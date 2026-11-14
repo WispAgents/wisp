@@ -206,6 +206,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Fixed
 
+- **v2: sandboxes and far delegates.** A project over about 1.4 MB now reaches its sandbox (up to 256 MB), and deleting a lead also deletes its delegates' copies on other machines.
 - **v2 grid: v1 sign-ins carry over.** Browsers and devices signed in to wisp Cloud under v1 stay signed in after the move to v2 (v1 hashed their tokens differently).
 - **v2: account cools.** An account cooled at its usage limit no longer becomes ready again just because Settings checked it is still signed in; signing in again still clears it. Try it two ways: a pair is refused as one on any error after a run starts, and a trigger row held for the plan clears when its run starts.
 - **v2: desktop start.** The first window no longer waits for a slow ~/.zshrc; wisp starts at once and picks up your login shell's PATH as soon as it answers, so agent CLIs installed since the last start are found without a restart. Plugins you install and the connectors pane find programs on that PATH too.
