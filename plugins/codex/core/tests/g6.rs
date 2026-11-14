@@ -93,3 +93,23 @@ fn every_fixture_builds_v1s_argv() {
         assert_eq!(args(&a), want, "{name}");
     }
 }
+
+/// Windows CI (round 3): a run in a `C:\…` folder names the same project-relative files as one in `/tmp/…`, with
+/// `/` (it named `C:\…\proj/math.js` and lost `notes.txt`, so a turn counted 1 changed file, or none).
+#[test]
+fn a_windows_folder_names_the_same_files_as_a_posix_one() {
+    const WIN: &str = r"C:\Users\RUNNER~1\AppData\Local\Temp\wisp-g6-run";
+    let run = |cwd: &str, stdout: &str| -> Vec<String> {
+        let mut p = CodexParser::new(CodexOptions { paths: RunPaths::same(cwd), ..CodexOptions::default() });
+        let at = if cwd == WIN { "C:/Users/RUNNER~1/AppData/Local/Temp/wisp-g6-run" } else { CWD };
+        golden::files(&mut p, cwd, stdout).into_iter().map(|f| f.replace(at, "@CWD@")).collect()
+    };
+    let mut math = 0;
+    for name in names() {
+        let stdout = read(&name, "jsonl");
+        let (posix, win) = (run(CWD, &stdout), run(WIN, &stdout));
+        assert_eq!(win, posix, "{name}");
+        math += usize::from(posix.iter().any(|f| f == "math.js"));
+    }
+    assert!(math > 0, "some run names math.js");
+}

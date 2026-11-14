@@ -6,7 +6,7 @@ use std::future::Future;
 
 use crate::event::HarnessEvent;
 use crate::parser::{Exit, IoStep, LineParser, Out};
-use crate::paths::{MAX_SNAPSHOT, RunPaths, resolve};
+use crate::paths::{MAX_SNAPSHOT, RunPaths, is_absolute, resolve};
 use crate::protocol::write_change;
 use crate::tracker::{Before, Tracker};
 
@@ -163,7 +163,7 @@ impl<P: LineParser> Driver<P> {
 
     /// The file at the pinned base (pinning now if nothing did yet), '' past `MAX_SNAPSHOT`.
     async fn at_base(&mut self, file: &str, disk: &dyn Disk) -> Option<String> {
-        if file.starts_with('/') {
+        if is_absolute(file) {
             return None;
         }
         self.pin(disk).await;
@@ -256,6 +256,29 @@ mod tests {
         assert_eq!(
             (json[2]["op"].as_str(), json[2]["early"].as_bool(), json[2]["edits"][0]["before"].as_str()),
             (Some("write"), Some(true), Some("old b"))
+        );
+    }
+
+    #[test]
+    fn a_windows_folder_reads_its_files_through_one_spelling() {
+        // a run in `C:\w`: `a.js` is read at `C:/w/a.js` (v2 Windows CI: `…\proj/notes.txt` was never read)
+        let disk = MapDisk::default();
+        if let Ok(mut m) = disk.files.lock() {
+            m.insert("C:/w/a.js".into(), "old a".into());
+        }
+        let mut d = Driver::new(Script, RunPaths::same(r"C:\w"));
+        let mut ev = Vec::new();
+        block_on(async {
+            d.stdout("announce", 1, &disk, &mut ev).await;
+            if let Ok(mut m) = disk.files.lock() {
+                m.insert("C:/w/a.js".into(), "new a".into());
+            }
+            d.stdout("wrote", 2, &disk, &mut ev).await;
+        });
+        let json: Vec<_> = ev.iter().map(HarnessEvent::to_json).collect();
+        assert_eq!(
+            (json[0]["file"].as_str(), json[0]["edits"][0]["before"].as_str(), json[0]["edits"][0]["after"].as_str()),
+            (Some("a.js"), Some("old a"), Some("new a"))
         );
     }
 }

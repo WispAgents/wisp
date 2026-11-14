@@ -162,8 +162,8 @@ pub fn describe_tool(name: &str, i: &Value, paths: &RunPaths) -> Tool {
         "grep" => t(ToolKind::Search, format!("Searching for “{}”", clip_value(&i["pattern"], 40))),
         "list_dir" => {
             // grok passes absolute paths, also for the project root itself
-            let root = truthy(&i["target_directory"])
-                && resolve(&paths.cwd, &js::string(&i["target_directory"])).trim_end_matches('/') == paths.cwd.trim_end_matches('/');
+            let root =
+                truthy(&i["target_directory"]) && resolve(&paths.cwd, &js::string(&i["target_directory"])) == resolve(&paths.cwd, "");
             t(ToolKind::Search, format!("Listing {}", if root || f.is_empty() { "." } else { &f }))
         }
         "web_search" => t(ToolKind::Web, format!("Searching the web: {}", clip_value(&i["query"], 50))),

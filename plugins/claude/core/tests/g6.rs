@@ -8,7 +8,7 @@ use std::path::Path;
 
 use serde_json::Value;
 use wisp_claude_core::{ClaudeOptions, ClaudeParser};
-use wisp_harness_kit::{Exit, HarnessEvent, NoDisk, RunPaths, js, replay};
+use wisp_harness_kit::{Exit, HarnessEvent, NoDisk, RunPaths, golden, js, replay};
 
 /// The folder the runs replay in (any absolute path: the disk is never read).
 const CWD: &str = "/tmp/wisp-g6-run";
@@ -147,4 +147,29 @@ fn g6_every_recorded_run_parses_as_v1_did() {
     }
     eprintln!("G6: {}/34 recorded Claude runs match v1", 34 - failed.len());
     assert!(failed.is_empty(), "G6: {}/34 match v1\n{}", 34 - failed.len(), failed.join("\n"));
+}
+
+/// Windows CI (round 3): a run in a `C:\…` folder names the same project-relative files as one in `/tmp/…`, with
+/// `/` (it named `C:\…\proj/math.js` and lost `notes.txt`, so a turn counted 1 changed file, or none).
+#[test]
+fn a_windows_folder_names_the_same_files_as_a_posix_one() {
+    const WIN: &str = r"C:\Users\RUNNER~1\AppData\Local\Temp\wisp-g6-run";
+    let run = |cwd: &str, stdout: &str| -> Vec<String> {
+        let mut p = ClaudeParser::new(ClaudeOptions { paths: RunPaths::same(cwd), prior: None, unknown_prior: false });
+        let at = if cwd == WIN { "C:/Users/RUNNER~1/AppData/Local/Temp/wisp-g6-run" } else { CWD };
+        golden::files(&mut p, cwd, stdout).into_iter().map(|f| f.replace(at, "@CWD@")).collect()
+    };
+    let mut math = 0;
+    for name in std::fs::read_dir(fixtures())
+        .unwrap()
+        .filter_map(Result::ok)
+        .filter_map(|e| e.file_name().to_str().and_then(|n| n.strip_suffix(".jsonl")).map(str::to_owned))
+        .collect::<Vec<_>>()
+    {
+        let stdout = read(&fixtures().join(format!("{name}.jsonl"))).unwrap_or_default();
+        let (posix, win) = (run(CWD, &stdout), run(WIN, &stdout));
+        assert_eq!(win, posix, "{name}");
+        math += usize::from(posix.iter().any(|f| f == "math.js"));
+    }
+    assert!(math > 0, "some run names math.js");
 }

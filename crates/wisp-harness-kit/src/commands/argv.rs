@@ -76,10 +76,12 @@ impl Ctx<'_> {
     }
 }
 
-/// `path.basename` (POSIX): the last segment, trailing slashes ignored.
+/// `path.basename`: the last segment, trailing slashes ignored; a Windows path (`C:\bin\git.exe`) splits on `\`
+/// too, a POSIX one only on `/`.
 pub(super) fn basename(p: &str) -> &str {
-    let t = p.trim_end_matches('/');
-    t.rfind('/').map_or(t, |i| &t[i + 1..])
+    let seps: &[char] = if crate::paths::is_windows(p) { &['/', '\\'] } else { &['/'] };
+    let t = p.trim_end_matches(seps);
+    t.rfind(seps).map_or(t, |i| &t[i + 1..])
 }
 
 /// `/^-[nABCmdeoItLX]$/`: the short options whose value is the next word.
@@ -213,5 +215,8 @@ mod tests {
         assert_eq!(basename("a/"), "a");
         assert_eq!(basename("/"), "");
         assert_eq!(basename(""), "");
+        assert_eq!(basename(r"C:\Program Files\Git\bin\git.exe"), "git.exe");
+        assert_eq!(basename(r"C:\tools\"), "tools");
+        assert_eq!(basename(r"a\b"), r"a\b"); // POSIX: a backslash is part of the name
     }
 }

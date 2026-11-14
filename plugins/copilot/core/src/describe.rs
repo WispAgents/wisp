@@ -16,7 +16,9 @@ pub fn describe_tool(name: &str, a: &Value, paths: &RunPaths) -> Tool {
     let f = rel_value(&a["path"], paths);
     match name {
         // v1 asked the disk whether it was a folder; a trailing slash is all a parser can see
-        "view" if js::str(&a["path"]).ends_with('/') => t(ToolKind::Search, format!("Listing {}", if f.is_empty() { "." } else { &f })),
+        "view" if js::str(&a["path"]).ends_with(['/', '\\']) => {
+            t(ToolKind::Search, format!("Listing {}", if f.is_empty() { "." } else { &f }))
+        }
         "view" => t(ToolKind::Read, format!("Reading {f}")).file(f),
         "create" => t(ToolKind::Edit, format!("Writing {f}")).file(f),
         "edit" => t(ToolKind::Edit, format!("Editing {f}")).file(f),

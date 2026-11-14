@@ -3,11 +3,13 @@
 //! options, `drop`, `stopAfter`) and v1's events (`<name>.v1.json`). The test reads the files; this
 //! module only compares, so it stays sans-IO.
 
+use std::collections::BTreeSet;
+
 use serde_json::Value;
 
 use crate::event::HarnessEvent;
 use crate::js;
-use crate::parser::{Exit, LineParser, Out, ReplayIo};
+use crate::parser::{Exit, IoStep, LineParser, Out, ReplayIo};
 
 /// JSON equality with numbers compared as numbers (v1's 5 and our 5.0 are the same).
 pub fn same(a: &Value, b: &Value) -> bool {
@@ -107,6 +109,73 @@ pub fn check<P: LineParser + ?Sized>(
         show(got.get(at)),
         show(want.get(at))
     ))
+}
+
+/// `@CWD@` as `cwd` in every string of a recorded line, the way the fake CLI fills it (a Windows `cwd`'s `\`
+/// stays a valid JSON string).
+fn fill(v: &mut Value, cwd: &str) {
+    match v {
+        Value::String(s) => *s = s.replace("@CWD@", cwd),
+        Value::Array(a) => a.iter_mut().for_each(|x| fill(x, cwd)),
+        Value::Object(o) => o.values_mut().for_each(|x| fill(x, cwd)),
+        _ => {}
+    }
+}
+
+fn file_keys(v: &Value, out: &mut BTreeSet<String>) {
+    match v {
+        Value::Array(a) => a.iter().for_each(|x| file_keys(x, out)),
+        Value::Object(o) => {
+            for (k, x) in o {
+                match x.as_str() {
+                    Some(f) if k == "file" && !f.is_empty() => {
+                        out.insert(f.to_owned());
+                    }
+                    _ => file_keys(x, out),
+                }
+            }
+        }
+        _ => {}
+    }
+}
+
+/// Collects every file an IO step names; the disk finds nothing (as [`crate::NoDisk`]).
+struct Files(BTreeSet<String>);
+
+impl ReplayIo for Files {
+    fn run(&mut self, step: &IoStep, out: &mut Vec<HarnessEvent>) {
+        let (IoStep::WriteBefore { file, .. }
+        | IoStep::Remember { file }
+        | IoStep::Changed { file }
+        | IoStep::Sync { file }
+        | IoStep::ChangedElse { file, .. }) = step;
+        self.0.insert(file.clone());
+        crate::NoDisk.run(step, out);
+    }
+}
+
+/// Every file a replay of `stdout` (with `@CWD@` as `cwd`) names: its IO steps' and its events' `file`s. A run
+/// in a Windows folder (`C:\w\proj`) must name the same project-relative files as one in a POSIX folder.
+pub fn files<P: LineParser + ?Sized>(parser: &mut P, cwd: &str, stdout: &str) -> BTreeSet<String> {
+    let lines: Vec<String> = stdout
+        .lines()
+        .map(|l| match serde_json::from_str::<Value>(l) {
+            Ok(mut v) => {
+                fill(&mut v, cwd);
+                v.to_string()
+            }
+            Err(_) => l.to_owned(),
+        })
+        .collect();
+    let refs: Vec<&str> = lines.iter().map(String::as_str).collect();
+    let mut io = Files(BTreeSet::new());
+    let exit = Exit { code: Some(0), ..Exit::default() };
+    let events = crate::replay(parser, &refs, &exit, &mut io, |i| i64::try_from(i).unwrap_or(0));
+    let mut out = io.0;
+    for e in &events {
+        file_keys(&e.to_json(), &mut out);
+    }
+    out
 }
 
 #[cfg(test)]
