@@ -41,6 +41,8 @@ pub(crate) fn spawn(bin: &str, r: &Resolved, opts: &SpawnOpts, size: PtySize) ->
     // Our copy of the slave side would keep the terminal open after the program exits.
     drop(pair.slave);
     let pid = child.process_id().ok_or_else(|| ProcError::spawn(bin, "no pid"))?;
+    // Windows: portable-pty can't start it suspended, so it joins its job here, already running; anything it starts
+    // before this line is outside the job (ADR-0063). The cursor answer ConPTY waits for goes only after this.
     let tree = Tree::new(pid);
     let reader = pair.master.try_clone_reader().map_err(|e| ProcError::spawn(bin, e))?;
     let writer = pair.master.take_writer().map_err(|e| ProcError::spawn(bin, e))?;

@@ -12,6 +12,9 @@
 //!   `FAKE_CODEX_USAGE` a file: codex app-server's `account/rateLimits/read` answers its JSON as `rateLimits`
 //!   `FAKE_CLI_VERSION` what --version says (9.9.9); `FAKE_AUTH_PROFILE`, `FAKE_AUTH_FAIL` for `auth status --text`
 //!   TOPIC[…] in the prompt: the hero names it
+//!   named `exec-plugin`: an exec plugin (JSON-RPC on stdio) that answers `initialize`, starts `FAKE_GRANDCHILD`'s
+//!   sleeper then, and ignores its input closing (it never exits on its own); `FAKE_EXEC_CRASH=1`: exits 1 right after
+//!   starting the sleeper (a crash that leaves its child behind)
 #![allow(clippy::print_stdout, clippy::unwrap_used, clippy::expect_used)]
 use std::io::{Read, Write};
 use std::path::Path;
@@ -249,6 +252,33 @@ fn grandchild(file: &str) {
     std::mem::forget(child);
 }
 
+/// `exec-plugin`: answers each request with `null` (so `initialize` finishes), starts the grandchild once set up, and
+/// once its input closes (wisp gone) keeps running: only wisp's containment can end it.
+fn exec_plugin() -> ! {
+    use std::io::BufRead as _;
+    let mut started = false;
+    for line in std::io::stdin().lock().lines() {
+        let Ok(line) = line else { break };
+        let Ok(m) = serde_json::from_str::<Value>(&line) else { continue };
+        if m.get("method").is_none() {
+            continue;
+        }
+        if let Some(id) = m.get("id") {
+            out(&json!({ "jsonrpc": "2.0", "id": id, "result": null }));
+        }
+        if !started && m["method"] == "initialize" {
+            started = true;
+            if let Some(f) = env("FAKE_GRANDCHILD") {
+                grandchild(&f);
+            }
+            if env("FAKE_EXEC_CRASH").is_some() {
+                std::process::exit(1);
+            }
+        }
+    }
+    hang();
+}
+
 fn main() {
     if env("FAKE_SLEEPER").is_some() {
         hang();
@@ -256,6 +286,9 @@ fn main() {
     let mut args = std::env::args();
     let me = args.next().unwrap_or_default();
     let name = Path::new(&me).file_stem().and_then(|s| s.to_str()).unwrap_or("agent").to_owned();
+    if name == "exec-plugin" {
+        exec_plugin();
+    }
     let argv: Vec<String> = args.collect();
     if let Some(code) = meta(&name, &argv) {
         std::process::exit(code);

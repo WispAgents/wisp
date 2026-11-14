@@ -54,7 +54,7 @@ pub use caps::{Caller, CapabilitySet};
 pub use diag::{FAILURES, FailureRecord, FailureWatch};
 pub use error::{Code, Result, WireError};
 pub use events::{EventEnvelope, QUEUE_CAP};
-pub use exec::{ExecOptions, ExecPlugin, ExecSpawner};
+pub use exec::{Contain, Contained, ExecOptions, ExecPlugin, ExecSpawner};
 pub use host::{App, Ctx, Kernel, PluginStatus, Setup};
 pub use kernel_api::{CommandInfo, CommitHook, Declarative, RouteEntry};
 pub use manifest::{Manifest, ManifestError, SettingDecl};

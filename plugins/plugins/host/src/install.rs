@@ -51,12 +51,34 @@ pub fn read(dir: &Path, text: &str, trusted: bool) -> Result<UserPlugin> {
     }
     m.validate()?;
     Ok(if m.exec().is_some() {
-        // its child starts on the PATH wisp finds programs on (the desktop app's handed-over one, ADR-0057)
-        let opts = ExecOptions { search_path: wisp_proc::search_path, ..ExecOptions::default() };
+        // its child starts on the PATH wisp finds programs on (the desktop app's handed-over one, ADR-0057), and it and
+        // everything it starts end with wisp however wisp ends (ADR-0063)
+        let opts = ExecOptions { search_path: wisp_proc::search_path, contain: Some(Arc::new(ProcContain)), ..ExecOptions::default() };
         UserPlugin::Exec(ExecPlugin::new(m, Some(dir.to_owned())).with_options(opts))
     } else {
         UserPlugin::Declarative(Declarative(m))
     })
+}
+
+/// wisp-proc's guard (Unix) and Job Objects (Windows) for an exec plugin's child (ADR-0063).
+#[derive(Debug)]
+struct ProcContain;
+
+struct Held(wisp_proc::contain::Contained);
+
+impl wisp_kernel::Contained for Held {
+    fn end(&self) {
+        self.0.end();
+    }
+}
+
+impl wisp_kernel::Contain for ProcContain {
+    fn prepare(&self, cmd: &mut tokio::process::Command) {
+        wisp_proc::contain::prepare(cmd);
+    }
+    fn adopt(&self, pid: u32) -> std::io::Result<Box<dyn wisp_kernel::Contained>> {
+        Ok(Box::new(Held(wisp_proc::contain::adopt(pid)?)))
+    }
 }
 
 /// The folder a plugin goes in: `user.my-tool` → `my-tool`.

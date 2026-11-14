@@ -15,6 +15,7 @@
 
 mod canon;
 mod child;
+pub mod contain;
 pub mod error;
 #[cfg(unix)]
 mod guard;

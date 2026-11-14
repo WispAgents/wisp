@@ -45,6 +45,22 @@ pub trait ExecSpawner: Send + Sync + 'static {
     ) -> std::io::Result<tokio::process::Child>;
 }
 
+/// What keeps an exec plugin's whole tree from outliving wisp (ADR-0063): the kernel can't start processes that
+/// way itself (it knows no OS process service), so the install hands one in (`wisp` passes wisp-proc's guard and Job
+/// Objects). `prepare` runs on the command before it starts (Unix: a process group of its own; Windows: started
+/// suspended), `adopt` right after (listed with the guard; in a `KILL_ON_JOB_CLOSE` job, then resumed). An `Err`
+/// from `adopt` means the child couldn't be held and was ended: the start fails.
+pub trait Contain: Send + Sync + std::fmt::Debug + 'static {
+    fn prepare(&self, cmd: &mut tokio::process::Command);
+    fn adopt(&self, pid: u32) -> std::io::Result<Box<dyn Contained>>;
+}
+
+/// A child held by [`Contain`]: `end` ends everything it started (the plugin was switched off); dropping it (once
+/// the child was reaped) lets the tree go.
+pub trait Contained: Send + Sync + 'static {
+    fn end(&self);
+}
+
 #[derive(Debug, Clone)]
 pub struct ExecOptions {
     /// first restart after this long, doubling each time
@@ -56,6 +72,9 @@ pub struct ExecOptions {
     /// The PATH a child starts with (and its program is found on), read at each start: wisp passes
     /// `wisp_proc::search_path` (the one the desktop app handed over, ADR-0057), the kernel alone the inherited one.
     pub search_path: fn() -> Option<OsString>,
+    /// How the child and what it starts die with wisp, however wisp ends (ADR-0063). None (the kernel alone): only
+    /// the child itself, and only on a clean stop. Not used with an [`ExecSpawner`], which starts children its way.
+    pub contain: Option<Arc<dyn Contain>>,
 }
 
 /// The PATH this process inherited: the kernel has no proc service of its own.
@@ -65,7 +84,14 @@ fn inherited_path() -> Option<OsString> {
 
 impl Default for ExecOptions {
     fn default() -> Self {
-        Self { restart_base_ms: 1000, max_restarts: 5, init_timeout_ms: 10_000, env: Vec::new(), search_path: inherited_path }
+        Self {
+            restart_base_ms: 1000,
+            max_restarts: 5,
+            init_timeout_ms: 10_000,
+            env: Vec::new(),
+            search_path: inherited_path,
+            contain: None,
+        }
     }
 }
 
@@ -110,7 +136,8 @@ fn default_spawn(
     env: &[(String, String)],
     untrusted: bool,
     path: Option<OsString>,
-) -> std::io::Result<tokio::process::Child> {
+    contain: Option<&dyn Contain>,
+) -> std::io::Result<(tokio::process::Child, Option<Box<dyn Contained>>)> {
     let mut c = tokio::process::Command::new(program);
     // an untrusted plugin (ADR-0048) gets none of wisp's environment (its keys and tokens): a PATH to find its
     // runtime, its own folder as its home, and what wisp tells it; on Windows also the system variables it can't
@@ -136,7 +163,13 @@ fn default_spawn(
     if let Some(d) = cwd {
         c.current_dir(d);
     }
-    c.spawn()
+    let Some(contain) = contain else { return Ok((c.spawn()?, None)) };
+    contain.prepare(&mut c);
+    let child = c.spawn()?;
+    let pid = child.id().ok_or_else(|| std::io::Error::other("the child has no pid"))?;
+    // on an error the child was ended (Windows: it never ran); dropping it reaps it
+    let held = contain.adopt(pid)?;
+    Ok((child, Some(held)))
 }
 
 async fn start(ctx: Ctx, m: Manifest, root: Option<PathBuf>, opts: ExecOptions) -> Result<()> {
@@ -152,12 +185,17 @@ async fn start(ctx: Ctx, m: Manifest, root: Option<PathBuf>, opts: ExecOptions) 
     }
     let mut env = opts.env.clone();
     env.push(("WISP_PLUGIN".into(), id.clone()));
-    let spawned = match k.service::<Arc<dyn ExecSpawner>>() {
-        Some(s) => s.spawn(&program, &argv[1..], root.as_deref(), &env),
-        None => default_spawn(&program, &argv[1..], root.as_deref(), &env, m.trust.as_deref() == Some("untrusted"), (opts.search_path)()),
+    let spawned = if let Some(s) = k.service::<Arc<dyn ExecSpawner>>() {
+        s.spawn(&program, &argv[1..], root.as_deref(), &env).map(|c| (c, None))
+    } else {
+        let untrusted = m.trust.as_deref() == Some("untrusted");
+        default_spawn(&program, &argv[1..], root.as_deref(), &env, untrusted, (opts.search_path)(), opts.contain.as_deref())
     };
-    let mut child = spawned.map_err(|e| WireError::unavailable(format!("{id}: can't start {}: {e}", program.display())))?;
+    let (mut child, held) = spawned.map_err(|e| WireError::unavailable(format!("{id}: can't start {}: {e}", program.display())))?;
     let (Some(stdin), Some(stdout)) = (child.stdin.take(), child.stdout.take()) else {
+        if let Some(h) = &held {
+            h.end();
+        }
         return Err(WireError::internal(format!("{id}: the child has no stdio")));
     };
     let bridge =
@@ -168,7 +206,7 @@ async fn start(ctx: Ctx, m: Manifest, root: Option<PathBuf>, opts: ExecOptions) 
     if let Some(err) = child.stderr.take() {
         ctx.spawn(log_stderr(id.clone(), err));
     }
-    supervise(&k, &ctx, child, peer.clone(), &opts);
+    supervise(&k, &ctx, child, held, peer.clone(), &opts);
     let settings: serde_json::Map<String, Value> =
         m.settings().into_iter().map(|d| (d.key.clone(), ctx.setting(&d.key).unwrap_or(Value::Null))).collect();
     for key in settings.keys() {
@@ -199,14 +237,26 @@ async fn log_stderr(id: String, err: tokio::process::ChildStderr) {
 }
 
 /// Waits on the child: a death while the plugin is on is a crash (off with the reason, restart with a
-/// backoff); the plugin going off kills it.
-fn supervise(k: &Arc<KernelState>, ctx: &Ctx, mut child: tokio::process::Child, peer: Arc<Peer>, opts: &ExecOptions) {
+/// backoff); the plugin going off kills it. Held, everything it started dies with it either way; `held` is let go once
+/// the child is reaped.
+fn supervise(
+    k: &Arc<KernelState>,
+    ctx: &Ctx,
+    mut child: tokio::process::Child,
+    held: Option<Box<dyn Contained>>,
+    peer: Arc<Peer>,
+    opts: &ExecOptions,
+) {
     let (weak, scope, id, base, max) =
         (Arc::downgrade(k), ctx.scope().clone(), ctx.plugin().to_owned(), opts.restart_base_ms, opts.max_restarts);
     tokio::spawn(async move {
         tokio::select! {
             status = child.wait() => {
                 let how = status.map_or_else(|e| format!("failed: {e}"), |s| s.code().map_or_else(|| "was killed".to_owned(), |c| format!("exited (code {c})")));
+                // what it started dies with it (its group still has members, so its pgid can't be a stranger's yet)
+                if let Some(h) = &held {
+                    h.end();
+                }
                 let why = format!("{id}'s process {how}");
                 peer.close(&why);
                 // a death before `initialize` answered is a failed start, handled there
@@ -217,9 +267,13 @@ fn supervise(k: &Arc<KernelState>, ctx: &Ctx, mut child: tokio::process::Child, 
             }
             () = scope.cancelled() => {
                 peer.close(&format!("{id} is off"));
+                if let Some(h) = &held {
+                    h.end();
+                }
                 let _ = child.kill().await;
             }
         }
+        drop(held);
     });
 }
 
