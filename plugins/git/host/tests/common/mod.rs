@@ -47,7 +47,8 @@ pub fn repo(t: &Tmp) -> PathBuf {
     let dir = t.0.join("repo");
     std::fs::create_dir_all(&dir).unwrap();
     git(&dir, &["init", "-q", "-b", "main"]);
-    for (k, v) in [("user.email", "qa@wisp.test"), ("user.name", "QA"), ("commit.gpgsign", "false")] {
+    // core.autocrlf: the test's git reads no system config, wisp's does (Git for Windows: true); the same bytes for both
+    for (k, v) in [("user.email", "qa@wisp.test"), ("user.name", "QA"), ("commit.gpgsign", "false"), ("core.autocrlf", "false")] {
         git(&dir, &["config", k, v]);
     }
     let lines: Vec<String> = (1..=30).map(|i| format!("line {i}")).collect();

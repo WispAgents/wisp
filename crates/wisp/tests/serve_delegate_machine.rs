@@ -51,6 +51,8 @@ async fn a_delegate_on_another_machine_runs_there_says_where_and_its_change_come
     let proj = da.join("proj");
     std::fs::create_dir_all(&proj).unwrap();
     git(&proj, &["init", "-q", "-b", "main"]);
+    // the lead's checkout as the test writes it: no line-ending conversion (Windows' git defaults to autocrlf=true)
+    git(&proj, &["config", "core.autocrlf", "false"]);
     std::fs::write(proj.join("math.js"), "export const add = (a, b) => a - b;\n").unwrap();
     std::fs::write(proj.join("README.md"), "app\n").unwrap();
     git(&proj, &["add", "."]);
@@ -130,6 +132,8 @@ async fn deleting_the_lead_deletes_its_delegates_copy_and_task_there() {
     .await;
     let proj = da.join("proj");
     git(&proj, &["init", "-q", "-b", "main"]);
+    // the lead's checkout as the test writes it: no line-ending conversion (Windows' git defaults to autocrlf=true)
+    git(&proj, &["config", "core.autocrlf", "false"]);
     git(&proj, &["add", "."]);
     git(&proj, &["-c", "user.name=T", "-c", "user.email=t@e", "commit", "-qm", "first"]);
     let team = json!({ "wisp.runtime": { "subagents": [{ "name": "far", "agent": "codex", "machine": machine, "place": "studio" }] } });
