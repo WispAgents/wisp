@@ -51,7 +51,7 @@ use serde_json::Value;
 
 pub use call::MAX_DEPTH;
 pub use caps::{Caller, CapabilitySet};
-pub use diag::FailureRecord;
+pub use diag::{FAILURES, FailureRecord, FailureWatch};
 pub use error::{Code, Result, WireError};
 pub use events::{EventEnvelope, QUEUE_CAP};
 pub use exec::{ExecOptions, ExecPlugin, ExecSpawner};
@@ -229,6 +229,7 @@ impl Call {
                 tx: None,
                 cause: None,
                 cause_depth: 0,
+                under_route: false,
             }),
         }
     }

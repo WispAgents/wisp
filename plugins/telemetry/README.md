@@ -15,7 +15,11 @@ Anonymous usage stats (v1 `server/telemetry.js`, `services/telemetry.js`), as AD
   it doesn't list is never sent. The page may send only its own events and values.
 - Sinks deliver it (`telemetry.sink@1`); `wisp.posthog` is one. No other plugin names a vendor.
 
+- Errors go as `$exception` (ADR-0062): a server error at the edge (`kernel.failures`), a panic (kept with the
+  queue and sent by the next start), an agent's error (`AgentError`). The UI reports none (v1 didn't).
+- `api/tests/goldens/emitters.json` lists each event's keys and the file that sends it, or why nothing does.
+
 ## Not yet
 
-Feedback (thumbs, /feedback) and its offline outbox, exceptions, the queue kept across a crash, and the
-events of plugins not ported yet (they emit with `telemetry.track` as each is).
+`getapp_*` (v2 has no Get the desktop app card yet), `move_task` (no move in v2) and `spell_hook` (spells are gone,
+ADR-0031) are in the catalogue with nothing to send them.

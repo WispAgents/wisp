@@ -5270,6 +5270,7 @@ dependencies = [
  "wisp-resources",
  "wisp-resources-api",
  "wisp-store",
+ "wisp-telemetry-api",
  "wisp-testkit",
 ]
 

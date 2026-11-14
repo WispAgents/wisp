@@ -27,6 +27,7 @@ use wisp_telemetry_core::env::{FLUSH_MS, TIMEOUT_MS};
 use wisp_telemetry_core::turns::{ended_props, started_props};
 use wisp_telemetry_core::{Common, Env, ScrubOptions, Telemetry, Tracked};
 
+mod errors;
 mod facts;
 use facts::facts;
 
@@ -61,6 +62,9 @@ pub fn state_row(setting: bool, env: &Env) -> Row {
     r.insert("blocked".into(), json!(blocked));
     r
 }
+/// The saved body's topic: no client subscribes (it's the install's id and queues), but the store keeps only rows that
+/// are on one: with none, every save was refused, and the id, the switch and the outboxes were lost at each start.
+const META_TOPIC: &str = "plugin:wisp.telemetry:meta";
 const META: EntityDef = EntityDef {
     kind: "telemetry_meta",
     table: "telemetry_meta",
@@ -69,14 +73,17 @@ const META: EntityDef = EntityDef {
     json_columns: &["body"],
     parent: None,
     seq: None,
-    topics: |_| Vec::new(),
+    topics: |_| vec![META_TOPIC.to_owned()],
 };
 
 struct State {
     store: Store,
+    ctx: Ctx,
     t: Mutex<Telemetry>,
     /// feedback no sink took yet (v1 feedback-outbox.json): sent with the next one
     outbox: Mutex<Vec<Value>>,
+    /// what a crash kept (v1 telemetry-pending.json): sent by the next start
+    pending: Mutex<Vec<Value>>,
 }
 
 fn lock<T>(m: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
@@ -94,23 +101,44 @@ fn now(ctx: &Ctx) -> i64 {
 }
 
 impl State {
-    async fn save(&self) {
+    /// The saved body (the install's id, the switch, the outboxes) and the Privacy row.
+    fn saved(&self) -> (Row, Row) {
         let (id, on, row) = {
             let t = lock(&self.t);
             (t.install_id.clone(), t.setting_on, state_row(t.setting_on, &t.env))
         };
-        let outbox = lock(&self.outbox).clone();
-        let body = json!({ "installId": id, "telemetry": if on { "on" } else { "off" }, "outbox": outbox });
-        let _ = self
+        let (outbox, pending) = (lock(&self.outbox).clone(), lock(&self.pending).clone());
+        let mut r = Row::new();
+        r.insert("id".into(), json!("settings"));
+        r.insert(
+            "body".into(),
+            json!({ "installId": id, "telemetry": if on { "on" } else { "off" }, "outbox": outbox, "pending": pending }),
+        );
+        (r, row)
+    }
+
+    async fn save(&self) {
+        let (body, row) = self.saved();
+        if let Err(err) = self
             .store
             .write(move |w| {
-                let mut r = Row::new();
-                r.insert("id".into(), json!("settings"));
-                r.insert("body".into(), body);
-                w.upsert(META.kind, r)?;
+                w.upsert(META.kind, body)?;
                 w.upsert(STATE.kind, row).map(|_| ())
             })
-            .await;
+            .await
+        {
+            tracing::warn!(error = %err, "telemetry: its settings aren't kept");
+        }
+    }
+
+    /// Says a queued event to watchers; a full queue flushes now.
+    fn queued(&self, last: Option<Value>, tracked: Tracked) {
+        if let Some(ev) = last.and_then(|v| serde_json::from_value::<TelemetryEvent>(v).ok()) {
+            self.ctx.emit(&self.ctx.root_call(), &ev);
+        }
+        if tracked == Tracked::Flush {
+            self.flush(&self.ctx);
+        }
     }
 
     /// Queues `name` (catalogue keys only) and says it to watchers; a full queue flushes now.
@@ -129,12 +157,7 @@ impl State {
         if new_id {
             self.save().await;
         }
-        if let Some(ev) = last.and_then(|v| serde_json::from_value::<TelemetryEvent>(v).ok()) {
-            ctx.emit(&ctx.root_call(), &ev);
-        }
-        if tracked == Tracked::Flush {
-            self.flush(ctx);
-        }
+        self.queued(last, tracked);
         true
     }
 
@@ -285,10 +308,17 @@ impl Plugin for TelemetryPlugin {
                 let Ok(st) = state(&slot) else { return Ok(()) };
                 if let Some((r, t)) = facts(&ctx, &call, e.session_id.as_str(), e.turn_id.as_str()).await {
                     st.track(&ctx, "turn_ended", ended_props(&r, &t, e.interrupted)).await;
+                    // v1 trackTurns: the agent's error as an exception, with how the run was set up (never the prompt)
+                    if let Some(text) = e.error_text.as_deref().filter(|x| !x.trim().is_empty()) {
+                        let err = wisp_telemetry_core::ErrorInfo { name: None, message: text.to_owned(), stack: None };
+                        st.capture(&err, wisp_telemetry_core::turns::agent_error_props(&r));
+                    }
                 }
                 Ok(())
             }
         });
+        // a server error at the edge (a root command's `internal`, a route's 5xx) as `$exception` (ADR-0062)
+        s.contribute(&wisp_kernel::FAILURES, Arc::new(errors::Failures(slot.clone())) as Arc<dyn wisp_kernel::FailureWatch>);
         let start = slot;
         let given = self.env.clone();
         s.on_start(move |ctx| async move {
@@ -329,10 +359,15 @@ impl Plugin for TelemetryPlugin {
             );
             t.install_id = body["installId"].as_str().map(str::to_owned);
             t.setting_on = wisp_telemetry_core::env::setting_on(body.get("telemetry"));
+            t.restore(errors::pending_of(&body)); // what the last crash kept (dropped when stats are off by now)
+            let watch_panics = !wisp_telemetry_core::env::env_disabled(&t.env);
             let outbox = body["outbox"].as_array().cloned().unwrap_or_default();
-            let st = Arc::new(State { store, t: Mutex::new(t), outbox: Mutex::new(outbox) });
+            let st = Arc::new(State { store, ctx: ctx.clone(), t: Mutex::new(t), outbox: Mutex::new(outbox), pending: Mutex::default() });
             let _ = start.set(st.clone());
-            st.save().await; // the Privacy row exists from the start
+            st.save().await; // the Privacy row exists from the start, and the crash's queue is in this one now
+            if watch_panics {
+                errors::watch_panics(&st);
+            }
             // app_started: which harnesses are installed, and their versions (v1 index.js), off the start's way
             let (c3, st3) = (ctx.clone(), st.clone());
             ctx.spawn(async move {

@@ -16,7 +16,8 @@
       "deny": [
         { "permission": "plugins:install", "why": "install a plugin: the user installs plugins" },
         { "permission": "secrets:*", "why": "read the user’s secrets" },
-        { "permission": "settings:write{scope:server}", "why": "change wisp’s settings" }
+        { "permission": "settings:write{scope:server}", "why": "change wisp’s settings" },
+        { "permission": "topic:read{topic:plugin:wisp.telemetry:meta}", "why": "read wisp's usage-stats queue and the feedback waiting to be sent" }
       ]
     },
     {
@@ -36,10 +37,13 @@
       "deny": [
         { "permission": "apikeys:*", "why": "make or revoke API keys" },
         { "permission": "plugins:*", "why": "change plugins" },
-        { "permission": "secrets:*", "why": "read secrets" }
+        { "permission": "secrets:*", "why": "read secrets" },
+        { "permission": "topic:read{topic:plugin:wisp.telemetry:meta}", "why": "read wisp's usage-stats queue and the feedback waiting to be sent" }
       ]
     },
-    { "id": "preview", "allow": ["topic:read", "session:read", "stuff:read", "blob:read"] },
+    { "id": "preview", "allow": ["topic:read", "session:read", "stuff:read", "blob:read"], "deny": [
+      { "permission": "topic:read{topic:plugin:wisp.telemetry:meta}", "why": "read wisp's usage-stats queue and the feedback waiting to be sent" }
+    ] },
     { "id": "grid:inbox", "allow": ["channels:inbound"] },
     { "id": "grid:route", "allow": ["channels:routed"] }
   ],

@@ -18,6 +18,23 @@ pub struct FailureRecord {
     pub stack: Vec<String>,
 }
 
+/// Who hears of a server error as it happens (`kernel.failures@1`, ADR-0062): a root command that failed with
+/// `internal` (a panic included) or a route that answered 5xx, the same record Diagnostics keeps. Called on the
+/// failing call's own task, so it must only hand the record on (queue it, count it), never block or run a call.
+pub trait FailureWatch: Send + Sync + 'static {
+    fn failed(&self, f: &FailureRecord);
+}
+
+pub const FAILURES: crate::Point<dyn FailureWatch> = crate::Point::new("kernel.failures", 1);
+
+/// Records `f` in Diagnostics' ring for its plugin and tells every `kernel.failures` watcher.
+pub(crate) fn server_error(k: &crate::state::KernelState, f: FailureRecord) {
+    for (_, w) in crate::kernel_api::contributions(k, &FAILURES) {
+        w.failed(&f);
+    }
+    k.diag.record(f.at, &f.plugin, &f.kind, &f.code, f.message, f.stack);
+}
+
 #[derive(Debug)]
 pub(crate) struct Diagnostics {
     size: usize,

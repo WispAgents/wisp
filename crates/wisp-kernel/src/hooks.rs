@@ -89,6 +89,7 @@ where
             tx: p.tx.clone(),
             cause: p.cause,
             cause_depth: p.cause_depth,
+            under_route: p.under_route,
         }
         .into_call();
         let ms = h.opts.timeout_ms.clamp(1, TIMEOUT_MAX_MS);

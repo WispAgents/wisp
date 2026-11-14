@@ -76,19 +76,27 @@ pub(crate) fn serve(k: Kernel, caller: Caller, mut req: Request) -> BoxFuture<'s
         }
         req.params = params;
         k.route_scope(&caller, e.route.pattern, &req.params).await?;
-        let call = CallInner::detached(&k.state, caller, Some(e.ctx.inner.id.clone()), k.state.root.child_token()).into_call();
+        let mut inner = CallInner::detached(&k.state, caller, Some(e.ctx.inner.id.clone()), k.state.root.child_token());
+        inner.under_route = true; // its 5xx is reported once, here, not by each command it ran
+        let call = inner.into_call();
         let r = (e.route.handler)(e.ctx.clone(), call, req).await;
         if let Err(err) = &r
             && err.status() >= 500
         {
-            k.state.diag.record(
-                k.state.now_ms(),
-                &e.plugin,
-                "route",
-                "internal",
-                format!("{} {}: {}", e.route.method, e.route.pattern, err.message),
-                Vec::new(),
-            );
+            let f = crate::FailureRecord {
+                at: k.state.now_ms(),
+                plugin: e.plugin.clone(),
+                kind: "route".into(),
+                code: "internal".into(),
+                message: format!("{} {}: {}", e.route.method, e.route.pattern, err.message),
+                stack: Vec::new(),
+            };
+            // a plugin that's off, a service gone, a timeout: Diagnostics keeps it, but it's no server error to report
+            if err.code == Code::Internal {
+                crate::diag::server_error(&k.state, f);
+            } else {
+                k.state.diag.record(f.at, &f.plugin, &f.kind, &f.code, f.message, f.stack);
+            }
         }
         r
     })

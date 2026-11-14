@@ -98,6 +98,7 @@ fn enter(k: &Arc<KernelState>, e: &CmdEntry, from: Option<&Ctx>, parent: &Call) 
         tx: tx.clone(),
         cause: p.cause,
         cause_depth: p.cause_depth,
+        under_route: p.under_route,
     };
     Ok(Entered { call: call.into_call(), root: if in_cmd { None } else { tx } })
 }
@@ -124,7 +125,14 @@ async fn run<T: Send + 'static>(k: &Arc<KernelState>, e: &CmdEntry, en: Entered,
     .await;
     if let Err(err) = &res {
         let code = serde_json::to_value(err.code).ok().and_then(|v| v.as_str().map(str::to_owned)).unwrap_or_default();
-        k.diag.record(k.now_ms(), &e.owner, "command", &code, format!("{}: {}", e.id, err.message), en.call.inner.stack.clone());
+        let (message, stack) = (format!("{}: {}", e.id, err.message), en.call.inner.stack.clone());
+        if err.code == Code::Internal && en.call.inner.depth == 0 && !en.call.inner.under_route {
+            // a server error at the edge (the call nobody above it answers for): Diagnostics and kernel.failures
+            let f = crate::FailureRecord { at: k.now_ms(), plugin: e.owner.to_string(), kind: "command".into(), code, message, stack };
+            crate::diag::server_error(k, f);
+        } else {
+            k.diag.record(k.now_ms(), &e.owner, "command", &code, message, stack);
+        }
     }
     if let Some(tx) = en.root {
         if res.is_ok() {

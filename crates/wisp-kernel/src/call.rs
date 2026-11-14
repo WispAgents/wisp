@@ -43,6 +43,8 @@ pub(crate) struct CallInner {
     /// the durable event whose handler made this call (ADR-0044), and its chain depth
     pub(crate) cause: Option<u64>,
     pub(crate) cause_depth: u32,
+    /// a route's handler runs it: a server error is the route's to report (its 5xx), not each command's (ADR-0062)
+    pub(crate) under_route: bool,
 }
 
 impl CallInner {
@@ -64,6 +66,7 @@ impl CallInner {
             tx: None,
             cause: None,
             cause_depth: 0,
+            under_route: false,
         }
     }
 
