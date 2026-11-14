@@ -47,6 +47,12 @@ test('every_platform_rule_sits_in_layer_kit_under_its_own_look', () => {
     expect(all.length, s.look).toBeGreaterThan(20);
     for (const [sel, , at] of all) {
       expect(at, `${s.look}: ${sel}`).toMatch(/^@layer kit/);
+      // a keyframe's steps (from, to, 50%) are no selectors; the animation's name is the look's own (step 4)
+      const frames = /@keyframes ([\w-]+)/.exec(at);
+      if (frames) {
+        expect(frames[1], s.look).toMatch(new RegExp(`^k-${s.look}-`));
+        continue;
+      }
       for (const one of sel.split(',')) expect(one.trim(), s.look).toMatch(new RegExp(`^:root\\[data-platform='${s.look}'\\] `));
     }
   }

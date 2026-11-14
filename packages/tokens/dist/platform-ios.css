@@ -61,6 +61,23 @@
     --bar-button-gap: 6px; /* UINavigationBar: about 6 pt between trailing bar button items */
     --large-title-pad-bottom: 8px; /* UINavigationBar large title: 8 pt below the baseline box */
     --tab-inactive: #8e8e93; /* UITabBar unselected item tint = UIColor.systemGray */
+    --row-lead: 40px; /* HIG Lists and tables / UIListContentConfiguration: a leading image or avatar reserved 40 pt (Messages, Contacts) */
+    --row-lead-gap: 12px; /* UIListContentConfiguration.imageToTextPadding: 12 pt from the image to the text */
+    --row-pad-y: 11px; /* UITableViewCell default: 11 pt above and below a 22 pt body line (44 pt min) */
+    --chevron: 13px; /* UITableViewCell.AccessoryType.disclosureIndicator: the chevron glyph about 8 × 13 pt, drawn at 13 pt */
+    --chip-h: 22px; /* HIG capsule tags: footnote (13/18) with 2 pt above and below, a full capsule */
+    --chip-pad: 8px; /* HIG capsule tags: 8 pt leading and trailing */
+    --chip-icon: 13px; /* HIG capsule tags: an SF Symbol at the footnote size, 13 pt */
+    --card-pad: 16px; /* HIG inset grouped: 16 pt content inset inside a grouped box */
+    --group-head-pad: 6px; /* UITableView insetGrouped: the header sits 6 pt above its box, footer 6 pt below */
+    --banner-pad: 12px; /* HIG inline banner row: 12 pt inside an inset grouped row */
+    --swipe-action-w: 74px; /* UIContextualAction (Mail): a swipe action button 74 pt wide when the row rests open */
+    --refresh-h: 60px; /* UIRefreshControl: the control's 60 pt pull area above the content */
+    --refresh-spinner: 20px; /* UIActivityIndicatorView.Style.medium: 20 pt */
+    --empty-icon: 48px; /* UIContentUnavailableConfiguration (ContentUnavailableView): the SF Symbol at 48 pt */
+    --button-h: 50px; /* HIG Buttons: large filled button 50 pt, 12 pt corners */
+    --button-h-sm: 34px; /* HIG Buttons: small/regular bordered button 34 pt */
+    --button-pad: 20px; /* HIG Buttons: 20 pt leading and trailing padding */
     --spring-snappy: linear(0, 0.034, 0.117, 0.224, 0.339, 0.452, 0.557, 0.649, 0.729, 0.795, 0.849, 0.892, 0.925, 0.95, 0.969, 0.983, 0.992, 0.999, 1.003, 1.005, 1.006, 1.006, 1.006, 1.006, 1.005, 1.004, 1.003, 1.003, 1.002, 1.002, 1.001, 1); /* SwiftUI Animation.snappy: duration 0.5 s, extraBounce 0 (bounce 0.15) */
     --spring-snappy-dur: 700ms; /* spring-snappy settles (within 0.1 %) after this: its animation's duration */
     --spring-smooth: linear(0, 0.037, 0.122, 0.227, 0.337, 0.442, 0.537, 0.62, 0.692, 0.751, 0.801, 0.841, 0.874, 0.901, 0.922, 0.939, 0.952, 0.963, 0.971, 0.978, 0.983, 0.987, 0.99, 0.992, 0.994, 0.995, 0.996, 0.997, 0.998, 0.998, 0.999, 1); /* SwiftUI Animation.smooth: duration 0.5 s, bounce 0 */
@@ -82,6 +99,8 @@
     --outline: rgba(60, 60, 67, 0.29); /* UIColor.separator (drawn as a 0.5 pt hairline) */
     --outline-var: #c6c6c8; /* UIColor.opaqueSeparator */
     --chrome: rgba(249, 249, 249, 0.94); /* UIBarAppearance default background (systemChromeMaterial): the tab bar and a scrolled navigation bar */
+    --on-surface-ter: rgba(60, 60, 67, 0.3); /* UIColor.tertiaryLabel (the disclosure chevron, placeholders) */
+    --fill: rgba(118, 118, 128, 0.12); /* UIColor.tertiarySystemFill (redacted placeholders, gray buttons) */
   }
   @media (prefers-color-scheme: dark) {
     :root[data-platform='ios']:not([data-theme='light']) {
@@ -98,6 +117,8 @@
       --outline: rgba(84, 84, 88, 0.6); /* UIColor.separator (drawn as a 0.5 pt hairline) */
       --outline-var: #38383a; /* UIColor.opaqueSeparator */
       --chrome: rgba(22, 22, 22, 0.94); /* UIBarAppearance default background (systemChromeMaterial): the tab bar and a scrolled navigation bar */
+      --on-surface-ter: rgba(235, 235, 245, 0.3); /* UIColor.tertiaryLabel (the disclosure chevron, placeholders) */
+      --fill: rgba(118, 118, 128, 0.24); /* UIColor.tertiarySystemFill (redacted placeholders, gray buttons) */
     }
   }
   :root[data-platform='ios'][data-theme='dark'], :root[data-platform='ios'] [data-theme='dark'] {
@@ -114,6 +135,8 @@
     --outline: rgba(84, 84, 88, 0.6); /* UIColor.separator (drawn as a 0.5 pt hairline) */
     --outline-var: #38383a; /* UIColor.opaqueSeparator */
     --chrome: rgba(22, 22, 22, 0.94); /* UIBarAppearance default background (systemChromeMaterial): the tab bar and a scrolled navigation bar */
+    --on-surface-ter: rgba(235, 235, 245, 0.3); /* UIColor.tertiaryLabel (the disclosure chevron, placeholders) */
+    --fill: rgba(118, 118, 128, 0.24); /* UIColor.tertiarySystemFill (redacted placeholders, gray buttons) */
   }
   :root[data-platform='ios'][data-theme='light'], :root[data-platform='ios'] [data-theme='light'] {
     --surface-c0: #ffffff; /* UIColor.systemBackground */
@@ -129,5 +152,7 @@
     --outline: rgba(60, 60, 67, 0.29); /* UIColor.separator (drawn as a 0.5 pt hairline) */
     --outline-var: #c6c6c8; /* UIColor.opaqueSeparator */
     --chrome: rgba(249, 249, 249, 0.94); /* UIBarAppearance default background (systemChromeMaterial): the tab bar and a scrolled navigation bar */
+    --on-surface-ter: rgba(60, 60, 67, 0.3); /* UIColor.tertiaryLabel (the disclosure chevron, placeholders) */
+    --fill: rgba(118, 118, 128, 0.12); /* UIColor.tertiarySystemFill (redacted placeholders, gray buttons) */
   }
 }

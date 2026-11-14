@@ -232,6 +232,74 @@
     "tab-inactive": {
       "value": "#8e8e93",
       "spec": "UITabBar unselected item tint = UIColor.systemGray"
+    },
+    "row-lead": {
+      "value": "40px",
+      "spec": "HIG Lists and tables / UIListContentConfiguration: a leading image or avatar reserved 40 pt (Messages, Contacts)"
+    },
+    "row-lead-gap": {
+      "value": "12px",
+      "spec": "UIListContentConfiguration.imageToTextPadding: 12 pt from the image to the text"
+    },
+    "row-pad-y": {
+      "value": "11px",
+      "spec": "UITableViewCell default: 11 pt above and below a 22 pt body line (44 pt min)"
+    },
+    "chevron": {
+      "value": "13px",
+      "spec": "UITableViewCell.AccessoryType.disclosureIndicator: the chevron glyph about 8 × 13 pt, drawn at 13 pt"
+    },
+    "chip-h": {
+      "value": "22px",
+      "spec": "HIG capsule tags: footnote (13/18) with 2 pt above and below, a full capsule"
+    },
+    "chip-pad": {
+      "value": "8px",
+      "spec": "HIG capsule tags: 8 pt leading and trailing"
+    },
+    "chip-icon": {
+      "value": "13px",
+      "spec": "HIG capsule tags: an SF Symbol at the footnote size, 13 pt"
+    },
+    "card-pad": {
+      "value": "16px",
+      "spec": "HIG inset grouped: 16 pt content inset inside a grouped box"
+    },
+    "group-head-pad": {
+      "value": "6px",
+      "spec": "UITableView insetGrouped: the header sits 6 pt above its box, footer 6 pt below"
+    },
+    "banner-pad": {
+      "value": "12px",
+      "spec": "HIG inline banner row: 12 pt inside an inset grouped row"
+    },
+    "swipe-action-w": {
+      "value": "74px",
+      "spec": "UIContextualAction (Mail): a swipe action button 74 pt wide when the row rests open"
+    },
+    "refresh-h": {
+      "value": "60px",
+      "spec": "UIRefreshControl: the control's 60 pt pull area above the content"
+    },
+    "refresh-spinner": {
+      "value": "20px",
+      "spec": "UIActivityIndicatorView.Style.medium: 20 pt"
+    },
+    "empty-icon": {
+      "value": "48px",
+      "spec": "UIContentUnavailableConfiguration (ContentUnavailableView): the SF Symbol at 48 pt"
+    },
+    "button-h": {
+      "value": "50px",
+      "spec": "HIG Buttons: large filled button 50 pt, 12 pt corners"
+    },
+    "button-h-sm": {
+      "value": "34px",
+      "spec": "HIG Buttons: small/regular bordered button 34 pt"
+    },
+    "button-pad": {
+      "value": "20px",
+      "spec": "HIG Buttons: 20 pt leading and trailing padding"
     }
   },
   "springs": {
@@ -329,6 +397,16 @@
       "light": "rgba(249, 249, 249, 0.94)",
       "dark": "rgba(22, 22, 22, 0.94)",
       "spec": "UIBarAppearance default background (systemChromeMaterial): the tab bar and a scrolled navigation bar"
+    },
+    "on-surface-ter": {
+      "light": "rgba(60, 60, 67, 0.3)",
+      "dark": "rgba(235, 235, 245, 0.3)",
+      "spec": "UIColor.tertiaryLabel (the disclosure chevron, placeholders)"
+    },
+    "fill": {
+      "light": "rgba(118, 118, 128, 0.12)",
+      "dark": "rgba(118, 118, 128, 0.24)",
+      "spec": "UIColor.tertiarySystemFill (redacted placeholders, gray buttons)"
     }
   }
 }

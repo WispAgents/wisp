@@ -1,11 +1,17 @@
 // ListRow: one row of a list (a task, a machine, a file). Every cell is always rendered in a fixed
 // column, so selecting, opening or hovering a row moves nothing in it: the time sits in a
 // fixed-width column and hover-only actions appear beside it, never on top of it (v1 #188, #209).
+// In the phone apps (ADR-0065 build step 4, design/mobile.md §A.2, §A.7) the same row is an M3 list item
+// (1/2/3 lines: 56/72/88 dp, a 40 dp leading element, trailing supporting text) or an iOS table cell
+// (44 pt min, inset separators, a chevron where it pushes). The row says how many lines it has
+// (`data-row-lines`) and whether it leads with something (`data-lead`) on a phone only, so the browser's
+// HTML stays byte for byte v1's (test/goldens/platform-browser-rows.json).
 import { Show, type JSX } from 'solid-js';
 import { flag, sub, type CssVars, type KitProps, type PartName } from '../core/props.ts';
 import type { ReorderAttrs } from '../core/reorder.ts';
 import { Icon } from '../content/Icon.tsx';
 import type { IconName } from '../content/icons.ts';
+import { usePlatform } from '../platform/PlatformLook.tsx';
 
 export interface ListRowProps extends KitProps {
   readonly title: string;
@@ -48,7 +54,14 @@ export interface ListRowProps extends KitProps {
   /** feed: how many quick actions the row has (0–2): with a mouse the title makes room for them while they show; on a
    *  touch screen (hover: none) they leave the row, so the title keeps its own edge. Additive (2026-11-12). */
   readonly quick?: 0 | 1 | 2 | undefined;
+  /** Opening the row pushes a page (a setting, a computer): iOS draws the disclosure chevron at its end
+   *  (HIG); Android and the browser draw nothing. A task row opens beside the list, so it has none (Mail).
+   *  Additive (ADR-0065 step 4). */
+  readonly push?: boolean | undefined;
 }
+
+/** How many lines the row's text takes on a phone (M3 one/two/three-line list items; iOS cell heights). */
+export const rowLines = (row: Pick<ListRowProps, 'sub' | 'foot'>): '1' | '2' | '3' => (row.foot ? '3' : row.sub !== undefined && row.sub !== null && row.sub !== false ? '2' : '1');
 
 type RowPiece = 'row' | 'lead' | 'main' | 'title' | 'sub' | 'foot' | 'pills' | 'time' | 'actions';
 
@@ -149,6 +162,7 @@ export function RowRun(props: {
 function FeedRow(props: ListRowProps & { readonly partName: PartName }): JSX.Element {
   const p = (): PartName => props.partName;
   const open = (e: MouseEvent): void => props.onOpen?.(e);
+  const phone = ((look) => (): boolean => look() !== 'web')(usePlatform());
   return (
     <div
       {...props.reorder}
@@ -167,6 +181,8 @@ function FeedRow(props: ListRowProps & { readonly partName: PartName }): JSX.Ele
       data-quick={props.quick ? String(props.quick) : undefined}
       data-foot={flag(!!props.foot)}
       data-interactive={flag(props.onOpen !== undefined)}
+      data-row-lines={phone() ? rowLines(props) : undefined}
+      data-lead={flag(phone() && props.lead !== undefined)}
       onClick={open}
       onKeyDown={(e) => {
         if (e.target !== e.currentTarget || (e.key !== 'Enter' && e.key !== ' ')) return;
@@ -195,6 +211,8 @@ function FeedRow(props: ListRowProps & { readonly partName: PartName }): JSX.Ele
 export function ListRow(props: ListRowProps): JSX.Element {
   const part = (): PartName => props.part ?? 'ui.list-row';
   if (props.layout === 'feed') return <FeedRow {...props} partName={part()} />;
+  const look = usePlatform();
+  const phone = (): boolean => look() !== 'web';
   return (
     <div
       {...props.reorder}
@@ -209,6 +227,8 @@ export function ListRow(props: ListRowProps): JSX.Element {
       data-time={flag(props.time !== undefined)}
       data-foot={flag(!!props.foot)}
       data-interactive={flag(props.onOpen !== undefined || props.href !== undefined)}
+      data-row-lines={phone() ? rowLines(props) : undefined}
+      data-lead={flag(phone() && props.lead !== undefined)}
       onContextMenu={(e) => props.onContextMenu?.(e)}
     >
       <div data-kit="list-row-lead" data-part={named(props, part(), 'lead')}>
@@ -234,6 +254,11 @@ export function ListRow(props: ListRowProps): JSX.Element {
       <div data-kit="list-row-actions" data-part={named(props, part(), 'actions')}>
         {props.actions}
       </div>
+      <Show when={look() === 'ios' && props.push === true && (props.onOpen !== undefined || props.href !== undefined)}>
+        <span data-kit="list-row-chevron" data-part={sub(part(), 'chevron')} aria-hidden="true">
+          <Icon name="chevron" size="sm" />
+        </span>
+      </Show>
     </div>
   );
 }

@@ -100,5 +100,24 @@
     --fab-margin: 16px; /* M3 FAB › Specs: 16 dp from the screen edge and the navigation bar */
     --fab-ext-pad: 16px; /* M3 Extended FAB › Specs: leading and trailing padding 16 dp */
     --fab-ext-gap: 12px; /* M3 Extended FAB › Specs: 12 dp between the icon and the label */
+    --row-lead: 40px; /* M3 Lists › Specs: leading avatar / icon container 40 dp (step 4) */
+    --row-lead-gap: 16px; /* M3 Lists › Specs: 16 dp between the leading element and the text */
+    --row-pad-y: 8px; /* M3 Lists › Specs: one- and two-line items 8 dp top and bottom */
+    --row-pad-y-3: 12px; /* M3 Lists › Specs: three-line items 12 dp top and bottom */
+    --chip-h: 32px; /* M3 Chips › Specs: assist, filter and input chips 32 dp tall */
+    --chip-h-sm: 24px; /* M3 Badges/Lists: a chip inside a list item's trailing supporting text, 24 dp (dense; display only, never a target) */
+    --chip-pad: 16px; /* M3 Chips › Specs: 16 dp leading and trailing padding (8 dp beside an icon) */
+    --chip-icon: 18px; /* M3 Chips › Specs: leading icon 18 dp */
+    --card-pad: 16px; /* M3 Cards › Specs: 16 dp padding */
+    --subheader-h: 48px; /* M3 Lists › subheader: 48 dp, title small in primary */
+    --banner-pad: 16px; /* M3 Banner › Specs: 16 dp start and end, actions 8 dp from the bottom */
+    --swipe-icon: 24px; /* M3 Lists › swipe to dismiss: the band's leading icon 24 dp */
+    --refresh-disc: 40px; /* Compose M3 PullToRefreshDefaults.IndicatorSize 40 dp (a surface disc with the spinner) */
+    --refresh-spinner: 20px; /* Compose M3 PullToRefreshDefaults: spinner 16 dp + its 2.5 dp stroke, drawn in a 20 dp box */
+    --refresh-stroke: 2.5px; /* Compose M3 PullToRefreshDefaults.StrokeWidth 2.5 dp */
+    --refresh-travel: 80px; /* Compose M3 PullToRefreshDefaults.PositionalThreshold 80 dp: where the disc rests while refreshing */
+    --empty-icon: 48px; /* M3 icons › large 48 dp (an empty state's mark; M3 has no empty-state spec) */
+    --button-h: 40px; /* M3 Buttons › Specs: common buttons 40 dp tall, full radius */
+    --button-pad: 24px; /* M3 Buttons › Specs: 24 dp leading and trailing padding (16 dp beside an icon) */
   }
 }

@@ -51,3 +51,13 @@ test('a platform token reuses a browser name only where §A.8 means to override 
 test('each look restates the kit layer order first', () => {
   for (const [, css] of renderPlatforms()) assert.match(css, /^\/\*[^]*?\*\/\n\/\*[^]*?\*\/\n@layer reset, tokens, kit, plugins;\n/);
 });
+
+test('the swipe numbers the kit swipe math mirrors (packages/ui swipe-math.ts) stay the spec numbers', () => {
+  const css = (look: string): string => renderPlatforms().find(([l]) => l === look)?.[1] ?? '';
+  // iOS: Mail's 74 pt action and its full swipe past half the row; Android: v1's third of the row
+  assert.match(css('ios'), /--swipe-action-w: 74px;/);
+  assert.match(css('ios'), /--swipe-line: 0\.5;/);
+  assert.match(css('android'), /--swipe-line: 0\.33;/);
+  // step 4's row and surface tokens exist in both looks
+  for (const look of ['android', 'ios']) for (const name of ['row-lead', 'row-lead-gap', 'row-pad-y', 'chip-h', 'chip-pad', 'chip-icon', 'card-pad', 'banner-pad', 'refresh-spinner', 'empty-icon', 'button-h', 'button-pad']) assert.match(css(look), new RegExp(`--${name}: `), `${look} --${name}`);
+});

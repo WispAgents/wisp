@@ -3,11 +3,17 @@
 // would run it. A side with no action only gives a little. Letting go past the line flies the row off
 // its edge, closes its height, then calls onSwipe; anything short springs back. Touch only: a mouse
 // or pen drag is a text selection. No timers: each step waits for its own transition to end.
-import { createSignal, Show, type JSX } from 'solid-js';
+// In the phone apps (ADR-0065 build step 4, design/mobile.md §A.4) Android draws the same band in Material 3
+// (tonal, the icon leading, warming with --k-sw-p); iOS draws Mail's action instead: a button revealed from
+// the edge, where a short pull lets the row rest open on it (tap it to run, tap the row to close) and a pull
+// past half the row runs it at once. The words, the warming, the tick past the line and a running row's
+// little give are the same on all three.
+import { createSignal, onCleanup, Show, type JSX } from 'solid-js';
 import { flag, sub, type KitProps, type PartName, type WithChildren } from '../core/props.ts';
 import { Icon } from '../content/Icon.tsx';
 import type { IconName } from '../content/icons.ts';
-import { swipeArmed, swipeCommits, swipeOffset, swipePhase, swipeSpeed, swipeStarts } from './swipe-math.ts';
+import { usePlatform } from '../platform/PlatformLook.tsx';
+import { SWIPE_ACTION_W, swipeArmedFor, swipeOffset, swipePhase, swipeProgress, swipeRelease, swipeSpeed, swipeStarts, type SwipeStyle } from './swipe-math.ts';
 
 export type SwipeDir = 'left' | 'right';
 
@@ -27,7 +33,8 @@ export interface SwipeProps extends KitProps, WithChildren {
   readonly onArm?: (armed: boolean) => void;
 }
 
-type Phase = 'idle' | 'drag' | 'gone' | 'closing';
+/** `open`: iOS only, the row rests on its revealed action */
+type Phase = 'idle' | 'drag' | 'open' | 'gone' | 'closing';
 /** controls inside the row keep their own touches */
 const OWN = "[data-kit='button'], [data-kit='icon-button'], input, textarea, select, [contenteditable='true'], [data-swipe='none']";
 
@@ -41,22 +48,51 @@ interface Track {
 
 export function Swipe(props: SwipeProps): JSX.Element {
   const part = (): PartName => props.part ?? 'ui.swipe';
+  const look = usePlatform();
+  const style = (): SwipeStyle => (look() === 'ios' ? 'reveal' : 'band');
+  const phone = (): boolean => look() !== 'web';
   const [phase, setPhase] = createSignal<Phase>('idle');
   const [dx, setDx] = createSignal(0);
   const [armed, setArmed] = createSignal(false);
   const [height, setHeight] = createSignal<number | undefined>(undefined);
-  const st: { track: Track | undefined; swallow: boolean; dir: SwipeDir; el: HTMLDivElement | undefined } = { track: undefined, swallow: false, dir: 'right', el: undefined };
+  const [progress, setProgress] = createSignal(0);
+  const st: { track: Track | undefined; swallow: boolean; dir: SwipeDir; width: number; el: HTMLDivElement | undefined } = { track: undefined, swallow: false, dir: 'right', width: 0, el: undefined };
   const side = (d: number): SwipeSide | undefined => (d > 0 ? props.right : d < 0 ? props.left : undefined);
 
+  // iOS (Mail): a row resting open closes on a touch anywhere else (another row, a scroll), so one rests open at most
+  const outside = (e: PointerEvent): void => {
+    if (st.el && e.target instanceof Node && st.el.contains(e.target)) return;
+    reset();
+  };
+  const unlisten = (): void => document.removeEventListener('pointerdown', outside, true);
+  onCleanup(unlisten);
   const reset = (): void => {
+    unlisten();
     st.track = undefined;
     setPhase('idle');
     setDx(0);
     setArmed(false);
     setHeight(undefined);
+    setProgress(0);
+  };
+  /** fly the row off its edge; `ended` then closes its height and runs the action */
+  const fly = (dir: SwipeDir, width: number): void => {
+    unlisten();
+    st.dir = dir;
+    setArmed(true);
+    setPhase('gone');
+    setProgress(1);
+    setDx((dir === 'right' ? 1 : -1) * (width + 24));
   };
   const down = (e: PointerEvent): void => {
     st.swallow = false;
+    // iOS: a row resting open closes on any touch outside its action, and that touch opens nothing
+    if (phase() === 'open') {
+      if (e.target instanceof Element && e.target.closest("[data-kit='swipe-action']")) return;
+      reset();
+      st.swallow = true;
+      return;
+    }
     if (props.disabled || e.pointerType !== 'touch' || !e.isPrimary || phase() !== 'idle') return;
     if (e.target instanceof Element && e.target.closest(OWN)) return;
     if (!swipeStarts(e.clientX, window.innerWidth)) return;
@@ -76,7 +112,8 @@ export function Swipe(props: SwipeProps): JSX.Element {
     if (tr.samples.length > 12) tr.samples.shift();
     const can = side(ddx) !== undefined;
     setDx(swipeOffset(ddx, can));
-    const now = swipeArmed(ddx, tr.width, can);
+    if (phone()) setProgress(swipeProgress(style(), ddx, tr.width, can));
+    const now = swipeArmedFor(style(), ddx, tr.width, can);
     if (now !== armed()) {
       setArmed(now);
       props.onArm?.(now);
@@ -88,11 +125,35 @@ export function Swipe(props: SwipeProps): JSX.Element {
     if (!tr || tr.mode !== 'swipe') return;
     st.swallow = true;
     const ddx = e.clientX - tr.x;
-    if (!swipeCommits(ddx, tr.width, side(ddx) !== undefined, swipeSpeed(tr.samples))) return reset();
+    const can = side(ddx) !== undefined;
+    const release = swipeRelease(style(), ddx, tr.width, can, swipeSpeed(tr.samples));
+    if (release === 'close') return reset();
     st.dir = ddx > 0 ? 'right' : 'left';
-    setArmed(true);
-    setPhase('gone');
-    setDx(Math.sign(ddx) * (tr.width + 24));
+    st.width = tr.width;
+    if (release === 'commit') return fly(st.dir, tr.width);
+    // iOS: rest open on the action, the band at its full warmth short of the line
+    const rest = openWidth();
+    setArmed(false);
+    setPhase('open');
+    document.addEventListener('pointerdown', outside, true);
+    setDx(Math.sign(ddx) * rest);
+    setProgress(swipeProgress(style(), rest, tr.width, true));
+  };
+  /** iOS: the resting width: Mail's 74 pt, or the action's words in full when they need more (one layout
+   *  read, on release; the words never wrap and never truncate at rest) */
+  const openWidth = (): number => {
+    const b = st.el?.querySelector<HTMLElement>("[data-kit='swipe-action']");
+    const l = b?.querySelector<HTMLElement>("[data-kit='swipe-label']");
+    if (!b || !l) return SWIPE_ACTION_W;
+    const cs = getComputedStyle(b);
+    // scrollWidth rounds to whole px: one more keeps the last glyph off the ellipsis
+    const natural = Math.ceil(l.scrollWidth + 1 + (Number.parseFloat(cs.paddingLeft) || 0) + (Number.parseFloat(cs.paddingRight) || 0));
+    return Math.max(SWIPE_ACTION_W, Math.min(natural, st.width / 2));
+  };
+  /** iOS: the revealed action, tapped */
+  const runOpen = (e: MouseEvent): void => {
+    e.stopPropagation();
+    if (phase() === 'open') fly(st.dir, st.width);
   };
   // the row has flown off: close its height, then run the action
   const ended = (e: TransitionEvent): void => {
@@ -126,7 +187,13 @@ export function Swipe(props: SwipeProps): JSX.Element {
       data-phase={phase()}
       data-armed={flag(armed())}
       data-dir={dx() > 0 ? 'right' : dx() < 0 ? 'left' : undefined}
-      style={{ '--k-sw-x': `${dx()}px`, '--k-sw-h': height() === undefined ? undefined : `${height()}px` }}
+      style={{
+        '--k-sw-x': `${dx()}px`,
+        '--k-sw-h': height() === undefined ? undefined : `${height()}px`,
+        // the phone looks only: how warm the band is (0…1 at the line) and how wide the revealed part is
+        '--k-sw-p': phone() ? String(Math.round(Math.min(progress(), 1.5) * 1000) / 1000) : undefined,
+        '--k-sw-w': phone() ? `${Math.abs(dx())}px` : undefined,
+      }}
       onPointerDown={down}
       onPointerMove={move}
       onPointerUp={up}
@@ -137,10 +204,23 @@ export function Swipe(props: SwipeProps): JSX.Element {
     >
       <Show when={band()}>
         {(b) => (
-          <div data-kit="swipe-band" data-part={sub(part(), 'band')} data-tone={b().tone} aria-hidden="true">
-            <Icon name={armed() ? 'check' : b().icon} size="md" />
-            <span data-kit="swipe-label" data-text="control">{b().label}</span>
-          </div>
+          <Show
+            when={style() === 'reveal'}
+            fallback={
+              <div data-kit="swipe-band" data-part={sub(part(), 'band')} data-tone={b().tone} aria-hidden="true">
+                <Icon name={armed() ? 'check' : b().icon} size="md" />
+                <span data-kit="swipe-label" data-text="control">{b().label}</span>
+              </div>
+            }
+          >
+            {/* iOS (Mail): the action is a button in the revealed part; the row's own accessibility actions name it (step 7) */}
+            <div data-kit="swipe-band" data-part={sub(part(), 'band')} data-tone={b().tone} aria-hidden="true">
+              <button type="button" tabIndex={-1} data-kit="swipe-action" data-part={sub(part(), 'action')} onClick={runOpen}>
+                <Icon name={b().icon} size="md" />
+                <span data-kit="swipe-label" data-text="control">{b().label}</span>
+              </button>
+            </div>
+          </Show>
         )}
       </Show>
       <div data-kit="swipe-row" data-part={sub(part(), 'row')} onTransitionEnd={ended}>

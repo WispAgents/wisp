@@ -1,11 +1,15 @@
 // Section (a titled group, with actions on the right of its title) and SettingsRow (a short
 // title, one line saying what it does, and its control in a fixed right column; copy.md).
+// In the phone apps (ADR-0065 build step 4): Android's header is an M3 list subheader in the primary colour
+// with no card; iOS draws an inset grouped section, and its description moves under the box as the
+// section's footer (HIG: help text in footers).
 import { createUniqueId, Show, type JSX } from 'solid-js';
 import { sub, type KitProps, type PartName, type WithChildren } from '../core/props.ts';
 import type { HeadingLevel } from '../content/Text.tsx';
 import { Heading } from '../content/Text.tsx';
 import { Icon } from '../content/Icon.tsx';
 import type { IconName } from '../content/icons.ts';
+import { usePlatform } from '../platform/PlatformLook.tsx';
 
 export interface SectionProps extends KitProps, WithChildren {
   readonly title: string;
@@ -18,6 +22,8 @@ export interface SectionProps extends KitProps, WithChildren {
 export function Section(props: SectionProps): JSX.Element {
   const part = (): PartName => props.part ?? 'ui.section';
   const headingId = createUniqueId();
+  const look = usePlatform();
+  const footer = (): boolean => look() === 'ios';
   return (
     <section id={props.id} aria-labelledby={headingId} data-kit="section" data-part={part()}>
       <div data-kit="section-head" data-part={sub(part(), 'head')}>
@@ -25,7 +31,7 @@ export function Section(props: SectionProps): JSX.Element {
           <Heading level={props.level ?? 3} part={sub(part(), 'title')} id={headingId}>
             {props.title}
           </Heading>
-          <Show when={props.description}>
+          <Show when={!footer() && props.description}>
             <p data-kit="section-description">{props.description}</p>
           </Show>
         </div>
@@ -38,6 +44,11 @@ export function Section(props: SectionProps): JSX.Element {
       <div data-kit="section-body" data-part={sub(part(), 'body')}>
         {props.children}
       </div>
+      <Show when={footer() && props.description}>
+        <p data-kit="section-footer" data-part={sub(part(), 'footer')}>
+          {props.description}
+        </p>
+      </Show>
     </section>
   );
 }

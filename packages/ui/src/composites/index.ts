@@ -1,7 +1,8 @@
 // Domain-neutral composites and the long-list primitives.
 export { VirtualList, Each, type VirtualListProps, type EachProps } from '../layout/VirtualList.tsx';
+export { PullRefresh, PULL_TICKS, pullAmount, type PullRefreshProps } from '../layout/PullRefresh.tsx';
 export { TAIL_SLACK, atTail, computeRange, offsets, type Range } from '../layout/virtual-math.ts';
-export { ListRow, RowButton, RowRun, feedDoneColumn, type ListRowProps } from './ListRow.tsx';
+export { ListRow, RowButton, RowRun, feedDoneColumn, rowLines, type ListRowProps } from './ListRow.tsx';
 export { Card, type CardProps } from './Card.tsx';
 export { Toolbar, nextInToolbar, type ToolbarItem, type ToolbarProps } from './Toolbar.tsx';
 export { collapseSteps, formsAt, levelFor, nextLevel, widthAt, type ItemForm, type PlanInput, type PlanItem, type Priority } from './toolbar-plan.ts';

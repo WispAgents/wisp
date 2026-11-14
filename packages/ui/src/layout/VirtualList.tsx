@@ -9,6 +9,7 @@ import type { Size } from '@wisp/tokens';
 import { sizeVar } from '@wisp/tokens';
 import { flag, styleOf, sub, type KitProps, type Labelled, type PartName, type WithVars } from '../core/props.ts';
 import { anchorAt, atTail, computeRange, offsets, restoreAnchor, type Anchor } from './virtual-math.ts';
+import { PullRefresh } from './PullRefresh.tsx';
 
 export interface VirtualListProps<T> extends KitProps, WithVars, Labelled {
   readonly items: readonly T[];
@@ -34,6 +35,9 @@ export interface VirtualListProps<T> extends KitProps, WithVars, Labelled {
   /** runs of rows that belong together (a section: its heading and rows), each drawn as one box behind them, named
    *  `part`, so it can be measured and restyled as v1's section was (#secNeeds). Item indices, inclusive. Additive. */
   readonly groups?: readonly { readonly part: string; readonly from: number; readonly to: number }[];
+  /** Pulling the list down (the phone apps only: M3 indicator / iOS refresh control, ADR-0065 step 4). The
+   *  browser draws nothing for it. It sits over the rows, so it never moves what is measured. Additive. */
+  readonly pull?: { readonly progress: number; readonly refreshing: boolean; readonly label: string } | undefined;
 }
 
 interface Measured {
@@ -196,6 +200,7 @@ export function VirtualList<T>(props: VirtualListProps<T>): JSX.Element {
       onScroll={() => scroller.onScroll()}
       style={styleOf({ '--k-vl-h': props.height === undefined ? undefined : sizeVar(props.height) }, props.vars)}
     >
+      {props.pull ? <PullRefresh progress={props.pull.progress} refreshing={props.pull.refreshing} label={props.pull.label} part={sub(part(), 'pull')} /> : null}
       <div data-kit="virtual-spacer" aria-hidden="true" style={{ height: `${range().padTop}px` }} />
       <Key each={visible()} by={(item: T) => props.key(item)}>
         {row}

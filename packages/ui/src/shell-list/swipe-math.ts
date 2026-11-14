@@ -45,3 +45,40 @@ export function swipeSpeed(samples: readonly { readonly x: number; readonly t: n
   const dt = last.t - first.t;
   return dt > 0 ? (last.x - first.x) / dt : 0;
 }
+
+// The phone apps' two swipe shapes (ADR-0065 build step 4, design/mobile.md §A.4): the browser and Android
+// draw a band (Material 3: tonal, icon leading; v1's third of the row commits); iOS reveals Mail's action
+// from the edge: let go past half a button and the row rests open on it, past half the row (a full swipe)
+// it runs. Both keep v1's rules: a side with no action only gives a little; the edge zone is the system's.
+
+/** `band`: the browser and Android; `reveal`: iOS (Mail). */
+export type SwipeStyle = 'band' | 'reveal';
+/** iOS: an action's width when the row rests open (UIContextualAction; tokens/platform/ios.json --swipe-action-w) */
+export const SWIPE_ACTION_W = 74;
+/** iOS: past this share of the row a release runs the action (Mail's full swipe; ios.json --swipe-line) */
+export const SWIPE_FULL = 0.5;
+
+/** the share of the row past which letting go runs the action */
+export const swipeLine = (style: SwipeStyle): number => (style === 'reveal' ? SWIPE_FULL : SWIPE_COMMIT);
+
+/** Past the line: the band fills, the haptic ticks. */
+export const swipeArmedFor = (style: SwipeStyle, dx: number, width: number, can: boolean): boolean => can && Math.abs(dx) > width * swipeLine(style);
+
+/** How warm the band is: 0 at rest, 1 on the line (it may pass 1), 0 on a side with no action. */
+export function swipeProgress(style: SwipeStyle, dx: number, width: number, can: boolean): number {
+  if (!can || width <= 0) return 0;
+  return Math.abs(dx) / (width * swipeLine(style));
+}
+
+export type SwipeRelease = 'commit' | 'open' | 'close';
+
+/** What letting go does: run the action, rest open on it (iOS only), or spring back. */
+export function swipeRelease(style: SwipeStyle, dx: number, width: number, can: boolean, speed: number): SwipeRelease {
+  if (style === 'band') return swipeCommits(dx, width, can, speed) ? 'commit' : 'close';
+  if (!can) return 'close';
+  if (swipeArmedFor(style, dx, width, can)) return 'commit';
+  // a flick back toward the start closes, whatever the pull
+  if (Math.abs(speed) >= SWIPE_FLICK.speed && Math.sign(speed) !== Math.sign(dx)) return 'close';
+  const flickOut = Math.abs(speed) >= SWIPE_FLICK.speed && Math.abs(dx) >= SWIPE_SLOP;
+  return flickOut || Math.abs(dx) >= SWIPE_ACTION_W / 2 ? 'open' : 'close';
+}

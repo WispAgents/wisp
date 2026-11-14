@@ -272,4 +272,234 @@
     color: var(--on-surface-var);
   }
   :root[data-platform='android'] [data-kit='frame-top'] [data-kit='icon-button'] { min-width: var(--tap-min); min-height: var(--tap-min); border-radius: var(--radius-pill); }
+
+  /* ListRow (step 4): M3 list items. One/two/three lines are 56/72/88 dp; a 40 dp leading element 16 dp
+     before the text; the time is trailing supporting text (label small) over the pills; dividers off. */
+  :root[data-platform='android'] [data-kit='list-row'] {
+    min-height: var(--row-h-1);
+    padding: var(--row-pad-y) var(--inset);
+    border-radius: 0;
+    color: var(--on-surface);
+    font-family: var(--font-ui);
+    -webkit-tap-highlight-color: transparent;
+  }
+  :root[data-platform='android'] [data-kit='list-row'][data-row-lines='2'] { min-height: var(--row-h-2); }
+  :root[data-platform='android'] [data-kit='list-row'][data-row-lines='3'] { min-height: var(--row-h-3); padding-top: var(--row-pad-y-3); padding-bottom: var(--row-pad-y-3); align-items: start; }
+  :root[data-platform='android'] [data-kit='list-row'][data-lead] > [data-kit='list-row-lead'] {
+    justify-content: center;
+    width: var(--row-lead);
+    min-height: var(--row-lead);
+    margin-inline-end: var(--row-lead-gap);
+    color: var(--on-surface-var);
+  }
+  :root[data-platform='android'] [data-kit='list-row-lead'] > [data-kit='avatar'] { width: var(--row-lead); height: var(--row-lead); }
+  :root[data-platform='android'] [data-kit='list-row-title'],
+  :root[data-platform='android'] [data-kit='list-row'][data-layout='feed'] > [data-kit='list-row-title'] { font: var(--type-body-l); letter-spacing: var(--track-body-l); color: var(--on-surface); }
+  :root[data-platform='android'] [data-kit='list-row'][data-strong] [data-kit='list-row-title'] { font-weight: var(--fw-semibold); }
+  :root[data-platform='android'] [data-kit='list-row'][data-quiet] [data-kit='list-row-title'] { color: var(--on-surface-var); }
+  :root[data-platform='android'] [data-kit='list-row-sub'],
+  :root[data-platform='android'] [data-kit='list-row'][data-layout='feed'] > [data-kit='list-row-sub'] { font: var(--type-body-m); letter-spacing: var(--track-body-m); color: var(--on-surface-var); }
+  /* the third line (a 3-line row's foot) runs under the text, one line */
+  :root[data-platform='android'] [data-kit='list-row-foot'] {
+    grid-column: 2 / -1;
+    grid-row: 2;
+    min-width: 0;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+    font: var(--type-body-m); letter-spacing: var(--track-body-m);
+    color: var(--on-surface-var);
+  }
+  :root[data-platform='android'] [data-kit='list-row-time'],
+  :root[data-platform='android'] [data-kit='list-row'][data-layout='feed'] > [data-kit='list-row-pills'] > [data-kit='time'] { font: var(--type-label-s); letter-spacing: var(--track-label-s); color: var(--on-surface-var); }
+  /* trailing supporting text: the time on the first line's end, the pills under it */
+  :root[data-platform='android'] [data-kit='list-row'][data-time] > [data-kit='list-row-time'] { grid-column: 3 / 5; grid-row: 1; align-self: start; }
+  :root[data-platform='android'] [data-kit='list-row'][data-time] > [data-kit='list-row-pills'] { grid-column: 3 / 5; grid-row: 1; align-self: end; justify-content: flex-end; }
+  :root[data-platform='android'] [data-kit='list-row'][data-time][data-row-lines='1'] > [data-kit='list-row-pills'] { grid-column: 3; align-self: center; }
+  :root[data-platform='android'] [data-kit='list-row'][data-time][data-row-lines='1'] > [data-kit='list-row-time'] { grid-column: 4; align-self: center; }
+  :root[data-platform='android'] [data-kit='list-row'][data-interactive]:hover,
+  :root[data-platform='android'] [data-kit='list-row'][data-interactive]:active { background: color-mix(in srgb, var(--on-surface) calc(var(--state-pressed) * 100%), transparent); }
+  :root[data-platform='android'] [data-kit='list-row'][data-current] { background: var(--surface-c2); }
+  :root[data-platform='android'] [data-kit='list-row'][data-selected] { background: var(--primary-container); }
+  :root[data-platform='android'] [data-kit='list-row-actions'] { opacity: 1; pointer-events: auto; }
+  :root[data-platform='android'] [data-kit='list-row-actions'] > [data-kit='icon-button'] { width: var(--tap-min); height: var(--tap-min); margin: calc(var(--space-6) * -1) var(--space-0); }
+
+  /* Swipe (step 4): the M3 swipe band, tonal, the icon at the leading edge (where the pull starts), the
+     action's words after it; it warms with the pull (--k-sw-p, 1 on the line) and fills past it */
+  :root[data-platform='android'] [data-kit='swipe'][data-phase='drag'] > [data-kit='swipe-row'],
+  :root[data-platform='android'] [data-kit='swipe'][data-phase='gone'] > [data-kit='swipe-row'] { background: var(--surface-c0); }
+  :root[data-platform='android'] [data-kit='swipe-row'] { transition: transform var(--dur-medium) var(--ease-emph); }
+  /* while the finger drags, the row tracks it: the base sheet's `transition: none` would lose to the line above */
+  :root[data-platform='android'] [data-kit='swipe'][data-phase='drag'] > [data-kit='swipe-row'] { transition: none; }
+  :root[data-platform='android'] [data-kit='swipe-band'] {
+    gap: var(--row-lead-gap);
+    padding: var(--space-0) var(--inset);
+    font: var(--type-label-l);
+    letter-spacing: var(--track-label-l);
+    color: color-mix(in srgb, var(--k-tone) 70%, var(--on-surface));
+    background: color-mix(in srgb, var(--k-tone) calc(12% + var(--k-sw-p, 0) * 18%), var(--surface-c0));
+    transition: background-color var(--dur-short) var(--ease-standard), color var(--dur-short) var(--ease-standard);
+  }
+  :root[data-platform='android'] [data-kit='swipe'][data-dir='left'] > [data-kit='swipe-band'] { flex-direction: row-reverse; justify-content: flex-start; }
+  :root[data-platform='android'] [data-kit='swipe-band'] > [data-kit='icon'] { flex: none; width: var(--swipe-icon); height: var(--swipe-icon); }
+  :root[data-platform='android'] [data-kit='swipe'][data-armed] > [data-kit='swipe-band'] { background: var(--k-tone); color: var(--on-primary); }
+
+  /* Section and SettingsGroup (step 4): the head is an M3 list subheader (48 dp, title small in the
+     primary colour, 16 dp in); the rows sit on the page, no card, no border */
+  :root[data-platform='android'] [data-kit='section-head'],
+  :root[data-platform='android'] [data-kit='settings-group-head'] {
+    align-items: center;
+    min-height: var(--subheader-h);
+    margin: var(--space-0);
+    padding: var(--space-0) var(--inset);
+  }
+  :root[data-platform='android'] [data-kit='section-head'] [data-kit='heading'],
+  :root[data-platform='android'] [data-kit='settings-group-title'] { font: var(--type-title-s); letter-spacing: var(--track-title-s); color: var(--primary); }
+  :root[data-platform='android'] [data-kit='section-description'],
+  :root[data-platform='android'] [data-kit='settings-group-description'] { font: var(--type-body-m); letter-spacing: var(--track-body-m); color: var(--on-surface-var); }
+  :root[data-platform='android'] [data-kit='settings-group'],
+  :root[data-platform='android'] [data-kit='settings-group']:not([data-head]),
+  :root[data-platform='android'] [data-kit='settings-group-body'] { border: 0; border-radius: 0; background: transparent; }
+  :root[data-platform='android'] [data-kit='settings-group'][data-head] { gap: var(--space-0); }
+  :root[data-platform='android'] [data-kit='settings-group-body'] > [data-kit='settings-row'] { min-height: var(--row-h-2); padding: var(--row-pad-y) var(--inset); border: 0; }
+  :root[data-platform='android'] [data-kit='settings-row-title'] { font: var(--type-body-l); letter-spacing: var(--track-body-l); color: var(--on-surface); }
+  :root[data-platform='android'] [data-kit='settings-row-description'] { font: var(--type-body-m); letter-spacing: var(--track-body-m); color: var(--on-surface-var); }
+
+  /* Card (step 4): M3 outlined (default: the outline variant hairline) and filled (surface container
+     highest, no border) cards, 12 dp corners, 16 dp in; pressed shows the state layer */
+  :root[data-platform='android'] [data-kit='card'] {
+    border: var(--hairline) solid var(--outline-var);
+    border-radius: var(--radius-md);
+    background: var(--surface-c0);
+    color: var(--on-surface);
+    box-shadow: none;
+    overflow: hidden;
+    -webkit-tap-highlight-color: transparent;
+  }
+  :root[data-platform='android'] [data-kit='card'][data-variant='filled'] { border-color: transparent; background: var(--surface-c4); }
+  :root[data-platform='android'] [data-kit='card'][data-tone] { border-color: color-mix(in srgb, var(--k-tone) 40%, var(--outline-var)); }
+  :root[data-platform='android'] [data-kit='card'][data-interactive]:hover { border-color: var(--outline-var); box-shadow: none; }
+  :root[data-platform='android'] [data-kit='card'][data-interactive]:active { background-image: linear-gradient(color-mix(in srgb, var(--on-surface) calc(var(--state-pressed) * 100%), transparent), color-mix(in srgb, var(--on-surface) calc(var(--state-pressed) * 100%), transparent)); }
+  :root[data-platform='android'] [data-kit='card-header'],
+  :root[data-platform='android'] [data-kit='card-body'],
+  :root[data-platform='android'] [data-kit='card-footer'] { padding: var(--card-pad); }
+  :root[data-platform='android'] [data-kit='card-header'] { border: 0; padding-bottom: var(--space-0); font: var(--type-title-m); letter-spacing: var(--track-title-m); }
+  :root[data-platform='android'] [data-kit='card-footer'] { border: 0; padding-top: var(--space-0); font: var(--type-body-m); color: var(--on-surface-var); }
+
+  /* Banner (step 4): the M3 banner under the top bar: the tone's icon, body text, its action as a text
+     button at the end, a divider under it; no fill, no border round it */
+  :root[data-platform='android'] [data-kit='banner'] {
+    align-items: center;
+    gap: var(--row-lead-gap);
+    min-height: var(--row-h-1);
+    padding: var(--space-4) var(--space-4) var(--space-4) var(--banner-pad);
+    border: 0;
+    border-bottom: var(--hairline) solid var(--outline-var);
+    border-radius: 0;
+    background: var(--surface-c1);
+    color: var(--on-surface);
+    font: var(--type-body-m);
+    letter-spacing: var(--track-body-m);
+  }
+  :root[data-platform='android'] [data-kit='banner'] [data-kit='notice-icon'] { color: var(--k-tone); }
+  :root[data-platform='android'] [data-kit='banner'] [data-kit='notice-title'] { font: var(--type-title-s); letter-spacing: var(--track-title-s); }
+  :root[data-platform='android'] [data-kit='banner'] [data-kit='notice-action'] [data-kit='button'] {
+    height: var(--button-h);
+    padding: var(--space-0) var(--space-6);
+    border: 0;
+    border-radius: var(--radius-pill);
+    background: transparent;
+    color: var(--primary);
+    font: var(--type-label-l);
+  }
+  :root[data-platform='android'] [data-kit='banner'] > [data-kit='icon-button'] { width: var(--tap-min); height: var(--tap-min); border-radius: var(--radius-pill); }
+
+  /* Pill (step 4): M3 chips. 32 dp, 8 dp corners, label large; a state (soft) is a tonal chip, a tag
+     (outline) an assist / filter chip with the outline; in a list row's trailing text (sm) 24 dp */
+  :root[data-platform='android'] [data-kit='pill'] {
+    gap: var(--space-4);
+    height: var(--chip-h);
+    padding: var(--space-0) var(--chip-pad);
+    border: var(--hairline) solid transparent;
+    border-radius: var(--radius-sm);
+    font: var(--type-label-l);
+    letter-spacing: var(--track-label-l);
+    color: color-mix(in srgb, var(--k-tone) 70%, var(--on-surface));
+    background: color-mix(in srgb, var(--k-tone) 14%, var(--surface-c0));
+  }
+  :root[data-platform='android'] [data-kit='pill'][data-icon] { padding-inline-start: var(--space-4); }
+  :root[data-platform='android'] [data-kit='pill'] > [data-kit='icon'] { width: var(--chip-icon); height: var(--chip-icon); }
+  :root[data-platform='android'] [data-kit='pill'][data-variant='outline'] {
+    padding: var(--space-0) var(--chip-pad);
+    border-color: var(--outline);
+    border-radius: var(--radius-sm);
+    background: transparent;
+    color: var(--on-surface-var);
+    font: var(--type-label-l);
+  }
+  :root[data-platform='android'] [data-kit='pill'][data-variant='outline'][data-tone='accent'] { border-color: transparent; background: var(--primary-container); color: var(--on-primary-container); }
+  :root[data-platform='android'] [data-kit='pill'][data-variant='plain'] { height: auto; padding: var(--space-0); border: 0; background: transparent; font: var(--type-label-m); }
+  :root[data-platform='android'] [data-kit='pill'][data-size='sm'] { height: var(--chip-h-sm); padding: var(--space-0) var(--space-4); font: var(--type-label-m); letter-spacing: var(--track-label-m); }
+
+  /* Skeleton (step 4): M3 placeholder blocks in the surface container, a slow tonal pulse */
+  :root[data-platform='android'] [data-kit='skeleton'] { background: var(--surface-c3); }
+  :root[data-platform='android'] [data-kit='skeleton'][data-shape='block'] { border-radius: var(--radius-md); }
+  :root[data-platform='android'] [data-kit='skeleton'][data-shape='line'] { height: var(--k-h, var(--space-7)); border-radius: var(--radius-xs); }
+
+  /* EmptyState (step 4): the icon, the title in title large, the body, the step as a tonal button */
+  :root[data-platform='android'] [data-kit='empty-state'] { gap: var(--space-7); padding: var(--space-9) var(--inset); color: var(--on-surface-var); font: var(--type-body-m); }
+  :root[data-platform='android'] [data-kit='empty-state-icon'] { color: var(--on-surface-var); }
+  :root[data-platform='android'] [data-kit='empty-state-icon'] > [data-kit='icon'] { width: var(--empty-icon); height: var(--empty-icon); }
+  :root[data-platform='android'] [data-kit='empty-state-title'] { font: var(--type-title-l); color: var(--on-surface); }
+  :root[data-platform='android'] [data-kit='empty-state'][data-compact] [data-kit='empty-state-title'] { font: var(--type-title-m); }
+  :root[data-platform='android'] [data-kit='empty-state-action'] [data-kit='button'] {
+    height: var(--button-h);
+    padding: var(--space-0) var(--button-pad);
+    border: 0;
+    border-radius: var(--radius-pill);
+    background: var(--primary-container);
+    color: var(--on-primary-container);
+    font: var(--type-label-l);
+    letter-spacing: var(--track-label-l);
+  }
+
+  /* PullRefresh (step 4): the M3 pull-to-refresh indicator. A 40 dp disc in the container colour comes
+     down with the pull, its arc grows to most of a turn at the line, and spins while refreshing. */
+  :root[data-platform='android'] [data-kit='pull-refresh'] {
+    position: sticky;
+    top: var(--space-0);
+    z-index: var(--z-raised);
+    display: flex;
+    justify-content: center;
+    height: var(--space-0);
+    overflow: visible;
+    pointer-events: none;
+  }
+  :root[data-platform='android'] [data-kit='pull-disc'] {
+    display: grid;
+    place-items: center;
+    width: var(--refresh-disc);
+    height: var(--refresh-disc);
+    border-radius: var(--radius-pill);
+    background: var(--surface-c3);
+    color: var(--primary);
+    box-shadow: var(--elev-2);
+    opacity: min(1, calc(var(--k-pull) * 2));
+    transform: translateY(calc(min(var(--k-pull), 1.25) * var(--refresh-travel) - var(--refresh-disc)));
+    transition: transform var(--dur-short) var(--ease-standard);
+  }
+  :root[data-platform='android'] [data-kit='pull-arc'] { width: var(--refresh-spinner); height: var(--refresh-spinner); transform: rotate(calc(var(--k-pull) * 270deg - 90deg)); }
+  :root[data-platform='android'] [data-kit='pull-arc'] > circle {
+    fill: none;
+    stroke: currentColor;
+    stroke-width: var(--refresh-stroke);
+    stroke-linecap: round;
+    stroke-dasharray: calc(min(var(--k-pull), 1) * 80) 100;
+    opacity: calc(0.4 + min(var(--k-pull), 1) * 0.6);
+  }
+  :root[data-platform='android'] [data-kit='pull-refresh'][data-refreshing] [data-kit='pull-arc'] { animation: k-android-spin var(--dur-long) linear infinite; }
+  @keyframes k-android-spin { to { transform: rotate(270deg); } }
+  @media (prefers-reduced-motion: reduce) {
+    :root[data-platform='android'] [data-kit='pull-refresh'][data-refreshing] [data-kit='pull-arc'] { animation: none; }
+  }
 }
