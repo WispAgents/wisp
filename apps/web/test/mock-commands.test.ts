@@ -143,6 +143,28 @@ test('API keys answer Keys, ApiKey and NewKey: a key once, in the create answer 
   expect(() => run('grid-client.keysRevoke', { id: made['id'] })).toThrow();
 });
 
+test('Cloud accounts answer Status and AccountInfo: switch and sign out rewrite the cloud row (ADR-0061)', () => {
+  const data = seed({ peer: 'local', now: 1_700_000_000_000, extra: 0, cloud: true });
+  const rows = new Map((data.topics.get('plugin:wisp.grid-client:cloud' as never) ?? []).map((r) => [r.id, r.v]));
+  const ctx = { peer: 'local', row: (_t: string, _e: string, id: string) => rows.get(id), rows: () => [] } as unknown as CommandCtx;
+  const run = (cmd: string, args: unknown = {}): { ops: { id: string; v: unknown }[]; result: Record<string, unknown> } => {
+    const out = COMMANDS[cmd]?.(args, ctx) as { ops: { id: string; v: unknown }[]; result: Record<string, unknown> };
+    for (const op of out.ops) rows.set(op.id, op.v);
+    return out;
+  };
+  const keys = (o: unknown): string[] => Object.keys(o as object).sort();
+  const at = (file: string): string => `plugins/grid-client/api/bindings/grid-client/${file}.ts`;
+  const list = run('grid-client.accounts').result as unknown as Record<string, unknown>[];
+  expect(list.map((a) => [a['handle'], a['current']])).toEqual([['ada', true], ['bo', false]]);
+  for (const a of list) expect(keys(a)).toEqual(bindingFields(at('AccountInfo')));
+  const st = run('grid-client.accountSwitch', { key: 'https://wisp.acme.dev#bo' }).result;
+  expect(keys(st)).toEqual(bindingFields(at('Status')));
+  expect([st['handle'], (rows.get('this') as { handle: string }).handle]).toEqual(['bo', 'bo']);
+  const left = run('grid-client.accountRemove', { key: 'https://wisp.acme.dev#bo' }).result;
+  expect([left['handle'], (left['accounts'] as unknown[]).length]).toEqual(['ada', 1]);
+  expect(() => run('grid-client.accountSwitch', { key: 'https://gone#x' })).toThrow();
+});
+
 test('All settings lists the declared settings with their owners and values (the kernel SettingInfo)', () => {
   const data = seed({ peer: 'local', now: 1_700_000_000_000, extra: 0 });
   const ctx = { rows: (t: string) => data.topics.get(t as never) ?? [] } as unknown as CommandCtx;

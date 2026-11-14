@@ -6,6 +6,7 @@
 
 import type { EntityOp, PatchOp, Topic } from '@wisp/protocol';
 import { gitChanges, gitCommit, gitRevert, gitStage, type GitCtx } from './mock-git.ts';
+import { CLOUD_COMMANDS } from './mock-cloud.ts';
 import { KEY_COMMANDS } from './mock-keys.ts';
 import { READS } from './mock-reads.ts';
 
@@ -263,6 +264,7 @@ function settle(transport: string): MockChannel | undefined {
 export const COMMANDS: Record<string, CommandFn> = {
   ...READS,
   ...KEY_COMMANDS,
+  ...CLOUD_COMMANDS,
   'runtime.rename': (a, ctx) => {
     const x = obj(a);
     const title = str(x, 'title').trim();

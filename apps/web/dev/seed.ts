@@ -5,6 +5,7 @@
 
 import type { PeerInfo, Topic } from '@wisp/protocol';
 import { accountRows } from './mock-reads.ts';
+import { SEED_ACCOUNTS } from './mock-cloud.ts';
 
 interface Row {
   e: string;
@@ -640,7 +641,7 @@ export function seed(o: { peer: string; now: number; extra: number; firstRun?: b
   // signed in to wisp Cloud (?seed=cloud): Settings → Cloud's account, API keys and My shares (grid-client view.rs's row)
   if (o.cloud)
     topics.set('plugin:wisp.grid-client:cloud', [
-      { e: 'grid-client.cloud', id: 'this', v: { signedIn: true, grid: 'https://grid.trywisp.dev', handle: 'ada', machine: '', computer: { on: false, state: 'off', label: '', url: '', error: '' }, signin: null } },
+      { e: 'grid-client.cloud', id: 'this', v: { signedIn: true, grid: 'https://grid.trywisp.dev', handle: 'ada', machine: '', computer: { on: false, state: 'off', label: '', url: '', error: '' }, signin: null, accounts: SEED_ACCOUNTS.map((a) => ({ ...a })) } },
     ]);
   // MOCK_UPDATE=2.1.0: a newer wisp is out (the top bar's Update pill, Settings → Updates); no release feed is read
   const latest = typeof process === 'undefined' ? undefined : process.env['MOCK_UPDATE'];

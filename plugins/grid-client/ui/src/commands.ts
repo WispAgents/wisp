@@ -1,6 +1,8 @@
-// Settings → Cloud's writes: sign in (a device code the browser approves), cancel it, sign out, and this
-// computer on the grid or off. The row (`grid-client.cloud`, id `this`) shows each at once.
+// Settings → Cloud's writes: sign in (a device code the browser approves; another one adds an account), cancel
+// it, switch account, sign out of one, and this computer on the grid or off. The row (`grid-client.cloud`, id
+// `this`) shows each at once.
 import { defineCommand, entityKey, type EntityOps, type EntityReader, type PeerId } from '@wisp/client';
+import { removed, switched, type Account } from './accounts.ts';
 
 export const KIND = 'grid-client.cloud';
 export const TOPIC = 'plugin:wisp.grid-client:cloud';
@@ -33,6 +35,8 @@ export interface CloudRow {
   readonly machine: string;
   readonly computer: Computer | null;
   readonly signin: SignIn | null;
+  /** every account signed in to here, the current one marked (ADR-0061); missing on an older server */
+  readonly accounts?: readonly Account[] | null;
 }
 
 const change = (base: EntityReader, peer: PeerId, fn: (r: CloudRow) => Partial<CloudRow>): EntityOps => {
@@ -66,7 +70,21 @@ export const signOut = defineCommand<{ peer: PeerId }>({
   id: 'grid-client.signout',
   owner: (a) => a.peer,
   wire: () => ({}),
-  optimistic: (base, a) => change(base, a.peer, () => ({ signedIn: false, handle: '', machine: '' })),
+  optimistic: (base, a) => change(base, a.peer, (r) => removed(r, `${r.grid}#${r.handle}`)),
+});
+
+export const switchAccount = defineCommand<{ peer: PeerId; key: string }>({
+  id: 'grid-client.accountSwitch',
+  owner: (a) => a.peer,
+  wire: (a) => ({ key: a.key }),
+  optimistic: (base, a) => change(base, a.peer, (r) => switched(r, a.key)),
+});
+
+export const removeAccount = defineCommand<{ peer: PeerId; key: string }>({
+  id: 'grid-client.accountRemove',
+  owner: (a) => a.peer,
+  wire: (a) => ({ key: a.key }),
+  optimistic: (base, a) => change(base, a.peer, (r) => removed(r, a.key)),
 });
 
 export const setComputer = defineCommand<{ peer: PeerId; on: boolean }>({

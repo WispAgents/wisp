@@ -78,5 +78,14 @@
   "grid-client.keys.revoke.detail": "Anything using this key stops working right away. This can’t be undone.",
   "grid-client.keys.revoke.ok": "Revoke key",
   "grid-client.keys.revoked": "Revoked {name}",
-  "grid-client.keys.once": "Copy it now. You won’t see it again."
+  "grid-client.keys.once": "Copy it now. You won’t see it again.",
+  "grid-client.accounts.title": "Accounts",
+  "grid-client.accounts.description": "Shares, sandboxes, API keys and this computer go through the current one. Every account's cloud computer is under Machines.",
+  "grid-client.account.on": "on {host}",
+  "grid-client.account.current": "Current",
+  "grid-client.account.switch": "Switch",
+  "grid-client.account.signOut.ask": "Sign out of {handle} on {host} here?",
+  "grid-client.account.signOut.detail": "Its tasks stay on the grid; sign in again to see them. Its cloud computer and other computers leave Machines.",
+  "grid-client.add": "Add an account",
+  "grid-client.add.description": "Another grid, or another account on one you already use. You choose the account in the browser: if it signs you in as someone else, pick Use another account there."
 }
