@@ -17,6 +17,21 @@ pub type Row = Map<String, Value>;
 /// A sync topic (`list`, `config`, `session:<id>`, `plugin:<id>:<name>`, …), as `@wisp/protocol` has it.
 pub type Topic = String;
 
+/// A row with every column set (text `x`, numbers 0, `false`, JSON `{}`): what `compile` asks a kind's topics of. A kind
+/// that puts even this row on no topic was declared without one, and the store would refuse each of its writes; it is
+/// refused when it is defined (at its plugin's start), not on a save its caller may not check (`telemetry_meta`,
+/// `learn.seen`: saved state lost at every start).
+fn sample_row(def: &EntityDef) -> Row {
+    let value = |c: &str, t: Col| match t {
+        _ if def.json_columns.contains(&c) => Value::Object(Map::new()),
+        Col::Text => Value::from("x"),
+        Col::Int => Value::from(0),
+        Col::Real => Value::from(0.0),
+        Col::Bool => Value::Bool(false),
+    };
+    def.columns.iter().map(|(c, t)| ((*c).to_owned(), value(c, *t))).collect()
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Col {
     Text,
@@ -147,6 +162,11 @@ impl Kind {
         };
         if let Some(s) = def.seq {
             pos(s).ok_or_else(|| invalid(format!("{k}: seq {s} is not a column")))?;
+        }
+        if (def.topics)(&sample_row(&def)).is_empty() {
+            return Err(invalid(format!(
+                "{k}: its rows are on no topic, so every write would be refused; give the kind one (`plugin:<id>:<name>`, even if no client watches it)"
+            )));
         }
         let select_list = def.columns.iter().map(|(c, _)| format!("\"{c}\"")).collect::<Vec<_>>().join(", ");
         let get_sql = format!("SELECT {select_list} FROM \"{}\" WHERE \"{}\" = ?", def.table, def.key);

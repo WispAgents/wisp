@@ -283,6 +283,10 @@ fn no_topics(_: &Row) -> Vec<String> {
 fn bad_topic(_: &Row) -> Vec<String> {
     vec!["nope".into()]
 }
+/// on a topic only when the row has a title: a kind with a topic, so it's defined, but a row without one is refused
+fn title_topic(r: &Row) -> Vec<String> {
+    r.get("title").and_then(Value::as_str).map(|t| vec![format!("session:{t}")]).unwrap_or_default()
+}
 const BARE: EntityDef = EntityDef {
     kind: "bad",
     table: "t_session",
@@ -291,17 +295,29 @@ const BARE: EntityDef = EntityDef {
     json_columns: &[],
     parent: None,
     seq: None,
-    topics: no_topics,
+    topics: bad_topic,
 };
 
 #[test]
 fn topics_are_validated_none_or_a_malformed_one_is_refused() {
     let f = open();
-    f.store.define_entity(BARE).unwrap();
-    f.store.define_entity(EntityDef { kind: "worse", topics: bad_topic, ..BARE }).unwrap();
-    assert!(f.store.write_blocking(|w| w.upsert("bad", row!({"id": "x"}))).unwrap_err().to_string().contains("at least one topic"));
+    f.store.define_entity(EntityDef { kind: "worse", ..BARE }).unwrap();
+    f.store
+        .define_entity(EntityDef { kind: "titled", columns: &[("id", Col::Text), ("title", Col::Text)], topics: title_topic, ..BARE })
+        .unwrap();
+    assert!(f.store.write_blocking(|w| w.upsert("titled", row!({"id": "x"}))).unwrap_err().to_string().contains("at least one topic"));
     assert!(f.store.write_blocking(|w| w.upsert("worse", row!({"id": "x"}))).unwrap_err().to_string().contains("bad topic"));
     assert_eq!(f.store.get("session", "x").unwrap(), None);
+}
+
+/// `telemetry_meta` and `learn.seen` were declared on no topic: every write was refused and their callers didn't look,
+/// so saved state was lost at each start. Such a kind is refused when it's defined (its plugin fails to start, loudly).
+#[test]
+fn a_kind_declared_without_a_topic_is_refused_when_it_is_defined() {
+    let f = open();
+    let err = f.store.define_entity(EntityDef { kind: "seen", topics: no_topics, ..BARE }).unwrap_err().to_string();
+    assert!(err.contains("seen: its rows are on no topic"), "{err}");
+    assert!(f.store.get("seen", "x").unwrap_err().to_string().contains("unknown entity kind"), "not registered");
 }
 
 #[test]
