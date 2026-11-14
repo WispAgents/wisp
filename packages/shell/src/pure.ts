@@ -9,4 +9,4 @@ export { dirsOf, launchOf, parsePick, pickValue, startAt, taskPlaces, type TaskP
 export { create, startingRow, type CreateArgs } from './frame/commands.ts';
 export { menuEntryOf, taskMenu, type TaskMenuEntry, type TaskMenuInput } from './task-menu.ts';
 export { modelWords } from './frame/task-usage.ts';
-export { STANDALONE_CHECK } from './platform/standalone.ts';
+export { STANDALONE_CHECK, HOME_SCREEN_TAGS, homeScreenTags, addHomeScreenTags, nativeShell, type HomeScreenTag } from './platform/standalone.ts';

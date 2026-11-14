@@ -7,15 +7,8 @@
     <title>wisp</title>
     <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
     <link rel="apple-touch-icon" href="/apple-touch-icon.png" sizes="180x180" />
-    <link rel="manifest" href="/manifest.webmanifest" />
-    <!-- F-phone-6: Safari → Share → Add to Home Screen gives a full-screen wisp (v1 homescreen.js); the status bar
-         takes the page's own light or dark background (tokens --bg) -->
-    <meta name="apple-mobile-web-app-capable" content="yes" />
-    <meta name="mobile-web-app-capable" content="yes" />
-    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-    <meta name="apple-mobile-web-app-title" content="wisp" />
-    <meta name="theme-color" media="(prefers-color-scheme: light)" content="#ffffff" />
-    <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#111111" />
+    <!-- F-phone-6: the manifest and Apple's Home Screen tags go in at runtime on a grid box only (wisp.grid-client,
+         @wisp/shell homeScreenTags; v1 homescreen.js), so a browser on someone's own computer never offers to install wisp -->
     <!-- before any module: the last theme, so a dark phone never flashes white (@wisp/shell PREPAINT_THEME) -->
     <script>try{var t=localStorage.getItem('wisp.theme');if(t==='light'||t==='dark')document.documentElement.setAttribute('data-theme',t)}catch(e){}</script>
     <!-- opened from the Home Screen (not a tab, not the native apps): html[data-standalone] (@wisp/shell STANDALONE_CHECK) -->

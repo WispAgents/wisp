@@ -1,25 +1,28 @@
 // F-phone-6: given iPhone Safari on my cloud wisp, when I Add to Home Screen, then it runs full screen. The page
-// (index.html as built: dist/, which `wisp serve` serves) carries what iOS and Chrome read to install it, and the
-// head script that marks a Home Screen launch for the kit's safe-area rules runs as v1's did.
+// (index.html as built: dist/, which `wisp serve` serves) leaves what iOS and Chrome read to install it to a grid
+// box (added at runtime), and the head script that marks a Home Screen launch for the kit's safe-area rules runs as v1's did.
 import { existsSync, readFileSync } from 'node:fs';
 import { expect, test } from 'vitest';
-import { STANDALONE_CHECK } from '@wisp/shell/pure';
+import { HOME_SCREEN_TAGS, STANDALONE_CHECK } from '@wisp/shell/pure';
 
 const file = (p: string): string => new URL(`../${p}`, import.meta.url).pathname;
 const pages = ['index.html', 'dist/index.html'].filter((p) => p === 'index.html' || existsSync(file(p)));
 const meta = (html: string, name: string): string[] => [...html.matchAll(new RegExp(`<meta name="${name}"([^>]*)>`, 'g'))].map((m) => m[1] ?? '');
 
-test('the_built_page_has_the_manifest_and_apples_home_screen_tags', () => {
+test('the_built_page_leaves_the_home_screen_tags_to_a_grid_box', () => {
   for (const p of pages) {
     const html = readFileSync(file(p), 'utf8');
-    expect(html, p).toContain('<link rel="manifest" href="/manifest.webmanifest" />');
+    // v1 homescreen.js: the manifest and Apple's tags go in at runtime on a Grid only (wisp.grid-client, @wisp/shell
+    // homeScreenTags), so a browser on someone's own computer is never offered to install wisp
+    expect(html, p).not.toContain('rel="manifest"');
+    for (const name of ['apple-mobile-web-app-capable', 'mobile-web-app-capable', 'apple-mobile-web-app-status-bar-style', 'apple-mobile-web-app-title', 'theme-color']) {
+      expect(meta(html, name), `${p} ${name}`).toEqual([]);
+    }
+    // what the runtime adds points at the manifest this build ships
+    expect(HOME_SCREEN_TAGS.find((t) => t.attrs['rel'] === 'manifest')?.attrs['href']).toBe('/manifest.webmanifest');
+    expect(existsSync(file('public/manifest.webmanifest'))).toBe(true);
+    // harmless everywhere, as v1's static head: the icon, the notch-aware viewport, the standalone mark
     expect(html, p).toContain('<link rel="apple-touch-icon" href="/apple-touch-icon.png" sizes="180x180" />');
-    expect(meta(html, 'apple-mobile-web-app-capable'), p).toEqual([' content="yes" /']);
-    expect(meta(html, 'mobile-web-app-capable'), p).toEqual([' content="yes" /']);
-    expect(meta(html, 'apple-mobile-web-app-status-bar-style'), p).toEqual([' content="black-translucent" /']);
-    expect(meta(html, 'apple-mobile-web-app-title'), p).toEqual([' content="wisp" /']);
-    // the status bar per scheme: the kit's --bg, light and dark (v1 #ffffff / #111111)
-    expect(meta(html, 'theme-color'), p).toEqual([' media="(prefers-color-scheme: light)" content="#ffffff" /', ' media="(prefers-color-scheme: dark)" content="#111111" /']);
     expect(html, p).toMatch(/<meta name="viewport" content="[^"]*viewport-fit=cover/);
     // the standalone check runs before any module (so the first frame is laid out for the notch)
     const at = html.indexOf(`<script>${STANDALONE_CHECK}</script>`);

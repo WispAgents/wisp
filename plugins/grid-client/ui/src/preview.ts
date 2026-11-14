@@ -36,17 +36,23 @@ export function boxPreviewUrl(url: string, template: string | undefined, here: s
 
 const watched = new WeakSet<PluginClient>();
 
-/** The shell's `previewAddresses` entry: a task that ran on this wisp, read where this wisp's row says its pages show. */
-export function previewAddress(ctx: { client: PluginClient; task: string }): (url: string) => string | undefined {
-  const c = ctx.client;
-  // another machine's task: its localhost isn't this box's (v1: a task id with @machine)
-  if (ownerOf(ctx.task) !== c.home) return () => undefined;
+/** This wisp's own `grid-client.cloud` row, its topic watched once per client (the preview block, the Home Screen tags). */
+export function cloudRow(c: PluginClient): () => CloudRow | undefined {
   if (!watched.has(c)) {
     watched.add(c);
     c.watch(c.home, TOPIC, c.scope);
   }
   const row = c.entities.row<CloudRow>(KIND, entityKey(c.home, 'this'));
+  return () => row() as CloudRow | undefined;
+}
+
+/** The shell's `previewAddresses` entry: a task that ran on this wisp, read where this wisp's row says its pages show. */
+export function previewAddress(ctx: { client: PluginClient; task: string }): (url: string) => string | undefined {
+  const c = ctx.client;
+  // another machine's task: its localhost isn't this box's (v1: a task id with @machine)
+  if (ownerOf(ctx.task) !== c.home) return () => undefined;
+  const row = cloudRow(c);
   // where this window is (as the kit's Preview reads it): its own address, not navigation state
   const here = (): string => (typeof document === 'undefined' ? '' : document.baseURI);
-  return (url) => boxPreviewUrl(url, (row() as CloudRow | undefined)?.preview, here());
+  return (url) => boxPreviewUrl(url, row()?.preview, here());
 }
