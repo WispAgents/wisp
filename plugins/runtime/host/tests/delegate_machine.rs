@@ -53,7 +53,8 @@ async fn a_delegate_on_another_machine_runs_on_a_copy_there_and_says_where() {
     let r = rig_with(answers()).await;
     let id = r.rt.create(lead(false)).await.unwrap().id;
     running(&r, id.as_str()).await;
-    let task = DelegateTask { subagent: "far".into(), prompt: "fix /tmp/src/a.ts".into() };
+    // the lead's folder as the prompt names it, `/` after it even on Windows (`C:\…\Temp/src/a.ts`)
+    let task = DelegateTask { subagent: "far".into(), prompt: format!("fix {}/src/a.ts", common::tmp()) };
     let out = r.rt.delegate(DelegateArgs { id: id.clone(), tasks: vec![task] }).await.unwrap();
     assert!(out[0].error.is_none(), "{out:?}");
     assert_eq!(out[0].id.0, "m1|r1", "kept as <machine>|<task there>");

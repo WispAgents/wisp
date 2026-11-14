@@ -209,27 +209,35 @@ pub const AWAY_SUBAGENT: &str = "
 
 /// The lead's folder named in a delegate's prompt, as a path inside it (v1 relay.js `inFolder`): the copy on the
 /// other machine has another path. `/repo/src/a.ts` → `src/a.ts`, `/repo` alone → `.`. Only where the folder starts a
-/// path: `/backup/repo/x` stays (v1 cut the folder out of the middle of a longer path).
+/// path: `/backup/repo/x` stays (v1 cut the folder out of the middle of a longer path). A Windows folder (`C:\w\repo`,
+/// `\\host\share`) is found however the prompt spells it: either separator, any case (`c:/W/repo/src`).
 pub fn in_folder(text: &str, dir: &str) -> String {
     let root = dir.trim_end_matches(['/', '\\']);
     if root.is_empty() {
         return text.to_owned();
     }
+    let b = root.as_bytes();
+    let windows = root.starts_with(r"\\") || (b.len() >= 2 && b[0].is_ascii_alphabetic() && b[1] == b':');
+    // the same bytes, compared as NTFS reads names (ASCII case and `\` change no byte offsets)
+    let fold = |s: &str| if windows { s.to_ascii_lowercase().replace('\\', "/") } else { s.to_owned() };
+    let (key, hay) = (fold(root), fold(text));
     let word = |c: char| c.is_alphanumeric() || c == '_' || c == '-';
     let mut out = String::with_capacity(text.len());
-    let mut rest = text;
-    while let Some(i) = rest.find(root) {
-        let starts = !rest[..i].chars().next_back().is_some_and(|c| word(c) || matches!(c, '/' | '\\' | '.' | '~'));
-        out.push_str(&rest[..i]);
-        let after = &rest[i + root.len()..];
+    let mut at = 0;
+    while let Some(found) = hay.get(at..).and_then(|h| h.find(&key)) {
+        let i = at + found;
+        let end = i + key.len();
+        let starts = !text[..i].chars().next_back().is_some_and(|c| word(c) || matches!(c, '/' | '\\' | '.' | '~'));
+        out.push_str(&text[at..i]);
+        let after = &text[end..];
         if !starts {
-            out.push_str(root);
-            rest = after;
+            out.push_str(&text[i..end]);
+            at = end;
             continue;
         }
         let inner = after.trim_start_matches(['/', '\\']);
         if inner.len() < after.len() {
-            rest = inner;
+            at = text.len() - inner.len();
             continue;
         }
         let mut next = after.chars();
@@ -238,10 +246,10 @@ pub fn in_folder(text: &str, dir: &str) -> String {
             Some(c) => word(c),
             None => false,
         };
-        out.push_str(if longer { root } else { "." });
-        rest = after;
+        out.push_str(if longer { &text[i..end] } else { "." });
+        at = end;
     }
-    out.push_str(rest);
+    out.push_str(&text[at..]);
     out
 }
 
@@ -351,6 +359,25 @@ mod tests {
         // v1 cut the folder out of a longer path that only contains it
         assert_eq!(in_folder("see /backup/work/repo/a.ts and `/work/repo/b.ts`", "/work/repo"), "see /backup/work/repo/a.ts and `b.ts`");
         assert_eq!(in_folder("no folder", ""), "no folder");
+    }
+
+    /// `delegate_machine.rs` on Windows: the lead's `C:\…\Temp` named as `C:\…\Temp/src/a.ts` (or `c:/…`) stayed absolute.
+    #[test]
+    fn a_windows_leads_folder_is_found_with_either_separator_and_any_case() {
+        use super::in_folder;
+        let dir = r"C:\Users\RUNNER~1\AppData\Local\Temp";
+        assert_eq!(in_folder(r"fix C:\Users\RUNNER~1\AppData\Local\Temp/src/a.ts", dir), "fix src/a.ts");
+        assert_eq!(in_folder("fix c:/users/runner~1/appdata/local/temp/src/a.ts", dir), "fix src/a.ts");
+        assert_eq!(in_folder(r"fix C:\w\repo\src\b.js and run in C:/W/Repo.", r"C:\w\repo\"), r"fix src\b.js and run in ..");
+        assert_eq!(
+            in_folder("C:/w/repo2/x and D:/w/repo/y", r"C:\w\repo"),
+            "C:/w/repo2/x and D:/w/repo/y",
+            "another folder, another drive"
+        );
+        assert_eq!(in_folder(r"see \\nas\share\repo\a.ts", r"\\NAS\share\repo"), "see a.ts");
+        assert_eq!(in_folder("é C:/W/x", r"c:\w"), "é x", "multi-byte text before it");
+        // POSIX folders keep their case: /Work/repo isn't /work/repo
+        assert_eq!(in_folder("/Work/repo/a.ts", "/work/repo"), "/Work/repo/a.ts");
     }
 
     /// v1 (F-comp-34): a team of eight is eight; nothing caps delegates at six.
