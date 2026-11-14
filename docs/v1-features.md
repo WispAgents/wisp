@@ -450,8 +450,8 @@ in the sense of *looks like v1*: F-look-1 tracks that once.
 |---|---|---|---|---|
 | F-phone-1 | 0.27.0 | Given the Android app, when I add a computer over SSH, then wisp opens on it | missing | no v2 Android frontend (ADR-0031: v2 bundles only; queue item 8) |
 | F-phone-2 | 0.27.0 | Given the app in the background, when a task finishes or asks, then an Android notification shows; tapping opens the task | missing | as above |
-| F-phone-3 | 0.47.0 | Given the app's list, when I swipe right/left, then mark done / save for later | missing | no swipe in `shell-list` |
-| F-phone-4 | 0.51.0 | Given a task page, when I swipe left, then the side panel comes in | missing | |
+| F-phone-3 | 0.47.0 | Given the app's list, when I swipe right/left, then mark done / save for later | built | kit `row.swipe` (Swipe: M3 band / Mail actions, v1 semantics, edges the system's), twins in the row menu and Select; app-only (round 225, ADR-0065 step 7) |
+| F-phone-4 | 0.51.0 | Given a task page, when I swipe left, then the side panel comes in | partial | kit `task.body-swipe` gesture built and tested (twin: the side-panel button); no phone task page mounts it until step 8 (round 225) |
 | F-phone-5 | 0.28.0 | Given wisp Cloud, when I sign in from the app (GitHub/Google), then my cloud wisp and computers are listed | missing | |
 | F-phone-6 | 0.57.0 | Given iPhone Safari on my cloud wisp, when I Add to Home Screen, then it runs full screen | built | manifest (v1 icons, scope, display), Apple tags, theme-color per scheme, STANDALONE_CHECK marks Home Screen launches, safe-area padding in kit CSS; tags added at runtime on a grid box only, as v1 (round 223); not tried on a real iPhone (round 214) |
 | F-phone-7 | 0.42.0 | Given a browser under 900 px, when I tap a task, then it opens as its own page | built | under 900 px a task is its own page with Back (browser Back, Esc), Esc twice on New task returns to the list; `stack-page.ts` (round 214) |
