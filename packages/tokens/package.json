@@ -5,7 +5,9 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
-    "./tokens.css": "./dist/tokens.css"
+    "./tokens.css": "./dist/tokens.css",
+    "./platform-android.css": "./dist/platform-android.css",
+    "./platform-ios.css": "./dist/platform-ios.css"
   },
   "dependencies": {},
   "devDependencies": {},

@@ -1,13 +1,22 @@
 // `npm run build` in packages/tokens: renders tokens/*.json into dist/tokens.css and
-// src/generated.ts. Both are committed; test/fresh.test.ts fails when they fall behind the JSON.
+// src/generated.ts, and tokens/platform/<look>.json into dist/platform-<look>.css (the phone apps' sets,
+// ADR-0065). All are committed; test/fresh.test.ts fails when they fall behind the JSON.
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { render, type TokenFiles } from './render.ts';
+import { LOOKS, renderPlatform, type Look } from './render-platform.ts';
 
 export const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 export const CSS_OUT = join(ROOT, 'dist', 'tokens.css');
 export const TS_OUT = join(ROOT, 'src', 'generated.ts');
+
+export const platformOut = (look: Look): string => join(ROOT, 'dist', `platform-${look}.css`);
+
+/** Each look's stylesheet, rendered in memory. */
+export function renderPlatforms(root: string = ROOT): ReadonlyArray<readonly [Look, string]> {
+  return LOOKS.map((look) => [look, renderPlatform(look, JSON.parse(readFileSync(join(root, 'tokens', 'platform', `${look}.json`), 'utf8')))] as const);
+}
 
 export function readTokenFiles(root: string = ROOT): TokenFiles {
   const read = (name: string): unknown => JSON.parse(readFileSync(join(root, 'tokens', `${name}.json`), 'utf8'));
@@ -30,6 +39,7 @@ export function build(): void {
   mkdirSync(dirname(CSS_OUT), { recursive: true });
   writeFileSync(CSS_OUT, css);
   writeFileSync(TS_OUT, ts);
+  for (const [look, out] of renderPlatforms()) writeFileSync(platformOut(look), out);
 }
 
 // Run as a script (`node src/build.ts`); imported by the freshness test, it does nothing.
