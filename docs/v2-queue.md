@@ -545,7 +545,7 @@ alone.
          Extension, answer/reply actions.
      12. **Offline and bad network:** the silent-stream reopen, *Waiting to send*, cached first paint, the
          `spikes/phone-bench/ (extended to the app)` bench and `phone.firstList` + app-size budgets in `tools/budgets.ts`.
-     13. **Screens, part 1:** Tasks, the task page (side panel, composer, queue), New task, search, in both looks;
+     13. **Screens, part 1:** (decided 2026-11-15 after step 9: *Stay connected* defaults to ON for an SSH computer with no push channel, so SSH-only users keep v1's background alerts; the Add computer screen with QR scan, *Trust the new key* confirmation and the Stay connected switch belong here)  Tasks, the task page (side panel, composer, queue), New task, search, in both looks;
          seen on the emulator and simulator, light and dark.
      14. **Screens, part 2:** Settings (the app's panes too), My Stuff and apps, Crew, Computers and cloud sign-in
          (Apple sign-in once the owner answers).
