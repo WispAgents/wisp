@@ -173,7 +173,14 @@ const BUDGET: &str = "wisp.budget";
 impl Runtime {
     /// Why the task's first turn didn't start (`not_started`), read back after its `runtime.create`.
     pub async fn first_turn_not_started(&self, id: &str) -> Result<Option<String>> {
-        Ok(self.turns(id, None, Some(1)).await?.first().filter(|t| t.idx == 0).and_then(not_started))
+        Ok(self.first_turn(id).await?.0)
+    }
+
+    /// The task's first turn read back after its `runtime.create`: why it didn't start (`not_started`), and the
+    /// account it went on (wisp.accounts' pick).
+    pub async fn first_turn(&self, id: &str) -> Result<(Option<String>, Option<String>)> {
+        let first = self.turns(id, None, Some(1)).await?.into_iter().next().filter(|t| t.idx == 0);
+        Ok(first.map_or((None, None), |t| (not_started(&t), t.account.clone())))
     }
 
     /// A start's variant for `ext["wisp.runtime"].variant`, or why it can't run: a terminal task (its own CLI wouldn't
