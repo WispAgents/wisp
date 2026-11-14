@@ -2,6 +2,8 @@
   "accounts.state.ready": "Ready",
   "accounts.state.signedOut": "Signed out",
   "accounts.state.notFound": "Not found",
+  "accounts.state.checking": "Checking…",
+  "accounts.line.checking": "Looking for it on this computer",
   "accounts.installing": "Installing…",
   "accounts.setup.tip": "Install the {name} CLI and sign in, then re-check",
   "accounts.setup.copy": "Copy",

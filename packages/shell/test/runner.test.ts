@@ -1,5 +1,5 @@
 import { expect, test } from 'vitest';
-import { accountChoices, accountFor, effortsFor, harnessesFor, modelsFor, runnerWords, type AccountOffer, type AgentOffer, runPick, fullest, usedPct } from '../src/frame/runner.ts';
+import { accountChoices, accountFor, effortsFor, harnessesFor, keepOrder, modelsFor, offerState, offersFrom, runnerWords, type AccountOffer, type AgentOffer, type HarnessTopicRow, runPick, fullest, usedPct } from '../src/frame/runner.ts';
 
 const AGENTS: AgentOffer[] = [
   { id: 'codex', name: 'Codex', available: true, models: [{ id: 'gpt-5.5', label: 'GPT-5.5' }], efforts: ['low', 'high'] },
@@ -75,4 +75,35 @@ test('a_second_account_shows_in_the_picker_and_the_task_starts_on_the_one_picked
   expect(accountFor(two, 'gone')).toBe('');
   // the bar says which account
   expect(runnerWords(AGENTS, { agent: 'codex', model: '', effort: '', account: 'w1', accountLabel: 'Work' }, (id) => id)).toBe('codex · Work');
+});
+
+// ADR-0066: the picker renders from the `harnesses` topic before any CLI answers, a row per harness that says
+// Checking… until its own detect lands, and nothing moves while the picker is open.
+test('the_picker_shows_every_harness_at_once_as_checking_and_each_row_settles_in_place', () => {
+  const row = (id: string, ord: number, state: HarnessTopicRow['state'], available = false): HarnessTopicRow => ({ id, ord, state, agent: { id, name: id.toUpperCase(), available, models: [], efforts: [] } });
+  const answered: AgentOffer[] = [{ id: 'old', name: 'Old', available: true, models: [], efforts: [] }];
+  // a wisp with no such topic: what runtime.agents answered
+  expect(offersFrom([], answered)).toBe(answered);
+  expect(offersFrom([], undefined)).toEqual([]);
+  // the topic wins, in its order, and marks the ones still checking
+  const first = offersFrom([row('b', 1, 'checking'), row('a', 0, 'checking'), row('c', 2, 'checking')], answered);
+  expect(first.map((a) => [a.id, offerState(a)])).toEqual([
+    ['a', 'checking'],
+    ['b', 'checking'],
+    ['c', 'checking'],
+  ]);
+  // checking sits with the set-up ones, so it doesn't start below a missing one
+  const opened = harnessesFor([...first, { id: 'gone', name: 'Gone', available: false, models: [], efforts: [] }], '');
+  expect(opened.map((a) => a.id)).toEqual(['a', 'b', 'c', 'gone']);
+  // b and c settle: b missing, c ready. A fresh sort would move c above b; kept, every row stays where it was
+  const settled = offersFrom([row('a', 0, 'checking'), row('b', 1, 'missing'), row('c', 2, 'installed', true)], undefined);
+  const shown = opened.map((a) => a.id);
+  expect(harnessesFor([...settled], '').map((a) => a.id)).toEqual(['a', 'c', 'b']);
+  expect(keepOrder(shown, harnessesFor([...settled], '')).map((a) => a.id)).toEqual(['a', 'b', 'c']);
+  expect(settled.map((a) => offerState(a))).toEqual(['checking', 'missing', 'ready']);
+  // a new harness goes after the shown ones
+  expect(keepOrder(['b', 'a'], [...offersFrom([row('a', 0, 'installed', true), row('z', 1, 'checking'), row('b', 2, 'missing')], undefined)]).map((a) => a.id)).toEqual(['b', 'a', 'z']);
+  // signed out stays its own state, checking first
+  expect(offerState({ available: false, signedIn: false })).toBe('signedOut');
+  expect(offerState({ available: true, signedIn: false, checking: true })).toBe('checking');
 });

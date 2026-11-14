@@ -79,6 +79,30 @@ export interface HarnessRow {
   changed?: HarnessChange;
   /** when its program was last trusted (ms) */
   pinnedAt?: number;
+  /** its detect hasn't answered yet (wisp.runtime's `harnesses` topic, ADR-0066): the rest is what was known */
+  checking?: boolean;
+}
+
+/** wisp.runtime's `harnesses` topic (ADR-0066): every harness at once while it's checking, each as its detect lands.
+ * The pane lists harnesses from it, so rows show before any CLI answers; this topic adds the sign-ins, keys and
+ * accounts. */
+export const DETECT_TOPIC = 'plugin:wisp.runtime:harnesses' as const;
+export const DETECT = 'runtime.harness';
+
+/** A row on it (plugins/runtime/api/bindings/runtime/HarnessRow.ts). */
+export interface DetectRow {
+  id: string;
+  ord: number;
+  state: 'checking' | 'installed' | 'missing';
+  agent: {
+    name: string;
+    available: boolean;
+    version?: string;
+    error?: string;
+    models: { id: string; label: string }[];
+    signedIn?: boolean;
+    setup?: { tip: string; command?: string; url?: string };
+  };
 }
 
 export type AccountKind = 'personal' | 'work';

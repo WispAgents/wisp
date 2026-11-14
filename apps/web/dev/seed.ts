@@ -38,6 +38,41 @@ const HARNESS_ROWS: Row[] = [
   { e: 'accounts.tool', id: 'gh', v: { id: 'gh', name: 'GitHub CLI', installed: true } },
 ];
 
+/** MOCK_HARNESSES=1 (ADR-0066): wisp.runtime's `harnesses` topic mid-detection: Claude Code, Codex and Copilot
+ * answered, opencode, Cursor and Antigravity still checking (a hung CLI), Grok not on this machine. Off by default: the
+ * picker then shows `runtime.agents`' answer and Settings → Agents wisp.accounts' rows (qa/parity.mjs's shots). */
+const HARNESSES_MID = typeof process !== 'undefined' && process.env['MOCK_HARNESSES'] === '1';
+const DETECT_ROWS: Row[] = (
+  [
+    ['claude', 'Claude Code', 'installed', '9.9.9 (Fake Claude Code)'],
+    ['codex', 'Codex', 'installed', 'fake-codex 9.9.9'],
+    ['opencode', 'opencode', 'checking', undefined],
+    ['cursor', 'Cursor', 'checking', undefined],
+    ['antigravity', 'Antigravity', 'checking', undefined],
+    ['grok', 'Grok', 'missing', undefined],
+    ['copilot', 'Copilot', 'installed', 'fake-copilot 9.9.9'],
+  ] as const
+).map(([id, name, state, version], ord) => ({
+  e: 'runtime.harness',
+  id,
+  v: {
+    id,
+    ord,
+    state,
+    at: 0,
+    agent: {
+      id,
+      name,
+      available: state === 'installed',
+      ...(version && { version }),
+      ...(state === 'missing' && { setup: { tip: `Install the ${name} CLI and sign in, then re-check` } }),
+      models: state === 'installed' ? [{ id: '', label: 'Default' }, { id: `${id}-m0`, label: 'Model 1' }, { id: `${id}-m1`, label: 'Model 2' }] : [],
+      efforts: [],
+      delegates: false,
+    },
+  },
+}));
+
 /** Settings → Connectors (wisp.connectors' topic), as v1's reference had it: none added, two found in OpenCode and
  * Cursor's own configs, and the harnesses that take connectors per turn. */
 const CONNECTOR_ROWS: Row[] = [
@@ -631,6 +666,7 @@ export function seed(o: { peer: string; now: number; extra: number; firstRun?: b
   ]);
   // two accounts on Claude Code, Codex's own one (fromV1 adds none, so qa/parity.mjs's shots don't change)
   topics.set('plugin:wisp.accounts:harnesses', [...HARNESS_ROWS, ...accountRows(o.now)]);
+  if (HARNESSES_MID) topics.set('plugin:wisp.runtime:harnesses', DETECT_ROWS);
   topics.set('plugin:wisp.connectors:list', CONNECTOR_ROWS);
   topics.set('plugin:wisp.worktrees:worktrees', WORKTREE_ROWS);
   // usage stats off by the environment, as on v1's QA box (DO_NOT_TRACK)

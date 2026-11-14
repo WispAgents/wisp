@@ -4,7 +4,7 @@
 // that take one (opencode); Install for one wisp can install; the notice when a harness's program changed;
 // git and the GitHub CLI that Ship it needs; Re-check. Every write shows at once.
 import { createMemo, createSignal, For, Match, onCleanup, Show, Switch as Pick, type JSX } from 'solid-js';
-import { entityKey, type PluginClient } from '@wisp/client';
+import { entityKey, ownerOf, type PluginClient } from '@wisp/client';
 import { useShell } from '@wisp/shell';
 import {
   Button,
@@ -30,8 +30,8 @@ import { fromRow, text } from '../source.ts';
 import { Steps } from './Steps.tsx';
 import { addAccount, install, keyRemove, keySet, loginCancel, loginInput, loginStart, logout, recheck, removeAccount, setAsk, trust } from '../commands.ts';
 import { t } from '../i18n.ts';
-import { ACCOUNT, HARNESS, KEY, LOGIN, PLACE, TOOL, TOPIC, loginId, type AccountRow, type HarnessRow, type KeyRow, type LoginRow, type PlaceRow, type ToolRow } from '../types.ts';
-import { accountLine, changeText, changeTip, harnessLine, harnessState, howToGet, loginControl, masked, present, recheckSummary, site, stillChanged } from '../words.ts';
+import { ACCOUNT, DETECT, DETECT_TOPIC, HARNESS, KEY, LOGIN, PLACE, TOOL, TOPIC, loginId, type AccountRow, type DetectRow, type HarnessRow, type KeyRow, type LoginRow, type PlaceRow, type ToolRow } from '../types.ts';
+import { accountLine, changeText, changeTip, harnessLine, harnessState, howToGet, loginControl, masked, mergeHarnesses, present, recheckSummary, site, stillChanged } from '../words.ts';
 
 const quiet = (p: Promise<unknown>): void => {
   p.catch(() => {}); // the shell's onError shows the rollback toast
@@ -141,7 +141,18 @@ export default function Agents(props: { readonly client: PluginClient }): JSX.El
   const scope = c.scope.child('agents-pane');
   onCleanup(() => scope.dispose());
   c.watch(peer, TOPIC, scope);
-  const harnesses = useRows<HarnessRow>(c, HARNESS);
+  // each harness as its detect settles (ADR-0066): the rows show at once, `Checking…` until each answers
+  c.watch(peer, DETECT_TOPIC, scope);
+  const mine = useRows<HarnessRow>(c, HARNESS);
+  // this wisp's own: the runner picker may also watch another computer's
+  const detectKeys = useSignal(c.entities.keys(DETECT));
+  const detected = createMemo(() =>
+    detectKeys()
+      .filter((k) => ownerOf(k) === peer)
+      .map((k) => c.entities.row<DetectRow>(DETECT, k)() as DetectRow | undefined)
+      .filter((r): r is DetectRow => r !== undefined),
+  );
+  const harnesses = createMemo(() => mergeHarnesses(mine(), detected()));
   const accounts = useRows<AccountRow>(c, ACCOUNT);
   const logins = useRows<LoginRow>(c, LOGIN);
   const keys = useRows<KeyRow>(c, KEY);
@@ -149,7 +160,9 @@ export default function Agents(props: { readonly client: PluginClient }): JSX.El
   const place = useSignal(c.entities.row<PlaceRow>(PLACE, entityKey(peer, 'this')));
   const [keysOf, setKeysOf] = createSignal<HarnessRow | undefined>();
   const [rechecking, setRechecking] = createSignal(false);
-  const sorted = createMemo(() => [...harnesses()].sort((a, b) => a.ord - b.ord));
+  // keyed by id: a harness that settles updates its row in place (no remount, nothing moves)
+  const byId = createMemo(() => new Map(harnesses().map((h) => [h.id, h])));
+  const ids = createMemo(() => harnesses().map((h) => h.id), undefined, { equals: (a, b) => a.length === b.length && a.every((x, i) => x === b[i]) });
   const login = (agent: string, account = ''): LoginRow | undefined => logins().find((l) => l.agent === agent && loginId(l.agent, l.account) === loginId(agent, account));
   const accs = (agent: string): AccountRow[] =>
     accounts()
@@ -157,9 +170,10 @@ export default function Agents(props: { readonly client: PluginClient }): JSX.El
       .sort((a, b) => a.ord - b.ord);
   const keysFor = (agent: string): KeyRow[] => keys().filter((k) => k.agent === agent);
 
-  const signControl = (h: HarnessRow, account: string, isAccount: boolean): JSX.Element => {
-    const ctl = (): ReturnType<typeof loginControl> => loginControl(login(h.id, account), { account: isAccount, out: h.signedIn === false });
-    const args = { peer, agent: h.id, account };
+  /** `row`: the harness's row as it is now (it updates in place as its detect settles) */
+  const signControl = (row: () => HarnessRow, account: string, isAccount: boolean): JSX.Element => {
+    const ctl = (): ReturnType<typeof loginControl> => loginControl(login(row().id, account), { account: isAccount, out: row().signedIn === false });
+    const args = { peer, agent: row().id, account };
     return (
       <Pick>
         <Match when={ctl() === 'cancel'}>
@@ -195,34 +209,37 @@ export default function Agents(props: { readonly client: PluginClient }): JSX.El
     <>
       {/* v1 .sx-agents: one row per harness, lines between; its accounts in a box under it; then GitHub (and git while it's missing) */}
       <SettingsGroup part="accounts.harnesses">
-        <For each={sorted()}>
-          {(h) => {
-            const state = () => harnessState(h);
+        <For each={ids()}>
+          {(id) => {
+            // the last row it had: a harness that goes (its plugin switched off) may be read once more before its row unmounts
+            let last = byId().get(id) as HarnessRow;
+            const h = (): HarnessRow => (last = byId().get(id) ?? last);
+            const state = () => harnessState(h());
             return (
               <>
                 <SettingsRow
                   part="accounts.harness"
-                  title={h.name}
-                  {...(logoOf(h.id) && { logo: logoOf(h.id) as string })}
+                  title={h().name}
+                  {...(logoOf(h().id) && { logo: logoOf(h().id) as string })}
                   description={
-                    <Show when={howToGet(h)} fallback={harnessLine(h, accs(h.id).length)}>
+                    <Show when={howToGet(h())} fallback={harnessLine(h(), accs(h().id).length)}>
                       {(how) => <HowTo tip={how().tip} command={how().command} onCopy={copy} />}
                     </Show>
                   }
                   control={
                     <Inline gap="3">
-                      <Show when={h.signIn === 'key' && present(h)}>
-                        <Button size="sm" variant="primary" icon="lock" part="accounts.keys.open" onClick={() => setKeysOf(h)}>
-                          {keysFor(h.id).some((k) => k.set) ? t('accounts.keys.edit') : t('accounts.keys.add')}
+                      <Show when={h().signIn === 'key' && present(h())}>
+                        <Button size="sm" variant="primary" icon="lock" part="accounts.keys.open" onClick={() => setKeysOf(h())}>
+                          {keysFor(h().id).some((k) => k.set) ? t('accounts.keys.edit') : t('accounts.keys.add')}
                         </Button>
                       </Show>
-                      <Show when={h.signIn === 'cli' && present(h) && (!h.brand || accs(h.id).length <= 1)}>{signControl(h, '', false)}</Show>
-                      <Show when={!present(h) && !h.installable}>
-                        <Docs name={h.name} url={h.setup?.url} />
+                      <Show when={h().signIn === 'cli' && present(h()) && (!h().brand || accs(h().id).length <= 1)}>{signControl(h, '', false)}</Show>
+                      <Show when={!h().checking && !present(h()) && !h().installable}>
+                        <Docs name={h().name} url={h().setup?.url} />
                       </Show>
-                      <Show when={!present(h) && h.installable === true}>
-                        <Button size="sm" disabled={h.installing === true} onClick={() => quiet(c.run(install, { peer, agent: h.id }))}>
-                          {h.installing === true ? t('accounts.installing') : t('accounts.install')}
+                      <Show when={!h().checking && !present(h()) && h().installable === true}>
+                        <Button size="sm" disabled={h().installing === true} onClick={() => quiet(c.run(install, { peer, agent: h().id }))}>
+                          {h().installing === true ? t('accounts.installing') : t('accounts.install')}
                         </Button>
                       </Show>
                       <Pill tone={state().tone} dot variant="plain">
@@ -231,24 +248,24 @@ export default function Agents(props: { readonly client: PluginClient }): JSX.El
                     </Inline>
                   }
                 />
-                <Show when={stillChanged(h) && h.changed}>
+                <Show when={stillChanged(h()) && h().changed}>
                   {(ch) => (
                     <SettingsRow
                       part="accounts.changed"
-                      title={changeText(h.name, ch())}
+                      title={changeText(h().name, ch())}
                       description={<span title={changeTip(ch())}>{t('accounts.change.why')}</span>}
                       control={
-                        <Button size="sm" onClick={() => quiet(c.run(trust, { peer, agent: h.id }))}>
+                        <Button size="sm" onClick={() => quiet(c.run(trust, { peer, agent: h().id }))}>
                           {t('accounts.change.trust')}
                         </Button>
                       }
                     />
                   )}
                 </Show>
-                <Steps c={c} agent={h.id} account="" login={login(h.id)} />
-                <Show when={h.brand && present(h)}>
+                <Steps c={c} agent={h().id} account="" login={login(h().id)} />
+                <Show when={h().brand && present(h())}>
                   <SettingsInset part="settings.accounts">
-                    <For each={accs(h.id).length > 1 ? accs(h.id) : []}>
+                    <For each={accs(h().id).length > 1 ? accs(h().id) : []}>
                       {(a) => (
                         <SettingsInsetRow
                           part="accounts.account"
@@ -266,7 +283,7 @@ export default function Agents(props: { readonly client: PluginClient }): JSX.El
                                     { kind: 'separator' },
                                     { value: 'remove', label: t('accounts.account.remove'), icon: 'trash', danger: true },
                                   ]}
-                                  onSelect={(v) => quiet(v === 'out' ? c.run(logout, { peer, agent: h.id, account: a.id }) : c.run(removeAccount, { peer, agent: h.id, account: a.id }))}
+                                  onSelect={(v) => quiet(v === 'out' ? c.run(logout, { peer, agent: h().id, account: a.id }) : c.run(removeAccount, { peer, agent: h().id, account: a.id }))}
                                 />
                               </Show>
                             </Inline>
@@ -274,7 +291,7 @@ export default function Agents(props: { readonly client: PluginClient }): JSX.El
                         />
                       )}
                     </For>
-                    <SettingsInsetAdd part="accounts.add" label={t('accounts.account.add', { brand: h.brand ?? h.name })} onClick={() => addAnother(h)} />
+                    <SettingsInsetAdd part="accounts.add" label={t('accounts.account.add', { brand: h().brand ?? h().name })} onClick={() => addAnother(h())} />
                   </SettingsInset>
                 </Show>
               </>

@@ -122,6 +122,7 @@ export const SHELL_STRINGS = {
   'shell.runner.loading': 'Looking for harnesses…',
   'shell.runner.none': 'Nothing matches',
   'shell.runner.notSetUp': 'Not set up here',
+  'shell.runner.checking': 'Checking…',
   'shell.runner.used': '{label} {pct}% used',
   'shell.runner.signedOut': 'Signed out: sign in to use it',
   'shell.runner.account': 'Account',

@@ -15,6 +15,45 @@ export interface AgentOffer {
   readonly signedIn?: boolean | null;
   readonly models: readonly AgentModel[];
   readonly efforts: readonly string[];
+  /** its detect hasn't answered yet (the `harnesses` topic, ADR-0066): the rest is what was known before */
+  readonly checking?: boolean;
+}
+
+/** wisp.runtime's `harnesses` topic (ADR-0066): every harness at once as checking, each as its detect lands. */
+export const HARNESSES_TOPIC = 'plugin:wisp.runtime:harnesses';
+export const HARNESS_ROW = 'runtime.harness';
+
+/** A row on it (plugins/runtime/api/bindings/runtime/HarnessRow.ts). */
+export interface HarnessTopicRow {
+  readonly id: string;
+  readonly ord: number;
+  readonly state: 'checking' | 'installed' | 'missing';
+  readonly agent: Omit<AgentOffer, 'checking'>;
+}
+
+/** What the picker offers: the topic's rows in their order, each marked while it's checking; none yet (a wisp that
+ * has no such topic): what `runtime.agents` answered. */
+export function offersFrom(rows: readonly HarnessTopicRow[], answered: readonly AgentOffer[] | undefined): readonly AgentOffer[] {
+  if (rows.length === 0) return answered ?? [];
+  return [...rows].sort((a, b) => a.ord - b.ord).map((r) => ({ ...r.agent, id: r.id, ...(r.state === 'checking' && { checking: true }) }));
+}
+
+/** A harness row's state in the picker: still checking, ready, signed out (picked, it signs in) or not set up here. */
+export type OfferState = 'checking' | 'ready' | 'signedOut' | 'missing';
+export function offerState(a: Pick<AgentOffer, 'available' | 'signedIn' | 'checking'>): OfferState {
+  if (a.checking) return 'checking';
+  if (a.signedIn === false) return 'signedOut';
+  return a.available ? 'ready' : 'missing';
+}
+
+/** The order rows show in while the picker is open: the ones already shown keep their place (a harness that settles
+ * never jumps), new ones go after them; `next` is the order a fresh look would use. */
+export function keepOrder(shown: readonly string[], next: readonly AgentOffer[]): AgentOffer[] {
+  const at = new Map(shown.map((id, i) => [id, i]));
+  return next
+    .map((a, i) => ({ a, k: at.get(a.id) ?? shown.length + i }))
+    .sort((x, y) => x.k - y.k)
+    .map((x) => x.a);
 }
 export interface Runner {
   readonly agent: string;
@@ -80,7 +119,8 @@ export function harnessesFor(agents: readonly AgentOffer[], query: string): Agen
   const q = query.trim().toLowerCase();
   const hit = (a: AgentOffer): boolean => !q || a.name.toLowerCase().includes(q) || a.models.some((m) => m.label.toLowerCase().includes(q) || m.id.toLowerCase().includes(q));
   // a signed-out one can be picked to sign in, so it sits with the set-up ones
-  const usable = (a: AgentOffer): number => Number(a.available || a.signedIn === false);
+  // and one still checking (ADR-0066): most are there, and it shouldn't drop below the rest until it's known
+  const usable = (a: AgentOffer): number => Number(a.available || a.signedIn === false || a.checking === true);
   return agents.filter(hit).sort((a, b) => usable(b) - usable(a));
 }
 

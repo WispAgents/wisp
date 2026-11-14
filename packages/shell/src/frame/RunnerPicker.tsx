@@ -1,12 +1,32 @@
 // The harness · model picker (v1 runner-picker.js): the harnesses set up here, a search over every harness's models,
 // the model list of the one picked, and its thinking level. A harness pick keeps the dialog open; a model pick
-// closes it. Runs on what `runtime.agents` says (asked once the box shows).
-import { Show, createMemo, createResource, createSignal, type JSX } from 'solid-js';
-import { defineCommand } from '@wisp/client';
+// closes it. Runs on wisp.runtime's `harnesses` topic (ADR-0066): every harness at once, `Checking…` until its own
+// detect lands, each row updated in place; `runtime.agents` is still asked once the box shows (it detects again when
+// the probes' memo has run out, and answers a wisp with no such topic).
+import { Show, createEffect, createMemo, createResource, createSignal, onCleanup, type JSX } from 'solid-js';
+import { defineCommand, ownerOf, type EntityKey, type PeerId } from '@wisp/client';
 import { Dialog, Grid, Input, RadioGroup, Stack, Text, ThinkingSlider, useSignal } from '@wisp/ui';
 import { useShell } from '../context.tsx';
 import { Slot } from '../slot.tsx';
-import { accountChoices, accountFor, effortsFor, fullest, harnessesFor, modelsFor, usedPct, type AccountOffer, type AgentOffer, type PlanWindow, type Runner } from './runner.ts';
+import {
+  HARNESSES_TOPIC,
+  HARNESS_ROW,
+  accountChoices,
+  accountFor,
+  effortsFor,
+  fullest,
+  harnessesFor,
+  keepOrder,
+  modelsFor,
+  offerState,
+  offersFrom,
+  usedPct,
+  type AccountOffer,
+  type AgentOffer,
+  type HarnessTopicRow,
+  type PlanWindow,
+  type Runner,
+} from './runner.ts';
 
 /** v1 effortLabel: "X-High", else the level capitalised */
 const levelLabel = (e: string): string => (e === 'xhigh' ? 'X-High' : e.charAt(0).toUpperCase() + e.slice(1));
@@ -45,29 +65,74 @@ export function RunnerPicker(props: {
   /** each harness's logo, as its plugin registered it */
   const logoOf = (id: string): string | undefined => harnesses().find((h) => h.id === id)?.logo;
   const [query, setQuery] = createSignal('');
-  // asked when New task shows, not when the picker opens: detecting the harnesses takes seconds
-  const [agents] = createResource(
+  // each harness as its detect settles (ADR-0066), watched while the picker's box shows
+  createEffect(() => {
+    const scope = shell.client.scope.child('runner-harnesses');
+    shell.client.peers.watch(props.peer as PeerId, HARNESSES_TOPIC, scope);
+    onCleanup(() => scope.dispose());
+  });
+  const rowKeys = useSignal(shell.client.entities.keys(HARNESS_ROW));
+  const topicRows = createMemo((): HarnessTopicRow[] =>
+    rowKeys()
+      .filter((k) => ownerOf(k) === props.peer)
+      .map((k) => shell.client.entities.row<HarnessTopicRow>(HARNESS_ROW, k as EntityKey)() as HarnessTopicRow | undefined)
+      .filter((r): r is HarnessTopicRow => r !== undefined),
+  );
+  // asked when New task shows, not when the picker opens: it detects again once the probes' answers ran out
+  const [answered] = createResource(
     () => props.peer,
     (peer) => shell.client.commands.run(agentsOf, { peer }).catch(() => [] as AgentOffer[]),
   );
-  // before you pick, how much of each plan is gone (v1 runner-picker.js usageNote): asked when the picker opens
-  const [usage] = createResource(
-    () => (props.open && agents() ? { peer: props.peer, ids: (agents() ?? []).filter((a) => a.available).map((a) => a.id) } : false),
-    async ({ peer, ids }) =>
-      new Map(await Promise.all(ids.map(async (agent) => [agent, fullest(await shell.client.commands.run(plansOf, { peer, agent }).catch(() => []))] as const))),
+  const agents = createMemo(() => offersFrom(topicRows(), answered()));
+  /** the ready harnesses' ids, as one string: a row that changes in place doesn't ask the plans again */
+  const readyIds = createMemo(() =>
+    agents()
+      .filter((a) => a.available && !a.checking)
+      .map((a) => a.id)
+      .join(','),
   );
+  // before you pick, how much of each plan is gone (v1 runner-picker.js usageNote): asked when the picker opens, once
+  // per harness as each turns ready (a harness that settles doesn't ask the others' plans again); again on the next open
+  const [usage, setUsage] = createSignal<ReadonlyMap<string, PlanWindow | undefined>>(new Map());
+  const asked = new Set<string>();
+  createEffect(() => {
+    if (!props.open) {
+      asked.clear();
+      return;
+    }
+    const peer = props.peer;
+    for (const agent of readyIds() ? readyIds().split(',') : []) {
+      if (asked.has(agent)) continue;
+      asked.add(agent);
+      void shell.client.commands
+        .run(plansOf, { peer, agent })
+        .catch(() => [])
+        .then((w) => setUsage((m) => new Map(m).set(agent, fullest(w))));
+    }
+  });
   const usageHint = (id: string): string | undefined => {
-    const w = usage()?.get(id);
+    const w = usage().get(id);
     return w ? t('shell.runner.used', { label: w.label, pct: usedPct(w) }) : undefined;
   };
-  const list = createMemo(() => harnessesFor(agents() ?? [], query()));
+  // while the picker is open, a row keeps its place as its harness settles (nothing jumps); a fresh open sorts again
+  let shown: string[] = [];
+  const list = createMemo(() => {
+    const next = harnessesFor(agents(), query());
+    if (!props.open) {
+      shown = [];
+      return next;
+    }
+    const out = keepOrder(shown, next);
+    shown = [...shown, ...out.map((a) => a.id).filter((id) => !shown.includes(id))];
+    return out;
+  });
   /** a harness that's there but signed out (v1 runner-picker.js signedOut): picked, it offers its sign-in */
-  const signedOut = (id: string): boolean => (agents() ?? []).some((a) => a.id === id && a.signedIn === false);
+  const signedOut = (id: string): boolean => agents().some((a) => a.id === id && a.signedIn === false);
   const models = createMemo(() => modelsFor(agents() ?? [], props.value.agent, query()));
   const efforts = createMemo(() => (props.efforts === false ? [] : effortsFor(agents() ?? [], props.value)));
   // the picked harness's accounts, asked while the picker is open (v1 runner-picker.js accountsAt): two or more show
   const wantsAccounts = (): false | { peer: string; agent: string } =>
-    props.open && props.accounts === true && !signedOut(props.value.agent) && (agents() ?? []).some((a) => a.id === props.value.agent && a.available)
+    props.open && props.accounts === true && !signedOut(props.value.agent) && agents().some((a) => a.id === props.value.agent && a.available)
       ? { peer: props.peer, agent: props.value.agent }
       : false;
   const [fetched] = createResource(wantsAccounts, async (a) => ({
@@ -91,16 +156,21 @@ export function RunnerPicker(props: {
             when={list().length > 0}
             fallback={
               <Text size="sm" tone="muted">
-                {agents.loading ? t('shell.runner.loading') : t('shell.runner.none')}
+                {answered.loading ? t('shell.runner.loading') : t('shell.runner.none')}
               </Text>
             }
           >
             <RadioGroup
               label={t('shell.runner.harness')}
               options={list().map((a) => {
-                const used = a.available && a.signedIn !== false ? usageHint(a.id) : undefined;
-                const out = a.signedIn === false && { hint: t('shell.runner.signedOut') };
-                return { value: a.id, label: a.name, logo: logoOf(a.id), ...(!a.available && !out && { disabled: true, hint: t('shell.runner.notSetUp') }), ...out, ...(used && { hint: used }) };
+                const state = offerState(a);
+                if (state === 'checking') {
+                  // what was known still picks (a harness that was ready); one never seen waits for its answer
+                  return { value: a.id, label: a.name, logo: logoOf(a.id), hint: t('shell.runner.checking'), ...(!a.available && a.signedIn !== false && { disabled: true }) };
+                }
+                const used = state === 'ready' ? usageHint(a.id) : undefined;
+                const out = state === 'signedOut' && { hint: t('shell.runner.signedOut') };
+                return { value: a.id, label: a.name, logo: logoOf(a.id), ...(state === 'missing' && { disabled: true, hint: t('shell.runner.notSetUp') }), ...out, ...(used && { hint: used }) };
               })}
               value={props.value.agent}
               onChange={(agent) => props.onChange({ agent, model: '', effort: '', account: '' })}

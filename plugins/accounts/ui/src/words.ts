@@ -3,9 +3,9 @@
 // recheckSummary; agent-login.js control/loginPanel; harness-watch.js changeText).
 
 import { t } from './i18n.ts';
-import type { AccountRow, HarnessChange, HarnessRow, KeyRow, LoginRow, Pin } from './types.ts';
+import type { AccountRow, DetectRow, HarnessChange, HarnessRow, KeyRow, LoginRow, Pin } from './types.ts';
 
-type Tone = 'good' | 'warn' | 'bad';
+type Tone = 'neutral' | 'good' | 'warn' | 'bad';
 
 const modelCount = (h: Pick<HarnessRow, 'models'> | undefined): number => (h?.models ?? []).filter((m) => m.id).length;
 
@@ -14,8 +14,9 @@ export const signedOut = (h: Pick<HarnessRow, 'available' | 'signedIn'>): boolea
 /** Found, or found and signed out: its row has a version and a sign-in. */
 export const present = (h: Pick<HarnessRow, 'available' | 'signedIn'>): boolean => h.available || signedOut(h);
 
-/** "Ready", "Signed out", "Not found" and its tone (v1 sx-state). */
-export function harnessState(h: Pick<HarnessRow, 'available' | 'signedIn'>): { tone: Tone; label: string } {
+/** "Checking…", "Ready", "Signed out", "Not found" and its tone (v1 sx-state). */
+export function harnessState(h: Pick<HarnessRow, 'available' | 'signedIn' | 'checking'>): { tone: Tone; label: string } {
+  if (h.checking) return { tone: 'neutral', label: t('accounts.state.checking') };
   if (h.available) return { tone: 'good', label: t('accounts.state.ready') };
   if (signedOut(h)) return { tone: 'warn', label: t('accounts.state.signedOut') };
   return { tone: 'bad', label: t('accounts.state.notFound') };
@@ -23,6 +24,8 @@ export function harnessState(h: Pick<HarnessRow, 'available' | 'signedIn'>): { t
 
 /** The harness's small line: "2.1.30 · 3 models · 2 accounts", or how to get it while it isn't found. */
 export function harnessLine(h: HarnessRow, accounts: number): string {
+  // never seen yet: no install tip before its detect says it isn't there
+  if (h.checking && !present(h)) return t('accounts.line.checking');
   if (!present(h)) return h.installing ? t('accounts.installing') : (h.setup?.tip ?? t('accounts.setup.tip', { name: h.name }));
   const n = modelCount(h);
   const parts = [
@@ -37,7 +40,7 @@ export function harnessLine(h: HarnessRow, accounts: number): string {
 /** Not found here (v1 settings.js paintAgents): this OS's tip and the one-line command to copy, unless wisp installs it
  * itself (Install) or it's installing; undefined while it's found. */
 export function howToGet(h: HarnessRow): { tip: string; command?: string } | undefined {
-  if (present(h) || h.installing) return undefined;
+  if (present(h) || h.installing || h.checking) return undefined;
   const tip = h.setup?.tip ?? t('accounts.setup.tip', { name: h.name });
   const command = h.installable ? undefined : h.setup?.command;
   return command ? { tip, command } : { tip };
@@ -59,6 +62,34 @@ export function recheckSummary(before: ReadonlyMap<string, Pick<HarnessRow, 'ava
     } else if (a.available && a.version !== was?.version) notes.push(t('accounts.recheck.updated', { name: a.name }));
   }
   return notes.length ? notes.join(' · ') : t('accounts.recheck.none');
+}
+
+/** The pane's harness rows (ADR-0066): wisp.runtime's detection rows in their order, each with what this plugin's
+ * own row adds (sign-in, keys, accounts, Install); a detection row is the fresher of the two. With no detection rows
+ * (a wisp before the topic), this plugin's rows as they are. */
+export function mergeHarnesses(mine: readonly HarnessRow[], detected: readonly DetectRow[]): HarnessRow[] {
+  if (detected.length === 0) return [...mine].sort((a, b) => a.ord - b.ord);
+  const byId = new Map(mine.map((h) => [h.id, h]));
+  const out = [...detected]
+    .sort((a, b) => a.ord - b.ord)
+    .map((d): HarnessRow => {
+      const base: HarnessRow = byId.get(d.id) ?? { id: d.id, name: d.agent.name, ord: d.ord, available: false, models: [], signIn: 'none' };
+      const { version: _v, error: _e, setup: _s, signedIn: _o, checking: _c, ...rest } = base;
+      return {
+        ...rest,
+        name: d.agent.name,
+        ord: d.ord,
+        available: d.agent.available,
+        models: d.agent.models.map((m) => ({ id: m.id, label: m.label })),
+        ...(d.agent.version !== undefined && { version: d.agent.version }),
+        ...(d.agent.error !== undefined && { error: d.agent.error }),
+        ...(d.agent.setup !== undefined && { setup: d.agent.setup }),
+        ...(d.agent.signedIn === false && { signedIn: false as const }),
+        ...(d.state === 'checking' && { checking: true }),
+      };
+    });
+  const seen = new Set(out.map((h) => h.id));
+  return [...out, ...mine.filter((h) => !seen.has(h.id)).sort((a, b) => a.ord - b.ord)];
 }
 
 const label = (p: Pin): string => p.version ?? p.path;
