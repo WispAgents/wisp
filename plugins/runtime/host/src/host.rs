@@ -67,6 +67,9 @@ pub trait Host: Send + Sync + 'static {
     fn spawn(&self, fut: wisp_kernel::BoxFuture<'static, ()>) {
         tokio::spawn(fut);
     }
+    /// A usage event this plugin owns (wisp.telemetry's catalogue, ADR-0021), off the caller's way. Nothing by
+    /// default (a test's host).
+    fn track(&self, _event: &'static str, _props: serde_json::Value) {}
     /// The plugin's scope, for the processes it spawns (a turn's CLI): switching it off kills their trees. Additive.
     fn scope(&self) -> Option<wisp_proc::Scope> {
         None

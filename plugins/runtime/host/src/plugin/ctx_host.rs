@@ -74,6 +74,10 @@ impl Host for CtxHost {
     fn spawn(&self, fut: BoxFuture<'static, ()>) {
         self.ctx.spawn(fut);
     }
+    fn track(&self, event: &'static str, props: serde_json::Value) {
+        let ctx = self.ctx.clone();
+        self.ctx.spawn(Box::pin(async move { super::track(&ctx, event, props).await }));
+    }
     fn scope(&self) -> Option<wisp_proc::Scope> {
         Some(self.ctx.scope().clone())
     }

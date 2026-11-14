@@ -43,12 +43,22 @@ pub fn setup(s: &mut Setup, slot: &Slot) {
     let m: Arc<dyn SummaryField> = Arc::new(Marker);
     s.contribute(&SUMMARY, m);
     let sl = slot.clone();
-    s.command::<c::AgentWatch, _, _>(move |_ctx, _call, a| {
+    s.command::<c::AgentWatch, _, _>(move |ctx, _call, a| {
         let slot = sl.clone();
         async move {
             let r = rt(&slot)?;
+            // v1 internal.js: an `open` counts as `wisp_watch`, with whether the agent sent a page of its own
+            let opened = a.body.get("action").and_then(serde_json::Value::as_str) == Some("open");
+            let html = a.body.get("html").is_some_and(serde_json::Value::is_string);
+            let id = a.session.clone();
             Ok(match r.agent_watch(a).await {
-                Ok(text) => c::AgentText { text: Some(text), error: None },
+                Ok(text) => {
+                    if opened {
+                        let agent = r.get(&id).await.map(|x| x.agent).unwrap_or_default();
+                        crate::plugin::track(&ctx, "wisp_watch", serde_json::json!({ "agent": agent, "html": html })).await;
+                    }
+                    c::AgentText { text: Some(text), error: None }
+                }
                 Err(e) => c::AgentText { text: None, error: Some(e) },
             })
         }

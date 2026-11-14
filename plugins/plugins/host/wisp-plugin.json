@@ -10,6 +10,7 @@
   },
   "permissions": [
     "plugins:manage",
+    "telemetry:track",
     "proc:exec{bin:git}",
     "automations:read",
     "budget:read",

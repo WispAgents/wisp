@@ -112,9 +112,17 @@ pub async fn upload(s: Arc<Stuff>, ctx: Ctx, call: Call, req: Request) -> Result
         mime: q("type").map(str::to_owned),
         ..SaveOpts::default()
     };
+    if let Some(n) = added_files(q("of")) {
+        track(&ctx, "stuff_add", json!({ "files": n })); // v1 stuff.js addFiles: how many, once per drop, kept or not
+    }
     let it = s.shelf.save_bytes(req.body, o).await?;
     saved(&ctx, &call, &it, false);
     ok_json(s.view(&it).await, 201)
+}
+
+/// The `of` an upload names: how many files came with it (the first of a drop says), 1..=1000; None otherwise.
+pub fn added_files(of: Option<&str>) -> Option<u32> {
+    of?.parse::<u32>().ok().filter(|n| (1..=1000).contains(n))
 }
 
 pub async fn starters_list(s: Arc<Stuff>, _c: Ctx, _call: Call, _r: Request) -> Result<Response> {
@@ -173,4 +181,19 @@ pub fn all(cell: &Cell) -> Vec<Route> {
         route(cell, "GET", "/uploads/:id", "stuff:read", "An attachment's bytes", crate::files::upload_get),
         Route { doc: false, ..route(cell, "DELETE", "/uploads/:id", "stuff:save", "Remove an attachment", crate::files::upload_delete) },
     ]
+}
+
+#[cfg(test)]
+mod added_tests {
+    use super::added_files;
+
+    /// v1's `stuff_add`: the first upload of a drop says how many came; anything else says nothing.
+    #[test]
+    fn only_the_first_upload_of_a_drop_counts_the_files() {
+        assert_eq!(added_files(Some("3")), Some(3));
+        assert_eq!(added_files(None), None, "the rest of the drop");
+        assert_eq!(added_files(Some("0")), None);
+        assert_eq!(added_files(Some("many")), None);
+        assert_eq!(added_files(Some("100000")), None, "a made-up count isn't sent");
+    }
 }

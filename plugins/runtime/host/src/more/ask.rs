@@ -224,6 +224,8 @@ impl Runtime {
         let question = format!("Allow {} to {}?", h.info().name, p.action);
         let permission = json!({ "tool": p.tool, "action": p.action, "detail": p.detail, "toolUseId": a.tool_use_id });
         let ask_id = self.ask_in(&a.id, &question, p.why.as_deref().unwrap_or_default(), &options, Some(permission)).await?;
+        // v1 internal.js: an approval that asked you (not one an "always" already let through) counts
+        self.host.track("approval", json!({ "agent": s.agent }));
         let Some(answer) = self.wait_answer(&ask_id, ASK_TIMEOUT_MS).await else {
             return Ok(json!({ "behavior": "deny", "message": "No answer from the user in time, or the task was stopped." }));
         };

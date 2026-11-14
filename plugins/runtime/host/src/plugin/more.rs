@@ -19,11 +19,10 @@ pub(super) fn more(s: &mut Setup, slot: &Slot, harness_kind: Arc<StoredKind>, ki
     cmd!(s, slot, c::Btw, |r, call, a| r.btw(a).await);
     cmd!(s, slot, c::BtwDrop, |r, call, a| r.btw_drop(a.id.as_str(), &a.btw_id).await.map(|()| c::Ack {}));
     cmd!(s, slot, c::Reveal, |r, call, a| r.reveal(a.id.as_str(), &a.path).await);
-    cmd!(s, slot, c::Compact, |r, call, a| r.compact(&a.id).await);
+    counted(s, slot);
     cmd!(s, slot, c::Rerun, |r, call, a| r.rerun(a).await);
     fork(s, slot);
     cmd!(s, slot, c::Adopt, |r, call, a| r.adopt(a).await);
-    cmd!(s, slot, c::Delegate, |r, call, a| r.delegate(a).await);
     cmd!(s, slot, c::Results, |r, call, a| r.results(a).await);
     cmd!(s, slot, c::Quick, |r, call, a| r.quick(a).await);
     cmd!(s, slot, c::QuickCancel, |r, call, a| Ok(c::QuickCancelled { stopped: r.quick_cancel(&a.run_id) }));
@@ -79,6 +78,45 @@ fn agents(s: &mut Setup, slot: &Slot, harness_kind: Arc<StoredKind>) {
     });
 }
 
+/// `runtime.compact` and `runtime.delegate`, counted as v1's `compact` and `delegate` (agent, how many tasks, which
+/// harnesses: never what they were asked).
+fn counted(s: &mut Setup, slot: &Slot) {
+    let sl = slot.clone();
+    s.command::<c::Compact, _, _>(move |ctx, _call, a| {
+        let slot = sl.clone();
+        async move {
+            let r = rt(&slot)?;
+            let out = r.compact(&a.id).await.map_err(WireError::from)?;
+            let agent = r.get(a.id.as_str()).await.map(|x| x.agent).unwrap_or_default();
+            track(&ctx, "compact", serde_json::json!({ "agent": agent })).await;
+            Ok(out)
+        }
+    });
+    let sl = slot.clone();
+    s.command::<c::Delegate, _, _>(move |ctx, _call, a| {
+        let slot = sl.clone();
+        async move {
+            let r = rt(&slot)?;
+            let lead = a.id.clone();
+            let out = r.delegate(a).await.map_err(WireError::from)?;
+            let agent = r.get(lead.as_str()).await.map(|x| x.agent).unwrap_or_default();
+            track(&ctx, "delegate", delegate_props(&agent, &out)).await;
+            Ok(out)
+        }
+    });
+}
+
+/// v1 internal.js's `delegate`: the lead's harness, how many it started (refusals too), and the harnesses they run on.
+pub(crate) fn delegate_props(agent: &str, out: &[c::Delegation]) -> serde_json::Value {
+    let mut harnesses: Vec<&str> = Vec::new();
+    for d in out.iter().filter(|d| !d.agent.is_empty()) {
+        if !harnesses.contains(&d.agent.as_str()) {
+            harnesses.push(&d.agent);
+        }
+    }
+    serde_json::json!({ "agent": agent, "tasks": out.len(), "harnesses": harnesses })
+}
+
 /// `runtime.fork`, counted as `fork_task`.
 fn fork(s: &mut Setup, slot: &Slot) {
     let sl = slot.clone();
@@ -93,4 +131,23 @@ fn fork(s: &mut Setup, slot: &Slot) {
             Ok(out)
         }
     });
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod tests {
+    use super::delegate_props;
+
+    /// v1's `delegate`: every task it started counts (a refused one too), each harness once, never what was asked.
+    #[test]
+    fn a_delegation_counts_its_tasks_and_names_each_harness_once() {
+        let d = |agent: &str| {
+            serde_json::from_value::<wisp_runtime_api::commands::Delegation>(serde_json::json!({
+                "id": "s1", "subagent": "Reviewer", "agent": agent, "model": "", "effort": "", "turnId": "t1"
+            }))
+            .unwrap()
+        };
+        let p = delegate_props("claude", &[d("codex"), d("codex"), d(""), d("claude")]);
+        assert_eq!(p, serde_json::json!({ "agent": "claude", "tasks": 4, "harnesses": ["codex", "claude"] }));
+    }
 }

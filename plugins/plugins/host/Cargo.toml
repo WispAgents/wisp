@@ -16,6 +16,7 @@ wisp-kernel.workspace = true
 wisp-plugins-api.workspace = true
 wisp-mcp-api.workspace = true
 wisp-plugins-core.workspace = true
+wisp-telemetry-api.workspace = true
 tracing.workspace = true
 tokio.workspace = true
 wisp-proc.workspace = true

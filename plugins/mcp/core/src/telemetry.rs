@@ -1,5 +1,5 @@
 //! The catalogue events a tool call stands for (ADR-0021; v1 routes/control.js, internal.js, connectors.js):
-//! a task's agent launching tasks (`wisp_launch`) or acting on one (`wisp_task`), and the crew and connector
+//! a task's agent launching tasks (`wisp_launch`), acting on one (`wisp_task`) or asking you (`ask_user`), and the crew and connector
 //! tools an agent or the user (`wisp mcp`) called. Only after the call worked; `agent` is the caller's harness, filled in by the host.
 
 use serde_json::{Map, Value, json};
@@ -14,6 +14,8 @@ pub fn of(name: &str, args: &Map<String, Value>, agent_side: bool) -> Option<(&'
             json!({ "harness": s("agent").unwrap_or("auto"), "machine": s("machine").is_some(), "team": args.get("team").is_some_and(|t| !t.is_null()) || s("preset").is_some() }),
         )),
         "wisp_task" if agent_side => Some(("agent_task", json!({ "action": s("action").unwrap_or("") }))),
+        // v1 internal.js /internal/ask: the agent's question (runtime.ask is also asked by others, a goal's judge)
+        "ask_user" if agent_side => Some(("ask_user", json!({}))),
         "wisp_crew_add" | "wisp_crew_edit" | "wisp_crew_remove" | "wisp_crew_kit" => {
             Some(("crew_tool", json!({ "by": by, "op": name.trim_start_matches("wisp_crew_") })))
         }
@@ -41,5 +43,6 @@ mod tests {
         assert_eq!((e, p["by"].as_str(), p["op"].as_str()), ("crew_tool", Some("agent"), Some("kit")));
         assert_eq!(of("wisp_connector_add", &a(json!({ "url": "https://x" })), true).unwrap().1["transport"], "http");
         assert_eq!(of("wisp_list", &a(json!({})), false), None);
+        assert_eq!(of("ask_user", &a(json!({ "question": "which db?" })), true), Some(("ask_user", json!({}))), "never the question");
     }
 }

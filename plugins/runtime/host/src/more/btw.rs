@@ -41,6 +41,9 @@ impl Runtime {
         };
         self.put_btw(a.id.as_str(), &entry).await?;
         let fork = h.info().fork && s.resume_id.is_some();
+        // v1 launch.js askBtw: on a fork of the conversation or not, and whether the task's run was going
+        let running = !matches!(self.run_state(s.id.as_str()), wisp_runtime_core::queue::Run::Idle);
+        self.host.track("btw", json!({ "agent": s.agent, "forked": fork, "running": running }));
         let run = HarnessRun {
             session_id: s.id.0.clone(),
             prompt: a.question,

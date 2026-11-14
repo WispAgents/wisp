@@ -136,12 +136,15 @@ export default function StuffPage(props: { readonly client: PluginClient }): JSX
   };
 
   const upload = (files: FileList | null): void => {
-    for (const f of Array.from(files ?? [])) {
-      // the bytes go to My Stuff's upload route on this computer; its rows follow on the stuff topic
+    const all = Array.from(files ?? []);
+    all.forEach((f, i) => {
+      // the bytes go to My Stuff's upload route on this computer; its rows follow on the stuff topic. The first says how
+      // many came together (`of`): v1's one stuff_add per drop
+      const of = i === 0 ? `&of=${all.length}` : '';
       c.http(c.home)
-        .send({ method: 'POST', path: `/stuff/upload?name=${encodeURIComponent(f.name)}&type=${encodeURIComponent(f.type)}`, body: f, contentType: 'application/octet-stream' })
+        .send({ method: 'POST', path: `/stuff/upload?name=${encodeURIComponent(f.name)}&type=${encodeURIComponent(f.type)}${of}`, body: f, contentType: 'application/octet-stream' })
         .catch((e: unknown) => shell.toast.error(e instanceof Error ? e.message : String(e)));
-    }
+    });
   };
   let picker: HTMLInputElement | undefined;
 

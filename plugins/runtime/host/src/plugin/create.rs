@@ -47,6 +47,15 @@ async fn create(ctx: &Ctx, call: &Call, slot: &Slot, kinds: &Kinds, a: StartArgs
         a.prompt = rest;
         a.terminal = true;
     }
+    // the client's id for it (the row and page it shows): checked before anything is made; one that exists is this
+    // create sent again (after a restart), answered with the task it made, nothing made twice
+    if let Some(id) = a.id.clone()
+        && rt(slot)?.claimed(&id).await.map_err(WireError::from)?
+    {
+        return Ok(c::Created { id, turn_id: None });
+    }
+    // a task you start under another is a side discussion (`/side`, a row's Side discussion…): v1's `side_task`
+    let side_of = a.parent_id.clone().filter(|_| call.caller().set.starts_with("user"));
     let (store, proc) = (ctx.service::<Store>()?, ctx.service::<Proc>()?);
     let home = wisp_kernel::services::paths(ctx).ok().map(|p| p.home().to_owned());
     // a worktree of its own: made before the first turn, the project's setup run in it
@@ -79,6 +88,11 @@ async fn create(ctx: &Ctx, call: &Call, slot: &Slot, kinds: &Kinds, a: StartArgs
     for text in p.steps {
         let f = c::FollowUpArgs { id: made.id.clone(), text, queue: Some(true), by: Some("step".into()), ..c::FollowUpArgs::default() };
         rt.follow_up(f).await.map_err(WireError::from)?;
+    }
+    if let Some(main) = side_of {
+        let running = !matches!(rt.run_state(main.as_str()), wisp_runtime_core::queue::Run::Idle);
+        let agent = rt.get(made.id.as_str()).await.map(|x| x.agent).unwrap_or_default();
+        super::track(ctx, "side_task", serde_json::json!({ "agent": agent, "running": running })).await;
     }
     Ok(made)
 }

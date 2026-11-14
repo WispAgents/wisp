@@ -146,7 +146,8 @@ pub async fn install(ctx: &Ctx, a: &InstallArgs) -> Result<Installed> {
         return Err(WireError::invalid("say where the plugin is: a folder or a git URL"));
     }
     let staging = root.join(format!(".incoming-{}", wisp_kernel::ids::uuid7()));
-    let fetched: std::result::Result<(), String> = if IS_URL.iter().any(|p| source.starts_with(p)) {
+    let from_url = IS_URL.iter().any(|p| source.starts_with(p));
+    let fetched: std::result::Result<(), String> = if from_url {
         let proc = ctx.service::<Proc>()?;
         let opts =
             ExecOpts { cwd: Some(root.clone()), timeout: Some(Duration::from_secs(120)), max_output: 1 << 20, ..ExecOpts::default() };
@@ -195,6 +196,7 @@ pub async fn install(ctx: &Ctx, a: &InstallArgs) -> Result<Installed> {
     let text = tokio::fs::read_to_string(dir.join(MANIFEST)).await.unwrap_or_default();
     // what's installed starts untrusted, a reinstall too: trusting it again is your call
     ctx.install_plugin(Arc::new(read(&dir, &text, false)?)).await?;
+    track(ctx, "spell_installed", installed_props(from_url, m.server.as_ref())).await;
     Ok(Installed {
         id: m.id.clone(),
         name: m.name.clone().unwrap_or_else(|| m.id.clone()),
@@ -202,6 +204,22 @@ pub async fn install(ctx: &Ctx, a: &InstallArgs) -> Result<Installed> {
         permissions: m.permissions.clone(),
         folder: dir.display().to_string(),
     })
+}
+
+/// v1's `spell_installed` (plugins replace spells, ADR-0031): where it came from (`url` or `local`), that it's off
+/// (an install always is), and its kind (`exec` or `declarative`): never its id, name or source.
+pub fn installed_props(from_url: bool, server: Option<&serde_json::Value>) -> serde_json::Value {
+    let exec = server.and_then(|s| s.get("exec")).is_some_and(|e| !e.is_null());
+    serde_json::json!({ "source": if from_url { "url" } else { "local" }, "enabled": false, "kind": if exec { "exec" } else { "declarative" } })
+}
+
+/// A usage event this plugin owns (wisp.telemetry's catalogue); a refusal is only logged.
+async fn track(ctx: &Ctx, event: &str, props: serde_json::Value) {
+    let props = props.as_object().cloned().unwrap_or_default();
+    let a = wisp_telemetry_api::TrackArgs { event: event.into(), props };
+    if let Err(err) = ctx.run::<wisp_telemetry_api::Track>(&ctx.root_call(), a).await {
+        tracing::warn!(error = %err.message, event, "plugins: telemetry.track");
+    }
 }
 
 /// `plugins.uninstall`: off, out of the kernel, and its folder deleted.
@@ -245,6 +263,14 @@ pub async fn trust(ctx: &Ctx, a: &TrustArgs) -> Result<serde_json::Value> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// v1's `spell_installed`, for a plugin: where from and what kind, as fixed values (an install is always off).
+    #[test]
+    fn an_install_counts_as_spell_installed_with_fixed_values_only() {
+        let exec = serde_json::json!({ "exec": ["node", "main.js"] });
+        assert_eq!(installed_props(true, Some(&exec)), serde_json::json!({ "source": "url", "enabled": false, "kind": "exec" }));
+        assert_eq!(installed_props(false, None), serde_json::json!({ "source": "local", "enabled": false, "kind": "declarative" }));
+    }
 
     /// The box says "~/code/my-plugin": that is a folder under your home, not a folder named `~` (it was refused as
     /// "has no wisp-plugin.json"). `~bob` and plain paths stay as typed.

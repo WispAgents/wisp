@@ -55,7 +55,7 @@ mod trial;
 use ctx_host::{CtxHost, Tree};
 
 /// A catalogue event for the fact this plugin owns (ADR-0021); never fails the command that caused it.
-async fn track(ctx: &wisp_kernel::Ctx, event: &str, props: serde_json::Value) {
+pub(crate) async fn track(ctx: &wisp_kernel::Ctx, event: &str, props: serde_json::Value) {
     let props = match props {
         serde_json::Value::Object(m) => m,
         _ => serde_json::Map::new(),
