@@ -7,7 +7,7 @@ import '@wisp/ui/styles';
 import { createSignal } from 'solid-js';
 import { browserHistory, createClient, defineCommand, effect, httpTransport, indexedDBPersist, peerId, untracked, uuidv7, type PeerConfig, type PeerId } from '@wisp/client';
 import { commandErrorToast, createShell, detectPlatform, remoteUiDefs, type RemoteUi } from '@wisp/shell';
-import { createToaster } from '@wisp/ui';
+import { createToaster, preloadControls } from '@wisp/ui';
 import { shellSettingsUi } from '@wisp-plugin/shell-settings-ui';
 import { startNotifier } from '@wisp-plugin/shell-home-ui';
 import { pluginUis } from './plugins.ts';
@@ -148,6 +148,10 @@ void client.start([{ peer: home, name: 'wisp', transport: httpTransport({ base: 
   const root = document.getElementById('app');
   if (root) shell.render(root);
   performance.mark('wisp:painted');
+  // ADR-0011: the overlays' machines load apart from the first page; fetched once it's up, so a press finds them there
+  const preload = (): void => void preloadControls().catch(() => undefined);
+  if ('requestIdleCallback' in window) window.requestIdleCallback(preload, { timeout: 2000 });
+  else client.scope.timeout(200, preload);
 });
 
 // what's waiting (rows, drafts) is written before the page goes away

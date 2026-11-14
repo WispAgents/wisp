@@ -27,3 +27,14 @@ test('every plugin UI registers, and the frame areas have their plugins', () => 
   const areas = pluginUis().flatMap(({ def }) => (def?.extensions ?? []).map((e) => e.attachTo.id));
   for (const area of ['shell.sidebar:list', 'shell.task:band', 'shell.task:foot', 'shell.side:changes']) expect(areas, area).toContain(area);
 });
+
+test('every plugin UI that has a later part (ADR-0067) loads it, and it holds only what a press reaches, its ids its own', async () => {
+  const withLater = pluginUis().flatMap(({ path, def }) => (def?.later ? [{ path, def, later: def.later }] : []));
+  expect(withLater.length).toBeGreaterThan(5);
+  for (const { path, def, later } of withLater) {
+    const part = (await later()).default;
+    expect(Object.keys(part).filter((k) => !['extensions', 'palette', 'shortcuts', 'prompt', 'sideTabs'].includes(k)), path).toEqual([]);
+    const ns = def.id.replace(/^wisp\./, '');
+    for (const e of part.extensions ?? []) expect(e.id.startsWith(`${ns}.`) || e.id.startsWith(`${def.id}.`), `${path}: ${e.id}`).toBe(true);
+  }
+});

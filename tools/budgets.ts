@@ -3,14 +3,15 @@
 // serves (crates/wisp-api statics: brotli 11):
 //   initial JS   the entry module and every modulepreload index.html names   ≤ 120 KB br
 //   initial CSS  every stylesheet index.html links                              ≤ 30 KB br
-// Lazy chunks (a task's view, the palette, a plugin's screens) are listed, not budgeted: they load
-// when they show. The server half (cold start, RSS, list query, write amplification, patch latency)
+// Lazy chunks (a task's view, the palette, a plugin's screens) and the stylesheets that load with them are
+// listed, not budgeted: they load when they show. CI (.github/workflows/suite.yml) runs this after the web build and
+// fails on a miss; under GitHub Actions the numbers also go to the job summary ($GITHUB_STEP_SUMMARY). The server half (cold start, RSS, list query, write amplification, patch latency)
 // is measured by the Rust benches (crates/*/benches, spikes/*) and gated there.
 //
-//   node tools/budgets.ts [--dist=apps/web/dist] [--json]
+//   node tools/budgets.ts [--dist=apps/web/dist] [--json] [--summary=<file>]
 
 import { brotliCompressSync, constants } from 'node:zlib';
-import { readFileSync, readdirSync, existsSync } from 'node:fs';
+import { appendFileSync, readFileSync, readdirSync, existsSync } from 'node:fs';
 import { join, relative } from 'node:path';
 
 export const BUDGETS = { initialJsBr: 120 * 1024, initialCssBr: 30 * 1024 } as const;
@@ -39,6 +40,7 @@ export interface Measured {
   initialJs: { files: string[]; raw: number; br: number };
   initialCss: { files: string[]; raw: number; br: number };
   lazy: { file: string; br: number }[];
+  lazyCss: { file: string; br: number }[];
 }
 
 /** The files the first load fetches, read from index.html's tags. */
@@ -67,8 +69,41 @@ export function measure(dir: string): Measured {
   };
   const initial = new Set([...js, ...css].map((u) => u.replace(/^\//, '')));
   const assets = existsSync(join(dir, 'assets')) ? readdirSync(join(dir, 'assets')).map((f) => `assets/${f}`) : [];
-  const lazy = assets.filter((f) => f.endsWith('.js') && !initial.has(f)).map((file) => ({ file, br: br(readFileSync(join(dir, file))) }));
-  return { initialJs: sum(js), initialCss: sum(css), lazy: lazy.sort((a, b) => b.br - a.br) };
+  const later = (ext: string): { file: string; br: number }[] =>
+    assets
+      .filter((f) => f.endsWith(ext) && !initial.has(f))
+      .map((file) => ({ file, br: br(readFileSync(join(dir, file))) }))
+      .sort((a, b) => b.br - a.br);
+  return { initialJs: sum(js), initialCss: sum(css), lazy: later('.js'), lazyCss: later('.css') };
+}
+
+/** Each budget the build misses, in words. */
+export function overBudget(m: Measured, budgets: { initialJsBr: number; initialCssBr: number } = BUDGETS): string[] {
+  const over: string[] = [];
+  if (m.initialJs.br > budgets.initialJsBr) over.push(`initial JS ${kb(m.initialJs.br)} br > ${kb(budgets.initialJsBr)}`);
+  if (m.initialCss.br > budgets.initialCssBr) over.push(`initial CSS ${kb(m.initialCss.br)} br > ${kb(budgets.initialCssBr)}`);
+  return over;
+}
+
+/** The job summary: both budgets with their numbers, then the largest lazy chunks (markdown). */
+export function summary(m: Measured, budgets: { initialJsBr: number; initialCssBr: number } = BUDGETS, top = 10): string {
+  const row = (name: string, got: { br: number; raw: number; files: string[] }, max: number): string =>
+    `| ${name} | ${kb(got.br)} | ${kb(max)} | ${kb(got.raw)} | ${got.files.length} | ${got.br > max ? `❌ over by ${kb(got.br - max)}` : '✅'} |`;
+  const lazy = (list: { file: string; br: number }[]): string =>
+    list.length === 0 ? 'none' : list.slice(0, top).map((l) => `\`${l.file.replace('assets/', '')}\` ${kb(l.br)}`).join(', ');
+  return [
+    '### Bundle budgets (ADR-0011)',
+    '',
+    '| | brotli | budget | raw | files | |',
+    '|---|---:|---:|---:|---:|---|',
+    row('initial JS', m.initialJs, budgets.initialJsBr),
+    row('initial CSS', m.initialCss, budgets.initialCssBr),
+    '',
+    `Lazy JS: ${m.lazy.length} chunks, largest ${lazy(m.lazy)}.`,
+    '',
+    `Lazy CSS: ${m.lazyCss.length} sheets, largest ${lazy(m.lazyCss)}.`,
+    '',
+  ].join('\n');
 }
 
 function main(): void {
@@ -78,16 +113,18 @@ function main(): void {
     return;
   }
   const m = measure(dist);
-  const over: string[] = [];
-  if (m.initialJs.br > BUDGETS.initialJsBr) over.push(`initial JS ${kb(m.initialJs.br)} br > ${kb(BUDGETS.initialJsBr)}`);
-  if (m.initialCss.br > BUDGETS.initialCssBr) over.push(`initial CSS ${kb(m.initialCss.br)} br > ${kb(BUDGETS.initialCssBr)}`);
+  const over = overBudget(m);
+  const to = arg('summary') ?? process.env['GITHUB_STEP_SUMMARY'];
+  if (to) appendFileSync(to, summary(m));
   if (process.argv.includes('--json')) {
     console.log(JSON.stringify({ ...m, budgets: BUDGETS, over }, null, 2));
   } else {
     console.log(`initial JS   ${kb(m.initialJs.br).padStart(9)} br  (${kb(m.initialJs.raw)} raw, ${m.initialJs.files.length} files)  budget ${kb(BUDGETS.initialJsBr)}`);
     console.log(`initial CSS  ${kb(m.initialCss.br).padStart(9)} br  (${kb(m.initialCss.raw)} raw, ${m.initialCss.files.length} files)  budget ${kb(BUDGETS.initialCssBr)}`);
     console.log(`lazy chunks  ${m.lazy.length}, largest: ${m.lazy.slice(0, 5).map((l) => `${l.file.replace('assets/', '')} ${kb(l.br)}`).join(', ') || 'none'}`);
-    for (const o of over) console.error(`OVER BUDGET: ${o}`);
+    console.log(`lazy CSS     ${m.lazyCss.length}, largest: ${m.lazyCss.slice(0, 5).map((l) => `${l.file.replace('assets/', '')} ${kb(l.br)}`).join(', ') || 'none'}`);
+    // a GitHub annotation on the run as well as the log line
+    for (const o of over) console.error(`${process.env['GITHUB_ACTIONS'] ? '::error title=Bundle budget::' : ''}OVER BUDGET: ${o}`);
   }
   process.exitCode = over.length > 0 ? 1 : 0;
 }

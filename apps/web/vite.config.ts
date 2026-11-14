@@ -18,6 +18,22 @@ function build(): string {
   }
 }
 
+const REPO = fileURLToPath(new URL('../../', import.meta.url)).replace(/\\/g, '/');
+
+/** ADR-0011 budgets: our own TS modules (packages/*, plugins/*) have no import-time side effects, so a module whose
+ * exports nothing uses stays out of the bundle, and one only a lazy chunk uses goes there instead of the entry.
+ * (Solid's compiled components end in a top-level `delegateEvents([...])`, which rollup would otherwise keep, and
+ * with it the whole module.) Stylesheets and the kit's `*styles.ts` modules, which load CSS by being imported, keep
+ * theirs; so do the `i18n/lazy.ts` modules, which add a package's lazily used strings to its catalogue by being imported
+ * (only from lazily loaded modules, so the strings load with them); so does everything in node_modules. */
+export function moduleSideEffects(id: string): boolean {
+  const path = id.replace(/\\/g, '/').replace(/\?.*$/, '');
+  if (!path.startsWith(REPO)) return true;
+  const rel = path.slice(REPO.length);
+  if (rel.includes('node_modules/') || !/^(packages|plugins)\//.test(rel) || !/\.tsx?$/.test(rel)) return true;
+  return /^packages\/ui\/src\/(shell|platform)\/[\w-]*styles\.ts$/.test(rel) || /^(packages\/shell\/src|plugins\/[\w-]+\/ui\/src)\/i18n\/lazy\.ts$/.test(rel);
+}
+
 export default defineConfig(({ command }) => ({
   root: fileURLToPath(new URL('.', import.meta.url)),
   plugins: [solid(), ...(command === 'serve' && process.env['WISP_MOCK'] !== '0' ? [mockPeer()] : [])],
@@ -30,6 +46,7 @@ export default defineConfig(({ command }) => ({
     target: 'es2022',
     modulePreload: { polyfill: false },
     rollupOptions: {
+      treeshake: { moduleSideEffects },
       input: { index: fileURLToPath(new URL('index.html', import.meta.url)), sw: fileURLToPath(new URL('../../packages/shell/src/platform/sw.ts', import.meta.url)) },
       output: {
         entryFileNames: (chunk) => (chunk.name === 'sw' ? 'sw.js' : 'assets/[name]-[hash].js'),

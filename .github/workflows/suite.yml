@@ -68,7 +68,8 @@ jobs:
           components: clippy, rustfmt
       - uses: Swatinem/rust-cache@v2
 
-      - run: npm ci --no-audit --no-fund
+      - id: install
+        run: npm ci --no-audit --no-fund
       - run: npm run check
       - run: npm run typecheck
       - name: cargo fmt
@@ -109,6 +110,18 @@ jobs:
           done
           cp verify-all-1.json verify-all.json
           [ "$failed" = 0 ]
+
+      # ADR-0011: the web bundle's budgets (initial JS ≤ 120 KB br, initial CSS ≤ 30 KB br), measured on the
+      # production build; a miss fails the job, and the numbers go to the job summary. Runs even after an earlier
+      # step failed, so every PR shows where the bundle stands. Once per run: Linux, the first Node of the matrix (the
+      # bundle doesn't vary by OS or Node).
+      - name: web build
+        id: web-build
+        if: (success() || failure()) && steps.install.outcome == 'success' && runner.os == 'Linux' && matrix.node == fromJSON(inputs.node)[0]
+        run: npm run build --workspace @wisp/web
+      - name: bundle budgets
+        if: (success() || failure()) && steps.web-build.outcome == 'success'
+        run: npm run budgets
 
       # The published bundle still builds (v1 ran prepublishOnly here), once tools/bundle.ts exists.
       - if: hashFiles('tools/bundle.ts') != ''
