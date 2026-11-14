@@ -326,6 +326,7 @@ impl Runtime {
         crate::setup::record(
             self.repo.store.clone(),
             Arc::new(self.proc.clone()),
+            self.probes.clone(),
             self.host.net(),
             harness,
             s.id.0.clone(),

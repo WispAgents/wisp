@@ -217,7 +217,14 @@ async fn hung_probes(
     let api = Api { http: reqwest::Client::new(), port, n: 0.into() };
     // what the server probes by itself at start (its own detects time out at 15 s, so a few seconds hold still)
     let before: Vec<u32> = settled(&rec, Duration::from_secs(1), Duration::from_secs(8)).await.into_iter().map(|(_, p)| p).collect();
-    let agents = tokio::spawn(async move { api.try_cmd("runtime.agents", json!({})).await });
+    // a probe runs once however many ask (round 212): a request made while those run joins them, and after they timed
+    // out it answers with their hang. So the request's own probes are a Re-check (`fresh`) once the start's ended.
+    let at = Instant::now();
+    while before.iter().any(|&p| alive(p)) {
+        assert!(at.elapsed() < Duration::from_secs(25), "the start's probes outlived their time limit");
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+    let agents = tokio::spawn(async move { api.try_cmd("runtime.agents", json!({ "fresh": "all" })).await });
     let at = Instant::now();
     let ours = loop {
         let all = settled(&rec, Duration::from_millis(500), Duration::from_secs(5)).await;

@@ -26,6 +26,7 @@ mod mentions;
 mod more;
 mod ops;
 mod plugin;
+pub mod probes;
 mod reads;
 pub mod repo;
 pub mod rows;

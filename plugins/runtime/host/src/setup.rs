@@ -247,6 +247,7 @@ async fn harness_version(
 pub fn record(
     store: wisp_store::Store,
     proc: Arc<wisp_proc::Proc>,
+    probes: Arc<crate::probes::Probes>,
     net: Option<wisp_kernel::services::NetService>,
     harness: Option<Arc<dyn wisp_runtime_api::harness::Harness>>,
     id: String,
@@ -258,7 +259,8 @@ pub fn record(
         save(&store, &id, available.clone()).await;
         let mut a = available;
         if let Some(h) = harness {
-            let sys = crate::sys::ProcSys { proc: (*proc).clone() };
+            // through the memo: a task's start joins (or reads) the probes `runtime.agents` ran
+            let sys = crate::sys::ProcSys::probing((*proc).clone(), probes, false);
             if let Some(v) = harness_version(&h, &sys).await {
                 a["harnessVersion"] = json!(v);
             }

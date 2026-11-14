@@ -72,7 +72,7 @@ impl Runtime {
         mut rx: mpsc::Receiver<Output>,
         mut ctl: mpsc::UnboundedReceiver<Ctl>,
     ) {
-        let sys = ProcSys { proc: self.proc.clone() };
+        let sys = ProcSys::new(self.proc.clone());
         let seq = self.repo.next_seq(&sid).await.unwrap_or(1);
         // the .env values the task's earlier turns read (ADR-0050); a store that can't say is read again next turn
         let known = self.env_known(&sid).await.unwrap_or_else(|e| {

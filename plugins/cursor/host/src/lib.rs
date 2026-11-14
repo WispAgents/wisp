@@ -106,21 +106,21 @@ impl Harness for CursorHarness {
             let Some(bin) = bin else {
                 return HarnessFound { available: false, error: Some("Cursor isn't installed".into()), ..HarnessFound::default() };
             };
-            let Some(line) = output(sys, &bin, &["--version"]).await else {
+            // both at once: a CLI that hangs costs one time limit, not two
+            let found = wisp_harness_kit::probe::gated(output(sys, &bin, &["--version"]), output(sys, &bin, &["--list-models"])).await;
+            let Some((line, listed)) = found else {
                 return HarnessFound { available: false, error: Some("cursor-agent --version failed".into()), ..HarnessFound::default() };
             };
             if let Ok(mut b) = self.bin.lock() {
                 *b = Some(bin.clone());
             }
             let mut models = vec![self.info.models[0].clone()];
-            models.extend(
-                list_models(&output(sys, &bin, &["--list-models"]).await.unwrap_or_default()).into_iter().map(|(id, label)| HarnessModel {
-                    hint: Some(id.clone()),
-                    id,
-                    label,
-                    efforts: Vec::new(),
-                }),
-            );
+            models.extend(list_models(&listed.unwrap_or_default()).into_iter().map(|(id, label)| HarnessModel {
+                hint: Some(id.clone()),
+                id,
+                label,
+                efforts: Vec::new(),
+            }));
             let v = version_in(&line);
             HarnessFound {
                 available: true,

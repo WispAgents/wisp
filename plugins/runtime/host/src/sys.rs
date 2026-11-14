@@ -2,6 +2,7 @@
 //! (detect, trust, has-session). Every call is async; nothing blocks a worker.
 
 use std::path::PathBuf;
+use std::sync::Arc;
 use std::time::Duration;
 
 use wisp_kernel::{BoxFuture, Result, WireError};
@@ -10,6 +11,20 @@ use wisp_runtime_api::harness::{ExecOut, ExecReq, HarnessSys};
 
 pub struct ProcSys {
     pub proc: Proc,
+    /// a detect's: its probes run once and are kept (`probes.rs`); `fresh`, Re-check: none kept answers
+    pub probes: Option<(Arc<crate::probes::Probes>, bool)>,
+}
+
+impl ProcSys {
+    /// Every exec runs as asked.
+    pub fn new(proc: Proc) -> Self {
+        Self { proc, probes: None }
+    }
+
+    /// A detect's: its probes go through the runtime's memo.
+    pub fn probing(proc: Proc, probes: Arc<crate::probes::Probes>, fresh: bool) -> Self {
+        Self { proc, probes: Some((probes, fresh)) }
+    }
 }
 
 impl std::fmt::Debug for ProcSys {
@@ -20,18 +35,25 @@ impl std::fmt::Debug for ProcSys {
 
 impl HarnessSys for ProcSys {
     fn exec(&self, req: ExecReq) -> BoxFuture<'_, Result<ExecOut>> {
-        let opts = ExecOpts {
-            cwd: req.cwd.map(PathBuf::from),
-            env: Env { set: req.env.into_iter().collect(), ..Env::default() },
-            input: req.stdin,
-            timeout: Some(Duration::from_millis(if req.timeout_ms == 0 { 30_000 } else { req.timeout_ms })),
-            ..ExecOpts::default()
+        let proc = self.proc.clone();
+        let start = move |req: ExecReq| -> BoxFuture<'static, Result<ExecOut>> {
+            let opts = ExecOpts {
+                cwd: req.cwd.map(PathBuf::from),
+                env: Env { set: req.env.into_iter().collect(), ..Env::default() },
+                input: req.stdin,
+                timeout: Some(Duration::from_millis(if req.timeout_ms == 0 { 30_000 } else { req.timeout_ms })),
+                ..ExecOpts::default()
+            };
+            let fut = proc.exec(&req.program, &req.args, opts);
+            Box::pin(async move {
+                let r = fut.await.map_err(WireError::from)?;
+                Ok(ExecOut { code: r.exit.code, stdout: r.stdout_text(), stderr: r.stderr_text(), timed_out: r.timed_out })
+            })
         };
-        let fut = self.proc.exec(&req.program, &req.args, opts);
-        Box::pin(async move {
-            let r = fut.await.map_err(WireError::from)?;
-            Ok(ExecOut { code: r.exit.code, stdout: r.stdout_text(), stderr: r.stderr_text(), timed_out: r.timed_out })
-        })
+        match &self.probes {
+            Some((probes, fresh)) => Box::pin(probes.exec(&self.proc, req, *fresh, start)),
+            None => start(req),
+        }
     }
     fn which(&self, program: &str) -> BoxFuture<'_, Option<String>> {
         let fut = self.proc.which(program, None);
@@ -122,7 +144,7 @@ mod tests {
         std::fs::write(dir.join("a.txt"), "y\n").unwrap();
         stamp(&dir.join("a.txt"));
         let scratch = dir.join(".git/wisp-test.index");
-        let sys = ProcSys { proc: wisp_proc::local() };
+        let sys = ProcSys::new(wisp_proc::local());
         let real = dir.join(".git/index");
         assert!(sys.copy_file(real.to_str().unwrap(), scratch.to_str().unwrap()).await);
         git(&dir, Some(&scratch), &["add", "--update"]);

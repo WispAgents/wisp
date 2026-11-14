@@ -202,7 +202,19 @@ impl Harness for CodexHarness {
 
     fn detect<'a>(&'a self, sys: &'a dyn HarnessSys) -> BoxFuture<'a, HarnessFound> {
         Box::pin(async move {
-            let Some((bin, line)) = Self::find_bin(sys).await else {
+            // the model list of the codex it will most likely find runs alongside the version check: a CLI that hangs
+            // costs one time limit, not two
+            let guess = match sys.env("WISP_CODEX_BIN").filter(|b| !b.is_empty()) {
+                Some(b) => Some(b),
+                None => sys.which(DEFAULT_BIN).await,
+            };
+            let listed = async {
+                match &guess {
+                    Some(b) => output(sys, b, &["debug", "models"], 10_000).await,
+                    None => None,
+                }
+            };
+            let Some(((bin, line), listed)) = wisp_harness_kit::probe::gated(Self::find_bin(sys), listed).await else {
                 return HarnessFound { available: false, error: Some("Codex isn't installed".into()), ..HarnessFound::default() };
             };
             let version = Some(version_in(&line)).filter(|v| !v.is_empty());
@@ -215,7 +227,9 @@ impl Harness for CodexHarness {
                 *f = Found { bin: Some(bin.clone()), developer: at_least && sys.platform() != "win32" && !own };
             }
             let mut list = None;
-            if let Some(out) = output(sys, &bin, &["debug", "models"], 10_000).await {
+            let listed =
+                if guess.as_deref() == Some(bin.as_str()) { listed } else { output(sys, &bin, &["debug", "models"], 10_000).await };
+            if let Some(out) = listed {
                 list = serde_json::from_str::<Value>(&out).ok().as_ref().and_then(models_in);
             }
             if list.is_none() {

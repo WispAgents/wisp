@@ -49,6 +49,8 @@ pub struct Runtime {
     pub(crate) quick_runs: crate::more::QuickRuns,
     /// each task's runs that are starting (a turn before its spawn, a /btw): a delete cancels them (`claims.rs`)
     pub(crate) claims: crate::claims::Claims,
+    /// the harness probes, run once and kept while their CLI is the same file (`probes.rs`, ADR-0011)
+    pub(crate) probes: Arc<crate::probes::Probes>,
 }
 
 impl std::fmt::Debug for Runtime {
@@ -67,7 +69,6 @@ impl Runtime {
             repo,
             host,
             proc,
-            clock,
             list: Mutex::default(),
             live: Mutex::default(),
             locks: Mutex::default(),
@@ -80,6 +81,8 @@ impl Runtime {
             caps: Mutex::default(),
             quick_runs: crate::more::QuickRuns::default(),
             claims: crate::claims::Claims::default(),
+            probes: Arc::new(crate::probes::Probes::new(clock.clone())),
+            clock,
         })
     }
 

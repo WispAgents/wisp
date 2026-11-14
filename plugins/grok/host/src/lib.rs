@@ -152,7 +152,9 @@ impl Harness for GrokHarness {
             let Some(bin) = bin else {
                 return HarnessFound { available: false, error: Some("Grok isn't installed".into()), ..HarnessFound::default() };
             };
-            let Some(line) = output(sys, &bin, &["--version"]).await else {
+            // both at once: a CLI that hangs costs one time limit, not two
+            let found = wisp_harness_kit::probe::gated(output(sys, &bin, &["--version"]), output(sys, &bin, &["models"])).await;
+            let Some((line, listed)) = found else {
                 return HarnessFound { available: false, error: Some("grok --version failed".into()), ..HarnessFound::default() };
             };
             if let Ok(mut b) = self.bin.lock() {
@@ -171,7 +173,7 @@ impl Harness for GrokHarness {
                 .await
                 .and_then(|t| serde_json::from_str(&t).ok())
                 .unwrap_or(Value::Null);
-            let (models, levels) = models_of(&output(sys, &bin, &["models"]).await.unwrap_or_default(), &cache);
+            let (models, levels) = models_of(&listed.unwrap_or_default(), &cache);
             if !models.is_empty() {
                 found.efforts = levels;
                 let mut all = vec![self.info.models[0].clone()];

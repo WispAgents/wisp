@@ -203,13 +203,16 @@ impl Harness for OpencodeHarness {
             if let Ok(mut f) = self.found.lock() {
                 *f = Found { bin: Some(bin.clone()), v2 };
             }
-            let mut models = verbose_models(&output(sys, &bin, &["models", "--verbose"]).await.unwrap_or_default());
-            if models.is_empty() {
-                models = plain_models(&output(sys, &bin, &["models"]).await.unwrap_or_default());
-            }
+            // the three at once (the plain list only read, and waited for, when the verbose one lists nothing): a CLI
+            // that hangs costs one time limit, not three
+            let verbose = async { Some(verbose_models(&output(sys, &bin, &["models", "--verbose"]).await?)).filter(|m| !m.is_empty()) };
+            let plain = async { Some(plain_models(&output(sys, &bin, &["models"]).await.unwrap_or_default())) };
+            let (models, auth) =
+                wisp_harness_kit::probe::both(wisp_harness_kit::probe::or_else(verbose, plain), output(sys, &bin, &["auth", "list"])).await;
+            let models = models.unwrap_or_default();
             let mut all = vec![self.info.models[0].clone()];
             all.extend(models);
-            let key = has_key(&output(sys, &bin, &["auth", "list"]).await.unwrap_or_default());
+            let key = has_key(&auth.unwrap_or_default());
             HarnessFound {
                 available: true,
                 version: Some(version).filter(|v| !v.is_empty()),

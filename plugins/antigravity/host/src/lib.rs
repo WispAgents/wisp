@@ -135,21 +135,28 @@ impl Harness for AntigravityHarness {
             let Some(bin) = bin else {
                 return HarnessFound { available: false, error: Some("Antigravity isn't installed".into()), ..HarnessFound::default() };
             };
-            let Some((line, _)) = output(sys, &bin, &["--version"]).await else {
+            // the three at once: a CLI that hangs costs one time limit, not three
+            let found = wisp_harness_kit::probe::gated(
+                output(sys, &bin, &["--version"]),
+                wisp_harness_kit::probe::both(output(sys, &bin, &["--help"]), output(sys, &bin, &["models"])),
+            )
+            .await;
+            let Some(((line, _), (help, listed))) = found else {
                 return HarnessFound { available: false, error: Some("agy --version failed".into()), ..HarnessFound::default() };
             };
             if let Ok(mut b) = self.bin.lock() {
                 *b = Some(bin.clone());
             }
             // agy prints its help to stderr
-            let help = output(sys, &bin, &["--help"]).await.map(|(o, e)| format!("{o}\n{e}")).unwrap_or_default();
+            let help = help.map(|(o, e)| format!("{o}\n{e}")).unwrap_or_default();
             let efforts = help_efforts(&help);
             let mut models = vec![self.info.models[0].clone()];
-            models.extend(
-                list_models(&output(sys, &bin, &["models"]).await.map(|(o, _)| o).unwrap_or_default())
-                    .into_iter()
-                    .map(|(id, label, _)| HarnessModel { hint: Some(id.clone()), id, label, efforts: Vec::new() }),
-            );
+            models.extend(list_models(&listed.map(|(o, _)| o).unwrap_or_default()).into_iter().map(|(id, label, _)| HarnessModel {
+                hint: Some(id.clone()),
+                id,
+                label,
+                efforts: Vec::new(),
+            }));
             let v = version_in(&line);
             HarnessFound {
                 available: true,

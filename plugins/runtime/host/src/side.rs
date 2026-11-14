@@ -104,7 +104,7 @@ impl Runtime {
             handle.write(b.clone())?;
             handle.close_stdin();
         }
-        let sys = ProcSys { proc: self.proc.clone() };
+        let sys = ProcSys::new(self.proc.clone());
         let mut driver = h.driver(run);
         // a /btw or a goal check on a task knows what the task's turns read (ADR-0050)
         let known = if run.session_id.is_empty() { Ok(EnvValues::default()) } else { self.env_known(&run.session_id).await };

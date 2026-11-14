@@ -151,14 +151,20 @@ impl Harness for CopilotHarness {
             let Some(bin) = bin else {
                 return HarnessFound { available: false, error: Some("Copilot isn't installed".into()), ..HarnessFound::default() };
             };
-            let Some(line) = output(sys, &bin, &["--version"]).await else {
+            // the three at once: a CLI that hangs costs one time limit, not three
+            let found = wisp_harness_kit::probe::gated(
+                output(sys, &bin, &["--version"]),
+                wisp_harness_kit::probe::both(output(sys, &bin, &["help", "config"]), output(sys, &bin, &["--help"])),
+            )
+            .await;
+            let Some((line, (config, help))) = found else {
                 return HarnessFound { available: false, error: Some("copilot --version failed".into()), ..HarnessFound::default() };
             };
             if let Ok(mut b) = self.bin.lock() {
                 *b = Some(bin.clone());
             }
-            let ids = model_ids(&output(sys, &bin, &["help", "config"]).await.unwrap_or_default());
-            let efforts = help_efforts(&output(sys, &bin, &["--help"]).await.unwrap_or_default());
+            let ids = model_ids(&config.unwrap_or_default());
+            let efforts = help_efforts(&help.unwrap_or_default());
             let v = version_in(&line);
             let mut found = HarnessFound {
                 available: true,

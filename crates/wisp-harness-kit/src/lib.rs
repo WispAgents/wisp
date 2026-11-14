@@ -13,6 +13,7 @@ pub mod js;
 pub mod lines;
 pub mod parser;
 pub mod paths;
+pub mod probe;
 pub mod protocol;
 pub mod re;
 pub mod text;
