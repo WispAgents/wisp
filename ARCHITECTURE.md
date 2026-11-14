@@ -98,7 +98,8 @@ Checked by `npm run check` (`tools/check`: the TypeScript rules and the Rust one
    ← ui ← client ← shell ← plugins/*/ui ← apps.
 2. **No cycles** between crates, packages or files.
 3. **CSS only in `packages/ui`**; no `class`/`style` outside it (ADR-0007); nothing wraps that shouldn't
-   (ADR-0012).
+   (ADR-0012). Features don't know the platform: only `packages/ui`, `packages/tokens` and
+   `packages/shell/src/platform` read `data-platform` or compare `platform.kind` with a phone (`platform-branch`, ADR-0065).
 4. **State has one home** on the client (ADR-0006). **One write path** on the server (ADR-0004).
 5. **Default deny:** every command, route and MCP tool is named by a capability set (ADR-0008).
 6. **Contracts are versioned:** protocol shapes diffed against released snapshots; points and services carry
