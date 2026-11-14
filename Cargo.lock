@@ -5786,6 +5786,7 @@ dependencies = [
  "tokio",
  "tracing",
  "wisp-kernel",
+ "wisp-proc",
  "wisp-router-api",
  "wisp-runtime-api",
  "wisp-store",

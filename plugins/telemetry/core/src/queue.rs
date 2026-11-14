@@ -105,7 +105,7 @@ impl Telemetry {
         }
         let id = self.install_id.clone().filter(|_| self.enabled()).unwrap_or(one_off);
         if let Some(t) = props.get("text").and_then(Value::as_str).filter(|t| !t.is_empty()) {
-            let t = if self.scrub.home.is_empty() { t.to_owned() } else { t.replace(&self.scrub.home, "~") };
+            let t = crate::scrub::replace_home(t, &self.scrub);
             props.insert("text".into(), json!(slice_utf16(&t, FEEDBACK_MAX)));
         } else {
             props.remove("text");

@@ -345,12 +345,13 @@ impl Plugin for TelemetryPlugin {
                 node: std::env::var("WISP_NODE_VERSION").ok(),
                 shell: wisp_telemetry_core::shell_of(&e).into(),
             };
-            let home = std::env::var("HOME").unwrap_or_default();
+            let (home, also_home) = homes().await;
             let mut t = Telemetry::new(
                 e,
                 common.props(),
                 ScrubOptions {
                     home,
+                    also_home,
                     root: std::env::current_exe()
                         .ok()
                         .and_then(|p| p.parent().map(|d| d.to_string_lossy().into_owned()))
@@ -395,6 +396,32 @@ impl Plugin for TelemetryPlugin {
         });
         Ok(())
     }
+}
+
+/// The user's home and its other spellings, for the scrubber: `HOME`, else `USERPROFILE` (Windows sets only
+/// that); both when they differ; the long canonical path; and the 8.3 short name (`C:\\Users\\RUNNER~1`) the
+/// system's own folders (`TEMP`, …) are spelled with.
+async fn homes() -> (String, Vec<String>) {
+    let var = |k: &str| std::env::var(k).ok().filter(|v| !v.is_empty());
+    let home = var("HOME").or_else(|| var("USERPROFILE")).unwrap_or_default();
+    if home.is_empty() {
+        return (home, Vec::new());
+    }
+    let mut also: Vec<String> = var("USERPROFILE").into_iter().filter(|p| *p != home).collect();
+    let long = wisp_proc::canonical(&home).await.map_or_else(|_| home.clone(), |p| p.to_string_lossy().into_owned());
+    also.push(long.clone());
+    let mut seen = Vec::new();
+    for k in ["TEMP", "TMP", "LOCALAPPDATA", "APPDATA"] {
+        if let Some(given) = var(k)
+            && let Ok(l) = wisp_proc::canonical(&given).await
+        {
+            seen.push((given, l.to_string_lossy().into_owned()));
+        }
+    }
+    also.extend(wisp_telemetry_core::scrub::short_homes(&long, &seen));
+    also.retain(|a| *a != home);
+    also.dedup();
+    (home, also)
 }
 
 #[cfg(test)]

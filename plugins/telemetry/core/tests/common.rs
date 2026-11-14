@@ -31,7 +31,7 @@ pub fn common() -> Props {
 }
 
 pub fn scrub() -> ScrubOptions {
-    ScrubOptions { home: HOME.into(), root: ROOT.into() }
+    ScrubOptions { home: HOME.into(), root: ROOT.into(), also_home: Vec::new() }
 }
 
 pub fn env(pairs: &[(&str, &str)]) -> Env {

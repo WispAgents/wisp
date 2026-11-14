@@ -45,8 +45,10 @@ impl Command for Refuse {
     type Out = Value;
 }
 
+/// The home as the system spells it (Windows sets `USERPROFILE`, not `HOME`).
 fn home() -> String {
-    std::env::var("HOME").unwrap_or_default()
+    let var = |k: &str| std::env::var(k).ok().filter(|v| !v.is_empty());
+    var("HOME").or_else(|| var("USERPROFILE")).unwrap_or_default()
 }
 
 struct Acme(Got);
