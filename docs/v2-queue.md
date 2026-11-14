@@ -544,3 +544,5 @@ alone.
 ## After v2 is 100% (owner, 2026-11-14)
 
 When every v1 row is built and the full suite has passed several runs in a row (no flakes), list the Linear tickets in TODO and work them, one concern per fresh coder. Not before.
+
+Then QA (owner, 2026-11-14): separate QA agents with little context (no known-bug list, no hints) each drive the real app (real `wisp serve`, fake agents, temp home, free port) through user journeys and find bugs by themselves; their findings go into one list; each bug goes to its own fresh coder. The lead does no QA itself.
