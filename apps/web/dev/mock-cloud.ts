@@ -36,12 +36,13 @@ function current(ctx: CommandCtx): { id: string; row: Row } {
   return { id: 'this', row: { signedIn: false, grid: '', handle: '', machine: '', computer: null, signin: null, accounts: [] } };
 }
 
-/** The row with `list` as its accounts, its own fields the current one's (view.rs `row`). */
+/** The row with `list` as its accounts, its own fields the current one's (view.rs `row`); the answer is lib.rs `status`
+ * (`preview` is "": the mock is never a grid box's wisp, ADR-0064). */
 function rewrite(ctx: CommandCtx, list: MockAccount[]): { ops: EntityOp[]; result: unknown } {
   const { id, row } = current(ctx);
   const c = list.find((a) => a.current);
   const v = { ...row, signedIn: !!c, grid: c?.grid ?? '', handle: c?.handle ?? '', machine: c?.machine ?? '', accounts: list };
-  const status = { signedIn: v.signedIn, grid: v.grid, handle: v.handle, machine: v.machine, computer: row['computer'] ?? { on: false, state: 'off', label: '', url: '', error: '' }, accounts: list };
+  const status = { signedIn: v.signedIn, grid: v.grid, handle: v.handle, machine: v.machine, computer: row['computer'] ?? { on: false, state: 'off', label: '', url: '', error: '' }, accounts: list, preview: '' };
   return { ops: [{ topic: CLOUD_TOPIC, e: 'grid-client.cloud', id, op: 'upsert', v }], result: status };
 }
 
