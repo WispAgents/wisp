@@ -4,7 +4,7 @@
 use std::path::{Path, PathBuf};
 
 use wisp_git_api::{CheckoutArgs, CloneRequest, Cloned, Origin};
-use wisp_git_core::repo_url::{REPO_ROOTS, same_repo};
+use wisp_git_core::repo_url::{REPO_ROOTS, native_folder, same_repo};
 
 use crate::error::Result;
 use crate::service::GitServiceImpl;
@@ -20,7 +20,8 @@ impl GitServiceImpl {
         if origin.is_empty() {
             return Origin::default();
         }
-        let root = self.git.quiet(dir, &["rev-parse", "--show-toplevel"]).await.trim().to_owned();
+        // git prints `C:/x` on Windows: the folder is given back as the OS spells it (`C:\x`)
+        let root = native_folder(self.git.quiet(dir, &["rev-parse", "--show-toplevel"]).await.trim());
         Origin { origin, root }
     }
 

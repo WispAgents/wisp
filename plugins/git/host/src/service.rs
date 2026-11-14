@@ -8,6 +8,7 @@ use std::sync::{Arc, Mutex};
 
 use wisp_git_api::{Blobs, CloneRequest, Cloned, Fut, GitService, Repo, RepoInfo, Tools};
 use wisp_kernel::{Call, CancellationToken, WireError};
+use wisp_runtime_api::paths::same_folder;
 
 use crate::error::{GitError, Result};
 use crate::repo::{Inner, RepoImpl};
@@ -124,7 +125,7 @@ impl GitServiceImpl {
             let origin = self.git.quiet(&dir, &["remote", "get-url", "origin"]).await;
             let top = self.git.quiet(&dir, &["rev-parse", "--show-toplevel"]).await;
             if !origin.is_empty()
-                && canonical(&top).await == canonical(&dir.to_string_lossy()).await
+                && same_folder(&canonical(top.trim()).await.to_string_lossy(), &canonical(&dir.to_string_lossy()).await.to_string_lossy())
                 && wisp_git_core::repo_url::same_repo(&origin, &repo.url)
             {
                 return Ok(Cloned { dir: dir.display().to_string(), existed: true });
@@ -146,7 +147,7 @@ impl GitServiceImpl {
                 }
                 Err(e) => {
                     last = e.to_string();
-                    let _ = tokio::fs::remove_dir_all(&dir).await; // a half clone would block the next try
+                    let _ = wisp_proc::remove_tree(&dir).await; // a half clone would block the next try
                 }
             }
         }

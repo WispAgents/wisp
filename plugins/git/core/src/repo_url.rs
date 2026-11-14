@@ -51,8 +51,43 @@ fn is_url(s: &str) -> bool {
         || low.starts_with("www.github.com/")
 }
 
+/// `C:…` (a drive letter and its colon, then a separator or nothing): a Windows path, whatever OS reads it.
+fn is_drive(p: &str) -> bool {
+    let b = p.as_bytes();
+    b.len() >= 2 && b[0].is_ascii_alphabetic() && b[1] == b':' && b.get(2).is_none_or(|c| matches!(c, b'\\' | b'/'))
+}
+
+/// A folder as the `file://` URL git takes (2026-11-14): `/srv/x.git` → `file:///srv/x.git`; on Windows
+/// `C:\a\b.git` (or `C:/a/b.git`) → `file:///C:/a/b.git` and `\\host\share\x` → `file://host/share/x`. Never
+/// `file://C:\…`: git (and `parse_repo`) read `C:` there as a host.
+#[must_use]
+pub fn file_url(path: &str) -> String {
+    let p = path.trim();
+    if let Some(unc) = p.strip_prefix(r"\\") {
+        return format!("file://{}", unc.replace('\\', "/"));
+    }
+    if is_drive(p) {
+        return format!("file:///{}", p.replace('\\', "/"));
+    }
+    format!("file://{p}")
+}
+
+/// A `file://` URL spelled with a Windows path (`file://C:\x`, `file:///C:\x`, `file://C:/x`), as `file:///C:/x`.
+fn windows_file_url(s: &str) -> Option<RepoUrl> {
+    let rest = s.get(..7).filter(|h| h.eq_ignore_ascii_case("file://")).and(s.get(7..))?;
+    let p = rest.strip_prefix('/').filter(|r| is_drive(r)).unwrap_or(rest);
+    if !is_drive(p) {
+        return None;
+    }
+    let p = p.replace('\\', "/");
+    of(format!("file:///{p}"), "", &p)
+}
+
 pub fn parse_repo(input: &str, shorthand: bool) -> Option<RepoUrl> {
     let s = input.trim();
+    if let Some(r) = windows_file_url(s) {
+        return Some(r);
+    }
     if is_url(s) {
         let full = if s.contains("://") { s.to_owned() } else { format!("https://{s}") };
         let (scheme, host, path) = split_url(&full)?;
@@ -96,15 +131,31 @@ fn scp(s: &str) -> Option<RepoUrl> {
     of(s.to_owned(), &host.to_ascii_lowercase(), path)
 }
 
-/// `parse_repo`, plus a plain absolute path to a repo on disk (an origin can be one).
+/// `parse_repo`, plus a plain absolute path to a repo on disk (an origin can be one): `/srv/x`, `C:\x`, `\\host\share\x`.
 pub fn repo_of(u: &str) -> Option<RepoUrl> {
-    parse_repo(u, false).or_else(|| u.starts_with('/').then(|| parse_repo(&format!("file://{u}"), false)).flatten())
+    let u = u.trim();
+    let path = u.starts_with('/') || u.starts_with(r"\\") || is_drive(u);
+    parse_repo(u, false).or_else(|| path.then(|| parse_repo(&file_url(u), false)).flatten())
 }
 
-/// The same repo however it was spelled (https vs ssh, .git or not, the host's case).
+/// A repo's folder as git prints it (`rev-parse --show-toplevel` says `C:/a/b` on Windows), in the OS's own spelling:
+/// a drive path gets `\`, any other is left as it is. Pure, so a Windows-shaped string reads the same everywhere.
+#[must_use]
+pub fn native_folder(path: &str) -> String {
+    if is_drive(path) { path.replace('/', "\\") } else { path.to_owned() }
+}
+
+/// The same repo however it was spelled (https vs ssh, .git or not, the host's case; a Windows folder's case and
+/// separators).
 pub fn same_repo(a: &str, b: &str) -> bool {
-    let key =
-        |u: &str| repo_of(u).map(|r| r.gh.map_or_else(|| format!("{}/{}", r.host, r.path), |g| format!("github.com/{}", g.to_lowercase())));
+    let key = |u: &str| {
+        repo_of(u).map(|r| {
+            r.gh.map_or_else(
+                || if is_drive(&r.path) { format!("/{}", r.path.to_lowercase()) } else { format!("{}/{}", r.host, r.path) },
+                |g| format!("github.com/{}", g.to_lowercase()),
+            )
+        })
+    };
     matches!((key(a), key(b)), (Some(x), Some(y)) if x == y)
 }
 
@@ -155,6 +206,37 @@ mod tests {
         assert!(same_repo("/srv/git/proj.git", "file:///srv/git/proj"));
         assert!(!same_repo("https://github.com/a/b", "https://github.com/a/c"));
         assert!(!same_repo("not a repo", "not a repo"));
+    }
+
+    /// `real_git.rs` on Windows: `file://C:\…` was refused as a repo URL (`C:` read as its host).
+    #[test]
+    fn a_windows_folder_is_a_file_url_git_takes_and_matches_its_other_spellings() {
+        assert_eq!(file_url(r"C:\Users\me\origin.git"), "file:///C:/Users/me/origin.git");
+        assert_eq!(file_url("C:/Users/me/origin.git"), "file:///C:/Users/me/origin.git");
+        assert_eq!(file_url(r"\\nas\git\proj.git"), "file://nas/git/proj.git");
+        assert_eq!(file_url("/srv/git/proj.git"), "file:///srv/git/proj.git");
+        for s in [
+            r"file://C:\Users\me\origin.git",
+            "file://C:/Users/me/origin.git",
+            r"file:///C:\Users\me\origin.git",
+            "FILE:///C:/Users/me/origin.git",
+        ] {
+            let r = parse_repo(s, false).unwrap_or_else(|| panic!("{s}"));
+            assert_eq!((r.url.as_str(), r.host.as_str(), r.name.as_str()), ("file:///C:/Users/me/origin.git", "", "origin"), "{s}");
+        }
+        assert!(same_repo(r"C:\Users\me\origin.git", r"file://C:\Users\me\origin.git"));
+        assert!(same_repo("c:/users/ME/origin", "file:///C:/Users/me/origin.git"), "a drive's case and separators");
+        assert!(!same_repo(r"C:\Users\me\origin.git", r"C:\Users\me\other.git"));
+        assert!(same_repo(r"\\nas\git\proj.git", "file://nas/git/proj"));
+        assert_eq!(parse_repo(r"C:\code\app", false), None, "a bare path stays a path");
+        assert!(!is_drive("C:x") && is_drive("C:") && is_drive("c:/") && !is_drive("/C:"));
+    }
+
+    #[test]
+    fn a_windows_top_folder_gets_its_own_separators() {
+        assert_eq!(native_folder("C:/Users/me/repo"), r"C:\Users\me\repo");
+        assert_eq!(native_folder("/home/me/repo"), "/home/me/repo");
+        assert_eq!(native_folder(""), "");
     }
 }
 
