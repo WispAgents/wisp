@@ -48,6 +48,12 @@ pub(super) fn validate_auth(cfg: &GridConfig) -> Result<()> {
     Ok(())
 }
 
+/// boxd's socket is a Unix socket on the Linux host, so `/run/…` is absolute wherever the config is checked
+/// (on Windows `Path::is_absolute` wants a drive, and refused every real config).
+fn socket_path(b: &str) -> bool {
+    b.starts_with('/') || Path::new(b).is_absolute()
+}
+
 pub(super) fn validate_hostd(cfg: &GridConfig) -> Result<()> {
     let h = &cfg.hostd;
     if h.driver != "process" && h.driver != "container" {
@@ -57,7 +63,7 @@ pub(super) fn validate_hostd(cfg: &GridConfig) -> Result<()> {
         )));
     }
     if let Some(b) = h.container.as_ref().and_then(|c| c.boxd.as_ref())
-        && !Path::new(b).is_absolute()
+        && !socket_path(b)
     {
         return Err(GridError::Config(
             "hostd.container.boxd: the path of boxd’s socket, e.g. /run/wisp-grid/box.sock (apps/grid/README.md → Isolation).".into(),
@@ -158,4 +164,13 @@ fn validate_mail(cfg: &mut GridConfig, dir: &Path, env: &Env) -> Result<()> {
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn boxds_socket_is_a_unix_path_on_every_os() {
+        assert!(super::socket_path("/run/wisp-grid/box.sock"), "a Linux socket path, also checked on Windows");
+        assert!(!super::socket_path("rel/box.sock") && !super::socket_path(r"rel\box.sock"));
+    }
 }
