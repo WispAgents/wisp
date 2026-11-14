@@ -64,6 +64,13 @@ pub(super) fn project_test(s: &mut Setup, tests_kind: Arc<StoredKind>) {
     });
 }
 
+/// A project's run line in the platform's shell: `sh -c` off Windows, `cmd.exe /d /s /c` on it, where there is no
+/// `sh` unless Git's happens to be on `PATH` (wisp-proc hands a `cmd /c` line to `ConPTY` as it is written).
+fn run_argv(line: &str, windows: bool) -> Vec<String> {
+    let v: &[&str] = if windows { &["cmd.exe", "/d", "/s", "/c"] } else { &["sh", "-c"] };
+    v.iter().map(|x| (*x).to_owned()).chain([line.to_owned()]).collect()
+}
+
 /// `runtime.projectRun`: a declared project's run scripts, in a shell terminal.
 pub(super) fn project_run(s: &mut Setup, projects: Arc<StoredKind>) {
     s.command::<c::ProjectRun, _, _>(move |ctx, call, a| {
@@ -75,7 +82,7 @@ pub(super) fn project_run(s: &mut Setup, projects: Arc<StoredKind>) {
             if p.run.is_empty() {
                 return Err(WireError::invalid(format!("{name} has no run scripts (run: in its project)")));
             }
-            let argv = vec!["sh".to_owned(), "-c".to_owned(), p.run.join(" && ")];
+            let argv = run_argv(&p.run.join(" && "), cfg!(windows));
             let args = wisp_terminal_api::commands::OpenArgs {
                 kind: wisp_terminal_api::TermKind::Shell,
                 id: format!("run:{name}"),
@@ -88,4 +95,18 @@ pub(super) fn project_run(s: &mut Setup, projects: Arc<StoredKind>) {
             serde_json::to_value(out).map_err(|e| WireError::invalid(format!("terminal.open: {e}")))
         }
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_projects_run_line_goes_to_cmd_exe_on_windows_and_sh_elsewhere() {
+        assert_eq!(run_argv("echo serving > ran.txt && npm start", false), ["sh", "-c", "echo serving > ran.txt && npm start"]);
+        assert_eq!(
+            run_argv("echo serving > ran.txt && npm start", true),
+            ["cmd.exe", "/d", "/s", "/c", "echo serving > ran.txt && npm start"]
+        );
+    }
 }

@@ -311,7 +311,10 @@ async fn defaults(a: &mut StartArgs, kinds: Option<&crate::kinds::Kinds>) {
 }
 
 /// Where a task runs, never the server's own folder (v1 `launch.js`): a folder that isn't there is refused,
-/// and a task with none gets an empty one of its own under `~/.wisp/scratch` (v1 `store.scratchDir`).
+/// and a task with none gets an empty one of its own under `~/.wisp/scratch` (v1 `store.scratchDir`), named by its
+/// canonical path as every other task folder is: the home can be reached through a symlink (macOS' `/var` is
+/// `/private/var`) or, on Windows, an 8.3 short name (`C:\Users\RUNNER~1\…` from `%TEMP%`), and a folder named two
+/// ways is two folders to every comparison after.
 pub async fn folder(home: Option<&std::path::Path>, a: &mut StartArgs) -> Result<()> {
     let cwd = a.cwd.clone().unwrap_or_default();
     if cwd.trim().is_empty() {
@@ -319,6 +322,7 @@ pub async fn folder(home: Option<&std::path::Path>, a: &mut StartArgs) -> Result
         tokio::fs::create_dir_all(&dir)
             .await
             .map_err(|e| WireError::internal(format!("couldn't make a scratch folder at {}: {e}", dir.display())))?;
+        let dir = wisp_proc::canonical(&dir).await.unwrap_or(dir);
         a.cwd = Some(dir.display().to_string());
         return Ok(());
     }
@@ -630,6 +634,23 @@ mod tests {
         let made = std::path::PathBuf::from(a.cwd.unwrap());
         assert!(made.is_absolute() && made.is_dir(), "{}", made.display());
         std::fs::remove_dir_all(made).ok();
+    }
+
+    /// A home reached through a symlink (as macOS' `/var` → `/private/var`; on Windows the same holds for an 8.3
+    /// short name such as `RUNNER~1`): the scratch folder is named by its canonical path, as a project folder is.
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn a_scratch_folder_is_named_by_its_canonical_path() {
+        let root = std::env::temp_dir().join(format!("wisp-scratch-canon-{}", std::process::id()));
+        let (real, link) = (root.join("real"), root.join("link"));
+        std::fs::create_dir_all(&real).unwrap();
+        std::os::unix::fs::symlink(&real, &link).unwrap();
+        let mut a = StartArgs::default();
+        folder(Some(&link), &mut a).await.unwrap();
+        let made = std::path::PathBuf::from(a.cwd.unwrap());
+        let canon = wisp_proc::canonical_blocking(&real).unwrap().join("scratch");
+        assert!(made.starts_with(&canon), "{} is under {}", made.display(), canon.display());
+        std::fs::remove_dir_all(root).ok();
     }
 
     #[test]

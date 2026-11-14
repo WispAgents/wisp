@@ -7,6 +7,8 @@ use std::collections::HashSet;
 
 use wisp_worktrees_api::{Offer, OfferItem};
 
+use wisp_runtime_api::paths::{folder_key, is_within, same_folder};
+
 use crate::removal::in_conductor;
 
 /// A worktree git lists for a project's main checkout (`git worktree list`), with its dirt.
@@ -31,7 +33,8 @@ fn name_of(path: &str) -> String {
 
 /// The offer for one project, or None when there's nothing to bring in. Left out: the main checkout,
 /// wisp's own worktrees (`<home>/worktrees/…`), folders a task already has, bare and prunable entries;
-/// a dismissed project offers nothing.
+/// a dismissed project offers nothing. Folders are compared by `folder_key` (`known` holds those keys): on Windows git
+/// lists `C:/x/app` for the `C:\x\app` wisp keeps.
 pub fn offer<S: std::hash::BuildHasher>(
     project: &str,
     root: &str,
@@ -44,13 +47,12 @@ pub fn offer<S: std::hash::BuildHasher>(
     if dismissed.iter().any(|d| d == project) {
         return None;
     }
-    let wisp_dir = format!("{}/", norm(wisp_dir));
     let mut items = Vec::new();
     let mut detached = 0;
     let mut conductor = false;
     for l in listed {
         let p = norm(&l.path);
-        if p.is_empty() || p == norm(root) || l.bare || l.prunable || p.starts_with(&wisp_dir) || known.contains(p) {
+        if p.is_empty() || same_folder(p, root) || l.bare || l.prunable || is_within(p, wisp_dir) || known.contains(&folder_key(p)) {
             continue;
         }
         if l.branch.is_empty() {
@@ -109,6 +111,25 @@ mod tests {
         assert_eq!(o.detached, 1);
         assert!(offer("app", "/src/app", &listed, &known, "/h/.wisp/worktrees", "/u", &["app".into()]).is_none(), "Not now stays");
         assert!(offer("app", "/src/app", &listed[..3], &known, "/h/.wisp/worktrees", "/u", &[]).is_none(), "nothing left: no offer");
+    }
+
+    /// Windows: git lists every worktree as `C:/…` while the project's root, wisp's worktrees folder and a task's
+    /// folder are kept as `C:\…` (and in any case): only the foreign one is offered.
+    #[test]
+    fn on_windows_git_s_forward_slashes_still_leave_out_the_checkout_wisp_s_own_and_known_ones() {
+        let listed = vec![
+            l("C:/Users/runneradmin/Temp/t/src/app", "main"),
+            l("C:/Users/runneradmin/Temp/t/h/worktrees/app-fix", "wisp/fix"),
+            l("C:/Users/runneradmin/Temp/t/src/app-known", "known"),
+            l("C:/Users/runneradmin/Temp/t/u/conductor/workspaces/app/oslo", "oslo"),
+        ];
+        let known: HashSet<String> = [folder_key(r"C:\Users\RunnerAdmin\Temp\t\src\app-known")].into();
+        let (root, wisp, home) =
+            (r"C:\Users\runneradmin\Temp\t\src\app", r"C:\Users\runneradmin\Temp\t\h\worktrees", r"C:\Users\runneradmin\Temp\t\u");
+        let o = offer("app", root, &listed, &known, wisp, home, &[]).unwrap();
+        let paths: Vec<&str> = o.items.iter().map(|i| i.path.as_str()).collect();
+        assert_eq!(paths, ["C:/Users/runneradmin/Temp/t/u/conductor/workspaces/app/oslo"]);
+        assert_eq!((o.from.as_str(), o.items[0].name.as_str()), ("Conductor", "oslo"));
     }
 
     #[test]
