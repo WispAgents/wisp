@@ -1,11 +1,47 @@
 // The `platform` module (plan §7): what differs between the browser, the Tauri desktop app and the
-// Capacitor Android app goes through this one interface, so no feature checks MOBILE or sniffs a
+// Capacitor phone apps (Android, iPhone: ADR-0065) goes through this one interface, so no feature checks MOBILE or sniffs a
 // user agent. Every call answers what happened ('unsupported' is an answer, never a throw), so a
 // feature can offer the action everywhere and say so where it can't.
 
 import type { Target } from '@wisp/client';
 
-export type PlatformKind = 'browser' | 'desktop' | 'android';
+export type PlatformKind = 'browser' | 'desktop' | 'android' | 'ios';
+
+/** The phone apps' look (ADR-0065 §5): what the shell writes as `data-platform` on <html>. The browser has none. */
+export type PlatformLook = 'android' | 'ios';
+
+/** Edge insets in CSS px: the status bar, the notch, the home indicator, the gesture bar. */
+export interface Insets {
+  readonly top: number;
+  readonly right: number;
+  readonly bottom: number;
+  readonly left: number;
+}
+
+/** The window's width class (M3 window size classes; design/mobile.md §A.3): compact < 600, medium < 840. */
+export type SizeClass = 'compact' | 'medium' | 'expanded';
+
+export interface Rect {
+  readonly x: number;
+  readonly y: number;
+  readonly width: number;
+  readonly height: number;
+}
+
+export interface WindowLayout {
+  readonly width: number;
+  readonly height: number;
+  readonly size: SizeClass;
+  /** a foldable's hinge (or the gap between its two screens) in page px; absent on a flat screen */
+  readonly hinge?: Rect;
+}
+
+/** Predictive Back (Android 14+) and the interactive edge swipe (iOS): the gesture's progress, then its end. */
+export type BackEvent =
+  | { readonly phase: 'start'; readonly edge: 'left' | 'right' }
+  | { readonly phase: 'progress'; readonly edge: 'left' | 'right'; /** 0–1 */ readonly progress: number }
+  | { readonly phase: 'cancel' }
+  | { readonly phase: 'commit' };
 
 export interface NotifyOptions {
   title: string;
@@ -55,6 +91,9 @@ export interface Platform {
   readonly kind: PlatformKind;
   /** touch-first and narrow: the phone layout's affordances (a FAB, press feedback) */
   readonly mobile: boolean;
+  /** added 2026-11-14 (additive, ADR-0065): a phone app (Android, iPhone), not a page in a phone's browser. The
+   * computer wisp runs on is elsewhere (no Show in folder), and rows swipe. Features ask this, never `kind`. */
+  readonly phone: boolean;
   /** installed (home-screen web app, or a native shell): the service worker serves the page */
   readonly standalone: boolean;
   /** ⌘ on Apple platforms, Ctrl elsewhere: how `mod+k` is shown and matched */
@@ -93,6 +132,19 @@ export interface Platform {
   onOpen(fn: (target: Target) => void): () => void;
   /** loads the page again (a new build is ready) */
   reload(): void;
+  /** added 2026-11-14 (additive, ADR-0065 §5): what the system draws over the page's edges now. A browser and
+   * the desktop app answer the page's own `env(safe-area-inset-*)` (zero where there is none). */
+  safeArea(): Insets;
+  /** added 2026-11-14 (additive): the window's size class and a foldable's hinge (the Viewport Segments API on the
+   * web; WindowLayoutInfo in the Android app) */
+  windowLayout(): WindowLayout;
+  /** added 2026-11-14 (additive): a page shown over the app and back (Custom Tabs, SFSafariViewController) for a
+   * preview; a browser opens a tab and the desktop app the system browser, as `openExternal` */
+  openInApp(url: string): void;
+  /** added 2026-11-14 (additive): the system's Back gesture with its progress (predictive Back on Android, the
+   * edge swipe on iOS). Returns the stop function. A browser and the desktop app never call it (their Back is
+   * the history's). */
+  onBack(fn: (e: BackEvent) => void): () => void;
 }
 
 /** The slice of `window` the implementations read; tests pass a fake. */
@@ -103,6 +155,11 @@ export interface PlatformWindow {
   addEventListener(type: string, fn: (e: Event) => void): void;
   removeEventListener(type: string, fn: (e: Event) => void): void;
   open(url: string, target?: string, features?: string): unknown;
+  readonly innerWidth?: number;
+  readonly innerHeight?: number;
+  /** the Viewport Segments API: one segment per screen of a foldable (Chrome 138+) */
+  readonly viewport?: { readonly segments?: readonly Rect[] | null };
+  getComputedStyle?(el: Element): CSSStyleDeclaration;
   readonly location: { reload(): void; readonly origin: string };
   readonly Notification?: typeof Notification;
   readonly __TAURI_INTERNALS__?: { invoke(cmd: string, args?: Record<string, unknown>): Promise<unknown> };
@@ -119,7 +176,7 @@ export interface AndroidBridge {
   dictateStop?(): void;
 }
 
-/** The part of Capacitor's global the Android implementation uses (no @capacitor dependency). */
+/** The part of Capacitor's global the phone implementations use (no @capacitor dependency). */
 export interface CapacitorGlobal {
   isNativePlatform?(): boolean;
   getPlatform?(): string;

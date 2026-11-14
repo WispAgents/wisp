@@ -20,7 +20,7 @@ export { useNow } from './clock.ts';
 // the harness · model picker New task uses, for any plugin that picks a runner (a trigger, a crew member's job)
 export { RunnerPicker } from './frame/RunnerPicker.tsx';
 export type { Runner } from './frame/runner.ts';
-export { detectPlatform, nullPlatform, browserPlatform, desktopPlatform, androidPlatform } from './platform/index.ts';
+export { detectPlatform, nullPlatform, browserPlatform, desktopPlatform, androidPlatform, iosPlatform } from './platform/index.ts';
 export type * from './platform/types.ts';
 export { routeOf, routeTip, type RouteSeen } from './frame/auto.ts';
 export { PROJECT_ORDER, movedOrder, projectList, projectOf, type ProjectView } from './frame/rows-view.ts';

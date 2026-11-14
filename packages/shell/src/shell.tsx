@@ -7,10 +7,11 @@
 import { render } from 'solid-js/web';
 import type { JSX } from 'solid-js';
 import { computed, effect, signal, untracked, type Client, type PeerId, type PluginClient, type Readable } from '@wisp/client';
-import { BLOCK_STRINGS, KitProvider, KIT_STRINGS, type KitString, type Toaster } from '@wisp/ui';
+import { BLOCK_STRINGS, KitProvider, KIT_STRINGS, loadPlatformStyles, type KitString, type Toaster } from '@wisp/ui';
 import type { PluginUiDef, PromptBox, SettingsPaneDef, ShellApi, ShellContext } from './contract.ts';
 import { namespaceOf } from './define.ts';
 import { SHELL_STRINGS } from './i18n/en.ts';
+import { applyPlatformLook } from './platform/look.ts';
 import type { Platform } from './platform/types.ts';
 import { createRegistry, type Warn } from './registry.ts';
 import { createTheme } from './theme.ts';
@@ -91,6 +92,9 @@ export function createShell(o: ShellOptions): Shell {
     onLocked: (by) => toaster.show(t('shell.toast.locked', { by })),
   });
   self.scope.add(() => theme.dispose());
+  // the phone apps' look (ADR-0065 §5): data-platform on <html> and its stylesheet; the browser gets neither
+  const look = applyPlatformLook(o.window.document.documentElement, platform);
+  if (look) void loadPlatformStyles(look).catch((e: unknown) => warn('platform styles', e));
 
   const selected = signal<string | undefined>(undefined);
   const focusTargets = new Map<string, () => void>();

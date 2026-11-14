@@ -40,7 +40,7 @@ export function buildEnv(shell: ShellContext, client: PluginClient): ListEnv {
     return m.kind === 'task' ? (m.id as unknown as EntityKey) : undefined;
   });
   const split = (): boolean => nav().layout === 'split';
-  const swipes = shell.platform.kind === 'android';
+  const swipes = shell.platform.phone;
   const here = (): string => shell.t(machineLabelKey(load()?.platform));
   /** the keyboard moves to the row's neighbour when the row it is on leaves the list */
   const handOff = (key: EntityKey): void => {

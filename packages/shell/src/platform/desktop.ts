@@ -50,5 +50,9 @@ export function desktopPlatform(w: PlatformWindow): Platform {
     openExternal(url) {
       invoke('plugin:opener|open_url', { url }).catch(() => base.openExternal(url));
     },
+    // no in-app browser on a computer: the system browser, as openExternal
+    openInApp(url) {
+      invoke('plugin:opener|open_url', { url }).catch(() => base.openExternal(url));
+    },
   };
 }

@@ -4,6 +4,7 @@
 
 import type { Target } from '@wisp/client';
 import type { Haptic, Permission, Platform, PlatformWindow, Shown } from './types.ts';
+import { webSafeArea, webWindowLayout } from './web.ts';
 
 const VIBRATE: Record<Haptic, number | number[]> = { tap: 8, select: 4, success: [10, 40, 10], warning: [20, 60, 20], error: [30, 50, 30, 50, 30] };
 
@@ -26,6 +27,7 @@ export function browserPlatform(w: PlatformWindow): Platform {
   const platform: Platform = {
     kind: 'browser',
     mobile: coarse && narrow,
+    phone: false,
     standalone,
     apple,
     titlebar: 'none',
@@ -110,6 +112,14 @@ export function browserPlatform(w: PlatformWindow): Platform {
       };
     },
     reload: () => w.location.reload(),
+    safeArea: () => webSafeArea(w),
+    windowLayout: () => webWindowLayout(w),
+    // a browser has no in-app browser: a tab, as openExternal
+    openInApp(url) {
+      platform.openExternal(url);
+    },
+    // a browser's Back is the history's (the nav reads popstate): no gesture progress to pass on
+    onBack: () => () => {},
     onOpen(fn) {
       opens.add(fn);
       return () => opens.delete(fn);

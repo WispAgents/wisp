@@ -88,8 +88,8 @@ export function answerContext(h: AnswerHost): BlockContext {
       }
       return undefined;
     },
-    // Show in folder: only on a computer (a phone has no folder to open, v1 MOBILE)
-    ...(shell.platform.kind !== 'android' && {
+    // Show in folder: only on a computer (a phone app has no folder to open, v1 MOBILE)
+    ...(!shell.platform.phone && {
       revealFile: (path: string) =>
         void run(reveal, { id: key, path }).then(
           (r) => !r.ok && shell.toast.error(shell.t('shell.reveal.failed', { path: r.path })),
