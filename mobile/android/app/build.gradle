@@ -88,6 +88,10 @@ dependencies {
     implementation "org.bouncycastle:bcprov-jdk18on:1.84" // registered first: Android's own BC lacks Ed25519
     implementation "org.slf4j:slf4j-nop:2.0.17"
     testImplementation "junit:junit:$junitVersion"
+    // Tests only, never in the APK: an in-process sshd for TunnelTest's edge cases (host keys, the
+    // password once, wisp stopped there), and the real org.json for Computers (android.jar's is a stub).
+    testImplementation "org.apache.sshd:sshd-core:2.16.0"
+    testImplementation "org.json:json:20250517"
     androidTestImplementation "androidx.test.ext:junit:$androidxJunitVersion"
     androidTestImplementation "androidx.test.espresso:espresso-core:$androidxEspressoCoreVersion"
     implementation project(':capacitor-cordova-android-plugins')

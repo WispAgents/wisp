@@ -2,10 +2,8 @@ package dev.trywisp.mobile;
 
 import java.io.File;
 import java.io.FileInputStream;
-import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
-import java.io.OutputStream;
 import java.nio.file.Files;
 import java.security.GeneralSecurityException;
 import java.security.KeyFactory;
@@ -30,9 +28,11 @@ import net.schmizz.sshj.userauth.keyprovider.KeyProviderUtil;
 import net.schmizz.sshj.userauth.password.PasswordUtils;
 
 /**
- * The phone's SSH keys, kept in the app's private files (backups are off in the manifest). Each
- * key is `<id>.key` (PKCS#8), `<id>.pub` (X.509) and `<id>.properties` (name, algorithm, made here
- * or imported). Imported keys are decrypted once on import, so their passphrase isn't kept.
+ * The phone's SSH keys, sealed in the {@link Vault} (the Android Keystore's key, ADR-0065 §2), never
+ * in files or web storage. Each key is three entries: `key/<id>/priv` (PKCS#8), `key/<id>/pub`
+ * (X.509) and `key/<id>/meta` (name, algorithm, made here or imported, when). Imported keys are
+ * decrypted once on import, so their passphrase isn't kept. v1 kept them as files in the app's
+ * private storage: {@link #moveV1} moves those in once and deletes them.
  * Plain Java, so the desktop check runs it too.
  */
 public final class Keys {
@@ -48,11 +48,51 @@ public final class Keys {
         }
     }
 
-    private final File dir;
+    private static final String PREFIX = "key/";
+    private final Vault vault;
 
-    public Keys(File dir) {
-        this.dir = dir;
-        dir.mkdirs();
+    public Keys(Vault vault) {
+        this.vault = vault;
+    }
+
+    /**
+     * v1's key files (`<id>.key`, `<id>.pub`, `<id>.properties` in `dir`) into the vault, then the
+     * files and the folder are deleted. Their bytes move as they are, unread, so a key this phone
+     * can't load stays listed as unreadable rather than lost. Answers how many keys moved; with no
+     * folder left, nothing (it runs on every start and does its work once).
+     */
+    public static synchronized int moveV1(File dir, Vault vault) throws GeneralSecurityException, IOException {
+        File[] files = dir.listFiles((d, n) -> n.endsWith(".properties"));
+        if (files == null) return 0;
+        java.util.Arrays.sort(files, (a, b) -> Long.compare(a.lastModified(), b.lastModified()));
+        int n = 0;
+        long at = 1;
+        for (File f : files) {
+            String id = f.getName().substring(0, f.getName().length() - ".properties".length());
+            if (!id.matches("[a-z0-9]{1,32}")) continue;
+            Properties p = new Properties();
+            try (InputStream in = new FileInputStream(f)) {
+                p.load(in);
+            }
+            if (vault.get(PREFIX + id + "/meta") == null) {
+                p.setProperty("at", String.valueOf(at++));
+                for (String ext : new String[] { "key", "pub" }) {
+                    File part = new File(dir, id + "." + ext);
+                    if (part.exists()) vault.put(PREFIX + id + "/" + (ext.equals("key") ? "priv" : "pub"), Files.readAllBytes(part.toPath()));
+                }
+                vault.put(PREFIX + id + "/meta", text(p));
+                n++;
+            }
+        }
+        // Everything is in the vault: now the files go (a crash before this moves them again, harmlessly).
+        File[] all = dir.listFiles(File::isFile);
+        if (all != null) for (File f : all) Files.deleteIfExists(f.toPath());
+        try {
+            Files.deleteIfExists(dir.toPath());
+        } catch (java.nio.file.DirectoryNotEmptyException e) {
+            // something that isn't v1's (a folder): left; the keys themselves are gone from here
+        }
+        return n;
     }
 
     public synchronized List<Info> list() throws IOException {
@@ -60,27 +100,43 @@ public final class Keys {
     }
 
     /**
-     * Every key that loads. One that doesn't (a damaged file, an algorithm this phone's provider
-     * lacks) is left on disk and skipped, its name added to `unreadable`, so the others still list.
+     * Every key that loads. One that doesn't (a damaged entry, an algorithm this phone's provider
+     * lacks) is left in the vault and skipped, its name added to `unreadable`, so the others still list.
      */
     public synchronized List<Info> list(List<String> unreadable) throws IOException {
         List<Info> out = new ArrayList<>();
-        File[] files = dir.listFiles((d, n) -> n.endsWith(".properties"));
-        if (files != null) {
-            java.util.Arrays.sort(files, (a, b) -> Long.compare(a.lastModified(), b.lastModified()));
-            for (File f : files) {
-                String id = f.getName().replace(".properties", "");
-                String name = id;
-                try {
-                    Properties p = props(id);
-                    name = p.getProperty("name", "Key");
-                    out.add(new Info(id, name, p.getProperty("source", "phone"), load(id).getPublic()));
-                } catch (GeneralSecurityException | IOException | RuntimeException e) {
-                    if (unreadable != null) unreadable.add(name);
-                }
+        List<String[]> metas = new ArrayList<>(); // [at, id]
+        for (String name : vault.names(PREFIX)) {
+            if (!name.endsWith("/meta")) continue;
+            String id = name.substring(PREFIX.length(), name.length() - "/meta".length());
+            Properties p = props(id);
+            metas.add(new String[] { p == null ? "0" : p.getProperty("at", "0"), id });
+        }
+        metas.sort((a, b) -> {
+            int c = Long.compare(parse(a[0]), parse(b[0]));
+            return c != 0 ? c : a[1].compareTo(b[1]);
+        });
+        for (String[] m : metas) {
+            String id = m[1];
+            String name = id;
+            try {
+                Properties p = props(id);
+                if (p == null) throw new IOException("no meta");
+                name = p.getProperty("name", "Key");
+                out.add(new Info(id, name, p.getProperty("source", "phone"), load(id).getPublic()));
+            } catch (GeneralSecurityException | IOException | RuntimeException e) {
+                if (unreadable != null) unreadable.add(name);
             }
         }
         return out;
+    }
+
+    private static long parse(String s) {
+        try {
+            return Long.parseLong(s);
+        } catch (NumberFormatException e) {
+            return 0;
+        }
     }
 
     /** The phone's first key, made the first time the app needs one (or when none of them loads). */
@@ -118,41 +174,47 @@ public final class Keys {
     }
 
     public synchronized void delete(String id) {
-        for (String ext : new String[] { ".key", ".pub", ".properties" }) new File(dir, safe(id) + ext).delete();
+        for (String part : new String[] { "/priv", "/pub", "/meta" }) vault.remove(PREFIX + safe(id) + part);
     }
 
     public synchronized KeyPair load(String id) throws GeneralSecurityException, IOException {
-        String alg = props(id).getProperty("alg", "Ed25519");
-        KeyFactory kf = KeyFactory.getInstance(alg, "BC");
-        return new KeyPair(
-            kf.generatePublic(new X509EncodedKeySpec(Files.readAllBytes(new File(dir, safe(id) + ".pub").toPath()))),
-            kf.generatePrivate(new PKCS8EncodedKeySpec(Files.readAllBytes(new File(dir, safe(id) + ".key").toPath())))
-        );
+        Properties p = props(safe(id));
+        if (p == null) throw new IOException("No such key.");
+        byte[] pub = vault.get(PREFIX + id + "/pub");
+        byte[] priv = vault.get(PREFIX + id + "/priv");
+        if (pub == null || priv == null) throw new IOException("That key is damaged.");
+        KeyFactory kf = KeyFactory.getInstance(p.getProperty("alg", "Ed25519"), "BC");
+        return new KeyPair(kf.generatePublic(new X509EncodedKeySpec(pub)), kf.generatePrivate(new PKCS8EncodedKeySpec(priv)));
     }
 
-    private Info save(String name, String source, KeyPair kp) throws IOException {
+    private Info save(String name, String source, KeyPair kp) throws IOException, GeneralSecurityException {
         String id = UUID.randomUUID().toString().replace("-", "").substring(0, 12);
-        Files.write(new File(dir, id + ".key").toPath(), kp.getPrivate().getEncoded());
-        Files.write(new File(dir, id + ".pub").toPath(), kp.getPublic().getEncoded());
         Properties p = new Properties();
         p.setProperty("name", name == null || name.trim().isEmpty() ? "Key" : name.trim());
         p.setProperty("alg", kp.getPublic().getAlgorithm());
         p.setProperty("source", source);
-        try (OutputStream o = new FileOutputStream(new File(dir, id + ".properties"))) {
-            p.store(o, null);
-        }
+        p.setProperty("at", String.valueOf(System.currentTimeMillis()));
+        vault.put(PREFIX + id + "/priv", kp.getPrivate().getEncoded());
+        vault.put(PREFIX + id + "/pub", kp.getPublic().getEncoded());
+        vault.put(PREFIX + id + "/meta", text(p)); // last: a key is listed only once it is whole
         return new Info(id, p.getProperty("name"), source, kp.getPublic());
     }
 
+    private static byte[] text(Properties p) throws IOException {
+        java.io.ByteArrayOutputStream o = new java.io.ByteArrayOutputStream();
+        p.store(o, null);
+        return o.toByteArray();
+    }
+
     private Properties props(String id) throws IOException {
+        byte[] b = vault.get(PREFIX + id + "/meta");
+        if (b == null) return null;
         Properties p = new Properties();
-        try (InputStream in = new FileInputStream(new File(dir, safe(id) + ".properties"))) {
-            p.load(in);
-        }
+        p.load(new java.io.ByteArrayInputStream(b));
         return p;
     }
 
-    // Ids come from the page: never let one reach outside the keys folder.
+    // Ids come from the page: never let one name another entry.
     private static String safe(String id) {
         if (id == null || !id.matches("[a-z0-9]{1,32}")) throw new IllegalArgumentException("No such key.");
         return id;
