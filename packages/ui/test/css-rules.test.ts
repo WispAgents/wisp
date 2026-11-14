@@ -69,6 +69,22 @@ test('no :has() and no :is() (they make every style recalc walk large boxes)', (
   }
 });
 
+test('no_sibling_combinator_lands_on_a_universal_selector', () => {
+  // F-phone-8: `X > * + *` (or `X + *`) is tried on every element, and Chrome marks each element's parent as
+  // affected by sibling rules on the way: then adding one row to a list restyles every row in it (the task list
+  // at 390 px, 4× slowed: 850 elements and 60 ms a scroll frame instead of 48 and 2 ms). Name what follows (or
+  // `:where(X) > :not(:first-child)` for "every child after the first").
+  const bad: string[] = [];
+  for (const s of sheets)
+    for (const m of s.css.matchAll(/([^{}]*)\{/g)) {
+      const sel = (m[1] ?? '').trim();
+      if (sel.startsWith('@')) continue;
+      for (const one of sel.split(','))
+        if (/[+~]\s*\*?\s*(::?[\w-]+(\([^)]*\))?)*\s*$/.test(one.trim()) && /[+~]\s*(\*|::?|$)/.test(one.trim())) bad.push(`${s.name}: ${one.trim()}`);
+    }
+  expect(bad).toEqual([]);
+});
+
 test('no hard-coded colours: every colour is a token', () => {
   for (const s of sheets.filter((x) => x.name !== 'index.css')) {
     expect(s.css, s.name).not.toMatch(/#[0-9a-fA-F]{3,8}\b/);

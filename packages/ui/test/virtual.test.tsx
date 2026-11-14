@@ -187,3 +187,30 @@ test('a_row_says_when_it_sits_a_list_gap_below_the_one_before_it', () => {
   const gap = (id: string): boolean | undefined => nodeFor(host, id)?.closest('[data-kit="virtual-row"]')?.hasAttribute('data-gap');
   expect([gap('h'), gap('a'), gap('b')]).toEqual([false, false, true]);
 });
+
+test('a_scroll_reads_layout_before_it_renders_rows_never_after', () => {
+  // F-phone-8: reading scrollTop after the new rows are in the DOM forces a reflow on every scroll frame (60 ms a
+  // frame on a 4× slowed phone with 4,000 tasks). A scroll reads its geometry first, then renders.
+  const host = mount(() => (
+    <VirtualList items={rows(4000)} key={(r) => r.id} estimate={30} viewport={300}>
+      {(r) => <span data-id={r().id}>{r().text}</span>}
+    </VirtualList>
+  ));
+  const list = host.querySelector<HTMLElement>('[data-kit="virtual-list"]');
+  if (!list) throw new Error('no list');
+  const first = (): string | null | undefined => list.querySelector('[data-id]')?.getAttribute('data-id');
+  let top = 0;
+  const seen: (string | null | undefined)[] = [];
+  Object.defineProperty(list, 'scrollTop', {
+    configurable: true,
+    get: () => (seen.push(first()), top),
+    set: (v: number) => void (top = v),
+  });
+  Object.defineProperty(list, 'clientHeight', { configurable: true, get: () => 300 });
+  top = 30 * 2000;
+  const before = first();
+  list.dispatchEvent(new Event('scroll'));
+  expect(first()).not.toBe(before); // the rows at row 2000 are on screen now
+  expect(seen.length).toBeGreaterThan(0);
+  expect(seen.every((f) => f === before), `scrollTop read after rows changed: ${seen.join(',')}`).toBe(true);
+});

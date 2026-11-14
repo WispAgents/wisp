@@ -81,8 +81,8 @@ interface Scroller {
   readonly scrollTop: Accessor<number>;
   readonly viewportH: Accessor<number>;
   readonly onScroll: () => void;
-  /** Note the row under the viewport's top before something changes heights. */
-  readonly remember: () => void;
+  /** Note the row under the viewport's top before something changes heights (`top`: a scrollTop already read). */
+  readonly remember: (top?: number) => void;
 }
 
 /** Scroll position, the tail rule and the anchor row, for one list. */
@@ -95,9 +95,9 @@ function useScroller<T>(props: VirtualListProps<T>, offs: Accessor<readonly numb
   // What the reader is looking at, by key: survives inserts above it as well as height changes.
   const anchor: { at: { key: string; delta: number } | undefined } = { at: undefined };
 
-  const remember = (): void => {
+  const remember = (top?: number): void => {
     if (!box.el) return;
-    const a: Anchor = anchorAt(offs(), box.el.scrollTop);
+    const a: Anchor = anchorAt(offs(), top ?? box.el.scrollTop);
     const item = props.items[a.index];
     anchor.at = item === undefined ? undefined : { key: props.key(item), delta: a.delta };
   };
@@ -105,19 +105,22 @@ function useScroller<T>(props: VirtualListProps<T>, offs: Accessor<readonly numb
     el.scrollTop = y;
     setScrollTop(el.scrollTop);
   };
+  // Geometry is read once, before the batch renders the new rows: a read after them would force a reflow on every
+  // scroll frame (F-phone-8: 60 ms a frame on a 4× slowed phone with 4,000 tasks).
   const onScroll = (): void => {
     const el = box.el;
     if (!el) return;
+    const top = el.scrollTop;
+    const view = el.clientHeight;
+    const tail = bottom() ? atTail(top, view || viewportH(), el.scrollHeight) : undefined;
     batch(() => {
-      setScrollTop(el.scrollTop);
-      if (el.clientHeight > 0) setViewportH(el.clientHeight);
-      if (!bottom()) return;
-      const tail = atTail(el.scrollTop, el.clientHeight || viewportH(), el.scrollHeight);
-      if (tail === following()) return;
+      setScrollTop(top);
+      if (view > 0) setViewportH(view);
+      if (tail === undefined || tail === following()) return;
       setFollowing(tail);
       props.onTailChange?.(tail);
     });
-    remember();
+    remember(top);
   };
 
   // After the rows or their heights change: follow the tail, or put the anchor row back.

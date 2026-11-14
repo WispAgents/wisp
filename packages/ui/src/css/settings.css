@@ -45,7 +45,8 @@
   /* v1 .sx-pane: groups 14px apart by their own margin (.sx-group + .sx-group), not a gap */
   /* v1 .sx-pane is a block: its children's margins meet (a group's 14px under a head's 22px is 22px) */
   [data-kit='settings-pane'] { display: block; padding: var(--space-7) var(--space-8) 28px; }
-  [data-kit='settings-pane'] > * + * { margin-top: 14px; }
+  /* every child after the first (was `> * + *`: a sibling rule on `*` slows every list's row inserts, F-phone-8) */
+  :where([data-kit='settings-pane']) > :not(:first-child) { margin-top: 14px; }
   /* a group a plugin put in through a slot (a `contents` wrapper) keeps the same 14px */
   [data-kit='settings-pane'] [data-kit='settings-group'] { margin-top: 14px; }
   /* v1 .sx-head: a group's head sits 22px under what's above it, 2px in, its button on the head's last line */
@@ -109,7 +110,7 @@
 
   /* a box inside a group, under its row (v1 .sx-accts: a harness's accounts and "Add another … account") */
   [data-kit='settings-inset'] { margin: 0 14px 12px 3.125rem; border: var(--size-hairline) solid var(--line); border-radius: 10px; background: var(--surface); overflow: hidden; }
-  [data-kit='settings-inset'] > * + * { border-top: var(--size-hairline) solid var(--line); }
+  :where([data-kit='settings-inset']) > :not(:first-child) { border-top: var(--size-hairline) solid var(--line); }
   [data-kit='settings-inset'] + [data-kit='settings-row'] { border-top: var(--size-hairline) solid var(--line); }
   [data-kit='settings-inset-row'] { display: flex; align-items: center; gap: 10px; width: 100%; min-height: 44px; padding: 6px 8px 6px 12px; font-size: 13px; text-align: left; }
   [data-kit='settings-inset-text'] { flex: 1; display: flex; align-items: baseline; gap: 0 8px; min-width: 0; }
@@ -126,7 +127,7 @@
   [data-kit='settings-block-head'] { display: flex; flex-direction: column; gap: 3px; margin: 0; }
   [data-kit='settings-block-head'] > b { font-size: 14px; font-weight: var(--fw-semibold); color: var(--ink); }
   [data-kit='settings-block-head'] > small { font-size: 12.5px; color: var(--muted); line-height: 1.45; }
-  [data-kit='settings-pane'] > [data-kit='settings-lede'] + * { margin-top: 0; }
+  /* what follows the lede needs no rule: the lede's 16px bottom margin collapses with its 14px (or 8px) top margin */
   /* a group first in a column of its own (a pane's block) takes no margin */
   [data-kit='settings-pane'] [data-kit='stack'] > [data-kit='settings-group']:first-child { margin-top: 0; }
   [data-kit='settings-note'] { margin: 8px 0 0; font-size: 12.5px; line-height: var(--lh-base); color: var(--muted); }
@@ -226,7 +227,10 @@
   [data-kit='plan-task'][data-quiet] { color: var(--muted); }
   [data-kit='plan-task'][data-quiet] [data-kit='plan-p'] { font-weight: var(--fw-regular); color: var(--muted); }
   [data-kit='plan-list'] { display: flex; flex-direction: column; min-width: 0; }
-  [data-kit='settings-group-body'] > [data-kit='plan-list'] + * { border-top: var(--size-hairline) solid var(--line); }
+  /* the line under the plan's windows: the top border of what follows it (a notice row, a drain callout, the model
+     select), named, not `+ *` (a sibling rule on `*` slows every list's row inserts, F-phone-8) */
+  [data-kit='settings-group-body'] > [data-kit='plan-list'] + [data-kit='settings-row'],
+  [data-kit='settings-group-body'] > [data-kit='plan-list'] + [data-kit='callout'] { border-top: var(--size-hairline) solid var(--line); }
   /* tokens per turn by account (v1 .bg-cmp) */
   [data-kit='plan-cmp'] { display: flex; flex-direction: column; gap: 2px; padding: 11px 14px 12px; }
   [data-kit='plan-cmp'] [data-kit='plan-name'] { margin-bottom: 0; }
