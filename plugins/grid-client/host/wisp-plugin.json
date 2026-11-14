@@ -35,6 +35,9 @@
       { "id": "grid-client.fetch", "title": "Open a share link", "readOnly": true },
       { "id": "grid-client.imported", "title": "Record a share taken in (for update available)" },
       { "id": "grid-client.updates", "title": "Imported shares with an update", "readOnly": true },
+      { "id": "grid-client.keys", "title": "Your API keys for scripting your cloud wisp (never the keys themselves)", "readOnly": true },
+      { "id": "grid-client.keysCreate", "title": "Make an API key for scripting your cloud wisp, shown once", "uiOnly": "the key is shown once, to a person who copies it: through an agent it would sit in a transcript" },
+      { "id": "grid-client.keysRevoke", "title": "Revoke an API key: anything using it stops at once" },
       { "id": "grid-client.reply", "title": "Report a routed task back to the chat it came from", "uiOnly": "wisp.channels reports a routed task's end through it; an agent has no thread to name" }
     ],
     "settings": [

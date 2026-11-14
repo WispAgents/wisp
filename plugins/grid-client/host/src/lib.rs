@@ -20,6 +20,7 @@
 mod calls;
 mod cloud;
 pub mod computer;
+mod keys;
 mod net;
 mod peers;
 mod publish;
@@ -129,6 +130,9 @@ impl Plugin for GridClientPlugin {
         on!(s, slot, api::SandboxLogout, |st, a| async move { sandboxes::logout(&st, &a).await });
         on!(s, slot, api::SandboxEnv, |st, a| async move { sandboxes::env(&st, &a).await });
         on!(s, slot, api::Teams, |st, a| async move { sandboxes::teams(&st, &a).await });
+        on!(s, slot, api::KeyList, |st, _a| async move { keys::list(&st).await });
+        on!(s, slot, api::KeyCreate, |st, a| async move { keys::create(&st, &a.name).await });
+        on!(s, slot, api::KeyRevoke, |st, a| async move { keys::revoke(&st, &a.id).await });
         on!(s, slot, api::Reply, |st, a| async move { Ok::<_, WireError>(computer::reply(&st, &a).await) });
         s.on_start(move |ctx| async move {
             let store = ctx.service::<Store>()?.as_ref().clone();

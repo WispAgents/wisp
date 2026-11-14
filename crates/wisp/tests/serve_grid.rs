@@ -520,3 +520,85 @@ async fn a_published_app_is_at_its_grid_link_without_its_secrets_or_source_maps(
     assert_eq!(a.cmd("stuff.get", json!({ "id": id })).await["id"], id.as_str());
     drop(s);
 }
+
+/// F-mach-15 (ADR-0058): an API key made from wisp (`grid-client.keysCreate`, as Settings → Cloud → API keys makes
+/// it) opens the cloud wisp from a script: `Authorization: Bearer wgk_…`, no cookie, no device. Revoked, it's 401.
+#[tokio::test(flavor = "multi_thread")]
+async fn an_api_key_scripts_the_cloud_wisp_without_a_browser_until_revoked() {
+    let root = temp("serve-grid-keys");
+    let g = grid(&root).await;
+    let d = root.join("a");
+    std::fs::create_dir_all(d.join("proj")).unwrap();
+    let (s, p) = start_with(&d, &[]);
+    let a = api(p);
+
+    // not signed in: no grid to keep keys on, and it says how
+    let no = a.try_cmd("grid-client.keys", json!({})).await;
+    assert!(no["ok"] != true && no.to_string().contains("wisp cloud signin"), "{no}");
+    sign_in(&a, &g, "ada").await;
+
+    // the key, once: in the command's answer and nowhere else
+    let made = a.cmd("grid-client.keysCreate", json!({ "name": "deploy script" })).await;
+    let key = made["key"].as_str().unwrap().to_owned();
+    assert!(key.starts_with("wgk_") && made["hint"] == json!(&key[key.len() - 4..]), "{made}");
+    let list = a.cmd("grid-client.keys", json!({})).await;
+    assert_eq!(list["keys"].as_array().unwrap().len(), 1, "{list}");
+    assert_eq!(list["keys"][0]["name"], "deploy script");
+    assert_eq!(list["address"], json!(format!("http://ada.wisp.localhost:{}", g.port)));
+    assert!(!list.to_string().contains(&key[4..]), "a list never carries the key");
+    let bad = a.try_cmd("grid-client.keysCreate", json!({ "name": "  " })).await;
+    assert_eq!(bad["ok"], false, "{bad}");
+
+    // a script: the key alone, at the cloud wisp's own address; the box wakes for it and answers
+    let boxu = format!("http://ada.wisp.localhost:{}", g.port);
+    let web = browser(g.port, &["ada.wisp.localhost"]);
+    let call = |n: usize| {
+        web.post(format!("{boxu}/api/cmd"))
+            .bearer_auth(&key)
+            .header("idempotency-key", format!("script-{n}"))
+            .json(&json!({ "cmd": "runtime.list", "args": {} }))
+            .send()
+    };
+    let r = call(0).await.unwrap();
+    assert_eq!(r.status(), 200);
+    let v: Value = r.json().await.unwrap();
+    assert_eq!(v["ok"], true, "runtime.list with a key: {v}");
+    let health = web.get(format!("{boxu}/api/health")).bearer_auth(&key).send().await.unwrap();
+    assert_eq!(health.status(), 200);
+    // a key can't manage keys, even through its own wisp: the box's wisp gives it the `apikey` set
+    let r: Value = web
+        .post(format!("{boxu}/api/cmd"))
+        .bearer_auth(&key)
+        .header("idempotency-key", "script-keys")
+        .json(&json!({ "cmd": "grid-client.keysCreate", "args": { "name": "second" } }))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert_ne!(r["ok"], true, "{r}");
+    // and the grid's own API knows no key
+    let me = browser(g.port, &["wisp.localhost"]).get(format!("{}/api/me", g.url)).bearer_auth(&key).send().await.unwrap();
+    assert_eq!(me.status(), 401);
+
+    // the key is in no file of this wisp (it was in an answer, never in a row)
+    for f in ["home/wisp.db", "home/wisp.db-wal"] {
+        let bytes = std::fs::read(d.join(f)).unwrap_or_default();
+        assert!(!String::from_utf8_lossy(&bytes).contains(&key[4..]), "{f} holds the key");
+    }
+
+    // the box sleeps again (a key reaches its /_grid/stop too); a revoked key's call below is refused at the edge,
+    // so it never wakes it
+    let r = web.post(format!("{boxu}/_grid/stop")).bearer_auth(&key).send().await.unwrap();
+    assert_eq!(r.status(), 200);
+
+    // revoke: the same call is 401, and the list is empty
+    let id = made["id"].as_str().unwrap();
+    assert_eq!(a.cmd("grid-client.keysRevoke", json!({ "id": id })).await["ok"], true);
+    assert_eq!(call(1).await.unwrap().status(), 401);
+    assert_eq!(a.cmd("grid-client.keys", json!({})).await["keys"], json!([]));
+    let again = a.try_cmd("grid-client.keysRevoke", json!({ "id": id })).await;
+    assert_eq!(again["ok"], false, "revoked once: {again}");
+    drop((s, g));
+}

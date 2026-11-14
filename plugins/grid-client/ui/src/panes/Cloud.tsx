@@ -1,12 +1,13 @@
 // Settings → Cloud (v1 settings.js cloud, design/v1-reference/settings.cloud): your wisp on a server. Signed
 // out: the grid's address and Sign in, then the code the browser asks for while it approves. Signed in: who,
-// where, this computer on the grid (reach it from any browser), and Sign out.
+// where, this computer on the grid (reach it from any browser), and Sign out; then API keys and My shares.
 import { Match, Show, Switch as Pick, type JSX } from 'solid-js';
 import type { PluginClient } from '@wisp/client';
 import { Slot } from '@wisp/shell';
 import { Button, Code, Inline, Input, Link, SettingsBlock, SettingsInputRow, SettingsGroup, SettingsNote, SettingsRow, Stack, Switch, Text } from '@wisp/ui';
 import { cancelSignIn, DEFAULT_GRID, setComputer, signOut } from '../commands.ts';
 import { t } from '../i18n.ts';
+import { ApiKeys } from './ApiKeys.tsx';
 import { MyShares } from './MyShares.tsx';
 import { host, useCloud } from './state.ts';
 
@@ -84,6 +85,7 @@ export default function Cloud(props: { readonly client: PluginClient }): JSX.Ele
         {/* the cloud computers (wisp.machines), each with its agents to sign in to (v1 .cg-list): whenever there are any */}
         <Slot input="shell.settings:cloud" layout="contents" />
         <Show when={r()?.signedIn}>
+          <ApiKeys client={c} />
           <MyShares client={c} />
         </Show>
         <SettingsNote part="grid-client.note" after={10}>

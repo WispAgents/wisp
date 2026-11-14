@@ -241,6 +241,56 @@ pub struct Replied {
     pub error: String,
 }
 
+/// `grid-client.keysCreate`: a new API key for scripting the cloud wisp (`Authorization: Bearer wgk_…`, ADR-0058).
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[ts(export, export_to = "grid-client/")]
+pub struct KeyArgs {
+    /// what it's for ("deploy script"): 1–60 characters
+    pub name: String,
+}
+
+/// An API key as wisp shows it: never the key itself, nor its hash.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export, export_to = "grid-client/")]
+pub struct ApiKey {
+    pub id: String,
+    pub name: String,
+    /// the key's last four characters, to tell keys apart
+    pub hint: String,
+    #[ts(type = "number")]
+    pub created_at: i64,
+    #[serde(default)]
+    #[ts(type = "number | null")]
+    pub last_used_at: Option<i64>,
+}
+
+/// `grid-client.keys`: your live keys, newest first, and where a key is sent (the cloud wisp's address).
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[ts(export, export_to = "grid-client/")]
+pub struct Keys {
+    pub keys: Vec<ApiKey>,
+    /// `https://<handle>.<domain>`
+    pub address: String,
+}
+
+/// A key just made: the only answer that carries `key`. wisp keeps it nowhere (no row, no topic, no log).
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export, export_to = "grid-client/")]
+pub struct NewKey {
+    pub id: String,
+    pub name: String,
+    pub hint: String,
+    #[ts(type = "number")]
+    pub created_at: i64,
+    #[serde(default)]
+    #[ts(type = "number | null")]
+    pub last_used_at: Option<i64>,
+    /// `wgk_…`: send it as `Authorization: Bearer`
+    pub key: String,
+}
+
 macro_rules! command {
     ($name:ident = $id:literal $(read $ro:ident)? : $args:ty => $out:ty) => {
         #[derive(Debug)]
@@ -278,3 +328,6 @@ command!(SandboxLogout = "grid-client.sandboxLogout" : SandboxSetArgs => Value);
 command!(SandboxEnv = "grid-client.sandboxEnv" : SandboxSetArgs => Value);
 command!(Teams = "grid-client.teams" : TeamsArgs => Value);
 command!(Reply = "grid-client.reply" : ReplyArgs => Replied);
+command!(KeyList = "grid-client.keys" read yes : NoArgs => Keys);
+command!(KeyCreate = "grid-client.keysCreate" : KeyArgs => NewKey);
+command!(KeyRevoke = "grid-client.keysRevoke" : IdArgs => Value);
