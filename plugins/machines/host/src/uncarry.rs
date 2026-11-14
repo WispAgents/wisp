@@ -1,6 +1,8 @@
 //! A deleted lead's delegates on other machines (ADR-0060): each one's task there and the lead's copies there go
 //! (`machines.uncarry` here, `machines.dropCopies` there). A machine that can't be reached keeps the drop in its
-//! row (`data.uncarry`) and the sweep tries again: when it comes online, and every 10 minutes.
+//! row (`data.uncarry`) and the sweep tries again: when it comes online, and every 10 minutes. One the machine answered
+//! and refused (a copy it can't remove) `GIVE_UP` times is let go, with a warning and a note on the machine's row
+//! (`data.uncarryStuck`): never failed every sweep forever.
 
 use std::path::Path;
 use std::sync::Arc;
@@ -49,10 +51,10 @@ pub(crate) async fn uncarry(st: &Arc<State>, a: api::UncarryArgs) -> Res<api::Un
     if a.lead.trim().is_empty() {
         return Err(MachinesError::Wire(WireError::invalid("whose delegate? (no lead)")));
     }
-    let d = core::Drop { lead: a.lead, task: a.task };
+    let d = core::Drop { lead: a.lead, task: a.task, tries: 0 };
     match let_go(st, &a.id, &d).await {
         Ok(()) => {
-            keep_drops(st, &a.id, |l| l.into_iter().filter(|x| *x != d).collect());
+            keep_drops(st, &a.id, |l| core::without(l, &d));
             Ok(api::Uncarried { done: true })
         }
         Err(e) => {
@@ -70,11 +72,41 @@ pub(crate) async fn sweep(st: &Arc<State>, only: Option<&str>) {
             continue;
         }
         for d in core::pending(row.data.get(core::UNCARRY)) {
-            if let_go(st, &row.id, &d).await.is_ok() {
-                keep_drops(st, &row.id, |l| l.into_iter().filter(|x| *x != d).collect());
+            match let_go(st, &row.id, &d).await {
+                Ok(()) => keep_drops(st, &row.id, |l| core::without(l, &d)),
+                Err(e) if answered(&e) && online(st, &row.id) => refused(st, &row.id, &d, &e.to_string()),
+                // not reached (offline, the link down): it takes the drop once it's back, however long that is
+                Err(_) => {}
             }
         }
     }
+}
+
+/// The machine itself answered with the refusal (a copy that stayed, a delete it turned down): trying again won't
+/// change it by itself. Not reaching it at all isn't one.
+fn answered(e: &MachinesError) -> bool {
+    matches!(e, MachinesError::Peer { .. } | MachinesError::Rejected { .. })
+}
+
+/// Online now: an error from a relay in front of a machine that's asleep isn't the machine's refusal.
+fn online(st: &Arc<State>, id: &str) -> bool {
+    st.with_link(id, |l| l.conn.status.state == wisp_machines_api::PeerState::Online).unwrap_or(false)
+}
+
+/// One more refusal counted in machine `id`'s row; at `GIVE_UP` the drop is let go with a warning and its note.
+fn refused(st: &Arc<State>, id: &str, d: &core::Drop, why: &str) {
+    let Ok(mut row) = st.peer(id) else { return };
+    if core::refused(&mut row.data, d, why) {
+        tracing::warn!(
+            machine = id,
+            lead = d.lead.as_str(),
+            task = d.task.as_str(),
+            "a delegate's copy there couldn't be removed after {} tries; the sweep let it go (remove it by hand): {why}",
+            core::GIVE_UP
+        );
+    }
+    st.save_peer(&row);
+    st.publish(id);
 }
 
 /// `machines.dropCopies` (on the machine): every copy and upload of lead `lead`'s delegates, under wisp's own folder.
@@ -105,4 +137,20 @@ pub(crate) async fn drop_copies(plugin: &Path, lead: &str) -> wisp_kernel::Resul
         return Err(WireError::unavailable(format!("a copy stayed: {}", kept.join("; "))));
     }
     Ok(api::DroppedCopies { copies })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Only a machine that answered counts a refusal toward giving up: one offline or out of reach is tried until it's
+    /// back.
+    #[test]
+    fn only_a_refusal_the_machine_answered_counts_toward_giving_up() {
+        assert!(answered(&MachinesError::Peer { message: "a copy stayed".into(), status: 503, hold: None }));
+        assert!(answered(&MachinesError::Rejected { code: "forbidden".into(), message: "no".into() }));
+        assert!(!answered(&MachinesError::Offline("offline".into())));
+        assert!(!answered(&MachinesError::Waiting("queued".into())));
+        assert!(!answered(&MachinesError::Wire(WireError::unavailable("link down"))));
+    }
 }

@@ -17,6 +17,12 @@ pub const CARRY_ROUTE: &str = "/machines/carry";
 pub const UNCARRY: &str = "uncarry";
 /// How often the sweep tries them again (and whenever the machine comes online).
 pub const SWEEP_MS: u64 = 10 * 60_000;
+/// The drops the sweep gave up on (its row's `data`): each one's lead, task and why, the machine's note that a copy
+/// stayed there for you to remove by hand.
+pub const STUCK: &str = "uncarryStuck";
+/// How many times a machine that answered may refuse a drop (a copy it can't remove) before the sweep gives up on it:
+/// an hour of sweeps. A machine that can't be reached never counts (it takes the drop once it's back).
+pub const GIVE_UP: u32 = 6;
 /// The biggest patch that comes back over the link.
 pub const MAX_PATCH: usize = 16 * 1024 * 1024;
 /// The marker of what a copy was when it came in (its changes are the difference from it).
@@ -98,6 +104,32 @@ pub struct Drop {
     pub lead: String,
     #[serde(default)]
     pub task: String,
+    /// how many times the machine answered and refused it (`GIVE_UP`)
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub tries: u32,
+}
+
+#[allow(clippy::trivially_copy_pass_by_ref, reason = "serde's skip_serializing_if takes a reference")]
+fn is_zero(n: &u32) -> bool {
+    *n == 0
+}
+
+impl Drop {
+    /// The same drop (its lead and task), however often it was tried.
+    pub fn same(&self, o: &Self) -> bool {
+        self.lead == o.lead && self.task == o.task
+    }
+}
+
+/// A drop the sweep gave up on, as its machine's row keeps it (`data.uncarryStuck`).
+#[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct Stuck {
+    pub lead: String,
+    #[serde(default)]
+    pub task: String,
+    /// what the machine said, last time
+    #[serde(default)]
+    pub why: String,
 }
 
 /// The drops kept in a machine's row (`data.uncarry`); anything else there reads as none.
@@ -105,12 +137,40 @@ pub fn pending(data: Option<&serde_json::Value>) -> Vec<Drop> {
     data.and_then(|v| serde_json::from_value(v.clone()).ok()).unwrap_or_default()
 }
 
-/// `list` with `d` in it once.
+/// `list` with `d` in it once (one already there keeps its tries).
 pub fn with_drop(mut list: Vec<Drop>, d: Drop) -> Vec<Drop> {
-    if !list.contains(&d) {
+    if !list.iter().any(|x| x.same(&d)) {
         list.push(d);
     }
     list
+}
+
+/// `list` without `d`.
+pub fn without(list: Vec<Drop>, d: &Drop) -> Vec<Drop> {
+    list.into_iter().filter(|x| !x.same(d)).collect()
+}
+
+/// The machine answered and refused `d` (`why`), as its row's `data` keeps it: one more try counted; at `GIVE_UP` the
+/// sweep lets it go, and the row's `uncarryStuck` says which copy stayed there and why (once per drop). True when it
+/// gave up.
+pub fn refused(data: &mut std::collections::BTreeMap<String, serde_json::Value>, d: &Drop, why: &str) -> bool {
+    let mut list = pending(data.get(UNCARRY));
+    let Some(at) = list.iter().position(|x| x.same(d)) else { return false };
+    list[at].tries += 1;
+    let gave_up = list[at].tries >= GIVE_UP;
+    if gave_up {
+        list.remove(at);
+        let mut stuck: Vec<Stuck> = data.get(STUCK).and_then(|v| serde_json::from_value(v.clone()).ok()).unwrap_or_default();
+        stuck.retain(|x| !(x.lead == d.lead && x.task == d.task));
+        stuck.push(Stuck { lead: d.lead.clone(), task: d.task.clone(), why: why.to_owned() });
+        data.insert(STUCK.to_owned(), serde_json::to_value(&stuck).unwrap_or(serde_json::Value::Null));
+    }
+    if list.is_empty() {
+        data.remove(UNCARRY);
+    } else {
+        data.insert(UNCARRY.to_owned(), serde_json::to_value(&list).unwrap_or(serde_json::Value::Null));
+    }
+    gave_up
 }
 
 /// The `git` args that unpack it, run in the copies folder: a clone of the bundle, the lead's commit checked out on
@@ -211,11 +271,36 @@ mod tests {
         assert!(!of_lead("t10-far", "t1"), "another lead whose id starts the same");
         assert!(!of_lead("t1", "t1"));
         assert!(!of_lead("work-far", ""), "no lead: nothing");
-        let l = with_drop(Vec::new(), Drop { lead: "t1".into(), task: "r1".into() });
-        let l = with_drop(l, Drop { lead: "t1".into(), task: "r1".into() });
+        let l = with_drop(Vec::new(), Drop { lead: "t1".into(), task: "r1".into(), tries: 0 });
+        let l = with_drop(l, Drop { lead: "t1".into(), task: "r1".into(), tries: 0 });
         assert_eq!(l.len(), 1);
         let v = serde_json::to_value(&l).unwrap();
         assert_eq!(pending(Some(&v)), l);
         assert!(pending(Some(&serde_json::json!("junk"))).is_empty());
+    }
+
+    /// A copy a machine can never remove isn't tried forever: each refusal counts, the count survives the drop being
+    /// asked again, and at `GIVE_UP` it leaves the sweep and the machine's row notes it (once); another drop is untouched.
+    #[test]
+    fn a_drop_the_machine_keeps_refusing_is_given_up_with_a_note_on_its_row() {
+        let d = Drop { lead: "t1".into(), task: "r1".into(), tries: 0 };
+        let other = Drop { lead: "t2".into(), task: String::new(), tries: 0 };
+        let mut data = std::collections::BTreeMap::new();
+        let list = with_drop(with_drop(Vec::new(), d.clone()), other.clone());
+        data.insert(UNCARRY.to_owned(), serde_json::to_value(&list).unwrap());
+        for n in 1..GIVE_UP {
+            assert!(!refused(&mut data, &d, "a copy stayed"), "try {n}");
+            // asked again meanwhile (the lead's delete retried): still one, its count kept
+            let again = with_drop(pending(data.get(UNCARRY)), d.clone());
+            assert_eq!(again.len(), 2);
+            assert_eq!(again.iter().find(|x| x.same(&d)).unwrap().tries, n);
+        }
+        assert!(refused(&mut data, &d, "a copy stayed: t1-far: Directory not empty"), "given up at GIVE_UP");
+        assert_eq!(pending(data.get(UNCARRY)), vec![other.clone()], "only the other drop is swept");
+        assert_eq!(data[STUCK], serde_json::json!([{ "lead": "t1", "task": "r1", "why": "a copy stayed: t1-far: Directory not empty" }]));
+        assert!(!refused(&mut data, &d, "again"), "gone from the sweep: nothing more counted");
+        assert_eq!(data[STUCK].as_array().unwrap().len(), 1);
+        // a drop never tried still reads as it did (no tries field)
+        assert_eq!(serde_json::to_value(&other).unwrap(), serde_json::json!({ "lead": "t2", "task": "" }));
     }
 }
