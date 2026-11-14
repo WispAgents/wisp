@@ -74,6 +74,9 @@ impl Host for CtxHost {
     fn spawn(&self, fut: BoxFuture<'static, ()>) {
         self.ctx.spawn(fut);
     }
+    fn scope(&self) -> Option<wisp_proc::Scope> {
+        Some(self.ctx.scope().clone())
+    }
     fn agent_access(&self) -> Option<Arc<dyn wisp_runtime_api::points::AgentAccess>> {
         self.ctx.service::<Arc<dyn wisp_runtime_api::points::AgentAccess>>().ok().map(|a| a.as_ref().clone())
     }

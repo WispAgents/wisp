@@ -557,3 +557,40 @@ async fn the_first_answer_names_the_task_after_what_was_asked_but_never_a_compar
     until("the run to end", || async { last_status(&r, run.as_str()).await == Some(TurnStatus::Done) }).await;
     assert_eq!(r.rt.get(run.as_str()).await.unwrap().title, "fix the logout");
 }
+
+/// A CLI that exited before it read the prompt written to its stdin (the write failed) still has its turn driven to
+/// its end: the turn lands with what the CLI said, the run lets go, and a follow-up starts at once (the task had read
+/// as running forever, every follow-up queued and never started). Queued follow-ups stay, never discarded.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_cli_gone_before_it_read_its_prompt_ends_its_turn_and_follow_ups_start() {
+    let r = common::rig_on(Recorder::default(), vec![common::Fake::deaf()]).await;
+    let id = r.rt.create(start("a long prompt")).await.unwrap().id;
+    until("the turn to end", || async { last_status(&r, id.as_str()).await.is_some_and(|s| s != TurnStatus::Running) }).await;
+    let t = r.rt.turns(id.as_str(), None, Some(1)).await.unwrap().pop().unwrap();
+    assert_eq!(t.status, TurnStatus::Error, "{t:?}");
+    assert!(t.text.as_deref().unwrap_or_default().contains("went before reading"), "what the CLI said: {t:?}");
+    until("the run to let go", || async { r.rt.get(id.as_str()).await.is_ok_and(|s| s.state != SessionState::Running) }).await;
+    let out = r.rt.follow_up(follow(&id, "again", false)).await.unwrap();
+    assert!(out.turn_id.is_some() && out.queued.is_none(), "started, not queued behind a run that's gone: {out:?}");
+    until("the follow-up to end", || async {
+        r.rt.turns(id.as_str(), None, None).await.unwrap().len() == 2 && last_status(&r, id.as_str()).await != Some(TurnStatus::Running)
+    })
+    .await;
+    assert_eq!(r.sim.spawned().len(), 2);
+}
+
+/// Switching wisp.runtime off (its scope cancelled) ends a running turn's work with it: the CLI's tree is killed and
+/// its drive goes (it was a bare `tokio::spawn`, outside the plugin's scope, and the CLI ran on).
+#[tokio::test(flavor = "multi_thread")]
+async fn switching_the_runtime_off_ends_a_running_turns_cli_and_drive() {
+    use wisp_proc::ProcService as _;
+    let scope = wisp_proc::Scope::new();
+    let r = rig_with(Recorder { scope: Some(scope.clone()), ..Recorder::default() }).await;
+    let id = r.rt.create(start("slow one")).await.unwrap().id;
+    until("the CLI to run", || async { r.sim.live() == 1 }).await;
+    scope.cancel();
+    until("the CLI to be killed", || async { r.sim.live() == 0 }).await;
+    // its drive went with the scope: nothing landed the turn after its CLI was gone (a restart marks it stopped)
+    tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+    assert_eq!(last_status(&r, id.as_str()).await, Some(TurnStatus::Running));
+}

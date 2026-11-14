@@ -61,7 +61,7 @@ impl Claims {
     }
 
     #[cfg(test)]
-    fn count(&self, task: &str) -> usize {
+    pub(crate) fn count(&self, task: &str) -> usize {
         lock(&self.inner).by_task.get(task).map_or(0, Vec::len)
     }
 }

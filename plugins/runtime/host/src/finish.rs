@@ -239,23 +239,26 @@ impl Runtime {
             if next.is_some() && self.persist(&mut s, Vec::new()).await.is_err() {
                 return;
             }
-            next.map(|n| (s, n))
+            // claimed under the task's lock, before its start is spawned: a delete (it takes the lock) either came
+            // first (no row: nothing starts) or finds this claim and waits for it; claimed in the spawned task, a
+            // delete in between waited on nothing and the start's `folder_ready` could bring a worktree back for it
+            next.map(|n| (self.claims.claim(sid), s, n))
         };
-        if let Some((s, n)) = next {
-            self.spawn_start(s, n);
+        if let Some((claim, s, n)) = next {
+            self.spawn_start(s, n, claim);
         }
     }
 
-    /// Starts a queued turn on its own task. A sync step on purpose: a run's end starting the next run
-    /// would otherwise make the run's future contain itself, and its `Send` couldn't be proven.
-    fn spawn_start(self: &Arc<Self>, s: Session, n: wisp_runtime_api::model::QueueItem) {
+    /// Starts a queued turn on its own task, on the plugin's scope. A sync step on purpose: a run's end starting the
+    /// next run would otherwise make the run's future contain itself, and its `Send` couldn't be proven.
+    fn spawn_start(self: &Arc<Self>, s: Session, n: wisp_runtime_api::model::QueueItem, claim: crate::claims::Claim) {
         let rt = self.clone();
         let sid = s.id.0.clone();
-        tokio::spawn(async move {
-            if let Err(err) = rt.start_turn(s, n).await {
+        self.host.spawn(Box::pin(async move {
+            if let Err(err) = rt.start_claimed(s, n, claim).await {
                 tracing::warn!(task = %sid, %err, "the next queued follow-up did not start");
             }
-        });
+        }));
     }
 }
 
@@ -302,4 +305,60 @@ fn cache_reads(st: &wisp_runtime_api::model::TurnStats) -> Option<u64> {
         models.values().map(|m| m.get("cacheRead").and_then(serde_json::Value::as_u64)).try_fold(0u64, |a, x| x.map(|x| a + x))
     });
     reads.or(st.cache_tokens)
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod tests {
+    use std::sync::Arc;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    use wisp_kernel::BoxFuture;
+    use wisp_runtime_api::TurnId;
+    use wisp_runtime_api::model::{QueueItem, Session};
+    use wisp_runtime_api::points::RunPart;
+
+    use crate::{Recorder, Runtime, repo::Repo, schema};
+
+    /// Counts the runs whose folder was made ready.
+    #[derive(Default)]
+    struct Ready(AtomicUsize);
+    impl RunPart for Ready {
+        fn id(&self) -> &'static str {
+            "test.ready"
+        }
+        fn ready(&self, _s: &Session, _turn: Option<&TurnId>) -> BoxFuture<'static, Result<(), String>> {
+            self.0.fetch_add(1, Ordering::SeqCst);
+            Box::pin(async { Ok(()) })
+        }
+    }
+
+    /// The next queued follow-up claims its task when its run lets go, under the task's lock and before its start is
+    /// spawned: a delete right after finds the claim and the start goes no further, not even its folder made ready
+    /// (claimed only once the spawned start ran, the delete waited on nothing and `folder_ready` brought the deleted
+    /// task's worktree back).
+    #[tokio::test(flavor = "current_thread")]
+    async fn the_next_queued_follow_up_is_claimed_before_its_start_is_spawned() {
+        let store = wisp_store::Store::open(wisp_store::Location::Memory, Arc::new(wisp_store::SystemClock)).unwrap();
+        schema::install(&store).unwrap();
+        let ready = Arc::new(Ready::default());
+        let host = Arc::new(Recorder { parts: vec![ready.clone()], ..Recorder::default() });
+        let proc: wisp_proc::Proc = Arc::new(wisp_proc::sim::SimProc::new());
+        let rt = Runtime::new(Repo::new(store), host, proc, Arc::new(wisp_store::SystemClock));
+        let mut s = Session {
+            id: "t1".into(),
+            agent: "fake".into(),
+            cwd: std::env::temp_dir().display().to_string(),
+            queue: vec![QueueItem { id: "q1".into(), text: "next".into(), ..QueueItem::default() }],
+            ..Session::default()
+        };
+        rt.persist(&mut s, Vec::new()).await.unwrap();
+        rt.release_run("t1").await;
+        // no await since: the spawned start hasn't run yet
+        assert_eq!(rt.claims.count("t1"), 1, "claimed before its start was spawned");
+        rt.delete("t1").await.unwrap();
+        assert_eq!(rt.claims.count("t1"), 0, "the delete waited for it to let go");
+        assert_eq!(ready.0.load(Ordering::SeqCst), 0, "the deleted task's folder was never made ready");
+        assert!(rt.repo.session("t1").await.is_err(), "nothing put its row back");
+    }
 }

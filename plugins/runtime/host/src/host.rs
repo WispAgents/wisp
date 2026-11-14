@@ -62,9 +62,14 @@ pub trait Host: Send + Sync + 'static {
     fn agent_access(&self) -> Option<Arc<dyn wisp_runtime_api::points::AgentAccess>> {
         None
     }
-    /// Work that outlives the command (a side run): on the plugin's scope, so switching it off ends it.
+    /// Work that outlives the command (a side run, a turn's drive, the next queued start): on the plugin's scope, so
+    /// switching it off ends it.
     fn spawn(&self, fut: wisp_kernel::BoxFuture<'static, ()>) {
         tokio::spawn(fut);
+    }
+    /// The plugin's scope, for the processes it spawns (a turn's CLI): switching it off kills their trees. Additive.
+    fn scope(&self) -> Option<wisp_proc::Scope> {
+        None
     }
     fn summary_fields(&self) -> Vec<Arc<dyn SummaryField>> {
         Vec::new()
@@ -121,6 +126,9 @@ pub struct Recorder {
     pub shots: Option<std::path::PathBuf>,
     /// every `before:run` it was asked, in order
     pub ran: Mutex<Vec<BeforeRunCtx>>,
+    /// a stand-in for the plugin's scope: cancelled, what was spawned on it (a drive, its CLI) ends, as when the
+    /// runtime is switched off
+    pub scope: Option<wisp_proc::Scope>,
 }
 
 impl std::fmt::Debug for Recorder {
@@ -173,6 +181,21 @@ impl Host for Recorder {
     }
     fn router(&self) -> Option<(Arc<dyn wisp_router_api::service::RouterApi>, wisp_kernel::Call)> {
         self.router.clone().map(|r| (r, wisp_kernel::Call::new_root(wisp_kernel::Caller::user())))
+    }
+    fn spawn(&self, fut: BoxFuture<'static, ()>) {
+        let Some(scope) = self.scope.clone() else {
+            tokio::spawn(fut);
+            return;
+        };
+        tokio::spawn(async move {
+            tokio::select! {
+                () = scope.cancelled() => {}
+                () = fut => {}
+            }
+        });
+    }
+    fn scope(&self) -> Option<wisp_proc::Scope> {
+        self.scope.clone()
     }
 }
 

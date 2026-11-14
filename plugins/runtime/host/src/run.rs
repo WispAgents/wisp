@@ -91,9 +91,19 @@ fn shown(title: &str, summary: &str, status: &str) -> Presentation {
 
 impl Runtime {
     /// Starts `item` as the task's next turn. The turn id, also for one held or refused.
-    pub async fn start_turn(self: &Arc<Self>, mut s: Session, item: QueueItem) -> Result<TurnId> {
+    pub async fn start_turn(self: &Arc<Self>, s: Session, item: QueueItem) -> Result<TurnId> {
         // claimed before its first await: a delete from here on finds it, stops it and waits for it (`claims.rs`)
         let claim = self.claims.claim(s.id.as_str());
+        self.start_claimed(s, item, claim).await
+    }
+
+    /// `start_turn` on a claim its caller took (the next queued follow-up claims under the task's lock, before its
+    /// start is spawned: `finish.rs`).
+    pub(crate) async fn start_claimed(self: &Arc<Self>, mut s: Session, item: QueueItem, claim: Claim) -> Result<TurnId> {
+        // deleted before it ran at all: not even its folder is made ready (a worktree brought back for a deleted task)
+        if claim.cancelled() {
+            return Err(RuntimeError::NoTask(s.id.0.clone()));
+        }
         let was = s.agent.clone();
         apply_opts(&mut s, &item);
         // a capped task's turn never runs above its cap, whatever its queued item asked (F-chan-10)
@@ -458,6 +468,8 @@ impl Runtime {
             cwd: Some(cwd),
             env: Env { clear: false, set, remove: launch.env_remove.clone() },
             no_stdin: launch.stdin == Stdin::Null,
+            // the CLI's tree goes with the plugin's scope (switching wisp.runtime off), as its drive does
+            scope: self.host.scope(),
             ..SpawnOpts::default()
         };
         let args: Vec<String> = launch.args.iter().map(|a| fill(a)).collect();
@@ -489,16 +501,22 @@ impl Runtime {
         };
         let (handle, rx, ctl_rx, ended_tx) = spawned?;
         if let Stdin::Bytes(b) = &launch.stdin {
-            handle.write(b.clone())?;
+            // a CLI that exited before reading its prompt is driven all the same: `Live` is in, and only its drive
+            // takes it out (a turn whose write failed here read as running forever, its follow-ups queued unstarted);
+            // its exit ends the turn with what it said, and the next queued follow-up starts
+            if let Err(err) = handle.write(b.clone()) {
+                tracing::warn!(task = %s.id, %err, "runtime: the prompt didn't reach the CLI");
+            }
             handle.close_stdin();
         }
         let rt = self.clone();
         let driver = h.driver(run);
         let (sid, tid) = (s.id.0.clone(), t.id.0.clone());
-        tokio::spawn(async move {
+        // on the plugin's scope: switching wisp.runtime off ends the drive (and its CLI, through the spawn's scope)
+        self.host.spawn(Box::pin(async move {
             rt.drive(sid, tid, driver, handle, rx, ctl_rx).await;
             drop(ended_tx);
-        });
+        }));
         Ok(true)
     }
 

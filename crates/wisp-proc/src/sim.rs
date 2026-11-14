@@ -71,6 +71,8 @@ pub struct Spawned {
 struct State {
     programs: HashMap<String, Program>,
     spawned: Vec<Spawned>,
+    /// programs whose stdin is closed from the start (they exited before reading it): a write fails
+    deaf: std::collections::HashSet<String>,
 }
 
 /// The simulated service. Clones share programs and records.
@@ -115,6 +117,14 @@ impl SimProc {
                 Exit { code: Some(code), signal: None }
             }
         })
+    }
+
+    /// `name`'s stdin is closed as it starts, as for a CLI that exited before reading it: a write to it fails
+    /// (`ProcError::StdinClosed`).
+    #[must_use]
+    pub fn closed_stdin(self, name: &str) -> Self {
+        self.lock().deaf.insert(name.to_owned());
+        self
     }
 
     /// Every spawn so far, in order.
@@ -192,6 +202,7 @@ impl ProcService for SimProc {
 
     fn spawn(&self, bin: &str, args: &[String], opts: SpawnOpts) -> Result<Child> {
         let program = self.record(bin, args, &opts, false).ok_or_else(|| ProcError::NotFound(bin.to_owned()))?;
+        let deaf = self.lock().deaf.contains(base_name(bin));
         let (stdin_tx, stdin_rx) = mpsc::unbounded_channel();
         let (out_tx, out_rx) = crate::output_channel();
         let (size_tx, size_rx) = watch::channel(opts.pty);
@@ -211,7 +222,7 @@ impl ProcService for SimProc {
             killed: killed.clone(),
         };
         let control = SimControl {
-            stdin: Mutex::new((!opts.no_stdin).then_some(stdin_tx)),
+            stdin: Mutex::new((!opts.no_stdin && !deaf).then_some(stdin_tx)),
             size: size_tx,
             signals: sig_tx,
             killed: killed.clone(),

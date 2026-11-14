@@ -243,6 +243,10 @@ impl Runtime {
     pub async fn delete(self: &Arc<Self>, id: &str) -> Result<()> {
         self.stop_run(id);
         let guard = self.task_lock(id).await;
+        // a run still starting (the next queued follow-up, claimed under this lock when its run let go) is told
+        // before the row's write below lets it run on: it stops before its folder is made ready; `stop_and_wait`
+        // waits for it after
+        drop(self.claims.cancel(id));
         let key = id.to_owned();
         let was = self.repo.session(id).await.ok();
         // turns, events and queue items go with the row (ON DELETE CASCADE): one change row for the task

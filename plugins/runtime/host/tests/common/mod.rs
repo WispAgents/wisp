@@ -11,7 +11,8 @@ use wisp_proc::Exit;
 use wisp_proc::sim::{SimIo, SimProc};
 use wisp_runtime::{Recorder, Runtime, repo::Repo, schema};
 use wisp_runtime_api::harness::{
-    HarnessFound, HarnessInfo, HarnessModel, HarnessParser, HarnessRun, HarnessSys, Launch, ParserInput, ParserOutput, RunDriver, pure,
+    HarnessFound, HarnessInfo, HarnessModel, HarnessParser, HarnessRun, HarnessSys, Launch, ParserInput, ParserOutput, RunDriver, Stdin,
+    pure,
 };
 use wisp_runtime_api::{Harness, HarnessEvent};
 use wisp_store::{Location, Store, SystemClock};
@@ -21,6 +22,8 @@ pub struct Fake {
     info: HarnessInfo,
     /// the program it launches (`fake`; another is one the sim doesn't have, so its spawn fails)
     program: &'static str,
+    /// its prompt also written to its stdin (`Stdin::Bytes`, a prompt too long for argv)
+    piped: bool,
 }
 
 impl Fake {
@@ -36,6 +39,7 @@ impl Fake {
                 ..HarnessInfo::default()
             },
             program: "fake",
+            piped: false,
         })
     }
 
@@ -51,6 +55,7 @@ impl Fake {
                 ..HarnessInfo::default()
             },
             program: "fake",
+            piped: false,
         })
     }
 
@@ -58,7 +63,14 @@ impl Fake {
     pub fn gone(id: &str, name: &str) -> Arc<dyn Harness> {
         let mut info = Self::varies(id, name).info().clone();
         info.id = id.into();
-        Arc::new(Self { info, program: "gone-cli" })
+        Arc::new(Self { info, program: "gone-cli", piped: false })
+    }
+
+    /// Its prompt goes in on stdin, and its CLI (`deaf`) exits before reading it: the write fails.
+    pub fn deaf() -> Arc<dyn Harness> {
+        let mut info = Self::harness().info().clone();
+        info.id = "deaf".into();
+        Arc::new(Self { info, program: "deaf", piped: true })
     }
 
     pub fn harness() -> Arc<dyn Harness> {
@@ -71,6 +83,7 @@ impl Fake {
                 ..HarnessInfo::default()
             },
             program: "fake",
+            piped: false,
         })
     }
 }
@@ -137,7 +150,8 @@ impl Harness for Fake {
         if !run.skills.is_empty() {
             args.push(format!("--skills={}", run.skills));
         }
-        Ok(Launch { program: self.program.into(), args, ..Launch::default() })
+        let stdin = if self.piped { Stdin::Bytes(run.prompt.clone().into_bytes()) } else { Stdin::Null };
+        Ok(Launch { program: self.program.into(), args, stdin, ..Launch::default() })
     }
     fn driver(&self, _run: &HarnessRun) -> Box<dyn RunDriver> {
         pure(Lines { done: false })
@@ -214,8 +228,16 @@ pub static HANG_GONE: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicB
 async fn fake_cli(mut io: SimIo) -> Exit {
     let prompt = io.args.first().cloned().unwrap_or_default();
     if prompt.starts_with("hang") {
+        // set as it goes, however: the sim's kill may end it by dropping it (its own `killed` branch wins the
+        // select) before a store after this await ran, and a delete that waited for it read it as still running
+        struct Gone;
+        impl Drop for Gone {
+            fn drop(&mut self) {
+                HANG_GONE.store(true, std::sync::atomic::Ordering::SeqCst);
+            }
+        }
+        let _gone = Gone;
         io.killed.cancelled().await;
-        HANG_GONE.store(true, std::sync::atomic::Ordering::SeqCst);
         return Exit { code: None, signal: Some("SIGKILL".into()) };
     }
 
@@ -245,6 +267,12 @@ async fn fake_cli(mut io: SimIo) -> Exit {
     Exit { code: Some(0), signal: None }
 }
 
+/// A CLI that's gone before it reads its input: a line on stderr, exit 1.
+async fn deaf_cli(io: SimIo) -> Exit {
+    io.eprint(b"error: it went before reading its prompt\n").await;
+    Exit { code: Some(1), signal: None }
+}
+
 pub struct Rig {
     pub rt: Arc<Runtime>,
     pub host: Arc<Recorder>,
@@ -260,7 +288,7 @@ pub async fn rig_with(host: Recorder) -> Rig {
 pub async fn rig_on(host: Recorder, harnesses: Vec<Arc<dyn Harness>>) -> Rig {
     let store = Store::open(Location::Memory, Arc::new(SystemClock)).unwrap();
     schema::install(&store).unwrap();
-    let sim = SimProc::new().program("fake", fake_cli);
+    let sim = SimProc::new().program("fake", fake_cli).program("deaf", deaf_cli).closed_stdin("deaf");
     let host = Arc::new(Recorder { harnesses, ..host });
     let rt = Runtime::new(Repo::new(store.clone()), host.clone(), Arc::new(sim.clone()), Arc::new(SystemClock));
     rt.start().await.unwrap();
