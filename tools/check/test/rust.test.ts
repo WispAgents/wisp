@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { codeLines, header, isTestFile } from '../core/rust.ts';
-import { RUST_MAX_FILE, RUST_MAX_FN, eventsInCode, longFns, rustEvents, rustIndexCopy, rustLayers, rustManifests, rustMcp, rustMcpOwners, rustPath, rustSansIo, rustSetExt, rustSizes, rustTypedCommands, rustUnsafe } from '../rules/rust.ts';
+import { RUST_MAX_FILE, RUST_MAX_FN, eventsInCode, longFns, rustCanonicalize, rustEvents, rustIndexCopy, rustLayers, rustManifests, rustMcp, rustMcpOwners, rustPath, rustSansIo, rustSetExt, rustSizes, rustTypedCommands, rustUnsafe } from '../rules/rust.ts';
 import { fixture, messages, run, writeTree } from './helpers.ts';
 
 test('rust-layers: plugins use other plugins through -api only; api ↛ core ↛ host; base crates use no plugin', async () => {
@@ -341,4 +341,44 @@ test('rust-index-copy: fs::copy of a git index (near an index identifier or stri
   assert.deepEqual(await run(rustIndexCopy, root), ['plugins/carry/host/src/lib.rs:18 rust-index-copy', 'plugins/carry/host/src/lib.rs:2 rust-index-copy', 'plugins/carry/host/src/lib.rs:7 rust-index-copy']);
   const [m] = await messages(rustIndexCopy, root);
   assert.ok(m?.includes('wisp_proc::copy_index'), m);
+});
+
+test('rust-canonicalize: std/tokio/Path canonicalize fails anywhere (tests included) outside crates/wisp-proc/src/canon.rs unless a `// canonicalize: <why>` says why; comments and strings do not', async () => {
+  const root = writeTree(
+    new Map([
+      ['Cargo.toml', '[workspace]\nmembers = ["crates/*", "plugins/*/host"]\n'],
+      ['crates/wisp-proc/Cargo.toml', '[package]\nname = "wisp-proc"\n'],
+      ['crates/wisp-proc/src/canon.rs', 'pub fn canonical_blocking(p: &Path) { std::fs::canonicalize(p).map(strip); }'], // the helper's home: none
+      ['crates/wisp-proc/src/other.rs', 'fn x(p: &Path) { let _ = p.canonicalize(); }'], // 1: elsewhere in wisp-proc: the finding
+      ['plugins/git/host/Cargo.toml', '[package]\nname = "wisp-git"\n'],
+      [
+        'plugins/git/host/src/lib.rs',
+        [
+          'async fn open(p: &Path) {', // 1
+          '    let d = tokio::fs::canonicalize(p).await;', // 2: tokio's: the finding
+          '    let e = wisp_proc::canonical(p).await;', // the helper: none
+          '    // std::fs::canonicalize(p) would be \\\\?\\ on Windows', // a comment: none
+          '    let s = "fs::canonicalize(";', // a string: none
+          '    // canonicalize: Unix-only, the xcode link',
+          '    let x = std::fs::canonicalize("/var/db/x");', // a reason above: none
+          '    let y = std::fs::canonicalize(p); // canonicalize: a crate with no deps',
+          '    // canonicalize:',
+          '    let z = std::fs::canonicalize(p);', // 10: no reason given: the finding
+          '}',
+          '#[cfg(test)]',
+          'mod tests { fn t(p: &Path) { std::fs::canonicalize(p).unwrap(); } }', // 13: tests too: the finding
+        ].join('\n'),
+      ],
+      ['plugins/git/host/tests/common/mod.rs', 'pub fn tmp(d: &Path) -> Tmp { Tmp(std::fs::canonicalize(&d).unwrap()) }'], // 1: the Windows CI failure: the finding
+    ]),
+  );
+  assert.deepEqual(await run(rustCanonicalize, root), [
+    'crates/wisp-proc/src/other.rs:1 rust-canonicalize',
+    'plugins/git/host/src/lib.rs:10 rust-canonicalize',
+    'plugins/git/host/src/lib.rs:13 rust-canonicalize',
+    'plugins/git/host/src/lib.rs:2 rust-canonicalize',
+    'plugins/git/host/tests/common/mod.rs:1 rust-canonicalize',
+  ]);
+  const [m] = await messages(rustCanonicalize, root);
+  assert.ok(m?.includes('wisp_proc::canonical'), m);
 });

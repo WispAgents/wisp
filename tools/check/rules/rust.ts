@@ -18,6 +18,8 @@
 //                   PATH, ADR-0057) or with a `// path: inherited <why>` comment (rust-path.ts)
 //   rust-index-copy a scratch git index is made with wisp_proc::copy_index (the mtime kept), never fs::copy:
 //                   git's racy-clean check would drop a same-size edit (rust-index-copy.ts)
+//   rust-canonicalize a path is canonicalized through wisp_proc::canonical only: std's is `\\?\C:\…` on Windows,
+//                   which git reads as a host (rust-canonicalize.ts)
 //   rust-resource-kinds  a plugin with tables a user sets up registers a resource kind (its settings are
 //                   wisp.settings' `setting` kind), unless plugins/resources/pending-kinds.txt lists it
 // Normal and build dependencies count for the layers; dev-dependencies don't (tests may wire anything).
@@ -348,13 +350,15 @@ export { rustMcp } from './rust-mcp.ts';
 import { rustMcp } from './rust-mcp.ts';
 export { rustMcpOwners } from './rust-mcp-owners.ts';
 import { rustMcpOwners } from './rust-mcp-owners.ts';
+import { rustCanonicalize } from './rust-canonicalize.ts';
 import { rustIndexCopy } from './rust-index-copy.ts';
 import { rustPath } from './rust-path.ts';
 import { rustSetExt } from './rust-set-ext.ts';
 import { rustTypedCommands } from './rust-typed-commands.ts';
+export { rustCanonicalize } from './rust-canonicalize.ts';
 export { rustIndexCopy } from './rust-index-copy.ts';
 export { rustPath } from './rust-path.ts';
 export { rustSetExt } from './rust-set-ext.ts';
 export { rustTypedCommands } from './rust-typed-commands.ts';
 
-export const RUST_RULES: readonly Rule[] = [rustLayers, rustSansIo, rustUnsafe, rustSizes, rustManifests, rustResourceKinds, rustEvents, rustMcp, rustMcpOwners, rustTypedCommands, rustSetExt, rustPath, rustIndexCopy];
+export const RUST_RULES: readonly Rule[] = [rustLayers, rustSansIo, rustUnsafe, rustSizes, rustManifests, rustResourceKinds, rustEvents, rustMcp, rustMcpOwners, rustTypedCommands, rustSetExt, rustPath, rustIndexCopy, rustCanonicalize];
