@@ -7,6 +7,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Added
 
+- **v2: wisp on a phone's browser.** On iPhone, Add to Home Screen opens wisp full screen, clear of the notch and home indicator. Under 900 px a task opens as its own page with Back, and Esc on New task goes back to the list as in v1.
 - **v2: previews in the cloud.** A preview block in an answer shows the agent's live page even when wisp runs in the cloud: the grid shows that box's page at its own preview address, to the box's owner only.
 - **v2: `wisp` opens the app.** `wisp` (and `npx wisp-agents`) opens the installed desktop app on the running wisp, or a browser tab with `--browser` or when there's no app, and refuses a port another program holds instead of starting a second server.
 - **v2: usage stats as in v1.** wisp sends v1's anonymous usage events and reports server errors and crashes (never paths, prompts or names), with the off switch in Settings.
@@ -210,6 +211,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Fixed
 
+- **v2: speed on a phone.** The task list scrolls smoothly with thousands of tasks (one kit CSS rule made every row restyle on each frame), a task opens at once on a slow connection, and Back to the list is twice as fast.
 - **v2: processes.** A harness probe whose caller gave up is ended, and exec plugins stop with wisp, even when wisp is killed. Harness detection no longer waits 45 s when a CLI hangs: probes run at once, each runs once, and answers are kept until the CLI changes.
 - **v2: no stray agents.** If wisp is killed (a crash, Force Quit), the agent CLIs and everything they started stop with it instead of running on in the background.
 - **v2: sending a task.** Sending from Home opens the task you just sent instead of a blank page; the harness picker no longer shows Claude Code twice; a task page no longer says *Mark read needs a newer wisp.runtime*. Telemetry's off switch and install id are kept across restarts, and learned preferences and retro history survive a restart; wisp refuses at startup any plugin data kind that could never be saved.
