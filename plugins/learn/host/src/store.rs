@@ -39,6 +39,9 @@ pub const RETRO: EntityDef = EntityDef {
     seq: None,
     topics,
 };
+/// How far each task was read: no client watches it (a task id and a count, nothing secret), but the store keeps only
+/// rows on a topic; with none every write was refused, and a retro's log row (written with it) went too.
+pub const SEEN_TOPIC: &str = "plugin:wisp.learn:seen";
 pub const SEEN: EntityDef = EntityDef {
     kind: "learn.seen",
     table: "learn_seen",
@@ -47,7 +50,7 @@ pub const SEEN: EntityDef = EntityDef {
     json_columns: &[],
     parent: None,
     seq: None,
-    topics: |_| Vec::new(),
+    topics: |_| vec![SEEN_TOPIC.into()],
 };
 
 /// What the tables hold, read once at start.
@@ -146,4 +149,39 @@ fn seen_row(w: &mut wisp_store::Writer<'_>, sid: &str, turns: u32) -> wisp_store
 pub async fn put_seen(store: &Store, sid: &str, turns: u32) -> wisp_store::Result<()> {
     let sid = sid.to_owned();
     store.write(move |w| seen_row(w, &sid, turns)).await
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod tests {
+    use std::sync::Arc;
+
+    use wisp_store::{Location, SystemClock};
+
+    use super::*;
+
+    fn open(file: &std::path::Path) -> Store {
+        let store = Store::open(Location::Path(file.to_owned()), Arc::new(SystemClock)).unwrap();
+        install(&store).unwrap();
+        store
+    }
+
+    /// `learn_seen` rows were on no topic, so the store refused each write: how far a task was read was lost at every
+    /// start (its old turns read again), and a retro's log row, written in the same transaction, went with it.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn how_far_a_task_was_read_and_its_retro_survive_a_restart() {
+        let dir = std::env::temp_dir().join(format!("wisp-learn-restart-{}", wisp_kernel::ids::uuid7()));
+        let file = dir.join("wisp.db");
+        {
+            let store = open(&file);
+            put_seen(&store, "s1", 3).await.unwrap();
+            let run = Retro { id: "r1".into(), session_id: "s2".into(), at: 5, status: "nothing".into(), ..Retro::default() };
+            put_retro(&store, &run, serde_json::to_value(&run).unwrap(), Vec::new(), 4).await.unwrap();
+        }
+        let d = load(&open(&file)).await.unwrap();
+        assert_eq!(d.seen.get("s1"), Some(&3), "read up to turn 3, still after a restart");
+        assert_eq!(d.seen.get("s2"), Some(&4));
+        assert_eq!(d.history.iter().map(|r| r.id.as_str()).collect::<Vec<_>>(), ["r1"], "the retro's log row is kept");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 }
