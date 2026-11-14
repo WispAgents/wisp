@@ -35,7 +35,7 @@ const WIDTHS = (process.env.WIDTHS || '1440,1024,900,600,390,320').split(',').ma
 const THEMES = (process.env.THEMES || 'light,dark').split(',');
 const SHOTS = path.join(OUT, 'layout');
 
-function freePort() {
+export function freePort() {
   return new Promise((resolve, reject) => {
     const s = net.createServer().listen(0, '127.0.0.1', () => {
       const { port } = s.address();
@@ -45,15 +45,15 @@ function freePort() {
   });
 }
 
-/** Starts the gallery's vite server (or, with --area, the app on the mock peer) and resolves its URL once it answers. */
-async function startGallery() {
+/** Starts the gallery's vite server (or, with an area, the app on the mock peer) and resolves its URL once it answers. qa/platform.mjs starts the app with it too. */
+export async function startGallery(area = AREA) {
   const port = await freePort();
   const vite = path.join(ROOT, 'node_modules', 'vite', 'bin', 'vite.js');
-  const args = AREA ? ['--port', String(port), '--strictPort', '--host', '127.0.0.1'] : ['--config', 'gallery/vite.config.ts', '--port', String(port), '--strictPort', '--host', '127.0.0.1'];
+  const args = area ? ['--port', String(port), '--strictPort', '--host', '127.0.0.1'] : ['--config', 'gallery/vite.config.ts', '--port', String(port), '--strictPort', '--host', '127.0.0.1'];
   const child = spawn(process.execPath, [vite, ...args], {
-    cwd: AREA ? path.join(ROOT, 'apps', 'web') : path.join(ROOT, 'packages', 'ui'),
+    cwd: area ? path.join(ROOT, 'apps', 'web') : path.join(ROOT, 'packages', 'ui'),
     // the app on v1's reference data, as qa/parity.mjs runs it: qa/layout-areas.mjs paths use its ids
-    env: AREA ? { ...process.env, MOCK_SEED: path.join(ROOT, 'design', 'v1-reference', 'seed.json') } : process.env,
+    env: area ? { ...process.env, MOCK_SEED: path.join(ROOT, 'design', 'v1-reference', 'seed.json') } : process.env,
     stdio: ['ignore', 'pipe', 'pipe'],
   });
   let log = '';
