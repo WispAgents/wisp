@@ -1,6 +1,9 @@
+// The path tests are Unix only (`/w/my repo` is not an absolute path on Windows), and so are their imports.
+#[cfg(unix)]
 use std::path::Path;
 
 use serde_json::{Value, json};
+#[cfg(unix)]
 use wisp_lsp_api::Severity;
 
 use super::{Action, Client};

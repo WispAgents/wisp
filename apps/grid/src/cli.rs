@@ -115,11 +115,18 @@ async fn serve(data: Option<PathBuf>) -> crate::Result<()> {
     let grid = crate::edge::Grid::new(cfg, db, clock, boxes);
     let stop = tokio_util::sync::CancellationToken::new();
     let server = tokio::spawn(crate::edge::serve(grid.clone(), listener, stop.clone()));
-    let mut term = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate()).map_err(|e| crate::bad(e.to_string(), 500))?;
-    tokio::select! {
-        _ = tokio::signal::ctrl_c() => {}
-        _ = term.recv() => {}
+    #[cfg(unix)]
+    {
+        let mut term =
+            tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate()).map_err(|e| crate::bad(e.to_string(), 500))?;
+        tokio::select! {
+            _ = tokio::signal::ctrl_c() => {}
+            _ = term.recv() => {}
+        }
     }
+    // no SIGTERM off Unix: Ctrl-C only
+    #[cfg(not(unix))]
+    let _ = tokio::signal::ctrl_c().await;
     eprintln!("  ◌ stopping every box…");
     stop.cancel();
     grid.boxes.close_all().await;

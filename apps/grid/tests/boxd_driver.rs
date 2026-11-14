@@ -1,6 +1,7 @@
 //! hostd's container driver against a fake boxd: a run asks boxd for the box (with its secret in the env, never on
 //! a command line), the box is up once its port answers, stopping it closes the run's connection, and removing it
-//! asks boxd to delete it.
+//! asks boxd to delete it. Unix only: boxd (and so the fake) serves a Unix socket.
+#![cfg(unix)]
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
 use std::sync::{Arc, Mutex};

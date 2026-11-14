@@ -376,6 +376,7 @@ async fn a_claim_through_a_symlink_or_dotdot_holds_the_real_folder() {
     assert!(archived::tidy(&e, &user(), &wt, e.mark()).await.unwrap().removed, "t2's claim, `..` out of it, never held it");
 }
 
+#[cfg(unix)] // only the Unix symlink test needs it
 fn fsx_parent(p: &str) -> String {
     Path::new(p).parent().unwrap().to_string_lossy().into_owned()
 }

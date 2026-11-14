@@ -38,6 +38,7 @@ fn set_mode(p: &Path, mode: u32) -> Result<()> {
     Ok(())
 }
 #[cfg(not(unix))]
+#[allow(clippy::unnecessary_wraps)] // the Unix one can fail; no mode bits to set here
 fn set_mode(_: &Path, _: u32) -> Result<()> {
     Ok(())
 }

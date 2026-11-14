@@ -12,13 +12,19 @@
 //! ```
 //!
 //! std only, on purpose (ADR-0014): every line it pulled in would run as root.
+//!
+//! Unix only: it serves a Unix socket and checks owners and modes, so on other systems (the workspace is still
+//! built and linted on Windows) it compiles to a `main_with` that says so and exits.
 
 pub mod json;
 pub mod run;
+#[cfg(unix)]
 pub mod serve;
 
+#[cfg(unix)]
 use serve::Opts;
 
+#[cfg(unix)]
 fn opts(args: &[String]) -> Result<Opts, String> {
     let mut o = Opts::default();
     let mut it = args.iter();
@@ -43,6 +49,15 @@ fn opts(args: &[String]) -> Result<Opts, String> {
     Ok(o)
 }
 
+#[cfg(not(unix))]
+#[must_use]
+#[allow(clippy::needless_pass_by_value)] // the same signature as on Unix
+pub fn main_with(_args: Vec<String>) -> i32 {
+    eprintln!("boxd: runs on Linux only (it serves a Unix socket)");
+    1
+}
+
+#[cfg(unix)]
 #[must_use]
 #[allow(clippy::needless_pass_by_value)] // main hands over its arguments
 pub fn main_with(args: Vec<String>) -> i32 {

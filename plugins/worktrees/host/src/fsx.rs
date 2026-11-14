@@ -155,7 +155,10 @@ pub async fn within_real(p: &str, dir: &str) -> bool {
 #[cfg(test)]
 #[allow(clippy::unwrap_used)]
 mod within_tests {
-    use super::{clean, norm, within, within_real};
+    use super::{clean, within};
+    // the on-disk (symlink) test is Unix only, and so are its helpers
+    #[cfg(unix)]
+    use super::{norm, within_real};
 
     #[test]
     fn a_folder_is_within_itself_and_its_parents_only() {
@@ -199,6 +202,7 @@ mod within_tests {
         assert!(!within(r"\\srv\share2\x", r"\\srv\share"));
     }
 
+    #[cfg(unix)]
     fn scratch(name: &str) -> std::path::PathBuf {
         let d = std::env::temp_dir().join(format!("wisp-fsx-{name}-{}", std::process::id()));
         drop(std::fs::remove_dir_all(&d));

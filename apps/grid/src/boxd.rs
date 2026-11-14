@@ -8,7 +8,6 @@ use std::sync::{Arc, Mutex, PoisonError};
 
 use serde_json::{Value, json};
 use tokio::io::{AsyncBufReadExt as _, AsyncWriteExt as _, BufReader};
-use tokio::net::UnixStream;
 use tokio::sync::{mpsc, watch};
 
 use crate::error::{Result, bad};
@@ -45,6 +44,19 @@ impl Driver {
     }
 }
 
+/// boxd's socket.
+#[cfg(unix)]
+async fn connect(socket: &Path) -> std::io::Result<tokio::net::UnixStream> {
+    tokio::net::UnixStream::connect(socket).await
+}
+
+/// boxd listens on a Unix socket, so off Unix (the grid runs on Linux; the workspace still builds on Windows)
+/// there is none to reach.
+#[cfg(not(unix))]
+fn connect(_socket: &Path) -> std::future::Ready<std::io::Result<tokio::io::DuplexStream>> {
+    std::future::ready(Err(std::io::Error::new(std::io::ErrorKind::Unsupported, "boxd needs a Unix socket")))
+}
+
 fn unreachable(socket: &Path, e: &dyn std::fmt::Display) -> String {
     format!("boxd didn't answer at {} ({e}): is wisp-grid-boxd running?", socket.display())
 }
@@ -52,7 +64,7 @@ fn unreachable(socket: &Path, e: &dyn std::fmt::Display) -> String {
 /// One request and its answer (`ping`, `remove`); boxd's `error` becomes an error.
 pub async fn call(socket: &Path, req: &Value) -> Result<Value> {
     let go = async {
-        let mut s = UnixStream::connect(socket).await.map_err(|e| bad(unreachable(socket, &e), 503))?;
+        let mut s = connect(socket).await.map_err(|e| bad(unreachable(socket, &e), 503))?;
         s.write_all(format!("{req}\n").as_bytes()).await.map_err(|e| bad(unreachable(socket, &e), 503))?;
         let mut lines = BufReader::new(s).lines();
         let mut answer = Value::Null;
@@ -83,8 +95,8 @@ pub struct BoxdRun {
 impl BoxdRun {
     /// Starts the box; its output goes to `log`.
     pub async fn start(socket: &Path, mut req: Value, log: PathBuf) -> Result<Self> {
-        let s = UnixStream::connect(socket).await.map_err(|e| bad(unreachable(socket, &e), 503))?;
-        let (rd, mut wr) = s.into_split();
+        let s = connect(socket).await.map_err(|e| bad(unreachable(socket, &e), 503))?;
+        let (rd, mut wr) = tokio::io::split(s);
         req["op"] = json!("run");
         wr.write_all(format!("{req}\n").as_bytes()).await.map_err(|e| bad(unreachable(socket, &e), 503))?;
         let (control, mut rx) = mpsc::unbounded_channel::<String>();

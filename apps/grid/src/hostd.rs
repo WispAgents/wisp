@@ -44,7 +44,8 @@ pub struct ProcessOptions {
 /// A started box: a process here, or a container boxd runs.
 #[derive(Debug)]
 enum BoxProc {
-    Local(tokio::process::Child),
+    /// boxed: a Child is 272 bytes on Windows, a [`crate::boxd::BoxdRun`] 32
+    Local(Box<tokio::process::Child>),
     Boxd(crate::boxd::BoxdRun),
 }
 
@@ -251,7 +252,7 @@ impl ProcessHost {
         for (k, v) in self.box_env(user, port, secret) {
             cmd.env(k, v);
         }
-        Ok(BoxProc::Local(cmd.spawn().map_err(|e| bad(format!("wisp didn't start in the box: {e}"), 503))?))
+        Ok(BoxProc::Local(Box::new(cmd.spawn().map_err(|e| bad(format!("wisp didn't start in the box: {e}"), 503))?)))
     }
 
     async fn start(&self, user: &BoxUser) -> Result<Running> {

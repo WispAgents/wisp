@@ -53,6 +53,7 @@ fn executable(p: &Path) -> std::io::Result<()> {
     std::fs::set_permissions(p, std::fs::Permissions::from_mode(0o755))
 }
 #[cfg(not(unix))]
+#[allow(clippy::unnecessary_wraps)] // the Unix one can fail; no mode bits to set here
 fn executable(_p: &Path) -> std::io::Result<()> {
     Ok(())
 }

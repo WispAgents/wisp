@@ -36,16 +36,6 @@ pub fn signal_number(name: &str) -> Option<i32> {
     }
 }
 
-pub fn signal_name(sig: i32) -> String {
-    match sig {
-        SIGKILL => "SIGKILL".to_owned(),
-        SIGTERM => "SIGTERM".to_owned(),
-        SIGHUP => "SIGHUP".to_owned(),
-        2 => "SIGINT".to_owned(),
-        n => format!("SIG{n}"),
-    }
-}
-
 fn check(ok: i32) -> io::Result<()> {
     if ok == 0 { Err(io::Error::last_os_error()) } else { Ok(()) }
 }

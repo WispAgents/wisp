@@ -103,20 +103,19 @@ pub async fn clone_or_copy_with(e: &Engine, from: &str, to: &str, platform: &str
 }
 
 /// `cp -c` clones only within one volume and copies quietly otherwise.
+#[cfg(unix)]
 async fn same_device(a: &str, b: &str) -> bool {
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::MetadataExt;
-        match (tokio::fs::symlink_metadata(a).await, tokio::fs::metadata(b).await) {
-            (Ok(x), Ok(y)) => x.dev() == y.dev(),
-            _ => false,
-        }
+    use std::os::unix::fs::MetadataExt;
+    match (tokio::fs::symlink_metadata(a).await, tokio::fs::metadata(b).await) {
+        (Ok(x), Ok(y)) => x.dev() == y.dev(),
+        _ => false,
     }
-    #[cfg(not(unix))]
-    {
-        let _ = (a, b);
-        false
-    }
+}
+
+/// No `cp -c` clone to check off Unix: always a plain copy.
+#[cfg(not(unix))]
+fn same_device(_a: &str, _b: &str) -> std::future::Ready<bool> {
+    std::future::ready(false)
 }
 
 type Boxed = Pin<Box<dyn Future<Output = std::io::Result<()>> + Send>>;

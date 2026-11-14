@@ -10,7 +10,7 @@
 //! stranger who got a remembered pid again never is. Windows: the child's Job Object holds the tree; `TerminateJobObject` ends it.
 
 use std::collections::{BTreeMap, BTreeSet};
-use std::sync::{Mutex, PoisonError};
+use std::sync::Mutex;
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -79,7 +79,9 @@ fn wait_until_gone(limit: Duration, mut left: impl FnMut() -> usize) -> usize {
 
 #[cfg(unix)]
 mod imp {
-    use super::{BTreeSet, Duration, KILL_WAIT, PoisonError, Report, Tree, sys, wait_until_gone};
+    use std::sync::PoisonError;
+
+    use super::{BTreeSet, Duration, KILL_WAIT, Report, Tree, sys, wait_until_gone};
 
     /// The tree's live pids: the group, the root while it runs, the members seen before that still
     /// run (same pid, same start), and their descendants. Remembers what it found.
@@ -169,7 +171,7 @@ mod imp {
 
 #[cfg(windows)]
 mod imp {
-    use super::{BTreeSet, Duration, KILL_WAIT, PoisonError, Report, Tree, sys, wait_until_gone};
+    use super::{BTreeSet, Duration, KILL_WAIT, Report, Tree, sys, wait_until_gone};
 
     fn descendants(root: u32) -> BTreeSet<u32> {
         let Ok(table) = sys::processes() else {
