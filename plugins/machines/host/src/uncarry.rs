@@ -122,7 +122,8 @@ pub(crate) async fn drop_copies(plugin: &Path, lead: &str) -> wisp_kernel::Resul
             if !e.file_name().to_str().is_some_and(|n| core::of_lead(n, lead)) {
                 continue;
             }
-            let gone = if dir { tokio::fs::remove_dir_all(e.path()).await } else { tokio::fs::remove_file(e.path()).await };
+            // a copy holds git's read-only pack files: the shared removal clears them (Windows refuses otherwise)
+            let gone = if dir { wisp_proc::remove_tree(e.path()).await } else { tokio::fs::remove_file(e.path()).await };
             match gone {
                 Ok(()) if dir => copies += 1,
                 Ok(()) => {}

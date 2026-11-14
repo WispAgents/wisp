@@ -215,7 +215,7 @@ pub(crate) async fn take_in(ctx: &Ctx, a: &api::TakeInArgs) -> wisp_kernel::Resu
     }
     let Some(parent) = dir.parent().map(Path::to_owned) else { return Err(WireError::internal("the copy has no folder")) };
     // the same copy again (the member's next job): a fresh copy of what came now; its last changes went back already
-    let _ = tokio::fs::remove_dir_all(&dir).await;
+    let _ = wisp_proc::remove_tree(&dir).await;
     tokio::fs::create_dir_all(&parent).await.map_err(wire)?;
     let (b, d) = (bundle.display().to_string(), dir.display().to_string());
     for args in core::unpack_commands(&b, &d, &a.head, &a.branch) {

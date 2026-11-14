@@ -22,11 +22,11 @@ pub async fn mkdirp(p: impl AsRef<Path>) -> std::io::Result<()> {
     tokio::fs::create_dir_all(p).await
 }
 
-/// Removes a file or a tree; gone already is fine.
+/// Removes a file or a tree (read-only files in it too: git's packs); gone already is fine.
 pub async fn rm_rf(p: impl AsRef<Path>) {
     let p = p.as_ref();
     match tokio::fs::symlink_metadata(p).await {
-        Ok(m) if m.is_dir() => drop(tokio::fs::remove_dir_all(p).await),
+        Ok(m) if m.is_dir() => drop(wisp_proc::remove_tree(p).await),
         Ok(_) => drop(tokio::fs::remove_file(p).await),
         Err(_) => {}
     }

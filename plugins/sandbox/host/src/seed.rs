@@ -117,7 +117,7 @@ pub async fn seed(ctx: &Ctx, home: &Path, a: &api::SeedArgs) -> Result<api::Seed
         return Ok(api::Seeded { cwd: dir.display().to_string(), setup: None });
     };
     // the same project again (a member's own sandbox, the next job): a fresh copy of what came now
-    let _ = tokio::fs::remove_dir_all(&dir).await;
+    let _ = wisp_proc::remove_tree(&dir).await;
     let cloned = async {
         for args in core::seed_commands(&bundle.display().to_string(), &dir.display().to_string(), &a.branch, &a.origin) {
             run(&proc, &code, "git", &args, None, 300)

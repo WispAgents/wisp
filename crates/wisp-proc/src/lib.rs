@@ -17,6 +17,7 @@ mod index;
 mod local;
 mod pipes;
 mod pty;
+mod remove;
 pub mod resolve;
 pub mod sim;
 mod sys;
@@ -39,6 +40,7 @@ pub type BoxFuture<'a, T> = std::pin::Pin<Box<dyn std::future::Future<Output = T
 pub use error::{ProcError, Result};
 pub use index::{copy_index, copy_index_blocking};
 pub use local::{LocalProc, search_path, set_path, terminal_command, vars};
+pub use remove::{remove_tree, remove_tree_blocking};
 
 /// The kernel service plugins ask for: `ctx.service::<Proc>()`.
 pub type Proc = Arc<dyn ProcService>;

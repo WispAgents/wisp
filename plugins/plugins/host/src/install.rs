@@ -173,7 +173,7 @@ pub async fn install(ctx: &Ctx, a: &InstallArgs) -> Result<Installed> {
     let gone = |why: String| {
         let staging = staging.clone();
         async move {
-            let _ = tokio::fs::remove_dir_all(&staging).await;
+            let _ = wisp_proc::remove_tree(&staging).await;
             Err(WireError::invalid(why))
         }
     };
@@ -190,7 +190,7 @@ pub async fn install(ctx: &Ctx, a: &InstallArgs) -> Result<Installed> {
         ctx.uninstall_plugin(&m.id).await?;
     }
     let dir = root.join(slug(&m.id));
-    let _ = tokio::fs::remove_dir_all(&dir).await;
+    let _ = wisp_proc::remove_tree(&dir).await;
     tokio::fs::rename(&staging, &dir).await.map_err(|e| WireError::internal(format!("couldn't move it into place: {e}")))?;
     let text = tokio::fs::read_to_string(dir.join(MANIFEST)).await.unwrap_or_default();
     // what's installed starts untrusted, a reinstall too: trusting it again is your call
@@ -208,7 +208,7 @@ pub async fn install(ctx: &Ctx, a: &InstallArgs) -> Result<Installed> {
 pub async fn uninstall(ctx: &Ctx, a: &UninstallArgs) -> Result<serde_json::Value> {
     ctx.uninstall_plugin(&a.id).await?;
     let home = ctx.service::<wisp_kernel::services::Paths>()?;
-    let _ = tokio::fs::remove_dir_all(home.join("plugins").join(slug(&a.id))).await;
+    let _ = wisp_proc::remove_tree(home.join("plugins").join(slug(&a.id))).await;
     Ok(serde_json::json!({ "ok": true, "id": a.id }))
 }
 
