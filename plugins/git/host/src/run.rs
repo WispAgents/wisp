@@ -153,7 +153,7 @@ async fn xcode_git() -> Option<String> {
     if std::env::consts::OS != "macos" {
         return None;
     }
-    let dir = tokio::fs::canonicalize("/var/db/xcode_select_link").await.ok()?;
+    let dir = wisp_proc::canonical("/var/db/xcode_select_link").await.ok()?;
     let git: PathBuf = dir.join("usr/bin/git");
     tokio::fs::metadata(&git).await.ok().filter(std::fs::Metadata::is_file)?;
     Some(git.to_string_lossy().into_owned())

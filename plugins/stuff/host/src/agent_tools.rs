@@ -125,7 +125,7 @@ fn local(cwd: &str, p: &str) -> PathBuf {
 
 /// v1 `insideFolders`: links followed, so one inside the folder pointing out doesn't get out.
 async fn inside_folders(file: &Path, roots: &[String]) -> bool {
-    let real = |p: PathBuf| async move { tokio::fs::canonicalize(&p).await.unwrap_or(p) };
+    let real = |p: PathBuf| async move { wisp_proc::canonical(&p).await.unwrap_or(p) };
     let at = real(file.to_owned()).await;
     for r in roots.iter().filter(|r| !r.is_empty()) {
         if inside(&at, &real(PathBuf::from(r)).await) {

@@ -24,7 +24,7 @@ async fn resolve(bin: &str) -> Option<(PathBuf, PathBuf)> {
         wisp_proc::search_path().map(|p| std::env::split_paths(&p).map(|d| d.join(bin)).collect()).unwrap_or_default()
     };
     for p in candidates {
-        if let Ok(real) = tokio::fs::canonicalize(&p).await
+        if let Ok(real) = wisp_proc::canonical(&p).await
             && tokio::fs::metadata(&real).await.is_ok_and(|m| m.is_file())
         {
             return Some((p, real));

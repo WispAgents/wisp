@@ -72,7 +72,7 @@ impl GitServiceImpl {
     pub(crate) async fn open(self: Arc<Self>, owner: CancellationToken, path: String) -> Result<RepoImpl> {
         // "" or a relative path would canonicalize against the server's own folder
         let full = wisp_runtime_api::paths::Folder::of(&path).map_err(|_| GitError::NoFolder(path.clone()))?;
-        let dir = tokio::fs::canonicalize(full.path()).await.map_err(|_| GitError::NoFolder(path.clone()))?;
+        let dir = wisp_proc::canonical(full.path()).await.map_err(|_| GitError::NoFolder(path.clone()))?;
         let repo = if let Some(r) = self.reuse(&dir) {
             r
         } else {
@@ -177,7 +177,7 @@ impl GitServiceImpl {
 }
 
 async fn canonical(p: &str) -> PathBuf {
-    tokio::fs::canonicalize(p).await.unwrap_or_else(|_| PathBuf::from(p))
+    wisp_proc::canonical(p).await.unwrap_or_else(|_| PathBuf::from(p))
 }
 
 /// The service as plugins get it: an `Arc` around the cache.

@@ -156,6 +156,7 @@ tracing-subscriber.workspace = true
 
 [dev-dependencies]
 portable-pty.workspace = true
+wisp-proc.workspace = true
 wisp-testkit.workspace = true
 wisp-grid = { path = "../../apps/grid" }
 hmac.workspace = true

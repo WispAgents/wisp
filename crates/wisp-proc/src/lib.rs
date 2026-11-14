@@ -10,6 +10,7 @@
 //!
 //! The only `unsafe` in wisp lives in `sys/`: each block is one OS call with a `SAFETY:` comment.
 
+mod canon;
 mod child;
 pub mod error;
 mod index;
@@ -29,6 +30,7 @@ use serde::{Deserialize, Serialize};
 use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 
+pub use canon::{canonical, canonical_blocking, strip_verbatim, without_verbatim};
 pub use child::{Child, ChildControl, ChildHandle};
 pub use tokio_util::sync::CancellationToken as Scope;
 

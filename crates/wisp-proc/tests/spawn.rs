@@ -58,7 +58,7 @@ async fn which_finds_programs_on_path() {
 #[tokio::test]
 async fn env_is_patched_cwd_is_honoured() {
     let proc = wisp_proc::local();
-    let dir = std::env::temp_dir().canonicalize().unwrap();
+    let dir = wisp_proc::canonical_blocking(std::env::temp_dir()).unwrap();
     let env = Env::default().with("WISP_T", "yes").without("HOME");
     let r = proc
         .exec(

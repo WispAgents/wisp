@@ -105,7 +105,7 @@ impl HarnessSessions for CursorSessions {
     fn list(&self, cwd: &str) -> BoxFuture<'static, Vec<OutsideSession>> {
         let (root, cwd) = (self.root.clone(), cwd.to_owned());
         Box::pin(async move {
-            let resolved = tokio::fs::canonicalize(&cwd).await.ok();
+            let resolved = wisp_proc::canonical(&cwd).await.ok();
             let forms = folder_forms(&cwd, resolved.as_deref());
             let mut out: Vec<OutsideSession> = Vec::new();
             let mut dirs: Vec<String> = forms.iter().map(|f| project_dir(f)).collect();

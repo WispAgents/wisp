@@ -2,6 +2,8 @@
 
 use std::path::{Path, PathBuf};
 
+use wisp_proc::strip_verbatim;
+
 pub async fn exists(p: impl AsRef<Path>) -> bool {
     tokio::fs::try_exists(p).await.unwrap_or(false)
 }
@@ -11,9 +13,9 @@ pub async fn read_opt(p: impl AsRef<Path>) -> Option<String> {
     tokio::fs::read_to_string(p).await.ok()
 }
 
-/// The real path (symlinks, macOS's /private/tmp), else the path as given.
+/// The real path (symlinks, macOS's /private/tmp; never Windows' `\\?\` form), else the path as given.
 pub async fn real(p: &str) -> String {
-    tokio::fs::canonicalize(p).await.map_or_else(|_| p.to_owned(), |r| r.to_string_lossy().into_owned())
+    wisp_proc::canonical(p).await.map_or_else(|_| p.to_owned(), |r| r.to_string_lossy().into_owned())
 }
 
 pub async fn mkdirp(p: impl AsRef<Path>) -> std::io::Result<()> {
@@ -56,12 +58,6 @@ pub fn join(a: &str, b: &str) -> String {
 
 pub fn parent(p: &str) -> String {
     Path::new(p).parent().map_or_else(|| p.to_owned(), |d| d.to_string_lossy().into_owned())
-}
-
-/// `p` without Windows' verbatim prefix (`\\?\C:\x` is `C:\x`, `\\?\UNC\srv\share` is `\\srv\share`), which
-/// `canonicalize` adds and git refuses.
-pub fn strip_verbatim(p: &str) -> String {
-    if let Some(rest) = p.strip_prefix(r"\\?\UNC\") { format!(r"\\{rest}") } else { p.strip_prefix(r"\\?\").unwrap_or(p).to_owned() }
 }
 
 /// `p` cleaned by its text alone (no disk): the verbatim prefix gone, `.` and empty parts dropped, `..` taking
@@ -117,8 +113,8 @@ pub async fn norm(p: &str) -> String {
     let comps: Vec<std::path::Component<'_>> = Path::new(&raw).components().collect();
     for i in (1..=comps.len()).rev() {
         let base: PathBuf = comps[..i].iter().collect();
-        if let Ok(real) = tokio::fs::canonicalize(&base).await {
-            let mut out = strip_verbatim(&real.to_string_lossy());
+        if let Ok(real) = wisp_proc::canonical(&base).await {
+            let mut out = real.to_string_lossy().into_owned();
             for c in &comps[i..] {
                 if !out.ends_with(['/', '\\']) {
                     out.push(std::path::MAIN_SEPARATOR);

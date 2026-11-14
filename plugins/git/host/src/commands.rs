@@ -64,14 +64,14 @@ async fn hash_at(file: &Path) -> Option<String> {
 async fn target(root: &Path, rel: &str) -> Result<PathBuf> {
     let rel = lexical_path(rel).ok_or_else(|| GitError::NoFolder(NOT_HERE.into()))?;
     let file = root.join(&rel);
-    let real_root = tokio::fs::canonicalize(root).await?;
+    let real_root = wisp_proc::canonical(root).await?;
     let mut probe = file.clone();
     while tokio::fs::symlink_metadata(&probe).await.is_err() {
         if !probe.pop() {
             break;
         }
     }
-    let at = tokio::fs::canonicalize(&probe).await.unwrap_or_default();
+    let at = wisp_proc::canonical(&probe).await.unwrap_or_default();
     if at != real_root && !at.starts_with(&real_root) {
         return Err(GitError::NoFolder(NOT_HERE.into()));
     }

@@ -116,7 +116,7 @@ impl HarnessSessions for AntigravitySessions {
     fn list(&self, cwd: &str) -> BoxFuture<'static, Vec<OutsideSession>> {
         let (root, cwd) = (self.root.clone(), cwd.to_owned());
         Box::pin(async move {
-            let resolved = tokio::fs::canonicalize(&cwd).await.ok();
+            let resolved = wisp_proc::canonical(&cwd).await.ok();
             let forms = folder_forms(&cwd, resolved.as_deref());
             tokio::task::spawn_blocking(move || list_in(&root, &forms)).await.unwrap_or_default()
         })

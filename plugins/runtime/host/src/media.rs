@@ -133,7 +133,7 @@ impl Runtime {
         let Some(mut f) = media_file(&dir, asked, &blocks, &|p| seen.get(p).copied().unwrap_or(false)) else { return Ok(None) };
         // a link in the folder that points out of it is outside too
         if !f.outside {
-            let (real, root) = (tokio::fs::canonicalize(&f.path).await, tokio::fs::canonicalize(&dir).await);
+            let (real, root) = (wisp_proc::canonical(&f.path).await, wisp_proc::canonical(&dir).await);
             f.outside = !matches!((real, root), (Ok(real), Ok(root)) if real.starts_with(&root));
         }
         if f.outside && !fits(&f.path).await {
@@ -172,7 +172,7 @@ impl Runtime {
         if let Some(doc) = doc_file(&dir, asked, &blocks, &|_| true).filter(|p| !p.starts_with(&dir) && document(p)) {
             return Ok(Some(doc));
         }
-        let (real, root) = (tokio::fs::canonicalize(&at).await, tokio::fs::canonicalize(&dir).await);
+        let (real, root) = (wisp_proc::canonical(&at).await, wisp_proc::canonical(&dir).await);
         Ok(matches!((real, root), (Ok(real), Ok(root)) if real.starts_with(&root)).then_some(at))
     }
 

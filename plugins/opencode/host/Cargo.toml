@@ -17,6 +17,7 @@ tracing.workspace = true
 wisp-kernel.workspace = true
 wisp-runtime-api.workspace = true
 wisp-harness-kit.workspace = true
+wisp-proc.workspace = true
 wisp-opencode-core.workspace = true
 
 [dev-dependencies]

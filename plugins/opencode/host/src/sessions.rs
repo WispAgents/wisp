@@ -129,7 +129,7 @@ impl HarnessSessions for OpencodeSessions {
     fn list(&self, cwd: &str) -> BoxFuture<'static, Vec<OutsideSession>> {
         let (db, cwd) = (self.db.clone(), cwd.to_owned());
         Box::pin(async move {
-            let resolved = tokio::fs::canonicalize(&cwd).await.ok();
+            let resolved = wisp_proc::canonical(&cwd).await.ok();
             let forms = folder_forms(&cwd, resolved.as_deref());
             tokio::task::spawn_blocking(move || open(&db).map(|c| list_in(&c, &forms)).unwrap_or_default()).await.unwrap_or_default()
         })

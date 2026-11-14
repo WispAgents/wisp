@@ -32,8 +32,7 @@ fn ms(t: std::io::Result<std::time::SystemTime>) -> i64 {
 /// The folder as the disk names it: on a case-insensitive disk `~/code` and `~/Code` are one folder (v1 listed
 /// each repo twice), and a known project reached by the other spelling is still known. Windows' `\\?\` prefix goes.
 async fn real(p: &Path) -> String {
-    let r = tokio::fs::canonicalize(p).await.unwrap_or_else(|_| p.to_owned()).display().to_string();
-    r.strip_prefix(r"\\?\").map(str::to_owned).unwrap_or(r)
+    wisp_proc::canonical(p).await.unwrap_or_else(|_| p.to_owned()).display().to_string()
 }
 
 /// The repos under `home`'s usual folders, minus `known` (project paths).

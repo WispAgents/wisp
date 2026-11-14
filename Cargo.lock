@@ -4119,6 +4119,7 @@ dependencies = [
  "wisp-antigravity-core",
  "wisp-harness-kit",
  "wisp-kernel",
+ "wisp-proc",
  "wisp-runtime-api",
 ]
 
@@ -4531,6 +4532,7 @@ dependencies = [
  "wisp-cursor-core",
  "wisp-harness-kit",
  "wisp-kernel",
+ "wisp-proc",
  "wisp-runtime-api",
 ]
 
@@ -4837,6 +4839,7 @@ dependencies = [
  "wisp-grok-core",
  "wisp-harness-kit",
  "wisp-kernel",
+ "wisp-proc",
  "wisp-runtime-api",
 ]
 
@@ -5236,6 +5239,7 @@ dependencies = [
  "wisp-harness-kit",
  "wisp-kernel",
  "wisp-opencode-core",
+ "wisp-proc",
  "wisp-runtime-api",
 ]
 

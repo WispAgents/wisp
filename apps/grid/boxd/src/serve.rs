@@ -359,6 +359,7 @@ impl Boxd {
 /// for a link to anywhere.
 pub fn root_only_dir(dir: &Path) -> Result<(), String> {
     std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
+    // canonicalize: boxd is Linux-only and has no dependencies on purpose (ADR-0014): no verbatim prefix to strip
     let mut d = std::fs::canonicalize(dir).map_err(|e| e.to_string())?;
     loop {
         let m = std::fs::symlink_metadata(&d).map_err(|e| e.to_string())?;
