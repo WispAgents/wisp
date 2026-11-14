@@ -3,7 +3,10 @@
 //! server/proc.js), `spawn` on pipes or a PTY (portable-pty), `exec` to completion, and killing a tree
 //! so nothing it started survives (gate G12: process groups on Unix, a Job Object per child on Windows).
 //!
-//! A child may belong to a scope (a plugin's `ctx.scope()`): cancelling the scope kills its tree.
+//! A child may belong to a scope (a plugin's `ctx.scope()`): cancelling the scope kills its tree. However wisp
+//! itself ends (a clean stop, or SIGKILL and a crash) its children end too: on Unix a guard process ends their
+//! groups when wisp is gone (guard.rs), on Windows each child's job is created `KILL_ON_JOB_CLOSE` and the child
+//! joins it before it runs.
 //!
 //! The service is a trait object so an install can swap it (the grid's sandboxed spawner, `sim::SimProc`
 //! in tests). A plugin gets it with `ctx.service::<wisp_proc::Proc>()`; the binary provides `local()`.
@@ -13,6 +16,8 @@
 mod canon;
 mod child;
 pub mod error;
+#[cfg(unix)]
+mod guard;
 mod index;
 mod local;
 mod pipes;

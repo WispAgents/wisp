@@ -9,14 +9,17 @@ use std::ptr;
 
 use windows_sys::Win32::Foundation::{CloseHandle, FALSE, HANDLE, INVALID_HANDLE_VALUE};
 use windows_sys::Win32::System::Diagnostics::ToolHelp::{
-    CreateToolhelp32Snapshot, PROCESSENTRY32W, Process32FirstW, Process32NextW, TH32CS_SNAPPROCESS,
+    CreateToolhelp32Snapshot, PROCESSENTRY32W, Process32FirstW, Process32NextW, TH32CS_SNAPPROCESS, TH32CS_SNAPTHREAD, THREADENTRY32,
+    Thread32First, Thread32Next,
 };
 use windows_sys::Win32::System::JobObjects::{
     AssignProcessToJobObject, CreateJobObjectW, JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE, JOBOBJECT_BASIC_ACCOUNTING_INFORMATION,
     JOBOBJECT_EXTENDED_LIMIT_INFORMATION, JobObjectBasicAccountingInformation, JobObjectExtendedLimitInformation,
     QueryInformationJobObject, SetInformationJobObject, TerminateJobObject,
 };
-use windows_sys::Win32::System::Threading::{OpenProcess, PROCESS_SET_QUOTA, PROCESS_TERMINATE, TerminateProcess};
+use windows_sys::Win32::System::Threading::{
+    OpenProcess, OpenThread, PROCESS_SET_QUOTA, PROCESS_TERMINATE, ResumeThread, THREAD_SUSPEND_RESUME, TerminateProcess,
+};
 
 use super::ProcInfo;
 
@@ -123,6 +126,51 @@ impl Job {
         check(ok)?;
         Ok(info.ActiveProcesses)
     }
+}
+
+/// `CreateProcess`'s `CREATE_SUSPENDED`: the child's first thread waits until [`resume`], so it joins its job before
+/// it can start anything (a process started before the assignment would be outside the job, and outlive wisp).
+pub const CREATE_SUSPENDED: u32 = 0x0000_0004;
+
+/// Resume every thread of `pid` (a child started with [`CREATE_SUSPENDED`]: its one, first thread). Ok only when at
+/// least one thread was resumed.
+pub fn resume(pid: u32) -> io::Result<()> {
+    // SAFETY: flags and a pid are plain integers; a failure is INVALID_HANDLE_VALUE, checked below.
+    #[allow(unsafe_code)]
+    let snap = unsafe { CreateToolhelp32Snapshot(TH32CS_SNAPTHREAD, 0) };
+    if snap == INVALID_HANDLE_VALUE {
+        return Err(io::Error::last_os_error());
+    }
+    let snap = Owned(snap);
+    // SAFETY: THREADENTRY32 is plain data; all-zero is valid before dwSize is set.
+    #[allow(unsafe_code)]
+    let mut entry: THREADENTRY32 = unsafe { std::mem::zeroed() };
+    entry.dwSize = u32::try_from(size_of_val(&entry)).map_err(|_| io::Error::from(io::ErrorKind::InvalidInput))?;
+    let mut resumed = 0;
+    // SAFETY: the snapshot handle is open and `entry` is writable with dwSize set.
+    #[allow(unsafe_code)]
+    let mut more = unsafe { Thread32First(snap.0, &raw mut entry) };
+    while more != 0 {
+        if entry.th32OwnerProcessID == pid {
+            // SAFETY: integers only; a failure is a null handle, checked below.
+            #[allow(unsafe_code)]
+            let thread = unsafe { OpenThread(THREAD_SUSPEND_RESUME, FALSE, entry.th32ThreadID) };
+            if !thread.is_null() {
+                let thread = Owned(thread);
+                // SAFETY: the thread handle is open and owned for the call; u32::MAX is its failure value.
+                #[allow(unsafe_code)]
+                let was = unsafe { ResumeThread(thread.0) };
+                if was != u32::MAX {
+                    resumed += 1;
+                }
+            }
+        }
+        // SAFETY: as for Thread32First.
+        #[allow(unsafe_code)]
+        let next = unsafe { Thread32Next(snap.0, &raw mut entry) };
+        more = next;
+    }
+    if resumed == 0 { Err(io::Error::other(format!("no thread of {pid} to resume"))) } else { Ok(()) }
 }
 
 /// End one process (used only when a child couldn't be put in a job).

@@ -58,15 +58,25 @@ pub(crate) fn spawn(bin: &str, r: &Resolved, opts: &SpawnOpts, size: PtySize) ->
     thread::Builder::new().name(format!("{name}-read")).spawn(move || read(reader, &reader_slot, &done_tx, answer))?;
     thread::Builder::new().name(format!("{name}-write")).spawn(move || feed(&in_rx, writer))?;
     let alive2 = alive.clone();
-    thread::Builder::new().name(format!("{name}-wait")).spawn(move || {
+    // Listed with the guard once nothing but the wait thread can fail; that thread unlists it after the reap.
+    #[cfg(unix)]
+    crate::guard::watch(pid);
+    let waiter = thread::Builder::new().name(format!("{name}-wait")).spawn(move || {
         let exit = wait(child);
         alive2.store(false, Ordering::SeqCst);
+        #[cfg(unix)]
+        crate::guard::reaped(pid);
         // Output first, then the exit: the last screen includes the final lines.
         let _ = done_rx.recv_timeout(DRAIN);
         slot.lock().unwrap_or_else(PoisonError::into_inner).take();
         tracing::debug!(pid, code = ?exit.code, signal = ?exit.signal, "pty exit");
         let _ = exit_tx.send(Some(exit));
-    })?;
+    });
+    if let Err(e) = waiter {
+        #[cfg(unix)]
+        crate::guard::reaped(pid);
+        return Err(e.into());
+    }
     let control = PtyControl { input: Mutex::new(Some(in_tx)), master: Mutex::new(pair.master), tree, alive };
     let handle = ChildHandle::new(pid, true, opts.grace.unwrap_or(crate::KILL_GRACE), Arc::new(control), exit_rx);
     Ok(Child { handle, output: out_rx })

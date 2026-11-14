@@ -44,6 +44,14 @@ pub(crate) fn spawn(bin: &str, r: &Resolved, opts: &SpawnOpts) -> Result<Child> 
     let mut child = cmd.spawn().map_err(|e| ProcError::from_spawn(bin, &e))?;
     let pid = child.id().ok_or_else(|| ProcError::spawn(bin, "no pid"))?;
     let tree = Tree::new(pid);
+    #[cfg(unix)]
+    crate::guard::watch(pid);
+    // Windows: it was started suspended and is in its job now; only now may it run (and start others, in the job).
+    #[cfg(windows)]
+    if let Err(e) = sys::resume(pid) {
+        let _ = sys::terminate_pid(pid, 1);
+        return Err(ProcError::spawn(bin, format!("couldn't resume it: {e}")));
+    }
     let (out_tx, out_rx) = crate::output_channel();
     let (gone_tx, gone_rx) = watch::channel(false);
     let mut readers = Vec::with_capacity(2);
@@ -65,6 +73,8 @@ pub(crate) fn spawn(bin: &str, r: &Resolved, opts: &SpawnOpts) -> Result<Child> 
         let exit = child.wait().await.map(exit_of).unwrap_or_default();
         // Reaped: its pid may be a stranger's from now on, only its group is ours.
         alive2.store(false, Ordering::SeqCst);
+        #[cfg(unix)]
+        crate::guard::reaped(pid);
         let _ = gone_tx.send(true);
         drain(readers).await;
         tracing::debug!(pid, code = ?exit.code, signal = ?exit.signal, "exit");
@@ -166,11 +176,12 @@ fn own_group(cmd: &mut tokio::process::Command) {
     cmd.process_group(0);
 }
 
-/// No console window for a piped child (v1's `windowsHide`).
+/// No console window for a piped child (v1's `windowsHide`), and suspended until it is in its Job Object (`spawn`
+/// resumes it), so nothing it starts is ever outside the job.
 #[cfg(windows)]
 fn own_group(cmd: &mut tokio::process::Command) {
     const CREATE_NO_WINDOW: u32 = 0x0800_0000;
-    cmd.creation_flags(CREATE_NO_WINDOW);
+    cmd.creation_flags(CREATE_NO_WINDOW | sys::CREATE_SUSPENDED);
 }
 
 pub(crate) fn sig_number(sig: Signal) -> i32 {
