@@ -171,3 +171,119 @@ async fn an_exec_plugin_that_crashes_leaves_no_grandchild() {
     }
     assert!(!left, "the crashed plugin's grandchild {grandchild} (plugin {plugin}) still runs");
 }
+
+/// The harness probes the server runs (`agy --help`, `cursor-agent --list-models`, `opencode models --verbose`,
+/// `copilot help config`, `grok models`, …), as `(argv, pid)`: every record of a fake with no prompt, from
+/// `FAKE_RECORD`. Under `FAKE_HANG` a probe never answers.
+fn probes(rec: &Path) -> Vec<(String, u32)> {
+    let mut out = Vec::new();
+    for e in std::fs::read_dir(rec).into_iter().flatten().flatten() {
+        let name = e.path().file_stem().and_then(|s| s.to_str()).unwrap_or("").to_owned();
+        for r in common::records(&e.path()) {
+            if r["stdin"].as_str().is_some_and(|s| s.trim().is_empty())
+                && let Some(pid) = r["pid"].as_u64().and_then(|p| u32::try_from(p).ok())
+            {
+                out.push((format!("{name} {}", common::argv(&r).join(" ")), pid));
+            }
+        }
+    }
+    out
+}
+
+/// The probes recorded in `rec` once their list stopped growing for `quiet` (at most `limit`), as `(argv, pid)`.
+async fn settled(rec: &Path, quiet: Duration, limit: Duration) -> Vec<(String, u32)> {
+    let at = Instant::now();
+    let (mut last, mut since) = (probes(rec), Instant::now());
+    while since.elapsed() < quiet && at.elapsed() < limit {
+        tokio::time::sleep(Duration::from_millis(100)).await;
+        let now = probes(rec);
+        if now.len() != last.len() {
+            (last, since) = (now, Instant::now());
+        }
+    }
+    last
+}
+
+/// Hung probes on a live server whose fakes never answer one, in two sets: the ones started at the server's start, and
+/// the ones one `runtime.agents` request started (`hang_up`: that request is then closed, as a client that gives up
+/// does). Returns the server, the request's probes still running, every probe running, and the request.
+async fn hung_probes(
+    name: &str,
+    hang_up: bool,
+) -> (common::Serve, Vec<(String, u32)>, Vec<(String, u32)>, tokio::task::JoinHandle<serde_json::Value>) {
+    let dir = temp(name);
+    let rec = dir.join("rec");
+    let (serve, port) = start_with(&dir, &[("FAKE_HANG", "1"), ("FAKE_RECORD", rec.to_str().unwrap())]);
+    let api = Api { http: reqwest::Client::new(), port, n: 0.into() };
+    // what the server probes by itself at start (its own detects time out at 15 s, so a few seconds hold still)
+    let before: Vec<u32> = settled(&rec, Duration::from_secs(1), Duration::from_secs(8)).await.into_iter().map(|(_, p)| p).collect();
+    let agents = tokio::spawn(async move { api.try_cmd("runtime.agents", json!({})).await });
+    let at = Instant::now();
+    let ours = loop {
+        let all = settled(&rec, Duration::from_millis(500), Duration::from_secs(5)).await;
+        let ours: Vec<_> = all.into_iter().filter(|(_, p)| !before.contains(p) && alive(*p)).collect();
+        if !ours.is_empty() {
+            break ours;
+        }
+        assert!(
+            at.elapsed() < Duration::from_secs(10),
+            "runtime.agents ran no probe: {:?} {}",
+            probes(&rec),
+            std::fs::read_to_string(dir.join("serve.log")).unwrap_or_default()
+        );
+    };
+    if hang_up {
+        agents.abort();
+    }
+    let all = probes(&rec).into_iter().filter(|&(_, p)| alive(p)).collect();
+    (serve, ours, all, agents)
+}
+
+/// Waits up to `limit` for every probe in `running` to be gone; ends (by pid) and returns what is left.
+async fn left_after(running: &[(String, u32)], limit: Duration) -> Vec<(String, u32)> {
+    let at = Instant::now();
+    loop {
+        let left: Vec<_> = running.iter().filter(|&&(_, p)| alive(p)).cloned().collect();
+        if left.is_empty() || at.elapsed() > limit {
+            for (_, p) in &left {
+                end(*p);
+            }
+            return left;
+        }
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+}
+
+/// Round 211: a server killed hard (SIGKILL, `TerminateProcess`) while its harness probes still run leaves no probe
+/// (they lead groups of their own, so only the guard / their job can end them).
+#[tokio::test(flavor = "multi_thread")]
+async fn a_server_killed_hard_while_probes_run_leaves_no_probe() {
+    let (mut serve, _, running, _) = hung_probes("serve-orphans-probe-kill", false).await;
+    let _ = serve.child.kill();
+    let _ = serve.child.wait();
+    let left = left_after(&running, Duration::from_secs(10)).await;
+    assert!(left.is_empty(), "probes outlived the server: {left:?}");
+}
+
+/// Round 211: a probe that never answers is ended (its whole group) by its time limit (15 s at most) while the
+/// server runs on and its caller still waits.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_hung_harness_probe_is_ended_by_its_timeout() {
+    let (serve, running, _, agents) = hung_probes("serve-orphans-probe-timeout", false).await;
+    let left = left_after(&running, Duration::from_secs(25)).await;
+    agents.abort();
+    drop(serve);
+    assert!(left.is_empty(), "hung probes outlived their time limit: {left:?}");
+}
+
+/// Round 211 (the leak seen): the caller of `runtime.agents` gives up (a closed request, an MCP client's own timeout)
+/// while its probes hang: the dropped command never reaches the probes' time limit, so dropping it must end them; before,
+/// nothing did while the server ran, and they ran on with ppid 1 for an hour.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_probe_whose_caller_hung_up_is_ended() {
+    let (serve, running, _, _) = hung_probes("serve-orphans-probe-hangup", true).await;
+    // well inside the probes' own 15 s limit: the drop ends them, not their timeout
+    let left = left_after(&running, Duration::from_secs(8)).await;
+    drop(serve);
+    assert!(left.is_empty(), "probes ran on after their caller hung up: {left:?}");
+}

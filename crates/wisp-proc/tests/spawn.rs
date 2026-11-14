@@ -88,6 +88,38 @@ async fn exec_keeps_output_to_its_cap_and_kills_on_timeout() {
     assert_eq!(r.stdout_text(), "piped in");
 }
 
+/// Round 211: an `exec` whose caller gives up (its future dropped: a closed request, a cancelled detect) never reaches
+/// its timeout, so the drop itself ends the child and what it started in its group; before, both ran on for good.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_dropped_exec_ends_its_child_and_its_group() {
+    let proc = wisp_proc::local();
+    let file = std::env::temp_dir().join(format!("wisp-proc-dropped-exec-{}", std::process::id()));
+    let _ = std::fs::remove_file(&file);
+    let script = format!("sleep 60 & echo $$ $! > '{}'; wait", file.display());
+    let opts = ExecOpts { timeout: Some(Duration::from_secs(60)), ..ExecOpts::default() };
+    let pending = proc.exec("sh", &args(&["-c", &script]), opts);
+    let pids = tokio::time::timeout(Duration::from_secs(5), async {
+        let mut pending = pending;
+        loop {
+            tokio::select! {
+                _ = &mut pending => panic!("the exec ended on its own"),
+                () = tokio::time::sleep(Duration::from_millis(20)) => {}
+            }
+            if let Some(p) = std::fs::read_to_string(&file).ok().filter(|t| t.ends_with('\n')) {
+                break (p, pending);
+            }
+        }
+    })
+    .await
+    .expect("the child wrote its pids");
+    let (text, pending) = pids;
+    drop(pending);
+    let _ = std::fs::remove_file(&file);
+    let members: std::collections::BTreeSet<u32> = text.split_whitespace().map(|p| p.parse().unwrap()).collect();
+    assert_eq!(members.len(), 2, "{text}");
+    common::assert_all_gone(&members).await;
+}
+
 #[tokio::test]
 async fn a_background_grandchild_holding_the_pipe_does_not_hold_the_exit() {
     let proc = wisp_proc::local();

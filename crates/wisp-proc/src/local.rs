@@ -281,6 +281,8 @@ fn detach(cmd: &mut tokio::process::Command) {
 /// Runs `child` to completion for `exec`: input in, output kept up to the cap, the tree killed on timeout.
 pub(crate) async fn collect(child: Child, opts: ExecOpts) -> Result<ExecResult> {
     let (handle, mut output) = child.split();
+    // dropped before the end (its caller gave up): the timeout below never fires, so the drop ends the tree
+    let ender = EndOnDrop(handle.clone());
     if let Some(input) = opts.input {
         let _ = handle.write(input);
     }
@@ -308,5 +310,21 @@ pub(crate) async fn collect(child: Child, opts: ExecOpts) -> Result<ExecResult> 
         buf.extend_from_slice(&chunk.data[..chunk.data.len().min(room)]);
     }
     let exit = handle.exited().await;
+    drop(ender);
     Ok(ExecResult { exit, stdout, stderr, timed_out, truncated })
+}
+
+/// An `exec` child nobody waits for any more: an `exec` future dropped before its child ended (a closed request, a
+/// cancelled detect) SIGKILLs the child's whole group (Windows: its job) at once, as its timeout would have. Only
+/// `exec` holds the handle, so nothing else would ever end it while wisp runs (round 211: hung harness probes ran
+/// on for an hour). Once the child has exited and drained, it does nothing.
+struct EndOnDrop(ChildHandle);
+
+impl Drop for EndOnDrop {
+    fn drop(&mut self) {
+        if self.0.running() {
+            tracing::debug!(pid = self.0.pid(), "exec dropped: its tree is ended");
+            let _ = self.0.signal(Signal::Kill, true);
+        }
+    }
 }
