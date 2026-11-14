@@ -14,6 +14,8 @@
 //                   string id with hand-built JSON (warn while callers migrate; rust-typed-commands.ts)
 //   rust-set-ext    a plugin's `SetExtArgs { expect: None }` (a whole write of its ext slot) says why in a
 //                   `// set-ext: whole <why>` comment; a read-then-write is ext::update_ext (rust-set-ext.ts)
+//   rust-swallowed-write  a store write (`.write(|w| …)`, `.upsert(`, a `run::<…Set…>`-style command) never drops
+//                   its error in `let _ =` or `.ok();`: propagate it, warn!, or `// write: best-effort <why>`
 //   rust-path       `env::var("PATH")`/`var_os("PATH")` only in crates/wisp-proc (search_path(), the handed-over
 //                   PATH, ADR-0057) or with a `// path: inherited <why>` comment (rust-path.ts)
 //   rust-index-copy a scratch git index is made with wisp_proc::copy_index (the mtime kept), never fs::copy:
@@ -354,11 +356,13 @@ import { rustCanonicalize } from './rust-canonicalize.ts';
 import { rustIndexCopy } from './rust-index-copy.ts';
 import { rustPath } from './rust-path.ts';
 import { rustSetExt } from './rust-set-ext.ts';
+import { rustSwallowedWrite } from './rust-swallowed-write.ts';
 import { rustTypedCommands } from './rust-typed-commands.ts';
 export { rustCanonicalize } from './rust-canonicalize.ts';
 export { rustIndexCopy } from './rust-index-copy.ts';
 export { rustPath } from './rust-path.ts';
 export { rustSetExt } from './rust-set-ext.ts';
+export { rustSwallowedWrite } from './rust-swallowed-write.ts';
 export { rustTypedCommands } from './rust-typed-commands.ts';
 
-export const RUST_RULES: readonly Rule[] = [rustLayers, rustSansIo, rustUnsafe, rustSizes, rustManifests, rustResourceKinds, rustEvents, rustMcp, rustMcpOwners, rustTypedCommands, rustSetExt, rustPath, rustIndexCopy, rustCanonicalize];
+export const RUST_RULES: readonly Rule[] = [rustLayers, rustSansIo, rustUnsafe, rustSizes, rustManifests, rustResourceKinds, rustEvents, rustMcp, rustMcpOwners, rustTypedCommands, rustSetExt, rustSwallowedWrite, rustPath, rustIndexCopy, rustCanonicalize];
