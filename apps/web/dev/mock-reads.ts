@@ -170,7 +170,7 @@ export const NOT_MOCKED: Readonly<Record<string, string>> = Object.fromEntries([
     'runtime.signIn', 'connectors.signin', 'connectors.signout',
   ]),
   ...reason('wisp Grid / cloud: needs a signed-in grid (the mock has none)', [
-    'grid-client.computer', 'grid-client.revoke', 'grid-client.shares', 'grid-client.signin', 'grid-client.signinCancel', 'grid-client.signout',
+    'grid-client.computer', 'grid-client.revoke', 'grid-client.signin', 'grid-client.signinCancel', 'grid-client.signout',
     'sandbox.claude.begin', 'sandbox.claude.code', 'sandbox.drop', 'sandbox.env', 'sandbox.launch', 'sandbox.logout',
     'share.create', 'share.import', 'share.peek', 'share.preview', 'share.stop', 'stuff.publish', 'stuff.unpublish', 'crew.share',
   ]),

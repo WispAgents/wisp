@@ -50,6 +50,8 @@ export interface MockPeerOptions {
   usage?: boolean;
   /** a Try it two ways pair, run B with Skills off (POST /__mock/reset?seed=trial, F-comp-31) */
   trial?: boolean;
+  /** signed in to wisp Cloud: Settings → Cloud's account and API keys (MOCK_CLOUD=1, or POST /__mock/reset?seed=cloud) */
+  cloud?: boolean;
   /** v1's reference data (design/v1-reference/seed.json): replayed instead of the hand-written seed */
   v1?: V1Seed;
 }
@@ -91,7 +93,7 @@ export function createMockPeer(o: MockPeerOptions = {}): MockPeer {
   const epoch = o.epoch ?? `mock-${timers.now().toString(36)}`;
   const data: Seeded = o.v1
     ? fromV1(o.v1, peer)
-    : seed({ peer, now: timers.now(), extra: o.sessions ?? 0, ...(o.firstRun && { firstRun: true }), ...(o.computers && { computers: true }), ...(o.media && { media: true }), ...(o.env && { env: true }), ...(o.usage && { usage: true }), ...(o.trial && { trial: true }) });
+    : seed({ peer, now: timers.now(), extra: o.sessions ?? 0, ...(o.firstRun && { firstRun: true }), ...(o.computers && { computers: true }), ...(o.media && { media: true }), ...(o.env && { env: true }), ...(o.usage && { usage: true }), ...(o.trial && { trial: true }), ...(o.cloud && { cloud: true }) });
   const store = new Map<Topic, Map<string, Row>>();
   const conns = new Map<string, Conn>();
   const handlers = new Map<string, CommandFn>(Object.entries(COMMANDS));

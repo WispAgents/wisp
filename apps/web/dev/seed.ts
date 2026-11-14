@@ -593,7 +593,7 @@ function withTrial(peer: string, now: number, list: Row[], topics: Map<Topic, Ro
   });
 }
 
-export function seed(o: { peer: string; now: number; extra: number; firstRun?: boolean; computers?: boolean; media?: boolean; env?: boolean; usage?: boolean; trial?: boolean }): Seeded {
+export function seed(o: { peer: string; now: number; extra: number; firstRun?: boolean; computers?: boolean; media?: boolean; env?: boolean; usage?: boolean; trial?: boolean; cloud?: boolean }): Seeded {
   const topics = new Map<Topic, Row[]>();
   const list: Row[] = [];
   (o.firstRun ? [] : TASKS).forEach((t, i) => {
@@ -637,6 +637,11 @@ export function seed(o: { peer: string; now: number; extra: number; firstRun?: b
   topics.set('plugin:wisp.machine:load', LOAD_ROWS);
   topics.set('plugin:wisp.router:view', ROUTER_ROWS);
   topics.set('plugin:wisp.telemetry:state', [{ e: 'telemetry.state', id: 'this', v: { on: false, setting: true, blocked: true } }]);
+  // signed in to wisp Cloud (?seed=cloud): Settings → Cloud's account, API keys and My shares (grid-client view.rs's row)
+  if (o.cloud)
+    topics.set('plugin:wisp.grid-client:cloud', [
+      { e: 'grid-client.cloud', id: 'this', v: { signedIn: true, grid: 'https://grid.trywisp.dev', handle: 'ada', machine: '', computer: { on: false, state: 'off', label: '', url: '', error: '' }, signin: null } },
+    ]);
   // MOCK_UPDATE=2.1.0: a newer wisp is out (the top bar's Update pill, Settings → Updates); no release feed is read
   const latest = typeof process === 'undefined' ? undefined : process.env['MOCK_UPDATE'];
   if (latest) topics.set('plugin:wisp.update:state', [{ e: 'update.state', id: 'update', v: { current: '2.0.0', latest, available: true, method: 'global', channel: 'stable', status: 'idle', error: null, enabled: true, command: 'npm install -g wisp-agents@latest', checked_at: o.now, checking: false, running: 1 } }]);

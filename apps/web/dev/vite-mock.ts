@@ -8,6 +8,7 @@
 //                                 Studio, at /api/peer/studio, and a project here; MOCK_COMPUTERS=1 starts that way;
 //                                 ?seed=first-run: no tasks yet; ?seed=usage: a lead's usage and context fill;
 //                                 ?seed=trial: a Try it two ways pair (Compare says what differed);
+//                                 ?seed=cloud: signed in to wisp Cloud (Settings → Cloud → API keys), MOCK_CLOUD=1;
 //                                 New task's first run; MOCK_FIRST_RUN=1 starts that way)
 // MOCK_SESSIONS=5000 adds that many plain tasks (a long list); MOCK_PEER names the peer.
 // MOCK_SEED=<design/v1-reference/seed.json> replays v1's reference data (qa/parity.mjs), with the
@@ -21,6 +22,7 @@ import { encodeFrame, heartbeat } from '@wisp/sync';
 import { createMockPeer, type MockPeer, type MockTimers } from './mock-peer.ts';
 import { STUDIO, v1Captured, type V1Seed } from './seed.ts';
 import { resetGit } from './mock-git.ts';
+import { resetKeys } from './mock-keys.ts';
 
 function body(req: IncomingMessage): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -65,7 +67,7 @@ function runStream(req: IncomingMessage, res: ServerResponse): void {
   req.on('close', () => timers.forEach(clearTimeout));
 }
 
-type Seed = 'first-run' | 'computers' | 'media' | 'env' | 'usage' | 'trial' | undefined;
+type Seed = 'first-run' | 'computers' | 'media' | 'env' | 'usage' | 'trial' | 'cloud' | undefined;
 
 /** An answer's picture (v1 /sessions/:id/file): a drawn SVG naming the path; a video isn't there. */
 function mediaFile(url: URL, res: ServerResponse): void {
@@ -85,6 +87,7 @@ function middleware(box: { peer: MockPeer; others: Map<string, MockPeer>; fresh:
       box.peer = made.peer;
       box.others = made.others;
       resetGit();
+      resetKeys();
       return void res.writeHead(204).end();
     }
     // another computer's wisp, as the app reaches it through this one (`/api/peer/<machine>/…`)
@@ -122,13 +125,13 @@ function v1Seed(): { v1: V1Seed; timers: MockTimers } | undefined {
 
 export function mockPeer(): Plugin {
   const fresh = (
-    seed: Seed = process.env['MOCK_FIRST_RUN'] === '1' ? 'first-run' : process.env['MOCK_COMPUTERS'] === '1' ? 'computers' : undefined,
+    seed: Seed = process.env['MOCK_FIRST_RUN'] === '1' ? 'first-run' : process.env['MOCK_COMPUTERS'] === '1' ? 'computers' : process.env['MOCK_CLOUD'] === '1' ? 'cloud' : undefined,
   ): { peer: MockPeer; others: Map<string, MockPeer> } => {
     const computers = seed === 'computers';
     const peer = createMockPeer({
       sessions: Number(process.env['MOCK_SESSIONS'] ?? 0),
       ...(process.env['MOCK_PEER'] && { peer: process.env['MOCK_PEER'] }),
-      ...(seed === 'first-run' ? { firstRun: true } : computers ? { computers: true } : seed === 'media' ? { media: true } : seed === 'env' ? { env: true } : seed === 'usage' ? { usage: true } : seed === 'trial' ? { trial: true } : v1Seed()),
+      ...(seed === 'first-run' ? { firstRun: true } : computers ? { computers: true } : seed === 'media' ? { media: true } : seed === 'env' ? { env: true } : seed === 'usage' ? { usage: true } : seed === 'trial' ? { trial: true } : seed === 'cloud' ? { cloud: true } : v1Seed()),
     });
     // Studio: a wisp of its own with no tasks yet (and no projects: Run on sets one up there)
     const others = new Map<string, MockPeer>(computers ? [[STUDIO, createMockPeer({ peer: STUDIO, name: 'Studio', firstRun: true })]] : []);

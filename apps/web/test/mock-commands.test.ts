@@ -127,6 +127,22 @@ test('the reads answer the fields of the ts-rs bindings: AccountsOut, AccountVie
   expect(keys(row?.v)).toEqual([...bindingFields(at('accounts', 'AccountView')), 'agent', 'ord'].sort());
 });
 
+test('API keys answer Keys, ApiKey and NewKey: a key once, in the create answer only', () => {
+  const ctx = { rows: () => [] } as unknown as CommandCtx;
+  const run = (cmd: string, args: unknown = {}): Record<string, unknown> => COMMANDS[cmd]?.(args, ctx).result as Record<string, unknown>;
+  const keys = (o: unknown): string[] => Object.keys(o as object).sort();
+  const at = (file: string): string => `plugins/grid-client/api/bindings/grid-client/${file}.ts`;
+  const list = run('grid-client.keys');
+  expect(keys(list)).toEqual(bindingFields(at('Keys')));
+  for (const k of list['keys'] as unknown[]) expect(keys(k)).toEqual(bindingFields(at('ApiKey')));
+  const made = run('grid-client.keysCreate', { name: 'ci' });
+  expect(keys(made)).toEqual(bindingFields(at('NewKey')));
+  expect(String(made['key'])).toMatch(/^wgk_[\w-]{43}$/);
+  expect(JSON.stringify(run('grid-client.keys'))).not.toContain('wgk_');
+  expect(run('grid-client.keysRevoke', { id: made['id'] })).toEqual({ ok: true });
+  expect(() => run('grid-client.keysRevoke', { id: made['id'] })).toThrow();
+});
+
 test('All settings lists the declared settings with their owners and values (the kernel SettingInfo)', () => {
   const data = seed({ peer: 'local', now: 1_700_000_000_000, extra: 0 });
   const ctx = { rows: (t: string) => data.topics.get(t as never) ?? [] } as unknown as CommandCtx;
