@@ -82,5 +82,23 @@
     --safe-right: env(safe-area-inset-right, 0px); /* edge-to-edge: a cutout in landscape */
     --safe-bottom: env(safe-area-inset-bottom, 0px); /* edge-to-edge: the gesture bar or the 3-button bar */
     --safe-left: env(safe-area-inset-left, 0px); /* edge-to-edge: a cutout in landscape */
+    --nav-pill-w: 64px; /* M3 Navigation bar › Specs: active indicator 64 × 32 dp */
+    --nav-pill-h: 32px; /* M3 Navigation bar › Specs: active indicator 64 × 32 dp */
+    --rail-pill-w: 56px; /* M3 Navigation rail › Specs: active indicator 56 × 32 dp */
+    --nav-icon: 24px; /* M3 Navigation bar › Specs: icon 24 dp */
+    --nav-pad-top: 12px; /* M3 Navigation bar › Specs: 12 dp from the top to the indicator */
+    --nav-pad-bottom: 16px; /* M3 Navigation bar › Specs: 16 dp from the label to the bottom */
+    --nav-gap: 4px; /* M3 Navigation bar › Specs: 4 dp between the indicator and the label */
+    --rail-gap: 12px; /* M3 Navigation rail › Specs: 12 dp between destinations */
+    --rail-pad-top: 44px; /* M3 Navigation rail › Specs: destinations start 44 dp from the top (no menu or FAB) */
+    --bar-pad: 4px; /* M3 Top app bar › Specs: leading and trailing padding 4 dp around icon buttons */
+    --bar-icon-target: 48px; /* M3 Top app bar › Specs: icon buttons 48 × 48 dp targets */
+    --bar-title-gap: 4px; /* M3 Top app bar › Specs: 4 dp between the navigation icon and the title (16 dp from the edge without one) */
+    --bar-medium-pad-bottom: 24px; /* M3 Top app bar › Specs: medium title 24 dp above the bottom edge */
+    --fab-radius: 16px; /* M3 FAB › Specs: container shape large 16 dp */
+    --fab-icon: 24px; /* M3 FAB › Specs: icon 24 dp */
+    --fab-margin: 16px; /* M3 FAB › Specs: 16 dp from the screen edge and the navigation bar */
+    --fab-ext-pad: 16px; /* M3 Extended FAB › Specs: leading and trailing padding 16 dp */
+    --fab-ext-gap: 12px; /* M3 Extended FAB › Specs: 12 dp between the icon and the label */
   }
 }

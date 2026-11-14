@@ -95,6 +95,13 @@ export const ICONS = {
   user: ['0 0 24 24', '<circle cx="12" cy="8.5" r="3.5" fill="none" stroke="currentColor" stroke-width="1.7"/><path d="M5.5 19.5c.8-3.4 3.4-5.3 6.5-5.3s5.7 1.9 6.5 5.3" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>'],
   pin: ['0 0 24 24', '<path d="M12 21s-6.5-5.6-6.5-11a6.5 6.5 0 0113 0c0 5.4-6.5 11-6.5 11z" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/><circle cx="12" cy="10" r="2.4" fill="none" stroke="currentColor" stroke-width="1.7"/>'],
   crew: ['0 0 24 24', '<circle cx="12" cy="8" r="3" fill="none" stroke="currentColor" stroke-width="1.7"/><path d="M6.5 19.5c.6-3 2.8-4.8 5.5-4.8s4.9 1.8 5.5 4.8" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/><path d="M5.2 6.6a2.4 2.4 0 00.4 4.6M2.5 17.5c.3-1.8 1.2-3 2.6-3.6M18.8 6.6a2.4 2.4 0 01-.4 4.6M21.5 17.5c-.3-1.8-1.2-3-2.6-3.6" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>'],
+  // the phone apps (ADR-0065 §A.7): the selected tab's filled glyph (iOS), the compose button, Android's ⋮
+  'feed-fill': ['0 0 24 24', '<rect x="5" y="4" width="14" height="5" rx="1.6" fill="currentColor"/><rect x="5" y="11.5" width="14" height="8.5" rx="1.6" fill="currentColor"/>'],
+  'crew-fill': ['0 0 24 24', '<circle cx="12" cy="8" r="3.4" fill="currentColor"/><path d="M6 19.5c.6-3.3 3-5.3 6-5.3s5.4 2 6 5.3z" fill="currentColor"/><path d="M5.2 6.6a2.4 2.4 0 00.4 4.6M2.5 17.5c.3-1.8 1.2-3 2.6-3.6M18.8 6.6a2.4 2.4 0 01-.4 4.6M21.5 17.5c-.3-1.8-1.2-3-2.6-3.6" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>'],
+  'stuff-fill': ['0 0 24 24', '<path d="M3.8 13.2L6 7.5h12l2.2 5.7v4.8a1.5 1.5 0 01-1.5 1.5H5.3A1.5 1.5 0 013.8 18zh4.6l1.2 2.3h4.8l1.2-2.3h4.6" fill="currentColor" fill-rule="evenodd"/>'],
+  'laptop-fill': ['0 0 24 24', '<rect x="4.5" y="5" width="15" height="10.5" rx="1.8" fill="currentColor"/><path d="M2.5 19h19" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"/>'],
+  compose: ['0 0 24 24', '<path d="M11 4.5H6.5a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2V13" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/><path d="M17.6 3.6l2.8 2.8-8.2 8.2-3.6.8.8-3.6z" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/>'],
+  'dots-v': ['0 0 24 24', '<circle cx="12" cy="6" r="1.6" fill="currentColor"/><circle cx="12" cy="12" r="1.6" fill="currentColor"/><circle cx="12" cy="18" r="1.6" fill="currentColor"/>'],
 } as const satisfies Record<string, readonly [viewBox: string, markup: string]>;
 
 export type IconName = keyof typeof ICONS;

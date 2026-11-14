@@ -53,6 +53,14 @@
     --safe-right: env(safe-area-inset-right, 0px); /* safe area in landscape */
     --safe-bottom: env(safe-area-inset-bottom, 0px); /* safe area: the home indicator */
     --safe-left: env(safe-area-inset-left, 0px); /* safe area in landscape */
+    --tab-icon: 25px; /* UITabBarItem: compact glyph about 25 × 25 pt (SF Symbols in the tab bar) */
+    --type-tab: 500 10px/12px var(--font-ui); /* UITabBar item title: SF 10 pt medium */
+    --tab-gap: 2px; /* UITabBar: about 2 pt between the glyph and its title */
+    --tab-pad-top: 7px; /* UITabBar: the glyph sits about 7 pt below the bar top on iPhone */
+    --bar-pad: 8px; /* UINavigationBar: bar button items 8 pt from the layout margin (16 pt edge with the 8 pt button padding) */
+    --bar-button-gap: 6px; /* UINavigationBar: about 6 pt between trailing bar button items */
+    --large-title-pad-bottom: 8px; /* UINavigationBar large title: 8 pt below the baseline box */
+    --tab-inactive: #8e8e93; /* UITabBar unselected item tint = UIColor.systemGray */
     --spring-snappy: linear(0, 0.034, 0.117, 0.224, 0.339, 0.452, 0.557, 0.649, 0.729, 0.795, 0.849, 0.892, 0.925, 0.95, 0.969, 0.983, 0.992, 0.999, 1.003, 1.005, 1.006, 1.006, 1.006, 1.006, 1.005, 1.004, 1.003, 1.003, 1.002, 1.002, 1.001, 1); /* SwiftUI Animation.snappy: duration 0.5 s, extraBounce 0 (bounce 0.15) */
     --spring-snappy-dur: 700ms; /* spring-snappy settles (within 0.1 %) after this: its animation's duration */
     --spring-smooth: linear(0, 0.037, 0.122, 0.227, 0.337, 0.442, 0.537, 0.62, 0.692, 0.751, 0.801, 0.841, 0.874, 0.901, 0.922, 0.939, 0.952, 0.963, 0.971, 0.978, 0.983, 0.987, 0.99, 0.992, 0.994, 0.995, 0.996, 0.997, 0.998, 0.998, 0.999, 1); /* SwiftUI Animation.smooth: duration 0.5 s, bounce 0 */
@@ -73,6 +81,7 @@
     --on-surface-var: rgba(60, 60, 67, 0.6); /* UIColor.secondaryLabel */
     --outline: rgba(60, 60, 67, 0.29); /* UIColor.separator (drawn as a 0.5 pt hairline) */
     --outline-var: #c6c6c8; /* UIColor.opaqueSeparator */
+    --chrome: rgba(249, 249, 249, 0.94); /* UIBarAppearance default background (systemChromeMaterial): the tab bar and a scrolled navigation bar */
   }
   @media (prefers-color-scheme: dark) {
     :root[data-platform='ios']:not([data-theme='light']) {
@@ -88,6 +97,7 @@
       --on-surface-var: rgba(235, 235, 245, 0.6); /* UIColor.secondaryLabel */
       --outline: rgba(84, 84, 88, 0.6); /* UIColor.separator (drawn as a 0.5 pt hairline) */
       --outline-var: #38383a; /* UIColor.opaqueSeparator */
+      --chrome: rgba(22, 22, 22, 0.94); /* UIBarAppearance default background (systemChromeMaterial): the tab bar and a scrolled navigation bar */
     }
   }
   :root[data-platform='ios'][data-theme='dark'], :root[data-platform='ios'] [data-theme='dark'] {
@@ -103,6 +113,7 @@
     --on-surface-var: rgba(235, 235, 245, 0.6); /* UIColor.secondaryLabel */
     --outline: rgba(84, 84, 88, 0.6); /* UIColor.separator (drawn as a 0.5 pt hairline) */
     --outline-var: #38383a; /* UIColor.opaqueSeparator */
+    --chrome: rgba(22, 22, 22, 0.94); /* UIBarAppearance default background (systemChromeMaterial): the tab bar and a scrolled navigation bar */
   }
   :root[data-platform='ios'][data-theme='light'], :root[data-platform='ios'] [data-theme='light'] {
     --surface-c0: #ffffff; /* UIColor.systemBackground */
@@ -117,5 +128,6 @@
     --on-surface-var: rgba(60, 60, 67, 0.6); /* UIColor.secondaryLabel */
     --outline: rgba(60, 60, 67, 0.29); /* UIColor.separator (drawn as a 0.5 pt hairline) */
     --outline-var: #c6c6c8; /* UIColor.opaqueSeparator */
+    --chrome: rgba(249, 249, 249, 0.94); /* UIBarAppearance default background (systemChromeMaterial): the tab bar and a scrolled navigation bar */
   }
 }

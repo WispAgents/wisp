@@ -14,6 +14,7 @@ import { Button, IconButton } from '../controls/Button.tsx';
 import { Menu, type MenuEntry } from '../controls/Menu.tsx';
 import type { IconName } from '../content/icons.ts';
 import { formsAt, nextLevel, type ItemForm, type PlanItem } from './toolbar-plan.ts';
+import { usePlatform } from '../platform/PlatformLook.tsx';
 
 interface ItemBase {
   readonly id: string;
@@ -108,6 +109,9 @@ function useMeasure(onChange: (sizes: ReadonlyMap<string, number>) => void): (el
 
 export function Toolbar(props: ToolbarProps): JSX.Element {
   const t = useT(() => props.t);
+  // More is ⋮ in an M3 top app bar, ⋯ elsewhere (iOS, the browser) (design/mobile.md §A.7)
+  const look = usePlatform();
+  const moreIcon = (): IconName => (look() === 'android' ? 'dots-v' : 'dots');
   const [level, setLevel] = createSignal(0);
   const forms = createMemo(() =>
     formsAt(
@@ -166,7 +170,7 @@ export function Toolbar(props: ToolbarProps): JSX.Element {
       </Key>
       <Show when={overflowed().length > 0}>
         <div style={{ order: moreOrder() }} data-kit="toolbar-item" data-item="more">
-          <Menu items={overflowed()} onSelect={select} trigger={{ icon: 'dots', 'aria-label': t('more'), size: 'sm' }} placement="bottom-end" part={`${props.part ?? 'ui.toolbar'}.more`} />
+          <Menu items={overflowed()} onSelect={select} trigger={{ icon: moreIcon(), 'aria-label': t('more'), size: 'sm' }} placement="bottom-end" part={`${props.part ?? 'ui.toolbar'}.more`} />
         </div>
       </Show>
       <div data-kit="toolbar-measure" aria-hidden="true" inert>
@@ -183,7 +187,7 @@ export function Toolbar(props: ToolbarProps): JSX.Element {
           )}
         </For>
         <span data-measure="more" ref={(el) => observe(el)}>
-          <IconButton icon="dots" label={t('more')} size="sm" />
+          <IconButton icon={moreIcon()} label={t('more')} size="sm" />
         </span>
       </div>
     </div>

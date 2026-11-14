@@ -11,6 +11,7 @@ import { CompositesGallery } from './sections/composites.tsx';
 import { SettingsGallery } from './sections/settings.tsx';
 import { BlocksGallery } from './sections/blocks.tsx';
 import { ShellGallery } from './sections/shell.tsx';
+import { PhoneGallery } from './sections/phone.tsx';
 import { TerminalGallery } from './sections/terminal.tsx';
 
 type Theme = 'light' | 'dark' | 'system';
@@ -74,6 +75,7 @@ function Gallery(): JSX.Element {
         <SettingsGallery />
         <BlocksGallery />
         <ShellGallery />
+        <PhoneGallery />
         <TerminalGallery />
       </Stack>
     </Box>

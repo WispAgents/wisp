@@ -76,31 +76,3 @@ export function PinnedCard(props: PinnedCardProps): JSX.Element {
     </button>
   );
 }
-
-export interface FabProps extends KitProps {
-  readonly icon: IconName;
-  readonly label: string;
-  readonly onClick: () => void;
-  /** something with choices is on screen under it: it fades and sinks out of reach, and comes back */
-  readonly giveWay?: boolean;
-}
-
-/** The floating button over a phone's list (v1 fab.js). Its label is its name and tooltip. */
-export function Fab(props: FabProps): JSX.Element {
-  return (
-    <button
-      type="button"
-      id={props.id}
-      data-kit="fab"
-      data-part={props.part ?? 'ui.fab'}
-      data-give-way={flag(props.giveWay)}
-      aria-hidden={props.giveWay ? 'true' : undefined}
-      tabIndex={props.giveWay ? -1 : 0}
-      aria-label={props.label}
-      title={props.label}
-      onClick={() => props.onClick()}
-    >
-      <Icon name={props.icon} size="lg" />
-    </button>
-  );
-}

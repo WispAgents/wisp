@@ -1,6 +1,275 @@
 /* The Android app's stylesheet (ADR-0065 §5, design/mobile.md §A.7–A.8). Loaded only in the app
    (src/platform/styles.ts), never by the browser. The layer order is index.css's: these rules join the
    tokens and kit layers that sheet declared. Kit variants (Material 3) go here, each under
-   :root[data-platform='android'] in @layer kit (build steps 3–6). */
+   :root[data-platform='android'] in @layer kit (build steps 3–6). Numbers come from the platform tokens;
+   the window size classes (M3: compact < 600 dp, medium 600–839, expanded ≥ 840) are the only px here,
+   in @media conditions. */
 @layer reset, tokens, kit, plugins;
 @import '@wisp/tokens/platform-android.css';
+
+@layer kit {
+  /* Frame (step 3): edge to edge. The top app bar under the status bar, the panes, the navigation bar
+     over the gesture bar; from 600 dp the rail beside them (M3 window size class medium). */
+  :root[data-platform='android'] [data-kit='frame'] {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto minmax(0, 1fr) auto;
+    grid-template-areas: 'top' 'body' 'nav';
+    padding-left: var(--safe-left);
+    padding-right: var(--safe-right);
+    background: var(--surface-c0);
+    color: var(--on-surface);
+    font-family: var(--font-ui);
+  }
+  :root[data-platform='android'] [data-kit='frame'] > [data-kit='frame-top'] {
+    grid-area: top;
+    height: auto;
+    min-height: calc(var(--bar-h) + var(--safe-top));
+    padding: var(--safe-top) var(--space-0) var(--space-0);
+    gap: var(--space-0);
+    border-bottom: 0;
+    background: var(--surface-c0);
+    font: var(--type-title-l);
+  }
+  /* the screen's TopAppBar is the frame's top bar: it fills it */
+  :root[data-platform='android'] [data-kit='frame-top'] > [data-kit='app-bar'] { flex: 1 1 auto; align-self: stretch; }
+  :root[data-platform='android'] [data-kit='frame'] > [data-kit='frame-body'] { grid-area: body; }
+  :root[data-platform='android'] [data-kit='frame'] > [data-kit='frame-nav'] { grid-area: nav; min-width: 0; }
+  :root[data-platform='android'] [data-kit='frame'] [data-kit='frame-pane'],
+  :root[data-platform='android'] [data-kit='frame'] [data-kit='frame-pane'][data-pane='list'] {
+    background: var(--surface-c0);
+    border-color: var(--outline-var);
+  }
+  :root[data-platform='android'] [data-kit='frame'][data-layout='stack'] [data-kit='frame-pane'][data-pane='list'] { background: var(--surface-c0); }
+  /* without a navigation bar the bottom pane sits over the gesture bar itself */
+  :root[data-platform='android'] [data-kit='frame'] > [data-kit='frame-body']:last-child { padding-bottom: var(--safe-bottom); }
+
+  @media (min-width: 600px) {
+    :root[data-platform='android'] [data-kit='frame'] {
+      grid-template-columns: var(--nav-rail-w) minmax(0, 1fr);
+      grid-template-rows: auto minmax(0, 1fr);
+      grid-template-areas: 'nav top' 'nav body';
+      padding-left: 0;
+    }
+    :root[data-platform='android'] [data-kit='frame'] > [data-kit='frame-nav'] { padding-left: var(--safe-left); background: var(--surface-c0); }
+    :root[data-platform='android'] [data-kit='frame'] > [data-kit='frame-body'] { padding-bottom: var(--safe-bottom); }
+  }
+
+  /* NavigationBar (step 3): M3 navigation bar, 80 dp; the 64 × 32 active indicator pill behind the icon */
+  :root[data-platform='android'] [data-kit='nav-bar'] {
+    display: flex;
+    align-items: stretch;
+    height: calc(var(--nav-h) + var(--safe-bottom));
+    padding-bottom: var(--safe-bottom);
+    background: var(--surface-c2);
+  }
+  :root[data-platform='android'] [data-kit='nav-item'] {
+    flex: 1 1 0;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: flex-start;
+    gap: var(--nav-gap);
+    padding: var(--nav-pad-top) var(--space-1) var(--nav-pad-bottom);
+    border: 0;
+    background: transparent;
+    color: var(--on-surface-var);
+    font: var(--type-label-m);
+    letter-spacing: var(--track-label-m);
+    -webkit-tap-highlight-color: transparent;
+    cursor: pointer;
+  }
+  :root[data-platform='android'] [data-kit='nav-pill'] {
+    position: relative;
+    flex: none;
+    display: grid;
+    place-items: center;
+    width: var(--nav-pill-w);
+    height: var(--nav-pill-h);
+    border-radius: var(--radius-pill);
+    transition: background-color var(--dur-short) var(--ease-standard);
+  }
+  :root[data-platform='android'] [data-kit='nav-pill'] > [data-kit='icon'] { width: var(--nav-icon); height: var(--nav-icon); }
+  :root[data-platform='android'] [data-kit='nav-item']:active [data-kit='nav-pill'] {
+    background: color-mix(in srgb, var(--on-surface) calc(var(--state-pressed) * 100%), transparent);
+  }
+  :root[data-platform='android'] [data-kit='nav-item'][data-selected] { color: var(--on-surface); font-weight: var(--fw-semibold); }
+  :root[data-platform='android'] [data-kit='nav-item'][data-selected] [data-kit='nav-pill'] { background: var(--primary-container); color: var(--on-primary-container); }
+  :root[data-platform='android'] [data-kit='nav-item'][data-selected]:active [data-kit='nav-pill'] {
+    background: color-mix(in srgb, var(--on-primary-container) calc(var(--state-pressed) * 100%), var(--primary-container));
+  }
+  :root[data-platform='android'] [data-kit='nav-item']:focus-visible { outline: none; }
+  :root[data-platform='android'] [data-kit='nav-item']:focus-visible [data-kit='nav-pill'] { outline: var(--size-ring) solid var(--primary); outline-offset: var(--space-1); }
+  :root[data-platform='android'] [data-kit='nav-label'] { max-width: 100%; }
+  /* M3 large badge: 16 dp tall, label small, error colours, over the icon's top end */
+  :root[data-platform='android'] [data-kit='nav-badge'] {
+    position: absolute;
+    top: var(--space-1);
+    left: 50%;
+    min-width: var(--space-7);
+    height: var(--space-7);
+    padding: var(--space-0) var(--space-2);
+    border-radius: var(--radius-pill);
+    background: var(--error);
+    color: var(--on-accent);
+    font: var(--type-label-s);
+    text-align: center;
+  }
+
+  /* the rail from 600 dp: 80 dp wide, destinations from the top, the 56 × 32 indicator */
+  @media (min-width: 600px) {
+    :root[data-platform='android'] [data-kit='nav-bar'] {
+      flex-direction: column;
+      align-items: stretch;
+      justify-content: flex-start;
+      gap: var(--rail-gap);
+      width: var(--nav-rail-w);
+      height: 100%;
+      padding: calc(var(--safe-top) + var(--rail-pad-top)) var(--space-0) var(--safe-bottom);
+      background: var(--surface-c0);
+    }
+    :root[data-platform='android'] [data-kit='nav-item'] { flex: none; padding: var(--space-0); }
+    :root[data-platform='android'] [data-kit='nav-pill'] { width: var(--rail-pill-w); }
+  }
+
+  /* Fab (step 3): the M3 extended FAB at the pane's bottom end, above the navigation bar; it shrinks to
+     the 56 dp FAB on scroll down (the label folds, the icon stays put) and gives way (v1 fab.js). */
+  :root[data-platform='android'] [data-kit='fab'] {
+    position: absolute;
+    z-index: var(--z-raised);
+    right: var(--fab-margin);
+    bottom: var(--fab-margin);
+    display: inline-flex;
+    align-items: center;
+    justify-content: flex-start;
+    gap: var(--space-0);
+    width: auto;
+    min-width: var(--fab);
+    height: var(--fab);
+    padding: var(--space-0) calc((var(--fab) - var(--fab-icon)) / 2);
+    border: 0;
+    border-radius: var(--fab-radius);
+    background: var(--primary-container);
+    color: var(--on-primary-container);
+    box-shadow: var(--elev-3);
+    font: var(--type-label-l);
+    letter-spacing: var(--track-label-l);
+    -webkit-tap-highlight-color: transparent;
+    transition:
+      padding var(--dur-medium) var(--ease-emph),
+      gap var(--dur-medium) var(--ease-emph),
+      opacity var(--dur-short) var(--ease-emph-in),
+      transform var(--dur-short) var(--ease-emph-in),
+      visibility 0s linear var(--dur-short);
+  }
+  :root[data-platform='android'] [data-kit='fab'] > [data-kit='icon'] { width: var(--fab-icon); height: var(--fab-icon); }
+  :root[data-platform='android'] [data-kit='fab-label'] {
+    display: inline-block;
+    max-width: 0;
+    overflow: hidden;
+    opacity: 0;
+    transition:
+      max-width var(--dur-medium) var(--ease-emph),
+      opacity var(--dur-short) var(--ease-standard);
+  }
+  :root[data-platform='android'] [data-kit='fab'][data-extended] { gap: var(--fab-ext-gap); padding: var(--space-0) var(--fab-ext-pad); }
+  :root[data-platform='android'] [data-kit='fab'][data-extended] > [data-kit='fab-label'] { max-width: 20em; opacity: 1; }
+  :root[data-platform='android'] [data-kit='fab']:active {
+    transform: none;
+    background: color-mix(in srgb, var(--on-primary-container) calc(var(--state-pressed) * 100%), var(--primary-container));
+  }
+  :root[data-platform='android'] [data-kit='fab']:focus-visible { outline: var(--size-ring) solid var(--primary); outline-offset: var(--space-2); }
+  :root[data-platform='android'] [data-kit='fab'][data-give-way] {
+    opacity: 0;
+    transform: translateY(var(--space-7));
+    visibility: hidden;
+    pointer-events: none;
+  }
+  :root[data-platform='android'] [data-kit='fab']:not([data-give-way]) {
+    transition:
+      padding var(--dur-medium) var(--ease-emph),
+      gap var(--dur-medium) var(--ease-emph),
+      opacity var(--dur-short) var(--ease-emph-out),
+      transform var(--dur-short) var(--ease-emph-out),
+      visibility 0s;
+  }
+
+  /* TopAppBar (step 3): M3 small (64 dp, title large) and medium (112 dp: the headline-small title on up
+     to two lines under the bar, folding into the bar on scroll) top app bars */
+  :root[data-platform='android'] [data-kit='app-bar'] {
+    flex: none;
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    background: var(--surface-c0);
+    color: var(--on-surface);
+    transition: background-color var(--dur-short) var(--ease-standard);
+  }
+  :root[data-platform='android'] [data-kit='app-bar'][data-collapsed] { background: var(--surface-c2); }
+  :root[data-platform='android'] [data-kit='app-bar-row'] {
+    display: flex;
+    align-items: center;
+    gap: var(--bar-title-gap);
+    height: var(--bar-h);
+    min-width: 0;
+    padding: var(--space-0) var(--bar-pad);
+  }
+  :root[data-platform='android'] [data-kit='app-bar-row'] > [data-kit='icon-button'] { width: var(--bar-icon-target); height: var(--bar-icon-target); border-radius: var(--radius-pill); color: var(--on-surface); }
+  :root[data-platform='android'] [data-kit='app-bar-title'] {
+    flex: 1 1 auto;
+    min-width: 0;
+    margin: var(--space-0);
+    padding-left: calc(var(--inset) - var(--bar-pad));
+    font: var(--type-title-l);
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+    transition: opacity var(--dur-short) var(--ease-standard);
+  }
+  :root[data-platform='android'] [data-kit='icon-button'] + [data-kit='app-bar-title'] { padding-left: 0; }
+  :root[data-platform='android'] [data-kit='app-bar'][data-large] [data-kit='app-bar-title'] { opacity: 0; pointer-events: none; }
+  :root[data-platform='android'] [data-kit='app-bar'][data-large][data-collapsed] [data-kit='app-bar-title'] { opacity: 1; pointer-events: auto; }
+  :root[data-platform='android'] [data-kit='app-bar-actions'] { flex: 0 1 auto; display: flex; align-items: center; justify-content: flex-end; min-width: 0; }
+  :root[data-platform='android'] [data-kit='app-bar-actions'] > [data-kit='toolbar'] { height: var(--bar-h); }
+  :root[data-platform='android'] [data-kit='app-bar-large'] {
+    display: flex;
+    align-items: flex-end;
+    /* 48 dp under the bar for one line (112 dp in all); a second line grows it (M3 medium flexible) */
+    min-height: calc(var(--bar-h-large) - var(--bar-h));
+    max-height: var(--bar-h-large);
+    padding: var(--space-0) var(--inset) var(--bar-medium-pad-bottom);
+    overflow: hidden;
+    transition: min-height var(--dur-medium) var(--ease-emph), max-height var(--dur-medium) var(--ease-emph), padding var(--dur-medium) var(--ease-emph), opacity var(--dur-short) var(--ease-standard);
+  }
+  :root[data-platform='android'] [data-kit='app-bar'][data-collapsed] [data-kit='app-bar-large'] { min-height: 0; max-height: 0; padding-bottom: 0; opacity: 0; }
+  :root[data-platform='android'] [data-kit='app-bar-large-title'] {
+    font: var(--type-headline-s);
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    overflow: hidden;
+  }
+  :root[data-platform='android'] [data-kit='app-bar-title-button'] {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-2);
+    max-width: 100%;
+    padding: var(--space-0);
+    border: 0;
+    background: transparent;
+    color: inherit;
+    font: inherit;
+  }
+  :root[data-platform='android'] [data-kit='app-bar-title-button'] > [data-kit='icon'] { flex: none; transform: rotate(90deg); }
+  :root[data-platform='android'] [data-kit='app-bar-title-button'] > [data-text='control'] { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+
+  /* Toolbar in a bar (step 3): M3 top app bar actions are 48 dp icon targets; More is ⋮ */
+  :root[data-platform='android'] [data-kit='app-bar'] [data-kit='toolbar'] [data-kit='icon-button'] {
+    width: var(--bar-icon-target);
+    height: var(--bar-icon-target);
+    border-radius: var(--radius-pill);
+    color: var(--on-surface-var);
+  }
+  :root[data-platform='android'] [data-kit='frame-top'] [data-kit='icon-button'] { min-width: var(--tap-min); min-height: var(--tap-min); border-radius: var(--radius-pill); }
+}

@@ -10,6 +10,7 @@ export const KIT_STRINGS = {
   send: 'Send',
   resize: 'Resize',
   more: 'More',
+  back: 'Back',
   clear: 'Clear',
   'clear-all': 'Clear all',
   notifications: 'Notifications',

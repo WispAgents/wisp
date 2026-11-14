@@ -4,9 +4,17 @@
 // `list="closed"`. Stack: one page at a time (`page`), the others stay mounted and hidden, so going
 // back to the list keeps its scroll and nothing re-renders. The list's width is a measured value
 // (`--sb-w`), dragged on its grip and reported once the drag ends.
+//
+// The phone apps (ADR-0065, design/mobile.md §A.1, §A.3): the top bar is the platform's top app bar /
+// navigation bar, edge to edge inside the safe areas, and `nav` (a NavigationBar) sits under the panes,
+// beside them as a rail from 600 dp on Android. The frame is the ComposeHost: on iOS a Fab's action is
+// drawn as the compose button at the top bar's end unless a root TopAppBar draws it. The browser draws
+// none of it, `nav` included: its DOM is the same as before (test/goldens/platform-browser.json).
 import { Show, type JSX } from 'solid-js';
 import { flag, styleOf, type KitProps, type WithVars } from '../core/props.ts';
 import { useT, type Translate } from '../core/i18n.tsx';
+import { usePlatform } from '../platform/PlatformLook.tsx';
+import { ComposeButton, ComposeHost, useComposeHost } from '../nav/compose.tsx';
 
 export type FramePage = 'list' | 'main' | 'side';
 
@@ -29,6 +37,15 @@ export interface FrameProps extends KitProps, WithVars {
   readonly t?: Translate;
   /** inside a box of its own (the gallery), not over the whole viewport */
   readonly contained?: boolean;
+  /** The phone apps' destinations (a NavigationBar). Never drawn in the browser. */
+  readonly nav?: JSX.Element;
+}
+
+/** The compose button at the top bar's end, on iOS, while no root TopAppBar draws it. */
+function TopCompose(): JSX.Element {
+  const look = usePlatform();
+  const host = useComposeHost();
+  return <ComposeButton when={look() === 'ios' && (host?.bars() ?? 0) === 0} />;
 }
 
 function Grip(props: { readonly onResize: (px: number, done: boolean) => void; readonly label: string }): JSX.Element {
@@ -56,7 +73,16 @@ function Grip(props: { readonly onResize: (px: number, done: boolean) => void; r
 }
 
 export function Frame(props: FrameProps): JSX.Element {
+  return (
+    <ComposeHost>
+      <FrameBody {...props} />
+    </ComposeHost>
+  );
+}
+
+function FrameBody(props: FrameProps): JSX.Element {
   const t = useT(() => props.t);
+  const look = usePlatform();
   const active = (p: FramePage): '' | undefined => flag(props.layout === 'split' || props.page === p);
   return (
     <div
@@ -70,7 +96,10 @@ export function Frame(props: FrameProps): JSX.Element {
       data-contained={flag(props.contained)}
       style={styleOf({}, props.vars)}
     >
-      <header data-kit="frame-top" data-part="shell.topbar">{props.top}</header>
+      <header data-kit="frame-top" data-part="shell.topbar">
+        {props.top}
+        <TopCompose />
+      </header>
       <div data-kit="frame-body">
         <section data-kit="frame-pane" data-pane="list" data-part="shell.sidebar" data-active={active('list')} aria-label={props.listLabel}>
           {props.list}
@@ -87,6 +116,9 @@ export function Frame(props: FrameProps): JSX.Element {
           </aside>
         </Show>
       </div>
+      <Show when={look() !== 'web' && props.nav}>
+        <div data-kit="frame-nav">{props.nav}</div>
+      </Show>
     </div>
   );
 }

@@ -1,6 +1,229 @@
 /* The iPhone app's stylesheet (ADR-0065 §5, design/mobile.md §A.7–A.8). Loaded only in the app
    (src/platform/styles.ts), never by the browser. The layer order is index.css's: these rules join the
    tokens and kit layers that sheet declared. Kit variants (HIG) go here, each under
-   :root[data-platform='ios'] in @layer kit (build steps 3–6). */
+   :root[data-platform='ios'] in @layer kit (build steps 3–6). Numbers come from the platform tokens;
+   the only px here are @media conditions (the iPad's regular width, the browser's split at 900). */
 @layer reset, tokens, kit, plugins;
 @import '@wisp/tokens/platform-ios.css';
+
+@layer kit {
+  /* Frame (step 3): the navigation bar under the status bar and the Dynamic Island, the panes, the tab bar
+     over the home indicator; on iPad widths the sidebar beside them. */
+  :root[data-platform='ios'] [data-kit='frame'] {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto minmax(0, 1fr) auto;
+    grid-template-areas: 'top' 'body' 'nav';
+    padding-left: var(--safe-left);
+    padding-right: var(--safe-right);
+    background: var(--surface-c0);
+    color: var(--on-surface);
+    font-family: var(--font-ui);
+  }
+  :root[data-platform='ios'] [data-kit='frame'] > [data-kit='frame-top'] {
+    grid-area: top;
+    height: auto;
+    min-height: calc(var(--bar-h) + var(--safe-top));
+    padding: var(--safe-top) var(--space-0) var(--space-0);
+    gap: var(--bar-button-gap);
+    border-bottom: 0;
+    background: var(--surface-c0);
+    font: var(--type-headline);
+  }
+  /* the screen's TopAppBar is the frame's top bar: it fills it and draws its own material and hairline */
+  :root[data-platform='ios'] [data-kit='frame-top'] > [data-kit='app-bar'] { flex: 1 1 auto; align-self: stretch; }
+  :root[data-platform='ios'] [data-kit='frame'] > [data-kit='frame-body'] { grid-area: body; }
+  :root[data-platform='ios'] [data-kit='frame'] > [data-kit='frame-nav'] { grid-area: nav; min-width: 0; }
+  :root[data-platform='ios'] [data-kit='frame'] [data-kit='frame-pane'],
+  :root[data-platform='ios'] [data-kit='frame'] [data-kit='frame-pane'][data-pane='list'] {
+    background: var(--surface-c0);
+    border-color: var(--outline);
+    border-width: var(--hairline);
+  }
+  :root[data-platform='ios'] [data-kit='frame'][data-layout='stack'] [data-kit='frame-pane'][data-pane='list'] { background: var(--surface-c0); }
+  :root[data-platform='ios'] [data-kit='frame'] > [data-kit='frame-body']:last-child { padding-bottom: var(--safe-bottom); }
+
+  /* NavigationBar (step 3): the tab bar, 49 pt over the home indicator, glyph over a 10 pt title; the
+     selected tab in the tint with its filled glyph, the others in system gray */
+  :root[data-platform='ios'] [data-kit='nav-bar'] {
+    display: flex;
+    align-items: stretch;
+    height: calc(var(--nav-h) + var(--safe-bottom));
+    padding: var(--space-0) var(--safe-right) var(--safe-bottom) var(--safe-left);
+    border-top: var(--hairline) solid var(--outline);
+    background: var(--chrome);
+  }
+  :root[data-platform='ios'] [data-kit='nav-item'] {
+    flex: 1 1 0;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: flex-start;
+    gap: var(--tab-gap);
+    padding: var(--tab-pad-top) var(--space-1) var(--space-0);
+    border: 0;
+    background: transparent;
+    color: var(--tab-inactive);
+    font: var(--type-tab);
+    -webkit-tap-highlight-color: transparent;
+    cursor: pointer;
+    transition: opacity var(--dur-short) var(--ease-standard);
+  }
+  :root[data-platform='ios'] [data-kit='nav-item']:active { opacity: calc(1 - var(--state-pressed) * 2); }
+  :root[data-platform='ios'] [data-kit='nav-item'][data-selected] { color: var(--primary); }
+  :root[data-platform='ios'] [data-kit='nav-item']:focus-visible { outline: var(--size-ring) solid var(--primary); outline-offset: calc(var(--space-1) * -1); }
+  :root[data-platform='ios'] [data-kit='nav-pill'] { position: relative; flex: none; display: grid; place-items: center; }
+  :root[data-platform='ios'] [data-kit='nav-pill'] > [data-kit='icon'] { width: var(--tab-icon); height: var(--tab-icon); }
+  :root[data-platform='ios'] [data-kit='nav-label'] { max-width: 100%; }
+  /* the tab bar badge: a red capsule at the glyph's top end, caption 2 */
+  :root[data-platform='ios'] [data-kit='nav-badge'] {
+    position: absolute;
+    top: calc(var(--space-1) * -1);
+    left: 60%;
+    min-width: var(--space-7);
+    height: var(--space-7);
+    padding: var(--space-0) var(--space-2);
+    border-radius: var(--radius-pill);
+    background: var(--error);
+    color: var(--on-primary);
+    font: var(--type-caption);
+    line-height: var(--space-7);
+    text-align: center;
+  }
+
+  /* iPad (regular width): the sidebar, 320 pt, icon and title on one row, the selected row filled */
+  @media (min-width: 900px) {
+    :root[data-platform='ios'] [data-kit='frame'] {
+      grid-template-columns: var(--nav-rail-w) minmax(0, 1fr);
+      grid-template-rows: auto minmax(0, 1fr);
+      grid-template-areas: 'nav top' 'nav body';
+      padding-left: 0;
+    }
+    :root[data-platform='ios'] [data-kit='frame'] > [data-kit='frame-body'] { padding-bottom: var(--safe-bottom); }
+    :root[data-platform='ios'] [data-kit='nav-bar'] {
+      flex-direction: column;
+      gap: var(--space-1);
+      height: 100%;
+      padding: calc(var(--safe-top) + var(--bar-h)) var(--space-6) var(--safe-bottom) calc(var(--safe-left) + var(--space-6));
+      border-top: 0;
+      border-right: var(--hairline) solid var(--outline);
+      background: var(--surface-c1);
+    }
+    :root[data-platform='ios'] [data-kit='nav-item'] {
+      flex: none;
+      flex-direction: row;
+      justify-content: flex-start;
+      gap: var(--space-6);
+      height: var(--row-h-1);
+      padding: var(--space-0) var(--space-6);
+      border-radius: var(--radius-md);
+      color: var(--on-surface);
+      font: var(--type-body);
+    }
+    :root[data-platform='ios'] [data-kit='nav-item'] [data-kit='nav-pill'] { color: var(--primary); }
+    :root[data-platform='ios'] [data-kit='nav-item'][data-selected] { background: var(--primary); color: var(--on-primary); }
+    :root[data-platform='ios'] [data-kit='nav-item'][data-selected] [data-kit='nav-pill'] { color: var(--on-primary); }
+  }
+
+  /* Fab (step 3): not drawn on iOS (Fab.tsx hands its action to the compose button); nothing to style */
+
+  /* TopAppBar (step 3): the navigation bar, 44 pt. A destination's root has the large title (34/41) under
+     it, which folds into the centred inline title once the page scrolls; a pushed page has only the
+     inline title, Back carrying the previous one. The bar's material shows once content is under it. */
+  :root[data-platform='ios'] [data-kit='app-bar'] {
+    flex: none;
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    background: var(--surface-c0);
+    color: var(--on-surface);
+    border-bottom: var(--hairline) solid transparent;
+    transition: background-color var(--dur-short) var(--ease-standard), border-color var(--dur-short) var(--ease-standard);
+  }
+  :root[data-platform='ios'] [data-kit='app-bar'][data-collapsed],
+  :root[data-platform='ios'] [data-kit='app-bar'][data-kind='page'] { background: var(--chrome); border-bottom-color: var(--outline); }
+  /* three columns, so the inline title is centred on the bar while Back and the actions keep their room:
+     a long title shrinks to its ellipsis and the actions fold into ⋯ before anything overlaps */
+  :root[data-platform='ios'] [data-kit='app-bar-row'] {
+    display: grid;
+    grid-template-columns: minmax(auto, 1fr) minmax(0, max-content) minmax(var(--tap-min), 1fr);
+    align-items: center;
+    column-gap: var(--bar-button-gap);
+    height: var(--bar-h);
+    min-width: 0;
+    padding: var(--space-0) var(--bar-pad);
+  }
+  :root[data-platform='ios'] [data-kit='app-bar'] [data-kit='app-bar-row'] > [data-kit='button'] { grid-column: 1; justify-self: start; min-width: max-content; }
+  :root[data-platform='ios'] [data-kit='app-bar-title'] {
+    grid-column: 2;
+    min-width: 0;
+    margin: var(--space-0);
+    font: var(--type-headline);
+    text-align: center;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+    transition: opacity var(--dur-short) var(--ease-standard);
+  }
+  :root[data-platform='ios'] [data-kit='app-bar'][data-large] [data-kit='app-bar-title'] { opacity: 0; pointer-events: none; }
+  :root[data-platform='ios'] [data-kit='app-bar'][data-large][data-collapsed] [data-kit='app-bar-title'] { opacity: 1; pointer-events: auto; }
+  :root[data-platform='ios'] [data-kit='app-bar-actions'] {
+    grid-column: 3;
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: var(--bar-button-gap);
+    min-width: 0;
+  }
+  :root[data-platform='ios'] [data-kit='app-bar-actions'] > [data-kit='toolbar'] { height: var(--bar-h); }
+  /* bar buttons: plain, in the tint, 44 pt targets, dimmed while pressed (no background) */
+  :root[data-platform='ios'] [data-kit='app-bar-row'] [data-kit='icon-button'],
+  :root[data-platform='ios'] [data-kit='app-bar-row'] [data-kit='button'],
+  :root[data-platform='ios'] [data-kit='frame-top'] [data-kit='icon-button'] {
+    min-width: var(--tap-min);
+    height: var(--tap-min);
+    padding: var(--space-0) var(--space-2);
+    border: 0;
+    background: transparent;
+    color: var(--primary);
+    font: var(--type-body);
+  }
+  :root[data-platform='ios'] [data-kit='app-bar-row'] [data-kit='icon-button'] [data-kit='icon'],
+  :root[data-platform='ios'] [data-kit='frame-top'] [data-kit='icon-button'] [data-kit='icon'] { width: var(--size-icon-lg); height: var(--size-icon-lg); }
+  :root[data-platform='ios'] [data-kit='app-bar-row'] [data-kit='button'] { padding-left: 0; }
+  :root[data-platform='ios'] [data-kit='app-bar-row'] [data-kit='button'] [data-kit='button-content'] { gap: var(--space-1); }
+  :root[data-platform='ios'] [data-kit='app-bar-row'] [data-kit='button'] [data-kit='icon'] { width: var(--size-icon-lg); height: var(--size-icon-lg); }
+  :root[data-platform='ios'] [data-kit='app-bar-row'] [data-kit='icon-button']:active,
+  :root[data-platform='ios'] [data-kit='app-bar-row'] [data-kit='button']:active,
+  :root[data-platform='ios'] [data-kit='frame-top'] [data-kit='icon-button']:active { transform: none; background: transparent; opacity: calc(1 - var(--state-pressed) * 2); }
+  :root[data-platform='ios'] [data-kit='app-bar-large'] {
+    display: flex;
+    align-items: flex-end;
+    height: calc(var(--bar-h-large) - var(--bar-h));
+    padding: var(--space-0) var(--inset) var(--large-title-pad-bottom);
+    overflow: hidden;
+    transition: height var(--dur-medium) var(--ease-standard), padding var(--dur-medium) var(--ease-standard), opacity var(--dur-short) var(--ease-standard);
+  }
+  :root[data-platform='ios'] [data-kit='app-bar'][data-collapsed] [data-kit='app-bar-large'] { height: 0; padding-bottom: 0; opacity: 0; }
+  :root[data-platform='ios'] [data-kit='app-bar-large-title'] {
+    font: var(--type-large-title);
+    font-weight: var(--fw-semibold);
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+  }
+  :root[data-platform='ios'] [data-kit='app-bar-title-button'] {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-2);
+    max-width: 100%;
+    padding: var(--space-0);
+    border: 0;
+    background: transparent;
+    color: inherit;
+    font: inherit;
+  }
+  :root[data-platform='ios'] [data-kit='app-bar-title-button'] > [data-kit='icon'] { flex: none; color: var(--primary); transform: rotate(90deg); }
+  :root[data-platform='ios'] [data-kit='app-bar-title-button'] > [data-text='control'] { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+}
