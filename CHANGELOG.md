@@ -7,6 +7,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Added
 
+- **v2: several wisp Cloud accounts.** Sign in to more than one grid or account; Settings → Cloud lists each with Switch and Sign out, the current one carries shares, sandboxes and API keys, and every account's cloud computer shows under Machines.
 - **v2: delegate to another machine.** A subagent on another computer runs there on a copy of the lead's work (its commits and uncommitted edits, kept under wisp's own folder there, never your checkout); its changes come back into the lead's folder when it finishes, and its row and report name the machine.
 - **v2: wisp Cloud API keys.** Settings → Cloud → API keys makes a `wgk_` key (shown once) that opens your cloud wisp from a script with no browser; revoke it and it stops at once.
 - **v2: early Codex resets.** When a banked Codex reset lands early, work held for that account (held runs, Ask-held runs, tasks waiting at the limit) starts at once, and your phone hears *↻ Codex reset early* with the count. Trigger rows held for the plan clear, a cooled account is ready at once, the note comes even with Later off, and the Drain watch's notes reach your phone.

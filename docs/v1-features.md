@@ -330,7 +330,7 @@ in the sense of *looks like v1*: F-look-1 tracks that once.
 | F-mach-18 | 0.28.0 | Given Settings → Cloud, when I click Sign in for Claude on a cloud computer, then I sign in its agents from my desktop | built | under an online cloud computer, Agents on it (`accounts.machine-agents` on `shell.machine:agents`, `MachineAgents.tsx`): its CLI-sign-in harnesses with Sign in / Cancel and the link-and-code steps, every command sent to that machine's peer; test `machine_agents_lists_found_cli_sign_ins_in_wisps_order`; GitHub CLI sign-in there not in v2 accounts yet |
 | F-mach-19 | Unrel. | Given Settings → This Mac, when I open it, then I see free memory, CPU, disk, each task's RAM/CPU, harness folders, leftover processes with Stop | built | `plugins/machine/ui/src/MachinePage.tsx`; `machine.load`/`read`/`stop`/`fix`/`harness.clean` |
 | F-mach-20 | Unrel. | Given a grid, when I open it after sign-in, then a real home page shows (not one long column) | built | `apps/grid/src` (v1 change; v2 grid has the account page) — parity not checked |
-| F-mach-21 | 0.47.0 | Given several grids or accounts, when I add an account, then each is listed | partial | v2's grid-client keeps one account (`St::account()`); Add an account needs several accounts in its state (new state shape, ADR) |
+| F-mach-21 | 0.47.0 | Given several grids or accounts, when I add an account, then each is listed | built | grid-client state holds several (grid, account) sign-ins, one current (ADR-0061, migrated from the one-account shape); add/list/switch/remove commands and CLI; Settings → Cloud lists each with Switch/Sign out and Add an account; e2e `serve_grid_accounts.rs` with two grids (round 186) |
 
 ## 12. Channels: phone, chat, mail (`CHAN`)
 
