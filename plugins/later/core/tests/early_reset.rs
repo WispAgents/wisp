@@ -1,12 +1,11 @@
 //! An early (banked) reset pulls forward what waits on that plan (v1 later.js pullForward, F-auto-12): a follow-up
 //! held by Automations stop at on a task of that account, and one waiting at that limit, come due now; nothing of
-//! another account's, and nothing already due. The phone's note is v1's words.
+//! another account's, and nothing already due. (The phone's note: `wisp_budget_api::early_note`.)
 #![allow(clippy::unwrap_used)]
 
 use std::collections::BTreeMap;
 
 use wisp_later_api::{LaterEntry, LaterHeld, LimitRef};
-use wisp_later_core::rules::early_note;
 use wisp_later_core::{Task, TaskState, pull_forward};
 
 const NOW: i64 = 1_000_000;
@@ -71,17 +70,4 @@ fn what_waits_on_the_plan_that_reset_early_comes_due_now_and_nothing_else() {
     assert_eq!(moved.iter().map(|l| l.id.as_str()).collect::<Vec<_>>(), ["other-account", "work-limit"]);
     // a blank account is `default`, as everywhere
     assert_eq!(pull_forward(&entries, &tasks, "codex", "", NOW).len(), 2);
-}
-
-#[test]
-fn the_phone_note_is_v1s() {
-    assert_eq!(early_note("Codex", "", 0), None, "nothing waited: no note");
-    assert_eq!(
-        early_note("Codex", "", 1).unwrap(),
-        ("\u{21bb} Codex reset early".to_owned(), "Its plan reset before its time. 1 task waiting on it starts now.".to_owned())
-    );
-    assert_eq!(
-        early_note("Codex", "Work", 3).unwrap(),
-        ("\u{21bb} Codex (Work) reset early".to_owned(), "Its plan reset before its time. 3 tasks waiting on it start now.".to_owned())
-    );
 }

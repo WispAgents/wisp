@@ -27,16 +27,32 @@ async fn early_note(ctx: &Ctx, agent: &str, account: &str, n: u32) {
         .iter()
         .find(|h| h.info().id == agent)
         .map_or_else(|| agent.to_owned(), |h| h.info().name.clone());
-    let label = if account == "default" { "" } else { account };
-    let Some((title, text)) = wisp_budget_core::windows::early_note(&name, label, n) else { return };
+    let Some((title, text)) = wisp_budget_api::early_note(&name, account, n) else { return };
     let msg = wisp_channels_api::Msg { title, text, actions: Vec::new() };
     if let Err(err) = ctx.run::<wisp_channels_api::SendNotice>(&ctx.root_call(), wisp_channels_api::SendArgs { msg }).await {
         tracing::debug!(error = %err.message, "budget: an early reset, no phone to tell");
     }
 }
 
-/// A held turn to start: ((agent, account), (task, turn)).
-pub(crate) type Due = ((String, String), (String, String));
+/// A held turn to start: ((agent, account), (task, turn), the list it came from).
+pub(crate) type Due = ((String, String), (String, String), Origin);
+
+/// Which hold a turn to start came from, so one the runtime refuses goes back on that list: a stop line's waits for
+/// its account to be free, Ask near the limit's for its window's reset (`until`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Origin {
+    Stop,
+    Ask { until: i64 },
+}
+
+/// A turn the runtime refused to start goes back where it came from.
+pub(crate) fn put_back(due: Due, held: &mut crate::HeldTurns, asked: &mut Vec<crate::ask::Asked>) {
+    let ((agent, account), (task, turn), from) = due;
+    match from {
+        Origin::Stop => held.entry((agent, account)).or_default().push((task, turn)),
+        Origin::Ask { until } => asked.push(crate::ask::Asked { task, turn, until, agent, account }),
+    }
+}
 
 /// How many looks a held turn the runtime refuses to start is tried again.
 const RELEASE_TRIES: u8 = 5;
@@ -53,9 +69,9 @@ impl State {
     /// spend their tries before the runtime could have written them held).
     pub(crate) fn requeue(&self) {
         let again = std::mem::take(&mut lock(&self.retry).again);
-        let mut held = lock(&self.held);
-        for (key, t) in again {
-            held.entry(key).or_default().push(t);
+        let (mut held, mut asked) = (lock(&self.held), lock(&self.asked));
+        for due in again {
+            put_back(due, &mut held, &mut asked);
         }
     }
 
@@ -64,7 +80,7 @@ impl State {
     /// waiting"), and dropping it then left it held for good.
     pub(crate) async fn start(&self, ctx: &Ctx, due: Vec<Due>) -> u32 {
         let mut n = 0;
-        for (key, (id, turn)) in due {
+        for (key, (id, turn), from) in due {
             let a = rt::ReleaseArgs { id: SessionId(id.clone()), turn_id: TurnId(turn.clone()), action: rt::ReleaseAction::Start };
             match ctx.run::<rt::Release>(&ctx.root_call(), a).await {
                 Ok(_) => {
@@ -78,7 +94,7 @@ impl State {
                         *tries += 1;
                         let again = *tries <= RELEASE_TRIES;
                         if again {
-                            r.again.push((key, (id.clone(), turn.clone())));
+                            r.again.push((key, (id.clone(), turn.clone()), from));
                         } else {
                             r.tries.remove(&turn);
                         }
@@ -104,7 +120,8 @@ impl State {
         }
         let key = (agent.to_owned(), account.clone());
         lock(&self.limited).remove(&key);
-        let mut due: Vec<Due> = lock(&self.held).remove(&key).unwrap_or_default().into_iter().map(|t| (key.clone(), t)).collect();
+        let mut due: Vec<Due> =
+            lock(&self.held).remove(&key).unwrap_or_default().into_iter().map(|t| (key.clone(), t, Origin::Stop)).collect();
         due.extend(self.ask_freed(agent, &account));
         let started = self.start(ctx, due).await;
         ctx.emit(&ctx.root_call(), &PlanFree { agent: agent.to_owned(), account: account.clone(), started });
@@ -129,5 +146,31 @@ impl State {
         }
         out.extend(held);
         out.into_iter().collect()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Round 177's review: a refused release of a run Ask near the limit held went back on the stop line's list, so
+    /// it waited for the stop line (maybe never set) instead of its window's reset, and Check Codex lost it. It goes
+    /// back where it came from; a stop line's goes back on its own list.
+    #[test]
+    fn a_refused_release_goes_back_on_the_list_it_came_from() {
+        let key = ("codex".to_owned(), "work".to_owned());
+        let (mut held, mut asked) = (crate::HeldTurns::new(), Vec::new());
+        put_back((key.clone(), ("t1".into(), "u1".into()), Origin::Ask { until: 42 }), &mut held, &mut asked);
+        assert!(held.is_empty(), "not on the stop line's list");
+        assert_eq!(
+            asked,
+            vec![crate::ask::Asked { task: "t1".into(), turn: "u1".into(), until: 42, agent: "codex".into(), account: "work".into() }]
+        );
+        put_back((key.clone(), ("t2".into(), "u2".into()), Origin::Stop), &mut held, &mut asked);
+        assert_eq!(held[&key], vec![("t2".to_owned(), "u2".to_owned())]);
+        assert_eq!(asked.len(), 1);
+        // taken off the Ask list again, it says where it came from
+        let back = crate::ask::take(&mut asked, |_| true);
+        assert_eq!(back, vec![(key, ("t1".to_owned(), "u1".to_owned()), Origin::Ask { until: 42 })]);
     }
 }

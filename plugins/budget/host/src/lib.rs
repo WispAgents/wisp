@@ -37,7 +37,7 @@ const STOP_AT: [&str; 4] = ["off", "50", "75", "90"];
 type TurnPlans = BTreeMap<String, (u64, String, Vec<wisp_budget_api::Share>)>;
 
 /// Turns held per (agent, account): (task, turn).
-type HeldTurns = BTreeMap<(String, String), Vec<(String, String)>>;
+pub(crate) type HeldTurns = BTreeMap<(String, String), Vec<(String, String)>>;
 
 struct State {
     store: Store,
@@ -123,8 +123,9 @@ impl State {
         let due: Vec<early::Due> = {
             let mut held = lock(&self.held);
             let keys: Vec<(String, String)> = held.keys().filter(|(g, a)| self.free(g, a, at)).cloned().collect();
+            let stop = |k: &(String, String), t| (k.clone(), t, early::Origin::Stop);
             let mut due: Vec<early::Due> =
-                keys.iter().filter_map(|k| held.remove(k).map(|v| v.into_iter().map(|t| (k.clone(), t)))).flatten().collect();
+                keys.iter().filter_map(|k| held.remove(k).map(|v| v.into_iter().map(|t| stop(k, t)))).flatten().collect();
             due.extend(self.ask_due(at));
             due
         };

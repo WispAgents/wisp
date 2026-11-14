@@ -138,7 +138,7 @@ pub struct Asked {
 pub fn take(asked: &mut Vec<Asked>, go: impl Fn(&Asked) -> bool) -> Vec<crate::early::Due> {
     let (due, keep): (Vec<Asked>, Vec<Asked>) = asked.drain(..).partition(|a| go(a));
     *asked = keep;
-    due.into_iter().map(|a| ((a.agent, a.account), (a.task, a.turn))).collect()
+    due.into_iter().map(|a| ((a.agent, a.account), (a.task, a.turn), crate::early::Origin::Ask { until: a.until })).collect()
 }
 
 #[cfg(test)]
@@ -180,7 +180,8 @@ mod tests {
         };
         let mut asked = vec![a("t1", "codex", "default"), a("t2", "codex", "work"), a("t3", "claude", "default")];
         let freed = take(&mut asked, |x| x.agent == "codex" && x.account == "default");
-        assert_eq!(freed, vec![(("codex".to_owned(), "default".to_owned()), ("t1".to_owned(), "t1-1".to_owned()))]);
+        let from = crate::early::Origin::Ask { until: 99 };
+        assert_eq!(freed, vec![(("codex".to_owned(), "default".to_owned()), ("t1".to_owned(), "t1-1".to_owned()), from)]);
         assert_eq!(asked.iter().map(|x| x.task.as_str()).collect::<Vec<_>>(), ["t2", "t3"]);
         assert!(take(&mut asked, |x| x.until <= 98).is_empty(), "the old reset hasn't come");
     }

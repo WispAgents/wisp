@@ -146,6 +146,39 @@ impl Event for PlanFree {
     const TYPE: &'static str = "budget.plan_free";
 }
 
+/// The phone's one note when a plan reset early and `n` tasks waiting on it start now (v1 index.js `app.resetEarly`),
+/// `(title, text)`: wisp.later sends it (counting its follow-ups too), or wisp.budget when later is off. `name`: the
+/// harness's; `account`: shown when it isn't the CLI's own login (empty or `default`). None when nothing started.
+pub fn early_note(name: &str, account: &str, n: u32) -> Option<(String, String)> {
+    if n == 0 {
+        return None;
+    }
+    let label = if account.is_empty() || account == "default" { String::new() } else { format!(" ({account})") };
+    let (s, verb) = if n == 1 { ("", "starts") } else { ("s", "start") };
+    Some((format!("\u{21bb} {name}{label} reset early"), format!("Its plan reset before its time. {n} task{s} waiting on it {verb} now.")))
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod early_note_tests {
+    use super::early_note;
+
+    /// v1's words, in one place for both senders (round 177: budget and later each had a copy).
+    #[test]
+    fn the_early_reset_note_is_v1s_and_names_the_account_unless_its_the_clis_own_login() {
+        assert_eq!(early_note("Codex", "", 0), None, "nothing waited: no note");
+        assert_eq!(
+            early_note("Codex", "", 1).unwrap(),
+            ("\u{21bb} Codex reset early".to_owned(), "Its plan reset before its time. 1 task waiting on it starts now.".to_owned())
+        );
+        assert_eq!(early_note("Codex", "default", 1).unwrap().0, "\u{21bb} Codex reset early", "budget's name for the own login");
+        assert_eq!(
+            early_note("Codex", "Work", 3).unwrap(),
+            ("\u{21bb} Codex (Work) reset early".to_owned(), "Its plan reset before its time. 3 tasks waiting on it start now.".to_owned())
+        );
+    }
+}
+
 // ---------- end of the shared contract ----------
 
 /// The plugin id (manifest `id`).
