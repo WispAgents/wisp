@@ -190,3 +190,82 @@ fn escaping_never_loses_a_character_property() {
         assert_eq!(kept, want, "{x:?} → {e:?}");
     }
 }
+
+#[test]
+fn windows_a_path_without_its_extension_finds_the_exe_or_cmd_as_wisp_bin_variables_name_it() {
+    // `WISP_CLAUDE_BIN=C:\t\bin\claude`: the file on disk is `claude.exe` (a copied binary) or `claude.cmd`
+    let fs = FakeFs::default().with("C:\\t\\bin\\claude.exe", "").with("C:\\t\\bin\\codex.cmd", "@echo off\r\necho %*\r\n");
+    assert_eq!(which("C:\\t\\bin\\claude", &win_env(""), Platform::Windows, &fs).as_deref(), Some("C:\\t\\bin\\claude.exe"));
+    assert_eq!(
+        resolve_command("C:\\t\\bin\\claude", &s(&["-p"]), &win_env(""), Platform::Windows, &fs),
+        Resolved { command: "C:\\t\\bin\\claude.exe".into(), args: s(&["-p"]), verbatim: false }
+    );
+    let r = resolve_command("C:\\t\\bin\\codex", &s(&["exec"]), &win_env(""), Platform::Windows, &fs);
+    assert_eq!((r.command.as_str(), r.verbatim), ("cmd.exe", true), "a .cmd named by path runs through cmd.exe: {r:?}");
+    // an extensionless file alone (a `#!/bin/sh` script) is no program Windows can start: left for the spawn to report
+    let sh = FakeFs::default().with("C:\\t\\bin\\gh", "#!/bin/sh\n");
+    assert_eq!(which("C:\\t\\bin\\gh", &win_env(""), Platform::Windows, &sh), None);
+}
+
+#[test]
+fn windows_an_npm_global_folder_runs_the_cmd_shim_not_the_sh_script_beside_it() {
+    // `npm i -g @anthropic-ai/claude-code` writes `claude` (sh, for Git Bash), `claude.cmd` and `claude.ps1`
+    let fs = FakeFs::default()
+        .with("C:\\npm\\claude", "#!/bin/sh\nexec node \"$basedir/node_modules/@anthropic-ai/claude-code/cli.js\" \"$@\"\n")
+        .with("C:\\npm\\claude.ps1", "")
+        .with("C:\\npm\\claude.cmd", &npm_cmd_shim("node_modules/@anthropic-ai/claude-code/cli.js"))
+        .with("C:\\npm\\node_modules\\@anthropic-ai\\claude-code\\cli.js", "")
+        .with("C:\\node\\node.exe", "");
+    let env = win_env("C:\\npm;C:\\node");
+    assert_eq!(which("claude", &env, Platform::Windows, &fs).as_deref(), Some("C:\\npm\\claude.cmd"));
+    let r = resolve_command("claude", &s(&["-p", "fix it & del *"]), &env, Platform::Windows, &fs);
+    assert_eq!(
+        r,
+        Resolved {
+            command: "C:\\node\\node.exe".into(),
+            args: s(&["C:\\npm\\node_modules\\@anthropic-ai\\claude-code\\cli.js", "-p", "fix it & del *"]),
+            verbatim: false
+        },
+        "no shell at all: the prompt is one argument to node"
+    );
+}
+
+/// One pass of cmd.exe's parser over a line: `^x` is a literal `x`, and a bare `& | < >` would start another
+/// command (Err).
+fn cmd_pass(line: &str) -> Result<String, char> {
+    let mut out = String::new();
+    let mut it = line.chars();
+    while let Some(c) = it.next() {
+        match c {
+            '^' => out.extend(it.next()),
+            '&' | '|' | '<' | '>' => return Err(c),
+            c => out.push(c),
+        }
+    }
+    Ok(out)
+}
+
+#[test]
+fn windows_a_prompt_through_an_unknown_cmd_file_never_runs_a_command_of_its_own() {
+    let fs = FakeFs::default().with("C:\\Program Files (x86)\\t\\run.cmd", "@echo off\r\necho %*\r\n");
+    let prompts = [
+        "fix it & calc.exe",
+        "a | b",
+        "x > C:\\pwned.txt",
+        "< in",
+        "\"quoted & \" & calc",
+        "trailing \\\" & calc",
+        "line one\n& calc",
+        "^& calc",
+        "(a) & (b)",
+    ];
+    for p in prompts {
+        let r = resolve_command("C:\\Program Files (x86)\\t\\run.cmd", &s(&["-p", p]), &win_env(""), Platform::Windows, &fs);
+        assert!(r.verbatim, "{r:?}");
+        let line = r.args[3].strip_prefix('"').and_then(|l| l.strip_suffix('"')).unwrap();
+        // cmd /s /c parses the line, then the batch file's `%*` is parsed again: both passes see no bare operator
+        let once = cmd_pass(line).unwrap_or_else(|c| panic!("{p:?}: a bare {c} in {line}"));
+        let twice = cmd_pass(&once).unwrap_or_else(|c| panic!("{p:?}: a bare {c} after one pass: {once}"));
+        assert!(twice.starts_with("C:\\Program Files (x86)\\t\\run.cmd "), "{twice}");
+    }
+}

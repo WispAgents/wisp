@@ -103,12 +103,12 @@ fn send_cmd(
     }
 }
 
-/// The terminal handed to `program` until it ends (the input thread paused), then taken back. → it succeeded.
-fn handed(paused: &AtomicBool, program: &std::ffi::OsStr, args: &[std::ffi::OsString]) -> bool {
+/// The terminal handed to `cmd` until it ends (the input thread paused), then taken back. → it succeeded.
+fn handed(paused: &AtomicBool, mut cmd: std::process::Command) -> bool {
     paused.store(true, Ordering::Relaxed);
     ratatui::restore();
     let _ = execute!(std::io::stdout(), event::DisableMouseCapture, event::DisableBracketedPaste);
-    let ok = std::process::Command::new(program).args(args).status().is_ok_and(|s| s.success());
+    let ok = cmd.status().is_ok_and(|s| s.success());
     let _ = ratatui::init();
     let _ = execute!(std::io::stdout(), event::EnableMouseCapture, event::EnableBracketedPaste);
     paused.store(false, Ordering::Relaxed);
@@ -118,7 +118,9 @@ fn handed(paused: &AtomicBool, program: &std::ffi::OsStr, args: &[std::ffi::OsSt
 /// Open in <harness>: `wisp open <task>` in this terminal (v1's Take over), the TUI back after.
 fn open_in(id: &str, paused: &AtomicBool) {
     let me = std::env::current_exe().map_or_else(|_| "wisp".into(), std::path::PathBuf::into_os_string);
-    handed(paused, &me, &["open".into(), id.into()]);
+    let mut cmd = std::process::Command::new(me);
+    cmd.args(["open", id]);
+    handed(paused, cmd);
 }
 
 /// `$EDITOR` on the composer's text; the terminal is handed over and back.
@@ -128,9 +130,10 @@ fn editor(text: &str, paused: &AtomicBool) -> Option<String> {
     let ed = std::env::var("VISUAL").or_else(|_| std::env::var("EDITOR")).unwrap_or_else(|_| "vi".into());
     let mut parts = ed.split_whitespace();
     let ok = parts.next().is_some_and(|bin| {
-        let mut args: Vec<std::ffi::OsString> = parts.map(Into::into).collect();
-        args.push(path.clone().into_os_string());
-        handed(paused, bin.as_ref(), &args)
+        // the file goes in with the rest: on Windows a `.cmd` editor's whole line is escaped as one
+        let mut args: Vec<String> = parts.map(str::to_owned).collect();
+        args.push(path.display().to_string());
+        handed(paused, crate::repo_cli::terminal(bin, &args))
     });
     let out = ok.then(|| std::fs::read_to_string(&path).ok()).flatten();
     let _ = std::fs::remove_file(&path);

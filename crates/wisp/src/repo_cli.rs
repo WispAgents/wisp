@@ -708,6 +708,21 @@ pub fn harness_program(h: &str) -> String {
     std::env::var(var).ok().filter(|b| !b.is_empty()).unwrap_or_else(|| name.to_owned())
 }
 
+/// `program args` with this terminal, found as wisp's own runs find it: on Windows `claude` is `claude.exe` or npm's
+/// `claude.cmd` (PATHEXT), and a shim runs with its arguments intact (`wisp_proc::terminal_command`).
+pub fn terminal(program: &str, args: &[String]) -> std::process::Command {
+    #[cfg(feature = "proc")]
+    {
+        wisp_proc::terminal_command(program, args)
+    }
+    #[cfg(not(feature = "proc"))]
+    {
+        let mut c = std::process::Command::new(program);
+        c.args(args);
+        c
+    }
+}
+
 /// A harness's "resume this session" args, when it has one.
 pub fn resume_args(h: &str, session: &str) -> Option<Vec<String>> {
     match h {
@@ -829,8 +844,7 @@ pub async fn open_task(c: &Client, argv: &[String], o: &Opts, cwd: &Path) -> Res
         say(&format!("  {} {}", plan.how, plan.note));
     }
     let started = now_ms();
-    let status = std::process::Command::new(&plan.program)
-        .args(&plan.args)
+    let status = terminal(&plan.program, &plan.args)
         .current_dir(&plan.cwd)
         .status()
         .map_err(|e| CliError::said(format!("{}: {e}", plan.program)))?;

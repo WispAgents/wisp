@@ -38,7 +38,7 @@ pub use tokio_util::sync::CancellationToken as Scope;
 pub type BoxFuture<'a, T> = std::pin::Pin<Box<dyn std::future::Future<Output = T> + Send + 'a>>;
 pub use error::{ProcError, Result};
 pub use index::{copy_index, copy_index_blocking};
-pub use local::{LocalProc, search_path, set_path, vars};
+pub use local::{LocalProc, search_path, set_path, terminal_command, vars};
 
 /// The kernel service plugins ask for: `ctx.service::<Proc>()`.
 pub type Proc = Arc<dyn ProcService>;

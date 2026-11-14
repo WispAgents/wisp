@@ -217,6 +217,37 @@ impl ProcService for LocalProc {
     }
 }
 
+/// `bin args` as a blocking `std::process::Command` that keeps this terminal (stdio inherited), for a CLI the user
+/// is handed (`wisp open`'s harness, `$EDITOR`). Off Windows it is `Command::new(bin)` as before. On Windows it is
+/// resolved as `spawn` resolves it: `claude` finds `claude.exe` or npm's `claude.cmd` by PATHEXT, a shim runs its
+/// script under node, and an unknown batch file goes through cmd.exe with every argument escaped (a prompt can't
+/// run a command). `std::process::Command::new` alone finds only `.exe`.
+#[must_use]
+pub fn terminal_command(bin: &str, args: &[String]) -> std::process::Command {
+    let opts = SpawnOpts { env: with_handed_path(crate::Env::default()), ..SpawnOpts::default() };
+    let r = resolve_for(bin, args, &opts);
+    let mut cmd = std::process::Command::new(&r.command);
+    std_args(&mut cmd, &r);
+    cmd
+}
+
+#[cfg(unix)]
+fn std_args(cmd: &mut std::process::Command, r: &Resolved) {
+    cmd.args(&r.args);
+}
+
+#[cfg(windows)]
+fn std_args(cmd: &mut std::process::Command, r: &Resolved) {
+    use std::os::windows::process::CommandExt as _;
+    if r.verbatim {
+        for a in &r.args {
+            cmd.raw_arg(a);
+        }
+    } else {
+        cmd.args(&r.args);
+    }
+}
+
 #[cfg(unix)]
 fn detached_args(cmd: &mut tokio::process::Command, r: &Resolved) {
     cmd.args(&r.args);
