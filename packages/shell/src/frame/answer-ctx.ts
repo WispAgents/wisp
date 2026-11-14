@@ -43,6 +43,9 @@ export function answerContext(h: AnswerHost): BlockContext {
   // called while a view sets up (TaskView, Compare): the shell's own client says which wisp is this one
   const home = usePluginClient('shell').home;
   const keyOf = (id: string): EntityKey => (id.includes(':') ? (id as EntityKey) : entityKey(peer, id));
+  // where a `preview` block's page loads from here (ADR-0064: a box's localhost at the grid's preview address); set
+  // up once per answer, read reactively by the block; the first plugin that answers wins
+  const previews = (shell.previewAddresses?.()() ?? []).map((d) => d.map({ client: d.client, task: key }));
   return {
     // a .env file's values in a code or diff block: masked, revealed per task for the tab's life (env-reveal.ts)
     ...(h.env && { env: h.env }),
@@ -78,6 +81,13 @@ export function answerContext(h: AnswerHost): BlockContext {
     openUrl: (url) => shell.platform.openExternal(url),
     openFile: () => h.openChanges(),
     media: (p) => mediaUrl(home, key, p),
+    previewUrl: (url) => {
+      for (const m of previews) {
+        const to = m(url);
+        if (to) return to;
+      }
+      return undefined;
+    },
     // Show in folder: only on a computer (a phone has no folder to open, v1 MOBILE)
     ...(shell.platform.kind !== 'android' && {
       revealFile: (path: string) =>

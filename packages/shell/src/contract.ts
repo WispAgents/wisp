@@ -231,6 +231,17 @@ export interface PluginUiDef {
   harnesses?: HarnessUiDef[];
   /** added 2026-11-12 (additive): tabs it adds to the panel beside a task (v1 panel.js: My Stuff's panes pinned to tasks) */
   sideTabs?: SideTabDef[];
+  /** added 2026-11-14 (additive, ADR-0064): where a `preview` block's page loads when it can't as written (wisp.grid-client:
+   *  a box's `localhost:<port>` at the grid's preview address). The first that answers wins; none: the URL as written. */
+  previewAddresses?: PreviewAddressDef[];
+}
+
+/** One way to show a `preview` block's page from where this window is (ADR-0064). */
+export interface PreviewAddressDef {
+  id: string;
+  /** called as an answer of the task `task` (an entity key) sets up; the function it gives reads reactively and
+   *  says where `url` loads from here, or undefined when it isn't this plugin's to say */
+  map(ctx: { client: PluginClient; task: string }): (url: string) => string | undefined;
 }
 
 /** Tabs a plugin adds to the panel beside a task, after the panel's own (Changes, PR, Shell, Preview). */
@@ -499,6 +510,8 @@ export interface ShellContext {
   promptSources(): () => readonly PromptSourceDef[];
   /** added 2026-11-12 (additive): every plugin's tabs beside a task, each with its plugin's client */
   sideTabs?(): () => readonly (SideTabDef & { readonly plugin: string; readonly client: PluginClient })[];
+  /** added 2026-11-14 (additive, ADR-0064): every plugin's preview addresses, each with its plugin's client */
+  previewAddresses?(): () => readonly (PreviewAddressDef & { readonly plugin: string; readonly client: PluginClient })[];
   block(type: string): BlockRendererDef | undefined;
   view(kind: string): ViewDef | undefined;
 }

@@ -54,9 +54,10 @@ export function PreviewBlock(props: BlockProps): JSX.Element {
     );
   const url = pageUrl(props.block['url']) ?? '';
   const asked = previewSize(props.block);
-  const mapped = ctx.previewUrl?.(url);
-  const src = mapped ?? url;
-  const local = !mapped && isLoopback(url) && !isLoopback(here());
+  // read live: the host's mapping may only know where the page shows once its data arrives (a box's preview address)
+  const mapped = (): string | undefined => ctx.previewUrl?.(url);
+  const src = (): string => mapped() ?? url;
+  const local = (): boolean => !mapped() && isLoopback(url) && !isLoopback(here());
   const [size, setSize] = createSignal<PreviewSize>(asked);
   const [scale, setScale] = createSignal(1);
   const [loaded, setLoaded] = createSignal(false);
@@ -106,7 +107,7 @@ export function PreviewBlock(props: BlockProps): JSX.Element {
     <figure data-kit="rb-preview" data-card="" data-part="block.preview">
       <div data-kit="rb-pv-head">
         <span data-kit="rb-pv-addr" title={url}>
-          <Icon name={src.startsWith('https:') ? 'lock' : 'web'} size="sm" />
+          <Icon name={src().startsWith('https:') ? 'lock' : 'web'} size="sm" />
           <span>{shortUrl(url)}</span>
         </span>
         <div data-kit="rb-pv-seg" role="group" aria-label={t('block.preview.sizes')}>
@@ -133,7 +134,7 @@ export function PreviewBlock(props: BlockProps): JSX.Element {
           <button type="button" data-kit="rb-pv-btn" title={t('block.preview.reload')} aria-label={t('block.preview.reload')} onClick={() => (setLoaded(false), setN(n() + 1))}>
             <Icon name="rerun" size="sm" />
           </button>
-          <OutLink href={src} part="block.preview.open" label={t('block.preview.open')} iconOnly />
+          <OutLink href={src()} part="block.preview.open" label={t('block.preview.open')} iconOnly />
         </div>
       </div>
       <div data-kit="rb-pv-stage" ref={(el) => (stage = el)}>
@@ -157,9 +158,9 @@ export function PreviewBlock(props: BlockProps): JSX.Element {
             <Show when={String(n())} keyed>
               {(_k) => (
                 <iframe
-                  src={src}
+                  src={src()}
                   title={title ?? shortUrl(url)}
-                  sandbox={previewSandbox(src, here())}
+                  sandbox={previewSandbox(src(), here())}
                   referrerpolicy="no-referrer"
                   loading="lazy"
                   onLoad={() => setLoaded(true)}
@@ -191,7 +192,7 @@ export function PreviewBlock(props: BlockProps): JSX.Element {
               {t('block.preview.sandboxed')}
             </span>
           </span>
-          <Show when={local}>
+          <Show when={local()}>
             <span data-kit="rb-pv-note">
               <Icon name="info" size="sm" />
               {t('block.preview.local')}

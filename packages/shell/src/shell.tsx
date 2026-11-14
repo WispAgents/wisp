@@ -74,6 +74,13 @@ export function createShell(o: ShellOptions): Shell {
       return pc ? [{ ...d, client: pc }] : [];
     }),
   );
+  // each plugin's preview addresses (ADR-0064), with the client its map reads as
+  const previewAddresses = computed(() =>
+    registry.previewAddresses().flatMap((d) => {
+      const pc = clients.get(d.plugin);
+      return pc ? [{ ...d, client: pc }] : [];
+    }),
+  );
   const theme = createTheme({
     pref: settings.get('shell.theme'),
     lockedBy: settings.lockedBy('shell.theme'),
@@ -152,6 +159,7 @@ export function createShell(o: ShellOptions): Shell {
     harnesses: () => registry.harnesses,
     promptSources: () => registry.prompt,
     sideTabs: () => sideTabs,
+    previewAddresses: () => previewAddresses,
     block: (type) => registry.block(type),
     view: (kind) => registry.view(kind),
   };
