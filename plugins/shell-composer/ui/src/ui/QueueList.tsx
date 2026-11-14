@@ -4,7 +4,7 @@
 // moved, or cancelled. Every change is a command with the queue's new order as its patch.
 import { createSignal, Show, type JSX } from 'solid-js';
 import { Key } from '@zag-js/solid';
-import { IconButton, Inline, ListRow, Menu, Stack, TextArea, type MenuEntry } from '@wisp/ui';
+import { IconButton, Inline, ListRow, Menu, Stack, TextArea, reordered, useQueueDrag, type MenuEntry } from '@wisp/ui';
 import type { Env } from '../env.ts';
 import { canCombineNext, combinableAll, editable, moved, quote, tagOf } from '../model/queue.ts';
 import { plain } from '../text/mentions.ts';
@@ -98,6 +98,8 @@ export function QueueList(p: QueueListProps): JSX.Element {
   const t = p.env.t;
   const [editing, setEditing] = createSignal<string | undefined>(undefined);
   const ids = (): string[] => p.queue.map((q) => q.id);
+  // the phone apps: long-press a follow-up, then drag it (design/mobile.md §A.4; twins: the grip, Move up / Move down)
+  const drag = useQueueDrag({ item: "[data-part~='composer.queue.row']", ids, onReorder: (id, before) => p.actions.order(reordered(ids(), id, before)) });
   const cancel = async (q: Row<QueueItem>): Promise<void> => {
     if (await p.confirm(t(`${K}.cancel-confirm`, { text: quote(plain(q.text)) }))) p.actions.cancel(q.id);
   };
@@ -120,7 +122,7 @@ export function QueueList(p: QueueListProps): JSX.Element {
     else if (v === 'cancel') void cancel(q);
   };
   return (
-    <Stack gap="1" part="composer.queue" role="list" aria-label={t(`${K}.label`)}>
+    <Stack ref={drag} gap="1" part="composer.queue" role="list" aria-label={t(`${K}.label`)}>
       <Key each={p.queue} by={(q) => q.id}>
         {(q, i) => {
           const tag = (): string => {

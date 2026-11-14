@@ -25,6 +25,7 @@ import { Toolbar, type ToolbarItem } from '../composites/Toolbar.tsx';
 import { usePlatform } from '../platform/PlatformLook.tsx';
 import { ComposeButton, claimCompose, useComposeHost } from './compose.tsx';
 import { barCollapsed } from './scroll-math.ts';
+import { useTaskSwipe, type TaskSwipe } from '../gestures/use.ts';
 
 export interface TopAppBarBack {
   /** What Back returns to (iOS shows it, shortened to the kit's "Back" when long; Android names the button). */
@@ -42,6 +43,9 @@ export interface TopAppBarProps extends KitProps {
   /** The actions toolbar's name (default: the title). */
   readonly actionsLabel?: string;
   readonly t?: Translate;
+  /** A task page (the phone apps): swiping the head left / right opens the next / previous task in the list's order
+   *  (design/mobile.md §A.4); the twins are Next task / Previous task in `actions`' menu. The browser binds nothing. */
+  readonly swipe?: TaskSwipe;
 }
 
 /** iOS shortens the back title the way UINavigationBar does when it doesn't fit: past this many characters, "Back". */
@@ -92,6 +96,7 @@ function PhoneBar(props: TopAppBarProps & { readonly part: PartName }): JSX.Elem
   const host = useComposeHost();
   claimCompose(host, ios() && kind() === 'root');
   const [collapsed, setCollapsed] = createSignal(false);
+  const swipe = useTaskSwipe(() => props.swipe ?? {});
   let el: HTMLElement | undefined;
   let largeEl: HTMLDivElement | undefined;
   onMount(() => {
@@ -109,7 +114,13 @@ function PhoneBar(props: TopAppBarProps & { readonly part: PartName }): JSX.Elem
     onCleanup(() => box.removeEventListener('scroll', onScroll, { capture: true }));
   });
   return (
-    <header ref={el} id={props.id} data-kit="app-bar" data-part={props.part} data-kind={kind()} data-large={flag(large())} data-collapsed={flag(large() && collapsed())}>
+    <header
+      ref={(h) => {
+        el = h;
+        if (props.swipe) swipe(h);
+      }}
+      id={props.id}
+      data-kit="app-bar" data-part={props.part} data-kind={kind()} data-large={flag(large())} data-collapsed={flag(large() && collapsed())}>
       <div data-kit="app-bar-row">
         <Show when={props.back}>
           {(b) => (

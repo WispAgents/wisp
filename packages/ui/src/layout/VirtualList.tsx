@@ -10,6 +10,9 @@ import { sizeVar } from '@wisp/tokens';
 import { flag, styleOf, sub, type KitProps, type Labelled, type PartName, type WithVars } from '../core/props.ts';
 import { anchorAt, atTail, computeRange, offsets, restoreAnchor, type Anchor } from './virtual-math.ts';
 import { PullRefresh } from './PullRefresh.tsx';
+import { bindPull } from '../gestures/bind-vertical.ts';
+import { useGesture } from '../gestures/use.ts';
+import { useT } from '../core/i18n.tsx';
 
 export interface VirtualListProps<T> extends KitProps, WithVars, Labelled {
   readonly items: readonly T[];
@@ -38,6 +41,11 @@ export interface VirtualListProps<T> extends KitProps, WithVars, Labelled {
   /** Pulling the list down (the phone apps only: M3 indicator / iOS refresh control, ADR-0065 step 4). The
    *  browser draws nothing for it. It sits over the rows, so it never moves what is measured. Additive. */
   readonly pull?: { readonly progress: number; readonly refreshing: boolean; readonly label: string } | undefined;
+  /** Pull to refresh, the gesture (ADR-0065 step 7, design/mobile.md §A.4; the phone apps only): pulling the list
+   *  down from its top past the line runs `onRefresh` (the list's reconnect: every computer now, skipping the
+   *  backoff), and the list draws the pull itself. Its twin is *Reconnect* in the bar's me menu (and *Retry* on the
+   *  offline bar). The browser binds nothing. Additive. */
+  readonly refresh?: { readonly onRefresh: () => void; readonly refreshing: boolean; readonly label: string } | undefined;
 }
 
 interface Measured {
@@ -167,6 +175,15 @@ export function VirtualList<T>(props: VirtualListProps<T>): JSX.Element {
   const scroller = useScroller(props, offs);
   const range = createMemo(() => computeRange(offs(), scroller.scrollTop(), scroller.viewportH(), props.overscan ?? 6));
   const visible = createMemo(() => props.items.slice(range().start, range().end));
+  const [pulled, setPulled] = createSignal(0);
+  const t = useT();
+  const pullGesture = useGesture(
+    'list.pull',
+    (el, host) => bindPull(el, { host, onRefresh: () => props.refresh?.onRefresh(), onProgress: setPulled, refreshing: () => props.refresh?.refreshing === true }),
+    () => [{ label: t('gesture.reconnect'), run: () => props.refresh?.onRefresh() }],
+  );
+  const pullView = (): { readonly progress: number; readonly refreshing: boolean; readonly label: string } | undefined =>
+    props.pull ?? (props.refresh ? { progress: pulled(), refreshing: props.refresh.refreshing, label: props.refresh.label } : undefined);
 
   const row = (item: Accessor<T>, i: Accessor<number>): JSX.Element => (
     <div
@@ -187,6 +204,7 @@ export function VirtualList<T>(props: VirtualListProps<T>): JSX.Element {
     <div
       ref={(el) => {
         scroller.attach(el);
+        if (props.refresh) pullGesture(el);
         props.ref?.(el);
       }}
       id={props.id}
@@ -200,7 +218,7 @@ export function VirtualList<T>(props: VirtualListProps<T>): JSX.Element {
       onScroll={() => scroller.onScroll()}
       style={styleOf({ '--k-vl-h': props.height === undefined ? undefined : sizeVar(props.height) }, props.vars)}
     >
-      {props.pull ? <PullRefresh progress={props.pull.progress} refreshing={props.pull.refreshing} label={props.pull.label} part={sub(part(), 'pull')} /> : null}
+      {pullView() ? <PullRefresh progress={pullView()?.progress ?? 0} refreshing={pullView()?.refreshing === true} label={pullView()?.label ?? ''} part={sub(part(), 'pull')} /> : null}
       <div data-kit="virtual-spacer" aria-hidden="true" style={{ height: `${range().padTop}px` }} />
       <Key each={visible()} by={(item: T) => props.key(item)}>
         {row}

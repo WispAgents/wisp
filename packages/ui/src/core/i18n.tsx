@@ -25,6 +25,14 @@ export const KIT_STRINGS = {
   'time.in-minutes': 'in {n} min',
   'no-results': 'No results',
   'diff.binary': 'Binary file not shown',
+  // the phone apps' gestures as accessibility actions (design/mobile.md §A.6), in the menus' words
+  'gesture.actions': 'Actions',
+  'gesture.reconnect': 'Reconnect',
+  'gesture.next-task': 'Next task',
+  'gesture.previous-task': 'Previous task',
+  'gesture.side-panel': 'Side panel',
+  'gesture.move-up': 'Move up',
+  'gesture.move-down': 'Move down',
 } as const;
 
 export type KitString = keyof typeof KIT_STRINGS;

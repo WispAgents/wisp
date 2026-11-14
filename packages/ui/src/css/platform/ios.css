@@ -506,4 +506,18 @@
   @media (prefers-reduced-motion: reduce) {
     :root[data-platform='ios'] [data-kit='pull-refresh'][data-refreshing] [data-kit='pull-spinner'] { animation: none; }
   }
+
+  /* Gestures (step 7, design/mobile.md §A.4): a sideways gesture on a task page keeps the vertical scroll the
+     browser's; a long-pressed follow-up lifts and follows the finger (bind.ts sets --k-drag-y), the others stay. */
+  :root[data-platform='ios'] [data-gesture~='task.head-swipe'],
+  :root[data-platform='ios'] [data-gesture~='task.body-swipe'] { touch-action: pan-y; }
+  :root[data-platform='ios'] [data-gesture~='queue.drag'] > * { -webkit-touch-callout: none; user-select: none; }
+  :root[data-platform='ios'] [data-gesture~='queue.drag'] [data-dragging] {
+    position: relative;
+    z-index: 1;
+    transform: translateY(var(--k-drag-y, 0));
+    box-shadow: var(--elev-2);
+    background: var(--surface-c1);
+  }
+  :root[data-platform='ios'] [data-gesture~='list.pull'] { overscroll-behavior-y: contain; }
 }

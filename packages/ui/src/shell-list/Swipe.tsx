@@ -8,11 +8,20 @@
 // the edge, where a short pull lets the row rest open on it (tap it to run, tap the row to close) and a pull
 // past half the row runs it at once. The words, the warming, the tick past the line and a running row's
 // little give are the same on all three.
+// Build step 7 (design/mobile.md §A.4–§A.6): under a phone look the row also answers a long-press (`onLongPress`:
+// Android's bottom sheet of the row's actions with Select first, iOS's context menu with a preview; until those
+// overlays land (step 5) the caller opens its existing row menu), carries `data-gesture`/`data-twin`, and gives a
+// screen reader each side's action and the menu as custom actions. A swipe starting in a horizontal scroller inside
+// the row (a chip row, code) scrolls it. The browser gets none of this: its HTML is what it was.
 import { createSignal, onCleanup, Show, type JSX } from 'solid-js';
 import { flag, sub, type KitProps, type PartName, type WithChildren } from '../core/props.ts';
 import { Icon } from '../content/Icon.tsx';
 import type { IconName } from '../content/icons.ts';
 import { usePlatform } from '../platform/PlatformLook.tsx';
+import { useT } from '../core/i18n.tsx';
+import { bindLongPress, inScroller } from '../gestures/bind.ts';
+import { useGestureHost } from '../gestures/host.tsx';
+import { useGesture } from '../gestures/use.ts';
 import { SWIPE_ACTION_W, swipeArmedFor, swipeOffset, swipePhase, swipeProgress, swipeRelease, swipeSpeed, swipeStarts, type SwipeStyle } from './swipe-math.ts';
 
 export type SwipeDir = 'left' | 'right';
@@ -31,6 +40,8 @@ export interface SwipeProps extends KitProps, WithChildren {
   readonly disabled?: boolean;
   /** the pull crossed the line (true) or came back (false): a haptic tick */
   readonly onArm?: (armed: boolean) => void;
+  /** the phone apps: a long-press opens the row's actions (its menu); also the screen reader's *Actions* */
+  readonly onLongPress?: () => void;
 }
 
 /** `open`: iOS only, the row rests on its revealed action */
@@ -58,6 +69,30 @@ export function Swipe(props: SwipeProps): JSX.Element {
   const [progress, setProgress] = createSignal(0);
   const st: { track: Track | undefined; swallow: boolean; dir: SwipeDir; width: number; el: HTMLDivElement | undefined } = { track: undefined, swallow: false, dir: 'right', width: 0, el: undefined };
   const side = (d: number): SwipeSide | undefined => (d > 0 ? props.right : d < 0 ? props.left : undefined);
+  const host = useGestureHost();
+  const t = useT();
+  // the phone apps: the marks qa/platform.mjs reads and the screen reader's actions (the browser: nothing)
+  const swipeMarks = useGesture(
+    'row.swipe',
+    () => () => undefined,
+    () => [
+      ...(props.right && !props.disabled ? [{ label: props.right.label, run: () => props.onSwipe('right') }] : []),
+      ...(props.left && !props.disabled ? [{ label: props.left.label, run: () => props.onSwipe('left') }] : []),
+    ],
+  );
+  const pressMenu = useGesture(
+    'row.long-press',
+    (el, h) =>
+      bindLongPress(el, {
+        host: h,
+        onLongPress: () => {
+          // the press is the menu's, not the start of a swipe
+          st.track = undefined;
+          props.onLongPress?.();
+        },
+      }),
+    () => (props.onLongPress ? [{ label: t('gesture.actions'), run: () => props.onLongPress?.() }] : []),
+  );
 
   // iOS (Mail): a row resting open closes on a touch anywhere else (another row, a scroll), so one rests open at most
   const outside = (e: PointerEvent): void => {
@@ -96,6 +131,8 @@ export function Swipe(props: SwipeProps): JSX.Element {
     if (props.disabled || e.pointerType !== 'touch' || !e.isPrimary || phase() !== 'idle') return;
     if (e.target instanceof Element && e.target.closest(OWN)) return;
     if (!swipeStarts(e.clientX, window.innerWidth)) return;
+    // a chip row or code inside the row scrolls; it never swipes the row
+    if (st.el && inScroller(e.target, st.el)) return;
     st.track = { x: e.clientX, y: e.clientY, width: st.el?.getBoundingClientRect().width ?? 0, mode: 'pending', samples: [{ x: e.clientX, t: e.timeStamp }] };
   };
   const move = (e: PointerEvent): void => {
@@ -116,7 +153,8 @@ export function Swipe(props: SwipeProps): JSX.Element {
     const now = swipeArmedFor(style(), ddx, tr.width, can);
     if (now !== armed()) {
       setArmed(now);
-      props.onArm?.(now);
+      if (props.onArm) props.onArm(now);
+      else if (now) host.haptic('select');
     }
   };
   const up = (e: PointerEvent): void => {
@@ -180,7 +218,11 @@ export function Swipe(props: SwipeProps): JSX.Element {
 
   return (
     <div
-      ref={(el) => (st.el = el)}
+      ref={(el) => {
+        st.el = el;
+        swipeMarks(el);
+        if (props.onLongPress) pressMenu(el);
+      }}
       id={props.id}
       data-kit="swipe"
       data-part={part()}
