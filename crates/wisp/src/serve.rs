@@ -41,14 +41,25 @@ fn master_token() -> String {
     crate::services::hex(&b)
 }
 
-/// Who this wisp is to a client: features come from its plugins, not its version number.
+/// Who this wisp is to a client: features come from its plugins, not its version number. Each plugin that's on
+/// (active, or resolved and waiting on its first event) is listed with the commands and topics its manifest
+/// contributes: the UI's `hasFeature` gates a command on this list, so an empty one refused every gated command
+/// ("Mark read needs a newer wisp.runtime").
 fn peer(kernel: &Kernel) -> wisp_protocol::PeerInfo {
     let name = env("HOSTNAME").or_else(|| env("COMPUTERNAME")).unwrap_or_else(|| "this computer".into());
+    let manifests: std::collections::BTreeMap<String, wisp_kernel::Manifest> =
+        kernel.manifests().into_iter().map(|m| (m.id.clone(), m)).collect();
     let plugins = kernel
         .status()
         .into_iter()
-        .filter(|s| s.state == "active")
-        .map(|s| wisp_protocol::PeerPlugin { id: s.id, version: s.version, commands: Vec::new(), topics: Vec::new(), blocks: Vec::new() })
+        .filter(|s| s.state == "active" || s.state == "resolved")
+        .map(|s| {
+            let m = manifests.get(&s.id);
+            let commands = m.map(|m| m.commands().into_iter().map(|c| c.id).collect()).unwrap_or_default();
+            let topics =
+                m.map(|m| m.contributions("topics").iter().filter_map(|t| t.as_str().map(str::to_owned)).collect()).unwrap_or_default();
+            wisp_protocol::PeerPlugin { id: s.id, version: s.version, commands, topics, blocks: Vec::new() }
+        })
         .collect();
     wisp_protocol::PeerInfo {
         peer: name.clone(),

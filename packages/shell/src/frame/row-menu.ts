@@ -2,7 +2,7 @@
 // Rerun… and Fork… (a new task from this one, its row and page at once, as the task's More does), Changes and Shell
 // (the panel beside it), Compare runs (the runs of one ask side by side); v1 #786 sections: Rerun with Open, Fork and
 // Side discussion with the task itself, Changes, Shell and Compare under View ›. Which show, by v1's rules (forkable, a side discussion has no Rerun, a pending row no panel).
-import { entityKey, uuidv7, type PeerId } from '@wisp/client';
+import { entityKey, newRowId, type PeerId } from '@wisp/client';
 import type { ExtensionDef, ExtensionProps, ShellContext, TaskMenuSection, TaskMenuSub } from '../contract.ts';
 import { defineExtension } from '../define.ts';
 import { editorUrl } from '../editor.ts';
@@ -62,7 +62,7 @@ function copyAndFiles(ctx: ShellContext): ExtensionDef[] {
 
 export function rowMenuItems(ctx: ShellContext): ExtensionDef[] {
   const copy = (cmd: typeof rerun, key: string): void => {
-    const newId = entityKey(peerOf(key), uuidv7());
+    const newId = entityKey(peerOf(key), newRowId());
     void ctx.client.commands.run(cmd, { id: key, newId, at: Date.now() }).catch(() => undefined);
     ctx.navigate({ t: 'openTask', id: newId as never });
   };

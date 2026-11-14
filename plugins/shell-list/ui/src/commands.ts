@@ -11,6 +11,8 @@ import { KIND, type Session, type SessionRow } from './types.ts';
 const RUNTIME = 'wisp.runtime';
 const row = (base: EntityReader, id: EntityKey): SessionRow | undefined => base.peek<Session>(KIND.session, id);
 const patch = (id: EntityKey, ops: PatchOp[]): EntityOps => (ops.length ? [{ e: KIND.session, id, op: 'patch', ops }] : []);
+/** the args as the peer reads them: the task by its bare id (`local:01a…` → `01a…`), not the list's entity key */
+const bare = <A extends { id: EntityKey }>(a: A): Omit<A, 'id'> & { id: string } => ({ ...a, id: a.id.slice(a.id.indexOf(':') + 1) });
 
 /** Sets or clears an optional field, with the op JSON Patch needs for what's there now. */
 function setField(s: SessionRow | undefined, field: keyof Session, value: unknown): PatchOp[] {
@@ -22,6 +24,7 @@ function setField(s: SessionRow | undefined, field: keyof Session, value: unknow
 export const rename = defineCommand<{ id: EntityKey; title: string }>({
   id: 'runtime.rename',
   owner: (a) => a.id,
+  wire: bare,
   optimistic: (base, a) => (row(base, a.id) ? patch(a.id, [{ op: 'replace', path: '/title', value: a.title }]) : []),
   feature: { plugin: RUNTIME, command: 'runtime.rename', label: 'Rename' },
 });
@@ -30,6 +33,7 @@ export const rename = defineCommand<{ id: EntityKey; title: string }>({
 export const archive = defineCommand<{ id: EntityKey; archived: boolean }>({
   id: 'runtime.archive',
   owner: (a) => a.id,
+  wire: bare,
   optimistic: (base, a) => {
     const s = row(base, a.id);
     if (!s) return [];
@@ -41,6 +45,7 @@ export const archive = defineCommand<{ id: EntityKey; archived: boolean }>({
 export const markRead = defineCommand<{ id: EntityKey; unread: boolean }>({
   id: 'runtime.markRead',
   owner: (a) => a.id,
+  wire: bare,
   optimistic: (base, a) => {
     const s = row(base, a.id);
     return s && !!s.unread !== a.unread ? patch(a.id, setField(s, 'unread', a.unread)) : [];
@@ -52,6 +57,7 @@ export const markRead = defineCommand<{ id: EntityKey; unread: boolean }>({
 export const setState = defineCommand<{ id: EntityKey; state: 'done' | 'review' }>({
   id: 'runtime.setState',
   owner: (a) => a.id,
+  wire: bare,
   optimistic: (base, a) => {
     const s = row(base, a.id);
     if (!s) return [];
@@ -63,6 +69,7 @@ export const setState = defineCommand<{ id: EntityKey; state: 'done' | 'review' 
 export const remove = defineCommand<{ id: EntityKey }>({
   id: 'runtime.delete',
   owner: (a) => a.id,
+  wire: bare,
   optimistic: (base, a) => (row(base, a.id) ? [{ e: KIND.session, id: a.id, op: 'del' }] : []),
   feature: { plugin: RUNTIME, command: 'runtime.delete', label: 'Delete task' },
 });
@@ -71,6 +78,7 @@ export const remove = defineCommand<{ id: EntityKey }>({
 export const setExt = defineCommand<{ id: EntityKey; plugin: 'forLater' | 'pinned'; value: { at: number; by: 'user' } | true | null }>({
   id: 'runtime.setExt',
   owner: (a) => a.id,
+  wire: bare,
   optimistic: (base, a) => patch(a.id, setField(row(base, a.id), a.plugin, a.value)),
   feature: { plugin: RUNTIME, command: 'runtime.setExt', label: 'Save for later' },
 });
