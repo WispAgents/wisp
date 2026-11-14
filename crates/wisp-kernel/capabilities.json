@@ -32,7 +32,7 @@
     },
     {
       "id": "apikey",
-      "allow": ["runtime:*", "session:*", "stuff:read", "stuff:save", "topic:read", "crew:read", "budget:read"],
+      "allow": ["edge:health", "runtime:*", "session:*", "stuff:read", "stuff:save", "topic:read", "crew:read", "budget:read"],
       "deny": [
         { "permission": "apikeys:*", "why": "make or revoke API keys" },
         { "permission": "plugins:*", "why": "change plugins" },

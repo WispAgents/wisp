@@ -47,6 +47,8 @@ use crate::tunnels::{TUNNEL_PROTOCOL, Tunnels};
 
 #[path = "edge_inbox.rs"]
 mod inbox;
+#[path = "edge_keys.rs"]
+mod keys;
 #[path = "edge_mail.rs"]
 mod mail;
 #[path = "edge_pages.rs"]
@@ -71,6 +73,10 @@ pub struct Grid {
     pub db: Arc<Db>,
     pub clock: SharedClock,
     pub accounts: Accounts,
+    /// API keys (`wgk_…`): a script's way in to its user's own wisp (`keys.rs`)
+    pub keys: crate::keys::ApiKeys,
+    /// per-user and per-address rate limits (a minute's window)
+    limits: crate::http::Limiter,
     pub shares: Shares,
     pub teams: Teams,
     pub tunnels: Arc<Tunnels>,
@@ -120,6 +126,10 @@ impl HostLookups for Grid {
         self.accounts.user_by_handle(label).ok().flatten().is_some()
     }
 }
+
+/// How the edge let a request into a box, when the box's wisp must know (`x-wisp-proxy-via`, set only here).
+#[derive(Debug, Clone, Copy)]
+struct Via(&'static str);
 
 /// Who's asking.
 #[derive(Debug, Clone)]
@@ -249,11 +259,14 @@ impl Grid {
                 }
             }));
         }
+        let keys = crate::keys::ApiKeys { db: db.clone(), clock: clock.clone() };
         Arc::new(Self {
             cfg,
             db,
             clock,
             accounts,
+            keys,
+            limits: crate::http::Limiter::default(),
             shares,
             teams,
             tunnels,
@@ -386,6 +399,8 @@ impl Grid {
             (_, ["api", "shares", ..] | ["api", "gallery"] | ["s", ..]) | ("GET", ["gallery"]) => {
                 self.shares_route(&method, &parts, q, &head.headers, &bytes, &who)
             }
+            (_, ["api", "keys"]) => self.keys_route(&method, None, &head.headers, &bytes, &who),
+            (_, ["api", "keys", id]) => self.keys_route(&method, Some(id), &head.headers, &bytes, &who),
             (_, ["api", "sandboxes", ..]) => self.sandboxes_route(&method, &parts, &head.headers, &bytes, &who).await,
             (_, ["api", "teams", ..]) => self.teams_route(&method, &parts, &head.headers, &bytes, &who),
             (_, ["api", "channels", which @ ("url" | "rotate" | "key")]) => {
@@ -731,12 +746,27 @@ impl Grid {
             return Ok(json(404, &json!({ "error": "There's nobody with that handle here." })));
         };
         let who = self.who(req.headers());
-        let cred = who.credential().ok_or_else(|| bad("Sign in first.", 401))?;
+        // an API key opens this address only (never a computer's, a sandbox's or the grid's own API: `trust`)
+        let key = match who {
+            Who::Nobody => self.keys.check(header_str(req.headers(), "authorization"))?,
+            _ => None,
+        };
+        let (cred, owner) = match (&key, who.credential()) {
+            (Some((u, _)), _) => (Credential::Key, Some(u.id.clone())),
+            (None, Some(c)) => (c, who.user().map(|u| u.id.clone())),
+            (None, None) => return Err(bad("Sign in first.", 401)),
+        };
         if let Some(r) = no(&may(cred, Reach::Box)).filter(|_| cred != Credential::Session) {
             return Ok(r);
         }
-        if who.user().is_none_or(|u| u.id != user.id) {
+        // another user's key is refused outright, like their device token
+        if owner.is_none_or(|id| id != user.id) {
             return Err(bad("That wisp isn't yours.", 403));
+        }
+        let mut req = req;
+        if key.is_some() {
+            // the box's wisp speaks for a key with the `apikey` set (wisp-api auth.rs): never key management
+            req.extensions_mut().insert(Via("key"));
         }
         self.proxy(req, &BoxUser::user(&user), handle).await
     }
@@ -760,6 +790,7 @@ impl Grid {
         let busy = std::sync::Mutex::new(self.boxes.begin(&bu.id, !passive));
         let secret = self.boxes.secret(&bu.id).unwrap_or_default();
         let (mut head, body) = req.into_parts();
+        let via = head.extensions.remove::<Via>();
         let pq = head.uri.path_and_query().map_or("/", |p| p.as_str()).to_owned();
         head.uri = format!("http://127.0.0.1:{}{pq}", running.port).parse().map_err(|_| bad("Bad path.", 400))?;
         let public = self.cfg.instance_url(handle);
@@ -784,6 +815,9 @@ impl Grid {
         set(&mut head.headers, "x-wisp-proxy-secret", &secret);
         set(&mut head.headers, "x-forwarded-host", &fwd_host);
         set(&mut head.headers, "x-forwarded-proto", &self.cfg.scheme);
+        if let Some(Via(v)) = via {
+            set(&mut head.headers, "x-wisp-proxy-via", v);
+        }
         set(&mut head.headers, "host", &format!("127.0.0.1:{}", running.port));
         let up = self
             .client
