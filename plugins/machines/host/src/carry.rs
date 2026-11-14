@@ -59,15 +59,33 @@ async fn git(proc: &Proc, cwd: &Path, args: &[&str], index: Option<&Path>, input
     if r.exit.success() { Ok(r.stdout_text()) } else { Err(format!("{}{}", r.stdout_text(), r.stderr_text()).trim().to_owned()) }
 }
 
+/// A scratch copy of the index `real`, with `real`'s mtime: git tells a racily clean entry (a file written in the
+/// same second as the index, then edited again in that second, same size) by comparing it with the index file's
+/// mtime, and Linux's copy gives the copy a fresh one, so such an edit read as unchanged (a delegate's `a - b` →
+/// `a + b` right after its copy was checked out never came back). Without the mtime, no copy: an empty index
+/// re-hashes every file, slower but never wrong.
+async fn scratch_index(real: &Path, scratch: &Path) {
+    let Ok(when) = tokio::fs::metadata(real).await.and_then(|m| m.modified()) else { return };
+    if tokio::fs::copy(real, scratch).await.is_err() {
+        let _ = tokio::fs::remove_file(scratch).await;
+        return;
+    }
+    let s = scratch.to_owned();
+    let kept = tokio::task::spawn_blocking(move || std::fs::OpenOptions::new().write(true).open(&s).and_then(|f| f.set_modified(when)))
+        .await
+        .is_ok_and(|r| r.is_ok());
+    if !kept {
+        let _ = tokio::fs::remove_file(scratch).await;
+    }
+}
+
 /// The folder's whole working state (tracked, changed and new files, not ignored ones) as a tree, read through a
 /// scratch copy of its index: the folder's own index stays as it was.
 async fn tree_of(proc: &Proc, dir: &Path) -> Result<String, String> {
     let at = git(proc, dir, &["rev-parse", "--git-path", "index"], None, None).await?;
     let real = dir.join(at.trim());
     let scratch = temp("index");
-    if tokio::fs::copy(&real, &scratch).await.is_err() {
-        let _ = tokio::fs::remove_file(&scratch).await;
-    }
+    scratch_index(&real, &scratch).await;
     let out = async {
         git(proc, dir, &["add", "-A"], Some(&scratch), None).await?;
         git(proc, dir, &["write-tree"], Some(&scratch), None).await
@@ -353,6 +371,37 @@ mod tests {
     fn sh(at: &Path, args: &[&str]) {
         let o = std::process::Command::new("git").current_dir(at).args(args).output().unwrap();
         assert!(o.status.success(), "git {args:?}: {}", String::from_utf8_lossy(&o.stderr));
+    }
+
+    fn stamp(p: &Path, when: std::time::SystemTime) {
+        std::fs::OpenOptions::new().write(true).open(p).unwrap().set_modified(when).unwrap();
+    }
+
+    /// `serve_delegate_machine`'s flake (ubuntu CI): the copy checked out, then the delegate's same-size edit of
+    /// math.js in that same second; its changes read through a scratch index that Linux's copy stamped later, so
+    /// git took math.js as unchanged and only notes.txt came back. The stamps are pinned here, as on that run.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn a_same_size_edit_in_the_index_s_own_second_is_a_change() {
+        let dir = temp("racy");
+        std::fs::create_dir_all(&dir).unwrap();
+        sh(&dir, &["init", "-q"]);
+        // ctime can't be pinned: the same second's ctime is what CI had
+        sh(&dir, &["config", "core.trustctime", "false"]);
+        let then = std::time::SystemTime::UNIX_EPOCH + Duration::from_secs(1_700_000_000);
+        std::fs::write(dir.join("math.js"), "a - b\n").unwrap();
+        stamp(&dir.join("math.js"), then);
+        sh(&dir, &["add", "."]);
+        sh(&dir, &["-c", "user.name=T", "-c", "user.email=t@e", "commit", "-qm", "one"]);
+        stamp(&dir.join(".git/index"), then);
+        let proc = wisp_proc::local();
+        let base = tree_of(&proc, &dir).await.unwrap();
+        std::fs::write(dir.join("math.js"), "a + b\n").unwrap();
+        stamp(&dir.join(".git/index"), then);
+        stamp(&dir.join("math.js"), then);
+        let now = tree_of(&proc, &dir).await.unwrap();
+        let diff = git(&proc, &dir, &["diff", "--name-only", &base, &now], None, None).await.unwrap();
+        assert_eq!(diff.trim(), "math.js", "the edit is seen");
+        let _ = std::fs::remove_dir_all(dir);
     }
 
     #[tokio::test(flavor = "multi_thread")]
