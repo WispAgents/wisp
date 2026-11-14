@@ -244,10 +244,15 @@ impl Runtime {
         self.stop_run(id);
         let _guard = self.task_lock(id).await;
         let key = id.to_owned();
+        let was = self.repo.session(id).await.ok();
         // turns, events and queue items go with the row (ON DELETE CASCADE): one change row for the task
         let gone = self.repo.store.write(move |w| w.del("session", key.as_str())).await?;
         if !gone {
             return Err(RuntimeError::NoTask(id.to_owned()));
+        }
+        // its delegates on other machines go there too (ADR-0060)
+        if let Some(s) = &was {
+            self.let_away_go(s);
         }
         let row = self.lock_list().remove(id);
         self.usage.forget(id);

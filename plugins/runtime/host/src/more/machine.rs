@@ -36,6 +36,22 @@ struct There {
 }
 
 impl Runtime {
+    /// A lead deleted (ADR-0060): each of its delegates on another machine goes there too, its task and its copy
+    /// (`machines.uncarry`; a machine that can't be reached keeps it for machines' sweep). Doesn't hold up the delete.
+    pub(crate) fn let_away_go(self: &Arc<Self>, lead: &Session) {
+        let Some(away) = slot(lead).and_then(|m| m.get(AWAY)).and_then(Value::as_object) else { return };
+        for key in away.keys() {
+            let Some((machine, task)) = key.split_once('|') else { continue };
+            let a = wisp_machines_api::UncarryArgs { id: machine.to_owned(), lead: lead.id.0.clone(), task: task.to_owned() };
+            let rt = self.clone();
+            self.host.spawn(Box::pin(async move {
+                if let Err(err) = crate::calls::run::<wisp_machines_api::Uncarry>(&*rt.host, a).await {
+                    tracing::warn!(error = %err.message, "runtime: a deleted lead's delegate on another machine");
+                }
+            }));
+        }
+    }
+
     async fn there(&self, machine: &str, id: &str) -> Option<There> {
         let session = self.route(machine, "runtime.get", json!({ "id": id })).await.ok()?;
         let state = serde_json::from_value(session.get("state").cloned().unwrap_or_default()).unwrap_or(SessionState::Running);

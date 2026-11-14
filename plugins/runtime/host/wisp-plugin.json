@@ -45,7 +45,7 @@
       "version": "1.0.0"
     }
   },
-  "permissions": ["router:read", "router:write", "stuff:read", "fs:read{path:~/.wisp/sessions}", "fs:write{path:~/.wisp/sessions}", "fs:write{path:~/.wisp/shots}", "proc:exec{bin:*}", "proc:spawn{bin:*}", "store:write{owner:runtime}", "telemetry:track", "worktrees:create", "accounts:write", "budget:read", "terminal:open", "terminal:input", "terminal:read", "sandbox:place", "sandbox:bring", "sandbox:info", "machines:route", "machines:list", "machines:carry", "machines:bring", "crew:read", "crew:assign"],
+  "permissions": ["router:read", "router:write", "stuff:read", "fs:read{path:~/.wisp/sessions}", "fs:write{path:~/.wisp/sessions}", "fs:write{path:~/.wisp/shots}", "proc:exec{bin:*}", "proc:spawn{bin:*}", "store:write{owner:runtime}", "telemetry:track", "worktrees:create", "accounts:write", "budget:read", "terminal:open", "terminal:input", "terminal:read", "sandbox:place", "sandbox:bring", "sandbox:info", "machines:route", "machines:list", "machines:carry", "machines:bring", "machines:uncarry", "crew:read", "crew:assign"],
   "server": {
     "builtin": "wisp-runtime"
   },

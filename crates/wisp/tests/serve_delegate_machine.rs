@@ -111,3 +111,43 @@ async fn a_delegate_on_another_machine_runs_there_says_where_and_its_change_come
 async fn nothing_runs_here(a: &Api, id: &str) -> bool {
     a.try_cmd("runtime.get", json!({ "id": id })).await["ok"] == false
 }
+
+/// ADR-0060: deleting the lead deletes its delegate's task on the other wisp and the copy it worked in there (only
+/// under that wisp's own folder); v1 deleted the task there after each job, ADR-0059 left both behind.
+#[tokio::test(flavor = "multi_thread")]
+async fn deleting_the_lead_deletes_its_delegates_copy_and_task_there() {
+    let (da, db) = (temp("dlg-gone-a"), temp("dlg-gone-b"));
+    let (_sa, pa) = start_with(&da, &[("FAKE_DELAY", "60000")]);
+    let (_sb, pb) = start(&db);
+    let a = Api { http: reqwest::Client::new(), port: pa, n: 0.into() };
+    let b = Api { http: reqwest::Client::new(), port: pb, n: 0.into() };
+    let added = a.cmd("machines.add", json!({ "transport": "loopback", "address": "127.0.0.1", "port": pb, "name": "studio" })).await;
+    let machine = added["id"].as_str().unwrap().to_owned();
+    until("the peer comes online", 60, async || {
+        let v = a.cmd("machines.get", json!({ "id": machine })).await;
+        (v["state"] == "online").then_some(v)
+    })
+    .await;
+    let proj = da.join("proj");
+    git(&proj, &["init", "-q", "-b", "main"]);
+    git(&proj, &["add", "."]);
+    git(&proj, &["-c", "user.name=T", "-c", "user.email=t@e", "commit", "-qm", "first"]);
+    let team = json!({ "wisp.runtime": { "subagents": [{ "name": "far", "agent": "codex", "machine": machine, "place": "studio" }] } });
+    let lead = a.cmd("runtime.create", json!({ "prompt": "lead", "cwd": proj, "agent": "claude", "ext": team })).await;
+    let lead_id = lead["id"].as_str().unwrap().to_owned();
+    a.until(&lead_id, "the lead running", |t| t.len() == 1 && t[0]["status"] == "running").await;
+    let out = a.cmd("runtime.delegate", json!({ "id": lead_id, "tasks": [{ "subagent": "far", "prompt": "fix the add bug" }] })).await;
+    let key = out[0]["id"].as_str().unwrap_or_else(|| panic!("{out}")).to_owned();
+    let (_, there_id) = key.split_once('|').unwrap();
+    let there = b.cmd("runtime.get", json!({ "id": there_id })).await;
+    let copy = std::path::PathBuf::from(there["cwd"].as_str().unwrap());
+    assert!(copy.is_dir() && copy.starts_with(db.join("home/plugins/wisp.machines/copies")), "{}", copy.display());
+
+    a.cmd("runtime.delete", json!({ "id": lead_id })).await;
+    until("the delegate's task there goes", 30, async || nothing_runs_here(&b, there_id).await.then_some(Value::Null)).await;
+    until("its copy there goes", 30, async || (!copy.exists()).then_some(Value::Null)).await;
+    assert!(copy.parent().is_some_and(|p| !p.exists()), "the copy's own folder too");
+    assert!(proj.join("math.js").is_file(), "the lead's own folder stays");
+    let row = a.cmd("machines.get", json!({ "id": machine })).await;
+    assert!(row["uncarry"].is_null(), "nothing kept for the sweep: {row}");
+}

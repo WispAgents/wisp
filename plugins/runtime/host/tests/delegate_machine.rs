@@ -33,6 +33,7 @@ fn answers() -> Recorder {
         json!({ "id": "r1", "state": "review", "cwd": "/there/copies/k/repo", "title": "far · lead", "text": "fixed it" }),
     );
     answers.insert("machines.bring".to_owned(), json!({ "files": 2 }));
+    answers.insert("machines.uncarry".to_owned(), json!({ "done": true }));
     Recorder { answers, ..Recorder::default() }
 }
 
@@ -130,4 +131,24 @@ async fn a_machine_that_refuses_the_copy_is_that_tasks_error() {
     assert!(asked(&r, "machines.route").is_empty(), "nothing runs there without its copy");
     let l = r.rt.repo.session(id.as_str()).await.unwrap();
     assert!(l.ext["wisp.runtime"].get("away").is_none(), "nothing went: nothing kept");
+}
+
+/// ADR-0060: deleting the lead lets each of its delegates on another machine go there (its task and its copy, through
+/// `machines.uncarry`, typed), and nothing for a lead that never delegated elsewhere.
+#[tokio::test(flavor = "multi_thread")]
+async fn deleting_the_lead_lets_its_delegates_elsewhere_go() {
+    let r = rig_with(answers()).await;
+    let id = r.rt.create(lead(false)).await.unwrap().id;
+    running(&r, id.as_str()).await;
+    let task = DelegateTask { subagent: "far".into(), prompt: "go".into() };
+    let out = r.rt.delegate(DelegateArgs { id: id.clone(), tasks: vec![task] }).await.unwrap();
+    assert_eq!(out[0].id.0, "m1|r1", "{out:?}");
+    assert!(asked(&r, "machines.uncarry").is_empty(), "nothing goes while the lead is here");
+    // a task that never delegated elsewhere, deleted first: it lets nothing go
+    let other = r.rt.create(StartArgs { prompt: "alone".into(), cwd: Some("/tmp".into()), ..StartArgs::default() }).await.unwrap().id;
+    r.rt.delete(other.as_str()).await.unwrap();
+    r.rt.delete(id.as_str()).await.unwrap();
+    until("the delegate there goes", || async { !asked(&r, "machines.uncarry").is_empty() }).await;
+    let gone = asked(&r, "machines.uncarry");
+    assert_eq!(gone, [json!({ "id": "m1", "lead": id.0, "task": "r1" })], "{gone:?}");
 }
