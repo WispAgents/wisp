@@ -545,4 +545,4 @@ alone.
 
 When every v1 row is built and the full suite has passed several runs in a row (no flakes), list the Linear tickets in TODO and work them, one concern per fresh coder. Not before.
 
-Then QA (owner, 2026-11-14): separate QA agents with little context (no known-bug list, no hints) each drive the real app (real `wisp serve`, fake agents, temp home, free port) through user journeys and find bugs by themselves; their findings go into one list; each bug goes to its own fresh coder. The lead does no QA itself.
+QA (owner, 2026-11-14, latest): a QA round is always running beside the coders, from now on. Each round is a NEW agent (qa-rN) with little context (no known-bug list, no hints), only how to run the real app (real `wisp serve`, fake agents, temp home, a free port) and a focus area that rotates until every scenario wisp offers is covered (first hour, task page, list, settings, crew, stuff, machines/cloud, channels, CLI/TUI, phone width, dark). Findings go to docs/qa/bugs.md; each bug goes to its own fresh coder with a failing test first; a later round re-checks it. The lead never QAs.
