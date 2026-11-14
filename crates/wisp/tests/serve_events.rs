@@ -201,12 +201,20 @@ async fn sink_webhook_signed_retried_with_backoff_and_paused_after_failures() {
     let sinks = json!([{ "name": "hook", "kind": "webhook", "url": format!("http://127.0.0.1:{rport}/in"), "match": "turn.finished", "secret": "HOOK_SECRET", "backoffMs": [50, 50], "pauseAfter": 1 }]);
     api.cmd("settings.set", json!({ "key": "events.sinks", "value": sinks })).await;
     task(&api, &dir, "one").await;
-    // two 500s, then 200: retried with its backoff, delivered
+    // two 500s, then 200: retried with its backoff, delivered. Waited on in the sink's own state: the receiver counts
+    // a try when it reads the request, before it answers, and the sink records the delivery once the 200 is in (read
+    // at the third hit, it said delivered 0: round 185's flake)
     let at = Instant::now();
-    while hits.load(Ordering::SeqCst) < 3 {
-        assert!(at.elapsed() < Duration::from_secs(20), "tries: {}", hits.load(Ordering::SeqCst));
+    let status = loop {
+        let s = api.cmd("events.sinksStatus", json!({})).await;
+        if s[0]["state"]["delivered"] != 0 {
+            break s;
+        }
+        assert!(at.elapsed() < Duration::from_secs(20), "tries: {}: {s}", hits.load(Ordering::SeqCst));
         tokio::time::sleep(Duration::from_millis(50)).await;
-    }
+    };
+    assert_eq!((status[0]["state"]["delivered"].clone(), status[0]["state"]["paused"].clone()), (json!(1), json!(false)), "{status}");
+    assert_eq!(hits.load(Ordering::SeqCst), 3, "two 500s, then the 200");
     let (ty, sig, body) = got.lock().unwrap()[2].clone();
     assert_eq!(ty, "turn.finished");
     // signed: sha256=HMAC(secret, body)
@@ -221,8 +229,6 @@ async fn sink_webhook_signed_retried_with_backoff_and_paused_after_failures() {
         })
     };
     assert_eq!(sig, want);
-    let status = api.cmd("events.sinksStatus", json!({})).await;
-    assert_eq!((status[0]["state"]["delivered"].clone(), status[0]["state"]["paused"].clone()), (json!(1), json!(false)), "{status}");
     // a receiver that's down: an event failing every try pauses the sink (pauseAfter 1), and nothing more goes
     drop(serve);
     let dir2 = temp("serve-events-sink2");
