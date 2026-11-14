@@ -95,6 +95,7 @@ pub fn box_options(cfg: &crate::config::GridConfig) -> crate::Result<crate::host
             .collect(),
         url_of: std::sync::Arc::new(move |handle| url_cfg.instance_url(handle)),
         boxd,
+        previews: cfg.previews(),
     })
 }
 

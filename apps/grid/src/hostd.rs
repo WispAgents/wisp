@@ -40,6 +40,8 @@ pub struct ProcessOptions {
     pub url_of: Arc<dyn Fn(&str) -> String + Send + Sync>,
     /// the container driver (boxd's socket and the limits); None runs boxes as processes here
     pub boxd: Option<crate::boxd::Driver>,
+    /// pages in boxes show at `p<port>--<handle>` (config `hostd.previews`): each box is told its template
+    pub previews: bool,
 }
 
 /// A started box: a process here, or a container boxd runs.
@@ -70,6 +72,14 @@ impl BoxProc {
             }
             Self::Boxd(r) => r.stop(Duration::from_secs(10)).await,
         }
+    }
+}
+
+/// `https://ada.grid.example` → `https://p{port}--ada.grid.example`: a box's preview addresses (`{port}` literal).
+pub fn preview_template(public: &str) -> String {
+    match public.split_once("://") {
+        Some((scheme, rest)) => format!("{scheme}://p{{port}}--{}", rest.trim_end_matches('/')),
+        None => String::new(),
     }
 }
 
@@ -212,6 +222,10 @@ impl ProcessHost {
             ("WISP_PUBLIC_URL".to_owned(), (self.o.url_of)(&user.handle)),
         ];
         env.extend(self.o.env.iter().cloned());
+        // where its pages show (ADR-0064): its own address with `p{port}--` before it; a sandbox's aren't shown
+        if self.o.previews && user.sandbox.is_none() {
+            env.push(("WISP_PREVIEW_URL".to_owned(), preview_template(&(self.o.url_of)(&user.handle))));
+        }
         // a sandbox's wisp knows it is one: it takes a project in, and publishes, shares and makes nothing (ADR-0047)
         if user.sandbox.is_some() {
             env.push(("WISP_SANDBOX".to_owned(), "1".to_owned()));
@@ -407,7 +421,7 @@ impl BoxHost for ProcessHost {
         self.tx.subscribe()
     }
     fn previews(&self) -> bool {
-        false
+        self.o.previews
     }
     async fn close(&self) {
         let ids: Vec<String> = lock(&self.inst).keys().cloned().collect();

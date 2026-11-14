@@ -53,6 +53,8 @@ mod keys;
 mod mail;
 #[path = "edge_pages.rs"]
 mod pages_route;
+#[path = "edge_preview.rs"]
+mod preview;
 #[path = "edge_route.rs"]
 mod route;
 #[path = "edge_sandboxes.rs"]
@@ -111,7 +113,7 @@ impl HostLookups for Grid {
         &self.roots
     }
     fn previews(&self) -> bool {
-        false
+        self.cfg.previews()
     }
     fn site(&self, label: &str) -> Option<SiteRow> {
         self.sites.by_label(label).ok().flatten()
@@ -327,7 +329,8 @@ impl Grid {
             HostKind::Computer(c) => self.computer_reach(req, &c, None).await,
             HostKind::Preview(p) => match p.of {
                 PreviewOf::Computer(c) => self.computer_reach(req, &c, Some(p.port)).await,
-                _ => Ok(json(404, &json!({ "error": "Pages in boxes aren't shown on this grid." }))),
+                PreviewOf::Handle(h) => self.box_preview(req, p.port, &h).await,
+                PreviewOf::Sandbox(_) => Ok(json(404, &json!({ "error": "Pages in sandboxes aren't shown on this grid." }))),
             },
             HostKind::Sandbox(sb) => self.sandbox_reach(req, &sb).await,
             HostKind::Site(site) => Ok(self.site_reach(&req, site.as_ref())),
@@ -763,6 +766,11 @@ impl Grid {
         if owner.is_none_or(|id| id != user.id) {
             return Err(bad("That wisp isn't yours.", 403));
         }
+        // a page in the box at its own address: a one-time link there (edge_preview.rs)
+        if req.uri().path() == "/_grid/preview" && req.method() == Method::GET {
+            let q = req.uri().query().unwrap_or_default().to_owned();
+            return self.preview_link(&q, &user, cred);
+        }
         let mut req = req;
         if key.is_some() {
             // the box's wisp speaks for a key with the `apikey` set (wisp-api auth.rs): never key management
@@ -972,6 +980,7 @@ pub async fn dev(
             env,
             url_of: Arc::new(move |h| url_cfg.instance_url(h)),
             boxd: None,
+            previews: false,
         },
         clock.clone(),
     );

@@ -23,6 +23,7 @@ pub mod trust;
 pub mod accounts;
 pub mod auth;
 pub mod keys;
+pub mod previews;
 pub mod seats;
 
 // boxes

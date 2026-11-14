@@ -48,6 +48,7 @@ async fn rig(name: &str, extra: serde_json::Value) -> Rig {
             env: Vec::new(),
             url_of: Arc::new(move |h| url_cfg.instance_url(h)),
             boxd: None,
+            previews: false,
         },
         clock.clone(),
     );

@@ -73,6 +73,7 @@ async fn github_sign_in_through_the_routes() {
             env: Vec::new(),
             url_of: Arc::new(move |h| url_cfg.instance_url(h)),
             boxd: None,
+            previews: false,
         },
         clock.clone(),
     );

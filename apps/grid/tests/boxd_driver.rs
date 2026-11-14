@@ -86,6 +86,7 @@ async fn hostd_runs_a_box_through_boxd() {
         env: vec![("EXTRA".into(), "1".into())],
         url_of: Arc::new(|h| format!("https://{h}.grid.test")),
         boxd: Some(wisp_grid::boxd::Driver { socket: sock.clone(), limits: json!({ "memory": "2g" }), dns: None }),
+        previews: false,
     };
     let host = wisp_grid::hostd::ProcessHost::new(o, clock);
     let ada = BoxUser { id: "u1".into(), handle: "ada".into(), sandbox: None, owner: None };
