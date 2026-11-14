@@ -100,8 +100,10 @@ pub fn install_fakes(dir: &Path, names: &[&str]) {
 }
 
 /// A fake CLI a test writes itself, at `at` without an extension: the `sh` script off Windows (made executable), and
-/// on Windows, which runs no sh script, `at.cmd` holding `cmd` (a batch file, as npm installs CLIs there; wisp quotes
-/// each argument for cmd.exe, so read them with `%~1`). The path to name it by comes back.
+/// on Windows, which runs no sh script, `at.cmd` holding `cmd` (a batch file, as npm installs CLIs there). The path to
+/// name it by comes back. Read a `.cmd` fake's first two arguments as `%A1%` and `%A2%` after [`CMD_ARGS`]: wisp
+/// caret-escapes each argument twice for an unknown batch file (`wisp_proc::resolve`, as cross-spawn does, so a prompt a
+/// batch file forwards with `%*` can't start a command), so `%~1` is `^"install^"` and reads back as `"install"`.
 pub fn script(at: &Path, sh: &str, cmd: &str) -> PathBuf {
     #[cfg(unix)]
     {
@@ -118,6 +120,10 @@ pub fn script(at: &Path, sh: &str, cmd: &str) -> PathBuf {
         file
     }
 }
+
+/// A `.cmd` fake's prelude: its first two arguments, quotes gone, in `A1` and `A2` (see [`script`]).
+#[allow(dead_code)]
+pub const CMD_ARGS: &str = "set A1=%~1\nset A2=%~2\nif defined A1 set A1=%A1:\"=%\nif defined A2 set A2=%A2:\"=%\n";
 
 pub fn start(dir: &Path) -> (Serve, u16) {
     start_with(dir, &[])

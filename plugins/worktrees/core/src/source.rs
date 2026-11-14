@@ -110,16 +110,23 @@ pub fn hits(out: &str, max: usize) -> Vec<Hit> {
 mod tests {
     use super::*;
 
-    /// The pattern as `git grep -E` reads it, run here through the system's grep (tests only).
+    /// The pattern as `git grep -E` reads it, run through git's own grep (tests only): the system's `grep` is another
+    /// engine, and on Windows not GNU's (its POSIX classes failed there while git's read them).
     fn regex_lite(pattern: &str) -> impl Fn(&str) -> bool + use<> {
         let p = pattern.to_owned();
+        let dir = std::env::temp_dir().join(format!("wisp-def-pattern-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let n = std::sync::atomic::AtomicU32::new(0);
         move |line: &str| {
-            let mut c = std::process::Command::new("grep").args(["-E", "-q", &p]).stdin(std::process::Stdio::piped()).spawn().unwrap();
-            {
-                use std::io::Write as _;
-                c.stdin.take().unwrap().write_all(line.as_bytes()).unwrap();
-            }
-            c.wait().unwrap().success()
+            let file = format!("line-{}.txt", n.fetch_add(1, std::sync::atomic::Ordering::Relaxed));
+            std::fs::write(dir.join(&file), format!("{line}\n")).unwrap();
+            let out = std::process::Command::new("git")
+                .current_dir(&dir)
+                .args(["grep", "--no-index", "-q", "-E", "-e", &p, "--", &file])
+                .output()
+                .unwrap();
+            std::fs::remove_file(dir.join(&file)).ok();
+            out.status.success()
         }
     }
 

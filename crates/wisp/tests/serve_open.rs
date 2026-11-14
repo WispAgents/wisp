@@ -72,7 +72,8 @@ async fn open_resumes_restores_continues_and_adopts_back() {
             turn.replace('\'', "'\\''")
         ),
         &format!(
-            ">> \"{}\" echo(%~1 %~2\nif \"%~1\"==\"--resume\" type \"{}\" >> \"%STORE%\\%~2.jsonl\"\n",
+            "{}>> \"{}\" echo(%A1% %A2%\nif \"%A1%\"==\"--resume\" type \"{}\" >> \"%STORE%\\%A2%.jsonl\"\n",
+            common::CMD_ARGS,
             log.display(),
             dir.join("cli-turn.jsonl").display()
         ),

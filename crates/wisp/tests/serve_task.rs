@@ -90,8 +90,10 @@ async fn follow_up_queue_and_stop_keep_the_queue() {
     api.until(&id, "the first turn", |t| t.len() == 1 && ended(&t[0])).await;
 
     // a follow-up starts a second turn in the same conversation
+    // the turn has its result, but its CLI may still be on its way out (Lingering: Windows takes its time to end a
+    // process): then the follow-up is queued and the CLI let go, and it starts as soon as the run has ended
     let f = api.cmd("runtime.followUp", json!({ "id": id, "text": "second" })).await;
-    assert!(f["turnId"].is_string(), "{f}");
+    assert!(f["turnId"].is_string() || f["queued"].is_string(), "{f}");
     api.until(&id, "the second turn running", |t| t.len() == 2 && t[1]["status"] == "running").await;
     // another one while it runs waits in the queue
     let q = api.cmd("runtime.followUp", json!({ "id": id, "text": "third", "queue": true })).await;

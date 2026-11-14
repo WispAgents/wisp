@@ -439,9 +439,11 @@ ui: {{ theme: dark, editor: zed }}
     // v1's home: its plan, then applied; history imported apart
     let v1 = dir.join("v1-home");
     std::fs::create_dir_all(v1.join("sessions")).unwrap();
+    // the path goes in as a JSON string's inside: a Windows path's backslashes escaped (`C:\\Users\\…`)
+    let in_json = serde_json::to_string(&proj.display().to_string()).unwrap();
     let fixture = std::fs::read_to_string(Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/v1-home/config.json"))
         .unwrap()
-        .replace("__PROJ__", &proj.display().to_string());
+        .replace("__PROJ__", &in_json[1..in_json.len() - 1]);
     std::fs::write(v1.join("config.json"), fixture).unwrap();
     let (code, out, err) = wisp(&dir, port, &["import", v1.to_str().unwrap(), "--dry-run"]);
     assert_eq!(code, 0, "{out}{err}");

@@ -432,7 +432,7 @@ async fn a_harness_from_brew_is_installed_when_it_isnt_there() {
     let brew = script(
         &dir.join("brew"),
         &format!("#!/bin/sh\necho \"$@\" >> {}\n", log.display()),
-        &format!(">> \"{}\" echo(%~1 %~2\n", log.display()),
+        &format!("{}>> \"{}\" echo(%A1% %A2%\n", common::CMD_ARGS, log.display()),
     );
     let (serve, port) = start_with(&dir, &[("WISP_GROK_BIN", "/no/such/grok"), ("WISP_BREW", brew.to_str().unwrap())]);
     let api = Api { http: reqwest::Client::new(), port, n: 0.into() };

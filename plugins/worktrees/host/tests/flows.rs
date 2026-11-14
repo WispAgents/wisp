@@ -123,8 +123,9 @@ async fn a_projects_conductor_worktree_is_offered_and_published_on_the_panes_top
     assert_eq!(offers.len(), 1, "{offers:?}");
     let o = &offers[0];
     assert_eq!((o.project.as_str(), o.from.as_str()), ("app", "Conductor"));
-    let paths: Vec<&str> = o.items.iter().map(|i| i.path.as_str()).collect();
-    assert_eq!(paths, [oslo.to_str().unwrap()]);
+    // git's own spelling of the folder (`C:/…` on Windows), the same folder as the test's
+    let paths: Vec<String> = o.items.iter().map(|i| wisp_runtime_api::paths::folder_key(&i.path)).collect();
+    assert_eq!(paths, [wisp_runtime_api::paths::folder_key(oslo.to_str().unwrap())]);
     assert_eq!((o.items[0].branch.as_str(), o.items[0].name.as_str(), o.items[0].dirty), ("oslo", "oslo", 1));
 
     let db = Store::open(Location::Memory, Arc::new(SystemClock)).unwrap();
@@ -143,7 +144,7 @@ async fn a_projects_conductor_worktree_is_offered_and_published_on_the_panes_top
     };
     pane::publish(&db, &view, &offers).await.unwrap();
     let row = db.read(|r| r.get("worktrees.offer", "app")).unwrap().unwrap();
-    assert_eq!(row["items"][0]["path"], oslo.to_str().unwrap());
+    assert_eq!(row["items"][0]["path"], o.items[0].path.as_str(), "the offer's row, as offered");
     assert_eq!((pane::OFFER.topics)(&row), vec![pane::TOPIC.to_owned()]);
 
     // Not now: the project's offer isn't made again
