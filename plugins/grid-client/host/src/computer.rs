@@ -8,6 +8,8 @@
 //!   "Show local pages in previews" (`grid-client.previews`) is on; 403 with why otherwise.
 //! - It redials after a drop (Wi-Fi, sleep, a grid restart) after 1, 2, 5, 15, then every 30 s, and gives
 //!   up only when the grid says this device or computer is gone (401/404).
+//! - The tunnel is the current account's (ADR-0061): switching accounts closes it and dials the new one's grid
+//!   if this computer is on there.
 //! - **A box never gets a laptop token:** on a grid box (`WISP_BOX`) this refuses to run.
 use std::sync::Arc;
 use std::time::Duration;
@@ -69,7 +71,7 @@ pub async fn set(st: &Arc<St>, on: bool, name: Option<String>) -> Result<Compute
         stop(st);
         if let Some(mut a) = st.account() {
             a.computer_on = false;
-            st.save_account(Some(a)).await?;
+            st.save_account(a).await?;
         }
         set_state(st, "off", "", None);
         return Ok(view(st));
@@ -86,7 +88,13 @@ pub async fn set(st: &Arc<St>, on: bool, name: Option<String>) -> Result<Compute
         (a.computer_id, a.computer_label, a.computer_name) = (s("id"), s("label"), name);
     }
     a.computer_on = true;
-    st.save_account(Some(a.clone())).await?;
+    // the account may have been switched from or signed out of while the grid answered: the tunnel is the
+    // current account's only (ADR-0061), and a signed-out token never dials
+    let key = a.key();
+    let saved = a.clone();
+    if !st.change(move |x| x.current == key && x.update(saved)).await? {
+        return Err(WireError::conflict("The current grid account changed meanwhile: try again."));
+    }
     start(st, &a.grid, &a.computer_id, &token);
     Ok(view(st))
 }
@@ -268,6 +276,14 @@ async fn serve(st: &St, local: &Client<HttpConnector, Body>, port: u16, req: htt
         }
         Err(e) => answer(502, &json!({ "error": format!("wisp here didn’t answer: {e}") })),
     }
+}
+
+/// The current account changed (switched, added, signed out of): the tunnel goes with it. It dials the new
+/// current account's grid if this computer was on there, else it's off.
+pub async fn follow_current(st: &Arc<St>) {
+    stop(st);
+    set_state(st, "off", "", None);
+    resume(st).await;
 }
 
 /// At start: a computer that was on dials again.

@@ -34,6 +34,10 @@ wisp-store.workspace = true
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["test-util", "macros", "rt-multi-thread"] }
+# tests/accounts.rs: the accounts' peers in a real wisp.machines
+wisp-machines = { path = "../../machines/host" }
+wisp-proc.workspace = true
+wisp-testkit.workspace = true
 
 [lints]
 workspace = true

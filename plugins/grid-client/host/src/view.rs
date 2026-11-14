@@ -1,6 +1,7 @@
 //! Settings → Cloud reads one row, `grid-client.cloud` id `this` on `plugin:wisp.grid-client:cloud`: signed in
-//! where and as whom, the cloud box's machine, this computer on the grid, and the newest sign-in (its code and
-//! the page that takes it, while the browser approves). Rewritten after every change: a command, a sign-in's
+//! where and as whom (the current account), every account signed in to (ADR-0061: each with Switch and Sign
+//! out), the cloud box's machine, this computer on the grid, and the newest sign-in (its code and the page that
+//! takes it, while the browser approves). Rewritten after every change: a command, a sign-in's
 //! step, the tunnel's state. The page never polls.
 
 use serde_json::{Value, json};
@@ -10,11 +11,15 @@ use crate::state::{St, lock};
 
 pub const TOPIC: &str = "plugin:wisp.grid-client:cloud";
 
-const MIGRATIONS: &[Migration] = &[Migration::sql(
-    1,
-    "CREATE TABLE grid_client_cloud (id TEXT PRIMARY KEY, signedIn INTEGER NOT NULL, grid TEXT NOT NULL, handle TEXT NOT NULL, machine TEXT NOT NULL,
+const MIGRATIONS: &[Migration] = &[
+    Migration::sql(
+        1,
+        "CREATE TABLE grid_client_cloud (id TEXT PRIMARY KEY, signedIn INTEGER NOT NULL, grid TEXT NOT NULL, handle TEXT NOT NULL, machine TEXT NOT NULL,
        computer TEXT, signin TEXT) STRICT;",
-)];
+    ),
+    // ADR-0061: every account signed in to
+    Migration::sql(2, "ALTER TABLE grid_client_cloud ADD COLUMN accounts TEXT;"),
+];
 
 pub const CLOUD: EntityDef = EntityDef {
     kind: "grid-client.cloud",
@@ -28,8 +33,9 @@ pub const CLOUD: EntityDef = EntityDef {
         ("machine", Col::Text),
         ("computer", Col::Text),
         ("signin", Col::Text),
+        ("accounts", Col::Text),
     ],
-    json_columns: &["computer", "signin"],
+    json_columns: &["computer", "signin", "accounts"],
     parent: None,
     seq: None,
     topics: |_| vec![TOPIC.to_owned()],
@@ -50,6 +56,7 @@ pub fn row(status: &wisp_grid_client_api::Status, signin: Option<&wisp_grid_clie
     r.insert("machine".into(), json!(status.machine));
     r.insert("computer".into(), serde_json::to_value(&status.computer).unwrap_or(Value::Null));
     r.insert("signin".into(), signin.map_or(Value::Null, |s| serde_json::to_value(s).unwrap_or(Value::Null)));
+    r.insert("accounts".into(), serde_json::to_value(&status.accounts).unwrap_or(Value::Null));
     r
 }
 
@@ -83,6 +90,7 @@ mod tests {
             handle: String::new(),
             machine: String::new(),
             computer: ComputerState::default(),
+            accounts: Vec::new(),
         };
         let waiting = SignIn {
             id: "s1".into(),
@@ -103,11 +111,19 @@ mod tests {
             handle: "ada".into(),
             machine: "m1".into(),
             computer: ComputerState::default(),
+            accounts: vec![wisp_grid_client_api::AccountInfo {
+                key: "https://grid.trywisp.dev#ada".into(),
+                grid: "https://grid.trywisp.dev".into(),
+                handle: "ada".into(),
+                machine: "m1".into(),
+                current: true,
+            }],
         };
         let r = row(&signed, None);
         db.write(move |w| w.upsert(CLOUD.kind, r).map(|_| ())).await.unwrap();
         let got = db.read(|x| x.get("grid-client.cloud", "this")).unwrap().unwrap();
         assert_eq!((got["signedIn"].clone(), got["handle"].clone()), (json!(true), json!("ada")));
         assert!(got["signin"].is_null());
+        assert_eq!(got["accounts"][0]["key"], "https://grid.trywisp.dev#ada", "each account, for Switch and Sign out");
     }
 }

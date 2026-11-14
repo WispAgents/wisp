@@ -4801,11 +4801,14 @@ dependencies = [
  "wisp-grid-client-api",
  "wisp-grid-client-core",
  "wisp-kernel",
+ "wisp-machines",
  "wisp-machines-api",
+ "wisp-proc",
  "wisp-runtime-api",
  "wisp-share-api",
  "wisp-store",
  "wisp-stuff-api",
+ "wisp-testkit",
 ]
 
 [[package]]

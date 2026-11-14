@@ -15,7 +15,7 @@
   "activation": ["onStartup"],
   "contributes": {
     "commands": [
-      { "id": "grid-client.signin", "title": "Sign in to wisp Cloud (or another grid)" },
+      { "id": "grid-client.signin", "title": "Sign in to wisp Cloud (or another grid): adds an account and makes it current" },
       { "id": "grid-client.sandbox", "title": "Make a sandbox on the grid, as a machine" },
       { "id": "grid-client.sandboxes", "title": "Your sandboxes on the grid", "readOnly": true },
       { "id": "grid-client.sandboxRemove", "title": "Delete a sandbox (its box and home)" },
@@ -27,7 +27,10 @@
       { "id": "grid-client.signinStatus", "title": "How a sign-in is going", "readOnly": true },
       { "id": "grid-client.signinCancel", "title": "Stop a sign-in" },
       { "id": "grid-client.status", "title": "Signed in where, and this computer on the grid", "readOnly": true },
-      { "id": "grid-client.signout", "title": "Sign out of the grid" },
+      { "id": "grid-client.signout", "title": "Sign out of the current grid account" },
+      { "id": "grid-client.accounts", "title": "The grid accounts signed in to here, the current one marked", "readOnly": true },
+      { "id": "grid-client.accountSwitch", "title": "Make another signed-in grid account the current one" },
+      { "id": "grid-client.accountRemove", "title": "Sign out of one grid account (its cloud box and computers leave Machines)" },
       { "id": "grid-client.computer", "title": "Turn this computer on or off on the grid" },
       { "id": "grid-client.shares", "title": "What I've shared through wisp Cloud", "readOnly": true },
       { "id": "grid-client.access", "title": "Change who may open a share, its expiry, or its place in the gallery" },

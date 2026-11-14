@@ -101,6 +101,13 @@ fn grid_of(st: &St, l: &Link) -> Result<String> {
     st.account().map(|a| a.grid).or_else(|| grid_url(wisp_grid_client_api::DEFAULT_GRID)).ok_or_else(|| WireError::invalid("which grid?"))
 }
 
+/// The token of an account on `grid` (the current one if it's there, ADR-0061): a link on any grid signed in to
+/// opens as that account; on another grid, as nobody.
+async fn grid_token(st: &St, grid: &str) -> Option<String> {
+    let key = st.accounts().on_grid(grid).map(crate::state::Account::key)?;
+    st.token_for(&key).await
+}
+
 fn url_of(grid: &str, l: &Link) -> String {
     let q = |v: &Option<String>| v.as_ref().map(|r| format!("?ref={r}")).unwrap_or_default();
     match l {
@@ -113,7 +120,7 @@ fn url_of(grid: &str, l: &Link) -> String {
 pub async fn fetch(st: &St, raw: &str, password: Option<&str>) -> Result<Fetched> {
     let l = link(raw).ok_or_else(|| WireError::invalid(format!("{raw} isn't a share link")))?;
     let grid = grid_of(st, &l)?;
-    let token = st.token().await.filter(|_| st.account().is_some_and(|a| a.grid == grid));
+    let token = grid_token(st, &grid).await;
     let headers: Vec<(&str, &str)> = password.map(|p| vec![("x-wisp-share-password", p)]).unwrap_or_default();
     let (status, v) = net::call(&st.http, "GET", &url_of(&grid, &l), token.as_deref(), None, &headers).await?;
     if status >= 400 {
@@ -150,7 +157,7 @@ pub async fn imported(st: &St, raw: &str, version: i64) -> Result<Value> {
     let id = f.card.get("id").and_then(Value::as_str).unwrap_or_default().to_owned();
     let l = link(raw).ok_or_else(|| WireError::invalid("not a link"))?;
     let grid = grid_of(st, &l)?;
-    let token = st.token().await.filter(|_| st.account().is_some_and(|a| a.grid == grid));
+    let token = grid_token(st, &grid).await;
     // counted on the grid as taken in; the import stands without it
     crate::calls::warn(
         "the grid's import count",

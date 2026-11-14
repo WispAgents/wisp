@@ -1,6 +1,7 @@
 //! Signing in to a grid (v1 server/services/cloud.js): the device flow, RFC 8628. wisp asks the grid for a
 //! code, you approve it in your browser (signed in to the grid), and the grid hands this computer a
-//! device token. The token goes to secrets; the cloud box shows up as a machine (transport `grid`).
+//! device token. The token goes to secrets (keyed by grid and account); the cloud box shows up as a machine
+//! (transport `grid`). Signing in again adds an account next to the others and makes it current (ADR-0061).
 //!
 //! Polling follows the grid's interval, plus 5 s for each `slow_down`; a network blip keeps it going until
 //! the code expires; `access_denied` and `expired_token` end it in words.
@@ -13,7 +14,7 @@ use wisp_grid_client_core::{grid_url, label_host, next_interval};
 use wisp_kernel::{Result, WireError};
 
 use crate::net;
-use crate::state::{Account, St, TOKEN, lock};
+use crate::state::{Account, St, key_of, lock, token_key};
 
 /// What this computer calls itself to the grid.
 pub fn device_name() -> String {
@@ -105,21 +106,36 @@ async fn poll(st: Arc<St>, id: String, code: String, mut interval: u64, add_comp
     }
 }
 
-/// Signed in: the token kept, the account saved, the cloud box added as a machine (or its token renewed).
+/// Signed in: the token kept under its account, the account added (or renewed) and made current, its cloud
+/// box added as a machine (or its token renewed).
 async fn done(st: &Arc<St>, f: &SignIn, b: &Value, add_computer: bool) -> Result<(String, String)> {
     let token = b.get("token").and_then(Value::as_str).unwrap_or_default();
     let handle = b.pointer("/user/handle").and_then(Value::as_str).unwrap_or_default().to_owned();
+    if token.is_empty() || handle.is_empty() || handle.contains('#') {
+        return Err(WireError::invalid("The grid's answer had no token or handle."));
+    }
     let url = b.pointer("/instance/url").and_then(Value::as_str).map_or_else(
         || label_host(&f.grid, &handle).map(|h| format!("{}://{h}", f.grid.split("://").next().unwrap_or("https"))).unwrap_or_default(),
         str::to_owned,
     );
-    wisp_kernel::services::secrets(&st.ctx)?.set(TOKEN, token).await?;
-    let prev = st.account().filter(|a| a.grid == f.grid && a.handle == handle);
-    let machine =
-        crate::peers::cloud_box(st, prev.as_ref().map(|a| a.machine.as_str()).unwrap_or_default(), &f.grid, &handle, &url, token).await?;
-    let mut a = prev.unwrap_or_else(|| Account { grid: f.grid.clone(), handle: handle.clone(), ..Account::default() });
-    a.machine.clone_from(&machine);
-    st.save_account(Some(a)).await?;
+    let key = key_of(&f.grid, &handle);
+    let prev = st.accounts().get(&key).map(|a| a.machine.clone()).unwrap_or_default();
+    let machine = crate::peers::cloud_box(st, &prev, &f.grid, &handle, &url, token).await?;
+    let was = st.accounts().current;
+    // the account as it is now (a sign-out or a computer change may have landed while the box was added), then its
+    // token: written last, so a sign-out racing this one can't leave the account without it, nor a failed box a
+    // token no account owns
+    let (grid, who, added, m) = (f.grid.clone(), handle.clone(), now(st), machine.clone());
+    st.change(move |x| {
+        let mut a = x.get(&key_of(&grid, &who)).cloned().unwrap_or_else(|| Account { grid, handle: who, added, ..Account::default() });
+        a.machine = m;
+        x.add(a);
+    })
+    .await?;
+    wisp_kernel::services::secrets(&st.ctx)?.set(&token_key(&key), token).await?;
+    if was != key {
+        crate::computer::follow_current(st).await;
+    }
     if add_computer {
         crate::calls::warn("this computer on the grid", crate::computer::set(st, true, None).await);
     }
@@ -140,16 +156,11 @@ pub fn cancel(st: &St, id: &str) -> Result<SignIn> {
     Ok(f.clone())
 }
 
-/// Signed out: the token gone, the cloud box and the computers from this grid removed, the tunnel closed.
+/// Signed out of the current account (`wisp cloud signout`): `accounts::remove` on it.
 pub async fn sign_out(st: &Arc<St>) -> Result<()> {
-    crate::computer::stop(st);
-    if let Some(a) = st.account() {
-        for p in crate::calls::peers(&st.ctx).await {
-            if p.field("grid") == Some(a.grid.as_str()) || p.id == a.machine {
-                crate::calls::warn("machines.remove (signed out)", crate::calls::remove(&st.ctx, &p.id).await);
-            }
-        }
+    let key = st.accounts().current;
+    if key.is_empty() {
+        return Ok(());
     }
-    wisp_kernel::services::secrets(&st.ctx)?.delete(TOKEN).await?;
-    st.save_account(None).await
+    crate::accounts::remove(st, &key).await
 }

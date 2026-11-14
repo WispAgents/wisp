@@ -1,6 +1,7 @@
 //! wisp.grid-client (plan §7.2.2, ADR-0010, 0038, 0041): wisp and a wisp Grid.
 //!
 //! - **Sign in** (`signin.rs`): RFC 8628's device flow; the token in secrets; the cloud box as a machine.
+//! - **Accounts** (`accounts.rs`, ADR-0061): several (grid, account) sign-ins, one current; switch, sign out of one.
 //! - **Transports** (`transport.rs`): `grid` (a cloud box: watched without waking, woken by real use) and
 //!   `grid-tunnel` (another of your computers, through the tunnel it holds), for wisp.machines.
 //! - **This computer** (`computer.rs`): `wisp computer on|off|status`, the tunnel it holds open, redials.
@@ -17,6 +18,7 @@
 // `Failing<T>` is the transport contract's result (machines-api): a failure carries its hint; rare, never hot
 #![allow(clippy::result_large_err)]
 
+mod accounts;
 mod calls;
 mod cloud;
 pub mod computer;
@@ -115,6 +117,15 @@ impl Plugin for GridClientPlugin {
             signin::sign_out(&st).await?;
             Ok(status(&st))
         });
+        on!(s, slot, api::AccountList, |st, _a| async move { Ok::<_, WireError>(st.accounts().infos()) });
+        on!(s, slot, api::AccountSwitch, |st, a| async move {
+            accounts::switch(&st, &a.key).await?;
+            Ok(status(&st))
+        });
+        on!(s, slot, api::AccountRemove, |st, a| async move {
+            accounts::remove(&st, &a.key).await?;
+            Ok(status(&st))
+        });
         on!(s, slot, api::Computer, |st, a| computer::set(&st, a.on, a.name));
         on!(s, slot, api::Shares, |st, _a| async move { cloud::mine(&st).await });
         on!(s, slot, api::Access, |st, a| async move { cloud::access(&st, &a).await });
@@ -152,14 +163,17 @@ impl Plugin for GridClientPlugin {
     }
 }
 
+/// The current account (signed in, where, as whom), this computer on its grid, and every account.
 pub(crate) fn status(st: &St) -> api::Status {
-    let a = st.account();
+    let all = st.accounts();
+    let a = all.current();
     api::Status {
         signed_in: a.is_some(),
-        grid: a.as_ref().map(|a| a.grid.clone()).unwrap_or_default(),
-        handle: a.as_ref().map(|a| a.handle.clone()).unwrap_or_default(),
-        machine: a.map(|a| a.machine).unwrap_or_default(),
+        grid: a.map(|a| a.grid.clone()).unwrap_or_default(),
+        handle: a.map(|a| a.handle.clone()).unwrap_or_default(),
+        machine: a.map(|a| a.machine.clone()).unwrap_or_default(),
         computer: computer::view(st),
+        accounts: all.infos(),
     }
 }
 

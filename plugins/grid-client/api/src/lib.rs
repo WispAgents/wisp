@@ -1,5 +1,5 @@
 //! wisp-grid-client-api: the contract of `wisp.grid-client` (plan §7.2.2, ADR-0010, 0038, 0041): signing in
-//! to a wisp Grid (RFC 8628), this computer as a peer others reach through the grid (`computer`), and
+//! to a wisp Grid (RFC 8628) with several accounts, one current (ADR-0061), this computer as a peer others reach through the grid (`computer`), and
 //! wisp Cloud as the place shares go (`share.destination@1`'s `wisp-cloud`): links, access, versions,
 //! imports and their updates. The ids are the permissions (`grid-client.signin` → `grid-client:signin`).
 
@@ -91,6 +91,32 @@ pub struct Status {
     #[serde(default)]
     pub machine: String,
     pub computer: ComputerState,
+    /// every account signed in to here (several grids, or several accounts on one), the current one marked
+    #[serde(default)]
+    pub accounts: Vec<AccountInfo>,
+}
+
+/// One (grid, account) signed in to here (ADR-0061). Its token stays in secrets, never here.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export, export_to = "grid-client/")]
+pub struct AccountInfo {
+    /// `<grid>#<handle>`: what `grid-client.accountSwitch` and `accountRemove` name
+    pub key: String,
+    pub grid: String,
+    pub handle: String,
+    /// its cloud box's peer in machines
+    #[serde(default)]
+    pub machine: String,
+    /// the one shares, sandboxes, keys and this computer's tunnel go through
+    pub current: bool,
+}
+
+/// `grid-client.accountSwitch` / `accountRemove`: an account by its key (`<grid>#<handle>`).
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[ts(export, export_to = "grid-client/")]
+pub struct AccountArgs {
+    pub key: String,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
@@ -312,6 +338,9 @@ command!(SignInGet = "grid-client.signinStatus" read yes : IdArgs => SignIn);
 command!(SignInCancel = "grid-client.signinCancel" : IdArgs => SignIn);
 command!(StatusCmd = "grid-client.status" read yes : NoArgs => Status);
 command!(SignOut = "grid-client.signout" : NoArgs => Status);
+command!(AccountList = "grid-client.accounts" read yes : NoArgs => Vec<AccountInfo>);
+command!(AccountSwitch = "grid-client.accountSwitch" : AccountArgs => Status);
+command!(AccountRemove = "grid-client.accountRemove" : AccountArgs => Status);
 command!(Computer = "grid-client.computer" : ComputerArgs => ComputerState);
 command!(Shares = "grid-client.shares" read yes : NoArgs => Value);
 command!(Access = "grid-client.access" : AccessArgs => Value);
