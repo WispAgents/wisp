@@ -7,7 +7,7 @@ use std::path::PathBuf;
 use std::time::Duration;
 
 use serde_json::Value;
-use wisp_kernel::{Call, Ctx, Result, WireError};
+use wisp_kernel::{Call, Command, Ctx, Result, WireError};
 use wisp_machines_api::PeerState;
 use wisp_proc::{ExecOpts, Proc};
 use wisp_runtime_api::commands as rt;
@@ -55,6 +55,11 @@ pub(crate) async fn make(ctx: &Ctx, call: &Call, owner: &Owner, name: &str) -> R
     Ok((machine, peer, sandbox))
 }
 
+/// [`UP_MS`] from now, on the plugin's clock.
+fn deadline(ctx: &Ctx) -> Result<i64> {
+    Ok(ctx.clock()?.now_ms() + i64::try_from(UP_MS).unwrap_or(i64::MAX))
+}
+
 /// Waits for a sandbox's wisp to answer; its peer id.
 ///
 /// As v1's `waitOnline`: a box that is off or in error (its tunnel failed once, a first connect that failed) gets one
@@ -63,7 +68,7 @@ pub(crate) async fn make(ctx: &Ctx, call: &Call, owner: &Owner, name: &str) -> R
 /// because retrying wouldn't help (a lost tunnel it retries itself, with backoff, as *reconnecting*).
 async fn wait_up(ctx: &Ctx, call: &Call, machine: &str) -> Result<String> {
     let clock = ctx.clock()?;
-    let until = clock.now_ms() + i64::try_from(UP_MS).unwrap_or(i64::MAX);
+    let until = deadline(ctx)?;
     let mut tried = false;
     loop {
         let m = calls::machine(ctx, call, machine).await?;
@@ -80,16 +85,42 @@ async fn wait_up(ctx: &Ctx, call: &Call, machine: &str) -> Result<String> {
             calls::connect(ctx, call, machine).await;
             tried = true;
         }
-        // a new box sleeps until it's used: one real request wakes it (a passive watch never does)
-        if state == PeerState::Asleep {
-            calls::wake(ctx, call, machine).await;
+        // a new box sleeps until it's used: one real request wakes it (a passive watch never does). Once it answers,
+        // its link connects now: machines' watch of an asleep box only looks every 20 s
+        if state == PeerState::Asleep
+            && calls::wake(ctx, call, machine).await
+            && calls::machine(ctx, call, machine).await.is_ok_and(|m| m.state == PeerState::Asleep)
+        {
+            calls::connect(ctx, call, machine).await;
         }
         if clock.now_ms() > until {
-            let why = if m.error.is_empty() { "it didn't answer in 3 minutes" } else { m.error.as_str() };
+            let why = if m.error.is_empty() { "it didn't answer in 90 s" } else { m.error.as_str() };
             let state = serde_json::to_value(state).ok().and_then(|v| v.as_str().map(str::to_owned)).unwrap_or_default();
             return Err(WireError::unavailable(format!("The sandbox didn't come up ({state}): {why}")));
         }
         clock.sleep(POLL_MS).await;
+    }
+}
+
+/// Command `C` on a sandbox the work there depends on (its seed, its task), waited for up to [`UP_MS`].
+///
+/// `machines.route` answers "waiting for <box> to wake" (`retry: true`) after 30 s while the command is still on its
+/// way (the link keeps it and sends it after the next welcome), and "offline" (`retry: true`) when the link is down.
+/// Either way the sandbox is waited for as at its start ([`wait_up`]: woken, connected, or failed at once with its
+/// reason) and the command asked again under the **same** mid, over the link: the sandbox's wisp runs one mid once.
+async fn route_up<C: Command>(ctx: &Ctx, call: &Call, machine: &str, args: C::Args) -> Result<C::Out> {
+    let clock = ctx.clock()?;
+    let until = deadline(ctx)?;
+    let (args, mid) = (calls::to_args::<C>(args)?, format!("sbx-{}", wisp_kernel::ids::uuid7()));
+    loop {
+        match calls::route_as::<C>(ctx, call, machine, args.clone(), &mid).await {
+            Err(e) if e.retry && clock.now_ms() < until => {
+                tracing::info!(machine, cmd = C::ID, "sandbox: {}; waiting for it, then asking again", e.message);
+                clock.sleep(POLL_MS).await;
+                wait_up(ctx, call, machine).await?;
+            }
+            out => return out,
+        }
     }
 }
 
@@ -113,7 +144,7 @@ async fn seed(ctx: &Ctx, call: &Call, machine: &str, cwd: Option<&str>) -> Resul
         }
         None => api::SeedArgs { name: "scratch".into(), ..api::SeedArgs::default() },
     };
-    let out = calls::route::<api::Seed>(ctx, call, machine, args).await?;
+    let out = route_up::<api::Seed>(ctx, call, machine, args).await?;
     if out.cwd.is_empty() {
         return Err(WireError::internal("the sandbox took the project but didn't say where"));
     }
@@ -178,7 +209,7 @@ pub(crate) async fn launch(ctx: &Ctx, call: &Call, a: &api::LaunchArgs) -> Resul
         goal: a.goal.clone(),
         ..rt::StartArgs::default()
     };
-    let made = match calls::route::<rt::Create>(ctx, call, &machine, args).await {
+    let made = match route_up::<rt::Create>(ctx, call, &machine, args).await {
         Ok(m) => m,
         Err(e) => {
             drop_one(ctx, call, &machine, &sandbox).await;

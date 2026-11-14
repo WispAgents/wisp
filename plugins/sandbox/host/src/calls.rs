@@ -35,10 +35,14 @@ pub(crate) async fn connect(ctx: &Ctx, call: &Call, id: &str) {
     warn("connecting a sandbox", ctx.run::<m::Connect>(call, m::IdArgs { id: id.to_owned() }).await);
 }
 
-/// One real request to an asleep box, which wakes it (a passive watch never does): a refusal is logged.
-pub(crate) async fn wake(ctx: &Ctx, call: &Call, id: &str) {
+/// One real request to an asleep box, which wakes it (a passive watch never does): whether it answered (it's up). A
+/// refusal is logged.
+pub(crate) async fn wake(ctx: &Ctx, call: &Call, id: &str) -> bool {
     let a = m::CallArgs { id: id.to_owned(), method: "GET".into(), path: "/health".into(), body: None, timeout_ms: Some(30_000) };
-    warn("machines.call /health", ctx.run::<m::CallPeer>(call, a).await);
+    let r = ctx.run::<m::CallPeer>(call, a).await;
+    let up = r.is_ok();
+    warn("machines.call /health", r);
+    up
 }
 
 /// `machines.send`: the project in `cwd` packed (every ref, what isn't committed) and uploaded raw to the sandbox's
@@ -56,9 +60,19 @@ pub(crate) async fn send(ctx: &Ctx, call: &Call, machine: &str, cwd: &str, key: 
 
 /// Command `C` on a sandbox's own wisp, through `machines.route`.
 pub(crate) async fn route<C: Command>(ctx: &Ctx, call: &Call, machine: &str, args: C::Args) -> Result<C::Out> {
-    let args = serde_json::to_value(args).map_err(|e| WireError::internal(format!("{}: {e}", C::ID)))?;
     let mid = format!("sbx-{}", wisp_kernel::ids::uuid7());
-    let out = ctx.run::<m::Route>(call, m::RouteArgs { id: Some(machine.to_owned()), cmd: C::ID.to_owned(), args, mid }).await?;
+    route_as::<C>(ctx, call, machine, to_args::<C>(args)?, &mid).await
+}
+
+/// `C`'s args as `machines.route` carries them.
+pub(crate) fn to_args<C: Command>(args: C::Args) -> Result<Value> {
+    serde_json::to_value(args).map_err(|e| WireError::internal(format!("{}: {e}", C::ID)))
+}
+
+/// [`route`] under a given `mid`: asked again with the same one, the sandbox's wisp runs it once.
+pub(crate) async fn route_as<C: Command>(ctx: &Ctx, call: &Call, machine: &str, args: Value, mid: &str) -> Result<C::Out> {
+    let a = m::RouteArgs { id: Some(machine.to_owned()), cmd: C::ID.to_owned(), args, mid: mid.to_owned() };
+    let out = ctx.run::<m::Route>(call, a).await?;
     serde_json::from_value(out).map_err(|e| WireError::internal(format!("the sandbox's answer to {}: {e}", C::ID)))
 }
 

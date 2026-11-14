@@ -24,21 +24,32 @@ cmd!(List, "machines.list");
 cmd!(Get, "machines.get");
 cmd!(Connect, "machines.connect");
 cmd!(Route, "machines.route");
+cmd!(CallPeer, "machines.call");
 
-/// The box's state and error, what a connect turns it into, and how many connects it got.
+/// The box's state and error, what a connect turns it into, and how many connects it got; how many of its routed
+/// commands answer machines' 30 s "waiting" first, whether its link drops when one is routed, and the mid of every ask.
 #[derive(Clone)]
 struct Box_ {
     now: Arc<Mutex<(String, String)>>,
     after: (String, String),
     connects: Arc<Mutex<u32>>,
+    waits: Arc<Mutex<u32>>,
+    drops: bool,
+    mids: Arc<Mutex<Vec<String>>>,
 }
 
 impl Box_ {
     fn new(after: (&str, &str)) -> Self {
+        Self::at(("error", "the tunnel closed"), after)
+    }
+    fn at(now: (&str, &str), after: (&str, &str)) -> Self {
         Self {
-            now: Arc::new(Mutex::new(("error".into(), "the tunnel closed".into()))),
+            now: Arc::new(Mutex::new((now.0.into(), now.1.into()))),
             after: (after.0.into(), after.1.into()),
             connects: Arc::default(),
+            waits: Arc::default(),
+            drops: false,
+            mids: Arc::default(),
         }
     }
     fn view(&self) -> Value {
@@ -79,10 +90,34 @@ impl Plugin for Machines {
             let v = b.view();
             async move { Ok(v) }
         });
-        s.command::<Route, _, _>(|_, _, a: Value| async move {
-            assert_eq!(a["cmd"], "sandbox.seed", "{a}");
-            Ok(json!({ "cwd": "/home/u/code/scratch" }))
+        let b = self.0.clone();
+        s.command::<Route, _, _>(move |_, _, a: Value| {
+            b.mids.lock().unwrap().push(a["mid"].as_str().unwrap_or_default().to_owned());
+            let waited = {
+                let mut w = b.waits.lock().unwrap();
+                let left = *w > 0;
+                *w = w.saturating_sub(1);
+                left
+            };
+            if b.drops {
+                // its tunnel closes under the seed: machines refuses it, "offline" (`retry: true`)
+                *b.now.lock().unwrap() = ("error".into(), "the tunnel closed".into());
+            }
+            let drops = b.drops;
+            async move {
+                assert_eq!(a["cmd"], "sandbox.seed", "{a}");
+                if drops {
+                    return Err(wisp_kernel::WireError::unavailable("Sandbox is offline. Connect it from Machines."));
+                }
+                if waited {
+                    // machines.route's answer when the ack hasn't come in 30 s: the command stays queued in the link
+                    return Err(wisp_kernel::WireError::unavailable("waiting for Sandbox to wake"));
+                }
+                Ok(json!({ "cwd": "/home/u/code/scratch" }))
+            }
         });
+        // a real request to an asleep box wakes it (the grid starts it): it answers
+        s.command::<CallPeer, _, _>(|_, _, _| async move { Ok(json!({ "name": "wisp" })) });
         Ok(())
     }
 }
@@ -117,4 +152,40 @@ async fn a_sandbox_in_error_is_reconnected_when_used_and_gives_up_at_once_with_i
     // (not the 90 s wait's "The sandbox didn't come up (error): …")
     assert_eq!(err.message, "The sandbox didn't start: the grid refused the tunnel", "{err:?}");
     assert_eq!(*down.connects.lock().unwrap(), 1, "one fresh connect per wait, no loop of them");
+}
+
+/// Round 185's test failing in CI (`serve_sandbox` `a_project_bigger_than_a_sync_message_reaches_its_sandbox`): the box
+/// was up, the seed went, and machines.route answered its 30 s "waiting for … to wake" (`retry: true`) while the seed
+/// was still on its way in the link. sandbox took that as a failure and dropped the sandbox. Now it asks again with
+/// the same mid (the sandbox's wisp runs one mid once) until its answer comes.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_seed_still_on_its_way_after_machines_30_s_wait_is_asked_again_with_the_same_mid() {
+    let b = Box_::at(("online", ""), ("online", ""));
+    *b.waits.lock().unwrap() = 2;
+    let out = place(&b).await.unwrap();
+    assert_eq!(out["cwd"], "/home/u/code/scratch", "{out}");
+    let mids = b.mids.lock().unwrap().clone();
+    assert_eq!(mids.len(), 3, "two waits, then its answer: {mids:?}");
+    assert!(mids.iter().all(|m| m == &mids[0]), "one mid for every ask: {mids:?}");
+}
+
+/// An asleep sandbox whose wake answers (the grid started it) connects at once: machines' own watch of an asleep box
+/// only looks every 20 s, which every launch used to wait out.
+#[tokio::test(flavor = "multi_thread")]
+async fn an_asleep_sandbox_that_answers_its_wake_connects_at_once() {
+    let b = Box_::at(("asleep", ""), ("online", ""));
+    let out = place(&b).await.unwrap();
+    assert_eq!(out["machine"], "m1", "{out}");
+    assert_eq!(*b.connects.lock().unwrap(), 1, "connected right after its wake answered");
+}
+
+/// Review of the fix above: a box whose link went down under the seed (machines' "offline", also `retry: true`) is
+/// waited for as at its start: one fresh connect, and in error again it fails at once with the box's reason, not after
+/// 90 s of asking again.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_seed_whose_sandbox_drops_gets_one_reconnect_then_fails_with_its_reason() {
+    let b = Box_ { drops: true, ..Box_::at(("online", ""), ("error", "the grid refused the tunnel")) };
+    let err = place(&b).await.unwrap_err();
+    assert_eq!(err.message, "The sandbox didn't start: the grid refused the tunnel", "{err:?}");
+    assert_eq!((b.mids.lock().unwrap().len(), *b.connects.lock().unwrap()), (1, 1), "asked once, connected once");
 }
