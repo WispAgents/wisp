@@ -14,6 +14,7 @@ export { BUILT_IN_KEYS, displayCombo, matches, parseCombo } from './keys.ts';
 export { rank as rankPalette, fuzzy, splitQuery } from './palette/match.ts';
 export { commandErrorToast } from './toasts.ts';
 export { PREPAINT_THEME, THEME_KEY, THEMES } from './theme.ts';
+export { STANDALONE_CHECK } from './platform/standalone.ts';
 export { CORE_TOPICS } from './watch.ts';
 export { isStub, keepTurnsWhole, turnTopic, turnsTopic } from './frame/turn-window.ts';
 export { useNow } from './clock.ts';

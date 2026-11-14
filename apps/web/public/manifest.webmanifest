@@ -1,10 +1,13 @@
 {
+  "id": "/",
   "name": "wisp",
   "short_name": "wisp",
+  "description": "Your coding agents, every harness and machine, in one list.",
   "start_url": "/",
+  "scope": "/",
   "display": "standalone",
-  "background_color": "#151517",
-  "theme_color": "#151517",
+  "background_color": "#ffffff",
+  "theme_color": "#ffffff",
   "icons": [
     { "src": "/favicon.svg", "sizes": "any", "type": "image/svg+xml" },
     { "src": "/icon-192.png", "sizes": "192x192", "type": "image/png" },

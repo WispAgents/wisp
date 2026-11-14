@@ -113,4 +113,17 @@
   [data-kit='stage'][data-layout='stack'] [data-kit='c-bar'] > [data-kit='send'] { position: sticky; right: 0; box-shadow: -10px 0 8px -2px var(--surface); }
   /* the side pane stacked (a phone): the task's page under it, the pane over it, full screen */
   [data-kit='stage'][data-layout='stack'] > [data-kit='side-pane'] { position: fixed; inset: 0; z-index: var(--z-pane); border-left: 0; }
+  /* v1 split.css: a phone's reply box keeps above the home indicator (env() is 0 where there's none) */
+  [data-kit='stage'][data-layout='stack'] [data-kit='it-dock'] { padding-bottom: calc(var(--space-6) + env(safe-area-inset-bottom, 0px)); }
+
+  /* Opened from an iPhone's Home Screen (F-phone-6; html[data-standalone], set by index.html's first script as v1's
+     html.standalone): full screen under the status bar and around the notch, so the page keeps out of both and of
+     the home indicator. A browser tab and the native apps never get the attribute. */
+  [data-standalone] [data-kit='stage'] { padding: env(safe-area-inset-top, 0px) env(safe-area-inset-right, 0px) 0 env(safe-area-inset-left, 0px); }
+  /* the list's colour under the status bar and beside the notch */
+  [data-standalone] [data-kit='stage'][data-layout='stack'][data-page='list'] { background: var(--rail); }
+  [data-standalone] [data-kit='stage'][data-layout] > [data-kit='feed-wrap'] { padding-bottom: calc(40px + env(safe-area-inset-bottom, 0px)); }
+  [data-standalone] [data-kit='stage'][data-layout='split'] [data-kit='it-dock'] { padding-bottom: calc(var(--space-7) + env(safe-area-inset-bottom, 0px)); }
+  /* a stacked side pane is fixed to the screen: it keeps out of the same edges */
+  [data-standalone] [data-kit='stage'][data-layout='stack'] > [data-kit='side-pane'] { padding: env(safe-area-inset-top, 0px) env(safe-area-inset-right, 0px) env(safe-area-inset-bottom, 0px) env(safe-area-inset-left, 0px); }
 }
