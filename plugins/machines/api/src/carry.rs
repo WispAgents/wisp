@@ -9,6 +9,70 @@
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
+/// The biggest bundle sent (v1 relay `MAX_PATCH`); a far side's upload route takes a little more.
+pub const MAX_CARRY: usize = 256 * 1024 * 1024;
+
+/// `machines.send` (ADR-0060): the folder `cwd` here packed (as `machines.carry` packs it) and uploaded raw to
+/// `/api<to>/<key>/bundle` and `/api<to>/<key>/patch` on machine `id`; nothing is taken in there.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
+pub struct SendArgs {
+    pub id: String,
+    /// a git repo with a commit
+    pub cwd: String,
+    /// names the upload there (letters, digits, `-`, `_`)
+    pub key: String,
+    /// the far side's upload route, under `/api` (plain segments: `/sandbox/seed`)
+    pub to: String,
+    /// every ref in the bundle (a sandbox's project), not only HEAD and its branch
+    #[serde(default)]
+    pub all: bool,
+}
+
+/// What the far side needs to take the upload in.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct Sent {
+    /// the key it went under (as the far side's route cuts it to one segment)
+    pub key: String,
+    /// the commit the folder is on
+    pub head: String,
+    /// its branch (empty: a detached HEAD)
+    pub branch: String,
+    /// its `origin` remote (empty: none)
+    pub origin: String,
+    pub author_name: String,
+    pub author_email: String,
+}
+
+/// `machines.uncarry` (here, ADR-0060): lead `lead`'s delegate on machine `id` goes: its task there and every copy of
+/// that lead's there. A machine that can't be reached keeps it for the sweep.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
+pub struct UncarryArgs {
+    pub id: String,
+    /// the lead task here (its copies there are `copies/<lead>-<member>`)
+    pub lead: String,
+    /// the delegate's task there (empty: only the copies)
+    #[serde(default)]
+    pub task: String,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
+pub struct Uncarried {
+    /// false: the machine didn't answer; the sweep tries again
+    pub done: bool,
+}
+
+/// `machines.dropCopies` (on the machine): every copy and upload a lead's delegates got here.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
+pub struct DropCopiesArgs {
+    pub lead: String,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
+pub struct DroppedCopies {
+    pub copies: u32,
+}
+
 /// `machines.carry`: the lead's folder here, copied onto machine `id` for `key` (the lead and its member).
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
 pub struct CarryArgs {

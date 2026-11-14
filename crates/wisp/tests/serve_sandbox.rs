@@ -53,18 +53,10 @@ async fn until(what: &str, secs: u64, mut f: impl AsyncFnMut() -> Option<Value>)
     }
 }
 
-#[tokio::test(flavor = "multi_thread")]
-async fn a_sandbox_task_runs_in_a_box_of_its_own_with_the_project_and_goes_with_the_task() {
-    let dir = temp("serve-sandbox");
-    // the project: a commit on `fix`, and a change not committed
-    let proj = dir.join("proj");
-    git(&proj, &["init", "-q", "-b", "main"]);
-    git(&proj, &["add", "."]);
-    git(&proj, &["-c", "user.name=T", "-c", "user.email=t@e", "commit", "-qm", "first"]);
-    git(&proj, &["checkout", "-qb", "fix"]);
-    std::fs::write(proj.join("math.js"), "export const add = (a, b) => a + b; // not committed\n").unwrap();
-    // this wisp first (it puts the fake harnesses in dir/bin), then the grid, whose boxes use them too
-    let (serve, port) = start_with(&dir, &[("WISP_SANDBOX_TICK_MS", "500")]);
+/// This wisp (it puts the fake harnesses in dir/bin), then a local grid whose boxes use them too, and this wisp signed
+/// in to it. The last item stops the grid (it holds the grid until then).
+async fn signed_in(dir: &Path) -> (common::Serve, Api, u16, Box<dyn FnOnce() + Send>) {
+    let (serve, port) = start_with(dir, &[("WISP_SANDBOX_TICK_MS", "500")]);
     let api = Api { http: reqwest::Client::new(), port, n: 0.into() };
     let data = dir.join("grid");
     std::fs::create_dir_all(data.join("secrets")).unwrap();
@@ -80,7 +72,7 @@ async fn a_sandbox_task_runs_in_a_box_of_its_own_with_the_project_and_goes_with_
         ("WISP_WEB_DIR".into(), dir.join("no-web").display().to_string()),
         ("WISP_CLAUDE_BIN".into(), bin.join("claude").display().to_string()),
     ];
-    let (_g, gport, stop) = wisp_grid::edge::dev(&data, 0, PathBuf::from(env!("CARGO_BIN_EXE_wisp")), env, 600_000).await.unwrap();
+    let (g, gport, stop) = wisp_grid::edge::dev(&data, 0, PathBuf::from(env!("CARGO_BIN_EXE_wisp")), env, 600_000).await.unwrap();
     let url = format!("http://wisp.localhost:{gport}");
     let f = api.cmd("grid-client.signin", json!({ "grid": url })).await;
     approve(gport, &url, "ada", f["userCode"].as_str().unwrap()).await;
@@ -89,6 +81,28 @@ async fn a_sandbox_task_runs_in_a_box_of_its_own_with_the_project_and_goes_with_
         (s["state"] != "waiting").then_some(s)
     })
     .await;
+    (
+        serve,
+        api,
+        port,
+        Box::new(move || {
+            stop.cancel();
+            drop(g);
+        }),
+    )
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_sandbox_task_runs_in_a_box_of_its_own_with_the_project_and_goes_with_the_task() {
+    let dir = temp("serve-sandbox");
+    // the project: a commit on `fix`, and a change not committed
+    let proj = dir.join("proj");
+    git(&proj, &["init", "-q", "-b", "main"]);
+    git(&proj, &["add", "."]);
+    git(&proj, &["-c", "user.name=T", "-c", "user.email=t@e", "commit", "-qm", "first"]);
+    git(&proj, &["checkout", "-qb", "fix"]);
+    std::fs::write(proj.join("math.js"), "export const add = (a, b) => a + b; // not committed\n").unwrap();
+    let (serve, api, port, stop) = signed_in(&dir).await;
     let info = api.cmd("sandbox.info", json!({})).await;
     assert_eq!(info["enabled"], true, "{info}");
     // not signed in to Claude for sandboxes: refused up front, nothing made
@@ -141,10 +155,64 @@ async fn a_sandbox_task_runs_in_a_box_of_its_own_with_the_project_and_goes_with_
         (left == json!([])).then_some(left)
     })
     .await;
-    stop.cancel();
+    stop();
     drop(serve);
 }
 
 fn rand_id() -> String {
     format!("{:x}", std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos())
+}
+
+/// Bytes that don't compress (a bundle of them is as big as they are).
+fn noise(n: usize, mut x: u64) -> Vec<u8> {
+    (0..n)
+        .map(|_| {
+            x ^= x << 13;
+            x ^= x >> 7;
+            x ^= x << 17;
+            x.to_le_bytes()[0]
+        })
+        .collect()
+}
+
+/// The project used to travel inside one sync message (`machines.route`), whose body the sandbox's wisp caps at 2 MB:
+/// a repo whose bundle is over that never reached its sandbox. It goes as raw bytes now (`machines.send`, then
+/// `sandbox.seed` names the upload), so a 3 MB history and an uncommitted 1 MB file arrive whole.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_project_bigger_than_a_sync_message_reaches_its_sandbox() {
+    let dir = temp("serve-sandbox-big");
+    let proj = dir.join("proj");
+    git(&proj, &["init", "-q", "-b", "main"]);
+    let big = noise(3 << 20, 0x9e37_79b9_7f4a_7c15);
+    std::fs::write(proj.join("assets.bin"), &big).unwrap();
+    git(&proj, &["add", "."]);
+    git(&proj, &["-c", "user.name=T", "-c", "user.email=t@e", "commit", "-qm", "big"]);
+    let loose = noise(1 << 20, 0x2545_f491_4f6c_dd1d);
+    std::fs::write(proj.join("new.bin"), &loose).unwrap();
+    let (serve, api, _port, stop) = signed_in(&dir).await;
+    api.cmd("grid-client.sandboxLogin", json!({ "agent": "claude", "token": "sk-ant-oat01-test-token-for-every-sandbox-000" })).await;
+    let made = api.try_cmd("sandbox.launch", json!({ "prompt": "look", "cwd": proj, "agent": "claude" })).await;
+    assert_eq!(made["ok"], true, "a 3 MB project reaches its sandbox: {made}");
+    // the box is a process here: its folder is on this disk
+    let found = find(&dir.join("grid"), "assets.bin").unwrap_or_else(|| panic!("the project isn't in the sandbox"));
+    assert_eq!(std::fs::read(&found).unwrap(), big, "its history came whole");
+    assert_eq!(std::fs::read(found.with_file_name("new.bin")).unwrap(), loose, "and its new file, not committed");
+    stop();
+    drop(serve);
+}
+
+/// The first `<name>` under `root` in a `code/` folder (a sandbox's `~/code/<project>`).
+fn find(root: &Path, name: &str) -> Option<PathBuf> {
+    let mut todo = vec![root.to_owned()];
+    while let Some(d) = todo.pop() {
+        for e in std::fs::read_dir(&d).ok()?.flatten() {
+            let p = e.path();
+            if p.is_dir() && !p.ends_with(".git") {
+                todo.push(p);
+            } else if p.file_name().is_some_and(|n| n == name) && p.components().any(|c| c.as_os_str() == "code") {
+                return Some(p);
+            }
+        }
+    }
+    None
 }

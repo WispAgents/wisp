@@ -69,9 +69,14 @@ pub struct Placed {
 #[serde(rename_all = "camelCase")]
 pub struct SeedArgs {
     pub name: String,
-    /// `git bundle create --all`, base64
+    /// the upload the bundle and patch came in as (`POST /api/sandbox/seed/<key>/<part>`, ADR-0060); the lead always
+    /// sends one, so the project's size isn't bound by a sync message's
+    #[serde(default)]
+    pub key: String,
+    /// with no `key`: `git bundle create --all`, base64 (a small project; none: an empty folder)
+    #[serde(default)]
     pub bundle: String,
-    /// `git diff HEAD --binary`
+    /// with no `key`: what isn't committed, as a binary diff from HEAD
     #[serde(default)]
     pub patch: String,
     #[serde(default)]

@@ -33,6 +33,7 @@ mod ssh;
 mod state;
 mod store;
 mod sys;
+mod uncarry;
 
 use std::sync::{Arc, OnceLock};
 
@@ -72,17 +73,43 @@ impl Plugin for MachinesPlugin {
         carry::register(s, &slot);
         let svc: Arc<dyn wisp_machines_api::MachinesService> = Arc::new(service::Service(slot.clone()));
         s.provide::<Peers>(svc);
+        // a machine back online: the delegates' copies it kept for the sweep go now (ADR-0060)
+        let sl = slot.clone();
+        s.on::<wisp_machines_api::Online, _, _>(move |_ctx, e| {
+            let sl = sl.clone();
+            async move {
+                if let Ok(st) = state(&sl) {
+                    uncarry::sweep(&st, Some(&e.id)).await;
+                }
+            }
+        });
         s.on_start(move |ctx| async move {
             let store = ctx.service::<Store>()?.as_ref().clone();
             store::install(&store).map_err(WireError::from)?;
             let loaded = store::load(&store).await.map_err(WireError::from)?;
-            let st = State::new(ctx, store, loaded);
+            let st = State::new(ctx.clone(), store, loaded);
             let _ = slot.set(st.clone());
             manager::start_all(&st);
+            sweep_every(&ctx, st);
             Ok(())
         });
         Ok(())
     }
+}
+
+/// The sweep of drops machines kept (ADR-0060): at start and every 10 minutes, on the plugin's clock and scope.
+fn sweep_every(ctx: &wisp_kernel::Ctx, st: Arc<State>) {
+    let Ok(clock) = ctx.clock() else { return };
+    let scope = ctx.scope().clone();
+    ctx.spawn(async move {
+        loop {
+            uncarry::sweep(&st, None).await;
+            tokio::select! {
+                () = scope.cancelled() => return,
+                () = clock.sleep(wisp_machines_core::carry::SWEEP_MS) => {}
+            }
+        }
+    });
 }
 
 #[cfg(test)]

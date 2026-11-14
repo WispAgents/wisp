@@ -136,6 +136,31 @@ fn watch(s: &mut Setup) {
     });
 }
 
+/// `POST /api/sandbox/seed/:key/:part` (ADR-0060): the project's bundle or patch as raw bytes, kept for
+/// `sandbox.seed {key}`. Only a sandbox takes one; its cap is the carry limit (`wisp_machines_api::MAX_CARRY`), not a
+/// sync message's 2 MB.
+fn seed_route(inside: bool, at: std::path::PathBuf) -> wisp_kernel::http::Route {
+    wisp_kernel::http::Route {
+        method: "POST",
+        pattern: "/sandbox/seed/:key/:part",
+        permission: "sandbox:seed",
+        doc: false,
+        summary: "A sandbox's project (a bundle, a patch), kept for sandbox.seed",
+        raw: false,
+        max_body: Some(wisp_machines_api::MAX_CARRY + (1 << 20)),
+        handler: Arc::new(move |_ctx, _call, req| {
+            let at = at.clone();
+            Box::pin(async move {
+                if !inside {
+                    return Err(WireError::forbidden("Only a sandbox takes a project in (sandbox.seed)."));
+                }
+                seed::receive(&at, req.param("key").unwrap_or_default(), req.param("part").unwrap_or_default(), &req.body).await?;
+                Ok(wisp_kernel::http::Response::Json { status: 200, body: serde_json::json!({ "ok": true }) })
+            })
+        }),
+    }
+}
+
 impl Plugin for SandboxPlugin {
     fn manifest(&self) -> Manifest {
         Manifest::embedded(include_str!("../wisp-plugin.json"))
@@ -154,6 +179,7 @@ impl Plugin for SandboxPlugin {
                 seed::seed(&ctx, &at, &a).await
             }
         });
+        s.route(seed_route(inside, self.home.clone().unwrap_or_else(home)));
         let at = self.home.clone().unwrap_or_else(home);
         s.command::<api::PatchCmd, _, _>(move |ctx, _call, a| {
             let at = at.clone();

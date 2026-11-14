@@ -139,8 +139,43 @@ async fn carrying_and_taking_in_need_their_permissions() {
         ("machines.takeIn", json!({ "key": "k", "name": "n", "head": "ab" })),
         ("machines.changes", json!({ "cwd": "/" })),
         ("machines.bring", json!({ "id": "x", "from": "/", "into": "/" })),
+        ("machines.send", json!({ "id": "x", "cwd": "/", "key": "k", "to": "/sandbox/seed" })),
+        ("machines.uncarry", json!({ "id": "x", "lead": "t1" })),
+        ("machines.dropCopies", json!({ "lead": "t1" })),
     ] {
         let e = k.call(nobody.clone(), cmd, args).await.unwrap_err();
         assert_eq!(e.code, Code::Forbidden, "{cmd}: {e:?}");
     }
+}
+
+/// ADR-0060: a lead deleted while its delegate's machine can't be reached: the drop is kept in the machine's row for
+/// the sweep (once, however often it's asked), and the machine's own copies of that lead go when it's told, only
+/// that lead's.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_machine_that_cant_be_reached_keeps_the_drop_for_the_sweep() {
+    let home = dir("home6");
+    let k = kernel(&home).await;
+    let m = k
+        .call(Caller::user(), "machines.add", json!({ "transport": "loopback", "address": "127.0.0.1", "port": 9, "connect": false }))
+        .await
+        .unwrap();
+    for _ in 0..2 {
+        let out = k.call(Caller::user(), "machines.uncarry", json!({ "id": m["id"], "lead": "t1", "task": "r1" })).await.unwrap();
+        assert_eq!(out["done"], false, "{out}");
+    }
+    let row = k.call(Caller::user(), "machines.get", json!({ "id": m["id"] })).await.unwrap();
+    assert_eq!(row["uncarry"], json!([{ "lead": "t1", "task": "r1" }]), "kept once, for the sweep: {row}");
+    assert!(k.call(Caller::user(), "machines.send", json!({ "id": m["id"], "cwd": "/", "key": "k", "to": "/cmd" })).await.is_err());
+
+    // on the machine: that lead's copies and uploads go, another lead's stay
+    let (_l, a) = carried(&home, "t1-far");
+    k.call(Caller::user(), "machines.takeIn", a).await.unwrap();
+    let (_l, b) = carried(&home, "t10-far");
+    k.call(Caller::user(), "machines.takeIn", b).await.unwrap();
+    std::fs::write(home.join("plugins/wisp.machines/incoming/t1-near.bundle"), b"x").unwrap();
+    let out = k.call(Caller::user(), "machines.dropCopies", json!({ "lead": "t1" })).await.unwrap();
+    assert_eq!(out["copies"], 1, "{out}");
+    let copies = home.join("plugins/wisp.machines/copies");
+    assert!(!copies.join("t1-far").exists() && copies.join("t10-far/my-app").is_dir());
+    assert!(!home.join("plugins/wisp.machines/incoming/t1-near.bundle").exists());
 }

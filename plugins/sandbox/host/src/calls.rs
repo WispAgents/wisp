@@ -41,6 +41,19 @@ pub(crate) async fn wake(ctx: &Ctx, call: &Call, id: &str) {
     warn("machines.call /health", ctx.run::<m::CallPeer>(call, a).await);
 }
 
+/// `machines.send`: the project in `cwd` packed (every ref, what isn't committed) and uploaded raw to the sandbox's
+/// seed route, under `key`.
+pub(crate) async fn send(ctx: &Ctx, call: &Call, machine: &str, cwd: &str, key: &str) -> Result<wisp_machines_api::Sent> {
+    let a = wisp_machines_api::SendArgs {
+        id: machine.to_owned(),
+        cwd: cwd.to_owned(),
+        key: key.to_owned(),
+        to: wisp_sandbox_core::SEED_ROUTE.to_owned(),
+        all: true,
+    };
+    ctx.run::<m::Send>(call, a).await
+}
+
 /// Command `C` on a sandbox's own wisp, through `machines.route`.
 pub(crate) async fn route<C: Command>(ctx: &Ctx, call: &Call, machine: &str, args: C::Args) -> Result<C::Out> {
     let args = serde_json::to_value(args).map_err(|e| WireError::internal(format!("{}: {e}", C::ID)))?;

@@ -215,6 +215,27 @@ command!(
     read_only = true
 );
 command!(
+    /// a folder here packed and uploaded raw to a far route (`machines.carry`'s pack and upload, ADR-0060)
+    Send,
+    "machines.send",
+    crate::carry::SendArgs,
+    crate::carry::Sent
+);
+command!(
+    /// a lead's delegate on a machine goes: its task and the lead's copies there (kept for the sweep when unreachable)
+    Uncarry,
+    "machines.uncarry",
+    crate::carry::UncarryArgs,
+    crate::carry::Uncarried
+);
+command!(
+    /// on the machine: every copy a lead's delegates got, gone (only under wisp's own folder)
+    DropCopies,
+    "machines.dropCopies",
+    crate::carry::DropCopiesArgs,
+    crate::carry::DroppedCopies
+);
+command!(
     /// a carried copy's changes, applied to the lead's folder here (kept in a file when they clash)
     Bring,
     "machines.bring",

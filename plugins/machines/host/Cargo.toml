@@ -22,6 +22,8 @@ wisp-machines-api = { path = "../api" }
 wisp-machines-core = { path = "../core" }
 wisp-proc.workspace = true
 wisp-protocol.workspace = true
+# a delegate's task on another machine, deleted with its lead (ADR-0060)
+wisp-runtime-api.workspace = true
 wisp-store.workspace = true
 
 [dev-dependencies]

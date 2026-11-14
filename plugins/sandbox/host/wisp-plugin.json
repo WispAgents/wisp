@@ -21,6 +21,7 @@
     "machines:route",
     "machines:call",
     "machines:connect",
+    "machines:send",
     "proc:exec{bin:git}",
     "proc:exec{bin:sh}",
     "proc:exec{bin:claude}"

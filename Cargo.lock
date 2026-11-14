@@ -5127,6 +5127,7 @@ dependencies = [
  "wisp-machines-core",
  "wisp-proc",
  "wisp-protocol",
+ "wisp-runtime-api",
  "wisp-store",
  "wisp-testkit",
 ]

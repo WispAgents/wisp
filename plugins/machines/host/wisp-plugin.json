@@ -121,6 +121,18 @@
         "readOnly": true
       },
       {
+        "id": "machines.send",
+        "title": "Pack a folder here and upload it raw to a computer's route (a sandbox's project)"
+      },
+      {
+        "id": "machines.uncarry",
+        "title": "A lead's delegate on a computer goes: its task and its copies there"
+      },
+      {
+        "id": "machines.dropCopies",
+        "title": "Delete the copies a lead's delegates got (on the computer they were carried to)"
+      },
+      {
         "id": "machines.bring",
         "title": "A carried copy's changes, into the lead's folder here"
       }

@@ -1,15 +1,15 @@
 //! Making a sandbox for an owner, waiting for it, carrying the project in, starting work there, and dropping it
-//! (ADR-0047). The grid is reached through wisp.grid-client, a sandbox through `machines.route`, git through proc.
+//! (ADR-0047). The grid is reached through wisp.grid-client, a sandbox through `machines.route` (the project itself
+//! through `machines.send`, raw: ADR-0060), git through proc.
 
 use std::collections::BTreeMap;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::time::Duration;
 
-use base64::Engine as _;
 use serde_json::Value;
 use wisp_kernel::{Call, Ctx, Result, WireError};
 use wisp_machines_api::PeerState;
-use wisp_proc::{Env, ExecOpts, Proc};
+use wisp_proc::{ExecOpts, Proc};
 use wisp_runtime_api::commands as rt;
 use wisp_sandbox_api as api;
 use wisp_sandbox_core::{self as core, Held, Owner};
@@ -93,47 +93,24 @@ async fn wait_up(ctx: &Ctx, call: &Call, machine: &str) -> Result<String> {
     }
 }
 
-async fn git(proc: &Proc, cwd: &Path, args: &[String]) -> Option<String> {
-    let opts = ExecOpts {
-        cwd: Some(cwd.to_owned()),
-        env: Env::default().with("GIT_TERMINAL_PROMPT", "0"),
-        timeout: Some(Duration::from_secs(120)),
-        max_output: 64 << 20,
-        ..ExecOpts::default()
-    };
-    let r = proc.exec("git", args, opts).await.ok()?;
-    r.exit.success().then(|| r.stdout_text())
-}
-
-/// The project in `cwd` as `sandbox.seed` takes it: a bundle of every ref, what isn't committed, branch, origin, author.
-async fn pack(ctx: &Ctx, cwd: &str) -> Result<api::SeedArgs> {
-    let proc = ctx.service::<Proc>()?;
-    let dir = PathBuf::from(cwd);
-    let tmp = std::env::temp_dir().join(format!("wisp-sbx-{}.bundle", wisp_kernel::ids::uuid7()));
-    let [bundle, diff] = core::pack_commands(&tmp.display().to_string());
-    let s = |v: &[&str]| v.iter().map(|x| (*x).to_owned()).collect::<Vec<_>>();
-    if git(&proc, &dir, &bundle).await.is_none() {
-        let _ = tokio::fs::remove_file(&tmp).await;
-        return Err(WireError::invalid(format!("{cwd} isn't a git repo with a commit: only a repo goes into a sandbox")));
-    }
-    let bytes = tokio::fs::read(&tmp).await.map_err(|e| WireError::internal(format!("the bundle: {e}")))?;
-    let _ = tokio::fs::remove_file(&tmp).await;
-    let line = |o: Option<String>| o.map(|x| x.trim().to_owned()).unwrap_or_default();
-    Ok(api::SeedArgs {
-        name: core::name_of(cwd),
-        bundle: base64::engine::general_purpose::STANDARD.encode(bytes),
-        patch: git(&proc, &dir, &diff).await.unwrap_or_default(),
-        branch: line(git(&proc, &dir, &s(&["rev-parse", "--abbrev-ref", "HEAD"])).await).replace("HEAD", ""),
-        origin: line(git(&proc, &dir, &s(&["remote", "get-url", "origin"])).await),
-        author_name: line(git(&proc, &dir, &s(&["config", "user.name"])).await),
-        author_email: line(git(&proc, &dir, &s(&["config", "user.email"])).await),
-    })
-}
-
 /// The project in, there: its folder in the sandbox (an empty `~/code/scratch` when there's none).
 async fn seed(ctx: &Ctx, call: &Call, machine: &str, cwd: Option<&str>) -> Result<String> {
     let args = match cwd.filter(|c| !c.is_empty()) {
-        Some(c) => pack(ctx, c).await?,
+        // the project goes raw (`machines.send`, every ref and what isn't committed), never inside a sync message
+        // (2 MB at most): only the seed's own args go through `machines.route`
+        Some(c) => {
+            let key = format!("seed-{}", wisp_kernel::ids::uuid7());
+            let sent = calls::send(ctx, call, machine, c, &key).await?;
+            api::SeedArgs {
+                name: core::name_of(c),
+                key: sent.key,
+                branch: sent.branch,
+                origin: sent.origin,
+                author_name: sent.author_name,
+                author_email: sent.author_email,
+                ..api::SeedArgs::default()
+            }
+        }
         None => api::SeedArgs { name: "scratch".into(), ..api::SeedArgs::default() },
     };
     let out = calls::route::<api::Seed>(ctx, call, machine, args).await?;

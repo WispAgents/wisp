@@ -28,7 +28,7 @@ use crate::error::{MachinesError, Res};
 use crate::{Slot, State, state};
 
 /// `<wisp>/plugins/wisp.machines`.
-fn plugin_dir(ctx: &Ctx) -> wisp_kernel::Result<PathBuf> {
+pub(crate) fn plugin_dir(ctx: &Ctx) -> wisp_kernel::Result<PathBuf> {
     Ok(ctx.service::<Paths>()?.plugin_dir(api::PLUGIN))
 }
 
@@ -52,6 +52,10 @@ async fn git(proc: &Proc, cwd: &Path, args: &[&str], index: Option<&Path>, input
     };
     let args: Vec<String> = args.iter().map(|a| (*a).to_owned()).collect();
     let r = proc.exec("git", &args, opts).await.map_err(|e| e.to_string())?;
+    // a patch cut short would be another patch: refused
+    if r.truncated {
+        return Err(format!("git wrote more than {} MB", (core::MAX_PATCH + (1 << 20)) >> 20));
+    }
     if r.exit.success() { Ok(r.stdout_text()) } else { Err(format!("{}{}", r.stdout_text(), r.stderr_text()).trim().to_owned()) }
 }
 
@@ -73,14 +77,14 @@ async fn tree_of(proc: &Proc, dir: &Path) -> Result<String, String> {
     out.map(|t| t.trim().to_owned())
 }
 
-/// The lead's folder, ready to go: the bundle's bytes, the uncommitted changes, and what `takeIn` needs.
+/// A folder here, ready to go: the bundle's bytes, the uncommitted changes, and what the far side needs.
 struct Pack {
     bundle: Vec<u8>,
     patch: String,
-    take: api::TakeInArgs,
+    sent: api::Sent,
 }
 
-async fn pack(proc: &Proc, cwd: &str, key: &str) -> Res<Pack> {
+async fn pack(proc: &Proc, cwd: &str, key: &str, all: bool) -> Res<Pack> {
     let dir = PathBuf::from(cwd);
     let line = |r: Result<String, String>| r.map(|x| x.trim().to_owned()).unwrap_or_default();
     let head = line(git(proc, &dir, &["rev-parse", "--verify", "HEAD"], None, None).await);
@@ -90,10 +94,20 @@ async fn pack(proc: &Proc, cwd: &str, key: &str) -> Res<Pack> {
     let branch = line(git(proc, &dir, &["symbolic-ref", "--quiet", "--short", "HEAD"], None, None).await);
     let tmp = temp("bundle");
     let tmp_s = tmp.display().to_string();
-    let made = match core::pack_commands(&tmp_s, &branch).first() {
+    let made = match core::pack_commands(&tmp_s, &branch, all).first() {
         Some(args) => git(proc, &dir, &args.iter().map(String::as_str).collect::<Vec<_>>(), None, None).await,
         None => Err(String::new()),
     };
+    // too big: refused before it's read, and before anything goes
+    if let Ok(m) = tokio::fs::metadata(&tmp).await
+        && usize::try_from(m.len()).unwrap_or(usize::MAX) > core::MAX_BUNDLE
+    {
+        let _ = tokio::fs::remove_file(&tmp).await;
+        return Err(MachinesError::Wire(WireError::new(
+            wisp_kernel::Code::TooLarge,
+            core::too_big(usize::try_from(m.len() >> 20).unwrap_or(usize::MAX)),
+        )));
+    }
     let bundle = tokio::fs::read(&tmp).await;
     let _ = tokio::fs::remove_file(&tmp).await;
     let bundle = match (made, bundle) {
@@ -101,34 +115,33 @@ async fn pack(proc: &Proc, cwd: &str, key: &str) -> Res<Pack> {
         (Err(e), _) => return Err(MachinesError::Wire(WireError::internal(format!("git bundle: {e}")))),
         (_, Err(e)) => return Err(MachinesError::Wire(WireError::internal(format!("the bundle: {e}")))),
     };
-    if bundle.len() > core::MAX_BUNDLE {
-        return Err(MachinesError::Wire(WireError::invalid(core::too_big(bundle.len() >> 20))));
-    }
     // what isn't committed, new files too: the difference from HEAD to the folder's whole state
     let patch = match tree_of(proc, &dir).await {
-        Ok(tree) => git(proc, &dir, &["diff", "--binary", "HEAD", &tree], None, None).await.unwrap_or_default(),
+        Ok(tree) => git(proc, &dir, &["diff", "--binary", "HEAD", &tree], None, None)
+            .await
+            .map_err(|e| MachinesError::Wire(WireError::internal(format!("the uncommitted changes: {e}"))))?,
         Err(e) => return Err(MachinesError::Wire(WireError::internal(format!("the uncommitted changes: {e}")))),
     };
-    let take = api::TakeInArgs {
+    let sent = api::Sent {
         key: core::segment(key),
-        name: core::name_of(cwd),
         head,
         branch,
+        origin: line(git(proc, &dir, &["remote", "get-url", "origin"], None, None).await),
         author_name: line(git(proc, &dir, &["config", "user.name"], None, None).await),
         author_email: line(git(proc, &dir, &["config", "user.email"], None, None).await),
     };
-    Ok(Pack { bundle, patch, take })
+    Ok(Pack { bundle, patch, sent })
 }
 
-/// One raw upload to the machine (`POST /api/machines/carry/<key>/<part>`).
-async fn upload(st: &Arc<State>, id: &str, key: &str, part: &str, bytes: Vec<u8>) -> Res<()> {
+/// One raw upload to the machine (`POST /api<to>/<key>/<part>`).
+async fn upload(st: &Arc<State>, id: &str, to: &str, key: &str, part: &str, bytes: Vec<u8>) -> Res<()> {
     let row = st.peer(id)?;
     let _ = crate::manager::secret_of(st, id).await;
     let ch = st.channel(id)?;
     let headers = vec![("content-type".into(), "application/octet-stream".into()), ("content-length".into(), bytes.len().to_string())];
     let req = ChannelRequest {
         method: "POST".into(),
-        path: format!("/machines/carry/{key}/{part}"),
+        path: format!("{to}/{key}/{part}"),
         headers,
         body: Body::Bytes(bytes),
         timeout_ms: Some(600_000),
@@ -145,22 +158,41 @@ async fn upload(st: &Arc<State>, id: &str, key: &str, part: &str, bytes: Vec<u8>
 }
 
 /// A typed command run by the machine's wisp (`POST /api/cmd`), with a timeout long enough for git.
-async fn on_machine<C: Command>(st: &Arc<State>, id: &str, args: C::Args) -> Res<C::Out> {
+pub(crate) async fn on_machine<C: Command>(st: &Arc<State>, id: &str, args: C::Args) -> Res<C::Out> {
     let body = json!({ "cmd": C::ID, "args": serde_json::to_value(args).unwrap_or(Value::Null) });
     let v = crate::service::json(st.clone(), id.to_owned(), "POST".into(), "/cmd".into(), Some(body), Some(600_000)).await?;
     let out = if v.get("ok") == Some(&Value::Bool(true)) { v.get("result").cloned().unwrap_or(Value::Null) } else { v };
     serde_json::from_value(out).map_err(|e| MachinesError::Wire(WireError::internal(format!("{}: {e}", C::ID))))
 }
 
+/// `machines.send`: the folder packed and its two parts uploaded raw to the machine's route `to` (ADR-0060).
+async fn send(st: &Arc<State>, a: &api::SendArgs) -> Res<api::Sent> {
+    st.peer(&a.id)?;
+    if !core::send_route_ok(&a.to) {
+        return Err(MachinesError::Wire(WireError::invalid(format!("{} isn't an upload route", a.to))));
+    }
+    let proc = st.ctx.service::<Proc>().map_err(MachinesError::Wire)?;
+    let p = pack(&proc, &a.cwd, &a.key, a.all).await?;
+    let key = p.sent.key.clone();
+    upload(st, &a.id, &a.to, &key, "bundle", p.bundle).await?;
+    upload(st, &a.id, &a.to, &key, "patch", p.patch.into_bytes()).await?;
+    Ok(p.sent)
+}
+
 /// `machines.carry`: the lead's work copied onto the machine.
 async fn carry(st: &Arc<State>, a: api::CarryArgs) -> Res<api::Carried> {
     let row = st.peer(&a.id)?;
-    let proc = st.ctx.service::<Proc>().map_err(MachinesError::Wire)?;
-    let p = pack(&proc, &a.cwd, &a.key).await?;
-    let key = p.take.key.clone();
-    upload(st, &a.id, &key, "bundle", p.bundle).await?;
-    upload(st, &a.id, &key, "patch", p.patch.into_bytes()).await?;
-    let took = on_machine::<api::TakeIn>(st, &a.id, p.take).await?;
+    let sent =
+        send(st, &api::SendArgs { id: a.id.clone(), cwd: a.cwd.clone(), key: a.key, to: core::CARRY_ROUTE.into(), all: false }).await?;
+    let take = api::TakeInArgs {
+        key: sent.key,
+        name: core::name_of(&a.cwd),
+        head: sent.head,
+        branch: sent.branch,
+        author_name: sent.author_name,
+        author_email: sent.author_email,
+    };
+    let took = on_machine::<api::TakeIn>(st, &a.id, take).await?;
     Ok(api::Carried { cwd: took.cwd, machine: row.name })
 }
 
@@ -290,6 +322,17 @@ pub(crate) fn register(s: &mut Setup, slot: &Slot) {
     s.route(upload_route());
     s.command::<api::TakeIn, _, _>(|ctx, _call, a| async move { take_in(&ctx, &a).await });
     s.command::<api::ChangesOf, _, _>(|ctx, _call, a| async move { changes(&ctx, &a.cwd).await });
+    s.command::<api::DropCopies, _, _>(|ctx, _call, a| async move { crate::uncarry::drop_copies(&plugin_dir(&ctx)?, &a.lead).await });
+    let sl = slot.clone();
+    s.command::<api::Send, _, _>(move |_ctx, _call, a| {
+        let sl = sl.clone();
+        async move { send(&state(&sl)?, &a).await.map_err(WireError::from) }
+    });
+    let sl = slot.clone();
+    s.command::<api::Uncarry, _, _>(move |_ctx, _call, a| {
+        let sl = sl.clone();
+        async move { crate::uncarry::uncarry(&state(&sl)?, a).await.map_err(WireError::from) }
+    });
     let sl = slot.clone();
     s.command::<api::Carry, _, _>(move |_ctx, _call, a| {
         let sl = sl.clone();

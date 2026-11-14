@@ -92,3 +92,53 @@ async fn a_delegates_changes_come_back_as_the_difference_from_what_came_in() {
     // outside ~/code: nothing to give back
     assert!(sb.call(Caller::user(), "sandbox.patch", serde_json::json!({ "cwd": "/etc" })).await.is_err());
 }
+
+fn upload(key: &str, part: &str, body: Vec<u8>) -> wisp_kernel::http::Request {
+    wisp_kernel::http::Request {
+        method: "POST".into(),
+        path: format!("/api/sandbox/seed/{key}/{part}"),
+        params: std::collections::BTreeMap::new(),
+        query: Vec::new(),
+        headers: vec![("content-type".into(), "application/octet-stream".into())],
+        body,
+    }
+}
+
+/// ADR-0060: the project comes raw to `POST /api/sandbox/seed/<key>/<part>` (as `machines.send` posts it: a bundle of
+/// every ref, and the uncommitted changes with a new file), and `sandbox.seed {key}` takes it from there; a computer
+/// refuses the upload as it refuses the seed, and a seed for nothing sent is refused.
+#[tokio::test(flavor = "multi_thread")]
+async fn only_a_sandbox_takes_an_upload_and_a_seed_reads_it_by_key() {
+    let (p, _) = project();
+    std::fs::write(p.join("brand-new.txt"), "not committed, not even added\n").unwrap();
+    let bundle = dir("bundle-k").join("b.bundle");
+    git(&p, &["bundle", "create", bundle.to_str().unwrap(), "--all"]);
+    git(&p, &["add", "-N", "brand-new.txt"]);
+    let patch = git(&p, &["diff", "HEAD", "--binary"]);
+    git(&p, &["reset", "-q", "brand-new.txt"]);
+    let bytes = std::fs::read(&bundle).unwrap();
+
+    let home = dir("home3");
+    let here =
+        TestApp::new().with(SandboxPlugin { inside: Some(false), home: Some(home.clone()) }).service(wisp_proc::local()).start().await;
+    let no = here.serve(Caller::user(), upload("k1", "bundle", bytes.clone())).await.unwrap_err();
+    assert!(no.message.contains("Only a sandbox"), "{no:?}");
+    assert!(!home.join(".sandbox").exists(), "nothing written on a computer");
+
+    let sb = TestApp::new().with(SandboxPlugin { inside: Some(true), home: Some(home.clone()) }).service(wisp_proc::local()).start().await;
+    let none = sb.call(Caller::user(), "sandbox.seed", json!({ "name": "app", "key": "k1" })).await.unwrap_err();
+    assert!(none.message.contains("Nothing was sent"), "{none:?}");
+    assert!(sb.serve(Caller::user(), upload("k1", "../x", Vec::new())).await.is_err(), "a part is a bundle or a patch");
+    sb.serve(Caller::user(), upload("k1", "bundle", bytes)).await.unwrap();
+    sb.serve(Caller::user(), upload("k1", "patch", patch.into_bytes())).await.unwrap();
+    let out = sb.call(Caller::user(), "sandbox.seed", json!({ "name": "my app", "key": "k1", "branch": "fix" })).await.unwrap();
+    let cwd = PathBuf::from(out["cwd"].as_str().unwrap());
+    assert_eq!(cwd, home.join("code/my-app"));
+    assert_eq!(std::fs::read_to_string(cwd.join("app.js")).unwrap(), "one\ntwo, not committed\n");
+    assert_eq!(std::fs::read_to_string(cwd.join("brand-new.txt")).unwrap(), "not committed, not even added\n");
+    assert_eq!(git(&cwd, &["rev-parse", "--abbrev-ref", "HEAD"]).trim(), "fix");
+    assert_eq!(std::fs::read_dir(home.join(".sandbox/incoming")).unwrap().count(), 0, "the upload is used once");
+    // the lead's new file came in with it: it never goes back as the delegate's
+    let back = sb.call(Caller::user(), "sandbox.patch", json!({ "cwd": cwd })).await.unwrap();
+    assert_eq!(back["patch"], "", "nothing changed there yet: {back}");
+}

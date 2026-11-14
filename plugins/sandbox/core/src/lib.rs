@@ -120,9 +120,16 @@ pub fn name_of(cwd: &str) -> String {
     if n.is_empty() { "project".to_owned() } else { n }
 }
 
-/// The git commands that pack a project: every ref as one bundle (written to `bundle`), and what isn't committed.
-pub fn pack_commands(bundle: &str) -> [Vec<String>; 2] {
-    [["bundle", "create", bundle, "--all"].map(str::to_owned).to_vec(), ["diff", "HEAD", "--binary"].map(str::to_owned).to_vec()]
+/// Where the project goes raw (ADR-0060): `POST /api/sandbox/seed/<key>/<part>` on the sandbox, sent by
+/// `machines.send` (every ref as one bundle, and what isn't committed, new files too), then `sandbox.seed {key}`.
+pub const SEED_ROUTE: &str = "/sandbox/seed";
+
+/// The upload of `part` (`bundle`, `patch`) for seed `key`, as a file name in `~/.sandbox/incoming`; `None`: not a
+/// part. The key is cut to one path segment, whatever it says.
+pub fn upload_name(key: &str, part: &str) -> Option<String> {
+    let k: String = key.chars().map(|c| if c.is_ascii_alphanumeric() || matches!(c, '_' | '-') { c } else { '-' }).take(80).collect();
+    let k = if k.trim_matches('-').is_empty() { "seed".to_owned() } else { k };
+    matches!(part, "bundle" | "patch").then(|| format!("{k}.{part}"))
 }
 
 /// The git commands that unpack it in the sandbox, in `home/code`: clone the bundle, check out the branch it was on,
@@ -300,9 +307,10 @@ mod tests {
     fn a_projects_work_goes_in_as_a_bundle_and_its_uncommitted_changes() {
         assert_eq!(name_of("/Users/me/code/web app/"), "web-app");
         assert_eq!(name_of("/"), "project");
-        let [bundle, diff] = pack_commands("/tmp/b.bundle");
-        assert_eq!(bundle, ["bundle", "create", "/tmp/b.bundle", "--all"]);
-        assert_eq!(diff, ["diff", "HEAD", "--binary"]);
+        assert_eq!(upload_name("seed-1", "bundle").as_deref(), Some("seed-1.bundle"));
+        assert_eq!(upload_name("../../.ssh/x", "patch").as_deref(), Some("-------ssh-x.patch"), "one segment, whatever it says");
+        assert_eq!(upload_name("..", "bundle").as_deref(), Some("seed.bundle"));
+        assert!(upload_name("k", "../x").is_none());
         let seed = seed_commands("/h/in.bundle", "/h/code/web", "fix-login", "git@github.com:me/web.git");
         assert_eq!(seed[0], ["clone", "--quiet", "/h/in.bundle", "/h/code/web"]);
         assert_eq!(seed[1], ["-C", "/h/code/web", "checkout", "--quiet", "fix-login"]);
