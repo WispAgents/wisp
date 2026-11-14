@@ -453,7 +453,7 @@ in the sense of *looks like v1*: F-look-1 tracks that once.
 | F-phone-3 | 0.47.0 | Given the app's list, when I swipe right/left, then mark done / save for later | missing | no swipe in `shell-list` |
 | F-phone-4 | 0.51.0 | Given a task page, when I swipe left, then the side panel comes in | missing | |
 | F-phone-5 | 0.28.0 | Given wisp Cloud, when I sign in from the app (GitHub/Google), then my cloud wisp and computers are listed | missing | |
-| F-phone-6 | 0.57.0 | Given iPhone Safari on my cloud wisp, when I Add to Home Screen, then it runs full screen | built | manifest (v1 icons, scope, display), Apple tags, theme-color per scheme, STANDALONE_CHECK marks Home Screen launches, safe-area padding in kit CSS; not tried on a real iPhone (round 214) |
+| F-phone-6 | 0.57.0 | Given iPhone Safari on my cloud wisp, when I Add to Home Screen, then it runs full screen | built | manifest (v1 icons, scope, display), Apple tags, theme-color per scheme, STANDALONE_CHECK marks Home Screen launches, safe-area padding in kit CSS; tags added at runtime on a grid box only, as v1 (round 223); not tried on a real iPhone (round 214) |
 | F-phone-7 | 0.42.0 | Given a browser under 900 px, when I tap a task, then it opens as its own page | built | under 900 px a task is its own page with Back (browser Back, Esc), Esc twice on New task returns to the list; `stack-page.ts` (round 214) |
 | F-phone-8 | 0.51.0 | Given 4,000 tasks on a bad connection, when I use the app, then it stays quick | partial | spikes/phone-bench: fling 110/141 slow frames → 2/298, first tap on Slow 4G 1,273 ms blank → 171 ms; left: warm tap ~90 ms vs 50 budget, initial JS 288.7 KB br vs 120 (round 214) |
 
