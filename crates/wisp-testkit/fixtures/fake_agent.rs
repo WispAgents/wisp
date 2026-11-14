@@ -4,6 +4,7 @@
 //!
 //!   `FAKE_RECORD`      directory; each run appends {argv, stdin, cwd, pid, codexHome, subagentModel} to `<name>.jsonl`
 //!   `FAKE_HANG=1`      stop after the first events and wait to be killed
+//!   `FAKE_GRANDCHILD`  a file: a run starts a copy of this binary that only sleeps, then appends `<own pid> <its pid>\n`
 //!   `FAKE_FAIL=1`      exit 1 with an error on stderr, no result
 //!   `FAKE_LIMIT_ONCE`  a file: the first run with a prompt hits a usage limit (stderr, exit 1); later runs work
 //!   `FAKE_DELAY` / `FAKE_LINGER`  ms to wait before answering / after the result
@@ -230,7 +231,28 @@ fn replay_turn(name: &str, stream: &str, prompt: &str, target: &Path, after: &st
     }
 }
 
+/// `FAKE_GRANDCHILD`: a process this run starts and never waits for (an agent's tool, a dev server), in the run's own
+/// process group, holding this same executable: wisp must end it with the run, and with the server however it stops.
+fn grandchild(file: &str) {
+    let Ok(exe) = std::env::current_exe() else { return };
+    let child = std::process::Command::new(exe)
+        .env("FAKE_SLEEPER", "1")
+        .env_remove("FAKE_GRANDCHILD")
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .spawn()
+        .expect("the grandchild starts");
+    let line = format!("{} {}\n", std::process::id(), child.id());
+    let mut f = std::fs::OpenOptions::new().create(true).append(true).open(file).expect("the pid file");
+    let _ = f.write_all(line.as_bytes());
+    std::mem::forget(child);
+}
+
 fn main() {
+    if env("FAKE_SLEEPER").is_some() {
+        hang();
+    }
     let mut args = std::env::args();
     let me = args.next().unwrap_or_default();
     let name = Path::new(&me).file_stem().and_then(|s| s.to_str()).unwrap_or("agent").to_owned();
@@ -252,6 +274,9 @@ fn main() {
     }
     record(&name, &argv, &prompt);
     let run = !prompt.trim().is_empty();
+    if run && let Some(f) = env("FAKE_GRANDCHILD") {
+        grandchild(&f);
+    }
     RUN.store(run, std::sync::atomic::Ordering::Relaxed);
     // only a run (it has a prompt) hits it: a harness's detect probe (`opencode models`, `auth list`) that
     // lands late must not use the limit up (serve_kinds' best-of-n flaked on that under CI load)
