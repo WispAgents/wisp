@@ -22,10 +22,15 @@ impl Runtime {
         if a.question.trim().is_empty() {
             return Err(RuntimeError::Invalid("Ask something first.".into()));
         }
+        // claimed before its first await: a delete from here on stops it (before its spawn: it never spawns) and waits
+        let claim = self.claims.claim(a.id.as_str());
         let s = self.repo.session(a.id.as_str()).await?;
         let h = self.harness(&s.agent)?;
         // where it runs first, as a turn's (ADR-0053): an archived task's worktree comes back, or it's refused with why
         self.folder_ready(&s, None).await.map_err(RuntimeError::Conflict)?;
+        if claim.cancelled() {
+            return Err(RuntimeError::NoTask(a.id.0.clone()));
+        }
         let entry = BtwEntry {
             id: wisp_kernel::ids::uuid7(),
             question: a.question.clone(),
@@ -54,13 +59,15 @@ impl Runtime {
         let (rt, mut e) = (self.clone(), entry.clone());
         // owned by the plugin's scope: switching the runtime off ends the side run with it
         self.host.spawn(Box::pin(async move {
-            match rt.side_run(h.as_ref(), &run, BTW_TIMEOUT, None).await {
+            match rt.side_run(h.as_ref(), &run, BTW_TIMEOUT, Some(claim.stop())).await {
                 Ok(o) if !o.is_error => e.answer = o.text,
                 Ok(o) => e.error = Some(o.text),
                 Err(err) => e.error = Some(err.to_string()),
             }
             e.pending = false;
+            // a task deleted meanwhile has no row to put it on (`put_btw` reads it first): nothing is written
             let _ = rt.put_btw(&s.id.0, &e).await;
+            drop(claim);
         }));
         Ok(entry)
     }

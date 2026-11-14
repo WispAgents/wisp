@@ -208,8 +208,17 @@ pub fn script(prompt: &str) -> Vec<Value> {
 /// Set once a `slowexit…` CLI has exited: told to stop, it takes 300 ms to go (a real CLI's exit, its drive's last git work).
 pub static SLOW_EXIT_GONE: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
+/// Set once a `hang…` CLI was killed (a /btw a delete must stop).
+pub static HANG_GONE: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
 async fn fake_cli(mut io: SimIo) -> Exit {
     let prompt = io.args.first().cloned().unwrap_or_default();
+    if prompt.starts_with("hang") {
+        io.killed.cancelled().await;
+        HANG_GONE.store(true, std::sync::atomic::Ordering::SeqCst);
+        return Exit { code: None, signal: Some("SIGKILL".into()) };
+    }
+
     if prompt.starts_with("slowexit") {
         for l in &script(&prompt)[..2] {
             io.print(format!("{l}\n").as_bytes()).await;

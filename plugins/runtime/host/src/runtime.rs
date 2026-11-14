@@ -47,6 +47,8 @@ pub struct Runtime {
     pub(crate) caps: Mutex<HashMap<String, Mode>>,
     /// the `runtime.quick` runs under way that a caller named (`runId`), for `runtime.quickCancel` (`more/quick.rs`)
     pub(crate) quick_runs: crate::more::QuickRuns,
+    /// each task's runs that are starting (a turn before its spawn, a /btw): a delete cancels them (`claims.rs`)
+    pub(crate) claims: crate::claims::Claims,
 }
 
 impl std::fmt::Debug for Runtime {
@@ -77,6 +79,7 @@ impl Runtime {
             env: crate::env_known::EnvKnown::default(),
             caps: Mutex::default(),
             quick_runs: crate::more::QuickRuns::default(),
+            claims: crate::claims::Claims::default(),
         })
     }
 

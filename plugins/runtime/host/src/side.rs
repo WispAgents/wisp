@@ -89,7 +89,16 @@ impl Runtime {
             no_stdin: launch.stdin == Stdin::Null,
             ..SpawnOpts::default()
         };
-        let child = self.proc.spawn(&launch.program, &launch.args, opts)?;
+        // a cancel that came before the spawn (a goal's judge dropped, its task deleted) spawns nothing; the stop's
+        // value is held across the (sync) spawn, so a cancel lands before it or is seen by the loop below
+        let child = {
+            let held = stop.as_ref().map(watch::Receiver::borrow);
+            if held.as_ref().is_some_and(|v| **v) {
+                return Err(RuntimeError::Cancelled(wisp_runtime_api::commands::QUICK_CANCELLED.into()));
+            }
+            self.proc.spawn(&launch.program, &launch.args, opts)?
+        };
+
         let (handle, mut rx) = child.split();
         if let Stdin::Bytes(b) = &launch.stdin {
             handle.write(b.clone())?;

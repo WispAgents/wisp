@@ -6,6 +6,7 @@
 
 mod calls;
 mod capped;
+mod claims;
 mod drive;
 mod env_known;
 mod env_other;
