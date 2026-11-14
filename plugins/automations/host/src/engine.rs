@@ -56,6 +56,9 @@ pub struct Engine {
     pub declared: Mutex<Vec<(String, TriggerSpec)>>,
     /// one decision at a time: a state row is read, decided on and written back whole
     pub(crate) gate: tokio::sync::Mutex<()>,
+    /// the runs whose trigger row says held for the plan: `turn.started` looks one up here and touches no row for the
+    /// others, so a turn start costs a set lookup
+    pub(crate) plan_runs: Mutex<std::collections::BTreeSet<String>>,
 }
 
 fn lock<T>(m: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
@@ -87,7 +90,12 @@ fn takes(on: &str, ty: &str) -> bool {
 impl Engine {
     #[allow(clippy::new_without_default)]
     pub fn new() -> Self {
-        Self { store: std::sync::OnceLock::new(), declared: Mutex::default(), gate: tokio::sync::Mutex::new(()) }
+        Self {
+            store: std::sync::OnceLock::new(),
+            declared: Mutex::default(),
+            gate: tokio::sync::Mutex::new(()),
+            plan_runs: Mutex::default(),
+        }
     }
 
     /// Set once, at start (the store is a service then).
@@ -234,6 +242,8 @@ impl Engine {
     /// A run a trigger started ended: its outcome counts (a quiet member's answer is a skip, not a failure).
     pub async fn ended(&self, ctx: &Ctx, session: &str, o: Outcome, from_crew: bool, now: i64) {
         let all = self.all(ctx);
+        // its row stops saying held below (`core::ended`); its start can't come any more
+        self.plan_runs().remove(session);
         for (name, st) in self.states().await {
             if !st.running.iter().any(|s| s == session) {
                 continue;

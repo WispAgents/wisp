@@ -1,6 +1,6 @@
 //! A run a trigger started that waits for its plan (Automations stop at, wisp.budget's `before:run` hold; v1
 //! triggers.js `t.held`): the row says so, with why, until the plan frees (`budget.plan_free`, v1 `release(agent)`),
-//! or the run ends. The next event runs as usual and meets the plan's check again.
+//! its held run starts, or the run ends. The next event runs as usual and meets the plan's check again.
 
 use serde::{Deserialize, Serialize};
 
@@ -49,9 +49,16 @@ pub fn release(st: &mut State, agent: &str, account: &str) -> bool {
 
 /// The run ended (it started after all, or was stopped): nothing waits any more.
 pub fn ended(st: &mut State, session: &str) {
-    if st.plan.as_ref().is_some_and(|w| w.session == session) {
+    started(st, session);
+}
+
+/// The held run started (its plan reset on time, or Start now): the row stops saying held. Whether it did.
+pub fn started(st: &mut State, session: &str) -> bool {
+    let hit = st.plan.as_ref().is_some_and(|w| w.session == session);
+    if hit {
         st.plan = None;
     }
+    hit
 }
 
 #[cfg(test)]

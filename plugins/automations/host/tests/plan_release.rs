@@ -139,3 +139,26 @@ async fn a_row_held_for_the_plan_is_released_when_that_plan_frees() {
     assert_eq!(n["n"], 1, "{n}");
     assert_eq!(row(&k).await["state"], "on");
 }
+
+fn started(k: &Kernel, session: &str) {
+    let ctx = k.ctx("wisp.runtime").unwrap();
+    ctx.emit(&ctx.root_call(), &wisp_runtime_api::events::TurnStarted { session_id: session.into(), turn_id: "u9".into() });
+}
+
+/// Round 177's review: a normal, on-time reset sends no `budget.plan_free`, so the row kept saying held until its run
+/// ended. Its held run starting (`turn.started`) clears it; another run's start (not one the rows hold) doesn't.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_row_held_for_the_plan_clears_when_its_held_run_starts_after_an_on_time_reset() {
+    let clock = FakeClock::at(T0);
+    let k = kernel(&clock).await;
+    let ev = json!({ "on": "chat.message", "key": "chat:slack:U1:2", "at": T0, "summary": "deploy",
+        "payload": { "channel": "slack", "user": "U1", "text": "deploy", "trusted": true } });
+    k.call(Caller::user(), "automations.trigger.push", ev).await.unwrap();
+    held(&k, "u1");
+    until_state(&k, "held").await;
+    started(&k, "t2");
+    tokio::time::sleep(std::time::Duration::from_millis(150)).await;
+    assert_eq!(row(&k).await["state"], "held", "another run's start");
+    started(&k, "t1");
+    until_state(&k, "on").await;
+}

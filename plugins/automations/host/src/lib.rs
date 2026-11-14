@@ -256,6 +256,7 @@ impl Plugin for AutomationsPlugin {
     fn setup(&self, s: &mut Setup) -> Result<()> {
         let engine = Arc::new(engine::Engine::new());
         crate::trigger::register(s, &engine);
+        crate::plan::on_started(s, &engine);
         let started = engine.clone();
         // a scheduled task acts without you: a foreign formula's needs --trust (ADR-0028)
         let info =
@@ -290,6 +291,8 @@ impl Plugin for AutomationsPlugin {
                 store.define_entity(d).map_err(store_err)?;
             }
             started.open((*store).clone());
+            // rows held for the plan before a restart: their run's start still clears them
+            started.seed_plan_runs().await;
             let clock = ctx.clock()?;
             let c2 = ctx.clone();
             ctx.spawn(async move {
