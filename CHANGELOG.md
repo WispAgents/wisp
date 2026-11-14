@@ -207,6 +207,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Fixed
 
+- **v2: deleting a running task.** Deleting a task now stops its run first, even one still starting: its CLI never starts for a deleted task and the task never comes back.
 - **v2: sandboxes and far delegates.** A project over about 1.4 MB now reaches its sandbox (up to 256 MB), and deleting a lead also deletes its delegates' copies on other machines. A delegate's same-size edit made in the second its copy was checked out is no longer lost on the way back.
 - **v2 grid: v1 sign-ins carry over.** Browsers and devices signed in to wisp Cloud under v1 stay signed in after the move to v2 (v1 hashed their tokens differently).
 - **v2: account cools.** An account cooled at its usage limit no longer becomes ready again just because Settings checked it is still signed in; signing in again still clears it. Try it two ways: a pair is refused as one on any error after a run starts, and a trigger row held for the plan clears when its run starts.
