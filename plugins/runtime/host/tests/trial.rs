@@ -13,7 +13,7 @@ use wisp_runtime_api::commands::{FollowUpArgs, StartArgs, TrialArgs, TrialLink, 
 use wisp_runtime_api::model::TurnStatus;
 
 fn start(prompt: &str, agent: &str) -> StartArgs {
-    StartArgs { prompt: prompt.into(), agent: Some(agent.into()), cwd: Some("/tmp".into()), ..StartArgs::default() }
+    StartArgs { prompt: prompt.into(), agent: Some(agent.into()), cwd: Some(common::tmp()), ..StartArgs::default() }
 }
 
 async fn ended(r: &common::Rig, id: &str) -> bool {

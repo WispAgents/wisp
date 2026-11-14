@@ -21,7 +21,7 @@ fn lead(capped: bool) -> StartArgs {
     }
     let mut ext = BTreeMap::new();
     ext.insert("wisp.runtime".to_owned(), slot);
-    StartArgs { prompt: "slow lead".into(), cwd: Some("/tmp".into()), ext, ..StartArgs::default() }
+    StartArgs { prompt: "slow lead".into(), cwd: Some(common::tmp()), ext, ..StartArgs::default() }
 }
 
 fn answers() -> Recorder {
@@ -62,7 +62,7 @@ async fn a_delegate_on_another_machine_runs_on_a_copy_there_and_says_where() {
     // the lead's work goes to the machine, one copy per lead and member
     let carry = asked(&r, "machines.carry");
     assert_eq!(carry.len(), 1, "{carry:?}");
-    assert_eq!((carry[0]["id"].as_str(), carry[0]["cwd"].as_str()), (Some("m1"), Some("/tmp")));
+    assert_eq!((carry[0]["id"].as_str(), carry[0]["cwd"].as_str()), (Some("m1"), Some(common::tmp().as_str())));
     assert_eq!(carry[0]["key"], format!("{}-far", id.0));
     // the task runs there, in the copy, with the lead's paths as paths in it, told it's elsewhere
     let routed = asked(&r, "machines.route");
@@ -92,7 +92,7 @@ async fn a_delegate_on_another_machine_runs_on_a_copy_there_and_says_where() {
     assert_eq!(bring.len(), 1, "{bring:?}");
     assert_eq!(
         (bring[0]["id"].as_str(), bring[0]["from"].as_str(), bring[0]["into"].as_str()),
-        (Some("m1"), Some("/there/copies/k/repo"), Some("/tmp"))
+        (Some("m1"), Some("/there/copies/k/repo"), Some(common::tmp().as_str()))
     );
     let again = r.rt.results(ResultsArgs { id: id.clone(), ids: Vec::new(), wait: Some(0) }).await.unwrap();
     assert!(!again.reports[0].text.contains("in your folder"), "{again:?}");
@@ -145,7 +145,7 @@ async fn deleting_the_lead_lets_its_delegates_elsewhere_go() {
     assert_eq!(out[0].id.0, "m1|r1", "{out:?}");
     assert!(asked(&r, "machines.uncarry").is_empty(), "nothing goes while the lead is here");
     // a task that never delegated elsewhere, deleted first: it lets nothing go
-    let other = r.rt.create(StartArgs { prompt: "alone".into(), cwd: Some("/tmp".into()), ..StartArgs::default() }).await.unwrap().id;
+    let other = r.rt.create(StartArgs { prompt: "alone".into(), cwd: Some(common::tmp()), ..StartArgs::default() }).await.unwrap().id;
     r.rt.delete(other.as_str()).await.unwrap();
     r.rt.delete(id.as_str()).await.unwrap();
     until("the delegate there goes", || async { !asked(&r, "machines.uncarry").is_empty() }).await;

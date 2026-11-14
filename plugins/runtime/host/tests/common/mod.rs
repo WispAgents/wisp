@@ -245,6 +245,12 @@ pub async fn rig() -> Rig {
     rig_with(Recorder::default()).await
 }
 
+/// A folder a task may run in on this OS (it must exist: a task whose folder is gone never starts): `/tmp`, and
+/// Windows' temp folder there (`/tmp` there is `C:\tmp`, which is no folder).
+pub fn tmp() -> String {
+    if cfg!(windows) { std::env::temp_dir().display().to_string().trim_end_matches('\\').to_owned() } else { "/tmp".to_owned() }
+}
+
 /// Waits (up to 5 s) until `f` holds.
 pub async fn until<F, Fut>(what: &str, mut f: F)
 where

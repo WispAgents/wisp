@@ -11,7 +11,7 @@ use std::path::Path;
 use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
 
-use common::{Api, ended, start_with, temp};
+use common::{Api, ended, script, start_with, temp};
 use serde_json::{Value, json};
 
 fn wisp(dir: &Path, cwd: &Path, port: u16, args: &[&str]) -> (i32, String, String) {
@@ -428,10 +428,12 @@ async fn a_task_never_runs_in_the_servers_own_folder() {
 #[tokio::test(flavor = "multi_thread")]
 async fn a_harness_from_brew_is_installed_when_it_isnt_there() {
     let dir = temp("serve-kinds-brew");
-    let brew = dir.join("brew");
-    std::fs::write(&brew, format!("#!/bin/sh\necho \"$@\" >> {}\n", dir.join("brew.log").display())).unwrap();
-    #[cfg(unix)]
-    std::fs::set_permissions(&brew, std::os::unix::fs::PermissionsExt::from_mode(0o755)).unwrap();
+    let log = dir.join("brew.log");
+    let brew = script(
+        &dir.join("brew"),
+        &format!("#!/bin/sh\necho \"$@\" >> {}\n", log.display()),
+        &format!(">> \"{}\" echo(%~1 %~2\n", log.display()),
+    );
     let (serve, port) = start_with(&dir, &[("WISP_GROK_BIN", "/no/such/grok"), ("WISP_BREW", brew.to_str().unwrap())]);
     let api = Api { http: reqwest::Client::new(), port, n: 0.into() };
     // there already: nothing runs

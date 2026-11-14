@@ -11,7 +11,7 @@ use wisp_runtime_api::commands::{FollowUpArgs, StartArgs};
 use wisp_runtime_api::model::{Mode, TurnStatus};
 
 fn capped(prompt: &str, mode: Option<Mode>, cap: Mode) -> StartArgs {
-    StartArgs { prompt: prompt.into(), cwd: Some("/tmp".into()), mode, cap: Some(cap), ..StartArgs::default() }
+    StartArgs { prompt: prompt.into(), cwd: Some(common::tmp()), mode, cap: Some(cap), ..StartArgs::default() }
 }
 
 #[tokio::test(flavor = "multi_thread")]

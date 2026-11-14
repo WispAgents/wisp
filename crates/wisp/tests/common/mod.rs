@@ -99,6 +99,26 @@ pub fn install_fakes(dir: &Path, names: &[&str]) {
     wisp_testkit::install_fakes_from(dir, names, &agent, &gh).unwrap();
 }
 
+/// A fake CLI a test writes itself, at `at` without an extension: the `sh` script off Windows (made executable), and
+/// on Windows, which runs no sh script, `at.cmd` holding `cmd` (a batch file, as npm installs CLIs there; wisp quotes
+/// each argument for cmd.exe, so read them with `%~1`). The path to name it by comes back.
+pub fn script(at: &Path, sh: &str, cmd: &str) -> PathBuf {
+    #[cfg(unix)]
+    {
+        let _ = cmd;
+        std::fs::write(at, sh).unwrap();
+        std::fs::set_permissions(at, std::os::unix::fs::PermissionsExt::from_mode(0o755)).unwrap();
+        at.to_owned()
+    }
+    #[cfg(windows)]
+    {
+        let _ = sh;
+        let file = at.with_extension("cmd");
+        std::fs::write(&file, format!("@echo off\r\n{}", cmd.replace("\r\n", "\n").replace('\n', "\r\n"))).unwrap();
+        file
+    }
+}
+
 pub fn start(dir: &Path) -> (Serve, u16) {
     start_with(dir, &[])
 }

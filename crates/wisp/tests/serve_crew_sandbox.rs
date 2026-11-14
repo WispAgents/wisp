@@ -83,7 +83,7 @@ async fn setup(name: &str) -> Setup {
     let bin = dir.join("bin");
     let env = vec![
         ("WISP_WEB_DIR".into(), dir.join("no-web").display().to_string()),
-        ("WISP_CLAUDE_BIN".into(), bin.join("claude").display().to_string()),
+        ("WISP_CLAUDE_BIN".into(), bin.join(format!("claude{}", std::env::consts::EXE_SUFFIX)).display().to_string()),
     ];
     let (grid, gport, stop) = wisp_grid::edge::dev(&data, 0, PathBuf::from(env!("CARGO_BIN_EXE_wisp")), env, 600_000).await.unwrap();
     let url = format!("http://wisp.localhost:{gport}");

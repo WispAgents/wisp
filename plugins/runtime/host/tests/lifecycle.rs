@@ -12,7 +12,7 @@ use wisp_runtime_api::commands::{FollowUpArgs, ListArgs, QueueEditArgs, StartArg
 use wisp_runtime_api::model::{Activity, QueueItem, SessionState, TurnStatus};
 
 fn start(prompt: &str) -> StartArgs {
-    StartArgs { prompt: prompt.into(), cwd: Some("/tmp".into()), ..StartArgs::default() }
+    StartArgs { prompt: prompt.into(), cwd: Some(common::tmp()), ..StartArgs::default() }
 }
 
 fn follow(id: &wisp_runtime_api::SessionId, text: &str, queue: bool) -> FollowUpArgs {

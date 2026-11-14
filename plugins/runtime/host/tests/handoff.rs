@@ -24,7 +24,7 @@ async fn a_hand_off_to_another_harness_keeps_the_users_rules_and_effort_v1_hando
         prompt: "fix the login. Don't touch the migrations.".into(),
         agent: Some("fake".into()),
         effort: Some("max".into()),
-        cwd: Some("/tmp".into()),
+        cwd: Some(common::tmp()),
         ..StartArgs::default()
     };
     let id = r.rt.create(start).await.unwrap().id;
@@ -66,7 +66,7 @@ async fn a_hand_off_note_never_quotes_a_env_value_the_task_read_adr_0050() {
     let start = StartArgs {
         prompt: "envread and keep sk-live-handoff. Don't touch the key sk-live-handoff.".into(),
         agent: Some("fake".into()),
-        cwd: Some("/tmp".into()),
+        cwd: Some(common::tmp()),
         ..StartArgs::default()
     };
     let id = r.rt.create(start).await.unwrap().id;
@@ -93,7 +93,7 @@ async fn a_hand_off_note_never_quotes_a_env_value_the_task_read_adr_0050() {
 async fn a_btw_without_a_fork_sends_only_its_question_and_stores_no_earlier_step_text_adr_0050() {
     use wisp_runtime_api::commands::BtwArgs;
     let r = rig_on(Recorder::default(), vec![Fake::named("fake", "Fake CLI", &["low"])]).await;
-    let start = StartArgs { prompt: "envread it".into(), agent: Some("fake".into()), cwd: Some("/tmp".into()), ..StartArgs::default() };
+    let start = StartArgs { prompt: "envread it".into(), agent: Some("fake".into()), cwd: Some(common::tmp()), ..StartArgs::default() };
     let id = r.rt.create(start).await.unwrap().id;
     until("the first turn", || {
         let (rt, id) = (r.rt.clone(), id.0.clone());

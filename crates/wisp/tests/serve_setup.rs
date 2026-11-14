@@ -9,7 +9,7 @@ use std::path::Path;
 use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
 
-use common::{Api, ended, start_with, temp};
+use common::{Api, ended, script, start_with, temp};
 use serde_json::{Value, json};
 
 fn wisp(dir: &Path, cwd: &Path, port: u16, args: &[&str]) -> (i32, String, String) {
@@ -34,15 +34,14 @@ async fn a_tasks_setup_is_what_it_had_and_what_it_used() {
     std::fs::create_dir_all(cfg.join("skills/house-style")).unwrap();
     std::fs::write(cfg.join("skills/house-style/SKILL.md"), "---\nname: house-style\n---\nShort sentences.\n").unwrap();
     // an MCP server that answers initialize and tools/list
-    let server = dir.join("mcp-probe");
-    std::fs::write(&server, "#!/bin/sh\necho '{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{\"serverInfo\":{\"name\":\"probe\",\"version\":\"1.4.0\"}}}'\necho '{\"jsonrpc\":\"2.0\",\"id\":2,\"result\":{\"tools\":[{\"name\":\"do_x\"},{\"name\":\"do_y\"}]}}'\n").unwrap();
-    #[cfg(unix)]
-    std::fs::set_permissions(&server, std::os::unix::fs::PermissionsExt::from_mode(0o755)).unwrap();
+    let (init, list) = (
+        r#"{"jsonrpc":"2.0","id":1,"result":{"serverInfo":{"name":"probe","version":"1.4.0"}}}"#,
+        r#"{"jsonrpc":"2.0","id":2,"result":{"tools":[{"name":"do_x"},{"name":"do_y"}]}}"#,
+    );
+    let server =
+        script(&dir.join("mcp-probe"), &format!("#!/bin/sh\necho '{init}'\necho '{list}'\n"), &format!("echo {init}\necho {list}\n"));
     // and one that never answers
-    let slow = dir.join("mcp-slow");
-    std::fs::write(&slow, "#!/bin/sh\nexec sleep 30\n").unwrap();
-    #[cfg(unix)]
-    std::fs::set_permissions(&slow, std::os::unix::fs::PermissionsExt::from_mode(0o755)).unwrap();
+    let slow = script(&dir.join("mcp-slow"), "#!/bin/sh\nexec sleep 30\n", "ping -n 31 127.0.0.1 >nul\n");
     let (serve, port) = start_with(&dir, &[("CLAUDE_CONFIG_DIR", cfg.to_str().unwrap())]);
     let api = Api { http: reqwest::Client::new(), port, n: 0.into() };
     let r = api

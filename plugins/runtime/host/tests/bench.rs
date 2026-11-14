@@ -65,7 +65,7 @@ async fn amplification(burst: usize) -> (f64, u64, u64, u64, usize) {
     reader.execute_batch("PRAGMA wal_checkpoint(TRUNCATE); BEGIN;").unwrap();
     let _: i64 = reader.query_row("SELECT count(*) FROM runtime_session", [], |r| r.get(0)).unwrap();
     let before = size(&file);
-    let id = rt.create(StartArgs { prompt: "stream".into(), cwd: Some("/tmp".into()), ..StartArgs::default() }).await.unwrap().id.0;
+    let id = rt.create(StartArgs { prompt: "stream".into(), cwd: Some(common::tmp()), ..StartArgs::default() }).await.unwrap().id.0;
     for _ in 0..12_000 {
         if rt.turns(&id, None, Some(1)).await.unwrap().pop().is_some_and(|t| t.status == TurnStatus::Done) {
             break;

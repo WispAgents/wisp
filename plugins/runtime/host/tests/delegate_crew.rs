@@ -16,7 +16,7 @@ use wisp_runtime_api::model::TurnStatus;
 fn lead(team: &serde_json::Value) -> StartArgs {
     let mut ext = BTreeMap::new();
     ext.insert("wisp.runtime".to_owned(), json!({ "subagents": team, "capped": { "mode": "edits" } }));
-    StartArgs { prompt: "slow lead".into(), cwd: Some("/tmp".into()), ext, ..StartArgs::default() }
+    StartArgs { prompt: "slow lead".into(), cwd: Some(common::tmp()), ext, ..StartArgs::default() }
 }
 
 fn task(subagent: &str, prompt: &str) -> DelegateTask {

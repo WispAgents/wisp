@@ -15,7 +15,7 @@ use wisp_runtime_api::model::TurnStatus;
 async fn a_signed_out_run_is_sent_again_once_its_login_lands_v1_sign_in_rerun() {
     let r = rig().await;
     let id =
-        r.rt.create(StartArgs { prompt: "signedout fix the login".into(), cwd: Some("/tmp".into()), ..StartArgs::default() })
+        r.rt.create(StartArgs { prompt: "signedout fix the login".into(), cwd: Some(common::tmp()), ..StartArgs::default() })
             .await
             .unwrap()
             .id

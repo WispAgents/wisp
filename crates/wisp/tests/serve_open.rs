@@ -9,7 +9,7 @@ mod common;
 use std::path::Path;
 use std::process::{Command, Stdio};
 
-use common::{Api, ended, start_with, temp};
+use common::{Api, ended, script, start_with, temp};
 use serde_json::{Value, json};
 
 fn wisp(dir: &Path, home: &str, cwd: &Path, port: u16, args: &[&str], env: &[(&str, &str)]) -> (i32, String, String) {
@@ -61,19 +61,22 @@ async fn open_resumes_restores_continues_and_adopts_back() {
     std::fs::create_dir_all(&store).unwrap();
     // the interactive CLI: says how it was run, and (resumed) adds a turn to its session log, as Claude Code does
     let log = dir.join("cli.log");
-    let script = dir.join("claude-cli");
     let turn = format!("{}\n{}", user("one more from the CLI", "2026-11-09T10:00:00.000Z"), said("Did it.", "2026-11-09T10:00:05.000Z"));
-    std::fs::write(
-        &script,
-        format!(
+    // Windows: its turn comes from a file (cmd's echo can't print JSON safely)
+    std::fs::write(dir.join("cli-turn.jsonl"), format!("{turn}\n")).unwrap();
+    let script = script(
+        &dir.join("claude-cli"),
+        &format!(
             "#!/bin/sh\necho \"$@\" >> '{}'\nif [ \"$1\" = \"--resume\" ]; then printf '%s\\n' '{}' >> \"$STORE/$2.jsonl\"; fi\n",
             log.display(),
             turn.replace('\'', "'\\''")
         ),
-    )
-    .unwrap();
-    #[cfg(unix)]
-    std::fs::set_permissions(&script, std::os::unix::fs::PermissionsExt::from_mode(0o755)).unwrap();
+        &format!(
+            ">> \"{}\" echo(%~1 %~2\nif \"%~1\"==\"--resume\" type \"{}\" >> \"%STORE%\\%~2.jsonl\"\n",
+            log.display(),
+            dir.join("cli-turn.jsonl").display()
+        ),
+    );
     let cli: Vec<(&str, &str)> = vec![
         ("WISP_CLAUDE_BIN", script.to_str().unwrap()),
         ("WISP_CODEX_BIN", script.to_str().unwrap()),
