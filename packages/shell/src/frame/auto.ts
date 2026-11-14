@@ -64,6 +64,16 @@ export function autoPick(p: AutoPreview | undefined): { agent: string; label: st
   return { agent: p.pick.agent, label: p.pick.model ? p.pick.label.split(' · ').slice(1).join(' · ') : p.pick.label };
 }
 
+/**
+ * What the launcher's pick button says beside the harness button. Under Auto: the preview's pick (or the harness Auto
+ * runs, before one arrives). With a harness picked, the harness button already names it, so only its model, thinking
+ * and account (v1 .rb-m/.rb-e/.rb-a; `fallback`, v1's `Default`, with no model): never the harness's name twice.
+ */
+export function runnerPick(o: { readonly agent: string; readonly shown?: string | undefined; readonly name: string; readonly model: string; readonly effort: string; readonly account: string; readonly fallback: string }): string {
+  if (o.agent === 'auto') return o.shown ?? o.name;
+  return [o.model || o.fallback, o.effort, o.account].filter(Boolean).join(' · ');
+}
+
 /** Your pick differs from what Auto showed: a harness of your own, or a model of your own on its harness. */
 export function overrideOf(p: AutoPreview | undefined, chose: { agent: string; model: string }): { key: string; type?: string } | undefined {
   if (!p?.pick || chose.agent === 'auto' || !chose.agent) return undefined;

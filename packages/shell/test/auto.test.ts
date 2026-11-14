@@ -1,5 +1,5 @@
 import { expect, test } from 'vitest';
-import { autoPick, neverRule, overrideOf, popOf, routeOf, routeTip, shortLabel, type AutoPreview } from '../src/frame/auto.ts';
+import { autoPick, neverRule, overrideOf, popOf, routeOf, routeTip, runnerPick, shortLabel, type AutoPreview } from '../src/frame/auto.ts';
 
 test('picking_your_own_harness_after_autos_preview_tells_auto_what_it_had_shown', () => {
   const p: AutoPreview = { pick: { agent: 'claude', model: 'sonnet', effort: 'high', key: 'claude:sonnet:high', label: 'Claude Code · Sonnet · High' }, type: 'bugfix', why: 'Balanced' };
@@ -64,4 +64,15 @@ test('the popover says why without what its title says, the odds once, Worth a t
   expect(popOf({ ...p, suggest: { ...p.suggest, key: 'claude:' } }).suggest).toBeNull();
   expect(shortLabel({ label: 'Claude Code · Opus 4.7 · Medium', model: 'opus' })).toBe('Opus 4.7 · Medium');
   expect(neverRule({ agent: 'codex', model: '' }, 'bug')).toBe('codex:@bug');
+});
+
+test('the pick beside the harness never names the harness twice: Auto shows its preview, a picked harness only its model_runner_pick_no_duplicate', () => {
+  const base = { name: 'Claude Code', model: '', effort: '', account: '', fallback: 'Default' };
+  // Auto: the preview's pick, or the harness Auto runs before one arrives
+  expect(runnerPick({ ...base, agent: 'auto', shown: 'Sonnet · High' })).toBe('Sonnet · High');
+  expect(runnerPick({ ...base, agent: 'auto' })).toBe('Claude Code');
+  // Claude Code picked from the menu: the harness button says Claude Code, this says its model (v1 .rb-m: Default)
+  expect(runnerPick({ ...base, agent: 'claude' })).toBe('Default');
+  expect(runnerPick({ ...base, agent: 'claude', model: 'opus', effort: 'high', account: 'Work' })).toBe('opus · high · Work');
+  expect(runnerPick({ ...base, agent: 'claude', model: 'opus' })).not.toContain('Claude Code');
 });

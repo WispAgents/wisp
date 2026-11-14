@@ -116,6 +116,10 @@ export interface LauncherProps {
   readonly runner: {
     readonly label: string;
     readonly title: string;
+    /** Auto is the pick: the harness button shows Auto's mark and `pick` is Auto's preview (launcher.autoPreview, with
+     * `logo`). Otherwise the harness button shows the harness's `logo`, and `pick` is its model · thinking · account
+     * (launcher.model, v1 .rb-m), never the harness's name again. */
+    readonly auto: boolean;
     readonly pick: string;
     readonly pickTitle: string;
     readonly logo?: string;
@@ -354,9 +358,16 @@ export function Launcher(props: LauncherProps): JSX.Element {
               render={(trigger) => (
                 <button type="button" {...trigger()} data-kit="runner-btn" data-part="launcher.harness" title={props.runner.title}>
                   <span data-kit="rb-logo">
-                    <i data-kit="auto-mark">
-                      <Icon name="spark" />
-                    </i>
+                    <Show
+                      when={!props.runner.auto && props.runner.logo}
+                      fallback={
+                        <i data-kit="auto-mark">
+                          <Icon name="spark" />
+                        </i>
+                      }
+                    >
+                      {(src) => <img src={src()} alt="" />}
+                    </Show>
                   </span>
                   <span data-kit="rb-h" data-text="control">
                     {props.runner.label}
@@ -372,14 +383,16 @@ export function Launcher(props: LauncherProps): JSX.Element {
                   type="button"
                   {...trigger()}
                   data-kit="auto-pv"
-                  data-part="launcher.autoPreview"
+                  data-part={props.runner.auto ? 'launcher.autoPreview' : 'launcher.model'}
                   aria-expanded={props.runner.pickOpen === undefined ? undefined : props.runner.pickOpen ? 'true' : 'false'}
                   title={props.runner.pickTitle}
                   aria-label={props.runner.pickTitle}
                 >
-                  <span data-kit="rb-logo" data-small="">
-                    <Show when={props.runner.logo}>{(src) => <img src={src()} alt="" />}</Show>
-                  </span>
+                  <Show when={props.runner.auto}>
+                    <span data-kit="rb-logo" data-small="">
+                      <Show when={props.runner.logo}>{(src) => <img src={src()} alt="" />}</Show>
+                    </span>
+                  </Show>
                   <span data-kit="apv-l" data-text="control">
                     {props.runner.pick}
                   </span>
