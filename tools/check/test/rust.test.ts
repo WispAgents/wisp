@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { codeLines, header, isTestFile } from '../core/rust.ts';
-import { RUST_MAX_FILE, RUST_MAX_FN, eventsInCode, longFns, rustEvents, rustLayers, rustManifests, rustMcp, rustMcpOwners, rustPath, rustSansIo, rustSetExt, rustSizes, rustTypedCommands, rustUnsafe } from '../rules/rust.ts';
+import { RUST_MAX_FILE, RUST_MAX_FN, eventsInCode, longFns, rustEvents, rustIndexCopy, rustLayers, rustManifests, rustMcp, rustMcpOwners, rustPath, rustSansIo, rustSetExt, rustSizes, rustTypedCommands, rustUnsafe } from '../rules/rust.ts';
 import { fixture, messages, run, writeTree } from './helpers.ts';
 
 test('rust-layers: plugins use other plugins through -api only; api ↛ core ↛ host; base crates use no plugin', async () => {
@@ -300,4 +300,45 @@ test('rust-path: env::var("PATH")/var_os("PATH") outside crates/wisp-proc fails 
   ]);
   const [m] = await messages(rustPath, root);
   assert.ok(m?.includes('search_path'), m);
+});
+
+test('rust-index-copy: fs::copy of a git index (near an index identifier or string) fails outside crates/wisp-proc unless a `// index-copy: not git\'s <why>` says why; other copies, comments and tests do not', async () => {
+  const root = writeTree(
+    new Map([
+      ['Cargo.toml', '[workspace]\nmembers = ["crates/*", "plugins/*/host"]\n'],
+      ['crates/wisp-proc/Cargo.toml', '[package]\nname = "wisp-proc"\n'],
+      ['crates/wisp-proc/src/index.rs', 'fn copy_index(from: &Path, to: &Path) { std::fs::copy(from, to); }'], // the helper's home: none
+      ['plugins/carry/host/Cargo.toml', '[package]\nname = "wisp-carry"\n'],
+      [
+        'plugins/carry/host/src/lib.rs',
+        [
+          'async fn scratch_index(real: &Path, scratch: &Path) {', // 1
+          '    let _ = tokio::fs::copy(real, scratch).await;', // 2: the fn names an index: the finding
+          '}',
+          'async fn tree_of(dir: &Path) {', // 4
+          '    let at = git(dir, &["rev-parse", "--git-path", "index"]).await;',
+          '    let real = dir.join(at.trim());',
+          '    std::fs::copy(&real, &tmp).unwrap();', // 7: a git-path string above: the finding
+          '}',
+          'fn assets(from: &Path, to: &Path) {',
+          '    std::fs::copy(from, to).unwrap();', // no index near: none
+          '    // std::fs::copy(index, to)', // a comment: none
+          '}',
+          'fn env_files(from: &Path) {',
+          '    // index-copy: not git\'s the .env files a worktree gets',
+          '    std::fs::copy(from, index_dir.join(".env")).unwrap();', // a reason above: none
+          '    std::fs::copy(from, index_dir.join(".npmrc")).unwrap(); // index-copy: not git\'s an rc file',
+          '    // index-copy: not git\'s',
+          '    std::fs::copy(from, index_dir.join("x")).unwrap();', // 18: no reason given: the finding
+          '}',
+          '#[cfg(test)]',
+          'mod tests { fn t(index: &Path) { std::fs::copy(index, to); } }', // tests: none
+        ].join('\n'),
+      ],
+      ['plugins/carry/host/tests/racy.rs', 'fn t(index: &Path) { std::fs::copy(index, to).unwrap(); }'], // a test file: none
+    ]),
+  );
+  assert.deepEqual(await run(rustIndexCopy, root), ['plugins/carry/host/src/lib.rs:18 rust-index-copy', 'plugins/carry/host/src/lib.rs:2 rust-index-copy', 'plugins/carry/host/src/lib.rs:7 rust-index-copy']);
+  const [m] = await messages(rustIndexCopy, root);
+  assert.ok(m?.includes('wisp_proc::copy_index'), m);
 });
