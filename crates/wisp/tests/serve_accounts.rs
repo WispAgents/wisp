@@ -187,10 +187,23 @@ async fn a_run_moved_to_the_second_account_records_that_account_on_its_turn() {
 #[tokio::test(flavor = "multi_thread")]
 async fn an_early_reset_ends_the_accounts_cool_at_once() {
     let dir = temp("serve-accounts-early");
+    // the CLI's own login is signed in (the fake reads auth.json), or its row says signed out and never ready
     std::fs::create_dir_all(dir.join("codex-home")).unwrap();
+    std::fs::write(dir.join("codex-home/auth.json"), "{}").unwrap();
     let (serve, port) = start(&dir);
     let api = Arc::new(Api { http: reqwest::Client::new(), port, n: 0.into() });
     api.cmd("accounts.add", json!({ "agent": "codex", "id": "w1", "label": "Work", "kind": "work" })).await;
+    // w1's sign-in, which `accounts.add` starts, ends before the cool: a sign-in ends a cool, and this one would land
+    // after it at a random time
+    until("w1 signs in", async || {
+        let v = api.cmd("accounts.login", json!({ "agent": "codex", "account": "w1" })).await;
+        (v["state"] == "done").then_some(v)
+    })
+    .await;
+    for account in ["", "w1"] {
+        let st = api.cmd("accounts.login.status", json!({ "agent": "codex", "account": account })).await;
+        assert_eq!(st["signedIn"], true, "{account:?} signed in: {st}");
+    }
     let now = i64::try_from(std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_millis()).unwrap();
     let old = now + 3 * 3_600_000;
     for account in ["default", "w1"] {
@@ -201,6 +214,11 @@ async fn an_early_reset_ends_the_accounts_cool_at_once() {
         v["accounts"].as_array().and_then(|l| l.iter().find(|a| a["id"] == id)).map(|a| a["until"].clone()).unwrap_or_default()
     };
     assert_eq!(until_of("default").await, old, "cooled until the old reset");
+    // a check that says still signed in (Settings → Agents runs one after every accounts command) keeps the cool
+    for account in ["", "w1"] {
+        api.cmd("accounts.login.status", json!({ "agent": "codex", "account": account })).await;
+    }
+    assert_eq!((until_of("default").await, until_of("w1").await), (json!(old), json!(old)), "still signed in: still cooled");
     // the CLI's own login: 80% of the five-hour window, resetting in three hours; then OpenAI banks a reset
     let read = |used: f64, at: i64| json!({ "agent": "codex", "account": "", "report": { "windows": [{ "id": "five_hour", "used": used, "resetsAt": at, "ms": 18_000_000 }], "complete": true } });
     api.cmd("budget.record", read(0.8, old)).await;

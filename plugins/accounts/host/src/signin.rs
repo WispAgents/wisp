@@ -208,9 +208,25 @@ pub async fn start(ctx: &Ctx, st: &Arc<State>, h: Arc<dyn Harness>, acc: &str) -
             last_line(&out)
                 .unwrap_or_else(|| format!("{} exited ({}).", l.bin, exit.code.map_or_else(|| "signal".into(), |c| c.to_string())))
         });
+        if ok {
+            signed_in_again(&st2, &agent, &acc2).await;
+        }
         finish(&ctx2, &st2, &id, &agent, &acc2, if ok { LoginState::Done } else { LoginState::Failed }, why).await;
     });
     Ok(v)
+}
+
+/// A sign-in that finished ends the account's cool, even on an account that was signed in already (signed in again,
+/// maybe as someone else or on another plan): `identify` only ends it when the login changed.
+async fn signed_in_again(st: &State, agent: &str, acc: &str) {
+    let list = {
+        let mut map = lock(&st.accounts);
+        map.get_mut(agent).filter(|l| accounts::multi(l)).and_then(|list| accounts::uncool(list, account_key(acc)).then(|| list.clone()))
+    };
+    if let Some(l2) = list {
+        let a = agent.to_owned();
+        let _ = st.store.write(move |w| store::put_accounts(w, &a, &l2)).await;
+    }
 }
 
 async fn finish(ctx: &Ctx, st: &State, id: &str, agent: &str, acc: &str, state: LoginState, error: Option<String>) {

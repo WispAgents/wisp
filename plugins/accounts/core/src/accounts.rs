@@ -198,7 +198,10 @@ pub fn uncool(list: &mut [Stored], id: &str) -> bool {
     list.iter_mut().find(|a| a.id == id).is_some_and(|a| a.limit.take().is_some())
 }
 
-/// What the CLI says about a login, kept for the page.
+/// What the CLI says about a login, kept for the page. A sign-in (signed out, or not known yet, and now signed in)
+/// ends the account's cool; a check that it's still signed in doesn't (Settings → Agents asks after every accounts
+/// command, so the cool a usage limit just set would last milliseconds). A sign-in flow that finishes ends it too
+/// (wisp.accounts' `signin`, with `uncool`).
 pub fn identify(list: &mut [Stored], id: &str, email: Option<&str>, plan: Option<&str>, signed_in: Option<bool>) -> bool {
     let id = if id.is_empty() { DEFAULT } else { id };
     let Some(a) = list.iter_mut().find(|a| a.id == id) else { return false };
@@ -208,11 +211,11 @@ pub fn identify(list: &mut [Stored], id: &str, email: Option<&str>, plan: Option
     if let Some(p) = plan.filter(|p| !p.is_empty()) {
         a.plan = p.chars().take(40).collect();
     }
+    if signed_in == Some(true) && a.signed_in != Some(true) {
+        a.limit = None;
+    }
     if signed_in.is_some() {
         a.signed_in = signed_in;
-    }
-    if signed_in == Some(true) {
-        a.limit = None;
     }
     true
 }
@@ -263,5 +266,22 @@ mod tests {
             (AccountState::Ready, AccountKind::Work, "Ann.b"),
             "signing in clears the limit; a team plan is work"
         );
+    }
+
+    /// Round 179: the check Settings → Agents runs after every accounts command said "still signed in" and ended the
+    /// cool a usage limit had just set (`serve_accounts.rs` `an_early_reset_ends_the_accounts_cool_at_once` failed on
+    /// CI both ways). Only a sign-in ends it: from signed out, or from not known yet.
+    #[test]
+    fn a_check_that_says_still_signed_in_keeps_the_cool() {
+        let mut l = two();
+        identify(&mut l, "w1", None, None, Some(true));
+        cool(&mut l, "w1", 1000, "5-hour limit");
+        identify(&mut l, "w1", None, None, Some(true));
+        assert_eq!(view(&l, 10)[1].state, AccountState::Limit, "still signed in: still cooled");
+        identify(&mut l, "w1", None, None, None);
+        assert_eq!(view(&l, 10)[1].until, Some(1000), "no answer changes nothing");
+        identify(&mut l, "w1", None, None, Some(false));
+        identify(&mut l, "w1", None, None, Some(true));
+        assert_eq!(view(&l, 10)[1].state, AccountState::Ready, "signed out, then in again: a new login, no cool");
     }
 }
