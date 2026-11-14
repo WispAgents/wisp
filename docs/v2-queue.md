@@ -541,6 +541,10 @@ alone.
      - The real runs use the owner's Claude Code and Codex accounts: short prompts, recorded in the round doc with the
        transcripts.
 
+## Task history redesign (owner, 2026-11-14)
+
+The owner doesn't like how a task shows older turns and an opened turn. Research: docs/research/long-task-history.md; three directions with a clickable mock: docs/design/history-redesign.md and .html (A · Ledger + scrubber, B · Chapters, C · Outline + stage). Recommended: A, with C's full-page turn on phones. Waiting on the owner's pick. Building it departs from v1 parity on this screen, so it gets an ADR superseding ADR-0016 for the task history. Not reordered: it's built where the owner places it.
+
 ## After v2 is 100% (owner, 2026-11-14)
 
 When every v1 row is built and the full suite has passed several runs in a row (no flakes), list the Linear tickets in TODO and work them, one concern per fresh coder. Not before.
