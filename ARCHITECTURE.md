@@ -22,7 +22,8 @@ phone app.
 ```
  apps/web (Solid bundle) ── browser
  apps/desktop (Tauri)    ── same bundle, wisp core in-process
- mobile (Capacitor)      ── same bundle in the APK, its own frontend; sshj/grid as transports
+ mobile (Capacitor)      ── same bundle in the APK/IPA, its own frontend (ADR-0065: Material 3 / HIG via kit variants);
+                            sshj (Android) / Citadel (iOS) / grid as transports; push via the grid relay
         │  @wisp/client: entities · navigation · machines · drafts · settings · N peers
         ▼  SSE /api/events?topics&cursor  +  POST /api/cmd (Idempotency-Key)
  ┌──────────────────────────── wisp (Rust, one binary) ───────────────────────────────┐
@@ -79,7 +80,8 @@ apps/
   web/                  the one bundle's entry
   desktop/              Tauri shell, embeds the wisp core
   grid/                 wisp Grid in Rust
-mobile/                 Android (Capacitor + sshj): ships the bundle, its own frontend
+mobile/                 the phone apps (Capacitor, ADR-0065): android/ (Java, sshj), ios/ (Swift, Citadel), web/ (@wisp/mobile);
+                        ship the bundle, their own frontend
 npm/                    the wisp-agents launcher and @wisp/core-<os>-<arch> binary packages
 tools/                  check (structure rules), test runner, budgets, codegen, setup-monoflow
 docs/  design/  qa/  spikes/

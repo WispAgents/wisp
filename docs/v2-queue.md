@@ -509,6 +509,49 @@ alone.
    - **Gestures (owner, 2026-11-13):** prefer gestures where they fit better than tapping, and be creative: swipe a row to
      archive, mark read or save for later; long-press for the menu; pull to refresh; swipe between tasks; drag to reorder
      the queue; edge swipe back. Every gesture also has a visible control, so nobody has to know it.
+   - **Decided (2026-11-14):** ADR-0065 (Capacitor on both, the bundle inside, one `NativeBridge`; SSH / LAN via
+     Bonjour / wisp Cloud / own grid; push as a `wisp.push` channel transport relayed by the grid; offline from the
+     cache; `data-platform` kit variants; `qa/platform.mjs` instead of parity) and `design/mobile.md` Part A. Its five
+     open questions wait on the owner (Sign in with Apple, push without a Cloud account, where the app opens, dynamic
+     colour, iOS icons); their defaults hold until answered.
+   - **Build steps (one coder each, in order; each writes its ADR-0065 edge-case tests first):**
+     1. **Platform look plumbing:** `'ios'` in `PlatformKind` plus `safeArea`, `windowLayout`, `openInApp`, `onBack`
+        (ADR-0065 §5; contract: `monoflow graph impact` first), the shell sets
+        `data-platform`, the kit's `usePlatform()`, the `platform-branch` rule in `tools/check`, the §A.8 token sets
+        in `@wisp/tokens`, a platform switch in the kit gallery. Tests: `a_browser_never_sets_data_platform`,
+        `a_feature_reading_the_platform_fails`.
+     2. **`qa/platform.mjs`:** the metric table from `design/mobile.md` §A.8, the phone sizes, 100/200 % text; the
+        phone views added to `qa/layout.mjs`/`qa/feedback.mjs` and kept out of `qa/parity.mjs`.
+     3. **Kit variants: frame and navigation:** `AppFrame`/`Frame`, `NavigationBar` (new), `Fab` (new), `Toolbar`,
+        safe areas, the compose button on iOS.
+     4. **Kit variants: rows and surfaces:** `ListRow`, `Swipe` (M3 band / Mail actions), `Section`/`SettingsGroup`,
+        `Card`, `Pill`, `Skeleton`, `EmptyState`, `Banner`, `Icon` sets.
+     5. **Kit variants: overlays:** `Sheet` (new), `Dialog`, `Menu` (long-press sheet / context menu), `Popover`,
+        `Toast` (snackbar / capsule), `Tooltip`.
+     6. **Kit variants: controls:** `Button`, `IconButton`, `Switch`, `Tabs` (segmented on iOS), `Input`/`Field`,
+        `Select`/`RadioGroup`/`Combobox`, `PromptBox`/composer.
+     7. **Gestures:** the kit's gesture registry with twins (`every_gesture_names_its_control`), long-press, pull to
+        refresh (reconnect now), swipe between tasks on the head, drag to reorder the queue, selection mode, the
+        Android predictive-back and iOS interactive-back bridges, accessibility actions.
+     8. **The app's frontend:** `@wisp/mobile` routes (Tasks · Crew · Stuff · Computers), launch on Computers, N
+        computers merged in one list, deep links, notification taps, share-in into New task.
+     9. **Android native:** keys and tokens into the Keystore (migrating v1's), QR host-key pinning, a port per
+        computer, Bonjour, the foreground-service rules, back progress events; JUnit for each.
+     10. **iOS native:** `mobile/ios` (Capacitor), `WispSshPlugin.swift` on Citadel, Keychain, the Share Extension,
+         `ASWebAuthenticationSession` sign-in, background close/resume; XCTest for each; the `bridge-contract` suite
+         green on both.
+     11. **Push:** `plugins/push` (`wisp.push`, HPKE seal, `push.pair`), the grid relay (`/api/push/register`,
+         `/api/push/send`, FCM/APNs, UnifiedPush), the Android messaging service and the iOS Notification Service
+         Extension, answer/reply actions.
+     12. **Offline and bad network:** the silent-stream reopen, *Waiting to send*, cached first paint, the
+         `spikes/phone-bench/ (extended to the app)` bench and `phone.firstList` + app-size budgets in `tools/budgets.ts`.
+     13. **Screens, part 1:** Tasks, the task page (side panel, composer, queue), New task, search, in both looks;
+         seen on the emulator and simulator, light and dark.
+     14. **Screens, part 2:** Settings (the app's panes too), My Stuff and apps, Crew, Computers and cloud sign-in
+         (Apple sign-in once the owner answers).
+     15. **Store and release:** `android.yml` for the v2 app, `ios.yml` (TestFlight), listings, Data safety / privacy
+         labels, review notes, account deletion; v1-features rows F-phone-*, F-stuff-10, F-share-4, F-set-6 moved
+         to built as each lands.
 9. [ ] **Cutover:**
    - Once our own tasks run on wisp v2, turn on `.wisp/` tracking for this repo (owner, 2026-11-10). Don't backfill the v2 rewrite sessions run on v1.
    - delete v1 (`server/`, `web/`, v1 `grid/`, v1 `desktop/` packaging, v1 tests and workflows);
