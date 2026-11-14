@@ -33,8 +33,8 @@ test('capacitorBridge calls WispSsh through Capacitor’s native bridge and read
   const b = capacitorBridge(f.cap);
   assert.deepEqual(await b.list(), [
     { id: 'a', kind: 'ssh', name: 'Studio', target: 'me@studio', port: 4477 },
-    { id: 'g', kind: 'grid', name: 'g', url: 'https://mo.grid', token: 't' },
-  ]);
+    { id: 'g', kind: 'grid', name: 'g', url: 'https://mo.grid' },
+  ], 'a token in the list is never read');
   assert.deepEqual(await b.connect('a', { password: 'pw' }), { kind: 'ssh', port: 5001, token: 'wlt', name: 'Studio', peer: 'studio-1f3a' });
   await b.disconnect('a');
   await b.save({ id: 'a', peer: 'studio-1f3a' });
@@ -98,15 +98,17 @@ test('v1’s computers: SSH ones keep their target, port and key; v1’s npx com
   assert.deepEqual(fromV1({ name: 'no id' }), []);
 });
 
-test('migrateV1 copies them once, skipping ones already on the device, and leaves v1’s list as it was', async () => {
+test('migrateV1 copies them once, skipping ones already on the device, then deletes v1’s list', async () => {
   const v1 = JSON.stringify([{ id: 'a', target: 'me@a' }, { id: 'b', target: 'me@b' }]);
   const store = new Map<string, string>([['wisp.machines', v1]]);
-  const storage = { getItem: (k: string) => store.get(k) ?? null, setItem: (k: string, v: string) => void store.set(k, v) };
+  const storage = { getItem: (k: string) => store.get(k) ?? null, setItem: (k: string, v: string) => void store.set(k, v), removeItem: (k: string) => void store.delete(k) };
   const bridge = fakeBridge([{ id: 'a', kind: 'ssh', name: 'kept', target: 'me@a' }]);
   assert.equal(await migrateV1(storage, bridge), 1);
   assert.deepEqual(bridge.computers.map((c) => [c.id, c.name]), [['a', 'kept'], ['b', 'b']]);
+  assert.equal(store.has('wisp.machines'), false, 'v1’s list is gone');
+  store.set('wisp.machines', v1); // an older build wrote it again
   assert.equal(await migrateV1(storage, bridge), 0, 'only once');
-  assert.equal(store.get('wisp.machines'), v1);
+  assert.equal(store.has('wisp.machines'), false);
   store.set('wisp.machines', '{broken');
   store.delete('wisp.machines.v2');
   assert.equal(await migrateV1(storage, bridge), 0, 'a damaged list brings nothing');

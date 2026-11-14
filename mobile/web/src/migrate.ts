@@ -1,12 +1,14 @@
 // v1's computers screen (mobile/www/app.js) kept its computers in this same origin's localStorage
-// (`wisp.machines`). v2 keeps them on the device (Computers.java), so the first start copies them
-// across once. v1's list is left as it was, so an older build still finds it.
+// (`wisp.machines`), grid device tokens included. v2 keeps them on the device (Computers.java), the
+// tokens in the Keystore (ADR-0065 §2), so the first start copies them across once and then deletes
+// v1's list: no token stays in web storage. A list that fails to copy stays, to try again next start.
 
-import type { Computer, NativeBridge } from './bridge.ts';
+import type { NativeBridge, NewComputer } from './bridge.ts';
 
 export interface StorageLike {
   getItem(key: string): string | null;
   setItem(key: string, value: string): void;
+  removeItem(key: string): void;
 }
 
 const V1 = 'wisp.machines';
@@ -25,7 +27,7 @@ function hostOf(target: string): string {
 }
 
 /** The v2 computers in one v1 entry: an SSH computer, or a grid account and its computers. */
-export function fromV1(m: Row): Computer[] {
+export function fromV1(m: Row): NewComputer[] {
   const id = str(m['id']);
   if (!id) return [];
   if (m['kind'] !== 'grid') {
@@ -37,16 +39,20 @@ export function fromV1(m: Row): Computer[] {
   const token = str(m['token']);
   if (m['signedOut'] === true || !token) return []; // signing in again makes a fresh entry
   const grid = str(m['grid']);
-  const own: Computer = { id, kind: 'grid', name: str(m['name']) || str(m['handle']) || 'wisp Cloud', url: str(m['url']), token, ...(grid && { grid }) };
+  const own: NewComputer = { id, kind: 'grid', name: str(m['name']) || str(m['handle']) || 'wisp Cloud', url: str(m['url']), token, ...(grid && { grid }) };
   const theirs = rows(m['computers'])
     .filter((c) => str(c['id']) && str(c['url']))
-    .map((c): Computer => ({ id: `${id}.${str(c['id'])}`, kind: 'grid', name: str(c['name']) || str(c['id']), url: str(c['url']), token, computer: str(c['id']), ...(grid && { grid }) }));
+    .map((c): NewComputer => ({ id: `${id}.${str(c['id'])}`, kind: 'grid', name: str(c['name']) || str(c['id']), url: str(c['url']), token, computer: str(c['id']), ...(grid && { grid }) }));
   return [...(str(m['url']) ? [own] : []), ...theirs];
 }
 
-/** Copies v1's computers in, once. Answers how many it saved. */
+/** Copies v1's computers in, once, then deletes v1's list (and its tokens). Answers how many it saved. */
 export async function migrateV1(storage: StorageLike | undefined, bridge: NativeBridge): Promise<number> {
-  if (!storage || storage.getItem(DONE)) return 0;
+  if (!storage) return 0;
+  if (storage.getItem(DONE)) {
+    storage.removeItem(V1); // copied by an earlier build that kept it: its tokens go now
+    return 0;
+  }
   let list: Row[] = [];
   try {
     list = rows(JSON.parse(storage.getItem(V1) ?? '[]'));
@@ -61,5 +67,6 @@ export async function migrateV1(storage: StorageLike | undefined, bridge: Native
     n += 1;
   }
   storage.setItem(DONE, '1');
+  storage.removeItem(V1);
   return n;
 }

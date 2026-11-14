@@ -1,7 +1,10 @@
 // The Android app's native side, as the bundle sees it: the WispSsh Capacitor plugin
 // (mobile/android/.../WispSshPlugin.java). Computers are kept on the device (Computers.java), each
 // reached by id: an SSH one through its own sshj tunnel (Reach.java), a grid one straight over
-// HTTPS with its device token. Typed structurally against the global Capacitor injects into the
+// HTTPS with its device token. Tokens (device tokens, computer tokens) and keys live in the Android
+// Keystore (ADR-0065 §2): a saved Computer never carries one; save() hands a new grid computer's token
+// down once, and only connect's Reached brings a token back, per connect, never to web storage.
+// Typed structurally against the global Capacitor injects into the
 // WebView, so this package has no @capacitor/core dependency.
 
 /** A computer saved on this phone. `peer` is its wisp's peer id once learnt from a welcome. */
@@ -11,6 +14,8 @@ interface Saved {
   readonly id: string;
   readonly name: string;
   readonly peer?: string;
+  /** a push channel is paired for it: the foreground service isn't needed for its alerts (ADR-0065 §3.6) */
+  readonly push?: boolean;
 }
 export interface SshComputer extends Saved {
   readonly kind: 'ssh';
@@ -22,24 +27,31 @@ export interface SshComputer extends Saved {
   readonly keyId?: string;
   /** a custom start command; '' runs the wisp binary the bootstrap installs */
   readonly command?: string;
+  /** the host key pinned from the desktop's QR code (`SHA256:…`): no other key is accepted, even the first time */
+  readonly fingerprint?: string;
 }
 export interface GridComputer extends Saved {
   readonly kind: 'grid';
   /** its wisp's own address: https://<handle>.<grid>, or <name>--<handle>.<grid> for your computer */
   readonly url: string;
-  /** the device token from the grid's sign-in (RFC 8628) */
-  readonly token: string;
   readonly grid?: string;
   /** set for one of your computers on the grid (it can't be woken from here) */
   readonly computer?: string;
 }
 
-/** Fields merged into a saved computer. */
+/**
+ * What save() adds: a grid computer comes with the device token from the grid's sign-in (RFC 8628),
+ * which goes straight into the Keystore. It is never read back (list() has none).
+ */
+export type NewComputer = SshComputer | (GridComputer & { readonly token: string });
+
+/** Fields merged into a saved computer. `token` (a renewed device token) is write-only, as above. */
 export interface ComputerPatch {
   readonly id: string;
   readonly peer?: string;
   readonly name?: string;
   readonly token?: string;
+  readonly push?: boolean;
 }
 
 /** How to reach a computer now. A tunnel may come back on another port: ask on every connect. */
@@ -56,13 +68,21 @@ export interface TunnelEvent {
 }
 
 export interface NativeBridge {
+  /** the saved computers, never with a token */
   list(): Promise<readonly Computer[]>;
-  /** adds one, or merges the fields given into the saved one (a learnt peer id) */
-  save(computer: Computer | ComputerPatch): Promise<void>;
+  /** adds one, or merges the fields given into the saved one (a learnt peer id, a renewed token) */
+  save(computer: NewComputer | ComputerPatch): Promise<void>;
   forget(id: string): Promise<void>;
   /** opens (or reuses) the way to it; rejects with why it can't (SSH refused, the script failed) */
   connect(id: string, opts?: { readonly password?: string }): Promise<Reached>;
   disconnect(id: string): Promise<void>;
+  /**
+   * *Trust the new key*, after the page's confirmation: keeps the fingerprint the last refused connect
+   * showed (`hostKeyRefused`), and replaces a QR pin. Rejects for any other fingerprint.
+   */
+  trustHostKey(id: string, fingerprint: string): Promise<void>;
+  /** Settings → Phone → *Stay connected* (off by default): the foreground service may hold SSH computers without push. Answers the switch. */
+  setStayConnected(on: boolean): Promise<boolean>;
   /** sends the app behind (Back with nothing left to close); its tunnels stay */
   leave(): Promise<void>;
   onTunnel(fn: (e: TunnelEvent) => void): () => void;
@@ -85,6 +105,19 @@ export interface CapacitorLike {
 
 export const PLUGIN = 'WispSsh';
 
+// The two refusals HostTrust.java says, in the key exchange before anything is sent.
+const CHANGED = 'This computer’s key changed: it is now ';
+const NOT_PINNED = 'This computer’s key isn’t the one its QR code showed: it is now ';
+
+/** A refused host key in a connect's rejection (or a tunnel line): the new fingerprint, for *Trust the new key*. */
+export function hostKeyRefused(message: string): { readonly fingerprint: string; readonly pinned: boolean } | undefined {
+  const m = message.replace(/^@@wisp fail ssh /, '');
+  for (const [p, pinned] of [[CHANGED, false], [NOT_PINNED, true]] as const) {
+    if (m.startsWith(p) && m.endsWith('.')) return { fingerprint: m.slice(p.length, -1), pinned };
+  }
+  return undefined;
+}
+
 const record = (v: unknown): Record<string, unknown> => (v && typeof v === 'object' ? (v as Record<string, unknown>) : {});
 const str = (v: unknown): string => (typeof v === 'string' ? v : '');
 
@@ -92,11 +125,12 @@ function computerOf(v: unknown): Computer | undefined {
   const o = record(v);
   const id = str(o['id']);
   if (!id) return undefined;
-  const base = { id, name: str(o['name']) || id, ...(str(o['peer']) && { peer: str(o['peer']) }) };
-  if (o['kind'] === 'grid') return { ...base, kind: 'grid', url: str(o['url']), token: str(o['token']), ...(str(o['grid']) && { grid: str(o['grid']) }), ...(str(o['computer']) && { computer: str(o['computer']) }) };
+  // a token is never taken from the list, even if a native side sent one
+  const base = { id, name: str(o['name']) || id, ...(str(o['peer']) && { peer: str(o['peer']) }), ...(o['push'] === true && { push: true }) };
+  if (o['kind'] === 'grid') return { ...base, kind: 'grid', url: str(o['url']), ...(str(o['grid']) && { grid: str(o['grid']) }), ...(str(o['computer']) && { computer: str(o['computer']) }) };
   if (o['kind'] !== 'ssh') return undefined; // a kind this app doesn't know: left alone
   const num = (k: string): object => (typeof o[k] === 'number' ? { [k]: o[k] } : {});
-  return { ...base, kind: 'ssh', target: str(o['target']), ...num('sshPort'), ...num('port'), ...(str(o['keyId']) && { keyId: str(o['keyId']) }), ...(str(o['command']) && { command: str(o['command']) }) };
+  return { ...base, kind: 'ssh', target: str(o['target']), ...num('sshPort'), ...num('port'), ...(str(o['keyId']) && { keyId: str(o['keyId']) }), ...(str(o['command']) && { command: str(o['command']) }), ...(str(o['fingerprint']) && { fingerprint: str(o['fingerprint']) }) };
 }
 
 function reachedOf(v: unknown): Reached {
@@ -127,6 +161,8 @@ export function capacitorBridge(cap: CapacitorLike | undefined): NativeBridge {
     forget: async (id) => void (await call('forgetComputer', { id })),
     connect: async (id, opts = {}) => reachedOf(await call('connect', { id, ...opts })),
     disconnect: async (id) => void (await call('disconnect', { id })),
+    trustHostKey: async (id, fingerprint) => void (await call('trustHostKey', { id, fingerprint })),
+    setStayConnected: async (on) => record(await call('setStayConnected', { on }))['on'] === true,
     leave: async () => void (await call('leave')),
     onTunnel: (fn) =>
       on('tunnel', (d) => {

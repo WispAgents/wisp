@@ -162,8 +162,13 @@ themed icon). The store art is in `store/`: `icon.png` (512×512) and `feature-g
 cd mobile/android && ./gradlew testDebugUnitTest
 ```
 
-`KeysTest` always runs: it makes, lists, deletes and imports keys, and checks fingerprints
-against `ssh-keygen -lf`. `TunnelTest` needs a real sshd and wisp, so it runs only when asked:
+`KeysTest` always runs: it makes, lists, deletes and imports keys, checks fingerprints against
+`ssh-keygen -lf`, moves v1's key files into the vault once and checks the password is dropped once
+the phone's key is added. `TunnelTest`'s ADR-0065 cases (a pinned fingerprint, a changed host key,
+wisp stopped there, two computers at once) run against an sshd in the test's JVM (`FakeSshd`,
+Apache MINA sshd, test-only). `ComputersTest` replays `web/test/fixtures/android-bridge.json`, the
+recording `mobile/web`'s bridge-contract suite replays too. Three older `TunnelTest` cases need a
+real sshd and wisp, so they run only when asked:
 
 ```sh
 # a throwaway sshd on 127.0.0.1:2299 that accepts /tmp/wsshd/client; the script starts this
@@ -182,10 +187,25 @@ changed host key both fail with a clear message.
 - **Closed app, deep sleep.** Notifications come from wisp's page, so they stop when the app is
   swiped away (that also disconnects) or Android kills it, and deep Doze can delay them. Use
   wisp's Phone settings (ntfy / Telegram) for alerts that don't depend on the app.
-- **Key storage.** Keys are files in the app's private storage with backups off. They are not
-  in the Android Keystore yet.
-- **Host keys** are trusted on first use, per `host:port`. A changed key is refused until you
-  tap *Forget saved key*.
-- **One machine at a time.** The phone's `127.0.0.1:<port>` leads to one wisp. To see every
-  machine at once, connect to one that has the others under its own Machines.
+- **Bonjour/mDNS** addresses (ADR-0065 §2.2) aren't offered yet: type the address or scan the QR.
+
+## Keys, tokens and host keys (v2, ADR-0065 §2)
+
+- **Keys and device tokens** are sealed with an AES-256-GCM key made in the Android Keystore
+  (`KeystoreVault`, `SealedVault`): the private `wisp.vault` preferences hold only ciphertext. Ed25519
+  and imported keys can't live in the Keystore itself on Android 8–12, so each is sealed with that key.
+  The first v2 start moves v1's key files (`files/keys/`) in and deletes them (`Keys.moveV1`); the
+  bundle moves v1's `localStorage` list in and deletes it (`mobile/web/src/migrate.ts`).
+- **Tokens never reach the page's storage:** `Computers` keeps a grid computer's token in the vault,
+  `list()` never answers it, and only `connect`'s answer (`Reached`) carries it, per connect.
+- **The password** signs in once, adds the phone's key (`@@wisp keyed`) and is dropped.
+- **Host keys** are pinned when scanned from the desktop's QR code
+  (`wisp+ssh://you@host:port?fp=SHA256:…&name=Studio`, `mobile/web/src/pair.ts`): another key is refused
+  in the key exchange, before anything is sent. Typed by hand, the first key is kept. A changed key is
+  refused with *This computer's key changed: it is now SHA256:…*; `trustHostKey({id, fingerprint})`
+  keeps the new one only if it is the one shown (the page asks first).
+- **Several computers at once:** each tunnel takes wisp's port on the phone when free, else any free
+  port, and `connect` says which.
+- **The foreground service** runs only while an SSH computer without push is connected and the
+  *Stay connected* switch (`setStayConnected`, off by default) is on (`Stay`).
 - **iOS**: the same `www/` and plugin API, with an SSH library (Citadel) behind it.

@@ -1,10 +1,10 @@
 // Fakes for the phone's tests: a clock the test advances, the native bridge, and a fetch that
 // streams SSE frames the test pushes (encoded as a real wisp would, with @wisp/sync).
 
-import type { FetchLike, FetchResponse, Timers } from '@wisp/client';
+import type { FetchLike, FetchResponse, IdbFactory, IdbKeyRangeStatic, Timers } from '@wisp/client';
 import { PROTO, PROTO_MIN, type PeerInfo, type ServerMessage, type Welcome } from '@wisp/protocol';
 import { encodeFrame } from '@wisp/sync';
-import type { Computer, ComputerPatch, NativeBridge, Reached, TunnelEvent } from '../src/bridge.ts';
+import type { Computer, ComputerPatch, NativeBridge, NewComputer, Reached, TunnelEvent } from '../src/bridge.ts';
 
 export interface FakeTimers extends Timers {
   advance(ms: number): void;
@@ -51,7 +51,11 @@ export interface FakeBridge extends NativeBridge {
   /** what the next connects answer, in order; the last one repeats */
   answers: (Reached | Error)[];
   readonly connects: string[];
-  readonly saves: (Computer | ComputerPatch)[];
+  readonly saves: (NewComputer | ComputerPatch)[];
+  /** what the native side sealed: tokens by computer id (never in `computers`) */
+  readonly tokens: Map<string, string>;
+  readonly trusted: [string, string][];
+  stay: boolean;
   leaves: number;
   emit: { computers(): void; tunnel(e: TunnelEvent): void; back(): void; open(t: unknown): void };
 }
@@ -67,13 +71,19 @@ export function fakeBridge(computers: Computer[] = []): FakeBridge {
     answers: [],
     connects: [],
     saves: [],
+    tokens: new Map(),
+    trusted: [],
+    stay: false,
     leaves: 0,
     list: async () => [...b.computers],
     async save(c) {
       b.saves.push(c);
+      // as Computers.java: the token goes into the vault, never into the list
+      const { token, ...rest } = c as { token?: string } & Computer;
+      if (token) b.tokens.set(c.id, token);
       const i = b.computers.findIndex((x) => x.id === c.id);
-      if (i >= 0) b.computers[i] = { ...b.computers[i], ...c } as Computer;
-      else b.computers.push(c as Computer);
+      if (i >= 0) b.computers[i] = { ...b.computers[i], ...rest } as Computer;
+      else b.computers.push(rest as Computer);
       for (const fn of on.computers) fn();
     },
     async forget(id) {
@@ -88,6 +98,8 @@ export function fakeBridge(computers: Computer[] = []): FakeBridge {
       return a;
     },
     disconnect: async () => {},
+    trustHostKey: async (id, fingerprint) => void b.trusted.push([id, fingerprint]),
+    setStayConnected: async (on) => (b.stay = on),
     leave: async () => void (b.leaves += 1),
     onTunnel: (fn) => add(on.tunnel, fn),
     onComputers: (fn) => add(on.computers, () => fn()),
@@ -183,4 +195,54 @@ export function welcome(peer = 'studio-1f3a', over: Partial<PeerInfo> = {}): Wel
 }
 
 export const ssh = (id: string, over: Partial<Computer> = {}): Computer => ({ id, kind: 'ssh', name: id, target: `me@${id}`, ...over }) as Computer;
-export const grid = (id: string, over: Partial<Computer> = {}): Computer => ({ id, kind: 'grid', name: id, url: `https://${id}.grid.test`, token: 'dev-token', ...over }) as Computer;
+export const grid = (id: string, over: Partial<Computer> = {}): Computer => ({ id, kind: 'grid', name: id, url: `https://${id}.grid.test`, ...over }) as Computer;
+
+/** localStorage as a map the test reads back. */
+export function memoryStorage(entries: [string, string][] = []): { map: Map<string, string>; getItem(k: string): string | null; setItem(k: string, v: string): void; removeItem(k: string): void } {
+  const map = new Map(entries);
+  return { map, getItem: (k) => map.get(k) ?? null, setItem: (k, v) => void map.set(k, v), removeItem: (k) => void map.delete(k) };
+}
+
+/** The subset of IndexedDB persist-idb.ts uses, async like the real one; `data` is what it holds. */
+export function fakeIndexedDB(): { idb: IdbFactory; range: IdbKeyRangeStatic; data: Map<string, unknown> } {
+  type Range = { lo: string; hi: string };
+  const data = new Map<string, unknown>();
+  let created = false;
+  const later = (fn: () => void): void => void Promise.resolve().then(fn);
+  const req = <T>(get: () => T) => {
+    const r: { result: T | undefined; error: unknown; onsuccess: (() => void) | null; onerror: (() => void) | null } = { result: undefined, error: null, onsuccess: null, onerror: null };
+    later(() => {
+      r.result = get();
+      r.onsuccess?.();
+    });
+    return r;
+  };
+  const inRange = (k: string, range: unknown): boolean => k >= (range as Range).lo && k <= (range as Range).hi;
+  const db = {
+    objectStoreNames: { contains: () => created },
+    createObjectStore: () => (created = true),
+    transaction: () => {
+      const tx = { error: null, oncomplete: null as (() => void) | null, onerror: null, onabort: null, objectStore: () => store };
+      setImmediate(() => tx.oncomplete?.());
+      const store = {
+        get: (k: string) => req(() => structuredClone(data.get(k))),
+        put: (v: unknown, k: string) => data.set(k, structuredClone(v)),
+        delete: (k: string) => data.delete(k),
+        getAll: (range: unknown) => req(() => [...data.keys()].sort().filter((k) => inRange(k, range)).map((k) => data.get(k))),
+        getAllKeys: (range: unknown) => req(() => [...data.keys()].sort().filter((k) => inRange(k, range))),
+      };
+      return tx;
+    },
+  };
+  const idb = {
+    open: () => {
+      const r = { result: db, error: null, onsuccess: null as (() => void) | null, onerror: null, onupgradeneeded: null as (() => void) | null };
+      later(() => {
+        if (!created) r.onupgradeneeded?.();
+        r.onsuccess?.();
+      });
+      return r;
+    },
+  };
+  return { idb: idb as unknown as IdbFactory, range: { bound: (lo, hi) => ({ lo, hi }) }, data };
+}

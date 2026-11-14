@@ -51,6 +51,13 @@ public class TunnelService extends Service {
         ctx.stopService(new Intent(ctx, TunnelService.class));
     }
 
+    /** Started, or on its way (a refused start clears it): restay starts it again when it isn't. */
+    static boolean isRunning() {
+        synchronized (lock) {
+            return running != null || pending > 0;
+        }
+    }
+
     // Started before notifications were allowed, its notification was dropped: post it again.
     static void refresh(Context ctx) {
         String name = running;
