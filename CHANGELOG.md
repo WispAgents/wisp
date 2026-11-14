@@ -7,6 +7,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Added
 
+- **v2: delegate to another machine.** A subagent on another computer runs there on a copy of the lead's work (its commits and uncommitted edits, kept under wisp's own folder there, never your checkout); its changes come back into the lead's folder when it finishes, and its row and report name the machine.
 - **v2: wisp Cloud API keys.** Settings → Cloud → API keys makes a `wgk_` key (shown once) that opens your cloud wisp from a script with no browser; revoke it and it stops at once.
 - **v2: early Codex resets.** When a banked Codex reset lands early, work held for that account (held runs, Ask-held runs, tasks waiting at the limit) starts at once, and your phone hears *↻ Codex reset early* with the count. Trigger rows held for the plan clear, a cooled account is ready at once, the note comes even with Later off, and the Drain watch's notes reach your phone.
 - **v2: Settings → Phone.** One dialog sets up ntfy, Telegram, Slack, Discord, GitHub and email: each channel's steps, whether it works, a Test button and its switch. Tokens are kept in secrets.json only. Send me (questions, finished), Unlink, Slack's Copy manifest, Discord's Add to a server and email's New address are there as in v1, and each channel's state updates live.
