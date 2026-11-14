@@ -15,6 +15,7 @@ use wisp_settings_api::{self as api, key_of};
 /// empty write lands after the settings' own.
 async fn durable(ctx: &Ctx) {
     if let Ok(store) = ctx.service::<wisp_store::Store>() {
+        // write: best-effort an empty write as a barrier; it writes nothing, and the settings' own write reported its error
         let _ = store.write(|_| Ok(())).await;
     }
 }

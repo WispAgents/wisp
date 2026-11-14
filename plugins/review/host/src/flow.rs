@@ -247,6 +247,8 @@ fn finished_of(t: &Task, r: &Review) -> ReviewFinished {
 pub async fn boot(env: &dyn Env, call: &Call, tasks: Vec<Task>) {
     for t in tasks.into_iter().filter(|t| t.review.as_ref().is_some_and(|r| r.status == Status::Running)) {
         // whole: at boot, before any run of this server can write the slot
-        let _ = env.save(call, &t.id, core::on_boot(t.review.clone()).as_ref(), false, None).await;
+        if let Err(e) = env.save(call, &t.id, core::on_boot(t.review.clone()).as_ref(), false, None).await {
+            tracing::warn!(task = %t.id, "couldn't clear the review a restart cut short: {e}");
+        }
     }
 }

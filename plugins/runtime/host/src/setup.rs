@@ -168,16 +168,20 @@ async fn probe(proc: &wisp_proc::Proc, net: Option<&wisp_kernel::services::NetSe
     v
 }
 
+/// Records a task's setup (what it had available). Runs in the background (`record`): a failure is logged.
 pub async fn save(store: &wisp_store::Store, id: &str, body: Value) {
-    let id = id.to_owned();
-    let _ = store
+    let task = id.to_owned();
+    let r = store
         .write(move |w| {
             let mut r = wisp_store::Row::new();
-            r.insert("id".into(), json!(id));
+            r.insert("id".into(), json!(task));
             r.insert("body".into(), body);
             w.upsert(SETUP.kind, r).map(|_| ())
         })
         .await;
+    if let Err(e) = r {
+        tracing::warn!(task = id, "couldn't save the task's setup: {e}");
+    }
 }
 
 pub async fn load(store: &wisp_store::Store, id: &str) -> Option<Value> {

@@ -196,7 +196,11 @@ async fn tick(ctx: &Ctx, store: &Store, now: i64) {
                 Ok(true)
             })
             .await
-            .unwrap_or(false);
+            .unwrap_or_else(|e| {
+                // not marked: the minute isn't run, so a store that can't record it can't run it twice either
+                tracing::warn!(task = %t.name, "couldn't record the scheduled minute, so it doesn't run: {e}");
+                false
+            });
         if fresh {
             let call = ctx.root_call();
             let name = t.name.clone();

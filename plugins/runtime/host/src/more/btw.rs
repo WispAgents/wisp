@@ -69,7 +69,10 @@ impl Runtime {
             }
             e.pending = false;
             // a task deleted meanwhile has no row to put it on (`put_btw` reads it first): nothing is written
-            let _ = rt.put_btw(&s.id.0, &e).await;
+            match rt.put_btw(&s.id.0, &e).await {
+                Ok(()) | Err(crate::error::RuntimeError::NoTask(_)) => {}
+                Err(err) => tracing::warn!(task = %s.id.0, btw = %e.id, "couldn't save the side question's answer: {err}"),
+            }
             drop(claim);
         }));
         Ok(entry)

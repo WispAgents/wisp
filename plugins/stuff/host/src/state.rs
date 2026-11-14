@@ -53,7 +53,10 @@ impl Stuff {
         if it.published.is_some()
             && let Ok(p) = ctx.use_service::<PublishService>()
         {
-            let _ = p.unpublish(call, id).await;
+            // the item goes either way; a link left up is logged so it can be taken down by hand
+            if let Err(e) = p.unpublish(call, id).await {
+                tracing::warn!(item = id, "couldn't unpublish the removed item: {}", e.message);
+            }
         }
         self.apps.appdb.release(&self.shelf.data_file(id));
         self.shelf.remove(id).await

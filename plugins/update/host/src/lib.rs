@@ -140,7 +140,7 @@ async fn publish(ctx: &Ctx, st: &St) -> Value {
     let v = row(ctx, st).await;
     if let Ok(store) = ctx.service::<Store>() {
         let body = v.clone();
-        let _ = store
+        let r = store
             .write(move |w| {
                 let mut r = Row::new();
                 r.insert("id".into(), json!(ROW));
@@ -148,6 +148,10 @@ async fn publish(ctx: &Ctx, st: &St) -> Value {
                 w.upsert(STATE.kind, r).map(|_| ())
             })
             .await;
+        // the caller answers with `v` either way; only the pane's row (the topic) misses this change
+        if let Err(e) = r {
+            tracing::warn!("couldn't save the update state row: {e}");
+        }
     }
     v
 }

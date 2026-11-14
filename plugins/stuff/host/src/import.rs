@@ -189,20 +189,28 @@ pub async fn import_interim(shelf: &Shelf, dir: &Path) {
             let Ok(mut rd) = tokio::fs::read_dir(sub.path()).await else { continue };
             while let Ok(Some(f)) = rd.next_entry().await {
                 let hash = f.file_name().to_string_lossy().into_owned();
-                if let Ok(Some(bytes)) = fs.get(&hash).await {
-                    let _ = shelf.blobs.put((*bytes).clone()).await;
+                if let Ok(Some(bytes)) = fs.get(&hash).await
+                    && let Err(e) = shelf.blobs.put((*bytes).clone()).await
+                {
+                    tracing::warn!(blob = %hash, "couldn't move a My Stuff blob into the store: {e}");
                 }
             }
         }
     }
     for it in crate::ports::read_all::<StuffItem>(&rows_dir.join("items")).await.unwrap_or_default() {
         if shelf.get(&it.id).is_none() {
-            let _ = shelf.put(it).await;
+            let id = it.id.clone();
+            if let Err(e) = shelf.put(it).await {
+                tracing::warn!(item = %id, "couldn't move a My Stuff item into the store: {e}");
+            }
         }
     }
     for u in crate::ports::read_all::<wisp_stuff_api::Upload>(&rows_dir.join("uploads")).await.unwrap_or_default() {
         if shelf.rows.upload(&u.id).await.ok().flatten().is_none() {
-            let _ = shelf.rows.put_upload(u).await;
+            let id = u.id.clone();
+            if let Err(e) = shelf.rows.put_upload(u).await {
+                tracing::warn!(upload = %id, "couldn't move a My Stuff upload into the store: {e}");
+            }
         }
     }
 }

@@ -56,8 +56,23 @@ async fn env_of(st: &State, h: &dyn Harness, acc: &str) -> Result<Vec<(String, S
     Ok(vec![(spec.env.clone(), dir.to_string_lossy().into_owned())])
 }
 
-async fn put(st: &State, id: String, v: LoginView) {
-    let _ = st.store.write(move |w| store::put_login(w, &id, &v)).await;
+/// Saves the login's row (what the Sign-in pane shows). The store's error is the caller's to report.
+async fn put(st: &State, id: String, v: LoginView) -> Result<(), WireError> {
+    st.store.write(move |w| store::put_login(w, &id, &v)).await.map_err(crate::store_err)
+}
+
+/// [`put`] from a flow nobody waits on (the CLI's output, its end): a failed save is logged, the flow goes on.
+async fn put_or_warn(st: &State, id: String, v: LoginView) {
+    let login = id.clone();
+    if let Err(e) = put(st, id, v).await {
+        tracing::warn!(%login, "couldn't save the sign-in's state: {}", e.message);
+    }
+}
+
+/// Saves a harness's accounts (who each is signed in as, its cool).
+async fn put_accounts(st: &State, agent: &str, list: Vec<accounts::Stored>) -> Result<(), WireError> {
+    let a = agent.to_owned();
+    st.store.write(move |w| store::put_accounts(w, &a, &list)).await.map_err(crate::store_err)
 }
 
 pub fn view(st: &State, agent: &str, acc: &str) -> LoginView {
@@ -109,9 +124,11 @@ pub async fn status(ctx: &Ctx, st: &State, h: &dyn Harness, acc: &str) -> Result
                 list.clone()
             })
         };
-        if let Some(l2) = list {
-            let a = agent.clone();
-            let _ = st.store.write(move |w| store::put_accounts(w, &a, &l2)).await;
+        // the status is right either way and the pane asks again: a save that failed is logged, not the answer
+        if let Some(l2) = list
+            && let Err(e) = put_accounts(st, &agent, l2).await
+        {
+            tracing::warn!(%agent, account = account_key(acc), "couldn't save who the account is signed in as: {}", e.message);
         }
     }
     let _ = ctx;
@@ -158,7 +175,7 @@ pub async fn start(ctx: &Ctx, st: &Arc<State>, h: Arc<dyn Harness>, acc: &str) -
     v.state = LoginState::Running;
     v.started_at = Some(now(ctx));
     lock(&st.flows.0).insert(id.clone(), Flow { view: v.clone(), out: String::new(), after: None, handle: Some(handle.clone()) });
-    put(st, id.clone(), v.clone()).await;
+    put_or_warn(st, id.clone(), v.clone()).await;
     let (st2, ctx2, acc2) = (st.clone(), ctx.clone(), acc.to_owned());
     ctx.spawn(async move {
         let deadline = ctx2.clock().map(|c| c.sleep(u64::try_from(TIMEOUT_MS).unwrap_or(u64::MAX)));
@@ -185,7 +202,7 @@ pub async fn start(ctx: &Ctx, st: &Arc<State>, h: Arc<dyn Harness>, acc: &str) -
                             f.view.output = Some(tail(&f.out, 6));
                             (was != (f.view.url.clone(), f.view.code.clone(), f.view.needs_input)).then(|| f.view.clone())
                         };
-                        if let Some(v) = changed { put(&st2, id.clone(), v).await; }
+                        if let Some(v) = changed { put_or_warn(&st2, id.clone(), v).await; }
                     }
                     None => break,
                 },
@@ -223,9 +240,10 @@ async fn signed_in_again(st: &State, agent: &str, acc: &str) {
         let mut map = lock(&st.accounts);
         map.get_mut(agent).filter(|l| accounts::multi(l)).and_then(|list| accounts::uncool(list, account_key(acc)).then(|| list.clone()))
     };
-    if let Some(l2) = list {
-        let a = agent.to_owned();
-        let _ = st.store.write(move |w| store::put_accounts(w, &a, &l2)).await;
+    if let Some(l2) = list
+        && let Err(e) = put_accounts(st, agent, l2).await
+    {
+        tracing::warn!(agent, account = account_key(acc), "couldn't save the account's end of cool after its sign-in: {}", e.message);
     }
 }
 
@@ -239,7 +257,7 @@ async fn finish(ctx: &Ctx, st: &State, id: &str, agent: &str, acc: &str, state: 
         f.handle = None;
         f.view.clone()
     };
-    put(st, id.to_owned(), v).await;
+    put_or_warn(st, id.to_owned(), v).await;
     let step = match state {
         LoginState::Done => "done",
         LoginState::Cancelled => "cancelled",
@@ -270,7 +288,8 @@ pub async fn input(st: &State, agent: &str, acc: &str, code: &str) -> Result<Log
         f.after = Some(String::new());
         f.view.clone()
     };
-    put(st, id, view.clone()).await;
+    // the code went to the CLI already: the flow goes on even if its row can't be saved
+    put_or_warn(st, id, view.clone()).await;
     Ok(view)
 }
 
@@ -327,24 +346,33 @@ pub async fn logout(ctx: &Ctx, st: &State, h: &dyn Harness, acc: &str) -> Result
         return Err(WireError::invalid(last_line(&out).unwrap_or_else(|| format!("{} exited ({:?}).", l.bin, r.exit.code))));
     }
     let agent = h.info().id.clone();
-    let id = login_id(&agent, acc);
-    if lock(&st.flows.0).get(&id).is_some_and(|f| !f.view.state.live()) {
+    signed_out(st, &agent, acc).await?;
+    let _ = ctx;
+    Ok(LoginStatus { agent, account: account_key(acc).to_owned(), signed_in: Some(false), email: None, plan: None })
+}
+
+/// wisp's side of a sign-out the CLI made: the ended login's row goes idle and the account is marked signed out.
+/// A failed save is the user's error (the CLI is signed out, but wisp would show it signed in after a restart).
+async fn signed_out(st: &State, agent: &str, acc: &str) -> Result<(), WireError> {
+    // memory first, then both saves: one that fails doesn't skip the other
+    let id = login_id(agent, acc);
+    let ended = lock(&st.flows.0).get(&id).is_some_and(|f| !f.view.state.live());
+    if ended {
         lock(&st.flows.0).remove(&id);
-        put(st, id, LoginView::idle(&agent, account_key(acc))).await;
     }
     let list = {
         let mut map = lock(&st.accounts);
-        map.get_mut(&agent).filter(|l| accounts::multi(l)).map(|list| {
+        map.get_mut(agent).filter(|l| accounts::multi(l)).map(|list| {
             accounts::identify(list, account_key(acc), None, None, Some(false));
             list.clone()
         })
     };
-    if let Some(l2) = list {
-        let a = agent.clone();
-        let _ = st.store.write(move |w| store::put_accounts(w, &a, &l2)).await;
-    }
-    let _ = ctx;
-    Ok(LoginStatus { agent, account: account_key(acc).to_owned(), signed_in: Some(false), email: None, plan: None })
+    let row = if ended { put(st, id, LoginView::idle(agent, account_key(acc))).await } else { Ok(()) };
+    let saved = match list {
+        Some(l2) => put_accounts(st, agent, l2).await,
+        None => Ok(()),
+    };
+    row.and(saved)
 }
 
 #[cfg(test)]
@@ -381,6 +409,45 @@ mod tests {
         let mut l = agy();
         l.args = v(&["it's"]);
         assert_eq!(argv_for(&l, "linux").1[4], "'agy' 'it'\\''s'");
+    }
+
+    fn state(store: wisp_store::Store) -> State {
+        let two = vec![
+            accounts::Stored { id: "default".into(), ..Default::default() },
+            accounts::Stored { id: "w1".into(), ..Default::default() },
+        ];
+        State {
+            store,
+            proc: wisp_proc::local(),
+            home: std::env::temp_dir(),
+            accounts: Mutex::new(HashMap::from([("codex".to_owned(), two)])),
+            watch: Mutex::default(),
+            settings: Mutex::new(serde_json::Value::Null),
+            held: Mutex::default(),
+            hashes: Mutex::default(),
+            flows: Flows::default(),
+            installing: Mutex::default(),
+            statuses: Mutex::default(),
+        }
+    }
+
+    /// A sign-out whose "signed out" can't be saved says so: before, the store's error was dropped and the account
+    /// came back signed in after a restart while the user had been told it was signed out.
+    #[tokio::test]
+    async fn a_sign_out_wisp_cant_save_is_the_users_error() {
+        let db = wisp_store::Store::open(wisp_store::Location::Memory, Arc::new(wisp_store::SystemClock)).unwrap();
+        store::install(&db).unwrap();
+        let st = state(db.clone());
+        signed_out(&st, "codex", "w1").await.unwrap();
+        let (saved, _, _) = store::load(&db).await.unwrap();
+        let codex = saved.iter().find(|(a, _)| a == "codex").map(|(_, l)| l.clone()).unwrap_or_default();
+        assert_eq!(codex.iter().find(|a| a.id == "w1").and_then(|a| a.signed_in), Some(false), "saved signed out");
+        db.close();
+        lock(&st.accounts).get_mut("codex").into_iter().flatten().for_each(|a| a.signed_in = Some(true));
+        let e = signed_out(&st, "codex", "w1").await.unwrap_err();
+        assert_eq!(e.code, wisp_kernel::Code::Unavailable, "{e:?}");
+        let w1 = lock(&st.accounts).get("codex").and_then(|l| l.iter().find(|a| a.id == "w1").and_then(|a| a.signed_in));
+        assert_eq!(w1, Some(false), "memory says signed out even when the save failed");
     }
 
     #[test]

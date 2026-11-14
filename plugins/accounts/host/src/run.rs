@@ -85,7 +85,10 @@ pub(crate) async fn observe(ctx: &Ctx, st: &State, agent: &str, bin: &str) -> Op
     if changed {
         lock(&st.watch).insert(agent.to_owned(), next.clone());
         let (a, n) = (agent.to_owned(), next.clone());
-        let _ = st.store.write(move |w| store::put_watch(w, &a, &n)).await;
+        // the watch decides from memory; a failed save only loses what it saw across a restart
+        if let Err(e) = st.store.write(move |w| store::put_watch(w, &a, &n)).await {
+            tracing::warn!(agent, "couldn't save the harness watch's fingerprint: {e}");
+        }
     }
     next.change
 }

@@ -66,6 +66,7 @@ async fn track(ctx: &Ctx, call: &Call, w: &Who, event: &str, mut props: Value) {
         }
     }
     if let Ok(a) = args_of::<wisp_telemetry_api::Track>(json!({ "event": event, "props": props })) {
+        // write: best-effort usage telemetry; a tool call never fails or waits on it
         let _ = ctx.run::<wisp_telemetry_api::Track>(&ctx.root_call(), a).await;
     }
 }

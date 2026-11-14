@@ -114,7 +114,10 @@ impl State {
         if dirty.is_empty() {
             return;
         }
-        let _ = self.store.write(move |w| dirty.iter().try_for_each(|(g, a, acc)| store::put_acc(w, g, a, acc))).await;
+        let n = dirty.len();
+        if let Err(e) = self.store.write(move |w| dirty.iter().try_for_each(|(g, a, acc)| store::put_acc(w, g, a, acc))).await {
+            tracing::warn!(accounts = n, "couldn't save the budget's spend per account: {e}");
+        }
     }
 
     /// Held work whose account is free starts now.
@@ -215,7 +218,9 @@ fn on_turns(s: &mut Setup, slot: &Slot) {
                 let learned = ask::learn(&mut lock(&st.runs), &e, now(&ctx));
                 if learned {
                     let runs = lock(&st.runs).clone();
-                    let _ = st.store.write(move |w| store::put_runs(w, &runs)).await;
+                    if let Err(err) = st.store.write(move |w| store::put_runs(w, &runs)).await {
+                        tracing::warn!(turn = %e.turn_id, "couldn't save the budget's learned run costs: {err}");
+                    }
                 }
             }
         }

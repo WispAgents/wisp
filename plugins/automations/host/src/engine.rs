@@ -267,7 +267,9 @@ impl Engine {
             for d in core::drain(&t.spec, &mut st, &Self::world(t, now)) {
                 self.act(ctx, &call, t, &mut st, d, now).await;
             }
-            let _ = self.save(&name, &st).await;
+            if let Err(e) = self.save(&name, &st).await {
+                tracing::warn!(automation = %name, "couldn't save the automation's state: {}", e.message);
+            }
         }
     }
 
@@ -303,8 +305,10 @@ impl Engine {
             if st.unavailable.is_none() && st.next_poll_at.is_none_or(|at| at <= now) {
                 self.poll(ctx, &call, &t, &mut st, now).await;
             }
-            if st != before {
-                let _ = self.save(&t.name, &st).await;
+            if st != before
+                && let Err(e) = self.save(&t.name, &st).await
+            {
+                tracing::warn!(automation = %t.name, "couldn't save the automation's state: {}", e.message);
             }
         }
     }
