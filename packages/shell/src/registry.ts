@@ -11,7 +11,7 @@
 // `if` is not applied here: it reads the render's props (the session), so the slot applies it.
 
 import { computed, signal, untracked, type Readable } from '@wisp/client';
-import type { BlockRendererDef, ExtensionDef, PaletteSourceDef, PluginUiDef, PromptSourceDef, ResolvedExtension, SettingsPaneDef, ShortcutDef, SideTabDef, PreviewAddressDef, TreeConfig, ViewDef, HarnessUiDef } from './contract.ts';
+import type { BlockRendererDef, ExtensionDef, PaletteSourceDef, PluginUiDef, PluginUiLater, PromptSourceDef, ResolvedExtension, SettingsPaneDef, ShortcutDef, SideTabDef, PreviewAddressDef, TreeConfig, ViewDef, HarnessUiDef } from './contract.ts';
 
 export type Warn = (msg: string, data?: unknown) => void;
 
@@ -23,6 +23,8 @@ interface Entry {
 
 export interface Registry {
   add(def: PluginUiDef): void;
+  /** adds a registered plugin's later part (PluginUiDef.later) to it, in its place: its extensions after its own */
+  extend(id: string, more: PluginUiLater): void;
   remove(id: string): void;
   has(id: string): boolean;
   plugins(): readonly string[];
@@ -140,6 +142,27 @@ export function createRegistry(warn: Warn = () => {}): Registry {
       if (untracked(entries).some((e) => e.plugin === def.id)) throw new Error(`plugin UI ${def.id} is registered twice`);
       counter += 1;
       entries([...untracked(entries), { plugin: def.id, def, index: counter }]);
+    },
+    extend(id, more) {
+      const join = <T>(a: readonly T[] | undefined, b: readonly T[] | undefined): T[] | undefined => (b?.length ? [...(a ?? []), ...b] : a && [...a]);
+      entries(
+        untracked(entries).map((e) => {
+          if (e.plugin !== id) return e;
+          const d = e.def;
+          const def: PluginUiDef = { ...d };
+          const extensions = join(d.extensions, more.extensions);
+          const palette = join(d.palette, more.palette);
+          const shortcuts = join(d.shortcuts, more.shortcuts);
+          const prompt = join(d.prompt, more.prompt);
+          const sideTabs = join(d.sideTabs, more.sideTabs);
+          if (extensions) def.extensions = extensions;
+          if (palette) def.palette = palette;
+          if (shortcuts) def.shortcuts = shortcuts;
+          if (prompt) def.prompt = prompt;
+          if (sideTabs) def.sideTabs = sideTabs;
+          return { ...e, def };
+        }),
+      );
     },
     remove(id) {
       entries(untracked(entries).filter((e) => e.plugin !== id));

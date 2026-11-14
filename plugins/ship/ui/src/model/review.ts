@@ -5,6 +5,7 @@
 import type { IconName } from '@wisp/ui';
 import type { T } from '../i18n.ts';
 import type { Coverage, ShipSession } from '../types.ts';
+import '../i18n/lazy.ts';
 
 export interface ReviewContext {
   /** Settings → Review by another harness is on */

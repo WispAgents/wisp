@@ -9,6 +9,7 @@ import { Button, Callout, IconButton, Inline, Input, SettingsGroup, SettingsRow,
 import { claudeBegin, claudeCode, codexLogin, drop, env, info, logout, type ClaudeSignIn, type Info } from './commands.ts';
 import { t } from './i18n.ts';
 import { ownerTask, ownerWords } from './model.ts';
+import './i18n/lazy.ts';
 
 export default function Sandboxes(props: { readonly client: PluginClient }): JSX.Element {
   const c = props.client;

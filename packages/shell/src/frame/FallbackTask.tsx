@@ -7,6 +7,7 @@ import { ownerOf, type EntityKey } from '@wisp/client';
 import { EmptyState, Heading, Inline, Pill, Stack, Text, VirtualList, useSignal } from '@wisp/ui';
 import { useShell } from '../context.tsx';
 import { SESSION, type EventRow, type SessionRow } from '../rows.ts';
+import '../i18n/lazy.ts';
 
 const label = (e: EventRow): string => e.body.text ?? e.body.label ?? e.kind;
 

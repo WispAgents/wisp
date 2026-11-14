@@ -5,6 +5,7 @@
 import type { IconName } from '@wisp/ui';
 import { behind, canCopy, canDownload } from './model.ts';
 import type { Item } from './types.ts';
+import './i18n/lazy.ts';
 
 export type ActionId =
   | 'open' | 'stop' | 'publish' | 'pubcopy' | 'pubopen' | 'update' | 'unpublish' | 'resetdata'

@@ -8,6 +8,7 @@ import { projectList } from '@wisp/shell';
 import { Button, Dialog, Field, Inline, Input, Select, Stack, Text, useSignal } from '@wisp/ui';
 import { t } from './i18n.ts';
 import { fieldsOf } from './recipe.ts';
+import './i18n/lazy.ts';
 
 export const RUN_VIEW = 'automations.run';
 

@@ -6,6 +6,7 @@ import { useShell } from '../context.tsx';
 import { ownerOf } from '@wisp/client';
 import { usePluginClient } from '../slot.tsx';
 import { canSend, sendFeedback, type FeedbackArgs, type FeedbackParams } from './feedback.ts';
+import '../i18n/lazy.ts';
 
 export default function Feedback(props: { readonly params: FeedbackParams }): JSX.Element {
   const shell = useShell();

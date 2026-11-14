@@ -15,20 +15,10 @@ import { useShell } from './shell.ts';
 import { useUnsent, withUnsent } from './unsent.ts';
 import type { ShipInfo, ShipRepo } from './types.ts';
 import { SHIP_VIEW, useSession } from './use.ts';
+import './i18n/lazy.ts';
 
-export interface ShipParams {
-  readonly key: EntityKey;
-  readonly guess: ShipGuess;
-}
-
-const isGuess = (g: unknown): g is ShipGuess =>
-  !!g && typeof g === 'object' && typeof (g as ShipGuess).repos === 'number' && typeof (g as ShipGuess).update === 'boolean' && Array.isArray((g as ShipGuess).branches);
-
-export function parseShipParams(v: unknown): ShipParams {
-  const o = (v ?? {}) as { key?: unknown; guess?: unknown };
-  if (typeof o.key !== 'string' || !o.key.includes(':')) throw new Error('Ship it needs the task’s key');
-  return { key: o.key as EntityKey, guess: isGuess(o.guess) ? o.guess : { repos: 1, update: false, branches: [] } };
-}
+export { parseShipParams, type ShipParams } from './params.ts';
+import type { ShipParams } from './params.ts';
 
 function Route(props: { readonly r?: ShipRepo; readonly branch?: string; readonly several: boolean }): JSX.Element {
   return (

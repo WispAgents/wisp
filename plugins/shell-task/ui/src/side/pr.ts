@@ -1,3 +1,4 @@
+import '../i18n/lazy.ts';
 // The PR pane, DOM-free (v1 features/panel.js paintPr, verdict, checksHtml, talkHtml, filesHtml): the one
 // sentence about where the PR stands with its one next step, the checks (failing and running first, the passed
 // folded behind one line), the reviewers, the conversation (live threads and people; outdated threads and bots

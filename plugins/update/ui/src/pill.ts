@@ -4,6 +4,7 @@
 
 import { t } from './i18n.ts';
 import type { UpdateState } from './types.ts';
+import './i18n/lazy.ts';
 
 type Row = Pick<UpdateState, 'available' | 'status' | 'latest' | 'current'>;
 

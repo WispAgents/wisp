@@ -4,6 +4,7 @@
 // ("12% memory · 9 running") lives in its tooltip and popover (design/layout.md §2).
 
 import type { Load, Row, SessionRow } from '../types.ts';
+import '../i18n/lazy.ts';
 
 export const FLOOR_DEFAULT = 15;
 /** within this many points of the floor, memory is tight */

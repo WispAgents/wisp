@@ -5,6 +5,7 @@ import { Button, Checkbox, CopyCommand, Inline, Link, SettingsRow, Text } from '
 import { t, type Key } from '../i18n.ts';
 import { notifies, toggled, unlinkable } from '../lib.ts';
 import { NOTIFY, type ChannelSetup, type SetupArgs } from '../types.ts';
+import '../i18n/lazy.ts';
 
 type Save = (a: Omit<SetupArgs, 'transport'>) => void;
 type Copy = (text: string, done?: Key) => void;

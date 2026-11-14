@@ -4,6 +4,7 @@
 import type { IconName } from '@wisp/ui';
 import { withoutLink } from './link.ts';
 import type { ImportArgs, RunHere, ShareCardInfo, SharePreview, ShareWork } from './types.ts';
+import '../i18n/lazy.ts';
 
 export type T = (key: string, vars?: Readonly<Record<string, string | number>>) => string;
 

@@ -10,14 +10,10 @@ import type { GoalAction } from './rules.ts';
 import { bareId } from './task.ts';
 import type { RunHint, SessionRow } from './types.ts';
 
-export const VIEW = {
-  /** overlay: Set goal… / Edit goal…; params { task } */
-  edit: 'goal.edit',
-  /** overlay: each judge's vote and the rounds before; params { task } */
-  checks: 'goal.checks',
-  /** overlay: one check, read like a task (v1 goal-run.js); params RunHint */
-  run: 'goal.run',
-} as const;
+import { VIEW } from './views.ts';
+import './i18n/lazy.ts';
+
+export { VIEW };
 
 export const ACTION_LABEL: Readonly<Record<GoalAction, Key>> = {
   set: 'wisp.goal.action.set',

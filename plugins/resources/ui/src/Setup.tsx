@@ -9,6 +9,7 @@ import { useShell } from '@wisp/shell';
 import { Button, Callout, Checkbox, Code, Inline, SettingsGroup, SettingsRow, Stack, Text, TextArea } from '@wisp/ui';
 import { t } from './i18n.ts';
 import { changeLines, formatOf, groups, keyOf, kindCounts, opTitle, picked, type KindInfo, type Plan, type Resource } from './model.ts';
+import './i18n/lazy.ts';
 
 const kinds = defineCommand<{ peer: PeerId }, KindInfo[]>({ id: 'resources.kinds', owner: (a) => a.peer, wire: () => ({}), optimistic: 'none', pending: 'the kinds' });
 const exported = defineCommand<{ peer: PeerId }, Resource[]>({ id: 'resources.export', owner: (a) => a.peer, wire: () => ({}), optimistic: 'none', pending: 'your setup' });

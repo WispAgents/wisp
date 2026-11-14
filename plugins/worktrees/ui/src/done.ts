@@ -6,6 +6,7 @@
 import type { EntityKey, PendingInfo } from '@wisp/client';
 import type { Key, Vars } from './i18n.ts';
 import type { DoneApplyOut, DoneFolder, OnDone } from './types.ts';
+import './i18n/lazy.ts';
 
 /** runtime's list row kind: Mark done patches its `/state` */
 export const SESSION = 'session';

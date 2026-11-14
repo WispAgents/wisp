@@ -6,6 +6,7 @@ import type { T } from '../i18n.ts';
 import type { Check, Note, PrDetail, ShipSession, Thread } from '../types.ts';
 import { fixing } from './pr.ts';
 import { reviewState, type ReviewContext } from './review.ts';
+import '../i18n/lazy.ts';
 
 export type VerdictTone = 'pass' | 'fail' | 'pending' | 'merged' | 'closed' | 'draft';
 export type VerdictAction = 'merge' | 'fix';

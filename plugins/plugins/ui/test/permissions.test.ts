@@ -2,6 +2,7 @@
 import { expect, test } from 'vitest';
 import { permissionWords } from '../src/commands.ts';
 import en from '../src/i18n/en.json';
+import '../src/i18n/lazy.ts'; // the lazily loaded strings too (they load with the code that shows them)
 
 const say = (k: string, v?: Readonly<Record<string, string>>): string => ((en as Record<string, string>)[k] ?? k).replace(/\{(\w+)\}/g, (_m, n: string) => v?.[n] ?? '');
 

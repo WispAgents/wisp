@@ -3,6 +3,7 @@
 import type { JSX } from 'solid-js';
 import { Banner, Button, Inline } from '@wisp/ui';
 import type { T } from './model.ts';
+import '../i18n/lazy.ts';
 
 export function HeldCard(props: { readonly label: string; readonly why: string; readonly t: T; readonly onStart: () => void; readonly onSkip: () => void }): JSX.Element {
   return (

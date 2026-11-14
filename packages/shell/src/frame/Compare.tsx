@@ -16,6 +16,7 @@ import { compareRows, compareSentence, letter, planShares, type CompareRun, type
 import { useNow } from '../clock.ts';
 import { harnessOf } from './harness.ts';
 import { statusOf } from './rows-view.ts';
+import '../i18n/lazy.ts';
 
 interface TurnRow {
   readonly id: string;

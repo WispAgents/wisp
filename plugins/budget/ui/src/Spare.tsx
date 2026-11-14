@@ -11,6 +11,7 @@ import { noticeWords } from './drain.ts';
 import { t } from './i18n.ts';
 import { fromRow } from './source.ts';
 import { pruneSeen, spareKey, spareOf, spareWhose } from './spare.ts';
+import './i18n/lazy.ts';
 
 const PLANNED = [
   { agent: 'claude', name: 'Claude Code' },

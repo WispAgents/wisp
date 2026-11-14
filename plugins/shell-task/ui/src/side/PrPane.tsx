@@ -9,6 +9,7 @@ import type { Tone as KitTone } from '@wisp/tokens';
 import { useShell } from '../shell.ts';
 import { useTask } from '../task-context.tsx';
 import { checkGroups, dur, gist, prFiles, talk, verdict, type PrNote, type PrPanel, type Tone } from './pr.ts';
+import '../i18n/lazy.ts';
 
 const bare = (k: string): string => k.slice(k.indexOf(':') + 1);
 type S = { key: EntityKey; session: string };

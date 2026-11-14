@@ -12,6 +12,7 @@ import { isStub, keepTurnsWhole } from '@wisp/shell';
 import { useShell } from '../shell.ts';
 import { useTask } from '../task-context.tsx';
 import { changesOf, envState, filesOf, relative, revealedOf, seenMasked, setRevealed, type ChangeTurn } from './changes.ts';
+import '../i18n/lazy.ts';
 
 interface GitFileRow {
   readonly path: string;

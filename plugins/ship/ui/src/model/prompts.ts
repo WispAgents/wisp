@@ -3,6 +3,7 @@
 
 import type { T } from '../i18n.ts';
 import type { Finding, Note, Thread } from '../types.ts';
+import '../i18n/lazy.ts';
 
 const quote = (body: string): string =>
   String(body || '')

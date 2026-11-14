@@ -2,6 +2,7 @@
 // Stop does: the lead's running subagents (`live`) stop with it, a stopped subagent sends its lead no report, and
 // queued follow-ups stay, held. DOM-free.
 import type { ShellContext } from '../contract.ts';
+import '../i18n/lazy.ts';
 
 export interface StopQuestion {
   readonly title: string;

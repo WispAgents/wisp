@@ -13,6 +13,7 @@ import { crewFaceOf, type CrewFace, type MemberRow } from '../model/crew-face.ts
 import { toggleDone, toggleForLater } from '../actions.ts';
 import { kitT, say } from './say.ts';
 import { useEnv } from './env.ts';
+import '../i18n/lazy.ts';
 
 export function Mark(props: { readonly s: SessionRow; readonly view: RowView; readonly name: string }): JSX.Element {
   const env = useEnv();

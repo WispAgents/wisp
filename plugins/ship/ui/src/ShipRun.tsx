@@ -6,6 +6,7 @@ import { Index, Show, type JSX } from 'solid-js';
 import { Card, Icon, Inline, Pill, Stack, Text, Toolbar, type ToolbarItem } from '@wisp/ui';
 import { t } from './i18n.ts';
 import { stepLabel, type Track } from './model/ship.ts';
+import './i18n/lazy.ts';
 
 const STEP_TONE = { done: 'good', current: 'accent', pending: 'neutral', failed: 'bad' } as const;
 const STEP_ICON = { done: 'check', failed: 'x' } as const;

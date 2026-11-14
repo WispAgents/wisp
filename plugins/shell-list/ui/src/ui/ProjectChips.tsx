@@ -5,6 +5,7 @@
 import { createMemo, Show, type JSX } from 'solid-js';
 import { Toolbar, useSignal, type ToolbarItem } from '@wisp/ui';
 import { useEnv } from './env.ts';
+import '../i18n/lazy.ts';
 
 export function ProjectChips(): JSX.Element {
   const env = useEnv();

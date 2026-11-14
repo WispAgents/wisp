@@ -12,6 +12,7 @@ import { PANE_USES, hasInvisible, isUse, showInvisible } from './panes/bridge.ts
 import { missingOf, panesAt, runsFullAuto, withPin } from './panes/grant.ts';
 import { stuffState } from './state.ts';
 import type { Item, PaneWhere, TaskRow } from './types.ts';
+import './i18n/lazy.ts';
 
 /** wisp.stuff's setting (its manifest): "<app>@home,<app>@task" */
 export const PANES_KEY = 'stuff.panes';

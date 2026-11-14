@@ -5,6 +5,7 @@ import { createSignal, Index, Show, type JSX } from 'solid-js';
 import { Button, Dialog, Field, IconButton, Inline, Input, RadioGroup, Stack, Text, TextArea } from '@wisp/ui';
 import { t } from '../i18n.ts';
 import { missing, parsePasted, tidyName, type Draft, type Pair } from '../lib.ts';
+import '../i18n/lazy.ts';
 
 export interface EditorProps {
   readonly draft: Draft;

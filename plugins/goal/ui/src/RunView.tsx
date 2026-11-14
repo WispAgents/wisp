@@ -12,6 +12,7 @@ import { SAID_KEY, VOTE_TONE } from './rules.ts';
 import { bareId } from './task.ts';
 import { railOf, stepOf } from './steps.ts';
 import { KIND, type GoalRun, type RunHint, type RunStep } from './types.ts';
+import './i18n/lazy.ts';
 
 const VERDICTS = new Set(['met', 'not_yet', 'impossible', 'unchecked']);
 

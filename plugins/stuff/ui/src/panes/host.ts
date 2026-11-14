@@ -7,6 +7,7 @@ import { argsOf, isWrite, PANE_WRITES_PER_MIN, refusal, type LaunchArgs } from '
 import { launchBody, type LaunchDefaults } from './grant.ts';
 import { lightMember, lightPrs, listedTasks, lightTask } from './light.ts';
 import type { CrewRow, Grant, Item, TaskRow } from '../types.ts';
+import '../i18n/lazy.ts';
 
 /** The confirm card a write waits on (v1 pane-card.js): its head, its rows (label, value), the words it sends. */
 export interface PaneCard {

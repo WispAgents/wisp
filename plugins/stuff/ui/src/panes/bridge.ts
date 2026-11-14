@@ -1,3 +1,4 @@
+import '../i18n/lazy.ts';
 // The pane bridge's wire protocol (v1 web/js/pane-bridge.js): a My Stuff app pinned as a pane runs
 // on its own origin in a sandboxed frame and never gets wisp's API. Its `/_wisp/pane.js` posts
 // `{ wispPane: 1, id, method, args }` to its parent; wisp's page checks the call against what you

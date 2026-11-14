@@ -1,0 +1,22 @@
+{
+  "resources.have": "What's set up here",
+  "resources.have.hint": "Tick what to share, or share it all",
+  "resources.have.none": "Nothing set up yet that can be shared.",
+  "resources.count.one": "1",
+  "resources.count.other": "{count}",
+  "resources.share": "Share setup",
+  "resources.share.hint": "The formula wisp export writes: secrets stay ${secret:…} references, and your accounts and screens stay out",
+  "resources.share.all": "Everything set up here",
+  "resources.share.some.one": "1 kind ticked",
+  "resources.share.some.other": "{count} kinds ticked",
+  "resources.share.include": "Include in Share setup",
+  "resources.share.make": "Make the formula",
+  "resources.share.copy": "Copy",
+  "resources.share.copied": "Formula copied",
+  "resources.import": "Import",
+  "resources.import.hint": "Paste a formula (wisp.yml, YAML, JSON or TOML): you see what it would change before anything does",
+  "resources.import.placeholder": "wisp: 1\ncrew:\n  ada:\n    role: Reviews every PR",
+  "resources.import.look": "See what it changes",
+  "resources.import.done": "Imported",
+  "resources.have.loading": "Reading your setup…"
+}

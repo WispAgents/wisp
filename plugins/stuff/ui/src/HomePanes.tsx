@@ -19,6 +19,7 @@ import { taskOfRow, type SessionLike } from './panes/rows.ts';
 import { PaneCards, pinsOf } from './pins.tsx';
 import { stuffState } from './state.ts';
 import type { CrewRow, PaneWhere, TaskRow } from './types.ts';
+import './i18n/lazy.ts';
 
 const LOOPBACK = /^(localhost|127\.\d+\.\d+\.\d+|\[::1\])$/;
 

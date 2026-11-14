@@ -3,6 +3,7 @@
 import { cadenceLabel, eventsLabel, threadItems, type ThreadItem } from './model.ts';
 import type { Key } from './i18n.ts';
 import type { Member, SessionRow } from './types.ts';
+import './i18n/lazy.ts';
 
 type T = (k: Key, vars?: Readonly<Record<string, string | number>>) => string;
 

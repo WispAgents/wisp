@@ -12,6 +12,7 @@ import { t } from './i18n.ts';
 import { isCrew, judgesLabel, named, nextHarness, ruleLine, VOTE_KEY } from './rules.ts';
 import { useCrew, useHarnesses } from './task.ts';
 import { MAX_JUDGES, VOTES, type HarnessJudge, type HarnessRow, type Judge, type Vote } from './types.ts';
+import './i18n/lazy.ts';
 
 export interface JudgesProps {
   readonly client: PluginClient;

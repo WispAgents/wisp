@@ -1,3 +1,4 @@
+import '../i18n/lazy.ts';
 // The cold-cache line and Compact now (v1 web/js/cold-cache.js, composer.js coldHtml, actions.js compactItem),
 // DOM-free. The peer says (`runtime.cold`) how large an idle task's prompt cache is, when it goes cold and what
 // compacting would cost; this decides, at a given time, what the reply box and the task's ⋯ menu say. Only words:

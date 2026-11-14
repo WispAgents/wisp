@@ -8,6 +8,7 @@ import { commentStore, isLine, removed, waiting, whereOf, withComments } from '.
 import { keyOf } from '../open-task.ts';
 import { useShell } from '../shell.ts';
 import { followUp } from './send.ts';
+import '../i18n/lazy.ts';
 
 export default function CommentTray(props: ExtensionProps): JSX.Element {
   const shell = useShell();

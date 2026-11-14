@@ -8,6 +8,7 @@ import { Button, Card, Face, Inline, Input, Markdown, Stack, Text, useSignal } f
 import { answersOf, isReply, type CrewAnswer } from './answers.ts';
 import { crewData } from './data.ts';
 import { t } from './i18n.ts';
+import './i18n/lazy.ts';
 
 const bare = (k: string): string => k.slice(k.indexOf(':') + 1);
 

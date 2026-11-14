@@ -8,10 +8,10 @@
 //   shell.register(shellSettingsUi({ panes: () => registry.settingsPanes(), t: client.i18n.t, has: client.i18n.has }))
 // Open it with `openSettings(pane?)` (the intent); a pane's lede is the catalogue key `<title>.lede`.
 
-import { lazy } from 'solid-js';
+import { createComponent, lazy } from 'solid-js';
 import type { Intent } from '@wisp/client';
 import type { PluginUiDef, SettingsPaneDef, ViewDef } from '@wisp/shell';
-import { SettingsView, type FrameDeps } from './frame.tsx';
+import type { FrameDeps } from './frame.tsx';
 import { parseParams } from './nav.ts';
 import { catalogue } from './i18n.ts';
 import { VIEW_ID, type SettingsParams } from './types.ts';
@@ -27,6 +27,8 @@ export function openSettings(pane?: string): Intent {
   return { t: 'openOverlay', overlay: { kind: 'viewer', id: VIEW_ID, params: pane === undefined ? {} : { pane } } };
 }
 
+// the frame loads on first open (ADR-0011: not in the first page)
+const SettingsView = lazy(() => import('./frame.tsx').then((m) => ({ default: m.SettingsView })));
 const General = lazy(() => import('./panes/General.tsx'));
 const Notifications = lazy(() => import('./panes/Notifications.tsx'));
 const Keys = lazy(() => import('./panes/Keys.tsx'));
@@ -52,7 +54,7 @@ export function settingsView(deps: FrameDeps): ViewDef<SettingsParams> {
     parse: parseParams,
     // getters, not a copy: the props stay live, so picking a pane (a new `params`) reaches the frame
     component: (p) =>
-      SettingsView({
+      createComponent(SettingsView, {
         get client() {
           return p.client;
         },

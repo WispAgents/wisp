@@ -2,6 +2,7 @@
 import { expect, test } from 'vitest';
 import { NO_OUTPUT_MS, lastOutputAt, noOutputLine } from '../src/frame/no-output.ts';
 import { SHELL_STRINGS } from '../src/i18n/en.ts';
+import '../src/i18n/lazy.ts'; // the lazily loaded strings too (they load with the code that shows them)
 
 const t = (key: string, p: Readonly<Record<string, string | number>> = {}): string =>
   String((SHELL_STRINGS as Record<string, string>)[key] ?? key).replace(/\{(\w+)\}/g, (_, k: string) => String(p[k] ?? ''));

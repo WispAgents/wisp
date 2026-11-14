@@ -3,6 +3,7 @@
 
 import { t } from './i18n.ts';
 import type { ArmReport, PreviewArgs, PreviewPick, PreviewResult, RouteAlt, RouterSettings, SessionRow, Suggest } from './types.ts';
+import './i18n/lazy.ts';
 
 type Labelled = Pick<ArmReport, 'agent' | 'model' | 'label'>;
 

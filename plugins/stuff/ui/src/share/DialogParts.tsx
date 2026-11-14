@@ -8,6 +8,7 @@ import { copyText } from './clipboard.ts';
 import { PASSKEY_MAX, suggestPasskey } from './link.ts';
 import { carryChips, carryTip, workOption, type T } from './model.ts';
 import type { SharePreview } from './types.ts';
+import '../i18n/lazy.ts';
 
 export function CarryChips(props: { t: T; info: SharePreview | undefined; turns: number }): JSX.Element {
   return (

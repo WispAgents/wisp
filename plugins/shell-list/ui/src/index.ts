@@ -12,6 +12,6 @@ const TaskList = lazy(() => import('./ui/TaskList.tsx').then((m) => ({ default: 
 
 export default definePluginUi({
   id: 'wisp.shell-list',
-  catalogue: { ...CATALOGUE },
+  catalogue: CATALOGUE as Record<string, string>,
   extensions: [defineExtension({ id: 'shell-list.list', attachTo: { id: 'shell.sidebar:list' }, component: TaskList })],
 });

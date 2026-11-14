@@ -234,7 +234,15 @@ export interface PluginUiDef {
   /** added 2026-11-14 (additive, ADR-0064): where a `preview` block's page loads when it can't as written (wisp.grid-client:
    *  a box's `localhost:<port>` at the grid's preview address). The first that answers wins; none: the URL as written. */
   previewAddresses?: PreviewAddressDef[];
+  /** added 2026-11-14 (additive, ADR-0067): what of it only a press reaches (a row's menu items, the palette's, its
+   *  shortcuts and prompt sources, the tabs beside a task), loaded with import() as the first screen draws and
+   *  registered into this same plugin (its scope, its client), so the first page doesn't carry its code (ADR-0011).
+   *  Views, Settings panes, harnesses, the catalogue, setup and whatever the first screen draws stay in the
+   *  definition: a link or the last place must find its view or pane at start. */
+  later?: () => Promise<{ readonly default: PluginUiLater }>;
 }
+/** What a plugin's UI registers once it's loaded (PluginUiDef.later): the parts the first screen never calls. */
+export type PluginUiLater = Pick<PluginUiDef, 'extensions' | 'palette' | 'shortcuts' | 'prompt' | 'sideTabs'>;
 
 /** One way to show a `preview` block's page from where this window is (ADR-0064). */
 export interface PreviewAddressDef {
@@ -508,6 +516,10 @@ export interface ShellContext {
   harnesses(): () => readonly HarnessUiDef[];
   /** added 2026-11-11 (additive): every plugin's prompt sources (the @ and / menus) */
   promptSources(): () => readonly PromptSourceDef[];
+  /** added 2026-11-14 (additive, ADR-0067): plugins' later parts still on their way (a load that failed is tried
+   *  again): a promise that settles when they have, or undefined when none is. A prompt box's send waits on it, so
+   *  `/goal`, `@member` or `tomorrow 9am` sent as the page loads still reaches its prompt source. */
+  laterReady?(): Promise<void> | undefined;
   /** added 2026-11-12 (additive): every plugin's tabs beside a task, each with its plugin's client */
   sideTabs?(): () => readonly (SideTabDef & { readonly plugin: string; readonly client: PluginClient })[];
   /** added 2026-11-14 (additive, ADR-0064): every plugin's preview addresses, each with its plugin's client */

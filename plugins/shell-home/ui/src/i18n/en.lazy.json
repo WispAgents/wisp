@@ -1,0 +1,18 @@
+{
+  "shell-home.state.asking": "Asking",
+  "shell-home.state.approval": "Approval",
+  "shell-home.state.reminder": "Reminder",
+  "shell-home.state.done": "Done",
+  "shell-home.state.ready": "Ready",
+  "shell-home.state.error": "Failed",
+  "shell-home.state.blocked": "Blocked",
+  "shell-home.overlap.pill": "Overlap",
+  "shell-home.overlap.clash": "Clash",
+  "shell-home.overlap.with": "Overlaps with “{title}”",
+  "shell-home.overlap.clashesWith": "Clashes with “{title}”",
+  "shell-home.overlap.conflict": "Merging both would conflict in {files}",
+  "shell-home.overlap.also": "Also changes {files}",
+  "shell-home.overlap.clean": "Also changes {files}, but they merge cleanly",
+  "shell-home.overlap.andMore": "{files} and {n} more",
+  "shell-home.overlap.more": "+{n} more"
+}

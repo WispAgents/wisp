@@ -5,6 +5,7 @@
 import type { CheckView, GoalStatus, GoalView, HarnessRow, Judge, JudgeVote, MemberRow, SessionRow, Verdict, Vote } from './types.ts';
 import { STALL } from './types.ts';
 import { t, type Key, type Vars } from './i18n.ts';
+import './i18n/lazy.ts';
 
 export interface Words {
   readonly key: Key;

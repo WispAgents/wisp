@@ -10,6 +10,7 @@ import { Input, SelectSetting, SettingsGroup, SettingsRow, SwitchSetting, useSig
 import { t, type Key } from '../i18n.ts';
 import { fromRow, onOff, text } from '../source.ts';
 import { EDITORS, HARNESS_KIND, KEYS, REVIEW_HARNESSES, TERMINAL_KIND, type Harness, type TerminalApp } from '../types.ts';
+import '../i18n/lazy.ts';
 
 const locked = (by: string): string => t('shell-settings.locked', { by });
 

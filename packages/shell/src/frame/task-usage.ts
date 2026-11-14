@@ -5,6 +5,7 @@
 import type { TaskUsageProps, TaskUsageRow, TaskUsageSection } from '@wisp/ui';
 import type { ShellContext } from '../contract.ts';
 import { windowName } from './compare.ts';
+import '../i18n/lazy.ts';
 
 type T = ShellContext['t'];
 type Plan = Readonly<Record<string, number>>;

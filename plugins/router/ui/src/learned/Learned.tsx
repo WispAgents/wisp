@@ -15,6 +15,7 @@ import { KindRules } from './KindRules.tsx';
 import { RecentPicks } from './RecentPicks.tsx';
 import { ResetButton } from './ResetButton.tsx';
 import { TestCommands } from './TestCommands.tsx';
+import '../i18n/lazy.ts';
 
 const dateOf = (iso: string): string => new Intl.DateTimeFormat(undefined, { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' }).format(new Date(iso));
 

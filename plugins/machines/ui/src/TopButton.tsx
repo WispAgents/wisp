@@ -7,6 +7,7 @@ import { PEER, STATUS, TOPIC, type PeerBody, type StatusBody } from './commands.
 import { t } from './i18n.ts';
 import { MachinesDialog } from './panes/Manager.tsx';
 import { barOf } from './view.ts';
+import './i18n/lazy.ts';
 
 type Doc<T> = { readonly id: string; readonly body: T };
 

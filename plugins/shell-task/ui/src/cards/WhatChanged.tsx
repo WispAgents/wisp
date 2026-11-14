@@ -3,6 +3,7 @@
 import type { JSX } from 'solid-js';
 import { Text } from '@wisp/ui';
 import type { T } from './model.ts';
+import '../i18n/lazy.ts';
 
 export function WhatChanged(props: { readonly line: string; readonly t: T }): JSX.Element {
   return (

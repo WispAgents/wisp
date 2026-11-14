@@ -10,6 +10,7 @@ import { t } from './i18n.ts';
 import { pillTitle, prOf, prTone } from './model/pr.ts';
 import { TONE } from './tones.ts';
 import { useSession, useShip } from './use.ts';
+import './i18n/lazy.ts';
 
 const DOING = { commit: 'wisp.ship.doing.commit', push: 'wisp.ship.doing.push', pr: 'wisp.ship.doing.pr', start: 'wisp.ship.doing.start' } as const;
 

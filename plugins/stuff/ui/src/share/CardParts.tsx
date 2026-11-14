@@ -5,6 +5,7 @@ import { Button, Checkbox, Icon, Inline, Input, Link, Stack, Text } from '@wisp/
 import { createSignal, Show, type JSX } from 'solid-js';
 import { cardFacts, whoOf, type CardChoice, type T } from './model.ts';
 import type { ShareCardInfo } from './types.ts';
+import '../i18n/lazy.ts';
 
 export function LockedBody(props: { t: T; card: ShareCardInfo | undefined; busy: boolean; onUnlock: (passkey: string) => void }): JSX.Element {
   const t = props.t;

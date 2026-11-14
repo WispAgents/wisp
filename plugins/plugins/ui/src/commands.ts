@@ -1,6 +1,7 @@
 // Settings → Plugins' reads and writes: every plugin the kernel has (plugins.list) and its switch
 // (plugins.setEnabled). The list is read when the pane opens and after a switch.
 import { defineCommand, type PeerId } from '@wisp/client';
+import './i18n/lazy.ts';
 
 export interface PluginRow {
   readonly id: string;

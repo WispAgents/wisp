@@ -93,6 +93,7 @@ import { runPick, type Runner } from './runner.ts';
 import { rowUsage, taskUsage, type TurnStatsLike } from './task-usage.ts';
 import { MODE_ICON, agentMenu, modeMenu, teamMenu, whenMenu, type Mode, type When } from './pickers.ts';
 import { capOf } from './cap.ts';
+import '../i18n/lazy.ts';
 
 interface TurnBody {
   readonly prompt?: string;
@@ -357,7 +358,21 @@ export default function TaskView(props: { readonly id: string; readonly onBack?:
       if (id === undefined) return chip;
       return { ...chip, onOpen: () => (switchTo(shell, id), shell.nav().layout === 'stack' && shell.navigate({ t: 'home' })) };
     });
+  // ADR-0067: plugins' prompt sources may still be on their way (the page's first moments, or a load tried again):
+  // a send waits for them once, then goes whatever they did
+  let waited = false;
   const send = (): void => {
+    const wait = waited ? undefined : shell.laterReady?.();
+    if (wait) {
+      return void wait.then(() => {
+        waited = true;
+        try {
+          send();
+        } finally {
+          waited = false;
+        }
+      });
+    }
     // /feedback … or /bug …: to the wisp team about this task's run, never a follow-up (v1 composer.js)
     if (isFeedback(text())) {
       const typed = text();

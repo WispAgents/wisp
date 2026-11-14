@@ -1,3 +1,4 @@
+import '../i18n/lazy.ts';
 // *No output for 12 min* in the working panel (v1 web/js/no-output.js, F-task-36): a plain fact about a running
 // turn, words only, that counts up and clears by itself on its next sign of life. DOM-free.
 

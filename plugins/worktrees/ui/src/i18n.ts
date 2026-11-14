@@ -5,7 +5,9 @@
 
 import en from './i18n/en.json' with { type: 'json' };
 
-type Raw = keyof typeof en;
+type LazyJson = typeof import('./i18n/en.lazy.json', { with: { type: 'json' } });
+type Lazy = LazyJson extends { default: infer D } ? D : LazyJson;
+type Raw = keyof typeof en | keyof Lazy;
 type Base<K> = K extends `${infer B}.one` ? B : K extends `${infer B}.other` ? B : K;
 export type Key = Base<Raw> | Raw;
 export type Vars = Readonly<Record<string, string | number>>;

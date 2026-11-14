@@ -6,6 +6,7 @@ import { Button, Dialog, Inline, Text } from '@wisp/ui';
 import { routerReset } from '../commands.ts';
 import { toastOf } from '../host.ts';
 import { t } from '../i18n.ts';
+import '../i18n/lazy.ts';
 
 export function ResetButton(props: { readonly client: PluginClient }): JSX.Element {
   const [asking, setAsking] = createSignal(false);

@@ -7,6 +7,7 @@ import { Dialog, Kbd, ListRow, Stack, Text } from '@wisp/ui';
 import { useShell } from '../context.tsx';
 import { SESSION, type SessionRow } from '../rows.ts';
 import { SHOW_AFTER_MS, pick, startSwitch, step, type SwitchState } from './model.ts';
+import '../i18n/lazy.ts';
 
 // size-ok: the keys and the view share the switch state; split, they'd pass it all around
 export default function Switcher(props: { readonly recent: Readable<readonly string[]> }): JSX.Element {

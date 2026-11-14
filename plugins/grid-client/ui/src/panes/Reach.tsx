@@ -7,6 +7,7 @@ import { Button, Inline, Input, Link, SettingsBlock, SettingsInputRow, SettingsG
 import { cancelSignIn, DEFAULT_GRID, setComputer } from '../commands.ts';
 import { t } from '../i18n.ts';
 import { host, useCloud } from './state.ts';
+import '../i18n/lazy.ts';
 
 export default function Reach(props: ExtensionProps): JSX.Element {
   const { c, peer, r, grid, setGrid, starting, waiting, failed, start, computerLine } = useCloud(props.client);

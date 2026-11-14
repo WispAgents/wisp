@@ -10,6 +10,7 @@ import { AutoFoot, AutoList, AutoRunner, AutoNote, AutoPresets, AutoRow, Automat
 import { recipes, triggers, type Recipe, type Trigger } from './commands.ts';
 import { t } from './i18n.ts';
 import { EVERY, HOOK_KINDS, KINDS, POLLED, SCHEDULE_PRESETS, TASK_KINDS, emptyForm, kindOf, pick, readBack, specOfForm, warning, type TriggerFormState } from './trigger-form.ts';
+import './i18n/lazy.ts';
 
 const apply = defineCommand<{ peer: PeerId; name: string; spec: Record<string, unknown> }>({
   id: 'resources.apply',

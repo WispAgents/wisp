@@ -10,6 +10,7 @@ import { useShell } from '@wisp/shell';
 import { PaletteSheet, type PaletteRow } from '@wisp/ui';
 import { t, type Key } from './i18n.ts';
 import { emptyLine, fixLabel, groupOf, issuePrompt, matches, others, PICKER, type Issue, type IssueList, type Other, type PickerParams, type Source } from './model.ts';
+import './i18n/lazy.ts';
 
 const list = defineCommand<{ peer: PeerId; source: Source; project?: string; q: string }, IssueList>({
   id: 'issues.list',

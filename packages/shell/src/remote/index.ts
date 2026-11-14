@@ -1,9 +1,8 @@
 // The untrusted tier's UI (ADR-0048): `plugins.ui` says what each untrusted plugin shows; here each one becomes a
 // plugin UI the shell registers like any other, its component the remote view host. Only a Settings pane for now
 // (a side view, a block renderer and a toolbar button are the ADR's other places).
-import { createComponent } from 'solid-js';
+import { createComponent, lazy } from 'solid-js';
 import type { PluginUiDef } from '../contract.ts';
-import { RemoteView } from './RemoteView.tsx';
 
 export { clean, KIT, type Desc, type Node } from './descriptor.ts';
 export { CSP, SANDBOX, frameDoc } from './frame.ts';
@@ -18,6 +17,9 @@ export interface RemoteUi {
   readonly module: string;
 }
 
+// the host (and the markdown its descriptors draw with) loads when a pane first shows (ADR-0011: not in the first page)
+const Host = lazy(() => import('./RemoteView.tsx').then((m) => ({ default: m.RemoteView })));
+
 /** The plugin UIs for what `plugins.ui` gave: one per plugin, its Settings panes in Advanced. */
 export function remoteUiDefs(list: readonly RemoteUi[]): PluginUiDef[] {
   const byPlugin = new Map<string, RemoteUi[]>();
@@ -31,7 +33,7 @@ export function remoteUiDefs(list: readonly RemoteUi[]): PluginUiDef[] {
       title: `${u.id}.title`,
       icon: 'plug',
       order: 90 + i,
-      component: (p) => createComponent(RemoteView, { client: p.client, plugin, module: u.module, title: u.title }),
+      component: (p) => createComponent(Host, { client: p.client, plugin, module: u.module, title: u.title }),
     })),
   }));
 }

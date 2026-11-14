@@ -7,6 +7,7 @@ import type { Tone } from '@wisp/tokens';
 import type { Row, Agent, SessionRow } from '../types.ts';
 import { resText } from './machine.ts';
 import { isForLater, isScheduled, nextAt } from './sections.ts';
+import '../i18n/lazy.ts';
 
 export interface Txt {
   readonly key: string;

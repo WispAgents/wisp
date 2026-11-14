@@ -1,7 +1,9 @@
 // F-page-13 (v1 receipt.js subagentParts / subagentTip, 0.57.0): Claude Code ran subagents: the trail says which and
 // where the tokens went, by model.
 import { expect, test } from 'vitest';
-import en from '../src/i18n/en.cards.json';
+// the plugin's whole catalogue: its first-page strings and the lazily loaded ones (src/i18n/lazy.ts)
+import { CATALOGUE as en } from '../src/i18n/index.ts';
+import '../src/i18n/lazy.ts';
 import { agentsOf } from '../src/cards/agents.ts';
 
 const t = (k: string, v?: Readonly<Record<string, string | number>>): string => ((en as Record<string, string>)[k] ?? k).replace(/\{(\w+)\}/g, (_, x: string) => String(v?.[x] ?? ''));

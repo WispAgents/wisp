@@ -7,6 +7,7 @@
 import { byAge, letter, listed, own, workOf, type T } from './metrics.ts';
 import { longestFirst, pct, windowKey } from './receipt.ts';
 import type { Run, RunTurn } from './types.ts';
+import '../i18n/lazy.ts';
 
 export const DASH = '—';
 

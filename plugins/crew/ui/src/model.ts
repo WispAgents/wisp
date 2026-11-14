@@ -6,6 +6,7 @@ import type { Key, Vars } from './i18n.ts';
 import { needsYou, type MemberState } from './rules/feed.ts';
 import { cronWords } from './rules/schedule.ts';
 import type { JobKind, Member, SessionRow } from './types.ts';
+import './i18n/lazy.ts';
 
 export type T = (key: Key, vars?: Vars) => string;
 export type State = MemberState<SessionRow>;

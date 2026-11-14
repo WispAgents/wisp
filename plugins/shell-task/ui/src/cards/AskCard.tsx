@@ -3,6 +3,7 @@
 import { For, Show, type JSX } from 'solid-js';
 import { Box, Button, Stack, Text, Wrap } from '@wisp/ui';
 import type { Ask } from '../foot/model.ts';
+import '../i18n/lazy.ts';
 
 export function AskCard(props: { readonly ask: Ask; readonly t: (k: string) => string; readonly onAnswer: (text: string) => void }): JSX.Element {
   const t = props.t;

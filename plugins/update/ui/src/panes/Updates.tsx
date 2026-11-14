@@ -12,6 +12,7 @@ import { useCopy, useNow, useTopic } from '../live.ts';
 import { fromRow, text } from '../source.ts';
 import { KEYS, KIND, ROW_ID, TOPIC, type UpdateState } from '../types.ts';
 import { channelHint, channelItems, showsInstall, versionLine } from '../words.ts';
+import '../i18n/lazy.ts';
 
 type Row = DeepReadonly<UpdateState>;
 const quiet = (p: Promise<unknown>): void => void p.catch(() => {}); // the shell toasts a refusal

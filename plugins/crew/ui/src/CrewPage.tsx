@@ -35,6 +35,7 @@ import type { SessionRow } from './types.ts';
 import { VIEW } from './views.ts';
 import { KitSection, OffersSection } from './more/index.ts';
 import { offerOf } from './more/kit-view.ts';
+import './i18n/lazy.ts';
 
 const SHOW = 30;
 

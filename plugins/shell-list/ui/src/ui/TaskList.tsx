@@ -24,6 +24,7 @@ import { GroupRow, PlanRow, SectionHead } from './OtherRows.tsx';
 import { revealIn } from './reveal.ts';
 import { Slot, hasExtensions } from './Slot.tsx';
 import { TaskRow } from './TaskRow.tsx';
+import '../i18n/lazy.ts';
 
 /** px of a row not measured yet: three lines (title, what it's doing, where it runs) */
 export const ROW_ESTIMATE = 58;

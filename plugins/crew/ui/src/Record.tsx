@@ -10,6 +10,7 @@ import { crewData } from './data.ts';
 import { t } from './i18n.ts';
 import { toks } from './more/record-logic.ts';
 import { crewLimits, memberLimits, memberRecord, type LimitRow, type MemberStats, type Say } from './record-view.ts';
+import './i18n/lazy.ts';
 
 const stats = defineCommand<{ peer: PeerId; days: number }, MemberStats[]>({
   id: 'crew.stats',

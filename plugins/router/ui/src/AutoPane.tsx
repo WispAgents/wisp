@@ -11,6 +11,7 @@ import { t } from './i18n.ts';
 import { harnessOf } from './rules.ts';
 import { GOALS, KIND, SCOUTS, TOPIC, type RouterPatch, type RouterSettings, type RouterView } from './types.ts';
 import { LEARNED } from './views.ts';
+import './i18n/lazy.ts';
 
 type Bool = 'habits' | 'explore' | 'escalate' | 'best2';
 

@@ -7,6 +7,7 @@ import { Button, Dialog, Input, Inline } from '@wisp/ui';
 import { deleteTask, renameTask } from '../actions.ts';
 import { KIND, type Session } from '../types.ts';
 import { useEnv } from './env.ts';
+import '../i18n/lazy.ts';
 
 export function RenameDialog(): JSX.Element {
   const env = useEnv();

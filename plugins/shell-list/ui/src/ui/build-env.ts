@@ -12,6 +12,7 @@ import { machineLabelKey } from '../model/machine.ts';
 import { modelOf } from '../state.ts';
 import { KIND, type Load } from '../types.ts';
 import type { ListEnv } from './env.ts';
+import '../i18n/lazy.ts';
 
 /** how often the rows' times move on */
 export const TICK_MS = 30_000;

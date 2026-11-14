@@ -8,6 +8,7 @@ import { useShell } from '@wisp/shell';
 import { DataTable, DayBars, SettingsNote, Stack, Stats, Tabs, Text, useSignal } from '@wisp/ui';
 import { usage, type Usage, type UsageRow } from './commands.ts';
 import { t } from './i18n.ts';
+import './i18n/lazy.ts';
 
 const money = (n: number): string => `$${n.toFixed(2)}`;
 const pct = (n: number | null | undefined): string => (n === null || n === undefined ? '—' : `${Math.round(n)}%`);

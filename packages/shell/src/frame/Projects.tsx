@@ -12,6 +12,7 @@ import { SESSION, type SessionRow } from '../rows.ts';
 import { useProjects } from './projects.ts';
 import { projectOf, type ProjectView } from './rows-view.ts';
 import { nameFor, whereIs } from './project-names.ts';
+import '../i18n/lazy.ts';
 
 const COLORS = ['violet', 'teal', 'amber', 'rose', 'sky', 'lime', 'orange', 'indigo', 'slate'] as const;
 const IS_URL = /^(https?:\/\/|git@|ssh:\/\/)/;

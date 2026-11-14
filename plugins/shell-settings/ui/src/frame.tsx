@@ -12,6 +12,7 @@ import { Callout, EmptyState, SettingsFrame, useSignal } from '@wisp/ui';
 import { t as own } from './i18n.ts';
 import { VIEW_ID, type SettingsParams } from './types.ts';
 import { groupPanes, pickPane, settingsIntent, type PaneEntry } from './nav.ts';
+import './i18n/lazy.ts';
 
 /** What the frame reads: every registered pane and a translator (titles are other plugins' keys). */
 export interface FrameDeps {

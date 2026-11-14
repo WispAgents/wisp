@@ -7,6 +7,7 @@ import { entityKey, ownerOf, type EntityKey, type PeerId } from '@wisp/client';
 import { useSignal, type KeepHost } from '@wisp/ui';
 import type { ShellContext } from '../contract.ts';
 import { ITEM, keepKey, keepRemove, keepSave, shownOf, type Kept, type SaveArgs } from './keep-ops.ts';
+import '../i18n/lazy.ts';
 
 /** Save to My Stuff for one turn's answer of task `task` (its entity key), kept in this computer's My Stuff (`home`):
  *  the page watches this computer's items. A task on another computer hands over its text (code, docs); its pictures

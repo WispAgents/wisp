@@ -12,6 +12,7 @@ import { follow } from './follow.ts';
 import { kitT } from './say.ts';
 import { useEnv } from './env.ts';
 import { flatSession } from '../model/wire.ts';
+import '../i18n/lazy.ts';
 
 type Group = Extract<Entry, { kind: 'group' }>;
 

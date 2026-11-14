@@ -10,6 +10,7 @@
 
 import type { PeerId } from '@wisp/client';
 import type { Topic } from '@wisp/protocol';
+import './i18n/lazy.ts';
 
 export const TOPIC = 'plugin:wisp.connectors:list' as Topic;
 export const KIND = {

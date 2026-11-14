@@ -1,3 +1,4 @@
+import './i18n/lazy.ts';
 // My shares (ADR-0038 "My shares", F-share-3), DOM-free: what `grid-client.shares` lists (the grid's own view of
 // each share), as rows: the live ones first, newest first, each with what it is, who may open it, and its counts.
 

@@ -1,6 +1,7 @@
 // Open file…'s palette rows (v1 editor.js openFileFinder, grepIn), pure: the task's files by name, the changed ones
 // first; then where the words typed are inside them.
 import type { PaletteItem } from '@wisp/shell/contract';
+import '../i18n/lazy.ts';
 
 /** One place `worktrees.grep {q}` found the words. */
 export interface Hit {

@@ -4,6 +4,7 @@
 
 import { t } from './i18n.ts';
 import type { Entry, Filter, Leftover, Offer, WorktreeItem, WorktreesStatus } from './types.ts';
+import './i18n/lazy.ts';
 
 const DAY = 86_400_000;
 const KB = 1024;

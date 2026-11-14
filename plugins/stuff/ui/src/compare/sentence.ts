@@ -4,6 +4,7 @@
 
 import { byAge, letter, listed, runMetrics, type T } from './metrics.ts';
 import type { Metrics, Run, Trial } from './types.ts';
+import '../i18n/lazy.ts';
 
 const NEAR = 0.05; // a difference under this share says nothing about one run each
 const NEAR_MS = 5000;

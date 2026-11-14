@@ -9,6 +9,7 @@ import type { DevEntry, PeerId, PluginClient } from '@wisp/client';
 import { Button, Inline, Pill, Section, SettingsRow, Stack, Text, Time, VirtualList, useSignal } from '@wisp/ui';
 import { useShell } from '../context.tsx';
 import { STORE_KINDS, describe, newestFirst } from './summary.ts';
+import '../i18n/lazy.ts';
 
 function Peer(props: { readonly peer: PeerId }): JSX.Element {
   const shell = useShell();

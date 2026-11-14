@@ -4,6 +4,7 @@ import { compareRows, compareSentence, newGroup, nextRun, planShares, runMetrics
 import { create } from '../src/frame/commands.ts';
 import { wireOf } from './command.ts';
 import { SHELL_STRINGS } from '../src/i18n/en.ts';
+import '../src/i18n/lazy.ts'; // the lazily loaded strings too (they load with the code that shows them)
 
 const t = (key: string, p: Readonly<Record<string, string | number>> = {}): string =>
   String((SHELL_STRINGS as Record<string, string>)[key] ?? key).replace(/\{(\w+)\}/g, (_, k: string) => String(p[k] ?? ''));

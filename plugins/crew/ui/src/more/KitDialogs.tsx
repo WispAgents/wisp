@@ -14,6 +14,7 @@ import { fitsKit } from './kit-logic.ts';
 import { ideas, kitGoal, localRows, type Say } from './kit-view.ts';
 import { KIT_MAX } from './skill-md.ts';
 import type { KitDraft } from './types.ts';
+import '../i18n/lazy.ts';
 
 const say = t as unknown as Say;
 

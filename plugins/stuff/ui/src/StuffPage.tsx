@@ -15,6 +15,7 @@ import { useEntries, type Entry } from './items.ts';
 import { kindOf } from './kinds.ts';
 import { cardMeta, groupItems, kindChips, shownItems, when, type KindFilter } from './model.ts';
 import { TOPIC } from './types.ts';
+import './i18n/lazy.ts';
 
 /** The actions this page carries out; the rest (pins, edit) live where they're done. */
 const HERE: ReadonlySet<ActionId> = new Set(['open', 'pin-task', 'unpin-task', 'pin-home', 'unpin-home', 'stop', 'publish', 'pubcopy', 'pubopen', 'update', 'unpublish', 'copy', 'download', 'star', 'task', 'folder', 'remove']);

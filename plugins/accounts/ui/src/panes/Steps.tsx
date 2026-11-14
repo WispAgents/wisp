@@ -7,6 +7,7 @@ import { loginInput } from '../commands.ts';
 import { t } from '../i18n.ts';
 import type { LoginRow } from '../types.ts';
 import { loginStep, site } from '../words.ts';
+import '../i18n/lazy.ts';
 
 const quiet = (p: Promise<unknown>): void => {
   p.catch(() => {}); // the shell's onError shows the rollback toast

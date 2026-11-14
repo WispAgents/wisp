@@ -14,6 +14,7 @@ import { KIND, REACH_ID, TOPIC, type ConnectorView, type FoundServer, type Reach
 import { Confirm } from './Confirm.tsx';
 import { Editor } from './Editor.tsx';
 import { Review } from './Review.tsx';
+import '../i18n/lazy.ts';
 
 const quiet = (p: Promise<unknown>): void => {
   p.catch(() => {}); // the shell's onError shows the rollback toast

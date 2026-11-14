@@ -8,6 +8,7 @@ import { AppFrame, EmptyState, Icon, IconButton, Inline, Orb, Stack, Text, readT
 import { useShell } from '../shell.ts';
 import { useTask } from '../task-context.tsx';
 import { appSandbox, runLine, shortUrl, watchDoc } from './watch-doc.ts';
+import '../i18n/lazy.ts';
 
 interface WatchBody {
   readonly title: string;

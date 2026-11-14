@@ -11,6 +11,7 @@ import { addStarter, listStarters, makePane } from './commands.ts';
 import { useEntries } from './items.ts';
 import { PaneCards, pinsOf } from './pins.tsx';
 import type { Item } from './types.ts';
+import './i18n/lazy.ts';
 
 export const MAKE_VIEW = 'stuff.make';
 

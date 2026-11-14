@@ -3,6 +3,7 @@
 
 import type { IconName } from '@wisp/ui';
 import type { StuffKind } from './types.ts';
+import './i18n/lazy.ts';
 
 export interface KindInfo {
   readonly id: StuffKind;

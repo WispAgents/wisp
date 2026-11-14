@@ -16,6 +16,7 @@ import { kitRows, toggled, type Say } from './kit-view.ts';
 import { KIT_MAX } from './skill-md.ts';
 import type { KitDraft, KitFile } from './types.ts';
 import type { PluginClient } from '@wisp/client';
+import '../i18n/lazy.ts';
 
 export interface KitSectionProps {
   readonly client: PluginClient;

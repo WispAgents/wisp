@@ -6,6 +6,7 @@ import { Button, Inline, SettingsGroup, SettingsRow } from '@wisp/ui';
 import { offerFacts } from '../format.ts';
 import { t } from '../i18n.ts';
 import type { Offer } from '../types.ts';
+import '../i18n/lazy.ts';
 
 export interface BringInProps {
   readonly offers: readonly Offer[];

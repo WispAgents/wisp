@@ -5,6 +5,7 @@ import { entityKey, type PluginClient } from '@wisp/client';
 import { useSignal } from '@wisp/ui';
 import { DEFAULT_GRID, KIND, signIn, TOPIC, type CloudRow } from '../commands.ts';
 import { t } from '../i18n.ts';
+import '../i18n/lazy.ts';
 
 export const host = (url: string): string => url.replace(/^https?:\/\//, '').replace(/\/$/, '');
 

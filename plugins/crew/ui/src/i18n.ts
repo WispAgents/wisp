@@ -8,7 +8,9 @@ import core from './i18n/en.json' with { type: 'json' };
 import more from './i18n/en.more.json' with { type: 'json' };
 
 const en = { ...core, ...more };
-type Raw = keyof typeof core | keyof typeof more;
+type LazyJson = typeof import('./i18n/en.lazy.json', { with: { type: 'json' } });
+type Lazy = LazyJson extends { default: infer D } ? D : LazyJson;
+type Raw = keyof typeof core | keyof typeof more | keyof Lazy;
 type Base<K> = K extends `${infer B}.one` ? B : K extends `${infer B}.other` ? B : K;
 export type Key = Base<Raw> | Raw;
 export type Vars = Readonly<Record<string, string | number>>;

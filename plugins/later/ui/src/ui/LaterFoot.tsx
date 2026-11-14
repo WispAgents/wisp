@@ -14,6 +14,7 @@ import { followUpTag } from '../format.ts';
 import { t } from '../i18n.ts';
 import { KIND, type LaterView, type SessionRow } from '../types.ts';
 import { sortLater } from '../rules.ts';
+import '../i18n/lazy.ts';
 
 /** The text in place: Enter or leaving it keeps it, Escape leaves the follow-up as it was. */
 function EditBox(p: { readonly text: string; readonly label: string; readonly onDone: (text: string | undefined) => void }): JSX.Element {

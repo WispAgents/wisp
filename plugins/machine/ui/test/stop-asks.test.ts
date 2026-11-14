@@ -2,6 +2,7 @@
 import { expect, test } from 'vitest';
 import { stopAsk } from '../src/view.ts';
 import en from '../src/i18n/en.json' with { type: 'json' };
+import '../src/i18n/lazy.ts'; // the lazily loaded strings too (they load with the code that shows them)
 
 const cat = en as Record<string, string>;
 const t = (k: string, v?: Readonly<Record<string, string | number>>): string => {

@@ -3,6 +3,7 @@
 
 import type { Item, PanePin, PaneWhere } from '../types.ts';
 import { MAX_PANES, PANE_WHERE, WRITE_USES } from './bridge.ts';
+import '../i18n/lazy.ts';
 
 /** What a grant may hold: only what the app asks for, each once, in the order asked. */
 export const grantOf = (uses: readonly string[] = [], want: unknown = []): string[] =>

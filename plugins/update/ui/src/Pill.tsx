@@ -16,6 +16,7 @@ import { usePaneScope, useTopic } from './live.ts';
 import { Confirm } from './panes/Updates.tsx';
 import { BACK_WITHIN_MS, cameBack, failureAction, notBack, pillOf, restartStep } from './pill.ts';
 import { KIND, ROW_ID, TOPIC, type UpdateState } from './types.ts';
+import './i18n/lazy.ts';
 
 /** The version that was restarting (pill.ts restartStep): reload once another answers, else say so after 2 min. */
 function useRestartWatch(row: () => UpdateState | undefined, shell: ReturnType<typeof useShell>, scope: ReturnType<typeof usePaneScope>): void {

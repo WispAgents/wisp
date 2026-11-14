@@ -1,3 +1,4 @@
+import './i18n/lazy.ts';
 // The Repo tab (ADR-0033 "A repo's history has its own place"), DOM-free: the repo's tracked tasks grouped by
 // month, newest first, each row's line (who, which agent, the PR or commits it made), and the prompt Resume sends
 // (as `wisp resume` writes it: carry on from the report, on today's code).

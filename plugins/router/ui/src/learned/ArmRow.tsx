@@ -6,6 +6,7 @@ import { Button, Icon, Inline, ListRow, Pill, Text, Tooltip } from '@wisp/ui';
 import { t } from '../i18n.ts';
 import { byTypeLine, cost, modelName, pct, ruleOn, sourceOf, TIER_WORD, type RuleKind, type RuleSet } from '../rules.ts';
 import type { ArmReport } from '../types.ts';
+import '../i18n/lazy.ts';
 
 const STATE_TONE: Readonly<Record<string, 'good' | 'warn' | 'bad' | 'neutral'>> = { ready: 'good', new: 'warn', untried: 'neutral', cooling: 'warn', gone: 'bad' };
 const STATE_KEYS = ['ready', 'new', 'untried', 'cooling', 'gone'] as const;

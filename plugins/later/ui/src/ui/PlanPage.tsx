@@ -14,6 +14,7 @@ import { t } from '../i18n.ts';
 import type { Plan } from '../types.ts';
 import { plans } from './data.ts';
 import { planPage } from './plan-page.ts';
+import '../i18n/lazy.ts';
 
 export default function PlanPage(props: { readonly client: PluginClient; readonly params: { readonly id?: string } }): JSX.Element {
   const c = props.client;

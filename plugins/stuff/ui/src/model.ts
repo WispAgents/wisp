@@ -4,6 +4,7 @@
 
 import { kindOf, KINDS } from './kinds.ts';
 import type { Item, StuffKind } from './types.ts';
+import './i18n/lazy.ts';
 
 export type Translate = (key: string, vars?: Readonly<Record<string, string | number>>) => string;
 export type Layout = 'grid' | 'list';

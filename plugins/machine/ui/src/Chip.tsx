@@ -10,6 +10,7 @@ import { Show, createMemo, type JSX } from 'solid-js';
 import { useLoad } from './data.ts';
 import { openSettings, useHost } from './host.ts';
 import { chipOf, loadOf, machineLabelKey } from './view.ts';
+import './i18n/lazy.ts';
 
 export function MachineChip(props: ExtensionProps): JSX.Element {
   const t = props.client.t;

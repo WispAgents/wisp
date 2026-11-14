@@ -7,6 +7,7 @@
 import { countChanges } from './line-count.ts';
 import { longestFirst, turnTokens, type Tokens } from './receipt.ts';
 import type { Metrics, Run, RunTurn } from './types.ts';
+import '../i18n/lazy.ts';
 
 /** The i18n lookup these pure functions word their output with (PluginClient.t, or a test's). */
 export type T = (key: string, vars?: Readonly<Record<string, string | number>>) => string;

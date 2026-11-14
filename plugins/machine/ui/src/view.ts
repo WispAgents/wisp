@@ -2,6 +2,7 @@
 // copy moved to the catalogue. Everything takes `now` and a `t`, so tests pin both.
 
 import type { HistoryPoint, MachineLoad, MachineSnapshot, ReclaimGroup, ReclaimKind } from './types.ts';
+import './i18n/lazy.ts';
 
 export type T = (key: string, vars?: Readonly<Record<string, string | number>>) => string;
 

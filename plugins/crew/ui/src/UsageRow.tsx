@@ -7,6 +7,7 @@ import { Button, SettingsRow, useSignal } from '@wisp/ui';
 import { crewData } from './data.ts';
 import { t } from './i18n.ts';
 import { VIEW } from './views.ts';
+import './i18n/lazy.ts';
 
 export default function UsageRow(props: ExtensionProps): JSX.Element {
   const members = useSignal(crewData(props.client).members);

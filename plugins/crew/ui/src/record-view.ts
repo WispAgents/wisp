@@ -4,6 +4,7 @@
 
 import { REPEATING, share, toks } from './more/record-logic.ts';
 import type { StatKind } from './more/types.ts';
+import './i18n/lazy.ts';
 
 export type Say = (k: string, v?: Readonly<Record<string, string | number>>) => string;
 

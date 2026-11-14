@@ -12,6 +12,7 @@ import { t } from './i18n.ts';
 import { cadenceText } from './model.ts';
 import { bundleText, shareNotes, shareWhat, type ShareOpts } from './share.ts';
 import { VIEW } from './views.ts';
+import './i18n/lazy.ts';
 
 interface Exported {
   readonly bundle: Record<string, unknown>;

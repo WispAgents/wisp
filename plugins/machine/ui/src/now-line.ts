@@ -1,6 +1,7 @@
 // Settings → Usage → Machine load's Now line, a plain module so its test needn't compile the group.
 import type { PluginClient } from '@wisp/client';
 import type { MachineLoad } from './types.ts';
+import './i18n/lazy.ts';
 
 /** "62% memory free · CPU at 50% of its cores · 2 runs of 4 going", and why automations wait, if they do (v1 paintLoad). */
 export function nowLine(l: MachineLoad | undefined, t: PluginClient['t']): string {

@@ -9,6 +9,7 @@ import { machineCommands } from './commands.ts';
 import type { MachineData } from './data.ts';
 import type { Host } from './host.ts';
 import { automationsLine, batteryLine, dayStats, limitsLine, pauseChoices, pctText, size, span } from './view.ts';
+import './i18n/lazy.ts';
 
 interface Props {
   readonly client: PluginClient;

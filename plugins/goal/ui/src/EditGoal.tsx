@@ -13,6 +13,7 @@ import { liveJudges } from './rules.ts';
 import { launcherGoal } from './store.ts';
 import { bareId, useCrew, useHarnesses, useTask } from './task.ts';
 import { MAX_TEXT, type Judge, type Vote } from './types.ts';
+import './i18n/lazy.ts';
 
 export interface EditParams {
   readonly task: string;

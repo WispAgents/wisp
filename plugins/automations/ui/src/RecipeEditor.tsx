@@ -8,6 +8,7 @@ import { projectList } from '@wisp/shell';
 import { Button, Dialog, Field, Input, Inline, Select, Stack, Text, TextArea, useSignal } from '@wisp/ui';
 import { t } from './i18n.ts';
 import { recipeParams, type RecipeDraft } from './recipe.ts';
+import './i18n/lazy.ts';
 
 const save = defineCommand<{ peer: PeerId; draft: RecipeDraft }, unknown>({
   id: 'automations.task.set',

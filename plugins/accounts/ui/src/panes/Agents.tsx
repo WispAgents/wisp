@@ -32,6 +32,7 @@ import { addAccount, install, keyRemove, keySet, loginCancel, loginInput, loginS
 import { t } from '../i18n.ts';
 import { ACCOUNT, DETECT, DETECT_TOPIC, HARNESS, KEY, LOGIN, PLACE, TOOL, TOPIC, loginId, type AccountRow, type DetectRow, type HarnessRow, type KeyRow, type LoginRow, type PlaceRow, type ToolRow } from '../types.ts';
 import { accountLine, changeText, changeTip, harnessLine, harnessState, howToGet, loginControl, masked, mergeHarnesses, present, recheckSummary, site, stillChanged } from '../words.ts';
+import '../i18n/lazy.ts';
 
 const quiet = (p: Promise<unknown>): void => {
   p.catch(() => {}); // the shell's onError shows the rollback toast

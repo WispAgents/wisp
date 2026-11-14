@@ -3,6 +3,7 @@
 
 import { pct } from './drain.ts';
 import { t } from './i18n.ts';
+import './i18n/lazy.ts';
 
 const DAY = 24 * 3600_000;
 

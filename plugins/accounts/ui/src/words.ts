@@ -4,6 +4,7 @@
 
 import { t } from './i18n.ts';
 import type { AccountRow, DetectRow, HarnessChange, HarnessRow, KeyRow, LoginRow, Pin } from './types.ts';
+import './i18n/lazy.ts';
 
 type Tone = 'neutral' | 'good' | 'warn' | 'bad';
 

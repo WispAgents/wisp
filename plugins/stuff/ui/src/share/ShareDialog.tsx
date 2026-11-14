@@ -11,6 +11,7 @@ import { sharePreview, shareCreate, shareStop, SESSION } from './commands.ts';
 import { CarryChips, LinkRow, WhoPicker, WorkOption } from './DialogParts.tsx';
 import { suggestPasskey } from './link.ts';
 import type { ShareableTask, Shared, SharePreview } from './types.ts';
+import '../i18n/lazy.ts';
 
 export { SHARE_VIEW, parseShareParams, type ShareParams } from './params.ts';
 import { SHARE_VIEW, type ShareParams } from './params.ts';

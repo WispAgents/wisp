@@ -15,6 +15,7 @@ import { cadenceText } from './model.ts';
 import { alone, graph, linkTeam, tiers, unlinkTeam } from './more/org-graph.ts';
 import type { Member } from './types.ts';
 import { VIEW } from './views.ts';
+import './i18n/lazy.ts';
 
 type Row = Member & { readonly key: EntityKey };
 

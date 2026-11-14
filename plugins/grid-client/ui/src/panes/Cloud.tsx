@@ -13,6 +13,7 @@ import { ApiKeys } from './ApiKeys.tsx';
 import { Confirm } from './Confirm.tsx';
 import { MyShares } from './MyShares.tsx';
 import { host, useCloud } from './state.ts';
+import '../i18n/lazy.ts';
 
 export default function Cloud(props: { readonly client: PluginClient }): JSX.Element {
   const { c, peer, r, grid, setGrid, starting, waiting, failed, start, computerLine } = useCloud(props.client);

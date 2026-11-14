@@ -7,6 +7,7 @@ import { Button, Callout, Code, IconButton, Inline, PathField, Pill, SettingsCas
 import { useShell } from '@wisp/shell';
 import { cast, castPrompt, folders, install, list, permissionWords, setEnabled, uninstall, type Installed, type PluginRow } from '../commands.ts';
 import { t } from '../i18n.ts';
+import '../i18n/lazy.ts';
 
 const IS_URL = /^(https?:\/\/|git@|ssh:\/\/)/;
 const TONE: Record<string, 'good' | 'neutral' | 'bad'> = { active: 'good', resolved: 'good', off: 'neutral', refused: 'bad' };

@@ -31,6 +31,7 @@ import { drainLines, drainReport, noticeWords, pct } from '../drain.ts';
 import { VIEW_USAGE } from '../views.ts';
 import { t } from '../i18n.ts';
 import { fromRow } from '../source.ts';
+import '../i18n/lazy.ts';
 
 /** v1 Subagents run on: the model Claude Code's own subagents use ('task' = the task's), read by the runtime as
  * `runtime.subagentModel` and passed to claude as CLAUDE_CODE_SUBAGENT_MODEL. */

@@ -73,3 +73,18 @@ test('a plugin registered twice is refused; views, blocks and panes resolve', ()
   expect(r.block('hero')?.component).not.toBe(C);
   expect(r.settingsPanes().map((p) => p.id)).toEqual(['b.p', 'a.p']);
 });
+
+test('a_later_part_joins_its_plugin_in_place_ADR_0067', () => {
+  const r = createRegistry();
+  r.add(plugin('wisp.a', [ext('a.one', 'x:y')]));
+  r.add(plugin('wisp.b', [ext('b.one', 'x:y')]));
+  r.extend('wisp.a', { extensions: [ext('a.two', 'x:y')], palette: [{ id: 'a.pal', items: () => [] }] });
+  // in wisp.a's place among the plugins, after its own: a tie in order still sorts as if it had been there from the start
+  expect(ids(r, 'x:y')).toEqual(['a.one', 'a.two', 'b.one']);
+  expect(r.palette().map((p) => `${p.plugin}:${p.id}`)).toEqual(['wisp.a:a.pal']);
+  // an unknown plugin: nothing changes
+  r.extend('wisp.gone', { extensions: [ext('gone.one', 'x:y')] });
+  expect(ids(r, 'x:y')).toEqual(['a.one', 'a.two', 'b.one']);
+  r.remove('wisp.a');
+  expect(ids(r, 'x:y')).toEqual(['b.one']);
+});

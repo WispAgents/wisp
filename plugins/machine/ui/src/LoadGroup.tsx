@@ -7,6 +7,7 @@ import type { ExtensionProps } from '@wisp/shell/contract';
 import { SelectSetting, SettingsGroup, SettingsRow, type SettingSource } from '@wisp/ui';
 import { useLoad } from './data.ts';
 import { nowLine } from './now-line.ts';
+import './i18n/lazy.ts';
 
 /** A setting of this computer's wisp, as a Settings row reads it (a refused write rolls back with a toast). */
 function fromRow(client: PluginClient, key: string, fallback: string): SettingSource<string> {

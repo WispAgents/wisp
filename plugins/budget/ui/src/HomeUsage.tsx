@@ -12,6 +12,7 @@ import { holdLine, homeTone, homeUsage, type HomeHarness } from './home-usage.ts
 import { stopLine, windowLine } from './plan.ts';
 import { t } from './i18n.ts';
 import { fromRow } from './source.ts';
+import './i18n/lazy.ts';
 
 const PLANNED = [
   { agent: 'claude', name: 'Claude Code', key: 'autoStopClaude' },

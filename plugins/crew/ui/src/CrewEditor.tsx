@@ -10,6 +10,7 @@ import { parsePick } from '@wisp/shell/pure';
 import { CrewEditorForm, isSpirit, parseSpirit, rollSpirit, useSignal, type CrewEditorBarItem, type CrewEditorChip } from '@wisp/ui';
 import { CREW_COLORS } from './types.ts';
 import { adoptTask, createMember, updateMember } from './commands.ts';
+import './i18n/lazy.ts';
 
 /** the task's first turn: its prompt starts the brief (v1 crewEditor({ task })) */
 const firstTurn = defineCommand<{ key: string; id: string }, readonly { prompt?: string }[]>({

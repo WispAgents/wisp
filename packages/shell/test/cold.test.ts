@@ -1,6 +1,7 @@
 import { expect, test } from 'vitest';
 import { about, coldHint, compactItem, type ColdOut } from '../src/frame/cold.ts';
 import { SHELL_STRINGS as en } from '../src/i18n/en.ts';
+import '../src/i18n/lazy.ts'; // the lazily loaded strings too (they load with the code that shows them)
 
 const t = (k: string, v?: Readonly<Record<string, string | number>>): string => ((en as Record<string, string>)[k] ?? k).replace(/\{(\w+)\}/g, (_, x: string) => String(v?.[x] ?? ''));
 

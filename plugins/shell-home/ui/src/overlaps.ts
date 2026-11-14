@@ -5,6 +5,7 @@
 
 import type { Overlap, TaskRow } from './types.ts';
 import type { T } from './notify.ts';
+import './i18n/lazy.ts';
 
 export const SHOWN = 2;
 

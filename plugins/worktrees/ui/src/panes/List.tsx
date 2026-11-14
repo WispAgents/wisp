@@ -6,6 +6,7 @@ import { Button, Each, IconButton, SettingsGroup, SettingsItem, SettingsRow, Tab
 import { asFilter, bySize, counts, FILTERS, fmtSize, matches, statusText } from '../format.ts';
 import { t } from '../i18n.ts';
 import type { Entry, Filter } from '../types.ts';
+import '../i18n/lazy.ts';
 
 const VIRTUAL_PAST = 200;
 

@@ -8,7 +8,9 @@ import { doneApply, doneList } from './commands.ts';
 import { newlyDone, planDone, SESSION } from './done.ts';
 import type { DoneFolder } from './types.ts';
 
-export const VIEW = 'worktrees.folders';
+import { VIEW } from './view-id.ts';
+
+export { VIEW };
 
 export interface Asked {
   readonly folders: readonly DoneFolder[];
@@ -59,10 +61,13 @@ export async function askAbout(c: PluginClient, key: EntityKey): Promise<void> {
   c.navigate({ t: 'openOverlay', overlay: { kind: 'dialog', id: VIEW as ExtensionId, params: { key, only: plan.only, n: plan.ask.length } } });
 }
 
-/** Watches this client's commands for a Done, for as long as the plugin's UI is on. */
-export function watchDone(c: PluginClient): void {
-  // what's in flight at start (restored from disk after a reload) was asked about before
-  const seen = new Set(c.entities.pending()().map((p) => p.mid));
+/** What's in flight at start (restored from disk after a reload): asked about before, so never again. */
+export const inFlight = (c: PluginClient): Set<string> => new Set(c.entities.pending()().map((p) => p.mid));
+
+/** Watches this client's commands for a Done, for as long as the plugin's UI is on. `seen`: what was in flight when the
+ * plugin started (this module loads apart from the first page, ADR-0011: a Done in between is still asked about). */
+export function watchDone(c: PluginClient, seen: Set<string> = inFlight(c)): void {
+  for (const key of newlyDone(c.entities.pending()(), seen)) void askAbout(c, key);
   const stop = subscribe(c.entities.pending(), (list) => {
     for (const key of newlyDone(list, seen)) void askAbout(c, key);
   });

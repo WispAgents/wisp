@@ -11,6 +11,7 @@ import { defineCommand, ownerOf, type EntityKey } from '@wisp/client';
 import { Button, EmptyState, Inline, Screen, Stack, Terminal, Text } from '@wisp/ui';
 import { useShell } from '../shell.ts';
 import { useTask } from '../task-context.tsx';
+import '../i18n/lazy.ts';
 
 const bare = (k: string): string => k.slice(k.indexOf(':') + 1);
 type Info = { supported: boolean; open: boolean; app: boolean; name: string };

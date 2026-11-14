@@ -2,6 +2,7 @@
 
 import { t } from './i18n.ts';
 import { CHANNELS, type Channel, type UpdateState } from './types.ts';
+import './i18n/lazy.ts';
 
 const HINTS: Readonly<Record<Channel, () => string>> = {
   stable: () => t('update.hint.stable'),

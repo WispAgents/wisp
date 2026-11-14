@@ -1,6 +1,7 @@
 // wisp.sandbox's commands as the app runs them (ADR-0047). Reads say what they wait for; writes the pane makes are
 // shown at once where they can be (an env var's name, a sandbox going).
 import { defineCommand, type PeerId } from '@wisp/client';
+import './i18n/lazy.ts';
 
 export interface SandboxView {
   readonly machine: string;

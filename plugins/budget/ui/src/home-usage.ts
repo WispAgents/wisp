@@ -3,6 +3,7 @@
 // (the weekly ones). Three accounts at most. Nothing until a CLI has reported its plan. DOM-free, so a test reads it.
 import type { AccountPlan, Window } from './commands.ts';
 import { t, type Key } from './i18n.ts';
+import './i18n/lazy.ts';
 
 const SHORT: Readonly<Record<string, Key>> = {
   five_hour: 'budget.home.short.fiveHour',

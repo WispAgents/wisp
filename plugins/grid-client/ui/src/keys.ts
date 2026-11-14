@@ -1,3 +1,4 @@
+import './i18n/lazy.ts';
 // Settings → Cloud → API keys (ADR-0058, v1 web/js/features/api-keys.js), DOM-free: what `grid-client.keys` lists,
 // the rows as they change at once (a new key's row before the grid answers, a revoked one gone), and each row's
 // line. A new key itself is never in here: the pane holds it in one local signal, shown once, gone on Done or when

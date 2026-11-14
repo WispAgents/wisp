@@ -1,6 +1,7 @@
 // Machines' cards, found hosts, Let me in and the asks (view.ts; v1 machines.js card, found, trouble, act).
 import { expect, test } from 'vitest';
 import en from '../src/i18n/en.json' with { type: 'json' };
+import '../src/i18n/lazy.ts'; // the lazily loaded strings too (they load with the code that shows them)
 import { barOf, cloudOf, foundOf, kindOf, menuOf, nameFor, offersLetIn, portOf, primaryOf, removeAsk, stepsOf, stopAsk, troubleTitle, whereOf, type PeerLike } from '../src/view.ts';
 
 const cat = en as Record<string, string>;

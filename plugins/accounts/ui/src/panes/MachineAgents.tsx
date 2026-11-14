@@ -11,6 +11,7 @@ import { t } from '../i18n.ts';
 import { HARNESS, LOGIN, TOPIC, loginId, type HarnessRow, type LoginRow } from '../types.ts';
 import { loginControl, signable } from '../words.ts';
 import { Steps } from './Steps.tsx';
+import '../i18n/lazy.ts';
 
 const quiet = (p: Promise<unknown>): void => {
   p.catch(() => {}); // the shell's onError shows the rollback toast

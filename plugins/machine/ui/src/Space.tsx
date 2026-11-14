@@ -12,6 +12,7 @@ import type { MachineData } from './data.ts';
 import type { Host } from './host.ts';
 import type { HarnessGroup } from './types.ts';
 import { reclaimRows, size, type ReclaimRow } from './view.ts';
+import './i18n/lazy.ts';
 
 interface Props {
   readonly client: PluginClient;

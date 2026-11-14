@@ -2,6 +2,7 @@
 // them, grouped. Chords read as on this OS: ⌘K on a Mac, Ctrl+K elsewhere.
 
 import type { Key } from './i18n.ts';
+import './i18n/lazy.ts';
 
 export interface Shortcut {
   readonly keys: readonly string[];

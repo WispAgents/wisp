@@ -10,6 +10,7 @@ import { lastUsed, projectItems } from '../channel-project.ts';
 import { t } from '../i18n.ts';
 import { fromRow, onOff, text } from '../source.ts';
 import { KEYS, VIEW_ID } from '../types.ts';
+import '../i18n/lazy.ts';
 
 export type Permission = 'granted' | 'denied' | 'default' | 'unsupported';
 

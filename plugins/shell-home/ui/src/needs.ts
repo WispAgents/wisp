@@ -2,6 +2,7 @@
 // with "5 of 12" when there are more. Home doubles as the inbox. Pure, so tests pin the rules.
 
 import type { TaskRow } from './types.ts';
+import './i18n/lazy.ts';
 
 export const NEEDS_SHOWN = 5;
 

@@ -10,6 +10,7 @@ import { EmptyState, ListRow, Pill, Time, VirtualList, useSignal } from '@wisp/u
 import { useShell } from '../context.tsx';
 import { useNow } from '../clock.ts';
 import { SESSION, type SessionRow } from '../rows.ts';
+import '../i18n/lazy.ts';
 
 const TONE: Record<string, Tone> = { running: 'info', review: 'warn', done: 'good', error: 'bad' };
 

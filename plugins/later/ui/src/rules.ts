@@ -5,6 +5,7 @@ import { t } from './i18n.ts';
 import { aheadLabel, laterLine, planTitle } from './format.ts';
 import type { LaterView, Plan, SessionRow } from './types.ts';
 import type { IconName } from '@wisp/ui';
+import './i18n/lazy.ts';
 
 type Row = Readonly<SessionRow>;
 

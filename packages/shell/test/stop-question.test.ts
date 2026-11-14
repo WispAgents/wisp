@@ -2,6 +2,7 @@
 import { expect, test } from 'vitest';
 import { stopQuestion } from '../src/frame/stop-question.ts';
 import { SHELL_STRINGS } from '../src/i18n/en.ts';
+import '../src/i18n/lazy.ts'; // the lazily loaded strings too (they load with the code that shows them)
 
 const cat = SHELL_STRINGS as Readonly<Record<string, string>>;
 const t = (k: string, v?: Readonly<Record<string, string | number>>): string => (cat[k] ?? k).replace(/\{(\w+)\}/g, (_, w: string) => String(v?.[w] ?? ''));

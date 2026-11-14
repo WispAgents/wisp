@@ -1,3 +1,4 @@
+import '../i18n/lazy.ts';
 // What each card under a turn says, DOM-free (v1 turns.js limitCard / refusalCard, sign-in-card.js, hold.js,
 // what-changed.js + what-changed-line.js, receipt.js). A turn as the store keeps it: the `turn` row with the
 // runtime's Turn in `body` (camelCase), its own facts in `body.ext['wisp.runtime']`.

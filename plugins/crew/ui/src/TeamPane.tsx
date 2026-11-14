@@ -8,6 +8,7 @@ import { Face, ListRow, Pill, Stack, Text, useSignal } from '@wisp/ui';
 import { crewData } from './data.ts';
 import { t } from './i18n.ts';
 import { teamRows, type Say } from './team.ts';
+import './i18n/lazy.ts';
 
 export default function TeamPane(props: { readonly client: PluginClient; readonly task: string; readonly value: string }): JSX.Element {
   const c = props.client;

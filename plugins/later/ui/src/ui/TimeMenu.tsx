@@ -10,6 +10,7 @@ import { aheadLabel, timeChoices, whenTip } from '../format.ts';
 import { t } from '../i18n.ts';
 import { nowOf } from '../host.ts';
 import { parseTime } from '../when.ts';
+import '../i18n/lazy.ts';
 
 export interface TimeMenuProps {
   readonly client: PluginClient;

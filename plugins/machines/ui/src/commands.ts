@@ -3,6 +3,7 @@
 // opens and on Re-check), and the grid sign-in that adds this computer (wisp.grid-client's command).
 import type { Found, StatusLike } from './view.ts';
 import { defineCommand, entityKey, type EntityOps, type EntityReader, type PeerId } from '@wisp/client';
+import './i18n/lazy.ts';
 
 /** Peer rows and their status rows: `{ id, body }`, on the `machines` topic. */
 export const TOPIC = 'machines';

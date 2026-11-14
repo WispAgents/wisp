@@ -13,6 +13,7 @@ import { fmtSize } from '../format.ts';
 import { t } from '../i18n.ts';
 import { SETTING, type DoneFolder } from '../types.ts';
 import type { DoneParams } from '../view.ts';
+import '../i18n/lazy.ts';
 
 const say = (s: Said): string => t(s.key, s.vars);
 

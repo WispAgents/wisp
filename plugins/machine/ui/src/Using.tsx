@@ -10,6 +10,7 @@ import { machineCommands, stopTask } from './commands.ts';
 import type { MachineData } from './data.ts';
 import type { Host } from './host.ts';
 import { clock, laterChoices, pctText, size, stopAsk, usingRows, wispRow, type UsingRow } from './view.ts';
+import './i18n/lazy.ts';
 
 interface Props {
   readonly client: PluginClient;

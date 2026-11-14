@@ -5,6 +5,7 @@ import { byAge, runMetrics, type T } from './metrics.ts';
 import { DASH, planShares } from './plan-shares.ts';
 import { pct, tokenWords } from './receipt.ts';
 import type { Metrics, Run } from './types.ts';
+import '../i18n/lazy.ts';
 
 export type RowKey = 'time' | 'cost' | 'tokens' | 'cache' | 'steps' | 'plan' | 'files' | 'tests' | 'asks';
 

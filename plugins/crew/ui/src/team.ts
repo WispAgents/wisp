@@ -2,6 +2,7 @@
 // tagged, or asked from its reply box with `@Ada`: a job whose `from` is this task), one row each in the order they went, each opening the job (a task of its own). Pure: the rows
 // from the crew's jobs and members; the pane lays them out and opens them.
 import type { SessionRow } from './types.ts';
+import './i18n/lazy.ts';
 
 export type Say = (k: string, v?: Readonly<Record<string, string | number>>) => string;
 

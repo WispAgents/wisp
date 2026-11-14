@@ -7,6 +7,7 @@ import { PROJECT_ORDER, projectList, useShell } from '@wisp/shell';
 import { Button, EmptyState, Icon, Input, ListRow, Markdown, SelectSetting, SettingsGroup, Stack, Text, englishT, timeLabel, useSignal } from '@wisp/ui';
 import { t } from './i18n.ts';
 import { byMonth, repoLine, resumePrompt, type RepoTask } from './model.ts';
+import './i18n/lazy.ts';
 
 interface Project {
   readonly id: string;

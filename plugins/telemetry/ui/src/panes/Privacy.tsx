@@ -6,6 +6,7 @@ import { SettingsGroup, SettingsNote, SettingsRow, Switch, SwitchSetting, useSig
 import { KIND, setStats, TOPIC, type StateRow } from '../commands.ts';
 import { t } from '../i18n.ts';
 import { fromRow, onOff } from '../source.ts';
+import '../i18n/lazy.ts';
 
 /** `git.maskEnvFiles` is a bool setting (wisp.git's manifest): read 'off' or false as off, write a bool. */
 function maskEnv(c: PluginClient): SettingSource<boolean> {

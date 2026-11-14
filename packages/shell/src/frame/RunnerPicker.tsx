@@ -27,6 +27,7 @@ import {
   type PlanWindow,
   type Runner,
 } from './runner.ts';
+import '../i18n/lazy.ts';
 
 /** v1 effortLabel: "X-High", else the level capitalised */
 const levelLabel = (e: string): string => (e === 'xhigh' ? 'X-High' : e.charAt(0).toUpperCase() + e.slice(1));

@@ -3,6 +3,7 @@
 // and the answer agree. A Stop never discards anything: it only holds the queue (`queueHeld`).
 
 import type { QueueItem, Row } from '../types.ts';
+import '../i18n/lazy.ts';
 
 type Queue = readonly Row<QueueItem>[];
 

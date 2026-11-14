@@ -4,6 +4,7 @@ import { aheadLabel } from '../format.ts';
 import { t, type Key } from '../i18n.ts';
 import type { Plan } from '../types.ts';
 import { planText, planTitle, runLine } from '../format.ts';
+import '../i18n/lazy.ts';
 
 export interface PlanPageState {
   readonly title: string;

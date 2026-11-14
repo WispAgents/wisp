@@ -5,6 +5,7 @@ import { alreadyHas, mergeKit, offerPicks, offerTag, sizeLabel } from './kit-log
 import { KIT_MAX } from './skill-md.ts';
 import type { KitDraft, KitFile, LocalKitFile, Member } from './types.ts';
 import type { Offer } from '../types.ts';
+import '../i18n/lazy.ts';
 
 export type Say = (k: string, v?: Readonly<Record<string, string | number>>) => string;
 

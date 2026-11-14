@@ -1,0 +1,7 @@
+{
+  "shell-composer.queue.next": "Next · after {name} finishes",
+  "shell-composer.queue.held": "Held after Stop",
+  "shell-composer.queue.nth": "Queued #{n}",
+  "shell-composer.queue.cancel": "Cancel it",
+  "shell-composer.queue.keep": "Keep it"
+}

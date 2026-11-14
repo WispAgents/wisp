@@ -4,6 +4,7 @@
 
 import type { Key } from './i18n.ts';
 import { NOTIFY, type ChannelSetup, type NotifyEvent, type SetupArgs, type SetupState, type Tested, type Transport } from './types.ts';
+import './i18n/lazy.ts';
 
 export interface FieldDef {
   readonly key: string;

@@ -10,6 +10,7 @@ import { SESSION, type SessionRow } from '../rows.ts';
 import { appState, approveBlocked, exec, reveal } from './commands.ts';
 import { mediaUrl } from './answer-of.ts';
 import { keepHost } from './keep.ts';
+import '../i18n/lazy.ts';
 
 export interface AnswerHost {
   readonly shell: ShellContext;

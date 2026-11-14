@@ -10,6 +10,7 @@ import { Button, Inline, Pill, SettingsGroup, SettingsRow, Stack, Text, useSigna
 import { connect, PEER, STATUS, stopMachine, TOPIC, type PeerBody, type StatusBody } from '../commands.ts';
 import { t } from '../i18n.ts';
 import { cloudBoxes, cloudRow, firstAsleep, primaryOf } from '../view.ts';
+import '../i18n/lazy.ts';
 
 type Doc<T> = { readonly id: string; readonly body: T };
 const say = t as (k: string, v?: Readonly<Record<string, string | number>>) => string;

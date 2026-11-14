@@ -162,11 +162,22 @@ export function createShell(o: ShellOptions): Shell {
     settingsPanes: () => registry.settingsPanes,
     harnesses: () => registry.harnesses,
     promptSources: () => registry.prompt,
+    laterReady: () => {
+      for (const retry of [...failedLaters]) retry();
+      return laterLoads.size ? Promise.all([...laterLoads]).then(() => undefined) : undefined;
+    },
     sideTabs: () => sideTabs,
     previewAddresses: () => previewAddresses,
     block: (type) => registry.block(type),
     view: (kind) => registry.view(kind),
   };
+
+  /** each plugin's later part, waiting for the first render */
+  const laters: (() => void)[] = [];
+  let rendered = false;
+  /** later parts on their way, and the loads that failed (laterReady tries them again) */
+  const laterLoads = new Set<Promise<void>>();
+  const failedLaters = new Set<() => void>();
 
   function register(def: PluginUiDef): void {
     if (registry.has(def.id)) throw new Error(`plugin UI ${def.id} is registered twice`);
@@ -177,10 +188,12 @@ export function createShell(o: ShellOptions): Shell {
       // a string is the plugin's under its namespace (`crew.x`) or its full id (`wisp.crew.x`), as an
       // extension id may be; the full-id ones are registered under the id, so each key still has one owner
       const full = `${def.id}.`;
-      const byId = def.id === ns ? [] : Object.entries(def.catalogue).filter(([k]) => k.startsWith(full));
-      const rest = Object.fromEntries(Object.entries(def.catalogue).filter(([k]) => !(def.id !== ns && k.startsWith(full))));
-      if (Object.keys(rest).length > 0) pc.strings(rest);
-      if (byId.length > 0) client.i18n.register(def.id, Object.fromEntries(byId), pc.scope);
+      // each half reads through to the catalogue, so strings its lazy code adds later (i18n/lazy.ts) show in both
+      const cat = def.catalogue;
+      const isId = (k: string): boolean => def.id !== ns && k.startsWith(full);
+      const keys = Object.keys(cat);
+      if (keys.some((k) => !isId(k))) pc.strings(keys.some(isId) ? liveView(cat, (k) => !isId(k)) : cat);
+      if (keys.some(isId)) client.i18n.register(def.id, liveView(cat, isId), pc.scope);
     }
     for (const v of def.views ?? []) {
       pc.registerView({
@@ -198,11 +211,38 @@ export function createShell(o: ShellOptions): Shell {
     }
     for (const e of def.extensions ?? []) if (!e.id.startsWith(`${ns}.`) && !e.id.startsWith(`${def.id}.`)) warn(`${def.id}'s extension ${e.id} isn't prefixed with ${ns}.`);
     registry.add(def);
+    let gone = false;
+    let retry: (() => void) | undefined;
     pc.scope.add(() => {
+      gone = true;
+      if (retry) failedLaters.delete(retry);
       registry.remove(def.id);
       clients.delete(def.id);
     });
     def.setup?.(pc);
+    const later = def.later;
+    if (later) {
+      const load = (): void => {
+        failedLaters.delete(load);
+        if (gone) return;
+        const p: Promise<void> = later()
+          .then(
+            (m) => {
+              if (!gone) registry.extend(def.id, m.default);
+            },
+            (err: unknown) => {
+              if (!gone) failedLaters.add(load);
+              warn(`${def.id}'s later part didn't load`, String(err));
+            },
+          )
+          .finally(() => laterLoads.delete(p));
+        laterLoads.add(p);
+      };
+      retry = load;
+      // ADR-0067: as the first screen draws (with the other lazy chunks it asks for), or at once after that
+      if (rendered) load();
+      else laters.push(load);
+    }
   }
 
   register(shellUi(context));
@@ -240,6 +280,8 @@ export function createShell(o: ShellOptions): Shell {
         root,
       );
       scope.add(stop);
+      rendered = true;
+      for (const load of laters.splice(0)) load();
       return () => scope.dispose();
     },
     dispose() {
@@ -258,4 +300,14 @@ export function createShell(o: ShellOptions): Shell {
   }
 
   return shell;
+}
+
+/** `cat`'s keys that pass `keep`, read live: a key added to `cat` later shows here too. */
+function liveView(cat: Readonly<Record<string, string>>, keep: (key: string) => boolean): Readonly<Record<string, string>> {
+  return new Proxy(cat, {
+    get: (o, k) => (typeof k === 'string' && keep(k) ? o[k] : undefined),
+    has: (o, k) => typeof k === 'string' && keep(k) && k in o,
+    ownKeys: (o) => Reflect.ownKeys(o).filter((k) => typeof k === 'string' && keep(k)),
+    getOwnPropertyDescriptor: (o, k) => (typeof k === 'string' && keep(k) ? Reflect.getOwnPropertyDescriptor(o, k) : undefined),
+  });
 }

@@ -1,5 +1,6 @@
 // The Recipes / Triggers line of Settings → Automations, a plain module so its test needn't compile the pane.
 import { t } from '../i18n.ts';
+import '../i18n/lazy.ts';
 
 /** "None yet · save a prompt you run often", or the names (the first three, then how many more). */
 export function summary(names: readonly string[], none: string): string {

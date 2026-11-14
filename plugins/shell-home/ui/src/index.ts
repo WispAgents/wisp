@@ -4,7 +4,26 @@
 import type { PluginUiDef } from '@wisp/shell';
 import catalogue from './i18n/en.json' with { type: 'json' };
 
-export { startNotifier, noticeFor, flatRow, notifyOn, NOTIFY_KEY, type NotifierDeps } from './notify.ts';
+import type { NotifierDeps } from './notify.ts';
+
+export type { NotifierDeps } from './notify.ts';
+
+/** Starts the notifier (./notify.ts), which loads apart from the first page (ADR-0011): it watches what changes from
+ * then on, so a few milliseconds later misses nothing. Returns its stop. */
+export function startNotifier(d: NotifierDeps): () => void {
+  let stop: (() => void) | undefined;
+  let stopped = false;
+  void import('./notify.ts').then(
+    (m) => {
+      if (!stopped) stop = m.startNotifier(d);
+    },
+    () => undefined,
+  );
+  return () => {
+    stopped = true;
+    stop?.();
+  };
+}
 
 const ui: PluginUiDef = { id: 'wisp.shell-home', catalogue };
 export default ui;

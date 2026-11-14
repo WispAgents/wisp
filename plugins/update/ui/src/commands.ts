@@ -3,6 +3,7 @@
 
 import { defineCommand, entityKey, type EntityOps, type EntityReader, type PeerId } from '@wisp/client';
 import { KIND, ROW_ID, type CheckArgs, type InstallArgs, type UpdateState } from './types.ts';
+import './i18n/lazy.ts';
 
 const patchRow = (base: EntityReader, peer: PeerId, fields: Partial<UpdateState>): EntityOps => {
   const id = entityKey(peer, ROW_ID);

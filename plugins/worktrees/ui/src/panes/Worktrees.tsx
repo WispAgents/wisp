@@ -28,6 +28,7 @@ import {
 import { BringIn } from './BringIn.tsx';
 import { Confirm, type Ask } from './Confirm.tsx';
 import { List } from './List.tsx';
+import '../i18n/lazy.ts';
 
 const MINUTE = 60_000;
 const quiet = (p: Promise<unknown>): void => {

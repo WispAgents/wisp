@@ -12,6 +12,7 @@ import { t } from './i18n.ts';
 import { jobSide, statusLine } from './model.ts';
 import { CARD_ROWS, cardJobs, holdRows, jobMark } from './rules/jobs.ts';
 import type { SessionRow } from './types.ts';
+import './i18n/lazy.ts';
 
 export default function RailCard(props: ExtensionProps): JSX.Element {
   const c = props.client;

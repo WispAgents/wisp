@@ -14,6 +14,7 @@ import { t } from './i18n.ts';
 import { cadenceText } from './model.ts';
 import type { Member } from './types.ts';
 import { VIEW } from './views.ts';
+import './i18n/lazy.ts';
 
 export default function CrewListTop(props: ExtensionProps): JSX.Element {
   const c = props.client;

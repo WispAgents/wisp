@@ -25,6 +25,7 @@ import {
   type RecheckArgs,
   type UpdateArgs,
 } from './types.ts';
+import './i18n/lazy.ts';
 
 const at = (peer: PeerId, id: string): EntityKey => entityKey(peer, id);
 

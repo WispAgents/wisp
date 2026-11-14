@@ -10,6 +10,7 @@ import { Button, Code, englishT, Inline, Input, SettingsBlock, SettingsGroup, Se
 import { t } from '../i18n.ts';
 import { adding, keyLine, keysOf, madeOf, nameProblem, NAME_MAX, restored, settled, tryLine, without, type ApiKey, type Fresh, type KeysView } from '../keys.ts';
 import { Confirm } from './Confirm.tsx';
+import '../i18n/lazy.ts';
 
 const list = defineCommand<{ peer: PeerId }, unknown>({ id: 'grid-client.keys', owner: (a) => a.peer, wire: () => ({}), optimistic: 'none', pending: 'the keys list' });
 const create = defineCommand<{ peer: PeerId; name: string }, unknown>({

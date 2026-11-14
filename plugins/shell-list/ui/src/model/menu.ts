@@ -8,6 +8,7 @@ import type { MenuEntry, MenuItem } from '@wisp/ui/pure';
 import type { SessionRow } from '../types.ts';
 import { busy } from './row.ts';
 import { isForLater } from './sections.ts';
+import '../i18n/lazy.ts';
 
 export type RowAction = 'open' | 'rename' | 'copy-id' | 'later' | 'pin' | 'read' | 'done' | 'archive' | 'delete';
 

@@ -12,6 +12,7 @@ import type { SessionRow } from '../types.ts';
 import { useEnv } from './env.ts';
 import { Actions, Mark, Pills, RunLine, SubLine, TimeCell, subOf } from './RowParts.tsx';
 import { Slot, hasExtensions } from './Slot.tsx';
+import '../i18n/lazy.ts';
 
 export interface SwipeConfig {
   readonly left: SwipeKind;

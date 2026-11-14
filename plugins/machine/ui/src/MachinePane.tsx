@@ -12,6 +12,7 @@ import { openSettings, useHost } from './host.ts';
 import { FreeUp, HarnessData } from './Space.tsx';
 import { LeftBehind, Using } from './Using.tsx';
 import { memTone, pctText, size, sparkPoints, updatedLine, type T } from './view.ts';
+import './i18n/lazy.ts';
 
 /** wisp's default CPU ceiling, shown when none is set (v1 server/load.js) */
 const FALLBACK_CEILING = 200;

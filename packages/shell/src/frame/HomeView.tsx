@@ -6,7 +6,6 @@
 
 import { useProjects } from './projects.ts';
 import { usePromptMenu } from './prompt-menu.ts';
-import { RunnerPicker } from './RunnerPicker.tsx';
 import { useAttachments } from './attach.ts';
 import { attachAct } from './capture.ts';
 import { useMic } from './dictate.ts';
@@ -14,7 +13,7 @@ import { warm, warmer } from './warm.ts';
 import { INSTALLABLE, useSetup } from './setup.ts';
 import { useRecipes } from './recipes.ts';
 import type { PickOptions } from '../platform/types.ts';
-import { Show, createEffect, createMemo, createSignal, on, onCleanup, type JSX } from 'solid-js';
+import { Show, Suspense, createEffect, createMemo, createSignal, lazy, on, onCleanup, type JSX } from 'solid-js';
 import { entityKey, newRowId, type EntityKey, type Json, type PeerId } from '@wisp/client';
 import { AutoPop, FeedbackLine, KeysHint, Launcher, NextList, SplitHome, Tips, useSignal, type LauncherChip, type LauncherTool, type PlainTip } from '@wisp/ui';
 import { useShell } from '../context.tsx';
@@ -36,6 +35,9 @@ import { alsoToggle, dirsOf, launchOf, parsePick, startAt } from './project-pick
 import { promptKeys, remember, sentStore } from './prompt-keys.ts';
 import { draftValue, launcherDraft } from './drafts.ts';
 import { MODE_ICON, agentMenu, agentName, modeMenu, teamMenu, teamPrefill, teamRows, whenAt, whenMenu, type Mode, type When } from './pickers.ts';
+
+// the harness · model picker opens on a press: it loads apart from the first page (ADR-0011), as Home first draws
+const RunnerPicker = lazy(() => import('./RunnerPicker.tsx').then((m) => ({ default: m.RunnerPicker })));
 
 interface SettingRow {
   readonly key: string;
@@ -227,7 +229,21 @@ export function HomeView(props: { readonly onBack?: () => void }): JSX.Element {
     const s = menu.suggest();
     return s && { ...s, onPick: (v: string) => (typedInFull(v, text()) ? (s.onClose(), send()) : s.onPick(v)) };
   });
+  // ADR-0067: plugins' prompt sources may still be on their way (the page's first moments, or a load tried again):
+  // a send waits for them once, then goes whatever they did
+  let waited = false;
   const send = (): void => {
+    const wait = waited ? undefined : shell.laterReady?.();
+    if (wait) {
+      return void wait.then(() => {
+        waited = true;
+        try {
+          send();
+        } finally {
+          waited = false;
+        }
+      });
+    }
     // /feedback … or /bug …: to the wisp team, never a task (v1 launcher.js)
     if (isFeedback(text())) {
       const typed = text();
@@ -675,19 +691,21 @@ export function HomeView(props: { readonly onBack?: () => void }): JSX.Element {
           );
         }}
       </Show>
-      <RunnerPicker
-        open={picker()}
-        onOpenChange={setPicker}
-        peer={target()}
-        accounts
-        value={{ agent: agent() === 'auto' ? auto() : agent(), model: model(), effort: effort(), account: account()?.id ?? '' }}
-        onChange={(r) => {
-          setAgent(r.agent);
-          setModel(r.model);
-          setEffort(r.effort);
-          setAccount(r.account ? { id: r.account, label: r.accountLabel ?? r.account } : undefined);
-        }}
-      />
+      <Suspense>
+        <RunnerPicker
+          open={picker()}
+          onOpenChange={setPicker}
+          peer={target()}
+          accounts
+          value={{ agent: agent() === 'auto' ? auto() : agent(), model: model(), effort: effort(), account: account()?.id ?? '' }}
+          onChange={(r) => {
+            setAgent(r.agent);
+            setModel(r.model);
+            setEffort(r.effort);
+            setAccount(r.account ? { id: r.account, label: r.accountLabel ?? r.account } : undefined);
+          }}
+        />
+      </Suspense>
       <NextList
         heading={t('shell.section.needs')}
         count={needs().length}

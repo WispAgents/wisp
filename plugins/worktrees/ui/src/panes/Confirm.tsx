@@ -3,6 +3,7 @@
 import { Show, type JSX } from 'solid-js';
 import { Button, Dialog, Inline, Text } from '@wisp/ui';
 import { t } from '../i18n.ts';
+import '../i18n/lazy.ts';
 
 export interface Ask {
   readonly title: string;

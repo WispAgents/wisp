@@ -13,6 +13,7 @@ import type { PaletteContext, PaletteItem } from '../contract.ts';
 import { useShell } from '../context.tsx';
 import { useClients } from '../slot.tsx';
 import { marks, rank, type Ranked } from './match.ts';
+import '../i18n/lazy.ts';
 
 const DEEP_PAUSE_MS = 160;
 

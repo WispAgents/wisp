@@ -12,6 +12,7 @@ import { t } from './i18n.ts';
 import { earlierRounds, judgeLabel, lastVotes, ruleLine, SAID_KEY, VOTE_TONE } from './rules.ts';
 import { useCrew, useHarnesses, useTask } from './task.ts';
 import type { CheckView, GoalView, Judge, RunHint, Verdict } from './types.ts';
+import './i18n/lazy.ts';
 
 export interface ChecksParams {
   readonly task: string;

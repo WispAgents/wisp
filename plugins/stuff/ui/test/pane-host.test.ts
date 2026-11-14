@@ -4,6 +4,7 @@ import { expect, test } from 'vitest';
 import { paneHost, type PaneCard, type PaneHostDeps } from '../src/panes/host.ts';
 import type { Grant, Item, TaskRow } from '../src/types.ts';
 import en from '../src/i18n/en.json' with { type: 'json' };
+import '../src/i18n/lazy.ts'; // the lazily loaded strings too (they load with the code that shows them)
 
 const cat = en as Record<string, string>;
 const t = (k: string, v?: Readonly<Record<string, string | number>>): string => (cat[k] ?? k).replace(/\{(\w+)\}/g, (_, w: string) => String(v?.[w] ?? ''));

@@ -10,6 +10,7 @@ import { TriggerEditor } from './TriggerEditor.tsx';
 import { t } from '../i18n.ts';
 import { fromRow } from '../source.ts';
 import { summary } from './summary.ts';
+import '../i18n/lazy.ts';
 
 /** `automations.webhookTriggers`, a bool setting (off by default): a boolean source, 'off' read as off. */
 function webhooks(c: PluginClient): SettingSource<boolean> {

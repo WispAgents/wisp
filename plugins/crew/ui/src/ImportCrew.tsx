@@ -8,6 +8,7 @@ import { t } from './i18n.ts';
 import { cadenceLabel } from './model.ts';
 import { VIEW } from './views.ts';
 import { joining, lockedOf, srcOf, withPassword, type Picks, type Src } from './import-picks.ts';
+import './i18n/lazy.ts';
 
 interface Proposed {
   readonly key: string;

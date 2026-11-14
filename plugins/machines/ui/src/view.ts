@@ -1,6 +1,7 @@
 // What Machines shows of a machine, as plain functions (v1 machines.js card, kind, where, found, steps, trouble):
 // no Solid, no client, so the tests read them without the components.
 import type { Step as KitStep } from '@wisp/ui';
+import './i18n/lazy.ts';
 
 export const DEFAULT_PORT = 4477;
 

@@ -12,7 +12,10 @@ import { shipRow } from './row.ts';
 import { useShell, type ShipShell } from './shell.ts';
 import { AGENT, SESSION, type AgentRow, type ShipSession } from './types.ts';
 
-export const SHIP_VIEW = 'ship.dialog'; // in the plugin's namespace, as every view id is
+import { SHIP_VIEW } from './view-id.ts';
+import './i18n/lazy.ts';
+
+export { SHIP_VIEW };
 
 export function useSession(client: PluginClient, key: () => EntityKey | undefined): Accessor<ShipSession | undefined> {
   const row = createMemo(() => {

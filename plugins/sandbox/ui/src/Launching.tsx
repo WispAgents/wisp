@@ -7,6 +7,7 @@ import { Button, Callout, Icon, Inline, Pill, Skeleton, Stack, Text } from '@wis
 import { launch, type LaunchArgs } from './commands.ts';
 import { t } from './i18n.ts';
 import type { LaunchingParams } from './views.ts';
+import './i18n/lazy.ts';
 
 /** one launch per id, so the view shown again (a reload, Back) doesn't make a second sandbox */
 const started = new Map<string, Promise<{ peer: string; task: string }>>();

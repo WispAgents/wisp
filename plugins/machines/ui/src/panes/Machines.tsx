@@ -8,6 +8,7 @@ import { Button, Code, CopyCommand, Link, Pill, SettingsGroup, SettingsNote, Set
 import { PEER, reachable, STATUS, TOPIC, type PeerBody, type StatusBody } from '../commands.ts';
 import { MachinesDialog } from './Manager.tsx';
 import { t } from '../i18n.ts';
+import '../i18n/lazy.ts';
 
 type Doc<T> = { readonly id: string; readonly body: T };
 export default function Machines(props: { readonly client: PluginClient }): JSX.Element {

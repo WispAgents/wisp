@@ -11,6 +11,7 @@ import { mergePlan } from './model/merge.ts';
 import type { ReviewContext } from './model/review.ts';
 import type { ShipShell } from './shell.ts';
 import type { ShipSession } from './types.ts';
+import './i18n/lazy.ts';
 
 export interface MergeAsk {
   /** Asks (opens the confirm here). */

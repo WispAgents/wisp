@@ -28,6 +28,7 @@ import {
 import { t } from '../i18n.ts';
 import { DEFAULT_PORT, foundOf, foundTitle, nameFor, portOf, removeAsk, stopAsk, type Found } from '../view.ts';
 import { MachineCard, type CardAct } from './Card.tsx';
+import '../i18n/lazy.ts';
 
 type Doc<T> = { readonly id: string; readonly body: T };
 type Ask = { readonly title: string; readonly body: string; readonly ok: string; readonly danger: boolean; readonly run: () => void };

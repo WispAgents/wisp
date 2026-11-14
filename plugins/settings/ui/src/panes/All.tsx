@@ -7,6 +7,7 @@ import { Input, Select, SettingsGroup, SettingsRow, Switch, Text, useSignal } fr
 import { list, type SettingInfo } from '../commands.ts';
 import { t } from '../i18n.ts';
 import { fromRow } from '../source.ts';
+import '../i18n/lazy.ts';
 
 const words = (v: unknown): string => (v === null || v === undefined ? '' : typeof v === 'string' ? v : JSON.stringify(v));
 

@@ -8,6 +8,7 @@ import { projectTests } from '../commands.ts';
 import { toastOf } from '../host.ts';
 import { t } from '../i18n.ts';
 import type { ProjectTests } from '../types.ts';
+import '../i18n/lazy.ts';
 
 const placeholder = (p: ProjectTests): string =>
   p.detected?.command ?? (p.detected?.skip ? t('wisp.router.learned.tests-skip', { why: p.detected.skip }) : t('wisp.router.learned.tests-none-found'));

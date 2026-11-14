@@ -3,6 +3,7 @@
 import { expect, test } from 'vitest';
 import { needsSetup, setupWords } from '../src/frame/setup.ts';
 import { SHELL_STRINGS as en } from '../src/i18n/en.ts';
+import '../src/i18n/lazy.ts'; // the lazily loaded strings too (they load with the code that shows them)
 
 const t = (k: string, v: Record<string, unknown> = {}): string => String((en as Record<string, string>)[k] ?? k).replace(/\{(\w+)\}/g, (_, n: string) => String(v[n] ?? ''));
 

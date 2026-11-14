@@ -13,6 +13,7 @@ import { mergedToast } from './model/merge.ts';
 import { shippedToast } from './model/ship.ts';
 import type { ShipShell } from './shell.ts';
 import type { ShipStep, ShipValues } from './types.ts';
+import './i18n/lazy.ts';
 
 export interface ShipRun {
   readonly steps: readonly ShipStep[];

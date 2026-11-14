@@ -7,6 +7,7 @@ import { useShell } from '@wisp/shell';
 import { IconButton, Inline, SettingsGroup, SettingsRow } from '@wisp/ui';
 import { t } from '../i18n.ts';
 import { ordered, shareLine, sharesOf, type Share } from '../shares.ts';
+import '../i18n/lazy.ts';
 
 const list = defineCommand<{ peer: PeerId }, unknown>({ id: 'grid-client.shares', owner: (a) => a.peer, wire: () => ({}), optimistic: 'none', pending: 'your shares' });
 const revoke = defineCommand<{ peer: PeerId; id: string }>({ id: 'grid-client.revoke', owner: (a) => a.peer, wire: (a) => ({ id: a.id }), optimistic: 'none', pending: 'Stop sharing' });

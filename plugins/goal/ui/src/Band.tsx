@@ -14,6 +14,7 @@ import { t } from './i18n.ts';
 import { checkLine, goalActions, goalLive, hasChecks, lastVotes, progressDelta, ruleLine, SAID_KEY, shownProgress, stateWords, tally, type GoalAction } from './rules.ts';
 import { keyOf, useTask } from './task.ts';
 import type { GoalView } from './types.ts';
+import './i18n/lazy.ts';
 
 const TONE = { working: 'accent', checking: 'accent', met: 'good', impossible: 'bad', out: 'warn', paused: 'warn', handed: 'neutral' } as const;
 

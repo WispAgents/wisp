@@ -6,6 +6,7 @@ import type { T } from '../i18n.ts';
 import type { MergeResult, ShipSession } from '../types.ts';
 import { openPrs, shippedPrs } from './pr.ts';
 import { reviewWarning, type ReviewContext } from './review.ts';
+import '../i18n/lazy.ts';
 
 export interface MergePlan {
   /** the confirm's question */

@@ -6,6 +6,7 @@ import { For, Show, createMemo, type JSX } from 'solid-js';
 import type { PeerId, PeerStatus } from '@wisp/client';
 import { Banner, Button, useSignal } from '@wisp/ui';
 import { useShell } from '../context.tsx';
+import '../i18n/lazy.ts';
 
 function PeerNote(props: { readonly peer: PeerId }): JSX.Element {
   const shell = useShell();

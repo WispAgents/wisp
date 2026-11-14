@@ -8,6 +8,7 @@ import { t } from '../i18n.ts';
 import { checkDraft, pastedSkill, sizeLabel } from './kit-logic.ts';
 import { KIT_BODY_MAX, skillName } from './skill-md.ts';
 import type { KitDraft, KitFile } from './types.ts';
+import '../i18n/lazy.ts';
 
 export interface KitEditorProps {
   readonly name: string; // the member's

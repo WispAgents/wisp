@@ -6,6 +6,7 @@ import { For, Match, Show, Switch, createSignal, type JSX } from 'solid-js';
 import { Banner, Button, Inline, Text } from '@wisp/ui';
 import type { Halt, T } from './model.ts';
 import type { Target } from './vendors.ts';
+import '../i18n/lazy.ts';
 
 export function HaltCard(props: {
   readonly halt: Halt;

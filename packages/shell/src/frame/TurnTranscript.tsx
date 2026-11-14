@@ -7,6 +7,7 @@ import { For, Show, createSignal, type JSX } from 'solid-js';
 import { EnvMask, Icon, Markdown, Text, Timeline, TimelineEnd, TimelineMessage, TimelineStep, DOTS, envFileNamed, envName, maskText, readsEnvFile, type EnvReveal, type IconName } from '@wisp/ui';
 import type { ShellContext } from '../contract.ts';
 import { changeFigures } from './rows-view.ts';
+import '../i18n/lazy.ts';
 
 const ICON: Readonly<Record<string, IconName>> = { read: 'read', edit: 'pen', run: 'terminal', error: 'warn', text: 'text', tool: 'tool', search: 'search' };
 

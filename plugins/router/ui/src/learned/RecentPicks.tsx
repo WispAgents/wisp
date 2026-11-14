@@ -6,6 +6,7 @@ import { Heading, Icon, ListRow, Pill, Stack, Text, useSignal } from '@wisp/ui';
 import { t } from '../i18n.ts';
 import { outcomeOf, typeWord, type Outcome } from '../rules.ts';
 import { KIND, type RecentPick, type SessionRow } from '../types.ts';
+import '../i18n/lazy.ts';
 
 const TONE: Readonly<Record<Outcome, 'neutral' | 'good' | 'warn' | 'bad'>> = { waiting: 'neutral', worked: 'good', finished: 'neutral', partly: 'warn', failed: 'bad' };
 

@@ -7,6 +7,7 @@ import { Button, Callout, CopyCommand, Inline, Input, Link, Menu, Pill, Settings
 import type { PeerBody, PeerView, StatusBody } from '../commands.ts';
 import { t } from '../i18n.ts';
 import { kindOf, menuOf, offersLetIn, primaryOf, removeLabel, stepsOf, troubleTitle, whereOf } from '../view.ts';
+import '../i18n/lazy.ts';
 
 const say = t as (k: string, v?: Readonly<Record<string, string | number>>) => string;
 const TAILSCALE_GUIDE = 'https://trywisp.dev/guides/connect-machines-with-tailscale.html';

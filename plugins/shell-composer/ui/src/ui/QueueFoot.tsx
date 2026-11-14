@@ -10,6 +10,7 @@ import { envOf } from '../env.ts';
 import { KIND, type QueueItem, type Row } from '../types.ts';
 import { QueueList } from './QueueList.tsx';
 import { useShell as useShellContext } from '@wisp/shell';
+import '../i18n/lazy.ts';
 
 interface TaskBody {
   readonly queue?: readonly Row<QueueItem>[];

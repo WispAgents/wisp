@@ -6,6 +6,7 @@ import type { SessionRow } from '../types.ts';
 import { busy } from './row.ts';
 import { canSaveForLater } from './menu.ts';
 import { isForLater } from './sections.ts';
+import '../i18n/lazy.ts';
 
 /** a touch starting this close to the screen's edge is Android's Back */
 export const EDGE = 24;

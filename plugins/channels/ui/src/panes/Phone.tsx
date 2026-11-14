@@ -14,6 +14,7 @@ import { t, type Key } from '../i18n.ts';
 import { fieldsFor, inviteOf, isTransport, linkLine, manifestText, marked, newer, optimistic, pinOf, readAgain, shown, STATE_KEY, stepsOf, testNote, toneOf, withRow, type FieldDef } from '../lib.ts';
 import { ORDER, PHONE_KIND, PHONE_TOPIC, type ChannelSetup, type PhoneRow, type PhoneStatus, type SetupArgs, type Tested } from '../types.ts';
 import { EmailAddress, Endpoint, Invite, Manifest, SendMe, Who, type Extras } from './Extras.tsx';
+import '../i18n/lazy.ts';
 
 const nameOf = (transport: string): string => (isTransport(transport) ? t(`channels.name.${transport}` as Key) : transport);
 

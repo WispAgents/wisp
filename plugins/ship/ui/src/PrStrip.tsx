@@ -19,6 +19,7 @@ import { TONE, TONE_ICON } from './tones.ts';
 import { useBusy } from './busy.ts';
 import { openShip, useReviewCtx, useSession, useShip } from './use.ts';
 import type { ShipSession } from './types.ts';
+import './i18n/lazy.ts';
 
 export default function PrStrip(props: ExtensionProps): JSX.Element {
   const key = (): EntityKey | undefined => (props.id ?? props.session?.()?.id) as EntityKey | undefined;

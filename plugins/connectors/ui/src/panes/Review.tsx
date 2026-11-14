@@ -5,6 +5,7 @@ import { Button, Checkbox, Dialog, Inline, SettingsRow, Stack, Text } from '@wis
 import { t } from '../i18n.ts';
 import { foundLine } from '../lib.ts';
 import type { FoundServer } from '../types.ts';
+import '../i18n/lazy.ts';
 
 export interface ReviewProps {
   readonly open: boolean;

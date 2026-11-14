@@ -10,6 +10,7 @@ import { canSaveForLater } from './model/menu.ts';
 import { busy } from './model/row.ts';
 import { isForLater } from './model/sections.ts';
 import { KIND, type Session, type SessionRow } from './types.ts';
+import './i18n/lazy.ts';
 
 export interface ActionCtx {
   readonly client: PluginClient;

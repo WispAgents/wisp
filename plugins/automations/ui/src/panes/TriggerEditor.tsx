@@ -7,6 +7,7 @@ import { defineCommand, type PeerId, type PluginClient } from '@wisp/client';
 import { Button, Inline, Input, SelectSetting, SettingsGroup, SettingsRow, Switch, TextArea } from '@wisp/ui';
 import { t } from '../i18n.ts';
 import { fieldsOf, groups, nameOf, pluginName, specOf, type SourceRow } from '../when.ts';
+import '../i18n/lazy.ts';
 
 const sources = defineCommand<{ peer: PeerId }, SourceRow[]>({ id: 'automations.sources', owner: (a) => a.peer, wire: () => ({}), optimistic: 'none', pending: 'the sources' });
 const apply = defineCommand<{ peer: PeerId; name: string; spec: Record<string, unknown> }>({

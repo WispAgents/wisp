@@ -9,6 +9,7 @@ import type { AccountPlan } from './commands.ts';
 import { pct } from './drain.ts';
 import { bankedSoon, bankedWords, compareParts, compareReport, compareWords, overWords, whereRows, windowLine, type Compare } from './plan.ts';
 import { t } from './i18n.ts';
+import './i18n/lazy.ts';
 
 /** v1 tone(): full at 100%, warn on pace to run out, at 90% or past the stop line. */
 const toneOf = (used: number, stop: number | null, hit: boolean): PlanWindowRow['tone'] => (used >= 1 ? 'full' : hit || used >= 0.9 || (stop !== null && used >= stop) ? 'warn' : undefined);

@@ -6,6 +6,7 @@ import { t } from './i18n.ts';
 import type { Key } from './i18n.ts';
 import type { LaterView, Plan } from './types.ts';
 import type { IconName } from '@wisp/ui';
+import './i18n/lazy.ts';
 
 const LOCALE = 'en-GB';
 const HM: Intl.DateTimeFormatOptions = { hour: '2-digit', minute: '2-digit', hourCycle: 'h23' };

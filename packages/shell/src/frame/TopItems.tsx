@@ -6,6 +6,7 @@ import { Button, IconButton } from '@wisp/ui';
 import type { ExtensionProps } from '../contract.ts';
 import { useShell } from '../context.tsx';
 import { displayCombo } from '../keys.ts';
+import '../i18n/lazy.ts';
 
 export function Brand(_p: ExtensionProps): JSX.Element {
   const shell = useShell();

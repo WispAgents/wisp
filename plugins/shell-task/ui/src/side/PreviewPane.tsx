@@ -10,6 +10,7 @@ import { RunPreview, Screen, Terminal, useSignal } from '@wisp/ui';
 import { useShell } from '../shell.ts';
 import { useTask } from '../task-context.tsx';
 import { pickedText, withPicked } from './pick.ts';
+import '../i18n/lazy.ts';
 
 const bare = (k: string): string => k.slice(k.indexOf(':') + 1);
 type Info = { open: boolean; port: number; dir: string; guess?: string; proxy?: number };

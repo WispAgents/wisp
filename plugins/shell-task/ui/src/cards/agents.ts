@@ -4,6 +4,7 @@
 // messages: `stats.subagents`, most output first). DOM-free.
 import { modelWords } from '@wisp/shell/pure';
 import { tokenWords, type T } from './model.ts';
+import '../i18n/lazy.ts';
 
 type Counts = { readonly input?: number; readonly output?: number; readonly cacheRead?: number; readonly cacheWrite?: number };
 export interface SubagentStat {
