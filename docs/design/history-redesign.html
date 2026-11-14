@@ -1,0 +1,695 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>wisp · task history redesign: three directions</title>
+<style>
+/* Mock only. Tokens copied from web/css/tokens.css (light + dark). Sizes: 11.5 / 12.5 / 13 / 14 + one display. */
+.frame {
+  --bg:#ffffff; --bg-2:#f3f3f2; --rail:#f7f7f6; --panel:#f7f7f6; --surface:#ffffff; --surface-2:#f9f9f8;
+  --ink:#171717; --ink-2:#3d3d3d; --muted:#575757; --faint:#6e6e6e; --line:#ebebea; --line-2:#dcdcda;
+  --accent:#2f5bea; --accent-ink:#2149cc; --accent-soft:rgba(47,91,234,.08); --on-accent:#fff;
+  --good:#18794e; --warn:#a35c00; --bad:#cd2b31; --add:#18794e; --del:#cd2b31;
+  --shadow-1:0 1px 2px rgba(0,0,0,.04); --shadow-2:0 1px 2px rgba(0,0,0,.04),0 10px 30px -12px rgba(0,0,0,.14);
+  --radius:10px; --ease:cubic-bezier(.25,.8,.25,1);
+  color-scheme: light;
+}
+.frame.dark {
+  --bg:#111111; --bg-2:#1e1e1e; --rail:#151515; --panel:#171717; --surface:#171717; --surface-2:#1a1a1a;
+  --ink:#ededed; --ink-2:#c7c7c7; --muted:#a3a3a3; --faint:#858585; --line:#262626; --line-2:#333333;
+  --accent:#6d8dff; --accent-ink:#94adff; --accent-soft:rgba(109,141,255,.12); --on-accent:#111111;
+  --good:#4cc38a; --warn:#f1a10d; --bad:#ff6369; --add:#4cc38a; --del:#ff6369;
+  --shadow-1:0 1px 2px rgba(0,0,0,.3); --shadow-2:0 1px 2px rgba(0,0,0,.3),0 12px 32px -12px rgba(0,0,0,.6);
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+html, body { margin:0; }
+body { font: 13px/1.45 -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Inter', 'Segoe UI', system-ui, sans-serif;
+  background:#e9e9e7; color:#171717; -webkit-font-smoothing: antialiased; }
+body.dark-page { background:#0a0a0a; color:#ededed; }
+.mono { font-family:'SF Mono','JetBrains Mono',Menlo,Consolas,monospace; }
+.num { font-variant-numeric: tabular-nums; }
+button { font: inherit; color: inherit; background: none; border: 0; padding: 0; cursor: pointer; }
+:focus-visible { outline: 2px solid var(--accent, #2f5bea); outline-offset: 2px; border-radius: 6px; }
+
+/* ---------- mock controls (outside wisp) ---------- */
+.bar { position: sticky; top: 0; z-index: 50; display:flex; gap:18px; align-items:center; flex-wrap:wrap;
+  padding:10px 18px; background: rgba(233,233,231,.92); backdrop-filter: blur(8px); border-bottom:1px solid #dcdcda; }
+body.dark-page .bar { background: rgba(10,10,10,.9); border-color:#262626; }
+.bar h1 { font-size:13px; font-weight:600; margin:0 8px 0 0; white-space:nowrap; }
+.seg { display:inline-flex; border:1px solid #dcdcda; border-radius:9px; padding:2px; background:#fff; }
+body.dark-page .seg { background:#171717; border-color:#333; }
+.seg button { padding:4px 10px; border-radius:7px; font-size:12.5px; white-space:nowrap; color:#575757; }
+body.dark-page .seg button { color:#a3a3a3; }
+.seg button[aria-pressed=true] { background:#171717; color:#fff; }
+body.dark-page .seg button[aria-pressed=true] { background:#ededed; color:#111; }
+.bar .hint { font-size:11.5px; color:#6e6e6e; margin-left:auto; }
+.blurb { max-width: 1280px; margin: 14px auto 0; padding: 0 18px; font-size:12.5px; color:#575757; }
+body.dark-page .blurb { color:#a3a3a3; }
+.blurb b { color: inherit; font-weight: 600; }
+.stage { display:flex; gap:28px; justify-content:center; align-items:flex-start; padding:18px; flex-wrap: wrap; }
+.cap { font-size:11.5px; color:#6e6e6e; margin:0 0 6px 2px; }
+
+/* ---------- the frame (a wisp task page) ---------- */
+.frame { background: var(--bg); color: var(--ink); border:1px solid var(--line-2); border-radius: 12px; overflow:hidden;
+  display:flex; flex-direction:column; position:relative; box-shadow: 0 20px 50px -30px rgba(0,0,0,.35); }
+.frame.desk { width:1280px; height:820px; }
+.frame.phone { width:390px; height:844px; border-radius: 36px; border-width: 8px; border-color:#1b1b1b; }
+.frame.phone .status { height:34px; flex:none; display:flex; align-items:flex-end; justify-content:space-between; padding:0 26px 4px;
+  font-size:12.5px; font-weight:600; }
+.thead { flex:none; display:flex; align-items:center; gap:10px; padding:12px 20px; border-bottom:1px solid var(--line); background: var(--bg); }
+.thead .t { font-size:14px; font-weight:600; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.thead .meta { font-size:12.5px; color: var(--faint); white-space:nowrap; }
+.thead .pill { font-size:11.5px; border:1px solid var(--line-2); border-radius:99px; padding:1px 8px; color: var(--muted); white-space:nowrap; }
+.thead .back { width:32px; height:32px; display:grid; place-items:center; color: var(--muted); margin-left:-8px; }
+.phone .thead { padding:8px 14px; }
+.phone .thead .t { font-size:14px; }
+.body { flex:1; min-height:0; display:flex; position:relative; overflow:hidden; }
+.composer { flex:none; border-top:1px solid var(--line); padding:10px 20px 14px; background: var(--bg); }
+.composer .box { border:1px solid var(--line-2); border-radius: 12px; padding:10px 12px; display:flex; align-items:center; gap:8px; background: var(--surface); }
+.composer .box span { color: var(--faint); flex:1; font-size:14px; }
+.composer .send { width:28px; height:28px; border-radius: 8px; background: var(--ink); color: var(--bg); display:grid; place-items:center; }
+.phone .composer { padding: 8px 12px 22px; }
+.ic { width:14px; height:14px; flex:none; }
+.ic.s { width:12px; height:12px; }
+.g-good { color: var(--good); } .g-bad { color: var(--bad); } .g-info { color: var(--faint); } .g-wisp { color: var(--faint); } .g-live { color: var(--accent); }
+
+/* shared bits */
+.chips { display:flex; gap:6px; overflow-x:auto; scrollbar-width:none; }
+.chips::-webkit-scrollbar { display:none; }
+.chip { flex:none; font-size:12.5px; padding:3px 10px; border:1px solid var(--line-2); border-radius:99px; color: var(--muted); white-space:nowrap; background: var(--surface); }
+.chip[aria-pressed=true] { border-color: var(--ink); color: var(--ink); background: var(--bg-2); }
+.chip .n { color: var(--faint); margin-left:4px; font-variant-numeric: tabular-nums; }
+.search { display:flex; align-items:center; gap:8px; border:1px solid var(--line-2); border-radius: 9px; padding:5px 10px; background: var(--surface-2); min-width:0; }
+.search input { border:0; background:transparent; color: var(--ink); font: inherit; font-size:13px; outline:none; flex:1; min-width:0; }
+.search input::placeholder { color: var(--faint); }
+.search kbd, kbd { font: 11.5px 'SF Mono',Menlo,monospace; color: var(--faint); border:1px solid var(--line-2); border-radius:5px; padding:0 5px; background: var(--bg); }
+.phone kbd { display:none; }
+.stat { font-size:12.5px; color: var(--muted); white-space:nowrap; font-variant-numeric: tabular-nums; }
+.stat b { font-weight: 500; color: var(--ink-2); }
+.stat .bad { color: var(--bad); }
+.files { margin:0; padding:0; list-style:none; border:1px solid var(--line); border-radius: 9px; overflow:hidden; }
+.files li { display:flex; gap:10px; padding:5px 10px; font-size:12.5px; border-top:1px solid var(--line); }
+.files li:first-child { border-top:0; }
+.files .p { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-family:'SF Mono',Menlo,monospace; font-size:11.5px; color: var(--ink-2); }
+.files .a { color: var(--add); font-family:'SF Mono',Menlo,monospace; font-size:11.5px; }
+.files .d { color: var(--del); font-family:'SF Mono',Menlo,monospace; font-size:11.5px; }
+.answer { font-size:14px; line-height:1.55; color: var(--ink); margin:0; overflow-wrap:anywhere; }
+.prompt { font-size:14px; line-height:1.5; color: var(--ink-2); overflow-wrap:anywhere; margin:0; white-space: pre-wrap; }
+.statusp { font-size:11.5px; padding:1px 8px; border-radius:99px; border:1px solid var(--line-2); white-space:nowrap; color: var(--muted); }
+.statusp.good { color: var(--good); border-color: color-mix(in srgb, var(--good) 35%, var(--line-2)); }
+.statusp.bad { color: var(--bad); border-color: color-mix(in srgb, var(--bad) 35%, var(--line-2)); }
+.who { font-size:11.5px; color: var(--faint); text-transform: none; letter-spacing: 0; white-space:nowrap; }
+.btn { font-size:12.5px; border:1px solid var(--line-2); border-radius:8px; padding:4px 10px; background: var(--surface); white-space:nowrap; color: var(--ink-2); }
+.btn:hover { background: var(--bg-2); }
+.phone .btn { padding:9px 12px; }
+mark { background: color-mix(in srgb, var(--accent) 22%, transparent); color: inherit; border-radius:3px; }
+
+/* =================== A · LEDGER + SCRUBBER =================== */
+.A { flex:1; display:flex; flex-direction:column; min-width:0; }
+.A .tools { flex:none; display:flex; gap:10px; align-items:center; padding:10px 20px; border-bottom:1px solid var(--line); }
+.A .tools .search { width: 280px; flex:none; }
+.A .tools .count { margin-left:auto; font-size:11.5px; color: var(--faint); white-space:nowrap; }
+.phone .A .tools { flex-direction:column; align-items:stretch; padding:8px 12px; gap:8px; }
+.phone .A .tools .search { width:auto; }
+.phone .A .tools .count { display:none; }
+.A .wrap { flex:1; min-height:0; display:flex; position:relative; }
+.A .list { flex:1; overflow-y:auto; padding: 0 0 24px; scrollbar-width: none; }
+.A .list::-webkit-scrollbar { display:none; }
+.A .inner { max-width: 820px; margin: 0 auto; padding: 0 20px; }
+.phone .A .inner { padding: 0 12px 0 12px; margin-right: 22px; }
+.A .day { position: sticky; top:0; z-index:2; background: var(--bg); display:flex; align-items:baseline; gap:10px; padding:14px 0 6px; border-bottom:1px solid var(--line); }
+.A .day .d { font-size:12.5px; font-weight:600; color: var(--ink-2); white-space:nowrap; }
+.A .day .s { font-size:11.5px; color: var(--faint); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.A .day button.tog { margin-left:auto; font-size:11.5px; color: var(--muted); white-space:nowrap; }
+.A .row { display:grid; grid-template-columns: 18px 1fr auto; column-gap:10px; align-items:center; padding:8px 8px; margin: 0 -8px; border-radius:8px; cursor:pointer; }
+.A .row:hover { background: var(--bg-2); }
+.A .row .h { font-size:13px; color: var(--ink); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; min-width:0; }
+.A .row .y { grid-column: 2 / 4; font-size:12.5px; color: var(--faint); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; min-width:0; }
+.A .row .r { display:flex; gap:12px; align-items:center; }
+.A .row .tm { font-size:11.5px; color: var(--faint); font-variant-numeric: tabular-nums; width:38px; text-align:right; }
+.phone .A .row .r .stat { display:none; }
+.phone .A .row { padding: 10px 8px; }
+.A .row.note { grid-template-columns: 18px 1fr auto; padding:4px 8px; }
+.A .row.note .h { font-size:12.5px; color: var(--faint); }
+.A .row.note .h b { font-weight:500; color: var(--muted); }
+.A .fold { display:flex; align-items:center; gap:8px; padding:4px 8px 4px 36px; font-size:12.5px; color: var(--faint); cursor:pointer; border-radius:8px; }
+.A .fold:hover { background: var(--bg-2); color: var(--muted); }
+.A .collapsed { display:grid; grid-template-columns: 1fr auto; gap:4px 12px; padding:12px 0; border-bottom:1px solid var(--line); cursor:pointer; }
+.A .collapsed .d { font-size:13px; font-weight:600; }
+.A .collapsed .k { font-size:12.5px; color: var(--muted); grid-column: 1 / 3; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.A .collapsed .strip { grid-column: 1 / 3; display:flex; gap:1px; height:6px; }
+.A .collapsed .strip i { flex:1; border-radius:1px; background: var(--line); }
+.A .collapsed .strip i.bad { background: var(--bad); }
+.A .collapsed .strip i.good { background: var(--line-2); }
+.A .collapsed .strip i.note { background: var(--line); }
+.A .open { margin: 2px -8px 10px; border:1px solid var(--line-2); border-radius: 12px; background: var(--surface); box-shadow: var(--shadow-1); overflow:hidden; }
+.A .open .row { margin:0; border-radius:0; background: var(--surface-2); border-bottom:1px solid var(--line); }
+.A .open .row:hover { background: var(--surface-2); }
+.A .open .pb { padding: 14px 16px 0; }
+.A .open .pb .who { display:block; margin-bottom:4px; }
+.A .open .hero { padding: 14px 16px 0; display:flex; gap:10px; align-items:center; flex-wrap: wrap; }
+.A .open .hero .ht { font-size:14px; font-weight:600; }
+.A .open .bd { padding: 8px 16px 14px; display:flex; flex-direction:column; gap:12px; }
+.A .open .ft { display:flex; gap:8px; padding:10px 16px; border-top:1px solid var(--line); background: var(--surface-2); flex-wrap: wrap; }
+.A .open .ft .sp { flex:1; }
+.A .scrub { flex:none; width:56px; border-left:1px solid var(--line); position:relative; display:flex; flex-direction:column; padding:8px 0; cursor:pointer; user-select:none; touch-action:none; }
+.phone .A .scrub { position:absolute; right:0; top:0; bottom:0; width:22px; border-left:0; background: transparent; padding:6px 0; }
+.A .scrub .tk { flex:1; margin: 0 10px 0 22px; position:relative; }
+.phone .A .scrub .tk { margin: 0 4px 0 8px; }
+.A .scrub .tk i { position:absolute; left:0; right:0; height:1px; background: var(--line-2); }
+.A .scrub .tk i.good { background: var(--line-2); right: 30%; }
+.A .scrub .tk i.bad { background: color-mix(in srgb, var(--bad) 75%, transparent); height:2px; left:30%; }
+.A .scrub .tk i.note { background: var(--line); left:55%; }
+.A .scrub .tk i.on { background: var(--accent); height:3px; left:-6px; }
+.A .scrub .dl { position:absolute; left:2px; font-size:11.5px; color: var(--faint); transform: translateY(-50%); writing-mode: vertical-rl; transform: rotate(180deg); }
+.phone .A .scrub .dl { display:none; }
+.A .scrub .view { position:absolute; left:16px; right:4px; border:1px solid var(--line-2); border-radius:4px; background: color-mix(in srgb, var(--ink) 5%, transparent); pointer-events:none; }
+.phone .A .scrub .view { left:3px; right:2px; }
+.A .bubble { position:absolute; right:64px; z-index:5; background: var(--surface); border:1px solid var(--line-2); border-radius: 10px; box-shadow: var(--shadow-2); padding:8px 10px; width: 260px; pointer-events:none; transform: translateY(-50%); }
+.phone .A .bubble { right: 28px; width: 220px; }
+.A .bubble .d { font-size:11.5px; color: var(--faint); }
+.A .bubble .h { font-size:13px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+
+/* =================== B · CHAPTERS =================== */
+.B { flex:1; display:flex; min-width:0; }
+.B .toc { flex:none; width:248px; border-right:1px solid var(--line); background: var(--panel); overflow-y:auto; padding:12px 10px; }
+.B .toc .lbl { font-size:11.5px; color: var(--faint); padding: 4px 8px 8px; display:flex; }
+.B .toc .lbl span:last-child { margin-left:auto; }
+.B .toc button.c { display:block; width:100%; text-align:left; padding:8px; border-radius:8px; }
+.B .toc button.c:hover { background: var(--bg-2); }
+.B .toc button.c[aria-current=true] { background: var(--surface); box-shadow: var(--shadow-1); outline: 1px solid var(--line-2); }
+.B .toc .ct { font-size:13px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.B .toc .cm { font-size:11.5px; color: var(--faint); display:flex; gap:8px; margin-top:2px; }
+.B .toc .bar5 { display:flex; gap:1px; height:4px; margin-top:6px; }
+.B .toc .bar5 i { flex:1; background: var(--line-2); border-radius:1px; }
+.B .toc .bar5 i.bad { background: var(--bad); }
+.B .main { flex:1; min-width:0; display:flex; flex-direction:column; }
+.B .tools { flex:none; display:flex; gap:10px; align-items:center; padding:10px 24px; border-bottom:1px solid var(--line); }
+.B .tools .search { width: 280px; }
+.phone .B .tools { padding:8px 12px; flex-direction: column; align-items: stretch; gap:8px; }
+.phone .B .tools .search { width:auto; }
+.B .scroll { flex:1; overflow-y:auto; }
+.B .inner { max-width: 760px; margin: 0 auto; padding: 8px 24px 40px; }
+.phone .B .inner { padding: 4px 12px 32px; }
+.B .chap { margin-top: 22px; }
+.B .chap > .hd { display:flex; align-items:baseline; gap:10px; cursor:pointer; padding:4px 0 10px; }
+.B .chap > .hd .n { font-size:11.5px; color: var(--faint); white-space:nowrap; }
+.B .chap > .hd h3 { font-size:14px; font-weight:600; margin:0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; min-width:0; }
+.B .chap > .hd .w { margin-left:auto; font-size:11.5px; color: var(--faint); white-space:nowrap; }
+.B .sum { border:1px solid var(--line); border-radius:12px; padding:14px 16px; background: var(--surface); display:grid; gap:10px; cursor:pointer; }
+.B .sum:hover { border-color: var(--line-2); }
+.B .sum ul { margin:0; padding:0; list-style:none; display:grid; gap:4px; }
+.B .sum li { display:flex; gap:8px; align-items:center; font-size:13px; min-width:0; }
+.B .sum li span { white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.B .sum .k { display:flex; gap:14px; flex-wrap:wrap; }
+.B .sum .more { font-size:12.5px; color: var(--accent-ink); }
+.B .story { position:relative; padding-left: 64px; }
+.phone .B .story { padding-left: 0; }
+.B .story::before { content:''; position:absolute; left: 50px; top: 0; bottom: 0; width:1px; background: var(--line); }
+.phone .B .story::before { display:none; }
+.B .card { position:relative; border:1px solid var(--line); border-radius:12px; background: var(--surface); padding:12px 14px; margin: 0 0 10px; cursor:pointer; }
+.B .card:hover { border-color: var(--line-2); }
+.B .card.on { border-color: var(--line-2); box-shadow: var(--shadow-2); cursor:default; }
+.B .card .tm { position:absolute; left:-64px; top:13px; width:42px; text-align:right; font-size:11.5px; color: var(--faint); font-variant-numeric: tabular-nums; }
+.phone .B .card .tm { position:static; width:auto; text-align:left; }
+.B .card .top { display:flex; gap:8px; align-items:center; min-width:0; }
+.B .card .ht { font-size:14px; font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; min-width:0; }
+.B .card .top .sp { flex:1; }
+.B .card .meta { display:flex; gap:12px; flex-wrap:wrap; margin-top:6px; }
+.B .card .fch { display:flex; gap:6px; flex-wrap:wrap; margin-top:8px; }
+.B .card .fch span { font: 11.5px 'SF Mono',Menlo,monospace; color: var(--muted); border:1px solid var(--line); border-radius:6px; padding:1px 6px; max-width: 100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.B .card .ask { margin-top:10px; padding-top:8px; border-top:1px solid var(--line); font-size:12.5px; color: var(--faint); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.B .card .ask b { font-weight:500; color: var(--muted); }
+.B .card.on .ask { white-space: normal; }
+.B .card .more { display:none; margin-top:12px; gap:12px; flex-direction:column; }
+.B .card.on .more { display:flex; }
+.B .card .more .acts { display:flex; gap:8px; flex-wrap:wrap; }
+.B .lane { position:relative; margin: -2px 0 10px; font-size:12.5px; color: var(--faint); display:flex; gap:8px; align-items:center; min-width:0; }
+.B .lane .tm { position:absolute; left:-64px; width:42px; text-align:right; font-size:11.5px; font-variant-numeric: tabular-nums; }
+.B .lane .dot { position:absolute; left:-17px; width:7px; height:7px; border-radius:50%; background: var(--bg); border:1px solid var(--line-2); }
+.B .lane span.t { white-space:nowrap; overflow:hidden; text-overflow:ellipsis; min-width:0; }
+.B .lane b { font-weight:500; color: var(--muted); }
+.phone .B .lane .tm, .phone .B .lane .dot { display:none; }
+.B .lane.dayk { margin: 14px 0 12px -64px; font-size:12.5px; font-weight:600; color: var(--ink-2); background: var(--bg); padding: 2px 0; }
+.phone .B .lane.dayk { margin-left:0; }
+.phone .A .collapsed .k { white-space: normal; }
+.B .lane.fold { cursor:pointer; }
+.B .lane.fold:hover { color: var(--muted); }
+.phone .B .toc { display:none; }
+.B .chapbar { display:none; }
+.phone .B .chapbar { display:flex; }
+
+/* =================== C · OUTLINE + STAGE =================== */
+.C { flex:1; display:flex; min-width:0; position:relative; overflow:hidden; }
+.C .ol { flex:none; width: 340px; border-right:1px solid var(--line); background: var(--panel); display:flex; flex-direction:column; min-height:0; }
+.C .ol .tools { padding:10px 12px; display:flex; flex-direction:column; gap:8px; border-bottom:1px solid var(--line); }
+.C .ol .lines { flex:1; overflow-y:auto; padding: 0 6px 12px; }
+.C .ol .dh { position:sticky; top:0; background: var(--panel); z-index:1; font-size:11.5px; color: var(--faint); padding:10px 8px 4px; display:flex; }
+.C .ol .dh span:last-child { margin-left:auto; }
+.C .ln { display:grid; grid-template-columns: 34px 16px 1fr auto; gap:6px; align-items:center; padding:5px 8px; border-radius:7px; cursor:pointer; }
+.C .ln:hover { background: var(--bg-2); }
+.C .ln[aria-current=true] { background: var(--accent-soft); }
+.C .ln[aria-current=true] .h { color: var(--accent-ink); }
+.C .ln .no { font: 11.5px 'SF Mono',Menlo,monospace; color: var(--faint); text-align:right; }
+.C .ln .h { font-size:13px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; min-width:0; }
+.C .ln .tm { font-size:11.5px; color: var(--faint); font-variant-numeric: tabular-nums; }
+.C .ln.note .h { font-size:12.5px; color: var(--faint); padding-left:10px; }
+.C .ln.note .ic { margin-left:10px; }
+.C .st { flex:1; min-width:0; display:flex; flex-direction:column; }
+.C .st .nav { flex:none; display:flex; align-items:center; gap:10px; padding:10px 28px; border-bottom:1px solid var(--line); }
+.C .st .nav .pos { font-size:12.5px; color: var(--muted); white-space:nowrap; font-variant-numeric: tabular-nums; }
+.C .st .nav .sp { flex:1; }
+.C .st .nav .ib { width:30px; height:30px; border-radius:8px; display:grid; place-items:center; border:1px solid var(--line-2); color: var(--muted); }
+.C .st .nav .ib:hover { background: var(--bg-2); }
+.C .st .nav .ib:disabled { opacity:.4; cursor:default; }
+.C .st .page { flex:1; overflow-y:auto; }
+.C .st .read { max-width: 720px; margin: 0 auto; padding: 28px 28px 48px; display:flex; flex-direction:column; gap:16px; }
+.C .st .ask { font-size:14px; line-height:1.5; color: var(--ink); background: var(--bg-2); border-radius: 12px; padding:12px 14px; white-space: pre-wrap; overflow-wrap:anywhere; }
+.C .st .notice { font-size:13px; color: var(--muted); border:1px dashed var(--line-2); border-radius:12px; padding:10px 14px; display:flex; gap:10px; align-items:flex-start; }
+.C .st .hero { display:flex; flex-direction:column; gap:8px; }
+.C .st .hero h2 { font-size:26px; line-height:1.2; font-weight:600; letter-spacing:-.01em; margin:0; }
+.C .st .hero .k { display:flex; gap:14px; flex-wrap:wrap; align-items:center; }
+.C .st .acts { display:flex; gap:8px; flex-wrap:wrap; padding-top:4px; }
+.C .st .near { border-top:1px solid var(--line); padding-top:12px; display:grid; grid-template-columns: 1fr 1fr; gap:10px; }
+.C .st .near button { text-align:left; border:1px solid var(--line); border-radius:10px; padding:8px 10px; min-width:0; }
+.C .st .near button:hover { background: var(--bg-2); }
+.C .st .near .d { font-size:11.5px; color: var(--faint); }
+.C .st .near .h { font-size:13px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.phone .C .ol { position:absolute; left:0; right:0; bottom:0; height: 78%; width:auto; z-index:10; border-right:0; border-top:1px solid var(--line-2);
+  border-radius: 16px 16px 0 0; box-shadow: var(--shadow-2); transform: translateY(105%); transition: transform .28s var(--ease); background: var(--surface); }
+.phone .C .ol .dh { background: var(--surface); }
+.phone .C.sheet .ol { transform: none; }
+.phone .C .ol .grab { height:20px; display:grid; place-items:center; }
+.phone .C .ol .grab i { width:36px; height:4px; border-radius:2px; background: var(--line-2); }
+.C .ol .grab { display:none; }
+.phone .C .ol .grab { display:grid; }
+.C .scrim { display:none; }
+.phone .C.sheet .scrim { display:block; position:absolute; inset:0; background: rgba(0,0,0,.28); z-index:9; }
+.phone .C .ln { padding: 9px 8px; }
+.phone .C .st .nav { padding:8px 12px; }
+.phone .C .st .read { padding: 18px 14px 32px; }
+.phone .C .st .hero h2 { font-size: 20px; }
+.phone .C .st .near { grid-template-columns: 1fr; }
+.C .handle { display:none; }
+.phone .C .handle { display:flex; align-items:center; gap:10px; border-top:1px solid var(--line); padding:8px 12px; background: var(--bg); }
+.phone .C .handle .o { flex:1; display:flex; gap:8px; align-items:center; min-width:0; text-align:left; height:36px; }
+.phone .C .handle .o span { white-space:nowrap; overflow:hidden; text-overflow:ellipsis; font-size:13px; }
+.phone .C .handle .ib { width:44px; height:36px; border-radius:8px; display:grid; place-items:center; border:1px solid var(--line-2); color: var(--muted); }
+.phone .C .st .nav .ib { display:none; }
+@media (prefers-reduced-motion: reduce) { .phone .C .ol { transition:none; } }
+</style>
+</head>
+<body>
+<div class="bar">
+  <h1>Task history: three directions</h1>
+  <div class="seg" id="segDir" role="group" aria-label="Direction">
+    <button data-v="A" aria-pressed="true">A · Ledger + scrubber</button>
+    <button data-v="B" aria-pressed="false">B · Chapters</button>
+    <button data-v="C" aria-pressed="false">C · Outline + stage</button>
+  </div>
+  <div class="seg" id="segW" role="group" aria-label="Width">
+    <button data-v="both" aria-pressed="true">Desktop + phone</button>
+    <button data-v="desk" aria-pressed="false">Desktop 1280</button>
+    <button data-v="phone" aria-pressed="false">Phone 390</button>
+  </div>
+  <div class="seg" id="segT" role="group" aria-label="Theme">
+    <button data-v="light" aria-pressed="false">Light</button>
+    <button data-v="dark" aria-pressed="true">Dark</button>
+  </div>
+  <span class="hint">Keys (desktop frame): j / k move · / search · [ ] previous / next failure · Esc close</span>
+</div>
+<p class="blurb" id="blurb"></p>
+<div class="stage" id="stage"></div>
+
+<svg width="0" height="0" style="position:absolute">
+  <symbol id="i-ok" viewBox="0 0 16 16"><circle cx="8" cy="8" r="6.25" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M5.3 8.2l1.8 1.8 3.6-3.8" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+  <symbol id="i-bad" viewBox="0 0 16 16"><circle cx="8" cy="8" r="6.25" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M6 6l4 4M10 6l-4 4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></symbol>
+  <symbol id="i-info" viewBox="0 0 16 16"><circle cx="8" cy="8" r="2.5" fill="currentColor"/></symbol>
+  <symbol id="i-wisp" viewBox="0 0 16 16"><path d="M8 2.5c1.6 2 3.5 3.3 3.5 6a3.5 3.5 0 0 1-7 0c0-1.3.6-2.2 1.4-3 .2 1 .7 1.6 1.3 1.8C7 5.6 7.3 4 8 2.5z" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/></symbol>
+  <symbol id="i-chev" viewBox="0 0 16 16"><path d="M6 4l4 4-4 4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+  <symbol id="i-up" viewBox="0 0 16 16"><path d="M4 10l4-4 4 4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+  <symbol id="i-down" viewBox="0 0 16 16"><path d="M4 6l4 4 4-4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+  <symbol id="i-back" viewBox="0 0 16 16"><path d="M10 3.5L5.5 8l4.5 4.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+  <symbol id="i-search" viewBox="0 0 16 16"><circle cx="7" cy="7" r="4.25" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M10.2 10.2l3 3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></symbol>
+  <symbol id="i-list" viewBox="0 0 16 16"><path d="M3 4.5h10M3 8h10M3 11.5h6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></symbol>
+  <symbol id="i-send" viewBox="0 0 16 16"><path d="M8 12.5v-9M4.5 7L8 3.5 11.5 7" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+</svg>
+
+<script>
+/* ---------------- data: one long task, 432 turns over 6 days ---------------- */
+const rnd = (() => { let a = 20261114; return () => { a |= 0; a = a + 0x6D2B79F5 | 0; let t = Math.imul(a ^ a >>> 15, 1 | a); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; })();
+const pick = a => a[Math.floor(rnd() * a.length)];
+const PHASES = [
+  { name: 'Install gate sockets', files: ['qa/install.mjs', 'server/http/agent.js', 'test/install-gate.test.js'],
+    good: ['Install gate no longer reuses a stale socket', 'Keep-alive agent scoped to one request', 'Install gate passes 20/20 locally', 'PR #770 opened'],
+    bad: ['Install gate still hangs on macOS (2/20)', 'ECONNRESET on the 3rd request'],
+    info: ['Found it: the agent keeps a socket the server already closed', 'Explained why the gate only fails on CI'],
+    asks: ['the install gate keeps timing out on CI, look at the last 3 runs', 'why only on macOS?', 'make every request open a fresh socket', 'add a test that fails before the fix', 'commit this and open a PR'] },
+  { name: 'Discord READY timeout', files: ['server/channels/discord.js', 'test/channel-discord.test.js', 'server/channels/ws.js'],
+    good: ['Fatal close refuses the next socket too', 'READY test no longer waits 20s', 'Discord gateway test made deterministic', 'PR #762 opened'],
+    bad: ['READY test still times out under full-suite load', 'Heartbeat test fails: missed beat hides the close'],
+    info: ['Mapped the gateway close codes we treat as fatal', 'Answered: what a missed heartbeat does today'],
+    asks: ['the READY test times out at 20s under load, why?', 'can a missed beat hide a fatal close?', 'use a fake clock instead of sleeps', 'run that file 30 times', 'ok push it'] },
+  { name: 'Reconnect flakiness', files: ['server/runner.js', 'server/reconnect.js', 'test/reconnect.test.js', 'test/helpers.js'],
+    good: ['Reconnect test fixed', 'Retry backoff capped at 30s', 'Backoff cap is now configurable', 'Reconnect passes 50/50 runs', 'Merged main, no conflicts'],
+    bad: ['Reconnect test still flaky (3/20)', '2 tests failing on Windows', 'Build fails: unknown option --retry-cap'],
+    info: ['Root cause: the timer starts before the socket opens', 'Plan: fake timers for every retry path'],
+    asks: ['the reconnect test is still flaky on CI, look at the last 3 runs', 'ok now make the backoff cap configurable', 'why does windows fail here?', 'no, keep the old name, just fix the wording', 'rebase on main and push'] },
+  { name: 'Reconnect, for good', files: ['server/reconnect.js', 'test/reconnect.test.js', 'test/helpers.js', 'CHANGELOG.md'],
+    good: ['Reconnect timer starts on open', 'Fake timers drive every retry path', 'Reconnect passes 50/50 runs on CI', 'PR #795 opened', 'Changelog line added'],
+    bad: ['Reconnect still flaky on windows-latest (1/20)', 'Helpers test leaks a timer'],
+    info: ['Read the last 3 CI runs: same assertion, always after a reconnect', 'Answered: why the old fix only hid it'],
+    asks: ['the reconnect test is flaky again, look at the last 3 runs', 'use fake timers everywhere', 'run it 50 times on CI', 'commit and open a PR with ci:full', 'add the changelog line'] },
+  { name: 'grid-boxd exits', files: ['grid/boxd.js', 'test/grid-boxd.test.js', 'grid/hostd.js'],
+    good: ['Box exits within 2s at load 25', 'boxd kills the process group, not the pid', 'Flaky grid-boxd test made deterministic'],
+    bad: ['Box never exited at load 25 (1/10)', 'hostd test leaves a zombie behind'],
+    info: ['Checked grid logs: the box got SIGTERM but its child kept the port', 'Explained process groups on Linux vs macOS'],
+    asks: ['check the grid logs for the box that never exited', 'kill the whole group', 'does this change anything on the real grid?', 'run grid-boxd at load 25 ten times'] },
+  { name: 'Release 0.61 prep', files: ['CHANGELOG.md', 'package.json', 'package-lock.json', 'README.md', 'docs/index.html'],
+    good: ['Version bumped to 0.61.0', 'CHANGELOG section written', 'PR #794 opened, CI 7/7', 'Typecheck clean', 'Lint clean across web/'],
+    bad: ['Merge conflict in CHANGELOG.md', 'release-notes.mjs rejects the section header'],
+    info: ['Listed what changed since 0.60.2', 'Answered: which PRs are still open'],
+    asks: ['what changed since 0.60.2?', 'prepare the 0.61 bump, don\'t merge', 'fix the changelog conflict, keep both sides', 'looks good, ship it'] },
+  { name: 'Composer and toasts', files: ['web/js/features/composer.js', 'web/css/composer.css', 'web/js/ui/toast.js', 'test/composer.test.js'],
+    good: ['Composer clears on send', 'Rollback toast on refused merge', 'Queued follow-ups survive Stop', 'Send now interrupts the run'],
+    bad: ['Toast covers Send at 390px', 'Queue reorder drops the last item'],
+    info: ['Explained how the queue is stored', 'Plan: keep follow-ups on Stop'],
+    asks: ['stopping must never drop my queued follow-ups', 'let me reorder them', 'the toast covers Send on my phone', 'screenshot it at 390 dark'] },
+];
+const NOTICES = [
+  ['Subagents finished', 'Subagents you delegated to earlier have finished: coder-r41, coder-r42. Read their results and carry on.'],
+  ['Scheduled follow-up', 'Scheduled follow-up (set 30 min ago): check CI on the open PR and fix what failed.'],
+  ['CI finished', 'CI finished on the open PR: 7 of 7 jobs passed.'],
+  ['CI failed', 'CI finished on the open PR: windows-latest / node 22 failed.'],
+  ['Goal check', 'Goal check: npm test passes 3 times in a row. Not yet (2 of 3). Keep going.'],
+  ['Review in', 'Gucci reviewed your change: 2 findings. Read them and fix what is real.'],
+  ['Resumed', 'wisp restarted and resumed this task where it stopped.'],
+];
+const BODIES = [
+  'The failure came from a timer that started before the socket was open, so a slow CI box raced it. I moved the start to the open event and drove the test with fake timers; it no longer sleeps.',
+  'I read the last three CI runs: all three fail on the same assertion after a reconnect, never before. The fix keeps one retry schedule per connection and resets it on success.',
+  'Nothing in the change touches the real grid: it only affects how the test harness waits. I ran the file 50 times at load 25 and it passed every time.',
+  'Rebased on main (38b1b5d0), resolved the CHANGELOG conflict by keeping both entries and putting ours last under Fixed, and pushed with --force-with-lease.',
+  'Windows fails because the path comes back as a \\\\?\\C:\\ verbatim path that git refuses. I strip the prefix before handing it to git and added a test that fails without it.',
+  'I added the option, documented it in the README and Settings, and kept the old default so nobody sees a change unless they set it.',
+];
+const DAYS = ['Mon 9 Nov', 'Tue 10 Nov', 'Wed 11 Nov', 'Thu 12 Nov', 'Yesterday', 'Today'];
+const PER_DAY = [58, 81, 77, 69, 84, 63];
+const TURNS = [];
+(function build() {
+  let n = 0, phaseIx = 0, left = 70 + Math.floor(rnd() * 20);
+  PER_DAY.forEach((count, d) => {
+    let min = 8 * 60 + 40 + Math.floor(rnd() * 30);
+    for (let i = 0; i < count; i++) {
+      if (left-- <= 0) { phaseIx = (phaseIx + 1) % 7; if (phaseIx === 3) phaseIx = 4; left = 55 + Math.floor(rnd() * 30); }
+      if (n >= 432 - 64) phaseIx = 3;
+      const ph = PHASES[phaseIx];
+      min += 2 + Math.floor(rnd() * 9);
+      const t = { n: ++n, day: d, time: `${String(Math.floor(min / 60) % 24).padStart(2, '0')}:${String(min % 60).padStart(2, '0')}`, phase: phaseIx };
+      const r = rnd();
+      t.from = r < 0.2 ? 'wisp' : 'you';
+      if (t.from === 'wisp') { const nt = pick(NOTICES); t.kind = nt[0]; t.ask = nt[1]; }
+      else t.ask = pick(ph.asks);
+      const o = rnd();
+      t.outcome = t.kind === 'CI failed' ? 'bad' : o < 0.09 ? 'bad' : o < 0.32 ? 'info' : 'good';
+      let h, tries = 0; do { h = pick(ph[t.outcome]); } while (tries++ < 6 && TURNS.slice(-3).some(x => x.hero === h)); t.hero = h;
+      const fc = t.outcome === 'info' ? 0 : 1 + Math.floor(rnd() * ph.files.length);
+      t.files = ph.files.slice(0, fc).map(p => ({ p, a: 2 + Math.floor(rnd() * 120), d: Math.floor(rnd() * 40) }));
+      const total = 1480 + n;
+      t.tests = t.outcome === 'info' ? null : { pass: t.outcome === 'bad' ? total - 2 - Math.floor(rnd() * 3) : total, fail: t.outcome === 'bad' ? 1 + Math.floor(rnd() * 3) : 0 };
+      t.dur = `${1 + Math.floor(rnd() * 11)}m ${String(Math.floor(rnd() * 60)).padStart(2, '0')}s`;
+      t.body = pick(BODIES);
+      TURNS.push(t);
+    }
+  });
+  const last = TURNS[TURNS.length - 1];
+  Object.assign(last, { from: 'you', kind: null, ask: 'the reconnect test is still flaky on CI, look at the last 3 runs and fix it for good.\nAdd a test that fails before the fix, then commit and open a PR.', outcome: 'good', hero: 'Reconnect test fixed', phase: 3,
+    files: [{ p: 'server/reconnect.js', a: 42, d: 17 }, { p: 'test/reconnect.test.js', a: 88, d: 3 }, { p: 'test/helpers.js', a: 6, d: 0 }, { p: 'CHANGELOG.md', a: 1, d: 0 }],
+    tests: { pass: 1912, fail: 0 }, dur: '6m 41s', body: BODIES[0] + ' PR #795 is open with ci:full; all 7 jobs passed.' });
+})();
+const N = TURNS.length;
+const fmtTests = t => !t.tests ? '' : t.tests.fail ? `<span class="stat"><span class="bad">${t.tests.fail} failed</span> · ${t.tests.pass}</span>` : `<span class="stat"><b>${t.tests.pass}</b> passed</span>`;
+const fmtFiles = t => !t.files.length ? '' : `<span class="stat"><b>${t.files.length}</b> file${t.files.length > 1 ? 's' : ''} <span style="color:var(--add)">+${t.files.reduce((s, f) => s + f.a, 0)}</span> <span style="color:var(--del)">−${t.files.reduce((s, f) => s + f.d, 0)}</span></span>`;
+const glyph = t => t.from === 'wisp' && t.outcome !== 'bad' ? `<svg class="ic g-wisp"><use href="#i-wisp"/></svg>` : `<svg class="ic g-${t.outcome}"><use href="#i-${t.outcome === 'good' ? 'ok' : t.outcome === 'bad' ? 'bad' : 'info'}"/></svg>`;
+const esc = s => s.replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+const hl = (s, q) => { s = esc(s); if (!q) return s; const i = s.toLowerCase().indexOf(q.toLowerCase()); return i < 0 ? s : s.slice(0, i) + '<mark>' + s.slice(i, i + q.length) + '</mark>' + s.slice(i + q.length); };
+const firstLine = s => s.split('\n')[0];
+const filesList = t => t.files.length ? `<ul class="files">${t.files.map(f => `<li><span class="p" title="${f.p}">${f.p}</span><span class="a">+${f.a}</span><span class="d">−${f.d}</span></li>`).join('')}</ul>` : '';
+const matches = (t, s) => {
+  if (s.filter === 'yours' && t.from !== 'you') return false;
+  if (s.filter === 'bad' && t.outcome !== 'bad') return false;
+  if (s.filter === 'ship' && !/PR #|Merged|bumped|push/i.test(t.hero)) return false;
+  if (s.filter === 'notices' && t.from !== 'wisp') return false;
+  if (s.q) { const q = s.q.toLowerCase(); return (t.hero + ' ' + t.ask + ' ' + t.files.map(f => f.p).join(' ')).toLowerCase().includes(q); }
+  return true;
+};
+const COUNTS = { bad: TURNS.filter(t => t.outcome === 'bad').length, wisp: TURNS.filter(t => t.from === 'wisp').length, yours: TURNS.filter(t => t.from === 'you').length, ship: TURNS.filter(t => /PR #|Merged|bumped|push/i.test(t.hero)).length };
+const chipsHtml = s => [['all', 'All', N], ['yours', 'Yours', COUNTS.yours], ['bad', 'Failed', COUNTS.bad], ['ship', 'Shipped', COUNTS.ship], ['notices', 'wisp notices', COUNTS.wisp]]
+  .map(([k, l, c]) => `<button class="chip" data-act="filter" data-v="${k}" aria-pressed="${s.filter === k}">${l}<span class="n">${c}</span></button>`).join('');
+const searchHtml = (s, ph) => `<label class="search"><svg class="ic s" style="color:var(--faint)"><use href="#i-search"/></svg><input data-act="q" value="${esc(s.q)}" placeholder="${ph}" aria-label="${ph}"><kbd>/</kbd></label>`;
+
+/* ---------------- A · Ledger + scrubber ---------------- */
+function renderA(f) {
+  const s = f.s;
+  const searching = s.q || s.filter !== 'all';
+  const rows = [];
+  const rowHtml = t => {
+    if (t.from === 'wisp' && t.n !== s.open) return `<div class="row note" data-act="open" data-n="${t.n}" id="${f.id}-t${t.n}">${glyph(t)}<span class="h"><b>wisp · ${t.kind}</b> → ${hl(t.hero, s.q)}</span><span class="r"><span class="tm">${t.time}</span></span></div>`;
+    const head = `<div class="row" data-act="open" data-n="${t.n}" id="${f.id}-t${t.n}">${glyph(t)}<span class="h">${hl(t.hero, s.q)}</span><span class="r">${fmtTests(t)}<span class="tm">${t.time}</span></span><span class="y">${t.from === 'you' ? 'You: ' : 'wisp: '}${hl(firstLine(t.ask), s.q)}</span></div>`;
+    if (t.n !== s.open) return head;
+    return `<div class="open">${head}
+      <div class="pb"><span class="who">${t.from === 'you' ? 'You asked · ' + t.time : 'wisp sent this · ' + t.kind + ' · ' + t.time}</span><p class="prompt">${esc(t.ask)}</p></div>
+      <div class="hero"><span class="ht">${esc(t.hero)}</span><span class="statusp ${t.outcome}">${t.outcome === 'good' ? 'Done' : t.outcome === 'bad' ? 'Failed' : 'Answer'}</span>${fmtTests(t)}${fmtFiles(t)}<span class="stat">${t.dur}</span></div>
+      <div class="bd"><p class="answer">${esc(t.body)}</p>${filesList(t)}</div>
+      <div class="ft"><button class="btn" data-act="step" data-v="-1">‹ Earlier</button><button class="btn" data-act="step" data-v="1">Later ›</button><span class="sp"></span><button class="btn">Copy link</button><button class="btn">Rerun from here</button></div></div>`;
+  };
+  if (searching) {
+    const m = TURNS.filter(t => matches(t, s));
+    let lastDay = -1;
+    m.forEach(t => { if (t.day !== lastDay) { lastDay = t.day; rows.push(`<div class="day"><span class="d">${DAYS[t.day]}</span><span class="s">${m.filter(x => x.day === t.day).length} matches</span></div>`); } rows.push(rowHtml(t)); });
+    if (!m.length) rows.push(`<p style="color:var(--faint);padding:24px 0">No turn matches “${esc(s.q)}”.</p>`);
+  } else {
+    DAYS.forEach((d, di) => {
+      const ts = TURNS.filter(t => t.day === di);
+      const bad = ts.filter(t => t.outcome === 'bad').length, good = ts.filter(t => t.outcome === 'good').length;
+      const phases = [...new Set(ts.map(t => PHASES[t.phase].name))];
+      const files = new Set(ts.flatMap(t => t.files.map(x => x.p))).size;
+      if (!s.days.has(di)) {
+        rows.push(`<div class="collapsed" data-act="day" data-v="${di}"><span class="d">${d}</span><span class="stat">${ts.length} turns · ${ts[0].time}–${ts[ts.length - 1].time}</span>
+          <span class="k">${phases.join(' · ')} — ${good} done, ${bad ? `<span style="color:var(--bad)">${bad} failed</span>` : '0 failed'}, ${files} files</span>
+          <span class="strip">${ts.map(t => `<i class="${t.from === 'wisp' ? 'note' : t.outcome}"></i>`).join('')}</span></div>`);
+        return;
+      }
+      rows.push(`<div class="day"><span class="d">${d}</span><span class="s">${ts.length} turns · ${phases.join(' · ')}</span><button class="tog" data-act="day" data-v="${di}">Fold</button></div>`);
+      let run = [];
+      const flush = () => {
+        if (run.length > 2 && !s.unfold.has(run[0].n)) rows.push(`<div class="fold" data-act="unfold" data-v="${run[0].n}"><svg class="ic s"><use href="#i-wisp"/></svg>${run.length} wisp notices · ${[...new Set(run.map(r => r.kind))].join(', ')}</div>`);
+        else run.forEach(r => rows.push(rowHtml(r)));
+        run = [];
+      };
+      ts.forEach(t => { if (t.from === 'wisp' && t.n !== s.open) run.push(t); else { flush(); rows.push(rowHtml(t)); } });
+      flush();
+    });
+  }
+  const ticks = TURNS.map((t, i) => `<i class="${t.n === s.open ? 'on' : t.from === 'wisp' ? 'note' : t.outcome}" style="top:${(i / N * 100).toFixed(2)}%"></i>`).join('');
+  let acc = 0;
+  const dls = DAYS.map((d, i) => { const top = acc / N * 100; acc += PER_DAY[i]; return `<span class="dl" style="top:calc(${top}% + 8px)">${d.replace(/ Nov/, '')}</span>`; }).join('');
+  f.body.innerHTML = `<div class="A">
+    <div class="tools">${searchHtml(s, 'Search 432 turns')}<div class="chips">${chipsHtml(s)}</div><span class="count">${N} turns · 6 days</span></div>
+    <div class="wrap"><div class="list"><div class="inner">${rows.join('')}</div></div>
+      <div class="scrub" data-act="scrub" aria-label="Scrub through turns" title="Drag to scrub through every turn">${dls}<div class="tk">${ticks}</div><div class="view"></div></div>
+      <div class="bubble" hidden></div></div></div>`;
+  const list = f.body.querySelector('.list'), view = f.body.querySelector('.view'), tk = f.body.querySelector('.tk');
+  const sync = () => { const r = list.scrollHeight; view.style.top = (8 + list.scrollTop / r * tk.offsetHeight) + 'px'; view.style.height = Math.max(8, list.clientHeight / r * tk.offsetHeight) + 'px'; };
+  list.addEventListener('scroll', sync); requestAnimationFrame(sync);
+  const scrub = f.body.querySelector('.scrub'), bub = f.body.querySelector('.bubble');
+  const at = e => { const r = tk.getBoundingClientRect(); const y = Math.min(Math.max(0, e.clientY - r.top), r.height - 1); return { t: TURNS[Math.floor(y / r.height * N)], y: e.clientY - f.body.getBoundingClientRect().top }; };
+  scrub.onmousemove = e => { const { t, y } = at(e); bub.hidden = false; bub.style.top = y + 'px'; bub.innerHTML = `<div class="d">${DAYS[t.day]} · ${t.time} · turn ${t.n} of ${N}</div><div class="h">${glyph(t)} ${esc(t.hero)}</div>`; };
+  scrub.onmouseleave = () => { bub.hidden = true; };
+  scrub.onpointerdown = e => { const { t } = at(e); s.days.add(t.day); s.open = t.n; s.q = ''; s.filter = 'all'; render(f); reveal(f, t.n); };
+}
+
+/* ---------------- B · Chapters ---------------- */
+function chapters() {
+  const out = []; let cur = null;
+  TURNS.forEach(t => { if (!cur || cur.phase !== t.phase) { cur = { phase: t.phase, name: PHASES[t.phase].name, turns: [] }; out.push(cur); } cur.turns.push(t); });
+  out.forEach((c, i) => { c.i = i; c.from = c.turns[0]; c.to = c.turns[c.turns.length - 1]; });
+  return out;
+}
+const CH = chapters();
+function renderB(f) {
+  const s = f.s;
+  const searching = s.q || s.filter !== 'all';
+  const cards = (c) => {
+    const ts = c.turns.filter(t => matches(t, s));
+    const out = []; let run = [];
+    const flush = () => {
+      if (!run.length) return;
+      if (run.length > 1 && !s.unfold.has(run[0].n) && !searching) out.push(`<div class="lane fold" data-act="unfold" data-v="${run[0].n}"><span class="tm">${run[0].time}</span><span class="dot"></span><svg class="ic s"><use href="#i-wisp"/></svg><span class="t">${run.length} wisp notices · ${[...new Set(run.map(r => r.kind))].join(', ')}</span></div>`);
+      else run.forEach(t => out.push(`<div class="lane" data-act="open" data-n="${t.n}" id="${f.id}-t${t.n}" style="cursor:pointer"><span class="tm">${t.time}</span><span class="dot"></span><svg class="ic s"><use href="#i-wisp"/></svg><span class="t"><b>${t.kind}</b> · ${hl(t.hero, s.q)}</span></div>`));
+      run = [];
+    };
+    let prevDay;
+    ts.forEach(t => {
+      if (prevDay !== undefined && t.day !== prevDay) { flush(); out.push(`<div class="lane dayk"><span class="t">${DAYS[t.day]}</span></div>`); }
+      prevDay = t.day;
+      if (t.from === 'wisp' && t.n !== s.open && t.outcome !== 'bad') { run.push(t); return; }
+      flush();
+      const on = t.n === s.open;
+      out.push(`<article class="card${on ? ' on' : ''}" data-act="open" data-n="${t.n}" id="${f.id}-t${t.n}">
+        <span class="tm">${t.time}</span>
+        <div class="top">${glyph(t)}<span class="ht">${hl(t.hero, s.q)}</span><span class="sp"></span><span class="statusp ${t.outcome}">${t.outcome === 'good' ? 'Done' : t.outcome === 'bad' ? 'Failed' : 'Answer'}</span></div>
+        ${t.tests || t.files.length ? `<div class="meta">${fmtTests(t)}${fmtFiles(t)}<span class="stat">${t.dur}</span></div>` : ''}
+        ${!on && t.files.length ? `<div class="fch">${t.files.slice(0, 3).map(x => `<span>${x.p.split('/').pop()}</span>`).join('')}</div>` : ''}
+        <div class="more"><p class="answer">${esc(t.body)}</p>${filesList(t)}<div class="acts"><button class="btn">Open diff</button><button class="btn">Copy link</button><button class="btn">Rerun from here</button></div></div>
+        <div class="ask"><b>${t.from === 'you' ? 'You' : 'wisp · ' + t.kind}:</b> ${on ? esc(t.ask) : hl(firstLine(t.ask), s.q)}</div></article>`);
+    });
+    flush();
+    return out.join('');
+  };
+  const secs = CH.map(c => {
+    const ts = c.turns, bad = ts.filter(t => t.outcome === 'bad').length;
+    const m = ts.filter(t => matches(t, s)).length;
+    if (searching && !m) return '';
+    const open = searching || s.chaps.has(c.i);
+    const passes = ts.filter(t => t.tests);
+    const t0 = passes[0], t1 = passes[passes.length - 1];
+    const tops = [...new Map(ts.filter(t => t.outcome === 'good' && t.from === 'you').map(t => [t.hero, t])).values()].slice(-3);
+    const files = [...new Set(ts.flatMap(t => t.files.map(x => x.p)))];
+    const when = c.from.day === c.to.day ? `${DAYS[c.from.day]} · ${c.from.time}–${c.to.time}` : `${DAYS[c.from.day]} ${c.from.time} – ${DAYS[c.to.day]} ${c.to.time}`;
+    return `<section class="chap" id="${f.id}-c${c.i}"><div class="hd" data-act="chap" data-v="${c.i}"><span class="n">Ch ${c.i + 1}</span><h3>${esc(c.name)}</h3><span class="w">${searching ? m + ' of ' : ''}${ts.length} turn${ts.length > 1 ? 's' : ''} · ${when}</span></div>
+      ${open ? `<div class="story">${cards(c)}</div>` : `<div class="sum" data-act="chap" data-v="${c.i}">
+        <ul>${tops.map(t => `<li>${glyph(t)}<span>${esc(t.hero)}</span></li>`).join('')}${bad ? `<li><svg class="ic g-bad"><use href="#i-bad"/></svg><span>${bad} turns failed on the way</span></li>` : ''}</ul>
+        <div class="k">${t0 && t1 ? `<span class="stat">Tests <b>${t0.tests.pass}</b> → <b>${t1.tests.pass}</b></span>` : ''}<span class="stat"><b>${files.length}</b> files · ${files.slice(0, 2).map(p => `<span class="mono" style="font-size:11.5px">${p.split('/').pop()}</span>`).join(', ')}</span><span class="stat">${ts.filter(t => t.from === 'wisp').length} wisp notices</span></div>
+        <span class="more">Read ${ts.length} turns ›</span></div>`}</section>`;
+  }).join('');
+  const toc = [...CH].reverse().map(c => `<button class="c" data-act="goChap" data-v="${c.i}" aria-current="${c.i === CH.length - 1}"><div class="ct">${esc(c.name)}</div><div class="cm"><span>Ch ${c.i + 1}</span><span>${c.turns.length} turns</span><span>${DAYS[c.from.day]}</span></div><div class="bar5">${c.turns.filter((_, i) => i % 3 === 0).map(t => `<i class="${t.outcome === 'bad' ? 'bad' : ''}"></i>`).join('')}</div></button>`).join('');
+  const chapbar = `<div class="chips chapbar">${[...CH].reverse().map(c => `<button class="chip" data-act="goChap" data-v="${c.i}" aria-pressed="${c.i === CH.length - 1}">Ch ${c.i + 1} · ${esc(c.name)}</button>`).join('')}</div>`;
+  f.body.innerHTML = `<div class="B"><nav class="toc"><div class="lbl"><span>${CH.length} chapters · latest first</span><span>${N} turns</span></div>${toc}</nav>
+    <div class="main"><div class="tools">${searchHtml(s, 'Search every chapter')}${chapbar}<div class="chips">${chipsHtml(s)}</div></div>
+    <div class="scroll"><div class="inner">${secs || `<p style="color:var(--faint);padding:24px 0">No turn matches “${esc(s.q)}”.</p>`}</div></div></div></div>`;
+}
+
+/* ---------------- C · Outline + stage ---------------- */
+function renderC(f) {
+  const s = f.s;
+  const t = TURNS[s.open - 1];
+  const m = TURNS.filter(x => matches(x, s));
+  let lastDay = -1; const lines = [];
+  [...m].reverse().forEach(x => {
+    if (x.day !== lastDay) { lastDay = x.day; lines.push(`<div class="dh"><span>${DAYS[x.day]}</span><span>${m.filter(y => y.day === x.day).length}</span></div>`); }
+    lines.push(`<div class="ln${x.from === 'wisp' ? ' note' : ''}" data-act="open" data-n="${x.n}" id="${f.id}-t${x.n}" aria-current="${x.n === s.open}"><span class="no">${x.n}</span>${glyph(x)}<span class="h">${x.from === 'wisp' ? 'wisp · ' + x.kind : hl(x.hero, s.q)}</span><span class="tm">${x.time}</span></div>`);
+  });
+  const prev = TURNS[s.open - 2], next = TURNS[s.open];
+  const near = (x, l) => x ? `<button data-act="openTo" data-n="${x.n}"><div class="d">${l} · turn ${x.n} · ${x.time}</div><div class="h">${glyph(x)} ${esc(x.hero)}</div></button>` : '<span></span>';
+  f.body.innerHTML = `<div class="C${s.sheet ? ' sheet' : ''}">
+    <aside class="ol" aria-label="Outline"><div class="grab" data-act="sheet"><i></i></div><div class="tools">${searchHtml(s, 'Search turns')}<div class="chips">${chipsHtml(s)}</div></div><div class="lines">${lines.join('') || `<p style="color:var(--faint);padding:16px">No match.</p>`}</div></aside>
+    <div class="scrim" data-act="sheet"></div>
+    <section class="st"><div class="nav"><span class="pos">Turn ${t.n} of ${N} · ${DAYS[t.day]} ${t.time} · ${t.dur}</span><span class="sp"></span>
+      <button class="ib" data-act="step" data-v="-1" aria-label="Earlier turn" title="Earlier turn (k)" ${prev ? '' : 'disabled'}><svg class="ic"><use href="#i-up"/></svg></button>
+      <button class="ib" data-act="step" data-v="1" aria-label="Later turn" title="Later turn (j)" ${next ? '' : 'disabled'}><svg class="ic"><use href="#i-down"/></svg></button></div>
+      <div class="page"><div class="read">
+        ${t.from === 'you' ? `<div><span class="who">You asked</span><div class="ask">${esc(t.ask)}</div></div>` : `<div class="notice"><svg class="ic"><use href="#i-wisp"/></svg><div><b style="font-weight:500;color:var(--ink-2)">wisp sent this · ${t.kind}</b><br>${esc(t.ask)}</div></div>`}
+        <div class="hero"><div class="k"><span class="statusp ${t.outcome}">${t.outcome === 'good' ? 'Done' : t.outcome === 'bad' ? 'Failed' : 'Answer'}</span><span class="stat">${PHASES[t.phase].name}</span></div><h2>${esc(t.hero)}</h2>
+          <div class="k">${fmtTests(t)}${fmtFiles(t)}<span class="stat">${t.dur}</span></div></div>
+        <p class="answer">${esc(t.body)}</p>${filesList(t)}
+        <div class="acts"><button class="btn">Open diff</button><button class="btn">Copy link</button><button class="btn">Rerun from here</button></div>
+        <div class="near">${near(prev, 'Earlier')}${near(next, 'Later')}</div>
+      </div></div>
+      <div class="handle"><button class="o" data-act="sheet" aria-label="Open outline"><svg class="ic" style="color:var(--muted)"><use href="#i-list"/></svg><span><b style="font-weight:500">${t.n}</b> <span style="color:var(--faint)">/ ${N}</span> · ${esc(t.hero)}</span></button>
+        <button class="ib" data-act="step" data-v="-1" aria-label="Earlier turn" title="Earlier turn"><svg class="ic"><use href="#i-up"/></svg></button>
+        <button class="ib" data-act="step" data-v="1" aria-label="Later turn" title="Later turn"><svg class="ic"><use href="#i-down"/></svg></button></div>
+    </section></div>`;
+  requestAnimationFrame(() => { const el = f.body.querySelector(`#${f.id}-t${s.open}`); el && within(el, 'nearest'); });
+}
+
+/* ---------------- frames, state, events ---------------- */
+const UI = { dir: 'A', w: 'both', theme: 'dark' };
+const BLURB = {
+  A: '<b>A · Ledger + scrubber.</b> Each turn is one line led by what came of it (the hero), your words a quiet second line. Older days fold into a day summary with an outcome strip; the right edge is a scrubber of all 432 turns (red = failed, faint = wisp notices). Hover it for a preview, click to jump. Runs of wisp notices fold into one line.',
+  B: '<b>B · Chapters.</b> The history reads as a story: turns grouped into chapters by what was being worked on. A closed chapter is a summary card (what got done, tests before → after, files). Open one and each turn is a card led by its hero; your message is the footnote; wisp notices sit in a quiet lane on the time rail.',
+  C: '<b>C · Outline + stage.</b> One turn at a time takes the stage, read like a page: your message, then the result as a 26px heading, stats, files, answer, with the turns before and after. Everything else is a dense numbered outline beside it (desktop) or a sheet under your thumb (phone). j / k step through.',
+};
+const frames = [];
+function newState() { return { open: N, q: '', filter: 'all', days: new Set([4, 5]), unfold: new Set(), chaps: new Set([CH.length - 1]), sheet: false }; }
+function render(f) { ({ A: renderA, B: renderB, C: renderC })[UI.dir](f); }
+function within(el, mode) { const box = el.closest('.list, .scroll, .lines, .page'); if (!box) return; const r = el.getBoundingClientRect(), b = box.getBoundingClientRect();
+  if (mode === 'start') box.scrollTop += r.top - b.top - 8; else if (mode === 'nearest') { if (r.top < b.top + 30) box.scrollTop += r.top - b.top - 30; else if (r.bottom > b.bottom) box.scrollTop += r.bottom - b.bottom + 8; } else box.scrollTop += r.top - b.top - Math.max(40, (b.height - Math.min(r.height, b.height)) / 2); }
+function reveal(f, n) { requestAnimationFrame(() => { const el = f.el.querySelector(`#${f.id}-t${n}`); if (el) within(el, UI.dir === 'C' ? 'nearest' : 'center'); }); }
+function mount() {
+  document.body.classList.toggle('dark-page', UI.theme === 'dark');
+  document.getElementById('blurb').innerHTML = BLURB[UI.dir];
+  const stage = document.getElementById('stage'); stage.innerHTML = ''; frames.length = 0;
+  const kinds = UI.w === 'both' ? ['desk', 'phone'] : [UI.w];
+  kinds.forEach((k, i) => {
+    const wrap = document.createElement('div');
+    wrap.innerHTML = `<p class="cap">${k === 'desk' ? 'Desktop · 1280 × 820 · task panel' : 'Phone · 390 × 844 · the app, stacked'} · ${UI.theme}</p>`;
+    const el = document.createElement('div'); el.className = `frame ${k}${UI.theme === 'dark' ? ' dark' : ''}`;
+    el.innerHTML = `${k === 'phone' ? '<div class="status"><span>9:41</span><span>●●● 5G</span></div>' : ''}
+      <div class="thead">${k === 'phone' ? '<button class="back" aria-label="Back" title="Back"><svg class="ic"><use href="#i-back"/></svg></button>' : ''}<span class="t">Fix flaky reconnect tests and ship 0.61</span>${k === 'desk' ? '<span class="meta">Claude Code · wisp-8fb6 · 6 days</span><span class="pill">PR #795</span>' : ''}</div>
+      <div class="body"></div>
+      <div class="composer"><div class="box"><span>Follow up…</span><button class="send" aria-label="Send" title="Send"><svg class="ic"><use href="#i-send"/></svg></button></div></div>`;
+    wrap.appendChild(el); stage.appendChild(wrap);
+    const f = { id: 'f' + i, el, body: el.querySelector('.body'), s: newState(), kind: k };
+    frames.push(f); wire(f); render(f);
+    if (UI.dir !== 'C') reveal(f, N);
+  });
+}
+function step(f, d) {
+  const s = f.s; let n = s.open + d;
+  while (n >= 1 && n <= N && !matches(TURNS[n - 1], s)) n += d;
+  if (n < 1 || n > N) return;
+  s.open = n; s.days.add(TURNS[n - 1].day); s.chaps.add(CH.findIndex(c => c.turns.includes(TURNS[n - 1])));
+  render(f); reveal(f, n);
+}
+function wire(f) {
+  f.el.addEventListener('click', e => {
+    const a = e.target.closest('[data-act]'); if (!a || a.dataset.act === 'q' || a.dataset.act === 'scrub') return;
+    const s = f.s, v = a.dataset.v, act = a.dataset.act;
+    if (act === 'open' || act === 'openTo') {
+      const n = +a.dataset.n;
+      if (UI.dir === 'C') { s.open = n; s.sheet = false; render(f); return; }
+      if (s.open === n && e.target.closest('.row, .top, .lane')) { s.open = 0; } else if (s.open === n) return; else s.open = n;
+      render(f); reveal(f, n); return;
+    }
+    if (act === 'filter') { s.filter = s.filter === v ? 'all' : v; }
+    if (act === 'day') { s.days.has(+v) ? s.days.delete(+v) : s.days.add(+v); }
+    if (act === 'unfold') { s.unfold.add(+v); }
+    if (act === 'chap') { s.chaps.has(+v) ? s.chaps.delete(+v) : s.chaps.add(+v); }
+    if (act === 'goChap') { s.chaps.add(+v); render(f); requestAnimationFrame(() => { const el = f.el.querySelector(`#${f.id}-c${v}`); el && within(el, 'start'); }); return; }
+    if (act === 'sheet') { s.sheet = !s.sheet; }
+    if (act === 'step') { step(f, +v); return; }
+    render(f);
+  });
+  f.el.addEventListener('input', e => {
+    if (e.target.dataset.act !== 'q') return;
+    f.s.q = e.target.value; const pos = e.target.selectionStart; render(f);
+    const inp = f.el.querySelector('input[data-act=q]'); inp.focus(); inp.setSelectionRange(pos, pos);
+  });
+}
+document.addEventListener('keydown', e => {
+  const f = frames[0]; if (!f) return;
+  if (e.target.tagName === 'INPUT') { if (e.key === 'Escape') { e.target.blur(); } return; }
+  if (e.key === '/') { e.preventDefault(); f.el.querySelector('input[data-act=q]')?.focus(); }
+  if (e.key === 'j') step(f, 1);
+  if (e.key === 'k') step(f, -1);
+  if (e.key === ']' || e.key === '[') { const d = e.key === ']' ? 1 : -1; let n = f.s.open + d; while (n >= 1 && n <= N && TURNS[n - 1].outcome !== 'bad') n += d; if (n >= 1 && n <= N) { f.s.open = n; f.s.days.add(TURNS[n - 1].day); f.s.chaps.add(CH.findIndex(c => c.turns.includes(TURNS[n - 1]))); render(f); reveal(f, n); } }
+  if (e.key === 'Escape' && UI.dir !== 'C') { f.s.open = 0; render(f); }
+});
+[['segDir', 'dir'], ['segW', 'w'], ['segT', 'theme']].forEach(([id, key]) => {
+  document.getElementById(id).addEventListener('click', e => {
+    const b = e.target.closest('button'); if (!b) return;
+    UI[key] = b.dataset.v;
+    document.querySelectorAll(`#${id} button`).forEach(x => x.setAttribute('aria-pressed', x === b));
+    const u = new URL(location); u.searchParams.set(key, b.dataset.v); history.replaceState(null, '', u);
+    mount();
+  });
+});
+const q = new URL(location).searchParams;
+['dir', 'w', 'theme'].forEach(k => { if (q.get(k)) { UI[k] = q.get(k); document.querySelectorAll(`#seg${{ dir: 'Dir', w: 'W', theme: 'T' }[k]} button`).forEach(x => x.setAttribute('aria-pressed', x.dataset.v === UI[k])); } });
+mount();
+</script>
+</body>
+</html>

@@ -1,0 +1,6 @@
+# Text checks out with LF on every OS. Windows runners default to core.autocrlf=true, which turned every golden
+# (telemetry, cli, resources, runtime, tui) into CRLF there, so byte-for-byte comparisons failed on Windows only.
+* text=auto eol=lf
+# Windows batch files stay as committed (CRLF), byte for byte.
+*.bat -text
+*.cmd -text

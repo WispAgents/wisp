@@ -1,0 +1,425 @@
+{
+ "_": "What wisp sends (ADR-0021): every catalogue event, its property keys, and the file that sends it or why nothing does. Changing it is a deliberate act (plugins/telemetry/api/tests/emitters.rs).",
+ "events": {
+  "account": {
+   "props": [
+    "agent",
+    "count",
+    "step"
+   ],
+   "from": "plugins/accounts/host/src/ops.rs"
+  },
+  "agent_launch": {
+   "props": [
+    "agent",
+    "harness",
+    "machine",
+    "team"
+   ],
+   "from": "plugins/mcp/core/src/telemetry.rs"
+  },
+  "agent_login": {
+   "props": [
+    "agent",
+    "step"
+   ],
+   "from": "plugins/accounts/host/src/signin.rs"
+  },
+  "agent_task": {
+   "props": [
+    "action",
+    "agent"
+   ],
+   "from": "plugins/runtime/host/src/plugin/agent_task.rs"
+  },
+  "app_started": {
+   "props": [
+    "*Version",
+    "agentsInstalled"
+   ],
+   "from": "plugins/telemetry/host/src/lib.rs"
+  },
+  "approval": {
+   "props": [
+    "agent"
+   ],
+   "from": "plugins/runtime/host/src/more/ask.rs"
+  },
+  "ask_user": {
+   "props": [
+    "agent"
+   ],
+   "from": "plugins/mcp/core/src/telemetry.rs"
+  },
+  "auto_override": {
+   "props": [
+    "from",
+    "sameHarness",
+    "to",
+    "type"
+   ],
+   "from": "plugins/router/host/src/service.rs"
+  },
+  "auto_settled": {
+   "props": [
+    "escalated",
+    "escalation",
+    "routeType",
+    "strategy"
+   ],
+   "from": "plugins/router/host/src/service.rs"
+  },
+  "btw": {
+   "props": [
+    "agent",
+    "forked",
+    "running"
+   ],
+   "from": "plugins/runtime/host/src/more/btw.rs"
+  },
+  "channel_event": {
+   "props": [
+    "kind"
+   ],
+   "from": "plugins/channels/host/src/hub.rs"
+  },
+  "compact": {
+   "props": [
+    "agent"
+   ],
+   "from": "plugins/runtime/host/src/plugin/more.rs"
+  },
+  "connector_tool": {
+   "props": [
+    "agent",
+    "op",
+    "transport"
+   ],
+   "from": "plugins/mcp/core/src/telemetry.rs"
+  },
+  "crew_imported": {
+   "props": [
+    "by",
+    "members",
+    "source"
+   ],
+   "from": "plugins/crew/host/src/transfer.rs"
+  },
+  "crew_shared": {
+   "props": [
+    "gist",
+    "members",
+    "notebook"
+   ],
+   "from": "plugins/crew/host/src/transfer.rs"
+  },
+  "crew_tool": {
+   "props": [
+    "agent",
+    "by",
+    "op"
+   ],
+   "from": "plugins/mcp/core/src/telemetry.rs"
+  },
+  "delegate": {
+   "props": [
+    "agent",
+    "harnesses",
+    "tasks"
+   ],
+   "from": "plugins/runtime/host/src/plugin/more.rs"
+  },
+  "exec_action": {
+   "props": [
+    "agent",
+    "exitCode"
+   ],
+   "from": "plugins/runtime/host/src/plugin/reads.rs"
+  },
+  "fork_task": {
+   "props": [
+    "agent",
+    "latest",
+    "switched"
+   ],
+   "from": "plugins/runtime/host/src/plugin/more.rs"
+  },
+  "getapp_clicked": {
+   "props": [],
+   "notSent": "the page sends it (an allowed UI event); v2 has no Get the desktop app card yet (shell.getapp:card is an empty slot)"
+  },
+  "getapp_hidden": {
+   "props": [],
+   "notSent": "the page sends it (an allowed UI event); v2 has no Get the desktop app card yet (shell.getapp:card is an empty slot)"
+  },
+  "getapp_opened": {
+   "props": [
+    "from"
+   ],
+   "notSent": "the page sends it (an allowed UI event); v2 has no Get the desktop app card yet (shell.getapp:card is an empty slot)"
+  },
+  "harness_install": {
+   "props": [
+    "agent",
+    "ms",
+    "ok"
+   ],
+   "from": "plugins/accounts/host/src/ops.rs"
+  },
+  "merge": {
+   "props": [
+    "agent"
+   ],
+   "from": "plugins/ship/host/src/lib.rs"
+  },
+  "move_task": {
+   "props": [
+    "agent",
+    "from",
+    "to"
+   ],
+   "notSent": "v2 has no move: a follow-up on another computer is Rerun's new task, the first one stays (F-mach-6)"
+  },
+  "resume_later": {
+   "props": [
+    "agent",
+    "minutes"
+   ],
+   "from": "plugins/later/host/src/lib.rs"
+  },
+  "retro": {
+   "props": [
+    "added",
+    "agent",
+    "ok",
+    "removed"
+   ],
+   "from": "plugins/learn/host/src/retro.rs"
+  },
+  "run_app": {
+   "props": [
+    "agent",
+    "source"
+   ],
+   "from": "plugins/runtime/host/src/plugin/projects.rs"
+  },
+  "shell": {
+   "props": [
+    "agent"
+   ],
+   "from": "plugins/terminal/host/src/lib.rs"
+  },
+  "ship": {
+   "props": [
+    "agent",
+    "draft"
+   ],
+   "from": "plugins/ship/host/src/lib.rs"
+  },
+  "side_task": {
+   "props": [
+    "agent",
+    "running"
+   ],
+   "from": "plugins/runtime/host/src/plugin/create.rs"
+  },
+  "spell_hook": {
+   "props": [
+    "action",
+    "on"
+   ],
+   "notSent": "spells are gone (ADR-0031): no spell hook fires"
+  },
+  "spell_installed": {
+   "props": [
+    "enabled",
+    "kind",
+    "source"
+   ],
+   "from": "plugins/plugins/host/src/install.rs"
+  },
+  "stuff_add": {
+   "props": [
+    "files"
+   ],
+   "from": "plugins/stuff/host/src/routes.rs"
+  },
+  "stuff_launch": {
+   "props": [],
+   "from": "plugins/stuff/host/src/commands.rs"
+  },
+  "stuff_publish": {
+   "props": [
+    "by",
+    "files",
+    "update"
+   ],
+   "from": "plugins/stuff/host/src/commands.rs"
+  },
+  "stuff_save": {
+   "props": [
+    "by",
+    "kind",
+    "update"
+   ],
+   "from": "plugins/stuff/host/src/routes.rs"
+  },
+  "takeover": {
+   "props": [
+    "agent",
+    "machine",
+    "terminal"
+   ],
+   "from": "plugins/terminal/host/src/lib.rs"
+  },
+  "task_import": {
+   "props": [
+    "connectors",
+    "crew",
+    "model",
+    "prompt",
+    "runs",
+    "skills",
+    "switched",
+    "turns",
+    "work"
+   ],
+   "from": "plugins/share/host/src/lib.rs"
+  },
+  "task_share": {
+   "props": [
+    "again",
+    "locked",
+    "turns",
+    "work"
+   ],
+   "from": "plugins/share/host/src/link.rs"
+  },
+  "try_two_ways": {
+   "props": [],
+   "from": "plugins/runtime/host/src/plugin/trial.rs"
+  },
+  "turn_ended": {
+   "props": [
+    "agent",
+    "blockCount",
+    "blockTypes",
+    "changedFiles",
+    "costUsd",
+    "durationMs",
+    "effort",
+    "followUp",
+    "heroStatus",
+    "inputTokens",
+    "mode",
+    "model",
+    "outputTokens",
+    "presentationFallback",
+    "routeEffort",
+    "routeExplored",
+    "routeGoal",
+    "routePinned",
+    "routePropensity",
+    "routeSize",
+    "routeSuggested",
+    "routeTaste",
+    "routeTier",
+    "routeTrying",
+    "routeType",
+    "routed",
+    "status"
+   ],
+   "from": "plugins/telemetry/host/src/lib.rs"
+  },
+  "turn_started": {
+   "props": [
+    "agent",
+    "attachments",
+    "effort",
+    "followUp",
+    "mode",
+    "model"
+   ],
+   "from": "plugins/telemetry/host/src/lib.rs"
+  },
+  "update": {
+   "props": [
+    "from",
+    "method",
+    "to"
+   ],
+   "from": "plugins/update/host/src/lib.rs"
+  },
+  "wisp_available": {
+   "props": [
+    "agent"
+   ],
+   "from": "plugins/runtime/host/src/plugin/agent_task.rs"
+  },
+  "wisp_pr": {
+   "props": [
+    "agent",
+    "remove"
+   ],
+   "from": "plugins/ship/host/src/agent.rs"
+  },
+  "wisp_session": {
+   "props": [
+    "agent"
+   ],
+   "from": "plugins/runtime/host/src/plugin/reads.rs"
+  },
+  "wisp_sessions": {
+   "props": [
+    "agent"
+   ],
+   "from": "plugins/runtime/host/src/plugin/reads.rs"
+  },
+  "wisp_stats": {
+   "props": [
+    "agent"
+   ],
+   "from": "plugins/runtime/host/src/plugin/agent_tools.rs"
+  },
+  "wisp_tag": {
+   "props": [
+    "agent",
+    "tags"
+   ],
+   "from": "plugins/runtime/host/src/plugin/agent_tools.rs"
+  },
+  "wisp_watch": {
+   "props": [
+    "agent",
+    "html"
+   ],
+   "from": "plugins/runtime/host/src/watch.rs"
+  },
+  "worktrees_brought_in": {
+   "props": [
+    "n",
+    "resumed"
+   ],
+   "from": "plugins/worktrees/host/src/commands.rs"
+  }
+ },
+ "exceptions": {
+  "event": "$exception",
+  "props": [
+   "$exception_list",
+   "route",
+   "type",
+   "handled",
+   "agent",
+   "model",
+   "mode",
+   "effort",
+   "followUp"
+  ],
+  "from": {
+   "InternalError": "plugins/telemetry/host/src/errors.rs",
+   "Panic": "plugins/telemetry/host/src/errors.rs",
+   "AgentError": "plugins/telemetry/core/src/turns.rs"
+  }
+ }
+}
