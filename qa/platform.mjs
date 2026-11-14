@@ -30,6 +30,8 @@
 // through CDP Emulation.setSafeAreaInsetsOverride (env(safe-area-inset-*)); a Chrome without it gets the
 // --safe-* tokens set instead, and the report says which. Text scale: --text-scale and the root font size
 // (what the app's native side will set from Android's font scale / iOS Dynamic Type).
+// That setup, the env and the view list are qa/phone.mjs + qa/phone-rules.ts, shared with qa/layout.mjs --phone
+// and qa/feedback.mjs --phone, so the three agree on what a phone view is and when it is skipped.
 //
 // Needs playwright-core in PW_DIR (default /tmp/wisp-qa-pw) and the system Chrome (qa/lib.mjs).
 // Writes $QA_OUT/platform.json (qa/out by default) and, per failing view, $QA_OUT/platform/<…>.png.
@@ -39,18 +41,13 @@ import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { launchBrowser, OUT, ROOT } from './lib.mjs';
 import { inspect, startGallery } from './layout.mjs';
-import { AREAS } from './layout-areas.mjs';
-import { barRule, hoverReveals, hoverRule, lookStatus, pickSizes, rolesOf, safeRule, tapRule, tokenRule, tokensOf, TOKEN_NAMES, twinRule, typeRule } from './platform-rules.ts';
+import { lookVariants, openPhone, phoneConfig, settlePhone } from './phone.mjs';
+import { gate, phoneRuns, runLabel, tally } from './phone-rules.ts';
+import { barRule, hoverReveals, hoverRule, lookStatus, rolesOf, safeRule, tapRule, tokenRule, tokensOf, TOKEN_NAMES, twinRule, typeRule } from './platform-rules.ts';
 
 const arg = (k) => process.argv.find((a) => a.startsWith(`--${k}=`))?.slice(k.length + 3);
-const list = (v, d) => (v || d).split(',').map((s) => s.trim()).filter(Boolean);
 const TARGET = arg('target') || 'app';
-const LOOKS = list(process.env.PLATFORMS, 'android,ios');
-const THEMES = list(process.env.THEMES, 'light,dark');
-const SCALES = list(process.env.SCALES, '100,200').map(Number);
 const SHOTS = path.join(OUT, 'platform');
-/** PLATFORM_FORCE=1: check a view even with no platform look yet (what steps 3–7 still have to fix) */
-const FORCE = process.env.PLATFORM_FORCE === '1';
 const shown = (p) => (path.relative(ROOT, p).startsWith('..') ? p : path.relative(ROOT, p));
 
 /** Runs in the page: what the rules need, measured. Self-contained (it is serialised into the page). */
@@ -89,39 +86,11 @@ export function measure(tokenNames) {
     return { part, top: r.top, bottom: r.bottom, left: r.left, right: r.right, inScroller: inScroller(el) };
   };
 
-  // kit variants for this look: rules under :root[data-platform=<look>] that set more than custom properties.
-  // Every rule is read with its nesting resolved (& → :is(parent)) and the platform attribute replaced by :root,
-  // so `:root[data-platform=ios] .list { & .row {…} }` is the variant `:is(:root .list) .row`.
-  const PLATFORM = /(?::root)?\[data-platform=(['"]?)(android|ios)\1\]/g;
-  const STATE = /::?(?:hover|active|focus-visible|focus-within|focus|visited|before|after|placeholder|marker|selection|backdrop|-webkit-[a-z-]+)(?![a-z-])/g;
-  const splitTop = (sel) => {
-    const out = [];
-    let depth = 0;
-    let cur = '';
-    for (const ch of sel) {
-      if (ch === '(' || ch === '[') depth++;
-      else if (ch === ')' || ch === ']') depth--;
-      if (ch === ',' && depth === 0) {
-        out.push(cur.trim());
-        cur = '';
-      } else cur += ch;
-    }
-    if (cur.trim()) out.push(cur.trim());
-    return out;
-  };
-  const variantSels = [];
+  // :hover rules (the kit variants for the look are qa/phone.mjs lookVariants, run beside this)
   const hoverRules = [];
   // one block of declarations (a style rule's own, or Chrome's CSSNestedDeclarations) under its resolved selector
   const consider = (sel, style, media) => {
     if (!sel || !style || style.length === 0) return;
-    const real = [...style].some((p) => !p.startsWith('--')); // custom properties only: the token set (dark/light too)
-    if (real) {
-      for (const part of splitTop(sel)) {
-        if (![...part.matchAll(PLATFORM)].some((m) => m[2] === look)) continue;
-        const rest = part.replace(PLATFORM, ':root').trim();
-        if (rest.replace(STATE, '').trim() !== ':root') variantSels.push(rest); // the root itself is page-wide plumbing
-      }
-    }
     if (sel.includes(':hover')) {
       const props = {};
       for (const p of ['opacity', 'visibility', 'display', 'pointer-events']) {
@@ -158,14 +127,6 @@ export function measure(tokenNames) {
       walk(sheet.cssRules, [], '');
     } catch {
       // a cross-origin sheet: not the kit's
-    }
-  }
-  let matched = 0;
-  for (const s of new Set(variantSels)) {
-    try {
-      if ([...document.querySelectorAll(s.replace(STATE, '').trim())].some(visible)) matched++;
-    } catch {
-      // a selector querySelector can't take once its states are stripped
     }
   }
 
@@ -245,7 +206,7 @@ export function measure(tokenNames) {
     .map((el) => ({ part: name(el), gesture: el.getAttribute('data-gesture') ?? '', twins: (el.getAttribute('data-twin') ?? '').split(/\s+/).filter(Boolean) }));
   const parts = [...new Set([...document.querySelectorAll('[data-part]')].filter(visible).map((el) => el.getAttribute('data-part')))];
 
-  return { look, vars, variants: new Set(variantSels).size, matched, targets, texts, placed: place, bars, hoverRules, gestures, parts, viewport: { width: vw, height: vh } };
+  return { look, vars, targets, texts, placed: place, bars, hoverRules, gestures, parts, viewport: { width: vw, height: vh } };
 }
 
 /** Runs in the page: what each :hover rule's base selector finds, hidden now and holding a control, and the
@@ -276,9 +237,8 @@ export function hoverHits(sels) {
 
 /** Applies every rule to one measured view (the browser-free half; the tests drive the rules directly). */
 export function judge(m, look, size, scale, layoutFound, force = false) {
-  const status = lookStatus(look, m.look, m.variants, m.matched);
-  const forced = force && 'skip' in status && status.skip.startsWith('no platform look yet');
-  if (!status.check && !forced) return 'skip' in status ? { status: 'skip', skip: status.skip, findings: [] } : { status: 'fail', findings: [status.fail] };
+  const g = gate(lookStatus(look, m.look, m.variants, m.matched), force);
+  if (!g.run) return 'skip' in g ? { status: 'skip', skip: g.skip, findings: [] } : { status: 'fail', findings: [g.fail] };
   const tokens = tokensOf(m.vars);
   const findings = [
     ...tokenRule(look, tokens),
@@ -295,71 +255,39 @@ export function judge(m, look, size, scale, layoutFound, force = false) {
 
 async function main() {
   fs.mkdirSync(SHOTS, { recursive: true });
-  const sizes = pickSizes(LOOKS, process.env.SIZES ? list(process.env.SIZES, '') : undefined);
-  if (!sizes.length) throw new Error(`no sizes for PLATFORMS=${LOOKS.join(',')} SIZES=${process.env.SIZES ?? ''}`);
   const gallery = TARGET === 'gallery';
+  // the gallery is one page: VIEWS names the app's views, so it doesn't apply there
+  const env = phoneConfig(gallery ? { ...process.env, VIEWS: undefined } : process.env);
+  const { sizes, themes, scales, force } = env;
   const fixed = gallery ? process.env.GALLERY_URL : process.env.APP_URL;
   const server = fixed ? { url: fixed, stop: () => {} } : await startGallery(gallery ? undefined : 'shell');
-  const only = process.env.VIEWS ? list(process.env.VIEWS, '') : undefined;
-  const views = gallery ? [{ name: 'gallery', path: '/', ready: 'body' }] : AREAS.shell.filter((v) => !only || only.includes(v.name));
+  const views = gallery ? [{ name: 'gallery', path: '/', ready: 'body' }] : env.viewList;
   const results = [];
   let insetsBy = 'cdp';
   let browser;
   try {
     browser = await launchBrowser();
-    for (const size of sizes)
-      for (const theme of THEMES)
-        for (const scale of SCALES)
-          for (const view of views) {
-            const ctx = await browser.newContext({ viewport: { width: size.width, height: size.height }, deviceScaleFactor: 2, isMobile: true, hasTouch: true, colorScheme: theme === 'dark' ? 'dark' : 'light', reducedMotion: 'reduce' });
-            // the shell's detectPlatform takes a native Capacitor bridge for the phone app (ADR-0065 §1)
-            await ctx.addInitScript((look) => {
-              window.Capacitor = { isNativePlatform: () => true, getPlatform: () => look, Plugins: {} };
-            }, size.look);
-            const page = await ctx.newPage();
-            const errors = [];
-            page.on('pageerror', (e) => errors.push(e.message));
-            const { top, right, bottom, left } = size.insets;
-            try {
-              const cdp = await ctx.newCDPSession(page);
-              await cdp.send('Emulation.setSafeAreaInsetsOverride', { insets: { top, topMax: top, right, rightMax: right, bottom, bottomMax: bottom, left, leftMax: left } });
-            } catch {
-              insetsBy = 'tokens';
-              await ctx.addInitScript((i) => {
-                const set = () => Object.entries(i).forEach(([k, v]) => document.documentElement.style.setProperty(`--safe-${k}`, `${v}px`));
-                if (document.documentElement) set();
-                else document.addEventListener('DOMContentLoaded', set);
-              }, size.insets);
-            }
-            const url = gallery ? `${server.url}/?theme=${theme}&platform=${size.look}` : `${server.url}${view.path}`;
-            await page.goto(url, { waitUntil: 'load' });
-            await page.waitForSelector(view.ready, { timeout: 15_000 }).catch(() => errors.push(`${view.ready} never showed`));
-            await page.evaluate((s) => {
-              const r = document.documentElement;
-              r.style.setProperty('--text-scale', String(s / 100));
-              r.style.fontSize = `${s}%`;
-              r.setAttribute('data-text-scale', String(s));
-            }, scale);
-            await page.evaluate(() => document.fonts.ready);
-            // the look's stylesheet comes by import() once the shell sets data-platform: wait for its tokens, not a guess
-            const looked = await page.evaluate(() => document.documentElement.hasAttribute('data-platform'));
-            if (looked)
-              await page
-                .waitForFunction(() => getComputedStyle(document.documentElement).getPropertyValue('--tap-min').trim() !== '', null, { timeout: 10_000 })
-                .catch(() => errors.push('the platform stylesheet never loaded: --tap-min unset after 10 s'));
-            await page.waitForTimeout(300); // the Toolbar's ResizeObserver settles its folding
-            const m = await page.evaluate(measure, Object.values(TOKEN_NAMES));
-            const hover = await page.evaluate(hoverHits, [...new Set(m.hoverRules.flatMap(hoverReveals))]);
-            m.hoverHits = hover.hits;
-            const r = judge(m, size.look, size, scale, m.look === size.look ? await page.evaluate(inspect) : [], FORCE);
-            if (r.status !== 'skip' && hover.unparsed.length) r.unchecked = hover.unparsed;
-            for (const e of errors) r.findings.push({ rule: 'page-error', part: 'page', detail: e });
-            if (r.status !== 'fail' && errors.length) r.status = 'fail';
-            const row = { look: size.look, size: `${size.width}x${size.height}`, theme, scale, view: view.name, ...r };
-            results.push(row);
-            if (r.status === 'fail') await page.screenshot({ path: path.join(SHOTS, `${size.look}-${row.size}-${theme}-${scale}-${view.name}.png`) });
-            await ctx.close();
-          }
+    for (const { size, theme, scale, view } of phoneRuns(sizes, themes, scales, views)) {
+      const { ctx, page, insetsBy: by } = await openPhone(browser, size, { theme });
+      if (by !== 'cdp') insetsBy = by;
+      const errors = [];
+      page.on('pageerror', (e) => errors.push(e.message));
+      const url = gallery ? `${server.url}/?theme=${theme}&platform=${size.look}` : `${server.url}${view.path}`;
+      await page.goto(url, { waitUntil: 'load' });
+      await page.waitForSelector(view.ready, { timeout: 15_000 }).catch(() => errors.push(`${view.ready} never showed`));
+      await settlePhone(page, scale, errors);
+      const m = { ...(await page.evaluate(measure, Object.values(TOKEN_NAMES))), ...(await page.evaluate(lookVariants)) };
+      const hover = await page.evaluate(hoverHits, [...new Set(m.hoverRules.flatMap(hoverReveals))]);
+      m.hoverHits = hover.hits;
+      const r = judge(m, size.look, size, scale, m.look === size.look ? await page.evaluate(inspect) : [], force);
+      if (r.status !== 'skip' && hover.unparsed.length) r.unchecked = hover.unparsed;
+      for (const e of errors) r.findings.push({ rule: 'page-error', part: 'page', detail: e });
+      if (r.status !== 'fail' && errors.length) r.status = 'fail';
+      const row = { look: size.look, size: `${size.width}x${size.height}`, theme, scale, view: view.name, ...r };
+      results.push(row);
+      if (r.status === 'fail') await page.screenshot({ path: path.join(SHOTS, `${size.look}-${row.size}-${theme}-${scale}-${view.name}.png`) });
+      await ctx.close();
+    }
   } finally {
     try {
       await browser?.close();
@@ -367,20 +295,19 @@ async function main() {
       server.stop();
     }
   }
-  const count = (s) => results.filter((r) => r.status === s).length;
-  const summary = { checked: results.length, forced: FORCE, pass: count('pass'), fail: count('fail'), skip: count('skip'), insets: insetsBy, target: TARGET, results };
+  const t = tally(results);
+  const summary = { checked: results.length, forced: force, pass: t.pass, fail: t.fail, skip: t.skip, insets: insetsBy, target: TARGET, results };
   fs.writeFileSync(path.join(OUT, 'platform.json'), `${JSON.stringify(summary, null, 2)}\n`);
   for (const r of results) {
-    const head = `${r.status === 'pass' ? '✔' : r.status === 'fail' ? '✗' : '–'} ${r.look} ${r.size} ${r.theme} ${r.scale}% ${r.view}`;
+    const head = `${r.status === 'pass' ? '✔' : r.status === 'fail' ? '✗' : '–'} ${runLabel(r.look, { width: Number(r.size.split('x')[0]), height: Number(r.size.split('x')[1]) }, r.theme, r.scale, r.view)}`;
     console.log(r.status === 'skip' ? `${head}: skipped, ${r.skip}` : head);
     for (const f of r.findings) console.log(`    ${f.rule} ${f.part}: ${f.detail}`);
     for (const u of r.unchecked ?? []) console.log(`    (hover rule not checked, the page can't parse it: ${u})`);
   }
-  const skips = [...new Set(results.filter((r) => r.status === 'skip').map((r) => r.skip))];
   console.log(
-    `\nplatform (${TARGET}): ${summary.pass} pass, ${summary.fail} fail, ${summary.skip} skipped of ${results.length} (${views.length} view${views.length === 1 ? '' : 's'} × ${sizes.length} sizes × ${THEMES.length} themes × ${SCALES.length} text scales); insets by ${insetsBy === 'cdp' ? 'CDP' : 'the --safe-* tokens (this Chrome has no inset override)'}`,
+    `\nplatform (${TARGET}): ${summary.pass} pass, ${summary.fail} fail, ${summary.skip} skipped of ${results.length} (${views.length} view${views.length === 1 ? '' : 's'} × ${sizes.length} sizes × ${themes.length} themes × ${scales.length} text scales); insets by ${insetsBy === 'cdp' ? 'CDP' : 'the --safe-* tokens (this Chrome has no inset override)'}`,
   );
-  for (const s of skips) console.log(`  skipped: ${s}`);
+  for (const s of t.reasons) console.log(`  skipped: ${s}`);
   console.log(`  ${shown(path.join(OUT, 'platform.json'))}${summary.fail ? `; screenshots in ${shown(SHOTS)}` : ''}`);
   process.exitCode = summary.fail ? 1 : 0;
 }

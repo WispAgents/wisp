@@ -16,6 +16,16 @@
 //                                                        desktop and browser modes, at 1440, 390 and 320
 //   FEEDBACK_URL=http://127.0.0.1:5180 node qa/feedback.mjs
 //   --views=home,task --widths=1440,390 --modes=desktop  a subset
+//   node qa/feedback.mjs --phone                         the phone apps instead (ADR-0065 §5): the shell views
+//                                                        of qa/layout-areas.mjs as the Android and iPhone app
+//                                                        (a fake Capacitor bridge sets data-platform), touch
+//                                                        presses, ADR-0065's phone sizes and insets, text at 100 %
+//                                                        and 200 %: the same views, env and setup as
+//                                                        qa/platform.mjs (qa/phone.mjs). PLATFORMS=ios
+//                                                        SIZES=393x852 SCALES=200 VIEWS=home THEMES=dark
+//                                                        PLATFORM_FORCE=1 pick a subset (themes: light by default).
+//                                                        A view with no platform look yet is a skip with its
+//                                                        reason, never a pass. Results in qa/out/feedback-phone/.
 // Results: qa/out/feedback/summary.{json,md}; a failure's before/after shots beside them.
 
 import { spawn } from 'node:child_process';
@@ -24,6 +34,8 @@ import path from 'node:path';
 import { decodePng, diffImages, encodePng, translator } from './parity.mjs';
 import { launchBrowser, OUT, ROOT } from './lib.mjs';
 import { views } from './views.mjs';
+import { openPhone, phoneConfig, phoneGate, settlePhone } from './phone.mjs';
+import { phoneRuns, runLabel, tally } from './phone-rules.ts';
 
 const DELAY = 400; // ms the mock peer's answers take (design/feedback.md)
 const BUDGET = 100; // ms an action has to show something
@@ -32,6 +44,7 @@ const ROLLBACK_SLACK = 64;
 const SIZES = { 1440: [1440, 900], 1024: [1024, 768], 900: [900, 900], 600: [600, 900], 390: [390, 844], 320: [320, 640] };
 const INTERACTIVE = 'button, a[href], [role="button"], input:not([type=hidden]), textarea, select, [tabindex]:not([tabindex="-1"])';
 
+const PHONE = process.argv.includes('--phone');
 const arg = (k) => process.argv.find((a) => a.startsWith(`--${k}=`))?.slice(k.length + 3) || process.env[`FEEDBACK_${k.toUpperCase()}`];
 
 async function startV2(seedFile) {
@@ -88,26 +101,50 @@ function watch() {
   w.stop = () => mo.disconnect();
 }
 
-async function open(browser, url, opener, size, mode, at) {
+/** ph (--phone): { size, theme, scale, view, force }, the phone app at that size and text scale on view.path */
+async function open(browser, url, opener, size, mode, at, ph) {
   // every press starts from the seed: what an earlier press changed (a task read) doesn't carry over
   await fetch(new URL('/__mock/reset', url), { method: 'POST' }).catch(() => {});
-  const ctx = await browser.newContext({ viewport: { width: size[0], height: size[1] }, deviceScaleFactor: 1, reducedMotion: 'reduce' });
+  let ctx;
+  let p;
+  if (ph) ({ ctx, page: p } = await openPhone(browser, ph.size, { theme: ph.theme, deviceScaleFactor: 1 }));
+  else {
+    ctx = await browser.newContext({ viewport: { width: size[0], height: size[1] }, deviceScaleFactor: 1, reducedMotion: 'reduce' });
+    if (mode === 'desktop') await ctx.addInitScript(() => (window.__TAURI_INTERNALS__ = { invoke: async () => null }));
+    p = await ctx.newPage();
+  }
   ctx.setDefaultTimeout(2500);
-  if (mode === 'desktop') await ctx.addInitScript(() => (window.__TAURI_INTERNALS__ = { invoke: async () => null }));
-  const p = await ctx.newPage();
+  const errors = [];
   if (at) await p.clock.setFixedTime(new Date(at));
   // the peer's answers take 400 ms; the page's own requests (the stream, the bundle) don't
   await p.route('**/api/events', async (route) => {
     if (route.request().method() === 'POST') await new Promise((r) => setTimeout(r, DELAY));
     await route.continue();
   });
+  if (ph) {
+    // a phone view is a path (qa/layout-areas.mjs) and a selector that shows it's drawn, as qa/platform.mjs opens it
+    p.on('pageerror', (e) => errors.push(e.message));
+    await p.goto(new URL(ph.view.path, url).href, { waitUntil: 'load', timeout: 20_000 });
+    await p.waitForSelector(ph.view.ready, { timeout: 15_000 }).catch(() => errors.push(`${ph.view.ready} never showed`));
+    await settlePhone(p, ph.scale, errors);
+    await p.waitForTimeout(600);
+    return { ctx, p, errors };
+  }
   await p.goto(url);
   await p.locator('[data-part="shell.app"]').first().waitFor({ state: 'attached', timeout: 20_000 });
   await p.waitForTimeout(500);
   await opener(p).catch(() => {});
   await p.mouse.move(0, size[1] - 1);
   await p.waitForTimeout(900);
-  return { ctx, p };
+  return { ctx, p, errors };
+}
+
+/** A press where the target is: a touch on the phone apps (nothing hovers there), the mouse otherwise. */
+async function tapAt(p, box, touch) {
+  const [x, y, w, h] = box;
+  if (touch) return p.touchscreen.tap(x + w / 2, y + h / 2);
+  await p.mouse.down();
+  await p.mouse.up();
 }
 
 const commandOf = (req) => {
@@ -120,12 +157,12 @@ const commandOf = (req) => {
 };
 
 /** One press: what changed within the budget, whether it sent a command, whether it went pending. */
-async function press(p, target, size) {
+async function press(p, target, size, touch = false) {
   const loc = p.locator(INTERACTIVE).nth(target.nth);
   const [x, y, w, h] = target.box;
   const cx = x + w / 2;
   const cy = y + h / 2;
-  await p.mouse.move(cx, cy);
+  if (!touch) await p.mouse.move(cx, cy);
   await p.waitForTimeout(250);
   const before = await p.screenshot();
   const sent = [];
@@ -141,10 +178,7 @@ async function press(p, target, size) {
     await loc.focus();
     await p.keyboard.type('x');
     await p.keyboard.press('Enter');
-  } else {
-    await p.mouse.down();
-    await p.mouse.up();
-  }
+  } else await tapAt(p, target.box, touch);
   // the first frame after the press, then the budget's end
   const shot1 = await p.screenshot();
   const took = Date.now() - t0;
@@ -166,9 +200,27 @@ async function press(p, target, size) {
   return { ok, ms: dom.ms, shot: changed, navigated, focusMoved: dom.focusMoved, sent, pending, before, after };
 }
 
-async function checkView(browser, url, name, opener, size, mode, at, outDir) {
+async function checkView(browser, url, name, opener, size, mode, at, outDir, ph) {
   const res = { view: name, width: size[0], mode, targets: [], pass: 0, fail: 0, skipped: 0 };
-  let first = await open(browser, url, opener, size, mode, at);
+  const touch = !!ph;
+  const tag = ph ? `${name}-${ph.size.look}-${ph.size.width}x${ph.size.height}-${ph.theme}-${ph.scale}` : `${name}-${mode}-${size[0]}`;
+  let first = await open(browser, url, opener, size, mode, at, ph);
+  if (ph) {
+    // a view the look doesn't reach yet is skipped with its reason, never passed (qa/phone.mjs phoneGate)
+    Object.assign(res, { label: runLabel(ph.size.look, ph.size, ph.theme, ph.scale, name), size: `${ph.size.width}x${ph.size.height}`, theme: ph.theme, scale: ph.scale });
+    const g = await phoneGate(first.p, ph.size.look, ph.force);
+    const problems = [...first.errors, ...('fail' in g ? [`${g.fail.rule}: ${g.fail.detail}`] : [])];
+    if (problems.length || !g.run) {
+      await first.ctx.close();
+      if (problems.length) {
+        res.fail++;
+        res.status = 'fail';
+        res.targets.push({ name: 'view', result: 'fail', how: problems.join('; ') });
+      } else Object.assign(res, { status: 'skip', skip: g.skip });
+      return res;
+    }
+    if (g.forced) res.forced = true;
+  }
   const targets = await first.p.evaluate(listTargets, INTERACTIVE);
   await first.ctx.close();
   for (const target of targets) {
@@ -177,13 +229,13 @@ async function checkView(browser, url, name, opener, size, mode, at, outDir) {
       res.targets.push({ ...target, result: `skipped: ${target.skip}` });
       continue;
     }
-    const { ctx, p } = await open(browser, url, opener, size, mode, at);
+    const { ctx, p } = await open(browser, url, opener, size, mode, at, ph);
     let line;
     try {
-      const r = await press(p, target, size);
+      const r = await press(p, target, size, touch);
       const notes = [];
       if (!r.ok) {
-        const file = path.join(outDir, `${name}-${mode}-${size[0]}-${target.nth}`);
+        const file = path.join(outDir, `${tag}-${target.nth}`);
         fs.writeFileSync(`${file}.before.png`, r.before);
         fs.writeFileSync(`${file}.after.png`, r.after);
       }
@@ -195,8 +247,7 @@ async function checkView(browser, url, name, opener, size, mode, at, outDir) {
           if (c) again.push(c);
         };
         p.on('request', on);
-        await p.mouse.down();
-        await p.mouse.up();
+        await tapAt(p, target.box, touch);
         await p.waitForTimeout(150);
         p.off('request', on);
         if (again.length) notes.push(`pressed again while pending: sent ${again.join(', ')}`);
@@ -205,11 +256,11 @@ async function checkView(browser, url, name, opener, size, mode, at, outDir) {
       let refusal = '';
       if (r.sent.length) {
         const cmd = r.sent[0];
-        const { ctx: c2, p: p2 } = await open(browser, url, opener, size, mode, at);
+        const { ctx: c2, p: p2 } = await open(browser, url, opener, size, mode, at, ph);
         try {
           await fetch(new URL(`/__mock/fail?cmd=${encodeURIComponent(cmd)}`, url), { method: 'POST' });
           const target2 = (await p2.evaluate(listTargets, INTERACTIVE)).find((t) => t.nth === target.nth) ?? target;
-          await p2.mouse.move(target2.box[0] + target2.box[2] / 2, target2.box[1] + target2.box[3] / 2);
+          if (!touch) await p2.mouse.move(target2.box[0] + target2.box[2] / 2, target2.box[1] + target2.box[3] / 2);
           await p2.waitForTimeout(250);
           const text = target.tag === 'textarea' || target.tag === 'input';
           if (text) {
@@ -218,10 +269,7 @@ async function checkView(browser, url, name, opener, size, mode, at, outDir) {
           }
           const t0 = Date.now();
           if (text) await p2.keyboard.press('Enter');
-          else {
-            await p2.mouse.down();
-            await p2.mouse.up();
-          }
+          else await tapAt(p2, target2.box, touch);
           // the refusal arrives after DELAY: a toast within BUDGET of it
           const TOASTS = '[data-kit="toast"], [role="status"][data-part*="toast"], [data-part="ui.toast"]';
           const toast = await p2
@@ -239,7 +287,7 @@ async function checkView(browser, url, name, opener, size, mode, at, outDir) {
           const still = diffImages(decodePng(r.after), decodePng(now)).differing <= ROLLBACK_SLACK;
           if (showed && still) {
             notes.push(`${cmd} refused: the screen still shows the accepted change (no rollback)`);
-            const file = path.join(outDir, `${name}-${mode}-${size[0]}-${target.nth}-rollback`);
+            const file = path.join(outDir, `${tag}-${target.nth}-rollback`);
             fs.writeFileSync(`${file}.accepted.png`, r.after);
             fs.writeFileSync(`${file}.refused.png`, now);
           }
@@ -259,10 +307,58 @@ async function checkView(browser, url, name, opener, size, mode, at, outDir) {
     }
     res.targets.push(line);
   }
+  if (ph) res.status = res.fail ? 'fail' : 'pass';
   return res;
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) {
+/** --phone: every phone view as the Android and iPhone app (qa/phone.mjs), each press a touch. */
+async function mainPhone(ref, seedFile) {
+  const outDir = path.join(OUT, 'feedback-phone');
+  fs.rmSync(outDir, { recursive: true, force: true });
+  fs.mkdirSync(outDir, { recursive: true });
+  // --views (or FEEDBACK_VIEWS) wins over VIEWS, as in the browser run
+  const only = arg('views');
+  const env = phoneConfig(only ? { ...process.env, VIEWS: only } : process.env, { themes: 'light' });
+  const list = env.viewList;
+  const v2 = process.env.FEEDBACK_URL ? { url: process.env.FEEDBACK_URL, stop: () => {} } : await startV2(seedFile);
+  const browser = await launchBrowser();
+  const results = [];
+  try {
+    for (const { size, theme, scale, view } of phoneRuns(env.sizes, env.themes, env.scales, list)) {
+      const metrics = path.join(ref, view.name, 'metrics.json');
+      const at = fs.existsSync(metrics) ? ((m) => m.clock ?? m.captured)(JSON.parse(fs.readFileSync(metrics, 'utf8'))) : undefined;
+      const r = await checkView(browser, v2.url, view.name, async () => {}, [size.width, size.height], size.look, at, outDir, { size, theme, scale, view, force: env.force });
+      results.push(r);
+      const mark = r.status === 'skip' ? '–' : r.status === 'fail' ? '✗' : '✔';
+      console.log(`  ${mark} ${r.label}${r.forced ? ' (forced)' : ''}: ${r.status === 'skip' ? `skipped, ${r.skip}` : `${r.pass} pass, ${r.fail} fail, ${r.skipped} skipped`}`);
+      for (const t of r.targets.filter((x) => x.result === 'fail')) console.log(`      ✗ ${t.part || t.tag || t.name} “${t.name}”: ${t.how}${t.notes?.length ? ` · ${t.notes.join('; ')}` : ''}`);
+    }
+  } finally {
+    await browser.close();
+    v2.stop();
+  }
+  const t = tally(results);
+  const presses = results.reduce((a, r) => ({ pass: a.pass + r.pass, fail: a.fail + r.fail, skipped: a.skipped + r.skipped }), { pass: 0, fail: 0, skipped: 0 });
+  fs.writeFileSync(path.join(outDir, 'summary.json'), JSON.stringify({ runs: t, presses, forced: env.force, results }, null, 2));
+  const md = [
+    `# Feedback on the phone apps: every press answers within ${BUDGET} ms (${new Date().toISOString()})`,
+    '',
+    `${t.pass} views pass · ${t.fail} fail · ${t.skip} skipped (no platform look yet) · presses: ${presses.pass} pass, ${presses.fail} fail, ${presses.skipped} skipped · answers delayed ${DELAY} ms`,
+    '',
+    '| View | Look | Size | Theme | Text | Result | Pass | Fail | Skipped |',
+    '|---|---|---|---|---:|---|---:|---:|---:|',
+    ...results.map((r) => `| ${r.view} | ${r.mode} | ${r.size} | ${r.theme} | ${r.scale} % | ${r.status === 'skip' ? `skip: ${r.skip}` : r.status} | ${r.pass} | ${r.fail} | ${r.skipped} |`),
+    '',
+    ...t.reasons.map((s) => `- skipped: ${s}`),
+    '',
+  ].join('\n');
+  fs.writeFileSync(path.join(outDir, 'summary.md'), md);
+  console.log(`\n${md}`);
+  process.exit(t.fail ? 1 : 0);
+}
+
+if (import.meta.url === `file://${process.argv[1]}` && PHONE) await mainPhone(path.join(ROOT, 'design', 'v1-reference'), path.join(ROOT, 'design', 'v1-reference', 'seed.json'));
+else if (import.meta.url === `file://${process.argv[1]}`) {
   const ref = path.join(ROOT, 'design', 'v1-reference');
   const outDir = path.join(OUT, 'feedback');
   fs.rmSync(outDir, { recursive: true, force: true });

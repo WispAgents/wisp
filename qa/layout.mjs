@@ -13,6 +13,14 @@
 //   node qa/layout.mjs --area=shell    the app instead (apps/web on the mock peer, `npm run dev:web`),
 //                                      at the paths qa/layout-areas.mjs lists for that area
 //   APP_URL=http://127.0.0.1:5180 node qa/layout.mjs --area=shell     against an app already running
+//   node qa/layout.mjs --phone         the phone apps instead (ADR-0065 §5): the shell views as the Android and
+//                                      iPhone app draw them (data-platform set by a fake Capacitor bridge), at
+//                                      ADR-0065's phone sizes with their safe-area insets, light and dark, text at
+//                                      100 % and 200 %. The same views, env and setup as qa/platform.mjs
+//                                      (qa/phone.mjs): PLATFORMS=ios SIZES=393x852 THEMES=dark SCALES=200
+//                                      VIEWS=home,task PLATFORM_FORCE=1 pick a subset. A view with no platform
+//                                      look yet is a skip with its reason, never a pass. Writes qa/out/layout-phone.json
+//                                      and per failing run qa/out/layout/phone-<look>-<size>-<theme>-<scale>-<view>.png.
 //
 // Needs playwright-core in PW_DIR (default /tmp/wisp-qa-pw) and the system Chrome (qa/lib.mjs).
 // Writes qa/out/layout.json and, per failing width and theme, qa/out/layout/<width>-<theme>.png.
@@ -30,6 +38,7 @@ import { launchBrowser, OUT, ROOT } from './lib.mjs';
 import { AREAS } from './layout-areas.mjs';
 
 const AREA = process.argv.find((a) => a.startsWith('--area='))?.slice('--area='.length);
+const PHONE = process.argv.includes('--phone');
 
 const WIDTHS = (process.env.WIDTHS || '1440,1024,900,600,390,320').split(',').map(Number);
 const THEMES = (process.env.THEMES || 'light,dark').split(',');
@@ -177,5 +186,53 @@ async function main() {
   process.exitCode = results.length ? 1 : 0;
 }
 
+/** --phone: every phone view as the Android and iPhone app, gated by its platform look (qa/phone.mjs). */
+async function mainPhone() {
+  // imported here, not at the top: qa/parity.mjs imports inspect() from this file and needs none of it
+  const { openPhone, phoneConfig, phoneGate, settlePhone } = await import('./phone.mjs');
+  const { phoneRuns, runLabel, tally } = await import('./phone-rules.ts');
+  fs.mkdirSync(SHOTS, { recursive: true });
+  const env = phoneConfig();
+  const runs = phoneRuns(env.sizes, env.themes, env.scales, env.viewList);
+  const server = process.env.APP_URL ? { url: process.env.APP_URL, stop: () => {} } : await startGallery('shell');
+  const results = [];
+  let browser;
+  try {
+    browser = await launchBrowser();
+    for (const { size, theme, scale, view } of runs) {
+      const { ctx, page } = await openPhone(browser, size, { theme });
+      const errors = [];
+      page.on('pageerror', (e) => errors.push(e.message));
+      await page.goto(`${server.url}${view.path}`, { waitUntil: 'load' });
+      await page.waitForSelector(view.ready, { timeout: 15_000 }).catch(() => errors.push(`${view.ready} never showed`));
+      await settlePhone(page, scale, errors);
+      const g = await phoneGate(page, size.look, env.force);
+      const found = g.run ? await page.evaluate(inspect) : 'fail' in g ? [g.fail] : [];
+      found.push(...errors.map((e) => ({ rule: 'page-error', part: 'page', detail: e })));
+      const status = found.length ? 'fail' : g.run ? 'pass' : 'skip';
+      const row = { label: runLabel(size.look, size, theme, scale, view.name), look: size.look, size: `${size.width}x${size.height}`, theme, scale, view: view.name, status, ...(status === 'skip' && 'skip' in g ? { skip: g.skip } : {}), ...(g.run && g.forced ? { forced: true } : {}), findings: found };
+      results.push(row);
+      if (status === 'fail') await page.screenshot({ path: path.join(SHOTS, `phone-${row.label.replace(/[ %]+/g, '-').replace(/-$/, '')}.png`) });
+      await ctx.close();
+    }
+  } finally {
+    try {
+      await browser?.close();
+    } finally {
+      server.stop();
+    }
+  }
+  const t = tally(results);
+  fs.writeFileSync(path.join(OUT, 'layout-phone.json'), `${JSON.stringify({ checked: results.length, forced: env.force, ...t, results }, null, 2)}\n`);
+  for (const r of results) {
+    const head = `${r.status === 'pass' ? '✔' : r.status === 'fail' ? '✗' : '–'} ${r.label}${r.forced ? ' (forced)' : ''}`;
+    console.log(r.status === 'skip' ? `${head}: skipped, ${r.skip}` : head);
+    for (const f of r.findings) console.log(`    ${f.rule} ${f.part}: ${f.detail}`);
+  }
+  console.log(`\nlayout (phone): ${t.pass} pass, ${t.fail} fail, ${t.skip} skipped of ${results.length} (${env.viewList.length} views × ${env.sizes.length} sizes × ${env.themes.length} themes × ${env.scales.length} text scales)`);
+  for (const s of t.reasons) console.log(`  skipped: ${s}`);
+  process.exitCode = t.fail ? 1 : 0;
+}
+
 // run as a script, not when qa/parity.mjs imports inspect()
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) await main();
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) await (PHONE ? mainPhone() : main());
