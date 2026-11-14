@@ -26,6 +26,7 @@ use wisp_runtime_api::model::{Activity, Session, ToolKind, Turn, TurnStatus};
 use crate::error::{Result, RuntimeError};
 use crate::runtime::Runtime;
 
+pub(crate) use agents::Rounds;
 pub(crate) use ask::ask_id;
 pub(crate) use quick::QuickRuns;
 pub(crate) use sign_in::SignIn;

@@ -61,6 +61,9 @@ pub const PLUGIN_ID: &str = "wisp.runtime";
 
 /// Sync topics: the list, and one task (its row, turns and activity).
 pub const TOPIC_LIST: &str = "list";
+/// Each harness's detection as it settles (ADR-0066): `harness` rows ([`commands::HarnessRow`]), every known
+/// harness at once as `checking`, then each as its own detect lands.
+pub const TOPIC_HARNESSES: &str = "plugin:wisp.runtime:harnesses";
 pub fn session_topic(id: &str) -> String {
     format!("session:{id}")
 }

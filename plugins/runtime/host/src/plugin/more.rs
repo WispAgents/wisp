@@ -65,17 +65,24 @@ fn task_setup(s: &mut Setup, slot: &Slot) {
     });
 }
 
-/// `runtime.agents`: the harnesses as Settings → Agents shows them, with the declared ones.
+/// `runtime.agents`: the harnesses as Settings → Agents shows them, with the declared ones; each lands on the
+/// `harnesses` topic as it settles (ADR-0066).
 fn agents(s: &mut Setup, slot: &Slot, harness_kind: Arc<StoredKind>) {
     let (agents, harnesses) = (slot.clone(), harness_kind);
     s.command::<c::Agents, _, _>(move |_ctx, _call, a| {
         let (slot, harnesses) = (agents.clone(), harnesses.clone());
         async move {
-            let mut list = rt(&slot)?.agents(&a).await;
-            crate::kinds::declared(&mut list, &harnesses.specs().await.unwrap_or_default());
-            Ok(list)
+            let rt = rt(&slot)?;
+            Ok(detect(&rt, &harnesses, &a).await)
         }
     });
+}
+
+/// Every harness detected, with what `harnesses:` declares applied to each as it lands (the topic and the answer
+/// agree). At start too (`plugin/mod.rs`), so the topic is filled before anyone asks.
+pub(super) async fn detect(rt: &Arc<crate::runtime::Runtime>, harnesses: &StoredKind, a: &c::AgentsArgs) -> Vec<c::AgentStatus> {
+    let specs = harnesses.specs().await.unwrap_or_default();
+    rt.agents_as(a, Arc::new(move |s: &mut c::AgentStatus| crate::kinds::declared(std::slice::from_mut(s), &specs))).await
 }
 
 /// `runtime.compact` and `runtime.delegate`, counted as v1's `compact` and `delegate` (agent, how many tasks, which

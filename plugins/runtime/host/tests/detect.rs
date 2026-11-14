@@ -53,3 +53,179 @@ async fn runtime_agents_detects_every_harness_at_once_in_registration_order() {
     assert_eq!(list.iter().map(|a| a.id.as_str()).collect::<Vec<_>>(), ids, "the list keeps the harnesses' order");
     assert!(list.iter().all(|a| a.available && a.version.as_deref() == Some(&format!("{} 1.0", a.id))), "{list:?}");
 }
+
+/// A harness whose detect waits for its gate; each detect answers `<id> <n>.0` (n: how many it ran).
+struct Gated {
+    inner: Arc<dyn Harness>,
+    gates: Vec<tokio::sync::watch::Receiver<bool>>,
+    runs: std::sync::atomic::AtomicUsize,
+    available: bool,
+}
+
+impl Gated {
+    fn new(id: &str, available: bool, gates: Vec<tokio::sync::watch::Receiver<bool>>) -> Arc<Self> {
+        Arc::new(Self { inner: Fake::named(id, &id.to_uppercase(), &[]), gates, runs: std::sync::atomic::AtomicUsize::new(0), available })
+    }
+}
+
+impl Harness for Gated {
+    fn info(&self) -> &HarnessInfo {
+        self.inner.info()
+    }
+    fn detect<'a>(&'a self, _sys: &'a dyn HarnessSys) -> BoxFuture<'a, HarnessFound> {
+        Box::pin(async move {
+            let n = self.runs.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            if let Some(g) = self.gates.get(n) {
+                let mut g = g.clone();
+                let _ = g.wait_for(|open| *open).await;
+            }
+            HarnessFound {
+                available: self.available,
+                version: self.available.then(|| format!("{} {}.0", self.inner.info().id, n + 1)),
+                ..HarnessFound::default()
+            }
+        })
+    }
+    fn launch(&self, run: &HarnessRun) -> wisp_kernel::Result<Launch> {
+        self.inner.launch(run)
+    }
+    fn driver(&self, run: &HarnessRun) -> Box<dyn RunDriver> {
+        self.inner.driver(run)
+    }
+}
+
+/// The `harnesses` topic's rows: (id, ord, state, version).
+async fn topic(store: &wisp_store::Store) -> Vec<(String, u64, String, Option<String>)> {
+    let mut rows: Vec<_> = store
+        .read_async(|r| r.query("runtime.harness", &wisp_store::Query::new()))
+        .await
+        .unwrap()
+        .into_iter()
+        .map(|row| {
+            let s = |k: &str| row.get(k).and_then(serde_json::Value::as_str).unwrap_or_default().to_owned();
+            let ord = row.get("ord").and_then(serde_json::Value::as_u64).unwrap();
+            let version = row.get("agent").and_then(|a| a.get("version")).and_then(serde_json::Value::as_str).map(str::to_owned);
+            (s("id"), ord, s("state"), version)
+        })
+        .collect();
+    rows.sort_by_key(|r| r.1);
+    rows
+}
+
+/// Waits (≤ 5 s) until the topic's (id, state) pairs are `want`.
+async fn topic_is(store: &wisp_store::Store, want: &[(&str, &str)]) -> Vec<(String, u64, String, Option<String>)> {
+    let at = std::time::Instant::now();
+    loop {
+        let rows = topic(store).await;
+        let now: Vec<(&str, &str)> = rows.iter().map(|r| (r.0.as_str(), r.2.as_str())).collect();
+        if now == want {
+            return rows;
+        }
+        assert!(at.elapsed() < Duration::from_secs(5), "the topic never read {want:?}; it reads {now:?}");
+        tokio::time::sleep(Duration::from_millis(5)).await;
+    }
+}
+
+/// ADR-0066: the picker and Settings → Agents render before any CLI answers. Every harness is on the topic at once as
+/// `checking`, each settles the moment its own detect lands, and a hung one holds back only its own row.
+#[tokio::test(flavor = "multi_thread")]
+async fn the_harnesses_topic_shows_every_harness_checking_at_once_then_each_as_it_settles() {
+    let (a_go, a_rx) = tokio::sync::watch::channel(false);
+    let (hung_go, hung_rx) = tokio::sync::watch::channel(false);
+    let (b_go, b_rx) = tokio::sync::watch::channel(false);
+    let harnesses: Vec<Arc<dyn Harness>> =
+        vec![Gated::new("a", true, vec![a_rx]), Gated::new("hung", true, vec![hung_rx]), Gated::new("b", false, vec![b_rx])];
+    let r = rig_on(Recorder::default(), harnesses).await;
+    let rt = r.rt.clone();
+    let call = tokio::spawn(async move { rt.agents(&AgentsArgs::default()).await });
+    let rows = topic_is(&r.store, &[("a", "checking"), ("hung", "checking"), ("b", "checking")]).await;
+    assert_eq!(rows.iter().map(|x| x.1).collect::<Vec<_>>(), [0, 1, 2], "rows keep the registration order");
+    assert!(rows.iter().all(|x| x.3.is_none()), "nothing is known before a detect answers: {rows:?}");
+    a_go.send(true).unwrap();
+    let rows = topic_is(&r.store, &[("a", "installed"), ("hung", "checking"), ("b", "checking")]).await;
+    assert_eq!(rows[0].3.as_deref(), Some("a 1.0"));
+    b_go.send(true).unwrap();
+    topic_is(&r.store, &[("a", "installed"), ("hung", "checking"), ("b", "missing")]).await;
+    assert!(!call.is_finished(), "runtime.agents answered before the hung harness did");
+    hung_go.send(true).unwrap();
+    let list = tokio::time::timeout(Duration::from_secs(5), call).await.unwrap().unwrap();
+    assert_eq!(list.iter().map(|x| x.id.as_str()).collect::<Vec<_>>(), ["a", "hung", "b"], "runtime.agents still answers the whole list");
+    let rows = topic_is(&r.store, &[("a", "installed"), ("hung", "installed"), ("b", "missing")]).await;
+    assert_eq!(rows[1].3.as_deref(), Some("hung 1.0"));
+}
+
+/// Settings' Re-check while the picker's ask still waits on a hung CLI: the older round's late answer never
+/// overwrites the Re-check's; and a plain round over a settled harness leaves its row as it was (no `checking` flash).
+#[tokio::test(flavor = "multi_thread")]
+async fn an_older_rounds_late_answer_never_overwrites_a_newer_one() {
+    let (old_go, old_rx) = tokio::sync::watch::channel(false);
+    let h = Gated::new("h", true, vec![old_rx]);
+    let r = rig_on(Recorder::default(), vec![h.clone() as Arc<dyn Harness>]).await;
+    let rt = r.rt.clone();
+    let old = tokio::spawn(async move { rt.agents(&AgentsArgs::default()).await });
+    topic_is(&r.store, &[("h", "checking")]).await;
+    let fresh = r.rt.agents(&AgentsArgs { fresh: Some("h".into()) }).await;
+    assert_eq!(fresh[0].version.as_deref(), Some("h 2.0"));
+    assert_eq!(topic_is(&r.store, &[("h", "installed")]).await[0].3.as_deref(), Some("h 2.0"));
+    old_go.send(true).unwrap();
+    let old = old.await.unwrap();
+    assert_eq!(old[0].version.as_deref(), Some("h 1.0"), "the older round still answers its own caller");
+    assert_eq!(topic(&r.store).await[0].3.as_deref(), Some("h 2.0"), "the older round's answer overwrote the Re-check's");
+    // a plain round: the row never goes back to checking, and lands in place
+    let (seen_tx, mut seen) = tokio::sync::mpsc::unbounded_channel();
+    let store = r.store.clone();
+    let watch = tokio::spawn(async move {
+        loop {
+            let _ = seen_tx.send(topic(&store).await[0].2.clone());
+            tokio::time::sleep(Duration::from_millis(1)).await;
+        }
+    });
+    r.rt.agents(&AgentsArgs::default()).await;
+    watch.abort();
+    while let Ok(state) = seen.try_recv() {
+        assert_eq!(state, "installed", "a settled harness flashed `checking` on a plain round");
+    }
+    assert_eq!(topic(&r.store).await[0].3.as_deref(), Some("h 3.0"));
+}
+
+/// Review of ADR-0066: a Re-check's `checking` was written, then a plain round that started before it answered: that
+/// older answer (from before the install) landed over the Re-check's row. A row a newer round wrote stays its.
+#[tokio::test(flavor = "multi_thread")]
+async fn an_older_answer_never_lands_over_a_newer_rounds_checking() {
+    let (old_go, old_rx) = tokio::sync::watch::channel(false);
+    let (new_go, new_rx) = tokio::sync::watch::channel(false);
+    let h = Gated::new("h", true, vec![old_rx, new_rx]);
+    let r = rig_on(Recorder::default(), vec![h.clone() as Arc<dyn Harness>]).await;
+    let rt = r.rt.clone();
+    let old = tokio::spawn(async move { rt.agents(&AgentsArgs::default()).await });
+    topic_is(&r.store, &[("h", "checking")]).await;
+    let rt = r.rt.clone();
+    let recheck = tokio::spawn(async move { rt.agents(&AgentsArgs { fresh: Some("all".into()) }).await });
+    // both rounds are waiting on their detects (the Re-check's wrote its checking before its detect started)
+    let at = std::time::Instant::now();
+    while h.runs.load(std::sync::atomic::Ordering::SeqCst) < 2 {
+        assert!(at.elapsed() < Duration::from_secs(5), "the Re-check's round never started");
+        tokio::task::yield_now().await;
+    }
+    old_go.send(true).unwrap();
+    assert_eq!(old.await.unwrap()[0].version.as_deref(), Some("h 1.0"));
+    assert_eq!(topic(&r.store).await[0].2, "checking", "the older round's answer landed over the Re-check's checking");
+    new_go.send(true).unwrap();
+    assert_eq!(recheck.await.unwrap()[0].version.as_deref(), Some("h 2.0"));
+    assert_eq!(topic_is(&r.store, &[("h", "installed")]).await[0].3.as_deref(), Some("h 2.0"));
+}
+
+/// Review of ADR-0066: a caller that hangs up (an MCP client gone, a page closed) mid-round left rows `checking`
+/// until someone asked again. The round runs on its own task and still lands every answer.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_caller_that_hangs_up_never_leaves_rows_checking() {
+    let (go, rx) = tokio::sync::watch::channel(false);
+    let r = rig_on(Recorder::default(), vec![Gated::new("h", true, vec![rx]) as Arc<dyn Harness>]).await;
+    let rt = r.rt.clone();
+    let asked = tokio::spawn(async move { rt.agents(&AgentsArgs::default()).await });
+    topic_is(&r.store, &[("h", "checking")]).await;
+    asked.abort();
+    assert!(asked.await.unwrap_err().is_cancelled());
+    go.send(true).unwrap();
+    assert_eq!(topic_is(&r.store, &[("h", "installed")]).await[0].3.as_deref(), Some("h 1.0"));
+}

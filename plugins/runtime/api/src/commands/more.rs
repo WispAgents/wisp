@@ -321,6 +321,37 @@ pub struct AgentStatus {
     pub setup: Option<crate::harness::SetupTip>,
 }
 
+/// Where a harness's detection stands on the `harnesses` topic (ADR-0066).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export, export_to = "runtime/")]
+pub enum HarnessCheck {
+    /// its detect hasn't answered yet: `agent` is what was known before (its declared models, or the last answer)
+    Checking,
+    /// found (signed in or not: `agent.signedIn`)
+    Installed,
+    /// not found, or its detect failed (`agent.error`)
+    Missing,
+}
+
+/// One harness on `plugin:wisp.runtime:harnesses` (ADR-0066): written `checking` the moment a detection starts, then
+/// again as that harness's own detect lands, so a picker renders at once and a hung CLI holds back only its own row.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export, export_to = "runtime/")]
+pub struct HarnessRow {
+    /// the harness id
+    pub id: String,
+    /// the order the harnesses register in (`runtime.agents`' order)
+    pub ord: u32,
+    pub state: HarnessCheck,
+    /// what `runtime.agents` says of it (while checking: the last known)
+    pub agent: AgentStatus,
+    /// when this row was written (ms)
+    #[ts(type = "number")]
+    pub at: i64,
+}
+
 /// `runtime.card`: a task that is only a message (v1 `kind: 'reminder'`): review, unread, one done turn.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]

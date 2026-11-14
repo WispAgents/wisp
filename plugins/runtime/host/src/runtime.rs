@@ -51,6 +51,8 @@ pub struct Runtime {
     pub(crate) claims: crate::claims::Claims,
     /// the harness probes, run once and kept while their CLI is the same file (`probes.rs`, ADR-0011)
     pub(crate) probes: Arc<crate::probes::Probes>,
+    /// which detection round last settled each harness's row on the `harnesses` topic (`more/agents.rs`, ADR-0066)
+    pub(crate) harness_rounds: crate::more::Rounds,
 }
 
 impl std::fmt::Debug for Runtime {
@@ -82,6 +84,7 @@ impl Runtime {
             quick_runs: crate::more::QuickRuns::default(),
             claims: crate::claims::Claims::default(),
             probes: Arc::new(crate::probes::Probes::new(clock.clone())),
+            harness_rounds: crate::more::Rounds::default(),
             clock,
         })
     }

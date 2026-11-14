@@ -67,7 +67,8 @@ pub(crate) async fn track(ctx: &wisp_kernel::Ctx, event: &str, props: serde_json
     }
 }
 
-fn commands(s: &mut Setup, slot: &Slot) {
+/// Registers every command; the `harnesses:` kind, for the start's detection.
+fn commands(s: &mut Setup, slot: &Slot) -> Arc<wisp_resources_api::StoredKind> {
     let made_kinds = crate::kinds::register(s);
     let harness_kind = made_kinds.harness.clone();
     let project_kind = made_kinds.project.clone();
@@ -83,10 +84,11 @@ fn commands(s: &mut Setup, slot: &Slot) {
     reads::reads(s, slot);
     reads::for_agents(s, slot);
     agent_tools::setup(s, slot);
-    more::more(s, slot, harness_kind, project_kind);
+    more::more(s, slot, harness_kind.clone(), project_kind);
     crate::term::setup(s, slot);
     crate::group::setup(s);
     crate::watch::setup(s, slot);
+    harness_kind
 }
 
 impl Plugin for RuntimePlugin {
@@ -96,7 +98,7 @@ impl Plugin for RuntimePlugin {
 
     fn setup(&self, s: &mut Setup) -> WireResult<()> {
         let slot: Slot = Arc::default();
-        commands(s, &slot);
+        let harness_kind = commands(s, &slot);
         s.route(crate::media::route(&slot));
         // My Stuff asks a task its title, its Full auto and the file Save to My Stuff copies
         task_files::provide(s, &slot);
@@ -110,8 +112,14 @@ impl Plugin for RuntimePlugin {
             let host = Arc::new(CtxHost { ctx: ctx.clone() });
             let runtime = Runtime::new(Repo::new((*store).clone()), host, (*proc).clone(), clock);
             runtime.start().await.map_err(WireError::from)?;
-            let _ = slot.set(runtime);
+            let _ = slot.set(runtime.clone());
             retention::retention(&ctx, &slot);
+            // the `harnesses` topic filled before anyone asks (ADR-0066): every harness `checking` at once, each as
+            // its detect lands; off the start's way (a hung CLI takes 15 s)
+            let rt = runtime.clone();
+            runtime.host.spawn(Box::pin(async move {
+                more::detect(&rt, &harness_kind, &wisp_runtime_api::commands::AgentsArgs::default()).await;
+            }));
             Ok(())
         });
         Ok(())

@@ -51,6 +51,12 @@ pub const MIGRATIONS: &[Migration] = &[
         "CREATE TABLE runtime_watch (id TEXT PRIMARY KEY, body TEXT NOT NULL) STRICT;
          CREATE TABLE runtime_watch_page (id TEXT PRIMARY KEY, body TEXT NOT NULL) STRICT;",
     ),
+    // ADR-0066: each harness's detection as it settles, on `plugin:wisp.runtime:harnesses` (the picker, Settings → Agents)
+    Migration::sql(
+        5,
+        "CREATE TABLE runtime_harness (id TEXT PRIMARY KEY, ord INTEGER NOT NULL, state TEXT NOT NULL, at INTEGER NOT NULL,
+           agent TEXT NOT NULL) STRICT;",
+    ),
 ];
 
 fn session_of(r: &Row, key: &str) -> String {
@@ -212,10 +218,26 @@ pub const WATCH_PAGE: EntityDef = EntityDef {
     topics: setup_topics,
 };
 
+fn harness_topics(_: &Row) -> Vec<String> {
+    vec![wisp_runtime_api::TOPIC_HARNESSES.into()]
+}
+
+/// A harness's detection (`HarnessRow`, ADR-0066): `checking` at once, then as its detect lands.
+pub const HARNESS: EntityDef = EntityDef {
+    kind: "runtime.harness",
+    table: "runtime_harness",
+    key: "id",
+    columns: &[("id", Col::Text), ("ord", Col::Int), ("state", Col::Text), ("at", Col::Int), ("agent", Col::Text)],
+    json_columns: &["agent"],
+    parent: None,
+    seq: None,
+    topics: harness_topics,
+};
+
 /// Runs the migrations and registers the kinds and the search index. At start, before any command.
 pub fn install(store: &wisp_store::Store) -> wisp_store::Result<()> {
     store.migrate(OWNER, MIGRATIONS)?;
-    for def in [SESSION, TURN, EVENT, QUEUE_ITEM, PROFILE, FORMULA, SETUP, WATCH, WATCH_PAGE] {
+    for def in [SESSION, TURN, EVENT, QUEUE_ITEM, PROFILE, FORMULA, SETUP, WATCH, WATCH_PAGE, HARNESS] {
         store.define_entity(def)?;
     }
     store.define_search("session", &["title"])?;
