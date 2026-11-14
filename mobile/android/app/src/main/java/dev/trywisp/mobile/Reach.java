@@ -13,6 +13,8 @@ import java.util.Map;
  * bundle (mobile/web) asks for one with connect({id}) each time its sync stream (re)opens: a ready
  * tunnel answers at once with its local port and token; one still connecting answers when it opens,
  * so a reconnect hands back the port it came back on. The tunnel's own retry loop stays as in v1.
+ * A local port per computer: each tunnel binds wisp's own port when it is free on the phone, else any
+ * free one, so several SSH computers connect at once (v1 had one); the answer says which.
  */
 final class Reach {
     interface Events {
@@ -30,6 +32,19 @@ final class Reach {
 
     synchronized int count() {
         return tunnels.size();
+    }
+
+    /** The computers with a tunnel now (connecting, up, or failed and not yet retried). */
+    synchronized List<String> ids() {
+        List<String> out = new ArrayList<>();
+        for (Map.Entry<String, Tunnel> e : tunnels.entrySet()) if (!"failed".equals(e.getValue().state())) out.add(e.getKey());
+        return out;
+    }
+
+    /** The host key `id`'s last connect refused (for Trust the new key), or null. */
+    synchronized String refusedKey(String id) {
+        Tunnel t = tunnels.get(id);
+        return t == null ? null : t.refusedKey();
     }
 
     /** Opens (or reuses) the tunnel to `id` and answers `call` once it is up, or why it failed. */

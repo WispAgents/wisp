@@ -56,9 +56,9 @@ public final class Tunnel {
         void line(String text);
     }
 
-    /** Trust on first use: true to accept this host key. */
+    /** Whether to accept this host key: null to go on, else why not (HostTrust: a pin, or trust on first use). */
     public interface HostKeys {
-        boolean trust(String host, int port, String fingerprint);
+        String refuse(String host, int port, String fingerprint);
     }
 
     private static final long[] RETRY_MS = { 2_000, 5_000, 15_000, 30_000, 60_000 };
@@ -66,11 +66,15 @@ public final class Tunnel {
     // stopped there (quit, crashed, the machine's wisp updated), and then the page has nothing to load.
     static long WATCH_MS = 15_000;
     private static final int WATCH_MISSES = 2;
+    static int WATCH_TIMEOUT_MS = 5_000; // one check's wait
     static final String WISP_DOWN = "wisp stopped on that computer. Starting it again…";
     private static final int MAX_LINES = 300;
     private static final Pattern VERSION = Pattern.compile("\"version\"\\s*:\\s*\"([^\"]+)\"");
 
-    public final String host, user, password, script;
+    public final String host, user, script;
+    // Used to sign in until the phone's key is added there (@@wisp keyed), then dropped (ADR-0065:
+    // the password is not kept anywhere).
+    private volatile String password;
     public final int sshPort, port;
     private final KeyPair key;
     private final HostKeys hostKeys;
@@ -82,7 +86,8 @@ public final class Tunnel {
     private volatile SSHClient ssh;
     private volatile ServerSocket server;
     private volatile String stage = "ssh"; // the step a failure belongs to
-    private volatile String rejectedKey; // set when the host key changed
+    private volatile String refusal; // set when the host key was refused: why (HostTrust's message)
+    private volatile String rejectedKey; // the fingerprint refused, for Trust the new key
     private volatile boolean everUp;
     private volatile int tries; // reconnects since the tunnel was last up
     private volatile boolean wispDown; // the watchdog cut the session: wisp stopped answering there
@@ -124,6 +129,16 @@ public final class Tunnel {
 
     public String state() {
         return state;
+    }
+
+    /** Still holding the password: true only until the phone's key is added there. */
+    boolean hasPassword() {
+        return password != null && !password.isEmpty();
+    }
+
+    /** The host key fingerprint this connect refused, or null. */
+    String refusedKey() {
+        return rejectedKey;
     }
 
     /**
@@ -174,7 +189,7 @@ public final class Tunnel {
             } catch (Exception e) {
                 if (stopped) return;
                 // Before the first success, or when the machine refuses us: the user has to act.
-                if (!everUp || rejectedKey != null || e instanceof UserAuthException) {
+                if (!everUp || refusal != null || e instanceof UserAuthException) {
                     state = "failed";
                     emit("@@wisp fail " + stage + " " + message(e));
                     return;
@@ -202,6 +217,7 @@ public final class Tunnel {
     private boolean once() throws Exception {
         stage = "ssh";
         rejectedKey = null;
+        refusal = null;
         emit("@@wisp step ssh run " + (everUp ? "Reconnecting…" : user + "@" + host));
         DefaultConfig config = new DefaultConfig();
         config.setKeepAliveProvider(KeepAliveProvider.KEEP_ALIVE); // notice a dead network, not just a closed socket
@@ -212,7 +228,9 @@ public final class Tunnel {
                 @Override
                 public boolean verify(String h, int p, PublicKey k) {
                     String fp = Keys.fingerprint(k);
-                    if (hostKeys.trust(host, sshPort, fp)) return true;
+                    String why = hostKeys.refuse(host, sshPort, fp);
+                    if (why == null) return true;
+                    refusal = why; // in the key exchange: no password or key has been sent
                     rejectedKey = fp;
                     return false;
                 }
@@ -225,6 +243,7 @@ public final class Tunnel {
             c.setConnectTimeout(15_000);
             c.getConnection().getKeepAlive().setKeepAliveInterval(10);
             c.connect(host, sshPort);
+            String password = this.password;
             List<AuthMethod> methods = new ArrayList<>();
             // Tailscale SSH lets tailnet devices in by identity, with no key: it accepts "none".
             // A regular sshd refuses it and the key is next.
@@ -275,7 +294,10 @@ public final class Tunnel {
             in.close();
             cmd.join(15, java.util.concurrent.TimeUnit.SECONDS);
             Integer code = cmd.getExitStatus();
-            if (code != null && code == 0) emit("@@wisp keyed");
+            if (code != null && code == 0) {
+                password = null; // the key signs in from now on
+                emit("@@wisp keyed");
+            }
         }
     }
 
@@ -329,7 +351,7 @@ public final class Tunnel {
                 }
                 if (stopped || ssh != c || !"ready".equals(state)) return;
                 try {
-                    ping(5_000);
+                    ping(WATCH_TIMEOUT_MS);
                     misses = 0;
                 } catch (IOException e) {
                     if (++misses >= WATCH_MISSES && ssh == c) {
@@ -433,7 +455,8 @@ public final class Tunnel {
     }
 
     private String message(Throwable e) {
-        if (rejectedKey != null) return "The host key changed: it is now " + rejectedKey + ".";
+        if (refusal != null) return refusal;
+        String password = this.password;
         if (e instanceof UserAuthException) return password != null && !password.isEmpty() ? "Authentication failed: the machine refused this phone’s key and the password." : "Authentication failed: the machine refused this phone’s key.";
         Throwable root = e;
         while (root.getCause() != null && root.getCause() != root) root = root.getCause();
