@@ -16,8 +16,10 @@ import { FallbackList } from './FallbackList.tsx';
 import { backOf } from './rows-view.ts';
 import { PeerBanner } from './PeerBanner.tsx';
 import { HomeView } from './HomeView.tsx';
+import { stackView } from './stack-page.ts';
 
-const TaskView = lazy(() => import('./TaskView.tsx'));
+/** lazy: the task page's own code; App warms it while the list sits idle (warm-task.ts) */
+export const TaskView = lazy(() => import('./TaskView.tsx'));
 
 type SessionProp = NonNullable<ExtensionProps['session']>;
 
@@ -55,12 +57,17 @@ function ViewOf(props: { readonly kind: string; readonly params: unknown }): JSX
 
 const mainKey = (n: Nav): string => (n.main.kind === 'home' ? 'home' : n.main.kind === 'view' ? `view:${n.main.id}:${JSON.stringify(n.main.params)}` : `${n.main.kind}:${n.main.id}`);
 
-export function MainPane(props: { readonly onBack?: () => void }): JSX.Element {
+/** `launcher`: New task is open as a phone's page. While the list is the page Home isn't built (stack-page.ts), so
+ *  opening a task doesn't tear down a hidden prompt box first and Back doesn't build one (F-phone-8: 58 ms of a 93 ms
+ *  tap on a 4× slowed phone). Worked out from this pane's own nav: a prop derived from App's would change a step
+ *  ahead of it and build Home for one pass on every tap. */
+export function MainPane(props: { readonly onBack?: () => void; readonly launcher?: boolean }): JSX.Element {
   const shell = useShell();
   const nav = useSignal(shell.nav);
+  const idleHome = (): boolean => stackView(nav(), props.launcher === true).idleHome;
   // the layout is part of the key (Back shows in a stack); nothing else of nav may rebuild the page: a side
   // panel opening must keep the task's open steps, its scroll and the focus (v1's panel did)
-  const key = createMemo(() => `${mainKey(nav())}|${nav().layout}`);
+  const key = createMemo(() => `${mainKey(nav())}|${nav().layout}${idleHome() ? '|idle' : ''}`);
   return (
     <Show when={key()} keyed>
       {(_k) => {
@@ -68,6 +75,7 @@ export function MainPane(props: { readonly onBack?: () => void }): JSX.Element {
         const main = now.main;
         switch (main.kind) {
           case 'home':
+            if (untrack(idleHome)) return null;
             return <Area input="shell.screen:home" fallback={<HomeView {...(now.layout === 'stack' && props.onBack && { onBack: props.onBack })} />} />;
           case 'task': {
             // v1 #773: Back from a subagent's run opens its lead; anything else goes back through history

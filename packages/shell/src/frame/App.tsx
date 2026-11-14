@@ -8,11 +8,13 @@ import type { Readable } from '@wisp/client';
 import { Stage, Toasts, useSignal, type StagePage } from '@wisp/ui';
 import { useShell } from '../context.tsx';
 import { Area, ClientsProvider, type Clients } from '../slot.tsx';
-import { MainPane, SidePane } from './Panes.tsx';
+import { MainPane, SidePane, TaskView } from './Panes.tsx';
+import { TASK_PAGE_INPUTS, taskPagePreloads } from './warm-task.ts';
 import { Overlays } from './Overlays.tsx';
 import { Head, PickStripView, Rail, SidebarList, SidebarTop } from './Sidebar.tsx';
 import { crewTint, type TintMember } from './crew-tint.ts';
 import { flatRow } from './rows-view.ts';
+import { escLeavesLauncher, stackView } from './stack-page.ts';
 
 const Switcher = lazy(() => import('../switcher/Switcher.tsx'));
 
@@ -31,11 +33,32 @@ export function App(props: { readonly clients: Clients; readonly recent: Readabl
       (k) => k !== 'home' && setLauncher(false),
     ),
   );
-  const page = createMemo<StagePage>(() => (nav().main.kind === 'home' && !launcher() ? 'list' : 'main'));
+  const view = createMemo(() => stackView(nav(), launcher()));
+  const page = (): StagePage => view().page;
   const switcher = shell.platform.kind === 'desktop';
   // the desktop app on a Mac: the page is the title bar (Stage's titlebar, the platform's drag regions)
   const titlebar = shell.platform.titlebar === 'mac' ? 'mac' : undefined;
   onMount(() => onCleanup(shell.platform.dragRegions(document.body)));
+  // a phone's New task page: Esc goes back to the list (unless a menu or dialog took the key: defaultPrevented, overlays)
+  onMount(() => {
+    const onKey = (e: KeyboardEvent): void => {
+      const typing = e.target instanceof Element && e.target.closest('input, textarea, select, [contenteditable="true"]') !== null;
+      if (escLeavesLauncher(shell.nav(), launcher(), { key: e.key, defaultPrevented: e.defaultPrevented, typing })) setLauncher(false);
+    };
+    document.addEventListener('keydown', onKey);
+    onCleanup(() => document.removeEventListener('keydown', onKey));
+  });
+  // F-phone-8: the task page's code loads while the list sits idle, so the first tap on a slow phone doesn't wait
+  // on the network with nothing on screen
+  onMount(() => {
+    const warm = (): void => {
+      const comps = [TaskView, ...TASK_PAGE_INPUTS.flatMap((i) => shell.extensions(i)().map((e) => e.def.component))];
+      for (const run of taskPagePreloads(comps)) void run();
+    };
+    const idle = window.requestIdleCallback?.bind(window);
+    const t = setTimeout(() => (idle ? idle(warm, { timeout: 4000 }) : warm()), 1500);
+    onCleanup(() => clearTimeout(t));
+  });
   // a crew member picked on the rail tints the list beside it (v1 #768); Settings → General → Crew tint turns it off
   const crew = useSignal(shell.client.entities.list<TintMember>('crew_member'));
   const settings = useSignal(shell.client.entities.list<{ key: string; value: unknown }>('setting'));
@@ -49,7 +72,7 @@ export function App(props: { readonly clients: Clients; readonly recent: Readabl
         : undefined;
     return crewTint(picked, settings().find((r) => r.key === 'crew.tint')?.value);
   });
-  const homeOn = (): boolean => nav().main.kind === 'home' && (nav().layout === 'split' || launcher());
+  const homeOn = (): boolean => view().homeOn;
   const onNew = (): void => {
     setLauncher(true);
     shell.navigate({ t: 'home' });
@@ -69,11 +92,11 @@ export function App(props: { readonly clients: Clients; readonly recent: Readabl
             <Area input="shell.sidebar:list" fallback={<SidebarList onNew={onNew} homeOn={homeOn()} filter={filter} />} />
           </>
         }
-        main={<MainPane onBack={() => setLauncher(false)} />}
+        main={<MainPane onBack={() => setLauncher(false)} launcher={launcher()} />}
         // a plain prop, not a spread: a reactive spread rebuilds every prop (the task page too) when the side opens
         side={nav().side.kind !== 'none' ? <SidePane /> : undefined}
         gripLabel={shell.t('shell.side.grip')}
-        listBehind={nav().main.kind === 'home'}
+        listBehind={view().listBehind}
         tint={tint()}
         {...(titlebar && { titlebar })}
       />
