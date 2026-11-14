@@ -43,6 +43,9 @@ pub(crate) struct Live {
     /// the account the run is on (what `before:run` picked): its usage reports are that account's
     pub account: Option<String>,
     pub ctl: mpsc::UnboundedSender<Ctl>,
+    /// closed once the run's drive let go: its CLI exited, its last output parsed (and the git work that does in
+    /// the task's folder, `wisp_harness_kit` pin and snapshots) done. `Runtime::stop_and_wait` waits on it.
+    pub ended: tokio::sync::watch::Receiver<()>,
 }
 
 impl Live {
@@ -431,6 +434,7 @@ impl Runtime {
             handle.close_stdin();
         }
         let (ctl, ctl_rx) = mpsc::unbounded_channel();
+        let (ended_tx, ended) = tokio::sync::watch::channel(());
         let live = Live {
             resumable: s.resume_id.is_some(),
             finished: false,
@@ -439,12 +443,16 @@ impl Runtime {
             label: None,
             account: t.account.clone(),
             ctl,
+            ended,
         };
         self.live.lock().unwrap_or_else(std::sync::PoisonError::into_inner).insert(s.id.0.clone(), live);
         let rt = self.clone();
         let driver = h.driver(run);
         let (sid, tid) = (s.id.0.clone(), t.id.0.clone());
-        tokio::spawn(async move { rt.drive(sid, tid, driver, handle, rx, ctl_rx).await });
+        tokio::spawn(async move {
+            rt.drive(sid, tid, driver, handle, rx, ctl_rx).await;
+            drop(ended_tx);
+        });
         Ok(())
     }
 
@@ -480,6 +488,19 @@ impl Runtime {
     pub(crate) fn stop_run(&self, id: &str) {
         self.send(id, Ctl::Stop);
     }
+    /// The task's run, stopped, and once it let go (at most `STOP_WAIT`): nothing of it is still at work in the
+    /// task's folder after this. A delete waits on it: a deleted delegate's copy is removed right after (ADR-0060),
+    /// and a drive still parsing the CLI's last output ran git there meanwhile (its pin's temporary index), so the
+    /// copy's removal failed with "Directory not empty" and the copy stayed.
+    pub(crate) async fn stop_and_wait(&self, id: &str) {
+        let ended = self.live.lock().unwrap_or_else(std::sync::PoisonError::into_inner).get(id).map(|l| l.ended.clone());
+        self.stop_run(id);
+        if let Some(mut ended) = ended
+            && tokio::time::timeout(STOP_WAIT, ended.changed()).await.is_err()
+        {
+            tracing::warn!(task = id, "runtime: a stopped run didn't let go in {} s", STOP_WAIT.as_secs());
+        }
+    }
     pub(crate) fn interrupt(&self, id: &str) {
         self.send(id, Ctl::Interrupt);
     }
@@ -502,6 +523,8 @@ fn carry_others_ext(s: &mut Session, mut now: wisp_runtime_api::model::Ext) {
 }
 
 const OWN: &str = "wisp.runtime";
+/// How long `stop_and_wait` waits for a stopped run (its CLI's kill grace and tree sweep are 2 s each).
+const STOP_WAIT: std::time::Duration = std::time::Duration::from_secs(15);
 
 pub(crate) async fn run_folder(launch: &str, task: &str, scratch: &str) -> Result<std::path::PathBuf> {
     let named = if launch.trim().is_empty() { task } else { launch };

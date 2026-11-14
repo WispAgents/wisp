@@ -242,7 +242,7 @@ impl Runtime {
 
     pub async fn delete(self: &Arc<Self>, id: &str) -> Result<()> {
         self.stop_run(id);
-        let _guard = self.task_lock(id).await;
+        let guard = self.task_lock(id).await;
         let key = id.to_owned();
         let was = self.repo.session(id).await.ok();
         // turns, events and queue items go with the row (ON DELETE CASCADE): one change row for the task
@@ -250,6 +250,10 @@ impl Runtime {
         if !gone {
             return Err(RuntimeError::NoTask(id.to_owned()));
         }
+        // its run let go before the delete answers (outside the task's lock: the run's end takes it; with the row
+        // gone, no queued follow-up starts): whoever removes its folder next meets nothing still writing there
+        drop(guard);
+        self.stop_and_wait(id).await;
         // its delegates on other machines go there too (ADR-0060)
         if let Some(s) = &was {
             self.let_away_go(s);

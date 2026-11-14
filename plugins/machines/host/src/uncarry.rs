@@ -83,6 +83,7 @@ pub(crate) async fn drop_copies(plugin: &Path, lead: &str) -> wisp_kernel::Resul
         return Err(WireError::invalid("whose copies? (no lead)"));
     }
     let mut copies = 0;
+    let mut kept = Vec::new();
     for (sub, dir) in [(core::COPIES, true), (core::INCOMING, false)] {
         let Ok(mut rd) = tokio::fs::read_dir(plugin.join(sub)).await else { continue };
         while let Ok(Some(e)) = rd.next_entry().await {
@@ -90,10 +91,18 @@ pub(crate) async fn drop_copies(plugin: &Path, lead: &str) -> wisp_kernel::Resul
                 continue;
             }
             let gone = if dir { tokio::fs::remove_dir_all(e.path()).await } else { tokio::fs::remove_file(e.path()).await };
-            if gone.is_ok() && dir {
-                copies += 1;
+            match gone {
+                Ok(()) if dir => copies += 1,
+                Ok(()) => {}
+                Err(err) if err.kind() == std::io::ErrorKind::NotFound => {}
+                Err(err) => kept.push(format!("{}: {err}", e.file_name().to_string_lossy())),
             }
         }
+    }
+    // one that stayed (something still wrote in it) is an error: the lead's wisp keeps the drop for the sweep,
+    // never "done" with the copy left behind
+    if !kept.is_empty() {
+        return Err(WireError::unavailable(format!("a copy stayed: {}", kept.join("; "))));
     }
     Ok(api::DroppedCopies { copies })
 }

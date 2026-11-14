@@ -205,8 +205,21 @@ pub fn script(prompt: &str) -> Vec<Value> {
     lines
 }
 
-async fn fake_cli(io: SimIo) -> Exit {
+/// Set once a `slowexit…` CLI has exited: told to stop, it takes 300 ms to go (a real CLI's exit, its drive's last git work).
+pub static SLOW_EXIT_GONE: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+async fn fake_cli(mut io: SimIo) -> Exit {
     let prompt = io.args.first().cloned().unwrap_or_default();
+    if prompt.starts_with("slowexit") {
+        for l in &script(&prompt)[..2] {
+            io.print(format!("{l}\n").as_bytes()).await;
+        }
+        // its SIGTERM, then 300 ms to go (inside the kill's grace)
+        let _ = io.signals.recv().await;
+        tokio::time::sleep(Duration::from_millis(300)).await;
+        SLOW_EXIT_GONE.store(true, std::sync::atomic::Ordering::SeqCst);
+        return Exit { code: None, signal: Some("SIGTERM".into()) };
+    }
     let slow = prompt.starts_with("slow");
     let lines = script(&prompt);
     let (head, tail) = if slow { lines.split_at(2) } else { lines.split_at(lines.len()) };

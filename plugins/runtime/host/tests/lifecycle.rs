@@ -263,6 +263,19 @@ async fn edits_reads_and_delete() {
     assert!(r.host.names().contains(&"session.deleted"));
 }
 
+/// ADR-0060: a delete answers once the task's run let go, never while its CLI or its drive is still at work in the
+/// folder (a deleted delegate's copy is removed right after; a drive still parsing ran git there and the removal
+/// failed with "Directory not empty", round 185's flake of `serve_delegate_machine`).
+#[tokio::test(flavor = "multi_thread")]
+async fn a_delete_answers_once_the_tasks_run_let_go() {
+    let r = rig().await;
+    let id = r.rt.create(start("slowexit")).await.unwrap().id.0;
+    until("the turn running", || async { r.rt.get(&id).await.is_ok_and(|s| s.state == SessionState::Running) }).await;
+    r.rt.delete(&id).await.unwrap();
+    assert!(common::SLOW_EXIT_GONE.load(std::sync::atomic::Ordering::SeqCst), "the delete answered with its CLI still running");
+    assert!(r.rt.get(&id).await.is_err());
+}
+
 #[tokio::test(flavor = "multi_thread")]
 async fn a_restart_marks_turns_it_left_running_as_stopped() {
     let r = rig().await;
