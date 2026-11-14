@@ -205,4 +205,22 @@ mod tests {
         );
         assert!(md.contains("## do it") && md.contains("**Done**: it works") && md.contains("- `src/a.rs`"), "{md}");
     }
+
+    /// A task run on Windows has `C:\…` folders in its spec: the task file reads back with every backslash (a
+    /// YAML `"…"` would read `\t`, `\x`, `\U` as escapes; a `\\?\` folder is two backslashes, a UNC share too).
+    #[test]
+    fn a_task_file_with_windows_paths_reads_back_the_same() {
+        let paths = [r"C:\Users\me\x\tasks", r"C:\a\b: c #d", r"\\srv\share\x", r"\\?\C:\x", "C:\\tab\there"];
+        let b = Bundle {
+            id: "01a1bc12ab34cdef".into(),
+            title: r"Fix C:\x\tasks.wisp.yml".into(),
+            spec: json!({ "folder": paths[0], "extra": paths }),
+            report: Some(json!({ "files": [r"src\tasks.wisp.yml"] })),
+            ..Bundle::default()
+        };
+        let files = files_for(&b, &[], None, r"C:\Users\me");
+        let text = String::from_utf8(files[0].1.clone()).unwrap();
+        let back: Value = serde_saphyr::from_str(&text).unwrap();
+        assert_eq!(back, task_doc_with(&b, &[], None, r"C:\Users\me", None), "{text}");
+    }
 }

@@ -26,7 +26,7 @@ fn git(dir: &Path, args: &[&str]) {
 }
 
 fn repo(dir: &Path) -> PathBuf {
-    let repo = std::fs::canonicalize(dir.join("proj")).unwrap();
+    let repo = wisp_proc::canonical_blocking(dir.join("proj")).unwrap();
     std::fs::write(repo.join("README.md"), "hi\n").unwrap();
     git(&repo, &["init", "-q", "-b", "main"]);
     git(&repo, &["add", "."]);

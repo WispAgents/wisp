@@ -28,7 +28,7 @@ fn git(dir: &Path, args: &[&str]) -> String {
 
 /// `proj` as a repo with one commit.
 fn repo(dir: &Path) -> PathBuf {
-    let repo = std::fs::canonicalize(dir.join("proj")).unwrap();
+    let repo = wisp_proc::canonical_blocking(dir.join("proj")).unwrap();
     git(&repo, &["init", "-q", "-b", "main"]);
     git(&repo, &["add", "."]);
     git(&repo, &["commit", "-qm", "init"]);
@@ -82,7 +82,7 @@ async fn a_follow_up_on_an_archived_task_runs_in_its_worktree_brought_back_on_it
     assert_eq!(git(Path::new(path), &["branch", "--show-current"]), branch, "on its own branch");
     let ran = run_folders(&rec);
     assert_eq!(ran.len(), 2, "{ran:?}");
-    let same = |a: &str, b: &str| std::fs::canonicalize(a).ok() == std::fs::canonicalize(b).ok();
+    let same = |a: &str, b: &str| wisp_proc::canonical_blocking(a).ok() == wisp_proc::canonical_blocking(b).ok();
     assert!(same(&ran[1], cwd), "the follow-up ran in the worktree: {ran:?}, {cwd}");
     drop(serve);
     let _ = std::fs::remove_dir_all(&dir);
@@ -117,7 +117,7 @@ async fn a_btw_on_an_archived_task_runs_in_its_worktree_brought_back() {
     }
     let ran = run_folders(&rec);
     assert_eq!(ran.len(), 2, "{ran:?}");
-    let same = |a: &str, b: &str| std::fs::canonicalize(a).ok() == std::fs::canonicalize(b).ok();
+    let same = |a: &str, b: &str| wisp_proc::canonical_blocking(a).ok() == wisp_proc::canonical_blocking(b).ok();
     assert!(same(&ran[1], cwd), "the /btw ran in the worktree: {ran:?}, {cwd}");
     assert_eq!(git(Path::new(path), &["branch", "--show-current"]), branch, "brought back on its own branch");
     let task = api.cmd("runtime.get", json!({ "id": id })).await;

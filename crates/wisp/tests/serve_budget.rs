@@ -206,7 +206,7 @@ async fn where_the_plan_went_and_tokens_per_turn_by_account_come_from_real_runs(
 #[tokio::test(flavor = "multi_thread")]
 async fn a_trial_asks_near_the_limit_for_both_runs_where_one_run_alone_would_go_v1_together() {
     let dir = temp("serve-budget-trial");
-    let repo = std::fs::canonicalize(dir.join("proj")).unwrap();
+    let repo = wisp_proc::canonical_blocking(dir.join("proj")).unwrap();
     git(&repo, &["init", "-q", "-b", "main"]);
     git(&repo, &["add", "."]);
     git(&repo, &["commit", "-qm", "init"]);

@@ -110,7 +110,7 @@ async fn a_tasks_setup_is_what_it_had_and_what_it_used() {
     );
 
     // an_adopted_task_says_its_setup_is_unknown
-    let cwd = std::fs::canonicalize(&proj).unwrap().display().to_string();
+    let cwd = wisp_proc::canonical_blocking(&proj).unwrap().display().to_string();
     let store = cfg.join("projects").join(cwd.chars().map(|c| if c.is_ascii_alphanumeric() { c } else { '-' }).collect::<String>());
     std::fs::create_dir_all(&store).unwrap();
     let sid = "7b3e4a3c-0000-4000-8000-00000000cafe";

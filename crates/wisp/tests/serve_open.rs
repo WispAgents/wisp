@@ -51,7 +51,7 @@ fn said(text: &str, at: &str) -> Value {
 #[tokio::test(flavor = "multi_thread")]
 async fn open_resumes_restores_continues_and_adopts_back() {
     let dir = temp("serve-open");
-    let repo = std::fs::canonicalize(dir.join("proj")).unwrap();
+    let repo = wisp_proc::canonical_blocking(dir.join("proj")).unwrap();
     git(&repo, &["init", "-q", "-b", "main"]);
     git(&repo, &["add", "."]);
     git(&repo, &["commit", "-qm", "init"]);
@@ -159,7 +159,7 @@ async fn open_resumes_restores_continues_and_adopts_back() {
 #[tokio::test(flavor = "multi_thread")]
 async fn a_folder_gone_opens_at_its_base() {
     let dir = temp("serve-open-base");
-    let repo = std::fs::canonicalize(dir.join("proj")).unwrap();
+    let repo = wisp_proc::canonical_blocking(dir.join("proj")).unwrap();
     git(&repo, &["init", "-q", "-b", "main"]);
     git(&repo, &["add", "."]);
     git(&repo, &["commit", "-qm", "init"]);

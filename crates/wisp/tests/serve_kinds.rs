@@ -386,7 +386,7 @@ async fn a_task_never_runs_in_the_servers_own_folder() {
     finished(&api, &id).await;
     let ran = run_dirs(&rec, "what's a monad?");
     assert_eq!(ran.len(), 1, "{ran:?}");
-    let scratch = std::fs::canonicalize(dir.join("home/scratch")).unwrap();
+    let scratch = wisp_proc::canonical_blocking(dir.join("home/scratch")).unwrap();
     assert!(Path::new(&ran[0]).starts_with(&scratch), "ran in {} (the server's is {})", ran[0], here.display());
     assert!(
         api.cmd("runtime.spec", json!({ "id": id })).await["cwd"].as_str().unwrap_or_default().is_empty(),
@@ -417,7 +417,7 @@ async fn a_task_never_runs_in_the_servers_own_folder() {
     finished(&api, &id).await;
     let ran = run_dirs(&rec, "Tidy the docs");
     assert_eq!(ran.len(), 1, "{ran:?}");
-    assert_eq!(Path::new(&ran[0]), std::fs::canonicalize(&proj).unwrap(), "a hand-fired trigger runs in its project");
+    assert_eq!(Path::new(&ran[0]), wisp_proc::canonical_blocking(&proj).unwrap(), "a hand-fired trigger runs in its project");
     // and no harness's detect probe left a file in the server's folder
     for f in ["math.js", "notes.txt"] {
         assert!(!here.join(f).exists(), "{f} in the server's folder {}", here.display());

@@ -228,4 +228,24 @@ mod tests {
         assert_eq!(documents(&text, Format::Yaml).unwrap(), [v], "{text}");
         assert!(text.starts_with("name: Ada\n"), "{text}");
     }
+
+    /// A Windows path in an exported formula or the module lock (`wisp init`) reads back as itself: plain, or
+    /// quoted with its backslashes escaped (never a bare `"C:\x\tasks"`, where `\x`, `\t` are YAML escapes).
+    #[test]
+    fn a_windows_path_round_trips_through_yaml() {
+        let paths = [
+            r"C:\Users\me\x\tasks.wisp.yml",
+            r"C:\a\b: c #d",
+            r"\\srv\share\x",
+            r"\\?\C:\x",
+            r"\x",
+            "C:\\tab\there",
+            r"git::file:///C:/x//pack?ref=main",
+            r"'C:\quoted'",
+            r#""C:\dq""#,
+        ];
+        let v = json!({ "name": "w", "folder": paths[0], "paths": paths, "modules": { "pack": { "source": r"C:\x\tasks" } } });
+        let text = yaml(&v);
+        assert_eq!(documents(&text, Format::Yaml).unwrap(), [v], "{text}");
+    }
 }

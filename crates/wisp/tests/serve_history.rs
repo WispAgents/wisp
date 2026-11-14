@@ -78,7 +78,7 @@ async fn until(what: &str, f: impl AsyncFn() -> bool) {
 #[tokio::test(flavor = "multi_thread")]
 async fn track_blame_log_resume_mcp_and_auto_track() {
     let dir = temp("serve-history");
-    let repo = std::fs::canonicalize(dir.join("proj")).unwrap();
+    let repo = wisp_proc::canonical_blocking(dir.join("proj")).unwrap();
     git(&repo, &["init", "-q", "-b", "main"]);
     git(&repo, &["add", "."]);
     git(&repo, &["commit", "-qm", "init"]);
@@ -183,7 +183,7 @@ async fn track_blame_log_resume_mcp_and_auto_track() {
 #[tokio::test(flavor = "multi_thread")]
 async fn a_claude_code_session_is_adopted_tracked_and_continued() {
     let dir = temp("serve-adopt");
-    let repo = std::fs::canonicalize(dir.join("proj")).unwrap();
+    let repo = wisp_proc::canonical_blocking(dir.join("proj")).unwrap();
     git(&repo, &["init", "-q", "-b", "main"]);
     let cwd = repo.display().to_string();
     let store =
@@ -252,7 +252,7 @@ async fn a_claude_code_session_is_adopted_tracked_and_continued() {
 #[tokio::test(flavor = "multi_thread")]
 async fn the_same_session_is_adopted_once_and_the_pr_comes_from_gh() {
     let dir = temp("serve-history-once");
-    let repo = std::fs::canonicalize(dir.join("proj")).unwrap();
+    let repo = wisp_proc::canonical_blocking(dir.join("proj")).unwrap();
     git(&repo, &["init", "-q", "-b", "main"]);
     git(&repo, &["add", "."]);
     git(&repo, &["commit", "-qm", "init"]);
@@ -326,7 +326,7 @@ async fn the_same_session_is_adopted_once_and_the_pr_comes_from_gh() {
 #[tokio::test(flavor = "multi_thread")]
 async fn offers_the_mark_resume_requests_and_injection() {
     let dir = temp("serve-history-ask");
-    let repo = std::fs::canonicalize(dir.join("proj")).unwrap();
+    let repo = wisp_proc::canonical_blocking(dir.join("proj")).unwrap();
     git(&repo, &["init", "-q", "-b", "main"]);
     git(&repo, &["add", "."]);
     git(&repo, &["commit", "-qm", "init"]);

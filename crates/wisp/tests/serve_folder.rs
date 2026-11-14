@@ -59,7 +59,13 @@ async fn a_formula_folder_with_variables_references_modules_and_workspaces() {
     git(&gm, &["add", "."]);
     git(&gm, &["commit", "-qm", "pack"]);
     std::fs::write(w.join("agents.wisp.yml"), "variables:\n  model: { type: string, default: opus }\n  helpers: { type: number, default: 2 }\nlocals:\n  harness: claude\nagents:\n  reviewer: { harness: \"${local.harness}\", model: \"${var.model}\", instructions: \"Workspace ${workspace}\" }\n  helper:\n    count: ${var.helpers}\n    harness: codex\n    instructions: \"helper ${count.index}\"\n").unwrap();
-    std::fs::write(w.join("x/tasks.wisp.yml"), format!("tasks:\n  nightly: {{ prompt: Update deps, agent: \"${{agent.reviewer}}\" }}\nmodules:\n  team: {{ source: ../../shared/team, inputs: {{ model: haiku }} }}\n  pack: {{ source: \"git::file://{}//pack?ref=main\" }}\noutputs:\n  reviewer_model: {{ value: \"${{agent.reviewer.model}}\" }}\n  team_reviewer: {{ value: \"${{module.team.reviewer}}\" }}\n", gm.display())).unwrap();
+    // a file URL, `/` only (file:///C:/x on Windows), single-quoted: in a YAML "…" a Windows path's `\U`, `\t` are
+    // escapes ("did not find expected hexadecimal number")
+    let gm_url = {
+        let p = gm.display().to_string().replace('\\', "/");
+        if p.starts_with('/') { format!("file://{p}") } else { format!("file:///{p}") }
+    };
+    std::fs::write(w.join("x/tasks.wisp.yml"), format!("tasks:\n  nightly: {{ prompt: Update deps, agent: \"${{agent.reviewer}}\" }}\nmodules:\n  team: {{ source: ../../shared/team, inputs: {{ model: haiku }} }}\n  pack: {{ source: 'git::{gm_url}//pack?ref=main' }}\noutputs:\n  reviewer_model: {{ value: \"${{agent.reviewer.model}}\" }}\n  team_reviewer: {{ value: \"${{module.team.reviewer}}\" }}\n")).unwrap();
     let (serve, port) = start(&dir);
     let api = Api { http: reqwest::Client::new(), port, n: 0.into() };
 

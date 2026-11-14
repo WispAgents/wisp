@@ -130,7 +130,7 @@ fn git(dir: &std::path::Path, args: &[&str]) {
 async fn a_trial_counts_one_try_two_ways_with_nothing_in_it_never_on_a_refusal_or_with_stats_off() {
     let (ph, got) = fake_posthog();
     let dir = temp("serve-telemetry-trial");
-    let repo = std::fs::canonicalize(dir.join("proj")).unwrap();
+    let repo = wisp_proc::canonical_blocking(dir.join("proj")).unwrap();
     git(&repo, &["init", "-q", "-b", "main"]);
     git(&repo, &["add", "."]);
     git(&repo, &["commit", "-qm", "init"]);

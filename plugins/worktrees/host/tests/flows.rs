@@ -26,7 +26,7 @@ fn tmp(name: &str) -> Tmp {
     let d = std::env::temp_dir().join(format!("wisp-wt-{name}-{}-{}", std::process::id(), N.fetch_add(1, Ordering::SeqCst)));
     let _ = std::fs::remove_dir_all(&d);
     std::fs::create_dir_all(&d).unwrap();
-    Tmp(std::fs::canonicalize(&d).unwrap())
+    Tmp(wisp_proc::canonical_blocking(&d).unwrap())
 }
 
 fn git(dir: &Path, args: &[&str]) -> String {
