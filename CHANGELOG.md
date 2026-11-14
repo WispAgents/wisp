@@ -7,6 +7,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Added
 
+- **v2: previews in the cloud.** A preview block in an answer shows the agent's live page even when wisp runs in the cloud: the grid shows that box's page at its own preview address, to the box's owner only.
+- **v2: `wisp` opens the app.** `wisp` (and `npx wisp-agents`) opens the installed desktop app on the running wisp, or a browser tab with `--browser` or when there's no app, and refuses a port another program holds instead of starting a second server.
 - **v2: usage stats as in v1.** wisp sends v1's anonymous usage events and reports server errors and crashes (never paths, prompts or names), with the off switch in Settings.
 - **v2: several wisp Cloud accounts.** Sign in to more than one grid or account; Settings → Cloud lists each with Switch and Sign out, the current one carries shares, sandboxes and API keys, and every account's cloud computer shows under Machines.
 - **v2: delegate to another machine.** A subagent on another computer runs there on a copy of the lead's work (its commits and uncommitted edits, kept under wisp's own folder there, never your checkout); its changes come back into the lead's folder when it finishes, and its row and report name the machine.
@@ -208,6 +210,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Fixed
 
+- **v2: processes.** A harness probe whose caller gave up is ended, and exec plugins stop with wisp, even when wisp is killed.
 - **v2: no stray agents.** If wisp is killed (a crash, Force Quit), the agent CLIs and everything they started stop with it instead of running on in the background.
 - **v2: sending a task.** Sending from Home opens the task you just sent instead of a blank page; the harness picker no longer shows Claude Code twice; a task page no longer says *Mark read needs a newer wisp.runtime*. Telemetry's off switch and install id are kept across restarts, and learned preferences and retro history survive a restart; wisp refuses at startup any plugin data kind that could never be saved.
 - **v2: deleting a running task.** Deleting a task now stops its run first, even one still starting: its CLI never starts for a deleted task and the task never comes back.
