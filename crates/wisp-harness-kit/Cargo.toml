@@ -12,5 +12,9 @@ serde.workspace = true
 serde_json.workspace = true
 regex.workspace = true
 
+[dev-dependencies]
+# the copy wisp.runtime's ProcSys::copy_file seeds the wip pin's index with (the mtime kept)
+wisp-proc.workspace = true
+
 [lints]
 workspace = true

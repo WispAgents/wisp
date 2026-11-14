@@ -59,33 +59,14 @@ async fn git(proc: &Proc, cwd: &Path, args: &[&str], index: Option<&Path>, input
     if r.exit.success() { Ok(r.stdout_text()) } else { Err(format!("{}{}", r.stdout_text(), r.stderr_text()).trim().to_owned()) }
 }
 
-/// A scratch copy of the index `real`, with `real`'s mtime: git tells a racily clean entry (a file written in the
-/// same second as the index, then edited again in that second, same size) by comparing it with the index file's
-/// mtime, and Linux's copy gives the copy a fresh one, so such an edit read as unchanged (a delegate's `a - b` →
-/// `a + b` right after its copy was checked out never came back). Without the mtime, no copy: an empty index
-/// re-hashes every file, slower but never wrong.
-async fn scratch_index(real: &Path, scratch: &Path) {
-    let Ok(when) = tokio::fs::metadata(real).await.and_then(|m| m.modified()) else { return };
-    if tokio::fs::copy(real, scratch).await.is_err() {
-        let _ = tokio::fs::remove_file(scratch).await;
-        return;
-    }
-    let s = scratch.to_owned();
-    let kept = tokio::task::spawn_blocking(move || std::fs::OpenOptions::new().write(true).open(&s).and_then(|f| f.set_modified(when)))
-        .await
-        .is_ok_and(|r| r.is_ok());
-    if !kept {
-        let _ = tokio::fs::remove_file(scratch).await;
-    }
-}
-
 /// The folder's whole working state (tracked, changed and new files, not ignored ones) as a tree, read through a
 /// scratch copy of its index: the folder's own index stays as it was.
 async fn tree_of(proc: &Proc, dir: &Path) -> Result<String, String> {
     let at = git(proc, dir, &["rev-parse", "--git-path", "index"], None, None).await?;
     let real = dir.join(at.trim());
     let scratch = temp("index");
-    scratch_index(&real, &scratch).await;
+    // with the real one's mtime (git's racy-clean check), or none: an empty index re-hashes every file
+    wisp_proc::copy_index(real, scratch.clone()).await;
     let out = async {
         git(proc, dir, &["add", "-A"], Some(&scratch), None).await?;
         git(proc, dir, &["write-tree"], Some(&scratch), None).await

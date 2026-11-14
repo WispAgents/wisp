@@ -46,18 +46,9 @@ impl Disk for RealDisk {
         Box::pin(async {})
     }
     fn copy<'a>(&'a self, from: &'a str, to: &'a str) -> DiskFuture<'a, bool> {
-        let v = copy_keeping_mtime(Path::new(from), Path::new(to)).is_ok();
+        let v = wisp_proc::copy_index_blocking(Path::new(from), Path::new(to)).is_ok();
         Box::pin(async move { v })
     }
-}
-
-/// As `ProcSys::copy_file` (plugins/runtime/host/src/sys.rs): one open handle, the mtime kept.
-fn copy_keeping_mtime(from: &Path, to: &Path) -> std::io::Result<()> {
-    let mut src = std::fs::File::open(from)?;
-    let mtime = src.metadata()?.modified()?;
-    let mut dst = std::fs::File::create(to)?;
-    std::io::copy(&mut src, &mut dst)?;
-    dst.set_modified(mtime)
 }
 
 fn now<T>(f: impl Future<Output = T>) -> T {

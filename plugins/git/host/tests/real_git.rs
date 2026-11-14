@@ -413,3 +413,28 @@ async fn a_repo_is_never_opened_in_the_servers_own_folder() {
         assert!(e.message.contains("no such folder"), "{path:?}: {e:?}");
     }
 }
+
+/// Git's racy-clean rule vs the snapshot's scratch index (round 188): an entry whose mtime isn't older than the
+/// index's own is re-read. The scratch copy keeps the real index's mtime (`wisp_proc::copy_index`); a copy with a
+/// fresh mtime (Linux's `fs::copy`) calls the same-size edit made in the index's own second clean, and the
+/// snapshot is HEAD's tree. Stamps pinned; ctime can't be, so `core.trustctime false`.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_snapshot_sees_a_same_size_edit_in_the_index_s_own_second() {
+    let t = tmp("racy");
+    let dir = repo(&t);
+    git(&dir, &["config", "core.trustctime", "false"]);
+    let then = std::time::SystemTime::UNIX_EPOCH + std::time::Duration::from_secs(1_700_000_000);
+    let stamp = |p: &std::path::Path| std::fs::File::options().write(true).open(p).unwrap().set_modified(then).unwrap();
+    write(&dir, "m.js", "a - b\n");
+    stamp(&dir.join("m.js"));
+    git(&dir, &["add", "m.js"]);
+    git(&dir, &["commit", "-qm", "m"]);
+    stamp(&dir.join(".git/index"));
+    write(&dir, "m.js", "a + b\n"); // same size, same mtime
+    stamp(&dir.join("m.js"));
+    let (_, s) = service();
+    let o = owner();
+    let r = s.repo(&user(), &o, dir.to_str().unwrap()).await.unwrap();
+    let snap = r.snapshot(&user()).await.unwrap().expect("the edit: a snapshot");
+    assert_eq!(git(&dir, &["show", &format!("{snap}:m.js")]), "a + b");
+}

@@ -4856,6 +4856,7 @@ dependencies = [
  "regex",
  "serde",
  "serde_json",
+ "wisp-proc",
 ]
 
 [[package]]

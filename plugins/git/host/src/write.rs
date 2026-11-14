@@ -286,7 +286,7 @@ impl Inner {
         let git_dir = self.git.quiet(&self.dir, &["rev-parse", "--absolute-git-dir"]).await;
         let go = async {
             let seeded = !git_dir.is_empty()
-                && copy_keeping_mtime(Path::new(&git_dir).join("index"), index.clone()).await
+                && wisp_proc::copy_index(Path::new(&git_dir).join("index"), index.clone()).await
                 && self.git.run(&self.dir, &args(&["add", "-A"]), o()).await.is_ok();
             if !seeded {
                 let _ = tokio::fs::remove_file(&index).await;
@@ -299,21 +299,6 @@ impl Inner {
         let _ = tokio::fs::remove_file(&index).await;
         tree.map(Some)
     }
-}
-
-/// `from` into `to` through one open handle (git swaps its index by rename, so this reads one whole
-/// file), with `from`'s mtime set on `to`: git's racy-clean check compares the index's mtime with its
-/// entries', and a fresh mtime would hide a same-size edit made in the instant the index was written.
-/// As wisp.runtime's `copy_file` (plugins/runtime/host/src/sys.rs), which harness runs pin through.
-async fn copy_keeping_mtime(from: std::path::PathBuf, to: std::path::PathBuf) -> bool {
-    let copy = move || -> std::io::Result<()> {
-        let mut src = std::fs::File::open(&from)?;
-        let mtime = src.metadata()?.modified()?;
-        let mut dst = std::fs::File::create(&to)?;
-        std::io::copy(&mut src, &mut dst)?;
-        dst.set_modified(mtime)
-    };
-    tokio::task::spawn_blocking(copy).await.is_ok_and(|r| r.is_ok())
 }
 
 fn temp_index() -> std::path::PathBuf {

@@ -58,7 +58,8 @@ impl HarnessSys for ProcSys {
     }
     fn copy_file(&self, from: &str, to: &str) -> BoxFuture<'_, bool> {
         let (from, to) = (PathBuf::from(from), PathBuf::from(to));
-        Box::pin(async move { tokio::task::spawn_blocking(move || copy_keeping_mtime(&from, &to).is_ok()).await.unwrap_or(false) })
+        // the index's mtime kept (git's racy-clean check): the wip pin's seed (wisp_harness_kit::wip)
+        Box::pin(wisp_proc::copy_index(from, to))
     }
     fn list_dir(&self, path: &str) -> BoxFuture<'_, Vec<String>> {
         let path = path.to_owned();
@@ -87,13 +88,46 @@ impl HarnessSys for ProcSys {
     }
 }
 
-/// `from` into `to` through one open handle (git swaps its index by rename, so this reads one whole
-/// file), with `from`'s mtime set on `to`: git's racy-clean check compares the index's mtime with
-/// its entries', and a fresh mtime would hide a same-size edit made in the second the index was written.
-fn copy_keeping_mtime(from: &std::path::Path, to: &std::path::Path) -> std::io::Result<()> {
-    let mut src = std::fs::File::open(from)?;
-    let mtime = src.metadata()?.modified()?;
-    let mut dst = std::fs::File::create(to)?;
-    std::io::copy(&mut src, &mut dst)?;
-    dst.set_modified(mtime)
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod tests {
+    use super::*;
+
+    fn git(dir: &std::path::Path, index: Option<&std::path::Path>, args: &[&str]) -> String {
+        let mut c = std::process::Command::new("git");
+        c.current_dir(dir).args(args).env("GIT_CONFIG_NOSYSTEM", "1");
+        if let Some(i) = index {
+            c.env("GIT_INDEX_FILE", i);
+        }
+        let o = c.output().unwrap();
+        assert!(o.status.success(), "git {args:?}: {}", String::from_utf8_lossy(&o.stderr));
+        String::from_utf8_lossy(&o.stdout).trim().to_owned()
+    }
+
+    /// The wip pin seeds its index through `copy_file` (round 188): the copy keeps the real index's mtime, so a
+    /// same-size edit made in the index's own second is still racily clean and `add --update` re-reads it. A
+    /// fresh mtime (Linux's `fs::copy`) would call it clean and the pin would hold the old text.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn copy_file_keeps_a_same_size_edit_in_the_index_s_own_second() {
+        let dir = std::env::temp_dir().join(format!("wisp-sys-racy-{}", wisp_kernel::ids::uuid7()));
+        std::fs::create_dir_all(&dir).unwrap();
+        git(&dir, None, &["init", "-q"]);
+        git(&dir, None, &["config", "core.trustctime", "false"]);
+        let then = std::time::SystemTime::UNIX_EPOCH + Duration::from_secs(1_700_000_000);
+        let stamp = |p: &std::path::Path| std::fs::File::options().write(true).open(p).unwrap().set_modified(then).unwrap();
+        std::fs::write(dir.join("a.txt"), "x\n").unwrap();
+        stamp(&dir.join("a.txt"));
+        git(&dir, None, &["add", "a.txt"]);
+        stamp(&dir.join(".git/index"));
+        std::fs::write(dir.join("a.txt"), "y\n").unwrap();
+        stamp(&dir.join("a.txt"));
+        let scratch = dir.join(".git/wisp-test.index");
+        let sys = ProcSys { proc: wisp_proc::local() };
+        let real = dir.join(".git/index");
+        assert!(sys.copy_file(real.to_str().unwrap(), scratch.to_str().unwrap()).await);
+        git(&dir, Some(&scratch), &["add", "--update"]);
+        let tree = git(&dir, Some(&scratch), &["write-tree"]);
+        assert_eq!(git(&dir, None, &["show", &format!("{tree}:a.txt")]), "y");
+        let _ = std::fs::remove_dir_all(dir);
+    }
 }

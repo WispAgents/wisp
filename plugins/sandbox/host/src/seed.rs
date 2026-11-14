@@ -188,3 +188,39 @@ pub async fn patch(ctx: &Ctx, home: &Path, cwd: &str) -> Result<api::Patch> {
         .map_err(|e| WireError::internal(format!("git diff: {e}")))?;
     Ok(api::Patch { patch: diff })
 }
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod tests {
+    use super::*;
+
+    fn sh(at: &Path, args: &[&str]) {
+        let o = std::process::Command::new("git").current_dir(at).args(args).output().unwrap();
+        assert!(o.status.success(), "git {args:?}: {}", String::from_utf8_lossy(&o.stderr));
+    }
+
+    /// Round 188's sweep: `tree_of` starts from an empty index (`read-tree HEAD` records no stat data), so git
+    /// re-hashes every file and a same-size edit in the real index's own second is never mistaken for clean.
+    /// Stamps pinned as in carry.rs's test; a seeded copy with a fresh mtime would fail here.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn a_same_size_edit_in_the_index_s_own_second_is_a_change() {
+        let dir = std::env::temp_dir().join(format!("wisp-sbx-racy-{}", wisp_kernel::ids::uuid7()));
+        std::fs::create_dir_all(&dir).unwrap();
+        sh(&dir, &["init", "-q"]);
+        sh(&dir, &["config", "core.trustctime", "false"]);
+        let then = std::time::SystemTime::UNIX_EPOCH + Duration::from_secs(1_700_000_000);
+        let stamp = |p: &Path| std::fs::OpenOptions::new().write(true).open(p).unwrap().set_modified(then).unwrap();
+        std::fs::write(dir.join("math.js"), "a - b\n").unwrap();
+        stamp(&dir.join("math.js"));
+        sh(&dir, &["add", "."]);
+        sh(&dir, &["-c", "user.name=T", "-c", "user.email=t@e", "commit", "-qm", "one"]);
+        stamp(&dir.join(".git/index"));
+        std::fs::write(dir.join("math.js"), "a + b\n").unwrap();
+        stamp(&dir.join("math.js"));
+        let proc = wisp_proc::local();
+        let tree = tree_of(&proc, &dir).await.unwrap();
+        let o = std::process::Command::new("git").current_dir(&dir).args(["show", &format!("{tree}:math.js")]).output().unwrap();
+        assert_eq!(String::from_utf8_lossy(&o.stdout), "a + b\n", "the edit is seen");
+        let _ = std::fs::remove_dir_all(dir);
+    }
+}
