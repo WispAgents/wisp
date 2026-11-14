@@ -91,11 +91,22 @@ pub async fn docs(root: &Path) -> Vec<Doc> {
                 && let Ok(text) = tokio::fs::read_to_string(&p).await
                 && let Ok(doc) = serde_saphyr::from_str::<Value>(&text)
             {
-                out.push(Doc { path: p.strip_prefix(root).map_or_else(|_| p.display().to_string(), |r| r.display().to_string()), doc });
+                out.push(Doc { path: p.strip_prefix(root).map_or_else(|_| p.display().to_string(), rel), doc });
             }
         }
     }
     out
+}
+
+/// A repo-relative path as wisp reports and matches it: `/`-separated on every OS (`tasks/2026/11/…`,
+/// never `tasks\2026\11\…`), so a listing taken on Windows finds a task's earlier files.
+fn rel(p: &Path) -> String {
+    slashed(&p.to_string_lossy(), cfg!(windows))
+}
+
+/// `rel`, pure: on Windows `\` is a separator (off it, a legal file name character, kept).
+fn slashed(rel: &str, windows: bool) -> String {
+    if windows { rel.replace('\\', "/") } else { rel.to_owned() }
 }
 
 /// Every path under `.wisp/` (relative to it).
@@ -110,7 +121,7 @@ async fn listing(root: &Path) -> Vec<String> {
             if p.is_dir() {
                 stack.push(p);
             } else if let Ok(r) = p.strip_prefix(&base) {
-                out.push(r.display().to_string());
+                out.push(rel(r));
             }
         }
     }

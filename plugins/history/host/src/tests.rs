@@ -212,6 +212,16 @@ async fn kernel_with(d: &Path, title: &Arc<Mutex<String>>, with_history: bool, k
     app.start().await
 }
 
+#[test]
+fn repo_paths_use_slashes_on_windows_too() {
+    // the Windows CI failure: `.wisp\wisp.yml`, and a retitled task kept its old `tasks\…` files
+    assert_eq!(super::slashed(r"tasks\2026\11\01a1bc12ab34-fix.task.yml", true), "tasks/2026/11/01a1bc12ab34-fix.task.yml");
+    assert_eq!(super::slashed(".wisp/wisp.yml", true), ".wisp/wisp.yml");
+    assert_eq!(super::slashed(r"odd\name", false), r"odd\name");
+    let listing = [super::slashed(r"tasks\2026\11\01a1bc12ab34-fix-the-login.task.yml", true)];
+    assert_eq!(wisp_history_core::files_of(&listing, "01a1bc12ab34cdef0123456789abcdef").len(), 1);
+}
+
 fn files_under(d: &Path) -> Vec<String> {
     let mut out = Vec::new();
     let mut stack = vec![d.join(".wisp")];
@@ -220,7 +230,7 @@ fn files_under(d: &Path) -> Vec<String> {
             if e.path().is_dir() {
                 stack.push(e.path());
             } else {
-                out.push(e.path().strip_prefix(d).unwrap().display().to_string());
+                out.push(super::rel(e.path().strip_prefix(d).unwrap()));
             }
         }
     }

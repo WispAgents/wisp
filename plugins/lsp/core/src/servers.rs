@@ -77,6 +77,8 @@ pub struct Search {
     /// `PATH`
     pub path: Option<String>,
     pub windows: bool,
+    /// `PATHEXT` (Windows): the extensions a bare program name is tried with, in order
+    pub pathext: Option<String>,
 }
 
 impl Search {
@@ -87,27 +89,49 @@ impl Search {
 }
 
 /// Every command to try for `lang` in `root`, in order: the repo's own `node_modules/.bin`, wisp's
-/// `<home>/lsp/node_modules/.bin`, then PATH; on Windows each as `.cmd` then `.exe`.
+/// `<home>/lsp/node_modules/.bin`, then PATH. On Windows each name is tried with every `PATHEXT`
+/// extension, as cmd.exe finds it (npm installs `typescript-language-server.cmd`), and paths are
+/// joined with `\`; elsewhere with `/`, whatever OS the code runs on.
 pub fn candidates(lang: Lang, root: &Path, home: Option<&Path>, search: &Search) -> Vec<Vec<String>> {
-    let sep = if search.windows { ';' } else { ':' };
-    let mut dirs: Vec<PathBuf> = vec![root.join("node_modules").join(".bin")];
-    dirs.extend(home.map(|h| h.join("lsp").join("node_modules").join(".bin")));
-    dirs.extend(search.path.as_deref().unwrap_or("").split(sep).filter(|d| !d.is_empty()).map(PathBuf::from));
+    let (sep, slash) = if search.windows { (';', '\\') } else { (':', '/') };
+    let join = |dir: &str, parts: &[&str]| -> String {
+        let mut out = dir.trim_end_matches(['/', slash]).to_owned();
+        for p in parts {
+            out.push(slash);
+            out.push_str(p);
+        }
+        out
+    };
+    let mut dirs: Vec<String> = vec![join(&root.to_string_lossy(), &["node_modules", ".bin"])];
+    dirs.extend(home.map(|h| join(&h.to_string_lossy(), &["lsp", "node_modules", ".bin"])));
+    dirs.extend(search.path.as_deref().unwrap_or("").split(sep).filter(|d| !d.is_empty()).map(str::to_owned));
+    let exts: Vec<String> = if search.windows { windows_exts(search.pathext.as_deref()) } else { vec![String::new()] };
     let mut out = Vec::new();
     for bin in spec(lang).bins {
         let Some((prog, args)) = bin.split_first() else {
             continue;
         };
-        let names: Vec<String> = if search.windows { vec![format!("{prog}.cmd"), format!("{prog}.exe")] } else { vec![(*prog).to_owned()] };
         for d in &dirs {
-            for n in &names {
-                let mut cmd = vec![d.join(n).to_string_lossy().into_owned()];
+            for e in &exts {
+                let mut cmd = vec![join(d, &[&format!("{prog}{e}")])];
                 cmd.extend(args.iter().map(|a| (*a).to_owned()));
                 out.push(cmd);
             }
         }
     }
     out
+}
+
+/// `PATHEXT`'s extensions, lower-cased, in order (cmd.exe's default when unset or empty).
+fn windows_exts(pathext: Option<&str>) -> Vec<String> {
+    pathext
+        .filter(|s| !s.trim().is_empty())
+        .unwrap_or(".COM;.EXE;.BAT;.CMD")
+        .split(';')
+        .map(str::trim)
+        .filter(|e| !e.is_empty())
+        .map(str::to_lowercase)
+        .collect()
 }
 
 /// The override, split on spaces, if set.
@@ -181,7 +205,12 @@ mod tests {
 
     #[test]
     fn the_override_wins() {
-        let s = Search { override_cmd: Some("/usr/bin/node  /x/fake-lsp.mjs".into()), path: Some("/bin".into()), windows: false };
+        let s = Search {
+            override_cmd: Some("/usr/bin/node  /x/fake-lsp.mjs".into()),
+            path: Some("/bin".into()),
+            windows: false,
+            pathext: None,
+        };
         assert_eq!(
             find_server(Lang::Ts, Path::new("/r"), None, &s, |_| true),
             Some(vec!["/usr/bin/node".into(), "/x/fake-lsp.mjs".into()])
@@ -191,7 +220,7 @@ mod tests {
 
     #[test]
     fn the_repo_then_wisp_then_path() {
-        let s = Search { override_cmd: None, path: Some("/usr/bin::/opt/bin".into()), windows: false };
+        let s = Search { override_cmd: None, path: Some("/usr/bin::/opt/bin".into()), windows: false, pathext: None };
         let c = candidates(Lang::Ts, Path::new("/r"), Some(Path::new("/h")), &s);
         let firsts: Vec<&str> = c.iter().map(|c| c[0].as_str()).collect();
         assert_eq!(
@@ -219,12 +248,41 @@ mod tests {
 
     #[test]
     fn windows_shims() {
-        let s = Search { path: Some(r"C:\bin;C:\tools".into()), windows: true, ..Search::default() };
-        let c = candidates(Lang::Go, Path::new("/r"), None, &s);
-        let names: Vec<String> =
-            c.iter().map(|c| Path::new(&c[0]).file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default()).collect();
-        assert_eq!(&names[..2], ["gopls.cmd", "gopls.exe"]);
-        assert_eq!(c.len(), 6);
+        let s = Search { path: Some(r"C:\bin;C:\tools\".into()), windows: true, pathext: Some(".EXE;.CMD".into()), ..Search::default() };
+        let c = candidates(Lang::Go, Path::new(r"C:\r"), None, &s);
+        let firsts: Vec<&str> = c.iter().map(|c| c[0].as_str()).collect();
+        assert_eq!(
+            firsts,
+            [
+                r"C:\r\node_modules\.bin\gopls.exe",
+                r"C:\r\node_modules\.bin\gopls.cmd",
+                r"C:\bin\gopls.exe",
+                r"C:\bin\gopls.cmd",
+                r"C:\tools\gopls.exe",
+                r"C:\tools\gopls.cmd"
+            ]
+        );
+    }
+
+    #[test]
+    fn npm_installs_a_cmd_shim_on_windows_and_it_is_found() {
+        // the CI failure: `/r\node_modules\.bin\…` (mixed separators), and no `.cmd` tried
+        let s = Search { path: Some(r"C:\Windows".into()), windows: true, ..Search::default() };
+        let shim = r"C:\Users\me\.wisp\lsp\node_modules\.bin\typescript-language-server.cmd";
+        let found = find_server(Lang::Ts, Path::new(r"C:\repo"), Some(Path::new(r"C:\Users\me\.wisp")), &s, |p| p == Path::new(shim));
+        assert_eq!(found, Some(vec![shim.to_owned(), "--stdio".into()]));
+        let c = candidates(Lang::Ts, Path::new(r"C:\repo"), None, &s);
+        assert!(c.iter().all(|c| !c[0].contains('/')), "{c:?}");
+        assert_eq!(c[0][0], r"C:\repo\node_modules\.bin\typescript-language-server.com");
+        assert_eq!(windows_exts(Some(" ")), [".com", ".exe", ".bat", ".cmd"]);
+    }
+
+    #[test]
+    fn unix_paths_join_with_slashes_on_any_os() {
+        let s = Search { path: Some("/usr/bin/".into()), ..Search::default() };
+        let c = candidates(Lang::Rs, Path::new("/r/"), None, &s);
+        let firsts: Vec<&str> = c.iter().map(|c| c[0].as_str()).collect();
+        assert_eq!(firsts, ["/r/node_modules/.bin/rust-analyzer", "/usr/bin/rust-analyzer"]);
     }
 
     #[test]
@@ -236,11 +294,14 @@ mod tests {
     #[test]
     fn install_only_the_npm_ones() {
         let p = install_plan("ts", Path::new("/h"));
+        // the OS's own join: npm gets `<home>\lsp` on Windows
+        let dir = Path::new("/h").join("lsp");
+        let prefix = dir.to_string_lossy().into_owned();
         assert_eq!(
             p,
             Some(InstallPlan {
-                dir: PathBuf::from("/h/lsp"),
-                args: ["install", "--no-audit", "--no-fund", "--prefix", "/h/lsp", "typescript@5", "typescript-language-server"]
+                dir,
+                args: ["install", "--no-audit", "--no-fund", "--prefix", prefix.as_str(), "typescript@5", "typescript-language-server"]
                     .map(String::from)
                     .to_vec()
             })

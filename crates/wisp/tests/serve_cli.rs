@@ -57,10 +57,13 @@ fn strip(s: &str) -> String {
     out
 }
 
+/// A terminal's cursor-position query (DSR 6), answered `ESC[row;colR`.
+const CURSOR_QUERY: &str = "\x1b[6n";
+
 /// `wisp …` in a pseudo-terminal: what it printed (escapes taken out), keys typed in.
 struct Pty {
     out: Arc<Mutex<String>>,
-    w: Box<dyn Write + Send>,
+    w: Arc<Mutex<Box<dyn Write + Send>>>,
     child: Box<dyn portable_pty::Child + Send + Sync>,
 }
 
@@ -78,16 +81,29 @@ impl Pty {
         let child = pair.slave.spawn_command(cmd).unwrap();
         drop(pair.slave);
         let mut r = pair.master.try_clone_reader().unwrap();
-        let w = pair.master.take_writer().unwrap();
+        let w = Arc::new(Mutex::new(pair.master.take_writer().unwrap()));
         let out = Arc::new(Mutex::new(String::new()));
         let o2 = out.clone();
+        let w2 = w.clone();
         std::thread::spawn(move || {
             let mut buf = [0u8; 4096];
+            let mut answered = 0;
             while let Ok(n) = r.read(&mut buf) {
                 if n == 0 {
                     break;
                 }
-                o2.lock().unwrap().push_str(&String::from_utf8_lossy(&buf[..n]));
+                let mut o = o2.lock().unwrap();
+                o.push_str(&String::from_utf8_lossy(&buf[..n]));
+                // answer each cursor-position query as a terminal does: Windows' ConPTY (opened with
+                // INHERIT_CURSOR) asks once at start and holds back everything the program prints until
+                // it hears back, which left the whole output empty on Windows CI
+                let asked = o.matches(CURSOR_QUERY).count();
+                drop(o);
+                while answered < asked {
+                    let mut w = w2.lock().unwrap();
+                    let _ = w.write_all(b"\x1b[1;1R").and_then(|()| w.flush());
+                    answered += 1;
+                }
             }
         });
         // the master must outlive the child: keep it in the reader's thread scope
@@ -117,8 +133,9 @@ impl Pty {
     }
 
     fn keys(&mut self, s: &str) {
-        self.w.write_all(s.as_bytes()).unwrap();
-        self.w.flush().unwrap();
+        let mut w = self.w.lock().unwrap();
+        w.write_all(s.as_bytes()).unwrap();
+        w.flush().unwrap();
     }
 
     fn exit(&mut self) -> u32 {

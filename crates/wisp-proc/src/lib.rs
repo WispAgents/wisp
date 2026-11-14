@@ -254,18 +254,26 @@ pub fn signal_pid(pid: u32, sig: Signal) -> Result<()> {
     if pid == std::process::id() {
         return Err(ProcError::Unsupported("signalling wisp itself"));
     }
+    let gone = |e: std::io::Error| if no_such_process(e.raw_os_error(), cfg!(windows)) { ProcError::Exited } else { ProcError::Io(e) };
     #[cfg(unix)]
     {
-        sys::signal_pid(pid, pipes::sig_number(sig))
-            .map_err(|e| if e.raw_os_error() == Some(libc::ESRCH) { ProcError::Exited } else { ProcError::Io(e) })
+        sys::signal_pid(pid, pipes::sig_number(sig)).map_err(gone)
     }
     #[cfg(windows)]
     {
         match sig {
-            Signal::Term | Signal::Kill | Signal::Hup => sys::terminate_pid(pid, 1).map_err(ProcError::Io),
+            Signal::Term | Signal::Kill | Signal::Hup => sys::terminate_pid(pid, 1).map_err(gone),
             Signal::Int => Err(ProcError::Unsupported("SIGINT on Windows")),
         }
     }
+}
+
+/// The OS's "no such process": `ESRCH` on Unix; on Windows `OpenProcess` answers a pid that isn't
+/// running with `ERROR_INVALID_PARAMETER` (87, "The parameter is incorrect").
+const fn no_such_process(code: Option<i32>, windows: bool) -> bool {
+    const ESRCH: i32 = 3;
+    const ERROR_INVALID_PARAMETER: i32 = 87;
+    matches!((code, windows), (Some(ESRCH), false) | (Some(ERROR_INVALID_PARAMETER), true))
 }
 
 /// Is `pid` still running (not a zombie)? One process-table read.
@@ -279,4 +287,17 @@ pub use sys::ProcInfo;
 /// Every process this user can see (pid, parent, group, zombie). Blocking: one table read.
 pub fn processes() -> std::io::Result<Vec<ProcInfo>> {
     sys::processes()
+}
+
+#[cfg(test)]
+mod signal_tests {
+    #[test]
+    fn a_pid_that_already_ended_is_exited_on_every_os() {
+        // the Windows CI failure: Stop on an ended pid said "The parameter is incorrect. (os error 87)"
+        assert!(super::no_such_process(Some(87), true));
+        assert!(super::no_such_process(Some(3), false));
+        assert!(!super::no_such_process(Some(5), true), "access denied stays an error");
+        assert!(!super::no_such_process(Some(1), false), "EPERM stays an error");
+        assert!(!super::no_such_process(None, true));
+    }
 }

@@ -83,6 +83,7 @@ impl State {
             // the PATH servers start on: the login shell's once the desktop app handed it over (ADR-0057)
             path: wisp_proc::search_path().and_then(|p| p.into_string().ok()),
             windows: cfg!(windows),
+            pathext: std::env::var("PATHEXT").ok(),
         };
         let Some(cmd) = find_server(lang, root, self.home.as_deref(), &search, Path::is_file) else { return Ok(None) };
         let Some((prog, args)) = cmd.split_first() else { return Ok(None) };

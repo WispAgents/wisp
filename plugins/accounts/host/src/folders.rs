@@ -12,7 +12,12 @@ pub fn default_home(a: &HarnessAccounts) -> PathBuf {
     if let Some(d) = std::env::var_os(&a.env).filter(|d| !d.is_empty()) {
         return PathBuf::from(d);
     }
-    std::env::var_os("HOME").map_or_else(|| PathBuf::from("."), PathBuf::from).join(&a.home_dir)
+    user_home(std::env::var_os("HOME"), std::env::var_os("USERPROFILE")).join(&a.home_dir)
+}
+
+/// The user's home: `HOME`, else `USERPROFILE` (Windows sets only that), else `.`.
+fn user_home(home: Option<std::ffi::OsString>, profile: Option<std::ffi::OsString>) -> PathBuf {
+    home.filter(|h| !h.is_empty()).or_else(|| profile.filter(|h| !h.is_empty())).map_or_else(|| PathBuf::from("."), PathBuf::from)
 }
 
 pub fn home_of(wisp_home: &Path, agent: &str, a: &HarnessAccounts, id: &str) -> PathBuf {
@@ -29,7 +34,7 @@ async fn link(target: &Path, at: &Path) -> std::io::Result<()> {
             if tokio::fs::read_link(at).await.ok().as_deref() == Some(target) {
                 return Ok(());
             }
-            tokio::fs::remove_file(at).await?;
+            remove_link(at).await?;
         }
         Ok(m) if m.is_file() => {
             // the CLI replaced the link with a file of its own: the newer one wins, then it's a link again
@@ -43,15 +48,39 @@ async fn link(target: &Path, at: &Path) -> std::io::Result<()> {
         Ok(_) => return Ok(()), // a real folder: left alone
         Err(_) => {}
     }
-    #[cfg(unix)]
-    {
-        tokio::fs::symlink(target, at).await
+    make_link(target, at).await
+}
+
+/// A link removed, never followed. Windows removes a link to a folder as a folder.
+async fn remove_link(at: &Path) -> std::io::Result<()> {
+    match tokio::fs::remove_file(at).await {
+        Err(e) if cfg!(windows) => tokio::fs::remove_dir(at).await.map_err(|_| e),
+        r => r,
     }
-    #[cfg(not(unix))]
-    {
-        let _ = (target, at);
-        Ok(())
+}
+
+#[cfg(unix)]
+async fn make_link(target: &Path, at: &Path) -> std::io::Result<()> {
+    tokio::fs::symlink(target, at).await
+}
+
+/// Windows: a symbolic link (folders and files differ there); without the right to make one
+/// (no Developer Mode, not elevated) a file is hard-linked, then copied, so the account still sees
+/// the CLI's settings. A folder that can't be linked is left out.
+#[cfg(windows)]
+async fn make_link(target: &Path, at: &Path) -> std::io::Result<()> {
+    if tokio::fs::metadata(target).await?.is_dir() {
+        return tokio::fs::symlink_dir(target, at).await;
     }
+    if tokio::fs::symlink_file(target, at).await.is_ok() || tokio::fs::hard_link(target, at).await.is_ok() {
+        return Ok(());
+    }
+    tokio::fs::copy(target, at).await.map(|_| ())
+}
+
+#[cfg(not(any(unix, windows)))]
+async fn make_link(_target: &Path, _at: &Path) -> std::io::Result<()> {
+    Ok(())
 }
 
 /// Makes an extra account's folder ready. The default account needs nothing.
@@ -103,12 +132,23 @@ mod tests {
         let dir = home_of(&t.join("wisp"), "fake", &a, "w1");
         link_all(&base, &dir, &a.own).await.unwrap();
         link_all(&base, &dir, &a.own).await.unwrap(); // again: nothing to mend
-        assert!(tokio::fs::symlink_metadata(dir.join("settings.json")).await.unwrap().file_type().is_symlink());
+        // the Windows CI failure: no link was made there at all (NotFound)
+        assert_eq!(tokio::fs::read_to_string(dir.join("settings.json")).await.unwrap(), "{}", "the CLI's settings reach the account");
+        assert!(tokio::fs::symlink_metadata(dir.join("settings.json")).await.unwrap().file_type().is_symlink() || cfg!(windows));
         assert!(tokio::fs::symlink_metadata(dir.join("projects")).await.unwrap().file_type().is_symlink());
         assert!(tokio::fs::symlink_metadata(dir.join("auth.json")).await.is_err(), "the login stays the account's own");
         remove(&t.join("wisp"), "fake", &a, "w1").await;
         assert!(tokio::fs::metadata(&dir).await.is_err());
         assert!(tokio::fs::metadata(base.join("settings.json")).await.is_ok(), "links are removed, never followed");
         let _ = tokio::fs::remove_dir_all(t).await;
+    }
+
+    #[test]
+    fn the_users_home_on_windows_is_userprofile() {
+        let p = |s: &str| Some(std::ffi::OsString::from(s));
+        assert_eq!(user_home(None, p(r"C:\Users\me")), PathBuf::from(r"C:\Users\me"));
+        assert_eq!(user_home(p(""), p(r"C:\Users\me")), PathBuf::from(r"C:\Users\me"));
+        assert_eq!(user_home(p("/home/me"), p(r"C:\Users\me")), PathBuf::from("/home/me"));
+        assert_eq!(user_home(None, None), PathBuf::from("."));
     }
 }
