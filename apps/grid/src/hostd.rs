@@ -118,6 +118,23 @@ fn lock<T>(m: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
     m.lock().unwrap_or_else(PoisonError::into_inner)
 }
 
+/// What a Windows process can't start without, for a box whose environment is otherwise cleared: `SystemRoot` (without
+/// it Winsock doesn't load, so the box's wisp never listens and the box "didn't answer"), the system folders and
+/// `ComSpec`/`PATHEXT` (a `.cmd` harness), the temp folder, and the box's folder as its user profile (`HOME`'s
+/// counterpart there, so nothing of the grid's own user is read). Nothing off Windows: `PATH` and `HOME` are enough.
+fn windows_base_env(windows: bool, home: &str, get: impl Fn(&str) -> Option<String>) -> Vec<(String, String)> {
+    if !windows {
+        return Vec::new();
+    }
+    let mut out: Vec<(String, String)> =
+        ["SystemRoot", "SystemDrive", "windir", "ComSpec", "PATHEXT", "TEMP", "TMP", "NUMBER_OF_PROCESSORS"]
+            .into_iter()
+            .filter_map(|k| get(k).map(|v| (k.to_owned(), v)))
+            .collect();
+    out.push(("USERPROFILE".to_owned(), home.to_owned()));
+    out
+}
+
 /// A port nobody listens on, now.
 fn free_port() -> Result<u16> {
     let l = std::net::TcpListener::bind("127.0.0.1:0").map_err(|e| bad(format!("no free port: {e}"), 503))?;
@@ -244,8 +261,11 @@ impl ProcessHost {
             .env_clear()
             .env("PATH", std::env::var("PATH").unwrap_or_default()) // path: inherited the grid is a server, no desktop app hands it one
             .env("HOME", &logs)
-            .env("WISP_HOME", &home)
-            .stdin(std::process::Stdio::null())
+            .env("WISP_HOME", &home);
+        for (k, v) in windows_base_env(cfg!(windows), &logs.display().to_string(), |k| std::env::var(k).ok()) {
+            cmd.env(k, v);
+        }
+        cmd.stdin(std::process::Stdio::null())
             .stdout(std::process::Stdio::null())
             .stderr(std::fs::File::create(logs.join("wisp.log")).map_or_else(|_| std::process::Stdio::null(), std::process::Stdio::from))
             .kill_on_drop(true);
@@ -408,5 +428,32 @@ impl BoxHost for ProcessHost {
         for id in ids {
             let _ = self.stop(&id, "grid stopped").await;
         }
+    }
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod tests {
+    use super::*;
+
+    /// A box's cleared environment on Windows (a runner's values): `SystemRoot` and the rest a process needs come
+    /// with it, its profile is its own folder, and a variable the grid doesn't have isn't made up. Off Windows: none.
+    #[test]
+    fn a_process_box_on_windows_keeps_what_windows_needs_to_start() {
+        let grid = |k: &str| match k {
+            "SystemRoot" | "windir" => Some(r"C:\Windows".to_owned()),
+            "ComSpec" => Some(r"C:\Windows\system32\cmd.exe".to_owned()),
+            "PATHEXT" => Some(".COM;.EXE;.BAT;.CMD".to_owned()),
+            "TEMP" | "TMP" => Some(r"C:\Users\RUNNER~1\AppData\Local\Temp".to_owned()),
+            "USERPROFILE" => Some(r"C:\Users\runneradmin".to_owned()),
+            _ => None,
+        };
+        let env: HashMap<String, String> = windows_base_env(true, r"D:\grid\users\u1", grid).into_iter().collect();
+        assert_eq!(env.get("SystemRoot").map(String::as_str), Some(r"C:\Windows"), "Winsock loads");
+        assert_eq!(env.get("ComSpec").map(String::as_str), Some(r"C:\Windows\system32\cmd.exe"));
+        assert_eq!(env.get("TEMP").map(String::as_str), Some(r"C:\Users\RUNNER~1\AppData\Local\Temp"));
+        assert_eq!(env.get("USERPROFILE").map(String::as_str), Some(r"D:\grid\users\u1"), "the box's own, not the grid's");
+        assert!(!env.contains_key("SystemDrive"), "only what the grid has");
+        assert_eq!(windows_base_env(false, "/g/users/u1", grid), Vec::new());
     }
 }
