@@ -212,7 +212,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 ### Fixed
 
 - **v2: speed on a phone.** The task list scrolls smoothly with thousands of tasks (one kit CSS rule made every row restyle on each frame), a task opens at once on a slow connection, and Back to the list is twice as fast.
-- **v2: processes.** A harness probe whose caller gave up is ended, and exec plugins stop with wisp, even when wisp is killed. Harness detection no longer waits 45 s when a CLI hangs: probes run at once, each runs once, and answers are kept until the CLI changes.
+- **v2: processes.** A harness probe whose caller gave up is ended, and exec plugins stop with wisp, even when wisp is killed. Harness detection no longer waits 45 s when a CLI hangs: probes run at once, each runs once, and answers are kept until the CLI changes; the runner picker and Settings → Agents show every harness at once (*Checking…*), each updating in place.
 - **v2: no stray agents.** If wisp is killed (a crash, Force Quit), the agent CLIs and everything they started stop with it instead of running on in the background.
 - **v2: sending a task.** Sending from Home opens the task you just sent instead of a blank page; the harness picker no longer shows Claude Code twice; a task page no longer says *Mark read needs a newer wisp.runtime*. Telemetry's off switch and install id are kept across restarts, and learned preferences and retro history survive a restart; wisp refuses at startup any plugin data kind that could never be saved.
 - **v2: deleting a running task.** Deleting a task now stops its run first, even one still starting: its CLI never starts for a deleted task and the task never comes back.
