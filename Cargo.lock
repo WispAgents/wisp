@@ -4775,6 +4775,7 @@ dependencies = [
  "url",
  "wisp-channels-api",
  "wisp-channels-core",
+ "wisp-kernel",
  "x509-cert",
 ]
 

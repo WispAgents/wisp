@@ -34,7 +34,7 @@ impl Hook for Go {
 }
 
 fn echo(mode: &str) -> Manifest {
-    let cmds: Vec<Value> = ["say", "nested", "deep", "hook", "setting", "crash", "env", "path"]
+    let cmds: Vec<Value> = ["say", "nested", "deep", "hook", "setting", "crash", "env", "path", "resolve"]
         .iter()
         .map(|c| json!({ "id": format!("echo.{c}"), "title": c }))
         .collect();
@@ -181,7 +181,14 @@ async fn an_untrusted_exec_plugin_starts_with_an_empty_environment() {
     let k = common::start(PluginGroup::new().add(ExecPlugin::new(m, Some(dir.clone())))).await;
     until(|| common::state(&k, "acme.echo").0 == "active").await;
     let got = names(&k).await;
-    assert!(got.iter().all(|n| ["PATH", "HOME", "WISP_PLUGIN", "PWD", "__CF_USER_TEXT_ENCODING"].contains(&n.as_str())), "{got:?}");
+    // on Windows also the system variables it can't start without (wisp_kernel::exec::windows_base_env), and
+    // the names Windows adds by itself (`=C:`-style drive folders)
+    let windows =
+        |n: &str| cfg!(windows) && (n == "USERPROFILE" || n.starts_with('=') || wisp_kernel::exec::WINDOWS_BASE_VARS.contains(&n));
+    assert!(
+        got.iter().all(|n| ["PATH", "HOME", "WISP_PLUGIN", "PWD", "__CF_USER_TEXT_ENCODING"].contains(&n.as_str()) || windows(n)),
+        "{got:?}"
+    );
     assert!(got.contains(&"WISP_PLUGIN".to_owned()) && got.contains(&"HOME".to_owned()));
     let trusted = common::start(PluginGroup::new().add(ExecPlugin::new(echo("ok"), None))).await;
     until(|| common::state(&trusted, "acme.echo").0 == "active").await;
@@ -208,5 +215,23 @@ async fn an_exec_plugin_starts_with_the_search_path_not_the_inherited_one() {
     let trusted = world("ok", opts()).await.k;
     until(|| common::state(&trusted, "acme.echo").0 == "active").await;
     assert_eq!(path(trusted).await, json!("/wisp-handed-exec/bin:/usr/bin:/bin"), "trusted");
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// An untrusted exec plugin on Windows starts with the system variables Windows needs (`SystemRoot`: without it
+/// Winsock doesn't load), so it can resolve `localhost`, and its profile is its own folder.
+#[cfg(windows)]
+#[tokio::test]
+async fn an_untrusted_exec_plugin_on_windows_resolves_localhost() {
+    let dir = std::env::temp_dir().join(format!("wisp-untrusted-net-{}", wisp_kernel::ids::uuid7()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let mut m = echo("ok");
+    m.trust = Some("untrusted".into());
+    let k = common::start(PluginGroup::new().add(ExecPlugin::new(m, Some(dir.clone())))).await;
+    until(|| common::state(&k, "acme.echo").0 == "active").await;
+    let got = k.call(Caller::user(), "echo.resolve", json!(null)).await.unwrap();
+    assert_eq!(got["ok"], json!(true), "{got}");
+    let names = k.call(Caller::user(), "echo.env", json!(null)).await.unwrap();
+    assert!(names["names"].as_array().unwrap().contains(&json!("SystemRoot")), "{names}");
     let _ = std::fs::remove_dir_all(&dir);
 }

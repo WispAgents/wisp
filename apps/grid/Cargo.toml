@@ -23,6 +23,8 @@ path = "src/bin/wisp-grid-hostd.rs"
 [dependencies]
 wisp-channels-api.workspace = true
 wisp-channels-core.workspace = true
+# the Windows base environment a cleared child needs (`wisp_kernel::exec::windows_base_env`), shared with exec plugins
+wisp-kernel.workspace = true
 aes-gcm.workspace = true
 async-trait.workspace = true
 base64.workspace = true

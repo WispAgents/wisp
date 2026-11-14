@@ -13,6 +13,7 @@
 //!
 //! size-ok: the JSON-RPC bridge's registrations and its lifecycle share one child handle
 pub mod rpc;
+mod winenv;
 
 use std::collections::HashMap;
 use std::ffi::OsString;
@@ -29,6 +30,7 @@ use crate::reg::PointEntry;
 use crate::state::KernelState;
 use crate::{Call, Failure, InterceptOpts, Manifest, Plugin, Result, Setup, Verdict, WireError};
 use rpc::{Peer, Reply};
+pub use winenv::{WINDOWS_BASE_VARS, windows_base_env};
 
 /// How an install starts exec plugins (the grid sandboxes them). A kernel service:
 /// `App::service(Arc::new(MySpawner) as Arc<dyn ExecSpawner>)`.
@@ -111,9 +113,12 @@ fn default_spawn(
 ) -> std::io::Result<tokio::process::Child> {
     let mut c = tokio::process::Command::new(program);
     // an untrusted plugin (ADR-0048) gets none of wisp's environment (its keys and tokens): a PATH to find its
-    // runtime, its own folder as its home, and what wisp tells it
+    // runtime, its own folder as its home, and what wisp tells it; on Windows also the system variables it can't
+    // start without (`SystemRoot` for Winsock, …), its folder as its profile
     if untrusted {
         c.env_clear();
+        let profile = cwd.map(|d| d.display().to_string());
+        c.envs(windows_base_env(cfg!(windows), profile.as_deref(), |k| std::env::var(k).ok()));
         if let Some(d) = cwd {
             c.env("HOME", d);
         }

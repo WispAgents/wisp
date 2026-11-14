@@ -66,7 +66,7 @@ impl Rpc {
                         std::thread::sleep(std::time::Duration::from_secs(60));
                     }
                 }
-                for c in ["say", "nested", "deep", "hook", "setting", "crash", "env", "path"] {
+                for c in ["say", "nested", "deep", "hook", "setting", "crash", "env", "path", "resolve"] {
                     self.request("command.register", json!({ "id": format!("echo.{c}") })).unwrap();
                 }
                 self.request("intercept.register", json!({ "n": 0, "hook": "before:go", "failure": "closed" })).unwrap();
@@ -110,6 +110,14 @@ impl Rpc {
             }
             // the PATH it started with (ADR-0057: the one wisp finds programs on)
             "echo.path" => Ok(json!({ "path": std::env::var("PATH").ok() })),
+            // whether it can resolve `localhost` (on Windows, Winsock needs `SystemRoot` to load)
+            "echo.resolve" => {
+                use std::net::ToSocketAddrs;
+                Ok(match ("localhost", 80).to_socket_addrs() {
+                    Ok(a) => json!({ "ok": a.count() > 0 }),
+                    Err(e) => json!({ "ok": false, "error": e.to_string() }),
+                })
+            }
             _ => Err(json!({ "code": -32601, "message": "no such command" })),
         }
     }
