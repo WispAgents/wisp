@@ -19,6 +19,7 @@
 // `Failing<T>` is the transport contract's result (machines-api): a failure carries its hint, and is rare
 #![allow(clippy::result_large_err)]
 
+mod carry;
 mod commands;
 mod error;
 mod http;
@@ -68,6 +69,7 @@ impl Plugin for MachinesPlugin {
         s.contribute(&TRANSPORT, lo);
         commands::register(s, &slot);
         proxy::register(s, &slot);
+        carry::register(s, &slot);
         let svc: Arc<dyn wisp_machines_api::MachinesService> = Arc::new(service::Service(slot.clone()));
         s.provide::<Peers>(svc);
         s.on_start(move |ctx| async move {

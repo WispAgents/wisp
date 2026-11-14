@@ -6,6 +6,7 @@
 #![cfg_attr(test, allow(clippy::assert_is_empty))] // `assert!(x.is_empty())` reads better in tests
 
 pub mod bootstrap;
+pub mod carry;
 pub mod conn;
 pub mod hint;
 pub mod hosts;

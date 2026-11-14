@@ -8,6 +8,7 @@
 //! How a peer is reached is an implementation of [`TRANSPORT`] (`machines.transport@1`): `ssh` ships
 //! in `wisp.machines`, `grid` and `grid-tunnel` in `wisp.grid-client`, and a user's plugin may add one.
 
+pub mod carry;
 pub mod commands;
 pub mod events;
 pub mod ids;
@@ -15,6 +16,7 @@ pub mod rows;
 pub mod service;
 pub mod transport;
 
+pub use carry::*;
 pub use commands::*;
 pub use events::*;
 pub use ids::{owner_of, secret_key};

@@ -22,6 +22,7 @@
     "proc:exec{bin:ssh-keygen}",
     "proc:exec{bin:tailscale}",
     "proc:exec{bin:hostname}",
+    "proc:exec{bin:git}",
     "net:connect{host:127.0.0.1}",
     "net:connect{host:localhost}",
     "secrets:read",
@@ -105,6 +106,23 @@
       {
         "id": "machines.route",
         "title": "Run a command on the computer that owns its row"
+      },
+      {
+        "id": "machines.carry",
+        "title": "Copy the lead's work onto a computer for a delegate (a copy under wisp's own folder there)"
+      },
+      {
+        "id": "machines.takeIn",
+        "title": "Take carried work into its copy (on the computer it was carried to)"
+      },
+      {
+        "id": "machines.changes",
+        "title": "A carried copy's changes since it came in",
+        "readOnly": true
+      },
+      {
+        "id": "machines.bring",
+        "title": "A carried copy's changes, into the lead's folder here"
       }
     ],
     "events": ["machines.changed", "machines.offline", "machines.remote", "machines.removed", {"type": "machines.online", "durable": true}],

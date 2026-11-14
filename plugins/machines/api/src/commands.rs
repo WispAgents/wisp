@@ -192,3 +192,32 @@ command!(Discover, "machines.discover", NoArgs, Vec<FoundHost>, read_only = true
 command!(Reachable, "machines.reachable", NoArgs, Reachability, read_only = true);
 command!(CallPeer, "machines.call", CallArgs, Value);
 command!(Route, "machines.route", RouteArgs, Value);
+command!(
+    /// a delegate's place on another machine (ADR-0059): the lead's work copied there, under that wisp's own folder
+    Carry,
+    "machines.carry",
+    crate::carry::CarryArgs,
+    crate::carry::Carried
+);
+command!(
+    /// on the machine: the work `machines.carry` uploaded, into its copy (never the user's checkout)
+    TakeIn,
+    "machines.takeIn",
+    crate::carry::TakeInArgs,
+    crate::carry::TakenIn
+);
+command!(
+    /// on the machine: a carried copy's changes since it came in (only a copy carried here has any)
+    ChangesOf,
+    "machines.changes",
+    crate::carry::ChangesArgs,
+    crate::carry::Changes,
+    read_only = true
+);
+command!(
+    /// a carried copy's changes, applied to the lead's folder here (kept in a file when they clash)
+    Bring,
+    "machines.bring",
+    crate::carry::BringArgs,
+    crate::carry::Brought
+);
