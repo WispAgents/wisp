@@ -17,6 +17,15 @@ export function uuidv7(now: number = Date.now()): string {
   return `${h.slice(0, 8)}-${h.slice(8, 12)}-${h.slice(12, 16)}-${h.slice(16, 20)}-${h.slice(20)}`;
 }
 
+/**
+ * A new row's id in the shape the peer makes its own (`Uuid::simple`: a UUIDv7's 32 hex digits, no dashes). A client
+ * that shows a task before the peer answers names it with this and sends it (`runtime.create`'s `id`), so the row and
+ * page it opened are the ones the peer writes (ADR-0017); the peer refuses any other shape.
+ */
+export function newRowId(now: number = Date.now()): string {
+  return uuidv7(now).replaceAll('-', '');
+}
+
 export function isPeerId(s: string): s is PeerId {
   return /^[A-Za-z0-9._-]+$/.test(s);
 }

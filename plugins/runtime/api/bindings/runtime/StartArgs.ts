@@ -11,14 +11,30 @@ import type { Mode } from "./Mode";
 /**
  * `runtime.create`: creates a task and starts its first turn. `agent: "auto"` lets wisp.router pick.
  */
-export type StartArgs = { prompt: string, agent?: string, model?: string, effort?: string, mode?: Mode, 
+export type StartArgs = { 
+/**
+ * the id the client already shows the new task under (its optimistic row and page, ADR-0017): 32 lowercase hex
+ * (a `UUIDv7` without dashes, as wisp makes its own), never one a task has. None: wisp makes one. Additive (2026-11-14).
+ */
+id?: SessionId, prompt: string, agent?: string, model?: string, effort?: string, mode?: Mode, 
 /**
  * the most this task's turns may ever run at (a channel starts its tasks at Edits; v1 `session.capped`): kept
  * on the task as `ext["wisp.runtime"].capped = { mode }`, the shape a crew job's cap has; a follow-up or a
  * mode switch above it is refused unless the user asks in wisp, which lifts it. Full auto is no cap.
  * Additive (2026-11-14).
  */
-cap?: Mode, cwd?: string, dirs?: Array<string>, title?: string, attachments?: Array<Attachment>, parentId?: SessionId, account?: string, by?: string, 
+cap?: Mode, 
+/**
+ * the model its subagents run on, over `runtime.subagentModel` (v1 `session.subagentModel`, Try it two ways):
+ * '' is the task's own model, `haiku` or `sonnet`. Kept on the task (`ext["wisp.runtime"].variant`) for every
+ * turn; a harness that can't (`HarnessInfo::variants`) is refused. Additive (2026-11-14).
+ */
+subagentModel?: string, 
+/**
+ * `off`: without its skills and slash commands (v1 `skills: 'off'`); `on` or none: as usual. Kept and refused
+ * like `subagent_model`. Additive (2026-11-14).
+ */
+skills?: string, cwd?: string, dirs?: Array<string>, title?: string, attachments?: Array<Attachment>, parentId?: SessionId, account?: string, by?: string, 
 /**
  * you said yes to going past Ask near the limit's line (v1 `confirmLimit`; the CLI's --yes). Additive (2026-11-11).
  */

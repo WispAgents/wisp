@@ -341,6 +341,27 @@ impl Runtime {
         }
     }
 
+    /// The id a new task goes under: the one the client already shows its row and page by (ADR-0017), checked, or a
+    /// new one. A client's id is wisp's own shape (32 lowercase hex) and names no task yet: a peer prefix (`local:…`),
+    /// a dashed UUID or a path is refused, and so is taking over a task that exists.
+    pub(crate) async fn new_task_id(&self, asked: Option<SessionId>) -> Result<SessionId> {
+        let Some(id) = asked else { return Ok(SessionId::new()) };
+        if self.claimed(&id).await? {
+            return Err(RuntimeError::Conflict(format!("a task {id} exists already")));
+        }
+        Ok(id)
+    }
+
+    /// Whether a client's id for a new task names one that exists: a resend of the create that made it (the client
+    /// sends a pending create again after a restart, when the server's idempotency cache is gone). An id not in wisp's
+    /// shape is refused. Checked before anything is made, so a refused id leaves nothing behind.
+    pub(crate) async fn claimed(&self, id: &SessionId) -> Result<bool> {
+        if !is_task_id(id.as_str()) {
+            return Err(RuntimeError::Invalid(format!("a new task's id is 32 lowercase hex characters, not {:?}", id.as_str())));
+        }
+        Ok(self.lock_list().contains_key(id.as_str()) || self.repo.session(id.as_str()).await.is_ok())
+    }
+
     /// `runtime.create`: a new task, and its first turn starts.
     pub async fn create(self: &Arc<Self>, a: StartArgs) -> Result<Created> {
         if a.prompt.trim().is_empty() {
@@ -362,9 +383,10 @@ impl Runtime {
             .or_else(|| a.model.clone())
             .or_else(|| self.harness(&agent).ok().and_then(|h| h.info().models.first().map(|m| m.id.clone())))
             .unwrap_or_default();
+        let id = self.new_task_id(a.id.clone()).await?;
         let now = self.now();
         let mut s = Session {
-            id: SessionId::new(),
+            id,
             title: a
                 .title
                 .clone()
@@ -619,4 +641,9 @@ impl Runtime {
         s.queue.insert(0, item);
         Ok(())
     }
+}
+
+/// wisp's own task id shape (`Uuid::simple`): what a client may name a new task by.
+pub(crate) fn is_task_id(id: &str) -> bool {
+    id.len() == 32 && id.bytes().all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
 }

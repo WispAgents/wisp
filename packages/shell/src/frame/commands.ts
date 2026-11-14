@@ -91,7 +91,8 @@ export interface Attachment {
 export const create = defineCommand<CreateArgs, { id: string }>({
   id: 'runtime.create',
   owner: (a) => a.peer,
-  wire: ({ shows: _shows, group, ...a }) => ({ ...a, ...(group && { ext: { 'wisp.runtime': { group } } }) }),
+  // `id`: the bare id of the row and page shown at once; the peer makes the task under it (StartArgs.id)
+  wire: ({ shows: _shows, group, ...a }) => ({ ...a, id: bare(a.id), ...(group && { ext: { 'wisp.runtime': { group } } }) }),
   optimistic: (_base, a) => [
     { e: SESSION, id: a.id as EntityKey, op: 'upsert', v: startingRow({ ...a, agent: a.shows ?? a.agent, title: a.prompt.split('\n')[0]?.slice(0, 80) ?? a.prompt }) as never },
   ],
@@ -107,8 +108,8 @@ export const trial = defineCommand<
 >({
   id: 'runtime.trial',
   owner: (a) => a.peer,
-  // `ids`: the rows the client shows at once (as create's `id`; the mock peer keeps them)
-  wire: (a) => ({ ids: [...a.ids], task: { ...a.task, worktree: true }, vary: a.vary }),
+  // `ids`: the rows the client shows at once, bare (as create's `id`: the peer makes both runs under them)
+  wire: (a) => ({ ids: a.ids.map(bare), task: { ...a.task, worktree: true }, vary: a.vary }),
   optimistic: (_base, a) =>
     a.ids.map((id, run) => ({
       e: SESSION,
@@ -304,7 +305,8 @@ function copyOf(id: 'runtime.rerun' | 'runtime.fork') {
   return defineCommand<{ id: string; newId: string; agent?: string; at: number }, { id: string }>({
     id,
     owner: (a) => a.id,
-    wire: (a) => ({ ...a, id: bare(a.id) }),
+    // `newId`: the bare id of the row and page shown at once (runtime.fork makes the copy under it)
+    wire: (a) => ({ ...a, id: bare(a.id), newId: bare(a.newId) }),
     optimistic: (base, a) => {
       const src = base.peek<SessionRow>(SESSION, a.id as EntityKey) as SessionRow | undefined;
       if (!src) return [];

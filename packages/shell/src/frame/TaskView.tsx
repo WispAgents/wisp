@@ -6,7 +6,7 @@
 // restore show their control working; the panes and menus open in the same frame.
 
 import { For, Show, createEffect, createMemo, createResource, createSignal, onCleanup, untrack, type JSX } from 'solid-js';
-import { entityKey, ownerOf, uuidv7, type EntityKey, type Json } from '@wisp/client';
+import { entityKey, newRowId, ownerOf, uuidv7, type EntityKey, type Json } from '@wisp/client';
 import {
   Answer,
   BtwList,
@@ -443,7 +443,7 @@ export default function TaskView(props: { readonly id: string; readonly onBack?:
   // Rerun… (v1 rerunDialog): the task's prompt, mode, harness and computer, editable, then a new task (F-task-43/44)
   const openRerun = (agent?: string): void => shell.navigate({ t: 'openOverlay', overlay: { kind: 'dialog', id: 'shell.rerun' as never, params: { id: key, ...(agent && { agent }) } } });
   const copy = (cmd: typeof rerun, agent?: string): void => {
-    const newId = entityKey(peer, uuidv7());
+    const newId = entityKey(peer, newRowId());
     void run(cmd, { id: key, newId, at: Date.now(), ...(agent && { agent }) }).catch(() => undefined);
     shell.navigate({ t: 'openTask', id: newId as never });
   };

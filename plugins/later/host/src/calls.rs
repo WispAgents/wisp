@@ -113,6 +113,8 @@ pub(crate) fn start_args(body: Option<&Value>) -> Result<r::StartArgs> {
     let mut a: r::StartArgs = serde_json::from_value(body.cloned().unwrap_or_else(|| Value::Object(Map::new())))
         .map_err(|e| WireError::invalid(format!("a plan's task isn't one runtime can start: {e}")))?;
     a.by = Some("later".into());
+    // a plan may start many tasks (it repeats): each gets wisp's own id, never one its body carried
+    a.id = None;
     a.cwd = a.cwd.and_then(|c| match Folder::of(&c) {
         Ok(f) => Some(f.to_string()),
         Err(e) => {

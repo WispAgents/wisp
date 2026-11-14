@@ -87,7 +87,7 @@ async fn a_fork_of_a_capped_task_keeps_its_cap() {
     let id = r.rt.create(capped("fix it", Some(Mode::Edits), Mode::Edits)).await.unwrap().id.0;
     until("the first turn", || async { r.rt.turns(&id, None, Some(1)).await.unwrap().pop().is_some_and(|t| t.status == TurnStatus::Done) })
         .await;
-    let a = wisp_runtime_api::commands::ForkArgs { id: id.as_str().into(), turn_id: None, title: None };
+    let a = wisp_runtime_api::commands::ForkArgs { id: id.as_str().into(), new_id: None, turn_id: None, title: None };
     let fork = r.rt.fork(a).await.unwrap().id.0;
     assert_eq!(r.rt.repo.session(&fork).await.unwrap().ext["wisp.runtime"]["capped"], json!({ "mode": "edits" }));
     assert_eq!(r.rt.agent_set(&fork).as_deref(), Some("agent:capped"));

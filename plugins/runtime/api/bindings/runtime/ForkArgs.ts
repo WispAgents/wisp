@@ -4,6 +4,10 @@ import type { TurnId } from "../TurnId";
 
 export type ForkArgs = { id: SessionId, 
 /**
+ * the new task's id, made by the client that shows its row and page at once (as `StartArgs::id`). Additive (2026-11-14).
+ */
+newId?: SessionId, 
+/**
  * fork after this turn (default: the last)
  */
 turnId?: TurnId, title?: string, };

@@ -129,6 +129,11 @@ pub struct RunPick {
 #[serde(rename_all = "camelCase")]
 #[ts(export, export_to = "runtime/")]
 pub struct StartArgs {
+    /// the id the client already shows the new task under (its optimistic row and page, ADR-0017): 32 lowercase hex
+    /// (a `UUIDv7` without dashes, as wisp makes its own), never one a task has. None: wisp makes one. Additive (2026-11-14).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub id: Option<SessionId>,
     pub prompt: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]

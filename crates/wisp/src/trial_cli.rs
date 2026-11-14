@@ -55,7 +55,7 @@ pub fn trial_args(f: &Flags, prompt: &str, cwd: &str) -> std::result::Result<Tri
     }
     let vary = vary(&f.tries)?;
     let task: StartArgs = serde_json::from_value(sc::launch_args(f, prompt, cwd)).map_err(|e| e.to_string())?;
-    Ok(TrialArgs { task, vary })
+    Ok(TrialArgs { task, vary, ids: Vec::new() })
 }
 
 /// Starts the pair and says each run's id (`--wait`: waits for both, A first).

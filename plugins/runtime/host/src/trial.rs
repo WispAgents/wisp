@@ -103,9 +103,17 @@ pub fn plan(t: &TrialArgs, setting: &str) -> std::result::Result<Plan, String> {
     if a.hold || a.schedule.is_some() {
         return Err("Try it two ways starts now: each run's worktree is made as it starts.".into());
     }
+    // the runs' ids, checked before run A starts: two, distinct, in wisp's shape (or none: wisp names them)
+    let ok = t.ids.is_empty() || (t.ids.len() == 2 && t.ids[0] != t.ids[1] && t.ids.iter().all(|i| crate::runtime::is_task_id(i.as_str())));
+    if !ok {
+        return Err("Try it two ways names its two runs by two different ids of 32 lowercase hex, or by none.".into());
+    }
     let mut a = a.clone();
     a.worktree = Some(true);
+    // the ids the client shows both rows under (A, B); none: wisp makes them, and run B never takes run A's
+    a.id = t.ids.first().cloned().or(a.id);
     let mut b = a.clone();
+    b.id = t.ids.get(1).cloned();
     if let Some(m) = &t.vary.subagent_model {
         b.subagent_model = Some(m.clone());
     }
@@ -274,23 +282,39 @@ mod tests {
 
     #[test]
     fn a_trial_is_run_a_as_given_and_run_b_with_one_setting_changed_both_in_worktrees_v1_try_two_ways() {
-        let p = plan(&TrialArgs { task: task(), vary: vary(Some("haiku"), None) }, "").unwrap();
+        let p = plan(&TrialArgs { ids: Vec::new(), task: task(), vary: vary(Some("haiku"), None) }, "").unwrap();
         assert_eq!((p.a.worktree, p.b.worktree), (Some(true), Some(true)), "each run keeps its own worktree");
         assert_eq!((p.a.subagent_model.as_deref(), p.b.subagent_model.as_deref()), (None, Some("haiku")));
         assert_eq!(p.differs, vec![TrialDiff { key: "subagentModel".into(), values: vec![String::new(), "haiku".into()] }]);
-        let p = plan(&TrialArgs { task: task(), vary: vary(None, Some("off")) }, "").unwrap();
+        let p = plan(&TrialArgs { ids: Vec::new(), task: task(), vary: vary(None, Some("off")) }, "").unwrap();
         assert_eq!(p.differs, vec![TrialDiff { key: "skills".into(), values: vec!["on".into(), "off".into()] }]);
+    }
+
+    #[test]
+    fn a_trial_runs_under_the_ids_the_client_shows_its_rows_by_and_run_b_never_reuses_run_a_s_optimistic_trial_ids() {
+        let (ia, ib) = (SessionId("019a0000000070008000000000000001".into()), SessionId("019a0000000070008000000000000002".into()));
+        let p = plan(&TrialArgs { ids: vec![ia.clone(), ib.clone()], task: task(), vary: vary(Some("haiku"), None) }, "").unwrap();
+        assert_eq!((p.a.id, p.b.id), (Some(ia.clone()), Some(ib)), "each run is the row the client already shows");
+        // no ids: wisp names both, and B doesn't copy an id the task carried
+        let mut t = task();
+        t.id = Some(ia.clone());
+        let p = plan(&TrialArgs { ids: Vec::new(), task: t, vary: vary(Some("haiku"), None) }, "").unwrap();
+        assert_eq!((p.a.id, p.b.id), (Some(ia.clone()), None));
+        for ids in [vec![ia.clone()], vec![ia.clone(), ia.clone()], vec![ia, SessionId("local:x".into())]] {
+            let bad = plan(&TrialArgs { ids, task: task(), vary: vary(Some("haiku"), None) }, "").unwrap_err();
+            assert!(bad.contains("ids"), "{bad}");
+        }
     }
 
     #[test]
     fn run_as_subagents_follow_the_setting_so_differs_says_what_really_ran_v1_trial_differs() {
         // Settings put subagents on Haiku: run A (no pick) is on Haiku, run B asks for the task's model
-        let p = plan(&TrialArgs { task: task(), vary: vary(Some(""), None) }, "haiku").unwrap();
+        let p = plan(&TrialArgs { ids: Vec::new(), task: task(), vary: vary(Some(""), None) }, "haiku").unwrap();
         assert_eq!(p.differs[0].values, vec!["haiku".to_owned(), String::new()]);
         // the same as the setting: nothing differs, refused rather than two identical paid runs
-        let same = plan(&TrialArgs { task: task(), vary: vary(Some("haiku"), None) }, "haiku").unwrap_err();
+        let same = plan(&TrialArgs { ids: Vec::new(), task: task(), vary: vary(Some("haiku"), None) }, "haiku").unwrap_err();
         assert!(same.contains("same as run A"), "{same}");
-        let on = plan(&TrialArgs { task: task(), vary: vary(None, Some("on")) }, "").unwrap_err();
+        let on = plan(&TrialArgs { ids: Vec::new(), task: task(), vary: vary(None, Some("on")) }, "").unwrap_err();
         assert!(on.contains("same as run A"), "{on}");
     }
 
@@ -299,7 +323,7 @@ mod tests {
         let refused = |f: &dyn Fn(&mut StartArgs)| {
             let mut a = task();
             f(&mut a);
-            plan(&TrialArgs { task: a, vary: vary(Some("haiku"), None) }, "").unwrap_err()
+            plan(&TrialArgs { ids: Vec::new(), task: a, vary: vary(Some("haiku"), None) }, "").unwrap_err()
         };
         assert!(refused(&|a| a.agent = Some("auto".into())).contains("Pick a harness"));
         assert!(refused(&|a| a.agent = None).contains("Pick a harness"));
@@ -309,7 +333,7 @@ mod tests {
         assert!(refused(&|a| a.hold = true).contains("starts now"));
         assert!(refused(&|a| a.schedule = Some("tomorrow 9:00".into())).contains("starts now"));
         assert!(refused(&|a| a.terminal = true).contains("terminal"));
-        let nothing = plan(&TrialArgs { task: task(), vary: Variant::default() }, "").unwrap_err();
+        let nothing = plan(&TrialArgs { ids: Vec::new(), task: task(), vary: Variant::default() }, "").unwrap_err();
         assert!(nothing.contains("what run B changes"), "{nothing}");
     }
 

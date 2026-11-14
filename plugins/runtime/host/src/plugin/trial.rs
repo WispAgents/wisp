@@ -22,6 +22,12 @@ async fn pair(ctx: &Ctx, call: &Call, slot: &Slot, a: TrialArgs) -> WireResult<T
     let rt = rt(slot)?;
     // every refusal before anything runs: nothing is half started
     let p = rt.trial_plan(&a).map_err(WireError::from)?;
+    // a run's id that names a task already: refused before run A starts
+    for id in &a.ids {
+        if rt.claimed(id).await.map_err(WireError::from)? {
+            return Err(WireError::conflict(format!("a task {id} exists already")));
+        }
+    }
     // a folder outside git gets no worktree, and both runs would edit it at once
     if !in_git(p.a.cwd.as_deref().unwrap_or_default()).await {
         return Err(WireError::invalid("Try it two ways needs a project in git: each run keeps its own worktree."));

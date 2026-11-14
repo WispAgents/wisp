@@ -72,7 +72,7 @@ test('the trial shows both rows at once, run B with its change; Keep archives th
     vary: { skills: 'off' },
     task: { prompt: 'fix it\nmore', agent: 'claude', mode: 'auto', at: 1, cwd: '/repo', projectId: 'pr1' },
   };
-  expect(wireOf(trial)(args)).toEqual({ ids: ['p:a', 'p:b'], task: { ...args.task, worktree: true }, vary: { skills: 'off' } });
+  expect(wireOf(trial)(args)).toEqual({ ids: ['a', 'b'], task: { ...args.task, worktree: true }, vary: { skills: 'off' } });
   const ops = optimisticOf(trial)(peekReader(undefined), args) as readonly { id: string; op: string; v: { title: string; summary: Record<string, unknown> } }[];
   expect(ops.map((o) => [o.id, o.op])).toEqual([
     ['p:a', 'upsert'],

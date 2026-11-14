@@ -139,9 +139,19 @@ impl Runtime {
         let src = self.repo.session(a.id.as_str()).await?;
         let upto = self.turn_of(a.id.as_str(), a.turn_id.as_ref()).await?;
         let turns: Vec<Turn> = self.repo.turns(a.id.as_str(), None, None).await?.into_iter().filter(|t| t.idx <= upto.idx).collect();
+        if a.new_id.as_ref() == Some(&a.id) {
+            return Err(RuntimeError::Invalid("a fork is a new task: its id isn't the one it forks".into()));
+        }
+        // the same fork sent again (after a restart): the copy it made is the answer
+        if let Some(id) = a.new_id.clone()
+            && self.claimed(&id).await?
+        {
+            return Ok(wisp_runtime_api::commands::Created { id, turn_id: None });
+        }
+        let id = self.new_task_id(a.new_id.clone()).await?;
         let now = self.now();
         let mut s = Session {
-            id: SessionId::new(),
+            id,
             title: a.title.filter(|t| !t.trim().is_empty()).unwrap_or_else(|| format!("{} (fork)", src.title)),
             agent: src.agent.clone(),
             model: src.model.clone(),

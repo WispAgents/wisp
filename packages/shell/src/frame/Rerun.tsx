@@ -1,7 +1,7 @@
 // Rerun… (v1 actions.js rerunDialog, F-task-43/44): the task's prompt to edit, where it runs (another computer, when
 // there are others), its mode and harness, then Rerun: a new task from this one's spec (`rerun.ts`); the old one stays.
 import { Show, createResource, createSignal, type JSX } from 'solid-js';
-import { entityKey, ownerOf, uuidv7, type EntityKey, type PeerId } from '@wisp/client';
+import { entityKey, newRowId, ownerOf, type EntityKey, type PeerId } from '@wisp/client';
 import { AutoRunner, Button, Inline, Select, Stack, Text, TextArea, useSignal } from '@wisp/ui';
 import { useShell } from '../context.tsx';
 import { SESSION, type SessionRow } from '../rows.ts';
@@ -31,7 +31,7 @@ export default function Rerun(props: { readonly params: { readonly id: string; r
     const s = spec();
     const x = e();
     if (!s || !x?.prompt.trim()) return;
-    const id = entityKey(x.peer as PeerId, uuidv7());
+    const id = entityKey(x.peer as PeerId, newRowId());
     const begin = (cwd: string | undefined): void => {
       void shell.client.commands.run(create, rerunArgs({ ...(s as never as object), ...(cwd !== undefined && { cwd }) } as never, x, { of: key, id, at: Date.now() }) as never).catch(() => undefined);
       shell.navigate({ t: 'closeOverlay', id: 'shell.rerun' as never });

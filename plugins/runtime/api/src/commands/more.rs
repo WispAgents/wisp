@@ -348,6 +348,10 @@ pub struct CardArgs {
 #[ts(export, export_to = "runtime/")]
 pub struct ForkArgs {
     pub id: SessionId,
+    /// the new task's id, made by the client that shows its row and page at once (as `StartArgs::id`). Additive (2026-11-14).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub new_id: Option<SessionId>,
     /// fork after this turn (default: the last)
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]

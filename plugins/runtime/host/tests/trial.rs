@@ -57,9 +57,9 @@ async fn a_harness_without_variants_refuses_one_by_name_and_starts_nothing_v1_ch
     assert!(e.contains("Codex-ish can't run its subagents"), "{e}");
     assert!(r.sim.spawned().is_empty(), "nothing ran");
     // the trial's plan checks both runs against the harness before anything starts
-    let t = TrialArgs { task: start("fix it", "cx"), vary: Variant { skills: Some("off".into()), ..Variant::default() } };
+    let t = TrialArgs { ids: Vec::new(), task: start("fix it", "cx"), vary: Variant { skills: Some("off".into()), ..Variant::default() } };
     assert!(r.rt.trial_plan(&t).unwrap_err().to_string().contains("Codex-ish can't"));
-    let ok = TrialArgs { task: start("fix it", "cc"), vary: Variant { skills: Some("off".into()), ..Variant::default() } };
+    let ok = TrialArgs { ids: Vec::new(), task: start("fix it", "cc"), vary: Variant { skills: Some("off".into()), ..Variant::default() } };
     let p = r.rt.trial_plan(&ok).unwrap();
     assert_eq!(p.b.skills.as_deref(), Some("off"));
 }
@@ -67,7 +67,11 @@ async fn a_harness_without_variants_refuses_one_by_name_and_starts_nothing_v1_ch
 #[tokio::test(flavor = "multi_thread")]
 async fn keep_this_marks_the_kept_run_on_both_and_archives_the_other_v1_trial_kept() {
     let r = rig_on(Recorder::default(), vec![Fake::varies("cc", "Claude-ish")]).await;
-    let t = TrialArgs { task: start("fix it", "cc"), vary: Variant { subagent_model: Some("haiku".into()), ..Variant::default() } };
+    let t = TrialArgs {
+        ids: Vec::new(),
+        task: start("fix it", "cc"),
+        vary: Variant { subagent_model: Some("haiku".into()), ..Variant::default() },
+    };
     let p = r.rt.trial_plan(&t).unwrap();
     let mut ids: Vec<SessionId> = Vec::new();
     for (i, mut a) in [p.a, p.b].into_iter().enumerate() {
@@ -132,7 +136,7 @@ async fn keep_stops_the_other_run_still_working_so_it_stops_billing_out_of_sight
 #[tokio::test(flavor = "multi_thread")]
 async fn a_trials_run_a_asks_near_the_limit_for_both_runs_and_b_and_follow_ups_for_one_v1_together() {
     let r = rig_on(Recorder::default(), vec![Fake::varies("cc", "Claude-ish")]).await;
-    let t = TrialArgs { task: start("fix it", "cc"), vary: Variant { skills: Some("off".into()), ..Variant::default() } };
+    let t = TrialArgs { ids: Vec::new(), task: start("fix it", "cc"), vary: Variant { skills: Some("off".into()), ..Variant::default() } };
     let p = r.rt.trial_plan(&t).unwrap();
     let mut ids: Vec<SessionId> = Vec::new();
     for (i, mut a) in [p.a, p.b].into_iter().enumerate() {

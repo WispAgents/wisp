@@ -15,7 +15,7 @@ import { INSTALLABLE, useSetup } from './setup.ts';
 import { useRecipes } from './recipes.ts';
 import type { PickOptions } from '../platform/types.ts';
 import { Show, createEffect, createMemo, createSignal, on, onCleanup, type JSX } from 'solid-js';
-import { entityKey, uuidv7, type EntityKey, type Json, type PeerId } from '@wisp/client';
+import { entityKey, newRowId, type EntityKey, type Json, type PeerId } from '@wisp/client';
 import { AutoPop, FeedbackLine, KeysHint, Launcher, NextList, SplitHome, Tips, useSignal, type LauncherChip, type LauncherTool, type PlainTip } from '@wisp/ui';
 import { useShell } from '../context.tsx';
 import { Slot, usePluginClient } from '../slot.tsx';
@@ -26,7 +26,7 @@ import { autoBlocked, autoPreview, autoRules, create, setSetting, trial, type At
 import { pickVary, settingModel, trialVary, varyMenu, variantWords, type Variant } from './trial.ts';
 import { goalGate, goalOf, goalSent, isBareGoal, typedInFull, type HomeGoal } from './goal-gate.ts';
 import { feedbackCommand, isFeedback, openFeedback } from './feedback.ts';
-import { autoPick, neverRule, overrideOf, popOf, pct, PREVIEW_DEBOUNCE, shortLabel, usd, type AutoPreview } from './auto.ts';
+import { autoPick, neverRule, runnerPick, overrideOf, popOf, pct, PREVIEW_DEBOUNCE, shortLabel, usd, type AutoPreview } from './auto.ts';
 import { defaultHarness, harnessOf } from './harness.ts';
 import { MAX_RUNNERS, newGroup, nextRun } from './compare.ts';
 import { firstRunOf, firstRunTools, launcherFull } from './first-run.ts';
@@ -257,7 +257,7 @@ export function HomeView(props: { readonly onBack?: () => void }): JSX.Element {
     }
     menu.reset();
     const p = project();
-    const id = entityKey(target(), uuidv7());
+    const id = entityKey(target(), newRowId());
     const g = goal();
     // sent: Done when empties and Goal goes off for the next prompt; a refused launch puts both back
     const taken = goalSent(homeGoal());
@@ -311,7 +311,7 @@ export function HomeView(props: { readonly onBack?: () => void }): JSX.Element {
       shell.client.commands
         .run(trial, {
           peer: target(),
-          ids: [id, entityKey(target(), uuidv7())],
+          ids: [id, entityKey(target(), newRowId())],
           group,
           vary: tried,
           task: {
@@ -361,7 +361,7 @@ export function HomeView(props: { readonly onBack?: () => void }): JSX.Element {
         shell.client.commands
           .run(create, {
             peer: target(),
-            id: entityKey(target(), uuidv7()),
+            id: entityKey(target(), newRowId()),
             prompt,
             agent: a,
             mode: mode(),
@@ -485,10 +485,14 @@ export function HomeView(props: { readonly onBack?: () => void }): JSX.Element {
         runner={{
           label: agentName(t, harnesses(), agent()),
           title: t('shell.home.autoTitle'),
-          pick:
-            shown()?.label ??
-            [pick().name, agent() !== 'auto' && model() ? model() : '', agent() !== 'auto' ? effort() : '', agent() !== 'auto' ? (account()?.label ?? '') : ''].filter(Boolean).join(' · '),
-          pickTitle: shown() ? t('shell.home.autoWhy', { label: preview()?.pick?.label ?? '', why: preview()?.why ?? '' }) : t('shell.home.pickTitle', { name: pick().name }),
+          auto: agent() === 'auto',
+          pick: runnerPick({ agent: agent(), shown: shown()?.label, name: pick().name, model: model(), effort: effort(), account: account()?.label ?? '', fallback: t('shell.runner.default') }),
+          pickTitle:
+            agent() !== 'auto'
+              ? t('shell.runner.title')
+              : shown()
+                ? t('shell.home.autoWhy', { label: preview()?.pick?.label ?? '', why: preview()?.why ?? '' })
+                : t('shell.home.pickTitle', { name: pick().name }),
           ...(pick().logo && { logo: pick().logo }),
           compare: runs().length > 0 ? t('shell.home.compareMore', { n: MAX_RUNNERS }) : t('shell.home.compare'),
           act: { menu: { items: agentMenu(t, harnesses(), agent()), onSelect: pickAgent } },

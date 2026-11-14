@@ -9,7 +9,7 @@ export { createScope } from './scope.ts';
 export type { Scope } from './scope.ts';
 export { realTimers } from './clock.ts';
 export type { TimerHandle, Timers } from './clock.ts';
-export { entityKey, ownerOf, peerId, uuidv7 } from './ids.ts';
+export { entityKey, newRowId, ownerOf, peerId, uuidv7 } from './ids.ts';
 export type * from './types.ts';
 export { assertNever } from './types.ts';
 
