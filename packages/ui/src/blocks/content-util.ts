@@ -55,11 +55,17 @@ export function langOf(file: string): string {
   return alias[ext] ?? ext;
 }
 
-/** The digits after the point a value was written with: `1.50` → 2, so a count keeps them. */
+/**
+ * The digits after the point a value was written with, at most 6: `'1.50'` → 2 and `4.1` → 1, so a count keeps
+ * them; 0 for a whole number, a non-finite one or anything else. A fractional number only JS's exponent form
+ * can write (`1.5e-7`) gets the most, 6.
+ */
 export function decimalsOf(v: unknown): number {
+  if (typeof v === 'number' && (!Number.isFinite(v) || Number.isInteger(v))) return 0;
   if (typeof v !== 'string' && typeof v !== 'number') return 0;
   const frac = String(v).split('.')[1];
-  return frac && /^\d+$/.test(frac) ? Math.min(frac.length, 6) : 0;
+  if (frac && /^\d+$/.test(frac)) return Math.min(frac.length, 6);
+  return typeof v === 'number' ? 6 : 0;
 }
 
 // eslint-disable-next-line no-control-regex -- terminal colour codes are what this strips

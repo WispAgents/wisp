@@ -1,7 +1,8 @@
 // The count-up shown frame by frame (tests counts, stats numbers): a whole target never shows a fraction,
 // a decimal target keeps its own decimals, the last frame is exactly the target, and reduced motion skips it.
 import { describe, expect, it } from 'vitest';
-import { countAt, countDuration, countsUp, decimalsOfNumber } from '../src/blocks/count-math.ts';
+import { decimalsOf } from '../src/blocks/content-util.ts';
+import { countAt, countDuration, countsUp } from '../src/blocks/count-math.ts';
 
 /** Every value a count to `to` shows at 60 fps, until it lands (as useCountUp's frame loop stops). */
 function frames(to: number, fps = 60): number[] {
@@ -30,9 +31,9 @@ describe('count-up frames', () => {
 
   it('a decimal target keeps its own decimals each frame and lands exactly', () => {
     for (const to of [4.1, 0.3, 12.75, 99.999]) {
-      const d = decimalsOfNumber(to);
+      const d = decimalsOf(to);
       const shown = frames(to);
-      for (const v of shown) expect(decimalsOfNumber(v)).toBeLessThanOrEqual(d);
+      for (const v of shown) expect(decimalsOf(v)).toBeLessThanOrEqual(d);
       expect(shown.at(-1)).toBe(to);
     }
   });
@@ -62,5 +63,23 @@ describe('when a number counts up', () => {
     expect(countsUp(48, false, false)).toBe(false);
     expect(countsUp(0, true, false)).toBe(false);
     expect(countsUp(undefined, true, false)).toBe(false);
+  });
+});
+
+describe('decimalsOf: one helper for counts and stats', () => {
+  it('reads a written string, keeping its trailing zeros (stats raw values)', () => {
+    expect(decimalsOf('1.50')).toBe(2);
+    expect(decimalsOf('42')).toBe(0);
+    expect(decimalsOf('1.5e3')).toBe(0);
+    expect(decimalsOf(undefined)).toBe(0);
+  });
+  it('reads a number: whole and non-finite are 0, exponent-only fractions get 6 (count targets)', () => {
+    expect(decimalsOf(4.1)).toBe(1);
+    expect(decimalsOf(0.1234567)).toBe(6);
+    expect(decimalsOf(5)).toBe(0);
+    expect(decimalsOf(1e21)).toBe(0);
+    expect(decimalsOf(Number.NaN)).toBe(0);
+    expect(decimalsOf(Infinity)).toBe(0);
+    expect(decimalsOf(1.5e-7)).toBe(6);
   });
 });
