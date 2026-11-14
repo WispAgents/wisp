@@ -133,9 +133,10 @@ pub fn upload_name(key: &str, part: &str) -> Option<String> {
 }
 
 /// The git commands that unpack it in the sandbox, in `home/code`: clone the bundle, check out the branch it was on,
-/// keep its origin and author. The uncommitted patch is applied after (`git apply`), when there is one.
+/// keep its origin and author. The uncommitted patch is applied after (`git apply`), when there is one. The copy keeps
+/// `core.autocrlf=false` in its config, so its files are byte for byte what was committed whatever the box's git says.
 pub fn seed_commands(bundle: &str, dir: &str, branch: &str, origin: &str) -> Vec<Vec<String>> {
-    let mut out = vec![["clone", "--quiet", bundle, dir].map(str::to_owned).to_vec()];
+    let mut out = vec![["clone", "--quiet", "-c", "core.autocrlf=false", bundle, dir].map(str::to_owned).to_vec()];
     if !branch.is_empty() {
         out.push(["-C", dir, "checkout", "--quiet", branch].map(str::to_owned).to_vec());
     }
@@ -312,7 +313,7 @@ mod tests {
         assert_eq!(upload_name("..", "bundle").as_deref(), Some("seed.bundle"));
         assert!(upload_name("k", "../x").is_none());
         let seed = seed_commands("/h/in.bundle", "/h/code/web", "fix-login", "git@github.com:me/web.git");
-        assert_eq!(seed[0], ["clone", "--quiet", "/h/in.bundle", "/h/code/web"]);
+        assert_eq!(seed[0], ["clone", "--quiet", "-c", "core.autocrlf=false", "/h/in.bundle", "/h/code/web"]);
         assert_eq!(seed[1], ["-C", "/h/code/web", "checkout", "--quiet", "fix-login"]);
         assert_eq!(seed.last().unwrap(), &["-C", "/h/code/web", "remote", "add", "origin", "git@github.com:me/web.git"]);
         assert_eq!(seed_commands("b", "d", "", "").len(), 2, "no branch, no origin: clone, and the bundle's origin goes");

@@ -151,8 +151,11 @@ pub async fn install(ctx: &Ctx, a: &InstallArgs) -> Result<Installed> {
         let opts =
             ExecOpts { cwd: Some(root.clone()), timeout: Some(Duration::from_secs(120)), max_output: 1 << 20, ..ExecOpts::default() };
         let _ = tokio::fs::create_dir_all(&root).await;
-        let args: Vec<String> =
-            ["clone", "--depth", "1", "--", source, &staging.display().to_string()].iter().map(|x| (*x).to_owned()).collect();
+        // wisp's own copy: byte for byte as committed (a CRLF checkout would break its scripts' shebangs on Windows)
+        let args: Vec<String> = ["clone", "--depth", "1", "-c", "core.autocrlf=false", "--", source, &staging.display().to_string()]
+            .iter()
+            .map(|x| (*x).to_owned())
+            .collect();
         match proc.exec("git", &args, opts).await {
             Ok(r) if r.exit.success() => Ok(()),
             Ok(r) => Err(format!("git couldn't clone it: {}", r.stderr_text().trim())),

@@ -207,6 +207,7 @@ mod tests {
         let dir = std::env::temp_dir().join(format!("wisp-sbx-racy-{}", wisp_kernel::ids::uuid7()));
         std::fs::create_dir_all(&dir).unwrap();
         sh(&dir, &["init", "-q"]);
+        sh(&dir, &["config", "core.autocrlf", "false"]);
         sh(&dir, &["config", "core.trustctime", "false"]);
         let then = std::time::SystemTime::UNIX_EPOCH + Duration::from_secs(1_700_000_000);
         let stamp = |p: &Path| std::fs::OpenOptions::new().write(true).open(p).unwrap().set_modified(then).unwrap();

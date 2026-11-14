@@ -366,6 +366,7 @@ mod tests {
         let dir = temp("racy");
         std::fs::create_dir_all(&dir).unwrap();
         sh(&dir, &["init", "-q"]);
+        sh(&dir, &["config", "core.autocrlf", "false"]);
         // ctime can't be pinned: the same second's ctime is what CI had
         sh(&dir, &["config", "core.trustctime", "false"]);
         let then = std::time::SystemTime::UNIX_EPOCH + Duration::from_secs(1_700_000_000);
@@ -391,6 +392,8 @@ mod tests {
         let (lead, plugin) = (root.join("lead"), root.join("plugin"));
         std::fs::create_dir_all(&lead).unwrap();
         sh(&lead, &["init", "-q"]);
+        // the lead's checkout keeps its own settings: this one converts nothing (Windows' git defaults to autocrlf=true)
+        sh(&lead, &["config", "core.autocrlf", "false"]);
         std::fs::write(lead.join("math.js"), "a - b\n").unwrap();
         sh(&lead, &["add", "."]);
         sh(&lead, &["-c", "user.name=T", "-c", "user.email=t@e", "commit", "-qm", "one"]);

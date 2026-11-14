@@ -28,6 +28,8 @@ fn git(at: &Path, args: &[&str]) -> String {
 fn project() -> (PathBuf, serde_json::Value) {
     let p = dir("proj");
     git(&p, &["init", "-q", "-b", "main"]);
+    // the lead's checkout as the test writes it: no line-ending conversion (the Windows runner's git says autocrlf=true)
+    git(&p, &["config", "core.autocrlf", "false"]);
     std::fs::write(p.join("app.js"), "one\n").unwrap();
     std::fs::create_dir_all(p.join(".wisp")).unwrap();
     std::fs::write(p.join(".wisp/sandbox.sh"), "echo set up\n").unwrap();
@@ -141,4 +143,90 @@ async fn only_a_sandbox_takes_an_upload_and_a_seed_reads_it_by_key() {
     // the lead's new file came in with it: it never goes back as the delegate's
     let back = sb.call(Caller::user(), "sandbox.patch", json!({ "cwd": cwd })).await.unwrap();
     assert_eq!(back["patch"], "", "nothing changed there yet: {back}");
+}
+
+/// Every git this test's wisp runs reads `core.autocrlf=true` from a config wisp didn't write, as on the Windows
+/// runner (Git for Windows' system default), on any OS.
+struct AutocrlfGit {
+    inner: wisp_proc::Proc,
+    config: PathBuf,
+}
+
+impl AutocrlfGit {
+    fn env(&self, env: wisp_proc::Env) -> wisp_proc::Env {
+        env.with("GIT_CONFIG_GLOBAL", self.config.display().to_string()).with("GIT_CONFIG_NOSYSTEM", "1")
+    }
+}
+
+impl wisp_proc::ProcService for AutocrlfGit {
+    fn which(&self, bin: &str, env: Option<Vec<(String, String)>>) -> wisp_proc::BoxFuture<'static, Option<PathBuf>> {
+        self.inner.which(bin, env)
+    }
+    fn spawn(&self, bin: &str, args: &[String], mut opts: wisp_proc::SpawnOpts) -> wisp_proc::Result<wisp_proc::Child> {
+        opts.env = self.env(opts.env);
+        self.inner.spawn(bin, args, opts)
+    }
+    fn exec(
+        &self,
+        bin: &str,
+        args: &[String],
+        mut opts: wisp_proc::ExecOpts,
+    ) -> wisp_proc::BoxFuture<'static, wisp_proc::Result<wisp_proc::ExecResult>> {
+        opts.env = self.env(opts.env);
+        self.inner.exec(bin, args, opts)
+    }
+    fn spawn_detached(&self, bin: &str, args: &[String], mut opts: wisp_proc::SpawnOpts) -> wisp_proc::Result<u32> {
+        opts.env = self.env(opts.env);
+        self.inner.spawn_detached(bin, args, opts)
+    }
+    fn live(&self) -> usize {
+        self.inner.live()
+    }
+    fn kill_all(&self, grace: std::time::Duration) -> wisp_proc::BoxFuture<'static, ()> {
+        self.inner.kill_all(grace)
+    }
+}
+
+/// Windows CI (round 196): the box's git checked the seed out with CRLF, so "one\ntwo, not committed\n" read
+/// "one\r\ntwo, not committed\r\n" there and every line was a change. A seeded project is byte for byte what was
+/// committed (LF, CRLF and mixed files alike), the uncommitted edit on top, and its patch back holds only the
+/// delegate's line.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_seed_is_byte_for_byte_what_came_whatever_the_boxs_git_says() {
+    let home = dir("home-crlf");
+    let config = home.join("windows.gitconfig");
+    std::fs::write(&config, "[core]\n\tautocrlf = true\n").unwrap();
+    let proc: wisp_proc::Proc = std::sync::Arc::new(AutocrlfGit { inner: wisp_proc::local(), config });
+    let sb = TestApp::new().with(SandboxPlugin { inside: Some(true), home: Some(home.clone()) }).service(proc).start().await;
+
+    // the lead's own checkout says autocrlf=true too (kept: wisp never changes it); its blobs are written as they are
+    let p = dir("proj-crlf");
+    git(&p, &["init", "-q", "-b", "main"]);
+    git(&p, &["config", "core.autocrlf", "true"]);
+    for (f, text) in [("lf.txt", "one\ntwo\n"), ("crlf.txt", "one\r\ntwo\r\n"), ("mixed.txt", "one\r\ntwo\n")] {
+        std::fs::write(p.join(f), text).unwrap();
+    }
+    git(&p, &["-c", "core.autocrlf=false", "add", "."]);
+    git(&p, &["-c", "user.name=T", "-c", "user.email=t@e", "commit", "-qm", "first"]);
+    std::fs::write(p.join("lf.txt"), "one\ntwo, not committed\n").unwrap();
+    let bundle = dir("bundle-crlf").join("b.bundle");
+    git(&p, &["bundle", "create", bundle.to_str().unwrap(), "--all"]);
+    let b = base64::engine::general_purpose::STANDARD.encode(std::fs::read(&bundle).unwrap());
+    let patch = git(&p, &["diff", "HEAD", "--binary"]);
+
+    let out =
+        sb.call(Caller::user(), "sandbox.seed", json!({ "name": "crlf", "bundle": b, "patch": patch, "branch": "main" })).await.unwrap();
+    let cwd = PathBuf::from(out["cwd"].as_str().unwrap());
+    assert_eq!(std::fs::read(cwd.join("lf.txt")).unwrap(), b"one\ntwo, not committed\n", "the uncommitted change, as it was");
+    assert_eq!(std::fs::read(cwd.join("crlf.txt")).unwrap(), b"one\r\ntwo\r\n");
+    assert_eq!(std::fs::read(cwd.join("mixed.txt")).unwrap(), b"one\r\ntwo\n");
+    assert_eq!(git(&cwd, &["config", "--local", "core.autocrlf"]).trim(), "false", "the copy's own setting, for the delegate's git too");
+    let none = sb.call(Caller::user(), "sandbox.patch", json!({ "cwd": cwd })).await.unwrap();
+    assert_eq!(none["patch"], "", "nothing reads as changed: {none}");
+
+    std::fs::write(cwd.join("crlf.txt"), "one\r\ntwo\r\nthree\r\n").unwrap();
+    let back = sb.call(Caller::user(), "sandbox.patch", json!({ "cwd": cwd })).await.unwrap()["patch"].as_str().unwrap().to_owned();
+    let changed: Vec<&str> =
+        back.split('\n').filter(|l| (l.starts_with('+') || l.starts_with('-')) && !l.starts_with("+++") && !l.starts_with("---")).collect();
+    assert_eq!(changed, ["+three\r"], "only the delegate's line: {back}");
 }

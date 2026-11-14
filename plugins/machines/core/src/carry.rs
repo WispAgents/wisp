@@ -174,12 +174,15 @@ pub fn refused(data: &mut std::collections::BTreeMap<String, serde_json::Value>,
 }
 
 /// The `git` args that unpack it, run in the copies folder: a clone of the bundle, the lead's commit checked out on
-/// the lead's branch (`wisp/delegate` when it was detached), its remote gone (a delegate never pushes).
+/// the lead's branch (`wisp/delegate` when it was detached), its remote gone (a delegate never pushes). The copy is
+/// wisp's own, so it keeps `core.autocrlf=false` in its config: every file comes out byte for byte as committed and the
+/// lead's patch applies as it was made, whatever the machine's git says (Git for Windows' system default is `true`,
+/// which would check out CRLF and make every line a change). The lead's own checkout keeps the user's settings.
 pub fn unpack_commands(bundle: &str, dir: &str, head: &str, branch: &str) -> Vec<Vec<String>> {
     let s = |v: &[&str]| v.iter().map(|x| (*x).to_owned()).collect::<Vec<_>>();
     let on = if branch.is_empty() { "wisp/delegate" } else { branch };
     vec![
-        s(&["clone", "--quiet", "--no-checkout", bundle, dir]),
+        s(&["clone", "--quiet", "--no-checkout", "-c", "core.autocrlf=false", bundle, dir]),
         s(&["-C", dir, "checkout", "--quiet", "-B", on, head]),
         s(&["-C", dir, "remote", "remove", "origin"]),
     ]
@@ -245,6 +248,7 @@ mod tests {
     #[test]
     fn a_detached_lead_gets_a_branch_of_its_own_there() {
         let c = unpack_commands("/b", "/d", "abc", "");
+        assert_eq!(c[0], ["clone", "--quiet", "--no-checkout", "-c", "core.autocrlf=false", "/b", "/d"], "a byte-exact copy");
         assert_eq!(c[1], ["-C", "/d", "checkout", "--quiet", "-B", "wisp/delegate", "abc"]);
         let c = unpack_commands("/b", "/d", "abc", "fix");
         assert_eq!(c[1][5], "fix");
