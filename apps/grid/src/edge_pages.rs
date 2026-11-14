@@ -287,7 +287,10 @@ impl Grid {
                     if all {
                         c.execute("DELETE FROM sessions WHERE user_id = ?1", [&u.id])
                     } else {
-                        c.execute("DELETE FROM sessions WHERE id_hash = ?1", [crate::accounts::sha256_hex(&session)])
+                        c.execute(
+                            "DELETE FROM sessions WHERE id_hash IN (?1, ?2)",
+                            [crate::accounts::sha256_hex(&session), crate::accounts::sha256_v1(&session)],
+                        )
                     }
                 })?;
                 Ok(self.cleared(redirect("/", &[])))

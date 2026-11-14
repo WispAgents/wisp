@@ -38,6 +38,23 @@ pub fn sha256_hex(s: &str) -> String {
     out
 }
 
+/// A token's hash as v1's grid kept it (SHA-256, base64url). A live grid.db opens as it was (ADR-0014), so its
+/// sessions, devices and device codes still hold these: a lookup tries both, and a hit rewrites the row to
+/// [`sha256_hex`], so nobody signed in under v1 is signed out at cutover.
+pub fn sha256_v1(s: &str) -> String {
+    B64URL.encode(Sha256::digest(s.as_bytes()))
+}
+
+/// The row `col = kept` found by `token`: when it's v1's hash, move it to v2's (the two never collide: 43
+/// characters against 64).
+fn upgrade(c: &rusqlite::Connection, table: &str, col: &str, kept: &str, token: &str) -> rusqlite::Result<()> {
+    let h = sha256_hex(token);
+    if kept != h {
+        c.execute(&format!("UPDATE {table} SET {col} = ?1 WHERE {col} = ?2"), params![h, kept])?;
+    }
+    Ok(())
+}
+
 /// `prefix` + 32 random bytes, base64url.
 pub fn token(prefix: &str) -> String {
     format!("{prefix}{}", B64URL.encode(rand::random::<[u8; 32]>()))
@@ -306,10 +323,16 @@ impl Accounts {
         }
         let now = self.now();
         let uid: Option<String> = self.db.with(|c| {
-            c.query_row("SELECT user_id FROM sessions WHERE id_hash = ?1 AND expires_at > ?2", params![sha256_hex(cookie), now], |r| {
-                r.get(0)
-            })
-            .optional()
+            let row: Option<(String, String)> = c
+                .query_row(
+                    "SELECT id_hash, user_id FROM sessions WHERE id_hash IN (?1, ?2) AND expires_at > ?3",
+                    params![sha256_hex(cookie), sha256_v1(cookie), now],
+                    |r| Ok((r.get(0)?, r.get(1)?)),
+                )
+                .optional()?;
+            let Some((kept, uid)) = row else { return Ok(None) };
+            upgrade(c, "sessions", "id_hash", &kept, cookie)?;
+            Ok(Some(uid))
         })?;
         match uid {
             Some(u) => Ok(self.user_by_id(&u)?.filter(|u| u.disabled == 0)),
@@ -376,7 +399,10 @@ impl Accounts {
         let h = sha256_hex(device_code);
         let now = self.now();
         let row: Option<Code> = self.db.with(|c| {
-            c.query_row("SELECT expires_at, approved_at, denied_at, consumed_at, last_poll_at, user_id, name FROM device_codes WHERE code_hash = ?1", [&h], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?, r.get(5)?, r.get(6)?))).optional()
+            let row = c.query_row("SELECT expires_at, approved_at, denied_at, consumed_at, last_poll_at, user_id, name, code_hash FROM device_codes WHERE code_hash IN (?1, ?2)", params![h, sha256_v1(device_code)], |r| Ok(((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?, r.get(5)?, r.get(6)?), r.get::<_, String>(7)?))).optional()?;
+            let Some((row, kept)) = row else { return Ok(None) };
+            upgrade(c, "device_codes", "code_hash", &kept, device_code)?;
+            Ok(Some(row))
         })?;
         let Some((expires, approved, denied, consumed, last_poll, user_id, name)) = row else { return Ok(Poll::Invalid) };
         if consumed.is_some() {
@@ -417,8 +443,17 @@ impl Accounts {
             return Ok(None);
         }
         let d: Option<DeviceRow> = self.db.with(|c| {
-            c.query_row(&format!("SELECT {} FROM devices WHERE token_hash = ?1", DeviceRow::COLS), [sha256_hex(t)], DeviceRow::from_row)
-                .optional()
+            let d = c
+                .query_row(
+                    &format!("SELECT {} FROM devices WHERE token_hash IN (?1, ?2)", DeviceRow::COLS),
+                    params![sha256_hex(t), sha256_v1(t)],
+                    DeviceRow::from_row,
+                )
+                .optional()?;
+            if let Some(d) = &d {
+                upgrade(c, "devices", "token_hash", &d.token_hash, t)?;
+            }
+            Ok(d)
         })?;
         let Some(d) = d.filter(|d| d.revoked_at.is_none()) else { return Ok(None) };
         let Some(u) = self.user_by_id(&d.user_id)?.filter(|u| u.disabled == 0) else { return Ok(None) };
@@ -544,6 +579,54 @@ mod tests {
         // a revoked device is nobody
         a.revoke_device(&ada.id, &d.id).unwrap();
         assert!(a.device(&token).unwrap().is_none());
+    }
+
+    /// v1's grid kept every token as SHA-256 base64url (grid/secrets.js `sha256`); the hashes below are node's
+    /// `createHash('sha256').update(t).digest('base64url')`, so the rows are what a live v1 grid.db holds.
+    #[test]
+    fn v1_hashed_sessions_devices_and_codes_still_sign_in_and_move_to_v2s_hash() {
+        let (a, _) = accounts();
+        let ada = a.dev_user("ada").unwrap();
+        let (device, cookie, code) = (
+            "wgd_v1devicetokenfromthev1grid0000000000000000",
+            "v1sessioncookie0000000000000000000000000000",
+            "v1devicecode000000000000000000000000000000",
+        );
+        let v1 = |t: &str| sha256_v1(t);
+        assert_eq!(v1(device), "-X9qkF5vSGsraB6kiW0cjnpcXR4TT80vJMm2RxBp_io");
+        assert_eq!(v1(cookie), "Y-4h-LBszo01aXF2CK8lhnPutHntITHqu68OtufZJRg");
+        assert_eq!(v1(code), "I_fQZcVV6zFXRZotl0_PlV0WCXshyiQazBdOGk8vpF8");
+        let now = a.now();
+        a.db.with(|c| {
+            c.execute("INSERT INTO devices (id, user_id, name, token_hash, created_at) VALUES ('d1', ?1, 'laptop', ?2, ?3)", params![ada.id, v1(device), now])?;
+            c.execute("INSERT INTO sessions (id_hash, user_id, scope, created_at, expires_at, last_seen_at) VALUES (?1, ?2, 'grid', ?3, ?4, ?3)", params![v1(cookie), ada.id, now, now + DAY])?;
+            c.execute("INSERT INTO device_codes (code_hash, user_code, name, user_id, created_at, expires_at, approved_at) VALUES (?1, 'BCDF-GHJK', 'studio', ?2, ?3, ?4, ?3)", params![v1(code), ada.id, now, now + CODE_TTL_MS])
+        })
+        .unwrap();
+        let hash_of = |sql: &str, id: &str| a.db.with(|c| c.query_row(sql, [id], |r| r.get::<_, String>(0))).unwrap();
+
+        // a device signed in under v1 is still signed in, and its row now holds v2's hash (never the token)
+        let (u, d) = a.device(&format!("Bearer {device}")).unwrap().unwrap();
+        assert_eq!((u.handle.as_str(), d.id.as_str()), ("ada", "d1"));
+        assert_eq!(hash_of("SELECT token_hash FROM devices WHERE id = ?1", "d1"), sha256_hex(device));
+        assert!(a.device(device).unwrap().is_some(), "still works once rewritten");
+
+        // a v1 browser session too
+        assert_eq!(a.session(cookie).unwrap().map(|u| u.handle).as_deref(), Some("ada"));
+        assert_eq!(hash_of("SELECT id_hash FROM sessions WHERE user_id = ?1", &ada.id), sha256_hex(cookie));
+        assert!(a.session(cookie).unwrap().is_some());
+
+        // a device code v1 handed out just before cutover still finishes
+        let Poll::Token { token, user } = a.poll(code).unwrap() else { panic!("no token") };
+        assert_eq!(user.handle, "ada");
+        assert_eq!(hash_of("SELECT code_hash FROM device_codes WHERE user_code = ?1", "BCDF-GHJK"), sha256_hex(code));
+        assert_eq!(a.poll(code).unwrap(), Poll::Invalid);
+        assert!(a.device(&token).unwrap().is_some());
+
+        // a revoked v1 device stays revoked; a token that only shares a prefix is nobody
+        a.revoke_device(&ada.id, "d1").unwrap();
+        assert!(a.device(device).unwrap().is_none());
+        assert!(a.device("wgd_v1devicetokenfromthev1grid").unwrap().is_none());
     }
 
     #[test]
