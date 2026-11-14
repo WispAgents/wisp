@@ -1,0 +1,6 @@
+/* The Android app's stylesheet (ADR-0065 §5, design/mobile.md §A.7–A.8). Loaded only in the app
+   (src/platform/styles.ts), never by the browser. The layer order is index.css's: these rules join the
+   tokens and kit layers that sheet declared. Kit variants (Material 3) go here, each under
+   :root[data-platform='android'] in @layer kit (build steps 3–6). */
+@layer reset, tokens, kit, plugins;
+@import '@wisp/tokens/platform-android.css';

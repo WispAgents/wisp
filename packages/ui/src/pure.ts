@@ -6,6 +6,8 @@ export { menuSections, type MenuEntry, type MenuGroup, type MenuItem, type MenuS
 export type { IconName } from './content/icons.ts';
 export { isSpirit, parseSpirit, spiritCode, type SpiritPart, type SpiritParts } from './home/spirit-shape.ts';
 export { themeCss, type FrameScheme } from './frame/theme.ts';
+export { LOOK_ATTR, documentLook, lookOf, type Look } from './platform/look.ts';
+export { loadPlatformStyles } from './platform/styles.ts';
 export { isEnvFile, maskEdit } from './content/env-mask.ts';
 export type { DiffFile, DiffHunk, DiffLine, DiffStatus } from './content/diff/parse.ts';
 export { makerOptions, type MakerOption } from './crew/maker-options.ts';

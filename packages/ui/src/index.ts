@@ -18,6 +18,7 @@ export * from './machine/index.ts';
 export * from './shell-list/index.ts';
 export * from './terminal/index.ts';
 export * from './frame/index.ts';
+export * from './platform/index.ts';
 export * from './ship/index.ts';
 export * from './crew/index.ts';
 export * from './transcript/index.ts';

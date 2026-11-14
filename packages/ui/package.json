@@ -7,6 +7,8 @@
     ".": "./src/index.ts",
     "./kit.css": "./src/css/index.css",
     "./styles": "./src/shell/styles.ts",
+    "./styles/android": "./src/platform/android-styles.ts",
+    "./styles/ios": "./src/platform/ios-styles.ts",
     "./pure": "./src/pure.ts"
   },
   "dependencies": {

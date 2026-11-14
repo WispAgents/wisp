@@ -3,12 +3,23 @@
 // A frame on another origin can't read our styles, so the owner posts these to it, or writes them
 // into a srcdoc.
 
+import { documentLook, LOOK_ATTR } from '../platform/look.ts';
+
 /** The tokens a framed page gets, by name. Stable: apps people made read them. */
 export const FRAME_TOKENS = [
   '--bg', '--bg-2', '--surface', '--surface-2', '--ink', '--ink-2', '--muted', '--faint', '--line', '--line-2',
   '--accent', '--accent-ink', '--accent-soft', '--good', '--warn', '--bad', '--info', '--add-bg', '--del-bg',
   '--shadow-1', '--shadow-2', '--radius', '--sans', '--mono', '--display',
 ] as const;
+
+/** Added for the phone apps (ADR-0065, design/mobile.md §A.8): a framed page inside the Android or iPhone app
+ * also gets the look's tokens, so a My Stuff app can match Material 3 or HIG. A browser frame never has them. */
+export const PLATFORM_FRAME_TOKENS = [
+  '--tap-min', '--font-ui', '--inset', '--hairline', '--radius-xs', '--radius-sm', '--radius-md', '--radius-lg', '--radius-xl',
+  '--surface-c0', '--surface-c1', '--surface-c2', '--surface-c3', '--surface-c4', '--on-surface', '--on-surface-var',
+  '--outline', '--outline-var', '--primary', '--on-primary', '--error',
+] as const;
+// no --safe-*: the frame's own chrome (the app bar, the bottom bar) already sits inside the safe area
 
 export type FrameScheme = 'light' | 'dark';
 export interface FrameTheme {
@@ -29,11 +40,12 @@ export function currentScheme(doc: Document = document): FrameScheme {
   return doc.defaultView?.matchMedia?.('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
 }
 
-/** The tokens' values as they are now on this page. */
+/** The tokens' values as they are now on this page (the phone look's too, in the phone apps). */
 export function readTheme(doc: Document = document): FrameTheme {
   const cs = doc.defaultView?.getComputedStyle(doc.documentElement);
   const vars: Record<string, string> = {};
-  for (const name of FRAME_TOKENS) {
+  const names: readonly string[] = documentLook(doc) === 'web' ? FRAME_TOKENS : [...FRAME_TOKENS, ...PLATFORM_FRAME_TOKENS];
+  for (const name of names) {
     const v = cs?.getPropertyValue(name).trim();
     if (v) vars[name] = v;
   }
@@ -41,7 +53,7 @@ export function readTheme(doc: Document = document): FrameTheme {
 }
 
 /**
- * Calls `fn` with the new theme each time it changes (`data-theme` on the root, or the OS's scheme),
+ * Calls `fn` with the new theme each time it changes (`data-theme` or `data-platform` on the root, or the OS's scheme),
  * once the new styles apply. Returns the function that stops it.
  */
 export function watchTheme(fn: (t: FrameTheme) => void, doc: Document = document): () => void {
@@ -53,7 +65,7 @@ export function watchTheme(fn: (t: FrameTheme) => void, doc: Document = document
     frame = win.requestAnimationFrame(() => fn(readTheme(doc)));
   };
   const mo = new MutationObserver(fire);
-  mo.observe(doc.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+  mo.observe(doc.documentElement, { attributes: true, attributeFilter: ['data-theme', LOOK_ATTR] });
   const mq = win?.matchMedia?.('(prefers-color-scheme: dark)');
   mq?.addEventListener?.('change', fire);
   return () => {
