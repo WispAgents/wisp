@@ -48,7 +48,7 @@ impl Runtime {
 
     /// Runtime command `cmd` on sandbox `machine` (`machines.route`, typed; the routed command stays by name: it is
     /// this plugin's own, run by the wisp over there).
-    async fn route(&self, machine: &str, cmd: &str, args: Value) -> wisp_kernel::Result<Value> {
+    pub(super) async fn route(&self, machine: &str, cmd: &str, args: Value) -> wisp_kernel::Result<Value> {
         let a = wisp_machines_api::RouteArgs {
             id: Some(machine.to_owned()),
             cmd: cmd.to_owned(),

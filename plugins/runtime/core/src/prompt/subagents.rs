@@ -207,6 +207,44 @@ pub const AWAY_SUBAGENT: &str = "
   lead's computer may not exist here: find the file by its path inside the folder. Your changes
   go back to the lead as a patch when you finish, so don't commit or push them.";
 
+/// The lead's folder named in a delegate's prompt, as a path inside it (v1 relay.js `inFolder`): the copy on the
+/// other machine has another path. `/repo/src/a.ts` → `src/a.ts`, `/repo` alone → `.`. Only where the folder starts a
+/// path: `/backup/repo/x` stays (v1 cut the folder out of the middle of a longer path).
+pub fn in_folder(text: &str, dir: &str) -> String {
+    let root = dir.trim_end_matches(['/', '\\']);
+    if root.is_empty() {
+        return text.to_owned();
+    }
+    let word = |c: char| c.is_alphanumeric() || c == '_' || c == '-';
+    let mut out = String::with_capacity(text.len());
+    let mut rest = text;
+    while let Some(i) = rest.find(root) {
+        let starts = !rest[..i].chars().next_back().is_some_and(|c| word(c) || matches!(c, '/' | '\\' | '.' | '~'));
+        out.push_str(&rest[..i]);
+        let after = &rest[i + root.len()..];
+        if !starts {
+            out.push_str(root);
+            rest = after;
+            continue;
+        }
+        let inner = after.trim_start_matches(['/', '\\']);
+        if inner.len() < after.len() {
+            rest = inner;
+            continue;
+        }
+        let mut next = after.chars();
+        let longer = match next.next() {
+            Some('.') => next.next().is_some_and(word),
+            Some(c) => word(c),
+            None => false,
+        };
+        out.push_str(if longer { root } else { "." });
+        rest = after;
+    }
+    out.push_str(rest);
+    out
+}
+
 /// Replaces the `ask_user` guidance for a subagent's own system prompt.
 pub const SUBAGENT_ASK: &str = "- You are a subagent: a lead agent delegated this task to you and will read your presentation.
   You cannot ask the user anything. Make the call yourself, note the assumption in a \"callout\"
@@ -304,6 +342,16 @@ pub fn delegation_report(
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn a_delegate_elsewhere_reads_the_leads_paths_as_paths_in_its_folder() {
+        use super::in_folder;
+        assert_eq!(in_folder("Fix /work/repo/src/a.ts, run tests in /work/repo.", "/work/repo/"), "Fix src/a.ts, run tests in ..");
+        assert_eq!(in_folder("Not /work/repo2/x nor /work/repo.git", "/work/repo"), "Not /work/repo2/x nor /work/repo.git");
+        assert_eq!(in_folder("C:\\w\\repo\\src\\b.js", "C:\\w\\repo"), "src\\b.js");
+        // v1 cut the folder out of a longer path that only contains it
+        assert_eq!(in_folder("see /backup/work/repo/a.ts and `/work/repo/b.ts`", "/work/repo"), "see /backup/work/repo/a.ts and `b.ts`");
+        assert_eq!(in_folder("no folder", ""), "no folder");
+    }
 
     /// v1 (F-comp-34): a team of eight is eight; nothing caps delegates at six.
     #[test]

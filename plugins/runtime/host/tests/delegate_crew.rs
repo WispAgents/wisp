@@ -51,7 +51,8 @@ async fn delegating_to_a_crew_member_assigns_the_job_through_crew_with_the_lead_
     assert_eq!((out[0].subagent.as_str(), out[0].agent.as_str(), out[0].model.as_str()), ("ada", "claude", "opus"));
     assert_eq!(out[0].place.as_deref(), Some("crew"));
     assert_eq!(out[1].error.as_deref(), Some("The task prompt is empty."));
-    assert!(out[2].error.as_deref().unwrap().contains("far runs on another machine"), "{out:?}");
+    // a member on a machine takes a copy of the lead's work there (ADR-0059): this capped lead's work stays here
+    assert!(out[2].error.as_deref().unwrap().contains("send work to another machine"), "{out:?}");
 
     // one crew.assign: the member's id, the prompt, the lead as `from`, and its cap
     let asked: Vec<_> = r.host.asked.lock().unwrap().iter().filter(|(c, _)| c == "crew.assign").cloned().collect();
