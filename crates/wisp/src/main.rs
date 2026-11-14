@@ -297,7 +297,10 @@ async fn shared_and_cloud(first: &str, p: &Parsed, o: &code::Opts, port: u16, cw
         "shares" if o.words.is_empty() => cloud_cli::shares(&connect().await?, &o).await?,
         "cloud"
             if o.words.len() <= 2
-                && matches!(o.words.first().map(String::as_str), None | Some("signin" | "login" | "signout" | "logout" | "status")) =>
+                && matches!(
+                    o.words.first().map(String::as_str),
+                    None | Some("signin" | "login" | "signout" | "logout" | "status" | "accounts" | "switch" | "remove" | "rm")
+                ) =>
         {
             cloud_cli::cloud(&connect().await?, &o).await?
         }

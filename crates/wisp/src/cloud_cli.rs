@@ -1,6 +1,8 @@
 //! wisp and a wisp Grid from the terminal (ADR-0010, 0038, 0041), over wisp.grid-client's commands:
 //!
-//! - `wisp cloud signin [grid]` (the device flow: a code to approve in the browser), `status`, `signout`;
+//! - `wisp cloud signin [grid]` (the device flow: a code to approve in the browser; another grid or account is added
+//!   next to the others and becomes current), `status`, `signout` (the current account), and `accounts`,
+//!   `switch <account>`, `remove <account>` (ADR-0061; an account is `handle`, `handle@host` or its key);
 //! - `wisp computer on|off|status`: this computer on the grid, reachable from your other wisps;
 //! - `wisp share <kind>.<name> --to cloud`: a setup (with what it references) to wisp Cloud, previewed;
 //!   `wisp share <task> --to cloud` is `share_cli`'s, through `share.send`;
@@ -106,7 +108,7 @@ pub fn said_shared(v: &Value) {
     ));
 }
 
-/// `wisp cloud signin|status|signout`.
+/// `wisp cloud signin|status|signout|accounts|switch|remove`.
 pub async fn cloud(c: &Client, o: &Opts) -> Result<i32> {
     let st = crate::cli::style();
     match o.words.first().map(String::as_str) {
@@ -154,7 +156,52 @@ pub async fn cloud(c: &Client, o: &Opts) -> Result<i32> {
             }
             Ok(0)
         }
-        Some(other) => Err(CliError::said(format!("wisp cloud {other}: signin, status or signout"))),
+        Some("accounts") => {
+            let v = c.cmd("grid-client.accounts", json!({})).await?;
+            if o.json {
+                say(&v.to_string());
+            } else if v.as_array().is_none_or(Vec::is_empty) {
+                say("  not signed in (wisp cloud signin)");
+            } else {
+                for a in v.as_array().into_iter().flatten() {
+                    let mark = if a["current"] == json!(true) { paint(&st, GREEN, "●") } else { " ".to_owned() };
+                    say(&format!("  {mark} {}@{}", s(a, "handle"), host_of(s(a, "grid"))));
+                }
+            }
+            Ok(0)
+        }
+        Some(verb @ ("switch" | "remove" | "rm")) => {
+            let Some(want) = o.words.get(1) else { return Err(CliError::said(format!("wisp cloud {verb} <handle | handle@host>"))) };
+            let all = c.cmd("grid-client.accounts", json!({})).await?;
+            let key = pick_account(all.as_array().map_or(&[][..], Vec::as_slice), want).map_err(CliError::said)?;
+            let cmd = if verb == "switch" { "grid-client.accountSwitch" } else { "grid-client.accountRemove" };
+            let v = c.cmd(cmd, json!({ "key": key })).await?;
+            if verb == "switch" {
+                say(&format!("  {} now {}@{}", paint(&st, GREEN, "✓"), s(&v, "handle"), host_of(s(&v, "grid"))));
+            } else {
+                say(&format!("  {} signed out of {want}", paint(&st, GREEN, "✓")));
+            }
+            Ok(0)
+        }
+        Some(other) => Err(CliError::said(format!("wisp cloud {other}: signin, status, accounts, switch, remove or signout"))),
+    }
+}
+
+fn host_of(url: &str) -> &str {
+    url.split_once("://").map_or(url, |(_, h)| h)
+}
+
+/// The account `want` names (its key, `handle@host`, or a handle signed in to on one grid only) → its key.
+pub fn pick_account(all: &[Value], want: &str) -> std::result::Result<String, String> {
+    let (handle, host) = want.split_once('@').map_or((want, None), |(h, g)| (h, Some(g)));
+    let hits: Vec<&Value> = all
+        .iter()
+        .filter(|a| s(a, "key") == want || (s(a, "handle") == handle && host.is_none_or(|g| host_of(s(a, "grid")) == g)))
+        .collect();
+    match hits.as_slice() {
+        [one] => Ok(s(one, "key").to_owned()),
+        [] => Err(format!("not signed in as {want} here (wisp cloud accounts)")),
+        _ => Err(format!("{want} is signed in on several grids: say which, like {handle}@{}", host_of(s(hits[0], "grid")))),
     }
 }
 
@@ -540,5 +587,16 @@ mod tests {
                 && is_link("wisp://open/AbC")
                 && !is_link("https://example.com/x.wisp-task")
         );
+    }
+
+    #[test]
+    fn an_account_is_named_by_handle_handle_at_host_or_key() {
+        let a = |g: &str, h: &str| json!({ "key": format!("{g}#{h}"), "grid": g, "handle": h });
+        let all = [a("https://g1.dev", "ada"), a("https://g2.dev", "ada"), a("https://g1.dev", "bea")];
+        assert_eq!(pick_account(&all, "bea"), Ok("https://g1.dev#bea".to_owned()));
+        assert_eq!(pick_account(&all, "ada@g2.dev"), Ok("https://g2.dev#ada".to_owned()));
+        assert_eq!(pick_account(&all, "https://g1.dev#ada"), Ok("https://g1.dev#ada".to_owned()));
+        assert!(pick_account(&all, "ada").is_err_and(|e| e.contains("ada@g1.dev")), "on two grids: says which to name");
+        assert!(pick_account(&all, "zed").is_err());
     }
 }

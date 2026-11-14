@@ -43,6 +43,7 @@ pub const HELP: &str = "usage:
   wisp shares                   what you've shared: access, views, imports, versions   (--revoke ID  --updates)
   wisp open <file|url|link>     a shared task or setup: its plan, then run, import or apply it   (--run  --their-setup  --compare  --import  --yes)
   wisp cloud signin|status|signout   wisp Cloud (or another grid: wisp cloud signin <url>)
+  wisp cloud accounts|switch|remove  each grid account signed in to; switch or sign out of one
   wisp computer on|off|status   this computer on the grid, reachable from your other wisps
   wisp --on <machine> …         run any command on that machine (wisp ls --on studio, wisp \"task\" --on cloud)
   wisp desktop                  open the wisp app window
