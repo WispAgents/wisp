@@ -584,6 +584,16 @@ alone.
      - The real runs use the owner's Claude Code and Codex accounts: short prompts, recorded in the round doc with the
        transcripts.
 
+## Developer experience (owner, 2026-11-15)
+
+The owner: the repo must be easy to use, debug, test and work on; a documented command that doesn't work must never happen again (found: no desktop dev mode, `npm run dev` pointing at a missing tools/dev.ts, v2 clashing with an installed v1's app id and port).
+
+1. [ ] `npm run dev` and `npm run dev:desktop` (coder-r230).
+2. [ ] A CI check that every package.json script's target exists and every command in AGENTS.md / README / .claude/skills resolves (dry-run where safe).
+3. [ ] `npm run doctor`: checks the toolchain (rust-toolchain.toml, Node, npm ci state, monoflow, CARGO_TARGET_DIR advice, free disk), the web build, the fake agents; says what to run.
+4. [ ] docs/dev.md: the shortest path from clone to a running wisp, how to debug (logs and RUST_LOG, the devtools inspector, attaching a debugger to the server, the vite mock), and the one test command per area.
+5. [ ] Dev runs never collide with an installed wisp: own port, own home, own app id, everywhere (desktop, CLI, grid).
+
 ## Task history redesign (owner, 2026-11-14)
 
 The owner doesn't like how a task shows older turns and an opened turn. Research: docs/research/long-task-history.md; three directions with a clickable mock: docs/design/history-redesign.md and .html (A · Ledger + scrubber, B · Chapters, C · Outline + stage). Recommended: A, with C's full-page turn on phones. Waiting on the owner's pick. Building it departs from v1 parity on this screen, so it gets an ADR superseding ADR-0016 for the task history. Not reordered: it's built where the owner places it.
