@@ -197,6 +197,8 @@ pub struct St {
     pub dialer: Mutex<Option<CancellationToken>>,
     /// the mark on requests that came through this computer's tunnel (this process only)
     pub mark: String,
+    /// in a grid box, where its pages show (ADR-0064, `preview.rs`); "" anywhere else
+    pub preview: String,
 }
 
 impl std::fmt::Debug for St {
@@ -254,6 +256,7 @@ impl St {
             computer: Mutex::new(ComputerState { state: "off".into(), ..ComputerState::default() }),
             dialer: Mutex::new(None),
             mark: hex(24),
+            preview: crate::preview::template(&|k| std::env::var(k).ok()),
         }))
     }
 

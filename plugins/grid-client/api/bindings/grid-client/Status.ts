@@ -13,4 +13,9 @@ machine: string, computer: ComputerState,
 /**
  * every account signed in to here (several grids, or several accounts on one), the current one marked
  */
-accounts: Array<AccountInfo>, };
+accounts: Array<AccountInfo>, 
+/**
+ * ADR-0064: when this wisp runs in a grid box, where a page on its loopback shows (`https://p{port}--ada.grid.example`,
+ * `{port}` literal); "" anywhere else. A `preview` block of this wisp's own task loads `localhost:<port>` there.
+ */
+preview: string, };

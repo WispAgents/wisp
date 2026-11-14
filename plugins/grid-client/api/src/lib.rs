@@ -94,6 +94,10 @@ pub struct Status {
     /// every account signed in to here (several grids, or several accounts on one), the current one marked
     #[serde(default)]
     pub accounts: Vec<AccountInfo>,
+    /// ADR-0064: when this wisp runs in a grid box, where a page on its loopback shows (`https://p{port}--ada.grid.example`,
+    /// `{port}` literal); "" anywhere else. A `preview` block of this wisp's own task loads `localhost:<port>` there.
+    #[serde(default)]
+    pub preview: String,
 }
 
 /// One (grid, account) signed in to here (ADR-0061). Its token stays in secrets, never here.

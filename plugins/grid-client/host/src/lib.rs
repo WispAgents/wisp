@@ -25,6 +25,7 @@ pub mod computer;
 mod keys;
 mod net;
 mod peers;
+pub mod preview;
 mod publish;
 mod sandboxes;
 mod signin;
@@ -174,6 +175,7 @@ pub(crate) fn status(st: &St) -> api::Status {
         machine: a.map(|a| a.machine.clone()).unwrap_or_default(),
         computer: computer::view(st),
         accounts: all.infos(),
+        preview: st.preview.clone(),
     }
 }
 
