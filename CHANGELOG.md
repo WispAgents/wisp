@@ -7,6 +7,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Added
 
+- **v2: usage stats as in v1.** wisp sends v1's anonymous usage events and reports server errors and crashes (never paths, prompts or names), with the off switch in Settings.
 - **v2: several wisp Cloud accounts.** Sign in to more than one grid or account; Settings → Cloud lists each with Switch and Sign out, the current one carries shares, sandboxes and API keys, and every account's cloud computer shows under Machines.
 - **v2: delegate to another machine.** A subagent on another computer runs there on a copy of the lead's work (its commits and uncommitted edits, kept under wisp's own folder there, never your checkout); its changes come back into the lead's folder when it finishes, and its row and report name the machine.
 - **v2: wisp Cloud API keys.** Settings → Cloud → API keys makes a `wgk_` key (shown once) that opens your cloud wisp from a script with no browser; revoke it and it stops at once.
@@ -207,6 +208,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Fixed
 
+- **v2: sending a task.** Sending from Home opens the task you just sent instead of a blank page; the harness picker no longer shows Claude Code twice; a task page no longer says *Mark read needs a newer wisp.runtime*. Telemetry's off switch and install id are kept across restarts.
 - **v2: deleting a running task.** Deleting a task now stops its run first, even one still starting: its CLI never starts for a deleted task and the task never comes back.
 - **v2: sandboxes and far delegates.** A project over about 1.4 MB now reaches its sandbox (up to 256 MB), and deleting a lead also deletes its delegates' copies on other machines. A delegate's same-size edit made in the second its copy was checked out is no longer lost on the way back.
 - **v2 grid: v1 sign-ins carry over.** Browsers and devices signed in to wisp Cloud under v1 stay signed in after the move to v2 (v1 hashed their tokens differently).

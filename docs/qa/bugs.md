@@ -6,6 +6,6 @@ run by fresh agents with no list of known bugs (owner, 2026-11-14); the lead nev
 
 | Id | Bug | Found | Fix | State |
 |---|---|---|---|---|
-| B1 | Sending a task from Home leaves the main pane blank: the page opens the client's id, the server made another | owner, v2 desktop preview | coder-r198 | fixing |
-| B2 | Harness picker shows "Claude Code \| Claude Code" after picking Claude Code (Auto's preview stays) | owner, v2 desktop preview | coder-r198 | fixing |
-| B3 | Task page toasts "Mark read needs a newer wisp.runtime on this computer" | lead, reproducing B1 | coder-r198 | fixing |
+| B1 | Sending a task from Home leaves the main pane blank: the page opens the client's id, the server made another | owner, v2 desktop preview | coder-r198 | fixed, to re-check |
+| B2 | Harness picker shows "Claude Code \| Claude Code" after picking Claude Code (Auto's preview stays) | owner, v2 desktop preview | coder-r198 | fixed, to re-check |
+| B3 | Task page toasts "Mark read needs a newer wisp.runtime on this computer" | lead, reproducing B1 | coder-r198 | fixed, to re-check |
