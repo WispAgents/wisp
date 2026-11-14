@@ -57,9 +57,10 @@ test('vs + adds the next harness nobody runs yet, then the lead again, never pas
   expect(nextRun('claude', ['codex', 'opencode', 'claude'], here)).toBeUndefined();
   expect(nextRun('auto', [], here)).toBe('claude'); // Auto picks; a compare run is a harness
   expect(newGroup(new Uint8Array([0, 15, 255]))).toBe('g-000fff');
-  // the group goes in runtime's slot on the wire, and on the row at once
+  // the group goes in runtime's slot on the wire, and on the row at once; the run keeps its entity key (`p:1`, what
+  // navigation and Compare look it up by) and only its bare id goes on the wire (the peer makes the task under it)
   const a = { peer: 'p', id: 'p:1', prompt: 'x', agent: 'codex', mode: 'auto', at: 1, group: 'g-1' };
-  expect(wireOf(create)(a)).toEqual({ peer: 'p', id: 'p:1', prompt: 'x', agent: 'codex', mode: 'auto', at: 1, ext: { 'wisp.runtime': { group: 'g-1' } } });
+  expect(wireOf(create)(a)).toEqual({ peer: 'p', id: '1', prompt: 'x', agent: 'codex', mode: 'auto', at: 1, ext: { 'wisp.runtime': { group: 'g-1' } } });
 });
 
 test('Plan: a run alone on its account shows its share; runs overlapping on one account split the total by cost, as an estimate_v1_compare_plan', () => {
