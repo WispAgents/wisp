@@ -255,11 +255,19 @@ pub fn install_fakes(dir: &Path, names: &[&str]) -> std::io::Result<()> {
 
 /// [`install_fakes`] from given binaries: for another crate's tests, whose executable doesn't sit
 /// next to this crate's bins (they find them next to `CARGO_BIN_EXE_<their bin>` instead).
+///
+/// A copy already in place with the same bytes is kept: on Windows a running executable can be neither
+/// replaced nor removed, and a test that restarts its server in the same folder installs again while a
+/// process of the server it stopped (a harness probe, a lingering run) may still be running that copy
+/// (os error 32, "being used by another process").
 pub fn install_fakes_from(dir: &Path, names: &[&str], agent: &Path, gh: &Path) -> std::io::Result<()> {
     std::fs::create_dir_all(dir)?;
     for n in names {
         let src = if *n == "gh" { gh } else { agent };
         let dst = dir.join(format!("{n}{}", std::env::consts::EXE_SUFFIX));
+        if cfg!(not(unix)) && same_bytes(src, &dst) {
+            continue;
+        }
         let _ = std::fs::remove_file(&dst);
         #[cfg(unix)]
         std::os::unix::fs::symlink(src, &dst)?;
@@ -267,4 +275,34 @@ pub fn install_fakes_from(dir: &Path, names: &[&str], agent: &Path, gh: &Path) -
         std::fs::copy(src, &dst).map(|_| ())?;
     }
     Ok(())
+}
+
+/// Whether `b` is a file with exactly `a`'s bytes (the length first, so a different build is told cheaply).
+fn same_bytes(a: &Path, b: &Path) -> bool {
+    match (std::fs::metadata(a), std::fs::metadata(b)) {
+        (Ok(x), Ok(y)) if x.is_file() && y.is_file() && x.len() == y.len() => {
+            matches!((std::fs::read(a), std::fs::read(b)), (Ok(x), Ok(y)) if x == y)
+        }
+        _ => false,
+    }
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod install_tests {
+    use super::*;
+
+    #[test]
+    fn a_fake_already_in_place_is_told_apart_from_another_build() {
+        let d = std::env::temp_dir().join(format!("wisp-testkit-same-{}", std::process::id()));
+        std::fs::create_dir_all(&d).unwrap();
+        let (a, b, c) = (d.join("a"), d.join("b"), d.join("c"));
+        std::fs::write(&a, b"fake v1").unwrap();
+        std::fs::write(&b, b"fake v1").unwrap();
+        std::fs::write(&c, b"fake v2").unwrap();
+        assert!(same_bytes(&a, &b), "the same bytes: kept, so a running copy is never touched");
+        assert!(!same_bytes(&a, &c), "another build of the same length: copied again");
+        assert!(!same_bytes(&a, &d.join("missing")), "nothing there yet: copied");
+        let _ = std::fs::remove_dir_all(&d);
+    }
 }

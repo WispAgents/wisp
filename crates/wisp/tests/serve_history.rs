@@ -59,7 +59,9 @@ fn task_files(repo: &Path) -> Vec<String> {
             if e.path().is_dir() {
                 stack.push(e.path());
             } else {
-                out.push(e.path().strip_prefix(repo).unwrap().display().to_string());
+                // `/`-joined, as wisp reports them on every OS (display() would give `.wisp\\README.md` on Windows)
+                let rel = e.path().strip_prefix(repo).unwrap().to_owned();
+                out.push(rel.components().map(|c| c.as_os_str().to_string_lossy().into_owned()).collect::<Vec<_>>().join("/"));
             }
         }
     }

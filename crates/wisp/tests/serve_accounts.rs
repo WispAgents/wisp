@@ -50,7 +50,10 @@ async fn a_second_codex_account_signs_in_and_its_runs_use_its_folder() {
     api.until(&id, "the turn ends", |t| t.len() == 1 && ended(&t[0])).await;
     let runs = common::records(&rec.join("codex.jsonl"));
     let home = runs.iter().rev().find(|r| r["argv"][0] == "exec").map(|r| r["codexHome"].clone()).unwrap();
-    assert!(home.as_str().unwrap().ends_with("accounts/codex/w1"), "{home}");
+    // the same folder, however it's spelled (Windows: `\\` and the temp folder's 8.3 `RUNNER~1` against its long name)
+    let want = dir.join("home").join("accounts").join("codex").join("w1");
+    let canon = |p: &std::path::Path| wisp_proc::canonical_blocking(p).unwrap_or_else(|e| panic!("{}: {e}", p.display()));
+    assert_eq!(canon(std::path::Path::new(home.as_str().unwrap())), canon(&want), "{home}");
     // reorder and remove
     let up = api.cmd("accounts.update", json!({ "agent": "codex", "account": "w1", "move": "up" })).await;
     assert_eq!(up["accounts"][0]["id"], "w1");

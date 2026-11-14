@@ -275,7 +275,7 @@ async fn wisp_save_keeps_text_in_my_stuff() {
     let (t, err) = a.call("wisp_save", json!({ "path": "notes.txt" })).await;
     assert!(!err && t.starts_with("Saved “notes”") && t.contains("5 B"), "{t}");
     let (t, err) = a.call("wisp_save", json!({ "path": "gone.png" })).await;
-    assert!(err && t.contains(&format!("Nothing at {}.", a.dir.join("proj/gone.png").display())), "{t}");
+    assert!(err && t.contains(&format!("Nothing at {}.", a.dir.join("proj").join("gone.png").display())), "{t}");
     // id alone: only its details change, the version before kept
     let (t, err) = a.call("wisp_save", json!({ "id": id, "note": "for friday" })).await;
     assert!(!err && t.starts_with("Updated “Launch plan” (doc, 22 B) in the user's My Stuff, now v"), "{t}");
@@ -323,7 +323,11 @@ async fn wisp_pr_attaches_and_detaches_a_pr() {
             "isDraft": false, "headRefName": "fix-login", "baseRefName": "main", "reviewDecision": "", "mergeStateStatus": "CLEAN",
             "statusCheckRollup": [] });
         std::fs::write(&state, json!({ "prs": { "12": pr } }).to_string()).unwrap();
-        let path = format!("{}:{}", bin.display(), std::env::var("PATH").unwrap_or_default());
+        // the OS's own separator (`;` on Windows): with `:` Windows found no fake and ran the runner's real gh
+        let path = std::env::join_paths(std::iter::once(bin).chain(std::env::split_paths(&std::env::var_os("PATH").unwrap_or_default())))
+            .unwrap()
+            .to_string_lossy()
+            .into_owned();
         vec![("PATH".into(), path), ("FAKE_GH_STATE".into(), state.display().to_string())]
     })
     .await;
@@ -433,7 +437,7 @@ async fn wisp_available_lists_harnesses_and_projects() {
     assert!(!err && t.starts_with("## Harnesses on this computer\n"), "{t}");
     assert!(t.contains("- **claude** (") && t.contains("- **auto**: wisp picks the harness and model"), "{t}");
     assert!(t.contains("## Machines\nNone: everything runs on this computer."), "{t}");
-    assert!(t.contains("## Projects\n- **proj**: ") && t.contains("/proj\n"), "{t}");
+    assert!(t.contains(&format!("## Projects\n- **proj**: {path}\n")), "{t}");
     assert!(t.contains("## Subagent presets (saved teams)\nNone."), "{t}");
     assert!(t.contains(&format!("Task `{}` on claude", a.id)) && t.contains("No subagents yet: delegate creates them on the fly."), "{t}");
     assert!(t.ends_with("wisp_task: follow up, stop, finish or archive a task."), "{t}");

@@ -48,6 +48,18 @@ async fn grid(dir: &Path) -> Grid {
     Grid { port, url: format!("http://wisp.localhost:{port}"), _stop: tokio_util_stop::Stop(Box::new(move || stop.cancel())), _g: g }
 }
 
+/// What each box's wisp wrote as it started (`grid/users/<id>/wisp.log`), so a box that stops as it starts says why.
+fn box_logs(root: &Path) -> String {
+    let users = root.join("grid").join("users");
+    std::fs::read_dir(&users)
+        .into_iter()
+        .flatten()
+        .flatten()
+        .map(|e| format!("{}:\n{}", e.path().display(), std::fs::read_to_string(e.path().join("wisp.log")).unwrap_or_default()))
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
 /// A client that finds every `*.wisp.localhost` on the grid's port, as a browser would.
 fn browser(port: u16, names: &[&str]) -> reqwest::Client {
     let mut b = reqwest::Client::builder().redirect(reqwest::redirect::Policy::none()).no_proxy();
@@ -415,7 +427,7 @@ async fn a_computer_and_a_box_through_the_grid() {
     assert_eq!(state(web.clone(), token.clone(), boxu.clone()).await, "stopped", "a_passive_request_never_wakes_a_box");
     // a_real_request_wakes_a_sleeping_box: a command, from the other wisp, --on the cloud box
     let (code, out, err) = wisp(&db, &db.join("proj"), &["--on", "Cloud", "runtime", "list", "--json"]);
-    assert_eq!(code, 0, "{out}{err}");
+    assert_eq!(code, 0, "{out}{err}\nthe box's log: {}", box_logs(&root));
     assert_eq!(state(web.clone(), token.clone(), boxu.clone()).await, "running");
     // a_box_never_gets_a_laptop_token (the wisp's side): the box refuses to be a computer
     let r: Value = web
@@ -560,7 +572,7 @@ async fn an_api_key_scripts_the_cloud_wisp_without_a_browser_until_revoked() {
             .send()
     };
     let r = call(0).await.unwrap();
-    assert_eq!(r.status(), 200);
+    assert_eq!(r.status(), 200, "the box's log: {}", box_logs(&root));
     let v: Value = r.json().await.unwrap();
     assert_eq!(v["ok"], true, "runtime.list with a key: {v}");
     let health = web.get(format!("{boxu}/api/health")).bearer_auth(&key).send().await.unwrap();
