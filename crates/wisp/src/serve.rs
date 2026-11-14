@@ -2,7 +2,7 @@
 //! 127.0.0.1:<port> (`WISP_HOST` in a grid container), until Ctrl-C or SIGTERM. Env read once here:
 //!   `WISP_HOME`, `WISP_PORT`, `WISP_HOST`, `WISP_WEB_DIR`, `WISP_EXIT_WITH_STDIN` (the desktop app's child),
 //!   `WISP_BOX` (a grid box: the `box` set, `BoxPlugins`),
-//!   `WISP_TRUSTED_PROXY_SECRET`, `WISP_PUBLIC_URL`, `WISP_PREVIEW_URL`.
+//!   `WISP_TRUSTED_PROXY_SECRET`, `WISP_PUBLIC_URL`, `WISP_PREVIEW_URL`, `WISP_BROWSER` (the program a page opens with).
 use std::net::IpAddr;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -325,9 +325,12 @@ pub async fn until_signal(r: Running) {
     r.store.close();
 }
 
-/// The page in the user's browser (no shell: the address is ours).
+/// The page in the user's browser (no shell: the address is ours), or in `WISP_BROWSER` (a program given the address).
 pub fn open_url(url: &str) {
-    let (cmd, args): (&str, Vec<&str>) = if cfg!(target_os = "macos") {
+    let chosen = std::env::var("WISP_BROWSER").ok().filter(|b| !b.is_empty());
+    let (cmd, args): (&str, Vec<&str>) = if let Some(b) = chosen.as_deref() {
+        (b, vec![url])
+    } else if cfg!(target_os = "macos") {
         ("open", vec![url])
     } else if cfg!(windows) {
         ("rundll32", vec!["url.dll,FileProtocolHandler", url])

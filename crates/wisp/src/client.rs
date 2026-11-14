@@ -180,8 +180,10 @@ impl Client {
         self.request("GET", path, None).await
     }
 
+    /// Whether a wisp answers here, bounded: something that takes the connection and never answers isn't a wisp.
     pub async fn ping(&self) -> bool {
-        self.get("/health").await.ok().and_then(|v| v.get("ok").and_then(Value::as_bool)) == Some(true)
+        let health = tokio::time::timeout(Duration::from_secs(2), self.get("/health")).await;
+        health.ok().and_then(Result::ok).and_then(|v| v.get("ok").and_then(Value::as_bool)) == Some(true)
     }
 
     /// The running wisp, else a headless one started now (v1 `WispClient.connect`).

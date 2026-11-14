@@ -124,7 +124,9 @@ async fn dispatch(p: &Parsed, user_home: &Path, cwd: &Path) -> Result<i32> {
             }
         }
         Some("serve") => serve_here(&home, f.port, f.host.as_deref(), false, None).await?,
-        Some("desktop") => desktop(&home, f.port, true).await?,
+        Some("desktop") => {
+            desktop::desktop(&home, user_home, port, desktop::reach(port).await?, true).await?;
+        }
         Some("plugin" | "plugins") if rest.first().map(String::as_str) == Some("new") => {
             let name = scripted::need(rest.get(1), "a plugin name")?;
             let dir = plugin_cmd::new_plugin(&home, name)?;
@@ -140,7 +142,7 @@ async fn dispatch(p: &Parsed, user_home: &Path, cwd: &Path) -> Result<i32> {
             commands::run(p, "launch", &p.words, &cwd_s, port).await?;
         }
         None if !p.words.is_empty() => return launch_and_open(p, &home, port, &cwd_s).await,
-        None => open(&home, f.port, f.open, f.browser).await?,
+        None => desktop::open(&home, user_home, port, f.open, f.browser).await?,
     }
     Ok(0)
 }
@@ -429,7 +431,7 @@ async fn live(p: &Parsed, home: &Path, port: u16) -> Result<Option<i32>> {
 }
 
 /// Runs wisp here until a signal; `open`: then show it in the browser at `path`.
-async fn serve_here(home: &Path, port: u16, host: Option<&str>, open: bool, path: Option<&str>) -> Result<()> {
+pub(crate) async fn serve_here(home: &Path, port: u16, host: Option<&str>, open: bool, path: Option<&str>) -> Result<()> {
     let r = serve::boot(home, port, host).await?;
     let url = r.server.url();
     tracing::info!("listening at {url} after {} ms", r.started.elapsed().as_millis());
@@ -439,37 +441,6 @@ async fn serve_here(home: &Path, port: u16, host: Option<&str>, open: bool, path
     }
     serve::until_signal(r).await;
     Ok(())
-}
-
-/// `wisp`: focus the running one, else the desktop window, else serve here and open a tab.
-async fn open(home: &Path, port: u16, open: bool, browser: bool) -> Result<()> {
-    let c = Client::new(port);
-    if c.ping().await {
-        if open {
-            serve::open_url(&format!("{}/", c.url));
-        }
-        eprintln!("\n  ◌ wisp is open at {}\n", c.url);
-        return Ok(());
-    }
-    if open && !browser && desktop(home, port, false).await.is_ok() {
-        return Ok(());
-    }
-    serve_here(home, port, None, open, None).await
-}
-
-async fn desktop(home: &Path, port: u16, strict: bool) -> Result<()> {
-    match desktop::shell(home, serve::VERSION).await {
-        Ok(exe) => {
-            desktop::launch(&exe, port)?;
-            eprintln!("\n  ◌ wisp is open\n");
-            Ok(())
-        }
-        Err(why) if strict => Err(CliError::said(desktop::no_app_line(&why))),
-        Err(why) => {
-            eprintln!("{}", desktop::no_app_line(&why));
-            Err(CliError::said(why))
-        }
-    }
 }
 
 /// `wisp add [path|repo URL]`: a `project` resource (a URL is cloned here first, through git).
