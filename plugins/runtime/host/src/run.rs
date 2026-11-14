@@ -77,6 +77,8 @@ fn apply_opts(s: &mut Session, item: &QueueItem) {
 
 /// The hero title of a turn `before:run` (or its folder) refused: it never started.
 pub(crate) const NOT_STARTED: &str = "Not started";
+/// The turn's `ext["wisp.runtime"]` flag for a CLI that couldn't be spawned: it ended at once, nothing ran.
+pub(crate) const SPAWN_FAILED: &str = "spawnFailed";
 
 fn shown(title: &str, summary: &str, status: &str) -> Presentation {
     let hero = serde_json::json!({ "type": "hero", "title": title, "summary": summary, "status": status });
@@ -186,8 +188,25 @@ impl Runtime {
         if let Err(e) = self.spawn_run(&s, &turn, &harness, &run).await {
             let text = e.to_string();
             self.finish_now(s.id.as_str(), turn.id.as_str(), &text).await?;
+            // its CLI never ran (gone, its folder unmade): read back as not started (a trial's pair goes as one)
+            self.mark_unspawned(s.id.as_str(), turn.id.as_str()).await?;
         }
         Ok(turn.id)
+    }
+
+    /// The turn's CLI couldn't be spawned: `ext["wisp.runtime"].spawnFailed`, beside what its end kept there.
+    async fn mark_unspawned(self: &Arc<Self>, sid: &str, tid: &str) -> Result<()> {
+        let _guard = self.task_lock(sid).await;
+        let mut s = self.repo.session(sid).await?;
+        let mut t = self.repo.turn(tid).await?;
+        let own = t.ext.entry("wisp.runtime".to_owned()).or_insert_with(|| serde_json::json!({}));
+        if !own.is_object() {
+            *own = serde_json::json!({});
+        }
+        if let Some(o) = own.as_object_mut() {
+            o.insert(SPAWN_FAILED.into(), Value::Bool(true));
+        }
+        self.persist(&mut s, vec![t]).await.map(drop)
     }
 
     /// The turn `item` starts, as it's saved (running, from now).

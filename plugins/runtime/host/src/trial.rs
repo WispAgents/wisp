@@ -146,8 +146,8 @@ fn put_trial(s: &mut Session, t: &TrialLink) {
 
 /// Why a run's first turn didn't start, or None when it runs, ran, or waits for something its own row offers (a
 /// failed project setup: Start now). Not started: refused before it ran (a hook's veto, Ask near the limit's
-/// included) or held by the budget (Ask near the limit or a stop line). A trial whose run didn't start keeps no
-/// lone other run: one run of a pair would bill as if it were one.
+/// included), held by the budget (Ask near the limit or a stop line), or its CLI couldn't be spawned. A trial whose
+/// run didn't start keeps no lone other run: one run of a pair would bill as if it were one.
 pub fn not_started(t: &Turn) -> Option<String> {
     let hero = || t.presentation.as_ref().and_then(|p| p.blocks.first());
     match t.status {
@@ -158,6 +158,10 @@ pub fn not_started(t: &Turn) -> Option<String> {
             .map(|h| h.data.get("why").and_then(Value::as_str).unwrap_or("It waits for its account's usage window.").to_owned()),
         TurnStatus::Error if hero().and_then(|h| h.get("title")).and_then(Value::as_str) == Some(crate::run::NOT_STARTED) => {
             Some(hero().and_then(|h| h.get("summary")).and_then(Value::as_str).unwrap_or("It was refused.").to_owned())
+        }
+        // its CLI couldn't be spawned: nothing ran, so the pair is refused as one (its end's words say why)
+        TurnStatus::Error if t.ext.get(OWN).and_then(|o| o.get(crate::run::SPAWN_FAILED)).and_then(Value::as_bool) == Some(true) => {
+            Some(t.text.clone().filter(|x| !x.is_empty()).unwrap_or_else(|| "Its CLI couldn't be started.".to_owned()))
         }
         _ => None,
     }

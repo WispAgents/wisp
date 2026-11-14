@@ -19,6 +19,8 @@ use wisp_store::{Location, Store, SystemClock};
 /// A CLI whose output is v1 event JSON, one per line; the prompt is its first argument.
 pub struct Fake {
     info: HarnessInfo,
+    /// the program it launches (`fake`; another is one the sim doesn't have, so its spawn fails)
+    program: &'static str,
 }
 
 impl Fake {
@@ -33,6 +35,7 @@ impl Fake {
                 system_prompt_flag: true,
                 ..HarnessInfo::default()
             },
+            program: "fake",
         })
     }
 
@@ -47,7 +50,15 @@ impl Fake {
                 variants: vec!["subagentModel".into(), "skills".into()],
                 ..HarnessInfo::default()
             },
+            program: "fake",
         })
+    }
+
+    /// `varies`, but its CLI isn't installed: every spawn fails (`ProcError::NotFound`).
+    pub fn gone(id: &str, name: &str) -> Arc<dyn Harness> {
+        let mut info = Self::varies(id, name).info().clone();
+        info.id = id.into();
+        Arc::new(Self { info, program: "gone-cli" })
     }
 
     pub fn harness() -> Arc<dyn Harness> {
@@ -59,6 +70,7 @@ impl Fake {
                 system_prompt_flag: true,
                 ..HarnessInfo::default()
             },
+            program: "fake",
         })
     }
 }
@@ -125,7 +137,7 @@ impl Harness for Fake {
         if !run.skills.is_empty() {
             args.push(format!("--skills={}", run.skills));
         }
-        Ok(Launch { program: "fake".into(), args, ..Launch::default() })
+        Ok(Launch { program: self.program.into(), args, ..Launch::default() })
     }
     fn driver(&self, _run: &HarnessRun) -> Box<dyn RunDriver> {
         pure(Lines { done: false })

@@ -183,3 +183,23 @@ async fn a_run_refused_or_budget_held_before_it_ran_is_read_back_as_not_started_
     until("it ends", || async { ended(&ok, id.as_str()).await }).await;
     assert_eq!(ok.rt.first_turn_not_started(id.as_str()).await.unwrap(), None, "it ran");
 }
+
+/// Round 174's nit: run A's CLI can't be spawned (not installed, its folder unmade): it ended at once and nothing
+/// ran, so it's read back as not started and `runtime.trial` refuses the pair as one, never run B alone.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_run_whose_cli_cant_be_spawned_is_read_back_as_not_started_so_run_b_never_goes_alone() {
+    let r = rig_on(Recorder::default(), vec![Fake::gone("cc", "Claude-ish")]).await;
+    let id = r.rt.create(start("fix it", "cc")).await.unwrap().id;
+    let t = r.rt.turns(id.as_str(), None, Some(1)).await.unwrap().pop().unwrap();
+    assert_eq!(t.status, TurnStatus::Error, "its end is the spawn error, as before");
+    let why = r.rt.first_turn_not_started(id.as_str()).await.unwrap();
+    assert!(why.as_deref().is_some_and(|w| w.contains("gone-cli")), "the spawn error's words: {why:?}");
+    // a run that ran and failed on its own is not "not started"
+    let ok = rig_on(Recorder::default(), vec![Fake::varies("cc", "Claude-ish")]).await;
+    let id = ok.rt.create(start("fail now", "cc")).await.unwrap().id;
+    until("it ends", || async {
+        ok.rt.turns(id.as_str(), None, Some(1)).await.unwrap().pop().is_some_and(|t| t.status == TurnStatus::Error)
+    })
+    .await;
+    assert_eq!(ok.rt.first_turn_not_started(id.as_str()).await.unwrap(), None, "it ran");
+}
