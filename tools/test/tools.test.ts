@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import test, { after } from 'node:test';
 import { discover } from '../check/core/workspace.ts';
 import { affectedSet, parseImpact, scorePr, verdict, type PrScore } from '../g14.ts';
-import { clippedHint, markdown, readVerify } from '../monoflow-report.ts';
+import { clippedHint, fenceFor, markdown, packageFolders, readVerify } from '../monoflow-report.ts';
 import { MONOFLOW_COMMIT, WRAPPER, WRAPPER_SCRIPT, strays, writeWrapper } from '../setup-monoflow.ts';
 import { dependencyOrder, plan } from '../test.ts';
 
@@ -76,6 +76,33 @@ test('monoflow-report: a clipped execution_failure says the test is cut out and 
     clippedHint(panic, ['x'], 'packages/x', () => false),
     "failing: thread 'hostd_runs_a_box_through_boxd' panicked at apps/grid/tests/boxd_driver.rs:105:5: | test hostd_runs_a_box_through_boxd ... FAILED; to see it: the test script in packages/x",
   );
+});
+
+test('monoflow-report: an execution_failure with no file resolves its target to the crate folder', () => {
+  const r = readVerify({ status: 'failed', errors: [{ code: 'execution_failure', targets: ['wisp-grid'], message: 'test result: ok…' }] }, (t) => (t === 'wisp-grid' ? 'apps/grid' : undefined));
+  assert.match(r.details[1] ?? '', /^wisp-grid: .*to see it: cargo test -p wisp-grid --no-fail-fast$/);
+  // the real resolver, from cargo metadata and the npm workspaces of this repo
+  const folders = packageFolders();
+  assert.equal(folders.get('wisp'), 'crates/wisp');
+  assert.equal(folders.get('@wisp/ui'), 'packages/ui');
+  // a target nobody knows keeps the target names as the folder (and so the test script hint)
+  const unknown = readVerify({ errors: [{ code: 'execution_failure', targets: ['nope'], message: '' }] }, () => undefined);
+  assert.match(unknown.details.at(-1) ?? '', /the test script in nope$/);
+});
+
+test('monoflow-report: a ``` inside an error message does not close the What failed block', () => {
+  const r = readVerify({ errors: [{ file: 'packages/d', targets: ['d'], message: 'expected:\n```ts\nx\n```\nand ````` too' }] });
+  const md = markdown('PR', r);
+  const fence = fenceFor(r.details);
+  assert.equal(fence, '``````');
+  assert.ok(md.includes(`${fence}\npackages/d: expected:`));
+  assert.equal(md.split('\n').filter((l) => l === fence).length, 2);
+  assert.equal(fenceFor(['plain']), '```');
+});
+
+test('monoflow-report: ✖ and FAIL count only at the start of a line', () => {
+  const msg = ['✖ adds two numbers (1.2ms)', ' FAIL  src/a.test.ts > a', 'note: no ✖ here', 'AUTOFAIL x', 'skipped FAIL marker'].join('\n');
+  assert.equal(clippedHint(msg, ['x'], 'packages/x', () => false), 'failing: ✖ adds two numbers (1.2ms) | FAIL  src/a.test.ts > a; to see it: the test script in packages/x');
 });
 
 test('g14: impact in either shape; affected set is owners plus dependents; unmapped files listed', () => {

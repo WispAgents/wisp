@@ -4,8 +4,10 @@
 //
 //   node tools/monoflow-report.ts <verify.json> [--title=<heading>] [--affected=<affected.json>]
 
+import { execFileSync } from 'node:child_process';
 import { appendFileSync, existsSync, readFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { dirname, join, relative, sep } from 'node:path';
+import { discover } from './check/core/workspace.ts';
 
 export interface VerifyReport {
   status: string;
@@ -27,7 +29,34 @@ const strings = (v: unknown): string[] => (Array.isArray(v) ? v.filter((x): x is
 const num = (v: unknown): number => (typeof v === 'number' && Number.isFinite(v) ? v : 0);
 
 /** Lines that name what failed: a Rust panic or FAILED test, a node:test/vitest failure, an error line. */
-const FAILURE_LINE = /panicked at|^test .* FAILED$|^---- .* ----$|^failures:|^not ok |✖|FAIL |^error(\[|:)/;
+const FAILURE_LINE = /panicked at|^test .* FAILED$|^---- .* ----$|^failures:|^not ok |^✖|^FAIL |^error(\[|:)/;
+
+/** monoflow's package names (Cargo crates and npm workspaces) to their repo-relative folders. */
+export function packageFolders(root = process.cwd()): Map<string, string> {
+  const map = new Map<string, string>();
+  try {
+    for (const p of discover(root)) map.set(p.name, p.dir);
+  } catch {
+    // no root package.json: only the crates
+  }
+  try {
+    const out = execFileSync('cargo', ['metadata', '--no-deps', '--offline', '--format-version', '1'], { cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], maxBuffer: 64 * 1024 * 1024 });
+    const meta: unknown = JSON.parse(out);
+    const pkgs = isObj(meta) && Array.isArray(meta['packages']) ? meta['packages'] : [];
+    for (const p of pkgs) {
+      if (isObj(p) && typeof p['name'] === 'string' && typeof p['manifest_path'] === 'string') map.set(p['name'], relative(root, dirname(p['manifest_path'])).split(sep).join('/'));
+    }
+  } catch {
+    // no cargo on this machine: crates fall back to their target name
+  }
+  return map;
+}
+
+/** A Markdown fence one backtick longer than any backtick run in the content, so a ``` inside cannot close it. */
+export function fenceFor(lines: string[]): string {
+  const longest = Math.max(0, ...lines.flatMap((l) => (l.match(/`+/g) ?? []).map((r) => r.length)));
+  return '`'.repeat(Math.max(3, longest + 1));
+}
 
 /**
  * A command that failed with no file:line diagnostics comes back as `execution_failure`, and monoflow keeps very
@@ -45,11 +74,13 @@ export function clippedHint(message: string, targets: string[], dir: string, isC
   ].join('; ');
 }
 
-export function readVerify(raw: unknown): VerifyReport {
+/** `folderOf` maps a target to its folder, for errors that name no `file`; computed only when one needs it. */
+export function readVerify(raw: unknown, folderOf?: (target: string) => string | undefined): VerifyReport {
   const j = isObj(raw) ? raw : {};
   const failed = new Set<string>();
   const durations: Record<string, number> = {};
   const details: string[] = [];
+  let folders: ((target: string) => string | undefined) | undefined;
   const detail = (who: string, r: Record<string, unknown>): void => {
     const text = DETAIL_KEYS.map((k) => r[k]).find((v): v is string => typeof v === 'string' && v.length > 0);
     if (text) details.push(`${who}: ${clip(text)}`);
@@ -67,9 +98,21 @@ export function readVerify(raw: unknown): VerifyReport {
     if (!isObj(e)) continue;
     const targets = strings(e['targets']);
     for (const t of targets) failed.add(t);
-    const who = typeof e['file'] === 'string' ? e['file'] : targets.join(', ');
+    const file = typeof e['file'] === 'string' ? e['file'] : undefined;
+    const who = file ?? targets.join(', ');
     detail(who, e);
-    if (e['code'] === 'execution_failure') details.push(`${who}: ${clippedHint(typeof e['message'] === 'string' ? e['message'] : '', targets, who)}`);
+    if (e['code'] === 'execution_failure') {
+      let dir = file;
+      if (dir === undefined) {
+        if (!folders) {
+          const known = folderOf ? undefined : packageFolders();
+          folders = folderOf ?? ((t) => known?.get(t));
+        }
+        const resolve = folders;
+        dir = targets.map((t) => resolve(t)).find((d) => d !== undefined) ?? who;
+      }
+      details.push(`${who}: ${clippedHint(typeof e['message'] === 'string' ? e['message'] : '', targets, dir)}`);
+    }
   }
   return {
     status: typeof j['status'] === 'string' ? j['status'] : 'unknown',
@@ -93,7 +136,7 @@ export function markdown(title: string, r: VerifyReport, affected?: { affected_p
   const lines = [`### ${title}`, '', `**${r.status}** · ${r.total} targets · ${(r.durationMs / 1000).toFixed(1)} s`, ''];
   if (r.failed.length) lines.push(`Failed: ${r.failed.map((f) => `\`${f}\``).join(', ')}`, '');
   // what each failure said, so the job summary shows it without opening the log
-  if (r.details.length) lines.push('<details><summary>What failed</summary>', '', '```', ...r.details, '```', '', '</details>', '');
+  if (r.details.length) lines.push('<details><summary>What failed</summary>', '', fenceFor(r.details), ...r.details, fenceFor(r.details), '', '</details>', '');
   if (affected) {
     const a = affected.affected_packages ?? [];
     lines.push(`Affected set (report-only, gate G14): ${a.length ? a.map((p) => `\`${p}\``).join(', ') : '_none_'}`, '');
