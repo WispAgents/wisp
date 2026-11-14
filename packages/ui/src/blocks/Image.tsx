@@ -14,6 +14,7 @@ import { useBlocks, useBlockT } from './context.tsx';
 import { opt } from './read.ts';
 import { CantShow, InlineMd } from './rich-ui.tsx';
 import type { BlockProps } from './types.ts';
+import '../css/media.css';
 
 /** What the agent named (`path`, else `src`), and the URL the host gives for it. */
 export function useMedia(props: BlockProps): { readonly name: () => string; readonly url: () => string | undefined } {

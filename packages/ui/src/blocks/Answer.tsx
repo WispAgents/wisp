@@ -11,6 +11,10 @@ import { BLOCKS } from './registry.ts';
 import type { AnswerBlock, BlockContext, BlockRenderer } from './types.ts';
 import { UnknownBlock } from './Unknown.tsx';
 import { BlockComment, CommentLayer, commentable, createCommenting } from './answer-comments.tsx';
+import '../css/answer.css';
+import '../css/answer-content.css';
+import '../css/answer-rich.css';
+import '../css/answer-comments.css';
 
 export interface AnswerProps extends KitProps {
   /** the presentation's blocks, as the agent wrote them */

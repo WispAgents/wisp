@@ -6,6 +6,7 @@
 import { Index, Show, type JSX } from 'solid-js';
 import { sub, type KitProps, type PartName } from '../core/props.ts';
 import { Skeleton } from '../content/Skeleton.tsx';
+import '../css/machine.css';
 
 /** Points in 0..1 on both axes: x is time across the hour, y the value over the scale. */
 export type SparkPoint = readonly [x: number, y: number];

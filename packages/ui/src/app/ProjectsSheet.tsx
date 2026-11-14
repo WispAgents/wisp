@@ -7,6 +7,7 @@ import { flag } from '../core/props.ts';
 import type { ReorderAttrs } from '../core/reorder.ts';
 import { Icon } from '../content/Icon.tsx';
 import { MenuOn, type MenuEntry } from '../controls/Menu.tsx';
+import '../css/app-projects.css';
 
 export interface ProjectsPlace {
   readonly id: string;

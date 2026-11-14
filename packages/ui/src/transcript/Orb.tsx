@@ -2,6 +2,7 @@
 // its centre. The one "busy" signal (design/ui.md: don't invent another). Still under reduced motion.
 import { For, type JSX } from 'solid-js';
 import { flag, type KitProps } from '../core/props.ts';
+import '../css/transcript.css';
 
 export interface OrbProps extends KitProps {
   readonly live?: boolean;

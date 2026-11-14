@@ -7,6 +7,7 @@ import { flag, sub, type KitProps, type PartName } from '../../core/props.ts';
 import { highlight } from '../highlight.ts';
 import { hoverWords, lineAt, nameAt, nameCellAt } from './file-text.ts';
 import { useTimeout } from '../../blocks/rich-scope.ts';
+import '../../css/file-view.css';
 
 /** One line's mark in the why-gutter: who wrote it (a short label) and why (its title). */
 export interface GutterMark {

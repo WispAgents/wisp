@@ -8,6 +8,7 @@ import { For, Show, createMemo, createUniqueId, type JSX } from 'solid-js';
 import { Portal } from 'solid-js/web';
 import { Icon } from '../content/Icon.tsx';
 import type { PartName } from '../core/props.ts';
+import '../css/app-usage.css';
 
 export interface TaskUsageRow {
   readonly label: string;

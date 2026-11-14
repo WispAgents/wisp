@@ -5,6 +5,8 @@ import { For, Show, type JSX } from 'solid-js';
 import { flag } from '../core/props.ts';
 import { Icon } from '../content/Icon.tsx';
 import { Switch } from '../controls/Switch.tsx';
+import '../css/crew-view.css';
+import '../css/crew-kit.css';
 
 export interface CrewKitRow {
   readonly id: string;

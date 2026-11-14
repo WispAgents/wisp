@@ -3,6 +3,7 @@
 // whether it's shown; the button only asks to flip it.
 import type { JSX } from 'solid-js';
 import { sub, type KitProps, type PartName } from '../core/props.ts';
+import '../css/changes.css';
 
 export interface EnvMaskProps extends KitProps {
   /** the file's values show as they are */

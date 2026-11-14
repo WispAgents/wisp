@@ -6,6 +6,7 @@
 import { For, Show, type JSX } from 'solid-js';
 import { sub, flag, type KitProps, type PartName } from '../core/props.ts';
 import { Skeleton } from '../content/Skeleton.tsx';
+import '../css/machine.css';
 
 export interface UsageCell {
   /** the column's name: shown in the head, and beside the number when stacked */

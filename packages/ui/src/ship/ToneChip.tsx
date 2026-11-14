@@ -2,6 +2,7 @@
 import type { JSX } from 'solid-js';
 import type { Tone } from '@wisp/tokens';
 import { flag, type KitProps } from '../core/props.ts';
+import '../css/ship.css';
 
 export interface ToneChipProps extends KitProps {
   readonly label: string;

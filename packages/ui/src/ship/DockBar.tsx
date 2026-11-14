@@ -5,6 +5,7 @@ import type { Tone } from '@wisp/tokens';
 import type { KitProps } from '../core/props.ts';
 import { Icon } from '../content/Icon.tsx';
 import type { IconName } from '../content/icons.ts';
+import '../css/ship.css';
 
 export interface DockBarProps extends KitProps {
   readonly text: string;

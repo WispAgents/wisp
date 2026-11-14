@@ -4,6 +4,7 @@
 import { For, Show, type JSX } from 'solid-js';
 import { Icon } from '../content/Icon.tsx';
 import { Markdown } from '../content/markdown/Markdown.tsx';
+import '../css/btw.css';
 
 export interface BtwItem {
   readonly id: string;

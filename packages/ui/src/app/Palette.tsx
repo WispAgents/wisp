@@ -10,6 +10,7 @@ import type { IconName } from '../content/icons.ts';
 import { Dot } from '../shell-list/Dot.tsx';
 import { Skeleton } from '../content/Skeleton.tsx';
 import { Button } from '../controls/Button.tsx';
+import '../css/palette.css';
 
 export interface PaletteRow {
   readonly id: string;

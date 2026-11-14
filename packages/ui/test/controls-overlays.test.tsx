@@ -1,4 +1,4 @@
-import { describe, expect, test, vi } from 'vitest';
+import { beforeAll, describe, expect, test, vi } from 'vitest';
 import { createSignal } from 'solid-js';
 import { mount, part, tick } from './helpers.tsx';
 import { Dialog, Sheet } from '../src/controls/Dialog.tsx';
@@ -6,6 +6,10 @@ import { Popover } from '../src/controls/Popover.tsx';
 import { Tooltip } from '../src/controls/Tooltip.tsx';
 import { Button } from '../src/controls/Button.tsx';
 import { KitProvider } from '../src/core/i18n.tsx';
+import { preloadControls } from '../src/controls/lazy-part.ts';
+
+// the app fetches the overlays' machines once its first screen is up (ADR-0011); a press before that: lazy-controls.test.tsx
+beforeAll(() => preloadControls());
 
 const key = (el: Element, k: string): void => {
   el.dispatchEvent(new KeyboardEvent('keydown', { key: k, bubbles: true, cancelable: true }));

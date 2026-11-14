@@ -7,6 +7,7 @@ import { Icon } from '../content/Icon.tsx';
 import { Spirit } from './Spirit.tsx';
 import { SPIRIT_PARTS, isSpirit, type SpiritPart } from './spirit-code.ts';
 import { makerOptions } from './maker-options.ts';
+import '../css/crew-editor.css';
 
 export interface SpiritMakerProps {
   /** the avatar now: a spirit code, or an emoji */

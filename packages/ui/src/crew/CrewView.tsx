@@ -7,6 +7,7 @@ import { flag } from '../core/props.ts';
 import { Icon } from '../content/Icon.tsx';
 import type { IconName } from '../content/icons.ts';
 import { WithAct, type Act } from '../app/act.tsx';
+import '../css/crew-view.css';
 
 export interface CrewViewProps {
   readonly face: JSX.Element;

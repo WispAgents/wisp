@@ -6,6 +6,7 @@ import { flag, sub, type KitProps, type PartName } from '../core/props.ts';
 import { Orb } from './Orb.tsx';
 import { Icon } from '../content/Icon.tsx';
 import type { IconName } from '../content/icons.ts';
+import '../css/transcript.css';
 
 export interface WorkingPanelProps extends KitProps {
   readonly status: string;

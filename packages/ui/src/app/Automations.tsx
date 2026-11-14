@@ -6,6 +6,7 @@ import { For, Index, Show, type JSX } from 'solid-js';
 import { flag } from '../core/props.ts';
 import { Icon } from '../content/Icon.tsx';
 import type { IconName } from '../content/icons.ts';
+import '../css/app-automations.css';
 
 /** words with `{ code }` runs, as v1 wrote `<code>{name}</code>` in its lines */
 export type Rich = readonly (string | { readonly code: string })[];

@@ -65,7 +65,8 @@ export { CommentCard, CommentTray, type CommentCardProps, type CommentTrayProps 
 export { SpareCards, type SpareCard, type SpareCardsProps } from './Spare.tsx';
 export { HomeUsage, type HomeUsageGroup, type HomeUsageProps, type HomeUsageWindow } from './HomeUsage.tsx';
 export { RailCardBody, headingForCard, stepRow, type RailCardBodyProps, type RailCardRow } from './RailCard.tsx';
-export { AutoPop, type AutoPopProps, type AutoPopRow } from './AutoPop.tsx';
+export { AutoPop } from './auto-pop-lazy.ts';
+export type { AutoPopProps, AutoPopRow } from './AutoPop.tsx';
 export { ProjectsSheet, type ProjectsSheetProps, type ProjectsRow, type ProjectsPlace } from './ProjectsSheet.tsx';
 export { BtwList, type BtwItem } from './Btw.tsx';
 export { RateButtons, WhyForm, type Rating, type RateProps, type WhyFormProps } from './Rate.tsx';

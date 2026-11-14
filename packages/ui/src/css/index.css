@@ -1,6 +1,10 @@
 /* @wisp/ui: the only stylesheet. The layer order is declared here, once: tokens and the kit sit
    under plugins, so a plugin's [data-part] rule wins without !important, and unlayered CSS (none
-   is allowed) would beat them all. */
+   is allowed) would beat them all.
+   Not here: the sheets of what only shows once its code has loaded (an answer's blocks, the transcript, the side
+   panel, a crew member's page, Compare, Projects, the machine pane …). Each is imported by the kit component that
+   draws it, so it ships in that component's lazy chunk and loads with it, before it renders (ADR-0011: initial CSS
+   ≤ 30 KB br). They sit in the same `kit` layer. */
 @layer reset, tokens, kit, plugins;
 
 @import '@wisp/tokens/tokens.css';
@@ -16,43 +20,19 @@
 @import './composites.css';
 @import './composer.css';
 @import './settings.css';
-@import './blocks.css';
 @import './markdown.css';
-@import './diff.css';
-@import './file-view.css';
 @import './virtual.css';
-@import './answer.css';
-@import './answer-content.css';
-@import './answer-rich.css';
-@import './answer-comments.css';
 @import './shell.css';
-@import './machine.css';
 @import './shell-list.css';
-@import './terminal.css';
 @import './frame.css';
 @import './app-frame.css';
 @import './project-select.css';
 @import './app-feed.css';
 @import './app-home.css';
-@import './app-projects.css';
-@import './app-automations.css';
-@import './app-compare.css';
 @import './app-watch.css';
 @import './think.css';
-@import './btw.css';
-@import './media.css';
-@import './rate.css';
 @import './app-task.css';
-@import './app-usage.css';
 @import './app-stack.css';
-@import './ship.css';
 @import './crew.css';
-@import './crew-view.css';
-@import './transcript.css';
-@import './changes.css';
-@import './palette.css';
-@import './crew-editor.css';
-@import './crew-kit.css';
-@import './stuff-frame.css';
 @import './org.css';
 @import './home.css';

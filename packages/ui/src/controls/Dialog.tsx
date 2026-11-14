@@ -1,10 +1,12 @@
 // Dialog and Sheet on Zag's dialog machine: focus moves in and is trapped, Escape and the
 // backdrop close it, focus returns to what opened it, the page behind doesn't scroll. It opens in
 // its final shape at once (design/ux.md): the caller shows placeholders for what still loads.
-import * as dialog from '@zag-js/dialog';
-import { normalizeProps, useMachine } from '@zag-js/solid';
-import { createMemo, createUniqueId, Show, type JSX } from 'solid-js';
+// The machine (./dialog-machine.ts) loads apart from the first page (./lazy-part.ts); until it's bound, the surface
+// draws with plain props (its role, Escape, the backdrop and × close it) and the machine takes it over as it lands.
+import { createEffect, createSignal, Show, untrack, type Accessor, type JSX } from 'solid-js';
 import { Portal } from 'solid-js/web';
+import { lazyPart, warm } from './lazy-part.ts';
+import type { DialogApi } from './dialog-machine.ts';
 import { styleOf, sub, type KitProps, type PartName, type WithChildren, type WithVars } from '../core/props.ts';
 import { useT, type Translate } from '../core/i18n.tsx';
 import { Icon } from '../content/Icon.tsx';
@@ -41,27 +43,54 @@ export interface DialogProps extends KitProps, WithChildren, WithVars {
 
 type Kind = 'dialog' | 'sheet';
 
-function useDialog(props: DialogProps): () => dialog.Api {
-  const id = createUniqueId();
-  const service = useMachine(dialog.machine, () => ({
-    id,
-    ...(props.open === undefined ? {} : { open: props.open }),
-    onOpenChange: (d: dialog.OpenChangeDetails) => props.onOpenChange?.(d.open),
-    role: props.role ?? 'dialog',
-    closeOnInteractOutside: props.closeOnOutside ?? true,
-    ...(props.initialFocus ? { initialFocusEl: props.initialFocus } : {}),
-  }));
-  return createMemo(() => dialog.connect(service, normalizeProps));
+const machine = lazyPart(() => import('./dialog-machine.ts'));
+
+type Bind = Record<string, unknown>;
+
+/** The surface's parts' props: the machine's once it's bound, plain ones before. */
+interface Parts {
+  /** no machine yet: the surface moves focus in itself */
+  plain(): boolean;
+  backdrop(): Bind;
+  positioner(): Bind;
+  content(): Bind;
+  title(): Bind;
+  description(): Bind;
+  close(): Bind;
 }
 
-function Surface(props: DialogProps & { readonly kind: Kind; readonly api: dialog.Api; readonly part: PartName }): JSX.Element {
+function partsOf(api: () => DialogApi | undefined, props: DialogProps, close: () => void): Parts {
+  const outside = (e: PointerEvent): void => {
+    if (e.target === e.currentTarget && (props.closeOnOutside ?? true)) close();
+  };
+  const keys = (e: KeyboardEvent): void => {
+    if (e.key !== 'Escape') return;
+    e.preventDefault();
+    close();
+  };
+  return {
+    plain: () => api() === undefined,
+    backdrop: () => api()?.getBackdropProps() ?? { 'data-state': 'open' },
+    positioner: () => api()?.getPositionerProps() ?? { onPointerDown: outside },
+    content: () => api()?.getContentProps() ?? { role: props.role ?? 'dialog', 'aria-modal': 'true', tabIndex: -1, 'data-state': 'open', onKeyDown: keys },
+    title: () => api()?.getTitleProps() ?? {},
+    description: () => api()?.getDescriptionProps() ?? {},
+    close: () => api()?.getCloseTriggerProps() ?? { type: 'button', onClick: close },
+  };
+}
+
+function Surface(props: DialogProps & { readonly kind: Kind; readonly parts: Parts; readonly part: PartName }): JSX.Element {
   const t = useT(() => props.t);
   return (
     <Portal>
-      <div {...props.api.getBackdropProps()} data-kit="backdrop" data-sheet={props.kind === 'sheet' ? '' : undefined} data-place={props.place} />
-      <div {...props.api.getPositionerProps()} data-kit="dialog-positioner" data-sheet={props.kind === 'sheet' ? '' : undefined} data-size={props.size ?? 'md'} data-place={props.place}>
+      <div {...props.parts.backdrop()} data-kit="backdrop" data-sheet={props.kind === 'sheet' ? '' : undefined} data-place={props.place} />
+      <div {...props.parts.positioner()} data-kit="dialog-positioner" data-sheet={props.kind === 'sheet' ? '' : undefined} data-size={props.size ?? 'md'} data-place={props.place}>
         <div
-          {...props.api.getContentProps()}
+          {...props.parts.content()}
+          // shown before its machine: focus goes in (the machine traps it once it lands), so Escape and typing reach it
+          ref={(el) => {
+            if (props.parts.plain()) queueMicrotask(() => (props.initialFocus?.() ?? el).focus());
+          }}
           data-kit={props.kind}
           data-part={props.part}
           data-size={props.size ?? 'md'}
@@ -73,11 +102,11 @@ function Surface(props: DialogProps & { readonly kind: Kind; readonly api: dialo
             <span data-kit="sheet-handle" aria-hidden="true" />
           </Show>
           <header data-kit="dialog-head" data-part={sub(props.part, 'head')}>
-            <h2 {...props.api.getTitleProps()} data-kit="dialog-title" data-part={sub(props.part, 'title')}>
+            <h2 {...props.parts.title()} data-kit="dialog-title" data-part={sub(props.part, 'title')}>
               {props.title}
             </h2>
             <button
-              {...props.api.getCloseTriggerProps()}
+              {...props.parts.close()}
               aria-label={t('close')}
               title={t('close')}
               data-kit="icon-button"
@@ -90,7 +119,7 @@ function Surface(props: DialogProps & { readonly kind: Kind; readonly api: dialo
           </header>
           <Show when={props.description}>
             {(text) => (
-              <p {...props.api.getDescriptionProps()} data-kit="dialog-description">
+              <p {...props.parts.description()} data-kit="dialog-description">
                 {text()}
               </p>
             )}
@@ -110,15 +139,44 @@ function Surface(props: DialogProps & { readonly kind: Kind; readonly api: dialo
 }
 
 function Shell(props: DialogProps & { readonly kind: Kind }): JSX.Element {
-  const api = useDialog(props);
+  const [api, setApi] = createSignal<Accessor<DialogApi>>();
+  // opened by its own trigger before the machine was there
+  const [selfOpen, setSelfOpen] = createSignal(false);
+  const bound = (): DialogApi | undefined => api()?.();
+  const open = (): boolean => bound()?.open ?? props.open ?? selfOpen();
+  createEffect(() => {
+    if (open()) warm(machine)();
+  });
+  const close = (): void => {
+    if (props.open === undefined) setSelfOpen(false);
+    props.onOpenChange?.(false);
+  };
+  const parts = partsOf(bound, props, close);
   const part = (): PartName => props.part ?? (props.kind === 'sheet' ? 'ui.sheet' : 'ui.dialog');
+  const trigger = (): Bind =>
+    bound()?.getTriggerProps() ?? {
+      'aria-haspopup': 'dialog',
+      'aria-expanded': selfOpen(),
+      onPointerEnter: warm(machine),
+      onFocus: warm(machine),
+      onClick: () => {
+        setSelfOpen(true);
+        props.onOpenChange?.(true);
+      },
+    };
   return (
     <>
-      <Show when={props.trigger}>
-        {(look) => <TriggerButton look={look()} bind={api().getTriggerProps()} part={sub(part(), 'trigger')} />}
+      <Show when={machine.ready()}>
+        {(m) => {
+          setApi(() => m().useDialog(props, untrack(selfOpen)));
+          return null;
+        }}
       </Show>
-      <Show when={api().open}>
-        <Surface {...props} api={api()} part={part()} />
+      <Show when={props.trigger}>
+        {(look) => <TriggerButton look={look()} bind={trigger()} part={sub(part(), 'trigger')} />}
+      </Show>
+      <Show when={open()}>
+        <Surface {...props} parts={parts} part={part()} />
       </Show>
     </>
   );

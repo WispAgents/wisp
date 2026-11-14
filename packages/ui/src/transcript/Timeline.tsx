@@ -5,6 +5,7 @@ import { Show, type JSX } from 'solid-js';
 import { Icon } from '../content/Icon.tsx';
 import type { IconName } from '../content/icons.ts';
 import { flag, sub, type KitProps, type PartName } from '../core/props.ts';
+import '../css/transcript.css';
 
 export interface TimelineProps extends KitProps {
   /** the head: title and counts on one line */

@@ -10,6 +10,7 @@ import { WithAct, ActIcon, type Act } from '../app/act.tsx';
 import { Face } from './Face.tsx';
 import { Spirit } from './Spirit.tsx';
 import { SpiritMaker, type SpiritMakerProps } from './Maker.tsx';
+import '../css/crew-editor.css';
 
 export interface CrewEditorTemplate {
   readonly key: string;

@@ -3,6 +3,7 @@
 import { Show, type JSX } from 'solid-js';
 import type { KitProps, WithChildren } from '../core/props.ts';
 import { Icon } from '../content/Icon.tsx';
+import '../css/ship.css';
 
 export type CheckState = 'pass' | 'fail' | 'pending' | 'skipped';
 

@@ -1,7 +1,11 @@
-import { describe, expect, test, vi } from 'vitest';
+import { beforeAll, describe, expect, test, vi } from 'vitest';
 import { createSignal } from 'solid-js';
 import { mount, part, tick } from './helpers.tsx';
 import { ContextMenu, Menu, menuSections, type MenuEntry } from '../src/controls/Menu.tsx';
+import { preloadControls } from '../src/controls/lazy-part.ts';
+
+// the app fetches the overlays' machines once its first screen is up (ADR-0011); a press before that: lazy-controls.test.tsx
+beforeAll(() => preloadControls());
 
 const items: MenuEntry[] = [
   { value: 'rerun', label: 'Rerun…', icon: 'rerun' },

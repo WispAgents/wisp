@@ -8,6 +8,7 @@ import { MediaViewer, mediaSet, type ViewItem } from './Viewer.tsx';
 import { opt } from './read.ts';
 import { CantShow } from './rich-ui.tsx';
 import type { BlockProps } from './types.ts';
+import '../css/media.css';
 
 export function VideoBlock(props: BlockProps): JSX.Element {
   const t = useBlockT();

@@ -9,6 +9,7 @@ import type { IconName } from '../icons.ts';
 import { Text } from '../Text.tsx';
 import { Button, IconButton } from '../../controls/Button.tsx';
 import { parseDiff, type DiffFile, type DiffLine, type DiffStatus } from './parse.ts';
+import '../../css/diff.css';
 
 export interface DiffProps extends KitProps {
   /** A unified diff, as `git diff` prints it. */

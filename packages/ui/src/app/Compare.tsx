@@ -6,6 +6,7 @@ import { For, Show, type JSX } from 'solid-js';
 import type { Tone } from '@wisp/tokens';
 import { Button } from '../controls/Button.tsx';
 import { Pill } from '../content/Pill.tsx';
+import '../css/app-compare.css';
 
 export interface CompareCellView {
   readonly text: string;

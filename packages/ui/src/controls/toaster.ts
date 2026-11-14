@@ -1,7 +1,14 @@
 // The toaster: what the app (and @wisp/client's command rollback) calls to say something happened.
 // Rules from design/ux.md: short, past tense, at most one action (Undo); the same text twice
 // shows once; at most three stacked, only the newest in front; errors are red.
-import * as toast from '@zag-js/toast';
+// Zag's toast store loads apart from the first page (./lazy-part.ts) on the first toast: until then a toast waits for it
+// (its id is known at once: the same tone and text, the same id).
+import { createSignal, type Accessor } from 'solid-js';
+import type * as toast from '@zag-js/toast';
+import { lazyPart } from './lazy-part.ts';
+
+/** Zag's store and group machine (./toast-machine.tsx). */
+export const toastMachine = lazyPart(() => import('./toast-machine.tsx'));
 
 export type ToastTone = 'info' | 'success' | 'error' | 'loading';
 
@@ -30,8 +37,10 @@ export interface Toaster extends RollbackToaster {
   dismiss(id?: string): void;
   /** Clear all. */
   clear(): void;
-  /** For <Toasts>. */
-  readonly store: toast.Store;
+  /** For <Toasts>: Zag's store, once the first toast (or the app's preload) has loaded it. */
+  readonly store: Accessor<toast.Store | undefined>;
+  /** the store, loading it if it isn't yet */
+  ready(): Promise<toast.Store>;
 }
 
 export interface ToasterOptions {
@@ -48,24 +57,50 @@ const idFor = (tone: ToastTone, message: string): string => `toast:${tone}:${mes
 
 export function createToaster(options: ToasterOptions = {}): Toaster {
   const duration = options.duration ?? 4000;
-  const store = toast.createStore({ placement: 'bottom', max: options.max ?? 3, overlap: true, duration, gap: 8 });
+  const [store, setStore] = createSignal<toast.Store>();
+  const waiting: ((s: toast.Store) => void)[] = [];
+  let loading: Promise<toast.Store> | undefined;
+  const ready = (): Promise<toast.Store> =>
+    (loading ??= toastMachine.load().then(
+      (m) => {
+        const s = m.createStore({ placement: 'bottom', max: options.max ?? 3, overlap: true, duration, gap: 8 });
+        setStore(() => s);
+        for (const f of waiting.splice(0)) f(s);
+        return s;
+      },
+      (err: unknown) => {
+        loading = undefined;
+        throw err;
+      },
+    ));
+  const withStore = (f: (s: toast.Store) => void): void => {
+    const s = store();
+    if (s) return f(s);
+    waiting.push(f);
+    ready().catch(() => undefined);
+  };
   const show = (message: string, opts: ToastOptions & { readonly tone?: ToastTone } = {}): string => {
     const tone = opts.tone ?? 'info';
-    return store.create({
-      id: idFor(tone, message),
-      title: message,
-      type: tone,
-      duration: opts.duration ?? (tone === 'error' ? ERROR_DURATION : duration),
-      ...(opts.description === undefined ? {} : { description: opts.description }),
-      ...(opts.action === undefined ? {} : { action: { label: opts.action.label, onClick: opts.action.onClick } }),
-    });
+    const id = idFor(tone, message);
+    withStore((s) =>
+      s.create({
+        id,
+        title: message,
+        type: tone,
+        duration: opts.duration ?? (tone === 'error' ? ERROR_DURATION : duration),
+        ...(opts.description === undefined ? {} : { description: opts.description }),
+        ...(opts.action === undefined ? {} : { action: { label: opts.action.label, onClick: opts.action.onClick } }),
+      }),
+    );
+    return id;
   };
   return {
     show,
     success: (message, opts) => show(message, { ...opts, tone: 'success' }),
     error: (message, opts) => show(message, { ...opts, tone: 'error' }),
-    dismiss: (id) => store.dismiss(id),
-    clear: () => store.dismiss(),
+    dismiss: (id) => withStore((s) => s.dismiss(id)),
+    clear: () => withStore((s) => s.dismiss()),
     store,
+    ready,
   };
 }

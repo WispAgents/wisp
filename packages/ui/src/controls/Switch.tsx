@@ -1,7 +1,9 @@
 // Switch (v1's button role=switch) and Checkbox (on Zag: a real hidden input for forms, the right roles and keyboard).
-import * as checkbox from '@zag-js/checkbox';
-import { normalizeProps, useMachine } from '@zag-js/solid';
-import { createMemo, createUniqueId, Show, type JSX } from 'solid-js';
+// Checkbox draws at once on a plain input that already works; Zag's machine (./checkbox-machine.ts) loads apart from the
+// first page (./lazy-part.ts) and binds to the same elements when it's there.
+import { createSignal, createUniqueId, Show, type Accessor, type JSX } from 'solid-js';
+import { lazyPart, warm } from './lazy-part.ts';
+import type { CheckboxApi } from './checkbox-machine.ts';
 import { sub, type KitProps, type PartName } from '../core/props.ts';
 import { Icon } from '../content/Icon.tsx';
 
@@ -64,31 +66,45 @@ export interface CheckboxProps extends ToggleBase {
   readonly invalid?: boolean;
 }
 
+const machine = lazyPart(() => import('./checkbox-machine.ts'));
+
 export function Checkbox(props: CheckboxProps): JSX.Element {
   const id = props.id ?? createUniqueId();
-  const service = useMachine(checkbox.machine, () => ({
-    id,
-    checked: props.checked,
-    // An indeterminate box becomes checked when clicked; callers only ever see a boolean.
-    onCheckedChange: (d: checkbox.CheckedChangeDetails) => props.onChange(d.checked === true),
-    ...(props.disabled === undefined ? {} : { disabled: props.disabled }),
-    ...(props.invalid === undefined ? {} : { invalid: props.invalid }),
-    ...(props.name === undefined ? {} : { name: props.name }),
-    ...(props.value === undefined ? {} : { value: props.value }),
-  }));
-  const api = createMemo(() => checkbox.connect(service, normalizeProps));
+  const [api, setApi] = createSignal<Accessor<CheckboxApi>>();
+  const bound = (): CheckboxApi | undefined => api()?.();
   const part = (): PartName => props.part ?? 'ui.checkbox';
+  const state = (): string => (props.checked === 'indeterminate' ? 'indeterminate' : props.checked ? 'checked' : 'unchecked');
+  const look = (): Record<string, unknown> => ({ 'data-state': state(), 'data-disabled': props.disabled ? '' : undefined, 'data-invalid': props.invalid ? '' : undefined });
+  const checked = (): boolean => bound()?.checked ?? props.checked === true;
+  const indeterminate = (): boolean => bound()?.indeterminate ?? props.checked === 'indeterminate';
   return (
-    <label {...api().getRootProps()} data-kit="checkbox" data-part={part()}>
-      <input {...api().getHiddenInputProps()} aria-label={props.label ? undefined : props['aria-label']} />
-      <span {...api().getControlProps()} data-kit="checkbox-control" data-part={sub(part(), 'control')}>
-        <Show when={api().indeterminate} fallback={<Show when={api().checked}><Icon name="check" size="xs" /></Show>}>
+    <label {...(bound()?.getRootProps() ?? { ...look(), onPointerEnter: warm(machine), onFocusIn: warm(machine) })} data-kit="checkbox" data-part={part()}>
+      <Show when={machine.ready()}>
+        {(m) => {
+          setApi(() => m().useCheckbox(props, id));
+          return null;
+        }}
+      </Show>
+      <input
+        {...(bound()?.getHiddenInputProps() ?? {
+          type: 'checkbox',
+          id: `checkbox:${id}:input`,
+          checked: props.checked === true,
+          disabled: props.disabled === true,
+          name: props.name,
+          value: props.value ?? 'on',
+          onChange: (e: Event) => props.onChange((e.currentTarget as HTMLInputElement).checked),
+        })}
+        aria-label={props.label ? undefined : props['aria-label']}
+      />
+      <span {...(bound()?.getControlProps() ?? { ...look(), 'aria-hidden': true })} data-kit="checkbox-control" data-part={sub(part(), 'control')}>
+        <Show when={indeterminate()} fallback={<Show when={checked()}><Icon name="check" size="xs" /></Show>}>
           <Icon name="minus" size="xs" />
         </Show>
       </span>
       <Show when={props.label}>
         {(label) => (
-          <span {...api().getLabelProps()} data-kit="toggle-label">
+          <span {...(bound()?.getLabelProps() ?? look())} data-kit="toggle-label">
             {label()}
           </span>
         )}

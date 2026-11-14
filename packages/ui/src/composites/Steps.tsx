@@ -3,6 +3,7 @@
 import { For, Match, Show, Switch, type JSX } from 'solid-js';
 import { sub, type KitProps, type PartName } from '../core/props.ts';
 import { Icon } from '../content/Icon.tsx';
+import '../css/blocks.css';
 
 export type StepStatus = 'done' | 'current' | 'pending' | 'skipped' | 'failed';
 

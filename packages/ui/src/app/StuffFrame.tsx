@@ -6,6 +6,7 @@ import { For, Show, type JSX } from 'solid-js';
 import { flag } from '../core/props.ts';
 import { Icon } from '../content/Icon.tsx';
 import type { IconName } from '../content/icons.ts';
+import '../css/stuff-frame.css';
 
 export interface StuffFrameProps {
   readonly title: string;

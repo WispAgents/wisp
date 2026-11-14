@@ -7,6 +7,7 @@ import { Portal } from 'solid-js/web';
 import { Icon } from '../content/Icon.tsx';
 import { useBlockT } from './context.tsx';
 import { copyImage, fileName } from './media-copy.ts';
+import '../css/media.css';
 
 export interface ViewItem {
   readonly src: string;

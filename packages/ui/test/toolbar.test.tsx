@@ -1,8 +1,12 @@
 // The no-wrapping-bars rule (design/layout.md §2): items step down lowest priority first, label to
 // icon before anything moves into More, pins never step down, and expanding waits for slack.
-import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
+import { afterEach, beforeAll, beforeEach, describe, expect, test, vi } from 'vitest';
 import { mount, part, tick } from './helpers.tsx';
 import { Toolbar, collapseSteps, formsAt, levelFor, nextLevel, widthAt, type PlanInput, type ToolbarItem } from '../src/index.ts';
+import { preloadControls } from '../src/controls/lazy-part.ts';
+
+// the app fetches the overlays' machines once its first screen is up (ADR-0011); a press before that: lazy-controls.test.tsx
+beforeAll(() => preloadControls());
 
 const item = (id: string, priority: 'pin' | number, full = 100, icon = 32) => ({ id, priority, full, icon });
 

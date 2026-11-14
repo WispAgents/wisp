@@ -2,6 +2,7 @@
 // delta coloured only when it means good or bad.
 import { For, Show, type JSX } from 'solid-js';
 import { sub, type KitProps, type PartName } from '../core/props.ts';
+import '../css/blocks.css';
 
 export interface Stat {
   readonly label: string;

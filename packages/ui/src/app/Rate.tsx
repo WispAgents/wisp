@@ -6,6 +6,7 @@ import { Button } from '../controls/Button.tsx';
 import { TextArea } from '../controls/Input.tsx';
 import { Icon } from '../content/Icon.tsx';
 import { flag } from '../core/props.ts';
+import '../css/rate.css';
 
 export type Rating = 'up' | 'down';
 

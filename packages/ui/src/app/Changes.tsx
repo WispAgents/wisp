@@ -8,6 +8,7 @@ import { flag, type PartName } from '../core/props.ts';
 import { Icon } from '../content/Icon.tsx';
 import { EnvMask } from '../content/EnvMask.tsx';
 import { WithAct, type Act } from './act.tsx';
+import '../css/changes.css';
 
 /** A row of a git diff (wisp-git's FileDiff rows): ' ', '+', '-', or '…' for a gap of `count` unchanged lines. */
 export interface ChangeRow {

@@ -10,6 +10,9 @@ import { PromptSuggestList, dropHandlers } from '../composer/PromptSuggest.tsx';
 import { suggestKeyDown, type PromptSuggest } from '../composer/suggest-keys.ts';
 import type { IconName } from '../content/icons.ts';
 import { TaskUsage, type TaskUsageProps } from './TaskUsage.tsx';
+import '../css/transcript.css';
+import '../css/app-usage.css';
+import '../css/rate.css';
 
 export interface TaskHeadProps {
   readonly title: string;

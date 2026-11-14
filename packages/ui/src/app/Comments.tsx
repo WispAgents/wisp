@@ -4,6 +4,7 @@
 import { For, Show, onMount, type JSX } from 'solid-js';
 import { Icon } from '../content/Icon.tsx';
 import type { KitProps } from '../core/props.ts';
+import '../css/answer-comments.css';
 
 export interface CommentCardProps extends KitProps {
   readonly n: number;

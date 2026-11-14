@@ -12,6 +12,7 @@ import { KEY_ROW, type RowKey } from './keys.ts';
 import { rowKey, wireKeys, wireMouse, wireScroll, type InputHost } from './input.ts';
 import { Painter } from './paint.ts';
 import type { Screen } from './screen.ts';
+import '../css/terminal.css';
 
 export const SYNC_MS = 150;
 
