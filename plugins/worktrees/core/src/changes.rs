@@ -7,14 +7,15 @@
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 use wisp_automations_api::TriggerEvent;
+use wisp_runtime_api::paths::is_within;
 
 /// `git status` for the poll.
 pub const STATUS_ARGS: [&str; 4] = ["status", "--porcelain=v1", "-z", "--untracked-files=all"];
 
 /// Whether `path` is in one of wisp's own worktrees.
 pub fn in_own_worktree(path: &str, wisp_home: &str) -> bool {
-    let root = format!("{}/worktrees/", wisp_home.trim_end_matches('/'));
-    !wisp_home.is_empty() && (path.starts_with(&root) || format!("{path}/") == root)
+    // any separators: on Windows git says `C:/x/.wisp/worktrees/…` of a home that reads `C:\x\.wisp`
+    !wisp_home.is_empty() && is_within(path, &format!("{}/worktrees", wisp_home.trim_end_matches(['/', '\\'])))
 }
 
 /// The paths `git status -z` lists (a rename's new name).
@@ -98,6 +99,11 @@ mod tests {
         let wt = "/Users/me/.wisp/worktrees/api-1f2e";
         let (none, _) = files_changed(wt, &more, &json!("old"), home, 4);
         assert!(none.is_none());
+        // Windows: git's `/` under a home with `\`, any case
+        assert!(in_own_worktree("C:/Users/Me/.wisp/worktrees/api-1f2e/src", r"C:\Users\me\.wisp"));
+        assert!(in_own_worktree(r"C:\Users\me\.wisp\worktrees", r"C:\Users\me\.wisp\"));
+        assert!(!in_own_worktree(r"C:\Users\me\.wisp\worktreesx\a", r"C:\Users\me\.wisp"));
+        assert!(!in_own_worktree(r"C:\w\api", r"C:\Users\me\.wisp"));
         // a path into one (a project that holds wisp's home) is dropped
         let (ev, _) = files_changed("/Users/me", "?? .wisp/worktrees/api-1f2e/x.rs\0 M code/y.rs\0", &json!("old"), home, 5);
         assert_eq!(ev.unwrap().payload["paths"], json!(["code/y.rs"]));

@@ -49,22 +49,22 @@ pub fn keeps_branch(name: &str) -> bool {
     !name.is_empty() && name.len() <= 120 && name.chars().all(|c| c.is_ascii_alphanumeric() || matches!(c, '_' | '.' | '/' | '-'))
 }
 
-/// The last path segment.
+/// The last path segment, by `/` or `\` (a Windows root `C:\src\app` named the worktree `…/C:\src\app-<id>`).
 pub fn basename(p: &str) -> &str {
-    p.trim_end_matches('/').rsplit('/').next().unwrap_or(p)
+    p.trim_end_matches(['/', '\\']).rsplit(['/', '\\']).next().unwrap_or(p)
 }
 
 /// `<home>/worktrees/<basename(root)>-<id>`.
 pub fn worktree_dir(home: &str, root: &str, id: &str) -> String {
-    format!("{}/worktrees/{}-{id}", home.trim_end_matches('/'), basename(root))
+    format!("{}/worktrees/{}-{id}", home.trim_end_matches(['/', '\\']), basename(root))
 }
 
 /// `cwd` relative to `root`, or None when it is `root` itself or outside it.
 pub fn subfolder<'a>(root: &str, cwd: &'a str) -> Option<&'a str> {
-    let root = root.trim_end_matches('/');
-    let rest = cwd.strip_prefix(root)?.strip_prefix('/')?;
-    let rest = rest.trim_end_matches('/');
-    (!rest.is_empty() && !rest.split('/').any(|s| s == "..")).then_some(rest)
+    let root = root.trim_end_matches(['/', '\\']);
+    let rest = cwd.strip_prefix(root)?.strip_prefix(['/', '\\'])?;
+    let rest = rest.trim_end_matches(['/', '\\']);
+    (!rest.is_empty() && !rest.split(['/', '\\']).any(|s| s == "..")).then_some(rest)
 }
 
 /// Where the agent runs in the new worktree: the same subfolder the launch came from.
@@ -107,6 +107,12 @@ mod tests {
         assert_eq!(worktree_cwd(&dir, "/src/app", "/src/app"), dir);
         assert_eq!(worktree_cwd(&dir, "/src/app", "/src/application"), dir, "a sibling with the same prefix is outside");
         assert_eq!(worktree_cwd(&dir, "/src/app", "/elsewhere"), dir);
+        // Windows: the repo's name, not its whole path; the subfolder by `\` too
+        let win = worktree_dir(r"C:\h\.wisp", r"C:\src\app\", "abc");
+        assert_eq!(win, r"C:\h\.wisp/worktrees/app-abc");
+        assert_eq!(worktree_cwd(&win, r"C:\src\app", r"C:\src\app\web\ui"), format!(r"{win}/web\ui"));
+        assert_eq!(worktree_cwd(&win, r"C:\src\app", r"C:\src\app\..\x"), win, "no climbing out");
+        assert_eq!(worktree_cwd(&win, r"C:\src\app", r"C:\src\application"), win);
     }
 
     #[test]

@@ -111,14 +111,13 @@ pub fn with_test(spec: &Value, command: &str) -> Value {
 
 /// The project whose path holds `cwd` (the longest), if one is declared.
 pub fn project_for(projects: &[(String, Value)], cwd: &str) -> Option<(String, ProjectSpec)> {
-    let norm = |p: &str| p.trim_end_matches('/').to_owned();
-    let cwd = norm(cwd);
     projects
         .iter()
         .filter_map(|(n, v)| Some((n.clone(), serde_json::from_value::<ProjectSpec>(v.clone()).ok()?)))
         .filter(|(_, p)| {
-            let root = norm(&p.path);
-            !root.is_empty() && (cwd == root || cwd.starts_with(&format!("{root}/")) || cwd.ends_with(&format!("/private{root}")))
+            // any separators (Windows), and macOS's `/tmp` seen as `/private/tmp`
+            let within = wisp_runtime_api::paths::is_within;
+            within(cwd, &p.path) || cwd.strip_prefix("/private").is_some_and(|c| within(c, &p.path))
         })
         .max_by_key(|(_, p)| p.path.len())
 }

@@ -234,19 +234,21 @@ mod tests {
             json!({ "type": "text", "path": "/etc/x.png" }),
             json!({ "type": "image", "path": "/home/me/.wisp/shots/a.png", "source": "/tmp/gone.png" }),
         ];
-        let get = |asked: &str| media_file(dir, asked, &blocks, &exists).map(|m| m.path.display().to_string());
+        // compared as paths: on Windows `/w/app/shot.png` comes back as `\w\app\shot.png`, the same path
+        let get = |asked: &str| media_file(dir, asked, &blocks, &exists).map(|m| m.path);
+        let at = |p: &str| Some(PathBuf::from(p));
         // inside the folder, relative or absolute
-        assert_eq!(get("shot.png").as_deref(), Some("/w/app/shot.png"));
-        assert_eq!(get("/w/app/shot.png").as_deref(), Some("/w/app/shot.png"));
+        assert_eq!(get("shot.png"), at("/w/app/shot.png"));
+        assert_eq!(get("/w/app/shot.png"), at("/w/app/shot.png"));
         // outside: only the exact path an image block named
-        assert_eq!(get("/tmp/s.png").as_deref(), Some("/tmp/s.png"));
+        assert_eq!(get("/tmp/s.png"), at("/tmp/s.png"));
         assert_eq!(get("/etc/x.png"), None, "a text block naming it doesn't count");
         assert_eq!(get("../../etc/x.png"), None, "no climbing out");
         // not a picture or a video; not on disk
         assert_eq!(get("notes.txt"), None);
         assert_eq!(get("missing.png"), None);
         // the original path of a block wisp rewrote to its copy: the copy
-        assert_eq!(get("/tmp/gone.png").as_deref(), Some("/home/me/.wisp/shots/a.png"));
+        assert_eq!(get("/tmp/gone.png"), at("/home/me/.wisp/shots/a.png"));
         assert_eq!(mime(Path::new("a.MOV")), "video/quicktime");
         // a doc block's file: inside, or the path it named
         let docs = [json!({ "type": "doc", "path": "/home/me/plan.md" })];
@@ -312,17 +314,19 @@ mod tests {
             json!({ "type": "text", "path": "/tmp/x.png" }),
         ];
         let plan = keep_plan(dir, &blocks, "t9", shots);
+        // compared as paths (Windows joins with `\`)
         assert_eq!(
-            plan.iter().map(|k| (k.index, k.from.display().to_string(), k.to.display().to_string())).collect::<Vec<_>>(),
+            plan.iter().map(|k| (k.index, k.from.clone(), k.to.clone())).collect::<Vec<_>>(),
             vec![
-                (0, "/tmp/shot.png".to_owned(), "/h/.wisp/shots/s1/t9-0.png".to_owned()),
-                (2, "/w/app/rec/run.MP4".to_owned(), "/h/.wisp/shots/s1/t9-2.mp4".to_owned()),
+                (0, PathBuf::from("/tmp/shot.png"), PathBuf::from("/h/.wisp/shots/s1/t9-0.png")),
+                (2, PathBuf::from("/w/app/rec/run.MP4"), PathBuf::from("/h/.wisp/shots/s1/t9-2.mp4")),
             ]
         );
         assert_eq!(plan[1].max, MAX_KEPT_VIDEO);
         let mut b = blocks[0].clone();
         kept(&mut b, &plan[0]);
-        assert_eq!(b, json!({ "type": "image", "path": "/h/.wisp/shots/s1/t9-0.png", "source": "/tmp/shot.png" }));
+        assert_eq!(b["path"].as_str().map(Path::new), Some(Path::new("/h/.wisp/shots/s1/t9-0.png")));
+        assert_eq!((&b["type"], &b["source"], b.get("src")), (&json!("image"), &json!("/tmp/shot.png"), None));
         // the page asks for the original path: it gets the copy (media_file's `source` match)
         let exists = |p: &Path| p == Path::new("/h/.wisp/shots/s1/t9-0.png");
         assert_eq!(media_file(dir, "/tmp/shot.png", &[b], &exists).map(|m| m.path), Some(PathBuf::from("/h/.wisp/shots/s1/t9-0.png")));

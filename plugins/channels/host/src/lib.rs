@@ -117,8 +117,7 @@ async fn act(ctx: &Ctx, live: &Arc<Live>) {
 
 /// The task's cwd is in one of `projects` (or there are none).
 fn in_projects(projects: &[String], cwd: &str) -> bool {
-    projects.is_empty()
-        || projects.iter().any(|p| cwd == p.trim_end_matches('/') || cwd.starts_with(&format!("{}/", p.trim_end_matches('/'))))
+    projects.is_empty() || projects.iter().any(|p| wisp_runtime_api::paths::is_within(cwd, p))
 }
 
 /// Sends `event` about a task to every notification that asks for it. `fanned`: the same event goes to the channels

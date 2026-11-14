@@ -84,7 +84,7 @@ fn uuid() -> String {
 /// The conversation a CLI kept for a terminal task that it doesn't let wisp name: the newest in its folder that
 /// was still going after the terminal opened (a minute's slack for clocks), else none.
 pub fn conversation_since(list: &[wisp_runtime_api::harness::sessions::OutsideSession], cwd: &str, opened_at: i64) -> Option<String> {
-    let norm = |p: &str| p.trim_end_matches('/').trim_start_matches("/private").to_owned();
+    let norm = |p: &str| wisp_runtime_api::paths::folder_key(p.strip_prefix("/private").unwrap_or(p));
     list.iter()
         .filter(|s| norm(&s.cwd) == norm(cwd) && s.updated_at >= opened_at - 60_000)
         .max_by_key(|s| s.updated_at)

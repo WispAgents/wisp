@@ -4318,6 +4318,7 @@ dependencies = [
  "tokio",
  "wisp-channels-api",
  "wisp-kernel",
+ "wisp-runtime-api",
 ]
 
 [[package]]
@@ -6009,6 +6010,7 @@ dependencies = [
  "serde_json",
  "sha2",
  "wisp-automations-api",
+ "wisp-runtime-api",
  "wisp-worktrees-api",
 ]
 

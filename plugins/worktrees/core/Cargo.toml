@@ -10,6 +10,8 @@ publish.workspace = true
 [dependencies]
 wisp-worktrees-api.workspace = true
 wisp-automations-api.workspace = true
+# the pure folder comparisons (`is_within`): `C:\x\.wisp` holds git's `C:/x/.wisp/worktrees/…`
+wisp-runtime-api.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 sha2.workspace = true

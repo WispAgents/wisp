@@ -4,6 +4,7 @@
 //! a foreign worktree (brought in, under ~/conductor, or in a `.conductor` folder) is never removed,
 //! whatever `force` says; a branch goes only when `rev-list base..branch` is 0, unless forced.
 
+use wisp_runtime_api::paths::{is_within, same_folder};
 use wisp_worktrees_api::{BranchMode, Worktree};
 
 /// Anywhere that looks like Conductor's: a `.conductor` segment, or under `<home>/conductor`.
@@ -14,8 +15,9 @@ pub fn in_conductor(path: &str, home: &str) -> bool {
     if path.split(['/', '\\']).any(|s| s == ".conductor") {
         return true;
     }
-    let under = format!("{}/conductor/", home.trim_end_matches('/'));
-    path.starts_with(&under)
+    // inside it, by any separators (Windows)
+    let under = format!("{}/conductor", home.trim_end_matches(['/', '\\']));
+    is_within(path, &under) && !same_folder(path, &under)
 }
 
 /// Not ours to remove, recreate or tidy. `claimed`: a contributed setup source says the path is its own.
@@ -138,6 +140,8 @@ mod tests {
         assert!(is_foreign(&wt("/src/app", false), home, true), "a setup source claims it");
         assert!(!is_foreign(&wt("/Users/me/.wisp/worktrees/app-1", false), home, false));
         assert!(!is_foreign(&wt("/Users/me/conductorish/x", false), home, false));
+        assert!(is_foreign(&wt("C:/Users/me/conductor/workspaces/app/x", false), r"C:\Users\me", false), "Windows: git's `/`");
+        assert!(!is_foreign(&wt(r"C:\Users\me\conductor", false), r"C:\Users\me", false), "the folder itself isn't inside");
         for force in [false, true] {
             assert_eq!(decide_removal(true, true, 0, force, Some(true)), RemoveStep::Foreign);
         }

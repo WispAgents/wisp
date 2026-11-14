@@ -151,10 +151,14 @@ pub static SIGNED_IN: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicB
 /// else a hero.
 pub fn script(prompt: &str) -> Vec<Value> {
     // `shot <path>`: the answer shows that picture too
-    let shot = prompt.strip_prefix("shot ").map(|p| format!(",{{\"type\":\"image\",\"path\":\"{p}\"}}")).unwrap_or_default();
-    let hero = format!(
-        "```wisp\n{{\"blocks\":[{{\"type\":\"hero\",\"title\":\"Did it\",\"topic\":\"Topic of {prompt}\",\"summary\":\"done: {prompt}\",\"status\":\"done\"}}{shot}]}}\n```"
-    );
+    // built as JSON, so a Windows path stays a valid string (spliced in raw, `C:\Users` was no wisp block)
+    let mut blocks = vec![
+        json!({"type":"hero","title":"Did it","topic":format!("Topic of {prompt}"),"summary":format!("done: {prompt}"),"status":"done"}),
+    ];
+    if let Some(p) = prompt.strip_prefix("shot ") {
+        blocks.push(json!({"type":"image","path":p}));
+    }
+    let hero = format!("```wisp\n{}\n```", json!({ "blocks": blocks }));
     if prompt.starts_with("fail") {
         return vec![json!({"type":"session","id":"conv-1"}), json!({"type":"result","text":"Error: boom\nmore","isError":true})];
     }

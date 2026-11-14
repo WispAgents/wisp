@@ -101,13 +101,18 @@ pub async fn folders(q: &str, home: Option<&Path>) -> Vec<String> {
     }
     let trailing = raw.ends_with(['/', '\\']);
     let p = Path::new(&raw);
+    let typed = p.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
     let (dir, prefix) = if trailing {
         (p.to_owned(), String::new())
     } else {
-        (
-            p.parent().map_or_else(|| p.to_owned(), Path::to_owned),
-            p.file_name().map(|n| n.to_string_lossy().to_lowercase()).unwrap_or_default(),
-        )
+        (p.parent().map_or_else(|| p.to_owned(), Path::to_owned), typed.to_lowercase())
+    };
+    // a suggestion is what was typed up to its last part, then the folder's name: the separators you typed stay
+    // (on Windows `C:\Users\me/code/wi` went on as `…/code\wiki`, mixed)
+    let base = match raw.strip_suffix(typed.as_str()) {
+        _ if trailing => Some(raw.clone()),
+        Some(b) if !typed.is_empty() && b.ends_with(['/', '\\']) => Some(b.to_owned()),
+        _ => None,
     };
     let Ok(mut rd) = tokio::fs::read_dir(&dir).await else { return Vec::new() };
     let mut out = Vec::new();
@@ -117,7 +122,7 @@ pub async fn folders(q: &str, home: Option<&Path>) -> Vec<String> {
             continue;
         }
         if e.file_type().await.is_ok_and(|t| t.is_dir()) {
-            out.push(dir.join(&name).display().to_string());
+            out.push(base.as_ref().map_or_else(|| dir.join(&name).display().to_string(), |b| format!("{b}{name}")));
         }
     }
     out.sort();
@@ -184,6 +189,17 @@ mod tests {
             std::fs::create_dir_all(home.join(format!("many/d{i:02}"))).unwrap();
         }
         assert_eq!(folders(&format!("{h}/many/"), None).await.len(), 12);
+        // the form you typed stays, `..` and all
+        assert_eq!(
+            folders(&format!("{h}/code/../code/wi"), None).await,
+            [format!("{h}/code/../code/Wisp"), format!("{h}/code/../code/wiki")]
+        );
+        #[cfg(windows)]
+        {
+            let back = h.replace('/', "\\");
+            assert_eq!(folders(&format!(r"{back}\code\wi"), None).await, [format!(r"{back}\code\Wisp"), format!(r"{back}\code\wiki")]);
+            assert_eq!(folders(&format!(r"{back}\code/"), None).await.len(), 3);
+        }
         let _ = std::fs::remove_dir_all(&home);
     }
 }

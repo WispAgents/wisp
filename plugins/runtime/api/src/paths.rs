@@ -39,6 +39,48 @@ pub fn canonical_project_path(path: &str, cwd: Option<&str>) -> String {
     if root.is_empty() && body.is_empty() { ".".to_owned() } else { format!("{root}{body}") }
 }
 
+/// A folder as a key to compare (2026-11-14, additive): its canonical form, and a Windows one (`C:\x`, `\\host\share`)
+/// with `/` and in lower case, as NTFS reads names. `C:\Repo\`, `c:/repo` and `\\?\C:\Repo` are one key; on POSIX
+/// `/repo/.` and `/repo/` are. For comparing only: never shown, never opened.
+#[must_use]
+pub fn folder_key(path: &str) -> String {
+    let p = path.trim();
+    let b = p.as_bytes();
+    // Windows by its root only: a POSIX name may hold a `\` (and keeps its case)
+    if p.starts_with(r"\\") || (b.len() >= 2 && b[0].is_ascii_alphabetic() && b[1] == b':') {
+        return canonical_project_path(p, None).replace('\\', "/").to_lowercase();
+    }
+    let mut parts: Vec<&str> = Vec::new();
+    for seg in p.split('/') {
+        match seg {
+            "" | "." => {}
+            ".." => {
+                parts.pop();
+            }
+            s => parts.push(s),
+        }
+    }
+    let body = parts.join("/");
+    if p.starts_with('/') { format!("/{body}") } else { body }
+}
+
+/// Two spellings of one folder (`folder_key`). An empty one is no folder: never the same as anything.
+#[must_use]
+pub fn same_folder(a: &str, b: &str) -> bool {
+    !a.trim().is_empty() && !b.trim().is_empty() && folder_key(a) == folder_key(b)
+}
+
+/// `path` is `root` or inside it, whichever separators either uses (`C:\repo\src` in `C:/Repo`; `/repository` is not
+/// in `/repo`). An empty or relative `root` holds nothing.
+#[must_use]
+pub fn is_within(path: &str, root: &str) -> bool {
+    if Folder::of(root).is_err() || path.trim().is_empty() {
+        return false;
+    }
+    let (p, r) = (folder_key(path), folder_key(root));
+    p == r || p.strip_prefix(&r).is_some_and(|rest| r.ends_with('/') || rest.starts_with('/'))
+}
+
 fn split_root(p: &str) -> (String, &str) {
     let b = p.as_bytes();
     if b.len() >= 2 && b[1] == b':' {

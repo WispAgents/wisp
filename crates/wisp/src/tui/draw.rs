@@ -411,7 +411,7 @@ fn sidebar(f: &mut Frame<'_>, app: &App, r: Rect) -> BTreeMap<u16, String> {
         } else {
             glyph(state)
         };
-        let project = s(t, "cwd").rsplit('/').next().unwrap_or_default().to_owned();
+        let project = s(t, "cwd").trim_end_matches(['/', '\\']).rsplit(['/', '\\']).next().unwrap_or_default().to_owned();
         let meta = [s(t, "agent").to_owned(), project].into_iter().filter(|x| !x.is_empty()).collect::<Vec<_>>().join(" · ");
         let line2 = split(
             vec![
@@ -474,7 +474,7 @@ fn header(app: &App, session: &Value, w: usize) -> Vec<Line<'static>> {
         first.push(Span::raw("  "));
         first.push(Span::styled(pill, Style::default().bg(tone(th, state)).fg(th.on_accent).add_modifier(Modifier::BOLD)));
     }
-    let project = s(session, "cwd").rsplit('/').next().unwrap_or_default().to_owned();
+    let project = s(session, "cwd").trim_end_matches(['/', '\\']).rsplit(['/', '\\']).next().unwrap_or_default().to_owned();
     let run = [cell(session, "/agent"), cell(session, "/model")].into_iter().filter(|x| !x.is_empty()).collect::<Vec<_>>().join(" ");
     let mut meta: Vec<String> = [project, cell(session, "/branch"), run].into_iter().filter(|x| !x.is_empty()).collect();
     // the goal comes from wisp.goal's own tui crate (a TaskHeader input), as the GUI's band does

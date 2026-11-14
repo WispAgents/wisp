@@ -17,6 +17,8 @@ sha2.workspace = true
 subtle.workspace = true
 thiserror.workspace = true
 wisp-channels-api.workspace = true
+# the pure folder comparison (`is_within`) a task's project is found by
+wisp-runtime-api.workspace = true
 wisp-kernel.workspace = true
 
 [dev-dependencies]

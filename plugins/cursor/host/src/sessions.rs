@@ -122,7 +122,7 @@ impl HarnessSessions for CursorSessions {
                         if s.cwd.is_empty() {
                             s.cwd.clone_from(&cwd);
                         }
-                        if s.prompts > 0 && forms.contains(&s.cwd) {
+                        if s.prompts > 0 && forms.iter().any(|f| wisp_runtime_api::paths::same_folder(f, &s.cwd)) {
                             out.push(s);
                         }
                     }

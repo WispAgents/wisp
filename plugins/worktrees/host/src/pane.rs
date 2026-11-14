@@ -8,6 +8,7 @@ use std::collections::HashSet;
 
 use serde_json::{Value, json};
 use wisp_kernel::Call;
+use wisp_runtime_api::paths::{folder_key, is_within, same_folder};
 use wisp_store::{Col, EntityDef, Migration, Query, Row, Store};
 use wisp_worktrees_api::{Offer, WorktreesView};
 use wisp_worktrees_core::offer::{self, Listed};
@@ -173,10 +174,10 @@ pub async fn publish(store: &Store, view: &WorktreesView, offers: &[Offer]) -> w
 /// Bring in's offers: every declared project's worktrees no task knows (git.service lists them).
 pub async fn offers(engine: &Engine, port: &dyn Port, call: &Call) -> Vec<Offer> {
     let tasks = port.tasks().await;
-    let known: HashSet<String> =
-        tasks.iter().flat_map(|t| t.trees.iter().map(|x| x.worktree.path.trim_end_matches('/').to_owned())).collect();
+    let known: HashSet<String> = tasks.iter().flat_map(|t| t.trees.iter().map(|x| folder_key(&x.worktree.path))).collect();
     let dismissed = port.settings().await.dismissed;
-    let wisp_dir = format!("{}/worktrees", engine.home.trim_end_matches('/'));
+    // compared by `folder_key`: on Windows git lists `C:/x/…` and wisp keeps `C:\x\…`
+    let wisp_dir = format!("{}/worktrees", engine.home.trim_end_matches(['/', '\\']));
     let mut out = Vec::new();
     for (name, root) in port.projects().await {
         if dismissed.contains(&name) || !fsx::exists(&root).await {
@@ -186,8 +187,11 @@ pub async fn offers(engine: &Engine, port: &dyn Port, call: &Call) -> Vec<Offer>
         let Ok(entries) = repo.worktrees(call).await else { continue };
         let mut listed = Vec::with_capacity(entries.len());
         for e in entries {
-            let p = e.path.trim_end_matches('/');
-            let candidate = !e.bare && !e.prunable && p != root.trim_end_matches('/') && !known.contains(p) && !p.starts_with(&wisp_dir);
+            let candidate = !e.bare
+                && !e.prunable
+                && !same_folder(&e.path, &root)
+                && !known.contains(&folder_key(&e.path))
+                && !is_within(&e.path, &wisp_dir);
             let (dirty, chat) = if candidate && !e.branch.is_empty() {
                 let dirty = match engine.repo(call, &e.path).await {
                     Ok(r) => r.status(call).await.map_or(0, |s| u32::try_from(s.dirty()).unwrap_or(u32::MAX)),

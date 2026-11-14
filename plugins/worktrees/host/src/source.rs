@@ -35,7 +35,7 @@ fn task_root(tree: Option<&str>, cwd: &str) -> Option<PathBuf> {
 /// A project of yours by its folder (New task's @): a full path that one of `projects` (their `spec.path`) names.
 fn project_root(path: &str, projects: &[Resource]) -> Option<PathBuf> {
     let full = Folder::of(path).ok()?;
-    let same = |p: &str| p.trim_end_matches('/') == path.trim_end_matches('/');
+    let same = |p: &str| wisp_runtime_api::paths::same_folder(p, path);
     projects.iter().any(|r| r.spec.get("path").and_then(Value::as_str).is_some_and(same)).then(|| full.into_path())
 }
 

@@ -50,3 +50,30 @@ fn a_folder_is_a_full_path_and_never_empty_or_relative() {
     let w: wisp_kernel::WireError = Folder::of("").unwrap_err().into();
     assert_eq!(w.message, "no folder");
 }
+
+/// Windows round 3: a folder compares as one folder whatever its spelling (`C:\Repo\`, `c:/repo`, `\\?\C:\Repo`), and
+/// "inside" holds across `\` and `/` (a task in `C:\repo\src` is the `C:/repo` project's).
+#[test]
+fn a_folder_is_the_same_folder_in_every_spelling_and_holds_what_is_inside_it() {
+    use wisp_runtime_api::paths::{folder_key, is_within, same_folder};
+    assert!(same_folder(r"C:\Repo\", "c:/repo"));
+    assert!(same_folder(r"\\?\C:\Repo", r"C:\repo\."));
+    assert!(same_folder(r"\\host\share\x", r"\\HOST\share\x\"));
+    assert_eq!(folder_key(r"\\?\UNC\host\share\X"), "//host/share/x");
+    assert!(same_folder("/repo/.", "/repo/"));
+    assert!(!same_folder("/Repo", "/repo"), "POSIX names keep their case");
+    assert!(!same_folder("", ""), "no folder is no folder");
+    assert!(is_within(r"C:\repo\src\a", "C:/Repo"));
+    assert!(is_within("C:/repo/src", r"C:\repo\"));
+    assert!(is_within(r"C:\repo", r"c:\repo"));
+    assert!(!is_within(r"C:\repository", r"C:\repo"));
+    assert!(!is_within(r"D:\repo\src", r"C:\repo"));
+    assert!(is_within(r"C:\x", r"C:\"), "the drive holds all of it");
+    assert!(is_within("/repo/src", "/repo/") && is_within("/repo", "/repo/.") && is_within("/x", "/"));
+    assert!(!is_within("/repository", "/repo") && !is_within("/repo/src", "") && !is_within("src", "."));
+    // a POSIX name may hold a `\`: it's no separator there, and the case still counts
+    assert!(is_within(r"/Work/a\b", "/Work"));
+    assert!(!same_folder(r"/Repo\x", r"/repo\X"));
+    assert!(!is_within("/a/b/c", r"/a\b"));
+    assert_eq!(folder_key("/repo/./web/../api/"), "/repo/api");
+}

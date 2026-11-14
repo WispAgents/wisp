@@ -26,7 +26,8 @@ pub fn project_of<'a>(cwd: &str, projects: &'a [ProjectView]) -> Option<&'a Proj
         .iter()
         .filter(|p| {
             let root = root(&p.path);
-            !root.is_empty() && (cwd == root || cwd.strip_prefix(root).is_some_and(|rest| rest.starts_with('/')))
+            // any separators (a Windows `C:\p\sub` is in `C:/p`)
+            !root.is_empty() && wisp_runtime_api::paths::is_within(cwd, root)
         })
         .max_by_key(|p| root(&p.path).len())
 }

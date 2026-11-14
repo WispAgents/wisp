@@ -72,11 +72,12 @@ fn str_of<'a>(a: &'a Map<String, Value>, k: &str) -> &'a str {
 /// `dir` joined with `p` unless `p` is absolute (no file system: plain path text).
 #[must_use]
 pub fn resolve(dir: &str, p: &str) -> String {
-    if p.starts_with('/') || p.starts_with('~') || p.get(1..3) == Some(":\\") || dir.is_empty() {
+    // a Windows path is absolute with either separator (`C:\x`, `C:/x`, `\\host\x`)
+    if p.starts_with(['/', '\\', '~']) || matches!(p.get(1..3), Some(":\\" | ":/")) || dir.is_empty() {
         return p.to_owned();
     }
-    let p = p.trim_start_matches("./");
-    format!("{}/{p}", dir.trim_end_matches('/'))
+    let p = p.trim_start_matches("./").trim_start_matches(".\\");
+    format!("{}/{p}", dir.trim_end_matches(['/', '\\']))
 }
 
 fn run_of(v: Option<&Value>, dir: &str) -> Option<Run> {
@@ -312,6 +313,15 @@ fn open(
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn a_windows_path_is_absolute_with_either_separator() {
+        assert_eq!(resolve(r"C:\w\app", "C:/x/a.html"), "C:/x/a.html");
+        assert_eq!(resolve(r"C:\w\app", r"C:\x\a.html"), r"C:\x\a.html");
+        assert_eq!(resolve(r"C:\w\app", r"\\host\s\a.html"), r"\\host\s\a.html");
+        assert_eq!(resolve(r"C:\w\app\", r".\out\a.html"), r"C:\w\app/out\a.html");
+        assert_eq!(resolve("/w/app/", "./out/a.html"), "/w/app/out/a.html");
+    }
 
     fn args(v: Value) -> Map<String, Value> {
         let Value::Object(m) = v else { unreachable!("a call is an object") };

@@ -85,13 +85,13 @@ impl HarnessSessions for CodexSessions {
         "codex"
     }
     fn list(&self, cwd: &str) -> BoxFuture<'static, Vec<OutsideSession>> {
-        let cwd = cwd.trim_end_matches('/').to_owned();
+        let cwd = cwd.to_owned();
         Box::pin(async move {
             let mut out = Vec::new();
             for p in rollouts(500).await {
                 if let Ok(text) = tokio::fs::read_to_string(&p).await {
                     let (s, _) = parse(&text);
-                    if s.cwd.trim_end_matches('/') == cwd && s.prompts > 0 {
+                    if wisp_runtime_api::paths::same_folder(&s.cwd, &cwd) && s.prompts > 0 {
                         out.push(s);
                     }
                 }

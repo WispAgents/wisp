@@ -55,7 +55,15 @@ pub fn folder_of(blob: &[u8]) -> Option<String> {
         out.push(b[i]);
         i += 1;
     }
-    String::from_utf8(out).ok().map(|s| s.trim_end_matches('/').to_owned()).filter(|s| s.starts_with('/'))
+    // `file:///C:/x` on Windows: the path is `C:/x`
+    let decoded = String::from_utf8(out).ok()?;
+    let path = match decoded.as_bytes() {
+        [b'/', drive, b':', ..] if drive.is_ascii_alphabetic() => &decoded[1..],
+        _ => decoded.as_str(),
+    };
+    let path = path.trim_end_matches(['/', '\\']);
+    let path = if path.ends_with(':') { format!("{path}/") } else { path.to_owned() };
+    wisp_runtime_api::paths::Folder::of(&path).is_ok().then_some(path)
 }
 
 fn folder(root: &Path, id: &str) -> Option<String> {
@@ -89,7 +97,7 @@ fn list_in(root: &Path, forms: &[String]) -> Vec<OutsideSession> {
     for e in rd.flatten() {
         let name = e.file_name().to_string_lossy().into_owned();
         let Some(id) = name.strip_suffix(".db").filter(|i| safe_id(i)) else { continue };
-        let Some(cwd) = folder(root, id).filter(|c| forms.contains(c)) else { continue };
+        let Some(cwd) = folder(root, id).filter(|c| forms.iter().any(|f| wisp_runtime_api::paths::same_folder(f, c))) else { continue };
         if let Some((s, _)) = load(root, id, Some(cwd)).filter(|(s, _)| s.prompts > 0) {
             out.push(s);
         }
@@ -159,6 +167,9 @@ mod tests {
         assert_eq!(folder_of(BLOB).as_deref(), Some("/tmp/wisp-samples/run"));
         assert_eq!(folder_of(b"\x0a\x1cfile:///w/my%20app/\x12"), Some("/w/my app".to_owned()));
         assert_eq!(folder_of(b"no uri"), None);
+        // Windows: `file:///C:/…` is `C:/…`, a drive's root keeps its slash
+        assert_eq!(folder_of(b"\x0a\x1cfile:///C:/Users/me/my%20app/\x12"), Some("C:/Users/me/my app".to_owned()));
+        assert_eq!(folder_of(b"\x0a\x1cfile:///d:/\x12"), Some("d:/".to_owned()));
         let t = parse(TRANSCRIPT);
         assert_eq!((t.len(), t[0].prompt.as_str(), t[0].text.as_str()), (1, "Reply with OK.", "OK"));
         let root = home("read");
