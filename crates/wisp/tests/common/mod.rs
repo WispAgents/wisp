@@ -46,26 +46,49 @@ pub const FAKES: [(&str, &str); 7] = [
     ("agy", "WISP_ANTIGRAVITY_BIN"),
 ];
 
-/// wisp-testkit's fakes (`wisp-fake-agent`, `wisp-fake-gh`) have one home: the artifact dir of this
+/// wisp-testkit's fakes (`wisp-fake-agent`, `wisp-fake-gh`), built from the artifact dir of this
 /// crate's `wisp` bin (`<target>/<profile>/`), in every cargo layout. Not the test's own folder:
 /// cargo's build-dir layout puts test executables under `build/<pkg>/<hash>/`, so
 /// `current_exe()` points nowhere useful. Cargo doesn't build another crate's bins for these
-/// tests, so the first call builds both into the same target dir and profile.
+/// tests, so each process builds both once into the same target dir and profile, then serves its
+/// own copies from `<target>/<profile>/wisp-fakes/` (see [`fake_bins_into`]).
 pub fn fake_bins() -> (PathBuf, PathBuf) {
-    static BUILT: std::sync::Once = std::sync::Once::new();
-    let dir = Path::new(env!("CARGO_BIN_EXE_wisp")).parent().unwrap();
-    let exe = |n: &str| dir.join(format!("{n}{}", std::env::consts::EXE_SUFFIX));
-    let (agent, gh) = (exe("wisp-fake-agent"), exe("wisp-fake-gh"));
-    BUILT.call_once(|| {
-        let target = dir.parent().unwrap();
-        let mut cmd = Command::new(std::env::var("CARGO").unwrap_or_else(|_| "cargo".into()));
-        cmd.args(["build", "--quiet", "-p", "wisp-testkit", "--bin", "wisp-fake-agent", "--bin", "wisp-fake-gh", "--target-dir"])
-            .arg(target);
-        if dir.ends_with("release") {
-            cmd.arg("--release");
-        }
-        assert!(cmd.status().unwrap().success(), "building wisp-testkit's fakes into {}", target.display());
-    });
+    static BUILT: std::sync::OnceLock<(PathBuf, PathBuf)> = std::sync::OnceLock::new();
+    BUILT.get_or_init(|| fake_bins_into(&bin_dir().join("wisp-fakes"))).clone()
+}
+
+fn bin_dir() -> &'static Path {
+    Path::new(env!("CARGO_BIN_EXE_wisp")).parent().unwrap()
+}
+
+/// Builds the fakes and puts them in `out`, safe when several test processes do it at once (monoflow
+/// runs packages in parallel, agents run copies): the build and the copy run under an exclusive lock
+/// on `out/.lock`, and each copy is written to a temp file and renamed into place, so a fake a server
+/// is running (or a symlink to it) is never missing or half-written. The copies also keep a later
+/// `cargo test -p wisp-testkit`, which re-links `<target>/<profile>/wisp-fake-agent`, from pulling a
+/// binary out from under a running test.
+pub fn fake_bins_into(out: &Path) -> (PathBuf, PathBuf) {
+    let dir = bin_dir();
+    let exe = |d: &Path, n: &str| d.join(format!("{n}{}", std::env::consts::EXE_SUFFIX));
+    std::fs::create_dir_all(out).unwrap();
+    let lock = std::fs::OpenOptions::new().create(true).truncate(false).write(true).open(out.join(".lock")).unwrap();
+    lock.lock().unwrap();
+    let target = dir.parent().unwrap();
+    let mut cmd = Command::new(std::env::var("CARGO").unwrap_or_else(|_| "cargo".into()));
+    cmd.args(["build", "--quiet", "-p", "wisp-testkit", "--bin", "wisp-fake-agent", "--bin", "wisp-fake-gh", "--target-dir"]).arg(target);
+    if dir.ends_with("release") {
+        cmd.arg("--release");
+    }
+    assert!(cmd.status().unwrap().success(), "building wisp-testkit's fakes into {}", target.display());
+    let place = |n: &str| {
+        let (src, dst) = (exe(dir, n), exe(out, n));
+        let tmp = out.join(format!(".{n}.{}.tmp", std::process::id()));
+        std::fs::copy(&src, &tmp).unwrap_or_else(|e| panic!("copying {} to {}: {e}", src.display(), tmp.display()));
+        std::fs::rename(&tmp, &dst).unwrap();
+        dst
+    };
+    let (agent, gh) = (place("wisp-fake-agent"), place("wisp-fake-gh"));
+    lock.unlock().unwrap();
     assert!(agent.is_file() && gh.is_file(), "{} and {} after the build", agent.display(), gh.display());
     (agent, gh)
 }
