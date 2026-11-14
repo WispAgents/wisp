@@ -208,6 +208,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Fixed
 
+- **v2: no stray agents.** If wisp is killed (a crash, Force Quit), the agent CLIs and everything they started stop with it instead of running on in the background.
 - **v2: sending a task.** Sending from Home opens the task you just sent instead of a blank page; the harness picker no longer shows Claude Code twice; a task page no longer says *Mark read needs a newer wisp.runtime*. Telemetry's off switch and install id are kept across restarts, and learned preferences and retro history survive a restart; wisp refuses at startup any plugin data kind that could never be saved.
 - **v2: deleting a running task.** Deleting a task now stops its run first, even one still starting: its CLI never starts for a deleted task and the task never comes back.
 - **v2: sandboxes and far delegates.** A project over about 1.4 MB now reaches its sandbox (up to 256 MB), and deleting a lead also deletes its delegates' copies on other machines. A delegate's same-size edit made in the second its copy was checked out is no longer lost on the way back.
