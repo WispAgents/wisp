@@ -103,6 +103,10 @@ turn. When a screen or feature contradicts one, that's a bug: fix it toward the 
 - **Crew as stories, direction C: stories you can reply to** (11-15 19:14): stories row under the Tasks top bar,
   full-screen story, reply box (the task page's composer, compact). Design first, the owner approves, then build
   (11-15 19:10): the rule for every redesign.
+- **The one project selector with multi-pick is used everywhere a project is chosen, desktop New task included**
+  (owner, 2026-11-15 20:05): it replaces v1's place row ("in <project> · No folder · Other folder…") in the
+  desktop and browser New task box and the reply box, the phone Tasks chips and the phone New task sheet. Recorded as
+  an allowed difference from v1 (design/v1-reference/allowed.md).
 - **Projects on phones follow the project-selector decisions above**: one selector (with multi-pick: tap = only, +
   adds), not chips (owner, 11-15 19:52, on the New task sheet showing the old selector).
 
@@ -166,7 +170,7 @@ turn. When a screen or feature contradicts one, that's a bug: fix it toward the 
 
 - [x] Every screen wired to the real server (the 2026-11-09 "mounts no task view" gap is closed)
 - [x] Multi-project pick (click = only, + adds, strip with Only/All) (round 133)
-- [ ] **Phones break the project-selector decisions (§3):** the phone Tasks screen shows project chips (round 284) and the phone New task sheet shows v1's place chips (round 286): replace both with the one selector + multi-pick: **next round**
+- [ ] **Phones break the project-selector decisions (§3):** the phone Tasks screen shows project chips (round 284) and the phone New task sheet shows v1's place chips (round 286): replace both with the one selector + multi-pick, **and the desktop New task place row too (owner 2026-11-15 20:05)**: **next round, after r287**
 - [x] Composer `@` and `/`
 - [x] Harness picker back to v1: one pill, one two-pane popover (round 233, 6e3fe42e)
 - [x] "What will Auto run" back on the pill as v1 (#autoPv: Auto's pick is the pill's own segment, opens the AutoPop); extra compare runs open the same two-pane picker with their own model · thinking · account and What's different (round 236, c390aca5)
@@ -203,13 +207,22 @@ turn. When a screen or feature contradicts one, that's a bug: fix it toward the 
 11. [x] Push (`wisp.push`, HPKE, grid relay) (round 228, reviewed by r241; no UI calls it yet: step 13)
 12. [x] Offline and bad network: core + shell hookups (round 229, reviewed by r241)
 13. [ ] Screens part 1 (Tasks, task page, New task, search; Add computer with QR, Trust new key, Stay connected ON by default without push). Done (round 284): Tasks (root TopAppBar with the computer filter `shell.computerFilter` as title, Search, the me menu; project chips row; FAB / iOS compose for New task; shell-list filters by computer), Add computer (QR via `scanCode`, typed fallback, Trust the new key with confirm, Stay connected ON for SSH without push, `mobile/web/src/{add,stay}.ts`). Done (round 286): the task page's app bar (M3 medium / iOS navigation bar: Back + the task's menu from the one menu model, with the details bar's Transcript, Rerun, Open in, Changes, Shell, Ship it, Mark done and Details: the details column as a sheet; Rename as a dialog; plugins' `shell.task:head` items in the bar; the ledger and the reply box as they are, the composer M3 docked / Messages-like, `PhoneTaskBar` in `frame/PhoneHead.tsx`), New task as Android's full-screen dialog / iOS's sheet (Close × or Cancel, New task, Send; the prompt box unchanged, `PhoneCompose` in `frame/PhoneHead.tsx`, Frame `behind`), Search as the M3 search view / the iOS field under the large title (the palette's task search, Back / Cancel; `TopAppBar.search`, `PaletteSheet.close`); browser initial JS 107.8 KB br and CSS 27.1 KB as at HEAD; tests `apps/web/test/phone-pages.test.tsx`, `packages/ui/test/platform-pages.test.tsx`. Left: Select in the list's bar (selection mode), the iOS computer filter as a pull-down menu (a sheet today), the task head's swipe to the next / previous task (its twins Next task / Previous task in the menu)
-13b. [ ] **Crew on phones as stories** (owner, 2026-11-15: "like stories in Instagram and Snapchat"): replace the phone Tasks list's Crew section
+13b. [x] **Crew on phones as stories** (owner, 2026-11-15: "like stories in Instagram and Snapchat"): replace the phone Tasks list's Crew section
       with a stories row under the top bar (one avatar per member, ring = working / unread report / waiting on you / idle;
       Org and + as first/last bubbles); tap opens a full-screen story (now, last report, what waits on you with the task
       page's buttons, next check-in), tap/swipe to step, swipe down to close, each gesture with a visible control.
       Mock done: docs/design/crew-stories.html (A stories row, B + Waiting for you strip [recommended], C + reply box);
-      **Owner picked C (stories you can reply to), 2026-11-15: build next, after r286.** Phones only;
-      browser/desktop keep v1. **Next round after r286.**
+      **Owner picked C (stories you can reply to), 2026-11-15.** Phones only; browser/desktop keep v1.
+      Done (round 287): `shell.list:crew` draws under the phone Tasks top bar (shell `PhoneListTop`; shell-list leaves
+      it out of the list on phones); the crew's phone chunk (`plugins/crew/ui/src/Stories.tsx`, rules in `stories.ts`)
+      with kit `CrewStories`/`CrewStory`/`StoryCard` (`packages/ui/src/crew/Stories.tsx`, its own lazy
+      `crew-stories.css`); rings wait › unread report › working › idle; story: bars that fill (8 s, none under reduced
+      motion), ←/→ + arrow keys + tap halves, × + Esc + drag down, Pause + held press, ⋯ (page, Edit, Check in,
+      Pause, Share, Track record, Remove); Waiting for you is shell-task's own `shell.task:foot`; reply is the kit
+      `ReplyBox compact` (follow-up on the running job, else `crew.assign`); 👍 Good / ↻ Try again follow up on the
+      report. Mock seed `crew` (MOCK_CREW=1, `?seed=crew`), mocks `crew.assign`, `runtime.answer`. Browser initial
+      JS/CSS unchanged (396.7 KB raw / 199.7 KB raw). Tests: `apps/web/test/crew-stories.test.tsx`,
+      `packages/ui/test/crew-stories.test.tsx`, `plugins/crew/ui/test/stories.test.ts`.
 14. [ ] Screens part 2 (Settings, My Stuff, Crew, Computers and cloud sign-in)
 15. [ ] Store and release (android.yml, ios.yml, listings, privacy)
 - Open questions with defaults (ADR-0065): Sign in with Apple before iOS ships · push needs a free Cloud sign-in ·
