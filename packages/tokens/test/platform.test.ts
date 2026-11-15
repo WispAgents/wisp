@@ -61,3 +61,13 @@ test('the swipe numbers the kit swipe math mirrors (packages/ui swipe-math.ts) s
   // step 4's row and surface tokens exist in both looks
   for (const look of ['android', 'ios']) for (const name of ['row-lead', 'row-lead-gap', 'row-pad-y', 'chip-h', 'chip-pad', 'chip-icon', 'card-pad', 'banner-pad', 'refresh-spinner', 'empty-icon', 'button-h', 'button-pad']) assert.match(css(look), new RegExp(`--${name}: `), `${look} --${name}`);
 });
+
+test('step_6_control_tokens_are_the_spec_numbers_in_each_look', () => {
+  const css = (look: string): string => renderPlatforms().find(([l]) => l === look)?.[1] ?? '';
+  // M3: buttons 32/40/56, the icon button 40 in a 48 target, the 52 × 32 switch, 48 dp tabs, the 56 dp text field
+  for (const [name, v] of [['button-h-sm', '32px'], ['button-h', '40px'], ['button-h-lg', '56px'], ['icon-button', '40px'], ['switch-w', '52px'], ['switch-h', '32px'], ['tab-h', '48px'], ['field-h', '56px'], ['radio', '20px']]) assert.match(css('android'), new RegExp(`--${name}: ${v};`), `android --${name}`);
+  // HIG: buttons 28/34/50, the 51 × 31 UISwitch, the 32 pt segmented control, a 44 pt field
+  for (const [name, v] of [['button-h-xs', '28px'], ['button-h-sm', '34px'], ['button-h', '50px'], ['switch-w', '51px'], ['switch-h', '31px'], ['seg-h', '32px'], ['field-h', '44px'], ['state-disabled', '0.3']]) assert.match(css('ios'), new RegExp(`--${name}: ${v};`), `ios --${name}`);
+  // the colours the controls add follow light and dark
+  assert.match(css('ios'), /--switch-off: rgba\(120, 120, 128, 0\.16\);[^]*--switch-off: rgba\(120, 120, 128, 0\.32\);/);
+});

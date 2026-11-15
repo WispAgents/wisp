@@ -6,6 +6,8 @@ import { lazyPart, warm } from './lazy-part.ts';
 import type { CheckboxApi } from './checkbox-machine.ts';
 import { sub, type KitProps, type PartName } from '../core/props.ts';
 import { Icon } from '../content/Icon.tsx';
+import { usePlatform } from '../platform/PlatformLook.tsx';
+import { useGestureHost } from '../gestures/host.tsx';
 
 interface ToggleBase extends KitProps {
   /** Visible label beside the control. Without one, pass `aria-label`. */
@@ -23,10 +25,13 @@ export interface SwitchProps extends ToggleBase {
 
 /** An on/off setting that applies at once (Settings rows). v1's element: a `<button role="switch">` (Space and Enter
  * toggle it, it takes focus like any button), so a page reads and counts it as v1's did; a hidden input carries it in a
- * form when it has a `name`. */
+ * form when it has a `name`. The phone apps (ADR-0065 step 6): Android's M3 switch carries a check on its handle when
+ * on; both phones tick the picker haptic as it flips (design/mobile.md §A.5); the rest is the look's stylesheet. */
 export function Switch(props: SwitchProps): JSX.Element {
   const part = (): PartName => props.part ?? 'ui.switch';
   const state = (): string => (props.checked ? 'checked' : 'unchecked');
+  const look = usePlatform();
+  const host = useGestureHost();
   // the button is the track (v1 .switch: 34 × 20), its knob inside; a label sits beside it, outside the button
   const track = (): JSX.Element => (
     <button
@@ -40,11 +45,18 @@ export function Switch(props: SwitchProps): JSX.Element {
       data-part={part()}
       data-state={state()}
       data-disabled={props.disabled ? '' : undefined}
-      onClick={() => props.onChange(!props.checked)}
+      onClick={() => {
+        if (look() !== 'web') host.haptic('select');
+        props.onChange(!props.checked);
+      }}
     >
       <Show when={props.name}>{(n) => <input type="hidden" name={n()} value={props.checked ? (props.value ?? 'on') : ''} />}</Show>
       <span data-kit="switch-control" data-part={sub(part(), 'control')} data-state={state()}>
-        <span data-kit="switch-thumb" data-state={state()} />
+        <span data-kit="switch-thumb" data-state={state()}>
+          <Show when={look() === 'android' && props.checked}>
+            <Icon name="check" size="xs" />
+          </Show>
+        </span>
       </span>
     </button>
   );

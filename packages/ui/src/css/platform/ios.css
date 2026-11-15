@@ -745,4 +745,311 @@
     :root[data-platform='ios'] [data-kit='context-preview'],
     :root[data-platform='ios'] [data-kit='context-menu'] { animation: none; }
   }
+
+  /* Controls (step 6, design/mobile.md §A.5–§A.7). Generic rules keep the specificity of one look and one kit name
+     (variants and sizes in :where()), so a control placed in a bar, an alert, a banner or an empty state keeps the
+     rule written for it there (steps 3–5). A press answers as the finger goes down: the highlight (the control dims)
+     with no scale; 44 pt touch targets round a smaller visible control (::before); the focus ring in the tint;
+     disabled at the tertiary label's 30 %. */
+
+  /* Button: HIG buttons. primary = filled, accent = tinted, secondary = gray, ghost and link = plain, danger = filled
+     in red, chip = a gray capsule (selected: tinted). Sizes: lg the 50 pt large button (12 pt corners, headline), md
+     34 pt (8 pt), xs and sm 28 pt (6 pt, footnote). */
+  :root[data-platform='ios'] [data-kit='button'] {
+    gap: var(--space-3);
+    height: var(--button-h-sm);
+    padding: var(--space-0) var(--space-6);
+    border: 0;
+    border-radius: var(--radius-sm);
+    background: var(--fill);
+    color: var(--primary);
+    box-shadow: none;
+    font: var(--type-subhead);
+    font-weight: var(--fw-semibold);
+    transition: opacity var(--dur-short) ease-out, background-color var(--dur-short) ease-out;
+  }
+  :root[data-platform='ios'] [data-kit='button'] > [data-kit='button-content'] { gap: var(--space-3); }
+  :root[data-platform='ios'] [data-kit='button'] [data-kit='icon'] { width: var(--size-icon-lg); height: var(--size-icon-lg); }
+  :root[data-platform='ios'] :where([data-size='xs'])[data-kit='button'],
+  :root[data-platform='ios'] :where([data-size='sm'])[data-kit='button'] { height: var(--button-h-xs); padding: var(--space-0) var(--space-5); border-radius: var(--radius-xs); font: var(--type-footnote); font-weight: var(--fw-semibold); }
+  :root[data-platform='ios'] :where([data-size='lg'])[data-kit='button'] { height: var(--button-h); padding: var(--space-0) var(--button-pad); border-radius: var(--radius-lg); font: var(--type-headline); }
+  :root[data-platform='ios'] :where([data-variant='primary'])[data-kit='button'] { background: var(--primary); color: var(--on-primary); }
+  :root[data-platform='ios'] :where([data-variant='danger'])[data-kit='button'] { background: var(--error); color: var(--on-primary); }
+  :root[data-platform='ios'] :where([data-variant='accent'])[data-kit='button'] { background: color-mix(in srgb, var(--primary) 15%, transparent); color: var(--primary); }
+  :root[data-platform='ios'] :where([data-variant='ghost'])[data-kit='button'] { padding: var(--space-0) var(--space-4); background: transparent; font-weight: var(--fw-regular); }
+  :root[data-platform='ios'] :where([data-variant='ghost'][data-tone='good'])[data-kit='button'] { color: var(--good); }
+  :root[data-platform='ios'] :where([data-variant='ghost'][data-tone='bad'])[data-kit='button'] { color: var(--error); }
+  :root[data-platform='ios'] :where([data-variant='chip'])[data-kit='button'] { height: var(--button-h-xs); padding: var(--space-0) var(--chip-pad); border-radius: var(--radius-pill); color: var(--on-surface); font: var(--type-footnote); }
+  :root[data-platform='ios'] :where([data-variant='chip'][aria-pressed='true'])[data-kit='button'] { background: color-mix(in srgb, var(--primary) 15%, transparent); color: var(--primary); }
+  :root[data-platform='ios'] :where([data-variant='link'])[data-kit='button'] { height: auto; padding: var(--space-0); border-radius: var(--space-0); background: none; color: var(--primary); font: inherit; }
+  :root[data-platform='ios'] :where([data-fill])[data-kit='button'] { width: 100%; }
+
+  /* IconButton: a plain bar button, the glyph in the tint in a 44 pt target (xs and sm draw 28 pt and grow their hit
+     area); primary = a filled circle, secondary = a gray one (the sheets' close button). */
+  :root[data-platform='ios'] [data-kit='icon-button'] {
+    width: var(--tap-min);
+    height: var(--tap-min);
+    border: 0;
+    border-radius: var(--radius-pill);
+    background: transparent;
+    color: var(--primary);
+    transition: opacity var(--dur-short) ease-out;
+  }
+  :root[data-platform='ios'] [data-kit='icon-button'] [data-kit='icon'] { width: var(--bar-glyph); height: var(--bar-glyph); }
+  :root[data-platform='ios'] :where([data-size='xs'])[data-kit='icon-button'],
+  :root[data-platform='ios'] :where([data-size='sm'])[data-kit='icon-button'] { width: var(--button-h-xs); height: var(--button-h-xs); }
+  :root[data-platform='ios'] [data-kit='icon-button']:where([data-size='xs']) [data-kit='icon'],
+  :root[data-platform='ios'] [data-kit='icon-button']:where([data-size='sm']) [data-kit='icon'] { width: var(--size-icon-lg); height: var(--size-icon-lg); }
+  :root[data-platform='ios'] :where([data-variant='primary'])[data-kit='icon-button'] { background: var(--primary); color: var(--on-primary); }
+  :root[data-platform='ios'] :where([data-variant='secondary'])[data-kit='icon-button'] { background: var(--fill); color: var(--on-surface-var); }
+  :root[data-platform='ios'] :where([data-tone='bad'])[data-kit='icon-button'] { color: var(--error); }
+  :root[data-platform='ios'] :where([data-tone='good'])[data-kit='icon-button'] { color: var(--good); }
+
+  :root[data-platform='ios'] [data-kit='button']:not([data-variant='link'])::before,
+  :root[data-platform='ios'] [data-kit='icon-button']::before {
+    content: '';
+    position: absolute;
+    inset: min(var(--space-0), calc((100% - var(--tap-min)) / 2));
+  }
+  @media (hover: hover) {
+    :root[data-platform='ios'] [data-kit='button']:hover,
+    :root[data-platform='ios'] [data-kit='icon-button']:hover { opacity: calc(1 - var(--state-pressed)); }
+  }
+  :root[data-platform='ios'] [data-kit='button']:active,
+  :root[data-platform='ios'] [data-kit='icon-button']:active { transform: none; opacity: calc(1 - var(--state-pressed) * 2); transition: none; }
+  /* an alert's actions show their press as the fill (step 5), not dimmed as well */
+  :root[data-platform='ios'] [data-kit='dialog'][data-alert] > [data-kit='dialog-foot'] > [data-kit='button']:active { opacity: 1; }
+  :root[data-platform='ios'] [data-kit='button']:focus-visible,
+  :root[data-platform='ios'] [data-kit='icon-button']:focus-visible { outline: var(--size-ring) solid var(--primary); outline-offset: var(--space-1); }
+  :root[data-platform='ios'] [data-kit='button']:disabled,
+  :root[data-platform='ios'] [data-kit='icon-button']:disabled { opacity: var(--state-disabled); cursor: not-allowed; }
+  /* the busy ring is the activity indicator, the glyph's size */
+  :root[data-platform='ios'] [data-kit='button'] > [data-kit='spinner'],
+  :root[data-platform='ios'] [data-kit='icon-button'] > [data-kit='spinner'] { width: var(--size-icon-lg); height: var(--size-icon-lg); }
+
+  /* Switch: UISwitch, 51 × 31, the off track secondarySystemFill, on the tint; the 27 pt white thumb 2 pt in, which
+     stretches to 34 pt while held (towards the middle); the hit area grown to 44 pt. */
+  :root[data-platform='ios'] [data-kit='switch'] {
+    width: var(--switch-w);
+    height: var(--switch-h);
+    border: 0;
+    border-radius: var(--radius-pill);
+    background: var(--switch-off);
+    -webkit-tap-highlight-color: transparent;
+    transition: background-color var(--dur-short) ease-out;
+  }
+  :root[data-platform='ios'] [data-kit='switch'][data-state='checked'] { background: var(--primary); }
+  :root[data-platform='ios'] [data-kit='switch']::after {
+    content: '';
+    position: absolute;
+    inset: min(var(--space-0), calc((100% - var(--tap-min)) / 2)) var(--space-0);
+  }
+  :root[data-platform='ios'] [data-kit='switch-thumb'] {
+    top: var(--switch-pad);
+    left: var(--switch-pad);
+    width: var(--switch-thumb);
+    height: var(--switch-thumb);
+    border-radius: var(--radius-pill);
+    background: var(--switch-knob);
+    box-shadow: var(--elev-2);
+    transform: none;
+    transition: left var(--spring-snappy-dur) var(--spring-snappy), width var(--dur-short) ease-out;
+  }
+  :root[data-platform='ios'] [data-kit='switch-thumb'][data-state='checked'] { left: calc(var(--switch-w) - var(--switch-thumb) - var(--switch-pad)); transform: none; }
+  :root[data-platform='ios'] [data-kit='switch']:active [data-kit='switch-thumb'] { width: var(--switch-thumb-press); }
+  :root[data-platform='ios'] [data-kit='switch'][data-state='checked']:active [data-kit='switch-thumb'] { left: calc(var(--switch-w) - var(--switch-thumb-press) - var(--switch-pad)); }
+  :root[data-platform='ios'] [data-kit='switch']:focus-visible { outline: var(--size-ring) solid var(--primary); outline-offset: var(--space-1); }
+  :root[data-platform='ios'] [data-kit='switch'][data-disabled] { opacity: var(--state-disabled); }
+  :root[data-platform='ios'] [data-kit='switch-field'] { gap: var(--space-6); color: var(--on-surface); font: var(--type-body); }
+
+  /* Tabs: every variant is UISegmentedControl. A 32 pt track in the fill, 9 pt corners, the selected segment raised
+     (7 pt corners, 2 pt in, a shadow), footnote, semibold when selected; hairlines between unselected segments; the
+     hit area grown to 44 pt (::after). */
+  :root[data-platform='ios'] [data-kit='tabs'] > [data-kit='tab-list'] {
+    gap: var(--space-0);
+    height: var(--seg-h);
+    margin: var(--space-0);
+    padding: var(--seg-pad);
+    overflow: visible;
+    border: 0;
+    border-radius: var(--seg-radius);
+    background: var(--fill);
+  }
+  :root[data-platform='ios'] [data-kit='tabs'] > [data-kit='tab-list'][data-fill] { align-self: stretch; }
+  :root[data-platform='ios'] [data-kit='tabs'] [data-kit='tab'] {
+    flex: 1 1 0;
+    justify-content: center;
+    gap: var(--space-2);
+    min-width: max-content;
+    height: 100%;
+    min-height: var(--space-0);
+    padding: var(--space-0) var(--space-6);
+    border-radius: var(--seg-thumb-radius);
+    background: transparent;
+    box-shadow: none;
+    color: var(--on-surface);
+    font: var(--type-footnote);
+    font-weight: var(--fw-medium);
+    -webkit-tap-highlight-color: transparent;
+    transition: background-color var(--dur-short) ease-out, box-shadow var(--dur-short) ease-out;
+  }
+  :root[data-platform='ios'] [data-kit='tabs'] [data-kit='tab'] > [data-kit='icon'] { width: var(--size-icon-md); height: var(--size-icon-md); margin: var(--space-0); }
+  :root[data-platform='ios'] [data-kit='tabs'] [data-kit='tab-count'] { margin: var(--space-0); font: inherit; color: var(--on-surface-var); }
+  :root[data-platform='ios'] [data-kit='tabs'] [data-kit='tab'][data-selected] { background: var(--seg-thumb); box-shadow: var(--elev-1); color: var(--on-surface); font-weight: var(--fw-semibold); }
+  :root[data-platform='ios'] [data-kit='tabs'] [data-kit='tab']::after,
+  :root[data-platform='ios'] [data-kit='tabs'] [data-kit='tab'][data-selected]::after {
+    content: '';
+    position: absolute;
+    inset: min(var(--space-0), calc((100% - var(--tap-min)) / 2)) var(--space-0);
+    height: auto;
+    border-radius: var(--space-0);
+    background: none;
+  }
+  :root[data-platform='ios'] [data-kit='tabs'] [data-kit='tab'] + [data-kit='tab']::before {
+    content: '';
+    position: absolute;
+    top: var(--space-4);
+    bottom: var(--space-4);
+    left: var(--space-0);
+    width: var(--hairline);
+    background: var(--outline-var);
+  }
+  :root[data-platform='ios'] [data-kit='tabs'] [data-kit='tab'][data-selected]::before,
+  :root[data-platform='ios'] [data-kit='tabs'] [data-kit='tab'][data-selected] + [data-kit='tab']::before { background: transparent; }
+  :root[data-platform='ios'] [data-kit='tabs'] [data-kit='tab']:active { opacity: calc(1 - var(--state-pressed) * 2); }
+  :root[data-platform='ios'] [data-kit='tabs'] [data-kit='tab']:focus-visible { outline: var(--size-ring) solid var(--primary); outline-offset: var(--space-0); }
+  :root[data-platform='ios'] [data-kit='tabs'] [data-kit='tab'][data-disabled] { opacity: var(--state-disabled); }
+
+  /* Input, TextArea, Select's button: the rounded field. 44 pt (sm 34), 10 pt corners, the fill, no edge, body;
+     placeholders in the tertiary label; focus is a ring in the tint (iPad keyboards; a tap shows the caret too). */
+  :root[data-platform='ios'] [data-kit='input'],
+  :root[data-platform='ios'] [data-kit='field-box'],
+  :root[data-platform='ios'] [data-kit='textarea'],
+  :root[data-platform='ios'] [data-kit='select-trigger'] {
+    height: var(--field-h);
+    padding: var(--space-0) var(--field-pad);
+    border: 0;
+    border-radius: var(--radius-md);
+    background-color: var(--fill);
+    box-shadow: none;
+    color: var(--on-surface);
+    font: var(--type-body);
+    transition: box-shadow var(--dur-short) ease-out;
+  }
+  :root[data-platform='ios'] :where([data-size='sm'])[data-kit='input'],
+  :root[data-platform='ios'] :where([data-size='sm'])[data-kit='field-box'],
+  :root[data-platform='ios'] :where([data-size='sm'])[data-kit='select-trigger'] { height: var(--button-h-sm); font: var(--type-subhead); }
+  :root[data-platform='ios'] [data-kit='textarea'] { height: auto; min-height: var(--field-h); padding: var(--space-5) var(--field-pad); line-height: inherit; }
+  :root[data-platform='ios'] [data-kit='field-box'] { gap: var(--space-3); color: var(--on-surface-var); }
+  :root[data-platform='ios'] [data-kit='field-box'] > [data-kit='icon'] { width: var(--size-icon-lg); height: var(--size-icon-lg); }
+  :root[data-platform='ios'] [data-kit='field-prefix'] { color: var(--on-surface-var); }
+  :root[data-platform='ios'] [data-kit='field-input'] { color: var(--on-surface); }
+  :root[data-platform='ios'] [data-kit='input'][data-mono],
+  :root[data-platform='ios'] [data-kit='textarea'][data-mono],
+  :root[data-platform='ios'] [data-kit='field-box'][data-mono],
+  :root[data-platform='ios'] [data-kit='select-trigger'][data-mono] { font-family: var(--mono); }
+  :root[data-platform='ios'] [data-kit='input']::placeholder,
+  :root[data-platform='ios'] [data-kit='textarea']::placeholder,
+  :root[data-platform='ios'] [data-kit='field-input']::placeholder { color: var(--on-surface-ter); }
+  :root[data-platform='ios'] [data-kit='input']:hover,
+  :root[data-platform='ios'] [data-kit='field-box']:hover,
+  :root[data-platform='ios'] [data-kit='textarea']:hover,
+  :root[data-platform='ios'] [data-kit='select-trigger']:hover { border-color: transparent; }
+  :root[data-platform='ios'] [data-kit='input']:focus,
+  :root[data-platform='ios'] [data-kit='textarea']:focus,
+  :root[data-platform='ios'] [data-kit='field-box']:focus-within,
+  :root[data-platform='ios'] [data-kit='select-trigger']:focus-visible {
+    background-color: var(--fill);
+    box-shadow: inset 0 0 0 var(--size-ring) color-mix(in srgb, var(--primary) 60%, transparent);
+  }
+  :root[data-platform='ios'] [data-kit='input'][aria-invalid='true'],
+  :root[data-platform='ios'] [data-kit='textarea'][aria-invalid='true'],
+  :root[data-platform='ios'] [data-kit='field-box'][data-invalid],
+  :root[data-platform='ios'] [data-kit='select-trigger'][data-invalid] { box-shadow: inset 0 0 0 var(--size-ring) var(--error); }
+  :root[data-platform='ios'] [data-kit='input']:disabled,
+  :root[data-platform='ios'] [data-kit='textarea']:disabled,
+  :root[data-platform='ios'] [data-kit='field-box'][data-disabled],
+  :root[data-platform='ios'] [data-kit='select-trigger']:disabled { opacity: var(--state-disabled); }
+  /* Select: a pop-up button in the field's shape, the up-down mark in the tint; it dims while held. Its list is the
+     pull-down menu (the context menu's material and rows, a check on the picked one). */
+  :root[data-platform='ios'] [data-kit='select'] { display: flex; }
+  :root[data-platform='ios'] [data-kit='select-trigger'] { width: 100%; gap: var(--space-4); }
+  :root[data-platform='ios'] [data-kit='select-trigger'][aria-expanded='true'],
+  :root[data-platform='ios'] [data-kit='select-trigger']:active { box-shadow: none; opacity: calc(1 - var(--state-pressed) * 2); }
+  :root[data-platform='ios'] [data-kit='select-trigger'][data-invalid][aria-expanded='true'] { box-shadow: inset 0 0 0 var(--size-ring) var(--error); }
+  :root[data-platform='ios'] [data-kit='select-trigger'][data-placeholder] [data-kit='select-value'] { color: var(--on-surface-ter); }
+  :root[data-platform='ios'] [data-kit='select-trigger'] > [data-kit='icon'] { width: var(--size-icon-md); height: var(--size-icon-md); color: var(--primary); }
+  :root[data-platform='ios'] [data-kit='listbox'] {
+    min-width: min(var(--ctx-w), calc(100vw - var(--space-4) * 2));
+    padding: var(--space-0);
+    border: 0;
+    border-radius: var(--ctx-radius);
+    background: var(--chrome);
+    -webkit-backdrop-filter: blur(var(--ctx-blur));
+    backdrop-filter: blur(var(--ctx-blur));
+    box-shadow: var(--elev-2);
+    font-family: var(--font-ui);
+  }
+  :root[data-platform='ios'] [data-kit='option'] {
+    min-height: var(--ctx-row-h);
+    padding: var(--space-0) var(--inset);
+    border-radius: var(--space-0);
+    border-top: var(--hairline) solid var(--outline);
+    color: var(--on-surface);
+    font: var(--type-body);
+  }
+  :root[data-platform='ios'] [data-kit='option']:first-child,
+  :root[data-platform='ios'] [data-kit='option-group'] + [data-kit='option'] { border-top: 0; }
+  :root[data-platform='ios'] [data-kit='option'][data-highlighted] { background: var(--fill); color: var(--on-surface); }
+  :root[data-platform='ios'] [data-kit='option'] > [data-kit='icon'] { color: var(--on-surface); }
+  :root[data-platform='ios'] [data-kit='option'][data-disabled] { color: var(--on-surface-ter); opacity: 1; }
+  :root[data-platform='ios'] [data-kit='option-group'] { padding: var(--space-3) var(--inset); font: var(--type-footnote); color: var(--on-surface-var); }
+
+  /* Field: the label over the rounded field (footnote, the secondary label, in line with the text), the error and
+     the hint under it the same way. */
+  :root[data-platform='ios'] [data-kit='field'] { gap: var(--space-3); color: var(--on-surface); }
+  :root[data-platform='ios'] [data-kit='field-label'] { padding: var(--space-0) var(--field-pad); color: var(--on-surface-var); font: var(--type-footnote); }
+  :root[data-platform='ios'] [data-kit='field-hint'],
+  :root[data-platform='ios'] [data-kit='field-error'] { padding: var(--space-0) var(--field-pad); font: var(--type-footnote); color: var(--on-surface-var); }
+  :root[data-platform='ios'] [data-kit='field-error'] { color: var(--error); }
+
+  /* A Select's long list (phone.tsx SelectSheet): the choices as an inset grouped checkmark list, 44 pt rows with
+     inset separators, the check trailing in the tint. */
+  :root[data-platform='ios'] [data-kit='select-sheet'] { display: flex; flex-direction: column; overflow: hidden; margin-bottom: var(--space-4); border-radius: var(--radius-md); background: var(--surface-grouped-1); }
+  :root[data-platform='ios'] [data-kit='select-sheet-item'] {
+    position: relative;
+    display: flex;
+    align-items: center;
+    gap: var(--space-6);
+    width: 100%;
+    min-height: var(--row-h-1);
+    padding: var(--space-0) var(--inset);
+    border: 0;
+    background: transparent;
+    color: var(--on-surface);
+    font: var(--type-body);
+    text-align: start;
+    -webkit-tap-highlight-color: transparent;
+  }
+  :root[data-platform='ios'] [data-kit='select-sheet-item'] + [data-kit='select-sheet-item']::before {
+    content: '';
+    position: absolute;
+    top: var(--space-0);
+    left: var(--inset);
+    right: var(--space-0);
+    height: var(--hairline);
+    background: var(--outline);
+  }
+  :root[data-platform='ios'] [data-kit='select-sheet-item']:active { background: var(--fill); }
+  :root[data-platform='ios'] [data-kit='select-sheet-item']:focus-visible { outline: var(--size-ring) solid var(--primary); outline-offset: calc(var(--size-ring) * -1); }
+  :root[data-platform='ios'] [data-kit='select-sheet-item']:disabled { color: var(--on-surface-ter); }
+  :root[data-platform='ios'] [data-kit='select-sheet-item'] > [data-kit='icon'] { flex: none; width: var(--size-icon-lg); height: var(--size-icon-lg); color: var(--primary); }
+  :root[data-platform='ios'] [data-kit='select-sheet-label'] { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  :root[data-platform='ios'] [data-kit='select-sheet-group'] { padding: var(--space-4) var(--inset) var(--space-2); font: var(--type-footnote); color: var(--on-surface-var); }
+
+  @media (prefers-reduced-motion: reduce) {
+    :root[data-platform='ios'] [data-kit='switch'],
+    :root[data-platform='ios'] [data-kit='switch-thumb'],
+    :root[data-platform='ios'] [data-kit='tabs'] [data-kit='tab'] { transition: none; }
+  }
 }

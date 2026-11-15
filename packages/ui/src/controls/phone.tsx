@@ -6,6 +6,8 @@
 //   - bindSheet: a phone sheet's drag (step 7's bindSheetDrag): down closes (a draft stays); on iOS it steps the
 //     detents (large → medium → closed) and a drag up grows it.
 //   - bindTip: Android's M3 plain tooltip on a long-press of an icon button (1.5 s); the press then opens nothing.
+//   - SelectSheet (step 6): a Select's long list. Android: an M3 modal bottom sheet of radio rows; iOS: a sheet of the
+//     choices as a checkmark list (HIG's pushed list for a long set). A choice closes it.
 // Words come from props and the kit's strings (t()); every number from the platform tokens, mirrored here only where
 // the layout must be decided before the menu draws (the iOS row height, separator and width).
 import { createEffect, createMemo, createSignal, For, Match, onCleanup, onMount, Show, Switch, type JSX } from 'solid-js';
@@ -17,6 +19,7 @@ import { Sheet } from './Dialog.tsx';
 import type { MenuEntry, MenuItem, MenuSubmenu } from './menu-entries.ts';
 import type { MenuMachineProps } from './menu-machine.tsx';
 import type { ContextMenuProps } from './Menu.tsx';
+import type { SelectOption } from './Select.tsx';
 import { bound } from './lazy-part.ts';
 import { usePlatform } from '../platform/PlatformLook.tsx';
 import { contextPlace, detentAfter, detentsOf, phoneRows, rowsHeight, SELECT_VALUE, tipPlace, TIP_MS, type Detent, type PhoneRow } from './phone-math.ts';
@@ -463,4 +466,78 @@ export function bindTip(el: HTMLElement, o: TipBind): () => void {
       { capture: true },
     ),
   ]);
+}
+
+export interface SelectSheetProps {
+  readonly look: 'android' | 'ios';
+  readonly items: readonly SelectOption[];
+  readonly value: string | undefined;
+  /** the field's name (its aria-label, its Field's label, its placeholder) */
+  readonly title: string | undefined;
+  readonly part: PartName;
+  readonly onChoose: (value: string) => void;
+  readonly onClose: () => void;
+}
+
+/** A Select's long list in the phone apps: Android's bottom sheet of radio rows, iOS's checkmark list in a sheet. The
+ * picked row takes focus first; a choice (or a drag down, Escape, the scrim) closes it, focus back on the button. */
+export function SelectSheet(props: SelectSheetProps): JSX.Element {
+  const t = useT();
+  const title = (): string => props.title?.trim() || t('select');
+  let list: HTMLDivElement | undefined;
+  const pick = (item: SelectOption): void => {
+    props.onChoose(item.value);
+    props.onClose();
+  };
+  const keys = (e: KeyboardEvent): void => {
+    if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return;
+    e.preventDefault();
+    const rows = [...(list?.querySelectorAll<HTMLElement>("[data-kit='select-sheet-item']:not([disabled])") ?? [])];
+    const at = rows.indexOf(document.activeElement as HTMLElement);
+    const next = at < 0 ? (e.key === 'ArrowDown' ? 0 : rows.length - 1) : (at + (e.key === 'ArrowDown' ? 1 : rows.length - 1)) % rows.length;
+    rows[next]?.focus();
+  };
+  return (
+    <Sheet
+      open
+      title={title()}
+      onOpenChange={(open) => !open && props.onClose()}
+      part={sub(props.part, 'sheet')}
+      initialFocus={() => list?.querySelector<HTMLElement>("[data-kit='select-sheet-item'][aria-checked='true']:not([disabled])") ?? list?.querySelector<HTMLElement>("[data-kit='select-sheet-item']:not([disabled])") ?? null}
+    >
+      <div ref={list} role="radiogroup" aria-label={title()} data-kit="select-sheet" data-look={props.look} data-part={sub(props.part, 'list')} onKeyDown={keys}>
+        <For each={props.items}>
+          {(item, i) => (
+            <>
+              <Show when={item.group && props.items[i() - 1]?.group !== item.group}>
+                <div role="presentation" data-kit="select-sheet-group">
+                  {item.group}
+                </div>
+              </Show>
+              <button
+                type="button"
+                role="radio"
+                aria-checked={item.value === props.value}
+                disabled={item.disabled}
+                data-kit="select-sheet-item"
+                data-part={sub(props.part, 'option')}
+                data-value={item.value}
+                onClick={() => pick(item)}
+              >
+                <Show when={props.look === 'android'}>
+                  <span data-kit="select-sheet-radio" aria-hidden="true" data-checked={flag(item.value === props.value)} />
+                </Show>
+                <span data-kit="select-sheet-label" data-text="control">
+                  {item.label}
+                </span>
+                <Show when={props.look === 'ios' && item.value === props.value}>
+                  <Icon name="check" size="md" tone="accent-ink" />
+                </Show>
+              </button>
+            </>
+          )}
+        </For>
+      </div>
+    </Sheet>
+  );
 }

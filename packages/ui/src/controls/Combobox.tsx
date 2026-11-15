@@ -6,7 +6,7 @@ import { createMemo, createSignal, createUniqueId, For, Show, type JSX } from 's
 import { Portal } from 'solid-js/web';
 import { flag, sub, type KitProps, type Labelled, type PartName } from '../core/props.ts';
 import { Icon } from '../content/Icon.tsx';
-import { useField } from './Field.tsx';
+import { useField, useFieldText } from './Field.tsx';
 import type { FieldSize } from './Input.tsx';
 import type { SelectOption } from './Select.tsx';
 
@@ -30,6 +30,7 @@ const defaultMatch = (item: SelectOption, query: string): boolean => item.label.
 
 export function Combobox(props: ComboboxProps): JSX.Element {
   const field = useField();
+  useFieldText()();
   const id = createUniqueId();
   const [query, setQuery] = createSignal('');
   const shown = createMemo(() => {

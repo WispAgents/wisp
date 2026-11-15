@@ -91,6 +91,21 @@
     --ctx-gap: 8px; /* UIContextMenuInteraction: 8 pt between the preview and the menu */
     --capsule-h: 44px; /* HIG Notifications-like banner (iOS has no toast): a 44 pt capsule */
     --capsule-gap: 8px; /* 8 pt above the tab bar (HIG layout margin), as Apple Music’s and Maps’ banners */
+    --button-h-xs: 28px; /* HIG Buttons: small bordered button 28 pt (the kit's xs and sm), its hit area grown to 44 pt */
+    --switch-w: 51px; /* UISwitch: 51 × 31 pt */
+    --switch-h: 31px; /* UISwitch: 51 × 31 pt, full radius */
+    --switch-thumb: 27px; /* UISwitch: the 27 pt thumb, 2 pt in from the track */
+    --switch-pad: 2px; /* UISwitch: the thumb 2 pt in from the track */
+    --switch-thumb-press: 34px; /* UISwitch: the thumb stretches to 34 pt while it is held */
+    --seg-h: 32px; /* UISegmentedControl: 32 pt tall, its hit area grown to 44 pt */
+    --seg-pad: 2px; /* UISegmentedControl: the selected segment 2 pt in from the track */
+    --seg-radius: 9px; /* UISegmentedControl: 9 pt track corners */
+    --seg-thumb-radius: 7px; /* UISegmentedControl: 7 pt selected segment corners */
+    --field-h: 44px; /* HIG Text fields: a form's field at the 44 pt row height */
+    --field-pad: 12px; /* HIG Text fields: 12 pt in from the rounded edge */
+    --state-disabled: 0.3; /* HIG Color: a disabled control in tertiaryLabel (30 % of the label) */
+    --switch-knob: #ffffff; /* UISwitch: the thumb is white in light and dark */
+    --bar-glyph: 22px; /* HIG Toolbars: a plain bar button's SF Symbol at about 22 pt in its 44 pt target */
     --spring-snappy: linear(0, 0.034, 0.117, 0.224, 0.339, 0.452, 0.557, 0.649, 0.729, 0.795, 0.849, 0.892, 0.925, 0.95, 0.969, 0.983, 0.992, 0.999, 1.003, 1.005, 1.006, 1.006, 1.006, 1.006, 1.005, 1.004, 1.003, 1.003, 1.002, 1.002, 1.001, 1); /* SwiftUI Animation.snappy: duration 0.5 s, extraBounce 0 (bounce 0.15) */
     --spring-snappy-dur: 700ms; /* spring-snappy settles (within 0.1 %) after this: its animation's duration */
     --spring-smooth: linear(0, 0.037, 0.122, 0.227, 0.337, 0.442, 0.537, 0.62, 0.692, 0.751, 0.801, 0.841, 0.874, 0.901, 0.922, 0.939, 0.952, 0.963, 0.971, 0.978, 0.983, 0.987, 0.99, 0.992, 0.994, 0.995, 0.996, 0.997, 0.998, 0.998, 0.999, 1); /* SwiftUI Animation.smooth: duration 0.5 s, bounce 0 */
@@ -114,6 +129,8 @@
     --chrome: rgba(249, 249, 249, 0.94); /* UIBarAppearance default background (systemChromeMaterial): the tab bar and a scrolled navigation bar */
     --on-surface-ter: rgba(60, 60, 67, 0.3); /* UIColor.tertiaryLabel (the disclosure chevron, placeholders) */
     --fill: rgba(118, 118, 128, 0.12); /* UIColor.tertiarySystemFill (redacted placeholders, gray buttons) */
+    --switch-off: rgba(120, 120, 128, 0.16); /* UIColor.secondarySystemFill (UISwitch's off track) */
+    --seg-thumb: #ffffff; /* UISegmentedControl: the selected segment (systemGray in dark) */
   }
   @media (prefers-color-scheme: dark) {
     :root[data-platform='ios']:not([data-theme='light']) {
@@ -132,6 +149,8 @@
       --chrome: rgba(22, 22, 22, 0.94); /* UIBarAppearance default background (systemChromeMaterial): the tab bar and a scrolled navigation bar */
       --on-surface-ter: rgba(235, 235, 245, 0.3); /* UIColor.tertiaryLabel (the disclosure chevron, placeholders) */
       --fill: rgba(118, 118, 128, 0.24); /* UIColor.tertiarySystemFill (redacted placeholders, gray buttons) */
+      --switch-off: rgba(120, 120, 128, 0.32); /* UIColor.secondarySystemFill (UISwitch's off track) */
+      --seg-thumb: #636366; /* UISegmentedControl: the selected segment (systemGray in dark) */
     }
   }
   :root[data-platform='ios'][data-theme='dark'], :root[data-platform='ios'] [data-theme='dark'] {
@@ -150,6 +169,8 @@
     --chrome: rgba(22, 22, 22, 0.94); /* UIBarAppearance default background (systemChromeMaterial): the tab bar and a scrolled navigation bar */
     --on-surface-ter: rgba(235, 235, 245, 0.3); /* UIColor.tertiaryLabel (the disclosure chevron, placeholders) */
     --fill: rgba(118, 118, 128, 0.24); /* UIColor.tertiarySystemFill (redacted placeholders, gray buttons) */
+    --switch-off: rgba(120, 120, 128, 0.32); /* UIColor.secondarySystemFill (UISwitch's off track) */
+    --seg-thumb: #636366; /* UISegmentedControl: the selected segment (systemGray in dark) */
   }
   :root[data-platform='ios'][data-theme='light'], :root[data-platform='ios'] [data-theme='light'] {
     --surface-c0: #ffffff; /* UIColor.systemBackground */
@@ -167,5 +188,7 @@
     --chrome: rgba(249, 249, 249, 0.94); /* UIBarAppearance default background (systemChromeMaterial): the tab bar and a scrolled navigation bar */
     --on-surface-ter: rgba(60, 60, 67, 0.3); /* UIColor.tertiaryLabel (the disclosure chevron, placeholders) */
     --fill: rgba(118, 118, 128, 0.12); /* UIColor.tertiarySystemFill (redacted placeholders, gray buttons) */
+    --switch-off: rgba(120, 120, 128, 0.16); /* UIColor.secondarySystemFill (UISwitch's off track) */
+    --seg-thumb: #ffffff; /* UISegmentedControl: the selected segment (systemGray in dark) */
   }
 }

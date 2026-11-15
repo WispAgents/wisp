@@ -112,7 +112,7 @@ Rust for everything but the UI, Solid/TS for the UI, everything a plugin (ADR-00
 3. [x] Kit: frame and navigation (round 217)
 4. [x] Kit: rows and surfaces (round 220)
 5. [x] Kit: overlays (Sheet, Dialog, Menu, Popover, Toast, Tooltip) (round 227, reviewed by r241)
-6. [ ] Kit: controls (Button, IconButton, Switch, Tabs, Input, Select)
+6. [x] Kit: controls (Button, IconButton, Switch, Tabs, Input, Select) (round 265)
 7. [x] Gestures with visible twins (round 225); seams (GestureHostProvider, row long-press) in round 227's work
 8. [ ] The app's frontend (`@wisp/mobile` routes, launch on Computers, several peers)
 9. [x] Android native: Keystore-sealed keys and tokens, QR host-key pinning, a port per computer (round 226)

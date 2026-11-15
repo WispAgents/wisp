@@ -560,6 +560,106 @@
     "state-disabled": {
       "value": "0.38",
       "spec": "M3 States › Disabled: content at 38% opacity"
+    },
+    "button-h-sm": {
+      "value": "32px",
+      "spec": "M3 Buttons (expressive) › Specs: extra small button 32 dp tall (the kit's xs and sm)"
+    },
+    "button-h-lg": {
+      "value": "56px",
+      "spec": "M3 Buttons (expressive) › Specs: medium button 56 dp tall (the kit's lg)"
+    },
+    "button-pad-sm": {
+      "value": "12px",
+      "spec": "M3 Buttons › Specs: text button and extra small button 12 dp leading and trailing padding"
+    },
+    "icon-button": {
+      "value": "40px",
+      "spec": "M3 Icon buttons › Specs: small icon button container 40 dp, 24 dp icon, 48 dp target"
+    },
+    "icon-button-sm": {
+      "value": "32px",
+      "spec": "M3 Icon buttons (expressive) › Specs: extra small icon button 32 dp"
+    },
+    "icon-button-lg": {
+      "value": "56px",
+      "spec": "M3 Icon buttons (expressive) › Specs: medium icon button 56 dp"
+    },
+    "switch-w": {
+      "value": "52px",
+      "spec": "M3 Switch › Specs: track 52 × 32 dp"
+    },
+    "switch-h": {
+      "value": "32px",
+      "spec": "M3 Switch › Specs: track 52 × 32 dp, full radius"
+    },
+    "switch-border": {
+      "value": "2px",
+      "spec": "M3 Switch › Specs: unselected track outline 2 dp"
+    },
+    "switch-thumb": {
+      "value": "16px",
+      "spec": "M3 Switch › Specs: unselected handle 16 dp"
+    },
+    "switch-thumb-on": {
+      "value": "24px",
+      "spec": "M3 Switch › Specs: selected handle (and a handle with an icon) 24 dp"
+    },
+    "switch-thumb-press": {
+      "value": "28px",
+      "spec": "M3 Switch › Specs: pressed handle 28 dp"
+    },
+    "switch-icon": {
+      "value": "16px",
+      "spec": "M3 Switch › Specs: handle icon 16 dp"
+    },
+    "switch-halo": {
+      "value": "40px",
+      "spec": "M3 Switch › Specs: state layer 40 dp round the handle"
+    },
+    "tab-h": {
+      "value": "48px",
+      "spec": "M3 Tabs › Specs: primary and secondary tabs 48 dp tall (label only, or icon and label inline)"
+    },
+    "tab-pad": {
+      "value": "16px",
+      "spec": "M3 Tabs › Specs: 16 dp padding either side of a tab's content"
+    },
+    "tab-indicator": {
+      "value": "3px",
+      "spec": "M3 Tabs › Specs: primary tab active indicator 3 dp, top corners 3 dp, as wide as the content"
+    },
+    "tab-indicator-sec": {
+      "value": "2px",
+      "spec": "M3 Tabs › Specs: secondary tab active indicator 2 dp, the tab's full width"
+    },
+    "field-h": {
+      "value": "56px",
+      "spec": "M3 Text fields › Specs: filled and outlined text field 56 dp tall"
+    },
+    "field-h-sm": {
+      "value": "48px",
+      "spec": "M3 Text fields › Density: the densest text field, kept at the 48 dp touch target"
+    },
+    "field-pad": {
+      "value": "16px",
+      "spec": "M3 Text fields › Specs: 16 dp leading and trailing padding (12 dp beside an icon)"
+    },
+    "field-label-pad": {
+      "value": "4px",
+      "spec": "M3 Text fields › Specs: outlined label 4 dp either side of it in the notch"
+    },
+    "field-outline-focus": {
+      "value": "2px",
+      "spec": "M3 Text fields › Specs: outlined focused outline 2 dp (1 dp at rest)"
+    },
+    "radio": {
+      "value": "20px",
+      "spec": "M3 Radio button › Specs: 20 dp, a 2 dp ring"
+    },
+    "radio-dot": {
+      "value": "10px",
+      "spec": "M3 Radio button › Specs: the selected dot 10 dp"
     }
   },
   "themed": {}

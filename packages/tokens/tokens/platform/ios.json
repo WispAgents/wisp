@@ -352,6 +352,66 @@
     "capsule-gap": {
       "value": "8px",
       "spec": "8 pt above the tab bar (HIG layout margin), as Apple Music’s and Maps’ banners"
+    },
+    "button-h-xs": {
+      "value": "28px",
+      "spec": "HIG Buttons: small bordered button 28 pt (the kit's xs and sm), its hit area grown to 44 pt"
+    },
+    "switch-w": {
+      "value": "51px",
+      "spec": "UISwitch: 51 × 31 pt"
+    },
+    "switch-h": {
+      "value": "31px",
+      "spec": "UISwitch: 51 × 31 pt, full radius"
+    },
+    "switch-thumb": {
+      "value": "27px",
+      "spec": "UISwitch: the 27 pt thumb, 2 pt in from the track"
+    },
+    "switch-pad": {
+      "value": "2px",
+      "spec": "UISwitch: the thumb 2 pt in from the track"
+    },
+    "switch-thumb-press": {
+      "value": "34px",
+      "spec": "UISwitch: the thumb stretches to 34 pt while it is held"
+    },
+    "seg-h": {
+      "value": "32px",
+      "spec": "UISegmentedControl: 32 pt tall, its hit area grown to 44 pt"
+    },
+    "seg-pad": {
+      "value": "2px",
+      "spec": "UISegmentedControl: the selected segment 2 pt in from the track"
+    },
+    "seg-radius": {
+      "value": "9px",
+      "spec": "UISegmentedControl: 9 pt track corners"
+    },
+    "seg-thumb-radius": {
+      "value": "7px",
+      "spec": "UISegmentedControl: 7 pt selected segment corners"
+    },
+    "field-h": {
+      "value": "44px",
+      "spec": "HIG Text fields: a form's field at the 44 pt row height"
+    },
+    "field-pad": {
+      "value": "12px",
+      "spec": "HIG Text fields: 12 pt in from the rounded edge"
+    },
+    "state-disabled": {
+      "value": "0.3",
+      "spec": "HIG Color: a disabled control in tertiaryLabel (30 % of the label)"
+    },
+    "switch-knob": {
+      "value": "#ffffff",
+      "spec": "UISwitch: the thumb is white in light and dark"
+    },
+    "bar-glyph": {
+      "value": "22px",
+      "spec": "HIG Toolbars: a plain bar button's SF Symbol at about 22 pt in its 44 pt target"
     }
   },
   "springs": {
@@ -459,6 +519,16 @@
       "light": "rgba(118, 118, 128, 0.12)",
       "dark": "rgba(118, 118, 128, 0.24)",
       "spec": "UIColor.tertiarySystemFill (redacted placeholders, gray buttons)"
+    },
+    "switch-off": {
+      "light": "rgba(120, 120, 128, 0.16)",
+      "dark": "rgba(120, 120, 128, 0.32)",
+      "spec": "UIColor.secondarySystemFill (UISwitch's off track)"
+    },
+    "seg-thumb": {
+      "light": "#ffffff",
+      "dark": "#636366",
+      "spec": "UISegmentedControl: the selected segment (systemGray in dark)"
     }
   }
 }

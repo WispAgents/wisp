@@ -5,7 +5,7 @@ import { flag, type KitProps, type Labelled } from '../core/props.ts';
 import { fitTextarea } from '../core/autosize.ts';
 import { Icon } from '../content/Icon.tsx';
 import type { IconName } from '../content/icons.ts';
-import { useField } from './Field.tsx';
+import { useField, useFieldText } from './Field.tsx';
 
 export type FieldSize = 'sm' | 'md' | 'lg';
 
@@ -52,6 +52,7 @@ function useControlAria(props: TextControlProps): {
   required: () => boolean;
 } {
   const field = useField();
+  useFieldText()();
   return {
     id: () => props.id ?? field()?.id,
     describedBy: () => props['aria-describedby'] ?? field()?.describedBy,

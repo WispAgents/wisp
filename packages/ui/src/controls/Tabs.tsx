@@ -6,6 +6,8 @@ import { createMemo, createUniqueId, For, Show, type JSX } from 'solid-js';
 import { flag, sub, type KitProps, type PartName } from '../core/props.ts';
 import { Icon } from '../content/Icon.tsx';
 import type { IconName } from '../content/icons.ts';
+import { usePlatform } from '../platform/PlatformLook.tsx';
+import { useGestureHost } from '../gestures/host.tsx';
 
 export interface TabItem {
   readonly value: string;
@@ -39,13 +41,21 @@ export interface TabsProps extends KitProps {
   readonly fieldset?: boolean;
 }
 
+/** The phone apps (ADR-0065 step 6, design/mobile.md §A.7): every variant draws as M3 tabs on Android (`line` the primary
+ * tabs, `pill` and `seg` the secondary ones) and as a segmented control on iOS, from the look's stylesheet; a change
+ * ticks the picker haptic (§A.5). */
 export function Tabs(props: TabsProps): JSX.Element {
   const id = createUniqueId();
+  const look = usePlatform();
+  const host = useGestureHost();
   const service = useMachine(tabs.machine, () => ({
     id,
     ...(props.value === undefined ? {} : { value: props.value }),
     defaultValue: props.defaultValue ?? props.items[0]?.value ?? null,
-    onValueChange: (d: tabs.ValueChangeDetails) => props.onChange?.(d.value),
+    onValueChange: (d: tabs.ValueChangeDetails) => {
+      if (look() !== 'web') host.haptic('select');
+      props.onChange?.(d.value);
+    },
     activationMode: props.activation ?? 'automatic',
     loopFocus: true,
   }));

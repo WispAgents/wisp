@@ -719,4 +719,401 @@
     :root[data-platform='android'] [data-kit='sheet'],
     :root[data-platform='android'] [data-kit='plain-tip'] { animation: none; }
   }
+
+  /* Controls (step 6, design/mobile.md §A.5–§A.7). Generic rules keep the specificity of one look and one kit name
+     (variants and sizes in :where()), so a control placed in a bar, a dialog, a banner or an empty state keeps the
+     rule written for it there (steps 3–5). Every press answers as the finger goes down: the state layer and the M3
+     ripple (CSS only: a disc growing from the centre while held; under reduced motion only the layer), 48 dp touch
+     targets round a smaller visible control (::before), the focus ring in primary, disabled content at 38 %. */
+
+  /* Button: M3 common buttons, full radius, label large. primary = filled, secondary and accent = tonal, ghost = text,
+     danger = filled in error, chip = an outlined filter chip (selected: tonal, no edge), link = primary ink in text.
+     Sizes: xs and sm the 32 dp extra small button, md 40 dp, lg the 56 dp medium one. */
+  :root[data-platform='android'] [data-kit='button'] {
+    gap: var(--space-4);
+    height: var(--button-h);
+    padding: var(--space-0) var(--button-pad);
+    border: 0;
+    border-radius: var(--radius-pill);
+    background: var(--primary-container);
+    color: var(--on-primary-container);
+    box-shadow: none;
+    font: var(--type-label-l);
+    letter-spacing: var(--track-label-l);
+    transition: background-color var(--dur-short) var(--ease-standard), color var(--dur-short) var(--ease-standard);
+  }
+  :root[data-platform='android'] [data-kit='button'] > [data-kit='button-content'] { gap: var(--space-4); }
+  :root[data-platform='android'] [data-kit='button'] [data-kit='icon'] { width: var(--size-icon-lg); height: var(--size-icon-lg); }
+  :root[data-platform='android'] :where([data-size='xs'])[data-kit='button'],
+  :root[data-platform='android'] :where([data-size='sm'])[data-kit='button'] { height: var(--button-h-sm); padding: var(--space-0) var(--button-pad-sm); }
+  :root[data-platform='android'] :where([data-size='lg'])[data-kit='button'] { height: var(--button-h-lg); font: var(--type-title-m); letter-spacing: var(--track-title-m); }
+  :root[data-platform='android'] :where([data-variant='primary'])[data-kit='button'] { background: var(--primary); color: var(--on-primary); }
+  :root[data-platform='android'] :where([data-variant='danger'])[data-kit='button'] { background: var(--error); color: var(--on-primary); }
+  :root[data-platform='android'] :where([data-variant='ghost'])[data-kit='button'] { padding: var(--space-0) var(--button-pad-sm); background: transparent; color: var(--primary); }
+  :root[data-platform='android'] :where([data-variant='ghost'][data-tone='good'])[data-kit='button'] { color: var(--good); }
+  :root[data-platform='android'] :where([data-variant='ghost'][data-tone='bad'])[data-kit='button'] { color: var(--error); }
+  :root[data-platform='android'] :where([data-variant='chip'])[data-kit='button'] {
+    height: var(--chip-h);
+    padding: var(--space-0) var(--chip-pad);
+    border: var(--hairline) solid var(--outline);
+    border-radius: var(--radius-sm);
+    background: transparent;
+    color: var(--on-surface-var);
+  }
+  :root[data-platform='android'] :where([data-variant='chip'][aria-pressed='true'])[data-kit='button'] { border-color: transparent; background: var(--primary-container); color: var(--on-primary-container); }
+  :root[data-platform='android'] :where([data-variant='link'])[data-kit='button'] { height: auto; padding: var(--space-0); border-radius: var(--space-0); background: none; color: var(--primary); font: inherit; letter-spacing: inherit; }
+  :root[data-platform='android'] :where([data-fill])[data-kit='button'] { width: 100%; }
+
+  /* IconButton: M3 icon buttons, round. ghost = standard (on-surface-variant, no container), primary = filled,
+     secondary = tonal. 40 dp (xs 32, lg 56), the 24 dp icon, a 48 dp target. */
+  :root[data-platform='android'] [data-kit='icon-button'] {
+    width: var(--icon-button);
+    height: var(--icon-button);
+    border: 0;
+    border-radius: var(--radius-pill);
+    background: transparent;
+    color: var(--on-surface-var);
+    transition: background-color var(--dur-short) var(--ease-standard), color var(--dur-short) var(--ease-standard);
+  }
+  :root[data-platform='android'] [data-kit='icon-button'] [data-kit='icon'] { width: var(--nav-icon); height: var(--nav-icon); }
+  :root[data-platform='android'] :where([data-size='xs'])[data-kit='icon-button'] { width: var(--icon-button-sm); height: var(--icon-button-sm); }
+  :root[data-platform='android'] [data-kit='icon-button']:where([data-size='xs']) [data-kit='icon'] { width: var(--size-icon-lg); height: var(--size-icon-lg); }
+  :root[data-platform='android'] :where([data-size='lg'])[data-kit='icon-button'] { width: var(--icon-button-lg); height: var(--icon-button-lg); }
+  :root[data-platform='android'] :where([data-variant='primary'])[data-kit='icon-button'] { background: var(--primary); color: var(--on-primary); }
+  :root[data-platform='android'] :where([data-variant='secondary'])[data-kit='icon-button'] { background: var(--primary-container); color: var(--on-primary-container); }
+  :root[data-platform='android'] :where([aria-pressed='true'])[data-kit='icon-button'] { color: var(--primary); }
+  :root[data-platform='android'] :where([data-tone='bad'])[data-kit='icon-button'] { color: var(--error); }
+  :root[data-platform='android'] :where([data-tone='good'])[data-kit='icon-button'] { color: var(--good); }
+
+  /* the state layer and the ripple (::after), the touch target (::before) */
+  :root[data-platform='android'] [data-kit='button']:not([data-variant='link'])::before,
+  :root[data-platform='android'] [data-kit='icon-button']::before {
+    content: '';
+    position: absolute;
+    inset: min(var(--space-0), calc((100% - var(--tap-min)) / 2));
+  }
+  :root[data-platform='android'] [data-kit='button']:not([data-variant='link'])::after,
+  :root[data-platform='android'] [data-kit='icon-button']::after,
+  :root[data-platform='android'] [data-kit='tab']::before {
+    content: '';
+    position: absolute;
+    inset: var(--space-0);
+    border-radius: inherit;
+    pointer-events: none;
+    background-color: transparent;
+    background-image: radial-gradient(circle closest-side, color-mix(in srgb, currentColor calc(var(--state-pressed) * 100%), transparent) 99%, transparent 100%);
+    background-position: center;
+    background-repeat: no-repeat;
+    background-size: 0% 0%;
+    transition: background-color var(--dur-short) var(--ease-standard), background-size 0s;
+  }
+  @media (hover: hover) {
+    :root[data-platform='android'] [data-kit='button']:not([data-variant='link']):hover::after,
+    :root[data-platform='android'] [data-kit='icon-button']:hover::after,
+    :root[data-platform='android'] [data-kit='tab']:hover::before { background-color: color-mix(in srgb, currentColor calc(var(--state-hover) * 100%), transparent); }
+    :root[data-platform='android'] [data-kit='button']:hover,
+    :root[data-platform='android'] [data-kit='icon-button']:hover { opacity: 1; }
+  }
+  :root[data-platform='android'] [data-kit='button']:not([data-variant='link']):focus-visible::after,
+  :root[data-platform='android'] [data-kit='icon-button']:focus-visible::after,
+  :root[data-platform='android'] [data-kit='tab']:focus-visible::before { background-color: color-mix(in srgb, currentColor calc(var(--state-focus) * 100%), transparent); }
+  :root[data-platform='android'] [data-kit='button']:not([data-variant='link']):active::after,
+  :root[data-platform='android'] [data-kit='icon-button']:active::after,
+  :root[data-platform='android'] [data-kit='tab']:active::before {
+    background-color: color-mix(in srgb, currentColor calc(var(--state-pressed) * 100%), transparent);
+    background-size: 250% 250%;
+    transition: background-color var(--dur-short) var(--ease-standard), background-size var(--dur-medium) var(--ease-standard);
+  }
+  :root[data-platform='android'] [data-kit='button']:active,
+  :root[data-platform='android'] [data-kit='icon-button']:active { transform: none; }
+  /* a dialog's actions paint their pressed layer themselves (step 5): no second one on top */
+  :root[data-platform='android'] [data-kit='dialog'] > [data-kit='dialog-foot'] > [data-kit='button']::after { background: none; }
+  :root[data-platform='android'] [data-kit='button']:focus-visible,
+  :root[data-platform='android'] [data-kit='icon-button']:focus-visible { outline: var(--size-ring) solid var(--primary); outline-offset: var(--space-1); }
+  :root[data-platform='android'] [data-kit='button']:disabled,
+  :root[data-platform='android'] [data-kit='icon-button']:disabled { opacity: var(--state-disabled); cursor: not-allowed; }
+  :root[data-platform='android'] [data-kit='button'][data-loading]::after,
+  :root[data-platform='android'] [data-kit='icon-button'][data-loading]::after { background-size: 0% 0%; }
+  /* the busy ring is M3's circular indicator, the icon's size, in the content colour */
+  :root[data-platform='android'] [data-kit='button'] > [data-kit='spinner'],
+  :root[data-platform='android'] [data-kit='icon-button'] > [data-kit='spinner'] { width: var(--size-icon-lg); height: var(--size-icon-lg); border-width: var(--size-ring); }
+
+  /* Switch: the M3 switch, 52 × 32. Off: the outline track, a 16 dp handle in outline; on: the primary track, a 24 dp
+     handle in on-primary with its check icon; held: 28 dp. The 40 dp state layer rings the handle; 48 dp target. */
+  :root[data-platform='android'] [data-kit='switch'] {
+    width: var(--switch-w);
+    height: var(--switch-h);
+    border: var(--switch-border) solid var(--outline);
+    border-radius: var(--radius-pill);
+    background: var(--surface-c4);
+    -webkit-tap-highlight-color: transparent;
+    transition: background-color var(--dur-short) var(--ease-standard), border-color var(--dur-short) var(--ease-standard);
+  }
+  :root[data-platform='android'] [data-kit='switch'][data-state='checked'] { border-color: var(--primary); background: var(--primary); }
+  :root[data-platform='android'] [data-kit='switch']::after {
+    content: '';
+    position: absolute;
+    inset: min(var(--space-0), calc((100% - var(--tap-min)) / 2)) var(--space-0);
+  }
+  :root[data-platform='android'] [data-kit='switch-thumb'] {
+    display: grid;
+    place-items: center;
+    top: 50%;
+    left: calc(var(--switch-h) / 2 - var(--switch-border));
+    width: var(--switch-thumb);
+    height: var(--switch-thumb);
+    background: var(--outline);
+    color: var(--on-primary-container);
+    box-shadow: none;
+    transform: none;
+    translate: -50% -50%;
+    transition: left var(--dur-short) var(--ease-standard), width var(--dur-short) var(--ease-standard), height var(--dur-short) var(--ease-standard), background-color var(--dur-short) var(--ease-standard);
+  }
+  :root[data-platform='android'] [data-kit='switch-thumb'][data-state='checked'] {
+    left: calc(var(--switch-w) - var(--switch-h) / 2 - var(--switch-border));
+    width: var(--switch-thumb-on);
+    height: var(--switch-thumb-on);
+    background: var(--on-primary);
+    transform: none;
+  }
+  :root[data-platform='android'] [data-kit='switch-thumb'] > [data-kit='icon'] { width: var(--switch-icon); height: var(--switch-icon); }
+  :root[data-platform='android'] [data-kit='switch']:active [data-kit='switch-thumb'] { width: var(--switch-thumb-press); height: var(--switch-thumb-press); background: var(--on-surface-var); }
+  :root[data-platform='android'] [data-kit='switch'][data-state='checked']:active [data-kit='switch-thumb'] { background: var(--primary-container); }
+  :root[data-platform='android'] [data-kit='switch-thumb']::before {
+    content: '';
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: var(--switch-halo);
+    height: var(--switch-halo);
+    border-radius: var(--radius-pill);
+    translate: -50% -50%;
+    background: transparent;
+    transition: background-color var(--dur-short) var(--ease-standard);
+  }
+  @media (hover: hover) {
+    :root[data-platform='android'] [data-kit='switch']:hover [data-kit='switch-thumb']::before { background: color-mix(in srgb, var(--on-surface) calc(var(--state-hover) * 100%), transparent); }
+    :root[data-platform='android'] [data-kit='switch'][data-state='checked']:hover [data-kit='switch-thumb']::before { background: color-mix(in srgb, var(--primary) calc(var(--state-hover) * 100%), transparent); }
+  }
+  :root[data-platform='android'] [data-kit='switch']:focus-visible { outline: var(--size-ring) solid var(--primary); outline-offset: var(--space-1); }
+  :root[data-platform='android'] [data-kit='switch']:focus-visible [data-kit='switch-thumb']::before { background: color-mix(in srgb, var(--on-surface) calc(var(--state-focus) * 100%), transparent); }
+  :root[data-platform='android'] [data-kit='switch']:active [data-kit='switch-thumb']::before { background: color-mix(in srgb, var(--on-surface) calc(var(--state-pressed) * 100%), transparent); }
+  :root[data-platform='android'] [data-kit='switch'][data-state='checked']:active [data-kit='switch-thumb']::before { background: color-mix(in srgb, var(--primary) calc(var(--state-pressed) * 100%), transparent); }
+  :root[data-platform='android'] [data-kit='switch'][data-disabled] { opacity: var(--state-disabled); }
+  :root[data-platform='android'] [data-kit='switch-field'] { gap: var(--row-lead-gap); color: var(--on-surface); font: var(--type-body-l); letter-spacing: var(--track-body-l); }
+
+  /* Tabs: M3 tabs, 48 dp, title small. line = the primary tabs (the label in primary over a 3 dp indicator as wide as
+     the content, top corners round), pill and seg = the secondary tabs (on-surface over a 2 dp line the tab's width);
+     a 1 dp divider under the row. The state layer and ripple fill the tab (::before). */
+  :root[data-platform='android'] [data-kit='tabs'] > [data-kit='tab-list'] {
+    align-self: stretch;
+    gap: var(--space-0);
+    height: var(--tab-h);
+    padding: var(--space-0);
+    border: 0;
+    border-bottom: var(--hairline) solid var(--outline-var);
+    border-radius: var(--space-0);
+    margin: var(--space-0);
+    background: transparent;
+  }
+  :root[data-platform='android'] [data-kit='tabs'] [data-kit='tab'] {
+    flex: 1 1 0;
+    justify-content: center;
+    gap: var(--space-4);
+    min-width: max-content;
+    height: 100%;
+    min-height: var(--tab-h);
+    padding: var(--space-0) var(--tab-pad);
+    border-radius: var(--space-0);
+    background: transparent;
+    box-shadow: none;
+    color: var(--on-surface-var);
+    font: var(--type-title-s);
+    letter-spacing: var(--track-title-s);
+    -webkit-tap-highlight-color: transparent;
+  }
+  :root[data-platform='android'] [data-kit='tabs'] [data-kit='tab'] > [data-kit='icon'] { width: var(--nav-icon); height: var(--nav-icon); margin: var(--space-0); }
+  :root[data-platform='android'] [data-kit='tabs'] [data-kit='tab-count'] { margin: var(--space-0); font: inherit; color: inherit; }
+  :root[data-platform='android'] [data-kit='tabs'] [data-kit='tab'][data-selected] { background: transparent; box-shadow: none; color: var(--primary); font: var(--type-title-s); }
+  :root[data-platform='android'] [data-kit='tabs'][data-variant='line'] [data-kit='tab'][data-selected]::after {
+    content: '';
+    position: absolute;
+    left: var(--tab-pad);
+    right: var(--tab-pad);
+    bottom: var(--space-0);
+    height: var(--tab-indicator);
+    border-radius: var(--tab-indicator) var(--tab-indicator) var(--space-0) var(--space-0);
+    background: var(--primary);
+  }
+  :root[data-platform='android'] [data-kit='tabs'][data-variant='pill'] [data-kit='tab'][data-selected],
+  :root[data-platform='android'] [data-kit='tabs'][data-variant='seg'] [data-kit='tab'][data-selected] { color: var(--on-surface); }
+  :root[data-platform='android'] [data-kit='tabs'][data-variant='pill'] [data-kit='tab'][data-selected]::after,
+  :root[data-platform='android'] [data-kit='tabs'][data-variant='seg'] [data-kit='tab'][data-selected]::after {
+    content: '';
+    position: absolute;
+    left: var(--space-0);
+    right: var(--space-0);
+    bottom: var(--space-0);
+    height: var(--tab-indicator-sec);
+    background: var(--primary);
+  }
+  :root[data-platform='android'] [data-kit='tabs'] [data-kit='tab']:focus-visible { outline: var(--size-ring) solid var(--primary); outline-offset: calc(var(--size-ring) * -1); }
+  :root[data-platform='android'] [data-kit='tabs'] [data-kit='tab'][data-disabled] { opacity: var(--state-disabled); }
+
+  /* Input, TextArea, Select's button: the M3 outlined text field. 56 dp (sm 48), 4 dp corners, a 1 dp outline that
+     darkens on hover and is 2 dp primary on focus (an inset ring, so nothing moves), error when invalid, body large.
+     In a Field (data-float) the label sits in the outline's notch, body small, primary while focused. */
+  :root[data-platform='android'] [data-kit='input'],
+  :root[data-platform='android'] [data-kit='field-box'],
+  :root[data-platform='android'] [data-kit='textarea'],
+  :root[data-platform='android'] [data-kit='select-trigger'] {
+    height: var(--field-h);
+    padding: var(--space-0) var(--field-pad);
+    border: var(--hairline) solid var(--outline);
+    border-radius: var(--radius-xs);
+    background-color: transparent;
+    box-shadow: none;
+    color: var(--on-surface);
+    font: var(--type-body-l);
+    letter-spacing: var(--track-body-l);
+    transition: border-color var(--dur-short) var(--ease-standard), box-shadow var(--dur-short) var(--ease-standard);
+  }
+  :root[data-platform='android'] :where([data-size='sm'])[data-kit='input'],
+  :root[data-platform='android'] :where([data-size='sm'])[data-kit='field-box'],
+  :root[data-platform='android'] :where([data-size='sm'])[data-kit='select-trigger'] { height: var(--field-h-sm); }
+  :root[data-platform='android'] [data-kit='textarea'] { height: auto; min-height: var(--field-h); padding: var(--field-pad); line-height: inherit; }
+  :root[data-platform='android'] [data-kit='field-box'] { gap: var(--field-pad); color: var(--on-surface-var); }
+  :root[data-platform='android'] [data-kit='field-box'] > [data-kit='icon'] { width: var(--nav-icon); height: var(--nav-icon); }
+  :root[data-platform='android'] [data-kit='field-input'] { color: var(--on-surface); }
+  :root[data-platform='android'] [data-kit='input'][data-mono],
+  :root[data-platform='android'] [data-kit='textarea'][data-mono],
+  :root[data-platform='android'] [data-kit='field-box'][data-mono],
+  :root[data-platform='android'] [data-kit='select-trigger'][data-mono] { font-family: var(--mono); }
+  :root[data-platform='android'] [data-kit='input']::placeholder,
+  :root[data-platform='android'] [data-kit='textarea']::placeholder,
+  :root[data-platform='android'] [data-kit='field-input']::placeholder { color: var(--on-surface-var); }
+  @media (hover: hover) {
+    :root[data-platform='android'] [data-kit='input']:hover,
+    :root[data-platform='android'] [data-kit='field-box']:hover,
+    :root[data-platform='android'] [data-kit='textarea']:hover,
+    :root[data-platform='android'] [data-kit='select-trigger']:hover { border-color: var(--on-surface); }
+  }
+  :root[data-platform='android'] [data-kit='input']:focus,
+  :root[data-platform='android'] [data-kit='textarea']:focus,
+  :root[data-platform='android'] [data-kit='field-box']:focus-within,
+  :root[data-platform='android'] [data-kit='select-trigger']:focus-visible,
+  :root[data-platform='android'] [data-kit='select-trigger'][aria-expanded='true'] {
+    border-color: var(--primary);
+    background-color: transparent;
+    box-shadow: inset 0 0 0 calc(var(--field-outline-focus) - var(--hairline)) var(--primary);
+  }
+  :root[data-platform='android'] [data-kit='input'][aria-invalid='true'],
+  :root[data-platform='android'] [data-kit='textarea'][aria-invalid='true'],
+  :root[data-platform='android'] [data-kit='field-box'][data-invalid],
+  :root[data-platform='android'] [data-kit='select-trigger'][data-invalid] { border-color: var(--error); }
+  :root[data-platform='android'] [data-kit='input'][aria-invalid='true']:focus,
+  :root[data-platform='android'] [data-kit='textarea'][aria-invalid='true']:focus,
+  :root[data-platform='android'] [data-kit='field-box'][data-invalid]:focus-within { box-shadow: inset 0 0 0 calc(var(--field-outline-focus) - var(--hairline)) var(--error); }
+  :root[data-platform='android'] [data-kit='input']:disabled,
+  :root[data-platform='android'] [data-kit='textarea']:disabled,
+  :root[data-platform='android'] [data-kit='field-box'][data-disabled],
+  :root[data-platform='android'] [data-kit='select-trigger']:disabled { opacity: var(--state-disabled); }
+  /* Select: the exposed dropdown menu's field, the arrow turning up while it's open; its list the M3 menu */
+  :root[data-platform='android'] [data-kit='select'] { display: flex; }
+  :root[data-platform='android'] [data-kit='select-trigger'] { width: 100%; gap: var(--field-pad); }
+  :root[data-platform='android'] [data-kit='select-trigger'][data-placeholder] [data-kit='select-value'] { color: var(--on-surface-var); }
+  :root[data-platform='android'] [data-kit='select-trigger'] > [data-kit='icon'] { width: var(--nav-icon); height: var(--nav-icon); color: var(--on-surface-var); transition: transform var(--dur-short) var(--ease-standard); }
+  :root[data-platform='android'] [data-kit='select-trigger'][aria-expanded='true'] > [data-kit='icon'] { transform: rotate(-90deg); color: var(--primary); }
+  :root[data-platform='android'] [data-kit='listbox'] {
+    min-width: var(--menu-min-w);
+    padding: var(--menu-pad-y) var(--space-0);
+    border: 0;
+    border-radius: var(--radius-xs);
+    background: var(--surface-c2);
+    box-shadow: var(--elev-2);
+    font-family: var(--font-ui);
+  }
+  :root[data-platform='android'] [data-kit='option'] {
+    min-height: var(--menu-item-h);
+    gap: var(--menu-item-pad);
+    padding: var(--space-0) var(--menu-item-pad);
+    border-radius: var(--space-0);
+    color: var(--on-surface);
+    font: var(--type-body-l);
+    letter-spacing: var(--track-body-l);
+  }
+  :root[data-platform='android'] [data-kit='option'][data-highlighted] { background: color-mix(in srgb, var(--on-surface) calc(var(--state-focus) * 100%), transparent); color: var(--on-surface); }
+  :root[data-platform='android'] [data-kit='option'][data-state='checked'] { background: var(--primary-container); color: var(--on-primary-container); }
+  :root[data-platform='android'] [data-kit='option'] > [data-kit='icon'] { color: var(--on-primary-container); }
+  :root[data-platform='android'] [data-kit='option'][data-disabled] { opacity: var(--state-disabled); }
+  :root[data-platform='android'] [data-kit='option-group'] { padding: var(--menu-pad-y) var(--menu-item-pad); font: var(--type-title-s); color: var(--on-surface-var); }
+
+  /* Field: the label in the outline's notch (data-float: round a text control), body small; the error and the hint
+     under the field as M3 supporting text, 16 dp in. */
+  :root[data-platform='android'] [data-kit='field'] { gap: var(--space-2); color: var(--on-surface); }
+  :root[data-platform='android'] [data-kit='field-label'] { color: var(--on-surface-var); font: var(--type-body-s); letter-spacing: var(--track-body-s); }
+  :root[data-platform='android'] [data-kit='field'][data-float] { position: relative; }
+  :root[data-platform='android'] [data-kit='field'][data-float] > [data-kit='field-label'] {
+    position: absolute;
+    z-index: 1;
+    top: var(--space-0);
+    left: calc(var(--field-pad) - var(--field-label-pad));
+    max-width: calc(100% - var(--field-pad) * 2);
+    padding: var(--space-0) var(--field-label-pad);
+    overflow: hidden;
+    background: var(--field-notch, var(--surface-c0));
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    translate: 0 -50%;
+    pointer-events: none;
+  }
+  :root[data-platform='android'] [data-kit='field'][data-float]:focus-within > [data-kit='field-label'] { color: var(--primary); }
+  :root[data-platform='android'] [data-kit='field'][data-invalid] > [data-kit='field-label'] { color: var(--error); }
+  :root[data-platform='android'] [data-kit='field-hint'],
+  :root[data-platform='android'] [data-kit='field-error'] { padding: var(--space-0) var(--field-pad); font: var(--type-body-s); letter-spacing: var(--track-body-s); color: var(--on-surface-var); }
+  :root[data-platform='android'] [data-kit='field-error'] { color: var(--error); }
+
+  /* A Select's long list (phone.tsx SelectSheet): radio rows in the bottom sheet, 56 dp, the radio leading */
+  :root[data-platform='android'] [data-kit='select-sheet'] { display: flex; flex-direction: column; margin: var(--space-0) calc(var(--inset) * -1); padding-bottom: var(--space-4); }
+  :root[data-platform='android'] [data-kit='select-sheet-item'] {
+    position: relative;
+    display: flex;
+    align-items: center;
+    gap: var(--row-lead-gap);
+    width: 100%;
+    min-height: var(--row-h-1);
+    padding: var(--space-0) var(--inset);
+    border: 0;
+    background: transparent;
+    color: var(--on-surface);
+    font: var(--type-body-l);
+    letter-spacing: var(--track-body-l);
+    text-align: start;
+    -webkit-tap-highlight-color: transparent;
+  }
+  :root[data-platform='android'] [data-kit='select-sheet-item']:active { background: color-mix(in srgb, var(--on-surface) calc(var(--state-pressed) * 100%), transparent); }
+  :root[data-platform='android'] [data-kit='select-sheet-item']:focus-visible { outline: var(--size-ring) solid var(--primary); outline-offset: calc(var(--size-ring) * -1); }
+  :root[data-platform='android'] [data-kit='select-sheet-item']:disabled { opacity: var(--state-disabled); }
+  :root[data-platform='android'] [data-kit='select-sheet-label'] { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  :root[data-platform='android'] [data-kit='select-sheet-group'] { padding: var(--space-6) var(--inset) var(--space-2); font: var(--type-title-s); letter-spacing: var(--track-title-s); color: var(--on-surface-var); }
+  /* the M3 radio button: a 20 dp ring, 2 dp, a 10 dp dot when picked, in primary */
+  :root[data-platform='android'] [data-kit='select-sheet-radio'] {
+    flex: none;
+    width: var(--radio);
+    height: var(--radio);
+    border: var(--size-ring) solid var(--on-surface-var);
+    border-radius: var(--radius-pill);
+    transition: border-color var(--dur-short) var(--ease-standard), box-shadow var(--dur-short) var(--ease-standard);
+  }
+  :root[data-platform='android'] [data-kit='select-sheet-radio'][data-checked] { border-color: var(--primary); box-shadow: inset 0 0 0 calc((var(--radio) - var(--size-ring) * 2 - var(--radio-dot)) / 2) var(--surface-c1), inset 0 0 0 var(--radio) var(--primary); }
+
+  @media (prefers-reduced-motion: reduce) {
+    :root[data-platform='android'] [data-kit='button']:not([data-variant='link']):active::after,
+    :root[data-platform='android'] [data-kit='icon-button']:active::after,
+    :root[data-platform='android'] [data-kit='tab']:active::before { background-size: 0% 0%; transition: none; }
+    :root[data-platform='android'] [data-kit='switch'],
+    :root[data-platform='android'] [data-kit='switch-thumb'],
+    :root[data-platform='android'] [data-kit='select-trigger'] > [data-kit='icon'],
+    :root[data-platform='android'] [data-kit='select-sheet-radio'] { transition: none; }
+  }
 }

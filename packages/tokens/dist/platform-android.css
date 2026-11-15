@@ -143,5 +143,30 @@
     --inverse-on-surface: var(--bg); /* M3 Color roles: inverse on surface */
     --inverse-primary: color-mix(in srgb, var(--accent) 55%, var(--bg)); /* M3 Color roles: inverse primary (a snackbar’s action) */
     --state-disabled: 0.38; /* M3 States › Disabled: content at 38% opacity */
+    --button-h-sm: 32px; /* M3 Buttons (expressive) › Specs: extra small button 32 dp tall (the kit's xs and sm) */
+    --button-h-lg: 56px; /* M3 Buttons (expressive) › Specs: medium button 56 dp tall (the kit's lg) */
+    --button-pad-sm: 12px; /* M3 Buttons › Specs: text button and extra small button 12 dp leading and trailing padding */
+    --icon-button: 40px; /* M3 Icon buttons › Specs: small icon button container 40 dp, 24 dp icon, 48 dp target */
+    --icon-button-sm: 32px; /* M3 Icon buttons (expressive) › Specs: extra small icon button 32 dp */
+    --icon-button-lg: 56px; /* M3 Icon buttons (expressive) › Specs: medium icon button 56 dp */
+    --switch-w: 52px; /* M3 Switch › Specs: track 52 × 32 dp */
+    --switch-h: 32px; /* M3 Switch › Specs: track 52 × 32 dp, full radius */
+    --switch-border: 2px; /* M3 Switch › Specs: unselected track outline 2 dp */
+    --switch-thumb: 16px; /* M3 Switch › Specs: unselected handle 16 dp */
+    --switch-thumb-on: 24px; /* M3 Switch › Specs: selected handle (and a handle with an icon) 24 dp */
+    --switch-thumb-press: 28px; /* M3 Switch › Specs: pressed handle 28 dp */
+    --switch-icon: 16px; /* M3 Switch › Specs: handle icon 16 dp */
+    --switch-halo: 40px; /* M3 Switch › Specs: state layer 40 dp round the handle */
+    --tab-h: 48px; /* M3 Tabs › Specs: primary and secondary tabs 48 dp tall (label only, or icon and label inline) */
+    --tab-pad: 16px; /* M3 Tabs › Specs: 16 dp padding either side of a tab's content */
+    --tab-indicator: 3px; /* M3 Tabs › Specs: primary tab active indicator 3 dp, top corners 3 dp, as wide as the content */
+    --tab-indicator-sec: 2px; /* M3 Tabs › Specs: secondary tab active indicator 2 dp, the tab's full width */
+    --field-h: 56px; /* M3 Text fields › Specs: filled and outlined text field 56 dp tall */
+    --field-h-sm: 48px; /* M3 Text fields › Density: the densest text field, kept at the 48 dp touch target */
+    --field-pad: 16px; /* M3 Text fields › Specs: 16 dp leading and trailing padding (12 dp beside an icon) */
+    --field-label-pad: 4px; /* M3 Text fields › Specs: outlined label 4 dp either side of it in the notch */
+    --field-outline-focus: 2px; /* M3 Text fields › Specs: outlined focused outline 2 dp (1 dp at rest) */
+    --radio: 20px; /* M3 Radio button › Specs: 20 dp, a 2 dp ring */
+    --radio-dot: 10px; /* M3 Radio button › Specs: the selected dot 10 dp */
   }
 }
