@@ -8,7 +8,7 @@ import { batch, createEffect, createMemo, createSignal, on, onCleanup, onMount, 
 import type { Size } from '@wisp/tokens';
 import { sizeVar } from '@wisp/tokens';
 import { flag, styleOf, sub, type KitProps, type Labelled, type PartName, type WithVars } from '../core/props.ts';
-import { anchorAt, atTail, computeRange, offsets, restoreAnchor, type Anchor } from './virtual-math.ts';
+import { anchorAt, anchors, atTail, computeRange, offsets, restoreAnchor, type Anchor } from './virtual-math.ts';
 import { PullRefresh } from './PullRefresh.tsx';
 import { bindPull } from '../gestures/bind-vertical.ts';
 import { useGesture } from '../gestures/use.ts';
@@ -109,7 +109,9 @@ function useScroller<T>(props: VirtualListProps<T>, offs: Accessor<readonly numb
 
   const remember = (top?: number): void => {
     if (!box.el) return;
-    const a: Anchor = anchorAt(offs(), top ?? box.el.scrollTop);
+    const at = top ?? box.el.scrollTop;
+    if (!anchors(at, bottom() ? 'bottom' : 'top')) return void (anchor.at = undefined);
+    const a: Anchor = anchorAt(offs(), at);
     const item = props.items[a.index];
     anchor.at = item === undefined ? undefined : { key: props.key(item), delta: a.delta };
   };

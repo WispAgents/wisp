@@ -5,7 +5,7 @@
 import '@wisp/ui/styles';
 import { createSignal } from 'solid-js';
 import { effect } from '@wisp/client';
-import type { PluginUiDef, Shell } from '@wisp/shell';
+import type { Shell } from '@wisp/shell';
 import type { Platform } from '@wisp/shell/platform';
 import { loadPlatformStyles, type Toaster } from '@wisp/ui';
 import { shellSettingsUi } from '@wisp-plugin/shell-settings-ui';
@@ -13,12 +13,8 @@ import { startNotifier } from '@wisp-plugin/shell-home-ui';
 import { onPhone, type PhoneWindow } from './boot.ts';
 import { startPhoneApp } from './app.tsx';
 import type { NativeBridge } from './bridge.ts';
+import { pluginUis as plugins } from './plugins.ts';
 
-const found = import.meta.glob<{ default?: PluginUiDef }>(['../../../plugins/*/ui/src/index.ts', '../../../plugins/*/ui/src/index.tsx'], { eager: true });
-const plugins = (): { path: string; def: PluginUiDef | undefined }[] =>
-  Object.entries(found)
-    .map(([path, mod]) => ({ path, def: mod.default }))
-    .sort((a, b) => a.path.localeCompare(b.path));
 
 /** Settings (an overlay view, with every plugin's panes) and the notifier, on each shell the app runs. */
 function extend(shell: Shell, toaster: Toaster, platform: Platform): () => void {
@@ -51,7 +47,7 @@ async function main(): Promise<void> {
     const { previewBridge, previewLook } = await import('../dev/preview-bridge.ts');
     const look = previewLook(location.search);
     (window as unknown as { Capacitor: { getPlatform(): string } }).Capacitor = { getPlatform: () => look };
-    bridge = previewBridge(location.origin);
+    bridge = previewBridge(location.origin, location.search);
   }
   // the look's stylesheet and the phone frame before the first render, so nothing pops in (the shell asks for them too)
   await loadPlatformStyles(w.Capacitor?.getPlatform?.() === 'ios' ? 'ios' : 'android').catch(() => undefined);

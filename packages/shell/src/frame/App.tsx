@@ -19,6 +19,9 @@ import { escLeavesLauncher, stackView } from './stack-page.ts';
 const Switcher = lazy(() => import('../switcher/Switcher.tsx'));
 // the phone apps' destinations: their own chunk, so the browser's first download never carries the navigation bar
 const PhoneNav = lazy(() => import('./PhoneNav.tsx'));
+// the phone apps' Tasks head (ADR-0065 step 13): the TopAppBar with the computer filter, the chip row and the FAB
+const PhoneHead = lazy(() => import('./PhoneHead.tsx'));
+const PhoneListTop = lazy(() => import('./PhoneHead.tsx').then((m) => ({ default: m.PhoneListTop })));
 
 export function App(props: { readonly clients: Clients; readonly recent: Readable<readonly string[]> }): JSX.Element {
   const shell = useShell();
@@ -38,6 +41,8 @@ export function App(props: { readonly clients: Clients; readonly recent: Readabl
   const view = createMemo(() => stackView(nav(), launcher()));
   const page = (): StagePage => view().page;
   const switcher = shell.platform.kind === 'desktop';
+  // the phone apps (Android, iPhone): their own head, New task and destinations; a phone's browser keeps v1's
+  const phone = shell.platform.phone;
   // the desktop app on a Mac: the page is the title bar (Stage's titlebar, the platform's drag regions)
   const titlebar = shell.platform.titlebar === 'mac' ? 'mac' : undefined;
   onMount(() => onCleanup(shell.platform.dragRegions(document.body)));
@@ -86,10 +91,11 @@ export function App(props: { readonly clients: Clients; readonly recent: Readabl
         layout={nav().layout}
         page={page()}
         rail={<Rail />}
-        head={<Head filter={filter} setFilter={setFilter} />}
+        // the phone apps draw the platform's bar and the FAB in place of v1's head and New task row (step 13)
+        head={phone ? <PhoneHead /> : <Head filter={filter} setFilter={setFilter} />}
         list={
           <>
-            <SidebarTop onNew={onNew} homeOn={homeOn()} />
+            {phone ? <PhoneListTop onNew={onNew} filter={filter} setFilter={setFilter} /> : <SidebarTop onNew={onNew} homeOn={homeOn()} />}
             <PickStripView filter={filter} setFilter={setFilter} />
             <Area input="shell.sidebar:list" fallback={<SidebarList onNew={onNew} homeOn={homeOn()} filter={filter} />} />
           </>
@@ -101,7 +107,7 @@ export function App(props: { readonly clients: Clients; readonly recent: Readabl
         listBehind={view().listBehind}
         tint={tint()}
         // the phone apps (ADR-0065 step 8): Tasks · Crew · Stuff · Computers; the browser passes none
-        nav={shell.platform.phone ? <PhoneNav /> : undefined}
+        nav={phone ? <PhoneNav /> : undefined}
         mainLabel={shell.t('shell.main')}
         sideLabel={shell.t('shell.side')}
         {...(titlebar && { titlebar })}

@@ -29,6 +29,8 @@ export interface Filter {
   readonly crew?: string;
   /** a crew member's job that lives under that member, not in the list (crew rail) */
   readonly underMember?: (s: SessionRow) => boolean;
+  /** the phone apps' computer filter (ADR-0065 step 13): only the rows of this peer (keys `<peer>:…`); undefined: all */
+  readonly computer?: string;
 }
 
 export const ALL: Filter = { project: 'all' };
@@ -110,6 +112,7 @@ function visibleEntries(all: readonly Keyed[], f: Filter): Entry[] {
   for (const k of all) {
     const s = k.s;
     if (!inProject(s, f.project)) continue;
+    if (f.computer !== undefined && !k.key.startsWith(`${f.computer}:`)) continue;
     const mine = f.crew !== undefined && s.crew?.id === f.crew;
     if (f.crew !== undefined && !mine) continue;
     // a crew job for another task lives under its member, unless it needs you

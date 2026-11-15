@@ -72,19 +72,13 @@ export function Rail(): JSX.Element {
   );
 }
 
-/** The project the list shows (All is 'all'): the chips set it, the list follows. */
-export function Head(props: { readonly filter: () => string; readonly setFilter: (id: string) => void }): JSX.Element {
+/** The head's project chips (All, then each project in your order) with their need-you counts, and the pick: the
+ *  browser's head and the phone apps' chip row under the Tasks bar share them. */
+export function useHeadChips(filter: () => string) {
   const shell = useShell();
   const sessions = useSessions();
   const pc = usePluginClient('shell');
   const { list: projects, reorder } = useProjects(shell, pc.home);
-  // you on the grid (v1 split.js meInfo): wisp.machines' rows, on its topic while the head shows
-  const meScope = pc.scope.child('sidebar-me');
-  onCleanup(() => meScope.dispose());
-  pc.watch(pc.home, 'machines' as never, meScope);
-  const peers = useSignal(shell.client.entities.list<PeerDoc>('machines_peer'));
-  const statuses = useSignal(shell.client.entities.list<StatusDoc>('machines_status'));
-  const me = createMemo(() => meOf(peers(), statuses()));
   const needs = (pred: (s: SessionRow) => boolean): number => sessions().filter((s) => sectionOf(s) === 'needs' && pred(s)).length;
   const needLabel = (n: number): string => shell.t(n === 1 ? 'shell.side.need.one' : 'shell.side.need.other', { count: n });
   const chips = createMemo<ProjectChip[]>(() => {
@@ -98,7 +92,7 @@ export function Head(props: { readonly filter: () => string; readonly setFilter:
     ];
   });
   // several projects picked: the button names them, their need-you counts summed, the tip listing each
-  const pickIds = createMemo(() => knownPick(props.filter(), projects()));
+  const pickIds = createMemo(() => knownPick(filter(), projects()));
   const pick = createMemo(() => {
     const ids = pickIds();
     if (ids.length < 2) return undefined;
@@ -109,12 +103,24 @@ export function Head(props: { readonly filter: () => string; readonly setFilter:
     return { colors: picked.map((p) => p.color || 'slate'), label: pickLabel(picked, shell.t), tip: picked.map((p) => p.name).join('\n'), need, needLabel: needLabel(need) };
   });
   const on = (): string => pickIds()[0] ?? 'all';
-  const slots = useHeadSlots();
+  return { chips, pick, pickIds, on, reorder };
+}
+
+/** You on the grid and the me menu (v1 #meMenu): the browser's head and the phone apps' Tasks bar share it. */
+export function useAccount() {
+  const shell = useShell();
+  const pc = usePluginClient('shell');
+  // you on the grid (v1 split.js meInfo): wisp.machines' rows, on its topic while the head shows
+  const meScope = pc.scope.child('sidebar-me');
+  onCleanup(() => meScope.dispose());
+  pc.watch(pc.home, 'machines' as never, meScope);
+  const peers = useSignal(shell.client.entities.list<PeerDoc>('machines_peer'));
+  const statuses = useSignal(shell.client.entities.list<StatusDoc>('machines_status'));
+  const me = createMemo(() => meOf(peers(), statuses()));
   const nav = useSignal(shell.nav);
-  const homeOn = (): boolean => nav().main.kind === 'home';
   const sheet = (pane: string | undefined): void => shell.navigate({ t: 'openOverlay', overlay: { kind: 'viewer', id: 'shell-settings.sheet' as never, params: pane === undefined ? {} : { pane } } });
   // v1 #meMenu: you first, then Machines, Automations and Settings (the theme after, v2's)
-  const account = (): MenuEntry[] => [
+  const items = (): MenuEntry[] => [
     {
       value: 'me',
       label: me().who || shell.t('shell.me.grid'),
@@ -130,8 +136,8 @@ export function Head(props: { readonly filter: () => string; readonly setFilter:
     { value: 'theme', label: shell.t(shell.theme.resolved() === 'dark' ? 'shell.cmd.theme.light' : 'shell.cmd.theme.dark'), icon: shell.theme.resolved() === 'dark' ? 'sun' : 'moon' },
   ];
   // v1 meBtn's title: "<you> · Machines, Automations and Settings"
-  const meLabel = (): string => (me().who ? shell.t('shell.me.title', { who: me().who }) : shell.t('shell.side.account'));
-  const onAccount = (v: string): void => {
+  const label = (): string => (me().who ? shell.t('shell.me.title', { who: me().who }) : shell.t('shell.side.account'));
+  const onSelect = (v: string): void => {
     const href = me().href;
     // signed in: the grid's account page; signed out (or never): Settings → Cloud, to sign in
     if (v === 'me') return href && me().state !== 'out' ? shell.platform.openExternal(href) : sheet('cloud');
@@ -140,6 +146,18 @@ export function Head(props: { readonly filter: () => string; readonly setFilter:
     // Settings on a phone opens on its list, as v1's did; a wider window shows General beside the list
     else sheet(v === 'automations' ? 'automations' : nav().layout === 'stack' ? undefined : 'general');
   };
+  return { me, items, label, onSelect };
+}
+
+/** The project the list shows (All is 'all'): the chips set it, the list follows. */
+export function Head(props: { readonly filter: () => string; readonly setFilter: (id: string) => void }): JSX.Element {
+  const shell = useShell();
+  const { chips, pick, on, reorder } = useHeadChips(props.filter);
+  const account = useAccount();
+  const me = account.me;
+  const slots = useHeadSlots();
+  const nav = useSignal(shell.nav);
+  const homeOn = (): boolean => nav().main.kind === 'home';
   return (
     <SidebarHead
       homeOn={homeOn()}
@@ -158,8 +176,8 @@ export function Head(props: { readonly filter: () => string; readonly setFilter:
       onSwitch={() => openSwitcher(shell)}
       switchLabel={`${shell.t('shell.projects.switch')} (${displayCombo('mod+p', shell.platform.apple).join('')})`}
       onReorder={reorder}
-      accountAct={{ menu: { items: account(), onSelect: onAccount } }}
-      accountLabel={meLabel()}
+      accountAct={{ menu: { items: account.items(), onSelect: account.onSelect } }}
+      accountLabel={account.label()}
       {...(me().initial !== undefined && { me: { initial: me().initial as string, state: me().state, ...(me().avatar !== undefined && { avatar: me().avatar as string }) } })}
       manageAct={{
         menu: {

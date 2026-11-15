@@ -25,6 +25,13 @@ export function buildEnv(shell: ShellContext, client: PluginClient): ListEnv {
     const f = picked();
     if (f !== undefined && f !== model.view.value().filter) model.setFilter(f);
   });
+  // the phone apps' computer filter (the Tasks bar's title): 'all', or one gone from the phone, is every computer
+  const computer = useSignal(shell.computerFilter?.value ?? (() => 'all'));
+  const peers = useSignal(client.peers.list());
+  createEffect(() => {
+    const c = computer();
+    model.setComputer(c && c !== 'all' && peers().includes(c as never) ? c : undefined);
+  });
   const nav = useSignal(shell.nav);
   const selected = useSignal(shell.selection.get);
   const agents = useSignal(model.agents);

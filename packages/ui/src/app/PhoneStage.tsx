@@ -15,13 +15,9 @@ export function PhoneStage(props: StageProps): JSX.Element {
     <Frame
       layout={props.layout}
       page={page()}
-      // the list's head (v1's top bar, until the Tasks screen's TopAppBar: build step 13) in its own box, so its cells keep
-      // v1's grid; a pushed page draws its own head, so the frame's top steps aside there (v1 stack)
-      top={
-        <div data-kit="topbar" data-part="topbar">
-          {props.head}
-        </div>
-      }
+      // the list's head is the Tasks screen's TopAppBar (the shell's PhoneHead, step 13), the frame's top itself; a pushed
+      // page draws its own head, so the frame's top steps aside there (v1 stack)
+      top={props.head}
       list={props.list}
       main={props.main}
       side={side()}

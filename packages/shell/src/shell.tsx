@@ -127,6 +127,10 @@ export function createShell(o: ShellOptions): Shell {
       value: settings.get('shell.projectFilter') as Readable<string>,
       set: (id) => void settings.set('shell.projectFilter', id || 'all'),
     },
+    computerFilter: {
+      value: settings.get('shell.computerFilter') as Readable<string>,
+      set: (peer) => void settings.set('shell.computerFilter', peer || 'all'),
+    },
     prompts: {
       provide(name, box) {
         prompts.set(name, box);

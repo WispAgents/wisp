@@ -72,6 +72,13 @@ export interface Anchor {
   readonly delta: number;
 }
 
+/** Whether a list keeps the row it is on when rows change above it. A list (top-anchored: the task list) resting at
+ *  its very top stays there instead (the new task shows where it goes, Needs you filling in after the list paints);
+ *  a transcript (bottom-anchored) always keeps its row, so older turns paged in above don't move what is read. */
+export function anchors(scrollTop: number, anchor: 'top' | 'bottom' = 'top'): boolean {
+  return anchor === 'bottom' || scrollTop > 0;
+}
+
 /** The row under the top of the viewport, and how far into it the reader is. */
 export function anchorAt(offs: readonly number[], scrollTop: number): Anchor {
   const index = rowAt(offs, scrollTop);

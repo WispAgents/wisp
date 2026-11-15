@@ -10,6 +10,7 @@ import type { NativeBridge } from './bridge.ts';
 import { bootPhone, type PhoneWindow } from './boot.ts';
 import { createLauncher, type Launcher } from './launch.ts';
 import { phoneUi } from './ui/index.tsx';
+import { followStayConnected, type StayConnected } from './stay.ts';
 
 export interface PhoneAppOptions {
   build: string;
@@ -38,6 +39,7 @@ export async function startPhoneApp(o: PhoneAppOptions): Promise<PhoneApp> {
   let shell: Shell | undefined;
   let stopExtend: (() => void) | void;
   let launcher: Launcher | undefined;
+  let stay: StayConnected | undefined;
 
   const make = (client: Client, platform: Platform, bridge: NativeBridge): Shell => {
     const s = createShell({ client, toaster, platform, home: client.home(), window: w as unknown as Parameters<typeof createShell>[0]['window'] });
@@ -49,7 +51,10 @@ export async function startPhoneApp(o: PhoneAppOptions): Promise<PhoneApp> {
         client.devtools.record({ kind: 'warn', message: `${path}: ${String(err)}` }); // one bad plugin never stops the app
       }
     }
-    if (launcher) s.register(phoneUi({ bridge, launcher }));
+    if (launcher) {
+      const scan = platform.scanCode?.bind(platform);
+      s.register(phoneUi({ bridge, launcher, toast: toaster, newId: () => crypto.randomUUID(), ...(scan && { scan }), ...(stay && { stay }) }));
+    }
     stopExtend = o.extend?.(s, toaster, platform);
     return s;
   };
@@ -61,6 +66,8 @@ export async function startPhoneApp(o: PhoneAppOptions): Promise<PhoneApp> {
     ...(o.bridge && { bridge: o.bridge }),
     client: { onError: commandErrorToast(toaster), ...(o.dev !== undefined && { dev: o.dev }) },
     createShell: (client, platform, bridge) => {
+      // Stay connected follows the saved computers (ON for SSH without push) for as long as the client lives
+      stay = followStayConnected(bridge, w.localStorage, client.scope);
       launcher = createLauncher({
         client,
         storage: w.localStorage,

@@ -347,5 +347,10 @@
   "shell.dest.tasks": "Tasks",
   "shell.dest.crew": "Crew",
   "shell.dest.stuff": "Stuff",
-  "shell.dest.computers": "Computers"
+  "shell.dest.computers": "Computers",
+  "shell.phone.allComputers": "All",
+  "shell.phone.pickComputer": "Show tasks from",
+  "shell.phone.search": "Search",
+  "shell.phone.tasksActions": "Tasks",
+  "shell.phone.projects": "Projects"
 }

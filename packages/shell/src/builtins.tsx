@@ -25,6 +25,8 @@ export const SHELL_SETTINGS = [
   { key: 'shell.sidebar.open', type: 'bool', default: true, scope: 'device' },
   /** the project the list shows (the top bar's chips): a project's id, or 'all' (v1 wisp.filter) */
   { key: 'shell.projectFilter', type: 'string', default: 'all', scope: 'device' },
+  /** the phone apps' computer filter (the Tasks bar's title): a peer id, or 'all' (ADR-0065 step 13) */
+  { key: 'shell.computerFilter', type: 'string', default: 'all', scope: 'device' },
   /** other wisps this device connects to: [{ peer, name, base }] */
   { key: 'shell.peers', type: 'json', default: [] as Json[], scope: 'device' },
 ] as const;

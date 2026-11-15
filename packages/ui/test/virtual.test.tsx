@@ -2,7 +2,7 @@ import { afterEach, describe, expect, test } from 'vitest';
 import { createSignal } from 'solid-js';
 import { render } from 'solid-js/web';
 import { Each, VirtualList } from '../src/layout/VirtualList.tsx';
-import { anchorAt, atTail, computeRange, offsets, restoreAnchor, rowAt, TAIL_SLACK } from '../src/layout/virtual-math.ts';
+import { anchorAt, anchors, atTail, computeRange, offsets, restoreAnchor, rowAt, TAIL_SLACK } from '../src/layout/virtual-math.ts';
 
 /** A small seeded PRNG (mulberry32), so a failing case can be replayed from its seed. */
 function rng(seed: number): () => number {
@@ -63,6 +63,16 @@ describe('virtual-math (property tests, 500 seeded cases each)', () => {
     const a = anchorAt(before, 120); // row 2, 20px in
     expect(a).toEqual({ index: 2, delta: 20 });
     expect(restoreAnchor(offsets([50, 80, 50, 50]), a)).toBe(150);
+  });
+
+  test('a_list_at_its_top_stays_at_its_top_when_rows_arrive_above_and_a_transcript_keeps_its_row', () => {
+    // the phone's Tasks list: Needs you fills in after the first paint, the list was never scrolled
+    expect(anchors(0)).toBe(false);
+    expect(anchors(0, 'top')).toBe(false);
+    // scrolled into: the row under the top stays put as rows grow above (the rule above)
+    expect(anchors(1)).toBe(true);
+    // a transcript reading its oldest turn while older ones page in above keeps that turn in place
+    expect(anchors(0, 'bottom')).toBe(true);
   });
 
   test('rowAt, empty lists and the tail slack', () => {

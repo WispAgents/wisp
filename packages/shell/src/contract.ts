@@ -502,6 +502,10 @@ export interface ShellContext {
    * a list in `shell.sidebar:list` follows it. Since 2026-11-14 several picked projects are their ids joined by
    * commas, in the order added (frame/project-pick.ts `parsePick`) */
   readonly projectFilter?: { readonly value: Readable<string>; set(id: string): void };
+  /** added 2026-11-15 (additive, ADR-0065 step 13): the phone apps' computer filter, the Tasks bar's title ('all', or a
+   * peer id: frame/computer-filter.ts); a list in `shell.sidebar:list` shows only that computer's rows. The browser
+   * leaves it at 'all' (no control sets it there) */
+  readonly computerFilter?: { readonly value: Readable<string>; set(peer: string): void };
   /** named things a shortcut can focus ('launcher' for ⌘L, 'reply' for /): the owner registers */
   readonly focusTargets: { provide(name: string, focus: () => void): () => void; focus(name: string): boolean };
   /** added 2026-11-11 (additive): the prompt boxes ('launcher' for New task) a plugin may fill, as v1's Start from an
