@@ -20,10 +20,10 @@ Rust for everything but the UI, Solid/TS for the UI, everything a plugin (ADR-00
 |---|---|
 | v1 features | **315 built · 7 partial · 5 missing · 4 dropped** of 331 (§6) |
 | Regressed | none (F-comp-1 picker restored to v1 in round 233) |
-| CI, last full run (9ea69e14) | Linux + macOS: only css-rules :is() (fixed) · **Windows: cargo test 25 min, 3 failing targets (was 14)**: serve_open, machines carry, sandbox seed (r268); last step 26+ min, cancelled at 60 (r269) |
+| CI, last full run (836287a4) | **Linux 4/4 + macOS 24 green · Windows 22: cargo test 0 failures, whole job 33 min (was cancelled at 60)** · 2 load-sensitive UI tests: stuff-ui pane-host (win22), platform-controls Select (mac22) -> r270 · win24 running |
 | Budgets | initial JS 107.2 KB br (≤ 120) · CSS 27.1 KB (≤ 30) |
-| Weekly usage | 94 % (owner 2026-11-15: continue until the limit; 1 coder) |
-| Coders running | none (CI on 836287a4) |
+| Weekly usage | 95 % (owner 2026-11-15 14:50: keep going with one coder until the limit) |
+| Coders running | coder-r270 (two flaky UI tests) |
 
 ## 3. Owner directions (standing rules)
 
@@ -794,6 +794,7 @@ Source: `docs/v1-features.md` (each row's evidence and test). `[x]` built, `[ ]`
 
 | Round | What | State |
 |---|---|---|
+| 270 | Two load-sensitive UI tests (pane-host timeout, phone Select null) | in progress |
 | 269 | CI's other-packages step runs each check once (ADR-0072): 128.6 s -> 38.5 s locally | committed (836287a4); proof = CI on 836287a4 |
 | 268 | Machines copy check spells both sides (product); sandbox joins; long temp in plugin tests; serve_open | committed (d3165656) |
 | 267 | wisp import keeps v1 per-turn file changes (ledger 0 files) | committed (3d55a9e2) |
