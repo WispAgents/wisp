@@ -171,6 +171,24 @@ mod tests {
         assert!(with_test(&set, "").get("test").is_none());
     }
 
+    /// Round 288: two folders named `wisp` are two projects (`wisp`, `wisp-2`, ADR-0076), and each folder's task finds
+    /// its own one: neither replaced the other.
+    #[test]
+    fn two_same_named_folders_are_two_projects_and_each_holds_its_own_tasks() {
+        use wisp_runtime_api::paths::{ProjectName, project_name_for};
+        let mut a = json!({ "path": "/tmp/a/wisp/" });
+        tidy_project_at(&mut a, None);
+        let mut stored = vec![("wisp".to_owned(), a)];
+        let paths = |s: &[(String, Value)]| -> Vec<(String, String)> {
+            s.iter().map(|(n, v)| (n.clone(), v["path"].as_str().unwrap_or_default().to_owned())).collect()
+        };
+        assert_eq!(project_name_for("/tmp/b/wisp", &paths(&stored)), ProjectName::New("wisp-2".into()));
+        stored.push(("wisp-2".to_owned(), json!({ "path": "/tmp/b/wisp" })));
+        assert_eq!(project_for(&stored, "/tmp/a/wisp/src").unwrap().0, "wisp");
+        assert_eq!(project_for(&stored, "/tmp/b/wisp").unwrap().0, "wisp-2");
+        assert_eq!(project_name_for("/tmp/a/wisp", &paths(&stored)), ProjectName::Existing("wisp".into()));
+    }
+
     #[test]
     fn the_deepest_project_holds_the_folder_and_the_brief_reads() {
         let ps = vec![

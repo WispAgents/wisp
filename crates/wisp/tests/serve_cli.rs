@@ -292,3 +292,38 @@ async fn a_command_word_or_a_typo_of_one_starts_no_task() {
     assert_eq!(list.as_array().unwrap().len(), 1, "{list}");
     drop(serve);
 }
+
+/// Round 288: `wisp add /tmp/b/wisp` after `/tmp/a/wisp` replaced the first project (both named `wisp`, a project's
+/// key). Now the second is `wisp-2` beside it (ADR-0076), and adding a folder that's a project already changes nothing.
+#[tokio::test(flavor = "multi_thread")]
+async fn wisp_add_of_a_second_folder_with_the_same_name_keeps_both_projects() {
+    let dir = temp("serve-cli-add-same-name");
+    let (a, b) = (dir.join("a/wisp"), dir.join("b/wisp"));
+    std::fs::create_dir_all(&a).unwrap();
+    std::fs::create_dir_all(&b).unwrap();
+    let (serve, port) = start(&dir);
+    let api = Api { http: reqwest::Client::new(), port, n: 0.into() };
+    let projects = || async {
+        let mut v: Vec<(String, String)> = api
+            .cmd("resources.export", json!({ "kinds": ["project"] }))
+            .await
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|r| (r["name"].as_str().unwrap().to_owned(), r["spec"]["path"].as_str().unwrap().to_owned()))
+            .collect();
+        v.sort();
+        v
+    };
+    for p in [&a, &b] {
+        let (code, out, err) = wisp(&dir, port, &["add", &p.display().to_string()]);
+        assert_eq!(code, 0, "{out}{err}");
+    }
+    let (code, out, err) = wisp(&dir, port, &["add", &format!("{}/.", a.display())]);
+    assert_eq!(code, 0, "{err}");
+    assert!(out.contains("already a project: wisp"), "{out}");
+    let got = projects().await;
+    let canon = |p: &Path| wisp_runtime_api::paths::canonical_project_path(&p.display().to_string(), None);
+    assert_eq!(got, vec![("wisp".to_owned(), canon(&a)), ("wisp-2".to_owned(), canon(&b))], "both projects kept");
+    drop(serve);
+}

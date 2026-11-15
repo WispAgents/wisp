@@ -3,6 +3,7 @@
 // else a repo in its usual folders) or clones the origin, and the checkout joins its projects, so the next launch finds
 // it at once. A folder that isn't a repo with an origin can't be set up there, as v1 said.
 import { defineCommand } from '@wisp/client';
+import { nameFor } from './project-names.ts';
 
 type Run = <A, R>(cmd: ReturnType<typeof defineCommand<A, R>>, args: A) => Promise<R>;
 
@@ -20,7 +21,9 @@ const checkout = defineCommand<{ peer: string; url: string; known: string[] }, {
   optimistic: 'none',
   pending: 'Run on',
 });
-const projectsOf = defineCommand<{ peer: string }, { projects?: { name?: string; path?: string }[] }>({
+// resources.export answers with the resources themselves (`[{ kind, name, spec: { path } }]`)
+type Theirs = readonly { name?: string; spec?: { path?: string } }[];
+const projectsOf = defineCommand<{ peer: string }, Theirs>({
   id: 'resources.export',
   owner: (a) => a.peer as never,
   wire: () => ({ kinds: ['project'] }),
@@ -59,9 +62,12 @@ export async function placeOn(o: {
   if (!o.cwd || o.peer === o.home) return o.cwd;
   const here = await o.run(origin, { peer: o.home, path: o.cwd });
   if (!here.origin) throw new NoOrigin(o.say(o.name, o.where));
-  const known = ((await o.run(projectsOf, { peer: o.peer }).catch(() => ({ projects: [] }))).projects ?? []).map((p) => p.path ?? '').filter(Boolean);
+  const list = await o.run(projectsOf, { peer: o.peer }).catch((): Theirs => []);
+  const known = list.map((p) => p.spec?.path ?? '').filter(Boolean);
   const got = await o.run(checkout, { peer: o.peer, url: here.origin, known });
-  // a checkout it didn't know as a project joins its projects (v1 store.addProject on that machine)
-  if (!known.includes(got.dir)) await o.run(addProject, { peer: o.peer, name: o.name, path: got.dir }).catch(() => undefined);
+  // a checkout it didn't know as a project joins its projects (v1 store.addProject on that machine), under a name of
+  // its own there: a project is keyed by its name (ADR-0076), so its `web` at another folder is never replaced
+  const taken = list.map((p) => p.name ?? '').filter(Boolean);
+  if (!known.includes(got.dir)) await o.run(addProject, { peer: o.peer, name: nameFor(o.name, taken), path: got.dir }).catch(() => undefined);
   return moved(o.cwd, here.root || o.cwd, got.dir);
 }

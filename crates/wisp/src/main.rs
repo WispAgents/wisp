@@ -502,7 +502,28 @@ async fn add(_home: &Path, port: u16, what: Option<&String>, cwd: &Path) -> Resu
             None,
         )
     };
-    let name = Path::new(&path).file_name().map_or_else(|| "project".into(), |n| n.to_string_lossy().to_lowercase().replace(' ', "-"));
+    // a project is keyed by its name (ADR-0076): `/a/wisp` then `/b/wisp` are `wisp` and `wisp-2`, never the second
+    // replacing the first; a folder that's a project already stays that one
+    let known: Vec<(String, String)> = c
+        .cmd("resources.export", json!({ "kinds": ["project"] }))
+        .await?
+        .as_array()
+        .map(|rs| {
+            rs.iter()
+                .filter_map(|r| {
+                    let n = r.get("name").and_then(Value::as_str)?;
+                    Some((n.to_owned(), r.pointer("/spec/path").and_then(Value::as_str).unwrap_or_default().to_owned()))
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+    let name = match wisp_runtime_api::paths::project_name_for(&path, &known) {
+        wisp_runtime_api::paths::ProjectName::Existing(name) => {
+            say(&format!("  ✓ already a project: {name}  ({path})"));
+            return Ok(());
+        }
+        wisp_runtime_api::paths::ProjectName::New(name) => name,
+    };
     c.cmd("resources.apply", json!({ "resources": [{ "kind": "project", "name": name, "spec": { "path": path } }] })).await?;
     say(&format!("  ✓ project added: {name}  ({path})"));
     Ok(())

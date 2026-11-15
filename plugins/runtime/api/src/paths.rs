@@ -70,6 +70,39 @@ pub fn same_folder(a: &str, b: &str) -> bool {
     !a.trim().is_empty() && !b.trim().is_empty() && folder_key(a) == folder_key(b)
 }
 
+/// The name `wisp add` gives a folder, or the one it already goes by (ADR-0076).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ProjectName {
+    /// the folder is a project already (any spelling of it, `same_folder`, `/private/tmp` as `/tmp`): it stays that one
+    Existing(String),
+    /// a new project's name: the folder's last part, then `-2`, `-3`… when another folder has that name
+    New(String),
+}
+
+/// A new project's name for `path` among `projects` (their `(name, path)`), as Projects' Add names one (v1 let two
+/// folders share a name under random ids; v2 keys a project by its name, so `/a/wisp` then `/b/wisp` are `wisp` and
+/// `wisp-2`, and the second no longer replaces the first). The base is the last part, `.git` off, lower case, spaces
+/// as `-`; a root or empty path is `project`.
+#[must_use]
+pub fn project_name_for(path: &str, projects: &[(String, String)]) -> ProjectName {
+    // macOS: a shell's own folder is `/private/tmp/…` where you typed `/tmp/…` (as `project_for` reads a task's)
+    let bare = |p: &str| p.trim().strip_prefix("/private").filter(|r| r.starts_with('/')).map_or_else(|| p.to_owned(), str::to_owned);
+    if let Some((n, _)) = projects.iter().find(|(_, p)| same_folder(p, path) || same_folder(&bare(p), &bare(path))) {
+        return ProjectName::Existing(n.clone());
+    }
+    let last = path.trim().trim_end_matches(['/', '\\']).rsplit(['/', '\\', ':']).next().unwrap_or_default();
+    let last = last.strip_suffix(".git").unwrap_or(last).to_lowercase().replace(' ', "-");
+    let base = if last.is_empty() { "project".to_owned() } else { last };
+    let taken = |n: &str| projects.iter().any(|(t, _)| t == n);
+    let mut name = base.clone();
+    let mut i = 2u32;
+    while taken(&name) {
+        name = format!("{base}-{i}");
+        i += 1;
+    }
+    ProjectName::New(name)
+}
+
 /// `path` is `root` or inside it, whichever separators either uses (`C:\repo\src` in `C:/Repo`; `/repository` is not
 /// in `/repo`). An empty or relative `root` holds nothing.
 #[must_use]

@@ -77,3 +77,30 @@ fn a_folder_is_the_same_folder_in_every_spelling_and_holds_what_is_inside_it() {
     assert!(!is_within("/a/b/c", r"/a\b"));
     assert_eq!(folder_key("/repo/./web/../api/"), "/repo/api");
 }
+
+/// Round 288: `wisp add /b/wisp` after `/a/wisp` replaced the first project (both were named `wisp`, and a project is
+/// keyed by its name). The second gets `wisp-2`; the same folder again, any spelling, is the project it already is.
+#[test]
+fn a_second_folder_with_a_taken_name_gets_its_own_name_and_the_same_folder_stays_one_project() {
+    use wisp_runtime_api::paths::{ProjectName, project_name_for};
+    let none: Vec<(String, String)> = Vec::new();
+    assert_eq!(project_name_for("/tmp/a/wisp", &none), ProjectName::New("wisp".into()));
+    let one = vec![("wisp".to_owned(), "/tmp/a/wisp".to_owned())];
+    assert_eq!(project_name_for("/tmp/b/wisp", &one), ProjectName::New("wisp-2".into()));
+    let two = vec![one[0].clone(), ("wisp-2".to_owned(), "/tmp/b/wisp".to_owned())];
+    assert_eq!(project_name_for("/tmp/c/wisp", &two), ProjectName::New("wisp-3".into()));
+    // the same folder, spelled with a trailing slash or `/.`: not a second project
+    assert_eq!(project_name_for("/tmp/b/wisp/.", &two), ProjectName::Existing("wisp-2".into()));
+    // macOS: `wisp add` in /tmp/b/wisp reads its folder as /private/tmp/b/wisp, and the other way round
+    assert_eq!(project_name_for("/private/tmp/b/wisp", &two), ProjectName::Existing("wisp-2".into()));
+    let private = vec![("wisp".to_owned(), "/private/tmp/a/wisp".to_owned())];
+    assert_eq!(project_name_for("/tmp/a/wisp", &private), ProjectName::Existing("wisp".into()));
+    assert_eq!(project_name_for("/privatex/wisp", &private), ProjectName::New("wisp-2".into()));
+    // a name taken by hand (a spec's `wisp-2` for another folder) is skipped too
+    let by_hand = vec![("wisp".to_owned(), "/x/wisp".to_owned()), ("wisp-2".to_owned(), "/y/other".to_owned())];
+    assert_eq!(project_name_for("/z/wisp", &by_hand), ProjectName::New("wisp-3".into()));
+    // the base: last part, `.git` off, lower case, spaces as `-`; Windows separators; a root is `project`
+    assert_eq!(project_name_for("/w/My App", &none), ProjectName::New("my-app".into()));
+    assert_eq!(project_name_for(r"C:\work\Api\", &none), ProjectName::New("api".into()));
+    assert_eq!(project_name_for("/", &none), ProjectName::New("project".into()));
+}

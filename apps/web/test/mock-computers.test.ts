@@ -17,7 +17,7 @@ test('two computers: Studio is listed here, this computer s project has an origi
   expect(origin?.result).toEqual({ origin: 'git@github.com:WispAgents/wisp.git', root: COMPUTERS_PROJECT.path });
   expect(COMMANDS['git.origin']?.({ path: '/tmp/notes' }, ctxOf(home, 'local'))?.result).toEqual({ origin: '', root: '' });
   // Studio has no projects yet: a fresh checkout, then it's one of Studio's projects
-  expect(COMMANDS['resources.export']?.({}, ctxOf(studio, STUDIO))?.result).toEqual({ projects: [] });
+  expect(COMMANDS['resources.export']?.({}, ctxOf(studio, STUDIO))?.result).toEqual([]);
   const got = COMMANDS['git.checkout']?.({ url: 'git@github.com:WispAgents/wisp.git', known: [] }, ctxOf(studio, STUDIO))?.result;
   expect(got).toEqual({ dir: `/Users/${STUDIO}/code/wisp`, existed: false });
   const added = COMMANDS['resources.apply']?.({ resources: [{ kind: 'project', name: 'wisp', spec: { path: `/Users/${STUDIO}/code/wisp` } }] }, ctxOf(studio, STUDIO));

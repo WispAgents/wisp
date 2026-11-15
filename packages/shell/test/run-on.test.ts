@@ -4,12 +4,13 @@ import { moved, NoOrigin, placeOn } from '../src/frame/run-on.ts';
 
 const say = (name: string, where: string): string => `${name} has no git remote (origin) to clone from, so wisp can’t set it up on ${where}.`;
 
-function fake(o: { origin?: string; projects?: string[]; dir?: string; existed?: boolean }) {
+function fake(o: { origin?: string; projects?: string[]; names?: string[]; dir?: string; existed?: boolean }) {
   const calls: [string, string, unknown][] = [];
   const run = (async (cmd: { id: string }, args: { peer: string }) => {
     calls.push([cmd.id, args.peer, args]);
     if (cmd.id === 'git.origin') return { origin: o.origin ?? '', root: o.origin ? '/me/code/web' : '' };
-    if (cmd.id === 'resources.export') return { projects: (o.projects ?? []).map((path) => ({ name: 'web', path })) };
+    // the server's shape: the resources themselves
+    if (cmd.id === 'resources.export') return (o.projects ?? []).map((path, i) => ({ kind: 'project', name: o.names?.[i] ?? 'web', spec: { path } }));
     if (cmd.id === 'git.checkout') return { dir: o.dir ?? '/studio/code/web', existed: o.existed ?? false };
     return {};
   }) as never;
@@ -34,4 +35,12 @@ test('here stays as it is; a folder with no origin can t be set up there, as v1 
   expect(h.calls).toEqual([]);
   await expect(placeOn({ cwd: '/me/notes', peer: 'studio', home: 'laptop', name: 'notes', where: 'Studio', run: fake({}).run, say })).rejects.toThrow(NoOrigin);
   expect(moved('C:\\me\\web\\src', 'C:\\me\\web', '/studio/web')).toBe('/studio/web/src');
+});
+
+test('a checkout joins that computer s projects beside its own same-named one, never replacing it_r288_run_on_same_name', async () => {
+  // the other computer has a `web` at another folder (not this repo's checkout): the new one is `web-2` beside it
+  const f = fake({ origin: 'git@github.com:me/web.git', projects: ['/studio/forks/web'], dir: '/studio/code/web' });
+  expect(await placeOn({ cwd: '/me/code/web', peer: 'studio', home: 'laptop', name: 'web', where: 'Studio', run: f.run, say })).toBe('/studio/code/web');
+  expect(f.calls[2]?.[2]).toMatchObject({ known: ['/studio/forks/web'] });
+  expect(f.calls.at(-1)).toEqual(['resources.apply', 'studio', { peer: 'studio', name: 'web-2', path: '/studio/code/web' }]);
 });

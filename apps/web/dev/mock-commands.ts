@@ -738,15 +738,14 @@ export const COMMANDS: Record<string, CommandFn> = {
   }),
   // a pinned pane: the app served here (the mock's own page), what it may use, and Allow (answered as asked)
   // your saved launch defaults (agent profiles): none saved here, so New task's own defaults apply
-  // a computer's projects (`resources.export`, kind project): what Run on checks for a checkout first
+  // a computer's projects (`resources.export`, kind project): what Run on checks for a checkout first; the server's
+  // shape, the resources themselves
   'resources.export': (_a, ctx) => ({
     ops: [],
-    result: {
-      projects: ctx
-        .rows('config')
-        .filter((r) => r.e === 'project')
-        .map((r) => ({ name: String(obj(r.v)['name'] ?? ''), path: String(obj(r.v)['path'] ?? '') })),
-    },
+    result: ctx
+      .rows('config')
+      .filter((r) => r.e === 'project')
+      .map((r) => ({ kind: 'project', name: String(obj(r.v)['name'] ?? ''), spec: { path: String(obj(r.v)['path'] ?? '') } })),
   }),
   // a project added on this computer (`resources.apply`, kind project): a Run on checkout joins its projects
   'resources.apply': (a, ctx) => {
