@@ -23,7 +23,7 @@ Rust for everything but the UI, Solid/TS for the UI, everything a plugin (ADR-00
 | CI, last full run (2790d627) | Linux + macOS: 1 failing test (`serve_orphans` probe), fixed by round 234, re-run pending · Windows: cancelled (open groups, §8) · desktop builds + Android: green |
 | Budgets | initial JS 117.9 KB br (≤ 120) · CSS 29.7 KB (≤ 30) · enforced in CI |
 | Weekly usage | 86 % (owner allowed 3 coders: free reset) |
-| Coders running | coder-r239 (launcher name breakpoints), coder-r240 (picker account row, clock locale) |
+| Coders running | coder-r239 (launcher name breakpoints) |
 
 ## 3. Owner directions (standing rules)
 
@@ -604,6 +604,7 @@ Source: `docs/v1-features.md` (each row's evidence and test). `[x]` built, `[ ]`
 - [ ] `wisp import` drops v1 per-turn changes (importer.rs), so imported tasks show 0 files on day cards
 - [ ] Ledger scrubber has no day labels (the mock had them); `wisp notices` chip clipped at 1280 (scrolls)
 - [ ] Ledger not yet in design/v1-reference/allowed.md for the parity gate
+- [ ] `rows-view.ts` and `peer-note.ts` force `en-GB` dates: check v1 (later/format.ts is en-GB on purpose, as v1) and use the app locale where v1 did
 - [ ] `ui-only`/MCP: nothing open
 
 ## 8. CI
@@ -691,7 +692,7 @@ Source: `docs/v1-features.md` (each row's evidence and test). `[x]` built, `[ ]`
 
 | Round | What | State |
 |---|---|---|
-| 240 | Picker account row wraps as v1 (Wrap group); task clock locale | in progress |
+| 240 | Picker account row wraps as v1 (Wrap group); task clock locale | committed (af6dd52b, f838e783) |
 | 239 | Launcher hides a hand-picked harness's name at v1's breakpoint (520 px, default model only), not 640 | in progress |
 | 238 | Auto pick segment: v2 already matches v1's shortLabel; test pins it | committed (61ddba34) |
 | 236 | "What will Auto run" + compare runs on the picker | committed (c390aca5; its app-picker.css .pk-vary waits for r237) |
