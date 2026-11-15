@@ -114,13 +114,21 @@ async fn remove(st: &Arc<State>, id: String) -> Res<RemoveOut> {
         manager::disconnect(st, r);
         let Ok(gone) = st.peer(r) else { continue };
         let key = r.clone();
-        // `machines.removed` goes out with the write that forgets the peer (ADR-0074)
-        let ob = st.ctx.outbox();
-        ob.emit(&Removed { id: r.clone(), row: gone });
-        st.store.write_with(ob, move |w| store::forget(w, &key)).await.map_err(MachinesError::from)?;
-        lock(&st.links).remove(r);
+        // Memory first, then the write that carries `machines.removed` (ADR-0074): a handler of the event (it runs
+        // once the write commits) that reads the list or routes to the peer finds it gone.
+        let link = lock(&st.links).remove(r);
         lock(&st.peers).remove(r);
         let _ = lock(&st.mirror).reset(r);
+        let ob = st.ctx.outbox();
+        ob.emit(&Removed { id: r.clone(), row: gone.clone() });
+        if let Err(e) = st.store.write_with(ob, move |w| store::forget(w, &key)).await {
+            // nothing was forgotten: the peer stays listed (disconnected; `recheck` reconnects it)
+            if let Some(l) = link {
+                lock(&st.links).insert(r.clone(), l);
+            }
+            lock(&st.peers).insert(r.clone(), gone);
+            return Err(MachinesError::from(e));
+        }
         let _ = lock(&st.mirror).take_dirty(); // the store rows went with `forget`
         if let Some(s) = &secrets {
             let _ = s.delete(&secret_key(r)).await;

@@ -638,7 +638,7 @@ Source: `docs/v1-features.md` (each row's evidence and test). `[x]` built, `[ ]`
 - [ ] README's Development lines still describe v1's npm run dev
 - [ ] No tested `.vscode/launch.json` (CodeLLDB) for wisp serve
 - [x] ADR-0074 gaps: a command's events go out with its writes (every `Store::write` in a command stages what it emitted so far; the rest at its return), and budget drain/early, channels `startedFrom`, machines `changed`/`removed` go in an outbox with their write (ADR-0075; `kernel_events.rs` `a_commands_events_go_out_with_its_write_so_a_reader_of_its_row_finds_them`, `durable_events.rs`, `plan_free.rs`, `machines/host/tests/events.rs`)
-- [ ] machines.removed can reach a handler before the peer is cleared from memory (ADR-0075 note; no subscriber reads it today)
+- [x] machines.removed reaches a handler only after the peer is cleared from memory (r279: memory first, then the write that carries the event; `plugins/machines/host/tests/events.rs` `a_machines_removed_handler_reading_the_list_finds_the_peer_gone`)
 - [x] serve_task follow_up_queue_and_stop_keep_the_queue relies on a 1.5 s fake run (fails under Windows load): hold the fake on a gate (r277: `FAKE_GATE` file gate in fake_agent; also serve_task ask/stale-ask/mcp/delegate and serve_crew_delegate)
 - [x] serve_channels_cap and serve_delegate_machine still use FAKE_DELAY (convert to FAKE_GATE)
 - [ ] `ui-only`/MCP: nothing open
