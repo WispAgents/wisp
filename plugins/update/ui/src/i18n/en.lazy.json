@@ -36,5 +36,6 @@
   "update.cancel": "Cancel",
   "update.locked": "Set by the plugin {by}",
   "update.notBack": "wisp didn’t come back. Start it again from your terminal.",
-  "update.notBack.app": "wisp didn’t come back. Open it again."
+  "update.notBack.app": "wisp didn’t come back. Open it again.",
+  "update.pill.title": "wisp {current} → {latest}: install and restart"
 }

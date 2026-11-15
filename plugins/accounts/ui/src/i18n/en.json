@@ -1,24 +1,8 @@
 {
-  "accounts.recheck.found": "{name} found",
-  "accounts.recheck.gone": "{name} not found",
-  "accounts.recheck.more.one": "{name} +{count} model",
-  "accounts.recheck.more.other": "{name} +{count} models",
-  "accounts.recheck.fewer.one": "{name} −{count} model",
-  "accounts.recheck.fewer.other": "{name} −{count} models",
-  "accounts.recheck.updated": "{name} updated",
-  "accounts.recheck.none": "Up to date: nothing new",
   "accounts.pane": "Agents",
   "accounts.lede": "The harnesses wisp found on this machine. Pick one next to the model in the launcher.",
   "accounts.recheck": "Re-check",
-  "accounts.recheck.running": "Checking…",
   "accounts.install": "Install",
   "accounts.keys.remove": "Remove",
-  "accounts.pane.lede": "The harnesses wisp found on this machine. Pick one next to the model in the launcher.",
-  "accounts.lean.title": "Lean Claude Code runs",
-  "accounts.lean.description": "Without telemetry, error reports and update checks: fewer connections and about a second faster to start. A lean run has no claude.ai connectors (Google Drive, Docs, …), no org memory (Team plans), no /ultrareview or /advisor, no push notifications, and none of Claude Code’s server-rolled features. wisp’s side runs (judges, reviews, the retro) need none of these",
-  "accounts.lean.off": "Off",
-  "accounts.lean.on": "wisp’s side runs",
-  "accounts.lean.all": "All Claude runs",
-  "accounts.recheck.title": "Installed something new?",
-  "accounts.recheck.hint": "After installing a CLI, signing in or adding a provider, look for harnesses and models again"
+  "accounts.pane.lede": "The harnesses wisp found on this machine. Pick one next to the model in the launcher."
 }

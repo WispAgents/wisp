@@ -71,5 +71,19 @@
   "grid-client.account.signOut.ask": "Sign out of {handle} on {host} here?",
   "grid-client.account.signOut.detail": "Its tasks stay on the grid; sign in again to see them. Its cloud computer and other computers leave Machines.",
   "grid-client.add": "Add an account",
-  "grid-client.add.description": "Another grid, or another account on one you already use. You choose the account in the browser: if it signs you in as someone else, pick Use another account there."
+  "grid-client.add.description": "Another grid, or another account on one you already use. You choose the account in the browser: if it signs you in as someone else, pick Use another account there.",
+  "grid-client.signedIn": "Signed in as {handle}",
+  "grid-client.shares.access.anyone": "Anyone with the link",
+  "grid-client.shares.access.password": "With a password",
+  "grid-client.shares.access.people.one": "1 person",
+  "grid-client.shares.access.people.other": "{count} people",
+  "grid-client.shares.access.teams.one": "1 team",
+  "grid-client.shares.access.teams.other": "{count} teams",
+  "grid-client.shares.kind.task": "Task",
+  "grid-client.shares.kind.setup": "Setup",
+  "grid-client.shares.kind.stuff": "My Stuff",
+  "grid-client.shares.kind.app": "App",
+  "grid-client.shares.kind.plugin": "Plugin",
+  "grid-client.shares.kind.report": "Report",
+  "grid-client.shares.kind.other": "Share"
 }

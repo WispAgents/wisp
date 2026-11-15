@@ -1,6 +1,7 @@
 // Settings → Setup (ADR-0034): your setup as code. DOM-free: the kinds with how many of each you have, the Import
 // plan as cards (added, changed, removed, each in words, a change with its fields), what's picked to apply, and
 // the format a pasted text is in.
+import './i18n/lazy.ts';
 
 export interface Resource {
   readonly kind: string;

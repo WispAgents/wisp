@@ -24,5 +24,7 @@
   "sandbox.list.remove": "Delete {name}",
   "sandbox.list.open": "Open its task",
   "sandbox.list.codex": "Sign in to Codex there",
-  "sandbox.back": "Back to New task"
+  "sandbox.back": "Back to New task",
+  "sandbox.claude.waiting": "Starting Claude's sign-in…",
+  "sandbox.empty": "Say what to do after /sandbox"
 }

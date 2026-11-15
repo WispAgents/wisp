@@ -9,6 +9,7 @@ import type { Env } from '../env.ts';
 import { canCombineNext, combinableAll, editable, moved, quote, tagOf } from '../model/queue.ts';
 import { plain } from '../text/mentions.ts';
 import type { QueueItem, Row } from '../types.ts';
+import '../i18n/lazy.ts';
 
 const K = 'shell-composer.queue';
 

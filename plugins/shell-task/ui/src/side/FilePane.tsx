@@ -8,6 +8,7 @@ import { Box, Button, EmptyState, FileView, IconButton, Inline, Stack, Text, lan
 import { useShell } from '../shell.ts';
 import { useTask } from '../task-context.tsx';
 import { askText, gutterOf, placeOf, statusOf, type BlameLine } from './file-view.ts';
+import '../i18n/lazy.ts';
 
 interface Source {
   readonly path: string;

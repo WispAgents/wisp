@@ -45,4 +45,16 @@ describe('the strings split', () => {
       expect(missing).toEqual([]);
     });
   }
+
+  // shell.tsx register() picks a catalogue's halves (namespace keys, full-id keys) from the keys there at start, and
+  // registers nothing for an empty one: strings lazy.ts adds later show only through a half registered then
+  for (const dir of owners.filter((d) => d.startsWith('plugins/'))) {
+    it(`${dir}: the eager half keeps a key of each kind its strings use, so its lazy strings show`, () => {
+      const id = /id:\s*'([\w.-]+)'/.exec(readFileSync(`${repo}${dir}/index.ts`, 'utf8'))?.[1] ?? '';
+      const ns = id.replace(/^wisp\./, '');
+      const kind = (k: string): string => (id !== ns && k.startsWith(`${id}.`) ? 'id' : 'ns');
+      const all = [...eagerKeys(dir), ...Object.keys(json(`${repo}${dir}/i18n/en.lazy.json`))];
+      expect(new Set(eagerKeys(dir).map(kind))).toEqual(new Set(all.map(kind)));
+    });
+  }
 });

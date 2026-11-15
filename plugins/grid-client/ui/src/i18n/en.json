@@ -1,18 +1,4 @@
 {
   "grid-client.pane": "Cloud",
-  "grid-client.signedIn": "Signed in as {handle}",
-  "grid-client.shares.access.anyone": "Anyone with the link",
-  "grid-client.shares.access.password": "With a password",
-  "grid-client.shares.access.people.one": "1 person",
-  "grid-client.shares.access.people.other": "{count} people",
-  "grid-client.shares.access.teams.one": "1 team",
-  "grid-client.shares.access.teams.other": "{count} teams",
-  "grid-client.shares.kind.task": "Task",
-  "grid-client.shares.kind.setup": "Setup",
-  "grid-client.shares.kind.stuff": "My Stuff",
-  "grid-client.shares.kind.app": "App",
-  "grid-client.shares.kind.plugin": "Plugin",
-  "grid-client.shares.kind.report": "Report",
-  "grid-client.shares.kind.other": "Share",
   "grid-client.pane.lede": "Your wisp on a server: it keeps working while this computer sleeps."
 }

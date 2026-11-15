@@ -6,6 +6,7 @@ import { RadioGroup, Section, useSignal } from '@wisp/ui';
 import type { ThemePref } from '../contract.ts';
 import { useShell } from '../context.tsx';
 import { THEMES } from '../theme.ts';
+import '../i18n/lazy.ts';
 
 export default function Appearance(_p: { readonly client: PluginClient }): JSX.Element {
   const shell = useShell();

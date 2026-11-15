@@ -1,6 +1,7 @@
 // Slash commands in the reply box and New task (v1 web/js/slash-text.js): what the / menu offers
 // and how a message reads as one. Pure. The peer parses the same forms (the CLI and the phone send
 // them as text), so these only decide what the box does locally before sending.
+import '../i18n/lazy.ts';
 
 export interface SlashCommand {
   readonly name: string;

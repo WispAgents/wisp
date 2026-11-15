@@ -1,10 +1,3 @@
 {
-  "wisp.crew.record.title": "Crew track record",
-  "wisp.crew.more.local.looking": "Looking…",
-  "wisp.crew.record.kind.checkin": "Check-ins",
-  "wisp.crew.record.kind.trigger": "Triggers",
-  "wisp.crew.record.kind.task": "Jobs you sent",
-  "wisp.crew.record.kind.mention": "Tagged in tasks",
-  "wisp.crew.record.kind.delegated": "Delegated",
-  "wisp.crew.record.kind.event": "Checks on tasks"
+  "wisp.crew.record.title": "Crew track record"
 }

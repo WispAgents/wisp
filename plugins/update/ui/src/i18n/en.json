@@ -2,6 +2,5 @@
   "update.pane.updates": "Updates",
   "update.pane.updates.lede": "Which releases this wisp follows, and installing a new one.",
   "update.pill": "Update to {latest}",
-  "update.pill.title": "wisp {current} → {latest}: install and restart",
   "update.pill.bar": "Update wisp"
 }

@@ -1,26 +1,5 @@
 {
   "machine.name.mac": "This Mac",
   "machine.palette": "What’s using my computer",
-  "machine.act.stopping": "Stopping…",
-  "machine.left.group": "{count} × {command}",
-  "machine.free.title": "Free up space",
-  "machine.free.sum": "{size} wisp can give back",
-  "machine.free.nothing": "Nothing to free",
-  "machine.free.merged.one": "1 folder of a merged or closed PR",
-  "machine.free.merged.other": "{count} folders of merged or closed PRs",
-  "machine.free.done.one": "1 folder of a Done task",
-  "machine.free.done.other": "{count} folders of Done tasks",
-  "machine.free.crew.one": "1 folder of a finished crew job",
-  "machine.free.crew.other": "{count} folders of finished crew jobs",
-  "machine.free.leftover.one": "1 folder no task knows",
-  "machine.free.leftover.other": "{count} folders no task knows",
-  "machine.free.safe": "Branches stay, and replying to a task brings its folder back",
-  "machine.free.unsafe": "Look first: nothing brings these back",
-  "machine.free.confirmTitle": "Remove {label}?",
-  "machine.free.confirmBody": "No task uses them, so nothing brings them back, uncommitted changes included.",
-  "machine.free.next": "By itself, the next cleanup removes clean folders of merged PRs, Done tasks after a day, and the rest after {days} idle days. Uncommitted work, kept folders and open PRs stay.",
-  "machine.free.off": "Automatic cleanup is off: folders stay until you remove them.",
-  "machine.ram": "{size} of memory",
-  "machine.which": "Computer",
-  "machine.chip.long": "{lead}{rest}"
+  "machine.ram": "{size} of memory"
 }

@@ -1,6 +1,5 @@
 {
   "sandbox.pane": "Sandboxes",
-  "sandbox.claude.waiting": "Starting Claude's sign-in…",
   "sandbox.owner.task": "A task's (/sandbox)",
   "sandbox.owner.pending": "Starting",
   "sandbox.owner.delegate": "{member}'s, a delegate",
@@ -9,6 +8,5 @@
   "sandbox.owner.judges": "A goal's judges'",
   "sandbox.owner.none": "Nobody's (the sweep removes it)",
   "sandbox.launching": "Making a sandbox for it: about half a minute",
-  "sandbox.empty": "Say what to do after /sandbox",
   "sandbox.pill": "Sandbox"
 }

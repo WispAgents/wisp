@@ -7,6 +7,7 @@ import { effect, entityKey, untracked, type EntityKey, type Nav, type PluginClie
 import type { Platform } from '@wisp/shell/platform';
 import type { Toaster } from '@wisp/ui';
 import { SESSION, type TaskRow } from './types.ts';
+import './i18n/lazy.ts';
 
 export type T = (key: string, vars?: Readonly<Record<string, string | number>>) => string;
 

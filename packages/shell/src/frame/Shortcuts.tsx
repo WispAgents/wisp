@@ -8,6 +8,7 @@ import { Kbd, Section, SettingsRow, Stack, Inline, useSignal } from '@wisp/ui';
 import { useShell } from '../context.tsx';
 import { useClients } from '../slot.tsx';
 import { allowed, displayCombo } from '../keys.ts';
+import '../i18n/lazy.ts';
 
 export default function Shortcuts(_p: { readonly client: PluginClient; readonly params: unknown }): JSX.Element {
   const shell = useShell();

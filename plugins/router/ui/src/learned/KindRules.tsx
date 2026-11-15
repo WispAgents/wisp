@@ -5,6 +5,7 @@ import { IconButton, Inline, Pill, Wrap } from '@wisp/ui';
 import { t } from '../i18n.ts';
 import { kindRules } from '../rules.ts';
 import type { ArmReport } from '../types.ts';
+import '../i18n/lazy.ts';
 
 export function KindRules(props: { readonly blocked: readonly string[]; readonly arms: readonly ArmReport[]; readonly onDrop: (rule: string) => void }): JSX.Element {
   const list = (): ReturnType<typeof kindRules> => kindRules(props.blocked, props.arms);
