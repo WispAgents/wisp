@@ -186,11 +186,24 @@ async fn a_folder_gone_opens_at_its_base() {
             tokio::time::sleep(std::time::Duration::from_millis(50)).await;
         }
     }
-    if let Err(e) = std::fs::remove_dir_all(&tree) {
-        // CI 8bb8ccd0 (Windows): os error 32 with the run's CLI gone: something else of wisp's still works in the
-        // folder. Name every process still alive (no retry: the holder is the bug), so the next run says which.
-        panic!("the task's folder is still held after its run ended: {e}\n{}", processes());
+    // CI 8bb8ccd0 and 9ea69e14 (Windows): os error 32 with the run's CLI gone and no process of wisp serve's alive a
+    // moment later: the turn's end sets off wisp's own work in the task's folder (ship's `TurnEnded` recheck runs
+    // `git status` there, off the event's way), and Windows refuses to remove a folder that is any process's cwd. So
+    // the folder goes as a user's folder does: while wisp is stopped (its nursery job ends every git it started), and
+    // the task opens on the next wisp. If it is still held then, it isn't wisp's: the dump names the holder.
+    let serve_pid = serve.child.id();
+    serve.stop();
+    // the server is gone once `wait` returns; what it started ends with its job a moment later (a kill on Windows
+    // is asynchronous): wait for that, not for time
+    let at = std::time::Instant::now();
+    while let Some(left) = started_by(serve_pid) {
+        assert!(at.elapsed() < std::time::Duration::from_secs(20), "wisp serve's {left:?} outlived it");
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
     }
+    if let Err(e) = std::fs::remove_dir_all(&tree) {
+        panic!("the task's folder is held with wisp stopped: {e}\n{}", holders(Path::new(&tree), serve_pid, &dir));
+    }
+    let (serve, port) = start_with(&dir, &[("FAKE_RECORD", rec.to_str().unwrap())]);
     let (code, out, err) = wisp(&dir, "home", &repo, port, &["open", &id, "--print"], &[]);
     assert_eq!(code, 0, "{out}{err}");
     let plan: Value = serde_json::from_str(&out).unwrap_or_else(|e| panic!("{e}: {out}"));
@@ -199,18 +212,100 @@ async fn a_folder_gone_opens_at_its_base() {
     drop(serve);
 }
 
-/// Every process with its parent and command line (Windows: what may hold a folder; elsewhere `ps`).
-fn processes() -> String {
+/// The live processes `root` started, and theirs (by parent pid, which a process keeps after its parent is gone);
+/// `None` when there are none.
+fn started_by(root: u32) -> Option<Vec<u32>> {
+    let all = wisp_proc::processes().unwrap_or_default();
+    let mut tree = vec![root];
+    let mut i = 0;
+    while let Some(&p) = tree.get(i) {
+        let kids: Vec<u32> = all.iter().filter(|c| c.ppid == p && !c.zombie && !tree.contains(&c.pid)).map(|c| c.pid).collect();
+        tree.extend(kids);
+        i += 1;
+    }
+    tree.remove(0);
+    (!tree.is_empty()).then_some(tree)
+}
+
+/// Who holds `tree`, for the panic (wisp serve already stopped): on Windows, the processes Restart Manager says hold a
+/// file in it (or that none does: then a process has the folder itself open, as a cwd), what is still alive under this
+/// test and under the stopped server, every git, wisp, harness or console process alive anywhere, and the command
+/// lines that name the folder; elsewhere `ps`. And what the server logged last.
+fn holders(tree: &Path, serve: u32, dir: &Path) -> String {
     let o = if cfg!(windows) {
         std::process::Command::new("powershell")
-            .args([
-                "-NoProfile",
-                "-Command",
-                "Get-CimInstance Win32_Process | Select-Object ProcessId,ParentProcessId,CommandLine | Format-Table -AutoSize -Wrap | Out-String -Width 400",
-            ])
+            .args(["-NoProfile", "-Command", HOLDERS_PS1])
+            .env("WISP_HELD", tree)
+            .env("WISP_HELD_SERVE", serve.to_string())
+            .env("WISP_HELD_TEST", std::process::id().to_string())
             .output()
     } else {
         std::process::Command::new("ps").args(["-eo", "pid,ppid,command"]).output()
     };
-    o.map_or_else(|e| format!("(no process list: {e})"), |o| String::from_utf8_lossy(&o.stdout).into_owned())
+    let list = o.map_or_else(
+        |e| format!("(no process list: {e})"),
+        |o| format!("{}{}", String::from_utf8_lossy(&o.stdout), String::from_utf8_lossy(&o.stderr)),
+    );
+    let log = std::fs::read_to_string(dir.join("serve.log")).unwrap_or_default();
+    let tail: Vec<&str> = log.lines().rev().take(40).collect();
+    format!("{list}\nwisp serve's log, last {} lines:\n{}", tail.len(), tail.into_iter().rev().collect::<Vec<_>>().join("\n"))
 }
+
+/// Restart Manager (`RmGetList`) over every file left in the folder, the process tree under this test, wisp serve's
+/// open handle count, and the processes whose command line names the folder.
+const HOLDERS_PS1: &str = r#"
+$ErrorActionPreference = 'SilentlyContinue'
+$rmError = $null
+try { Add-Type -ErrorAction Stop -TypeDefinition @'
+using System; using System.Collections.Generic; using System.Runtime.InteropServices;
+public static class WispRm {
+  [StructLayout(LayoutKind.Sequential)] struct Uniq { public int Pid; public System.Runtime.InteropServices.ComTypes.FILETIME Start; }
+  [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)] struct Info {
+    public Uniq P; [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 256)] public string App;
+    [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 64)] public string Svc; public int Type; public int Status; public int Session;
+    [MarshalAs(UnmanagedType.Bool)] public bool Restartable; }
+  [DllImport("rstrtmgr.dll", CharSet = CharSet.Unicode)] static extern int RmStartSession(out uint h, int f, string key);
+  [DllImport("rstrtmgr.dll")] static extern int RmEndSession(uint h);
+  [DllImport("rstrtmgr.dll", CharSet = CharSet.Unicode)] static extern int RmRegisterResources(uint h, uint n, string[] files, uint a, IntPtr apps, uint s, string[] svcs);
+  [DllImport("rstrtmgr.dll")] static extern int RmGetList(uint h, out uint needed, ref uint n, [In, Out] Info[] info, ref uint reasons);
+  public static string Who(string[] files) {
+    uint h; if (RmStartSession(out h, 0, Guid.NewGuid().ToString()) != 0) return "(no Restart Manager session)";
+    try {
+      if (RmRegisterResources(h, (uint)files.Length, files, 0, IntPtr.Zero, 0, null) != 0) return "(Restart Manager refused the files)";
+      uint needed = 0, n = 0, why = 0;
+      int r = RmGetList(h, out needed, ref n, null, ref why);
+      if (r == 0) return "";
+      if (r != 234) return "(RmGetList " + r + ")";
+      var info = new Info[needed]; n = needed;
+      r = RmGetList(h, out needed, ref n, info, ref why);
+      if (r != 0) return "(RmGetList " + r + ")";
+      var s = new List<string>(); for (int i = 0; i < n; i++) s.Add(info[i].P.Pid + " " + info[i].App);
+      return string.Join("; ", s);
+    } finally { RmEndSession(h); }
+  }
+}
+'@ } catch { $rmError = $_.Exception.Message }
+$tree = $env:WISP_HELD; $serve = [int]$env:WISP_HELD_SERVE; $me = [int]$env:WISP_HELD_TEST
+$left = @(Get-ChildItem -LiteralPath $tree -Recurse -Force)
+$files = @($left | Where-Object { -not $_.PSIsContainer } | ForEach-Object { $_.FullName })
+"left in the folder: $($left.Count) entries, $($files.Count) files"
+$left | Select-Object -First 30 | ForEach-Object { "  $($_.FullName)" }
+if ($rmError) { "(Restart Manager unavailable: $rmError)" }
+elseif ($files.Count -eq 0) { 'no file left in it: the holder has the folder itself open (a cwd, an open directory)' }
+else {
+  try { $who = [WispRm]::Who($files) } catch { $who = "(Restart Manager failed: $($_.Exception.Message))" }
+  if ($who) { "holding a file in it (Restart Manager): $who" } else { 'no process holds a file in it (Restart Manager): the holder has the folder itself open (a cwd, an open directory)' }
+}
+$all = @(Get-CimInstance Win32_Process)
+function Under($p, $d) { foreach ($c in @($all | Where-Object { $_.ParentProcessId -eq $p })) { ('  ' * $d) + "$($c.ProcessId) $($c.CommandLine)"; Under $c.ProcessId ($d + 1) } }
+"alive under this test (pid $me), this query included:"
+Under $me 1
+$s = Get-Process -Id $serve
+if ($s) { "wisp serve (pid $serve): $($s.HandleCount) handles open" } else { "wisp serve (pid $serve) is stopped" }
+"started by wisp serve (pid $serve), still alive:"
+Under $serve 1
+$tools = @($all | Where-Object { $_.Name -match '^(git|wisp|claude|codex|opencode|gh|conhost|OpenConsole)(\.exe)?$' -and $_.ProcessId -ne $me })
+if ($tools.Count) { 'git, wisp, harness and console processes alive anywhere:'; $tools | ForEach-Object { "  $($_.ProcessId) (parent $($_.ParentProcessId)) $($_.CommandLine)" } } else { 'no git, wisp, harness or console process is alive anywhere' }
+$named = @($all | Where-Object { $_.CommandLine -and $_.CommandLine.IndexOf($tree, [StringComparison]::OrdinalIgnoreCase) -ge 0 })
+if ($named.Count) { 'naming the folder:'; $named | ForEach-Object { "  $($_.ProcessId) (parent $($_.ParentProcessId)) $($_.CommandLine)" } } else { 'no process names the folder in its command line' }
+"#;

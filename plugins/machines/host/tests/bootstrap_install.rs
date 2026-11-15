@@ -20,7 +20,8 @@ fn scratch(name: &str) -> PathBuf {
     let nanos = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos();
     let d = std::env::temp_dir().join(format!("wisp-boot-{name}-{}-{nanos}", std::process::id()));
     std::fs::create_dir_all(&d).unwrap();
-    d
+    // spelled as wisp spells a home (ADR-0071): the Windows runner's `%TEMP%` is `C:\Users\RUNNER~1\…`
+    wisp_proc::plain_path_blocking(d)
 }
 
 fn exe(path: &Path, body: &str) {

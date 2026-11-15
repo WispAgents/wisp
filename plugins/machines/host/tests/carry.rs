@@ -17,7 +17,8 @@ use wisp_testkit::TestApp;
 fn dir(name: &str) -> PathBuf {
     let d = std::env::temp_dir().join(format!("wisp-carry-{name}-{}", wisp_kernel::ids::uuid7()));
     std::fs::create_dir_all(&d).unwrap();
-    d
+    // spelled as wisp spells a home (ADR-0071): the Windows runner's `%TEMP%` is `C:\Users\RUNNER~1\…`
+    wisp_proc::plain_path_blocking(d)
 }
 
 fn git(at: &Path, args: &[&str]) -> String {

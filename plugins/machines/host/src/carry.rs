@@ -242,15 +242,23 @@ pub(crate) async fn take_in(ctx: &Ctx, a: &api::TakeInArgs) -> wisp_kernel::Resu
     Ok(api::TakenIn { cwd: d })
 }
 
+/// The copy `cwd` names, when it is one carried here: `cwd` and the copies root both `spell`ed (ADR-0071:
+/// `wisp_proc::plain_str_blocking`), so a short spelling of either (`C:\Users\RUNNER~1\…` for a home given short) is
+/// the same folder as its long one. Spelling only one side refused every copy on the Windows runner.
+pub(crate) fn copy_at(plugin: &Path, cwd: &str, spell: impl Fn(&str) -> String) -> Option<PathBuf> {
+    let plugin = PathBuf::from(spell(&plugin.to_string_lossy()));
+    let cwd = spell(cwd);
+    core::is_copy(&plugin, &cwd).then(|| PathBuf::from(cwd))
+}
+
 /// `machines.changes` (on the machine): a carried copy's changes since it came in, new files too.
 pub(crate) async fn changes(ctx: &Ctx, cwd: &str) -> wisp_kernel::Result<api::Changes> {
     let proc = ctx.service::<Proc>()?;
-    // spelled as the plugin's folder is (ADR-0071: the home is, `services::home`), so either spelling of a copy is one
-    let cwd = wisp_proc::plain_str(cwd).await;
-    if !core::is_copy(&plugin_dir(ctx)?, &cwd) {
-        return Err(WireError::forbidden(core::not_a_copy()));
-    }
-    let dir = PathBuf::from(&cwd);
+    let (plugin, cwd) = (plugin_dir(ctx)?, cwd.to_owned());
+    let dir = tokio::task::spawn_blocking(move || copy_at(&plugin, &cwd, wisp_proc::plain_str_blocking))
+        .await
+        .map_err(|e| WireError::internal(e.to_string()))?
+        .ok_or_else(|| WireError::forbidden(core::not_a_copy()))?;
     let base = tokio::fs::read_to_string(dir.join(".git").join(core::BASE_FILE))
         .await
         .map_err(|_| WireError::not_found("That copy didn't come in through wisp."))?;
@@ -386,6 +394,25 @@ mod tests {
         let diff = git(&proc, &dir, &["diff", "--name-only", &base, &now], None, None).await.unwrap();
         assert_eq!(diff.trim(), "math.js", "the edit is seen");
         let _ = std::fs::remove_dir_all(dir);
+    }
+
+    /// CI 9ea69e14 (windows): the copy's cwd was spelled long, the copies root (a home given as `RUNNER~1`) wasn't,
+    /// so `machines.changes` refused wisp's own copy. Either side short, or both, is the same copy; a sibling isn't.
+    #[test]
+    fn a_copy_is_one_whichever_side_is_spelled_short() {
+        let spell = |p: &str| p.replace("/RUNNER~1/", "/runneradmin/");
+        let short = Path::new("/Users/RUNNER~1/t/plugins/wisp.machines");
+        let long = Path::new("/Users/runneradmin/t/plugins/wisp.machines");
+        for (plugin, cwd) in [
+            (short, "/Users/runneradmin/t/plugins/wisp.machines/copies/k/app"),
+            (long, "/Users/RUNNER~1/t/plugins/wisp.machines/copies/k/app"),
+            (short, "/Users/RUNNER~1/t/plugins/wisp.machines/copies/k/app"),
+        ] {
+            let at = copy_at(plugin, cwd, spell);
+            assert_eq!(at.as_deref(), Some(Path::new("/Users/runneradmin/t/plugins/wisp.machines/copies/k/app")), "{plugin:?} {cwd}");
+        }
+        assert!(copy_at(short, "/Users/runneradmin/t/plugins/wisp.machines/copies/k", spell).is_none(), "not two below");
+        assert!(copy_at(short, "/Users/runneradmin/code/app", spell).is_none(), "the user's checkout");
     }
 
     #[tokio::test(flavor = "multi_thread")]

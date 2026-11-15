@@ -195,6 +195,8 @@ async fn app(name: &str) -> App {
     let dir = std::env::temp_dir().join(format!("wisp-chan-setup-{name}-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
     std::fs::create_dir_all(&dir).unwrap();
+    // spelled as wisp spells a home (ADR-0071): the Windows runner's `%TEMP%` is `C:\Users\RUNNER~1\…`
+    let dir = wisp_proc::plain_path_blocking(dir);
     let store = Store::open(Location::Path(dir.join("wisp.db")), Arc::new(SystemClock)).unwrap();
     let secrets = Arc::new(Secrets::default());
     let net = Arc::new(Net::default());

@@ -15,7 +15,8 @@ use wisp_testkit::TestApp;
 fn dir(name: &str) -> PathBuf {
     let d = std::env::temp_dir().join(format!("wisp-sbx-{name}-{}", wisp_kernel::ids::uuid7()));
     std::fs::create_dir_all(&d).unwrap();
-    d
+    // spelled as wisp spells a home (ADR-0071): the Windows runner's `%TEMP%` is `C:\Users\RUNNER~1\…`
+    wisp_proc::plain_path_blocking(d)
 }
 
 fn git(at: &Path, args: &[&str]) -> String {
@@ -59,7 +60,9 @@ async fn only_a_sandbox_takes_a_seed_and_its_setup_runs_once() {
     let sb = TestApp::new().with(SandboxPlugin { inside: Some(true), home: Some(home.clone()) }).service(wisp_proc::local()).start().await;
     let out = sb.call(Caller::user(), "sandbox.seed", args.clone()).await.unwrap();
     let cwd = PathBuf::from(out["cwd"].as_str().unwrap());
-    assert_eq!(cwd, home.join("code/my-app"));
+    assert_eq!(cwd, home.join("code").join("my-app"));
+    // one separator, the OS's: a Windows folder is never joined with '/' (CI 9ea69e14 expected `…\code/my-app`)
+    assert!(cfg!(not(windows)) || !out["cwd"].as_str().unwrap().contains('/'), "{out}");
     assert_eq!(std::fs::read_to_string(cwd.join("app.js")).unwrap(), "one\ntwo, not committed\n", "the uncommitted change came along");
     assert_eq!(git(&cwd, &["rev-parse", "--abbrev-ref", "HEAD"]).trim(), "fix");
     assert_eq!(git(&cwd, &["remote", "get-url", "origin"]).trim(), "git@github.com:me/app.git");
@@ -135,7 +138,7 @@ async fn only_a_sandbox_takes_an_upload_and_a_seed_reads_it_by_key() {
     sb.serve(Caller::user(), upload("k1", "patch", patch.into_bytes())).await.unwrap();
     let out = sb.call(Caller::user(), "sandbox.seed", json!({ "name": "my app", "key": "k1", "branch": "fix" })).await.unwrap();
     let cwd = PathBuf::from(out["cwd"].as_str().unwrap());
-    assert_eq!(cwd, home.join("code/my-app"));
+    assert_eq!(cwd, home.join("code").join("my-app"));
     assert_eq!(std::fs::read_to_string(cwd.join("app.js")).unwrap(), "one\ntwo, not committed\n");
     assert_eq!(std::fs::read_to_string(cwd.join("brand-new.txt")).unwrap(), "not committed, not even added\n");
     assert_eq!(git(&cwd, &["rev-parse", "--abbrev-ref", "HEAD"]).trim(), "fix");

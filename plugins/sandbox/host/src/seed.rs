@@ -41,7 +41,7 @@ async fn run(
 
 /// `~/.sandbox/incoming`: uploads waiting for their `sandbox.seed` (ADR-0060).
 fn incoming(home: &Path) -> PathBuf {
-    home.join(".sandbox/incoming")
+    home.join(".sandbox").join("incoming")
 }
 
 /// An upload's bytes (`POST /api/sandbox/seed/<key>/<part>`), kept for `sandbox.seed {key}`.
@@ -97,7 +97,7 @@ async fn bundle_and_patch(home: &Path, name: &str, a: &api::SeedArgs) -> Result<
     }
     let bytes =
         base64::engine::general_purpose::STANDARD.decode(a.bundle.as_bytes()).map_err(|_| WireError::invalid("the bundle isn't base64"))?;
-    let bundle = home.join(format!(".sandbox/{name}.bundle"));
+    let bundle = home.join(".sandbox").join(format!("{name}.bundle"));
     if let Some(p) = bundle.parent() {
         let _ = tokio::fs::create_dir_all(p).await;
     }
@@ -147,18 +147,18 @@ pub async fn seed(ctx: &Ctx, home: &Path, a: &api::SeedArgs) -> Result<api::Seed
     // what it was when it came, new files too: a delegate's changes go back as the difference from this (no commit
     // made, no ref moved, the folder's index untouched)
     let base = tree_of(&proc, &dir).await.map_err(|e| WireError::internal(format!("the project's state: {e}")))?;
-    let _ = tokio::fs::write(home.join(format!(".sandbox/base-{name}")), base).await;
+    let _ = tokio::fs::write(home.join(".sandbox").join(format!("base-{name}")), base).await;
     let setup = setup_once(&proc, home, &dir, &name).await;
     Ok(api::Seeded { cwd: dir.display().to_string(), setup })
 }
 
 /// The project's `.wisp/sandbox.sh`, the first time this sandbox gets the project (a mark in `~/.sandbox`).
 async fn setup_once(proc: &Proc, home: &Path, dir: &Path, name: &str) -> Option<String> {
-    let script = dir.join(".wisp/sandbox.sh");
+    let script = dir.join(".wisp").join("sandbox.sh");
     if !tokio::fs::metadata(&script).await.is_ok_and(|m| m.is_file()) {
         return None;
     }
-    let mark: PathBuf = home.join(format!(".sandbox/setup-{name}"));
+    let mark: PathBuf = home.join(".sandbox").join(format!("setup-{name}"));
     if tokio::fs::metadata(&mark).await.is_ok() {
         return None;
     }
@@ -179,7 +179,7 @@ pub async fn patch(ctx: &Ctx, home: &Path, cwd: &str) -> Result<api::Patch> {
     if !dir.starts_with(home.join("code")) {
         return Err(WireError::invalid("only a project under ~/code has changes to give back"));
     }
-    let base = tokio::fs::read_to_string(home.join(format!(".sandbox/base-{name}")))
+    let base = tokio::fs::read_to_string(home.join(".sandbox").join(format!("base-{name}")))
         .await
         .map_err(|_| WireError::not_found("That project didn't come in through a seed."))?;
     // new files count: the folder's whole state now, through a scratch index
