@@ -91,6 +91,22 @@ describe('ListRow', () => {
     });
   }
 
+  for (const look of ['android', 'ios'] as const) {
+    it(`${look}_a_feed_rows_time_is_its_own_trailing_cell_never_inside_the_pills`, () => {
+      // r285: in the pills the time was pinned over the status pill (Android 390: '30m' on 'Finished')
+      as(look, () => <ListRow layout="feed" title="Feed" sub={<Text>sub</Text>} pills={<Text>Finished</Text>} time={<span data-kit="time">30m</span>} />);
+      const row = q('[data-kit="list-row"]');
+      expect(row?.querySelector(':scope > [data-kit="time"]')?.textContent).toBe('30m');
+      expect(q('[data-kit="list-row-pills"] [data-kit="time"]')).toBeNull();
+    });
+  }
+
+  it('the_browser_feed_row_keeps_its_time_last_in_the_pills_as_v1', () => {
+    mount(() => <ListRow layout="feed" title="Feed" pills={<Text>Finished</Text>} time={<span data-kit="time">30m</span>} />);
+    expect(q('[data-kit="list-row-pills"] > [data-kit="time"]')?.textContent).toBe('30m');
+    expect(q('[data-kit="list-row"] > [data-kit="time"]')).toBeNull();
+  });
+
   it('ios_draws_the_chevron_only_where_opening_pushes_a_page', () => {
     as('ios', () => (
       <>

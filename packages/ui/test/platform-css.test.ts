@@ -91,3 +91,15 @@ test('nav_labels_and_bar_titles_never_wrap', () => {
     for (const [sel, body] of titles) expect(body, sel).not.toMatch(/white-space:\s*(normal|pre-wrap)|line-clamp/);
   }
 });
+
+test('a_feed_rows_time_and_pills_each_have_their_own_line_in_one_trailing_column', () => {
+  // r285: the time sat on the status pill; now line 1 holds the time, line 2 the pills, both in column 3, the title stops before it
+  for (const s of sheets) {
+    const R = `:root[data-platform='${s.look}'] [data-kit='list-row'][data-layout='feed']`;
+    const body = (sel: string): string => rules(s.css).filter(([x]) => x.split(',').some((one) => one.trim() === sel)).map(([, b]) => b).join(';');
+    expect(body(`${R} > [data-kit='time']`), s.look).toMatch(/grid-column: 3; grid-row: 1;/);
+    expect(body(`${R} > [data-kit='time']`), s.look).not.toMatch(/position: absolute/);
+    expect(body(`${R}[data-time][data-row-lines] > [data-kit='list-row-pills']`), s.look).toMatch(/grid-column: 3; grid-row: 2;/);
+    expect(body(`${R} > [data-kit='list-row-title']`), s.look).toMatch(/grid-column: 2;/);
+  }
+});

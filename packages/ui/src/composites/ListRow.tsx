@@ -201,8 +201,10 @@ function FeedRow(props: ListRowProps & { readonly partName: PartName }): JSX.Ele
       {props.foot}
       <div data-kit="list-row-pills" data-part={named(props, p(), 'pills')}>
         {props.pills}
-        {props.time}
+        <Show when={!phone()}>{props.time}</Show>
       </div>
+      {/* on a phone the time is the row's own trailing cell: its line over the pills' line, never on them (r285) */}
+      <Show when={phone()}>{props.time}</Show>
       {props.actions}
     </div>
   );

@@ -317,12 +317,19 @@
     color: var(--on-surface-var);
   }
   :root[data-platform='android'] [data-kit='list-row-time'],
-  :root[data-platform='android'] [data-kit='list-row'][data-layout='feed'] > [data-kit='list-row-pills'] > [data-kit='time'] { font: var(--type-label-s); letter-spacing: var(--track-label-s); color: var(--on-surface-var); }
+  :root[data-platform='android'] [data-kit='list-row'][data-layout='feed'] > [data-kit='time'] { font: var(--type-label-s); letter-spacing: var(--track-label-s); color: var(--on-surface-var); }
   /* trailing supporting text: the time on the first line's end, the pills under it */
   :root[data-platform='android'] [data-kit='list-row'][data-time] > [data-kit='list-row-time'] { grid-column: 3 / 5; grid-row: 1; align-self: start; }
   :root[data-platform='android'] [data-kit='list-row'][data-time] > [data-kit='list-row-pills'] { grid-column: 3 / 5; grid-row: 1; align-self: end; justify-content: flex-end; }
   :root[data-platform='android'] [data-kit='list-row'][data-time][data-row-lines='1'] > [data-kit='list-row-pills'] { grid-column: 3; align-self: center; }
   :root[data-platform='android'] [data-kit='list-row'][data-time][data-row-lines='1'] > [data-kit='list-row-time'] { grid-column: 4; align-self: center; }
+  /* a feed row (the Tasks list): the trailing column holds the time on the title's line and the pills on the next,
+     each on its own line, right-aligned, so the time never sits on a pill (r285); the title stops at that column */
+  :root[data-platform='android'] [data-kit='list-row'][data-layout='feed'] > [data-kit='list-row-title'] { grid-column: 2; padding-right: var(--space-0); }
+  :root[data-platform='android'] [data-kit='list-row'][data-layout='feed'] > [data-kit='time'] { grid-column: 3; grid-row: 1; justify-self: end; align-self: center; text-align: end; white-space: nowrap; font-variant-numeric: tabular-nums; }
+  :root[data-platform='android'] [data-kit='list-row'][data-layout='feed'] > [data-kit='list-row-pills'],
+  :root[data-platform='android'] [data-kit='list-row'][data-layout='feed'][data-time] > [data-kit='list-row-pills'],
+  :root[data-platform='android'] [data-kit='list-row'][data-layout='feed'][data-time][data-row-lines] > [data-kit='list-row-pills'] { grid-column: 3; grid-row: 2; align-self: center; justify-content: flex-end; }
   :root[data-platform='android'] [data-kit='list-row'][data-interactive]:hover,
   :root[data-platform='android'] [data-kit='list-row'][data-interactive]:active { background: color-mix(in srgb, var(--on-surface) calc(var(--state-pressed) * 100%), transparent); }
   :root[data-platform='android'] [data-kit='list-row'][data-current] { background: var(--surface-c2); }
