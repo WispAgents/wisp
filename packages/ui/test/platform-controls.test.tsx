@@ -5,10 +5,10 @@
 // M3 switch's handle icon, the floated label, a long Select's sheet) from the components. The browser's render is byte
 // for byte what it was before the variants landed (test/goldens/platform-browser-controls.json), and the browser never
 // fetches the phone halves.
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import goldenRaw from './goldens/platform-browser-controls.json?raw';
 import { createSignal, type JSX } from 'solid-js';
-import { mount, tick } from './helpers.tsx';
+import { frame, mount, tick } from './helpers.tsx';
 import { controlScenes, FEW, MANY } from './platform-scenes-controls.tsx';
 import { Field, GestureHostProvider, Input, PlatformLookProvider, SHEET_AFTER, Select, Switch, Tabs, TextArea, selectSheet, type GestureHost, type Haptic, type Look } from '../src/index.ts';
 import { phoneOverlays } from '../src/controls/phone-part.ts';
@@ -309,10 +309,16 @@ describe('Select', () => {
 
   it('a_short_list_on_a_phone_is_the_same_menu_at_the_button', async () => {
     as('android', () => <Select items={FEW} value="codex" onChange={noop} aria-label="Harness" />);
-    q('[data-kit="select-trigger"]')?.click();
-    await tick(20);
+    const trigger = q('[data-kit="select-trigger"]');
+    trigger?.click();
+    // the press shows within its frame, whether the machine is already bound or still loading (then the plain button
+    // shows it pressed and the machine replays the press once it binds)
+    await frame();
+    expect(trigger?.getAttribute('aria-expanded')).toBe('true');
+    // wait for the machine itself, not for a guessed number of milliseconds
+    await import('../src/controls/select-machine.tsx');
+    await vi.waitFor(() => expect(q('[data-kit="listbox"]')?.getAttribute('data-state')).toBe('open'));
     expect(q('[data-kit="select-sheet"]')).toBeNull();
-    expect(q('[data-kit="listbox"]')).not.toBeNull();
   });
 
   for (const look of ['android', 'ios'] as const) {
@@ -355,16 +361,15 @@ describe('Select', () => {
     as('android', () => <Select items={items()} value="codex" onChange={noop} aria-label="Model" />);
     const trigger = (): HTMLElement | null => q('[data-kit="select-trigger"]');
     trigger()?.click();
-    await tick(30);
-    expect(q('[data-kit="listbox"]')).not.toBeNull();
+    await import('../src/controls/select-machine.tsx');
+    await vi.waitFor(() => expect(q('[data-kit="listbox"]')?.getAttribute('data-state')).toBe('open'));
     trigger()?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
     setItems(MANY);
     await tick(10);
     trigger()?.click();
     expect(trigger()?.getAttribute('aria-expanded')).toBe('true');
     await phoneOverlays.load();
-    await tick(30);
-    expect(q('[data-kit="select-sheet"]')).not.toBeNull();
+    await vi.waitFor(() => expect(q('[data-kit="select-sheet"]')).not.toBeNull());
     setItems(FEW);
     await tick(10);
     expect(q('[data-kit="select-sheet"]')).toBeNull();

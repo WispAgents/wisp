@@ -71,6 +71,11 @@ export function Select(props: SelectProps): JSX.Element {
   });
   const [api, setApi] = createSignal<Accessor<SelectApi>>();
   const [pending, setPending] = createSignal<Replay>();
+  // a list that grows into a sheet before its early press found the machine: that press is gone with the menu it was
+  // for (the machine never mounts to replay it), so the button doesn't stay open and a later shrink replays nothing
+  createEffect(() => {
+    if (sheet()) setPending(undefined);
+  });
   const bound = (): SelectApi | undefined => api()?.();
   const part = (): PartName => props.part ?? 'ui.select';
   const invalid = (): boolean => Boolean(props.invalid ?? field()?.invalid);
@@ -139,9 +144,16 @@ export function Select(props: SelectProps): JSX.Element {
       <Show when={!sheet() && machine.ready()}>
         {(m) => {
           const M = m().SelectMachine;
-          // a list that grows into a sheet unmounts the machine: the button goes back to its plain props
+          // the early press, taken now (the machine replays it on mount); once bound it's the machine's, so it no longer
+          // holds the plain button open: a list that grows into a sheet unmounts the machine and the button goes back to
+          // its plain props, closed
+          const early = untrack(pending);
           onCleanup(() => setApi(undefined));
-          return <M base={withChoose} id={id} invalid={invalid()} triggerId={triggerId()} part={part()} bind={(a) => setApi(() => a)} pending={untrack(pending)} />;
+          const bind = (a: Accessor<SelectApi>): void => {
+            setApi(() => a);
+            setPending(undefined);
+          };
+          return <M base={withChoose} id={id} invalid={invalid()} triggerId={triggerId()} part={part()} bind={bind} pending={early} />;
         }}
       </Show>
       <Show when={sheet() && sheetOpen() && phoneOverlays.ready()}>
