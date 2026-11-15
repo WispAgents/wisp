@@ -32,8 +32,10 @@ pub struct SandboxPlugin {
 /// How often task-owned sandboxes are looked at (is their task still there?).
 const OWNERS_MS: u64 = 60_000;
 
+/// `$HOME` (else the temp folder), spelled as every path in wisp is (ADR-0071: an 8.3 short name spelled out), so a
+/// project under `~/code` compares with the task folders runtime stores. Startup only (blocking).
 fn home() -> std::path::PathBuf {
-    std::env::var_os("HOME").map_or_else(std::env::temp_dir, std::path::PathBuf::from)
+    wisp_proc::plain_path_blocking(std::env::var_os("HOME").map_or_else(std::env::temp_dir, std::path::PathBuf::from))
 }
 
 async fn info(ctx: &Ctx, call: &wisp_kernel::Call) -> Result<api::Info> {
@@ -168,7 +170,7 @@ impl Plugin for SandboxPlugin {
 
     fn setup(&self, s: &mut Setup) -> Result<()> {
         let inside = self.inside.unwrap_or_else(|| in_sandbox(&|k| std::env::var(k).ok()));
-        let at = self.home.clone().unwrap_or_else(home);
+        let at = self.home.clone().map_or_else(home, wisp_proc::plain_path_blocking);
         s.command::<api::Seed, _, _>(move |ctx, _call, a| {
             let at = at.clone();
             async move {
@@ -179,8 +181,8 @@ impl Plugin for SandboxPlugin {
                 seed::seed(&ctx, &at, &a).await
             }
         });
-        s.route(seed_route(inside, self.home.clone().unwrap_or_else(home)));
-        let at = self.home.clone().unwrap_or_else(home);
+        s.route(seed_route(inside, self.home.clone().map_or_else(home, wisp_proc::plain_path_blocking)));
+        let at = self.home.clone().map_or_else(home, wisp_proc::plain_path_blocking);
         s.command::<api::PatchCmd, _, _>(move |ctx, _call, a| {
             let at = at.clone();
             async move {

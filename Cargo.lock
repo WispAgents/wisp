@@ -4239,6 +4239,7 @@ dependencies = [
  "wisp-crew-api",
  "wisp-events-api",
  "wisp-kernel",
+ "wisp-proc",
  "wisp-resources-api",
  "wisp-runtime-api",
  "wisp-store",

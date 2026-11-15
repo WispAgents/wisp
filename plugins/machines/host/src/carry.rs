@@ -245,10 +245,12 @@ pub(crate) async fn take_in(ctx: &Ctx, a: &api::TakeInArgs) -> wisp_kernel::Resu
 /// `machines.changes` (on the machine): a carried copy's changes since it came in, new files too.
 pub(crate) async fn changes(ctx: &Ctx, cwd: &str) -> wisp_kernel::Result<api::Changes> {
     let proc = ctx.service::<Proc>()?;
-    if !core::is_copy(&plugin_dir(ctx)?, cwd) {
+    // spelled as the plugin's folder is (ADR-0071: the home is, `services::home`), so either spelling of a copy is one
+    let cwd = wisp_proc::plain_str(cwd).await;
+    if !core::is_copy(&plugin_dir(ctx)?, &cwd) {
         return Err(WireError::forbidden(core::not_a_copy()));
     }
-    let dir = PathBuf::from(cwd);
+    let dir = PathBuf::from(&cwd);
     let base = tokio::fs::read_to_string(dir.join(".git").join(core::BASE_FILE))
         .await
         .map_err(|_| WireError::not_found("That copy didn't come in through wisp."))?;

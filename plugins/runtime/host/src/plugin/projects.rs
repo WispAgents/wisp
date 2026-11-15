@@ -77,7 +77,10 @@ pub(super) fn project_run(s: &mut Setup, projects: Arc<StoredKind>) {
         let projects = projects.clone();
         async move {
             let list = projects.specs().await.unwrap_or_default();
-            let (name, p) = crate::kinds::project_for(&list, &a.cwd)
+            // spelled as the projects' paths are (ADR-0071): `C:\Users\RUNNER~1\…\proj\src` is in the project stored
+            // as `C:\Users\runneradmin\…\proj` (CI 8bb8ccd0 refused it "isn't in a declared project")
+            let cwd = wisp_proc::plain_str(&a.cwd).await;
+            let (name, p) = crate::kinds::project_for(&list, &cwd)
                 .ok_or_else(|| WireError::not_found(format!("{} isn't in a declared project (projects: in a formula)", a.cwd)))?;
             if p.run.is_empty() {
                 return Err(WireError::invalid(format!("{name} has no run scripts (run: in its project)")));

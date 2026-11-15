@@ -45,7 +45,9 @@ use serde_json::{Value, json};
 fn main() {
     let argv: Vec<String> = std::env::args().skip(1).collect();
     let user_home = services::user_home().unwrap_or_else(|| PathBuf::from("."));
-    let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+    // the CLI's folder as every path in wisp is spelled (ADR-0071): `wisp "task"` in `C:\Users\RUNNER~1\…` runs in
+    // the folder its project stores as `C:\Users\runneradmin\…`
+    let cwd = services::plain(std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")));
     let parsed = match args::parse(&argv, std::env::var("WISP_PORT").ok().as_deref(), &user_home, &cwd) {
         Ok(p) => p,
         Err(e) => die(&e.to_string()),

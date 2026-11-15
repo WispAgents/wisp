@@ -39,6 +39,12 @@ impl ResourceKind for TriggerKind {
     fn read<'a>(&'a self, call: &'a Call) -> BoxFuture<'a, Result<Vec<Resource>>> {
         self.inner.read(call)
     }
+    /// Its project's folder spelled as a task's is (ADR-0071: an 8.3 short name spelled out), so a trigger on
+    /// `C:\Users\RUNNER~1\…\proj` hears the tasks in `C:\Users\runneradmin\…\proj` (CI 8bb8ccd0: `trigger:after`
+    /// never fired). Its `match.project` too.
+    fn normalize(&self, spec: &mut Value) {
+        spell_project(spec);
+    }
     fn check(&self, r: &Resource) -> Vec<String> {
         match serde_json::from_value::<TriggerSpec>(r.spec.clone()) {
             Ok(s) => wisp_automations_api::spec::check(&s),
@@ -360,6 +366,27 @@ pub fn register(s: &mut Setup, engine: &Shared) {
         });
         Ok(())
     });
+}
+
+/// A trigger spec's `project` and `match.project` (one folder or a list) as `wisp_proc::plain_path` spells them.
+fn spell_project(spec: &mut Value) {
+    let spell = |v: &mut Value| match v {
+        Value::String(p) if !p.trim().is_empty() => *p = wisp_proc::plain_str_blocking(p),
+        Value::Array(list) => {
+            for x in list {
+                if let Value::String(p) = x {
+                    *p = wisp_proc::plain_str_blocking(p);
+                }
+            }
+        }
+        _ => {}
+    };
+    if let Some(p) = spec.get_mut("project") {
+        spell(p);
+    }
+    if let Some(p) = spec.get_mut("match").and_then(|m| m.get_mut("project")) {
+        spell(p);
+    }
 }
 
 #[cfg(test)]

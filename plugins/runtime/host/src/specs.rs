@@ -331,14 +331,20 @@ pub async fn folder(home: Option<&std::path::Path>, a: &mut StartArgs) -> Result
     if !tokio::fs::metadata(dir.path()).await.is_ok_and(|m| m.is_dir()) {
         return Err(WireError::invalid(format!("Not a project folder: {cwd} (it isn't on this computer; pick a project that is)")));
     }
-    // one folder, one spelling: an 8.3 short name in it (`C:\Users\RUNNER~1\…` from `%TEMP%`) spelled out, as a
-    // project's stored path is (`kinds::project::tidy_project`), so the task's folder, its project and its worktrees
-    // compare equal. Unix: no such names, nothing changes.
-    let long = wisp_proc::long_path(dir.path()).await;
-    if long != dir.path() {
-        a.cwd = Some(long.display().to_string());
-    }
     Ok(())
+}
+
+/// One folder, one spelling (ADR-0071): the task's folder and its extra folders as `wisp_proc::plain_path` spells
+/// them (an 8.3 short name in them, `C:\Users\RUNNER~1\…` from `%TEMP%`, spelled out), before anything compares
+/// them: its project (`defaults`, whose path is stored that way, `kinds::project::tidy_project`), its worktrees, the
+/// triggers watching it. Unix: no such names, nothing changes.
+async fn spell_folders(a: &mut StartArgs) {
+    if let Some(c) = a.cwd.as_deref().filter(|c| !c.trim().is_empty()) {
+        a.cwd = Some(wisp_proc::plain_str(c).await);
+    }
+    for d in &mut a.dirs {
+        *d = wisp_proc::plain_str(d).await;
+    }
 }
 
 /// The effective formula, stored once per content: its hash is what the spec keeps.
@@ -389,6 +395,7 @@ pub async fn prepare(
     kinds: Option<&crate::kinds::Kinds>,
     mut a: StartArgs,
 ) -> Result<Prepared> {
+    spell_folders(&mut a).await;
     defaults(&mut a, kinds).await;
     let asked = a.agent.clone().unwrap_or_default();
     // the spec keeps what was asked; the profile's values fill the task, not the spec (ADR-0029:

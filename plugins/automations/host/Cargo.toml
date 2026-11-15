@@ -19,6 +19,7 @@ tokio.workspace = true
 tracing.workspace = true
 jiff.workspace = true
 wisp-kernel.workspace = true
+wisp-proc.workspace = true
 wisp-runtime-api.workspace = true
 wisp-events-api.workspace = true
 wisp-crew-api.workspace = true

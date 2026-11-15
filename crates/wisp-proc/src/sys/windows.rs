@@ -248,8 +248,9 @@ pub fn take_ctrl_c() {
 }
 
 /// `p` with every 8.3 short name in it spelled out (`C:\Users\RUNNER~1` → `C:\Users\runneradmin`), nothing else
-/// changed (links aren't followed, `\\?\` isn't added). `p` itself when it doesn't exist or isn't UTF-16-able.
-pub fn long_path(p: &std::path::Path) -> std::path::PathBuf {
+/// changed (links aren't followed, `\\?\` isn't added). `None` when it doesn't exist (`canon::plain_path` then
+/// spells out the part of it that does).
+pub fn long_path(p: &std::path::Path) -> Option<std::path::PathBuf> {
     use std::os::windows::ffi::{OsStrExt as _, OsStringExt as _};
     let wide: Vec<u16> = p.as_os_str().encode_wide().chain(std::iter::once(0)).collect();
     let mut buf = vec![0u16; 512];
@@ -260,11 +261,11 @@ pub fn long_path(p: &std::path::Path) -> std::path::PathBuf {
         let n = unsafe { GetLongPathNameW(wide.as_ptr(), buf.as_mut_ptr(), cap) };
         let n = n as usize;
         if n == 0 {
-            return p.to_owned();
+            return None;
         }
         if n < buf.len() {
             buf.truncate(n);
-            return std::path::PathBuf::from(std::ffi::OsString::from_wide(&buf));
+            return Some(std::path::PathBuf::from(std::ffi::OsString::from_wide(&buf)));
         }
         // too small: `n` is the size it needs, NUL included
         buf.resize(n, 0);

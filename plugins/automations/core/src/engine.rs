@@ -191,6 +191,24 @@ pub fn glob(p: &str, v: &str) -> bool {
 }
 
 /// Whether a filter's wanted value takes the payload's.
+/// A full folder: POSIX `/…`, a Windows drive `C:\…` (or `C:/…`) or a UNC share `\\srv\share`.
+fn is_folder(w: &str) -> bool {
+    let b = w.as_bytes();
+    let drive = b.len() >= 3 && b[0].is_ascii_alphabetic() && b[1] == b':' && matches!(b[2], b'/' | b'\\');
+    // a Windows pattern (`C:\work\*`) is still a glob, as it was
+    w.starts_with('/') || (!w.contains('*') && (w.starts_with(r"\\") || drive))
+}
+
+/// `g` is the folder `w` or inside it, by parts: on Windows either separator and any case (as NTFS reads names). Both
+/// are spelled the same way already (a trigger's project and a task's folder are, ADR-0071).
+fn folder_holds(w: &str, g: &str) -> bool {
+    let windows = !w.starts_with('/');
+    let key = |x: &str| if windows { x.replace('\\', "/").to_lowercase() } else { x.to_owned() };
+    let (w, g) = (key(w), key(g));
+    let r = w.trim_end_matches('/');
+    g == r || g.starts_with(&format!("{r}/"))
+}
+
 fn takes(key: &str, want: &Value, got: Option<&Value>) -> bool {
     let Some(got) = got else { return false };
     match want {
@@ -203,10 +221,9 @@ fn takes(key: &str, want: &Value, got: Option<&Value>) -> bool {
                 };
                 if key == "keyword" || key == "text" {
                     g.to_lowercase().contains(&w.to_lowercase())
-                } else if w.starts_with('/') {
+                } else if is_folder(w) {
                     // a path: itself or anything under it
-                    let r = w.trim_end_matches('/');
-                    g == r || g.starts_with(&format!("{r}/"))
+                    folder_holds(w, &g)
                 } else {
                     glob(w, &g)
                 }

@@ -29,7 +29,7 @@ pub mod sim;
 mod sys;
 mod tree;
 
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -37,7 +37,10 @@ use serde::{Deserialize, Serialize};
 use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 
-pub use canon::{canonical, canonical_blocking, strip_verbatim, without_verbatim};
+pub use canon::{
+    canonical, canonical_blocking, plain_path, plain_path_blocking, plain_str, plain_str_blocking, spell_out_with, strip_verbatim,
+    within_blocking, within_with, without_verbatim,
+};
 pub use child::{Child, ChildControl, ChildHandle};
 pub use tokio_util::sync::CancellationToken as Scope;
 
@@ -309,25 +312,6 @@ pub fn nursery() -> std::io::Result<()> {
 /// command that answers Ctrl-C itself (`wisp "task"` attached). Unix: nothing to do.
 pub fn take_ctrl_c() {
     sys::take_ctrl_c();
-}
-
-/// `p` with Windows' 8.3 short names spelled out (`C:\Users\RUNNER~1\x` is `C:\Users\runneradmin\x`, the name
-/// `%TEMP%` often has), links not followed: one folder, one spelling, so a folder given short and the same one met
-/// long (a canonical path, a worktree under the home) compare equal. `p` as it is when it doesn't exist, and on Unix.
-/// Blocking: one file-system call.
-#[must_use]
-pub fn long_path_blocking(p: impl AsRef<Path>) -> PathBuf {
-    sys::long_path(p.as_ref())
-}
-
-/// [`long_path_blocking`], without blocking a runtime thread.
-pub async fn long_path(p: impl AsRef<Path>) -> PathBuf {
-    let p = p.as_ref().to_owned();
-    if cfg!(not(windows)) {
-        return p;
-    }
-    let back = p.clone();
-    tokio::task::spawn_blocking(move || sys::long_path(&p)).await.unwrap_or(back)
 }
 
 /// Spawns `cmd`, a program meant to outlive this process (the desktop app, a browser), outside this process's

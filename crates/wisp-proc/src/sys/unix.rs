@@ -187,8 +187,9 @@ pub fn nursery() -> io::Result<()> {
 pub fn take_ctrl_c() {}
 
 /// Unix has no short names: `p` as it is.
-pub fn long_path(p: &std::path::Path) -> std::path::PathBuf {
-    p.to_owned()
+#[allow(clippy::unnecessary_wraps, reason = "Windows' says when the path isn't there")]
+pub fn long_path(p: &std::path::Path) -> Option<std::path::PathBuf> {
+    Some(p.to_owned())
 }
 
 #[cfg(test)]

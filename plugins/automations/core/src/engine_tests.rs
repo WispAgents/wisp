@@ -363,3 +363,25 @@ fn a_chat_trigger_with_users_starts_nothing_for_someone_not_listed_and_reads_the
     );
     assert_eq!(admit("t", &s, &mut State::default(), msg("U1", "hello"), &w(0)), Decision::Nothing, "no keyword");
 }
+
+/// A trigger on a Windows project hears the tasks in it and in its subfolders, either separator, any case (CI
+/// 8bb8ccd0: `C:\…` paths went to `glob`, an exact match, so a task one folder down, or spelled `c:/…`, was missed).
+#[test]
+fn a_trigger_on_a_windows_project_hears_its_tasks_and_their_subfolders() {
+    let s = TriggerSpec { project: r"C:\Users\runneradmin\t\proj".into(), ..spec() };
+    let at = |cwd: &str, n: &str| {
+        let e = TriggerEvent { payload: json!({ "cwd": cwd }), ..ev(n) };
+        matches!(admit("t", &s, &mut State::default(), e, &w(0)), Decision::Start(_))
+    };
+    assert!(at(r"C:\Users\runneradmin\t\proj", "1"));
+    assert!(at(r"C:\Users\runneradmin\t\proj\src", "2"));
+    assert!(at("c:/users/runneradmin/t/proj/src", "3"), "either separator, any case");
+    assert!(!at(r"C:\Users\runneradmin\t\proj2", "4"), "a sibling with a shared prefix");
+    assert!(!at(r"C:\Users\runneradmin\t", "5"));
+    let glob_spec = TriggerSpec { project: r"C:\work\*".into(), ..spec() };
+    let e = TriggerEvent { payload: json!({ "cwd": r"C:\work\api" }), ..ev("7") };
+    assert!(matches!(admit("t", &glob_spec, &mut State::default(), e, &w(0)), Decision::Start(_)), "a Windows pattern is a glob");
+    let unc = TriggerSpec { project: r"\\srv\share\proj".into(), ..spec() };
+    let e = TriggerEvent { payload: json!({ "cwd": r"\\srv\share\proj\x" }), ..ev("6") };
+    assert!(matches!(admit("t", &unc, &mut State::default(), e, &w(0)), Decision::Start(_)));
+}

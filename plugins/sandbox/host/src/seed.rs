@@ -173,8 +173,9 @@ async fn setup_once(proc: &Proc, home: &Path, dir: &Path, name: &str) -> Option<
 /// `sandbox.patch` (inside a sandbox): what changed in a project since it came in, new files too, as one binary diff.
 pub async fn patch(ctx: &Ctx, home: &Path, cwd: &str) -> Result<api::Patch> {
     let proc = ctx.service::<Proc>()?;
-    let dir = PathBuf::from(cwd);
-    let name = core::name_of(cwd);
+    // spelled as the home is (ADR-0071): the task's folder may come in either spelling of one folder
+    let dir = wisp_proc::plain_path(cwd).await;
+    let name = core::name_of(&dir.to_string_lossy());
     if !dir.starts_with(home.join("code")) {
         return Err(WireError::invalid("only a project under ~/code has changes to give back"));
     }

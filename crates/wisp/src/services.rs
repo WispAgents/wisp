@@ -11,16 +11,27 @@ use tokio::sync::Mutex;
 use wisp_kernel::services::{Net, NetRequest, NetResponse, NetService, NotifyService, Paths, Secrets, SecretsService};
 use wisp_kernel::{App, BoxFuture, Clock, Result, WireError};
 
-/// `WISP_HOME`, else `~/.wisp`.
+/// `WISP_HOME`, else `~/.wisp`; spelled once, here, as every path in wisp is ([`plain`]).
 pub fn home(env_home: Option<&str>, user_home: Option<PathBuf>) -> PathBuf {
-    match env_home.filter(|h| !h.is_empty()) {
+    plain(match env_home.filter(|h| !h.is_empty()) {
         Some(h) => PathBuf::from(h),
         None => user_home.unwrap_or_else(|| PathBuf::from(".")).join(".wisp"),
-    }
+    })
 }
 
+/// `HOME`, else `USERPROFILE`, spelled as every path in wisp is ([`plain`]).
 pub fn user_home() -> Option<PathBuf> {
-    std::env::var_os("HOME").or_else(|| std::env::var_os("USERPROFILE")).map(PathBuf::from)
+    std::env::var_os("HOME").or_else(|| std::env::var_os("USERPROFILE")).map(|h| plain(PathBuf::from(h)))
+}
+
+/// One folder, one spelling (ADR-0071): a path that enters wisp (its home, the user's, the CLI's folder) with
+/// Windows' 8.3 short names spelled out (`%TEMP%` is often `C:\Users\RUNNER~1\…`), so every folder wisp derives
+/// from it (task copies, worktrees, scratch folders) and every folder a task stores compare as one. Startup only
+/// (blocking: one file-system call on Windows; none elsewhere).
+pub fn plain(p: PathBuf) -> PathBuf {
+    #[cfg(feature = "proc")]
+    let p = wisp_proc::plain_path_blocking(p);
+    p
 }
 
 type Data = BTreeMap<String, BTreeMap<String, String>>;
