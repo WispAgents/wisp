@@ -10,6 +10,8 @@
 //!   `FAKE_FAIL=1`      exit 1 with an error on stderr, no result
 //!   `FAKE_LIMIT_ONCE`  a file: the first run with a prompt hits a usage limit (stderr, exit 1); later runs work
 //!   `FAKE_DELAY` / `FAKE_LINGER`  ms to wait before answering / after the result
+//!   `FAKE_GATE`        directory; a run whose prompt is `gate <name> …` (or has a `\n\ngate <name>` paragraph) waits
+//!                      until the file `<dir>/<name>` exists: the test holds the turn running until it creates it
 //!   `FAKE_REPLAY`      claude: print this .jsonl as its stream and exit (a recorded run)
 //!   `FAKE_CODEX_USAGE` a file: codex app-server's `account/rateLimits/read` answers its JSON as `rateLimits`
 //!   `FAKE_CLI_VERSION` what --version says (9.9.9); `FAKE_AUTH_PROFILE`, `FAKE_AUTH_FAIL` for `auth status --text`
@@ -45,6 +47,19 @@ fn env(k: &str) -> Option<String> {
 fn wait_ms(k: &str) {
     if let Some(ms) = env(k).and_then(|v| v.parse::<u64>().ok()) {
         std::thread::sleep(std::time::Duration::from_millis(ms));
+    }
+}
+
+/// `FAKE_GATE`: a gated run waits for its gate file (the test's release), checked every 20 ms: a condition, not a
+/// duration, so the turn runs exactly as long as the test needs however loaded the machine is.
+fn wait_gate(prompt: &str) {
+    let Some(dir) = env("FAKE_GATE") else { return };
+    let gated = prompt.strip_prefix("gate ").or_else(|| prompt.split("\n\ngate ").nth(1));
+    if let Some(name) = gated.and_then(|r| r.split_whitespace().next()) {
+        let file = Path::new(&dir).join(name);
+        while !file.exists() {
+            std::thread::sleep(std::time::Duration::from_millis(20));
+        }
     }
 }
 
@@ -373,6 +388,7 @@ fn main() {
     // answers at once, or every `runtime.agents` paid FAKE_DELAY per probe (serve_mcp_tools' sweep took 274 s)
     if run {
         wait_ms("FAKE_DELAY");
+        wait_gate(&prompt);
     }
     let target = std::env::current_dir().unwrap_or_default().join("math.js");
     let before = std::fs::read_to_string(&target).unwrap_or_default();

@@ -285,3 +285,15 @@ pub async fn until_records(path: &Path, what: &str, f: impl Fn(&[Value]) -> bool
         tokio::time::sleep(Duration::from_millis(50)).await;
     }
 }
+
+/// The folder a fake run's `FAKE_GATE` gates live in (`gate <name> …` prompts wait for `<it>/<name>`).
+pub fn gates(dir: &Path) -> PathBuf {
+    let g = dir.join("gates");
+    std::fs::create_dir_all(&g).unwrap();
+    g
+}
+
+/// Lets the fake run gated on `name` go on (now, or as soon as it gets there).
+pub fn open_gate(gates: &Path, name: &str) {
+    std::fs::write(gates.join(name), "open").unwrap();
+}

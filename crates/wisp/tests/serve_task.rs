@@ -82,8 +82,9 @@ async fn serve_runs_a_task_through_the_fake_claude_to_finished() {
 #[tokio::test(flavor = "multi_thread")]
 async fn follow_up_queue_and_stop_keep_the_queue() {
     let dir = temp("serve-queue");
-    // each fake run takes 1.5 s, so a follow-up sent meanwhile queues
-    let (serve, port) = start_with(&dir, &[("FAKE_DELAY", "1500")]);
+    // the second turn's run waits on its gate (never opened: Stop ends it), so the third provably queues
+    let gates = common::gates(&dir);
+    let (serve, port) = start_with(&dir, &[("FAKE_GATE", gates.to_str().unwrap())]);
     let api = Api { http: reqwest::Client::new(), port, n: 0.into() };
     let made = api.cmd("runtime.create", json!({ "prompt": "first", "cwd": dir.join("proj"), "agent": "claude" })).await;
     let id = made["id"].as_str().unwrap().to_owned();
@@ -92,7 +93,7 @@ async fn follow_up_queue_and_stop_keep_the_queue() {
     // a follow-up starts a second turn in the same conversation
     // the turn has its result, but its CLI may still be on its way out (Lingering: Windows takes its time to end a
     // process): then the follow-up is queued and the CLI let go, and it starts as soon as the run has ended
-    let f = api.cmd("runtime.followUp", json!({ "id": id, "text": "second" })).await;
+    let f = api.cmd("runtime.followUp", json!({ "id": id, "text": "gate second" })).await;
     assert!(f["turnId"].is_string() || f["queued"].is_string(), "{f}");
     api.until(&id, "the second turn running", |t| t.len() == 2 && t[1]["status"] == "running").await;
     // another one while it runs waits in the queue
@@ -129,10 +130,11 @@ async fn activity(api: &Api, id: &str, turn: &str) -> Vec<String> {
 #[tokio::test(flavor = "multi_thread")]
 async fn a_question_asked_mid_turn_survives_a_restart_and_the_reply_answers_it() {
     let dir = temp("serve-ask");
-    // the fake agent works for 4 s: the question is asked while its turn runs
-    let (serve, port) = start_with(&dir, &[("FAKE_DELAY", "4000")]);
+    // the fake agent works until its gate opens (never: the restart ends it), so the question is asked while it runs
+    let gates = common::gates(&dir);
+    let (serve, port) = start_with(&dir, &[("FAKE_GATE", gates.to_str().unwrap())]);
     let api = Api { http: reqwest::Client::new(), port, n: 0.into() };
-    let made = api.cmd("runtime.create", json!({ "prompt": "hi", "cwd": dir.join("proj"), "agent": "claude" })).await;
+    let made = api.cmd("runtime.create", json!({ "prompt": "gate ask", "cwd": dir.join("proj"), "agent": "claude" })).await;
     let id = made["id"].as_str().unwrap().to_owned();
     let turn = made["turnId"].as_str().unwrap().to_owned();
     api.until(&id, "the turn running", |t| t.len() == 1 && t[0]["status"] == "running").await;
@@ -169,6 +171,7 @@ async fn a_question_asked_mid_turn_survives_a_restart_and_the_reply_answers_it()
     assert_eq!(api.turns(&id).await.len(), 1);
     // nothing asked: answering is refused
     assert_eq!(api.try_cmd("runtime.answer", json!({ "id": id, "text": "x" })).await["ok"], false);
+    common::open_gate(&gates, "ask");
     drop(serve);
 }
 
@@ -223,13 +226,15 @@ async fn always_allow_grants_the_same_action_for_the_rest_of_the_task() {
 #[tokio::test(flavor = "multi_thread")]
 async fn a_lead_delegates_to_its_team_and_reads_the_reports() {
     let dir = temp("serve-delegate");
-    let (serve, port) = start_with(&dir, &[("FAKE_DELAY", "1500")]);
+    // the lead's run and the child's wait on their gates: the lead runs while it delegates, the child stays busy
+    let gates = common::gates(&dir);
+    let (serve, port) = start_with(&dir, &[("FAKE_GATE", gates.to_str().unwrap())]);
     let api = Api { http: reqwest::Client::new(), port, n: 0.into() };
     let team = json!({ "wisp.runtime": { "subagents": [{ "name": "helper", "agent": "claude" }], "capped": { "mode": "edits" } } });
-    let made = api.cmd("runtime.create", json!({ "prompt": "lead", "cwd": dir.join("proj"), "agent": "claude", "ext": team })).await;
+    let made = api.cmd("runtime.create", json!({ "prompt": "gate lead", "cwd": dir.join("proj"), "agent": "claude", "ext": team })).await;
     let lead = made["id"].as_str().unwrap().to_owned();
     api.until(&lead, "the lead running", |t| t.len() == 1 && t[0]["status"] == "running").await;
-    let out = api.cmd("runtime.delegate", json!({ "id": lead, "tasks": [{ "subagent": "helper", "prompt": "do x" }, { "subagent": "nobody", "prompt": "y" }, { "subagent": "helper", "prompt": "" }] })).await;
+    let out = api.cmd("runtime.delegate", json!({ "id": lead, "tasks": [{ "subagent": "helper", "prompt": "gate child do x" }, { "subagent": "nobody", "prompt": "y" }, { "subagent": "helper", "prompt": "" }] })).await;
     assert!(out[0]["error"].is_null(), "{out}");
     assert_eq!(out[1]["error"], "No subagent named \"nobody\". The team: helper.");
     assert_eq!(out[2]["error"], "The task prompt is empty.");
@@ -240,11 +245,13 @@ async fn a_lead_delegates_to_its_team_and_reads_the_reports() {
     // the member is busy: a second task for it is refused until it's done
     let busy = api.cmd("runtime.delegate", json!({ "id": lead, "tasks": [{ "subagent": "helper", "prompt": "more" }] })).await;
     assert!(busy[0]["error"].as_str().unwrap().contains("still working"), "{busy}");
+    common::open_gate(&gates, "child");
     let reports = api.cmd("runtime.results", json!({ "id": lead, "ids": [], "wait": 30 })).await;
     assert_eq!(reports["reports"][0]["done"], true, "{reports}");
     assert_eq!(reports["reports"][0]["subagent"], "helper");
     let lt = made["turnId"].as_str().unwrap();
     assert!(activity(&api, &lead, lt).await.iter().any(|l| l == "Delegated to helper"));
+    common::open_gate(&gates, "lead");
     drop(serve);
     let _ = c;
 }
@@ -386,9 +393,11 @@ async fn the_agent_reaches_wisp_over_mcp_with_its_own_token() {
     let dir = temp("serve-agent");
     let rec = dir.join("rec");
     std::fs::create_dir_all(&rec).unwrap();
-    let (serve, port) = start_with(&dir, &[("FAKE_DELAY", "3000"), ("FAKE_RECORD", rec.to_str().unwrap())]);
+    // the run waits on its gate, so ask_user is asked while it runs
+    let gates = common::gates(&dir);
+    let (serve, port) = start_with(&dir, &[("FAKE_GATE", gates.to_str().unwrap()), ("FAKE_RECORD", rec.to_str().unwrap())]);
     let api = Arc::new(Api { http: reqwest::Client::new(), port, n: 0.into() });
-    let made = api.cmd("runtime.create", json!({ "prompt": "hi", "cwd": dir.join("proj"), "agent": "claude" })).await;
+    let made = api.cmd("runtime.create", json!({ "prompt": "gate mcp", "cwd": dir.join("proj"), "agent": "claude" })).await;
     let id = made["id"].as_str().unwrap().to_owned();
     api.until(&id, "the turn running", |t| t.len() == 1 && t[0]["status"] == "running").await;
     // what the run was launched with: wisp's MCP server, at this wisp, with a token for this task
@@ -446,6 +455,7 @@ async fn the_agent_reaches_wisp_over_mcp_with_its_own_token() {
     api.cmd("runtime.followUp", json!({ "id": id, "text": "dev" })).await;
     let (_, answered) = asked.await.unwrap();
     assert!(answered["result"]["content"][0]["text"].as_str().unwrap_or_default().contains("dev"), "{answered}");
+    common::open_gate(&gates, "mcp");
     drop(serve);
 }
 
@@ -539,9 +549,11 @@ async fn an_agents_token_cannot_touch_another_task() {
 #[tokio::test(flavor = "multi_thread")]
 async fn a_question_open_when_its_turn_ends_is_cleared() {
     let dir = temp("serve-stale-ask");
-    let (serve, port) = start_with(&dir, &[("FAKE_DELAY", "1500")]);
+    // the run waits on its gate: the question is asked while it runs, then the gate lets the turn end
+    let gates = common::gates(&dir);
+    let (serve, port) = start_with(&dir, &[("FAKE_GATE", gates.to_str().unwrap())]);
     let api = Arc::new(Api { http: reqwest::Client::new(), port, n: 0.into() });
-    let id = api.cmd("runtime.create", json!({ "prompt": "hi", "cwd": dir.join("proj"), "agent": "claude" })).await["id"]
+    let id = api.cmd("runtime.create", json!({ "prompt": "gate stale", "cwd": dir.join("proj"), "agent": "claude" })).await["id"]
         .as_str()
         .unwrap()
         .to_owned();
@@ -549,6 +561,7 @@ async fn a_question_open_when_its_turn_ends_is_cleared() {
     let asked = api.cmd("runtime.ask", json!({ "id": id, "question": "Which branch?" })).await;
     let ask_id = asked["askId"].as_str().unwrap().to_owned();
     assert_eq!(api.cmd("runtime.pollAnswer", json!({ "askId": ask_id })).await["state"], "pending");
+    common::open_gate(&gates, "stale");
     api.until(&id, "the turn ends", |t| t.len() == 1 && ended(&t[0])).await;
     let task = api.cmd("runtime.get", json!({ "id": id })).await;
     assert!(task["ext"]["wisp.runtime"]["ask"].is_null(), "no stale question: {task}");
