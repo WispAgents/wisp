@@ -111,3 +111,24 @@ test('gridAsleep: only a 503 that says asleep', () => {
   assert.equal(gridAsleep(503, 'Service Unavailable'), false);
   assert.equal(gridAsleep(502, '{"asleep":true}'), false);
 });
+
+test('an_older_wisp_says_update', async () => {
+  const { createClient, peerId } = await import('@wisp/client');
+  const { phonePeers, PHONE } = await import('../src/peers.ts');
+  const { fakeTimers, settle, ssh } = await import('./helpers.ts');
+  const clock = fakeTimers();
+  const bridge = fakeBridge([ssh('a', { peer: 'studio-1f3a', name: 'Studio' })]);
+  bridge.answers = [{ kind: 'ssh', port: 5001, token: 't', name: 'Studio' }];
+  const srv = fakeServer();
+  const client = createClient({ clientId: 'phone-1', build: 'test', home: PHONE, width: 390, timers: clock });
+  await client.start(await phonePeers(bridge, undefined, { fetch: srv.fetch }));
+  await settle(clock);
+  // a wisp whose protocol window ends before the app's begins: it says so instead of half working
+  srv.streams[0]?.frame(null, welcome('studio-1f3a', { proto_min: 1, proto_max: 1 }));
+  await settle(clock);
+  assert.deepEqual(client.peers.status(peerId('studio-1f3a'))(), { kind: 'incompatible', reason: 'Update wisp on Studio', update: 'peer', command: 'npm install -g wisp-agents@latest' });
+  clock.advance(10 * 60_000);
+  await settle(clock);
+  assert.equal(srv.streams.length, 1, 'no retry loop against a wisp it cannot speak to');
+  client.dispose();
+});

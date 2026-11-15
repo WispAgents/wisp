@@ -73,11 +73,82 @@ test('a peer outside the protocol window is incompatible, and says which side to
     await settle();
     conn()?.push(welcome({}, { ...range, name: 'studio-mac' }));
     await settle();
-    assert.deepEqual(peers.status(A)(), { kind: 'incompatible', reason, update });
+    assert.deepEqual(peers.status(A)(), { kind: 'incompatible', reason, update, ...(update === 'peer' && { command: 'npm install -g wisp-agents@latest' }) });
     clock.advance(600_000);
     await settle();
     assert.equal(t.connections.length, 1, 'no retries against an incompatible peer');
   }
+});
+
+test('a_silent_stream_is_dropped_and_reopened_from_its_cursor', async () => {
+  const { peers, t, conn, clock } = await setup();
+  peers.add({ peer: A, name: 'laptop', transport: t });
+  await settle();
+  conn()?.frame(4, welcome());
+  await settle();
+  const heard = clock.now();
+  // heartbeats (empty frames) keep it: a minute of them and nothing is dropped
+  for (let i = 0; i < 4; i++) {
+    clock.advance(15_000);
+    conn()?.frame(null);
+    await settle();
+  }
+  assert.equal(t.connections.length, 1);
+  assert.equal(conn()?.aborted, false);
+  // then nothing for two keepalives: the stream is dropped, the bar says when it was last heard
+  clock.advance(30_000);
+  await settle();
+  assert.equal(conn()?.aborted, true, 'the dead stream is closed, not left hanging');
+  const st = peers.status(A)();
+  assert.equal(st.kind, 'unreachable');
+  assert.equal(st.kind === 'unreachable' && st.heardAt, heard + 60_000, 'the last heartbeat');
+  assert.equal(st.kind === 'unreachable' && st.reason, 'no answer', 'why: not an older error');
+  clock.advance(2_000);
+  await settle();
+  assert.equal(t.connections.length, 2, 'reopened after the first wait');
+  assert.equal(conn()?.params['cursor'], '4', 'from its cursor: only what changed comes');
+});
+
+test('reconnect_skips_the_backoff_and_never_wakes_a_sleeping_box', async () => {
+  const { peers, t, conn, clock } = await setup();
+  peers.add({ peer: A, name: 'laptop', transport: t });
+  await settle();
+  conn()?.end(new Error('ECONNREFUSED'));
+  await settle();
+  clock.advance(2_000);
+  await settle();
+  conn()?.end(new Error('ECONNREFUSED'));
+  await settle(); // now waiting 5 s
+  assert.equal(t.connections.length, 2);
+  peers.reconnect();
+  await settle();
+  assert.equal(t.connections.length, 3, 'now, not in 5 s');
+  assert.equal(peers.status(A)().kind, 'connecting');
+  conn()?.push(welcome());
+  await settle();
+  clock.advance(5_000);
+  await settle();
+  assert.equal(t.connections.length, 3, 'the old wait was cancelled');
+  // live: Reconnect replaces a stream that may be dead, resuming, with no offline flash
+  const seen: string[] = [];
+  peers.reconnect(A);
+  seen.push(peers.status(A)().kind);
+  await settle();
+  assert.deepEqual(seen, ['connecting']);
+  assert.equal(t.connections[2]?.aborted, true);
+  assert.equal(t.connections.length, 4);
+  // a sleeping box stays asleep
+  const box = fakeTransport();
+  const B = peerId('box');
+  peers.add({ peer: B, name: 'box', transport: box });
+  await settle();
+  box.connections[0]?.end(new PeerDown('asleep', 'asleep'));
+  await settle();
+  assert.equal(peers.status(B)().kind, 'asleep');
+  peers.reconnect();
+  await settle();
+  assert.equal(box.connections.length, 1);
+  assert.equal(box.wakes, 0);
 });
 
 test('an unreachable peer says why and is retried with backoff', async () => {
@@ -87,7 +158,7 @@ test('an unreachable peer says why and is retried with backoff', async () => {
   conn()?.end(new Error('ECONNREFUSED'));
   await settle();
   assert.deepEqual(peers.status(A)(), { kind: 'unreachable', reason: 'ECONNREFUSED' });
-  clock.advance(499);
+  clock.advance(1_999); // v1's first wait: 2 s
   await settle();
   assert.equal(t.connections.length, 1);
   clock.advance(1);

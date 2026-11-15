@@ -1,12 +1,13 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import type { Mutate } from '@wisp/protocol';
-import { CommandError, createCommands, defineCommand } from '../src/commands.ts';
+import { CommandError, createCommands, defineCommand, waitingToSend } from '../src/commands.ts';
 import { createEntityStore } from '../src/entities.ts';
 import { entityKey, peerId } from '../src/ids.ts';
 import { createPeers } from '../src/peers.ts';
 import { memoryPersist, type Persist } from '../src/persist.ts';
 import { createScope } from '../src/scope.ts';
+import { untracked } from '../src/signals.ts';
 import type { EntityKey } from '../src/types.ts';
 import { fakeTimers, type FakeTimers, fakeTransport, tick, welcome } from './helpers.ts';
 
@@ -115,7 +116,7 @@ test('offline: the command waits, then goes after the welcome; a lost stream res
   const mid = mutates()[0]?.mid;
   conn().end(new Error('tunnel dropped'));
   await settle();
-  clock.advance(500); // the link's first retry
+  clock.advance(2_000); // the link's first retry
   await settle();
   conn().push(welcome({ resume: true }));
   await settle();
@@ -202,4 +203,94 @@ test('a command\'s wire shape: the peer gets the args as its command takes them 
   const view = defineCommand<{ key: EntityKey }>({ id: 'ship.view', owner: (a) => a.key, wire: (a) => ({ session: a.key.slice(a.key.indexOf(':') + 1) }), optimistic: 'none', pending: 'the ship.view control' });
   void commands.run(view, { key: S1 }).catch(() => undefined);
   assert.deepEqual(mutates()[0]?.args, { session: 's1' });
+});
+
+const markDone = defineCommand<{ id: EntityKey }>({
+  id: 'session.done',
+  owner: (a) => a.id,
+  optimistic: (base, a) => (base.peek('session', a.id) ? [{ e: 'session', id: a.id, op: 'patch', ops: [{ op: 'replace', path: '/state', value: 'done' }] }] : []),
+});
+const online = (peers: { status(p: typeof A): () => { kind: string } }) => (p: typeof A) => untracked(peers.status(p)).kind === 'online';
+
+test('an_offline_command_is_sent_once_on_reconnect', async () => {
+  const { commands, mutates, conn, clock, reader, writer, peers, errors } = await setup(memoryPersist(), { connect: false });
+  writer.applyServer(A, [{ topic: 'list', e: 'session', id: 's1', op: 'upsert', v: { title: 't', state: 'review' } }]);
+  conn().end(new Error('no network'));
+  await settle();
+  // Mark done offline: done at once, and the row says Waiting to send
+  const done = commands.run(markDone, { id: S1 });
+  assert.equal(reader.peek<{ state: string }>('session', S1)?.state, 'done', 'at once');
+  assert.deepEqual([...waitingToSend(untracked(reader.pending()), online(peers))], [S1]);
+  // the peer stays away through two retries: nothing is sent, nothing is lost
+  for (const wait of [2_000, 5_000]) {
+    clock.advance(wait);
+    await settle();
+    conn().end(new Error('no network'));
+    await settle();
+  }
+  assert.equal(mutates().length, 0);
+  // pull to refresh: back now, and the command goes once
+  peers.reconnect();
+  await settle();
+  conn().push(welcome());
+  await settle();
+  conn().frame(2, { t: 'snapshot', topic: 'list', seq: 2, rows: [{ e: 'session', id: 's1', v: { title: 't', state: 'review' } }] });
+  await settle();
+  assert.equal(mutates().length, 1);
+  assert.equal(reader.peek<{ state: string }>('session', S1)?.state, 'done', 'still done over the fresh rows');
+  assert.equal(waitingToSend(untracked(reader.pending()), online(peers)).size, 0, 'sent: no longer waiting');
+  for (let i = 0; i < 8; i++) {
+    clock.advance(15_000);
+    conn().frame(null); // heartbeats meanwhile
+    await settle();
+  }
+  assert.equal(mutates().length, 1, 'once: no resend while the stream lives');
+  // a later refusal rolls it back with the toast
+  conn().push({ t: 'reject', mid: mutates()[0]?.mid ?? '', code: 'vetoed', message: 'already merged' });
+  await settle();
+  await assert.rejects(done, (e: unknown) => e instanceof CommandError && e.code === 'vetoed');
+  assert.equal(reader.peek<{ state: string }>('session', S1)?.state, 'review');
+  assert.deepEqual(errors.map((e) => e.message), ['already merged']);
+});
+
+test('pending_commands_survive_a_restart', async () => {
+  // the app killed with a command waiting: the next start shows it and sends it, once, with the same key
+  const { createClient } = await import('../src/client.ts');
+  const persist = memoryPersist();
+  const timers = fakeTimers(1_700_000_000_000);
+  clockNow = timers;
+  const boot = async () => {
+    const t = fakeTransport();
+    const client = createClient({ clientId: 'c1', build: 'test', home: A, width: 1200, persist, timers });
+    await client.start([{ peer: A, name: 'laptop', transport: t }]);
+    client.peers.watch(A, 'list', client.scope); // the list on screen
+    await settle();
+    return { client, t };
+  };
+  const first = await boot();
+  first.t.connections[0]?.push(welcome());
+  await settle();
+  first.t.connections[0]?.frame(3, { t: 'snapshot', topic: 'list', seq: 3, rows: [{ e: 'session', id: 's1', v: { title: 't', state: 'review' } }] });
+  await settle();
+  first.t.connections[0]?.end(new Error('no network'));
+  await settle();
+  void first.client.commands.run(markDone, { id: S1 }).catch(() => undefined);
+  await first.client.flush();
+  first.client.dispose(); // killed: no answer ever came
+  assert.equal(first.t.posted.filter((m) => m.t === 'mutate').length, 0);
+
+  const second = await boot();
+  assert.equal(second.client.entities.peek<{ state: string }>('session', S1)?.state, 'done', 'the overlay is back on first paint');
+  assert.equal(untracked(second.client.commands.pending()).length, 1);
+  const c = second.t.connections[0];
+  assert.equal(c?.params['cursor'], '3', 'resumed from the saved cursor');
+  c?.push(welcome({ resume: true, epoch: 'e1' }));
+  await settle();
+  const sent = second.t.posted.filter((m): m is Mutate => m.t === 'mutate');
+  const saved = (await persist.entries('pending'))[0]?.[1] as { mid: string } | undefined;
+  assert.deepEqual(sent.map((m) => m.mid), [saved?.mid], 'sent once, with the key it was saved with');
+  c?.push({ t: 'ack', mid: saved?.mid ?? '', seq: 4 });
+  await settle();
+  assert.deepEqual(await persist.entries('pending'), []);
+  second.client.dispose();
 });

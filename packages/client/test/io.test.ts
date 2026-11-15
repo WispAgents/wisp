@@ -105,10 +105,12 @@ test('http: one GET streams the frames, split anywhere; the hello rides on the q
   const t = httpTransport({ base: 'https://box.example', fetch, headers: () => ({ authorization: 'Bearer tok' }) });
   const frames = [];
   for await (const f of t.connect({ client_id: 'c1', cursor: '4', topics: 'list' }, new AbortController().signal)) frames.push(f);
-  assert.deepEqual(frames, [
+  // bytes with no whole frame (the `: hb`, a cut mid-frame) are empty frames: life for the watchdog, nothing else
+  assert.deepEqual(frames.filter((f) => f.messages.length > 0), [
     { id: null, messages: [w] },
     { id: 5, messages: [p] },
   ]);
+  assert.ok(frames.some((f) => f.messages.length === 0 && f.id === null));
   assert.equal(calls[0]?.url, 'https://box.example/api/events?client_id=c1&cursor=4&topics=list');
   assert.equal(calls[0]?.headers['authorization'], 'Bearer tok');
   await t.post({ t: 'sub', topic: 'session:s1' }, new AbortController().signal);
@@ -150,4 +152,11 @@ test('http_routes_carry_raw_bodies_with_the_peers_headers_and_stream_a_routes_ev
   for await (const ev of t.events?.('/sessions/s1/shell', new AbortController().signal) ?? []) seen.push(ev);
   assert.deepEqual(seen, [{ event: 'hello', data: '{"cols":80}' }, { event: 'data', data: '"hi"' }]);
   assert.deepEqual(calls[1]?.headers, { accept: 'text/event-stream', authorization: 'Bearer tok' });
+});
+
+test('http_a_heartbeat_is_an_empty_frame', async () => {
+  const fetch: FetchLike = async () => streamOf([': hb\n\n']);
+  const frames = [];
+  for await (const f of httpTransport({ base: '', fetch }).connect({}, new AbortController().signal)) frames.push(f);
+  assert.deepEqual(frames, [{ id: null, messages: [] }], 'the server\'s keepalive keeps the stream from being dropped as silent');
 });

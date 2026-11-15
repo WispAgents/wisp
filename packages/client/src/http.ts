@@ -37,6 +37,9 @@ export interface HttpTransportOptions {
   asleep?: (status: number, body: string) => boolean;
 }
 
+/** An empty frame: no messages, no cursor. The link reads it as life, nothing else. */
+const HEARTBEAT: Frame = { id: null, messages: [] };
+
 export function httpTransport(o: HttpTransportOptions): Transport {
   const fetchFn: FetchLike = o.fetch ?? ((url, init) => globalThis.fetch(url, init));
   let clientId = '';
@@ -61,10 +64,16 @@ export function httpTransport(o: HttpTransportOptions): Transport {
           const { done, value } = await reader.read();
           if (done || signal.aborted) return;
           if (!value) continue;
+          let any = false;
           for (const ev of parser.push(value)) {
             const frame = decodeFrame(ev);
-            if (frame) yield frame;
+            if (frame) {
+              any = true;
+              yield frame;
+            }
           }
+          // bytes but no frame (the server's `: hb` comment): the stream is alive, the link's watchdog hears it
+          if (!any) yield HEARTBEAT;
         }
       } finally {
         reader.cancel().catch(() => {}); // frees the connection when the consumer stops early

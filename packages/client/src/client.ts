@@ -57,8 +57,9 @@ export interface PluginClient {
   t(key: string, vars?: Vars): string;
   /** keeps `topic` of `peer` live while `owner` lives (the plugin's scope by default); passive never wakes a box */
   watch(peer: PeerId, topic: Topic, owner?: Scope, opts?: { passive?: boolean }): void;
-  /** the peers this client reaches, read-only: which are there, how each is, what each offers */
-  readonly peers: Pick<Peers, 'list' | 'status' | 'info' | 'name' | 'hasFeature'>;
+  /** the peers this client reaches: which are there, how each is, what each offers; `reconnect` (pull to refresh) is
+   *  the one thing it may do to them, and it only skips a wait. Additive (2026-11-15). */
+  readonly peers: Pick<Peers, 'list' | 'status' | 'info' | 'name' | 'hasFeature' | 'reconnect'>;
   /** a peer's own routes: raw uploads, event streams (a terminal). Everything else is a command. */
   http(peer: PeerId): PeerHttp;
   /** this client's own wisp (ClientOptions.home) */
@@ -113,7 +114,7 @@ export function createClient(o: ClientOptions): Client {
     persist.write([{ ns: 'nav', key: 'last', value: url }]).catch(() => {});
   };
   const nav = createNavigation({ scope, width: o.width, views, warn, onChange: saveNav, home: o.home, ...(o.history && { history: o.history }) });
-  const readPeers: PluginClient['peers'] = { list: peers.list, status: peers.status, info: peers.info, name: peers.name, hasFeature: peers.hasFeature };
+  const readPeers: PluginClient['peers'] = { list: peers.list, status: peers.status, info: peers.info, name: peers.name, hasFeature: peers.hasFeature, reconnect: peers.reconnect };
   const rows = persistEntities({ writer, persist, scope, warn, linkOf: (p) => peers.save(p) });
 
   const client: Client = {

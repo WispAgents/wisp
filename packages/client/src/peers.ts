@@ -8,7 +8,7 @@
 import type { Ack, Notice, PeerInfo, Reject, Topic } from '@wisp/protocol';
 import type { Devtools } from './devtools.ts';
 import type { EntityWriter } from './entities.ts';
-import { hasFeature, updateReason, type FeatureAnswer, type FeatureNeed } from './features.ts';
+import { hasFeature, updateCommand, updateReason, type FeatureAnswer, type FeatureNeed } from './features.ts';
 import { syncLink, type ClientInput, type ClientOutput, type LinkSaved, type PeerLink } from './peer.ts';
 import type { Scope } from './scope.ts';
 import { batch, signal, untracked, type Readable, type WritableSignal } from './signals.ts';
@@ -20,8 +20,10 @@ export type PeerStatus =
   | { kind: 'online' }
   | { kind: 'asleep' }
   | { kind: 'waking' }
-  | { kind: 'unreachable'; reason: string }
-  | { kind: 'incompatible'; reason: string; update: 'peer' | 'app' };
+  /** `heardAt`: when it was last heard from, this run or a saved one (the offline bar's *last updated*). Additive. */
+  | { kind: 'unreachable'; reason: string; heardAt?: number }
+  /** `command`: what updates the side that's too old, when it is the peer (`npm install -g wisp-agents`). Additive. */
+  | { kind: 'incompatible'; reason: string; update: 'peer' | 'app'; command?: string };
 
 export interface PeerConfig {
   peer: PeerId;
@@ -47,6 +49,9 @@ export interface Peers {
   /** keeps `topic` of `peer` live while `scope` lives; a passive watch never wakes a box */
   watch(peer: PeerId, topic: Topic, scope: Scope, opts?: { passive?: boolean }): void;
   wake(peer: PeerId): Promise<void>;
+  /** opens `peer`'s stream again now (every peer when omitted), from its cursor, skipping the backoff: pull to
+   *  refresh, the me menu's *Reconnect*, the offline bar's *Retry*. A sleeping box stays asleep. Additive. */
+  reconnect(peer?: PeerId): void;
   /** hands a command to the peer's link: sent now if live, else after the next welcome */
   mutate(peer: PeerId, m: { mid: string; cmd: string; args: unknown }): boolean;
   /** asks for older rows of `topic` (a transcript page); false when the peer isn't online */
@@ -69,6 +74,9 @@ export interface PeersOptions {
   warn?: Warn;
   devtools?: Devtools;
 }
+
+/** how often an open stream's silence is checked: its link drops one quiet for two keepalives */
+const WATCH_MS = 5_000;
 
 interface PeerRuntime {
   readonly cfg: PeerConfig;
@@ -136,13 +144,15 @@ export function createPeers(o: PeersOptions): Peers {
         p.status({ kind: 'online' });
         for (const fn of on.live) fn(p.cfg.peer);
         return;
-      case 'offline':
-        return p.status(p.asleep ? { kind: 'asleep' } : { kind: 'unreachable', reason: p.lastError });
+      case 'offline': {
+        const heardAt = p.link.heardAt;
+        return p.status(p.asleep ? { kind: 'asleep' } : { kind: 'unreachable', reason: p.lastError, ...(heardAt !== undefined && { heardAt }) });
+      }
       case 'incompatible': {
         const update = out.update ?? 'peer';
         const name = untracked(p.info)?.name ?? p.cfg.name;
         p.conn?.dispose();
-        return p.status({ kind: 'incompatible', reason: updateReason(update, name), update: update === 'client' ? 'app' : 'peer' });
+        return p.status({ kind: 'incompatible', reason: updateReason(update, name), update: update === 'client' ? 'app' : 'peer', ...(update === 'peer' && { command: updateCommand() }) });
       }
     }
   }
@@ -187,11 +197,18 @@ export function createPeers(o: PeersOptions): Peers {
         p.cancelRetry?.();
         p.cancelRetry = p.scope.timeout(Math.max(0, out.at - now()), () => feed(p, { kind: 'open' }));
         return;
+      case 'drop':
+        // silent too long, or reopened: this stream ends here; the link has counted it lost already
+        p.lastError = 'no answer';
+        p.conn?.dispose();
+        delete p.conn;
+        return;
     }
   }
 
   function onFrame(p: PeerRuntime, frame: Frame): void {
     const peer = p.cfg.peer;
+    if (frame.messages.length === 0) return feed(p, { kind: 'frame', id: frame.id, messages: frame.messages }); // a heartbeat: alive
     o.devtools?.record({ kind: 'frame', peer, t: frame.messages.map((m) => m.t).join(','), ...(frame.id !== null && { seq: frame.id }) });
     for (const m of frame.messages) if (m.t === 'welcome') p.info(m.peer); // features come from the peer
     batch(() => {
@@ -202,8 +219,17 @@ export function createPeers(o: PeersOptions): Peers {
 
   async function connect(p: PeerRuntime, params: Readonly<Record<string, string>>): Promise<void> {
     p.conn?.dispose();
+    p.cancelRetry?.();
     const conn = p.scope.child('conn');
     p.conn = conn;
+    // the watchdog: the link drops a stream (or a connect) that says nothing for two keepalives
+    const watch = (): void => {
+      conn.timeout(WATCH_MS, () => {
+        feed(p, { kind: 'tick' });
+        if (conn.alive) watch();
+      });
+    };
+    watch();
     try {
       for await (const frame of p.cfg.transport.connect(params, conn.signal)) {
         if (!conn.alive) return;
@@ -289,6 +315,14 @@ export function createPeers(o: PeersOptions): Peers {
       }
       p.cancelRetry?.();
       feed(p, { kind: 'open' });
+    },
+    reconnect(peer) {
+      for (const p of peer === undefined ? [...peers.values()] : [peers.get(peer)]) {
+        if (!p || p.asleep || p.waking) continue; // a sleeping box isn't woken by a refresh (ADR-0065 edge cases)
+        p.cancelRetry?.();
+        delete p.cancelRetry;
+        feed(p, { kind: 'reopen' });
+      }
     },
     mutate(peer, m) {
       const p = peers.get(peer);

@@ -117,7 +117,7 @@ export function followComputers(client: Client_, bridge: NativeBridge, scope: Sc
   scope.add(
     bridge.onTunnel((e) => {
       const entry = current.get(e.id);
-      if (e.state === 'ready' && entry && client.peers.status(entry.peer)().kind === 'unreachable') void client.peers.wake(entry.peer);
+      if (e.state === 'ready' && entry && client.peers.status(entry.peer)().kind === 'unreachable') client.peers.reconnect(entry.peer);
     }),
   );
 }

@@ -10,14 +10,14 @@
 // returns the first run (#643).
 
 import type { Devtools } from './devtools.ts';
-import type { EntityReader, EntityWriter } from './entities.ts';
+import type { EntityReader, EntityWriter, PendingInfo } from './entities.ts';
 import type { FeatureNeed } from './features.ts';
 import { ownerOf, uuidv7 } from './ids.ts';
 import type { EntityOps } from './ops.ts';
 import type { Answer, Peers } from './peers.ts';
 import type { Persist } from './persist.ts';
 import { signal, untracked, type Readable } from './signals.ts';
-import type { PeerId, Warn, WireError } from './types.ts';
+import type { EntityKey, PeerId, Warn, WireError } from './types.ts';
 
 interface CommandBase<A, R> {
   readonly id: string; // 'session.rename'
@@ -242,4 +242,21 @@ export function createCommands(o: CommandsOptions): Commands {
     },
     pending: () => () => view(),
   };
+}
+
+/**
+ * The rows that show a command still waiting to send (ADR-0065 §4): its patch is on screen, its peer isn't online, and
+ * no ack has come. A list row reads it for *Waiting to send* in its status column. `online` may read signals (the
+ * peers' status), so in a memo the set follows them. Acked commands (settleAt) are sent, whatever the peer is now.
+ */
+export function waitingToSend(pending: readonly PendingInfo[], online: (peer: PeerId) => boolean): ReadonlySet<EntityKey> {
+  const out = new Set<EntityKey>();
+  const up = new Map<PeerId, boolean>();
+  for (const p of pending) {
+    if (p.settleAt !== undefined) continue;
+    let on = up.get(p.peer);
+    if (on === undefined) up.set(p.peer, (on = online(p.peer)));
+    if (!on) for (const op of p.ops) out.add(op.id);
+  }
+  return out;
 }

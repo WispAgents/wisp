@@ -30,7 +30,7 @@ export type { Slot, ViewDecl, ViewHandle, ViewRegistry } from './views.ts';
 export { interpret, machine, paths, transitionsOf } from './machine.ts';
 export type { Machine, MachineDef, MachineHooks, MachinePaths, StateNode, Step, Transition } from './machine.ts';
 // writes
-export { CommandError, defineCommand, stableJson } from './commands.ts';
+export { CommandError, defineCommand, stableJson, waitingToSend } from './commands.ts';
 export type { CommandDef, Commands, PendingRecord, PendingView } from './commands.ts';
 export type { Paging, Transcript, Transcripts } from './transcript.ts'; // opened through createClient: the loader holds the writer
 // kind 5: drafts
@@ -51,7 +51,7 @@ export { PeerDown } from './transport.ts';
 export type { Frame, PeerHttp, RawRequest, RawResponse, RouteEvent, Transport } from './transport.ts';
 export { httpTransport } from './http.ts';
 export type { FetchLike, FetchResponse, HttpTransportOptions } from './http.ts';
-export { compareVersions, hasFeature, updateReason } from './features.ts';
+export { compareVersions, hasFeature, updateCommand, updateReason } from './features.ts';
 export type { FeatureAnswer, FeatureNeed } from './features.ts';
 // i18n, devtools
 export type { Catalogue, I18n, Vars } from './i18n.ts';

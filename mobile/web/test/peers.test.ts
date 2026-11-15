@@ -78,6 +78,25 @@ test('a tunnel back up skips the client’s backoff', async () => {
   assert.equal(bridge.connects.length, before + 1, 'connected again at once');
 });
 
+test('pull_to_refresh_skips_the_backoff', async () => {
+  const { clock, bridge, srv, client } = await started([ssh('a'), ssh('b')]);
+  for (const st of srv.streams) st.end(); // the phone lost the network: both drop
+  await settle(clock);
+  bridge.answers = [new Error('Network is unreachable')];
+  clock.advance(2_000); // the first wait: tried again, still down
+  await settle(clock);
+  assert.equal(client.peers.status(peerId('ssh-a'))().kind, 'unreachable', 'backing off: 5 s to the next try');
+  const before = bridge.connects.length;
+  bridge.answers = [{ kind: 'ssh', port: 5002, token: 't', name: 'x' }];
+  client.peers.reconnect(); // the list pulled down (and the me menu's Reconnect, the bar's Retry)
+  await settle(clock);
+  assert.equal(bridge.connects.length, before + 2, 'every computer, now');
+  assert.equal(client.peers.status(peerId('ssh-a'))().kind, 'connecting');
+  clock.advance(5_000);
+  await settle(clock);
+  assert.equal(bridge.connects.length, before + 2, 'the wait it skipped is gone, not a second connect');
+});
+
 test('a disposed follower stops following', async () => {
   const { clock, bridge, client, scope } = await started([ssh('a')]);
   scope.dispose();

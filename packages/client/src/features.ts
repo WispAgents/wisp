@@ -51,3 +51,8 @@ export function hasFeature(info: PeerInfo | undefined, need: FeatureNeed, peerNa
 export function updateReason(update: 'peer' | 'client', peerName: string): string {
   return update === 'peer' ? `Update wisp on ${peerName}` : `Update the app to use ${peerName}`;
 }
+
+/** What updates a peer's wisp (README: the npm package), shown with *Update wisp on <name>*. */
+export function updateCommand(): string {
+  return 'npm install -g wisp-agents@latest';
+}

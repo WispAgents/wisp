@@ -11,6 +11,8 @@ export type { ClientInput, ClientOutput, SyncClientSaved as LinkSaved };
 export interface PeerLink {
   readonly peer: string;
   readonly cursor: number | null;
+  /** when the peer was last heard from (undefined: never, or a link that doesn't say). Additive. */
+  readonly heardAt?: number | undefined;
   handle(input: ClientInput, now: number): ClientOutput[];
   /** what to persist so a restart resumes from the cursor instead of starting over */
   save(): SyncClientSaved;
