@@ -293,6 +293,24 @@ impl Ctx {
         });
     }
 
+    /// Waits until this plugin's event handlers have run on every event published before the call (ADR-0073), at
+    /// most `within`: a command that answers from what its subscriptions learned (a turn's tokens) answers with the
+    /// latest, so a client that saw a turn end and asks next isn't told the turn before it; a handler stuck on
+    /// something slow costs the answer `within`, then it answers with what it has. Returns at once when nothing is
+    /// queued. Await it from a command, never from this plugin's own event handler (it would wait on itself, until
+    /// `within`). Additive (2026-11-15).
+    pub fn events_delivered(&self, within: std::time::Duration) -> BoxFuture<'static, ()> {
+        let k = self.inner.kernel.clone();
+        let owner = self.inner.plugin.clone();
+        Box::pin(async move {
+            if let Some(k) = k.upgrade()
+                && tokio::time::timeout(within, k.bus.delivered(&owner)).await.is_err()
+            {
+                tracing::debug!(plugin = %owner, ?within, "events_delivered: its handlers are still busy; answering with what's there");
+            }
+        })
+    }
+
     /// A kernel service the install provided (store, proc, net, secrets, paths, clock).
     pub fn service<T: KernelService>(&self) -> Result<Arc<T>> {
         self.k()?.service::<T>().ok_or_else(|| WireError::new(crate::Code::ServiceGone, std::any::type_name::<T>()))

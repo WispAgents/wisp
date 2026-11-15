@@ -177,6 +177,8 @@ struct Queue {
     subs: RwLock<Vec<Sub>>,
     items: Mutex<VecDeque<Arc<EventEnvelope>>>,
     wake: Notify,
+    /// an event left the queue (its handlers ran): `delivered` waiters look again
+    popped: Notify,
     lagging: Mutex<Option<u64>>,
     stop: CancellationToken,
 }
@@ -244,6 +246,7 @@ impl Bus {
                 subs: RwLock::default(),
                 items: Mutex::default(),
                 wake: Notify::new(),
+                popped: Notify::new(),
                 lagging: Mutex::default(),
                 stop: scope.child_token(),
             });
@@ -278,6 +281,28 @@ impl Bus {
         let qs = self.queues.lock().ok()?;
         let q = qs.get(owner)?;
         *q.lagging.lock().ok()?
+    }
+
+    /// Waits until `owner`'s handlers have run on every event published before this call (ADR-0073): an event stays
+    /// in its queue while its handlers run, so a queue with nothing from before the call is done (all of it looked
+    /// at: two publishes can queue out of seq order). Never await it from `owner`'s own event handler: that handler's
+    /// event is queued, and it would wait on itself.
+    pub(crate) async fn delivered(&self, owner: &str) {
+        let upto = self.seq.load(Ordering::Acquire);
+        let Some(q) = self.queues.lock().ok().and_then(|qs| qs.get(owner).cloned()) else { return };
+        loop {
+            let wait = q.popped.notified();
+            tokio::pin!(wait);
+            wait.as_mut().enable();
+            let behind = q.items.lock().is_ok_and(|i| i.iter().any(|e| e.seq <= upto));
+            if !behind {
+                return;
+            }
+            tokio::select! {
+                () = q.stop.cancelled() => return,
+                () = wait => {}
+            }
+        }
     }
 
     pub(crate) fn caught_up(&self, owner: &str) {
@@ -385,6 +410,7 @@ async fn worker(q: Arc<Queue>, k: Weak<KernelState>, work: Arc<Work>) {
         }
         let popped = q.items.lock().ok().and_then(|mut i| i.pop_front()).is_some();
         if popped {
+            q.popped.notify_waiters();
             work.done(1);
         }
     }

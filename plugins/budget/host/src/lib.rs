@@ -240,9 +240,15 @@ macro_rules! on {
     }};
 }
 
+/// How long a read waits for the turns that ended before it to be counted (ADR-0073): the handler is a few store
+/// writes; one stuck on a Drain watch notice doesn't hold Settings → Usage or the picker longer than this.
+const EVENTS_WAIT: std::time::Duration = std::time::Duration::from_secs(2);
+
 /// The budget's commands: view, hold, reset, record, dismiss and the auto-stop lines.
 fn commands(s: &mut Setup, slot: &Slot) {
     on!(s, slot, c::View, |st, ctx, a| {
+        // the turns a client saw end are in what it reads (their drain, their Where it went): ADR-0073
+        ctx.events_delivered(EVENTS_WAIT).await;
         let mut v = lock(&st.budget).view(&a.agent, now(&ctx));
         // v1 meta.js:63: the drain card with Drain watch on, the notices unless they're switched off
         let (drain, notices) = (
@@ -261,7 +267,11 @@ fn commands(s: &mut Setup, slot: &Slot) {
         }
         Ok(v)
     });
-    on!(s, slot, c::Compare, |st, ctx, a| Ok(lock(&st.budget).compare_accounts(&a.agent, now(&ctx))));
+    // tokens per turn by account counts every turn a client saw end, the last one too (ADR-0073; v1 read the sessions)
+    on!(s, slot, c::Compare, |st, ctx, a| {
+        ctx.events_delivered(EVENTS_WAIT).await;
+        Ok(lock(&st.budget).compare_accounts(&a.agent, now(&ctx)))
+    });
     on!(s, slot, c::PlanWindows, |st, ctx, a| {
         let only: Option<std::collections::BTreeSet<String>> = a.tasks.map(|t| t.into_iter().collect());
         Ok(lock(&st.budget).plan_windows(only.as_ref(), now(&ctx)))

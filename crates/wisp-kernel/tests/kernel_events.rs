@@ -167,3 +167,56 @@ async fn event_v2_type_and_v1_type_both_emitted_for_one_minor() {
         "an old subscriber keeps getting the old shape"
     );
 }
+
+cmd!(Count, "ctr.count", (), u32);
+
+/// ADR-0073: a command that answers from what its subscription learned waits for the events published before it
+/// (`Ctx::events_delivered`), so a client that saw the fact and asks next gets it, however slow the handler; with
+/// nothing queued it answers at once; a handler that never finishes holds it no longer than the command's cap. One
+/// thread: the command gets every chance to answer early before the handler is let go, so the order is fixed, not
+/// timed.
+#[tokio::test]
+async fn a_command_waits_for_its_own_handlers_to_take_the_events_published_before_it() {
+    let gate = Arc::new(tokio::sync::Notify::new());
+    let seen = Arc::new(AtomicU32::new(0));
+    // how long the command waits, in seconds: an hour (never reached) until the stuck-handler case
+    let cap = Arc::new(std::sync::atomic::AtomicU64::new(3600));
+    let (g, n, c2) = (gate.clone(), seen.clone(), cap.clone());
+    let ctr = common::plugin("wisp.ctr", json!({}), move |s| {
+        let (g, took) = (g.clone(), n.clone());
+        s.on::<Made, _, _>(move |_, _| {
+            let (g, n) = (g.clone(), took.clone());
+            async move {
+                g.notified().await;
+                n.fetch_add(1, Ordering::SeqCst);
+            }
+        });
+        let (n, cap) = (n.clone(), c2.clone());
+        s.command::<Count, _, _>(move |ctx, _, ()| {
+            let (n, cap) = (n.clone(), cap.clone());
+            async move {
+                ctx.events_delivered(std::time::Duration::from_secs(cap.load(Ordering::SeqCst))).await;
+                Ok(n.load(Ordering::SeqCst))
+            }
+        });
+    });
+    let k = common::start(PluginGroup::new().add(source()).add(ctr)).await;
+    assert_eq!(k.call(Caller::user(), "ctr.count", json!(null)).await.unwrap(), json!(0), "nothing queued: at once");
+    k.call(Caller::user(), "src.make", json!([1, false])).await.unwrap();
+    let mut ask = Box::pin(k.call(Caller::user(), "ctr.count", json!(null)));
+    for _ in 0..200 {
+        tokio::select! {
+            biased;
+            r = &mut ask => panic!("answered before its handler took the event: {r:?}"),
+            () = tokio::task::yield_now() => {}
+        }
+    }
+    gate.notify_one();
+    assert_eq!(ask.await.unwrap(), json!(1), "the answer has the event it waited for");
+    // a handler that never finishes holds the answer only as long as the command said: then it answers with what's there
+    cap.store(0, Ordering::SeqCst);
+    k.call(Caller::user(), "src.make", json!([2, false])).await.unwrap();
+    assert_eq!(k.call(Caller::user(), "ctr.count", json!(null)).await.unwrap(), json!(1), "a stuck handler: answered without it");
+    gate.notify_one();
+    k.idle().await;
+}
