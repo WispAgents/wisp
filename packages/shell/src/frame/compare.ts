@@ -3,6 +3,10 @@
 // is better. DOM-free. v2's turn stats are each turn's own (the parsers difference running totals), so v1's counter
 // trap isn't carried over; the Plan row (shares of a plan window) waits on v2's budget windows per turn.
 import { changeFigures, duration } from './rows-view.ts';
+import { windowName } from './runs-small.ts';
+import '../i18n/lazy.ts';
+
+export { MAX_RUNNERS, newGroup, nextRun, parseCompare, windowName } from './runs-small.ts';
 
 export interface CompareTurn {
   readonly status?: string;
@@ -69,9 +73,6 @@ const STEP_KINDS = new Set(['run', 'tool', 'read', 'edit', 'agent', 'web', 'sear
 const NEAR = 0.05;
 const NEAR_MS = 5000;
 export const DASH = '—';
-
-/** the dialog's params: the task it was opened from */
-export const parseCompare = (p: unknown): { id: string } => ({ id: String((p as { id?: unknown } | null)?.id ?? '') });
 
 const isLive = (state: string): boolean => state === 'running' || state === 'waiting';
 const tidy = (x: number): number => Math.round(x * 1e7) / 1e7;
@@ -230,37 +231,12 @@ export function compareSentence(runs: readonly CompareRun[], t: T): string {
   return said.size ? [...said, t('shell.compare.noise')].join(' ') : '';
 }
 
-/** v1 runners.js MAX_RUNNERS: the lead and up to three more side by side */
-export const MAX_RUNNERS = 4;
-
-/**
- * The launcher's vs + (v1 launcher.js vsBtn): the next harness nobody in the pill uses yet, among those that can run
- * here; once they're all in, another copy of the lead. None past MAX_RUNNERS.
- */
-export function nextRun(lead: string, runs: readonly string[], available: readonly string[]): string | undefined {
-  if (runs.length >= MAX_RUNNERS - 1) return undefined;
-  const used = new Set([lead, ...runs]);
-  return available.find((a) => a !== 'auto' && !used.has(a)) ?? (lead === 'auto' ? available.find((a) => a !== 'auto') : lead);
-}
-
-/** A group id for the runs of one launch (v1: 6 random bytes in hex). */
-export const newGroup = (bytes: Uint8Array): string => `g-${[...bytes].map((b) => b.toString(16).padStart(2, '0')).join('')}`;
-
 // ---- the Plan row (v1 compare-metrics.js planShares) ----
 
 const DAY = 864e5;
-const WINDOW_NAMES: Readonly<Record<string, string>> = { five_hour: '5-hour', seven_day: 'weekly', seven_day_opus: 'weekly Opus', seven_day_sonnet: 'weekly Sonnet' };
 const LENGTH: Readonly<Record<string, number>> = { seven_day: 7 * DAY, seven_day_opus: 7 * DAY - 1, seven_day_sonnet: 7 * DAY - 2, five_hour: 5 * 36e5 };
 const lengthOf = (id: string): number => LENGTH[id] ?? (Number(/^w(\d+)m$/.exec(id)?.[1]) * 60_000 || 0);
 const longestFirst = (a: { readonly window: string }, b: { readonly window: string }): number => lengthOf(b.window) - lengthOf(a.window);
-
-/** "5-hour", "weekly", "3-day" (v1 receipt.js windowName) */
-export function windowName(id: string): string {
-  const named = WINDOW_NAMES[id];
-  if (named) return named;
-  const mins = Number(/^w(\d+)m$/.exec(id)?.[1]) || 0;
-  return !mins ? 'plan' : mins >= 1440 ? `${Math.round(mins / 1440)}-day` : `${Math.round(mins / 60)}-hour`;
-}
 
 /** a share in words: "<1%", "99%" (never a rounded 100% that isn't all of it) */
 const share = (x: number): string => (x > 0 && x < 0.005 ? '<1%' : x < 1 && x > 0.99 ? '99%' : `${Math.round(x * 100)}%`);

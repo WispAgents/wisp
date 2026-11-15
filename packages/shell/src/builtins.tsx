@@ -13,7 +13,7 @@ import { SESSION, type SessionRow } from './rows.ts';
 import { archive, markRead, remove, setState } from './frame/commands.ts';
 import { pastWork, tagsOf } from './palette/tasks.ts';
 import { TASK_KEY, type TaskKey } from './frame/task-keys.ts';
-import { parseCompare } from './frame/compare.ts';
+import { parseCompare } from './frame/runs-small.ts';
 import { openFeedback, parseFeedback } from './frame/feedback.ts';
 import { rowMenuItems } from './frame/row-menu.ts';
 import { PROJECT_ACTIONS, PROJECT_SOURCE, projectItems, projectShortcuts, projectsNow } from './frame/project-switch.ts';

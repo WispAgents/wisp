@@ -4,7 +4,7 @@
 // usage_row.rs: the row's `usage`, `subUsage`, `context`, `agents`); the card's token split is read from the open task's turns. DOM-free.
 import type { TaskUsageProps, TaskUsageRow, TaskUsageSection } from '@wisp/ui';
 import type { ShellContext } from '../contract.ts';
-import { windowName } from './compare.ts';
+import { windowName } from './runs-small.ts';
 import '../i18n/lazy.ts';
 
 type T = ShellContext['t'];

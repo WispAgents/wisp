@@ -28,7 +28,7 @@ import { goalGate, goalOf, goalSent, isBareGoal, typedInFull, type HomeGoal } fr
 import { feedbackCommand, isFeedback, openFeedback } from './feedback.ts';
 import { autoPick, neverRule, runnerParts, runnerPick, overrideOf, popOf, pct, PREVIEW_DEBOUNCE, shortLabel, usd, type AutoPreview } from './auto.ts';
 import { defaultHarness, harnessOf } from './harness.ts';
-import { MAX_RUNNERS, newGroup, nextRun } from './compare.ts';
+import { MAX_RUNNERS, newGroup, nextRun } from './runs-small.ts';
 import { firstRunOf, firstRunTools, launcherFull } from './first-run.ts';
 import { whereItems } from './where.ts';
 import { placeOn } from './run-on.ts';
