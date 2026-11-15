@@ -192,15 +192,22 @@ impl Store {
         }
     }
 
-    /// `write`, carrying the running command's durable events and its handler's cursor (ADR-0044).
-    pub(crate) async fn write_durable<T, F>(&self, intx: wisp_kernel::durable::InTx, f: F) -> Result<T>
+    /// `write`, carrying the running command's durable events and its handler's cursor (ADR-0044), and an outbox's
+    /// events (ADR-0074: its durable ones appended here too, all of them staged just before COMMIT).
+    pub(crate) async fn write_durable<T, F>(
+        &self,
+        intx: Option<wisp_kernel::durable::InTx>,
+        outbox: Option<wisp_kernel::Outbox>,
+        f: F,
+    ) -> Result<T>
     where
         T: Send + 'static,
         F: FnOnce(&mut Writer<'_>) -> Result<T> + Send + 'static,
     {
-        let rows = intx.rows().to_vec();
-        let cursor = intx.cursor().map(|(p, n, s)| (p.to_owned(), n.to_owned(), s));
-        let n = rows.len();
+        let rows = intx.as_ref().map(|i| i.rows().to_vec()).unwrap_or_default();
+        let cursor = intx.as_ref().and_then(|i| i.cursor().map(|(p, n, s)| (p.to_owned(), n.to_owned(), s)));
+        let mine = outbox.as_ref().map(wisp_kernel::Outbox::rows).unwrap_or_default();
+        let n = rows.len() + mine.len();
         let shared = self.shared.clone();
         let added = std::sync::Arc::new(Mutex::new(Vec::new()));
         let added2 = added.clone();
@@ -211,9 +218,15 @@ impl Store {
                     let v = f(w)?;
                     let now = w.now();
                     let (seqs, keys) = append_on(w.db, &shared.log, now, &rows)?;
-                    *lock(&added2) = keys;
+                    lock(&added2).extend(keys);
                     if let Some((p, name, seq)) = &cursor {
                         set_cursor_on(w.db, p, name, *seq)?;
+                    }
+                    if let Some(ob) = outbox {
+                        let (theirs, keys) = append_on(w.db, &shared.log, now, &mine)?;
+                        lock(&added2).extend(keys);
+                        let head = u64::try_from(w.head_seq()?).ok();
+                        w.staged = Some(ob.stage(head, &theirs));
                     }
                     Ok::<(T, Vec<Option<u64>>), StoreError>((v, seqs))
                 })
@@ -221,13 +234,19 @@ impl Store {
             .await;
         match r {
             Ok((v, seqs)) => {
-                intx.committed(&seqs);
-                self.after_append(n);
+                if let Some(i) = intx {
+                    i.committed(&seqs);
+                }
+                if n > 0 {
+                    self.after_append(n);
+                }
                 Ok(v)
             }
             Err(e) => {
                 forget(&self.shared.log, &lock(&added));
-                intx.rolled_back();
+                if let Some(i) = intx {
+                    i.rolled_back();
+                }
                 Err(e)
             }
         }

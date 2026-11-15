@@ -115,8 +115,8 @@ impl Runtime {
             s.archived = true;
         }
         s.updated_at = self.now();
-        let summary = self.persist(&mut s, vec![turn.clone()]).await?;
-        self.emit_end(&s, &turn, interrupted, &landing, &summary, &text);
+        let (s0, t0, l) = (s.clone(), turn.clone(), &landing); // its events ride on the write (ADR-0074)
+        self.persist_emitting(&mut s, vec![turn.clone()], |sum| Self::end_events(&s0, &t0, interrupted, l, sum, &text)).await?;
         // a delegate's turn ended (a child, or a crew job a lead handed out): its lead may have waited on it last
         if let Some(lead) = crate::more::lead_of(&s) {
             self.spawn_check_lead(&lead);
@@ -158,18 +158,18 @@ impl Runtime {
         land::land(facts, outcome, || steps.iter().find(|a| a.wants(s, turn, end)).map(|a| a.id().to_owned()))
     }
 
-    fn emit_end(
-        &self,
+    /// What a turn's end tells, in order: `turn.ended`, `task.finished`/`failed`, `turn.finished` if someone should hear.
+    fn end_events(
         s: &Session,
         turn: &Turn,
         interrupted: bool,
         l: &land::Landing,
         summary: &wisp_runtime_api::model::Summary,
         text: &str,
-    ) {
+    ) -> Vec<Emitted> {
         let error_text = (turn.status == TurnStatus::Error).then(|| text.to_owned());
         let cost = turn.stats.as_ref().and_then(|x| x.cost_usd);
-        self.host.emit(Emitted::Ended(TurnEnded {
+        let mut out = vec![Emitted::Ended(TurnEnded {
             session_id: s.id.clone(),
             turn_id: turn.id.clone(),
             status: turn.status,
@@ -192,14 +192,14 @@ impl Runtime {
             cache_read_tokens: turn.stats.as_ref().and_then(cache_reads),
             first: turn.idx == 0,
             inner: s.parent_id.is_some() || matches!(turn.by.as_deref(), Some("wisp" | "compact")),
-        }));
+        })];
         match turn.status {
-            TurnStatus::Done => self.host.emit(Emitted::Task("task.finished", crate::host::fact(s, Some(&turn.id), "done", text, cost))),
-            TurnStatus::Error => self.host.emit(Emitted::Task("task.failed", crate::host::fact(s, Some(&turn.id), "error", text, cost))),
+            TurnStatus::Done => out.push(Emitted::Task("task.finished", crate::host::fact(s, Some(&turn.id), "done", text, cost))),
+            TurnStatus::Error => out.push(Emitted::Task("task.failed", crate::host::fact(s, Some(&turn.id), "error", text, cost))),
             _ => {}
         }
         if l.notify {
-            self.host.emit(Emitted::Finished(TurnFinished {
+            out.push(Emitted::Finished(TurnFinished {
                 session_id: s.id.clone(),
                 turn_id: turn.id.clone(),
                 status: turn.status,
@@ -207,6 +207,7 @@ impl Runtime {
                 summary: summary.clone(),
             }));
         }
+        out
     }
 
     /// A turn that failed before its process ran (the spawn failed).

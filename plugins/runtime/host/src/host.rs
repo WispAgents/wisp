@@ -47,6 +47,12 @@ impl Emitted {
 
 pub trait Host: Send + Sync + 'static {
     fn emit(&self, e: Emitted);
+    /// The kernel's outbox carrying `events` for the store write that causes them (ADR-0074): they're queued inside
+    /// its transaction and go out with its commit, so whoever reads its rows finds them queued. None: the runtime
+    /// emits them itself once the write returns (a test's host). Additive (2026-11-15).
+    fn outbox(&self, _events: &[Emitted]) -> Option<wisp_kernel::Outbox> {
+        None
+    }
     /// `before:run`'s interceptors, in order. Err: vetoed (the message reaches the user on the turn).
     fn before_run(&self, c: BeforeRunCtx) -> BoxFuture<'static, Result<BeforeRunCtx, WireError>>;
     fn harnesses(&self) -> Vec<Arc<dyn Harness>>;
@@ -111,6 +117,8 @@ pub trait Host: Send + Sync + 'static {
 #[derive(Default)]
 pub struct Recorder {
     pub events: Mutex<Vec<Emitted>>,
+    /// each store write's events (ADR-0074: what goes out with its commit), by name, one entry per write
+    pub writes: Mutex<Vec<Vec<&'static str>>>,
     pub harnesses: Vec<Arc<dyn Harness>>,
     /// a `before:run` that vetoes with this message, or holds with this kind
     pub veto: Option<String>,
@@ -178,6 +186,10 @@ impl Host for Recorder {
     }
     fn emit(&self, e: Emitted) {
         self.events.lock().unwrap_or_else(PoisonError::into_inner).push(e);
+    }
+    fn outbox(&self, events: &[Emitted]) -> Option<wisp_kernel::Outbox> {
+        self.writes.lock().unwrap_or_else(PoisonError::into_inner).push(events.iter().map(Emitted::name).collect());
+        None
     }
     fn before_run(&self, mut c: BeforeRunCtx) -> BoxFuture<'static, Result<BeforeRunCtx, WireError>> {
         self.ran.lock().unwrap_or_else(PoisonError::into_inner).push(c.clone());

@@ -220,3 +220,77 @@ async fn a_command_waits_for_its_own_handlers_to_take_the_events_published_befor
     gate.notify_one();
     k.idle().await;
 }
+
+cmd!(Stage, "wr.stage", Vec<u32>, ());
+
+/// A write's events (ADR-0074) are queued before its COMMIT, held until it settles: a reader who saw the write's
+/// rows (here: between `stage`, the moment before COMMIT, and `commit`, the moment after it, the window where the
+/// old code had published nothing yet) and asks a command that waits for its handlers gets an answer with them
+/// in it, never before; their handler doesn't run until the commit; a rolled-back write's events are never
+/// delivered and never waited for; and a write's events reach the handler in the order they were emitted. One
+/// thread: the command gets 200 chances to answer early, so the order is fixed, not timed.
+#[tokio::test]
+async fn a_writes_events_are_queued_before_it_commits_so_a_reader_of_its_rows_finds_them() {
+    let slot: Arc<Mutex<Option<wisp_kernel::Staged>>> = Arc::default();
+    let s2 = slot.clone();
+    let writer = common::plugin("wisp.wr", json!({}), move |s| {
+        let slot = s2.clone();
+        // a runner's write outside any command: its events in an outbox, staged inside the transaction
+        s.command::<Stage, _, _>(move |ctx, _, ns: Vec<u32>| {
+            let slot = slot.clone();
+            async move {
+                let ob = ctx.outbox();
+                for n in ns {
+                    ob.emit(&Made { n });
+                }
+                *slot.lock().unwrap() = Some(ob.stage(Some(7), &[]));
+                Ok(())
+            }
+        });
+    });
+    let got = Arc::new(Mutex::new(Vec::<(u32, Option<u64>)>::new()));
+    let g2 = got.clone();
+    let ctr = common::plugin("wisp.ctr", json!({}), move |s| {
+        let got = g2.clone();
+        s.on_raw("src.made", move |_, e| {
+            let got = got.clone();
+            async move {
+                got.lock().unwrap().push((e.get::<Made>().unwrap().n, e.cursor));
+                Ok(())
+            }
+        });
+        let got = g2.clone();
+        s.command::<Count, _, _>(move |ctx, _, ()| {
+            let got = got.clone();
+            async move {
+                ctx.events_delivered(std::time::Duration::from_secs(3600)).await;
+                Ok(u32::try_from(got.lock().unwrap().len()).unwrap())
+            }
+        });
+    });
+    let k = common::start(PluginGroup::new().add(writer).add(ctr)).await;
+    k.call(Caller::user(), "wr.stage", json!([1, 2])).await.unwrap();
+    // the rows are visible now (COMMIT ran): the reader asks
+    let mut ask = Box::pin(k.call(Caller::user(), "ctr.count", json!(null)));
+    for _ in 0..200 {
+        tokio::select! {
+            biased;
+            r = &mut ask => panic!("answered before the write's events were delivered: {r:?}"),
+            () = tokio::task::yield_now() => {}
+        }
+    }
+    assert!(got.lock().unwrap().is_empty(), "held: no handler runs on a write that hasn't settled");
+    slot.lock().unwrap().take().unwrap().commit();
+    assert_eq!(ask.await.unwrap(), json!(2), "the answer has both of the write's events");
+    assert_eq!(*got.lock().unwrap(), vec![(1, Some(7)), (2, Some(7))], "in the order emitted, with the write's cursor");
+    // rolled back: never delivered, never waited for
+    k.call(Caller::user(), "wr.stage", json!([3])).await.unwrap();
+    slot.lock().unwrap().take().unwrap().abort();
+    assert_eq!(k.call(Caller::user(), "ctr.count", json!(null)).await.unwrap(), json!(2));
+    // dropped unsettled (the write's outcome unknown): the same as a rollback
+    k.call(Caller::user(), "wr.stage", json!([4])).await.unwrap();
+    drop(slot.lock().unwrap().take());
+    k.idle().await;
+    assert_eq!(k.call(Caller::user(), "ctr.count", json!(null)).await.unwrap(), json!(2));
+    assert_eq!(got.lock().unwrap().iter().map(|x| x.0).collect::<Vec<_>>(), vec![1, 2], "3 and 4 never happened");
+}

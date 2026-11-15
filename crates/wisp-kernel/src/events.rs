@@ -4,7 +4,7 @@
 //! 10k queued a plugin is `lagging`: its queue stops growing and it catches up from the change feed.
 use std::any::Any;
 use std::collections::{HashMap, VecDeque};
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicU8, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, RwLock, Weak};
 
 use futures::FutureExt;
@@ -172,10 +172,30 @@ pub(crate) struct Sub {
     pub(crate) ctx: Ctx,
 }
 
+/// A staged event's gate (ADR-0074): queued before its write commits, held there until the write settles; then
+/// delivered (committed) or dropped unseen (rolled back).
+struct Gate(AtomicU8);
+const HELD: u8 = 0;
+const GO: u8 = 1;
+const DROPPED: u8 = 2;
+
+/// One queued event: its envelope, and its gate when a write's commit lets it go.
+#[derive(Clone)]
+struct Item {
+    env: Arc<EventEnvelope>,
+    gate: Option<Arc<Gate>>,
+}
+
+impl Item {
+    fn state(&self) -> u8 {
+        self.gate.as_ref().map_or(GO, |g| g.0.load(Ordering::Acquire))
+    }
+}
+
 struct Queue {
     owner: Arc<str>,
     subs: RwLock<Vec<Sub>>,
-    items: Mutex<VecDeque<Arc<EventEnvelope>>>,
+    items: Mutex<VecDeque<Item>>,
     wake: Notify,
     /// an event left the queue (its handlers ran): `delivered` waiters look again
     popped: Notify,
@@ -294,7 +314,7 @@ impl Bus {
             let wait = q.popped.notified();
             tokio::pin!(wait);
             wait.as_mut().enable();
-            let behind = q.items.lock().is_ok_and(|i| i.iter().any(|e| e.seq <= upto));
+            let behind = q.items.lock().is_ok_and(|i| i.iter().any(|e| e.env.seq <= upto));
             if !behind {
                 return;
             }
@@ -333,7 +353,32 @@ impl Bus {
 
     /// Publishes one committed event to every queue that wants it. Returns its envelope.
     pub(crate) fn publish(&self, k: &KernelState, root: &str, cursor: Option<u64>, p: Pending) -> Arc<EventEnvelope> {
-        let seq = self.seq.fetch_add(1, Ordering::Relaxed) + 1;
+        self.publish_gated(k, root, cursor, p, None, &mut Vec::new())
+    }
+
+    /// Queues a write's events before its COMMIT (ADR-0074): each takes its seq and its place in every queue that
+    /// wants it now, held there (never delivered, but waited for by `delivered`) until the write settles. So a
+    /// reader who can see the write's rows finds its events already queued.
+    pub(crate) fn stage(&self, k: &KernelState, root: &str, cursor: Option<u64>, events: Vec<Pending>) -> Staged {
+        let gate = Arc::new(Gate(AtomicU8::new(HELD)));
+        let mut queues = Vec::new();
+        for p in events {
+            self.publish_gated(k, root, cursor, p, Some(&gate), &mut queues);
+        }
+        Staged { gate, queues, fresh: Vec::new(), kernel: Weak::new(), settled: false }
+    }
+
+    fn publish_gated(
+        &self,
+        k: &KernelState,
+        root: &str,
+        cursor: Option<u64>,
+        p: Pending,
+        gate: Option<&Arc<Gate>>,
+        reached: &mut Vec<Arc<Queue>>,
+    ) -> Arc<EventEnvelope> {
+        // AcqRel: a reader that saw the staged write commit and then takes `delivered`'s bound sees this seq
+        let seq = self.seq.fetch_add(1, Ordering::AcqRel) + 1;
         let env = Arc::new(EventEnvelope {
             seq,
             ty: p.ty,
@@ -352,23 +397,29 @@ impl Bus {
             data: p.data,
         });
         let ix = self.index.read().map(|i| i.clone()).unwrap_or_default();
+        let mut to = |q: &Arc<Queue>| {
+            if self.enqueue(k, q, &env, gate) && gate.is_some() && !reached.iter().any(|x| Arc::ptr_eq(x, q)) {
+                reached.push(q.clone());
+            }
+        };
         if let Some(qs) = ix.exact.get(&env.ty) {
             for q in qs {
-                self.enqueue(k, q, &env);
+                to(q);
             }
         }
         for (pat, q) in &ix.patterns {
             // a queue matched exactly already has it
             if glob(pat, &env.ty) && !ix.exact.get(&env.ty).is_some_and(|l| l.iter().any(|x| Arc::ptr_eq(x, q))) {
-                self.enqueue(k, q, &env);
+                to(q);
             }
         }
         env
     }
 
-    fn enqueue(&self, k: &KernelState, q: &Arc<Queue>, env: &Arc<EventEnvelope>) {
+    /// → whether it was queued (not past `QUEUE_CAP`).
+    fn enqueue(&self, k: &KernelState, q: &Arc<Queue>, env: &Arc<EventEnvelope>, gate: Option<&Arc<Gate>>) -> bool {
         let Ok(mut items) = q.items.lock() else {
-            return;
+            return false;
         };
         if items.len() >= QUEUE_CAP {
             drop(items);
@@ -386,27 +437,99 @@ impl Bus {
                     Vec::new(),
                 );
             }
-            return;
+            return false;
         }
-        items.push_back(env.clone());
+        items.push_back(Item { env: env.clone(), gate: gate.cloned() });
         drop(items);
         self.work.add(1);
         q.wake.notify_one();
+        true
+    }
+}
+
+/// A write's events, queued and held until the write settles (ADR-0074): `commit` right after its COMMIT lets them
+/// be delivered (in the order they were staged, each queue in seq order), `abort` after a ROLLBACK drops them unseen.
+/// Dropped unsettled, it aborts: an event whose write isn't known to have committed is never delivered.
+pub struct Staged {
+    gate: Arc<Gate>,
+    queues: Vec<Arc<Queue>>,
+    /// durable events now in the log: their durable subscribers take them once the write commits
+    pub(crate) fresh: Vec<(u64, Pending)>,
+    pub(crate) kernel: Weak<KernelState>,
+    settled: bool,
+}
+
+impl std::fmt::Debug for Staged {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Staged").field("queues", &self.queues.len()).field("durable", &self.fresh.len()).finish_non_exhaustive()
+    }
+}
+
+impl Staged {
+    /// Nothing staged (the kernel is gone).
+    pub(crate) fn inert() -> Self {
+        Self { gate: Arc::new(Gate(AtomicU8::new(DROPPED))), queues: Vec::new(), fresh: Vec::new(), kernel: Weak::new(), settled: true }
+    }
+
+    /// The write committed: its events go out.
+    pub fn commit(mut self) {
+        self.settle(GO);
+        if let Some(k) = self.kernel.upgrade() {
+            for (seq, p) in std::mem::take(&mut self.fresh) {
+                k.bus.remember(&k, seq, &p);
+            }
+        }
+    }
+
+    /// The write rolled back: its events never happened.
+    pub fn abort(mut self) {
+        self.settle(DROPPED);
+    }
+
+    fn settle(&mut self, to: u8) {
+        if self.settled {
+            return;
+        }
+        self.settled = true;
+        self.gate.0.store(to, Ordering::Release);
+        for q in &self.queues {
+            q.wake.notify_one();
+        }
+    }
+}
+
+impl Drop for Staged {
+    fn drop(&mut self) {
+        self.settle(DROPPED);
     }
 }
 
 async fn worker(q: Arc<Queue>, k: Weak<KernelState>, work: Arc<Work>) {
     loop {
         let next = q.items.lock().ok().and_then(|i| i.front().cloned());
-        let Some(env) = next else {
+        let Some(item) = next else {
             tokio::select! {
                 () = q.stop.cancelled() => return,
                 () = q.wake.notified() => continue,
             }
         };
-        let subs: Vec<Sub> = q.subs.read().map(|s| s.iter().filter(|x| glob(&x.pattern, &env.ty)).cloned().collect()).unwrap_or_default();
-        for s in subs {
-            deliver(&q, &k, &s, &env).await;
+        match item.state() {
+            // its write hasn't settled: everything behind it waits too (per-queue order)
+            HELD => {
+                tokio::select! {
+                    () = q.stop.cancelled() => return,
+                    () = q.wake.notified() => continue,
+                }
+            }
+            DROPPED => {}
+            _ => {
+                let env = &item.env;
+                let subs: Vec<Sub> =
+                    q.subs.read().map(|s| s.iter().filter(|x| glob(&x.pattern, &env.ty)).cloned().collect()).unwrap_or_default();
+                for s in subs {
+                    deliver(&q, &k, &s, env).await;
+                }
+            }
         }
         let popped = q.items.lock().ok().and_then(|mut i| i.pop_front()).is_some();
         if popped {

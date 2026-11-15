@@ -240,7 +240,18 @@ impl Runtime {
         extra: impl FnOnce(&mut wisp_store::Writer<'_>) -> wisp_store::Result<()> + Send + 'static,
     ) -> Result<Arc<Summary>> {
         // boxed: every write of a task goes through here, so its callers' futures stay small
-        Box::pin(self.write_session(s, turns, extra)).await
+        Box::pin(self.write_session(s, turns, extra, |_| Vec::new())).await
+    }
+
+    /// `persist`, and the events `also` names (from the row it writes) go out with the write's commit, after
+    /// `session.changed` (ADR-0074): a turn's end, so whoever sees the turn ended finds `runtime.turn.ended` queued.
+    pub(crate) async fn persist_emitting(
+        self: &Arc<Self>,
+        s: &mut Session,
+        turns: Vec<Turn>,
+        also: impl FnOnce(&Summary) -> Vec<Emitted> + Send,
+    ) -> Result<Arc<Summary>> {
+        Box::pin(self.write_session(s, turns, |_| Ok(()), also)).await
     }
 
     async fn write_session(
@@ -248,6 +259,7 @@ impl Runtime {
         s: &mut Session,
         turns: Vec<Turn>,
         extra: impl FnOnce(&mut wisp_store::Writer<'_>) -> wisp_store::Result<()> + Send + 'static,
+        also: impl FnOnce(&Summary) -> Vec<Emitted> + Send,
     ) -> Result<Arc<Summary>> {
         s.rev += 1;
         // what the task read, in memory from here on: its row keeps where its text quotes it (ADR-0050)
@@ -260,21 +272,31 @@ impl Runtime {
         for t in &turns {
             self.env.note_turn(t.id.as_str(), s.id.as_str()); // its patches on the stream find its task's values
         }
+        // the write's events ride on its commit (ADR-0074): queued before its rows can be read
+        let mut events = vec![Emitted::Changed(SessionChanged { id: s.id.clone() })];
+        events.extend(also(&summary));
+        let outbox = self.host.outbox(&events);
         let (row, sum, ts, k) = (s.clone(), summary.clone(), turns, known);
-        self.repo
-            .store
-            .write(move |w| {
-                // the session first: a new task's turns point at it (a fork's, an adopted share's)
-                repo::save_session(w, &row, &sum, Some(&hide)).map_err(|e| wisp_store::StoreError::Internal(e.to_string()))?;
-                for t in &ts {
-                    repo::save_turn(w, t, k.as_deref()).map_err(|e| wisp_store::StoreError::Internal(e.to_string()))?;
-                }
-                extra(w)
-            })
-            .await?;
+        let job = move |w: &mut wisp_store::Writer<'_>| {
+            // the session first: a new task's turns point at it (a fork's, an adopted share's)
+            repo::save_session(w, &row, &sum, Some(&hide)).map_err(|e| wisp_store::StoreError::Internal(e.to_string()))?;
+            for t in &ts {
+                repo::save_turn(w, t, k.as_deref()).map_err(|e| wisp_store::StoreError::Internal(e.to_string()))?;
+            }
+            extra(w)
+        };
+        let sent = outbox.is_some();
+        match outbox {
+            Some(ob) => self.repo.store.write_with(ob, job).await?,
+            None => self.repo.store.write(job).await?,
+        }
         self.note_cap(s);
         let before = self.lock_list().insert(s.id.0.clone(), summary.clone());
-        self.host.emit(Emitted::Changed(SessionChanged { id: s.id.clone() }));
+        if !sent {
+            for e in events {
+                self.host.emit(e);
+            }
+        }
         self.lead_follows(before.as_deref(), &summary);
         Ok(summary)
     }

@@ -48,6 +48,20 @@ hook.committed(&call, Some(change_seq));                 // after COMMIT: buffer
 hook.rolled_back(&call, mark);                           // after ROLLBACK: events since mark are dropped
 ```
 
+Work outside a command (a turn's runner, a timer) hands its events to the write that causes them, so they
+are queued before that write's rows can be read (ADR-0074):
+
+```rust
+let ob = ctx.outbox();
+ob.emit(&TurnEnded { … });                               // collected, not published
+store.write_with(ob, |w| { … }).await?;                  // staged (held in every queue) before COMMIT,
+                                                         // let go right after it, dropped on ROLLBACK
+```
+
+The store calls `Outbox::rows` (durable ones, appended in the same transaction), `Outbox::stage(head, seqs)` →
+`Staged` inside the transaction, and `Staged::commit`/`abort` on the writer thread after COMMIT/ROLLBACK. A held
+event blocks its queue (per-queue order) and counts for `Ctx::events_delivered`; its handlers run once it's let go.
+
 Subscribers get an `EventEnvelope { seq, ty, plugin, at, root, cursor, data }`; `seq` is the kernel's
 publish order (dedupe), `cursor` the store's change seq when known (a lagging subscriber catches up from
 the change feed by it: `Kernel::lagging(plugin)` → `caught_up(plugin)`).

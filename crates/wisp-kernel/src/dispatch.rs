@@ -249,8 +249,14 @@ pub(crate) struct Meta {
 /// Records an event on the call's root command, or publishes it at once outside a command (a durable one
 /// outside a command goes to the log first, in its own transaction).
 pub(crate) fn emit(ctx: &Ctx, call: &Call, ty: &str, data: Payload, meta: Meta) {
+    let p = pending(ctx, call, ty, data, meta);
+    emit_pending(ctx, call, p);
+}
+
+/// What `ctx` emitting `ty` on `call` records (its cause, root, time).
+pub(crate) fn pending(ctx: &Ctx, call: &Call, ty: &str, data: Payload, meta: Meta) -> Pending {
     let at = ctx.k().map_or(0, |k| k.now_ms());
-    let p = Pending {
+    Pending {
         ty: ty.to_owned(),
         plugin: ctx.inner.id.clone(),
         data,
@@ -263,7 +269,10 @@ pub(crate) fn emit(ctx: &Ctx, call: &Call, ty: &str, data: Payload, meta: Meta) 
         at,
         written: crate::events::Logged::Not,
         taken: false,
-    };
+    }
+}
+
+fn emit_pending(ctx: &Ctx, call: &Call, p: Pending) {
     if p.durable && call.inner.tx.is_none() {
         // outside a command: in-process subscribers get it at once (in order with what follows), the
         // log and the durable subscribers once it's appended

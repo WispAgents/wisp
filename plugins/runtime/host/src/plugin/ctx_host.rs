@@ -34,36 +34,14 @@ impl Host for CtxHost {
     }
     fn emit(&self, e: Emitted) {
         let call = self.ctx.root_call();
-        match e {
-            Emitted::Created(x) => self.ctx.emit(&call, &x),
-            Emitted::Changed(x) => self.ctx.emit(&call, &x),
-            Emitted::Deleted(x) => self.ctx.emit(&call, &x),
-            Emitted::Started(x) => self.ctx.emit(&call, &x),
-            // a step's .env output never leaves on the event either (ADR-0050)
-            Emitted::Activity(mut x) => {
-                if crate::env_view::on(&self.ctx) {
-                    match crate::env_view::mask_items(std::mem::take(&mut x.items)) {
-                        Ok(items) => x.items = items,
-                        Err(_) => return,
-                    }
-                }
-                self.ctx.emit(&call, &x);
-            }
-            Emitted::Finished(x) => self.ctx.emit(&call, &x),
-            Emitted::Ended(x) => self.ctx.emit(&call, &x),
-            Emitted::Held(x) => self.ctx.emit(&call, &x),
-            Emitted::Limits(x) => self.ctx.emit(&call, &x),
-            Emitted::Task(ty, f) => {
-                use wisp_runtime_api::events::{TaskAsked, TaskDone, TaskFailed, TaskFinished, TaskHeld};
-                match ty {
-                    "task.finished" => self.ctx.emit(&call, &TaskFinished(f)),
-                    "task.failed" => self.ctx.emit(&call, &TaskFailed(f)),
-                    "task.held" => self.ctx.emit(&call, &TaskHeld(f)),
-                    "task.asked" => self.ctx.emit(&call, &TaskAsked(f)),
-                    _ => self.ctx.emit(&call, &TaskDone(f)),
-                }
-            }
+        send(&self.ctx, e, &mut |x: Out<'_>| x.on_call(&self.ctx, &call));
+    }
+    fn outbox(&self, events: &[Emitted]) -> Option<wisp_kernel::Outbox> {
+        let ob = self.ctx.outbox();
+        for e in events {
+            send(&self.ctx, e.clone(), &mut |x: Out<'_>| x.into(&ob));
         }
+        Some(ob)
     }
     fn before_run(&self, c: BeforeRunCtx) -> BoxFuture<'static, WireResult<BeforeRunCtx>> {
         self.ctx.run_hook::<BeforeRun>(&self.ctx.root_call(), c)
@@ -122,5 +100,91 @@ impl wisp_kernel::scope::TaskTree for Tree {
     }
     fn agent_set(&self, task: &str) -> Option<String> {
         rt(&self.0).ok()?.agent_set(task)
+    }
+}
+
+/// One runtime event, typed, on its way to a call (`emit`) or a write's outbox (ADR-0074).
+enum Out<'a> {
+    Created(&'a wisp_runtime_api::events::SessionCreated),
+    Changed(&'a wisp_runtime_api::events::SessionChanged),
+    Deleted(&'a wisp_runtime_api::events::SessionDeleted),
+    Started(&'a wisp_runtime_api::events::TurnStarted),
+    Activity(&'a wisp_runtime_api::events::TurnActivity),
+    Finished(&'a wisp_runtime_api::events::TurnFinished),
+    Ended(&'a wisp_runtime_api::events::TurnEnded),
+    Held(&'a wisp_runtime_api::events::TurnHeld),
+    Limits(&'a wisp_runtime_api::events::TurnLimits),
+    Fact(&'static str, &'a wisp_runtime_api::events::TaskFact),
+}
+
+macro_rules! each {
+    ($x:expr, |$e:ident| $body:expr) => {{
+        use wisp_runtime_api::events::{TaskAsked, TaskDone, TaskFailed, TaskFinished, TaskHeld};
+        match $x {
+            Out::Created($e) => $body,
+            Out::Changed($e) => $body,
+            Out::Deleted($e) => $body,
+            Out::Started($e) => $body,
+            Out::Activity($e) => $body,
+            Out::Finished($e) => $body,
+            Out::Ended($e) => $body,
+            Out::Held($e) => $body,
+            Out::Limits($e) => $body,
+            Out::Fact(ty, f) => match ty {
+                "task.finished" => {
+                    let $e = &TaskFinished(f.clone());
+                    $body
+                }
+                "task.failed" => {
+                    let $e = &TaskFailed(f.clone());
+                    $body
+                }
+                "task.held" => {
+                    let $e = &TaskHeld(f.clone());
+                    $body
+                }
+                "task.asked" => {
+                    let $e = &TaskAsked(f.clone());
+                    $body
+                }
+                _ => {
+                    let $e = &TaskDone(f.clone());
+                    $body
+                }
+            },
+        }
+    }};
+}
+
+impl Out<'_> {
+    fn on_call(self, ctx: &Ctx, call: &wisp_kernel::Call) {
+        each!(self, |e| ctx.emit(call, e));
+    }
+    fn into(self, ob: &wisp_kernel::Outbox) {
+        each!(self, |e| ob.emit(e));
+    }
+}
+
+/// `e` as its typed event, to `put`; a step's .env output never leaves on the event either (ADR-0050).
+fn send(ctx: &Ctx, e: Emitted, put: &mut dyn FnMut(Out<'_>)) {
+    match e {
+        Emitted::Created(x) => put(Out::Created(&x)),
+        Emitted::Changed(x) => put(Out::Changed(&x)),
+        Emitted::Deleted(x) => put(Out::Deleted(&x)),
+        Emitted::Started(x) => put(Out::Started(&x)),
+        Emitted::Activity(mut x) => {
+            if crate::env_view::on(ctx) {
+                match crate::env_view::mask_items(std::mem::take(&mut x.items)) {
+                    Ok(items) => x.items = items,
+                    Err(_) => return,
+                }
+            }
+            put(Out::Activity(&x));
+        }
+        Emitted::Finished(x) => put(Out::Finished(&x)),
+        Emitted::Ended(x) => put(Out::Ended(&x)),
+        Emitted::Held(x) => put(Out::Held(&x)),
+        Emitted::Limits(x) => put(Out::Limits(&x)),
+        Emitted::Task(ty, f) => put(Out::Fact(ty, &f)),
     }
 }

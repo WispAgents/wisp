@@ -447,3 +447,119 @@ async fn handler_panic_retried_3_times_then_parked_with_reason() {
     assert_eq!(seen.tries.load(Ordering::SeqCst), 9);
     assert_eq!(st.parked().await.unwrap().len(), 2);
 }
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+struct EndArgs {
+    n: u32,
+    /// the old way: write, then emit once the write returned (ADR-0073's gap)
+    #[serde(default)]
+    after: bool,
+    #[serde(default)]
+    fail_write: bool,
+}
+struct EndCmd;
+impl Command for EndCmd {
+    const ID: &'static str = "src.end";
+    type Args = EndArgs;
+    type Out = ();
+}
+struct CountCmd;
+impl Command for CountCmd {
+    const ID: &'static str = "live.count";
+    type Args = ();
+    type Out = usize;
+}
+
+/// A writer outside a command's own events (a turn's runner): its row and its durable event, in an outbox.
+fn ender() -> P {
+    P {
+        id: "wisp.src",
+        f: Arc::new(|s| {
+            s.command::<EndCmd, _, _>(|ctx, _call, a| async move {
+                let st = store_of(&ctx);
+                let (id, fail) = (format!("end-{}", a.n), a.fail_write);
+                let job = move |w: &mut wisp_store::Writer<'_>| {
+                    w.upsert(NOTE.kind, note(&id))?;
+                    if fail {
+                        return Err(wisp_store::StoreError::Internal("injected".into()));
+                    }
+                    Ok(())
+                };
+                let r = if a.after {
+                    let r = st.write(job).await;
+                    if r.is_ok() {
+                        ctx.emit(&ctx.root_call(), &Made { n: a.n, key: None });
+                    }
+                    r
+                } else {
+                    let ob = ctx.outbox();
+                    ob.emit(&Made { n: a.n, key: None });
+                    st.write_with(ob, job).await
+                };
+                r.map_err(|e| WireError::internal(e.to_string()))
+            });
+        }),
+    }
+}
+
+/// An in-process subscriber whose command answers from what it heard, after its handlers took what came before
+/// (ADR-0073), as budget.compare does.
+fn counter(got: Arc<Mutex<Vec<u32>>>) -> P {
+    P {
+        id: "wisp.live",
+        f: Arc::new(move |s| {
+            let g = got.clone();
+            s.on::<Made, _, _>(move |_, e| {
+                let got = g.clone();
+                async move { got.lock().unwrap().push(e.n) }
+            });
+            let g = got.clone();
+            s.command::<CountCmd, _, _>(move |ctx, _, ()| {
+                let got = g.clone();
+                async move {
+                    ctx.events_delivered(Duration::from_secs(10)).await;
+                    Ok(got.lock().unwrap().len())
+                }
+            });
+        }),
+    }
+}
+
+/// ADR-0074: a reader who can see a write's rows finds its events queued. The store's commit listener is the reader
+/// (writer thread, right after COMMIT: the row is visible, the write hasn't returned to its caller yet); it asks a
+/// command that answers after its handlers took what came before. Written the old way (write, then emit), the event
+/// doesn't exist yet and the answer misses it (deterministically: the emit can't run before the listener returns);
+/// through an outbox it's in the answer, its durable row is in the log, and a rolled-back write's event is never
+/// heard of.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_reader_who_sees_a_writes_row_finds_its_event_already_queued() {
+    let path = temp("outbox");
+    let st = open(&path);
+    let got = Arc::new(Mutex::new(Vec::new()));
+    let k = kernel(&st, vec![ender(), counter(got.clone())]).await;
+    let kk = Arc::new(Mutex::new(Some(k.clone())));
+    let answers = Arc::new(Mutex::new(Vec::<(String, Value)>::new()));
+    let (a2, handle) = (answers.clone(), tokio::runtime::Handle::current());
+    let _sub = st.on_commit(move |rows| {
+        let Some(row) = rows.iter().find(|r| r.entity == NOTE.kind && r.id.starts_with("end-")) else { return };
+        let Some(k) = kk.lock().unwrap().clone() else { return };
+        let r = handle.block_on(k.call(Caller::user(), "live.count", json!(null))).unwrap();
+        a2.lock().unwrap().push((row.id.clone(), r));
+    });
+    k.call(Caller::user(), "src.end", json!({ "n": 1, "after": true })).await.unwrap();
+    settle(&k).await;
+    k.call(Caller::user(), "src.end", json!({ "n": 2 })).await.unwrap();
+    settle(&k).await;
+    assert!(k.call(Caller::user(), "src.end", json!({ "n": 3, "fail_write": true })).await.is_err());
+    settle(&k).await;
+    assert_eq!(
+        *answers.lock().unwrap(),
+        vec![("end-1".to_owned(), json!(0)), ("end-2".to_owned(), json!(2))],
+        "the old way the reader misses its own write's event; through the outbox it's there"
+    );
+    assert_eq!(*got.lock().unwrap(), vec![1, 2], "3 rolled back: never heard of");
+    let log: Vec<u32> =
+        EventLog::read(&st, 0, 100).await.unwrap().iter().map(|e| u32::try_from(e.event.data["n"].as_u64().unwrap()).unwrap()).collect();
+    assert_eq!(log, vec![1, 2], "the durable row went in with the write; the rolled-back one didn't");
+    assert_eq!(notes(&st).iter().filter(|n| n.starts_with("end-")).count(), 2);
+}

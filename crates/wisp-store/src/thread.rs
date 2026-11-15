@@ -117,10 +117,10 @@ pub(crate) fn transact<T>(s: &Arc<Shared>, f: impl FnOnce(&mut Writer<'_>) -> Re
     let db = lock(&s.writer);
     db.prepare_cached("BEGIN IMMEDIATE")?.execute([])?; // cached: parsed once, not per transaction
     IN_WRITE.set(true);
-    let mut w = Writer { db: &db, shared: s, pending: Vec::new(), now: s.clock.now_ms(), doomed: None };
+    let mut w = Writer { db: &db, shared: s, pending: Vec::new(), now: s.clock.now_ms(), doomed: None, staged: None };
     let out = catch_unwind(AssertUnwindSafe(|| f(&mut w)));
     IN_WRITE.set(false);
-    let (pending, doomed) = (std::mem::take(&mut w.pending), w.doomed.take());
+    let (pending, doomed, staged) = (std::mem::take(&mut w.pending), w.doomed.take(), w.staged.take());
     let out = match out {
         Ok(Ok(v)) => match doomed {
             None => db.prepare_cached("COMMIT").and_then(|mut st| st.execute([])).map(|_| v).map_err(StoreError::from),
@@ -132,10 +132,19 @@ pub(crate) fn transact<T>(s: &Arc<Shared>, f: impl FnOnce(&mut Writer<'_>) -> Re
         Err(_) => Err(StoreError::Internal("a write closure panicked; its transaction rolled back".into())),
     };
     if out.is_err() {
-        if !db.is_autocommit() {
-            db.execute_batch("ROLLBACK")?;
+        // its events never happened: dropped from their queues unseen (after the ROLLBACK, before anyone could
+        // see a row: none is visible)
+        let rolled = if db.is_autocommit() { Ok(()) } else { db.execute_batch("ROLLBACK") };
+        if let Some(st) = staged {
+            st.abort();
         }
+        rolled?;
         return out;
+    }
+    // committed: its events, queued and held since before COMMIT, go out now (ADR-0074), before the change feed's
+    // listeners hear of it
+    if let Some(st) = staged {
+        st.commit();
     }
     drop(db);
     if !pending.is_empty() {
@@ -161,9 +170,21 @@ impl Store {
     {
         // a command's durable events (and a durable handler's cursor) ride on its writes (ADR-0044)
         if let Some(intx) = wisp_kernel::durable::take() {
-            return self.write_durable(intx, f).await;
+            return self.write_durable(Some(intx), None, f).await;
         }
         self.thread.queued(move |s| transact(s, f)).await
+    }
+
+    /// `write`, and `outbox`'s events go out with its commit (ADR-0074): queued (held) inside the transaction just
+    /// before COMMIT, let go on the writer thread right after it, dropped if it rolls back; its durable ones are
+    /// appended to the log in the same transaction. Whoever reads these rows finds the events already queued.
+    /// Additive (2026-11-15).
+    pub async fn write_with<T, F>(&self, outbox: wisp_kernel::Outbox, f: F) -> Result<T>
+    where
+        T: Send + 'static,
+        F: FnOnce(&mut Writer<'_>) -> Result<T> + Send + 'static,
+    {
+        self.write_durable(wisp_kernel::durable::take(), Some(outbox), f).await
     }
 
     /// `write`, submitted now and not waited for: the writer thread runs writes in the order they were

@@ -56,6 +56,21 @@ async fn a_task_runs_its_first_turn_and_is_named_after_its_topic() {
     assert_eq!(r.sim.spawned()[0].args[0], "fix the login");
 }
 
+/// ADR-0074: a turn's end goes out with the write that ends it, not after it returns: the one store write that
+/// records the turn done carries `turn.ended` (and the task's fact, `turn.finished`) in its outbox, after its
+/// `session.changed`, so a client that reads the turn ended and asks budget.compare finds the event queued.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_turns_end_goes_out_with_the_write_that_ends_it() {
+    let r = rig().await;
+    let id = r.rt.create(start("fix the login")).await.unwrap().id.0;
+    until("the turn to end", || async { last_status(&r, &id).await == Some(TurnStatus::Done) }).await;
+    until("the run to let go", || async { r.rt.list(&ListArgs::default())[0].state == SessionState::Review }).await;
+    let writes = r.host.writes.lock().unwrap().clone();
+    let ending: Vec<_> = writes.iter().filter(|w| w.contains(&"turn.ended")).collect();
+    assert_eq!(ending, [&vec!["session.changed", "turn.ended", "task.finished", "turn.finished"]], "{writes:?}");
+    assert!(writes.iter().all(|w| w.first() == Some(&"session.changed")), "every task write carries its session.changed");
+}
+
 #[tokio::test(flavor = "multi_thread")]
 async fn a_failed_run_shows_the_harness_error() {
     let r = rig().await;
