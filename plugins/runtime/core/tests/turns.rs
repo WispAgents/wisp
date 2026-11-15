@@ -314,6 +314,34 @@ fn a_v1_session_file_imports_1_to_1() {
     assert!(import::from_v1(&json!({"title": "no id"})).is_err());
 }
 
+/// v1 kept a turn's edits on `turn.changes`; a live v2 turn keeps them in `ext["wisp.runtime"].changes` (finish.rs),
+/// where the ledger, the opened turn's files and the Changes pane read them. An imported turn has them there too: a
+/// file named twice is one entry, an entry without a path is dropped, and one bad edit doesn't lose the file's others.
+#[test]
+fn a_v1_turns_changes_land_where_a_live_turn_keeps_them() {
+    let mut v = v1_file();
+    v["turns"][0]["changes"] = json!([
+        {"file": "a.ts", "op": "edit", "edits": [{"before": "a", "after": "b"}]},
+        {"file": "b.ts", "op": "create", "beforeFile": null, "edits": [{"before": "", "after": "new"}]},
+        {"file": "a.ts", "op": "write", "edits": [{"old": "b", "new": "c"}, 7]},
+        {"file": "", "op": "edit", "edits": []}
+    ]);
+    let i = import::from_v1(&v).unwrap();
+    let t = &i.turns[0].turn;
+    assert_eq!(t.changed_files, Some(2), "two files, not four entries");
+    let kept = &t.ext["wisp.runtime"]["changes"];
+    assert_eq!(
+        kept,
+        &json!([
+            {"file": "a.ts", "op": "modify", "edits": [{"before": "a", "after": "b"}, {"before": "b", "after": "c"}]},
+            {"file": "b.ts", "op": "add", "edits": [{"before": "", "after": "new"}]}
+        ])
+    );
+    assert!(t.ext["v1"].get("changes").is_none(), "not kept twice");
+    // a turn that changed nothing has no slot and no count
+    assert!(!i.turns[1].turn.ext.contains_key("wisp.runtime") && i.turns[1].turn.changed_files.is_none());
+}
+
 /// Saved for later (`runtime.forLater` writes `ext["wisp.runtime"].forLater`) is on the row for the list's For later
 /// section; a held turn's row names that turn, so Later's Start / Skip can release it.
 #[test]

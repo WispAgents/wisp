@@ -3,7 +3,8 @@
 //!
 //! Fields runtime owns map 1:1. Everything else v1 kept on a task or a turn (goal, worktree, crew, auto,
 //! delegations, checkpoint, …) is kept as it was under `ext["v1"]`, for its owner's own import to read. Activity keeps v1's item shape in the log with `v = 0` (read through
-//! `upcast`), so history is never rewritten.
+//! `upcast`), so history is never rewritten. A turn's `changes` land where a live turn keeps its edits
+//! (`ext["wisp.runtime"].changes`), so an imported turn shows its files like a native one.
 //!
 //! size-ok: one v1 session JSON → rows mapping, field for field
 
@@ -15,6 +16,8 @@ use wisp_runtime_api::{SessionId, TurnId};
 
 /// The slot v1's other fields wait in.
 pub const V1_EXT: &str = "v1";
+/// Runtime's own slot on a turn (`ext["wisp.runtime"]`).
+const RUNTIME_EXT: &str = "wisp.runtime";
 
 const SESSION_OWN: &[&str] = &[
     "id",
@@ -166,12 +169,31 @@ fn change_op(v: &str) -> ChangeOp {
     }
 }
 
+/// One v1 edit: `{before, after}` as v1's adapters wrote it, or `{old, new}`; a field that isn't text reads as empty.
+fn edit(v: &Value) -> Option<Edit> {
+    let o = v.as_object()?;
+    let text = |a: &str, b: &str| o.get(a).or_else(|| o.get(b)).and_then(Value::as_str).unwrap_or_default().to_owned();
+    Some(Edit { before: text("before", "old"), after: text("after", "new") })
+}
+
+/// v1's `turn.changes`, one entry per file in first-touch order (v1 merged a file's edits into one entry, but a
+/// file it wrote twice could appear twice: its edits join the first entry), no entry without a path. An edit that
+/// isn't an object is skipped alone, never the file's whole list.
 fn changes(v: Option<&Value>) -> Vec<FileChange> {
     let list = v.and_then(Value::as_array).map_or(&[][..], Vec::as_slice);
-    list.iter()
-        .filter_map(Value::as_object)
-        .map(|c| FileChange { file: s(c, "file"), op: change_op(&s(c, "op")), edits: parse::<Vec<Edit>>(c.get("edits")) })
-        .collect()
+    let mut out: Vec<FileChange> = Vec::new();
+    for c in list.iter().filter_map(Value::as_object) {
+        let file = s(c, "file");
+        if file.is_empty() {
+            continue;
+        }
+        let edits: Vec<Edit> = c.get("edits").and_then(Value::as_array).map_or_else(Vec::new, |a| a.iter().filter_map(edit).collect());
+        match out.iter_mut().find(|x| x.file == file) {
+            Some(x) => x.edits.extend(edits),
+            None => out.push(FileChange { file, op: change_op(&s(c, "op")), edits }),
+        }
+    }
+    out
 }
 
 /// A stored v1 presentation keeps `v = 0`: the current parser rebuilds it from the turn's text lazily.
@@ -193,6 +215,10 @@ fn turn(sid: &SessionId, idx: u32, o: &Map<String, Value>) -> ImportedTurn {
     let rest = leftovers(o, TURN_OWN);
     if !rest.is_empty() {
         ext.insert(V1_EXT.into(), Value::Object(rest));
+    }
+    // where a live turn keeps its edits (finish.rs `keep_in_slot`): the ledger, the turn's files and Changes read them there
+    if !changes.is_empty() {
+        ext.insert(RUNTIME_EXT.into(), serde_json::json!({ "changes": changes }));
     }
     let turn = Turn {
         id: TurnId(s(o, "id")),

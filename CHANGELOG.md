@@ -219,6 +219,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Fixed
 
+- **v2: `wisp import` keeps each v1 turn's changed files.** An imported task's day cards count its files, an opened turn lists them and the Changes pane has their edits, as for a turn run in v2; a file v1 listed twice counts once, and importing again doesn't double them.
+
 - **v2: `wisp tasks` no longer starts a task.** A command word alone (`wisp tasks`, `wisp ship`, `wisp run`) prints its usage, a typo of one (`wisp tsks`) asks *did you mean wisp tasks?*, and a plugin's name alone (`wisp runtime`) lists its verbs; none of them launches an agent. A prompt that is a command word goes after `--`: `wisp -- tasks`.
 - **v2: closing a dialog with Escape gives focus back to what opened it.** A dialog opened before its code had loaded could leave focus on the page itself, so the keyboard went nowhere until you clicked.
 - **v2: you can paste into a task's Shell after selecting text in it.** Selecting text on the Shell's screen (to copy it) took the keys out of the terminal, so ⌘V or Ctrl+Shift+V did nothing. A paste now goes to the terminal you last clicked or opened, unless a text box takes it.

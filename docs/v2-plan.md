@@ -622,7 +622,7 @@ Source: `docs/v1-features.md` (each row's evidence and test). `[x]` built, `[ ]`
 - [ ] Share links on another grid aren't revoked by Share again
 - [ ] `uncarryStuck` note isn't shown on the Machines card
 - [ ] Ledger keys (j/k, /, [ ]) work only with focus inside the ledger (they mean other things page-wide)
-- [ ] `wisp import` drops v1 per-turn changes (importer.rs), so imported tasks show 0 files on day cards
+- [x] `wisp import` drops v1 per-turn changes (importer.rs), so imported tasks show 0 files on day cards (r267: kept in `ext["wisp.runtime"].changes` like a live turn; `a_v1_turns_changes_*` tests)
 - [ ] Ledger scrubber has no day labels (the mock had them); `wisp notices` chip clipped at 1280 (scrolls)
 - [ ] Ledger not yet in design/v1-reference/allowed.md for the parity gate
 - [ ] `rows-view.ts` forces `en-GB` (peer-note fixed in r241) dates: check v1 (later/format.ts is en-GB on purpose, as v1) and use the app locale where v1 did
