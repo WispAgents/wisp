@@ -21,9 +21,9 @@ Rust for everything but the UI, Solid/TS for the UI, everything a plugin (ADR-00
 | v1 features | **315 built · 7 partial · 5 missing · 4 dropped** of 331 (§6) |
 | Regressed | none (F-comp-1 picker restored to v1 in round 233) |
 | CI, last full run (03c0046d) | Linux + macOS: **only** 2 css-rules tests failed (1 of 192 targets), fixed in r244 · Windows cancelled · desktop + Android green |
-| Budgets | initial JS **119.3** KB br (≤ 120: 0.7 KB left) · CSS 26.9 KB (≤ 30) |
+| Budgets | initial JS **119.4** KB br (≤ 120: 0.6 KB left; r248 making room) · CSS 27.1 KB (≤ 30) |
 | Weekly usage | 88 % (owner allowed 3 coders: free reset; running 2) |
-| Coders running | coder-r245 (trial folds), coder-r247 (lead waits on subagents + report-back) |
+| Coders running | coder-r247 (lead waits on subagents + report-back), coder-r248 (initial JS room) |
 
 ## 3. Owner directions (standing rules)
 
@@ -72,7 +72,8 @@ Rust for everything but the UI, Solid/TS for the UI, everything a plugin (ADR-00
 - [x] Composer `@` and `/`
 - [x] Harness picker back to v1: one pill, one two-pane popover (round 233, 6e3fe42e)
 - [x] "What will Auto run" back on the pill as v1 (#autoPv: Auto's pick is the pill's own segment, opens the AutoPop); extra compare runs open the same two-pane picker with their own model · thinking · account and What's different (round 236, c390aca5)
-- [ ] Try it two ways: v1's `.runners.trial` folds (≤1099 px name + Default, ≤700 px effort) and 'Default' on a compare run with its default model (after r242: CSS budget)
+- [x] Try it two ways folds as v1 + Default on compare runs (round 245, 1d79d6e9)
+- [ ] After Escape closes the harness picker v2 focuses the pill (focus ring on the runner group); v1 appears to return focus to the prompt (blue box): check v1 and match
 - [ ] **Parity gate** (`qa/parity.mjs`): baseline 0/96 on 2026-11-10; per-view burn-down in `docs/v2-ui-burndown.md`;
       **not re-measured as a whole since**: the batched pass (§4.8) runs it on every view, width and theme
 - [ ] Layout and feedback gates on every view (browser and phone views): to run in the batched pass
@@ -703,7 +704,7 @@ Source: `docs/v1-features.md` (each row's evidence and test). `[x]` built, `[ ]`
 |---|---|---|
 | 243 | Launcher bar as v1 at every width (More label, gaps, lead's model, unknown = Default, Worktree hidden with no project) | committed (a6ba4cac) |
 | 246 | Port v1 #795 (check-in fires while waiting on subagents) + #796 (compact follow-ups list) | done, uncommitted |
-| 245 | Try it two ways folds (≤1099/≤700) + Default on compare runs | in progress |
+| 245 | Try it two ways folds (≤1099/≤700) + Default on compare runs | committed (1d79d6e9; lead verified: tests, check, side-by-sides) |
 | 244 | css-rules failures fixed (breakpoint tokens, Wrap group); check and test share @wisp/tokens/css-rules | committed (8e60cdf5, c8173ea6) |
 | 242 | Settings and org CSS lazy: initial CSS 30.0 -> 26.9 KB br, looks unchanged | committed (826b025f) |
 | 241 | Review of rounds 227, 228, 229: one fix (offline time in app locale); all committed | committed |
