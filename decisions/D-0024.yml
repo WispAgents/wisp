@@ -1,0 +1,11 @@
+id: D-0024
+decision: Add a line to `server/capped.js` for every new `/internal` route or tool.
+reason: Routes enforce capped permissions for tasks started below Full auto by the authenticated session.
+scope:
+- server/capped.js
+- server/routes/**
+category: constraint
+status: accepted
+sources:
+- AGENTS.md
+date: 2026-11-07

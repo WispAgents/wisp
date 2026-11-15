@@ -1,0 +1,9 @@
+id: D-0039
+decision: Keep `ws.js` a generic WebSocket client that knows nothing about any channel.
+scope:
+- server/channels/ws.js
+category: architecture
+status: accepted
+sources:
+- AGENTS.md
+date: 2026-11-07

@@ -1,0 +1,14 @@
+id: D-0010
+decision: Treat split view as the page's only layout; don't reintroduce the feed or a `view` setting.
+reason: The feed and its `view` setting are gone; spells setting `view` load with a warning.
+rejected:
+- feed layout
+- '`view` setting'
+scope:
+- web/js/features/split.js
+- web/**
+category: architecture
+status: accepted
+sources:
+- AGENTS.md
+date: 2026-11-07

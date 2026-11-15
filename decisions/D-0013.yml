@@ -1,0 +1,9 @@
+id: D-0013
+decision: Don't let tests rely on the network (e.g. `npx` downloads) or on which harness Auto picks.
+scope:
+- test/**
+category: constraint
+status: accepted
+sources:
+- AGENTS.md
+date: 2026-11-07

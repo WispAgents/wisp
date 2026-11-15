@@ -1,0 +1,11 @@
+id: D-0046
+decision: Don't open persistent channel connections (Slack Socket Mode, Discord gateway) on a grid box.
+reason: Grid boxes sleep; Discord's grid edge answers instead.
+scope:
+- server/channels/slack.js
+- server/channels/discord.js
+category: constraint
+status: accepted
+sources:
+- AGENTS.md
+date: 2026-11-07

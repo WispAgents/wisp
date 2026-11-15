@@ -1,0 +1,15 @@
+id: D-0011
+decision: Release by merging a version bump that includes a `## [x.y.z] - date` CHANGELOG section; never run `npm publish` by hand.
+reason: '`release.yml` builds, drafts notes from the CHANGELOG, publishes to npm and bumps Homebrew, and merging to main is the gate.'
+rejected:
+- manual npm publish
+scope:
+- .github/workflows/release.yml
+- scripts/release-notes.mjs
+- CHANGELOG.md
+- package.json
+category: architecture
+status: accepted
+sources:
+- AGENTS.md
+date: 2026-11-07

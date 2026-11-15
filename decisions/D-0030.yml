@@ -1,0 +1,11 @@
+id: D-0030
+decision: Name each visible element in `PARTS` and keep its selectors stable; when renaming a class, update `PARTS` rather than breaking spells.
+scope:
+- web/js/spell-schema.js
+- web/css/**
+- web/**
+category: constraint
+status: accepted
+sources:
+- AGENTS.md
+date: 2026-11-07

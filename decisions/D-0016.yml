@@ -1,0 +1,11 @@
+id: D-0016
+decision: Make every piece of UI you add or change reachable from a spell; a UI change without this is not done.
+reason: Users rely on being able to change any part of wisp with a spell.
+scope:
+- web/**
+- web/js/spell-schema.js
+category: constraint
+status: accepted
+sources:
+- AGENTS.md
+date: 2026-11-07

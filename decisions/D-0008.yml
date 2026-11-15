@@ -1,0 +1,9 @@
+id: D-0008
+decision: Have worktree cleanup remove on its own only what a follow-up can bring back.
+scope:
+- server/services/worktrees.js
+category: constraint
+status: accepted
+sources:
+- AGENTS.md
+date: 2026-11-07

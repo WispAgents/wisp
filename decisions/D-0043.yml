@@ -1,0 +1,10 @@
+id: D-0043
+decision: Do not add new dependencies; match surrounding code style with short comments that explain why and consistent naming.
+reason: Keep the codebase consistent and dependency-free.
+scope:
+- '**'
+category: constraint
+status: accepted
+sources:
+- AGENTS.md
+date: 2026-11-07

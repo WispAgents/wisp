@@ -1,0 +1,13 @@
+agent_markers: []
+window_days: 14
+min_support: 3
+min_precision: 0.5
+ignore:
+- '**/node_modules/**'
+- '**/dist/**'
+- '**/vendor/**'
+- '**/*.min.js'
+- '**/*.lock'
+promote_min_hits: 5
+promote_max_override_rate: 0.1
+stop_max_attempts: 3

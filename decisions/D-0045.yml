@@ -1,0 +1,12 @@
+id: D-0045
+decision: Fix flaky tests instead of retrying them.
+rejected:
+- retrying flaky tests
+scope:
+- test/**
+- .github/workflows/**
+category: convention
+status: accepted
+sources:
+- AGENTS.md
+date: 2026-11-07

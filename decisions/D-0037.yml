@@ -1,0 +1,10 @@
+id: D-0037
+decision: For notable new spell capabilities, add a worked example to `SPELL_EXAMPLES` in `server/spell-guide.js` and, when needed, a sentence in `scripts/guides.mjs`.
+scope:
+- server/spell-guide.js
+- scripts/guides.mjs
+category: convention
+status: accepted
+sources:
+- AGENTS.md
+date: 2026-11-07

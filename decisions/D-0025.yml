@@ -1,0 +1,10 @@
+id: D-0025
+decision: Make every UI change follow `design/` and pass `design/checklist.md` (real Chrome, desktop and phone widths, light and dark, side by side and stacked).
+scope:
+- web/**
+- design/**
+category: convention
+status: accepted
+sources:
+- AGENTS.md
+date: 2026-11-07

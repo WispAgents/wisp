@@ -1,0 +1,10 @@
+id: D-0007
+decision: Never commit directly to `main`; work on a branch and open a PR.
+reason: '`main` is protected.'
+scope:
+- '**'
+category: constraint
+status: accepted
+sources:
+- AGENTS.md
+date: 2026-11-07

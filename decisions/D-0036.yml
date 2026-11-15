@@ -1,0 +1,9 @@
+id: D-0036
+decision: On a public GitHub repo, have the GitHub channel report only its fixed line.
+scope:
+- server/channels/github.js
+category: constraint
+status: accepted
+sources:
+- AGENTS.md
+date: 2026-11-07

@@ -1,0 +1,11 @@
+id: D-0033
+decision: Define behaviour knobs as typed `PART_PROPS`, validate them in `server/spells.js` (`PROP_RANGE`), and read them with `spellProp(part, key)`, re-applying on the `spells` bus event.
+scope:
+- web/js/spell-schema.js
+- server/spells.js
+- web/js/features/**
+category: convention
+status: accepted
+sources:
+- AGENTS.md
+date: 2026-11-07

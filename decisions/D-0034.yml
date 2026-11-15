@@ -1,0 +1,9 @@
+id: D-0034
+decision: Use no privileged gateway intents in the Discord channel.
+scope:
+- server/channels/discord.js
+category: constraint
+status: accepted
+sources:
+- AGENTS.md
+date: 2026-11-07

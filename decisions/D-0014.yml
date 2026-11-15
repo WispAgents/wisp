@@ -1,0 +1,14 @@
+id: D-0014
+decision: On refresh, never re-append a DOM node that is already in place; compare and move only what changed.
+reason: Re-inserting a node replays its CSS entry animation.
+rejected:
+- re-appending existing nodes on refresh
+scope:
+- web/js/**
+- renderFeed
+- renderBody
+category: convention
+status: accepted
+sources:
+- AGENTS.md
+date: 2026-11-07

@@ -1,0 +1,11 @@
+id: D-0032
+decision: Scroll through `web/js/features/scroll.js` (`scrollByPx`, `keepInPlace`, `feedAnchor`, `topInset`, `watching`) instead of touching `#stage` directly.
+rejected:
+- manipulating `#stage` scroll directly
+scope:
+- web/js/**
+category: convention
+status: accepted
+sources:
+- AGENTS.md
+date: 2026-11-07
