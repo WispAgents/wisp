@@ -187,6 +187,22 @@ describe('Fab', () => {
     expect(buttons[0]?.closest('[data-kit="app-bar-actions"]')).not.toBeNull();
   });
 
+  it('ios_compose_shows_on_tasks_only_not_on_my_stuffs_bar_r298', async () => {
+    // the Tasks list stays mounted (hidden) under My Stuff with its Fab: My Stuff's root bar never draws New task
+    const { createSignal } = await import('solid-js');
+    const [page, setPage] = createSignal<'list' | 'main'>('list');
+    as('ios', () => (
+      <Frame layout="stack" page={page()} top={<TopAppBar kind="root" title="Tasks" part="t.bar" />} list={<Fab icon="plus" label="New task" onClick={noop} />} main={<TopAppBar kind="root" title="My Stuff" part="s.bar" />} />
+    ));
+    expect(qa('[data-part="t.bar"] [aria-label="New task"]').length).toBe(1);
+    setPage('main');
+    expect(qa('[data-part="s.bar"] [aria-label="New task"]').length).toBe(0);
+    expect(qa('[data-kit="frame-pane"][data-pane="main"] [aria-label="New task"]').length).toBe(0);
+    // with no bar of its own on the shown page, the frame's top bar doesn't draw a hidden pane's action either
+    as('ios', () => <Frame layout="stack" page="main" top={null} list={<Fab icon="plus" label="Other" onClick={noop} />} main={null} />);
+    expect(qa('[aria-label="Other"]').length).toBe(0);
+  });
+
   it('ios_the_compose_button_leaves_with_its_fab', async () => {
     const { createSignal, Show } = await import('solid-js');
     const [on, setOn] = createSignal(true);

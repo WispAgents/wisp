@@ -5,14 +5,14 @@
 // list row swipes right to Share and left to Remove; both are in the row's ⋯ on screen. An app launches inside wisp,
 // in its sandboxed frame over the whole screen (F-stuff-10). Its own chunk: only the phone apps load it.
 import { createMemo, createSignal, onCleanup, Show, type JSX } from 'solid-js';
-import type { PluginClient } from '@wisp/client';
+import { ownerOf, type PluginClient } from '@wisp/client';
 import { useShell } from '@wisp/shell';
 import { StuffPhone, StuffPhoneApp, type MenuEntry, type StuffPhoneGroup } from '@wisp/ui';
 import { itemActions, type ActionId } from './actions.ts';
 import { publishTargets } from './commands.ts';
 import { useEntries, type Entry } from './items.ts';
 import { kindOf } from './kinds.ts';
-import { cardMeta, groupItems, kindChips, shownItems, when, type KindFilter } from './model.ts';
+import { cardMeta, computerOf, groupItems, withComputer, kindChips, shownItems, when, type KindFilter } from './model.ts';
 import { pageRun } from './page-run.ts';
 import { PaneCards, pinsOf } from './pins.tsx';
 import { stuffState } from './state.ts';
@@ -66,7 +66,10 @@ export default function StuffPhonePage(props: { readonly client: PluginClient })
   const [app, setApp] = createSignal<{ readonly title: string; readonly url: string }>();
   const { run, upload } = pageRun({ c, shell, pins, entries, launched: (e, url) => setApp({ title: e.it.title || e.it.name, url }) });
   const sessions = c.entities.list<{ id: string; title: string }>('session');
-  const byId = createMemo(() => new Map(entries().map((e) => [e.it.id, e])));
+  // rows are keyed by entity key, never the bare item id: two computers can each hold an `st1` (r298), and keyed by id
+  // one copy stood for both (its name, its menu, its Remove)
+  const byKey = createMemo(() => new Map<string, Entry>(entries().map((e) => [e.key, e])));
+  const byItem = createMemo(() => new Map(entries().map((e) => [e.it, e])));
   const filter = () => ({ query: q(), kind: kind(), starred: false });
   const chips = createMemo(() => kindChips(entries().map((e) => e.it), filter(), t));
   const shown = createMemo(() => shownItems(entries().map((e) => e.it), { ...filter(), kind: chips().kind }, t));
@@ -77,6 +80,8 @@ export default function StuffPhonePage(props: { readonly client: PluginClient })
   const groups = createMemo((): StuffPhoneGroup[] => {
     const now = Date.now();
     const items = entries().map((x) => x.it);
+    // two computers' things in one list: each says whose it is, by the computer's own name (never "This Mac")
+    const computer = computerOf(entries().map((x) => ownerOf(x.key)), (p) => c.peers.name(ownerOf(p)));
     return groupItems(shown(), byTask() ? 'task' : 'time', {
       t,
       now,
@@ -87,8 +92,8 @@ export default function StuffPhonePage(props: { readonly client: PluginClient })
       id: g.label,
       label: g.label,
       items: g.items.flatMap((it) => {
-        const e = byId().get(it.id);
-        return e ? [{ id: it.id, title: it.title || it.name, sub: cardMeta(it, t), when: when(it.at, now), icon: kindOf(it.kind).icon, menu: actionsOf(e, items) }] : [];
+        const e = byItem().get(it);
+        return e ? [{ id: e.key, title: it.title || it.name, sub: withComputer(cardMeta(it, t), computer(ownerOf(e.key))), when: when(it.at, now), icon: kindOf(it.kind).icon, menu: actionsOf(e, items) }] : [];
       }),
     }));
   });
@@ -123,7 +128,7 @@ export default function StuffPhonePage(props: { readonly client: PluginClient })
     });
   };
   const act = (id: string, action: string): void => {
-    const e = byId().get(id);
+    const e = byKey().get(id);
     if (!e) return;
     if (action === 'remove') removeSoon(e);
     else run(e, action as ActionId);

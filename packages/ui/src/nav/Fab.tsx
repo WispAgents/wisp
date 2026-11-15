@@ -13,7 +13,7 @@ import { flag, type KitProps, type PartName } from '../core/props.ts';
 import { Icon } from '../content/Icon.tsx';
 import type { IconName } from '../content/icons.ts';
 import { usePlatform } from '../platform/PlatformLook.tsx';
-import { useComposeHost } from './compose.tsx';
+import { useComposeHost, useComposeScope } from './compose.tsx';
 import { FAB_START, fabOnScroll } from './scroll-math.ts';
 import { watchGiveWay } from './give-way.ts';
 import { markRoot } from '../platform/root-mark.ts';
@@ -107,6 +107,7 @@ function WebFab(props: FabProps): JSX.Element {
 
 function IosCompose(props: FabProps): JSX.Element {
   const host = useComposeHost();
+  const scope = useComposeScope();
   const part: PartName = props.part ?? 'ui.fab';
   if (host)
     onCleanup(
@@ -117,6 +118,7 @@ function IosCompose(props: FabProps): JSX.Element {
         icon: 'compose',
         onSelect: () => props.onClick(),
         part,
+        scope,
       }),
     );
   return null;

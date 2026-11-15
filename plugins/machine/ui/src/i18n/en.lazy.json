@@ -1,6 +1,6 @@
 {
+  "machine.name.mac": "This Mac",
   "machine.name.pc": "This PC",
-  "machine.name.computer": "This computer",
   "machine.chip.memory": " memory",
   "machine.chip.memoryRuns": " memory · {runs} running",
   "machine.chip.paused": "Paused",

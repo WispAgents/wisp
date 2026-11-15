@@ -133,6 +133,15 @@ export function cardMeta(it: Item, t: Translate): string {
   return [what, files, it.size ? fmtSize(it.size) : '', it.kind === 'link' ? it.name : ''].filter(Boolean).join(' · ');
 }
 
+/** The computer each item is on, when the list mixes computers (a phone with two of them): its name, else nothing, so
+ *  the same thing on two computers reads apart. One computer: nothing (the meta line stays as it was). */
+export function computerOf(peers: readonly string[], name: (peer: string) => string): (peer: string) => string | undefined {
+  return new Set(peers).size > 1 ? name : () => undefined;
+}
+
+/** A card's meta line with its computer after it ("Document · md · Studio"). */
+export const withComputer = (meta: string, computer: string | undefined): string => (computer ? (meta ? `${meta} · ${computer}` : computer) : meta);
+
 /** A card's time: the hour today, the day this year, else month and year. */
 export function when(at: number, now: number, locale?: string): string {
   const d = new Date(at);

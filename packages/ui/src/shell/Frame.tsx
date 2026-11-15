@@ -14,7 +14,7 @@ import { children, Show, type JSX } from 'solid-js';
 import { flag, styleOf, type KitProps, type WithVars } from '../core/props.ts';
 import { useT, type Translate } from '../core/i18n.tsx';
 import { usePlatform } from '../platform/PlatformLook.tsx';
-import { ComposeButton, ComposeHost, useComposeHost } from '../nav/compose.tsx';
+import { ComposeButton, ComposeHost, ComposeScope, useComposeHost } from '../nav/compose.tsx';
 
 export type FramePage = 'list' | 'main' | 'side';
 
@@ -44,11 +44,12 @@ export interface FrameProps extends KitProps, WithVars {
   readonly behind?: boolean;
 }
 
-/** The compose button at the top bar's end, on iOS, while no root TopAppBar draws it. */
-function TopCompose(): JSX.Element {
+/** The compose button at the top bar's end, on iOS, while no root TopAppBar draws it and the pane it came from is on
+ *  screen (a hidden list's New task is not My Stuff's). */
+function TopCompose(props: { readonly shown: (pane: string | undefined) => boolean }): JSX.Element {
   const look = usePlatform();
   const host = useComposeHost();
-  return <ComposeButton when={look() === 'ios' && (host?.bars() ?? 0) === 0} />;
+  return <ComposeButton when={look() === 'ios' && (host?.bars() ?? 0) === 0} accept={props.shown} />;
 }
 
 function Grip(props: { readonly onResize: (px: number, done: boolean) => void; readonly label: string }): JSX.Element {
@@ -103,22 +104,23 @@ function FrameBody(props: FrameProps): JSX.Element {
       style={styleOf({}, props.vars)}
     >
       <header data-kit="frame-top" data-part="shell.topbar">
-        {props.top}
-        <TopCompose />
+        {/* the top is the list's head (the phone's Tasks bar): its pane's compose, not a pushed page's */}
+        <ComposeScope id="list">{props.top}</ComposeScope>
+        <TopCompose shown={(p) => p === undefined || active(p as FramePage) === ''} />
       </header>
       <div data-kit="frame-body">
         <section data-kit="frame-pane" data-pane="list" data-part="shell.sidebar" data-active={active('list')} aria-label={props.listLabel}>
-          {props.list}
+          <ComposeScope id="list">{props.list}</ComposeScope>
           <Show when={props.layout === 'split' && props.onListResize}>
             {(fn) => <Grip onResize={fn()} label={t('resize')} />}
           </Show>
         </section>
         <main data-kit="frame-pane" data-pane="main" data-part="shell.main" data-active={active('main')} aria-label={props.mainLabel}>
-          {props.main}
+          <ComposeScope id="main">{props.main}</ComposeScope>
         </main>
         <Show when={props.sideOpen}>
           <aside data-kit="frame-pane" data-pane="side" data-part="shell.side" data-active={active('side')} aria-label={props.sideLabel}>
-            {props.side}
+            <ComposeScope id="side">{props.side}</ComposeScope>
           </aside>
         </Show>
       </div>

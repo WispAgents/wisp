@@ -111,7 +111,7 @@ export function createMockPeer(o: MockPeerOptions = {}): MockPeer {
 
   const info: PeerInfo = {
     peer,
-    name: o.name ?? 'This Mac (mock)',
+    name: o.name ?? 'Mac mini (mock)',
     build: 'mock',
     version: '2.0.0-mock',
     proto_min: PROTO_MIN,
