@@ -23,7 +23,7 @@ Rust for everything but the UI, Solid/TS for the UI, everything a plugin (ADR-00
 | CI, last full run (f4679d2d) | **2nd green run: Linux 4/4 + macOS 2/2 + Windows node 22**; Windows node 24: serve_task follow-up timing (1.5 s fake vs Windows load; next: gate the fake) |
 | Budgets | initial JS 107.2 KB br (≤ 120) · CSS 27.1 KB (≤ 30) |
 | Weekly usage | 98 % (owner: continue, 1 coder) |
-| Coders running | coder-r278 (last FAKE_DELAY tests) |
+| Coders running | coder-r279 (machines.removed order) |
 
 ## 3. Owner directions (standing rules)
 
@@ -812,7 +812,8 @@ Source: `docs/v1-features.md` (each row's evidence and test). `[x]` built, `[ ]`
 
 | Round | What | State |
 |---|---|---|
-| 278 | serve_channels_cap + serve_delegate_machine onto FAKE_GATE | in progress |
+| 279 | machines.removed delivered only after the peer is cleared from memory | in progress |
+| 278 | serve_channels_cap + serve_delegate_machine on gates (FAKE_GATE_ALL) | committed (b4d85054) |
 | 277 | 'While running' tests held on a gate (serve_task x5, crew delegate) | committed |
 | 276 | Ledger: scrubber day labels; filter row one line (collapse, then scroll) | committed |
 | 275 | serve_orphans: Windows pid reuse (test tracked pids); fakes hold a life lock | committed (488e7813) |
