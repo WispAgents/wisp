@@ -20,10 +20,10 @@ Rust for everything but the UI, Solid/TS for the UI, everything a plugin (ADR-00
 |---|---|
 | v1 features | **315 built · 7 partial · 5 missing · 4 dropped** of 331 (§6) |
 | Regressed | none (F-comp-1 picker restored to v1 in round 233) |
-| CI, last full run (836287a4) | **Linux 4/4 + macOS 24 green; Windows Rust tests: win22 0 failures (job 33 min), win24 1 (serve_budget, r271)** · UI: pane-host + phone Select flakes fixed in r270 (302cff77) |
+| CI, last full run (302cff77) | **Linux 4/4 + macOS 2/2 green · Windows 22: all Rust tests pass**; 4 tools tests assume POSIX (r273) · Windows 24 running |
 | Budgets | initial JS 107.2 KB br (≤ 120) · CSS 27.1 KB (≤ 30) |
 | Weekly usage | 95 % (owner 2026-11-15 14:50: keep going with one coder until the limit) |
-| Coders running | coder-r272 (events published on commit) |
+| Coders running | coder-r273 (tools tests on Windows) |
 
 ## 3. Owner directions (standing rules)
 
@@ -637,6 +637,7 @@ Source: `docs/v1-features.md` (each row's evidence and test). `[x]` built, `[ ]`
 - [x] `wisp tasks` with no flags starts a task with the prompt 'tasks' (a known command word taken as a prompt): a command word alone prints its usage, a typo of one says *did you mean*, a plugin's name lists its verbs; `wisp -- <word>` is the task (`crates/wisp/src/words.rs` `not_a_task`, `serve_cli.rs` `a_command_word_or_a_typo_of_one_starts_no_task`)
 - [ ] README's Development lines still describe v1's npm run dev
 - [ ] No tested `.vscode/launch.json` (CodeLLDB) for wisp serve
+- [ ] ADR-0074 gaps: events a command emits still go out when it returns (after its writes); budget drain/early, channels hub, machines emit after writes outside a command
 - [ ] `ui-only`/MCP: nothing open
 
 ## 8. CI
@@ -794,7 +795,8 @@ Source: `docs/v1-features.md` (each row's evidence and test). `[x]` built, `[ ]`
 
 | Round | What | State |
 |---|---|---|
-| 272 | Turn-ended event published in the turn-end write's own commit (ADR-0073's open gap) | in progress |
+| 273 | 4 tools tests on Windows (commands rule, parseArgs root, test.ts monoflow detection, dev home) | in progress |
+| 272 | A write's events queued before its rows can be read (outbox, ADR-0074) | committed (d1a32104) |
 | 271 | Budget counts a turn that just ended: compare/view wait for earlier events (kernel Bus::delivered, ADR-0073) | committed (3cd4ffd7) |
 | 270 | Two load-sensitive UI tests + a Select stuck-open bug (product) | committed (b532ec4e, 302cff77) |
 | 269 | CI's other-packages step runs each check once (ADR-0072): 128.6 s -> 38.5 s locally | committed (836287a4); proof = CI on 836287a4 |
