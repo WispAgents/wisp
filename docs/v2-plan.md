@@ -23,7 +23,7 @@ Rust for everything but the UI, Solid/TS for the UI, everything a plugin (ADR-00
 | CI, last full run (5b84787a, partial) | Linux: only `apps/web/test/strings-split.test.ts` (peer-note.ts lazy keys; r249) · macOS/Windows still running |
 | Budgets | initial JS **119.4** KB br (≤ 120: 0.6 KB left; r248 making room) · CSS 27.1 KB (≤ 30) |
 | Weekly usage | 88 % (owner allowed 3 coders: free reset; running 2) |
-| Coders running | coder-r247 (subagent report-back), coder-r248 (initial JS room), coder-r249 (offline bar strings) |
+| Coders running | coder-r248 (initial JS room), coder-r250 (report-back timing as v1) |
 
 ## 3. Owner directions (standing rules)
 
