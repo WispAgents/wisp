@@ -9,7 +9,7 @@ import { fileURLToPath } from 'node:url';
 import { defineConfig, type ProxyOptions } from 'vite';
 import solid from 'vite-plugin-solid';
 import { mockPeer } from './dev/vite-mock.ts';
-import { proxiedOrigin } from '../../tools/dev/plan.ts';
+import { proxiedOrigin } from './dev/dev-proxy.ts';
 
 function build(): string {
   try {

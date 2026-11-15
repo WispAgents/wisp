@@ -99,13 +99,6 @@ export function resolveHome(asked: string | undefined, userHome: string, cwd: st
   return home;
 }
 
-/** The Origin the dev proxy hands the server: the server's own for Vite's page (the edge only takes its own,
- * crates/wisp-api/src/guard.rs), anything else as it came, so a pane or another local page is still refused. */
-export function proxiedOrigin(origin: string | undefined, vitePort: number, target: string): string | undefined {
-  if (origin === undefined) return undefined;
-  return [`http://localhost:${vitePort}`, `http://127.0.0.1:${vitePort}`].includes(origin) ? target : origin;
-}
-
 type Env = Record<string, string | undefined>;
 
 /** `wisp serve`'s env: its own port and home, the page from Vite (so no WISP_WEB_DIR), and it exits when dev.ts goes. */

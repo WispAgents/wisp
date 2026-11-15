@@ -3,7 +3,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
-  apiUrl, builtBinary, proxiedOrigin, choosePort, DEFAULT_PORT, DESKTOP_DEV_IDENTIFIER, desktopEnv, DevArgError, isRustChange, parseArgs,
+  apiUrl, builtBinary, choosePort, DEFAULT_PORT, DESKTOP_DEV_IDENTIFIER, desktopEnv, DevArgError, isRustChange, parseArgs,
   portCandidates, resolveHome, serverEnv, viteEnv,
 } from '../dev/plan.ts';
 
@@ -80,16 +80,6 @@ test('the_desktop_attaches_to_the_dev_port_loads_vite_and_uses_the_dev_identifie
   assert.deepEqual(JSON.parse(env['TAURI_CONFIG'] ?? ''), overlay);
   assert.equal(desktopEnv({ CARGO_TARGET_DIR: '/shared' }, 4801, 5181, '/h', overlay, '/tmp/t', '/b')['CARGO_TARGET_DIR'], '/tmp/t', 'never the server build\'s');
   assert.throws(() => desktopEnv({}, 4801, 5181, '/h', { identifier: 'dev.wisp.app' }, '/tmp/t', '/b'), DevArgError);
-});
-
-test('the_proxy_gives_vites_own_page_the_servers_origin_and_passes_any_other_through', () => {
-  const api = 'http://127.0.0.1:4801';
-  assert.equal(proxiedOrigin('http://localhost:5181', 5181, api), api);
-  assert.equal(proxiedOrigin('http://127.0.0.1:5181', 5181, api), api);
-  assert.equal(proxiedOrigin(undefined, 5181, api), undefined, 'a GET without Origin stays without');
-  assert.equal(proxiedOrigin('http://localhost:3000', 5181, api), 'http://localhost:3000', 'a pane on another port is still refused by the edge');
-  assert.equal(proxiedOrigin('https://evil.example', 5181, api), 'https://evil.example');
-  assert.equal(proxiedOrigin('http://localhost:51810', 5181, api), 'http://localhost:51810');
 });
 
 test('rust_sources_under_crates_and_plugin_hosts_rebuild_and_nothing_else_does', () => {
