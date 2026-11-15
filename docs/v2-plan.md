@@ -72,6 +72,9 @@ Rust for everything but the UI, Solid/TS for the UI, everything a plugin (ADR-00
 - [ ] Layout and feedback gates on every view (browser and phone views): to run in the batched pass
 - [x] Task history redesign, direction A: the Ledger (round 235, b4b43212, ADR-0068): outcome rows, notice folds, day
       cards, search + filters, scrubber above 30 turns, inline open on every width
+
+### 4.3 Performance
+
 - [x] Budgets in CI (initial JS ≤ 120 KB br, CSS ≤ 30 KB)
 - [x] First download 290.6 → 117.9 KB JS, 46.4 → 29.7 KB CSS (ADR-0067)
 - [x] 4,000 tasks scroll smoothly on a 4× slowed phone; first tap on Slow 4G 1.3 s blank → 171 ms
