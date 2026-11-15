@@ -139,7 +139,8 @@ async fn a_sandbox_task_runs_in_a_box_of_its_own_with_the_project_and_goes_with_
     })
     .await;
     let cwd = s["result"]["cwd"].as_str().unwrap_or_default().to_owned();
-    assert!(cwd.ends_with("/code/proj"), "{s}");
+    // by its parts: Windows spells it `…\code\proj`
+    assert!(Path::new(&cwd).ends_with(Path::new("code").join("proj")), "{s}");
     let patch = via("sandbox.patch", json!({ "cwd": cwd })).await;
     assert_eq!(patch["ok"], true, "the project came in through a seed: {patch}");
     // the sandbox is the task's: listed with its owner, never a machine you pick

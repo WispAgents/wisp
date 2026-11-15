@@ -342,6 +342,9 @@ async fn a_project_reaches_every_screen_on_config_and_after_a_restart() {
     serve.stop();
     let (serve, port) = start_with(&dir, &[]);
     let snap = stream(port, "c2", "config", None, |s| s.contains("\"snapshot\"") && s.contains("\"web\"")).await;
-    assert!(snap.contains("\"e\":\"project\"") && snap.contains(&path), "after a restart: {snap}");
+    // the path as it's stored (Windows: `%TEMP%`'s 8.3 short names spelled out, `RUNNER~1` → `runneradmin`), as JSON
+    // spells it (Windows' `\` doubled)
+    let stored = serde_json::to_string(&wisp_proc::long_path_blocking(&path).display().to_string()).unwrap();
+    assert!(snap.contains("\"e\":\"project\"") && snap.contains(stored.trim_matches('"')), "after a restart: {snap}");
     drop(serve);
 }

@@ -104,11 +104,14 @@ async fn a_second_ask_is_answered_from_the_cache_and_a_changed_cli_is_probed_aga
     assert!(again < Duration::from_millis(500), "the second ask took {again:?}");
     assert_eq!(settled(&rec, Duration::from_millis(500)).await, once, "the second ask ran a probe");
 
-    // agy updated: another file at the same path
+    // agy updated: another file at the same path (written anew: a fresh mtime, and off Windows a fresh inode). Its
+    // bytes are read first: on Windows the fake is a copy, not a link to one, so removing it removed the only source
     let agy = dir.join("bin").join(format!("agy{}", std::env::consts::EXE_SUFFIX));
-    let real = wisp_proc::canonical_blocking(&agy).unwrap();
+    let bytes = std::fs::read(&agy).unwrap();
     std::fs::remove_file(&agy).unwrap();
-    std::fs::copy(&real, &agy).unwrap();
+    std::fs::write(&agy, bytes).unwrap();
+    #[cfg(unix)]
+    std::fs::set_permissions(&agy, std::os::unix::fs::PermissionsExt::from_mode(0o755)).unwrap();
     api.cmd("runtime.agents", json!({})).await;
     let after = settled(&rec, Duration::from_millis(500)).await;
     assert_eq!(after["agy --help"], 2, "the updated agy wasn't probed again: {after:?}");

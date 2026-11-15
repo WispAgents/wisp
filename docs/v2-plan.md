@@ -648,6 +648,20 @@ Source: `docs/v1-features.md` (each row's evidence and test). `[x]` built, `[ ]`
   min on Linux, macOS past 60). Windows hung 38 min in `serve_desktop::with_no_wisp_running_the_app_starts_one`: the
   detached app inherited the test's stdout pipe (fixed: `wisp_proc::keep_std_handles`). To confirm on the next
   `ci:full` run: every OS under 45 min.
+- **Windows 708ba936 (r257, proof = next `ci:full`):** the Rust test step hung 26 min after `6 targets failed`: an
+  orphaned `opencode` probe held the `tee` pipe. Diagnosis: a child joins its own job only after `CreateProcess`
+  returns; a server killed in that window (many serve tests stop theirs within a second of its start, while its ~10
+  startup probes spawn) left it suspended outside every job. Fixed by ADR-0070 (`wisp serve` joins a nursery job,
+  `wisp_proc::nursery`; detached starts break away), test `wisp-proc/tests/nursery_windows.rs`. The 6 targets:
+  `serve_detect` (the test removed `agy.exe`, a copy on Windows, then copied from it: now rewrites its bytes),
+  `serve_events` (compared a raw path inside JSON, where `\` is doubled), `serve_sandbox` (`ends_with("/code/proj")`
+  on a `\` path: compared by parts), `serve_kinds` (8.3 `RUNNER~1` vs the long name: product fix, a task's folder and a
+  project's path are stored long, `wisp_proc::long_path` / `GetLongPathNameW`), `serve_open` (os error 32: the folder
+  was removed while the run's process, its cwd in it, was still exiting after its answer; the test waits for that pid),
+  `serve_cli` Ctrl-C (the runner hands "ignore Ctrl-C" down: the attached CLI turns it back on,
+  `wisp_proc::take_ctrl_c`, and listens from its start). Only Windows CI can confirm: `nursery_windows`, Ctrl-C under
+  ConPTY, and `serve_open` (if a post-turn `git` in the worktree also holds the folder, the next step is a product one:
+  the turn's end waits for the run's release, not the test).
 - **Last full run 03c0046d:** Linux and macOS fail only `packages/ui/test/css-rules.test.ts` (2 tests; fixed in round 244, 8e60cdf5 + c8173ea6); Windows jobs cancelled after the others failed. Earlier: 2790d627's probe test fixed in round 234.
 - **Windows groups still open** (from the last Windows results, b7499c23 → 8c2a17ed): most fixed since; to re-count on
   the next full run. Logs in `target/ci/*-failed.log`.

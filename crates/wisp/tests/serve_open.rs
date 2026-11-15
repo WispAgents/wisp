@@ -167,13 +167,25 @@ async fn a_folder_gone_opens_at_its_base() {
     git(&repo, &["init", "-q", "-b", "main"]);
     git(&repo, &["add", "."]);
     git(&repo, &["commit", "-qm", "init"]);
-    let (serve, port) = start_with(&dir, &[]);
+    let rec = dir.join("rec");
+    let (serve, port) = start_with(&dir, &[("FAKE_RECORD", rec.to_str().unwrap())]);
     let api = Api { http: reqwest::Client::new(), port, n: 0.into() };
     let made = api.cmd("runtime.create", json!({ "prompt": "fix it", "cwd": repo, "agent": "claude", "worktree": true })).await;
     let id = made["id"].as_str().unwrap().to_owned();
     api.until(&id, "the turn ends", |t| t.last().is_some_and(ended)).await;
     let tree = api.cmd("runtime.get", json!({ "id": id })).await["cwd"].as_str().unwrap().to_owned();
     assert_ne!(tree, repo.display().to_string(), "it ran in a worktree");
+    // the turn ends on the agent's answer, and its process exits just after; on Windows a folder can't be removed
+    // while a process works in it ("being used by another process", os error 32), as a user's `rm` after the task
+    // wouldn't be either: the folder goes once the run is gone
+    for r in common::records(&rec.join("claude.jsonl")) {
+        let pid = u32::try_from(r["pid"].as_u64().unwrap()).unwrap();
+        let at = std::time::Instant::now();
+        while wisp_proc::pid_alive(pid) {
+            assert!(at.elapsed() < std::time::Duration::from_secs(20), "the run (pid {pid}) never exited");
+            tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+        }
+    }
     std::fs::remove_dir_all(&tree).unwrap();
     let (code, out, err) = wisp(&dir, "home", &repo, port, &["open", &id, "--print"], &[]);
     assert_eq!(code, 0, "{out}{err}");
