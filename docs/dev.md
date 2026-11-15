@@ -145,7 +145,7 @@ WISP_OUTER_LOOP=1 node qa/layout.mjs    # outer loop only: the full gate
   the first time they run. No test needs the network or a real Claude or Codex.
 - The `qa/*.mjs` scripts drive system Chrome through playwright-core in `PW_DIR` (default `/tmp/wisp-qa-pw`;
   see `qa/README.md`). Set `QA_PARITY_PORT` if 4590 is taken. A gate exits 1 when a shot differs, and its
-  report lands in `qa/out/`.
+  report lands in qa/out (the first run creates it; it is git-ignored).
 - Keep the code compiling while you work: `cargo check -p <crate>` and
   `cargo clippy --workspace --all-targets -- -D warnings`. `npm run check` and `npm run typecheck` are fast and
   allowed.
