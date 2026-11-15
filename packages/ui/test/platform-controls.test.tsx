@@ -32,7 +32,8 @@ const body = (css: string, sel: string): string =>
     .map((m) => m[2] ?? '')
     .join('\n');
 /** the sheet's last reduced-motion block: step 6's */
-const reduced = (css: string): string => css.slice(css.lastIndexOf('@media (prefers-reduced-motion: reduce)'));
+// every prefers-reduced-motion block of a sheet, joined: a sheet may have several (the controls', the pages' transitions)
+const reduced = (css: string): string => css.split('@media (prefers-reduced-motion: reduce)').slice(1).join('\n');
 
 function host(): GestureHost & { readonly ticks: Haptic[] } {
   const ticks: Haptic[] = [];
