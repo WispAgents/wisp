@@ -478,16 +478,17 @@
     flex: 0 1 auto;
     min-width: 0;
   }
-  /* one pill (v1 .runner-btn + .auto-pv): the pick sits inside the harness's button, one press for both */
+  /* one pill (v1 .runner-btn + .rb-m): the model sits inside the harness's button after its name, the chevron
+     last; one press for both. v1's .rb-m::before hairline sits outside its overflow box, so v1 never shows it */
   [data-kit='runner-btn'][data-lead] {
     flex: 0 1 auto;
     min-width: 0;
-    padding-right: 0;
   }
   [data-kit='runner-btn'] > [data-kit='auto-pv'] {
     flex: 0 10000 auto;
     min-width: 0;
     overflow: hidden;
+    padding: 0 0 0 13px;
   }
   /* Auto: "Auto" keeps its word and its own press (the picker); the pick is the pill's next segment (v1 #autoPv,
      .runners.pv-on .rb-h flex none), its own press (what will Auto run), and its label gives way first */
@@ -711,7 +712,8 @@
   /* The prompt box folds its toolbar as it narrows, by its own width (launcher.css, auto.css, subagents.css
      @container launcher): labels go to their icons in v1's order, then the bar scrolls with Send pinned. */
   @container launcher (max-width: 720px) {
-    [data-kit='l-bar'] > [data-a='worktree'] > [data-text='control'] {
+    [data-kit='l-bar'] > [data-a='worktree'] > [data-text='control'],
+    [data-kit='rb-a'] {
       display: none;
     }
   }
@@ -721,36 +723,77 @@
       padding-inline: var(--space-2);
     }
   }
+  /* a narrower bar (v1 auto.css): Auto's pick outranks the word "Auto" and folds to its logo; a harness picked by
+     hand keeps its name and model here (v1 hides them at 520px); a compare run's model goes (v1 .runners.cmp .rb-m) */
   @container launcher (max-width: 640px) {
-    [data-kit='rb-h'],
-    [data-kit='apv-l'],
+    [data-kit='runner-btn'][data-auto] > [data-kit='rb-h'],
+    [data-kit='runners'] > [data-kit='auto-pv'] > [data-kit='apv-l'],
+    [data-kit='runner-btn'][data-cmp] > [data-part~='launcher.compare.model'],
     [data-kit='l-bar'] > [data-a='team'] > [data-text='control'] {
       display: none;
     }
-    [data-kit='auto-pv'] {
+    [data-kit='runners'] > [data-kit='auto-pv'] {
       padding: 0 5px;
     }
-    [data-kit='auto-pv'] > [data-kit='rb-logo'] {
+    [data-kit='runners'] > [data-kit='auto-pv'] > [data-kit='rb-logo'] {
       margin-right: 0;
     }
     /* the pick is its logo alone now: it keeps its 28px (v1), the bar scrolls before it gives way */
-    [data-kit='runner-btn'] > [data-kit='auto-pv'],
     [data-kit='runners'] > [data-kit='auto-pv'] {
       flex: none;
     }
   }
+  /* three or four runs on a narrow bar: logos only, no chevrons, a narrower vs × (v1 launcher.css 600px) */
+  @container launcher (max-width: 600px) {
+    [data-kit='runners'][data-many] > [data-kit='runner-btn'] > [data-kit='icon'] {
+      display: none;
+    }
+    [data-kit='runners'][data-many] > [data-kit='vs-btn'][data-del] {
+      width: 18px;
+    }
+  }
   @container launcher (max-width: 520px) {
-    [data-kit='runner-btn'],
+    /* Auto's spark alone, centred, its chevron gone: the pick is the next thing to tap (v1 auto.css .pv-on) */
     [data-kit='runner-btn'][data-lead][data-auto] {
       padding: 0 3px;
     }
-    [data-kit='runner-btn'] > [data-kit='rb-logo'] {
+    [data-kit='runner-btn'][data-auto] > [data-kit='rb-logo'] {
       margin-right: 0;
     }
-    [data-kit='runner-btn'] > [data-kit='icon'] {
+    [data-kit='runner-btn'][data-auto] > [data-kit='icon'] {
       display: none;
     }
-    [data-kit='l-bar'] [data-text='control'] {
+    /* a phone (v1 launcher.css): the model is the pick that matters, so it alone keeps its name, the harness's name
+       when the model is the default; the effort goes to the picker */
+    [data-kit='runner-btn'] > [data-kit='rb-h'],
+    [data-kit='runner-btn'][data-def] > [data-kit='auto-pv'],
+    [data-kit='rb-e'] {
+      display: none;
+    }
+    [data-kit='runners']:not([data-cmp]) > [data-kit='runner-btn'][data-def] > [data-kit='rb-h'] {
+      display: block;
+    }
+    [data-kit='runners'][data-cmp] > [data-kit='runner-btn']:not([data-auto]) > [data-kit='rb-logo'] {
+      margin-right: var(--space-2);
+    }
+    [data-kit='runner-btn']:not([data-auto]) > [data-kit='icon'] {
+      margin-left: var(--space-2);
+    }
+    [data-kit='runners'][data-cmp] > [data-kit='runner-btn'] > [data-kit='icon'] {
+      margin-left: 0;
+    }
+    [data-kit='runner-btn'] > [data-kit='auto-pv'] {
+      flex: none;
+      padding: 0;
+    }
+    [data-kit='runner-btn'] > [data-kit='auto-pv'] > [data-kit='apv-l'] {
+      max-width: var(--size-pick-max-phone);
+      color: var(--ink);
+      font-weight: 500;
+    }
+    /* the place, mode and the rest go to their icons (their tooltips and menus name them); the pill's own parts
+       follow the rules above */
+    [data-kit='l-bar'] [data-text='control']:not([data-kit]) {
       display: none;
     }
     [data-kit='l-bar'] > [data-kit='mode-btn'] {

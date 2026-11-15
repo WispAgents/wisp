@@ -71,7 +71,22 @@ export function autoPick(p: AutoPreview | undefined): { agent: string; label: st
  */
 export function runnerPick(o: { readonly agent: string; readonly shown?: string | undefined; readonly name: string; readonly model: string; readonly effort: string; readonly account: string; readonly fallback: string }): string {
   if (o.agent === 'auto') return o.shown ?? o.name;
-  return [o.model || o.fallback, o.effort, o.account].filter(Boolean).join(' · ');
+  const p = runnerParts(o);
+  return [p.model, p.effort, p.account].filter(Boolean).join(' · ');
+}
+
+/** A picked harness's pick in v1's own parts (.rb-m, .rb-e, .rb-a), so a narrow bar folds them one by one (v1
+ * launcher.css: the account at 720px; at 520px the effort, and the model when it's the harness's default, `def`,
+ * where the harness's name comes back instead). */
+export interface RunnerParts {
+  readonly model: string;
+  readonly def: boolean;
+  readonly effort: string;
+  readonly account: string;
+}
+
+export function runnerParts(o: { readonly model: string; readonly effort: string; readonly account: string; readonly fallback: string }): RunnerParts {
+  return { model: o.model || o.fallback, def: !o.model, effort: o.effort, account: o.account };
 }
 
 /** Your pick differs from what Auto showed: a harness of your own, or a model of your own on its harness. */

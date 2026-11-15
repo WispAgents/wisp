@@ -4,7 +4,7 @@ import { expect, test } from 'vitest';
 import { firstFocus, goalOf, modelGroups, pickerRows, searchShown, stepRow, subLine, useHarness, varyRows, withModel, withSetting, withVary } from '../src/frame/picker.ts';
 import type { AgentOffer } from '../src/frame/runner.ts';
 import { compareWords, newRun, sameSetup } from '../src/frame/trial.ts';
-import { autoPick, runnerPick, type AutoPreview } from '../src/frame/auto.ts';
+import { autoPick, runnerParts, runnerPick, type AutoPreview } from '../src/frame/auto.ts';
 
 const CLAUDE: AgentOffer = {
   id: 'claude',
@@ -156,4 +156,15 @@ test("Auto's pick segment says what v1 #autoPv says: the harness for its default
   expect(say(preview({ agent: 'codex', model: 'gpt-5.6-terra', effort: 'high', key: 'codex:gpt-5.6-terra:high', label: 'Codex · GPT-5.6-Terra · High' }))).toBe('GPT-5.6-Terra · High');
   // before Auto answers: the harness Auto runs
   expect(runnerPick({ agent: 'auto', name: 'Codex', model: '', effort: '', account: '', fallback: 'Default' })).toBe('Codex');
+});
+
+test('a_picked_harness_s_pick_comes_in_v1_s_parts_so_a_phone_keeps_the_harness_name_only_for_the_default_model_v1_rb_m_def', () => {
+  // v1 runners.js: <span class="rb-m${m && m.id ? '' : ' def'}">${m ? m.label : 'Default'}</span>, then .rb-e, .rb-a;
+  // launcher.css ≤520px hides .rb-h, .rb-m.def and .rb-e, and shows .rb-h again beside a .rb-m.def
+  expect(runnerParts({ model: '', effort: '', account: '', fallback: 'Default' })).toEqual({ model: 'Default', def: true, effort: '', account: '' });
+  expect(runnerParts({ model: 'Opus 4.7', effort: 'High', account: 'work', fallback: 'Default' })).toEqual({ model: 'Opus 4.7', def: false, effort: 'High', account: 'work' });
+  // a level on the default model is still the default model: the phone shows the harness, the level goes to the picker
+  expect(runnerParts({ model: '', effort: 'High', account: '', fallback: 'Default' }).def).toBe(true);
+  // the wide pill's words are the parts joined, as before
+  expect(runnerPick({ agent: 'claude', name: 'Claude Code', model: 'Opus 4.7', effort: 'High', account: 'work', fallback: 'Default' })).toBe('Opus 4.7 · High · work');
 });

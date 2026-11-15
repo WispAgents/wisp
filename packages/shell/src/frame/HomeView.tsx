@@ -26,7 +26,7 @@ import { compareWords, newRun, sameSetup, settingModel, trialVary, variantWords,
 import type { Runner } from './runner.ts';
 import { goalGate, goalOf, goalSent, isBareGoal, typedInFull, type HomeGoal } from './goal-gate.ts';
 import { feedbackCommand, isFeedback, openFeedback } from './feedback.ts';
-import { autoPick, neverRule, runnerPick, overrideOf, popOf, pct, PREVIEW_DEBOUNCE, shortLabel, usd, type AutoPreview } from './auto.ts';
+import { autoPick, neverRule, runnerParts, runnerPick, overrideOf, popOf, pct, PREVIEW_DEBOUNCE, shortLabel, usd, type AutoPreview } from './auto.ts';
 import { defaultHarness, harnessOf } from './harness.ts';
 import { MAX_RUNNERS, newGroup, nextRun } from './compare.ts';
 import { firstRunOf, firstRunTools, launcherFull } from './first-run.ts';
@@ -522,6 +522,8 @@ export function HomeView(props: { readonly onBack?: () => void }): JSX.Element {
           title: agent() === 'auto' ? t('shell.home.autoTitle') : t('shell.runner.title'),
           auto: agent() === 'auto',
           pick: runnerPick({ agent: agent(), shown: shown()?.label, name: pick().name, model: modelLabel() || model(), effort: effort(), account: account()?.label ?? '', fallback: t('shell.runner.default') }),
+          // a picked harness's model, thinking and account as v1's parts: the narrow bar folds them one by one (launcher.css)
+          ...(agent() !== 'auto' && { pickParts: runnerParts({ model: modelLabel() || model(), effort: effort(), account: account()?.label ?? '', fallback: t('shell.runner.default') }) }),
           pickTitle:
             agent() !== 'auto'
               ? t('shell.runner.title')

@@ -118,6 +118,17 @@ test('a_harness_shows_its_models_thinking_and_accounts_on_the_right', () => {
   expect(s.picked).toEqual(['acct:w']);
 });
 
+test('only_the_account_row_is_a_wrap_group_the_other_segment_rows_stay_one_line_v1_pk_acct', () => {
+  setup();
+  (document.querySelectorAll('[data-kit="pk-h"]')[1] as HTMLElement).click();
+  const box = document.querySelector('[data-kit="picker"]') as HTMLElement;
+  const wraps = [...box.querySelectorAll('[data-kit="pk-seg"][data-part$="wrap"]')];
+  // v1 launcher.css `.pk-acct .pk-seg { flex-wrap: wrap }`: the accounts' segment, and no other
+  expect(wraps.map((w) => w.getAttribute('data-part'))).toEqual(['runner.account-wrap']);
+  expect(wraps[0]?.closest('[role="radiogroup"]')?.getAttribute('aria-label')).toBe('Account');
+  expect([...(wraps[0]?.querySelectorAll('button') ?? [])].map((b) => b.textContent)).toEqual(['Auto', 'Work', 'Old']);
+});
+
 test('keys_arrows_preview_in_the_left_pane_right_and_enter_go_across_left_comes_back_escape_closes', async () => {
   const s = setup();
   await Promise.resolve();
@@ -302,4 +313,40 @@ test('a_compare_run_s_button_opens_its_picker_and_says_its_own_model_lit_while_o
   expect(pressed).toEqual([0]);
   expect(run?.getAttribute('aria-expanded')).toBe('true');
   expect(document.querySelector('[data-kit="runners"]')?.hasAttribute('data-open')).toBe(true);
+});
+
+test('a_hand_picked_harness_s_pill_marks_the_default_model_and_splits_model_effort_account_for_the_narrow_rules_v1_rb_m_def', () => {
+  const [def, setDef] = createSignal(true);
+  mount(() => (
+    <Launcher
+      {...launcher({})}
+      runner={{
+        ...launcher({}).runner,
+        auto: false,
+        label: 'Claude Code',
+        pick: def() ? 'Default' : 'Opus 4.7 · High · work',
+        pickParts: def() ? { model: 'Default', def: true, effort: '', account: '' } : { model: 'Opus 4.7', def: false, effort: 'High', account: 'work' },
+      }}
+    />
+  ));
+  const btn = document.querySelector<HTMLElement>('[data-part="launcher.harness"]');
+  const model = (): HTMLElement | null | undefined => btn?.querySelector('[data-part="launcher.model"]');
+  // the default model: app-home.css ≤520px keys on data-def to keep "Claude Code" and fold "Default" (v1 .rb-m.def)
+  expect(btn?.hasAttribute('data-def')).toBe(true);
+  expect(btn?.querySelector('[data-kit="rb-h"]')?.textContent).toBe('Claude Code');
+  expect(model()?.querySelector('[data-kit="rb-m"]')?.textContent).toBe('Default');
+  expect(model()?.querySelector('[data-kit="rb-e"]')).toBeNull();
+  // a model of your own: no data-def (≤520px the harness name goes, the model stays); the effort (≤520px) and the
+  // account (≤720px) are their own parts, the words the same as the joined pick
+  setDef(false);
+  expect(btn?.hasAttribute('data-def')).toBe(false);
+  expect(model()?.querySelector('[data-kit="rb-m"]')?.textContent).toBe('Opus 4.7');
+  expect(model()?.querySelector('[data-kit="rb-e"]')?.textContent).toBe(' · High');
+  expect(model()?.querySelector('[data-kit="rb-a"]')?.textContent).toBe(' · work');
+  expect(model()?.textContent).toBe('Opus 4.7 · High · work');
+});
+
+test('auto_never_marks_a_default_model_on_the_harness_button', () => {
+  mount(() => <Launcher {...launcher({})} runner={{ ...launcher({}).runner, pickParts: { model: 'Default', def: true, effort: '', account: '' } }} />);
+  expect(document.querySelector('[data-part="launcher.harness"]')?.hasAttribute('data-def')).toBe(false);
 });

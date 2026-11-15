@@ -126,6 +126,10 @@ export interface LauncherProps {
      * (launcher.model, v1 .rb-m), never the harness's name again. */
     readonly auto: boolean;
     readonly pick: string;
+    /** a picked harness's `pick` in v1's parts (.rb-m/.rb-e/.rb-a; `def`: the harness's default model), so a narrow bar
+     * folds the account (720px), then the effort and a default model, where the harness's name stays (520px).
+     * Additive (2026-11-15). */
+    readonly pickParts?: { readonly model: string; readonly def: boolean; readonly effort: string; readonly account: string };
     readonly pickTitle: string;
     readonly logo?: string;
     readonly compare: string;
@@ -374,6 +378,7 @@ export function Launcher(props: LauncherProps): JSX.Element {
                   data-part="launcher.harness"
                   data-lead=""
                   data-auto={flag(props.runner.auto)}
+                  data-def={flag(!props.runner.auto && props.runner.pickParts?.def === true)}
                   aria-haspopup="dialog"
                   aria-expanded={props.runner.open ? 'true' : 'false'}
                   title={props.runner.title}
@@ -395,15 +400,27 @@ export function Launcher(props: LauncherProps): JSX.Element {
                   <span data-kit="rb-h" data-text="control">
                     {props.runner.label}
                   </span>
-                  <Icon name="chevron" />
-                  {/* a harness's model · thinking · account, in its button (v1 .rb-m) */}
+                  {/* a harness's model · thinking · account, in its button after its name, the chevron last (v1 .rb-m … .chev) */}
                   <Show when={!props.runner.auto}>
                     <span data-kit="auto-pv" data-part="launcher.model">
                       <span data-kit="apv-l" data-text="control">
-                        {props.runner.pick}
+                        <Show when={props.runner.pickParts} fallback={props.runner.pick}>
+                          {(p) => (
+                            <>
+                              <span data-kit="rb-m">{p().model}</span>
+                              <Show when={p().effort}>
+                                <span data-kit="rb-e">{` · ${p().effort}`}</span>
+                              </Show>
+                              <Show when={p().account}>
+                                <span data-kit="rb-a">{` · ${p().account}`}</span>
+                              </Show>
+                            </>
+                          )}
+                        </Show>
                       </span>
                     </span>
                   </Show>
+                  <Icon name="chevron" />
                 </button>
               )}
             />
