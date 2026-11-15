@@ -82,7 +82,7 @@ cd wisp
 node bin/wisp.js           # → http://localhost:4477
 
 # Desktop app (needs Rust):
-npm run dev:tauri
+npm run dev:desktop
 ```
 
 On first launch, the *Welcome to wisp* session shows a live gallery of every presentation block.
@@ -180,7 +180,7 @@ wisp ship <id> [--draft]          # commit, push and open a PR for a worktree ta
 wisp merge <id>                   # squash-merge its PR, fast-forward your local main
 wisp run release 0.58.0            # run a recipe; values fill its {params} (or version=0.58.0)
 wisp recipes                      # list recipes
-wisp usage [--days 7]             # spend and outcomes
+wisp runtime usage --days 7       # spend and outcomes
 wisp computer on [--grid HOST]    # add this computer to your wisp Grid (signs in with a code first); off, or no word for its status
 wisp mcp                          # MCP server for other agents and editors
 wisp skill install                # install the wisp skill for Claude Code (--agent all for Codex/opencode too)
@@ -593,19 +593,11 @@ An agent (in an empty folder of its own) reads the spell reference, samples the 
 
 A spell's code (`script`) runs only in a sandboxed frame with no network, no DOM and no wisp API: it gets the data wisp fetched and returns values or blocks, which wisp checks and draws with its own renderer. Every spell shows how far it reaches: **Safe**, **Acts for you** (follow-ups, launches; only when you click, or a hook), **Reads GitHub**, or **Runs commands**. Questions, approvals and Settings → Spells can't be restyled or hidden. Start wisp with `WISP_SAFE=1` to turn every spell off, or use **Turn every spell off** in Settings → Spells.
 
-**Share one.** Settings → Spells → export (a `.spell.json` file) or copy (JSON for a chat). Your colleague drops the file on wisp, pastes it or a link (https or `gist:<id>`) into Settings → Spells, or runs `wisp spell install ./my-prs.spell.json`. They see the same review before anything changes, and it stays off until they turn it on.
-
-```sh
-wisp spell                         # list: ● on  ○ off
-wisp spell cast "a /explain command that asks for a plain-words explanation"
-wisp spell install my-prs.spell.json --on
-wisp spell export my-prs > my-prs.spell.json
-wisp spell off --all
-```
+**Share one.** Settings → Spells → export (a `.spell.json` file) or copy (JSON for a chat). Your colleague drops the file on wisp, or pastes it or a link (https or `gist:<id>`) into Settings → Spells. They see the same review before anything changes, and it stays off until they turn it on.
 
 ## Usage
 
-⌘K → *Usage* shows spend per day and, per project and per harness · model: spend, turns, how often the run worked (finished, not partial or blocked), how often the agent had to ask you, and the average time. Claude Code, opencode and Grok report cost (Grok only when its plan does); Codex, Cursor, Antigravity and Copilot only report tokens (Copilot bills in premium requests), so their turns are counted but not priced. Also `wisp usage` and `GET /api/usage?days=30`.
+⌘K → *Usage* shows spend per day and, per project and per harness · model: spend, turns, how often the run worked (finished, not partial or blocked), how often the agent had to ask you, and the average time. Claude Code, opencode and Grok report cost (Grok only when its plan does); Codex, Cursor, Antigravity and Copilot only report tokens (Copilot bills in premium requests), so their turns are counted but not priced. Also `wisp runtime usage` and `GET /api/usage?days=30`.
 
 Settings → *Usage* → **Plan budget** shows how much of each Claude Code and Codex account's 5-hour and weekly windows is gone, and where it went. Each time the CLI reports its windows, wisp shares the move out among the tasks that ran on that account since the last report, by how long each ran. A task's details show its share (*22% of weekly · 31% of 5-hour*), and under each account *Where the weekly window went* lists the three tasks that used the most this period (click one to open it), the rest in one row, and *Outside wisp or earlier* for what wisp didn't run. Shares are approximate: Claude Code reports once per run, so a turn's share lands with the next report. **Automations stop at** (Off, 50%, 75%, 90%) keeps the rest for you. Past that mark, crew check-ins, triggers, goal rounds and agents' own follow-ups wait for the window's reset. Anything you start yourself still runs.
 
@@ -717,7 +709,6 @@ Issues and PRs are welcome. wisp has no build step: edit `web/` or `server/`, th
 
 ```sh
 npm test         # adapters, process launching, terminals, and the full ask_user loop
-npm run test:real  # smoke test against the real CLIs installed on this machine
 ```
 
 `npm test` needs no network or accounts. A fake CLI (`test/fixtures/fake-agent.mjs`) speaks each harness's real output format, edits files, and calls `ask_user` through the real MCP bridge. On Windows the fakes are installed as npm-style `.cmd` shims, which is how npm installs the real CLIs. CI runs in three tiers (`.github/workflows/`): a pull request runs the suite once on Linux with Node 22 (`pr.yml`; the `ci:full` label adds every OS). Every merge to main runs it on Linux, macOS, and Windows with Node 20 and 22, plus `test:real` against freshly installed Claude Code, Codex, opencode, Cursor, and Antigravity CLIs (`main.yml`). Every night all of that runs again, also on the current Node LTS and the newest Node, with the suite three times per job to catch flaky tests (`nightly.yml`).

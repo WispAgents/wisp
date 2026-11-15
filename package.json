@@ -19,11 +19,13 @@
     "check": "node tools/check/index.ts",
     "typecheck": "node tools/typecheck.ts",
     "verify": "npm run check && npm run typecheck && npm test",
-    "build": "npm run build --workspace @wisp/web && node tools/bundle.ts",
+    "build": "npm run build --workspace @wisp/web",
     "dev": "node tools/dev.ts",
+    "dev:desktop": "node tools/dev.ts --desktop",
     "dev:web": "npm run dev --workspace @wisp/web",
     "budgets": "node tools/budgets.ts",
-    "start": "node apps/server/bin/wisp.ts"
+    "doctor": "node tools/doctor.ts",
+    "start": "cargo run -p wisp -- serve"
   },
   "devDependencies": {
     "@types/node": "^24.0.0",

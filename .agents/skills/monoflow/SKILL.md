@@ -22,7 +22,7 @@ so a new package needs no config edit.
 Turned off for wisp, on purpose (plan §9.4.3): the git shield hooks, the `git` shim, monoflow's own
 worktrees, `monoflow start/ship`, and its "never use raw git, never grep" rules. Commits, branches, PRs and
 worktrees stay with git, `gh` and wisp. If `monoflow init` is ever run again, remove what it installs in
-`.git/hooks/`, `.agents/bin/git`, `.claude/settings.json`, `.opencode/` and the block it adds to AGENTS.md.
+`.git/hooks/`, `.agents/bin/git`, `.claude/settings.json`, `.opencode/` and the block it adds to AGENTS.md. <!-- cmd-check: skip paths to delete, not commands -->
 
 **In a worktree shared by several agents** (wisp's crew and subagents work this way): never `checkpoint revert`,
 `commit`, `outer` or `ship`. `checkpoint revert` is `git read-tree -u --reset` and removes every staged file

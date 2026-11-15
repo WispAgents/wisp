@@ -106,6 +106,9 @@ Checked by `npm run check` (`tools/check`: the TypeScript rules and the Rust one
    majors; manifests validate.
 7. **Performance budgets fail CI** (ADR-0011).
 8. Files over 400 lines and functions over 60 lines warn.
+9. **Documented commands work** (`commands`): every package.json script and every command in AGENTS.md,
+   README.md, this file, docs/dev.md and the skills names a file, script, workspace, crate or `wisp` word that
+   exists; a line opts out with `<!-- cmd-check: skip <why> -->`.
 
 ## How a feature is built
 

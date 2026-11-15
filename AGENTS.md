@@ -17,6 +17,7 @@ step-by-step how-tos are in `.claude/skills/` (any agent can read them, not only
 
 ```sh
 npm install                      # once: links the TypeScript (UI) workspaces
+npm run doctor                   # is this checkout ready? toolchain, deps, monoflow, builds, ports: one ok/warn/FAIL line each with its fix; exit 1 on FAIL; --json for agents
 cargo build                      # the Rust workspace (one shared target dir per machine)
 npm run check                    # structure rules for both sides (layers, cycles, CSS, state, manifests, OpenAPI, sizes; rust-layers, -sans-io, -unsafe, -sizes, -manifests)
 npm run typecheck                # tsc strict for every TS package, tests, dev and gallery included (tools/typecheck.ts: 4 programs in parallel)
@@ -26,7 +27,8 @@ cargo deny check                 # licences, advisories, bans, sources (deny.tom
 cargo test -p <crate> --test <file> <name>  # the test you're writing: that's all a coder runs
 .agents/bin/monoflow graph impact <file>   # before changing a contract
 # full suites, e2e, monoflow verify and qa/*.mjs are the outer loop: PR CI and one batched pass (WISP_OUTER_LOOP=1)
-npm run dev                      # the wisp binary + the web bundle with reload
+npm run dev                      # dev mode: `wisp serve` from this checkout on :4800 (next free if busy) with home ~/.wisp-dev, + Vite HMR proxying /api to it; prints the URL. Rust edits under crates/ or plugins/*/host rebuild + restart it (r+Enter by hand, --no-watch to skip); Ctrl-C stops all it started
+npm run dev:desktop              # the same + the Tauri window on Vite's URL, as dev.wisp.dev (tauri.dev.conf.json), attached to :4800 (never 4477, never ~/.wisp); options: npm run dev -- --help
 ```
 
 ## Language and runtime (ADR-0013)
