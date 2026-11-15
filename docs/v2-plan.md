@@ -23,7 +23,7 @@ Rust for everything but the UI, Solid/TS for the UI, everything a plugin (ADR-00
 | CI, last full run (2790d627) | Linux + macOS: 1 failing test (`serve_orphans` probe), fixed by round 234, re-run pending · Windows: cancelled (open groups, §8) · desktop builds + Android: green |
 | Budgets | initial JS 118.8 KB br (≤ 120) · **CSS 30.0 KB (≤ 30): over**, coder-r242 making room |
 | Weekly usage | 86 % (owner allowed 3 coders: free reset) |
-| Coders running | coder-r242 (initial CSS budget), coder-r243 (launcher bar v1 details) |
+| Coders running | coder-r242 (initial CSS budget) |
 
 ## 3. Owner directions (standing rules)
 
@@ -69,6 +69,7 @@ Rust for everything but the UI, Solid/TS for the UI, everything a plugin (ADR-00
 - [x] Composer `@` and `/`
 - [x] Harness picker back to v1: one pill, one two-pane popover (round 233, 6e3fe42e)
 - [x] "What will Auto run" back on the pill as v1 (#autoPv: Auto's pick is the pill's own segment, opens the AutoPop); extra compare runs open the same two-pane picker with their own model · thinking · account and What's different (round 236, c390aca5)
+- [ ] Try it two ways: v1's `.runners.trial` folds (≤1099 px name + Default, ≤700 px effort) and 'Default' on a compare run with its default model (after r242: CSS budget)
 - [ ] **Parity gate** (`qa/parity.mjs`): baseline 0/96 on 2026-11-10; per-view burn-down in `docs/v2-ui-burndown.md`;
       **not re-measured as a whole since**: the batched pass (§4.8) runs it on every view, width and theme
 - [ ] Layout and feedback gates on every view (browser and phone views): to run in the batched pass
@@ -697,7 +698,7 @@ Source: `docs/v1-features.md` (each row's evidence and test). `[x]` built, `[ ]`
 
 | Round | What | State |
 |---|---|---|
-| 243 | Launcher bar v1 details: More options label at ≤520, bar gap 521–960, lead's model when comparing, unknown model = Default | in progress |
+| 243 | Launcher bar as v1 at every width (More label, gaps, lead's model, unknown = Default, Worktree hidden with no project) | committed (a6ba4cac) |
 | 242 | Initial CSS back under budget (30.0 > 30.0 KB br) without changing looks | in progress |
 | 241 | Review of rounds 227, 228, 229: one fix (offline time in app locale); all committed | committed |
 | 240 | Picker account row wraps as v1 (Wrap group); task clock locale | committed (af6dd52b, f838e783) |
