@@ -20,10 +20,10 @@ Rust for everything but the UI, Solid/TS for the UI, everything a plugin (ADR-00
 |---|---|
 | v1 features | **314 built · 8 partial · 5 missing · 4 dropped** of 331 (§6) |
 | Regressed | F-comp-1 harness picker (owner, 2026-11-15): being rebuilt to v1 |
-| CI, last full run (2790d627) | Linux + macOS: 1 failing test (`serve_orphans` probe), fix in progress · Windows: cancelled (open groups, §8) · desktop builds + Android: green |
+| CI, last full run (2790d627) | Linux + macOS: 1 failing test (`serve_orphans` probe), fixed by round 234, re-run pending · Windows: cancelled (open groups, §8) · desktop builds + Android: green |
 | Budgets | initial JS 117.9 KB br (≤ 120) · CSS 29.7 KB (≤ 30) · enforced in CI |
 | Weekly usage | 86 % (owner allowed 3 coders: free reset) |
-| Coders running | coder-r233 (harness picker), coder-r234 (CI probe test), coder-r235 (task history Ledger) |
+| Coders running | coder-r233 (harness picker), coder-r235 (task history Ledger) |
 
 ## 3. Owner directions (standing rules)
 
@@ -150,7 +150,7 @@ Rust for everything but the UI, Solid/TS for the UI, everything a plugin (ADR-00
 - [ ] Verify + commit round 227 (gesture seams, phone overlays) and round 229's shell hookups (mixed files)
 - [ ] Verify + commit round 228 (push plugin, grid relay, `hpke` dependency)
 - [ ] Review coder-r233's picker against `design/v1-reference/home.runner` (side by side) before committing
-- [ ] Push the local commits after coder-r234's CI fix
+- [x] Push the local commits after coder-r234's CI fix
 - [ ] Rebuild the owner's v2 desktop preview with the latest fixes (port 4791, `~/.wisp-v2-preview`)
 
 ## 6. Every v1 feature
@@ -602,7 +602,7 @@ Source: `docs/v1-features.md` (each row's evidence and test). `[x]` built, `[ ]`
 ## 8. CI
 
 - **Last full run 2790d627:** Linux and macOS fail only `serve_orphans::a_probe_whose_caller_hung_up_is_ended`
-  (coder-r234); Windows jobs cancelled; desktop builds and Android green.
+  (fixed in round 234: the probes end at their 15 s limit since ADR-0066; 8/8 pass locally; new run pushed); Windows jobs cancelled; desktop builds and Android green.
 - **Windows groups still open** (from the last Windows results, b7499c23 → 8c2a17ed): most fixed since; to re-count on
   the next full run. Logs in `target/ci/*-failed.log`.
 - **Earlier green:** 0a22f297, 3fcb1196, ed7924d1 had Linux and macOS fully green.
@@ -685,7 +685,7 @@ Source: `docs/v1-features.md` (each row's evidence and test). `[x]` built, `[ ]`
 | Round | What | State |
 |---|---|---|
 | 235 | Task history: direction A, Ledger + scrubber | in progress |
-| 234 | CI: probe test after the probe memo | in progress |
+| 234 | CI: probe test after the probe memo (ends at its limit) | committed |
 | 233 | Harness picker back to v1 (one pill, one two-pane popover) | in progress |
 | 232 | `npm run doctor` | committed |
 | 231 | Check rule `commands`; 13 broken commands fixed | committed |
