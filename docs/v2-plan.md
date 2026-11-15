@@ -20,10 +20,10 @@ Rust for everything but the UI, Solid/TS for the UI, everything a plugin (ADR-00
 |---|---|
 | v1 features | **315 built · 7 partial · 5 missing · 4 dropped** of 331 (§6) |
 | Regressed | none (F-comp-1 picker restored to v1 in round 233) |
-| CI, last full run (03c0046d) | Linux + macOS: **only** 2 css-rules tests failed (1 of 192 targets), fixed in r244 · Windows cancelled · desktop + Android green |
+| CI, last full run (5b84787a, partial) | Linux: only `apps/web/test/strings-split.test.ts` (peer-note.ts lazy keys; r249) · macOS/Windows still running |
 | Budgets | initial JS **119.4** KB br (≤ 120: 0.6 KB left; r248 making room) · CSS 27.1 KB (≤ 30) |
 | Weekly usage | 88 % (owner allowed 3 coders: free reset; running 2) |
-| Coders running | coder-r247 (lead waits on subagents + report-back), coder-r248 (initial JS room) |
+| Coders running | coder-r247 (subagent report-back), coder-r248 (initial JS room), coder-r249 (offline bar strings) |
 
 ## 3. Owner directions (standing rules)
 
