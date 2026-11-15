@@ -461,7 +461,7 @@ function ranOn(s, d, child) {
   const away = !!place;
   const name = away ? place : s.machine?.name || placeName('');
   const tip = d.crew ? `Ran on ${name}, in ${d.name}'s own folder` : away ? `Ran on ${name}, on a copy of the lead's work` : `Ran on ${name}, with the lead in its folder`;
-  return `<span class="tl-place${away ? ' away' : ''}" title="${esc(tip)}">${icon(away || s.machine ? 'server' : 'laptop')}${esc(name)}</span>`;
+  return `<span class="tl-place${away ? ' away' : ''}" title="${esc(tip)}">${icon(away || s.machine ? 'server' : 'laptop')}<span>${esc(name)}</span></span>`;
 }
 
 // One delegation with the child session and turn it ran as (from the lead's childSessions).
