@@ -7,8 +7,8 @@
 // New task as the FAB (Android) / the bar's compose button (iOS: the kit hands a Fab's action to the root bar). Its
 // own chunk: only the phone apps load it, so the
 // browser's first download is unchanged.
-import { createMemo, createSignal, Show, type JSX } from 'solid-js';
-import { Button, Dialog, Fab, Inline, Input, Menu, ProjectSelect, RadioGroup, Sheet, TopAppBar, useSignal, type MenuEntry, type ToolbarItem } from '@wisp/ui';
+import { createMemo, createSignal, onCleanup, onMount, Show, type JSX } from 'solid-js';
+import { Button, Dialog, Fab, Inline, Input, Menu, ProjectSelect, RadioGroup, SelectionBar, Sheet, TopAppBar, useSignal, type MenuEntry, type SelectionAction, type TaskSwipe, type ToolbarItem } from '@wisp/ui';
 import { useShell } from '../context.tsx';
 import { Slot } from '../slot.tsx';
 import '../i18n/lazy.ts';
@@ -16,6 +16,10 @@ import { displayCombo } from '../keys.ts';
 import { computerOptions, computerTitle, knownComputer } from './computer-filter.ts';
 import { openSwitcher } from './project-switch.ts';
 import { useAccount, useHeadChips } from './Sidebar.tsx';
+import { computed } from '@wisp/client';
+import { SESSION, type SessionRow } from '../rows.ts';
+import { allSelected } from './list-select.ts';
+import { BULK_ACTIONS, bulkTargets, runBulk, type BulkAction } from './bulk.ts';
 
 /** The computer filter, from the client's peers (every saved computer) and the device setting. */
 function useComputers() {
@@ -27,6 +31,11 @@ function useComputers() {
   return {
     title: (): string => computerTitle(pick(), peers(), name, all()),
     options: () => computerOptions(pick(), peers(), name, all()),
+    /** iOS's pull-down: the same choices, the one shown checked */
+    menu: (): MenuEntry[] => {
+      const on = knownComputer(pick(), peers());
+      return computerOptions(pick(), peers(), name, all()).map((o) => ({ value: o.id, label: o.label, checked: o.id === on }));
+    },
     on: (): string => knownComputer(pick(), peers()),
     set: (id: string): void => shell.computerFilter?.set(id),
   };
@@ -52,6 +61,7 @@ export function PhoneHead(props: { readonly filter: () => string }): JSX.Element
   const computers = useComputers();
   const project = useBarProject(props.filter);
   const [picking, setPicking] = createSignal(false);
+  const selecting = useSignal(shell.listSelect?.on ?? (() => false));
   const actions = createMemo((): ToolbarItem[] => [
     {
       id: 'project',
@@ -69,14 +79,18 @@ export function PhoneHead(props: { readonly filter: () => string }): JSX.Element
       priority: 'pin',
       render: () => <Menu trigger={{ icon: 'user', 'aria-label': account.label() }} items={account.items()} onSelect={account.onSelect} placement="bottom-end" part="phone.tasks.me" />,
     },
+    // selection mode's visible way in (the twin of a row's long-press menu's Select): iOS's Select, Android's in ⋮
+    ...(shell.listSelect ? [{ id: 'select', label: shell.t('shell.phone.select'), icon: 'check' as const, priority: 1, onSelect: () => shell.listSelect?.start() }] : []),
   ]);
   return (
-    <>
+    <Show when={selecting()} fallback={<>
       <TopAppBar
         kind="root"
         part="phone.tasks.bar"
         title={computers.title()}
         onTitle={() => setPicking(true)}
+        // iOS: the computer filter is a pull-down from the title (UIMenu), its choices checked; Android keeps its sheet
+        titleMenu={{ label: shell.t('shell.phone.pickComputer'), items: computers.menu(), onSelect: (id: string) => computers.set(id) }}
         search={{ label: shell.t('shell.phone.search'), onOpen: () => shell.palette.open() }}
         actions={actions()}
         actionsLabel={shell.t('shell.phone.tasksActions')}
@@ -95,6 +109,112 @@ export function PhoneHead(props: { readonly filter: () => string }): JSX.Element
           }}
         />
       </Sheet>
+    </>}>
+      <PhoneSelectBar />
+    </Show>
+  );
+}
+
+/** Delete on several tasks asks first, with how many (as a row's Delete asks). */
+function BulkDeleteAsk(props: { readonly count: number; readonly onCancel: () => void; readonly onDelete: () => void }): JSX.Element {
+  const t = useShell().t;
+  return (
+    <Dialog
+      open
+      role="alertdialog"
+      size="sm"
+      title={t('shell.select.ask.title', { count: props.count })}
+      description={t('shell.select.ask.body')}
+      onOpenChange={(open) => !open && props.onCancel()}
+      part="phone.tasks.select.ask"
+      t={(k) => t(`kit.${k}`)}
+      footer={
+        <Inline gap="4" justify="end">
+          <Button variant="ghost" onClick={() => props.onCancel()}>
+            {t('shell.select.ask.cancel')}
+          </Button>
+          <Button variant="danger" part="phone.tasks.select.ask.ok" onClick={() => props.onDelete()}>
+            {t('shell.select.ask.ok')}
+          </Button>
+        </Inline>
+      }
+    />
+  );
+}
+
+/** Esc (a keyboard, Android's Back through the platform) leaves selection, unless something over it took the key. */
+function escLeaves(exit: () => void, held: () => boolean): void {
+  onMount(() => {
+    const onKey = (e: KeyboardEvent): void => {
+      if (e.key === 'Escape' && !e.defaultPrevented && !held()) exit();
+    };
+    document.addEventListener('keydown', onKey);
+    onCleanup(() => document.removeEventListener('keydown', onKey));
+  });
+}
+
+const BULK_ICON = { done: 'done', later: 'bookmark', archive: 'archive', delete: 'trash' } as const;
+const BULK_LABEL = { done: 'shell.select.markDone', later: 'shell.select.later', archive: 'shell.select.archive', delete: 'shell.select.delete' } as const;
+
+// The Tasks list's selection bar (ADR-0065 step 13, design/mobile.md §A.4): the kit's SelectionBar (Android's contextual
+// top app bar; iOS's edit mode with its bottom toolbar) in place of the Tasks bar while the list picks rows. Its bulk
+// actions are the rows' own (bulk.ts): each picked row changes at once, a refusal rolls back with a toast; Delete asks
+// first, as a row's Delete does. Back (Esc, Android's ×, iOS's Done) leaves.
+function PhoneSelectBar(): JSX.Element {
+  const shell = useShell();
+  const t = shell.t;
+  const sel = shell.listSelect;
+  const keys = useSignal(sel?.keys ?? (() => [] as readonly string[]));
+  const order = useSignal(shell.listOrder?.keys ?? (() => [] as readonly string[]));
+  const [asking, setAsking] = createSignal<readonly string[]>();
+  const rowOf = (k: string): SessionRow | undefined => shell.client.entities.peek<SessionRow>(SESSION, k as never) as SessionRow | undefined;
+  // which bulk actions some picked task can take: it watches the picked rows only, never the whole list (5k rows)
+  const enabled = useSignal(
+    computed(() => {
+      const ks = sel?.keys() ?? [];
+      const rows = new Map(ks.map((k) => [k, shell.client.entities.row<SessionRow>(SESSION, k as never)()]));
+      return new Set(BULK_ACTIONS.filter((a) => bulkTargets(a, ks, (k) => rows.get(k)).length > 0));
+    }),
+  );
+  const all = (): boolean => allSelected({ on: true, keys: keys() }, order());
+  const exit = (): void => sel?.exit();
+  const act = (a: BulkAction): void => {
+    const targets = bulkTargets(a, keys(), rowOf);
+    if (!targets.length) return;
+    if (a === 'delete') return void setAsking(targets);
+    runBulk({ client: shell.client, toast: shell.toast, t }, a, targets);
+    exit();
+  };
+  escLeaves(exit, () => asking() !== undefined);
+  const actions = createMemo((): SelectionAction[] =>
+    BULK_ACTIONS.map((a) => ({ id: a, label: t(BULK_LABEL[a]), icon: BULK_ICON[a], onSelect: () => act(a), disabled: !enabled().has(a), ...(a === 'delete' && { danger: true }) })),
+  );
+  return (
+    <>
+      <SelectionBar
+        part="phone.tasks.select"
+        count={keys().length}
+        allPicked={all()}
+        onAll={() => sel?.all()}
+        onExit={exit}
+        actions={actions()}
+        actionsLabel={t('shell.select.actions')}
+        t={(k, v) => t(`kit.${k}`, v)}
+      />
+      <Show when={asking()}>
+        {(targets) => (
+          <BulkDeleteAsk
+            count={targets().length}
+            onCancel={() => setAsking(undefined)}
+            onDelete={() => {
+              const ks = targets();
+              setAsking(undefined);
+              runBulk({ client: shell.client, toast: shell.toast, t }, 'delete', ks);
+              exit();
+            }}
+          />
+        )}
+      </Show>
     </>
   );
 }
@@ -102,11 +222,15 @@ export function PhoneHead(props: { readonly filter: () => string }): JSX.Element
 /** Over the list: the crew's stories and New task (the projects are the bar's selector, owner 2026-11-15). */
 export function PhoneListTop(props: { readonly onNew: () => void }): JSX.Element {
   const shell = useShell();
+  const selecting = useSignal(shell.listSelect?.on ?? (() => false));
   return (
     <>
       {/* the crew as stories (step 13b): the crew's section, which the phone apps draw here and not in the list */}
       <Slot input="shell.list:crew" layout="stack" />
-      <Fab label={shell.t('shell.side.new')} icon="plus" onClick={props.onNew} part="phone.tasks.new" />
+      {/* selection mode: the bar's actions take over, so New task steps aside (M3's contextual bar; iOS's edit mode) */}
+      <Show when={!selecting()}>
+        <Fab label={shell.t('shell.side.new')} icon="plus" onClick={props.onNew} part="phone.tasks.new" />
+      </Show>
     </>
   );
 }
@@ -152,6 +276,8 @@ export interface PhoneTaskBarProps {
   readonly onRename: (title: string) => void;
   /** what plugins put in the task's head (`shell.task:head`), before the menu */
   readonly head: () => JSX.Element;
+  /** the head's swipe to the next / previous task in the list's order (its twins: Next task / Previous task in the menu) */
+  readonly swipe: TaskSwipe;
 }
 
 export function PhoneTaskBar(props: PhoneTaskBarProps): JSX.Element {
@@ -167,6 +293,7 @@ export function PhoneTaskBar(props: PhoneTaskBarProps): JSX.Element {
         back={{ label: t('shell.dest.tasks'), onBack: props.onBack }}
         actions={[{ id: 'head', label: t('shell.phone.taskHead'), icon: 'dots', priority: 'pin', render: () => props.head() }]}
         menu={{ label: t('shell.task.more'), items: props.menu(), onSelect: props.onSelect }}
+        swipe={props.swipe}
         t={kit}
       />
       <Sheet title={t('shell.phone.details')} open={props.detailsOpen} onOpenChange={props.onDetails} part="phone.task.details" t={kit}>

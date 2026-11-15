@@ -1273,4 +1273,25 @@
      Start from an issue stays, at the row's end */
   :root[data-platform='android'] [data-kit='lr-list'][data-empty] { display: none; }
   :root[data-platform='android'] [data-kit='lr-list'][data-empty] ~ [data-part~='launcher.issue'] { margin-inline-start: auto; }
+
+  /* Selection mode (step 13, design/mobile.md §A.4): M3's contextual top app bar (×, the count, the bulk actions) on a
+     container tone; each row leads with its check circle in the dot's column, a picked row in the secondary container,
+     and the rows' own quick actions step aside */
+  :root[data-platform='android'] [data-kit='app-bar'][data-kind='select'] { background: var(--surface-c2); }
+  :root[data-platform='android'] [data-kit='list-row'][data-layout='feed'] > [data-kit='row-pick'] {
+    grid-column: 1;
+    grid-row: 1;
+    justify-self: center;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: var(--size-avatar-sm);
+    height: var(--size-avatar-sm);
+    border: var(--size-ring) solid var(--on-surface-var);
+    border-radius: var(--radius-pill);
+    color: var(--on-primary);
+  }
+  :root[data-platform='android'] [data-kit='list-row'][data-picked] > [data-kit='row-pick'] { border-color: var(--primary); background: var(--primary); }
+  :root[data-platform='android'] [data-kit='list-row'][data-picked] { background: var(--primary-container); }
+  :root[data-platform='android'] [data-kit='list-row'][data-picking] > [data-kit='list-row-actions'] { display: none; }
 }

@@ -45,6 +45,10 @@ function Body(props: { readonly k: EntityKey; readonly s: SessionRow; readonly n
   const env = useEnv();
   const t = env.shell.t;
   const open = (): boolean => env.open() === props.k;
+  // the phone list's selection mode (ADR-0065 step 13): a tap picks the row, the row shows its check, no swipe
+  const picking = useSignal(env.shell.listSelect?.on ?? (() => false));
+  const pickedKeys = useSignal(env.shell.listSelect?.keys ?? (() => [] as readonly string[]));
+  const picked = (): boolean | undefined => (picking() ? pickedKeys().includes(props.k) : undefined);
   const view = createMemo(() => rowView(props.s, env.rowCtx(props.k)));
   // extension slots only where something fills them: v1's row has no such elements (qa/parity.mjs compares the tree)
   const bottom = hasExtensions('shell.row:bottom');
@@ -102,9 +106,10 @@ function Body(props: { readonly k: EntityKey; readonly s: SessionRow; readonly n
       selected={env.selected() === props.k && !open()}
       quiet={view().quiet}
       strong={view().unread || props.s.state === 'waiting'}
-      onOpen={() => env.openTask(props.k)}
+      {...((p) => (p === undefined ? {} : { picked: p }))(picked())}
+      onOpen={() => (picking() ? env.shell.listSelect?.toggle(props.k) : env.openTask(props.k))}
       onContextMenu={() => {
-        if (props.nested !== 'sub') env.setMenuFor(props.k);
+        if (props.nested !== 'sub' && !picking()) env.setMenuFor(props.k);
       }}
     />
   );
@@ -125,10 +130,11 @@ function Body(props: { readonly k: EntityKey; readonly s: SessionRow; readonly n
         left={side(props.swipe.left)}
         right={side(props.swipe.right)}
         onSwipe={swiped}
+        disabled={picking()}
         onArm={(on) => env.shell.platform.haptic(on ? 'select' : 'tap')}
         // the phone apps: a long-press opens this row's menu (the list's ContextMenu: Android's sheet with Select
         // first, iOS's context menu with the row as its preview); its twins are the bar's Select and the task's menu
-        onLongPress={(row) => env.menuAt(props.k, row)}
+        onLongPress={(row) => (picking() ? env.shell.listSelect?.toggle(props.k) : env.menuAt(props.k, row))}
         part="list.swipe"
       >
         <FeedItem part={'card' as `${string}.${string}`} id={props.k} current={open()} selected={env.selected() === props.k && !open()}>

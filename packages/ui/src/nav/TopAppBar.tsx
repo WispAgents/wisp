@@ -28,7 +28,7 @@ import { Text } from '../content/Text.tsx';
 import { Inline } from '../layout/Stack.tsx';
 import { Box } from '../layout/Box.tsx';
 import { Toolbar, type ToolbarItem } from '../composites/Toolbar.tsx';
-import { Menu, type MenuEntry } from '../controls/Menu.tsx';
+import { Menu, MenuOn, type MenuEntry } from '../controls/Menu.tsx';
 import { usePlatform } from '../platform/PlatformLook.tsx';
 import { ComposeButton, claimCompose, useComposeHost } from './compose.tsx';
 import { barCollapsed } from './scroll-math.ts';
@@ -72,6 +72,9 @@ export interface TopAppBarProps extends KitProps {
   readonly search?: TopAppBarSearch;
   /** The title as a button with a chevron (the computer filter on the list). */
   readonly onTitle?: () => void;
+  /** iOS: the title's button opens this pull-down menu (a UIMenu from the title, its choices with checkmarks) in place
+   *  of `onTitle`, which Android and the browser keep. Additive (ADR-0065 step 13, 2026-11-15). */
+  readonly titleMenu?: TopAppBarMenu;
   readonly actions?: readonly ToolbarItem[];
   /** The actions toolbar's name (default: the title). */
   readonly actionsLabel?: string;
@@ -88,18 +91,45 @@ export function backTitle(label: string, t: Translate): string {
   return [...label].length > BACK_TITLE_MAX ? t('back') : label;
 }
 
-function Title(props: { readonly title: string; readonly onTitle: (() => void) | undefined; readonly part: PartName }): JSX.Element {
+function Title(props: { readonly title: string; readonly onTitle: (() => void) | undefined; readonly menu?: TopAppBarMenu | undefined; readonly part: PartName }): JSX.Element {
   return (
-    <Show when={props.onTitle} fallback={<h1 data-kit="app-bar-title" data-part={props.part} data-text="control">{props.title}</h1>}>
-      {(go) => (
+    <Show
+      when={props.menu}
+      fallback={
+        <Show when={props.onTitle} fallback={<h1 data-kit="app-bar-title" data-part={props.part} data-text="control">{props.title}</h1>}>
+          {(go) => (
+            <h1 data-kit="app-bar-title" data-part={props.part}>
+              <button type="button" data-kit="app-bar-title-button" onClick={() => go()()}>
+                <span data-text="control">{props.title}</span>
+                <Icon name="chevron" size="sm" />
+              </button>
+            </h1>
+          )}
+        </Show>
+      }
+    >
+      {(m) => (
         <h1 data-kit="app-bar-title" data-part={props.part}>
-          <button type="button" data-kit="app-bar-title-button" onClick={() => go()()}>
-            <span data-text="control">{props.title}</span>
-            <Icon name="chevron" size="sm" />
-          </button>
+          <TitleMenu menu={m()} part={sub(props.part, 'menu')}>
+            {(trigger) => (
+              <button {...trigger()} data-kit="app-bar-title-button" title={m().label}>
+                <span data-text="control">{props.title}</span>
+                <Icon name="chevron" size="sm" />
+              </button>
+            )}
+          </TitleMenu>
         </h1>
       )}
     </Show>
+  );
+}
+
+/** iOS's pull-down from the title (UIMenu from a navigation bar's title): the kit's menu under the title's button. */
+function TitleMenu(props: { readonly menu: TopAppBarMenu; readonly part: PartName; readonly children: (trigger: () => Record<string, unknown>) => JSX.Element }): JSX.Element {
+  return (
+    <MenuOn items={props.menu.items} onSelect={(v) => props.menu.onSelect(v)} placement="bottom-start" part={props.part}>
+      {props.children}
+    </MenuOn>
   );
 }
 
@@ -212,7 +242,7 @@ function PhoneBar(props: TopAppBarProps & { readonly part: PartName }): JSX.Elem
       data-kit="app-bar" data-part={props.part} data-kind={kind()} data-large={flag(large())} data-collapsed={flag(large() && collapsed())}>
       <div data-kit="app-bar-row">
         <Show when={props.back}>{(b) => <BackControl back={b()} ios={ios()} part={sub(props.part, 'back')} t={t} />}</Show>
-        <Title title={props.title} onTitle={props.onTitle} part={sub(props.part, 'title')} />
+        <Title title={props.title} onTitle={props.onTitle} menu={ios() ? props.titleMenu : undefined} part={sub(props.part, 'title')} />
         <div data-kit="app-bar-actions">
           <Show when={props.search}>
             {(q) => (
@@ -230,12 +260,29 @@ function PhoneBar(props: TopAppBarProps & { readonly part: PartName }): JSX.Elem
       </div>
       <Show when={large()}>
         <div ref={largeEl} data-kit="app-bar-large">
-          <Show when={props.onTitle} fallback={<span data-kit="app-bar-large-title" aria-hidden="true">{props.title}</span>}>
-            {(go) => (
-              <button type="button" data-kit="app-bar-title-button" data-large="" aria-hidden="true" tabIndex={-1} onClick={() => go()()}>
-                <span data-kit="app-bar-large-title">{props.title}</span>
-                <Icon name="chevron" size="md" />
-              </button>
+          <Show
+            when={ios() ? props.titleMenu : undefined}
+            fallback={
+              <Show when={props.onTitle} fallback={<span data-kit="app-bar-large-title" aria-hidden="true">{props.title}</span>}>
+                {(go) => (
+                  <button type="button" data-kit="app-bar-title-button" data-large="" aria-hidden="true" tabIndex={-1} onClick={() => go()()}>
+                    <span data-kit="app-bar-large-title">{props.title}</span>
+                    <Icon name="chevron" size="md" />
+                  </button>
+                )}
+              </Show>
+            }
+          >
+            {/* the large title opens the same pull-down, from under itself (the inline copy is hidden until it folds) */}
+            {(m) => (
+              <TitleMenu menu={m()} part={sub(sub(props.part, 'title'), 'large-menu')}>
+                {(trigger) => (
+                  <button {...trigger()} data-kit="app-bar-title-button" data-large="" aria-hidden="true" tabIndex={-1}>
+                    <span data-kit="app-bar-large-title">{props.title}</span>
+                    <Icon name="chevron" size="md" />
+                  </button>
+                )}
+              </TitleMenu>
             )}
           </Show>
         </div>

@@ -35,6 +35,16 @@ export const KIT_STRINGS = {
   'gesture.move-down': 'Move down',
   // the platform's own word for its own control (design/mobile.md: *Select* on both)
   select: 'Select',
+  // a list's selection mode (SelectionBar): Android's contextual bar, iOS's edit mode, each in its platform's words
+  'select.count': '{count} selected',
+  'select.count-ios': '{count} Selected',
+  'select.none-ios': 'Select Items',
+  'select.all': 'Select all',
+  'select.all-ios': 'Select All',
+  'select.deselect': 'Deselect all',
+  'select.deselect-ios': 'Deselect All',
+  'select.exit': 'Close selection',
+  done: 'Done',
 } as const;
 
 export type KitString = keyof typeof KIT_STRINGS;

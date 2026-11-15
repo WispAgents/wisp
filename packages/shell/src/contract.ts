@@ -508,6 +508,21 @@ export interface ShellContext {
    * peer id: frame/computer-filter.ts); a list in `shell.sidebar:list` shows only that computer's rows. The browser
    * leaves it at 'all' (no control sets it there) */
   readonly computerFilter?: { readonly value: Readable<string>; set(peer: string): void };
+  /** added 2026-11-15 (additive, ADR-0065 step 13): the task keys in the order the list shows them now (its filters,
+   * folded sections, sort), which the list publishes while it is mounted (the last order stays after it goes). A phone's
+   * task page steps through it (Next task / Previous task, the head's swipe: frame/task-step.ts) */
+  readonly listOrder?: { readonly keys: Readable<readonly string[]>; publish(keys: readonly string[]): void };
+  /** added 2026-11-15 (additive, ADR-0065 step 13): the phone list's selection mode (frame/list-select.ts): the bar
+   * becomes the selection bar, a row's tap toggles it. UI state the list's rows and the shell's bar share */
+  readonly listSelect?: {
+    readonly on: Readable<boolean>;
+    readonly keys: Readable<readonly string[]>;
+    /** enter it, with `key` picked (a row's Select) or none (the bar's Select) */
+    start(key?: string): void;
+    toggle(key: string): void;
+    all(): void;
+    exit(): void;
+  };
   /** named things a shortcut can focus ('launcher' for ⌘L, 'reply' for /): the owner registers */
   readonly focusTargets: { provide(name: string, focus: () => void): () => void; focus(name: string): boolean };
   /** added 2026-11-11 (additive): the prompt boxes ('launcher' for New task) a plugin may fill, as v1's Start from an

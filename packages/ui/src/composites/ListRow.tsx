@@ -58,6 +58,10 @@ export interface ListRowProps extends KitProps {
    *  (HIG); Android and the browser draw nothing. A task row opens beside the list, so it has none (Mail).
    *  Additive (ADR-0065 step 4). */
   readonly push?: boolean | undefined;
+  /** feed, the phone apps' selection mode (ADR-0065 step 13): set (true or false) while the list picks rows; the row
+   *  leads with its check (Android's filled circle, iOS's edit-mode checkmark) in place of `lead`, a tap toggles it
+   *  (`onOpen`), and it says so (aria-pressed). Unset, nothing of it is drawn. Additive (2026-11-15). */
+  readonly picked?: boolean | undefined;
 }
 
 /** How many lines the row's text takes on a phone (M3 one/two/three-line list items; iOS cell heights). */
@@ -183,6 +187,9 @@ function FeedRow(props: ListRowProps & { readonly partName: PartName }): JSX.Ele
       data-interactive={flag(props.onOpen !== undefined)}
       data-row-lines={phone() ? rowLines(props) : undefined}
       data-lead={flag(phone() && props.lead !== undefined)}
+      data-picking={flag(props.picked !== undefined)}
+      data-picked={flag(props.picked)}
+      aria-pressed={props.picked}
       onClick={open}
       onKeyDown={(e) => {
         if (e.target !== e.currentTarget || (e.key !== 'Enter' && e.key !== ' ')) return;
@@ -191,7 +198,13 @@ function FeedRow(props: ListRowProps & { readonly partName: PartName }): JSX.Ele
       }}
       onContextMenu={(e) => props.onContextMenu?.(e)}
     >
-      {props.lead}
+      <Show when={props.picked !== undefined} fallback={props.lead}>
+        <span data-kit="row-pick" data-part={sub(p(), 'pick')} aria-hidden="true">
+          <Show when={props.picked}>
+            <Icon name="check" size="sm" />
+          </Show>
+        </span>
+      </Show>
       <span data-kit="list-row-title" data-text="control" data-part={named(props, p(), 'title')} title={props.title}>
         {props.title}
       </span>

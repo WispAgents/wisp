@@ -1252,4 +1252,42 @@
      Start from an issue stays, at the row's end */
   :root[data-platform='ios'] [data-kit='lr-list'][data-empty] { display: none; }
   :root[data-platform='ios'] [data-kit='lr-list'][data-empty] ~ [data-part~='launcher.issue'] { margin-inline-start: auto; }
+
+  /* Selection mode (step 13, design/mobile.md §A.4): edit mode. The bar holds Select All, "n Selected" and Done; the
+     rows lead with the edit circle (a ring, filled in the tint with its checkmark when picked); the bulk actions sit
+     in the toolbar over the tab bar's place; the rows' own quick actions step aside */
+  :root[data-platform='ios'] [data-kit='app-bar'][data-kind='select'] { background: var(--chrome); border-bottom-color: var(--outline); }
+  :root[data-platform='ios'] [data-kit='list-row'][data-layout='feed'] > [data-kit='row-pick'] {
+    grid-column: 1;
+    grid-row: 1;
+    justify-self: center;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: var(--size-avatar-sm);
+    height: var(--size-avatar-sm);
+    border: var(--size-ring-thin) solid var(--on-surface-ter);
+    border-radius: var(--radius-pill);
+    color: var(--on-primary);
+  }
+  :root[data-platform='ios'] [data-kit='list-row'][data-picked] > [data-kit='row-pick'] { border-color: var(--primary); background: var(--primary); }
+  :root[data-platform='ios'] [data-kit='list-row'][data-picking] > [data-kit='list-row-actions'] { display: none; }
+  :root[data-platform='ios'] [data-kit='select-toolbar'] {
+    position: fixed;
+    inset-inline: var(--space-0);
+    bottom: var(--space-0);
+    z-index: var(--z-sticky);
+    display: flex;
+    align-items: center;
+    height: calc(var(--nav-h) + var(--safe-bottom));
+    padding: var(--space-0) calc(var(--bar-pad) + var(--safe-right)) var(--safe-bottom) calc(var(--bar-pad) + var(--safe-left));
+    border-top: var(--hairline) solid var(--outline);
+    /* the bar material over an opaque page: the tab bar it covers never shows through */
+    background: linear-gradient(var(--chrome), var(--chrome)), var(--surface-c0);
+  }
+  :root[data-platform='ios'] [data-kit='select-toolbar'] > [data-kit='toolbar'] { flex: 1 1 auto; justify-content: space-between; }
+  :root[data-platform='ios'] [data-kit='select-toolbar'] [data-kit='icon-button'],
+  :root[data-platform='ios'] [data-kit='select-toolbar'] [data-kit='button'] { border: 0; background: transparent; color: var(--primary); font: var(--type-body); }
+  :root[data-platform='ios'] [data-kit='select-toolbar'] [data-kit='icon-button']:disabled,
+  :root[data-platform='ios'] [data-kit='select-toolbar'] [data-kit='button']:disabled { color: var(--on-surface-ter); opacity: 1; }
 }

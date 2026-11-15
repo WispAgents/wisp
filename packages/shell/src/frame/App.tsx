@@ -38,6 +38,14 @@ export function App(props: { readonly clients: Clients; readonly recent: Readabl
       (k) => k !== 'home' && setLauncher(false),
     ),
   );
+  // the phone list's selection mode ends when the list leaves the screen (a task, New task, another destination)
+  createEffect(
+    on(
+      () => `${nav().main.kind}:${nav().layout}`,
+      () => shell.listSelect?.exit(),
+      { defer: true },
+    ),
+  );
   const view = createMemo(() => stackView(nav(), launcher()));
   const page = (): StagePage => view().page;
   const switcher = shell.platform.kind === 'desktop';

@@ -18,6 +18,7 @@ import { createRegistry, type Warn } from './registry.ts';
 import { createTheme } from './theme.ts';
 import { ShellProvider } from './context.tsx';
 import { App } from './frame/App.tsx';
+import { NONE as NO_SELECTION, pruneSelect, selectAll, startSelect, toggleSelect, type ListSelection } from './frame/list-select.ts';
 import { shellUi, SHELL_SETTINGS } from './builtins.tsx';
 import { installKeys } from './keyboard.ts';
 import { watchCoreTopics } from './watch.ts';
@@ -101,6 +102,11 @@ export function createShell(o: ShellOptions): Shell {
   const focusTargets = new Map<string, () => void>();
   const prompts = new Map<string, PromptBox>();
   const taskCard = signal<((key: string) => JSX.Element) | undefined>(undefined);
+  // the list's order (published by the list) and the phone list's selection mode (frame/list-select.ts)
+  const listOrder = signal<readonly string[]>([]);
+  const picking = signal<ListSelection>(NO_SELECTION);
+  const pickOn = computed(() => picking().on);
+  const pickKeys = computed(() => picking().keys);
   const recent = signal<readonly string[]>([]);
   const nav = client.nav.nav;
   const openTask = computed(() => {
@@ -130,6 +136,25 @@ export function createShell(o: ShellOptions): Shell {
     computerFilter: {
       value: settings.get('shell.computerFilter') as Readable<string>,
       set: (peer) => void settings.set('shell.computerFilter', peer || 'all'),
+    },
+    listOrder: {
+      keys: listOrder,
+      publish: (keys) => {
+        const was = untracked(listOrder);
+        if (was.length !== keys.length || was.some((k, i) => k !== keys[i])) listOrder(keys);
+        // a picked row the list no longer shows leaves the selection
+        const s = untracked(picking);
+        const next = pruneSelect(s, keys);
+        if (next !== s) picking(next);
+      },
+    },
+    listSelect: {
+      on: pickOn,
+      keys: pickKeys,
+      start: (key) => picking(startSelect(key)),
+      toggle: (key) => picking(toggleSelect(untracked(picking), key)),
+      all: () => picking(selectAll(untracked(picking), untracked(listOrder))),
+      exit: () => picking(NO_SELECTION),
     },
     prompts: {
       provide(name, box) {

@@ -9,7 +9,7 @@ import type { ProjectColor } from '@wisp/tokens';
 import type { EntityKey } from '@wisp/client';
 import type { ExtensionProps, ResolvedExtension } from '@wisp/shell/contract';
 import { copyId, setUnread, toggleArchived, toggleDone, toggleForLater, togglePin } from '../actions.ts';
-import { flatten, itemKey, sectionGroups, type Item } from '../model/flat.ts';
+import { flatten, itemKey, sectionGroups, taskKeys, type Item } from '../model/flat.ts';
 import { pickOf } from '../model/sections.ts';
 import { createPull } from '../model/pull.ts';
 import { rowMenu } from '../model/menu.ts';
@@ -81,6 +81,9 @@ function ListBody(): JSX.Element {
     return picked() === undefined ? pickOf(view().filter).filter((id) => known.has(id)) : [];
   });
   const items = createMemo(() => flatten(sections(), { toggled: toggled(), open: env.open(), split: env.split(), crew: !env.split() && crewInList(), byProject: byProject() }));
+  // the order the list shows (its filters, folds and sort): a phone's task page steps through it (Next task, the head's
+  // swipe) and the selection's Select all picks it (ADR-0065 step 13)
+  createEffect(() => env.shell.listOrder?.publish(taskKeys(items())));
   // on touch, Mark done keeps a column of its own only while some row on the list shows it (v1 feed.js has-quick)
   const doneColumn = createMemo(() => !env.swipes && anyShowsDone(shownRows(items()), (k) => env.rowCtx(k as EntityKey)));
   const plugins = useSignal(env.shell.extensions('shell.row:menu'));
@@ -93,7 +96,13 @@ function ListBody(): JSX.Element {
     <Stack gap="2" grow part="list.sidebar">
       <Slot input="shell.list:top" layout="stack" />
       <Show when={items().length > 0} fallback={<EmptyState icon="spark" compact title={emptyTitle()} part="list.empty" />}>
-        <ContextMenu items={menu()} onSelect={(v) => pick(env, v, plugins())} part="list.menu">
+        <ContextMenu
+          items={menu()}
+          onSelect={(v) => pick(env, v, plugins())}
+          // the phone apps: Select first in a row's long-press menu enters the list's selection mode with that row
+          {...(env.swipes && env.shell.listSelect && { onSelectMode: () => env.shell.listSelect?.start(env.menuFor()) })}
+          part="list.menu"
+        >
           <VirtualList
             ref={(el) => (box.el = el)}
             items={items()}

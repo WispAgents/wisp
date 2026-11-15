@@ -88,6 +88,7 @@ import { attachAct } from './capture.ts';
 import { useMic } from './dictate.ts';
 import type { PickOptions } from '../platform/types.ts';
 import { harnessOf } from './harness.ts';
+import { placeIn, taskSteps, type TaskSteps } from './task-step.ts';
 import { RunnerPicker } from './RunnerPicker.tsx';
 import { TurnTranscript } from './TurnTranscript.tsx';
 import { isStub, turnOpener } from './turn-window.ts';
@@ -515,6 +516,19 @@ export default function TaskView(props: { readonly id: string; readonly onBack?:
     const id = nextNeedsYou(untrack(sessions), key);
     if (id) shell.navigate({ t: 'openTask', id: (id.includes(':') ? id : entityKey(peer, id)) as never });
   };
+  // a phone's page (ADR-0065 step 13): the next / previous task in the list's order, the order the list shows now (a
+  // filter changing it moves the neighbours with it); a task that left the list meanwhile keeps its last place
+  const order = useSignal(shell.listOrder?.keys ?? (() => [] as readonly string[]));
+  const stepsAt = createMemo((was: { readonly steps: TaskSteps; readonly at: number | undefined }) => {
+    const o = order();
+    return { steps: taskSteps(o, key, was.at), at: placeIn(o, key, was.at) };
+  }, { steps: {}, at: undefined });
+  const steps = (): TaskSteps => stepsAt().steps;
+  const stepTo = (to: string | undefined): void => {
+    if (to === undefined) return;
+    shell.selection.set(to);
+    shell.navigate({ t: 'openTask', id: to as never });
+  };
   const markDone = (): void => {
     void run(setState, { id: key, state: 'done' }).catch(() => undefined);
     shell.navigate({ t: 'markDone', id: key as never });
@@ -584,6 +598,9 @@ export default function TaskView(props: { readonly id: string; readonly onBack?:
         { section: 'open', order: 20, entry: { value: 'shell', label: t('shell.task.shell'), icon: 'shell', checked: nav().side.kind === 'shell' } },
         { section: 'open', order: 30, entry: { value: 'ship', label: t('shell.task.ship'), icon: 'send' } },
         { section: 'open', order: 40, entry: { value: 'done', label: t('shell.task.done'), icon: 'done' } },
+        // the head's swipe's twins: at the list's first / last task (or none) they are there, disabled
+        { section: 'open', order: -39, entry: { value: 'next-task', label: t('shell.phone.nextTask'), icon: 'chevron', ...(steps().next === undefined && { disabled: true }) } },
+        { section: 'open', order: -38, entry: { value: 'previous-task', label: t('shell.phone.previousTask'), icon: 'back', ...(steps().previous === undefined && { disabled: true }) } },
       );
     own.push({ section: 'task', order: -10, entry: { value: 'rename', label: t('shell.more.rename'), icon: 'pen', keys: 'M' } });
     if (compactOffer()) own.push({ section: 'task', order: 45, entry: { value: 'compact', label: t('shell.cold.compact'), icon: 'minus', hint: compactOffer()?.note ?? '' } });
@@ -622,7 +639,9 @@ export default function TaskView(props: { readonly id: string; readonly onBack?:
     else document.querySelector<HTMLElement>('[data-part="split.title"]')?.click();
   };
   const onMore = (v: string): void => {
-    if (v === 'transcript') setStepsOpen(!stepsOpen());
+    if (v === 'next-task') stepTo(steps().next);
+    else if (v === 'previous-task') stepTo(steps().previous);
+    else if (v === 'transcript') setStepsOpen(!stepsOpen());
     else if (v === 'rerun') openRerun();
     else if (v === 'openIn') takeOver();
     else if (v === 'shell') side('shell');
@@ -1253,6 +1272,16 @@ export default function TaskView(props: { readonly id: string; readonly onBack?:
                   renaming={renaming()}
                   onRenaming={setRenaming}
                   onRename={(title) => void run(rename, { id: key, title }).catch(() => undefined)}
+                  swipe={{
+                    get onNext() {
+                      const to = steps().next;
+                      return to === undefined ? undefined : () => stepTo(to);
+                    },
+                    get onPrevious() {
+                      const to = steps().previous;
+                      return to === undefined ? undefined : () => stepTo(to);
+                    },
+                  }}
                 />
               )}
             </Show>
