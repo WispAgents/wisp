@@ -10,7 +10,7 @@
     display: grid;
     grid-template-columns: 200px minmax(0, 1fr);
     width: var(--k-w);
-    height: min(420px, 70vh);
+    height: min(var(--size-picker-h), 70vh);
     overflow: hidden;
     border-radius: 14px;
     background: var(--surface);
@@ -228,12 +228,13 @@
     text-transform: uppercase;
     color: var(--faint);
   }
+  /* v1 .pk-seg: one row that scrolls sideways, never wraps (design/layout.md §2) */
   [data-kit='pk-seg'] {
     display: flex;
-    flex-wrap: wrap;
     min-width: 0;
     gap: 2px;
     padding: 2px;
+    overflow-x: auto;
     border-radius: 9px;
     background: var(--bg-2);
     border: 1px solid var(--line);
@@ -263,6 +264,28 @@
   [data-kit='pk-seg'] > button[data-off] {
     opacity: 0.5;
     cursor: not-allowed;
+  }
+  /* v1 .pk-vary: Try it two ways' What's different under the pane, a row per setting, label then segments */
+  [data-kit='pk-vary'] {
+    flex: none;
+    padding-bottom: 8px;
+    border-top: 1px solid var(--line);
+    background: var(--surface-2);
+  }
+  [data-kit='pk-vary'] > [data-kit='pk-head'] {
+    padding: 8px 10px 6px;
+  }
+  [data-kit='pk-vary'] > [data-kit='pk-effort'] {
+    display: grid;
+    grid-template-columns: 76px minmax(0, 1fr);
+    align-items: center;
+    gap: 6px;
+    padding: 0 8px;
+    border-top: 0;
+    background: none;
+  }
+  [data-kit='pk-vary'] > [data-kit='pk-effort'] + [data-kit='pk-effort'] {
+    margin-top: 6px;
   }
   [data-kit='pk-anote'] {
     margin: 0;
