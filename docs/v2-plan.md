@@ -25,24 +25,106 @@ Rust for everything but the UI, Solid/TS for the UI, everything a plugin (ADR-00
 | Weekly usage | 0 % (reset applied) · **owner 2026-11-15: one coder at a time** |
 | Coders running | coder-r287 (crew stories C) |
 
-## 3. Owner directions (standing rules)
+## 3. Owner decisions (every one, dated; read before any change)
 
-- **Port intent, not bugs;** keep every v1 feature; only the owner or an ADR drops one.
-- **v2 looks exactly like v1** in the browser (ADR-0016). **UI fixes go toward v1's exact control** (cite
-  `design/v1-reference/`, side-by-side proof); one choice = one control (2026-11-15, after the two-picker mistake).
-- **Phone apps don't copy v1:** Material 3 on Android, Apple HIG on iPhone, from the kit's platform variants, every v1
-  feature kept, gestures where they fit, each with a visible twin (2026-11-13). The web at phone width keeps v1.
-- **Every action answers within one frame;** nothing wraps that shouldn't; performance budgets fail CI.
-- **Developer experience is first-class:** every documented command works (CI-checked); dev runs never collide with an
-  installed wisp (2026-11-15).
-- **Coders:** a fresh session per job, one concern each, medium effort; each waits for its own tests and reviewer
-  before ending; **one coder at a time** (owner, 2026-11-15; warn the owner at 85 % weekly usage).
-- **The lead:** commits by file name, by concern; pushes when the running CI finishes; never schedules check-ins
-  (checks at the start of each turn); never QAs itself; questions from the owner don't reorder the plan.
-- **Order after v2 is 100 %:** the Linear TODO tickets, then continuous QA rounds by fresh low-context agents, findings
-  into `docs/qa/bugs.md`, one fix per coder (2026-11-14).
-- **Security:** `.env` values never leave the server (ADR-0050, 0054, 0055); secrets only in `~/.wisp/secrets.json`;
-  default deny for every command, route and MCP tool.
+The owner's decisions, from every conversation since v2 started (2026-11-07). Each coder brief says "read §3 first".
+A decision here wins over an older doc, a v1 habit or a coder's idea. When a decision is new, it goes here the same
+turn. When a screen or feature contradicts one, that's a bug: fix it toward the decision. Quotes are the owner's words.
+
+### Product and positioning
+
+- **wisp is a harness wrapper** for every harness (Claude Code, Codex, opencode, Cursor, …); the user doesn't read long
+  agent sessions: wisp shows a presentation of what was done; you follow up from wisp (2026-10-16).
+- **Wisp as code** (2026-11-08): everything declarable in files (agents, crew, machines, tools, MCP, skills, tasks,
+  formulas), imported, run with `--formula`, deployed to the grid; GUI, TUI and CLI are wrappers over it. Not "one
+  file": references and modules like Terraform (11-08 23:52). Import happens in the UI too (11-09).
+- **Three pillars: Declare · Run · Track** (11-08 23:49, 11-09 00:55); "Manage the code your agents write"; Run =
+  "every harness, any machine, from anywhere"; Track = remember, rerun, blame. Hero leads with Track and open source,
+  Declare and Run support (11-09 00:53). Site examples show every way: CLI, SDK/code, GUI, TUI (11-08 23:02).
+- **`.wisp/` in a repo** holds the tasks that produced the code (11-08 22:58); the user can add a task to the repo's
+  `.wisp` (11-08 23:31); `wisp ls` has a repo flag (23:45); a wisp-init'ed project shows its tasks apart (another
+  tab) in GUI and TUI (23:45). `wisp blame` takes commit ids and PRs, not only file:line, shown creatively in GUI and
+  TUI (23:09). Turn on tracking in our own repo once v2 runs our tasks; don't backfill now (11-10 00:05).
+- **Save the full transcript always**, not just the report (11-08 23:59); "You read a report, not a transcript" is
+  an option (default in the apps), not the headline (11-09 00:05).
+- **Sharing goes through the grid** (wisp Cloud) as the easy option; files still work (11-09 00:42). The grid is the
+  hub for shared things and remote machines (and does the tunnelling) (11-09 01:20).
+- **Meet users where they work**: every feature works inside wisp and from the user's harness (skill, MCP), git, CI,
+  chat; never require a flow or harness change (11-09 01:19). Test wisp's skills and MCP from other harnesses in a
+  wisp-init'ed repo (11-09 21:39).
+- **"Open in <harness>"** replaces "Take over" everywhere (11-09, option 1).
+- **docs.trywisp.dev**: big docs on every aspect, like big projects' docs (11-09 00:48). Site inspirations: warp.dev,
+  openclaw.ai, herdr.dev (11-09 00:52). Full docs/site rework at the end.
+- **Sandboxes**: in the plan; they use the main box's subscriptions; usable as the main prompt, a delegate and judges
+  (11-11 19:52).
+- **Crew and triggers** get more ways to start tasks and crew work; an event system that is fast and clear (11-09).
+- **PostHog events as in v1**, behind a swappable analytics interface (11-08 18:17).
+- **The CLI does everything the GUI does** (11-08 18:35), can read the terminal it ran from ("check the error above")
+  (18:36), shows blocks well, not raw JSON (18:48); **a TUI mirrors the GUI** (18:49), inspired by opencode / Claude
+  Code, not simple (11-09 20:52). CLI, TUI and GUI are plugins (18:49).
+
+### Architecture and code
+
+- **Rust for everything but the UI**: backend, local runners and every plugin's backend; Solid + TypeScript only for
+  UI (11-07 22:54). Everything is a plugin and swappable (11-08 18:49, 11-09 01:30).
+- **The phone app is a separate UI**, not a remote webview (11-07 22:58).
+- **monoflow always** (11-07 22:16). **Performance is a priority**: the fastest dev tool (11-07 22:29).
+- **Code quality and architecture respected strictly** (11-08 00:46).
+- **No v1 back-compat** (11-08 21:20).
+- **Port the intent, not the bugs**: check v1 bugs whenever porting and fix them in v2 (11-08 18:19). Check v1's
+  changes often and port them (11-10 01:39).
+- **Keep every v1 feature and UI detail**: "v1 ui and features are amazing, make sure we don't lose any" (11-10
+  01:01); docs/v1-features.md is the inventory.
+
+### UI (browser and desktop)
+
+- **v2 looks exactly like v1** (11-08 01:12): spacing and paddings consistent, states right (hover/active padding);
+  the base kit must be right first (11-08 01:08).
+- **No sloppy wrapping**: rules for when components/text wrap and when never; icons instead of labels when tight
+  (11-07 22:46).
+- **Immediate feedback on every action**: something happens at once (loading, navigate, something appears) (11-08
+  01:19).
+- **One choice = one control**; UI fixes go toward v1's exact control, never a new arrangement (11-15 00:04, the
+  harness picker: v1's one pill and one two-pane popover).
+- **Project selector** (11-12 01:00): **a selector instead of the chips/cards**, plus a shortcut opening a palette to
+  search and switch (⌘P), done "the way good project-management apps do it". Built 10d8f30f; recorded as an allowed
+  difference from v1 (design/v1-reference/allowed.md).
+- **Multi-project pick** (11-13 22:44–46): a task can work in several folders; **clicking a project selects only that
+  project**; a **+ button** (or similar) adds other projects; clear and easy. Built round 133 (click = only, + adds,
+  Only/All strip). **This applies everywhere a project is chosen, phones included: no chip rows of projects.**
+- **Badges** ("Done" etc.) as small as v1's (11-11 23:34). "This computer", never "This Mac" (11-08 19:16).
+- **Task history: direction A, the ledger**, inline expand on phones too (11-15 00:24).
+
+### Phone apps
+
+- **Native design, not v1's look**: Material 3 on Android, Apple HIG on iPhone, built from our kit and tokens
+  (11-13 20:34, 20:37). Every v1 feature kept.
+- **Gestures where they fit better than taps**, be creative (11-13 21:40); each gesture also has a visible control.
+- **Crew as stories, direction C: stories you can reply to** (11-15 19:14): stories row under the Tasks top bar,
+  full-screen story, reply box (the task page's composer, compact). Design first, the owner approves, then build
+  (11-15 19:10): the rule for every redesign.
+- **Projects on phones follow the project-selector decisions above**: one selector (with multi-pick: tap = only, +
+  adds), not chips (owner, 11-15 19:52, on the New task sheet showing the old selector).
+
+### How the work runs
+
+- **Coders code; tests in CI**: coders write code and their named tests; full suites, e2e and gates are the outer loop
+  (11-09 15:24, 15:34). Move fast, verify after.
+- **One coder at a time** (latest: 11-15 17:40, "Dont use 3 coders please one coder"). A fresh session per job, one
+  small concern, small briefs so context stays small (11-12 18:39, 19:00). Medium effort, never high (11-07 23:31).
+- **The coder is always working**; delegate the next job when a report lands (11-09 20:57).
+- **Coders may use Chrome to see their UI** (11-10 00:40).
+- **No QA now**: finish v2 to 100 %, then the Linear TODO tickets, then QA by separate low-context agents, a bug list,
+  fixes (11-14 17:59, 18:28 "i said not now"). When QA starts: strict rounds on every scenario (11-14 18:27).
+- **When 100 % and tests pass repeatedly: work the Linear TODO tickets** (11-14 10:53).
+- **Never schedule check-ins** in wisp; check at the start of each turn (11-15 00:11).
+- **Questions don't reorder the plan**: answer, record the direction on its future item (11-13 20:41; 11-09 18:21).
+- **This file is the memory**: everything goes in docs/v2-plan.md, marked done or to do, updated every turn; never
+  trust memory (11-15 00:17, 19:52).
+- **Update the watch page every round**, with "round X" in its title (11-13 16:11–16:12).
+- **Developer experience is first-class**: easy to use, debug, test and work on; a dev mode for the desktop app;
+  documented commands must work (11-14 23:40, 23:48).
+- **Repo lives at github.com/WispAgents/wisp** (11-09 14:19).
 
 ## 4. The plan
 
@@ -84,6 +166,7 @@ Rust for everything but the UI, Solid/TS for the UI, everything a plugin (ADR-00
 
 - [x] Every screen wired to the real server (the 2026-11-09 "mounts no task view" gap is closed)
 - [x] Multi-project pick (click = only, + adds, strip with Only/All) (round 133)
+- [ ] **Phones break the project-selector decisions (§3):** the phone Tasks screen shows project chips (round 284) and the phone New task sheet shows v1's place chips (round 286): replace both with the one selector + multi-pick: **next round**
 - [x] Composer `@` and `/`
 - [x] Harness picker back to v1: one pill, one two-pane popover (round 233, 6e3fe42e)
 - [x] "What will Auto run" back on the pill as v1 (#autoPv: Auto's pick is the pill's own segment, opens the AutoPop); extra compare runs open the same two-pane picker with their own model · thinking · account and What's different (round 236, c390aca5)

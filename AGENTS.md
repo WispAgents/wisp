@@ -3,8 +3,8 @@
 How to work on wisp v2. `README.md` says what wisp does, `ARCHITECTURE.md` maps the code, and
 `docs/adr/` records why each decision was made. This file holds the rules a change has to follow. The
 step-by-step how-tos are in `.claude/skills/` (any agent can read them, not only Claude). **`docs/v2-plan.md` is the
-plan and where everything stands** (every item and v1 feature marked done or to do): read it first, and update it
-in the same commit when you finish an item.
+plan and where everything stands** (every item and v1 feature marked done or to do): read it first, **its §3 (the
+owner's decisions) before any change**, and update it in the same commit when you finish an item.
 
 ## Before you change anything
 
