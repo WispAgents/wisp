@@ -20,10 +20,10 @@ Rust for everything but the UI, Solid/TS for the UI, everything a plugin (ADR-00
 |---|---|
 | v1 features | **315 built · 7 partial · 5 missing · 4 dropped** of 331 (§6) |
 | Regressed | none (F-comp-1 picker restored to v1 in round 233) |
-| CI, last full run (9ea69e14) | Linux: only css-rules `:is()` in queued.css (fixed ed23c434) · macOS + Windows running |
+| CI, last full run (9ea69e14) | Linux + macOS: only css-rules :is() (fixed) · **Windows: cargo test 25 min, 3 failing targets (was 14)**: serve_open, machines carry, sandbox seed (r268); last step 26+ min, cancelled at 60 (r269) |
 | Budgets | initial JS 107.2 KB br (≤ 120) · CSS 27.1 KB (≤ 30) |
 | Weekly usage | 94 % (owner 2026-11-15: continue until the limit; 1 coder) |
-| Coders running | coder-r266 (CSS rules shared) |
+| Coders running | coder-r268 (3 Windows failures), coder-r269 (Windows CI step time) |
 
 ## 3. Owner directions (standing rules)
 
@@ -761,7 +761,10 @@ Source: `docs/v1-features.md` (each row's evidence and test). `[x]` built, `[ ]`
 
 | Round | What | State |
 |---|---|---|
-| 266 | Every CSS rule shared by check and css-rules.test (the :is() rule passed check, failed CI) | in progress |
+| 269 | CI per-package step 26+ min on Windows -> < 8 min | in progress |
+| 268 | Last 3 Windows failures: machines carry (product), sandbox seed, serve_open folder held | in progress |
+| 267 | wisp import keeps v1 per-turn file changes (ledger 0 files) | committed (3d55a9e2) |
+| 266 | Every CSS rule shared by check and css-rules.test (the :is() rule passed check, failed CI) | committed (608cedcb) |
 | 265 | Phone kit controls (ADR-0065 step 6), browser unchanged; lead fixed queued.css :is() | committed (a6c727ac, ed23c434) |
 | 264 | Paths spelled once at entry (ADR-0071): 6 product bugs + Mark-done race; 13/14 Windows serve failures; serve_open holder still unknown | committed (46437ddb, 236c6c04, 9ea69e14) |
 | 263 | Windows nursery test: pid marker mid-line (libtest prefix), deadlines on every blocking step | committed (ff809a38) |
