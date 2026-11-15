@@ -179,6 +179,11 @@ fn open_store(home: &Path) -> Result<wisp_store::Store> {
 
 pub async fn boot(home: &Path, port: u16, host: Option<&str>) -> Result<Running> {
     let started = Instant::now();
+    // Windows (ADR-0070): every process this server starts is born in a job that ends with it, however it ends
+    #[cfg(feature = "proc")]
+    if let Err(e) = wisp_proc::nursery() {
+        tracing::warn!(error = %e, "no nursery job: a child started just as wisp is killed may outlive it");
+    }
     let box_mode = env("WISP_BOX").is_some_and(|v| v != "0");
     let hub = Hub::new();
     let notify: NotifyService = hub.clone();
@@ -337,15 +342,13 @@ pub fn open_url(url: &str) {
     } else {
         ("xdg-open", vec![url])
     };
-    // a browser started here may outlive wisp: as desktop::launch
+    let mut c = std::process::Command::new(cmd);
+    c.args(args).stdin(std::process::Stdio::null()).stdout(std::process::Stdio::null()).stderr(std::process::Stdio::null());
+    // a browser started here outlives wisp: out of its nursery, never holding wisp's caller's pipes
     #[cfg(feature = "proc")]
-    wisp_proc::keep_std_handles();
-    let _ = std::process::Command::new(cmd)
-        .args(args)
-        .stdin(std::process::Stdio::null())
-        .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null())
-        .spawn();
+    let _ = wisp_proc::spawn_outliving(&mut c, 0);
+    #[cfg(not(feature = "proc"))]
+    let _ = c.spawn();
 }
 
 #[cfg(test)]

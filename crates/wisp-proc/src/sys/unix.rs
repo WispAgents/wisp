@@ -177,6 +177,20 @@ pub fn processes() -> io::Result<Vec<ProcInfo>> {
 /// close-on-exec, so no child holds this process's stdio unless it asks for it.
 pub fn keep_std_handles() {}
 
+/// Unix has no job to be born in: the guard (guard.rs) ends each child's group with this process.
+#[allow(clippy::unnecessary_wraps, reason = "Windows' can fail")]
+pub fn nursery() -> io::Result<()> {
+    Ok(())
+}
+
+/// Nothing to do: SIGINT reaches a handler however this process was started.
+pub fn take_ctrl_c() {}
+
+/// Unix has no short names: `p` as it is.
+pub fn long_path(p: &std::path::Path) -> std::path::PathBuf {
+    p.to_owned()
+}
+
 #[cfg(test)]
 #[allow(clippy::unwrap_used, reason = "a test")]
 mod tests {

@@ -40,3 +40,25 @@ async fn canonical_resolves_links_and_dots_and_never_returns_a_verbatim_path() {
     assert!(canonical_blocking(base.join("not-there")).is_err());
     std::fs::remove_dir_all(&base).unwrap();
 }
+
+/// CI 708ba936: `%TEMP%` on the Windows runner is `C:\Users\RUNNER~1\…` (an 8.3 short name), a task's folder kept that
+/// spelling while a canonical path said `C:\Users\runneradmin\…`, and one folder was two. `long_path` spells out the
+/// short names and changes nothing else: on Windows a folder with no links reads as its canonical path (the runner's
+/// temp folder is the short-named case); a path that isn't there, and every path on Unix, comes back as it is.
+#[tokio::test]
+async fn a_short_name_is_spelled_out_and_nothing_else_changes() {
+    let tmp = std::env::temp_dir().join(format!("wisp-proc-long-{}", std::process::id()));
+    std::fs::create_dir_all(tmp.join("inner")).unwrap();
+    let inner = tmp.join("inner");
+    let long = wisp_proc::long_path(&inner).await;
+    assert_eq!(long, wisp_proc::long_path_blocking(&inner));
+    if cfg!(windows) {
+        assert_eq!(long, canonical_blocking(&inner).unwrap(), "every short name spelled out, as the canonical path has it");
+        assert!(!long.to_string_lossy().contains('~'), "{}", long.display());
+    } else {
+        assert_eq!(long, inner, "Unix has no short names");
+    }
+    let gone = tmp.join("not-there").join("x");
+    assert_eq!(wisp_proc::long_path_blocking(&gone), gone);
+    std::fs::remove_dir_all(&tmp).unwrap();
+}

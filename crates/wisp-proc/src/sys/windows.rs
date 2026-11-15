@@ -8,18 +8,19 @@ use std::io;
 use std::ptr;
 
 use windows_sys::Win32::Foundation::{CloseHandle, FALSE, HANDLE, HANDLE_FLAG_INHERIT, INVALID_HANDLE_VALUE, SetHandleInformation};
-use windows_sys::Win32::System::Console::{GetStdHandle, STD_ERROR_HANDLE, STD_INPUT_HANDLE, STD_OUTPUT_HANDLE};
+use windows_sys::Win32::Storage::FileSystem::GetLongPathNameW;
+use windows_sys::Win32::System::Console::{GetStdHandle, STD_ERROR_HANDLE, STD_INPUT_HANDLE, STD_OUTPUT_HANDLE, SetConsoleCtrlHandler};
 use windows_sys::Win32::System::Diagnostics::ToolHelp::{
     CreateToolhelp32Snapshot, PROCESSENTRY32W, Process32FirstW, Process32NextW, TH32CS_SNAPPROCESS, TH32CS_SNAPTHREAD, THREADENTRY32,
     Thread32First, Thread32Next,
 };
 use windows_sys::Win32::System::JobObjects::{
-    AssignProcessToJobObject, CreateJobObjectW, JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE, JOBOBJECT_BASIC_ACCOUNTING_INFORMATION,
-    JOBOBJECT_EXTENDED_LIMIT_INFORMATION, JobObjectBasicAccountingInformation, JobObjectExtendedLimitInformation,
-    QueryInformationJobObject, SetInformationJobObject, TerminateJobObject,
+    AssignProcessToJobObject, CreateJobObjectW, JOB_OBJECT_LIMIT_BREAKAWAY_OK, JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE,
+    JOBOBJECT_BASIC_ACCOUNTING_INFORMATION, JOBOBJECT_EXTENDED_LIMIT_INFORMATION, JobObjectBasicAccountingInformation,
+    JobObjectExtendedLimitInformation, QueryInformationJobObject, SetInformationJobObject, TerminateJobObject,
 };
 use windows_sys::Win32::System::Threading::{
-    OpenProcess, OpenThread, PROCESS_SET_QUOTA, PROCESS_TERMINATE, ResumeThread, THREAD_SUSPEND_RESUME, TerminateProcess,
+    GetCurrentProcess, OpenProcess, OpenThread, PROCESS_SET_QUOTA, PROCESS_TERMINATE, ResumeThread, THREAD_SUSPEND_RESUME, TerminateProcess,
 };
 
 use super::ProcInfo;
@@ -70,7 +71,12 @@ unsafe impl Send for Job {}
 unsafe impl Sync for Job {}
 
 impl Job {
+    /// A job of one child's tree: everything in it ends when its handle closes.
     pub fn new() -> io::Result<Job> {
+        Self::with_limits(JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE)
+    }
+
+    fn with_limits(flags: u32) -> io::Result<Job> {
         // SAFETY: null attributes and a null name are documented as "default, unnamed".
         #[allow(unsafe_code)]
         let handle = unsafe { CreateJobObjectW(ptr::null(), ptr::null()) };
@@ -81,7 +87,7 @@ impl Job {
         // SAFETY: an all-zero JOBOBJECT_EXTENDED_LIMIT_INFORMATION is a valid "no limits" value.
         #[allow(unsafe_code)]
         let mut info: JOBOBJECT_EXTENDED_LIMIT_INFORMATION = unsafe { std::mem::zeroed() };
-        info.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
+        info.BasicLimitInformation.LimitFlags = flags;
         let size = u32::try_from(size_of_val(&info)).map_err(|_| io::Error::from(io::ErrorKind::InvalidInput))?;
         // SAFETY: `info` lives across the call and `size` is its exact size.
         #[allow(unsafe_code)]
@@ -191,6 +197,77 @@ pub fn keep_std_handles() {
         // console handle that refuses is no pipe to leak: the result is ignored.
         #[allow(unsafe_code)]
         let _ = unsafe { SetHandleInformation(h, HANDLE_FLAG_INHERIT, 0) };
+    }
+}
+
+/// `CreateProcess`'s `CREATE_BREAKAWAY_FROM_JOB`: the child is in none of this process's jobs (the nursery).
+pub const CREATE_BREAKAWAY_FROM_JOB: u32 = 0x0100_0000;
+
+/// The nursery (ADR-0070): this process's own `KILL_ON_JOB_CLOSE` job, held in a static so the handle closes only
+/// when the process ends. `None` inside: it couldn't be made (the error was returned once, to the first caller).
+static NURSERY: std::sync::OnceLock<Option<Job>> = std::sync::OnceLock::new();
+
+/// Puts this process in a `KILL_ON_JOB_CLOSE | BREAKAWAY_OK` job of its own: every process it starts from now on is
+/// born in it (no window between `CreateProcess` and a job, which a per-child job always has), and ends when this
+/// process ends, however it ends. A start meant to outlive it breaks away (`CREATE_BREAKAWAY_FROM_JOB`). Already in
+/// a job (CI, a service manager): the nursery nests in it (Windows 8+). Idempotent.
+pub fn nursery() -> io::Result<()> {
+    let mut first = Ok(());
+    NURSERY.get_or_init(|| {
+        let made = Job::with_limits(JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE | JOB_OBJECT_LIMIT_BREAKAWAY_OK).and_then(|job| {
+            // SAFETY: no arguments; it returns a pseudo-handle to this process that needs no close.
+            #[allow(unsafe_code)]
+            let me = unsafe { GetCurrentProcess() };
+            // SAFETY: the job handle is open and owned by `job`; `me` is valid for this process's lifetime.
+            #[allow(unsafe_code)]
+            let ok = unsafe { AssignProcessToJobObject(job.0.0, me) };
+            check(ok).map(|()| job)
+        });
+        match made {
+            Ok(job) => Some(job),
+            Err(e) => {
+                first = Err(e);
+                None
+            }
+        }
+    });
+    first
+}
+
+/// Whether this process is in its nursery (it was made and joined).
+pub fn in_nursery() -> bool {
+    NURSERY.get().is_some_and(Option::is_some)
+}
+
+/// Turns Ctrl-C processing back on for this process: a parent started with `CREATE_NEW_PROCESS_GROUP` (a CI runner,
+/// some launchers) hands its children "ignore Ctrl-C", and then no handler (tokio's `ctrl_c`) ever hears it.
+pub fn take_ctrl_c() {
+    // SAFETY: a null handler with FALSE only clears this process's ignore-Ctrl-C flag; nothing is borrowed.
+    #[allow(unsafe_code)]
+    let _ = unsafe { SetConsoleCtrlHandler(None, FALSE) };
+}
+
+/// `p` with every 8.3 short name in it spelled out (`C:\Users\RUNNER~1` → `C:\Users\runneradmin`), nothing else
+/// changed (links aren't followed, `\\?\` isn't added). `p` itself when it doesn't exist or isn't UTF-16-able.
+pub fn long_path(p: &std::path::Path) -> std::path::PathBuf {
+    use std::os::windows::ffi::{OsStrExt as _, OsStringExt as _};
+    let wide: Vec<u16> = p.as_os_str().encode_wide().chain(std::iter::once(0)).collect();
+    let mut buf = vec![0u16; 512];
+    loop {
+        let cap = u32::try_from(buf.len()).unwrap_or(u32::MAX);
+        // SAFETY: `wide` is NUL-terminated and lives across the call; `buf` is writable for `cap` u16s.
+        #[allow(unsafe_code)]
+        let n = unsafe { GetLongPathNameW(wide.as_ptr(), buf.as_mut_ptr(), cap) };
+        let n = n as usize;
+        if n == 0 {
+            return p.to_owned();
+        }
+        if n < buf.len() {
+            buf.truncate(n);
+            return std::path::PathBuf::from(std::ffi::OsString::from_wide(&buf));
+        }
+        // too small: `n` is the size it needs, NUL included
+        buf.resize(n, 0);
     }
 }
 

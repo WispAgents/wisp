@@ -29,7 +29,7 @@ pub mod sim;
 mod sys;
 mod tree;
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -293,6 +293,70 @@ pub fn pid_alive(pid: u32) -> bool {
 pub fn keep_std_handles() {
     sys::keep_std_handles();
 }
+
+/// Windows (ADR-0070): puts this process in its nursery, a `KILL_ON_JOB_CLOSE` job of its own, so every process it
+/// starts from now on (a harness probe, a run, a terminal, an exec plugin, a grid box) is born in a job and ends when
+/// this one ends, however it ends: a per-child job is joined only after `CreateProcess` returns, and a server killed
+/// in between left that child outside every job, suspended for ever, holding whatever it inherited (CI's log pipe).
+/// Call it first thing in a long-lived process that starts others (`wisp serve`). A start meant to outlive it goes
+/// through [`spawn_outliving`] or `spawn_detached`, which break away. Unix: nothing (the guard does it, guard.rs).
+pub fn nursery() -> std::io::Result<()> {
+    sys::nursery()
+}
+
+/// Turns Ctrl-C back on for this process when whoever started it turned it off (Windows: a parent started with
+/// `CREATE_NEW_PROCESS_GROUP`, as a CI runner does, hands "ignore Ctrl-C" down, and then no handler hears it). For a
+/// command that answers Ctrl-C itself (`wisp "task"` attached). Unix: nothing to do.
+pub fn take_ctrl_c() {
+    sys::take_ctrl_c();
+}
+
+/// `p` with Windows' 8.3 short names spelled out (`C:\Users\RUNNER~1\x` is `C:\Users\runneradmin\x`, the name
+/// `%TEMP%` often has), links not followed: one folder, one spelling, so a folder given short and the same one met
+/// long (a canonical path, a worktree under the home) compare equal. `p` as it is when it doesn't exist, and on Unix.
+/// Blocking: one file-system call.
+#[must_use]
+pub fn long_path_blocking(p: impl AsRef<Path>) -> PathBuf {
+    sys::long_path(p.as_ref())
+}
+
+/// [`long_path_blocking`], without blocking a runtime thread.
+pub async fn long_path(p: impl AsRef<Path>) -> PathBuf {
+    let p = p.as_ref().to_owned();
+    if cfg!(not(windows)) {
+        return p;
+    }
+    let back = p.clone();
+    tokio::task::spawn_blocking(move || sys::long_path(&p)).await.unwrap_or(back)
+}
+
+/// Spawns `cmd`, a program meant to outlive this process (the desktop app, a browser), outside this process's
+/// nursery ([`nursery`]): Windows, with `CREATE_BREAKAWAY_FROM_JOB` added to `flags` (its other creation flags); a job
+/// around wisp that allows no breakaway (a CI runner's, a service manager's) refuses that, and then it starts without,
+/// in the nursery, ending with wisp as everything else in that job does. Its stdio is never this process's
+/// ([`keep_std_handles`]). Unix: `cmd.spawn()`.
+pub fn spawn_outliving(cmd: &mut std::process::Command, flags: u32) -> std::io::Result<std::process::Child> {
+    keep_std_handles();
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt as _;
+        if sys::in_nursery() {
+            cmd.creation_flags(flags | sys::CREATE_BREAKAWAY_FROM_JOB);
+            match cmd.spawn() {
+                Err(e) if e.raw_os_error() == Some(ERROR_ACCESS_DENIED) => {}
+                r => return r,
+            }
+        }
+        cmd.creation_flags(flags);
+    }
+    #[cfg(not(windows))]
+    let _ = flags;
+    cmd.spawn()
+}
+
+/// What `CreateProcess` says when a job around this process allows no breakaway.
+#[cfg(windows)]
+pub(crate) const ERROR_ACCESS_DENIED: i32 = 5;
 
 /// A row of the process table: enough to walk a tree.
 pub use sys::ProcInfo;

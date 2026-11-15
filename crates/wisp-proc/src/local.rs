@@ -190,8 +190,7 @@ impl ProcService for LocalProc {
         }
         cmd.envs(opts.env.set.iter().map(|(k, v)| (k, v)));
         cmd.stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null()).kill_on_drop(false);
-        detach(&mut cmd);
-        let mut child = cmd.spawn().map_err(|e| ProcError::from_spawn(bin, &e))?;
+        let mut child = spawn_detached_cmd(&mut cmd).map_err(|e| ProcError::from_spawn(bin, &e))?;
         let pid = child.id().unwrap_or(0);
         // Reaped when it ends, never killed with wisp.
         tokio::spawn(async move {
@@ -266,18 +265,29 @@ fn detached_args(cmd: &mut tokio::process::Command, r: &Resolved) {
 
 /// Its own session: closing wisp (or its terminal) doesn't reach it.
 #[cfg(unix)]
-fn detach(cmd: &mut tokio::process::Command) {
+fn spawn_detached_cmd(cmd: &mut tokio::process::Command) -> std::io::Result<tokio::process::Child> {
     cmd.process_group(0);
+    cmd.spawn()
 }
 
-/// Its own console window and process group, outside any job of ours.
+/// Its own console window and process group, outside every job of ours: it breaks away from the nursery
+/// (`crate::nursery`); a job around wisp that refuses breakaway leaves it in the nursery (as `crate::spawn_outliving`).
 #[cfg(windows)]
-fn detach(cmd: &mut tokio::process::Command) {
+fn spawn_detached_cmd(cmd: &mut tokio::process::Command) -> std::io::Result<tokio::process::Child> {
     const DETACHED_PROCESS: u32 = 0x0000_0008;
     const CREATE_NEW_PROCESS_GROUP: u32 = 0x0000_0200;
-    cmd.creation_flags(DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP);
+    let flags = DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP;
     // it outlives wisp: never hand it the pipes wisp's own caller reads (crate::keep_std_handles)
     crate::sys::keep_std_handles();
+    if crate::sys::in_nursery() {
+        cmd.creation_flags(flags | crate::sys::CREATE_BREAKAWAY_FROM_JOB);
+        match cmd.spawn() {
+            Err(e) if e.raw_os_error() == Some(crate::ERROR_ACCESS_DENIED) => {}
+            r => return r,
+        }
+    }
+    cmd.creation_flags(flags);
+    cmd.spawn()
 }
 
 /// Runs `child` to completion for `exec`: input in, output kept up to the cap, the tree killed on timeout.

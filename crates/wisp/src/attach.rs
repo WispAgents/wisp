@@ -300,6 +300,36 @@ pub async fn notices(c: &Client, home: &Path) {
     }
 }
 
+/// Ctrl-C, heard from the moment it is made. tokio's `ctrl_c()` registers only when first polled (a Ctrl-C before
+/// that is lost; on Windows the default handler then ends the process), and on Windows a process whose parent
+/// turned Ctrl-C off (`CREATE_NEW_PROCESS_GROUP`: a CI runner, some launchers) never hears it at all until it turns it
+/// back on (`wisp_proc::take_ctrl_c`).
+struct CtrlC {
+    #[cfg(unix)]
+    s: tokio::signal::unix::Signal,
+    #[cfg(windows)]
+    s: tokio::signal::windows::CtrlC,
+}
+
+impl CtrlC {
+    fn listen() -> std::io::Result<Self> {
+        #[cfg(feature = "proc")]
+        wisp_proc::take_ctrl_c();
+        #[cfg(unix)]
+        let s = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::interrupt())?;
+        #[cfg(windows)]
+        let s = tokio::signal::windows::ctrl_c()?;
+        Ok(Self { s })
+    }
+
+    /// The next Ctrl-C (none can come any more: never).
+    async fn recv(&mut self) {
+        if self.s.recv().await.is_none() {
+            std::future::pending::<()>().await;
+        }
+    }
+}
+
 /// Follows task `id` until it goes idle (`until_idle`), you leave the reply box empty, or Ctrl-C.
 #[allow(clippy::too_many_lines)] // one select loop: the stream, the keyboard and Ctrl-C
 pub async fn attach(c: &Client, home: &Path, id: &str, mode: Mode) -> Result<i32> {
@@ -310,6 +340,9 @@ pub async fn attach(c: &Client, home: &Path, id: &str, mode: Mode) -> Result<i32
     let mut keys = if mode.interactive { Some(stdin_lines()) } else { None };
     let mut asking = Prompt::None;
     let mut got = conn.start().await?;
+    // listening before anything is shown: a Ctrl-C typed as the first step appears is never lost (and one during the
+    // connect still ends the command, as before)
+    let mut ctrl_c = CtrlC::listen()?;
     loop {
         for g in got.drain(..) {
             let outs = match g {
@@ -389,10 +422,10 @@ pub async fn attach(c: &Client, home: &Path, id: &str, mode: Mode) -> Result<i32
                     },
                 }
             }
-            _ = tokio::signal::ctrl_c() => {
+            () = ctrl_c.recv() => {
                 eprintln!("\n  ◌ detached: the task keeps running · wisp attach {id}\n    (Ctrl-C again within 2 s stops it)");
                 return Ok(tokio::select! {
-                    _ = tokio::signal::ctrl_c() => {
+                    () = ctrl_c.recv() => {
                         let stopped = c.cmd("runtime.stop", json!({ "id": id })).await;
                         eprintln!("  {}", if stopped.is_ok() { "◼ stopped" } else { "✗ couldn't stop it" });
                         130

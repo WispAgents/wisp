@@ -181,10 +181,12 @@ pub fn launch(exe: &Path, port: u16, server: Option<&Path>) -> std::io::Result<(
     cmd.stdin(std::process::Stdio::null()).stdout(std::process::Stdio::null()).stderr(std::process::Stdio::null());
     #[cfg(unix)]
     std::os::unix::process::CommandExt::process_group(&mut cmd, 0);
-    // the app outlives `wisp`: it must not hold the pipes `wisp`'s caller reads (Windows hands them over otherwise)
+    // the app outlives `wisp`: out of a nursery (a `wisp` serving here), never holding the pipes `wisp`'s caller reads
     #[cfg(feature = "proc")]
-    wisp_proc::keep_std_handles();
-    cmd.spawn().map(drop)
+    let started = wisp_proc::spawn_outliving(&mut cmd, 0);
+    #[cfg(not(feature = "proc"))]
+    let started = cmd.spawn();
+    started.map(drop)
 }
 
 pub fn no_app_line(why: &str) -> String {
