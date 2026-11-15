@@ -20,10 +20,10 @@ Rust for everything but the UI, Solid/TS for the UI, everything a plugin (ADR-00
 |---|---|
 | v1 features | **315 built · 7 partial · 5 missing · 4 dropped** of 331 (§6) |
 | Regressed | none (F-comp-1 picker restored to v1 in round 233) |
-| CI, last full run (c4123885) | every suite stopped at `npm run check` (docs/dev.md cited git-ignored qa/out; fixed 8bb8ccd0) · Windows verify step: web tests build `D:\D:\` paths, python SDK cwd (r258) · Windows cargo test not reached: run on 8bb8ccd0 decides |
+| CI, last full run (8bb8ccd0) | **Linux 4/4 + macOS 2/2 green** · Windows 2 jobs running (first run with r257's fixes) |
 | Budgets | initial JS 107.2 KB br (≤ 120) · CSS 27.1 KB (≤ 30) |
 | Weekly usage | 92 % (owner 2026-11-15: continue until the limit) |
-| Coders running | coder-r261 (later rows inside the reply box) |
+| Coders running | coder-r262 (queued follow-ups inside the box) |
 
 ## 3. Owner directions (standing rules)
 
@@ -744,7 +744,8 @@ Source: `docs/v1-features.md` (each row's evidence and test). `[x]` built, `[ ]`
 
 | Round | What | State |
 |---|---|---|
-| 261 | Later follow-up rows inside the reply box, as v1 | in progress |
+| 262 | Queued follow-ups inside the reply box with the scheduled ones, as v1 | in progress |
+| 261 | Scheduled follow-ups inside the reply box (kit top slot, shell.task:composer-top) | committed (f58828bd) |
 | 260 | A command word never starts a task; typos say 'did you mean'; `wisp -- <word>` | committed (75b53b16) |
 | 259 | `commands` rule resolves paths against tracked files | committed (ef174895) |
 | 258 | Windows file-URL paths fixed repo-wide (web tests, qa, mobile, tools/check); new rule file-urls; python SDK test | committed (46c87560) |
