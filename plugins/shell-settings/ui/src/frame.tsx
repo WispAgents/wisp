@@ -12,13 +12,17 @@ import { Callout, EmptyState, SettingsFrame, useSignal } from '@wisp/ui';
 import { t as own } from './i18n.ts';
 import { VIEW_ID, type SettingsParams } from './types.ts';
 import { groupPanes, pickPane, settingsIntent, type PaneEntry } from './nav.ts';
+import { offeredPanes, phoneGroups } from './phone-nav.ts';
 import './i18n/lazy.ts';
 
 /** What the frame reads: every registered pane and a translator (titles are other plugins' keys). */
 export interface FrameDeps {
   readonly panes: () => readonly PaneEntry[];
   readonly t: (key: string, vars?: Vars) => string;
+  /** the phone apps: no keyboard-only pane (v1 F-set-6), and the list's Back names the Tasks screen under it */
+  readonly phone?: boolean;
 }
+
 
 /** Inside the shell: its panes (each with its plugin's client) and its translator. */
 export function shellDeps(): FrameDeps {
@@ -26,7 +30,7 @@ export function shellDeps(): FrameDeps {
   const panes = useSignal(shell.settingsPanes());
   const clientOf = (plugin: string): PluginClient => usePluginClient(plugin);
   const entries = createMemo(() => panes().map((pane) => ({ pane, client: clientOf((pane as SettingsPaneDef & { plugin?: string }).plugin ?? 'shell') })));
-  return { panes: entries, t: (k, v) => shell.t(k, v) };
+  return { panes: entries, t: (k, v) => shell.t(k, v), phone: shell.platform.phone };
 }
 
 export function SettingsView(props: { readonly client: PluginClient; readonly params: SettingsParams; readonly deps?: FrameDeps }): JSX.Element {
@@ -36,9 +40,17 @@ export function SettingsView(props: { readonly client: PluginClient; readonly pa
     const s = deps.t(key);
     return s === key ? id : s;
   };
-  const groups = createMemo(() => groupPanes(deps.panes(), (k) => deps.t(k), groupLabel));
+  const panes = createMemo(() => offeredPanes(deps.panes(), deps.phone === true));
+  // the phone apps: sections by group (M3 headers, iOS grouped sections); the browser: v1's one flat list
+  const groups = createMemo(() => (deps.phone ? phoneGroups : groupPanes)(panes(), (k) => deps.t(k), groupLabel));
   const order = createMemo(() => groups().flatMap((g) => g.items.map((i) => i.id)));
-  const current = createMemo(() => pickPane(deps.panes(), order(), props.params.pane));
+  const current = createMemo(() => pickPane(panes(), order(), props.params.pane));
+  // the phone apps' list: Back is titled with the screen under Settings (iOS), Tasks, whose me menu opens it
+  const backLabel = (): string | undefined => {
+    if (!deps.phone) return undefined;
+    const s = deps.t('shell.dest.tasks');
+    return s === 'shell.dest.tasks' ? undefined : s;
+  };
   const close = (): void => props.client.navigate({ t: 'closeOverlay', id: VIEW_ID });
   const lede = (): string | undefined => {
     const c = current();
@@ -66,6 +78,7 @@ export function SettingsView(props: { readonly client: PluginClient; readonly pa
       upLabel={own('shell-settings.up')}
       onClose={close}
       closeLabel={own('shell-settings.close')}
+      backLabel={backLabel()}
       onKeyDown={onKey}
     >
       <Show when={current()} keyed fallback={<EmptyState compact icon="settings" title={own('shell-settings.empty')} />}>

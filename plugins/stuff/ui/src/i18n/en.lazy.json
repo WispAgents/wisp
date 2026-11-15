@@ -235,5 +235,14 @@
   "stuff.share.card.someone": "Someone",
   "stuff.share.copied": "Link copied.",
   "stuff.share.copiedPass": "Link copied. Send the passkey separately.",
-  "stuff.share.made": "Here's the link: copy it to send it."
+  "stuff.share.made": "Here's the link: copy it to send it.",
+  "stuff.act.share": "Share",
+  "stuff.page.shareCopied": "Copied: paste it where you want to share it",
+  "stuff.phone.actions": "My Stuff actions",
+  "stuff.phone.more": "More",
+  "stuff.phone.kinds": "Kinds",
+  "stuff.phone.close": "Close",
+  "stuff.phone.done": "Done",
+  "stuff.phone.removed": "Removed {name}",
+  "stuff.phone.undo": "Undo"
 }

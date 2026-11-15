@@ -1,0 +1,71 @@
+/* The phone apps' pushed pages and destination screens (ADR-0065 step 14): Settings (settings/SettingsPhone.tsx) and My
+   Stuff (app/StuffPhone.tsx). Loaded with those chunks only, so the browser's first download never carries it. The
+   platform's own colours and metrics are in css/platform/<look>.css; this is the layout both share. */
+@layer kit {
+  /* a page over the whole screen (Dialog size full: Settings from the me menu, a launched app), under the status bar
+     and over the gesture bar; over the platform sheets' dialog rules, whichever loads last (as crew-stories.css) */
+  :root [data-kit='dialog-positioner'][data-size='full']:not([data-place]) { padding: 0; place-items: stretch; overflow: hidden; }
+  :root [data-kit='dialog-positioner'][data-size='full'] > [data-kit='dialog'][data-size='full']:not([data-place]) {
+    width: 100%; min-width: 0; height: 100dvh; max-height: 100dvh; padding: 0; border: 0; border-radius: 0;
+    background: var(--bg); color: var(--ink); box-shadow: none; animation: kit-fade var(--dur-slow) var(--ease);
+  }
+  :root [data-kit='dialog'][data-size='full']:not([data-place]) > [data-kit='dialog-body'] { display: flex; flex-direction: column; overflow: hidden; color: var(--ink); }
+
+  /* a page: its bar, then one scroll box (the bar's collapse follows it) */
+  [data-kit='phone-page'] {
+    flex: 1 1 auto; min-height: 0; height: 100%; display: flex; flex-direction: column;
+    padding-top: env(safe-area-inset-top, 0px);
+  }
+  [data-kit='phone-page-body'] {
+    flex: 1 1 auto; min-height: 0; overflow-x: hidden; overflow-y: auto; overscroll-behavior-y: contain;
+    padding-bottom: calc(var(--space-7) + env(safe-area-inset-bottom, 0px));
+  }
+  [data-kit='phone-settings-list']:focus, [data-kit='phone-settings-pane']:focus { outline: 0; }
+  [data-kit='phone-settings-list'] { display: flex; flex-direction: column; gap: var(--space-6); padding-top: var(--space-4); }
+  [data-kit='phone-settings-pane'] { display: flex; flex-direction: column; gap: var(--space-6); padding: var(--space-4) 0; }
+  [data-kit='phone-settings-pane'] > [data-kit='settings-lede'] { margin: 0; padding: 0 var(--space-7); color: var(--muted); }
+
+  /* My Stuff: the kinds (Android's filter chips, iOS's segmented control) on one line that scrolls sideways */
+  [data-kit='stuff-phone-kinds'] {
+    display: flex; gap: var(--space-3); padding: var(--space-3) var(--space-7);
+    overflow-x: auto; overflow-y: hidden; overscroll-behavior-x: contain; scrollbar-width: none;
+  }
+  [data-kit='stuff-phone-kinds'] > [data-kit='button'] { flex: none; }
+  [data-kit='stuff-phone-kinds'] > [data-kit='tabs'] { flex: 1 1 auto; min-width: 0; }
+  [data-kit='stuff-phone-search'] { padding: var(--space-3) var(--space-7); }
+  [data-kit='stuff-phone-group'] { display: flex; flex-direction: column; }
+  [data-kit='stuff-phone-group-head'] {
+    margin: 0; padding: var(--space-6) var(--space-7) var(--space-3);
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: inherit; font-weight: var(--fw-semibold); color: var(--muted);
+  }
+  [data-kit='stuff-phone-rows'] { margin: 0; padding: 0; list-style: none; }
+  [data-kit='stuff-phone-grid'] {
+    display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-5);
+    margin: 0; padding: 0 var(--space-7); list-style: none;
+  }
+  /* a tile: the thumbnail (the kind's glyph when there is none), the name under it, its ⋯ at the corner */
+  [data-kit='stuff-tile'] { position: relative; display: flex; flex-direction: column; min-width: 0; }
+  [data-kit='stuff-tile-open'] {
+    display: flex; flex-direction: column; gap: var(--space-3); min-width: 0; padding: 0;
+    border: 0; background: none; color: inherit; font: inherit; text-align: start; cursor: pointer; -webkit-tap-highlight-color: transparent;
+  }
+  [data-kit='stuff-tile-thumb'] {
+    display: grid; place-items: center; aspect-ratio: 4 / 3; overflow: hidden; border-radius: var(--radius-md);
+    background: var(--bg-2); color: var(--muted);
+  }
+  [data-kit='stuff-tile-thumb'] > img { width: 100%; height: 100%; object-fit: cover; }
+  [data-kit='stuff-tile-thumb'] > [data-kit='icon'] { width: var(--size-icon-lg); height: var(--size-icon-lg); }
+  [data-kit='stuff-tile-name'] { display: flex; flex-direction: column; min-width: 0; padding: 0 var(--space-2); }
+  [data-kit='stuff-tile-name'] > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  [data-kit='stuff-tile-name'] > span + span { color: var(--muted); font-size: var(--fs-xs); }
+  [data-kit='stuff-tile-menu'] { position: absolute; top: var(--space-2); right: var(--space-2); }
+  [data-kit='stuff-thumb'] {
+    display: grid; place-items: center; width: var(--size-avatar-md); height: var(--size-avatar-md); overflow: hidden;
+    border-radius: var(--radius-sm); background: var(--bg-2); color: var(--muted);
+  }
+  [data-kit='stuff-thumb'] > img { width: 100%; height: 100%; object-fit: cover; }
+  [data-kit='stuff-phone-empty'] { padding: var(--space-9) var(--space-7); }
+  /* a launched app over the whole screen, its frame filling what the bar leaves */
+  [data-kit='stuff-phone-app'] { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; }
+  [data-kit='stuff-phone-app'] > [data-kit='app-frame'] { flex: 1 1 auto; min-height: 0; }
+}

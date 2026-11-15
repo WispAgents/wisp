@@ -43,6 +43,9 @@ export interface SwipeProps extends KitProps, WithChildren {
   /** the phone apps: a long-press opens the row's actions (its menu: a ContextMenu around the list opens on a
    * contextmenu dispatched on `row`, Android's sheet or iOS's context menu); also the screen reader's *Actions* */
   readonly onLongPress?: (row: HTMLElement) => void;
+  /** which registered gesture the swipe is (its twin's parts, qa/platform.mjs): a task row's (default) or a saved thing's
+   *  in My Stuff (`stuff.swipe`, twinned by the row's ⋯ menu). Additive (ADR-0065 step 14). */
+  readonly gesture?: 'row.swipe' | 'stuff.swipe';
 }
 
 /** `open`: iOS only, the row rests on its revealed action */
@@ -74,7 +77,7 @@ export function Swipe(props: SwipeProps): JSX.Element {
   const t = useT();
   // the phone apps: the marks qa/platform.mjs reads and the screen reader's actions (the browser: nothing)
   const swipeMarks = useGesture(
-    'row.swipe',
+    props.gesture ?? 'row.swipe',
     () => () => undefined,
     () => [
       ...(props.right && !props.disabled ? [{ label: props.right.label, run: () => props.onSwipe('right') }] : []),

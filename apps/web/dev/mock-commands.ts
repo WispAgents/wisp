@@ -985,6 +985,12 @@ export const COMMANDS: Record<string, CommandFn> = {
     if (typeof prev['locked_by'] === 'string') refuse('forbidden', `${key} is set by ${prev['locked_by']}`);
     return { ops: [{ topic: 'config', e: 'setting', id: key, op: 'upsert', v: { key, value: x['value'] ?? null, locked_by: null } }] };
   },
+  // My Stuff's Remove (wisp.stuff `stuff.remove`): the kept row leaves its topic
+  'stuff.remove': (a, ctx) => {
+    const id = str(obj(a), 'id');
+    if (ctx.row('stuff', 'stuff.item', id) === undefined) refuse('not_found', `nothing saved as ${id}`);
+    return { ops: [{ topic: 'stuff', e: 'stuff.item', id, op: 'del' }] };
+  },
   'stuff.delete': (a, ctx) => {
     const id = str(obj(a), 'id');
     if (ctx.row('stuff', 'stuff', id) === undefined) refuse('not_found', `nothing saved as ${id}`);

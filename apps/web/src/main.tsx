@@ -94,6 +94,7 @@ shell.register(
   shellSettingsUi({
     panes: paneEntries,
     t: (key, vars) => client.i18n.t(key, vars),
+    phone: platform.phone,
   }),
 );
 

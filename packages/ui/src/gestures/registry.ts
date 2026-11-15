@@ -95,6 +95,13 @@ export const GESTURES = defineGestures({
     does: 'hold the story still while pressed',
     twin: { command: 'ui.pause-story', parts: ['crew.story.pause'] },
   },
+  // My Stuff on phones (step 14): a saved thing's row, Share (right) and Delete (left); both are in its ⋯ menu on screen
+  'stuff.swipe': {
+    kind: 'swipe-x',
+    does: "Share (right) / Delete (left) a saved thing in My Stuff",
+    twin: { command: 'stuff.remove', parts: ['stuff.phone.row.menu.trigger'] },
+    haptic: { line: 'select' },
+  },
   'sheet.drag-down': {
     kind: 'drag-down',
     does: 'close the sheet (a draft stays)',

@@ -28,7 +28,8 @@ function extend(shell: Shell, toaster: Toaster, platform: Platform): () => void 
       }),
     );
   });
-  shell.register(shellSettingsUi({ panes: paneEntries, t: (key, vars) => shell.client.i18n.t(key, vars) }));
+  // the phone apps' Settings: the platform's pages, without the keyboard-only pane (frame.tsx offeredPanes)
+  shell.register(shellSettingsUi({ panes: paneEntries, t: (key, vars) => shell.client.i18n.t(key, vars), phone: platform.phone }));
   const home = shell.pluginClient('wisp.shell-home');
   const stopNotify = home ? startNotifier({ client: home, platform, toast: toaster, nav: shell.nav, focused: () => document.hasFocus() }) : undefined;
   return () => {

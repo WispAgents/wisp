@@ -77,3 +77,4 @@ export { AutomationsBody, AutoRunner, AutoList, TriggerKinds, AutoRow, AutoPrese
 export { TaskUsage, type TaskUsageProps, type TaskUsageRow, type TaskUsageSection } from './TaskUsage.tsx';
 export { Ledger, type LedgerProps, type LedgerString } from './Ledger.tsx';
 export { loadPhoneStage } from './phone-stage-load.ts';
+export { StuffPhone, StuffPhoneApp, type StuffPhoneProps, type StuffPhoneAppProps, type StuffPhoneItem, type StuffPhoneGroup, type StuffPhoneKind } from './StuffPhone.tsx';

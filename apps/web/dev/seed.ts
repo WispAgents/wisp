@@ -346,7 +346,7 @@ const PLUGINS: PeerInfo['plugins'] = [
   { id: 'wisp.settings', version: '2.0.0', commands: ['settings.set'], topics: ['config'], blocks: [] },
   { id: 'wisp.crew', version: '2.0.0', commands: [], topics: ['crew'], blocks: [] },
   { id: 'wisp.machines', version: '2.0.0', commands: [], topics: ['machines'], blocks: [] },
-  { id: 'wisp.stuff', version: '2.0.0', commands: ['stuff.delete'], topics: ['stuff'], blocks: [] },
+  { id: 'wisp.stuff', version: '2.0.0', commands: ['stuff.delete', 'stuff.remove'], topics: ['stuff'], blocks: [] },
 ];
 
 const MODEL: Record<Task['agent'], string> = { claude: 'claude-opus-5-5', codex: 'gpt-5.5-codex', gemini: 'gemini-3-pro' };

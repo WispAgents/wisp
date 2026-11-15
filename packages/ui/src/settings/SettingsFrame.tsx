@@ -1,11 +1,16 @@
 // SettingsFrame: Settings as every app has it (v1 web/js/features/settings.js): a sidebar of panes
 // and one pane at a time. Narrower than 640px of its own width (a container query, so it works in
 // a sheet, a split or a phone), it shows the list first and a pane over it, with Back.
+// In the phone apps (ADR-0065 step 14) the same props draw the platform's pushed pages (SettingsPhone.tsx, loaded apart
+// with the look): an M3 settings list / an iOS inset grouped table, each pane pushed with its own bar and Back.
 import { For, Show, createEffect, on, type JSX } from 'solid-js';
 import { flag, sub, type KitProps, type PartName, type WithChildren } from '../core/props.ts';
 import { Icon } from '../content/Icon.tsx';
 import type { IconName } from '../content/icons.ts';
 import { IconButton } from '../controls/Button.tsx';
+import { lazyView } from '../controls/lazy-part.ts';
+import { usePlatform } from '../platform/PlatformLook.tsx';
+import { settingsPhone } from './settings-phone-load.ts';
 import '../css/settings.css';
 
 export interface SettingsNavItem {
@@ -43,6 +48,8 @@ export interface SettingsFrameProps extends KitProps, WithChildren {
   readonly upLabel: string;
   readonly onClose?: () => void;
   readonly closeLabel: string;
+  /** The phone apps: what the list's Back returns to (iOS titles Back with it; default: `closeLabel`). Additive (2026-11-15). */
+  readonly backLabel?: string | undefined;
   /** Above the list: a search field. */
   readonly search?: JSX.Element;
   /** Keys on the whole frame (Escape closes it). */
@@ -105,7 +112,18 @@ function NavItems(props: { readonly frame: SettingsFrameProps; readonly part: Pa
   );
 }
 
+const Phone = lazyView(settingsPhone, (m) => m.SettingsPhone);
+
 export function SettingsFrame(props: SettingsFrameProps): JSX.Element {
+  const look = usePlatform();
+  return (
+    <Show when={look() !== 'web'} fallback={<BrowserFrame {...props} />}>
+      <Phone {...props} />
+    </Show>
+  );
+}
+
+function BrowserFrame(props: SettingsFrameProps): JSX.Element {
   const part = (): PartName => props.part ?? 'settings.frame';
   const refs: { body?: HTMLDivElement } = {};
   // a new pane starts at its top, not where the last one was scrolled to

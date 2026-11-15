@@ -3,12 +3,13 @@
 // task; cards with their kind, title and facts, each with its menu (open or launch, copy, download, star,
 // the task it came from, show in folder, remove). Add files drops them here. The rows are the peer's
 // `stuff.item` view rows on the `stuff` topic; every write shows at once.
-import { createMemo, createSignal, For, onCleanup, Show, type JSX } from 'solid-js';
-import { entityKey, ownerOf, type EntityKey, type PluginClient, type SessionId } from '@wisp/client';
+import { createMemo, createSignal, For, lazy, onCleanup, Show, type JSX } from 'solid-js';
+import type { EntityKey, PluginClient } from '@wisp/client';
 import { useShell } from '@wisp/shell';
 import { Button, Card, Icon, Inline, Menu, Stack, StuffFrame, Text, Wrap } from '@wisp/ui';
 import { itemActions, type ActionId } from './actions.ts';
-import { launchApp, publishApp, publishTargets, removeItem, revealItem, stopApp, unpublishApp, updateItem } from './commands.ts';
+import { publishTargets } from './commands.ts';
+import { pageRun } from './page-run.ts';
 import { stuffState } from './state.ts';
 import { PaneCards, pinsOf } from './pins.tsx';
 import { useEntries, type Entry } from './items.ts';
@@ -20,12 +21,20 @@ import './i18n/lazy.ts';
 /** The actions this page carries out; the rest (pins, edit) live where they're done. */
 const HERE: ReadonlySet<ActionId> = new Set(['open', 'pin-task', 'unpin-task', 'pin-home', 'unpin-home', 'stop', 'publish', 'pubcopy', 'pubopen', 'update', 'unpublish', 'copy', 'download', 'star', 'task', 'folder', 'remove']);
 
-/** a link without its scheme, as v1 shows it */
-const bare = (url: string): string => url.replace(/^https?:\/\//, '').replace(/\/$/, '');
+// the phone apps (data-platform android | ios): My Stuff as the platform's screen (ADR-0065 step 14); its own chunk
+const StuffPhonePage = lazy(() => import('./StuffPhone.tsx'));
 
-const fileUrl = (e: Entry): string => `/api/stuff/${encodeURIComponent(e.it.id)}/file`;
-
+/** The browser (a phone's too) keeps v1's page; the phone apps draw the platform's screen in its place. */
 export default function StuffPage(props: { readonly client: PluginClient }): JSX.Element {
+  const shell = useShell();
+  return (
+    <Show when={shell.platform.phone} fallback={<BrowserPage client={props.client} />}>
+      <StuffPhonePage client={props.client} />
+    </Show>
+  );
+}
+
+function BrowserPage(props: { readonly client: PluginClient }): JSX.Element {
   const c = props.client;
   const shell = useShell();
   const t = (k: string, v?: Readonly<Record<string, string | number>>): string => c.t(k, v);
@@ -58,95 +67,7 @@ export default function StuffPage(props: { readonly client: PluginClient }): JSX
       month: (at, withYear) => new Date(at).toLocaleDateString(undefined, withYear ? { month: 'long', year: 'numeric' } : { month: 'long' }),
     }),
   );
-  const quiet = (p: Promise<unknown>): void => {
-    p.catch(() => {}); // the shell's onError shows the rollback toast
-  };
-
-  const run = (e: Entry, id: ActionId): void => {
-    const key = e.key;
-    const args = { key, id: e.it.id };
-    switch (id) {
-      case 'open':
-        if (e.it.kind === 'app') {
-          c.run(launchApp, args).then((l) => window.open(l.url, '_blank', 'noopener'), () => {});
-        } else window.open(e.it.kind === 'link' && e.it.url ? e.it.url : fileUrl(e), '_blank', 'noopener');
-        return;
-      case 'stop':
-        return quiet(c.run(stopApp, args));
-      // Publish (again): a link anyone can open on your grid; its row says publishing until the grid answers
-      case 'publish':
-      case 'update': {
-        const again = !!e.it.published;
-        c.run(publishApp, args).then(
-          (next) => {
-            const url = next.published?.url;
-            if (!url) return;
-            void shell.platform.copy(url).then((copied) =>
-              shell.toast.success(t(again ? 'stuff.page.updated' : 'stuff.page.published', { at: bare(url) }), { ...(copied && { description: t('stuff.page.linkCopied') }), action: { label: t('stuff.page.openLink'), onClick: () => window.open(url, '_blank', 'noopener') } }),
-            );
-          },
-          () => {},
-        );
-        return;
-      }
-      case 'unpublish': {
-        const was = e.it.published?.url ?? '';
-        c.run(unpublishApp, args).then(
-          () => shell.toast.show(t('stuff.page.unpublished', { at: bare(was) })),
-          () => {},
-        );
-        return;
-      }
-      case 'pubopen':
-        if (e.it.published?.url) window.open(e.it.published.url, '_blank', 'noopener');
-        return;
-      case 'pubcopy':
-        void shell.platform.copy(e.it.published?.url ?? '').then((ok) => shell.toast.show(t(ok ? 'stuff.page.copied' : 'stuff.page.copyFailed')));
-        return;
-      case 'copy':
-        void navigator.clipboard.writeText(e.it.kind === 'link' ? (e.it.url ?? '') : (e.it.excerpt ?? '')).catch(() => {});
-        return;
-      case 'download': {
-        const a = document.createElement('a');
-        a.href = fileUrl(e);
-        a.download = e.it.name;
-        a.click();
-        return;
-      }
-      case 'star':
-        return quiet(c.run(updateItem, { ...args, starred: !e.it.starred }));
-      case 'task':
-        if (e.it.from?.session) c.navigate({ t: 'openTask', id: entityKey(ownerOf(key), e.it.from.session) as unknown as SessionId });
-        return;
-      case 'folder':
-        return quiet(c.run(revealItem, args));
-      case 'remove':
-        return quiet(c.run(removeItem, args));
-      // Pin on home (v1 panes.js pinApp): the Allow card first when it asks to use wisp
-      case 'pin-home':
-        return quiet(pins.pin(key, e.it, 'home', entries().map((x) => x.it)));
-      case 'unpin-home':
-        return quiet(pins.unpin(e.it, 'home', entries().map((x) => x.it)));
-      // Pin beside tasks: a tab in the panel beside every task (v1 panel.js)
-      case 'pin-task':
-        return quiet(pins.pin(key, e.it, 'task', entries().map((x) => x.it)));
-      case 'unpin-task':
-        return quiet(pins.unpin(e.it, 'task', entries().map((x) => x.it)));
-      default:
-    }
-  };
-
-  const upload = (files: FileList | null): void => {
-    const all = Array.from(files ?? []);
-    all.forEach((f, i) => {
-      // the bytes go to My Stuff's upload route on this computer; its rows follow on the stuff topic. The first says how
-      // many came together (`of`): v1's one stuff_add per drop
-      const of = i === 0 ? `&of=${all.length}` : '';
-      c.http(c.home)
-        .send({ method: 'POST', path: `/stuff/upload?name=${encodeURIComponent(f.name)}&type=${encodeURIComponent(f.type)}${of}`, body: f, contentType: 'application/octet-stream' })
-        .catch((e: unknown) => shell.toast.error(e instanceof Error ? e.message : String(e)));
-    });
-  };
+  const { run, upload } = pageRun({ c, shell, pins, entries });
   let picker: HTMLInputElement | undefined;
 
   const card = (e: Entry): JSX.Element => {

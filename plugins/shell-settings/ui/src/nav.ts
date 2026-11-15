@@ -13,7 +13,7 @@ export interface PaneEntry {
 /** The contract's groups, in the order they show. Unknown groups follow, alphabetically. */
 export const GROUP_ORDER = ['general', 'agents', 'usage', 'integrations', 'computers', 'advanced'] as const;
 
-const rank = (g: string): number => {
+export const rank = (g: string): number => {
   const i = (GROUP_ORDER as readonly string[]).indexOf(g);
   return i < 0 ? GROUP_ORDER.length : i;
 };

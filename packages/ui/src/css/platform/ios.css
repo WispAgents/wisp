@@ -1293,4 +1293,10 @@
   :root[data-platform='ios'] [data-kit='select-toolbar'] [data-kit='button'] { border: 0; background: transparent; color: var(--primary); font: var(--type-body); }
   :root[data-platform='ios'] [data-kit='select-toolbar'] [data-kit='icon-button']:disabled,
   :root[data-platform='ios'] [data-kit='select-toolbar'] [data-kit='button']:disabled { color: var(--on-surface-ter); opacity: 1; }
+
+  /* Step 14 (design/mobile.md §A.2): Settings is an inset grouped table (the grouped background behind its sections,
+     the rows on the section's fill); My Stuff's group headers in headline */
+  :root[data-platform='ios'] [data-kit='phone-page'][data-page='settings'] { background: var(--surface-grouped-0); }
+  :root[data-platform='ios'] [data-kit='settings-group-body'] > [data-kit='list-row'] { background: transparent; }
+  :root[data-platform='ios'] [data-kit='stuff-phone-group-head'] { font: var(--type-headline); color: var(--on-surface); }
 }

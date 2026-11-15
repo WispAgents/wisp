@@ -30,7 +30,10 @@ function OverlayView(props: { readonly overlay: Overlay }): JSX.Element {
   };
   // v1's modals stay cards on a phone (a 20px inset, scrolled inside); a viewer (Settings) takes the phone's whole
   // screen as before, and what's opened as a sheet comes up from the bottom; never a view placed at the top (⌘K)
-  const sheet = (): boolean => def?.place !== 'top' && (props.overlay.kind === 'sheet' || (props.overlay.kind === 'viewer' && nav().layout === 'stack'));
+  // the phone apps (ADR-0065 step 14): a viewer that brings its own head (Settings) is a pushed page over the whole
+  // screen, the platform's bars inside it
+  const page = (): boolean => shell.platform.phone && props.overlay.kind === 'viewer' && def?.bare === true && def.place !== 'top';
+  const sheet = (): boolean => !page() && def?.place !== 'top' && (props.overlay.kind === 'sheet' || (props.overlay.kind === 'viewer' && nav().layout === 'stack'));
   return (
     <Show
       when={sheet()}
@@ -42,7 +45,7 @@ function OverlayView(props: { readonly overlay: Overlay }): JSX.Element {
           {...(def?.place && { place: def.place })}
           onOpenChange={close}
           initialFocus={initialFocus}
-          size={props.overlay.kind === 'viewer' ? 'xl' : (def?.size ?? 'md')}
+          size={page() ? 'full' : props.overlay.kind === 'viewer' ? 'xl' : (def?.size ?? 'md')}
           part={(def?.part ? `shell.overlay ${def.part}` : 'shell.overlay') as `${string}.${string}`}
         >
           {body()}

@@ -81,7 +81,7 @@ describe('the registry', () => {
     defineGestures({ x: { kind: 'long-press', does: 'x', twin: { parts: ['ui.x'] } } });
     // and every entry of the kit's registry does, with real data-part names (namespace.name)
     const names = Object.keys(GESTURES);
-    expect(names.sort()).toEqual(['list.pull', 'queue.drag', 'row.long-press', 'row.swipe', 'sheet.drag-down', 'story.drag-down', 'story.long-press', 'task.body-swipe', 'task.head-swipe']);
+    expect(names.sort()).toEqual(['list.pull', 'queue.drag', 'row.long-press', 'row.swipe', 'sheet.drag-down', 'story.drag-down', 'story.long-press', 'stuff.swipe', 'task.body-swipe', 'task.head-swipe']);
     for (const [name, g] of Object.entries(GESTURES)) {
       expect(g.twin.command, name).toMatch(/^[a-z-]+(\.[a-zA-Z-]+)+$/);
       expect(g.twin.parts.length, name).toBeGreaterThan(0);

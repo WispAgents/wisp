@@ -3,6 +3,12 @@
 import { children, type JSX } from 'solid-js';
 import { Frame } from '../shell/Frame.tsx';
 import type { StageProps } from './Stage.tsx';
+import { settingsPhone } from '../settings/settings-phone-load.ts';
+
+// Settings' phone pages (step 14) come with the phone frame, which the look loads before the first render: opening
+// Settings from the me menu draws them at once. From here, not platform/styles.ts, so the browser's first download
+// doesn't even carry their chunk's name.
+settingsPhone.load().catch(() => undefined);
 
 /** The phone apps (design/mobile.md §A.1): one page at a time under 900 px, the side pane as its own page over the
  *  task; the crew rail gives way to the Crew destination. */

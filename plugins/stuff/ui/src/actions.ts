@@ -8,7 +8,7 @@ import type { Item } from './types.ts';
 import './i18n/lazy.ts';
 
 export type ActionId =
-  | 'open' | 'stop' | 'publish' | 'pubcopy' | 'pubopen' | 'update' | 'unpublish' | 'resetdata'
+  | 'open' | 'share' | 'stop' | 'publish' | 'pubcopy' | 'pubopen' | 'update' | 'unpublish' | 'resetdata'
   | 'pin-task' | 'unpin-task' | 'pin-home' | 'unpin-home' | 'revoke' | 'mention' | 'copy' | 'download'
   | 'star' | 'edit' | 'restore' | 'task' | 'folder' | 'remove';
 
@@ -55,7 +55,8 @@ export function itemActions(it: Item, c: ActionContext): Action[] {
   const open = app
     ? a('open', 'play', it.running ? 'stuff.act.openAgain' : 'stuff.act.launch')
     : a('open', it.kind === 'link' ? 'external' : 'expand', it.kind === 'link' ? 'stuff.act.openLink' : 'stuff.act.open');
-  const out: Action[] = [open, ...(app ? appActions(it, c) : []), a('mention', 'agent', 'stuff.act.mention')];
+  // the phone apps: Share (the platform's share sheet) right after Open, also a list row's swipe to the right
+  const out: Action[] = [open, ...(c.mobile ? [a('share', 'share', 'stuff.act.share')] : []), ...(app ? appActions(it, c) : []), a('mention', 'agent', 'stuff.act.mention')];
   if (canCopy(it)) out.push(a('copy', 'copy', it.kind === 'link' ? 'stuff.act.copyLink' : 'stuff.act.copy'));
   if (canDownload(it)) out.push(a('download', 'download', 'stuff.act.download'));
   out.push(a('star', 'star', it.starred ? 'stuff.act.unstar' : 'stuff.act.star'));

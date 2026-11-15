@@ -1294,4 +1294,7 @@
   :root[data-platform='android'] [data-kit='list-row'][data-picked] > [data-kit='row-pick'] { border-color: var(--primary); background: var(--primary); }
   :root[data-platform='android'] [data-kit='list-row'][data-picked] { background: var(--primary-container); }
   :root[data-platform='android'] [data-kit='list-row'][data-picking] > [data-kit='list-row-actions'] { display: none; }
+
+  /* Step 14 (design/mobile.md §A.2): My Stuff's group headers as M3 list subheaders (title small, on-surface-variant) */
+  :root[data-platform='android'] [data-kit='stuff-phone-group-head'] { font: var(--type-title-s); letter-spacing: var(--track-title-s); color: var(--on-surface-var); }
 }
