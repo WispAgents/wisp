@@ -14,3 +14,5 @@ export type { DiffFile, DiffHunk, DiffLine, DiffStatus } from './content/diff/pa
 export { makerOptions, type MakerOption } from './crew/maker-options.ts';
 export { GESTURES, defineGestures, gestureMarks, type GestureKind, type GestureName, type GestureSpec, type GestureTwin } from './gestures/registry.ts';
 export * from './gestures/gesture-math.ts';
+// the task history as a ledger (ADR-0068): days, notice folds, search and filters, the scrubber's ticks, the keys
+export * from './app/ledger-model.ts';

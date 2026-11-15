@@ -122,6 +122,14 @@ fn stub_body(body: Option<&Map<String, Value>>) -> Map<String, Value> {
         out.insert("ext".into(), Value::Object(light_ext(ext)));
     }
     let blocks = b.get("presentation").and_then(|p| p.get("blocks")).and_then(Value::as_array).map(Vec::as_slice).unwrap_or_default();
+    // the ledger's search and Shipped filter (ADR-0068): the paths it touched, without their edits, and whether it shipped
+    let files = touched(b);
+    if !files.is_empty() {
+        out.insert("files".into(), Value::Array(files.into_iter().map(Value::String).collect()));
+    }
+    if shipped(blocks) {
+        out.insert("shipped".into(), Value::Bool(true));
+    }
     let mut kept = Vec::new();
     // where each kept block was: its .env ranges (ADR-0050) follow it to its place in the stub
     let mut moved: Vec<(usize, usize, &[&str])> = Vec::new();
@@ -170,6 +178,42 @@ fn stub_hide(h: &Value, moved: &[(usize, usize, &[&str])]) -> Value {
         }
     }
     Value::Object(out)
+}
+
+/// How many paths a stub keeps for the ledger's search (ADR-0068): a turn that touched more is found by its first ones.
+pub const STUB_FILES: usize = 100;
+
+/// The paths a turn changed (`ext["wisp.runtime"].changes`, or a v1 body's `changes`), in order, once each, at most
+/// [`STUB_FILES`].
+fn touched(b: &Map<String, Value>) -> Vec<String> {
+    let changes = b
+        .get("ext")
+        .and_then(|e| e.get("wisp.runtime"))
+        .and_then(|r| r.get("changes"))
+        .or_else(|| b.get("changes"))
+        .and_then(Value::as_array)
+        .map(Vec::as_slice)
+        .unwrap_or_default();
+    let mut out: Vec<String> = Vec::new();
+    for f in changes.iter().filter_map(|c| c.get("file").and_then(Value::as_str)) {
+        if out.len() == STUB_FILES {
+            break;
+        }
+        if !f.is_empty() && !out.iter().any(|x| x == f) {
+            out.push(f.to_owned());
+        }
+    }
+    out
+}
+
+/// Whether a turn's answer shipped something (ADR-0068): it carries a `commits` block, or a `graph` block of a PR
+/// that is open or merged.
+pub fn shipped(blocks: &[Value]) -> bool {
+    blocks.iter().any(|x| match x.get("type").and_then(Value::as_str) {
+        Some("commits") => x.get("items").and_then(Value::as_array).is_some_and(|i| !i.is_empty()),
+        Some("graph") => matches!(x.get("state").and_then(Value::as_str), Some("open" | "merged")),
+        _ => false,
+    })
 }
 
 fn light_ext(ext: &Map<String, Value>) -> Map<String, Value> {
@@ -267,6 +311,29 @@ mod tests {
         let mut u = r.clone();
         u["body"][HIDE] = json!("unread");
         assert_eq!(stub_row(&u)["body"][HIDE], "unread", "unreadable stays so");
+    }
+
+    #[test]
+    fn a_stub_keeps_the_paths_it_touched_and_whether_it_shipped_for_the_ledger_adr_0068() {
+        let r = row(json!({ "id": "t", "body": {
+            "ext": { "wisp.runtime": { "changes": [{ "file": "a.ts", "edits": ["x"] }, { "file": "b.ts" }, { "file": "a.ts" }, { "file": "" }] } },
+            "presentation": { "blocks": [{ "type": "hero", "title": "PR opened" }, { "type": "graph", "state": "open" }] } } }));
+        let b = &stub_row(&r)["body"];
+        assert_eq!(b["files"], json!(["a.ts", "b.ts"]), "once each, in order, no empty path");
+        assert_eq!(b["shipped"], true);
+        assert_eq!(b["ext"]["wisp.runtime"].get("changes"), None, "the edits still go");
+        // a v1 body's changes; a closed PR and an empty commits block didn't ship
+        let v1 = row(json!({ "id": "t", "body": { "changes": [{ "file": "c.ts" }],
+            "presentation": { "blocks": [{ "type": "graph", "state": "closed" }, { "type": "commits", "items": [] }] } } }));
+        let b = &stub_row(&v1)["body"];
+        assert_eq!(b["files"], json!(["c.ts"]));
+        assert_eq!(b.get("shipped"), None);
+        // a turn that touched more keeps its first STUB_FILES
+        let many: Vec<Value> = (0..STUB_FILES + 5).map(|i| json!({ "file": format!("f{i}") })).collect();
+        let big = row(json!({ "id": "t", "body": { "changes": many } }));
+        assert_eq!(stub_row(&big)["body"]["files"].as_array().map(Vec::len), Some(STUB_FILES));
+        assert!(shipped(&[json!({ "type": "commits", "items": [{ "hash": "a" }] })]));
+        assert!(shipped(&[json!({ "type": "graph", "state": "merged" })]));
     }
 
     #[test]

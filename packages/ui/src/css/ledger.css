@@ -1,0 +1,168 @@
+/* The task history's ledger (ADR-0068, app/Ledger.tsx; docs/design/history-redesign.md § A): outcome rows, notice
+   folds, day heads and day cards with an outcome strip, the open turn in place, search and filter chips, the scrubber.
+   Loaded with the task page, never on the first screen (ADR-0011). Control text is one line (design/layout.md). */
+@layer kit {
+  [data-kit='ledger'] { container: ledger / inline-size; min-width: 0; }
+
+  /* ---- search and filters ---- */
+  [data-kit='ledger-tools'] {
+    display: flex; align-items: center; gap: var(--space-5); min-width: 0;
+    padding: var(--space-4) 0 var(--space-5); border-bottom: var(--size-hairline) solid var(--line);
+  }
+  [data-kit='ledger-search'] {
+    flex: none; display: flex; align-items: center; gap: var(--space-3); width: var(--size-hover-max); min-width: 0;
+    height: var(--size-control-sm); padding: 0 var(--space-4); border: var(--size-hairline) solid var(--line-2);
+    border-radius: var(--radius-control); background: var(--surface); color: var(--faint);
+  }
+  [data-kit='ledger-search']:focus-within { border-color: var(--accent); }
+  [data-kit='ledger-search'] input {
+    flex: 1 1 auto; min-width: 0; border: 0; outline: 0; background: none; font: inherit; font-size: var(--fs-md); color: var(--ink);
+  }
+  [data-kit='ledger-search'] input::-webkit-search-cancel-button { display: none; }
+  [data-kit='ledger-kbd'] {
+    flex: none; padding: 0 var(--space-2); border: var(--size-hairline) solid var(--line-2); border-radius: var(--radius-xs);
+    font-family: var(--mono); font-size: var(--fs-xs); color: var(--faint);
+  }
+  [data-kit='ledger-chips'] { display: flex; gap: var(--space-3); min-width: 0; overflow-x: auto; scrollbar-width: none; }
+  [data-kit='ledger-chips']::-webkit-scrollbar { display: none; }
+  [data-kit='ledger-chip'] {
+    flex: none; display: inline-flex; align-items: center; gap: var(--space-3); height: var(--size-control-xs);
+    padding: 0 var(--space-5); border: var(--size-hairline) solid var(--line-2); border-radius: var(--radius-pill);
+    background: none; font: inherit; font-size: var(--fs-sm); color: var(--muted); white-space: nowrap; cursor: pointer;
+  }
+  [data-kit='ledger-chip']:hover { color: var(--ink); background: var(--bg-2); }
+  [data-kit='ledger-chip'][aria-pressed='true'] { border-color: var(--ink); color: var(--ink); }
+  [data-kit='ledger-chip-n'] { color: var(--faint); font-variant-numeric: tabular-nums; }
+  [data-kit='ledger-count'] { flex: none; margin-left: auto; font-size: var(--fs-xs); color: var(--faint); white-space: nowrap; }
+
+  /* ---- the list, and the scrubber beside it ---- */
+  [data-kit='ledger-wrap'] { display: grid; grid-template-columns: minmax(0, 1fr); align-items: start; }
+  [data-kit='ledger'][data-scrub] [data-kit='ledger-wrap'] { grid-template-columns: minmax(0, 1fr) var(--size-scrub); }
+  [data-kit='ledger-list'] { min-width: 0; }
+  [data-kit='ledger'][data-scrub] [data-kit='ledger-list'] { padding-right: var(--space-5); }
+  [data-kit='ledger-none'] { margin: 0; padding: var(--space-8) 0; font-size: var(--fs-md); color: var(--faint); }
+
+  /* a day's head, and an earlier day folded into its card */
+  [data-kit='ledger-day'] {
+    display: flex; align-items: baseline; gap: var(--space-5); min-width: 0;
+    padding: var(--space-6) 0 var(--space-3); border-bottom: var(--size-hairline) solid var(--line); white-space: nowrap;
+  }
+  [data-kit='ledger-day-name'] { flex: none; font-size: var(--fs-sm); font-weight: var(--fw-semibold); color: var(--ink-2); }
+  [data-kit='ledger-day-sub'] { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; font-size: var(--fs-xs); color: var(--faint); }
+  [data-kit='ledger-day'] > [data-kit='ledger-btn'] { margin-left: auto; }
+  [data-kit='ledger-card'] {
+    display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: var(--space-2) var(--space-6); width: 100%; min-width: 0;
+    padding: var(--space-6) 0; border: 0; border-bottom: var(--size-hairline) solid var(--line); background: none;
+    font: inherit; text-align: left; color: var(--ink); cursor: pointer;
+  }
+  [data-kit='ledger-card']:hover [data-kit='ledger-card-day'] { color: var(--accent); }
+  [data-kit='ledger-card-day'] { font-size: var(--fs-md); font-weight: var(--fw-semibold); white-space: nowrap; }
+  [data-kit='ledger-card-span'] { font-size: var(--fs-xs); color: var(--faint); white-space: nowrap; font-variant-numeric: tabular-nums; }
+  [data-kit='ledger-card-sum'] {
+    grid-column: 1 / 3; min-width: 0; font-size: var(--fs-sm); color: var(--muted);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  [data-kit='ledger-strip'] { grid-column: 1 / 3; display: flex; gap: var(--size-hairline); height: var(--size-dot); margin-top: var(--space-2); }
+  [data-kit='ledger-strip'] > i { flex: 1 1 0; min-width: 0; border-radius: var(--radius-xs); background: var(--line-2); }
+  [data-kit='ledger-strip'] > i[data-tone='notice'], [data-kit='ledger-strip'] > i[data-tone='answer'] { background: var(--line); }
+  [data-kit='ledger-strip'] > i[data-tone='failed'] { background: var(--bad); }
+
+  /* a turn's line: glyph · outcome · time, then the prompt */
+  [data-kit='ledger-row'] {
+    display: grid; grid-template-columns: var(--size-icon-lg) minmax(0, 1fr) auto; column-gap: var(--space-5); align-items: center;
+    width: 100%; min-width: 0; padding: var(--space-4); border: 0; border-radius: var(--radius-md); background: none;
+    font: inherit; text-align: left; color: var(--ink); cursor: pointer;
+  }
+  [data-kit='ledger-row']:hover { background: var(--bg-2); }
+  [data-kit='ledger-row']:focus-visible { outline: var(--size-ring) solid var(--accent); outline-offset: calc(var(--size-ring) * -1); }
+  [data-kit='ledger-hero'] { min-width: 0; font-size: var(--fs-md); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  [data-kit='ledger-time'] { font-size: var(--fs-xs); color: var(--faint); font-variant-numeric: tabular-nums; white-space: nowrap; text-align: right; }
+  [data-kit='ledger-ask'] {
+    grid-column: 2 / 4; min-width: 0; font-size: var(--fs-sm); color: var(--faint);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  [data-kit='ledger-row'][data-notice] { padding-block: var(--space-2); }
+  [data-kit='ledger-row'][data-notice] [data-kit='ledger-hero'] { font-size: var(--fs-sm); color: var(--faint); }
+  [data-kit='ledger-row'][data-notice] [data-kit='ledger-hero'] b { font-weight: var(--fw-medium); color: var(--muted); }
+  [data-kit='ledger-glyph'] { display: inline-flex; align-items: center; justify-content: center; color: var(--faint); }
+  [data-kit='ledger-glyph'][data-tone='done'] { color: var(--good); }
+  [data-kit='ledger-glyph'][data-tone='failed'] { color: var(--bad); }
+  [data-kit='ledger-glyph'][data-tone='running'] { color: var(--accent); }
+
+  /* a run of wisp's notices, folded */
+  [data-kit='ledger-fold'] {
+    display: flex; align-items: center; gap: var(--space-4); width: 100%; min-width: 0;
+    padding: var(--space-2) var(--space-4) var(--space-2) var(--space-4); border: 0; border-radius: var(--radius-md); background: none;
+    font: inherit; font-size: var(--fs-sm); text-align: left; color: var(--faint); cursor: pointer;
+  }
+  [data-kit='ledger-fold']:hover { background: var(--bg-2); color: var(--muted); }
+  [data-kit='ledger-fold-text'] { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+  /* the open turn, in place: its head row as it was, then the turn whole, then Earlier · Later */
+  [data-kit='ledger-turn'] { min-width: 0; }
+  /* its frame is drawn, not laid out (a ring, no top margin or border): the head row doesn't move as it opens */
+  [data-kit='ledger-turn'][data-open] {
+    margin-bottom: var(--space-6); border-radius: var(--radius-lg); background: var(--surface);
+    box-shadow: 0 0 0 var(--size-hairline) var(--line-2), var(--shadow-1); overflow: hidden;
+  }
+  [data-kit='ledger-turn'][data-open] > [data-kit='ledger-row'] { border-radius: 0; background: var(--surface-2); box-shadow: 0 var(--size-hairline) 0 var(--line); }
+  [data-kit='ledger-body'] { min-width: 0; padding: 0 var(--space-6); }
+  [data-kit='ledger-step'] {
+    display: flex; gap: var(--space-4); padding: var(--space-4) var(--space-6);
+    border-top: var(--size-hairline) solid var(--line); background: var(--surface-2);
+  }
+  [data-kit='ledger-btn'] {
+    flex: none; height: var(--size-control-xs); padding: 0 var(--space-5); border: 0; border-radius: var(--radius-control);
+    background: none; font: inherit; font-size: var(--fs-sm); color: var(--muted); white-space: nowrap; cursor: pointer;
+  }
+  [data-kit='ledger-btn']:hover:not(:disabled) { background: var(--bg-2); color: var(--ink); }
+  [data-kit='ledger-btn']:disabled { opacity: 0.4; cursor: default; }
+  [data-kit='ledger-tail'] { min-width: 0; }
+  /* past 200 lines: its own scroller, as tall as its lines up to a sheet's height (never empty space under a short day) */
+  [data-kit='ledger-list'] > [data-kit='virtual-list'] { height: auto; max-height: var(--size-sheet-max); }
+
+  /* the scrubber: one tick per turn, oldest at the top; it stays in view as the page scrolls */
+  [data-kit='ledger-scrub'] {
+    position: sticky; top: 0; display: flex; flex-direction: column; height: var(--k-ledger-h, var(--size-sheet-max));
+    max-height: var(--k-ledger-h, var(--size-sheet-max)); padding: var(--space-4) 0; border-left: var(--size-hairline) solid var(--line);
+    cursor: pointer; user-select: none; touch-action: none; outline: 0;
+  }
+  [data-kit='ledger-scrub']:focus-visible { box-shadow: inset 0 0 0 var(--size-ring) var(--accent); }
+  [data-kit='ledger-ticks'] { position: relative; flex: 1 1 auto; margin: 0 var(--space-5) 0 var(--space-8); }
+  [data-kit='ledger-ticks'] > i { position: absolute; top: var(--k-at); left: 0; right: 30%; height: var(--size-hairline); background: var(--line-2); }
+  [data-kit='ledger-ticks'] > i[data-tone='notice'] { left: 55%; right: 0; background: var(--line); }
+  [data-kit='ledger-ticks'] > i[data-tone='answer'] { right: 45%; }
+  [data-kit='ledger-ticks'] > i[data-tone='failed'] { left: 30%; right: 0; height: var(--size-ring); background: var(--bad); }
+  [data-kit='ledger-ticks'] > i[data-tone='on'] { left: calc(var(--space-4) * -1); right: 0; height: var(--size-v1-nudge); background: var(--accent); z-index: 1; }
+  [data-kit='ledger-bubble'] {
+    position: absolute; top: calc(var(--k-y) + var(--space-4)); right: calc(100% + var(--space-3)); z-index: var(--z-raised);
+    display: flex; flex-direction: column; gap: var(--space-1); width: var(--size-hover-max); padding: var(--space-4) var(--space-5);
+    border: var(--size-hairline) solid var(--line-2); border-radius: var(--radius-md); background: var(--surface);
+    box-shadow: var(--shadow-2); pointer-events: none; transform: translateY(-50%);
+  }
+  [data-kit='ledger-bubble-at'] { font-size: var(--fs-xs); color: var(--faint); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  [data-kit='ledger-bubble-hero'] { display: flex; align-items: center; gap: var(--space-3); min-width: 0; font-size: var(--fs-md); }
+  [data-kit='ledger-bubble-hero'] > span:last-child { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+  /* a narrow pane (the details column beside it): the chips keep the room, the count goes */
+  @container ledger (max-width: 640px) {
+    [data-kit='ledger-count'] { display: none; }
+  }
+  /* a phone (or any narrow pane): the filters scroll sideways under the search, a 22px scrubber on the edge */
+  @container ledger (max-width: 520px) {
+    [data-kit='ledger-tools'] { flex-direction: column; align-items: stretch; gap: var(--space-4); }
+    [data-kit='ledger-search'] { width: auto; }
+    [data-kit='ledger-kbd'], [data-kit='ledger-count'] { display: none; }
+    [data-kit='ledger'][data-scrub] [data-kit='ledger-wrap'] { grid-template-columns: minmax(0, 1fr) var(--size-scrub-phone); }
+    [data-kit='ledger'][data-scrub] [data-kit='ledger-list'] { padding-right: var(--space-2); }
+    [data-kit='ledger-scrub'] { border-left: 0; }
+    [data-kit='ledger-ticks'] { margin: 0 var(--space-1) 0 var(--space-3); }
+    [data-kit='ledger-ticks'] > i[data-tone='on'] { left: 0; }
+    [data-kit='ledger-bubble'] { width: var(--size-tooltip-max); max-width: 70cqw; }
+    [data-kit='ledger-row'] { padding: var(--space-5) var(--space-3); }
+    [data-kit='ledger-body'] { padding: 0 var(--space-4); }
+  }
+  @media (pointer: coarse) {
+    [data-kit='ledger-row'], [data-kit='ledger-fold'] { min-height: var(--size-touch); }
+  }
+}

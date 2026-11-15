@@ -7,6 +7,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Added
 
+- **v2: a long task's history reads like a ledger.** Each earlier turn is one line led by what came of it (the answer's title, a done / failed / answer mark), your words under it; wisp's own notices are faint and three or more in a row fold into one line. Today and yesterday are open; earlier days fold into a card (turns, time span, done, failed, files, a red tick per failure). Search over titles, prompts and file paths with All · Yours · Failed · Shipped · wisp notices; a scrubber down the right edge past 30 turns (hover to preview, click to jump). A turn opens in place, on phones too, with ‹ Earlier · Later ›; with focus in the history, j/k step, / searches, [ ] jump between failures and Esc closes. *Show N earlier turns* is gone.
 - **v2: wisp on a phone's browser.** On iPhone, Add to Home Screen opens wisp full screen, clear of the notch and home indicator. Under 900 px a task opens as its own page with Back, and Esc on New task goes back to the list as in v1.
 - **v2: previews in the cloud.** A preview block in an answer shows the agent's live page even when wisp runs in the cloud: the grid shows that box's page at its own preview address, to the box's owner only.
 - **v2: `wisp` opens the app.** `wisp` (and `npx wisp-agents`) opens the installed desktop app on the running wisp, or a browser tab with `--browser` or when there's no app, and refuses a port another program holds instead of starting a second server.

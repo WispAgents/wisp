@@ -10,3 +10,5 @@ export { create, startingRow, type CreateArgs } from './frame/commands.ts';
 export { menuEntryOf, taskMenu, type TaskMenuEntry, type TaskMenuInput } from './task-menu.ts';
 export { modelWords } from './frame/task-usage.ts';
 export { STANDALONE_CHECK, HOME_SCREEN_TAGS, homeScreenTags, addHomeScreenTags, nativeShell, type HomeScreenTag } from './platform/standalone.ts';
+// a task's turn rows as the history ledger reads them (ADR-0068)
+export { NOTICE_KINDS, clause, isNotice, ledgerTurn, outcomeOf, shippedOf, type TurnLike } from './frame/ledger-turns.ts';
