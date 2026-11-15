@@ -60,7 +60,7 @@ impl Claims {
             .collect()
     }
 
-    #[cfg(test)]
+    /// How many starts hold `task` now (a lead's delegates are left to a turn of it that is starting).
     pub(crate) fn count(&self, task: &str) -> usize {
         lock(&self.inner).by_task.get(task).map_or(0, Vec::len)
     }

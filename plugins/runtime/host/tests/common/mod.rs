@@ -225,8 +225,37 @@ pub static SLOW_EXIT_GONE: std::sync::atomic::AtomicBool = std::sync::atomic::At
 /// Set once a `hang…` CLI was killed (a /btw a delete must stop).
 pub static HANG_GONE: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
+/// Gates a `gate <name> …` CLI waits on (after its conversation's line) before it answers: `open(name)` lets it go.
+static GATES: std::sync::LazyLock<std::sync::Mutex<std::collections::HashMap<String, Arc<tokio::sync::Notify>>>> =
+    std::sync::LazyLock::new(Default::default);
+
+fn gate(name: &str) -> Arc<tokio::sync::Notify> {
+    GATES.lock().unwrap().entry(name.to_owned()).or_default().clone()
+}
+
+/// Lets the `gate <name> …` CLI answer (now, or as soon as it gets there).
+pub fn open(name: &str) {
+    gate(name).notify_one();
+}
+
 async fn fake_cli(mut io: SimIo) -> Exit {
     let prompt = io.args.first().cloned().unwrap_or_default();
+    // `gate <name> …` as the prompt, or its paragraph after a note wisp put ahead of it: it waits to be let go, then
+    // answers (a report quoting it, `done: gate …`, is no gate)
+    let gated = prompt.strip_prefix("gate ").or_else(|| prompt.split("\n\ngate ").nth(1));
+    if let Some(name) = gated.and_then(|r| r.split_whitespace().next()) {
+        let lines = script(&prompt);
+        io.print(format!("{}\n", lines[0]).as_bytes()).await;
+        let g = gate(name);
+        tokio::select! {
+            () = g.notified() => {}
+            () = io.killed.cancelled() => return Exit { code: None, signal: Some("SIGTERM".into()) },
+        }
+        for l in &lines[1..] {
+            io.print(format!("{l}\n").as_bytes()).await;
+        }
+        return Exit { code: Some(0), signal: None };
+    }
     if prompt.starts_with("hang") {
         // set as it goes, however: the sim's kill may end it by dropping it (its own `killed` branch wins the
         // select) before a store after this await ran, and a delete that waited for it read it as still running

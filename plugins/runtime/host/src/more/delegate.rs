@@ -377,6 +377,9 @@ impl Runtime {
                 reports.push(Report { id: s.id.clone(), subagent: name, state: s.state, done, text, cost_usd: cost });
             }
             if all_done || self.now() >= until {
+                // the lead has these now: wisp won't send them to it again when its turn ends (v1 `owed`)
+                let read: Vec<String> = reports.iter().filter(|r| r.done).map(|r| r.id.0.clone()).collect();
+                self.mark_reports_read(a.id.as_str(), &read).await?;
                 return Ok(Reports { reports });
             }
             self.clock.sleep(POLL_MS).await;

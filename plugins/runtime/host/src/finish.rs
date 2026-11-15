@@ -77,9 +77,14 @@ impl Runtime {
         let blocked = wisp_runtime_core::activity::allowable(turn.mode, &head.blocked);
         if !head.changes.is_empty() || !blocked.is_empty() || auth_failed || head.cli.is_some() {
             // `cli`: what the CLI was this turn (version, catalog), for the page's "since the last turn" line
-            turn.ext.insert(
-                "wisp.runtime".into(),
-                json!({ "changes": head.changes, "blocked": blocked, "authFailed": auth_failed, "cli": head.cli }),
+            keep_in_slot(
+                &mut turn,
+                [
+                    ("changes", json!(head.changes)),
+                    ("blocked", json!(blocked)),
+                    ("authFailed", json!(auth_failed)),
+                    ("cli", json!(head.cli)),
+                ],
             );
         }
         if status == TurnStatus::Done
@@ -96,7 +101,12 @@ impl Runtime {
         }
         // v1 runner.js:1812: a question the turn left open goes with it (no stale ask in review)
         self.cancel_asks(&mut s);
-        let mut landing = self.landing(&s, &turn, stopped || stopping, interrupted);
+        // a lead: its delegates still at work hold it in Working; all of them done, their reports are queued now
+        let waits_on = self.lead_turn_ends(&mut s, &mut turn, stopped || stopping).await;
+        let mut landing = self.landing(&s, &turn, stopped || stopping, interrupted, waits_on.is_some());
+        if let Some(names) = waits_on.filter(|_| landing.state == wisp_runtime_api::model::SessionState::Running && !landing.handing) {
+            Self::note_waits(&mut s, &names);
+        }
         let waits = self.waits_reset(&s, &mut turn, &mut landing);
         s.state = landing.state;
         s.unread = landing.unread;
@@ -106,6 +116,10 @@ impl Runtime {
         s.updated_at = self.now();
         let summary = self.persist(&mut s, vec![turn.clone()]).await?;
         self.emit_end(&s, &turn, interrupted, &landing, &summary, &text);
+        // a delegate's turn ended: its lead may have waited on it last
+        if let Some(lead) = &s.parent_id {
+            self.spawn_check_lead(lead.as_str());
+        }
         if let (true, Some(l)) = (waits, turn.limit.as_ref()) {
             let (rt, sid, agent, until) = (self.clone(), s.id.0.clone(), turn.agent.clone(), l.until);
             tokio::spawn(async move { rt.schedule_reset(&sid, &agent, until).await });
@@ -126,12 +140,13 @@ impl Runtime {
         Ok(())
     }
 
-    fn landing(&self, s: &Session, turn: &Turn, stopped: bool, interrupted: bool) -> land::Landing {
+    fn landing(&self, s: &Session, turn: &Turn, stopped: bool, interrupted: bool, owes: bool) -> land::Landing {
         let outcome = self.host.outcomes().iter().find_map(|o| o.outcome(s, turn)).unwrap_or_default();
         let facts = Facts {
             stopped,
             interrupted,
             follow_up_waits: !s.queue.is_empty() && !s.queue_held,
+            owes,
             compact: turn.by.as_deref() == Some("compact"),
             sub: s.parent_id.is_some(),
             ..Facts::default()
@@ -242,16 +257,21 @@ impl Runtime {
             // claimed under the task's lock, before its start is spawned: a delete (it takes the lock) either came
             // first (no row: nothing starts) or finds this claim and waits for it; claimed in the spawned task, a
             // delete in between waited on nothing and the start's `folder_ready` could bring a worktree back for it
-            next.map(|n| (self.claims.claim(sid), s, n))
+            let waits =
+                next.is_none() && s.parent_id.is_none() && s.ext_of("wisp.runtime").get(wisp_runtime_core::owed::WAITS_ON).is_some();
+            (next.map(|n| (self.claims.claim(sid), s, n)), waits)
         };
-        if let Some((claim, s, n)) = next {
-            self.spawn_start(s, n, claim);
+        match next {
+            (Some((claim, s, n)), _) => self.spawn_start(s, n, claim),
+            // a lead waiting on its delegates let go: one may have ended while its run was still on
+            (None, true) => self.spawn_check_lead(sid),
+            (None, false) => {}
         }
     }
 
     /// Starts a queued turn on its own task, on the plugin's scope. A sync step on purpose: a run's end starting the
     /// next run would otherwise make the run's future contain itself, and its `Send` couldn't be proven.
-    fn spawn_start(self: &Arc<Self>, s: Session, n: wisp_runtime_api::model::QueueItem, claim: crate::claims::Claim) {
+    pub(crate) fn spawn_start(self: &Arc<Self>, s: Session, n: wisp_runtime_api::model::QueueItem, claim: crate::claims::Claim) {
         let rt = self.clone();
         let sid = s.id.0.clone();
         self.host.spawn(Box::pin(async move {
@@ -259,6 +279,20 @@ impl Runtime {
                 tracing::warn!(task = %sid, %err, "the next queued follow-up did not start");
             }
         }));
+    }
+}
+
+/// What the turn's end keeps in runtime's slot on it, merged: what the turn already keeps there (its delegations, a
+/// checkpoint) stays (replaced, a lead forgot the delegates it owed).
+fn keep_in_slot<const N: usize>(turn: &mut Turn, fields: [(&str, serde_json::Value); N]) {
+    let own = turn.ext.entry("wisp.runtime".to_owned()).or_insert_with(|| json!({}));
+    if !own.is_object() {
+        *own = json!({});
+    }
+    if let Some(o) = own.as_object_mut() {
+        for (k, v) in fields {
+            o.insert(k.to_owned(), v);
+        }
     }
 }
 

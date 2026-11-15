@@ -102,9 +102,31 @@ impl Runtime {
         self.load_caps();
         // questions open when wisp stopped stay answerable: the ask is on the task (v1 `session.ask`)
         let waiting: Vec<String> = self.lock_list().values().filter(|s| s.state == SessionState::Waiting).map(|s| s.id.0.clone()).collect();
+        let mut leads: Vec<String> = Vec::new();
         for t in self.repo.running_turns().await? {
             let s = self.repo.session(t.session_id.as_str()).await?;
+            // a delegate wisp's restart stopped: its lead hears of it (once every one it waits on ended)
+            leads.extend(s.parent_id.as_ref().map(|p| p.0.clone()));
             self.end_unfinished(s, t).await?;
+        }
+        // a lead still in Working on its delegates, or with their report queued: it goes on from where it was
+        let working: Vec<String> = self
+            .lock_list()
+            .values()
+            .filter(|s| s.state == SessionState::Running && s.parent_id.is_none())
+            .map(|s| s.id.0.clone())
+            .collect();
+        for id in working {
+            if let Ok(s) = self.repo.session(&id).await
+                && (!s.ext_of("wisp.runtime")[wisp_runtime_core::owed::WAITS_ON].is_null() || s.queue.iter().any(|q| q.reports))
+            {
+                leads.push(id);
+            }
+        }
+        leads.sort();
+        leads.dedup();
+        for id in leads {
+            self.spawn_check_lead(&id);
         }
         for id in waiting {
             let mut s = self.repo.session(&id).await?;
@@ -592,7 +614,7 @@ impl Runtime {
 
     /// `runtime.stop`: a Stop never discards queued follow-ups, it holds them.
     pub async fn stop(self: &Arc<Self>, id: &str, clear_queue: bool) -> Result<()> {
-        let _guard = self.task_lock(id).await;
+        let guard = self.task_lock(id).await;
         let mut s = self.repo.session(id).await?;
         let mut held = s.queue_held;
         let plan = queue::stop(&mut Queue { items: &mut s.queue, held: &mut held }, self.run_state(id));
@@ -610,7 +632,13 @@ impl Runtime {
         } else if s.state == SessionState::Running {
             s.state = SessionState::Review;
         }
-        self.persist(&mut s, Vec::new()).await?;
+        // a lead is owed nothing once stopped, and its delegates stop with it (v1)
+        let (marked, kids) = self.stop_owed(&mut s).await?;
+        self.persist(&mut s, marked.into_iter().collect()).await?;
+        drop(guard);
+        for kid in kids {
+            self.stop_run(&kid);
+        }
         Ok(())
     }
 

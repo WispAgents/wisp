@@ -183,10 +183,11 @@ impl Runtime {
         s.unread = false;
         s.archived = false;
         s.updated_at = self.now();
-        self.persist_start(&mut s, vec![turn.clone()], &claim).await?;
+        let taken = self.persist_run_start(&mut s, &mut turn, &claim).await?;
         self.host.emit(Emitted::Started(TurnStarted { session_id: s.id.clone(), turn_id: turn.id.clone() }));
         // a task or My Stuff mentioned in the prompt (the turn as saved keeps the user's words)
-        let asked = Turn { prompt: self.with_mentions(&s, &turn, harness.info()).await, ..turn.clone() };
+        let mut asked = Turn { prompt: self.with_mentions(&s, &turn, harness.info()).await, ..turn.clone() };
+        crate::more::still_working(&s, &turn, &taken, &mut asked.prompt);
         // another harness taking over: what it missed goes first, with the user's rules (v1 handoff.js)
         let asked = Turn { prompt: Box::pin(self.with_handoff(&s, &asked, asked.prompt.clone())).await, ..asked };
         let mut run = self.harness_run(&s, &asked, &ctx, harness.as_ref());
@@ -355,6 +356,20 @@ impl Runtime {
     /// (folder, `before:run`, run parts), so another plugin's slot written meanwhile (`runtime.setExt`: a goal
     /// dropped) is kept, never put back as `s` had it. Runtime's own slot is the start's.
     /// A task deleted meanwhile (its claim cancelled, or its row gone) is refused: the write would put its row back.
+    /// `persist_start` for a turn that runs: a lead's turn takes over the delegations its last one still owes, in
+    /// the same write (`more::report_back`). The records it took.
+    async fn persist_run_start(self: &Arc<Self>, s: &mut Session, turn: &mut Turn, claim: &Claim) -> Result<Vec<Value>> {
+        let _guard = self.task_lock(s.id.as_str()).await;
+        if claim.cancelled() {
+            return Err(RuntimeError::NoTask(s.id.0.clone()));
+        }
+        let now = self.repo.session(s.id.as_str()).await?;
+        carry_others_ext(s, now.ext);
+        let (prev, taken) = self.take_over_owed(s, turn).await?;
+        self.persist(s, prev.into_iter().chain(std::iter::once(turn.clone())).collect()).await?;
+        Ok(taken)
+    }
+
     async fn persist_start(self: &Arc<Self>, s: &mut Session, turns: Vec<Turn>, claim: &Claim) -> Result<()> {
         let _guard = self.task_lock(s.id.as_str()).await;
         if claim.cancelled() {

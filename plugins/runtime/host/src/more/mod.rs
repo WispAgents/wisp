@@ -13,6 +13,7 @@ mod delegate;
 mod fork;
 mod machine;
 mod quick;
+mod report_back;
 mod sandbox;
 mod sign_in;
 
@@ -29,6 +30,7 @@ use crate::runtime::Runtime;
 pub(crate) use agents::Rounds;
 pub(crate) use ask::ask_id;
 pub(crate) use quick::QuickRuns;
+pub(crate) use report_back::still_working;
 pub(crate) use sign_in::SignIn;
 
 /// How often a wait on an answer or on subagents looks again.
