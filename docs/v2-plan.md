@@ -20,10 +20,10 @@ Rust for everything but the UI, Solid/TS for the UI, everything a plugin (ADR-00
 |---|---|
 | v1 features | **315 built · 7 partial · 5 missing · 4 dropped** of 331 (§6) |
 | Regressed | none (F-comp-1 picker restored to v1 in round 233) |
-| CI, last full run (2790d627) | Linux + macOS: 1 failing test (`serve_orphans` probe), fixed by round 234, re-run pending · Windows: cancelled (open groups, §8) · desktop builds + Android: green |
+| CI, last full run (03c0046d) | Linux + macOS: **only** 2 css-rules tests failed (1 of 192 targets), fixed in r244 · Windows cancelled · desktop + Android green |
 | Budgets | initial JS **119.3** KB br (≤ 120: 0.7 KB left) · CSS 26.9 KB (≤ 30) |
 | Weekly usage | 86 % (owner allowed 3 coders: free reset) |
-| Coders running | coder-r244 (css-rules test failures) |
+| Coders running | none |
 
 ## 3. Owner directions (standing rules)
 
@@ -616,8 +616,7 @@ Source: `docs/v1-features.md` (each row's evidence and test). `[x]` built, `[ ]`
 
 ## 8. CI
 
-- **Last full run 2790d627:** Linux and macOS fail only `serve_orphans::a_probe_whose_caller_hung_up_is_ended`
-  (fixed in round 234: the probes end at their 15 s limit since ADR-0066; 8/8 pass locally; new run pushed); Windows jobs cancelled; desktop builds and Android green.
+- **Last full run 03c0046d:** Linux and macOS fail only `packages/ui/test/css-rules.test.ts` (2 tests; fixed in round 244, 8e60cdf5 + c8173ea6); Windows jobs cancelled after the others failed. Earlier: 2790d627's probe test fixed in round 234.
 - **Windows groups still open** (from the last Windows results, b7499c23 → 8c2a17ed): most fixed since; to re-count on
   the next full run. Logs in `target/ci/*-failed.log`.
 - **Earlier green:** 0a22f297, 3fcb1196, ed7924d1 had Linux and macOS fully green.
@@ -700,7 +699,7 @@ Source: `docs/v1-features.md` (each row's evidence and test). `[x]` built, `[ ]`
 | Round | What | State |
 |---|---|---|
 | 243 | Launcher bar as v1 at every width (More label, gaps, lead's model, unknown = Default, Worktree hidden with no project) | committed (a6ba4cac) |
-| 244 | css-rules test fails on raw-px breakpoints + account-row wrap; make check and test agree | in progress |
+| 244 | css-rules failures fixed (breakpoint tokens, Wrap group); check and test share @wisp/tokens/css-rules | committed (8e60cdf5, c8173ea6) |
 | 242 | Settings and org CSS lazy: initial CSS 30.0 -> 26.9 KB br, looks unchanged | committed (826b025f) |
 | 241 | Review of rounds 227, 228, 229: one fix (offline time in app locale); all committed | committed |
 | 240 | Picker account row wraps as v1 (Wrap group); task clock locale | committed (af6dd52b, f838e783) |
