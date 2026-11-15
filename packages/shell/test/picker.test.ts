@@ -4,6 +4,7 @@ import { expect, test } from 'vitest';
 import { firstFocus, goalOf, modelGroups, pickerRows, searchShown, stepRow, subLine, useHarness, varyRows, withModel, withSetting, withVary } from '../src/frame/picker.ts';
 import type { AgentOffer } from '../src/frame/runner.ts';
 import { compareWords, newRun, sameSetup } from '../src/frame/trial.ts';
+import { autoPick, runnerPick, type AutoPreview } from '../src/frame/auto.ts';
 
 const CLAUDE: AgentOffer = {
   id: 'claude',
@@ -142,4 +143,17 @@ test('a_copy_of_the_lead_added_with_plus_starts_from_the_lead_s_model_thinking_a
   expect(sameSetup(copy, lead)).toBe(true);
   // another harness: its own defaults, never the lead's model
   expect(newRun('codex', lead)).toEqual({ agent: 'codex', model: '', effort: '', account: '' });
+});
+
+test("Auto's pick segment says what v1 #autoPv says: the harness for its default model, else the model · level_auto_pick_segment_v1", () => {
+  // v1 auto-preview.js paint(): <span class="apv-l">${shortLabel(r.pick)}</span>, shortLabel = model ? label minus the harness : label
+  const preview = (pick: NonNullable<AutoPreview['pick']>): AutoPreview => ({ pick, why: '' });
+  const say = (p: AutoPreview): string => runnerPick({ agent: 'auto', shown: autoPick(p)?.label, name: 'Claude Code', model: '', effort: '', account: '', fallback: 'Default' });
+  // the router's default-model arm (server/router.js label `${a.name}`): the harness's name, whole (design/v1-reference/home.auto-preview)
+  expect(say(preview({ agent: 'claude', model: '', effort: '', key: 'claude:', label: 'Claude Code' }))).toBe('Claude Code');
+  // a model arm (label `${a.name} · ${m.label}` + level): the logo names the harness, the label the model · level; v1's .apv-l
+  // caps it at 150px with an ellipsis, as app-home.css does
+  expect(say(preview({ agent: 'codex', model: 'gpt-5.6-terra', effort: 'high', key: 'codex:gpt-5.6-terra:high', label: 'Codex · GPT-5.6-Terra · High' }))).toBe('GPT-5.6-Terra · High');
+  // before Auto answers: the harness Auto runs
+  expect(runnerPick({ agent: 'auto', name: 'Codex', model: '', effort: '', account: '', fallback: 'Default' })).toBe('Codex');
 });
