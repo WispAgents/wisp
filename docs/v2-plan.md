@@ -23,7 +23,7 @@ Rust for everything but the UI, Solid/TS for the UI, everything a plugin (ADR-00
 | CI, last full run (56405a3a) | Linux + macOS: one brittle test (platform-controls read only the last reduced-motion block) — fixed in the test; Windows running |
 | Budgets | initial JS 107.2 KB br (≤ 120) · CSS 27.1 KB (≤ 30) |
 | Weekly usage | 0 % (reset applied) · **owner 2026-11-15: one coder at a time** |
-| Coders running | coder-r294 (iOS selection jump, Back after stepping) |
+| Coders running | coder-r295 (v1 #799-#801) |
 
 ## 3. Owner decisions (every one, dated; read before any change)
 
@@ -271,7 +271,7 @@ turn. When a screen or feature contradicts one, that's a bug: fix it toward the 
 ### 4.8 One batched verification pass
 
 - [ ] CI green on every OS, several runs in a row (no flakes): first all-green run f0db9105 (2026-11-15); need more in a row
-- [ ] Parity, layout and feedback gates on every view, width and theme
+- [ ] Parity, layout and feedback gates on every view, width and theme; plus `qa/phone-selection.mjs` (first row holds still in selection)
 - [ ] Perf budgets, all of them
 - [ ] Windows by hand once
 - [ ] wisp from other harnesses in a wisp-init'ed repo (real Claude Code and Codex runs, offline MCP, the CI twin)
@@ -938,7 +938,8 @@ Source: `docs/v1-features.md` (each row's evidence and test). `[x]` built, `[ ]`
 |---|---|---|
 | 283 | DX: build bundle + Tauri lock: stopped before edits; plan in §4.6 | to redo |
 | 282 | Server perf budgets: stopped before edits; plan in §4.3 | to redo |
-| 294 | iOS selection keeps the large title (no jump); Back after Next/Previous returns to Tasks | in progress |
+| 295 | v1 #799-#801 phone fixes: subagent time in the lead card, pasted task ID -> chip, tests card command wraps | in progress |
+| 294 | iOS selection keeps the bar (no jump); stepping replaces history (Back -> Tasks); desktop j/k too, as v1 | committed |
 | 293 | Phone step 13 done: selection + bulk, iOS filter pull-down, Next/Previous task | committed (357aec16) |
 | 292 | Phone platform CSS bans in npm run check (shared module) | committed |
 | 291 | Phone New task sheet = composer only; crew avatar aligned; lead fixed raw px (4a43d45e, 73a52eb0) | committed (2891737c) |
