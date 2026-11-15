@@ -196,7 +196,7 @@ export const NOT_MOCKED: Readonly<Record<string, string>> = Object.fromEntries([
     'resources.plan', 'resources.read', 'resources.rename', 'resources.write', 'router.reset',
     'runtime.appState', 'runtime.approveBlocked', 'runtime.compact', 'runtime.held', 'runtime.projectTest', 'runtime.release',
     'runtime.resumeCommand', 'runtime.setExt', 'runtime.setLean', 'runtime.turns', 'runtime.unmasked',
-    'stuff.remove', 'stuff.resetData', 'stuff.restore', 'stuff.reveal', 'stuff.save', 'stuff.stop', 'stuff.update', 'telemetry.set',
+    'stuff.resetData', 'stuff.restore', 'stuff.reveal', 'stuff.save', 'stuff.stop', 'stuff.update', 'telemetry.set',
     'worktrees.bringIn', 'worktrees.dismiss', 'worktrees.done.apply', 'worktrees.done.list', 'worktrees.keep',
   ]),
 ]);
