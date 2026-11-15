@@ -2,7 +2,7 @@
 // (ADR-0005, plan §4.3–§4.5). The server half lives in Rust (crates/wisp-sync); both sides share the
 // wire types in @wisp/protocol, checked against the Rust goldens.
 
-export { SyncClient } from './client.ts';
+export { BACKOFF_MS, KEEPALIVE_MS, SyncClient } from './client.ts';
 export type { SyncClientOptions, SyncClientSaved } from './client.ts';
 export { compose, fold } from './fold.ts';
 export { applyEntityOps, applySnapshot } from './apply.ts';

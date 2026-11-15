@@ -124,7 +124,9 @@ export type ClientOutput =
   | { kind: 'notice'; notice: Notice }
   | { kind: 'state'; state: ClientState; update?: Update }
   /** reconnect at this time (the host owns the timer) */
-  | { kind: 'retry'; at: number };
+  | { kind: 'retry'; at: number }
+  /** close the open stream now (silent too long, or reopened): a `lost` for it is already handled */
+  | { kind: 'drop' };
 
 export type ClientState = 'idle' | 'connecting' | 'live' | 'offline' | 'incompatible';
 
@@ -139,4 +141,8 @@ export type ClientInput =
   | { kind: 'mutate'; mid: string; cmd: string; args: unknown; base_seq?: number }
   | { kind: 'window'; req: string; topic: Topic; beforeSeq: number; limit: number }
   /** the client store couldn't apply an op on this topic: start it over */
-  | { kind: 'drifted'; topic: Topic };
+  | { kind: 'drifted'; topic: Topic }
+  /** the host's watchdog, about once a keepalive while a stream is open: drops one silent for two */
+  | { kind: 'tick' }
+  /** open again now, from the cursor, skipping the backoff (pull to refresh, Retry) */
+  | { kind: 'reopen' };

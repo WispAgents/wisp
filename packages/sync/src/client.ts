@@ -1,6 +1,9 @@
 // The client half of sync, one per peer (plan §4.5, §7.2.1, §7.3.2), sans-IO. It keeps the cursor
 // for (peer, epoch), refcounts subscriptions (two views of one session are one sub), resends pending
-// mutations after welcome with the same mid, and negotiates the protocol window.
+// mutations after welcome with the same mid, and negotiates the protocol window. A stream that says
+// nothing (no frame, no heartbeat) for two keepalives is dead even if the socket isn't (a phone on a
+// train, a tunnel half-closed): the client drops it and reopens from its cursor, backing off as v1 did
+// (2/5/15/30/60 s, ADR-0065 §4). `reopen` (pull to refresh, Retry) skips the wait.
 
 import { PROTO, PROTO_MIN } from '@wisp/protocol';
 import type { ClientMessage, EntityOp, Mutate, ServerMessage, Topic, Welcome } from '@wisp/protocol';
@@ -14,7 +17,14 @@ export interface SyncClientSaved {
   pending: Mutate[];
   /** topics the store still holds from before, not subscribed now: [topic, the seq they are as of] */
   held?: [Topic, number][];
+  /** when the peer was last heard from (a frame or a heartbeat): the offline bar's *last updated*. Additive. */
+  heardAt?: number;
 }
+
+/** v1's reconnect waits (web/js/reconnecting.js), the last one repeated. */
+export const BACKOFF_MS: readonly number[] = [2_000, 5_000, 15_000, 30_000, 60_000];
+/** the server's heartbeat (crates/wisp-sync heartbeat_ms): a stream silent for two of them is dropped */
+export const KEEPALIVE_MS = 15_000;
 
 export interface SyncClientOptions {
   peer: string;
@@ -23,8 +33,10 @@ export interface SyncClientOptions {
   protoMin?: number;
   protoMax?: number;
   saved?: SyncClientSaved;
-  retryBaseMs?: number; // 500
-  retryMaxMs?: number; // 30 s
+  /** the waits between reconnects, the last repeated (BACKOFF_MS) */
+  backoffMs?: readonly number[];
+  /** the peer's heartbeat interval (KEEPALIVE_MS); silence past two of them drops the stream */
+  keepaliveMs?: number;
 }
 
 interface TopicSub {
@@ -37,7 +49,7 @@ interface TopicSub {
 
 export class SyncClient {
   readonly peer: string;
-  #o: SyncClientOptions & { protoMin: number; protoMax: number; retryBaseMs: number; retryMaxMs: number };
+  #o: SyncClientOptions & { protoMin: number; protoMax: number; backoffMs: readonly number[]; keepaliveMs: number };
   #state: ClientState = 'idle';
   #epoch: string | null;
   #cursor: number | null;
@@ -48,11 +60,15 @@ export class SyncClient {
   /** the topics the open hello carried: true when resumed from the cursor, false when fresh */
   #hello = new Map<Topic, boolean>();
   #attempt = 0;
+  /** the last time the open stream (or its connect) showed life */
+  #heard = 0;
+  #heardAt: number | undefined;
   #out: ClientOutput[] = [];
 
   constructor(opts: SyncClientOptions) {
     this.peer = opts.peer;
-    this.#o = { protoMin: PROTO_MIN, protoMax: PROTO, retryBaseMs: 500, retryMaxMs: 30_000, ...opts };
+    this.#o = { protoMin: PROTO_MIN, protoMax: PROTO, backoffMs: BACKOFF_MS, keepaliveMs: KEEPALIVE_MS, ...opts };
+    this.#heardAt = opts.saved?.heardAt;
     this.#epoch = opts.saved?.epoch ?? null;
     this.#cursor = opts.saved?.cursor ?? null;
     const at = opts.saved?.cursor ?? null;
@@ -72,24 +88,47 @@ export class SyncClient {
     return this.#epoch;
   }
 
+  /** when the peer was last heard from, this run or a saved one (undefined: never) */
+  get heardAt(): number | undefined {
+    return this.#heardAt;
+  }
+
   /** What to persist (IndexedDB on a phone) so a restart resumes instead of starting over. */
   save(): SyncClientSaved {
     const synced = [...this.#topics].filter(([, s]) => s.synced).map(([t]) => t);
     const held = [...this.#held].filter(([t]) => !synced.includes(t));
-    return { epoch: this.#epoch, cursor: this.#cursor, synced, pending: [...this.#pending.values()], ...(held.length > 0 && { held }) };
+    return { epoch: this.#epoch, cursor: this.#cursor, synced, pending: [...this.#pending.values()], ...(held.length > 0 && { held }), ...(this.#heardAt !== undefined && { heardAt: this.#heardAt }) };
   }
 
   handle(input: ClientInput, now: number): ClientOutput[] {
     this.#out = [];
     switch (input.kind) {
       case 'open':
-        this.#open();
+        this.#open(now);
         break;
       case 'frame':
-        this.#frame(input.id, input.messages);
+        if (this.#state === 'connecting' || this.#state === 'live') this.#heard = now;
+        this.#frame(input.id, input.messages, now);
         break;
       case 'lost':
         this.#lost(now);
+        break;
+      case 'tick':
+        // two keepalives with nothing on the stream: it's dead, whatever the socket says
+        if ((this.#state === 'connecting' || this.#state === 'live') && now - this.#heard >= 2 * this.#o.keepaliveMs) {
+          this.#out.push({ kind: 'drop' });
+          this.#lost(now);
+        }
+        break;
+      case 'reopen':
+        // pull to refresh, Retry: now, from the cursor, without waiting out the backoff
+        if (this.#state === 'idle') break;
+        if (this.#state === 'connecting' || this.#state === 'live') {
+          this.#out.push({ kind: 'drop' });
+          for (const s of this.#topics.values()) s.pages = null;
+          this.#state = 'offline'; // for a moment: the status goes straight to connecting, no offline flash
+        }
+        this.#open(now);
         break;
       case 'subscribe':
         this.#subscribe(input.topic, input.passive === true);
@@ -123,8 +162,9 @@ export class SyncClient {
 
   // ---------- connection ----------
 
-  #open(): void {
+  #open(now: number): void {
     if (this.#state === 'connecting' || this.#state === 'live') return;
+    this.#heard = now;
     this.#setState('connecting');
     const params: Record<string, string> = { proto_min: String(this.#o.protoMin), proto_max: String(this.#o.protoMax), client_id: this.#o.clientId, build: this.#o.build };
     const canResume = this.#epoch !== null && this.#cursor !== null;
@@ -156,7 +196,8 @@ export class SyncClient {
     for (const s of this.#topics.values()) s.pages = null; // a half-received snapshot is worthless
     this.#setState('offline');
     this.#attempt++;
-    const delay = Math.min(this.#o.retryMaxMs, this.#o.retryBaseMs * 2 ** (this.#attempt - 1));
+    const waits = this.#o.backoffMs;
+    const delay = waits[Math.min(this.#attempt, waits.length) - 1] ?? 0;
     this.#out.push({ kind: 'retry', at: now + delay });
   }
 
@@ -192,7 +233,7 @@ export class SyncClient {
 
   // ---------- frames ----------
 
-  #frame(id: number | null, messages: readonly ServerMessage[]): void {
+  #frame(id: number | null, messages: readonly ServerMessage[], now: number): void {
     const settle: ClientOutput[] = [];
     const resyncs: Topic[] = [];
     for (const m of messages) {
@@ -204,6 +245,7 @@ export class SyncClient {
       this.#message(m, settle, resyncs);
     }
     if (this.#state !== 'live') return;
+    this.#heardAt = now;
     // the frame's id is a watermark: everything at or below it is here (src/server.ts)
     if (id !== null) this.#cursor = id;
     for (const t of resyncs) {

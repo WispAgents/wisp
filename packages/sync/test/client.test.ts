@@ -46,7 +46,7 @@ test('the hello: proto window, cursor for this epoch, resumed and fresh topics, 
   const outs = c.handle({ kind: 'frame', id: 42, messages: [welcome({ resume: true })] }, 0);
   assert.ok(!kinds(outs).includes('reset'));
   assert.equal(c.state, 'live');
-  assert.deepEqual(c.save(), { epoch: 'E1', cursor: 42, synced: ['list'], pending: [] });
+  assert.deepEqual(c.save(), { epoch: 'E1', cursor: 42, synced: ['list'], pending: [], heardAt: 0 });
 });
 
 test('resume=false or a new epoch drops the caches for this peer', () => {
@@ -132,19 +132,58 @@ test('denied topics are reported and left out of the next hello', () => {
   assert.equal(req?.kind === 'request' && req.params['fresh'], undefined);
 });
 
-test('lost: retries back off exponentially to a cap, and reset after a welcome', () => {
-  const c = newClient({ retryBaseMs: 500, retryMaxMs: 4000 });
+test('lost: retries back off as v1 did (2/5/15/30/60 s, the last repeated), and reset after a welcome', () => {
+  const c = newClient();
   c.handle({ kind: 'open' }, 0);
   const at: number[] = [];
-  for (let i = 0; i < 6; i++) {
+  for (let i = 0; i < 7; i++) {
     const r = c.handle({ kind: 'lost' }, 1000).find((o) => o.kind === 'retry');
     at.push(r?.kind === 'retry' ? r.at - 1000 : -1);
     c.handle({ kind: 'open' }, 1000);
   }
-  assert.deepEqual(at, [500, 1000, 2000, 4000, 4000, 4000]);
+  assert.deepEqual(at, [2000, 5000, 15000, 30000, 60000, 60000, 60000]);
   c.handle({ kind: 'frame', id: 1, messages: [welcome()] }, 0);
   const r = c.handle({ kind: 'lost' }, 0).find((o) => o.kind === 'retry');
-  assert.deepEqual(r, { kind: 'retry', at: 500 });
+  assert.deepEqual(r, { kind: 'retry', at: 2000 });
+});
+
+test('a_silent_stream_is_reopened_from_its_cursor', () => {
+  const c = newClient({ keepaliveMs: 15_000 });
+  c.handle({ kind: 'subscribe', topic: 'list' }, 0);
+  c.handle({ kind: 'open' }, 0);
+  c.handle({ kind: 'frame', id: 10, messages: [welcome()] }, 0);
+  c.handle({ kind: 'frame', id: 12, messages: [{ t: 'snapshot', topic: 'list', seq: 12, rows: [] }] }, 1_000);
+  // a heartbeat (an empty frame) is life: the watchdog counts from it
+  c.handle({ kind: 'frame', id: null, messages: [] }, 16_000);
+  assert.deepEqual(c.handle({ kind: 'tick' }, 45_000), [], 'one keepalive and a bit: still fine');
+  const outs = c.handle({ kind: 'tick' }, 46_000);
+  assert.deepEqual(outs, [{ kind: 'drop' }, { kind: 'state', state: 'offline' }, { kind: 'retry', at: 48_000 }], 'two keepalives of silence: dropped, then the first wait');
+  assert.equal(c.state, 'offline');
+  assert.deepEqual(c.handle({ kind: 'tick' }, 50_000), [], 'nothing open, nothing to drop');
+  // reopened from the cursor: the hello resumes the topic it holds
+  const req = c.handle({ kind: 'open' }, 48_000).find((o) => o.kind === 'request');
+  assert.equal(req?.kind === 'request' && req.params['cursor'], '12');
+  assert.equal(req?.kind === 'request' && req.params['topics'], 'list');
+  // a connect that never answers is silent too: dropped at the same line, the wait growing
+  const again = c.handle({ kind: 'tick' }, 78_000);
+  assert.deepEqual(again.at(-1), { kind: 'retry', at: 83_000 });
+  assert.equal(c.save().heardAt, 16_000, 'when it was last heard from: the offline bar says so');
+});
+
+test('reopen skips the backoff: offline it opens now; live it drops the stream and resumes', () => {
+  const c = newClient();
+  c.handle({ kind: 'subscribe', topic: 'list' }, 0);
+  live(c);
+  c.handle({ kind: 'frame', id: 11, messages: [{ t: 'snapshot', topic: 'list', seq: 11, rows: [] }] }, 0);
+  c.handle({ kind: 'lost' }, 0);
+  const now = c.handle({ kind: 'reopen' }, 100);
+  assert.deepEqual(kinds(now), ['state', 'request'], 'no waiting out the 2 s');
+  assert.equal(c.state, 'connecting');
+  const outs = c.handle({ kind: 'reopen' }, 200);
+  assert.deepEqual(kinds(outs), ['drop', 'state', 'request'], 'a stream that may be dead is replaced at once, with no offline flash');
+  const req = outs.find((o) => o.kind === 'request');
+  assert.equal(req?.kind === 'request' && req.params['cursor'], '11');
+  assert.deepEqual(newClient().handle({ kind: 'reopen' }, 0), [], 'never opened: nothing to reopen');
 });
 
 test('subs and unsubs made while connecting are sent after the welcome', () => {
