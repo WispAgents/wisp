@@ -155,8 +155,9 @@ const ACT_ICON: Readonly<Record<string, IconName>> = { read: 'read', edit: 'pen'
 
 const clock = (at: number): string => new Intl.DateTimeFormat('en-GB', { hour: '2-digit', minute: '2-digit' }).format(at);
 
-/** An earlier day in the ledger ("Mon 9 Nov"). */
-const dayName = (day: number): string => new Intl.DateTimeFormat('en-GB', { weekday: 'short', day: 'numeric', month: 'short' }).format(day);
+/** An earlier day in the ledger ("Mon 9 Nov"), in the app's locale as the kit's <Time> reads (content/time-format.ts). */
+const DAY_NAME = new Intl.DateTimeFormat(undefined, { weekday: 'short', day: 'numeric', month: 'short' });
+const dayName = (day: number): string => DAY_NAME.format(day);
 
 /** A task with more turns than this gets the ledger's search and filters (ADR-0068). */
 const LEDGER_TOOLS = 10;
