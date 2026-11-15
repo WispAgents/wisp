@@ -9,8 +9,8 @@
 // past half the row runs it at once. The words, the warming, the tick past the line and a running row's
 // little give are the same on all three.
 // Build step 7 (design/mobile.md §A.4–§A.6): under a phone look the row also answers a long-press (`onLongPress`:
-// Android's bottom sheet of the row's actions with Select first, iOS's context menu with a preview; until those
-// overlays land (step 5) the caller opens its existing row menu), carries `data-gesture`/`data-twin`, and gives a
+// Android's bottom sheet of the row's actions with Select first, iOS's context menu with a preview: step 5's
+// ContextMenu phone variants, opened by the caller on the row it's handed), carries `data-gesture`/`data-twin`, and gives a
 // screen reader each side's action and the menu as custom actions. A swipe starting in a horizontal scroller inside
 // the row (a chip row, code) scrolls it. The browser gets none of this: its HTML is what it was.
 import { createSignal, onCleanup, Show, type JSX } from 'solid-js';
@@ -40,8 +40,9 @@ export interface SwipeProps extends KitProps, WithChildren {
   readonly disabled?: boolean;
   /** the pull crossed the line (true) or came back (false): a haptic tick */
   readonly onArm?: (armed: boolean) => void;
-  /** the phone apps: a long-press opens the row's actions (its menu); also the screen reader's *Actions* */
-  readonly onLongPress?: () => void;
+  /** the phone apps: a long-press opens the row's actions (its menu: a ContextMenu around the list opens on a
+   * contextmenu dispatched on `row`, Android's sheet or iOS's context menu); also the screen reader's *Actions* */
+  readonly onLongPress?: (row: HTMLElement) => void;
 }
 
 /** `open`: iOS only, the row rests on its revealed action */
@@ -88,10 +89,10 @@ export function Swipe(props: SwipeProps): JSX.Element {
         onLongPress: () => {
           // the press is the menu's, not the start of a swipe
           st.track = undefined;
-          props.onLongPress?.();
+          props.onLongPress?.(el);
         },
       }),
-    () => (props.onLongPress ? [{ label: t('gesture.actions'), run: () => props.onLongPress?.() }] : []),
+    () => (props.onLongPress ? [{ label: t('gesture.actions'), run: () => st.el && props.onLongPress?.(st.el) }] : []),
   );
 
   // iOS (Mail): a row resting open closes on a touch anywhere else (another row, a scroll), so one rests open at most

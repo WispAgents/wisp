@@ -15,7 +15,8 @@ export interface LazyPart<M> {
 
 const parts: LazyPart<unknown>[] = [];
 
-export function lazyPart<M>(importer: () => Promise<M>): LazyPart<M> {
+/** `preload: false`: not fetched by `preloadControls()` (the phone apps' overlay halves: the browser never needs them). */
+export function lazyPart<M>(importer: () => Promise<M>, opts: { readonly preload?: boolean } = {}): LazyPart<M> {
   const [ready, setReady] = createSignal<M>();
   let pending: Promise<M> | undefined;
   const part: LazyPart<M> = {
@@ -32,7 +33,7 @@ export function lazyPart<M>(importer: () => Promise<M>): LazyPart<M> {
         },
       )),
   };
-  parts.push(part as LazyPart<unknown>);
+  if (opts.preload !== false) parts.push(part as LazyPart<unknown>);
   return part;
 }
 

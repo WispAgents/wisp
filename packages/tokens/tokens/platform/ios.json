@@ -300,6 +300,58 @@
     "button-pad": {
       "value": "20px",
       "spec": "HIG Buttons: 20 pt leading and trailing padding"
+    },
+    "alert-w": {
+      "value": "270px",
+      "spec": "UIAlertController (HIG Alerts): alert width 270 pt"
+    },
+    "alert-pad": {
+      "value": "16px",
+      "spec": "UIAlertController: 16 pt content insets, 20 pt above the title"
+    },
+    "alert-pad-top": {
+      "value": "20px",
+      "spec": "UIAlertController: 20 pt above the title"
+    },
+    "alert-button-h": {
+      "value": "44px",
+      "spec": "UIAlertController: action row height 44 pt"
+    },
+    "sheet-medium": {
+      "value": "50dvh",
+      "spec": "UISheetPresentationController.Detent.medium: about half the screen height"
+    },
+    "sheet-top-gap": {
+      "value": "10px",
+      "spec": "UISheetPresentationController: the large detent leaves 10 pt under the safe area (the page behind shows)"
+    },
+    "ctx-w": {
+      "value": "250px",
+      "spec": "UIContextMenuInteraction / UIMenu: menu width 250 pt"
+    },
+    "ctx-row-h": {
+      "value": "44px",
+      "spec": "UIMenu: action row height 44 pt"
+    },
+    "ctx-radius": {
+      "value": "13px",
+      "spec": "UIContextMenuInteraction: menu corner radius 13 pt"
+    },
+    "ctx-blur": {
+      "value": "24px",
+      "spec": "UIBlurEffect.Style.systemThickMaterial behind a context menu (approximated with backdrop-filter)"
+    },
+    "ctx-gap": {
+      "value": "8px",
+      "spec": "UIContextMenuInteraction: 8 pt between the preview and the menu"
+    },
+    "capsule-h": {
+      "value": "44px",
+      "spec": "HIG Notifications-like banner (iOS has no toast): a 44 pt capsule"
+    },
+    "capsule-gap": {
+      "value": "8px",
+      "spec": "8 pt above the tab bar (HIG layout margin), as Apple Music’s and Maps’ banners"
     }
   },
   "springs": {

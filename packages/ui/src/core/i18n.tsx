@@ -33,6 +33,8 @@ export const KIT_STRINGS = {
   'gesture.side-panel': 'Side panel',
   'gesture.move-up': 'Move up',
   'gesture.move-down': 'Move down',
+  // the platform's own word for its own control (design/mobile.md: *Select* on both)
+  select: 'Select',
 } as const;
 
 export type KitString = keyof typeof KIT_STRINGS;

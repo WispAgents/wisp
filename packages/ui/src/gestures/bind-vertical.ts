@@ -88,12 +88,16 @@ export interface SheetDragOptions {
   readonly onDrag: (dy: number, progress: number) => void;
   /** the sheet's scrolling content, when it has one */
   readonly content?: () => HTMLElement | undefined;
+  /** an iOS sheet below its largest detent: a drag up past the line (or a flick up) grows it (step 5) */
+  readonly onLift?: () => void;
+  /** whether a drag up may grow it now (asked as the drag starts; at its largest a drag up scrolls the content) */
+  readonly canLift?: () => boolean;
 }
 
 export function bindSheetDrag(sheet: HTMLElement, o: SheetDragOptions): () => void {
-  let tr: { x: number; y: number; h: number; mode: 'pending' | 'drag'; armed: boolean; samples: { x: number; t: number }[] } | undefined;
+  let tr: { x: number; y: number; h: number; mode: 'pending' | 'drag' | 'lift'; armed: boolean; samples: { x: number; t: number }[] } | undefined;
   const end = (): void => {
-    if (tr?.mode === 'drag') o.onDrag(0, 0);
+    if (tr && tr.mode !== 'pending') o.onDrag(0, 0);
     tr = undefined;
   };
   return all([
@@ -117,14 +121,15 @@ export function bindSheetDrag(sheet: HTMLElement, o: SheetDragOptions): () => vo
         const dy = at.y - tr.y;
         if (tr.mode === 'pending') {
           const phase = swipePhase(at.x - tr.x, dy);
-          if (phase === 'swipe' || (phase === 'scroll' && dy < 0)) return void (tr = undefined);
+          if (phase === 'swipe' || (phase === 'scroll' && dy < 0 && !(o.onLift && (o.canLift?.() ?? true)))) return void (tr = undefined);
           if (phase !== 'scroll') return;
-          tr.mode = 'drag';
+          tr.mode = dy < 0 ? 'lift' : 'drag';
         }
         if (e.cancelable) e.preventDefault();
         // swipeSpeed reads `x`: here it carries the vertical position
         tr.samples.push({ x: at.y, t: e.timeStamp });
         if (tr.samples.length > 12) tr.samples.shift();
+        if (tr.mode === 'lift') return void o.onDrag(Math.min(0, dy), 0);
         const p = sheetProgress(dy, tr.h);
         o.onDrag(Math.max(0, dy), p);
         const armed = p >= 1;
@@ -140,6 +145,7 @@ export function bindSheetDrag(sheet: HTMLElement, o: SheetDragOptions): () => vo
       const at = pointOf(e);
       end();
       if (t?.mode === 'drag' && at && sheetCloses(at.y - t.y, t.h, swipeSpeed(t.samples))) o.onClose();
+      else if (t?.mode === 'lift' && at && sheetCloses(t.y - at.y, t.h, -swipeSpeed(t.samples))) o.onLift?.();
     }),
     listen(sheet, 'touchcancel', end),
   ]);

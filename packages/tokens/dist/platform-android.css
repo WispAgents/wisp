@@ -119,5 +119,29 @@
     --empty-icon: 48px; /* M3 icons › large 48 dp (an empty state's mark; M3 has no empty-state spec) */
     --button-h: 40px; /* M3 Buttons › Specs: common buttons 40 dp tall, full radius */
     --button-pad: 24px; /* M3 Buttons › Specs: 24 dp leading and trailing padding (16 dp beside an icon) */
+    --sheet-max-w: 640px; /* M3 Bottom sheets › Specs: modal bottom sheet max width 640 dp */
+    --sheet-top-gap: 72px; /* M3 Bottom sheets › Specs: expanded sheet top margin 72 dp on compact windows */
+    --sheet-handle-pad: 22px; /* M3 Bottom sheets › Specs: drag handle 32 × 4 dp with 22 dp above and below (a 48 dp target) */
+    --dialog-min-w: 280px; /* M3 Dialogs › Specs: basic dialog min width 280 dp */
+    --dialog-max-w: 560px; /* M3 Dialogs › Specs: basic dialog max width 560 dp */
+    --dialog-pad: 24px; /* M3 Dialogs › Specs: container padding 24 dp */
+    --dialog-gap: 16px; /* M3 Dialogs › Specs: 16 dp between headline and supporting text */
+    --dialog-actions-gap: 8px; /* M3 Dialogs › Specs: 8 dp between the text buttons, 24 dp above them */
+    --menu-min-w: 112px; /* M3 Menus › Specs: container min width 112 dp */
+    --menu-max-w: 280px; /* M3 Menus › Specs: container max width 280 dp */
+    --menu-item-h: 48px; /* M3 Menus › Specs: list item height 48 dp */
+    --menu-pad-y: 8px; /* M3 Menus › Specs: 8 dp top and bottom padding */
+    --menu-item-pad: 12px; /* M3 Menus › Specs: 12 dp leading and trailing padding, 12 dp icon gap */
+    --snack-h: 48px; /* M3 Snackbar › Specs: single-line container height 48 dp */
+    --snack-margin: 16px; /* M3 Snackbar › Specs: 16 dp from the screen edges (above a FAB / navigation bar) */
+    --snack-max-w: 600px; /* M3 Snackbar › Specs: max width 600 dp on larger windows */
+    --tip-h: 24px; /* M3 Tooltips › Specs: plain tooltip container height 24 dp */
+    --tip-pad: 8px; /* M3 Tooltips › Specs: 8 dp leading and trailing padding */
+    --tip-gap: 4px; /* M3 Tooltips › Specs: 4 dp between the anchor and the tooltip */
+    --tip-max-w: 200px; /* M3 Tooltips › Specs: plain tooltip max width 200 dp */
+    --inverse-surface: color-mix(in srgb, var(--ink) 88%, var(--bg)); /* M3 Color roles: inverse surface (snackbar, plain tooltip), from wisp’s ink so it flips with the theme */
+    --inverse-on-surface: var(--bg); /* M3 Color roles: inverse on surface */
+    --inverse-primary: color-mix(in srgb, var(--accent) 55%, var(--bg)); /* M3 Color roles: inverse primary (a snackbar’s action) */
+    --state-disabled: 0.38; /* M3 States › Disabled: content at 38% opacity */
   }
 }

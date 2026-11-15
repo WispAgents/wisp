@@ -7,11 +7,12 @@
 import { render } from 'solid-js/web';
 import type { JSX } from 'solid-js';
 import { computed, effect, signal, untracked, type Client, type PeerId, type PluginClient, type Readable } from '@wisp/client';
-import { BLOCK_STRINGS, KitProvider, KIT_STRINGS, loadPlatformStyles, type KitString, type Toaster } from '@wisp/ui';
+import { BLOCK_STRINGS, GestureHostProvider, KitProvider, KIT_STRINGS, loadPlatformStyles, type KitString, type Toaster } from '@wisp/ui';
 import type { PluginUiDef, PromptBox, SettingsPaneDef, ShellApi, ShellContext } from './contract.ts';
 import { namespaceOf } from './define.ts';
 import { SHELL_STRINGS } from './i18n/en.ts';
 import { applyPlatformLook } from './platform/look.ts';
+import { gestureHostOf } from './platform/gesture-host.ts';
 import type { Platform } from './platform/types.ts';
 import { createRegistry, type Warn } from './registry.ts';
 import { createTheme } from './theme.ts';
@@ -269,12 +270,13 @@ export function createShell(o: ShellOptions): Shell {
       const onResize = (): void => client.nav.navigate({ t: 'resize', width: o.window.innerWidth });
       o.window.addEventListener('resize', onResize);
       scope.add(() => o.window.removeEventListener('resize', onResize));
+      // the phone apps: the kit's gestures buzz and reach the native accessibility tree through the platform module
+      const host = gestureHostOf(platform);
+      const app = (): JSX.Element => <App clients={{ client: (id) => clients.get(id) ?? self, viewOwner: (kind) => registry.viewOwner(kind), palette: registry.palette, shortcuts: registry.shortcuts }} recent={recent} />;
       const stop = render(
         () => (
           <ShellProvider value={context}>
-            <KitProvider t={kitT}>
-              <App clients={{ client: (id) => clients.get(id) ?? self, viewOwner: (kind) => registry.viewOwner(kind), palette: registry.palette, shortcuts: registry.shortcuts }} recent={recent} />
-            </KitProvider>
+            <KitProvider t={kitT}>{host ? <GestureHostProvider host={host}>{app()}</GestureHostProvider> : app()}</KitProvider>
           </ShellProvider>
         ),
         root,

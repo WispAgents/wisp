@@ -5,14 +5,17 @@
 // `@wisp/ui/styles/android` | `ios` up front instead, so its first paint already has them.
 
 import type { Look } from './look.ts';
+import { phoneOverlays } from '../controls/phone-part.ts';
 
 const LOADERS: Record<Exclude<Look, 'web'>, () => Promise<unknown>> = {
   android: () => import('./android-styles.ts'),
   ios: () => import('./ios-styles.ts'),
 };
 
-/** Loads a phone look's stylesheet (once; a second call reuses it). The browser's look loads nothing. */
+/** Loads a phone look's stylesheet and the overlays' phone halves (once; a second call reuses them). The browser's
+ * look loads nothing. */
 export function loadPlatformStyles(look: Look): Promise<void> {
   if (look === 'web') return Promise.resolve();
-  return LOADERS[look]().then(() => undefined);
+  // the overlays' phone halves come with the look (controls/phone-part.ts)
+  return Promise.all([LOADERS[look](), phoneOverlays.load()]).then(() => undefined);
 }

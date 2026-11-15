@@ -78,6 +78,19 @@
     --button-h: 50px; /* HIG Buttons: large filled button 50 pt, 12 pt corners */
     --button-h-sm: 34px; /* HIG Buttons: small/regular bordered button 34 pt */
     --button-pad: 20px; /* HIG Buttons: 20 pt leading and trailing padding */
+    --alert-w: 270px; /* UIAlertController (HIG Alerts): alert width 270 pt */
+    --alert-pad: 16px; /* UIAlertController: 16 pt content insets, 20 pt above the title */
+    --alert-pad-top: 20px; /* UIAlertController: 20 pt above the title */
+    --alert-button-h: 44px; /* UIAlertController: action row height 44 pt */
+    --sheet-medium: 50dvh; /* UISheetPresentationController.Detent.medium: about half the screen height */
+    --sheet-top-gap: 10px; /* UISheetPresentationController: the large detent leaves 10 pt under the safe area (the page behind shows) */
+    --ctx-w: 250px; /* UIContextMenuInteraction / UIMenu: menu width 250 pt */
+    --ctx-row-h: 44px; /* UIMenu: action row height 44 pt */
+    --ctx-radius: 13px; /* UIContextMenuInteraction: menu corner radius 13 pt */
+    --ctx-blur: 24px; /* UIBlurEffect.Style.systemThickMaterial behind a context menu (approximated with backdrop-filter) */
+    --ctx-gap: 8px; /* UIContextMenuInteraction: 8 pt between the preview and the menu */
+    --capsule-h: 44px; /* HIG Notifications-like banner (iOS has no toast): a 44 pt capsule */
+    --capsule-gap: 8px; /* 8 pt above the tab bar (HIG layout margin), as Apple Music’s and Maps’ banners */
     --spring-snappy: linear(0, 0.034, 0.117, 0.224, 0.339, 0.452, 0.557, 0.649, 0.729, 0.795, 0.849, 0.892, 0.925, 0.95, 0.969, 0.983, 0.992, 0.999, 1.003, 1.005, 1.006, 1.006, 1.006, 1.006, 1.005, 1.004, 1.003, 1.003, 1.002, 1.002, 1.001, 1); /* SwiftUI Animation.snappy: duration 0.5 s, extraBounce 0 (bounce 0.15) */
     --spring-snappy-dur: 700ms; /* spring-snappy settles (within 0.1 %) after this: its animation's duration */
     --spring-smooth: linear(0, 0.037, 0.122, 0.227, 0.337, 0.442, 0.537, 0.62, 0.692, 0.751, 0.801, 0.841, 0.874, 0.901, 0.922, 0.939, 0.952, 0.963, 0.971, 0.978, 0.983, 0.987, 0.99, 0.992, 0.994, 0.995, 0.996, 0.997, 0.998, 0.998, 0.999, 1); /* SwiftUI Animation.smooth: duration 0.5 s, bounce 0 */

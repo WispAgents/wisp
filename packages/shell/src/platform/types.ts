@@ -119,6 +119,11 @@ export interface Platform {
    * cancel. Absent in a browser: there, a folder is typed with the server's suggestions (kit PathField). */
   pickFolder?(): Promise<string | null>;
   haptic(kind: Haptic): void;
+  /** added 2026-11-15 (additive, design/mobile.md §A.6): gives `el` custom accessibility actions in the native tree
+   * (TalkBack `AccessibilityNodeInfo` custom actions, VoiceOver `UIAccessibilityCustomAction`), so a screen reader runs
+   * every gesture without making it; returns the function that takes them off. Absent (a browser, the desktop app, a
+   * phone app whose native side doesn't offer it yet): the actions stay in the DOM, beside their visible twins. */
+  accessibilityActions?(el: Element, actions: readonly { readonly label: string; readonly run: () => void }[]): () => void;
   /** added 2026-11-13 (additive): the attach button offers Take photo and Record video (the Android app's camera
    * handler, Capture.java). Absent or false: the file picker, as in a browser. */
   readonly camera?: boolean;

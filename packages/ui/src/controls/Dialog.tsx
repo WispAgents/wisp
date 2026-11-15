@@ -3,7 +3,13 @@
 // its final shape at once (design/ux.md): the caller shows placeholders for what still loads.
 // The machine (./dialog-machine.ts) loads apart from the first page (./lazy-part.ts); until it's bound, the surface
 // draws with plain props (its role, Escape, the backdrop and × close it) and the machine takes it over as it lands.
-import { createEffect, createSignal, Show, untrack, type Accessor, type JSX } from 'solid-js';
+// The phone apps (ADR-0065 build step 5, design/mobile.md §A.7): Android draws an M3 basic dialog (28 dp, its buttons
+// end-aligned text buttons) and the Sheet as an M3 modal bottom sheet (drag handle, 28 dp top corners); iOS draws an
+// alert (270 pt, the destructive action red, Cancel bold) for a confirm (`alertdialog` or `sm`), and every other
+// dialog as a sheet with detents (medium, large), a grabber and 10 pt corners. A phone sheet drags down to close (a
+// draft stays; its × is the twin: step 7's `sheet.drag-down`); the drag lives in the phone chunk (./phone-part.ts).
+// The browser's HTML is what it was.
+import { createEffect, createSignal, onCleanup, Show, untrack, type Accessor, type JSX } from 'solid-js';
 import { Portal } from 'solid-js/web';
 import { lazyPart, warm } from './lazy-part.ts';
 import type { DialogApi } from './dialog-machine.ts';
@@ -12,6 +18,10 @@ import { useT, type Translate } from '../core/i18n.tsx';
 import { Icon } from '../content/Icon.tsx';
 import type { MenuTrigger } from './Menu.tsx';
 import { TriggerButton } from './trigger.tsx';
+import { usePlatform } from '../platform/PlatformLook.tsx';
+import { useGestureHost } from '../gestures/host.tsx';
+import { phoneOverlays } from './phone-part.ts';
+import type { Detent } from './phone-math.ts';
 
 /** v1: v1's .modal (640 wide, 18px 20px 20px, its 600 18px title): the crew editor */
 export type DialogSize = 'sm' | 'md' | 'lg' | 'xl' | 'v1';
@@ -39,6 +49,8 @@ export interface DialogProps extends KitProps, WithChildren, WithVars {
   /** Where focus goes first (default: the first focusable inside). */
   readonly initialFocus?: () => HTMLElement | null;
   readonly t?: Translate;
+  /** iOS sheets only: the heights it rests at, opening at the first (default medium and large) */
+  readonly detents?: readonly Detent[];
 }
 
 type Kind = 'dialog' | 'sheet';
@@ -79,8 +91,20 @@ function partsOf(api: () => DialogApi | undefined, props: DialogProps, close: ()
   };
 }
 
-function Surface(props: DialogProps & { readonly kind: Kind; readonly parts: Parts; readonly part: PartName }): JSX.Element {
+function Surface(props: DialogProps & { readonly kind: Kind; readonly parts: Parts; readonly part: PartName; readonly dismiss: () => void }): JSX.Element {
   const t = useT(() => props.t);
+  const look = usePlatform();
+  const host = useGestureHost();
+  let stop: (() => void) | undefined;
+  onCleanup(() => stop?.());
+  // the phone apps: the platform's shape (an alert, a sheet's drag and detents: the phone chunk, ./phone.tsx)
+  const bind = (el: HTMLElement): void => {
+    const l = look();
+    if (l !== 'web')
+      void phoneOverlays.load().then((m) => {
+        if (el.isConnected) stop = m.phoneSurface(el, { host, look: l, kind: props.kind, role: props.role, size: props.size, bare: props.bare, place: props.place, detents: props.detents, part: props.part, onClose: props.dismiss, closeLabel: t('close') });
+      }, () => undefined);
+  };
   return (
     <Portal>
       <div {...props.parts.backdrop()} data-kit="backdrop" data-sheet={props.kind === 'sheet' ? '' : undefined} data-place={props.place} />
@@ -90,6 +114,7 @@ function Surface(props: DialogProps & { readonly kind: Kind; readonly parts: Par
           // shown before its machine: focus goes in (the machine traps it once it lands), so Escape and typing reach it
           ref={(el) => {
             if (props.parts.plain()) queueMicrotask(() => (props.initialFocus?.() ?? el).focus());
+            bind(el);
           }}
           data-kit={props.kind}
           data-part={props.part}
@@ -152,6 +177,12 @@ function Shell(props: DialogProps & { readonly kind: Kind }): JSX.Element {
     props.onOpenChange?.(false);
   };
   const parts = partsOf(bound, props, close);
+  // a phone sheet dragged down: through the machine when it's there (focus goes back, the scroll lock lifts)
+  const dismiss = (): void => {
+    const a = bound();
+    if (a) a.setOpen(false);
+    else close();
+  };
   const part = (): PartName => props.part ?? (props.kind === 'sheet' ? 'ui.sheet' : 'ui.dialog');
   const trigger = (): Bind =>
     bound()?.getTriggerProps() ?? {
@@ -176,7 +207,7 @@ function Shell(props: DialogProps & { readonly kind: Kind }): JSX.Element {
         {(look) => <TriggerButton look={look()} bind={trigger()} part={sub(part(), 'trigger')} />}
       </Show>
       <Show when={open()}>
-        <Surface {...props} parts={parts} part={part()} />
+        <Surface {...props} parts={parts} part={part()} dismiss={dismiss} />
       </Show>
     </>
   );

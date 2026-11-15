@@ -520,4 +520,229 @@
     background: var(--surface-c1);
   }
   :root[data-platform='ios'] [data-gesture~='list.pull'] { overscroll-behavior-y: contain; }
+
+  /* Overlays (step 5, design/mobile.md §A.7). A confirm (data-alert) is the alert: 270 pt, 14 pt corners, the
+     material behind it, title and message centred, the actions full-width rows under a hairline, side by side; the
+     destructive one red, Cancel (the secondary) bold, no ×. */
+  :root[data-platform='ios'] [data-kit='dialog'][data-alert] {
+    width: min(var(--alert-w), 100%);
+    padding: var(--space-0);
+    overflow: hidden;
+    border: 0;
+    border-radius: var(--radius-dialog);
+    background: var(--chrome);
+    -webkit-backdrop-filter: blur(var(--ctx-blur));
+    backdrop-filter: blur(var(--ctx-blur));
+    box-shadow: none;
+    color: var(--on-surface);
+    font-family: var(--font-ui);
+    text-align: center;
+    animation: k-ios-alert var(--spring-snappy-dur) var(--spring-snappy);
+  }
+  :root[data-platform='ios'] [data-kit='dialog'][data-alert] > [data-kit='dialog-head'] { justify-content: center; margin: var(--space-0); padding: var(--alert-pad-top) var(--alert-pad) var(--space-1); }
+  :root[data-platform='ios'] [data-kit='dialog'][data-alert] [data-kit='dialog-title'] { font: var(--type-headline); letter-spacing: normal; color: var(--on-surface); }
+  :root[data-platform='ios'] [data-kit='dialog'][data-alert] > [data-kit='dialog-head'] > [data-kit='icon-button'] { display: none; }
+  :root[data-platform='ios'] [data-kit='dialog'][data-alert] > [data-kit='dialog-description'],
+  :root[data-platform='ios'] [data-kit='dialog'][data-alert] > [data-kit='dialog-body'] { margin: var(--space-0); padding: var(--space-0) var(--alert-pad); font: var(--type-footnote); color: var(--on-surface); }
+  :root[data-platform='ios'] [data-kit='dialog'][data-alert] > [data-kit='dialog-body']:empty { display: none; }
+  :root[data-platform='ios'] [data-kit='dialog'][data-alert] > [data-kit='dialog-foot'] { gap: var(--space-0); margin: var(--alert-pad-top) var(--space-0) var(--space-0); border-top: var(--hairline) solid var(--outline); }
+  :root[data-platform='ios'] [data-kit='dialog'][data-alert] > [data-kit='dialog-foot'] > [data-kit='button'] {
+    flex: 1 1 0;
+    min-width: 0;
+    height: var(--alert-button-h);
+    padding: var(--space-0) var(--space-4);
+    border: 0;
+    border-radius: var(--space-0);
+    background: transparent;
+    color: var(--primary);
+    box-shadow: none;
+    font: var(--type-body);
+  }
+  :root[data-platform='ios'] [data-kit='dialog'][data-alert] > [data-kit='dialog-foot'] > [data-kit='button'] + [data-kit='button'] { border-left: var(--hairline) solid var(--outline); }
+  :root[data-platform='ios'] [data-kit='dialog'][data-alert] > [data-kit='dialog-foot'] > [data-kit='button'][data-variant='secondary'],
+  :root[data-platform='ios'] [data-kit='dialog'][data-alert] > [data-kit='dialog-foot'] > [data-kit='button'][data-variant='ghost'] { font-weight: var(--fw-semibold); }
+  :root[data-platform='ios'] [data-kit='dialog'][data-alert] > [data-kit='dialog-foot'] > [data-kit='button'][data-variant='danger'] { color: var(--error); }
+  :root[data-platform='ios'] [data-kit='dialog'][data-alert] > [data-kit='dialog-foot'] > [data-kit='button']:active { background: var(--fill); }
+  @keyframes k-ios-alert { from { opacity: 0; transform: scale(1.1); } }
+
+  /* Sheet (and every dialog that isn't a confirm): the iOS sheet. Medium (half the screen) or large (10 pt under the
+     safe area), the 36 × 5 grabber (a tap steps the detents), 10 pt top corners; it follows a drag (--k-sheet-dy) and
+     springs between the detents. */
+  :root[data-platform='ios'] [data-kit='dialog-positioner'][data-sheet] { place-items: end stretch; padding: calc(var(--safe-top) + var(--sheet-top-gap)) var(--space-0) var(--space-0); }
+  :root[data-platform='ios'] [data-kit='sheet'] {
+    width: 100%;
+    height: calc(100dvh - var(--safe-top) - var(--sheet-top-gap));
+    max-height: none;
+    padding: var(--space-0) var(--space-0) var(--safe-bottom);
+    border: 0;
+    border-radius: var(--radius-sheet) var(--radius-sheet) var(--space-0) var(--space-0);
+    background: var(--surface-grouped-1);
+    color: var(--on-surface);
+    box-shadow: var(--elev-3);
+    font-family: var(--font-ui);
+    transform: translateY(var(--k-sheet-dy, 0));
+    transition: height var(--spring-smooth-dur) var(--ease-standard), transform var(--spring-smooth-dur) var(--ease-standard);
+    animation: k-ios-sheet var(--dur-medium) var(--ease-emph-out);
+  }
+  :root[data-platform='ios'] [data-kit='sheet'][data-detent='medium'] { height: var(--sheet-medium); }
+  :root[data-platform='ios'] [data-kit='sheet'][data-dragging] { transition: none; }
+  :root[data-platform='ios'] [data-kit='sheet'] > [data-kit='sheet-handle'] {
+    display: block;
+    flex: none;
+    align-self: center;
+    width: var(--grabber-w);
+    height: var(--grabber-h);
+    margin: var(--grabber-h) var(--space-0) var(--space-0);
+    border-radius: var(--radius-pill);
+    background: var(--on-surface-ter);
+  }
+  :root[data-platform='ios'] [data-kit='sheet'] > [data-kit='dialog-head'] { min-height: var(--bar-h); margin: var(--space-0); padding: var(--space-0) var(--bar-pad) var(--space-0) var(--inset); }
+  :root[data-platform='ios'] [data-kit='sheet'] [data-kit='dialog-title'] { font: var(--type-headline); letter-spacing: normal; color: var(--on-surface); }
+  :root[data-platform='ios'] [data-kit='sheet'] > [data-kit='dialog-description'] { margin: var(--space-0); padding: var(--space-0) var(--inset) var(--space-4); font: var(--type-subhead); color: var(--on-surface-var); }
+  :root[data-platform='ios'] [data-kit='sheet'] > [data-kit='dialog-body'] { padding: var(--space-0) var(--inset); font: var(--type-body); color: var(--on-surface); }
+  :root[data-platform='ios'] [data-kit='sheet'] > [data-kit='dialog-foot'] { margin: var(--space-0); padding: var(--space-4) var(--inset); gap: var(--bar-button-gap); }
+  :root[data-platform='ios'] [data-kit='sheet'] > [data-kit='dialog-foot'] > [data-kit='button'] { flex: 1 1 0; }
+  :root[data-platform='ios'] [data-kit='dialog-positioner'][data-sheet][data-size='xl'] { padding: var(--space-0); }
+  :root[data-platform='ios'] [data-kit='sheet'][data-size='xl'] { height: 100dvh; border-radius: var(--space-0); }
+  :root[data-platform='ios'] [data-kit='sheet'][data-size='xl'] > [data-kit='sheet-handle'] { display: none; }
+  @keyframes k-ios-sheet { from { transform: translateY(100%); } }
+
+  /* A long-press's menu (phone.tsx): the context menu. The page blurs, the pressed row lifts in place as the preview,
+     the 250 pt menu (13 pt corners, the thick material) opens under it or over it; rows 44 pt, the icon trailing, a
+     destructive one red; a group's gap is 8 pt. */
+  :root[data-platform='ios'] [data-kit='context-backdrop'] {
+    position: fixed;
+    inset: 0;
+    z-index: var(--z-overlay);
+    background: color-mix(in srgb, var(--surface-c0) 30%, transparent);
+    -webkit-backdrop-filter: blur(var(--ctx-blur));
+    backdrop-filter: blur(var(--ctx-blur));
+    animation: k-ios-fade var(--dur-short) var(--ease-standard);
+  }
+  :root[data-platform='ios'] [data-kit='context-preview'] {
+    position: fixed;
+    top: var(--k-cx-top);
+    left: var(--k-cx-left);
+    z-index: var(--z-overlay);
+    width: var(--k-cx-w);
+    height: var(--k-cx-h);
+    overflow: hidden;
+    border-radius: var(--ctx-radius);
+    background: var(--surface-c0);
+    box-shadow: var(--elev-2);
+    animation: k-ios-lift var(--spring-snappy-dur) var(--spring-snappy);
+  }
+  :root[data-platform='ios'] [data-kit='context-preview'] > * { pointer-events: none; }
+  :root[data-platform='ios'] [data-kit='context-menu'] {
+    position: fixed;
+    top: var(--k-cx-mtop);
+    left: var(--k-cx-mleft);
+    z-index: var(--z-overlay);
+    display: flex;
+    flex-direction: column;
+    width: min(var(--ctx-w), calc(100vw - var(--space-4) * 2));
+    max-height: calc(100dvh - var(--safe-top) - var(--safe-bottom));
+    overflow-y: auto;
+    border-radius: var(--ctx-radius);
+    background: var(--chrome);
+    -webkit-backdrop-filter: blur(var(--ctx-blur));
+    backdrop-filter: blur(var(--ctx-blur));
+    box-shadow: var(--elev-2);
+    font-family: var(--font-ui);
+    transform-origin: bottom left;
+    animation: k-ios-menu var(--spring-snappy-dur) var(--spring-snappy);
+  }
+  :root[data-platform='ios'] [data-kit='context-menu'][data-below] { transform-origin: top left; }
+  :root[data-platform='ios'] [data-kit='context-item'] {
+    display: flex;
+    align-items: center;
+    gap: var(--space-5);
+    width: 100%;
+    min-height: var(--ctx-row-h);
+    padding: var(--space-0) var(--inset);
+    border: 0;
+    border-top: var(--hairline) solid var(--outline);
+    background: transparent;
+    color: var(--on-surface);
+    font: var(--type-body);
+    text-align: start;
+    -webkit-tap-highlight-color: transparent;
+  }
+  :root[data-platform='ios'] [data-kit='context-item']:first-child,
+  :root[data-platform='ios'] [data-kit='context-separator'] + [data-kit='context-item'],
+  :root[data-platform='ios'] [data-kit='context-label'] + [data-kit='context-item'] { border-top: 0; }
+  :root[data-platform='ios'] [data-kit='context-item'] > [data-kit='icon'] { order: 2; flex: none; }
+  :root[data-platform='ios'] [data-kit='context-item']:active { background: var(--fill); }
+  :root[data-platform='ios'] [data-kit='context-item'][data-danger] { color: var(--error); }
+  :root[data-platform='ios'] [data-kit='context-item']:disabled { color: var(--on-surface-ter); }
+  :root[data-platform='ios'] [data-kit='context-item'][data-back] { font-weight: var(--fw-semibold); }
+  :root[data-platform='ios'] [data-kit='context-item-text'] { display: flex; flex-direction: column; flex: 1 1 auto; min-width: 0; }
+  :root[data-platform='ios'] [data-kit='context-item-label'] { flex: 1 1 auto; min-width: 0; }
+  :root[data-platform='ios'] [data-kit='context-item-hint'] { font: var(--type-footnote); color: var(--on-surface-var); }
+  :root[data-platform='ios'] [data-kit='context-separator'] { flex: none; height: var(--ctx-gap); background: var(--fill); }
+  :root[data-platform='ios'] [data-kit='context-label'] { padding: var(--space-3) var(--inset); font: var(--type-footnote); color: var(--on-surface-var); }
+  @keyframes k-ios-lift { from { transform: scale(0.96); } }
+  @keyframes k-ios-menu { from { opacity: 0; transform: scale(0.6); } }
+  @keyframes k-ios-fade { from { opacity: 0; } }
+
+  /* Menu from a button: the pull-down menu, the context menu's shape at the button. */
+  :root[data-platform='ios'] [data-kit='menu'] {
+    min-width: min(var(--ctx-w), calc(100vw - var(--space-4) * 2));
+    padding: var(--space-0);
+    border: 0;
+    border-radius: var(--ctx-radius);
+    background: var(--chrome);
+    -webkit-backdrop-filter: blur(var(--ctx-blur));
+    backdrop-filter: blur(var(--ctx-blur));
+    box-shadow: var(--elev-2);
+    font-family: var(--font-ui);
+  }
+  :root[data-platform='ios'] [data-kit='menu-item'] {
+    min-height: var(--ctx-row-h);
+    padding: var(--space-0) var(--inset);
+    border-radius: var(--space-0);
+    border-top: var(--hairline) solid var(--outline);
+    color: var(--on-surface);
+    font: var(--type-body);
+  }
+  :root[data-platform='ios'] [data-kit='menu-item']:first-child,
+  :root[data-platform='ios'] [data-kit='menu-separator'] + [data-kit='menu-item'] { border-top: 0; }
+  :root[data-platform='ios'] [data-kit='menu-item'] > [data-kit='icon'] { order: 2; color: var(--on-surface); }
+  :root[data-platform='ios'] [data-kit='menu-item'][data-highlighted] { background: var(--fill); color: var(--on-surface); }
+  :root[data-platform='ios'] [data-kit='menu-item'][data-danger],
+  :root[data-platform='ios'] [data-kit='menu-item'][data-danger] > [data-kit='icon'],
+  :root[data-platform='ios'] [data-kit='menu-item'][data-danger][data-highlighted] { color: var(--error); }
+  :root[data-platform='ios'] [data-kit='menu-separator'] { height: var(--ctx-gap); margin: var(--space-0); background: var(--fill); }
+  /* the iPad's popover: the same material and corners */
+  :root[data-platform='ios'] [data-kit='popover'] { border: 0; border-radius: var(--ctx-radius); background: var(--chrome); -webkit-backdrop-filter: blur(var(--ctx-blur)); backdrop-filter: blur(var(--ctx-blur)); box-shadow: var(--elev-2); }
+
+  /* Toast: iOS has none; the least surprising stand-in is a compact capsule banner 8 pt above the tab bar
+     (body[data-nav-bar]) with Undo, the material behind it. */
+  :root[data-platform='ios'] body { --toast-bottom: var(--capsule-gap); }
+  :root[data-platform='ios'] body[data-nav-bar] { --toast-bottom: calc(var(--nav-h) + var(--capsule-gap)); }
+  :root[data-platform='ios'] [data-kit='toast'] {
+    width: fit-content;
+    max-width: 100%;
+    margin-inline: auto;
+    border: 0;
+    border-radius: var(--radius-pill);
+    background: var(--chrome);
+    -webkit-backdrop-filter: blur(var(--ctx-blur));
+    backdrop-filter: blur(var(--ctx-blur));
+    color: var(--on-surface);
+    box-shadow: var(--elev-2);
+    font: var(--type-subhead);
+  }
+  :root[data-platform='ios'] [data-kit='toast-in'] { min-height: var(--capsule-h); gap: var(--space-3); padding: var(--space-0) var(--space-3) var(--space-0) var(--inset); }
+  :root[data-platform='ios'] [data-kit='toast-glyph'] { background: transparent; }
+  :root[data-platform='ios'] [data-kit='toast-description'] { font: var(--type-footnote); color: var(--on-surface-var); }
+  :root[data-platform='ios'] [data-kit='toast-action'] { height: var(--button-h-sm); margin: var(--space-0); padding: var(--space-0) var(--space-4); background: transparent; color: var(--primary); font: var(--type-headline); }
+  :root[data-platform='ios'] [data-kit='toast-action']:active { background: var(--fill); }
+  :root[data-platform='ios'] [data-kit='toast-close'] { color: var(--on-surface-var); }
+  @media (prefers-reduced-motion: reduce) {
+    :root[data-platform='ios'] [data-kit='dialog'][data-alert],
+    :root[data-platform='ios'] [data-kit='sheet'],
+    :root[data-platform='ios'] [data-kit='context-preview'],
+    :root[data-platform='ios'] [data-kit='context-menu'] { animation: none; }
+  }
 }

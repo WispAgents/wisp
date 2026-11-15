@@ -2,12 +2,18 @@
 // same words (design/ux.md). The trigger draws at once; Zag's menu machine (./menu-machine.tsx, with floating-ui) loads
 // apart from the first page (./lazy-part.ts: on idle, or on the trigger's first hover, focus or press) and binds to it.
 // A press before it's there shows the trigger pressed (aria-expanded) and opens the menu as it lands.
+// The phone apps (ADR-0065 build step 5, design/mobile.md §A.4, §A.7): a Menu from a button is the same machine in the
+// platform's shape (M3 menu, iOS pull-down: the look's stylesheet); a ContextMenu opens on a long-press (the caller's
+// gesture dispatches its contextmenu: Swipe's onLongPress) as Android's bottom sheet of the actions with *Select*
+// first, or iOS's context menu with the pressed row as its preview (./phone.tsx, loaded apart: ./phone-part.ts).
 import { createEffect, createSignal, Show, untrack, type Accessor, type JSX } from 'solid-js';
 import { sub, type KitProps, type PartName, type WithChildren } from '../core/props.ts';
 import { Icon } from '../content/Icon.tsx';
 import type { IconName } from '../content/icons.ts';
 import type { ButtonSize, ButtonVariant } from './Button.tsx';
 import { lazyPart, warm, type Replay } from './lazy-part.ts';
+import { usePlatform } from '../platform/PlatformLook.tsx';
+import { phoneOverlays } from './phone-part.ts';
 
 export { menuSections, type MenuEntry, type MenuGroup, type MenuItem, type MenuSeparator, type MenuSubmenu } from './menu-entries.ts';
 import type { MenuEntry } from './menu-entries.ts';
@@ -37,16 +43,18 @@ export interface MenuProps extends MenuBaseProps {
 }
 
 
-/** The trigger's props until the machine binds, then the machine's; and the machine itself, once it's loaded. */
-function useLazyMenu(props: MenuBaseProps & { readonly placement?: Placement }, part: () => PartName, at?: 'pointer') {
+/** The trigger's props until the machine binds, then the machine's; and the machine itself, once it's loaded. `phone`:
+ * a ContextMenu in the phone apps binds the phone chunk's stand-in (the same props) instead of Zag's. */
+function useLazyMenu(props: MenuBaseProps & { readonly placement?: Placement }, part: () => PartName, at?: 'pointer', phone?: boolean) {
+  const lazy = phone ? phoneOverlays : machine;
   const [bound, setBound] = createSignal<Accessor<Record<string, unknown>>>();
   const [pending, setPending] = createSignal<Replay>();
   let area: HTMLElement | undefined;
   const press = (p: Replay): void => {
     setPending(p);
-    machine.load().catch(() => setPending(undefined));
+    lazy.load().catch(() => setPending(undefined));
   };
-  const early = warm(machine);
+  const early = warm(lazy);
   // controlled open: the machine follows `open` as soon as it's there
   createEffect(() => {
     if (props.open) early();
@@ -57,7 +65,8 @@ function useLazyMenu(props: MenuBaseProps & { readonly placement?: Placement }, 
           onPointerDown: early,
           onContextMenu: (e: MouseEvent) => {
             e.preventDefault();
-            press({ el: e.currentTarget as HTMLElement, type: 'contextmenu', x: e.clientX, y: e.clientY });
+            // the browser replays on the area, as before; a phone on what was pressed (its menu reads the row)
+            press({ el: (phone && e.target instanceof HTMLElement ? e.target : e.currentTarget) as HTMLElement, type: 'contextmenu', x: e.clientX, y: e.clientY });
           },
         }
       : {
@@ -77,7 +86,7 @@ function useLazyMenu(props: MenuBaseProps & { readonly placement?: Placement }, 
         };
   const trigger = (): Record<string, unknown> => bound()?.() ?? plain();
   const content = (): JSX.Element => (
-    <Show when={machine.ready()}>
+    <Show when={lazy.ready()}>
       {(m) => {
         const M = m().MenuMachine;
         const p = untrack(pending);
@@ -122,12 +131,15 @@ export function Menu(props: MenuProps): JSX.Element {
   );
 }
 
-export interface ContextMenuProps extends MenuBaseProps, WithChildren {}
+export interface ContextMenuProps extends MenuBaseProps, WithChildren {
+  /** the phone apps: the list's selection mode, offered first in Android's long-press sheet (design/mobile.md §A.4) */
+  readonly onSelectMode?: () => void;
+}
 
 /** Right-click (or long-press) on its children opens the menu at the pointer. */
 export function ContextMenu(props: ContextMenuProps): JSX.Element {
   const part = (): PartName => props.part ?? 'ui.context-menu';
-  const m = useLazyMenu(props, part, 'pointer');
+  const m = useLazyMenu(props, part, 'pointer', usePlatform()() !== 'web');
   return (
     <>
       <div {...m.trigger()} ref={m.setArea} data-kit="context-area" data-part={sub(part(), 'area')}>

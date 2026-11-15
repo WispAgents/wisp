@@ -516,4 +516,207 @@
     background: var(--surface-c1);
   }
   :root[data-platform='android'] [data-gesture~='list.pull'] { overscroll-behavior-y: contain; }
+
+  /* Overlays (step 5, design/mobile.md §A.7). Dialog: the M3 basic dialog, 280–560 dp, 28 dp corners, surface
+     container high, its actions end-aligned text buttons; a confirm (data-alert) has no ×. */
+  :root[data-platform='android'] [data-kit='dialog-positioner'] { padding: var(--dialog-pad); }
+  :root[data-platform='android'] [data-kit='dialog'] {
+    width: min(var(--dialog-max-w), 100%);
+    min-width: min(var(--dialog-min-w), 100%);
+    max-height: calc(100dvh - var(--dialog-pad) * 2);
+    padding: var(--dialog-pad);
+    border: 0;
+    border-radius: var(--radius-dialog);
+    background: var(--surface-c3);
+    color: var(--on-surface);
+    box-shadow: var(--elev-3);
+    font-family: var(--font-ui);
+    animation: k-android-dialog var(--dur-medium) var(--ease-emph-out);
+  }
+  :root[data-platform='android'] [data-kit='dialog'] > [data-kit='dialog-head'] { margin-bottom: var(--dialog-gap); }
+  :root[data-platform='android'] [data-kit='dialog'] [data-kit='dialog-title'] { font: var(--type-headline-s); letter-spacing: normal; color: var(--on-surface); }
+  :root[data-platform='android'] [data-kit='dialog'][data-alert] > [data-kit='dialog-head'] > [data-kit='icon-button'] { display: none; }
+  :root[data-platform='android'] [data-kit='dialog'] > [data-kit='dialog-description'],
+  :root[data-platform='android'] [data-kit='dialog'] > [data-kit='dialog-body'] { margin: var(--space-0); font: var(--type-body-m); letter-spacing: var(--track-body-m); color: var(--on-surface-var); }
+  :root[data-platform='android'] [data-kit='dialog'] > [data-kit='dialog-description'] + [data-kit='dialog-body'] { margin-top: var(--dialog-gap); }
+  :root[data-platform='android'] [data-kit='dialog'] > [data-kit='dialog-body']:empty { display: none; }
+  :root[data-platform='android'] [data-kit='dialog'] > [data-kit='dialog-foot'] { justify-content: flex-end; gap: var(--dialog-actions-gap); margin-top: var(--dialog-pad); }
+  :root[data-platform='android'] [data-kit='dialog'] > [data-kit='dialog-foot'] > [data-kit='button'] {
+    flex: none;
+    height: var(--button-h);
+    padding: var(--space-0) var(--space-6);
+    border: 0;
+    border-radius: var(--radius-pill);
+    background: transparent;
+    color: var(--primary);
+    box-shadow: none;
+    font: var(--type-label-l);
+    letter-spacing: var(--track-label-l);
+  }
+  :root[data-platform='android'] [data-kit='dialog'] > [data-kit='dialog-foot'] > [data-kit='button'][data-variant='danger'] { color: var(--error); }
+  :root[data-platform='android'] [data-kit='dialog'] > [data-kit='dialog-foot'] > [data-kit='button']:active { background: color-mix(in srgb, currentColor calc(var(--state-pressed) * 100%), transparent); }
+  @keyframes k-android-dialog { from { opacity: 0; transform: scale(0.9); } }
+
+  /* Sheet: the M3 modal bottom sheet. Up to 640 dp wide, 72 dp under the top at most, 28 dp top corners, the 32 × 4
+     drag handle 22 dp from the top; it follows a drag down (--k-sheet-dy, the phone chunk) and springs back. */
+  :root[data-platform='android'] [data-kit='dialog-positioner'][data-sheet] { place-items: end center; padding: var(--sheet-top-gap) var(--space-0) var(--space-0); }
+  :root[data-platform='android'] [data-kit='sheet'] {
+    width: min(var(--sheet-max-w), 100%);
+    max-height: calc(100dvh - var(--sheet-top-gap));
+    padding: var(--space-0) var(--space-0) var(--safe-bottom);
+    border: 0;
+    border-radius: var(--radius-sheet) var(--radius-sheet) var(--space-0) var(--space-0);
+    background: var(--surface-c1);
+    color: var(--on-surface);
+    box-shadow: var(--elev-1);
+    font-family: var(--font-ui);
+    transform: translateY(var(--k-sheet-dy, 0));
+    transition: transform var(--dur-medium) var(--ease-emph-out);
+    animation: k-android-sheet var(--dur-medium) var(--ease-emph-out);
+  }
+  :root[data-platform='android'] [data-kit='sheet'][data-dragging] { transition: none; }
+  :root[data-platform='android'] [data-kit='sheet'] > [data-kit='sheet-handle'] {
+    display: block;
+    flex: none;
+    align-self: center;
+    width: var(--grabber-w);
+    height: var(--grabber-h);
+    margin: var(--sheet-handle-pad) var(--space-0);
+    border-radius: var(--radius-pill);
+    background: var(--on-surface-var);
+  }
+  :root[data-platform='android'] [data-kit='sheet'] > [data-kit='dialog-head'] { margin: var(--space-0); padding: var(--space-0) var(--space-2) var(--space-2) var(--inset); }
+  :root[data-platform='android'] [data-kit='sheet'] [data-kit='dialog-title'] { font: var(--type-title-l); letter-spacing: normal; color: var(--on-surface); }
+  :root[data-platform='android'] [data-kit='sheet'] > [data-kit='dialog-description'] { margin: var(--space-0); padding: var(--space-0) var(--inset) var(--space-4); font: var(--type-body-m); color: var(--on-surface-var); }
+  :root[data-platform='android'] [data-kit='sheet'] > [data-kit='dialog-body'] { padding: var(--space-0) var(--inset); font: var(--type-body-m); color: var(--on-surface); }
+  :root[data-platform='android'] [data-kit='sheet'] > [data-kit='dialog-foot'] { margin: var(--space-0); padding: var(--inset); gap: var(--dialog-actions-gap); }
+  :root[data-platform='android'] [data-kit='dialog-positioner'][data-sheet][data-size='xl'] { padding: var(--space-0); }
+  :root[data-platform='android'] [data-kit='sheet'][data-size='xl'] { width: 100%; height: 100dvh; max-height: 100dvh; border-radius: var(--space-0); }
+  :root[data-platform='android'] [data-kit='sheet'][data-size='xl'] > [data-kit='sheet-handle'] { display: none; }
+  @keyframes k-android-sheet { from { transform: translateY(100%); } }
+
+  /* A long-press's menu (phone.tsx): the row's actions in the sheet, Select first; M3 list items, 56 dp, the icon
+     leading in on-surface-variant, a destructive one in error. */
+  :root[data-platform='android'] [data-kit='sheet-menu'] { display: flex; flex-direction: column; margin: var(--space-0) calc(var(--inset) * -1); padding-bottom: var(--space-4); }
+  :root[data-platform='android'] [data-kit='sheet-item'] {
+    display: flex;
+    align-items: center;
+    gap: var(--row-lead-gap);
+    width: 100%;
+    min-height: var(--row-h-1);
+    padding: var(--space-0) var(--inset);
+    border: 0;
+    background: transparent;
+    color: var(--on-surface);
+    font: var(--type-body-l);
+    letter-spacing: var(--track-body-l);
+    text-align: start;
+    -webkit-tap-highlight-color: transparent;
+  }
+  :root[data-platform='android'] [data-kit='sheet-item'] > [data-kit='icon'] { flex: none; width: var(--nav-icon); height: var(--nav-icon); color: var(--on-surface-var); }
+  :root[data-platform='android'] [data-kit='sheet-item']:active { background: color-mix(in srgb, var(--on-surface) calc(var(--state-pressed) * 100%), transparent); }
+  :root[data-platform='android'] [data-kit='sheet-item']:focus-visible { outline: var(--size-ring) solid var(--primary); outline-offset: calc(var(--size-ring) * -1); }
+  :root[data-platform='android'] [data-kit='sheet-item'][data-danger],
+  :root[data-platform='android'] [data-kit='sheet-item'][data-danger] > [data-kit='icon'] { color: var(--error); }
+  :root[data-platform='android'] [data-kit='sheet-item']:disabled { opacity: var(--state-disabled); }
+  :root[data-platform='android'] [data-kit='sheet-item-text'] { display: flex; flex-direction: column; flex: 1 1 auto; min-width: 0; }
+  :root[data-platform='android'] [data-kit='sheet-item-label'] { flex: 1 1 auto; min-width: 0; }
+  :root[data-platform='android'] [data-kit='sheet-item-hint'] { font: var(--type-body-m); color: var(--on-surface-var); }
+  :root[data-platform='android'] [data-kit='sheet-separator'] { height: var(--hairline); margin: var(--space-4) var(--space-0); background: var(--outline-var); }
+  :root[data-platform='android'] [data-kit='sheet-label'] { padding: var(--space-6) var(--inset) var(--space-2); font: var(--type-title-s); letter-spacing: var(--track-title-s); color: var(--on-surface-var); }
+
+  /* Menu from a button: the M3 menu. 112–280 dp, 4 dp corners, 8 dp in, 48 dp items; the state layer on the lit one. */
+  :root[data-platform='android'] [data-kit='menu'] {
+    min-width: var(--menu-min-w);
+    max-width: min(var(--menu-max-w), calc(100vw - var(--inset) * 2));
+    padding: var(--menu-pad-y) var(--space-0);
+    border: 0;
+    border-radius: var(--radius-xs);
+    background: var(--surface-c2);
+    box-shadow: var(--elev-2);
+    font-family: var(--font-ui);
+  }
+  :root[data-platform='android'] [data-kit='menu-item'] {
+    min-height: var(--menu-item-h);
+    gap: var(--menu-item-pad);
+    padding: var(--space-0) var(--menu-item-pad);
+    border-radius: var(--space-0);
+    color: var(--on-surface);
+    font: var(--type-label-l);
+    letter-spacing: var(--track-label-l);
+  }
+  :root[data-platform='android'] [data-kit='menu-item'] > [data-kit='icon'] { color: var(--on-surface-var); }
+  :root[data-platform='android'] [data-kit='menu-item'][data-highlighted] { background: color-mix(in srgb, var(--on-surface) calc(var(--state-focus) * 100%), transparent); color: var(--on-surface); }
+  :root[data-platform='android'] [data-kit='menu-item'][data-danger],
+  :root[data-platform='android'] [data-kit='menu-item'][data-danger] > [data-kit='icon'],
+  :root[data-platform='android'] [data-kit='menu-item'][data-danger][data-highlighted] { color: var(--error); }
+  :root[data-platform='android'] [data-kit='menu-item'][data-disabled] { opacity: var(--state-disabled); }
+  :root[data-platform='android'] [data-kit='menu-separator'] { height: var(--hairline); margin: var(--menu-pad-y) var(--space-0); background: var(--outline-var); }
+  :root[data-platform='android'] [data-kit='menu-group-label'] { padding: var(--menu-pad-y) var(--menu-item-pad); font: var(--type-title-s); color: var(--on-surface-var); }
+
+  /* Toast: the M3 snackbar. Inverse surface, 4 dp corners, 48 dp, its action (Undo) a text button in inverse
+     primary; 16 dp above the navigation bar and the FAB when they're up (body[data-nav-bar], body[data-fab]). */
+  /* the kit's toast clearance (toast.css: --toast-bottom, the safe area added there) */
+  :root[data-platform='android'] body { --toast-bottom: var(--snack-margin); }
+  :root[data-platform='android'] body[data-nav-bar] { --toast-bottom: calc(var(--nav-h) + var(--snack-margin)); }
+  :root[data-platform='android'] body[data-fab] { --toast-bottom: calc(var(--fab-ext-h) + var(--fab-margin) + var(--snack-margin)); }
+  :root[data-platform='android'] body[data-nav-bar][data-fab] { --toast-bottom: calc(var(--nav-h) + var(--fab-ext-h) + var(--fab-margin) + var(--snack-margin)); }
+  @media (min-width: 600px) {
+    :root[data-platform='android'] body[data-nav-bar] { --toast-bottom: var(--snack-margin); }
+    :root[data-platform='android'] body[data-nav-bar][data-fab] { --toast-bottom: calc(var(--fab-ext-h) + var(--fab-margin) + var(--snack-margin)); }
+  }
+  :root[data-platform='android'] [data-kit='toasts'] { width: min(var(--snack-max-w), calc(100vw - var(--snack-margin) * 2)); }
+  :root[data-platform='android'] [data-kit='toast'] {
+    border: 0;
+    border-radius: var(--radius-xs);
+    background: var(--inverse-surface);
+    color: var(--inverse-on-surface);
+    box-shadow: var(--elev-3);
+    font: var(--type-body-m);
+    letter-spacing: var(--track-body-m);
+  }
+  :root[data-platform='android'] [data-kit='toast-in'] { min-height: var(--snack-h); gap: var(--space-2); padding: var(--space-0) var(--space-2) var(--space-0) var(--inset); }
+  :root[data-platform='android'] [data-kit='toast-glyph'] { display: none; }
+  :root[data-platform='android'] [data-kit='toast-description'] { color: color-mix(in srgb, var(--inverse-on-surface) 80%, transparent); }
+  :root[data-platform='android'] [data-kit='toast-action'] {
+    height: var(--button-h);
+    margin: var(--space-0);
+    padding: var(--space-0) var(--space-6);
+    border-radius: var(--radius-pill);
+    background: transparent;
+    color: var(--inverse-primary);
+    font: var(--type-label-l);
+    letter-spacing: var(--track-label-l);
+  }
+  :root[data-platform='android'] [data-kit='toast-action']:active { background: color-mix(in srgb, var(--inverse-primary) calc(var(--state-pressed) * 100%), transparent); }
+  :root[data-platform='android'] [data-kit='toast-close'] { width: var(--button-h); height: var(--button-h); color: var(--inverse-on-surface); }
+
+  /* Tooltip: the M3 plain tooltip, shown by a long-press of its trigger (phone.tsx bindTip): inverse surface, 24 dp,
+     4 dp corners, body small; placed by --k-tip-top / --k-tip-left. */
+  :root[data-platform='android'] [data-kit='plain-tip'] {
+    position: fixed;
+    top: var(--k-tip-top, 0);
+    left: var(--k-tip-left, 0);
+    z-index: var(--z-tooltip);
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    max-width: var(--tip-max-w);
+    min-height: var(--tip-h);
+    padding: var(--space-1) var(--tip-pad);
+    border-radius: var(--radius-xs);
+    background: var(--inverse-surface);
+    color: var(--inverse-on-surface);
+    font: var(--type-body-s);
+    letter-spacing: var(--track-body-s);
+    pointer-events: none;
+    animation: k-android-fade var(--dur-short) var(--ease-standard);
+  }
+  :root[data-platform='android'] [data-kit='plain-tip-hint'] { color: color-mix(in srgb, var(--inverse-on-surface) 70%, transparent); }
+  @keyframes k-android-fade { from { opacity: 0; } }
+  @media (prefers-reduced-motion: reduce) {
+    :root[data-platform='android'] [data-kit='dialog'],
+    :root[data-platform='android'] [data-kit='sheet'],
+    :root[data-platform='android'] [data-kit='plain-tip'] { animation: none; }
+  }
 }

@@ -16,6 +16,7 @@ import { usePlatform } from '../platform/PlatformLook.tsx';
 import { useComposeHost } from './compose.tsx';
 import { FAB_START, fabOnScroll } from './scroll-math.ts';
 import { watchGiveWay } from './give-way.ts';
+import { markRoot } from '../platform/root-mark.ts';
 
 export interface FabProps extends KitProps {
   /** The action's name: the extended FAB's label, the small one's and the iOS compose button's accessible name. */
@@ -41,6 +42,8 @@ function AndroidFab(props: FabProps): JSX.Element {
   const [watchedAway, setWatchedAway] = createSignal(false);
   let el: HTMLButtonElement | undefined;
   onMount(() => {
+    // a snackbar sits above it (M3)
+    onCleanup(markRoot('data-fab'));
     const pane = el ? paneOf(el) : null;
     if (!pane) return;
     const onScroll = (e: Event): void => {

@@ -121,7 +121,16 @@ function Body(props: { readonly k: EntityKey; readonly s: SessionRow; readonly n
         )
       }
     >
-      <Swipe left={side(props.swipe.left)} right={side(props.swipe.right)} onSwipe={swiped} onArm={(on) => env.shell.platform.haptic(on ? 'select' : 'tap')} part="list.swipe">
+      <Swipe
+        left={side(props.swipe.left)}
+        right={side(props.swipe.right)}
+        onSwipe={swiped}
+        onArm={(on) => env.shell.platform.haptic(on ? 'select' : 'tap')}
+        // the phone apps: a long-press opens this row's menu (the list's ContextMenu: Android's sheet with Select
+        // first, iOS's context menu with the row as its preview); its twins are the bar's Select and the task's menu
+        onLongPress={(row) => env.menuAt(props.k, row)}
+        part="list.swipe"
+      >
         <FeedItem part={'card' as `${string}.${string}`} id={props.k} current={open()} selected={env.selected() === props.k && !open()}>
           {list()}
         </FeedItem>

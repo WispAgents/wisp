@@ -5,12 +5,13 @@
 //
 // Selecting answers in the same frame: the item is marked current from the press (`selected` follows from
 // `navigate()`, which never waits on data), and the pill's state layer shows the press itself.
-import { Show, type JSX } from 'solid-js';
+import { onCleanup, Show, type JSX } from 'solid-js';
 import { Key } from '@zag-js/solid';
 import { flag, type KitProps } from '../core/props.ts';
 import { Icon } from '../content/Icon.tsx';
 import type { IconName } from '../content/icons.ts';
 import { usePlatform } from '../platform/PlatformLook.tsx';
+import { markRoot } from '../platform/root-mark.ts';
 
 export interface NavigationItem {
   readonly id: string;
@@ -37,7 +38,8 @@ export function NavigationBar(props: NavigationBarProps): JSX.Element {
   const look = usePlatform();
   return (
     <Show when={look() !== 'web'}>
-      <nav id={props.id} aria-label={props['aria-label']} data-kit="nav-bar" data-part={props.part ?? 'ui.nav-bar'}>
+      {/* a snackbar / the iOS capsule sits above it */}
+      <nav ref={() => onCleanup(markRoot('data-nav-bar'))} id={props.id} aria-label={props['aria-label']} data-kit="nav-bar" data-part={props.part ?? 'ui.nav-bar'}>
         <Key each={props.items} by={(i) => i.id}>
           {(item) => {
             const on = (): boolean => item().id === props.selected;

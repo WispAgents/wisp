@@ -13,6 +13,7 @@ import { BlocksGallery } from './sections/blocks.tsx';
 import { ShellGallery } from './sections/shell.tsx';
 import { PhoneGallery } from './sections/phone.tsx';
 import { PhoneRowsGallery } from './sections/phone-rows.tsx';
+import { PhoneOverlaysGallery } from './sections/phone-overlays.tsx';
 import { TerminalGallery } from './sections/terminal.tsx';
 
 type Theme = 'light' | 'dark' | 'system';
@@ -78,6 +79,7 @@ function Gallery(): JSX.Element {
         <ShellGallery />
         <PhoneGallery />
         <PhoneRowsGallery />
+        <PhoneOverlaysGallery />
         <TerminalGallery />
       </Stack>
     </Box>
