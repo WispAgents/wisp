@@ -8,7 +8,7 @@
 // own chunk: only the phone apps load it, so the
 // browser's first download is unchanged.
 import { createMemo, createSignal, onCleanup, onMount, Show, type JSX } from 'solid-js';
-import { Button, Dialog, Fab, Inline, Input, Menu, ProjectSelect, RadioGroup, SelectionBar, Sheet, TopAppBar, useSignal, type MenuEntry, type SelectionAction, type TaskSwipe, type ToolbarItem } from '@wisp/ui';
+import { Button, Dialog, Fab, Inline, Input, Menu, ProjectSelect, RadioGroup, SelectionBar, Sheet, TopAppBar, useSignal, type MenuEntry, type SelectionAction, type TaskSwipe, type ToolbarItem, type TopAppBarSelection } from '@wisp/ui';
 import { useShell } from '../context.tsx';
 import { Slot } from '../slot.tsx';
 import '../i18n/lazy.ts';
@@ -62,6 +62,11 @@ export function PhoneHead(props: { readonly filter: () => string }): JSX.Element
   const project = useBarProject(props.filter);
   const [picking, setPicking] = createSignal(false);
   const selecting = useSignal(shell.listSelect?.on ?? (() => false));
+  const picked = usePicked();
+  // one memo: the bar's props read it, not the list (allSelected walks the list's order once per change)
+  const selection = createMemo((): TopAppBarSelection | undefined =>
+    selecting() ? { count: picked.count(), allPicked: picked.all(), onAll: () => shell.listSelect?.all(), onExit: () => shell.listSelect?.exit(), part: 'phone.tasks.select' } : undefined,
+  );
   const actions = createMemo((): ToolbarItem[] => [
     {
       id: 'project',
@@ -82,8 +87,10 @@ export function PhoneHead(props: { readonly filter: () => string }): JSX.Element
     // selection mode's visible way in (the twin of a row's long-press menu's Select): iOS's Select, Android's in ⋮
     ...(shell.listSelect ? [{ id: 'select', label: shell.t('shell.phone.select'), icon: 'check' as const, priority: 1, onSelect: () => shell.listSelect?.start() }] : []),
   ]);
+  // selection mode: the bar takes `selection` and the selection bar comes in; the kit picks what shows (iOS's edit mode
+  // keeps this bar, its large title and its folded state; Android's contextual bar takes its place at its height)
   return (
-    <Show when={selecting()} fallback={<>
+    <>
       <TopAppBar
         kind="root"
         part="phone.tasks.bar"
@@ -94,8 +101,12 @@ export function PhoneHead(props: { readonly filter: () => string }): JSX.Element
         search={{ label: shell.t('shell.phone.search'), onOpen: () => shell.palette.open() }}
         actions={actions()}
         actionsLabel={shell.t('shell.phone.tasksActions')}
-        t={(k) => shell.t(`kit.${k}`)}
+        {...(selection() && { selection: selection() as TopAppBarSelection })}
+        t={(k, v) => shell.t(`kit.${k}`, v)}
       />
+      <Show when={selecting()}>
+        <PhoneSelectBar picked={picked} />
+      </Show>
       <Sheet title={shell.t('shell.phone.pickComputer')} open={picking()} onOpenChange={setPicking} part="phone.tasks.computers" t={(k) => shell.t(`kit.${k}`)}>
         <RadioGroup
           label={shell.t('shell.phone.pickComputer')}
@@ -109,9 +120,7 @@ export function PhoneHead(props: { readonly filter: () => string }): JSX.Element
           }}
         />
       </Sheet>
-    </>}>
-      <PhoneSelectBar />
-    </Show>
+    </>
   );
 }
 
@@ -153,19 +162,30 @@ function escLeaves(exit: () => void, held: () => boolean): void {
   });
 }
 
+/** What the list has picked: how many, and whether it is every row the list shows. */
+function usePicked() {
+  const shell = useShell();
+  const keys = useSignal(shell.listSelect?.keys ?? (() => [] as readonly string[]));
+  const order = useSignal(shell.listOrder?.keys ?? (() => [] as readonly string[]));
+  const all = createMemo(() => allSelected({ on: true, keys: keys() }, order()));
+  return { keys, count: (): number => keys().length, all };
+}
+type Picked = ReturnType<typeof usePicked>;
+
 const BULK_ICON = { done: 'done', later: 'bookmark', archive: 'archive', delete: 'trash' } as const;
 const BULK_LABEL = { done: 'shell.select.markDone', later: 'shell.select.later', archive: 'shell.select.archive', delete: 'shell.select.delete' } as const;
 
-// The Tasks list's selection bar (ADR-0065 step 13, design/mobile.md §A.4): the kit's SelectionBar (Android's contextual
-// top app bar; iOS's edit mode with its bottom toolbar) in place of the Tasks bar while the list picks rows. Its bulk
+// The Tasks list's selection bar (ADR-0065 step 13, design/mobile.md §A.4): the kit's SelectionBar, Android's contextual
+// top app bar in place of the Tasks bar while the list picks rows; on iOS only its bottom toolbar, the Tasks bar itself
+// being in edit mode (TopAppBar `selection`), so the list under it never moves. Its bulk
 // actions are the rows' own (bulk.ts): each picked row changes at once, a refusal rolls back with a toast; Delete asks
 // first, as a row's Delete does. Back (Esc, Android's ×, iOS's Done) leaves.
-function PhoneSelectBar(): JSX.Element {
+function PhoneSelectBar(props: { readonly picked: Picked }): JSX.Element {
   const shell = useShell();
   const t = shell.t;
   const sel = shell.listSelect;
-  const keys = useSignal(sel?.keys ?? (() => [] as readonly string[]));
-  const order = useSignal(shell.listOrder?.keys ?? (() => [] as readonly string[]));
+  const picked = props.picked;
+  const keys = picked.keys;
   const [asking, setAsking] = createSignal<readonly string[]>();
   const rowOf = (k: string): SessionRow | undefined => shell.client.entities.peek<SessionRow>(SESSION, k as never) as SessionRow | undefined;
   // which bulk actions some picked task can take: it watches the picked rows only, never the whole list (5k rows)
@@ -176,7 +196,6 @@ function PhoneSelectBar(): JSX.Element {
       return new Set(BULK_ACTIONS.filter((a) => bulkTargets(a, ks, (k) => rows.get(k)).length > 0));
     }),
   );
-  const all = (): boolean => allSelected({ on: true, keys: keys() }, order());
   const exit = (): void => sel?.exit();
   const act = (a: BulkAction): void => {
     const targets = bulkTargets(a, keys(), rowOf);
@@ -194,7 +213,7 @@ function PhoneSelectBar(): JSX.Element {
       <SelectionBar
         part="phone.tasks.select"
         count={keys().length}
-        allPicked={all()}
+        allPicked={picked.all()}
         onAll={() => sel?.all()}
         onExit={exit}
         actions={actions()}

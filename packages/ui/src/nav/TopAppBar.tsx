@@ -8,6 +8,11 @@
 //   compose (New task)            Android: the M3 full-screen dialog's bar: Close (×), the title, the confirm
 //                                 action as a text button at the end. iOS: a sheet's bar: Cancel, the centred
 //                                 title, the confirm action in bold.
+// `selection` is iOS's edit mode on a root bar (Mail, Files): the bar stays where it is, its large title (or the folded
+// title, scrolled) says how many are picked, Select All leads and Done ends; the screen's actions, title menu and
+// search step aside, so the list under it never moves (AGENTS.md "Nothing jumps"). On Android and in the browser the
+// bar gives way while `selection` is set: the screen's SelectionBar (M3's contextual bar, at the same height) takes its
+// place. So a screen renders both and the kit picks, features never ask the platform.
 // `menu` is the page's ⋮ (Android) / ⋯ (iOS) menu at the end; `search` is the screen's search: an icon among the
 // actions on Android (the M3 search view opens from it), the search field under the large title on iOS (an icon
 // in the bar once the large title has folded away).
@@ -33,6 +38,7 @@ import { usePlatform } from '../platform/PlatformLook.tsx';
 import { ComposeButton, claimCompose, useComposeHost } from './compose.tsx';
 import { barCollapsed } from './scroll-math.ts';
 import { useTaskSwipe, type TaskSwipe } from '../gestures/use.ts';
+import { selectionWords } from './selection-words.ts';
 
 export interface TopAppBarBack {
   /** What Back returns to (iOS shows it, shortened to the kit's "Back" when long; Android names the button). */
@@ -63,6 +69,19 @@ export interface TopAppBarSearch {
   readonly onOpen: () => void;
 }
 
+/** iOS's edit mode on a root bar (ADR-0065 step 13): what's picked and the bar's two buttons. */
+export interface TopAppBarSelection {
+  /** how many rows are picked */
+  readonly count: number;
+  /** every row the list shows is picked: Select All turns into Deselect All */
+  readonly allPicked: boolean;
+  readonly onAll: () => void;
+  /** Done */
+  readonly onExit: () => void;
+  /** its parts' base (default: the bar's part + `.select`): `.all`, `.title`, `.exit` */
+  readonly part?: PartName;
+}
+
 export interface TopAppBarProps extends KitProps {
   readonly title: string;
   readonly kind?: 'root' | 'page' | 'compose';
@@ -82,6 +101,10 @@ export interface TopAppBarProps extends KitProps {
   /** A task page (the phone apps): swiping the head left / right opens the next / previous task in the list's order
    *  (design/mobile.md §A.4); the twins are Next task / Previous task in `actions`' menu. The browser binds nothing. */
   readonly swipe?: TaskSwipe;
+  /** The list under this bar picks rows. iOS: the bar in edit mode (any kind; a list's root bar in practice) (Select All, the count, Done), keeping its
+   *  place and height. Android and the browser: the bar draws nothing, the screen's SelectionBar (the contextual bar)
+   *  stands in its place. Additive (2026-11-15). */
+  readonly selection?: TopAppBarSelection;
 }
 
 /** iOS shortens the back title the way UINavigationBar does when it doesn't fit: past this many characters, "Back". */
@@ -216,6 +239,14 @@ function PhoneBar(props: TopAppBarProps & { readonly part: PartName }): JSX.Elem
   claimCompose(host, ios() && kind() === 'root');
   const [collapsed, setCollapsed] = createSignal(false);
   const swipe = useTaskSwipe(() => props.swipe ?? {});
+  // iOS edit mode: the same header (its large title, its folded state), its buttons and words swapped
+  // (any kind: TopAppBar keeps the bar for `selection` on iOS whatever its kind, so it must offer Done)
+  const editing = (): TopAppBarSelection | undefined => (ios() ? props.selection : undefined);
+  const selPart = (): PartName => editing()?.part ?? sub(props.part, 'select');
+  const words = () => {
+    const e = editing();
+    return e ? selectionWords(t, true, e.count, e.allPicked) : undefined;
+  };
   let el: HTMLElement | undefined;
   let largeEl: HTMLDivElement | undefined;
   onMount(() => {
@@ -239,7 +270,8 @@ function PhoneBar(props: TopAppBarProps & { readonly part: PartName }): JSX.Elem
         if (props.swipe) swipe(h);
       }}
       id={props.id}
-      data-kit="app-bar" data-part={props.part} data-kind={kind()} data-large={flag(large())} data-collapsed={flag(large() && collapsed())}>
+      data-kit="app-bar" data-part={props.part} data-kind={kind()} data-large={flag(large())} data-collapsed={flag(large() && collapsed())} data-selecting={flag(editing() !== undefined)}>
+      <Show when={editing()} fallback={
       <div data-kit="app-bar-row">
         <Show when={props.back}>{(b) => <BackControl back={b()} ios={ios()} part={sub(props.part, 'back')} t={t} />}</Show>
         <Title title={props.title} onTitle={props.onTitle} menu={ios() ? props.titleMenu : undefined} part={sub(props.part, 'title')} />
@@ -258,8 +290,28 @@ function PhoneBar(props: TopAppBarProps & { readonly part: PartName }): JSX.Elem
           <ComposeButton when={ios() && kind() === 'root'} />
         </div>
       </div>
+      }>
+        {(e) => (
+          <div data-kit="app-bar-row">
+            <Button variant="ghost" onClick={() => e().onAll()} part={sub(selPart(), 'all')}>
+              {words()?.all}
+            </Button>
+            <h1 data-kit="app-bar-title" data-text="control" data-part={sub(selPart(), 'title')} aria-live="polite">
+              {words()?.title}
+            </h1>
+            <div data-kit="app-bar-actions">
+              <span data-kit="app-bar-confirm">
+                <Button variant="ghost" onClick={() => e().onExit()} part={sub(selPart(), 'exit')}>
+                  {t('done')}
+                </Button>
+              </span>
+            </div>
+          </div>
+        )}
+      </Show>
       <Show when={large()}>
         <div ref={largeEl} data-kit="app-bar-large">
+          <Show when={words()} fallback={
           <Show
             when={ios() ? props.titleMenu : undefined}
             fallback={
@@ -285,13 +337,16 @@ function PhoneBar(props: TopAppBarProps & { readonly part: PartName }): JSX.Elem
               </TitleMenu>
             )}
           </Show>
+          }>
+            {(w) => <span data-kit="app-bar-large-title" aria-hidden="true">{w().title}</span>}
+          </Show>
         </div>
       </Show>
       {/* iOS: the search field under the large title, folding away with it (the bar's icon takes over then) */}
       <Show when={ios() && kind() === 'root' ? props.search : undefined}>
         {(q) => (
           <div data-kit="app-bar-search">
-            <button type="button" data-kit="app-bar-search-field" data-part={sub(props.part, 'search-field')} onClick={() => q().onOpen()}>
+            <button type="button" data-kit="app-bar-search-field" data-part={sub(props.part, 'search-field')} disabled={editing() !== undefined} onClick={() => q().onOpen()}>
               <Icon name="search" size="sm" />
               <span data-text="control">{q().label}</span>
             </button>
@@ -305,9 +360,13 @@ function PhoneBar(props: TopAppBarProps & { readonly part: PartName }): JSX.Elem
 export function TopAppBar(props: TopAppBarProps): JSX.Element {
   const look = usePlatform();
   const part = (): PartName => props.part ?? 'ui.app-bar';
+  // selection: iOS keeps this bar (edit mode, nothing remounts); elsewhere SelectionBar takes its place
+  const shown = (): boolean => look() === 'ios' || props.selection === undefined;
   return (
-    <Show when={look() !== 'web'} fallback={<WebBar {...props} part={part()} />}>
-      <PhoneBar {...props} part={part()} />
+    <Show when={shown()}>
+      <Show when={look() !== 'web'} fallback={<WebBar {...props} part={part()} />}>
+        <PhoneBar {...props} part={part()} />
+      </Show>
     </Show>
   );
 }

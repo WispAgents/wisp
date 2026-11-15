@@ -181,6 +181,26 @@ test('navigation mirrors the URL: opens push, closes replace, Back restores', ()
   scope.dispose();
 });
 
+test('open_task_with_replace_adds_no_history_entry_so_back_returns_to_where_the_user_came_from', () => {
+  const scope = createScope();
+  const history = memoryHistory('/');
+  const nav = createNavigation({ scope, width: 390, history });
+  const T3 = 'laptop:0190a1b2-0000-7000-8000-000000000003' as SessionId;
+  nav.navigate({ t: 'openTask', id: T1 });
+  assert.equal(history.entries.length, 2, 'opening a task from the list is an entry');
+  nav.navigate({ t: 'openTask', id: T2, replace: true });
+  nav.navigate({ t: 'openTask', id: T3, replace: true });
+  assert.deepEqual(history.entries, ['/', encodeNav({ main: { kind: 'task', id: T3 }, side: { kind: 'none' }, overlays: [] })], 'each step took the open task’s place');
+  assert.deepEqual(nav.nav().main, { kind: 'task', id: T3 });
+  history.back(); // the browser's (a phone's) Back
+  assert.deepEqual(nav.nav().main, { kind: 'home' }, 'Back skips every stepped task');
+  // without the flag it stays a push
+  nav.navigate({ t: 'openTask', id: T1 });
+  nav.navigate({ t: 'openTask', id: T2 });
+  assert.equal(history.entries.length, 3);
+  scope.dispose();
+});
+
 test('a view that is not registered (or was switched off) lands on Home', () => {
   const scope = createScope();
   const plugin = scope.child('plugin:git');

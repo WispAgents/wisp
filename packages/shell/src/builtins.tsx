@@ -240,7 +240,8 @@ function step(ctx: ShellContext, by: 1 | -1): boolean {
   if (!next) return false;
   ctx.selection.set(next);
   document.querySelector<HTMLElement>(`[data-part="card"][data-id="${CSS.escape(next)}"]`)?.scrollIntoView({ block: 'nearest' });
-  if (ctx.nav().main.kind === 'task') ctx.navigate({ t: 'openTask', id: next as never });
+  // j/k step in place (v1 replaced the address, web/js/features/feed.js syncUrl): Back leaves the task, not each step
+  if (ctx.nav().main.kind === 'task') ctx.navigate({ t: 'openTask', id: next as never, replace: true });
   return true;
 }
 

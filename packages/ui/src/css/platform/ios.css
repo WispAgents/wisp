@@ -1253,10 +1253,13 @@
   :root[data-platform='ios'] [data-kit='lr-list'][data-empty] { display: none; }
   :root[data-platform='ios'] [data-kit='lr-list'][data-empty] ~ [data-part~='launcher.issue'] { margin-inline-start: auto; }
 
-  /* Selection mode (step 13, design/mobile.md §A.4): edit mode. The bar holds Select All, "n Selected" and Done; the
-     rows lead with the edit circle (a ring, filled in the tint with its checkmark when picked); the bulk actions sit
-     in the toolbar over the tab bar's place; the rows' own quick actions step aside */
-  :root[data-platform='ios'] [data-kit='app-bar'][data-kind='select'] { background: var(--chrome); border-bottom-color: var(--outline); }
+  /* Selection mode (step 13, design/mobile.md §A.4): edit mode. The screen's own bar stays (its large title or its
+     folded title, so the list never moves) with Select All leading and Done trailing, the large title saying how many
+     are picked; the search field dims; the rows lead with the edit circle (a ring, filled in the tint with its
+     checkmark when picked); the bulk actions sit in the toolbar over the tab bar's place; the rows' own quick actions
+     step aside */
+  :root[data-platform='ios'] [data-kit='app-bar'][data-selecting][data-large]:not([data-collapsed]) [data-kit='app-bar-actions'] { grid-column: 3; }
+  :root[data-platform='ios'] [data-kit='app-bar'][data-selecting] [data-kit='app-bar-search-field']:disabled { opacity: var(--state-disabled); }
   :root[data-platform='ios'] [data-kit='list-row'][data-layout='feed'] > [data-kit='row-pick'] {
     grid-column: 1;
     grid-row: 1;

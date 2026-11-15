@@ -4,7 +4,7 @@
 // toolbar; the bulk actions optimistic, a refusal rolled back with a toast), the iOS computer filter as a pull-down
 // from the title, and a task page's Next task / Previous task (the twins of the head's swipe) in the list's order.
 import { afterEach, expect, test } from 'vitest';
-import { createClient, peerId, type Client, type EntityKey } from '@wisp/client';
+import { createClient, memoryHistory, peerId, type Client, type EntityKey } from '@wisp/client';
 import { commandErrorToast, createShell, nullPlatform, type Platform, type ShellContext, type ShellWindow } from '@wisp/shell';
 import { createToaster } from '@wisp/ui';
 import { createMockPeer, type MockPeer } from '../dev/mock-peer.ts';
@@ -28,12 +28,12 @@ afterEach(() => {
 
 const PLUGINS = new Set(['wisp.shell-list', 'wisp.shell-task']);
 
-async function start(platform: Platform, o: { computers?: boolean } = {}): Promise<{ root: HTMLElement; mock: MockPeer; client: Client; shell: ShellContext }> {
+async function start(platform: Platform, o: { computers?: boolean; history?: ReturnType<typeof memoryHistory> } = {}): Promise<{ root: HTMLElement; mock: MockPeer; client: Client; shell: ShellContext }> {
   const mock = createMockPeer({ epoch: 'e1', ...(o.computers && { computers: true }) });
   const home = peerId('local');
   const toaster = createToaster();
   // as the app does: a refused command rolls back with a red toast
-  const client = createClient({ clientId: 'c1', build: 't', home, width: 390, onError: commandErrorToast(toaster) });
+  const client = createClient({ clientId: 'c1', build: 't', home, width: 390, onError: commandErrorToast(toaster), ...(o.history && { history: o.history }) });
   const shell = createShell({ client, toaster, platform, home, window: window as unknown as ShellWindow });
   for (const { def } of pluginUis()) if (def && PLUGINS.has(def.id)) shell.register(def);
   await client.start([{ peer: home, name: 'mock', transport: memTransport(mock) }]);
@@ -98,14 +98,20 @@ test('in_selection_a_tap_toggles_rows_and_unpicking_the_last_on_android_leaves_i
   expect(rowOf(a).hasAttribute('data-picking'), 'rows back to themselves').toBe(false);
 });
 
-test('on_ios_select_in_the_bar_is_edit_mode_with_select_all_done_and_the_bulk_actions_in_a_bottom_toolbar', async () => {
+test('on_ios_select_in_the_bar_is_edit_mode_in_the_same_bar_with_select_all_done_and_the_bulk_actions_in_a_bottom_toolbar', async () => {
   const { root, shell } = await start(phone('ios'));
   // the bar's Select (the twin of the long-press)
   expect(button(q('[data-part="phone.tasks.bar"]') as HTMLElement, 'Select') ?? q('[data-part="phone.tasks.bar"] [aria-label="More"]'), 'Select in the bar').toBeDefined();
+  const bar = q('[data-part="phone.tasks.bar"]') as HTMLElement;
+  const large = bar.querySelector('[data-kit="app-bar-large"]');
   shell.listSelect?.start();
-  await until(() => q('[data-part="phone.tasks.select"]') !== null);
+  await until(() => q('[data-part="phone.tasks.select.title"]') !== null);
+  // edit mode is the Tasks bar itself (iOS Mail, Files): the same node, its large title kept, so the list doesn't move
+  expect(q('[data-part="phone.tasks.bar"]'), 'the same bar, not a new one').toBe(bar);
+  expect(bar.hasAttribute('data-selecting')).toBe(true);
+  expect(bar.querySelector('[data-kit="app-bar-large"]'), 'the large title stays').toBe(large);
+  expect(document.querySelectorAll('[data-kit="app-bar"]').length, 'one bar').toBe(1);
   expect(title()).toBe('Select Items');
-  const bar = q('[data-part="phone.tasks.select"]') as HTMLElement;
   expect(button(bar, 'Select All')).toBeDefined();
   expect(button(bar, 'Done')).toBeDefined();
   expect(q('[data-kit="select-toolbar"]'), 'the bottom toolbar').not.toBeNull();
@@ -122,8 +128,25 @@ test('on_ios_select_in_the_bar_is_edit_mode_with_select_all_done_and_the_bulk_ac
   await settle(5);
   expect(title()).toBe('Select Items');
   button(bar, 'Done')?.click();
-  await until(() => q('[data-part="phone.tasks.bar"]') !== null);
+  await until(() => !bar.hasAttribute('data-selecting'));
+  expect(q('[data-part="phone.tasks.bar"]'), 'still the same bar').toBe(bar);
   expect(q('[data-kit="select-toolbar"]')).toBeNull();
+});
+
+test('on_android_the_contextual_bar_takes_the_top_app_bars_place_one_bar_at_a_time', async () => {
+  const { shell } = await start(phone('android'));
+  const frameTop = q('[data-part="phone.tasks.bar"]')?.parentElement;
+  shell.listSelect?.start();
+  await until(() => q('[data-part="phone.tasks.select"]') !== null);
+  expect(q('[data-part="phone.tasks.bar"]'), 'the top app bar gave way').toBeNull();
+  expect(q('[data-part="phone.tasks.select"]')?.parentElement, 'in its slot').toBe(frameTop);
+  expect(document.querySelectorAll('[data-kit="app-bar"]').length).toBe(1);
+  // leaving: the top app bar is back in the same slot, the contextual bar gone
+  shell.listSelect?.exit();
+  await until(() => q('[data-part="phone.tasks.bar"]') !== null);
+  expect(q('[data-part="phone.tasks.bar"]')?.parentElement).toBe(frameTop);
+  expect(q('[data-part="phone.tasks.select"]')).toBeNull();
+  expect(document.querySelectorAll('[data-kit="app-bar"]').length).toBe(1);
 });
 
 test('a_bulk_archive_changes_every_picked_row_at_once_and_a_refusal_rolls_it_back_with_a_toast', async () => {
@@ -221,6 +244,46 @@ for (const kind of ['android', 'ios'] as const) {
     prev?.click();
     await until(() => String((client.nav.nav().main as { id: string }).id) === order[0]);
     expect(String((client.nav.nav().main as { id: string }).id)).toBe(order[0]);
+  });
+}
+
+const openId = (client: Client): string => {
+  const m = client.nav.nav().main;
+  return m.kind === 'task' ? String(m.id) : m.kind;
+};
+
+for (const kind of ['android', 'ios'] as const) {
+  test(`on_${kind}_back_after_two_steps_returns_to_tasks_not_through_each_stepped_task`, async () => {
+    const history = memoryHistory('/');
+    const { client, shell } = await start(phone(kind), { history });
+    const order = shell.listOrder?.keys() ?? [];
+    expect(order.length).toBeGreaterThan(2);
+    client.nav.navigate({ t: 'openTask', id: order[0] as never });
+    await until(() => q('[data-part="phone.task.bar"]') !== null);
+    const entries = history.entries.length;
+    // step twice with Next task (the head swipe calls the same stepTo)
+    (await openMenu())[0]?.click();
+    await until(() => openId(client) === order[1]);
+    (await openMenu())[0]?.click();
+    await until(() => openId(client) === order[2]);
+    expect(openId(client)).toBe(order[2]);
+    expect(history.entries.length, 'a step adds no history entry').toBe(entries);
+    // the platform's Back (Android's Back, iOS's edge swipe: the history's)
+    history.back();
+    await until(() => openId(client) === 'home');
+    expect(openId(client), 'Back lands on Tasks').toBe('home');
+    await until(() => q('[data-part="phone.tasks.bar"]') !== null);
+    expect(q('[data-part="phone.tasks.bar"]'), 'the Tasks bar').not.toBeNull();
+    // and the bar's Back, after two steps again
+    client.nav.navigate({ t: 'openTask', id: order[0] as never });
+    await until(() => q('[data-part="phone.task.bar"]') !== null);
+    (await openMenu())[0]?.click();
+    await until(() => openId(client) === order[1]);
+    (await openMenu())[0]?.click();
+    await until(() => openId(client) === order[2]);
+    q('[data-part="phone.task.bar.back"]')?.click();
+    await until(() => openId(client) === 'home');
+    expect(openId(client)).toBe('home');
   });
 }
 

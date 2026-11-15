@@ -527,7 +527,8 @@ export default function TaskView(props: { readonly id: string; readonly onBack?:
   const stepTo = (to: string | undefined): void => {
     if (to === undefined) return;
     shell.selection.set(to);
-    shell.navigate({ t: 'openTask', id: to as never });
+    // a pager: the step takes this task's place in history, so Back returns to the list, not through every step
+    shell.navigate({ t: 'openTask', id: to as never, replace: true });
   };
   const markDone = (): void => {
     void run(setState, { id: key, state: 'done' }).catch(() => undefined);

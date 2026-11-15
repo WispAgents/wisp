@@ -1,6 +1,6 @@
 // ADR-0065 step 13 (design/mobile.md §A.4 Selection mode): the kit's selection bar in each platform's shape and words
-// (Android's contextual top app bar that leaves with the last row unpicked; iOS's edit mode with Select All, Done and a
-// bottom toolbar that stays until Done), a feed row's pick mark, and iOS's computer filter as a pull-down from the
+// (Android's contextual top app bar that leaves with the last row unpicked; iOS's edit mode in the screen's own bar, Select
+// All and Done, so nothing under it moves, and a bottom toolbar that stays until Done), a feed row's pick mark, and iOS's computer filter as a pull-down from the
 // title (Android and the browser keep the title's own action).
 import { describe, expect, it } from 'vitest';
 import { createSignal, type JSX } from 'solid-js';
@@ -31,12 +31,20 @@ describe('SelectionBar', () => {
     expect(left, 'M3: nothing picked, the contextual bar goes').toBe(1);
   });
 
-  it('on_ios_is_edit_mode_with_select_all_the_count_done_and_a_bottom_toolbar_that_stays_with_nothing_picked', () => {
+  it('on_ios_draws_only_the_bottom_toolbar_and_the_screens_bar_is_in_edit_mode_with_select_all_the_count_and_done', () => {
     const [count, setCount] = createSignal(0);
     const [all, setAll] = createSignal(false);
     let left = 0;
-    const host = as('ios', () => <SelectionBar part="t.sel" count={count()} allPicked={all()} onAll={noop} onExit={() => left++} actions={ACTIONS} actionsLabel="Selected tasks" />);
+    let alls = 0;
+    const host = as('ios', () => (
+      <>
+        <TopAppBar kind="root" part="t.bar" title="All" selection={{ count: count(), allPicked: all(), onAll: () => alls++, onExit: () => left++, part: 't.sel' }} />
+        <SelectionBar part="t.sel" count={count()} allPicked={all()} onAll={noop} onExit={() => left++} actions={ACTIONS} actionsLabel="Selected tasks" />
+      </>
+    ));
+    expect(host.querySelectorAll('[data-kit="app-bar"]').length, 'one bar: the screen’s own').toBe(1);
     expect(host.querySelector('[data-part="t.sel.title"]')?.textContent).toBe('Select Items');
+    expect(host.querySelector('[data-kit="app-bar-large-title"]')?.textContent, 'the large title says it too').toBe('Select Items');
     expect(host.querySelector('[data-part="t.sel.all"]')?.textContent).toBe('Select All');
     expect(host.querySelector('[data-kit="app-bar-confirm"] [data-part="t.sel.exit"]')?.textContent).toBe('Done');
     expect(host.querySelector('[data-kit="select-toolbar"] [data-kit="toolbar"]'), 'the bulk actions at the bottom').not.toBeNull();
@@ -44,10 +52,75 @@ describe('SelectionBar', () => {
     setAll(true);
     expect(host.querySelector('[data-part="t.sel.title"]')?.textContent).toBe('3 Selected');
     expect(host.querySelector('[data-part="t.sel.all"]')?.textContent).toBe('Deselect All');
+    host.querySelector<HTMLButtonElement>('[data-part="t.sel.all"]')?.click();
+    expect(alls).toBe(1);
     setCount(0);
     expect(left, 'edit mode waits for Done').toBe(0);
     host.querySelector<HTMLButtonElement>('[data-part="t.sel.exit"]')?.click();
     expect(left).toBe(1);
+  });
+
+  it('on_ios_entering_edit_mode_keeps_the_same_bar_its_large_title_and_its_folded_state_so_the_list_does_not_move', () => {
+    const [sel, setSel] = createSignal(false);
+    const search = { label: 'Search', onOpen: noop };
+    const host = as('ios', () => (
+      <TopAppBar kind="root" part="t.bar" title="All" search={search} actions={[{ id: 'x', label: 'X', icon: 'user', priority: 1, onSelect: noop }]} {...(sel() && { selection: { count: 0, allPicked: false, onAll: noop, onExit: noop } })} />
+    ));
+    const bar = host.querySelector('[data-kit="app-bar"]');
+    const large = host.querySelector('[data-kit="app-bar-large"]');
+    const field = host.querySelector('[data-kit="app-bar-search"]');
+    expect(bar?.hasAttribute('data-large')).toBe(true);
+    setSel(true);
+    expect(host.querySelector('[data-kit="app-bar"]'), 'the same header node: nothing remounts').toBe(bar);
+    expect(host.querySelector('[data-kit="app-bar-large"]'), 'the large title stays').toBe(large);
+    expect(host.querySelector('[data-kit="app-bar-search"]'), 'the search field stays, at its height').toBe(field);
+    expect(bar?.hasAttribute('data-selecting')).toBe(true);
+    expect(host.querySelector<HTMLButtonElement>('[data-kit="app-bar-search-field"]')?.disabled, 'dimmed').toBe(true);
+    expect(host.querySelector('[data-part="t.bar.select.exit"]')?.textContent, 'Done in place of the actions').toBe('Done');
+    expect(visible(host, '[aria-label="X"]').length, 'the screen’s actions step aside').toBe(0);
+    setSel(false);
+    expect(host.querySelector('[data-kit="app-bar"]')).toBe(bar);
+    expect(bar?.hasAttribute('data-selecting')).toBe(false);
+  });
+
+  it('on_ios_a_bar_folded_by_scrolling_stays_folded_in_edit_mode_with_the_count_as_its_inline_title', () => {
+    const [sel, setSel] = createSignal(false);
+    const host = as('ios', () => (
+      <>
+        <TopAppBar kind="root" part="t.bar" title="All" {...(sel() && { selection: { count: 2, allPicked: false, onAll: noop, onExit: noop } })} />
+        <div data-test="scroller" />
+      </>
+    ));
+    const scroller = host.querySelector<HTMLElement>('[data-test="scroller"]') as HTMLElement;
+    Object.defineProperties(scroller, { scrollHeight: { value: 2000 }, clientHeight: { value: 600 }, scrollTop: { value: 400 } });
+    scroller.dispatchEvent(new Event('scroll'));
+    const bar = host.querySelector('[data-kit="app-bar"]');
+    expect(bar?.hasAttribute('data-collapsed'), 'folded by the scroll').toBe(true);
+    setSel(true);
+    expect(host.querySelector('[data-kit="app-bar"]'), 'the same bar').toBe(bar);
+    expect(bar?.hasAttribute('data-collapsed'), 'still folded: the list under it keeps its place').toBe(true);
+    expect(host.querySelector('[data-part="t.bar.select.title"]')?.textContent, 'the folded title says the count').toBe('2 Selected');
+    setSel(false);
+    expect(bar?.hasAttribute('data-collapsed')).toBe(true);
+  });
+
+  it('on_android_and_in_the_browser_the_top_app_bar_gives_way_to_the_selection_bar_in_its_place', () => {
+    for (const look of ['android', 'web'] as const) {
+      const [sel, setSel] = createSignal(false);
+      const host = as(look, () => (
+        <>
+          <TopAppBar kind="root" part="t.bar" title="All" {...(sel() && { selection: { count: 2, allPicked: false, onAll: noop, onExit: noop } })} />
+          {sel() && <SelectionBar part="t.sel" count={2} allPicked={false} onAll={noop} onExit={noop} actions={ACTIONS} actionsLabel="Selected tasks" />}
+        </>
+      ));
+      expect(host.querySelector('[data-part="t.bar"]'), look).not.toBeNull();
+      setSel(true);
+      expect(host.querySelector('[data-part="t.bar"]'), `${look}: the bar gave way`).toBeNull();
+      expect(host.querySelectorAll('[data-kit="app-bar"], header').length, `${look}: one bar`).toBe(1);
+      expect(host.querySelector('[data-part="t.sel"]')).not.toBeNull();
+      setSel(false);
+      expect(host.querySelector('[data-part="t.bar"]'), `${look}: back`).not.toBeNull();
+    }
   });
 });
 

@@ -5,6 +5,8 @@
 //   #354       Mark done / Archive / Delete on the open task goes Home, not to the next task
 //   #406       renaming a task keeps it open
 //   back       pops the top overlay, then the side pane, then main (to Home)
+//   stepping   Next / Previous task (a phone's swipe and its menu twins, j/k) replaces the open task, like a pager,
+//              so Back returns to where the user came from, not through every task stepped past (v1 replaced too)
 // What's open is never stored on entities.
 
 import { assertNever, type CrewId, type ExtensionId, type Json, type SessionId } from './types.ts';
@@ -26,7 +28,9 @@ export type Nav = {
 export type Target = { to: 'main'; main: Main } | { to: 'side'; main: Main; side: Side } | { to: 'overlay'; overlay: Overlay };
 
 export type Intent =
-  | { t: 'openTask'; id: SessionId }
+  /** `replace`: the task takes the open one's place in history (no entry of its own: stepping to the next / previous
+   *  task). Additive (2026-11-15). */
+  | { t: 'openTask'; id: SessionId; replace?: boolean }
   | { t: 'openCrew'; id: CrewId }
   | { t: 'openView'; id: ExtensionId; params: Json }
   | { t: 'home' }
@@ -180,6 +184,7 @@ export function navigate(nav: Nav, intent: Intent): Nav {
 export function pushes(intent: Intent): boolean {
   switch (intent.t) {
     case 'openTask':
+      return intent.replace !== true;
     case 'openCrew':
     case 'openView':
     case 'home':
