@@ -53,9 +53,9 @@ api packages, default deny.
   `wisp ledger <task>` (show / `--set section=…`), `wisp fresh <task>`; the TUI shows the health line.
 - **Wisp as code:** a formula can seed a task's ledger (goal, constraints) declaratively.
 
-**Name clash to settle:** v2's task-history redesign is already called *the Ledger* (ADR-0068, `Ledger.tsx`). v1
-calls the state file "the ledger". Two things can't share one name in v2. Proposal: keep **Thread** as the tab/area
-name (v1's), and call the state file **the task's notes**… or rename ADR-0068's view to "History". The owner picks.
+**Naming (owner, 2026-11-15):** *Ledger* stays the task history (ADR-0068). The state file is **Notes**, shown in a
+**Thread** tab; the tool is `wisp_notes` (v1's `wisp_ledger`), the CLI `wisp notes <task>`, the tables `threads_notes`,
+the repo file `.wisp/tasks/<id>/notes.md`. Everywhere below, read "ledger" (v1's word) as Notes.
 
 **UI (design first, owner approves):** a Thread area on the task page (desktop: a tab in the side panel as v1;
 phones: in the task menu, platform look): the sections, each editable inline; the health meter (one line: "Worn ·
@@ -64,7 +64,7 @@ turn ("Kept 6 of 8"). A mock with 2 variants goes to the owner before any build.
 
 ## Order
 
-1. **Now:** this plan; ADR draft (`docs/adr/0076-long-threads.md`, status Proposed) once the name is settled.
+1. **Now:** this plan; ADR draft (`docs/adr/0076-long-threads.md`, status Proposed): naming settled (Notes, Thread tab).
 2. **When v1's PR merges:** read its final code and tests, list its bugs (port intent, not bugs), then:
    1. `wisp.threads` data + `wisp_ledger` (MCP) + CLI + the note (no UI yet) — the core.
    2. Output offload (`wisp hook offload`) in the Claude plugin, then others.

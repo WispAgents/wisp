@@ -110,6 +110,10 @@ turn. When a screen or feature contradicts one, that's a bug: fix it toward the 
 - **Projects on phones follow the project-selector decisions above**: one selector (with multi-pick: tap = only, +
   adds), not chips (owner, 11-15 19:52, on the New task sheet showing the old selector).
 
+- **Long threads naming** (owner, 2026-11-15): **Ledger** stays the task history (ADR-0068). The long-threads state
+  file (goal, constraints, decisions, failed, state, open, files) is called **Notes**, shown in a **Thread** tab.
+  Its tool is `wisp_notes` (v1's `wisp_ledger`), its CLI `wisp notes`. See docs/v2-long-threads.md.
+
 ### How the work runs
 
 - **Coders code; tests in CI**: coders write code and their named tests; full suites, e2e and gates are the outer loop
@@ -170,7 +174,7 @@ turn. When a screen or feature contradicts one, that's a bug: fix it toward the 
       ledger (goal, constraints, decisions, failed, state, open, files; rewritten, never appended; `wisp_ledger` MCP
       tool), the note before each follow-up, Fresh thread from an editable brief, the health meter, the compaction
       audit, the Bash output offload (`wisp hook offload`). v1 is building it now (~/Downloads/wisp-long-threads):
-      **port once v1's PR merges**; before that: the name clash with ADR-0068's Ledger (owner picks), the ADR draft
+      **port once v1's PR merges**; before that: the ADR draft (naming settled: Notes in a Thread tab)
       and the UI mock for the owner's approval
 
 ### 4.2 GUI (browser and desktop), v1 parity
