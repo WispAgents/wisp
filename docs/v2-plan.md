@@ -120,6 +120,12 @@ Rust for everything but the UI, Solid/TS for the UI, everything a plugin (ADR-00
 11. [x] Push (`wisp.push`, HPKE, grid relay) (round 228, reviewed by r241; no UI calls it yet: step 13)
 12. [x] Offline and bad network: core + shell hookups (round 229, reviewed by r241)
 13. [ ] Screens part 1 (Tasks, task page, New task, search; Add computer with QR, Trust new key, Stay connected ON by default without push). Done (round 284): Tasks (root TopAppBar with the computer filter `shell.computerFilter` as title, Search, the me menu; project chips row; FAB / iOS compose for New task; shell-list filters by computer), Add computer (QR via `scanCode`, typed fallback, Trust the new key with confirm, Stay connected ON for SSH without push, `mobile/web/src/{add,stay}.ts`). Left: the task page's phone app bar (Back + the task menu, the ledger and reply box in the platform look), New task as a full-screen page (Android) / sheet (iOS), search as the M3 search view / iOS search field (Search opens the palette today), Select in the list's bar (selection mode), the iOS computer filter as a pull-down menu (a sheet today)
+13b. [ ] **Crew on phones as stories** (owner, 2026-11-15: "like stories in Instagram and Snapchat"): replace the phone Tasks list's Crew section
+      with a stories row under the top bar (one avatar per member, ring = working / unread report / waiting on you / idle;
+      Org and + as first/last bubbles); tap opens a full-screen story (now, last report, what waits on you with the task
+      page's buttons, next check-in), tap/swipe to step, swipe down to close, each gesture with a visible control.
+      Design first (research + 2-3 variants in an HTML mock, Android + iOS frames), owner picks, then build. Phones only;
+      browser/desktop keep v1. **Next round after r286.**
 14. [ ] Screens part 2 (Settings, My Stuff, Crew, Computers and cloud sign-in)
 15. [ ] Store and release (android.yml, ios.yml, listings, privacy)
 - Open questions with defaults (ADR-0065): Sign in with Apple before iOS ships · push needs a free Cloud sign-in ·
