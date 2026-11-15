@@ -272,7 +272,7 @@
 
   /* the project selector in the Tasks bar (owner, 2026-11-15): an M3 filter chip with its menu arrow, 32 dp, 8 dp corners */
   :root[data-platform='android'] [data-kit='p-select'][data-where='bar'] {
-    height: 32px; max-width: 40vw; padding: var(--space-0) var(--space-2) var(--space-0) var(--space-4); border: var(--hairline) solid var(--outline);
+    height: var(--chip-h); max-width: 40vw; padding: var(--space-0) var(--space-2) var(--space-0) var(--space-4); border: var(--hairline) solid var(--outline);
     border-radius: var(--radius-xs); background: transparent; color: var(--on-surface-var); font: var(--type-label-l); letter-spacing: var(--track-label-l);
   }
   :root[data-platform='android'] [data-kit='p-select'][data-where='bar'] > [data-kit='icon']:last-child { width: var(--size-icon-lg); height: var(--size-icon-lg); color: var(--on-surface-var); }
@@ -333,7 +333,7 @@
      each on its own line, right-aligned, so the time never sits on a pill (r285); the title stops at that column */
   :root[data-platform='android'] [data-kit='list-row'][data-layout='feed'] > [data-kit='list-row-title'] { grid-column: 2; padding-right: var(--space-0); }
   /* the feed row's leading column is one fixed width, the crew face's (20): the dot, a reminder's or origin's icon and
-     a crew member's face sit centred in it, so every title starts at one x (r291; the browser's 10 px column let the
+     a crew member's face sit centred in it, so every title starts at one x (r291; the browser's 10-pixel column let the
      face run into the title); Mark done's touch column (composites.css) stays the fourth */
   :root[data-platform='android'] [data-kit='list-row'][data-layout='feed'] { grid-template-columns: var(--size-avatar-sm) minmax(0, 1fr) auto var(--k-feed-done,); }
   :root[data-platform='android'] [data-kit='list-row'][data-layout='feed'] > [data-kit='dot'],

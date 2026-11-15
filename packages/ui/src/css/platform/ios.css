@@ -302,7 +302,7 @@
      each on its own line, right-aligned, so the time never sits on a pill (r285); the title stops at that column */
   :root[data-platform='ios'] [data-kit='list-row'][data-layout='feed'] > [data-kit='list-row-title'] { grid-column: 2; padding-right: var(--space-0); }
   /* the feed row's leading column is one fixed width, the crew face's (20): the dot, a reminder's or origin's icon and
-     a crew member's face sit centred in it, so every title starts at one x (r291; the browser's 10 px column let the
+     a crew member's face sit centred in it, so every title starts at one x (r291; the browser's 10-pixel column let the
      face run into the title); Mark done's touch column (composites.css) stays the fourth */
   :root[data-platform='ios'] [data-kit='list-row'][data-layout='feed'] { grid-template-columns: var(--size-avatar-sm) minmax(0, 1fr) auto var(--k-feed-done,); }
   :root[data-platform='ios'] [data-kit='list-row'][data-layout='feed'] > [data-kit='dot'],
