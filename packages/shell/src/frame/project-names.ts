@@ -19,3 +19,21 @@ export function nameFor(source: string, taken: readonly string[]): string {
   for (let i = 2; taken.includes(name); i++) name = `${base}-${i}`;
   return name;
 }
+
+/** A typed folder without its trailing `/`, `/.` (`/repo/.` is `/repo`), as the server keeps it. */
+export function folderOf(path: string): string {
+  return path.trim().replace(/(?:[/\\]\.?)+$/, '');
+}
+
+/**
+ * The name `runtime.projectAdd` will most likely give a new folder (ADR-0077's rule: the name asked for, else its last
+ * part without `.git`, lower case, spaces as `-`; `-2`, `-3`… when taken). Only the optimistic row's until the server's
+ * answer lands: the server names it, in its store's transaction.
+ */
+export function addedName(source: string, taken: readonly string[], asked?: string): string {
+  const last = (folderOf(source).split(/[/\\:]/).pop() ?? '').replace(/\.git$/, '').toLowerCase().replace(/ /g, '-');
+  const base = asked?.trim() || last || 'project';
+  let name = base;
+  for (let i = 2; taken.includes(name); i++) name = `${base}-${i}`;
+  return name;
+}

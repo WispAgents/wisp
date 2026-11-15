@@ -122,6 +122,30 @@ async fn every_builtin_tool_reaches_a_registered_owner() {
     a.serve.stop();
 }
 
+/// An agent adds a project through its MCP tool (`runtime_projectAdd`, generated from the catalogue, ADR-0040) and gets
+/// the server's naming (ADR-0077): a second `wisp` folder is `wisp-2`, the same folder again is the one it is.
+#[tokio::test(flavor = "multi_thread")]
+async fn an_agent_adds_a_project_through_its_mcp_tool_and_the_server_names_it() {
+    let a = Agent::start("mcp-project-add").await;
+    assert!(a.names(true).await.iter().any(|n| n == "runtime_projectAdd"), "the agent has the tool");
+    let (one, two) = (a.dir.join("a/wisp"), a.dir.join("b/wisp"));
+    for (p, want) in [(&one, "\"name\":\"wisp\""), (&two, "\"name\":\"wisp-2\""), (&one, "\"created\":false")] {
+        let (t, err) = a.call("runtime_projectAdd", json!({ "path": p })).await;
+        assert!(!err && t.replace(' ', "").contains(want), "{}: {t}", p.display());
+    }
+    let names: Vec<String> = a
+        .api
+        .cmd("resources.export", json!({ "kinds": ["project"] }))
+        .await
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|r| r["name"].as_str().unwrap().to_owned())
+        .collect();
+    assert!(names.contains(&"wisp".to_owned()) && names.contains(&"wisp-2".to_owned()), "{names:?}");
+    a.serve.stop();
+}
+
 #[tokio::test(flavor = "multi_thread")]
 async fn wisp_mcp_crew_tools_add_read_edit_and_remove_a_member() {
     let a = Agent::start("mcp-user-crew").await;

@@ -85,11 +85,7 @@ pub fn tidy_project(spec: &mut Value) {
 /// server expanded it; v2 stored a folder named `~`).
 pub fn tidy_project_at(spec: &mut Value, home: Option<&std::path::Path>) {
     if let Some(p) = spec.get("path").and_then(Value::as_str) {
-        let p = match (p.trim().strip_prefix('~'), home) {
-            (Some(rest), Some(h)) if rest.is_empty() || rest.starts_with(['/', '\\']) => format!("{}{rest}", h.display()),
-            _ => p.to_owned(),
-        };
-        let c = wisp_runtime_api::paths::canonical_project_path(&p, None);
+        let c = home_canonical(p, home);
         // one folder, one spelling (ADR-0071): an 8.3 short name spelled out (`RUNNER~1` → `runneradmin`), so the
         // project and a task in it (whose folder is spelled out too, `specs::spell_folders`) are one folder to every
         // comparison; a URL is left as it is. Unix: nothing changes.
@@ -97,6 +93,36 @@ pub fn tidy_project_at(spec: &mut Value, home: Option<&std::path::Path>) {
         if let Some(o) = spec.as_object_mut() {
             o.insert("path".into(), Value::String(c));
         }
+    }
+}
+
+/// A typed folder with `~` as your home and in its canonical form (no file system): the first half of [`tidy_project_at`].
+fn home_canonical(p: &str, home: Option<&std::path::Path>) -> String {
+    let p = match (p.trim().strip_prefix('~'), home) {
+        (Some(rest), Some(h)) if rest.is_empty() || rest.starts_with(['/', '\\']) => format!("{}{rest}", h.display()),
+        _ => p.to_owned(),
+    };
+    wisp_runtime_api::paths::canonical_project_path(&p, None)
+}
+
+/// A folder as a project stores it, as [`tidy_project`] spells it but without blocking (`runtime.projectAdd`): `~` your
+/// home, canonical, 8.3 names spelled out (ADR-0071).
+pub async fn project_path(p: &str) -> String {
+    let home = std::env::var_os("HOME").or_else(|| std::env::var_os("USERPROFILE")).map(std::path::PathBuf::from);
+    let c = home_canonical(p, home.as_deref());
+    if c.contains("://") || c.starts_with("git@") { c } else { wisp_proc::plain_str(&c).await }
+}
+
+/// What `runtime.projectAdd` does with `path` (stored as it's kept) among the stored projects (ADR-0076): the project
+/// the folder already is (nothing to write), or a new one under a free name (`name`, else the folder's last part).
+/// Pure: the command runs it inside the store's transaction (`StoredKind::put_with`).
+pub fn project_add(projects: &[(String, Value)], path: &str, name: Option<&str>) -> (Option<(String, Value)>, (String, bool)) {
+    use wisp_runtime_api::paths::{ProjectName, project_name_as};
+    let known: Vec<(String, String)> =
+        projects.iter().map(|(n, v)| (n.clone(), v.get("path").and_then(Value::as_str).unwrap_or_default().to_owned())).collect();
+    match project_name_as(path, name, &known) {
+        ProjectName::Existing(n) => (None, (n, false)),
+        ProjectName::New(n) => (Some((n.clone(), serde_json::json!({ "path": path }))), (n, true)),
     }
 }
 

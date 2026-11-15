@@ -1,4 +1,4 @@
-//! Declared projects: `runtime.projectTest`, `runtime.discover`, `runtime.folders`, `runtime.projectRun`.
+//! Declared projects: `runtime.projectAdd`, `runtime.projectTest`, `runtime.discover`, `runtime.folders`, `runtime.projectRun`.
 
 use std::sync::Arc;
 
@@ -34,6 +34,31 @@ pub(super) fn folders(s: &mut Setup) {
     s.command::<c::Folders, _, _>(move |_ctx, _call, a| async move {
         let home = std::env::var_os("HOME").or_else(|| std::env::var_os("USERPROFILE")).map(std::path::PathBuf::from);
         Ok(crate::found::folders(&a.q, home.as_deref()).await)
+    });
+}
+
+/// `runtime.projectAdd`: a folder as a project, named here (ADR-0076, ADR-0077), so every client (`wisp add`, Projects'
+/// Add, Run on, an agent's MCP tool) gets one rule: the same folder is the project it is, a taken name gets `-2`. The
+/// name is chosen and the row written in one store transaction, so two adds at once never take one name.
+pub(super) fn project_add(s: &mut Setup, projects: Arc<StoredKind>) {
+    s.command::<c::ProjectAdd, _, _>(move |_ctx, _call, a| {
+        let projects = projects.clone();
+        async move {
+            // spelled once where it enters (ADR-0071): `~`, `/repo/.`, `\\?\C:\x`, `RUNNER~1` all as stored
+            let path = crate::kinds::project_path(&a.path).await;
+            wisp_runtime_api::paths::Folder::of(&path)
+                .map_err(|e| WireError::invalid(format!("path: {e} (clone a repo URL first: git.clone)")))?;
+            // a resource name: no path separators or `:` (`project.<name>` in a formula), no control characters
+            if let Some(n) =
+                a.name.as_deref().map(str::trim).filter(|n| n.chars().any(|ch| ch.is_control() || matches!(ch, '/' | '\\' | ':')))
+            {
+                return Err(WireError::invalid(format!("name: {n:?} can't be a project's name (no /, \\, : or control characters)")));
+            }
+            let name = a.name.clone();
+            let at = path.clone();
+            let (name, created) = projects.put_with(move |list| crate::kinds::project_add(list, &at, name.as_deref())).await?;
+            Ok(c::ProjectAdded { name, path, created })
+        }
     });
 }
 

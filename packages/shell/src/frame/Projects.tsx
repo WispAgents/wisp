@@ -11,7 +11,7 @@ import { usePluginClient } from '../slot.tsx';
 import { SESSION, type SessionRow } from '../rows.ts';
 import { useProjects } from './projects.ts';
 import { projectOf, type ProjectView } from './rows-view.ts';
-import { nameFor, whereIs } from './project-names.ts';
+import { addedName, folderOf, nameFor, whereIs } from './project-names.ts';
 import '../i18n/lazy.ts';
 
 const COLORS = ['violet', 'teal', 'amber', 'rose', 'sky', 'lime', 'orange', 'indigo', 'slate'] as const;
@@ -30,6 +30,14 @@ const putProject = defineCommand<{ peer: string; name: string; spec: Record<stri
   owner: (a) => a.peer,
   wire: (a) => ({ resources: [{ kind: 'project', name: a.name, spec: a.spec }], trust: true }),
   optimistic: (_b, a) => [row(a.peer, a.name, a.spec)],
+});
+/** Add a folder: named on the server (runtime.projectAdd, ADR-0077), so a taken name gets `-2` there, never an
+ * overwrite; its row shows at once under the name it will most likely get (`guess`), replaced by the server's. */
+const addProject = defineCommand<{ peer: string; path: string; guess: string }, { name: string; path: string; created: boolean }>({
+  id: 'runtime.projectAdd',
+  owner: (a) => a.peer,
+  wire: (a) => ({ path: a.path }),
+  optimistic: (_b, a) => [row(a.peer, a.guess, { path: a.path })],
 });
 const dropProject = defineCommand<{ peer: string; name: string }>({
   id: 'resources.apply',
@@ -70,18 +78,20 @@ export default function Projects(_p: { readonly client: PluginClient; readonly p
     }
     return out;
   });
-  const add = (path: string, name?: string): void => {
+  const add = (path: string): void => {
     // a folder that's a project already stays one project (v1 addProject returned the one it had)
-    const had = list().find((p) => p.path.replace(/\/+$/, '') === path.trim().replace(/\/+$/, ''));
+    const had = list().find((p) => folderOf(p.path) === folderOf(path));
     if (had) return void shell.toast.show(t('shell.projects.already', { name: had.name }));
-    const n =
-      name ??
-      nameFor(
-        path,
-        list().map((p) => p.id),
-      );
-    void shell.client.commands.run(putProject, { peer: home, name: n, spec: { path } }).then(
-      () => void refetch(),
+    const guess = addedName(
+      path,
+      list().map((p) => p.id),
+    );
+    void shell.client.commands.run(addProject, { peer: home, path, guess }).then(
+      (r) => {
+        // another spelling of a folder that's a project already (`/repo/.`, `~/repo`): the server kept that one
+        if (!r.created) shell.toast.show(t('shell.projects.already', { name: r.name }));
+        void refetch();
+      },
       () => undefined,
     );
   };
@@ -94,14 +104,8 @@ export default function Projects(_p: { readonly client: PluginClient; readonly p
     void shell.client.commands
       .run(clone, { peer: home, url: v })
       .then(
-        (c) =>
-          add(
-            c.dir,
-            nameFor(
-              v,
-              list().map((p) => p.id),
-            ),
-          ),
+        // named after its clone's folder (the repo's name), `-2` on the server when that's taken
+        (c) => add(c.dir),
         () => setSource(v),
       )
       .finally(() => setAdding(false));

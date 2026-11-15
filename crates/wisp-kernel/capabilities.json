@@ -66,6 +66,7 @@
     { "permission": "stuff:read{project:other}", "what": "read an item of another project" },
     { "permission": "fs:read{scope:outside}", "what": "show a file from outside its folders" },
     { "permission": "prs:read{by:url}", "what": "read a PR by URL: give its number in this task’s repo" },
+    { "permission": "runtime:projectAdd", "what": "add a folder to the user’s projects" },
     { "permission": "crew:write", "what": "change the user’s crew" },
     { "permission": "crew:share", "what": "put the user’s crew on a link" },
     { "permission": "crew:read{project:other}", "what": "read a member of another project" },

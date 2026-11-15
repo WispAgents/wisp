@@ -402,6 +402,35 @@ impl StoredKind {
         out.sort_by(|a, b| a.0.cmp(&b.0));
         Ok(out)
     }
+
+    /// One transaction that reads every stored spec (by name) and stores what `pick` chooses: `(Some((name, spec)),
+    /// out)` upserts that row, `(None, out)` writes nothing. The store has one writer and the read is inside its
+    /// transaction, so two calls never both see a name as free (`runtime.projectAdd`, ADR-0077). The spec is stored as
+    /// `pick` gives it: the owner tidies it first (no file system on the writer thread). Additive (2026-11-15).
+    pub async fn put_with<T, F>(&self, pick: F) -> Result<T>
+    where
+        T: Send + 'static,
+        F: FnOnce(&[(String, Value)]) -> (Option<(String, Value)>, T) + Send + 'static,
+    {
+        let store = self.store()?;
+        let kind = self.def.kind;
+        store
+            .write(move |w| {
+                let rows = w.query(kind, &wisp_store::Query::new())?;
+                let specs: Vec<(String, Value)> =
+                    rows.into_iter().filter_map(|r| Some((r.get("id")?.as_str()?.to_owned(), r.get("body")?.clone()))).collect();
+                let (put, out) = pick(&specs);
+                if let Some((name, spec)) = put {
+                    let mut r = wisp_store::Row::new();
+                    r.insert("id".into(), Value::String(name));
+                    r.insert("body".into(), spec);
+                    w.upsert(kind, r)?;
+                }
+                Ok(out)
+            })
+            .await
+            .map_err(store_err)
+    }
 }
 
 impl ResourceKind for StoredKind {

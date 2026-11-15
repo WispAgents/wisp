@@ -64,7 +64,7 @@ turn ("Kept 6 of 8"). A mock with 2 variants goes to the owner before any build.
 
 ## Order
 
-1. **Now:** this plan; ADR draft (`docs/adr/0077-long-threads.md`, status Proposed): naming settled (Notes, Thread tab).
+1. **Now:** this plan; ADR draft (`docs/adr/0078-long-threads.md`, status Proposed): naming settled (Notes, Thread tab).
 2. **When v1's PR merges:** read its final code and tests, list its bugs (port intent, not bugs), then:
    1. `wisp.threads` data + `wisp_ledger` (MCP) + CLI + the note (no UI yet) — the core.
    2. Output offload (`wisp hook offload`) in the Claude plugin, then others.

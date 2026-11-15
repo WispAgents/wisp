@@ -20,7 +20,7 @@ use wisp_resources_api::{KindInfo, stored, stored_published_tidied};
 pub use brief::Brief;
 pub use harness::{HarnessSpec, declared};
 pub use issues::IssueProjects;
-pub use project::{ProjectSpec, project_for, with_test};
+pub use project::{ProjectSpec, project_add, project_for, project_path, with_test};
 pub use team::{SkillSpec, TeamSpec};
 
 /// The stored kinds, for `prepare` to read.

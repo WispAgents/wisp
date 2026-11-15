@@ -560,6 +560,33 @@ pub struct ProjectTestArgs {
     pub test_command: String,
 }
 
+/// `runtime.projectAdd`: a folder as a project, named on the server (ADR-0076, ADR-0077): the same folder again is
+/// the project it is (nothing written); else `name` (or the folder's last part), `-2`, `-3`… when that's taken. The
+/// imperative add every client uses (`wisp add`, Projects' Add, Run on, an agent); `resources.apply` stays the
+/// declarative one, where a spec's name is its id. Additive (2026-11-15).
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export, export_to = "runtime/")]
+pub struct ProjectAddArgs {
+    /// a full path to the folder (`~` is your home); clone a repo URL first (`git.clone`)
+    pub path: String,
+    /// the name it should go by; a taken one gets `-2` (left out: the folder's last part)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub name: Option<String>,
+}
+
+/// `runtime.projectAdd`'s answer: the project's name, and whether this call made it (`false`: the folder was one).
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export, export_to = "runtime/")]
+pub struct ProjectAdded {
+    pub name: String,
+    /// the folder as it's stored (canonical, ADR-0071)
+    pub path: String,
+    pub created: bool,
+}
+
 /// `runtime.sessions`: this folder's sessions run outside wisp, across harnesses (ADR-0035). Additive.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]

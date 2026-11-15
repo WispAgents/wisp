@@ -376,6 +376,10 @@
       {
         "id": "runtime.projectTest",
         "title": "Set the command that runs a project's tests"
+      },
+      {
+        "id": "runtime.projectAdd",
+        "title": "Add a folder as a project (the same folder stays one project; a taken name gets -2)"
       }
     ],
     "topics": [

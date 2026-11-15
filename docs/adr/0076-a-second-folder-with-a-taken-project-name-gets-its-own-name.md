@@ -60,3 +60,9 @@
 - Other symlinks to one folder are still two spellings: `same_folder` reads no file system (sans-IO).
 - Two clients adding two same-named folders at the same moment can still choose the same free name. The later
   apply wins. That needs two adds within one round trip, so it is left open.
+
+## Follow-up
+
+- ADR-0077: imperative adds (`wisp add`, Projects' Add, Run on, an agent's MCP tool) go through `runtime.projectAdd`,
+  which names the folder on the server in one store transaction, so the race above is closed and no client names a
+  project. `resources.apply` keeps the declarative meaning of point 4.

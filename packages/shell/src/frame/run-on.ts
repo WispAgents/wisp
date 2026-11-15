@@ -3,7 +3,6 @@
 // else a repo in its usual folders) or clones the origin, and the checkout joins its projects, so the next launch finds
 // it at once. A folder that isn't a repo with an origin can't be set up there, as v1 said.
 import { defineCommand } from '@wisp/client';
-import { nameFor } from './project-names.ts';
 
 type Run = <A, R>(cmd: ReturnType<typeof defineCommand<A, R>>, args: A) => Promise<R>;
 
@@ -30,10 +29,11 @@ const projectsOf = defineCommand<{ peer: string }, Theirs>({
   optimistic: 'none',
   pending: 'Run on',
 });
-const addProject = defineCommand<{ peer: string; name: string; path: string }>({
-  id: 'resources.apply',
+// that computer names it (runtime.projectAdd, ADR-0077): `name`, or `name-2` there when another folder has it
+const addProject = defineCommand<{ peer: string; name: string; path: string }, { name: string; created: boolean }>({
+  id: 'runtime.projectAdd',
   owner: (a) => a.peer as never,
-  wire: (a) => ({ resources: [{ kind: 'project', name: a.name, spec: { path: a.path } }] }),
+  wire: (a) => ({ path: a.path, name: a.name }),
   optimistic: 'none',
   pending: 'Run on',
 });
@@ -66,8 +66,8 @@ export async function placeOn(o: {
   const known = list.map((p) => p.spec?.path ?? '').filter(Boolean);
   const got = await o.run(checkout, { peer: o.peer, url: here.origin, known });
   // a checkout it didn't know as a project joins its projects (v1 store.addProject on that machine), under a name of
-  // its own there: a project is keyed by its name (ADR-0076), so its `web` at another folder is never replaced
-  const taken = list.map((p) => p.name ?? '').filter(Boolean);
-  if (!known.includes(got.dir)) await o.run(addProject, { peer: o.peer, name: nameFor(o.name, taken), path: got.dir }).catch(() => undefined);
+  // its own there, picked by that computer in its store's transaction (ADR-0076, ADR-0077): its `web` at another
+  // folder is never replaced
+  if (!known.includes(got.dir)) await o.run(addProject, { peer: o.peer, name: o.name, path: got.dir }).catch(() => undefined);
   return moved(o.cwd, here.root || o.cwd, got.dir);
 }

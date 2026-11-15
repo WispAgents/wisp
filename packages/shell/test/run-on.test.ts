@@ -26,7 +26,7 @@ test('on another computer a task runs in that computer s checkout of the same re
   // cloned there (or found outside its projects): it joins that computer's projects, so the next launch finds it
   const g = fake({ origin: 'git@github.com:me/web.git', dir: '/studio/code/web-2' });
   expect(await placeOn({ cwd: '/me/code/web', peer: 'studio', home: 'laptop', name: 'web', where: 'Studio', run: g.run, say })).toBe('/studio/code/web-2');
-  expect(g.calls.at(-1)).toEqual(['resources.apply', 'studio', { peer: 'studio', name: 'web', path: '/studio/code/web-2' }]);
+  expect(g.calls.at(-1)).toEqual(['runtime.projectAdd', 'studio', { peer: 'studio', name: 'web', path: '/studio/code/web-2' }]);
 });
 
 test('here stays as it is; a folder with no origin can t be set up there, as v1 said_v1_run_on_no_origin', async () => {
@@ -38,9 +38,11 @@ test('here stays as it is; a folder with no origin can t be set up there, as v1 
 });
 
 test('a checkout joins that computer s projects beside its own same-named one, never replacing it_r288_run_on_same_name', async () => {
-  // the other computer has a `web` at another folder (not this repo's checkout): the new one is `web-2` beside it
+  // the other computer has a `web` at another folder (not this repo's checkout): the checkout is added there through
+  // runtime.projectAdd, which names it (`web-2` beside it, ADR-0077); never a resources.apply of a name that's taken
   const f = fake({ origin: 'git@github.com:me/web.git', projects: ['/studio/forks/web'], dir: '/studio/code/web' });
   expect(await placeOn({ cwd: '/me/code/web', peer: 'studio', home: 'laptop', name: 'web', where: 'Studio', run: f.run, say })).toBe('/studio/code/web');
   expect(f.calls[2]?.[2]).toMatchObject({ known: ['/studio/forks/web'] });
-  expect(f.calls.at(-1)).toEqual(['resources.apply', 'studio', { peer: 'studio', name: 'web-2', path: '/studio/code/web' }]);
+  expect(f.calls.at(-1)).toEqual(['runtime.projectAdd', 'studio', { peer: 'studio', name: 'web', path: '/studio/code/web' }]);
+  expect(f.calls.map((c) => c[0])).not.toContain('resources.apply');
 });

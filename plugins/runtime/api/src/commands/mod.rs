@@ -130,6 +130,7 @@ command!(Quick = "runtime.quick": QuickArgs => QuickResult);
 command!(QuickCancel = "runtime.quickCancel": QuickCancelArgs => QuickCancelled);
 command!(ProjectRun = "runtime.projectRun": ProjectRunArgs => Value);
 command!(ProjectTest = "runtime.projectTest": ProjectTestArgs => Ack);
+command!(ProjectAdd = "runtime.projectAdd": ProjectAddArgs => ProjectAdded);
 command!(Discover = "runtime.discover": DiscoverArgs => Vec<FoundRepo>, read_only);
 command!(Folders = "runtime.folders": FoldersArgs => Vec<String>, read_only);
 command!(Usage = "runtime.usage": UsageArgs => UsageSummary, read_only);

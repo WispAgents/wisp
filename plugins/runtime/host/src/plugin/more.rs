@@ -29,6 +29,7 @@ pub(super) fn more(s: &mut Setup, slot: &Slot, harness_kind: Arc<StoredKind>, ki
     cmd!(s, slot, c::SignIn, |r, call, a| r.sign_in(a.id.as_str(), &a.turn_id).await.map(|_| c::Ack {}));
     cmd!(s, slot, c::SignInDone, |r, call, a| r.sign_in_done(&a.agent, &a.account).await.map(|()| c::Ack {}));
     cmd!(s, slot, c::Overage, |r, call, a| r.overage(a.id.as_str(), &a.turn_id, &a.kind).await.map(|()| c::Ack {}));
+    super::projects::project_add(s, kinds_for_run.clone());
     super::projects::project_test(s, kinds_for_run.clone());
     super::projects::discover(s, kinds_for_run.clone());
     super::projects::folders(s);

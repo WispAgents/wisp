@@ -1,7 +1,7 @@
 // v1 #772: one stored project order used wherever projects show; a task belongs to the project that holds its folder.
 import { expect, test } from 'vitest';
 import { movedOrder, projectList, projectOf } from '../src/frame/rows-view.ts';
-import { nameFor, whereIs } from '../src/frame/project-names.ts';
+import { addedName, folderOf, nameFor, whereIs } from '../src/frame/project-names.ts';
 
 test('projects_read_from_their_rows_in_your_order_and_a_task_is_in_the_project_holding_its_folder', () => {
   const rows = [
@@ -36,4 +36,17 @@ test('a_found_repo_shows_where_it_is_as_v1_did', () => {
   expect(whereIs('/Users/me/code/web')).toBe('~/code');
   expect(whereIs('/home/me/src/api/')).toBe('~/src');
   expect(whereIs('/opt/repos/x')).toBe('/opt/repos');
+});
+
+test('the optimistic row of an added folder guesses runtime.projectAdd s name, never a taken one_adr0077_guess', () => {
+  expect(addedName('/a/wisp', [])).toBe('wisp');
+  expect(addedName('/b/wisp/', ['wisp'])).toBe('wisp-2');
+  expect(addedName('/w/My App', [])).toBe('my-app');
+  expect(addedName('C:\\work\\Api.git', ['api'])).toBe('api-2');
+  expect(addedName('/c/server', ['api'], ' api ')).toBe('api-2');
+  expect(addedName('/', [])).toBe('project');
+  // `/repo/.` is `/repo`: the guess is `repo`, never `.` (and Projects finds it's a project already)
+  expect(addedName('/w/repo/.', [])).toBe('repo');
+  expect(folderOf('/w/repo/./')).toBe('/w/repo');
+  expect(folderOf('C:\\w\\repo\\')).toBe('C:\\w\\repo');
 });

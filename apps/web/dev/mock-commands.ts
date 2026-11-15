@@ -759,6 +759,25 @@ export const COMMANDS: Record<string, CommandFn> = {
       });
     return { ops, result: { applied: ops.length } };
   },
+  // a folder as a project (`runtime.projectAdd`, ADR-0077), named as the server names it: the same folder is the
+  // project it is; else the name asked for (or the folder's last part, lower case, spaces as `-`), `-2`, `-3`… if taken
+  'runtime.projectAdd': (a, ctx) => {
+    const typed = str(obj(a), 'path').trim();
+    if (!typed.startsWith('/') && !/^[A-Za-z]:[\\/]/.test(typed)) refuse('invalid', `path: ${typed} isn't a full path to a folder`);
+    const tidy = (p: string): string => p.trim().replace(/(?:\/\.?)+$/, '') || '/';
+    const path = tidy(typed);
+    const rows = ctx.rows('config').filter((r) => r.e === 'project').map((r) => obj(r.v));
+    const had = rows.find((v) => tidy(String(v['path'] ?? '')) === path);
+    if (had) return { ops: [], result: { name: String(had['name'] ?? ''), path, created: false } };
+    const last = (path.split(/[\\/]/).pop() ?? '').replace(/\.git$/, '').toLowerCase().replace(/ /g, '-');
+    const asked = obj(a)['name'];
+    const base = (typeof asked === 'string' ? asked.trim() : '') || last || 'project';
+    const taken = new Set(rows.map((v) => String(v['name'] ?? '')));
+    let name = base;
+    for (let i = 2; taken.has(name); i++) name = `${base}-${i}`;
+    const op: EntityOp = { topic: 'config' as Topic, e: 'project', id: `${ctx.peer}:${name}`, op: 'upsert', v: { id: `${ctx.peer}:${name}`, name, path, color: 'violet' } };
+    return { ops: [op], result: { name, path, created: true } };
+  },
   // a folder's repo (git.origin): the project's folder is a checkout of wisp's repo; anything else isn't a repo
   'git.origin': (a, ctx) => {
     const path = str(obj(a), 'path');

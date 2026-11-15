@@ -85,6 +85,14 @@ pub enum ProjectName {
 /// as `-`; a root or empty path is `project`.
 #[must_use]
 pub fn project_name_for(path: &str, projects: &[(String, String)]) -> ProjectName {
+    project_name_as(path, None, projects)
+}
+
+/// [`project_name_for`], the new project's base `name` when the caller gives one (`runtime.projectAdd`'s `name`,
+/// trimmed; empty is none): a taken one gets `-2`, `-3`… as a folder's last part does. The same folder is still the
+/// project it is, whatever name is asked for. Additive (2026-11-15).
+#[must_use]
+pub fn project_name_as(path: &str, name: Option<&str>, projects: &[(String, String)]) -> ProjectName {
     // macOS: a shell's own folder is `/private/tmp/…` where you typed `/tmp/…` (as `project_for` reads a task's)
     let bare = |p: &str| p.trim().strip_prefix("/private").filter(|r| r.starts_with('/')).map_or_else(|| p.to_owned(), str::to_owned);
     if let Some((n, _)) = projects.iter().find(|(_, p)| same_folder(p, path) || same_folder(&bare(p), &bare(path))) {
@@ -92,15 +100,19 @@ pub fn project_name_for(path: &str, projects: &[(String, String)]) -> ProjectNam
     }
     let last = path.trim().trim_end_matches(['/', '\\']).rsplit(['/', '\\', ':']).next().unwrap_or_default();
     let last = last.strip_suffix(".git").unwrap_or(last).to_lowercase().replace(' ', "-");
-    let base = if last.is_empty() { "project".to_owned() } else { last };
+    let base = match name.map(str::trim).filter(|n| !n.is_empty()) {
+        Some(n) => n.to_owned(),
+        None if last.is_empty() => "project".to_owned(),
+        None => last,
+    };
     let taken = |n: &str| projects.iter().any(|(t, _)| t == n);
-    let mut name = base.clone();
+    let mut free = base.clone();
     let mut i = 2u32;
-    while taken(&name) {
-        name = format!("{base}-{i}");
+    while taken(&free) {
+        free = format!("{base}-{i}");
         i += 1;
     }
-    ProjectName::New(name)
+    ProjectName::New(free)
 }
 
 /// `path` is `root` or inside it, whichever separators either uses (`C:\repo\src` in `C:/Repo`; `/repository` is not

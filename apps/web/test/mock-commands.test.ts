@@ -199,3 +199,21 @@ test('crew_assign_starts_a_running_job_for_the_member_and_runtime_answer_clears_
   const ops = (ans?.ops[0] as { ops: { path: string; value: unknown }[] }).ops;
   expect(ops).toEqual(expect.arrayContaining([{ op: 'replace', path: '/state', value: 'running' }, { op: 'replace', path: '/body/ext/wisp.runtime/ask', value: null }]));
 });
+
+test('runtime.projectAdd names as the server does (ADR-0077): wisp then wisp-2, the same folder once, a taken name -2', () => {
+  const rows: { e: string; id: string; v: unknown }[] = [];
+  const ctx = { peer: 'local', rows: () => rows } as unknown as CommandCtx;
+  const add = (args: unknown): Record<string, unknown> => {
+    const out = COMMANDS['runtime.projectAdd']?.(args, ctx) as { ops: { e: string; id: string; v: unknown }[]; result: Record<string, unknown> };
+    rows.push(...out.ops);
+    return out.result;
+  };
+  expect(add({ path: '/a/wisp' })).toEqual({ name: 'wisp', path: '/a/wisp', created: true });
+  expect(add({ path: '/b/wisp' })).toEqual({ name: 'wisp-2', path: '/b/wisp', created: true });
+  expect(add({ path: '/a/wisp/.' })).toEqual({ name: 'wisp', path: '/a/wisp', created: false });
+  expect(add({ path: '/c/server', name: 'wisp' })['name']).toBe('wisp-3');
+  expect(Object.keys(add({ path: '/d/My App' })).sort()).toEqual(bindingFields('plugins/runtime/api/bindings/runtime/ProjectAdded.ts'));
+  expect(rows.map((r) => (r.v as { name?: string }).name)).toEqual(['wisp', 'wisp-2', 'wisp-3', 'my-app']);
+  expect(() => add({ path: 'wisp' })).toThrow();
+  expect(() => add({ path: '' })).toThrow();
+});
