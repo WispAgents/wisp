@@ -23,6 +23,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Fixed
 
+- **A task ID put in from a phone keyboard's clipboard shows as the task.** Gboard's clipboard suggestion puts text in like typing, with no paste event, so a copied task ID stayed a bare ID in the reply box and New task instead of becoming the task's `@title` chip. An ID that lands whole in one go now becomes the chip, wherever it goes in the text. Typing one a letter at a time still stays text.
 - **A check-in a lead scheduled goes while it waits on its subagents.** A task that delegated, scheduled a follow-up (`resume_later`) and ended its turn showed *Waiting on …*, and when the time came nothing happened: the follow-up was held until every subagent had finished. Now it goes on time, and the subagents' report still comes back to it when they're done.
 - **A doc block's Read all stays under your finger on a phone.** Pressing it shrank the button and dropped its centring, so it jumped right by half its width as you tapped.
 - **An opened step in a task's activity shows its whole title.** A long step ("Running a Python script, then searching for …") stayed cut after you opened it, both on screen and in the title wisp saved; now an opened step shows its full title, wrapped. Steps from before this fix stay cut.
