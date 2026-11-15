@@ -23,7 +23,7 @@ Rust for everything but the UI, Solid/TS for the UI, everything a plugin (ADR-00
 | CI, last full run (2790d627) | Linux + macOS: 1 failing test (`serve_orphans` probe), fixed by round 234, re-run pending · Windows: cancelled (open groups, §8) · desktop builds + Android: green |
 | Budgets | initial JS 118.8 KB br (≤ 120) · **CSS 30.0 KB (≤ 30): over**, coder-r242 making room |
 | Weekly usage | 86 % (owner allowed 3 coders: free reset) |
-| Coders running | coder-r239 (launcher name breakpoints), coder-r242 (initial CSS budget) |
+| Coders running | coder-r242 (initial CSS budget), coder-r243 (launcher bar v1 details) |
 
 ## 3. Owner directions (standing rules)
 
@@ -697,10 +697,11 @@ Source: `docs/v1-features.md` (each row's evidence and test). `[x]` built, `[ ]`
 
 | Round | What | State |
 |---|---|---|
+| 243 | Launcher bar v1 details: More options label at ≤520, bar gap 521–960, lead's model when comparing, unknown model = Default | in progress |
 | 242 | Initial CSS back under budget (30.0 > 30.0 KB br) without changing looks | in progress |
 | 241 | Review of rounds 227, 228, 229: one fix (offline time in app locale); all committed | committed |
 | 240 | Picker account row wraps as v1 (Wrap group); task clock locale | committed (af6dd52b, f838e783) |
-| 239 | Launcher hides a hand-picked harness's name at v1's breakpoint (520 px, default model only), not 640 | in progress |
+| 239 | Harness pill folds at v1's breakpoints (8 rules aligned) | committed (441ea737) |
 | 238 | Auto pick segment: v2 already matches v1's shortLabel; test pins it | committed (61ddba34) |
 | 236 | "What will Auto run" + compare runs on the picker | committed (c390aca5; its app-picker.css .pk-vary waits for r237) |
 | 237 | 3 check errors fixed (dev proxy in @wisp/web, picker-h token, no wrap) + dayName locale | committed (4fda9295, 85c563ac, c659fbee) |
