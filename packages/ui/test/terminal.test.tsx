@@ -105,6 +105,32 @@ describe('<Terminal>', () => {
     expect(sent).toEqual(['\x1b[200~a\rb\x1b[201~']);
   });
 
+  it('a paste after selecting text on the screen reaches the program; a click or a field elsewhere takes it back', () => {
+    const s = new Screen(20, 4);
+    const sent: string[] = [];
+    mount(() => <Terminal screen={s} onData={(d) => sent.push(d)} labels={LABELS} />);
+    const screen = part('ui.terminal.screen');
+    if (!screen) throw new Error('no screen');
+    const outside = document.createElement('div');
+    const field = document.createElement('textarea');
+    document.body.append(outside, field);
+    const paste = (at: EventTarget, text: string): Event => {
+      const e = new Event('paste', { bubbles: true, cancelable: true }) as Event & { clipboardData: unknown };
+      Object.defineProperty(e, 'clipboardData', { value: { getData: () => text, files: [] } });
+      at.dispatchEvent(e);
+      return e;
+    };
+    // Select text on the screen to copy it: the keys leave the hidden input, then ⌘V lands on the screen.
+    screen.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }));
+    screen.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }));
+    expect(paste(screen, 'ls -la').defaultPrevented).toBe(true);
+    expect(paste(document.body, '\n').defaultPrevented).toBe(true); // on the page too
+    expect(paste(field, 'mine').defaultPrevented).toBe(false); // a text box takes its own paste
+    outside.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }));
+    expect(paste(document.body, 'gone').defaultPrevented).toBe(false); // clicked elsewhere since
+    expect(sent).toEqual(['ls -la', '\r']);
+  });
+
   it('shows the waiting line until the program draws, and a new screen starts over', async () => {
     const a = new Screen(20, 4);
     const b = new Screen(20, 4);

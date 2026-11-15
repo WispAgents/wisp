@@ -59,6 +59,21 @@ export function pasted(text: string, bracketed: boolean): string {
   return bracketed ? `\x1b[200~${body.replace(/\x1b\[20[01]~/g, '')}\x1b[201~` : body;
 }
 
+/** A paste's target as far as `strayPaste` needs it: an element (or none: the page). */
+export interface PasteTarget {
+  closest?(selector: string): unknown;
+}
+
+/**
+ * Whether a paste that missed the terminal's hidden input is still the terminal's (v1 #797): no text
+ * box took it (it landed on the page, or on the screen after you selected text there to copy), and
+ * the terminal shows, runs and was the last thing you clicked or opened.
+ */
+export function strayPaste(target: PasteTarget | null, t: { readonly owns: boolean; readonly shown: boolean; readonly running: boolean }): boolean {
+  if (target?.closest?.('input, textarea, select, [contenteditable="true"], [contenteditable=""], [contenteditable="plaintext-only"]')) return false;
+  return t.owns && t.shown && t.running;
+}
+
 /** The phone's key row: the keys a phone keyboard lacks. `ctrl` and `paste` are handled by the view. */
 export const KEY_ROW = ['esc', 'ctrlc', 'tab', 'stab', 'ctrl', 'left', 'up', 'down', 'right', 'paste'] as const;
 export type RowKey = (typeof KEY_ROW)[number];

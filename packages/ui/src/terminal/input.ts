@@ -2,7 +2,7 @@
 // that take it, the wheel and swipes for full-screen programs, and the phone's key row. Wired to
 // plain elements so the component stays a thin shell; every listener goes with `signal`.
 
-import { compose, FOCUS_IN, FOCUS_OUT, keyBytes, mouseDrag, mousePress, mouseRelease, pasted, rowKeyBytes, wheelBytes, type RowKey } from './keys.ts';
+import { compose, FOCUS_IN, FOCUS_OUT, keyBytes, mouseDrag, mousePress, mouseRelease, pasted, rowKeyBytes, strayPaste, wheelBytes, type RowKey } from './keys.ts';
 import type { Screen } from './screen.ts';
 
 export interface InputHost {
@@ -12,6 +12,8 @@ export interface InputHost {
   readonly signal: AbortSignal;
   screen(): Screen;
   ended(): boolean;
+  /** on screen now (not in a hidden pane) */
+  shown(): boolean;
   mac(): boolean;
   touch(): boolean;
   /** bytes for the program; the view jumps to the bottom */
@@ -61,6 +63,7 @@ export function wireKeys(h: InputHost): void {
     typed(h, b);
   }, h);
   wireText(h);
+  wirePaste(h);
   on(ta, 'focus', () => {
     h.setFocused(true);
     focusReport(h, FOCUS_IN);
@@ -110,6 +113,46 @@ function wireText(h: InputHost): void {
     e.preventDefault();
     typed(h, pasted(e.clipboardData?.getData('text/plain') ?? '', h.screen().modes.paste));
   }, h);
+}
+
+// The terminal last clicked or opened, per page: it takes a paste that missed its input (v1 #797).
+const owners = new WeakMap<Document, InputHost>();
+
+/** This terminal takes the next paste no text box takes; even before it can take the focus (WebKit). */
+export function ownPaste(h: InputHost): void {
+  owners.set(h.box.ownerDocument, h);
+}
+
+/**
+ * Selecting text on the screen to copy takes the keys out of the hidden input (the screen isn't a
+ * field), so ⌘V would land on the page and do nothing. The terminal you last clicked or opened takes
+ * a paste no text box did; a click or a field anywhere else gives it back to the page.
+ */
+function wirePaste(h: InputHost): void {
+  const doc = h.box.ownerDocument;
+  const root = h.box.parentElement ?? h.box; // the screen and its key row
+  const inside = (t: EventTarget | null): boolean => t instanceof Node && root.contains(t);
+  const release = (e: Event): void => {
+    if (owners.get(doc) === h && !inside(e.target)) owners.delete(doc);
+  };
+  on(root, 'pointerdown', () => ownPaste(h), h);
+  doc.addEventListener('pointerdown', release, { capture: true, signal: h.signal });
+  doc.addEventListener('focusin', release, { signal: h.signal });
+  doc.addEventListener('paste', (e) => {
+    if (e.defaultPrevented) return; // a field (or this terminal's input) took it
+    const data = e.clipboardData;
+    const text = data?.getData('text/plain') ?? '';
+    // A copied file (its name is the text too) stays for the page's own handlers (attachments).
+    if (!text || (data?.files.length ?? 0) > 0) return;
+    const target = e.target instanceof Element ? e.target : null;
+    if (!strayPaste(target, { owns: owners.get(doc) === h, shown: h.shown(), running: !h.ended() })) return;
+    e.preventDefault();
+    typed(h, pasted(text, h.screen().modes.paste));
+    h.focus(); // and the keys after it (Enter) go in too
+  }, { signal: h.signal });
+  h.signal.addEventListener('abort', () => {
+    if (owners.get(doc) === h) owners.delete(doc);
+  });
 }
 
 /** the 1-based cell under a point */

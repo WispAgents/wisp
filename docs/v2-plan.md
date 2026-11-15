@@ -57,7 +57,7 @@ Rust for everything but the UI, Solid/TS for the UI, everything a plugin (ADR-00
       grid accounts (ADR-0061), cloud API keys (ADR-0058), cloud previews (ADR-0064), harness detection topic (ADR-0066)
 - [x] Process hygiene: nothing outlives a killed server (guard, Windows jobs, exec plugins ADR-0063, probes)
 - [x] `.env` masking everywhere a value can leave (ADR-0050, 0054, 0055)
-- [ ] **v1 sync** (`docs/v1-sync.md`): port v1 #797 (Shell paste after selecting); #789 with phone step 13. #795 (lead's
+- [ ] **v1 sync** (`docs/v1-sync.md`): #789 with phone step 13. #797 (Shell paste after selecting) done; #795 (lead's
       check-in while waiting on subagents) and #796 (compact follow-ups list) done in r246; #794 (Plan on Claude Code runs
       commands, side discussions' action buttons in the main task's folder) done in r253; found there: v2 has no side gate
       or clash check (v1 side-gate.js): a side discussion runs in a scratch folder with no side note or main-task digest

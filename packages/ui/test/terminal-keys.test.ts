@@ -1,6 +1,6 @@
 // What the terminal sends (src/terminal/keys.ts): v1's keyBytes cases, ported, plus the rest.
 import { describe, expect, it } from 'vitest';
-import { compose, keyBytes, pasted, rowKeyBytes, wheelBytes, type KeyLike } from '../src/terminal/keys.ts';
+import { compose, keyBytes, pasted, rowKeyBytes, strayPaste, wheelBytes, type KeyLike } from '../src/terminal/keys.ts';
 
 const k = (key: string, mods: Omit<KeyLike, 'key'> = {}): string | null => keyBytes({ key, ...mods });
 
@@ -62,5 +62,19 @@ describe('the rest of the input', () => {
     expect(compose('hel', 'help')).toBe('p');
     expect(compose('helo', 'hello')).toBe('\x7flo');
     expect(compose('日本', '日')).toBe('\x7f');
+  });
+});
+
+describe('strayPaste', () => {
+  it('a paste no field took goes to the terminal last clicked or opened', () => {
+    const page = { closest: (): null => null }; // the page or the screen: after selecting text to copy, the keys are there
+    const field = { closest: (sel: string): object | null => (sel.includes('textarea') ? {} : null) };
+    const term = { owns: true, shown: true, running: true };
+    expect(strayPaste(page, term)).toBe(true); // selected text in the shell, then ⌘V
+    expect(strayPaste(null, term)).toBe(true);
+    expect(strayPaste(field, term)).toBe(false); // a text box takes its own paste
+    expect(strayPaste(page, { ...term, owns: false })).toBe(false); // clicked elsewhere since
+    expect(strayPaste(page, { ...term, shown: false })).toBe(false);
+    expect(strayPaste(page, { ...term, running: false })).toBe(false); // an ended shell takes no keys
   });
 });

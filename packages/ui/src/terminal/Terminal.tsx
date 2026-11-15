@@ -9,7 +9,7 @@
 import { createEffect, createSignal, For, on, onCleanup, onMount, Show, type JSX } from 'solid-js';
 import { flag, type KitProps } from '../core/props.ts';
 import { KEY_ROW, type RowKey } from './keys.ts';
-import { rowKey, wireKeys, wireMouse, wireScroll, type InputHost } from './input.ts';
+import { ownPaste, rowKey, wireKeys, wireMouse, wireScroll, type InputHost } from './input.ts';
 import { Painter } from './paint.ts';
 import type { Screen } from './screen.ts';
 import '../css/terminal.css';
@@ -175,6 +175,7 @@ export function Terminal(props: TerminalProps): JSX.Element {
     signal: ctl.signal,
     screen: () => props.screen,
     ended: () => props.ended === true,
+    shown,
     mac: () => props.mac ?? isMac(),
     touch,
     type: (data) => {
@@ -186,6 +187,7 @@ export function Terminal(props: TerminalProps): JSX.Element {
     endedKey: () => props.onEndedKey?.(),
     cell: () => cell ?? measure(),
     focus: () => {
+      ownPaste(host); // a paste that misses the input comes here too
       if (!props.ended) input.focus({ preventScroll: true });
     },
     setFocused,
