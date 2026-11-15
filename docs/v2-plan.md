@@ -714,6 +714,20 @@ Source: `docs/v1-features.md` (each row's evidence and test). `[x]` built, `[ ]`
   lines naming the folder, and the last 40 lines of serve.log. A process holding only the folder as its cwd is named
   only if it is one of those. Not seen on Windows yet: only the next run can confirm (2) and (3); Defender holding a
   fresh file is the next suspect if (3) still fails with wisp stopped.
+- **Windows db8f01ad node 24 (proof = next Windows run):** `serve_orphans::a_probe_whose_caller_hung_up_ends_at_its_time_limit`
+  panicked at "the start's probes outlived their time limit" (node 22 and every Unix job green). Not a product bug: the
+  probes end at their 15 s limit with their whole tree (`wisp_proc::local::collect` → `kill_now` → `TerminateJobObject`
+  on the per-child job). Cause: the test watched them by pid (`tasklist /FI "PID eq n"`), and Windows hands a freed pid
+  to the next process at once. A timeline of the start (this Mac): 9 hung probes start at 0 s and end at 13.8-14.1 s;
+  at 14.3 s wisp.accounts' sign-in check (`agy models`, `HarnessLogin.status`, 8 s limit) starts a new hung fake, while
+  the 5 sibling tests start their own hung probes and the watch loop itself starts a `tasklist` per pid per 100 ms. Any
+  of those taking a freed pid kept a dead probe "alive" past the 25 s budget. Fix (test-side): every process the file
+  watches holds an exclusive lock on a file of its own for its whole life (`fake_agent.rs` `hold_live`: a record's
+  `live`; `FAKE_GRANDCHILD`'s `<file>.<pid>.live`: the run writes the pid line once the sleeper says on its pipe that it holds
+  its lock), and
+  `serve_orphans` `Watched::running` asks that lock (`try_lock`), never the pid; a leftover is ended by pid only while
+  its lock is held. Test `a_probe_that_ended_is_told_apart_from_a_process_that_got_its_pid` (a killed probe's record
+  with a live process's pid reads as ended; fails with the old `ps` check on every OS).
 - **Last full run 03c0046d:** Linux and macOS fail only `packages/ui/test/css-rules.test.ts` (2 tests; fixed in round 244, 8e60cdf5 + c8173ea6); Windows jobs cancelled after the others failed. Earlier: 2790d627's probe test fixed in round 234.
 - **Windows groups still open** (from the last Windows results, b7499c23 → 8c2a17ed): most fixed since; to re-count on
   the next full run. Logs in `target/ci/*-failed.log`.

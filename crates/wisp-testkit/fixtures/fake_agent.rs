@@ -2,9 +2,11 @@
 //! The CLI it plays comes from its file name (link it as `claude`, `codex`, …). It speaks each one's
 //! stream format, edits `math.js` for real (`a - b` → `a + b`) and ends with a wisp block.
 //!
-//!   `FAKE_RECORD`      directory; each run appends {argv, stdin, cwd, pid, codexHome, subagentModel} to `<name>.jsonl`
+//!   `FAKE_RECORD`      directory; each run appends {argv, stdin, cwd, pid, live, codexHome, subagentModel} to
+//!                      `<name>.jsonl`; `live` is a file it holds locked until it ends (see `hold_live`)
 //!   `FAKE_HANG=1`      stop after the first events and wait to be killed
 //!   `FAKE_GRANDCHILD`  a file: a run starts a copy of this binary that only sleeps, then appends `<own pid> <its pid>\n`
+//!                      once both hold `<file>.<pid>.live` locked (see `hold_live`)
 //!   `FAKE_FAIL=1`      exit 1 with an error on stderr, no result
 //!   `FAKE_LIMIT_ONCE`  a file: the first run with a prompt hits a usage limit (stderr, exit 1); later runs work
 //!   `FAKE_DELAY` / `FAKE_LINGER`  ms to wait before answering / after the result
@@ -130,12 +132,36 @@ fn meta(name: &str, argv: &[String]) -> Option<i32> {
     ["auth status", "auth logout", "login status", "logout", "status"].contains(&joined.as_str()).then_some(0)
 }
 
+/// Holds an exclusive lock on `path` (made if missing) until this process ends, however it ends (the OS drops it with
+/// the process; the handle is never inherited). A test tells whether this process still runs by that lock, never by
+/// its pid alone: Windows hands a freed pid to the next process at once (`serve_orphans`' hung probes on Windows CI: a
+/// probe ended at its time limit, the next process started got its pid, and the probe looked alive 25 s on).
+fn hold_live(path: &Path) {
+    if let Some(d) = path.parent() {
+        let _ = std::fs::create_dir_all(d);
+    }
+    // no lock would read as ended at once (a false pass): fail loudly instead
+    let f = std::fs::OpenOptions::new().create(true).truncate(false).write(true).open(path).expect("the live file");
+    f.lock().expect("the live file's lock");
+    // held for the process's life: closing it would let the lock go
+    std::mem::forget(f);
+}
+
+/// `FAKE_GRANDCHILD`'s lock file for process `pid`.
+fn live_of(file: &str, pid: u32) -> std::path::PathBuf {
+    std::path::PathBuf::from(format!("{file}.{pid}.live"))
+}
+
 fn record(name: &str, argv: &[String], prompt: &str) {
     let Some(dir) = env("FAKE_RECORD") else {
         return;
     };
     let _ = std::fs::create_dir_all(&dir);
-    let line = json!({ "argv": argv, "stdin": prompt, "cwd": std::env::current_dir().ok(), "pid": std::process::id(), "codexHome": env("CODEX_HOME"), "subagentModel": env("CLAUDE_CODE_SUBAGENT_MODEL") });
+    let nanos = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_nanos());
+    let live = Path::new(&dir).join("live").join(format!("{name}.{}.{nanos}", std::process::id()));
+    // taken before the record is written: a test that reads the record finds the lock held while this runs
+    hold_live(&live);
+    let line = json!({ "argv": argv, "stdin": prompt, "cwd": std::env::current_dir().ok(), "pid": std::process::id(), "live": live, "codexHome": env("CODEX_HOME"), "subagentModel": env("CLAUDE_CODE_SUBAGENT_MODEL") });
     if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(Path::new(&dir).join(format!("{name}.jsonl"))) {
         // one write per line: `writeln!` may split a long argv line, and a reader would see half of it
         let _ = f.write_all(format!("{line}\n").as_bytes());
@@ -238,18 +264,36 @@ fn replay_turn(name: &str, stream: &str, prompt: &str, target: &Path, after: &st
 /// process group, holding this same executable: wisp must end it with the run, and with the server however it stops.
 fn grandchild(file: &str) {
     let Ok(exe) = std::env::current_exe() else { return };
-    let child = std::process::Command::new(exe)
-        .env("FAKE_SLEEPER", "1")
+    hold_live(&live_of(file, std::process::id()));
+    let mut child = std::process::Command::new(exe)
+        .env("FAKE_SLEEPER", file)
         .env_remove("FAKE_GRANDCHILD")
         .stdin(std::process::Stdio::null())
-        .stdout(std::process::Stdio::null())
+        .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::null())
         .spawn()
         .expect("the grandchild starts");
-    let line = format!("{} {}\n", std::process::id(), child.id());
+    // its one byte says it holds its lock: only then is the line written (a test that reads it finds both held), and
+    // before this run goes on (an exec plugin that crashes right after must leave the line behind)
+    // no byte (it died first): no line, so the test fails with "never started its grandchild" instead of passing
+    let said = child.stdout.take().is_some_and(|mut out| matches!(out.read(&mut [0u8; 1]), Ok(1)));
+    let pid = child.id();
+    // never waited for: it outlives this run until wisp ends it
+    std::mem::forget(child);
+    if !said {
+        return;
+    }
+    let line = format!("{} {pid}\n", std::process::id());
     let mut f = std::fs::OpenOptions::new().create(true).append(true).open(file).expect("the pid file");
     let _ = f.write_all(line.as_bytes());
-    std::mem::forget(child);
+}
+
+/// The grandchild: takes its lock, says so on stdout (one byte, then the pipe closes), and sleeps until it is killed.
+fn sleeper(file: &str) -> ! {
+    hold_live(&live_of(file, std::process::id()));
+    let _ = std::io::stdout().write_all(b"\n");
+    let _ = std::io::stdout().flush();
+    hang();
 }
 
 /// `exec-plugin`: answers each request with `null` (so `initialize` finishes), starts the grandchild once set up, and
@@ -280,8 +324,8 @@ fn exec_plugin() -> ! {
 }
 
 fn main() {
-    if env("FAKE_SLEEPER").is_some() {
-        hang();
+    if let Some(file) = env("FAKE_SLEEPER") {
+        sleeper(&file);
     }
     let mut args = std::env::args();
     let me = args.next().unwrap_or_default();

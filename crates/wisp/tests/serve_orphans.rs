@@ -9,42 +9,60 @@
 
 mod common;
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::{Duration, Instant};
 
 use common::{Api, install_fakes, start_with, temp};
 use serde_json::json;
 
-/// Whether `pid` is a process that can still run (a zombie, dead but not reaped yet, isn't).
-fn alive(pid: u32) -> bool {
-    #[cfg(unix)]
-    {
-        let o = Command::new("ps").args(["-o", "stat=", "-p", &pid.to_string()]).output().unwrap();
-        let stat = String::from_utf8_lossy(&o.stdout);
-        o.status.success() && !stat.trim().is_empty() && !stat.trim_start().starts_with('Z')
+/// A process a fake started that this test watches: its pid, and the file it holds locked for its whole life
+/// (`FAKE_RECORD`'s `live`, `FAKE_GRANDCHILD`'s `<file>.<pid>.live`). A pid alone can't say whether it still runs:
+/// Windows hands a freed pid to the next process at once. CI db8f01ad (windows, node 24) saw it: the start's hung
+/// probes ended at their 15 s limit, wisp.accounts' sign-in check (`agy models`, a new hung probe) and the other tests'
+/// probes started right then, one of them got a freed pid, and the probe "outlived its time limit" for 25 s.
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct Watched {
+    pid: u32,
+    live: PathBuf,
+}
+
+impl Watched {
+    /// Whether it still runs: its lock is held (the OS drops it with the process, however it ends; a zombie, dead but
+    /// not reaped yet, holds none).
+    fn running(&self) -> bool {
+        let Ok(f) = std::fs::OpenOptions::new().read(true).write(true).open(&self.live) else {
+            return false;
+        };
+        match f.try_lock() {
+            Ok(()) => false,
+            Err(std::fs::TryLockError::WouldBlock) => true,
+            Err(std::fs::TryLockError::Error(e)) => panic!("reading the lock {}: {e}", self.live.display()),
+        }
     }
-    #[cfg(windows)]
-    {
-        let o = Command::new("tasklist").args(["/FI", &format!("PID eq {pid}"), "/NH", "/FO", "CSV"]).output().unwrap();
-        String::from_utf8_lossy(&o.stdout).contains(&format!("\"{pid}\""))
+
+    /// Ends it (by pid) if it still runs, so a stranger that got the pid since is never ended.
+    fn end(&self) {
+        if !self.running() {
+            return;
+        }
+        #[cfg(unix)]
+        let _ = Command::new("kill").args(["-9", &self.pid.to_string()]).output();
+        #[cfg(windows)]
+        let _ = Command::new("taskkill").args(["/F", "/PID", &self.pid.to_string()]).output();
     }
 }
 
-/// Ends `pid` (one this test's fake started, never anything found by name).
-fn end(pid: u32) {
-    #[cfg(unix)]
-    let _ = Command::new("kill").args(["-9", &pid.to_string()]).output();
-    #[cfg(windows)]
-    let _ = Command::new("taskkill").args(["/F", "/PID", &pid.to_string()]).output();
-}
-
-/// The agent's pid and its grandchild's, once the fake wrote them.
-fn pids(file: &Path) -> Option<(u32, u32)> {
+/// The agent and its grandchild, once the agent wrote their pids (after both took their locks).
+fn pids(file: &Path) -> Option<(Watched, Watched)> {
     let text = std::fs::read_to_string(file).ok()?;
     let line = text.lines().find(|l| !l.is_empty())?;
     let (a, b) = line.split_once(' ')?;
-    Some((a.trim().parse().ok()?, b.trim().parse().ok()?))
+    let watched = |p: &str| -> Option<Watched> {
+        let pid: u32 = p.trim().parse().ok()?;
+        Some(Watched { pid, live: PathBuf::from(format!("{}.{pid}.live", file.display())) })
+    };
+    Some((watched(a)?, watched(b)?))
 }
 
 /// What starts the process under test: a task's agent, or an exec plugin.
@@ -96,21 +114,21 @@ async fn nothing_outlives(name: &str, via: Via, stop: impl FnOnce(&mut std::proc
         );
         tokio::time::sleep(Duration::from_millis(50)).await;
     };
-    assert!(alive(agent) && alive(grandchild), "both run while the server does");
+    assert!(agent.running() && grandchild.running(), "both run while the server does");
     stop(&mut serve.child);
     let _ = serve.child.wait();
     let at = Instant::now();
     let left = loop {
-        let left: Vec<u32> = [agent, grandchild].into_iter().filter(|&p| alive(p)).collect();
+        let left: Vec<Watched> = [&agent, &grandchild].into_iter().filter(|w| w.running()).cloned().collect();
         if left.is_empty() || at.elapsed() > Duration::from_secs(10) {
             break left;
         }
         tokio::time::sleep(Duration::from_millis(100)).await;
     };
-    for &p in &left {
-        end(p);
+    for w in &left {
+        w.end();
     }
-    assert!(left.is_empty(), "outlived the server: {left:?} (agent {agent}, grandchild {grandchild})");
+    assert!(left.is_empty(), "outlived the server: {left:?} (agent {}, grandchild {})", agent.pid, grandchild.pid);
 }
 
 /// SIGKILL on Unix, `TerminateProcess` on Windows: `Child::kill`.
@@ -162,36 +180,35 @@ async fn an_exec_plugin_that_crashes_leaves_no_grandchild() {
         tokio::time::sleep(Duration::from_millis(50)).await;
     };
     let at = Instant::now();
-    while alive(grandchild) && at.elapsed() < Duration::from_secs(10) {
+    while grandchild.running() && at.elapsed() < Duration::from_secs(10) {
         tokio::time::sleep(Duration::from_millis(100)).await;
     }
-    let left = alive(grandchild);
-    if left {
-        end(grandchild);
-    }
-    assert!(!left, "the crashed plugin's grandchild {grandchild} (plugin {plugin}) still runs");
+    let left = grandchild.running();
+    grandchild.end();
+    assert!(!left, "the crashed plugin's grandchild {grandchild:?} (plugin {plugin:?}) still runs");
 }
 
 /// The harness probes the server runs (`agy --help`, `cursor-agent --list-models`, `opencode models --verbose`,
-/// `copilot help config`, `grok models`, …), as `(argv, pid)`: every record of a fake with no prompt, from
+/// `copilot help config`, `grok models`, …), as `(argv, process)`: every record of a fake with no prompt, from
 /// `FAKE_RECORD`. Under `FAKE_HANG` a probe never answers.
-fn probes(rec: &Path) -> Vec<(String, u32)> {
+fn probes(rec: &Path) -> Vec<(String, Watched)> {
     let mut out = Vec::new();
     for e in std::fs::read_dir(rec).into_iter().flatten().flatten() {
         let name = e.path().file_stem().and_then(|s| s.to_str()).unwrap_or("").to_owned();
         for r in common::records(&e.path()) {
             if r["stdin"].as_str().is_some_and(|s| s.trim().is_empty())
                 && let Some(pid) = r["pid"].as_u64().and_then(|p| u32::try_from(p).ok())
+                && let Some(live) = r["live"].as_str()
             {
-                out.push((format!("{name} {}", common::argv(&r).join(" ")), pid));
+                out.push((format!("{name} {}", common::argv(&r).join(" ")), Watched { pid, live: live.into() }));
             }
         }
     }
     out
 }
 
-/// The probes recorded in `rec` once their list stopped growing for `quiet` (at most `limit`), as `(argv, pid)`.
-async fn settled(rec: &Path, quiet: Duration, limit: Duration) -> Vec<(String, u32)> {
+/// The probes recorded in `rec` once their list stopped growing for `quiet` (at most `limit`), as `(argv, process)`.
+async fn settled(rec: &Path, quiet: Duration, limit: Duration) -> Vec<(String, Watched)> {
     let at = Instant::now();
     let (mut last, mut since) = (probes(rec), Instant::now());
     while since.elapsed() < quiet && at.elapsed() < limit {
@@ -210,17 +227,17 @@ async fn settled(rec: &Path, quiet: Duration, limit: Duration) -> Vec<(String, u
 async fn hung_probes(
     name: &str,
     hang_up: bool,
-) -> (common::Serve, Vec<(String, u32)>, Vec<(String, u32)>, tokio::task::JoinHandle<serde_json::Value>) {
+) -> (common::Serve, Vec<(String, Watched)>, Vec<(String, Watched)>, tokio::task::JoinHandle<serde_json::Value>) {
     let dir = temp(name);
     let rec = dir.join("rec");
     let (serve, port) = start_with(&dir, &[("FAKE_HANG", "1"), ("FAKE_RECORD", rec.to_str().unwrap())]);
     let api = Api { http: reqwest::Client::new(), port, n: 0.into() };
     // what the server probes by itself at start (its own detects time out at 15 s, so a few seconds hold still)
-    let before: Vec<u32> = settled(&rec, Duration::from_secs(1), Duration::from_secs(8)).await.into_iter().map(|(_, p)| p).collect();
+    let before: Vec<Watched> = settled(&rec, Duration::from_secs(1), Duration::from_secs(8)).await.into_iter().map(|(_, p)| p).collect();
     // a probe runs once however many ask (round 212): a request made while those run joins them, and after they timed
     // out it answers with their hang. So the request's own probes are a Re-check (`fresh`) once the start's ended.
     let at = Instant::now();
-    while before.iter().any(|&p| alive(p)) {
+    while before.iter().any(Watched::running) {
         assert!(at.elapsed() < Duration::from_secs(25), "the start's probes outlived their time limit");
         tokio::time::sleep(Duration::from_millis(100)).await;
     }
@@ -228,7 +245,7 @@ async fn hung_probes(
     let at = Instant::now();
     let ours = loop {
         let all = settled(&rec, Duration::from_millis(500), Duration::from_secs(5)).await;
-        let ours: Vec<_> = all.into_iter().filter(|(_, p)| !before.contains(p) && alive(*p)).collect();
+        let ours: Vec<_> = all.into_iter().filter(|(_, p)| !before.contains(p) && p.running()).collect();
         if !ours.is_empty() {
             break ours;
         }
@@ -242,18 +259,18 @@ async fn hung_probes(
     if hang_up {
         agents.abort();
     }
-    let all = probes(&rec).into_iter().filter(|&(_, p)| alive(p)).collect();
+    let all = probes(&rec).into_iter().filter(|(_, p)| p.running()).collect();
     (serve, ours, all, agents)
 }
 
-/// Waits up to `limit` for every probe in `running` to be gone; ends (by pid) and returns what is left.
-async fn left_after(running: &[(String, u32)], limit: Duration) -> Vec<(String, u32)> {
+/// Waits up to `limit` for every probe in `running` to be gone; ends and returns what is left.
+async fn left_after(running: &[(String, Watched)], limit: Duration) -> Vec<(String, Watched)> {
     let at = Instant::now();
     loop {
-        let left: Vec<_> = running.iter().filter(|&&(_, p)| alive(p)).cloned().collect();
+        let left: Vec<_> = running.iter().filter(|(_, p)| p.running()).cloned().collect();
         if left.is_empty() || at.elapsed() > limit {
             for (_, p) in &left {
-                end(*p);
+                p.end();
             }
             return left;
         }
@@ -312,4 +329,47 @@ async fn a_probe_whose_caller_hung_up_ends_at_its_time_limit() {
 fn port_of(serve: &common::Serve) -> u16 {
     let v: serde_json::Value = serde_json::from_slice(&std::fs::read(serve.dir.join("home/server.json")).unwrap()).unwrap();
     u16::try_from(v["port"].as_u64().unwrap()).unwrap()
+}
+
+/// CI db8f01ad (windows, node 24): a probe that ended reads as ended even when its pid is another running process's
+/// now (Windows reuses a freed pid at once). Before, the watch was by pid (`ps`, `tasklist`), so a stranger with the
+/// pid kept a dead probe "alive"; here the stranger is this test process, so the old check fails on every OS.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_probe_that_ended_is_told_apart_from_a_process_that_got_its_pid() {
+    let dir = temp("serve-orphans-pid-reuse");
+    let (bin, rec) = (dir.join("bin"), dir.join("rec"));
+    install_fakes(&bin, &["grok"]);
+    let mut probe = Command::new(bin.join(format!("grok{}", std::env::consts::EXE_SUFFIX)))
+        .arg("models")
+        .env("FAKE_HANG", "1")
+        .env("FAKE_RECORD", &rec)
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .spawn()
+        .unwrap();
+    let at = Instant::now();
+    let (_, watched) = loop {
+        if let Some(p) = probes(&rec).into_iter().next() {
+            break p;
+        }
+        assert!(at.elapsed() < Duration::from_secs(10), "the probe never recorded itself");
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    };
+    assert_eq!(watched.pid, probe.id());
+    assert!(watched.running(), "a hung probe runs");
+    let _ = probe.kill();
+    let _ = probe.wait();
+    let at = Instant::now();
+    while watched.running() {
+        assert!(at.elapsed() < Duration::from_secs(5), "a killed probe still reads as running");
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+    // its pid handed to another process (this one stands for it): the record still reads as ended
+    let line = json!({ "argv": ["models"], "stdin": "", "pid": std::process::id(), "live": watched.live });
+    std::fs::write(rec.join("grok.jsonl"), format!("{line}\n")).unwrap();
+    let after = probes(&rec);
+    assert_eq!(after.len(), 1, "{after:?}");
+    assert!(after.iter().all(|(_, p)| !p.running()), "a dead probe read as running through a pid someone else has: {after:?}");
+    let _ = std::fs::remove_dir_all(&dir);
 }
