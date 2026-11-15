@@ -259,32 +259,66 @@ export async function editFollowUp(id, l, text) {
 }
 
 // The rows above the reply box, for queued.js's keyedRows: queued follow-ups go first, then these,
-// by time. A click (or right-click) is the row's menu; the pencil edits what it says.
+// by time. They read as one compact list: the icon and time in a fixed column, then what it says;
+// who set it and when in words go in the tooltip. Past SHOW_MAX, the first ones and a "+N more" row
+// (opened per task, until the page reloads). A click (or right-click) is the row's menu; the pencil
+// edits what it says.
+const SHOW_MAX = 3;
+const opened = new Set();
 export function followUpItems(s) {
-  return (s.later || []).map((l) => ({
-    key: `l-${l.id}`,
-    cls: 'cq later',
-    item: l,
-    html: `<span class="cq-tag" title="${esc(l.held ? `${whenTip(l.at)}\n${l.held.load ? l.held.why : `Waits for your plan: ${l.held.why}`}` : whenTip(l.at))}">${icon(l.held ? 'pause' : l.remind ? 'bell' : 'clock')}${l.remind ? 'Reminder at' : 'At'} ${esc(aheadLabel(l.at))} · ${l.held ? (l.held.load ? 'when the computer has room' : 'when your plan resets') : `set by ${esc(whoSet(l.by))}`}${l.files ? ` · <span title="${l.files === 1 ? '1 file goes with it' : `${l.files} files go with it`}">${icon('clip')}${l.files}</span>` : ''}</span>
-      <span class="cq-text">${esc(l.goal ? laterLine(l)[1] : l.text)}</span>
+  const all = s.later || [];
+  const cut = all.length > SHOW_MAX && !opened.has(s.id) ? SHOW_MAX - 1 : all.length;
+  const shown = all.slice(0, cut);
+  const more = all.length > SHOW_MAX;
+  const items = shown.map((l, i) => {
+    const tip = `${l.remind ? 'Reminder' : 'Follow-up'} · ${whenTip(l.at)}\n${l.held ? (l.held.load ? `When the computer has room. ${l.held.why}` : `When your plan resets. Waits for your plan: ${l.held.why}`) : `Set by ${whoSet(l.by)}`}`;
+    const [, text] = laterLine(l);
+    return {
+      key: `l-${l.id}`,
+      cls: `cq later${l.held ? ' held' : ''}${i === 0 ? ' l-first' : ''}${i === shown.length - 1 && !more ? ' l-last' : ''}`,
+      item: l,
+      html: `<span class="cq-tag" title="${esc(tip)}">${icon(l.held ? 'pause' : l.remind ? 'bell' : 'clock')}<span class="cq-at">${esc(aheadLabel(l.at))}</span>${l.files ? `<span class="cq-files" title="${l.files === 1 ? '1 file goes with it' : `${l.files} files go with it`}">${icon('clip')}${l.files}</span>` : ''}</span>
+      <span class="cq-text" title="${esc(tip)}">${esc(l.goal ? text : l.text)}</span>
       ${l.goal || String(l.id).startsWith('tmp') ? '' : `<button class="cq-pen" aria-label="${l.remind ? 'Edit reminder' : 'Edit follow-up'}" title="${l.remind ? 'Edit reminder' : 'Edit follow-up'}">${icon('pen')}</button>`}
       <button class="att-x" aria-label="${l.remind ? 'Cancel reminder' : 'Cancel follow-up'}" title="${l.remind ? 'Cancel reminder' : 'Cancel follow-up'}">${icon('x')}</button>`,
-    make: (li) => {
-      const menu = (e) => {
-        if (li.classList.contains('editing')) return;
-        e.preventDefault();
-        e.stopPropagation();
-        followUpMenu(e, s.id, li.item, li);
-      };
-      li.addEventListener('click', (e) => {
-        const b = e.target.closest('button');
-        if (b?.classList.contains('att-x')) return e.stopPropagation(), cancelFollowUp(s.id, li.item);
-        if (b?.classList.contains('cq-pen')) return e.stopPropagation(), editLaterRow(s.id, li);
-        menu(e);
-      });
-      li.addEventListener('contextmenu', menu);
-    },
-  }));
+      make: (li) => {
+        const menu = (e) => {
+          if (li.classList.contains('editing')) return;
+          e.preventDefault();
+          e.stopPropagation();
+          followUpMenu(e, s.id, li.item, li);
+        };
+        li.addEventListener('click', (e) => {
+          const b = e.target.closest('button');
+          if (b?.classList.contains('att-x')) return e.stopPropagation(), cancelFollowUp(s.id, li.item);
+          if (b?.classList.contains('cq-pen')) return e.stopPropagation(), editLaterRow(s.id, li);
+          menu(e);
+        });
+        li.addEventListener('contextmenu', menu);
+      },
+    };
+  });
+  if (more) {
+    const open = opened.has(s.id);
+    const rest = all.length - cut;
+    items.push({
+      key: 'l-more',
+      cls: 'cq later l-more l-last',
+      html: `<button type="button" class="cq-more" aria-expanded="${open}">${icon('chevron')}${open ? 'Show less' : `${rest} more scheduled · next ${esc(aheadLabel(all[cut].at))}`}</button>`,
+      make: (li) => {
+        li.addEventListener('click', (e) => {
+          e.stopPropagation();
+          opened.has(s.id) ? opened.delete(s.id) : opened.add(s.id);
+          const had = li.contains(document.activeElement);
+          import('./composer.js').then((m) => {
+            m.updateDock(s.id);
+            if (had) li.querySelector('.cq-more')?.focus(); // its button was drawn again
+          });
+        });
+      },
+    });
+  }
+  return items;
 }
 
 function editLaterRow(id, li) {
