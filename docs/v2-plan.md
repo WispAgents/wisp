@@ -21,9 +21,9 @@ Rust for everything but the UI, Solid/TS for the UI, everything a plugin (ADR-00
 | v1 features | **315 built · 7 partial · 5 missing · 4 dropped** of 331 (§6) |
 | Regressed | none (F-comp-1 picker restored to v1 in round 233) |
 | CI, last full run (5b84787a, partial) | Linux: only `apps/web/test/strings-split.test.ts` (peer-note.ts lazy keys; r249) · macOS/Windows still running |
-| Budgets | initial JS **119.4** KB br (≤ 120: 0.6 KB left; r248 making room) · CSS 27.1 KB (≤ 30) |
+| Budgets | initial JS 107.2 KB br (≤ 120) · CSS 27.1 KB (≤ 30) |
 | Weekly usage | 88 % (owner allowed 3 coders: free reset; running 2) |
-| Coders running | coder-r248 (initial JS room), coder-r251 (remote + crew subagents) |
+| Coders running | coder-r252 (CI time on macOS/Windows) |
 
 ## 3. Owner directions (standing rules)
 
@@ -630,6 +630,9 @@ Source: `docs/v1-features.md` (each row's evidence and test). `[x]` built, `[ ]`
 - [ ] `phone.tsx` copies iOS token values as numbers (IOS_SEP has no token); 466 lines
 - [ ] Pull to refresh may never show its spinner (reads `connecting()` right after `reconnect()`)
 - [ ] Decide: should push notifications answer tool approvals in place (like ntfy)?
+- [ ] A machine that never answers keeps a lead in Working until Stop (no give-up timeout for far subagents)
+- [ ] ~300 strings no code uses (shell-home tips/setup/getapp, unused wisp.later.*, shell.key.switcher, shell-settings.diag.*): delete, with a check that fails on unused keys
+- [ ] CI: Windows jobs cancelled at 60 min twice (no Windows result since the main merge): coder-r252
 - [ ] `ui-only`/MCP: nothing open
 
 ## 8. CI
