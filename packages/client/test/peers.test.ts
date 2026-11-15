@@ -261,6 +261,21 @@ test('removing a peer ends its connection and its scope', async () => {
   assert.throws(() => peers.add({ peer: A, name: 'x', transport: t }), /twice/);
 });
 
+test('removing_a_peer_drops_its_rows_so_a_re_keyed_computer_is_never_listed_twice', async () => {
+  const { peers, t, conn, scope, reader } = await setup();
+  peers.add({ peer: A, name: 'laptop', transport: t });
+  peers.watch(A, 'config', scope);
+  await settle();
+  conn()?.push(welcome());
+  await settle();
+  conn()?.frame(3, { t: 'snapshot', topic: 'config', seq: 3, rows: [{ e: 'project', id: 'wisp', v: { name: 'wisp', path: '/code/wisp' } }] });
+  await settle();
+  assert.equal(reader.list('project')().length, 1);
+  peers.remove(A);
+  assert.deepEqual(reader.list('project')(), [], 'the removed peer’s project is gone');
+  assert.equal(reader.peek('project', entityKey(A, 'wisp')), undefined);
+});
+
 test('an op the store cannot apply starts its topic over: the link unsubscribes and subscribes afresh', async () => {
   const { peers, t, conn, scope } = await setup();
   peers.add({ peer: A, name: 'laptop', transport: t });

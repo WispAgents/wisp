@@ -266,7 +266,12 @@ export function createPeers(o: PeersOptions): Peers {
       waiting.delete(cfg.peer);
       for (const w of pending) manager.watch(cfg.peer, w.topic, w.scope, w.opts);
     },
-    remove: (peer) => peers.get(peer)?.scope.dispose(),
+    // a removed peer's rows go with it: a forgotten computer's tasks leave the list, and a computer re-keyed by its
+    // welcome (the phone's `grid-mac` → its wisp's id) isn't listed twice, every task and project doubled (r285)
+    remove: (peer) => {
+      peers.get(peer)?.scope.dispose();
+      o.writer.resetPeer(peer);
+    },
     http: (peer) => peerHttp(() => peers.get(peer)?.cfg.transport, peer),
     list: () => () => ids(),
     status: (peer) => {
