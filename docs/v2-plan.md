@@ -102,7 +102,7 @@ Rust for everything but the UI, Solid/TS for the UI, everything a plugin (ADR-00
 - [x] 4,000 tasks scroll smoothly on a 4× slowed phone; first tap on Slow 4G 1.3 s blank → 171 ms
 - [x] Initial JS 119.4 → 107.0 KB br: Compare's table math out of the entry (`frame/runs-small.ts`), 756 strings no first-page module uses moved to their lazy halves (ADR-0067 re-derived; every eager half keeps a key of each kind: `strings-split.test.ts`)
 - [ ] Warm tap on a phone ~90 ms (budget 50 ms) (F-phone-8)
-- [ ] The server budgets measured in CI (cold start, RSS, list query, append, write amplification, p99 patch)
+- [ ] The server budgets measured in CI (cold start, RSS, list query, append, write amplification, p99 patch). Plan (r282): `spikes/server-budgets/` own workspace, seed wisp.db with 5k tasks, release `wisp serve` + fakes; write amplification, list query, append already measured in tests/spikes (not CI); cold start, idle RSS, p99 patch not measured anywhere; needs a FAKE_STREAM mode in the fake agent first
 - [x] Harness detection: 45 s → 15 s with hung CLIs, ~1 ms cached
 
 ### 4.4 Phone apps (ADR-0065, `design/mobile.md` Part A)
@@ -139,8 +139,8 @@ Rust for everything but the UI, Solid/TS for the UI, everything a plugin (ADR-00
 - [x] `npm run doctor` (round 232)
 - [x] `docs/dev.md`: clone to running wisp, debugging (logs, `RUST_LOG`, inspector, attaching a debugger), one test per area
 - [ ] Dev runs never collide with an installed wisp, everywhere (desktop, CLI, grid)
-- [ ] Tauri dev window removes its lock file on Ctrl-C
-- [ ] `tools/bundle.ts` so `npm run build` builds the published bundle again
+- [ ] Tauri dev window removes its lock file on Ctrl-C. Plan (r283): macOS only (`/tmp/dev_wisp_dev_si.sock`; Linux DBus, Windows mutex); tools/dev.ts removes it after the desktop child exits, only for the dev identifier and only if nothing answers on it
+- [ ] `tools/bundle.ts` so `npm run build` builds the published bundle again. Plan (r283): web build, then `cargo build -p wisp` (release, `--debug` in CI), then `npm/scripts/build.mjs` for this target, then `npm pack` into npm/dist; pure plan in tools/bundle/plan.ts with a test
 
 ### 4.7 Cutover
 
@@ -150,6 +150,7 @@ Rust for everything but the UI, Solid/TS for the UI, everything a plugin (ADR-00
 - [ ] Budgets: binary ≤ 15 MB
 - [ ] README for v2 (most of it is still v1 prose) and CHANGELOG
 - [ ] Re-point the npm trusted publisher (repo moved to WispAgents)
+- [ ] **release.yml's npm job still publishes v1** (`npm publish` from the root; the root package.json is private now) and never runs `npm/scripts/build.mjs`: switch it to v2's npm packages before any v2 release
 
 ### 4.8 One batched verification pass
 
@@ -812,8 +813,8 @@ Source: `docs/v1-features.md` (each row's evidence and test). `[x]` built, `[ ]`
 
 | Round | What | State |
 |---|---|---|
-| 283 | DX: npm run build makes the published bundle; Tauri dev lock removed on Ctrl-C | stopped (owner: one coder); to redo later |
-| 282 | Server performance budgets measured in CI | stopped (owner: one coder); to redo later |
+| 283 | DX: build bundle + Tauri lock: stopped before edits; plan in §4.6 | to redo |
+| 282 | Server perf budgets: stopped before edits; plan in §4.3 | to redo |
 | 281 | Phone step 8: the app's frontend (@wisp/mobile) | in progress |
 | 280 | Pull to refresh shows its spinner until the reconnect settles | committed |
 | 279 | machines.removed after the peer is cleared from memory | committed |
