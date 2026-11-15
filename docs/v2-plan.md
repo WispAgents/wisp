@@ -23,7 +23,7 @@ Rust for everything but the UI, Solid/TS for the UI, everything a plugin (ADR-00
 | CI, last full run (708ba936) | Linux 4/4 green (23-32 min) · macOS 24 green · macOS 22: Dialog focus bug (fixed r256) · **Windows**: 6 failing targets + a leaked `opencode` holding the tee pipe, cancelled at 60 min (r257) |
 | Budgets | initial JS 107.2 KB br (≤ 120) · CSS 27.1 KB (≤ 30) |
 | Weekly usage | 91 % (pace 176 %: down to 1 coder) |
-| Coders running | coder-r257 (Windows CI) |
+| Coders running | none |
 
 ## 3. Owner directions (standing rules)
 
@@ -744,7 +744,7 @@ Source: `docs/v1-features.md` (each row's evidence and test). `[x]` built, `[ ]`
 
 | Round | What | State |
 |---|---|---|
-| 257 | Windows CI: leaked opencode holds the cargo-test pipe; serve_cli Ctrl-C, serve_detect, serve_events, serve_kinds + serve_sandbox (8.3 short paths), serve_open (file in use) | in progress |
+| 257 | Windows CI: nursery job (ADR-0070), long paths, Ctrl-C, 4 test fixes | committed (7ccc17f3, d90e5992, 85841811; lead-verified on macOS + windows-target clippy; proof = next ci:full) |
 | 256 | Dialog focus return: a real bug (Zag trap picks its target late; opened before the machine loaded, focus stayed on body), fixed in Dialog | committed (45b105df) |
 | 255 | docs/dev.md: clone to running, debugging, one test per area, troubleshooting (every command run) | committed (b3b5b3d9) |
 | 254 | Port v1 #797: paste after selecting text reaches the Shell | committed (3f45f724) |
