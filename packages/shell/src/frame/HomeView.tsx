@@ -13,9 +13,9 @@ import { warm, warmer } from './warm.ts';
 import { INSTALLABLE, useSetup } from './setup.ts';
 import { useRecipes } from './recipes.ts';
 import type { PickOptions } from '../platform/types.ts';
-import { Show, Suspense, createEffect, createMemo, createSignal, lazy, on, onCleanup, type JSX } from 'solid-js';
+import { Show, createEffect, createMemo, createSignal, on, onCleanup, type JSX } from 'solid-js';
 import { entityKey, newRowId, type EntityKey, type Json, type PeerId } from '@wisp/client';
-import { AutoPop, FeedbackLine, KeysHint, Launcher, NextList, SplitHome, Tips, useSignal, type LauncherChip, type LauncherTool, type PlainTip } from '@wisp/ui';
+import { AutoPop, FeedbackLine, KeysHint, Launcher, NextList, SplitHome, Tips, lazyPart, lazyView, useSignal, warm as warmPart, type LauncherChip, type LauncherTool, type PlainTip } from '@wisp/ui';
 import { useShell } from '../context.tsx';
 import { Slot, usePluginClient } from '../slot.tsx';
 import { useNow } from '../clock.ts';
@@ -36,8 +36,12 @@ import { promptKeys, remember, sentStore } from './prompt-keys.ts';
 import { draftValue, launcherDraft } from './drafts.ts';
 import { MODE_ICON, agentMenu, agentName, modeMenu, teamMenu, teamPrefill, teamRows, whenAt, whenMenu, type Mode, type When } from './pickers.ts';
 
-// the harness · model picker opens on a press: it loads apart from the first page (ADR-0011), as Home first draws
-const RunnerPicker = lazy(() => import('./RunnerPicker.tsx').then((m) => ({ default: m.RunnerPicker })));
+// the harness picker opens on a press: it loads apart from the first page (ADR-0011, ADR-0067), as Home first draws,
+// with the controls once the page is idle (preloadControls) and on the pill's first hover or focus, so the first press
+// finds it there and it shows within the frame
+const pickerPart = lazyPart(() => import('./RunnerPicker.tsx'));
+const RunnerPicker = lazyView(pickerPart, (m) => m.RunnerPicker);
+const warmPicker = warmPart(pickerPart);
 
 interface SettingRow {
   readonly key: string;
@@ -72,12 +76,15 @@ export function HomeView(props: { readonly onBack?: () => void }): JSX.Element {
   const [agent, setAgent] = createSignal('auto');
   // the model and thinking level picked for the harness (Default: '')
   const [model, setModel] = createSignal('');
+  // the model's name for the pill (v1 .rb-m shows the label, never the id)
+  const [modelLabel, setModelLabel] = createSignal('');
   const [effort, setEffort] = createSignal('');
   // the account picked for the harness ('' : Auto, your saved one) and its name for the bar (F-acct-3)
   const [account, setAccount] = createSignal<{ id: string; label: string } | undefined>();
   const pickAgent = (a: string): void => {
     setAgent(a);
     setModel('');
+    setModelLabel('');
     setEffort('');
     setAccount(undefined);
   };
@@ -173,7 +180,8 @@ export function HomeView(props: { readonly onBack?: () => void }): JSX.Element {
           peer: home,
           prompt: v.trim(), // empty too: v1 shows Auto's pick before you type
           ...(files().length > 0 && { attachments: files().length }),
-          ...(goal() ? { goal: goal() as string } : {}),
+          // Auto's goal (balanced, cheap, best), not Done when's condition: the router reads it as the goal it picks for
+          ...(agent() === 'auto' && model() ? { goal: model() } : {}),
           ...(team().size > 0 && { team: true }),
         })
         .then((p) => n === asked && setPreview(p))
@@ -286,7 +294,8 @@ export function HomeView(props: { readonly onBack?: () => void }): JSX.Element {
       ...(p && { cwd: p.path }),
       agent: agent(),
       mode: mode(),
-      ...(model() && { model: model() }),
+      // Auto's 'model' is its goal, the router's own: never sent as a model
+      ...(agent() !== 'auto' && model() && { model: model() }),
       ...(effort() && { effort: effort() }),
       ...(g && { goal: g }),
       ...(w && { at: whenAt(w, now()) }),
@@ -500,9 +509,10 @@ export function HomeView(props: { readonly onBack?: () => void }): JSX.Element {
         mode={{ label: t(`shell.mode.${mode()}`), title: t('shell.home.fullAutoTitle'), icon: MODE_ICON[mode()], act: { menu: { items: modeMenu(t, mode()), onSelect: (v) => setMode(v as Mode) } } }}
         runner={{
           label: agentName(t, harnesses(), agent()),
-          title: t('shell.home.autoTitle'),
+          // the pill's tooltip: Auto's (what it will run, as pickTitle says) or the harness's
+          title: agent() === 'auto' ? t('shell.home.autoTitle') : t('shell.runner.title'),
           auto: agent() === 'auto',
-          pick: runnerPick({ agent: agent(), shown: shown()?.label, name: pick().name, model: model(), effort: effort(), account: account()?.label ?? '', fallback: t('shell.runner.default') }),
+          pick: runnerPick({ agent: agent(), shown: shown()?.label, name: pick().name, model: modelLabel() || model(), effort: effort(), account: account()?.label ?? '', fallback: t('shell.runner.default') }),
           pickTitle:
             agent() !== 'auto'
               ? t('shell.runner.title')
@@ -511,10 +521,10 @@ export function HomeView(props: { readonly onBack?: () => void }): JSX.Element {
                 : t('shell.home.pickTitle', { name: pick().name }),
           ...(pick().logo && { logo: pick().logo }),
           compare: runs().length > 0 ? t('shell.home.compareMore', { n: MAX_RUNNERS }) : t('shell.home.compare'),
-          act: { menu: { items: agentMenu(t, harnesses(), agent()), onSelect: pickAgent } },
-          // the searchable harness · model picker (v1 runner-picker.js)
-          pickAct: { onClick: () => (agent() === 'auto' ? setAutoPop(!autoPop()) : setPicker(true)) },
-          ...(agent() === 'auto' && { pickOpen: autoPop() }),
+          // ONE pill, ONE press: the two-pane harness picker (v1 runner-picker.js); model, thinking and account are its right pane
+          act: { onClick: () => setPicker(!picker()) },
+          open: picker(),
+          onWarm: warmPicker,
           compareAct: {
             onClick: () => {
               const next = nextRun(
@@ -680,6 +690,7 @@ export function HomeView(props: { readonly onBack?: () => void }): JSX.Element {
                 if (!c) return;
                 pickAgent(c.agent);
                 setModel(c.model);
+                setModelLabel('');
                 setEffort(c.effort);
               }}
               onNever={() => {
@@ -691,21 +702,26 @@ export function HomeView(props: { readonly onBack?: () => void }): JSX.Element {
           );
         }}
       </Show>
-      <Suspense>
-        <RunnerPicker
-          open={picker()}
-          onOpenChange={setPicker}
-          peer={target()}
-          accounts
-          value={{ agent: agent() === 'auto' ? auto() : agent(), model: model(), effort: effort(), account: account()?.id ?? '' }}
-          onChange={(r) => {
-            setAgent(r.agent);
-            setModel(r.model);
-            setEffort(r.effort);
-            setAccount(r.account ? { id: r.account, label: r.accountLabel ?? r.account } : undefined);
-          }}
-        />
-      </Suspense>
+      <RunnerPicker
+        open={picker()}
+        onOpenChange={setPicker}
+        anchor={() => document.querySelector('[data-part="launcher.harness"][data-lead]')}
+        back={() => input}
+        peer={target()}
+        auto
+        accounts
+        value={{ agent: agent(), model: model(), effort: effort(), account: account()?.id ?? '' }}
+        onChange={(r) => {
+          const was = agent();
+          setAgent(r.agent);
+          setModel(r.model);
+          setModelLabel(r.modelLabel ?? '');
+          setEffort(r.effort);
+          setAccount(r.account ? { id: r.account, label: r.accountLabel ?? r.account } : undefined);
+          // back on Auto, or another goal: what it will run is asked again
+          if (r.agent === 'auto') ask(text(), was !== 'auto');
+        }}
+      />
       <NextList
         heading={t('shell.section.needs')}
         count={needs().length}

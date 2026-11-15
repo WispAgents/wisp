@@ -525,7 +525,8 @@ export interface ReplyBoxProps {
   /** the phone app's mic (v1 .c-mic): listening shows it on, in the accent. Absent: no mic. Additive (2026-11-13). */
   readonly mic?: { readonly label: string; readonly on: boolean; readonly act: Act } | undefined;
   readonly mode: { readonly label: string; readonly title: string; readonly icon?: IconName; readonly act?: Act; readonly cap?: ReplyCap | undefined };
-  readonly runner: { readonly title: string; readonly logo?: string; readonly act?: Act };
+  /** the reply's harness (v1 composer runner): one press opens the harness picker; `open` while it shows */
+  readonly runner: { readonly title: string; readonly logo?: string; readonly act?: Act; readonly open?: boolean };
   readonly team: string;
   readonly teamAct?: Act;
   readonly goal: string;
@@ -695,7 +696,16 @@ export function ReplyBox(props: ReplyBoxProps): JSX.Element {
         <WithAct
           act={props.runner.act}
           render={(trigger) => (
-            <button type="button" {...trigger()} data-kit="c-runner" data-part="composer.harness" title={props.runner.title} aria-label={props.runner.title}>
+            <button
+              type="button"
+              {...trigger()}
+              data-kit="c-runner"
+              data-part="composer.harness"
+              aria-haspopup="dialog"
+              aria-expanded={props.runner.open ? 'true' : 'false'}
+              title={props.runner.title}
+              aria-label={props.runner.title}
+            >
               <span data-kit="rb-logo" data-bare="">
                 <Show when={props.runner.logo}>{(src) => <img src={src()} alt="" />}</Show>
               </span>

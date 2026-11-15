@@ -65,6 +65,8 @@ export interface Runner {
   readonly account?: string;
   /** that account's name, for the bar's words (not sent) */
   readonly accountLabel?: string;
+  /** the model's name, for the bar's words (not sent) */
+  readonly modelLabel?: string;
 }
 
 /** One of a harness's accounts as `accounts.list` gives it (wisp.accounts' AccountView). */

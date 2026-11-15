@@ -69,7 +69,7 @@ export default function Rerun(props: { readonly params: { readonly id: string; r
               model={x().model || undefined}
               logo={harnessOf(harnesses(), x().agent).logo}
               title={t('shell.rerun.runner')}
-              onClick={() => setPicking(true)}
+              onClick={() => setPicking(!picking())}
             />
             <span data-kit="grow" />
             <Button variant="primary" size="sm" icon="rerun" disabled={!x().prompt.trim()} onClick={go} part="rerun.go">
@@ -82,6 +82,7 @@ export default function Rerun(props: { readonly params: { readonly id: string; r
           <RunnerPicker
             open={picking()}
             onOpenChange={setPicking}
+            anchor={() => [...document.querySelectorAll('[data-kit="au-runner-btn"]')].at(-1)}
             peer={x().peer}
             value={{ agent: x().agent, model: x().model, effort: x().effort }}
             onChange={(r) => set({ agent: r.agent, model: r.model, effort: r.effort })}

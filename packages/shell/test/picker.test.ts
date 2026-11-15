@@ -1,0 +1,105 @@
+// The harness picker's model (src/frame/picker.ts, v1 runner-picker.js): the left pane's rows and sub-lines, the pane
+// that shows on open, the right pane's model groups, and what each pick changes.
+import { expect, test } from 'vitest';
+import { firstFocus, goalOf, modelGroups, pickerRows, searchShown, stepRow, subLine, useHarness, withModel, withSetting } from '../src/frame/picker.ts';
+import type { AgentOffer } from '../src/frame/runner.ts';
+
+const CLAUDE: AgentOffer = {
+  id: 'claude',
+  name: 'Claude Code',
+  available: true,
+  models: [
+    { id: 'opus', label: 'Opus 5.5', efforts: ['low', 'medium', 'high', 'max'] },
+    { id: 'sonnet', label: 'Sonnet 5.5' },
+    { id: 'haiku', label: 'Haiku 5.5' },
+    { id: 'fable', label: 'Fable 5.2' },
+  ],
+  efforts: ['low', 'high'],
+};
+const CODEX: AgentOffer = { id: 'codex', name: 'Codex', available: true, models: [], efforts: [] };
+const CURSOR: AgentOffer = { id: 'cursor', name: 'Cursor', available: false, models: [], efforts: [] };
+const GROK: AgentOffer = { id: 'grok', name: 'Grok', available: false, signedIn: false, models: [{ id: 'g4', label: 'Grok 4' }], efforts: [] };
+const OPENCODE: AgentOffer = {
+  id: 'opencode',
+  name: 'opencode',
+  available: true,
+  checking: true,
+  models: [
+    { id: 'anthropic/opus', label: 'Opus', hint: 'Anthropic' },
+    { id: 'openai/gpt-5', label: 'GPT-5', hint: 'OpenAI' },
+    { id: 'anthropic/sonnet', label: 'Sonnet', hint: 'Anthropic' },
+  ],
+  efforts: [],
+};
+const ALL = [CLAUDE, CODEX, CURSOR, GROK, OPENCODE];
+
+test('the_left_pane_lists_auto_first_then_each_harness_with_its_sub_line_v1_runner_picker', () => {
+  const rows = pickerRows(ALL, { auto: true, autoName: 'Auto', used: (id) => (id === 'codex' ? { label: '5h', pct: 42 } : undefined) });
+  expect(rows.map((r) => [r.id, r.sub, r.off])).toEqual([
+    ['auto', { k: 'auto' }, false],
+    // "4 models": the Default isn't counted (v1 models.length - 1)
+    ['claude', { k: 'models', n: 4 }, false],
+    // how full its plan is, in place of the count (v1 usageNote)
+    ['codex', { k: 'used', label: '5h', pct: 42 }, false],
+    ['cursor', { k: 'missing' }, true],
+    ['grok', { k: 'signedOut' }, true],
+    // still detecting (ADR-0066): Checking…, and what was known still picks
+    ['opencode', { k: 'checking' }, false],
+  ]);
+  expect(pickerRows(ALL, { auto: false, autoName: 'Auto' })[0]?.id).toBe('claude');
+  expect(subLine({ ...CODEX, models: [] })).toEqual({ k: 'default' });
+  // a never-seen harness still checking can't run yet: dimmed
+  expect(pickerRows([{ ...CURSOR, checking: true }], { auto: false, autoName: 'Auto' })[0]?.off).toBe(true);
+});
+
+test('the_right_pane_opens_on_the_harness_in_use_else_the_first_usable_one', () => {
+  const rows = pickerRows(ALL, { auto: true, autoName: 'Auto' });
+  expect(firstFocus(rows, 'claude')).toBe('claude');
+  expect(firstFocus(rows, 'auto')).toBe('auto');
+  // one that can't run: the first usable one shows instead
+  expect(firstFocus(rows, 'cursor')).toBe('auto');
+  expect(firstFocus(pickerRows([CURSOR], { auto: false, autoName: 'Auto' }), 'x')).toBe('cursor');
+  expect(firstFocus([], 'x')).toBe('');
+  // the one in use while it's still checking: its pane, not one that switches under you once it lands
+  expect(firstFocus(pickerRows([{ ...CURSOR, checking: true }, CODEX], { auto: true, autoName: 'Auto' }), 'cursor')).toBe('cursor');
+});
+
+test('arrows_go_round_the_rows', () => {
+  const ids = ['auto', 'claude', 'codex'];
+  expect([stepRow(ids, 'auto', 1), stepRow(ids, 'codex', 1), stepRow(ids, 'auto', -1), stepRow(ids, 'nope', 1), stepRow(ids, 'nope', -1), stepRow([], 'a', 1)]).toEqual(['claude', 'auto', 'codex', 'auto', 'codex', undefined]);
+});
+
+test('models_list_the_default_first_group_provider_ids_and_narrow_by_the_search', () => {
+  expect(modelGroups(CLAUDE, '').map((g) => [g.head, g.items.map((m) => m.id)])).toEqual([['', ['', 'opus', 'sonnet', 'haiku', 'fable']]]);
+  expect(modelGroups(CLAUDE, 'son').map((g) => g.items.map((m) => m.id))).toEqual([['sonnet']]);
+  expect(modelGroups(OPENCODE, '').map((g) => [g.head, g.items.map((m) => m.id)])).toEqual([
+    ['', ['']],
+    ['Anthropic', ['anthropic/opus', 'anthropic/sonnet']],
+    ['OpenAI', ['openai/gpt-5']],
+  ]);
+  // a group with nothing left goes
+  expect(modelGroups(OPENCODE, 'gpt').map((g) => g.head)).toEqual(['OpenAI']);
+  expect(modelGroups(undefined, '')).toEqual([{ head: '', items: [{ id: '', label: '' }] }]);
+  // v1: the search shows past six
+  expect([searchShown(CLAUDE), searchShown({ ...CLAUDE, models: [...CLAUDE.models, { id: 'a', label: 'A' }, { id: 'b', label: 'B' }] }), searchShown(undefined)]).toEqual([false, true, false]);
+});
+
+test('a_harness_press_uses_it_at_once_a_model_pick_carries_the_level_over_settings_commit_in_place', () => {
+  const v = { agent: 'claude', model: 'opus', effort: 'max', account: 'work' };
+  // the one in use, one not set up, one signed out: nothing changes (the pane says how to get it)
+  expect([useHarness(v, 'claude', ALL), useHarness(v, 'cursor', ALL), useHarness(v, 'grok', ALL)]).toEqual([undefined, undefined, undefined]);
+  expect(useHarness(v, 'codex', ALL)).toEqual({ agent: 'codex', model: '', effort: '', account: '' });
+  expect(useHarness(v, 'auto', ALL)).toEqual({ agent: 'auto', model: '', effort: '', account: '' });
+  // still checking but known ready: it picks
+  expect(useHarness(v, 'opencode', ALL)?.agent).toBe('opencode');
+  // max only on Opus: Sonnet takes the harness's levels, so the level goes back to Default
+  // the pill's words: the model's name, never its id
+  expect(withModel(v, 'claude', 'sonnet', ALL)).toEqual({ agent: 'claude', model: 'sonnet', effort: '', account: 'work', modelLabel: 'Sonnet 5.5' });
+  expect(withModel({ ...v, effort: 'high' }, 'claude', 'sonnet', ALL).effort).toBe('high');
+  // a model on another harness's pane moves to it, with its own account
+  expect(withModel(v, 'codex', '', ALL)).toEqual({ agent: 'codex', model: '', effort: '', account: '' });
+  expect(withModel(v, 'auto', 'cheap', ALL)).toEqual({ agent: 'auto', model: 'cheap', effort: '', account: '' });
+  expect(withSetting(v, 'claude', { effort: 'low' })).toEqual({ ...v, effort: 'low' });
+  expect(withSetting(v, 'codex', { account: 'b', accountLabel: 'B' })).toEqual({ agent: 'codex', model: '', effort: '', account: 'b', accountLabel: 'B' });
+  expect([goalOf('cheap'), goalOf('nope'), goalOf(''), goalOf(undefined)]).toEqual(['cheap', 'balanced', 'balanced', 'balanced']);
+});

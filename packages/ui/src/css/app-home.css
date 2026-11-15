@@ -394,6 +394,11 @@
     border-radius: var(--radius-control);
     background: var(--surface);
   }
+  /* v1 .runners:hover, .runners:has(.open): the pill's edge shows */
+  [data-kit='runners']:hover,
+  [data-kit='runners'][data-open] {
+    border-color: var(--line-2);
+  }
   [data-kit='runner-btn'],
   [data-kit='auto-pv'] {
     display: flex;
@@ -473,10 +478,27 @@
     flex: 0 1 auto;
     min-width: 0;
   }
-  [data-kit='runners'] > [data-kit='auto-pv'] {
+  /* one pill (v1 .runner-btn + .auto-pv): the pick sits inside the harness's button, one press for both */
+  [data-kit='runner-btn'][data-lead] {
+    flex: 0 1 auto;
+    min-width: 0;
+    padding-right: 0;
+  }
+  [data-kit='runner-btn'] > [data-kit='auto-pv'] {
     flex: 0 10000 auto;
     min-width: 0;
     overflow: hidden;
+  }
+  /* v1 .runner-btn.open: lit, the chevron turned up; the pick keeps the surface */
+  [data-kit='runners'] > [data-kit='runner-btn'][aria-expanded='true'] {
+    background: var(--bg-2);
+    color: var(--ink-2);
+  }
+  [data-kit='runner-btn'][aria-expanded='true'] > [data-kit='icon'] {
+    transform: rotate(-90deg);
+  }
+  [data-kit='runner-btn'][aria-expanded='true'] > [data-kit='auto-pv'] {
+    background: var(--surface);
   }
   [data-kit='vs-btn'] {
     position: relative;
@@ -530,14 +552,14 @@
   [data-kit='vs-btn'][data-del]:focus-visible > [data-kit='icon'] {
     display: block;
   }
-  [data-kit='runners'][data-cmp] > [data-kit='auto-pv'] > [data-kit='apv-l'],
-  [data-kit='runners'][data-many] > [data-kit='auto-pv'] {
+  [data-kit='runners'][data-cmp] > [data-kit='runner-btn'] > [data-kit='auto-pv'] > [data-kit='apv-l'],
+  [data-kit='runners'][data-many] > [data-kit='runner-btn'] > [data-kit='auto-pv'] {
     display: none;
   }
-  [data-kit='runners'][data-cmp] > [data-kit='auto-pv'] {
+  [data-kit='runners'][data-cmp] > [data-kit='runner-btn'] > [data-kit='auto-pv'] {
     padding: 0 5px;
   }
-  [data-kit='runners'][data-cmp] > [data-kit='auto-pv'] > [data-kit='rb-logo'] {
+  [data-kit='runners'][data-cmp] > [data-kit='runner-btn'] > [data-kit='auto-pv'] > [data-kit='rb-logo'] {
     margin-right: 0;
   }
   [data-kit='runner-btn'][data-cmp] {
@@ -686,7 +708,7 @@
       margin-right: 0;
     }
     /* the pick is its logo alone now: it keeps its 28px (v1), the bar scrolls before it gives way */
-    [data-kit='runners'] > [data-kit='auto-pv'] {
+    [data-kit='runner-btn'] > [data-kit='auto-pv'] {
       flex: none;
     }
   }
@@ -1570,11 +1592,8 @@
     margin: 0.3125rem 0.25rem;
   }
   /* v1 .auto-pv.open: the pill's ground, its text as at rest, the logo on the surface */
-  [data-kit='launcher'] [data-kit='auto-pv'][aria-expanded='true'] {
-    color: var(--ink-2);
-  }
-  [data-kit='auto-pv']:hover > [data-kit='rb-logo'],
-  [data-kit='auto-pv'][aria-expanded='true'] > [data-kit='rb-logo'] {
+  [data-kit='runner-btn']:hover > [data-kit='auto-pv'] > [data-kit='rb-logo'],
+  [data-kit='runner-btn'][aria-expanded='true'] > [data-kit='auto-pv'] > [data-kit='rb-logo'] {
     background: var(--surface);
   }
   [data-kit='ap-head'] {

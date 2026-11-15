@@ -67,9 +67,11 @@ export { HomeUsage, type HomeUsageGroup, type HomeUsageProps, type HomeUsageWind
 export { RailCardBody, headingForCard, stepRow, type RailCardBodyProps, type RailCardRow } from './RailCard.tsx';
 export { AutoPop } from './auto-pop-lazy.ts';
 export type { AutoPopProps, AutoPopRow } from './AutoPop.tsx';
+export { HarnessPicker, pickerPlace, type HarnessPickerProps, type HarnessPickerRow, type HarnessPickerOption, type HarnessPickerPane } from './HarnessPicker.tsx';
 export { ProjectsSheet, type ProjectsSheetProps, type ProjectsRow, type ProjectsPlace } from './ProjectsSheet.tsx';
 export { BtwList, type BtwItem } from './Btw.tsx';
 export { RateButtons, WhyForm, type Rating, type RateProps, type WhyFormProps } from './Rate.tsx';
 export { CompareRuns, type CompareRunsProps, type CompareRowView, type CompareRunView, type CompareCellView } from './Compare.tsx';
 export { AutomationsBody, AutoRunner, AutoList, TriggerKinds, AutoRow, AutoPresets, AutoNote, AutoFoot, type AutomationsTab, type AutoItem, type TriggerKind, type Rich } from './Automations.tsx';
 export { TaskUsage, type TaskUsageProps, type TaskUsageRow, type TaskUsageSection } from './TaskUsage.tsx';
+export { Ledger, type LedgerProps, type LedgerString } from './Ledger.tsx';

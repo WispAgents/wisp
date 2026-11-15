@@ -27,7 +27,7 @@ export { Tooltip, type TooltipProps } from './Tooltip.tsx';
 export { Dialog, Sheet, type DialogProps, type DialogSize } from './Dialog.tsx';
 export { Tabs, type TabsProps, type TabItem } from './Tabs.tsx';
 export { Toasts, type ToastsProps } from './Toast.tsx';
-export { preloadControls } from './lazy-part.ts';
+export { preloadControls, lazyPart, lazyView, warm, type LazyPart } from './lazy-part.ts';
 export { createToaster, type Toaster, type ToasterOptions, type ToastOptions, type ToastAction, type ToastTone, type RollbackToaster } from './toaster.ts';
 export { Splitter, Split, type SplitterProps, type SplitterPanel, type SplitProps } from './Splitter.tsx';
 export { ThinkingSlider, stepKey, stopAt, type ThinkingSliderProps } from './ThinkingSlider.tsx';

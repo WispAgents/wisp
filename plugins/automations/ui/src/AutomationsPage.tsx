@@ -257,12 +257,13 @@ function TriggerForm(props: { readonly client: PluginClient; readonly recipes: r
             model={f().agent ? f().model || say('automations.form.defaultModel') : undefined}
             logo={harnesses().find((h) => h.id === f().agent)?.logo}
             title={say('automations.form.harnessTitle')}
-            onClick={() => setPicking(true)}
+            onClick={() => setPicking(!picking())}
             reset={f().agent ? { label: say('automations.form.useDefault'), onClick: () => set({ agent: '', model: '' }) } : undefined}
           />
           <RunnerPicker
             open={picking()}
             onOpenChange={setPicking}
+            anchor={() => document.querySelector('[data-part="automations.runner"] [data-kit="au-runner-btn"]')}
             peer={c.home}
             efforts={false}
             value={{ agent: f().agent, model: f().model, effort: '' }}

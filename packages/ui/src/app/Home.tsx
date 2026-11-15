@@ -124,10 +124,12 @@ export interface LauncherProps {
     readonly pickTitle: string;
     readonly logo?: string;
     readonly compare: string;
+    /** the one pill (v1 .runner-btn): harness and pick together, ONE press that opens the harness picker */
     readonly act?: Act;
-    readonly pickAct?: Act;
-    /** what the pick opens is open (the Auto popover): the launcher stays lit while it is */
-    readonly pickOpen?: boolean;
+    /** the harness picker is open: the pill stays lit while it is */
+    readonly open?: boolean;
+    /** the pill's first hover or focus: fetch the picker's code (ADR-0067) */
+    readonly onWarm?: () => void;
     readonly compareAct?: Act;
     /** the harnesses the same task also runs on (v1 launcher compare): each a "vs" that removes it, then its picker */
     readonly compares?: readonly LauncherCompare[];
@@ -352,11 +354,22 @@ export function Launcher(props: LauncherProps): JSX.Element {
               </button>
             )}
           />
-          <div data-kit="runners" data-cmp={flag((props.runner.compares?.length ?? 0) > 0)} data-many={flag((props.runner.compares?.length ?? 0) > 1)}>
+          <div data-kit="runners" data-open={flag(props.runner.open)} data-cmp={flag((props.runner.compares?.length ?? 0) > 0)} data-many={flag((props.runner.compares?.length ?? 0) > 1)}>
             <WithAct
               act={props.runner.act}
               render={(trigger) => (
-                <button type="button" {...trigger()} data-kit="runner-btn" data-part="launcher.harness" title={props.runner.title}>
+                <button
+                  type="button"
+                  {...trigger()}
+                  data-kit="runner-btn"
+                  data-part="launcher.harness"
+                  data-lead=""
+                  aria-haspopup="dialog"
+                  aria-expanded={props.runner.open ? 'true' : 'false'}
+                  title={props.runner.auto ? props.runner.pickTitle : props.runner.title}
+                  onPointerEnter={() => props.runner.onWarm?.()}
+                  onFocus={() => props.runner.onWarm?.()}
+                >
                   <span data-kit="rb-logo">
                     <Show
                       when={!props.runner.auto && props.runner.logo}
@@ -373,28 +386,16 @@ export function Launcher(props: LauncherProps): JSX.Element {
                     {props.runner.label}
                   </span>
                   <Icon name="chevron" />
-                </button>
-              )}
-            />
-            <WithAct
-              act={props.runner.pickAct}
-              render={(trigger) => (
-                <button
-                  type="button"
-                  {...trigger()}
-                  data-kit="auto-pv"
-                  data-part={props.runner.auto ? 'launcher.autoPreview' : 'launcher.model'}
-                  aria-expanded={props.runner.pickOpen === undefined ? undefined : props.runner.pickOpen ? 'true' : 'false'}
-                  title={props.runner.pickTitle}
-                  aria-label={props.runner.pickTitle}
-                >
-                  <Show when={props.runner.auto}>
-                    <span data-kit="rb-logo" data-small="">
-                      <Show when={props.runner.logo}>{(src) => <img src={src()} alt="" />}</Show>
+                  {/* what it runs, in the same pill: Auto's pick with its logo (v1 .auto-pv), else the model · thinking · account (v1 .rb-m) */}
+                  <span data-kit="auto-pv" data-part={props.runner.auto ? 'launcher.autoPreview' : 'launcher.model'}>
+                    <Show when={props.runner.auto}>
+                      <span data-kit="rb-logo" data-small="">
+                        <Show when={props.runner.logo}>{(src) => <img src={src()} alt="" />}</Show>
+                      </span>
+                    </Show>
+                    <span data-kit="apv-l" data-text="control">
+                      {props.runner.pick}
                     </span>
-                  </Show>
-                  <span data-kit="apv-l" data-text="control">
-                    {props.runner.pick}
                   </span>
                 </button>
               )}

@@ -1058,7 +1058,8 @@ export default function TaskView(props: { readonly id: string; readonly onBack?:
                     runner={{
                       title: t('shell.task.runner', { name: [h().name, replyRun()?.model ?? '', replyRun()?.effort ?? ''].filter(Boolean).join(' · ') }),
                       ...(h().logo && { logo: h().logo }),
-                      act: { onClick: () => setPickingRunner(true) },
+                      act: { onClick: () => setPickingRunner(!runnerOpen()) },
+                      open: runnerOpen(),
                     }}
                     team={t('shell.home.delegateTitle')}
                     teamAct={{
@@ -1112,6 +1113,8 @@ export default function TaskView(props: { readonly id: string; readonly onBack?:
                   <RunnerPicker
                     open={runnerOpen()}
                     onOpenChange={setPickingRunner}
+                    anchor={() => document.querySelector('[data-part="composer.harness"]')}
+                    back={() => input}
                     peer={peer}
                     value={replyRun() ?? { agent: s().agent, model: String(s().summary.model ?? ''), effort: '' }}
                     onChange={setReplyRun}
