@@ -22,8 +22,8 @@ Rust for everything but the UI, Solid/TS for the UI, everything a plugin (ADR-00
 | Regressed | none (F-comp-1 picker restored to v1 in round 233) |
 | CI, last full run (5b84787a, partial) | Linux: only `apps/web/test/strings-split.test.ts` (peer-note.ts lazy keys; r249) · macOS/Windows still running |
 | Budgets | initial JS 107.2 KB br (≤ 120) · CSS 27.1 KB (≤ 30) |
-| Weekly usage | 88 % (owner allowed 3 coders: free reset; running 2) |
-| Coders running | coder-r253 (v1 #794) |
+| Weekly usage | 91 % (pace 176 %: down to 1 coder) |
+| Coders running | coder-r254 (v1 #797) |
 
 ## 3. Owner directions (standing rules)
 
@@ -727,7 +727,8 @@ Source: `docs/v1-features.md` (each row's evidence and test). `[x]` built, `[ ]`
 
 | Round | What | State |
 |---|---|---|
-| 253 | Port v1 #794 (Plan mode on Claude runs commands; side discussions run commands) | in progress |
+| 254 | Port v1 #797 (Shell paste after selecting) | in progress |
+| 253 | Port v1 #794: Plan runs commands for your own tasks; outside/capped/side stay read-only | committed (f0b27570; lead-verified: plan 3, plan_mode 2, clippy, fmt) |
 | 252 | CI checks the Cargo workspace once (ADR-0069, tools/ci-verify.ts); Windows serve_desktop 38-min hang fixed (keep_std_handles); lead fixed a unix.rs clippy error | committed (a3d7e1b0, 708ba936); proof = next ci:full run |
 | 251 | Lead waits on remote, sandbox and crew subagents (v1 child.relay) | committed (5dee4072; lead-verified) |
 | 250 | Each subagent's report goes back as it ends (v1 timing) | committed (e9755bab) |
