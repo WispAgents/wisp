@@ -10,6 +10,7 @@ import { Button, Fab, IconButton, Menu, RadioGroup, Sheet, Toolbar, TopAppBar, u
 import { useShell } from '../context.tsx';
 import '../i18n/lazy.ts';
 import { computerOptions, computerTitle, knownComputer } from './computer-filter.ts';
+import { projectLabels } from './project-labels.ts';
 import { useAccount, useHeadChips } from './Sidebar.tsx';
 
 /** The computer filter, from the client's peers (every saved computer) and the device setting. */
@@ -84,10 +85,13 @@ export function PhoneListTop(props: { readonly onNew: () => void; readonly filte
   const head = useHeadChips(props.filter);
   // in your order from the start (a pinned item would push the row to the end); the last ones fold into More first, All
   // last. Each chip is its name in both forms: as icons every project would be the same folder, so they go to More
+  // every computer's projects show here at once: two of the same name say where each is (project-labels.ts)
+  const names = createMemo(() => projectLabels(head.projects(), (p) => shell.client.peers.name(p as never)));
   const items = createMemo((): ToolbarItem[] => {
     const all = head.chips();
     return all.map((c, i) => {
-      const label = c.id === 'all' || c.need === 0 ? c.name : `${c.name} · ${c.need}`;
+      const name = c.id === 'all' ? c.name : (names()[i - 1] ?? c.name);
+      const label = c.id === 'all' || c.need === 0 ? name : `${name} · ${c.need}`;
       const on = c.id === 'all' ? head.on() === 'all' : head.pickIds().includes(c.id);
       const pick = (): void => props.setFilter(c.id);
       return {

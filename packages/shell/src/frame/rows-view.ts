@@ -155,22 +155,27 @@ export interface ProjectView {
   readonly name: string;
   readonly path: string;
   readonly color: string;
+  /** the computer it's on (its entity key's peer), when the caller passed the keys */
+  readonly peer?: string;
 }
 
 /** The setting that keeps your project order (v1 #772): one list of names, used everywhere projects show. */
 export const PROJECT_ORDER = 'runtime.projectOrder';
 
 /** The projects in your order: the ones you placed first, as you placed them, then the rest by name. */
-export function projectList(rows: readonly unknown[], order: unknown): ProjectView[] {
+export function projectList(rows: readonly unknown[], order: unknown, keys?: readonly string[]): ProjectView[] {
   const placed = Array.isArray(order) ? order.filter((x): x is string => typeof x === 'string') : [];
-  const all = rows.map((r) => {
+  const all = rows.map((r, i): ProjectView => {
     const p = flatRow<{ id?: unknown; name?: unknown; path?: unknown; color?: unknown }>(r);
     const id = String(p.id ?? '');
     // a folder as one string: `wisp add .` kept "/repo/." (and a trailing "/"), which then held none of its tasks
     const path = String(p.path ?? '')
       .replace(/(\/\.)+$/, '')
       .replace(/(.)\/+$/, '$1');
-    return { id, name: typeof p.name === 'string' && p.name ? p.name : id, path, color: String(p.color ?? '') };
+    // the entity key is `<peer>:<id>` (the store keys rows by origin): the computer the project is on
+    const key = keys?.[i];
+    const peer = key && key.includes(':') ? key.slice(0, key.indexOf(':')) : undefined;
+    return { id, name: typeof p.name === 'string' && p.name ? p.name : id, path, color: String(p.color ?? ''), ...(peer ? { peer } : {}) };
   });
   const at = (id: string): number => {
     const i = placed.indexOf(id);

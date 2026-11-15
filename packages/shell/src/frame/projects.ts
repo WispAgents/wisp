@@ -16,9 +16,11 @@ export interface Projects {
 
 export function useProjects(shell: ShellContext, home: string): Projects {
   const rows = useSignal(shell.client.entities.list<unknown>('project'));
+  // the rows' keys, index for index (the store builds the list from them): which computer each project is on
+  const keys = useSignal(shell.client.entities.keys('project'));
   const settings = useSignal(shell.client.entities.list<{ key: string; value: unknown }>('setting'));
   const order = (): unknown => settings().find((s) => s.key === PROJECT_ORDER)?.value;
-  const list = createMemo(() => projectList(rows(), order()));
+  const list = createMemo(() => projectList(rows(), order(), keys()));
   const reorder = (id: string, before: string | undefined): void => {
     const value = reordered(
       list().map((p) => p.id),

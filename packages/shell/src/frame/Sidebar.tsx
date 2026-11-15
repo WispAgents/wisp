@@ -103,7 +103,7 @@ export function useHeadChips(filter: () => string) {
     return { colors: picked.map((p) => p.color || 'slate'), label: pickLabel(picked, shell.t), tip: picked.map((p) => p.name).join('\n'), need, needLabel: needLabel(need) };
   });
   const on = (): string => pickIds()[0] ?? 'all';
-  return { chips, pick, pickIds, on, reorder };
+  return { chips, pick, pickIds, on, reorder, projects };
 }
 
 /** You on the grid and the me menu (v1 #meMenu): the browser's head and the phone apps' Tasks bar share it. */
