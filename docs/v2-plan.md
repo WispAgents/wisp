@@ -20,10 +20,10 @@ Rust for everything but the UI, Solid/TS for the UI, everything a plugin (ADR-00
 |---|---|
 | v1 features | **315 built · 7 partial · 5 missing · 4 dropped** of 331 (§6) |
 | Regressed | none (F-comp-1 picker restored to v1 in round 233) |
-| CI, last full run (8bb8ccd0) | **Linux 4/4 + macOS 2/2 green** · Windows: `nursery_windows` (r257's new test) hung, cancelled at 60 min; no serve test reached (r263) |
+| CI, last full run (9ea69e14) | Linux: only css-rules `:is()` in queued.css (fixed ed23c434) · macOS + Windows running |
 | Budgets | initial JS 107.2 KB br (≤ 120) · CSS 27.1 KB (≤ 30) |
-| Weekly usage | 92 % (owner 2026-11-15: continue until the limit) |
-| Coders running | coder-r265 (phone kit controls) |
+| Weekly usage | 94 % (owner 2026-11-15: continue until the limit; 1 coder) |
+| Coders running | coder-r266 (CSS rules shared) |
 
 ## 3. Owner directions (standing rules)
 
@@ -761,7 +761,8 @@ Source: `docs/v1-features.md` (each row's evidence and test). `[x]` built, `[ ]`
 
 | Round | What | State |
 |---|---|---|
-| 265 | Phone kit controls (ADR-0065 step 6): Button, IconButton, Switch, Tabs, Input, Select | in progress |
+| 266 | Every CSS rule shared by check and css-rules.test (the :is() rule passed check, failed CI) | in progress |
+| 265 | Phone kit controls (ADR-0065 step 6), browser unchanged; lead fixed queued.css :is() | committed (a6c727ac, ed23c434) |
 | 264 | Paths spelled once at entry (ADR-0071): 6 product bugs + Mark-done race; 13/14 Windows serve failures; serve_open holder still unknown | committed (46437ddb, 236c6c04, 9ea69e14) |
 | 263 | Windows nursery test: pid marker mid-line (libtest prefix), deadlines on every blocking step | committed (ff809a38) |
 | 262 | Queued follow-ups inside the reply box; the queue now shows on a real server (queue_item rows) | committed (5d72c830) |
