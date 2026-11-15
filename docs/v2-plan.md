@@ -20,7 +20,7 @@ Rust for everything but the UI, Solid/TS for the UI, everything a plugin (ADR-00
 |---|---|
 | v1 features | **315 built · 7 partial · 5 missing · 4 dropped** of 331 (§6) |
 | Regressed | none (F-comp-1 picker restored to v1 in round 233) |
-| CI, last full run (302cff77) | **Linux 4/4 + macOS 2/2 green · Windows 22 + 24: all Rust tests pass, jobs 33 min**; only 4 tools tests (fixed r273, pushed) |
+| CI, last full run (db8f01ad) | **Linux 4/4 + macOS 2/2 + Windows node 22 GREEN** (first full Windows pass since the main merge) · Windows node 24 running |
 | Budgets | initial JS 107.2 KB br (≤ 120) · CSS 27.1 KB (≤ 30) |
 | Weekly usage | 96 % (owner 2026-11-15 14:50: keep going with one coder until the limit) |
 | Coders running | coder-r274 (ADR-0074 gaps) |
@@ -637,7 +637,7 @@ Source: `docs/v1-features.md` (each row's evidence and test). `[x]` built, `[ ]`
 - [x] `wisp tasks` with no flags starts a task with the prompt 'tasks' (a known command word taken as a prompt): a command word alone prints its usage, a typo of one says *did you mean*, a plugin's name lists its verbs; `wisp -- <word>` is the task (`crates/wisp/src/words.rs` `not_a_task`, `serve_cli.rs` `a_command_word_or_a_typo_of_one_starts_no_task`)
 - [ ] README's Development lines still describe v1's npm run dev
 - [ ] No tested `.vscode/launch.json` (CodeLLDB) for wisp serve
-- [ ] ADR-0074 gaps: events a command emits still go out when it returns (after its writes); budget drain/early, channels hub, machines emit after writes outside a command
+- [x] ADR-0074 gaps: a command's events go out with its writes (every `Store::write` in a command stages what it emitted so far; the rest at its return), and budget drain/early, channels `startedFrom`, machines `changed`/`removed` go in an outbox with their write (ADR-0075; `kernel_events.rs` `a_commands_events_go_out_with_its_write_so_a_reader_of_its_row_finds_them`, `durable_events.rs`, `plan_free.rs`, `machines/host/tests/events.rs`)
 - [ ] `ui-only`/MCP: nothing open
 
 ## 8. CI
