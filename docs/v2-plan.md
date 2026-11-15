@@ -23,7 +23,7 @@ Rust for everything but the UI, Solid/TS for the UI, everything a plugin (ADR-00
 | CI, last full run (11fe8350) | Linux + macOS: strings-split (phone nav destinations.ts uses lazy keys without the loader) -> r285 · previous run f0db9105 all 8 green |
 | Budgets | initial JS 107.2 KB br (≤ 120) · CSS 27.1 KB (≤ 30) |
 | Weekly usage | 0 % (reset applied) · **owner 2026-11-15: one coder at a time** |
-| Coders running | coder-r287 (crew stories C) |
+| Coders running | coder-r288 (one project selector everywhere) |
 
 ## 3. Owner decisions (every one, dated; read before any change)
 
@@ -747,6 +747,7 @@ Source: `docs/v1-features.md` (each row's evidence and test). `[x]` built, `[ ]`
 - [x] serve_channels_cap and serve_delegate_machine still use FAKE_DELAY (convert to FAKE_GATE)
 - [ ] Same-named phone chips share a highlight when one is pressed (give chips the computer in their id)
 - [ ] A removed peer's pending optimistic writes aren't cleared (resetPeer)
+- [ ] Phone Tasks: a crew member's avatar touches the task title (no gap like the dot's)
 - [ ] `ui-only`/MCP: nothing open
 
 ## 8. CI
@@ -920,7 +921,8 @@ Source: `docs/v1-features.md` (each row's evidence and test). `[x]` built, `[ ]`
 |---|---|---|
 | 283 | DX: build bundle + Tauri lock: stopped before edits; plan in §4.6 | to redo |
 | 282 | Server perf budgets: stopped before edits; plan in §4.3 | to redo |
-| 287 | Crew on phones as stories with a reply box (owner's pick C) | in progress |
+| 288 | One project selector with multi-pick everywhere (desktop New task, reply box, phone Tasks, phone New task) | in progress |
+| 287 | Crew on phones as stories with a reply box (owner's pick C) | committed (9da2cf94) |
 | 286 | Phone task page, New task, search (step 13; left: selection mode, iOS filter pull-down, swipe between tasks) | committed (cb800d63) |
 | 285 | Strings fix; phone row time/pill lines; peers.remove drops rows (duplicate tasks bug); same-name chip labels | committed |
 | 284 | Phone step 13 part: Tasks screen (top bar, filter, chips, FAB) + Add computer (QR, Trust key, Stay connected); list-at-top scroll fix | committed |
