@@ -338,9 +338,14 @@ pub async fn rig() -> Rig {
 }
 
 /// A folder a task may run in on this OS (it must exist: a task whose folder is gone never starts): `/tmp`, and
-/// Windows' temp folder there (`/tmp` there is `C:\tmp`, which is no folder).
+/// Windows' temp folder there (`/tmp` there is `C:\tmp`, which is no folder), spelled as runtime stores a task's
+/// folder (ADR-0071: `C:\Users\RUNNER~1\…` is `C:\Users\runneradmin\…`).
 pub fn tmp() -> String {
-    if cfg!(windows) { std::env::temp_dir().display().to_string().trim_end_matches('\\').to_owned() } else { "/tmp".to_owned() }
+    if cfg!(windows) {
+        wisp_proc::plain_str_blocking(std::env::temp_dir().display().to_string().trim_end_matches('\\'))
+    } else {
+        "/tmp".to_owned()
+    }
 }
 
 /// Waits (up to 5 s) until `f` holds.

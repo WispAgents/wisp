@@ -662,6 +662,23 @@ Source: `docs/v1-features.md` (each row's evidence and test). `[x]` built, `[ ]`
   `wisp_proc::take_ctrl_c`, and listens from its start). Only Windows CI can confirm: `nursery_windows`, Ctrl-C under
   ConPTY, and `serve_open` (if a post-turn `git` in the worktree also holds the folder, the next step is a product one:
   the turn's end waits for the run's release, not the test).
+- **Windows 8bb8ccd0 (r263, proof = next `ci:full`):** 14 serve tests failed: one folder spelled two ways (`%TEMP%` is
+  `C:\Users\RUNNER~1\…`; r257 stored task folders and projects long, nothing else). ADR-0071: one helper,
+  `wisp_proc::plain_path` (pure rule `spell_out_with`, tested on every OS with a mapped 8.3 name), applied where a path
+  enters (the homes, the CLI cwd, `runtime.create` cwd/dirs before the project match, projects and triggers on apply,
+  `projectRun`, `machines.changes`, the sandbox); the tests' `temp()`/`tmp()` are spelled the same. Causes: test-side
+  only (expected the short path the product now stores long): `serve_crew_delegate`, `serve_crew_machine`,
+  `serve_delegate_machine` ×2 (copy under the home), `serve_mcp_tools` ×2. Product: `projectRun` (short cwd vs a long
+  project), `serve_kinds` worktree + `a_failing_setup_holds…` (the project was matched before the cwd was spelled: no
+  worktree, no setup), `trigger:after` (the trigger's project kept short; and `C:\…` filters were an exact `glob` match:
+  now by parts), `serve_delegate_machine` "HTTP 403" (home short, copy long: not a copy), `serve_sandbox` ("only a
+  project under ~/code": `$HOME` short). `serve_history` setState: not a path: Mark done was refused while the CLI
+  lingered after its result (`Run::Lingering`); fixed in `ops::set_state`, test
+  `serve_task::a_task_whose_turn_ended_is_marked_done_while_its_cli_is_still_exiting` (fails before). **Left:**
+  `serve_open::a_folder_gone_opens_at_its_base` os error 32 is not diagnosed (no Windows here): the run's CLI pid is
+  gone, so another process of wisp's works in the worktree after the turn (candidates: ship's `TurnEnded` git/gh,
+  the worktree/git row refresh). The test now prints every live process with its command line when the remove fails,
+  so the next Windows run names the holder; then fix it in the product (the folder is free once the run ends).
 - **Last full run 03c0046d:** Linux and macOS fail only `packages/ui/test/css-rules.test.ts` (2 tests; fixed in round 244, 8e60cdf5 + c8173ea6); Windows jobs cancelled after the others failed. Earlier: 2790d627's probe test fixed in round 234.
 - **Windows groups still open** (from the last Windows results, b7499c23 → 8c2a17ed): most fixed since; to re-count on
   the next full run. Logs in `target/ci/*-failed.log`.

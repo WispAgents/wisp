@@ -182,10 +182,14 @@ pub async fn cmd(http: &reqwest::Client, port: u16, key: &str, name: &str, args:
     v["result"].clone()
 }
 
+/// A fresh folder for one test, with `proj/math.js` in it, spelled long (no 8.3 short names) as wisp stores folders.
 pub fn temp(name: &str) -> PathBuf {
     let nanos = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos();
     let dir = std::env::temp_dir().join(format!("wisp-{name}-{}-{nanos}", std::process::id()));
     std::fs::create_dir_all(dir.join("proj")).unwrap();
+    // spelled as wisp spells every folder it is given (ADR-0071): `%TEMP%` on the Windows runner is
+    // `C:\Users\RUNNER~1\…`, and a task's folder, its project and its copies are stored `C:\Users\runneradmin\…`
+    let dir = wisp_proc::plain_path_blocking(&dir);
     std::fs::write(dir.join("proj/math.js"), "export const add = (a, b) => a - b;\n").unwrap();
     dir
 }

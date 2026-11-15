@@ -186,11 +186,31 @@ async fn a_folder_gone_opens_at_its_base() {
             tokio::time::sleep(std::time::Duration::from_millis(50)).await;
         }
     }
-    std::fs::remove_dir_all(&tree).unwrap();
+    if let Err(e) = std::fs::remove_dir_all(&tree) {
+        // CI 8bb8ccd0 (Windows): os error 32 with the run's CLI gone: something else of wisp's still works in the
+        // folder. Name every process still alive (no retry: the holder is the bug), so the next run says which.
+        panic!("the task's folder is still held after its run ended: {e}\n{}", processes());
+    }
     let (code, out, err) = wisp(&dir, "home", &repo, port, &["open", &id, "--print"], &[]);
     assert_eq!(code, 0, "{out}{err}");
     let plan: Value = serde_json::from_str(&out).unwrap_or_else(|e| panic!("{e}: {out}"));
     let at = plan["cwd"].as_str().unwrap();
     assert!(at.contains("wisp-open-") && Path::new(at).join("math.js").is_file(), "a fresh worktree at the base: {plan}");
     drop(serve);
+}
+
+/// Every process with its parent and command line (Windows: what may hold a folder; elsewhere `ps`).
+fn processes() -> String {
+    let o = if cfg!(windows) {
+        std::process::Command::new("powershell")
+            .args([
+                "-NoProfile",
+                "-Command",
+                "Get-CimInstance Win32_Process | Select-Object ProcessId,ParentProcessId,CommandLine | Format-Table -AutoSize -Wrap | Out-String -Width 400",
+            ])
+            .output()
+    } else {
+        std::process::Command::new("ps").args(["-eo", "pid,ppid,command"]).output()
+    };
+    o.map_or_else(|e| format!("(no process list: {e})"), |o| String::from_utf8_lossy(&o.stdout).into_owned())
 }
