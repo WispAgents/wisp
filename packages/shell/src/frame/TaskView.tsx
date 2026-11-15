@@ -45,6 +45,7 @@ import { goalGate } from './goal-gate.ts';
 import { feedbackCommand, isFeedback } from './feedback.ts';
 import { readComments } from './comment-text.ts';
 import { useNow } from '../clock.ts';
+import { turnClock } from './turn-clock.ts';
 import { stopQuestion, type StopQuestion } from './stop-question.ts';
 import { noOutputLine } from './no-output.ts';
 import { promptKeys, remember, sentStore } from './prompt-keys.ts';
@@ -153,7 +154,8 @@ interface TurnRow {
 
 const ACT_ICON: Readonly<Record<string, IconName>> = { read: 'read', edit: 'pen', run: 'terminal', error: 'warn', text: 'text', tool: 'tool' };
 
-const clock = (at: number): string => new Intl.DateTimeFormat('en-GB', { hour: '2-digit', minute: '2-digit' }).format(at);
+/** A turn's clock time, in the app's locale (v1 turnTime). */
+const clock = (at: number): string => turnClock(at);
 
 /** An earlier day in the ledger ("Mon 9 Nov"), in the app's locale as the kit's <Time> reads (content/time-format.ts). */
 const DAY_NAME = new Intl.DateTimeFormat(undefined, { weekday: 'short', day: 'numeric', month: 'short' });
