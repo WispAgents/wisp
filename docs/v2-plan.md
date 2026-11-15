@@ -23,7 +23,7 @@ Rust for everything but the UI, Solid/TS for the UI, everything a plugin (ADR-00
 | CI, last full run (836287a4) | **Linux 4/4 + macOS 24 green; Windows Rust tests: win22 0 failures (job 33 min), win24 1 (serve_budget, r271)** · UI: pane-host + phone Select flakes fixed in r270 (302cff77) |
 | Budgets | initial JS 107.2 KB br (≤ 120) · CSS 27.1 KB (≤ 30) |
 | Weekly usage | 95 % (owner 2026-11-15 14:50: keep going with one coder until the limit) |
-| Coders running | coder-r271 (serve_budget race) |
+| Coders running | coder-r272 (events published on commit) |
 
 ## 3. Owner directions (standing rules)
 
@@ -794,7 +794,8 @@ Source: `docs/v1-features.md` (each row's evidence and test). `[x]` built, `[ ]`
 
 | Round | What | State |
 |---|---|---|
-| 271 | serve_budget: budget.compare empty right after turns end (Windows node 24) | in progress |
+| 272 | Turn-ended event published in the turn-end write's own commit (ADR-0073's open gap) | in progress |
+| 271 | Budget counts a turn that just ended: compare/view wait for earlier events (kernel Bus::delivered, ADR-0073) | committed (3cd4ffd7) |
 | 270 | Two load-sensitive UI tests + a Select stuck-open bug (product) | committed (b532ec4e, 302cff77) |
 | 269 | CI's other-packages step runs each check once (ADR-0072): 128.6 s -> 38.5 s locally | committed (836287a4); proof = CI on 836287a4 |
 | 268 | Machines copy check spells both sides (product); sandbox joins; long temp in plugin tests; serve_open | committed (d3165656) |
