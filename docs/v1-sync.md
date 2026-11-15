@@ -36,3 +36,8 @@ Last synced v1 commit: **fc1c10c3** (2026-11-14)
 | #789 23b5e9be | phone: the app's avatar menu says Computers before wisp answers | **to port** with the phone apps (queue item 8): the menu's labels never wait on the server |
 | #790 f3cfa4f6 | usage at a glance under the prompt box on Home | **done (round 126):** Home's launcher shows the plan windows' use (budget plugin's limits) under the prompt box, as v1 |
 | #762, #770, #783, #784, #791 | test and CI fixes in v1 (Discord fatal close, install gate sockets, timer and Windows lock flakes, nightly time, grid inbox stand-in) | **checked:** v2's own tests cover Discord close (channels ws), the grid inbox (serve_grid); nothing to port |
+| #792, #793 | test fixes in v1 (desktop shell test leaves no server, Discord timestamp-window clock) | **checked:** v2's tests don't share these patterns (serve tests drop their server; no wall-clock windows) |
+| #794 eb34b3a1 | side discussions and Plan mode run commands themselves | **to port** (2026-11-15) |
+| #795 0be7be31 | a lead's scheduled check-in goes while it waits on its subagents | **to port** (2026-11-15) |
+| #796 def1c166 | scheduled follow-ups above the reply box are one compact list | **to port** (2026-11-15) |
+| #797 c103d04b | paste into a task's Shell after selecting text in it | **to port** (2026-11-15) |

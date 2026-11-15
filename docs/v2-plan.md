@@ -57,6 +57,8 @@ Rust for everything but the UI, Solid/TS for the UI, everything a plugin (ADR-00
       grid accounts (ADR-0061), cloud API keys (ADR-0058), cloud previews (ADR-0064), harness detection topic (ADR-0066)
 - [x] Process hygiene: nothing outlives a killed server (guard, Windows jobs, exec plugins ADR-0063, probes)
 - [x] `.env` masking everywhere a value can leave (ADR-0050, 0054, 0055)
+- [ ] **v1 sync** (`docs/v1-sync.md`): port v1 #794 (side discussions/Plan mode run commands), #795 (lead's check-in
+      fires while waiting on subagents), #796 (compact follow-ups list), #797 (Shell paste after selecting); #789 with phone step 13
 - [ ] **TUI** (ADR-0024, `docs/v2-tui-design.md`): first slice done (list, answer, composer). Left: `--on <machine>`,
       For later and Repo tab, blame gutter, hunk jumps, terminal images, the real-terminal pass.
 
@@ -151,6 +153,7 @@ Rust for everything but the UI, Solid/TS for the UI, everything a plugin (ADR-00
 - [ ] Verify + commit round 228 (push plugin, grid relay, `hpke` dependency)
 - [x] Review coder-r233's picker against `design/v1-reference/home.runner` (side by side): matches; committed 6e3fe42e
 - [x] Push the local commits after coder-r234's CI fix
+- [x] Merge origin/main (#792-#797) into #756: CHANGELOG conflict was blocking PR CI (8efe765b)
 - [ ] Rebuild the owner's v2 desktop preview with the latest fixes (port 4791, `~/.wisp-v2-preview`)
 
 ## 6. Every v1 feature
