@@ -1,0 +1,14 @@
+id: D-0001
+decision: Mark beta versions with a `-` (e.g. `0.38.0-beta.1`), which publish to npm `next` as a GitHub prerelease with no Homebrew. Nightlies publish from the same release workflow.
+reason: npm allows only one trusted publisher per package.
+rejected:
+- a separate nightly publish workflow
+scope:
+- .github/workflows/release.yml
+- .github/workflows/nightly.yml
+- server/update.js
+category: architecture
+status: accepted
+sources:
+- AGENTS.md
+date: 2026-11-07

@@ -26,6 +26,32 @@ npm test            # everything
 - New test files go in `test/`, named `*.test.js`: `npm test` finds them.
 - User-facing changes get a line under *Unreleased* in [CHANGELOG.md](CHANGELOG.md).
 
+## Agent tooling
+
+If you work with a coding agent, install the two tools that keep it in line with what's already
+been decided:
+
+```sh
+brew install wispagents/tap/decision-ledger wispagents/tap/ingrain
+decisions init && ingrain init     # in your wisp checkout: adds the git pre-commit hooks
+```
+
+The Claude Code hooks are already in `.claude/settings.json`, and they do nothing until the tools
+are installed. Once they are, the agent sees the relevant decisions from `decisions/` before it edits
+a file, and the learned rules in `.corrections/` are checked as it writes.
+
+To record a decision (a convention, a constraint, a choice future code must follow), propose it:
+
+```sh
+decisions add --propose "Settings panes use container queries, not fixed widths." \
+  --reason "they must work at phone widths" --scope "web/css/**"
+decisions review                   # accept, edit or reject; then commit decisions/
+```
+
+To change an accepted decision, don't edit its file: run
+`decisions supersede D-0012 --decision "..." --reason "..."` and review it the same way. CI checks
+every PR against both (`.github/workflows/ledger.yml`).
+
 ## Pull requests
 
 `main` is protected: work on a branch and open a PR. CI runs the suite on Linux; label it `ci:full`

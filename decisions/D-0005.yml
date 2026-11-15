@@ -1,0 +1,12 @@
+id: D-0005
+decision: In `web/js`, give `on*` handlers block bodies instead of expression arrows.
+reason: An expression arrow returning `false` cancels the click and silently breaks submit buttons in dialogs.
+rejected:
+- expression-bodied arrow handlers
+scope:
+- web/js/**
+category: convention
+status: accepted
+sources:
+- AGENTS.md
+date: 2026-11-07

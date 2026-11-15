@@ -1,0 +1,9 @@
+id: D-0040
+decision: Set `body.stack-page` only through `paintSplit`.
+scope:
+- web/js/features/split.js
+category: constraint
+status: accepted
+sources:
+- AGENTS.md
+date: 2026-11-07

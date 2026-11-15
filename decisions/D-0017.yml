@@ -1,0 +1,9 @@
+id: D-0017
+decision: Keep `web/js/spell-schema.js` DOM-free so the server and the page can share it.
+scope:
+- web/js/spell-schema.js
+category: constraint
+status: accepted
+sources:
+- AGENTS.md
+date: 2026-11-07

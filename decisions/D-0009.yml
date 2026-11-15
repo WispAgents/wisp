@@ -1,0 +1,10 @@
+id: D-0009
+decision: Make UI actions update optimistically, and roll back with an error toast via `tryApi` if the server refuses.
+scope:
+- web/js/**
+- tryApi
+category: convention
+status: accepted
+sources:
+- AGENTS.md
+date: 2026-11-07

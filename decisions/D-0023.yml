@@ -1,0 +1,9 @@
+id: D-0023
+decision: Ship new integrations off by default behind a Settings switch, with tests.
+scope:
+- '**'
+category: convention
+status: accepted
+sources:
+- AGENTS.md
+date: 2026-11-07

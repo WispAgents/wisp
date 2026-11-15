@@ -1,0 +1,11 @@
+id: D-0004
+decision: Register each new area for buttons/chips/panels as a `SLOTS` entry (task slots also in `CARD_SLOTS`), render it with `slotHtml(slot, session)`, repaint on the bus `spells` event, and allow it in `server/spells.js` (`BUTTON_SLOTS`, chips list).
+scope:
+- web/js/spell-schema.js
+- web/js/features/spells.js
+- server/spells.js
+category: convention
+status: accepted
+sources:
+- AGENTS.md
+date: 2026-11-07

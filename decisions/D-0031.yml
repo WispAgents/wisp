@@ -1,0 +1,11 @@
+id: D-0031
+decision: Use plain 1px neutral borders (`var(--line)`, `var(--line-2)`) and no coloured side stripes.
+rejected:
+- coloured side stripes
+scope:
+- web/css/**
+category: convention
+status: accepted
+sources:
+- AGENTS.md
+date: 2026-11-07

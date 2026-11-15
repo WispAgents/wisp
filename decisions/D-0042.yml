@@ -1,0 +1,9 @@
+id: D-0042
+decision: 'Test each new slot/part/prop/setting in `test/spells.test.js`: accepted when valid, refused with a useful message when bad.'
+scope:
+- test/spells.test.js
+category: convention
+status: accepted
+sources:
+- AGENTS.md
+date: 2026-11-07

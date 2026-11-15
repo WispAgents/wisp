@@ -1,0 +1,13 @@
+id: D-0044
+decision: Route a channel's message handling through the shared `conversation.js`; a new channel passes in only what differs instead of copying it.
+reason: Telegram, GitHub, Slack and Discord share one conversation flow.
+rejected:
+- copying conversation logic per channel
+scope:
+- server/channels/**
+- server/channels/conversation.js
+category: architecture
+status: accepted
+sources:
+- AGENTS.md
+date: 2026-11-07

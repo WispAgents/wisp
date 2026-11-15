@@ -1,0 +1,12 @@
+id: D-0028
+decision: Write the web page in vanilla JS as native ES modules with no build step.
+rejected:
+- frameworks
+- bundlers/build steps
+scope:
+- web/**
+category: architecture
+status: accepted
+sources:
+- AGENTS.md
+date: 2026-11-07

@@ -1,0 +1,9 @@
+id: D-0019
+decision: 'Keep the desktop app''s Rust (`src-tauri/`) small: window, menu, links and the Node child.'
+scope:
+- desktop/src-tauri/**
+category: architecture
+status: accepted
+sources:
+- AGENTS.md
+date: 2026-11-07

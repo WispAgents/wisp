@@ -1,0 +1,10 @@
+id: D-0018
+decision: Add every new sprite icon in `web/index.html` to `ICONS` as well.
+scope:
+- web/index.html
+- web/js/spell-schema.js
+category: convention
+status: accepted
+sources:
+- AGENTS.md
+date: 2026-11-07

@@ -1,0 +1,10 @@
+id: D-0021
+decision: Label a PR `ci:full` when it touches process launching, paths, shells or terminals.
+reason: To run the full OS/Node matrix.
+scope:
+- '**'
+category: convention
+status: accepted
+sources:
+- AGENTS.md
+date: 2026-11-07

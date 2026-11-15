@@ -165,3 +165,23 @@ wisp aims to be the fastest dev tool there is. Speed is checked like correctness
 ## wisp: the tasks behind this code
 
 Before changing a file, read the tasks that shaped it: `wisp tasks --touching <path>` (or `wisp blame <file>:<line>`), or the files in `.wisp/tasks/`. They hold what was asked, the agent's report and its transcript.
+
+## Decision ledger and learned rules
+
+Two tools keep agents in line with what was already decided:
+
+- `decisions/` is the decision ledger ([decision-ledger](https://github.com/WispAgents/decision-ledger)).
+  Each `D-NNNN.yml` is one accepted decision with its reason and scope. Agents get the repo-wide
+  ones at session start and the ones scoped to a file right before editing it; an edit that breaks a
+  decision's check is refused. Don't edit the records: propose with
+  `decisions add --propose "..." --reason "..." --scope <glob>`, or `decisions supersede D-NNNN ...`
+  to change one; a person accepts with `decisions review`. The v1 rules were imported as D-0001 to
+  D-0046 (scoped to v1's files); v2's owner decisions live in `docs/v2-plan.md` §3 until they are recorded here too.
+- `.corrections/` holds lint rules learned from the corrections people make to agent code
+  ([ingrain](https://github.com/WispAgents/ingrain)). It starts empty: `ingrain mine` and
+  `ingrain propose` add rules once corrections repeat, and they start in shadow mode.
+
+Setup on your machine: `brew install wispagents/tap/decision-ledger wispagents/tap/ingrain`, then
+`decisions init` and `ingrain init` (installs the git pre-commit hooks; the Claude Code hooks are
+already in `.claude/settings.json` and do nothing if the tools aren't installed). CI runs both
+checks on every PR (`.github/workflows/ledger.yml`).
