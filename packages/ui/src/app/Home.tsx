@@ -367,7 +367,7 @@ export function Launcher(props: LauncherProps): JSX.Element {
               </button>
             )}
           />
-          <div data-kit="runners" data-open={flag(props.runner.open === true || props.runner.pickOpen === true || (props.runner.compares ?? []).some((c) => c.open === true))} data-cmp={flag((props.runner.compares?.length ?? 0) > 0)} data-many={flag((props.runner.compares?.length ?? 0) > 1)}>
+          <div data-kit="runners" data-open={flag(props.runner.open === true || props.runner.pickOpen === true || (props.runner.compares ?? []).some((c) => c.open === true))} data-cmp={flag((props.runner.compares?.length ?? 0) > 0)} data-many={flag((props.runner.compares?.length ?? 0) > 1)} data-trial={flag(props.runner.compares?.length === 1 && (props.runner.compares[0]?.variant?.length ?? 0) > 0)}>
             <WithAct
               act={props.runner.act}
               render={(trigger) => (

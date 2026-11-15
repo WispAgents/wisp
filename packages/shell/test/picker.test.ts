@@ -2,7 +2,7 @@
 // that shows on open, the right pane's model groups, and what each pick changes.
 import { expect, test } from 'vitest';
 import { firstFocus, goalOf, modelGroups, pickerRows, searchShown, stepRow, subLine, useHarness, varyRows, withModel, withSetting, withVary } from '../src/frame/picker.ts';
-import type { AgentOffer } from '../src/frame/runner.ts';
+import { modelWord, type AgentOffer } from '../src/frame/runner.ts';
 import { compareWords, newRun, sameSetup } from '../src/frame/trial.ts';
 import { autoPick, runnerParts, runnerPick, type AutoPreview } from '../src/frame/auto.ts';
 
@@ -133,7 +133,8 @@ test('a_compare_run_is_a_copy_of_the_lead_only_on_the_same_harness_model_and_thi
   // its name's words: the model's name, never "Default"; thinking and account stay in the tooltip (v1 .runners.cmp)
   expect(compareWords({ agent: 'codex', model: '', effort: 'high', account: 'w' })).toBe('');
   expect(compareWords({ agent: 'claude', model: 'opus', effort: 'high', modelLabel: 'Opus 5.5' })).toBe('Opus 5.5');
-  expect(compareWords({ agent: 'codex', model: 'gpt-5', effort: '' })).toBe('gpt-5');
+  // an id the harness doesn't list says nothing of its own, as the default does (v1 paintRunnerBtn: 'Default')
+  expect(compareWords({ agent: 'codex', model: 'gpt-5', effort: '' })).toBe('');
 });
 
 test('a_copy_of_the_lead_added_with_plus_starts_from_the_lead_s_model_thinking_and_account_so_try_it_two_ways_is_offered_at_once', () => {
@@ -167,4 +168,15 @@ test('a_picked_harness_s_pick_comes_in_v1_s_parts_so_a_phone_keeps_the_harness_n
   expect(runnerParts({ model: '', effort: 'High', account: '', fallback: 'Default' }).def).toBe(true);
   // the wide pill's words are the parts joined, as before
   expect(runnerPick({ agent: 'claude', name: 'Claude Code', model: 'Opus 4.7', effort: 'High', account: 'work', fallback: 'Default' })).toBe('Opus 4.7 · High · work');
+});
+
+test('an_unknown_model_id_reads_default_on_the_harness_button_never_the_raw_id_v1_paint_runner_btn', () => {
+  // v1 runners.js paintRunnerBtn: m = a.models.find(id); <span class="rb-m${m && m.id ? '' : ' def'}">${m && m.id ? m.label : 'Default'}</span>
+  expect(modelWord({ model: '', modelLabel: '' })).toBe('');
+  expect(modelWord({ model: 'opus', modelLabel: 'Opus 4.7' })).toBe('Opus 4.7');
+  // an id no model of the harness has (a stale default, a model the CLI dropped): no label, so Default and def
+  expect(modelWord({ model: 'gpt-4-legacy' })).toBe('');
+  expect(modelWord({ model: 'gpt-4-legacy', modelLabel: '' })).toBe('');
+  expect(runnerParts({ model: modelWord({ model: 'gpt-4-legacy' }), effort: 'High', account: '', fallback: 'Default' })).toEqual({ model: 'Default', def: true, effort: 'High', account: '' });
+  expect(runnerPick({ agent: 'codex', name: 'Codex', model: modelWord({ model: 'gpt-4-legacy' }), effort: '', account: '', fallback: 'Default' })).toBe('Default');
 });

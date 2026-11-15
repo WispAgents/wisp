@@ -69,6 +69,10 @@ export interface Runner {
   readonly modelLabel?: string;
 }
 
+/** The model's name a button shows (v1 paintRunnerBtn: the label of one of the harness's models, else `Default`): its
+ * label when the pick knows it, '' (the harness's default) for no model or an id the harness doesn't list. */
+export const modelWord = (r: { readonly model: string; readonly modelLabel?: string | undefined }): string => (r.model && r.modelLabel ? r.modelLabel : '');
+
 /** One of a harness's accounts as `accounts.list` gives it (wisp.accounts' AccountView). */
 export interface AccountOffer {
   readonly id: string;

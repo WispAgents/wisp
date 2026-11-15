@@ -23,7 +23,7 @@ import { SESSION, type SessionRow } from '../rows.ts';
 import { longTime, sectionOf, shortAgo, statusOf } from './rows-view.ts';
 import { autoBlocked, autoPreview, autoRules, create, setSetting, trial, type Attachment } from './commands.ts';
 import { compareWords, newRun, sameSetup, settingModel, trialVary, variantWords, type Variant } from './trial.ts';
-import type { Runner } from './runner.ts';
+import { modelWord, type Runner } from './runner.ts';
 import { goalGate, goalOf, goalSent, isBareGoal, typedInFull, type HomeGoal } from './goal-gate.ts';
 import { feedbackCommand, isFeedback, openFeedback } from './feedback.ts';
 import { autoPick, neverRule, runnerParts, runnerPick, overrideOf, popOf, pct, PREVIEW_DEBOUNCE, shortLabel, usd, type AutoPreview } from './auto.ts';
@@ -521,9 +521,9 @@ export function HomeView(props: { readonly onBack?: () => void }): JSX.Element {
           // the pill's tooltip: Auto's (what it will run, as pickTitle says) or the harness's
           title: agent() === 'auto' ? t('shell.home.autoTitle') : t('shell.runner.title'),
           auto: agent() === 'auto',
-          pick: runnerPick({ agent: agent(), shown: shown()?.label, name: pick().name, model: modelLabel() || model(), effort: effort(), account: account()?.label ?? '', fallback: t('shell.runner.default') }),
+          pick: runnerPick({ agent: agent(), shown: shown()?.label, name: pick().name, model: modelWord({ model: model(), modelLabel: modelLabel() }), effort: effort(), account: account()?.label ?? '', fallback: t('shell.runner.default') }),
           // a picked harness's model, thinking and account as v1's parts: the narrow bar folds them one by one (launcher.css)
-          ...(agent() !== 'auto' && { pickParts: runnerParts({ model: modelLabel() || model(), effort: effort(), account: account()?.label ?? '', fallback: t('shell.runner.default') }) }),
+          ...(agent() !== 'auto' && { pickParts: runnerParts({ model: modelWord({ model: model(), modelLabel: modelLabel() }), effort: effort(), account: account()?.label ?? '', fallback: t('shell.runner.default') }) }),
           pickTitle:
             agent() !== 'auto'
               ? t('shell.runner.title')
@@ -622,11 +622,16 @@ export function HomeView(props: { readonly onBack?: () => void }): JSX.Element {
               ...(goalOn() && { on: true }),
               act: { onClick: () => (setGoalOn(!goalOn()), queueMicrotask(() => (goalOn() ? goalInput : input)?.focus())) },
             }),
-            tool('worktree', 'launcher.worktree', 'branch', worktree() ? t('shell.home.worktree') : t('shell.home.inPlace'), t('shell.home.worktreeTitle'), {
-              text: true,
-              on: worktree(),
-              act: { onClick: () => void shell.client.commands.run(setSetting, { peer: home, key: 'defaults.worktree', value: !worktree() }).catch(() => undefined) },
-            }),
+            // No folder: no git repo, so no worktree either; the toggle would only mislead (v1 paintScratch)
+            ...(project() === undefined
+              ? []
+              : [
+                  tool('worktree', 'launcher.worktree', 'branch', worktree() ? t('shell.home.worktree') : t('shell.home.inPlace'), t('shell.home.worktreeTitle'), {
+                    text: true,
+                    on: worktree(),
+                    act: { onClick: () => void shell.client.commands.run(setSetting, { peer: home, key: 'defaults.worktree', value: !worktree() }).catch(() => undefined) },
+                  }),
+                ]),
             tool('later', 'launcher.later', 'clock', t('shell.home.later'), t('shell.home.later'), {
               ...(when() && { on: true }),
               act: { menu: { items: whenMenu(t), onSelect: (v) => setWhen(v as When) } },
@@ -701,7 +706,8 @@ export function HomeView(props: { readonly onBack?: () => void }): JSX.Element {
                 if (!c) return;
                 pickAgent(c.agent);
                 setModel(c.model);
-                setModelLabel('');
+                // its name from Auto's label ("Codex · GPT-5 · High", v1 shortLabel), so the pill names it, not Default
+                setModelLabel(c.model ? (c.label.split(' · ')[1] ?? '') : '');
                 setEffort(c.effort);
               }}
               onNever={() => {
@@ -721,7 +727,8 @@ export function HomeView(props: { readonly onBack?: () => void }): JSX.Element {
         peer={target()}
         auto
         accounts
-        value={{ agent: agent(), model: model(), effort: effort(), account: account()?.id ?? '' }}
+        // the names ride along, so a thinking or account change (withSetting) keeps the model's and account's words
+        value={{ agent: agent(), model: model(), effort: effort(), account: account()?.id ?? '', ...(modelLabel() && { modelLabel: modelLabel() }), ...(account() && { accountLabel: account()?.label ?? '' }) }}
         onChange={(r) => {
           const was = agent();
           setAgent(r.agent);

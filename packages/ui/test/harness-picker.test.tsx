@@ -350,3 +350,28 @@ test('auto_never_marks_a_default_model_on_the_harness_button', () => {
   mount(() => <Launcher {...launcher({})} runner={{ ...launcher({}).runner, pickParts: { model: 'Default', def: true, effort: '', account: '' } }} />);
   expect(document.querySelector('[data-part="launcher.harness"]')?.hasAttribute('data-def')).toBe(false);
 });
+
+test('comparing_the_lead_keeps_its_model_in_its_button_and_try_it_two_ways_marks_the_pill_v1_runners_cmp_rb_m', () => {
+  const [vary, setVary] = createSignal(false);
+  mount(() => (
+    <Launcher
+      {...launcher({})}
+      runner={{
+        ...launcher({}).runner,
+        auto: false,
+        label: 'Claude Code',
+        pick: 'Opus 4.7 · High · work',
+        pickParts: { model: 'Opus 4.7', def: false, effort: 'High', account: 'work' },
+        compares: [{ label: 'Claude Code', removeLabel: 'Remove', onRemove: () => undefined, act: { onClick: () => undefined }, ...(vary() && { variant: ['Haiku subagents'] }) }],
+      }}
+    />
+  ));
+  const pill = document.querySelector<HTMLElement>('[data-kit="runners"]');
+  // v1 .runners.cmp: the lead's .rb-m stays (only ≤640px folds it); .rb-a goes, .rb-e goes unless it's a trial
+  const lead = pill?.querySelector('[data-part="launcher.harness"] [data-part="launcher.model"]');
+  expect(lead?.querySelector('[data-kit="rb-m"]')?.textContent).toBe('Opus 4.7');
+  expect(pill?.hasAttribute('data-cmp')).toBe(true);
+  expect(pill?.hasAttribute('data-trial')).toBe(false);
+  setVary(true);
+  expect(pill?.hasAttribute('data-trial')).toBe(true);
+});

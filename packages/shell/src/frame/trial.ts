@@ -2,7 +2,7 @@
 // the run added with + is the copy; F-comp-31, ADR-0056): run B's one changed setting in the launcher, the trial the
 // launch sends, a run's variant in words for its row and Compare's column, and what differed. Pure, DOM-free.
 import type { MenuEntry } from '@wisp/ui';
-import type { Runner } from './runner.ts';
+import { modelWord, type Runner } from './runner.ts';
 
 type T = (key: string, params?: Readonly<Record<string, string | number>>) => string;
 
@@ -132,7 +132,7 @@ export const sameSetup = (r: Pick<Runner, 'agent' | 'model' | 'effort'>, lead: P
 
 /** A compare run's own words after its name (v1 .rb-m in a compare: thinking and account fold away there, the tooltip
  * keeps them): its model's name, '' on the harness's default. */
-export const compareWords = (r: Runner): string => (r.model ? r.modelLabel || r.model : '');
+export const compareWords = (r: Runner): string => modelWord(r);
 
 /** A run added with + (v1 vsBtn.onclick): a copy of the lead starts from the lead's model, thinking and account, so it's
  * Try it two ways' ground at once; another harness starts from its defaults. */

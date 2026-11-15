@@ -303,7 +303,7 @@
   [data-kit='l-bar'] {
     display: flex;
     align-items: center;
-    gap: var(--space-1);
+    gap: var(--space-3);
     padding-top: var(--space-3);
   }
   [data-kit='l-bar'] > *,
@@ -502,13 +502,13 @@
     overflow: hidden;
   }
   /* a harness's own name gives way with an ellipsis, never cut mid-word, and its chevron stays (v1 .runners .rb-h) */
-  [data-kit='runner-btn'][data-lead]:not([data-auto]) > [data-kit='rb-h'] {
+  [data-kit='runner-btn']:not([data-auto]) > [data-kit='rb-h'] {
     flex: 0 1 auto;
     min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
   }
-  [data-kit='runner-btn'][data-lead] > [data-kit='icon'] {
+  [data-kit='runner-btn'] > [data-kit='icon'] {
     flex: none;
   }
   /* v1 .runner-btn.open: lit, the chevron turned up; the pick keeps the surface */
@@ -574,24 +574,25 @@
   [data-kit='vs-btn'][data-del]:focus-visible > [data-kit='icon'] {
     display: block;
   }
-  [data-kit='runners'][data-cmp] > [data-kit='runner-btn'] > [data-kit='auto-pv'] > [data-kit='apv-l'],
   [data-kit='runners'][data-cmp] > [data-kit='auto-pv'] > [data-kit='apv-l'],
+  [data-kit='runners'][data-cmp] [data-kit='rb-a'],
+  [data-kit='runners'][data-cmp]:not([data-trial]) [data-kit='rb-e'],
   [data-kit='runners'][data-many] > [data-kit='runner-btn'] > [data-kit='auto-pv'],
   [data-kit='runners'][data-many] > [data-kit='auto-pv'],
   [data-kit='runners'][data-many] > [data-kit='runner-btn'] > [data-kit='rb-v'] {
     display: none;
   }
-  [data-kit='runners'][data-cmp] > [data-kit='runner-btn'] > [data-kit='auto-pv'],
   [data-kit='runners'][data-cmp] > [data-kit='auto-pv'] {
     padding: 0 5px;
   }
-  [data-kit='runners'][data-cmp] > [data-kit='runner-btn'] > [data-kit='auto-pv'] > [data-kit='rb-logo'],
   [data-kit='runners'][data-cmp] > [data-kit='auto-pv'] > [data-kit='rb-logo'] {
     margin-right: 0;
   }
+  /* a compare run's button gives way with the lead's, each cut with an ellipsis (v1 .runner-btn.cmp-x: v1's padding,
+     flex none only past two runs, .runners.many) */
   [data-kit='runner-btn'][data-cmp] {
-    flex: none;
-    padding-inline: 6px;
+    flex: 0 1 auto;
+    min-width: 0;
   }
   /* .rb-v: Try it two ways' words on the copy of the lead (v1 launcher.css): one line, cut rather than wrapped */
   [data-kit='rb-v'] {
@@ -711,6 +712,12 @@
 
   /* The prompt box folds its toolbar as it narrows, by its own width (launcher.css, auto.css, subagents.css
      @container launcher): labels go to their icons in v1's order, then the bar scrolls with Send pinned. */
+  /* v1: from 960px down the bar's gaps pay for Worktree's icon (each button has 7px inside); the first run has none */
+  @container launcher (max-width: 960px) {
+    [data-kit='launcher']:not([data-first-run]) [data-kit='l-bar'] {
+      gap: var(--space-1);
+    }
+  }
   @container launcher (max-width: 720px) {
     [data-kit='l-bar'] > [data-a='worktree'] > [data-text='control'],
     [data-kit='rb-a'] {
@@ -729,6 +736,7 @@
     [data-kit='runner-btn'][data-auto] > [data-kit='rb-h'],
     [data-kit='runners'] > [data-kit='auto-pv'] > [data-kit='apv-l'],
     [data-kit='runner-btn'][data-cmp] > [data-part~='launcher.compare.model'],
+    [data-kit='runners'][data-cmp] > [data-kit='runner-btn'] > [data-kit='auto-pv'],
     [data-kit='l-bar'] > [data-a='team'] > [data-text='control'] {
       display: none;
     }
@@ -793,7 +801,7 @@
     }
     /* the place, mode and the rest go to their icons (their tooltips and menus name them); the pill's own parts
        follow the rules above */
-    [data-kit='l-bar'] [data-text='control']:not([data-kit]) {
+    [data-kit='l-bar'] > :not([data-a='more']) > [data-text='control']:not([data-kit]) {
       display: none;
     }
     [data-kit='l-bar'] > [data-kit='mode-btn'] {
@@ -804,6 +812,7 @@
       display: inline;
     }
     [data-kit='l-bar'] {
+      gap: var(--space-1);
       overflow-x: auto;
       scrollbar-width: none;
     }
