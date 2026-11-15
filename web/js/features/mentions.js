@@ -66,11 +66,9 @@ export function mentionBox(ta) {
   ta.addEventListener('scroll', sync);
   new ResizeObserver(paint).observe(ta);
 
-  ta.addEventListener('paste', (e) => {
-    if (e.clipboardData?.files?.length) return; // attachments take those
-    const ids = pastedTasks(e.clipboardData?.getData('text/plain'), (id) => S.sessions.has(id) && !S.sessions.get(id).pending);
-    if (!ids) return;
-    e.preventDefault();
+  const known = (text) => pastedTasks(text, (id) => S.sessions.has(id) && !S.sessions.get(id).pending);
+  // The selection becomes the tasks' mentions.
+  function put(ids) {
     for (const id of ids) {
       const title = cleanTitle(S.sessions.get(id).title);
       if (!ta.mentions.some((m) => m.id === id)) ta.mentions.push({ id, title });
@@ -78,6 +76,31 @@ export function mentionBox(ta) {
     const before = shown().slice(0, ta.selectionStart);
     const lead = before && !/\s$/.test(before) ? ' ' : '';
     insert(lead + ids.map((id) => `@${ta.mentions.find((m) => m.id === id).title}`).join(' ') + ' ');
+  }
+
+  ta.addEventListener('paste', (e) => {
+    if (e.clipboardData?.files?.length) return; // attachments take those
+    const ids = known(e.clipboardData?.getData('text/plain'));
+    if (!ids) return;
+    e.preventDefault();
+    put(ids);
+  });
+
+  // A phone keyboard's clipboard chip (Gboard's) puts the text in like typing, with no paste event.
+  // An id that lands whole in one insert (typing adds a letter at a time) becomes its mention too.
+  let from = null;
+  ta.addEventListener('beforeinput', (e) => {
+    from = e.inputType === 'insertText' || e.inputType === 'insertFromPaste' ? ta.selectionStart : null;
+  });
+  ta.addEventListener('input', (e) => {
+    const at = from;
+    from = null;
+    if (at == null || e.isComposing) return;
+    const end = ta.selectionStart;
+    const ids = end - at >= 12 && known(shown().slice(at, end));
+    if (!ids) return;
+    ta.setSelectionRange(at, end);
+    put(ids);
   });
 
   // Backspace right after a mention (or Delete right before one) takes the whole mention.
