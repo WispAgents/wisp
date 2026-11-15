@@ -719,10 +719,17 @@ Source: `docs/v1-features.md` (each row's evidence and test). `[x]` built, `[ ]`
 
 | Round | What | State |
 |---|---|---|
-| 243 | Launcher bar as v1 at every width (More label, gaps, lead's model, unknown = Default, Worktree hidden with no project) | committed (a6ba4cac) |
-| 246 | Port v1 #795 (check-in fires while waiting on subagents) + #796 (compact follow-ups list) | done, uncommitted |
-| 245 | Try it two ways folds (≤1099/≤700) + Default on compare runs | committed (1d79d6e9; lead verified: tests, check, side-by-sides) |
-| 244 | css-rules failures fixed (breakpoint tokens, Wrap group); check and test share @wisp/tokens/css-rules | committed (8e60cdf5, c8173ea6) |
+| 253 | Port v1 #794 (Plan mode on Claude runs commands; side discussions run commands) | in progress |
+| 252 | Full suite finishes on macOS/Windows (cancelled at 60 min: verify --all after the cargo step) | in progress |
+| 251 | Lead waits on remote, sandbox and crew subagents (v1 child.relay) | committed (5dee4072; lead-verified) |
+| 250 | Each subagent's report goes back as it ends (v1 timing) | committed (e9755bab) |
+| 249 | Offline bar strings eager (strings-split CI failure) | committed (301a9cf5) |
+| 248 | Initial JS 119.4 -> 107.2 KB br (Compare split, 756 strings lazy); lead restored offline bar strings | committed (59a460b2, 5d23195a) |
+| 247 | Lead waits on its subagents + report-back + slot merge (F-task-51) | committed (2ec6192c, 25500b26, 66ca5968) |
+| 246 | Port v1 #795 + #796 (compact follow-ups list, kit ScheduledList) | committed (58ade620, 81eac943) |
+| 245 | Try it two ways folds (≤1099/≤700) + Default on compare runs | committed (1d79d6e9; lead-verified) |
+| 244 | css-rules failures fixed; check and test share @wisp/tokens/css-rules | committed (8e60cdf5, c8173ea6) |
+| 243 | Launcher bar as v1 at every width | committed (a6ba4cac) |
 | 242 | Settings and org CSS lazy: initial CSS 30.0 -> 26.9 KB br, looks unchanged | committed (826b025f) |
 | 241 | Review of rounds 227, 228, 229: one fix (offline time in app locale); all committed | committed |
 | 240 | Picker account row wraps as v1 (Wrap group); task clock locale | committed (af6dd52b, f838e783) |
