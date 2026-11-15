@@ -1,0 +1,183 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<title>Crew on phones as stories: three directions</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<style>
+:root{--bg:#f4f5f7;--surf:#fff;--surf2:#f0f2f6;--ink:#16181d;--muted:#5d6370;--line:#e3e6ec;--acc:#3a5bff;--accw:#e8edff;--good:#1f9d55;--warn:#d97706;--bad:#e5484d;--idle:#c4c8d0;--nav:#eef1fb}
+[data-theme=dark]{--bg:#0d0e11;--surf:#16181d;--surf2:#1f2228;--ink:#eceef2;--muted:#9aa1ad;--line:#2a2e36;--acc:#7d93ff;--accw:#232a4a;--good:#3ccf7a;--warn:#f0a43a;--bad:#ff6b6f;--idle:#4a4f59;--nav:#1a1d25}
+*{box-sizing:border-box}body{margin:0;font:14px/1.4 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;background:var(--bg);color:var(--ink)}
+header.top{position:sticky;top:0;z-index:5;display:flex;gap:12px;align-items:center;flex-wrap:wrap;padding:12px 20px;background:var(--surf);border-bottom:1px solid var(--line)}
+header.top h1{font-size:16px;margin:0 12px 0 0}
+.seg{display:inline-flex;border:1px solid var(--line);border-radius:8px;overflow:hidden}
+.seg button{border:0;background:none;color:var(--ink);padding:6px 12px;font:inherit;cursor:pointer}
+.seg button.on{background:var(--ink);color:var(--surf)}
+main{padding:20px;max-width:1500px;margin:auto}
+.intro{color:var(--muted);max-width:980px;margin:0 0 18px}
+.dir{display:none}.dir.on{display:block}
+.dir h2{font-size:18px;margin:6px 0 4px}.dir p.lede{color:var(--muted);max-width:980px;margin:0 0 16px}
+.row{display:flex;gap:28px;flex-wrap:wrap;align-items:flex-start}
+.cap{font-size:12px;color:var(--muted);margin:8px 0 0;max-width:360px}
+.phone{width:360px;height:740px;border-radius:38px;border:10px solid #111;background:var(--surf);position:relative;overflow:hidden;box-shadow:0 10px 30px #0003;display:flex;flex-direction:column}
+.status{height:30px;display:flex;justify-content:space-between;align-items:center;padding:0 22px;font-size:12px;font-weight:600}
+/* top bars */
+.bar-a{display:flex;align-items:center;justify-content:space-between;padding:6px 16px 4px}
+.bar-a .t{font-size:22px}
+.bar-i{padding:2px 16px 4px}.bar-i .acts{display:flex;justify-content:flex-end;gap:18px;color:var(--acc);font-size:18px}
+.bar-i .t{font-size:30px;font-weight:700;letter-spacing:-.5px}
+.ic{width:22px;height:22px;display:inline-grid;place-items:center;color:var(--muted)}
+/* stories */
+.stories{display:flex;gap:12px;overflow-x:auto;padding:8px 14px 10px;scrollbar-width:none}
+.st{flex:0 0 auto;width:62px;display:flex;flex-direction:column;align-items:center;gap:4px;cursor:pointer}
+.ring{width:58px;height:58px;border-radius:50%;padding:3px;display:grid;place-items:center;background:var(--idle)}
+.ring.work{background:conic-gradient(var(--good),#7ee2a8,var(--good))}
+.ring.report{background:var(--acc)}
+.ring.wait{background:var(--bad)}
+.ring.org,.ring.add{background:transparent;border:1.5px dashed var(--line)}
+.av{width:52px;height:52px;border-radius:50%;border:2.5px solid var(--surf);display:grid;place-items:center;font-weight:700;font-size:18px;color:#fff}
+.org .av,.add .av{border:0;color:var(--muted);font-weight:400;font-size:20px;background:var(--surf2)}
+.nm{font-size:11px;max-width:62px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.dot{position:relative}.dot::after{content:"";position:absolute;right:2px;bottom:2px;width:12px;height:12px;border-radius:50%;background:var(--good);border:2px solid var(--surf)}
+.chips{display:flex;gap:16px;padding:4px 16px 8px;color:var(--acc);font-size:15px}
+.sec{font-size:12px;color:var(--muted);padding:8px 16px 4px}
+.task{padding:10px 16px;display:grid;grid-template-columns:14px 1fr auto;gap:2px 10px;border-bottom:1px solid var(--line)}
+.task .b{width:7px;height:7px;border-radius:50%;background:var(--muted);margin-top:7px}
+.task .ti{font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.task .tm{font-size:12px;color:var(--muted);text-align:right}
+.task .su{color:var(--muted);font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.task .pill{font-size:12px;color:var(--good);text-align:right}
+.task .me{grid-column:2/4;font-size:12px;color:var(--muted)}
+.list{flex:1;overflow:hidden}
+.navb{height:62px;background:var(--nav);display:flex;justify-content:space-around;align-items:center;font-size:11px;color:var(--muted)}
+.navb .on{color:var(--ink);font-weight:600}
+.tabi{height:56px;border-top:1px solid var(--line);display:flex;justify-content:space-around;align-items:center;font-size:10px;color:var(--muted)}
+.tabi .on{color:var(--acc)}
+.fab{position:absolute;right:16px;bottom:78px;background:var(--accw);color:var(--acc);border-radius:16px;padding:14px 18px;font-weight:600;box-shadow:0 4px 12px #0002}
+/* waiting strip */
+.wstrip{margin:2px 14px 8px;border:1px solid var(--line);border-radius:14px;overflow:hidden}
+.wstrip .wh{font-size:12px;color:var(--bad);padding:8px 12px 2px;font-weight:600}
+.wi{display:flex;gap:10px;align-items:center;padding:8px 12px;border-top:1px solid var(--line)}
+.wi .mini{width:26px;height:26px;border-radius:50%;flex:0 0 auto;display:grid;place-items:center;color:#fff;font-size:12px;font-weight:700}
+.wi .tx{flex:1;font-size:13px}.wi .tx b{font-weight:600}
+.btn{border:1px solid var(--line);border-radius:999px;padding:5px 10px;font-size:12px;background:var(--surf);color:var(--ink);white-space:nowrap}
+.btn.p{background:var(--acc);border-color:var(--acc);color:#fff}
+/* story view */
+.story{background:#0b0c10;color:#f2f3f6;border-color:#111}
+.prog{display:flex;gap:4px;padding:8px 12px 0}.prog i{flex:1;height:3px;border-radius:2px;background:#ffffff40}.prog i.d{background:#fff}.prog i.c{background:linear-gradient(90deg,#fff 55%,#ffffff40 55%)}
+.sh{display:flex;align-items:center;gap:10px;padding:10px 12px}
+.sh .av{width:36px;height:36px;border:0;font-size:14px}
+.sh .who{flex:1}.sh .who b{display:block}.sh .who span{font-size:12px;color:#c6c9d1}
+.sx{font-size:22px;color:#fff;opacity:.9}
+.sbody{flex:1;padding:6px 14px;display:flex;flex-direction:column;gap:10px;overflow:hidden}
+.card{background:#1b1d24;border:1px solid #2a2d36;border-radius:16px;padding:12px}
+.card .k{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:#9ea3ae;margin-bottom:4px}
+.card .h{font-weight:600;font-size:15px}
+.card .m{font-size:13px;color:#c6c9d1;margin-top:4px}
+.live{display:inline-flex;align-items:center;gap:6px;font-size:12px;color:#7ee2a8}.live::before{content:"";width:8px;height:8px;border-radius:50%;background:#3ccf7a}
+.acts2{display:flex;gap:8px;margin-top:10px;flex-wrap:wrap}
+.acts2 .btn{background:#2a2d36;border-color:#3a3e48;color:#f2f3f6}.acts2 .btn.p{background:#7d93ff;border-color:#7d93ff;color:#0b0c10}
+.snav{display:flex;justify-content:space-between;align-items:center;padding:8px 14px 14px;color:#c6c9d1;font-size:13px}
+.snav .arr{width:40px;height:40px;border-radius:50%;background:#1f2128;display:grid;place-items:center;font-size:18px;color:#fff}
+.reply{display:flex;gap:8px;align-items:center;margin:0 12px 12px;border:1px solid #3a3e48;border-radius:999px;padding:8px 8px 8px 14px;color:#9ea3ae;font-size:13px}
+.reply .send{margin-left:auto;width:30px;height:30px;border-radius:50%;background:#7d93ff;display:grid;place-items:center;color:#0b0c10}
+.hint{font-size:11px;color:#9ea3ae;text-align:center;padding-bottom:6px}
+.tag{display:inline-block;font-size:11px;border:1px solid var(--line);border-radius:6px;padding:1px 6px;color:var(--muted);margin-left:6px}
+.pros{display:grid;grid-template-columns:1fr 1fr;gap:16px;max-width:980px;margin:16px 0 30px}
+.pros div{background:var(--surf);border:1px solid var(--line);border-radius:12px;padding:12px 14px;font-size:13px}
+.pros h3{margin:0 0 6px;font-size:13px}
+.rec{background:var(--accw);border:1px solid var(--acc);border-radius:12px;padding:12px 14px;max-width:980px;margin:6px 0 24px;font-size:13px}
+</style></head>
+<body data-theme="light" data-plat="android">
+<header class="top">
+  <h1>Crew on phones as stories</h1>
+  <div class="seg" id="dirs"><button data-v="a" class="on">A · Stories row</button><button data-v="b">B · Stories + Waiting for you</button><button data-v="c">C · Stories you can reply to</button></div>
+  <div class="seg" id="plat"><button data-v="android" class="on">Android (Material 3)</button><button data-v="ios">iPhone (HIG)</button></div>
+  <div class="seg" id="theme"><button data-v="light" class="on">Light</button><button data-v="dark">Dark</button></div>
+</header>
+<main>
+<p class="intro">Today the phone's Tasks list ends with a <b>Crew</b> section (one row per member, then their jobs), which pushes it below the fold and repeats what's above. These directions move the crew into one row of avatars under the top bar, like stories: the ring tells you at a glance who is working, who has news and who waits on you; tapping opens what that member is doing, full screen. Phones only: the browser and desktop keep v1. Every v1 crew feature stays reachable (Org, add a member, each member's page, their jobs, asks, check-ins). Sample data: 6 members.</p>
+
+<section class="dir on" id="d-a">
+<h2>A · Stories row</h2>
+<p class="lede">The Crew section leaves the list. A row of rings sits under the top bar: <b style="color:var(--good)">green, moving</b> = working, <b style="color:var(--acc)">blue</b> = a report you haven't read, <b style="color:var(--bad)">red</b> = waiting on you (an ask or an approval), grey = idle. Members waiting on you come first, then new reports, then working, then idle. <b>Org</b> and <b>+</b> are the first and last bubbles. Tap a ring: their story, full screen.</p>
+<div class="row">
+ <div><div class="phone tasks"></div><p class="cap">Tasks with the stories row. The list starts right under it: no Crew section at the bottom.</p></div>
+ <div><div class="phone story s1"></div><p class="cap">Dex's story: what waits on you first, with the task page's own buttons (Approve / Deny / Open task). Tap right or → for the next member, left or ← for the previous, swipe down or × to close.</p></div>
+ <div><div class="phone story s2"></div><p class="cap">Ada's story: working now (live line), her last report, her next check-in. Long-press pauses; the progress bars show where you are in the crew.</p></div>
+</div>
+<div class="pros"><div><h3>For</h3>Smallest change; one glance tells you who needs you; the list gets its space back; a familiar gesture with visible arrows and ×.</div><div><h3>Against</h3>An ask is one tap further away than today (the ring tells you, the story shows it); 6+ members scroll sideways.</div></div>
+</section>
+
+<section class="dir" id="d-b">
+<h2>B · Stories + Waiting for you</h2>
+<p class="lede">Same rings, plus a <b>Waiting for you</b> strip right under them when any member has an ask or approval open: one line each with its answer buttons, so the most urgent thing never needs a tap to find. The strip disappears when nothing waits. Stories open as in A.</p>
+<div class="row">
+ <div><div class="phone tasks wait1"></div><p class="cap">Two asks wait: answer from the list, or tap the line for the full story.</p></div>
+ <div><div class="phone story s1"></div><p class="cap">The story is the same as A's.</p></div>
+ <div><div class="phone tasks nowait"></div><p class="cap">Nothing waits: only the rings, as in A.</p></div>
+</div>
+<div class="pros"><div><h3>For</h3>Asks stay one tap from the list (as today's Needs you); stories stay for the rest. Best for crews that ask a lot.</div><div><h3>Against</h3>Two places show the same ask (strip and story); a bit more height when asks pile up (capped at 2 lines + "N more").</div></div>
+</section>
+
+<section class="dir" id="d-c">
+<h2>C · Stories you can reply to</h2>
+<p class="lede">Rings as in A; the story gets a <b>reply box</b> at the bottom, like replying to a story: what you type goes to that member as a follow-up on their current job (or starts a job when they're idle). Quick reactions (👍 Good, ↻ Try again) send a one-word follow-up.</p>
+<div class="row">
+ <div><div class="phone tasks"></div><p class="cap">The list is the same as A's.</p></div>
+ <div><div class="phone story s2 reply1"></div><p class="cap">Ada's story with a reply box: "Message Ada…" goes to her running job; reactions under her report.</p></div>
+ <div><div class="phone story s3 reply1"></div><p class="cap">An idle member: the reply box starts a job for them.</p></div>
+</div>
+<div class="pros"><div><h3>For</h3>Talk to a member without opening the task; fast reactions to reports.</div><div><h3>Against</h3>A second composer besides the task page's (one choice = one control: it must be the same composer, smaller); easy to send to the wrong member while swiping.</div></div>
+</section>
+
+<div class="rec"><b>Recommendation: B.</b> It keeps the one thing today's list does well (asks are answerable right there) and moves everything else into stories. A is the leanest if your crew rarely asks. C's reply box can come later inside B's story without a redesign.</div>
+</main>
+<script>
+const crew=[
+ {n:'Dex',r:'Release manager',c:'#475569',s:'wait',job:'Bump to 0.61.0',now:'Asked: "Merge #812 and tag 0.61.0?"',last:'CHANGELOG has 18 entries; main green 24 h.',next:'Check-in at 18:00'},
+ {n:'Bo',r:'Bug hunter',c:'#0f766e',s:'wait',job:'Flaky reconnect test',now:'Approval: run `npm run e2e` on CI',last:'Failing test written first; fix ready.',next:'—'},
+ {n:'Cleo',r:'Researcher',c:'#7c5cff',s:'report',job:'Competitor matrix',now:'Report ready: 6 tools compared',last:'Paseo added a queue; nobody has a ledger.',next:'Check-in tomorrow 09:00'},
+ {n:'Ada',r:'Reviewer',c:'#3a5bff',s:'work',job:'Review the reconnect fix',now:'Reading docs/sync.md',last:'PR #806: 2 layout reads after writes; fixed.',next:'Check-in in 25 min'},
+ {n:'Gus',r:'UI and UX',c:'#b45309',s:'work',job:'Phone Tasks polish',now:'Comparing v1 and v2 at 390 px',last:'3 fixes merged yesterday.',next:'—'},
+ {n:'Kit',r:'Marketing',c:'#8b8f99',s:'idle',job:'—',now:'Idle',last:'Launch notes for 0.60 posted.',next:'Check-in Monday'}];
+const ring={wait:'wait',report:'report',work:'work',idle:''};
+function bar(plat){return plat==='ios'
+ ?`<div class="bar-i"><div class="acts">🔍 ✎</div><div class="t">All ⌄</div></div>`
+ :`<div class="bar-a"><span class="t">All ⌄</span><span><span class="ic">🔍</span> <span class="ic">👤</span></span></div>`;}
+function stories(){return `<div class="stories"><div class="st"><div class="ring org"><div class="av">⌘</div></div><div class="nm">Org</div></div>${crew.map(m=>`<div class="st"><div class="ring ${ring[m.s]}"><div class="av" style="background:${m.c}">${m.n[0]}</div></div><div class="nm">${m.n}</div></div>`).join('')}<div class="st"><div class="ring add"><div class="av">+</div></div><div class="nm">Add</div></div></div>`;}
+const tasks=[['Add rate limiting to /login','Added a sliding-window limiter…','17m'],['Why is the list query slow on 5k…','The list query sorts in JS…','45m'],['Review PR #806: virtual list…','Two places read offsetHeight…','2h'],['Bump the retry limit','Raised the webhook retries…','8h']];
+function list(){return `<div class="chips">All&nbsp;&nbsp;&nbsp;wisp</div><div class="sec">⌄ Needs you 4</div>${tasks.map(t=>`<div class="task"><span class="b"></span><span class="ti">${t[0]}</span><span class="tm">${t[2]}</span><span></span><span class="su">${t[1]}</span><span class="pill">● Finished</span><span></span><span class="me">Claude Code · opus · This computer</span></div>`).join('')}`;}
+function waiting(){const w=crew.filter(m=>m.s==='wait');return `<div class="wstrip"><div class="wh">Waiting for you · ${w.length}</div>${w.map(m=>`<div class="wi"><span class="mini" style="background:${m.c}">${m.n[0]}</span><span class="tx"><b>${m.n}</b> ${m.now.replace(/^(Asked|Approval): /,'')}</span><span class="btn p">${m.now.startsWith('Approval')?'Allow':'Yes'}</span><span class="btn">${m.now.startsWith('Approval')?'Deny':'Open'}</span></div>`).join('')}</div>`;}
+function nav(plat){return plat==='ios'
+ ?`<div class="tabi"><span class="on">▤<br>Tasks</span><span>☺<br>Crew</span><span>✦<br>Stuff</span><span>▭<br>Computers</span></div>`
+ :`<div class="navb"><span class="on">▤ Tasks</span><span>☺ Crew</span><span>✦ Stuff</span><span>▭ Computers</span></div>`;}
+function tasksScreen(el,plat){const w=el.classList.contains('wait1');el.innerHTML=`<div class="status"><span>9:41</span><span>●●● 5G</span></div>${bar(plat)}${stories()}${w?waiting():''}<div class="list">${list()}</div>${plat==='ios'?'':'<div class="fab">＋ New task</div>'}${nav(plat)}`;}
+function storyScreen(el,idx,reply){const m=crew[idx];const i=crew.map((_,k)=>k<idx?'d':k===idx?'c':'');
+ const waits=m.s==='wait';
+ el.innerHTML=`<div class="status" style="color:#fff"><span>9:41</span><span>●●● 5G</span></div><div class="prog">${i.map(c=>`<i class="${c}"></i>`).join('')}</div>
+ <div class="sh"><div class="av" style="background:${m.c}">${m.n[0]}</div><div class="who"><b>${m.n}</b><span>${m.r} · ${m.job}</span></div><span class="sx">⋯</span>&nbsp;&nbsp;<span class="sx">×</span></div>
+ <div class="sbody">
+ ${waits?`<div class="card" style="border-color:#5a2428"><div class="k" style="color:#ff8a8d">Waiting for you</div><div class="h">${m.now.replace(/^(Asked|Approval): /,'')}</div><div class="acts2"><span class="btn p">${m.now.startsWith('Approval')?'Allow':'Yes'}</span><span class="btn">${m.now.startsWith('Approval')?'Deny':'No'}</span><span class="btn">Open task</span></div></div>`:''}
+ <div class="card"><div class="k">Now</div>${m.s==='idle'?'<div class="h">Idle</div><div class="m">No job running.</div>':`<div class="h">${m.job}</div><div class="m"><span class="live">${waits?'Paused for your answer':m.now}</span></div>`}</div>
+ <div class="card"><div class="k">Last report</div><div class="m">${m.last}</div>${reply?'<div class="acts2"><span class="btn">👍 Good</span><span class="btn">↻ Try again</span><span class="btn">Open report</span></div>':'<div class="acts2"><span class="btn">Open report</span></div>'}</div>
+ <div class="card"><div class="k">Next</div><div class="m">${m.next}</div></div>
+ </div>
+ ${reply?`<div class="reply">${m.s==='idle'?'Give '+m.n+' a job…':'Message '+m.n+'…'}<span class="send">↑</span></div>`:''}
+ <div class="snav"><span class="arr">←</span><span>${idx+1} of ${crew.length} · swipe down to close</span><span class="arr">→</span></div>`;}
+function draw(){const plat=document.body.dataset.plat;
+ document.querySelectorAll('.phone.tasks').forEach(el=>tasksScreen(el,plat));
+ document.querySelectorAll('.phone.nowait').forEach(el=>tasksScreen(el,plat));
+ document.querySelectorAll('.phone.s1').forEach(el=>storyScreen(el,0,el.classList.contains('reply1')));
+ document.querySelectorAll('.phone.s2').forEach(el=>storyScreen(el,3,el.classList.contains('reply1')));
+ document.querySelectorAll('.phone.s3').forEach(el=>storyScreen(el,5,el.classList.contains('reply1')));
+ document.querySelectorAll('.phone').forEach(el=>el.style.borderRadius=plat==='ios'?'44px':'30px');}
+function seg(id,fn){const s=document.getElementById(id);s.addEventListener('click',e=>{const b=e.target.closest('button');if(!b)return;s.querySelectorAll('button').forEach(x=>x.classList.toggle('on',x===b));fn(b.dataset.v);draw();});}
+seg('dirs',v=>document.querySelectorAll('.dir').forEach(d=>d.classList.toggle('on',d.id==='d-'+v)));
+seg('plat',v=>document.body.dataset.plat=v);
+seg('theme',v=>document.body.dataset.theme=v);
+const q=new URLSearchParams(location.search);
+if(q.get('dir'))document.querySelector(`#dirs [data-v="${q.get('dir')}"]`)?.click();
+if(q.get('plat'))document.querySelector(`#plat [data-v="${q.get('plat')}"]`)?.click();
+if(q.get('theme'))document.querySelector(`#theme [data-v="${q.get('theme')}"]`)?.click();
+draw();
+</script>
+</body></html>
