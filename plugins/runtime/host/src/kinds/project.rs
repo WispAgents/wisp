@@ -90,6 +90,10 @@ pub fn tidy_project_at(spec: &mut Value, home: Option<&std::path::Path>) {
             _ => p.to_owned(),
         };
         let c = wisp_runtime_api::paths::canonical_project_path(&p, None);
+        // Windows: an 8.3 short name spelled out (`RUNNER~1` → `runneradmin`), so the project and a task in it (whose
+        // folder is spelled out too, `specs::folder`) are one folder to every comparison; a URL or a folder that isn't
+        // there is left as it is. Unix: nothing changes.
+        let c = if cfg!(windows) && !c.contains("://") { wisp_proc::long_path_blocking(&c).display().to_string() } else { c };
         if let Some(o) = spec.as_object_mut() {
             o.insert("path".into(), Value::String(c));
         }

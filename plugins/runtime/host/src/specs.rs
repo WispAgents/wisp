@@ -331,6 +331,13 @@ pub async fn folder(home: Option<&std::path::Path>, a: &mut StartArgs) -> Result
     if !tokio::fs::metadata(dir.path()).await.is_ok_and(|m| m.is_dir()) {
         return Err(WireError::invalid(format!("Not a project folder: {cwd} (it isn't on this computer; pick a project that is)")));
     }
+    // one folder, one spelling: an 8.3 short name in it (`C:\Users\RUNNER~1\…` from `%TEMP%`) spelled out, as a
+    // project's stored path is (`kinds::project::tidy_project`), so the task's folder, its project and its worktrees
+    // compare equal. Unix: no such names, nothing changes.
+    let long = wisp_proc::long_path(dir.path()).await;
+    if long != dir.path() {
+        a.cwd = Some(long.display().to_string());
+    }
     Ok(())
 }
 
