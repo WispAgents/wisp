@@ -23,7 +23,7 @@ Rust for everything but the UI, Solid/TS for the UI, everything a plugin (ADR-00
 | CI, last full run (2790d627) | Linux + macOS: 1 failing test (`serve_orphans` probe), fixed by round 234, re-run pending · Windows: cancelled (open groups, §8) · desktop builds + Android: green |
 | Budgets | initial JS 117.9 KB br (≤ 120) · CSS 29.7 KB (≤ 30) · enforced in CI |
 | Weekly usage | 86 % (owner allowed 3 coders: free reset) |
-| Coders running | coder-r239 (launcher name breakpoints) |
+| Coders running | coder-r239 (launcher name breakpoints), reviewer-r241 (rounds 227-229) |
 
 ## 3. Owner directions (standing rules)
 
@@ -692,6 +692,7 @@ Source: `docs/v1-features.md` (each row's evidence and test). `[x]` built, `[ ]`
 
 | Round | What | State |
 |---|---|---|
+| 241 | Review of uncommitted rounds 227 (phone overlays, gesture seams), 228 (push), 229 (offline shell hookups) | in progress |
 | 240 | Picker account row wraps as v1 (Wrap group); task clock locale | committed (af6dd52b, f838e783) |
 | 239 | Launcher hides a hand-picked harness's name at v1's breakpoint (520 px, default model only), not 640 | in progress |
 | 238 | Auto pick segment: v2 already matches v1's shortLabel; test pins it | committed (61ddba34) |
