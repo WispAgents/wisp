@@ -1,0 +1,139 @@
+/* What is scheduled on a task, over its reply box: one compact list (v1 #796 later.css `.cq.later`, composer.css
+   `.cq`, `.cq-pen`, `.att-x`). The rows join into one box; the time sits in a fixed column so the texts line up. Loads
+   with ScheduledList.tsx. */
+@layer kit {
+  [data-kit='sched-list'] {
+    display: flex;
+    flex-direction: column;
+    border: var(--size-hairline) solid var(--line);
+    border-radius: var(--radius-md);
+    overflow: hidden;
+  }
+  [data-kit='sched-row'] {
+    position: relative;
+    display: flex;
+    align-items: center;
+    gap: var(--space-4);
+    min-width: 0;
+    padding: 3px var(--space-3) 3px var(--space-5);
+    font-size: 12px;
+    cursor: pointer;
+    transition: background 0.12s;
+  }
+  :where([data-kit='sched-list']) > :not(:first-child) {
+    border-top: var(--size-hairline) solid var(--line);
+  }
+  [data-kit='sched-row']:hover {
+    background: var(--bg-2);
+  }
+  [data-kit='sched-row'][data-editing] {
+    align-items: flex-start;
+    padding-top: var(--space-3);
+    padding-bottom: var(--space-3);
+    cursor: auto;
+  }
+  [data-kit='sched-row'][data-editing]:hover {
+    background: none;
+  }
+  [data-kit='sched-tag'] {
+    flex: none;
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    font-size: var(--fs-xs);
+    font-weight: 600;
+    color: var(--ink-2);
+    font-variant-numeric: tabular-nums;
+  }
+  [data-kit='sched-tag'] > [data-kit='icon'] {
+    flex: none;
+    width: var(--size-icon-xs);
+    height: var(--size-icon-xs);
+    color: var(--muted);
+  }
+  [data-kit='sched-at'] {
+    min-width: 34px;
+    white-space: nowrap;
+  }
+  [data-kit='sched-files'] {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--size-hairline);
+    font-weight: 500;
+    color: var(--muted);
+  }
+  [data-kit='sched-files'] > [data-kit='icon'] {
+    width: var(--size-icon-xs);
+    height: var(--size-icon-xs);
+  }
+  [data-kit='sched-text'] {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: var(--muted);
+  }
+  [data-kit='sched-acts'] {
+    flex: none;
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+  }
+  [data-kit='sched-btn'] {
+    display: grid;
+    place-items: center;
+    width: var(--size-icon-lg);
+    height: var(--size-icon-lg);
+    border-radius: var(--radius-sm);
+    color: var(--muted);
+  }
+  [data-kit='sched-btn'] > [data-kit='icon'] {
+    width: var(--size-icon-sm);
+    height: var(--size-icon-sm);
+  }
+  [data-kit='sched-btn']:hover {
+    background: var(--bg-2);
+    color: var(--ink);
+  }
+  [data-kit='sched-btn'][data-danger]:hover {
+    color: var(--bad);
+  }
+  [data-kit='sched-btn'][data-reveal] {
+    opacity: 0;
+    transition: opacity 0.12s;
+  }
+  [data-kit='sched-row']:hover [data-kit='sched-btn'][data-reveal],
+  [data-kit='sched-row']:focus-within [data-kit='sched-btn'][data-reveal] {
+    opacity: 1;
+  }
+  @media (hover: none) {
+    [data-kit='sched-btn'][data-reveal] {
+      opacity: 1;
+    }
+  }
+  [data-kit='sched-row'][data-more] {
+    padding: 0;
+  }
+  [data-kit='sched-more'] {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    width: 100%;
+    padding: 3px var(--space-5);
+    font-size: var(--fs-xs);
+    color: var(--muted);
+    text-align: left;
+  }
+  [data-kit='sched-more']:hover {
+    color: var(--ink);
+  }
+  [data-kit='sched-more'] > [data-kit='icon'] {
+    width: var(--size-icon-xs);
+    height: var(--size-icon-xs);
+    transition: rotate 0.15s var(--ease);
+  }
+  [data-kit='sched-more'][aria-expanded='true'] > [data-kit='icon'] {
+    rotate: 90deg;
+  }
+}

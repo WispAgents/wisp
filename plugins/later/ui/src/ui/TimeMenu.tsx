@@ -20,6 +20,9 @@ export interface TimeMenuProps {
   readonly part?: PartName;
   /** rows instead of the usual ones */
   readonly choices?: readonly [string, number][];
+  /** opens at once (a row menu's Change time…), and says when it closes */
+  readonly open?: boolean;
+  readonly onClose?: () => void;
 }
 
 /** What the Pick a time… field means now, or null (empty, unreadable, or under a minute away). */
@@ -68,7 +71,7 @@ function PickRow(props: { readonly now: number; readonly onPick: (at: number) =>
 }
 
 export function TimeMenu(props: TimeMenuProps): JSX.Element {
-  const [open, setOpen] = createSignal(false);
+  const [open, setOpen] = createSignal(props.open === true);
   const [picking, setPicking] = createSignal(false);
   const [now, setNow] = createSignal(nowOf(props.client));
   const choices = (): readonly [string, number][] => props.choices ?? timeChoices(now());
@@ -76,6 +79,7 @@ export function TimeMenu(props: TimeMenuProps): JSX.Element {
     setOpen(false);
     setPicking(false);
     props.onPick(at);
+    props.onClose?.();
   };
   return (
     <Popover
@@ -87,6 +91,7 @@ export function TimeMenu(props: TimeMenuProps): JSX.Element {
         if (o) setNow(nowOf(props.client));
         else setPicking(false);
         setOpen(o);
+        if (!o) props.onClose?.();
       }}
     >
       <Stack gap="0" part="later.menu.list" role="menu">

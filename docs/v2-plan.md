@@ -57,8 +57,9 @@ Rust for everything but the UI, Solid/TS for the UI, everything a plugin (ADR-00
       grid accounts (ADR-0061), cloud API keys (ADR-0058), cloud previews (ADR-0064), harness detection topic (ADR-0066)
 - [x] Process hygiene: nothing outlives a killed server (guard, Windows jobs, exec plugins ADR-0063, probes)
 - [x] `.env` masking everywhere a value can leave (ADR-0050, 0054, 0055)
-- [ ] **v1 sync** (`docs/v1-sync.md`): port v1 #794 (side discussions/Plan mode run commands), #795 (lead's check-in
-      fires while waiting on subagents), #796 (compact follow-ups list), #797 (Shell paste after selecting); #789 with phone step 13
+- [ ] **v1 sync** (`docs/v1-sync.md`): port v1 #794 (side discussions/Plan mode run commands), #797 (Shell paste after
+      selecting); #789 with phone step 13. #795 (lead's check-in while waiting on subagents) and #796 (compact follow-ups
+      list) done in r246; found there: runtime doesn't hold a lead in Working on its delegates or send their reports back
 - [ ] **TUI** (ADR-0024, `docs/v2-tui-design.md`): first slice done (list, answer, composer). Left: `--on <machine>`,
       For later and Repo tab, blame gutter, hunk jumps, terminal images, the real-terminal pass.
 
@@ -699,7 +700,7 @@ Source: `docs/v1-features.md` (each row's evidence and test). `[x]` built, `[ ]`
 | Round | What | State |
 |---|---|---|
 | 243 | Launcher bar as v1 at every width (More label, gaps, lead's model, unknown = Default, Worktree hidden with no project) | committed (a6ba4cac) |
-| 246 | Port v1 #795 (check-in fires while waiting on subagents) + #796 (compact follow-ups list) | in progress |
+| 246 | Port v1 #795 (check-in fires while waiting on subagents) + #796 (compact follow-ups list) | done, uncommitted |
 | 245 | Try it two ways folds (≤1099/≤700) + Default on compare runs | in progress |
 | 244 | css-rules failures fixed (breakpoint tokens, Wrap group); check and test share @wisp/tokens/css-rules | committed (8e60cdf5, c8173ea6) |
 | 242 | Settings and org CSS lazy: initial CSS 30.0 -> 26.9 KB br, looks unchanged | committed (826b025f) |

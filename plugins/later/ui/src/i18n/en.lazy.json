@@ -25,10 +25,6 @@
   "wisp.later.tomorrow": "Tomorrow",
   "wisp.later.by.user": "you",
   "wisp.later.by.agent": "the agent",
-  "wisp.later.tag.at": "At {time} · set by {who}",
-  "wisp.later.tag.remindAt": "Reminder at {time} · set by {who}",
-  "wisp.later.tag.heldPlan": "At {time} · when your plan resets",
-  "wisp.later.tag.heldLoad": "At {time} · when the computer has room",
   "wisp.later.line.goal": "Goal round {n}",
   "wisp.later.line.goalPlan": "Goal round {n} waits for your plan",
   "wisp.later.line.goalLoad": "Goal round {n} waits for the computer",
@@ -75,5 +71,14 @@
   "wisp.later.plan.hint.reminder": "You can edit it until it goes off",
   "wisp.later.plan.close": "Close",
   "wisp.later.plan.back": "Back to tasks",
-  "wisp.later.agent.auto": "Auto"
+  "wisp.later.agent.auto": "Auto",
+  "wisp.later.foot.tipFollowUp": "Follow-up · {when}",
+  "wisp.later.foot.tipReminder": "Reminder · {when}",
+  "wisp.later.foot.tipBy": "Set by {who}",
+  "wisp.later.foot.tipPlan": "When your plan resets. Waits for your plan: {why}",
+  "wisp.later.foot.tipLoad": "When the computer has room. {why}",
+  "wisp.later.foot.files.one": "1 file goes with it",
+  "wisp.later.foot.files.other": "{count} files go with it",
+  "wisp.later.foot.more": "{n} more scheduled · next {time}",
+  "wisp.later.foot.less": "Show less"
 }

@@ -36,6 +36,17 @@ export const byTime = (a: Plan, b: Plan): number => (a.at ?? Number.MAX_SAFE_INT
 /** A task's follow-ups, soonest first (the server keeps them so; an optimistic one may not be). */
 export const sortLater = (list: readonly LaterView[]): LaterView[] => [...list].sort((a, b) => a.at - b.at);
 
+/** Past this many follow-ups above the reply box, the first `FOOT_MAX - 1` show and a "+N more" row (v1 #796 SHOW_MAX). */
+export const FOOT_MAX = 3;
+
+/** The follow-ups the list over the reply box shows, and what its "+N more" row says (none when they all fit). */
+export function footRows<T extends { readonly at: number }>(all: readonly T[], open: boolean): { shown: readonly T[]; more?: { rest: number; next: number } } {
+  if (all.length <= FOOT_MAX) return { shown: all };
+  const cut = open ? all.length : FOOT_MAX - 1;
+  const next = all[FOOT_MAX - 1]?.at ?? 0;
+  return { shown: all.slice(0, cut), more: { rest: all.length - (FOOT_MAX - 1), next } };
+}
+
 /** One row of Scheduled: a plan or a task, and the time it sorts by. */
 export type ScheduledItem = { kind: 'plan'; key: string; at: number; plan: Plan } | { kind: 'task'; key: string; at: number; row: SessionRow };
 

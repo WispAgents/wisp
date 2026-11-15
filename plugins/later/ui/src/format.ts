@@ -64,11 +64,13 @@ export function laterLine(l: LaterView): [IconName, string] {
   return [l.remind ? 'bell' : 'clock', l.text];
 }
 
-/** "At 14:45 · set by you" over a follow-up row above the reply box. */
-export function followUpTag(l: LaterView, now: number): string {
-  const time = aheadLabel(l.at, now);
-  if (l.held) return t(l.held.load ? 'wisp.later.tag.heldLoad' : 'wisp.later.tag.heldPlan', { time });
-  return t(l.remind ? 'wisp.later.tag.remindAt' : 'wisp.later.tag.at', { time, who: whoSet(l.by) });
+/** A follow-up row's tooltip above the reply box (v1 #796): what it is and when in words, then who set it, or why
+ * it is held. "Follow-up · In 18 min · Tue 4 Nov, 14:32\nSet by you". */
+export function followUpTip(l: LaterView, now: number): string {
+  const head = t(l.remind ? 'wisp.later.foot.tipReminder' : 'wisp.later.foot.tipFollowUp', { when: whenTip(l.at, now) });
+  const why = l.held?.why ?? '';
+  const tail = l.held ? t(l.held.load ? 'wisp.later.foot.tipLoad' : 'wisp.later.foot.tipPlan', { why }) : t('wisp.later.foot.tipBy', { who: whoSet(l.by) });
+  return `${head}\n${tail.trim()}`;
 }
 
 export const planIcon = (p: Plan): IconName => (p.kind !== 'task' ? 'bell' : p.draft ? 'pen' : p.after ? 'queue' : 'clock');
