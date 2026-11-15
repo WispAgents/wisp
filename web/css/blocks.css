@@ -264,6 +264,7 @@ pre.code { margin: 0 0 12px; padding: 12px 14px; border-radius: 10px; background
 .ring .pass { stroke: var(--good); }
 .ring .fail { stroke: var(--bad); }
 .ring .skip { stroke: var(--line-2); }
+.tests-text { flex: 1; min-width: 0; }
 .ring-label { position: absolute; left: 0; width: 76px; display: grid; place-items: center; }
 .ring-label .i { width: 24px; height: 24px; }
 .b-tests.ok .ring-label { color: var(--good); }
@@ -675,7 +676,7 @@ body.wisp-mobile .mp-route { height: 44px; padding: 0 10px; }
 .term-run { color: var(--term-soft); border-color: color-mix(in srgb, var(--term-ink) 14%, transparent); background: color-mix(in srgb, var(--term-ink) 5%, transparent); }
 .term-run:hover:not(:disabled) { color: var(--term-ink); background: color-mix(in srgb, var(--term-ink) 12%, transparent); border-color: color-mix(in srgb, var(--term-ink) 25%, transparent); }
 .tests-cmd { display: flex; align-items: center; gap: 8px; margin-top: 8px; flex-wrap: wrap; }
-.tests-cmd .cmdline { margin-top: 0; }
+.tests-cmd .cmdline { margin-top: 0; min-width: 0; max-width: 100%; white-space: pre-wrap; overflow-wrap: anywhere; }
 .tests-rerun-out { margin-top: 12px; padding: 10px 12px; border-radius: 10px; background: var(--term-bg); color: var(--term-ink); }
 .tests-rerun-out pre { margin: 0; font: 12.5px/1.55 var(--mono); white-space: pre-wrap; word-break: break-word; max-height: 260px; overflow-y: auto; color: var(--term-soft); }
 .rev-tag { display: inline-flex; align-items: center; padding: 1px 6px; border-radius: 5px; font: 500 11.5px var(--sans); background: var(--bg-2); color: var(--muted); border: 1px solid var(--line); }
