@@ -20,10 +20,10 @@ Rust for everything but the UI, Solid/TS for the UI, everything a plugin (ADR-00
 |---|---|
 | v1 features | **315 built · 7 partial · 5 missing · 4 dropped** of 331 (§6) |
 | Regressed | none (F-comp-1 picker restored to v1 in round 233) |
-| CI, last full run (db8f01ad) | **Linux 4/4 + macOS 2/2 + Windows node 22 GREEN** (first full Windows pass since the main merge) · Windows node 24 running |
+| CI, last full run (db8f01ad) | **Linux 4/4 + macOS 2/2 + Windows node 22 green**; Windows node 24: 1 Rust test (serve_orphans startup probes alive past 25 s) -> r275 |
 | Budgets | initial JS 107.2 KB br (≤ 120) · CSS 27.1 KB (≤ 30) |
 | Weekly usage | 96 % (owner 2026-11-15 14:50: keep going with one coder until the limit) |
-| Coders running | coder-r274 (ADR-0074 gaps) |
+| Coders running | coder-r275 (serve_orphans on Windows) |
 
 ## 3. Owner directions (standing rules)
 
@@ -638,6 +638,7 @@ Source: `docs/v1-features.md` (each row's evidence and test). `[x]` built, `[ ]`
 - [ ] README's Development lines still describe v1's npm run dev
 - [ ] No tested `.vscode/launch.json` (CodeLLDB) for wisp serve
 - [x] ADR-0074 gaps: a command's events go out with its writes (every `Store::write` in a command stages what it emitted so far; the rest at its return), and budget drain/early, channels `startedFrom`, machines `changed`/`removed` go in an outbox with their write (ADR-0075; `kernel_events.rs` `a_commands_events_go_out_with_its_write_so_a_reader_of_its_row_finds_them`, `durable_events.rs`, `plan_free.rs`, `machines/host/tests/events.rs`)
+- [ ] machines.removed can reach a handler before the peer is cleared from memory (ADR-0075 note; no subscriber reads it today)
 - [ ] `ui-only`/MCP: nothing open
 
 ## 8. CI
@@ -795,7 +796,8 @@ Source: `docs/v1-features.md` (each row's evidence and test). `[x]` built, `[ ]`
 
 | Round | What | State |
 |---|---|---|
-| 274 | Command events staged with their writes; plugins emit via ctx.outbox (ADR-0074 gaps) | in progress |
+| 275 | serve_orphans on Windows node 24: startup probes 'alive' past their limit (pid reuse or tree kill) | in progress |
+| 274 | A command's events go out with its writes; budget/channels/machines via outbox (ADR-0075) | committed (d60b14dc, f4679d2d) |
 | 273 | 4 tools tests on Windows: 2 product bugs (commands ignored-file check off on Windows; dev home path rules) + 2 tests | committed (a7297cd7, 8921f5ae) |
 | 272 | A write's events queued before its rows can be read (outbox, ADR-0074) | committed (d1a32104) |
 | 271 | Budget counts a turn that just ended: compare/view wait for earlier events (kernel Bus::delivered, ADR-0073) | committed (3cd4ffd7) |
