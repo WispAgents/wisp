@@ -21,6 +21,9 @@ fn state_name(s: SessionState) -> String {
 /// What wisp.later needs of a task, as `runtime.get` answers it.
 pub(crate) fn task_of_session(s: &Session) -> Task {
     let st = state_name(s.state);
+    // v1 #795: a lead runtime holds in Working on its delegates names them on its slot (`waitsOn`); any other Working
+    // task whose turn ended is an after-turn step checking its work, which holds it
+    let delegates = s.ext_of("wisp.runtime")["waitsOn"].as_array().is_some_and(|w| !w.is_empty());
     Task {
         id: s.id.0.clone(),
         title: s.title.clone(),
@@ -28,12 +31,9 @@ pub(crate) fn task_of_session(s: &Session) -> Task {
         account: s.account.as_deref().filter(|a| !a.is_empty()).unwrap_or("default").to_owned(),
         state: TaskState::parse(&st).unwrap_or(TaskState::Review),
         archived: s.archived,
-        busy: s.state == SessionState::Running,
+        busy: s.state == SessionState::Running && !delegates,
         asking: s.state == SessionState::Waiting || !s.ext_of("wisp.runtime")["ask"].is_null(),
-        // v1 #795's lead held in Working on its delegates: v2's runtime doesn't hold one yet (`land::Facts.owes` is never
-        // set, a turn that ends with delegates out lands in Review, where the check-in goes); a Working task whose turn
-        // ended is an after-turn step checking its work, which holds it. Set this from runtime once it holds leads.
-        delegates: false,
+        delegates,
         sub: s.parent_id.is_some(),
         tour: s.agent == "wisp",
     }

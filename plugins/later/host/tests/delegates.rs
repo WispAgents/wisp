@@ -1,7 +1,7 @@
 //! v1 #795 against a stand-in wisp.runtime, in the states v2's runtime gives a lead: one whose turn ended while its
-//! delegate still works lands in Review (runtime doesn't hold it in Working: `land::Facts.owes` is unset), and the
-//! check-in it scheduled goes; one in Working after its turn ended is an after-turn step (Auto's or its goal's check)
-//! checking its work, and the check-in waits for it (it would cancel the check mid-run).
+//! delegate still works stays in Working and names who it waits on (`ext["wisp.runtime"].waitsOn`), and the check-in
+//! it scheduled goes; one in Working after its turn ended for any other reason is an after-turn step (Auto's or its
+//! goal's check) checking its work, and the check-in waits for it (it would cancel the check mid-run).
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
 use std::sync::{Arc, Mutex};
@@ -22,8 +22,13 @@ struct Rt {
 }
 
 fn session(id: &str, state: &str, parent: Option<&str>) -> Session {
+    // `waiting`: runtime holds the lead in Working on its delegate (and says so on its slot)
+    let (state, ext) = match state {
+        "waiting-on-kid" => ("running", json!({ "wisp.runtime": { "waitsOn": ["kid"] } })),
+        s => (s, json!({})),
+    };
     serde_json::from_value(json!({ "id": id, "title": id, "agent": "claude", "model": "", "effort": "", "mode": "auto",
-        "cwd": "/repo", "state": state, "parentId": parent, "createdAt": 0, "updatedAt": 0 }))
+        "cwd": "/repo", "state": state, "parentId": parent, "createdAt": 0, "updatedAt": 0, "ext": ext }))
     .unwrap()
 }
 
@@ -86,4 +91,12 @@ async fn a_lead_whose_turn_ended_with_its_delegate_at_work_gets_the_check_in_it_
 #[tokio::test(flavor = "multi_thread")]
 async fn a_lead_in_working_after_its_turn_ended_holds_its_check_in_for_the_after_turn_step_v1_795() {
     assert_eq!(due_check_in("running").await, Vec::<String>::new());
+}
+
+/// Runtime holds a lead in Working while its delegate works (`land::Facts.owes`) and names it on the lead's slot: the
+/// check-in the lead scheduled still goes (failed before: later read every Working lead as an after-turn step's).
+#[tokio::test(flavor = "multi_thread")]
+async fn a_lead_runtime_holds_in_working_on_its_delegate_gets_the_check_in_it_scheduled() {
+    let sent = due_check_in("waiting-on-kid").await;
+    assert_eq!(sent.len(), 1, "the check-in was held behind the delegate: {sent:?}");
 }
