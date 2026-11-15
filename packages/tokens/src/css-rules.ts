@@ -299,3 +299,99 @@ export function kitSheetProblems(name: string, raw: string, sets: KitScale | und
   }
   return out.sort((a, b) => a.line - b.line);
 }
+
+// ## The phone apps' sheets (packages/ui/src/css/platform/<look>.css, ADR-0065 §5): every ban the platform vitest
+// (packages/ui/test/platform-css.test.ts) enforces, one implementation (rounds 288 and 291: a raw px passed
+// `npm run check` that the vitest refused). They restate the layer order (they load on their own), every rule is
+// scoped to its look, and they use the platform's own tokens: no raw px at all, except in a size-class query.
+
+export type PlatformSheetRule = 'layout' | 'platform-px' | 'platform-query' | 'platform-scope' | 'has-is' | 'colour' | 'wrap' | 'class' | 'sibling-universal' | 'title-wraps';
+
+export interface PlatformSheetProblem {
+  readonly kind: PlatformSheetRule;
+  readonly line: number;
+  readonly message: string;
+}
+
+/** M3 window size classes (compact < 600 dp, expanded ≥ 840 dp) and the browser's split (900): the only px in a query. */
+export const PLATFORM_BREAKPOINTS: ReadonlySet<number> = new Set([600, 840, 900]);
+
+export interface PlatformRule {
+  readonly selector: string;
+  readonly body: string;
+  /** The at-rules it sits in, joined by a space ('@layer kit @media (max-width: 600px)'). */
+  readonly at: string;
+  /** Index of the selector's start in the comment-stripped sheet. */
+  readonly index: number;
+}
+
+/** Every rule of a platform sheet with the at-rules it sits in (comments stripped, line positions kept). */
+export function platformRules(raw: string): PlatformRule[] {
+  const css = stripComments(raw);
+  const out: PlatformRule[] = [];
+  const stack: string[] = [];
+  let head = '';
+  let start = 0;
+  for (let i = 0; i < css.length; i++) {
+    const c = css[i] ?? '';
+    if (c === '{') {
+      const sel = head.trim();
+      const index = start + (head.length - head.trimStart().length);
+      head = '';
+      start = i + 1;
+      if (sel.startsWith('@')) {
+        stack.push(sel);
+        continue;
+      }
+      const end = css.indexOf('}', i);
+      const stop = end < 0 ? css.length : end;
+      out.push({ selector: sel, body: css.slice(i + 1, stop), at: stack.join(' '), index });
+      i = stop;
+      start = i + 1;
+    } else if (c === '}') {
+      stack.pop();
+      head = '';
+      start = i + 1;
+    } else if (c === ';' && stack.length === 0) {
+      head = '';
+      start = i + 1;
+    } else head += c;
+  }
+  return out;
+}
+
+/** Every ban a phone sheet breaks. `look` is its file name without .css ('android', 'ios'). */
+export function platformSheetProblems(look: string, raw: string): PlatformSheetProblem[] {
+  const css = stripComments(raw);
+  const out: PlatformSheetProblem[] = [];
+  const add = (kind: PlatformSheetRule, index: number, message: string): void => {
+    out.push({ kind, line: lineAt(css, index), message: `${look}: ${message}` });
+  };
+  // every rule sits in @layer kit under its own look; a keyframe's steps are no selectors, its name is the look's own
+  for (const r of platformRules(raw)) {
+    if (!/^@layer kit/.test(r.at)) add('platform-scope', r.index, `${r.selector} sits outside @layer kit`);
+    const frames = /@keyframes ([\w-]+)/.exec(r.at);
+    if (frames) {
+      if (!(frames[1] ?? '').startsWith(`k-${look}-`)) add('platform-scope', r.index, `@keyframes ${frames[1] ?? ''} is not named k-${look}-…`);
+      continue;
+    }
+    for (const one of r.selector.split(',')) if (!one.trim().startsWith(`:root[data-platform='${look}'] `)) add('platform-scope', r.index, `${one.trim()} is not scoped to :root[data-platform='${look}']`);
+    // the bar title is one line (content.css: nowrap, ellipsis)
+    if (/\[data-kit='app-bar-title'\]$/.test(r.selector) && /white-space:\s*(normal|pre-wrap)|line-clamp/.test(r.body)) add('title-wraps', r.index, `${r.selector}: the bar title never wraps`);
+  }
+  // px: a query's only px are the size classes; anywhere else a raw px is a missed platform token
+  const body = css.replace(/@import[^;]*;/g, (m) => m.replace(/[^\n]/g, ' '));
+  for (const m of body.matchAll(/(@media[^{]*)\{|\d ?px/g)) {
+    if (m[1]) {
+      for (const q of m[1].matchAll(/(\d+)px/g)) if (!PLATFORM_BREAKPOINTS.has(Number(q[1]))) add('platform-query', (m.index ?? 0) + (q.index ?? 0), `${q[0]} in a query is not a size class (${[...PLATFORM_BREAKPOINTS].join(', ')})`);
+    } else add('platform-px', m.index ?? 0, `raw px (…${body.slice(Math.max(0, (m.index ?? 0) - 6), (m.index ?? 0) + m[0].length).trim()}): use the platform's token`);
+  }
+  for (const m of css.matchAll(/:(has|is)\(/g)) add('has-is', m.index ?? 0, `${m[0]}: every style recalc walks large boxes`);
+  for (const m of css.matchAll(/#[0-9a-fA-F]{3,8}\b|\brgba?\(|:\s*(white|black)\b/g)) add('colour', m.index ?? 0, `hard-coded colour ${m[0].trim()}: use a colour token`);
+  for (const m of css.matchAll(/flex-wrap:\s*wrap|white-space:\s*normal/g)) add('wrap', m.index ?? 0, `${m[0]}: nothing wraps but Wrap (design/layout.md)`);
+  for (const m of css.matchAll(/(^|[\s,>+~(])\.[a-zA-Z_-][\w-]*\s*[{,:[]/gm)) add('class', (m.index ?? 0) + (m[1]?.length ?? 0), `class selector ${m[0].trim()}: style by data-kit / data-part`);
+  for (const m of css.matchAll(/[+~]\s*\*/g)) add('sibling-universal', m.index ?? 0, `${m[0]}: a sibling combinator lands on a universal selector`);
+  // design/layout.md §6, as on every kit sheet: no flex-wrap outside Wrap, no wrapping white-space on control parts
+  for (const p of layoutProblems(scanCss(raw).decls)) out.push({ kind: 'layout', line: p.line, message: `${look}: ${p.message}` });
+  return out.sort((a, b) => a.line - b.line);
+}

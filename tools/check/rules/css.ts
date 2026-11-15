@@ -11,7 +11,7 @@
 // @wisp/tokens' css-rules.ts, which the kit's vitest (packages/ui/test/css-rules.test.ts) runs too: one implementation.
 
 import ts from 'typescript';
-import { kitCssProblems, kitSheetProblems, scanCss, splitTop, type KitScale } from '../../../packages/tokens/src/css-rules.ts';
+import { kitCssProblems, kitSheetProblems, platformSheetProblems, scanCss, splitTop, type KitScale } from '../../../packages/tokens/src/css-rules.ts';
 import { finding } from '../core/report.ts';
 import { isCode, lineOf, propName, visit } from '../core/source.ts';
 import { kitScale, TOKENS_DIR } from '../core/tokens.ts';
@@ -21,6 +21,7 @@ const ID = 'css';
 const KIT = 'packages/ui/';
 const STYLE_FILE = /\.(css|scss|sass|less|styl)$/;
 const SHEET = /^packages\/ui\/src\/css\/([^/]+\.css)$/;
+const PLATFORM_SHEET = /^packages\/ui\/src\/css\/platform\/([^/]+)\.css$/;
 const STYLE_IMPORT = /\.(css|scss|sass|less|styl)(\?.*)?$/;
 
 function inKit(file: string): boolean {
@@ -114,8 +115,10 @@ function kitCss(ctx: Ctx, file: string, sets: KitScale | undefined): Finding[] {
   // px on the scale, breakpoints only in queries, nothing wraps but Wrap: shared with packages/ui/test/css-rules.test.ts
   // packages/ui/src/css/*.css also get every kit-sheet rule (layers, :has/:is, colours, classes, …): the vitest's own code
   const sheet = SHEET.exec(file)?.[1];
-  const problems = sheet ? kitSheetProblems(sheet, text, sets) : kitCssProblems(text, sets);
-  for (const p of problems) out.push(finding(file, p.line, ID, sheet ? `[${p.kind}] ${p.message}` : p.message));
+  // the phone sheets (css/platform/<look>.css) get every ban packages/ui/test/platform-css.test.ts enforces instead
+  const look = PLATFORM_SHEET.exec(file)?.[1];
+  const problems = look ? platformSheetProblems(look, text) : sheet ? kitSheetProblems(sheet, text, sets) : kitCssProblems(text, sets);
+  for (const p of problems) out.push(finding(file, p.line, ID, look || sheet ? `[${p.kind}] ${p.message}` : p.message));
   return out;
 }
 
