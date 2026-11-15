@@ -235,6 +235,22 @@ fn the_row_says_who_a_lead_waits_on_what_it_asks_and_what_plugins_add() {
 }
 
 #[test]
+fn the_row_says_when_its_last_run_started_and_ended() {
+    // v1 team.js: a delegate's row in the lead's team panel ticks from its turn's start; a finished one shows its time
+    let s = session();
+    let none = BTreeMap::new;
+    let running = Turn { status: TurnStatus::Running, started_at: 1_000, ..Turn::default() };
+    let row = serde_json::to_value(summarize(&s, &RowFacts { last: Some(&running), ..RowFacts::default() }, none())).unwrap();
+    assert_eq!((&row["startedAt"], row.get("endedAt")), (&json!(1_000), None));
+    let done = Turn { started_at: 1_000, ended_at: Some(48_000), ..done_turn("Reviewed", "done") };
+    let row =
+        serde_json::to_value(summarize(&s, &RowFacts { last: Some(&done), report: Some(&done), ..RowFacts::default() }, none())).unwrap();
+    assert_eq!((&row["startedAt"], &row["endedAt"]), (&json!(1_000), &json!(48_000)));
+    let fresh = serde_json::to_value(summarize(&s, &RowFacts::default(), none())).unwrap();
+    assert_eq!((fresh.get("startedAt"), fresh.get("endedAt")), (None, None), "a task with no run yet has neither");
+}
+
+#[test]
 fn a_crashed_limited_or_refused_run_says_which_on_its_row() {
     // F-task-14 (v1 format.js haltOf): the row's pill reads `halt` over the agent's "Blocked"
     let s = session();

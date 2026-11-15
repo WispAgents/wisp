@@ -35,6 +35,9 @@ export function jobOf(r: PeerRow): SessionRow | undefined {
   const status = str(s['status']);
   const preview = str(s['preview']);
   const prompt = str((ext as { prompt?: unknown }).prompt);
+  const num = (v: unknown): number | undefined => (typeof v === 'number' && Number.isFinite(v) && v > 0 ? v : undefined);
+  const startedAt = num(s['startedAt']);
+  const endedAt = num(s['endedAt']);
   const forLater = s['forLater'] === true ? { at: r.updated_at ?? created } : undefined;
   return {
     id: r.id,
@@ -53,6 +56,8 @@ export function jobOf(r: PeerRow): SessionRow | undefined {
     ...(question && { question }),
     ...(forLater && { forLater }),
     ...(r.parent_id && { parentId: r.parent_id }),
+    ...(startedAt && { startedAt }),
+    ...(endedAt && { endedAt }),
     crew: {
       id: ext.id,
       job: ext.job,

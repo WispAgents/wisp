@@ -169,7 +169,8 @@ function copyTask(x: Args, ctx: CommandCtx, kind: 'rerun' | 'fork'): { ops: Enti
   const src = ctx.row('list', 'session', from) as Record<string, unknown> | undefined;
   if (!src) refuse('not_found', `no task ${from}`);
   const at = ctx.now();
-  const summary = { ...(src?.['summary'] as Record<string, unknown>), status: 'running', live: 'Starting…', overlaps: [], ...(kind === 'fork' && { forkedFrom: from }) };
+  const { endedAt: _ended, ...had } = (src?.['summary'] ?? {}) as Record<string, unknown>;
+  const summary = { ...had, status: 'running', live: 'Starting…', overlaps: [], startedAt: at, ...(kind === 'fork' && { forkedFrom: from }) };
   const row = { ...src, id, state: 'running', unread: false, created_at: at, updated_at: at, agent: typeof x['agent'] === 'string' ? x['agent'] : src?.['agent'], summary };
   ctx.later(10, () => {
     ctx.stream(id);
@@ -299,6 +300,8 @@ export const COMMANDS: Record<string, CommandFn> = {
       ops: sessionPatch(ctx, id, [
         { op: 'replace', path: '/state', value: 'review' },
         { op: 'replace', path: '/summary/live', value: '' },
+        // runtime's row: the stopped run's end (the lead's Team tab shows how long it ran)
+        { op: 'add', path: '/summary/endedAt', value: ctx.now() },
         ...(held ? [{ op: 'add' as const, path: '/body/queueHeld', value: true }] : []),
       ]),
     };
@@ -511,6 +514,7 @@ export const COMMANDS: Record<string, CommandFn> = {
         queued: 0,
         preview: prompt.slice(0, 80),
         live: 'Starting…',
+        startedAt: at,
         cwd: typeof x['cwd'] === 'string' ? x['cwd'] : '~/code/wisp',
         model: 'claude-opus-5-5',
         mode: typeof x['mode'] === 'string' ? x['mode'] : 'auto',

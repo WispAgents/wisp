@@ -91,7 +91,7 @@ debuginfo. There is no `.vscode/launch.json` yet, because a CodeLLDB config hasn
 `WISP_DEV_API` sends `/api` to the real server; `WISP_MOCK=0` turns it off. `mock-commands.ts` answers commands
 and `mock-reads.ts` answers the reads a screen sends when it opens. When a screen sends a command the mock
 doesn't have, add it there with the args from the plugin's api crate. Seeds:
-`curl -X POST 'http://localhost:5180/__mock/reset?seed=first-run'` (also `computers`, `usage`, `trial`, `cloud`).
+`curl -X POST 'http://localhost:5180/__mock/reset?seed=first-run'` (also `computers`, `usage`, `trial`, `cloud`, `team`: a lead's Team tab with a job on Studio).
 `/__mock/fail?cmd=<id>` refuses the next run of a command so you can watch the rollback. `MOCK_SESSIONS=5000`
 gives you a long list.
 

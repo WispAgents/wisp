@@ -246,6 +246,11 @@ export interface SessionRow {
   parentId?: string;
   member?: string;
   machine?: string;
+  /** the peer whose row it is (its entity key's prefix): a job on a member's machine is that machine's row */
+  peer?: string;
+  /** when its last run started and ended (runtime's row: `startedAt`, `endedAt`) */
+  startedAt?: number;
+  endedAt?: number;
   /** a crew member's job */
   crew?: { id: string; job: JobKind; from?: { id: string; title: string }; event?: 'finished' | 'done'; prompt?: string; sent?: { id: string; title: string }[]; kit?: boolean };
   team?: { name: string; agent: string; model: string; effort: string; used: boolean; busy: boolean; crew?: string }[];

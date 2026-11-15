@@ -54,6 +54,10 @@ export interface MockPeerOptions {
   cloud?: boolean;
   /** the crew at work: one asks you, one works, one has an unread report (MOCK_CREW=1, or POST /__mock/reset?seed=crew; the phone's stories) */
   crew?: boolean;
+  /** the flaky-test task leads three crew jobs, one on Studio (POST /__mock/reset?seed=team; implies `computers`) */
+  team?: boolean;
+  /** Studio's side of `team`: Linus's job, delegated from this computer's task, runs here */
+  farJob?: boolean;
   /** v1's reference data (design/v1-reference/seed.json): replayed instead of the hand-written seed */
   v1?: V1Seed;
 }
@@ -95,7 +99,7 @@ export function createMockPeer(o: MockPeerOptions = {}): MockPeer {
   const epoch = o.epoch ?? `mock-${timers.now().toString(36)}`;
   const data: Seeded = o.v1
     ? fromV1(o.v1, peer)
-    : seed({ peer, now: timers.now(), extra: o.sessions ?? 0, ...(o.firstRun && { firstRun: true }), ...(o.computers && { computers: true }), ...(o.media && { media: true }), ...(o.env && { env: true }), ...(o.usage && { usage: true }), ...(o.trial && { trial: true }), ...(o.cloud && { cloud: true }), ...(o.crew && { crew: true }) });
+    : seed({ peer, now: timers.now(), extra: o.sessions ?? 0, ...(o.firstRun && { firstRun: true }), ...(o.computers && { computers: true }), ...(o.media && { media: true }), ...(o.env && { env: true }), ...(o.usage && { usage: true }), ...(o.trial && { trial: true }), ...(o.cloud && { cloud: true }), ...(o.crew && { crew: true }), ...(o.team && { team: true, computers: true }), ...(o.farJob && { farJob: true }) });
   const store = new Map<Topic, Map<string, Row>>();
   const conns = new Map<string, Conn>();
   const handlers = new Map<string, CommandFn>(Object.entries(COMMANDS));
@@ -260,6 +264,7 @@ export function createMockPeer(o: MockPeerOptions = {}): MockPeer {
     const events = (): { seq: number }[] => (store.get(topic)?.get(rowKey('event', sid))?.v as { seq: number }[] | undefined) ?? [];
     const nextSeq = (): number => (events().at(-1)?.seq ?? 0) + 1;
     const now = timers.now();
+    const ended = (): boolean => Object.hasOwn(((store.get('list')?.get(rowKey('session', sid))?.v as { summary?: object } | undefined)?.summary ?? {}) as object, 'endedAt');
     const listOps = (patch: PatchOp[]): EntityOp[] => (['list', topic] as Topic[]).map((t) => ({ topic: t, e: 'session', id: sid, op: 'patch', ops: patch }));
     commit([
       { topic, e: 'turn', id: turnId, op: 'upsert', v: data.turn(sid, turnId, turns.length, prompt ?? 'Keep going: and make the empty state say what to do next.', now) },
@@ -269,6 +274,9 @@ export function createMockPeer(o: MockPeerOptions = {}): MockPeer {
         { op: 'replace', path: '/state', value: 'running' },
         { op: 'replace', path: '/summary/status', value: 'running' },
         { op: 'replace', path: '/summary/live', value: 'Reading src/list.ts' },
+        // runtime's row: when the last run started (and no end while it runs), the lead's Team tab ticks from it
+        { op: 'add', path: '/summary/startedAt', value: now },
+        ...(ended() ? [{ op: 'remove' as const, path: '/summary/endedAt' }] : []),
       ]),
     ]);
     let text = '';
@@ -309,6 +317,7 @@ export function createMockPeer(o: MockPeerOptions = {}): MockPeer {
           { op: 'replace', path: '/summary/live', value: '' },
           { op: 'replace', path: '/summary/preview', value: text.slice(0, 80).trim() },
           { op: 'replace', path: '/updated_at', value: timers.now() },
+          { op: 'add', path: '/summary/endedAt', value: timers.now() },
         ]),
       ]);
     };

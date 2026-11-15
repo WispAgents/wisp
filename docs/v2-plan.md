@@ -943,7 +943,7 @@ Source: `docs/v1-features.md` (each row's evidence and test). `[x]` built, `[ ]`
 |---|---|---|
 | 283 | DX: build bundle + Tauri lock: stopped before edits; plan in §4.6 | to redo |
 | 282 | Server perf budgets: stopped before edits; plan in §4.3 | to redo |
-| 296 | Team rows match v1: machine chip, running time (gap found by r295) | in progress |
+| 296 | Team rows match v1: machine chip (far job: its machine), running time ticking (1 s, only the time repaints), finished time + Finished pill; runtime row gains `startedAt`/`endedAt`; seen v1 vs v2 in target/r296/ | built, not committed |
 | 295 | v1 #800 ported (keyboard-clipboard task ID -> mention); #799, #801 already held, now tested | committed (9032c602) |
 | 294 | iOS selection keeps the bar (no jump); stepping replaces history (Back -> Tasks); desktop j/k too, as v1 | committed |
 | 293 | Phone step 13 done: selection + bulk, iOS filter pull-down, Next/Previous task | committed (357aec16) |

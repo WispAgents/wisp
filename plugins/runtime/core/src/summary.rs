@@ -81,6 +81,15 @@ fn halt(t: Option<&Turn>) -> Option<&'static str> {
     }
 }
 
+/// When the last run started and ended (v1 team.js: a delegate's row ticks its running time from the turn's
+/// `startedAt`, a finished one shows how long it took): the lead's Team tab reads them off the job's row.
+fn run_times(t: Option<&Turn>) -> Vec<(String, Value)> {
+    let Some(t) = t else { return Vec::new() };
+    let mut out = vec![("startedAt".to_owned(), json!(t.started_at))];
+    out.extend(t.ended_at.map(|e| ("endedAt".to_owned(), json!(e))));
+    out
+}
+
 /// The held turn's id (Later's Start / Skip name it).
 fn t_id(t: Option<&Turn>) -> String {
     t.map(|t| t.id.as_str().to_owned()).unwrap_or_default()
@@ -129,6 +138,7 @@ pub fn summarize(s: &Session, f: &RowFacts<'_>, fields: BTreeMap<String, Value>)
     }
     out.insert("approval".into(), json!(f.ask.is_some_and(|a| a.2)));
     out.insert("followups".into(), json!(f.followups));
+    out.extend(run_times(f.last));
     out.extend(fields);
     Summary {
         id: s.id.clone(),

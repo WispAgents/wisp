@@ -397,6 +397,8 @@ function sessionRow(peer: string, i: number, t: Task, now: number): { id: string
         queued: 0,
         preview: t.answer.slice(0, 90),
         live: t.live ?? '',
+        // runtime's row: when the last run started and ended (a running one since `ago`, one that's back took 2 minutes)
+        ...(t.state === 'running' ? { startedAt: at } : { startedAt: at - 2 * MIN, endedAt: at }),
         cwd: t.cwd,
         model: MODEL[t.agent],
         mode: t.capped ?? 'auto',
@@ -622,6 +624,25 @@ function withCrew(peer: string, now: number, list: Row[], topics: Map<Topic, Row
   job(3, { title: 'Review PR #806', agent: 'claude', state: 'done', ago: 26 * HOUR, cwd: '~/code/wisp', prompt: 'Review PR #806.', answer: 'PR #806: 2 layout reads after writes; fixed.', crew: { id: 'crew:ada', job: 'task' } });
 }
 
+/** `team`: the flaky-test task (s0001) leads a team of three (v1 team.js teamLiveHtml, F-crew-11): Ada's review runs here
+ *  (TASKS' first), Hopper's notes came back 2m 30s after they started, and Linus's job runs on Studio (`farJob`, Studio's
+ *  own mock peer): its row comes from that peer, so its Team row shows Studio's chip. */
+const LEAD = { id: 's0001', title: 'Fix the flaky reconnect test in sync' };
+function withTeam(peer: string, now: number, list: Row[], topics: Map<Topic, Row[]>, at: number): void {
+  const r = sessionTopic(peer, at, { title: 'Hopper · Job', agent: 'claude', state: 'review', ago: 4 * MIN, cwd: '~/code/wisp', prompt: 'Write up the retry timer for docs/sync.md.', answer: 'Documented the retry timer and its jitter in docs/sync.md.', crew: { id: 'crew:hopper', job: 'delegated', from: LEAD } }, now);
+  for (const row of [r.list, ...r.own.filter((x) => x.e === 'session')]) {
+    const v = row.v as { summary: Record<string, unknown> };
+    v.summary = { ...v.summary, startedAt: now - 4 * MIN - 150_000, endedAt: now - 4 * MIN };
+  }
+  list.push(r.list);
+  topics.set(`session:${r.list.id.slice(r.list.id.indexOf(':') + 1)}`, r.own);
+}
+function withFarJob(peer: string, now: number, list: Row[], topics: Map<Topic, Row[]>): void {
+  const r = sessionTopic(peer, 0, { title: 'Linus · Job', agent: 'codex', state: 'running', ago: 47_000, cwd: '~/code/wisp', prompt: 'Run the sync suite on the Linux box.', answer: 'Running the suite.', live: 'Running the sync suite on Linux', crew: { id: 'crew:linus', job: 'delegated', from: LEAD } }, now);
+  list.push(r.list);
+  topics.set(`session:${r.list.id.slice(r.list.id.indexOf(':') + 1)}`, r.own);
+}
+
 /** Try it two ways (F-comp-31, ADR-0056): one task run twice on Claude Code, run B with Skills off, both done; the
  * rows carry runtime's trial link (group.rs) as the peer sends it, so Compare runs says what differed. */
 function withTrial(peer: string, now: number, list: Row[], topics: Map<Topic, Row[]>, at: number): void {
@@ -652,7 +673,7 @@ function withTrial(peer: string, now: number, list: Row[], topics: Map<Topic, Ro
   });
 }
 
-export function seed(o: { peer: string; now: number; extra: number; firstRun?: boolean; computers?: boolean; media?: boolean; env?: boolean; usage?: boolean; trial?: boolean; cloud?: boolean; crew?: boolean }): Seeded {
+export function seed(o: { peer: string; now: number; extra: number; firstRun?: boolean; computers?: boolean; media?: boolean; env?: boolean; usage?: boolean; trial?: boolean; cloud?: boolean; crew?: boolean; team?: boolean; farJob?: boolean }): Seeded {
   const topics = new Map<Topic, Row[]>();
   const list: Row[] = [];
   (o.firstRun ? [] : TASKS).forEach((t, i) => {
@@ -679,6 +700,8 @@ export function seed(o: { peer: string; now: number; extra: number; firstRun?: b
   if (o.usage) withUsage(list);
   if (o.trial) withTrial(o.peer, o.now, list, topics, TASKS.length + o.extra);
   if (o.crew) withCrew(o.peer, o.now, list, topics, TASKS.length + o.extra + 2);
+  if (o.team) withTeam(o.peer, o.now, list, topics, TASKS.length + o.extra + 8);
+  if (o.farJob) withFarJob(o.peer, o.now, list, topics);
   topics.set('list', list);
   topics.set('config', [
     { e: 'setting', id: 'shell.theme', v: { key: 'shell.theme', value: 'system', locked_by: null } },

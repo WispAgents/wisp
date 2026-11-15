@@ -200,6 +200,32 @@ test('crew_assign_starts_a_running_job_for_the_member_and_runtime_answer_clears_
   expect(ops).toEqual(expect.arrayContaining([{ op: 'replace', path: '/state', value: 'running' }, { op: 'replace', path: '/body/ext/wisp.runtime/ask', value: null }]));
 });
 
+test('a_tasks_row_says_when_its_last_run_started_and_ended_as_runtime_does_for_the_team_tabs_time', () => {
+  // runtime summary.rs: `startedAt` (the last run's start) and, once it's back, `endedAt`; the lead's Team tab reads them
+  const now = 1_700_000_000_000;
+  const data = seed({ peer: 'local', now, extra: 0, crew: true });
+  const ctx = {
+    peer: 'local',
+    now: () => now,
+    row: (t: string, e: string, id: string) => data.topics.get(t as never)?.find((r) => r.e === e && r.id === id)?.v,
+    rows: (t: string) => data.topics.get(t as never) ?? [],
+    stream: () => undefined,
+    later: () => undefined,
+  } as unknown as CommandCtx;
+  const sums = (data.topics.get('list') ?? []).filter((r) => r.e === 'session').map((r) => r.v as { state: string; summary: { startedAt?: number; endedAt?: number } });
+  for (const r of sums) {
+    expect(typeof r.summary.startedAt).toBe('number');
+    expect(r.summary.endedAt === undefined).toBe(r.state === 'running' || r.state === 'waiting');
+  }
+  const job = COMMANDS['crew.assign']?.({ id: 'crew:turing', prompt: 'Bench the list query' }, ctx);
+  const up = job?.ops.find((o) => o.op === 'upsert' && o.topic === 'list') as { id: string; v: { summary: Record<string, unknown> } } | undefined;
+  expect(up?.v.summary['startedAt']).toBe(now);
+  expect(up?.v.summary['endedAt']).toBeUndefined();
+  const running = (data.topics.get('list') ?? []).find((r) => (r.v as { state?: string }).state === 'running');
+  const stop = COMMANDS['runtime.stop']?.({ id: running?.id }, ctx);
+  expect((stop?.ops[0] as { ops: unknown[] }).ops).toEqual(expect.arrayContaining([{ op: 'add', path: '/summary/endedAt', value: now }]));
+});
+
 test('runtime.projectAdd names as the server does (ADR-0077): wisp then wisp-2, the same folder once, a taken name -2', () => {
   const rows: { e: string; id: string; v: unknown }[] = [];
   const ctx = { peer: 'local', rows: () => rows } as unknown as CommandCtx;

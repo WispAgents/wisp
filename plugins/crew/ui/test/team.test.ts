@@ -1,5 +1,7 @@
 import { expect, test } from 'vitest';
-import { hasTeam, teamRows, type Say } from '../src/team.ts';
+import { hasTeam, teamRows, timeOf, type Say } from '../src/team.ts';
+import { machinesByPeer } from '../src/data.ts';
+import { jobOf } from '../src/jobs.ts';
 import type { SessionRow } from '../src/types.ts';
 
 const say: Say = (k) => k;
@@ -53,4 +55,46 @@ test('a_delegated_job_still_being_made_shows_starting_and_a_failed_one_says_so',
     ['wisp.crew.job.starting', 'accent', true],
     ['wisp.crew.team.failed', 'bad', false],
   ]);
+});
+
+test('each_team_row_says_where_its_job_runs_this_computer_or_the_members_machine_v1_tl_place', () => {
+  // v1 team.js ranOn: this computer (a laptop) with the lead; a job on Ada's machine is that machine's row, its name on
+  // a server chip, away from the lead (accent icon); the tooltip says where it ran, in the member's own folder
+  const here = 'laptop';
+  const jobs = [
+    job('j1', 'ada', 'delegated', 'L', { state: 'running', startedAt: 1_000 }),
+    job('j2', 'ada', 'delegated', 'L', { state: 'running', peer: 'studio', machine: 'Studio', startedAt: 2_000 }),
+    job('j3', 'bo', 'delegated', 'L', { peer: 'gone' }),
+  ];
+  const rows = teamRows(jobs, `${here}:L`, (id) => members.get(id), say, here);
+  expect(rows.map((r) => [r.id, r.place.name, r.place.icon, r.place.away])).toEqual([
+    ['j1', 'wisp.crew.page.here', 'laptop', false],
+    ['j2', 'Studio', 'server', true],
+    ['j3', 'wisp.crew.team.elsewhere', 'server', true],
+  ]);
+  expect(rows[1]?.place.tip).toBe('wisp.crew.team.ranOn');
+});
+
+test('a_far_job_shows_its_machine_read_from_the_machines_peer_row_its_key_names', () => {
+  // the data path: the far row comes keyed by the machine's peer id; wisp.machines' `machines_peer` row names it
+  expect(machinesByPeer([{ id: 'laptop:studio', body: { peer: 'studio', name: 'Studio' } }, { id: 'laptop:off', body: { peer: null, name: 'Off' } }])).toEqual(new Map([['studio', 'Studio']]));
+  // a lead on Studio and its job beside it there: on Studio (a server), not away
+  const [r] = teamRows([job('j1', 'ada', 'delegated', 'L', { peer: 'studio', machine: 'Studio' })], 'studio:L', (id) => members.get(id), say, 'laptop');
+  expect([r?.place.name, r?.place.icon, r?.place.away]).toEqual(['Studio', 'server', false]);
+  // v1 ranOn: away from its lead is a server even here (the lead on Studio, the job on this computer)
+  const [home] = teamRows([job('j2', 'ada', 'delegated', 'L', { peer: 'laptop' })], 'studio:L', (id) => members.get(id), say, 'laptop');
+  expect([home?.place.name, home?.place.icon, home?.place.away]).toEqual(['wisp.crew.page.here', 'server', true]);
+});
+
+test('a_running_jobs_time_ticks_from_its_runs_start_and_a_finished_one_says_how_long_it_took_v1_elapsed', () => {
+  // runtime's row says when the last run started and ended (summary.startedAt / endedAt)
+  const row = jobOf({ id: 's1', created_at: 1, summary: { startedAt: 1_000, endedAt: 48_000 }, body: { ext: { 'wisp.crew': { id: 'ada', job: 'delegated', from: { id: 'L', title: 'Lead' } } } } });
+  expect([row?.startedAt, row?.endedAt]).toEqual([1_000, 48_000]);
+  expect(timeOf({ running: true, pending: false, startedAt: 1_000 }, 135_000)).toBe(134_000);
+  expect(timeOf({ running: false, pending: false, startedAt: 1_000, endedAt: 48_000 }, 999_999)).toBe(47_000);
+  expect(timeOf({ running: true, pending: true, startedAt: 1_000 }, 5_000)).toBeUndefined();
+  expect(timeOf({ running: false, pending: false }, 5_000)).toBeUndefined();
+  // a job asking you: its run still goes (v1 counts the turn as running), so its time ticks beside the Asks pill
+  const [asking] = teamRows([job('j1', 'ada', 'delegated', 'L', { state: 'waiting', startedAt: 1_000 })], 'L', (id) => members.get(id), say);
+  expect([asking?.live, asking?.running, asking && timeOf(asking, 61_000)]).toEqual([false, true, 60_000]);
 });
