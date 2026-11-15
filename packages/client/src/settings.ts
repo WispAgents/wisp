@@ -80,8 +80,9 @@ export function validateSetting(d: SettingDecl, v: unknown): string | undefined 
 export interface SettingsOptions {
   reader: EntityReader;
   commands: Commands;
-  /** the peer whose `setting` rows hold server-scoped values: this client's own wisp */
-  home: PeerId;
+  /** the peer whose `setting` rows hold server-scoped values: this client's own wisp. A function when it can change
+   *  (the phone app's launched computer, Client.setHome): read inside each value, so they follow it. */
+  home: PeerId | (() => PeerId);
   persist?: Persist;
   warn?: Warn;
 }
@@ -99,7 +100,8 @@ export function createSettings(o: SettingsOptions): Settings {
     if (!s) m.set(k, (s = signal<V | undefined>(undefined)));
     return s;
   };
-  const row = (key: string): Readable<SettingRow | undefined> => o.reader.row<SettingRow>('setting', entityKey(o.home, key)) as Readable<SettingRow | undefined>;
+  const home = (): PeerId => (typeof o.home === 'function' ? o.home() : o.home);
+  const row = (key: string): Readable<SettingRow | undefined> => o.reader.row<SettingRow>('setting', entityKey(home(), key)) as Readable<SettingRow | undefined>;
   const isServer = (d: SettingDecl | undefined): boolean => (d?.scope ?? 'server') === 'server';
 
   const memo = new Map<string, Readable<unknown>>();
@@ -132,7 +134,7 @@ export function createSettings(o: SettingsOptions): Settings {
     const by = lockedBy(key)();
     if (by) throw new CommandError({ code: 'forbidden', message: `${key} is set by ${by}` });
     if (isServer(d)) {
-      await o.commands.run(setSetting, { peer: o.home, key, value });
+      await o.commands.run(setSetting, { peer: untracked(home), key, value });
       return;
     }
     lazy(device, key)(value);

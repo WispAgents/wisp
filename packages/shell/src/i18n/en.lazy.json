@@ -342,5 +342,10 @@
   "shell.runner.hint.high": "thinks it through",
   "shell.runner.hint.xhigh": "digs deep",
   "shell.runner.hint.max": "everything it has",
-  "shell.compare.gone": "These runs are gone."
+  "shell.compare.gone": "These runs are gone.",
+  "shell.dest.label": "Destinations",
+  "shell.dest.tasks": "Tasks",
+  "shell.dest.crew": "Crew",
+  "shell.dest.stuff": "Stuff",
+  "shell.dest.computers": "Computers"
 }

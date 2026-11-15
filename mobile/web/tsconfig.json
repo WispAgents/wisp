@@ -1,7 +1,17 @@
 {
   "extends": "../../tsconfig.web.json",
   "compilerOptions": {
-    "types": ["node"]
+    "types": [
+      "node",
+      "vite/client"
+    ]
   },
-  "include": ["src/**/*.ts", "test/**/*.ts"]
+  "include": [
+    "src/**/*.ts",
+    "src/**/*.tsx",
+    "test/**/*.ts",
+    "dev/**/*.ts",
+    "dev/**/*.tsx",
+    "vite.config.ts"
+  ]
 }

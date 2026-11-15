@@ -12,15 +12,18 @@
 // computer as a peer, follows the saved list, sends Android's Back to navigation (leaving the app
 // when there is nothing to go back to) and writes pending rows and drafts when the app is hidden.
 //
-// `home` is PHONE, a peer that is never added: no wisp runs on a phone. Device-scoped settings live
-// on the phone; a server-scoped setting has no home here and waits (the shell should offer those per
-// computer instead).
+// `home` is the launched computer (launch.ts: the one launched last, else the first saved; PHONE, a peer
+// never added, only while no computer is saved): the shell runs on it, as v1's app opened that computer's
+// wisp, while every saved computer stays connected as its own peer. The app opens on the Computers
+// destination (ADR-0065 open question 3's default: v1's), never inside a task; Tasks is one tap away.
 
 import { browserHistory, createClient, indexedDBPersist, sameNav, untracked, uuidv7, type Client, type ClientOptions, type IdbFactory, type IdbKeyRangeStatic, type Target, type WindowLike } from '@wisp/client';
-import { androidPlatform, type Platform, type PlatformWindow } from '@wisp/shell/platform';
+import { androidPlatform, iosPlatform, nativeSeams, type Platform, type PlatformWindow } from '@wisp/shell/platform';
+import { COMPUTERS_VIEW, intentOf } from '@wisp/shell/pure';
 import { capacitorBridge, exposePlugins, type CapacitorLike, type NativeBridge } from './bridge.ts';
 import { migrateV1, type StorageLike } from './migrate.ts';
-import { followComputers, phonePeers, PHONE } from './peers.ts';
+import { startHome } from './launch.ts';
+import { followComputers, phonePeers } from './peers.ts';
 
 export type PhoneWindow = PlatformWindow &
   WindowLike & {
@@ -36,8 +39,8 @@ export interface PhoneOptions {
   window?: PhoneWindow;
   /** the native side; capacitorBridge(window.Capacitor) by default (tests pass a fake) */
   bridge?: NativeBridge;
-  /** registers the plugins' UI before the client starts */
-  createShell?: (client: Client, platform: Platform) => void | Promise<void>;
+  /** registers the plugins' UI before the client starts (the bridge too: the Computers view lists from it) */
+  createShell?: (client: Client, platform: Platform, bridge: NativeBridge) => void | Promise<void>;
   /** anything else createClient takes (onError for the toast, dev, warn, timers) */
   client?: Partial<Omit<ClientOptions, 'clientId' | 'build' | 'home'>>;
 }
@@ -67,9 +70,13 @@ const isTarget = (v: unknown): v is Target => {
   return to === 'main' || to === 'side' || to === 'overlay';
 };
 
-/** androidPlatform, with a tapped notification coming from Alerts.java through the bridge. */
+/** The app's platform (Capacitor says which: the iPhone app or the Android one), with its native seams (secure
+ *  storage, the code scanner, push registration) and a tapped notification coming from the native side through the
+ *  bridge. Its kind is the look the shell sets on <html> (`data-platform`). */
 export function phonePlatform(w: PlatformWindow, bridge: NativeBridge): Platform {
-  return { ...androidPlatform(w), onOpen: (fn) => bridge.onOpen((t) => isTarget(t) && fn(t)) };
+  const kind = w.Capacitor?.getPlatform?.() === 'ios' ? 'ios' : 'android';
+  const base = kind === 'ios' ? iosPlatform(w) : androidPlatform(w);
+  return { ...base, ...nativeSeams(w.Capacitor, kind), onOpen: (fn) => bridge.onOpen((t) => isTarget(t) && fn(t)) };
 }
 
 export async function bootPhone(o: PhoneOptions): Promise<Phone> {
@@ -78,12 +85,14 @@ export async function bootPhone(o: PhoneOptions): Promise<Phone> {
   const bridge = o.bridge ?? capacitorBridge(w.Capacitor);
   const platform = phonePlatform(w, bridge);
   const persist = w.indexedDB && w.IDBKeyRange ? { persist: indexedDBPersist(w.indexedDB, w.IDBKeyRange) } : {};
-  const client = createClient({ history: browserHistory(w), ...persist, width: w.innerWidth, ...o.client, clientId: clientIdOf(w.localStorage), build: o.build, home: PHONE });
-  await o.createShell?.(client, platform);
   await migrateV1(w.localStorage, bridge).catch((err: unknown) => o.client?.warn?.('v1 computers not copied', String(err)));
   const computers = await bridge.list();
+  const home = startHome(computers, w.localStorage);
+  const client = createClient({ history: browserHistory(w), ...persist, width: w.innerWidth, ...o.client, clientId: clientIdOf(w.localStorage), build: o.build, home });
+  await o.createShell?.(client, platform, bridge);
   await client.start(await phonePeers(bridge, computers));
   followComputers(client, bridge, client.scope, computers);
+  openOnComputers(client);
   client.scope.add(bridge.onBack(() => back(client, bridge)));
   const hidden = (): void => {
     if (w.document.visibilityState === 'hidden') void client.flush();
@@ -91,6 +100,11 @@ export async function bootPhone(o: PhoneOptions): Promise<Phone> {
   w.document.addEventListener('visibilitychange', hidden);
   client.scope.add(() => w.document.removeEventListener('visibilitychange', hidden));
   return { client, platform, bridge };
+}
+
+/** The app's start: the Computers destination (when its view is registered), whatever the last place was. */
+export function openOnComputers(client: Pick<Client, 'nav' | 'views'>): void {
+  if (client.views.accepts('main', COMPUTERS_VIEW, null)) client.nav.navigate(intentOf({ view: COMPUTERS_VIEW }));
 }
 
 /** Back closes what's open (an overlay, the side, a task); with nothing left the app goes behind. */

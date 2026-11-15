@@ -176,3 +176,47 @@ test('plugin_clients_are_one_per_plugin_while_their_scope_lives: settings declar
   assert.notEqual(b, a);
   assert.doesNotThrow(() => b.settings([{ key: 'composer.followUp', type: 'enum', values: ['interrupt', 'queue'], default: 'interrupt', scope: 'server' }] as never));
 });
+
+test('set_home_moves_server_settings_and_keeps_every_connection: the phone app launching another of its computers', async () => {
+  const B = peerId('studio');
+  const { client, history } = make();
+  const ta = fakeTransport();
+  const tb = fakeTransport();
+  await client.start([
+    { peer: A, name: 'laptop', transport: ta },
+    { peer: B, name: 'studio', transport: tb },
+  ]);
+  client.peers.watch(A, 'config', client.scope);
+  client.peers.watch(B, 'config', client.scope);
+  await settle();
+  for (const [t, model] of [[ta, 'opus'], [tb, 'haiku']] as const) {
+    t.connections.at(-1)?.push(welcome());
+    await settle();
+    t.connections.at(-1)?.frame(3, { t: 'snapshot', topic: 'config', seq: 3, rows: [{ e: 'setting', id: 'claude.model', v: { key: 'claude.model', value: model } }] });
+  }
+  await settle();
+  const claude = client.plugin('claude');
+  const s = claude.settings([{ key: 'claude.model', type: 'string', default: 'sonnet' }] as const);
+  const model = s.get('claude.model');
+  assert.equal(model(), 'opus');
+  assert.equal(claude.home, A);
+  const opened = [ta.connections.length, tb.connections.length];
+
+  client.setHome(B);
+  assert.equal(client.home(), B);
+  assert.equal(claude.home, B, 'a plugin reads the new home when it asks');
+  assert.equal(model(), 'haiku', 'the same value follows the new home');
+  const before = tb.posted.length;
+  void s.set('claude.model', 'sonnet');
+  assert.ok(tb.posted.slice(before).some((m) => m.t === 'mutate'), 'written on the new home');
+  assert.ok(!ta.posted.some((m) => m.t === 'mutate'), 'never on the old one');
+  history.push('/task/t9');
+  history.push('/');
+  history.back(); // the URL changed under the app (a shared link): Back to /task/t9
+  assert.deepEqual(client.nav.nav().main, { kind: 'task', id: entityKey(B, 't9') }, 'a bare id in a URL is the new home’s');
+  await settle();
+  assert.deepEqual([ta.connections.length, tb.connections.length], opened, 'no peer reconnected');
+  assert.equal(client.peers.status(A)().kind, 'online');
+  assert.equal(client.peers.status(B)().kind, 'online');
+  client.dispose();
+});

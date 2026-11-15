@@ -3,20 +3,28 @@
   "version": "2.0.0",
   "private": true,
   "type": "module",
-  "description": "The Android app's side of the bundle (plan §7.3): reaches every saved computer through the native bridge (sshj tunnels, wisp Grid) over the sync protocol.",
+  "description": "The phone apps' side of the bundle (plan \u00a77.3, ADR-0065): its own entry (src/main.tsx: the shell on the launched computer, the Computers destination), reaching every saved computer through the native bridge (sshj tunnels, wisp Grid) over the sync protocol.",
   "exports": {
     ".": "./src/index.ts"
   },
   "dependencies": {
     "@wisp/client": "*",
     "@wisp/protocol": "*",
-    "@wisp/shell": "*"
+    "@wisp/shell": "*",
+    "@wisp/ui": "*",
+    "@wisp-plugin/shell-settings-ui": "*",
+    "@wisp-plugin/shell-home-ui": "*",
+    "solid-js": "^1.9.18"
   },
   "devDependencies": {
-    "@wisp/sync": "*"
+    "@wisp/sync": "*",
+    "vite": "^7.0.2",
+    "vite-plugin-solid": "^2.11.0"
   },
   "scripts": {
     "test": "node --test --test-reporter=dot \"test/**/*.test.ts\"",
-    "typecheck": "tsc -p tsconfig.json"
+    "typecheck": "tsc -p tsconfig.json",
+    "dev": "vite",
+    "build": "vite build"
   }
 }

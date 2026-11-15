@@ -7,7 +7,7 @@
 // that the same wisp has the same id on every device. Two saved entries for one wisp (over SSH and
 // through the grid) keep the derived id for the second, so neither replaces the other.
 
-import { peerId, type Client, type FetchLike, type PeerConfig, type PeerId, type Scope } from '@wisp/client';
+import { peerId, untracked, type Client, type FetchLike, type PeerConfig, type PeerId, type Scope } from '@wisp/client';
 import type { Computer, NativeBridge } from './bridge.ts';
 import { bridgeTransport } from './transport.ts';
 
@@ -44,6 +44,18 @@ export async function phonePeers(bridge: NativeBridge, computers?: readonly Comp
   return out;
 }
 
+/** Each saved computer's peer id, as phonePeers and followComputers give them (a second entry for one wisp keeps its own). */
+export function peerMap(list: readonly Computer[]): Map<string, PeerId> {
+  const seen = new Set<PeerId>();
+  const out = new Map<string, PeerId>();
+  for (const c of list) {
+    const peer = peerOf(distinct(c, seen));
+    seen.add(peer);
+    out.set(c.id, peer);
+  }
+  return out;
+}
+
 // A second entry claiming a peer id already used falls back to its own derived id.
 function distinct(c: Computer, taken: ReadonlySet<PeerId>): Computer {
   if (!taken.has(peerOf(c))) return c;
@@ -51,11 +63,13 @@ function distinct(c: Computer, taken: ReadonlySet<PeerId>): Computer {
   return rest as Computer;
 }
 
-type Client_ = Pick<Client, 'addPeer' | 'removePeer' | 'peers'>;
+type Client_ = Pick<Client, 'addPeer' | 'removePeer' | 'peers'> & Partial<Pick<Client, 'home' | 'setHome'>>;
 
 /**
  * Keeps the client's peers in step with the saved computers: added, forgotten, re-keyed when a
  * welcome names the real peer id. Owned by `scope`. A tunnel that comes back up skips the backoff.
+ * The client's home (the launched computer, launch.ts) follows its computer: re-keyed with it, once
+ * the new peer is added; forgotten, it moves to the first computer left (the phone with none).
  */
 export function followComputers(client: Client_, bridge: NativeBridge, scope: Scope, known: readonly Computer[], o: PhonePeersOptions = {}): void {
   const current = new Map<string, { peer: PeerId; computer: Computer }>(); // by saved id
@@ -67,6 +81,8 @@ export function followComputers(client: Client_, bridge: NativeBridge, scope: Sc
   }
 
   const apply = (list: readonly Computer[]): void => {
+    const home = client.home ? untracked(client.home) : undefined;
+    const homeId = [...current].find(([, e]) => e.peer === home)?.[0];
     const next = new Set(list.map((c) => c.id));
     for (const [id, e] of current) {
       if (next.has(id)) continue;
@@ -88,6 +104,10 @@ export function followComputers(client: Client_, bridge: NativeBridge, scope: Sc
       client.addPeer(peerConfig(bridge, c, o));
       current.set(raw.id, { peer, computer: c });
     }
+    if (!client.setHome || (homeId === undefined && home !== PHONE)) return;
+    // the launched computer under its new id, else the first one left; the phone's home moves to the first one added
+    const now = (homeId !== undefined ? current.get(homeId)?.peer : undefined) ?? current.values().next().value?.peer ?? PHONE;
+    if (now !== home) client.setHome(now);
   };
 
   let reloads = 0; // only the newest list applies when two reloads overlap

@@ -6,6 +6,7 @@
 
 import type { Look } from './look.ts';
 import { phoneOverlays } from '../controls/phone-part.ts';
+import { loadPhoneStage } from '../app/phone-stage-load.ts';
 
 const LOADERS: Record<Exclude<Look, 'web'>, () => Promise<unknown>> = {
   android: () => import('./android-styles.ts'),
@@ -16,6 +17,6 @@ const LOADERS: Record<Exclude<Look, 'web'>, () => Promise<unknown>> = {
  * look loads nothing. */
 export function loadPlatformStyles(look: Look): Promise<void> {
   if (look === 'web') return Promise.resolve();
-  // the overlays' phone halves come with the look (controls/phone-part.ts)
-  return Promise.all([LOADERS[look](), phoneOverlays.load()]).then(() => undefined);
+  // the overlays' phone halves and the phone frame (app/PhoneStage.tsx) come with the look
+  return Promise.all([LOADERS[look](), phoneOverlays.load(), loadPhoneStage()]).then(() => undefined);
 }

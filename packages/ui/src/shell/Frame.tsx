@@ -10,7 +10,7 @@
 // beside them as a rail from 600 dp on Android. The frame is the ComposeHost: on iOS a Fab's action is
 // drawn as the compose button at the top bar's end unless a root TopAppBar draws it. The browser draws
 // none of it, `nav` included: its DOM is the same as before (test/goldens/platform-browser.json).
-import { Show, type JSX } from 'solid-js';
+import { children, Show, type JSX } from 'solid-js';
 import { flag, styleOf, type KitProps, type WithVars } from '../core/props.ts';
 import { useT, type Translate } from '../core/i18n.tsx';
 import { usePlatform } from '../platform/PlatformLook.tsx';
@@ -31,9 +31,9 @@ export interface FrameProps extends KitProps, WithVars {
   readonly sideOpen?: boolean;
   /** the list's width in px while dragging, and once at the end */
   readonly onListResize?: (px: number, done: boolean) => void;
-  readonly listLabel?: string;
-  readonly mainLabel?: string;
-  readonly sideLabel?: string;
+  readonly listLabel?: string | undefined;
+  readonly mainLabel?: string | undefined;
+  readonly sideLabel?: string | undefined;
   readonly t?: Translate;
   /** inside a box of its own (the gallery), not over the whole viewport */
   readonly contained?: boolean;
@@ -84,6 +84,8 @@ function FrameBody(props: FrameProps): JSX.Element {
   const t = useT(() => props.t);
   const look = usePlatform();
   const active = (p: FramePage): '' | undefined => flag(props.layout === 'split' || props.page === p);
+  // resolved once (a getter builds the bar on every read), and only under a phone look
+  const nav = children(() => (look() !== 'web' ? props.nav : undefined));
   return (
     <div
       id={props.id}
@@ -116,8 +118,8 @@ function FrameBody(props: FrameProps): JSX.Element {
           </aside>
         </Show>
       </div>
-      <Show when={look() !== 'web' && props.nav}>
-        <div data-kit="frame-nav">{props.nav}</div>
+      <Show when={nav()}>
+        <div data-kit="frame-nav">{nav()}</div>
       </Show>
     </div>
   );

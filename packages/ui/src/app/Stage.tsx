@@ -11,6 +11,8 @@ import type { IconName } from '../content/icons.ts';
 import { Spirit } from '../crew/Spirit.tsx';
 import { WithAct, type Act } from './act.tsx';
 import { useRailCard } from './RailCard.tsx';
+import { usePlatform } from '../platform/PlatformLook.tsx';
+import { phoneStage } from './phone-stage-load.ts';
 
 export type StagePage = 'list' | 'main';
 
@@ -35,10 +37,26 @@ export interface StageProps {
   /** split with the rail: the picked crew member's colour (a crew colour name); the list and its top bar take a very
    *  light wash of it (v1 #768 .crew-tint) */
   readonly tint?: string | undefined;
+  /** added 2026-11-15 (ADR-0065 step 8): the phone apps' destinations (a NavigationBar). Under a phone look the stage
+   *  is the platform's Frame (the top app bar, the panes, the navigation bar or rail); the browser never draws it, and
+   *  its DOM stays v1's whatever is passed here. */
+  readonly nav?: JSX.Element;
+  /** the panes' names for a screen reader, on the phone frame */
+  readonly listLabel?: string;
+  readonly mainLabel?: string;
+  readonly sideLabel?: string;
 }
 
-/** v1 #stage: the rail, the sidebar's head and body, the main pane, the grip. */
+/** v1 #stage: the rail, the sidebar's head and body, the main pane, the grip. In the phone apps: the kit's Frame. */
 export function Stage(props: StageProps): JSX.Element {
+  // the look is set on <html> before the first render and never changes: one read picks the frame. The phone frame is
+  // its own chunk (the browser's first download never carries it, ADR-0011); loadPlatformStyles brings it with the look.
+  if (usePlatform()() === 'web') return WebStage(props);
+  void phoneStage.load().catch(() => undefined);
+  return <Show when={phoneStage.ready()}>{(m) => m().PhoneStage(props)}</Show>;
+}
+
+function WebStage(props: StageProps): JSX.Element {
   return (
     <main
       data-kit="stage"

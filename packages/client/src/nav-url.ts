@@ -178,8 +178,9 @@ export interface NavigationOptions {
   views?: ViewRegistry;
   warn?: Warn;
   onChange?: (url: string) => void;
-  /** the page's own wisp: a task named by a bare id in a URL (`/task/<id>`, a link the CLI printed) is its */
-  home?: string;
+  /** the page's own wisp: a task named by a bare id in a URL (`/task/<id>`, a link the CLI printed) is its. A function
+   *  when it can change (Client.setHome): read at each URL. */
+  home?: string | (() => string);
 }
 
 /** A bare session id in a decoded URL becomes the home peer's entity key (`<home>:<id>`), as the app's own
@@ -204,7 +205,8 @@ function knownViews(nav: Omit<Nav, 'layout'>, views: ViewRegistry | undefined): 
 export function createNavigation(o: NavigationOptions): Navigation {
   const warn = o.warn ?? (() => {});
   const url0 = o.history?.read() ?? '/';
-  const start = knownViews(homed(decodeNav(url0), o.home), o.views);
+  const home = (): string | undefined => (typeof o.home === 'function' ? o.home() : o.home);
+  const start = knownViews(homed(decodeNav(url0), home()), o.views);
   const state = signal<Nav>({ ...initialNav(o.width), ...start });
 
   const commit = (next: Nav, push: boolean): void => {
@@ -218,7 +220,7 @@ export function createNavigation(o: NavigationOptions): Navigation {
 
   if (o.history) {
     const h = o.history;
-    o.scope.add(h.listen((url) => commit(navigate(untracked(state), { t: 'restore', to: knownViews(homed(decodeNav(url), o.home), o.views) }), false)));
+    o.scope.add(h.listen((url) => commit(navigate(untracked(state), { t: 'restore', to: knownViews(homed(decodeNav(url), home()), o.views) }), false)));
   }
 
   return {

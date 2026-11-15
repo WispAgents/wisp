@@ -34,6 +34,25 @@
   :root[data-platform='ios'] [data-kit='frame-top'] > [data-kit='app-bar'] { flex: 1 1 auto; align-self: stretch; }
   :root[data-platform='ios'] [data-kit='frame'] > [data-kit='frame-body'] { grid-area: body; }
   :root[data-platform='ios'] [data-kit='frame'] > [data-kit='frame-nav'] { grid-area: nav; min-width: 0; }
+
+  /* The app's frame (step 8): the list's head is v1's top bar (its own box, until the Tasks screen's navigation bar
+     in step 13), fitted to the bar's row; a pushed page (a task, a view) draws its own head, so the frame's top steps
+     aside there and the page starts under the status bar. */
+  :root[data-platform='ios'] [data-kit='frame-top'] > [data-kit='topbar'] {
+    position: static;
+    flex: 1 1 auto;
+    align-self: stretch;
+    grid-template-columns: minmax(0, 1fr) auto auto;
+    margin: 0;
+    padding: 0 var(--space-3);
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+    font: var(--type-body);
+  }
+  :root[data-platform='ios'] [data-kit='frame-top'] > [data-kit='topbar'] [data-kit='tb-view'] { display: none; }
+  :root[data-platform='ios'] [data-kit='frame'][data-layout='stack']:not([data-page='list']) > [data-kit='frame-top'] { display: none; }
+  :root[data-platform='ios'] [data-kit='frame'][data-layout='stack']:not([data-page='list']) > [data-kit='frame-body'] { padding-top: var(--safe-top); }
   :root[data-platform='ios'] [data-kit='frame'] [data-kit='frame-pane'],
   :root[data-platform='ios'] [data-kit='frame'] [data-kit='frame-pane'][data-pane='list'] {
     background: var(--surface-c0);

@@ -1,0 +1,17 @@
+{
+  "phone.computers.title": "Computers",
+  "phone.computers.saved": "On this phone",
+  "phone.computers.help": "Each one stays connected. Open one to start tasks there.",
+  "phone.computers.empty": "No computers yet",
+  "phone.computers.emptyHow": "On your computer, open wisp and choose Machines → Add to your phone.",
+  "phone.open": "Open",
+  "phone.tasks": "Tasks",
+  "phone.via.ssh": "Over SSH",
+  "phone.via.cloud": "wisp Cloud",
+  "phone.via.grid": "Your computer · via grid",
+  "phone.state.online": "Online",
+  "phone.state.connecting": "Connecting",
+  "phone.state.offline": "Offline",
+  "phone.state.asleep": "Asleep",
+  "phone.state.update": "Update wisp"
+}

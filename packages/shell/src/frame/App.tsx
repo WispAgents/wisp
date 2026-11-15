@@ -17,6 +17,8 @@ import { flatRow } from './rows-view.ts';
 import { escLeavesLauncher, stackView } from './stack-page.ts';
 
 const Switcher = lazy(() => import('../switcher/Switcher.tsx'));
+// the phone apps' destinations: their own chunk, so the browser's first download never carries the navigation bar
+const PhoneNav = lazy(() => import('./PhoneNav.tsx'));
 
 export function App(props: { readonly clients: Clients; readonly recent: Readable<readonly string[]> }): JSX.Element {
   const shell = useShell();
@@ -98,6 +100,10 @@ export function App(props: { readonly clients: Clients; readonly recent: Readabl
         gripLabel={shell.t('shell.side.grip')}
         listBehind={view().listBehind}
         tint={tint()}
+        // the phone apps (ADR-0065 step 8): Tasks · Crew · Stuff · Computers; the browser passes none
+        nav={shell.platform.phone ? <PhoneNav /> : undefined}
+        mainLabel={shell.t('shell.main')}
+        sideLabel={shell.t('shell.side')}
         {...(titlebar && { titlebar })}
       />
       <Overlays />

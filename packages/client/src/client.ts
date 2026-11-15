@@ -18,6 +18,7 @@ import { createPeers, type PeerConfig, type Peers } from './peers.ts';
 import { memoryPersist, type Persist } from './persist.ts';
 import { createScope, type Scope } from './scope.ts';
 import { createSettings, type Settings, type TypedSettings } from './settings.ts';
+import { signal, untracked, type Readable } from './signals.ts';
 import type { Timers } from './clock.ts';
 import type { Json, PeerId, SettingDecl, Warn } from './types.ts';
 import type { Topic } from '@wisp/protocol';
@@ -62,7 +63,7 @@ export interface PluginClient {
   readonly peers: Pick<Peers, 'list' | 'status' | 'info' | 'name' | 'hasFeature' | 'reconnect'>;
   /** a peer's own routes: raw uploads, event streams (a terminal). Everything else is a command. */
   http(peer: PeerId): PeerHttp;
-  /** this client's own wisp (ClientOptions.home) */
+  /** this client's own wisp (ClientOptions.home; the one setHome named last, read when asked) */
   readonly home: PeerId;
   /** kind 5: text and files being written, keyed (entity, field), kept across reloads (the composer's drafts) */
   readonly drafts: Drafts;
@@ -87,6 +88,12 @@ export interface Client {
   plugin(id: string): PluginClient;
   /** writes what's waiting (rows, drafts) now: before the page hides */
   flush(): Promise<void>;
+  /** added 2026-11-15 (additive, ADR-0065 step 8): this client's own wisp now (ClientOptions.home until setHome) */
+  readonly home: Readable<PeerId>;
+  /** added 2026-11-15 (additive): another peer becomes this client's own wisp (the phone app launching one of its
+   *  computers): server-scoped settings and bare task ids in a URL follow it. Every peer stays as it is: none is
+   *  added, removed or reconnected. A plugin client's `home` reads it when asked, so a screen reads it as it mounts. */
+  setHome(peer: PeerId): void;
   dispose(): void;
 }
 
@@ -105,7 +112,9 @@ export function createClient(o: ClientOptions): Client {
   const views = createViews();
   const transcripts = createTranscripts({ reader, writer, peers });
   const drafts = createDrafts({ scope, persist, warn });
-  const settings = createSettings({ reader, commands, home: o.home, persist, warn });
+  const home = signal<PeerId>(o.home);
+  const homeNow = (): PeerId => home();
+  const settings = createSettings({ reader, commands, home: homeNow, persist, warn });
   const i18n = createI18n({ dev: o.dev === true, warn });
   const stores = createStoreHost({ persist, warn });
   /** one client per plugin while its scope lives (pluginClient) */
@@ -113,7 +122,7 @@ export function createClient(o: ClientOptions): Client {
   const saveNav = (url: string): void => {
     persist.write([{ ns: 'nav', key: 'last', value: url }]).catch(() => {});
   };
-  const nav = createNavigation({ scope, width: o.width, views, warn, onChange: saveNav, home: o.home, ...(o.history && { history: o.history }) });
+  const nav = createNavigation({ scope, width: o.width, views, warn, onChange: saveNav, home: homeNow, ...(o.history && { history: o.history }) });
   const readPeers: PluginClient['peers'] = { list: peers.list, status: peers.status, info: peers.info, name: peers.name, hasFeature: peers.hasFeature, reconnect: peers.reconnect };
   const rows = persistEntities({ writer, persist, scope, warn, linkOf: (p) => peers.save(p) });
 
@@ -137,7 +146,7 @@ export function createClient(o: ClientOptions): Client {
       // plugins registered their views by now, so the URL may name one; when it says nothing
       // (`/`), the app goes back where it was
       const url = o.history?.read() ?? '/';
-      nav.navigate({ t: 'restore', to: homed(decodeNav(url === '/' && typeof last === 'string' ? last : url), o.home) });
+      nav.navigate({ t: 'restore', to: homed(decodeNav(url === '/' && typeof last === 'string' ? last : url), untracked(home)) });
       for (const cfg of list) {
         const link = saved.get(cfg.peer)?.link;
         peers.add(link && !cfg.saved ? { ...cfg, saved: link } : cfg);
@@ -149,6 +158,10 @@ export function createClient(o: ClientOptions): Client {
     plugin: (id) => pluginClient(id),
     async flush() {
       await Promise.all([rows.flush(), drafts.flush()]);
+    },
+    home: () => home(),
+    setHome: (peer) => {
+      if (untracked(home) !== peer) home(peer);
     },
     dispose: () => scope.dispose(),
   };
@@ -195,7 +208,9 @@ export function createClient(o: ClientOptions): Client {
       watch: (peer, topic, owner = ps, opts) => peers.watch(peer, topic, owner, opts),
       peers: readPeers,
       http: (peer) => peers.http(peer),
-      home: o.home,
+      get home() {
+        return untracked(home);
+      },
       drafts,
     };
   }

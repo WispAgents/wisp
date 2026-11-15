@@ -49,5 +49,6 @@ export function nullPlatform(over: Partial<Platform> = {}): Platform {
 
 export { androidPlatform, browserPlatform, desktopPlatform, iosPlatform };
 export { applyPlatformLook, platformLook } from './look.ts';
+export { nativeSeams } from './native-seams.ts';
 export { sizeClass } from './web.ts';
 export type * from './types.ts';

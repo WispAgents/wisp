@@ -114,7 +114,7 @@ Rust for everything but the UI, Solid/TS for the UI, everything a plugin (ADR-00
 5. [x] Kit: overlays (Sheet, Dialog, Menu, Popover, Toast, Tooltip) (round 227, reviewed by r241)
 6. [x] Kit: controls (Button, IconButton, Switch, Tabs, Input, Select) (round 265)
 7. [x] Gestures with visible twins (round 225); seams (GestureHostProvider, row long-press) in round 227's work
-8. [ ] The app's frontend (`@wisp/mobile` routes, launch on Computers, several peers)
+8. [x] The app's frontend (`@wisp/mobile` routes, launch on Computers, several peers) (round 281: its own entry `mobile/web` `npm run dev`/`build`; Stage → kit Frame + NavigationBar under a phone look; `Client.setHome` runs the shell on the launched computer, every peer stays connected; seams `secureStore`/`scanCode`/`registerPush`)
 9. [x] Android native: Keystore-sealed keys and tokens, QR host-key pinning, a port per computer (round 226)
 10. [ ] iOS native: **blocked: Xcode is not installed on this Mac**
 11. [x] Push (`wisp.push`, HPKE, grid relay) (round 228, reviewed by r241; no UI calls it yet: step 13)

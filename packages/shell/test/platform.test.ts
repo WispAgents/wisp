@@ -3,7 +3,7 @@
 // onBack) answer on every platform.
 import { describe, expect, it } from 'vitest';
 import { applyPlatformLook, platformLook } from '../src/platform/look.ts';
-import { detectPlatform, nullPlatform } from '../src/platform/index.ts';
+import { detectPlatform, nativeSeams, nullPlatform } from '../src/platform/index.ts';
 import type { BackEvent, CapacitorGlobal, PlatformWindow, Rect } from '../src/platform/types.ts';
 
 interface Fake extends PlatformWindow {
@@ -149,5 +149,51 @@ describe('the new platform calls', () => {
     detectPlatform(b).onBack((e) => none.push(e));
     b.fire('wisp-back', { phase: 'commit' });
     expect(none).toEqual([]);
+  });
+});
+
+describe('the phone apps’ native seams (ADR-0065 step 8)', () => {
+  const cap = (methods: Record<string, (args?: unknown) => Promise<unknown>>): CapacitorGlobal => ({ isNativePlatform: () => true, Plugins: { WispSsh: methods } });
+
+  it('the_native_seams_answer_unsupported_until_the_native_side_has_them', async () => {
+    const refuse = async (): Promise<never> => {
+      throw new Error('not implemented');
+    };
+    const p = nativeSeams(cap({ secureGet: refuse, secureSet: refuse, secureRemove: refuse, scanCode: refuse, registerPush: refuse }), 'android');
+    expect(await p.secureStore.get('k')).toBeNull();
+    expect(await p.secureStore.set('k', 'v')).toBe('unsupported');
+    await expect(p.secureStore.remove('k')).resolves.toBeUndefined();
+    expect(await p.scanCode()).toBe('unsupported');
+    expect(await p.registerPush()).toBe('unsupported');
+    expect(await nativeSeams(undefined, 'ios').scanCode(), 'nor a WebView without the native side').toBe('unsupported');
+    const web = detectPlatform(fakeWindow());
+    expect(web.secureStore ?? web.scanCode ?? web.registerPush, 'a browser has none').toBeUndefined();
+  });
+
+  it('the_native_seams_pass_what_the_native_side_answers', async () => {
+    const vault = new Map<string, string>();
+    const key = (a: unknown): string => (a as { key: string }).key;
+    const p = nativeSeams(
+      cap({
+        secureGet: async (a) => ({ value: vault.get(key(a)) ?? null }),
+        secureSet: async (a) => {
+          vault.set(key(a), (a as { value: string }).value);
+          return {};
+        },
+        secureRemove: async (a) => {
+          vault.delete(key(a));
+          return {};
+        },
+        scanCode: async () => ({ text: 'wisp+ssh://me@studio?fp=x' }),
+        registerPush: async () => ({ handle: 'h1', publicKey: 'pk' }),
+      }),
+      'ios',
+    );
+    expect(await p.secureStore.set('wisp.k', 'sealed')).toBe('set');
+    expect(await p.secureStore.get('wisp.k')).toBe('sealed');
+    await p.secureStore.remove('wisp.k');
+    expect(await p.secureStore.get('wisp.k')).toBeNull();
+    expect(await p.scanCode()).toEqual({ text: 'wisp+ssh://me@studio?fp=x' });
+    expect(await p.registerPush()).toEqual({ handle: 'h1', publicKey: 'pk', platform: 'ios' });
   });
 });

@@ -87,6 +87,20 @@ export interface Dictation {
   start(onEvent: (e: DictationEvent) => void): () => void;
 }
 
+/** added 2026-11-15 (ADR-0065 step 8): small values sealed on the device (the Android Keystore, the iOS Keychain), never
+ * in web storage. `get` answers null for a key never set (or a platform without one). */
+export interface SecureStore {
+  get(key: string): Promise<string | null>;
+  set(key: string, value: string): Promise<'set' | 'unsupported'>;
+  remove(key: string): Promise<void>;
+}
+
+/** What the camera's code scanner read (the desktop's *Add to your phone* QR, ADR-0065 §2.1). */
+export type Scanned = { readonly text: string } | 'cancelled' | 'denied' | 'unsupported';
+
+/** The push relay's handle for this device and the key its notifications are sealed to (ADR-0065 §3.1). */
+export type PushRegistration = { readonly handle: string; readonly publicKey: string; readonly platform: 'android' | 'ios' } | 'denied' | 'unsupported';
+
 export interface Platform {
   readonly kind: PlatformKind;
   /** touch-first and narrow: the phone layout's affordances (a FAB, press feedback) */
@@ -150,6 +164,13 @@ export interface Platform {
    * edge swipe on iOS). Returns the stop function. A browser and the desktop app never call it (their Back is
    * the history's). */
   onBack(fn: (e: BackEvent) => void): () => void;
+  /** added 2026-11-15 (additive, ADR-0065 step 8): the phone apps' native seams, absent elsewhere. Each answers
+   * 'unsupported' (or null) when the app's native side doesn't have it yet; none throws. */
+  readonly secureStore?: SecureStore;
+  /** the camera's code scanner, for *Scan from your computer* (step 13) */
+  scanCode?(): Promise<Scanned>;
+  /** asks the system for notifications and the relay for a handle, for `push.pair` (step 13; ADR-0065 §3) */
+  registerPush?(): Promise<PushRegistration>;
 }
 
 /** The slice of `window` the implementations read; tests pass a fake. */
