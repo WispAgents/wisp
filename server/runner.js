@@ -7,7 +7,7 @@ import { EventEmitter } from 'node:events';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { sessionToken } from './agent-token.js';
-import { cappedRefusal } from './capped.js';
+import { aboveCap, cappedRefusal } from './capped.js';
 import { adapters, detectedVersion } from './adapters/index.js';
 import { versionIn } from './adapters/common.js';
 import { systemPrompt, parsePresentation, heroOf } from './protocol.js';
@@ -137,6 +137,23 @@ export const plainAnswer = (s, store) => store?.config?.defaults?.blocks === 'of
 
 // Worktree sessions get told where they are, so they don't go looking for the main checkout. A task
 // with other folders (also) gets their paths: that's where the work in them goes.
+// Plan mode, on a harness that can run commands there (adapter.planCommands): what the agent hears.
+export const PLAN_NOTE = `
+
+# Plan mode
+
+This task is in Plan mode: don't change the project's files. The file-editing tools are off; don't write files from the shell either (no \`sed -i\`, \`>\` into a file, \`patch\`, \`git commit\`). Everything else is yours: run commands, tests, builds and the app, read logs, use wisp's tools and the connectors. Don't hand the user a command to run that you could run yourself: run it and report what it showed. End with the plan: what to change, where, and why.
+`;
+
+// Where a task came from decides whether Plan may run commands: one a channel or trigger started
+// (someone outside may have written it) stays read-only, as Settings and the triggers promise.
+const OWN_ORIGINS = new Set(['recipe', 'task', 'later']); // your recipe, an agent of yours, your schedule or draft
+export function outsideTask(s, store) {
+  let x = s;
+  for (let n = 0; x?.parentId && n < 5; n++) x = store?.get?.(x.parentId) || x;
+  return !!(s.capped || x?.capped || (x?.origin && !OWN_ORIGINS.has(x.origin.kind)));
+}
+
 function workspaceNote(s) {
   const wt = s.worktree;
   const also = s.also || [];
@@ -1417,7 +1434,13 @@ export class Runner extends EventEmitter {
   }
 
   // The wisp protocol for this run: a lead hears about its team, a subagent that it can't ask.
-  #systemPrompt(session, adapter, team) {
+  // Plan with commands: yours, on a harness that can (adapters/claude.js planCommands). A side
+  // discussion runs in its own mode (sideMode), and its Plan only reads.
+  planRuns(session, mode) {
+    return mode === 'plan' && !!adapters[session.agent]?.planCommands && !session.sideOf && !outsideTask(session, this.store);
+  }
+
+  #systemPrompt(session, adapter, team, mode = session.mode) {
     const sub = session.parentId || session.delegated; // a delegate here, or one for a lead on another wisp
     const extraBlocks = sub ? [] : this.spellBlocks(session);
     const base = sub
@@ -1428,15 +1451,19 @@ export class Runner extends EventEmitter {
     // A shared task's skills and instructions came with it (services/share.js): written out in full.
     const kit = !sub && session.sharedFrom?.kit?.length ? kitNote({ kit: session.sharedFrom.kit }) : '';
     const side = session.sideOf ? sideNote(session, adapter.askTool === null || !this.bridge ? '' : (adapter.askTool ?? 'mcp__wisp__ask_user').replace(/ask_user$/, 'wisp_session'), { edits: this.sideMode(session.agent) === 'edits', name: adapter.name }) : '';
-    return base + spell + crew + kit + side + goalNote(session) + workspaceNote(session) + this.promptExtra(session);
+    const plan = this.planRuns(session, mode) ? PLAN_NOTE : '';
+    return base + spell + crew + kit + side + plan + goalNote(session) + workspaceNote(session) + this.promptExtra(session);
   }
 
   // wisp's own MCP server (ask_user, delegate), for harnesses that take one, and your connectors
   // (server/connectors.js). Subagents get only the connectors: they have nobody to ask.
   #mcpServers(session, adapter, team, mode) {
     if (adapter.askTool === null) return {};
-    // A side discussion gets none: connectors can act on the world, and the gate only sees the folder.
-    const yours = this.connectors?.({ agent: session.agent, mode: session.sideOf ? 'plan' : mode, cwd: workdir(session) }) || {};
+    // A side discussion gets them where it can act (Edits behind the gate), and Plan that runs
+    // commands does too: only a read-only Plan goes without.
+    // A side discussion of a task a channel capped at Plan doesn't get them past that cap.
+    const cappedSide = session.sideOf && aboveCap(mode, session.capped);
+    const yours = this.connectors?.({ agent: session.agent, mode: cappedSide ? 'plan' : this.planRuns(session, mode) ? 'edits' : mode, cwd: workdir(session) }) || {};
     if (!this.bridge || session.parentId || session.delegated) return yours;
     return {
       ...yours,
@@ -1451,7 +1478,7 @@ export class Runner extends EventEmitter {
           ...(adapter.approveTool && { WISP_APPROVE: '1' }),
           ...(session.kind === 'spell' && { WISP_SPELLS: '1' }),
           ...(session.capped && { WISP_CAPPED: '1' }), // the routes hold the cap; this only hides what they'd refuse
-          ...(session.sideOf && { WISP_READONLY: '1' }), // a side discussion: wisp's tools that read, ask or show, plus the gate (server/side.js)
+          ...(session.sideOf && mode !== 'edits' && { WISP_READONLY: '1' }), // a read-only side discussion: wisp's tools that read, ask or show (server/side.js)
           ...(this.store.config?.defaults?.watch !== 'off' && { WISP_WATCH: '1' }),
           ...(team.length && { WISP_TEAM: JSON.stringify(team.map((m) => ({ name: m.name, agent: m.crew ? `${m.label || m.name} of the user's crew${m.role ? `, ${m.role}` : ''}` : adapters[m.agent]?.name || m.agent, model: m.crew ? 'own folder and memory' : m.model, effort: m.effort, use: m.use, count: m.count || 1, copies: copies(m), ...(m.machine && { place: m.place || 'another machine' }) }))) }),
         },
@@ -1578,7 +1605,8 @@ export class Runner extends EventEmitter {
       grants,
       model: session.model,
       effort: session.effort || '',
-      systemPrompt: this.#systemPrompt(session, adapter, team),
+      systemPrompt: this.#systemPrompt(session, adapter, team, mode),
+      planCommands: this.planRuns(session, mode), // Plan runs commands, only edits are off (adapters/claude.js)
       // A lead with a team delegates through wisp, so the harness's own subagent tool is switched off.
       delegating,
       subagentModel,

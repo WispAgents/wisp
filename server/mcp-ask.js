@@ -516,7 +516,7 @@ const CONTROL_TOOLS = [
         agent: { type: 'string', enum: AGENTS, description: 'Harness. Default: the user\'s default.' },
         model: { type: 'string', description: 'Model id for that harness.' },
         effort: { type: 'string', description: 'Thinking level.' },
-        mode: { type: 'string', enum: ['plan', 'edits', 'auto'], description: 'plan = read-only, edits = auto-accept edits, auto = no prompts. Default: the user\'s.' },
+        mode: { type: 'string', enum: ['plan', 'edits', 'auto'], description: 'plan = no file edits (read-only on some harnesses), edits = auto-accept edits, auto = no prompts. Default: the user\'s.' },
         worktree: { type: 'boolean', description: 'Its own git worktree (default on in git repos, except in plan mode).' },
         subagents: {
           type: 'array',

@@ -8,7 +8,8 @@ import path from 'node:path';
 
 export const VERSION = JSON.parse(fs.readFileSync(new URL('../package.json', import.meta.url), 'utf8')).version;
 export const DEFAULT_PORT = 4477;
-// The modes a session can run in: read-only planning, edits with approval rules, or full auto.
+// The modes a session can run in: planning without file edits (read-only on most harnesses, and for
+// what a channel or trigger started), edits with approval rules, or full auto.
 export const MODES = new Set(['plan', 'edits', 'auto']);
 
 export const newId = () => randomUUID().replace(/-/g, '').slice(0, 12);

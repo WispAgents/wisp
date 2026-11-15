@@ -40,7 +40,7 @@ export const TIPS = [
   ['Reach this computer from your phone: <b>Machines</b> → <i>Reach this computer from anywhere</i>', G('reach-your-computer-from-your-phone', 'add')],
   ['Close the laptop: tasks on wisp Cloud or another machine keep working', G('run-claude-code-24-7-without-a-vps')],
   ['wisp Cloud gives you a box with Claude Code, Codex and Cursor installed, free during the preview', G('use-wisp-cloud')],
-  ['Pick <b>Plan</b> for read-only, <b>Edits</b> to approve commands, or <b>Full auto</b>, per task', G(BG, 'start')],
+  ['Pick <b>Plan</b> for no file edits, <b>Edits</b> to approve commands, or <b>Full auto</b>, per task', G(BG, 'start')],
   ['Questions and finished tasks can go to your phone through ntfy or Telegram', G(BG, 'away')],
   ['<code>/btw</code> asks a running agent something without interrupting it', G(BG, 'away')],
   ['<b>Recipes</b> are saved prompts with <code>{params}</code>: one click for the tasks you repeat', G(BG, 'triggers')],

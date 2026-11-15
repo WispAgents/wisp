@@ -9,7 +9,7 @@ export const MEMBER_PROPS = {
   agent: { type: 'string', description: 'Harness: auto, claude, codex, opencode, cursor, antigravity, grok or copilot. Default auto.' },
   model: { type: 'string', description: 'Model id for that harness; "" for its default.' },
   effort: { type: 'string', description: 'Thinking level, e.g. low | medium | high; "" for the default.' },
-  mode: { type: 'string', enum: ['plan', 'edits', 'auto'], description: 'plan = read-only, edits = auto-accept edits, auto = no permission prompts. Default auto.' },
+  mode: { type: 'string', enum: ['plan', 'edits', 'auto'], description: 'plan = no file edits (read-only on some harnesses), edits = auto-accept edits, auto = no permission prompts. Default auto.' },
   cron: { type: 'string', description: 'When they check in on their own, in words ("every monday", "8am every weekday", "every 30 min") or a 5-field cron, local time. "" = only when given work.' },
   parallel: { type: 'integer', minimum: 1, maximum: 5, description: 'Jobs at once; more wait in their queue. Default 2.' },
   paused: { type: 'boolean', description: 'Paused members skip check-ins; work for them waits.' },

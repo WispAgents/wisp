@@ -99,7 +99,9 @@ test('a side discussion works in the main task’s folder behind the gate, hears
   assert.equal(flag(r, '--permission-prompt-tool'), 'mcp__wisp__approve');
   assert.match(flag(r, '--settings'), /"ask":\[[^\]]*"Edit"/, 'your allow rules can’t skip the gate');
   assert.match(flag(r, '--append-system-prompt'), /# wisp side discussion[\s\S]*clash/);
-  assert.match(flag(r, '--mcp-config'), /"WISP_READONLY":"1"/, 'wisp’s tools that act are left out');
+  assert.doesNotMatch(flag(r, '--mcp-config'), /WISP_READONLY/, 'behind the gate it has all of wisp’s tools');
+  assert.match(flag(r, '--append-system-prompt'), /Never hand the user a command to run[^\n]*that you could do here yourself/, 'it runs what it would suggest');
+  assert.doesNotMatch(flag(r, '--append-system-prompt'), /Don't start changes of your own|can't start tasks/);
   assert.match(r.stdin, /## The main task now: “[^”]+”[\s\S]*fix add\(\) please[\s\S]*## The user, in this side discussion\n\nwhy did it do it that way\?/);
   assert.deepEqual((await api(`/sessions/${s.id}`)).sides, [side.id]);
   assert.deepEqual((await api('/sessions')).find((x) => x.id === s.id).sides, [side.id]);
@@ -233,7 +235,6 @@ test('what the main task owns stays refused on a side discussion; queued follow-
     [`/sessions/${side.id}/source`, { path: 'math.js', text: 'x' }, 'PUT'],
     [`/sessions/${side.id}/ship`, {}],
     [`/sessions/${side.id}/merge`, {}],
-    [`/sessions/${side.id}/exec`, { command: 'touch nope' }],
     [`/sessions/${side.id}/rollback`, { restore: false }],
     [`/sessions/${side.id}/takeover`, { inline: true }],
   ]) {
@@ -241,6 +242,10 @@ test('what the main task owns stays refused on a side discussion; queued follow-
     assert.equal(r.status, 409, p);
     assert.match(r.json.error, /Do it on the main task/, p);
   }
+  // Its actions block's buttons run, in the main task's folder.
+  const ran = await api(`/sessions/${side.id}/exec`, { command: 'touch from-side' });
+  assert.equal(ran.exitCode, 0);
+  assert.ok(fs.existsSync(path.join((await api(`/sessions/${s.id}`)).worktree.path, 'from-side')), 'run where the main task works');
   // A follow-up queued behind a running turn, with a mode, still runs behind the gate.
   process.env.FAKE_DELAY = '600';
   await api(`/sessions/${side.id}/reply`, { text: 'first' });

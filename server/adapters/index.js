@@ -51,7 +51,7 @@
 //                                                  may come after result (a check beside the run)
 //   { type: 'result', text, isError, stopped?, stats? }   exactly once, at the end
 //
-// mode is one of: plan (read-only), edits (auto-accept file edits), auto (no permission prompts).
+// mode is one of: plan (read-only; with planCommands, commands but no file edits), edits (auto-accept file edits), auto (no permission prompts).
 // Agents without a system-prompt flag prepend `systemPrompt` to the first prompt (withProtocol).
 
 import claude from './claude.js';
