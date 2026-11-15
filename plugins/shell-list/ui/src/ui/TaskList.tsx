@@ -3,7 +3,7 @@
 // Server data comes from the entity store through the model's memoised sections; what's open comes
 // from navigation; the rest (whose menu is open, the dialogs) is local to this list.
 
-import { createEffect, createMemo, Match, on, onCleanup, Show, Switch, type JSX } from 'solid-js';
+import { createEffect, createMemo, createSignal, Match, on, onCleanup, Show, Switch, type JSX } from 'solid-js';
 import { ContextMenu, EmptyState, ProjectHead, Stack, VirtualList, feedDoneColumn, useSignal, type MenuEntry } from '@wisp/ui';
 import type { ProjectColor } from '@wisp/tokens';
 import type { EntityKey } from '@wisp/client';
@@ -82,6 +82,7 @@ function ListBody(): JSX.Element {
   const doneColumn = createMemo(() => !env.swipes && anyShowsDone(shownRows(items()), (k) => env.rowCtx(k as EntityKey)));
   const plugins = useSignal(env.shell.extensions('shell.row:menu'));
   const menu = createMemo<MenuEntry[]>(() => menuFor(env, plugins()));
+  const refresh = pullRefresh(env, t);
   const box: { el?: HTMLElement } = {};
   // the keyboard's task (j / k, the palette) scrolls its row into view
   createEffect(on(env.selected, (k) => k !== undefined && box.el && revealIn(box.el, items(), k, ROW_ESTIMATE), { defer: true }));
@@ -109,6 +110,7 @@ function ListBody(): JSX.Element {
             }
             // each section a box from its heading to its last row (v1 #secNeeds, …): parity measures it, spells style it
             groups={sectionGroups(items())}
+            refresh={refresh}
           >
             {(item) => <ItemView item={item()} />}
           </VirtualList>
@@ -231,4 +233,26 @@ function pick(env: ListEnv, value: string, plugins: readonly ResolvedExtension[]
       x?.def.bar?.select?.({ client: env.client, config: x.config, session: () => ({ ...flatSession(s), id: key }) });
     }
   }
+}
+
+/** Pull to refresh (the phone apps): every computer reconnects now, skipping its backoff (ADR-0065 §4); the pull
+ *  spins while one is still connecting. Its twins: the me menu's Reconnect and the offline bar's Retry. */
+function pullRefresh(env: ListEnv, t: (key: string) => string): { readonly onRefresh: () => void; readonly refreshing: boolean; readonly label: string } | undefined {
+  if (!env.swipes) return undefined;
+  const peers = env.client.peers;
+  const connecting = useSignal(() => peers.list()().some((p) => peers.status(p)().kind === 'connecting'));
+  const [pulled, setPulled] = createSignal(false);
+  createEffect(() => {
+    if (!connecting()) setPulled(false);
+  });
+  return {
+    onRefresh: () => {
+      peers.reconnect();
+      setPulled(connecting());
+    },
+    get refreshing() {
+      return pulled();
+    },
+    label: t('kit.gesture.reconnect'),
+  };
 }

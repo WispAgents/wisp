@@ -85,6 +85,9 @@ export interface RowContext {
   /** what a sandbox is called in the machine's slot ("Sandbox") */
   readonly sandbox?: string;
   readonly agents: ReadonlyMap<string, Row<Agent>>;
+  /** a command for this task is on screen but its computer is away (ADR-0065 §4): the status column says
+   *  *Waiting to send* until it goes. @wisp/client's waitingToSend. Additive. */
+  readonly waiting?: boolean;
 }
 
 export const busy = (s: SessionRow): boolean => s.state === 'running' || s.state === 'waiting';
@@ -180,10 +183,13 @@ function goalAndOverlap(s: SessionRow): Pick<RowView, 'goal' | 'overlap'> {
   return out as Pick<RowView, 'goal' | 'overlap'>;
 }
 
-/** What a row says about its task between the title and the time, in v1's order. */
-export function pillsOf(s: SessionRow): PillView[] {
+/** In the status pill's place while a command waits for its computer: the done the row already shows isn't sent. */
+const WAITING: PillView = { id: 'status', label: tx('shell-list.pill.waiting'), tone: 'neutral', icon: 'send', variant: 'outline', title: tx('shell-list.pill.waiting-tip') };
+
+/** What a row says about its task between the title and the time, in v1's order. `waiting`: RowContext.waiting. */
+export function pillsOf(s: SessionRow, waiting = false): PillView[] {
   const out: PillView[] = [];
-  const status = statusPill(s);
+  const status = waiting ? WAITING : statusPill(s);
   if (status) out.push(status);
   const l = s.later?.[0];
   if (l && !isScheduled(s)) out.push({ id: 'later', label: s.later && s.later.length > 1 ? tx('shell-list.pill.later-more', { n: s.later.length - 1, at: l.at }) : tx('shell-list.pill.later', { at: l.at }), tone: 'neutral', icon: l.remind ? 'bell' : 'clock', variant: 'outline' });
@@ -240,7 +246,7 @@ export function rowView(s: SessionRow, c: RowContext): RowView {
     mark: markOf(s),
     ...(sub ? { sub } : {}),
     ...(run ? { run } : {}),
-    pills: pillsOf(s),
+    pills: pillsOf(s, c.waiting === true),
     ...goalAndOverlap(s),
     ram: resText(s),
     time: timeOf(s),
