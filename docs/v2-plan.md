@@ -23,7 +23,7 @@ Rust for everything but the UI, Solid/TS for the UI, everything a plugin (ADR-00
 | CI, last full run (5b84787a, partial) | Linux: only `apps/web/test/strings-split.test.ts` (peer-note.ts lazy keys; r249) · macOS/Windows still running |
 | Budgets | initial JS 107.2 KB br (≤ 120) · CSS 27.1 KB (≤ 30) |
 | Weekly usage | 88 % (owner allowed 3 coders: free reset; running 2) |
-| Coders running | coder-r252 (CI time on macOS/Windows), coder-r253 (v1 #794) |
+| Coders running | coder-r253 (v1 #794) |
 
 ## 3. Owner directions (standing rules)
 
@@ -632,7 +632,7 @@ Source: `docs/v1-features.md` (each row's evidence and test). `[x]` built, `[ ]`
 - [ ] Decide: should push notifications answer tool approvals in place (like ntfy)?
 - [ ] A machine that never answers keeps a lead in Working until Stop (no give-up timeout for far subagents)
 - [ ] ~300 strings no code uses (shell-home tips/setup/getapp, unused wisp.later.*, shell.key.switcher, shell-settings.diag.*): delete, with a check that fails on unused keys
-- [ ] CI: Windows jobs cancelled at 60 min twice (no Windows result since the main merge): coder-r252
+- [ ] CI: confirm on the run for 708ba936 that every OS ends under 45 min with a Windows result (r252's fix)
 - [ ] `ui-only`/MCP: nothing open
 
 ## 8. CI
@@ -727,7 +727,7 @@ Source: `docs/v1-features.md` (each row's evidence and test). `[x]` built, `[ ]`
 | Round | What | State |
 |---|---|---|
 | 253 | Port v1 #794 (Plan mode on Claude runs commands; side discussions run commands) | in progress |
-| 252 | Full suite finishes on macOS/Windows (cancelled at 60 min: verify --all after the cargo step) | in progress |
+| 252 | CI checks the Cargo workspace once (ADR-0069, tools/ci-verify.ts); Windows serve_desktop 38-min hang fixed (keep_std_handles); lead fixed a unix.rs clippy error | committed (a3d7e1b0, 708ba936); proof = next ci:full run |
 | 251 | Lead waits on remote, sandbox and crew subagents (v1 child.relay) | committed (5dee4072; lead-verified) |
 | 250 | Each subagent's report goes back as it ends (v1 timing) | committed (e9755bab) |
 | 249 | Offline bar strings eager (strings-split CI failure) | committed (301a9cf5) |
