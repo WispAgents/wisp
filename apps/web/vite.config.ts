@@ -1,4 +1,4 @@
-// apps/web: the one bundle. `vite` (npm run dev:web) serves it with the mock peer; `vite build`
+// apps/web: the one bundle. `vite` (npm run dev:web) serves it with the mock peer (npm run dev: with the real server); `vite build`
 // writes dist/ with content-hashed assets, which `wisp serve` serves (crates/wisp/src/serve.rs
 // web_dir: WISP_WEB_DIR, else web/ by the binary, else this checkout's apps/web/dist) and the
 // desktop and Android apps ship. The service worker (@wisp/shell's platform/sw.ts) builds to dist/sw.js (a fixed name: its scope
@@ -6,9 +6,10 @@
 
 import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { defineConfig } from 'vite';
+import { defineConfig, type ProxyOptions } from 'vite';
 import solid from 'vite-plugin-solid';
 import { mockPeer } from './dev/vite-mock.ts';
+import { proxiedOrigin } from '../../tools/dev/plan.ts';
 
 function build(): string {
   try {
@@ -34,11 +35,29 @@ export function moduleSideEffects(id: string): boolean {
   return /^packages\/ui\/src\/(shell|platform)\/[\w-]*styles\.ts$/.test(rel) || /^(packages\/shell\/src|plugins\/[\w-]+\/ui\/src)\/i18n\/lazy\.ts$/.test(rel);
 }
 
+/** `npm run dev` (tools/dev.ts): WISP_DEV_API is the checkout's own `wisp serve`; /api goes there instead of the mock.
+ * The edge only takes its own Host and Origin (crates/wisp-api/src/guard.rs): Host is rewritten, and Origin only for
+ * this page's own (proxiedOrigin), so another local page posting through the proxy is refused as before. */
+const DEV_API = process.env['WISP_DEV_API'];
+export function devProxy(target: string, vitePort: number): Record<string, ProxyOptions> {
+  return {
+    '/api': {
+      target,
+      changeOrigin: true,
+      configure: (proxy) =>
+        void proxy.on('proxyReq', (req, from) => {
+          const origin = proxiedOrigin(from.headers.origin, vitePort, target);
+          if (origin !== undefined) req.setHeader('origin', origin);
+        }),
+    },
+  };
+}
+
 export default defineConfig(({ command }) => ({
   root: fileURLToPath(new URL('.', import.meta.url)),
-  plugins: [solid(), ...(command === 'serve' && process.env['WISP_MOCK'] !== '0' ? [mockPeer()] : [])],
+  plugins: [solid(), ...(command === 'serve' && !DEV_API && process.env['WISP_MOCK'] !== '0' ? [mockPeer()] : [])],
   define: { __WISP_BUILD__: JSON.stringify(build()) },
-  server: { port: Number(process.env['PORT'] ?? 5180), strictPort: false, host: '127.0.0.1' },
+  server: { port: Number(process.env['PORT'] ?? 5180), strictPort: false, host: '127.0.0.1', ...(DEV_API ? { proxy: devProxy(DEV_API, Number(process.env['PORT'] ?? 5180)) } : {}) },
   preview: { port: Number(process.env['PORT'] ?? 5181), host: '127.0.0.1' },
   build: {
     outDir: 'dist',

@@ -39,8 +39,25 @@ fn port() -> u16 {
     std::env::var("WISP_PORT").ok().and_then(|p| p.parse().ok()).filter(|p| *p > 0).unwrap_or(DEFAULT_PORT)
 }
 
+// The page's origin: the server's, or in a debug build `npm run dev:desktop`'s Vite (WISP_DEV_URL, tools/dev.ts) with
+// hot reload, its /api proxied to the server on `port`. A release build never reads it.
 fn base(port: u16) -> Url {
-    Url::parse(&format!("http://localhost:{port}")).expect("a valid url")
+    dev_url().unwrap_or_else(|| Url::parse(&format!("http://localhost:{port}")).expect("a valid url"))
+}
+
+fn dev_url() -> Option<Url> {
+    if !cfg!(debug_assertions) {
+        return None;
+    }
+    let url = Url::parse(&std::env::var("WISP_DEV_URL").ok()?).ok()?;
+    matches!(url.host_str(), Some("localhost" | "127.0.0.1")).then_some(url)
+}
+
+// IPC is granted to exactly the page's origin (capability.json).
+fn capability(port: u16) -> String {
+    let page = base(port);
+    let origin = page.origin().ascii_serialization();
+    CAPABILITY.replace("http://localhost:__PORT__", &origin).replace("__PORT__", &port.to_string())
 }
 
 fn is_wisp(url: &Url, base: &Url) -> bool {
@@ -325,7 +342,7 @@ fn main() {
             _ => {}
         })
         .setup(move |app| {
-            app.add_capability(CAPABILITY.replace("__PORT__", &port.to_string()))?;
+            app.add_capability(capability(port))?;
             #[cfg(all(feature = "qa", any(target_os = "macos", target_os = "linux")))]
             qa::listen(app.handle().clone());
             notify::on_click(app.handle())?;
