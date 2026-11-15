@@ -107,6 +107,7 @@ turn. When a screen or feature contradicts one, that's a bug: fix it toward the 
   (owner, 2026-11-15 20:05): it replaces v1's place row ("in <project> · No folder · Other folder…") in the
   desktop and browser New task box and the reply box, the phone Tasks chips and the phone New task sheet. Recorded as
   an allowed difference from v1 (design/v1-reference/allowed.md).
+- **Removing (−) the only picked project switches New task to No folder** (owner, 2026-11-15, confirming round 288).
 - **Projects on phones follow the project-selector decisions above**: one selector (with multi-pick: tap = only, +
   adds), not chips (owner, 11-15 19:52, on the New task sheet showing the old selector).
 
@@ -760,7 +761,6 @@ Source: `docs/v1-features.md` (each row's evidence and test). `[x]` built, `[ ]`
 - [ ] A removed peer's pending optimistic writes aren't cleared (resetPeer)
 - [ ] Phone Tasks: a crew member's avatar touches the task title (no gap like the dot's)
 - [ ] Phone New task sheet shows the whole Home page under the composer (Needs you, Tips): a sheet should hold just the composer
-- [ ] Removing (−) the only picked project switches New task to No folder (r288, deliberate): confirm with the owner
 - [ ] `ui-only`/MCP: nothing open
 
 ## 8. CI
