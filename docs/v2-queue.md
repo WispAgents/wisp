@@ -588,9 +588,9 @@ alone.
 
 The owner: the repo must be easy to use, debug, test and work on; a documented command that doesn't work must never happen again (found: no desktop dev mode, `npm run dev` pointing at a missing tools/dev.ts, v2 clashing with an installed v1's app id and port).
 
-1. [ ] `npm run dev` and `npm run dev:desktop` (coder-r230).
-2. [ ] A CI check that every package.json script's target exists and every command in AGENTS.md / README / .claude/skills resolves (dry-run where safe).
-3. [ ] `npm run doctor`: checks the toolchain (rust-toolchain.toml, Node, npm ci state, monoflow, CARGO_TARGET_DIR advice, free disk), the web build, the fake agents; says what to run.
+1. [x] `npm run dev` and `npm run dev:desktop` (round 230).
+2. [x] (round 231, rule `commands`) A CI check that every package.json script's target exists and every command in AGENTS.md / README / .claude/skills resolves (dry-run where safe).
+3. [x] (round 232) `npm run doctor`: checks the toolchain (rust-toolchain.toml, Node, npm ci state, monoflow, CARGO_TARGET_DIR advice, free disk), the web build, the fake agents; says what to run.
 4. [ ] docs/dev.md: the shortest path from clone to a running wisp, how to debug (logs and RUST_LOG, the devtools inspector, attaching a debugger to the server, the vite mock), and the one test command per area.
 5. [ ] Dev runs never collide with an installed wisp: own port, own home, own app id, everywhere (desktop, CLI, grid).
 
