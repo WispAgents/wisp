@@ -11,7 +11,7 @@
 // @wisp/tokens' css-rules.ts, which the kit's vitest (packages/ui/test/css-rules.test.ts) runs too: one implementation.
 
 import ts from 'typescript';
-import { kitCssProblems, scanCss, splitTop, type KitScale } from '../../../packages/tokens/src/css-rules.ts';
+import { kitCssProblems, kitSheetProblems, scanCss, splitTop, type KitScale } from '../../../packages/tokens/src/css-rules.ts';
 import { finding } from '../core/report.ts';
 import { isCode, lineOf, propName, visit } from '../core/source.ts';
 import { kitScale, TOKENS_DIR } from '../core/tokens.ts';
@@ -20,6 +20,7 @@ import type { Ctx, Finding, Rule } from '../core/types.ts';
 const ID = 'css';
 const KIT = 'packages/ui/';
 const STYLE_FILE = /\.(css|scss|sass|less|styl)$/;
+const SHEET = /^packages\/ui\/src\/css\/([^/]+\.css)$/;
 const STYLE_IMPORT = /\.(css|scss|sass|less|styl)(\?.*)?$/;
 
 function inKit(file: string): boolean {
@@ -111,7 +112,10 @@ function kitCss(ctx: Ctx, file: string, sets: KitScale | undefined): Finding[] {
     if (/!\s*important/i.test(d.value) && !importantAllowed(d.within) && !reasoned) out.push(finding(file, d.line, ID, `!important in ${d.prop}: use the cascade layers`));
   }
   // px on the scale, breakpoints only in queries, nothing wraps but Wrap: shared with packages/ui/test/css-rules.test.ts
-  for (const p of kitCssProblems(text, sets)) out.push(finding(file, p.line, ID, p.message));
+  // packages/ui/src/css/*.css also get every kit-sheet rule (layers, :has/:is, colours, classes, …): the vitest's own code
+  const sheet = SHEET.exec(file)?.[1];
+  const problems = sheet ? kitSheetProblems(sheet, text, sets) : kitCssProblems(text, sets);
+  for (const p of problems) out.push(finding(file, p.line, ID, sheet ? `[${p.kind}] ${p.message}` : p.message));
   return out;
 }
 

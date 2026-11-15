@@ -5,41 +5,25 @@ import { expect, test } from 'vitest';
 import { BREAKPOINT_PX, PX_SCALE } from '@wisp/tokens';
 // The px and layout rules are `npm run check`'s own (@wisp/tokens/css-rules): one implementation, so a sheet
 // fails both gates or neither (round 244: the check passed a raw 600px query and a data-part "…wrap" flex-wrap).
-import { kitCssProblems } from '@wisp/tokens/css-rules';
+import { kitCssProblems, kitSheetProblems, type KitSheetRule } from '@wisp/tokens/css-rules';
 
 const files = import.meta.glob<string>('../src/css/*.css', { query: '?raw', import: 'default', eager: true });
 const sheets = Object.entries(files).map(([path, raw]) => ({ name: path.replace('../src/css/', ''), raw, css: raw.replace(/\/\*[^]*?\*\//g, '') }));
 const SETS = { scale: new Set(PX_SCALE), breakpoints: new Set(BREAKPOINT_PX) };
-const problems = (kind: 'px' | 'layout'): string[] =>
-  sheets.flatMap((s) => kitCssProblems(s.raw, SETS).filter((p) => p.kind === kind).map((p) => `${s.name}:${p.line} ${p.message}`));
+const all = sheets.map((s) => ({ name: s.name, problems: kitSheetProblems(s.name, s.raw, SETS) }));
+const problems = (kind: KitSheetRule): string[] => all.flatMap((s) => s.problems.filter((p) => p.kind === kind).map((p) => `${s.name}:${p.line} ${p.message}`));
 
 test('there are stylesheets to check', () => {
   expect(sheets.length).toBeGreaterThan(5);
 });
 
 test('the layer order is declared once, in index.css, with plugins last', () => {
-  const orders = sheets.flatMap((s) => [...s.css.matchAll(/@layer\s+[\w\s,]+;/g)].map((m) => ({ file: s.name, text: m[0] })));
-  expect(orders).toEqual([{ file: 'index.css', text: '@layer reset, tokens, kit, plugins;' }]);
-  const index = sheets.find((s) => s.name === 'index.css');
-  expect(index?.css.trim().startsWith('@layer reset, tokens, kit, plugins;')).toBe(true);
+  expect(sheets.some((s) => s.name === 'index.css')).toBe(true);
+  expect(problems('layer-order')).toEqual([]);
 });
 
 test('every other sheet is one @layer kit or @layer reset block', () => {
-  for (const s of sheets.filter((x) => x.name !== 'index.css')) {
-    const body = s.css.trim();
-    expect(body, s.name).toMatch(/^@layer (kit|reset) \{/);
-    // The opening brace closes only at the very end: nothing sits outside the layer.
-    let depth = 0;
-    let closedAt = -1;
-    for (let i = 0; i < body.length; i++) {
-      if (body[i] === '{') depth++;
-      if (body[i] === '}' && --depth === 0) {
-        closedAt = i;
-        break;
-      }
-    }
-    expect(closedAt, s.name).toBe(body.length - 1);
-  }
+  expect(problems('layer-block')).toEqual([]);
 });
 
 test('px values come from the token scale (breakpoints only in @media / @container)', () => {
@@ -47,41 +31,20 @@ test('px values come from the token scale (breakpoints only in @media / @contain
 });
 
 test('no :has() and no :is() (they make every style recalc walk large boxes)', () => {
-  for (const s of sheets) {
-    expect(s.css, s.name).not.toMatch(/:has\(/);
-    expect(s.css, s.name).not.toMatch(/:is\(/);
-  }
+  expect(problems('has-is')).toEqual([]);
 });
 
 test('no_sibling_combinator_lands_on_a_universal_selector', () => {
-  // F-phone-8: `X > * + *` (or `X + *`) is tried on every element, and Chrome marks each element's parent as
-  // affected by sibling rules on the way: then adding one row to a list restyles every row in it (the task list
-  // at 390 px, 4× slowed: 850 elements and 60 ms a scroll frame instead of 48 and 2 ms). Name what follows (or
-  // `:where(X) > :not(:first-child)` for "every child after the first").
-  const bad: string[] = [];
-  for (const s of sheets)
-    for (const m of s.css.matchAll(/([^{}]*)\{/g)) {
-      const sel = (m[1] ?? '').trim();
-      if (sel.startsWith('@')) continue;
-      for (const one of sel.split(','))
-        if (/[+~]\s*\*?\s*(::?[\w-]+(\([^)]*\))?)*\s*$/.test(one.trim()) && /[+~]\s*(\*|::?|$)/.test(one.trim())) bad.push(`${s.name}: ${one.trim()}`);
-    }
-  expect(bad).toEqual([]);
+  // F-phone-8: `X > * + *` (or `X + *`) restyles every row of a list when one is added (rule in @wisp/tokens/css-rules)
+  expect(problems('sibling-universal')).toEqual([]);
 });
 
 test('no hard-coded colours: every colour is a token', () => {
-  for (const s of sheets.filter((x) => x.name !== 'index.css')) {
-    expect(s.css, s.name).not.toMatch(/#[0-9a-fA-F]{3,8}\b/);
-    expect(s.css, s.name).not.toMatch(/\brgba?\(/);
-    expect(s.css, s.name).not.toMatch(/:\s*(white|black)\b/);
-  }
+  expect(problems('colour')).toEqual([]);
 });
 
 test('the kit styles by data-kit attributes, never by class names', () => {
-  for (const s of sheets) {
-    // A class selector starts a selector or follows a combinator; decimals (0.5) never do.
-    expect(s.css, s.name).not.toMatch(/(^|[\s,>+~(])\.[a-zA-Z_-][\w-]*\s*[{,:[]/m);
-  }
+  expect(problems('class')).toEqual([]);
 });
 
 test('nothing wraps a row but Wrap: flex-wrap: wrap appears only on a Wrap, control text never wraps (design/layout.md §5, §6)', () => {
@@ -103,7 +66,7 @@ test('css_rules_the_shared_check_refuses_a_raw_px_query_and_a_flex_wrap_outside_
 });
 
 test('control text never gets white-space: normal', () => {
-  for (const s of sheets) expect(s.css, s.name).not.toMatch(/white-space:\s*normal/);
+  expect(problems('white-space-normal')).toEqual([]);
   const layout = sheets.find((x) => x.name === 'content.css')?.css ?? '';
   expect(layout).toMatch(/\[data-text='control'\]\s*\{[^}]*white-space: nowrap;[^}]*text-overflow: ellipsis;/);
 });
@@ -117,19 +80,14 @@ test('a bar has a token height and never wraps', () => {
 
 test('a_pressed_button_never_jumps_none_is_centred_by_transform_v1_782', () => {
   // the press is a transform (scale): a button centred by translate(-50%) jumps by half its width under the finger
-  for (const s of sheets) {
-    for (const m of s.css.matchAll(/([^{}]+)\{([^}]*)\}/g)) {
-      const [, sel = '', body = ''] = m;
-      if (/(button|btn|icon-button|link)/.test(sel)) expect(body, `${s.name}: ${sel.trim()}`).not.toMatch(/transform:\s*translate(X)?\(\s*-50%/);
-    }
-  }
+  expect(problems('pressed-translate')).toEqual([]);
 });
 
 test('the_task_heads_title_is_one_line_at_every_width_v1_778', () => {
   // a subagent's title beside its lead's is one line too on the phone: no sheet lets the head's title wrap
   const rules = sheets.flatMap((s) => [...s.css.matchAll(/([^{}]+)\{([^}]*)\}/g)].filter((m) => (m[1] ?? '').includes("[data-kit='sh-title']")).map((m) => ({ file: s.name, body: m[2] ?? '' })));
   expect(rules.length).toBeGreaterThan(0);
-  for (const r of rules) expect(r.body, r.file).not.toMatch(/white-space:\s*(normal|pre-wrap)|line-clamp|text-wrap-mode:\s*wrap/);
+  expect(problems('head-title-wraps')).toEqual([]);
   expect(rules.some((r) => /white-space: nowrap/.test(r.body) && /text-overflow: ellipsis/.test(r.body))).toBe(true);
 });
 

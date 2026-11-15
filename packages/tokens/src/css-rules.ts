@@ -209,3 +209,93 @@ export function kitCssProblems(css: string, sets: KitScale | undefined): KitCssP
   for (const p of layoutProblems(decls)) out.push({ kind: 'layout', ...p });
   return out.sort((a, b) => a.line - b.line);
 }
+
+// ## The kit's own sheets (packages/ui/src/css/*.css): every rule the kit's vitest enforces, one implementation
+// (round 265: the vitest refused `:is(` in queued.css while `npm run check` passed it). Each problem names its rule,
+// so the vitest asserts one rule per test and the check reports them all.
+
+export type KitSheetRule =
+  | 'px'
+  | 'layout'
+  | 'layer-order'
+  | 'layer-block'
+  | 'has-is'
+  | 'sibling-universal'
+  | 'colour'
+  | 'class'
+  | 'white-space-normal'
+  | 'pressed-translate'
+  | 'head-title-wraps';
+
+export interface KitSheetProblem {
+  readonly kind: KitSheetRule;
+  readonly line: number;
+  readonly message: string;
+}
+
+export const LAYER_ORDER = '@layer reset, tokens, kit, plugins;';
+
+function lineAt(css: string, index: number): number {
+  let n = 1;
+  for (let i = 0; i < index && i < css.length; i++) if (css[i] === '\n') n++;
+  return n;
+}
+
+/** Every rule a kit sheet breaks. `name` is its path under packages/ui/src/css ('index.css', 'composites.css'). */
+export function kitSheetProblems(name: string, raw: string, sets: KitScale | undefined): KitSheetProblem[] {
+  const css = stripComments(raw);
+  const out: KitSheetProblem[] = kitCssProblems(raw, sets).map((p) => ({ ...p }));
+  const add = (kind: KitSheetRule, index: number, message: string): void => {
+    out.push({ kind, line: lineAt(css, index), message });
+  };
+  const index = name === 'index.css';
+  // one layer order, in index.css, plugins last
+  const orders = [...css.matchAll(/@layer\s+[\w\s,]+;/g)];
+  for (const m of orders) if (!index || m[0] !== LAYER_ORDER || m !== orders[0]) add('layer-order', m.index ?? 0, `${m[0]}: the layer order is declared once, in index.css (${LAYER_ORDER})`);
+  if (index && !css.trim().startsWith(LAYER_ORDER)) add('layer-order', 0, `index.css starts with ${LAYER_ORDER}`);
+  // every other sheet is one @layer kit / reset block, nothing outside it
+  if (!index) {
+    const body = css.trim();
+    const lead = css.length - css.trimStart().length;
+    if (!/^@layer (kit|reset) \{/.test(body)) add('layer-block', lead, 'a kit sheet is one @layer kit { … } or @layer reset { … } block');
+    else {
+      let depth = 0;
+      let closedAt = -1;
+      for (let i = 0; i < body.length; i++) {
+        if (body[i] === '{') depth++;
+        if (body[i] === '}' && --depth === 0) {
+          closedAt = i;
+          break;
+        }
+      }
+      if (closedAt !== body.length - 1) add('layer-block', lead + Math.max(0, closedAt + 1), 'something sits outside the sheet\'s @layer block');
+    }
+  }
+  // no :has() and no :is(): they make every style recalc walk large boxes
+  for (const m of css.matchAll(/:(has|is)\(/g)) add('has-is', m.index ?? 0, `${m[0]} in a kit sheet: every style recalc walks large boxes (name the part, or use :where())`);
+  // F-phone-8: no `X + *` / `X > * + *`: every element is tried, every parent marked sibling-affected
+  const at = (m: RegExpMatchArray): number => (m.index ?? 0) + ((m[1] ?? '').length - (m[1] ?? '').trimStart().length);
+  for (const m of css.matchAll(/([^{}]*)\{/g)) {
+    const sel = (m[1] ?? '').trim();
+    if (sel.startsWith('@')) continue;
+    for (const one of sel.split(',')) {
+      const s = one.trim();
+      if (/[+~]\s*\*?\s*(::?[\w-]+(\([^)]*\))?)*\s*$/.test(s) && /[+~]\s*(\*|::?|$)/.test(s)) add('sibling-universal', at(m), `a sibling combinator lands on a universal selector: ${s} (name what follows, or :where(X) > :not(:first-child))`);
+    }
+  }
+  // no hard-coded colours (index.css holds the token values)
+  if (!index)
+    for (const m of css.matchAll(/#[0-9a-fA-F]{3,8}\b|\brgba?\(|:\s*(white|black)\b/g)) add('colour', m.index ?? 0, `hard-coded colour ${m[0].trim()}: use a colour token`);
+  // the kit styles by data-kit attributes, never by class names (decimals like 0.5 never follow a combinator)
+  for (const m of css.matchAll(/(^|[\s,>+~(])\.[a-zA-Z_-][\w-]*\s*[{,:[]/gm)) add('class', (m.index ?? 0) + (m[1]?.length ?? 0), `class selector ${m[0].trim()}: style by data-kit / data-part`);
+  // control text never gets white-space: normal
+  for (const m of css.matchAll(/white-space:\s*normal/g)) add('white-space-normal', m.index ?? 0, 'white-space: normal: control text is nowrap + ellipsis (design/layout.md §1)');
+  for (const m of css.matchAll(/([^{}]+)\{([^}]*)\}/g)) {
+    const [, sel = '', body = ''] = m;
+    // v1 #782: the press is a scale transform; a button centred by translate(-50%) jumps under the finger
+    if (/(button|btn|icon-button|link)/.test(sel) && /transform:\s*translate(X)?\(\s*-50%/.test(body)) add('pressed-translate', at(m), `${sel.trim()}: a pressable centred by translate(-50%) jumps when pressed`);
+    // v1 #778: the task head's title is one line at every width
+    if (sel.includes("[data-kit='sh-title']") && /white-space:\s*(normal|pre-wrap)|line-clamp|text-wrap-mode:\s*wrap/.test(body)) add('head-title-wraps', at(m), `${sel.trim()}: the task head's title is one line at every width`);
+  }
+  return out.sort((a, b) => a.line - b.line);
+}
