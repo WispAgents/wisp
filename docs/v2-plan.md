@@ -23,7 +23,7 @@ Rust for everything but the UI, Solid/TS for the UI, everything a plugin (ADR-00
 | CI, last full run (2790d627) | Linux + macOS: 1 failing test (`serve_orphans` probe), fixed by round 234, re-run pending · Windows: cancelled (open groups, §8) · desktop builds + Android: green |
 | Budgets | initial JS 117.9 KB br (≤ 120) · CSS 29.7 KB (≤ 30) · enforced in CI |
 | Weekly usage | 86 % (owner allowed 3 coders: free reset) |
-| Coders running | coder-r236 (Auto preview entry), coder-r237 (check errors) |
+| Coders running | coder-r237 (check errors), coder-r238 (Auto pick segment text) |
 
 ## 3. Owner directions (standing rules)
 
@@ -68,7 +68,7 @@ Rust for everything but the UI, Solid/TS for the UI, everything a plugin (ADR-00
 - [x] Multi-project pick (click = only, + adds, strip with Only/All) (round 133)
 - [x] Composer `@` and `/`
 - [x] Harness picker back to v1: one pill, one two-pane popover (round 233, 6e3fe42e)
-- [x] "What will Auto run" back on the pill as v1 (#autoPv: Auto's pick is the pill's own segment, opens the AutoPop); extra compare runs open the same two-pane picker with their own model · thinking · account and What's different (round 236, uncommitted)
+- [x] "What will Auto run" back on the pill as v1 (#autoPv: Auto's pick is the pill's own segment, opens the AutoPop); extra compare runs open the same two-pane picker with their own model · thinking · account and What's different (round 236, c390aca5)
 - [ ] **Parity gate** (`qa/parity.mjs`): baseline 0/96 on 2026-11-10; per-view burn-down in `docs/v2-ui-burndown.md`;
       **not re-measured as a whole since**: the batched pass (§4.8) runs it on every view, width and theme
 - [ ] Layout and feedback gates on every view (browser and phone views): to run in the batched pass
@@ -691,10 +691,11 @@ Source: `docs/v1-features.md` (each row's evidence and test). `[x]` built, `[ ]`
 
 | Round | What | State |
 |---|---|---|
+| 238 | Auto pick segment shows the harness name as v1 (not a cut model name) | in progress |
+| 236 | "What will Auto run" + compare runs on the picker | committed (c390aca5; its app-picker.css .pk-vary waits for r237) |
 | 237 | 3 check errors (vite.config public-entry, app-picker.css token + wrap) + dayName locale | in progress |
 | 235 | Task history: direction A, Ledger + scrubber | committed |
 | 234 | CI: probe test after the probe memo (ends at its limit) | committed |
-| 236 | "What will Auto run" reachable again; compare runs use the picker | in progress |
 | 233 | Harness picker back to v1 (one pill, one two-pane popover) | committed |
 | 232 | `npm run doctor` | committed |
 | 231 | Check rule `commands`; 13 broken commands fixed | committed |
