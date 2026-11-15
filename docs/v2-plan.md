@@ -22,8 +22,8 @@ Rust for everything but the UI, Solid/TS for the UI, everything a plugin (ADR-00
 | Regressed | none (F-comp-1 picker restored to v1 in round 233) |
 | CI, last full run (03c0046d) | Linux + macOS: **only** 2 css-rules tests failed (1 of 192 targets), fixed in r244 · Windows cancelled · desktop + Android green |
 | Budgets | initial JS **119.3** KB br (≤ 120: 0.7 KB left) · CSS 26.9 KB (≤ 30) |
-| Weekly usage | 86 % (owner allowed 3 coders: free reset) |
-| Coders running | none |
+| Weekly usage | 88 % (owner allowed 3 coders: free reset; running 2) |
+| Coders running | coder-r245 (trial folds), coder-r246 (v1 #795, #796) |
 
 ## 3. Owner directions (standing rules)
 
@@ -699,6 +699,8 @@ Source: `docs/v1-features.md` (each row's evidence and test). `[x]` built, `[ ]`
 | Round | What | State |
 |---|---|---|
 | 243 | Launcher bar as v1 at every width (More label, gaps, lead's model, unknown = Default, Worktree hidden with no project) | committed (a6ba4cac) |
+| 246 | Port v1 #795 (check-in fires while waiting on subagents) + #796 (compact follow-ups list) | in progress |
+| 245 | Try it two ways folds (≤1099/≤700) + Default on compare runs | in progress |
 | 244 | css-rules failures fixed (breakpoint tokens, Wrap group); check and test share @wisp/tokens/css-rules | committed (8e60cdf5, c8173ea6) |
 | 242 | Settings and org CSS lazy: initial CSS 30.0 -> 26.9 KB br, looks unchanged | committed (826b025f) |
 | 241 | Review of rounds 227, 228, 229: one fix (offline time in app locale); all committed | committed |
