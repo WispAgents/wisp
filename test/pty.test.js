@@ -11,7 +11,7 @@ import path from 'node:path';
 import { installFakeBins, makeRepo, tmp, isolateAgentConfigs } from './helpers.js';
 import { ptyCommand, python, Terms } from '../server/pty.js';
 import { defaultTerminal, inWisp, terminalsFor } from '../server/terminal.js';
-import { keyBytes, Screen } from '../web/js/term-emu.js';
+import { keyBytes, Screen, strayPaste } from '../web/js/term-emu.js';
 
 const win = process.platform === 'win32';
 const waitFor = async (fn, ms = 8000) => {
@@ -435,4 +435,16 @@ test('keyBytes: what keys send', () => {
   assert.equal(k('a'), null, 'text comes through the input event');
   assert.equal(k('v', { metaKey: true }), null);
   assert.equal(k('F5'), '\x1b[15~');
+});
+
+test('strayPaste: a paste no field took goes to the terminal last clicked or opened', () => {
+  const page = { closest: () => null }; // the page or the screen: after selecting text to copy, the keys are there
+  const field = { closest: (sel) => (sel.includes('textarea') ? {} : null) };
+  const term = { owns: true, shown: true, running: true };
+  assert.equal(strayPaste(page, term), true, 'selected text in the shell, then ⌘V');
+  assert.equal(strayPaste(null, term), true);
+  assert.equal(strayPaste(field, term), false, 'a text box takes its own paste');
+  assert.equal(strayPaste(page, { ...term, owns: false }), false, 'clicked elsewhere since');
+  assert.equal(strayPaste(page, { ...term, shown: false }), false);
+  assert.equal(strayPaste(page, { ...term, running: false }), false, 'an ended shell takes no keys');
 });

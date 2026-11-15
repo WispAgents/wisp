@@ -35,6 +35,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - **A subagent's title on a phone is one line, like its lead's beside it.** Opening a subagent's task on a phone, the lead's title in the head was cut short on one line while the subagent's own title wrapped to two; now both are one line, cut short.
 - **A long task with many subagents opens fast on the desktop too.** The phone's fix fetched only a task's latest turns and the subagent runs their cards show; the desktop still fetched every turn and every subagent's whole run, again on each refresh while it ran (68 MB for a task of 257 turns and 52 subagents, now 2.4 MB). Unfolding an older turn fetches only that turn. The usage popover also counts a long task's older turns on the phone again.
 - **The phone app says Computers from the start.** Opening wisp in the Android app, the avatar menu's row read *Machines*, the desktop's word, until wisp's settings came through the tunnel, which on a slow connection took seconds. It reads *Computers* and the computer's name at once.
+- **You can paste into a task's Shell after selecting text in it.** Selecting text on the Shell's screen (to copy it) took the keys out of the terminal, so ⌘V or Ctrl+Shift+V did nothing. A paste now goes to the terminal you last clicked or opened, unless a text box takes it. Take over's terminal too.
 
 ## [0.58.0] - 2026-11-11
 

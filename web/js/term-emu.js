@@ -820,3 +820,11 @@ export function keyBytes(k, { appCursor = false, mac = false } = {}) {
   if (k.altKey && !mac && k.key.length === 1) return `\x1b${k.key}`;
   return null; // printable text comes through the input event
 }
+
+// Whether a paste that missed the terminal's hidden input is still the terminal's: no text box took
+// it (it landed on the page, or on the screen after you selected text there to copy), and the
+// terminal shows, runs and was the last thing you clicked or opened. target: the paste's target.
+export function strayPaste(target, { owns, shown, running }) {
+  if (target?.closest?.('input, textarea, select, [contenteditable="true"], [contenteditable=""]')) return false;
+  return !!(owns && shown && running);
+}
