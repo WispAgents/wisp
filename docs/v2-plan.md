@@ -124,7 +124,8 @@ Rust for everything but the UI, Solid/TS for the UI, everything a plugin (ADR-00
       with a stories row under the top bar (one avatar per member, ring = working / unread report / waiting on you / idle;
       Org and + as first/last bubbles); tap opens a full-screen story (now, last report, what waits on you with the task
       page's buttons, next check-in), tap/swipe to step, swipe down to close, each gesture with a visible control.
-      Design first (research + 2-3 variants in an HTML mock, Android + iOS frames), owner picks, then build. Phones only;
+      Mock done: docs/design/crew-stories.html (A stories row, B + Waiting for you strip [recommended], C + reply box);
+      **waiting on the owner's pick, then build**. Phones only;
       browser/desktop keep v1. **Next round after r286.**
 14. [ ] Screens part 2 (Settings, My Stuff, Crew, Computers and cloud sign-in)
 15. [ ] Store and release (android.yml, ios.yml, listings, privacy)
