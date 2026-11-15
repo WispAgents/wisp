@@ -18,7 +18,7 @@ pub struct Where {
     pub user_home: PathBuf,
 }
 
-pub const DEFAULT: [&str; 49] = [
+pub const DEFAULT: [&str; 50] = [
     "cli",
     "events",
     "resources",
@@ -59,6 +59,7 @@ pub const DEFAULT: [&str; 49] = [
     "github",
     "email",
     "ntfy",
+    "push",
     "mcp",
     "connectors",
     "stuff",
@@ -214,6 +215,8 @@ fn add(g: PluginGroup, name: &str, at: &Where) -> PluginGroup {
         "email" => g.add(wisp_email::EmailPlugin),
         #[cfg(feature = "ntfy")]
         "ntfy" => g.add(wisp_ntfy::NtfyPlugin),
+        #[cfg(feature = "push")]
+        "push" => g.add(wisp_push::PushPlugin),
         #[cfg(feature = "mcp")]
         "mcp" => g.add(wisp_mcp::McpPlugin),
         #[cfg(feature = "connectors")]
@@ -290,6 +293,7 @@ pub fn in_build(name: &str) -> bool {
         "github" => cfg!(feature = "github"),
         "email" => cfg!(feature = "email"),
         "ntfy" => cfg!(feature = "ntfy"),
+        "push" => cfg!(feature = "push"),
         "mcp" => cfg!(feature = "mcp"),
         "connectors" => cfg!(feature = "connectors"),
         "stuff" => cfg!(feature = "stuff"),

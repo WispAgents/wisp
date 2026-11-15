@@ -57,6 +57,9 @@ x509-cert.workspace = true
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["test-util"] }
+# the phone relay's tests check wisp's side reads its answers as meant (`wisp_push_core::classify`)
+wisp-push-api.workspace = true
+wisp-push-core.workspace = true
 
 [lints]
 workspace = true

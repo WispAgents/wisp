@@ -1,0 +1,49 @@
+{
+  "wispPlugin": 1,
+  "id": "wisp.push",
+  "name": "Push",
+  "version": "2.0.0",
+  "api": "^1",
+  "description": "wisp.push: the push transport for wisp.channels (phones paired by their own keys, notes sealed with HPKE, posted through the grid relay)",
+  "server": {
+    "builtin": "wisp-push"
+  },
+  "requires": {
+    "wisp.channels": "^2"
+  },
+  "permissions": [
+    "runtime:get",
+    "runtime:answer",
+    "runtime:followUp",
+    "runtime:setState",
+    "resources:read",
+    "resources:apply"
+  ],
+  "activation": [
+    "onStartup"
+  ],
+  "contributes": {
+    "commands": [
+      {
+        "id": "push.pair",
+        "title": "Pair this phone for notifications: its relay handle and its own public key",
+        "uiOnly": "the phone pairs itself with the key it just made in its Keystore or Keychain; no harness has a device to pair"
+      },
+      {
+        "id": "push.unpair",
+        "title": "Stop sending notifications to a paired phone",
+        "uiOnly": "a phone unpairs itself from its app, or the person does from Settings; an agent never removes someone's phone"
+      },
+      {
+        "id": "push.devices",
+        "title": "The phones that get this wisp's notifications",
+        "readOnly": true
+      },
+      {
+        "id": "push.answer",
+        "title": "A choice or a reply from a notification, signed by this wisp",
+        "uiOnly": "only the phone's notification sends it: a tap carries this wisp's signature, which no harness holds"
+      }
+    ]
+  }
+}

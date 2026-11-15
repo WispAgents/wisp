@@ -114,6 +114,8 @@ wisp-slack-core = { path = "plugins/slack/core" }
 wisp-discord-core = { path = "plugins/discord/core" }
 wisp-telegram-core = { path = "plugins/telegram/core" }
 wisp-ntfy-core = { path = "plugins/ntfy/core" }
+wisp-push-api = { path = "plugins/push/api" }
+wisp-push-core = { path = "plugins/push/core" }
 wisp-github-core = { path = "plugins/github/core" }
 wisp-email-core = { path = "plugins/email/core" }
 wisp-mcp-api = { path = "plugins/mcp/api" }
@@ -136,6 +138,11 @@ wisp-accounts-core = { path = "plugins/accounts/core" }
 # verifies OIDC id_tokens (RS256/ES256), DKIM and SNS signatures (RSA, Ed25519, X.509). All RustCrypto,
 # kept on the digest 0.10 line that sha2/hmac already pin.
 aes-gcm = "0.10"
+# ADR-0065 §3: wisp.push seals each phone notification to that phone's X25519 key (HPKE, RFC 9180: X25519 /
+# HKDF-SHA256 / ChaCha20-Poly1305), so the grid relay, Google and Apple carry ciphertext only. 0.13 is the
+# release on the same digest 0.10 / curve25519-dalek 4 / rand_core 0.9 line as the crates above (0.14+ moves to
+# digest 0.11 and would duplicate the whole RustCrypto tree). No P-256/384/521: only the x25519 KEM.
+hpke = { version = "=0.13.0", default-features = false, features = ["alloc", "x25519"] }
 ed25519-dalek = { version = "2", default-features = false, features = ["std", "pkcs8", "pem"] }
 hkdf = "0.12"
 http-body-util = "0.1"

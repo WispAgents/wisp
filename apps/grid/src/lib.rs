@@ -34,6 +34,7 @@ pub mod hostd;
 pub mod dkim;
 pub mod inbox;
 pub mod mail;
+pub mod push;
 pub mod route;
 
 // publishing and reach

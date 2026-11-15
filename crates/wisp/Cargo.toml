@@ -17,7 +17,7 @@ path = "src/main.rs"
 # scripts that name it.
 default = ["proc", "all-plugins"]
 full = ["default"]
-all-plugins = ["cli", "events", "resources", "workflows", "share", "history", "settings", "runtime", "claude", "codex", "cursor", "opencode", "copilot", "grok", "antigravity", "accounts", "git", "worktrees", "ship", "review", "issues", "terminal", "lsp", "machine", "machines", "grid-client", "crew", "goal", "later", "budget", "router", "automations", "learn", "channels", "telegram", "slack", "discord", "github", "email", "ntfy", "mcp", "connectors", "stuff", "plugins", "telemetry", "posthog", "update", "termctx", "sandbox"]
+all-plugins = ["cli", "events", "resources", "workflows", "share", "history", "settings", "runtime", "claude", "codex", "cursor", "opencode", "copilot", "grok", "antigravity", "accounts", "git", "worktrees", "ship", "review", "issues", "terminal", "lsp", "machine", "machines", "grid-client", "crew", "goal", "later", "budget", "router", "automations", "learn", "channels", "telegram", "slack", "discord", "github", "email", "ntfy", "push", "mcp", "connectors", "stuff", "plugins", "telemetry", "posthog", "update", "termctx", "sandbox"]
 proc = ["dep:wisp-proc"]
 cli = ["dep:wisp-cli"]
 resources = ["dep:wisp-resources"]
@@ -61,6 +61,7 @@ discord = ["dep:wisp-discord"]
 github = ["dep:wisp-github"]
 email = ["dep:wisp-email"]
 ntfy = ["dep:wisp-ntfy"]
+push = ["dep:wisp-push"]
 mcp = ["dep:wisp-mcp"]
 connectors = ["dep:wisp-connectors"]
 stuff = ["dep:wisp-stuff"]
@@ -135,6 +136,7 @@ wisp-discord = { path = "../../plugins/discord/host", optional = true }
 wisp-github = { path = "../../plugins/github/host", optional = true }
 wisp-email = { path = "../../plugins/email/host", optional = true }
 wisp-ntfy = { path = "../../plugins/ntfy/host", optional = true }
+wisp-push = { path = "../../plugins/push/host", optional = true }
 wisp-mcp = { path = "../../plugins/mcp/host", optional = true }
 wisp-connectors = { path = "../../plugins/connectors/host", optional = true }
 wisp-stuff = { path = "../../plugins/stuff/host", optional = true }

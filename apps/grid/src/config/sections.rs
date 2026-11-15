@@ -265,3 +265,51 @@ pub struct FeatureConfig {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub db_bytes: Option<i64>,
 }
+
+/// `push`: the phone relay's FCM and APNs credentials (ADR-0065 §3). Each secret is a file or an env var
+/// (`GRID_FCM_SERVICE_ACCOUNT(_FILE)`, `GRID_APNS_KEY(_FILE)`), never grid.json itself. Without them the relay answers
+/// `unavailable`, and wisp keeps ntfy.
+#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct PushConfig {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub fcm: Option<FcmConfig>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub apns: Option<ApnsConfig>,
+    /// sends a minute to one handle (default 30)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub per_minute: Option<usize>,
+}
+
+/// FCM HTTP v1: a Google service account's JSON key (it names its project).
+#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct FcmConfig {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub service_account_file: Option<String>,
+    /// default `GRID_FCM_SERVICE_ACCOUNT`
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub service_account_env: Option<String>,
+    /// tests and proxies: default `https://fcm.googleapis.com`
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub api: Option<String>,
+}
+
+/// APNs with a token key (`.p8`): its key id, the team, and the app's bundle id (the topic).
+#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct ApnsConfig {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub key_file: Option<String>,
+    /// default `GRID_APNS_KEY`
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub key_env: Option<String>,
+    pub key_id: String,
+    pub team_id: String,
+    pub topic: String,
+    /// the development gateway (`api.sandbox.push.apple.com`)
+    #[serde(default)]
+    pub sandbox: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub api: Option<String>,
+}

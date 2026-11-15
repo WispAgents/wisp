@@ -55,6 +55,8 @@ mod mail;
 mod pages_route;
 #[path = "edge_preview.rs"]
 mod preview;
+#[path = "edge_push.rs"]
+mod push_route;
 #[path = "edge_route.rs"]
 mod route;
 #[path = "edge_sandboxes.rs"]
@@ -97,6 +99,8 @@ pub struct Grid {
     pub routes: crate::route::Routes,
     /// mail to a box's secret address (`mail/service.rs`), when grid.json has `mail`
     pub mail: Option<Arc<crate::mail::service::MailService>>,
+    /// the phone relay: a handle → FCM/APNs token, ciphertext through (`push.rs`, ADR-0065 §3)
+    pub push: crate::push::Relay,
 }
 
 impl std::fmt::Debug for Grid {
@@ -262,6 +266,10 @@ impl Grid {
             }));
         }
         let keys = crate::keys::ApiKeys { db: db.clone(), clock: clock.clone() };
+        let push_cfg = cfg.file_cfg.push.clone();
+        let sender = crate::push::providers::HttpPush::from_config(push_cfg.as_ref(), &crate::config::process_env())
+            .map(|p| Arc::new(p) as Arc<dyn crate::push::PushSender>);
+        let push = crate::push::Relay::new(db.clone(), clock.clone(), sender, push_cfg.and_then(|c| c.per_minute));
         Arc::new(Self {
             cfg,
             db,
@@ -282,6 +290,7 @@ impl Grid {
             inbox,
             routes,
             mail,
+            push,
         })
     }
 
@@ -410,6 +419,7 @@ impl Grid {
                 self.channels_route(&method, which, q, &head.headers, &bytes, &who)
             }
             (_, ["api", "channels", which @ ("route" | "reply")]) => self.route_api(&method, which, &head.headers, &bytes, &who).await,
+            (_, ["api", "push", which @ ("register" | "send")]) => self.push_route(&method, which, &head.headers, &bytes, &who).await,
             ("POST", ["_route", tok]) => self.route_in(&head.headers, tok, &bytes),
             ("POST", ["_mail", provider]) => self.mail_in(provider, &bytes).await,
             ("POST", ["api", "channels", "mail", "reply"]) => {

@@ -143,6 +143,13 @@ pub const MIGRATIONS: &[&str] = &[
     // Discord's interactions reach a box through the grid, which checks their Ed25519 signature before it holds or
     // wakes anything: the application's public key (public, set by the box: `/api/channels/key`).
     r"ALTER TABLE channel_urls ADD COLUMN channel_key TEXT;",
+    // The phone relay (ADR-0065 §3): a phone's FCM or APNs token behind an opaque handle the phone gives its wisps.
+    // Only the handle's hash is kept (the handle is what reaches the phone); a token FCM/APNs says is gone drops its row.
+    r"CREATE TABLE push_handles (
+     handle_hash TEXT PRIMARY KEY, user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+     device_id TEXT NOT NULL REFERENCES devices(id) ON DELETE CASCADE, platform TEXT NOT NULL, token TEXT NOT NULL,
+     created_at INTEGER NOT NULL, last_sent_at INTEGER);
+   CREATE INDEX push_handles_device ON push_handles(device_id);",
 ];
 
 /// Every table the migrations make (and `meta`), for tests and `wisp grid backup` checks.

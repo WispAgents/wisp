@@ -155,8 +155,9 @@ mod tests {
         have.sort();
         assert_eq!(have, want);
         // v1's grid.db: 25 tables made by 11 migrations, plus meta; v2's 12th adds share_versions, teams
-        // and team_members (ADR-0038, ADR-0041); the 13th adds channel_urls.channel_key (Discord's key), no table.
-        assert_eq!(want.len(), 29);
-        assert_eq!(MIGRATIONS.len(), 13);
+        // and team_members (ADR-0038, ADR-0041); the 13th adds channel_urls.channel_key (Discord's key), no table; the
+        // 14th push_handles (the phone relay, ADR-0065).
+        assert_eq!(want.len(), 30);
+        assert_eq!(MIGRATIONS.len(), 14);
     }
 }

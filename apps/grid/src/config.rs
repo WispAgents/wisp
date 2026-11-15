@@ -59,6 +59,8 @@ pub struct GridFile {
     pub shares: Option<FeatureConfig>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub sandboxes: Option<FeatureConfig>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub push: Option<PushConfig>,
 }
 
 /// The settings in force: grid.json, the environment and the command line, checked.
