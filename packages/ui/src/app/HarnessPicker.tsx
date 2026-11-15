@@ -330,7 +330,7 @@ export function HarnessPicker(props: HarnessPickerProps): JSX.Element {
             {(acc) => (
               <div data-kit="pk-effort" data-acct="" role="radiogroup" aria-label={acc().label}>
                 <span data-kit="pk-ehead">{acc().label}</span>
-                <span data-kit="pk-seg">
+                <span data-kit="pk-seg" data-part="runner.account-wrap">
                   <Index each={acc().options}>
                     {(o) => (
                       <button

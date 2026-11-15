@@ -8,7 +8,7 @@
     bottom: var(--k-bottom);
     z-index: var(--z-overlay-menu);
     display: grid;
-    grid-template-columns: 200px minmax(0, 1fr);
+    grid-template-columns: var(--size-picker-side) minmax(0, 1fr);
     width: var(--k-w);
     height: min(var(--size-picker-h), 70vh);
     overflow: hidden;
@@ -238,6 +238,10 @@
     border-radius: 9px;
     background: var(--bg-2);
     border: 1px solid var(--line);
+  }
+  /* v1 .pk-acct .pk-seg: the account row is a Wrap group, its accounts flow onto more lines (design/layout.md §5) */
+  [data-kit='pk-seg'][data-part='runner.account-wrap'] {
+    flex-wrap: wrap;
   }
   [data-kit='pk-seg'] > button {
     flex: 1 0 auto;

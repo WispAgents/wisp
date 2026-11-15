@@ -54,6 +54,7 @@
     --size-ring-thin: 1.5px;
     --size-tests-ring: 76px;
     --size-picker-h: 420px;
+    --size-picker-side: 200px;
     --size-dialog-xl: 900px;
     --size-dialog-xl-h: 680px;
     --size-settings-nav: 200px;
@@ -118,6 +119,7 @@
     --size-meta-min: 100px;
     --size-home-top: 140px;
     --size-pick-max: 150px;
+    --size-pick-max-phone: 120px;
     --size-details: 232px;
     --size-read: 760px;
     --size-v1-nudge: 3px;
