@@ -23,7 +23,7 @@ Rust for everything but the UI, Solid/TS for the UI, everything a plugin (ADR-00
 | CI, last full run (03c0046d) | Linux + macOS: **only** 2 css-rules tests failed (1 of 192 targets), fixed in r244 · Windows cancelled · desktop + Android green |
 | Budgets | initial JS **119.3** KB br (≤ 120: 0.7 KB left) · CSS 26.9 KB (≤ 30) |
 | Weekly usage | 88 % (owner allowed 3 coders: free reset; running 2) |
-| Coders running | coder-r245 (trial folds), coder-r246 (v1 #795, #796) |
+| Coders running | coder-r245 (trial folds), coder-r247 (lead waits on subagents + report-back) |
 
 ## 3. Owner directions (standing rules)
 
@@ -60,6 +60,8 @@ Rust for everything but the UI, Solid/TS for the UI, everything a plugin (ADR-00
 - [ ] **v1 sync** (`docs/v1-sync.md`): port v1 #794 (side discussions/Plan mode run commands), #797 (Shell paste after
       selecting); #789 with phone step 13. #795 (lead's check-in while waiting on subagents) and #796 (compact follow-ups
       list) done in r246; found there: runtime doesn't hold a lead in Working on its delegates or send their reports back
+- [ ] **Lead waits on its subagents and gets their reports** (v1 core behaviour, missing: `Facts.owes` never set, no report-back turn, finish.rs wipes `delegations`): **in progress, coder-r247**
+- [ ] Later foot sits above the reply box; v1 puts the rows inside the composer box
 - [ ] **TUI** (ADR-0024, `docs/v2-tui-design.md`): first slice done (list, answer, composer). Left: `--on <machine>`,
       For later and Repo tab, blame gutter, hunk jumps, terminal images, the real-terminal pass.
 
