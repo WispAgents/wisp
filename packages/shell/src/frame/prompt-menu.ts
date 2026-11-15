@@ -77,10 +77,34 @@ export function pastedTasks(text: string, title: (id: string) => string | undefi
   return out;
 }
 
+/** The input types a phone keyboard's clipboard (Gboard's chip, iOS's suggestion) puts text in with, no paste event. */
+const INSERTS = new Set(['insertText', 'insertFromPaste', 'insertReplacementText']);
+
+/**
+ * What one input put in that is only task ids (v1 #800): `inserted` is the input's text (its `data`, or its
+ * dataTransfer's), ending at `caret` in `text`. Typing adds a letter at a time, so only an insert of 12 characters or
+ * more whole in one go counts (v1's bound); the ids' mentions and the span they replace, else null.
+ */
+export function insertedTasks(text: string, caret: number, inserted: string, title: (id: string) => string | undefined): { from: number; to: number; got: Mentioned[] } | null {
+  if (inserted.trim().length < 12) return null;
+  const from = caret - inserted.length;
+  if (from < 0 || text.slice(from, caret) !== inserted) return null;
+  const got = pastedTasks(inserted, title);
+  return got ? { from, to: caret, got } : null;
+}
+
+/** The box after its span `from`..`to` becomes the mentions' `@Title`s, a space before them after a word (v1 put). */
+export function putMentions(text: string, from: number, to: number, got: readonly Mentioned[]): { text: string; caret: number } {
+  const lead = from > 0 && !/\s$/.test(text.slice(0, from)) ? ' ' : '';
+  const words = `${lead}${got.map((m) => `@${m.title}`).join(' ')} `;
+  return { text: `${text.slice(0, from)}${words}${text.slice(to)}`, caret: from + words.length };
+}
+
 export interface PromptMenu {
   readonly suggest: Accessor<PromptSuggest | undefined>;
-  /** call from the box's input: what's typed and where the caret is */
-  readonly typed: (text: string) => void;
+  /** call from the box's input: what's typed and where the caret is; with its input event, task ids a phone
+   *  keyboard's clipboard put in become their mentions (v1 #800). The box's text after it. */
+  readonly typed: (text: string, e?: InputEvent) => string;
   /** what to send: the text with its mentions encoded */
   readonly encode: (text: string) => string;
   /** after a send: the mentions go */
@@ -149,31 +173,44 @@ export function usePromptMenu(o: {
       onClose: () => setAt(null),
     };
   });
+  const titleOf = (id: string): string | undefined => {
+    const peer = (o.shell.client.plugin('shell') as { home: string }).home;
+    const key = id.includes(':') ? id : `${peer}:${id}`;
+    return o.shell.client.entities.peek<{ title?: string }>('session', key as never)?.title;
+  };
+  // the span becomes the mentions' @Titles, the caret after them
+  const put = (text: string, from: number, to: number, got: readonly Mentioned[]): string => {
+    const el = o.input();
+    const r = putMentions(text, from, to, got);
+    setMentions([...mentions().filter((x) => !got.some((g) => g.title === x.title)), ...got]);
+    o.setText(r.text);
+    setAt(null);
+    queueMicrotask(() => el?.setSelectionRange(r.caret, r.caret));
+    return r.text;
+  };
   return {
     suggest,
-    typed: (text) => {
+    typed: (text, e) => {
       const caret = o.input()?.selectionStart ?? text.length;
+      // a phone keyboard's clipboard puts a copied task id in like typing, with no paste event (v1 #800)
+      if (e && INSERTS.has(e.inputType) && !e.isComposing) {
+        const r = insertedTasks(text, caret, e.data ?? e.dataTransfer?.getData('text/plain') ?? '', titleOf);
+        if (r) return put(text, r.from, r.to, r.got);
+      }
       setAt(menuAt(text, caret));
       setActive(0);
+      return text;
     },
     encode: (text) => encodeMentions(text, mentions()),
     reset: () => setMentions([]),
     paste: (e) => {
-      const got = pastedTasks(e.clipboardData?.getData('text/plain') ?? '', (id) => {
-        const peer = (o.shell.client.plugin('shell') as { home: string }).home;
-        const key = id.includes(':') ? id : `${peer}:${id}`;
-        return o.shell.client.entities.peek<{ title?: string }>('session', key as never)?.title;
-      });
+      const got = pastedTasks(e.clipboardData?.getData('text/plain') ?? '', titleOf);
       if (!got) return false;
       e.preventDefault();
       const el = o.input();
       const text = o.text();
       const from = el?.selectionStart ?? text.length;
-      const to = el?.selectionEnd ?? from;
-      const words = `${got.map((m) => `@${m.title}`).join(' ')} `;
-      setMentions([...mentions().filter((x) => !got.some((g) => g.title === x.title)), ...got]);
-      o.setText(`${text.slice(0, from)}${words}${text.slice(to)}`);
-      queueMicrotask(() => el?.setSelectionRange(from + words.length, from + words.length));
+      put(text, from, el?.selectionEnd ?? from, got);
       return true;
     },
   };

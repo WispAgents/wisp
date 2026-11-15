@@ -498,10 +498,10 @@ export function HomeView(props: { readonly onBack?: () => void }): JSX.Element {
         place={place()}
         placeholder={t('shell.home.placeholder')}
         value={text()}
-        onInput={(v) => {
+        onInput={(v, e) => {
           setText(v);
-          menu.typed(v);
-          ask(v);
+          // a task id a phone keyboard's clipboard put in becomes its mention (v1 #800): ask about what's left
+          ask(menu.typed(v, e));
           warmIt();
         }}
         onSend={send}

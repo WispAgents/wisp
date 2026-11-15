@@ -171,7 +171,7 @@ turn. When a screen or feature contradicts one, that's a bug: fix it toward the 
 - [ ] **TUI** (ADR-0024, `docs/v2-tui-design.md`): first slice done (list, answer, composer). Left: `--on <machine>`,
       For later and Repo tab, blame gutter, hunk jumps, terminal images, the real-terminal pass.
 
-- [ ] **v1 sync #799-#801** (phone fixes in v1: subagent time inside the lead card, a pasted task ID becomes a chip, a tests card's long command wraps): check v2 has each, port what's missing
+- [x] **v1 sync #799-#801** (phone fixes in v1: subagent time inside the lead card, a pasted task ID becomes a chip, a tests card's long command wraps): check v2 has each, port what's missing (r295: #799 and #801 already held in v2, guarded by css-rules tests; #800 ported: a clipboard insert with no paste event becomes the task's mention)
 - [ ] **Long threads** (owner, 2026-11-15, from wisp task d8ee0a207d52; plan `docs/v2-long-threads.md`): the task
       ledger (goal, constraints, decisions, failed, state, open, files; rewritten, never appended; `wisp_ledger` MCP
       tool), the note before each follow-up, Fresh thread from an editable brief, the health meter, the compaction

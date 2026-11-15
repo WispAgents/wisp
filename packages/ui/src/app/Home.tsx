@@ -92,7 +92,8 @@ export interface LauncherProps {
   readonly place: Omit<ProjectSelectProps, 'part' | 'where'>;
   readonly placeholder: string;
   readonly value: string;
-  readonly onInput: (v: string) => void;
+  /** what's in the box after each input, with the input event (v1 #800: what a phone keyboard's clipboard put in) */
+  readonly onInput: (v: string, e?: InputEvent) => void;
   readonly onSend: () => void;
   /** before the first task (v1 .launcher.first-run): on a narrow box the mode keeps its words, so two sparkles never sit unnamed side by side */
   readonly firstRun?: boolean;
@@ -245,7 +246,7 @@ export function Launcher(props: LauncherProps): JSX.Element {
             value={props.value}
             ref={(el) => ((input = el), props.inputRef?.(el))}
             onBlur={() => setNudge(false)}
-            onInput={(e) => (setNudge(false), props.onInput(e.currentTarget.value))}
+            onInput={(e) => (setNudge(false), props.onInput(e.currentTarget.value, e))}
             onKeyDown={key}
             onPaste={(e) => props.onPaste?.(e)}
           />

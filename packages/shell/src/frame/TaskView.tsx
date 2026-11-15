@@ -1134,9 +1134,9 @@ export default function TaskView(props: { readonly id: string; readonly onBack?:
                   <ReplyBox
                     placeholder={t(replyPlaceholderKey(row()), { name: h().name })}
                     value={text()}
-                    onInput={(v) => {
+                    onInput={(v, e) => {
                       setText(v);
-                      menu.typed(v);
+                      menu.typed(v, e);
                     }}
                     onSend={send}
                     onKey={replyKeys}

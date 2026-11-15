@@ -509,7 +509,8 @@ export interface ReplyCap {
 export interface ReplyBoxProps {
   readonly placeholder: string;
   readonly value: string;
-  readonly onInput: (v: string) => void;
+  /** what's in the box after each input, with the input event (v1 #800: what a phone keyboard's clipboard put in) */
+  readonly onInput: (v: string, e?: InputEvent) => void;
   readonly onSend: () => void;
   /** the box's own keys after its menus (↑ history, Shift+Tab mode): true when taken */
   readonly onKey?: (e: KeyboardEvent) => boolean;
@@ -560,7 +561,7 @@ export interface CompactReplyBoxProps {
   readonly compact: true;
   readonly placeholder: string;
   readonly value: string;
-  readonly onInput: (v: string) => void;
+  readonly onInput: (v: string, e?: InputEvent) => void;
   readonly onSend: () => void;
   readonly onKey?: (e: KeyboardEvent) => boolean;
   readonly suggest?: PromptSuggest | undefined;
@@ -640,7 +641,7 @@ export function ReplyBox(given: ReplyBoxProps | CompactReplyBoxProps): JSX.Eleme
           value={props.value}
           ref={(el) => ((input = el), props.inputRef?.(el))}
           onBlur={() => setNudge(false)}
-          onInput={(e) => (setNudge(false), props.onInput(e.currentTarget.value))}
+          onInput={(e) => (setNudge(false), props.onInput(e.currentTarget.value, e))}
           onKeyDown={key}
           onPaste={(e) => props.onPaste?.(e)}
           aria-activedescendant={props.suggest && props.suggest.items.length > 0 ? `${props.suggest.id}-o${props.suggest.active}` : undefined}

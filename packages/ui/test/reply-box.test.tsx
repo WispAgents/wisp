@@ -180,3 +180,14 @@ test('the_top_slot_sits_inside_the_box_over_the_text_and_a_row_coming_or_going_k
   row.click();
   expect(box.hasAttribute('data-awake')).toBe(true);
 });
+
+test('the_reply_box_hands_its_input_event_on_so_a_phone_keyboards_clipboard_insert_is_seen_v1_800', () => {
+  const host = document.createElement('div');
+  document.body.append(host);
+  const got: Array<[string, string | undefined, string | null | undefined]> = [];
+  dispose = render(() => <ReplyBox placeholder="Follow up" value="" onInput={(v, e) => got.push([v, e?.inputType, e?.data])} onSend={() => {}} attach="Attach" mode={{ label: 'Auto', title: 'Mode' }} runner={{ title: 'Claude Code' }} team="Team" goal="Goal" later="Later" send="Send" />, host);
+  const ta = host.querySelector('textarea') as HTMLTextAreaElement;
+  ta.value = 'abc123def456ghi7';
+  ta.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertText', data: 'abc123def456ghi7' }));
+  expect(got).toEqual([['abc123def456ghi7', 'insertText', 'abc123def456ghi7']]);
+});

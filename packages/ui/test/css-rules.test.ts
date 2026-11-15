@@ -139,3 +139,35 @@ test('on_touch_mark_done_keeps_its_own_column_after_the_time_and_save_for_later_
   expect(reserve.length).toBe(6);
   for (const [sel, , media] of reserve) expect(media, sel).toMatch(/\(hover:\s*hover\)/);
 });
+
+const platformFiles = import.meta.glob<string>('../src/css/platform/*.css', { query: '?raw', import: 'default', eager: true });
+/** Every rule of the kit's sheets and the phone looks' (platform/*.css) as [file, selector, body]. */
+const everyRule = (): Array<[string, string, string]> =>
+  [...sheets, ...Object.entries(platformFiles).map(([path, raw]) => ({ name: path.replace('../src/css/', ''), css: raw.replace(/\/\*[^]*?\*\//g, '') }))].flatMap((s) => rulesIn(s.css).map(([sel, body]): [string, string, string] => [s.name, sel, body]));
+
+test('a_delegates_time_and_pill_stay_inside_the_leads_card_on_a_phone_v1_799', () => {
+  // v1 #799: a long @name and the machine's chip pushed the time off the card at 320 px. v2's team rows (crew TeamPane,
+  // ListRow: face, @name, what it's doing, state pill, time) are a grid whose title column is minmax(0, 1fr): the
+  // name and line give way (one line, an ellipsis) and the pills and time keep their width, in the browser and in
+  // both phone looks. Seen at 320/390 in target/r295/.
+  const rules = everyRule();
+  const grids = rules.filter(([, sel, body]) => /\[data-kit='list-row'\]/.test(sel) && /grid-template-columns:/.test(body));
+  expect(grids.length).toBeGreaterThan(0);
+  for (const [file, sel, body] of grids) expect(`${file} ${sel}: ${/grid-template-columns:\s*[^;]*minmax\(0, 1fr\)/.test(body)}`).toBe(`${file} ${sel}: true`);
+  const own = (kit: string): string[] => rules.filter(([, sel]) => sel.split(',').some((x) => x.trim() === `[data-kit='${kit}']`)).map(([, , b]) => b);
+  for (const kit of ['list-row-title', 'list-row-sub']) expect(own(kit).some((b) => /overflow: hidden/.test(b) && /text-overflow: ellipsis/.test(b) && /white-space: nowrap/.test(b))).toBe(true);
+  expect(own('list-row-pills').some((b) => /flex-wrap: nowrap/.test(b))).toBe(true);
+  // nothing lets the title or pills column grow past the card
+  expect(rules.filter(([, sel, body]) => sel.includes("[data-kit='list-row-title']") && /white-space: (normal|pre-wrap)/.test(body))).toEqual([]);
+});
+
+test('a_tests_cards_long_command_wraps_inside_the_card_on_a_phone_v1_801', () => {
+  // v1 #801: the tests card's command ran past the card at phone widths. v2 wraps it (design/layout.md: content text,
+  // `overflow-wrap: anywhere` for code): the text column may shrink (min-width: 0) and the command breaks anywhere,
+  // in the browser and both phone looks; no sheet makes it one line. Seen at 320/390 in target/r295/.
+  const rules = everyRule();
+  const on = (sel: string): string[] => rules.filter(([, s]) => s.split(',').some((x) => x.trim() === sel)).map(([, , b]) => b);
+  expect(on("[data-kit='cb-tests-text']").some((b) => /min-width: 0/.test(b))).toBe(true);
+  expect(on("[data-kit='cb-tests-cmd'] code").some((b) => /overflow-wrap: anywhere/.test(b))).toBe(true);
+  expect(rules.filter(([, s, b]) => s.includes("[data-kit='cb-tests-cmd']") && /white-space: (nowrap|pre)\s*(;|$)/.test(b))).toEqual([]);
+});
