@@ -23,7 +23,7 @@ Rust for everything but the UI, Solid/TS for the UI, everything a plugin (ADR-00
 | CI, last full run (708ba936) | Linux 4/4 green (23-32 min, was 37+) · macOS node 22: 1 flaky UI test (Dialog focus return; r256) · Windows + macOS 24 still running |
 | Budgets | initial JS 107.2 KB br (≤ 120) · CSS 27.1 KB (≤ 30) |
 | Weekly usage | 91 % (pace 176 %: down to 1 coder) |
-| Coders running | coder-r256 (flaky Dialog focus test) |
+| Coders running | none (waiting on Windows CI log) |
 
 ## 3. Owner directions (standing rules)
 
@@ -730,7 +730,7 @@ Source: `docs/v1-features.md` (each row's evidence and test). `[x]` built, `[ ]`
 
 | Round | What | State |
 |---|---|---|
-| 256 | Flaky Dialog focus-return test (macOS node 22, CI 708ba936) | in progress |
+| 256 | Dialog focus return: a real bug (Zag trap picks its target late; opened before the machine loaded, focus stayed on body), fixed in Dialog | committed (45b105df) |
 | 255 | docs/dev.md: clone to running, debugging, one test per area, troubleshooting (every command run) | committed (b3b5b3d9) |
 | 254 | Port v1 #797: paste after selecting text reaches the Shell | committed (3f45f724) |
 | 253 | Port v1 #794: Plan runs commands for your own tasks; outside/capped/side stay read-only | committed (f0b27570; lead-verified: plan 3, plan_mode 2, clippy, fmt) |
