@@ -21,9 +21,9 @@ Rust for everything but the UI, Solid/TS for the UI, everything a plugin (ADR-00
 | v1 features | **315 built · 7 partial · 5 missing · 4 dropped** of 331 (§6) |
 | Regressed | none (F-comp-1 picker restored to v1 in round 233) |
 | CI, last full run (2790d627) | Linux + macOS: 1 failing test (`serve_orphans` probe), fixed by round 234, re-run pending · Windows: cancelled (open groups, §8) · desktop builds + Android: green |
-| Budgets | initial JS 117.9 KB br (≤ 120) · CSS 29.7 KB (≤ 30) · enforced in CI |
+| Budgets | initial JS 118.8 KB br (≤ 120) · **CSS 30.0 KB (≤ 30): over**, coder-r242 making room |
 | Weekly usage | 86 % (owner allowed 3 coders: free reset) |
-| Coders running | coder-r239 (launcher name breakpoints), reviewer-r241 (rounds 227-229) |
+| Coders running | coder-r239 (launcher name breakpoints), coder-r242 (initial CSS budget) |
 
 ## 3. Owner directions (standing rules)
 
@@ -90,14 +90,14 @@ Rust for everything but the UI, Solid/TS for the UI, everything a plugin (ADR-00
 2. [x] `qa/platform.mjs`, and layout/feedback on phone views (rounds 216, 224)
 3. [x] Kit: frame and navigation (round 217)
 4. [x] Kit: rows and surfaces (round 220)
-5. [ ] Kit: overlays (Sheet, Dialog, Menu, Popover, Toast, Tooltip): **built by round 227, waiting for the lead's verification**
+5. [x] Kit: overlays (Sheet, Dialog, Menu, Popover, Toast, Tooltip) (round 227, reviewed by r241)
 6. [ ] Kit: controls (Button, IconButton, Switch, Tabs, Input, Select)
 7. [x] Gestures with visible twins (round 225); seams (GestureHostProvider, row long-press) in round 227's work
 8. [ ] The app's frontend (`@wisp/mobile` routes, launch on Computers, several peers)
 9. [x] Android native: Keystore-sealed keys and tokens, QR host-key pinning, a port per computer (round 226)
 10. [ ] iOS native: **blocked: Xcode is not installed on this Mac**
-11. [ ] Push (`wisp.push`, HPKE, grid relay): **built by round 228, waiting for the lead's verification**
-12. [x] Offline and bad network: core committed (round 229); its shell hookups wait with round 227
+11. [x] Push (`wisp.push`, HPKE, grid relay) (round 228, reviewed by r241; no UI calls it yet: step 13)
+12. [x] Offline and bad network: core + shell hookups (round 229, reviewed by r241)
 13. [ ] Screens part 1 (Tasks, task page, New task, search; Add computer with QR, Trust new key, Stay connected ON by default without push)
 14. [ ] Screens part 2 (Settings, My Stuff, Crew, Computers and cloud sign-in)
 15. [ ] Store and release (android.yml, ios.yml, listings, privacy)
@@ -149,8 +149,8 @@ Rust for everything but the UI, Solid/TS for the UI, everything a plugin (ADR-00
 
 ## 5. Waiting for the lead right now
 
-- [ ] Verify + commit round 227 (gesture seams, phone overlays) and round 229's shell hookups (mixed files)
-- [ ] Verify + commit round 228 (push plugin, grid relay, `hpke` dependency)
+- [x] Verify + commit round 227 (gesture seams, phone overlays) and round 229's shell hookups (r241)
+- [x] Verify + commit round 228 (push plugin, grid relay, `hpke` dependency) (r241)
 - [x] Review coder-r233's picker against `design/v1-reference/home.runner` (side by side): matches; committed 6e3fe42e
 - [x] Push the local commits after coder-r234's CI fix
 - [x] Merge origin/main (#792-#797) into #756: CHANGELOG conflict was blocking PR CI (8efe765b)
@@ -604,7 +604,12 @@ Source: `docs/v1-features.md` (each row's evidence and test). `[x]` built, `[ ]`
 - [ ] `wisp import` drops v1 per-turn changes (importer.rs), so imported tasks show 0 files on day cards
 - [ ] Ledger scrubber has no day labels (the mock had them); `wisp notices` chip clipped at 1280 (scrolls)
 - [ ] Ledger not yet in design/v1-reference/allowed.md for the parity gate
-- [ ] `rows-view.ts` and `peer-note.ts` force `en-GB` dates: check v1 (later/format.ts is en-GB on purpose, as v1) and use the app locale where v1 did
+- [ ] `rows-view.ts` forces `en-GB` (peer-note fixed in r241) dates: check v1 (later/format.ts is en-GB on purpose, as v1) and use the app locale where v1 did
+- [ ] Popover reads its width once (an iPad rotating while open doesn't switch popover/sheet)
+- [ ] Android long-press sheet has no Select row (list selection mode comes with step 13)
+- [ ] `phone.tsx` copies iOS token values as numbers (IOS_SEP has no token); 466 lines
+- [ ] Pull to refresh may never show its spinner (reads `connecting()` right after `reconnect()`)
+- [ ] Decide: should push notifications answer tool approvals in place (like ntfy)?
 - [ ] `ui-only`/MCP: nothing open
 
 ## 8. CI
@@ -692,7 +697,8 @@ Source: `docs/v1-features.md` (each row's evidence and test). `[x]` built, `[ ]`
 
 | Round | What | State |
 |---|---|---|
-| 241 | Review of uncommitted rounds 227 (phone overlays, gesture seams), 228 (push), 229 (offline shell hookups) | in progress |
+| 242 | Initial CSS back under budget (30.0 > 30.0 KB br) without changing looks | in progress |
+| 241 | Review of rounds 227, 228, 229: one fix (offline time in app locale); all committed | committed |
 | 240 | Picker account row wraps as v1 (Wrap group); task clock locale | committed (af6dd52b, f838e783) |
 | 239 | Launcher hides a hand-picked harness's name at v1's breakpoint (520 px, default model only), not 640 | in progress |
 | 238 | Auto pick segment: v2 already matches v1's shortLabel; test pins it | committed (61ddba34) |
@@ -704,9 +710,9 @@ Source: `docs/v1-features.md` (each row's evidence and test). `[x]` built, `[ ]`
 | 232 | `npm run doctor` | committed |
 | 231 | Check rule `commands`; 13 broken commands fixed | committed |
 | 230 | `npm run dev`, `npm run dev:desktop` | committed |
-| 229 | Offline and bad network (client, sync); shell hookups pending | core committed |
-| 228 | Push plugin + grid relay (HPKE) | waiting for verification |
-| 227 | Gesture seams + phone overlays | waiting for verification |
+| 229 | Offline and bad network (client, sync, shell) | committed |
+| 228 | Push plugin + grid relay (HPKE) | committed |
+| 227 | Gesture seams + phone overlays | committed |
 | 226 | Android native: Keystore, QR pinning, ports per computer | committed |
 | 225 | Gestures with visible twins | committed |
 | 224 | Layout/feedback on phone views | committed |
