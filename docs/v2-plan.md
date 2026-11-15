@@ -23,7 +23,7 @@ Rust for everything but the UI, Solid/TS for the UI, everything a plugin (ADR-00
 | CI, last full run (db8f01ad) | **Linux 4/4 + macOS 2/2 + Windows node 22 green**; Windows node 24: 1 Rust test (serve_orphans startup probes alive past 25 s) -> r275 |
 | Budgets | initial JS 107.2 KB br (≤ 120) · CSS 27.1 KB (≤ 30) |
 | Weekly usage | 96 % (owner 2026-11-15 14:50: keep going with one coder until the limit) |
-| Coders running | coder-r275 (serve_orphans on Windows) |
+| Coders running | coder-r276 (ledger day labels, filter row) |
 
 ## 3. Owner directions (standing rules)
 
@@ -810,7 +810,8 @@ Source: `docs/v1-features.md` (each row's evidence and test). `[x]` built, `[ ]`
 
 | Round | What | State |
 |---|---|---|
-| 275 | serve_orphans on Windows node 24: startup probes 'alive' past their limit (pid reuse or tree kill) | in progress |
+| 276 | Ledger: scrubber day labels; filter chips never clipped (collapse by priority) | in progress |
+| 275 | serve_orphans: Windows pid reuse (test tracked pids); fakes hold a life lock | committed (488e7813) |
 | 274 | A command's events go out with its writes; budget/channels/machines via outbox (ADR-0075) | committed (d60b14dc, f4679d2d) |
 | 273 | 4 tools tests on Windows: 2 product bugs (commands ignored-file check off on Windows; dev home path rules) + 2 tests | committed (a7297cd7, 8921f5ae) |
 | 272 | A write's events queued before its rows can be read (outbox, ADR-0074) | committed (d1a32104) |
