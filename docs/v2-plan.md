@@ -23,7 +23,7 @@ Rust for everything but the UI, Solid/TS for the UI, everything a plugin (ADR-00
 | CI, last full run (11fe8350) | Linux + macOS: strings-split (phone nav destinations.ts uses lazy keys without the loader) -> r285 · previous run f0db9105 all 8 green |
 | Budgets | initial JS 107.2 KB br (≤ 120) · CSS 27.1 KB (≤ 30) |
 | Weekly usage | 0 % (reset applied) · **owner 2026-11-15: one coder at a time** |
-| Coders running | coder-r290 (runtime.projectAdd) |
+| Coders running | none |
 
 ## 3. Owner decisions (every one, dated; read before any change)
 
@@ -763,6 +763,7 @@ Source: `docs/v1-features.md` (each row's evidence and test). `[x]` built, `[ ]`
 - [ ] A removed peer's pending optimistic writes aren't cleared (resetPeer)
 - [ ] Phone Tasks: a crew member's avatar touches the task title (no gap like the dot's)
 - [ ] Phone New task sheet shows the whole Home page under the composer (Needs you, Tips): a sheet should hold just the composer
+- [x] Lead's call (2026-11-16): agents (agent:session) and API keys may add projects through runtime.projectAdd (they already start tasks; capped tasks are refused)
 - [ ] `ui-only`/MCP: nothing open
 
 ## 8. CI
@@ -936,7 +937,7 @@ Source: `docs/v1-features.md` (each row's evidence and test). `[x]` built, `[ ]`
 |---|---|---|
 | 283 | DX: build bundle + Tauri lock: stopped before edits; plan in §4.6 | to redo |
 | 282 | Server perf budgets: stopped before edits; plan in §4.3 | to redo |
-| 290 | Server-side runtime.projectAdd: every client gets ADR-0076's naming (MCP, UI add, phone) | in progress |
+| 290 | runtime.projectAdd: server-side naming in one write; CLI, UI, Run on, MCP use it (ADR-0077) | committed |
 | 289 | Same-named folders: wisp-2 instead of replacing (CLI + Run on; ADR-0076) | committed (bdcdb92c) |
 | 288 | One project selector with multi-pick everywhere (owner decision) | committed (d11a93ad) |
 | 287 | Crew on phones as stories with a reply box (owner's pick C) | committed (9da2cf94) |
