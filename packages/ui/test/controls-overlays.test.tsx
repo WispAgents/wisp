@@ -1,6 +1,6 @@
 import { beforeAll, describe, expect, test, vi } from 'vitest';
 import { createSignal } from 'solid-js';
-import { mount, part, tick } from './helpers.tsx';
+import { frame, mount, part, tick } from './helpers.tsx';
 import { Dialog, Sheet } from '../src/controls/Dialog.tsx';
 import { Popover } from '../src/controls/Popover.tsx';
 import { Tooltip } from '../src/controls/Tooltip.tsx';
@@ -28,6 +28,7 @@ describe('Dialog', () => {
     trigger?.focus();
     trigger?.click();
     await tick(30);
+    await frame();
     const content = part('recipe.delete');
     expect(content?.getAttribute('role')).toBe('dialog');
     expect(part('recipe.delete.title')?.textContent).toBe('Delete recipe');
@@ -35,7 +36,8 @@ describe('Dialog', () => {
     expect(content?.contains(document.activeElement)).toBe(true);
     expect(onOpenChange).toHaveBeenLastCalledWith(true);
     key(document.activeElement ?? document.body, 'Escape');
-    await tick(30);
+    // closed (Zag answers the key in a microtask) and focus back with it, no timer to wait on: dialog-focus-return.test.tsx
+    await Promise.resolve();
     expect(part('recipe.delete')).toBeNull();
     expect(onOpenChange).toHaveBeenLastCalledWith(false);
     expect(document.activeElement).toBe(trigger);
@@ -80,6 +82,7 @@ describe('Popover', () => {
     expect(trigger?.getAttribute('aria-label')).toBe('About');
     trigger?.click();
     await tick(30);
+    await frame();
     expect(part('about.pop')?.getAttribute('data-state')).toBe('open');
     expect(part('about.pop.title')?.textContent).toBe('About');
     key(part('about.pop') ?? document.body, 'Escape');

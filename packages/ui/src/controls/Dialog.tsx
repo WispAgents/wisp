@@ -163,12 +163,36 @@ function Surface(props: DialogProps & { readonly kind: Kind; readonly parts: Par
   );
 }
 
+/** Where focus goes back as the surface closes: its own trigger, else what had focus as it opened. The kit gives it back
+ * itself, in the same task the surface goes: Zag's focus trap remembers what was focused when it starts (a frame after
+ * opening; one opened before its machine has moved focus in by then) and gives it back on a timer, so focus sat on
+ * <body> for a while, or for good (dialog-focus-return.test.tsx). */
+function focusReturn(open: Accessor<boolean>): { readonly to: () => HTMLElement | null; readonly trigger: (el: HTMLElement) => void } {
+  let triggerEl: HTMLElement | undefined;
+  let opener: HTMLElement | undefined;
+  const to = (): HTMLElement | null => [triggerEl, opener].find((el) => el?.isConnected) ?? null;
+  let was = false;
+  createEffect(() => {
+    const now = open();
+    const a = document.activeElement;
+    if (now && !was) opener = a instanceof HTMLElement && a !== document.body ? a : undefined;
+    else if (!now && was) {
+      // focus was in the surface (now gone) or nowhere; one the user moved elsewhere (a click on a field outside) stays
+      const el = to();
+      if (el && (!a || a === document.body || !a.isConnected)) el.focus({ preventScroll: true });
+    }
+    was = now;
+  });
+  return { to, trigger: (el) => (triggerEl = el) };
+}
+
 function Shell(props: DialogProps & { readonly kind: Kind }): JSX.Element {
   const [api, setApi] = createSignal<Accessor<DialogApi>>();
   // opened by its own trigger before the machine was there
   const [selfOpen, setSelfOpen] = createSignal(false);
   const bound = (): DialogApi | undefined => api()?.();
   const open = (): boolean => bound()?.open ?? props.open ?? selfOpen();
+  const focus = focusReturn(open);
   createEffect(() => {
     if (open()) warm(machine)();
   });
@@ -199,12 +223,12 @@ function Shell(props: DialogProps & { readonly kind: Kind }): JSX.Element {
     <>
       <Show when={machine.ready()}>
         {(m) => {
-          setApi(() => m().useDialog(props, untrack(selfOpen)));
+          setApi(() => m().useDialog(props, untrack(selfOpen), focus.to));
           return null;
         }}
       </Show>
       <Show when={props.trigger}>
-        {(look) => <TriggerButton look={look()} bind={trigger()} part={sub(part(), 'trigger')} />}
+        {(look) => <TriggerButton look={look()} bind={trigger()} part={sub(part(), 'trigger')} ref={focus.trigger} />}
       </Show>
       <Show when={open()}>
         <Surface {...props} parts={parts} part={part()} dismiss={dismiss} />

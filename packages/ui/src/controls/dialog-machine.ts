@@ -8,8 +8,9 @@ import type { DialogProps } from './Dialog.tsx';
 
 export type DialogApi = dialog.Api;
 
-/** `open0`: it was opened (by its own trigger) before the machine was there. */
-export function useDialog(props: DialogProps, open0: boolean): Accessor<dialog.Api> {
+/** `open0`: it was opened (by its own trigger) before the machine was there. `returnTo`: where focus goes back on close
+ * (the kit's trigger carries its own data-part, so Zag's lookup by `data-part="trigger"` doesn't find it). */
+export function useDialog(props: DialogProps, open0: boolean, returnTo: () => HTMLElement | null): Accessor<dialog.Api> {
   const id = createUniqueId();
   const service = useMachine(dialog.machine, () => ({
     id,
@@ -18,6 +19,7 @@ export function useDialog(props: DialogProps, open0: boolean): Accessor<dialog.A
     role: props.role ?? 'dialog',
     closeOnInteractOutside: props.closeOnOutside ?? true,
     ...(props.initialFocus ? { initialFocusEl: props.initialFocus } : {}),
+    finalFocusEl: returnTo,
   }));
   return createMemo(() => dialog.connect(service, normalizeProps));
 }

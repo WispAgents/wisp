@@ -219,6 +219,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Fixed
 
+- **v2: closing a dialog with Escape gives focus back to what opened it.** A dialog opened before its code had loaded could leave focus on the page itself, so the keyboard went nowhere until you clicked.
 - **v2: you can paste into a task's Shell after selecting text in it.** Selecting text on the Shell's screen (to copy it) took the keys out of the terminal, so ⌘V or Ctrl+Shift+V did nothing. A paste now goes to the terminal you last clicked or opened, unless a text box takes it.
 - **v2: a lead's scheduled check-in follows v1 #795's rule.** Waiting on its subagents never holds it back; only a live run, a question to you, or Auto's or the goal's check does.
 - **v2: speed on a phone.** The task list scrolls smoothly with thousands of tasks (one kit CSS rule made every row restyle on each frame), a task opens at once on a slow connection, and Back to the list is twice as fast. The first download is less than half its size (initial JS 290 → 118 KB, CSS 46 → 30 KB compressed).

@@ -14,11 +14,13 @@ export function TriggerButton(props: {
   readonly look: MenuTrigger;
   readonly bind: JSX.ButtonHTMLAttributes<HTMLButtonElement>;
   readonly part: PartName;
+  readonly ref?: (el: HTMLButtonElement) => void;
 }): JSX.Element {
   const labelled = (): boolean => props.look.label !== undefined;
   return (
     <button
       {...props.bind}
+      ref={(el) => props.ref?.(el)}
       type="button"
       aria-label={triggerName(props.look)}
       title={triggerName(props.look)}
