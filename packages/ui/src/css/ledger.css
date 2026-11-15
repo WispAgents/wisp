@@ -6,13 +6,18 @@
 
   /* ---- search and filters ---- */
   [data-kit='ledger-tools'] {
-    display: flex; align-items: center; gap: var(--space-5); min-width: 0;
+    position: relative; display: flex; align-items: center; gap: var(--space-5); min-width: 0;
     padding: var(--space-4) 0 var(--space-5); border-bottom: var(--size-hairline) solid var(--line);
   }
   [data-kit='ledger-search'] {
-    flex: none; display: flex; align-items: center; gap: var(--space-3); width: var(--size-hover-max); min-width: 0;
+    flex: none; display: flex; align-items: center; gap: var(--space-3); width: var(--size-hover-max);
+    min-width: calc(var(--size-hover-max) * 2 / 3); max-width: var(--size-hover-max);
     height: var(--size-control-sm); padding: 0 var(--space-4); border: var(--size-hairline) solid var(--line-2);
     border-radius: var(--radius-control); background: var(--surface); color: var(--faint);
+  }
+  /* form 3+: the search gives the chips its spare room (Ledger.tsx reads min- and max-width to know how much) */
+  [data-kit='ledger-tools'][data-fit='3'] [data-kit='ledger-search'], [data-kit='ledger-tools'][data-fit='4'] [data-kit='ledger-search'] {
+    width: calc(var(--size-hover-max) * 2 / 3);
   }
   [data-kit='ledger-search']:focus-within { border-color: var(--accent); }
   [data-kit='ledger-search'] input {
@@ -23,10 +28,29 @@
     flex: none; padding: 0 var(--space-2); border: var(--size-hairline) solid var(--line-2); border-radius: var(--radius-xs);
     font-family: var(--mono); font-size: var(--fs-xs); color: var(--faint);
   }
-  [data-kit='ledger-chips'] { display: flex; gap: var(--space-3); min-width: 0; overflow-x: auto; scrollbar-width: none; }
+  /* one line, never wrapped (design/layout.md §2): measured in Ledger.tsx, the total then the chips' counts drop
+     (data-fit 1, 2), the search narrows (3), then the row scrolls sideways (4), faded at the end that hides more chips */
+  [data-kit='ledger-chips'] { flex: 1 1 auto; display: flex; gap: var(--space-3); min-width: 0; overflow-x: auto; scrollbar-width: none; }
   [data-kit='ledger-chips']::-webkit-scrollbar { display: none; }
+  [data-kit='ledger-chips'][data-edge='end'] {
+    -webkit-mask-image: linear-gradient(90deg, var(--ink) calc(100% - var(--space-9)), transparent);
+    mask-image: linear-gradient(90deg, var(--ink) calc(100% - var(--space-9)), transparent);
+  }
+  [data-kit='ledger-chips'][data-edge='start'] {
+    -webkit-mask-image: linear-gradient(90deg, transparent, var(--ink) var(--space-9));
+    mask-image: linear-gradient(90deg, transparent, var(--ink) var(--space-9));
+  }
+  [data-kit='ledger-chips'][data-edge='both'] {
+    -webkit-mask-image: linear-gradient(90deg, transparent, var(--ink) var(--space-9), var(--ink) calc(100% - var(--space-9)), transparent);
+    mask-image: linear-gradient(90deg, transparent, var(--ink) var(--space-9), var(--ink) calc(100% - var(--space-9)), transparent);
+  }
+  /* a dropped count leaves the flow but keeps its width (measured) and stays in the chip's name for a screen reader */
+  [data-kit='ledger-chips'][data-fit='2'] [data-kit='ledger-chip-n'], [data-kit='ledger-chips'][data-fit='3'] [data-kit='ledger-chip-n'], [data-kit='ledger-chips'][data-fit='4'] [data-kit='ledger-chip-n'],
+  [data-kit='ledger-count'][data-dropped] {
+    position: absolute; top: 0; left: 0; clip-path: inset(50%); pointer-events: none;
+  }
   [data-kit='ledger-chip'] {
-    flex: none; display: inline-flex; align-items: center; gap: var(--space-3); height: var(--size-control-xs);
+    position: relative; flex: none; display: inline-flex; align-items: center; gap: var(--space-3); height: var(--size-control-xs);
     padding: 0 var(--space-5); border: var(--size-hairline) solid var(--line-2); border-radius: var(--radius-pill);
     background: none; font: inherit; font-size: var(--fs-sm); color: var(--muted); white-space: nowrap; cursor: pointer;
   }
@@ -133,6 +157,13 @@
   [data-kit='ledger-ticks'] > i[data-tone='notice'] { left: 55%; right: 0; background: var(--line); }
   [data-kit='ledger-ticks'] > i[data-tone='answer'] { right: 45%; }
   [data-kit='ledger-ticks'] > i[data-tone='failed'] { left: 30%; right: 0; height: var(--size-ring); background: var(--bad); }
+  /* a day's label at its first tick, read bottom to top in the room left of the ticks; one that would touch the next
+     is skipped (data-skip, ledger-model placeMarks). Nothing about it moves (no transition). */
+  [data-kit='ledger-mark'] {
+    position: absolute; top: var(--k-y); right: calc(100% + var(--space-3)); writing-mode: vertical-rl; transform: rotate(180deg);
+    font-size: var(--fs-xs); line-height: 1; color: var(--faint); white-space: nowrap; pointer-events: none;
+  }
+  [data-kit='ledger-mark'][data-skip] { visibility: hidden; }
   [data-kit='ledger-ticks'] > i[data-tone='on'] { left: calc(var(--space-4) * -1); right: 0; height: var(--size-v1-nudge); background: var(--accent); z-index: 1; }
   [data-kit='ledger-bubble'] {
     position: absolute; top: calc(var(--k-y) + var(--space-4)); right: calc(100% + var(--space-3)); z-index: var(--z-raised);
@@ -144,20 +175,20 @@
   [data-kit='ledger-bubble-hero'] { display: flex; align-items: center; gap: var(--space-3); min-width: 0; font-size: var(--fs-md); }
   [data-kit='ledger-bubble-hero'] > span:last-child { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
-  /* a narrow pane (the details column beside it): the chips keep the room, the count goes */
-  @container ledger (max-width: 640px) {
-    [data-kit='ledger-count'] { display: none; }
-  }
   /* a phone (or any narrow pane): the filters scroll sideways under the search, a 22px scrubber on the edge */
   @container ledger (max-width: 520px) {
     [data-kit='ledger-tools'] { flex-direction: column; align-items: stretch; gap: var(--space-4); }
-    [data-kit='ledger-search'] { width: auto; }
+    [data-kit='ledger-search'], [data-kit='ledger-tools'][data-fit='3'] [data-kit='ledger-search'], [data-kit='ledger-tools'][data-fit='4'] [data-kit='ledger-search'] {
+      width: auto; min-width: 0; max-width: none;
+    }
     [data-kit='ledger-kbd'], [data-kit='ledger-count'] { display: none; }
     [data-kit='ledger'][data-scrub] [data-kit='ledger-wrap'] { grid-template-columns: minmax(0, 1fr) var(--size-scrub-phone); }
     [data-kit='ledger'][data-scrub] [data-kit='ledger-list'] { padding-right: var(--space-2); }
     [data-kit='ledger-scrub'] { border-left: 0; }
     [data-kit='ledger-ticks'] { margin: 0 var(--space-1) 0 var(--space-3); }
     [data-kit='ledger-ticks'] > i[data-tone='on'] { left: 0; }
+    /* the 22px scrubber has no room for day labels (the mock's phone has none); the preview bubble names the day */
+    [data-kit='ledger-mark'] { display: none; }
     [data-kit='ledger-bubble'] { width: var(--size-tooltip-max); max-width: 70cqw; }
     [data-kit='ledger-row'] { padding: var(--space-5) var(--space-3); }
     [data-kit='ledger-body'] { padding: 0 var(--space-4); }

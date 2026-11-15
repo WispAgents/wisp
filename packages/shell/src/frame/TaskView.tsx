@@ -160,6 +160,9 @@ const clock = (at: number): string => turnClock(at);
 /** An earlier day in the ledger ("Mon 9 Nov"), in the app's locale as the kit's <Time> reads (content/time-format.ts). */
 const DAY_NAME = new Intl.DateTimeFormat(undefined, { weekday: 'short', day: 'numeric', month: 'short' });
 const dayName = (day: number): string => DAY_NAME.format(day);
+/** Its label on the ledger's scrubber, shorter ("Mon 9"), in the same locale. */
+const DAY_SHORT = new Intl.DateTimeFormat(undefined, { weekday: 'short', day: 'numeric' });
+const dayShort = (day: number): string => DAY_SHORT.format(day);
 
 /** A task with more turns than this gets the ledger's search and filters (ADR-0068). */
 const LEDGER_TOOLS = 10;
@@ -1032,6 +1035,7 @@ export default function TaskView(props: { readonly id: string; readonly onBack?:
                     tail={<For each={fold().shown}>{(turn) => renderTurn(turn)}</For>}
                     t={ledgerT}
                     dayName={dayName}
+                    dayShort={dayShort}
                     clock={clock}
                     tools={turns().length > LEDGER_TOOLS}
                   />

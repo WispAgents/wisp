@@ -4,7 +4,9 @@
 import { describe, expect, it } from 'vitest';
 import {
   FOLD_RUN,
+  chipFit,
   counts,
+  dayMarks,
   dayKind,
   dayOf,
   dayOpen,
@@ -15,6 +17,7 @@ import {
   ledgerRows,
   matches,
   nextFailure,
+  placeMarks,
   stepFrom,
   ticks,
   titleOf,
@@ -175,6 +178,77 @@ describe('scrubber', () => {
     expect(turnAt(ts, 500, 100)?.id).toBe('t4');
     expect(turnAt([], 5, 100)).toBeUndefined();
     expect(turnAt(ts, 5, 0)).toBeUndefined();
+  });
+});
+
+describe('scrubber day labels', () => {
+  const D = 24 * H;
+  it('scrubber_day_labels_sit_at_the_first_tick_of_each_day_named_by_kind', () => {
+    // two turns three days ago, one yesterday, three today: 6 ticks
+    const ts = [turn(1, NOW - 3 * D), turn(2, NOW - 3 * D + H), turn(3, NOW - D), turn(4, NOW - 2 * H), turn(5, NOW - H), turn(6, NOW)];
+    const m = dayMarks(ts, NOW);
+    expect(m.map((x) => x.kind)).toEqual(['earlier', 'yesterday', 'today']);
+    expect(m.map((x) => x.day)).toEqual([dayOf(NOW - 3 * D), dayOf(NOW - D), dayOf(NOW)]);
+    // the same place as that turn's tick
+    const k = ticks(ts, undefined);
+    expect(m.map((x) => x.at)).toEqual([k[0]?.at, k[2]?.at, k[3]?.at]);
+    expect(dayMarks([], NOW)).toEqual([]);
+  });
+
+  it('scrubber_day_label_a_day_that_comes_back_out_of_order_keeps_its_first_label_only', () => {
+    const ts = [turn(1, NOW - D), turn(2, NOW), turn(3, NOW - D + H)];
+    expect(dayMarks(ts, NOW).map((x) => x.kind)).toEqual(['yesterday', 'today']);
+  });
+
+  it('scrubber_day_labels_never_overlap_the_earlier_label_is_skipped_when_the_next_is_too_close', () => {
+    // labels 40 px long, 4 px apart at least, a 400 px track
+    expect(placeMarks([0, 100, 200], [40, 40, 40], 400, 4)).toEqual([0, 100, 200]);
+    // the second starts 30 px after the first: the first (earlier) goes, the later keeps its label
+    expect(placeMarks([0, 30, 200], [40, 40, 40], 400, 4)).toEqual([undefined, 30, 200]);
+    // exactly enough room (40 long + 4 gap) keeps both; one px less skips the earlier
+    expect(placeMarks([0, 44], [40, 40], 400, 4)).toEqual([0, 44]);
+    expect(placeMarks([0, 43], [40, 40], 400, 4)).toEqual([undefined, 43]);
+    // a skipped label doesn't block the one before it: it's measured against the next label shown
+    expect(placeMarks([0, 50, 60], [40, 40, 40], 400, 4)).toEqual([0, undefined, 60]);
+  });
+
+  it('scrubber_day_label_near_the_bottom_is_pulled_up_inside_the_track_and_a_label_longer_than_it_is_skipped', () => {
+    // Today's first tick 10 px from the bottom: its label is pulled up to end at the bottom
+    expect(placeMarks([0, 390], [40, 40], 400, 4)).toEqual([0, 360]);
+    // pulled up, it now crowds the label before it, which goes
+    expect(placeMarks([330, 390], [40, 40], 400, 4)).toEqual([undefined, 360]);
+    // a track shorter than a label, or a label not measured yet (0: hidden), shows none
+    expect(placeMarks([0], [40], 30, 4)).toEqual([undefined]);
+    expect(placeMarks([0, 100], [0, 0], 400, 4)).toEqual([undefined, undefined]);
+  });
+});
+
+describe('filter row', () => {
+  // the room each form takes: everything 600, without the total 500, without the chips' counts 380, with a narrower
+  // search 320; one chip's width (50) to come back
+  const needs = [600, 500, 380, 320] as const;
+  it('filter_row_counts_drop_first_then_the_search_narrows_then_the_row_scrolls_never_wraps', () => {
+    expect(chipFit(700, needs, 0, 50)).toBe(0);
+    expect(chipFit(600, needs, 0, 50)).toBe(0);
+    // the task's total goes first, then the chips' counts, then the search narrows, then it scrolls
+    expect(chipFit(599, needs, 0, 50)).toBe(1);
+    expect(chipFit(499, needs, 0, 50)).toBe(2);
+    expect(chipFit(379, needs, 0, 50)).toBe(3);
+    expect(chipFit(319, needs, 0, 50)).toBe(4);
+    expect(chipFit(0, needs, 0, 50)).toBe(4);
+    // a row with no search beside it (a phone: it sits above) saves nothing by narrowing it, so form 3 never helps
+    expect(chipFit(379, [600, 500, 380, 380], 0, 50)).toBe(4);
+  });
+
+  it('filter_row_comes_back_to_a_fuller_form_only_with_a_chips_width_to_spare', () => {
+    // scrolled: 340 px fits form 3 (320) but not with the slack, so it stays scrolled; 370 brings it back
+    expect(chipFit(340, needs, 4, 50)).toBe(4);
+    expect(chipFit(370, needs, 4, 50)).toBe(3);
+    // at form 2, the counts come back at 550, not at 500
+    expect(chipFit(520, needs, 2, 50)).toBe(2);
+    expect(chipFit(550, needs, 2, 50)).toBe(1);
+    // narrowing from a form never needs slack: form 1 holds right down to its own width
+    expect(chipFit(500, needs, 1, 50)).toBe(1);
   });
 });
 

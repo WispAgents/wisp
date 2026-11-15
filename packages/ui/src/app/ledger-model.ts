@@ -219,6 +219,59 @@ export function ticks(turns: readonly LedgerTurn[], open: string | undefined): T
   return turns.map((t, i) => ({ id: t.id, tone: toneOf(t, open), at: (i + 0.5) / n }));
 }
 
+/** A day's label on the scrubber ("Mon 9", "Yesterday", "Today"), at its first tick. */
+export interface DayMark {
+  readonly day: number;
+  readonly kind: DayKind;
+  /** the day's first tick, 0 to 1 down the scrubber (the same place `ticks` gives that turn) */
+  readonly at: number;
+}
+
+/** One label per day, at the first tick of that day, in the scrubber's (turn) order. A day that shows up again later
+ * (a turn out of time order) keeps its first label only. */
+export function dayMarks(turns: readonly LedgerTurn[], now: number): DayMark[] {
+  const n = turns.length;
+  const seen = new Set<number>();
+  const out: DayMark[] = [];
+  turns.forEach((t, i) => {
+    const day = dayOf(t.at);
+    if (seen.has(day)) return;
+    seen.add(day);
+    out.push({ day, kind: dayKind(day, now), at: (i + 0.5) / n });
+  });
+  return out;
+}
+
+/** Where each label goes on a scrubber `h` px tall: its top, or undefined when it's skipped. A label runs down from
+ * its tick (`ys[i]` px) for `lens[i]` px and is pulled up to stay inside the track. Labels never overlap: walking from
+ * the latest day back, a label is skipped when the next one shown starts less than `gap` px after it ends (the later
+ * day keeps its label: Today and Yesterday are the ones read most). */
+export function placeMarks(ys: readonly number[], lens: readonly number[], h: number, gap: number): (number | undefined)[] {
+  const out: (number | undefined)[] = ys.map(() => undefined);
+  let next = Number.POSITIVE_INFINITY;
+  for (let i = ys.length - 1; i >= 0; i--) {
+    const len = lens[i] ?? 0;
+    const y = Math.max(0, Math.min(ys[i] ?? 0, h - len));
+    if (!(len > 0) || len > h || y + len + gap > next) continue;
+    out[i] = y;
+    next = y;
+  }
+  return out;
+}
+
+/** How much of the search and filter row shows, most first: 0 every chip with its count and the task's total; 1 the
+ * total goes; 2 the chips' counts go (they stay in each chip's name for a screen reader); 3 the search narrows; 4 the
+ * row scrolls sideways, faded at the end that hides more (design/layout.md §2: counts drop first, nothing wraps, every
+ * filter stays reachable). */
+export type ChipFit = 0 | 1 | 2 | 3 | 4;
+
+/** The fullest form that fits `room` px. `needs` is the room each of forms 0–3 takes (form 4 always fits); going back
+ * to a fuller form than `current` needs `slack` px more (one chip's width), so a row on the edge never flaps. */
+export function chipFit(room: number, needs: readonly [number, number, number, number], current: ChipFit, slack: number): ChipFit {
+  for (const s of [0, 1, 2, 3] as const) if (needs[s] + (s < current ? slack : 0) <= room) return s;
+  return 4;
+}
+
 /** The turn under a point `y` px down a scrubber `h` px tall, or undefined when there are none. */
 export function turnAt<T>(turns: readonly T[], y: number, h: number): T | undefined {
   if (turns.length === 0 || !(h > 0)) return undefined;

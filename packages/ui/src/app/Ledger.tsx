@@ -15,7 +15,9 @@ import {
   FILTERS,
   SCRUB_ABOVE,
   VIRTUAL_ABOVE,
+  chipFit,
   counts,
+  dayMarks,
   dayKind,
   dayOf,
   daysOf,
@@ -24,11 +26,13 @@ import {
   ledgerRows,
   matches,
   nextFailure,
+  placeMarks,
   searching,
   stepFrom,
   ticks,
   titleOf,
   turnAt,
+  type ChipFit,
   type DayKind,
   type LedgerFilter,
   type LedgerRow,
@@ -77,6 +81,8 @@ export interface LedgerProps extends KitProps {
   readonly t: (key: LedgerString, vars?: Readonly<Record<string, string | number>>) => string;
   /** an earlier day's name ("Mon 9 Nov") */
   readonly dayName: (day: number) => string;
+  /** an earlier day's short name, its label on the scrubber ("Mon 9"); `dayName` when not given */
+  readonly dayShort?: (day: number) => string;
   /** a turn's time of day ("15:37") */
   readonly clock: (at: number) => string;
   /** search and filters (a short task goes without) */
@@ -93,6 +99,9 @@ function scrollerOf(el: HTMLElement): HTMLElement | undefined {
   }
   return undefined;
 }
+
+/** Room left between two day labels on the scrubber, px (a label's own length is measured). */
+const MARK_GAP = 6;
 
 const TYPING = 'input, textarea, select, [contenteditable="true"], [contenteditable=""]';
 
@@ -206,6 +215,81 @@ export function Ledger(props: LedgerProps): JSX.Element {
     else next = nextFailure(list, props.open, k === 'nextFail' ? 1 : -1);
     e.preventDefault(); // handled, even at either end: the page's own j/k and [ ] don't also run
     if (next) jump(next, 'nearest', false);
+  };
+
+  // the filter row on one line (design/layout.md §2): measured, the total then the chips' counts drop, then it scrolls
+  const [fit, setFit] = createSignal<ChipFit>(0);
+  const [edge, setEdge] = createSignal<'start' | 'end' | 'both' | undefined>();
+  let chipsEl: HTMLDivElement | undefined;
+  let totalEl: HTMLSpanElement | undefined;
+  let searchBox: HTMLLabelElement | undefined;
+  /** Which ends of the scrolled row hide more chips (the fade shows there). */
+  const readEdge = (): void => {
+    const el = chipsEl;
+    if (!el || fit() < 4) return void setEdge(undefined);
+    const start = el.scrollLeft > 1;
+    const end = el.scrollLeft + el.clientWidth < el.scrollWidth - 1;
+    setEdge(start && end ? 'both' : start ? 'start' : end ? 'end' : undefined);
+  };
+  /** Reads every width first, then writes the form once (no layout read after a write). */
+  const measure = (): void => {
+    const el = chipsEl;
+    if (!el || !el.isConnected) return;
+    const px = (v: string): number => Number.parseFloat(v) || 0;
+    const chips = [...el.querySelectorAll<HTMLElement>('[data-kit="ledger-chip"]')];
+    const gap = px(getComputedStyle(el).columnGap);
+    const inner = chips[0] ? px(getComputedStyle(chips[0]).columnGap) : 0;
+    // the chips as they are now, then each count's room (a dropped count keeps its width, out of the flow)
+    const now = chips.reduce((w, c) => w + c.offsetWidth, 0) + gap * Math.max(chips.length - 1, 0);
+    const nums = chips.reduce((w, c) => w + (c.querySelector<HTMLElement>('[data-kit="ledger-chip-n"]')?.offsetWidth ?? 0) + inner, 0);
+    const bare = fit() >= 2 ? now : now - nums;
+    const full = bare + nums;
+    const total = totalEl?.offsetWidth ?? 0;
+    const tools = el.parentElement;
+    const toolsGap = tools ? px(getComputedStyle(tools).columnGap) : 0;
+    const totalRoom = total > 0 ? total + toolsGap : 0;
+    // the search beside the chips (not above them, as on a phone) can give up the room between its widest and narrowest
+    const box = searchBox;
+    const cs = box ? getComputedStyle(box) : undefined;
+    const beside = !!box && el.offsetTop < box.offsetTop + box.offsetHeight && box.offsetTop < el.offsetTop + el.offsetHeight;
+    const save = beside && cs ? Math.max(px(cs.maxWidth) - px(cs.minWidth), 0) : 0;
+    // the room with the total gone and the search at its widest, whatever the form is now
+    const room = el.clientWidth + (fit() === 0 ? totalRoom : 0) - (fit() >= 3 ? save : 0);
+    const next = chipFit(room, [full + totalRoom, full, bare, bare - save], fit(), chips[0]?.offsetWidth ?? 0);
+    if (next !== fit()) setFit(next);
+    // the fade's edge is read once the new form is laid out, never right after this write
+    requestAnimationFrame(readEdge);
+  };
+  // the row's box and the tools' box (only those: a chip resizing in the same pass would loop the observer); a count
+  // that grows or a web font that lands widens the chips inside an unchanged box, so they measure again then
+  createEffect(() => {
+    if (!props.tools || props.turns.length === 0 || typeof ResizeObserver === 'undefined' || !chipsEl) return;
+    const ro = new ResizeObserver(() => measure());
+    ro.observe(chipsEl);
+    if (chipsEl.parentElement) ro.observe(chipsEl.parentElement);
+    onCleanup(() => ro.disconnect());
+  });
+  createEffect(() => {
+    void n();
+    requestAnimationFrame(measure);
+  });
+  /** A mouse wheel scrolls the scrolled row sideways (it has no scrollbar to drag), until it can't: then the page does. */
+  const chipWheel = (e: WheelEvent): void => {
+    const el = chipsEl;
+    if (fit() < 4 || !el || Math.abs(e.deltaX) >= Math.abs(e.deltaY)) return;
+    const room = el.scrollWidth - el.clientWidth;
+    if ((e.deltaY < 0 && el.scrollLeft <= 0) || (e.deltaY > 0 && el.scrollLeft >= room - 1)) return;
+    e.preventDefault();
+    el.scrollLeft += e.deltaY;
+  };
+  /** A chip half under the fade comes into view as it's pressed (sideways only; read before the filter re-renders). */
+  const chipInView = (chip: HTMLElement): void => {
+    const el = chipsEl;
+    if (fit() < 4 || !el) return;
+    const from = chip.offsetLeft - el.offsetLeft;
+    const to = from + chip.offsetWidth;
+    if (from < el.scrollLeft) el.scrollLeft = from;
+    else if (to > el.scrollLeft + el.clientWidth) el.scrollLeft = to - el.clientWidth;
   };
 
   const dayLabel = (day: number, kind: DayKind): string => (kind === 'today' ? t('today') : kind === 'yesterday' ? t('yesterday') : props.dayName(day));
@@ -341,13 +425,36 @@ export function Ledger(props: LedgerProps): JSX.Element {
     if (next) jump(next, 'center', true);
   };
   const tickList = createMemo(() => ticks(props.turns, props.open));
+  // a label at the first tick of each day ("Mon 9" … "Yesterday", "Today"); measured, those that would touch are skipped
+  const marks = createMemo(() => dayMarks(props.turns, props.now));
+  const markName = (day: number, kind: DayKind): string => (kind === 'earlier' ? (props.dayShort ?? props.dayName)(day) : dayLabel(day, kind));
+  const [placed, setPlaced] = createSignal<readonly (number | undefined)[]>([]);
+  let markEls: HTMLElement[] = [];
+  const place = (): void => {
+    if (!track) return;
+    const h = track.clientHeight;
+    const lens = marks().map((_, i) => markEls[i]?.offsetHeight ?? 0);
+    setPlaced(placeMarks(marks().map((m) => m.at * h), lens, h, MARK_GAP));
+  };
+  createEffect(() => {
+    void marks();
+    if (!scrub() || typeof ResizeObserver === 'undefined' || !track) return;
+    const ro = new ResizeObserver(() => place());
+    ro.observe(track);
+    onCleanup(() => ro.disconnect());
+  });
+  // a web font that lands after the first measure changes every label's length and every chip's width
+  void document.fonts?.ready.then(() => {
+    place();
+    measure();
+  });
   const openN = (): LedgerTurn | undefined => props.turns.find((x) => x.id === props.open);
 
   return (
     <div ref={root} data-kit="ledger" data-part={part()} data-scrub={flag(scrub())} onKeyDown={onKey} style={styleOf({ '--k-ledger-h': viewH() ? `${viewH()}px` : undefined })}>
       <Show when={props.tools && props.turns.length > 0}>
-        <div data-kit="ledger-tools" data-part={sub(part(), 'tools')}>
-          <label data-kit="ledger-search">
+        <div data-kit="ledger-tools" data-part={sub(part(), 'tools')} data-fit={fit()}>
+          <label ref={(el) => (searchBox = el)} data-kit="ledger-search">
             <Icon name="search" size="sm" />
             <input
               ref={search}
@@ -360,17 +467,26 @@ export function Ledger(props: LedgerProps): JSX.Element {
             />
             <kbd data-kit="ledger-kbd">/</kbd>
           </label>
-          <div data-kit="ledger-chips" role="group">
+          <div ref={(el) => (chipsEl = el)} data-kit="ledger-chips" data-fit={fit()} data-edge={edge()} role="group" onScroll={readEdge} onWheel={chipWheel}>
             <For each={FILTERS}>
               {(f) => (
-                <button type="button" data-kit="ledger-chip" data-part={sub(part(), 'filter')} aria-pressed={filter() === f ? 'true' : 'false'} onClick={() => setFilter(filter() === f && f !== 'all' ? 'all' : f)}>
+                <button
+                  type="button"
+                  data-kit="ledger-chip"
+                  data-part={sub(part(), 'filter')}
+                  aria-pressed={filter() === f ? 'true' : 'false'}
+                  onClick={(e) => {
+                    chipInView(e.currentTarget);
+                    setFilter(filter() === f && f !== 'all' ? 'all' : f);
+                  }}
+                >
                   {t(`filter.${f}`)}
                   <span data-kit="ledger-chip-n">{n()[f]}</span>
                 </button>
               )}
             </For>
           </div>
-          <span data-kit="ledger-count">{t('count', { n: props.total, d: dayCount() })}</span>
+          <span ref={(el) => (totalEl = el)} data-kit="ledger-count" data-dropped={flag(fit() > 0)}>{t('count', { n: props.total, d: dayCount() })}</span>
         </div>
       </Show>
       <div data-kit="ledger-wrap">
@@ -430,6 +546,20 @@ export function Ledger(props: LedgerProps): JSX.Element {
           >
             <div ref={track} data-kit="ledger-ticks">
               <Index each={tickList()}>{(k) => <i data-tone={k().tone} style={styleOf({ '--k-at': `${(k().at * 100).toFixed(3)}%` })} />}</Index>
+              <Index each={marks()}>
+                {(m, i) => (
+                  <span
+                    ref={(el) => (markEls[i] = el)}
+                    data-kit="ledger-mark"
+                    data-part={sub(part(), 'daymark')}
+                    data-skip={flag(placed()[i] === undefined)}
+                    aria-hidden="true"
+                    style={styleOf({ '--k-y': `${placed()[i] ?? 0}px` })}
+                  >
+                    {markName(m().day, m().kind)}
+                  </span>
+                )}
+              </Index>
             </div>
             <Show when={hover()}>
               {(h) => (
