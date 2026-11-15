@@ -60,7 +60,18 @@ Rust for everything but the UI, Solid/TS for the UI, everything a plugin (ADR-00
 - [ ] **v1 sync** (`docs/v1-sync.md`): port v1 #794 (side discussions/Plan mode run commands), #797 (Shell paste after
       selecting); #789 with phone step 13. #795 (lead's check-in while waiting on subagents) and #796 (compact follow-ups
       list) done in r246; found there: runtime doesn't hold a lead in Working on its delegates or send their reports back
-- [x] **Lead waits on its subagents and gets their reports** (v1 #750, F-task-51, r247): `runtime-core::owed` + `runtime/host/src/more/report_back.rs`; `Facts.owes` set while owed delegates work (`waitsOn` on the slot, wisp.later reads it), one report-back follow-up when the last ends (queued in the write that marks them read; restart-safe), `subagent_results` marks read, Stop stops delegates and sends nothing, a follow-up's turn takes owed ones over with the still-working note; finish.rs merges the turn slot. Left: delegates on another machine / sandbox / crew jobs aren't waited on (read with `subagent_results`)
+- [x] **Lead waits on its subagents and gets their reports** (v1 #750, F-task-51, r247): `runtime-core::owed` + `runtime/host/src/more/report_back.rs`; `Facts.owes` set while owed delegates work (`waitsOn` on the slot, wisp.later reads it), each delegate's report goes back as soon as it ends and the lead's run is off, as v1 `#delegateDone`/`#reportBack` (r250: one follow-up per batch; those ending while the lead runs come in one at its end; the rest go on with that follow-up's turn; a stopped one rides with the next report and doesn't wake it alone; queued in the write that marks them read; restart-safe), `subagent_results` marks read, Stop stops delegates and sends nothing, a follow-up's turn takes owed ones over with the still-working note; finish.rs merges the turn slot. Left (see the open item below): delegates on another machine / sandbox / crew jobs aren't waited on
+- [ ] **Lead waits on its remote and crew subagents too** (F-task-51, v1 `#awaiting` counts `child.relay`: machine
+      members and crew jobs; v1 had no sandbox members). v2 drops them from owed at the lead's turn end
+      (`owed::is_away`, `report_back.rs` `lead_turn_ends`), so they're read only with `subagent_results`. Needs: (1)
+      local crew jobs (`crewJobs` key with no `|`, `ext["wisp.crew"].from.id` = lead): `finish.rs` spawns
+      `check_lead(from)` when such a job's turn ends, `owed_on` reads its last turn, `is_away` keeps them; (2) machine,
+      sandbox and remote crew jobs (`<machine>|<task>`): an end signal from there (a `runtime.turn.ended` event routed
+      by machines/sandbox, or a scoped `ctx.scope` poll through `there`/`remote_report` on the kernel clock), then
+      `check_lead`; their changes come back once (`BROUGHT`/`brought`) before the report is built, through the same
+      `machine_report`/`sandbox_report`; (3) Stop on the lead stops them there; (4) restart: a lead holding on one
+      re-arms its watch in `start()`. Tests each in `runtime/host/tests/report_back.rs` (fake machines answers, as in
+      `a_delegate_elsewhere_isnt_waited_on_nor_carried_into_the_leads_next_turn`, which then flips)
 - [ ] Later foot sits above the reply box; v1 puts the rows inside the composer box
 - [ ] **TUI** (ADR-0024, `docs/v2-tui-design.md`): first slice done (list, answer, composer). Left: `--on <machine>`,
       For later and Repo tab, blame gutter, hunk jumps, terminal images, the real-terminal pass.

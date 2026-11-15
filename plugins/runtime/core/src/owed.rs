@@ -2,9 +2,12 @@
 //! on the lead's turn (`ext["wisp.runtime"].delegations[]`) is `owed: true` until the lead has its report: read with
 //! `subagent_results`, or sent to it by wisp. While one it owes still works, a lead whose turn ended stays in Working
 //! (`land::Facts.owes`), unread and unannounced, and its slot names who it waits on (`waitsOn`, which wisp.later reads).
-//! When the last one ends (done, failed or stopped), wisp sends the lead one follow-up with every owed report
-//! (`REPORTS_BACK`, `by: wisp`, `reports: true`), once: the owed marks go in the same write that queues it. A lead the
-//! user stopped is owed nothing. The state is in the store (the turn's records, the task's queue), so a restart picks it
+//! As one ends (done or failed) while the lead's own run is off, wisp sends the lead a follow-up at once with every owed
+//! report that's in (`REPORTS_BACK`, `by: wisp`, `reports: true`): the ones still at work go on with that follow-up's turn
+//! and come back after it. Those that end while the lead's run is on are collected by its end, in one follow-up. A
+//! delegate the user stopped doesn't wake the lead alone: its `— stopped` line goes with the next report, or alone when
+//! it was the last at work. Once: the owed marks go in the same write that queues it. A lead the user stopped is owed
+//! nothing. The state is in the store (the turn's records, the task's queue), so a restart picks it
 //! up where it was.
 
 use serde_json::Value;
@@ -23,6 +26,8 @@ pub struct Open {
     pub name: String,
     /// its turn still runs
     pub running: bool,
+    /// its turn ended stopped (the user stopped it): reported, but it doesn't wake the lead by itself
+    pub stopped: bool,
 }
 
 /// What the lead does about what it owes.
@@ -30,14 +35,15 @@ pub struct Open {
 pub enum Next {
     /// some still work: it waits on these (names, in order, once each)
     Hold(Vec<String>),
-    /// every one it owes ended: send it their reports now
-    Report,
+    /// send it these reports now (indexes into `owed`, the ended ones); any still at work go on with that follow-up
+    Report(Vec<usize>),
     /// nothing to do: it owes nothing, it was stopped, or its own run is on (its end collects them)
     Nothing,
 }
 
 /// `owed`: the delegations it owes. `busy`: the lead's own run is on (starting, running or lingering): its end
-/// decides. `stopped`: the user stopped the lead.
+/// decides. `stopped`: the user stopped the lead. v1 runner.js `#delegateDone` → `#reportBack`: what ended is sent as
+/// soon as the lead's run is off, without waiting for the rest.
 pub fn next(owed: &[Open], busy: bool, stopped: bool) -> Next {
     if stopped || owed.is_empty() {
         return Next::Nothing;
@@ -48,10 +54,13 @@ pub fn next(owed: &[Open], busy: bool, stopped: bool) -> Next {
             at_work.push(d.name.clone());
         }
     }
-    if !at_work.is_empty() {
-        return Next::Hold(at_work);
+    let ended: Vec<usize> = owed.iter().enumerate().filter(|(_, d)| !d.running).map(|(i, _)| i).collect();
+    // a report worth waking it for: one that finished, or the last ones ended (stopped included)
+    let wakes = owed.iter().any(|d| !d.running && !d.stopped) || (at_work.is_empty() && !ended.is_empty());
+    if !busy && wakes {
+        return Next::Report(ended);
     }
-    if busy { Next::Nothing } else { Next::Report }
+    if at_work.is_empty() { Next::Nothing } else { Next::Hold(at_work) }
 }
 
 /// A record the lead still owes.

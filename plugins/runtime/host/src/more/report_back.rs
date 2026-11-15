@@ -1,6 +1,7 @@
 //! A lead that owes its delegates' reports (v1 runner.js `#awaiting`, `#delegateDone`, `#reportBack`; the rules are
 //! `wisp_runtime_core::owed`'s). Looked at when the lead's turn ends (`finish.rs`), when one of its delegates' turns
-//! ends, when its own run lets go, and as wisp starts: whichever comes last sends the report, once.
+//! ends, when its own run lets go, and as wisp starts: what ended while the lead's run is off goes to it at once, once;
+//! the rest go on with that follow-up's turn.
 
 use std::sync::Arc;
 
@@ -53,8 +54,13 @@ impl Runtime {
         let mut out = Vec::new();
         for rec in records(t).iter().filter(|d| owed::is_owed(d) && !owed::is_away(d, jobs)) {
             // gone (deleted) counts as ended: its report says so
-            let running = delegate_turn(self, rec).await.and_then(|(_, t)| t).is_some_and(|t| t.status == TurnStatus::Running);
-            out.push(OwedRec { rec: rec.clone(), open: Open { name: str_at(rec, "name"), running } });
+            let status = delegate_turn(self, rec).await.and_then(|(_, t)| t).map(|t| t.status);
+            let open = Open {
+                name: str_at(rec, "name"),
+                running: status == Some(TurnStatus::Running),
+                stopped: status == Some(TurnStatus::Stopped),
+            };
+            out.push(OwedRec { rec: rec.clone(), open });
         }
         out
     }
@@ -101,8 +107,9 @@ impl Runtime {
     }
 
     /// The lead's own turn ended (`finish.rs`, under its lock, before its landing). Some: the delegates it still owes
-    /// at work, and it stays in Working on them. Every one it owes ended: their reports are queued now (its release
-    /// starts them) and marked read on `t`, in the same write as the turn's end.
+    /// at work, and it stays in Working on them. Some of them ended (v1 `#reportBack` with `ending`): their reports are
+    /// queued now (its release starts them; that turn takes the rest over) and marked read on `t`, in the same write as
+    /// the turn's end.
     pub(crate) async fn lead_turn_ends(&self, s: &mut Session, t: &mut Turn, stopped: bool) -> Option<Vec<String>> {
         if s.parent_id.is_some() {
             return None;
@@ -126,7 +133,8 @@ impl Runtime {
         match owed::next(&opens, false, stopped) {
             Next::Hold(names) => Some(names),
             Next::Nothing => None,
-            Next::Report => {
+            Next::Report(ended) => {
+                let list = pick(list, &ended);
                 let reports = self.reports_of(&list).await;
                 let ids: Vec<String> = list.iter().map(|d| str_at(&d.rec, "sessionId")).collect();
                 with_slot(&mut t.ext, |x| owed::mark_read(x, &ids));
@@ -183,8 +191,8 @@ impl Runtime {
         });
     }
 
-    /// Looks at lead `id` again (one of its delegates' turns ended, its run let go, wisp started): the last delegate it
-    /// waited on ended, so their reports go to it now; or it still waits; or nothing. A lead that's running, starting
+    /// Looks at lead `id` again (one of its delegates' turns ended, its run let go, wisp started): the ones that ended go
+    /// to it now (the follow-up's turn takes the rest over); or it still waits; or nothing. A lead that's running, starting
     /// or was stopped is left to its own run's end.
     pub(crate) async fn check_lead(self: &Arc<Self>, id: &str) -> Result<()> {
         let next = {
@@ -213,7 +221,8 @@ impl Runtime {
                     }
                     None
                 }
-                (Next::Report, Some(mut t)) => {
+                (Next::Report(ended), Some(mut t)) => {
+                    let list = pick(list, &ended);
                     let reports = self.reports_of(&list).await;
                     let ids: Vec<String> = list.iter().map(|d| str_at(&d.rec, "sessionId")).collect();
                     with_slot(&mut t.ext, |x| owed::mark_read(x, &ids));
@@ -317,6 +326,11 @@ impl Runtime {
         });
         Ok((Some(prev), taken))
     }
+}
+
+/// The records `owed::next` picked (indexes into `list`), in order.
+fn pick(list: Vec<OwedRec>, at: &[usize]) -> Vec<OwedRec> {
+    list.into_iter().enumerate().filter(|(i, _)| at.contains(i)).map(|(_, d)| d).collect()
 }
 
 /// Delegates the lead's last turn still owed went on with `turn` (`taken`): its prompt says who, ahead of the user's

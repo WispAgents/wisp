@@ -1,5 +1,5 @@
-//! A lead that delegated stays in Working while its delegates work, and hears their reports when the last one ends
-//! (v1 runner.js `#awaiting`, `#delegateDone`, `#reportBack`; test/subagents.test.js): one follow-up from wisp, once,
+//! A lead that delegated stays in Working while its delegates work, and hears each report as soon as its own run is off
+//! (v1 runner.js `#awaiting`, `#delegateDone`, `#reportBack`; test/subagents.test.js): a follow-up from wisp, once,
 //! never to a lead the user stopped, never for a report it already read with `subagent_results`, and still after a
 //! restart. The delegates here are fake CLIs held at a gate (`gate <name> …`) until the test lets them answer.
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
@@ -103,10 +103,12 @@ async fn a_turns_end_keeps_its_delegation_records_beside_its_changes() {
     open("merge-k");
 }
 
-/// Two delegates: the first to end changes nothing but who it waits on; the last sends one follow-up from wisp with
-/// both reports, which runs, and the lead lands then, with one notification.
+/// Two delegates (v1 runner.js `#delegateDone` → `#reportBack`): the first to end goes to the waiting lead at once, in
+/// a follow-up from wisp whose turn takes the other over; that turn ends while b works, so the lead waits on b; b's
+/// report comes in a second follow-up, and the lead lands then, with one notification. (Round 247 held a's report until
+/// b ended too.)
 #[tokio::test(flavor = "multi_thread")]
-async fn the_last_delegate_to_end_sends_the_lead_one_report_back_turn() {
+async fn each_delegate_that_ends_while_the_lead_waits_is_reported_at_once() {
     let r = rig().await;
     let id = lead(&r, "two-l", &["a", "b"]).await;
     let kids = delegate(&r, &id, &[("a", "two-a"), ("b", "two-b")]).await;
@@ -115,27 +117,74 @@ async fn the_last_delegate_to_end_sends_the_lead_one_report_back_turn() {
     until("it waits on both", || async { r.rt.get(id.as_str()).await.is_ok_and(|s| waits_on(&s) == json!(["a", "b"])) }).await;
     open("two-a");
     ended(&r, &kids[0]).await;
+    until("a's report-back turn ran", || async {
+        let t = turns(&r, id.as_str()).await;
+        t.len() == 2 && t[1].status == TurnStatus::Done
+    })
+    .await;
+    let t = turns(&r, id.as_str()).await;
+    assert_eq!(t[1].by.as_deref(), Some("wisp"));
+    assert!(t[1].prompt.starts_with(REPORTS_BACK), "{}", t[1].prompt);
+    assert!(t[1].prompt.contains("### a (Fake CLI · m1) — done"), "{}", t[1].prompt);
+    assert!(t[1].prompt.contains("Files it changed: `a.ts`"), "{}", t[1].prompt);
+    assert!(!t[1].prompt.contains("### b"), "b still works: {}", t[1].prompt);
+    assert_eq!(records(&t[0]).len(), 1, "b moved on with the follow-up: {:?}", records(&t[0]));
+    assert_eq!(records(&t[0])[0]["owed"], false);
+    assert_eq!(records(&t[1])[0]["sessionId"], kids[1].as_str());
     until("it waits on b alone", || async { r.rt.get(id.as_str()).await.is_ok_and(|s| waits_on(&s) == json!(["b"])) }).await;
-    assert_eq!(turns(&r, id.as_str()).await.len(), 1, "no report while b works");
+    let s = r.rt.get(id.as_str()).await.unwrap();
+    assert_eq!(s.state, SessionState::Running);
+    assert_eq!(finished(&r, id.as_str()), 0, "nobody pinged while b works");
     open("two-b");
+    until("b's report-back turn ran", || async {
+        let t = turns(&r, id.as_str()).await;
+        t.len() == 3 && t[2].status == TurnStatus::Done
+    })
+    .await;
+    let t = turns(&r, id.as_str()).await;
+    assert!(t[2].prompt.contains("### b (Fake CLI · m1) — done"), "{}", t[2].prompt);
+    assert!(!t[2].prompt.contains("### a"), "a's report went once: {}", t[2].prompt);
+    assert!(t.iter().flat_map(records).all(|d| d["owed"] == false), "nothing left owed");
+    until("it lands", || async { r.rt.get(id.as_str()).await.is_ok_and(|s| s.state == SessionState::Review) }).await;
+    let s = r.rt.get(id.as_str()).await.unwrap();
+    assert!(s.unread);
+    assert!(waits_on(&s).is_null());
+    assert_eq!(finished(&r, id.as_str()), 1, "one notification, after the last report-back turn");
+}
+
+/// Two delegates end while the lead's turn still runs and a third works on (v1 `#reportBack` with `ending`): the lead's
+/// end sends the two in one follow-up at once, without waiting on the third, whose report comes after.
+#[tokio::test(flavor = "multi_thread")]
+async fn delegates_that_end_while_the_lead_runs_come_back_in_one_follow_up_and_the_rest_after() {
+    let r = rig().await;
+    let id = lead(&r, "batch-l", &["a", "b", "c"]).await;
+    let kids = delegate(&r, &id, &[("a", "batch-a"), ("b", "batch-b"), ("c", "batch-c")]).await;
+    open("batch-a");
+    open("batch-b");
+    ended(&r, &kids[0]).await;
+    ended(&r, &kids[1]).await;
+    open("batch-l");
     until("the report-back turn ran", || async {
         let t = turns(&r, id.as_str()).await;
         t.len() == 2 && t[1].status == TurnStatus::Done
     })
     .await;
     let t = turns(&r, id.as_str()).await;
-    let back = &t[1];
-    assert_eq!(back.by.as_deref(), Some("wisp"));
-    assert!(back.prompt.starts_with(REPORTS_BACK), "{}", back.prompt);
-    assert!(back.prompt.contains("### a (Fake CLI · m1) — done"), "{}", back.prompt);
-    assert!(back.prompt.contains("### b (Fake CLI · m1) — done"), "{}", back.prompt);
-    assert!(back.prompt.contains("Files it changed: `a.ts`"), "{}", back.prompt);
-    assert!(records(&t[0]).iter().all(|d| d["owed"] == false), "nothing left owed: {:?}", records(&t[0]));
+    let p = &t[1].prompt;
+    assert!(p.starts_with(REPORTS_BACK), "{p}");
+    assert!(p.contains("### a (Fake CLI · m1) — done") && p.contains("### b (Fake CLI · m1) — done"), "{p}");
+    assert!(!p.contains("### c"), "c still works: {p}");
+    assert_eq!(p.matches(REPORTS_BACK).count(), 1, "one follow-up: {p}");
+    until("it waits on c", || async { r.rt.get(id.as_str()).await.is_ok_and(|s| waits_on(&s) == json!(["c"])) }).await;
+    open("batch-c");
+    until("c's report-back turn ran", || async {
+        let t = turns(&r, id.as_str()).await;
+        t.len() == 3 && t[2].status == TurnStatus::Done
+    })
+    .await;
+    assert!(turns(&r, id.as_str()).await[2].prompt.contains("### c (Fake CLI · m1) — done"));
     until("it lands", || async { r.rt.get(id.as_str()).await.is_ok_and(|s| s.state == SessionState::Review) }).await;
-    let s = r.rt.get(id.as_str()).await.unwrap();
-    assert!(s.unread);
-    assert!(waits_on(&s).is_null());
-    assert_eq!(finished(&r, id.as_str()), 1, "one notification, after the report-back turn");
+    assert_eq!(finished(&r, id.as_str()), 1);
 }
 
 /// A delegate that finished while the lead still ran, its report never read: the lead's end queues it at once.

@@ -6,7 +6,11 @@ use serde_json::{Value, json};
 use wisp_runtime_core::owed::{self, Next, Open};
 
 fn open(name: &str, running: bool) -> Open {
-    Open { name: name.into(), running }
+    Open { name: name.into(), running, stopped: false }
+}
+
+fn stopped(name: &str) -> Open {
+    Open { name: name.into(), running: false, stopped: true }
 }
 
 #[test]
@@ -14,13 +18,32 @@ fn a_lead_waits_while_one_it_owes_works_and_hears_once_the_last_ends() {
     // nothing owed, or the user stopped it: nothing to do
     assert_eq!(owed::next(&[], false, false), Next::Nothing);
     assert_eq!(owed::next(&[open("a", true)], false, true), Next::Nothing);
-    // one at work: it waits on it, by name, once each (two copies' tasks of one member)
-    assert_eq!(owed::next(&[open("a", false), open("b", true), open("b", true)], false, false), Next::Hold(vec!["b".into()]));
+    // at work: it waits on them, by name, once each (two copies' tasks of one member)
+    assert_eq!(owed::next(&[open("b", true), open("b", true)], false, false), Next::Hold(vec!["b".into()]));
     // its own run is on: it still says who works, but its end decides
     assert_eq!(owed::next(&[open("a", true)], true, false), Next::Hold(vec!["a".into()]));
     // the last ended: it hears now, unless its own run is on (that run's end collects them)
-    assert_eq!(owed::next(&[open("a", false), open("b", false)], false, false), Next::Report);
+    assert_eq!(owed::next(&[open("a", false), open("b", false)], false, false), Next::Report(vec![0, 1]));
     assert_eq!(owed::next(&[open("a", false)], true, false), Next::Nothing);
+}
+
+/// v1 runner.js `#delegateDone` → `#reportBack`: one that ended goes to the lead at once, while others still work
+/// (round 247 held it until the last one ended).
+#[test]
+fn one_that_ends_while_others_work_is_reported_at_once() {
+    assert_eq!(owed::next(&[open("a", false), open("b", true), open("b", true)], false, false), Next::Report(vec![0]));
+    assert_eq!(owed::next(&[open("a", true), open("b", false), open("c", false)], false, false), Next::Report(vec![1, 2]));
+    // the lead's run is on: its end collects them, in one
+    assert_eq!(owed::next(&[open("a", false), open("b", true)], true, false), Next::Hold(vec!["b".into()]));
+}
+
+/// v1: a stopped run owes nothing. wisp keeps its `— stopped` line, but it doesn't wake the lead on its own: it goes
+/// with the next report, or alone when it was the last at work.
+#[test]
+fn a_stopped_delegate_rides_with_the_next_report_and_doesnt_wake_the_lead_alone() {
+    assert_eq!(owed::next(&[stopped("a"), open("b", true)], false, false), Next::Hold(vec!["b".into()]));
+    assert_eq!(owed::next(&[stopped("a"), open("b", false), open("c", true)], false, false), Next::Report(vec![0, 1]));
+    assert_eq!(owed::next(&[stopped("a")], false, false), Next::Report(vec![0]));
 }
 
 #[test]
