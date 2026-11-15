@@ -65,8 +65,9 @@ backend) and Gucci (the UI); the decisions they changed are marked *(review)*.
   says *16:10 has passed* and the menu opens again; the draft stays. *Pick a time…* turns into a
   field in its own row (the menu keeps its size and place), its time in the time column, Enter takes
   it, Escape goes back to the row. Attached files go with a scheduled task or follow-up.
-- **Above the reply box:** each follow-up is a row like a queued one (*At 14:45 · set by the agent ·
-  message*, ×). A click or right-click gives **Send now / Change time… / Cancel follow-up**. × acts at
+- **Above the reply box:** the follow-ups are one compact list, a joined box with a row each (icon,
+  *14:45* in a fixed column, message, ×); who set it and *in 18 min* are in the tooltip. More than 3:
+  the first 2 and *3 more scheduled · next 14:52*, which opens the rest (*Show less* closes it). A click or right-click gives **Send now / Change time… / Cancel follow-up**. × acts at
   once with **Undo**, no confirm *(review)*.
 - **The card:** a clock pill with the next time (*14:32*, *+1* for more) in *Needs you* (a task
   asking you, or one with only your reminders ahead), under a crew member, and in the details. On

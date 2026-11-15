@@ -27,7 +27,7 @@ const TOOLS = [
         cwd: { type: 'string', description: 'Absolute path of the project folder. Default: this MCP server’s working directory.' },
         also: { type: 'array', items: { type: 'string' }, description: 'Absolute paths of more folders the same agent works in (e.g. the API next to its web app). Git repos each get a worktree, and Ship it opens a PR in each.' },
         agent: { type: 'string', enum: AGENTS, description: 'Harness to run; auto lets wisp pick harness and model from what worked before. Default: the user’s last pick in wisp.' },
-        mode: { type: 'string', enum: ['plan', 'edits', 'auto'], description: 'plan = read-only, edits = auto-accept file edits, auto = no permission prompts. Default: the user’s pick.' },
+        mode: { type: 'string', enum: ['plan', 'edits', 'auto'], description: 'plan = no file edits (read-only on some harnesses), edits = auto-accept file edits, auto = no permission prompts. Default: the user’s pick.' },
         model: { type: 'string', description: 'Model id for that harness. Default: the user’s pick.' },
         effort: { type: 'string', description: 'Thinking level, e.g. low | medium | high.' },
         subagents: {

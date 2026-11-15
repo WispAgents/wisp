@@ -36,11 +36,26 @@
 .menu.later-plan { width: 280px; }
 .lp-what { margin: 4px 10px 6px; font-size: 12.5px; color: var(--muted); display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
 
-/* above the reply box: a scheduled follow-up, built like a queued one */
-.cq.later { cursor: pointer; border-style: solid; border-color: var(--line); }
+/* above the reply box: scheduled follow-ups as one compact list. Rows join into a single box
+   (l-first / l-last from later.js), the time sits in a fixed column so the texts line up, and who
+   set it lives in the tooltip. */
+.cq.later { cursor: pointer; align-items: center; padding-top: 3px; padding-bottom: 3px; border: 1px solid var(--line); border-radius: 0; font-size: 12px; }
+.cq.later + .cq.later { margin-top: -4px; border-top: 0; }
+.cq.later.l-first { border-top-left-radius: 8px; border-top-right-radius: 8px; }
+.cq.later.l-last { border-bottom-left-radius: 8px; border-bottom-right-radius: 8px; }
 .cq.later:hover { background: var(--bg-2); }
-.cq.later .cq-tag { display: inline-flex; align-items: center; gap: 4px; color: var(--ink-2); font-variant-numeric: tabular-nums; }
-.cq.later .cq-tag .i { width: 11px; height: 11px; color: var(--muted); }
+.cq.later.editing { align-items: flex-start; padding-top: 6px; padding-bottom: 6px; }
+.cq.later .cq-tag { display: inline-flex; align-items: center; gap: 5px; font-size: 11.5px; font-weight: 600; color: var(--ink-2); font-variant-numeric: tabular-nums; }
+.cq.later .cq-tag .i { width: 11px; height: 11px; color: var(--muted); flex: none; }
+.cq.later .cq-at { min-width: 34px; white-space: nowrap; }
+.cq.later .cq-files { display: inline-flex; align-items: center; gap: 1px; font-weight: 500; color: var(--muted); }
+.cq.later .cq-text { flex: 1; }
+.cq.later .att-x, .cq.later .cq-pen { width: 18px; height: 18px; }
+.cq.l-more { padding: 0; }
+.cq-more { display: flex; align-items: center; gap: 5px; width: 100%; padding: 3px 10px; font-size: 11.5px; color: var(--muted); text-align: left; }
+.cq-more:hover { color: var(--ink); }
+.cq-more .i { width: 11px; height: 11px; transition: rotate 0.15s var(--ease); }
+.cq-more[aria-expanded="true"] .i { rotate: 90deg; }
 
 /* the button beside Send, and what wisp read in the box */
 .c-later, #launchLater { color: var(--muted); }
@@ -51,7 +66,6 @@
 .when-chip .link { font-size: 11.5px; }
 .when-chip .att-x { position: static; translate: none; width: 18px; height: 18px; }
 .when-chip.passed, .when-chip.passed > .i { color: var(--warn); }
-.cq.later .cq-tag span .i { margin-left: 2px; }
 .it-props .later-pill { display: none; } /* the open task's rows above the box say it */
 .launcher.when-on .l-recipes { display: none; }
 .l-when[hidden] { display: none; }

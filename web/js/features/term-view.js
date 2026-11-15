@@ -6,7 +6,7 @@
 import { api } from '../core/api.js';
 import { $, el } from '../core/dom.js';
 import { MOBILE } from '../core/state.js';
-import { keyBytes, Screen, BOLD, DIM, ITALIC, UNDER, INVERSE, HIDDEN, STRIKE } from '../term-emu.js';
+import { keyBytes, Screen, strayPaste, BOLD, DIM, ITALIC, UNDER, INVERSE, HIDDEN, STRIKE } from '../term-emu.js';
 import { toast, toastError } from '../ui/toast.js';
 
 const MAC = /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent);
@@ -189,6 +189,8 @@ function pump(t) {
 
 // --- the view ---------------------------------------------------------------------------------
 
+let owner = null; // the TermView last clicked or opened: it takes a paste that missed its input
+
 export class TermView {
   // root holds SCREEN_HTML and gets .focused while the keys go to it. shown(): whether it's on
   // screen now. onEndedKey(): a key or click on a terminal that has ended.
@@ -221,6 +223,7 @@ export class TermView {
   }
 
   focus() {
+    owner = this; // even while it starts and can't take the focus yet (WebKit): a paste comes here
     if (this.cur?.code === null) $('.tm-input', this.root)?.focus({ preventScroll: true });
   }
 
@@ -482,6 +485,30 @@ export class TermView {
     ta.addEventListener('paste', (e) => {
       e.preventDefault();
       typed(this.pasted(e.clipboardData?.getData('text/plain') || ''));
+    });
+    // Selecting text on the screen to copy takes the keys out of the input (the screen isn't a
+    // field), so ⌘V would land on the page and do nothing. The terminal you last clicked or opened
+    // takes a paste no text box did; a click or a field anywhere else gives it back to the page.
+    root.addEventListener('pointerdown', () => {
+      owner = this;
+    });
+    document.addEventListener(
+      'pointerdown',
+      (e) => {
+        if (owner === this && !root.contains(e.target)) owner = null;
+      },
+      true,
+    );
+    document.addEventListener('focusin', (e) => {
+      if (owner === this && !root.contains(e.target)) owner = null;
+    });
+    document.addEventListener('paste', (e) => {
+      const text = e.clipboardData?.getData('text/plain');
+      // A copied file (its name is the text too) stays for the page's file handlers (attachments, Stuff).
+      if (!text || e.clipboardData.files.length || e.defaultPrevented || !strayPaste(e.target, { owns: owner === this, shown: this.shown(), running: this.cur?.code === null })) return;
+      e.preventDefault();
+      typed(this.pasted(text));
+      this.focus(); // and the keys after it (Enter) go in too
     });
     // Programs that asked (claude, codex) are told when the terminal gets and loses the keys.
     const focusReport = (seq) => {

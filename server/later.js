@@ -180,11 +180,15 @@ export class Later {
   }
 
   // Whether a task's follow-up can go now: not while its agent runs, asks you (an answer would
-  // take the follow-up's place), waits on delegates or Auto is checking its work.
+  // take the follow-up's place) or Auto or its goal is checking its work. A lead whose turn ended
+  // with its delegates still at work is free: the check-in it scheduled is often how it watches
+  // them, and the new turn takes over what they owe (Runner #startTurn), so their report still comes.
   #free(s) {
     if (this.runner.live.has(s.id) || this.runner.deleting?.has(s.id)) return false;
-    if (s.ask || s.state === 'running' || s.state === 'waiting' || s.auto?.busy) return false;
-    return !s.turns.at(-1)?.delegations?.some((d) => this.store.get(d.sessionId)?.turns.at(-1)?.status === 'running');
+    if (s.ask || s.state === 'waiting' || s.auto?.busy || s.goal?.status === 'checking') return false;
+    if (s.state !== 'running') return true;
+    const last = s.turns.at(-1);
+    return last?.status !== 'running' && !!last?.delegations?.some((d) => d.owed);
   }
 
   // force: Send now, whatever the clock says (still not over a live run: it queues behind it).

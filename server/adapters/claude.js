@@ -24,6 +24,9 @@ const LEAN = ['--tools', '', '--strict-mcp-config', '--setting-sources', 'user',
 // only the MCP servers wisp passes, so not .mcp.json's (nor, this run, your own).
 const UNTRUSTED = ['--setting-sources', 'user', '--strict-mcp-config'];
 const GATED = ['Edit', 'MultiEdit', 'Write', 'NotebookEdit', 'Bash']; // what a gated run always asks wisp about
+// Plan mode with commands (run({ planCommands })): Claude Code's own plan mode refuses any command
+// with a side effect, so it runs without prompts and only the file-editing tools are switched off.
+export const EDIT_TOOLS = ['Edit', 'MultiEdit', 'Write', 'NotebookEdit'];
 const leanOk = () => VERSION.length === 3 && (VERSION[0] > 2 || (VERSION[0] === 2 && VERSION[1] >= 1));
 // Where claude lives when it isn't on PATH: the native installer's folders (an app started from
 // the Dock never reads the shell profile that adds them), then the copies the Claude desktop app
@@ -319,6 +322,7 @@ export default {
   // Asks wisp before a tool call its permission mode won't allow on its own (Edits mode).
   approveTool: 'mcp__wisp__approve',
   sideGate: true, // a side discussion can change the work: wisp hears of every write first
+  planCommands: true, // run({ planCommands }): Plan runs commands and only its edit tools are off
   fork: true, // run({ resumeId, fork }) answers on a copy of the conversation (/btw)
   models: [
     { id: '', label: 'Default', hint: 'Whatever Claude Code is set to' },
@@ -422,14 +426,16 @@ export default {
   // on a /compact: with that flag it answers "isn't available in this environment" (claude 2.1.316).
   // gate: every write and command goes to the approve tool first (a side discussion, server/side-gate.js).
   // probe: a task's turn, which checks the sign-in it bills to (side runs don't pay for another process).
-  run({ prompt, attachments = [], cwd, dirs: extra = [], resumeId, prior = null, unknownPrior = false, fork = false, mode, model, effort, systemPrompt, mcpServers = {}, delegating = false, grants = [], accountEnv = {}, lean = false, untrusted = false, quiet = false, subagentModel = '', skills = '', gate = false, probe = false, runEnv = {}, onEvent }) {
+  // planCommands: in Plan, run any command; only Edit, Write and the like are off (EDIT_TOOLS).
+  run({ planCommands = false, prompt, attachments = [], cwd, dirs: extra = [], resumeId, prior = null, unknownPrior = false, fork = false, mode, model, effort, systemPrompt, mcpServers = {}, delegating = false, grants = [], accountEnv = {}, lean = false, untrusted = false, quiet = false, subagentModel = '', skills = '', gate = false, probe = false, runEnv = {}, onEvent }) {
     lean = lean && leanOk();
+    const planRuns = planCommands && mode === 'plan' && !gate;
     const args = [
       '-p',
       '--output-format', 'stream-json',
       lean ? '--system-prompt' : '--append-system-prompt', systemPrompt,
       // acceptEdits never reaches the approve tool (nor does rm or touch): only default does.
-      '--permission-mode', gate ? 'default' : PERMISSION_MODES[mode] || 'acceptEdits',
+      '--permission-mode', gate ? 'default' : planRuns ? 'bypassPermissions' : PERMISSION_MODES[mode] || 'acceptEdits',
     ];
     // An ask rule beats allow rules, so the user's own settings can't take a write past the gate.
     if (gate) args.push('--settings', JSON.stringify({ permissions: { ask: GATED } }));
@@ -447,7 +453,8 @@ export default {
     const allowed = [...Object.keys(mcpServers).map((n) => `mcp__${n}`), ...grants.filter((g) => typeof g === 'string')];
     if (allowed.length) args.push('--allowedTools', ...allowed);
     // Its built-in subagents (Task, or Agent in newer versions) would bypass the user's team.
-    if (delegating) args.push('--disallowedTools', 'Task', 'Agent', 'Workflow');
+    const off = [...(delegating ? ['Task', 'Agent', 'Workflow'] : []), ...(planRuns ? EDIT_TOOLS : [])];
+    if (off.length) args.push('--disallowedTools', ...off);
     const dirs = [...new Set([...extra, ...attachments.map((a) => path.dirname(a.path))])];
     if (dirs.length) args.push('--add-dir', ...dirs);
     args.push('--verbose'); // terminates the variadic flags above
