@@ -455,6 +455,16 @@ export const SHELL_STRINGS = {
   'shell.feedback.line': 'Hit a bug, or wish wisp did something? Tell us',
   'shell.cmd.feedback': 'Send feedback…',
   'shell.compare.gone': 'These runs are gone.',
+  // the offline/connecting bar (frame/peer-note.ts, PeerBanner.tsx): eager, it shows exactly when a lazy chunk may not load
+  'shell.peer.connecting': 'Connecting to {name}…',
+  'shell.peer.asleep': '{name} is asleep',
+  'shell.peer.waking': 'Waking {name}…',
+  'shell.peer.offline': '{name} is offline',
+  'shell.peer.offline-since': '{name} is offline · last updated {at}',
+  'shell.peer.retry': 'Retry',
+  'shell.peer.update': 'Update wisp on {name}',
+  'shell.peer.updateApp': 'Update the app to reach {name}',
+  'shell.peer.wake': 'Wake',
   // a task's usage in its details (v1 #785, frame/task-usage.ts)
 } as const;
 

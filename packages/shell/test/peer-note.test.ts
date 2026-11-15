@@ -2,9 +2,9 @@
 // Retry; a wisp too old says Update wisp on <name> with the command.
 import { expect, test } from 'vitest';
 import { heardLabel, peerNote } from '../src/frame/peer-note.ts';
-import en from '../src/i18n/en.lazy.json' with { type: 'json' };
+import { SHELL_STRINGS } from '../src/i18n/en.ts';
 
-const t = (key: string, vars: Record<string, string | number> = {}): string => ((en as Record<string, string>)[key] ?? key).replace(/\{(\w+)\}/g, (_, k: string) => String(vars[k] ?? ''));
+const t = (key: string, vars: Record<string, string | number> = {}): string => ((SHELL_STRINGS as Record<string, string>)[key] ?? key).replace(/\{(\w+)\}/g, (_, k: string) => String(vars[k] ?? ''));
 const at = (h: number, m: number): number => new Date(2026, 10, 15, h, m).getTime();
 
 test('offline_says_when_it_was_last_updated_with_retry', () => {
