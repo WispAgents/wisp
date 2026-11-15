@@ -89,6 +89,8 @@ On first launch, the *Welcome to wisp* session shows a live gallery of every pre
 
 ### Development
 
+Working on wisp v2: [docs/dev.md](docs/dev.md) takes you from clone to a running, debuggable wisp, with one test per area.
+
 ```sh
 npm run dev        # desktop app (Tauri): live reload for web/, relaunch on server/ and desktop/ changes
 npm run dev:web    # browser mode, restarts the server when server/ changes

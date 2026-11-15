@@ -17,6 +17,8 @@ in the same commit when you finish an item.
 
 ## Commands
 
+From clone to a running, debuggable wisp (logs, debugger, one test per area, troubleshooting): `docs/dev.md`.
+
 ```sh
 npm install                      # once: links the TypeScript (UI) workspaces
 npm run doctor                   # is this checkout ready? toolchain, deps, monoflow, builds, ports: one ok/warn/FAIL line each with its fix; exit 1 on FAIL; --json for agents

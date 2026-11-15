@@ -137,7 +137,7 @@ Rust for everything but the UI, Solid/TS for the UI, everything a plugin (ADR-00
 - [x] `npm run dev` and `npm run dev:desktop` (round 230)
 - [x] Check rule `commands`: every script and documented command resolves (round 231)
 - [x] `npm run doctor` (round 232)
-- [ ] `docs/dev.md`: clone to running wisp, debugging (logs, `RUST_LOG`, inspector, attaching a debugger), one test per area
+- [x] `docs/dev.md`: clone to running wisp, debugging (logs, `RUST_LOG`, inspector, attaching a debugger), one test per area
 - [ ] Dev runs never collide with an installed wisp, everywhere (desktop, CLI, grid)
 - [ ] Tauri dev window removes its lock file on Ctrl-C
 - [ ] `tools/bundle.ts` so `npm run build` builds the published bundle again
