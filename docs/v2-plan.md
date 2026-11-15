@@ -22,8 +22,8 @@ Rust for everything but the UI, Solid/TS for the UI, everything a plugin (ADR-00
 | Regressed | none (F-comp-1 picker restored to v1 in round 233) |
 | CI, last full run (c4123885) | every suite stopped at `npm run check` (docs/dev.md cited git-ignored qa/out; fixed 8bb8ccd0) · Windows verify step: web tests build `D:\D:\` paths, python SDK cwd (r258) · Windows cargo test not reached: run on 8bb8ccd0 decides |
 | Budgets | initial JS 107.2 KB br (≤ 120) · CSS 27.1 KB (≤ 30) |
-| Weekly usage | 91 % (pace 176 %: down to 1 coder) |
-| Coders running | coder-r258 (Windows test paths), coder-r259 (commands rule on tracked files) |
+| Weekly usage | 92 % (owner 2026-11-15: continue until the limit) |
+| Coders running | coder-r260 (`wisp tasks` starts a task) |
 
 ## 3. Owner directions (standing rules)
 
@@ -744,8 +744,9 @@ Source: `docs/v1-features.md` (each row's evidence and test). `[x]` built, `[ ]`
 
 | Round | What | State |
 |---|---|---|
-| 259 | `commands` check rule resolves paths against tracked files (an ignored local folder passed locally, failed in CI) | in progress |
-| 258 | Windows: `new URL(import.meta.url).pathname` paths in web tests (and repo-wide), python SDK cwd | in progress |
+| 260 | `wisp tasks` with no flags must not start a task; typos say 'did you mean' | in progress |
+| 259 | `commands` rule resolves paths against tracked files | committed (ef174895) |
+| 258 | Windows file-URL paths fixed repo-wide (web tests, qa, mobile, tools/check); new rule file-urls; python SDK test | committed (46c87560) |
 | 257 | Windows CI: nursery job (ADR-0070), long paths, Ctrl-C, 4 test fixes | committed (7ccc17f3, d90e5992, 85841811; lead-verified on macOS + windows-target clippy; proof = next ci:full) |
 | 256 | Dialog focus return: a real bug (Zag trap picks its target late; opened before the machine loaded, focus stayed on body), fixed in Dialog | committed (45b105df) |
 | 255 | docs/dev.md: clone to running, debugging, one test per area, troubleshooting (every command run) | committed (b3b5b3d9) |
