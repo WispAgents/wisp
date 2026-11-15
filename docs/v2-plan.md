@@ -20,10 +20,10 @@ Rust for everything but the UI, Solid/TS for the UI, everything a plugin (ADR-00
 |---|---|
 | v1 features | **315 built · 7 partial · 5 missing · 4 dropped** of 331 (§6) |
 | Regressed | none (F-comp-1 picker restored to v1 in round 233) |
-| CI, last full run (8bb8ccd0) | **Linux 4/4 + macOS 2/2 green** · Windows 2 jobs running (first run with r257's fixes) |
+| CI, last full run (8bb8ccd0) | **Linux 4/4 + macOS 2/2 green** · Windows: `nursery_windows` (r257's new test) hung, cancelled at 60 min; no serve test reached (r263) |
 | Budgets | initial JS 107.2 KB br (≤ 120) · CSS 27.1 KB (≤ 30) |
 | Weekly usage | 92 % (owner 2026-11-15: continue until the limit) |
-| Coders running | coder-r262 (queued follow-ups inside the box) |
+| Coders running | coder-r263 (Windows nursery test hang) |
 
 ## 3. Owner directions (standing rules)
 
@@ -744,7 +744,8 @@ Source: `docs/v1-features.md` (each row's evidence and test). `[x]` built, `[ ]`
 
 | Round | What | State |
 |---|---|---|
-| 262 | Queued follow-ups inside the reply box with the scheduled ones, as v1 | in progress |
+| 263 | Windows: nursery_windows test hangs (root cause; every Windows test fails fast) | in progress |
+| 262 | Queued follow-ups inside the reply box; the queue now shows on a real server (queue_item rows) | committed (5d72c830) |
 | 261 | Scheduled follow-ups inside the reply box (kit top slot, shell.task:composer-top) | committed (f58828bd) |
 | 260 | A command word never starts a task; typos say 'did you mean'; `wisp -- <word>` | committed (75b53b16) |
 | 259 | `commands` rule resolves paths against tracked files | committed (ef174895) |
