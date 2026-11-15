@@ -18,8 +18,10 @@ async function mountOn(platform: Platform): Promise<{ root: HTMLElement; stop: (
   const root = document.createElement('div');
   document.body.append(root);
   const stopRender = shell.render(root);
-  // the phone frame, the head's chunk and the FAB load lazily
-  for (let i = 0; i < 40 && !root.querySelector('[data-kit="frame-top"] > *, [data-kit="topbar"]'); i++) await tick(10);
+  // the phone frame, the head's chunk and the FAB load lazily: wait for the bar itself (the phone's app bar, or the
+  // browser's v1 head), with a deadline a loaded CI machine meets (a fixed 400 ms failed on macOS CI, 51bbc0aa)
+  const ready = (): boolean => !!root.querySelector('[data-kit="frame-top"] > [data-kit="app-bar"], [data-kit="topbar"]');
+  for (const until = Date.now() + 5000; !ready() && Date.now() < until; ) await tick(10);
   await tick(30);
   return {
     root,
