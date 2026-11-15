@@ -50,7 +50,7 @@ impl Runtime {
     /// job worked in the member's folder there). `None`: it's gone, or not this lead's.
     pub(super) async fn crew_report(self: &Arc<Self>, lead: &Session, key: &str, name: &str) -> Option<Report> {
         if key.contains('|') {
-            return self.remote_report(lead, key, false).await.map(|r| Report { subagent: name.to_owned(), ..r });
+            return self.far_report(lead, key).await.map(|r| Report { subagent: name.to_owned(), ..r });
         }
         let s = self.repo.session(key).await.ok()?;
         let from = s.ext.get(wisp_crew_api::PLUGIN_ID).and_then(|c| c.pointer("/from/id")).and_then(Value::as_str);

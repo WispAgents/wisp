@@ -18,17 +18,18 @@ fn copies(name: &str, count: u64) -> Vec<String> {
 }
 
 /// The lead's crew jobs (`ext["wisp.runtime"].crewJobs`): job key → the team name it went to.
-const CREW_JOBS: &str = "crewJobs";
+pub(super) const CREW_JOBS: &str = "crewJobs";
 
-/// A delegation that went elsewhere (a sandbox, another machine), kept as `<machine>|<task>`.
-fn away(m: &Value, key: String, subagent: String) -> Delegation {
+/// A delegation that went elsewhere (a sandbox, another machine), kept as `<machine>|<task>`; `turn`: the turn it
+/// started there (what the lead's wait reads, not an earlier job's).
+fn away(m: &Value, key: String, turn: String, subagent: String) -> Delegation {
     Delegation {
         id: SessionId(key),
         subagent,
         agent: str_at(m, "agent"),
         model: str_at(m, "model"),
         effort: str_at(m, "effort"),
-        turn_id: TurnId(String::new()),
+        turn_id: TurnId(turn),
         place: None,
         error: None,
     }
@@ -144,9 +145,9 @@ impl Runtime {
             // on another machine (ADR-0059): the lead's work copied there, the task runs there, its changes come back
             if let Place::Machine(machine) = &place {
                 match self.machine_member(&lead, m, machine, &slot_name, existing, &prompt).await {
-                    Ok((key, name)) => {
+                    Ok((key, name, turn)) => {
                         made.insert(slot_name.clone(), json!(key));
-                        out.push(Delegation { place: Some(name), ..away(m, key, slot_name) });
+                        out.push(Delegation { place: Some(name), ..away(m, key, turn, slot_name) });
                     }
                     Err(e) => out.push(failed(&want, e.to_string())),
                 }
@@ -155,9 +156,9 @@ impl Runtime {
             // its place is a sandbox (ADR-0047): the lead's work goes in, the task runs there, its changes come back
             if matches!(place, Place::Sandbox) {
                 match self.sandbox_member(&lead, m, &slot_name, existing, &prompt).await {
-                    Ok(key) => {
+                    Ok((key, turn)) => {
                         made.insert(slot_name.clone(), json!(key));
-                        out.push(Delegation { place: Some("sandbox".into()), ..away(m, key, slot_name) });
+                        out.push(Delegation { place: Some("sandbox".into()), ..away(m, key, turn, slot_name) });
                     }
                     Err(e) => out.push(failed(&want, e.to_string())),
                 }
@@ -338,7 +339,6 @@ impl Runtime {
             let mut all_done = true;
             let lead = self.repo.session(a.id.as_str()).await?;
             let crew_jobs = slot(&lead).and_then(|m| m.get(CREW_JOBS)).and_then(Value::as_object).cloned().unwrap_or_default();
-            let away = slot(&lead).and_then(|m| m.get(super::machine::AWAY)).and_then(Value::as_object).cloned().unwrap_or_default();
             for id in &ids {
                 // a crew member's job: its own task, here or on the member's machine
                 if let Some(name) = crew_jobs.get(id).and_then(Value::as_str) {
@@ -348,17 +348,9 @@ impl Runtime {
                     }
                     continue;
                 }
-                // a member on another machine: read there, its changes brought back once per job
-                if let Some(place) = away.get(id).and_then(Value::as_str) {
-                    if let Some(r) = self.machine_report(&lead, id, place).await {
-                        all_done &= r.done;
-                        reports.push(r);
-                    }
-                    continue;
-                }
-                // a member in a sandbox: read there
+                // a member on another machine or in a sandbox: read there, its changes brought back once per job
                 if id.contains('|') {
-                    if let Some(r) = self.sandbox_report(&lead, id).await {
+                    if let Some(r) = self.far_report(&lead, id).await {
                         all_done &= r.done;
                         reports.push(r);
                     }

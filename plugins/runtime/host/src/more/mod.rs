@@ -10,6 +10,7 @@ mod blocked;
 mod btw;
 mod crew_member;
 mod delegate;
+mod far_watch;
 mod fork;
 mod machine;
 mod quick;
@@ -30,7 +31,7 @@ use crate::runtime::Runtime;
 pub(crate) use agents::Rounds;
 pub(crate) use ask::ask_id;
 pub(crate) use quick::QuickRuns;
-pub(crate) use report_back::still_working;
+pub(crate) use report_back::{lead_of, still_working};
 pub(crate) use sign_in::SignIn;
 
 /// How often a wait on an answer or on subagents looks again.

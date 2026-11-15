@@ -8,9 +8,11 @@
 //! delegate the user stopped doesn't wake the lead alone: its `— stopped` line goes with the next report, or alone when
 //! it was the last at work. Once: the owed marks go in the same write that queues it. A lead the user stopped is owed
 //! nothing. The state is in the store (the turn's records, the task's queue), so a restart picks it
-//! up where it was.
+//! up where it was. Its children and crew jobs here are read here; a job on another wisp (`is_far`: a sandbox, another
+//! machine, a crew job there) stands as that wisp answers (`far_open`).
 
 use serde_json::Value;
+use wisp_runtime_api::model::{SessionState, TurnStatus};
 
 /// A delegation's mark on the lead's turn: the lead hasn't had its report yet.
 pub const OWED: &str = "owed";
@@ -68,11 +70,28 @@ pub fn is_owed(d: &Value) -> bool {
     d.get(OWED).and_then(Value::as_bool).unwrap_or(false)
 }
 
-/// A delegation that went elsewhere (a sandbox or another machine, `<machine>|<task>`) or to a crew member: wisp
-/// doesn't watch its run from here, so the lead doesn't wait on it (it reads it with `subagent_results`).
-pub fn is_away(d: &Value, crew_jobs: Option<&serde_json::Map<String, Value>>) -> bool {
-    let id = d.get("sessionId").and_then(Value::as_str).unwrap_or_default();
-    id.is_empty() || id.contains('|') || d.get("place").is_some_and(|p| !p.is_null()) || crew_jobs.is_some_and(|j| j.contains_key(id))
+/// A record with a job to watch (one that didn't go has no session).
+pub fn has_job(d: &Value) -> bool {
+    d.get("sessionId").and_then(Value::as_str).is_some_and(|id| !id.is_empty())
+}
+
+/// A delegation whose job runs on another wisp (`<machine>|<task>`: a sandbox, another machine, a crew member's job
+/// there): wisp reads how it stands there (`far_open`); the others (its own children, a crew job here) are read here.
+pub fn is_far(d: &Value) -> bool {
+    d.get("sessionId").and_then(Value::as_str).is_some_and(|id| id.contains('|'))
+}
+
+/// How a job on another wisp stands, from what that wisp answers (v1 relay.js `watch`): `state`, its task's (None: it
+/// didn't answer, so it's still at work as far as the lead knows: Stop lets it go); `job`, the status of the turn the
+/// delegation started there (`known`: its record names it), or of its task's last turn when it doesn't (None: not
+/// shown there yet). Its own turn counts, not the task's last: a turn after it (a resume, the user typing there, its
+/// own report-back) neither holds the lead nor ends its job.
+pub fn far_open(name: &str, state: Option<SessionState>, job: Option<TurnStatus>, known: bool) -> Open {
+    let at_work = matches!(job, None | Some(TurnStatus::Running | TurnStatus::Held));
+    // not known which turn is its: its task still Running (on its own delegates there, say) is still at it
+    let running = state.is_none() || at_work || (!known && state == Some(SessionState::Running));
+    let stopped = !running && job == Some(TurnStatus::Stopped);
+    Open { name: name.to_owned(), running, stopped }
 }
 
 /// The records a new turn of the lead takes over from its last one (v1 `#startTurn`: an interrupting follow-up's turn

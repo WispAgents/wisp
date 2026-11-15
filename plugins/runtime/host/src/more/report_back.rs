@@ -1,8 +1,10 @@
 //! A lead that owes its delegates' reports (v1 runner.js `#awaiting`, `#delegateDone`, `#reportBack`; the rules are
 //! `wisp_runtime_core::owed`'s). Looked at when the lead's turn ends (`finish.rs`), when one of its delegates' turns
 //! ends, when its own run lets go, and as wisp starts: what ended while the lead's run is off goes to it at once, once;
-//! the rest go on with that follow-up's turn.
+//! the rest go on with that follow-up's turn. Crew jobs count as children (`lead_of`); jobs on another wisp are watched
+//! there (`far_watch.rs`) and their changes come back once inside their report.
 
+use std::collections::HashMap;
 use std::sync::Arc;
 
 use serde_json::{Value, json};
@@ -12,6 +14,7 @@ use wisp_runtime_core::owed::{self, DELEGATIONS, Next, OWED, Open, WAITS_ON};
 use wisp_runtime_core::prompt::subagents::{Member, delegation_report};
 use wisp_runtime_core::queue::{self, Queue, ReportBack, Run};
 
+use super::machine::{BROUGHT_NOTE, There, far_text};
 use super::{SLOT, slot, str_at, with_slot};
 use crate::error::Result;
 use crate::runtime::Runtime;
@@ -23,6 +26,23 @@ const OWED_LOOKBACK: u32 = 8;
 pub(crate) struct OwedRec {
     rec: Value,
     open: Open,
+    /// what its wisp answered, for a job elsewhere (`<machine>|<task>`)
+    far: Option<There>,
+}
+
+impl OwedRec {
+    /// Its job's key (`sessionId`: a task here, or `<machine>|<task>`).
+    pub(super) fn key(&self) -> String {
+        str_at(&self.rec, "sessionId")
+    }
+    /// Its job still runs (as far as wisp knows).
+    pub(super) fn running(&self) -> bool {
+        self.open.running
+    }
+    /// A job elsewhere still at work: the far watch's.
+    pub(super) fn is_far_at_work(&self) -> bool {
+        owed::is_far(&self.rec) && self.open.running
+    }
 }
 
 /// A delegate's turn: the one its record names, else its task's last (a record from before the turn was known).
@@ -37,7 +57,7 @@ async fn delegate_turn(rt: &Runtime, rec: &Value) -> Option<(Session, Option<Tur
     Some((child, turn))
 }
 
-fn records(t: &Turn) -> &[Value] {
+pub(super) fn records(t: &Turn) -> &[Value] {
     t.ext.get(SLOT).and_then(|x| x.get(DELEGATIONS)).and_then(Value::as_array).map_or(&[], Vec::as_slice)
 }
 
@@ -47,26 +67,62 @@ fn clear_waits(s: &mut Session) -> bool {
 }
 
 impl Runtime {
-    /// The delegations on `t` the lead owes and wisp watches from here (its own children: not a sandbox's, another
-    /// machine's or a crew member's job, which it reads with `subagent_results`).
-    pub(crate) async fn owed_on(&self, lead: &Session, t: &Turn) -> Vec<OwedRec> {
-        let jobs = slot(lead).and_then(|m| m.get("crewJobs")).and_then(Value::as_object);
+    /// The delegations on `t` the lead owes, and how each stands: its own children and its crew jobs here read here,
+    /// the ones elsewhere (a sandbox, another machine, a crew job there) as `far` has them (`far_ahead`, asked before
+    /// the lead's lock is taken: never a machine's link under it); one `far` lacks is still at work.
+    pub(crate) async fn owed_on(&self, t: &Turn, far: &HashMap<String, There>) -> Vec<OwedRec> {
         let mut out = Vec::new();
-        for rec in records(t).iter().filter(|d| owed::is_owed(d) && !owed::is_away(d, jobs)) {
-            // gone (deleted) counts as ended: its report says so
-            let status = delegate_turn(self, rec).await.and_then(|(_, t)| t).map(|t| t.status);
-            let open = Open {
-                name: str_at(rec, "name"),
-                running: status == Some(TurnStatus::Running),
-                stopped: status == Some(TurnStatus::Stopped),
+        for rec in records(t).iter().filter(|d| owed::is_owed(d)) {
+            out.extend(self.owed_on_one(rec, far.get(&str_at(rec, "sessionId")).cloned()).await);
+        }
+        out
+    }
+
+    /// One owed record and how its job stands (None: it has no job, it didn't go); `far`: what its wisp answered.
+    pub(super) async fn owed_on_one(&self, rec: &Value, far: Option<There>) -> Option<OwedRec> {
+        if !owed::has_job(rec) {
+            return None;
+        }
+        let name = str_at(rec, "name");
+        if owed::is_far(rec) {
+            let open = match &far {
+                Some(t) => owed::far_open(&name, Some(t.state), t.job_status(), t.known),
+                None => owed::far_open(&name, None, None, false),
             };
-            out.push(OwedRec { rec: rec.clone(), open });
+            return Some(OwedRec { rec: rec.clone(), open, far });
+        }
+        // gone (deleted) counts as ended: its report says so
+        let status = delegate_turn(self, rec).await.and_then(|(_, t)| t).map(|t| t.status);
+        let open = Open { name, running: status == Some(TurnStatus::Running), stopped: status == Some(TurnStatus::Stopped) };
+        Some(OwedRec { rec: rec.clone(), open, far: None })
+    }
+
+    /// What the wisp a far record's job runs on answers of it (None: it didn't).
+    pub(super) async fn far_of(&self, rec: &Value) -> Option<There> {
+        let key = str_at(rec, "sessionId");
+        let (machine, id) = key.split_once('|')?;
+        self.there(machine, id, &str_at(rec, "turnId")).await
+    }
+
+    /// Before the lead's lock: how each far job lead `id` owes stands there, and the changes of those that ended
+    /// brought back (once; their note goes on the record, for the report).
+    pub(crate) async fn far_ahead(self: &Arc<Self>, id: &str) -> HashMap<String, There> {
+        let mut out = HashMap::new();
+        let Ok(Some(t)) = self.owed_turn(id, None).await else { return out };
+        for rec in records(&t).iter().filter(|d| owed::is_owed(d) && owed::is_far(d)) {
+            let Some(there) = self.far_of(rec).await else { continue };
+            let key = str_at(rec, "sessionId");
+            if !owed::far_open("", Some(there.state), there.job_status(), there.known).running {
+                self.bring_far(id, &key, &there).await;
+            }
+            out.insert(key, there);
         }
         out
     }
 
     /// Each owed delegation's report, as the lead reads it (v1 `delegationReport`).
-    async fn reports_of(&self, list: &[OwedRec]) -> Vec<String> {
+    /// A far one's says what of its changes came back (`far_ahead` brought them, the note is on its record).
+    async fn reports_of(&self, lead: &Session, list: &[OwedRec]) -> Vec<String> {
         let mut out = Vec::with_capacity(list.len());
         let name_of = |id: &str| self.harness(id).ok().map(|h| h.info().name.clone());
         for d in list {
@@ -76,6 +132,13 @@ impl Runtime {
                 model: str_at(&d.rec, "model"),
                 ..Member::default()
             };
+            if let Some(t) = &d.far {
+                let key = str_at(&d.rec, "sessionId");
+                let text = far_text(lead, &key, t, &str_at(&d.rec, BROUGHT_NOTE));
+                let status = t.job_status().unwrap_or(TurnStatus::Done);
+                out.push(delegation_report(&m, Some(status), &text, &[], &name_of));
+                continue;
+            }
             let (status, report, files) = match delegate_turn(self, &d.rec).await {
                 Some((_, Some(t))) => {
                     let report = t.presentation.as_ref().map_or_else(
@@ -110,35 +173,32 @@ impl Runtime {
     /// at work, and it stays in Working on them. Some of them ended (v1 `#reportBack` with `ending`): their reports are
     /// queued now (its release starts them; that turn takes the rest over) and marked read on `t`, in the same write as
     /// the turn's end.
-    pub(crate) async fn lead_turn_ends(&self, s: &mut Session, t: &mut Turn, stopped: bool) -> Option<Vec<String>> {
+    pub(crate) async fn lead_turn_ends(
+        self: &Arc<Self>,
+        s: &mut Session,
+        t: &mut Turn,
+        stopped: bool,
+        far: &HashMap<String, There>,
+    ) -> Option<Vec<String>> {
         if s.parent_id.is_some() {
             return None;
         }
-        if !stopped {
-            // one elsewhere (a sandbox, another machine, a crew job) isn't waited on: the lead reads it with
-            // `subagent_results`, and it isn't carried into its next turns as still at work
-            let jobs = slot(s).and_then(|m| m.get("crewJobs")).and_then(Value::as_object).cloned();
-            with_slot(&mut t.ext, |x| {
-                if let Some(Value::Array(list)) = x.get_mut(DELEGATIONS) {
-                    for d in list.iter_mut().filter(|d| owed::is_owed(d) && owed::is_away(d, jobs.as_ref())) {
-                        if let Some(o) = d.as_object_mut() {
-                            o.insert(OWED.into(), Value::Bool(false));
-                        }
-                    }
-                }
-            });
-        }
-        let list = self.owed_on(s, t).await;
+        let list = self.owed_on(t, far).await;
         let opens: Vec<Open> = list.iter().map(|d| d.open.clone()).collect();
         match owed::next(&opens, false, stopped) {
-            Next::Hold(names) => Some(names),
+            Next::Hold(names) => {
+                self.watch_far(s.id.as_str(), &list);
+                Some(names)
+            }
             Next::Nothing => None,
             Next::Report(ended) => {
-                let list = pick(list, &ended);
-                let reports = self.reports_of(&list).await;
+                let (list, rest) = pick(list, &ended);
+                let reports = self.reports_of(s, &list).await;
                 let ids: Vec<String> = list.iter().map(|d| str_at(&d.rec, "sessionId")).collect();
                 with_slot(&mut t.ext, |x| owed::mark_read(x, &ids));
                 self.queue_report(s, &reports, Run::Idle, true);
+                // the ones still at work go on with that follow-up's turn: watched from now
+                self.watch_far(s.id.as_str(), &rest);
                 None
             }
         }
@@ -165,7 +225,7 @@ impl Runtime {
 
     /// The lead's latest turn that still owes a delegation (of its last few, newest first; `skip`: a turn being started):
     /// a follow-up held before it ran, or refused, comes after it without taking its records over.
-    async fn owed_turn(&self, id: &str, skip: Option<&wisp_runtime_api::TurnId>) -> Result<Option<Turn>> {
+    pub(super) async fn owed_turn(&self, id: &str, skip: Option<&wisp_runtime_api::TurnId>) -> Result<Option<Turn>> {
         let mut recent = self.repo.turns(id, None, Some(OWED_LOOKBACK)).await?;
         recent.sort_by_key(|t| std::cmp::Reverse(t.idx));
         Ok(recent.into_iter().filter(|t| skip != Some(&t.id)).find(|t| records(t).iter().any(owed::is_owed)))
@@ -195,6 +255,7 @@ impl Runtime {
     /// to it now (the follow-up's turn takes the rest over); or it still waits; or nothing. A lead that's running, starting
     /// or was stopped is left to its own run's end.
     pub(crate) async fn check_lead(self: &Arc<Self>, id: &str) -> Result<()> {
+        let far = self.far_ahead(id).await;
         let next = {
             let _g = self.task_lock(id).await;
             let mut s = self.repo.session(id).await?;
@@ -208,12 +269,14 @@ impl Runtime {
                 || matches!(last.status, TurnStatus::Running | TurnStatus::Held);
             let owed_turn = self.owed_turn(id, None).await?;
             let list = match &owed_turn {
-                Some(t) => self.owed_on(&s, t).await,
+                Some(t) => self.owed_on(t, &far).await,
                 None => Vec::new(),
             };
             let opens: Vec<Open> = list.iter().map(|d| d.open.clone()).collect();
             match (owed::next(&opens, busy, last.status == TurnStatus::Stopped), owed_turn) {
                 (Next::Hold(names), _) => {
+                    // a restart, or one elsewhere it now waits on: watched there until it ends
+                    self.watch_far(id, &list);
                     let said = slot(&s).and_then(|m| m.get(WAITS_ON)).cloned();
                     if !busy && said != Some(json!(names)) {
                         Self::note_waits(&mut s, &names);
@@ -222,8 +285,9 @@ impl Runtime {
                     None
                 }
                 (Next::Report(ended), Some(mut t)) => {
-                    let list = pick(list, &ended);
-                    let reports = self.reports_of(&list).await;
+                    let (list, rest) = pick(list, &ended);
+                    self.watch_far(id, &rest);
+                    let reports = self.reports_of(&s, &list).await;
                     let ids: Vec<String> = list.iter().map(|d| str_at(&d.rec, "sessionId")).collect();
                     with_slot(&mut t.ext, |x| owed::mark_read(x, &ids));
                     clear_waits(&mut s);
@@ -278,7 +342,9 @@ impl Runtime {
     }
 
     /// The user stopped lead `s` (`stop`, under its lock): it's owed nothing (v1: a stopped run owes nothing, and Stop
-    /// stops its delegates too). Its last turn, marked, to write with it; and its own children still at work, to stop.
+    /// stops its delegates too, a relayed one's run there included). Its last turn, marked, to write with it; and the
+    /// delegates it owed still at work, to stop: its children and crew jobs here, and the ones elsewhere
+    /// (`<machine>|<task>`, stopped there by `stop_far`).
     pub(crate) async fn stop_owed(&self, s: &mut Session) -> Result<(Option<Turn>, Vec<String>)> {
         clear_waits(s);
         if s.parent_id.is_some() {
@@ -286,7 +352,7 @@ impl Runtime {
         }
         let Some(mut t) = self.owed_turn(s.id.as_str(), None).await? else { return Ok((None, Vec::new())) };
         let kids: Vec<String> =
-            self.owed_on(s, &t).await.into_iter().filter(|d| d.open.running).map(|d| str_at(&d.rec, "sessionId")).collect();
+            self.owed_on(&t, &HashMap::new()).await.into_iter().filter(|d| d.open.running).map(|d| str_at(&d.rec, "sessionId")).collect();
         let changed = with_slot(&mut t.ext, |x| {
             let Some(Value::Array(list)) = x.get_mut(DELEGATIONS) else { return false };
             let mut changed = false;
@@ -328,9 +394,34 @@ impl Runtime {
     }
 }
 
-/// The records `owed::next` picked (indexes into `list`), in order.
-fn pick(list: Vec<OwedRec>, at: &[usize]) -> Vec<OwedRec> {
-    list.into_iter().enumerate().filter(|(i, _)| at.contains(i)).map(|(_, d)| d).collect()
+/// The records `owed::next` picked (indexes into `list`), in order; and the rest.
+fn pick(list: Vec<OwedRec>, at: &[usize]) -> (Vec<OwedRec>, Vec<OwedRec>) {
+    let (picked, rest): (Vec<_>, Vec<_>) = list.into_iter().enumerate().partition(|(i, _)| at.contains(i));
+    (picked.into_iter().map(|(_, d)| d).collect(), rest.into_iter().map(|(_, d)| d).collect())
+}
+
+/// The note of what came back of job `key`'s changes, on its owed record in `slot` (the turn's runtime slot); true
+/// when one was there to take it.
+pub(super) fn note_brought(slot: &mut serde_json::Map<String, Value>, key: &str, note: &str) -> bool {
+    let Some(Value::Array(list)) = slot.get_mut(DELEGATIONS) else { return false };
+    let mut put = false;
+    for d in list.iter_mut().filter(|d| owed::is_owed(d) && str_at(d, "sessionId") == key) {
+        if let Some(o) = d.as_object_mut() {
+            o.insert(BROUGHT_NOTE.into(), json!(note));
+            put = true;
+        }
+    }
+    put
+}
+
+/// The lead a task works for: a delegate's parent, or the lead that handed this crew job out (`ext["wisp.crew"].from`,
+/// v1 crew.js `#delegate`: the lead waits on it as on its own children).
+pub(crate) fn lead_of(s: &Session) -> Option<String> {
+    if let Some(p) = &s.parent_id {
+        return Some(p.0.clone());
+    }
+    let from = s.ext.get(wisp_crew_api::PLUGIN_ID).and_then(|c| c.pointer("/from/id")).and_then(Value::as_str)?;
+    (!from.is_empty() && from != s.id.as_str()).then(|| from.to_owned())
 }
 
 /// Delegates the lead's last turn still owed went on with `turn` (`taken`): its prompt says who, ahead of the user's

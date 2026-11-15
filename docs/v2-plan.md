@@ -61,17 +61,20 @@ Rust for everything but the UI, Solid/TS for the UI, everything a plugin (ADR-00
       selecting); #789 with phone step 13. #795 (lead's check-in while waiting on subagents) and #796 (compact follow-ups
       list) done in r246; found there: runtime doesn't hold a lead in Working on its delegates or send their reports back
 - [x] **Lead waits on its subagents and gets their reports** (v1 #750, F-task-51, r247): `runtime-core::owed` + `runtime/host/src/more/report_back.rs`; `Facts.owes` set while owed delegates work (`waitsOn` on the slot, wisp.later reads it), each delegate's report goes back as soon as it ends and the lead's run is off, as v1 `#delegateDone`/`#reportBack` (r250: one follow-up per batch; those ending while the lead runs come in one at its end; the rest go on with that follow-up's turn; a stopped one rides with the next report and doesn't wake it alone; queued in the write that marks them read; restart-safe), `subagent_results` marks read, Stop stops delegates and sends nothing, a follow-up's turn takes owed ones over with the still-working note; finish.rs merges the turn slot. Left (see the open item below): delegates on another machine / sandbox / crew jobs aren't waited on
-- [ ] **Lead waits on its remote and crew subagents too** (**in progress, coder-r251**) (F-task-51, v1 `#awaiting` counts `child.relay`: machine
-      members and crew jobs; v1 had no sandbox members). v2 drops them from owed at the lead's turn end
-      (`owed::is_away`, `report_back.rs` `lead_turn_ends`), so they're read only with `subagent_results`. Needs: (1)
-      local crew jobs (`crewJobs` key with no `|`, `ext["wisp.crew"].from.id` = lead): `finish.rs` spawns
-      `check_lead(from)` when such a job's turn ends, `owed_on` reads its last turn, `is_away` keeps them; (2) machine,
-      sandbox and remote crew jobs (`<machine>|<task>`): an end signal from there (a `runtime.turn.ended` event routed
-      by machines/sandbox, or a scoped `ctx.scope` poll through `there`/`remote_report` on the kernel clock), then
-      `check_lead`; their changes come back once (`BROUGHT`/`brought`) before the report is built, through the same
-      `machine_report`/`sandbox_report`; (3) Stop on the lead stops them there; (4) restart: a lead holding on one
-      re-arms its watch in `start()`. Tests each in `runtime/host/tests/report_back.rs` (fake machines answers, as in
-      `a_delegate_elsewhere_isnt_waited_on_nor_carried_into_the_leads_next_turn`, which then flips)
+- [x] **Lead waits on its remote and crew subagents too** (F-task-51, v1 `#awaiting` counts `child.relay`, r251):
+      `owed::is_far`/`far_open` (pure) + `runtime/host/src/more/far_watch.rs`. Local crew jobs (`ext["wisp.crew"].from`
+      = the lead) are read like children and their end runs `check_lead` (`finish.rs`, `lead_of`); jobs elsewhere
+      (`<machine>|<task>`: machine, sandbox, crew there) are asked about through `machines.route` (`runtime.get`/`turns`,
+      no new wire message) on the kernel clock on the plugin's scope while owed (1 s, backing off to 10 s when it doesn't
+      answer or the lead's run is on), armed at every Hold (so `start` → `check_lead` re-arms after a restart); the
+      record's `turnId` is the turn started there, and that turn's status counts (not the task's last: a later turn
+      there neither holds the lead nor ends the job); status is asked and changes brought before the lead's lock
+      (`far_ahead`), never a machine's link under it; changes come back once (`bring_far`: one bringer per lead, the
+      mark on the lead and the note on the owed record written before the next looks); Stop routes `runtime.stop`
+      there. Left: a machine that never answers (or a task deleted there) keeps the lead in Working until Stop (no
+      give-up timeout yet); a sandbox member's second job's changes still aren't brought (marked by key, pre-existing).
+      Tests: runtime host `report_back.rs` (crew here, machine, sandbox, stop, restart, a later turn there), runtime-core `owed.rs`, crates/wisp
+      `serve_delegate_machine.rs` `a_lead_whose_delegate_elsewhere_outlasts_its_turn_hears_its_report_and_gets_its_changes`
 - [ ] Later foot sits above the reply box; v1 puts the rows inside the composer box
 - [ ] **TUI** (ADR-0024, `docs/v2-tui-design.md`): first slice done (list, answer, composer). Left: `--on <machine>`,
       For later and Repo tab, blame gutter, hunk jumps, terminal images, the real-terminal pass.
@@ -96,7 +99,7 @@ Rust for everything but the UI, Solid/TS for the UI, everything a plugin (ADR-00
 - [x] Budgets in CI (initial JS ≤ 120 KB br, CSS ≤ 30 KB)
 - [x] First download 290.6 → 117.9 KB JS, 46.4 → 29.7 KB CSS (ADR-0067)
 - [x] 4,000 tasks scroll smoothly on a 4× slowed phone; first tap on Slow 4G 1.3 s blank → 171 ms
-- [ ] Initial JS 119.3 / 120 KB br: move something the first screen doesn't draw out before the next first-page feature
+- [x] Initial JS 119.4 → 107.0 KB br: Compare's table math out of the entry (`frame/runs-small.ts`), 756 strings no first-page module uses moved to their lazy halves (ADR-0067 re-derived; every eager half keeps a key of each kind: `strings-split.test.ts`)
 - [ ] Warm tap on a phone ~90 ms (budget 50 ms) (F-phone-8)
 - [ ] The server budgets measured in CI (cold start, RSS, list query, append, write amplification, p99 patch)
 - [x] Harness detection: 45 s → 15 s with hung CLIs, ~1 ms cached

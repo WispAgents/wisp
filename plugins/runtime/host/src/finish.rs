@@ -37,7 +37,8 @@ impl Runtime {
         let Effect::Finish { text, is_error, stopped, stats, auth_failed, stop_reason } = e else {
             return Ok(());
         };
-        let _guard = self.task_lock(sid).await;
+        // a lead's delegates elsewhere are asked (left to right) before its lock: never a machine's link under it
+        let (far, _guard) = (self.far_ahead(sid).await, self.task_lock(sid).await);
         let mut s = self.repo.session(sid).await?;
         let mut turn = self.repo.turn(tid).await?;
         let (stopping, interrupted) = self
@@ -102,7 +103,7 @@ impl Runtime {
         // v1 runner.js:1812: a question the turn left open goes with it (no stale ask in review)
         self.cancel_asks(&mut s);
         // a lead: its delegates still at work hold it in Working; all of them done, their reports are queued now
-        let waits_on = self.lead_turn_ends(&mut s, &mut turn, stopped || stopping).await;
+        let waits_on = self.lead_turn_ends(&mut s, &mut turn, stopped || stopping, &far).await;
         let mut landing = self.landing(&s, &turn, stopped || stopping, interrupted, waits_on.is_some());
         if let Some(names) = waits_on.filter(|_| landing.state == wisp_runtime_api::model::SessionState::Running && !landing.handing) {
             Self::note_waits(&mut s, &names);
@@ -116,9 +117,9 @@ impl Runtime {
         s.updated_at = self.now();
         let summary = self.persist(&mut s, vec![turn.clone()]).await?;
         self.emit_end(&s, &turn, interrupted, &landing, &summary, &text);
-        // a delegate's turn ended: its lead may have waited on it last
-        if let Some(lead) = &s.parent_id {
-            self.spawn_check_lead(lead.as_str());
+        // a delegate's turn ended (a child, or a crew job a lead handed out): its lead may have waited on it last
+        if let Some(lead) = crate::more::lead_of(&s) {
+            self.spawn_check_lead(&lead);
         }
         if let (true, Some(l)) = (waits, turn.limit.as_ref()) {
             let (rt, sid, agent, until) = (self.clone(), s.id.0.clone(), turn.agent.clone(), l.until);

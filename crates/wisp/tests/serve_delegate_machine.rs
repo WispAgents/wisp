@@ -155,3 +155,58 @@ async fn deleting_the_lead_deletes_its_delegates_copy_and_task_there() {
     let row = a.cmd("machines.get", json!({ "id": machine })).await;
     assert!(row["uncarry"].is_null(), "nothing kept for the sweep: {row}");
 }
+
+/// The lead's turn ends while its delegate on the other machine still works (v1 `#awaiting` counts `child.relay`): it
+/// stays in Working on it, wisp watches it there through the machine's link, and when it ends there the lead gets one
+/// follow-up from wisp with its report (it ran on studio, its changes are in the lead's folder), without ever calling
+/// `subagent_results`. (Before r251 the lead's end let it go: it landed at once and heard nothing.)
+#[tokio::test(flavor = "multi_thread")]
+async fn a_lead_whose_delegate_elsewhere_outlasts_its_turn_hears_its_report_and_gets_its_changes() {
+    let (da, db) = (temp("dlg-wait-a"), temp("dlg-wait-b"));
+    // the lead's run lasts long enough to delegate; the delegate's there outlasts it
+    let (_sa, pa) = start_with(&da, &[("FAKE_DELAY", "3000")]);
+    let (_sb, pb) = start_with(&db, &[("FAKE_DELAY", "9000")]);
+    let a = Api { http: reqwest::Client::new(), port: pa, n: 0.into() };
+    let added = a.cmd("machines.add", json!({ "transport": "loopback", "address": "127.0.0.1", "port": pb, "name": "studio" })).await;
+    let machine = added["id"].as_str().unwrap().to_owned();
+    until("the peer comes online", 60, async || {
+        let v = a.cmd("machines.get", json!({ "id": machine })).await;
+        (v["state"] == "online").then_some(v)
+    })
+    .await;
+    let proj = da.join("proj");
+    std::fs::create_dir_all(&proj).unwrap();
+    git(&proj, &["init", "-q", "-b", "main"]);
+    git(&proj, &["config", "core.autocrlf", "false"]);
+    // nothing for the lead's own fake run to fix here (it edits only `a - b`): what comes back is the delegate's alone
+    std::fs::write(proj.join("math.js"), "export const add = (a, b) => a + b;\n").unwrap();
+    git(&proj, &["add", "."]);
+    git(&proj, &["-c", "user.name=T", "-c", "user.email=t@e", "commit", "-qm", "first"]);
+    let team = json!({ "wisp.runtime": { "subagents": [{ "name": "far", "agent": "codex", "machine": machine, "place": "studio" }] } });
+    let lead = a.cmd("runtime.create", json!({ "prompt": "lead", "cwd": proj, "agent": "claude", "ext": team })).await;
+    let lead_id = lead["id"].as_str().unwrap().to_owned();
+    a.until(&lead_id, "the lead running", |t| t.len() == 1 && t[0]["status"] == "running").await;
+    let out = a.cmd("runtime.delegate", json!({ "id": lead_id, "tasks": [{ "subagent": "far", "prompt": "fix the add bug" }] })).await;
+    assert!(out[0]["error"].is_null(), "{out}");
+
+    // the lead's own turn ends first: it waits on far, in Working
+    a.until(&lead_id, "the lead's turn ended", |t| t.len() == 1 && t[0]["status"] != "running").await;
+    let s = until("the lead waits on far", 30, async || {
+        let s = a.cmd("runtime.get", json!({ "id": lead_id })).await;
+        (s["ext"]["wisp.runtime"]["waitsOn"] == json!(["far"])).then_some(s)
+    })
+    .await;
+    assert_eq!(s["state"], "running", "{s}");
+
+    // far ends there: wisp sends the lead its report, with its changes in the lead's folder
+    let turns = a.until(&lead_id, "the report-back turn", |t| t.len() == 2).await;
+    assert_eq!(turns[1]["by"], "wisp", "{turns:?}");
+    let p = turns[1]["prompt"].as_str().unwrap_or_default();
+    assert!(p.starts_with("Subagents you delegated to earlier have finished."), "{p}");
+    assert!(p.contains("### far (") && p.contains("— done"), "{p}");
+    assert!(p.contains("It ran on studio") && p.contains("file(s) are in your folder"), "{p}");
+    assert_eq!(std::fs::read_to_string(proj.join("notes.txt")).unwrap(), "new file\n", "the new file it made there is here");
+    // brought once: a read after brings nothing again
+    let again = a.cmd("runtime.results", json!({ "id": lead_id, "ids": [out[0]["id"].clone()], "wait": 0 })).await;
+    assert!(!again["reports"][0]["text"].as_str().unwrap_or_default().contains("in your folder"), "{again}");
+}

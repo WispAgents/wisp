@@ -53,6 +53,9 @@ pub struct Runtime {
     pub(crate) probes: Arc<crate::probes::Probes>,
     /// which detection round last settled each harness's row on the `harnesses` topic (`more/agents.rs`, ADR-0066)
     pub(crate) harness_rounds: crate::more::Rounds,
+    /// the lead's delegates elsewhere being watched, as `<lead> <job key>` (`more/far_watch.rs`): one watch each; the
+    /// store's owed records are what it watches, and a restart arms them again
+    pub(crate) far_watch: Mutex<std::collections::HashSet<String>>,
 }
 
 impl std::fmt::Debug for Runtime {
@@ -85,6 +88,7 @@ impl Runtime {
             claims: crate::claims::Claims::default(),
             probes: Arc::new(crate::probes::Probes::new(clock.clone())),
             harness_rounds: crate::more::Rounds::default(),
+            far_watch: Mutex::default(),
             clock,
         })
     }
@@ -105,8 +109,8 @@ impl Runtime {
         let mut leads: Vec<String> = Vec::new();
         for t in self.repo.running_turns().await? {
             let s = self.repo.session(t.session_id.as_str()).await?;
-            // a delegate wisp's restart stopped: its lead hears of it (once every one it waits on ended)
-            leads.extend(s.parent_id.as_ref().map(|p| p.0.clone()));
+            // a delegate wisp's restart stopped (a child, a crew job): its lead hears of it
+            leads.extend(crate::more::lead_of(&s));
             self.end_unfinished(s, t).await?;
         }
         // a lead still in Working on its delegates, or with their report queued: it goes on from where it was
@@ -636,9 +640,11 @@ impl Runtime {
         let (marked, kids) = self.stop_owed(&mut s).await?;
         self.persist(&mut s, marked.into_iter().collect()).await?;
         drop(guard);
-        for kid in kids {
+        let (far, here): (Vec<String>, Vec<String>) = kids.into_iter().partition(|k| k.contains('|'));
+        for kid in here {
             self.stop_run(&kid);
         }
+        self.stop_far(&far);
         Ok(())
     }
 

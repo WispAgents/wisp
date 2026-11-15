@@ -7,7 +7,7 @@ use std::sync::Arc;
 use serde_json::{Value, json};
 use wisp_runtime_api::SessionId;
 use wisp_runtime_api::commands::{Delegation, Report};
-use wisp_runtime_api::model::{Session, SessionState};
+use wisp_runtime_api::model::{Session, SessionState, TurnStatus};
 use wisp_runtime_core::prompt::subagents::{AWAY_SUBAGENT, in_folder};
 
 use super::{push, slot, str_at, with_slot};
@@ -28,12 +28,36 @@ fn wire(e: wisp_kernel::WireError) -> RuntimeError {
     RuntimeError::Invalid(e.message)
 }
 
-/// What the machine says of a task there: its row and its last turn.
-struct There {
-    session: Value,
-    state: SessionState,
-    last: Value,
+/// What the machine says of a task there: its row, and the delegation's turn there (the one it started, or its last
+/// when that isn't known; Null: not shown there yet).
+#[derive(Clone)]
+pub(crate) struct There {
+    pub(crate) session: Value,
+    pub(crate) state: SessionState,
+    pub(crate) job: Value,
+    /// the delegation's turn there is known (its record's `turnId`)
+    pub(crate) known: bool,
 }
+
+impl There {
+    /// The job's turn's status there (None: not shown yet), as `owed::far_open` reads it.
+    pub(crate) fn job_status(&self) -> Option<TurnStatus> {
+        serde_json::from_value(self.job.get("status")?.clone()).ok()
+    }
+}
+
+/// The note a far job's report carries about its changes: how many came into the lead's folder, or why they didn't.
+fn bring_note(got: wisp_kernel::Result<(u32, Option<String>)>) -> String {
+    match got {
+        Ok((_, Some(e))) => format!("\n\n(Its changes didn't come back: {e})"),
+        Ok((files, None)) if files > 0 => format!("\n\n(Its changes to {files} file(s) are in your folder now.)"),
+        Ok(_) => String::new(),
+        Err(e) => format!("\n\n(Its changes didn't come back: {})", e.message),
+    }
+}
+
+/// The record's note of what came back (`far_ahead` keeps it there for the report the lead gets).
+pub(crate) const BROUGHT_NOTE: &str = "broughtNote";
 
 impl Runtime {
     /// A lead deleted (ADR-0060): each of its delegates on another machine goes there too, its task and its copy
@@ -52,12 +76,15 @@ impl Runtime {
         }
     }
 
-    async fn there(&self, machine: &str, id: &str) -> Option<There> {
+    /// What machine `machine` says of task `id` there; `turn`: the delegation's turn there ("" = its last). None: it
+    /// didn't answer (both asks must: a job read without its turns would look ended with no report).
+    pub(crate) async fn there(&self, machine: &str, id: &str, turn: &str) -> Option<There> {
         let session = self.route(machine, "runtime.get", json!({ "id": id })).await.ok()?;
         let state = serde_json::from_value(session.get("state").cloned().unwrap_or_default()).unwrap_or(SessionState::Running);
-        let turns = self.route(machine, "runtime.turns", json!({ "id": id })).await.ok().unwrap_or_default();
+        let turns = self.route(machine, "runtime.turns", json!({ "id": id })).await.ok()?;
         let list = turns.as_array().cloned().or_else(|| turns.get("turns").and_then(Value::as_array).cloned()).unwrap_or_default();
-        Some(There { session, state, last: list.last().cloned().unwrap_or_default() })
+        let job = if turn.is_empty() { list.last() } else { list.iter().find(|t| str_at(t, "id") == turn) };
+        Some(There { session, state, job: job.cloned().unwrap_or_default(), known: !turn.is_empty() })
     }
 
     /// A member whose place is machine `machine`: the lead's work carried there (afresh each job, after the last job's
@@ -70,7 +97,7 @@ impl Runtime {
         slot_name: &str,
         existing: Option<String>,
         prompt: &str,
-    ) -> Result<(String, String)> {
+    ) -> Result<(String, String, String)> {
         // a capped lead's work stays on this computer, under its cap (a sandbox refuses it the same way)
         if crate::capped::cap_of(lead).is_some() {
             return Err(RuntimeError::Wire(wisp_kernel::WireError::forbidden(wisp_kernel::caps::capped_refusal(
@@ -81,7 +108,7 @@ impl Runtime {
         if let Some(key) = &before {
             let place = slot(lead).and_then(|x| x.get(AWAY)).and_then(|a| a.get(key)).and_then(Value::as_str).unwrap_or(machine);
             // still at its last job: refused; done: its changes come back before the copy is made afresh
-            if let Some(r) = self.machine_report(lead, key, place).await
+            if let Some(r) = self.far_report(lead, key).await
                 && !r.done
             {
                 return Err(RuntimeError::Conflict(format!(
@@ -95,9 +122,9 @@ impl Runtime {
         // its folder has another path there: the lead's paths as paths in the folder, and it's told where it is
         let text = format!("{}\n{AWAY_SUBAGENT}", in_folder(prompt, &lead.cwd));
         if let Some((_, id)) = before.as_deref().and_then(|k| k.split_once('|'))
-            && self.route(machine, "runtime.followUp", json!({ "id": id, "text": text, "queue": true })).await.is_ok()
+            && let Ok(f) = self.route(machine, "runtime.followUp", json!({ "id": id, "text": text, "queue": true })).await
         {
-            return Ok((format!("{machine}|{id}"), carried.machine));
+            return Ok((format!("{machine}|{id}"), carried.machine, str_at(&f, "turnId")));
         }
         let mut args = json!({ "prompt": text, "cwd": carried.cwd, "mode": lead.mode, "title": format!("{slot_name} · {}", lead.title) });
         for k in ["agent", "model", "effort"] {
@@ -107,49 +134,93 @@ impl Runtime {
             }
         }
         let made = self.route(machine, "runtime.create", args).await.map_err(wire)?;
-        Ok((format!("{machine}|{}", str_at(&made, "id")), carried.machine))
+        Ok((format!("{machine}|{}", str_at(&made, "id")), carried.machine, str_at(&made, "turnId")))
     }
 
-    /// A machine member's report, read there; once its job is done, the job's changes come into the lead's folder
-    /// (once per job). The text says where it ran.
-    pub(super) async fn machine_report(self: &Arc<Self>, lead: &Session, key: &str, place: &str) -> Option<Report> {
+    /// A job on another wisp, for `subagent_results` and the next delegation (`<machine>|<task>`: a machine member,
+    /// a sandbox member, a crew job there): read there; once it's done, its changes come into the lead's folder once
+    /// (`bring_far`).
+    pub(crate) async fn far_report(self: &Arc<Self>, lead: &Session, key: &str) -> Option<Report> {
         let (machine, id) = key.split_once('|')?;
-        let t = self.there(machine, id).await?;
+        let turn = self.far_turn_of(lead.id.as_str(), key).await;
+        let t = self.there(machine, id, &turn).await?;
         let done = t.state != SessionState::Running;
-        let mut text = str_at(&t.last, "text");
-        let job = format!("{key}@{}", str_at(&t.last, "id"));
-        let lead = self.repo.session(lead.id.as_str()).await.ok()?;
-        let brought = slot(&lead)
-            .and_then(|m| m.get(BROUGHT))
-            .and_then(Value::as_array)
-            .is_some_and(|b| b.iter().any(|x| x.as_str() == Some(job.as_str())));
-        if done && !brought {
-            let bring = wisp_machines_api::BringArgs { id: machine.to_owned(), from: str_at(&t.session, "cwd"), into: lead.cwd.clone() };
-            let note = match crate::calls::run::<wisp_machines_api::Bring>(&*self.host, bring).await {
-                Ok(wisp_machines_api::Brought { error: Some(e), .. }) => format!("\n\n(Its changes didn't come back: {e})"),
-                Ok(b) if b.files > 0 => format!("\n\n(Its changes to {} file(s) are in your folder now.)", b.files),
-                Ok(_) => String::new(),
-                Err(e) => format!("\n\n(Its changes didn't come back: {})", e.message),
-            };
-            text.push_str(&note);
-            let _g = self.task_lock(lead.id.as_str()).await;
-            if let Ok(mut l) = self.repo.session(lead.id.as_str()).await {
-                with_slot(&mut l.ext, |x| push(x, BROUGHT, json!(job)));
-                if let Err(err) = self.persist(&mut l, Vec::new()).await {
-                    tracing::warn!(error = %err, task = lead.id.as_str(), "runtime: a machine member's changes, marked brought");
-                }
-            }
-        }
-        text.push_str("\n\n(It ran on ");
-        text.push_str(place);
-        text.push_str(", on a copy of your folder.)");
+        let note = if done { self.bring_far(lead.id.as_str(), key, &t).await.unwrap_or_default() } else { String::new() };
         Some(Report {
             id: SessionId(key.to_owned()),
             subagent: str_at(&t.session, "title").split(" · ").next().unwrap_or_default().to_owned(),
             state: t.state,
             done,
-            text,
-            cost_usd: t.last.pointer("/stats/costUsd").and_then(Value::as_f64),
+            text: far_text(lead, key, &t, &note),
+            cost_usd: t.job.pointer("/stats/costUsd").and_then(Value::as_f64),
         })
     }
+
+    /// The turn there the lead's latest record of job `key` names ("" when none does: its last turn counts).
+    async fn far_turn_of(&self, lead: &str, key: &str) -> String {
+        let mut recent = self.repo.turns(lead, None, Some(8)).await.unwrap_or_default();
+        recent.sort_by_key(|t| std::cmp::Reverse(t.idx));
+        recent
+            .iter()
+            .flat_map(super::report_back::records)
+            .find(|d| str_at(d, "sessionId") == key)
+            .map(|d| str_at(d, "turnId"))
+            .unwrap_or_default()
+    }
+
+    /// A done far job's changes into lead `lead`'s folder, once (v1 relay.js `return`), with the note its report
+    /// carries; None: nothing to bring (a crew job there worked in the member's folder), or it was brought already.
+    /// Off the lead's lock (git and the machine's link can take long): bringers of one lead go one at a time under a
+    /// lock of their own, and the mark (on the lead, the note on the owed record) is written before the next looks.
+    pub(crate) async fn bring_far(self: &Arc<Self>, lead: &str, key: &str, t: &There) -> Option<String> {
+        let (machine, _) = key.split_once('|')?;
+        let _one = self.task_lock(&format!("{lead} bring")).await;
+        let l = self.repo.session(lead).await.ok()?;
+        let own = slot(&l);
+        if own.and_then(|m| m.get(super::delegate::CREW_JOBS)).and_then(|j| j.get(key)).is_some() {
+            return None;
+        }
+        let has = |list: &str, mark: &str| {
+            own.and_then(|m| m.get(list)).and_then(Value::as_array).is_some_and(|b| b.iter().any(|x| x.as_str() == Some(mark)))
+        };
+        let machine_member = own.and_then(|m| m.get(AWAY)).and_then(|a| a.get(key)).is_some();
+        let (list, mark) = if machine_member { (BROUGHT, format!("{key}@{}", str_at(&t.job, "id"))) } else { ("brought", key.to_owned()) };
+        if has(list, &mark) {
+            return None;
+        }
+        let (from, into) = (str_at(&t.session, "cwd"), l.cwd.clone());
+        let got = if machine_member {
+            let a = wisp_machines_api::BringArgs { id: machine.to_owned(), from, into };
+            crate::calls::run::<wisp_machines_api::Bring>(&*self.host, a).await.map(|b| (b.files, b.error))
+        } else {
+            let a = wisp_sandbox_api::BringArgs { machine: machine.to_owned(), from, into };
+            crate::calls::run::<wisp_sandbox_api::Bring>(&*self.host, a).await.map(|b| (b.files, b.error))
+        };
+        let note = bring_note(got);
+        let _g = self.task_lock(lead).await;
+        let mut l = self.repo.session(lead).await.ok()?;
+        with_slot(&mut l.ext, |x| push(x, list, json!(mark)));
+        let mut turns = Vec::new();
+        if let Ok(Some(mut owing)) = self.owed_turn(lead, None).await
+            && with_slot(&mut owing.ext, |x| super::report_back::note_brought(x, key, &note))
+        {
+            turns.push(owing);
+        }
+        if let Err(err) = self.persist(&mut l, turns).await {
+            tracing::warn!(error = %err, task = lead, "runtime: a delegate's changes elsewhere, marked brought");
+        }
+        Some(note)
+    }
+}
+
+/// A far job's report text: its turn's answer, `note` (what came back), and where a machine member ran.
+pub(crate) fn far_text(lead: &Session, key: &str, t: &There, note: &str) -> String {
+    let mut text = str_at(&t.job, "text");
+    text.push_str(note);
+    if let Some(place) = slot(lead).and_then(|m| m.get(AWAY)).and_then(|a| a.get(key)).and_then(Value::as_str) {
+        text.push_str("\n\n(It ran on ");
+        text.push_str(place);
+        text.push_str(", on a copy of your folder.)");
+    }
+    text
 }

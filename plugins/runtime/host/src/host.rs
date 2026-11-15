@@ -121,8 +121,12 @@ pub struct Recorder {
     pub router: Option<Arc<dyn wisp_router_api::service::RouterApi>>,
     /// the settings it answers
     pub settings: std::collections::BTreeMap<String, serde_json::Value>,
-    /// what other plugins' commands answer (`budget.resetAt`, `later.waitAtLimit`…); one not here is unavailable
+    /// what other plugins' commands answer (`budget.resetAt`, `later.waitAtLimit`…); one not here is unavailable. A
+    /// command routed to another wisp answers `machines.route <cmd>` first (`machines.route runtime.get`), then
+    /// `machines.route`
     pub answers: std::collections::BTreeMap<String, serde_json::Value>,
+    /// answers a test changes as it goes (a job elsewhere that ends): looked up before `answers`, the same way
+    pub live: Mutex<std::collections::BTreeMap<String, serde_json::Value>>,
     /// the commands it was asked, in order
     pub asked: Mutex<Vec<(String, serde_json::Value)>>,
     /// where an answer's pictures are kept (`~/.wisp/shots`); none: not copied
@@ -151,8 +155,16 @@ impl Recorder {
 
 impl Host for Recorder {
     fn command(&self, cmd: &str, args: serde_json::Value) -> BoxFuture<'static, Result<serde_json::Value, WireError>> {
+        let routed = (cmd == "machines.route").then(|| args.get("cmd").and_then(serde_json::Value::as_str)).flatten();
+        let keys: Vec<String> = routed.map(|c| format!("{cmd} {c}")).into_iter().chain([cmd.to_owned()]).collect();
         self.asked.lock().unwrap_or_else(PoisonError::into_inner).push((cmd.to_owned(), args));
-        let out = self.answers.get(cmd).cloned().ok_or_else(|| WireError::unavailable(format!("{cmd}: no kernel here")));
+        let live = self.live.lock().unwrap_or_else(PoisonError::into_inner);
+        let out = keys
+            .iter()
+            .find_map(|k| live.get(k).or_else(|| self.answers.get(k)))
+            .cloned()
+            .ok_or_else(|| WireError::unavailable(format!("{cmd}: no kernel here")));
+        drop(live);
         Box::pin(async move { out })
     }
     fn setting(&self, key: &str) -> Option<serde_json::Value> {

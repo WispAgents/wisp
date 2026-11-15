@@ -2,7 +2,7 @@
 //! a new turn takes over.
 #![allow(clippy::unwrap_used)]
 
-use serde_json::{Value, json};
+use serde_json::json;
 use wisp_runtime_core::owed::{self, Next, Open};
 
 fn open(name: &str, running: bool) -> Open {
@@ -76,13 +76,29 @@ fn marking_read_changes_only_the_owed_records_named() {
 }
 
 #[test]
-fn delegates_elsewhere_are_read_with_subagent_results_not_waited_on() {
-    let jobs: serde_json::Map<String, Value> = [("job1".to_owned(), json!("quill"))].into_iter().collect();
-    assert!(!owed::is_away(&json!({ "sessionId": "abc" }), Some(&jobs)));
-    assert!(owed::is_away(&json!({ "sessionId": "m1|r1" }), None), "a sandbox's or another machine's");
-    assert!(owed::is_away(&json!({ "sessionId": "x", "place": "studio" }), None));
-    assert!(owed::is_away(&json!({ "sessionId": "job1" }), Some(&jobs)), "a crew member's job");
-    assert!(owed::is_away(&json!({ "sessionId": "" }), None));
+fn delegates_elsewhere_are_watched_there_and_local_crew_jobs_here() {
+    assert!(!owed::is_far(&json!({ "sessionId": "abc" })), "a child, or a crew job here: read here");
+    assert!(owed::is_far(&json!({ "sessionId": "m1|r1" })), "a sandbox's, another machine's, a crew job there");
+    assert!(owed::has_job(&json!({ "sessionId": "job1" })));
+    assert!(!owed::has_job(&json!({ "sessionId": "" })), "one that didn't go");
+}
+
+#[test]
+fn a_job_elsewhere_stands_as_its_machine_answers() {
+    use wisp_runtime_api::model::{SessionState as S, TurnStatus as T};
+    let at = |state, job, known| {
+        let o = owed::far_open("far", state, job, known);
+        (o.running, o.stopped)
+    };
+    assert_eq!(at(None, Some(T::Done), true), (true, false), "no answer: still at work as far as the lead knows");
+    assert_eq!(at(Some(S::Running), Some(T::Running), true), (true, false));
+    assert_eq!(at(Some(S::Review), Some(T::Done), true), (false, false), "done");
+    assert_eq!(at(Some(S::Review), Some(T::Stopped), true), (false, true), "stopped there");
+    assert_eq!(at(Some(S::Review), None, true), (true, false), "its turn isn't shown there yet");
+    assert_eq!(at(Some(S::Review), Some(T::Error), true), (false, false));
+    assert_eq!(at(Some(S::Running), Some(T::Done), true), (false, false), "its turn ended: a later one there doesn't hold it");
+    assert_eq!(at(Some(S::Running), Some(T::Done), false), (true, false), "turn not known: its task still at it holds");
+    assert_eq!(at(Some(S::Review), Some(T::Done), false), (false, false), "turn not known: its last turn counts");
 }
 
 #[test]

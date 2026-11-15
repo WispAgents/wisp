@@ -340,31 +340,231 @@ async fn a_refused_follow_up_between_doesnt_lose_what_the_lead_is_owed() {
     assert!(records(&turns(&r, id.as_str()).await[0]).iter().all(|d| d["owed"] == false));
 }
 
-/// A delegate on another machine isn't waited on (it's read with `subagent_results`): the lead's end lands it, and the
-/// record stops being owed, so its next turns aren't told it's still at work.
+/// A crew job here (F-crew-11: `crew.assign` made it, `ext["wisp.crew"].from` = the lead) is waited on as a child is
+/// (v1 `#awaiting` counts crew relays): the lead's end holds it in Working on the member, and the job's end sends its
+/// report back. (Before: it wasn't owed past the lead's turn, and the lead landed at once.)
 #[tokio::test(flavor = "multi_thread")]
-async fn a_delegate_elsewhere_isnt_waited_on_nor_carried_into_the_leads_next_turn() {
-    let mut answers = BTreeMap::new();
-    answers.insert("machines.carry".to_owned(), json!({ "cwd": "/there/copies/k/repo", "machine": "studio" }));
-    answers.insert("machines.route".to_owned(), json!({ "id": "r1", "state": "running", "cwd": "/there/copies/k/repo", "title": "far" }));
-    let r = common::rig_with(wisp_runtime::Recorder { answers, ..wisp_runtime::Recorder::default() }).await;
+async fn a_crew_job_here_holds_its_lead_and_its_report_comes_back_when_it_ends() {
+    let r = rig().await;
     let mut ext = BTreeMap::new();
-    ext.insert(
-        "wisp.runtime".to_owned(),
-        json!({ "subagents": [{ "name": "far", "agent": "codex", "machine": "m1", "place": "studio" }] }),
-    );
-    let start = StartArgs { prompt: "gate away-l lead".into(), cwd: Some(common::tmp()), ext, ..StartArgs::default() };
+    ext.insert("wisp.runtime".to_owned(), json!({ "subagents": [{ "name": "ada", "label": "Ada", "crew": "crew-ada" }] }));
+    let start = StartArgs { prompt: "gate crewh-l lead".into(), cwd: Some(common::tmp()), ext, ..StartArgs::default() };
     let id = r.rt.create(start).await.unwrap().id;
     until("the lead runs", || async { last(&r, id.as_str()).await.is_some_and(|t| t.status == TurnStatus::Running) }).await;
+    // the job crew.assign makes: a task of its own here, the lead as `from`
+    let mut job_ext = BTreeMap::new();
+    job_ext.insert("wisp.crew".to_owned(), json!({ "id": "crew-ada", "from": { "id": id.as_str(), "title": "lead" } }));
+    let job_start = StartArgs { prompt: "gate crewh-k work".into(), cwd: Some(common::tmp()), ext: job_ext, ..StartArgs::default() };
+    let job = r.rt.create(job_start).await.unwrap().id;
+    until("the job runs", || async { last(&r, job.as_str()).await.is_some_and(|t| t.status == TurnStatus::Running) }).await;
+    r.host.live.lock().unwrap().insert("crew.assign".into(), json!({ "session": { "id": job.as_str(), "agent": "fake", "model": "m1" } }));
+    let task = DelegateTask { subagent: "ada".into(), prompt: "fix it".into() };
+    let out = r.rt.delegate(DelegateArgs { id: id.clone(), tasks: vec![task] }).await.unwrap();
+    assert_eq!(out[0].id, job, "{out:?}");
+    open("crewh-l");
+    ended(&r, id.as_str()).await;
+    until("it waits on the member", || async { r.rt.get(id.as_str()).await.is_ok_and(|s| waits_on(&s) == json!(["ada"])) }).await;
+    let s = r.rt.get(id.as_str()).await.unwrap();
+    assert_eq!(s.state, SessionState::Running, "held on its crew job");
+    assert_eq!(finished(&r, id.as_str()), 0);
+    open("crewh-k");
+    until("the report-back turn ran", || async {
+        let t = turns(&r, id.as_str()).await;
+        t.len() == 2 && t[1].status == TurnStatus::Done
+    })
+    .await;
+    let t = turns(&r, id.as_str()).await;
+    assert!(t[1].prompt.starts_with(REPORTS_BACK), "{}", t[1].prompt);
+    assert!(t[1].prompt.contains("### ada (") && t[1].prompt.contains("— done"), "{}", t[1].prompt);
+    assert_eq!(records(&t[0])[0]["owed"], false);
+    until("it lands", || async { r.rt.get(id.as_str()).await.is_ok_and(|s| s.state == SessionState::Review) }).await;
+    assert_eq!(finished(&r, id.as_str()), 1);
+}
+
+/// What a machine answers for the job `r1` (turn `rt1`) there: still at work, or done with `fixed it`.
+fn far_answers(state: &str) -> Vec<(&'static str, Value)> {
+    let status = if state == "running" { "running" } else { "done" };
+    vec![
+        ("machines.route runtime.get", json!({ "id": "r1", "state": state, "cwd": "/there/copies/k/repo", "title": "far · lead" })),
+        ("machines.route runtime.turns", json!([{ "id": "rt1", "status": status, "text": "fixed it" }])),
+    ]
+}
+
+fn set_live(host: &wisp_runtime::Recorder, answers: Vec<(&'static str, Value)>) {
+    let mut live = host.live.lock().unwrap();
+    for (k, v) in answers {
+        live.insert(k.to_owned(), v);
+    }
+}
+
+/// A host that answers for a member on machine `m1` (named studio) and a sandbox member: the copy, the task there,
+/// the bring.
+fn far_host(scope: Option<wisp_proc::Scope>) -> wisp_runtime::Recorder {
+    let mut answers = BTreeMap::new();
+    answers.insert("machines.carry".to_owned(), json!({ "cwd": "/there/copies/k/repo", "machine": "studio" }));
+    answers.insert("machines.route runtime.create".to_owned(), json!({ "id": "r1", "turnId": "rt1" }));
+    answers.insert("machines.route runtime.stop".to_owned(), json!({}));
+    answers.insert("machines.bring".to_owned(), json!({ "files": 2 }));
+    answers.insert(
+        "sandbox.place".to_owned(),
+        json!({ "machine": "sb1", "peer": "p", "sandbox": "x", "cwd": "/home/u/code/x", "made": true }),
+    );
+    answers.insert("sandbox.bring".to_owned(), json!({ "files": 1 }));
+    let host = wisp_runtime::Recorder { answers, scope, ..wisp_runtime::Recorder::default() };
+    set_live(&host, far_answers("running"));
+    host
+}
+
+/// A lead whose one member works `machine` (`m1`: another machine; `sandbox`), its turn held at gate `gate`, and its
+/// task handed there: the lead's id.
+async fn far_lead(r: &Rig, gate: &str, machine: &str) -> SessionId {
+    let mut ext = BTreeMap::new();
+    ext.insert("wisp.runtime".to_owned(), json!({ "subagents": [{ "name": "far", "agent": "codex", "machine": machine }] }));
+    let start = StartArgs { prompt: format!("gate {gate} lead"), cwd: Some(common::tmp()), ext, ..StartArgs::default() };
+    let id = r.rt.create(start).await.unwrap().id;
+    until("the lead runs", || async { last(r, id.as_str()).await.is_some_and(|t| t.status == TurnStatus::Running) }).await;
     let task = DelegateTask { subagent: "far".into(), prompt: "fix it".into() };
     let out = r.rt.delegate(DelegateArgs { id: id.clone(), tasks: vec![task] }).await.unwrap();
-    assert_eq!(out[0].id.0, "m1|r1", "{out:?}");
-    open("away-l");
+    assert!(out[0].error.is_none() && out[0].id.0.ends_with("|r1"), "{out:?}");
+    assert_eq!(out[0].turn_id.0, "rt1", "the turn it started there");
+    id
+}
+
+fn asked(r: &Rig, cmd: &str) -> Vec<Value> {
+    r.host
+        .asked
+        .lock()
+        .unwrap()
+        .iter()
+        .filter(|(c, a)| c == cmd || format!("{c} {}", a["cmd"].as_str().unwrap_or_default()) == cmd)
+        .map(|(_, a)| a.clone())
+        .collect()
+}
+
+/// A delegate on another machine (ADR-0059) holds its lead in Working as one here does (v1 `#awaiting` counts
+/// `child.relay`); wisp watches it there (`machines.route`), and when it ends its changes come back once, before its
+/// report, which says so and where it ran; `subagent_results` after that brings nothing again. (Before: the lead's end
+/// let it go, and it was read only with `subagent_results`.)
+#[tokio::test(flavor = "multi_thread")]
+async fn a_delegate_on_another_machine_holds_its_lead_and_comes_back_once_with_its_changes() {
+    let r = common::rig_with(far_host(None)).await;
+    let id = far_lead(&r, "far-l", "m1").await;
+    open("far-l");
+    ended(&r, id.as_str()).await;
+    until("it waits on far", || async { r.rt.get(id.as_str()).await.is_ok_and(|s| waits_on(&s) == json!(["far"])) }).await;
+    assert_eq!(r.rt.get(id.as_str()).await.unwrap().state, SessionState::Running);
+    assert_eq!(asked(&r, "machines.bring").len(), 0, "nothing comes back while it works");
+    set_live(&r.host, far_answers("review"));
+    until("the report-back turn ran", || async {
+        let t = turns(&r, id.as_str()).await;
+        t.len() == 2 && t[1].status == TurnStatus::Done
+    })
+    .await;
+    let p = turns(&r, id.as_str()).await[1].prompt.clone();
+    assert!(p.starts_with(REPORTS_BACK), "{p}");
+    assert!(p.contains("### far (") && p.contains("— done"), "{p}");
+    assert!(p.contains("fixed it"), "{p}");
+    assert!(p.contains("(Its changes to 2 file(s) are in your folder now.)"), "{p}");
+    assert!(p.contains("(It ran on studio, on a copy of your folder.)"), "{p}");
     until("it lands", || async { r.rt.get(id.as_str()).await.is_ok_and(|s| s.state == SessionState::Review) }).await;
-    assert_eq!(records(&last(&r, id.as_str()).await.unwrap())[0]["owed"], false);
-    r.rt.follow_up(FollowUpArgs { id: id.clone(), text: "gate away-l2 next".into(), ..FollowUpArgs::default() }).await.unwrap();
-    until("the follow-up runs", || async { turns(&r, id.as_str()).await.len() == 2 }).await;
-    let told = r.sim.spawned().into_iter().find(|s| s.args.first().is_some_and(|a| a.contains("gate away-l2"))).unwrap();
-    assert!(told.args[0].starts_with("gate away-l2"), "no still-working note: {}", told.args[0]);
-    open("away-l2");
+    let rep = r.rt.results(ResultsArgs { id: id.clone(), ids: vec![SessionId("m1|r1".into())], wait: Some(0) }).await.unwrap();
+    assert!(rep.reports[0].done, "{rep:?}");
+    assert_eq!(asked(&r, "machines.bring").len(), 1, "its changes came back once");
+    assert_eq!(finished(&r, id.as_str()), 1);
+}
+
+/// A sandbox delegate (ADR-0047) is waited on the same way; its changes come back once through `sandbox.bring`.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_sandbox_delegate_holds_its_lead_and_its_changes_come_back_once() {
+    let r = common::rig_with(far_host(None)).await;
+    let id = far_lead(&r, "box-l", "sandbox").await;
+    open("box-l");
+    until("it waits on far", || async { r.rt.get(id.as_str()).await.is_ok_and(|s| waits_on(&s) == json!(["far"])) }).await;
+    set_live(&r.host, far_answers("review"));
+    until("the report-back turn ran", || async {
+        let t = turns(&r, id.as_str()).await;
+        t.len() == 2 && t[1].status == TurnStatus::Done
+    })
+    .await;
+    let p = turns(&r, id.as_str()).await[1].prompt.clone();
+    assert!(p.contains("fixed it") && p.contains("(Its changes to 1 file(s) are in your folder now.)"), "{p}");
+    until("it lands", || async { r.rt.get(id.as_str()).await.is_ok_and(|s| s.state == SessionState::Review) }).await;
+    r.rt.results(ResultsArgs { id: id.clone(), ids: vec![SessionId("sb1|r1".into())], wait: Some(0) }).await.unwrap();
+    assert_eq!(asked(&r, "sandbox.bring").len(), 1, "once");
+}
+
+/// Stop on a lead waiting on a delegate elsewhere reaches it there (`runtime.stop` routed, v1: the relay stops it), and
+/// nothing comes back to the stopped lead when it ends there.
+#[tokio::test(flavor = "multi_thread")]
+async fn stopping_a_lead_stops_its_delegate_elsewhere_there() {
+    let r = common::rig_with(far_host(None)).await;
+    let id = far_lead(&r, "farstop-l", "m1").await;
+    open("farstop-l");
+    until("it waits on far", || async { r.rt.get(id.as_str()).await.is_ok_and(|s| !waits_on(&s).is_null()) }).await;
+    r.rt.stop(id.as_str(), false).await.unwrap();
+    until("the stop reached it there", || async { !asked(&r, "machines.route runtime.stop").is_empty() }).await;
+    let stop = &asked(&r, "machines.route runtime.stop")[0];
+    assert_eq!((stop["id"].as_str(), stop["args"]["id"].as_str()), (Some("m1"), Some("r1")), "{stop}");
+    set_live(&r.host, far_answers("review"));
+    tokio::time::sleep(std::time::Duration::from_millis(1500)).await;
+    let s = r.rt.get(id.as_str()).await.unwrap();
+    assert_eq!(s.state, SessionState::Review);
+    assert_eq!(turns(&r, id.as_str()).await.len(), 1, "nothing sent back to a stopped lead");
+    assert_eq!(asked(&r, "machines.bring").len(), 0, "nothing brought for a stopped lead");
+}
+
+/// wisp restarts while a lead waits on a delegate on another machine: the new wisp watches it again (from the store's
+/// owed record), and its report comes back once it ends there.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_lead_waiting_on_a_delegate_elsewhere_watches_it_again_after_a_restart() {
+    let scope = wisp_proc::Scope::new();
+    let r = common::rig_with(far_host(Some(scope.clone()))).await;
+    let id = far_lead(&r, "farboot-l", "m1").await;
+    open("farboot-l");
+    until("it waits on far", || async { r.rt.get(id.as_str()).await.is_ok_and(|s| !waits_on(&s).is_null()) }).await;
+    // the first wisp goes (its scope, and the watch on it, with it); a second one on the same store
+    scope.cancel();
+    let host = Arc::new(wisp_runtime::Recorder { harnesses: r.host.harnesses.clone(), ..far_host(None) });
+    let rt2 = Runtime::new(Repo::new(r.store.clone()), host.clone(), Arc::new(r.sim.clone()), Arc::new(SystemClock));
+    rt2.start().await.unwrap();
+    tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+    assert_eq!(rt2.turns(id.as_str(), None, None).await.unwrap().len(), 1, "still at work there: nothing yet");
+    set_live(&host, far_answers("review"));
+    until("the report-back turn ran", || async {
+        let t = rt2.turns(id.as_str(), None, None).await.unwrap();
+        t.len() == 2 && t[1].status == TurnStatus::Done
+    })
+    .await;
+    let t = rt2.turns(id.as_str(), None, None).await.unwrap();
+    assert!(t[1].prompt.contains("fixed it") && t[1].prompt.contains("(It ran on studio"), "{}", t[1].prompt);
+    assert_eq!(host.asked.lock().unwrap().iter().filter(|(c, _)| c == "machines.bring").count(), 1);
+}
+
+/// The delegation's own turn there counts, not its task's last: after `rt1` ended, a newer turn runs on the task there
+/// (wisp.later resumed it, the user typed into it): the lead still hears `rt1`'s report. (Read off the last turn, the
+/// lead stayed in Working until Stop.)
+#[tokio::test(flavor = "multi_thread")]
+async fn a_later_turn_on_the_task_there_doesnt_hold_the_lead_on_its_job() {
+    let r = common::rig_with(far_host(None)).await;
+    let id = far_lead(&r, "later-l", "m1").await;
+    open("later-l");
+    until("it waits on far", || async { r.rt.get(id.as_str()).await.is_ok_and(|s| waits_on(&s) == json!(["far"])) }).await;
+    set_live(
+        &r.host,
+        vec![
+            ("machines.route runtime.get", json!({ "id": "r1", "state": "running", "cwd": "/there/copies/k/repo", "title": "far · lead" })),
+            (
+                "machines.route runtime.turns",
+                json!([{ "id": "rt1", "status": "done", "text": "fixed it" }, { "id": "rt2", "status": "running", "text": "" }]),
+            ),
+        ],
+    );
+    until("the report-back turn ran", || async {
+        let t = turns(&r, id.as_str()).await;
+        t.len() == 2 && t[1].status == TurnStatus::Done
+    })
+    .await;
+    let p = turns(&r, id.as_str()).await[1].prompt.clone();
+    assert!(p.contains("### far (") && p.contains("— done") && p.contains("fixed it"), "{p}");
+    assert_eq!(asked(&r, "machines.bring").len(), 1);
 }
