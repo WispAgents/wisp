@@ -57,7 +57,10 @@ async fn a_channel_task_stays_at_edits_its_agent_is_capped_and_only_the_user_rai
     let (proj, rec) = (dir.join("proj"), dir.join("rec"));
     std::fs::create_dir_all(&proj).unwrap();
     std::fs::create_dir_all(&rec).unwrap();
-    let (serve, port) = start_with(&dir, &[("FAKE_DELAY", "20000"), ("FAKE_RECORD", rec.to_str().unwrap())]);
+    // every run holds on the `run` gate (the Slack-started prompt carries no `gate` prefix) until the test is done
+    let gates = common::gates(&dir);
+    let env = [("FAKE_GATE", gates.to_str().unwrap()), ("FAKE_GATE_ALL", "run"), ("FAKE_RECORD", rec.to_str().unwrap())];
+    let (serve, port) = start_with(&dir, &env);
     let api = Api { http: reqwest::Client::new(), port, n: 0.into() };
     let applied = api
         .try_cmd(
@@ -117,5 +120,6 @@ async fn a_channel_task_stays_at_edits_its_agent_is_capped_and_only_the_user_rai
     assert!(t["ext"]["wisp.runtime"].get("capped").is_none(), "{t}");
     let (text, _) = mcp(&api, port, (&id, &capped_token), "wisp_connectors", json!({})).await;
     assert!(!text.contains("mode cap"), "{text}");
+    common::open_gate(&gates, "run");
     drop(serve);
 }

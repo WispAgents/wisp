@@ -34,8 +34,9 @@ async fn until(what: &str, secs: u64, mut f: impl AsyncFnMut() -> Option<Value>)
 #[tokio::test(flavor = "multi_thread")]
 async fn a_delegate_on_another_machine_runs_there_says_where_and_its_change_comes_back() {
     let (da, db) = (temp("dlg-machine-a"), temp("dlg-machine-b"));
-    // the lead stays running while it delegates (its own fake run is slow)
-    let (_sa, pa) = start_with(&da, &[("FAKE_DELAY", "60000")]);
+    // the lead stays running while it delegates: every run here holds on the `lead` gate
+    let ga = common::gates(&da);
+    let (_sa, pa) = start_with(&da, &[("FAKE_GATE", ga.to_str().unwrap()), ("FAKE_GATE_ALL", "lead")]);
     let (_sb, pb) = start(&db);
     let a = Api { http: reqwest::Client::new(), port: pa, n: 0.into() };
     let b = Api { http: reqwest::Client::new(), port: pb, n: 0.into() };
@@ -108,6 +109,7 @@ async fn a_delegate_on_another_machine_runs_there_says_where_and_its_change_come
     // a second read brings nothing twice
     let again = a.cmd("runtime.results", json!({ "id": lead_id, "ids": [], "wait": 0 })).await;
     assert!(!again["reports"][0]["text"].as_str().unwrap_or_default().contains("in your folder"), "{again}");
+    common::open_gate(&ga, "lead");
 }
 
 async fn nothing_runs_here(a: &Api, id: &str) -> bool {
@@ -119,7 +121,8 @@ async fn nothing_runs_here(a: &Api, id: &str) -> bool {
 #[tokio::test(flavor = "multi_thread")]
 async fn deleting_the_lead_deletes_its_delegates_copy_and_task_there() {
     let (da, db) = (temp("dlg-gone-a"), temp("dlg-gone-b"));
-    let (_sa, pa) = start_with(&da, &[("FAKE_DELAY", "60000")]);
+    let ga = common::gates(&da);
+    let (_sa, pa) = start_with(&da, &[("FAKE_GATE", ga.to_str().unwrap()), ("FAKE_GATE_ALL", "lead")]);
     let (_sb, pb) = start(&db);
     let a = Api { http: reqwest::Client::new(), port: pa, n: 0.into() };
     let b = Api { http: reqwest::Client::new(), port: pb, n: 0.into() };
@@ -154,6 +157,7 @@ async fn deleting_the_lead_deletes_its_delegates_copy_and_task_there() {
     assert!(proj.join("math.js").is_file(), "the lead's own folder stays");
     let row = a.cmd("machines.get", json!({ "id": machine })).await;
     assert!(row["uncarry"].is_null(), "nothing kept for the sweep: {row}");
+    common::open_gate(&ga, "lead");
 }
 
 /// The lead's turn ends while its delegate on the other machine still works (v1 `#awaiting` counts `child.relay`): it
@@ -163,9 +167,10 @@ async fn deleting_the_lead_deletes_its_delegates_copy_and_task_there() {
 #[tokio::test(flavor = "multi_thread")]
 async fn a_lead_whose_delegate_elsewhere_outlasts_its_turn_hears_its_report_and_gets_its_changes() {
     let (da, db) = (temp("dlg-wait-a"), temp("dlg-wait-b"));
-    // the lead's run lasts long enough to delegate; the delegate's there outlasts it
-    let (_sa, pa) = start_with(&da, &[("FAKE_DELAY", "3000")]);
-    let (_sb, pb) = start_with(&db, &[("FAKE_DELAY", "9000")]);
+    // the lead's run holds on `lead` until it has delegated; the delegate's there holds on `far` until the lead's ended
+    let (ga, gb) = (common::gates(&da), common::gates(&db));
+    let (_sa, pa) = start_with(&da, &[("FAKE_GATE", ga.to_str().unwrap()), ("FAKE_GATE_ALL", "lead")]);
+    let (_sb, pb) = start_with(&db, &[("FAKE_GATE", gb.to_str().unwrap()), ("FAKE_GATE_ALL", "far")]);
     let a = Api { http: reqwest::Client::new(), port: pa, n: 0.into() };
     let added = a.cmd("machines.add", json!({ "transport": "loopback", "address": "127.0.0.1", "port": pb, "name": "studio" })).await;
     let machine = added["id"].as_str().unwrap().to_owned();
@@ -188,6 +193,7 @@ async fn a_lead_whose_delegate_elsewhere_outlasts_its_turn_hears_its_report_and_
     a.until(&lead_id, "the lead running", |t| t.len() == 1 && t[0]["status"] == "running").await;
     let out = a.cmd("runtime.delegate", json!({ "id": lead_id, "tasks": [{ "subagent": "far", "prompt": "fix the add bug" }] })).await;
     assert!(out[0]["error"].is_null(), "{out}");
+    common::open_gate(&ga, "lead");
 
     // the lead's own turn ends first: it waits on far, in Working
     a.until(&lead_id, "the lead's turn ended", |t| t.len() == 1 && t[0]["status"] != "running").await;
@@ -197,6 +203,7 @@ async fn a_lead_whose_delegate_elsewhere_outlasts_its_turn_hears_its_report_and_
     })
     .await;
     assert_eq!(s["state"], "running", "{s}");
+    common::open_gate(&gb, "far");
 
     // far ends there: wisp sends the lead its report, with its changes in the lead's folder
     let turns = a.until(&lead_id, "the report-back turn", |t| t.len() == 2).await;

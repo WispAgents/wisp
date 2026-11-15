@@ -12,6 +12,7 @@
 //!   `FAKE_DELAY` / `FAKE_LINGER`  ms to wait before answering / after the result
 //!   `FAKE_GATE`        directory; a run whose prompt is `gate <name> …` (or has a `\n\ngate <name>` paragraph) waits
 //!                      until the file `<dir>/<name>` exists: the test holds the turn running until it creates it
+//!   `FAKE_GATE_ALL`    a gate name: every run (no prompt prefix needed, e.g. one a Slack message started) waits on it
 //!   `FAKE_REPLAY`      claude: print this .jsonl as its stream and exit (a recorded run)
 //!   `FAKE_CODEX_USAGE` a file: codex app-server's `account/rateLimits/read` answers its JSON as `rateLimits`
 //!   `FAKE_CLI_VERSION` what --version says (9.9.9); `FAKE_AUTH_PROFILE`, `FAKE_AUTH_FAIL` for `auth status --text`
@@ -55,7 +56,8 @@ fn wait_ms(k: &str) {
 fn wait_gate(prompt: &str) {
     let Some(dir) = env("FAKE_GATE") else { return };
     let gated = prompt.strip_prefix("gate ").or_else(|| prompt.split("\n\ngate ").nth(1));
-    if let Some(name) = gated.and_then(|r| r.split_whitespace().next()) {
+    let all = env("FAKE_GATE_ALL");
+    if let Some(name) = all.as_deref().or_else(|| gated.and_then(|r| r.split_whitespace().next())) {
         let file = Path::new(&dir).join(name);
         while !file.exists() {
             std::thread::sleep(std::time::Duration::from_millis(20));
