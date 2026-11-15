@@ -284,13 +284,32 @@ async fn a_hung_harness_probe_is_ended_by_its_timeout() {
 }
 
 /// Round 211 (the leak seen): the caller of `runtime.agents` gives up (a closed request, an MCP client's own timeout)
-/// while its probes hang: the dropped command never reaches the probes' time limit, so dropping it must end them; before,
-/// nothing did while the server ran, and they ran on with ppid 1 for an hour.
+/// while its probes hang; before, nothing ended them while the server ran, and they ran on with ppid 1 for an hour.
+/// Since ADR-0066 the detection round runs on its own task (a caller that hangs up must not leave the harnesses topic
+/// `checking`: `plugins/runtime/host/tests/detect.rs` `a_caller_that_hangs_up_never_leaves_rows_checking`), so the
+/// round still waits on the probes: they end, each with its group, at their own time limit (15 s), never later, and
+/// the round lands their answer (kept by the memo: a plain ask afterwards answers from it and starts no probe). A
+/// probe nobody waits on at all ends at once (`plugins/runtime/host/src/probes.rs` `a_probe_nobody_waits_for_is_dropped`).
 #[tokio::test(flavor = "multi_thread")]
-async fn a_probe_whose_caller_hung_up_is_ended() {
+async fn a_probe_whose_caller_hung_up_ends_at_its_time_limit() {
     let (serve, running, _, _) = hung_probes("serve-orphans-probe-hangup", true).await;
-    // well inside the probes' own 15 s limit: the drop ends them, not their timeout
-    let left = left_after(&running, Duration::from_secs(8)).await;
+    // the probes started at most ~6 s ago; their own limit is 15 s from their start
+    let left = left_after(&running, Duration::from_secs(25)).await;
+    assert!(left.is_empty(), "probes ran on past their time limit after their caller hung up: {left:?}");
+    let rec = serve.dir.join("rec");
+    let n = settled(&rec, Duration::from_secs(1), Duration::from_secs(5)).await.len();
+    let api = Api { http: reqwest::Client::new(), port: port_of(&serve), n: 0.into() };
+    let answer = tokio::time::timeout(Duration::from_secs(5), api.cmd("runtime.agents", json!({})))
+        .await
+        .expect("a plain runtime.agents waited: the hung-up round never landed its answers");
+    assert!(answer.as_array().is_some_and(|a| !a.is_empty()), "{answer}");
+    let after = probes(&rec);
+    assert_eq!(after.len(), n, "the hung-up round's answers weren't kept: a plain ask probed again: {after:?}");
     drop(serve);
-    assert!(left.is_empty(), "probes ran on after their caller hung up: {left:?}");
+}
+
+/// The port `serve` advertised.
+fn port_of(serve: &common::Serve) -> u16 {
+    let v: serde_json::Value = serde_json::from_slice(&std::fs::read(serve.dir.join("home/server.json")).unwrap()).unwrap();
+    u16::try_from(v["port"].as_u64().unwrap()).unwrap()
 }

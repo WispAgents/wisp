@@ -12,7 +12,8 @@
 //!
 //! Only probes are kept: an exec with input, or of a program wisp can't find, runs as asked. A probe nobody waits
 //! for any more is ended (the memo holds no strong handle to a run), so a caller that hangs up still ends its probes
-//! (round 211's `EndOnDrop`).
+//! (round 211's `EndOnDrop`). A detection round is such a caller too: `runtime.agents` runs it on its own task
+//! (ADR-0066), so a probe it waits on outlives the request that asked and ends at its own time limit (15 s).
 
 use std::collections::{BTreeMap, HashMap};
 use std::path::{Path, PathBuf};

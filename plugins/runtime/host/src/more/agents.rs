@@ -11,7 +11,8 @@
 //! - **newest wins**: two rounds at once (Settings' Re-check while the picker's ask still waits on a hung CLI):
 //!   a round's answer never overwrites a row a round that started after it wrote (its `checking` or its answer);
 //! - **never stranded**: a round runs on its own task (`Host::spawn`), so a caller that hangs up (an MCP client gone,
-//!   a closed page) can't leave rows `checking`: the round still lands every answer (a hung CLI ends at its timeout);
+//!   a closed page) can't leave rows `checking`: the round still lands every answer (a hung CLI ends at its timeout,
+//!   its probe's group killed then: `serve_orphans` `a_probe_whose_caller_hung_up_ends_at_its_time_limit`);
 //! - **gone is gone**: a harness no longer registered (its plugin switched off) loses its row.
 //!
 //! `runtime.agents` still answers the whole list, for the CLI and MCP callers; its rows land on the topic as
