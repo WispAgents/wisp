@@ -115,6 +115,11 @@ turn. When a screen or feature contradicts one, that's a bug: fix it toward the 
   file (goal, constraints, decisions, failed, state, open, files) is called **Notes**, shown in a **Thread** tab.
   Its tool is `wisp_notes` (v1's `wisp_ledger`), its CLI `wisp notes`. See docs/v2-long-threads.md.
 
+- **The decision ledger** (owner's #802, merged 2026-11-16): `decisions/D-NNNN.yml` records with hooks that bring each
+  decision to the agent before it edits a file in scope. D-0001..D-0046 are v1's AGENTS.md rules (scoped to v1's
+  files; advice only, no checks). **D-0043 ("no new dependencies") contradicts v2** (a pinned dependency with an ADR is
+  allowed): to supersede for v2's paths. v2's decisions are here in §3 until they're recorded as decisions too.
+
 ### How the work runs
 
 - **Coders code; tests in CI**: coders write code and their named tests; full suites, e2e and gates are the outer loop
