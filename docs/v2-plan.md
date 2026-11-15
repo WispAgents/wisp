@@ -23,7 +23,7 @@ Rust for everything but the UI, Solid/TS for the UI, everything a plugin (ADR-00
 | CI, last full run (2790d627) | Linux + macOS: 1 failing test (`serve_orphans` probe), fixed by round 234, re-run pending · Windows: cancelled (open groups, §8) · desktop builds + Android: green |
 | Budgets | initial JS 117.9 KB br (≤ 120) · CSS 29.7 KB (≤ 30) · enforced in CI |
 | Weekly usage | 86 % (owner allowed 3 coders: free reset) |
-| Coders running | coder-r236 (Auto preview entry), coder-r235 (task history Ledger) |
+| Coders running | coder-r236 (Auto preview entry), coder-r237 (check errors) |
 
 ## 3. Owner directions (standing rules)
 
@@ -70,12 +70,8 @@ Rust for everything but the UI, Solid/TS for the UI, everything a plugin (ADR-00
 - [ ] **Parity gate** (`qa/parity.mjs`): baseline 0/96 on 2026-11-10; per-view burn-down in `docs/v2-ui-burndown.md`;
       **not re-measured as a whole since**: the batched pass (§4.8) runs it on every view, width and theme
 - [ ] Layout and feedback gates on every view (browser and phone views): to run in the batched pass
-- [ ] Task history redesign: owner picked **A only** (Ledger + scrubber, inline expand on phones too; 2026-11-15).
-      **In progress, coder-r235**: outcome rows, notice folds, day cards, scrubber above 30 turns, search + filters
-      (Shipped is a filter), keys, ADR-0068 superseding ADR-0016 for this screen
-
-### 4.3 Performance
-
+- [x] Task history redesign, direction A: the Ledger (round 235, b4b43212, ADR-0068): outcome rows, notice folds, day
+      cards, search + filters, scrubber above 30 turns, inline open on every width
 - [x] Budgets in CI (initial JS ≤ 120 KB br, CSS ≤ 30 KB)
 - [x] First download 290.6 → 117.9 KB JS, 46.4 → 29.7 KB CSS (ADR-0067)
 - [x] 4,000 tasks scroll smoothly on a 4× slowed phone; first tap on Slow 4G 1.3 s blank → 171 ms
@@ -598,6 +594,10 @@ Source: `docs/v1-features.md` (each row's evidence and test). `[x]` built, `[ ]`
 - [ ] A stream already open with a revoked API key isn't cut
 - [ ] Share links on another grid aren't revoked by Share again
 - [ ] `uncarryStuck` note isn't shown on the Machines card
+- [ ] Ledger keys (j/k, /, [ ]) work only with focus inside the ledger (they mean other things page-wide)
+- [ ] `wisp import` drops v1 per-turn changes (importer.rs), so imported tasks show 0 files on day cards
+- [ ] Ledger scrubber has no day labels (the mock had them); `wisp notices` chip clipped at 1280 (scrolls)
+- [ ] Ledger not yet in design/v1-reference/allowed.md for the parity gate
 - [ ] `ui-only`/MCP: nothing open
 
 ## 8. CI
@@ -685,7 +685,8 @@ Source: `docs/v1-features.md` (each row's evidence and test). `[x]` built, `[ ]`
 
 | Round | What | State |
 |---|---|---|
-| 235 | Task history: direction A, Ledger + scrubber | in progress |
+| 237 | 3 check errors (vite.config public-entry, app-picker.css token + wrap) + dayName locale | in progress |
+| 235 | Task history: direction A, Ledger + scrubber | committed |
 | 234 | CI: probe test after the probe memo (ends at its limit) | committed |
 | 236 | "What will Auto run" reachable again; compare runs use the picker | in progress |
 | 233 | Harness picker back to v1 (one pill, one two-pane popover) | committed |
