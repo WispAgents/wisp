@@ -20,10 +20,10 @@ Rust for everything but the UI, Solid/TS for the UI, everything a plugin (ADR-00
 |---|---|
 | v1 features | **315 built · 7 partial · 5 missing · 4 dropped** of 331 (§6) |
 | Regressed | none (F-comp-1 picker restored to v1 in round 233) |
-| CI, last full run (11fe8350) | Linux + macOS: strings-split (phone nav destinations.ts uses lazy keys without the loader) -> r285 · previous run f0db9105 all 8 green |
+| CI, last full run (56405a3a) | Linux + macOS: one brittle test (platform-controls read only the last reduced-motion block) — fixed in the test; Windows running |
 | Budgets | initial JS 107.2 KB br (≤ 120) · CSS 27.1 KB (≤ 30) |
 | Weekly usage | 0 % (reset applied) · **owner 2026-11-15: one coder at a time** |
-| Coders running | coder-r293 (phone step 13 leftovers) |
+| Coders running | coder-r294 (iOS selection jump, Back after stepping) |
 
 ## 3. Owner decisions (every one, dated; read before any change)
 
@@ -938,7 +938,8 @@ Source: `docs/v1-features.md` (each row's evidence and test). `[x]` built, `[ ]`
 |---|---|---|
 | 283 | DX: build bundle + Tauri lock: stopped before edits; plan in §4.6 | to redo |
 | 282 | Server perf budgets: stopped before edits; plan in §4.3 | to redo |
-| 293 | Phone step 13 leftovers: list selection mode, iOS computer filter pull-down, swipe between tasks | in progress |
+| 294 | iOS selection keeps the large title (no jump); Back after Next/Previous returns to Tasks | in progress |
+| 293 | Phone step 13 done: selection + bulk, iOS filter pull-down, Next/Previous task | committed (357aec16) |
 | 292 | Phone platform CSS bans in npm run check (shared module) | committed |
 | 291 | Phone New task sheet = composer only; crew avatar aligned; lead fixed raw px (4a43d45e, 73a52eb0) | committed (2891737c) |
 | 290 | runtime.projectAdd: server-side naming in one write; CLI, UI, Run on, MCP use it (ADR-0077) | committed |
