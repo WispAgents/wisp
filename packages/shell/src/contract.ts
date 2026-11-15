@@ -48,7 +48,9 @@ export const INPUTS = {
   // added 2026-11-13 (additive): a machine's coding agents, signed in to from here (wisp.accounts, v1 cloud.js agents: the
   // login runs on that computer and stays there); its extension gets the machine's peer as `id`
   'shell.machine:agents': 'machine.agents',
-  // added 2026-11-12 (additive): what goes between Needs you and Working (the crew's section on the phone, v1 #secCrew)
+  // added 2026-11-12 (additive): what goes between Needs you and Working (the crew's section on the phone, v1 #secCrew);
+  // in the phone apps (data-platform) it goes under the Tasks top bar instead, over the project chips (the crew's
+  // stories, ADR-0065 step 13b), and the list leaves it out
   'shell.list:crew': 'section.crew',
   // added 2026-11-12 (additive): what a crew face's card beside the rail says (v1 .cl-card: who it is, the tasks it's on);
   // its extension gets the member's `id`. Without one, a face has no card.

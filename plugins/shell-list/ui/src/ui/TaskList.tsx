@@ -66,8 +66,10 @@ function ListBody(): JSX.Element {
     return t(view().filter !== 'all' ? 'shell-list.empty.project' : 'shell-list.empty.all');
   };
   const toggled = createMemo(() => new Set(view().toggled));
-  // the crew's section (on the phone, where there's no rail): a plugin fills shell.list:crew
+  // the crew's section (on the phone, where there's no rail): a plugin fills shell.list:crew. The phone apps draw it
+  // under their Tasks top bar instead (the crew's stories, step 13b: the shell's PhoneListTop), never in the list
   const crew = hasExtensions('shell.list:crew');
+  const crewInList = (): boolean => crew() && !env.shell.platform.phone;
   // a member's jobs for other tasks sit under the member, not in the sections (v1 crew.js): in the phone's Crew section,
   // or side by side in the face's card beside the rail
   const railCard = hasExtensions('shell.rail:card');
@@ -78,7 +80,7 @@ function ListBody(): JSX.Element {
     const known = new Set(projects().map((p) => p.id));
     return picked() === undefined ? pickOf(view().filter).filter((id) => known.has(id)) : [];
   });
-  const items = createMemo(() => flatten(sections(), { toggled: toggled(), open: env.open(), split: env.split(), crew: !env.split() && crew(), byProject: byProject() }));
+  const items = createMemo(() => flatten(sections(), { toggled: toggled(), open: env.open(), split: env.split(), crew: !env.split() && crewInList(), byProject: byProject() }));
   // on touch, Mark done keeps a column of its own only while some row on the list shows it (v1 feed.js has-quick)
   const doneColumn = createMemo(() => !env.swipes && anyShowsDone(shownRows(items()), (k) => env.rowCtx(k as EntityKey)));
   const plugins = useSignal(env.shell.extensions('shell.row:menu'));

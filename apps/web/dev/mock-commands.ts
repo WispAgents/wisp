@@ -539,6 +539,39 @@ export const COMMANDS: Record<string, CommandFn> = {
       result: { id },
     };
   },
+  // the answer to what a task asks (shell-task's AskCard, the crew's story): the question goes, the task runs on
+  'runtime.answer': (a, ctx) => {
+    const x = obj(a);
+    const id = taskKey(ctx, str(x, 'id'));
+    str(x, 'text');
+    const ext = obj(obj(obj(ctx.row('list', 'session', id))['body'])['ext']);
+    return {
+      ops: sessionPatch(ctx, id, [
+        { op: 'replace', path: '/state', value: 'running' },
+        { op: 'replace', path: '/summary/status', value: 'running' },
+        { op: 'replace', path: '/summary/question', value: '' },
+        ...('wisp.runtime' in ext ? [{ op: 'replace' as const, path: '/body/ext/wisp.runtime/ask', value: null }] : []),
+        touch(ctx),
+      ]),
+    };
+  },
+  // a job for a crew member (the member's page, the phone's story when it's idle): a task of its own, running, the
+  // member's job on its body as the crew host writes it
+  'crew.assign': (a, ctx) => {
+    const x = obj(a);
+    const crewId = str(x, 'id');
+    const prompt = str(x, 'prompt');
+    if (ctx.row('crew', 'crew_member', crewId) === undefined) refuse('not_found', `no crew member ${crewId}`);
+    const made = COMMANDS['runtime.create']?.({ prompt }, ctx) ?? refuse('internal', 'no create');
+    const ops = made.ops.map((o): EntityOp => {
+      if (o.op !== 'upsert') return o;
+      const v = o.v as Record<string, unknown>;
+      const body = obj(v['body']);
+      return { ...o, v: { ...v, body: { ...body, ext: { ...obj(body['ext']), 'wisp.crew': { id: crewId, job: 'task', prompt } } } } };
+    });
+    const row = ops.find((o) => o.op === 'upsert');
+    return { ops, result: { session: row && row.op === 'upsert' ? row.v : undefined } };
+  },
   // Try it two ways (runtime.trial, ADR-0056): two runs of one task on one harness, linked; run B with its change
   'runtime.trial': (a, ctx) => {
     const x = obj(a);

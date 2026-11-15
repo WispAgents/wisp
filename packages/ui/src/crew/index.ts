@@ -10,3 +10,4 @@ export { SpiritMaker, type SpiritMakerProps } from './Maker.tsx';
 export { makerOptions, type MakerOption } from './maker-options.ts';
 export { CrewKitList, CrewPickList, CrewOffer, type CrewKitRow, type CrewPickRow } from './Kit.tsx';
 export { CrewListStrip, CrewListFewer, type CrewStripFace } from './ListStrip.tsx';
+export { CrewStories, CrewStory, StoryCard, StoryText, STORY_DWELL_MS, type CrewStoriesProps, type CrewStoryProps, type CrewStoryLabels, type StoryBubble, type StoryRing } from './Stories.tsx';

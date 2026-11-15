@@ -81,6 +81,20 @@ export const GESTURES = defineGestures({
     action: ['gesture.move-up', 'gesture.move-down'],
     haptic: { start: 'tap', line: 'select' },
   },
+  // the crew's story on phones (step 13b): a drag down closes it (×), a press held pauses it (Pause); its tap on the left
+  // or right half steps through the crew with ← and → on screen
+  'story.drag-down': {
+    kind: 'drag-down',
+    does: "close a crew member's story",
+    twin: { command: 'ui.close-story', parts: ['crew.story.close'] },
+    action: 'close',
+    haptic: { line: 'select' },
+  },
+  'story.long-press': {
+    kind: 'long-press',
+    does: 'hold the story still while pressed',
+    twin: { command: 'ui.pause-story', parts: ['crew.story.pause'] },
+  },
   'sheet.drag-down': {
     kind: 'drag-down',
     does: 'close the sheet (a draft stays)',

@@ -176,3 +176,26 @@ test('All settings lists the declared settings with their owners and values (the
   // unset: its declared default, as the kernel answers (crates/wisp-kernel/src/settings.rs Inner::get)
   expect(list.find((s) => s.key === 'crew.tint')?.value).toBe(true);
 });
+
+// the phone's crew stories (ADR-0065 step 13b): an idle member's job and an ask's answer, as the peer answers them
+test('crew_assign_starts_a_running_job_for_the_member_and_runtime_answer_clears_the_ask', () => {
+  const data = seed({ peer: 'local', now: 1_700_000_000_000, extra: 0, crew: true });
+  const ctx = {
+    peer: 'local',
+    now: () => 1_700_000_000_000,
+    row: (t: string, e: string, id: string) => data.topics.get(t as never)?.find((r) => r.e === e && r.id === id)?.v,
+    rows: (t: string) => data.topics.get(t as never) ?? [],
+    stream: () => undefined,
+    later: () => undefined,
+  } as unknown as CommandCtx;
+  const out = COMMANDS['crew.assign']?.({ id: 'crew:turing', prompt: 'Bench the list query' }, ctx);
+  const up = out?.ops.find((o) => o.op === 'upsert' && o.topic === 'list') as { v: { state: string; title: string; body: { ext: Record<string, unknown> } } } | undefined;
+  expect(up?.v).toMatchObject({ state: 'running', title: 'Bench the list query', body: { ext: { 'wisp.crew': { id: 'crew:turing', job: 'task', prompt: 'Bench the list query' } } } });
+  expect(() => COMMANDS['crew.assign']?.({ id: 'crew:nobody', prompt: 'x' }, ctx)).toThrow();
+  // Grace's job asks; the answer clears it and the job runs on
+  const asking = (data.topics.get('list') ?? []).find((r) => (r.v as { state?: string }).state === 'waiting');
+  expect(asking).toBeDefined();
+  const ans = COMMANDS['runtime.answer']?.({ id: asking?.id, text: 'Yes' }, ctx);
+  const ops = (ans?.ops[0] as { ops: { path: string; value: unknown }[] }).ops;
+  expect(ops).toEqual(expect.arrayContaining([{ op: 'replace', path: '/state', value: 'running' }, { op: 'replace', path: '/body/ext/wisp.runtime/ask', value: null }]));
+});

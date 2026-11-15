@@ -3,11 +3,13 @@
 // Machines, the All pill, New task row). Its title is the computer filter (*All* or a computer's name, a sheet to pick),
 // its Search (the palette over tasks: the M3 search view / the iOS search field) and the me menu (v1 #meMenu: you, Machines, Automations, Settings, the
 // theme). Under it, in the list, v1's project chips as one row and New task as the FAB (Android) / the bar's compose
-// button (iOS: the kit hands a Fab's action to the root bar). Its own chunk: only the phone apps load it, so the
+// button (iOS: the kit hands a Fab's action to the root bar); over the chips, the crew's stories row (`shell.list:crew`,
+// step 13b). Its own chunk: only the phone apps load it, so the
 // browser's first download is unchanged.
 import { createMemo, createSignal, Show, type JSX } from 'solid-js';
 import { Button, Dialog, Fab, Inline, Input, Menu, RadioGroup, Sheet, Toolbar, TopAppBar, useSignal, type MenuEntry, type ToolbarItem } from '@wisp/ui';
 import { useShell } from '../context.tsx';
+import { Slot } from '../slot.tsx';
 import '../i18n/lazy.ts';
 import { computerOptions, computerTitle, knownComputer } from './computer-filter.ts';
 import { projectLabels } from './project-labels.ts';
@@ -106,6 +108,8 @@ export function PhoneListTop(props: { readonly onNew: () => void; readonly filte
   });
   return (
     <>
+      {/* the crew as stories (step 13b): the crew's section, which the phone apps draw here and not in the list */}
+      <Slot input="shell.list:crew" layout="stack" />
       {/* one project (All only): nothing to pick, no row */}
       {items().length > 1 ? <Toolbar aria-label={shell.t('shell.phone.projects')} items={items()} justify="start" compact gap="1" part="phone.tasks.projects" t={(k) => shell.t(`kit.${k}`)} /> : null}
       <Fab label={shell.t('shell.side.new')} icon="plus" onClick={props.onNew} part="phone.tasks.new" />

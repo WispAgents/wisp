@@ -24,7 +24,7 @@ import { phoneOverlays } from './phone-part.ts';
 import type { Detent } from './phone-math.ts';
 
 /** v1: v1's .modal (640 wide, 18px 20px 20px, its 600 18px title): the crew editor */
-export type DialogSize = 'sm' | 'md' | 'lg' | 'xl' | 'v1';
+export type DialogSize = 'sm' | 'md' | 'lg' | 'xl' | 'v1' | 'full';
 
 export interface DialogProps extends KitProps, WithChildren, WithVars {
   readonly title: string;
@@ -36,7 +36,8 @@ export interface DialogProps extends KitProps, WithChildren, WithVars {
   readonly onOpenChange?: (open: boolean) => void;
   /** Or let the dialog render its own opening button. */
   readonly trigger?: MenuTrigger;
-  /** 400, 600 (default) or 800 wide; xl: v1's Settings modal, 900 × 680 (less on a short window) */
+  /** 400, 600 (default) or 800 wide; xl: v1's Settings modal, 900 × 680 (less on a short window); full: the whole
+   *  screen (the phone's crew story, whose stylesheet draws it: crew-stories.css) */
   readonly size?: DialogSize;
   /** `alertdialog` for a confirm that interrupts. */
   readonly role?: 'dialog' | 'alertdialog';

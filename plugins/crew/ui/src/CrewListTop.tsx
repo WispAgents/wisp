@@ -2,7 +2,7 @@
 // Crew heading with Org and +, a row per member opening their thread, a dashed row to add the first one. Under a member,
 // its jobs for other tasks (delegated, @mentions, checks) as the list's own cards, the most urgent first, 3 at most
 // (v1 crew.js paintCrew / memberJobs): the list lends its card (ShellApi.taskCards) and leaves those jobs out.
-import { createMemo, createSignal, For, Show, type JSX } from 'solid-js';
+import { createMemo, createSignal, For, lazy, Show, type JSX } from 'solid-js';
 import type { ExtensionProps } from '@wisp/shell/contract';
 import { useShell } from '@wisp/shell';
 import { CrewListFewer, CrewListSection, CrewListStrip, useSignal, type CrewListRow } from '@wisp/ui';
@@ -16,7 +16,23 @@ import type { Member } from './types.ts';
 import { VIEW } from './views.ts';
 import './i18n/lazy.ts';
 
+// the phone apps (data-platform android | ios): the crew as stories under the Tasks top bar (step 13b); its own chunk
+const Stories = lazy(() => import('./Stories.tsx'));
+
+/** The browser (a phone's too) keeps v1's Crew section; the phone apps draw the stories row in its place. */
 export default function CrewListTop(props: ExtensionProps): JSX.Element {
+  const shell = useShell();
+  const nav = useSignal(shell.nav);
+  return (
+    <Show when={shell.platform.phone} fallback={<CrewSection {...props} />}>
+      <Show when={nav().layout === 'stack'}>
+        <Stories {...props} />
+      </Show>
+    </Show>
+  );
+}
+
+function CrewSection(props: ExtensionProps): JSX.Element {
   const c = props.client;
   const shell = useShell();
   const nav = useSignal(shell.nav);

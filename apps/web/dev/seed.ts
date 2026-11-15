@@ -599,6 +599,29 @@ function withUsage(list: Row[]): void {
   };
 }
 
+/** `crew`: the crew at work, for the phone's stories (ADR-0065 step 13b): Grace asks you something (her ring red, the
+ *  task page's answers in her story), Linus works (green), Hopper has a report you haven't read (accent), Ada works on
+ *  her delegated review and has an older report, Hopper and Turing (paused) are otherwise idle. Rows as runtime sends
+ *  them: the ask under `body.ext["wisp.runtime"].ask`, the job under `body.ext["wisp.crew"]`. */
+function withCrew(peer: string, now: number, list: Row[], topics: Map<Topic, Row[]>, at: number): void {
+  const job = (i: number, t: Task, patch?: (v: Record<string, unknown>) => void): void => {
+    const r = sessionTopic(peer, at + i, t, now);
+    for (const row of [r.list, ...r.own.filter((x) => x.e === 'session')]) patch?.(row.v as Record<string, unknown>);
+    list.push(r.list);
+    topics.set(`session:${r.list.id.slice(r.list.id.indexOf(':') + 1)}`, r.own);
+  };
+  const asks = (question: string, options: string[]) => (v: Record<string, unknown>): void => {
+    const body = v['body'] as { ext: Record<string, unknown> };
+    v['state'] = 'waiting';
+    v['summary'] = { ...(v['summary'] as object), status: 'waiting', question, live: '' };
+    v['body'] = { ...body, ext: { ...body.ext, 'wisp.runtime': { ask: { id: 'ask-1', question, options } } } };
+  };
+  job(0, { title: 'Bump to 0.61.0', agent: 'claude', state: 'running', ago: 6 * MIN, cwd: '~/code/wisp', prompt: 'Cut 0.61.0: changelog, version bump, tag.', answer: 'CHANGELOG has 18 entries; main green for 24 h.', crew: { id: 'crew:grace', job: 'task' } }, asks('Merge #812 and tag 0.61.0?', ['Yes', 'No']));
+  job(1, { title: 'Phone Tasks polish', agent: 'codex', state: 'running', ago: 2 * MIN, cwd: '~/code/wisp', prompt: 'Polish the phone Tasks screen against v1.', answer: 'Comparing v1 and v2.', live: 'Comparing v1 and v2 at 390 px', crew: { id: 'crew:linus', job: 'task' } });
+  job(2, { title: 'Competitor matrix', agent: 'claude', state: 'review', ago: 20 * MIN, cwd: '~/code/wisp', prompt: 'Compare the six tools we track.', answer: 'Report ready: 6 tools compared. Paseo added a queue; nobody has a ledger.', unread: true, crew: { id: 'crew:hopper', job: 'checkin' } });
+  job(3, { title: 'Review PR #806', agent: 'claude', state: 'done', ago: 26 * HOUR, cwd: '~/code/wisp', prompt: 'Review PR #806.', answer: 'PR #806: 2 layout reads after writes; fixed.', crew: { id: 'crew:ada', job: 'task' } });
+}
+
 /** Try it two ways (F-comp-31, ADR-0056): one task run twice on Claude Code, run B with Skills off, both done; the
  * rows carry runtime's trial link (group.rs) as the peer sends it, so Compare runs says what differed. */
 function withTrial(peer: string, now: number, list: Row[], topics: Map<Topic, Row[]>, at: number): void {
@@ -629,7 +652,7 @@ function withTrial(peer: string, now: number, list: Row[], topics: Map<Topic, Ro
   });
 }
 
-export function seed(o: { peer: string; now: number; extra: number; firstRun?: boolean; computers?: boolean; media?: boolean; env?: boolean; usage?: boolean; trial?: boolean; cloud?: boolean }): Seeded {
+export function seed(o: { peer: string; now: number; extra: number; firstRun?: boolean; computers?: boolean; media?: boolean; env?: boolean; usage?: boolean; trial?: boolean; cloud?: boolean; crew?: boolean }): Seeded {
   const topics = new Map<Topic, Row[]>();
   const list: Row[] = [];
   (o.firstRun ? [] : TASKS).forEach((t, i) => {
@@ -655,6 +678,7 @@ export function seed(o: { peer: string; now: number; extra: number; firstRun?: b
   if (o.env) withEnv(topics);
   if (o.usage) withUsage(list);
   if (o.trial) withTrial(o.peer, o.now, list, topics, TASKS.length + o.extra);
+  if (o.crew) withCrew(o.peer, o.now, list, topics, TASKS.length + o.extra + 2);
   topics.set('list', list);
   topics.set('config', [
     { e: 'setting', id: 'shell.theme', v: { key: 'shell.theme', value: 'system', locked_by: null } },

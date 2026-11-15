@@ -553,7 +553,26 @@ export interface ReplyBoxProps {
  * folds back to one line on a press outside it (composer.js), not when the keyboard moves on. It folds once the
  * press is let go: folding on the press itself moved what's over the box (a follow-up's ×, Send now) out from under
  * the finger before its click, so on a phone the first tap after sending did nothing. */
-export function ReplyBox(props: ReplyBoxProps): JSX.Element {
+/** The same reply box, compact (the phone's crew story, ADR-0065 step 13b): the text and Send on one line, none of the
+ * task's tools (attach, mode, harness, team, goal, later). One composer, smaller: the keys, the @ and / menus, Send's
+ * nudge and its pending state are the full box's own. Additive (2026-11-15). */
+export interface CompactReplyBoxProps {
+  readonly compact: true;
+  readonly placeholder: string;
+  readonly value: string;
+  readonly onInput: (v: string) => void;
+  readonly onSend: () => void;
+  readonly onKey?: (e: KeyboardEvent) => boolean;
+  readonly suggest?: PromptSuggest | undefined;
+  readonly inputRef?: (el: HTMLTextAreaElement) => void;
+  readonly send: string;
+  readonly sendAct?: Act;
+  readonly part?: string;
+}
+
+export function ReplyBox(given: ReplyBoxProps | CompactReplyBoxProps): JSX.Element {
+  // the tools below read the full box's props; a compact box never draws them (`compact` guards each read)
+  const props = given as ReplyBoxProps & { readonly compact?: boolean; readonly part?: string };
   const [awake, setAwake] = createSignal(false);
   let box: HTMLDivElement | undefined;
   // on the click the release makes (after the pressed control's own handler: Solid's sit on document first), or
@@ -600,7 +619,8 @@ export function ReplyBox(props: ReplyBoxProps): JSX.Element {
     <div
       data-nudge={flag(nudge())}
       data-kit="reply-box"
-      data-part="composer"
+      data-part={props.part ?? 'composer'}
+      data-compact={flag(props.compact)}
       data-awake={flag(awake())}
       data-drop={flag(over())}
       ref={(el) => (box = el)}
@@ -650,145 +670,147 @@ export function ReplyBox(props: ReplyBoxProps): JSX.Element {
         </div>
       </Show>
       <div data-kit="c-bar">
-        <WithAct
-          act={props.attachAct}
-          render={(trigger) => (
-            <button type="button" {...trigger()} data-kit="icon-btn" data-part="composer.attach" title={props.attach} aria-label={props.attach}>
-              <ActIcon act={props.attachAct}>
-                <Icon name="clip" />
-              </ActIcon>
-            </button>
-          )}
-        />
-        <Show when={props.mic}>
-          {(m) => (
-            <WithAct
-              act={m().act}
-              render={(trigger) => (
-                <button type="button" {...trigger()} data-kit="icon-btn" data-part="composer.mic" data-on={flag(m().on)} aria-pressed={m().on} title={m().label} aria-label={m().label}>
-                  <Icon name="mic" />
-                </button>
-              )}
-            />
-          )}
-        </Show>
-        <WithAct
-          act={props.mode.act}
-          render={(trigger) => (
-            <button type="button" {...trigger()} data-kit="mode-btn" data-part="composer.mode" data-reply="" title={props.mode.title} aria-label={props.mode.label}>
-              <Icon name={props.mode.icon ?? 'spark'} />
-              <span data-text="control">{props.mode.label}</span>
-            </button>
-          )}
-        />
-        <Show when={props.mode.cap}>
-          {(c) => (
-            <span data-kit="c-cap" data-part="composer.cap" title={c().title}>
-              <Icon name="lock" size="xs" />
-              <span data-kit="c-cap-words" data-text="control">
-                {c().label}
-              </span>
+        <Show when={!props.compact} fallback={<span data-kit="grow" />}>
+          <WithAct
+            act={props.attachAct}
+            render={(trigger) => (
+              <button type="button" {...trigger()} data-kit="icon-btn" data-part="composer.attach" title={props.attach} aria-label={props.attach}>
+                <ActIcon act={props.attachAct}>
+                  <Icon name="clip" />
+                </ActIcon>
+              </button>
+            )}
+          />
+          <Show when={props.mic}>
+            {(m) => (
               <WithAct
-                act={c().lift.act}
+                act={m().act}
                 render={(trigger) => (
-                  <button type="button" {...trigger()} data-kit="c-cap-lift" data-part="composer.capLift" title={c().lift.title}>
-                    <span data-text="control">{c().lift.label}</span>
+                  <button type="button" {...trigger()} data-kit="icon-btn" data-part="composer.mic" data-on={flag(m().on)} aria-pressed={m().on} title={m().label} aria-label={m().label}>
+                    <Icon name="mic" />
                   </button>
                 )}
               />
-            </span>
-          )}
-        </Show>
-        <WithAct
-          act={props.runner.act}
-          render={(trigger) => (
-            <button
-              type="button"
-              {...trigger()}
-              data-kit="c-runner"
-              data-part="composer.harness"
-              aria-haspopup="dialog"
-              aria-expanded={props.runner.open ? 'true' : 'false'}
-              title={props.runner.title}
-              aria-label={props.runner.title}
-            >
-              <span data-kit="rb-logo" data-bare="">
-                <Show when={props.runner.logo}>{(src) => <img src={src()} alt="" />}</Show>
-              </span>
-            </button>
-          )}
-        />
-        <WithAct
-          act={props.teamAct}
-          render={(trigger) => (
-            <button type="button" {...trigger()} data-kit="c-team" data-part="composer.team" title={props.team} aria-label={props.team}>
-              <Icon name="agent" />
-            </button>
-          )}
-        />
-        <WithAct
-          act={props.goalAct}
-          render={(trigger) => (
-            <button
-              type="button"
-              {...trigger()}
-              data-kit="icon-btn"
-              data-part="composer.goal"
-              data-on={flag(props.goalOn)}
-              aria-pressed={props.goalOn === true}
-              title={props.goal}
-              aria-label={props.goal}
-            >
-              <Icon name="target" />
-            </button>
-          )}
-        />
-        <Show when={props.hint} fallback={<span data-kit="grow" />}>
-          {(h) => (
-            <span data-kit="c-hint" data-part="composer.hint">
-              <span data-kit="c-cold-row">
-                <span data-kit="c-cold" title={h().title ?? h().long}>
-                  <span data-kit="cc-long">{h().long}</span>
-                  <span data-kit="cc-short">{h().short}</span>
+            )}
+          </Show>
+          <WithAct
+            act={props.mode.act}
+            render={(trigger) => (
+              <button type="button" {...trigger()} data-kit="mode-btn" data-part="composer.mode" data-reply="" title={props.mode.title} aria-label={props.mode.label}>
+                <Icon name={props.mode.icon ?? 'spark'} />
+                <span data-text="control">{props.mode.label}</span>
+              </button>
+            )}
+          />
+          <Show when={props.mode.cap}>
+            {(c) => (
+              <span data-kit="c-cap" data-part="composer.cap" title={c().title}>
+                <Icon name="lock" size="xs" />
+                <span data-kit="c-cap-words" data-text="control">
+                  {c().label}
                 </span>
-                <Show when={h().link}>
-                  {(l) => (
-                    <WithAct
-                      act={l().act}
-                      render={(trigger) => (
-                        <button type="button" {...trigger()} data-kit="link" data-part="composer.hint.link" title={l().title ?? l().label}>
-                          {l().label}
-                        </button>
-                      )}
-                    />
+                <WithAct
+                  act={c().lift.act}
+                  render={(trigger) => (
+                    <button type="button" {...trigger()} data-kit="c-cap-lift" data-part="composer.capLift" title={c().lift.title}>
+                      <span data-text="control">{c().lift.label}</span>
+                    </button>
                   )}
-                </Show>
+                />
               </span>
-            </span>
-          )}
+            )}
+          </Show>
+          <WithAct
+            act={props.runner.act}
+            render={(trigger) => (
+              <button
+                type="button"
+                {...trigger()}
+                data-kit="c-runner"
+                data-part="composer.harness"
+                aria-haspopup="dialog"
+                aria-expanded={props.runner.open ? 'true' : 'false'}
+                title={props.runner.title}
+                aria-label={props.runner.title}
+              >
+                <span data-kit="rb-logo" data-bare="">
+                  <Show when={props.runner.logo}>{(src) => <img src={src()} alt="" />}</Show>
+                </span>
+              </button>
+            )}
+          />
+          <WithAct
+            act={props.teamAct}
+            render={(trigger) => (
+              <button type="button" {...trigger()} data-kit="c-team" data-part="composer.team" title={props.team} aria-label={props.team}>
+                <Icon name="agent" />
+              </button>
+            )}
+          />
+          <WithAct
+            act={props.goalAct}
+            render={(trigger) => (
+              <button
+                type="button"
+                {...trigger()}
+                data-kit="icon-btn"
+                data-part="composer.goal"
+                data-on={flag(props.goalOn)}
+                aria-pressed={props.goalOn === true}
+                title={props.goal}
+                aria-label={props.goal}
+              >
+                <Icon name="target" />
+              </button>
+            )}
+          />
+          <Show when={props.hint} fallback={<span data-kit="grow" />}>
+            {(h) => (
+              <span data-kit="c-hint" data-part="composer.hint">
+                <span data-kit="c-cold-row">
+                  <span data-kit="c-cold" title={h().title ?? h().long}>
+                    <span data-kit="cc-long">{h().long}</span>
+                    <span data-kit="cc-short">{h().short}</span>
+                  </span>
+                  <Show when={h().link}>
+                    {(l) => (
+                      <WithAct
+                        act={l().act}
+                        render={(trigger) => (
+                          <button type="button" {...trigger()} data-kit="link" data-part="composer.hint.link" title={l().title ?? l().label}>
+                            {l().label}
+                          </button>
+                        )}
+                      />
+                    )}
+                  </Show>
+                </span>
+              </span>
+            )}
+          </Show>
+          <Show when={props.queue}>
+            {(q) => (
+              <WithAct
+                act={q().act}
+                render={(trigger) => (
+                  <button type="button" {...trigger()} data-kit="c-queue" data-part="composer.queueSwitch" data-on={flag(q().on)} aria-pressed={q().on} title={q().title}>
+                    <Icon name="queue" />
+                    <span data-text="control">{q().label}</span>
+                    <i data-kit="c-switch" />
+                  </button>
+                )}
+              />
+            )}
+          </Show>
+          <WithAct
+            act={props.laterAct}
+            render={(trigger) => (
+              <button type="button" {...trigger()} data-kit="icon-btn" data-part="composer.sendLater" title={props.later} aria-label={props.later}>
+                <Icon name="clock" />
+              </button>
+            )}
+          />
         </Show>
-        <Show when={props.queue}>
-          {(q) => (
-            <WithAct
-              act={q().act}
-              render={(trigger) => (
-                <button type="button" {...trigger()} data-kit="c-queue" data-part="composer.queueSwitch" data-on={flag(q().on)} aria-pressed={q().on} title={q().title}>
-                  <Icon name="queue" />
-                  <span data-text="control">{q().label}</span>
-                  <i data-kit="c-switch" />
-                </button>
-              )}
-            />
-          )}
-        </Show>
-        <WithAct
-          act={props.laterAct}
-          render={(trigger) => (
-            <button type="button" {...trigger()} data-kit="icon-btn" data-part="composer.sendLater" title={props.later} aria-label={props.later}>
-              <Icon name="clock" />
-            </button>
-          )}
-        />
         <button type="button" data-kit="send" data-part="composer.send" title={props.send} aria-label={props.send} onClick={send} aria-busy={props.sendAct?.pending ? 'true' : undefined}>
           <ActIcon act={props.sendAct}>
             <Icon name="enter" />
