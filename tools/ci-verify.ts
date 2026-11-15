@@ -1,23 +1,36 @@
-// CI's monoflow pass (suite.yml, ADR-0069): `monoflow verify --no-cache` for every package monoflow knows except the
-// Cargo workspace's members, which the job's own cargo steps already check once (`cargo clippy --workspace
-// --all-targets`, `cargo test --workspace --no-fail-fast`). `verify --all` re-ran them crate by crate (`cargo check
-// -p`, `cargo clippy -p`, `cargo test -p`, each with that crate's own feature set, so the workspace was rebuilt and
-// every test ran twice): 23 of the 33 min on Linux, and past the 60-minute limit on macOS. What's left (the npm
-// workspaces, sdk/python, the crates outside the workspace such as spikes/*) runs as before, one package per
-// monoflow call, `--jobs` at a time. Failures of the cargo test step (its log, `--cargo-log`) join the result as
-// failed crates, so the job summary and gate G14 (tools/g14.ts) see every failing package as they did.
+// CI's pass over every package but the Cargo workspace's members (suite.yml, ADR-0069, ADR-0072). The workspace's
+// crates are checked once by the job's own cargo steps (`cargo clippy --workspace --all-targets`, `cargo test
+// --workspace --no-fail-fast`); `verify --all` re-ran them crate by crate. What's left (the npm workspaces,
+// sdk/python, the crates outside the workspace such as spikes/*) gets every check monoflow's `verify --no-cache`
+// runs for it, each done once (ADR-0072):
+// - typecheck: a package's `tsc -p <config>` whose files and compiler options one of `npm run typecheck`'s programs
+//   already holds (tools/typecheck.ts PROGRAMS: the job's typecheck step, its output in `--typecheck-log`) is not
+//   run again; that step's errors are credited to the package whose config holds the file. Without a log of a
+//   finished typecheck (the step didn't run), ci-verify runs tools/typecheck.ts itself. Any other typecheck runs
+//   through monoflow (`--typecheck`).
+// - tests: every package whose `test` script is plain `vitest run` runs in one vitest process
+//   (tools/vitest.ci.config.ts: each package's own vitest.config.ts is a project). One vitest start per package, and
+//   one tsc per package over the whole kit, were most of the pass: 26+ min on Windows. Any other test script runs
+//   through monoflow (`--test`).
+// - a package with a lint script (or a root eslint config), sdk/python and the spikes: monoflow, every check, as
+//   before. The spikes start first, beside the vitest run: their builds are the longest.
+// Failures of the cargo test step (its log, `--cargo-log`) join the result as failed crates, so the job summary and
+// gate G14 (tools/g14.ts) see every failing package as they did.
 //
-//   node tools/ci-verify.ts --out=verify-all-1.json [--cargo-log=<cargo test output>] [--jobs=N] [--no-cache] [dir…]
-//   node tools/ci-verify.ts --out=- --list        the packages it would verify, and the folders it skips
+//   node tools/ci-verify.ts --out=verify-all-1.json [--cargo-log=<file>] [--typecheck-log=<file>] [--jobs=N] [--no-cache] [dir…]
+//   node tools/ci-verify.ts --out=- --list        the packages it would verify, how, and the folders it skips
 //
-// The output has monoflow's `--json` shape (status, counts, `failed`, `errors`, `results` with each target's time),
-// read by tools/monoflow-report.ts. Exit 1 when a monoflow package failed (the cargo step fails the job itself).
+// The output has monoflow's `--json` shape (status, counts, `failed`, `errors`, `results` with each target's time and
+// what ran it), read by tools/monoflow-report.ts. Exit 1 when a package failed (the cargo step fails the job itself).
 
 import { execFileSync, spawn } from 'node:child_process';
-import { existsSync, readFileSync, writeFileSync } from 'node:fs';
-import { availableParallelism } from 'node:os';
-import { dirname, join, posix, relative, sep } from 'node:path';
+import { existsSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
+import { availableParallelism, tmpdir } from 'node:os';
+import { dirname, join, posix, relative, resolve, sep } from 'node:path';
+import { cargoFailures, slash, stripAnsi, tscFailures, vitestByPackage } from './ci-logs.ts';
+import { covers, plan, readProgram, ROOT_LINT, type How, type Program } from './ci-plan.ts';
 import { DEST } from './setup-monoflow.ts';
+import { PROGRAMS } from './typecheck.ts';
 
 const ROOT = join(import.meta.dirname, '..');
 
@@ -30,7 +43,7 @@ export interface Target {
   path: string;
   status: 'passed' | 'failed';
   duration_ms: number;
-  /** what ran it: `monoflow` or `cargo test --workspace` */
+  /** what ran it: `monoflow`, `vitest (one run)`, `npm run typecheck`, joined by ` + ` */
   via: string;
 }
 
@@ -39,6 +52,15 @@ export interface Part {
   path: string;
   raw: unknown;
   ms: number;
+  via?: string;
+}
+
+/** One check's result for a package (a monoflow call, its share of the vitest run or of `npm run typecheck`). */
+export interface Piece {
+  via: string;
+  ok: boolean;
+  ms: number;
+  errors: unknown[];
 }
 
 const isObj = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);
@@ -62,34 +84,24 @@ export function candidates(files: readonly string[], members: ReadonlySet<string
   return manifestDirs(files).filter((d) => d !== '.' && (!members.has(d) || others.has(d)));
 }
 
-/** The crates whose tests failed or didn't build, from `cargo test --no-fail-fast`'s output (colours and all). */
-export function cargoFailures(log: string): Map<string, string[]> {
-  const out = new Map<string, string[]>();
-  const add = (crate: string, what: string): void => {
-    const l = out.get(crate) ?? [];
-    if (!l.includes(what)) l.push(what);
-    out.set(crate, l);
-  };
-  const lines = log.replace(/\x1b\[[0-9;]*[A-Za-z]/g, '').split(/\r?\n/);
-  let inList = false;
-  for (const raw of lines) {
-    const line = raw.replace(/^\d{4}-\d\d-\d\dT[\d:.]+Z /, ''); // a GitHub log's timestamps
-    const built = /error: could not compile `([^`]+)`(?: \(([^)]+)\))?/.exec(line);
-    if (built?.[1]) add(built[1], `doesn't compile${built[2] ? ` (${built[2]})` : ''}`);
-    if (/^error: \d+ targets? failed:/.test(line.trim())) {
-      inList = true;
-      continue;
-    }
-    if (inList) {
-      const t = /^\s+`-p (\S+) ([^`]*)`/.exec(line);
-      if (t?.[1]) add(t[1], `${t[2]?.trim() ?? ''} failed`.trim());
-      else inList = false;
-    }
-  }
-  return out;
+/** A monoflow call's `--json` result as one piece. */
+export function monoflowPiece(raw: unknown, ms: number, via = 'monoflow'): Piece {
+  const j = isObj(raw) ? raw : {};
+  const ok = j['status'] === 'passed';
+  const errors = Array.isArray(j['errors']) ? [...j['errors']] : [];
+  if (!ok && errors.length === 0) errors.push({ code: 'execution_failure', message: typeof j['error'] === 'string' ? j['error'] : `${via}: ${String(j['status'] ?? 'no result')}`, targets: [] });
+  return { via, ok, ms: num(j['duration_ms']) || ms, errors };
 }
 
-/** Folds the monoflow calls and the cargo step into one `monoflow verify --json`-shaped result. */
+/** A package's pieces as one monoflow-shaped result (errors keyed to the package). */
+export function combine(target: string, path: string, pieces: readonly Piece[]): Part {
+  const ok = pieces.every((p) => p.ok);
+  const errors = pieces.flatMap((p) => p.errors.map((e) => (isObj(e) ? { ...e, targets: [target] } : e)));
+  const ms = pieces.reduce((a, p) => a + p.ms, 0);
+  return { target, path, ms, via: pieces.map((p) => p.via).join(' + '), raw: { status: ok ? 'passed' : 'failed', duration_ms: ms, ...(ok ? {} : { failed: { [target]: 1 } }), errors } };
+}
+
+/** Folds the per-package results and the cargo step into one `monoflow verify --json`-shaped result. */
 export function merge(parts: readonly Part[], cargo: { ran: boolean; failures: Map<string, string[]>; crates: number; dirs?: ReadonlyMap<string, string> }, wallMs: number): Record<string, unknown> {
   const results: Target[] = [];
   const errors: unknown[] = [];
@@ -105,7 +117,7 @@ export function merge(parts: readonly Part[], cargo: { ran: boolean; failures: M
       failed[p.target] = 1;
       if (!Array.isArray(j['errors']) || j['errors'].length === 0) errors.push({ code: 'execution_failure', message: typeof j['error'] === 'string' ? j['error'] : `monoflow verify --package=${p.target}: ${String(j['status'] ?? 'no result')}`, targets: [p.target] });
     }
-    results.push({ target: p.target, path: p.path, status: ok ? 'passed' : 'failed', duration_ms: num(j['duration_ms']) || p.ms, via: 'monoflow' });
+    results.push({ target: p.target, path: p.path, status: ok ? 'passed' : 'failed', duration_ms: num(j['duration_ms']) || p.ms, via: p.via ?? 'monoflow' });
   }
   // a crate named like a monoflow package (crates/wisp and sdk/python are both `wisp`) is keyed by its folder, so its
   // failure is never credited to the other package (G14); no `results` row: the cargo step's time is the step's
@@ -158,19 +170,20 @@ function workspace(): { dirs: Set<string>; names: Set<string>; byName: Map<strin
 /** What the .agents/bin/monoflow wrapper sets (tools/setup-monoflow.ts WRAPPER_SCRIPT; a test keeps them alike). */
 export const WRAPPER_ENV: Readonly<Record<string, string>> = { MONOFLOW_NO_SPECULATE: '1', MONOFLOW_NO_ROOT_SPECULATE: '1' };
 
-/** One monoflow call, as the wrapper makes it (no background speculation). */
-function monoflow(args: string[], json = true): Promise<{ code: number; out: string }> {
+/** One child process, stdout captured (or passed through), stderr passed through. */
+function run(cmd: string, args: string[], env: NodeJS.ProcessEnv, capture = true): Promise<{ code: number; out: string }> {
   return new Promise((done) => {
-    const child = spawn(join(ROOT, DEST), args, {
-      cwd: ROOT,
-      env: { ...process.env, ...WRAPPER_ENV, ...(json ? { MONOFLOW_FORMAT: 'json' } : {}) },
-      stdio: ['ignore', 'pipe', 'inherit'],
-    });
+    const child = spawn(cmd, args, { cwd: ROOT, env, stdio: ['ignore', capture ? 'pipe' : 'inherit', 'inherit'] });
     let out = '';
-    child.stdout.setEncoding('utf8').on('data', (d: string) => (out += d));
+    child.stdout?.setEncoding('utf8').on('data', (d: string) => (out += d));
     child.on('error', (e) => done({ code: -1, out: JSON.stringify({ status: 'failed', error: e.message }) }));
     child.on('close', (code) => done({ code: code ?? -1, out }));
   });
+}
+
+/** One monoflow call, as the wrapper makes it (no background speculation). */
+function monoflow(args: string[], json = true): Promise<{ code: number; out: string }> {
+  return run(join(ROOT, DEST), args, { ...process.env, ...WRAPPER_ENV, ...(json ? { MONOFLOW_FORMAT: 'json' } : {}) });
 }
 
 const parse = (s: string): unknown => {
@@ -182,11 +195,11 @@ const parse = (s: string): unknown => {
   }
 };
 
-async function pool<T, R>(items: readonly T[], jobs: number, run: (t: T) => Promise<R>): Promise<R[]> {
+async function pool<T, R>(items: readonly T[], jobs: number, work: (t: T) => Promise<R>): Promise<R[]> {
   const out: R[] = new Array<R>(items.length);
   let next = 0;
   const worker = async (): Promise<void> => {
-    for (let i = next++; i < items.length; i = next++) out[i] = await run(items[i] as T);
+    for (let i = next++; i < items.length; i = next++) out[i] = await work(items[i] as T);
   };
   await Promise.all(Array.from({ length: Math.max(1, Math.min(jobs, items.length)) }, worker));
   return out;
@@ -197,7 +210,7 @@ if (import.meta.main) {
   const flag = (n: string): string | undefined => argv.find((a) => a.startsWith(`--${n}=`))?.slice(n.length + 3);
   const out = flag('out');
   if (!out) {
-    process.stderr.write('usage: node tools/ci-verify.ts --out=<verify.json> [--cargo-log=<file>] [--jobs=N] [--no-cache] [dir…]\n');
+    process.stderr.write('usage: node tools/ci-verify.ts --out=<verify.json> [--cargo-log=<file>] [--typecheck-log=<file>] [--jobs=N] [--no-cache] [dir…]\n');
     process.exit(2);
   }
   const start = performance.now();
@@ -208,32 +221,150 @@ if (import.meta.main) {
   // monoflow names each package; a folder it doesn't know, or knows under a name another folder took (three
   // packages are called `wisp`: monoflow keeps one), is skipped as `verify --all` skipped it
   const owners = await pool(dirs, 8, async (d) => ({ d, r: parse((await monoflow(['graph', 'query', d])).out) }));
-  const targets: { name: string; path: string }[] = [];
+  const targets: { name: string; path: string; how: How }[] = [];
   const skipped: string[] = [];
+  const rootLint = files.some((f) => ROOT_LINT.test(f));
+  let programs: (Program | undefined)[] | undefined;
+  const pkgPrograms = new Map<string, Program>();
   for (const { d, r } of owners) {
     const name = isObj(r) && typeof r['package'] === 'string' ? r['package'] : undefined;
-    const path = isObj(r) && typeof r['path'] === 'string' ? r['path'].replaceAll('\\', '/') : undefined;
-    if (name && path === d && !(ws.dirs.has(d) && ws.names.has(name))) targets.push({ name, path });
-    else skipped.push(d);
+    const path = isObj(r) && typeof r['path'] === 'string' ? slash(r['path']) : undefined;
+    if (!name || path !== d || (ws.dirs.has(d) && ws.names.has(name))) {
+      skipped.push(d);
+      continue;
+    }
+    const manifest = join(ROOT, d, 'package.json');
+    const pj: unknown = existsSync(manifest) ? JSON.parse(readFileSync(manifest, 'utf8')) : undefined;
+    const scripts = isObj(pj) && isObj(pj['scripts']) ? (Object.fromEntries(Object.entries(pj['scripts']).filter(([, v]) => typeof v === 'string')) as Record<string, string>) : undefined;
+    const how = plan(scripts, {
+      vitestConfig: existsSync(join(ROOT, d, 'vitest.config.ts')),
+      rootLint,
+      covered: (config) => {
+        programs ??= PROGRAMS.map(readProgram);
+        const p = readProgram(posix.join(d, config));
+        if (p) pkgPrograms.set(posix.join(d, config), p);
+        return covers(p, programs);
+      },
+    });
+    targets.push({ name, path: d, how });
   }
   if (skipped.length) process.stdout.write(`ci-verify: not monoflow packages of their own (as in verify --all): ${skipped.join(', ')}\n`);
+  const describe = (h: How): string => (h.kind === 'monoflow' ? 'monoflow' : `typecheck: ${h.typecheck === 'covered' ? 'npm run typecheck' : 'monoflow'}, test: ${h.test === 'vitest' ? 'vitest (one run)' : 'monoflow'}`);
   if (argv.includes('--list')) {
-    for (const t of targets) process.stdout.write(`${t.name}\t${t.path}\n`);
+    for (const t of targets) process.stdout.write(`${t.name}\t${t.path}\t${describe(t.how)}\n`);
     process.exit(0);
   }
+  const noCache = argv.includes('--no-cache') ? ['--no-cache'] : [];
+  const split = targets.filter((t): t is typeof t & { how: Extract<How, { kind: 'split' }> } => t.how.kind === 'split');
+  const vitestDirs = split.filter((t) => t.how.test === 'vitest').map((t) => t.path);
+  const covered = split.filter((t) => t.how.typecheck === 'covered');
+
+  // the monoflow calls: whole packages (crates outside the workspace first: the longest builds), then single checks
+  type Call = { name: string; path: string; args: string[]; via: string };
+  const isCrate = (p: string): boolean => existsSync(join(ROOT, p, 'Cargo.toml')) && !existsSync(join(ROOT, p, 'package.json'));
+  const calls: Call[] = [
+    ...targets.filter((t) => t.how.kind === 'monoflow').sort((a, b) => Number(isCrate(b.path)) - Number(isCrate(a.path))).map((t) => ({ name: t.name, path: t.path, args: [], via: 'monoflow' })),
+    ...split.filter((t) => t.how.typecheck === 'monoflow').map((t) => ({ name: t.name, path: t.path, args: ['--typecheck'], via: 'monoflow --typecheck' })),
+    ...split.filter((t) => t.how.test === 'monoflow').map((t) => ({ name: t.name, path: t.path, args: ['--test'], via: 'monoflow --test' })),
+  ];
   const jobs = Number(flag('jobs')) || Math.max(1, Math.ceil(availableParallelism() / 2));
-  process.stdout.write(`ci-verify: ${targets.length} packages through monoflow, ${jobs} at a time; ${ws.names.size} workspace crates left to the cargo steps\n`);
-  const parts = await pool(targets, jobs, async (t): Promise<Part> => {
+  process.stdout.write(
+    `ci-verify: ${targets.length} packages: ${calls.length} monoflow calls (${jobs} at a time), ${vitestDirs.length} packages' tests in one vitest run, ${covered.length} typechecks already in npm run typecheck; ${ws.names.size} workspace crates left to the cargo steps\n`,
+  );
+
+  const monoflowRuns = pool(calls, jobs, async (c) => {
     const t0 = performance.now();
-    const r = await monoflow(['verify', `--package=${t.name}`, '--json', ...(argv.includes('--no-cache') ? ['--no-cache'] : [])], false);
-    const ms = performance.now() - t0;
-    const raw = parse(r.out);
-    process.stdout.write(`  ${isObj(raw) && raw['status'] === 'passed' ? 'ok  ' : 'FAIL'} ${t.name} (${(ms / 1000).toFixed(1)} s)\n`);
-    return { target: t.name, path: t.path, raw, ms };
+    const r = await monoflow(['verify', `--package=${c.name}`, '--json', ...c.args, ...noCache], false);
+    const piece = monoflowPiece(parse(r.out), performance.now() - t0, c.via);
+    process.stdout.write(`  ${piece.ok ? 'ok  ' : 'FAIL'} ${c.name} (${c.via}, ${(piece.ms / 1000).toFixed(1)} s)\n`);
+    return { call: c, piece };
   });
+
+  const vitestRun = (async (): Promise<{ report: unknown; code: number; ms: number } | undefined> => {
+    if (!vitestDirs.length) return undefined;
+    const tmp = mkdtempSync(join(tmpdir(), 'wisp-ci-vitest-'));
+    const file = join(tmp, 'report.json');
+    const t0 = performance.now();
+    try {
+      const r = await run(
+        process.execPath,
+        [join(ROOT, 'node_modules', 'vitest', 'vitest.mjs'), 'run', '--config', join(ROOT, 'tools', 'vitest.ci.config.ts'), '--reporter=dot', '--reporter=json', `--outputFile.json=${file}`],
+        { ...process.env, WISP_VITEST_PROJECTS: JSON.stringify(vitestDirs) },
+        false,
+      );
+      const report: unknown = existsSync(file) ? JSON.parse(readFileSync(file, 'utf8')) : undefined;
+      const ms = performance.now() - t0;
+      process.stdout.write(`  ${r.code === 0 ? 'ok  ' : 'FAIL'} vitest, ${vitestDirs.length} packages in one run (${(ms / 1000).toFixed(1)} s)\n`);
+      return { report, code: r.code, ms };
+    } finally {
+      rmSync(tmp, { recursive: true, force: true });
+    }
+  })();
+
+  const typecheckRun = (async (): Promise<{ via: string; result: ReturnType<typeof tscFailures> } | undefined> => {
+    if (!covered.length) return undefined;
+    const log = flag('typecheck-log');
+    const fromStep = log !== undefined && existsSync(log) ? tscFailures(readFileSync(log, 'utf8')) : undefined;
+    if (fromStep?.done) return { via: 'npm run typecheck', result: fromStep };
+    // the typecheck step didn't run (or didn't finish): run it here, so those packages are still type-checked
+    process.stdout.write('ci-verify: no finished npm run typecheck log; running tools/typecheck.ts\n');
+    const r = await run(process.execPath, [join(ROOT, 'tools', 'typecheck.ts')], process.env);
+    const result = tscFailures(r.out);
+    if (!result.done) result.other.push(`tools/typecheck.ts ended (exit ${r.code}) before its summary: ${stripAnsi(r.out).trim().slice(-400)}`);
+    return { via: 'npm run typecheck (here)', result };
+  })();
+
+  const [mf, vt, tc] = await Promise.all([monoflowRuns, vitestRun, typecheckRun]);
+
+  // the packages' pieces
+  const pieces = new Map<string, Piece[]>(targets.map((t) => [t.name, []]));
+  for (const { call, piece } of mf) pieces.get(call.name)?.push(piece);
+  const extra: Part[] = [];
+  if (vt) {
+    const by = vt.report === undefined ? undefined : vitestByPackage(vt.report, vitestDirs, [ROOT, realpathSync.native(ROOT)], vt.code);
+    const share = vitestDirs.length ? vt.ms / vitestDirs.length : 0;
+    for (const t of split.filter((s) => s.how.test === 'vitest')) {
+      const at = by?.per.get(t.path);
+      const errors = at ? [...at.errors] : [{ code: 'execution_failure', message: `vitest wrote no report (exit ${vt.code}): see the vitest output above`, targets: [] }];
+      if (at && at.files === 0 && t.how.needsTests) errors.push({ code: 'test-failure', message: `vitest found no test files in ${t.path} (its test script has no --passWithNoTests)`, targets: [] });
+      pieces.get(t.name)?.push({ via: 'vitest (one run)', ok: errors.length === 0, ms: at?.ms || share, errors });
+    }
+    // a failure vitest can't place in a package fails a target of its own, so neither the job nor G14 loses it
+    if (by?.other.length) extra.push({ target: 'vitest', path: '.', ms: vt.ms, via: 'vitest (one run)', raw: { status: 'failed', errors: by.other.map((m) => ({ code: 'test-failure', message: m, targets: ['vitest'] })) } });
+  }
+  if (tc) {
+    // an error is the package's whose config holds the file, else the package whose folder it is in
+    const owner = new Map<string, string[]>();
+    for (const t of covered) {
+      const mine = new Set(t.how.configs.flatMap((c) => pkgPrograms.get(posix.join(t.path, c))?.files ?? []));
+      for (const file of tc.result.files.keys()) if (mine.has(resolve(ROOT, file))) owner.set(file, [...(owner.get(file) ?? []), t.name]);
+    }
+    const byFolder = [...covered].sort((a, b) => b.path.length - a.path.length);
+    for (const file of tc.result.files.keys()) {
+      const t = owner.has(file) ? undefined : byFolder.find((c) => file.startsWith(`${c.path}/`));
+      if (t) owner.set(file, [t.name]);
+    }
+    for (const t of covered) {
+      const errs = [...tc.result.files].filter(([file]) => owner.get(file)?.includes(t.name)).map(([file, what]) => ({ code: 'typecheck', file, message: what.join('\n'), targets: [] }));
+      pieces.get(t.name)?.unshift({ via: tc.via, ok: errs.length === 0, ms: 0, errors: errs });
+    }
+    // a file in no package (tools/, apps/server): no monoflow package ever type-checked it; the typecheck step fails
+    // the job for it, so it is named here, not credited (G14)
+    const loose = [...tc.result.files.keys()].filter((f) => !owner.has(f));
+    if (loose.length) process.stdout.write(`ci-verify: typecheck errors in no package: ${loose.join(', ')}\n`);
+    // an error with no file, or a typecheck that never finished: no package's result can be trusted, so a target of
+    // its own fails (as every package's own tsc -p would have)
+    if (tc.result.other.length) extra.push({ target: 'typecheck', path: '.', ms: 0, via: tc.via, raw: { status: 'failed', errors: tc.result.other.map((m) => ({ code: 'typecheck', message: m, targets: ['typecheck'] })) } });
+  }
+  const parts: Part[] = [...targets.map((t) => combine(t.name, t.path, pieces.get(t.name) ?? [])), ...extra];
+  for (const p of parts) {
+    const j = isObj(p.raw) ? p.raw : {};
+    if (j['status'] !== 'passed') process.stdout.write(`  FAIL ${p.target} (${p.via ?? 'monoflow'})\n`);
+  }
   const log = flag('cargo-log');
   const ran = log !== undefined && existsSync(log);
   const result = merge(parts, { ran, failures: ran ? cargoFailures(readFileSync(log, 'utf8')) : new Map(), crates: ws.names.size, dirs: ws.byName }, performance.now() - start);
   writeFileSync(out, `${JSON.stringify(result, null, 2)}\n`);
+  process.stdout.write(`ci-verify: ${((performance.now() - start) / 1000).toFixed(1)} s\n`);
   process.exitCode = parts.some((p) => !(isObj(p.raw) && p.raw['status'] === 'passed')) ? 1 : 0;
 }

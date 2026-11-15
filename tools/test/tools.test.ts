@@ -5,11 +5,14 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test, { after } from 'node:test';
 import { discover } from '../check/core/workspace.ts';
-import { candidates, cargoFailures, manifestDirs, merge, WRAPPER_ENV } from '../ci-verify.ts';
+import { cargoFailures, tscFailures, vitestByPackage } from '../ci-logs.ts';
+import { covers, plan as verifyPlan, readProgram } from '../ci-plan.ts';
+import { candidates, combine, manifestDirs, merge, monoflowPiece, WRAPPER_ENV } from '../ci-verify.ts';
 import { affectedSet, parseImpact, scorePr, verdict, type PrScore } from '../g14.ts';
 import { clippedHint, fenceFor, markdown, packageFolders, readVerify, slowest } from '../monoflow-report.ts';
 import { MONOFLOW_COMMIT, WRAPPER, WRAPPER_SCRIPT, strays, writeWrapper } from '../setup-monoflow.ts';
 import { dependencyOrder, plan } from '../test.ts';
+import { PROGRAMS } from '../typecheck.ts';
 
 const roots: string[] = [];
 after(() => {
@@ -224,4 +227,115 @@ test("ci-verify: one result in monoflow's shape: counts, failures from monoflow 
 test('ci-verify: calls monoflow-bin with the environment the wrapper sets', () => {
   for (const [k, v] of Object.entries(WRAPPER_ENV)) assert.match(WRAPPER_SCRIPT, new RegExp(`export [^\\n]*\\b${k}=${v}\\b`));
   assert.deepEqual([...WRAPPER_SCRIPT.matchAll(/\b(MONOFLOW_\w+)=/g)].map((m) => m[1]).sort(), Object.keys(WRAPPER_ENV).sort());
+});
+
+test('ci-verify: a package splits only when monoflow would run nothing but its typecheck and test scripts', () => {
+  const yes = { vitestConfig: true, rootLint: false, covered: (c: string): boolean => c === 'tsconfig.json' || c === 'tsconfig.dev.json' };
+  const ui = { test: 'vitest run --passWithNoTests', typecheck: 'tsc -p tsconfig.json', dev: 'vite' };
+  assert.deepEqual(verifyPlan(ui, yes), { kind: 'split', typecheck: 'covered', test: 'vitest', needsTests: false, configs: ['tsconfig.json'] });
+  const web = verifyPlan({ test: 'vitest run', typecheck: 'tsc -p tsconfig.json && tsc -p tsconfig.dev.json' }, yes);
+  assert.deepEqual(web, { kind: 'split', typecheck: 'covered', test: 'vitest', needsTests: true, configs: ['tsconfig.json', 'tsconfig.dev.json'] });
+  // node --test: its typecheck is covered, its tests go through monoflow
+  assert.deepEqual(verifyPlan({ test: 'node --test "test/**/*.test.ts"', typecheck: 'tsc -p tsconfig.json' }, { ...yes, vitestConfig: false }), { kind: 'split', typecheck: 'covered', test: 'monoflow', needsTests: true, configs: ['tsconfig.json'] });
+  // one config npm run typecheck doesn't hold: the typecheck goes through monoflow, the tests still join the one run
+  assert.deepEqual(verifyPlan({ test: 'vitest run', typecheck: 'tsc -p tsconfig.json && tsc -p tsconfig.other.json' }, yes), { kind: 'split', typecheck: 'monoflow', test: 'vitest', needsTests: true, configs: ['tsconfig.json', 'tsconfig.other.json'] });
+  // anything else is monoflow's whole verify, as before
+  const cases: [Record<string, string> | undefined, typeof yes, string][] = [
+    [undefined, yes, 'sdk/python, a spike'],
+    [{ ...ui, lint: 'eslint .' }, yes, 'a lint script: monoflow runs it'],
+    [ui, { ...yes, rootLint: true }, 'a root eslint config gives every package a lint command'],
+    [{ test: 'vitest run' }, yes, 'no typecheck script: monoflow may type-check through the root tsconfig'],
+    [{ typecheck: 'tsc -p tsconfig.json' }, yes, 'no test script'],
+    [{ test: 'vitest run --coverage', typecheck: 'tsc --noEmit' }, yes, 'neither in a form ci-verify runs'],
+    [{ test: 'vitest run', typecheck: 'tsc -p tsconfig.json' }, { ...yes, vitestConfig: false, covered: () => false }, 'no vitest.config.ts, typecheck not covered'],
+  ];
+  for (const [scripts, o, why] of cases) assert.deepEqual(verifyPlan(scripts, o), { kind: 'monoflow' }, why);
+});
+
+test("ci-verify: a package's tsconfig is covered only by a program with its options and all of its files", () => {
+  const pkg = { files: ['/r/p/src/a.ts', '/r/p/test/a.test.ts'], options: '{"strict":true}' };
+  assert.equal(covers(pkg, [undefined, { files: ['/r/p/src/a.ts', '/r/p/test/a.test.ts', '/r/q/b.ts'], options: '{"strict":true}' }]), true);
+  assert.equal(covers(pkg, [{ files: ['/r/p/src/a.ts'], options: '{"strict":true}' }]), false, 'a file the program lacks');
+  assert.equal(covers(pkg, [{ files: pkg.files, options: '{"strict":true,"types":["node"]}' }]), false, 'other options');
+  assert.equal(covers({ files: [], options: '{}' }, [{ files: [], options: '{}' }]), false, "no inputs is tsc's own error");
+  assert.equal(covers(undefined, [pkg]), false, "a config that doesn't parse");
+  // the repo's own: a plugin UI's config is the web program's; the web app's dev config is only its own program's
+  const programs = PROGRAMS.map((p) => readProgram(p));
+  assert.equal(covers(readProgram('plugins/goal/ui/tsconfig.json'), programs), true);
+  assert.equal(covers(readProgram('packages/tokens/tsconfig.json'), programs), true);
+  assert.equal(covers(readProgram('apps/web/tsconfig.dev.json'), programs.filter((_, i) => PROGRAMS[i] !== 'apps/web/tsconfig.dev.json')), false, 'node and vite types: no other program has its options');
+});
+
+test("ci-verify: npm run typecheck's errors by file, pretty or not, and whether it finished", () => {
+  const log = [
+    '> wisp-workspace@ typecheck',
+    '── tsconfig.web.json',
+    "\x1b[96mplugins/goal/ui/src/index.ts\x1b[0m:\x1b[93m3\x1b[0m:\x1b[93m5\x1b[0m - \x1b[91merror\x1b[0m\x1b[90m TS2322: \x1b[0mType 'x' is not assignable.",
+    "2026-11-15T02:40:00.0000000Z packages\\ui\\src\\a.tsx(10,2): error TS2304: Cannot find name 'y'.",
+    "error TS5083: Cannot read file '/x/tsconfig.json'.",
+    'typecheck: 1 of 4 programs failed (9.0s)',
+  ].join('\r\n');
+  const r = tscFailures(log);
+  assert.equal(r.done, true);
+  assert.deepEqual([...r.files.keys()], ['plugins/goal/ui/src/index.ts', 'packages/ui/src/a.tsx']);
+  assert.match(r.files.get('plugins/goal/ui/src/index.ts')?.[0] ?? '', /:3:5 TS2322: Type 'x'/);
+  assert.deepEqual(r.other, ["TS5083: Cannot read file '/x/tsconfig.json'."]);
+  assert.deepEqual(tscFailures('typecheck: 4 programs, 0 errors (9.2s)\n'), { done: true, files: new Map(), other: [] });
+  assert.equal(tscFailures('── tsconfig.json\n').done, false, 'cut off before its summary: not a result');
+  assert.equal(tscFailures('typecheck: 1 of 4 programs failed (1s)').other.length, 1, 'a failed program with no error line still fails');
+});
+
+test("ci-verify: the one vitest run's report, split by package, Windows paths included", () => {
+  const report = {
+    success: false,
+    testResults: [
+      { name: 'D:/a/wisp/wisp/plugins/goal/ui/test/a.test.ts', status: 'passed', startTime: 1000, endTime: 1250, assertionResults: [] },
+      { name: 'd:/a/wisp/wisp/plugins/goal/ui/test/b.test.ts', status: 'failed', startTime: 0, endTime: 50, message: '', assertionResults: [{ status: 'passed', fullName: 'ok' }, { status: 'failed', fullName: 'b > breaks', failureMessages: ['\x1b[31mAssertionError: expected 1 to be 2\x1b[39m\n    at b.test.ts:3'] }] },
+      { name: 'D:/a/wisp/wisp/packages/ui/test/c.test.tsx', status: 'failed', message: 'Failed to load url ./missing', assertionResults: [] },
+      { name: 'D:/a/wisp/wisp/elsewhere/d.test.ts', status: 'failed', message: 'boom', assertionResults: [] },
+    ],
+  };
+  const { per, other } = vitestByPackage(report, ['plugins/goal/ui', 'packages/ui', 'plugins/later/ui'], 'D:\\a\\wisp\\wisp');
+  assert.deepEqual(per.get('plugins/goal/ui'), { files: 2, ms: 300, errors: [{ code: 'test-failure', file: 'plugins/goal/ui/test/b.test.ts', message: 'b > breaks: AssertionError: expected 1 to be 2', targets: [] }] });
+  assert.deepEqual(per.get('packages/ui')?.errors, [{ code: 'test-failure', file: 'packages/ui/test/c.test.tsx', message: 'Failed to load url ./missing', targets: [] }]);
+  assert.deepEqual(per.get('plugins/later/ui'), { files: 0, ms: 0, errors: [] });
+  assert.deepEqual(other, ['elsewhere/d.test.ts: boom']);
+  assert.match(vitestByPackage({ success: false, testResults: [] }, ['a'], '/r').other[0] ?? '', /outside any test file/, 'a red run with no failing file still fails');
+  assert.deepEqual(vitestByPackage({ success: true, testResults: [] }, ['a'], '/r').other, []);
+});
+
+test('ci-verify: the vitest run fails when vitest exits red with a green report, or reports a file in no package', () => {
+  // an unhandled error (a rejected promise a test left behind): vitest exits 1, its JSON report still says success
+  const unhandled = vitestByPackage({ success: true, testResults: [{ name: '/r/a/test/x.test.ts', status: 'passed', assertionResults: [] }] }, ['a'], '/r', 1);
+  assert.equal(unhandled.per.get('a')?.files, 1);
+  assert.match(unhandled.other[0] ?? '', /exit 1\) outside any test file/);
+  // a passing file under a root spelled another way (a symlink, the real path) is matched, never dropped unseen
+  const real = vitestByPackage({ success: true, testResults: [{ name: '/private/r/a/test/x.test.ts', status: 'passed' }] }, ['a'], ['/r', '/private/r'], 0);
+  assert.deepEqual([real.per.get('a')?.files, real.other], [1, []]);
+  const lost = vitestByPackage({ success: true, testResults: [{ name: '/elsewhere/a/test/x.test.ts', status: 'passed' }] }, ['a'], '/r', 0);
+  assert.deepEqual([lost.per.get('a')?.files, lost.other.length], [0, 1]);
+});
+
+test("ci-verify: a split package's checks fold into one monoflow-shaped result, each named by what ran it", () => {
+  const tc = { via: 'npm run typecheck', ok: true, ms: 0, errors: [] };
+  const vt = { via: 'vitest (one run)', ok: false, ms: 1200, errors: [{ code: 'test-failure', file: 'plugins/goal/ui/test/b.test.ts', message: 'b > breaks', targets: [] }] };
+  const goal = combine('@w/goal-ui', 'plugins/goal/ui', [tc, vt]);
+  assert.equal(goal.via, 'npm run typecheck + vitest (one run)');
+  const later = combine('@w/later-ui', 'plugins/later/ui', [tc, { ...vt, ok: true, errors: [] }]);
+  const tokens = combine('@w/tokens', 'packages/tokens', [tc, monoflowPiece({ status: 'passed', duration_ms: 900 }, 1000, 'monoflow --test')]);
+  const r = merge([goal, later, tokens], { ran: false, failures: new Map(), crates: 3 }, 5000);
+  assert.deepEqual(r['failed'], { '@w/goal-ui': 1 });
+  assert.equal(r['passed_targets'], 2);
+  assert.deepEqual((r['errors'] as { targets: string[] }[]).map((e) => e.targets), [['@w/goal-ui']]);
+  assert.deepEqual((r['results'] as { target: string; via: string; duration_ms: number }[]).map((x) => [x.target, x.duration_ms, x.via]), [
+    ['@w/goal-ui', 1200, 'npm run typecheck + vitest (one run)'],
+    ['@w/later-ui', 1200, 'npm run typecheck + vitest (one run)'],
+    ['@w/tokens', 900, 'npm run typecheck + monoflow --test'],
+  ]);
+  const v = readVerify(r, () => undefined);
+  assert.deepEqual(v.failed, ['@w/goal-ui']);
+  assert.ok(v.details.some((d) => d.includes('b > breaks')));
+  // a monoflow call that printed no JSON still fails, with its error
+  const broken = monoflowPiece({ status: 'failed', error: 'monoflow printed no JSON: x' }, 10, 'monoflow --test');
+  assert.deepEqual([broken.ok, broken.ms, (broken.errors[0] as { message: string }).message], [false, 10, 'monoflow printed no JSON: x']);
 });

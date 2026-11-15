@@ -648,6 +648,14 @@ Source: `docs/v1-features.md` (each row's evidence and test). `[x]` built, `[ ]`
   min on Linux, macOS past 60). Windows hung 38 min in `serve_desktop::with_no_wisp_running_the_app_starts_one`: the
   detached app inherited the test's stdout pipe (fixed: `wisp_proc::keep_std_handles`). To confirm on the next
   `ci:full` run: every OS under 45 min.
+- **The other packages' step (ADR-0072, r269, proof = next `ci:full`):** 9ea69e14 Windows node 22 cancelled at 60 min
+  with the step 26 min in, 28 of 46 packages done (plugin UIs 60-345 s each; Linux 7.7 min, macOS 16.4). Cause: 43
+  per-package `tsc -p` runs, each re-checking the kit `npm run typecheck` had just checked, and 40 vitest starts. Now
+  `tools/ci-verify.ts` credits a package's typecheck from the typecheck step's log when one of its programs holds the
+  config's files with the same options (tools/ci-plan.ts `covers`: all 43 do; fallback: runs tools/typecheck.ts), runs
+  the 39 plain-vitest packages' tests in one vitest process (tools/vitest.ci.config.ts projects, report split by
+  folder), and sends the rest through monoflow (`--test` for the 4 node --test packages; whole verify for sdk/python
+  and the spikes, started first). Locally all 46: 128.6 → 38.5 s. To confirm: the step < 8 min on Windows, the job < 45.
 - **Windows 708ba936 (r257, proof = next `ci:full`):** the Rust test step hung 26 min after `6 targets failed`: an
   orphaned `opencode` probe held the `tee` pipe. Diagnosis: a child joins its own job only after `CreateProcess`
   returns; a server killed in that window (many serve tests stop theirs within a second of its start, while its ~10
@@ -679,6 +687,31 @@ Source: `docs/v1-features.md` (each row's evidence and test). `[x]` built, `[ ]`
   gone, so another process of wisp's works in the worktree after the turn (candidates: ship's `TurnEnded` git/gh,
   the worktree/git row refresh). The test now prints every live process with its command line when the remove fails,
   so the next Windows run names the holder; then fix it in the product (the folder is free once the run ends).
+- **Windows 9ea69e14 (r268, proof = next `ci:full`):** `cargo test --workspace` failed 3 targets (was 14). (1)
+  `wisp-machines --test carry` ×2, HTTP 403 "Only a copy wisp carried…": r264 spelled `machines.changes`' cwd long and
+  left the copies root as `Paths` was given (short in the test; in a product the same goes for any home not spelled at
+  entry), so `is_copy` compared long against short. Product fix: `carry::copy_at` spells both sides with
+  `wisp_proc::plain_str_blocking`; test `carry::tests::a_copy_is_one_whichever_side_is_spelled_short` (mapped 8.3 name,
+  fails before on every OS). The plugin host tests' temp helpers now return the long spelling as `crates/wisp/tests/common`
+  does (machines carry and bootstrap_install, sandbox seed, grid-client accounts, plugins install, channels setup; git and
+  worktrees were already canonical; push has no wisp-proc and compares no path). (2) `wisp-sandbox --test seed` ×2:
+  test-side only: the expected path was built from the short temp dir and joined `code/my-app` with `/`; now long and
+  `join("code").join("my-app")`, plus an assertion that a returned Windows cwd has no `/`. The sandbox's own `~/.sandbox/…`
+  and `.wisp/sandbox.sh` joins are now per part. Elsewhere `.join("a/b")` remains for files only read or written (Windows
+  takes `/` there), never for a stored or compared path. (3) `serve_open::a_folder_gone_opens_at_its_base` os error 32:
+  no handle is kept: no file watcher in the tree, no `set_current_dir`, no file kept open under a task's folder, the
+  claude run uses pipes (no ConPTY), and the dump showed no child of `wisp serve` alive. The holder is transient: ship's
+  `TurnEnded` recheck (`plugins/ship/host/src/wire.rs` `turn_ended` → `follow::recheck` → `git rev-parse`, `git status`,
+  `git rev-list --count`, all with their cwd in the worktree) starts as the turn's row turns ended, exactly when the test
+  removed the folder, and Windows refuses to remove any process's cwd; those gits were gone before PowerShell listed.
+  Not a product bug (wisp checks what a task has to ship after its turn; a user's `rm` in that second meets the same).
+  The test now stops wisp, waits until nothing it started is alive (by parent pid, `wisp_proc::processes`: a job's kill
+  is asynchronous), removes the folder, and opens on a restarted wisp. If it is still held then, the dump says what it
+  can: Restart Manager over every file left (or that no file is held: then a process has the folder itself open), what
+  is alive under the test and under the stopped server, every git/wisp/harness/console process alive anywhere, command
+  lines naming the folder, and the last 40 lines of serve.log. A process holding only the folder as its cwd is named
+  only if it is one of those. Not seen on Windows yet: only the next run can confirm (2) and (3); Defender holding a
+  fresh file is the next suspect if (3) still fails with wisp stopped.
 - **Last full run 03c0046d:** Linux and macOS fail only `packages/ui/test/css-rules.test.ts` (2 tests; fixed in round 244, 8e60cdf5 + c8173ea6); Windows jobs cancelled after the others failed. Earlier: 2790d627's probe test fixed in round 234.
 - **Windows groups still open** (from the last Windows results, b7499c23 → 8c2a17ed): most fixed since; to re-count on
   the next full run. Logs in `target/ci/*-failed.log`.

@@ -8,7 +8,8 @@
 import { spawn } from 'node:child_process';
 import { createRequire } from 'node:module';
 
-const PROGRAMS = ['tsconfig.json', 'tsconfig.web.json', 'apps/web/tsconfig.dev.json', 'mobile/web/tsconfig.json'];
+/** The programs; tools/ci-verify.ts reads them to know which packages' own `tsc -p` they cover. */
+export const PROGRAMS = ['tsconfig.json', 'tsconfig.web.json', 'apps/web/tsconfig.dev.json', 'mobile/web/tsconfig.json'];
 const tsc = createRequire(import.meta.url).resolve('typescript/bin/tsc');
 
 function run(project: string): Promise<{ project: string; code: number; out: string }> {
@@ -21,10 +22,12 @@ function run(project: string): Promise<{ project: string; code: number; out: str
   });
 }
 
-const started = performance.now();
-const results = await Promise.all(PROGRAMS.map(run));
-const failed = results.filter((r) => r.code !== 0);
-for (const r of failed) process.stdout.write(`\n── ${r.project}\n${r.out}`);
-const secs = ((performance.now() - started) / 1000).toFixed(1);
-console.log(failed.length ? `typecheck: ${failed.length} of ${PROGRAMS.length} programs failed (${secs}s)` : `typecheck: ${PROGRAMS.length} programs, 0 errors (${secs}s)`);
-process.exitCode = failed.length ? 1 : 0;
+if (import.meta.main) {
+  const started = performance.now();
+  const results = await Promise.all(PROGRAMS.map(run));
+  const failed = results.filter((r) => r.code !== 0);
+  for (const r of failed) process.stdout.write(`\n── ${r.project}\n${r.out}`);
+  const secs = ((performance.now() - started) / 1000).toFixed(1);
+  console.log(failed.length ? `typecheck: ${failed.length} of ${PROGRAMS.length} programs failed (${secs}s)` : `typecheck: ${PROGRAMS.length} programs, 0 errors (${secs}s)`);
+  process.exitCode = failed.length ? 1 : 0;
+}

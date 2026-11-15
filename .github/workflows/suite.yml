@@ -2,8 +2,8 @@ name: suite
 
 # The v2 suite on a matrix, called by pr.yml (Linux, Node 22 + 24), main.yml (every OS) and
 # nightly.yml (every OS, Node latest too, three times over). Structure rules, types, the tools' own
-# tests, the Rust workspace through cargo (once), then every other package through monoflow (ADR-0001,
-# ADR-0069: tools/ci-verify.ts). No network beyond the installs, no accounts: tests use fakes. Each job
+# tests, the Rust workspace through cargo (once), then every other package's checks, each once (ADR-0001,
+# ADR-0069, ADR-0072: tools/ci-verify.ts). No network beyond the installs, no accounts: tests use fakes. Each job
 # uploads the JSON result (cargo test's failing crates included) for gate G14 (tools/g14.ts).
 on:
   workflow_call:
@@ -25,7 +25,7 @@ on:
         type: string
         default: verify-all
       timeout:
-        description: Minutes a job may take; one run is ~30 min cold (setup and clippy ~7, cargo test ~11-16, the monoflow pass ~5-8), a repeat adds its tests' worth
+        description: Minutes a job may take; one run is ~30 min cold (setup and clippy ~7, cargo test ~11-25, the other packages ~3-8, ADR-0072), a repeat adds its tests' worth
         type: number
         default: 60
 
@@ -72,7 +72,10 @@ jobs:
       - id: install
         run: npm ci --no-audit --no-fund
       - run: npm run check
-      - run: npm run typecheck
+      - name: typecheck
+        # its output is the verify step's typecheck of every npm package whose own tsc -p it already covers (ADR-0072)
+        shell: bash
+        run: npm run typecheck 2>&1 | tee "$RUNNER_TEMP/typecheck.log"
       - name: cargo fmt
         run: cargo fmt --all --check
       - name: cargo clippy
@@ -103,8 +106,9 @@ jobs:
         run: python -m pip install --disable-pip-version-check pytest==8.3.5
 
       # Every package monoflow knows but the Cargo workspace's members, which the steps above check once (verify --all
-      # re-ran their check, clippy and tests crate by crate and took macOS past its limit): one --no-cache verify per
-      # package (ADR-0069). Runs after a failing Rust step too, so a red job still says which packages fail, and the
+      # re-ran their check, clippy and tests crate by crate and took macOS past its limit; ADR-0069). Each check once
+      # (ADR-0072): the typecheck step's programs stand for each npm package's own tsc -p they cover, every plain
+      # vitest package's tests run in one vitest process, the rest (sdk/python, the spikes, node --test) through monoflow. Runs after a failing Rust step too, so a red job still says which packages fail, and the
       # result gets the cargo test step's failing crates (G14). Every run, even after a failing one, so a nightly says
       # how flaky a package is (2 of 3); a repeat runs cargo test --workspace again too. The spikes' own workspaces build
       # into the job's target dir and reuse what the workspace built.
@@ -120,7 +124,7 @@ jobs:
             if [ "$i" -gt 1 ]; then
               cargo test --workspace --locked --no-fail-fast 2>&1 | tee "$RUNNER_TEMP/cargo-test-$i.log" || { failed=$((failed + 1)); echo "::error::cargo test --workspace: run $i of ${{ inputs.repeat }} failed"; }
             fi
-            node tools/ci-verify.ts --no-cache --out="verify-all-$i.json" --cargo-log="$RUNNER_TEMP/cargo-test-$i.log" || { failed=$((failed + 1)); echo "::error::monoflow verify: run $i of ${{ inputs.repeat }} failed"; }
+            node tools/ci-verify.ts --no-cache --out="verify-all-$i.json" --cargo-log="$RUNNER_TEMP/cargo-test-$i.log" --typecheck-log="$RUNNER_TEMP/typecheck.log" || { failed=$((failed + 1)); echo "::error::monoflow verify: run $i of ${{ inputs.repeat }} failed"; }
             node tools/monoflow-report.ts "verify-all-$i.json" --title="verify, run $i (${{ matrix.os }}, node ${{ matrix.node }})"
             echo "::endgroup::"
           done

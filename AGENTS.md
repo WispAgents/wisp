@@ -155,8 +155,9 @@ wisp aims to be the fastest dev tool there is. Speed is checked like correctness
   `cargo build --workspace` at once on a shared machine.
 - `main` is protected. Work on a branch, open a PR. Commit by file name, never `git add -A`.
 - PR CI (`.github/workflows/suite.yml`) on Linux, Node 22 and 24: `npm run check`, `npm run typecheck`, the Cargo
-  workspace once through its own steps (fmt, clippy, test --no-fail-fast), then `node tools/ci-verify.ts`: monoflow
-  verify for every other package (ADR-0069). Label a PR `ci:full` to run every OS. monoflow
+  workspace once through its own steps (fmt, clippy, test --no-fail-fast), then `node tools/ci-verify.ts`: every
+  other package's checks, each once (the typecheck step's programs, one vitest run, monoflow for the rest; ADR-0069,
+  ADR-0072). Label a PR `ci:full` to run every OS. monoflow
   reports the affected set; it does not skip anything until gate G14 passes (ADR-0001).
 - User-facing changes get a `CHANGELOG.md` entry under *Unreleased*.
 - Releasing is merging the version bump (`Cargo.toml` workspace version and `npm/wisp-agents/package.json`; see the `release` skill).
