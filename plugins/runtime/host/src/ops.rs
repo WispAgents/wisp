@@ -146,11 +146,19 @@ impl Runtime {
         .map(drop)
     }
 
-    /// Mark done / Reopen. A running task can't be marked done: stop it first.
+    /// Mark done / Reopen. A running task can't be marked done: stop it first. One whose turn has its result, its CLI
+    /// only on its way out (`Run::Lingering`: Windows takes its time to end a process), is no longer working once that
+    /// end is written (the task no longer reads Running: no after-turn step holds it) and nothing queued starts when
+    /// the CLI lets go: the user sees it ended, and Mark done goes (CI 8bb8ccd0 refused it "it is still working" just
+    /// after the turn ended). Read under the task's lock, as `end_turn` and `release_run` write.
     pub async fn set_state(self: &Arc<Self>, id: &str, state: SessionState) -> Result<()> {
-        let running = self.run_state(id) != queue::Run::Idle;
         self.edit(id, |s| {
-            if running && state != SessionState::Running {
+            let working = match self.run_state(id) {
+                queue::Run::Idle => false,
+                queue::Run::Running { .. } => true,
+                queue::Run::Lingering => s.state == SessionState::Running || (!s.queue.is_empty() && !s.queue_held),
+            };
+            if working && state != SessionState::Running {
                 return Err(RuntimeError::Conflict("it is still working: stop it first".into()));
             }
             s.state = state;

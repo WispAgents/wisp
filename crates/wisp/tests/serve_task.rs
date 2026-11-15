@@ -599,3 +599,22 @@ async fn a_tasks_resume_command_resumes_its_conversation_from_its_folder() {
     assert!(!cmd.contains("inside wisp"), "no in-wisp note: {cmd}");
     drop(serve);
 }
+
+/// CI 8bb8ccd0 (Windows): the turn had ended, its CLI was still on its way out (Lingering), and Mark done was refused
+/// "it is still working: stop it first". The fake stays 2.5 s after its result, as a slow exit would; a task whose
+/// turn has ended is marked done at once.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_task_whose_turn_ended_is_marked_done_while_its_cli_is_still_exiting() {
+    let dir = temp("serve-done-linger");
+    let (serve, port) = start_with(&dir, &[("FAKE_LINGER", "2500")]);
+    let api = Api { http: reqwest::Client::new(), port, n: 0.into() };
+    let made = api.cmd("runtime.create", json!({ "prompt": "fix add", "cwd": dir.join("proj"), "agent": "claude" })).await;
+    let id = made["id"].as_str().unwrap().to_owned();
+    let at = Instant::now();
+    api.until(&id, "the turn ends", |t| t.last().is_some_and(ended)).await;
+    let r = api.try_cmd("runtime.setState", json!({ "id": id, "state": "done" })).await;
+    assert!(at.elapsed() < Duration::from_millis(2500), "marked while the CLI lingers, not after: {:?}", at.elapsed());
+    assert_eq!(r["ok"], true, "{r}");
+    assert_eq!(api.cmd("runtime.get", json!({ "id": id })).await["state"], "done");
+    drop(serve);
+}
