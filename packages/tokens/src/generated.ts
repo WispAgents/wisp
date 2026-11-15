@@ -50,7 +50,7 @@ export type Easing = 'ease' | 'spring';
 /** Stacking layers. */
 export type ZLayer = 'base' | 'raised' | 'sticky' | 'rail' | 'pane' | 'menu' | 'overlay' | 'overlay-menu' | 'toast' | 'tooltip';
 /** Layout widths. */
-export type Breakpoint = 'box-narrow' | 'narrow' | 'compact' | 'phone' | 'split' | 'wide' | 'box-tight' | 'box-roomy' | 'box-wide' | 'pane-wide' | 'pane-xs' | 'box-xs' | 'bar-cold';
+export type Breakpoint = 'box-narrow' | 'narrow' | 'compact' | 'phone' | 'split' | 'wide' | 'box-tight' | 'box-roomy' | 'box-wide' | 'pane-wide' | 'pane-xs' | 'box-xs' | 'bar-cold' | 'box-many' | 'picker-stack';
 
 export const TONES: readonly Tone[] = ['neutral', 'accent', 'good', 'warn', 'bad', 'info'];
 export const SPACES: readonly Space[] = ['0', '1', '2', '3', '4', '5', '6', '7', '8', '9'];
@@ -73,10 +73,12 @@ export const BREAKPOINTS = {
   'pane-xs': 375,
   'box-xs': 290,
   'bar-cold': 326,
+  'box-many': 600,
+  'picker-stack': 560,
 } as const;
 /** At or over this width the list and the open task sit side by side; under it they stack. */
 export const SPLIT_MIN_WIDTH = 900;
 /** Every px value in the scale (space, radius, font size, size). The kit's CSS may use no other. */
 export const PX_SCALE: readonly number[] = [0, 1, 1.5, 2, 3, 4, 5, 6, 7, 7.5, 8, 9, 10, 10.5, 11, 11.5, 12, 12.5, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 24, 26, 27, 28, 30, 32, 34, 36, 38, 40, 41, 44, 48, 49, 52, 56, 57, 58, 60, 64, 68, 74, 76, 82, 92, 98, 99, 100, 120, 140, 150, 172, 200, 220, 232, 240, 260, 280, 300, 320, 340, 360, 400, 420, 440, 480, 520, 560, 600, 640, 680, 720, 760, 800, 860, 900];
 /** Breakpoint px values: allowed in @media and @container conditions only. */
-export const BREAKPOINT_PX: readonly number[] = [290, 326, 375, 400, 480, 520, 640, 720, 800, 860, 900, 960, 1180];
+export const BREAKPOINT_PX: readonly number[] = [290, 326, 375, 400, 480, 520, 560, 600, 640, 720, 800, 860, 900, 960, 1180];

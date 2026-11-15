@@ -125,6 +125,8 @@ test('only_the_account_row_is_a_wrap_group_the_other_segment_rows_stay_one_line_
   const wraps = [...box.querySelectorAll('[data-kit="pk-seg"][data-part$="wrap"]')];
   // v1 launcher.css `.pk-acct .pk-seg { flex-wrap: wrap }`: the accounts' segment, and no other
   expect(wraps.map((w) => w.getAttribute('data-part'))).toEqual(['runner.account-wrap']);
+  // it wraps as a sanctioned Wrap group (layout.css `[data-layout='wrap']`), and it is the only pk-seg that does
+  expect([...box.querySelectorAll('[data-kit="pk-seg"][data-layout="wrap"]')]).toEqual(wraps);
   expect(wraps[0]?.closest('[role="radiogroup"]')?.getAttribute('aria-label')).toBe('Account');
   expect([...(wraps[0]?.querySelectorAll('button') ?? [])].map((b) => b.textContent)).toEqual(['Auto', 'Work', 'Old']);
 });

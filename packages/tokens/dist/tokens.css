@@ -169,6 +169,8 @@
     --bp-pane-xs: 375px;
     --bp-box-xs: 290px;
     --bp-bar-cold: 326px;
+    --bp-box-many: 600px;
+    --bp-picker-stack: 560px;
     --bg: #ffffff;
     --bg-2: #f3f3f2;
     --rail: #f7f7f6;

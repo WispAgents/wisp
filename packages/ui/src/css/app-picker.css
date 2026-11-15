@@ -239,9 +239,11 @@
     background: var(--bg-2);
     border: 1px solid var(--line);
   }
-  /* v1 .pk-acct .pk-seg: the account row is a Wrap group, its accounts flow onto more lines (design/layout.md §5) */
-  [data-kit='pk-seg'][data-part='runner.account-wrap'] {
-    flex-wrap: wrap;
+  /* v1 .pk-acct .pk-seg: the account row is a Wrap group (data-layout='wrap': layout.css wraps it, design/layout.md §5);
+     it keeps the segment's own 2px gap and stretched buttons, not the Wrap layout's gap and centring */
+  [data-kit='pk-seg'][data-layout='wrap'] {
+    gap: 2px;
+    align-items: stretch;
   }
   [data-kit='pk-seg'] > button {
     flex: 1 0 auto;
