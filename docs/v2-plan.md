@@ -22,8 +22,8 @@ Rust for everything but the UI, Solid/TS for the UI, everything a plugin (ADR-00
 | Regressed | none (F-comp-1 picker restored to v1 in round 233) |
 | CI, last full run (f4679d2d) | **2nd green run: Linux 4/4 + macOS 2/2 + Windows node 22**; Windows node 24: serve_task follow-up timing (1.5 s fake vs Windows load; next: gate the fake) |
 | Budgets | initial JS 107.2 KB br (≤ 120) · CSS 27.1 KB (≤ 30) |
-| Weekly usage | 98 % (paused new coders until the weekly reset, ~68 h) |
-| Coders running | none: paused at 98 % weekly usage until the reset |
+| Weekly usage | 98 % (owner: continue, 1 coder) |
+| Coders running | coder-r278 (last FAKE_DELAY tests) |
 
 ## 3. Owner directions (standing rules)
 
@@ -812,6 +812,7 @@ Source: `docs/v1-features.md` (each row's evidence and test). `[x]` built, `[ ]`
 
 | Round | What | State |
 |---|---|---|
+| 278 | serve_channels_cap + serve_delegate_machine onto FAKE_GATE | in progress |
 | 277 | 'While running' tests held on a gate (serve_task x5, crew delegate) | committed |
 | 276 | Ledger: scrubber day labels; filter row one line (collapse, then scroll) | committed |
 | 275 | serve_orphans: Windows pid reuse (test tracked pids); fakes hold a life lock | committed (488e7813) |
