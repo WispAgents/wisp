@@ -1129,4 +1129,131 @@
     :root[data-platform='android'] [data-kit='select-trigger'] > [data-kit='icon'],
     :root[data-platform='android'] [data-kit='select-sheet-radio'] { transition: none; }
   }
+
+  /* Step 13: the task page, New task and Search (design/mobile.md §A.2). A pushed page's TopAppBar sits at its pane's
+     top, over the page's scroller (the browser's split head is laid out there by `order`, so is this). */
+  :root[data-platform='android'] [data-kit='frame-pane'] > [data-kit='app-bar'] { order: -1; }
+  /* a menu's key hints: no keyboard on a phone (design/mobile.md §A.2: keyboard-only things are hidden) */
+  :root[data-platform='android'] [data-kit='menu-item'] > [data-kit='kbd'] { display: none; }
+  /* the bar's search icon (the M3 search view opens from it), the page's ⋮, a compose bar's Send (an M3 text button) */
+  :root[data-platform='android'] [data-kit='app-bar-search-icon'] { display: contents; }
+  :root[data-platform='android'] [data-kit='app-bar-actions'] > [data-kit='app-bar-search-icon'] > [data-kit='icon-button'],
+  :root[data-platform='android'] [data-kit='app-bar-actions'] > [data-kit='icon-button'] {
+    width: var(--bar-icon-target);
+    height: var(--bar-icon-target);
+    border-radius: var(--radius-pill);
+    color: var(--on-surface-var);
+  }
+  :root[data-platform='android'] [data-kit='app-bar-confirm'] { display: flex; flex: none; padding-left: var(--space-2); }
+  :root[data-platform='android'] [data-kit='app-bar-confirm'] > [data-kit='button'] {
+    height: var(--button-h);
+    padding: var(--space-0) var(--button-pad-sm);
+    border: 0;
+    border-radius: var(--radius-pill);
+    background: transparent;
+    color: var(--primary);
+    font: var(--type-label-l);
+    letter-spacing: var(--track-label-l);
+  }
+  :root[data-platform='android'] [data-kit='app-bar-confirm'] > [data-kit='button']:active { background: color-mix(in srgb, var(--primary) calc(var(--state-pressed) * 100%), transparent); }
+  :root[data-platform='android'] [data-kit='app-bar-confirm'] > [data-kit='button']:disabled { color: var(--on-surface); opacity: var(--state-disabled); }
+  /* New task: the M3 full-screen dialog over the list (it comes up from the FAB's corner); the destinations give way */
+  :root[data-platform='android'] [data-kit='frame'][data-behind][data-page='main'] > [data-kit='frame-nav'] { display: none; }
+  :root[data-platform='android'] [data-kit='frame'][data-behind][data-page='main'] [data-kit='frame-pane'][data-pane='main'] {
+    background: var(--surface-c0);
+    animation: k-android-full var(--dur-medium) var(--ease-emph-out);
+  }
+  @keyframes k-android-full { from { opacity: 0; transform: translateY(var(--space-9)); } }
+  :root[data-platform='android'] [data-kit='frame'][data-behind] [data-kit='split-home'] { padding-top: var(--space-4); }
+  /* the composer as an M3 docked bar: a filled field with the extra-large shape, Send a filled icon button */
+  :root[data-platform='android'] [data-kit='reply-box'],
+  :root[data-platform='android'] [data-kit='launcher'] {
+    border: 0;
+    border-radius: var(--radius-xl);
+    background: var(--surface-c2);
+    box-shadow: none;
+    font-family: var(--font-ui);
+  }
+  :root[data-platform='android'] [data-kit='launcher']:focus-within,
+  :root[data-platform='android'] [data-kit='launcher'][data-open] { border: 0; box-shadow: none; }
+  /* the bar's tools scroll under Send (pinned at the end) when they don't fit a narrow phone */
+  :root[data-platform='android'] [data-kit='reply-box'] { padding-left: var(--space-4); }
+  :root[data-platform='android'] [data-kit='reply-box'] [data-kit='c-bar'],
+  :root[data-platform='android'] [data-kit='launcher'] [data-kit='l-bar'] { gap: var(--space-2); overflow-x: auto; scrollbar-width: none; }
+  :root[data-platform='android'] [data-kit='reply-box'] [data-kit='send'],
+  :root[data-platform='android'] [data-kit='launcher'] [data-kit='send'] {
+    position: sticky;
+    right: var(--space-0);
+    width: var(--icon-button-sm);
+    height: var(--icon-button-sm);
+    border-radius: var(--radius-pill);
+    background: var(--primary);
+    color: var(--on-primary);
+    /* the tools scrolled under it don't show through: a ring of the box's colour */
+    box-shadow: 0 0 0 var(--space-2) var(--surface-c2);
+  }
+  /* the task's Details (from its menu): the browser's details column as a list in the sheet: the state, the harness
+     and model, its folders, the branch, its usage; its actions are the menu's */
+  :root[data-platform='android'] [data-kit='sheet'] [data-kit='it-bar'] { display: flex; flex-direction: column; align-items: stretch; gap: var(--space-6); margin: var(--space-0); padding: var(--space-0) var(--space-0) var(--space-6); background: transparent; }
+  :root[data-platform='android'] [data-kit='sheet'] [data-kit='it-props'] { flex-direction: column; align-items: flex-start; gap: var(--space-5); font: var(--type-body-l); color: var(--on-surface); }
+  :root[data-platform='android'] [data-kit='sheet'] [data-kit='it-state'] {
+    --tone: var(--good);
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-3);
+    color: color-mix(in srgb, var(--tone) 85%, var(--on-surface));
+  }
+  :root[data-platform='android'] [data-kit='sheet'] [data-kit='it-state'][data-tone='info'],
+  :root[data-platform='android'] [data-kit='sheet'] [data-kit='it-state'][data-tone='live'] { --tone: var(--primary); }
+  :root[data-platform='android'] [data-kit='sheet'] [data-kit='it-state'][data-tone='bad'] { --tone: var(--error); }
+  :root[data-platform='android'] [data-kit='sheet'] [data-kit='it-state'][data-tone='warn'] { --tone: var(--warn); }
+  :root[data-platform='android'] [data-kit='sheet'] [data-kit='model-logo'] { align-items: center; gap: var(--space-3); color: var(--on-surface); }
+  :root[data-platform='android'] [data-kit='sheet'] [data-kit='ml-name'] { display: inline; }
+  :root[data-platform='android'] [data-kit='sheet'] [data-kit='it-meta'] { color: var(--on-surface-var); }
+  :root[data-platform='android'] [data-kit='sheet'] [data-kit='it-actions']:empty { display: none; }
+  /* Search: the M3 search view, full screen from the bar's search icon: the field row (Back, the query) on the
+     container-high surface, a divider, the results as one-line list items; no keyboard hints */
+  :root[data-platform='android'] [data-kit='backdrop'][data-place='top'] { background: transparent; }
+  :root[data-platform='android'] [data-kit='dialog-positioner'][data-place='top'] { place-items: stretch; padding: var(--space-0); }
+  :root[data-platform='android'] [data-kit='dialog'][data-place='top'] {
+    width: 100%;
+    max-width: none;
+    height: 100dvh;
+    max-height: 100dvh;
+    margin: var(--space-0);
+    padding: var(--safe-top) var(--space-0) var(--space-0);
+    border: 0;
+    border-radius: var(--space-0);
+    background: var(--surface-c3);
+    box-shadow: none;
+    color: var(--on-surface);
+    font-family: var(--font-ui);
+    animation: k-android-search var(--dur-medium) var(--ease-emph-out);
+  }
+  @keyframes k-android-search { from { opacity: 0; clip-path: inset(var(--space-0) var(--space-0) 100% var(--space-0)); } }
+  :root[data-platform='android'] [data-kit='pal-input'] { height: var(--bar-h); gap: var(--space-2); padding: var(--space-0) var(--bar-pad); border-bottom: var(--hairline) solid var(--outline); }
+  :root[data-platform='android'] [data-kit='pal-input'] > [data-kit='icon-button'] { width: var(--bar-icon-target); height: var(--bar-icon-target); border-radius: var(--radius-pill); color: var(--on-surface); }
+  :root[data-platform='android'] [data-kit='pal-input'] > [data-kit='icon'] { margin: var(--space-0) var(--space-4); color: var(--on-surface-var); }
+  :root[data-platform='android'] [data-kit='pal-input'] > input { font: var(--type-body-l); letter-spacing: var(--track-body-l); color: var(--on-surface); }
+  :root[data-platform='android'] [data-kit='pal-input'] > input::placeholder { color: var(--on-surface-var); }
+  :root[data-platform='android'] [data-kit='pal-list'] { padding: var(--space-2) var(--space-0); }
+  :root[data-platform='android'] [data-kit='pal-group'] { padding: var(--space-6) var(--inset) var(--space-2); font: var(--type-title-s); letter-spacing: var(--track-title-s); color: var(--on-surface-var); }
+  :root[data-platform='android'] [data-kit='pal-row'] {
+    height: var(--row-h-1);
+    gap: var(--row-lead-gap);
+    padding: var(--space-0) var(--inset);
+    border-radius: var(--space-0);
+    color: var(--on-surface);
+    font: var(--type-body-l);
+    letter-spacing: var(--track-body-l);
+  }
+  :root[data-platform='android'] [data-kit='pal-row'][data-on] { background: transparent; }
+  :root[data-platform='android'] [data-kit='pal-row']:active { background: color-mix(in srgb, var(--on-surface) calc(var(--state-pressed) * 100%), transparent); }
+  :root[data-platform='android'] [data-kit='pal-sub'] { font: var(--type-body-m); color: var(--on-surface-var); }
+  :root[data-platform='android'] [data-kit='pal-kbd'],
+  :root[data-platform='android'] [data-kit='pal-foot'] { display: none; }
+  @media (prefers-reduced-motion: reduce) {
+    :root[data-platform='android'] [data-kit='frame'][data-behind][data-page='main'] [data-kit='frame-pane'][data-pane='main'],
+    :root[data-platform='android'] [data-kit='dialog'][data-place='top'] { animation: none; }
+  }
 }

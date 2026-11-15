@@ -5,7 +5,7 @@
 // Mark done, a follow-up, Rerun and Fork show their result before the peer answers; Ship it and a
 // restore show their control working; the panes and menus open in the same frame.
 
-import { For, Show, createEffect, createMemo, createResource, createSignal, onCleanup, untrack, type JSX } from 'solid-js';
+import { For, Show, createEffect, createMemo, createResource, createSignal, lazy, onCleanup, untrack, type JSX } from 'solid-js';
 import { entityKey, newRowId, ownerOf, uuidv7, type EntityKey, type Json } from '@wisp/client';
 import {
   Answer,
@@ -117,6 +117,10 @@ interface TurnBody {
 
 /** A step of a turn, as the task's topic sends it (runtime's event log: `kind`, and a tool's `tool` and `label`). */
 /** A tool's output carried by its own `tool_output` event, as a step's `out` and the event that carried it. */
+// the phone apps' task head (ADR-0065 step 13): the platform's app bar with the task's menu, in the phone heads' chunk
+// (the list's head loaded it already)
+const PhoneTaskBar = lazy(() => import('./PhoneHead.tsx').then((m) => ({ default: m.PhoneTaskBar })));
+
 const outputOf = (o: { readonly text: string; readonly seq: number } | undefined): { out?: string; seq?: number } => (o?.text ? { out: o.text, seq: o.seq } : {});
 
 interface EventRow {
@@ -287,6 +291,12 @@ export default function TaskView(props: { readonly id: string; readonly onBack?:
   const compactOffer = (): ReturnType<typeof compactItem> => (row()?.state === 'running' ? undefined : compactItem(cold(), now(), t));
   // what's open in the page: the steps, the notes, a command in flight, the reply's extras
   const [stepsOpen, setStepsOpen] = createSignal(false);
+  // the phone apps: the details column as a sheet from the menu, and Rename as a dialog (the bar's title isn't edited)
+  const phone = shell.platform.phone;
+  const [detailsOpen, setDetailsOpen] = createSignal(false);
+  const [renaming, setRenaming] = createSignal(false);
+  // a phone's page (stack): the app bar and its menu; a tablet's split keeps the browser's head and details column
+  const phoneBar = (): boolean => phone && nav().layout === 'stack';
   const [notesOpen, setNotesOpen] = createSignal(false);
   // 👍 / 👎 on a turn (v1 feedback.js): after 👎, one optional line under that turn's trail
   const [whyFor, setWhyFor] = createSignal<string | undefined>();
@@ -566,6 +576,15 @@ export default function TaskView(props: { readonly id: string; readonly onBack?:
           { section: 'open', order: -10, entry: { value: 'openIn', label: t('shell.task.openIn', { harness: harnessName() }), icon: 'terminal', keys: 'T' } },
         );
     }
+    // the phone apps have no details bar: what it holds is here, after Open in (v1's order), and Details first
+    if (phoneBar())
+      own.push(
+        { section: 'open', order: -40, entry: { value: 'details', label: t('shell.phone.details'), icon: 'info' } },
+        { section: 'open', order: 10, entry: { value: 'changes', label: t('shell.task.changes'), icon: 'file', checked: nav().side.kind === 'changes' } },
+        { section: 'open', order: 20, entry: { value: 'shell', label: t('shell.task.shell'), icon: 'shell', checked: nav().side.kind === 'shell' } },
+        { section: 'open', order: 30, entry: { value: 'ship', label: t('shell.task.ship'), icon: 'send' } },
+        { section: 'open', order: 40, entry: { value: 'done', label: t('shell.task.done'), icon: 'done' } },
+      );
     own.push({ section: 'task', order: -10, entry: { value: 'rename', label: t('shell.more.rename'), icon: 'pen', keys: 'M' } });
     if (compactOffer()) own.push({ section: 'task', order: 45, entry: { value: 'compact', label: t('shell.cold.compact'), icon: 'minus', hint: compactOffer()?.note ?? '' } });
     // v1's task menu: Lean runs for this task, or as Settings says (Claude Code only)
@@ -597,11 +616,20 @@ export default function TaskView(props: { readonly id: string; readonly onBack?:
       t,
     });
   };
+  // the browser edits the head's title in place; the phone apps' bar asks in a dialog
+  const startRename = (): void => {
+    if (phoneBar()) setRenaming(true);
+    else document.querySelector<HTMLElement>('[data-part="split.title"]')?.click();
+  };
   const onMore = (v: string): void => {
     if (v === 'transcript') setStepsOpen(!stepsOpen());
     else if (v === 'rerun') openRerun();
     else if (v === 'openIn') takeOver();
     else if (v === 'shell') side('shell');
+    else if (v === 'details') setDetailsOpen(true);
+    else if (v === 'changes') side('changes');
+    else if (v === 'ship') ship();
+    else if (v === 'done') markDone();
     else if (v === 'fork') copy(fork);
     else if (v === 'compact') void run(compactNow, { id: key }).catch(() => undefined);
     else if (v.startsWith('lean:')) {
@@ -616,7 +644,7 @@ export default function TaskView(props: { readonly id: string; readonly onBack?:
       void run(remove, { id: key }).catch(() => undefined);
       shell.navigate({ t: 'delete', id: key as never });
       next();
-    } else if (v === 'rename') document.querySelector<HTMLElement>('[data-part="split.title"]')?.click();
+    } else if (v === 'rename') startRename();
     else if (v === 'copy-id') void shell.platform.copy(bare).then((ok) => ok && shell.toast.show(t('shell.more.copiedId')));
     else if (v === 'later') void run(forLater, { id: key, forLater: !forLaterNow() }).catch(() => undefined);
     else if (v === 'unarchive') void run(archive, { id: key, archived: false }).catch(() => undefined);
@@ -703,7 +731,7 @@ export default function TaskView(props: { readonly id: string; readonly onBack?:
       else if (act === 'done') markDone();
       else if (act === 'later') void run(forLater, { id: key, forLater: !(row()?.summary['forLater'] === true) }).catch(() => undefined);
       else if (act === 'reply') input?.focus();
-      else if (act === 'rename') document.querySelector<HTMLElement>('[data-part="split.title"]')?.click();
+      else if (act === 'rename') startRename();
       else if (act === 'collapse') {
         setStepsOpen(false);
         setOpenTurn(undefined);
@@ -998,7 +1026,8 @@ export default function TaskView(props: { readonly id: string; readonly onBack?:
                 el.addEventListener('scroll', onBodyScroll, { passive: true });
                 onCleanup(() => el.removeEventListener('scroll', onBodyScroll));
               }}
-              details={
+              {...(!phoneBar() && {
+                details: (
                 <TaskDetails
                   harness={t('shell.task.harness', { name: h().name })}
                   {...(h().logo && { logo: h().logo })}
@@ -1010,7 +1039,8 @@ export default function TaskView(props: { readonly id: string; readonly onBack?:
                   {...((u) => (u ? { usage: u } : {}))(usage())}
                   actions={actions(s())}
                 />
-              }
+                ),
+              })}
               turns={
                 <>
                   {/* the band over the turns (wisp.goal's): `shell.task:band`, the task's row as its session */}
@@ -1180,6 +1210,9 @@ export default function TaskView(props: { readonly id: string; readonly onBack?:
                 </>
               }
             />
+            <Show
+              when={phoneBar() && props.onBack}
+              fallback={
             <TaskHead
               actions={<TaskHeadSlot id={key} session={() => s() as never} />}
               title={s().title}
@@ -1193,6 +1226,36 @@ export default function TaskView(props: { readonly id: string; readonly onBack?:
               onPanel={() => side('changes')}
               panelOn={nav().side.kind !== 'none'}
             />
+              }
+            >
+              {(back) => (
+                <PhoneTaskBar
+                  title={s().title}
+                  onBack={back()}
+                  head={() => <TaskHeadSlot id={key} session={() => s() as never} />}
+                  menu={more}
+                  onSelect={onMore}
+                  details={() => (
+                    <TaskDetails
+                      harness={t('shell.task.harness', { name: h().name })}
+                      {...(h().logo && { logo: h().logo })}
+                      project={String(s().summary['project'] ?? '')}
+                      color={color()}
+                      places={placeChips(s())}
+                      status={statusOf(s(), t)}
+                      {...(branch() && { branch: { head: branch().replace(/-[0-9a-f]{6}$/, ''), tail: branch().match(/-[0-9a-f]{6}$/)?.[0] ?? '', title: branch() } })}
+                      {...((u) => (u ? { usage: u } : {}))(usage())}
+                      actions={[]}
+                    />
+                  )}
+                  detailsOpen={detailsOpen()}
+                  onDetails={setDetailsOpen}
+                  renaming={renaming()}
+                  onRenaming={setRenaming}
+                  onRename={(title) => void run(rename, { id: key, title }).catch(() => undefined)}
+                />
+              )}
+            </Show>
             <Show when={stopAsk()}>
               {(q) => (
                 <Dialog

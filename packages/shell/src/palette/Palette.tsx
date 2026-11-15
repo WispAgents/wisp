@@ -143,6 +143,8 @@ export default function Palette(_p: { readonly client: PluginClient; readonly pa
       selected={sel()}
       empty={shell.t('shell.palette.empty', { q: query().trim() })}
       foot={{ navigate: shell.t('shell.palette.navigate'), open: shell.t('shell.palette.open'), close: shell.t('shell.palette.close') }}
+      // the phone apps' search view: Back (Android) / Cancel (iOS); the browser closes it with Esc or outside
+      close={{ back: shell.t('shell.phone.back'), cancel: shell.t('shell.phone.cancel'), onClose: () => shell.navigate({ t: 'closeOverlay', id: 'shell.palette' as never }) }}
       onInput={(v) => {
         setQuery(v);
         setSel(0);

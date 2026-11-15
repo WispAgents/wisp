@@ -141,6 +141,7 @@ export default function Picker(props: { readonly client: PluginClient; readonly 
       note={note()}
       loading={res.loading}
       foot={{ navigate: t('issues.foot.navigate'), open: t('issues.foot.open'), close: t('issues.foot.close') }}
+      close={{ back: t('issues.back'), cancel: t('issues.cancel'), onClose: close }}
       onInput={typed}
       onKeyDown={(e) => {
         if (e.key === 'Escape') {

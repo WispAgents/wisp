@@ -5,6 +5,12 @@
 //   page (a pushed task, setting) Android: M3 medium top app bar, the title on up to two lines under the
 //                                 bar, collapsing into the bar on scroll.
 //                                 iOS: the inline, centred title; Back carries the previous title.
+//   compose (New task)            Android: the M3 full-screen dialog's bar: Close (×), the title, the confirm
+//                                 action as a text button at the end. iOS: a sheet's bar: Cancel, the centred
+//                                 title, the confirm action in bold.
+// `menu` is the page's ⋮ (Android) / ⋯ (iOS) menu at the end; `search` is the screen's search: an icon among the
+// actions on Android (the M3 search view opens from it), the search field under the large title on iOS (an icon
+// in the bar once the large title has folded away).
 // Actions are a Toolbar (label → icon → More by priority; More is ⋮ on Android, ⋯ on iOS). On iOS a root
 // bar also draws the compose button a Fab handed over (compose.tsx). In the browser it is a plain one-line
 // bar from the browser kit (Back, title, actions), so it needs no CSS of its own there.
@@ -22,6 +28,7 @@ import { Text } from '../content/Text.tsx';
 import { Inline } from '../layout/Stack.tsx';
 import { Box } from '../layout/Box.tsx';
 import { Toolbar, type ToolbarItem } from '../composites/Toolbar.tsx';
+import { Menu, type MenuEntry } from '../controls/Menu.tsx';
 import { usePlatform } from '../platform/PlatformLook.tsx';
 import { ComposeButton, claimCompose, useComposeHost } from './compose.tsx';
 import { barCollapsed } from './scroll-math.ts';
@@ -31,12 +38,38 @@ export interface TopAppBarBack {
   /** What Back returns to (iOS shows it, shortened to the kit's "Back" when long; Android names the button). */
   readonly label: string;
   readonly onBack: () => void;
+  /** A compose bar's way out, with iOS's word for it (Cancel): Android draws × named `label`, iOS this word. Default:
+   *  Back. */
+  readonly close?: string;
+}
+
+/** A compose bar's confirm action (Send): Android's text button at the end, iOS's bold bar button. */
+export interface TopAppBarConfirm {
+  readonly label: string;
+  readonly onSelect: () => void;
+  readonly disabled?: boolean;
+}
+
+/** The page's menu (⋮ on Android, ⋯ on iOS), after its actions. */
+export interface TopAppBarMenu {
+  readonly label: string;
+  readonly items: readonly MenuEntry[];
+  readonly onSelect: (value: string) => void;
+}
+
+/** The screen's search: what opens it and its words (the iOS field's placeholder, the icon's name). */
+export interface TopAppBarSearch {
+  readonly label: string;
+  readonly onOpen: () => void;
 }
 
 export interface TopAppBarProps extends KitProps {
   readonly title: string;
-  readonly kind?: 'root' | 'page';
+  readonly kind?: 'root' | 'page' | 'compose';
   readonly back?: TopAppBarBack;
+  readonly confirm?: TopAppBarConfirm;
+  readonly menu?: TopAppBarMenu;
+  readonly search?: TopAppBarSearch;
   /** The title as a button with a chevron (the computer filter on the list). */
   readonly onTitle?: () => void;
   readonly actions?: readonly ToolbarItem[];
@@ -82,16 +115,72 @@ function WebBar(props: TopAppBarProps & { readonly part: PartName }): JSX.Elemen
           <Toolbar aria-label={props.actionsLabel ?? props.title} items={props.actions ?? []} justify="end" part={sub(props.part, 'actions')} />
         </Show>
       </Box>
+      <Show when={props.search}>{(q) => <IconButton icon="search" label={q().label} onClick={() => q().onOpen()} part={sub(props.part, 'search')} />}</Show>
+      <Show when={props.menu}>
+        {(m) => <Menu trigger={{ icon: 'dots', 'aria-label': m().label }} items={m().items} onSelect={m().onSelect} placement="bottom-end" part={sub(props.part, 'menu')} />}
+      </Show>
+      <Show when={props.confirm}>
+        {(c) => (
+          <Button variant="primary" size="sm" disabled={c().disabled === true} onClick={() => c().onSelect()} part={sub(props.part, 'confirm')}>
+            {c().label}
+          </Button>
+        )}
+      </Show>
     </Inline>
+  );
+}
+
+/** Back (a pushed page), or a compose bar's way out: Android's × / ←, iOS's titled Back or plain Cancel. */
+function BackControl(props: { readonly back: TopAppBarBack; readonly ios: boolean; readonly part: PartName; readonly t: Translate }): JSX.Element {
+  const go = (): void => props.back.onBack();
+  return (
+    <Show when={props.ios} fallback={<IconButton icon={props.back.close === undefined ? 'back' : 'x'} label={props.back.label} onClick={go} part={props.part} />}>
+      <Show
+        when={props.back.close}
+        fallback={
+          <Button variant="ghost" icon="back" aria-label={props.back.label} onClick={go} part={props.part}>
+            {backTitle(props.back.label, props.t)}
+          </Button>
+        }
+      >
+        {(word) => (
+          <Button variant="ghost" onClick={go} part={props.part}>
+            {word()}
+          </Button>
+        )}
+      </Show>
+    </Show>
+  );
+}
+
+/** The bar's end after its actions: the page's menu (⋮ on Android, ⋯ on iOS) and a compose bar's confirm (Send). */
+function PageEnd(props: { readonly menu: TopAppBarMenu | undefined; readonly confirm: TopAppBarConfirm | undefined; readonly ios: boolean; readonly part: PartName }): JSX.Element {
+  return (
+    <>
+      <Show when={props.menu}>
+        {(m) => (
+          <Menu trigger={{ icon: props.ios ? 'dots' : 'dots-v', 'aria-label': m().label, variant: 'ghost' }} items={m().items} onSelect={m().onSelect} placement="bottom-end" part={sub(props.part, 'menu')} />
+        )}
+      </Show>
+      <Show when={props.confirm}>
+        {(c) => (
+          <span data-kit="app-bar-confirm">
+            <Button variant="ghost" disabled={c().disabled === true} onClick={() => c().onSelect()} part={sub(props.part, 'confirm')}>
+              {c().label}
+            </Button>
+          </span>
+        )}
+      </Show>
+    </>
   );
 }
 
 function PhoneBar(props: TopAppBarProps & { readonly part: PartName }): JSX.Element {
   const t = useT(() => props.t);
   const look = usePlatform();
-  const kind = (): 'root' | 'page' => props.kind ?? 'page';
+  const kind = (): 'root' | 'page' | 'compose' => props.kind ?? 'page';
   const ios = (): boolean => look() === 'ios';
-  // M3 medium on a pushed page; the iOS large title on a destination's root
+  // M3 medium on a pushed page; the iOS large title on a destination's root; a compose bar is one line on both
   const large = (): boolean => (ios() ? kind() === 'root' : kind() === 'page');
   const host = useComposeHost();
   claimCompose(host, ios() && kind() === 'root');
@@ -122,20 +211,20 @@ function PhoneBar(props: TopAppBarProps & { readonly part: PartName }): JSX.Elem
       id={props.id}
       data-kit="app-bar" data-part={props.part} data-kind={kind()} data-large={flag(large())} data-collapsed={flag(large() && collapsed())}>
       <div data-kit="app-bar-row">
-        <Show when={props.back}>
-          {(b) => (
-            <Show when={ios()} fallback={<IconButton icon="back" label={b().label} onClick={() => b().onBack()} part={sub(props.part, 'back')} />}>
-              <Button variant="ghost" icon="back" aria-label={b().label} onClick={() => b().onBack()} part={sub(props.part, 'back')}>
-                {backTitle(b().label, t)}
-              </Button>
-            </Show>
-          )}
-        </Show>
+        <Show when={props.back}>{(b) => <BackControl back={b()} ios={ios()} part={sub(props.part, 'back')} t={t} />}</Show>
         <Title title={props.title} onTitle={props.onTitle} part={sub(props.part, 'title')} />
         <div data-kit="app-bar-actions">
+          <Show when={props.search}>
+            {(q) => (
+              <span data-kit="app-bar-search-icon">
+                <IconButton icon="search" label={q().label} onClick={() => q().onOpen()} part={sub(props.part, 'search')} />
+              </span>
+            )}
+          </Show>
           <Show when={props.actions?.length}>
             <Toolbar aria-label={props.actionsLabel ?? props.title} items={props.actions ?? []} justify="end" part={sub(props.part, 'actions')} t={t} />
           </Show>
+          <PageEnd menu={props.menu} confirm={props.confirm} ios={ios()} part={props.part} />
           <ComposeButton when={ios() && kind() === 'root'} />
         </div>
       </div>
@@ -150,6 +239,17 @@ function PhoneBar(props: TopAppBarProps & { readonly part: PartName }): JSX.Elem
             )}
           </Show>
         </div>
+      </Show>
+      {/* iOS: the search field under the large title, folding away with it (the bar's icon takes over then) */}
+      <Show when={ios() && kind() === 'root' ? props.search : undefined}>
+        {(q) => (
+          <div data-kit="app-bar-search">
+            <button type="button" data-kit="app-bar-search-field" data-part={sub(props.part, 'search-field')} onClick={() => q().onOpen()}>
+              <Icon name="search" size="sm" />
+              <span data-text="control">{q().label}</span>
+            </button>
+          </div>
+        )}
       </Show>
     </header>
   );

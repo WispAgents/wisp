@@ -13,7 +13,7 @@ import { warm, warmer } from './warm.ts';
 import { INSTALLABLE, useSetup } from './setup.ts';
 import { useRecipes } from './recipes.ts';
 import type { PickOptions } from '../platform/types.ts';
-import { Show, createEffect, createMemo, createSignal, on, onCleanup, type JSX } from 'solid-js';
+import { Show, createEffect, createMemo, createSignal, lazy, on, onCleanup, type JSX } from 'solid-js';
 import { entityKey, newRowId, type EntityKey, type Json, type PeerId } from '@wisp/client';
 import { AutoPop, FeedbackLine, KeysHint, Launcher, NextList, SplitHome, Tips, lazyPart, lazyView, useSignal, warm as warmPart, type LauncherChip, type LauncherTool, type PlainTip } from '@wisp/ui';
 import { useShell } from '../context.tsx';
@@ -41,6 +41,8 @@ import { MODE_ICON, agentName, modeMenu, teamMenu, teamPrefill, teamRows, whenAt
 // with the controls once the page is idle (preloadControls) and on the pill's first hover or focus, so the first press
 // finds it there and it shows within the frame
 const pickerPart = lazyPart(() => import('./RunnerPicker.tsx'));
+// New task's bar in the phone apps (ADR-0065 step 13): in the phone heads' chunk, so the browser never downloads it
+const PhoneCompose = lazy(() => import('./PhoneHead.tsx').then((m) => ({ default: m.PhoneCompose })));
 const RunnerPicker = lazyView(pickerPart, (m) => m.RunnerPicker);
 const warmPicker = warmPart(pickerPart);
 
@@ -54,6 +56,8 @@ const GUIDE = 'https://trywisp.dev/guides';
 
 export function HomeView(props: { readonly onBack?: () => void }): JSX.Element {
   const shell = useShell();
+  // the phone apps (Android, iPhone): New task's own bar; set once, as the platform never changes
+  const phone = shell.platform.phone;
   const t = shell.t;
   const home = usePluginClient('shell').home;
   // Run on (v1 launch.where): this computer, or another one you added (machines); only one at a time (F-comp-10)
@@ -494,7 +498,13 @@ export function HomeView(props: { readonly onBack?: () => void }): JSX.Element {
       .map((k) => TIPS[(tipAt() + k) % TIPS.length] ?? 'goal1')
       .map((id) => ({ before: t(`shell.tips.${id}`), bold: t(`shell.tips.${id}b`), after: t(`shell.tips.${id}a`), href: `${GUIDE}#${id}` }));
   return (
-    <SplitHome greeting={t('shell.home.hello')} {...(props.onBack && { onBack: props.onBack, backLabel: t('shell.home.back') })}>
+    <>
+    {/* the phone apps: New task is a page (Android's full-screen dialog) or a sheet (iOS) with Close / Cancel and Send in
+        its bar; the browser at a phone's width keeps v1's Back and greeting */}
+    <Show when={phone ? props.onBack : undefined}>
+      {(close) => <PhoneCompose onClose={close()} onSend={send} canSend={text().trim() !== '' || files().length > 0} />}
+    </Show>
+    <SplitHome greeting={t('shell.home.hello')} {...(!phone && props.onBack && { onBack: props.onBack, backLabel: t('shell.home.back') })}>
       <Launcher
         inLabel={t('shell.home.in')}
         chips={chips()}
@@ -806,5 +816,6 @@ export function HomeView(props: { readonly onBack?: () => void }): JSX.Element {
       />
       <FeedbackLine label={t('shell.feedback.line')} onClick={() => openFeedback(shell)} />
     </SplitHome>
+    </>
   );
 }

@@ -9,5 +9,7 @@
   "issues.undo": "Undo",
   "issues.search.github": "Search {name}’s open issues…",
   "issues.search.linear": "Search the Linear issues assigned to you…",
-  "issues.search.jira": "Search the Jira issues assigned to you…"
+  "issues.search.jira": "Search the Jira issues assigned to you…",
+  "issues.back": "Back",
+  "issues.cancel": "Cancel"
 }

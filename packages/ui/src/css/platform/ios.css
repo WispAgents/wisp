@@ -1065,4 +1065,168 @@
     :root[data-platform='ios'] [data-kit='switch-thumb'],
     :root[data-platform='ios'] [data-kit='tabs'] [data-kit='tab'] { transition: none; }
   }
+
+  /* Step 13: the task page, New task and Search (design/mobile.md §A.2). A pushed page's navigation bar sits at its
+     pane's top, over the page's scroller (the browser's split head is laid out there by `order`, so is this). */
+  :root[data-platform='ios'] [data-kit='frame-pane'] > [data-kit='app-bar'] { order: -1; }
+  /* a menu's key hints: no keyboard on a phone (design/mobile.md §A.2: keyboard-only things are hidden) */
+  :root[data-platform='ios'] [data-kit='menu-item'] > [data-kit='kbd'] { display: none; }
+  /* the search field under the large title (the list's root), folding away with it; the bar's magnifier takes over
+     once it has (and is the only search on a page without the field) */
+  :root[data-platform='ios'] [data-kit='app-bar-search'] {
+    padding: var(--space-0) var(--inset) var(--space-4);
+    overflow: hidden;
+    transition: max-height var(--dur-medium) var(--ease-standard), padding var(--dur-medium) var(--ease-standard), opacity var(--dur-short) var(--ease-standard);
+    max-height: calc(var(--field-h) + var(--space-4));
+  }
+  :root[data-platform='ios'] [data-kit='app-bar'][data-collapsed] [data-kit='app-bar-search'] { max-height: 0; padding-bottom: 0; opacity: 0; }
+  :root[data-platform='ios'] [data-kit='app-bar-search-field'] {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    width: 100%;
+    height: var(--field-h);
+    padding: var(--space-0) var(--space-4);
+    border: 0;
+    border-radius: var(--radius-md);
+    background: var(--fill);
+    color: var(--on-surface-var);
+    font: var(--type-body);
+    text-align: left;
+    -webkit-tap-highlight-color: transparent;
+  }
+  :root[data-platform='ios'] [data-kit='app-bar-search-field']:active { opacity: calc(1 - var(--state-pressed) * 2); }
+  :root[data-platform='ios'] [data-kit='app-bar-search-field'] > [data-text='control'] { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+  :root[data-platform='ios'] [data-kit='app-bar'][data-kind='root']:not([data-collapsed]) [data-kit='app-bar-search-icon'] { display: none; }
+  :root[data-platform='ios'] [data-kit='app-bar-search-icon'] { display: contents; }
+  /* the page's ⋯ and a compose bar's Send: bar buttons in the tint; Send (the sheet's confirm) in semibold */
+  :root[data-platform='ios'] [data-kit='app-bar-confirm'] { display: flex; flex: none; }
+  :root[data-platform='ios'] [data-kit='app-bar-confirm'] > [data-kit='button'] { padding-right: var(--space-0); font-weight: var(--fw-semibold); }
+  :root[data-platform='ios'] [data-kit='app-bar-confirm'] > [data-kit='button']:disabled { color: var(--on-surface-ter); opacity: 1; }
+  :root[data-platform='ios'] [data-kit='app-bar'][data-kind='compose'] { background: var(--surface-c1); }
+  /* New task: a sheet at its large detent over the list, which stays behind it, dimmed; the tab bar gives way */
+  :root[data-platform='ios'] [data-kit='frame'][data-behind][data-page='main'] { background: var(--shadow-scrim); }
+  :root[data-platform='ios'] [data-kit='frame'][data-behind][data-page='main'] > [data-kit='frame-nav'] { display: none; }
+  :root[data-platform='ios'] [data-kit='frame'][data-behind][data-page='main'] > [data-kit='frame-body'] { padding-top: calc(var(--safe-top) + var(--sheet-top-gap)); }
+  :root[data-platform='ios'] [data-kit='frame'][data-behind][data-page='main'] [data-kit='frame-pane'][data-pane='main'] {
+    border-radius: var(--radius-sheet) var(--radius-sheet) var(--space-0) var(--space-0);
+    background: var(--surface-c1);
+    box-shadow: var(--elev-3);
+    animation: k-ios-sheet var(--spring-smooth-dur) var(--spring-smooth);
+  }
+  :root[data-platform='ios'] [data-kit='frame'][data-behind] [data-kit='split-home'] { padding-top: var(--space-4); }
+  @keyframes k-ios-sheet { from { transform: translateY(100%); } }
+  /* the composer, Messages-like: a rounded field on the page, Send the filled up-arrow circle at its end */
+  :root[data-platform='ios'] [data-kit='reply-box'],
+  :root[data-platform='ios'] [data-kit='launcher'] {
+    border: var(--hairline) solid var(--outline);
+    border-radius: var(--radius-xl);
+    background: var(--surface-c0);
+    box-shadow: none;
+    font-family: var(--font-ui);
+  }
+  :root[data-platform='ios'] [data-kit='launcher']:focus-within,
+  :root[data-platform='ios'] [data-kit='launcher'][data-open] { border-color: var(--outline); box-shadow: none; }
+  /* the bar's tools scroll under Send (pinned at the end) when they don't fit a narrow phone */
+  :root[data-platform='ios'] [data-kit='reply-box'] { padding-left: var(--space-4); }
+  :root[data-platform='ios'] [data-kit='reply-box'] [data-kit='c-bar'],
+  :root[data-platform='ios'] [data-kit='launcher'] [data-kit='l-bar'] { gap: var(--space-2); overflow-x: auto; scrollbar-width: none; }
+  :root[data-platform='ios'] [data-kit='reply-box'] [data-kit='send'],
+  :root[data-platform='ios'] [data-kit='launcher'] [data-kit='send'] {
+    position: sticky;
+    right: var(--space-0);
+    width: var(--button-h-sm);
+    height: var(--button-h-sm);
+    border-radius: var(--radius-pill);
+    background: var(--primary);
+    color: var(--on-primary);
+    /* the tools scrolled under it don't show through: a ring of the box's colour */
+    box-shadow: 0 0 0 var(--space-2) var(--surface-c0);
+  }
+  /* the task's Details (from its menu): the browser's details column as a list in the sheet: the state, the harness
+     and model, its folders, the branch, its usage; its actions are the menu's */
+  :root[data-platform='ios'] [data-kit='sheet'] [data-kit='it-bar'] { display: flex; flex-direction: column; align-items: stretch; gap: var(--space-6); margin: var(--space-0); padding: var(--space-0) var(--space-0) var(--space-6); background: transparent; }
+  :root[data-platform='ios'] [data-kit='sheet'] [data-kit='it-props'] { flex-direction: column; align-items: flex-start; gap: var(--space-5); font: var(--type-body); color: var(--on-surface); }
+  :root[data-platform='ios'] [data-kit='sheet'] [data-kit='it-state'] {
+    --tone: var(--good);
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-3);
+    color: color-mix(in srgb, var(--tone) 85%, var(--on-surface));
+  }
+  :root[data-platform='ios'] [data-kit='sheet'] [data-kit='it-state'][data-tone='info'],
+  :root[data-platform='ios'] [data-kit='sheet'] [data-kit='it-state'][data-tone='live'] { --tone: var(--primary); }
+  :root[data-platform='ios'] [data-kit='sheet'] [data-kit='it-state'][data-tone='bad'] { --tone: var(--error); }
+  :root[data-platform='ios'] [data-kit='sheet'] [data-kit='it-state'][data-tone='warn'] { --tone: var(--warn); }
+  :root[data-platform='ios'] [data-kit='sheet'] [data-kit='model-logo'] { align-items: center; gap: var(--space-3); color: var(--on-surface); }
+  :root[data-platform='ios'] [data-kit='sheet'] [data-kit='ml-name'] { display: inline; }
+  :root[data-platform='ios'] [data-kit='sheet'] [data-kit='it-meta'] { color: var(--on-surface-var); }
+  :root[data-platform='ios'] [data-kit='sheet'] [data-kit='it-actions']:empty { display: none; }
+  /* Search: the navigation bar's search field at the top, Cancel at its end, the results in place under it; no
+     keyboard hints */
+  :root[data-platform='ios'] [data-kit='backdrop'][data-place='top'] { background: transparent; }
+  :root[data-platform='ios'] [data-kit='dialog-positioner'][data-place='top'] { place-items: stretch; padding: var(--space-0); }
+  :root[data-platform='ios'] [data-kit='dialog'][data-place='top'] {
+    width: 100%;
+    max-width: none;
+    height: 100dvh;
+    max-height: 100dvh;
+    margin: var(--space-0);
+    padding: var(--safe-top) var(--space-0) var(--space-0);
+    border: 0;
+    border-radius: var(--space-0);
+    background: var(--surface-c0);
+    box-shadow: none;
+    color: var(--on-surface);
+    font-family: var(--font-ui);
+    animation: k-ios-search var(--dur-short) var(--ease-standard);
+  }
+  @keyframes k-ios-search { from { opacity: 0; } }
+  :root[data-platform='ios'] [data-kit='pal-input'] { height: var(--bar-h); gap: var(--space-0); padding: var(--space-0) var(--space-0) var(--space-0) var(--inset); border-bottom: var(--hairline) solid var(--outline); }
+  :root[data-platform='ios'] [data-kit='pal-input'] > [data-kit='icon'] {
+    box-sizing: content-box;
+    height: var(--field-h);
+    padding: var(--space-0) var(--space-2) var(--space-0) var(--space-4);
+    border-radius: var(--radius-md) var(--space-0) var(--space-0) var(--radius-md);
+    background: var(--fill);
+    color: var(--on-surface-var);
+  }
+  :root[data-platform='ios'] [data-kit='pal-input'] > input {
+    height: var(--field-h);
+    padding-right: var(--space-4);
+    border-radius: var(--space-0) var(--radius-md) var(--radius-md) var(--space-0);
+    background: var(--fill);
+    font: var(--type-body);
+    color: var(--on-surface);
+  }
+  :root[data-platform='ios'] [data-kit='pal-input'] > input::placeholder { color: var(--on-surface-var); }
+  :root[data-platform='ios'] [data-kit='pal-input'] > [data-kit='button'] {
+    flex: none;
+    min-width: var(--tap-min);
+    height: var(--tap-min);
+    padding: var(--space-0) var(--inset) var(--space-0) var(--space-4);
+    border: 0;
+    background: transparent;
+    color: var(--primary);
+    font: var(--type-body);
+  }
+  :root[data-platform='ios'] [data-kit='pal-list'] { padding: var(--space-0); }
+  :root[data-platform='ios'] [data-kit='pal-group'] { padding: var(--space-6) var(--inset) var(--space-2); font: var(--type-footnote); text-transform: uppercase; color: var(--on-surface-var); }
+  :root[data-platform='ios'] [data-kit='pal-row'] {
+    height: var(--row-h-1);
+    padding: var(--space-0) var(--inset);
+    border-radius: var(--space-0);
+    box-shadow: inset var(--inset) calc(var(--hairline) * -1) var(--surface-c0), inset var(--space-0) calc(var(--hairline) * -1) var(--outline);
+    color: var(--on-surface);
+    font: var(--type-body);
+  }
+  :root[data-platform='ios'] [data-kit='pal-row'][data-on] { background: transparent; }
+  :root[data-platform='ios'] [data-kit='pal-row']:active { background: color-mix(in srgb, var(--on-surface) calc(var(--state-pressed) * 100%), transparent); }
+  :root[data-platform='ios'] [data-kit='pal-sub'] { font: var(--type-subhead); color: var(--on-surface-var); }
+  :root[data-platform='ios'] [data-kit='pal-kbd'],
+  :root[data-platform='ios'] [data-kit='pal-foot'] { display: none; }
+  @media (prefers-reduced-motion: reduce) {
+    :root[data-platform='ios'] [data-kit='frame'][data-behind][data-page='main'] [data-kit='frame-pane'][data-pane='main'],
+    :root[data-platform='ios'] [data-kit='dialog'][data-place='top'] { animation: none; }
+  }
 }

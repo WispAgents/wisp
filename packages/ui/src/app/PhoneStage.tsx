@@ -23,6 +23,8 @@ export function PhoneStage(props: StageProps): JSX.Element {
       side={side()}
       sideOpen={open()}
       nav={props.nav}
+      // New task over the list (stack-page.ts): the platform's full-screen dialog / sheet
+      behind={props.layout === 'stack' && page() === 'main' && props.listBehind === true}
       listLabel={props.listLabel}
       mainLabel={props.mainLabel}
       sideLabel={props.sideLabel}

@@ -352,5 +352,13 @@
   "shell.phone.pickComputer": "Show tasks from",
   "shell.phone.search": "Search",
   "shell.phone.tasksActions": "Tasks",
-  "shell.phone.projects": "Projects"
+  "shell.phone.projects": "Projects",
+  "shell.phone.details": "Details",
+  "shell.phone.save": "Save",
+  "shell.phone.back": "Back",
+  "shell.phone.cancel": "Cancel",
+  "shell.phone.close": "Close",
+  "shell.phone.send": "Send",
+  "shell.phone.newTask": "New task",
+  "shell.phone.taskHead": "Task actions"
 }

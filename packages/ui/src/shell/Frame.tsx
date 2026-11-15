@@ -39,6 +39,9 @@ export interface FrameProps extends KitProps, WithVars {
   readonly contained?: boolean;
   /** The phone apps' destinations (a NavigationBar). Never drawn in the browser. */
   readonly nav?: JSX.Element;
+  /** stack only: the main page is New task, over the list (Android's full-screen dialog, iOS's sheet: the list stays
+   *  behind it, and the destinations give way) */
+  readonly behind?: boolean;
 }
 
 /** The compose button at the top bar's end, on iOS, while no root TopAppBar draws it. */
@@ -95,6 +98,7 @@ function FrameBody(props: FrameProps): JSX.Element {
       data-page={props.page}
       data-list={props.listOpen === false ? 'closed' : 'open'}
       data-side={flag(props.sideOpen)}
+      data-behind={flag(props.behind)}
       data-contained={flag(props.contained)}
       style={styleOf({}, props.vars)}
     >

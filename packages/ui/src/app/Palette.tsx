@@ -2,6 +2,9 @@
 // under it (a faint group line, then 38px rows: the lead, a project's dot or an icon, the label with what the query
 // found marked, a faint second part on the same line, the shortcut at the end), and the keys along the bottom.
 // The caller owns the query, the ranking and the selection; this draws them.
+// The phone apps (design/mobile.md §A.2 Search): the same sheet full screen as the platform's search: Android's M3
+// search view (Back at the field's start, the results under it), iOS's search field with Cancel at its end; no
+// keyboard hints. `close` names those controls; the browser draws neither.
 import { For, Show, type JSX } from 'solid-js';
 import type { ProjectColor } from '@wisp/tokens';
 import { flag, type PartName } from '../core/props.ts';
@@ -9,7 +12,8 @@ import { Icon } from '../content/Icon.tsx';
 import type { IconName } from '../content/icons.ts';
 import { Dot } from '../shell-list/Dot.tsx';
 import { Skeleton } from '../content/Skeleton.tsx';
-import { Button } from '../controls/Button.tsx';
+import { Button, IconButton } from '../controls/Button.tsx';
+import { usePlatform } from '../platform/PlatformLook.tsx';
 import '../css/palette.css';
 
 export interface PaletteRow {
@@ -53,15 +57,21 @@ export interface PaletteSheetProps {
   readonly note?: { readonly text: string; readonly tone?: 'info' | 'warn'; readonly action?: { readonly label: string; readonly onClick: () => void } } | undefined;
   /** added 2026-11-12: still asking: a group line and rows of placeholders in the rows' shape (v1 .pal-sk) */
   readonly loading?: boolean;
+  /** The phone apps' way out of the search (Android's Back, iOS's Cancel). The browser closes with Esc and outside. */
+  readonly close?: { readonly back: string; readonly cancel: string; readonly onClose: () => void };
 }
 
 export const paletteRowId = (i: number): string => `palette-row-${i}`;
 
 export function PaletteSheet(props: PaletteSheetProps): JSX.Element {
+  const look = usePlatform();
+  const close = (): PaletteSheetProps['close'] => (look() === 'web' ? undefined : props.close);
   return (
     <div data-kit="pal" data-part={props.part ?? 'shell.palette'} data-variant={props.variant}>
       <div data-kit="pal-input" data-part="shell.palette.input">
-        <Icon name="search" size="md" />
+        <Show when={look() === 'android' ? close() : undefined} fallback={<Icon name="search" size="md" />}>
+          {(c) => <IconButton icon="back" label={c().back} onClick={() => c().onClose()} part="shell.palette.back" />}
+        </Show>
         <input
           ref={(el) => props.inputRef?.(el)}
           type="text"
@@ -77,6 +87,13 @@ export function PaletteSheet(props: PaletteSheetProps): JSX.Element {
           onInput={(e) => props.onInput(e.currentTarget.value)}
           onKeyDown={(e) => props.onKeyDown(e)}
         />
+        <Show when={look() === 'ios' ? close() : undefined}>
+          {(c) => (
+            <Button variant="ghost" onClick={() => c().onClose()} part="shell.palette.cancel">
+              {c().cancel}
+            </Button>
+          )}
+        </Show>
       </div>
       <Show when={props.note}>
         {(n) => (
