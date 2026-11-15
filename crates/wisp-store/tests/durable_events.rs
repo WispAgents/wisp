@@ -563,3 +563,83 @@ async fn a_reader_who_sees_a_writes_row_finds_its_event_already_queued() {
     assert_eq!(log, vec![1, 2], "the durable row went in with the write; the rolled-back one didn't");
     assert_eq!(notes(&st).iter().filter(|n| n.starts_with("end-")).count(), 2);
 }
+
+/// ADR-0075: inside a command, the events it emitted before its write go out with that write's commit, not when the
+/// command returns. The commit listener is the reader (the row is visible; `src.make` hasn't returned): the command's
+/// events are in the answer of a subscriber that waits for its handlers (before, they were published at the return,
+/// after the listener: 0). A write that rolls back takes them with it (the command fails: never heard of, never
+/// logged); a command that writes nothing publishes at its return, as before; the durable rows are logged once, in
+/// the write's transaction.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_reader_who_sees_a_commands_row_finds_the_commands_events_already_queued() {
+    let path = temp("cmd-staged");
+    let st = open(&path);
+    let got = Arc::new(Mutex::new(Vec::new()));
+    let k = kernel(&st, vec![source(), counter(got.clone())]).await;
+    let kk = Arc::new(Mutex::new(Some(k.clone())));
+    let answers = Arc::new(Mutex::new(Vec::<(String, Value)>::new()));
+    let (a2, handle) = (answers.clone(), tokio::runtime::Handle::current());
+    let _sub = st.on_commit(move |rows| {
+        let Some(row) = rows.iter().find(|r| r.entity == NOTE.kind && r.id.starts_with("made-")) else { return };
+        let Some(k) = kk.lock().unwrap().clone() else { return };
+        let r = handle.block_on(k.call(Caller::user(), "live.count", json!(null))).unwrap();
+        a2.lock().unwrap().push((row.id.clone(), r));
+    });
+    make(&k, json!({ "n": 1, "count": 2 })).await.unwrap();
+    settle(&k).await;
+    assert!(make(&k, json!({ "n": 10, "fail_write": true })).await.is_err());
+    settle(&k).await;
+    make(&k, json!({ "n": 20, "no_write": true })).await.unwrap();
+    settle(&k).await;
+    make(&k, json!({ "n": 30 })).await.unwrap();
+    settle(&k).await;
+    assert_eq!(
+        *answers.lock().unwrap(),
+        vec![("made-1".to_owned(), json!(2)), ("made-30".to_owned(), json!(4))],
+        "the reader of each committed row heard the command's events, the command still running"
+    );
+    assert_eq!(*got.lock().unwrap(), vec![1, 2, 20, 30], "10 rolled back with its write and its command: never heard of");
+    let log: Vec<u32> =
+        EventLog::read(&st, 0, 100).await.unwrap().iter().map(|e| u32::try_from(e.event.data["n"].as_u64().unwrap()).unwrap()).collect();
+    assert_eq!(log, vec![1, 2, 20, 30], "each logged once: with its write, or at the return of a command that wrote nothing");
+}
+
+/// ADR-0074 for a caller that must not await (`write_detached_with`: channels' task origin, a peer's status): the
+/// reader of the row finds the event queued; nobody hears it before the row is there; a failed detached write
+/// publishes and logs nothing.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_detached_writes_events_go_out_with_its_commit() {
+    let path = temp("detached");
+    let st = open(&path);
+    let got = Arc::new(Mutex::new(Vec::new()));
+    let k = kernel(&st, vec![source(), counter(got.clone())]).await;
+    let kk = Arc::new(Mutex::new(Some(k.clone())));
+    let answers = Arc::new(Mutex::new(Vec::<(String, Value)>::new()));
+    let (a2, handle) = (answers.clone(), tokio::runtime::Handle::current());
+    let _sub = st.on_commit(move |rows| {
+        let Some(row) = rows.iter().find(|r| r.entity == NOTE.kind && r.id.starts_with("det-")) else { return };
+        let Some(k) = kk.lock().unwrap().clone() else { return };
+        let r = handle.block_on(k.call(Caller::user(), "live.count", json!(null))).unwrap();
+        a2.lock().unwrap().push((row.id.clone(), r));
+    });
+    let ctx = k.ctx("wisp.src").unwrap();
+    for (n, fail) in [(1, false), (2, true), (3, false)] {
+        let ob = ctx.outbox();
+        ob.emit(&Made { n, key: None });
+        st.write_detached_with(ob, move |w| {
+            w.upsert(NOTE.kind, note(&format!("det-{n}")))?;
+            if fail {
+                return Err(wisp_store::StoreError::Internal("injected".into()));
+            }
+            Ok(())
+        });
+    }
+    // a later awaited write finds the detached ones done (submit order)
+    st.write(|_| Ok(())).await.unwrap();
+    settle(&k).await;
+    assert_eq!(*answers.lock().unwrap(), vec![("det-1".to_owned(), json!(1)), ("det-3".to_owned(), json!(2))]);
+    assert_eq!(*got.lock().unwrap(), vec![1, 3], "2's write failed: never heard of");
+    let log: Vec<u32> =
+        EventLog::read(&st, 0, 100).await.unwrap().iter().map(|e| u32::try_from(e.event.data["n"].as_u64().unwrap()).unwrap()).collect();
+    assert_eq!(log, vec![1, 3]);
+}

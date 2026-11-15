@@ -294,3 +294,127 @@ async fn a_writes_events_are_queued_before_it_commits_so_a_reader_of_its_rows_fi
     assert_eq!(k.call(Caller::user(), "ctr.count", json!(null)).await.unwrap(), json!(2));
     assert_eq!(got.lock().unwrap().iter().map(|x| x.0).collect::<Vec<_>>(), vec![1, 2], "3 and 4 never happened");
 }
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(default)]
+pub struct CmdArgs {
+    /// emitted before the write
+    pub before: Vec<u32>,
+    /// emitted after it
+    pub after: u32,
+    /// the command returns an error after its write
+    pub fail: bool,
+}
+cmd!(WriteCmd, "wr.cmd", CmdArgs, ());
+
+/// ADR-0075: a command's events emitted before its write are queued with that write, before its rows can be read
+/// (here, as the store does: `durable::take` before the write, `InTx::stage` the moment before COMMIT, the `Staged`
+/// settled the moment after), not when the command returns. A reader who sees the row while the command is still
+/// running finds them (and waits for their handler, never answering early); events emitted after its last write go
+/// out at its return as before; a write that rolls back puts its events back, and a command that then fails
+/// publishes none of them. One thread: the reader gets 200 chances to answer early.
+#[tokio::test]
+async fn a_commands_events_go_out_with_its_write_so_a_reader_of_its_row_finds_them() {
+    let slot: Arc<Mutex<Option<wisp_kernel::Staged>>> = Arc::default();
+    let go = Arc::new(tokio::sync::Notify::new());
+    let (s2, g2) = (slot.clone(), go.clone());
+    let writer = common::plugin("wisp.wr", json!({}), move |s| {
+        let (slot, go) = (s2.clone(), g2.clone());
+        s.command::<WriteCmd, _, _>(move |ctx, call, a: CmdArgs| {
+            let (slot, go) = (slot.clone(), go.clone());
+            async move {
+                for n in a.before {
+                    ctx.emit(&call, &Made { n });
+                }
+                // the store's write: taken on the command's task, staged inside the transaction
+                let intx = wisp_kernel::durable::take().expect("inside a command a write always stages its events");
+                *slot.lock().unwrap() = Some(intx.stage(Some(7), &[]).expect("staged"));
+                // the write committed (or not); the command goes on
+                go.notified().await;
+                ctx.emit(&call, &Made { n: a.after });
+                if a.fail { Err(WireError::conflict("no")) } else { Ok(()) }
+            }
+        });
+    });
+    let got = Arc::new(Mutex::new(Vec::<(u32, Option<u64>)>::new()));
+    let g3 = got.clone();
+    let ctr = common::plugin("wisp.ctr", json!({}), move |s| {
+        let got = g3.clone();
+        s.on_raw("src.made", move |_, e| {
+            let got = got.clone();
+            async move {
+                got.lock().unwrap().push((e.get::<Made>().unwrap().n, e.cursor));
+                Ok(())
+            }
+        });
+        let got = g3.clone();
+        s.command::<Count, _, _>(move |ctx, _, ()| {
+            let got = got.clone();
+            async move {
+                ctx.events_delivered(std::time::Duration::from_secs(3600)).await;
+                Ok(u32::try_from(got.lock().unwrap().len()).unwrap())
+            }
+        });
+    });
+    let k = common::start(PluginGroup::new().add(writer).add(ctr)).await;
+    let staged = || async {
+        for _ in 0..10_000 {
+            if slot.lock().unwrap().is_some() {
+                return;
+            }
+            tokio::task::yield_now().await;
+        }
+        panic!("the command never wrote");
+    };
+    let run = |a: serde_json::Value| {
+        let k = k.clone();
+        tokio::spawn(async move { k.call(Caller::user(), "wr.cmd", a).await })
+    };
+
+    // 1. committed, the command still running: the reader of its row finds both events
+    let cmd = run(json!({ "before": [1, 2], "after": 3 }));
+    staged().await;
+    let mut ask = Box::pin(k.call(Caller::user(), "ctr.count", json!(null)));
+    for _ in 0..200 {
+        tokio::select! {
+            biased;
+            r = &mut ask => panic!("answered before the write's events were delivered: {r:?}"),
+            () = tokio::task::yield_now() => {}
+        }
+    }
+    assert!(got.lock().unwrap().is_empty(), "held until the write settles");
+    slot.lock().unwrap().take().unwrap().commit();
+    assert_eq!(ask.await.unwrap(), json!(2), "the command hasn't returned, and its write's events are in the answer");
+    assert_eq!(*got.lock().unwrap(), vec![(1, Some(7)), (2, Some(7))], "in emit order, with the write's cursor");
+    go.notify_one();
+    cmd.await.unwrap().unwrap();
+    k.idle().await;
+    assert_eq!(got.lock().unwrap().last(), Some(&(3, None)), "emitted after its last write: out at its return, as before");
+
+    // 2. the write rolls back and the command fails: none of its events
+    let cmd = run(json!({ "before": [4], "after": 5, "fail": true }));
+    staged().await;
+    slot.lock().unwrap().take().unwrap().abort();
+    go.notify_one();
+    assert!(cmd.await.unwrap().is_err());
+    k.idle().await;
+    assert_eq!(k.call(Caller::user(), "ctr.count", json!(null)).await.unwrap(), json!(3), "4 and 5 never happened");
+
+    // 3. the write rolls back and the command goes on to Ok: its events wait for its return (they're back in its buffer)
+    let cmd = run(json!({ "before": [6], "after": 7 }));
+    staged().await;
+    slot.lock().unwrap().take().unwrap().abort();
+    go.notify_one();
+    cmd.await.unwrap().unwrap();
+    k.idle().await;
+    assert_eq!(got.lock().unwrap()[3..].iter().map(|x| x.0).collect::<Vec<_>>(), vec![6, 7], "at its return, in order");
+
+    // 4. the write commits, then the command fails: the write's events are facts (its rows are there); the rest isn't
+    let cmd = run(json!({ "before": [8], "after": 9, "fail": true }));
+    staged().await;
+    slot.lock().unwrap().take().unwrap().commit();
+    go.notify_one();
+    assert!(cmd.await.unwrap().is_err());
+    k.idle().await;
+    assert_eq!(got.lock().unwrap()[5..].iter().map(|x| x.0).collect::<Vec<_>>(), vec![8], "9 never went out");
+}

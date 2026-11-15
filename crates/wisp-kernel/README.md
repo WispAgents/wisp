@@ -35,9 +35,12 @@ belongs to the plugin's scope. Switching a plugin off cancels the scope and remo
 
 ## For wisp-store: publishing on commit
 
-Events a command emits are buffered on its root call. Without the store's help they go out when the
-root command returns `Ok`, and are dropped when it fails. A command that runs store transactions should
-publish at COMMIT instead, so a fact goes out exactly when it is durable:
+Events a command emits are buffered on its root call. Every `Store::write`/`write_with` the command makes
+stages what it buffered so far (ADR-0075): `durable::take()` before the write, `InTx::stage(head, seqs)` →
+`Staged` inside the transaction just before COMMIT (held in every queue), settled on the writer thread after
+COMMIT (they go out) or ROLLBACK (dropped unseen, put back in the buffer). What's left after its last write
+goes out when the root command returns `Ok`, and is dropped when it fails. A store path that doesn't stage
+can publish at COMMIT with the commit hook:
 
 ```rust
 let hook = ctx.service::<wisp_kernel::CommitHook>()?;   // every App provides it

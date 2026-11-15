@@ -69,8 +69,8 @@ pub(crate) struct Pending {
     pub(crate) at: i64,
     /// durable: whether it's in the log yet (a repeat within 24 h is never published)
     pub(crate) written: Logged,
-    /// a write in flight carries it
-    pub(crate) taken: bool,
+    /// the write in flight that carries it (`durable::InTx`'s token; 0: none)
+    pub(crate) taken: u64,
 }
 
 /// Whether a durable event is in the log (ADR-0044).
@@ -97,7 +97,7 @@ impl Pending {
             root: String::new(),
             at: 0,
             written: Logged::Not,
-            taken: false,
+            taken: 0,
         }
     }
 }
@@ -365,7 +365,7 @@ impl Bus {
         for p in events {
             self.publish_gated(k, root, cursor, p, Some(&gate), &mut queues);
         }
-        Staged { gate, queues, fresh: Vec::new(), kernel: Weak::new(), settled: false }
+        Staged { gate, queues, fresh: Vec::new(), kernel: Weak::new(), undo: None, settled: false }
     }
 
     fn publish_gated(
@@ -456,7 +456,41 @@ pub struct Staged {
     /// durable events now in the log: their durable subscribers take them once the write commits
     pub(crate) fresh: Vec<(u64, Pending)>,
     pub(crate) kernel: Weak<KernelState>,
+    /// a command's write (ADR-0075): what it took from its root's buffer, put back if the write rolls back
+    pub(crate) undo: Option<Undo>,
     settled: bool,
+}
+
+/// What a command's write took from its root's buffer (ADR-0075), settled on the writer thread with the write: on
+/// COMMIT the events it carried are gone from the buffer for good; on ROLLBACK they go back to its front, unlogged,
+/// for the command's next write or its return (Ok: published then; Err: never).
+#[derive(Debug)]
+pub(crate) struct Undo {
+    pub(crate) tx: Arc<crate::call::RootTx>,
+    pub(crate) token: u64,
+    pub(crate) drained: Vec<Pending>,
+}
+
+impl Undo {
+    fn settle(self, committed: bool) {
+        let mut ev = self.tx.events.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+        for p in ev.iter_mut().filter(|p| p.taken == self.token) {
+            p.taken = 0;
+            if !committed {
+                p.written = Logged::Not;
+            }
+        }
+        if committed {
+            return;
+        }
+        let mut back = self.drained;
+        for p in back.iter_mut().filter(|p| p.taken == self.token) {
+            p.taken = 0;
+            p.written = Logged::Not;
+        }
+        back.append(&mut ev);
+        *ev = back;
+    }
 }
 
 impl std::fmt::Debug for Staged {
@@ -468,7 +502,14 @@ impl std::fmt::Debug for Staged {
 impl Staged {
     /// Nothing staged (the kernel is gone).
     pub(crate) fn inert() -> Self {
-        Self { gate: Arc::new(Gate(AtomicU8::new(DROPPED))), queues: Vec::new(), fresh: Vec::new(), kernel: Weak::new(), settled: true }
+        Self {
+            gate: Arc::new(Gate(AtomicU8::new(DROPPED))),
+            queues: Vec::new(),
+            fresh: Vec::new(),
+            kernel: Weak::new(),
+            undo: None,
+            settled: true,
+        }
     }
 
     /// The write committed: its events go out.
@@ -491,6 +532,9 @@ impl Staged {
             return;
         }
         self.settled = true;
+        if let Some(u) = self.undo.take() {
+            u.settle(to == GO);
+        }
         self.gate.0.store(to, Ordering::Release);
         for q in &self.queues {
             q.wake.notify_one();

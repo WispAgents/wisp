@@ -1,8 +1,9 @@
 //! The command bus (plan §6.11.2). Every call carries a trace: depth below `MAX_DEPTH`, no re-entering a
 //! frame already on the stack, read-only inside interceptors, and the permission checked against the
-//! caller's set and the calling plugin's own. A root command's events go out after it returns Ok (or
-//! when the store's commit hook says its transaction committed); veto follow-ups (`then`) run after it
-//! settles, each as a new root command speaking for the plugin that vetoed.
+//! caller's set and the calling plugin's own. A root command's events go out with each store write it
+//! makes (staged before COMMIT, ADR-0075: `durable::InTx::stage`); what it emits after its last write
+//! goes out after it returns Ok (or when the store's commit hook says its transaction committed); veto
+//! follow-ups (`then`) run after it settles, each as a new root command speaking for the plugin that vetoed.
 use std::panic::AssertUnwindSafe;
 use std::sync::Arc;
 
@@ -147,8 +148,19 @@ async fn run<T: Send + 'static>(k: &Arc<KernelState>, e: &CmdEntry, en: Entered,
 
 /// Publishes a root's buffered events from `from` on (they committed).
 pub(crate) fn flush(k: &KernelState, root: &str, tx: &RootTx, cursor: Option<u64>, from: usize) {
-    let pending: Vec<Pending> =
-        tx.events.lock().map(|mut ev| if from < ev.len() { ev.drain(from..).collect() } else { Vec::new() }).unwrap_or_default();
+    // an event a write still in flight carries (`taken`) stays: that write logs and stages it (ADR-0075)
+    let pending: Vec<Pending> = tx
+        .events
+        .lock()
+        .map(|mut ev| {
+            if from >= ev.len() {
+                return Vec::new();
+            }
+            let (keep, out): (Vec<Pending>, Vec<Pending>) = ev.drain(from..).partition(|p| p.taken != 0);
+            ev.extend(keep);
+            out
+        })
+        .unwrap_or_default();
     for p in pending {
         // a durable repeat (same type and key within 24 h) is the same fact: not published again
         if p.durable && p.written == crate::events::Logged::Repeat {
@@ -268,7 +280,7 @@ pub(crate) fn pending(ctx: &Ctx, call: &Call, ty: &str, data: Payload, meta: Met
         root: call.inner.root.clone(),
         at,
         written: crate::events::Logged::Not,
-        taken: false,
+        taken: 0,
     }
 }
 

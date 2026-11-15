@@ -4,7 +4,8 @@
 //!
 //! - **Append:** in the emitting command's own transaction when it writes (`take` / `InTx`, called by the
 //!   store around each `write` made while a command runs), else in one transaction when it returns Ok. A
-//!   rolled-back write takes its events with it. A repeated `(type, key)` within 24 h is recorded once (the
+//!   rolled-back write takes its events with it. The write also stages the command's events emitted so far
+//!   (ADR-0075: `InTx::stage`, queued held before COMMIT, let go after it), so a reader of its rows finds them. A repeated `(type, key)` within 24 h is recorded once (the
 //!   log answers `None` for it), and isn't published either.
 //! - **Deliver:** a durable subscription (`Setup::on_durable`) has a stable name and a cursor in
 //!   `event_cursor`. Its worker takes `cursor + 1` from the ring of recent events, or reads the table when
@@ -28,7 +29,7 @@ use tokio::sync::watch;
 use tokio_util::sync::CancellationToken;
 
 use crate::call::{CallInner, RootTx};
-use crate::events::{EventEnvelope, Logged, Payload, Pending};
+use crate::events::{EventEnvelope, Logged, Payload, Pending, Staged};
 use crate::host::Ctx;
 use crate::perm::glob;
 use crate::state::KernelState;
@@ -145,40 +146,44 @@ pub(crate) async fn scoped<T>(s: Scope, fut: impl Future<Output = T>) -> T {
 }
 
 /// What one store write carries along: the command's durable events emitted so far and not yet in the
-/// log, and the cursor of the handler it runs in. Taken just before the write, settled after it.
+/// log, the cursor of the handler it runs in, and (ADR-0075) the command's buffered events, staged with the write
+/// so whoever reads its rows finds them queued. Taken just before the write, staged inside it, settled after it.
 #[derive(Debug)]
 pub struct InTx {
     tx: Option<Arc<RootTx>>,
-    idx: Vec<usize>,
+    /// marks the buffered durable events this write logs (`Pending::taken`)
+    token: u64,
     rows: Vec<NewEvent>,
     cursor: Option<Arc<CursorMark>>,
     kernel: Weak<KernelState>,
 }
 
-/// For the store, around each write: None when nothing rides on it (no durable event, no handler cursor).
+static TOKENS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
+
+/// For the store, around each write: None when nothing rides on it (not inside a command, no handler cursor).
+/// Inside a command it's always Some: the write stages the command's events (ADR-0075).
 pub fn take() -> Option<InTx> {
     let s = current();
-    let (idx, rows, kernel) = match &s.tx {
+    let token = TOKENS.fetch_add(1, Ordering::Relaxed);
+    let (rows, kernel) = match &s.tx {
         Some(tx) => {
             let mut ev = tx.events.lock().unwrap_or_else(PoisonError::into_inner);
-            let mut idx = Vec::new();
             let mut rows = Vec::new();
-            for (i, p) in ev.iter_mut().enumerate() {
-                if p.durable && p.written == Logged::Not && !p.taken {
-                    p.taken = true;
-                    idx.push(i);
+            for p in ev.iter_mut() {
+                if p.durable && p.written == Logged::Not && p.taken == 0 {
+                    p.taken = token;
                     rows.push(p.row());
                 }
             }
-            (idx, rows, tx.kernel.clone())
+            (rows, tx.kernel.clone())
         }
-        None => (Vec::new(), Vec::new(), Weak::new()),
+        None => (Vec::new(), Weak::new()),
     };
     let cursor = s.cursor.filter(|c| !c.written.load(Ordering::SeqCst));
-    if rows.is_empty() && cursor.is_none() {
+    if s.tx.is_none() && cursor.is_none() {
         return None;
     }
-    Some(InTx { tx: s.tx, idx, rows, cursor, kernel })
+    Some(InTx { tx: s.tx, token, rows, cursor, kernel })
 }
 
 impl InTx {
@@ -189,39 +194,56 @@ impl InTx {
     pub fn cursor(&self) -> Option<(&str, &str, u64)> {
         self.cursor.as_ref().map(|c| (c.plugin.as_str(), c.name.as_str(), c.seq))
     }
-    /// The write committed: each row's seq (`None`: a repeat within 24 h).
-    pub fn committed(self, seqs: &[Option<u64>]) {
+    /// For the store, inside the write's transaction after its last op and the log append (`seqs`: what the log
+    /// answered for `rows`), just before COMMIT (ADR-0075): the command's buffered events, from the first on, up
+    /// to the first durable one this write doesn't log (emitted during it: per-source order, it and what follows
+    /// wait for the next write or the return), are queued held, with `head` as their cursor. The store settles
+    /// what this returns on the writer thread right after COMMIT (they go out; the durable ones this write logged
+    /// reach durable subscribers) or ROLLBACK (dropped unseen and back in the buffer, unlogged). None outside a
+    /// command.
+    pub fn stage(&self, head: Option<u64>, seqs: &[Option<u64>]) -> Option<Staged> {
+        let tx = self.tx.as_ref()?;
+        let k = self.kernel.upgrade()?;
+        let mut fresh = Vec::new();
+        let drained: Vec<Pending> = {
+            let mut ev = tx.events.lock().unwrap_or_else(PoisonError::into_inner);
+            for (n, p) in ev.iter_mut().filter(|p| p.taken == self.token).enumerate() {
+                p.written = seqs.get(n).copied().flatten().map_or(Logged::Repeat, Logged::At);
+                if let Logged::At(seq) = p.written {
+                    fresh.push((seq, p.clone()));
+                }
+            }
+            let cut = ev.iter().position(|p| p.durable && p.written == Logged::Not).unwrap_or(ev.len());
+            ev.drain(..cut).collect()
+        };
+        // a durable repeat (same type and key within 24 h) is the same fact: not published again
+        let out: Vec<Pending> = drained.iter().filter(|p| p.written != Logged::Repeat).cloned().collect();
+        let root = out.first().map(|p| p.root.clone()).unwrap_or_default();
+        let mut st = k.bus.stage(&k, &root, head, out);
+        st.fresh = fresh;
+        st.kernel = Arc::downgrade(&k);
+        st.undo = Some(crate::events::Undo { tx: tx.clone(), token: self.token, drained });
+        Some(st)
+    }
+    /// The write committed: the handler's cursor went with it.
+    pub fn committed(&self) {
         if let Some(c) = &self.cursor {
             c.written.store(true, Ordering::SeqCst);
         }
-        let Some(tx) = &self.tx else { return };
-        let mut fresh = Vec::new();
-        {
-            let mut ev = tx.events.lock().unwrap_or_else(PoisonError::into_inner);
-            for (n, i) in self.idx.iter().enumerate() {
-                if let Some(p) = ev.get_mut(*i) {
-                    p.written = seqs.get(n).copied().flatten().map_or(Logged::Repeat, Logged::At);
-                    p.taken = false;
-                    if let Logged::At(seq) = p.written {
-                        fresh.push((seq, p.clone()));
-                    }
-                }
-            }
-        }
-        // durable subscribers see it now (it's in the log); in-process ones when the command returns
-        if let Some(k) = self.kernel.upgrade() {
-            for (seq, p) in fresh {
-                k.bus.remember(&k, seq, &p);
-            }
-        }
+        self.release(false);
     }
-    /// The write rolled back: its events wait for the next write (or the command's end), its cursor too.
-    pub fn rolled_back(self) {
+    /// The write rolled back: its events wait for the next write (or the command's end), its cursor too. (When it
+    /// got as far as `stage`, the `Staged` already put them back, on the writer thread.)
+    pub fn rolled_back(&self) {
+        self.release(true);
+    }
+    fn release(&self, unlog: bool) {
         let Some(tx) = &self.tx else { return };
         let mut ev = tx.events.lock().unwrap_or_else(PoisonError::into_inner);
-        for i in &self.idx {
-            if let Some(p) = ev.get_mut(*i) {
-                p.taken = false;
+        for p in ev.iter_mut().filter(|p| p.taken == self.token) {
+            p.taken = 0;
+            if unlog {
+                p.written = Logged::Not;
             }
         }
     }
@@ -249,27 +271,38 @@ impl Pending {
 /// returned Ok and made no write after emitting them).
 pub(crate) async fn append_rest(k: &Arc<KernelState>, tx: &Arc<RootTx>) {
     let Some(log) = k.event_log() else { return };
-    let (idx, rows): (Vec<usize>, Vec<NewEvent>) = {
-        let ev = tx.events.lock().unwrap_or_else(PoisonError::into_inner);
-        ev.iter().enumerate().filter(|(_, p)| p.durable && p.written == Logged::Not).map(|(i, p)| (i, p.row())).unzip()
+    // marked with a token, not by position: a write still in flight (its future dropped, its job queued) may drain
+    // the buffer's front while this awaits; the events it carries (`taken`) are its to log and stage
+    let token = TOKENS.fetch_add(1, Ordering::Relaxed);
+    let rows: Vec<NewEvent> = {
+        let mut ev = tx.events.lock().unwrap_or_else(PoisonError::into_inner);
+        ev.iter_mut()
+            .filter(|p| p.durable && p.written == Logged::Not && p.taken == 0)
+            .map(|p| {
+                p.taken = token;
+                p.row()
+            })
+            .collect()
     };
     if rows.is_empty() {
         return;
     }
-    match log.0.append(rows).await {
-        Ok(seqs) => {
-            let mut fresh = Vec::new();
-            {
-                let mut ev = tx.events.lock().unwrap_or_else(PoisonError::into_inner);
-                for (n, i) in idx.iter().enumerate() {
-                    if let Some(p) = ev.get_mut(*i) {
-                        p.written = seqs.get(n).copied().flatten().map_or(Logged::Repeat, Logged::At);
-                        if let Logged::At(seq) = p.written {
-                            fresh.push((seq, p.clone()));
-                        }
-                    }
+    let r = log.0.append(rows).await;
+    let mut fresh = Vec::new();
+    {
+        let mut ev = tx.events.lock().unwrap_or_else(PoisonError::into_inner);
+        for (n, p) in ev.iter_mut().filter(|p| p.taken == token).enumerate() {
+            p.taken = 0;
+            if let Ok(seqs) = &r {
+                p.written = seqs.get(n).copied().flatten().map_or(Logged::Repeat, Logged::At);
+                if let Logged::At(seq) = p.written {
+                    fresh.push((seq, p.clone()));
                 }
             }
+        }
+    }
+    match r {
+        Ok(_) => {
             for (seq, p) in fresh {
                 k.bus.remember(k, seq, &p);
             }

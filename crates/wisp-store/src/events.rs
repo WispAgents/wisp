@@ -5,7 +5,9 @@
 //!   JSON, zstd above 1 KB (`codec` 1).
 //! - **In the command's transaction:** `Store::write` asks the kernel (`durable::take`) for the durable
 //!   events the running command emitted so far and the cursor of the handler it runs in, and writes them
-//!   in the same transaction as the command's own ops. A rollback takes them with it.
+//!   in the same transaction as the command's own ops. A rollback takes them with it. Just before COMMIT the
+//!   write also stages every event the command emitted so far (ADR-0075: `InTx::stage`, held in the queues,
+//!   let go after COMMIT, put back on ROLLBACK), so whoever reads its rows finds them queued.
 //! - **Dedupe:** a `(type, key)` appended within 24 h is recorded once. The keys of the last 24 h are kept in
 //!   memory (read back at open), so the check needs no index.
 //! - **Retention:** 30 days or 1 M rows, whichever is first, trimmed from the oldest every 10 k appends and at
@@ -211,6 +213,8 @@ impl Store {
         let shared = self.shared.clone();
         let added = std::sync::Arc::new(Mutex::new(Vec::new()));
         let added2 = added.clone();
+        let intx = intx.map(std::sync::Arc::new);
+        let intx2 = intx.clone();
         let r = self
             .thread
             .queued(move |s| {
@@ -222,20 +226,31 @@ impl Store {
                     if let Some((p, name, seq)) = &cursor {
                         set_cursor_on(w.db, p, name, *seq)?;
                     }
+                    let mut head = None;
+                    // last thing before COMMIT: the command's events so far (ADR-0075), then the outbox's (ADR-0074)
+                    if let Some(i) = &intx2 {
+                        head = u64::try_from(w.head_seq()?).ok();
+                        if let Some(st) = i.stage(head, &seqs) {
+                            w.staged.push(st);
+                        }
+                    }
                     if let Some(ob) = outbox {
                         let (theirs, keys) = append_on(w.db, &shared.log, now, &mine)?;
                         lock(&added2).extend(keys);
-                        let head = u64::try_from(w.head_seq()?).ok();
-                        w.staged = Some(ob.stage(head, &theirs));
+                        let head = match head {
+                            Some(h) => Some(h),
+                            None => u64::try_from(w.head_seq()?).ok(),
+                        };
+                        w.staged.push(ob.stage(head, &theirs));
                     }
-                    Ok::<(T, Vec<Option<u64>>), StoreError>((v, seqs))
+                    Ok::<T, StoreError>(v)
                 })
             })
             .await;
         match r {
-            Ok((v, seqs)) => {
-                if let Some(i) = intx {
-                    i.committed(&seqs);
+            Ok(v) => {
+                if let Some(i) = &intx {
+                    i.committed();
                 }
                 if n > 0 {
                     self.after_append(n);
@@ -244,12 +259,46 @@ impl Store {
             }
             Err(e) => {
                 forget(&self.shared.log, &lock(&added));
-                if let Some(i) = intx {
+                if let Some(i) = &intx {
                     i.rolled_back();
                 }
                 Err(e)
             }
         }
+    }
+}
+
+impl Store {
+    /// `write_detached`, and `outbox`'s events go out with its commit (ADR-0074): for a caller that must not await
+    /// (a channel transport's host, a peer's status) and says what changed. Whoever reads the rows finds the events
+    /// queued, and nobody hears them before the rows are there (emitted right after `write_detached`, they could be
+    /// delivered before it ran). A failed write publishes none. Additive (2026-11-15).
+    pub fn write_detached_with<F>(&self, outbox: wisp_kernel::Outbox, f: F)
+    where
+        F: FnOnce(&mut Writer<'_>) -> Result<()> + Send + 'static,
+    {
+        let mine = outbox.rows();
+        let logged = mine.len();
+        let store = self.clone();
+        let _ = self.thread.submit(Box::new(move |shared| {
+            let added = Mutex::new(Vec::new());
+            let r = crate::thread::transact(shared, |w| {
+                f(w)?;
+                let (seqs, keys) = append_on(w.db, &shared.log, w.now(), &mine)?;
+                lock(&added).extend(keys);
+                let head = u64::try_from(w.head_seq()?).ok();
+                w.staged.push(outbox.stage(head, &seqs));
+                Ok(())
+            });
+            match r {
+                Ok(()) if logged > 0 => store.after_append(logged),
+                Ok(()) => {}
+                Err(e) => {
+                    forget(&shared.log, &lock(&added));
+                    tracing::warn!(error = %e, "a detached write failed; its events never went out");
+                }
+            }
+        }));
     }
 }
 

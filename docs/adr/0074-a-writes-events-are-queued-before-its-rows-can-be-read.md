@@ -1,6 +1,6 @@
 # ADR-0074: A write's events are queued before its rows can be read (`Ctx::outbox`, `Store::write_with`)
 
-- Status: accepted
+- Status: accepted; its "Not covered" items 1 and 2 (and Decision 6) superseded by ADR-0075
 - Date: 2026-11-15
 - Source: ADR-0073 "Not covered", first item: wisp.runtime saves a turn's end (`persist`) and publishes
   `runtime.turn.ended` only after that write returns (`emit_end`), so a client reading the store in between sees the

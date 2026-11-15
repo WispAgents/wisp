@@ -39,8 +39,9 @@ pub struct Writer<'a> {
     /// the transaction's time: every change row it writes carries it
     pub(crate) now: i64,
     pub(crate) doomed: Option<String>,
-    /// events queued (held) for this transaction: let go right after its COMMIT, dropped on ROLLBACK (ADR-0074)
-    pub(crate) staged: Option<wisp_kernel::Staged>,
+    /// events queued (held) for this transaction: let go right after its COMMIT, dropped on ROLLBACK (ADR-0074;
+    /// a command's own buffered ones first, ADR-0075, then an outbox's)
+    pub(crate) staged: Vec<wisp_kernel::Staged>,
 }
 
 impl std::fmt::Debug for Writer<'_> {
