@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import test, { after } from 'node:test';
 import { runCheck } from '../check/index.ts';
@@ -28,8 +28,10 @@ function made(root: string, name: string, tier: 'builtin' | 'exec' = 'builtin'):
 }
 
 test('parseArgs: name, tier and id are validated', () => {
-  assert.deepEqual(parseArgs(['my-prs', '--tier', 'exec'], '/r'), { name: 'my-prs', tier: 'exec', id: undefined, root: '/r' });
-  assert.deepEqual(parseArgs(['x', '--id=acme.x', '--root=/t'], '/r'), { name: 'x', tier: 'builtin', id: 'acme.x', root: '/t' });
+  // root is absolute for this OS: /r on macOS/Linux, D:\r on Windows (the cwd's drive)
+  assert.deepEqual(parseArgs(['my-prs', '--tier', 'exec'], '/r'), { name: 'my-prs', tier: 'exec', id: undefined, root: resolve('/r') });
+  assert.deepEqual(parseArgs(['x', '--id=acme.x', '--root=/t'], '/r'), { name: 'x', tier: 'builtin', id: 'acme.x', root: resolve('/t') });
+  assert.equal((parseArgs(['x', '--root=sub'], '/r') as { root: string }).root, resolve('sub'), 'a relative --root is from the cwd');
   for (const bad of [[], ['My_Prs'], ['a', 'b'], ['a', '--tier', 'wasm'], ['a', '--id', 'nodots'], ['a', '--nope']]) assert.equal(typeof parseArgs(bad, '/r'), 'string', bad.join(' '));
 });
 

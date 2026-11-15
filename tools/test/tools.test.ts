@@ -45,10 +45,16 @@ test('test.ts: workspaces run in dependency order, ties by name, packages withou
 });
 
 test('test.ts: with monoflow installed, packages run through verify --all --test', () => {
-  const root = dir({ 'package.json': JSON.stringify({ workspaces: [] }), '.agents/bin/monoflow': '' });
-  const steps = plan(root, { monoflow: true });
-  assert.deepEqual(steps.map((s) => s.args.join(' ')), ['--test --test-reporter=dot tools/**/*.test.ts', 'verify --all --test']);
-  assert.deepEqual(plan(root, { monoflow: false }).length, 1);
+  // installed = the sh wrapper on macOS/Linux, the binary on Windows (setup-monoflow writes both; Node can't spawn sh there)
+  const root = dir({ 'package.json': JSON.stringify({ workspaces: [] }), '.agents/bin/monoflow': '', '.agents/bin/monoflow-bin.exe': '' });
+  for (const [platform, bin] of [['linux', 'monoflow'], ['darwin', 'monoflow'], ['win32', 'monoflow-bin.exe']] as const) {
+    const steps = plan(root, { monoflow: true, platform });
+    assert.deepEqual(steps.map((s) => s.args.join(' ')), ['--test --test-reporter=dot tools/**/*.test.ts', 'verify --all --test'], platform);
+    assert.equal(steps[1]?.cmd, join(root, '.agents', 'bin', bin), platform);
+    assert.deepEqual(plan(root, { monoflow: false, platform }).length, 1);
+  }
+  const wrapperOnly = dir({ 'package.json': JSON.stringify({ workspaces: [] }), '.agents/bin/monoflow': '' });
+  assert.equal(plan(wrapperOnly, { monoflow: true, platform: 'win32' }).length, 1, 'on Windows the sh wrapper alone is no monoflow: the plain npm fallback');
 });
 
 test('test.ts: dependency cycles still run every package', () => {

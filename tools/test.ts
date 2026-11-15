@@ -23,9 +23,9 @@ export interface Step {
   args: string[];
 }
 
-export function monoflowBin(root: string): string | undefined {
+export function monoflowBin(root: string, platform: string = process.platform): string | undefined {
   // the wrapper (a sh script) everywhere but Windows, where Node can't spawn it: the binary there
-  const names = process.platform === 'win32' ? ['monoflow-bin.exe'] : ['monoflow'];
+  const names = platform === 'win32' ? ['monoflow-bin.exe'] : ['monoflow'];
   return names.map((b) => join(root, '.agents', 'bin', b)).find((p) => existsSync(p));
 }
 
@@ -49,10 +49,11 @@ function hasTest(p: Pkg): boolean {
   return typeof s === 'object' && s !== null && 'test' in s;
 }
 
-export function plan(root: string, opts: { monoflow: boolean }): Step[] {
-  const npm = process.platform === 'win32' ? 'npm.cmd' : 'npm';
+export function plan(root: string, opts: { monoflow: boolean; platform?: string }): Step[] {
+  const platform = opts.platform ?? process.platform;
+  const npm = platform === 'win32' ? 'npm.cmd' : 'npm';
   const steps: Step[] = [{ name: 'tools', cmd: process.execPath, args: ['--test', '--test-reporter=dot', 'tools/**/*.test.ts'] }];
-  const mf = opts.monoflow ? monoflowBin(root) : undefined;
+  const mf = opts.monoflow ? monoflowBin(root, platform) : undefined;
   if (mf) return [...steps, { name: 'monoflow verify --all --test', cmd: mf, args: ['verify', '--all', '--test'] }];
   for (const p of dependencyOrder(discover(root)).filter(hasTest)) steps.push({ name: p.name, cmd: npm, args: ['run', 'test', `--workspace=${p.name}`] });
   return steps;
