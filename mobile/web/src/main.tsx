@@ -43,16 +43,20 @@ async function main(): Promise<void> {
   if (!root) return;
   const w = window as unknown as PhoneWindow & { Capacitor?: { getPlatform?(): string } };
   let bridge: NativeBridge | undefined;
+  let cloud: Parameters<typeof startPhoneApp>[0]['cloud'];
   if (import.meta.env.DEV && !onPhone(w)) {
     // a desktop browser: the stand-in native side (dev only; a production build outside the apps has no computers)
     const { previewBridge, previewLook } = await import('../dev/preview-bridge.ts');
     const look = previewLook(location.search);
     (window as unknown as { Capacitor: { getPlatform(): string } }).Capacitor = { getPlatform: () => look };
     bridge = previewBridge(location.origin, location.search);
+    // a stand-in wisp Grid and sealed store for wisp Cloud's sign-in (step 14)
+    const { previewGrid } = await import('../dev/preview-grid.ts');
+    cloud = previewGrid(location.search, localStorage);
   }
   // the look's stylesheet and the phone frame before the first render, so nothing pops in (the shell asks for them too)
   await loadPlatformStyles(w.Capacitor?.getPlatform?.() === 'ios' ? 'ios' : 'android').catch(() => undefined);
-  const app = await startPhoneApp({ build: __WISP_BUILD__, root, plugins, extend, dev: import.meta.env.DEV, ...(bridge && { bridge }) });
+  const app = await startPhoneApp({ build: __WISP_BUILD__, root, plugins, extend, dev: import.meta.env.DEV, ...(bridge && { bridge }), ...(cloud && { cloud }) });
   // bootPhone writes what's waiting when the app is hidden
   if (import.meta.env.DEV) (window as unknown as { __wispPhone?: unknown }).__wispPhone = app;
 }

@@ -3,8 +3,9 @@
 // in the same frame: launch() only switches the home and navigates). *Add computer* in the bar: *Scan from your
 // computer* (the desktop's QR through the native scanner, the key pinned) or the address typed by hand. A computer
 // whose key changed says so on its row, with *Trust the new key* behind a confirmation. *Stay connected* (the
-// background connection) shows while an SSH computer without push is saved, ON unless turned off. Kit components only,
-// no CSS: each platform's look comes from the kit. wisp Cloud sign-in is step 14.
+// background connection) shows while an SSH computer without push is saved, ON unless turned off. wisp Cloud (step 14,
+// Cloud.tsx): sign in with GitHub / Google or your own grid; each account a card with its computers.
+// Kit components only, no CSS: each platform's look comes from the kit.
 import { createSignal, For, onCleanup, Show, type JSX } from 'solid-js';
 import type { PeerId, PluginClient } from '@wisp/client';
 import type { Scanned } from '@wisp/shell/platform';
@@ -16,11 +17,13 @@ import { computerRows, stateOf, type ComputerRow, type ComputerState } from '../
 import type { Launcher } from '../launch.ts';
 import { peerMap } from '../peers.ts';
 import type { StayConnected } from '../stay.ts';
+import { Cloud, type CloudDeps } from './Cloud.tsx';
+import { createCloudAccounts, type CloudAccounts } from '../cloud-accounts.ts';
 
 const TONE: Record<ComputerState, Tone> = { online: 'good', connecting: 'info', offline: 'neutral', asleep: 'neutral', update: 'warn' };
 
 export interface ComputersDeps {
-  readonly bridge: Pick<NativeBridge, 'list' | 'onComputers' | 'save' | 'trustHostKey'>;
+  readonly bridge: Pick<NativeBridge, 'list' | 'onComputers' | 'save' | 'trustHostKey' | 'forget'>;
   readonly launcher: Launcher;
   /** the native code scanner (platform.scanCode); none: the address is typed */
   readonly scan?: () => Promise<Scanned>;
@@ -28,6 +31,8 @@ export interface ComputersDeps {
   readonly toast?: Pick<Toaster, 'error' | 'success'>;
   /** a new saved id (crypto.randomUUID in the app) */
   readonly newId?: () => string;
+  /** wisp Cloud sign-in (Cloud.tsx); none: the screen has no cloud section */
+  readonly cloud?: CloudDeps;
 }
 
 type T = (k: string, vars?: Record<string, string>) => string;
@@ -194,11 +199,29 @@ export function Computers(props: { readonly client: PluginClient } & ComputersDe
   const t: T = (k, vars) => props.client.t(k, vars);
   const [list, setList] = createSignal<readonly Computer[]>([]);
   const [adding, setAdding] = createSignal(false);
-  const load = (): void => void props.bridge.list().then(setList, () => undefined);
-  load();
-  onCleanup(props.bridge.onComputers(load));
+  const load = (): Promise<void> => props.bridge.list().then((l) => void setList(l), () => undefined);
+  const ready = load();
+  onCleanup(props.bridge.onComputers(() => void load()));
+  // wisp Cloud's accounts: the cards, the sign-in; it saves and forgets the accounts' computers through the bridge
+  const cloud = props.cloud
+    ? createCloudAccounts({ cloud: props.cloud, bridge: props.bridge, list, setList: (fn) => setList(fn(list())), ready, reload: () => void load(), toast: props.toast, t })
+    : undefined;
+  if (cloud) {
+    void cloud.refresh();
+    onCleanup(props.cloud?.onResume(() => void cloud.refresh()) ?? (() => {}));
+    onCleanup(() => cloud.dispose());
+  }
+  const known = cloud ? useSignal(() => cloud.known()) : () => new Set<string>();
   const home: PeerId = props.client.home; // the shell is run again on a switch, so this is read fresh
   const rows = (): ComputerRow[] => computerRows(list(), peerMap(list()), () => undefined, home);
+  // a signed-in account's computers are in its card; the rest (an account no longer here too) are this phone's own list
+  const carded = (c: Computer): boolean => c.kind === 'grid' && !!c.account && known().has(c.account);
+  const mine = (): ComputerRow[] => {
+    const own = new Set(list().filter((c) => !carded(c)).map((c) => c.id));
+    return rows().filter((r) => own.has(r.id));
+  };
+  const rowOf = (c: Computer): JSX.Element => <Show when={rows().find((r) => r.id === c.id)}>{(r) => <Row client={props.client} row={r()} deps={props} t={t} />}</Show>;
+  const accounts = (): boolean => known().size > 0;
   const stayOn = useSignal(props.stay?.on ?? (() => false));
   const stayHere = useSignal(props.stay?.offered ?? (() => false));
   // the new computer is in the list at once; the native side's list follows (onComputers), or a refusal takes it back
@@ -237,7 +260,7 @@ export function Computers(props: { readonly client: PluginClient } & ComputersDe
       />
       <Scroll grow part="phone.computers" aria-label={t('phone.computers.title')}>
         <Show
-          when={rows().length > 0}
+          when={mine().length > 0 || accounts()}
           fallback={
             <EmptyState
               icon="laptop"
@@ -252,10 +275,13 @@ export function Computers(props: { readonly client: PluginClient } & ComputersDe
             </EmptyState>
           }
         >
-          <Section title={t('phone.computers.saved')} description={t('phone.computers.help')}>
-            <For each={rows()}>{(row) => <Row client={props.client} row={row} deps={props} t={t} />}</For>
-          </Section>
+          <Show when={mine().length > 0}>
+            <Section title={t('phone.computers.saved')} description={t('phone.computers.help')}>
+              <For each={mine()}>{(row) => <Row client={props.client} row={row} deps={props} t={t} />}</For>
+            </Section>
+          </Show>
         </Show>
+        <Show when={props.cloud && cloud}>{(deps) => <Cloud t={t} deps={props.cloud as CloudDeps} cloud={deps() as CloudAccounts} list={list} row={rowOf} />}</Show>
         <Show when={props.stay && stayHere() && needsStay(list())}>
           <Section title={t('phone.stay.section')}>
             <ListRow

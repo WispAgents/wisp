@@ -3,7 +3,7 @@
 // (oldest first, quiet check-ins folded), what it is and how it works beside it (or folded above on a narrow
 // pane), and the box that gives it a job. Every write shows at once (crew.update, crew.assign) and rolls back
 // with the shell's toast when refused.
-import { createMemo, createSignal, For, Show, type JSX } from 'solid-js';
+import { createMemo, createSignal, For, lazy, Show, type JSX } from 'solid-js';
 import { uuidv7 } from '@wisp/client';
 import { useShell, type ExtensionProps } from '@wisp/shell';
 import {
@@ -39,8 +39,21 @@ import './i18n/lazy.ts';
 
 const SHOW = 30;
 
+// the phone apps: a member's page as the platform's pushed page (ADR-0065 step 14); its own chunk
+const PhoneMember = lazy(() => import('./CrewPhone.tsx').then((m) => ({ default: m.CrewPhoneMember })));
+
+/** The browser (a phone's too) keeps v1's page; the phone apps push the platform's member page in its place. */
+export default function CrewScreen(props: ExtensionProps): JSX.Element {
+  const shell = useShell();
+  return (
+    <Show when={shell.platform.phone} fallback={<CrewPage {...props} />}>
+      <PhoneMember client={props.client} id={String(props.id ?? '')} />
+    </Show>
+  );
+}
+
 // size-ok: one screen whose parts share the member, its state and the box's draft
-export default function CrewPage(props: ExtensionProps): JSX.Element {
+function CrewPage(props: ExtensionProps): JSX.Element {
   const c = props.client;
   const shell = useShell();
   const data = crewData(c);

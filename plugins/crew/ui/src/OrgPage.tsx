@@ -4,7 +4,7 @@
 // ✓ takes it off. The column beside it says how it works, or, for the selected member, who it hands work to and gets
 // work from, each with a ×. Every change is one optimistic crew.update of the member's team (rolled back with a
 // toast if refused).
-import { createMemo, createResource, createSignal, For, Show, type JSX } from 'solid-js';
+import { createMemo, createResource, createSignal, For, lazy, Show, type JSX } from 'solid-js';
 import type { EntityKey, PluginClient } from '@wisp/client';
 import { useShell } from '@wisp/shell';
 import { Icon, OrgMe, OrgPerson, OrgSection, OrgView, useSignal, type OrgCard, type OrgEdge } from '@wisp/ui';
@@ -13,14 +13,35 @@ import { crewData } from './data.ts';
 import { t, type Key } from './i18n.ts';
 import { cadenceText } from './model.ts';
 import { alone, graph, linkTeam, tiers, unlinkTeam } from './more/org-graph.ts';
+import { orgParams } from './org-params.ts';
 import type { Member } from './types.ts';
 import { VIEW } from './views.ts';
 import './i18n/lazy.ts';
 
 type Row = Member & { readonly key: EntityKey };
 
+// the phone apps: the Crew tab is the platform's screen (ADR-0065 step 14), the chart pushed from it; its own chunk
+const Phone = lazy(() => import('./CrewPhone.tsx').then((m) => ({ default: m.CrewPhoneRoot })));
+const PhoneOrg = lazy(() => import('./CrewPhone.tsx').then((m) => ({ default: m.CrewPhoneOrg })));
+
+/** The browser (a phone's too) keeps v1's Org page; in the phone apps the Crew tab's root is the members list, and
+ *  Org (params `{ chart: true }`) the chart under a page bar with Back. */
+export default function CrewOrg(props: { readonly client: PluginClient; readonly params?: unknown }): JSX.Element {
+  const shell = useShell();
+  // parsed here, not in index.ts: the first download stays as it was
+  return (
+    <Show when={shell.platform.phone} fallback={<OrgPage client={props.client} />}>
+      <Show when={orgParams(props.params)?.chart} fallback={<Phone client={props.client} />}>
+        <PhoneOrg client={props.client}>
+          <OrgPage client={props.client} pushed />
+        </PhoneOrg>
+      </Show>
+    </Show>
+  );
+}
+
 // size-ok: one page whose parts share the graph and the selection
-export default function OrgPage(props: { readonly client: PluginClient }): JSX.Element {
+function OrgPage(props: { readonly client: PluginClient; readonly pushed?: boolean }): JSX.Element {
   const c = props.client;
   const shell = useShell();
   const say = t as (k: string, v?: Readonly<Record<string, string | number>>) => string;
@@ -165,7 +186,8 @@ export default function OrgPage(props: { readonly client: PluginClient }): JSX.E
         ...(placed() ? [{ id: 'tidy', icon: 'rerun' as const, label: t('wisp.crew.org.reset'), title: t('wisp.crew.org.resetTitle'), onClick: resetLayout }] : []),
         { id: 'add', icon: 'plus', label: t('wisp.crew.org.add'), title: t('wisp.crew.org.addTitle'), onClick: () => c.navigate({ t: 'openOverlay', overlay: { kind: 'dialog', id: VIEW.editor as never, params: {} } }) },
       ]}
-      close={{ label: t('wisp.crew.org.close'), onClick: () => c.navigate({ t: 'home' }) }}
+      // pushed on a phone: the page bar's Back leaves it
+      close={props.pushed ? undefined : { label: t('wisp.crew.org.close'), onClick: () => c.navigate({ t: 'home' }) }}
       hint={hint()}
       tiers={tiers(list(), g()).map((tier) => tier.map(card))}
       alone={alone(list(), g()).map(card)}

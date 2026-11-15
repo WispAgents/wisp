@@ -42,7 +42,7 @@ export default definePluginUi({
     // the crew's track record (v1 crew-record.js): Settings → Usage's Crew track record
     defineView({ kind: VIEW.record, slot: 'overlay', overlay: 'dialog', parse: (p) => p, title: () => t('wisp.crew.record.title'), component: lazy(() => import('./Record.tsx')) }),
     // Org: who hands work to whom (v1 org.js, F-crew-14), in the main pane
-    defineView({ kind: VIEW.org, slot: 'main', parse: () => null, title: () => t('wisp.crew.org.title'), component: lazy(() => import('./OrgPage.tsx')) }),
+    defineView({ kind: VIEW.org, slot: 'main', parse: (p) => p, title: () => t('wisp.crew.org.title'), component: lazy(() => import('./OrgPage.tsx')) }),
     defineView({
       kind: VIEW.editor,
       slot: 'overlay',

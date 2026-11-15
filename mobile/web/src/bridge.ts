@@ -37,6 +37,8 @@ export interface GridComputer extends Saved {
   readonly grid?: string;
   /** set for one of your computers on the grid (it can't be woken from here) */
   readonly computer?: string;
+  /** the wisp Cloud account it came with (`<grid>#<handle>`, cloud.ts): its card on the Computers screen */
+  readonly account?: string;
 }
 
 /**
@@ -127,7 +129,8 @@ function computerOf(v: unknown): Computer | undefined {
   if (!id) return undefined;
   // a token is never taken from the list, even if a native side sent one
   const base = { id, name: str(o['name']) || id, ...(str(o['peer']) && { peer: str(o['peer']) }), ...(o['push'] === true && { push: true }) };
-  if (o['kind'] === 'grid') return { ...base, kind: 'grid', url: str(o['url']), ...(str(o['grid']) && { grid: str(o['grid']) }), ...(str(o['computer']) && { computer: str(o['computer']) }) };
+  if (o['kind'] === 'grid')
+    return { ...base, kind: 'grid', url: str(o['url']), ...(str(o['grid']) && { grid: str(o['grid']) }), ...(str(o['computer']) && { computer: str(o['computer']) }), ...(str(o['account']) && { account: str(o['account']) }) };
   if (o['kind'] !== 'ssh') return undefined; // a kind this app doesn't know: left alone
   const num = (k: string): object => (typeof o[k] === 'number' ? { [k]: o[k] } : {});
   return { ...base, kind: 'ssh', target: str(o['target']), ...num('sshPort'), ...num('port'), ...(str(o['keyId']) && { keyId: str(o['keyId']) }), ...(str(o['command']) && { command: str(o['command']) }), ...(str(o['fingerprint']) && { fingerprint: str(o['fingerprint']) }) };
