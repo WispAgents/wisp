@@ -19,6 +19,7 @@
 import { spawn } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
+import { pathToFileURL } from 'node:url';
 import zlib from 'node:zlib';
 import { PARTS } from '../web/js/spell-schema.js';
 import { inspect as layoutProblems } from './layout.mjs';
@@ -711,7 +712,7 @@ async function startV2(seedFile) {
   throw new Error(`apps/web did not start on ${port} (see ${OUT}/parity-vite-${port}.log)`);
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) {
+if (import.meta.url === pathToFileURL(process.argv[1] ?? '').href) {
   const ref = process.env.REF_DIR || path.join(ROOT, 'design', 'v1-reference');
   const outDir = path.join(OUT, 'parity');
   fs.rmSync(outDir, { recursive: true, force: true });

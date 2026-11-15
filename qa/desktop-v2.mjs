@@ -15,7 +15,7 @@ import http from 'node:http';
 import net from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const ROOT = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
 const OUT = path.join(ROOT, 'qa/out');
@@ -186,7 +186,7 @@ if (arg('--zip')) {
     fs.copyFileSync(zip, path.join(rel, name));
     const sum = execFileSync('shasum', ['-a', '256', path.join(rel, name)], { encoding: 'utf8' }).split(' ')[0];
     fs.writeFileSync(path.join(rel, 'SHA256SUMS.txt'), `${sum}  ${name}\n`);
-    execFileSync('bash', [path.join(ROOT, 'docs/install.sh'), '--app'], { stdio: 'inherit', env: { ...process.env, WISP_DOWNLOADS: `file://${rel}`, WISP_APP_DIR: dest, WISP_NO_OPEN: '1' } });
+    execFileSync('bash', [path.join(ROOT, 'docs/install.sh'), '--app'], { stdio: 'inherit', env: { ...process.env, WISP_DOWNLOADS: pathToFileURL(rel).href, WISP_APP_DIR: dest, WISP_NO_OPEN: '1' } });
     const bundle = path.join(dest, 'wisp.app');
     ok(fs.existsSync(path.join(bundle, 'Contents/Resources/app/wisp')), 'no wisp binary in the installed app');
     ok(fs.existsSync(path.join(bundle, 'Contents/Resources/app/web/index.html')), 'no web build in the installed app');
@@ -197,7 +197,7 @@ if (arg('--zip')) {
     fs.writeFileSync(path.join(rel, 'SHA256SUMS.txt'), `${'0'.repeat(64)}  ${name}\n`);
     let refused = false;
     try {
-      execFileSync('bash', [path.join(ROOT, 'docs/install.sh'), '--app'], { stdio: 'ignore', env: { ...process.env, WISP_DOWNLOADS: `file://${rel}`, WISP_APP_DIR: dest, WISP_NO_OPEN: '1' } });
+      execFileSync('bash', [path.join(ROOT, 'docs/install.sh'), '--app'], { stdio: 'ignore', env: { ...process.env, WISP_DOWNLOADS: pathToFileURL(rel).href, WISP_APP_DIR: dest, WISP_NO_OPEN: '1' } });
     } catch {
       refused = true;
     }

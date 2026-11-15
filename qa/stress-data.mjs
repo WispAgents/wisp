@@ -7,6 +7,7 @@
 import { randomBytes } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
+import { pathToFileURL } from 'node:url';
 
 export const HUGE = 'f00000000001'; // many turns
 export const WORDY = 'f00000000002'; // a huge prompt and answer
@@ -63,4 +64,4 @@ export function makeStress(from, to, n = 4000) {
   return { tasks: n + 2, mb: Math.round((bytes + JSON.stringify(huge).length + JSON.stringify(wordy).length) / 1e6), hugeTurns: turns.length };
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) console.log(makeStress(process.argv[2], process.argv[3], Number(process.argv[4] || 4000)));
+if (import.meta.url === pathToFileURL(process.argv[1] ?? '').href) console.log(makeStress(process.argv[2], process.argv[3], Number(process.argv[4] || 4000)));

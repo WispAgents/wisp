@@ -31,6 +31,7 @@
 import { spawn } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
+import { pathToFileURL } from 'node:url';
 import { decodePng, diffImages, encodePng, translator } from './parity.mjs';
 import { launchBrowser, OUT, ROOT } from './lib.mjs';
 import { views } from './views.mjs';
@@ -357,8 +358,8 @@ async function mainPhone(ref, seedFile) {
   process.exit(t.fail ? 1 : 0);
 }
 
-if (import.meta.url === `file://${process.argv[1]}` && PHONE) await mainPhone(path.join(ROOT, 'design', 'v1-reference'), path.join(ROOT, 'design', 'v1-reference', 'seed.json'));
-else if (import.meta.url === `file://${process.argv[1]}`) {
+if (import.meta.url === pathToFileURL(process.argv[1] ?? '').href && PHONE) await mainPhone(path.join(ROOT, 'design', 'v1-reference'), path.join(ROOT, 'design', 'v1-reference', 'seed.json'));
+else if (import.meta.url === pathToFileURL(process.argv[1] ?? '').href) {
   const ref = path.join(ROOT, 'design', 'v1-reference');
   const outDir = path.join(OUT, 'feedback');
   fs.rmSync(outDir, { recursive: true, force: true });

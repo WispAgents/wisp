@@ -109,6 +109,8 @@ Checked by `npm run check` (`tools/check`: the TypeScript rules and the Rust one
 9. **Documented commands work** (`commands`): every package.json script and every command in AGENTS.md,
    README.md, this file, docs/dev.md and the skills names a file, script, workspace, crate or `wisp` word that
    exists; a line opts out with `<!-- cmd-check: skip <why> -->`.
+10. **Paths work on Windows** (`file-urls`): a path comes from `fileURLToPath(new URL(…, import.meta.url))`
+    and a file: URL from `pathToFileURL(p).href`, never a URL's `.pathname` or a glued `"file://"` (also in `qa/` and `mobile/scripts/`).
 
 ## How a feature is built
 

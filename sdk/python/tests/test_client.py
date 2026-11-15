@@ -77,10 +77,12 @@ class SdkTest(unittest.TestCase):
 
     def test_a_command_goes_to_api_cmd_with_a_key_and_a_refusal_comes_back_in_wisps_words(self):
         w = wisp.WispClient(self.url, token="tok")
-        t = w.run("fix it", cwd="/w")
+        # an absolute path in this OS's spelling (D:\... on Windows), which run() sends as it is
+        here = os.path.dirname(os.path.abspath(__file__))
+        t = w.run("fix it", cwd=here)
         self.assertEqual(t["id"], "t1")
         sent = SEEN[-1]
-        self.assertEqual(sent["body"], {"cmd": "runtime.create", "args": {"prompt": "fix it", "cwd": "/w"}})
+        self.assertEqual(sent["body"], {"cmd": "runtime.create", "args": {"prompt": "fix it", "cwd": here}})
         self.assertRegex(sent["headers"]["idempotency-key"], r"^sdk-[0-9a-f]{24}$")
         self.assertEqual(sent["headers"]["x-wisp-token"], "tok")
         with self.assertRaises(wisp.WispError) as e:

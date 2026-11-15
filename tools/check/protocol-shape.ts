@@ -117,7 +117,7 @@ export function readProtocol(root: string, file = PROTOCOL_INDEX): Snapshot & { 
     // wire shapes are declared in the entry or in its generated/ folder (the Rust types, ADR-0013);
     // anything else re-exported is a helper
     const from = decl?.getSourceFile();
-    if (!decl || !from || (from !== sf && !from.fileName.startsWith(join(dirname(abs), 'generated') + '/'))) continue;
+    if (!decl || !from || (from !== sf && !from.fileName.startsWith(`${join(dirname(abs), 'generated').replaceAll('\\', '/')}/`))) continue;
     types[e.name] = describe(c, c.getDeclaredTypeOfSymbol(sym), 0, true);
     lines[e.name] = decl.getSourceFile().getLineAndCharacterOfPosition(decl.getStart()).line + 1;
   }

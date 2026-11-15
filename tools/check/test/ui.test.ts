@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { fileURLToPath } from 'node:url';
 import { kitCssProblems, scanCss, splitTop, subjectOf } from '../../../packages/tokens/src/css-rules.ts';
 import { kitScale } from '../core/tokens.ts';
 import { css, endsInIsList, hasOnLargeBox, importantAllowed } from '../rules/css.ts';
@@ -77,7 +78,7 @@ test('css_a_raw_px_media_query_and_a_flex_wrap_outside_wrap_fail_the_check', asy
 test('css_the_checks_token_sets_are_the_kits_px_scale_and_breakpoints', () => {
   // packages/ui/test/css-rules.test.ts runs @wisp/tokens/css-rules with @wisp/tokens' PX_SCALE and BREAKPOINT_PX; the check reads
   // the token JSON. Equal sets, so the two gates can't disagree on a px.
-  const sets = kitScale(new URL('../../..', import.meta.url).pathname);
+  const sets = kitScale(fileURLToPath(new URL('../../..', import.meta.url)));
   assert.ok(sets);
   const sorted = (s: Iterable<number>): number[] => [...s].sort((a, b) => a - b);
   assert.deepEqual(sorted(sets.scale), sorted(PX_SCALE));

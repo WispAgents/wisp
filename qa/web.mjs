@@ -4,6 +4,7 @@
 import { execFileSync, spawn } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
+import { pathToFileURL } from 'node:url';
 import { makeClone, until } from '../test/helpers.js';
 import { api, launchBrowser, ok, OUT, ROOT, runner, startWisp } from './lib.mjs';
 
@@ -1131,7 +1132,7 @@ try {
     for (const [label, vp] of [['desktop', { width: 1440, height: 900 }], ['phone', { width: 390, height: 844 }]]) {
       const q = await page({ viewport: vp });
       await q.route(/^https?:\/\/(?!localhost)/, (r) => r.abort());
-      await q.goto('file://' + path.join(ROOT, 'docs/index.html'));
+      await q.goto(pathToFileURL(path.join(ROOT, 'docs/index.html')).href);
       await q.waitForTimeout(1500);
       q.errors = q.errors.filter((e) => !/net::ERR_FAILED|posthog|Failed to load resource|CORS|file:|Origin null/.test(e));
       await noOverflow(q);

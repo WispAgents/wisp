@@ -2,10 +2,11 @@
 // (index.html as built: dist/, which `wisp serve` serves) leaves what iOS and Chrome read to install it to a grid
 // box (added at runtime), and the head script that marks a Home Screen launch for the kit's safe-area rules runs as v1's did.
 import { existsSync, readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import { expect, test } from 'vitest';
 import { HOME_SCREEN_TAGS, STANDALONE_CHECK } from '@wisp/shell/pure';
 
-const file = (p: string): string => new URL(`../${p}`, import.meta.url).pathname;
+const file = (p: string): string => fileURLToPath(new URL(`../${p}`, import.meta.url));
 const pages = ['index.html', 'dist/index.html'].filter((p) => p === 'index.html' || existsSync(file(p)));
 const meta = (html: string, name: string): string[] => [...html.matchAll(new RegExp(`<meta name="${name}"([^>]*)>`, 'g'))].map((m) => m[1] ?? '');
 

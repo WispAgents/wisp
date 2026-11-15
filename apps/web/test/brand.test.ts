@@ -1,9 +1,10 @@
 // F-look-4: the app's icon is v1's handwritten w with the orb (web/favicon.svg, icon-*.png), in the tab, on a phone's
 // home screen and in the installed app, not a stand-in.
 import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import { expect, test } from 'vitest';
 
-const pub = (f: string): string => new URL(`../public/${f}`, import.meta.url).pathname;
+const pub = (f: string): string => fileURLToPath(new URL(`../public/${f}`, import.meta.url));
 
 test('the_tab_icon_is_the_handwritten_w_with_the_orb_as_in_v1', () => {
   const svg = readFileSync(pub('favicon.svg'), 'utf8');
@@ -27,5 +28,5 @@ test('installed_and_home_screen_icons_are_v1s_pngs_and_the_manifest_names_them',
   const m = JSON.parse(readFileSync(pub('manifest.webmanifest'), 'utf8')) as { icons: { src: string; purpose?: string }[] };
   expect(m.icons.map((i) => i.src)).toEqual(['/favicon.svg', '/icon-192.png', '/icon-512.png', '/icon-maskable-512.png']);
   expect(m.icons.find((i) => i.purpose === 'maskable')?.src).toBe('/icon-maskable-512.png');
-  expect(readFileSync(new URL('../index.html', import.meta.url).pathname, 'utf8')).toContain('<link rel="apple-touch-icon" href="/apple-touch-icon.png" sizes="180x180" />');
+  expect(readFileSync(fileURLToPath(new URL('../index.html', import.meta.url)), 'utf8')).toContain('<link rel="apple-touch-icon" href="/apple-touch-icon.png" sizes="180x180" />');
 });

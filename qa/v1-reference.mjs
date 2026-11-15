@@ -26,6 +26,7 @@
 import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
+import { pathToFileURL } from 'node:url';
 import { PARTS } from '../web/js/spell-schema.js';
 import { spawn } from 'node:child_process';
 import { api, launchBrowser, qaEnv, ROOT, OUT } from './lib.mjs';
@@ -395,7 +396,7 @@ function dedupe(out, names) {
   return n;
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) {
+if (import.meta.url === pathToFileURL(process.argv[1] ?? '').href) {
   const out = process.env.REF_OUT || path.join(ROOT, 'design', 'v1-reference');
   fs.mkdirSync(out, { recursive: true });
   const port = Number(process.env.QA_REF_PORT) || 4496;
