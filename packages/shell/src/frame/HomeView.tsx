@@ -59,6 +59,9 @@ export function HomeView(props: { readonly onBack?: () => void }): JSX.Element {
   const shell = useShell();
   // the phone apps (Android, iPhone): New task's own bar; set once, as the platform never changes
   const phone = shell.platform.phone;
+  // the phone apps' New task sheet / page holds the prompt box alone (r291): no greeting (its bar says New task), no
+  // Needs you, cards, tips, keys or feedback line under it; the browser at a phone's width keeps v1's whole Home
+  const sheet = (): boolean => phone && props.onBack !== undefined;
   const t = shell.t;
   const home = usePluginClient('shell').home;
   // Run on (v1 launch.where): this computer, or another one you added (machines); only one at a time (F-comp-10)
@@ -212,7 +215,8 @@ export function HomeView(props: { readonly onBack?: () => void }): JSX.Element {
   // dialog opened while Home was still loading kept its focus in v1, whose Home was there from the start)
   queueMicrotask(() => {
     const at = document.activeElement;
-    if (!at || at === document.body) input?.focus();
+    // the phone sheet opens to write in: the caret is in the prompt (the keyboard comes up), whatever was pressed
+    if (sheet() || !at || at === document.body) input?.focus();
   });
   // several projects picked over the list (project-pick.ts): New task starts in the first, and also works in the others
   // (runtime.create `dirs`, F-comp-47) until you leave one out with its ×; + on any other chip (or ⌘-click) adds it
@@ -488,7 +492,7 @@ export function HomeView(props: { readonly onBack?: () => void }): JSX.Element {
     <Show when={phone ? props.onBack : undefined}>
       {(close) => <PhoneCompose onClose={close()} onSend={send} canSend={text().trim() !== '' || files().length > 0} />}
     </Show>
-    <SplitHome greeting={t('shell.home.hello')} {...(!phone && props.onBack && { onBack: props.onBack, backLabel: t('shell.home.back') })}>
+    <SplitHome {...(!sheet() && { greeting: t('shell.home.hello') })} {...(!phone && props.onBack && { onBack: props.onBack, backLabel: t('shell.home.back') })}>
       <Launcher
         inLabel={t('shell.home.in')}
         place={place()}
@@ -649,8 +653,10 @@ export function HomeView(props: { readonly onBack?: () => void }): JSX.Element {
           },
         }}
       />
-      {/* usage at a glance under the prompt box (wisp.budget's plan windows), v1 #790 .sh-usage */}
-      <Slot input="shell.home:usage" layout="contents" />
+      {/* usage at a glance under the prompt box (wisp.budget's plan windows), v1 #790 .sh-usage; not in the phone sheet */}
+      <Show when={!sheet()}>
+        <Slot input="shell.home:usage" layout="contents" />
+      </Show>
       {/* opened from the Auto pick (v1 openPop); before Auto answers it says it's still looking, then fills in */}
       <Show when={autoPop()}>
         {(_) => {
@@ -759,45 +765,47 @@ export function HomeView(props: { readonly onBack?: () => void }): JSX.Element {
           />
         )}
       </Show>
-      <NextList
-        heading={t('shell.section.needs')}
-        count={needs().length}
-        rows={needs()
-          .slice(0, 5)
-          .map((s) => ({
-            id: s.id,
-            title: s.title,
-            color: String(s.summary['color'] ?? 'slate'),
-            state: statusOf(s, t).label,
-            time: shortAgo(s.updated_at, now()),
-            timeTitle: longTime(s.updated_at),
-          }))}
-        onOpen={(id) => shell.navigate({ t: 'openTask', id: id as EntityKey as never })}
-      />
-      {/* notes on plans other plugins add (wisp.budget's Spare allowance), v1 .sh-spare */}
-      <Slot input="shell.home:cards" layout="contents" pickAgent={pickAgent} />
-      <Tips
-        heading={t('shell.tips.heading')}
-        more={t('shell.tips.more')}
-        moreTitle={t('shell.tips.moreTitle')}
-        onMore={() => setTipAt((tipAt() + 3) % TIPS.length)}
-        onOpen={(href) => shell.platform.openExternal(href)}
-        setup={[
-          { kind: 'tool', icon: 'github', title: t('shell.tips.github'), body: t('shell.tips.githubBody'), cta: t('shell.tips.signIn'), onClick: () => settingsSheet('accounts') },
-          { kind: 'grid', icon: 'cloud', title: t('shell.tips.grid'), body: t('shell.tips.gridBody'), cta: t('shell.tips.setUp'), onClick: () => settingsSheet('cloud') },
-        ]}
-        tips={tips()}
-      />
-      <KeysHint
-        items={[
-          { keys: ['J', 'K'], label: t('shell.keys.move') },
-          { keys: ['↵'], label: t('shell.keys.open') },
-          { keys: ['E'], label: t('shell.keys.done') },
-          { keys: ['Esc'], label: t('shell.keys.back') },
-          { keys: ['['], label: t('shell.keys.hide') },
-        ]}
-      />
-      <FeedbackLine label={t('shell.feedback.line')} onClick={() => openFeedback(shell)} />
+      <Show when={!sheet()}>
+        <NextList
+          heading={t('shell.section.needs')}
+          count={needs().length}
+          rows={needs()
+            .slice(0, 5)
+            .map((s) => ({
+              id: s.id,
+              title: s.title,
+              color: String(s.summary['color'] ?? 'slate'),
+              state: statusOf(s, t).label,
+              time: shortAgo(s.updated_at, now()),
+              timeTitle: longTime(s.updated_at),
+            }))}
+          onOpen={(id) => shell.navigate({ t: 'openTask', id: id as EntityKey as never })}
+        />
+        {/* notes on plans other plugins add (wisp.budget's Spare allowance), v1 .sh-spare */}
+        <Slot input="shell.home:cards" layout="contents" pickAgent={pickAgent} />
+        <Tips
+          heading={t('shell.tips.heading')}
+          more={t('shell.tips.more')}
+          moreTitle={t('shell.tips.moreTitle')}
+          onMore={() => setTipAt((tipAt() + 3) % TIPS.length)}
+          onOpen={(href) => shell.platform.openExternal(href)}
+          setup={[
+            { kind: 'tool', icon: 'github', title: t('shell.tips.github'), body: t('shell.tips.githubBody'), cta: t('shell.tips.signIn'), onClick: () => settingsSheet('accounts') },
+            { kind: 'grid', icon: 'cloud', title: t('shell.tips.grid'), body: t('shell.tips.gridBody'), cta: t('shell.tips.setUp'), onClick: () => settingsSheet('cloud') },
+          ]}
+          tips={tips()}
+        />
+        <KeysHint
+          items={[
+            { keys: ['J', 'K'], label: t('shell.keys.move') },
+            { keys: ['↵'], label: t('shell.keys.open') },
+            { keys: ['E'], label: t('shell.keys.done') },
+            { keys: ['Esc'], label: t('shell.keys.back') },
+            { keys: ['['], label: t('shell.keys.hide') },
+          ]}
+        />
+        <FeedbackLine label={t('shell.feedback.line')} onClick={() => openFeedback(shell)} />
+      </Show>
     </SplitHome>
     </>
   );

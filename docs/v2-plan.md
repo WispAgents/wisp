@@ -761,8 +761,8 @@ Source: `docs/v1-features.md` (each row's evidence and test). `[x]` built, `[ ]`
 - [x] serve_channels_cap and serve_delegate_machine still use FAKE_DELAY (convert to FAKE_GATE)
 - [ ] Same-named phone chips share a highlight when one is pressed (give chips the computer in their id)
 - [ ] A removed peer's pending optimistic writes aren't cleared (resetPeer)
-- [ ] Phone Tasks: a crew member's avatar touches the task title (no gap like the dot's)
-- [ ] Phone New task sheet shows the whole Home page under the composer (Needs you, Tips): a sheet should hold just the composer
+- [x] Phone Tasks: a crew member's avatar touches the task title (no gap like the dot's): the phone feed row's leading column is one fixed width (`--size-avatar-sm`), dot / face / mark icon centred in it, so every title starts at one x (r291; `platform-css.test.ts` `a_crew_face_rows_title_starts_at_the_same_x_as_a_dot_rows`; Chrome: title x 47 on face and dot rows, android and ios, 390 and 320)
+- [x] Phone New task sheet shows the whole Home page under the composer (Needs you, Tips): a sheet should hold just the composer: the phone sheet holds the prompt box alone, caret in it (no greeting, Needs you, usage, cards, tips, keys, feedback line); an empty Recipes list hides on phones as in v1 responsive.css (Start from an issue stays) (r291; `phone-pages.test.tsx` `the_new_task_sheet_on_{android,ios}_holds_only_the_composer_focused_with_no_home_list_or_tips`)
 - [x] Lead's call (2026-11-16): agents (agent:session) and API keys may add projects through runtime.projectAdd (they already start tasks; capped tasks are refused)
 - [ ] `ui-only`/MCP: nothing open
 

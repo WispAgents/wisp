@@ -153,6 +153,31 @@ for (const kind of ['android', 'ios'] as const) {
   });
 }
 
+// r291: the phone sheet is the prompt box alone, focused; Home's greeting, Needs you, tips, keys and feedback line
+// stay in the browser's Home only (the phone apps' Tasks list is where tasks are)
+for (const kind of ['android', 'ios'] as const) {
+  test(`the_new_task_sheet_on_${kind}_holds_only_the_composer_focused_with_no_home_list_or_tips`, async () => {
+    const { root } = await start(phone(kind));
+    await until(() => root.querySelector('[data-part~="phone.tasks.new"]') !== null);
+    (root.querySelector('[data-part~="phone.tasks.new"]') as HTMLElement).click();
+    await until(() => root.querySelector('[data-part="phone.new.bar"]') !== null && root.querySelector('[data-part~="launcher.input"]') !== null);
+    await settle();
+    const home = root.querySelector('[data-part="split.home"]');
+    expect(home?.querySelector('[data-part~="launcher.input"]'), 'the prompt').not.toBeNull();
+    expect(home?.querySelector('[data-part~="launcher.projects"]'), 'the project selector').not.toBeNull();
+    for (const part of ['split.greeting', 'split.next', 'tips', 'home.feedback'])
+      expect(home?.querySelector(`[data-part~="${part}"]`), `${part} is not in the sheet`).toBeNull();
+    // what the sheet holds besides the bar: the prompt box and its own popups, nothing of Home's page
+    const kids = [...(home?.children ?? [])].map((e) => e.getAttribute('data-kit'));
+    expect(kids.filter((k) => k !== null)).toEqual(['sh-launch']);
+    // no recipes: the phones drop the empty Recipes list (v1 responsive.css) and keep Start from an issue
+    expect(home?.querySelector('[data-part="launcher.recipes-wrap"]')?.hasAttribute('data-empty')).toBe(true);
+    expect(home?.querySelector('[data-part~="launcher.issue"]'), 'Start from an issue').not.toBeNull();
+    // the caret is in the prompt, as the sheet opens (the keyboard with it)
+    expect(document.activeElement).toBe(root.querySelector('[data-part~="launcher.input"]'));
+  });
+}
+
 test('new_task_in_a_phones_browser_keeps_v1s_back_and_greeting_and_no_compose_bar', async () => {
   const { root } = await start(nullPlatform({ mobile: true }));
   await until(() => root.querySelector('[data-part~="sidebar.new"], [data-part~="list.new"]') !== null);
@@ -160,6 +185,8 @@ test('new_task_in_a_phones_browser_keeps_v1s_back_and_greeting_and_no_compose_ba
   await until(() => root.querySelector('[data-part="split.back"]') !== null);
   expect(root.querySelector('[data-part="split.home"] [data-part="split.back"]'), 'v1’s Back').not.toBeNull();
   expect(root.querySelector('[data-part="phone.new.bar"]')).toBeNull();
+  // r291: the browser keeps v1's whole Home under the box (the greeting, Needs you, the tips)
+  for (const part of ['split.greeting', 'split.next', 'tips']) expect(root.querySelector(`[data-part="split.home"] [data-part~="${part}"]`), part).not.toBeNull();
 });
 
 for (const kind of ['android', 'ios'] as const) {

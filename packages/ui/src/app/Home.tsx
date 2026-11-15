@@ -11,9 +11,11 @@ import { suggestKeyDown, type PromptSuggest } from '../composer/suggest-keys.ts'
 import type { IconName } from '../content/icons.ts';
 import { ActIcon, WithAct, actAttrs, type Act } from './act.tsx';
 import { ProjectSelect, type ProjectSelectProps } from './ProjectSelect.tsx';
+import { usePlatform } from '../platform/PlatformLook.tsx';
 
 export interface SplitHomeProps {
-  readonly greeting: string;
+  /** none in the phone apps' New task sheet, whose bar says New task (r291) */
+  readonly greeting?: string;
   /** stack only: back to the list */
   readonly backLabel?: string;
   readonly onBack?: () => void;
@@ -33,7 +35,7 @@ export function SplitHome(props: SplitHomeProps): JSX.Element {
           </h2>
         </div>
       </Show>
-      <Show when={!props.onBack}>
+      <Show when={!props.onBack && props.greeting !== undefined}>
         <h2 data-kit="sh-hello" data-part="split.greeting">
           {props.greeting}
         </h2>
@@ -204,6 +206,7 @@ export function Launcher(props: LauncherProps): JSX.Element {
     }
   };
   const empty = (): boolean => props.value.trim() === '';
+  const phone = ((look) => (): boolean => look() !== 'web')(usePlatform());
   // Send with nothing written: the prompt takes the caret and its placeholder lights up until you type
   const [nudge, setNudge] = createSignal(false);
   const [over, setOver] = createSignal(false);
@@ -444,7 +447,14 @@ export function Launcher(props: LauncherProps): JSX.Element {
         </div>
         <div data-kit="l-foot">
           <div data-kit="l-recipes" data-part="launcher.recipes">
-            <div data-kit="lr-list" data-part="launcher.recipes-wrap" data-layout={(props.recipes.items?.length ?? 0) > 0 ? 'wrap' : undefined}>
+            {/* v1 responsive.css: an empty Recipes list is an ad for a feature, not worth a phone's screen; the phone apps
+                hide it by data-empty and keep Start from an issue (v1 moved it to the bar there); the browser's HTML stays v1's */}
+            <div
+              data-kit="lr-list"
+              data-part="launcher.recipes-wrap"
+              data-layout={(props.recipes.items?.length ?? 0) > 0 ? 'wrap' : undefined}
+              data-empty={phone() && (props.recipes.items?.length ?? 0) === 0 ? '' : undefined}
+            >
               <span data-kit="l-in" data-icon="">
                 <Icon name="bolt" />
                 {props.recipes.label}

@@ -332,6 +332,13 @@
   /* a feed row (the Tasks list): the trailing column holds the time on the title's line and the pills on the next,
      each on its own line, right-aligned, so the time never sits on a pill (r285); the title stops at that column */
   :root[data-platform='android'] [data-kit='list-row'][data-layout='feed'] > [data-kit='list-row-title'] { grid-column: 2; padding-right: var(--space-0); }
+  /* the feed row's leading column is one fixed width, the crew face's (20): the dot, a reminder's or origin's icon and
+     a crew member's face sit centred in it, so every title starts at one x (r291; the browser's 10 px column let the
+     face run into the title); Mark done's touch column (composites.css) stays the fourth */
+  :root[data-platform='android'] [data-kit='list-row'][data-layout='feed'] { grid-template-columns: var(--size-avatar-sm) minmax(0, 1fr) auto var(--k-feed-done,); }
+  :root[data-platform='android'] [data-kit='list-row'][data-layout='feed'] > [data-kit='dot'],
+  :root[data-platform='android'] [data-kit='list-row'][data-layout='feed'] > [data-kit='face'],
+  :root[data-platform='android'] [data-kit='list-row'][data-layout='feed'] > [data-kit='icon'][data-part~='list.row.mark'] { grid-column: 1; grid-row: 1; justify-self: center; }
   :root[data-platform='android'] [data-kit='list-row'][data-layout='feed'] > [data-kit='time'] { grid-column: 3; grid-row: 1; justify-self: end; align-self: center; text-align: end; white-space: nowrap; font-variant-numeric: tabular-nums; }
   :root[data-platform='android'] [data-kit='list-row'][data-layout='feed'] > [data-kit='list-row-pills'],
   :root[data-platform='android'] [data-kit='list-row'][data-layout='feed'][data-time] > [data-kit='list-row-pills'],
@@ -1262,4 +1269,8 @@
     :root[data-platform='android'] [data-kit='frame'][data-behind][data-page='main'] [data-kit='frame-pane'][data-pane='main'],
     :root[data-platform='android'] [data-kit='dialog'][data-place='top'] { animation: none; }
   }
+  /* v1 responsive.css: an empty Recipes list is not worth a phone's screen (Home.tsx sets data-empty on phones only);
+     Start from an issue stays, at the row's end */
+  :root[data-platform='android'] [data-kit='lr-list'][data-empty] { display: none; }
+  :root[data-platform='android'] [data-kit='lr-list'][data-empty] ~ [data-part~='launcher.issue'] { margin-inline-start: auto; }
 }

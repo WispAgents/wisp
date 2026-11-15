@@ -103,3 +103,16 @@ test('a_feed_rows_time_and_pills_each_have_their_own_line_in_one_trailing_column
     expect(body(`${R} > [data-kit='list-row-title']`), s.look).toMatch(/grid-column: 2;/);
   }
 });
+
+test('a_crew_face_rows_title_starts_at_the_same_x_as_a_dot_rows', () => {
+  // r291: the browser's 10 px dot column let a crew member's 20 px face run into the title; on the phones the leading
+  // column is one fixed width (the face's, --size-avatar-sm), the dot, the face and the mark icons centred in it, so
+  // the title (column 2) starts at one x on every row, whatever leads it
+  for (const s of sheets) {
+    const R = `:root[data-platform='${s.look}'] [data-kit='list-row'][data-layout='feed']`;
+    const body = (sel: string): string => rules(s.css).filter(([x]) => x.split(',').some((one) => one.trim() === sel)).map(([, b]) => b).join(';');
+    expect(body(R), s.look).toMatch(/grid-template-columns: var\(--size-avatar-sm\) minmax\(0, 1fr\) auto var\(--k-feed-done,\);/);
+    for (const lead of ["[data-kit='dot']", "[data-kit='face']", "[data-kit='icon'][data-part~='list.row.mark']"])
+      expect(body(`${R} > ${lead}`), `${s.look} ${lead}`).toMatch(/grid-column: 1; grid-row: 1; justify-self: center;/);
+  }
+});
