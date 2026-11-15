@@ -22,8 +22,8 @@ Rust for everything but the UI, Solid/TS for the UI, everything a plugin (ADR-00
 | Regressed | none (F-comp-1 picker restored to v1 in round 233) |
 | CI, last full run (f4679d2d) | **2nd green run: Linux 4/4 + macOS 2/2 + Windows node 22**; Windows node 24: serve_task follow-up timing (1.5 s fake vs Windows load; next: gate the fake) |
 | Budgets | initial JS 107.2 KB br (≤ 120) · CSS 27.1 KB (≤ 30) |
-| Weekly usage | 0 % (reset applied 2026-11-15): 3 coders |
-| Coders running | coder-r281 (phone step 8), coder-r282 (server budgets in CI), coder-r283 (build bundle, Tauri lock) |
+| Weekly usage | 0 % (reset applied) · **owner 2026-11-15: one coder at a time** |
+| Coders running | coder-r281 (phone step 8) |
 
 ## 3. Owner directions (standing rules)
 
@@ -36,7 +36,7 @@ Rust for everything but the UI, Solid/TS for the UI, everything a plugin (ADR-00
 - **Developer experience is first-class:** every documented command works (CI-checked); dev runs never collide with an
   installed wisp (2026-11-15).
 - **Coders:** a fresh session per job, one concern each, medium effort; each waits for its own tests and reviewer
-  before ending; up to 3 at once while weekly usage allows (warn the owner at 85 %, 1 coder at 95 %).
+  before ending; **one coder at a time** (owner, 2026-11-15; warn the owner at 85 % weekly usage).
 - **The lead:** commits by file name, by concern; pushes when the running CI finishes; never schedules check-ins
   (checks at the start of each turn); never QAs itself; questions from the owner don't reorder the plan.
 - **Order after v2 is 100 %:** the Linear TODO tickets, then continuous QA rounds by fresh low-context agents, findings
@@ -812,8 +812,8 @@ Source: `docs/v1-features.md` (each row's evidence and test). `[x]` built, `[ ]`
 
 | Round | What | State |
 |---|---|---|
-| 283 | DX: npm run build makes the published bundle; Tauri dev lock removed on Ctrl-C | in progress |
-| 282 | Server performance budgets measured in CI | in progress |
+| 283 | DX: npm run build makes the published bundle; Tauri dev lock removed on Ctrl-C | stopped (owner: one coder); to redo later |
+| 282 | Server performance budgets measured in CI | stopped (owner: one coder); to redo later |
 | 281 | Phone step 8: the app's frontend (@wisp/mobile) | in progress |
 | 280 | Pull to refresh shows its spinner until the reconnect settles | committed |
 | 279 | machines.removed after the peer is cleared from memory | committed |
