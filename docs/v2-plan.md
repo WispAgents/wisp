@@ -20,10 +20,10 @@ Rust for everything but the UI, Solid/TS for the UI, everything a plugin (ADR-00
 |---|---|
 | v1 features | **315 built · 7 partial · 5 missing · 4 dropped** of 331 (§6) |
 | Regressed | none (F-comp-1 picker restored to v1 in round 233) |
-| CI, last full run (708ba936) | Linux 4/4 green (23-32 min) · macOS 24 green · macOS 22: Dialog focus bug (fixed r256) · **Windows**: 6 failing targets + a leaked `opencode` holding the tee pipe, cancelled at 60 min (r257) |
+| CI, last full run (c4123885) | every suite stopped at `npm run check` (docs/dev.md cited git-ignored qa/out; fixed 8bb8ccd0) · Windows verify step: web tests build `D:\D:\` paths, python SDK cwd (r258) · Windows cargo test not reached: run on 8bb8ccd0 decides |
 | Budgets | initial JS 107.2 KB br (≤ 120) · CSS 27.1 KB (≤ 30) |
 | Weekly usage | 91 % (pace 176 %: down to 1 coder) |
-| Coders running | none |
+| Coders running | coder-r258 (Windows test paths), coder-r259 (commands rule on tracked files) |
 
 ## 3. Owner directions (standing rules)
 
@@ -744,6 +744,8 @@ Source: `docs/v1-features.md` (each row's evidence and test). `[x]` built, `[ ]`
 
 | Round | What | State |
 |---|---|---|
+| 259 | `commands` check rule resolves paths against tracked files (an ignored local folder passed locally, failed in CI) | in progress |
+| 258 | Windows: `new URL(import.meta.url).pathname` paths in web tests (and repo-wide), python SDK cwd | in progress |
 | 257 | Windows CI: nursery job (ADR-0070), long paths, Ctrl-C, 4 test fixes | committed (7ccc17f3, d90e5992, 85841811; lead-verified on macOS + windows-target clippy; proof = next ci:full) |
 | 256 | Dialog focus return: a real bug (Zag trap picks its target late; opened before the machine loaded, focus stayed on body), fixed in Dialog | committed (45b105df) |
 | 255 | docs/dev.md: clone to running, debugging, one test per area, troubleshooting (every command run) | committed (b3b5b3d9) |
