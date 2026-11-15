@@ -1,8 +1,9 @@
 // The harness picker's model (src/frame/picker.ts, v1 runner-picker.js): the left pane's rows and sub-lines, the pane
 // that shows on open, the right pane's model groups, and what each pick changes.
 import { expect, test } from 'vitest';
-import { firstFocus, goalOf, modelGroups, pickerRows, searchShown, stepRow, subLine, useHarness, withModel, withSetting } from '../src/frame/picker.ts';
+import { firstFocus, goalOf, modelGroups, pickerRows, searchShown, stepRow, subLine, useHarness, varyRows, withModel, withSetting, withVary } from '../src/frame/picker.ts';
 import type { AgentOffer } from '../src/frame/runner.ts';
+import { compareWords, newRun, sameSetup } from '../src/frame/trial.ts';
 
 const CLAUDE: AgentOffer = {
   id: 'claude',
@@ -102,4 +103,43 @@ test('a_harness_press_uses_it_at_once_a_model_pick_carries_the_level_over_settin
   expect(withSetting(v, 'claude', { effort: 'low' })).toEqual({ ...v, effort: 'low' });
   expect(withSetting(v, 'codex', { account: 'b', accountLabel: 'B' })).toEqual({ agent: 'codex', model: '', effort: '', account: 'b', accountLabel: 'B' });
   expect([goalOf('cheap'), goalOf('nope'), goalOf(''), goalOf(undefined)]).toEqual(['cheap', 'balanced', 'balanced', 'balanced']);
+});
+
+test('vary_rows_subagents_show_the_setting_until_the_run_picks_its_own_skills_on_unless_off_only_what_the_harness_varies', () => {
+  expect(varyRows([], undefined, '')).toEqual([]);
+  expect(varyRows(['subagentModel', 'skills'], undefined, 'haiku')).toEqual([
+    { id: 'subagentModel', options: ['', 'haiku', 'sonnet'], value: 'haiku' },
+    { id: 'skills', options: ['on', 'off'], value: 'on' },
+  ]);
+  // the run's own pick wins over the setting, '' (the task's model) included
+  expect(varyRows(['subagentModel'], { subagentModel: '' }, 'haiku')).toEqual([{ id: 'subagentModel', options: ['', 'haiku', 'sonnet'], value: '' }]);
+  expect(varyRows(['skills'], { skills: 'off' }, '')).toEqual([{ id: 'skills', options: ['on', 'off'], value: 'off' }]);
+});
+
+test('with_vary_a_segment_changes_one_setting_and_keeps_the_other_skills_on_drops_its_key', () => {
+  expect(withVary(undefined, 'subagentModel', 'haiku')).toEqual({ subagentModel: 'haiku' });
+  expect(withVary({ subagentModel: 'haiku' }, 'skills', 'off')).toEqual({ subagentModel: 'haiku', skills: 'off' });
+  expect(withVary({ subagentModel: 'haiku', skills: 'off' }, 'skills', 'on')).toEqual({ subagentModel: 'haiku' });
+  expect(withVary({ skills: 'off' }, 'subagentModel', '')).toEqual({ skills: 'off', subagentModel: '' });
+});
+
+test('a_compare_run_is_a_copy_of_the_lead_only_on_the_same_harness_model_and_thinking_and_says_its_own_model', () => {
+  const lead = { agent: 'claude', model: 'opus', effort: 'high' };
+  expect(sameSetup({ ...lead }, lead)).toBe(true);
+  expect(sameSetup({ ...lead, model: 'sonnet' }, lead)).toBe(false);
+  expect(sameSetup({ ...lead, effort: '' }, lead)).toBe(false);
+  expect(sameSetup({ ...lead, agent: 'codex' }, lead)).toBe(false);
+  // its name's words: the model's name, never "Default"; thinking and account stay in the tooltip (v1 .runners.cmp)
+  expect(compareWords({ agent: 'codex', model: '', effort: 'high', account: 'w' })).toBe('');
+  expect(compareWords({ agent: 'claude', model: 'opus', effort: 'high', modelLabel: 'Opus 5.5' })).toBe('Opus 5.5');
+  expect(compareWords({ agent: 'codex', model: 'gpt-5', effort: '' })).toBe('gpt-5');
+});
+
+test('a_copy_of_the_lead_added_with_plus_starts_from_the_lead_s_model_thinking_and_account_so_try_it_two_ways_is_offered_at_once', () => {
+  const lead = { agent: 'claude', model: 'opus', effort: 'high', account: 'w', modelLabel: 'Opus 5.5', accountLabel: 'Work' };
+  const copy = newRun('claude', lead);
+  expect(copy).toEqual(lead);
+  expect(sameSetup(copy, lead)).toBe(true);
+  // another harness: its own defaults, never the lead's model
+  expect(newRun('codex', lead)).toEqual({ agent: 'codex', model: '', effort: '', account: '' });
 });

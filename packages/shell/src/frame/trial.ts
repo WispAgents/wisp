@@ -2,6 +2,7 @@
 // the run added with + is the copy; F-comp-31, ADR-0056): run B's one changed setting in the launcher, the trial the
 // launch sends, a run's variant in words for its row and Compare's column, and what differed. Pure, DOM-free.
 import type { MenuEntry } from '@wisp/ui';
+import type { Runner } from './runner.ts';
 
 type T = (key: string, params?: Readonly<Record<string, string | number>>) => string;
 
@@ -26,7 +27,7 @@ export interface TrialLink {
   readonly kept?: string | null;
 }
 
-const SUBAGENT_NAME: Readonly<Record<string, string>> = { haiku: 'Haiku', sonnet: 'Sonnet' };
+export const SUBAGENT_NAME: Readonly<Record<string, string>> = { haiku: 'Haiku', sonnet: 'Sonnet' };
 /** a menu value of What's different (never a harness id: those have no ':') */
 const SUB = 'vary:sub:';
 const SKILLS = 'vary:skills:';
@@ -124,3 +125,15 @@ export function variantOf(summary: Readonly<Record<string, unknown>> | undefined
 export function runOrder<R extends { readonly created_at: number; readonly summary: Readonly<Record<string, unknown>> }>(rows: readonly R[]): R[] {
   return [...rows].sort((a, b) => (trialOf(a.summary)?.run ?? 0) - (trialOf(b.summary)?.run ?? 0) || a.created_at - b.created_at);
 }
+
+/** A compare run is a copy of the lead (Try it two ways' ground): the same harness, model and thinking level. */
+export const sameSetup = (r: Pick<Runner, 'agent' | 'model' | 'effort'>, lead: Pick<Runner, 'agent' | 'model' | 'effort'>): boolean =>
+  r.agent === lead.agent && r.model === lead.model && r.effort === lead.effort;
+
+/** A compare run's own words after its name (v1 .rb-m in a compare: thinking and account fold away there, the tooltip
+ * keeps them): its model's name, '' on the harness's default. */
+export const compareWords = (r: Runner): string => (r.model ? r.modelLabel || r.model : '');
+
+/** A run added with + (v1 vsBtn.onclick): a copy of the lead starts from the lead's model, thinking and account, so it's
+ * Try it two ways' ground at once; another harness starts from its defaults. */
+export const newRun = (agent: string, lead: Runner): Runner => (agent === lead.agent ? { ...lead } : { agent, model: '', effort: '', account: '' });

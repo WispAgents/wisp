@@ -68,7 +68,7 @@ Rust for everything but the UI, Solid/TS for the UI, everything a plugin (ADR-00
 - [x] Multi-project pick (click = only, + adds, strip with Only/All) (round 133)
 - [x] Composer `@` and `/`
 - [x] Harness picker back to v1: one pill, one two-pane popover (round 233, 6e3fe42e)
-- [ ] "What will Auto run" (odds, alternatives, Never pick this model) unreachable since round 233; extra compare runs still use the plain list: **in progress, coder-r236**
+- [x] "What will Auto run" back on the pill as v1 (#autoPv: Auto's pick is the pill's own segment, opens the AutoPop); extra compare runs open the same two-pane picker with their own model · thinking · account and What's different (round 236, uncommitted)
 - [ ] **Parity gate** (`qa/parity.mjs`): baseline 0/96 on 2026-11-10; per-view burn-down in `docs/v2-ui-burndown.md`;
       **not re-measured as a whole since**: the batched pass (§4.8) runs it on every view, width and theme
 - [ ] Layout and feedback gates on every view (browser and phone views): to run in the batched pass

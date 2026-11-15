@@ -28,7 +28,8 @@ import {
   type PlanWindow,
   type Runner,
 } from './runner.ts';
-import { AUTO, AUTO_GOALS, firstFocus, goalOf, modelGroups, pickerRows, searchShown, useHarness, withModel, withSetting, type SubLine } from './picker.ts';
+import { AUTO, AUTO_GOALS, firstFocus, goalOf, modelGroups, pickerRows, searchShown, useHarness, varyRows, withModel, withSetting, withVary, type SubLine, type VaryKey } from './picker.ts';
+import { SUBAGENT_NAME, type Variant } from './trial.ts';
 import '../i18n/lazy.ts';
 
 /** v1 effortLabel: "X-High", else the level capitalised */
@@ -79,6 +80,17 @@ export interface RunnerPickerProps {
   /** true: it can pick one of the harness's accounts (New task); elsewhere the run keeps its own */ readonly accounts?: boolean;
   /** where the caret goes once a pick closes it (the prompt) */
   readonly back?: () => HTMLElement | undefined;
+  /** Try it two ways (a compare run, v1 runnerPicker `variant`): What's different under the pane of a harness that runs
+   * variants (`can`); a segment commits in place, moving the run to that harness if it wasn't on it */
+  readonly vary?:
+    | {
+        /** the settings `agent` can vary for the run as it would be there (`r`) */
+        readonly can: (agent: string, r: Runner) => readonly string[];
+        readonly value: Variant | undefined;
+        readonly setting: string;
+        readonly onChange: (v: Variant, r: Runner) => void;
+      }
+    | undefined;
 }
 
 export function RunnerPicker(props: RunnerPickerProps): JSX.Element {
@@ -160,6 +172,10 @@ function PickerOpen(props: RunnerPickerProps): JSX.Element {
         return t('shell.runner.defaultModel');
     }
   };
+  const varyLabel = (row: VaryKey, o: string): string =>
+    row === 'skills' ? t(o === 'off' ? 'shell.try.off' : 'shell.try.on') : o ? (SUBAGENT_NAME[o] ?? o) : t('shell.try.taskModel');
+  const varyTitle = (row: VaryKey, o: string): string =>
+    row === 'skills' ? t(o === 'off' ? 'shell.try.offHint' : 'shell.try.onHint') : o ? t('shell.try.subOn', { name: SUBAGENT_NAME[o] ?? o }) : t('shell.try.subTask');
   // the harness whose pane shows: the one in use on open (v1 focusAgent), then wherever you arrow or press
   const [focus, setFocus] = createSignal<string | undefined>();
   const focused = (): string => focus() ?? firstFocus(rows(), props.value.agent);
@@ -246,6 +262,10 @@ function PickerOpen(props: RunnerPickerProps): JSX.Element {
         ),
       };
     const levels = props.efforts === false ? [] : effortsFor(agents(), current());
+    // What's different: on the run's own harness its variant, on another what it would start from
+    const vary = props.vary;
+    const was = id === props.value.agent ? vary?.value : undefined;
+    const varied = vary ? varyRows(vary.can(id, current()), was, vary.setting) : [];
     const accs = accounts();
     const accValue = accountFor(accs, current().account);
     const accNotes = accs.filter((x) => x.state === 'limit' || x.state === 'signedOut').map((x) => t(x.state === 'limit' ? 'shell.runner.accountAtLimit' : 'shell.runner.accountIsOut', { name: x.label }));
@@ -279,6 +299,19 @@ function PickerOpen(props: RunnerPickerProps): JSX.Element {
           ...(accNotes.length > 0 && { note: accNotes.join(' ') }),
         },
       }),
+      ...(vary &&
+        varied.length > 0 && {
+          vary: {
+            label: t('shell.try.differs'),
+            rows: varied.map((r) => ({
+              id: r.id,
+              label: t(r.id === 'skills' ? 'shell.try.skills' : 'shell.try.subagents'),
+              options: r.options.map((o) => ({ id: o, label: varyLabel(r.id, o), title: varyTitle(r.id, o) })),
+              value: r.value,
+              onPick: (o: string) => vary.onChange(withVary(was, r.id, o), current()),
+            })),
+          },
+        }),
     };
   });
   const viewRows = createMemo((): HarnessPickerRow[] =>

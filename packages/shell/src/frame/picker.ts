@@ -116,3 +116,29 @@ export function withSetting(value: Runner, focused: string, change: { readonly e
   const base: Runner = focused === value.agent ? value : { agent: focused, model: '', effort: '', account: '' };
   return { ...base, ...change };
 }
+
+/** What's different (Try it two ways, v1 runner-picker.js paintVariant): which setting a row changes. */
+export type VaryKey = 'subagentModel' | 'skills';
+
+export interface VaryRow {
+  readonly id: VaryKey;
+  /** '' (the task's model), 'haiku', 'sonnet'; or 'on', 'off' */
+  readonly options: readonly string[];
+  readonly value: string;
+}
+
+/** The rows the pane shows under the rest for a copy of the lead (`can`: its harness's `variants`): Subagents showing
+ * what the run would really use (the setting included), then Skills (on unless turned off). None: no group. */
+export function varyRows(can: readonly string[], v: { readonly subagentModel?: string; readonly skills?: string } | undefined, setting: string): VaryRow[] {
+  const out: VaryRow[] = [];
+  if (can.includes('subagentModel')) out.push({ id: 'subagentModel', options: ['', 'haiku', 'sonnet'], value: v?.subagentModel ?? setting });
+  if (can.includes('skills')) out.push({ id: 'skills', options: ['on', 'off'], value: v?.skills === 'off' ? 'off' : 'on' });
+  return out;
+}
+
+/** A segment pressed on a What's different row (v1 chooseVariant): the run's new variant; Skills on keeps no key. */
+export function withVary(v: { readonly subagentModel?: string; readonly skills?: string } | undefined, row: VaryKey, option: string): { subagentModel?: string; skills?: string } {
+  if (row === 'subagentModel') return { ...v, subagentModel: option };
+  const { skills: _skills, ...rest } = v ?? {};
+  return option === 'off' ? { ...rest, skills: 'off' } : rest;
+}

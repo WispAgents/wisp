@@ -3,6 +3,7 @@ import { expect, test } from 'vitest';
 import { createSignal } from 'solid-js';
 import { mount } from './helpers.tsx';
 import { HarnessPicker, pickerPlace, type HarnessPickerPane } from '../src/app/HarnessPicker.tsx';
+import { Launcher, type LauncherProps } from '../src/app/Home.tsx';
 
 const ROWS = [
   { id: 'auto', name: 'Auto', auto: true, sub: 'Picks per task' },
@@ -170,4 +171,135 @@ test('a_refresh_rebuilding_the_rows_and_the_pane_keeps_each_node_and_the_focus_i
   expect(document.activeElement).toBe(goal);
   expect(document.querySelectorAll('[data-kit="pk-h"]')[2]).toBe(codex);
   expect(codex?.querySelector('small')?.textContent).toBe('2 models');
+});
+
+test('what_s_different_a_row_of_segments_per_setting_under_the_pane_a_press_commits_in_place_v1_pk_vary', () => {
+  const anchor = document.createElement('button');
+  document.body.append(anchor);
+  const picked: string[] = [];
+  const [sub, setSub] = createSignal('');
+  let closed = 0;
+  mount(() => (
+    <HarnessPicker
+      anchor={() => anchor}
+      label="Harness and model"
+      head="Harness"
+      rows={ROWS.slice(1)}
+      inUse="claude"
+      inUseLabel="In use"
+      focused="claude"
+      onPreview={() => undefined}
+      onUse={() => undefined}
+      pane={{
+        label: 'Model',
+        groups: [{ items: [{ id: '', label: 'Default' }] }],
+        value: '',
+        onPick: () => undefined,
+        empty: 'No models match',
+        vary: {
+          label: 'What’s different',
+          rows: [
+            { id: 'subagentModel', label: 'Subagents', options: [{ id: '', label: 'Task’s model' }, { id: 'haiku', label: 'Haiku', title: 'Subagents run on Haiku' }, { id: 'sonnet', label: 'Sonnet' }], value: sub(), onPick: (o) => (setSub(o), picked.push(`sub:${o}`)) },
+            { id: 'skills', label: 'Skills', options: [{ id: 'on', label: 'On' }, { id: 'off', label: 'Off' }], value: 'on', onPick: (o) => picked.push(`skills:${o}`) },
+          ],
+        },
+      }}
+      onClose={() => closed++}
+    />
+  ));
+  const box = document.querySelector('[data-part="runner.vary"]') as HTMLElement;
+  expect(box.getAttribute('role')).toBe('group');
+  expect(box.querySelector('[data-kit="pk-head"]')?.textContent).toBe('What’s different');
+  const rows = [...box.querySelectorAll('[role="radiogroup"]')];
+  expect(rows.map((r) => r.getAttribute('aria-label'))).toEqual(['Subagents', 'Skills']);
+  const segs = (i: number): HTMLButtonElement[] => [...(rows[i]?.querySelectorAll<HTMLButtonElement>('button') ?? [])];
+  expect(segs(0).map((b) => [b.textContent, b.getAttribute('aria-checked')])).toEqual([
+    ['Task’s model', 'true'],
+    ['Haiku', 'false'],
+    ['Sonnet', 'false'],
+  ]);
+  expect(segs(0)[1]?.title).toBe('Subagents run on Haiku');
+  // a press commits in place: checked at once, the picker stays open, the same nodes
+  const haiku = segs(0)[1];
+  haiku?.click();
+  segs(1)[1]?.click();
+  expect(picked).toEqual(['sub:haiku', 'skills:off']);
+  expect(segs(0)[1]).toBe(haiku);
+  expect(haiku?.getAttribute('aria-checked')).toBe('true');
+  expect(closed).toBe(0);
+});
+
+const launcher = (runner: Partial<LauncherProps['runner']>): LauncherProps => ({
+  inLabel: 'in',
+  chips: [],
+  placeholder: 'What should I do?',
+  value: '',
+  onInput: () => undefined,
+  onSend: () => undefined,
+  mode: { label: 'Full auto', title: 'Mode' },
+  runner: { label: 'Auto', title: 'Harness, model and thinking level', auto: true, pick: 'Claude Code', pickTitle: 'Auto will run Claude Code', compare: 'Compare', ...runner },
+  lead: [],
+  mid: [],
+  tail: [],
+  sendLabel: 'Send',
+  recipes: { label: 'Recipes', empty: '', add: 'New', issue: 'Issue', issueTitle: 'Issue' },
+});
+
+test('auto_s_pick_is_the_pill_s_own_segment_after_auto_its_press_opens_what_will_auto_run_not_the_picker_v1_autoPv', () => {
+  const pressed: string[] = [];
+  const [open, setOpen] = createSignal(false);
+  const [auto, setAuto] = createSignal(true);
+  mount(() => (
+    <Launcher
+      {...launcher({})}
+      runner={{
+        ...launcher({}).runner,
+        auto: auto(),
+        act: { onClick: () => pressed.push('picker') },
+        pickAct: { onClick: () => (pressed.push('auto-pop'), setOpen(!open())) },
+        pickOpen: open(),
+      }}
+    />
+  ));
+  const pill = document.querySelector('[data-kit="runners"]') as HTMLElement;
+  // one pill: "Auto" (the harness picker), the pick (what will Auto run), the + — no button beside it
+  const harness = pill.querySelector<HTMLButtonElement>('[data-part="launcher.harness"]');
+  const pick = pill.querySelector<HTMLButtonElement>(':scope > [data-part="launcher.autoPreview"]');
+  expect(pick?.tagName).toBe('BUTTON');
+  expect(harness?.contains(pick ?? null)).toBe(false);
+  expect(pick?.getAttribute('aria-haspopup')).toBe('dialog');
+  expect(pick?.getAttribute('aria-label')).toBe('Auto will run Claude Code');
+  expect(pick?.textContent).toBe('Claude Code');
+  pick?.click();
+  expect(pressed).toEqual(['auto-pop']);
+  expect(pick?.getAttribute('aria-expanded')).toBe('true');
+  expect(pill.hasAttribute('data-open')).toBe(true);
+  harness?.click();
+  expect(pressed).toEqual(['auto-pop', 'picker']);
+  // a harness of your own: no Auto pick; its model rides in the harness's button (v1 .rb-m), one press
+  setAuto(false);
+  expect(pill.querySelector('[data-part="launcher.autoPreview"]')).toBeNull();
+  expect(pill.querySelector('[data-part="launcher.harness"] [data-part="launcher.model"]')?.textContent).toBe('Claude Code');
+});
+
+test('a_compare_run_s_button_opens_its_picker_and_says_its_own_model_lit_while_open', () => {
+  const pressed: number[] = [];
+  const [open, setOpen] = createSignal(false);
+  mount(() => (
+    <Launcher
+      {...launcher({})}
+      runner={{
+        ...launcher({}).runner,
+        compares: [{ label: 'Codex', removeLabel: 'Remove Codex', onRemove: () => undefined, model: 'GPT-5', act: { onClick: () => (pressed.push(0), setOpen(true)) }, open: open() }],
+      }}
+    />
+  ));
+  const run = document.querySelector<HTMLButtonElement>('[data-part="launcher.compare.runner"]');
+  expect(run?.getAttribute('aria-haspopup')).toBe('dialog');
+  expect(run?.querySelector('[data-part="launcher.compare.model"]')?.textContent).toBe('GPT-5');
+  expect(run?.title).toBe('Codex · GPT-5');
+  run?.click();
+  expect(pressed).toEqual([0]);
+  expect(run?.getAttribute('aria-expanded')).toBe('true');
+  expect(document.querySelector('[data-kit="runners"]')?.hasAttribute('data-open')).toBe(true);
 });

@@ -54,6 +54,19 @@ export interface HarnessPickerPane {
         readonly note?: string | undefined;
       }
     | undefined;
+  /** Try it two ways' What's different (v1 .pk-vary): a row of segments per setting under the rest; a pick commits in place */
+  readonly vary?:
+    | {
+        readonly label: string;
+        readonly rows: readonly {
+          readonly id: string;
+          readonly label: string;
+          readonly options: readonly { readonly id: string; readonly label: string; readonly title?: string | undefined }[];
+          readonly value: string;
+          readonly onPick: (id: string) => void;
+        }[];
+      }
+    | undefined;
   /** in place of the list: how to set up or sign in to a harness that can't run yet */
   readonly body?: JSX.Element;
 }
@@ -337,6 +350,31 @@ export function HarnessPicker(props: HarnessPickerProps): JSX.Element {
                 <Show when={acc().note}>
                   <p data-kit="pk-anote">{acc().note}</p>
                 </Show>
+              </div>
+            )}
+          </Show>
+          <Show when={p().body === undefined && p().vary}>
+            {(v) => (
+              <div data-kit="pk-vary" data-part="runner.vary" role="group" aria-label={v().label}>
+                <div data-kit="pk-head" aria-hidden="true">
+                  {v().label}
+                </div>
+                <Index each={v().rows}>
+                  {(r) => (
+                    <div data-kit="pk-effort" role="radiogroup" aria-label={r().label} data-id={r().id}>
+                      <span data-kit="pk-ehead">{r().label}</span>
+                      <span data-kit="pk-seg">
+                        <Index each={r().options}>
+                          {(o) => (
+                            <button type="button" role="radio" aria-checked={o().id === r().value ? 'true' : 'false'} title={o().title} onClick={() => r().onPick(o().id)}>
+                              <span data-text="control">{o().label}</span>
+                            </button>
+                          )}
+                        </Index>
+                      </span>
+                    </div>
+                  )}
+                </Index>
               </div>
             )}
           </Show>

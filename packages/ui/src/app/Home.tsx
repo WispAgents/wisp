@@ -87,7 +87,12 @@ export interface LauncherCompare {
   /** "Remove Codex from the comparison" */
   readonly removeLabel: string;
   readonly onRemove: () => void;
+  /** its press: the harness picker for this run (v1 runnerPicker on .runner-btn.cmp-x) */
   readonly act: Act;
+  /** its picker is open: the button stays lit while it is */
+  readonly open?: boolean;
+  /** the run's own model · thinking · account (v1 .rb-m), after the name; none on Default */
+  readonly model?: string | undefined;
   /** Try it two ways: a copy of the lead's words for its one change ("Subagents on Haiku"), after the name */
   readonly variant?: readonly string[];
 }
@@ -124,10 +129,14 @@ export interface LauncherProps {
     readonly pickTitle: string;
     readonly logo?: string;
     readonly compare: string;
-    /** the one pill (v1 .runner-btn): harness and pick together, ONE press that opens the harness picker */
+    /** the pill's harness button (v1 .runner-btn): ONE press that opens the harness picker; a harness's model rides in it */
     readonly act?: Act;
     /** the harness picker is open: the pill stays lit while it is */
     readonly open?: boolean;
+    /** Auto's pick, its own segment of the same pill (v1 #autoPv): what will Auto run, the AutoPop */
+    readonly pickAct?: Act;
+    /** the AutoPop is open: the pick stays lit while it is */
+    readonly pickOpen?: boolean;
     /** the pill's first hover or focus: fetch the picker's code (ADR-0067) */
     readonly onWarm?: () => void;
     readonly compareAct?: Act;
@@ -354,7 +363,7 @@ export function Launcher(props: LauncherProps): JSX.Element {
               </button>
             )}
           />
-          <div data-kit="runners" data-open={flag(props.runner.open)} data-cmp={flag((props.runner.compares?.length ?? 0) > 0)} data-many={flag((props.runner.compares?.length ?? 0) > 1)}>
+          <div data-kit="runners" data-open={flag(props.runner.open === true || props.runner.pickOpen === true || (props.runner.compares ?? []).some((c) => c.open === true))} data-cmp={flag((props.runner.compares?.length ?? 0) > 0)} data-many={flag((props.runner.compares?.length ?? 0) > 1)}>
             <WithAct
               act={props.runner.act}
               render={(trigger) => (
@@ -364,9 +373,10 @@ export function Launcher(props: LauncherProps): JSX.Element {
                   data-kit="runner-btn"
                   data-part="launcher.harness"
                   data-lead=""
+                  data-auto={flag(props.runner.auto)}
                   aria-haspopup="dialog"
                   aria-expanded={props.runner.open ? 'true' : 'false'}
-                  title={props.runner.auto ? props.runner.pickTitle : props.runner.title}
+                  title={props.runner.title}
                   onPointerEnter={() => props.runner.onWarm?.()}
                   onFocus={() => props.runner.onWarm?.()}
                 >
@@ -386,20 +396,42 @@ export function Launcher(props: LauncherProps): JSX.Element {
                     {props.runner.label}
                   </span>
                   <Icon name="chevron" />
-                  {/* what it runs, in the same pill: Auto's pick with its logo (v1 .auto-pv), else the model · thinking · account (v1 .rb-m) */}
-                  <span data-kit="auto-pv" data-part={props.runner.auto ? 'launcher.autoPreview' : 'launcher.model'}>
-                    <Show when={props.runner.auto}>
-                      <span data-kit="rb-logo" data-small="">
-                        <Show when={props.runner.logo}>{(src) => <img src={src()} alt="" />}</Show>
+                  {/* a harness's model · thinking · account, in its button (v1 .rb-m) */}
+                  <Show when={!props.runner.auto}>
+                    <span data-kit="auto-pv" data-part="launcher.model">
+                      <span data-kit="apv-l" data-text="control">
+                        {props.runner.pick}
                       </span>
-                    </Show>
-                    <span data-kit="apv-l" data-text="control">
-                      {props.runner.pick}
                     </span>
-                  </span>
+                  </Show>
                 </button>
               )}
             />
+            {/* Auto's pick with its logo: the pill's own segment after "Auto" (v1 #autoPv), what will Auto run */}
+            <Show when={props.runner.auto}>
+              <WithAct
+                act={props.runner.pickAct}
+                render={(trigger) => (
+                  <button
+                    type="button"
+                    {...trigger()}
+                    data-kit="auto-pv"
+                    data-part="launcher.autoPreview"
+                    aria-haspopup="dialog"
+                    aria-expanded={props.runner.pickOpen ? 'true' : 'false'}
+                    title={props.runner.pickTitle}
+                    aria-label={props.runner.pickTitle}
+                  >
+                    <span data-kit="rb-logo" data-small="">
+                      <Show when={props.runner.logo}>{(src) => <img src={src()} alt="" />}</Show>
+                    </span>
+                    <span data-kit="apv-l" data-text="control">
+                      {props.runner.pick}
+                    </span>
+                  </button>
+                )}
+              />
+            </Show>
             <Index each={props.runner.compares ?? []}>
               {(c) => (
                 <>
@@ -417,7 +449,9 @@ export function Launcher(props: LauncherProps): JSX.Element {
                         data-cmp=""
                         data-vary={c().variant?.length ? '' : undefined}
                         data-part="launcher.compare.runner"
-                        title={[c().label, ...(c().variant ?? [])].join(' · ')}
+                        aria-haspopup="dialog"
+                        aria-expanded={c().open ? 'true' : 'false'}
+                        title={[c().label, ...(c().model ? [c().model as string] : []), ...(c().variant ?? [])].join(' · ')}
                       >
                         <span data-kit="rb-logo" data-small="">
                           <Show when={c().logo}>{(src) => <img src={src()} alt="" />}</Show>
@@ -425,6 +459,13 @@ export function Launcher(props: LauncherProps): JSX.Element {
                         <span data-kit="rb-h" data-text="control">
                           {c().label}
                         </span>
+                        <Show when={c().model}>
+                          {(m) => (
+                            <span data-kit="rb-v" data-text="control" data-part="launcher.compare.model">
+                              {m()}
+                            </span>
+                          )}
+                        </Show>
                         <For each={c().variant ?? []}>
                           {(w) => (
                             <span data-kit="rb-v" data-text="control" data-part="launcher.compare.variant">

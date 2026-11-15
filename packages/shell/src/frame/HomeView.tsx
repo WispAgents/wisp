@@ -22,7 +22,8 @@ import { useNow } from '../clock.ts';
 import { SESSION, type SessionRow } from '../rows.ts';
 import { longTime, sectionOf, shortAgo, statusOf } from './rows-view.ts';
 import { autoBlocked, autoPreview, autoRules, create, setSetting, trial, type Attachment } from './commands.ts';
-import { pickVary, settingModel, trialVary, varyMenu, variantWords, type Variant } from './trial.ts';
+import { compareWords, newRun, sameSetup, settingModel, trialVary, variantWords, type Variant } from './trial.ts';
+import type { Runner } from './runner.ts';
 import { goalGate, goalOf, goalSent, isBareGoal, typedInFull, type HomeGoal } from './goal-gate.ts';
 import { feedbackCommand, isFeedback, openFeedback } from './feedback.ts';
 import { autoPick, neverRule, runnerPick, overrideOf, popOf, pct, PREVIEW_DEBOUNCE, shortLabel, usd, type AutoPreview } from './auto.ts';
@@ -34,7 +35,7 @@ import { placeOn } from './run-on.ts';
 import { alsoToggle, dirsOf, launchOf, parsePick, startAt } from './project-pick.ts';
 import { promptKeys, remember, sentStore } from './prompt-keys.ts';
 import { draftValue, launcherDraft } from './drafts.ts';
-import { MODE_ICON, agentMenu, agentName, modeMenu, teamMenu, teamPrefill, teamRows, whenAt, whenMenu, type Mode, type When } from './pickers.ts';
+import { MODE_ICON, agentName, modeMenu, teamMenu, teamPrefill, teamRows, whenAt, whenMenu, type Mode, type When } from './pickers.ts';
 
 // the harness picker opens on a press: it loads apart from the first page (ADR-0011, ADR-0067), as Home first draws,
 // with the controls once the page is idle (preloadControls) and on the pill's first hover or focus, so the first press
@@ -123,14 +124,18 @@ export function HomeView(props: { readonly onBack?: () => void }): JSX.Element {
     input?.focus();
   };
   // vs (v1 launcher.js compare): the same task on more harnesses, side by side; picks here don't touch the defaults
-  const [runs, setRuns] = createSignal<readonly string[]>([]);
+  // each its own harness, model, thinking and account, picked in the same harness picker as the lead (v1 runnerPicker)
+  const [runs, setRuns] = createSignal<readonly Runner[]>([]);
+  // the run whose harness picker is open (its place in runs), if any
+  const [cmpPicker, setCmpPicker] = createSignal<number | undefined>();
   // Try it two ways (v1 #650, #771): the one run added with + on the lead's harness may change one setting
   const [vary, setVary] = createSignal<Variant | undefined>();
   const subSetting = (): string => settingModel(settings().find((r) => r.key === 'runtime.subagentModel')?.value);
-  /** What's different: only for a lone copy of the lead on a harness that runs variants */
-  const varies = (a: string, i: number): readonly string[] =>
+  /** What's different: only for a lone copy of the lead (its harness, model and thinking: one setting changes) on a
+   * harness that runs variants */
+  const varies = (r: Runner, i: number): readonly string[] =>
     // each run needs a worktree of its own: no project, no trial (the launch would be a plain compare)
-    i === 0 && runs().length === 1 && a === agent() && project() ? (harnesses().find((h) => h.id === a)?.variants ?? []) : [];
+    i === 0 && runs().length === 1 && sameSetup(r, { agent: agent(), model: model(), effort: effort() }) && project() ? (harnesses().find((h) => h.id === r.agent)?.variants ?? []) : [];
   const [team, setTeam] = createSignal<ReadonlySet<string>>(new Set());
   // the team new tasks start with (Settings, `runtime.subagents`): pre-filled until you pick your own
   let teamTouched = false;
@@ -324,8 +329,9 @@ export function HomeView(props: { readonly onBack?: () => void }): JSX.Element {
     const extra = runs();
     const group = extra.length > 0 ? newGroup(crypto.getRandomValues(new Uint8Array(6))) : undefined;
     // the copy of the lead with one setting changed: one runtime.trial (both runs linked, a worktree each)
-    const tried = p && runner.agent !== 'auto' ? trialVary(agent(), extra, vary(), subSetting()) : undefined;
+    const tried = p && runner.agent !== 'auto' && extra.length === 1 && varies(extra[0] as Runner, 0).length > 0 ? trialVary(agent(), extra.map((r) => r.agent), vary(), subSetting()) : undefined;
     setRuns([]);
+    setCmpPicker(undefined);
     setVary(undefined);
     // the other folders it works in: on this computer only (another one has its own checkouts, placed per folder later)
     const dirs = target() === home ? dirsOf(p, also(), projects()) : [];
@@ -382,13 +388,16 @@ export function HomeView(props: { readonly onBack?: () => void }): JSX.Element {
         })
         .catch(() => (setText(prompt), goalBack()));
       // the other runs after the lead, so the lead is run A (Compare orders runs by when they started)
-      for (const a of extra) {
+      for (const r of extra) {
         shell.client.commands
           .run(create, {
             peer: target(),
             id: entityKey(target(), newRowId()),
             prompt,
-            agent: a,
+            agent: r.agent,
+            ...(r.model && { model: r.model }),
+            ...(r.effort && { effort: r.effort }),
+            ...(r.account && { account: r.account }),
             mode: mode(),
             at: Date.now(),
             group: group ?? '',
@@ -522,46 +531,46 @@ export function HomeView(props: { readonly onBack?: () => void }): JSX.Element {
           ...(pick().logo && { logo: pick().logo }),
           compare: runs().length > 0 ? t('shell.home.compareMore', { n: MAX_RUNNERS }) : t('shell.home.compare'),
           // ONE pill, ONE press: the two-pane harness picker (v1 runner-picker.js); model, thinking and account are its right pane
-          act: { onClick: () => setPicker(!picker()) },
+          act: { onClick: () => (setAutoPop(false), setCmpPicker(undefined), setPicker(!picker())) },
           open: picker(),
           onWarm: warmPicker,
+          // what will Auto run: Auto's pick, the pill's own segment (v1 #autoPv), opens the AutoPop
+          pickAct: { onClick: () => (setPicker(false), setCmpPicker(undefined), setAutoPop(!autoPop())) },
+          pickOpen: autoPop(),
           compareAct: {
             onClick: () => {
+              const was = runs();
               const next = nextRun(
                 agent(),
-                runs(),
+                was.map((r) => r.agent),
                 harnesses().map((h) => h.id),
               );
               if (next) {
-                setRuns([...runs(), next]);
+                const a = account();
+                setRuns([...was, newRun(next, { agent: agent(), model: model(), effort: effort(), account: a?.id ?? '', ...(modelLabel() && { modelLabel: modelLabel() }), ...(a && { accountLabel: a.label }) })]);
                 // What's different is for one copy: a third run makes it a compare again
                 setVary(undefined);
+                // a repeat is rarely the one you want: straight into picking it (v1 vsBtn.onclick)
+                if (next === agent() || was.some((r) => r.agent === next)) (setPicker(false), setAutoPop(false), setCmpPicker(was.length));
               }
             },
           },
           compareFull: firstRun() || runs().length >= MAX_RUNNERS - 1,
-          compares: runs().map((a, i) => {
-            const h = harnessOf(harnesses(), a);
-            const can = varies(a, i);
+          compares: runs().map((r, i) => {
+            const h = harnessOf(harnesses(), r.agent);
+            const can = varies(r, i);
             const words = can.length ? variantWords(t, vary()) : [];
+            const own = can.length ? '' : compareWords(r);
             return {
               label: h.name,
               logo: h.logo,
               removeLabel: t('shell.home.compareRemove', { name: h.name }),
-              onRemove: () => (setRuns(runs().filter((_, k) => k !== i)), setVary(undefined)),
+              onRemove: () => (setCmpPicker(undefined), setRuns(runs().filter((_, k) => k !== i)), setVary(undefined)),
+              ...(own && { model: own }),
               ...(words.length > 0 && { variant: words }),
-              act: {
-                menu: {
-                  // v1 runner-picker.js What's different: Subagents and Skills under the harnesses, on the copy of the lead
-                  items: [...agentMenu(t, harnesses(), a, false), ...(can.length ? [{ kind: 'separator' as const }, ...varyMenu(t, can, vary(), subSetting())] : [])],
-                  onSelect: (v) => {
-                    const next = pickVary(vary(), v);
-                    if (next) return setVary(next);
-                    setRuns(runs().map((x, k) => (k === i ? v : x)));
-                    setVary(undefined);
-                  },
-                },
-              },
+              // the same two-pane harness picker as the lead's (v1 runnerPicker on .runner-btn.cmp-x), What's different in it
+              act: { onClick: () => (setPicker(false), setAutoPop(false), setCmpPicker(cmpPicker() === i ? undefined : i)) },
+              open: cmpPicker() === i,
             };
           }),
         }}
@@ -722,6 +731,34 @@ export function HomeView(props: { readonly onBack?: () => void }): JSX.Element {
           if (r.agent === 'auto') ask(text(), was !== 'auto');
         }}
       />
+      {/* a compare run's harness picker: the same one, anchored on that run's button; picks here don't touch the lead */}
+      <Show when={((i) => (i === undefined ? undefined : runs()[i] && { i, r: runs()[i] as Runner }))(cmpPicker())}>
+        {(c) => (
+          <RunnerPicker
+            open
+            onOpenChange={(o) => !o && setCmpPicker(undefined)}
+            anchor={() => document.querySelectorAll('[data-part="launcher.compare.runner"]')[c().i]}
+            back={() => input}
+            peer={target()}
+            accounts
+            value={c().r}
+            onChange={(r) => {
+              setRuns(runs().map((x, k) => (k === c().i ? r : x)));
+              // another harness or model: no longer a copy of the lead with one change
+              if (varies(r, c().i).length === 0) setVary(undefined);
+            }}
+            vary={{
+              can: (id, r) => varies({ ...r, agent: id }, c().i),
+              value: vary(),
+              setting: subSetting(),
+              onChange: (v, r) => {
+                setRuns(runs().map((x, k) => (k === c().i ? r : x)));
+                setVary(v);
+              },
+            }}
+          />
+        )}
+      </Show>
       <NextList
         heading={t('shell.section.needs')}
         count={needs().length}
