@@ -32,6 +32,7 @@ mod trial_cli;
 mod trigger_cli;
 mod tui;
 mod v1_formula;
+mod words;
 
 use std::io::IsTerminal;
 use std::path::{Path, PathBuf};
@@ -114,6 +115,11 @@ async fn dispatch(p: &Parsed, user_home: &Path, cwd: &Path) -> Result<i32> {
         say(args::HELP);
         return Ok(0);
     }
+    if p.command.is_none()
+        && let Some(code) = not_a_task(p, home.as_path(), port).await
+    {
+        return Ok(code);
+    }
     match p.command {
         Some("grid") => return extras::grid(&p.argv),
         Some("mcp") => return repo_cli::mcp(&p.argv, cwd, port).await,
@@ -145,6 +151,40 @@ async fn dispatch(p: &Parsed, user_home: &Path, cwd: &Path) -> Result<i32> {
         None => desktop::open(&home, user_home, port, f.open, f.browser).await?,
     }
     Ok(0)
+}
+
+/// Words on the launch path that aren't a task (`wisp tasks`, `wisp tsks`, `wisp runtime`): what they
+/// say instead and the exit code; None: launch them. The catalogue is read only when the word isn't one
+/// of the CLI's own (a plugin's name, or a typo of one).
+async fn not_a_task(p: &Parsed, home: &Path, port: u16) -> Option<i32> {
+    let first = p.words.first()?;
+    let mut cat = None;
+    if words::command_shaped(&p.words, p.literal)
+        && !words::known(first)
+        && let Ok(c) = Client::connect(port, true).await
+    {
+        cat = cli::catalogue(&c, home).await.ok();
+    }
+    let plugins: Vec<String> = cat.as_ref().map(|c| c.plugins().iter().map(|(p, _)| (*p).to_owned()).collect()).unwrap_or_default();
+    match words::not_a_task(&p.words, p.literal, &plugins)? {
+        words::NotATask::Usage(w) => {
+            eprintln!("{}", words::usage(&w));
+            Some(cli::USAGE_EXIT)
+        }
+        words::NotATask::Plugin(w) => {
+            if let Some(h) = cat.as_ref().and_then(|c| wisp_cli_core::verbs::help_plugin(c, &w)) {
+                say(&h);
+                Some(0)
+            } else {
+                eprintln!("{}", words::usage(&w));
+                Some(cli::USAGE_EXIT)
+            }
+        }
+        words::NotATask::Near(w) => {
+            eprintln!("  ✗ wisp {first} isn't a command: did you mean wisp {w}?   (a task that's just \"{first}\": wisp -- {first})");
+            Some(cli::USAGE_EXIT)
+        }
+    }
 }
 
 /// Whether `word` could be a plugin's first word (`crew`, `runtime`, `grid-client`).

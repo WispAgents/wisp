@@ -190,9 +190,12 @@ Each skill is in `.claude/skills/<name>/SKILL.md`. Any agent can read them.
 - **The Tauri lock after Ctrl-C:** stopping `npm run dev:desktop` leaves `/tmp/dev_wisp_dev_si.sock` behind
   (still true on 2026-11-15, `docs/v2-plan.md` §4.6). On macOS the next start finds nothing listening on it,
   removes it and goes on, so it's harmless. Delete it by hand if a start ever says another instance is running.
-- **A bare `wisp <word>` starts a task:** the CLI takes any word it doesn't know as a prompt. `wisp tasks` with no
-  flags, for example, launches an agent. The list of commands is `wisp help`. To stop a task you started by
-  mistake, run `wisp stop <id>`.
+- **A bare `wisp <word>` starts a task:** a word the CLI doesn't know, and isn't one or two letters off a command
+  or a plugin, is a prompt. A command word alone (`wisp tasks`, `wisp ship`) prints its usage instead, a typo of one
+  (`wisp tsks`) says *did you mean wisp tasks?*, and a plugin's name (`wisp runtime`) lists its verbs: none of them <!-- cmd-check: skip a typo on purpose -->
+  starts anything. A prompt that is a command word goes after `--` (`wisp -- tasks`); the shell drops quotes, so
+  `wisp "tasks"` is `wisp tasks`. The list of commands is `wisp help`. To stop a task you started by mistake, run
+  `wisp stop <id>`.
 - **`npm run check` fails on a doc:** the `commands` rule found a command that no longer resolves (a script, file,
   crate or `wisp` word). Fix the command. If a line can't be checked, add `<!-- cmd-check: skip <why> -->` on it.
 - **`npm run dev` shows a blank page:** check the terminal for `wisp serve exited`. Then `curl http://127.0.0.1:4800/api/health`,

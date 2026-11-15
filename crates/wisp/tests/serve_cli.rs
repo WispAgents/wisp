@@ -262,3 +262,33 @@ async fn ctrl_c_detaches_and_a_second_ctrl_c_stops() {
     api.until(&id, "the stop", |t| t.last().is_some_and(ended)).await;
     drop(serve);
 }
+
+/// Round 255: `wisp tasks` with no flags started a real task with the prompt "tasks". A command word
+/// alone prints its usage, a typo of one asks "did you mean", a plugin's name lists its verbs; none
+/// of them starts anything. `wisp -- tasks` still does, on purpose.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_command_word_or_a_typo_of_one_starts_no_task() {
+    let dir = temp("serve-cli-words");
+    let (serve, port) = start(&dir);
+    let api = Api { http: reqwest::Client::new(), port, n: 0.into() };
+    let (code, _, err) = wisp(&dir, port, &["tasks"]);
+    assert_eq!(code, 2, "{err}");
+    assert!(err.contains("wisp tasks --touching <path>") && err.contains("wisp -- tasks"), "{err}");
+    let (code, _, err) = wisp(&dir, port, &["ship"]);
+    assert_eq!(code, 2, "{err}");
+    assert!(err.contains("wisp ship <id>"), "{err}");
+    let (code, _, err) = wisp(&dir, port, &["tsks", "--json"]);
+    assert_eq!(code, 2, "{err}");
+    assert!(err.contains("did you mean wisp tasks?"), "{err}");
+    let (code, out, err) = wisp(&dir, port, &["runtime"]);
+    assert_eq!(code, 0, "{err}");
+    assert!(out.contains("wisp runtime <verb>"), "a plugin's name lists its verbs: {out}");
+    assert_eq!(api.cmd("runtime.list", json!({})).await.as_array().unwrap().len(), 0, "nothing started");
+    // on purpose: `--` first makes any word the task
+    let (code, out, err) = wisp(&dir, port, &["--agent", "claude", "--", "tasks"]);
+    assert_eq!(code, 0, "{err}");
+    assert!(out.contains("wisp attach "), "{out}");
+    let list = api.cmd("runtime.list", json!({})).await;
+    assert_eq!(list.as_array().unwrap().len(), 1, "{list}");
+    drop(serve);
+}

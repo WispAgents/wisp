@@ -53,6 +53,7 @@ pub const HELP: &str = "usage:
   wisp <plugin> <verb> …        any command of any plugin, flags from its arguments (wisp crew create --name Ada)
   wisp help [plugin [verb]]     every plugin's commands, a plugin's verbs, a verb's flags
   wisp completions zsh|bash|fish  shell completions from the same catalogue
+  wisp tasks --touching <path>|--tracked   the tracked tasks (.wisp/tasks) behind a path, or all of them   (--json)
   wisp sdk types ts|py [FILE]   typed commands for the SDKs (a .d.ts or a .pyi), from the same catalogue
   wisp -- \"ls the repo\"         a task that starts with a command name
 

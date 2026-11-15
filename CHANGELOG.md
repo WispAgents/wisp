@@ -219,6 +219,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Fixed
 
+- **v2: `wisp tasks` no longer starts a task.** A command word alone (`wisp tasks`, `wisp ship`, `wisp run`) prints its usage, a typo of one (`wisp tsks`) asks *did you mean wisp tasks?*, and a plugin's name alone (`wisp runtime`) lists its verbs; none of them launches an agent. A prompt that is a command word goes after `--`: `wisp -- tasks`.
 - **v2: closing a dialog with Escape gives focus back to what opened it.** A dialog opened before its code had loaded could leave focus on the page itself, so the keyboard went nowhere until you clicked.
 - **v2: you can paste into a task's Shell after selecting text in it.** Selecting text on the Shell's screen (to copy it) took the keys out of the terminal, so ⌘V or Ctrl+Shift+V did nothing. A paste now goes to the terminal you last clicked or opened, unless a text box takes it.
 - **v2: a lead's scheduled check-in follows v1 #795's rule.** Waiting on its subagents never holds it back; only a live run, a question to you, or Auto's or the goal's check does.

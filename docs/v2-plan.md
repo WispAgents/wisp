@@ -634,7 +634,7 @@ Source: `docs/v1-features.md` (each row's evidence and test). `[x]` built, `[ ]`
 - [ ] A machine that never answers keeps a lead in Working until Stop (no give-up timeout for far subagents)
 - [ ] ~300 strings no code uses (shell-home tips/setup/getapp, unused wisp.later.*, shell.key.switcher, shell-settings.diag.*): delete, with a check that fails on unused keys
 - [ ] CI: Windows still cancelled at 60 min on 708ba936 (cargo test ended 04:19 with 6 failing targets, then a leaked process held the pipe): coder-r257
-- [ ] `wisp tasks` with no flags starts a task with the prompt 'tasks' (a known command word taken as a prompt)
+- [x] `wisp tasks` with no flags starts a task with the prompt 'tasks' (a known command word taken as a prompt): a command word alone prints its usage, a typo of one says *did you mean*, a plugin's name lists its verbs; `wisp -- <word>` is the task (`crates/wisp/src/words.rs` `not_a_task`, `serve_cli.rs` `a_command_word_or_a_typo_of_one_starts_no_task`)
 - [ ] README's Development lines still describe v1's npm run dev
 - [ ] No tested `.vscode/launch.json` (CodeLLDB) for wisp serve
 - [ ] `ui-only`/MCP: nothing open
