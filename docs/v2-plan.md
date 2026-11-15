@@ -20,10 +20,10 @@ Rust for everything but the UI, Solid/TS for the UI, everything a plugin (ADR-00
 |---|---|
 | v1 features | **315 built · 7 partial · 5 missing · 4 dropped** of 331 (§6) |
 | Regressed | none (F-comp-1 picker restored to v1 in round 233) |
-| CI, last full run (5b84787a, partial) | Linux: only `apps/web/test/strings-split.test.ts` (peer-note.ts lazy keys; r249) · macOS/Windows still running |
+| CI, last full run (708ba936) | Linux 4/4 green (23-32 min, was 37+) · macOS node 22: 1 flaky UI test (Dialog focus return; r256) · Windows + macOS 24 still running |
 | Budgets | initial JS 107.2 KB br (≤ 120) · CSS 27.1 KB (≤ 30) |
 | Weekly usage | 91 % (pace 176 %: down to 1 coder) |
-| Coders running | coder-r255 (docs/dev.md) |
+| Coders running | coder-r256 (flaky Dialog focus test) |
 
 ## 3. Owner directions (standing rules)
 
@@ -634,6 +634,9 @@ Source: `docs/v1-features.md` (each row's evidence and test). `[x]` built, `[ ]`
 - [ ] A machine that never answers keeps a lead in Working until Stop (no give-up timeout for far subagents)
 - [ ] ~300 strings no code uses (shell-home tips/setup/getapp, unused wisp.later.*, shell.key.switcher, shell-settings.diag.*): delete, with a check that fails on unused keys
 - [ ] CI: confirm on the run for 708ba936 that every OS ends under 45 min with a Windows result (r252's fix)
+- [ ] `wisp tasks` with no flags starts a task with the prompt 'tasks' (a known command word taken as a prompt)
+- [ ] README's Development lines still describe v1's npm run dev
+- [ ] No tested `.vscode/launch.json` (CodeLLDB) for wisp serve
 - [ ] `ui-only`/MCP: nothing open
 
 ## 8. CI
@@ -727,7 +730,8 @@ Source: `docs/v1-features.md` (each row's evidence and test). `[x]` built, `[ ]`
 
 | Round | What | State |
 |---|---|---|
-| 255 | docs/dev.md: clone to running, debugging, one test per area, troubleshooting | in progress |
+| 256 | Flaky Dialog focus-return test (macOS node 22, CI 708ba936) | in progress |
+| 255 | docs/dev.md: clone to running, debugging, one test per area, troubleshooting (every command run) | committed (b3b5b3d9) |
 | 254 | Port v1 #797: paste after selecting text reaches the Shell | committed (3f45f724) |
 | 253 | Port v1 #794: Plan runs commands for your own tasks; outside/capped/side stay read-only | committed (f0b27570; lead-verified: plan 3, plan_mode 2, clippy, fmt) |
 | 252 | CI checks the Cargo workspace once (ADR-0069, tools/ci-verify.ts); Windows serve_desktop 38-min hang fixed (keep_std_handles); lead fixed a unix.rs clippy error | committed (a3d7e1b0, 708ba936); proof = next ci:full run |
