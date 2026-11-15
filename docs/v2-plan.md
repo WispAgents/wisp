@@ -23,7 +23,7 @@ Rust for everything but the UI, Solid/TS for the UI, everything a plugin (ADR-00
 | CI, last full run (9ea69e14) | Linux + macOS: only css-rules :is() (fixed) · **Windows: cargo test 25 min, 3 failing targets (was 14)**: serve_open, machines carry, sandbox seed (r268); last step 26+ min, cancelled at 60 (r269) |
 | Budgets | initial JS 107.2 KB br (≤ 120) · CSS 27.1 KB (≤ 30) |
 | Weekly usage | 94 % (owner 2026-11-15: continue until the limit; 1 coder) |
-| Coders running | coder-r268 (3 Windows failures), coder-r269 (Windows CI step time) |
+| Coders running | none (CI on 836287a4) |
 
 ## 3. Owner directions (standing rules)
 
@@ -794,8 +794,8 @@ Source: `docs/v1-features.md` (each row's evidence and test). `[x]` built, `[ ]`
 
 | Round | What | State |
 |---|---|---|
-| 269 | CI per-package step 26+ min on Windows -> < 8 min | in progress |
-| 268 | Last 3 Windows failures: machines carry (product), sandbox seed, serve_open folder held | in progress |
+| 269 | CI's other-packages step runs each check once (ADR-0072): 128.6 s -> 38.5 s locally | committed (836287a4); proof = CI on 836287a4 |
+| 268 | Machines copy check spells both sides (product); sandbox joins; long temp in plugin tests; serve_open | committed (d3165656) |
 | 267 | wisp import keeps v1 per-turn file changes (ledger 0 files) | committed (3d55a9e2) |
 | 266 | Every CSS rule shared by check and css-rules.test (the :is() rule passed check, failed CI) | committed (608cedcb) |
 | 265 | Phone kit controls (ADR-0065 step 6), browser unchanged; lead fixed queued.css :is() | committed (a6c727ac, ed23c434) |
