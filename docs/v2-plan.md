@@ -20,10 +20,10 @@ Rust for everything but the UI, Solid/TS for the UI, everything a plugin (ADR-00
 |---|---|
 | v1 features | **315 built · 7 partial · 5 missing · 4 dropped** of 331 (§6) |
 | Regressed | none (F-comp-1 picker restored to v1 in round 233) |
-| CI, last full run (708ba936) | Linux 4/4 green (23-32 min, was 37+) · macOS node 22: 1 flaky UI test (Dialog focus return; r256) · Windows + macOS 24 still running |
+| CI, last full run (708ba936) | Linux 4/4 green (23-32 min) · macOS 24 green · macOS 22: Dialog focus bug (fixed r256) · **Windows**: 6 failing targets + a leaked `opencode` holding the tee pipe, cancelled at 60 min (r257) |
 | Budgets | initial JS 107.2 KB br (≤ 120) · CSS 27.1 KB (≤ 30) |
 | Weekly usage | 91 % (pace 176 %: down to 1 coder) |
-| Coders running | none (waiting on Windows CI log) |
+| Coders running | coder-r257 (Windows CI) |
 
 ## 3. Owner directions (standing rules)
 
@@ -633,7 +633,7 @@ Source: `docs/v1-features.md` (each row's evidence and test). `[x]` built, `[ ]`
 - [ ] Decide: should push notifications answer tool approvals in place (like ntfy)?
 - [ ] A machine that never answers keeps a lead in Working until Stop (no give-up timeout for far subagents)
 - [ ] ~300 strings no code uses (shell-home tips/setup/getapp, unused wisp.later.*, shell.key.switcher, shell-settings.diag.*): delete, with a check that fails on unused keys
-- [ ] CI: confirm on the run for 708ba936 that every OS ends under 45 min with a Windows result (r252's fix)
+- [ ] CI: Windows still cancelled at 60 min on 708ba936 (cargo test ended 04:19 with 6 failing targets, then a leaked process held the pipe): coder-r257
 - [ ] `wisp tasks` with no flags starts a task with the prompt 'tasks' (a known command word taken as a prompt)
 - [ ] README's Development lines still describe v1's npm run dev
 - [ ] No tested `.vscode/launch.json` (CodeLLDB) for wisp serve
@@ -730,6 +730,7 @@ Source: `docs/v1-features.md` (each row's evidence and test). `[x]` built, `[ ]`
 
 | Round | What | State |
 |---|---|---|
+| 257 | Windows CI: leaked opencode holds the cargo-test pipe; serve_cli Ctrl-C, serve_detect, serve_events, serve_kinds + serve_sandbox (8.3 short paths), serve_open (file in use) | in progress |
 | 256 | Dialog focus return: a real bug (Zag trap picks its target late; opened before the machine loaded, focus stayed on body), fixed in Dialog | committed (45b105df) |
 | 255 | docs/dev.md: clone to running, debugging, one test per area, troubleshooting (every command run) | committed (b3b5b3d9) |
 | 254 | Port v1 #797: paste after selecting text reaches the Shell | committed (3f45f724) |
