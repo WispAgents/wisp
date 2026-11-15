@@ -18,12 +18,12 @@ Rust for everything but the UI, Solid/TS for the UI, everything a plugin (ADR-00
 
 | | Now |
 |---|---|
-| v1 features | **314 built · 8 partial · 5 missing · 4 dropped** of 331 (§6) |
-| Regressed | F-comp-1 harness picker (owner, 2026-11-15): being rebuilt to v1 |
+| v1 features | **315 built · 7 partial · 5 missing · 4 dropped** of 331 (§6) |
+| Regressed | none (F-comp-1 picker restored to v1 in round 233) |
 | CI, last full run (2790d627) | Linux + macOS: 1 failing test (`serve_orphans` probe), fixed by round 234, re-run pending · Windows: cancelled (open groups, §8) · desktop builds + Android: green |
 | Budgets | initial JS 117.9 KB br (≤ 120) · CSS 29.7 KB (≤ 30) · enforced in CI |
 | Weekly usage | 86 % (owner allowed 3 coders: free reset) |
-| Coders running | coder-r233 (harness picker), coder-r235 (task history Ledger) |
+| Coders running | coder-r236 (Auto preview entry), coder-r235 (task history Ledger) |
 
 ## 3. Owner directions (standing rules)
 
@@ -65,7 +65,8 @@ Rust for everything but the UI, Solid/TS for the UI, everything a plugin (ADR-00
 - [x] Every screen wired to the real server (the 2026-11-09 "mounts no task view" gap is closed)
 - [x] Multi-project pick (click = only, + adds, strip with Only/All) (round 133)
 - [x] Composer `@` and `/`
-- [ ] **Harness picker back to v1** (F-comp-1 regressed): **in progress, coder-r233**
+- [x] Harness picker back to v1: one pill, one two-pane popover (round 233, 6e3fe42e)
+- [ ] "What will Auto run" (odds, alternatives, Never pick this model) unreachable since round 233; extra compare runs still use the plain list: **in progress, coder-r236**
 - [ ] **Parity gate** (`qa/parity.mjs`): baseline 0/96 on 2026-11-10; per-view burn-down in `docs/v2-ui-burndown.md`;
       **not re-measured as a whole since**: the batched pass (§4.8) runs it on every view, width and theme
 - [ ] Layout and feedback gates on every view (browser and phone views): to run in the batched pass
@@ -149,7 +150,7 @@ Rust for everything but the UI, Solid/TS for the UI, everything a plugin (ADR-00
 
 - [ ] Verify + commit round 227 (gesture seams, phone overlays) and round 229's shell hookups (mixed files)
 - [ ] Verify + commit round 228 (push plugin, grid relay, `hpke` dependency)
-- [ ] Review coder-r233's picker against `design/v1-reference/home.runner` (side by side) before committing
+- [x] Review coder-r233's picker against `design/v1-reference/home.runner` (side by side): matches; committed 6e3fe42e
 - [x] Push the local commits after coder-r234's CI fix
 - [ ] Rebuild the owner's v2 desktop preview with the latest fixes (port 4791, `~/.wisp-v2-preview`)
 
@@ -237,7 +238,7 @@ Source: `docs/v1-features.md` (each row's evidence and test). `[x]` built, `[ ]`
 
 ### Composer: New task and the reply box (`COMP`)
 
-- [ ] F-comp-1: the launcher, when I open the harness · model picker, then harnesses with logos are left and models right, searchable — **partial**: REGRESSED (owner, 2026-11-15): the launcher shows a plain one-column list of harness names, no logos, no models pane; likely ADR-0067's lazy loading showing a fallback before RunnerPicker.tsx loads; coder-r233 rebuilds t…
+- [x] F-comp-1: the launcher, when I open the harness · model picker, then harnesses with logos are left and models right — built: round 233 (6e3fe42e), one pill, one two-pane popover
 - [x] F-comp-2: the picker, when I drag the thinking slider, then the level goes from Default to the harness's top
 - [x] F-comp-3: Codex or Claude, when I open models, then they come from the CLI's own catalogue (Fable included)
 - [x] F-comp-4: the prompt, when I press Shift+Tab or the mode button, then it cycles Plan, Edits, Full auto
@@ -686,7 +687,8 @@ Source: `docs/v1-features.md` (each row's evidence and test). `[x]` built, `[ ]`
 |---|---|---|
 | 235 | Task history: direction A, Ledger + scrubber | in progress |
 | 234 | CI: probe test after the probe memo (ends at its limit) | committed |
-| 233 | Harness picker back to v1 (one pill, one two-pane popover) | in progress |
+| 236 | "What will Auto run" reachable again; compare runs use the picker | in progress |
+| 233 | Harness picker back to v1 (one pill, one two-pane popover) | committed |
 | 232 | `npm run doctor` | committed |
 | 231 | Check rule `commands`; 13 broken commands fixed | committed |
 | 230 | `npm run dev`, `npm run dev:desktop` | committed |
