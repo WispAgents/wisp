@@ -22,8 +22,8 @@ Rust for everything but the UI, Solid/TS for the UI, everything a plugin (ADR-00
 | Regressed | F-comp-1 harness picker (owner, 2026-11-15): being rebuilt to v1 |
 | CI, last full run (2790d627) | Linux + macOS: 1 failing test (`serve_orphans` probe), fix in progress · Windows: cancelled (open groups, §8) · desktop builds + Android: green |
 | Budgets | initial JS 117.9 KB br (≤ 120) · CSS 29.7 KB (≤ 30) · enforced in CI |
-| Weekly usage | 85 % (owner applies the reset) |
-| Coders running | coder-r233 (harness picker), coder-r234 (CI probe test) |
+| Weekly usage | 86 % (owner allowed 3 coders: free reset) |
+| Coders running | coder-r233 (harness picker), coder-r234 (CI probe test), coder-r235 (task history Ledger) |
 
 ## 3. Owner directions (standing rules)
 
@@ -69,8 +69,9 @@ Rust for everything but the UI, Solid/TS for the UI, everything a plugin (ADR-00
 - [ ] **Parity gate** (`qa/parity.mjs`): baseline 0/96 on 2026-11-10; per-view burn-down in `docs/v2-ui-burndown.md`;
       **not re-measured as a whole since**: the batched pass (§4.8) runs it on every view, width and theme
 - [ ] Layout and feedback gates on every view (browser and phone views): to run in the batched pass
-- [ ] Task history redesign: research + 3 directions + mock done (`docs/design/history-redesign.md`); **waiting on the
-      owner's pick** (A, B or C); building it needs an ADR superseding ADR-0016 for that screen
+- [ ] Task history redesign: owner picked **A only** (Ledger + scrubber, inline expand on phones too; 2026-11-15).
+      **In progress, coder-r235**: outcome rows, notice folds, day cards, scrubber above 30 turns, search + filters
+      (Shipped is a filter), keys, ADR-0068 superseding ADR-0016 for this screen
 
 ### 4.3 Performance
 
@@ -609,7 +610,6 @@ Source: `docs/v1-features.md` (each row's evidence and test). `[x]` built, `[ ]`
 ## 9. Blocked
 
 - **iOS app (phone step 10):** needs Xcode installed on this Mac (owner).
-- **Task history redesign:** needs the owner's pick (A, B or C).
 
 ## 10. Decisions (ADRs)
 
@@ -684,6 +684,7 @@ Source: `docs/v1-features.md` (each row's evidence and test). `[x]` built, `[ ]`
 
 | Round | What | State |
 |---|---|---|
+| 235 | Task history: direction A, Ledger + scrubber | in progress |
 | 234 | CI: probe test after the probe memo | in progress |
 | 233 | Harness picker back to v1 (one pill, one two-pane popover) | in progress |
 | 232 | `npm run doctor` | committed |
