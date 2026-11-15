@@ -1,0 +1,12 @@
+id: D-0003
+decision: Don't end a CSS selector in an `:is()` list; write the list out instead (`.bar .a, .bar .b`). Mid-selector `:is()`, or one with differing specificity or combinators, is fine.
+reason: Chrome can't index a trailing `:is()` by class and tests it on every element of every restyle.
+rejected:
+- trailing :is() lists
+scope:
+- web/css/**
+category: constraint
+status: accepted
+sources:
+- AGENTS.md
+date: 2026-11-07

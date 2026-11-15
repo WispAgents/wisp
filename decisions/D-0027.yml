@@ -1,0 +1,10 @@
+id: D-0027
+decision: Make `scripts/site.mjs` handle CRLF input.
+reason: Windows CI.
+scope:
+- scripts/site.mjs
+category: constraint
+status: accepted
+sources:
+- AGENTS.md
+date: 2026-11-07

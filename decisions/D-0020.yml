@@ -1,0 +1,9 @@
+id: D-0020
+decision: In UI, use design tokens only, make actions instant with toast rollback, avoid layout jumps and empty loading states, name the same action the same everywhere, and treat phones as first-class.
+scope:
+- web/**
+category: convention
+status: accepted
+sources:
+- AGENTS.md
+date: 2026-11-07

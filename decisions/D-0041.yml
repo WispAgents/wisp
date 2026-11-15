@@ -1,0 +1,12 @@
+id: D-0041
+decision: Expose UI to spells only through names in `web/js/spell-schema.js` mapped to the DOM by wisp, never through raw markup.
+rejected:
+- spells targeting wisp's markup directly
+scope:
+- web/js/spell-schema.js
+- web/js/features/spells.js
+category: architecture
+status: accepted
+sources:
+- AGENTS.md
+date: 2026-11-07

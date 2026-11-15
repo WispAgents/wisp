@@ -1,0 +1,10 @@
+id: D-0038
+decision: Keep `server/channels/grammar.js` importing only `mentions.js`.
+reason: So the grid can read it too.
+scope:
+- server/channels/grammar.js
+category: constraint
+status: accepted
+sources:
+- AGENTS.md
+date: 2026-11-07

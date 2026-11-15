@@ -1,0 +1,10 @@
+id: D-0026
+decision: In `server/runner.js`, call optional store methods as `store?.method?.()`.
+reason: The store may be a test stub.
+scope:
+- server/runner.js
+category: convention
+status: accepted
+sources:
+- AGENTS.md
+date: 2026-11-07

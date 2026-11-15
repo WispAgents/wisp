@@ -1,0 +1,13 @@
+id: D-0035
+decision: Keep `:has()` to small, local boxes; don't anchor it on `body`, `.stage` or `#feed`, follow it with `> *`, or match globally changing things (`.open`, `.i`, `[hidden]`). Set a class from JS instead.
+reason: Broad `:has()` makes every class change restyle the whole page (~25 ms per change on phones).
+rejected:
+- broad :has() selectors
+scope:
+- web/css/**
+- web/js/**
+category: constraint
+status: accepted
+sources:
+- AGENTS.md
+date: 2026-11-07

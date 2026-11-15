@@ -1,0 +1,9 @@
+id: D-0029
+decision: Never add questions, approvals, waiting pills, the spell review or Settings → Spells to `PARTS`.
+scope:
+- web/js/spell-schema.js
+category: constraint
+status: accepted
+sources:
+- AGENTS.md
+date: 2026-11-07

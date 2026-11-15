@@ -1,0 +1,10 @@
+id: D-0015
+decision: Give spell buttons in slots outside `.item[data-id]` and `#splitHead[data-id]` a `data-task` attribute or their own case in the click handler.
+reason: The handler finds the task from those ancestors.
+scope:
+- web/js/features/spells.js
+category: convention
+status: accepted
+sources:
+- AGENTS.md
+date: 2026-11-07

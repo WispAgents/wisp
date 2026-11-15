@@ -1,0 +1,16 @@
+name: ledger
+
+# Added lines must not break accepted decisions (decisions/) or rules learned from past
+# corrections of agent code (.corrections/rules/). Both tools judge only what a PR adds.
+on:
+  pull_request:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # the base commit must be there for the diff
+      - uses: WispAgents/decision-ledger/action@v0.1.0
+      - uses: WispAgents/ingrain/action@v0.1.0

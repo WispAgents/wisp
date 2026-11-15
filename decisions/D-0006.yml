@@ -1,0 +1,14 @@
+id: D-0006
+decision: Add a `CHANGELOG.md` entry under *Unreleased* for user-facing features and fixes. Releases must also update the version in `package.json`, `package-lock.json`, `README.md`, `docs/index.html`, `docs/integrations.md`, `docs/install.sh` and `scripts/guides.mjs`.
+scope:
+- CHANGELOG.md
+- package.json
+- package-lock.json
+- README.md
+- docs/**
+- scripts/guides.mjs
+category: convention
+status: accepted
+sources:
+- AGENTS.md
+date: 2026-11-07

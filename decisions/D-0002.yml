@@ -1,0 +1,10 @@
+id: D-0002
+decision: Add spell-settable user settings to `SETTINGS` with allowed values and their control to `LOCKABLE` in `web/js/features/settings.js`; never include secrets or telemetry/feedback switches.
+scope:
+- web/js/spell-schema.js
+- web/js/features/settings.js
+category: constraint
+status: accepted
+sources:
+- AGENTS.md
+date: 2026-11-07

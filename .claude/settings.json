@@ -1,0 +1,54 @@
+{
+  "hooks": {
+    "PostToolUse": [
+      {
+        "hooks": [
+          {
+            "command": "command -v ingrain >/dev/null 2>&1 && ingrain check --hook post-edit || true",
+            "type": "command"
+          }
+        ],
+        "matcher": "Edit|Write|MultiEdit"
+      }
+    ],
+    "PreToolUse": [
+      {
+        "hooks": [
+          {
+            "command": "command -v decisions >/dev/null 2>&1 && decisions hook pre-tool-use || true",
+            "type": "command"
+          }
+        ],
+        "matcher": "Edit|Write|MultiEdit"
+      }
+    ],
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "command": "command -v decisions >/dev/null 2>&1 && decisions hook session-start || true",
+            "type": "command"
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "command": "command -v ingrain >/dev/null 2>&1 && ingrain check --hook stop || true",
+            "type": "command"
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "command": "command -v decisions >/dev/null 2>&1 && decisions hook stop || true",
+            "type": "command"
+          }
+        ]
+      }
+    ]
+  }
+}

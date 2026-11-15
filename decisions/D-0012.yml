@@ -1,0 +1,9 @@
+id: D-0012
+decision: Make each agent token authorize only its own session.
+scope:
+- server/agent-token.js
+category: constraint
+status: accepted
+sources:
+- AGENTS.md
+date: 2026-11-07
