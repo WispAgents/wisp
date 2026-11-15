@@ -22,6 +22,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Fixed
 
+- **A check-in a lead scheduled goes while it waits on its subagents.** A task that delegated, scheduled a follow-up (`resume_later`) and ended its turn showed *Waiting on …*, and when the time came nothing happened: the follow-up was held until every subagent had finished. Now it goes on time, and the subagents' report still comes back to it when they're done.
 - **A doc block's Read all stays under your finger on a phone.** Pressing it shrank the button and dropped its centring, so it jumped right by half its width as you tapped.
 - **An opened step in a task's activity shows its whole title.** A long step ("Running a Python script, then searching for …") stayed cut after you opened it, both on screen and in the title wisp saved; now an opened step shows its full title, wrapped. Steps from before this fix stay cut.
 - **Goal on with an empty Done when no longer sends without asking.** Turning on Goal in New task or a task's reply box and pressing Send with Done when left empty used to start the task (or send the message) without a goal, so it stopped after one round. Now nothing goes: Done when gets the focus, your text stays, and a toast says the goal is empty, with **Send without a goal** to send it anyway. With Done when filled but nothing in New task's box, Send says *Say what to do first* instead of doing nothing.

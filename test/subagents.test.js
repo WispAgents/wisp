@@ -326,6 +326,25 @@ test('a lead whose turn ends while its delegates work stays Working, and finishe
   }
 });
 
+test('a lead waiting on its delegates still gets the check-in it scheduled, and their report after', async () => {
+  const s = await api('/sessions', { prompt: 'DELEGATE SLOW and DELEGATE NOWAIT', cwd: makeRepo(), agent: 'claude', worktree: false, subagents: [{ agent: 'codex' }] });
+  await leadWaiting(s.id);
+  await until(() => !srv.runner.live.has(s.id));
+  const lead = srv.store.get(s.id);
+  assert.equal(lead.state, 'running', 'waits on its delegate');
+  srv.later.add(lead, { text: 'check on the delegate', by: 'agent', in: 5 });
+  lead.later[0].at = Date.now() - 1000; // came due
+  await srv.later.tick();
+  assert.equal(lead.later, undefined, 'the check-in went, not held behind the delegate');
+  assert.equal(lead.turns[1]?.prompt, 'check on the delegate');
+  // The report still comes back once the delegate is done.
+  const done = await until(async () => {
+    const x = await api(`/sessions/${s.id}`);
+    return x.state === 'review' && x.turns.some((t) => t.reports) && x;
+  });
+  assert.equal(Object.values(done.childSessions)[0].turns[0].status, 'done');
+});
+
 test('stopping a lead that waits on its delegates stops them and lands it, with nothing sent back', async () => {
   // Its CLI still lingers after the result when you stop it (as on a slow machine): the lead
   // lands once the last of them lets go, whichever goes first.
