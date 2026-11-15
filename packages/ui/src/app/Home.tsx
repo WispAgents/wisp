@@ -91,7 +91,7 @@ export interface LauncherCompare {
   readonly act: Act;
   /** its picker is open: the button stays lit while it is */
   readonly open?: boolean;
-  /** the run's own model · thinking · account (v1 .rb-m), after the name; none on Default */
+  /** the run's own model (v1 .rb-m), after the name: "Default" on its harness's default; none on a copy that says its variant */
   readonly model?: string | undefined;
   /** Try it two ways: a copy of the lead's words for its one change ("Subagents on Haiku"), after the name */
   readonly variant?: readonly string[];
@@ -278,6 +278,8 @@ function Chip(props: { readonly c: LauncherChip; readonly ids: () => readonly st
 /** v1 #launcher: the prompt box on Home. */
 export function Launcher(props: LauncherProps): JSX.Element {
   const projectIds = (): string[] => props.chips.filter((c) => c.kind === 'project').map((c) => c.id);
+  // Try it two ways (v1 .runners.trial / .l-bar.l-try): one copy of the lead that says its change; the bar folds for it
+  const trial = (): boolean => props.runner.compares?.length === 1 && (props.runner.compares[0]?.variant?.length ?? 0) > 0;
   const key = (e: KeyboardEvent): void => {
     if (suggestKeyDown(props.suggest, e)) return;
     if (props.onKey?.(e)) return;
@@ -356,7 +358,7 @@ export function Launcher(props: LauncherProps): JSX.Element {
             </For>
           </div>
         </Show>
-        <div data-kit="l-bar">
+        <div data-kit="l-bar" data-try={flag(trial())}>
           <Index each={props.lead}>{(t) => <Tool t={t()} />}</Index>
           <WithAct
             act={props.mode.act}
@@ -367,7 +369,7 @@ export function Launcher(props: LauncherProps): JSX.Element {
               </button>
             )}
           />
-          <div data-kit="runners" data-open={flag(props.runner.open === true || props.runner.pickOpen === true || (props.runner.compares ?? []).some((c) => c.open === true))} data-cmp={flag((props.runner.compares?.length ?? 0) > 0)} data-many={flag((props.runner.compares?.length ?? 0) > 1)} data-trial={flag(props.runner.compares?.length === 1 && (props.runner.compares[0]?.variant?.length ?? 0) > 0)}>
+          <div data-kit="runners" data-open={flag(props.runner.open === true || props.runner.pickOpen === true || (props.runner.compares ?? []).some((c) => c.open === true))} data-cmp={flag((props.runner.compares?.length ?? 0) > 0)} data-many={flag((props.runner.compares?.length ?? 0) > 1)} data-trial={flag(trial())}>
             <WithAct
               act={props.runner.act}
               render={(trigger) => (
@@ -409,7 +411,11 @@ export function Launcher(props: LauncherProps): JSX.Element {
                             <>
                               <span data-kit="rb-m">{p().model}</span>
                               <Show when={p().effort}>
-                                <span data-kit="rb-e">{` · ${p().effort}`}</span>
+                                <span data-kit="rb-e">
+                                  {/* its own node: a Try it two ways lead folds "Default" and keeps the thinking level (v1 .rb-e) */}
+                                  <span data-kit="rb-sep"> · </span>
+                                  {p().effort}
+                                </span>
                               </Show>
                               <Show when={p().account}>
                                 <span data-kit="rb-a">{` · ${p().account}`}</span>

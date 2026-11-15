@@ -594,6 +594,17 @@
     flex: 0 1 auto;
     min-width: 0;
   }
+  /* its model is v1's .rb-m: muted, and it gives way well before its name (flex 0 10000 auto); v1's hairline
+     sits outside .rb-m's overflow box, so v1 never shows it */
+  [data-kit='runner-btn'][data-cmp] > [data-part~='launcher.compare.model'] {
+    flex-shrink: 10000;
+    margin-left: 13px;
+    padding-left: 0;
+    color: var(--muted);
+  }
+  [data-kit='runner-btn'][data-cmp] > [data-part~='launcher.compare.model']::before {
+    display: none;
+  }
   /* .rb-v: Try it two ways' words on the copy of the lead (v1 launcher.css): one line, cut rather than wrapped */
   [data-kit='rb-v'] {
     position: relative;
@@ -827,6 +838,56 @@
       box-shadow:
         -8px 0 8px var(--surface),
         -20px 0 12px var(--surface);
+    }
+  }
+  /* Try it two ways (v1 launcher.css .runners.trial): the same harness twice, so the words that matter are the run's
+     difference (the copy says only that, [data-vary] above). Under 1100px the lead's harness goes to its logo and
+     its "Default" goes, its name staying beside a default model while there's room; under 700px its thinking level
+     goes; under 640px it is its logo alone. The tooltip spells each run out. */
+  @container launcher (max-width: 1099px) {
+    [data-kit='runners'][data-trial] > [data-kit='runner-btn'][data-lead] > [data-kit='rb-h'],
+    [data-kit='runners'][data-trial] > [data-kit='runner-btn'][data-def] [data-kit='rb-m'],
+    [data-kit='runners'][data-trial] > [data-kit='runner-btn'][data-def] [data-kit='rb-sep'] {
+      display: none;
+    }
+    [data-kit='runners'][data-trial] > [data-kit='runner-btn'][data-lead] > [data-kit='auto-pv'] {
+      padding-left: 0;
+    }
+  }
+  @container launcher (not (max-width: 640px)) and (max-width: 1099px) {
+    [data-kit='runners'][data-trial] > [data-kit='runner-btn'][data-def] > [data-kit='rb-h'] {
+      display: block;
+    }
+    [data-kit='runners'][data-trial] > [data-kit='runner-btn'][data-def] [data-kit='rb-e'] {
+      padding-left: var(--space-3);
+    }
+  }
+  /* the bar's words give the pill room: Delegate's, then the mode's and Goal's (v1 .l-bar.l-try); tooltips name them */
+  @container launcher (max-width: 800px) {
+    [data-kit='l-bar'][data-try] > [data-a='team'] > [data-text='control'] {
+      display: none;
+    }
+  }
+  @container launcher (max-width: 780px) {
+    [data-kit='l-bar'][data-try] > [data-kit='mode-btn'] > [data-text='control'],
+    [data-kit='l-bar'][data-try] > [data-a='goal'] > [data-text='control'] {
+      display: none;
+    }
+  }
+  @container launcher (max-width: 700px) {
+    [data-kit='runners'][data-trial] [data-kit='rb-e'] {
+      display: none;
+    }
+  }
+  @container launcher (max-width: 640px) {
+    [data-kit='runners'][data-trial] > [data-kit='runner-btn'][data-lead] {
+      flex: none;
+    }
+    [data-kit='runners'][data-trial] > [data-kit='runner-btn'][data-lead] > [data-kit='icon'] {
+      display: none;
+    }
+    [data-kit='runners'][data-trial] > [data-kit='runner-btn'][data-lead] > [data-kit='rb-logo'] {
+      margin-right: 0;
     }
   }
   @container launcher (max-width: 480px) {

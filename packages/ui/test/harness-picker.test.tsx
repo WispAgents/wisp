@@ -4,6 +4,7 @@ import { createSignal } from 'solid-js';
 import { mount } from './helpers.tsx';
 import { HarnessPicker, pickerPlace, type HarnessPickerPane } from '../src/app/HarnessPicker.tsx';
 import { Launcher, type LauncherProps } from '../src/app/Home.tsx';
+import HOME_CSS from '../src/css/app-home.css?raw';
 
 const ROWS = [
   { id: 'auto', name: 'Auto', auto: true, sub: 'Picks per task' },
@@ -376,4 +377,51 @@ test('comparing_the_lead_keeps_its_model_in_its_button_and_try_it_two_ways_marks
   expect(pill?.hasAttribute('data-trial')).toBe(false);
   setVary(true);
   expect(pill?.hasAttribute('data-trial')).toBe(true);
+});
+
+test('try_it_two_ways_folds_the_lead_as_v1_runners_trial_its_name_and_default_under_1099px_its_thinking_under_700px', () => {
+  mount(() => (
+    <Launcher
+      {...launcher({})}
+      runner={{
+        ...launcher({}).runner,
+        auto: false,
+        label: 'Claude Code',
+        pick: 'Default · High',
+        pickParts: { model: 'Default', def: true, effort: 'High', account: '' },
+        compares: [{ label: 'Claude Code', removeLabel: 'Remove', onRemove: () => undefined, act: { onClick: () => undefined }, variant: ['Subagents on Haiku'] }],
+      }}
+    />
+  ));
+  const lead = document.querySelector<HTMLElement>('[data-kit="runners"][data-trial] > [data-part="launcher.harness"][data-def]');
+  // the bar folds with it (v1 .l-bar.l-try): Delegate's words at 800px, the mode's and Goal's at 780px
+  expect(document.querySelector('[data-kit="l-bar"]')?.hasAttribute('data-try')).toBe(true);
+  // the thinking level's " · " is its own node, so folding "Default" leaves "High", not " · High" (v1 .rb-e)
+  const effort = lead?.querySelector('[data-kit="rb-e"]');
+  expect(effort?.textContent).toBe(' · High');
+  expect(effort?.querySelector('[data-kit="rb-sep"]')?.textContent).toBe(' · ');
+  // v1 launcher.css: @container launcher (max-width: 1099px) .runners.trial .rb-h / .rb-m.def; 641–1099 .rb-h back
+  // beside a default model; (max-width: 700px) .rb-e; (max-width: 640px) the lead's chevron
+  const rules = HOME_CSS.replace(/\s+/g, ' ');
+  expect(rules).toContain("@container launcher (max-width: 1099px) { [data-kit='runners'][data-trial] > [data-kit='runner-btn'][data-lead] > [data-kit='rb-h'], [data-kit='runners'][data-trial] > [data-kit='runner-btn'][data-def] [data-kit='rb-m'], [data-kit='runners'][data-trial] > [data-kit='runner-btn'][data-def] [data-kit='rb-sep'] { display: none; }");
+  expect(rules).toContain("@container launcher (not (max-width: 640px)) and (max-width: 1099px) { [data-kit='runners'][data-trial] > [data-kit='runner-btn'][data-def] > [data-kit='rb-h'] { display: block; }");
+  expect(rules).toContain("@container launcher (max-width: 700px) { [data-kit='runners'][data-trial] [data-kit='rb-e'] { display: none; } }");
+  expect(rules).toContain("[data-kit='runners'][data-trial] > [data-kit='runner-btn'][data-lead] > [data-kit='icon'] { display: none; }");
+  expect(rules).toContain("@container launcher (max-width: 800px) { [data-kit='l-bar'][data-try] > [data-a='team'] > [data-text='control'] { display: none; } }");
+  expect(rules).toContain("@container launcher (max-width: 780px) { [data-kit='l-bar'][data-try] > [data-kit='mode-btn'] > [data-text='control'], [data-kit='l-bar'][data-try] > [data-a='goal'] > [data-text='control'] { display: none; } }");
+});
+
+test('a_compare_run_on_its_harness_s_default_model_says_default_after_its_name_v1_rb_m_def', () => {
+  mount(() => (
+    <Launcher
+      {...launcher({})}
+      runner={{ ...launcher({}).runner, compares: [{ label: 'Codex', removeLabel: 'Remove Codex', onRemove: () => undefined, model: 'Default', act: { onClick: () => undefined } }] }}
+    />
+  ));
+  const run = document.querySelector<HTMLElement>('[data-part="launcher.compare.runner"]');
+  expect(run?.querySelector('[data-part="launcher.compare.model"]')?.textContent).toBe('Default');
+  expect(document.querySelector('[data-kit="runners"]')?.hasAttribute('data-trial')).toBe(false);
+  expect(document.querySelector('[data-kit="l-bar"]')?.hasAttribute('data-try')).toBe(false);
+  // "Default" gives way before the run's name, as v1 .rb-m (flex 0 10000 auto)
+  expect(HOME_CSS.replace(/\s+/g, ' ')).toContain("[data-kit='runner-btn'][data-cmp] > [data-part~='launcher.compare.model'] { flex-shrink: 10000; margin-left: 13px; padding-left: 0; color: var(--muted); }");
 });

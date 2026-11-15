@@ -3,7 +3,7 @@
 import { expect, test } from 'vitest';
 import { firstFocus, goalOf, modelGroups, pickerRows, searchShown, stepRow, subLine, useHarness, varyRows, withModel, withSetting, withVary } from '../src/frame/picker.ts';
 import { modelWord, type AgentOffer } from '../src/frame/runner.ts';
-import { compareWords, newRun, sameSetup } from '../src/frame/trial.ts';
+import { compareWords, newRun, runWords, sameSetup } from '../src/frame/trial.ts';
 import { autoPick, runnerParts, runnerPick, type AutoPreview } from '../src/frame/auto.ts';
 
 const CLAUDE: AgentOffer = {
@@ -130,11 +130,8 @@ test('a_compare_run_is_a_copy_of_the_lead_only_on_the_same_harness_model_and_thi
   expect(sameSetup({ ...lead, model: 'sonnet' }, lead)).toBe(false);
   expect(sameSetup({ ...lead, effort: '' }, lead)).toBe(false);
   expect(sameSetup({ ...lead, agent: 'codex' }, lead)).toBe(false);
-  // its name's words: the model's name, never "Default"; thinking and account stay in the tooltip (v1 .runners.cmp)
-  expect(compareWords({ agent: 'codex', model: '', effort: 'high', account: 'w' })).toBe('');
-  expect(compareWords({ agent: 'claude', model: 'opus', effort: 'high', modelLabel: 'Opus 5.5' })).toBe('Opus 5.5');
-  // an id the harness doesn't list says nothing of its own, as the default does (v1 paintRunnerBtn: 'Default')
-  expect(compareWords({ agent: 'codex', model: 'gpt-5', effort: '' })).toBe('');
+  // its name's words: the model's name; thinking and account stay in the tooltip (v1 .runners.cmp)
+  expect(compareWords({ agent: 'claude', model: 'opus', effort: 'high', modelLabel: 'Opus 5.5' }, 'Default')).toBe('Opus 5.5');
 });
 
 test('a_copy_of_the_lead_added_with_plus_starts_from_the_lead_s_model_thinking_and_account_so_try_it_two_ways_is_offered_at_once', () => {
@@ -179,4 +176,21 @@ test('an_unknown_model_id_reads_default_on_the_harness_button_never_the_raw_id_v
   expect(modelWord({ model: 'gpt-4-legacy', modelLabel: '' })).toBe('');
   expect(runnerParts({ model: modelWord({ model: 'gpt-4-legacy' }), effort: 'High', account: '', fallback: 'Default' })).toEqual({ model: 'Default', def: true, effort: 'High', account: '' });
   expect(runnerPick({ agent: 'codex', name: 'Codex', model: modelWord({ model: 'gpt-4-legacy' }), effort: '', account: '', fallback: 'Default' })).toBe('Default');
+});
+
+test('a_compare_run_on_its_harness_s_default_model_reads_default_v1_paint_runner_btn_rb_m_def', () => {
+  // v1 launcher.js paintCompare -> runners.js paintRunnerBtn: <span class="rb-m def">Default</span> on a .cmp-x button
+  expect(compareWords({ agent: 'codex', model: '', effort: 'high', account: 'w' }, 'Default')).toBe('Default');
+  // an id the harness doesn't list reads Default too, never the raw id
+  expect(compareWords({ agent: 'codex', model: 'gpt-5', effort: '' }, 'Default')).toBe('Default');
+  expect(compareWords({ agent: 'codex', model: 'gpt-5', effort: '', modelLabel: 'GPT-5' }, 'Default')).toBe('GPT-5');
+});
+
+test('a_copy_of_the_lead_says_its_model_until_a_change_is_picked_then_only_the_change_v1_same_needs_a_variant', () => {
+  const copy = { agent: 'claude', model: '', effort: '' };
+  // just added with +: no change picked yet, so it reads like any run (v1 "Claude Code Default"), never bare
+  expect(runWords(copy, [], 'Default')).toEqual({ model: 'Default' });
+  expect(runWords({ ...copy, model: 'opus', modelLabel: 'Opus 4.7' }, [], 'Default')).toEqual({ model: 'Opus 4.7' });
+  // a change picked: the copy says only that (v1 .runners.trial .same)
+  expect(runWords(copy, ['Subagents on Haiku'], 'Default')).toEqual({ variant: ['Subagents on Haiku'] });
 });

@@ -131,8 +131,13 @@ export const sameSetup = (r: Pick<Runner, 'agent' | 'model' | 'effort'>, lead: P
   r.agent === lead.agent && r.model === lead.model && r.effort === lead.effort;
 
 /** A compare run's own words after its name (v1 .rb-m in a compare: thinking and account fold away there, the tooltip
- * keeps them): its model's name, '' on the harness's default. */
-export const compareWords = (r: Runner): string => modelWord(r);
+ * keeps them): its model's name, `fallback` ("Default") on the harness's default, as v1 paintRunnerBtn says. */
+export const compareWords = (r: Runner, fallback: string): string => modelWord(r) || fallback;
+
+/** What a compare run's button says after its name: Try it two ways' words once a change is picked (the copy says only
+ * that), else its model's word, "Default" included (v1 has no .same without a variant: paintRunnerBtn's .rb-m). */
+export const runWords = (r: Runner, variant: readonly string[], fallback: string): { readonly model?: string; readonly variant?: readonly string[] } =>
+  variant.length ? { variant } : { model: compareWords(r, fallback) };
 
 /** A run added with + (v1 vsBtn.onclick): a copy of the lead starts from the lead's model, thinking and account, so it's
  * Try it two ways' ground at once; another harness starts from its defaults. */

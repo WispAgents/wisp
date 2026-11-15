@@ -22,7 +22,7 @@ import { useNow } from '../clock.ts';
 import { SESSION, type SessionRow } from '../rows.ts';
 import { longTime, sectionOf, shortAgo, statusOf } from './rows-view.ts';
 import { autoBlocked, autoPreview, autoRules, create, setSetting, trial, type Attachment } from './commands.ts';
-import { compareWords, newRun, sameSetup, settingModel, trialVary, variantWords, type Variant } from './trial.ts';
+import { newRun, runWords, sameSetup, settingModel, trialVary, variantWords, type Variant } from './trial.ts';
 import { modelWord, type Runner } from './runner.ts';
 import { goalGate, goalOf, goalSent, isBareGoal, typedInFull, type HomeGoal } from './goal-gate.ts';
 import { feedbackCommand, isFeedback, openFeedback } from './feedback.ts';
@@ -562,14 +562,12 @@ export function HomeView(props: { readonly onBack?: () => void }): JSX.Element {
             const h = harnessOf(harnesses(), r.agent);
             const can = varies(r, i);
             const words = can.length ? variantWords(t, vary()) : [];
-            const own = can.length ? '' : compareWords(r);
             return {
               label: h.name,
               logo: h.logo,
               removeLabel: t('shell.home.compareRemove', { name: h.name }),
               onRemove: () => (setCmpPicker(undefined), setRuns(runs().filter((_, k) => k !== i)), setVary(undefined)),
-              ...(own && { model: own }),
-              ...(words.length > 0 && { variant: words }),
+              ...runWords(r, words, t('shell.runner.default')),
               // the same two-pane harness picker as the lead's (v1 runnerPicker on .runner-btn.cmp-x), What's different in it
               act: { onClick: () => (setPicker(false), setAutoPop(false), setCmpPicker(cmpPicker() === i ? undefined : i)) },
               open: cmpPicker() === i,
