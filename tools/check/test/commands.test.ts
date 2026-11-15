@@ -165,3 +165,17 @@ test('commands: review fixes: cd ends a block, parens split, skips report once, 
   ];
   assert.deepEqual(got, want.sort(), got.join('\n'));
 });
+
+test('commands: a cited path that exists only because it is git-ignored fails like in CI; a tracked file passes', async () => {
+  const { execFileSync } = await import('node:child_process');
+  const { mkdirSync, writeFileSync } = await import('node:fs');
+  const { join } = await import('node:path');
+  const root = tree({ 'docs/dev.md': '# Dev\n\n```sh\nnode tools/check.ts\nnode tools/out/report.ts\n```\n', '.gitignore': 'tools/out/\n' });
+  mkdirSync(join(root, 'tools/out'), { recursive: true });
+  writeFileSync(join(root, 'tools/out/report.ts'), '');
+  const git = (...a: string[]): void => void execFileSync('git', a, { cwd: root, stdio: 'ignore' });
+  git('init', '-q');
+  git('add', '.');
+  const got = (await messages(commands, root)).filter((m) => m.startsWith('docs/dev.md'));
+  assert.deepEqual(got, ["docs/dev.md:5 commands tools/out/report.ts is git-ignored: it exists here but won't in CI (name a tracked file, or add it to CREATED in tools/check/rules/commands.ts)"], got.join('\n'));
+});

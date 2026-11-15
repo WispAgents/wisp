@@ -9,10 +9,15 @@
 //            usage text; main.rs's dispatch arms) or a plugin's command namespace (`wisp crew create` ↔ crew.create), else the CLI
 //            launches it as a task. External tools (git, gh, curl, cargo's own subcommands) are skipped,
 //            and so are placeholders (`<crate>`, `{x}`, `$X`, `*`, `…`).
+// Paths resolve against what CI will check out (`git ls-files --cached --others --exclude-standard`, one
+// call per run): a git-ignored path that exists only locally (qa/out/, target/) fails here too, with a
+// message saying so. A path a documented command creates goes in CREATED with the command that makes it.
+// Outside a git checkout (test fixtures without `git init`) the working tree is used.
 // A docs line opts out with `<!-- cmd-check: skip <why> -->` on the line, or on the line just above a
 // fence for the whole block; a skip without a why is an error.
 
-import { existsSync, readdirSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
+import { existsSync, readdirSync, realpathSync } from 'node:fs';
 import { join, posix } from 'node:path';
 import { finding } from '../core/report.ts';
 import { crates } from '../core/rust.ts';
@@ -32,6 +37,8 @@ const INSTALLED: Readonly<Record<string, string>> = { '.agents/bin/monoflow': 't
 /** root scripts another coder is adding right now (coder-r230, docs/v2-queue.md DX 1): a doc may name them
  * before they land (their own bodies are checked like any script); drop once both are in package.json */
 const PENDING_ROOT = new Set(['dev', 'dev:desktop']);
+/** paths that are no files in git but that a documented command creates: path → the command that makes it */
+const CREATED: Readonly<Record<string, string>> = {};
 const SKIP = /<!--\s*cmd-check:\s*skip\b(.*?)-->/;
 
 export interface Word {
@@ -92,6 +99,31 @@ export interface Known {
   /** the first words `wisp` takes */
   wisp: Set<string>;
   exists(file: string): boolean;
+  /** on disk but not what CI sees (git-ignored); optional so hand-built Knowns stay valid */
+  ignored?(file: string): boolean;
+}
+
+/** Every path CI will see (files and their folders), or undefined outside a git checkout. */
+export function trackedPaths(root: string): Set<string> | undefined {
+  let out: string;
+  try {
+    const top = execFileSync('git', ['rev-parse', '--show-toplevel'], { cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim();
+    if (realpathSync(top) !== realpathSync(root)) return undefined;
+    out = execFileSync('git', ['ls-files', '-z', '--cached', '--others', '--exclude-standard'], { cwd: root, encoding: 'utf8', maxBuffer: 256 * 1024 * 1024, stdio: ['ignore', 'pipe', 'ignore'] });
+  } catch {
+    return undefined;
+  }
+  const set = new Set<string>();
+  for (const f of out.split('\0')) {
+    if (!f) continue;
+    set.add(f);
+    for (let i = f.lastIndexOf('/'); i > 0; i = f.lastIndexOf('/', i - 1)) {
+      const d = f.slice(0, i);
+      if (set.has(d)) break;
+      set.add(d);
+    }
+  }
+  return set;
 }
 
 function scriptsOf(manifest: unknown): Record<string, string> {
@@ -130,14 +162,20 @@ function readKnown(ctx: Ctx): Known {
     for (const c of cmds) if (isRecord(c) && typeof c.id === 'string') namespaces.add(c.id.split('.')[0] ?? '');
   }
   const src = (f: string): string => (ctx.exists(f) ? ctx.read(f) : '');
-  const exists = (f: string): boolean => ctx.exists(INSTALLED[f] ?? f);
-  return { scripts, workspaces, crates: new Set(names), wisp: wispWords(src(ARGS), src(MAIN), namespaces), exists };
+  const tracked = trackedPaths(ctx.root);
+  const strip = (f: string): string => f.replace(/\/+$/, '');
+  const inGit = (f: string): boolean => (tracked ? strip(f) === '.' || strip(f) === '' || tracked.has(strip(f)) || CREATED[strip(f)] !== undefined : ctx.exists(f));
+  const exists = (f: string): boolean => inGit(INSTALLED[f] ?? f);
+  const ignored = (f: string): boolean => tracked !== undefined && ctx.exists(f);
+  return { scripts, workspaces, crates: new Set(names), wisp: wispWords(src(ARGS), src(MAIN), namespaces), exists, ignored };
 }
 
 function checkPath(file: string, base: string, k: Known): string | undefined {
   if (placeholder(file) || file.startsWith('/') || file.startsWith('~') || file.includes(':')) return undefined;
   const rel = posix.normalize(posix.join(base, file));
-  return k.exists(rel) ? undefined : `${file} doesn't exist${base ? ` (from ${base})` : ''}`;
+  if (k.exists(rel)) return undefined;
+  const from = base ? ` (from ${base})` : '';
+  return k.ignored?.(rel) ? `${file}${from} is git-ignored: it exists here but won't in CI (name a tracked file, or add it to CREATED in ${'tools/check/rules/commands.ts'})` : `${file} doesn't exist${from}`;
 }
 
 function checkNpm(w: readonly string[], base: string, k: Known): string | undefined {
