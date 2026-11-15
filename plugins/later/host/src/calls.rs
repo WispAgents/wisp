@@ -30,6 +30,9 @@ pub(crate) fn task_of_session(s: &Session) -> Task {
         archived: s.archived,
         busy: s.state == SessionState::Running,
         asking: s.state == SessionState::Waiting || !s.ext_of("wisp.runtime")["ask"].is_null(),
+        // v1 #795's lead held in Working on its delegates: v2's runtime doesn't hold one yet (`land::Facts.owes` is never
+        // set, a turn that ends with delegates out lands in Review, where the check-in goes); a Working task whose turn
+        // ended is an after-turn step checking its work, which holds it. Set this from runtime once it holds leads.
         delegates: false,
         sub: s.parent_id.is_some(),
         tour: s.agent == "wisp",

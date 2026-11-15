@@ -47,11 +47,12 @@ pub struct Task {
     pub account: String,
     pub state: TaskState,
     pub archived: bool,
-    /// a run of it is live (or it is being deleted)
+    /// a run of it is live, or it is in Working for another reason (an after-turn step: Auto's or its goal's check)
     pub busy: bool,
     /// it asks the user a question (an answer would take the follow-up's place)
     pub asking: bool,
-    /// its last turn waits on delegates that still run
+    /// a lead whose turn ended with the delegates it handed out still at work: it stays in Working on them, and is
+    /// free (v1 #795: the check-in it scheduled is often how it watches them; their report still comes after)
     pub delegates: bool,
     /// a subagent or a delegate: its lead schedules, not it
     pub sub: bool,
@@ -60,9 +61,10 @@ pub struct Task {
 }
 
 impl Task {
-    /// A follow-up can go now: not while its agent runs, asks or waits on delegates (v1 #free).
+    /// A follow-up can go now (v1 #free): not while its agent runs, asks you or an after-turn step checks its work.
+    /// A lead in Working only because its delegates still work is free (v1 #795).
     pub fn free(&self) -> bool {
-        !self.busy && !self.asking && !self.delegates && self.state != TaskState::Running
+        !self.busy && !self.asking && (self.state != TaskState::Running || self.delegates)
     }
 }
 
