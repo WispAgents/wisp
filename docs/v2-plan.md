@@ -23,7 +23,7 @@ Rust for everything but the UI, Solid/TS for the UI, everything a plugin (ADR-00
 | CI, last full run (56405a3a) | Linux + macOS: one brittle test (platform-controls read only the last reduced-motion block) — fixed in the test; Windows running |
 | Budgets | initial JS 107.2 KB br (≤ 120) · CSS 27.1 KB (≤ 30) |
 | Weekly usage | 0 % (reset applied) · **owner 2026-11-15: one coder at a time** |
-| Coders running | coder-r298 (labels, My Stuff computer) |
+| Coders running | coder-r299 (phone step 14 rest) |
 
 ## 3. Owner decisions (every one, dated; read before any change)
 
@@ -943,7 +943,8 @@ Source: `docs/v1-features.md` (each row's evidence and test). `[x]` built, `[ ]`
 |---|---|---|
 | 283 | DX: build bundle + Tauri lock: stopped before edits; plan in §4.6 | to redo |
 | 282 | Server perf budgets: stopped before edits; plan in §4.3 | to redo |
-| 298 | "This Mac" labels follow the OS (owner 11-08); My Stuff says each item's computer; iOS compose only on Tasks | in progress |
+| 299 | Phone step 14 rest: Crew tab as the platform screen; wisp Cloud sign-in on Computers | in progress |
+| 298 | "This Mac" labels follow the OS (owner 11-08); My Stuff says each item's computer; iOS compose only on Tasks | committed |
 | 297 | Phone step 14 part: Settings + My Stuff platform screens (left: Crew tab, cloud sign-in) | committed |
 | 296 | Team rows as v1: machine chip, ticking time, time taken (F-crew-11) | committed (f1dcea35) |
 | 295 | v1 #800 ported (keyboard-clipboard task ID -> mention); #799, #801 already held, now tested | committed (9032c602) |
