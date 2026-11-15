@@ -7,15 +7,14 @@
 // inside a user-preference query (prefers-reduced-motion, forced-colors), which must win everywhere.
 // Anywhere else it needs a written reason: a `/* !important: <why> */` comment on the line above or
 // on the same line (overriding a style a library sets inline is the usual one).
-// Layout (design/layout.md §6): no flex-wrap outside Wrap, no wrapping white-space on control parts
-// (css-layout.ts).
+// px and layout (design/layout.md §6: no flex-wrap outside Wrap, no wrapping white-space on control parts) are
+// @wisp/tokens' css-rules.ts, which the kit's vitest (packages/ui/test/css-rules.test.ts) runs too: one implementation.
 
 import ts from 'typescript';
-import { scanCss, splitTop } from '../core/css-scan.ts';
-import { layoutProblems } from './css-layout.ts';
+import { kitCssProblems, scanCss, splitTop, type KitScale } from '../../../packages/tokens/src/css-rules.ts';
 import { finding } from '../core/report.ts';
 import { isCode, lineOf, propName, visit } from '../core/source.ts';
-import { pxScale, TOKENS_DIR } from '../core/tokens.ts';
+import { kitScale, TOKENS_DIR } from '../core/tokens.ts';
 import type { Ctx, Finding, Rule } from '../core/types.ts';
 
 const ID = 'css';
@@ -95,7 +94,7 @@ export function importantReasons(css: string): Set<number> {
   return lines;
 }
 
-function kitCss(ctx: Ctx, file: string, scale: Set<number> | undefined): Finding[] {
+function kitCss(ctx: Ctx, file: string, sets: KitScale | undefined): Finding[] {
   const out: Finding[] = [];
   const text = ctx.read(file);
   const { preludes, decls } = scanCss(text);
@@ -107,22 +106,12 @@ function kitCss(ctx: Ctx, file: string, scale: Set<number> | undefined): Finding
       if (endsInIsList(sel)) out.push(finding(file, p.line, ID, `selector ends in an :is()/:where() list: ${sel}`));
     }
   }
-  const checkPx = (text: string, line: number): void => {
-    if (!scale) return;
-    for (const m of text.matchAll(/(?<![\w.#-])(-?\d*\.?\d+)px\b/g)) {
-      const v = Math.abs(Number(m[1]));
-      if (!scale.has(v)) out.push(finding(file, line, ID, `${m[0]} is off the token scale (${TOKENS_DIR}): use a token`));
-    }
-  };
-  // px inside a string or url() is content (an inline SVG), not a length
-  const lengths = (v: string): string => v.replace(/url\([^)]*\)/g, '').replace(/"[^"]*"|'[^']*'/g, '');
   for (const d of decls) {
     const reasoned = reasons.has(d.line) || reasons.has(d.line - 1);
     if (/!\s*important/i.test(d.value) && !importantAllowed(d.within) && !reasoned) out.push(finding(file, d.line, ID, `!important in ${d.prop}: use the cascade layers`));
-    if (!d.prop.startsWith('--')) checkPx(lengths(d.value), d.line);
   }
-  for (const p of preludes) if (p.at) checkPx(p.text, p.line);
-  for (const p of layoutProblems(decls)) out.push(finding(file, p.line, ID, p.message));
+  // px on the scale, breakpoints only in queries, nothing wraps but Wrap: shared with packages/ui/test/css-rules.test.ts
+  for (const p of kitCssProblems(text, sets)) out.push(finding(file, p.line, ID, p.message));
   return out;
 }
 
@@ -132,9 +121,9 @@ export const css: Rule = {
   run(ctx) {
     const out: Finding[] = [];
     const kitFiles = ctx.files.filter((f) => inKit(f) && f.endsWith('.css'));
-    const scale = kitFiles.length ? pxScale(ctx.root) : undefined;
-    if (kitFiles.length && !scale) out.push(finding(TOKENS_DIR, 1, ID, 'no token files yet: px values in the kit are not checked', 'warn'));
-    for (const file of kitFiles) out.push(...kitCss(ctx, file, scale));
+    const sets = kitFiles.length ? kitScale(ctx.root) : undefined;
+    if (kitFiles.length && !sets) out.push(finding(TOKENS_DIR, 1, ID, 'no token files yet: px values in the kit are not checked', 'warn'));
+    for (const file of kitFiles) out.push(...kitCss(ctx, file, sets));
     for (const file of ctx.files) {
       if (inKit(file)) continue;
       if (STYLE_FILE.test(file)) out.push(finding(file, 1, ID, 'CSS lives in packages/ui only'));

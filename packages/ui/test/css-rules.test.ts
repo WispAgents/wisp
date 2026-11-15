@@ -3,9 +3,15 @@
 // a layer, px only from the token scale, no :has(), no :is(), no hard-coded colours.
 import { expect, test } from 'vitest';
 import { BREAKPOINT_PX, PX_SCALE } from '@wisp/tokens';
+// The px and layout rules are `npm run check`'s own (@wisp/tokens/css-rules): one implementation, so a sheet
+// fails both gates or neither (round 244: the check passed a raw 600px query and a data-part "…wrap" flex-wrap).
+import { kitCssProblems } from '@wisp/tokens/css-rules';
 
 const files = import.meta.glob<string>('../src/css/*.css', { query: '?raw', import: 'default', eager: true });
-const sheets = Object.entries(files).map(([path, raw]) => ({ name: path.replace('../src/css/', ''), css: raw.replace(/\/\*[^]*?\*\//g, '') }));
+const sheets = Object.entries(files).map(([path, raw]) => ({ name: path.replace('../src/css/', ''), raw, css: raw.replace(/\/\*[^]*?\*\//g, '') }));
+const SETS = { scale: new Set(PX_SCALE), breakpoints: new Set(BREAKPOINT_PX) };
+const problems = (kind: 'px' | 'layout'): string[] =>
+  sheets.flatMap((s) => kitCssProblems(s.raw, SETS).filter((p) => p.kind === kind).map((p) => `${s.name}:${p.line} ${p.message}`));
 
 test('there are stylesheets to check', () => {
   expect(sheets.length).toBeGreaterThan(5);
@@ -36,30 +42,8 @@ test('every other sheet is one @layer kit or @layer reset block', () => {
   }
 });
 
-/** Each px literal with whether it sits in an @media / @container condition. */
-function pxUses(css: string): Array<{ px: number; inQuery: boolean }> {
-  const out: Array<{ px: number; inQuery: boolean }> = [];
-  for (const m of css.matchAll(/(@media|@container)[^{]*\{|(-?\d*\.?\d+)px/g)) {
-    if (m[1]) {
-      for (const q of m[0].matchAll(/(\d*\.?\d+)px/g)) out.push({ px: Number(q[1]), inQuery: true });
-    } else if (m[2]) {
-      out.push({ px: Math.abs(Number(m[2])), inQuery: false });
-    }
-  }
-  return out;
-}
-
 test('px values come from the token scale (breakpoints only in @media / @container)', () => {
-  const scale = new Set(PX_SCALE);
-  const bps = new Set(BREAKPOINT_PX);
-  const bad: string[] = [];
-  for (const s of sheets) {
-    for (const u of pxUses(s.css)) {
-      const ok = u.px === 0 || (u.inQuery ? bps.has(u.px) : scale.has(u.px));
-      if (!ok) bad.push(`${s.name}: ${u.px}px${u.inQuery ? ' (in a query)' : ''}`);
-    }
-  }
-  expect(bad).toEqual([]);
+  expect(problems('px')).toEqual([]);
 });
 
 test('no :has() and no :is() (they make every style recalc walk large boxes)', () => {
@@ -100,9 +84,22 @@ test('the kit styles by data-kit attributes, never by class names', () => {
   }
 });
 
-test('nothing wraps a row but Wrap: flex-wrap: wrap appears only in its rule (design/layout.md §5)', () => {
-  const wraps = sheets.flatMap((s) => [...s.css.matchAll(/([^{}]+)\{[^{}]*flex-wrap:\s*wrap/g)].map((m) => `${s.name}: ${(m[1] ?? '').trim()}`));
-  expect(wraps).toEqual(["layout.css: [data-kit='wrap'], [data-layout='wrap']"]);
+test('nothing wraps a row but Wrap: flex-wrap: wrap appears only on a Wrap, control text never wraps (design/layout.md §5, §6)', () => {
+  expect(problems('layout')).toEqual([]);
+  // the Wrap layout itself is still where wrapping lives
+  const layout = sheets.find((x) => x.name === 'layout.css')?.css ?? '';
+  expect(layout).toMatch(/\[data-kit='wrap'\], \[data-layout='wrap'\] \{[^}]*flex-wrap: wrap;/);
+});
+
+test('css_rules_the_shared_check_refuses_a_raw_px_query_and_a_flex_wrap_outside_wrap', () => {
+  // the same function as `npm run check`: a 600px query (on the scale, not a breakpoint) and a data-part named …wrap
+  const sets = { scale: new Set([0, 8, 600]), breakpoints: new Set([720]) };
+  const bad = "@layer kit {\n  @container launcher (max-width: 600px) { [data-kit='a'] { gap: 8px; } }\n  [data-kit='seg'][data-part='x.account-wrap'] { flex-wrap: wrap; }\n  [data-kit='seg'][data-layout='wrap'] { gap: 8px; }\n  [data-kit='seg']:not([data-layout='wrap']) { flex-wrap: wrap; }\n}";
+  expect(kitCssProblems(bad, sets).map((p) => [p.line, p.kind])).toEqual([
+    [2, 'px'],
+    [3, 'layout'],
+    [5, 'layout'],
+  ]);
 });
 
 test('control text never gets white-space: normal', () => {
