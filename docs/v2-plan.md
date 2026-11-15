@@ -23,7 +23,7 @@ Rust for everything but the UI, Solid/TS for the UI, everything a plugin (ADR-00
 | CI, last full run (f4679d2d) | **2nd green run: Linux 4/4 + macOS 2/2 + Windows node 22**; Windows node 24: serve_task follow-up timing (1.5 s fake vs Windows load; next: gate the fake) |
 | Budgets | initial JS 107.2 KB br (≤ 120) · CSS 27.1 KB (≤ 30) |
 | Weekly usage | 96 % (owner 2026-11-15 14:50: keep going with one coder until the limit) |
-| Coders running | coder-r276 (ledger day labels, filter row) |
+| Coders running | coder-r277 (serve_task gate) |
 
 ## 3. Owner directions (standing rules)
 
@@ -623,7 +623,7 @@ Source: `docs/v1-features.md` (each row's evidence and test). `[x]` built, `[ ]`
 - [ ] `uncarryStuck` note isn't shown on the Machines card
 - [ ] Ledger keys (j/k, /, [ ]) work only with focus inside the ledger (they mean other things page-wide)
 - [x] `wisp import` drops v1 per-turn changes (importer.rs), so imported tasks show 0 files on day cards (r267: kept in `ext["wisp.runtime"].changes` like a live turn; `a_v1_turns_changes_*` tests)
-- [ ] Ledger scrubber has no day labels (the mock had them); `wisp notices` chip clipped at 1280 (scrolls)
+- [x] Ledger scrubber day labels; filter row never clipped (round 276)
 - [ ] Ledger not yet in design/v1-reference/allowed.md for the parity gate
 - [ ] `rows-view.ts` forces `en-GB` (peer-note fixed in r241) dates: check v1 (later/format.ts is en-GB on purpose, as v1) and use the app locale where v1 did
 - [ ] Popover reads its width once (an iPad rotating while open doesn't switch popover/sheet)
@@ -811,7 +811,8 @@ Source: `docs/v1-features.md` (each row's evidence and test). `[x]` built, `[ ]`
 
 | Round | What | State |
 |---|---|---|
-| 276 | Ledger: scrubber day labels; filter chips never clipped (collapse by priority) | in progress |
+| 277 | serve_task follow-up test held on a gate, not a 1.5 s delay (and other FAKE_DELAY while-running tests) | in progress |
+| 276 | Ledger: scrubber day labels; filter row one line (collapse, then scroll) | committed |
 | 275 | serve_orphans: Windows pid reuse (test tracked pids); fakes hold a life lock | committed (488e7813) |
 | 274 | A command's events go out with its writes; budget/channels/machines via outbox (ADR-0075) | committed (d60b14dc, f4679d2d) |
 | 273 | 4 tools tests on Windows: 2 product bugs (commands ignored-file check off on Windows; dev home path rules) + 2 tests | committed (a7297cd7, 8921f5ae) |
