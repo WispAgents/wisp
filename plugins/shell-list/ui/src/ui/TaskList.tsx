@@ -11,6 +11,7 @@ import type { ExtensionProps, ResolvedExtension } from '@wisp/shell/contract';
 import { copyId, setUnread, toggleArchived, toggleDone, toggleForLater, togglePin } from '../actions.ts';
 import { flatten, itemKey, sectionGroups, type Item } from '../model/flat.ts';
 import { pickOf } from '../model/sections.ts';
+import { createPull } from '../model/pull.ts';
 import { rowMenu } from '../model/menu.ts';
 import { anyShowsDone } from '../model/row.ts';
 import { menuEntryOf } from '@wisp/shell';
@@ -236,22 +237,16 @@ function pick(env: ListEnv, value: string, plugins: readonly ResolvedExtension[]
 }
 
 /** Pull to refresh (the phone apps): every computer reconnects now, skipping its backoff (ADR-0065 §4); the pull
- *  spins while one is still connecting. Its twins: the me menu's Reconnect and the offline bar's Retry. */
+ *  spins from the pull until the reconnect settles (model/pull.ts). Its twins: the me menu's Reconnect and the offline bar's Retry. */
 function pullRefresh(env: ListEnv, t: (key: string) => string): { readonly onRefresh: () => void; readonly refreshing: boolean; readonly label: string } | undefined {
   if (!env.swipes) return undefined;
   const peers = env.client.peers;
   const connecting = useSignal(() => peers.list()().some((p) => peers.status(p)().kind === 'connecting'));
-  const [pulled, setPulled] = createSignal(false);
-  createEffect(() => {
-    if (!connecting()) setPulled(false);
-  });
+  const pull = createPull(connecting, () => peers.reconnect(), (ms, run) => env.client.scope.timeout(ms, run));
   return {
-    onRefresh: () => {
-      peers.reconnect();
-      setPulled(connecting());
-    },
+    onRefresh: pull.pull,
     get refreshing() {
-      return pulled();
+      return pull.refreshing();
     },
     label: t('kit.gesture.reconnect'),
   };

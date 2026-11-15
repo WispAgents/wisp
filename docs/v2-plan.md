@@ -629,7 +629,7 @@ Source: `docs/v1-features.md` (each row's evidence and test). `[x]` built, `[ ]`
 - [ ] Popover reads its width once (an iPad rotating while open doesn't switch popover/sheet)
 - [ ] Android long-press sheet has no Select row (list selection mode comes with step 13)
 - [ ] `phone.tsx` copies iOS token values as numbers (IOS_SEP has no token); 466 lines
-- [ ] Pull to refresh may never show its spinner (reads `connecting()` right after `reconnect()`)
+- [x] Pull to refresh may never show its spinner (reads `connecting()` right after `reconnect()`)
 - [ ] Decide: should push notifications answer tool approvals in place (like ntfy)?
 - [ ] A machine that never answers keeps a lead in Working until Stop (no give-up timeout for far subagents)
 - [ ] ~300 strings no code uses (shell-home tips/setup/getapp, unused wisp.later.*, shell.key.switcher, shell-settings.diag.*): delete, with a check that fails on unused keys
