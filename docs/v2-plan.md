@@ -20,10 +20,10 @@ Rust for everything but the UI, Solid/TS for the UI, everything a plugin (ADR-00
 |---|---|
 | v1 features | **315 built · 7 partial · 5 missing · 4 dropped** of 331 (§6) |
 | Regressed | none (F-comp-1 picker restored to v1 in round 233) |
-| CI, last full run (302cff77) | **Linux 4/4 + macOS 2/2 green · Windows 22: all Rust tests pass**; 4 tools tests assume POSIX (r273) · Windows 24 running |
+| CI, last full run (302cff77) | **Linux 4/4 + macOS 2/2 green · Windows 22 + 24: all Rust tests pass, jobs 33 min**; only 4 tools tests (fixed r273, pushed) |
 | Budgets | initial JS 107.2 KB br (≤ 120) · CSS 27.1 KB (≤ 30) |
 | Weekly usage | 95 % (owner 2026-11-15 14:50: keep going with one coder until the limit) |
-| Coders running | coder-r273 (tools tests on Windows) |
+| Coders running | none (CI on the push) |
 
 ## 3. Owner directions (standing rules)
 
@@ -795,7 +795,7 @@ Source: `docs/v1-features.md` (each row's evidence and test). `[x]` built, `[ ]`
 
 | Round | What | State |
 |---|---|---|
-| 273 | 4 tools tests on Windows (commands rule, parseArgs root, test.ts monoflow detection, dev home) | in progress |
+| 273 | 4 tools tests on Windows: 2 product bugs (commands ignored-file check off on Windows; dev home path rules) + 2 tests | committed (a7297cd7, 8921f5ae) |
 | 272 | A write's events queued before its rows can be read (outbox, ADR-0074) | committed (d1a32104) |
 | 271 | Budget counts a turn that just ended: compare/view wait for earlier events (kernel Bus::delivered, ADR-0073) | committed (3cd4ffd7) |
 | 270 | Two load-sensitive UI tests + a Select stuck-open bug (product) | committed (b532ec4e, 302cff77) |
