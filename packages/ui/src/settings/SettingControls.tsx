@@ -9,6 +9,7 @@ import { SettingsRow } from '../composites/Section.tsx';
 import { Switch } from '../controls/Switch.tsx';
 import { Select, type SelectOption } from '../controls/Select.tsx';
 import { Tabs } from '../controls/Tabs.tsx';
+import '../css/settings.css';
 
 /** One setting as a row reads it: @wisp/client's TypedSettings `get(key)` / `lockedBy(key)` / `set`. */
 export interface SettingSource<V> {

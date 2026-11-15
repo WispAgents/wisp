@@ -45,13 +45,8 @@
   /* v1 .sx-pane: groups 14px apart by their own margin (.sx-group + .sx-group), not a gap */
   /* v1 .sx-pane is a block: its children's margins meet (a group's 14px under a head's 22px is 22px) */
   [data-kit='settings-pane'] { display: block; padding: var(--space-7) var(--space-8) 28px; }
-  /* every child after the first (was `> * + *`: a sibling rule on `*` slows every list's row inserts, F-phone-8) */
-  :where([data-kit='settings-pane']) > :not(:first-child) { margin-top: 14px; }
   /* a group a plugin put in through a slot (a `contents` wrapper) keeps the same 14px */
   [data-kit='settings-pane'] [data-kit='settings-group'] { margin-top: 14px; }
-  /* v1 .sx-head: a group's head sits 22px under what's above it, 2px in, its button on the head's last line */
-  [data-kit='settings-pane'] [data-kit='settings-group'][data-head] { margin-top: 22px; }
-  [data-kit='settings-pane'] > [data-kit='settings-group']:first-child { margin-top: 0; }
   /* v1 .sx-lede: 16px under it, and what follows it takes no margin of its own */
   [data-kit='settings-lede'] { margin: 0 var(--space-1) var(--space-7); font-size: var(--fs-sm); color: var(--muted); line-height: 1.5; }
 
@@ -60,7 +55,6 @@
   [data-kit='settings-group'][data-head] { gap: var(--space-4); }
   /* headless, the group is the box (v1 .sx-group: its line, corners and surface); its body inside is plain */
   [data-kit='settings-group']:not([data-head]) { --field-bg: var(--surface); border: var(--size-hairline) solid var(--line); border-radius: calc(var(--radius-lg) + var(--space-1)); background: var(--surface-2); }
-  [data-kit='settings-group']:not([data-head]) > [data-kit='settings-group-body'] { border: 0; border-radius: 0; background: none; }
   [data-kit='settings-group-head'] { display: flex; align-items: flex-end; justify-content: space-between; gap: var(--space-6); margin: 0 2px; }
   [data-kit='settings-group-titles'] { display: flex; flex-direction: column; gap: var(--space-1); min-width: 0; }
   [data-kit='settings-group-title'] { margin: 0; font-size: var(--fs-md); font-weight: var(--fw-semibold); color: var(--ink); }
@@ -110,7 +104,6 @@
 
   /* a box inside a group, under its row (v1 .sx-accts: a harness's accounts and "Add another … account") */
   [data-kit='settings-inset'] { margin: 0 14px 12px 3.125rem; border: var(--size-hairline) solid var(--line); border-radius: 10px; background: var(--surface); overflow: hidden; }
-  :where([data-kit='settings-inset']) > :not(:first-child) { border-top: var(--size-hairline) solid var(--line); }
   [data-kit='settings-inset'] + [data-kit='settings-row'] { border-top: var(--size-hairline) solid var(--line); }
   [data-kit='settings-inset-row'] { display: flex; align-items: center; gap: 10px; width: 100%; min-height: 44px; padding: 6px 8px 6px 12px; font-size: 13px; text-align: left; }
   [data-kit='settings-inset-text'] { flex: 1; display: flex; align-items: baseline; gap: 0 8px; min-width: 0; }
@@ -133,12 +126,9 @@
   [data-kit='settings-note'] { margin: 8px 0 0; font-size: 12.5px; line-height: var(--lh-base); color: var(--muted); }
   [data-kit='settings-note'][data-after='10'] { margin-top: 10px; }
   [data-kit='settings-note'][data-boxed] { margin: 0; padding: 12px 14px; }
-  [data-kit='settings-group-body'] > [data-kit='settings-note'][data-boxed] + [data-kit='settings-row'] { border-top: var(--size-hairline) solid var(--line); }
   /* rows a plugin adds through a slot keep the line between rows */
-  [data-kit='settings-group-body'] > [data-kit='settings-row'] + [data-kit='slot'] [data-kit='settings-row'], [data-kit='settings-group-body'] > [data-kit='slot'] [data-kit='extension'] + [data-kit='extension'] [data-kit='settings-row'] { border-top: var(--size-hairline) solid var(--line); }
   [data-kit='settings-note'][data-inset] { margin-left: 2px; margin-right: 2px; }
   /* a group with a head straight in a pane: v1's head and box were siblings there, the box 14px under the head */
-  [data-kit='settings-pane'] > [data-kit='settings-group'][data-head], [data-kit='settings-pane'] > [data-kit='slot'] > [data-kit='extension'] > [data-kit='settings-group'][data-head] { gap: 0; }
   [data-kit='settings-pane'] > [data-kit='settings-group'][data-head] > [data-kit='settings-group-body'], [data-kit='settings-pane'] > [data-kit='slot'] > [data-kit='extension'] > [data-kit='settings-group'][data-head] > [data-kit='settings-group-body'] { margin-top: 14px; }
   [data-kit='settings-group'][data-after] { margin-bottom: 14px; }
   /* v1 .wtr-row: fixed columns (who, state, size, buttons), a line on top */
@@ -163,7 +153,6 @@
   [data-kit='settings-group-body'] > [data-kit='tabs'] > [data-kit='tab-list'] { border-width: 0; }
   [data-kit='settings-group-body'] > [data-kit='tabs'] [data-kit='tab'] { line-height: var(--lh-base); }
   /* a row's title as the box's headline (v1 .wtr-total) */
-  [data-kit='settings-row'][data-big] [data-kit='settings-row-title'] { font-size: 15px; font-variant-numeric: tabular-nums; }
   /* v1 .sp-castbox: the row, the prompt, the examples, 10px apart, 14px under the last */
   [data-kit='settings-cast'] { display: grid; gap: 10px; margin-top: 10px; padding-bottom: 14px; }
   [data-kit='cast-prompt'] { margin: 0 14px; padding: 8px 10px; border: var(--size-hairline) solid var(--line-2); border-radius: 12px; background: var(--surface); box-shadow: var(--shadow-1); cursor: text; transition: box-shadow 0.15s, border-color 0.15s; }

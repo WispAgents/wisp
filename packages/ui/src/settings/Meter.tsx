@@ -3,6 +3,7 @@
 import { Show, type JSX } from 'solid-js';
 import type { Tone } from '@wisp/tokens';
 import { styleOf, sub, type KitProps, type PartName } from '../core/props.ts';
+import '../css/settings.css';
 
 export interface MeterProps extends KitProps {
   /** 0..1; clamped. */

@@ -5,6 +5,7 @@ import { createSignal, For, type JSX } from 'solid-js';
 import { flag } from '../core/props.ts';
 import { Icon } from '../content/Icon.tsx';
 import { Face } from './Face.tsx';
+import '../css/org.css';
 
 export interface CrewStripFace {
   readonly id: string;

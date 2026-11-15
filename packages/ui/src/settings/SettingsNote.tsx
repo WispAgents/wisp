@@ -2,6 +2,7 @@
 // e.g. Cloud's and Connectors' notes; `inset` keeps 2px off the sides as Connectors' did).
 import type { JSX } from 'solid-js';
 import type { KitProps, WithChildren } from '../core/props.ts';
+import '../css/settings.css';
 
 export interface SettingsNoteProps extends KitProps, WithChildren {
   /** the space above it: 8 (v1's default) or 10 */

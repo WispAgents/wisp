@@ -5,6 +5,7 @@ import { For, Show, type JSX } from 'solid-js';
 import { sub, styleOf, type KitProps, type PartName, type WithChildren } from '../core/props.ts';
 import { Icon } from '../content/Icon.tsx';
 import { Button } from '../controls/Button.tsx';
+import '../css/settings.css';
 
 export interface PlanWindowRow {
   readonly label: string;

@@ -3,6 +3,7 @@
 import { Show, type JSX } from 'solid-js';
 import { sub, type KitProps, type PartName, type WithChildren } from '../core/props.ts';
 import { Icon } from '../content/Icon.tsx';
+import '../css/settings.css';
 
 export type SettingsInsetProps = KitProps & WithChildren;
 

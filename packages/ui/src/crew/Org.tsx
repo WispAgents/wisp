@@ -9,6 +9,7 @@ import { Icon } from '../content/Icon.tsx';
 import type { IconName } from '../content/icons.ts';
 import { Face } from './Face.tsx';
 import '../css/stuff-frame.css';
+import '../css/org.css';
 
 export interface OrgCard {
   readonly id: string;

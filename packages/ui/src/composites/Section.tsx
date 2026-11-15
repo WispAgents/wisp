@@ -10,6 +10,7 @@ import { Heading } from '../content/Text.tsx';
 import { Icon } from '../content/Icon.tsx';
 import type { IconName } from '../content/icons.ts';
 import { usePlatform } from '../platform/PlatformLook.tsx';
+import '../css/settings.css';
 
 export interface SectionProps extends KitProps, WithChildren {
   readonly title: string;

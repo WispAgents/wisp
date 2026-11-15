@@ -43,4 +43,8 @@
     font-size: var(--fs-xs); font-weight: var(--fw-medium); color: var(--muted); white-space: nowrap;
   }
   [data-kit='proj-head'] > [data-text] { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+  /* the phone's Crew section (crew/Org.tsx, org.css, loaded with it): in the list its 14px below would stay inside its
+     row (v1's escapes the list): the row gives it back, and the next row takes the gap itself (gapBefore 'section').
+     Here, not in org.css: the list's slot is there before the section's code is. */
+  [data-kit='virtual-row'] > [data-kit='slot'][data-input='shell.list:crew'] { margin-bottom: -14px; }
 }

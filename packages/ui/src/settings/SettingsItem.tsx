@@ -2,6 +2,7 @@
 // its line, a state (warn when it holds work), a size, then its buttons. The columns never move whatever they say.
 import { Show, type JSX } from 'solid-js';
 import { sub, type KitProps, type PartName } from '../core/props.ts';
+import '../css/settings.css';
 
 export interface SettingsItemProps extends KitProps {
   readonly title: string;

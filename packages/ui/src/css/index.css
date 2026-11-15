@@ -2,7 +2,7 @@
    under plugins, so a plugin's [data-part] rule wins without !important, and unlayered CSS (none
    is allowed) would beat them all.
    Not here: the sheets of what only shows once its code has loaded (an answer's blocks, the transcript, the side
-   panel, a crew member's page, Compare, Projects, the machine pane …). Each is imported by the kit component that
+   panel, a crew member's page, the crew's chart, a settings pane, Compare, Projects, the machine pane …). Each is imported by the kit component that
    draws it, so it ships in that component's lazy chunk and loads with it, before it renders (ADR-0011: initial CSS
    ≤ 30 KB br). They sit in the same `kit` layer. */
 @layer reset, tokens, kit, plugins;
@@ -19,7 +19,7 @@
 @import './toast.css';
 @import './composites.css';
 @import './composer.css';
-@import './settings.css';
+@import './settings-eager.css';
 @import './markdown.css';
 @import './virtual.css';
 @import './shell.css';
@@ -34,5 +34,4 @@
 @import './app-task.css';
 @import './app-stack.css';
 @import './crew.css';
-@import './org.css';
 @import './home.css';

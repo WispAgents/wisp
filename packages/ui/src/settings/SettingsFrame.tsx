@@ -6,6 +6,7 @@ import { flag, sub, type KitProps, type PartName, type WithChildren } from '../c
 import { Icon } from '../content/Icon.tsx';
 import type { IconName } from '../content/icons.ts';
 import { IconButton } from '../controls/Button.tsx';
+import '../css/settings.css';
 
 export interface SettingsNavItem {
   readonly id: string;

@@ -6,6 +6,7 @@
 import { Show, type JSX } from 'solid-js';
 import { flag, sub, type KitProps, type PartName, type WithChildren } from '../core/props.ts';
 import { usePlatform } from '../platform/PlatformLook.tsx';
+import '../css/settings.css';
 
 export interface SettingsGroupProps extends KitProps, WithChildren {
   readonly title?: string;

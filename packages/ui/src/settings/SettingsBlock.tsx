@@ -2,6 +2,7 @@
 // them (v1 .cg-signin: Sign in to a wisp Grid, the line, then the address and Sign in). 14px in, 10px apart.
 import { Show, type JSX } from 'solid-js';
 import { sub, type KitProps, type PartName, type WithChildren } from '../core/props.ts';
+import '../css/settings.css';
 
 export interface SettingsBlockProps extends KitProps, WithChildren {
   readonly title: string;

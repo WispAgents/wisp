@@ -1,0 +1,17 @@
+/* The settings rules the phone looks' sheets (platform/ios.css, android.css) override at the same specificity:
+   they stay in the initial sheet, before those lazily loaded sheets, so the phone's rule still wins. The rest of a
+   settings pane's styles load with its code (settings.css, ADR-0067). The two `:where()` rules stay here too: at
+   specificity 0,1,0, from the lazy sheet they would beat a later eager sheet's one-kit rule on a pane's or an inset's child. */
+@layer kit {
+  /* every child after the first (was `> * + *`: a sibling rule on `*` slows every list's row inserts, F-phone-8) */
+  :where([data-kit='settings-pane']) > :not(:first-child) { margin-top: 14px; }
+  :where([data-kit='settings-inset']) > :not(:first-child) { border-top: var(--size-hairline) solid var(--line); }
+  /* v1 .sx-head: a group's head sits 22px under what's above it, 2px in, its button on the head's last line */
+  [data-kit='settings-pane'] [data-kit='settings-group'][data-head] { margin-top: 22px; }
+  [data-kit='settings-pane'] > [data-kit='settings-group']:first-child { margin-top: 0; }
+  [data-kit='settings-group']:not([data-head]) > [data-kit='settings-group-body'] { border: 0; border-radius: 0; background: none; }
+  [data-kit='settings-group-body'] > [data-kit='settings-note'][data-boxed] + [data-kit='settings-row'] { border-top: var(--size-hairline) solid var(--line); }
+  [data-kit='settings-group-body'] > [data-kit='settings-row'] + [data-kit='slot'] [data-kit='settings-row'], [data-kit='settings-group-body'] > [data-kit='slot'] [data-kit='extension'] + [data-kit='extension'] [data-kit='settings-row'] { border-top: var(--size-hairline) solid var(--line); }
+  [data-kit='settings-pane'] > [data-kit='settings-group'][data-head], [data-kit='settings-pane'] > [data-kit='slot'] > [data-kit='extension'] > [data-kit='settings-group'][data-head] { gap: 0; }
+  [data-kit='settings-row'][data-big] [data-kit='settings-row-title'] { font-size: 15px; font-variant-numeric: tabular-nums; }
+}
