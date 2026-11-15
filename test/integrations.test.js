@@ -145,9 +145,14 @@ test('wait times out while still running', async () => {
 
 test('webhooks get session.finished with the markdown', async () => {
   const got = [];
+  // Only wisp's POST to /x counts: the port is a free one other test files' clients may still hit
+  // (an empty request failed JSON.parse here on CI, run 43657287017).
   const hook = http.createServer((req, res) => {
     let b = '';
-    req.on('data', (c) => (b += c)).on('end', () => (got.push(JSON.parse(b)), res.end()));
+    req.on('data', (c) => (b += c)).on('end', () => {
+      res.end();
+      if (req.method === 'POST' && req.url === '/x') got.push(JSON.parse(b));
+    });
   });
   await new Promise((r) => hook.listen(0, '127.0.0.1', r));
   try {
