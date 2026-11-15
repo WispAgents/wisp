@@ -23,7 +23,7 @@ Rust for everything but the UI, Solid/TS for the UI, everything a plugin (ADR-00
 | CI, last full run (56405a3a) | Linux + macOS: one brittle test (platform-controls read only the last reduced-motion block) — fixed in the test; Windows running |
 | Budgets | initial JS 107.2 KB br (≤ 120) · CSS 27.1 KB (≤ 30) |
 | Weekly usage | 0 % (reset applied) · **owner 2026-11-15: one coder at a time** |
-| Coders running | coder-r296 (Team rows as v1) |
+| Coders running | coder-r297 (phone step 14) |
 
 ## 3. Owner decisions (every one, dated; read before any change)
 
@@ -943,7 +943,8 @@ Source: `docs/v1-features.md` (each row's evidence and test). `[x]` built, `[ ]`
 |---|---|---|
 | 283 | DX: build bundle + Tauri lock: stopped before edits; plan in §4.6 | to redo |
 | 282 | Server perf budgets: stopped before edits; plan in §4.3 | to redo |
-| 296 | Team rows match v1: machine chip (far job: its machine), running time ticking (1 s, only the time repaints), finished time + Finished pill; runtime row gains `startedAt`/`endedAt`; seen v1 vs v2 in target/r296/ | built, not committed |
+| 297 | Phone step 14: Settings, My Stuff, Crew, Computers + cloud sign-in | in progress |
+| 296 | Team rows as v1: machine chip, ticking time, time taken (F-crew-11) | committed (f1dcea35) |
 | 295 | v1 #800 ported (keyboard-clipboard task ID -> mention); #799, #801 already held, now tested | committed (9032c602) |
 | 294 | iOS selection keeps the bar (no jump); stepping replaces history (Back -> Tasks); desktop j/k too, as v1 | committed |
 | 293 | Phone step 13 done: selection + bulk, iOS filter pull-down, Next/Previous task | committed (357aec16) |
