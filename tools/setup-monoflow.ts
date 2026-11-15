@@ -15,9 +15,9 @@
 // checkout), else a build of https://github.com/M0xoo/monoflow at the pinned commit (needs git and go).
 
 import { spawnSync } from 'node:child_process';
-import { chmodSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { homedir, tmpdir } from 'node:os';
-import { dirname, join } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 
 export const MONOFLOW_REPO = 'https://github.com/M0xoo/monoflow';
 /** 8c6bc74, plan §9.4: bump it here (and in the CI cache key, which reads this file) to upgrade. */
@@ -70,11 +70,20 @@ export function strays(root: string): string[] {
   const settings = join(root, '.claude/settings.json');
   if (existsSync(settings) && /monoflow/.test(readFileSync(settings, 'utf8'))) out.push('.claude/settings.json (monoflow hooks)');
   const hooks = sh('git', ['rev-parse', '--git-path', 'hooks'], root);
-  const dir = hooks.ok ? join(root, hooks.out) : '';
+  // absolute in a linked worktree (…/.git/hooks of the main checkout), relative in a plain clone
+  const dir = hooks.ok ? resolve(root, hooks.out) : '';
   if (dir && existsSync(dir)) {
     for (const f of readdirSync(dir)) {
       const p = join(dir, f);
-      if (!f.endsWith('.sample') && /monoflow/i.test(readFileSync(p, 'utf8'))) out.push(`${join(hooks.out, f)} (a git shield hook)`);
+      if (f.endsWith('.sample')) continue;
+      let text = '';
+      try {
+        // core.hooksPath dirs (husky) hold subdirs; a dangling symlink throws too
+        if (statSync(p).isFile()) text = readFileSync(p, 'utf8');
+      } catch {
+        continue;
+      }
+      if (/monoflow/i.test(text)) out.push(`${join(hooks.out, f)} (a git shield hook)`);
     }
   }
   return out;
