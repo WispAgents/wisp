@@ -23,7 +23,7 @@ Rust for everything but the UI, Solid/TS for the UI, everything a plugin (ADR-00
 | CI, last full run (2790d627) | Linux + macOS: 1 failing test (`serve_orphans` probe), fixed by round 234, re-run pending · Windows: cancelled (open groups, §8) · desktop builds + Android: green |
 | Budgets | initial JS 117.9 KB br (≤ 120) · CSS 29.7 KB (≤ 30) · enforced in CI |
 | Weekly usage | 86 % (owner allowed 3 coders: free reset) |
-| Coders running | coder-r237 (check errors), coder-r238 (Auto pick segment text) |
+| Coders running | coder-r237 (check errors), coder-r239 (launcher name breakpoints) |
 
 ## 3. Owner directions (standing rules)
 
@@ -691,7 +691,8 @@ Source: `docs/v1-features.md` (each row's evidence and test). `[x]` built, `[ ]`
 
 | Round | What | State |
 |---|---|---|
-| 238 | Auto pick segment shows the harness name as v1 (not a cut model name) | in progress |
+| 239 | Launcher hides a hand-picked harness's name at v1's breakpoint (520 px, default model only), not 640 | in progress |
+| 238 | Auto pick segment: v2 already matches v1's shortLabel; test pins it | committed (61ddba34) |
 | 236 | "What will Auto run" + compare runs on the picker | committed (c390aca5; its app-picker.css .pk-vary waits for r237) |
 | 237 | 3 check errors (vite.config public-entry, app-picker.css token + wrap) + dayName locale | in progress |
 | 235 | Task history: direction A, Ledger + scrubber | committed |
