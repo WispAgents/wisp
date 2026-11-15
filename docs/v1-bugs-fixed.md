@@ -56,6 +56,9 @@ Each line: area · what v1 did · what v2 does · the test. Visible changes are 
 - **Settings → Worktrees on a phone squeezed each task's name to one letter** (v1 .wtr-row kept four fixed columns at any
   width). v2's `SettingsItem` puts the name and its line on their own line under 520px, the state, size and buttons under
   it. Test: kit settings `v1_settings_pieces_render_their_parts_and_the_flags_their_css_reads` (the parts); seen at 390.
+| Subagents | a lead waiting on several delegates was sent a follow-up as soon as any one finished (`#delegateDone` → `#reportBack` on every end), so it started again on partial results while the others still worked, and again for each straggler | one follow-up, when the last one it owes ends, with every report | `plugins/runtime/host/tests/report_back.rs` `the_last_delegate_to_end_sends_the_lead_one_report_back_turn` |
+| Subagents | a restart while a lead waited on its delegates landed it in Needs you as if it were done (the boot loop set `review` on every running task) and their reports never came: the stopped delegates dropped what the lead was owed | the lead stays in Working; wisp's start finds what it's owed in the store and sends it one follow-up saying the delegate was stopped, once (a second restart sends nothing) | `report_back.rs` `a_lead_waiting_on_its_delegate_hears_once_after_a_restart` |
+| Subagents | (found in v2's own port) a turn's end replaced runtime's slot on the turn with its changes, wiping the turn's delegation records: the lead forgot what it owed | the end merges its fields into the slot | `report_back.rs` `a_turns_end_keeps_its_delegation_records_beside_its_changes` |
 
 ## Decided by the lead (2026-11-08; the owner asked not to be stopped for these)
 

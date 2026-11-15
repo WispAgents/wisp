@@ -60,7 +60,7 @@ Rust for everything but the UI, Solid/TS for the UI, everything a plugin (ADR-00
 - [ ] **v1 sync** (`docs/v1-sync.md`): port v1 #794 (side discussions/Plan mode run commands), #797 (Shell paste after
       selecting); #789 with phone step 13. #795 (lead's check-in while waiting on subagents) and #796 (compact follow-ups
       list) done in r246; found there: runtime doesn't hold a lead in Working on its delegates or send their reports back
-- [ ] **Lead waits on its subagents and gets their reports** (v1 core behaviour, missing: `Facts.owes` never set, no report-back turn, finish.rs wipes `delegations`): **in progress, coder-r247**
+- [x] **Lead waits on its subagents and gets their reports** (v1 #750, F-task-51, r247): `runtime-core::owed` + `runtime/host/src/more/report_back.rs`; `Facts.owes` set while owed delegates work (`waitsOn` on the slot, wisp.later reads it), one report-back follow-up when the last ends (queued in the write that marks them read; restart-safe), `subagent_results` marks read, Stop stops delegates and sends nothing, a follow-up's turn takes owed ones over with the still-working note; finish.rs merges the turn slot. Left: delegates on another machine / sandbox / crew jobs aren't waited on (read with `subagent_results`)
 - [ ] Later foot sits above the reply box; v1 puts the rows inside the composer box
 - [ ] **TUI** (ADR-0024, `docs/v2-tui-design.md`): first slice done (list, answer, composer). Left: `--on <machine>`,
       For later and Repo tab, blame gutter, hunk jumps, terminal images, the real-terminal pass.
