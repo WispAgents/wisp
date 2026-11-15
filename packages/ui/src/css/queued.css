@@ -27,7 +27,8 @@
       transform: scale(0.9) translateY(6px);
     }
   }
-  [data-kit='cq-row']:is(:hover, :focus-within):not([data-editing]):not([data-dragged]) {
+  [data-kit='cq-row']:hover:not([data-editing]):not([data-dragged]),
+  [data-kit='cq-row']:focus-within:not([data-editing]):not([data-dragged]) {
     --cq-bg: var(--bg-2);
     background: var(--cq-bg);
   }
@@ -62,7 +63,8 @@
     pointer-events: none;
     transition: opacity 0.12s;
   }
-  [data-kit='cq-row']:is(:hover, :focus-within) [data-kit='cq-acts'] {
+  [data-kit='cq-row']:hover [data-kit='cq-acts'],
+  [data-kit='cq-row']:focus-within [data-kit='cq-acts'] {
     opacity: 1;
     pointer-events: auto;
   }
