@@ -23,7 +23,7 @@ Rust for everything but the UI, Solid/TS for the UI, everything a plugin (ADR-00
 | CI, last full run (11fe8350) | Linux + macOS: strings-split (phone nav destinations.ts uses lazy keys without the loader) -> r285 · previous run f0db9105 all 8 green |
 | Budgets | initial JS 107.2 KB br (≤ 120) · CSS 27.1 KB (≤ 30) |
 | Weekly usage | 0 % (reset applied) · **owner 2026-11-15: one coder at a time** |
-| Coders running | coder-r285 (CI strings + phone row smells) |
+| Coders running | none (next: step 13 rest) |
 
 ## 3. Owner directions (standing rules)
 
@@ -642,6 +642,8 @@ Source: `docs/v1-features.md` (each row's evidence and test). `[x]` built, `[ ]`
 - [x] machines.removed reaches a handler only after the peer is cleared from memory (r279: memory first, then the write that carries the event; `plugins/machines/host/tests/events.rs` `a_machines_removed_handler_reading_the_list_finds_the_peer_gone`)
 - [x] serve_task follow_up_queue_and_stop_keep_the_queue relies on a 1.5 s fake run (fails under Windows load): hold the fake on a gate (r277: `FAKE_GATE` file gate in fake_agent; also serve_task ask/stale-ask/mcp/delegate and serve_crew_delegate)
 - [x] serve_channels_cap and serve_delegate_machine still use FAKE_DELAY (convert to FAKE_GATE)
+- [ ] Same-named phone chips share a highlight when one is pressed (give chips the computer in their id)
+- [ ] A removed peer's pending optimistic writes aren't cleared (resetPeer)
 - [ ] `ui-only`/MCP: nothing open
 
 ## 8. CI
@@ -815,7 +817,7 @@ Source: `docs/v1-features.md` (each row's evidence and test). `[x]` built, `[ ]`
 |---|---|---|
 | 283 | DX: build bundle + Tauri lock: stopped before edits; plan in §4.6 | to redo |
 | 282 | Server perf budgets: stopped before edits; plan in §4.3 | to redo |
-| 285 | CI strings-split (phone nav labels); phone row time vs pill overlap; same-named project chips | in progress |
+| 285 | Strings fix; phone row time/pill lines; peers.remove drops rows (duplicate tasks bug); same-name chip labels | committed |
 | 284 | Phone step 13 part: Tasks screen (top bar, filter, chips, FAB) + Add computer (QR, Trust key, Stay connected); list-at-top scroll fix | committed |
 | 281 | Phone step 8: the app's frontend (opens on Computers, all computers connected) | committed (ae086063) |
 | 280 | Pull to refresh shows its spinner until the reconnect settles | committed |
