@@ -23,7 +23,7 @@ Rust for everything but the UI, Solid/TS for the UI, everything a plugin (ADR-00
 | CI, last full run (f4679d2d) | **2nd green run: Linux 4/4 + macOS 2/2 + Windows node 22**; Windows node 24: serve_task follow-up timing (1.5 s fake vs Windows load; next: gate the fake) |
 | Budgets | initial JS 107.2 KB br (≤ 120) · CSS 27.1 KB (≤ 30) |
 | Weekly usage | 98 % (owner: continue, 1 coder) |
-| Coders running | coder-r280 (pull-to-refresh spinner) |
+| Coders running | none |
 
 ## 3. Owner directions (standing rules)
 
@@ -812,7 +812,7 @@ Source: `docs/v1-features.md` (each row's evidence and test). `[x]` built, `[ ]`
 
 | Round | What | State |
 |---|---|---|
-| 280 | Pull to refresh shows its spinner until the reconnect settles | in progress |
+| 280 | Pull to refresh shows its spinner until the reconnect settles | committed |
 | 279 | machines.removed after the peer is cleared from memory | committed |
 | 278 | serve_channels_cap + serve_delegate_machine on gates (FAKE_GATE_ALL) | committed (b4d85054) |
 | 277 | 'While running' tests held on a gate (serve_task x5, crew delegate) | committed |
