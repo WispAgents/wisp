@@ -164,6 +164,8 @@ export type { EntityKey, PeerId };
 
 export const KIND = {
   session: 'session',
+  /** a queued follow-up: wisp.runtime keeps each in its own row on the task's topic (`runtime_queue_item`) */
+  queueItem: 'queue_item',
   agent: 'agent',
   project: 'project',
   crew: 'crew',

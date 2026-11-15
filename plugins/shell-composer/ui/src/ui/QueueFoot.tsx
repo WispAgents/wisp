@@ -1,6 +1,7 @@
-// `shell-composer.queue`, over the task's reply box (`shell.task:foot`): the follow-ups waiting for the run
-// (v1 queued.js), each with when it goes, Send now, Edit, Combine with the next, Move, and Cancel. The queue is
-// the task's row (`body.queue`, `body.queueHeld`); every change is a command whose patch shows it at once.
+// `shell-composer.queue`, inside the task's reply box over its text (`shell.task:composer-top`, v1 .c-queued), before
+// wisp.later's: the follow-ups waiting for the run (v1 queued.js), each with when it goes, Send now, Edit, Combine with the next, Move, and Cancel. The queue is
+// the task's `queue_item` rows (wisp.runtime's; the dev mock keeps `body.queue`) and its row's `body.queueHeld`; every
+// change is a command whose patch shows it at once.
 import { Show, createMemo, createSignal, type JSX } from 'solid-js';
 import type { EntityKey } from '@wisp/client';
 import type { ExtensionProps } from '@wisp/shell/contract';
@@ -8,6 +9,7 @@ import { Button, Dialog, Inline, useSignal } from '@wisp/ui';
 import { queueCancel, queueEdit, queueMerge, queueNow, queueOrder } from '../commands.ts';
 import { envOf } from '../env.ts';
 import { KIND, type QueueItem, type Row } from '../types.ts';
+import { taskQueue, type QueueItemRow } from '../model/queue.ts';
 import { QueueList } from './QueueList.tsx';
 import { useShell as useShellContext } from '@wisp/shell';
 import '../i18n/lazy.ts';
@@ -26,14 +28,18 @@ const quiet = (p: Promise<unknown>): void => {
 export default function QueueFoot(props: ExtensionProps): JSX.Element {
   const c = props.client;
   const env = envOf(c);
-  // the task the slot is for: its id, or the row it lends (as the other `shell.task:foot` extensions read it)
+  // the task the slot is for: its id, or the row it lends (as the other `shell.task:composer-top` extensions read it)
   const key = (): EntityKey | undefined => (props.id ?? (props.session?.() as { id?: string } | undefined)?.id) as EntityKey | undefined;
   const row = createMemo(() => {
     const k = key();
     return k ? useSignal(c.entities.row<{ state?: string; agent?: string; body?: TaskBody }>(KIND.session, k)) : () => undefined;
   });
   const body = (): TaskBody => row()()?.body ?? {};
-  const queue = (): readonly Row<QueueItem>[] => body().queue ?? [];
+  const items = useSignal(c.entities.list<QueueItemRow>(KIND.queueItem));
+  const queue = createMemo((): readonly Row<QueueItem>[] => {
+    const k = key();
+    return k ? taskQueue(row()(), items(), k.slice(k.indexOf(':') + 1)) : [];
+  });
   // the harness as it calls itself (v1: "after Claude Code finishes"), from the harness plugins' registrations
   const harnesses = useSignal(useShellContext().harnesses());
   const harnessName = (id: string): string => harnesses().find((h) => h.id === id)?.name ?? id;

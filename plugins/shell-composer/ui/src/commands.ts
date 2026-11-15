@@ -5,7 +5,7 @@
 // POST /sessions/:id/reply → runtime.reply, PATCH /sessions/:id/queue → runtime.queue.*, ….
 
 import { defineCommand, entityKey, ownerOf, type EntityKey, type EntityOps, type EntityReader, type PeerId } from '@wisp/client';
-import { combine, edit, remove, reorder } from './model/queue.ts';
+import { combine, edit, queueRowOps, remove, reorder, taskQueue, type QueueItemRow } from './model/queue.ts';
 import { titleOf, type LaunchBody } from './model/launch.ts';
 import { KIND, type Attachment, type Mode, type QueueItem, type Row, type Runner, type Session, type TeamMember } from './types.ts';
 
@@ -14,10 +14,17 @@ const STARTING = 'Starting up';
 
 const session = (base: EntityReader, key: EntityKey): Row<Session> | undefined => base.peek<Session>(KIND.session, key);
 const patch = (key: EntityKey, ops: { path: string; value: unknown }[]): EntityOps => [{ e: KIND.session, id: key, op: 'patch', ops: ops.map((o) => ({ op: 'add', ...o })) }];
-/** The task's queue: the store keeps the task whole in its row's `body` (a flat row, a test's, has it on top). */
-const queueOf = (base: EntityReader, key: EntityKey): readonly Row<QueueItem>[] => {
-  const s = session(base, key) as (Row<Session> & { body?: { queue?: readonly Row<QueueItem>[] } }) | undefined;
-  return s?.body?.queue ?? s?.queue ?? [];
+/** the bare id the peer knows the task by */
+const bare = (key: EntityKey): string => key.slice(key.indexOf(':') + 1);
+type Holder = Row<Session> & { body?: { queue?: readonly Row<QueueItem>[] } };
+/** The task's queue: its `queue_item` rows (a real peer), or the one its row carries (the dev mock, a test's flat row). */
+const queueOf = (base: EntityReader, key: EntityKey): readonly Row<QueueItem>[] =>
+  taskQueue(session(base, key) as Holder | undefined, base.list<QueueItemRow>(KIND.queueItem)(), bare(key));
+/** The patch that shows the queue as `next` at once, where the task keeps it, with `extra` on the task's row. */
+const queuePatch = (base: EntityReader, key: EntityKey, next: readonly Row<QueueItem>[], extra: { path: string; value: unknown }[] = []): EntityOps => {
+  const s = session(base, key) as Holder | undefined;
+  if (s?.body?.queue ?? s?.queue) return patch(key, [{ path: s?.body?.queue ? '/body/queue' : '/queue', value: next }, ...extra]);
+  return [...queueRowOps(key, queueOf(base, key), next), ...(extra.length ? patch(key, extra) : [])];
 };
 const live = (s: Row<Session> | undefined): boolean => s?.state === 'running' || s?.state === 'waiting';
 
@@ -46,7 +53,7 @@ export const reply = defineCommand<ReplyArgs, { queued?: boolean; interrupted?: 
     if (s.ask || s.asks || s.approval) return patch(a.session, [{ path: '/ask', value: null }, { path: '/asks', value: false }, { path: '/state', value: 'running' }]);
     if (live(s) && a.queue) {
       const item: QueueItem = { id: a.id, text: a.text, attachments: a.attachments, at: a.at, ...(a.mode && { mode: a.mode }), ...(a.run && { run: a.run }) };
-      return patch(a.session, [{ path: '/body/queue', value: [...queueOf(base, a.session), item] }]);
+      return queuePatch(base, a.session, [...queueOf(base, a.session), item]);
     }
     // steering shows nothing new until the interrupt lands (v1 startOptimistic returns null)
     if (live(s)) return [];
@@ -55,14 +62,12 @@ export const reply = defineCommand<ReplyArgs, { queued?: boolean; interrupted?: 
 });
 
 type QueueArgs = { session: EntityKey; item: string };
-/** the bare id the peer knows the task by */
-const bare = (key: EntityKey): string => key.slice(key.indexOf(':') + 1);
 
 export const queueEdit = defineCommand<QueueArgs & { text: string }>({
   id: 'runtime.queue.text',
   owner: (a) => a.session,
   wire: (a) => ({ id: bare(a.session), itemId: a.item, text: a.text }),
-  optimistic: (base, a) => patch(a.session, [{ path: '/body/queue', value: edit(queueOf(base, a.session), a.item, a.text) }]),
+  optimistic: (base, a) => queuePatch(base, a.session, edit(queueOf(base, a.session), a.item, a.text)),
 });
 
 /** Send now: interrupts the run with this one (or starts it); the rest of the queue carries on. */
@@ -70,21 +75,21 @@ export const queueNow = defineCommand<QueueArgs>({
   id: 'runtime.queue.sendNow',
   owner: (a) => a.session,
   wire: (a) => ({ id: bare(a.session), itemId: a.item }),
-  optimistic: (base, a) => patch(a.session, [{ path: '/body/queue', value: remove(queueOf(base, a.session), a.item) }, { path: '/body/queueHeld', value: false }]),
+  optimistic: (base, a) => queuePatch(base, a.session, remove(queueOf(base, a.session), a.item), [{ path: '/body/queueHeld', value: false }]),
 });
 
 export const queueMerge = defineCommand<{ session: EntityKey; items: string[] }>({
   id: 'runtime.queue.merge',
   owner: (a) => a.session,
   wire: (a) => ({ id: bare(a.session), ids: a.items }),
-  optimistic: (base, a) => patch(a.session, [{ path: '/body/queue', value: combine(queueOf(base, a.session), a.items) }]),
+  optimistic: (base, a) => queuePatch(base, a.session, combine(queueOf(base, a.session), a.items)),
 });
 
 export const queueOrder = defineCommand<{ session: EntityKey; order: string[] }>({
   id: 'runtime.queue.order',
   owner: (a) => a.session,
   wire: (a) => ({ id: bare(a.session), order: a.order }),
-  optimistic: (base, a) => patch(a.session, [{ path: '/body/queue', value: reorder(queueOf(base, a.session), a.order) }]),
+  optimistic: (base, a) => queuePatch(base, a.session, reorder(queueOf(base, a.session), a.order)),
 });
 
 /** Cancel one follow-up. Removing the last one also lifts a Stop's hold (runner.js:748). */
@@ -94,7 +99,7 @@ export const queueCancel = defineCommand<QueueArgs>({
   wire: (a) => ({ id: bare(a.session), itemId: a.item }),
   optimistic: (base, a) => {
     const rest = remove(queueOf(base, a.session), a.item);
-    return patch(a.session, [{ path: '/body/queue', value: rest }, ...(rest.length === 0 ? [{ path: '/body/queueHeld', value: false }] : [])]);
+    return queuePatch(base, a.session, rest, rest.length === 0 ? [{ path: '/body/queueHeld', value: false }] : []);
   },
 });
 

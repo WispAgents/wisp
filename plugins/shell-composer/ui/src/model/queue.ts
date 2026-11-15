@@ -2,7 +2,8 @@
 // once and declares as each command's optimistic patch, with the peer's own semantics so the patch
 // and the answer agree. A Stop never discards anything: it only holds the queue (`queueHeld`).
 
-import type { QueueItem, Row } from '../types.ts';
+import type { EntityKey, LocalOp } from '@wisp/client';
+import { KIND, type QueueItem, type Row } from '../types.ts';
 import '../i18n/lazy.ts';
 
 type Queue = readonly Row<QueueItem>[];
@@ -75,3 +76,42 @@ export const combinableAll = (queue: Queue): string[] => {
 
 /** v1 C:138: the confirm's quote, cut to 80 characters. */
 export const quote = (text: string): string => (text.length > 80 ? `${text.slice(0, 80)}…` : text);
+
+/** A queued follow-up as wisp.runtime syncs it: its own row on the task's topic (rows.rs queue_row), the item in `body`. */
+export interface QueueItemRow {
+  readonly id: string;
+  readonly session_id?: string;
+  readonly pos?: number;
+  readonly body?: Row<QueueItem>;
+}
+
+/** A task row as the queue reads it: the store's (its `body`) or a flat one (the dev mock's, a test's). */
+export interface QueueHolder {
+  readonly queue?: Queue;
+  readonly body?: { readonly queue?: Queue };
+}
+
+/** The task's queue: the one its row carries (the dev mock, a test's flat row), else its `queue_item` rows in `pos`
+ * order (a real peer: the session row's body has no queue, rows.rs strips it). `session` is the bare task id. */
+export function taskQueue(row: QueueHolder | undefined, items: readonly QueueItemRow[], session: string): Queue {
+  const own = row?.body?.queue ?? row?.queue;
+  if (own) return own;
+  return items
+    .filter((r) => r.session_id === session && r.body)
+    .toSorted((a, b) => (a.pos ?? 0) - (b.pos ?? 0))
+    .map((r) => ({ ...(r.body as Row<QueueItem>), id: r.body?.id ?? r.id }));
+}
+
+/** The ops that make the task's `queue_item` rows say `next` (a command's optimistic patch, as the peer's save_queue
+ * writes them): a row for each item at its place, and the ones gone deleted. `task` is the task's entity key. */
+export function queueRowOps(task: EntityKey, was: Queue, next: Queue): LocalOp[] {
+  const i = task.indexOf(':');
+  const peer = i < 0 ? '' : task.slice(0, i + 1);
+  const session = task.slice(i + 1);
+  const key = (id: string): EntityKey => `${peer}${id}` as EntityKey;
+  const keep = new Set(next.map((q) => q.id));
+  return [
+    ...was.filter((q) => !keep.has(q.id)).map((q): LocalOp => ({ e: KIND.queueItem, id: key(q.id), op: 'del' })),
+    ...next.map((q, pos): LocalOp => ({ e: KIND.queueItem, id: key(q.id), op: 'upsert', v: { id: q.id, session_id: session, pos, body: q } })),
+  ];
+}

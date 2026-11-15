@@ -729,7 +729,7 @@ export default function TaskView(props: { readonly id: string; readonly onBack?:
   return (
     <Show when={row()}>
       {(s) => {
-        // inside the reply box, over the text (wisp.later's follow-ups, v1 .c-queued): `shell.task:composer-top`. Made once:
+        // inside the reply box, over the text (the queued follow-ups, then wisp.later's, v1 .c-queued): `shell.task:composer-top`. Made once:
         // a JSX prop beside the box's reactive spread would be rebuilt (rows, an edit in progress) each time the task starts or stops
         const composerTop = <Slot input="shell.task:composer-top" layout="contents" id={key} session={() => s() as never} />;
         const h = (): { name: string; logo?: string } => harnessOf(harnesses(), replyRun()?.agent ?? s().agent);

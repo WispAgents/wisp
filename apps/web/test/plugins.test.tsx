@@ -28,6 +28,19 @@ test('every plugin UI registers, and the frame areas have their plugins', () => 
   for (const area of ['shell.sidebar:list', 'shell.task:band', 'shell.task:foot', 'shell.task:composer-top', 'shell.side:changes']) expect(areas, area).toContain(area);
 });
 
+// v1 composer.js `keyedRows(list, [...queuedItems(s), ...followUpItems(s)])`: one list inside the reply box over its
+// text, the queued follow-ups first, then the ones set for a time, as the shell resolves the input's order
+test('the_queued_follow_ups_sit_in_the_reply_box_before_the_scheduled_ones_v1_c_queued', () => {
+  const home = peerId('local');
+  const client = createClient({ clientId: 'c1', build: 't', home, width: 1440 });
+  const shell = createShell({ client, toaster: createToaster(), platform: nullPlatform(), home, window: window as unknown as ShellWindow });
+  for (const { def } of pluginUis()) if (def) shell.register(def);
+  const ids = shell.context.extensions('shell.task:composer-top')().map((e) => e.id);
+  expect(ids.indexOf('shell-composer.queue')).toBeGreaterThanOrEqual(0);
+  expect(ids.indexOf('shell-composer.queue')).toBeLessThan(ids.indexOf('wisp.later.foot'));
+  expect(shell.context.extensions('shell.task:foot')().map((e) => e.id)).not.toContain('shell-composer.queue');
+});
+
 test('every plugin UI that has a later part (ADR-0067) loads it, and it holds only what a press reaches, its ids its own', async () => {
   const withLater = pluginUis().flatMap(({ path, def }) => (def?.later ? [{ path, def, later: def.later }] : []));
   expect(withLater.length).toBeGreaterThan(5);
