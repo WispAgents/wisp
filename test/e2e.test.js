@@ -325,7 +325,8 @@ test('a follow-up can switch the mode: plan → edits → auto, and a queued one
     return argv[argv.indexOf('--permission-mode') + 1];
   };
   await turns(1);
-  assert.equal(permission(), 'plan');
+  assert.equal(permission(), 'bypassPermissions', 'Plan runs commands; only the edit tools are off');
+  assert.ok(records(RECORD, 'claude').at(-1).argv.includes('Edit'));
 
   await api(`/sessions/${s.id}/reply`, { text: 'go ahead and fix it', mode: 'edits' });
   let x = await turns(2);

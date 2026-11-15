@@ -100,7 +100,7 @@ function checkAction(a, where, p, { hook = false, panels = new Set(), data = new
       for (const f of ['agent', 'model', 'effort', 'mode', 'text', 'prompt', 'cwd']) if (x[f] !== undefined) out[f] = f === 'prompt' || f === 'text' ? truncate(String(x[f]), 4000) : str(x[f], 200);
       if (out.mode && !['plan', 'edits', 'auto'].includes(out.mode)) p.at_(where, 'mode must be plan, edits or auto');
       if ((k === 'launch' || k === 'fork' || k === 'side') && !out.prompt) p.at_(where, `${k} needs a prompt: what the ${{ fork: 'fork should try', side: 'side discussion should talk over' }[k] || 'task should do'}`);
-      if (k === 'side' && out.mode) p.at_(where, 'side takes no mode: a side discussion only reads');
+      if (k === 'side' && out.mode) p.at_(where, 'side takes no mode: a side discussion runs in its harness’s own');
       return { [k]: out };
     }
   }

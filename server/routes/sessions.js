@@ -843,13 +843,13 @@ export function register(r, app) {
     }),
   );
 
-  // Run a command from an actionable presentation block (actions, tests, terminal).
+  // Run a command from an actionable presentation block (actions, tests, terminal). A side
+  // discussion's run in the main task's folder: you clicked it, as you'd type it there.
   r.route(
     'POST',
     '/sessions/:id/exec',
     one(async (c, s) => {
       const { command, turnId, key } = await c.body();
-      notSide(s, 'run commands in the main task’s folder');
       const cmd = String(command || '').trim();
       if (!cmd) return c.send(400, { error: 'command required' });
       const turn = (turnId && s.turns.find((t) => t.id === turnId)) || s.turns.at(-1);

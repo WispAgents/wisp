@@ -132,7 +132,7 @@ export function register(r, app) {
         ...(crew.length ? [`The user's crew: ${crew.join(', ')} (wisp_crew reads them).`] : []),
         '',
         ...(s.capped ? [`A channel started this task with a cap of ${s.capped.mode}: nothing it starts may go above that, leave this computer, or leave this project; it can't change the user's crew or connectors. That goes for what you delegate too.`] : []),
-        'Modes: plan (read-only) | edits (auto-accept edits) | auto (no permission prompts).',
+        'Modes: plan (no file edits; read-only for what a channel started) | edits (auto-accept edits) | auto (no permission prompts).',
         'delegate: subagents for this task (their edits land in your folder; any harness, any machine). wisp_launch: a separate task the user follows on its own. wisp_task: follow up, stop, finish or archive a task.',
       ].join('\n');
       c.send(200, { text });
