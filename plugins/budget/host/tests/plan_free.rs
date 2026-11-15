@@ -180,3 +180,88 @@ async fn with_later_on_budget_sends_no_second_note() {
     settle().await;
     assert!(seen.notes().is_empty(), "later's to send: {:?}", seen.notes());
 }
+
+struct Heard;
+impl wisp_kernel::Command for Heard {
+    const ID: &'static str = "ear.heard";
+    type Args = ();
+    type Out = usize;
+}
+
+/// A subscriber that answers from what it heard of `budget.drain`, after its handlers took what came before (ADR-0073).
+struct Ear(Arc<Mutex<usize>>);
+impl Plugin for Ear {
+    fn manifest(&self) -> Manifest {
+        manifest("wisp.ear")
+    }
+    fn setup(&self, s: &mut Setup) -> Result<()> {
+        let n = self.0.clone();
+        s.on::<wisp_budget_api::events::DrainNoted, _, _>(move |_, _| {
+            let n = n.clone();
+            async move { *n.lock().unwrap() += 1 }
+        });
+        let n = self.0.clone();
+        s.command::<Heard, _, _>(move |ctx, _, ()| {
+            let n = n.clone();
+            async move {
+                ctx.events_delivered(std::time::Duration::from_secs(10)).await;
+                Ok(*n.lock().unwrap())
+            }
+        });
+        Ok(())
+    }
+}
+
+/// ADR-0074: Drain watch's note goes out with the save of the spend that drained. The store's commit listener is the
+/// reader (the row is visible, the save hasn't returned): on the first commit whose account row shows the drain, it
+/// asks a subscriber that answers after its handlers took what came before, and the note is in the answer. (Saved,
+/// then emitted, the answer there was 0.)
+#[tokio::test(flavor = "multi_thread")]
+async fn drain_watchs_note_is_queued_before_the_drained_spend_can_be_read() {
+    let (seen, clock) = (Seen::default(), FakeClock::at(NOW));
+    let store = Store::open(Location::Memory, Arc::new(SystemClock)).unwrap();
+    let k = TestApp::new()
+        .clock(&clock)
+        .service(store.clone())
+        .with(BudgetPlugin)
+        .with(Runtime(seen.clone()))
+        .with(Channels(seen.clone()))
+        .with(Later)
+        .with(Ear(Arc::default()))
+        .start()
+        .await;
+    k.set_setting("budget.drainWatch", Some(json!(true))).unwrap();
+    let answers = Arc::new(Mutex::new(Vec::<usize>::new()));
+    let (kk, a2, c2, st2, handle) =
+        (Arc::new(Mutex::new(Some(k.clone()))), answers.clone(), clock.clone(), store.clone(), tokio::runtime::Handle::current());
+    let _sub = store.on_commit(move |rows| {
+        if !a2.lock().unwrap().is_empty() {
+            return; // the first drained commit only
+        }
+        let now = wisp_kernel::Clock::now_ms(&c2);
+        let drained = rows.iter().filter(|r| r.entity == "budget_acc").any(|r| {
+            let body = st2.get("budget_acc", r.id.clone()).unwrap().and_then(|row| row.get("body").cloned());
+            body.and_then(|b| serde_json::from_value::<wisp_budget_core::state::Acc>(b).ok())
+                .is_some_and(|acc| wisp_budget_core::drain::drain_of(&acc, now).is_some())
+        });
+        let Some(k) = kk.lock().unwrap().clone().filter(|_| drained) else { return };
+        let n = handle.block_on(k.call(Caller::user(), "ear.heard", json!(null))).unwrap();
+        a2.lock().unwrap().push(usize::try_from(n.as_u64().unwrap()).unwrap());
+    });
+    let (week, resets) = (7 * 24 * H, NOW + 6 * 24 * H);
+    let mut used = 0.10;
+    record(&k, "seven_day", used, resets, week).await;
+    for (i, d) in [0.01, 0.01, 0.01, 0.01, 0.01, 0.05, 0.05].into_iter().enumerate() {
+        if i == 5 {
+            clock.advance(3 * 3_600_000);
+            record(&k, "seven_day", used, resets, week).await;
+        }
+        clock.advance(60_000);
+        used += d;
+        record(&k, "seven_day", used, resets, week).await;
+        ended(&k, u32::try_from(i).unwrap());
+        settle().await;
+    }
+    eventually("Drain watch tells the phone", || !seen.notes().is_empty()).await;
+    assert_eq!(*answers.lock().unwrap(), vec![1], "the reader of the drained spend heard the note");
+}

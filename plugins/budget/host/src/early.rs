@@ -110,14 +110,22 @@ impl State {
     /// Windows of `agent@account` reset before their time (a banked reset, v1 `app.resetEarly`): `budget.reset`, and
     /// when no window holds the account any more, what waits on it goes now: the runs held here start, and
     /// `budget.plan_free` brings due the follow-ups later holds for it (it sends the one phone note, with the count).
-    pub(crate) async fn reset_early(&self, ctx: &Ctx, agent: &str, account: &str, ids: Vec<String>) {
+    /// `budget.reset` for windows of `agent@account` that reset early (`ids`): `free` when none holds it any more.
+    /// It goes out with the save that recorded the reading (`record`, ADR-0074).
+    pub(crate) fn reset_event(&self, ctx: &Ctx, agent: &str, account: &str, ids: Vec<String>) -> Reset {
         let account = account_of(account);
         let free = self.free(agent, &account, now(ctx));
         tracing::info!(agent, %account, ?ids, free, "budget: a window reset early");
-        ctx.emit(&ctx.root_call(), &Reset { agent: agent.to_owned(), account: account.clone(), ids, free });
-        if !free {
+        Reset { agent: agent.to_owned(), account, ids, free }
+    }
+
+    /// After an early reset (`e`, already out with its save): when no window holds the account any more, what waits
+    /// on it goes now.
+    pub(crate) async fn reset_early(&self, ctx: &Ctx, e: &Reset) {
+        if !e.free {
             return; // another window still holds it (the weekly one, say)
         }
+        let (agent, account) = (e.agent.as_str(), e.account.clone());
         let key = (agent.to_owned(), account.clone());
         lock(&self.limited).remove(&key);
         let mut due: Vec<Due> =

@@ -110,12 +110,24 @@ impl State {
     }
 
     async fn save(&self) {
+        self.save_with(None).await;
+    }
+
+    /// `save`, and `ob`'s events go out with its commit (ADR-0074): whoever reads the saved spend finds them queued.
+    /// With nothing to save they still go out, with an empty write; a save that fails publishes none of them.
+    async fn save_with(&self, ob: Option<wisp_kernel::Outbox>) {
         let dirty = lock(&self.budget).take_dirty();
-        if dirty.is_empty() {
+        let ob = ob.filter(|o| !o.is_empty());
+        if dirty.is_empty() && ob.is_none() {
             return;
         }
         let n = dirty.len();
-        if let Err(e) = self.store.write(move |w| dirty.iter().try_for_each(|(g, a, acc)| store::put_acc(w, g, a, acc))).await {
+        let job = move |w: &mut wisp_store::Writer<'_>| dirty.iter().try_for_each(|(g, a, acc)| store::put_acc(w, g, a, acc));
+        let r = match ob {
+            Some(ob) => self.store.write_with(ob, job).await,
+            None => self.store.write(job).await,
+        };
+        if let Err(e) = r {
             tracing::warn!(accounts = n, "couldn't save the budget's spend per account: {e}");
         }
     }
@@ -169,10 +181,16 @@ impl State {
 
     async fn record(&self, ctx: &Ctx, agent: &str, account: &str, report: &wisp_budget_api::LimitsReport) -> c::RecordOut {
         let r = lock(&self.budget).record(agent, &account_of(account), report, now(ctx));
-        self.save().await;
+        // an early reset goes out with the save that records it (ADR-0074)
+        let ob = ctx.outbox();
+        let early = (!r.early.is_empty()).then(|| self.reset_event(ctx, agent, account, r.early.clone()));
+        if let Some(e) = &early {
+            ob.emit(e);
+        }
+        self.save_with(Some(ob)).await;
         self.keep_shares(ctx, &r.shares).await;
-        if !r.early.is_empty() {
-            self.reset_early(ctx, agent, account, r.early).await;
+        if let Some(e) = early {
+            self.reset_early(ctx, &e).await;
         }
         self.release(ctx).await;
         c::RecordOut { past: r.past }

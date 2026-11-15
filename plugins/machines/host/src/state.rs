@@ -118,11 +118,21 @@ impl State {
         lock(&self.links).get_mut(id).map(f)
     }
 
-    /// Writes the peer's status (the `machines` topic carries it) and says it changed.
+    /// Writes the peer's status (the `machines` topic carries it) and says it changed, with that write's commit
+    /// (ADR-0074): a reader of the status finds `machines.changed` queued, and nobody hears it before the row is there.
     pub fn publish(&self, id: &str) {
         let Some(status) = self.with_link(id, |l| l.conn.status.clone()) else { return };
-        self.store.write_detached(move |w| store::put_status(w, &status));
-        self.ctx.emit(&self.ctx.root_call(), &Changed { id: id.to_owned() });
+        let ob = self.ctx.outbox();
+        ob.emit(&Changed { id: id.to_owned() });
+        self.store.write_detached_with(ob, move |w| store::put_status(w, &status));
+    }
+
+    /// Says `e` after the writes submitted so far (ADR-0075): an empty detached write carries it, so it's never ahead
+    /// of the `machines.changed` a `publish` just before it sends with its status write (per-source order).
+    pub fn emit_after_writes<E: wisp_kernel::Event>(&self, e: &E) {
+        let ob = self.ctx.outbox();
+        ob.emit(e);
+        self.store.write_detached_with(ob, |_| Ok(()));
     }
 
     pub fn save_peer(&self, row: &PeerRow) {

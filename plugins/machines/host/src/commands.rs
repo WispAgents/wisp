@@ -114,7 +114,10 @@ async fn remove(st: &Arc<State>, id: String) -> Res<RemoveOut> {
         manager::disconnect(st, r);
         let Ok(gone) = st.peer(r) else { continue };
         let key = r.clone();
-        write(st, move |w| store::forget(w, &key)).await?;
+        // `machines.removed` goes out with the write that forgets the peer (ADR-0074)
+        let ob = st.ctx.outbox();
+        ob.emit(&Removed { id: r.clone(), row: gone });
+        st.store.write_with(ob, move |w| store::forget(w, &key)).await.map_err(MachinesError::from)?;
         lock(&st.links).remove(r);
         lock(&st.peers).remove(r);
         let _ = lock(&st.mirror).reset(r);
@@ -122,7 +125,6 @@ async fn remove(st: &Arc<State>, id: String) -> Res<RemoveOut> {
         if let Some(s) = &secrets {
             let _ = s.delete(&secret_key(r)).await;
         }
-        st.ctx.emit(&st.ctx.root_call(), &Removed { id: r.clone(), row: gone });
     }
     Ok(RemoveOut { ok: true, removed })
 }

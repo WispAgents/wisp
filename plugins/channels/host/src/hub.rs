@@ -679,11 +679,14 @@ impl ChannelHub for Hub {
     }
     fn mark_started(&self, session_id: &str, channel: &str, by: Option<&str>) {
         lock(&self.st.started).insert(session_id.to_owned(), (channel.to_owned(), by.map(str::to_owned)));
-        crate::kept::put_task(&self.st, session_id);
-        self.ctx.emit(
-            &self.ctx.root_call(),
-            &wisp_channels_api::StartedFrom { session_id: session_id.to_owned(), channel: channel.to_owned(), by: by.map(str::to_owned) },
-        );
+        // `channels.startedFrom` goes out with the write of the task's origin (ADR-0074)
+        let e =
+            wisp_channels_api::StartedFrom { session_id: session_id.to_owned(), channel: channel.to_owned(), by: by.map(str::to_owned) };
+        let ob = self.ctx.outbox();
+        ob.emit(&e);
+        if crate::kept::put_task_with(&self.st, session_id, Some(ob)).is_some() {
+            self.ctx.emit(&self.ctx.root_call(), &e);
+        }
     }
     fn thread_started(&self, _s: Option<&SessionView>, _thread: Option<&Thread>, _by: Option<&str>, err: Option<&str>) {
         if let Some(e) = err {

@@ -185,7 +185,7 @@ async fn attempt(st: &Arc<State>, id: &str, t: &dyn Transport, token: &Cancellat
         c.online(&label, agents, s("home"), s("version"), pid, wisp_protocol::PROTO, now);
         Next::Nothing
     });
-    st.ctx.emit(&st.ctx.root_call(), &Online { id: id.to_owned() });
+    st.emit_after_writes(&Online { id: id.to_owned() });
     let end = link::run(st, id, &ch, token).await;
     after(st, id, &row.address, ch, end).await
 }
@@ -197,7 +197,7 @@ async fn after(st: &Arc<State>, id: &str, address: &str, ch: Arc<dyn Channel>, e
     match end {
         End::Cancelled | End::Incompatible => {
             ch.close();
-            st.ctx.emit(&st.ctx.root_call(), &Offline { id: id.to_owned(), state: state(st) });
+            st.emit_after_writes(&Offline { id: id.to_owned(), state: state(st) });
             Next::Nothing
         }
         End::Lost => {
@@ -214,7 +214,7 @@ async fn after(st: &Arc<State>, id: &str, address: &str, ch: Arc<dyn Channel>, e
                 c.closed(None, address)
             });
             st.with_link(id, |l| l.channel = None);
-            st.ctx.emit(&st.ctx.root_call(), &Offline { id: id.to_owned(), state: state(st) });
+            st.emit_after_writes(&Offline { id: id.to_owned(), state: state(st) });
             next
         }
     }

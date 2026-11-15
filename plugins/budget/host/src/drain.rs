@@ -55,12 +55,11 @@ impl State {
         let account = account_of(e.account.as_deref().unwrap_or_default());
         let failed = e.status == TurnStatus::Error && !e.interrupted;
         let drain = lock(&self.budget).spend(&e.agent, &account, units, failed, at);
-        self.save().await;
-        let d = drain?;
         let on = watch_on(ctx.setting(WATCH).as_ref(), &lock(&self.settings));
-        if !lock(&self.notes).due(&format!("{}@{account}", e.agent), &d.id, on, at) {
+        let Some(d) = drain.filter(|d| lock(&self.notes).due(&format!("{}@{account}", e.agent), &d.id, on, at)) else {
+            self.save().await;
             return None;
-        }
+        };
         let name = ctx
             .contributions(&wisp_runtime_api::harness::HARNESS)
             .iter()
@@ -74,7 +73,10 @@ impl State {
             text: drain_why(&d, &name, label, in_usd, offset_min(at)),
             drain: d,
         };
-        ctx.emit(&ctx.root_call(), &note);
+        // the note goes out with the save of the spend that drained (ADR-0074): a reader of it finds the note queued
+        let ob = ctx.outbox();
+        ob.emit(&note);
+        self.save_with(Some(ob)).await;
         let msg = wisp_channels_api::Msg { title: note.title.clone(), text: note.text.clone(), actions: Vec::new() };
         if let Err(err) = ctx.run::<wisp_channels_api::SendNotice>(&ctx.root_call(), wisp_channels_api::SendArgs { msg }).await {
             tracing::debug!(error = %err.message, "Drain watch: no phone to tell");

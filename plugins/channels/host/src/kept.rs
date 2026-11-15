@@ -156,18 +156,30 @@ pub fn put_path(o: &mut Map<String, Value>, path: &str, v: Value) {
 /// A task's origin changed: its row is written again (nothing kept: the row goes). Read and submitted under one
 /// lock, so a later change is never overtaken by an older snapshot (the writer runs writes in submit order).
 pub fn put_task(st: &State, id: &str) {
-    let Some(store) = st.store.get() else { return };
+    put_task_with(st, id, None);
+}
+
+/// `put_task`, and `ob`'s events go out with the write's commit (ADR-0074): whoever reads the task's origin finds
+/// them queued, and nobody hears them before the row is there. Without a store nothing is written: `ob` comes back
+/// (the caller emits its events itself).
+pub fn put_task_with(st: &State, id: &str, ob: Option<wisp_kernel::Outbox>) -> Option<wisp_kernel::Outbox> {
+    let Some(store) = st.store.get() else { return ob };
     let _turn = lock(&st.task_turn);
     let r = st.task_row(id);
     let id = id.to_owned();
-    store.write_detached(move |w| {
+    let job = move |w: &mut wisp_store::Writer<'_>| {
         if r == TaskRow::default() {
             w.del(TASK.kind, id)?;
         } else {
             w.upsert(TASK.kind, row(&id, &r)?)?;
         }
         Ok(())
-    });
+    };
+    match ob {
+        Some(ob) => store.write_detached_with(ob, job),
+        None => store.write_detached(job),
+    }
+    None
 }
 
 /// A task went: so does its origin.
