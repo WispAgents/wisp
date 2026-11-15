@@ -700,6 +700,16 @@
       border-color 0.15s,
       box-shadow 0.15s;
   }
+  /* composer.css .c-queued (4px 0 6px when it holds something, 4px between): what plugins put in the box over the
+     text (shell.task:composer-top). The slot lays out as contents and an extension that draws something is a block in
+     this box, so the margins collapse (6px under, 4px between); one that draws nothing stays contents and takes no room. */
+  [data-kit='c-top'] > [data-kit='slot'] > [data-kit='extension']:not(:empty) {
+    display: block;
+    margin: var(--space-2) 0 var(--space-3);
+  }
+  [data-kit='c-top'] > [data-kit='slot'] > [data-kit='extension']:not(:empty) ~ [data-kit='extension']:not(:empty) {
+    margin-top: calc(-1 * var(--space-1));
+  }
   [data-kit='reply'] {
     min-height: 26px;
     height: 34px;

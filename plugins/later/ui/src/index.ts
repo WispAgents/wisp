@@ -8,7 +8,7 @@ import { catalogue } from './i18n.ts';
 export default definePluginUi({
   id: 'wisp.later',
   // the follow-ups set for later in a task, over its reply box (v1 later.js followUpItems)
-  extensions: [defineExtension({ id: 'wisp.later.foot', attachTo: { id: 'shell.task:foot' }, component: lazy(() => import('./ui/LaterFoot.tsx')) })],
+  extensions: [defineExtension({ id: 'wisp.later.foot', attachTo: { id: 'shell.task:composer-top' }, component: lazy(() => import('./ui/LaterFoot.tsx')) })],
   views: [
     // a scheduled task or reminder, or a /draft, opened from its row (shell-list's Scheduled and Drafts)
     defineView<{ id?: string }>({

@@ -3,6 +3,7 @@
 import { expect, test } from 'vitest';
 import { followUpTip } from '../src/format.ts';
 import { FOOT_MAX, footRows } from '../src/rules.ts';
+import ui from '../src/index.ts';
 
 const at = (n: number): { id: string; at: number } => ({ id: `l${n}`, at: n * 60_000 });
 
@@ -30,4 +31,10 @@ test('who_set_it_and_when_in_words_go_in_the_tooltip_v1_796', () => {
   const held = followUpTip({ id: 'l2', at: now + 60_000, text: 'go on', by: 'agent', setAt: 0, remind: true, held: { why: 'past 75%', until: 0 } }, now);
   expect(held).toMatch(/^Reminder · /);
   expect(held.split('\n')[1]).toBe('When your plan resets. Waits for your plan: past 75%');
+});
+
+// v1 .c-queued: the follow-ups sit inside the reply box over its text, within its border, not over the box
+test('the_follow_ups_attach_inside_the_reply_box_over_its_text_v1_c_queued', () => {
+  const foot = ui.extensions?.find((e) => e.id === 'wisp.later.foot');
+  expect(foot?.attachTo.id).toBe('shell.task:composer-top');
 });

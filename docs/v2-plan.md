@@ -76,7 +76,7 @@ Rust for everything but the UI, Solid/TS for the UI, everything a plugin (ADR-00
       give-up timeout yet); a sandbox member's second job's changes still aren't brought (marked by key, pre-existing).
       Tests: runtime host `report_back.rs` (crew here, machine, sandbox, stop, restart, a later turn there), runtime-core `owed.rs`, crates/wisp
       `serve_delegate_machine.rs` `a_lead_whose_delegate_elsewhere_outlasts_its_turn_hears_its_report_and_gets_its_changes`
-- [ ] Later foot sits above the reply box; v1 puts the rows inside the composer box
+- [x] Later foot sits inside the reply box over its text, as v1 .c-queued (r261: kit `ReplyBox` `top` → `[data-kit='c-top']` `data-part=composer.top`, new additive input `shell.task:composer-top`; `wisp.later.foot` moved there; same box geometry as v1 at 1280/390, light/dark, 1 and 4 follow-ups, `target/r261/`)
 - [ ] **TUI** (ADR-0024, `docs/v2-tui-design.md`): first slice done (list, answer, composer). Left: `--on <machine>`,
       For later and Repo tab, blame gutter, hunk jumps, terminal images, the real-terminal pass.
 

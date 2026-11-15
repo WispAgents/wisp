@@ -25,7 +25,7 @@ test('every plugin UI registers, and the frame areas have their plugins', () => 
   }
   expect(refused).toEqual([]);
   const areas = pluginUis().flatMap(({ def }) => (def?.extensions ?? []).map((e) => e.attachTo.id));
-  for (const area of ['shell.sidebar:list', 'shell.task:band', 'shell.task:foot', 'shell.side:changes']) expect(areas, area).toContain(area);
+  for (const area of ['shell.sidebar:list', 'shell.task:band', 'shell.task:foot', 'shell.task:composer-top', 'shell.side:changes']) expect(areas, area).toContain(area);
 });
 
 test('every plugin UI that has a later part (ADR-0067) loads it, and it holds only what a press reaches, its ids its own', async () => {

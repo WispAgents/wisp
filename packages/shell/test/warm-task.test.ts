@@ -4,6 +4,7 @@ import { TASK_PAGE_INPUTS, taskPagePreloads } from '../src/frame/warm-task.ts';
 test('the_task_page_inputs_are_its_screen_and_every_task_and_turn_input', () => {
   expect(TASK_PAGE_INPUTS).toContain('shell.screen:task');
   expect(TASK_PAGE_INPUTS).toContain('shell.task:foot');
+  expect(TASK_PAGE_INPUTS).toContain('shell.task:composer-top');
   expect(TASK_PAGE_INPUTS).toContain('shell.turn:foot');
   expect(TASK_PAGE_INPUTS.some((i) => i.startsWith('shell.list:') || i.startsWith('shell.topbar:'))).toBe(false);
 });

@@ -129,3 +129,54 @@ test('an_uncapped_tasks_box_has_no_cap_pill', () => {
   dispose = render(() => <ReplyBox placeholder="Follow up" value="" onInput={() => {}} onSend={() => {}} attach="Attach" mode={{ label: 'Auto', title: 'Mode' }} runner={{ title: 'Claude Code' }} team="Team" goal="Goal" later="Later" send="Send" />, host);
   expect(host.querySelector('[data-part="composer.cap"]')).toBeNull();
 });
+
+// v1 .c-queued: what a plugin puts over the text (wisp.later's follow-ups) sits inside the box, within its border, before
+// the text; a row coming or going leaves the textarea and the bar the same nodes, and a press on a row is inside the box.
+test('the_top_slot_sits_inside_the_box_over_the_text_and_a_row_coming_or_going_keeps_the_textarea_v1_c_queued', async () => {
+  const { createSignal, For } = await import('solid-js');
+  const host = document.createElement('div');
+  document.body.append(host);
+  const [rows, setRows] = createSignal<string[]>([]);
+  dispose = render(
+    () => (
+      <ReplyBox
+        placeholder="Follow up"
+        value=""
+        onInput={() => {}}
+        onSend={() => {}}
+        attach="Attach"
+        mode={{ label: 'Auto', title: 'Mode' }}
+        runner={{ title: 'Claude Code' }}
+        team="Team"
+        goal="Goal"
+        later="Later"
+        send="Send"
+        top={<For each={rows()}>{(r) => <button type="button" data-row={r}>{r}</button>}</For>}
+      />
+    ),
+    host,
+  );
+  const box = host.querySelector('[data-kit="reply-box"]') as HTMLElement;
+  const top = box.querySelector(':scope > [data-kit="c-top"]') as HTMLElement;
+  expect(top.dataset['part']).toBe('composer.top');
+  expect(top.childElementCount).toBe(0); // nothing set: the slot holds nothing
+  const ta = box.querySelector('textarea') as HTMLTextAreaElement;
+  const bar = box.querySelector('[data-kit="c-bar"]');
+  // first in the frame: over the text, never outside the border
+  expect(box.firstElementChild).toBe(top);
+  setRows(['a', 'b']);
+  expect([...top.querySelectorAll('[data-row]')].map((b) => b.textContent)).toEqual(['a', 'b']);
+  const a = top.querySelector('[data-row="a"]');
+  setRows(['a']);
+  setRows(['a', 'c']);
+  expect(top.querySelector('[data-row="a"]')).toBe(a); // keyed: the row that stays is the same node
+  expect(box.querySelector('textarea')).toBe(ta);
+  expect(box.querySelector('[data-kit="c-bar"]')).toBe(bar);
+  // a press on a row is a press inside: the awake box stays awake
+  ta.focus();
+  expect(box.hasAttribute('data-awake')).toBe(true);
+  const row = top.querySelector('[data-row="c"]') as HTMLElement;
+  row.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, button: 0 }));
+  row.click();
+  expect(box.hasAttribute('data-awake')).toBe(true);
+});

@@ -544,6 +544,9 @@ export interface ReplyBoxProps {
   readonly extras?: readonly { readonly id: string; readonly icon: IconName; readonly label: string; readonly removeLabel: string; readonly onRemove: () => void }[];
   /** the bar's quiet line (v1 .c-hint): the cold cache's words, with a short form for a narrow bar, and an optional link (Compact now) */
   readonly hint?: { readonly long: string; readonly short: string; readonly title?: string; readonly link?: { readonly label: string; readonly title?: string; readonly act: Act } } | undefined;
+  /** what sits inside the box over the text (v1 .c-queued: the follow-ups set for later), within its border; the box
+   * grows upward with it and the text and bar stay as they are. The host fills it (an extension slot). Additive (2026-11-15). */
+  readonly top?: JSX.Element;
 }
 
 /** v1 .composer: the reply box under a task. It wakes (its toolbar shows) when the caret goes in, and
@@ -604,6 +607,9 @@ export function ReplyBox(props: ReplyBoxProps): JSX.Element {
       onFocusIn={(e) => (e.target as HTMLElement).dataset['kit'] === 'reply' && setAwake(true)}
       {...dropHandlers(() => props.onFiles, setOver)}
     >
+      <div data-kit="c-top" data-part="composer.top">
+        {props.top}
+      </div>
       <div data-kit="mn-wrap">
         <PromptSuggestList suggest={props.suggest} place="above" />
         <textarea

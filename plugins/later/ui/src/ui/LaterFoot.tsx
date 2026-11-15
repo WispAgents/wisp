@@ -1,4 +1,4 @@
-// `wisp.later.foot`, over the task's reply box (`shell.task:foot`): the follow-ups set for later in this task, soonest
+// `wisp.later.foot`, inside the task's reply box over its text (`shell.task:composer-top`, v1 .c-queued): the follow-ups set for later in this task, soonest
 // first, as one compact list (v1 #796 later.js followUpItems): a joined box with a short row each, its icon and time in
 // a fixed column, what it says, the pen and ×; who set it and "in 18 min" are the tooltip. More than 3: the first 2 and
 // "N more scheduled · next 14:52", which opens the rest (Show less closes it; opened per task until the page reloads).
