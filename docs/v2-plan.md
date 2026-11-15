@@ -20,10 +20,10 @@ Rust for everything but the UI, Solid/TS for the UI, everything a plugin (ADR-00
 |---|---|
 | v1 features | **315 built · 7 partial · 5 missing · 4 dropped** of 331 (§6) |
 | Regressed | none (F-comp-1 picker restored to v1 in round 233) |
-| CI, last full run (f4679d2d) | **2nd green run: Linux 4/4 + macOS 2/2 + Windows node 22**; Windows node 24: serve_task follow-up timing (1.5 s fake vs Windows load; next: gate the fake) |
+| CI, last full run (f0db9105) | **ALL 8 SUITE JOBS GREEN: Linux 4/4, macOS 2/2, Windows 2/2** (first fully green run on every OS) |
 | Budgets | initial JS 107.2 KB br (≤ 120) · CSS 27.1 KB (≤ 30) |
 | Weekly usage | 0 % (reset applied) · **owner 2026-11-15: one coder at a time** |
-| Coders running | coder-r281 (phone step 8) |
+| Coders running | coder-r284 (phone step 13) |
 
 ## 3. Owner directions (standing rules)
 
@@ -154,7 +154,7 @@ Rust for everything but the UI, Solid/TS for the UI, everything a plugin (ADR-00
 
 ### 4.8 One batched verification pass
 
-- [ ] CI green on every OS, several runs in a row (no flakes)
+- [ ] CI green on every OS, several runs in a row (no flakes): first all-green run f0db9105 (2026-11-15); need more in a row
 - [ ] Parity, layout and feedback gates on every view, width and theme
 - [ ] Perf budgets, all of them
 - [ ] Windows by hand once
@@ -815,7 +815,8 @@ Source: `docs/v1-features.md` (each row's evidence and test). `[x]` built, `[ ]`
 |---|---|---|
 | 283 | DX: build bundle + Tauri lock: stopped before edits; plan in §4.6 | to redo |
 | 282 | Server perf budgets: stopped before edits; plan in §4.3 | to redo |
-| 281 | Phone step 8: the app's frontend (@wisp/mobile) | in progress |
+| 284 | Phone step 13: screens part 1 (Tasks with TopAppBar + computer filter, task page, New task, search, Add computer with QR, Trust new key) | in progress |
+| 281 | Phone step 8: the app's frontend (opens on Computers, all computers connected) | committed (ae086063) |
 | 280 | Pull to refresh shows its spinner until the reconnect settles | committed |
 | 279 | machines.removed after the peer is cleared from memory | committed |
 | 278 | serve_channels_cap + serve_delegate_machine on gates (FAKE_GATE_ALL) | committed (b4d85054) |
