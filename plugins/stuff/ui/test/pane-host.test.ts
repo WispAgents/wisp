@@ -5,6 +5,11 @@ import { paneHost, type PaneCard, type PaneHostDeps } from '../src/panes/host.ts
 import type { Grant, Item, TaskRow } from '../src/types.ts';
 import en from '../src/i18n/en.json' with { type: 'json' };
 import '../src/i18n/lazy.ts'; // the lazily loaded strings too (they load with the code that shows them)
+// imported once, at collection: a dynamic import inside a test puts the cold module graph (commands.ts pulls in
+// @wisp/client) inside that test's timeout, which a loaded CI runner (one vitest process, ADR-0072) can overrun
+import { launchTask } from '../src/commands.ts';
+import { defaultsFrom } from '../src/panes/grant.ts';
+import { taskOfRow } from '../src/panes/rows.ts';
 
 const cat = en as Record<string, string>;
 const t = (k: string, v?: Readonly<Record<string, string | number>>): string => (cat[k] ?? k).replace(/\{(\w+)\}/g, (_, w: string) => String(v?.[w] ?? ''));
@@ -104,8 +109,7 @@ test('a pane write goes only after your click, on your defaults, six a minute, a
   await expect(hb.call('tasks.done', ['t1'])).rejects.toThrow('Slow down');
 });
 
-test('a pane reads the runtime rows as tasks: bare ids, the project holding the folder, no subagents_v1_light_task', async () => {
-  const { taskOfRow } = await import('../src/panes/rows.ts');
+test('a pane reads the runtime rows as tasks: bare ids, the project holding the folder, no subagents_v1_light_task', () => {
   const project = (cwd: string): string | undefined => (cwd.startsWith('/w/web') ? 'web' : undefined);
   const row = { id: 'local:s1', title: 'Fix', state: 'running', agent: 'claude', summary: { cwd: '/w/web/src', status: 'running', live: 'Reading', branch: 'fix' }, body: { ext: { 'wisp.crew': { id: 'ada', name: 'Ada' } } } };
   expect(taskOfRow(row, project)).toMatchObject({ id: 's1', project: 'web', status: 'running', live: 'Reading', branch: 'fix', crew: { id: 'ada', name: 'Ada' } });
@@ -113,15 +117,13 @@ test('a pane reads the runtime rows as tasks: bare ids, the project holding the 
   expect(taskOfRow({ ...row, body: { ext: { 'wisp.stuff': { kind: 'pane' } } } }, project)?.kind).toBe('pane');
 });
 
-test('a task a pane starts goes out as the host built it, on your saved defaults_v1_launch_defaults', async () => {
-  const { launchTask } = await import('../src/commands.ts');
+test('a task a pane starts goes out as the host built it, on your saved defaults_v1_launch_defaults', () => {
   const wire = (launchTask as unknown as { wire: (a: unknown) => Record<string, unknown> }).wire;
   const body = { prompt: 'x', mode: 'auto', agent: 'claude' };
   expect(wire({ peer: 'local', body })).toEqual(body); // nothing added, nothing taken away
 });
 
-test('a pane starts tasks on what New task would: the default profile, else the first harness and Full auto_v1_launch_defaults', async () => {
-  const { defaultsFrom } = await import('../src/panes/grant.ts');
+test('a pane starts tasks on what New task would: the default profile, else the first harness and Full auto_v1_launch_defaults', () => {
   const saved = [{ name: 'reviewer', spec: { harness: 'codex', mode: 'plan' } }, { name: 'default', spec: { harness: 'codex', mode: 'edits', model: 'gpt-5.5', effort: '' } }];
   expect(defaultsFrom(saved, true, 'claude')).toEqual({ agent: 'codex', mode: 'edits', model: 'gpt-5.5' });
   expect(defaultsFrom([], undefined, 'claude')).toEqual({ agent: 'claude', mode: 'auto' });
