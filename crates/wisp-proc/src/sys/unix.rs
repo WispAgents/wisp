@@ -173,6 +173,10 @@ pub fn processes() -> io::Result<Vec<ProcInfo>> {
     Err(io::Error::from(io::ErrorKind::Unsupported))
 }
 
+/// Nothing to do: a child's fds 0-2 are always replaced by the stdio it is given, and std opens everything else
+/// close-on-exec, so no child holds this process's stdio unless it asks for it.
+pub fn keep_std_handles() {}
+
 #[cfg(test)]
 #[allow(clippy::unwrap_used, reason = "a test")]
 mod tests {

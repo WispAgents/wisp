@@ -203,6 +203,9 @@ impl Client {
             .stderr(std::process::Stdio::null());
         #[cfg(unix)]
         std::os::unix::process::CommandExt::process_group(&mut cmd, 0);
+        // the server outlives this command: it must not hold the pipes our caller reads (as desktop::launch)
+        #[cfg(feature = "proc")]
+        wisp_proc::keep_std_handles();
         cmd.spawn()?;
         let end = Instant::now() + Duration::from_secs(15);
         while Instant::now() < end {

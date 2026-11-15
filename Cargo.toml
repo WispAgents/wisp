@@ -194,7 +194,7 @@ brotli = { version = "9", default-features = false, features = ["std"] }
 flate2 = "1"
 # wisp-proc's reviewed sys module on Windows: Job Objects (kill a tree with 0 orphans) and the process
 # table (Toolhelp). Pinned to the line v2's first native helper used (ADR-0015).
-windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_Security", "Win32_System_Diagnostics_ToolHelp", "Win32_System_JobObjects", "Win32_System_Threading"] }
+windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_Security", "Win32_System_Console", "Win32_System_Diagnostics_ToolHelp", "Win32_System_JobObjects", "Win32_System_Threading"] }
 
 # Plan §9.2: forbid unsafe (crates/wisp-proc's sys module is the reviewed exception), clippy pedantic with a
 # short allow list, no unwrap/expect/panic/todo outside tests, stdout is never printed to by libraries.

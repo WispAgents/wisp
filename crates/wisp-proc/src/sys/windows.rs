@@ -7,7 +7,8 @@
 use std::io;
 use std::ptr;
 
-use windows_sys::Win32::Foundation::{CloseHandle, FALSE, HANDLE, INVALID_HANDLE_VALUE};
+use windows_sys::Win32::Foundation::{CloseHandle, FALSE, HANDLE, HANDLE_FLAG_INHERIT, INVALID_HANDLE_VALUE, SetHandleInformation};
+use windows_sys::Win32::System::Console::{GetStdHandle, STD_ERROR_HANDLE, STD_INPUT_HANDLE, STD_OUTPUT_HANDLE};
 use windows_sys::Win32::System::Diagnostics::ToolHelp::{
     CreateToolhelp32Snapshot, PROCESSENTRY32W, Process32FirstW, Process32NextW, TH32CS_SNAPPROCESS, TH32CS_SNAPTHREAD, THREADENTRY32,
     Thread32First, Thread32Next,
@@ -171,6 +172,26 @@ pub fn resume(pid: u32) -> io::Result<()> {
         more = next;
     }
     if resumed == 0 { Err(io::Error::other(format!("no thread of {pid} to resume"))) } else { Ok(()) }
+}
+
+/// Makes this process's own stdin, stdout and stderr non-inheritable. `CreateProcess` hands a child every inheritable
+/// handle of its parent, whatever its stdio is set to, so a program started detached with null stdio would still hold
+/// the pipes wisp's caller reads (`wisp` run from a script, a test's `Command::output`): the caller then waits for
+/// EOF until that program exits, which for the desktop app or a browser is never. std's `Stdio::inherit` duplicates
+/// the handle for the child it starts, so clearing the flag here takes nothing from children that ask for it.
+pub fn keep_std_handles() {
+    for which in [STD_INPUT_HANDLE, STD_OUTPUT_HANDLE, STD_ERROR_HANDLE] {
+        // SAFETY: a plain integer in; a missing handle is null or INVALID_HANDLE_VALUE, checked below.
+        #[allow(unsafe_code)]
+        let h = unsafe { GetStdHandle(which) };
+        if h.is_null() || h == INVALID_HANDLE_VALUE {
+            continue;
+        }
+        // SAFETY: `h` is this process's own std handle, open for its lifetime; only its inherit flag changes. A
+        // console handle that refuses is no pipe to leak: the result is ignored.
+        #[allow(unsafe_code)]
+        let _ = unsafe { SetHandleInformation(h, HANDLE_FLAG_INHERIT, 0) };
+    }
 }
 
 /// End one process (used only when a child couldn't be put in a job).

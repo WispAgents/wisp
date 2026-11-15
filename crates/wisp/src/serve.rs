@@ -337,6 +337,9 @@ pub fn open_url(url: &str) {
     } else {
         ("xdg-open", vec![url])
     };
+    // a browser started here may outlive wisp: as desktop::launch
+    #[cfg(feature = "proc")]
+    wisp_proc::keep_std_handles();
     let _ = std::process::Command::new(cmd)
         .args(args)
         .stdin(std::process::Stdio::null())

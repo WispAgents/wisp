@@ -287,6 +287,13 @@ pub fn pid_alive(pid: u32) -> bool {
     sys::processes().is_ok_and(|t| t.iter().any(|p| p.pid == pid && !p.zombie))
 }
 
+/// Call before starting a program that outlives this one (the desktop app, a browser): it then can't hold this
+/// process's stdout or stderr, so whoever reads them (a script, a test) sees EOF when this process ends. Windows hands
+/// a child every inheritable handle whatever its stdio is; this clears the flag on our own three. Unix: nothing to do.
+pub fn keep_std_handles() {
+    sys::keep_std_handles();
+}
+
 /// A row of the process table: enough to walk a tree.
 pub use sys::ProcInfo;
 

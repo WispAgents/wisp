@@ -276,6 +276,8 @@ fn detach(cmd: &mut tokio::process::Command) {
     const DETACHED_PROCESS: u32 = 0x0000_0008;
     const CREATE_NEW_PROCESS_GROUP: u32 = 0x0000_0200;
     cmd.creation_flags(DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP);
+    // it outlives wisp: never hand it the pipes wisp's own caller reads (crate::keep_std_handles)
+    crate::sys::keep_std_handles();
 }
 
 /// Runs `child` to completion for `exec`: input in, output kept up to the cap, the tree killed on timeout.

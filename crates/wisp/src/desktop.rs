@@ -181,6 +181,9 @@ pub fn launch(exe: &Path, port: u16, server: Option<&Path>) -> std::io::Result<(
     cmd.stdin(std::process::Stdio::null()).stdout(std::process::Stdio::null()).stderr(std::process::Stdio::null());
     #[cfg(unix)]
     std::os::unix::process::CommandExt::process_group(&mut cmd, 0);
+    // the app outlives `wisp`: it must not hold the pipes `wisp`'s caller reads (Windows hands them over otherwise)
+    #[cfg(feature = "proc")]
+    wisp_proc::keep_std_handles();
     cmd.spawn().map(drop)
 }
 
