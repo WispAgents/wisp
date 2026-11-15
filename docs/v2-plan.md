@@ -21,9 +21,9 @@ Rust for everything but the UI, Solid/TS for the UI, everything a plugin (ADR-00
 | v1 features | **315 built · 7 partial · 5 missing · 4 dropped** of 331 (§6) |
 | Regressed | none (F-comp-1 picker restored to v1 in round 233) |
 | CI, last full run (2790d627) | Linux + macOS: 1 failing test (`serve_orphans` probe), fixed by round 234, re-run pending · Windows: cancelled (open groups, §8) · desktop builds + Android: green |
-| Budgets | initial JS 118.8 KB br (≤ 120) · **CSS 30.0 KB (≤ 30): over**, coder-r242 making room |
+| Budgets | initial JS **119.3** KB br (≤ 120: 0.7 KB left) · CSS 26.9 KB (≤ 30) |
 | Weekly usage | 86 % (owner allowed 3 coders: free reset) |
-| Coders running | coder-r242 (initial CSS budget) |
+| Coders running | coder-r244 (css-rules test failures) |
 
 ## 3. Owner directions (standing rules)
 
@@ -81,6 +81,7 @@ Rust for everything but the UI, Solid/TS for the UI, everything a plugin (ADR-00
 - [x] Budgets in CI (initial JS ≤ 120 KB br, CSS ≤ 30 KB)
 - [x] First download 290.6 → 117.9 KB JS, 46.4 → 29.7 KB CSS (ADR-0067)
 - [x] 4,000 tasks scroll smoothly on a 4× slowed phone; first tap on Slow 4G 1.3 s blank → 171 ms
+- [ ] Initial JS 119.3 / 120 KB br: move something the first screen doesn't draw out before the next first-page feature
 - [ ] Warm tap on a phone ~90 ms (budget 50 ms) (F-phone-8)
 - [ ] The server budgets measured in CI (cold start, RSS, list query, append, write amplification, p99 patch)
 - [x] Harness detection: 45 s → 15 s with hung CLIs, ~1 ms cached
@@ -699,7 +700,8 @@ Source: `docs/v1-features.md` (each row's evidence and test). `[x]` built, `[ ]`
 | Round | What | State |
 |---|---|---|
 | 243 | Launcher bar as v1 at every width (More label, gaps, lead's model, unknown = Default, Worktree hidden with no project) | committed (a6ba4cac) |
-| 242 | Initial CSS back under budget (30.0 > 30.0 KB br) without changing looks | in progress |
+| 244 | css-rules test fails on raw-px breakpoints + account-row wrap; make check and test agree | in progress |
+| 242 | Settings and org CSS lazy: initial CSS 30.0 -> 26.9 KB br, looks unchanged | committed (826b025f) |
 | 241 | Review of rounds 227, 228, 229: one fix (offline time in app locale); all committed | committed |
 | 240 | Picker account row wraps as v1 (Wrap group); task clock locale | committed (af6dd52b, f838e783) |
 | 239 | Harness pill folds at v1's breakpoints (8 rules aligned) | committed (441ea737) |
