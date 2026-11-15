@@ -22,8 +22,8 @@ Rust for everything but the UI, Solid/TS for the UI, everything a plugin (ADR-00
 | Regressed | none (F-comp-1 picker restored to v1 in round 233) |
 | CI, last full run (f4679d2d) | **2nd green run: Linux 4/4 + macOS 2/2 + Windows node 22**; Windows node 24: serve_task follow-up timing (1.5 s fake vs Windows load; next: gate the fake) |
 | Budgets | initial JS 107.2 KB br (≤ 120) · CSS 27.1 KB (≤ 30) |
-| Weekly usage | 96 % (owner 2026-11-15 14:50: keep going with one coder until the limit) |
-| Coders running | coder-r277 (serve_task gate) |
+| Weekly usage | 98 % (paused new coders until the weekly reset, ~68 h) |
+| Coders running | none: paused at 98 % weekly usage until the reset |
 
 ## 3. Owner directions (standing rules)
 
@@ -640,6 +640,7 @@ Source: `docs/v1-features.md` (each row's evidence and test). `[x]` built, `[ ]`
 - [x] ADR-0074 gaps: a command's events go out with its writes (every `Store::write` in a command stages what it emitted so far; the rest at its return), and budget drain/early, channels `startedFrom`, machines `changed`/`removed` go in an outbox with their write (ADR-0075; `kernel_events.rs` `a_commands_events_go_out_with_its_write_so_a_reader_of_its_row_finds_them`, `durable_events.rs`, `plan_free.rs`, `machines/host/tests/events.rs`)
 - [ ] machines.removed can reach a handler before the peer is cleared from memory (ADR-0075 note; no subscriber reads it today)
 - [x] serve_task follow_up_queue_and_stop_keep_the_queue relies on a 1.5 s fake run (fails under Windows load): hold the fake on a gate (r277: `FAKE_GATE` file gate in fake_agent; also serve_task ask/stale-ask/mcp/delegate and serve_crew_delegate)
+- [ ] serve_channels_cap and serve_delegate_machine still use FAKE_DELAY (convert to FAKE_GATE)
 - [ ] `ui-only`/MCP: nothing open
 
 ## 8. CI
@@ -811,7 +812,7 @@ Source: `docs/v1-features.md` (each row's evidence and test). `[x]` built, `[ ]`
 
 | Round | What | State |
 |---|---|---|
-| 277 | serve_task follow-up test held on a gate, not a 1.5 s delay (and other FAKE_DELAY while-running tests) | in progress |
+| 277 | 'While running' tests held on a gate (serve_task x5, crew delegate) | committed |
 | 276 | Ledger: scrubber day labels; filter row one line (collapse, then scroll) | committed |
 | 275 | serve_orphans: Windows pid reuse (test tracked pids); fakes hold a life lock | committed (488e7813) |
 | 274 | A command's events go out with its writes; budget/channels/machines via outbox (ADR-0075) | committed (d60b14dc, f4679d2d) |
