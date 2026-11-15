@@ -57,9 +57,10 @@ Rust for everything but the UI, Solid/TS for the UI, everything a plugin (ADR-00
       grid accounts (ADR-0061), cloud API keys (ADR-0058), cloud previews (ADR-0064), harness detection topic (ADR-0066)
 - [x] Process hygiene: nothing outlives a killed server (guard, Windows jobs, exec plugins ADR-0063, probes)
 - [x] `.env` masking everywhere a value can leave (ADR-0050, 0054, 0055)
-- [ ] **v1 sync** (`docs/v1-sync.md`): port v1 #794 (side discussions/Plan mode run commands), #797 (Shell paste after
-      selecting); #789 with phone step 13. #795 (lead's check-in while waiting on subagents) and #796 (compact follow-ups
-      list) done in r246; found there: runtime doesn't hold a lead in Working on its delegates or send their reports back
+- [ ] **v1 sync** (`docs/v1-sync.md`): port v1 #797 (Shell paste after selecting); #789 with phone step 13. #795 (lead's
+      check-in while waiting on subagents) and #796 (compact follow-ups list) done in r246; #794 (Plan on Claude Code runs
+      commands, side discussions' action buttons in the main task's folder) done in r253; found there: v2 has no side gate
+      or clash check (v1 side-gate.js): a side discussion runs in a scratch folder with no side note or main-task digest
 - [x] **Lead waits on its subagents and gets their reports** (v1 #750, F-task-51, r247): `runtime-core::owed` + `runtime/host/src/more/report_back.rs`; `Facts.owes` set while owed delegates work (`waitsOn` on the slot, wisp.later reads it), each delegate's report goes back as soon as it ends and the lead's run is off, as v1 `#delegateDone`/`#reportBack` (r250: one follow-up per batch; those ending while the lead runs come in one at its end; the rest go on with that follow-up's turn; a stopped one rides with the next report and doesn't wake it alone; queued in the write that marks them read; restart-safe), `subagent_results` marks read, Stop stops delegates and sends nothing, a follow-up's turn takes owed ones over with the still-working note; finish.rs merges the turn slot. Left (see the open item below): delegates on another machine / sandbox / crew jobs aren't waited on
 - [x] **Lead waits on its remote and crew subagents too** (F-task-51, v1 `#awaiting` counts `child.relay`, r251):
       `owed::is_far`/`far_open` (pure) + `runtime/host/src/more/far_watch.rs`. Local crew jobs (`ext["wisp.crew"].from`

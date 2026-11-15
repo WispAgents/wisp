@@ -457,6 +457,10 @@ impl Runtime {
             };
         }
         own.insert("titleAuto".into(), a.title.is_none().into());
+        // a channel's task stays one after its cap is lifted: its Plan only reads (v1 #794 `origin`, `plan::outside`)
+        if let Some(by) = a.by.as_deref().filter(|b| b.starts_with(wisp_runtime_core::plan::CHANNEL)) {
+            own.insert("startedBy".into(), by.into());
+        }
         // Try it two ways' variant (ADR-0056): kept for every turn, refused when it can't run
         if let Some(v) = self.variant_slot(&a, &s.agent)? {
             own.insert("variant".into(), v);

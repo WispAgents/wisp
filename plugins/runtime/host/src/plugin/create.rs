@@ -56,6 +56,11 @@ async fn create(ctx: &Ctx, call: &Call, slot: &Slot, kinds: &Kinds, a: StartArgs
     }
     // a task you start under another is a side discussion (`/side`, a row's Side discussion…): v1's `side_task`
     let side_of = a.parent_id.clone().filter(|_| call.caller().set.starts_with("user"));
+    let main_title = match &side_of {
+        Some(main) => Some(rt(slot)?.repo.session(main.as_str()).await.map(|m| m.title).unwrap_or_default()),
+        None => None,
+    };
+    mark_side(&mut a, side_of.as_ref().zip(main_title.as_deref()));
     let (store, proc) = (ctx.service::<Store>()?, ctx.service::<Proc>()?);
     let home = wisp_kernel::services::paths(ctx).ok().map(|p| p.home().to_owned());
     // a worktree of its own: made before the first turn, the project's setup run in it
@@ -97,6 +102,21 @@ async fn create(ctx: &Ctx, call: &Call, slot: &Slot, kinds: &Kinds, a: StartArgs
     Ok(made)
 }
 
+/// v1 `sideOf: { id, title }` in runtime's slot: only the user's create makes a side discussion, so one a caller wrote
+/// itself is dropped (a forged one would run its action buttons in another task's folder).
+pub(crate) fn mark_side(a: &mut StartArgs, main: Option<(&wisp_runtime_api::SessionId, &str)>) {
+    let own = a.ext.entry("wisp.runtime".to_owned()).or_insert_with(|| serde_json::json!({}));
+    if let Some(o) = own.as_object_mut() {
+        o.remove("sideOf");
+        if let Some((id, title)) = main {
+            o.insert("sideOf".into(), serde_json::json!({ "id": id.as_str(), "title": title }));
+        }
+    }
+    if a.ext.get("wisp.runtime").is_some_and(|o| o.as_object().is_some_and(serde_json::Map::is_empty)) {
+        a.ext.remove("wisp.runtime");
+    }
+}
+
 /// The held task's worktree, made and set up; then its first turn starts (in its folder if that failed).
 async fn in_worktree(
     ctx: &Ctx,
@@ -120,4 +140,30 @@ async fn in_worktree(
     };
     let turn_id = rt.worktree_ready(made.id.as_str(), wt, failed).await.map_err(WireError::from)?;
     Ok(c::Created { id: made.id, turn_id })
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod tests {
+    use super::*;
+
+    /// v1 #794: a side discussion's action buttons run in the main task's folder, so only the user's create may say
+    /// which task that is; a `sideOf` another caller wrote is dropped, the rest of its slot kept.
+    #[test]
+    fn only_the_users_create_marks_a_side_discussion_v1_794() {
+        let forged = || {
+            let mut a = StartArgs::default();
+            a.ext.insert("wisp.runtime".into(), serde_json::json!({ "sideOf": { "id": "other", "title": "x" }, "team": [] }));
+            a
+        };
+        let mut a = forged();
+        mark_side(&mut a, None);
+        assert_eq!(a.ext["wisp.runtime"], serde_json::json!({ "team": [] }));
+        let mut a = forged();
+        mark_side(&mut a, Some((&"main".into(), "Fix login")));
+        assert_eq!(a.ext["wisp.runtime"]["sideOf"], serde_json::json!({ "id": "main", "title": "Fix login" }));
+        let mut a = StartArgs::default();
+        mark_side(&mut a, None);
+        assert!(!a.ext.contains_key("wisp.runtime"), "nothing added to a plain create");
+    }
 }

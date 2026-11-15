@@ -16,6 +16,7 @@ pub mod land;
 pub mod limit;
 pub mod media;
 pub mod owed;
+pub mod plan;
 pub mod prompt;
 pub mod queue;
 pub mod refused;

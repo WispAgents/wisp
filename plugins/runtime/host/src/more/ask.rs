@@ -194,7 +194,9 @@ impl Runtime {
             why: None,
         });
         let last = self.last_turn(a.id.as_str()).await?;
-        if slot(&s).and_then(|m| m.get("sideOf")).is_some() {
+        // a side discussion on a harness that can't ask before a write only reads (v1 `sideMode`); on one that can,
+        // its writes and commands are asked about as any task's (v1 #794: side discussions run commands)
+        if slot(&s).and_then(|m| m.get("sideOf")).is_some() && !h.info().side_gate {
             if let Some(t) = &last {
                 self.add_row(
                     a.id.as_str(),

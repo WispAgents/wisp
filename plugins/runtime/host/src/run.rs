@@ -202,6 +202,9 @@ impl Runtime {
         }
         run.mode = wisp_runtime_core::cap::at_cap(run.mode, capped);
         run.capped = capped.is_some();
+        // Plan that runs commands (v1 #794 `planRuns`): yours, not a side discussion's, nor from a channel or trigger
+        let outside = run.mode == Mode::Plan && self.started_outside(&s).await;
+        run.plan_commands = wisp_runtime_core::plan::runs_commands(run.mode, is_side(&s), outside);
         if turn.idx == 0 && !claim.cancelled() {
             self.record_setup(&s, &run);
         }
@@ -378,6 +381,27 @@ impl Runtime {
         let now = self.repo.session(s.id.as_str()).await?;
         carry_others_ext(s, now.ext);
         self.persist(s, turns).await.map(drop)
+    }
+
+    /// v1 `outsideTask`: the task, or one of its leads (up to `plan::MAX_LEADS`), was started by a trigger or carries
+    /// a mode cap (a channel's).
+    async fn started_outside(&self, s: &Session) -> bool {
+        let mut leads: Vec<Session> = Vec::new();
+        let mut up = s.parent_id.clone();
+        while let Some(p) = up.take().filter(|_| leads.len() < wisp_runtime_core::plan::MAX_LEADS) {
+            let Ok(x) = self.repo.session(p.as_str()).await else { break };
+            up.clone_from(&x.parent_id);
+            leads.push(x);
+        }
+        let origins: Vec<wisp_runtime_core::plan::Origin<'_>> = std::iter::once(s)
+            .chain(&leads)
+            .map(|x| wisp_runtime_core::plan::Origin {
+                capped: crate::capped::cap_of(x).is_some(),
+                triggered_by: x.ext.get("wisp.runtime").and_then(|o| o.pointer("/spec/lineage/triggeredBy")).and_then(Value::as_str),
+                started_by: x.ext.get("wisp.runtime").and_then(|o| o.get("startedBy")).and_then(Value::as_str),
+            })
+            .collect();
+        wisp_runtime_core::plan::outside(&origins)
     }
 
     fn harness_run(&self, s: &Session, t: &Turn, ctx: &BeforeRunCtx, h: &dyn Harness) -> HarnessRun {
@@ -612,6 +636,16 @@ fn carry_others_ext(s: &mut Session, mut now: wisp_runtime_api::model::Ext) {
 const OWN: &str = "wisp.runtime";
 /// How long `stop_and_wait` waits for a stopped run (its CLI's kill grace and tree sweep are 2 s each).
 const STOP_WAIT: std::time::Duration = std::time::Duration::from_secs(15);
+
+/// A side discussion (`ext["wisp.runtime"].sideOf`, set by `runtime.create` for a task the user starts under another).
+pub(crate) fn is_side(s: &Session) -> bool {
+    side_main(s).is_some()
+}
+
+/// The main task a side discussion is about.
+pub(crate) fn side_main(s: &Session) -> Option<&str> {
+    s.ext.get("wisp.runtime").and_then(|o| o.pointer("/sideOf/id")).and_then(Value::as_str).filter(|id| !id.is_empty())
+}
 
 pub(crate) async fn run_folder(launch: &str, task: &str, scratch: &str) -> Result<std::path::PathBuf> {
     let named = if launch.trim().is_empty() { task } else { launch };

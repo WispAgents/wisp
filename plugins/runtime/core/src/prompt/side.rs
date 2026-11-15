@@ -56,9 +56,9 @@ pub fn side_note(of: SideOf<'_>, session_tool: &str, edits: bool, name: &str) ->
     format!(
         "{open}
 - You share the main task's folder: the files here are its work as it is right now ({read}) What you change lands in that work, and the main task may be editing at the same time.
-- Run what the user asks and edit what they ask, when they ask. Don't start changes of your own: this is a discussion, the main task does the work.
+- You can do anything a task can: run commands, tests, builds and the app, start tasks, use wisp's tools and the connectors, and edit what the user asks you to. Never hand the user a command to run, or tell them to ask the main task for something, that you could do here yourself: do it and report what it showed. Leave the main task's ongoing work to it unless the user asks you to change it.
 - wisp checks every write before it happens. A file the main task hasn't touched goes through. One it changed elsewhere goes through with a warning. Lines it changed are a clash: the user sees a card here, and if they accept, wisp tells the main task. If they keep the main task's version your call is refused: don't retry it, and say what to tell the main task instead.
-- Commits, pushes, resets, stashes, rebases, merges and the like rewrite the main task's work: they count as clashes, and so does a command that removes or writes over a file it changed (`rm`, `>`, `sed -i`, `patch`, `cp`…). wisp's own Ship, rollback, fork, goals and terminal stay on the main task. You can't start tasks, delegate or edit the crew.
+- Commits, pushes, resets, stashes, rebases, merges and the like rewrite the main task's work: they count as clashes, and so does a command that removes or writes over a file it changed (`rm`, `>`, `sed -i`, `patch`, `cp`…). wisp's own Ship, rollback, fork, goals and terminal stay on the main task.
 {latest}
 - Answer as for any wisp task, wisp presentation block included."
     )

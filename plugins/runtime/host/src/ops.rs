@@ -217,14 +217,19 @@ impl Runtime {
         self.persist(&mut s, vec![t]).await.map(drop)
     }
 
-    /// A one-click command in the task's folder (`sh -c`, 2 min at most): its exit code and output.
+    /// A one-click command in the task's folder (`sh -c`, 2 min at most): its exit code and output. A side
+    /// discussion's runs where the main task works now (v1 #794: you clicked it, as you'd type it there).
     pub async fn exec(self: &Arc<Self>, id: &str, command: &str) -> Result<(i32, String)> {
         if command.trim().is_empty() {
             return Err(RuntimeError::Invalid("no command to run".into()));
         }
         let s = self.repo.session(id).await?;
+        let cwd = match crate::run::side_main(&s) {
+            Some(main) => self.repo.session(main).await.map(|m| m.cwd).ok().filter(|c| !c.is_empty()).unwrap_or_else(|| s.cwd.clone()),
+            None => s.cwd.clone(),
+        };
         // a task with no folder has nowhere to run it: never the server's own folder
-        let dir = wisp_runtime_api::paths::Folder::of(&s.cwd)
+        let dir = wisp_runtime_api::paths::Folder::of(&cwd)
             .map_err(|e| RuntimeError::Invalid(format!("This task has no folder to run a command in ({e}).")))?;
         let opts = wisp_proc::ExecOpts {
             cwd: Some(dir.into_path()),

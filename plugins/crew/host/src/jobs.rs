@@ -114,12 +114,14 @@ async fn start(ctx: &Ctx, call: &Call, st: &State, m: &Member, w: &WaitingJob, c
     let (agent, model, effort, mode) = job_body(m, w.run.as_ref());
     let mode = at_cap(&mode, capped.map(|c| c.get("mode").and_then(Value::as_str).unwrap_or("edits")));
     let agent = (!agent.is_empty() && agent != "auto").then_some(agent);
-    let args = json!({
+    let mut args = json!({
         "prompt": prompt, "agent": agent, "model": (!model.is_empty()).then_some(model), "effort": (!effort.is_empty()).then_some(effort),
         "mode": mode, "cwd": (!m.cwd.is_empty()).then(|| m.cwd.clone()), "attachments": attachments, "by": "crew", "title": format!("{} · {}", m.name, if job == JobKind::Checkin { "Check-in" } else { "Job" }),
         "ext": { PLUGIN_ID: ext },
     });
-    let mut args = args;
+    if let Some(l) = outside_lineage(w.origin.as_ref()) {
+        args["lineage"] = l;
+    }
     if let Some(cap) = capped {
         args["ext"][wisp_runtime_api::PLUGIN_ID] = json!({ "capped": cap });
     }
@@ -159,6 +161,18 @@ async fn start(ctx: &Ctx, call: &Call, st: &State, m: &Member, w: &WaitingJob, c
 }
 
 /// A job to start or queue.
+/// A wake's origin (`{ kind: "trigger", by }`), from what woke it (`trigger:<name>`, an event like `github.comment`).
+fn woken_by(source: Option<&String>) -> Option<Value> {
+    source.map(|s| json!({ "kind": "trigger", "by": s }))
+}
+
+/// The lineage a job woken from outside (a trigger, a pushed comment, a chat mention) runs with: `triggeredBy: trigger:…`, which keeps its Plan read-only.
+fn outside_lineage(origin: Option<&Value>) -> Option<Value> {
+    let by = origin.filter(|o| o.get("kind").and_then(Value::as_str) == Some("trigger"))?.get("by").and_then(Value::as_str)?;
+    let by = if by.starts_with("trigger:") { by.to_owned() } else { format!("trigger:{by}") };
+    Some(json!({ "triggeredBy": by }))
+}
+
 fn work(prompt: String, job: JobKind, attachments: Vec<Value>, run: Option<RunPick>) -> WaitingJob {
     WaitingJob { prompt, job, attachments, run, ..WaitingJob::default() }
 }
@@ -246,7 +260,8 @@ fn wakes(s: &mut Setup, st: &Arc<State>) {
             Some(src) => format!("{why}\n\n(woken by {src})"),
             None => why,
         };
-        assign(&ctx, &call, &st, &m, work(prompt, JobKind::Task, Vec::new(), None)).await
+        let w = WaitingJob { origin: woken_by(a.source.as_ref()), ..work(prompt, JobKind::Task, Vec::new(), None) };
+        assign(&ctx, &call, &st, &m, w).await
     });
     on!(s, st, c::WakeMentions, |st, ctx, call, a| {
         let crew = lock(&st.saved).crew.clone();
@@ -258,7 +273,8 @@ fn wakes(s: &mut Setup, st: &Arc<State>) {
                 Some(src) => format!("You were mentioned ({src}):\n\n{}", a.text.trim()),
                 None => format!("You were mentioned:\n\n{}", a.text.trim()),
             };
-            out.push(assign(&ctx, &call, &st, &m, work(prompt, JobKind::Task, Vec::new(), None)).await?);
+            let w = WaitingJob { origin: woken_by(a.source.as_ref()), ..work(prompt, JobKind::Task, Vec::new(), None) };
+            out.push(assign(&ctx, &call, &st, &m, w).await?);
         }
         Ok(out)
     });
@@ -433,4 +449,20 @@ async fn run_tick(ctx: &Ctx, st: &State) {
 /// The agent profiles a member may name (wisp.runtime's `runtime.profiles`).
 async fn profile_names(ctx: &wisp_kernel::Ctx, call: &wisp_kernel::Call) -> Vec<String> {
     calls::profile_names(ctx, call).await
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// v1 #794: a crew job a trigger or a pushed mention woke carries the waker as its lineage, so its Plan stays
+    /// read-only; one you gave it (no source) has none.
+    #[test]
+    fn a_job_woken_from_outside_runs_with_a_trigger_lineage_v1_794() {
+        let by = |s: &str| outside_lineage(woken_by(Some(&s.to_owned())).as_ref());
+        assert_eq!(by("trigger:on-issue"), Some(json!({ "triggeredBy": "trigger:on-issue" })));
+        assert_eq!(by("github.comment"), Some(json!({ "triggeredBy": "trigger:github.comment" })));
+        assert_eq!(outside_lineage(woken_by(None).as_ref()), None);
+        assert_eq!(outside_lineage(Some(&json!({ "kind": "task" }))), None);
+    }
 }

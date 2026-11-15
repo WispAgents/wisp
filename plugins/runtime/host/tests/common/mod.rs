@@ -150,6 +150,9 @@ impl Harness for Fake {
         if !run.skills.is_empty() {
             args.push(format!("--skills={}", run.skills));
         }
+        if run.plan_commands {
+            args.push("--plan-commands".into());
+        }
         let stdin = if self.piped { Stdin::Bytes(run.prompt.clone().into_bytes()) } else { Stdin::Null };
         Ok(Launch { program: self.program.into(), args, stdin, ..Launch::default() })
     }
@@ -296,6 +299,12 @@ async fn fake_cli(mut io: SimIo) -> Exit {
     Exit { code: Some(0), signal: None }
 }
 
+/// `sh -c <command>` for `runtime.exec`: says it ran, exit 0.
+async fn sh_cli(io: SimIo) -> Exit {
+    io.print(b"ran\n").await;
+    Exit { code: Some(0), signal: None }
+}
+
 /// A CLI that's gone before it reads its input: a line on stderr, exit 1.
 async fn deaf_cli(io: SimIo) -> Exit {
     io.eprint(b"error: it went before reading its prompt\n").await;
@@ -317,7 +326,7 @@ pub async fn rig_with(host: Recorder) -> Rig {
 pub async fn rig_on(host: Recorder, harnesses: Vec<Arc<dyn Harness>>) -> Rig {
     let store = Store::open(Location::Memory, Arc::new(SystemClock)).unwrap();
     schema::install(&store).unwrap();
-    let sim = SimProc::new().program("fake", fake_cli).program("deaf", deaf_cli).closed_stdin("deaf");
+    let sim = SimProc::new().program("fake", fake_cli).program("deaf", deaf_cli).program("sh", sh_cli).closed_stdin("deaf");
     let host = Arc::new(Recorder { harnesses, ..host });
     let rt = Runtime::new(Repo::new(store.clone()), host.clone(), Arc::new(sim.clone()), Arc::new(SystemClock));
     rt.start().await.unwrap();

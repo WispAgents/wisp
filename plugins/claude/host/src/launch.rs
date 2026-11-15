@@ -31,6 +31,11 @@ pub const ENV_REMOVE: [&str; 10] = [
 ];
 const SUBAGENT_MODELS: [&str; 2] = ["haiku", "sonnet"];
 pub const APPROVE_TOOL: &str = "mcp__wisp__approve";
+/// Plan that runs commands (`HarnessRun::plan_commands`, v1 #794): Claude Code's own plan mode refuses any command
+/// with a side effect, so the run goes without prompts and only these file-editing tools are off (v1 `EDIT_TOOLS`).
+pub const EDIT_TOOLS: [&str; 4] = ["Edit", "MultiEdit", "Write", "NotebookEdit"];
+/// What the agent hears in Plan that runs commands (v1 runner.js `PLAN_NOTE`), after wisp's system prompt.
+pub const PLAN_NOTE: &str = "\n\n# Plan mode\n\nThis task is in Plan mode: don't change the project's files. The file-editing tools are off; don't write files from the shell either (no `sed -i`, `>` into a file, `patch`, `git commit`). Everything else is yours: run commands, tests, builds and the app, read logs, use wisp's tools and the connectors. Don't hand the user a command to run that you could run yourself: run it and report what it showed. End with the plan: what to change, where, and why.\n";
 
 pub(crate) fn permission_mode(mode: Mode) -> &'static str {
     match mode {
@@ -70,11 +75,22 @@ fn dir_of(p: &str) -> String {
 
 /// The launch for `run`, with `bin` the program to start.
 pub fn launch(run: &HarnessRun, bin: &str) -> Launch {
+    // Plan that runs commands: a task you started (the runtime says), never past a side discussion's gate
+    let plan_runs = run.plan_commands && run.mode == Mode::Plan && !run.gate;
     let mut args: Vec<String> = vec!["-p".into(), "--output-format".into(), "stream-json".into()];
     args.push(if run.lean { "--system-prompt" } else { "--append-system-prompt" }.into());
-    args.push(run.system_prompt.clone());
+    args.push(if plan_runs { format!("{}{PLAN_NOTE}", run.system_prompt) } else { run.system_prompt.clone() });
     args.push("--permission-mode".into());
-    args.push(if run.gate { "default" } else { permission_mode(run.mode) }.into());
+    args.push(
+        if run.gate {
+            "default"
+        } else if plan_runs {
+            "bypassPermissions"
+        } else {
+            permission_mode(run.mode)
+        }
+        .into(),
+    );
     if run.gate {
         args.push("--settings".into());
         args.push(serde_json::json!({ "permissions": { "ask": GATED } }).to_string());
@@ -115,8 +131,14 @@ pub fn launch(run: &HarnessRun, bin: &str) -> Launch {
         args.push("--allowedTools".into());
         args.extend(allowed);
     }
-    if run.delegating {
-        args.extend(["--disallowedTools", "Task", "Agent", "Workflow"].map(str::to_owned));
+    // its built-in subagents would bypass the user's team; Plan that runs commands has its edit tools off
+    let off: Vec<&str> = if run.delegating { vec!["Task", "Agent", "Workflow"] } else { Vec::new() }
+        .into_iter()
+        .chain(EDIT_TOOLS.into_iter().filter(|_| plan_runs))
+        .collect();
+    if !off.is_empty() {
+        args.push("--disallowedTools".into());
+        args.extend(off.into_iter().map(str::to_owned));
     }
     let mut seen = BTreeSet::new();
     let dirs: Vec<String> = run
@@ -219,6 +241,44 @@ mod tests {
         let a = launch(&l, "claude").args;
         assert_eq!(a[3], "--system-prompt");
         assert!(a.iter().any(|x| x == "--strict-mcp-config"));
+    }
+
+    fn flag<'a>(a: &'a [String], f: &str) -> &'a str {
+        a.iter().position(|x| x == f).and_then(|i| a.get(i + 1)).map_or("", String::as_str)
+    }
+
+    fn after(a: &[String], f: &str) -> Vec<String> {
+        let Some(i) = a.iter().position(|x| x == f) else { return Vec::new() };
+        a[i + 1..].iter().take_while(|x| !x.starts_with("--")).cloned().collect()
+    }
+
+    /// v1 #794 test/plan-mode.test.js: Plan with `plan_commands` runs without prompts, its edit tools off and the Plan
+    /// note told; without it, Claude Code's own read-only plan mode; a side discussion's gate wins; only Plan.
+    #[test]
+    fn plan_that_runs_commands_has_no_prompts_its_edit_tools_off_and_the_plan_note_v1_794() {
+        let strict = launch(&HarnessRun { mode: Mode::Plan, ..run() }, "claude").args;
+        assert_eq!(flag(&strict, "--permission-mode"), "plan");
+        assert!(!strict.iter().any(|x| x == "--disallowedTools"));
+        assert!(!flag(&strict, "--append-system-prompt").contains("# Plan mode"));
+
+        let open = launch(&HarnessRun { mode: Mode::Plan, plan_commands: true, delegating: true, ..run() }, "claude").args;
+        assert_eq!(flag(&open, "--permission-mode"), "bypassPermissions", "Claude Code's plan mode refuses commands with side effects");
+        assert_eq!(after(&open, "--disallowedTools"), ["Task", "Agent", "Workflow", "Edit", "MultiEdit", "Write", "NotebookEdit"]);
+        let sys = flag(&open, "--append-system-prompt");
+        assert!(sys.starts_with("SYS\n\n# Plan mode\n\n"), "{sys}");
+        assert!(sys.contains("don't change the project's files") && sys.contains("run commands, tests, builds and the app"));
+
+        let alone = launch(&HarnessRun { mode: Mode::Plan, plan_commands: true, ..run() }, "claude").args;
+        assert_eq!(after(&alone, "--disallowedTools"), EDIT_TOOLS);
+
+        let gated = launch(&HarnessRun { mode: Mode::Plan, plan_commands: true, gate: true, ..run() }, "claude").args;
+        assert_eq!(flag(&gated, "--permission-mode"), "default", "a side discussion's gate wins");
+        assert!(!gated.iter().any(|x| x == "--disallowedTools"));
+
+        let edits = launch(&HarnessRun { mode: Mode::Edits, plan_commands: true, ..run() }, "claude").args;
+        assert_eq!(flag(&edits, "--permission-mode"), "acceptEdits", "only Plan");
+        assert!(!edits.iter().any(|x| x == "--disallowedTools"));
+        assert!(!flag(&edits, "--append-system-prompt").contains("# Plan mode"));
     }
 
     /// v1 lean.js `LEAN_ENV`: a quiet run goes without Claude Code's nonessential traffic.

@@ -55,6 +55,11 @@ pub struct HarnessRun {
     pub skills: String,
     /// every write and command goes to the approve tool first
     pub gate: bool,
+    /// in Plan, this run may run commands with only the file-editing tools off (v1 `planCommands`, #794): a task
+    /// you started, not a side discussion, nor one a channel or trigger started or capped (`wisp_runtime_core::plan`).
+    /// A harness that can run Plan so does; one that can't stays read-only. Additive (2026-11-15).
+    #[serde(default)]
+    pub plan_commands: bool,
     /// started from a channel with a mode cap: the sandbox keeps the shell off wisp's API
     pub capped: bool,
     /// a task's turn: check what the CLI is and what the sign-in bills to (side runs skip it)
