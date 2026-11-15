@@ -23,7 +23,7 @@ Rust for everything but the UI, Solid/TS for the UI, everything a plugin (ADR-00
 | CI, last full run (8bb8ccd0) | **Linux 4/4 + macOS 2/2 green** · Windows: `nursery_windows` (r257's new test) hung, cancelled at 60 min; no serve test reached (r263) |
 | Budgets | initial JS 107.2 KB br (≤ 120) · CSS 27.1 KB (≤ 30) |
 | Weekly usage | 92 % (owner 2026-11-15: continue until the limit) |
-| Coders running | coder-r264 (Windows long paths) |
+| Coders running | none (CI on 9ea69e14) |
 
 ## 3. Owner directions (standing rules)
 
@@ -761,7 +761,7 @@ Source: `docs/v1-features.md` (each row's evidence and test). `[x]` built, `[ ]`
 
 | Round | What | State |
 |---|---|---|
-| 264 | Windows: one long canonical path at every entry; 14 serve tests (8.3 RUNNER~1 vs long), projectRun containment bug, serve_open folder held | in progress |
+| 264 | Paths spelled once at entry (ADR-0071): 6 product bugs + Mark-done race; 13/14 Windows serve failures; serve_open holder still unknown | committed (46437ddb, 236c6c04, 9ea69e14) |
 | 263 | Windows nursery test: pid marker mid-line (libtest prefix), deadlines on every blocking step | committed (ff809a38) |
 | 262 | Queued follow-ups inside the reply box; the queue now shows on a real server (queue_item rows) | committed (5d72c830) |
 | 261 | Scheduled follow-ups inside the reply box (kit top slot, shell.task:composer-top) | committed (f58828bd) |
