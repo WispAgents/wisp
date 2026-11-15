@@ -166,11 +166,18 @@ turn. When a screen or feature contradicts one, that's a bug: fix it toward the 
 - [ ] **TUI** (ADR-0024, `docs/v2-tui-design.md`): first slice done (list, answer, composer). Left: `--on <machine>`,
       For later and Repo tab, blame gutter, hunk jumps, terminal images, the real-terminal pass.
 
+- [ ] **Long threads** (owner, 2026-11-15, from wisp task d8ee0a207d52; plan `docs/v2-long-threads.md`): the task
+      ledger (goal, constraints, decisions, failed, state, open, files; rewritten, never appended; `wisp_ledger` MCP
+      tool), the note before each follow-up, Fresh thread from an editable brief, the health meter, the compaction
+      audit, the Bash output offload (`wisp hook offload`). v1 is building it now (~/Downloads/wisp-long-threads):
+      **port once v1's PR merges**; before that: the name clash with ADR-0068's Ledger (owner picks), the ADR draft
+      and the UI mock for the owner's approval
+
 ### 4.2 GUI (browser and desktop), v1 parity
 
 - [x] Every screen wired to the real server (the 2026-11-09 "mounts no task view" gap is closed)
 - [x] Multi-project pick (click = only, + adds, strip with Only/All) (round 133)
-- [ ] **Phones break the project-selector decisions (§3):** the phone Tasks screen shows project chips (round 284) and the phone New task sheet shows v1's place chips (round 286): replace both with the one selector + multi-pick, **and the desktop New task place row too (owner 2026-11-15 20:05)**: **next round, after r287**
+- [x] **Phones break the project-selector decisions (§3):** done round 288 (2026-11-15): the one selector (kit `ProjectSelect`, the sidebar's) replaces the desktop and browser New task place row (it opens the ⌘P list on the box's place: name = only, + adds, No folder and Other folder… in the list), the phone Tasks project chips (the selector is in the Tasks top bar beside the computer filter, M3 filter chip / iOS pull-down look) and the phone New task place chips (the same launcher); the task page's reply box has no place control (its place chips only show where it works). Tests `apps/web/test/project-selector.test.tsx`; allowed.md entry; F-comp-47, F-task-26/27/30
 - [x] Composer `@` and `/`
 - [x] Harness picker back to v1: one pill, one two-pane popover (round 233, 6e3fe42e)
 - [x] "What will Auto run" back on the pill as v1 (#autoPv: Auto's pick is the pill's own segment, opens the AutoPop); extra compare runs open the same two-pane picker with their own model · thinking · account and What's different (round 236, c390aca5)
