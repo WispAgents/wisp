@@ -15,7 +15,7 @@ import { useRecipes } from './recipes.ts';
 import type { PickOptions } from '../platform/types.ts';
 import { Show, createEffect, createMemo, createSignal, lazy, on, onCleanup, type JSX } from 'solid-js';
 import { entityKey, newRowId, type EntityKey, type Json, type PeerId } from '@wisp/client';
-import { AutoPop, FeedbackLine, KeysHint, Launcher, NextList, SplitHome, Tips, lazyPart, lazyView, useSignal, warm as warmPart, type LauncherChip, type LauncherTool, type PlainTip } from '@wisp/ui';
+import { AutoPop, FeedbackLine, KeysHint, Launcher, NextList, SplitHome, Tips, lazyPart, lazyView, useSignal, warm as warmPart, type LauncherProps, type LauncherTool, type PlainTip } from '@wisp/ui';
 import { useShell } from '../context.tsx';
 import { Slot, usePluginClient } from '../slot.tsx';
 import { useNow } from '../clock.ts';
@@ -32,7 +32,8 @@ import { MAX_RUNNERS, newGroup, nextRun } from './runs-small.ts';
 import { firstRunOf, firstRunTools, launcherFull } from './first-run.ts';
 import { whereItems } from './where.ts';
 import { placeOn } from './run-on.ts';
-import { alsoToggle, dirsOf, launchOf, parsePick, startAt } from './project-pick.ts';
+import { dirsOf, launchOf, parsePick, pickLabel, pickedProjects, placePick } from './project-pick.ts';
+import { openPlaces, releasePlaces, type PlaceTarget } from './project-switch.ts';
 import { promptKeys, remember, sentStore } from './prompt-keys.ts';
 import { draftValue, launcherDraft } from './drafts.ts';
 import { MODE_ICON, agentName, modeMenu, teamMenu, teamPrefill, teamRows, whenAt, whenMenu, type Mode, type When } from './pickers.ts';
@@ -65,7 +66,7 @@ export function HomeView(props: { readonly onBack?: () => void }): JSX.Element {
   const [runOn, setRunOn] = createSignal<string>(home);
   const target = (): PeerId => (peerIds().includes(runOn() as PeerId) ? runOn() : home) as PeerId;
   const sessions = useSignal(shell.client.entities.list<SessionRow>(SESSION));
-  const { list: projects, reorder } = useProjects(shell, usePluginClient('shell').home);
+  const { list: projects } = useProjects(shell, usePluginClient('shell').home);
   const settings = useSignal(shell.client.entities.list<SettingRow>('setting'));
   const now = useNow(shell.client);
   const harnesses = useSignal(shell.harnesses());
@@ -218,16 +219,10 @@ export function HomeView(props: { readonly onBack?: () => void }): JSX.Element {
   const listFilter = useSignal(shell.projectFilter?.value ?? (() => 'all'));
   const listPick = createMemo(() => launchOf(parsePick(listFilter()), projects()));
   const [ownAlso, setOwnAlso] = createSignal<readonly string[] | undefined>(undefined);
-  createEffect(on(listPick, () => setOwnAlso(undefined), { defer: true }));
+  // the pick over the list changed (its ids, not a new projects list: an added folder or a rename keeps what + added)
+  createEffect(on(() => `${listPick().start ?? ''}|${listPick().also.join(',')}`, () => setOwnAlso(undefined), { defer: true }));
   const project = createMemo(() => (where() === 'none' ? undefined : (projects().find((p) => p.id === (where() ?? listPick().start)) ?? projects()[0])));
   const also = createMemo(() => (project() ? (ownAlso() ?? listPick().also).filter((id) => id !== project()?.id) : []));
-  // another chip as the start: the old start stays a folder it also works in (startAt)
-  const pickWhere = (id: string): void => {
-    // from No folder: the added ones are still there (also() is empty while there's no start)
-    const next = startAt(project()?.id, project() ? also() : (ownAlso() ?? listPick().also), id);
-    setWhere(id);
-    setOwnAlso(next);
-  };
   const worktree = createMemo(() => settings().find((r) => r.key === 'defaults.worktree')?.value !== false);
   const needs = createMemo(() =>
     sessions()
@@ -452,41 +447,30 @@ export function HomeView(props: { readonly onBack?: () => void }): JSX.Element {
   const settingsSheet = (pane: string): void => shell.navigate({ t: 'openOverlay', overlay: { kind: 'viewer', id: 'shell-settings.sheet' as never, params: { pane } } });
   const shown = (): { agent: string; label: string } | undefined => (agent() === 'auto' ? autoPick(preview()) : undefined);
   const pick = (): { name: string; logo?: string } => harnessOf(harnesses(), shown()?.agent ?? (agent() === 'auto' ? auto() : agent()));
-  const chips = (): LauncherChip[] => [
-    ...projects().map((p) => {
-      const start = project()?.id === p.id;
-      const added = also().includes(p.id);
-      const several = also().length > 0;
-      return {
-        id: p.id,
-        kind: 'project' as const,
-        name: p.name,
-        title: start && several ? `${p.path}\n${t('shell.home.startsHere')}` : p.path,
-        color: p.color || 'slate',
-        on: start || added,
-        act: { onClick: () => pickWhere(p.id) },
-        // the folder it starts in has no badge; with no folder picked there's nothing to add to
-        ...(!start && project() && { also: { on: added, label: t(added ? 'shell.home.leaveOut' : 'shell.home.also', { name: p.name }), onToggle: () => setOwnAlso(alsoToggle(also(), p.id)) } }),
-      };
-    }),
-    { id: 'none', kind: 'none', name: t('shell.home.noFolder'), title: t('shell.home.noFolderTitle'), on: where() === 'none', act: { onClick: () => setWhere('none') } },
-    {
-      id: 'pick',
-      kind: 'pick',
-      name: t('shell.home.otherFolder'),
-      title: t('shell.home.otherFolderTitle'),
-      act: {
-        menu: {
-          items: [
-            ...projects().map((p) => ({ value: p.id, label: p.name, hint: p.path })),
-            { kind: 'separator' as const },
-            { value: 'add', label: t('shell.home.addProject'), icon: 'folder' as const },
-          ],
-          onSelect: (v: string) => (v === 'add' ? shell.navigate({ t: 'openOverlay', overlay: { kind: 'dialog', id: 'shell.projects' as never, params: null } }) : pickWhere(v)),
-        },
-      },
+  // where it works (owner, 2026-11-15): the one project selector, the same list as ⌘P on this box's place
+  const placeTarget: PlaceTarget = {
+    pick: () => placePick(project()?.id, also()),
+    set: (ids) => {
+      setWhere(ids[0] ?? 'none');
+      setOwnAlso(ids.slice(1));
     },
-  ];
+    other: () => shell.navigate({ t: 'openOverlay', overlay: { kind: 'dialog', id: 'shell.projects' as never, params: null } }),
+  };
+  onCleanup(() => releasePlaces(placeTarget));
+  const place = (): LauncherProps['place'] => {
+    const p = project();
+    const picked = p ? [p, ...pickedProjects(also(), projects())] : [];
+    const label = p ? pickLabel(picked, t) : t('shell.home.noFolder');
+    const tip = p ? picked.map((x) => x.path).join('\n') : t('shell.home.noFolderTitle');
+    return {
+      label,
+      colors: picked.map((x) => x.color || 'slate'),
+      icon: 'text',
+      title: `${tip}\n${t('shell.home.placeTitle')}`,
+      ariaLabel: t('shell.home.placeAria', { name: label }),
+      onOpen: () => openPlaces(shell, placeTarget),
+    };
+  };
   const extras = () => [
     ...files().map((f, i) => ({ id: `file:${i}:${f.name}`, icon: 'clip' as const, label: f.name, removeLabel: t('shell.home.remove', { name: f.name }), onRemove: () => att.remove(f) })),
     ...(when()
@@ -507,8 +491,7 @@ export function HomeView(props: { readonly onBack?: () => void }): JSX.Element {
     <SplitHome greeting={t('shell.home.hello')} {...(!phone && props.onBack && { onBack: props.onBack, backLabel: t('shell.home.back') })}>
       <Launcher
         inLabel={t('shell.home.in')}
-        chips={chips()}
-        onReorder={reorder}
+        place={place()}
         placeholder={t('shell.home.placeholder')}
         value={text()}
         onInput={(v) => {

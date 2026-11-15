@@ -16,7 +16,7 @@ import { TASK_KEY, type TaskKey } from './frame/task-keys.ts';
 import { parseCompare } from './frame/runs-small.ts';
 import { openFeedback, parseFeedback } from './frame/feedback.ts';
 import { rowMenuItems } from './frame/row-menu.ts';
-import { PROJECT_ACTIONS, PROJECT_SOURCE, projectItems, projectShortcuts, projectsNow } from './frame/project-switch.ts';
+import { PLACE_SOURCE, PROJECT_ACTIONS, PROJECT_SOURCE, placeItems, projectItems, projectShortcuts, projectsNow } from './frame/project-switch.ts';
 import { flatRow, projectOf, shortAgo, statusOf } from './frame/rows-view.ts';
 
 export const SHELL_SETTINGS = [
@@ -385,6 +385,8 @@ export function shellUi(ctx: ShellContext): PluginUiDef {
       { id: PROJECT_ACTIONS, order: 30, items: () => actionHead(ctx) },
       { id: 'shell.app', order: 90, items: () => appItems(ctx) },
       { id: PROJECT_SOURCE, order: 200, items: () => projectItems(ctx) },
+      // New task's place list (its selector opens the palette on it alone): nothing in ⌘K
+      { id: PLACE_SOURCE, order: 201, items: (pc) => (pc.narrowed ? placeItems(ctx) : []) },
     ],
     shortcuts: shortcuts(ctx),
   };

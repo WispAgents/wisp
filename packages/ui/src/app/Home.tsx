@@ -1,16 +1,16 @@
 // Home as v1 draws it (web/css/split.css .split-home, launcher.css, composer.css, auto.css, tips):
 // the greeting, the prompt box (where it runs, the prompt, its toolbar, Recipes), what needs you,
 // then the tips. On a phone it's its own page with a back button in its head.
-import { For, Index, Match, Show, Switch, createSignal, type JSX } from 'solid-js';
+import { For, Index, Show, createSignal, type JSX } from 'solid-js';
 import { LauncherSetup, type LauncherSetupProps } from './LauncherSetup.tsx';
 import { flag } from '../core/props.ts';
 import { useOpenWithin } from '../core/open-within.ts';
-import { reorderable, type OnReorder } from '../core/reorder.ts';
 import { Icon } from '../content/Icon.tsx';
 import { PromptSuggestList, dropHandlers } from '../composer/PromptSuggest.tsx';
 import { suggestKeyDown, type PromptSuggest } from '../composer/suggest-keys.ts';
 import type { IconName } from '../content/icons.ts';
 import { ActIcon, WithAct, actAttrs, type Act } from './act.tsx';
+import { ProjectSelect, type ProjectSelectProps } from './ProjectSelect.tsx';
 
 export interface SplitHomeProps {
   readonly greeting: string;
@@ -66,20 +66,6 @@ export interface LauncherRecipe {
   readonly act: Act;
 }
 
-export interface LauncherChip {
-  readonly id: string;
-  /** a project (its colour's dot and name), No folder (its icon), or Other folder… (a dashed chip) */
-  readonly kind: 'project' | 'none' | 'pick';
-  readonly name: string;
-  readonly title: string;
-  readonly color?: string;
-  readonly on?: boolean;
-  readonly act?: Act;
-  /** added 2026-11-14 (F-comp-47, v1 launcher.js lp-also): one task in several folders. A badge on the chip's corner adds
-   *  this project (+, on hover; always on touch) or leaves it out (×, `on`); ⌘/Ctrl-click the chip does the same */
-  readonly also?: { readonly on: boolean; readonly label: string; readonly onToggle: () => void };
-}
-
 /** One more harness the launch runs on (v1 .vs-del + .runner-btn.cmp-x). */
 export interface LauncherCompare {
   readonly label: string;
@@ -99,9 +85,9 @@ export interface LauncherCompare {
 
 export interface LauncherProps {
   readonly inLabel: string;
-  readonly chips: readonly LauncherChip[];
-  /** drag a project chip (or Alt+←/→) into your own order (v1 #772) */
-  readonly onReorder?: OnReorder;
+  /** where it works (owner, 2026-11-15): the one project selector in place of v1's row of place chips; it opens the
+   *  same list as ⌘P, with No folder and Other folder… after the projects */
+  readonly place: Omit<ProjectSelectProps, 'part' | 'where'>;
   readonly placeholder: string;
   readonly value: string;
   readonly onInput: (v: string) => void;
@@ -205,79 +191,8 @@ function Tool(props: { readonly t: LauncherTool }): JSX.Element {
   );
 }
 
-function Chip(props: { readonly c: LauncherChip; readonly ids: () => readonly string[]; readonly onReorder?: OnReorder | undefined }): JSX.Element {
-  return (
-    <WithAct
-      act={props.c.act}
-      render={(trigger) => (
-        <button
-          type="button"
-          {...reorderable('launcher.projects', props.c.id, props.ids, props.c.kind === 'project' ? props.onReorder : undefined)}
-          {...trigger()}
-          onClick={(e: MouseEvent) => {
-            const also = props.c.also;
-            if (also && (e.metaKey || e.ctrlKey)) {
-              e.preventDefault();
-              e.stopPropagation();
-              return also.onToggle();
-            }
-            (trigger()['onClick'] as ((e: MouseEvent) => void) | undefined)?.(e);
-          }}
-          // ⌘/Ctrl-Enter on a focused chip: the badge's act from the keyboard
-          onKeyDown={(e: KeyboardEvent) => {
-            if (props.c.also && e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
-              e.preventDefault();
-              props.c.also.onToggle();
-            }
-          }}
-          aria-description={props.c.also?.label}
-          data-kit="lp-chip"
-          data-on={flag(props.c.on)}
-          data-none={flag(props.c.kind === 'none')}
-          data-add={flag(props.c.kind === 'pick')}
-          data-color={props.c.color}
-          aria-current={props.c.on ? 'true' : undefined}
-          title={props.c.title}
-        >
-          <Switch>
-            <Match when={props.c.kind === 'project'}>
-              <i data-kit="p-dot" />
-              {props.c.name}
-              <Show when={props.c.also}>
-                {(a) => (
-                  <span
-                    data-kit="lp-also"
-                    data-part="launcher.also"
-                    data-on={flag(a().on)}
-                    // inside the chip's button, so not a control of its own: the chip says it (aria-description)
-                    // and ⌘/Ctrl-click or ⌘/Ctrl-Enter on the chip does it
-                    aria-hidden="true"
-                    title={a().label}
-                    onClick={(e) => (e.preventDefault(), e.stopPropagation(), a().onToggle())}
-                  >
-                    <Icon name={a().on ? 'x' : 'plus'} />
-                  </span>
-                )}
-              </Show>
-            </Match>
-            <Match when={props.c.kind === 'none'}>
-              <Icon name="text" />
-              <span data-text="control">{props.c.name}</span>
-            </Match>
-            <Match when={props.c.kind === 'pick'}>
-              <Icon name="folder" />
-              <span data-text="control">{props.c.name}</span>
-            </Match>
-          </Switch>
-        </button>
-      )}
-    />
-  );
-}
-
 /** v1 #launcher: the prompt box on Home. */
 export function Launcher(props: LauncherProps): JSX.Element {
-  const projectIds = (): string[] => props.chips.filter((c) => c.kind === 'project').map((c) => c.id);
   // Try it two ways (v1 .runners.trial / .l-bar.l-try): one copy of the lead that says its change; the bar folds for it
   const trial = (): boolean => props.runner.compares?.length === 1 && (props.runner.compares[0]?.variant?.length ?? 0) > 0;
   const key = (e: KeyboardEvent): void => {
@@ -315,9 +230,7 @@ export function Launcher(props: LauncherProps): JSX.Element {
       >
         <div data-kit="l-projects" data-part="launcher.projects">
           <span data-kit="l-in">{props.inLabel}</span>
-          <span data-kit="lp-group">
-            <For each={props.chips}>{(c) => <Chip c={c} ids={projectIds} onReorder={props.onReorder} />}</For>
-          </span>
+          <ProjectSelect {...props.place} part="launcher.place" where="launcher" />
         </div>
         <Show when={props.setup}>{(s) => <LauncherSetup {...s()} />}</Show>
         <div data-kit="mn-wrap">

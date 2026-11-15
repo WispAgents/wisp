@@ -1,7 +1,7 @@
 // Pick several projects (docs/v2-queue.md GUI item 7): click = only, + / ⌘-Enter = add or remove, ⌘1–⌘9 = only,
 // All clears, the pick saved in the one device setting and restored, New task's folders (`dirs`, F-comp-47).
 import { expect, test } from 'vitest';
-import { alsoToggle, dirsOf, launchOf, middle, parsePick, pickHas, pickLabel, pickOnly, pickRemove, pickToggle, pickValue, startAt, taskPlaces } from '../src/frame/project-pick.ts';
+import { dirsOf, launchOf, middle, parsePick, pickHas, pickLabel, pickOnly, pickRemove, pickToggle, pickValue, placePick, taskPlaces } from '../src/frame/project-pick.ts';
 import { projectItems, projectShortcuts, togglePick } from '../src/frame/project-switch.ts';
 import type { PaletteItem, ShellContext } from '../src/contract.ts';
 import type { ProjectView } from '../src/frame/rows-view.ts';
@@ -113,29 +113,29 @@ test('new_task_dirs_start_in_the_first_pick_and_work_in_the_others', () => {
   expect(l).toEqual({ start: 'b', also: ['a', 'c'] });
   const start = projects[1];
   expect(dirsOf(start, l.also, projects)).toEqual(['/code/api', '/code/docs']);
-  // leaving one out with its ×, or adding one with + (⌘-click)
-  expect(alsoToggle(l.also, 'a')).toEqual(['c']);
-  expect(dirsOf(start, alsoToggle(['c'], 'd'), projects)).toEqual(['/code/docs', '/code/infra']);
+  // leaving one out with its −, or adding one with + (the selector's list)
+  expect(pickToggle(l.also, 'a')).toEqual(['c']);
+  expect(dirsOf(start, pickToggle(['c'], 'd'), projects)).toEqual(['/code/docs', '/code/infra']);
   // never the folder it starts in, never twice, nothing for a pick of one
   expect(dirsOf(start, ['b', 'a', 'a'], projects)).toEqual(['/code/api']);
   expect(launchOf(['a'], projects)).toEqual({ start: 'a', also: [] });
   expect(launchOf([], projects)).toEqual({ start: undefined, also: [] });
 });
 
-test('making_another_chip_the_start_keeps_the_old_start_as_an_extra_folder', () => {
-  // an added one made the start: the two swap, in place (round 133 dropped `a`)
-  expect(startAt('a', ['b', 'c'], 'b')).toEqual(['a', 'c']);
-  expect(startAt('a', ['b', 'c'], 'c')).toEqual(['b', 'a']);
-  // one not added, in a task that works in several: the old start stays, first
-  expect(startAt('a', ['b'], 'd')).toEqual(['a', 'b']);
-  // a one-folder task switching folder: still one folder
-  expect(startAt('a', [], 'b')).toEqual([]);
-  // the one it starts in, or no folder before: nothing else changes
-  expect(startAt('a', ['b'], 'a')).toEqual(['b']);
-  expect(startAt(undefined, ['b'], 'c')).toEqual(['b']);
-  // and what goes on the wire: the new start's folder, then the old one as a dir
-  const next = startAt('a', ['b'], 'b');
-  expect(dirsOf(projects[1], next, projects)).toEqual(['/code/api']);
+test('new_task_place_click_is_only_that_project_plus_adds_and_the_last_one_out_is_no_folder', () => {
+  // the box's place as a pick: where it starts first, then the others, never twice; No folder is []
+  expect(placePick('a', ['b', 'c'])).toEqual(['a', 'b', 'c']);
+  expect(placePick('a', ['a', 'b', 'b'])).toEqual(['a', 'b']);
+  expect(placePick(undefined, ['b'])).toEqual([]);
+  // a row's name: only that project, whatever was picked (owner, 2026-11-13)
+  expect(pickOnly('c')).toEqual(['c']);
+  // its +: added after the others, so the task still starts where it did
+  const two = pickToggle(placePick('a', []), 'b');
+  expect(two).toEqual(['a', 'b']);
+  expect(launchOf(two, projects)).toEqual({ start: 'a', also: ['b'] });
+  // its − on the start: the next one is where it starts; the last one out leaves No folder
+  expect(pickToggle(two, 'a')).toEqual(['b']);
+  expect(pickToggle(['b'], 'b')).toEqual([]);
 });
 
 test('a_task_page_shows_every_folder_it_works_in_its_own_first', () => {

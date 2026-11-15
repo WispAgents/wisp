@@ -19,7 +19,7 @@ import { escLeavesLauncher, stackView } from './stack-page.ts';
 const Switcher = lazy(() => import('../switcher/Switcher.tsx'));
 // the phone apps' destinations: their own chunk, so the browser's first download never carries the navigation bar
 const PhoneNav = lazy(() => import('./PhoneNav.tsx'));
-// the phone apps' Tasks head (ADR-0065 step 13): the TopAppBar with the computer filter, the chip row and the FAB
+// the phone apps' Tasks head (ADR-0065 step 13): the TopAppBar with the computer filter and the project selector, and the FAB
 const PhoneHead = lazy(() => import('./PhoneHead.tsx'));
 const PhoneListTop = lazy(() => import('./PhoneHead.tsx').then((m) => ({ default: m.PhoneListTop })));
 
@@ -92,10 +92,10 @@ export function App(props: { readonly clients: Clients; readonly recent: Readabl
         page={page()}
         rail={<Rail />}
         // the phone apps draw the platform's bar and the FAB in place of v1's head and New task row (step 13)
-        head={phone ? <PhoneHead /> : <Head filter={filter} setFilter={setFilter} />}
+        head={phone ? <PhoneHead filter={filter} /> : <Head filter={filter} setFilter={setFilter} />}
         list={
           <>
-            {phone ? <PhoneListTop onNew={onNew} filter={filter} setFilter={setFilter} /> : <SidebarTop onNew={onNew} homeOn={homeOn()} />}
+            {phone ? <PhoneListTop onNew={onNew} /> : <SidebarTop onNew={onNew} homeOn={homeOn()} />}
             <PickStripView filter={filter} setFilter={setFilter} />
             <Area input="shell.sidebar:list" fallback={<SidebarList onNew={onNew} homeOn={homeOn()} filter={filter} />} />
           </>

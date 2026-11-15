@@ -245,7 +245,7 @@ test('what_s_different_a_row_of_segments_per_setting_under_the_pane_a_press_comm
 
 const launcher = (runner: Partial<LauncherProps['runner']>): LauncherProps => ({
   inLabel: 'in',
-  chips: [],
+  place: { label: 'wisp', colors: ['blue'], onOpen: () => undefined },
   placeholder: 'What should I do?',
   value: '',
   onInput: () => undefined,

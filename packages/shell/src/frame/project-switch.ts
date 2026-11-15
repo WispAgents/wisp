@@ -11,6 +11,7 @@ import { SESSION, type SessionRow } from '../rows.ts';
 import { displayCombo } from '../keys.ts';
 import { PROJECT_ORDER, projectList, projectOf, sectionOf, type ProjectView } from './rows-view.ts';
 import { parsePick, pickOnly, pickToggle, pickValue } from './project-pick.ts';
+import { projectLabels } from './project-labels.ts';
 
 /** The palette source's id: the switcher opens the palette on it alone. */
 export const PROJECT_SOURCE = 'shell.projects';
@@ -100,23 +101,100 @@ export function projectItems(ctx: ShellContext): PaletteItem[] {
       run: () => switchTo(ctx, 'all'),
     },
   ];
-  projects.forEach((p, i) => {
+  out.push(
+    ...projectRows(ctx, projects, by, pick, {
+      kbd: true,
+      sub: (inPick) => (inPick && !several ? ctx.t('shell.projects.current') : undefined),
+      only: (id) => switchTo(ctx, id),
+      toggle: (id) => togglePick(ctx, id),
+    }),
+  );
+  return out; // adding and managing them are Actions (v1), which the switcher lists too
+}
+
+/** One row per project, as the switcher and New task's place list both show them: the colour's dot, the name (two of
+ *  the same name say where each is), what it says (current, need-you count, folder), ⌘1–⌘9 (the switcher only); its
+ *  name = only this one, its + / − = add it or take it out (the palette stays open). */
+function projectRows(
+  ctx: ShellContext,
+  projects: readonly ProjectView[],
+  by: ReadonlyMap<string, number>,
+  pick: readonly string[],
+  o: { readonly kbd: boolean; readonly sub: (inPick: boolean, at: number) => string | undefined; readonly only: (id: string) => void; readonly toggle: (id: string) => void },
+): PaletteItem[] {
+  const g = ctx.t('shell.palette.group.projects');
+  const apple = ctx.platform.apple;
+  const names = projectLabels(projects, (peer) => ctx.client.peers.name(peer as never));
+  return projects.map((p, i) => {
     const inPick = pick.includes(p.id);
-    const sub = subOf(by.get(p.id) ?? 0, inPick && !several, p.path);
-    out.push({
+    const need = by.get(p.id) ?? 0;
+    const parts = [o.sub(inPick, pick.indexOf(p.id)), need > 0 ? ctx.t(need === 1 ? 'shell.side.need.one' : 'shell.side.need.other', { count: need }) : undefined, p.path].filter((x): x is string => !!x);
+    return {
       id: `project:${p.id}`,
       group: g,
-      label: p.name,
+      label: names[i] ?? p.name,
       color: p.color || 'slate',
-      ...(sub !== undefined && { sub }),
-      ...(i < 9 && { kbd: displayCombo(`mod+${i + 1}`, apple).join(' ') }),
+      ...(parts.length > 0 && { sub: parts.join(' · ') }),
+      ...(o.kbd && i < 9 && { kbd: displayCombo(`mod+${i + 1}`, apple).join(' ') }),
       keywords: `project ${p.path}`,
-      run: () => switchTo(ctx, p.id),
+      run: () => o.only(p.id),
       // the + at the row's end adds it to the pick without closing; once in, a check and a −
-      toggle: { on: inPick, label: ctx.t(inPick ? 'shell.pick.remove' : 'shell.pick.add', { name: p.name, key: displayCombo('mod+enter', apple).join('') }), run: () => togglePick(ctx, p.id) },
-    });
+      toggle: { on: inPick, label: ctx.t(inPick ? 'shell.pick.remove' : 'shell.pick.add', { name: p.name, key: displayCombo('mod+enter', apple).join('') }), run: () => o.toggle(p.id) },
+    };
   });
-  return out; // adding and managing them are Actions (v1), which the switcher lists too
+}
+
+/** New task's place (owner, 2026-11-15): what its selector picks, held by the prompt box that opened the list. */
+export interface PlaceTarget {
+  /** the projects picked, the one it starts in first; [] for No folder */
+  pick(): readonly string[];
+  set(ids: readonly string[]): void;
+  /** Other folder…: a folder that isn't a project yet */
+  other(): void;
+}
+
+/** New task's place list: a palette source that answers only while a prompt box has it open (never in ⌘K). */
+export const PLACE_SOURCE = 'shell.places';
+let place: PlaceTarget | undefined;
+
+/** New task's selector: the same list as ⌘P (search, dots, need-you counts, + adds) on this box's place, with No folder
+ *  and Other folder… after the projects. */
+export function openPlaces(ctx: ShellContext, target: PlaceTarget): void {
+  place = target;
+  ctx.navigate({
+    t: 'openOverlay',
+    overlay: { kind: 'dialog', id: 'shell.palette' as never, params: { only: [PLACE_SOURCE], placeholder: ctx.t('shell.home.placeSearch'), title: ctx.t('shell.home.placeTitle') } },
+  });
+}
+
+/** The prompt box is gone: its list no longer answers for it. */
+export function releasePlaces(target: PlaceTarget): void {
+  if (place === target) place = undefined;
+}
+
+/** The place list: the projects (name = only it, + adds it; the first picked is where it starts), No folder, Other
+ *  folder…. */
+export function placeItems(ctx: ShellContext): PaletteItem[] {
+  const target = place;
+  // opened again with no prompt box behind it (a reload, Back to its URL): nothing to pick for, so it closes
+  if (!target) {
+    queueMicrotask(() => ctx.navigate({ t: 'closeOverlay', id: 'shell.palette' as never }));
+    return [];
+  }
+  const projects = projectsNow(ctx);
+  const { by } = needCounts(ctx, projects);
+  const pick = target.pick();
+  const g = ctx.t('shell.palette.group.projects');
+  return [
+    ...projectRows(ctx, projects, by, pick, {
+      kbd: false,
+      sub: (inPick, at) => (!inPick ? undefined : at === 0 && pick.length > 1 ? ctx.t('shell.home.startsHere') : ctx.t('shell.home.picked')),
+      only: (id) => target.set(pickOnly(id)),
+      toggle: (id) => target.set(pickToggle(target.pick(), id)),
+    }),
+    { id: 'place:none', group: g, label: ctx.t('shell.home.noFolder'), icon: 'text', ...(pick.length === 0 && { sub: ctx.t('shell.home.picked') }), keywords: 'none scratch general', run: () => target.set([]) },
+    { id: 'place:other', group: g, label: ctx.t('shell.home.otherFolder'), icon: 'folder', keywords: 'other folder add browse', run: () => target.other() },
+  ];
 }
 
 /** ⌘P opens the switcher; ⌘1…⌘9 go to your first nine projects, ⌘0 to All projects. */

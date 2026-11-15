@@ -66,8 +66,9 @@ export function launchOf(ids: readonly string[], projects: readonly ProjectView[
   return { start: known[0]?.id, also: known.slice(1).map((p) => p.id) };
 }
 
-/** New task's + / × on a chip: add the project to the folders it also works in, or leave it out. */
-export const alsoToggle = (also: readonly string[], id: string): string[] => (also.includes(id) ? also.filter((x) => x !== id) : [...also, id]);
+/** New task's place as a pick (its selector, owner 2026-11-15): where it starts first, then the folders it also works
+ *  in; [] for No folder. The list's name = only that one, its + adds it (pickOnly / pickToggle, as over the list). */
+export const placePick = (start: string | undefined, also: readonly string[]): string[] => (start ? [start, ...also.filter((x, i) => x !== start && also.indexOf(x) === i)] : []);
 
 /** The extra folders for runtime.create's `dirs`: every added project but the one it starts in, once each. */
 export function dirsOf(start: ProjectView | undefined, also: readonly string[], projects: readonly ProjectView[]): string[] {
@@ -78,19 +79,6 @@ export function dirsOf(start: ProjectView | undefined, also: readonly string[], 
     out.push(p.path);
   }
   return out;
-}
-
-/**
- * New task: make `id` the start (a chip's click). The old start stays a folder the task also works in (round 133
- * dropped it): where `id` was when it was an added one (the two swap), else first, while the task works in several.
- * Picking the one it starts in, or switching a one-folder task, changes nothing else.
- */
-export function startAt(start: string | undefined, also: readonly string[], id: string): string[] {
-  const rest = also.filter((x) => x !== id);
-  if (!start || start === id) return rest;
-  const i = also.indexOf(id);
-  if (i >= 0) return also.map((x) => (x === id ? start : x)).filter((x, j, a) => a.indexOf(x) === j);
-  return also.length > 0 ? [start, ...rest.filter((x) => x !== start)] : [];
 }
 
 /** One folder a task works in, as its page's place chip: the project it is in (`id`), or the folder's own name. */

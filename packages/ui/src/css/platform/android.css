@@ -270,6 +270,12 @@
   :root[data-platform='android'] [data-kit='app-bar-title-button'] > [data-kit='icon'] { flex: none; transform: rotate(90deg); }
   :root[data-platform='android'] [data-kit='app-bar-title-button'] > [data-text='control'] { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 
+  /* the project selector in the Tasks bar (owner, 2026-11-15): an M3 filter chip with its menu arrow, 32 dp, 8 dp corners */
+  :root[data-platform='android'] [data-kit='p-select'][data-where='bar'] {
+    height: 32px; max-width: 40vw; padding: var(--space-0) var(--space-2) var(--space-0) var(--space-4); border: var(--hairline) solid var(--outline);
+    border-radius: var(--radius-xs); background: transparent; color: var(--on-surface-var); font: var(--type-label-l); letter-spacing: var(--track-label-l);
+  }
+  :root[data-platform='android'] [data-kit='p-select'][data-where='bar'] > [data-kit='icon']:last-child { width: 18px; height: 18px; color: var(--on-surface-var); }
   /* Toolbar in a bar (step 3): M3 top app bar actions are 48 dp icon targets; More is ⋮ */
   :root[data-platform='android'] [data-kit='app-bar'] [data-kit='toolbar'] [data-kit='icon-button'] {
     width: var(--bar-icon-target);

@@ -233,6 +233,18 @@
   :root[data-platform='ios'] [data-kit='app-bar-title-button'] > [data-kit='icon'] { flex: none; color: var(--primary); transform: rotate(90deg); }
   :root[data-platform='ios'] [data-kit='app-bar-title-button'] > [data-text='control'] { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 
+  /* the project selector in the Tasks bar (owner, 2026-11-15): a pull-down button, tinted text and its chevron, no box */
+  :root[data-platform='ios'] [data-kit='p-select'][data-where='bar'] {
+    height: var(--tap-min); max-width: 40vw; padding: var(--space-0) var(--space-2); border: 0; background: transparent; color: var(--primary); font: var(--type-body);
+  }
+  :root[data-platform='ios'] [data-kit='p-select'][data-where='bar']:hover { background: transparent; }
+  :root[data-platform='ios'] [data-kit='p-select'][data-where='bar'] > [data-kit='icon']:last-child { color: var(--primary); }
+  /* a root bar under its large title has no Back and an empty inline title: its actions may use the whole row (the
+     selector's name needs the room); once the title folds into the bar, the selector keeps its dot and chevron */
+  :root[data-platform='ios'] [data-kit='app-bar'][data-large]:not([data-collapsed]) [data-kit='app-bar-actions'] { grid-column: 1 / 4; }
+  :root[data-platform='ios'] [data-kit='app-bar'][data-collapsed] [data-kit='p-select'][data-where='bar'] > [data-kit='p-name'],
+  :root[data-platform='ios'] [data-kit='app-bar'][data-collapsed] [data-kit='p-select'][data-where='bar'] > [data-kit='p-need'] { display: none; }
+
   /* ListRow (step 4): an iOS table cell. 44 pt min; the title in body (headline when it wants you), the
      sub line in subheadline secondary, the time trailing in footnote; inset separators from the text's
      start; a disclosure chevron where opening the row pushes a page (Mail's rows have none). */

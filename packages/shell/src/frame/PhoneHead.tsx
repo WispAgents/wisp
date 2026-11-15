@@ -2,17 +2,19 @@
 // (M3 small top app bar on Android; the large title that collapses on iOS) in place of v1's desktop head (logo,
 // Machines, the All pill, New task row). Its title is the computer filter (*All* or a computer's name, a sheet to pick),
 // its Search (the palette over tasks: the M3 search view / the iOS search field) and the me menu (v1 #meMenu: you, Machines, Automations, Settings, the
-// theme). Under it, in the list, v1's project chips as one row and New task as the FAB (Android) / the bar's compose
-// button (iOS: the kit hands a Fab's action to the root bar); over the chips, the crew's stories row (`shell.list:crew`,
-// step 13b). Its own chunk: only the phone apps load it, so the
+// theme), and the one project selector (owner, 2026-11-15: no chip row of projects on phones either), which opens the
+// same ⌘P list (tap = only, + adds). Under it, in the list, the crew's stories row (`shell.list:crew`, step 13b) and
+// New task as the FAB (Android) / the bar's compose button (iOS: the kit hands a Fab's action to the root bar). Its
+// own chunk: only the phone apps load it, so the
 // browser's first download is unchanged.
 import { createMemo, createSignal, Show, type JSX } from 'solid-js';
-import { Button, Dialog, Fab, Inline, Input, Menu, RadioGroup, Sheet, Toolbar, TopAppBar, useSignal, type MenuEntry, type ToolbarItem } from '@wisp/ui';
+import { Button, Dialog, Fab, Inline, Input, Menu, ProjectSelect, RadioGroup, Sheet, TopAppBar, useSignal, type MenuEntry, type ToolbarItem } from '@wisp/ui';
 import { useShell } from '../context.tsx';
 import { Slot } from '../slot.tsx';
 import '../i18n/lazy.ts';
+import { displayCombo } from '../keys.ts';
 import { computerOptions, computerTitle, knownComputer } from './computer-filter.ts';
-import { projectLabels } from './project-labels.ts';
+import { openSwitcher } from './project-switch.ts';
 import { useAccount, useHeadChips } from './Sidebar.tsx';
 
 /** The computer filter, from the client's peers (every saved computer) and the device setting. */
@@ -30,12 +32,34 @@ function useComputers() {
   };
 }
 
-export function PhoneHead(): JSX.Element {
+/** The sidebar's selector, in the bar: the project (or the pick, or All), its need-you count; a tap opens the ⌘P list. */
+function useBarProject(filter: () => string) {
+  const shell = useShell();
+  const head = useHeadChips(filter);
+  const switchLabel = (): string => `${shell.t('shell.projects.switch')} (${displayCombo('mod+p', shell.platform.apple).join('')})`;
+  return () => {
+    const pk = head.pick();
+    const cur = head.chips().find((c) => c.id === head.on()) ?? head.chips()[0];
+    // beside the computer filter's All: All projects in full, so the two never read the same
+    const label = pk?.label ?? (cur?.id === 'all' ? shell.t('shell.side.all') : (cur?.name ?? ''));
+    return { label, colors: pk ? pk.colors : cur?.color ? [cur.color] : [], need: pk?.need ?? cur?.need ?? 0, needLabel: pk?.needLabel ?? cur?.needLabel, title: pk?.tip ?? cur?.title, ariaLabel: `${label} · ${switchLabel()}` };
+  };
+}
+
+export function PhoneHead(props: { readonly filter: () => string }): JSX.Element {
   const shell = useShell();
   const account = useAccount();
   const computers = useComputers();
+  const project = useBarProject(props.filter);
   const [picking, setPicking] = createSignal(false);
   const actions = createMemo((): ToolbarItem[] => [
+    {
+      id: 'project',
+      label: project().label,
+      icon: 'folder',
+      priority: 'pin',
+      render: () => <ProjectSelect {...project()} part="phone.tasks.project" where="bar" onOpen={() => openSwitcher(shell)} />,
+    },
     // icons only in an app bar (M3, HIG): the title keeps its room. Search is the bar's own (`search`): Android's icon
     // opens the M3 search view, iOS's field sits under the large title; both are the palette's task search
     {
@@ -75,43 +99,13 @@ export function PhoneHead(): JSX.Element {
   );
 }
 
-/** Over the list: v1's project chips as one row (it never wraps: the last fold into More), and New task. */
-export function PhoneListTop(props: { readonly onNew: () => void; readonly filter: () => string; readonly setFilter: (id: string) => void }): JSX.Element {
+/** Over the list: the crew's stories and New task (the projects are the bar's selector, owner 2026-11-15). */
+export function PhoneListTop(props: { readonly onNew: () => void }): JSX.Element {
   const shell = useShell();
-  const head = useHeadChips(props.filter);
-  // in your order from the start (a pinned item would push the row to the end); the last ones fold into More first, All
-  // last. Each chip is its name in both forms: as icons every project would be the same folder, so they go to More
-  // every computer's projects show here at once: two of the same name say where each is (project-labels.ts)
-  const names = createMemo(() => projectLabels(head.projects(), (p) => shell.client.peers.name(p as never)));
-  const items = createMemo((): ToolbarItem[] => {
-    const all = head.chips();
-    return all.map((c, i) => {
-      const name = c.id === 'all' ? c.name : (names()[i - 1] ?? c.name);
-      const label = c.id === 'all' || c.need === 0 ? name : `${name} · ${c.need}`;
-      const on = c.id === 'all' ? head.on() === 'all' : head.pickIds().includes(c.id);
-      const pick = (): void => props.setFilter(c.id);
-      return {
-        id: c.id,
-        label,
-        icon: c.id === 'all' ? 'grid' : 'folder',
-        priority: c.id === 'all' ? all.length + 1 : all.length - i,
-        pressed: on,
-        variant: 'ghost',
-        onSelect: pick,
-        render: () => (
-          <Button variant="ghost" size="sm" pressed={on} onClick={pick} part="phone.tasks.project">
-            {label}
-          </Button>
-        ),
-      };
-    });
-  });
   return (
     <>
       {/* the crew as stories (step 13b): the crew's section, which the phone apps draw here and not in the list */}
       <Slot input="shell.list:crew" layout="stack" />
-      {/* one project (All only): nothing to pick, no row */}
-      {items().length > 1 ? <Toolbar aria-label={shell.t('shell.phone.projects')} items={items()} justify="start" compact gap="1" part="phone.tasks.projects" t={(k) => shell.t(`kit.${k}`)} /> : null}
       <Fab label={shell.t('shell.side.new')} icon="plus" onClick={props.onNew} part="phone.tasks.new" />
     </>
   );

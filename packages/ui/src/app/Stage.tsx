@@ -12,6 +12,7 @@ import { Spirit } from '../crew/Spirit.tsx';
 import { WithAct, type Act } from './act.tsx';
 import { useRailCard } from './RailCard.tsx';
 import { usePlatform } from '../platform/PlatformLook.tsx';
+import { ProjectSelect } from './ProjectSelect.tsx';
 import { phoneStage } from './phone-stage-load.ts';
 
 export type StagePage = 'list' | 'main';
@@ -333,39 +334,17 @@ export function SidebarHead(props: SidebarHeadProps): JSX.Element {
             const need = (): number => props.pick?.need ?? cur()?.need ?? 0;
             const tip = (): string | undefined => (props.pick ? `${props.pick.tip}\n${props.switchLabel ?? ''}`.trim() : props.switchLabel);
             return (
-              <button
-                type="button"
-                data-kit="p-select"
-                data-part="topbar.project-select"
-                data-color={props.pick ? undefined : (cur()?.color ?? 'slate')}
-                data-several={flag(props.pick !== undefined)}
+              <ProjectSelect
+                part="topbar.project-select"
+                where="head"
+                label={name() ?? ''}
+                colors={props.pick ? props.pick.colors : cur()?.color ? [cur()?.color ?? 'slate'] : []}
+                need={need()}
+                needLabel={props.pick?.needLabel ?? cur()?.needLabel}
                 title={tip()}
-                aria-label={props.pick ? `${props.pick.label} · ${props.switchLabel ?? ''}` : props.switchLabel}
-                aria-haspopup="dialog"
-                onClick={() => open()()}
-              >
-                <Show
-                  when={props.pick}
-                  fallback={
-                    <Show when={cur()?.color} fallback={<Icon name="feed" />}>
-                      <i data-kit="p-dot" />
-                    </Show>
-                  }
-                >
-                  {(pk) => (
-                    <span data-kit="p-dots" data-part="topbar.project-dots">
-                      <For each={pk().colors.slice(0, 3)}>{(c) => <i data-kit="p-dot" data-color={c} />}</For>
-                    </span>
-                  )}
-                </Show>
-                <span data-kit="p-name" data-text="control">{name()}</span>
-                <Show when={need() > 0}>
-                  <span data-kit="p-need" title={props.pick?.needLabel ?? cur()?.needLabel}>
-                    {need()}
-                  </span>
-                </Show>
-                <Icon name="chevron" />
-              </button>
+                ariaLabel={props.pick ? `${props.pick.label} · ${props.switchLabel ?? ''}` : props.switchLabel}
+                onOpen={() => open()()}
+              />
             );
           }}
         </Show>

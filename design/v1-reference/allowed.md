@@ -60,6 +60,11 @@ shift every later index. Everything outside the part still has to match.
 
 - **One project selector instead of the chips** (the owner, 2026-11-12, commit 10d8f30f): the sidebar's project chips
   are one selector with a ⌘P switcher (search, ↑↓ Enter, colour dots, need-you counts, ⌘0–⌘9).
+- **New task's place row is the one selector** (the owner, 2026-11-15 20:05, round 288): v1's place row ("in <project>
+  · No folder · Other folder…", its + badges) is the sidebar's project selector (kit `ProjectSelect`), opening the same
+  ⌘P list on New task's place: a project's name = only it, its + adds it, No folder and Other folder… after the
+  projects. The phone apps' project chip row and New task's place chips are the same selector. Masked: the place line
+  (`launcher.projects`) on every Home view; everything around it is still checked.
 - **Take over is Open in <harness>** (the owner, 2026-11-09, ADR-0033 "Name"): the task's details say "Open in Claude
   Code" where v1 said "Take over" (`details.openIn`).
 - **Settings-row titles never wrap** (the owner, 2026-11-12, round 26; ADR-0012, `design/layout.md` §1: settings-row
@@ -123,6 +128,7 @@ One rule a line: `<view glob> <part glob> <kind> [widths]` (widths: `390` or `32
 *   panel.head         fold
 *   topbar             fold
 *   topbar.projects    owner
+home*  launcher.projects  owner
 task*  details.openIn  owner
 settings.privacy  settings.projectAsk  owner  390
 settings.privacy  settings.maskEnvFiles  owner  390
