@@ -17,7 +17,7 @@
 // fence for the whole block; a skip without a why is an error.
 
 import { execFileSync } from 'node:child_process';
-import { existsSync, readdirSync, realpathSync } from 'node:fs';
+import { existsSync, readdirSync } from 'node:fs';
 import { join, posix } from 'node:path';
 import { finding } from '../core/report.ts';
 import { crates } from '../core/rust.ts';
@@ -107,8 +107,10 @@ export interface Known {
 export function trackedPaths(root: string): Set<string> | undefined {
   let out: string;
   try {
-    const top = execFileSync('git', ['rev-parse', '--show-toplevel'], { cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim();
-    if (realpathSync(top) !== realpathSync(root)) return undefined;
+    // root is the checkout's top when git sees no prefix: no comparing paths, which differ on Windows (git prints
+    // C:/Users/runneradmin/…, os.tmpdir() gives C:\Users\RUNNER~1\… and realpathSync keeps the 8.3 name)
+    const prefix = execFileSync('git', ['rev-parse', '--show-prefix'], { cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim();
+    if (prefix !== '') return undefined;
     out = execFileSync('git', ['ls-files', '-z', '--cached', '--others', '--exclude-standard'], { cwd: root, encoding: 'utf8', maxBuffer: 256 * 1024 * 1024, stdio: ['ignore', 'pipe', 'ignore'] });
   } catch {
     return undefined;

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { commands, segments } from '../rules/commands.ts';
+import { commands, segments, trackedPaths } from '../rules/commands.ts';
 import { messages, pkg, writeTree } from './helpers.ts';
 
 const ROOT = JSON.stringify(
@@ -178,4 +178,9 @@ test('commands: a cited path that exists only because it is git-ignored fails li
   git('add', '.');
   const got = (await messages(commands, root)).filter((m) => m.startsWith('docs/dev.md'));
   assert.deepEqual(got, ["docs/dev.md:5 commands tools/out/report.ts is git-ignored: it exists here but won't in CI (name a tracked file, or add it to CREATED in tools/check/rules/commands.ts)"], got.join('\n'));
+  // the top is found by git's own prefix, not by comparing paths (on Windows git's C:/Users/runneradmin/… and
+  // tmpdir's C:\Users\RUNNER~1\… are one folder that no string compare matches)
+  assert.ok(trackedPaths(root)?.has('tools/check.ts'));
+  assert.ok(!trackedPaths(root)?.has('tools/out/report.ts'));
+  assert.equal(trackedPaths(join(root, 'tools')), undefined, 'a folder inside a checkout is no checkout of its own');
 });

@@ -45,18 +45,34 @@ test('a_busy_port_falls_back_to_the_next_free_one_and_never_reuses_a_taken_one',
 });
 
 test('the_home_is_the_dev_home_by_default_and_never_an_installed_wisps', () => {
-  assert.equal(resolveHome(undefined, '/Users/u', '/repo'), '/Users/u/.wisp-dev');
-  assert.equal(resolveHome('~/x', '/Users/u', '/repo'), '/Users/u/x');
-  assert.equal(resolveHome('rel', '/Users/u', '/repo'), '/repo/rel');
-  for (const h of ['/Users/u/.wisp', '~/.wisp', '/Users/u/.wisp/sub', '/Users/u/.wisp-v2-preview', '/Users/u/.wisp/../.wisp']) {
-    assert.throws(() => resolveHome(h, '/Users/u', '/repo'), DevArgError, h);
+  for (const os of ['linux', 'darwin']) {
+    const home = (h: string | undefined): string => resolveHome(h, '/Users/u', '/repo', os);
+    assert.equal(home(undefined), '/Users/u/.wisp-dev');
+    assert.equal(home('~/x'), '/Users/u/x');
+    assert.equal(home('rel'), '/repo/rel');
+    for (const h of ['/Users/u/.wisp', '~/.wisp', '/Users/u/.wisp/sub', '/Users/u/.wisp-v2-preview', '/Users/u/.wisp/../.wisp']) {
+      assert.throws(() => home(h), DevArgError, `${os} ${h}`);
+    }
+    assert.equal(home('/Users/u/.wisp-devx'), '/Users/u/.wisp-devx');
+    assert.equal(home('~'), '/Users/u', '~ alone is the user home');
+    assert.throws(() => home('/Users/u/.wisp/..x'), DevArgError, 'a folder named ..x is still inside');
   }
-  assert.equal(resolveHome('/Users/u/.wisp-devx', '/Users/u', '/repo'), '/Users/u/.wisp-devx');
-  assert.equal(resolveHome('~', '/Users/u', '/repo'), '/Users/u', '~ alone is the user home');
-  assert.throws(() => resolveHome('/Users/u/.wisp/..x', '/Users/u', '/repo'), DevArgError, 'a folder named ..x is still inside');
   assert.throws(() => resolveHome('~/.WISP', '/Users/u', '/repo', 'darwin'), DevArgError, 'macOS folds case');
   assert.throws(() => resolveHome('~/.Wisp-V2-Preview/x', '/Users/u', '/repo', 'win32'), DevArgError);
   assert.equal(resolveHome('~/.WISP', '/Users/u', '/repo', 'linux'), '/Users/u/.WISP', 'Linux does not');
+});
+
+test('the_dev_home_on_windows_is_a_windows_path_and_refuses_the_installed_home_however_it_is_written', () => {
+  const home = (h: string | undefined): string => resolveHome(h, 'C:\\Users\\u', 'D:\\repo', 'win32');
+  assert.equal(home(undefined), 'C:\\Users\\u\\.wisp-dev');
+  assert.equal(home('~/x'), 'C:\\Users\\u\\x');
+  assert.equal(home('~\\x'), 'C:\\Users\\u\\x', 'a Windows ~\\ expands too');
+  assert.equal(home('rel'), 'D:\\repo\\rel');
+  assert.equal(home('~'), 'C:\\Users\\u');
+  assert.equal(home('E:\\.wisp'), 'E:\\.wisp', 'another drive is not the installed home');
+  for (const h of ['C:\\Users\\u\\.wisp', 'c:/users/U/.WISP', '~\\.wisp', '~/.wisp/sub', 'C:\\Users\\u\\.wisp-v2-preview\\x', 'C:\\Users\\u\\.wisp\\..\\.wisp']) {
+    assert.throws(() => home(h), DevArgError, h);
+  }
 });
 
 test('the_server_gets_its_port_home_and_stdin_exit_and_no_desktop_or_web_dir_env', () => {

@@ -1,7 +1,7 @@
 // tools/dev.ts's pure parts: the arguments, which ports and home a dev run may use, the env each child gets, and
 // which file changes rebuild the Rust server. No I/O here (tools/test/dev.test.ts).
 
-import { isAbsolute, join, relative, resolve, sep } from 'node:path';
+import { posix, sep, win32 } from 'node:path';
 
 export const DEFAULT_PORT = 4800;
 export const DEFAULT_VITE_PORT = 5180;
@@ -86,14 +86,17 @@ export async function choosePort(start: number, free: (port: number) => Promise<
 }
 
 /** The dev home, absolute; refuses an installed wisp's home (or anything inside it). Case-insensitive where the file
- * system usually is (macOS, Windows): ~/.WISP is ~/.wisp there. */
+ * system usually is (macOS, Windows): ~/.WISP is ~/.wisp there. Paths are `platform`'s (win32: `C:\Users\u`, `~\x`
+ * too), so every OS's rules are testable on any OS. */
 export function resolveHome(asked: string | undefined, userHome: string, cwd: string, platform: string = process.platform): string {
-  const expand = (a: string): string => (a === '~' ? userHome : a.startsWith('~/') ? join(userHome, a.slice(2)) : a);
-  const home = asked === undefined ? join(userHome, DEV_HOME) : resolve(cwd, expand(asked));
+  const path = platform === 'win32' ? win32 : posix;
+  const tilde = platform === 'win32' ? /^~[\\/]/ : /^~\//;
+  const expand = (a: string): string => (a === '~' ? userHome : tilde.test(a) ? path.join(userHome, a.slice(2)) : a);
+  const home = asked === undefined ? path.join(userHome, DEV_HOME) : path.resolve(cwd, expand(asked));
   const fold = platform === 'darwin' || platform === 'win32' ? (p: string) => p.toLowerCase() : (p: string) => p;
   for (const r of RESERVED_HOMES) {
-    const rel = relative(fold(join(userHome, r)), fold(home));
-    const outside = rel === '..' || rel.startsWith(`..${sep}`) || isAbsolute(rel);
+    const rel = path.relative(fold(path.join(userHome, r)), fold(home));
+    const outside = rel === '..' || rel.startsWith(`..${path.sep}`) || path.isAbsolute(rel);
     if (!outside) throw new DevArgError(`${home} is an installed wisp's home (~/${r}); a dev run never touches it`);
   }
   return home;
