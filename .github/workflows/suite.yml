@@ -2,8 +2,9 @@ name: suite
 
 # The v2 suite on a matrix, called by pr.yml (Linux, Node 22 + 24), main.yml (every OS) and
 # nightly.yml (every OS, Node latest too, three times over). Structure rules, types, the tools' own
-# tests, then every workspace package through monoflow (ADR-0001). No network beyond the installs, no
-# accounts: tests use fakes. Each job uploads monoflow's JSON result for gate G14 (tools/g14.ts).
+# tests, the Rust workspace through cargo (once), then every other package through monoflow (ADR-0001,
+# ADR-0069: tools/ci-verify.ts). No network beyond the installs, no accounts: tests use fakes. Each job
+# uploads the JSON result (cargo test's failing crates included) for gate G14 (tools/g14.ts).
 on:
   workflow_call:
     inputs:
@@ -16,7 +17,7 @@ on:
         type: string
         default: '["22", "24"]'
       repeat:
-        description: Runs of monoflow verify --all per job; more than one surfaces flaky tests
+        description: Runs of the test suites per job (cargo test --workspace and the monoflow pass); more than one surfaces flaky tests
         type: number
         default: 1
       artifact:
@@ -24,7 +25,7 @@ on:
         type: string
         default: verify-all
       timeout:
-        description: Minutes a job may take; v2's whole Rust suite runs to the end (no fail-fast) and takes ~35 min cold, a repeat needs a run's worth each
+        description: Minutes a job may take; one run is ~30 min cold (setup and clippy ~7, cargo test ~11-16, the monoflow pass ~5-8), a repeat adds its tests' worth
         type: number
         default: 60
 
@@ -77,8 +78,10 @@ jobs:
       - name: cargo clippy
         run: cargo clippy --workspace --all-targets --locked -- -D warnings
       - name: cargo test
-        # every failing test in one run, not just the first failing binary's
-        run: cargo test --workspace --locked --no-fail-fast
+        # every failing test in one run, not just the first failing binary's; its log names the failing crates for the
+        # verify step's result (G14). The workspace's tests run here only: the monoflow pass below leaves its crates out.
+        shell: bash
+        run: cargo test --workspace --locked --no-fail-fast 2>&1 | tee "$RUNNER_TEMP/cargo-test-1.log"
       # a container action: Linux runners only (licences and advisories don't vary by OS)
       - name: cargo deny
         if: runner.os == 'Linux'
@@ -90,22 +93,35 @@ jobs:
 
       # The Python SDK (sdk/python) is a monoflow package whose tests run under pytest: a pinned one, on a
       # setup-python interpreter (the runner's system python is externally managed, PEP 668).
+      # (after a failing Rust step too: the verify step below still runs sdk/python's tests)
       - uses: actions/setup-python@v5
+        if: (success() || failure()) && steps.install.outcome == 'success'
         with:
           python-version: '3.12'
       - name: pytest for sdk/python
+        if: (success() || failure()) && steps.install.outcome == 'success'
         run: python -m pip install --disable-pip-version-check pytest==8.3.5
 
-      # Every run, even after a failing one, so a nightly says how flaky a package is (2 of 3).
-      # --no-cache: a repeat must really run again.
-      - name: monoflow verify --all (${{ inputs.repeat }}×)
+      # Every package monoflow knows but the Cargo workspace's members, which the steps above check once (verify --all
+      # re-ran their check, clippy and tests crate by crate and took macOS past its limit): one --no-cache verify per
+      # package (ADR-0069). Runs after a failing Rust step too, so a red job still says which packages fail, and the
+      # result gets the cargo test step's failing crates (G14). Every run, even after a failing one, so a nightly says
+      # how flaky a package is (2 of 3); a repeat runs cargo test --workspace again too. The spikes' own workspaces build
+      # into the job's target dir and reuse what the workspace built.
+      - name: monoflow verify, every other package (${{ inputs.repeat }}×)
+        if: (success() || failure()) && steps.install.outcome == 'success'
         shell: bash
+        env:
+          CARGO_TARGET_DIR: ${{ github.workspace }}/target
         run: |
           failed=0
           for i in $(seq 1 ${{ inputs.repeat }}); do
             echo "::group::run $i of ${{ inputs.repeat }}"
-            .agents/bin/monoflow verify --all --no-cache --json > "verify-all-$i.json" || { failed=$((failed + 1)); echo "::error::monoflow verify --all: run $i of ${{ inputs.repeat }} failed"; }
-            node tools/monoflow-report.ts "verify-all-$i.json" --title="verify --all, run $i (${{ matrix.os }}, node ${{ matrix.node }})"
+            if [ "$i" -gt 1 ]; then
+              cargo test --workspace --locked --no-fail-fast 2>&1 | tee "$RUNNER_TEMP/cargo-test-$i.log" || { failed=$((failed + 1)); echo "::error::cargo test --workspace: run $i of ${{ inputs.repeat }} failed"; }
+            fi
+            node tools/ci-verify.ts --no-cache --out="verify-all-$i.json" --cargo-log="$RUNNER_TEMP/cargo-test-$i.log" || { failed=$((failed + 1)); echo "::error::monoflow verify: run $i of ${{ inputs.repeat }} failed"; }
+            node tools/monoflow-report.ts "verify-all-$i.json" --title="verify, run $i (${{ matrix.os }}, node ${{ matrix.node }})"
             echo "::endgroup::"
           done
           cp verify-all-1.json verify-all.json

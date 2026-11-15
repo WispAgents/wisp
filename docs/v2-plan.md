@@ -637,6 +637,13 @@ Source: `docs/v1-features.md` (each row's evidence and test). `[x]` built, `[ ]`
 
 ## 8. CI
 
+- **Shape (ADR-0069, r252):** suite.yml checks the Cargo workspace once (fmt, clippy --workspace --all-targets, test
+  --workspace --no-fail-fast, its log kept for the result), then `node tools/ci-verify.ts --no-cache`: one monoflow
+  verify per package that isn't a workspace member (43 npm workspaces, sdk/python, spikes/events, spikes/sync-bench-rs),
+  after a failing Rust step too. `verify --all` had re-run each of the 149 crates' check, clippy and tests (23 of 33
+  min on Linux, macOS past 60). Windows hung 38 min in `serve_desktop::with_no_wisp_running_the_app_starts_one`: the
+  detached app inherited the test's stdout pipe (fixed: `wisp_proc::keep_std_handles`). To confirm on the next
+  `ci:full` run: every OS under 45 min.
 - **Last full run 03c0046d:** Linux and macOS fail only `packages/ui/test/css-rules.test.ts` (2 tests; fixed in round 244, 8e60cdf5 + c8173ea6); Windows jobs cancelled after the others failed. Earlier: 2790d627's probe test fixed in round 234.
 - **Windows groups still open** (from the last Windows results, b7499c23 → 8c2a17ed): most fixed since; to re-count on
   the next full run. Logs in `target/ci/*-failed.log`.

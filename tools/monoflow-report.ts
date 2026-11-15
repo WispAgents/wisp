@@ -132,8 +132,19 @@ export function readJsonFile(path: string): unknown {
   return JSON.parse(start > 0 ? text.slice(start) : text);
 }
 
+/** The five targets that took longest, longest first. */
+export function slowest(r: VerifyReport, n = 5): [string, number][] {
+  return Object.entries(r.durations)
+    .filter(([, s]) => s > 0)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, n);
+}
+
 export function markdown(title: string, r: VerifyReport, affected?: { affected_packages?: string[]; unmapped_files?: string[] }): string {
   const lines = [`### ${title}`, '', `**${r.status}** · ${r.total} targets · ${(r.durationMs / 1000).toFixed(1)} s`, ''];
+  // where the time went, when the version reports it per target (tools/ci-verify.ts does)
+  const slow = slowest(r);
+  if (slow.length) lines.push(`Slowest: ${slow.map(([t, s]) => `\`${t}\` ${s.toFixed(0)} s`).join(', ')}`, '');
   if (r.failed.length) lines.push(`Failed: ${r.failed.map((f) => `\`${f}\``).join(', ')}`, '');
   // what each failure said, so the job summary shows it without opening the log
   if (r.details.length) lines.push('<details><summary>What failed</summary>', '', fenceFor(r.details), ...r.details, fenceFor(r.details), '', '</details>', '');
@@ -171,6 +182,8 @@ if (import.meta.main) {
   }
   const affected = isObj(aff) ? { affected_packages: strings(aff['affected_packages']), unmapped_files: strings(aff['unmapped_files']) } : undefined;
   process.stdout.write(`monoflow: ${r.status}, ${r.total} targets, ${(r.durationMs / 1000).toFixed(1)} s${r.failed.length ? `, failed: ${r.failed.join(', ')}` : ''}\n`);
+  const slow = slowest(r);
+  if (slow.length) process.stdout.write(`slowest: ${slow.map(([t, sec]) => `${t} ${sec.toFixed(0)} s`).join(', ')}\n`);
   for (const d of r.details) process.stdout.write(`  ${d.replace(/\n/g, '\n    ')}\n`);
   if (affected) process.stdout.write(`affected: ${affected.affected_packages.join(', ') || 'none'}${affected.unmapped_files.length ? ` (+${affected.unmapped_files.length} files outside every package)` : ''}\n`);
   const summary = process.env['GITHUB_STEP_SUMMARY'];

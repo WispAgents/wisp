@@ -5,8 +5,9 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test, { after } from 'node:test';
 import { discover } from '../check/core/workspace.ts';
+import { candidates, cargoFailures, manifestDirs, merge, WRAPPER_ENV } from '../ci-verify.ts';
 import { affectedSet, parseImpact, scorePr, verdict, type PrScore } from '../g14.ts';
-import { clippedHint, fenceFor, markdown, packageFolders, readVerify } from '../monoflow-report.ts';
+import { clippedHint, fenceFor, markdown, packageFolders, readVerify, slowest } from '../monoflow-report.ts';
 import { MONOFLOW_COMMIT, WRAPPER, WRAPPER_SCRIPT, strays, writeWrapper } from '../setup-monoflow.ts';
 import { dependencyOrder, plan } from '../test.ts';
 
@@ -166,4 +167,61 @@ test('setup-monoflow: the wrapper refuses what rewrites a shared tree and execs 
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
+});
+
+test('ci-verify: the crates a --no-fail-fast cargo run names (failed targets, builds that broke), through colours and timestamps', () => {
+  const log = [
+    '2026-11-15T02:40:00.0000000Z \x1b[1m\x1b[91merror\x1b[0m: could not compile `wisp-store` (test "store") due to 2 previous errors',
+    'test a ... ok',
+    'error: 3 targets failed:',
+    '    `-p wisp-runtime --test owed`',
+    '    `-p wisp-runtime --lib`',
+    '2026-11-15T02:41:00.0000000Z     `-p wisp --test serve_desktop`',
+    'error: test failed, to rerun pass `-p other --lib`',
+  ].join('\r\n');
+  const f = cargoFailures(log);
+  assert.deepEqual([...f.keys()].sort(), ['wisp', 'wisp-runtime', 'wisp-store']);
+  assert.deepEqual(f.get('wisp-runtime'), ['--test owed failed', '--lib failed']);
+  assert.deepEqual(f.get('wisp-store'), ['doesn\'t compile (test "store")']);
+  assert.equal(cargoFailures('test result: ok. 3 passed\n').size, 0, 'a green run names nothing');
+});
+
+test('ci-verify: monoflow is asked about every manifest folder but the workspace members (unless they hold another manifest)', () => {
+  const files = ['Cargo.toml', 'package.json', 'crates/a/Cargo.toml', 'crates/a/src/lib.rs', 'both/Cargo.toml', 'both/package.json', 'spikes/x/Cargo.toml', 'apps/web/package.json', 'sdk/python/pyproject.toml', 'x/node_modules/y/package.json', 'crates/a/tests/fixtures/package.json'];
+  assert.deepEqual(manifestDirs(files), ['.', 'apps/web', 'both', 'crates/a', 'sdk/python', 'spikes/x']);
+  assert.deepEqual(candidates(files, new Set(['crates/a', 'both'])), ['apps/web', 'both', 'sdk/python', 'spikes/x']);
+});
+
+test("ci-verify: one result in monoflow's shape: counts, failures from monoflow and cargo, slowest first", () => {
+  const parts = [
+    { target: '@w/ui', path: 'packages/ui', ms: 9000, raw: { status: 'passed', duration_ms: 8000, cached_targets: 0 } },
+    { target: '@w/web', path: 'apps/web', ms: 20000, raw: { status: 'failed', duration_ms: 19000, failed: { '@w/web': 1 }, errors: [{ code: 'test-failure', file: 'apps/web/test/a.test.ts', message: 'boom', targets: ['@w/web'] }] } },
+    { target: 'bench', path: 'spikes/b', ms: 500, raw: { status: 'failed', error: 'monoflow printed no JSON: x' } },
+  ];
+  const r = merge(parts, { ran: true, failures: new Map([['wisp-runtime', ['--test owed failed']]]), crates: 10 }, 30000);
+  assert.equal(r['status'], 'failed');
+  assert.equal(r['total_targets'], 13);
+  assert.equal(r['failed_targets'], 3);
+  assert.equal(r['passed_targets'], 10);
+  assert.deepEqual(Object.keys(r['failed'] as object).sort(), ['@w/web', 'bench', 'wisp-runtime']);
+  const v = readVerify(r, () => undefined);
+  assert.deepEqual(v.failed, ['@w/web', 'bench', 'wisp-runtime']);
+  assert.ok(v.details.some((d) => d.includes('boom')) && v.details.some((d) => d.includes('no JSON')) && v.details.some((d) => d.includes('--test owed')));
+  assert.deepEqual(slowest(v, 2), [['@w/web', 19], ['@w/ui', 8]]);
+  assert.match(markdown('t', v), /Slowest: `@w\/web` 19 s, `@w\/ui` 8 s/);
+  // crates/wisp and sdk/python are both `wisp`: the crate's failure is keyed by its folder, never credited to sdk/python
+  const py = [{ target: 'wisp', path: 'sdk/python', ms: 4000, raw: { status: 'passed', duration_ms: 4000 } }];
+  const clash = merge(py, { ran: true, failures: new Map([['wisp', ['--test serve_desktop failed']]]), crates: 5, dirs: new Map([['wisp', 'crates/wisp']]) }, 1);
+  assert.deepEqual(Object.keys(clash['failed'] as object), ['crates/wisp']);
+  assert.equal(readVerify(clash, () => undefined).durations['wisp'], 4, "sdk/python keeps its time");
+  assert.equal(clash['passed_targets'], 5);
+  const green = merge(parts.slice(0, 1), { ran: false, failures: new Map(), crates: 10 }, 1);
+  assert.equal(green['status'], 'passed');
+  assert.equal(green['passed_targets'], 1, 'crates without a cargo test result are not counted as passed');
+  assert.match(String(green['rust_workspace']), /didn't run/);
+});
+
+test('ci-verify: calls monoflow-bin with the environment the wrapper sets', () => {
+  for (const [k, v] of Object.entries(WRAPPER_ENV)) assert.match(WRAPPER_SCRIPT, new RegExp(`export [^\\n]*\\b${k}=${v}\\b`));
+  assert.deepEqual([...WRAPPER_SCRIPT.matchAll(/\b(MONOFLOW_\w+)=/g)].map((m) => m[1]).sort(), Object.keys(WRAPPER_ENV).sort());
 });
