@@ -3,7 +3,8 @@
 // the kit's pending ring while it installs and restarts (named "Updating…", "Restarting…"). A click installs, asking first when it would stop running
 // tasks (the Updates pane's confirm). A failed install toasts why, with Copy command (Open downloads for the app);
 // once the new wisp answers with another version the page reloads onto it, and after two minutes without it a
-// toast says to start it again.
+// toast says to start it again. The old version back with an error (a Windows install that failed after wisp quit)
+// toasts why.
 
 import { createEffect, createMemo, createSignal, on, Show, type JSX } from 'solid-js';
 import { entityKey } from '@wisp/client';
@@ -14,7 +15,7 @@ import { installUpdate } from './commands.ts';
 import { t } from './i18n.ts';
 import { usePaneScope, useTopic } from './live.ts';
 import { Confirm } from './panes/Updates.tsx';
-import { BACK_WITHIN_MS, cameBack, failureAction, notBack, pillOf, restartStep } from './pill.ts';
+import { BACK_WITHIN_MS, cameBack, failureAction, notBack, pillOf, restartFailed, restartStep } from './pill.ts';
 import { KIND, ROW_ID, TOPIC, type UpdateState } from './types.ts';
 import './i18n/lazy.ts';
 
@@ -24,6 +25,7 @@ function useRestartWatch(row: () => UpdateState | undefined, shell: ReturnType<t
   let wait = 0;
   createEffect(
     on(row, (u, prev) => {
+      if (u && restartFailed(from(), u)) toastFailed(shell, u);
       const step = restartStep(from(), prev, u);
       setFrom(step.from);
       if (step.reload) return shell.platform.reload();

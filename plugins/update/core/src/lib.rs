@@ -5,6 +5,7 @@
 
 pub mod app;
 pub mod channel;
+pub mod deferred;
 pub mod harness;
 pub mod install;
 pub mod updater;

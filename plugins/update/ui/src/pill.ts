@@ -54,6 +54,11 @@ export function restartStep(
   return { from: undefined, reload: false, wait: false };
 }
 
+/** The restart brought the same version back idle with an error: the install ran after wisp quit (Windows npm)
+ * and failed, and the old wisp says why. The page that waited toasts it, as it would a failure answered at once. */
+export const restartFailed = (from: string | undefined, u: Pick<UpdateState, 'status' | 'current' | 'error'> | undefined): boolean =>
+  from !== undefined && u !== undefined && u.status === 'idle' && u.current === from && !!u.error;
+
 /** v1 gave up after two minutes with "wisp did not come back". */
 export const BACK_WITHIN_MS = 120_000;
 

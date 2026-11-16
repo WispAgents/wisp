@@ -1,7 +1,7 @@
 // The top bar's Update pill, v1 web/js/features/update.js: when it shows, what it says, what a failed install
 // offers, and when the page reloads onto the new wisp.
 import { describe, expect, it } from 'vitest';
-import { cameBack, failureAction, notBack, pillOf, restartStep } from '../src/pill.ts';
+import { cameBack, failureAction, notBack, pillOf, restartFailed, restartStep } from '../src/pill.ts';
 import type { UpdateState } from '../src/types.ts';
 
 const row = (over: Partial<UpdateState> = {}): UpdateState => ({
@@ -66,5 +66,17 @@ describe('the Update pill', () => {
   it('says_how_to_start_wisp_again_when_it_never_came_back', () => {
     expect(notBack(row())).toBe('wisp didn’t come back. Start it again from your terminal.');
     expect(notBack(row({ method: 'app' }))).toBe('wisp didn’t come back. Open it again.');
+  });
+});
+
+describe('a restart that failed after wisp quit', () => {
+  it('a_restart_that_brings_the_old_version_back_with_an_error_says_why', () => {
+    const failed = row({ error: '`npm install -g wisp-agents@latest` failed: npm error code EBUSY' });
+    expect(restartFailed('2.0.0', failed), 'the install after exit failed').toBe(true);
+    expect(restartFailed(undefined, failed), 'nothing was restarting: the pane shows it, no toast').toBe(false);
+    expect(restartFailed('2.0.0', row()), 'back idle without an error').toBe(false);
+    expect(restartFailed('2.0.0', row({ ...failed, current: '2.1.0' })), 'the new version answered').toBe(false);
+    expect(restartFailed('2.0.0', row({ ...failed, status: 'restarting' }))).toBe(false);
+    expect(restartFailed('2.0.0', undefined)).toBe(false);
   });
 });

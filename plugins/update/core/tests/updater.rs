@@ -3,6 +3,7 @@
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)] // tests may fail loudly
 use serde_json::{Value, json};
 use wisp_update_core::app::sha256_hex;
+use wisp_update_core::deferred::Files;
 use wisp_update_core::{
     Env, Install, InstallStep, Method, Platform, Refusal, Status, Swap, Updater, asset_name, cargo_clone, detect, installed_version,
 };
@@ -17,6 +18,10 @@ fn mac() -> Platform {
 
 fn global() -> Install {
     detect("/usr/local/lib/node_modules/wisp-agents/node_modules/@wisp/core-darwin-arm64/bin/wisp", &mac(), None, false, None)
+}
+
+fn files() -> Files {
+    Files { dir: "C:\\Users\\O'Brien\\.wisp\\plugins\\wisp.update".into(), exe: "C:\\x\\wisp.exe".into() }
 }
 
 fn updater(install: Install, env: Env) -> Updater {
@@ -308,9 +313,9 @@ fn installed_version_reads_a_package_json() {
 fn an_installed_update_relaunches_wisp_through_a_detached_waiter() {
     let mut u = updater(global(), Env::default());
     let _ = check(&mut u, "stable", &json!({ "latest": "9.0.0" }));
-    assert_eq!(u.hand_off(4242), None, "nothing installed yet: no relaunch");
+    assert_eq!(u.hand_off(4242, &files()), None, "nothing installed yet: no relaunch");
     u.install_done();
-    let h = u.hand_off(4242).expect("a relaunch");
+    let h = u.hand_off(4242, &files()).expect("a relaunch");
     assert_eq!((h.bin, h.args[0].as_str()), ("sh", "-c"));
     let script = &h.args[1];
     assert!(script.contains("kill -TERM 4242"), "{script}");
@@ -329,9 +334,9 @@ fn an_installed_update_relaunches_wisp_on_windows_through_powershell() {
     let mut u = Updater::new(detect(&exe, &win, None, false, None), win, CURRENT, 4477, Env::default());
     assert_eq!(u.method(), Method::Global);
     let _ = check(&mut u, "stable", &json!({ "latest": "9.0.0" }));
-    assert_eq!(u.hand_off(7), None, "nothing installed yet: no relaunch");
+    assert_eq!(u.hand_off(7, &files()), None, "nothing installed yet: no relaunch");
     u.install_done();
-    let h = u.hand_off(7).expect("a relaunch on Windows");
+    let h = u.hand_off(7, &files()).expect("a relaunch on Windows");
     assert_eq!(h.bin, "powershell");
     assert_eq!(h.args[..5], ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-EncodedCommand"]);
     assert_eq!(h.args[5], wisp_update_core::encode_ps(&h.script), "the script travels encoded");

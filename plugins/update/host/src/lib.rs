@@ -6,7 +6,9 @@
 //!   the desktop app) through the net service; offline is "next round", never an error.
 //! - **install** (`update.install`): npm (`npm install -g wisp-agents@<tag>`) or Homebrew, run through the proc
 //!   service; then the updated copy's `package.json` must say a newer version, or it says what went wrong. npx has
-//!   nothing to install.
+//!   nothing to install. On Windows npm runs in the hand-off, once wisp.exe has exited (Windows locks a running exe
+//!   and npm swaps the folder it runs from): the next start reads what it did from this plugin's folder
+//!   (`wisp_update_core::deferred`) and the row says why it failed.
 //! - **state:** one row (`update.state`, id `update`) on topic `plugin:wisp.update:state`: `Updater::view` plus
 //!   `checked_at`, `checking` and `running` (tasks an install stops), which Settings → Updates reads.
 //!
@@ -22,12 +24,17 @@ use wisp_runtime_api::commands as rt;
 use wisp_runtime_api::model::{SessionState, Summary};
 use wisp_store::{Col, EntityDef, Migration, Row, Store};
 use wisp_telemetry_api as tel;
+use wisp_update_core::deferred::{self, Outcome};
 use wisp_update_core::install::{self, Platform};
 use wisp_update_core::updater::{self as up, InstallStep, Refusal, Updater};
 
 pub const OWNER: &str = "update";
 pub const CHANNEL: &str = "update.updateChannel";
 const ROW: &str = "update";
+
+mod hand_off;
+pub use hand_off::read_hand_off;
+use hand_off::{files, pending_of, relaunch, write_pending};
 
 const MIGRATIONS: &[Migration] = &[Migration::sql(1, "CREATE TABLE update_state (id TEXT PRIMARY KEY, body TEXT NOT NULL) STRICT;")];
 
@@ -72,6 +79,8 @@ command!(View = "update.view", true);
 
 struct St {
     up: Mutex<Updater>,
+    /// this binary, which the Windows hand-off sets aside before npm runs
+    exe: String,
     checked_at: Mutex<Option<i64>>,
     checking: Mutex<bool>,
 }
@@ -107,6 +116,7 @@ impl St {
         let port = std::env::var("WISP_PORT").ok().and_then(|p| p.parse().ok()).unwrap_or(4477);
         Self {
             up: Mutex::new(Updater::new(inst, platform, env!("CARGO_PKG_VERSION"), port, env)),
+            exe,
             checked_at: Mutex::new(None),
             checking: Mutex::new(false),
         }
@@ -209,13 +219,16 @@ async fn shell(ctx: &Ctx, cmd: &str, env: &[(String, String)]) -> std::result::R
     Ok(())
 }
 
-/// Hands off to the detached waiter that stops this wisp and starts the new one (`Updater::hand_off`: `sh` on Unix,
-/// `PowerShell` on Windows), through the proc service. False: it couldn't start, and the user restarts it.
-fn relaunch(ctx: &Ctx, st: &St) -> bool {
-    let Some(h) = lock(&st.up).hand_off(std::process::id()) else { return false };
-    let Ok(proc) = ctx.service::<wisp_proc::Proc>() else { return false };
-    // Err: the user restarts it by hand, as `next` says
-    proc.spawn_detached(h.bin, &h.args, wisp_proc::SpawnOpts { no_stdin: true, ..wisp_proc::SpawnOpts::default() }).is_ok()
+/// The update telemetry event, once the new version is installed.
+fn track(ctx: &Ctx, from: String, to: Option<String>, method: &'static str) {
+    let c = ctx.clone();
+    ctx.spawn(async move {
+        let props = [("from", json!(from)), ("to", json!(to)), ("method", json!(method))];
+        let a = tel::TrackArgs { event: "update".into(), props: props.into_iter().map(|(k, v)| (k.to_owned(), v)).collect() };
+        if let Err(err) = c.run::<tel::Track>(&c.root_call(), a).await {
+            tracing::warn!(error = %err.message, "update: telemetry.track");
+        }
+    });
 }
 
 async fn install(ctx: &Ctx, st: &St) -> Result<Value> {
@@ -224,8 +237,13 @@ async fn install(ctx: &Ctx, st: &St) -> Result<Value> {
         Refusal::Conflict(m) => WireError::conflict(m),
     })?;
     publish(ctx, st).await;
+    let after_exit = matches!(step, InstallStep::AfterExit { .. });
     let done = match step {
         InstallStep::Nothing => Ok(()),
+        InstallStep::AfterExit { .. } => match pending_of(st) {
+            Some(p) => write_pending(ctx, st, &p).await.map_err(|e| format!("The update couldn't start: {e}. Run `{}` yourself.", p.cmd)),
+            None => Err("The update couldn't start.".to_owned()),
+        },
         InstallStep::Run { cmd, env } => match shell(ctx, &cmd, &env).await {
             Ok(()) => {
                 let home = lock(&st.up).home();
@@ -243,30 +261,42 @@ async fn install(ctx: &Ctx, st: &St) -> Result<Value> {
         Ok(()) => lock(&st.up).install_done(),
         Err(m) => lock(&st.up).install_failed(&m),
     }
-    if ok {
+    // an install after exit is counted by the start that sees it done
+    if ok && !after_exit {
         let (from, to, method) = {
             let u = lock(&st.up);
             (u.current.clone(), u.latest.clone(), u.method().name())
         };
-        let c = ctx.clone();
-        ctx.spawn(async move {
-            let props = [("from", json!(from)), ("to", json!(to)), ("method", json!(method))];
-            let a = tel::TrackArgs { event: "update".into(), props: props.into_iter().map(|(k, v)| (k.to_owned(), v)).collect() };
-            if let Err(err) = c.run::<tel::Track>(&c.root_call(), a).await {
-                tracing::warn!(error = %err.message, "update: telemetry.track");
-            }
-        });
+        track(ctx, from, to, method);
+    }
+    Ok(restart(ctx, st, after_exit).await)
+}
+
+/// Starts the hand-off (its waiter sleeps a second, so the answer below reaches the page first) and says what
+/// happens next. An install after exit whose waiter didn't start installed nothing: that's a failure, published
+/// once (never `restarting` first, which the page would toast a second time).
+async fn restart(ctx: &Ctx, st: &St, after_exit: bool) -> Value {
+    if lock(&st.up).status != up::Status::Restarting {
+        return publish(ctx, st).await;
+    }
+    let relaunched = relaunch(ctx, st);
+    if !relaunched && after_exit {
+        if let Some(f) = files(ctx, st) {
+            let platform = lock(&st.up).platform.clone();
+            let _ = tokio::fs::remove_file(f.path(&platform, deferred::PENDING)).await;
+        }
+        let cmd = lock(&st.up).command().unwrap_or_default();
+        lock(&st.up).install_failed(&format!("The update couldn't start. Quit wisp and run `{cmd}` yourself."));
+        return publish(ctx, st).await;
     }
     let mut v = publish(ctx, st).await;
-    if v["status"] == "restarting" {
-        let latest = v["latest"].as_str().unwrap_or("the new version").to_owned();
-        v["next"] = json!(if relaunch(ctx, st) {
-            format!("wisp restarts on {latest} now.")
-        } else {
-            format!("Restart wisp to use {latest} (quit it and run `wisp` again).")
-        });
-    }
-    Ok(v)
+    let latest = v["latest"].as_str().unwrap_or("the new version").to_owned();
+    v["next"] = json!(match (relaunched, after_exit) {
+        (true, true) => format!("wisp stops, installs {latest} and restarts now."),
+        (true, false) => format!("wisp restarts on {latest} now."),
+        _ => format!("Restart wisp to use {latest} (quit it and run `wisp` again)."),
+    });
+    v
 }
 
 #[derive(Debug, Default)]
@@ -300,7 +330,20 @@ impl Plugin for UpdatePlugin {
             store.define_entity(STATE).map_err(|e| WireError::internal(e.to_string()))?;
             let clock = ctx.clock()?;
             let c2 = ctx.clone();
+            let dir = wisp_kernel::services::paths(&ctx).ok().map(|p| p.plugin_dir(ctx.plugin()));
             ctx.spawn(async move {
+                // a Windows install the last run handed off: this row says how it went, before anyone reads it
+                let current = lock(&st.up).current.clone();
+                let last = match &dir {
+                    Some(folder) => read_hand_off(folder, &current).await,
+                    None => None,
+                };
+                if let Some(last) = last {
+                    if let Outcome::Updated { from, to } = &last {
+                        track(&c2, from.clone(), Some(to.clone()), lock(&st.up).method().name());
+                    }
+                    lock(&st.up).resume(&last);
+                }
                 // the stored row is the last run's (after an update: `restarting`, the old version): this one's now,
                 // so an open page sees the new version at once and reloads onto it
                 publish(&c2, &st).await;

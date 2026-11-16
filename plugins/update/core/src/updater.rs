@@ -8,6 +8,7 @@ use serde::Serialize;
 use serde_json::Value;
 
 use crate::channel::Channel;
+use crate::deferred::{self, Files, Pending};
 use crate::install::{DOWNLOADS, FORMULA, Install, Method, PKG, Platform, REGISTRY, RELEASES, asset_name};
 use crate::version::{find_version, newer, newest};
 
@@ -95,6 +96,8 @@ pub enum InstallStep {
     Nothing,
     /// npm or brew: run this shell command with these extra env vars
     Run { cmd: String, env: Vec<(String, String)> },
+    /// npm on Windows: the hand-off runs `cmd` once wisp has exited (`crate::deferred`)
+    AfterExit { cmd: String },
     /// the desktop app: download `asset` and swap it in
     DownloadApp { asset: Asset },
 }
@@ -127,6 +130,8 @@ pub struct Updater {
     /// app (beta, nightly): that release's page
     pub release: Option<String>,
     pub swap: Option<Swap>,
+    /// Windows npm: what the hand-off installs once this wisp has exited
+    pub deferred: Option<String>,
 }
 
 fn falsy(v: Option<&str>) -> bool {
@@ -158,6 +163,7 @@ impl Updater {
             asset: None,
             release: None,
             swap: None,
+            deferred: None,
         }
     }
 
@@ -298,7 +304,13 @@ impl Updater {
             Method::Brew => {
                 InstallStep::Run { cmd: self.command().unwrap_or_default(), env: vec![("HOMEBREW_NO_INSTALL_CLEANUP".into(), "1".into())] }
             }
+            // wisp.exe runs from the folder npm swaps, and Windows locks a running exe
+            Method::Global if self.platform.windows() => InstallStep::AfterExit { cmd: self.command().unwrap_or_default() },
             Method::Global | Method::Git => InstallStep::Run { cmd: self.command().unwrap_or_default(), env: Vec::new() },
+        };
+        self.deferred = match &step {
+            InstallStep::AfterExit { cmd } => Some(cmd.clone()),
+            _ => None,
         };
         self.status = Status::Installing;
         self.error = None;
@@ -321,6 +333,21 @@ impl Updater {
     pub fn install_failed(&mut self, message: &str) {
         self.status = Status::Idle;
         self.error = Some(message.to_owned());
+        self.deferred = None;
+    }
+
+    /// What the host writes to [`deferred::PENDING`] before a hand-off that installs after exit.
+    pub fn pending(&self) -> Option<Pending> {
+        let cmd = self.deferred.clone()?;
+        Some(Pending { from: self.current.clone(), to: self.latest.clone().unwrap_or_default(), cmd })
+    }
+
+    /// At start, what the last run's hand-off did ([`deferred::outcome`]): a failure is this row's error, so the
+    /// pane and the page that waited on the restart say why.
+    pub fn resume(&mut self, outcome: &deferred::Outcome) {
+        if let deferred::Outcome::Failed(m) = outcome {
+            self.install_failed(m);
+        }
     }
 
     pub fn install_done(&mut self) {
@@ -331,22 +358,27 @@ impl Updater {
     /// it's gone (≤ 30 s), then runs [`Self::relaunch_command`]. The desktop app is reopened, a browser tab kept.
     /// Unix: `sh` sends SIGTERM, wisp's clean stop. Windows (v1 relaunched there too; v2 left it to the user until
     /// 2026-11-14): `PowerShell` ends the process (Windows has no SIGTERM for a console-less server; its children go
-    /// with their Job Objects) and starts the command through `cmd /S /C`. `None` when there's nothing to relaunch.
-    pub fn hand_off(&self, pid: u32) -> Option<HandOff> {
-        let cmd = self.relaunch_command(self.env.desktop.is_some());
+    /// with their Job Objects) and starts the command through `cmd /S /C`; an npm install deferred to here runs in
+    /// between (`crate::deferred`, with `files`). `None` when there's nothing to relaunch.
+    pub fn hand_off(&self, pid: u32, files: &Files) -> Option<HandOff> {
+        let desktop = self.env.desktop.is_some();
+        let cmd = self.relaunch_command(desktop);
         if cmd.is_empty() || self.status != Status::Restarting {
             return None;
         }
+        if let Some(npm) = self.deferred.as_deref().filter(|_| self.platform.windows()) {
+            let script = deferred::script(pid, npm, &cmd, &self.wisp_args(desktop), files, &self.platform);
+            return Some(powershell(script));
+        }
         if self.platform.windows() {
             // -EncodedCommand: no quoting of the script through cmd.exe or PowerShell's own command line
-            let quoted = format!("/S /C \"{cmd}\"").replace('\'', "''");
+            let quoted = crate::deferred::ps_escape(&format!("/S /C \"{cmd}\""));
             let script = format!(
                 "Start-Sleep -Seconds 1; Stop-Process -Id {pid} -Force -ErrorAction SilentlyContinue; \
                  Wait-Process -Id {pid} -Timeout 30 -ErrorAction SilentlyContinue; \
                  Start-Process -FilePath cmd.exe -ArgumentList '{quoted}' -WindowStyle Hidden"
             );
-            let args = ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-EncodedCommand"].map(str::to_owned);
-            return Some(HandOff { bin: "powershell", args: args.into_iter().chain([encode_ps(&script)]).collect(), script });
+            return Some(powershell(script));
         }
         // let the answer reach the page first, then stop and wait for the port to be free
         let script = format!(
@@ -377,7 +409,7 @@ impl Updater {
                 None => String::new(),
             };
         }
-        let args = format!("{} --port {}", if desktop { "" } else { " --browser --no-open" }, self.port);
+        let args = self.wisp_args(desktop);
         // A shell started by bin/wisp.js holds the same lock: the new `wisp` would hand over to it and go.
         let wait = if tauri && !self.platform.windows() { self.shell_gone() } else { String::new() };
         if self.method() == Method::Npx {
@@ -386,6 +418,11 @@ impl Updater {
         let node = json_quote(self.env.node.as_deref().unwrap_or("node"));
         let launcher = json_quote(&self.platform.join(&self.home(), &["bin", "wisp.js"]));
         format!("{wait}{node} {launcher}{args}")
+    }
+
+    /// The new wisp's arguments (leading space): the same port; desktop: reopen the app, otherwise keep the tab.
+    pub fn wisp_args(&self, desktop: bool) -> String {
+        format!("{} --port {}", if desktop { "" } else { " --browser --no-open" }, self.port)
     }
 
     /// Tauri's shell is this process's parent and outlives it by a moment, holding the single-instance
@@ -402,6 +439,12 @@ pub struct HandOff {
     pub bin: &'static str,
     pub args: Vec<String>,
     pub script: String,
+}
+
+/// `PowerShell` running `script`, passed encoded so no quote in it reaches cmd.exe's or `PowerShell`'s command line.
+fn powershell(script: String) -> HandOff {
+    let args = ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-EncodedCommand"].map(str::to_owned);
+    HandOff { bin: "powershell", args: args.into_iter().chain([encode_ps(&script)]).collect(), script }
 }
 
 /// `PowerShell`'s `-EncodedCommand`: the script as UTF-16LE, in base64.
@@ -436,7 +479,8 @@ pub fn run_failed(cmd: &str, stderr: &str) -> String {
     } else {
         ""
     };
-    let lines: Vec<&str> = stderr.trim().lines().collect();
+    // each line trimmed: cmd's `echo … 1>&2` and npm on Windows leave spaces and `\r` at line ends
+    let lines: Vec<&str> = stderr.trim().lines().map(str::trim).collect();
     let tail = lines[lines.len().saturating_sub(3)..].join(" ");
     format!("`{cmd}` failed{hint}: {tail}")
 }
