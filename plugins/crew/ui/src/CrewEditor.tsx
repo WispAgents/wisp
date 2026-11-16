@@ -4,7 +4,7 @@
 // reports, ADR-0043), then the project, harness, mode and how many at once, and First check-in now. Save shows at
 // once (crew.update or crew.create) and rolls back with the shell's toast if refused.
 import { createEffect, createMemo, createSignal, type JSX } from 'solid-js';
-import { defineCommand, uuidv7, type PluginClient } from '@wisp/client';
+import { defineCommand, newRowId, type PluginClient } from '@wisp/client';
 import { projectList, useShell } from '@wisp/shell';
 import { parsePick } from '@wisp/shell/pure';
 import { CrewEditorForm, isSpirit, parseSpirit, rollSpirit, useSignal, type CrewEditorBarItem, type CrewEditorChip } from '@wisp/ui';
@@ -21,7 +21,7 @@ const firstTurn = defineCommand<{ key: string; id: string }, readonly { prompt?:
   pending: 'the task’s first prompt',
 });
 import { crewData } from './data.ts';
-import { EVENTS, TEMPLATES, addWake, draftOf, faceOf, fromTemplate, patchOf, problemOf, toggleOn, type Draft } from './editor.ts';
+import { EVENTS, TEMPLATES, addWake, draftOf, faceOf, fromTemplate, patchOf, problemOf, toggleOn, toggleTeam, type Draft } from './editor.ts';
 import { t, type Key } from './i18n.ts';
 import { CADENCES } from './model.ts';
 import { cronWords, toCron } from './rules/schedule.ts';
@@ -35,6 +35,8 @@ const MODES = [
 ] as const;
 const EVENT_ICON = { finished: 'bolt', done: 'done', ci: 'warn' } as const;
 const HANDOFF = 'crew.reported';
+/** what you'd typed when the peer refused it: the dialog opens with it again (v1 crewEditor's `again()`) */
+let refused: { readonly key: string; readonly draft: Draft } | undefined;
 
 // size-ok: one form whose rows share its draft
 export default function CrewEditor(props: { readonly client: PluginClient; readonly params: { id?: string; task?: string } }): JSX.Element {
@@ -60,7 +62,9 @@ export default function CrewEditor(props: { readonly client: PluginClient; reado
     const on = parsePick(shell.projectFilter?.value())[0]; // several picked: the first, where New task starts
     return all.find((p) => p.id === on)?.path ?? (all.length === 1 ? (all[0]?.path ?? '') : '');
   };
-  const [d, setD] = createSignal<Draft>(editing() ? before : { ...before, ...faceOf(rollSpirit(String(Math.random()))), cwd: task ? '' : here() });
+  const again = refused?.key === (props.params.id ?? props.params.task ?? '') ? refused.draft : undefined;
+  refused = undefined;
+  const [d, setD] = createSignal<Draft>(again ?? (editing() ? before : { ...before, ...faceOf(rollSpirit(String(Math.random()))), cwd: task ? '' : here() }));
   if (task)
     void c
       .run(firstTurn, { key: task, id: bare(task) })
@@ -105,8 +109,16 @@ export default function CrewEditor(props: { readonly client: PluginClient; reado
       if (Object.keys(patch).length > 0) void c.run(updateMember, { key: m.key as never, id: m.id, ...patch }).catch(() => undefined);
     } else {
       const v = { ...d(), name: d().name.trim(), role: d().role.trim(), brief: d().brief.trim() };
-      if (task) void c.run(adoptTask, { peer: c.home, sessionId: bare(task), member: v as unknown as Member }).catch(() => undefined);
-      else void c.run(createMember, { peer: c.home, id: uuidv7(), member: v as unknown as Member, ...(checkin() && { checkin: true }) }).catch(() => undefined);
+      const draft = d();
+      // joined: a toast with Open (v1); refused: the shell's toast says why and the dialog comes back as you left it
+      const done = (m: Member | undefined): void =>
+        void shell.toast.success(t('wisp.crew.editor.joined', { name: v.name }), { action: { label: t('wisp.crew.editor.open'), onClick: () => c.navigate({ t: 'openCrew', id: `${c.home}:${m?.id ?? ''}` as never }) } });
+      const back = (): void => {
+        refused = { key: task ?? '', draft };
+        c.navigate({ t: 'openOverlay', overlay: { kind: 'dialog', id: VIEW.editor as never, params: task ? { task } : {} } });
+      };
+      if (task) void c.run(adoptTask, { peer: c.home, sessionId: bare(task), member: v as unknown as Member }).then(done, back);
+      else void c.run(createMember, { peer: c.home, id: newRowId(), member: v as unknown as Member, ...(checkin() && { checkin: true }) }).then(done, back);
     }
     close();
   };
@@ -145,6 +157,26 @@ export default function CrewEditor(props: { readonly client: PluginClient; reado
       label: t(`wisp.crew.page.mode.${mode().id}`),
       tone: mode().tone,
       act: { menu: { items: MODES.map((m) => ({ value: m.id, label: t(`wisp.crew.page.mode.${m.id}`) })), onSelect: (v) => set({ mode: v as Draft['mode'] }) } },
+    },
+    // Delegate (v1 .ce-team): who their jobs can hand work to: a harness's copies, or other crew members
+    {
+      id: 'team',
+      kind: 'tog',
+      icon: 'agent',
+      label: d().team.length ? t('wisp.crew.editor.delegateN', { count: d().team.length }) : t('wisp.crew.editor.delegate'),
+      title: t('wisp.crew.editor.delegateTitle'),
+      ...(d().team.length > 0 && { tone: 'accent' as const }),
+      act: {
+        menu: {
+          items: [
+            ...harnesses().map((h) => ({ value: h.id, label: t('wisp.crew.editor.copies', { name: h.name }), checked: d().team.some((x) => !x.crew && x.agent === h.id) })),
+            ...members()
+              .filter((m) => m.id !== props.params.id)
+              .map((m) => ({ value: `crew:${m.id}`, label: m.name, checked: d().team.some((x) => x.crew === m.id) })),
+          ],
+          onSelect: (v) => set({ team: toggleTeam(d().team, v, (id) => members().find((m) => m.id === id)) }),
+        },
+      },
     },
   ];
 
@@ -226,7 +258,7 @@ export default function CrewEditor(props: { readonly client: PluginClient; reado
             }
           : undefined
       }
-      name={{ label: t('wisp.crew.editor.name'), value: d().name, placeholder: t('wisp.crew.editor.namePlaceholder'), onInput: (v) => (setProblem(undefined), set({ name: v })) }}
+      name={{ label: t('wisp.crew.editor.name'), value: d().name, placeholder: t('wisp.crew.editor.namePlaceholder'), onInput: (v) => (setProblem(undefined), set({ name: v })), focus: !editing() }}
       role={{ label: t('wisp.crew.editor.role'), value: d().role, placeholder: t('wisp.crew.editor.rolePlaceholder'), onInput: (v) => set({ role: v }) }}
       handle={
         problem()

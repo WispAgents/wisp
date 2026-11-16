@@ -187,6 +187,11 @@ pub struct LayoutArgs {
 pub struct CreateArgs {
     #[serde(flatten)]
     pub member: MemberBody,
+    /// the client's id for it (the rail shows it under this id at once): kept when it's an id's shape and no member has
+    /// it, so the row it drew is the one that comes back (never two for a frame). Additive (2026-11-16).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub id: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub checkin: Option<bool>,

@@ -59,3 +59,20 @@ async fn a_lead_delegates_to_a_crew_member_and_reads_the_jobs_report() {
     common::open_gate(&gates, "lead");
     drop(serve);
 }
+
+/// Add to your crew draws the member under an id it made (B27): the member comes back under that id, so the rail never
+/// shows it twice. An id that isn't an id's shape, or one a member has, is the server's own.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_new_member_keeps_the_id_the_client_drew_it_under_unless_its_taken_or_malformed() {
+    let dir = temp("crew-create-id");
+    let (serve, port) = start_with(&dir, &[]);
+    let api = Api { http: reqwest::Client::new(), port, n: 0.into() };
+    let mine = "0123456789abcdef0123456789abcdef";
+    let a = api.cmd("crew.create", json!({ "name": "Quinn", "id": mine })).await;
+    assert_eq!(a["id"], mine, "{a}");
+    let taken = api.cmd("crew.create", json!({ "name": "Rex", "id": mine })).await;
+    assert_ne!(taken["id"], mine, "a taken id is the server's own: {taken}");
+    let bad = api.cmd("crew.create", json!({ "name": "Sam", "id": "Not An Id!" })).await;
+    assert_ne!(bad["id"], "Not An Id!", "{bad}");
+    drop(serve);
+}

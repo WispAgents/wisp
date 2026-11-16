@@ -64,12 +64,16 @@ export function crewData(client: PluginClient): CrewData {
   const e = client.entities;
   const keys = e.keys(KIND.member);
   const rows = e.list<MemberView>(KIND.member);
+  // in the order they joined (v1's crew list), never the order rows arrive in: a reload's snapshot and a live add
+  // gave two orders (B28)
   const members = computed(() => {
     const ks = keys();
-    return rows().map((v, i) => {
-      const key = ks[i] as EntityKey;
-      return { ...memberOf(v), key, peer: ownerOf(key) } as CrewMember;
-    });
+    return rows()
+      .map((v, i) => {
+        const key = ks[i] as EntityKey;
+        return { ...memberOf(v), key, peer: ownerOf(key) } as CrewMember;
+      })
+      .toSorted((a, b) => (a.createdAt || 0) - (b.createdAt || 0) || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
   });
   // every peer's task rows, each read as a job when it is one (jobs.ts: body.ext["wisp.crew"]); a job on a member's
   // machine is that machine's row: it says which peer it came from and the machine's name (wisp.machines' rows)

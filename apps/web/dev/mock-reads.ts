@@ -188,7 +188,7 @@ export const NOT_MOCKED: Readonly<Record<string, string>> = Object.fromEntries([
     'automations.sources', 'automations.task.remove', 'automations.task.set', 'automations.trigger.fire', 'automations.trigger.test',
     'budget.dismissDrain', 'budget.dismissNotice', 'budget.setStop',
     'connectors.add', 'connectors.import', 'connectors.remove', 'connectors.test', 'connectors.update',
-    'crew.adopt', 'crew.ask', 'crew.checkin', 'crew.create', 'crew.detach', 'crew.import', 'crew.remove', 'crew.reply',
+    'crew.adopt', 'crew.ask', 'crew.checkin', 'crew.detach', 'crew.import', 'crew.remove', 'crew.reply',
     'goal.check', 'goal.drop', 'goal.pause', 'goal.resume',
     'later.cancelPlan', 'later.editPlan', 'later.park', 'learn.set',
     'machine.automations.pause', 'machine.fix', 'machine.harness.clean', 'machine.stop',

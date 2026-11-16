@@ -482,5 +482,12 @@
   "wisp.crew.phone.wakes.checkins.one": "{count} check-in",
   "wisp.crew.phone.wakes.checkins.other": "{count} check-ins",
   "wisp.crew.phone.changeSchedule": "Change when…",
-  "wisp.crew.phone.newJob": "New job"
+  "wisp.crew.phone.newJob": "New job",
+  "wisp.crew.editor.delegate": "Delegate",
+  "wisp.crew.editor.delegateN.one": "Delegates · {count}",
+  "wisp.crew.editor.delegateN.other": "Delegates · {count}",
+  "wisp.crew.editor.delegateTitle": "Delegates: agents (or other crew members) every job of theirs can hand work to",
+  "wisp.crew.editor.copies": "{name} copies",
+  "wisp.crew.editor.joined": "{name} joined your crew",
+  "wisp.crew.editor.open": "Open"
 }

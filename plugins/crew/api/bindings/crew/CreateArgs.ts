@@ -3,7 +3,12 @@
 /**
  * `POST /crew`. `checkin: true` starts a first check-in at once.
  */
-export type CreateArgs = { checkin?: boolean, name?: string, role?: string, avatar?: string, color?: string, 
+export type CreateArgs = { 
+/**
+ * the client's id for it (the rail shows it under this id at once): kept when it's an id's shape and no member has
+ * it, so the row it drew is the one that comes back (never two for a frame). Additive (2026-11-16).
+ */
+id?: string, checkin?: boolean, name?: string, role?: string, avatar?: string, color?: string, 
 /**
  * the list's tint while they're picked (v1 `bg`): '' their glow, 'none', or a crew colour. Additive (2026-11-12).
  */

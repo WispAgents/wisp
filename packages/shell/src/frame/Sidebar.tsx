@@ -26,6 +26,8 @@ interface CrewRow {
   readonly name: string;
   readonly avatar?: string;
   readonly color?: string;
+  /** when they joined: the rail shows them in joining order (v1's crew list), whatever order rows arrive in (B28) */
+  readonly createdAt?: number;
 }
 
 function useSessions(): () => readonly SessionRow[] {
@@ -41,6 +43,7 @@ export function Rail(): JSX.Element {
   const members = createMemo<RailMember[]>(() =>
     crew()
       .map((r) => flatRow<CrewRow>(r))
+      .toSorted((a, b) => (a.createdAt || 0) - (b.createdAt || 0) || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))
       .map((c) => ({ id: c.id, name: c.name, avatar: c.avatar ?? '', color: c.color ?? 'violet' })),
   );
   const nav = useSignal(shell.nav);

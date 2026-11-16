@@ -43,7 +43,8 @@ export interface CrewEditorFormProps {
   readonly face: { readonly avatar: string; readonly name: string; readonly color?: string; readonly title: string; readonly onRoll: () => void };
   /** the spirit maker under the face (v1 .ce-maker), while it's open */
   readonly maker?: SpiritMakerProps | undefined;
-  readonly name: { readonly label: string; readonly value: string; readonly placeholder: string; readonly onInput: (v: string) => void };
+  /** `focus`: the caret starts here (a new member: v1 put it in Name as the dialog opened) */
+  readonly name: { readonly label: string; readonly value: string; readonly placeholder: string; readonly onInput: (v: string) => void; readonly focus?: boolean };
   readonly role: { readonly label: string; readonly value: string; readonly placeholder: string; readonly onInput: (v: string) => void };
   /** under the names: how to reach them, or what's wrong with the name */
   readonly handle: { readonly text: string; readonly code?: string; readonly after?: string; readonly bad?: boolean };
@@ -125,7 +126,7 @@ export function CrewEditorForm(props: CrewEditorFormProps): JSX.Element {
           <div data-kit="ce-names">
             <label data-kit="ce-field" data-part="crew.editor.name">
               <span>{props.name.label}</span>
-              <input name="name" maxlength="24" value={props.name.value} placeholder={props.name.placeholder} spellcheck={false} autocomplete="off" required onInput={(e) => props.name.onInput(e.currentTarget.value)} />
+              <input name="name" ref={(el) => props.name.focus && queueMicrotask(() => el.focus({ preventScroll: true }))} maxlength="24" value={props.name.value} placeholder={props.name.placeholder} spellcheck={false} autocomplete="off" required onInput={(e) => props.name.onInput(e.currentTarget.value)} />
             </label>
             <label data-kit="ce-field" data-part="crew.editor.role">
               <span>{props.role.label}</span>

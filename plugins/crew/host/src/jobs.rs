@@ -309,8 +309,12 @@ pub(crate) fn register(s: &mut Setup, st: &Arc<State>) {
         Ok(out)
     });
     on!(s, st, c::Create, |st, ctx, call, a| {
-        let m =
+        let mut m =
             st.normalize(&a.member, None, now(&ctx), &profile_names(&ctx, &call).await, &crate::calls::machine_ids(&ctx, &call).await)?;
+        // the id the client drew it under (B27: the rail showed the member twice for a frame)
+        if let Some(id) = a.id.filter(|id| wisp_crew_core::kit::is_id(id) && st.member(id).is_err()) {
+            m.id = id;
+        }
         st.put(m.clone());
         st.save().await;
         ctx.emit(&call, &wisp_crew_api::events::Joined { crew_id: m.id.clone(), name: m.name.clone(), how: "create".into() });

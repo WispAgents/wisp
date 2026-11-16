@@ -224,6 +224,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Fixed
 
+- **Adding a crew member works as before**: the ready-made members show whole, Delegate is back (who their jobs can hand work to), the name field takes the caret, you're told “Quinn joined your crew” with Open, a refused add brings the dialog back with what you typed, and the crew keeps the order members joined in.
+
 - **A new task shows your prompt at once**, as before: no blank page while it starts, its own prompt never listed as a queued follow-up ("Held after Stop"), and the working time counts every second from when you sent it.
 
 - **The update button no longer spins forever.** The top bar showed a loading spinner on every wisp with nothing to update, and Settings → Updates showed nothing about the version; both read the update state again.

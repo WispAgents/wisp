@@ -79,7 +79,8 @@ export const createMember = defineCommand<{ peer: PeerId; id: string; member: Me
   id: 'crew.create',
   owner: (a) => a.peer,
   wire: (a) => ({ ...a.member, id: a.id, ...(a.checkin && { checkin: true }) }),
-  optimistic: (_base, a) => [{ e: KIND.member, id: `${a.peer}:${a.id}` as EntityKey, op: 'upsert', v: a.member }],
+  // joined now: the rail (in joining order) puts it last at once, where the peer's row keeps it
+  optimistic: (_base, a) => [{ e: KIND.member, id: `${a.peer}:${a.id}` as EntityKey, op: 'upsert', v: { ...a.member, id: a.id, createdAt: a.member.createdAt || Date.now() } }],
 });
 
 /** Add to crew… on a task (v1 POST /sessions/:id/crew): a new member whose first job is that task. */

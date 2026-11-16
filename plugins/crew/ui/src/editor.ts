@@ -28,6 +28,26 @@ export interface Draft {
   readonly mode: 'plan' | 'edits' | 'auto';
   readonly cwd: string;
   readonly wakes: readonly Wake[];
+  /** who every job of theirs can hand work to (v1 .ce-team, the launcher's Delegate with the member as lead): a
+   *  harness's copies (`agent`) or another crew member (`crew`) */
+  readonly team: readonly TeamPick[];
+}
+
+/** One delegate as the member keeps it (crew core `normalize_team`). */
+export interface TeamPick {
+  readonly agent: string;
+  readonly crew?: string;
+  readonly name?: string;
+}
+
+/** Delegate's toggle: a harness's copies, or a crew member (`crew:<id>`), in or out of the team. */
+export function toggleTeam(team: readonly TeamPick[], value: string, crew: (id: string) => { name: string } | undefined): TeamPick[] {
+  const isCrew = value.startsWith('crew:');
+  const id = isCrew ? value.slice(5) : value;
+  const has = team.some((x) => (isCrew ? x.crew === id : !x.crew && x.agent === id));
+  if (has) return team.filter((x) => !(isCrew ? x.crew === id : !x.crew && x.agent === id));
+  const m = isCrew ? crew(id) : undefined;
+  return [...team, isCrew ? { agent: 'auto', crew: id, ...(m && { name: m.name }) } : { agent: id }];
 }
 
 const wakesOf = (m: Partial<Member> & { wakes?: unknown }): Wake[] =>
@@ -54,6 +74,7 @@ export function draftOf(m: (Partial<Member> & { wakes?: unknown }) | undefined):
     mode: m?.mode === 'plan' || m?.mode === 'edits' ? m.mode : 'auto',
     cwd: m?.cwd ?? '',
     wakes: m ? wakesOf(m) : [],
+    team: Array.isArray(m?.team) ? m.team.map((x) => ({ agent: x.agent, ...(x.crew && { crew: x.crew }), ...(x.name && { name: x.name }) })) : [],
   };
 }
 
@@ -71,7 +92,7 @@ const same = (a: unknown, b: unknown): boolean => JSON.stringify(a) === JSON.str
 /** Save on an existing member: only the fields that changed (crew.update merges). */
 export function patchOf(d: Draft, before: Draft): MemberPatch & { wakes?: readonly Wake[] } {
   const out: Record<string, unknown> = {};
-  for (const k of ['name', 'role', 'avatar', 'color', 'bg', 'on', 'brief', 'cron', 'parallel', 'agent', 'mode', 'cwd', 'wakes'] as const) {
+  for (const k of ['name', 'role', 'avatar', 'color', 'bg', 'on', 'brief', 'cron', 'parallel', 'agent', 'mode', 'cwd', 'wakes', 'team'] as const) {
     const v = typeof d[k] === 'string' ? (d[k] as string).trim() : d[k];
     if (!same(v, before[k])) out[k] = v;
   }
