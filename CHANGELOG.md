@@ -224,6 +224,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Fixed
 
+- **No more "new 5-hour window" on a weekly-only plan**: a usage window's notice goes when the window does.
+
 - **Send anyway in a task's reply box works** near your usage limit (it asked again and sent nothing).
 
 - **A follow-up's card stays put** from the moment you press Enter until its answer lands (it was replaced when the server's turn came, and again when it ended), and a notification stays where it is when another one comes.

@@ -138,7 +138,9 @@ impl Budget {
         let mut out = Vec::new();
         for (account, acc) in self.of(agent) {
             let windows = Self::view_windows(acc, now);
-            let notices = Self::notices(acc);
+            // what was said of a window shows while the window does: one the reports left out is gone past its reset
+            // (v1 #556), and its "new 5-hour window" with it (B5: v1 kept the notice, its reset long past)
+            let notices: Vec<WindowNotice> = Self::notices(acc).into_iter().filter(|n| windows.iter().any(|w| w.id == n.window)).collect();
             let overage = Self::over_view(acc, now);
             let banked = if agent == "codex" { banked_at(acc.banked.as_ref(), now) } else { None };
             if windows.is_empty() && notices.is_empty() && overage.is_none() && banked.is_none() {
