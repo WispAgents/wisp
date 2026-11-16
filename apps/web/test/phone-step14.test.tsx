@@ -8,7 +8,7 @@
 import { afterEach, expect, test, vi } from 'vitest';
 import { createClient, peerId, type Timers } from '@wisp/client';
 import { createShell, nullPlatform, type Platform, type ShellWindow } from '@wisp/shell';
-import { createToaster } from '@wisp/ui';
+import { createToaster, loadPlatformStyles } from '@wisp/ui';
 import { shellSettingsUi } from '@wisp-plugin/shell-settings-ui';
 import { createMockPeer } from '../dev/mock-peer.ts';
 import { memTransport } from '../dev/mem-transport.ts';
@@ -215,3 +215,22 @@ test('a_phones_browser_keeps_v1s_my_stuff_and_settings', async () => {
   expect(q('[data-kit="dialog"][data-size="full"]')).toBeNull();
   expect(q('[data-kit="phone-page"]'), 'v1’s sidebar of panes, not the phone pages').toBeNull();
 });
+
+// The screens' lazy chunks (each look's stylesheet and the overlays' phone halves, Settings and a pane, My Stuff and a
+// tile's menu, the browser's Settings and My Stuff), compiled while vitest collects this file, off the tests' clock
+// (the dynamic-import-in-test rule's reason): on a busy Windows runner a cold chunk outlasted a test's waits (B22).
+// Each platform opens what the tests open and is taken down; nothing here is asserted.
+for (const p of [phone('android'), phone('ios'), nullPlatform({ kind: 'browser', mobile: true })]) {
+  if (p.kind === 'android' || p.kind === 'ios') await loadPlatformStyles(p.kind);
+  const { client } = await start(p);
+  client.nav.navigate(STUFF as never);
+  await until(() => document.querySelector('[data-kit="stuff-tile"], [data-part="stuff.page"]') !== null, 60_000);
+  q('[aria-label^="More for "]')?.click();
+  await until(() => document.querySelector('[role="menu"][data-state="open"]') !== null, 60_000);
+  client.nav.navigate(SETTINGS as never);
+  await until(() => document.querySelector('[data-part~="settings.item"], [data-kit="settings-frame"]') !== null, 60_000);
+  for (const s of stops) s();
+  stops = [];
+  document.documentElement.removeAttribute('data-platform');
+  document.body.innerHTML = '';
+}

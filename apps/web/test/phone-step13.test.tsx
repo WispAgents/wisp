@@ -39,10 +39,6 @@ async function start(platform: Platform, o: { computers?: boolean; history?: Ret
     shell.dispose();
   });
   await until(() => root.querySelectorAll('[data-pane="list"] [data-part="card"][data-id]').length > 2);
-  // the look's chunks the shell started loading as it set data-platform (the overlays' phone halves: the long-press
-  // sheet), landed before the test presses anything, as on a phone they land with the first screen (B22: a cold
-  // chunk on a busy runner outlasted the long-press's wait)
-  await loadPlatformStyles(platform.kind === 'ios' ? 'ios' : 'android');
   return { root, mock, client, shell: shell.context };
 }
 
@@ -296,3 +292,22 @@ test('a_filter_that_changes_the_lists_order_moves_next_task_with_it', async () =
   await until(() => String((client.nav.nav().main as { id: string }).id) === order[0]);
   expect(String((client.nav.nav().main as { id: string }).id)).toBe(order[0]);
 });
+
+// The screens' lazy chunks (each look's stylesheet and the overlays' phone halves, the Tasks list, the phone head and
+// nav, the task page and its menu), compiled while vitest collects this file, off the tests' clock (the
+// dynamic-import-in-test rule's reason): on a busy Windows runner a cold chunk outlasted the first test's waits (B22).
+// Each look draws the list once, opens a task and its menu, and is taken down; nothing here is asserted.
+for (const kind of ['android', 'ios'] as const) {
+  await loadPlatformStyles(kind);
+  const { root, client } = await start(phone(kind));
+  await until(() => cards(root).length > 2, 60_000);
+  const id = cards(root)[0]?.dataset['id'];
+  if (id) client.nav.navigate({ t: 'openTask', id: id as never });
+  await until(() => q('[data-part="phone.task.bar"] [data-kit="app-bar-actions"] > [aria-label="More"]') !== null, 60_000);
+  q('[data-part="phone.task.bar"] [data-kit="app-bar-actions"] > [aria-label="More"]')?.click();
+  await until(() => document.querySelector('[data-kit="menu-item"]') !== null, 60_000);
+  for (const s of stops) s();
+  stops = [];
+  document.documentElement.removeAttribute('data-platform');
+  document.body.innerHTML = '';
+}

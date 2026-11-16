@@ -1,6 +1,6 @@
 // The queued follow-ups inside the reply box (v1 queued.js, composer.css .c-queued .cq): one row each on the kit's
 // QueuedRow, keyed so a reorder moves the rows; Send now, Combine, the grip, Move up / down and × still act.
-import { afterEach, beforeAll, expect, test, vi } from 'vitest';
+import { afterEach, expect, test, vi } from 'vitest';
 import { createSignal } from 'solid-js';
 import { render } from 'solid-js/web';
 import { preloadControls } from '@wisp/ui';
@@ -9,9 +9,10 @@ import { QueueList, type QueueActions } from '../src/ui/QueueList.tsx';
 import type { Env } from '../src/env.ts';
 import type { QueueItem, Row } from '../src/types.ts';
 
-// the row menu's machine is a lazy chunk (lazy-part.ts): loaded before the tests, as the app does once the first screen
-// is up, so a right-click's wait is the menu opening, not the chunk's first compile on a busy runner (B23)
-beforeAll(() => preloadControls());
+// the row menu's machine is a lazy chunk (lazy-part.ts): loaded while vitest collects this file, off the tests' clock
+// (the dynamic-import-in-test rule's reason), as the app loads it once the first screen is up, so a right-click's wait
+// is the menu opening, not the chunk's first compile on a busy runner (B23)
+await preloadControls();
 
 let dispose: (() => void) | undefined;
 afterEach(() => {
