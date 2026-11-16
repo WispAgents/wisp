@@ -6,6 +6,8 @@ name = "server-budgets"
 version = "0.0.0"
 edition = "2024"
 publish = false
+# `src/bin/steps.rs` (the stream's evidence) is the second bin; a bare `cargo run` stays the gate
+default-run = "server-budgets"
 
 [workspace]
 
@@ -19,6 +21,9 @@ wisp-runtime = { path = "../../plugins/runtime/host" }
 wisp-runtime-api = { path = "../../plugins/runtime/api" }
 wisp-runtime-core = { path = "../../plugins/runtime/core" }
 wisp-store = { path = "../../crates/wisp-store" }
+# `steps`: real transcripts through wisp's own Claude parser, as `drive.rs` reads them
+wisp-claude-core = { path = "../../plugins/claude/core" }
+wisp-harness-kit = { path = "../../crates/wisp-harness-kit" }
 
 # the root's `budgets` profile, setting for setting: CI builds `wisp` and this spike with `--profile budgets` into one
 # target dir, so the dependencies both use compile once

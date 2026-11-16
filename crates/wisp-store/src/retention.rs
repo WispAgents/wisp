@@ -1,4 +1,5 @@
-//! Retention (plan §4.1): change rows are kept 7 days or 1M rows, whichever keeps fewer; mutation records
+//! Retention (plan §4.1): change rows are kept 7 days or 1M rows, whichever keeps fewer, but never the newest (its
+//! seq is the next one's base, ADR-0085); mutation records
 //! 24 h. And the epoch: a fresh random value on restore or import, so a cursor from before is never trusted.
 
 use std::sync::PoisonError;
@@ -42,7 +43,9 @@ fn prune(db: &Connection, r: Retention, now: i64) -> Result<PruneResult> {
         let first_kept: Option<i64> =
             db.query_row("SELECT seq FROM change WHERE at >= ? ORDER BY seq LIMIT 1", [now - r.change_ms], |row| row.get(0)).optional()?;
         let by_age = first_kept.map_or(head, |s| s - 1);
-        let upto = by_age.max(head - r.change_rows);
+        // never the newest: its seq is what the next one counts from (no AUTOINCREMENT, ADR-0085), so the feed
+        // never empties and a seq is never handed out twice
+        let upto = by_age.max(head - r.change_rows).min(head - 1);
         let changes = prune_changes(db, upto)?;
         let mutations = db.execute("DELETE FROM mutation WHERE at < ?", [now - r.mutation_ms])?;
         Ok(PruneResult { changes, mutations: mutations as u64 })

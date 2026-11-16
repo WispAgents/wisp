@@ -106,21 +106,40 @@ async fn the_row_cap_wins_when_it_keeps_fewer_and_seqs_are_never_reused() {
     assert_eq!(seqs, vec![8, 9, 10]);
     f.clock.advance(8 * DAY);
     f.store.prune().await.unwrap();
-    assert_eq!((f.store.head_seq().unwrap(), f.store.oldest_seq().unwrap()), (10, 11));
+    // every row is past 7 days, but the newest stays: the next seq counts from it (ADR-0085, no AUTOINCREMENT)
+    assert_eq!((f.store.head_seq().unwrap(), f.store.oldest_seq().unwrap()), (10, 10));
     assert!(f.store.can_resume(10).unwrap(), "a client that saw everything still resumes");
     f.store.write(|w| w.upsert("session", session("after"))).await.unwrap();
     assert_eq!(f.store.head_seq().unwrap(), 11);
+}
+
+/// ADR-0085: with no AUTOINCREMENT, a table retention emptied would hand out 1 again; it never empties, so however
+/// often everything ages out, the next seq is past every one a cursor has seen.
+#[tokio::test]
+async fn retention_never_takes_the_newest_change_so_no_seq_comes_back() {
+    let f = open();
+    for round in 0..3 {
+        f.store.write(move |w| w.upsert("session", session(&format!("s{round}")))).await.unwrap();
+        let head = f.store.head_seq().unwrap();
+        f.clock.advance(8 * DAY);
+        f.store.prune().await.unwrap();
+        assert_eq!((f.store.head_seq().unwrap(), f.store.oldest_seq().unwrap()), (head, head), "round {round}");
+        f.store.write(move |w| w.upsert("session", session(&format!("t{round}")))).await.unwrap();
+        assert_eq!(f.store.head_seq().unwrap(), head + 1, "round {round}: the next seq is new");
+    }
 }
 
 #[tokio::test]
 async fn pruned_changes_take_their_extra_topics_with_them() {
     let f = open();
     f.store.write(|w| w.upsert("session", session("a"))).await.unwrap();
+    // the newest change always stays (ADR-0085): an older one on another topic is the one retention keeps
+    f.store.write(|w| w.upsert("session", session("z"))).await.unwrap();
     f.clock.advance(8 * DAY);
     f.store.prune().await.unwrap();
     f.store.write(|w| w.upsert("session", session("b"))).await.unwrap();
     assert!(f.store.changes_since(0, Some(&["session:a"]), 100).unwrap().is_empty());
     assert_eq!(f.store.changes_since(0, Some(&["session:b"]), 100).unwrap()[0].topics, vec!["list", "session:b"]);
     let left: i64 = f.store.read(|r| r.count("session", &wisp_store::Query::new()).map(|n| i64::try_from(n).unwrap_or(0))).unwrap();
-    assert_eq!(left, 2, "retention never touches entity rows");
+    assert_eq!(left, 3, "retention never touches entity rows");
 }

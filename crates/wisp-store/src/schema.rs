@@ -86,6 +86,31 @@ pub const KERNEL_MIGRATIONS: &[Migration] = &[
     Migration::sql(2, crate::events::SQL),
     // a setting's own value under another plugin's lock (`value` is what's in force, what clients read)
     Migration::sql(3, "ALTER TABLE setting ADD COLUMN saved TEXT;"),
+    // ADR-0085: the change feed without AUTOINCREMENT, whose `sqlite_sequence` row cost a 4 KB WAL page in every
+    // commit (10 % of what 10 streaming tasks wrote). A seq still never comes back: retention keeps the newest row
+    // (`retention::prune`), so max(seq), the next one's base, never goes down. A feed whose high-water mark is past
+    // its rows (retention emptied it) loses its epoch, so every cursor from before is distrusted (`init_epoch` makes
+    // a fresh one).
+    Migration::sql(
+        4,
+        r"
+    DELETE FROM meta WHERE key = 'epoch'
+      AND (SELECT seq FROM sqlite_sequence WHERE name = 'change') > (SELECT coalesce(max(seq), 0) FROM change);
+    CREATE TABLE change_next (
+      seq INTEGER PRIMARY KEY,
+      topic TEXT NOT NULL,
+      more TEXT,
+      entity TEXT NOT NULL,
+      id TEXT NOT NULL,
+      op TEXT NOT NULL CHECK (op IN ('upsert', 'patch', 'del', 'append')),
+      patch TEXT,
+      at INTEGER NOT NULL
+    ) STRICT;
+    INSERT INTO change_next (seq, topic, more, entity, id, op, patch, at) SELECT seq, topic, more, entity, id, op, patch, at FROM change;
+    DROP TABLE change;
+    ALTER TABLE change_next RENAME TO change;
+    ",
+    ),
 ];
 
 fn config_topic(_: &Row) -> Vec<String> {

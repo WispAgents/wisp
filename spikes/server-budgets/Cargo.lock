@@ -663,6 +663,8 @@ dependencies = [
  "events-bench",
  "serde_json",
  "tokio",
+ "wisp-claude-core",
+ "wisp-harness-kit",
  "wisp-runtime",
  "wisp-runtime-api",
  "wisp-runtime-core",
@@ -1084,6 +1086,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "wisp-claude-core"
+version = "2.0.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "wisp-harness-kit",
+]
+
+[[package]]
 name = "wisp-crew-api"
 version = "2.0.0"
 dependencies = [
@@ -1100,6 +1111,15 @@ name = "wisp-envmask"
 version = "2.0.0"
 dependencies = [
  "regex",
+ "serde_json",
+]
+
+[[package]]
+name = "wisp-harness-kit"
+version = "2.0.0"
+dependencies = [
+ "regex",
+ "serde",
  "serde_json",
 ]
 

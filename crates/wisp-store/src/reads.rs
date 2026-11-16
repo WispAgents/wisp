@@ -106,9 +106,10 @@ impl Reader<'_> {
     pub fn window(&self, kind: &str, parent: &str, before: Option<i64>, limit: u32) -> Result<Vec<Row>> {
         window(self.db, &*self.shared.kind(kind)?, parent, before, limit)
     }
-    /// Committed changes after `seq`, oldest first; only those on `topics` when given (≤ 10,000 per call).
+    /// Committed changes after `seq`, oldest first; only those on `topics` when given (≤ 10,000 per call). An
+    /// append carries its rows as they are now (the feed keeps their keys, ADR-0085).
     pub fn changes_since(&self, seq: i64, topics: Option<&[&str]>, limit: u32) -> Result<Vec<ChangeRow>> {
-        changes::read(self.db, seq, topics, limit)
+        changes::read_whole(self.db, &|k| self.shared.kind(k).ok(), seq, topics, limit)
     }
     /// The rows on `topic` changed after `since`, as they are now; `None` when retention dropped part of
     /// that range (the client takes a snapshot).

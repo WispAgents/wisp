@@ -229,6 +229,64 @@ fn the_fake_claude_streams_stamped_text_at_the_rate_asked() {
     assert!(!out.contains("~stamp:"), "a probe streams nothing: {out}");
 }
 
+/// `FAKE_STREAM_MIX=agent` (spikes/server-budgets' stream, ADR-0085): the lines are a real agent's steps in `MIX`'s
+/// order (thinking, Bash calls, their results right after them, answers), every one stamped in order, each result
+/// naming the call before it, the turn still ending with its result.
+#[test]
+fn the_fake_claude_streams_a_real_agents_steps_in_the_mix() {
+    let d = tmp("mix");
+    let bin = d.join("bin");
+    install_fakes(&bin, &["claude"]);
+    let work = d.join("work");
+    std::fs::create_dir_all(&work).unwrap();
+    let env = [("FAKE_STREAM", "400"), ("FAKE_STREAM_MS", "100"), ("FAKE_STREAM_MIX", "agent")];
+    let (code, out, _) = run(&bin.join("claude"), &["-p", "--output-format", "stream-json"], &work, "go", &env);
+    assert_eq!(code, 0);
+    let lines: Vec<Value> = out.lines().filter(|l| l.contains("~stamp:")).map(|l| serde_json::from_str(l).unwrap()).collect();
+    assert_eq!(lines.len(), 40, "100 ms at 400 a second: two cycles of 20");
+    let kind = |v: &Value| {
+        let part = &v["message"]["content"][0];
+        part["type"].as_str().unwrap().to_owned()
+    };
+    let kinds: Vec<String> = lines.iter().map(kind).collect();
+    let cycle = [
+        "thinking",
+        "tool_use",
+        "tool_result",
+        "tool_use",
+        "tool_result",
+        "text",
+        "thinking",
+        "tool_use",
+        "tool_result",
+        "tool_use",
+        "tool_result",
+        "thinking",
+        "tool_use",
+        "tool_result",
+        "tool_use",
+        "tool_result",
+        "thinking",
+        "tool_use",
+        "tool_result",
+        "text",
+    ];
+    assert_eq!(kinds[..20], cycle.map(str::to_owned), "{kinds:?}");
+    assert_eq!(kinds[20..], kinds[..20]);
+    for (n, (v, k)) in lines.iter().zip(&kinds).enumerate() {
+        let text = v.to_string();
+        assert!(text.contains(&format!(":{n}:")), "line {n} carries its stamp: {text}");
+        if k == "tool_result" {
+            assert_eq!(v["type"], "user");
+            assert_eq!(lines[n - 1]["message"]["content"][0]["id"], v["message"]["content"][0]["tool_use_id"], "a result names its call");
+        }
+    }
+    // the biggest of the cycle (its 2 925 B answer) is padded to its size, the line around it included
+    let longest = lines.iter().map(|v| v.to_string().len()).max().unwrap();
+    assert!((2_900..3_100).contains(&longest), "{longest}");
+    assert_eq!(serde_json::from_str::<Value>(out.lines().last().unwrap()).unwrap()["type"], "result");
+}
+
 #[test]
 fn the_fake_gh_keeps_pull_requests() {
     let d = tmp("gh");

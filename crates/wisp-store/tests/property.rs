@@ -1,6 +1,7 @@
 //! Property: whatever sequence of upsert / patch / del / append runs (refused ops and rolled-back
 //! transactions included), replaying the change feed over an empty map gives the tables' state, and what
-//! listeners hear is exactly what `changes_since` reads back (property.test.ts: 25 seeds × 40 txs).
+//! listeners hear is exactly what `changes_since` reads back, but for appended rows deleted since: the feed keeps an
+//! append's keys and reads its rows back from their table (ADR-0085) (property.test.ts: 25 seeds × 40 txs).
 #![allow(
     clippy::unwrap_used,
     clippy::expect_used,
@@ -15,7 +16,7 @@ mod common;
 use std::collections::{BTreeMap, HashMap};
 use std::sync::{Arc, Mutex};
 
-use common::{event, open, session_with};
+use common::{event, open, open_disk, session_with};
 use serde_json::{Value, json};
 use wisp_store::json_patch::apply;
 use wisp_store::{ChangeOp, ChangeRow, PatchOp, Query, Row, Store, StoreError, Writer};
@@ -146,7 +147,41 @@ fn what_listeners_hear_is_exactly_what_changes_since_reads_back() {
         let (rng, next_seq) = (rng.clone(), next_seq.clone());
         f.store.write_blocking(move |w| step(w, &mut rng.lock().unwrap(), &mut next_seq.lock().unwrap())).unwrap();
     }
-    let heard = heard.lock().unwrap().clone();
+    let mut heard = heard.lock().unwrap().clone();
     assert!(heard.len() > 20);
-    assert_eq!(heard, f.store.changes_since(0, None, 10_000).unwrap());
+    let read = f.store.changes_since(0, None, 10_000).unwrap();
+    // an appended row deleted since is the one difference: the feed reads an append's rows back from their table
+    // (`an_appends_change_row_stores_the_keys_and_reads_back_the_rows` deletes one)
+    for c in heard.iter_mut().filter(|c| c.op == ChangeOp::Append) {
+        if let Some(rows) = c.patch.as_array_mut() {
+            rows.retain(|r| f.store.get("event", r["id"].as_i64().unwrap()).unwrap().is_some());
+        }
+    }
+    assert_eq!(heard, read);
+}
+
+/// ADR-0085: an append's change row stores each row's key, not the row (the row is in its table); listeners still
+/// hear the whole rows, and `changes_since` reads them back whole.
+#[test]
+fn an_appends_change_row_stores_the_keys_and_reads_back_the_rows() {
+    let f = open_disk(None);
+    let heard = Arc::new(Mutex::new(Vec::new()));
+    let h = heard.clone();
+    let _sub = f.store.on_commit(move |c| h.lock().unwrap().extend(c.iter().cloned()));
+    f.store.write_blocking(|w| w.upsert("session", session_with("s1", json!({"title": "t"})))).unwrap();
+    let rows = f
+        .store
+        .write_blocking(|w| {
+            w.append("event", vec![event("s1", 0, "text", json!({"text": "x".repeat(500)})), event("s1", 1, "text", json!({"i": 1}))])
+        })
+        .unwrap();
+    let ids: Vec<Value> = rows.iter().map(|r| r["id"].clone()).collect();
+    let db = wisp_store::rusqlite::Connection::open(f.home.as_ref().unwrap().join("wisp.db")).unwrap();
+    let stored: String = db.query_row("SELECT patch FROM change WHERE seq = 2", [], |r| r.get(0)).unwrap();
+    assert_eq!(serde_json::from_str::<Value>(&stored).unwrap(), json!([{"id": ids[0]}, {"id": ids[1]}]));
+    let whole: Vec<Value> = rows.into_iter().map(Value::Object).collect();
+    assert_eq!(heard.lock().unwrap()[1].patch, Value::Array(whole.clone()), "listeners hear the rows");
+    assert_eq!(f.store.changes_since(1, None, 10).unwrap()[0].patch, Value::Array(whole.clone()), "the feed reads them back");
+    f.store.write_blocking(move |w| w.del("event", ids[0].as_i64().unwrap()).map(drop)).unwrap();
+    assert_eq!(f.store.changes_since(1, None, 10).unwrap()[0].patch, json!([whole[1]]), "a row deleted since is left out");
 }

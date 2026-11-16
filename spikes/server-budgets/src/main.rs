@@ -35,7 +35,7 @@ const IDLE_RSS_MB: f64 = 120.0;
 const LIST_MS: f64 = 5.0;
 const PATCH_P99_MS: f64 = 150.0;
 const APPEND_PER_S: f64 = 20_000.0;
-const WRITE_AMPLIFICATION: f64 = 15.0;
+const WRITE_AMPLIFICATION: f64 = 48.0;
 
 const TASKS: usize = 5_000;
 const COLD_RUNS: usize = 7;
@@ -47,15 +47,49 @@ const RSS_WINDOW: usize = 8;
 const RSS_SPREAD_KB: u64 = 1024;
 const RSS_CAP: Duration = Duration::from_secs(30);
 /// One heavy user (plan §8): 10 running tasks, 4 clients each on `list` and every running task's topic (the worst
-/// fan-out: G3's clients hold one open task each). Each task streams 20 lines a second (10× G3's harness rate) for 6 s,
-/// 400 B a line (the runtime bench's 2 MB in 5 000 events).
+/// fan-out: G3's clients hold one open task each). Each task streams a real agent's steps (the fake's
+/// `FAKE_STREAM_MIX=agent`: thinking, Bash calls, their results, answers, sized as 275 374 real steps were) at 2 a
+/// second for 10 s: above the busiest 10 s of 99 % of 3 872 real turns (1.8 a second; README *The stream's shape*).
 const RUNNING: usize = 10;
 const CLIENTS: usize = 4;
-const STREAM_PER_S: u64 = 20;
-const STREAM_MS: u64 = 6_000;
-const STREAM_BYTES: usize = 400;
-/// stamped lines each task writes: the n-th is due at n / rate, n from 0, while that is under `STREAM_MS`
-const STAMPS: usize = (STREAM_PER_S * STREAM_MS).div_ceil(1000) as usize;
+const STREAM: Shape = Shape { per_s: 2, ms: 10_000, mix: Mix::Agent };
+/// `--stream=<per_s>:<ms>:text`'s line length (ADR-0082's stream: 400 B text lines, the runtime bench's 2 MB in 5 000)
+const TEXT_BYTES: usize = 400;
+
+/// What each running task streams: `FAKE_STREAM` lines a second for `FAKE_STREAM_MS`, of `FAKE_STREAM_MIX`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct Shape {
+    per_s: u64,
+    ms: u64,
+    mix: Mix,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Mix {
+    /// a real agent's steps (`FAKE_STREAM_MIX=agent`)
+    Agent,
+    /// `TEXT_BYTES` of assistant text a line (ADR-0082's first stream)
+    Text,
+}
+
+impl Shape {
+    /// stamped lines each task writes: the n-th is due at n / rate, n from 0, while that is under `ms`
+    fn stamps(self) -> usize {
+        usize::try_from((self.per_s * self.ms).div_ceil(1000)).unwrap_or(usize::MAX)
+    }
+
+    /// `--stream=<per_s>:<ms>:<agent|text>`, to measure another shape by hand (the gate is `STREAM`)
+    fn parse(s: &str) -> Option<Self> {
+        let mut p = s.split(':');
+        let (per_s, ms) = (p.next()?.parse().ok().filter(|r| *r > 0)?, p.next()?.parse().ok().filter(|m| *m > 0)?);
+        let mix = match p.next()? {
+            "agent" => Mix::Agent,
+            "text" => Mix::Text,
+            _ => return None,
+        };
+        p.next().is_none().then_some(Self { per_s, ms, mix })
+    }
+}
 
 /// The harness CLIs wisp looks for, by file name and override variable (crates/wisp/tests/common `FAKES`, plus gh).
 const FAKES: [(&str, &str); 8] = [
@@ -83,6 +117,7 @@ struct Opts {
     fake: PathBuf,
     summary: Option<PathBuf>,
     keep: bool,
+    stream: Shape,
 }
 
 fn opts() -> Opts {
@@ -95,6 +130,10 @@ fn opts() -> Opts {
         fake: arg("fake").map_or_else(|| built("wisp-fake-agent"), PathBuf::from),
         summary: arg("summary").or_else(|| std::env::var("GITHUB_STEP_SUMMARY").ok()).filter(|s| !s.is_empty()).map(PathBuf::from),
         keep: std::env::args().any(|a| a == "--keep"),
+        stream: arg("stream").map_or(Some(STREAM), |s| Shape::parse(&s)).unwrap_or_else(|| {
+            eprintln!("server budgets: --stream=<lines a second>:<ms>:<agent|text>");
+            std::process::exit(2);
+        }),
     }
 }
 
@@ -151,6 +190,7 @@ fn seed(home: &Path, projects: &[String]) -> Res<Duration> {
 struct Bench {
     dir: PathBuf,
     wisp: PathBuf,
+    stream: Shape,
 }
 
 /// A `wisp serve` this bench started: stopped (SIGTERM, then SIGKILL after 10 s) when dropped, by its own pid only.
@@ -213,9 +253,10 @@ impl Bench {
             .env("WISP_TELEMETRY", "0")
             .env("WISP_UPDATE_CHECK", "0")
             // only a run streams or waits on the gate: the probes and the other servers here start none
-            .env("FAKE_STREAM", STREAM_PER_S.to_string())
-            .env("FAKE_STREAM_MS", STREAM_MS.to_string())
-            .env("FAKE_STREAM_BYTES", STREAM_BYTES.to_string())
+            .env("FAKE_STREAM", self.stream.per_s.to_string())
+            .env("FAKE_STREAM_MS", self.stream.ms.to_string())
+            .env("FAKE_STREAM_BYTES", TEXT_BYTES.to_string())
+            .env("FAKE_STREAM_MIX", if self.stream.mix == Mix::Agent { "agent" } else { "text" })
             .env("FAKE_GATE", self.dir.join("gates"))
             .envs(FAKES.map(|(n, var)| (var, bin.join(n))))
             .stdin(Stdio::null())
@@ -678,7 +719,8 @@ fn stream(b: &Bench, port: u16, projects: &[String]) -> Res<Stream> {
     let mut topics = vec!["list".to_owned()];
     topics.extend(ids.iter().map(|id| format!("session:{id}")));
     let sh = Shared { stop: false.into(), ready: 0.into(), seen: 0.into() };
-    let expected = RUNNING * STAMPS * CLIENTS;
+    let stamps = b.stream.stamps();
+    let expected = RUNNING * stamps * CLIENTS;
     let (db, wal) = (b.home().join("wisp.db"), b.home().join("wisp.db-wal"));
     std::thread::scope(|scope| -> Res<Stream> {
         let clients: Vec<_> = (0..CLIENTS)
@@ -721,7 +763,7 @@ fn stream(b: &Bench, port: u16, projects: &[String]) -> Res<Stream> {
             let opened = Instant::now();
             for id in &ids {
                 while last_turn(port, id)?.1 == "running" {
-                    if opened.elapsed() > Duration::from_millis(STREAM_MS) + Duration::from_secs(60) {
+                    if opened.elapsed() > Duration::from_millis(b.stream.ms) + Duration::from_secs(60) {
                         return Err(format!("task {id}'s turn never ended"));
                     }
                     std::thread::sleep(Duration::from_millis(50));
@@ -755,10 +797,10 @@ fn stream(b: &Bench, port: u16, projects: &[String]) -> Res<Stream> {
             (payload, steps) = (payload + b, steps + n);
         }
         Ok(Stream {
-            // only stamps a task writes (n under STAMPS): a stray one can never stand in for a patch that went missing
+            // only stamps a task writes (n under `stamps`): a stray one can never stand in for a patch that went missing
             lat: seen
                 .iter()
-                .flat_map(|s| s.first.iter().filter(|((_, n), _)| usize::try_from(*n).is_ok_and(|n| n < STAMPS)).map(|(_, l)| *l))
+                .flat_map(|s| s.first.iter().filter(|((_, n), _)| usize::try_from(*n).is_ok_and(|n| n < stamps)).map(|(_, l)| *l))
                 .collect(),
             expected,
             frames: seen.iter().map(|s| s.frames).sum(),
@@ -909,6 +951,8 @@ struct Report {
     patch: Patch,
     append_per_s: f64,
     amp: Amp,
+    /// what each running task streamed
+    stream: Shape,
 }
 
 /// The patch latency, as the report needs it.
@@ -1041,9 +1085,13 @@ impl Report {
             ),
             String::new(),
             format!(
-                "The stream: {RUNNING} tasks × {STAMPS} lines ({STREAM_PER_S} a second, {STREAM_BYTES} B) through the fake claude, \
+                "The stream: {RUNNING} tasks × {} lines ({} a second for {:.0} s, {}) through the fake claude, \
                  each client on `list` and all {RUNNING} task topics; the last turn ended {:.1} s after the gate opened; \
                  the clients read {} frames, {:.0} KB.",
+                self.stream.stamps(),
+                self.stream.per_s,
+                self.stream.ms as f64 / 1000.0,
+                if self.stream.mix == Mix::Agent { "a real agent's steps".to_owned() } else { format!("{TEXT_BYTES} B of text") },
                 self.patch.took.as_secs_f64(),
                 self.patch.frames,
                 self.patch.bytes as f64 / 1024.0
@@ -1082,7 +1130,7 @@ fn run(o: &Opts, dir: &Path) -> Res<Report> {
     if !o.wisp.is_file() {
         return Err(format!("no wisp binary at {} (cargo build --profile budgets -p wisp, or --wisp=<bin>)", o.wisp.display()));
     }
-    let b = Bench { dir: dir.to_owned(), wisp: o.wisp.clone() };
+    let b = Bench { dir: dir.to_owned(), wisp: o.wisp.clone(), stream: o.stream };
     if !o.fake.is_file() {
         return Err(format!("no fake agent at {} (cargo build --profile budgets -p wisp-testkit, or --fake=<bin>)", o.fake.display()));
     }
@@ -1173,6 +1221,7 @@ fn run(o: &Opts, dir: &Path) -> Res<Report> {
         patch,
         append_per_s,
         amp: Amp { wal: st.wal, db, payload: st.payload, steps: st.steps },
+        stream: o.stream,
     })
 }
 
@@ -1219,7 +1268,7 @@ mod tests {
     use super::*;
 
     fn report(cold: u64, rss_mb: u64, settled: bool, list_us: u64) -> Report {
-        report_all(cold, rss_mb, settled, list_us, 150_000, 20_000.0, 15)
+        report_all(cold, rss_mb, settled, list_us, 150_000, 20_000.0, 48)
     }
 
     fn report_all(cold: u64, rss_mb: u64, settled: bool, list_us: u64, patch_us: u64, append: f64, amp_x: u64) -> Report {
@@ -1239,6 +1288,7 @@ mod tests {
             patch: Patch { lat: vec![patch_us; 100], expected: 100, frames: 0, bytes: 0, took: Duration::ZERO },
             append_per_s: append,
             amp: Amp { wal: amp_x * 1000, db: 0, payload: 1000, steps: 1 },
+            stream: STREAM,
         }
     }
 
@@ -1307,7 +1357,7 @@ mod tests {
     #[test]
     fn each_budget_misses_on_its_own_and_the_budget_itself_passes() {
         assert!(report(150, 120, true, 5_000).over().is_empty());
-        let over = report_all(151, 121, true, 5_001, 150_001, 19_999.0, 16).over();
+        let over = report_all(151, 121, true, 5_001, 150_001, 19_999.0, 49).over();
         assert_eq!(over.len(), 6, "{over:?}");
         let starts = ["cold start", "idle RSS", "task list", "patch latency", "durable append", "write amplification"];
         for (o, s) in over.iter().zip(starts) {
@@ -1316,7 +1366,7 @@ mod tests {
         for (i, r) in [
             report_all(10, 50, true, 1_000, 150_001, 30_000.0, 2),
             report_all(10, 50, true, 1_000, 1_000, 19_999.0, 2),
-            report_all(10, 50, true, 1_000, 1_000, 30_000.0, 16),
+            report_all(10, 50, true, 1_000, 1_000, 30_000.0, 49),
         ]
         .iter()
         .enumerate()
@@ -1342,11 +1392,22 @@ mod tests {
     }
 
     #[test]
+    fn a_stream_shape_parses_or_is_refused() {
+        assert_eq!(Shape::parse("20:6000:text"), Some(Shape { per_s: 20, ms: 6_000, mix: Mix::Text }));
+        assert_eq!(Shape::parse("2:10000:agent"), Some(STREAM));
+        for bad in ["", "2", "2:10000", "0:10000:agent", "2:0:agent", "2:10000:noise", "2:10000:agent:x", "x:1:text"] {
+            assert_eq!(Shape::parse(bad), None, "{bad}");
+        }
+        assert_eq!(STREAM.stamps(), 20);
+        assert_eq!(Shape { per_s: 3, ms: 1_001, mix: Mix::Text }.stamps(), 4, "n / rate under ms: 0, ⅓, ⅔, 1");
+    }
+
+    #[test]
     fn no_payload_is_an_infinite_amplification_never_a_pass() {
         assert!(Amp { wal: 0, db: 0, payload: 0, steps: 0 }.x().is_infinite());
         let mut r = report(10, 50, true, 1_000);
         r.amp = Amp { wal: 0, db: 0, payload: 0, steps: 0 };
-        assert_eq!(r.over(), vec!["write amplification inf× > 15×".to_owned()]);
+        assert_eq!(r.over(), vec!["write amplification inf× > 48×".to_owned()]);
         assert!((Amp { wal: 9_000, db: 1_000, payload: 1_000, steps: 3 }.x() - 10.0).abs() < 1e-9);
     }
 

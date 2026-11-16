@@ -225,8 +225,16 @@ impl Writer<'_> {
         for (group, idx) in groups {
             let list: Vec<&Row> = idx.iter().map(|&i| &stored[i]).collect();
             let topics = topics_of(&k, &list)?;
+            // the feed keeps each row's key only: the row is in its table already, and a copy here was most of a
+            // streaming commit's change-table bytes (ADR-0085); what listeners hear is the whole row
+            let key = k.def.key;
+            let keys = Value::Array(
+                list.iter()
+                    .map(|r| Value::Object(std::iter::once((key.to_owned(), r.get(key).cloned().unwrap_or(Value::Null))).collect()))
+                    .collect(),
+            );
             let patch = Value::Array(list.into_iter().map(|r| Value::Object(r.clone())).collect());
-            self.record(&k, ChangeOp::Append, group, patch, topics)?;
+            self.record_as(&k, ChangeOp::Append, group, patch, Some(&keys), topics)?;
         }
         Ok(stored)
     }
@@ -238,13 +246,27 @@ impl Writer<'_> {
         k.decode_returning(r, given)
     }
 
-    fn record(&mut self, k: &Kind, op: ChangeOp, id: String, patch: Value, mut topics: Vec<Topic>) -> Result<()> {
+    fn record(&mut self, k: &Kind, op: ChangeOp, id: String, patch: Value, topics: Vec<Topic>) -> Result<()> {
+        self.record_as(k, op, id, patch, None, topics)
+    }
+
+    /// `stored`: what the change row keeps when it isn't `patch` itself (an append's keys); listeners get `patch`.
+    fn record_as(
+        &mut self,
+        k: &Kind,
+        op: ChangeOp,
+        id: String,
+        patch: Value,
+        stored: Option<&Value>,
+        mut topics: Vec<Topic>,
+    ) -> Result<()> {
         if op == ChangeOp::Patch && patch.as_array().is_some_and(Vec::is_empty) {
             return Ok(());
         }
         let topic = topics.remove(0); // topics_of never returns an empty list
         topics.sort(); // the order the feed reads them back in
-        let text = if patch.is_null() { None } else { Some(serde_json::to_string(&patch)?) };
+        let kept = stored.unwrap_or(&patch);
+        let text = if kept.is_null() { None } else { Some(serde_json::to_string(kept)?) };
         let more = if topics.is_empty() { None } else { Some(topics.join(" ")) };
         self.db
             .prepare_cached("INSERT INTO change (topic, more, entity, id, op, patch, at) VALUES (?, ?, ?, ?, ?, ?, ?)")?

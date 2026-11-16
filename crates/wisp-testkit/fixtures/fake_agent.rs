@@ -18,6 +18,8 @@
 //!                      init, each line `FAKE_STREAM_BYTES` (400) long, its text starting `~stamp:<pid>:<n>:<unix µs>~`
 //!                      (when it was written: spikes/server-budgets times each one to the clients' patches), paced
 //!                      against its start so a slow write never makes the stream fall behind, then ends as usual
+//!   `FAKE_STREAM_MIX=agent`  with `FAKE_STREAM`: the lines are a real agent's steps instead of text, `MIX` in turn
+//!                      (thinking, Bash calls, their results, answers), each sized so the step wisp keeps is its bytes
 //!   `FAKE_CODEX_USAGE` a file: codex app-server's `account/rateLimits/read` answers its JSON as `rateLimits`
 //!   `FAKE_CLI_VERSION` what --version says (9.9.9); `FAKE_AUTH_PROFILE`, `FAKE_AUTH_FAIL` for `auth status --text`
 //!   TOPIC[…] in the prompt: the hero names it
@@ -223,6 +225,64 @@ fn claude(prompt: &str, target: &Path, before: &str, after: &str) {
     );
 }
 
+/// `FAKE_STREAM_MIX=agent`: one cycle of a real agent's steps, `(kind, bytes of the step wisp keeps)`. The bytes are the
+/// 20 ventiles' midpoints (2.5 %, 7.5 %, … 97.5 %) of 275 374 steps that 3 872 real Claude Code turns kept once wisp's
+/// own parser read them (`spikes/server-budgets`' `steps` bin, its README *The stream's shape*), the kinds in their
+/// share (thinking 21 %, calls 35 %, results 34 %, text 9 %), each result after its call.
+const MIX: [(&str, usize); 20] = [
+    ("thinking", 19),
+    ("tool", 86),
+    ("tool_output", 180),
+    ("tool", 222),
+    ("tool_output", 563),
+    ("text", 146),
+    ("thinking", 19),
+    ("tool", 487),
+    ("tool_output", 1988),
+    ("tool", 114),
+    ("tool_output", 264),
+    ("thinking", 19),
+    ("tool", 1350),
+    ("tool_output", 413),
+    ("tool", 327),
+    ("tool_output", 1863),
+    ("thinking", 19),
+    ("tool", 681),
+    ("tool_output", 922),
+    ("text", 2925),
+];
+
+/// What wisp's step adds around the text the CLI sent, by kind (`{"kind":"tool","label":…}`), so a line's text is
+/// padded to the step's size: measured with the `steps` bin on these very lines.
+fn mix_overhead(kind: &str) -> usize {
+    match kind {
+        "thinking" => 29,
+        "tool" => 74,
+        "tool_output" => 61,
+        _ => 35,
+    }
+}
+
+/// Line n of a `FAKE_STREAM_MIX=agent` stream, its text (stamp first) padded to `MIX[n % 20]`'s bytes.
+fn mix_line(session: &str, n: u64, stamp: &str) -> Value {
+    let i = usize::try_from(n % 20).unwrap_or(0);
+    let (kind, bytes) = MIX[i];
+    let mut text = stamp.to_owned();
+    text.extend(std::iter::repeat_n('x', bytes.saturating_sub(mix_overhead(kind) + text.len())));
+    let assistant = |part: Value| json!({ "type": "assistant", "session_id": session, "message": { "content": [part] } });
+    match kind {
+        "thinking" => assistant(json!({ "type": "thinking", "thinking": text, "signature": "fake" })),
+        "tool" => assistant(
+            json!({ "type": "tool_use", "id": format!("mix{n}"), "name": "Bash", "input": { "command": text, "description": "Run it" } }),
+        ),
+        // its call is the line before (every result in MIX follows its call)
+        "tool_output" => {
+            json!({ "type": "user", "session_id": session, "message": { "content": [{ "type": "tool_result", "tool_use_id": format!("mix{}", n.saturating_sub(1)), "content": text }] } })
+        }
+        _ => assistant(json!({ "type": "text", "text": text })),
+    }
+}
+
 /// `FAKE_STREAM`: `rate` assistant text lines a second for `FAKE_STREAM_MS`, each stamped with when it was written.
 /// The n-th line is due at start + n / rate: a late one goes at once and the next keeps the pace.
 #[allow(clippy::cast_precision_loss)] // n stays far below 2^52
@@ -230,6 +290,7 @@ fn stream(session: &str) {
     let Some(rate) = env("FAKE_STREAM").and_then(|v| v.parse::<f64>().ok()).filter(|r| *r > 0.0) else { return };
     let ms = env("FAKE_STREAM_MS").and_then(|v| v.parse::<u64>().ok()).unwrap_or(5000);
     let bytes = env("FAKE_STREAM_BYTES").and_then(|v| v.parse::<usize>().ok()).unwrap_or(400);
+    let mix = env("FAKE_STREAM_MIX").is_some_and(|m| m == "agent");
     let start = std::time::Instant::now();
     let until = std::time::Duration::from_millis(ms);
     let pid = std::process::id();
@@ -243,6 +304,10 @@ fn stream(session: &str) {
         }
         let us = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_micros());
         let mut text = format!("~stamp:{pid}:{n}:{us}~ ");
+        if mix {
+            out(&mix_line(session, n, &text));
+            continue;
+        }
         let line = |text: &str| json!({ "type": "assistant", "session_id": session, "message": { "content": [{ "type": "text", "text": text }] } });
         // padded to the line length asked for (the JSON around the text is counted)
         let pad = bytes.saturating_sub(line(&text).to_string().len());

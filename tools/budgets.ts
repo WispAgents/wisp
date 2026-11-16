@@ -31,8 +31,9 @@ export const SERVER_BUDGETS = {
   patchP99Ms: 150,
   /** durable events a second into the event log, 1 000 a transaction (spikes/events' `append_rate`) */
   appendPerS: 20_000,
-  /** bytes the store wrote (WAL + database growth) ÷ the activity the 10 streaming tasks kept */
-  writeAmplification: 15,
+  /** bytes the store wrote (WAL + database growth) ÷ the activity the 10 streaming tasks kept, at real agents' step
+   * sizes and rates (ADR-0085: a ratchet, lowered by each cut that lands) */
+  writeAmplification: 48,
 } as const;
 
 /** The durable event log's budgets (ADR-0044), measured and gated by `spikes/events` (it exits 1 on a miss). */
@@ -45,8 +46,8 @@ export const EVENT_BUDGETS = {
   replay100kMs: 1_000,
   /** the events:* topic to a client, p99 (the sync path's budget: spikes/sync-bench-rs) */
   topicP99Ms: 150,
-  /** write amplification on the streaming bench: unchanged, since stream events stay ephemeral (the server's budget) */
-  writeAmplification: SERVER_BUDGETS.writeAmplification,
+  /** write amplification of a bulk append (one session streaming 2 MB in 5 000 events: the runtime bench, ADR-0085) */
+  writeAmplification: 15,
 } as const;
 
 const arg = (name: string): string | undefined => process.argv.find((a) => a.startsWith(`--${name}=`))?.slice(name.length + 3);

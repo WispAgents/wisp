@@ -42,7 +42,9 @@ impl ChangeOp {
 }
 
 /// One committed change. `patch` is what sync puts on the wire: the full row for `upsert` (a row that
-/// did not exist), RFC 6902 ops for `patch`, null for `del`, the new rows for `append`.
+/// did not exist), RFC 6902 ops for `patch`, null for `del`, the new rows for `append`. The feed stores an append's
+/// keys only (ADR-0085): read back, its rows are as they are now in their table (a later patch already in them), a
+/// row gone since left out. Live (`on_commit`) an append carries its rows as they were written.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ChangeRow {
     pub seq: i64,
@@ -71,13 +73,10 @@ pub struct Delta {
 pub const MAX_LIMIT: u32 = 10_000;
 const COLS: &str = "seq, topic, more, entity, id, op, patch, at";
 
+/// The newest seq: the rowid's max (the b-tree's last cell, no scan). Retention keeps the newest row, so it never
+/// goes down and SQLite's next rowid (max + 1) is never one a cursor has seen (ADR-0085).
 pub(crate) fn head_seq(db: &Connection) -> Result<i64> {
-    let mut st = db.prepare_cached("SELECT seq FROM sqlite_sequence WHERE name = 'change'")?;
-    let mut rows = st.query([])?;
-    Ok(match rows.next()? {
-        Some(r) => r.get(0)?,
-        None => 0,
-    })
+    Ok(db.prepare_cached("SELECT coalesce(max(seq), 0) FROM change")?.query_row([], |r| r.get(0))?)
 }
 
 pub(crate) fn oldest_seq(db: &Connection) -> Result<i64> {
@@ -123,6 +122,30 @@ pub(crate) fn read(db: &Connection, since: i64, topics: Option<&[&str]>, limit: 
                 }
             }
         }
+    }
+    Ok(out)
+}
+
+/// [`read`], each append's rows read back from their table (the feed keeps their keys only, ADR-0085). A row
+/// deleted since is left out; a kind that isn't loaded keeps the keys.
+pub(crate) fn read_whole(
+    db: &Connection,
+    kinds: &dyn Fn(&str) -> Option<std::sync::Arc<Kind>>,
+    since: i64,
+    topics: Option<&[&str]>,
+    limit: u32,
+) -> Result<Vec<ChangeRow>> {
+    let mut out = read(db, since, topics, limit)?;
+    for c in out.iter_mut().filter(|c| c.op == ChangeOp::Append) {
+        let Some(k) = kinds(&c.entity) else { continue };
+        let keys = c.patch.as_array().map(Vec::as_slice).unwrap_or_default();
+        let mut rows = Vec::with_capacity(keys.len());
+        for key in keys.iter().filter_map(Value::as_object) {
+            if let Some(row) = get_row(db, &k, &k.id_value(key)?)? {
+                rows.push(Value::Object(row));
+            }
+        }
+        c.patch = Value::Array(rows);
     }
     Ok(out)
 }

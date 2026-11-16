@@ -41,8 +41,9 @@ const MEMBER: EntityDef = EntityDef {
 fn a_fresh_database_migrates_kernel_and_owner_from_v0_with_no_snapshot() {
     let home = tmp_home();
     let store = at(&home, 5000);
-    // 2: the durable event log (ADR-0044); 3: a setting's saved value under another plugin's lock
-    assert_eq!(store.schema_version("kernel").unwrap(), 3);
+    // 2: the durable event log (ADR-0044); 3: a setting's saved value under another plugin's lock; 4: the change
+    // feed without AUTOINCREMENT (ADR-0085)
+    assert_eq!(store.schema_version("kernel").unwrap(), 4);
     assert_eq!(store.migrate("crew", V1).unwrap(), MigrateReport { from: 0, to: 1, snapshot: None });
     assert_eq!(store.migrate("crew", V1).unwrap(), MigrateReport { from: 1, to: 1, snapshot: None }, "again is a no-op");
     assert!(!home.join("backups").exists());
@@ -124,4 +125,59 @@ fn old_snapshots_are_pruned_three_per_owner_are_kept() {
     kept.sort();
     assert_eq!(kept, vec!["crew-v3-4000.db", "crew-v4-5000.db", "crew-v5-6000.db"]);
     let _ = json!(null);
+}
+
+/// A kernel v3 database as it was: the change feed on AUTOINCREMENT, its high-water mark in `sqlite_sequence`.
+fn as_kernel_v3(home: &std::path::Path, rows: &[i64], high: i64) {
+    let db = wisp_store::rusqlite::Connection::open(home.join("wisp.db")).unwrap();
+    db.execute_batch(
+        "DROP TABLE change;
+         CREATE TABLE change (seq INTEGER PRIMARY KEY AUTOINCREMENT, topic TEXT NOT NULL, more TEXT, entity TEXT NOT NULL,
+           id TEXT NOT NULL, op TEXT NOT NULL CHECK (op IN ('upsert', 'patch', 'del', 'append')), patch TEXT, at INTEGER NOT NULL) STRICT;
+         UPDATE meta SET value = '3' WHERE key = 'schema:kernel';",
+    )
+    .unwrap();
+    for seq in rows {
+        db.execute("INSERT INTO change (seq, topic, entity, id, op, at) VALUES (?, 'config', 'setting', 'k', 'del', 1)", [seq]).unwrap();
+    }
+    db.execute("DELETE FROM sqlite_sequence WHERE name = 'change'", []).unwrap();
+    db.execute("INSERT INTO sqlite_sequence (name, seq) VALUES ('change', ?)", [high]).unwrap();
+}
+
+fn autoincrement_left(home: &std::path::Path) -> bool {
+    let db = wisp_store::rusqlite::Connection::open(home.join("wisp.db")).unwrap();
+    db.query_row("SELECT count(*) FROM sqlite_schema WHERE sql LIKE '%AUTOINCREMENT%'", [], |r| r.get::<_, i64>(0)).unwrap() > 0
+}
+
+/// ADR-0085: kernel v4 rebuilds the change feed without AUTOINCREMENT; its rows and seqs survive, the next seq follows
+/// the newest and the epoch (every client's cursor) is kept.
+#[test]
+fn kernel_v4_drops_the_feeds_autoincrement_keeping_its_rows_seqs_and_epoch() {
+    let home = tmp_home();
+    let store = at(&home, 5000);
+    let epoch = store.epoch();
+    store.close();
+    as_kernel_v3(&home, &[3, 4, 7], 7);
+    let store = at(&home, 6000);
+    assert_eq!(store.schema_version("kernel").unwrap(), 4);
+    assert_eq!(store.changes_since(0, None, 100).unwrap().iter().map(|c| c.seq).collect::<Vec<_>>(), vec![3, 4, 7]);
+    store.write_blocking(|w| w.upsert("setting", row!({"key": "k2", "value": 1, "locked_by": null}))).unwrap();
+    assert_eq!(store.head_seq().unwrap(), 8);
+    assert_eq!(store.epoch(), epoch, "a cursor from before still resumes");
+    store.close();
+    assert!(!autoincrement_left(&home));
+}
+
+/// ADR-0085: a v3 feed retention had emptied (its high-water mark past every row) would hand out seqs a client has
+/// seen; the upgrade drops its epoch instead, so every cursor from before takes a snapshot.
+#[test]
+fn kernel_v4_gives_a_feed_retention_emptied_a_fresh_epoch() {
+    let home = tmp_home();
+    let store = at(&home, 5000);
+    let epoch = store.epoch();
+    store.close();
+    as_kernel_v3(&home, &[], 12);
+    let store = at(&home, 6000);
+    assert_ne!(store.epoch(), epoch, "cursors up to 12 must not resume into seqs 1, 2, … of the new feed");
+    assert_eq!(store.head_seq().unwrap(), 0);
 }
