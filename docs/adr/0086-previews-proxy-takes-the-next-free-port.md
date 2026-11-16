@@ -63,7 +63,13 @@ listened from the first local address it printed, else `PORT`.
    (started or already running), `RunInfo.port` while it runs, and the row's mark (`ext["wisp.terminal"].run.port`, set
    at start, kept as it was at exit or Stop) all read the record; nothing recomputes it from the id (`run::port_for` is
    only the first try, and what `RunInfo.port` says before any run). Choosing and recording is one step under one lock, so two starts never get one port; a second Run for a task that started while it probed answers the running app's port. Hanging the run up (Stop, its `DELETE` route, a restart) forgets it.
-3. Where the app really listens stays as ADR-0049 had it: the first local address it prints (`Registry::local_port`),
+3. **A restart (and Stop) waits for the old app, bounded as v1:** `Registry::close` already waits for the old tree to be
+   gone (`ChildHandle::kill`: the hang-up, the grace, SIGKILL, then until no member is left), so the restarted run
+   probes its own port after the old app let it go and gets it back. A run's app gets v1's `STOP_GRACE_MS` (3 s,
+   `run::STOP_GRACE_MS`) to stop before SIGKILL, not the 2 s spawns get by default, so an app that shuts down slowly
+   ends on its own (Unix; on Windows the job is ended at once, no grace, and Run isn't offered there yet). One still holding the port after that (a survivor SIGKILL couldn't end) gets the next port, as
+   above.
+4. Where the app really listens stays as ADR-0049 had it: the first local address it prints (`Registry::local_port`),
    else the port it was given; the proxy targets that, and the panel's Open link reads the printed address.
 
 | Case | What happens | Test |
@@ -72,4 +78,5 @@ listened from the first local address it printed, else `PORT`.
 | Another task's app has the port, still starting | not given to a second task | `registry.rs` `a_taken_app_port_moves_to_the_next_free_one_and_is_the_one_recorded` |
 | The own port free again (after Stop) | it's the one taken again (the stable origin) | same |
 | The candidate order | own first, 60 distinct, all in 41000–41899 (never a proxy's 42000–42899), the next ones wrapping | `run.rs` `preview_runs_the_worktree_run_else_the_dev_script_with_a_stable_port` |
+| Restart while the old app takes 2.2 s to let go of its port after the hang-up | the restart waits for it (it ends on its own, within the 3 s grace) and gets its own port back | `serve_terminal.rs` `a_restarted_app_slow_to_exit_ends_on_its_own_and_gets_its_own_port_back` (fails with the 2 s default grace) |
 | The app exits or is stopped | the row's mark keeps the port it was given (`running: false`) | `serve_terminal.rs` `a_tasks_running_app_is_marked_on_its_row_until_it_stops_or_exits` |

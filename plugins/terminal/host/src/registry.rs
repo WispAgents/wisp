@@ -154,6 +154,8 @@ impl Registry {
             cwd: Some(a.cwd.clone().into()),
             env: Env { clear: false, set: patch.set.clone(), remove: patch.remove.clone() },
             pty: Some(PtySize { cols, rows }),
+            // a run's app gets v1's grace to stop (close waits for its tree to be gone): a restart gets its port back
+            grace: (a.kind == TermKind::Run).then(|| std::time::Duration::from_millis(wisp_terminal_core::run::STOP_GRACE_MS)),
             ..SpawnOpts::default()
         };
         let mut replay = Replay::new(KEEP);

@@ -6,6 +6,10 @@
 const APP_BASE: u16 = 41_000;
 const SPAN: u32 = 900;
 
+/// v1 `STOP_GRACE_MS`: how long a stopped (or restarted) app gets to go before SIGKILL; Stop and a restart wait for it
+/// to be gone, so a restart finds its own port free again (ADR-0086).
+pub const STOP_GRACE_MS: u64 = 3_000;
+
 /// v1 `pickPort`: how many ports from the task's own are tried before any free one the system gives.
 pub const APP_TRIES: u32 = 60;
 

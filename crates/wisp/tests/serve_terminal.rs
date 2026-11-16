@@ -270,3 +270,51 @@ async fn a_taken_app_port_still_runs_the_app_and_every_caller_says_the_real_port
     api.cmd("terminal.close", json!({ "kind": "run", "id": id })).await;
     drop(serve);
 }
+
+/// v1 runs.js `start` stops the old app before it picks a port, giving it `STOP_GRACE_MS` (3 s) to go before SIGKILL
+/// (ADR-0086): a restart waits for the old app's tree to be gone, so an app that takes a while to let go of its port
+/// after the signal (2.2 s here: past the 2 s spawns get by default) ends on its own and gets its own port back (the
+/// same origin, its storage kept), never the next one.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_restarted_app_slow_to_exit_ends_on_its_own_and_gets_its_own_port_back() {
+    if cfg!(windows) || std::process::Command::new("python3").arg("-V").output().is_err() {
+        return;
+    }
+    let dir = temp("serve-run-restart");
+    let (serve, port) = start_with(&dir, &[("SHELL", "/bin/sh")]);
+    let api = Arc::new(Api { http: reqwest::Client::new(), port, n: 0.into() });
+    let (_, task) = run_task(&api, &dir, "claude").await;
+    let id = task["id"].as_str().unwrap().to_owned();
+    // holds PORT; on the hang-up (a PTY's) or a TERM it takes 2.2 s to go, the port still held, and says it ended
+    let app = dir.join("slow_app.py");
+    let clean = dir.join("clean.txt");
+    std::fs::write(
+        &app,
+        "import os, signal, socket, sys, time\n\
+         def bye(*_):\n    time.sleep(2.2); open(sys.argv[1], 'a').write('clean\\n'); sys.exit(0)\n\
+         signal.signal(signal.SIGHUP, bye); signal.signal(signal.SIGTERM, bye)\n\
+         s = socket.socket(); s.bind(('127.0.0.1', int(os.environ['PORT']))); s.listen()\n\
+         while True:\n    c, _ = s.accept(); c.close()\n",
+    )
+    .unwrap();
+    let command = format!("exec python3 '{}' '{}'", app.display(), clean.display());
+    let answers = |p: u16| std::net::TcpStream::connect_timeout(&([127, 0, 0, 1], p).into(), Duration::from_millis(200)).is_ok();
+    let up = |p: u16| async move {
+        let until = Instant::now() + Duration::from_secs(15);
+        while !answers(p) {
+            assert!(Instant::now() < until, "the app never listened on {p}");
+            tokio::time::sleep(Duration::from_millis(100)).await;
+        }
+    };
+    let first = api.cmd("terminal.run.start", json!({ "id": id, "command": command, "cols": 80, "rows": 24 })).await;
+    let own = first["port"].as_u64().unwrap();
+    up(u16::try_from(own).unwrap()).await;
+    let t0 = Instant::now();
+    let again = api.cmd("terminal.run.start", json!({ "id": id, "command": command, "cols": 80, "rows": 24, "restart": true })).await;
+    assert_eq!((again["started"].as_bool(), again["port"].as_u64()), (Some(true), Some(own)), "its own port back: {again}");
+    assert!(t0.elapsed() >= Duration::from_millis(2100), "the old app was waited for ({:?})", t0.elapsed());
+    assert_eq!(std::fs::read_to_string(&clean).unwrap_or_default(), "clean\n", "it ended on its own, not cut off by SIGKILL");
+    up(u16::try_from(own).unwrap()).await;
+    api.cmd("terminal.close", json!({ "kind": "run", "id": id })).await;
+    drop(serve);
+}
