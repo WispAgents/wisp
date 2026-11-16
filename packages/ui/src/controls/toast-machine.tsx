@@ -5,11 +5,12 @@
 // `--toast-bottom` to the box's height so a toast never covers Send.
 import * as toast from '@zag-js/toast';
 import { normalizeProps, useMachine } from '@zag-js/solid';
-import { createMemo, createUniqueId, Index, Show, type JSX } from 'solid-js';
+import { createEffect, createMemo, createUniqueId, Index, onCleanup, Show, type JSX } from 'solid-js';
 import { Portal } from 'solid-js/web';
 import { sub, type KitProps, type PartName } from '../core/props.ts';
 import { useT, type Translate } from '../core/i18n.tsx';
 import { Icon } from '../content/Icon.tsx';
+import { dockToasts } from './toast-dock-scope.ts';
 import type { IconName } from '../content/icons.ts';
 
 export { createStore } from '@zag-js/toast';
@@ -89,9 +90,15 @@ export function ToastGroup(props: ToastGroupProps): JSX.Element {
   const service = useMachine(toast.group.machine, () => ({ id: createUniqueId(), store: props.store }));
   const api = createMemo(() => toast.group.connect(service, normalizeProps));
   const part = (): PartName => props.part ?? 'ui.toast';
+  // clear of the box at the bottom while toasts show (./toast-dock-scope.ts; v1 clearDock, B18)
+  let group: HTMLDivElement | undefined;
+  createEffect(() => {
+    if (api().getToasts().length === 0 || !group) return;
+    onCleanup(dockToasts(group));
+  });
   return (
     <Portal>
-      <div {...api().getGroupProps({ label: t('notifications') })} data-kit="toasts" data-part={sub(part(), 'group')}>
+      <div ref={(el) => (group = el)} {...api().getGroupProps({ label: t('notifications') })} data-kit="toasts" data-part={sub(part(), 'group')}>
         <Index each={api().getToasts()}>
           {(item, index) => <ToastCard toast={item()} index={index} parent={service} part={part()} t={t} />}
         </Index>
