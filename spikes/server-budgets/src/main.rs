@@ -987,7 +987,7 @@ struct Breakdown {
     feed: Duration,
     /// every task in one query of the session table, as JSON
     query: Duration,
-    /// the first page's query (the 100 latest unarchived, on the `(archived, updated_at)` index), as JSON
+    /// the first page's query (the 50 latest unarchived, on the `(archived, updated_at)` index, ADR-0093), as JSON
     page: Duration,
     /// the change feed's rows encoded as JSON
     encode: Duration,
@@ -1017,7 +1017,7 @@ fn breakdown(home: &Path) -> Res<Breakdown> {
     let d = store.changed_since("list", 0).map_err(said("read the change feed"))?.ok_or("the change feed was pruned")?;
     let encode = median(&mut || serde_json::to_vec(&d.rows).map(drop).map_err(said("encode")))?;
     let query = median(&mut || store.query_json("session", &Query::new()).map(drop).map_err(said("query the sessions")))?;
-    let first = Query::new().eq("archived", false).desc("updated_at").desc("id").limit(100);
+    let first = Query::new().eq("archived", false).desc("updated_at").desc("id").limit(50);
     let page = median(&mut || store.query_json("session", &first).map(drop).map_err(said("query the first page")))?;
     store.close();
     Ok(Breakdown { feed, query, page, encode, rows })
@@ -1834,7 +1834,7 @@ mod tests {
             defaults: None,
             list: vec![Duration::from_micros(list_us); 3],
             list_all: vec![Duration::from_micros(list_us * 10); 3],
-            list_first: 100,
+            list_first: 50,
             list_pages: 6,
             list_bytes: 0,
             why: None,

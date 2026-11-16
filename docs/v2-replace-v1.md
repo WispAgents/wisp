@@ -9,7 +9,7 @@ Bugs go to `docs/qa/bugs.md`.
    (B10), the task URL id (B11), and every one found while testing (`docs/qa/bugs.md`).
    *2026-11-16:* B4, B6–B10, B12–B18, B20–B24, B26–B28, B30–B36 fixed or closed, each checked in the running app
    (mock and real server, frames recorded); `qa/flicker.mjs` now gates "something appears then goes" (37 actions, two
-   widths, all clean). B5 fixed too (a gone window's notice stayed). Open: B24's byte headroom (an ADR for a slimmer list row, after item 2).
+   widths, all clean). B5 fixed too (a gone window's notice stayed). B24 fixed by a 50-task first page (ADR-0093). Nothing open.
 2. [ ] **Test the running app screen by screen**, every state a user reaches, desktop window and browser, real data,
    against v1.
 3. [ ] **Parity, layout and feedback checks against v1** on every view, width and theme (`qa/parity.mjs`,

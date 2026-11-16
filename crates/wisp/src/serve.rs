@@ -117,8 +117,9 @@ fn snapshot_sources() -> Vec<wisp_api::v2_store::TopicSource> {
         .collect()
 }
 
-/// wisp.runtime's tasks on `list`, read from the session table in pages (ADR-0081): the 100 latest unarchived first
-/// (what the first screen draws, on the `(archived, updated_at)` index), then the rest 500 at a time, the archived
+/// wisp.runtime's tasks on `list`, read from the session table in pages (ADR-0081): the 50 latest unarchived first
+/// (ADR-0093: 100 sat at the 5 ms budget on CI's runners; 50 still fill the tallest first screen)
+/// (on the `(archived, updated_at)` index), then the rest 500 at a time, the archived
 /// last, all at one seq. A first look is one read, never a replay of every change the list ever had (~54 ms on
 /// 5 000 tasks, and empty once retention pruned the feed); a client with a cursor still resumes from the change feed.
 fn list_pages() -> Vec<wisp_api::v2_store::PagedSource> {
@@ -134,7 +135,7 @@ fn list_pages() -> Vec<wisp_api::v2_store::PagedSource> {
                 let by = |archived: bool| wisp_store::Query::new().eq("archived", archived).desc("updated_at").desc("id");
                 vec![by(false), by(true)]
             },
-            first: 100,
+            first: 50,
             page: 500,
         }]
     }
