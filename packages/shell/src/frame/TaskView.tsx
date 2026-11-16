@@ -5,7 +5,7 @@
 // Mark done, a follow-up, Rerun and Fork show their result before the peer answers; Ship it and a
 // restore show their control working; the panes and menus open in the same frame.
 
-import { For, Show, createEffect, createMemo, createResource, createSignal, lazy, onCleanup, untrack, type JSX } from 'solid-js';
+import { For, Show, createEffect, createMemo, createResource, createSignal, getOwner, lazy, onCleanup, runWithOwner, untrack, type JSX } from 'solid-js';
 import { entityKey, newRowId, ownerOf, uuidv7, type EntityKey, type Json } from '@wisp/client';
 import {
   Answer,
@@ -321,7 +321,7 @@ export default function TaskView(props: { readonly id: string; readonly onBack?:
     const r = row();
     if (!r) return;
     const live = allRows().filter((x) => x.parent_id === key && x.state === 'running').length;
-    setStopAsk(stopQuestion({ sub: !!r.parent_id, name: harnessOf(harnesses(), r.agent).name, live, queued: Number(r.summary.queued ?? 0) }, t));
+    setStopAsk(stopQuestion({ sub: !!r.parent_id, name: harnessView(r.agent).name, live, queued: Number(r.summary.queued ?? 0) }, t));
   };
   const doStop = (): void => {
     setStopAsk(undefined);
@@ -406,6 +406,9 @@ export default function TaskView(props: { readonly id: string; readonly onBack?:
   const [when, setWhen] = createSignal<When | undefined>(undefined);
   const nav = useSignal(shell.nav);
   const harnesses = useSignal(shell.harnesses());
+  // a task on Auto is named Auto until the server's row says which harness it picked (the optimistic row of a New task
+  // on Auto: "auto is working", "Open in auto" before; B34)
+  const harnessView = (id: string): { name: string; logo?: string } => (id === 'auto' ? { name: t('shell.home.auto') } : harnessOf(harnesses(), id));
   // the @ and / menus (plugins' prompt sources: shell-composer's tasks, crew, My Stuff and commands)
   const menu = usePromptMenu({ shell, where: 'reply', task: key, text, setText, input: () => input, id: `reply-suggest-${bare}` });
   // a plugin may fill this reply box (the file view's ✦: "@src/a.ts:12-20 "): set it, the caret at its end
@@ -625,7 +628,7 @@ export default function TaskView(props: { readonly id: string; readonly onBack?:
     next();
   };
   // "Open in Claude Code" (v1's Take over; owner, 2026-11-10)
-  const harnessName = (): string => harnessOf(harnesses(), row()?.agent ?? '').name;
+  const harnessName = (): string => harnessView(row()?.agent ?? '').name;
   // v1 moreMenu: what a task's right-click menu offers is here too: the entries other plugins attach to
   // `shell.row:menu` (Side discussion, Share, Ship it, Run app, Save as recipe, Add to crew, Set goal, Keep worktree);
   // the shell's own (Rerun, Fork, Changes, Shell) are on this page already
@@ -796,8 +799,8 @@ export default function TaskView(props: { readonly id: string; readonly onBack?:
       deskOnly: true,
       key: 'T',
       icon: 'terminal',
-      label: t('shell.task.openIn', { harness: harnessOf(harnesses(), s.agent).name }),
-      title: t('shell.task.openInTitle', { harness: harnessOf(harnesses(), s.agent).name }),
+      label: t('shell.task.openIn', { harness: harnessView(s.agent).name }),
+      title: t('shell.task.openInTitle', { harness: harnessView(s.agent).name }),
       act: { onClick: () => side('shell') },
     },
     {
@@ -872,7 +875,7 @@ export default function TaskView(props: { readonly id: string; readonly onBack?:
         // inside the reply box, over the text (the queued follow-ups, then wisp.later's, v1 .c-queued): `shell.task:composer-top`. Made once:
         // a JSX prop beside the box's reactive spread would be rebuilt (rows, an edit in progress) each time the task starts or stops
         const composerTop = <Slot input="shell.task:composer-top" layout="contents" id={key} session={() => s() as never} />;
-        const h = (): { name: string; logo?: string } => harnessOf(harnesses(), replyRun()?.agent ?? s().agent);
+        const h = (): { name: string; logo?: string } => harnessView(replyRun()?.agent ?? s().agent);
         const branch = (): string => String(s().summary['branch'] ?? '');
         const color = (): string => String(s().summary['color'] ?? 'slate');
         const ov = createMemo(() => (!closedReady() ? [] : shownOverlaps(overlapsOf(s()), closed() as unknown as Dismissed | undefined, s().id)));
@@ -938,6 +941,55 @@ export default function TaskView(props: { readonly id: string; readonly onBack?:
           const comment = answerComments({ shell, client: (pl) => clients.client(pl), task: key, turn: turn.id, of: () => (turn.id === turns().at(-1)?.id ? undefined : sent.rest) });
           // what a step printed of a .env file: masked, revealed per task (env-reveal.ts)
           const env = envReveal(shell, key, `${turn.id}:`);
+          // the working panel, made once for this turn and only while it runs, under the turn's own owner: made inside
+          // the props' spread it was made again on every change of the task's row (its live line, ~3 a second while it
+          // streams), so the panel and its Stop were taken down and put back each time (B31). Its words update in place.
+          const live = createMemo(() => turn.status === 'running' && turn.id === turns().at(-1)?.id && (s().state === 'running' || s().state === 'waiting'));
+          const owner = getOwner();
+          let made: JSX.Element | undefined;
+          const working = (): JSX.Element =>
+            (made ??= runWithOwner(owner, () => (
+              <WorkingPanel
+                part="task.working"
+                waiting={s().state === 'waiting'}
+                status={
+                  (b as { by?: string }).by === 'compact'
+                    ? t('shell.work.compacting')
+                    : t(s().state === 'waiting' ? 'shell.work.waiting' : 'shell.work.working', { name: harnessName() })
+                }
+                // a first turn counts from the send: its worktree and setup are part of the wait
+                elapsed={duration(Math.max(0, tick() - (turn.idx === 0 ? Math.min(turn.started_at, s().created_at || turn.started_at) : turn.started_at)))}
+                count={t('shell.work.actions', { count: steps().filter((a) => a.kind !== 'text').length })}
+                note={noOutputLine(
+                  {
+                    running: turn.status === 'running',
+                    waiting: s().state === 'waiting',
+                    startedAt: turn.started_at,
+                    steps: stepsOf(turn.id).map((e) => ({ kind: e.kind ?? e.body?.kind, t: e.t, outAt: e.body?.outAt, call: e.body?.callId, output: e.body?.output })),
+                    // a delegate of this task still works: its row says so
+                    delegating: allRows().some((x) => x.parent_id === key && x.state === 'running'),
+                  },
+                  now(),
+                  t,
+                )}
+                ticker={steps()
+                  .filter((a) => a.kind !== 'text')
+                  .slice(-5)
+                  .reverse()
+                  .map((a) => ({ icon: ACT_ICON[a.kind] ?? 'tool', text: here(a.label ?? a.kind) }))}
+                actions={
+                  <>
+                    <Show when={Number(s().summary.queued ?? 0) > 0}>
+                      <span data-kit="working-queued">{t('shell.work.queued', { count: Number(s().summary.queued ?? 0) })}</span>
+                    </Show>
+                    <span data-kit="working-grow" />
+                    <Button size="sm" variant="ghost" tone="bad" icon="stop" part="task.stop" loading={stopping()} onClick={askStop}>
+                      {stopping() ? t('shell.stop.stopping') : t('shell.stop.ok')}
+                    </Button>
+                  </>
+                }
+              />
+            )));
           return (
             <>
               <TurnView
@@ -1027,52 +1079,7 @@ export default function TaskView(props: { readonly id: string; readonly onBack?:
                 {...(turn.status === 'running' && { live: s().summary.live || t('shell.task.starting') })}
                 {...(turn.status === 'starting' && { live: t('shell.task.waitingToStart') })}
                 {...(turn.status === 'held' && { untold: true })}
-                {...(turn.status === 'running' &&
-                  turn.id === turns().at(-1)?.id &&
-                  (s().state === 'running' || s().state === 'waiting') && {
-                    working: (
-                      <WorkingPanel
-                        part="task.working"
-                        waiting={s().state === 'waiting'}
-                        status={
-                          (b as { by?: string }).by === 'compact'
-                            ? t('shell.work.compacting')
-                            : t(s().state === 'waiting' ? 'shell.work.waiting' : 'shell.work.working', { name: harnessName() })
-                        }
-                        // a first turn counts from the send: its worktree and setup are part of the wait
-                        elapsed={duration(Math.max(0, tick() - (turn.idx === 0 ? Math.min(turn.started_at, s().created_at || turn.started_at) : turn.started_at)))}
-                        count={t('shell.work.actions', { count: steps().filter((a) => a.kind !== 'text').length })}
-                        note={noOutputLine(
-                          {
-                            running: turn.status === 'running',
-                            waiting: s().state === 'waiting',
-                            startedAt: turn.started_at,
-                            steps: stepsOf(turn.id).map((e) => ({ kind: e.kind ?? e.body?.kind, t: e.t, outAt: e.body?.outAt, call: e.body?.callId, output: e.body?.output })),
-                            // a delegate of this task still works: its row says so
-                            delegating: allRows().some((x) => x.parent_id === key && x.state === 'running'),
-                          },
-                          now(),
-                          t,
-                        )}
-                        ticker={steps()
-                          .filter((a) => a.kind !== 'text')
-                          .slice(-5)
-                          .reverse()
-                          .map((a) => ({ icon: ACT_ICON[a.kind] ?? 'tool', text: here(a.label ?? a.kind) }))}
-                        actions={
-                          <>
-                            <Show when={Number(s().summary.queued ?? 0) > 0}>
-                              <span data-kit="working-queued">{t('shell.work.queued', { count: Number(s().summary.queued ?? 0) })}</span>
-                            </Show>
-                            <span data-kit="working-grow" />
-                            <Button size="sm" variant="ghost" tone="bad" icon="stop" part="task.stop" loading={stopping()} onClick={askStop}>
-                              {stopping() ? t('shell.stop.stopping') : t('shell.stop.ok')}
-                            </Button>
-                          </>
-                        }
-                      />
-                    ),
-                  })}
+                {...(live() && { working: working() })}
                 actsTitle={t('shell.task.activity')}
                 acts={trailActs(stepsOpen() ? 0 : steps().length, { read: count('read'), edit: count('edit'), run: count('run') }, t)}
                 stats={[
@@ -1187,7 +1194,7 @@ export default function TaskView(props: { readonly id: string; readonly onBack?:
                       error: b.error,
                       tip: t('shell.btw.tip', { at: clock(b.at) }),
                     }))}
-                    waiting={t('shell.btw.waiting', { name: harnessOf(harnesses(), s().agent).name })}
+                    waiting={t('shell.btw.waiting', { name: harnessView(s().agent).name })}
                     dismiss={(pending) => t(pending ? 'shell.btw.cancel' : 'shell.btw.dismiss')}
                     onDismiss={(btwId) => void run(btwDrop, { id: key, btwId }).catch(() => undefined)}
                   />

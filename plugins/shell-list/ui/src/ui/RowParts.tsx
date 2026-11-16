@@ -4,7 +4,7 @@
 // Every cell keeps its place whatever the task says, so a row never shifts (design/layout.md §4).
 
 import { routeOf, routeTip, type HarnessUiDef, type RouteSeen } from '@wisp/shell';
-import { For, Match, Show, Switch, type JSX } from 'solid-js';
+import { For, Match, Show, Switch, createMemo, type JSX } from 'solid-js';
 import { Dot, Face, Gap, GoalPill, Icon, OverlapPill, Pill, RowButton, RowLogo, RowPill, RowRun, Text, Time, futureLabel, timeTitle, useSignal } from '@wisp/ui';
 import type { EntityKey } from '@wisp/client';
 import { colorToken, type SessionRow } from '../types.ts';
@@ -156,16 +156,26 @@ function OnePill(props: { readonly p: PillView }): JSX.Element {
   );
 }
 
+/** What makes a pill another element: its id, and whether the status draws as v1's dot (OnePill's branch). */
+const pillKey = (p: PillView): string => `${p.id}${p.id === 'status' && !p.icon ? '' : ':pill'}`;
+
+/** The pills by key, each made once: the row's view is made again on every change (opening a task, the clock, the
+ *  selection), and a list of new objects took every pill down and put it back (B32). Its words update in place. */
+function PillsBy(props: { readonly pills: () => readonly PillView[] }): JSX.Element {
+  const keys = createMemo(() => props.pills().map(pillKey), [], { equals: (a, b) => a.length === b.length && a.every((v, i) => v === b[i]) });
+  return <For each={keys()}>{(k) => <OnePill p={props.pills().find((p) => pillKey(p) === k) ?? (props.pills()[0] as PillView)} />}</For>;
+}
+
 export function Pills(props: { readonly view: RowView }): JSX.Element {
   const env = useEnv();
   return (
     <>
-      <For each={props.view.pills.filter((p) => p.id === 'status')}>{(p) => <OnePill p={p} />}</For>
+      <PillsBy pills={() => props.view.pills.filter((p) => p.id === 'status')} />
       <Show when={props.view.goal}>
         {(g) => <GoalPill n={g().n} progress={g().progress} paused={g().paused} title={say(env.shell.t, g().title, env.now())} part={'list.pill.goal card.goal' as `${string}.${string}`} />}
       </Show>
       <Show when={props.view.overlap}>{(o) => <OverlapPill n={o().n} title={say(env.shell.t, o().title, env.now())} part={'list.pill.overlap card.overlap' as `${string}.${string}`} />}</Show>
-      <For each={props.view.pills.filter((p) => p.id !== 'status')}>{(p) => <OnePill p={p} />}</For>
+      <PillsBy pills={() => props.view.pills.filter((p) => p.id !== 'status')} />
       <Show when={props.view.ram}>
         {(ram) => (
           <Text size="xs" tone="muted" numeric nowrap title={env.shell.t('shell-list.row.ram-tip', { size: ram() })} part="list.row.ram">

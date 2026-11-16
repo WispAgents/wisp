@@ -5,7 +5,7 @@
 import { afterEach, expect, test } from 'vitest';
 import { createClient, peerId, type EntityKey } from '@wisp/client';
 import { createShell, nullPlatform, type Platform, type ShellWindow } from '@wisp/shell';
-import { createToaster } from '@wisp/ui';
+import { createToaster, loadPlatformStyles } from '@wisp/ui';
 import { createMockPeer } from '../dev/mock-peer.ts';
 import { memTransport } from '../dev/mem-transport.ts';
 import { until } from './until.ts';
@@ -220,3 +220,23 @@ test('search_in_a_phones_browser_is_v1s_palette_with_no_back_or_cancel', async (
   expect(q('[data-part="shell.palette.cancel"]')).toBeNull();
   expect(q('[data-kit="pal-foot"]'), 'v1’s keys foot').not.toBeNull();
 });
+
+// The screens' lazy chunks (each look's halves, the phone task page and its menu, the details sheet), compiled while
+// vitest collects this file, off the tests' clock (the dynamic-import-in-test rule's reason): under the full suite's
+// load a cold chunk outlasted the task menu test's waits. Each look opens the task, its menu and Details once.
+for (const kind of ['android', 'ios'] as const) {
+  await loadPlatformStyles(kind);
+  const { client, root } = await start(phone(kind));
+  const task = (): { id: string } | undefined => client.entities.list<{ id: string; title: string }>('session')().find((r) => r.title.startsWith('Add rate limiting'));
+  await until(() => task() !== undefined, 60_000);
+  client.nav.navigate({ t: 'openTask', id: task()?.id as EntityKey as never });
+  await until(() => root.querySelector(PHONE_TASK) !== null, 60_000);
+  root.querySelector<HTMLButtonElement>(PHONE_TASK)?.click();
+  await until(() => document.querySelector('[data-kit="menu-item"]') !== null, 60_000);
+  [...document.querySelectorAll<HTMLElement>('[data-kit="menu-item"]')].find((e) => e.textContent?.includes('Details'))?.click();
+  await until(() => q('[data-part~="phone.task.details"] [data-part="split.details"]') !== null, 60_000);
+  for (const s of stops) s();
+  stops = [];
+  document.documentElement.removeAttribute('data-platform');
+  document.body.innerHTML = '';
+}

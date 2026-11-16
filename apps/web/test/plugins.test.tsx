@@ -41,11 +41,15 @@ test('the_queued_follow_ups_sit_in_the_reply_box_before_the_scheduled_ones_v1_c_
   expect(shell.context.extensions('shell.task:foot')().map((e) => e.id)).not.toContain('shell-composer.queue');
 });
 
-test('every plugin UI that has a later part (ADR-0067) loads it, and it holds only what a press reaches, its ids its own', async () => {
-  const withLater = pluginUis().flatMap(({ path, def }) => (def?.later ? [{ path, def, later: def.later }] : []));
+// every later part, loaded while vitest collects this file, off the test's clock (the dynamic-import-in-test rule's
+// reason: a dozen cold chunks inside one test's 5 s failed it under the full suite's load)
+const withLater = await Promise.all(
+  pluginUis().flatMap(({ path, def }) => (def?.later ? [{ path, def, later: def.later }] : [])).map(async (x) => ({ ...x, part: (await x.later()).default })),
+);
+
+test('every plugin UI that has a later part (ADR-0067) loads it, and it holds only what a press reaches, its ids its own', () => {
   expect(withLater.length).toBeGreaterThan(5);
-  for (const { path, def, later } of withLater) {
-    const part = (await later()).default;
+  for (const { path, def, part } of withLater) {
     expect(Object.keys(part).filter((k) => !['extensions', 'palette', 'shortcuts', 'prompt', 'sideTabs'].includes(k)), path).toEqual([]);
     const ns = def.id.replace(/^wisp\./, '');
     for (const e of part.extensions ?? []) expect(e.id.startsWith(`${ns}.`) || e.id.startsWith(`${def.id}.`), `${path}: ${e.id}`).toBe(true);

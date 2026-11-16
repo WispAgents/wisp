@@ -2,7 +2,7 @@
 // .it-bar, .it-actions, transcript.css .turn/.ask/.trail, ship.css .overlap-strip, composer.css):
 // its head, then its turns with the details column beside them, and the reply box docked at the foot.
 import { HoldRow, type HoldRowProps } from '../composer/HoldRow.tsx';
-import { For, Show, createSignal, onCleanup, onMount, type JSX } from 'solid-js';
+import { For, Index, Show, createMemo, createSignal, onCleanup, onMount, type JSX } from 'solid-js';
 import { flag } from '../core/props.ts';
 import { ActIcon, WithAct, type Act } from './act.tsx';
 import { holdMedia } from './hold-view.ts';
@@ -152,6 +152,7 @@ export interface TaskDetailsProps {
 
 /** v1 .it-bar: the harness and project, the branch, then the task's actions. */
 export function TaskDetails(props: TaskDetailsProps): JSX.Element {
+  const actionIds = createMemo(() => props.actions.map((x) => x.id), [], { equals: (x, y) => x.length === y.length && x.every((v, k) => v === y[k]) });
   return (
     <div data-kit="it-bar" data-part="split.details">
       <div data-kit="it-props">
@@ -185,24 +186,25 @@ export function TaskDetails(props: TaskDetailsProps): JSX.Element {
           }
         >
           {(places) => (
-            <For each={places()}>
+            // by place, each chip made once (the row changes while the task runs: B31)
+            <Index each={places()}>
               {(p) => (
                 <Show
-                  when={p.onOpen}
+                  when={p().onOpen}
                   fallback={
-                    <span data-kit="q-proj" data-part="split.place" data-color={p.color} data-also={flag(p.also)} title={p.title}>
-                      {p.name}
+                    <span data-kit="q-proj" data-part="split.place" data-color={p().color} data-also={flag(p().also)} title={p().title}>
+                      {p().name}
                     </span>
                   }
                 >
                   {(open) => (
-                    <button type="button" data-kit="q-proj" data-part="split.place" data-color={p.color} data-also={flag(p.also)} title={p.title} onClick={() => open()()}>
-                      {p.name}
+                    <button type="button" data-kit="q-proj" data-part="split.place" data-color={p().color} data-also={flag(p().also)} title={p().title} onClick={() => open()()}>
+                      {p().name}
                     </button>
                   )}
                 </Show>
               )}
-            </For>
+            </Index>
           )}
         </Show>
       </div>
@@ -218,32 +220,37 @@ export function TaskDetails(props: TaskDetailsProps): JSX.Element {
         )}
       </Show>
       <div data-kit="it-actions" data-part="split.actions">
-        <For each={props.actions}>
-          {(a) => (
-            <WithAct
-              act={a.act}
-              render={(trigger) => (
-                <button
-                  type="button"
-                  {...trigger()}
-                  data-kit="ghost-xs"
-                  data-a={a.id}
-                  data-part={a.part}
-                  data-tone={a.tone}
-                  data-key={a.key}
-                  data-desk={flag(a.deskOnly)}
-                  data-on={flag(a.on)}
-                  aria-pressed={a.on === undefined ? undefined : a.on}
-                  title={a.title}
-                >
-                  <ActIcon act={a.act}>
-                    <Icon name={a.icon} />
-                  </ActIcon>
-                  <span data-text="control">{a.label}</span>
-                </button>
-              )}
-            />
-          )}
+        {/* by id, each button made once: the task's row changes a few times a second while it runs, and each change
+            hands a new list (B31: every button was taken down and put back, its hover and focus lost) */}
+        <For each={actionIds()}>
+          {(id) => {
+            const a = (): TaskAction => props.actions.find((x) => x.id === id) ?? (props.actions[0] as TaskAction);
+            return (
+              <WithAct
+                act={a().act}
+                render={(trigger) => (
+                  <button
+                    type="button"
+                    {...trigger()}
+                    data-kit="ghost-xs"
+                    data-a={a().id}
+                    data-part={a().part}
+                    data-tone={a().tone}
+                    data-key={a().key}
+                    data-desk={flag(a().deskOnly)}
+                    data-on={flag(a().on)}
+                    aria-pressed={a().on === undefined ? undefined : a().on}
+                    title={a().title}
+                  >
+                    <ActIcon act={a().act}>
+                      <Icon name={a().icon} />
+                    </ActIcon>
+                    <span data-text="control">{a().label}</span>
+                  </button>
+                )}
+              />
+            );
+          }}
         </For>
       </div>
     </div>

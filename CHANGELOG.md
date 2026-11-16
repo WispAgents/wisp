@@ -224,6 +224,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Fixed
 
+- **Nothing on a running task's page flickers any more**: the working panel, its Stop button, the task's buttons and its folder chip stay put while it streams (they were rebuilt several times a second), and the list's pills stay put as you move around.
+
+- **A New task on Auto says Auto** until wisp has picked its harness (it said "auto").
+
 - **Auto near the limit asks first**, as a named harness does: wisp asks about the harness Auto would pick, so the task never lands as Not started.
 
 - **A held run's row says which window and how full** ("5-hour at 97%"; it said "at 0%"), its card says why in plain words (no instructions meant for agents), and it has no empty bar of buttons under it.
