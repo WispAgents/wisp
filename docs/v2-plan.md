@@ -127,12 +127,17 @@ turn. When a screen or feature contradicts one, that's a bug: fix it toward the 
 
 - **Coders code; tests in CI**: coders write code and their named tests; full suites, e2e and gates are the outer loop
   (11-09 15:24, 15:34). Move fast, verify after.
+- **No coders: the lead does the work himself** (owner, 2026-11-16: "don't use coders, do them by yourself"), one item
+  at a time from `docs/v2-replace-v1.md`, each checked in the real app before the next. (Was: one coder at a time.)
 - **One coder at a time** (latest: 11-15 17:40, "Dont use 3 coders please one coder"). A fresh session per job, one
   small concern, small briefs so context stays small (11-12 18:39, 19:00). Medium effort, never high (11-07 23:31).
 - **The coder is always working**; delegate the next job when a report lands (11-09 20:57).
 - **Coders may use Chrome to see their UI** (11-10 00:40).
-- **No QA now**: finish v2 to 100 %, then the Linear TODO tickets, then QA by separate low-context agents, a bug list,
-  fixes (11-14 17:59, 18:28 "i said not now"). When QA starts: strict rounds on every scenario (11-14 18:27).
+- **Test the real app after every coder, now (owner, 2026-11-16, overrides "No QA now")**: "test the app in every state
+  user will be on, dont go to next thing until you are 100% confident". After each hand-off the lead runs the real app
+  (dev mode, desktop window and browser, seeded data) through every state the change touches, with screenshots, and
+  only then starts the next job. No new features until the bug list (`docs/qa/bugs.md`) is empty. Unit tests and CI
+  passing is not "done". (Was: no QA until 100 %, 11-14.)
 - **When 100 % and tests pass repeatedly: work the Linear TODO tickets** (11-14 10:53).
 - **Never schedule check-ins** in wisp; check at the start of each turn (11-15 00:11).
 - **Questions don't reorder the plan**: answer, record the direction on its future item (11-13 20:41; 11-09 18:21).

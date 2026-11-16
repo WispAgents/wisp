@@ -3,7 +3,8 @@ decision: Coders run only the tests they write; full suites, e2e and UI gates ru
 reason: Owner 2026-11-09.
 scope: []
 category: convention
-status: accepted
+status: superseded
+superseded_by: D-0066
 sources:
 - docs/v2-plan.md §3
 author: M0xoo

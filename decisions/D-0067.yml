@@ -1,0 +1,8 @@
+id: D-0067
+decision: The lead does the v2 work himself, without coder subagents, one item of docs/v2-replace-v1.md at a time, each checked in the real app before the next.
+reason: 'Owner 2026-11-16: don''t use coders, do them by yourself.'
+scope: []
+category: convention
+status: accepted
+author: M0xoo
+date: 2026-11-16

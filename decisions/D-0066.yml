@@ -1,0 +1,10 @@
+id: D-0066
+decision: Coders run only the tests they write; full suites run in PR CI. After every coder hand-off the lead runs the real app (dev mode, desktop and browser, seeded data) through every state the change touches, with screenshots, before starting the next job; no new features while docs/qa/bugs.md has open bugs.
+reason: 'Owner 2026-11-16: test the app in every state a user will be on; don''t go to the next thing until 100% confident.'
+rejected:
+- Coders run only the tests they write; full suites, e2e and UI gates run in PR CI and one batched pass.
+scope: []
+category: convention
+status: accepted
+supersedes: D-0051
+date: 2026-11-16
