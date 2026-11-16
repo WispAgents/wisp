@@ -42,10 +42,22 @@ export function statusOf(s: SessionRow, t: ShellContext['t']): { label: string; 
   // a question waits for you (an ask, a stalled goal): that's what the task's state says, whatever the last turn said
   if (s.state === 'waiting') return { label: t('shell.status.waiting'), tone: 'warn' };
   if (st === 'info') return { label: t('shell.status.report'), tone: 'info' };
-  if (st === 'blocked' || st === 'failed' || s.state === 'error') return { label: t('shell.status.failed'), tone: 'bad' };
-  if (st === 'waiting' || st === 'partial') return { label: t('shell.status.waiting'), tone: 'warn' };
+  // v1 format.js statusKey: a blocked run says why it stopped (a limit, a refusal, a crash), else Blocked, as the
+  // list's pill does (B9: a run refused before it started read Failed here and Blocked on its card)
+  const halt = String(s.summary['halt'] ?? '');
+  if (st === 'blocked' && HALT[halt]) return { label: t(HALT[halt]), tone: halt === 'failed' ? 'bad' : 'warn' };
+  if (st === 'blocked') return { label: t('shell.status.blocked'), tone: 'warn' };
+  if (st === 'failed' || s.state === 'error') return { label: t('shell.status.failed'), tone: 'bad' };
+  if (st === 'partial') return { label: t('shell.status.partial'), tone: 'warn' };
+  if (st === 'waiting') return { label: t('shell.status.waiting'), tone: 'warn' };
   return { label: t('shell.status.finished'), tone: 'done' };
 }
+const HALT: Readonly<Record<string, string>> = {
+  failed: 'shell.status.failed',
+  limit: 'shell.status.limit',
+  refused: 'shell.status.refused',
+  signedOut: 'shell.status.signedOut',
+};
 
 interface GoalSummary {
   readonly text?: string;
@@ -210,4 +222,18 @@ export function nextNeedsYou(rows: readonly SessionRow[], leaving: string): stri
   return rows
     .filter((s) => bare(s.id) !== left && !s.archived && !s.parent_id && sectionOf(s) === 'needs')
     .reduce<SessionRow | undefined>((best, s) => (!best || s.updated_at > best.updated_at ? s : best), undefined)?.id;
+}
+
+/** A finished turn's activity counts for its trail bar (v1 renderTrail): only the kinds it did; steps of other kinds
+ *  only: "Activity"; no steps (a turn that never ran, B9) or the transcript showing them already: none. */
+export function trailActs(steps: number, n: { readonly read: number; readonly edit: number; readonly run: number }, t: ShellContext['t']): { icon?: 'read' | 'pen' | 'terminal'; text: string; title?: string }[] {
+  if (!steps) return [];
+  const acts = [
+    { icon: 'read' as const, text: String(n.read), title: t('shell.task.read', { n: n.read }), n: n.read },
+    { icon: 'pen' as const, text: String(n.edit), title: t('shell.task.edited', { n: n.edit }), n: n.edit },
+    { icon: 'terminal' as const, text: String(n.run), title: t('shell.task.ran', { n: n.run }), n: n.run },
+  ]
+    .filter((a) => a.n > 0)
+    .map(({ n: _n, ...a }) => a);
+  return acts.length ? acts : [{ text: t('shell.task.activityLabel') }];
 }

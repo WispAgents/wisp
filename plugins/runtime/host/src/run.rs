@@ -80,7 +80,7 @@ fn apply_opts(s: &mut Session, item: &QueueItem) {
 }
 
 /// The hero title of a turn `before:run` (or its folder) refused: it never started.
-pub(crate) const NOT_STARTED: &str = "Not started";
+pub(crate) const NOT_STARTED: &str = wisp_runtime_core::summary::NOT_STARTED;
 /// The turn's `ext["wisp.runtime"]` flag for a CLI that couldn't be spawned: it ended at once, nothing ran.
 pub(crate) const SPAWN_FAILED: &str = "spawnFailed";
 

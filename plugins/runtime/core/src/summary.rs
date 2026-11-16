@@ -66,15 +66,20 @@ fn live(f: &RowFacts<'_>, waiting: &str) -> String {
     f.after_busy.unwrap_or_default().to_owned()
 }
 
+/// The hero title of a turn refused before it ran (a `before:run` veto, a folder that can't be made ready, a harness
+/// gone): its card says why, with the status "blocked".
+pub const NOT_STARTED: &str = "Not started";
+
 /// Why the last run stopped short, in wisp's words (v1 format.js haltOf): a usage limit, a refusal, a crash. The row's
-/// pill says it in place of the agent's "Blocked", as each needs something else from you (F-task-14).
+/// pill says it in place of the agent's "Blocked", as each needs something else from you (F-task-14). A turn refused
+/// before it ran didn't fail: its row says Blocked, as its card does (B9; it said Failed).
 fn halt(t: Option<&Turn>) -> Option<&'static str> {
     let t = t?;
     if t.limit.is_some() {
         Some("limit")
     } else if t.refusal.is_some() {
         Some("refused")
-    } else if t.status == TurnStatus::Error {
+    } else if t.status == TurnStatus::Error && hero(Some(t)).and_then(|h| h.get("title")).and_then(Value::as_str) != Some(NOT_STARTED) {
         Some("failed")
     } else {
         None

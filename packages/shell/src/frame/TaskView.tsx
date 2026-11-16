@@ -41,7 +41,7 @@ import { afterNextPaint, buildsAtOnce } from './task-paint.ts';
 import { useProjects } from './projects.ts';
 import { taskPlaces } from './project-pick.ts';
 import { switchTo } from './project-switch.ts';
-import { changeFigures, duration, foldedFrom, longTime, nextNeedsYou, overlapLine, overlapsOf, statusOf } from './rows-view.ts';
+import { changeFigures, duration, foldedFrom, longTime, nextNeedsYou, overlapLine, overlapsOf, statusOf, trailActs } from './rows-view.ts';
 import { coldHint, compactItem } from './cold.ts';
 import { replyPlaceholderKey } from './reply-hint.ts';
 import { goalGate } from './goal-gate.ts';
@@ -1073,20 +1073,14 @@ export default function TaskView(props: { readonly id: string; readonly onBack?:
                     ),
                   })}
                 actsTitle={t('shell.task.activity')}
-                acts={
-                  stepsOpen()
-                    ? []
-                    : [
-                        { icon: 'read', text: String(count('read')), title: t('shell.task.read', { n: count('read') }) },
-                        { icon: 'pen', text: String(count('edit')), title: t('shell.task.edited', { n: count('edit') }) },
-                        { icon: 'terminal', text: String(count('run')), title: t('shell.task.ran', { n: count('run') }) },
-                      ]
-                }
+                acts={trailActs(stepsOpen() ? 0 : steps().length, { read: count('read'), edit: count('edit'), run: count('run') }, t)}
                 stats={[
-                  { text: duration((b.endedAt ?? (turn.status === 'running' ? Date.now() : turn.started_at)) - turn.started_at) },
-                  ...(b.stats?.costUsd !== undefined ? [{ text: `$${b.stats.costUsd.toFixed(2)}` }] : []),
+                  // v1 renderTrail: each only when there is something to say; a turn refused before it ran (no stats,
+                  // no steps) took no time worth a figure ("1ms": B9)
+                  ...(b.endedAt && b.endedAt > turn.started_at && (b.stats || steps().length) ? [{ text: duration(b.endedAt - turn.started_at) }] : []),
+                  ...(b.stats?.costUsd ? [{ text: `$${b.stats.costUsd.toFixed(2)}` }] : []),
                 ]}
-                receipt={{ text: t('shell.task.tokens', { n: tokens }), title: t('shell.task.tokensTitle', { n: tokens }) }}
+                {...(tokens > 0 && turn.status !== 'running' && { receipt: { text: t('shell.task.tokens', { n: tokens }), title: t('shell.task.tokensTitle', { n: tokens }) } })}
                 {...(changes.length > 0 && {
                   files: { label: t('shell.task.files', { n: figures.files }), plus: `+${figures.plus}`, minus: `−${figures.minus}`, act: { onClick: () => side('changes') } },
                 })}

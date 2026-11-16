@@ -395,16 +395,19 @@ export function TurnView(props: TurnViewProps): JSX.Element {
       </Show>
       <div data-kit="trail" hidden={props.live !== undefined || props.working !== undefined}>
         <div data-kit="trail-bar">
-          <button type="button" data-kit="tb-acts" title={props.actsTitle} aria-expanded={props.activity?.open ?? false} onClick={() => props.activity?.onToggle()}>
-            <For each={props.acts}>
-              {(a) => (
-                <span data-kit="tb" title={a.title}>
-                  <Show when={a.icon}>{(i) => <Icon name={i()} />}</Show>
-                  {a.text}
-                </span>
-              )}
-            </For>
-          </button>
+          {/* v1 renderTrail: no button when the turn did nothing (or the transcript shows its steps) */}
+          <Show when={props.acts.length > 0}>
+            <button type="button" data-kit="tb-acts" title={props.actsTitle} aria-expanded={props.activity?.open ?? false} onClick={() => props.activity?.onToggle()}>
+              <For each={props.acts}>
+                {(a) => (
+                  <span data-kit="tb" title={a.title}>
+                    <Show when={a.icon}>{(i) => <Icon name={i()} />}</Show>
+                    {a.text}
+                  </span>
+                )}
+              </For>
+            </button>
+          </Show>
           <For each={props.stats}>{(s) => <span data-kit="tb">{s.text}</span>}</For>
           <Show when={props.receipt}>
             {(r) => (

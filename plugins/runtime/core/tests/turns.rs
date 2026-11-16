@@ -268,6 +268,18 @@ fn a_crashed_limited_or_refused_run_says_which_on_its_row() {
     assert_eq!(row(&refused).fields.get("halt"), Some(&json!("refused")));
     // a finished run has none, and a later good turn clears it
     assert_eq!(row(&done_turn("ok", "done")).fields.get("halt"), None);
+    // refused before it ran (B9): Blocked on the row, as its card says, never Failed
+    let not_started = Turn {
+        status: TurnStatus::Error,
+        presentation: Some(Presentation {
+            blocks: vec![
+                json!({ "type": "hero", "title": wisp_runtime_core::summary::NOT_STARTED, "summary": "Its folder is gone.", "status": "blocked" }),
+            ],
+            ..Presentation::default()
+        }),
+        ..Turn::default()
+    };
+    assert_eq!((row(&not_started).status.as_str(), row(&not_started).fields.get("halt")), ("blocked", None));
 }
 
 #[test]

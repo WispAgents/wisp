@@ -1,6 +1,6 @@
 // The task header's status pill (frame/rows-view.ts statusOf).
 import { describe, expect, it, test } from 'vitest';
-import { nextNeedsYou, statusOf, duration, changeFigures, folded } from '../src/frame/rows-view.ts';
+import { nextNeedsYou, statusOf, duration, changeFigures, folded, trailActs } from '../src/frame/rows-view.ts';
 import type { SessionRow } from '../src/rows.ts';
 
 const t = (key: string): string => key;
@@ -10,6 +10,15 @@ test('a task waiting on a question says Waiting, whatever its last turn said (a 
   expect(statusOf(row('waiting', 'done'), t)).toEqual({ label: 'shell.status.waiting', tone: 'warn' });
   expect(statusOf(row('review', 'done'), t).label).toBe('shell.status.finished');
   expect(statusOf(row('running', 'done'), t).tone).toBe('live');
+});
+
+test('a blocked run says why it stopped, else Blocked, as v1 statusKey and the list do (B9: a run refused before it started read Failed)', () => {
+  const blocked = (halt?: string): SessionRow => ({ id: 'x', state: 'review', summary: { status: 'blocked', ...(halt && { halt }) } }) as unknown as SessionRow;
+  expect(statusOf(blocked(), t)).toEqual({ label: 'shell.status.blocked', tone: 'warn' });
+  expect(statusOf(blocked('failed'), t)).toEqual({ label: 'shell.status.failed', tone: 'bad' });
+  expect(statusOf(blocked('limit'), t).label).toBe('shell.status.limit');
+  expect(statusOf(blocked('refused'), t).label).toBe('shell.status.refused');
+  expect(statusOf(row('review', 'partial'), t).label).toBe('shell.status.partial');
 });
 
 describe('turn figures', () => {
@@ -42,4 +51,10 @@ test('leaving_a_task_opens_the_next_that_needs_you_else_new_task', () => {
   expect(nextNeedsYou(rows, 'b')).toBe('local:a'); // a bare id is the same task
   expect(nextNeedsYou(rows, 'local:x')).toBe('local:b');
   expect(nextNeedsYou([row('local:a', 'review', 1)], 'local:a')).toBeUndefined(); // nothing else: New task
+});
+
+test("a finished turn's trail shows only the kinds it did; none when it never ran (B9: it showed 0 · 0 · 0)", () => {
+  expect(trailActs(0, { read: 0, edit: 0, run: 0 }, t)).toEqual([]);
+  expect(trailActs(3, { read: 2, edit: 0, run: 1 }, t).map((a) => a.icon)).toEqual(['read', 'terminal']);
+  expect(trailActs(1, { read: 0, edit: 0, run: 0 }, t)).toEqual([{ text: 'shell.task.activityLabel' }]);
 });

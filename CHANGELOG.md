@@ -224,6 +224,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Fixed
 
+- **A run that never started says Blocked** in the list, as its card does (it said Failed), and its turn no longer shows empty figures (0 · 0 · 0, 0 tokens); a turn's bar shows only what it did.
+
 - **A task's Mark done and Save for later buttons no longer cover its time** when the time is long (16:24, Mon 9:00): they sit just before it.
 
 - **Send later in a task's reply box works**: the follow-up waits for the time you picked (it went at once); near the limit, Wait until the reset does the same.
