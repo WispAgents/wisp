@@ -57,7 +57,12 @@ const later: PluginUiLater = {
         const home = ctx.client.home;
         const task = ctx.task as EntityKey;
         const setting = ctx.client.entities.peek<{ value?: unknown }>('setting', `${home}:shell-composer.readTimes` as EntityKey);
-        const p = replyPlan(text, { now: new Date(), task: ctx.client.entities.peek<ReplyTask>('session', task), readTimes: setting?.value !== false && setting?.value !== 'off' });
+        // a time picked on the box's clock (Send later, or the hold row's Wait until the reset), else one typed in it
+        const picked = (ctx.launch as { at?: number } | undefined)?.at;
+        const p =
+          picked !== undefined && picked > Date.now() && text.trim()
+            ? { at: picked, text: text.trim(), remind: false }
+            : replyPlan(text, { now: new Date(), task: ctx.client.entities.peek<ReplyTask>('session', task), readTimes: setting?.value !== false && setting?.value !== 'off' });
         if (!p) return false;
         // refused: the row goes (the patch rolls back, with the toast) and what was typed is back in the box
         void ctx.client.run(addFollowUp, { sessionId: task, at: p.at, text: p.text, tmp: uuidv7(), setAt: Date.now(), ...(p.remind && { remind: true }) }).catch(() => ctx.restore?.(text));

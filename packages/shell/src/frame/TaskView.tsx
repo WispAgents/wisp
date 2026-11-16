@@ -33,6 +33,7 @@ import {
 } from '@wisp/ui';
 import { useShell } from '../context.tsx';
 import type { SendHold } from '../contract.ts';
+import { aheadLabel, waitable } from './hold.ts';
 import { SESSION, type SessionRow } from '../rows.ts';
 import { Slot, useClients, usePluginClient } from '../slot.tsx';
 import { TaskHeadSlot } from './slots.tsx';
@@ -99,7 +100,7 @@ import type { LedgerTurn } from '@wisp/ui/pure';
 import { envReveal } from './env-reveal.ts';
 import { runPick, type Runner } from './runner.ts';
 import { rowUsage, taskUsage, type TurnStatsLike } from './task-usage.ts';
-import { MODE_ICON, agentMenu, modeMenu, teamMenu, whenMenu, type Mode, type When } from './pickers.ts';
+import { MODE_ICON, agentMenu, modeMenu, teamMenu, whenAt, whenMenu, type Mode, type When } from './pickers.ts';
 import { capOf } from './cap.ts';
 import '../i18n/lazy.ts';
 
@@ -468,6 +469,8 @@ export default function TaskView(props: { readonly id: string; readonly onBack?:
   const [hold, setHold] = createSignal<SendHold | undefined>(undefined);
   const [checking, setChecking] = createSignal(false);
   let pass: 'checked' | 'confirmed' | undefined;
+  // the hold row's Wait until the reset: the next send() goes then, as Send later does
+  let waitUntil: number | undefined;
   const send = (): void => {
     const wait = waited ? undefined : shell.laterReady?.();
     if (wait) {
@@ -502,13 +505,16 @@ export default function TaskView(props: { readonly id: string; readonly onBack?:
       shell.toast.show(t('shell.goal.empty'), { action: { label: t('shell.goal.sendWithout'), onClick: () => (setGoalText(undefined), send()) } });
       return;
     }
+    // when it goes: the box's clock (Send later, B14), or the hold row's Wait until the reset
+    const sendAt = waitUntil ?? (when() ? whenAt(when() ?? 'hour', Date.now()) : undefined);
+    waitUntil = undefined;
     // asked before anything is taken (the box, the goal, the menu); not an answer to what the task asks (v1 composer.js)
     const through = pass;
     pass = undefined;
     setHold(undefined);
     const holds = shell.sendHolds;
     const agent = runOf()?.agent ?? row()?.agent ?? '';
-    if (!through && holds && v && !v.startsWith('/') && row()?.state !== 'waiting') {
+    if (!through && sendAt === undefined && holds && v && !v.startsWith('/') && row()?.state !== 'waiting') {
       if (checking()) return;
       setChecking(true);
       void holds.check({ peer, agent, session: bare }).then((h) => {
@@ -534,9 +540,10 @@ export default function TaskView(props: { readonly id: string; readonly onBack?:
       files().length === 0 &&
       shell
         .promptSources()()
-        .some((p) => (p.where ?? ['reply']).includes('reply') && p.send?.(v, { client: pc, task: key, restore: (back) => !text().trim() && setText(back) }) === true)
+        .some((p) => (p.where ?? ['reply']).includes('reply') && p.send?.(v, { client: pc, task: key, ...(sendAt !== undefined && { launch: { at: sendAt } }), restore: (back) => !text().trim() && setText(back) }) === true)
     ) {
       setText('');
+      setWhen(undefined);
       return;
     }
     setText('');
@@ -1225,6 +1232,8 @@ export default function TaskView(props: { readonly id: string; readonly onBack?:
                         goTitle: t('shell.hold.sendTitle'),
                         keepLabel: t('shell.hold.keep'),
                         onGo: () => ((pass = 'confirmed'), send()),
+                        ...(waitable(hd.until, Date.now()) && { wait: { label: t('shell.hold.wait', { at: aheadLabel(hd.until ?? 0, Date.now()) }), title: t('shell.hold.waitTitle') } }),
+                        onWait: () => ((waitUntil = hd.until), send()),
                         onKeep: () => (setHold(undefined), input?.focus()),
                       })(hold())}
                     placeholder={t(replyPlaceholderKey(row()), { name: h().name })}
