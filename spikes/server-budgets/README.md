@@ -7,13 +7,27 @@ cargo run --profile budgets --manifest-path spikes/server-budgets/Cargo.toml   #
 
 Seeds a home with 5 000 tasks through wisp.runtime's writer (`schema::install`, `repo::save_session`), starts the real
 `wisp serve` on it (fake harness CLIs, a cleared environment, no network) and gates it on `tools/budgets.ts`
-`SERVER_BUDGETS`; exits 1 on a miss, 2 when it can't run:
+`SERVER_BUDGETS`; exits 1 on a miss, 2 when it can't run, 3 when a timed budget was over while most of its rounds ran
+on a slowed runner (*too noisy to judge*, below):
 
-- cold start: process start → the first `200` from `GET /api/status`, median of 7 restarts ≤ 150 ms
+- cold start: process start → the first `200` from `GET /api/status`, each round the median of 5 restarts (on a copy of
+  the migrated home), gated on the median of 5 rounds ≤ 150 ms
 - idle RSS: the server's resident set once settled (2 s within 1 MB), after a client read the list ≤ 120 MB
 - the task list: `GET /api/events?fresh=list` (the UI's first read) → the last byte of the `list` snapshot's first page
-  (what the first screen draws, ADR-0081), median of 30 ≤ 5 ms; the time to its last page (every task), the pages and
-  the bytes are reported. A task in two pages, or pages at two seqs, fails the run.
+  (what the first screen draws, ADR-0081), each round the median of 12 reads (after 2 warm-ups) by a fresh client of the
+  idle server, gated on the median of 5 rounds ≤ 5 ms; the time to its last page (every task), the pages and the bytes
+  are reported. A task in two pages, or pages at two seqs, fails the run.
+
+**Rounds and the runner's calibration (ADR-0089).** Shared CI runners have slow spells (a cold start of 424 ms among
+85–115, 30 list reads with a p90 of 67 ms, one stalled commit window deciding a p99): a timed budget gated on one
+measure failed on them. So cold start and the list take turns, 5 rounds of each spread over the job, the stream runs 3
+rounds (fresh tasks, fresh clients), and each budget is the median of its rounds. Before and after each round the bench
+times a fixed workload in its own process (200 loopback TCP round trips to an echo thread, then 4 xorshift passes over
+64 KB, each written and read back; median of 5): nothing of wisp's is in it, so it tracks the runner only (on Linux
+each round also reports the hypervisor's steal, `/proc/stat`, not judged). A round whose bracket ran over 1.5× the job's fastest
+calibration is marked † and left out of its median while the clean rounds are most; over budget with most rounds
+marked is *too noisy to judge*: exit 3, an `::error` that says so, never a pass. Noise only ever slows a measure, so a
+pass on a noisy runner is a pass. The table shows every round's value and the calibration's range.
 
 It also prints where the list's time goes (the first page's query, every task in one query, and the change-feed replay a
 first look made before ADR-0081), measured in process. And where the idle RSS is (ADR-0087, reported, not gated): on
@@ -28,9 +42,11 @@ On the same server, once those are read (ADR-0082):
 - patch latency: 10 tasks on the fake claude (wisp-testkit's fake agent, `FAKE_STREAM` + `FAKE_STREAM_MIX=agent`),
   gated until 4 clients (`fresh=list` + all 10 `session:<id>`) have their first looks, then a real agent's steps (see
   *The stream's shape*), 2 a second each for 10 s, every one stamped; each client's first sight of each stamp is a
-  sample: p99 ≤ 150 ms, and a stamp a client never got is a miss
-- write amplification: the WAL pinned by a read while they stream, then the database's growth once the server
-  stopped, over the JSON of the steps the 10 turns kept (the runtime bench's payload) ≤ 15×
+  sample; 3 rounds, each 10 new tasks and 4 new clients (800 samples a round, 2 400 in all): the median of the rounds'
+  p99 ≤ 150 ms, and a stamp a client never got, in any round, is a miss
+- write amplification: in the last stream round, the WAL pinned by a read while they stream, then the database's
+  growth once the server stopped, over the JSON of the steps the 10 turns kept (the runtime bench's payload) ≤ the
+  ratchet (`SERVER_BUDGETS.writeAmplification`)
 - append rate: `spikes/events`' `append_rate` (its library), 100 000 events 1 000 a transaction ≥ 20 000/s
 
 Then where the stream's WAL went (ADR-0088, reported, not gated; `src/wal.rs`): every frame's page named by the b-tree

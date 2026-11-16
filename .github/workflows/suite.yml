@@ -136,7 +136,9 @@ jobs:
       # write amplification ≤ 15×: tools/budgets.ts SERVER_BUDGETS), `wisp` and the fake agent the running tasks stream
       # through built in the `budgets` profile (release, thin
       # LTO: fat LTO's link would add minutes) into the job's target dir, the spike reusing the dependencies it shares with `wisp`. A miss fails
-      # the job and the table goes to the job summary. Once per run: Linux, the first Node of the matrix.
+      # the job and the table goes to the job summary. The timed budgets are medians of rounds bracketed by a calibration of
+      # the runner (ADR-0089): a run too noisy to judge fails too (exit 3, its own annotation), never passes. Once per run:
+      # Linux, the first Node of the matrix.
       - name: server budgets
         if: (success() || failure()) && steps.install.outcome == 'success' && runner.os == 'Linux' && matrix.node == fromJSON(inputs.node)[0]
         shell: bash

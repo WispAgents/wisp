@@ -1,7 +1,7 @@
 //! ADR-0011's server budgets against a real `wisp serve` (ADR-0080), on a home seeded with 5 000 tasks:
-//!   cold start  process start → the first 200 from `GET /api/status`, median of 7 restarts   ≤ 150 ms
+//!   cold start  process start → the first 200 from `GET /api/status`, median of 5 restarts    ≤ 150 ms
 //!   idle RSS    the server's resident set once it settles, after a client read the list      ≤ 120 MB
-//!   list        `GET /api/events?fresh=list` → the `list` snapshot's first page, median of 30  ≤ 5 ms
+//!   list        `GET /api/events?fresh=list` → the `list` snapshot's first page, median of 12  ≤ 5 ms
 //!   patch p99   a running task's output written → each client's patch carrying it, p99           ≤ 150 ms
 //!               (10 tasks streaming through the fake claude's `FAKE_STREAM`, 4 clients on `list` and all 10 tasks)
 //!   append      durable events a second (spikes/events' `append_rate`, 1 000 a transaction)      ≥ 20 000 /s
@@ -9,7 +9,10 @@
 //! The list is the UI's first read (packages/sync's hello: `fresh=list`), answered by the server's own snapshot path in
 //! pages (ADR-0081): the first is what the first screen draws; the time to the last page (every task) is reported.
 //! The home is seeded through wisp.runtime's schema and `repo::save_session` (the fixture its list bench uses), never
-//! a hand-made database. Fake harness CLIs, a cleared environment, no network. Exits 1 on a miss, 2 when it can't run.
+//! a hand-made database. Fake harness CLIs, a cleared environment, no network. The three timed budgets are gated on
+//! the median of rounds spread over the job (5, 5 and 3), each bracketed by a calibration of the runner (ADR-0089).
+//! Exits 1 on a miss, 2 when it can't run, 3 when a timed budget is over while most of its rounds ran on a slowed
+//! runner (too noisy to judge: never a pass).
 //!
 //!   cargo run --profile budgets --manifest-path spikes/server-budgets/Cargo.toml -- [--wisp=<bin>] [--fake=<bin>] [--summary=<file>]
 //!
@@ -41,9 +44,18 @@ const APPEND_PER_S: f64 = 20_000.0;
 const WRITE_AMPLIFICATION: f64 = 44.0;
 
 const TASKS: usize = 5_000;
-const COLD_RUNS: usize = 7;
-const LIST_WARMUP: usize = 3;
-const LIST_RUNS: usize = 30;
+/// The timed budgets (cold start, the list, patch p99) are taken in rounds spread over the job and gated on the median
+/// of the rounds (ADR-0089): a slow spell on a shared runner spoils a round, not the verdict. Cold start and the list
+/// take turns, `ROUNDS` times: each round `COLD_PER_ROUND` fresh servers, then `LIST_PER_ROUND` reads (after
+/// `LIST_WARMUP`) by a fresh client of the idle server; the stream runs `PATCH_ROUNDS` times, fresh tasks and clients.
+const ROUNDS: usize = 5;
+const COLD_PER_ROUND: usize = 5;
+const LIST_WARMUP: usize = 2;
+const LIST_PER_ROUND: usize = 12;
+const PATCH_ROUNDS: usize = 3;
+/// The runner's calibration (`calibrate`): a round whose bracket ran over `NOISY`× the job's fastest is disturbed
+const NOISY: f64 = 1.5;
+const CALIB_RUNS: usize = 5;
 /// RSS is settled once 8 samples 250 ms apart (2 s) stay within 1 MB; given up after 30 s
 const RSS_EVERY: Duration = Duration::from_millis(250);
 const RSS_WINDOW: usize = 8;
@@ -234,9 +246,14 @@ impl Bench {
         self.dir.join("home")
     }
 
-    /// `wisp serve` on the seeded home, in a cleared environment: fakes first on PATH, every CLI's home under the
+    /// A copy of the home once migrated, where the cold starts boot while the idle server keeps `home` (ADR-0089)
+    fn cold_home(&self) -> PathBuf {
+        self.dir.join("cold-home")
+    }
+
+    /// `wisp serve` on a seeded home, in a cleared environment: fakes first on PATH, every CLI's home under the
     /// bench's folder, no telemetry, no update check, no web build.
-    fn spawn(&self, run: &str, env: &[(&str, String)]) -> Res<(Serve, Instant)> {
+    fn spawn(&self, home: &Path, run: &str, env: &[(&str, String)]) -> Res<(Serve, Instant)> {
         let port = free_port()?;
         let (bin, user) = (self.dir.join("bin"), self.dir.join("user"));
         let log = std::fs::File::create(self.dir.join(format!("serve-{run}.log"))).map_err(said("create the log"))?;
@@ -248,7 +265,7 @@ impl Bench {
             .env("XDG_CONFIG_HOME", user.join(".config"))
             .env("CODEX_HOME", user.join(".codex"))
             .env("TMPDIR", std::env::temp_dir())
-            .env("WISP_HOME", self.home())
+            .env("WISP_HOME", home)
             .env("WISP_WEB_DIR", self.dir.join("no-web"))
             .env("RUST_LOG", "warn")
             .env("CI", "1")
@@ -268,7 +285,7 @@ impl Bench {
             .stderr(log);
         let t0 = Instant::now();
         let child = cmd.spawn().map_err(said(&format!("start {}", self.wisp.display())))?;
-        Ok((Serve { child, port, home: self.home() }, t0))
+        Ok((Serve { child, port, home: home.to_owned() }, t0))
     }
 
     fn log(&self, run: &str) -> String {
@@ -277,12 +294,17 @@ impl Bench {
 
     /// Starts a server and waits for its first successful response: the time from process start to it.
     fn boot(&self, run: &str) -> Res<(Serve, Duration)> {
-        self.boot_with(run, &[])
+        self.boot_in(&self.home(), run, &[])
     }
 
     /// `boot` with more environment.
     fn boot_with(&self, run: &str, env: &[(&str, String)]) -> Res<(Serve, Duration)> {
-        let (mut s, t0) = self.spawn(run, env)?;
+        self.boot_in(&self.home(), run, env)
+    }
+
+    /// `boot` on `home`.
+    fn boot_in(&self, home: &Path, run: &str, env: &[(&str, String)]) -> Res<(Serve, Duration)> {
+        let (mut s, t0) = self.spawn(home, run, env)?;
         loop {
             if status(s.port) == Some(200) {
                 return Ok((s, t0.elapsed()));
@@ -499,10 +521,10 @@ impl Sse {
     }
 }
 
-/// The UI's first read: a v2 hello asking for `list` fresh, timed from connect to each page's last byte.
-fn list_once(port: u16) -> Res<ListRead> {
+/// The UI's first read: a v2 hello from `client` asking for `list` fresh, timed from connect to each page's last byte.
+fn list_once(port: u16, client: &str) -> Res<ListRead> {
     let t0 = Instant::now();
-    let mut sse = Sse::open(port, "client_id=budgets&fresh=list", Duration::from_secs(10))?;
+    let mut sse = Sse::open(port, &format!("client_id={client}&fresh=list"), Duration::from_secs(10))?;
     let mut pages = Pages::default();
     let mut done = None;
     loop {
@@ -650,20 +672,22 @@ struct Shared {
     ready: std::sync::atomic::AtomicUsize,
     /// stamps seen, over every client
     seen: std::sync::atomic::AtomicUsize,
+    /// this round began (µs): a stamp written before it is an earlier round's (a row that carries old text), never a sample
+    since: u64,
 }
 
-/// One UI: `list` and every running task's topic, fresh; counts itself ready once each first look is in, then times
-/// every stamp it is sent until told to stop.
-fn client(port: u16, i: usize, topics: &[String], sh: &Shared) -> Res<Seen> {
+/// One UI (`id`): `list` and every running task's topic, fresh; counts itself ready once each first look is in, then
+/// times every stamp it is sent until told to stop.
+fn client(port: u16, id: &str, topics: &[String], sh: &Shared) -> Res<Seen> {
     use std::sync::atomic::Ordering::Relaxed;
-    let mut sse = Sse::open(port, &format!("client_id=budgets-{i}&fresh={}", topics.join(",")), Duration::from_millis(50))?;
+    let mut sse = Sse::open(port, &format!("client_id={id}&fresh={}", topics.join(",")), Duration::from_millis(50))?;
     let (mut seen, mut done, mut ready) = (Seen::default(), std::collections::HashSet::new(), false);
     while !sh.stop.load(Relaxed) {
         let mut on = |frame: &[u8]| -> Res<bool> {
             let now = now_us();
             seen.frames += 1;
             seen.bytes += frame.len() + 2;
-            for (key, at) in stamps(frame) {
+            for (key, at) in stamps(frame).into_iter().filter(|(_, at)| *at >= sh.since) {
                 if let std::collections::hash_map::Entry::Vacant(e) = seen.first.entry(key) {
                     e.insert(now.saturating_sub(at));
                     sh.seen.fetch_add(1, Relaxed);
@@ -696,7 +720,8 @@ struct Stream {
     bytes: usize,
     /// the gate opening → the last turn's end
     took: Duration,
-    /// WAL bytes written while the stream ran (a read held open from before it, so nothing was checkpointed away)
+    /// WAL bytes written while the stream ran (a read held open from before it, so nothing was checkpointed away);
+    /// 0 on a round that doesn't pin it (only the last round measures write amplification, ADR-0089)
     wal: u64,
     /// the database file's size before (its growth is read once the server stopped)
     db_before: u64,
@@ -705,14 +730,18 @@ struct Stream {
     steps: usize,
 }
 
-/// 10 tasks gated before their first line, 4 clients on their topics, then the gate opens: each line the fake writes
-/// is stamped, and each client's first sight of a stamp is its latency. The store's WAL is pinned meanwhile.
-fn stream(b: &Bench, port: u16, projects: &[String]) -> Res<Stream> {
+/// Round `round` of the stream: 10 new tasks gated before their first line, 4 new clients on their topics, then the
+/// gate opens: each line the fake writes is stamped, and each client's first sight of a stamp is its latency. With
+/// `pin`, the store's WAL is pinned meanwhile and the turns' kept steps are read (write amplification).
+fn stream(b: &Bench, port: u16, projects: &[String], round: usize, pin: bool) -> Res<Stream> {
     use std::sync::atomic::Ordering::Relaxed;
+    // each round its own gate file: the last round's is already open
+    let gate = b.dir.join("gates").join(format!("go{round}"));
+    let since = now_us();
     let mut ids = Vec::new();
     for i in 0..RUNNING {
-        let args =
-            serde_json::json!({ "prompt": "gate go stream", "cwd": projects[i % projects.len()], "agent": "claude", "worktree": false });
+        let prompt = format!("gate go{round} stream");
+        let args = serde_json::json!({ "prompt": prompt, "cwd": projects[i % projects.len()], "agent": "claude", "worktree": false });
         let made = cmd(port, "runtime.create", &args)?;
         ids.push(made["id"].as_str().ok_or("runtime.create gave no id")?.to_owned());
     }
@@ -727,7 +756,7 @@ fn stream(b: &Bench, port: u16, projects: &[String]) -> Res<Stream> {
     }
     let mut topics = vec!["list".to_owned()];
     topics.extend(ids.iter().map(|id| format!("session:{id}")));
-    let sh = Shared { stop: false.into(), ready: 0.into(), seen: 0.into() };
+    let sh = Shared { stop: false.into(), ready: 0.into(), seen: 0.into(), since };
     let stamps = b.stream.stamps();
     let expected = RUNNING * stamps * CLIENTS;
     let (db, wal) = (b.home().join("wisp.db"), b.home().join("wisp.db-wal"));
@@ -735,8 +764,8 @@ fn stream(b: &Bench, port: u16, projects: &[String]) -> Res<Stream> {
         let clients: Vec<_> = (0..CLIENTS)
             .map(|i| {
                 scope.spawn({
-                    let (topics, sh) = (&topics, &sh);
-                    move || client(port, i, topics, sh)
+                    let (topics, sh, id) = (&topics, &sh, format!("budgets-s{round}-{i}"));
+                    move || client(port, &id, topics, sh)
                 })
             })
             .collect();
@@ -747,6 +776,14 @@ fn stream(b: &Bench, port: u16, projects: &[String]) -> Res<Stream> {
                     return Err(format!("{} of {CLIENTS} clients had their first look", sh.ready.load(Relaxed)));
                 }
                 std::thread::sleep(Duration::from_millis(5));
+            }
+            if !pin {
+                std::fs::write(&gate, "go").map_err(said("open the gate"))?;
+                let opened = Instant::now();
+                wait_turns(port, &ids, opened, b.stream.ms)?;
+                let took = opened.elapsed();
+                last_patches(&sh, expected);
+                return Ok((took, 0, 0));
             }
             // the WAL from here on: emptied into the database, then held by a read so no checkpoint takes it back
             // (as the runtime bench pins it; across processes, SQLite's shared memory makes it the same)
@@ -768,22 +805,11 @@ fn stream(b: &Bench, port: u16, projects: &[String]) -> Res<Stream> {
             pin.execute_batch("BEGIN").map_err(said("pin the WAL"))?;
             let _: i64 = pin.query_row("SELECT count(*) FROM runtime_session", [], |r| r.get(0)).map_err(said("pin the WAL"))?;
             let (wal0, db0) = (file_len(&wal), file_len(&db));
-            std::fs::write(b.dir.join("gates").join("go"), "go").map_err(said("open the gate"))?;
+            std::fs::write(&gate, "go").map_err(said("open the gate"))?;
             let opened = Instant::now();
-            for id in &ids {
-                while last_turn(port, id)?.1 == "running" {
-                    if opened.elapsed() > Duration::from_millis(b.stream.ms) + Duration::from_secs(60) {
-                        return Err(format!("task {id}'s turn never ended"));
-                    }
-                    std::thread::sleep(Duration::from_millis(50));
-                }
-            }
+            wait_turns(port, &ids, opened, b.stream.ms)?;
             let took = opened.elapsed();
-            // the last patches: every stamp to every client, or 5 s
-            let ended = Instant::now();
-            while sh.seen.load(Relaxed) < expected && ended.elapsed() < Duration::from_secs(5) {
-                std::thread::sleep(Duration::from_millis(10));
-            }
+            last_patches(&sh, expected);
             let wal1 = file_len(&wal);
             // what the stream wrote, frame by frame, for `--keep` (where the bytes went: which pages, how many commits)
             let _ = std::fs::copy(&wal, b.dir.join("stream.wal"));
@@ -792,7 +818,7 @@ fn stream(b: &Bench, port: u16, projects: &[String]) -> Res<Stream> {
         };
         let ran = run();
         // the gate opens however the run went: a fake still waiting on it would poll on after the bench is gone
-        let _ = std::fs::write(b.dir.join("gates").join("go"), "go");
+        let _ = std::fs::write(&gate, "go");
         sh.stop.store(true, Relaxed);
         let mut seen = Vec::new();
         for c in clients {
@@ -800,7 +826,7 @@ fn stream(b: &Bench, port: u16, projects: &[String]) -> Res<Stream> {
         }
         let (took, wal, db_before) = ran?;
         let (mut payload, mut steps) = (0, 0);
-        for id in &ids {
+        for id in ids.iter().filter(|_| pin) {
             let (turn, _) = last_turn(port, id)?;
             let (b, n) = kept(port, id, &turn)?;
             (payload, steps) = (payload + b, steps + n);
@@ -821,6 +847,43 @@ fn stream(b: &Bench, port: u16, projects: &[String]) -> Res<Stream> {
             steps,
         })
     })
+}
+
+/// Waits until the WAL (its length and its modified time: a WAL reset after a checkpoint is rewritten from its start,
+/// so the length alone can stand still while it's written) is unchanged for 1.5 s, at most 15 s; how long that took.
+fn wal_quiet(wal: &Path) -> Duration {
+    let t0 = Instant::now();
+    let look = || std::fs::metadata(wal).ok().map(|m| (m.len(), m.modified().ok()));
+    let (mut last, mut since) = (look(), Instant::now());
+    while since.elapsed() < Duration::from_millis(1_500) && t0.elapsed() < Duration::from_secs(15) {
+        std::thread::sleep(Duration::from_millis(100));
+        let now = look();
+        if now != last {
+            (last, since) = (now, Instant::now());
+        }
+    }
+    t0.elapsed()
+}
+
+/// Every task's turn ended (none `running`), or an error a minute past the stream's length.
+fn wait_turns(port: u16, ids: &[String], opened: Instant, ms: u64) -> Res<()> {
+    for id in ids {
+        while last_turn(port, id)?.1 == "running" {
+            if opened.elapsed() > Duration::from_millis(ms) + Duration::from_secs(60) {
+                return Err(format!("task {id}'s turn never ended"));
+            }
+            std::thread::sleep(Duration::from_millis(50));
+        }
+    }
+    Ok(())
+}
+
+/// The last patches: every stamp to every client, or 5 s.
+fn last_patches(sh: &Shared, expected: usize) {
+    let ended = Instant::now();
+    while sh.seen.load(std::sync::atomic::Ordering::Relaxed) < expected && ended.elapsed() < Duration::from_secs(5) {
+        std::thread::sleep(Duration::from_millis(10));
+    }
 }
 
 /// The database's growth once the server stopped: its WAL emptied into it first.
@@ -893,8 +956,9 @@ fn glibc_defaults(b: &Bench) -> Res<Defaults> {
     let arenas = 8 * std::thread::available_parallelism().map_or(1, std::num::NonZero::get);
     let (s, _) = b.boot_with("glibc-defaults", &[("MALLOC_ARENA_MAX", arenas.to_string())])?;
     let before = settle(s.child.id())?;
-    for _ in 0..=(LIST_WARMUP + LIST_RUNS) {
-        let r = list_once(s.port)?;
+    // as many reads as the gated idle server takes
+    for _ in 0..=(ROUNDS * (LIST_WARMUP + LIST_PER_ROUND)) {
+        let r = list_once(s.port, "budgets")?;
         if r.tasks != TASKS {
             return Err(format!("its list snapshot had {} tasks, not {TASKS}", r.tasks));
         }
@@ -955,6 +1019,169 @@ fn breakdown(home: &Path) -> Res<Breakdown> {
     Ok(Breakdown { feed, query, page, encode, rows })
 }
 
+// ---------- the runner's calibration and the rounds' verdict (ADR-0089) ----------
+
+/// A fixed piece of work in the bench's own process, nothing of wisp's in it: 200 one-byte round trips to an echo
+/// thread over loopback TCP (each a wake-up of another thread, as every request wisp answers is: a CPU-only loop fits in
+/// one time slice and never sees a busy runner, measured: 6.7 ms with every core taken, as idle), then 4 passes of
+/// xorshift over a 64 KB buffer, each written to `scratch` and read back (CPU and file syscalls). It tracks the runner only.
+fn workload(scratch: &Path) -> Res<Duration> {
+    const TRIPS: usize = 200;
+    let l = TcpListener::bind("127.0.0.1:0").map_err(said("calibrate"))?;
+    let at = l.local_addr().map_err(said("calibrate"))?;
+    // connected before the echo thread exists (the listen backlog takes it): a failed connect leaves no thread waiting
+    let mut c = TcpStream::connect(at).map_err(said("calibrate"))?;
+    let echo = std::thread::spawn(move || -> std::io::Result<()> {
+        let (mut c, _) = l.accept()?;
+        c.set_nodelay(true)?;
+        let mut b = [0u8; 1];
+        for _ in 0..TRIPS {
+            c.read_exact(&mut b)?;
+            c.write_all(&b)?;
+        }
+        Ok(())
+    });
+    c.set_nodelay(true).map_err(said("calibrate"))?;
+    c.set_read_timeout(Some(Duration::from_secs(10))).map_err(said("calibrate"))?;
+    let t = Instant::now();
+    let mut b = [7u8; 1];
+    for _ in 0..TRIPS {
+        c.write_all(&b).map_err(said("calibrate"))?;
+        c.read_exact(&mut b).map_err(said("calibrate"))?;
+    }
+    let mut x = 0x9E37_79B9_7F4A_7C15_u64;
+    let mut buf = vec![0u8; 64 * 1024];
+    for i in 0..4 {
+        for b in &mut buf {
+            x ^= x << 13;
+            x ^= x >> 7;
+            x ^= x << 17;
+            *b = x.to_le_bytes()[0];
+        }
+        std::fs::write(scratch, &buf).map_err(said("calibrate"))?;
+        let back = std::fs::read(scratch).map_err(said("calibrate"))?;
+        x ^= u64::from(back.get(i).copied().unwrap_or(0));
+    }
+    std::hint::black_box(x);
+    let took = t.elapsed();
+    echo.join().map_err(|_| "the calibration's echo thread panicked".to_owned())?.map_err(said("calibrate"))?;
+    Ok(took)
+}
+
+/// The runner's speed now: the median of `CALIB_RUNS` workloads, in ms.
+fn calibrate(scratch: &Path) -> Res<f64> {
+    let mut v = (0..CALIB_RUNS).map(|_| workload(scratch).map(ms)).collect::<Res<Vec<f64>>>()?;
+    Ok(upper_median(&mut v))
+}
+
+/// The middle value (the upper one of an even count: the slower, never the kinder); no values is infinite, a miss.
+fn upper_median(v: &mut [f64]) -> f64 {
+    v.sort_by(f64::total_cmp);
+    v.get(v.len() / 2).copied().unwrap_or(f64::INFINITY)
+}
+
+/// A timed budget taken in rounds: each round's value (ms) and the runner's calibration around it (the slower of the
+/// two brackets, ms), index for index.
+#[derive(Debug, Clone, Default)]
+struct Rounds {
+    values: Vec<f64>,
+    calib: Vec<f64>,
+    /// the share of CPU time the hypervisor took during each round, % (Linux `/proc/stat`; reported, not judged)
+    steal: Vec<Option<f64>>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Verdict {
+    Pass,
+    /// over budget with most rounds run on an undisturbed runner: wisp is slower
+    Miss,
+    /// over budget, but most rounds ran while the runner itself was slow: this run can't tell (a failure, not a pass)
+    Noisy,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct Judged {
+    verdict: Verdict,
+    /// the gated value: the median of the clean rounds while they are most, else of every round
+    value: f64,
+    clean: usize,
+    rounds: usize,
+    /// the slowest bracket over `usual`
+    worst: f64,
+}
+
+impl Rounds {
+    fn push(&mut self, value: f64, calib: f64) {
+        self.values.push(value);
+        self.calib.push(calib);
+    }
+
+    /// Round `i` ran while the runner was over `NOISY`× its usual speed (or the calibration is unknown).
+    fn disturbed(&self, i: usize, usual: f64) -> bool {
+        let known = usual.is_finite() && usual > 0.0;
+        self.calib.get(i).is_none_or(|c| !known || !c.is_finite() || *c > NOISY * usual)
+    }
+
+    /// The verdict on `budget` (lower is better), with `usual` the runner's undisturbed calibration (the job's fastest).
+    /// Noise only ever slows a measure, so a pass is a pass however noisy the runner was; a disturbed round is left out
+    /// of the median while the clean rounds are most (the calibration is wisp-free, so this never hides a regression:
+    /// it slows the clean rounds too); over budget with most rounds disturbed is `Noisy`, never `Pass`.
+    fn judge(&self, usual: f64, budget: f64) -> Judged {
+        let n = self.values.len();
+        let clean: Vec<f64> = (0..n).filter(|i| !self.disturbed(*i, usual)).map(|i| self.values[i]).collect();
+        let most = clean.len() > n / 2;
+        let value = if most { upper_median(&mut clean.clone()) } else { upper_median(&mut self.values.clone()) };
+        let worst = self.calib.iter().copied().fold(0.0, f64::max) / usual;
+        let verdict = if n > 0 && value <= budget {
+            Verdict::Pass
+        } else if n > 0 && !most {
+            Verdict::Noisy
+        } else {
+            Verdict::Miss
+        };
+        Judged { verdict, value, clean: clean.len(), rounds: n, worst }
+    }
+
+    /// `a · b† · c` in ms, † on a disturbed round
+    fn cell(&self, usual: f64, decimals: usize) -> String {
+        (0..self.values.len())
+            .map(|i| format!("{:.decimals$}{}", self.values[i], if self.disturbed(i, usual) { "†" } else { "" }))
+            .collect::<Vec<_>>()
+            .join(" · ")
+    }
+}
+
+/// The machine's CPU time so far, `/proc/stat`'s first line: (steal, every kind but guests) in ticks; None off Linux.
+fn cpu_ticks() -> Option<(u64, u64)> {
+    let s = std::fs::read_to_string("/proc/stat").ok()?;
+    let v: Vec<u64> = s.lines().next()?.split_whitespace().skip(1).filter_map(|t| t.parse().ok()).collect();
+    Some((*v.get(7)?, v.iter().take(8).sum()))
+}
+
+/// The steal share between two readings, %; None without both, or when no tick passed.
+fn steal_pct(a: Option<(u64, u64)>, b: Option<(u64, u64)>) -> Option<f64> {
+    let ((s0, t0), (s1, t1)) = (a?, b?);
+    #[allow(clippy::cast_precision_loss)]
+    let pct = (t1 > t0).then(|| s1.saturating_sub(s0) as f64 * 100.0 / (t1 - t0) as f64);
+    pct
+}
+
+/// `from` copied into `to`, folders and all (the migrated home the cold starts boot on).
+fn copy_dir(from: &Path, to: &Path) -> Res<()> {
+    std::fs::create_dir_all(to).map_err(said("copy the home"))?;
+    for e in std::fs::read_dir(from).map_err(said("copy the home"))? {
+        let e = e.map_err(said("copy the home"))?;
+        let (src, dst) = (e.path(), to.join(e.file_name()));
+        let kind = e.file_type().map_err(said("copy the home"))?;
+        if kind.is_dir() {
+            copy_dir(&src, &dst)?;
+        } else if kind.is_file() {
+            std::fs::copy(&src, &dst).map_err(said("copy the home"))?;
+        }
+    }
+    Ok(())
+}
+
 // ---------- the report ----------
 
 fn ms(d: Duration) -> f64 {
@@ -978,7 +1205,10 @@ fn spread(v: &[Duration]) -> (f64, f64, f64, f64) {
 struct Report {
     seeded: Duration,
     first_boot: Duration,
+    /// every restart, over every round (reported)
     cold: Vec<Duration>,
+    /// each round's median of `COLD_PER_ROUND` restarts (gated: the median of the rounds)
+    cold_rounds: Rounds,
     rss_before: Rss,
     rss: Rss,
     /// where the RSS is, before the list and settled (`mem`; Linux has every part, macOS the threads)
@@ -986,8 +1216,10 @@ struct Report {
     parts: Option<mem::Parts>,
     /// the same idle server on glibc's own malloc settings (Linux): wisp's `tune_heap` off (ADR-0087)
     defaults: Option<Defaults>,
-    /// to the first page (gated)
+    /// to the first page, every timed read of every round (reported)
     list: Vec<Duration>,
+    /// each round's median to the first page (gated: the median of the rounds)
+    list_rounds: Rounds,
     /// to the last page (reported)
     list_all: Vec<Duration>,
     /// tasks in the first page, pages in all
@@ -995,7 +1227,12 @@ struct Report {
     list_pages: usize,
     list_bytes: usize,
     why: Option<Breakdown>,
+    /// every round's samples together (reported; a patch a client never got, in any round, is a miss)
     patch: Patch,
+    /// each round's p99 (gated: the median of the rounds)
+    patch_rounds: Rounds,
+    /// every calibration the job took (ms): the fastest is the runner's usual speed
+    calibrations: Vec<f64>,
     append_per_s: f64,
     amp: Amp,
     /// what each running task streamed
@@ -1043,31 +1280,103 @@ impl Amp {
     }
 }
 
+/// The three timed budgets, by name, unit decimals and budget.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Timed {
+    Cold,
+    List,
+    Patch,
+}
+
+impl Timed {
+    const ALL: [Self; 3] = [Self::Cold, Self::List, Self::Patch];
+    fn name(self) -> &'static str {
+        match self {
+            Self::Cold => "cold start",
+            Self::List => "task list",
+            Self::Patch => "patch latency p99",
+        }
+    }
+    fn budget(self) -> f64 {
+        match self {
+            Self::Cold => COLD_START_MS,
+            Self::List => LIST_MS,
+            Self::Patch => PATCH_P99_MS,
+        }
+    }
+}
+
 impl Report {
-    fn cold_ms(&self) -> f64 {
-        spread(&self.cold).1
+    /// The runner's undisturbed speed: the job's fastest calibration (ms)
+    fn usual(&self) -> f64 {
+        self.calibrations.iter().copied().fold(f64::INFINITY, f64::min)
     }
-    fn list_ms(&self) -> f64 {
-        spread(&self.list).1
+    fn rounds(&self, t: Timed) -> &Rounds {
+        match t {
+            Timed::Cold => &self.cold_rounds,
+            Timed::List => &self.list_rounds,
+            Timed::Patch => &self.patch_rounds,
+        }
     }
+    fn judge(&self, t: Timed) -> Judged {
+        self.rounds(t).judge(self.usual(), t.budget())
+    }
+
+    /// The timed budgets this run couldn't judge: over budget while most of their rounds ran on a slowed runner.
+    fn noisy(&self) -> Vec<String> {
+        let usual = self.usual();
+        Timed::ALL
+            .into_iter()
+            .filter(|t| *t != Timed::Patch || self.patch.missing() == 0)
+            .map(|t| (t, self.judge(t)))
+            .filter(|(_, j)| j.verdict == Verdict::Noisy)
+            .map(|(t, j)| {
+                format!(
+                    "too noisy to judge {}: {} of {} rounds ran while the runner's calibration was over {NOISY}× its usual \
+                     {usual:.2} ms (up to {:.1}×), and their median {:.2} ms is over the {} ms budget: not a pass, not a \
+                     verdict on wisp",
+                    t.name(),
+                    j.rounds - j.clean,
+                    j.rounds,
+                    j.worst,
+                    j.value,
+                    t.budget()
+                )
+            })
+            .collect()
+    }
+
+    /// 1 on a miss, else 3 when a timed budget couldn't be judged, else 0 (2, it can't run, is `main`'s)
+    fn exit_code(&self) -> i32 {
+        if !self.over().is_empty() {
+            1
+        } else if !self.noisy().is_empty() {
+            3
+        } else {
+            0
+        }
+    }
+
     fn over(&self) -> Vec<String> {
         let mut over = Vec::new();
-        if self.cold_ms() > COLD_START_MS {
-            over.push(format!("cold start {:.1} ms (median of {}) > {COLD_START_MS} ms", self.cold_ms(), self.cold.len()));
+        let cold = self.judge(Timed::Cold);
+        if cold.verdict == Verdict::Miss {
+            over.push(format!("cold start {:.1} ms (median of {} rounds) > {COLD_START_MS} ms", cold.value, cold.clean));
         }
         if !self.rss.settled {
             over.push(format!("idle RSS never settled in 30 s (last {:.1} MB, budget {IDLE_RSS_MB} MB)", mb(self.rss.kb)));
         } else if mb(self.rss.kb) > IDLE_RSS_MB {
             over.push(format!("idle RSS {:.1} MB (settled) > {IDLE_RSS_MB} MB", mb(self.rss.kb)));
         }
-        if self.list_ms() > LIST_MS {
-            over.push(format!("task list {:.2} ms (median of {}) > {LIST_MS} ms", self.list_ms(), self.list.len()));
+        let list = self.judge(Timed::List);
+        if list.verdict == Verdict::Miss {
+            over.push(format!("task list {:.2} ms (median of {} rounds) > {LIST_MS} ms", list.value, list.clean));
         }
-        let (_, _, p99, _) = self.patch.spread();
+        let patch = self.judge(Timed::Patch);
         if self.patch.missing() > 0 {
             over.push(format!("{} of {} patches never reached their client", self.patch.missing(), self.patch.expected));
-        } else if p99 > PATCH_P99_MS {
-            over.push(format!("patch latency p99 {p99:.1} ms (of {}) > {PATCH_P99_MS} ms", self.patch.lat.len()));
+        } else if patch.verdict == Verdict::Miss {
+            over.push(format!("patch latency p99 {:.1} ms (median of {} rounds) > {PATCH_P99_MS} ms", patch.value, patch.clean));
         }
         if self.append_per_s < APPEND_PER_S {
             over.push(format!("durable append {:.0} events/s < {APPEND_PER_S} events/s", self.append_per_s));
@@ -1102,21 +1411,37 @@ impl Report {
 
     fn summary(&self) -> String {
         let mark = |ok: bool| if ok { "✅" } else { "❌" };
-        let (c0, c50, c95, c100) = spread(&self.cold);
-        let (l0, l50, l95, l100) = spread(&self.list);
+        let verdict = |j: Judged| match j.verdict {
+            Verdict::Pass => "✅",
+            Verdict::Miss => "❌",
+            Verdict::Noisy => "⚠️ too noisy to judge",
+        };
+        let usual = self.usual();
+        let (cold, list, patch) = (self.judge(Timed::Cold), self.judge(Timed::List), self.judge(Timed::Patch));
+        let (c0, _, _, c100) = spread(&self.cold);
+        let (l0, l50, _, l100) = spread(&self.list);
         let (a0, a50, a95, a100) = spread(&self.list_all);
         let rss_ok = mb(self.rss.kb) <= IDLE_RSS_MB && self.rss.settled;
         let (p0, p50, p99, pmax) = self.patch.spread();
-        let patch_ok = self.patch.missing() == 0 && p99 <= PATCH_P99_MS;
+        let patch_mark = if self.patch.missing() > 0 { "❌" } else { verdict(patch) };
+        let of =
+            |j: Judged| if j.clean == j.rounds { format!("{} rounds", j.rounds) } else { format!("{} of {} rounds", j.clean, j.rounds) };
+        let steal =
+            |r: &Rounds| r.steal.iter().map(|s| s.map_or_else(|| "?".to_owned(), |s| format!("{s:.1}"))).collect::<Vec<_>>().join(" · ");
+        let stole = [&self.cold_rounds, &self.list_rounds, &self.patch_rounds].iter().any(|r| r.steal.iter().any(Option::is_some));
+        let (cmin, cmax) =
+            (self.calibrations.iter().copied().fold(f64::INFINITY, f64::min), self.calibrations.iter().copied().fold(0.0, f64::max));
         [
             format!("### Server budgets (ADR-0011), `wisp serve` on {TASKS} tasks"),
             String::new(),
-            "| | measured | budget | runs (min · p95 · max) | |".into(),
+            "| | measured | budget | rounds († the runner was slowed) and runs | |".into(),
             "|---|---:|---:|---|---|".into(),
             format!(
-                "| cold start → first response | {c50:.1} ms median | {COLD_START_MS} ms | {} ({c0:.1} · {c95:.1} · {c100:.1} ms) | {} |",
-                self.cold.len(),
-                mark(c50 <= COLD_START_MS)
+                "| cold start → first response | {:.1} ms, median of {} | {COLD_START_MS} ms | each the median of {COLD_PER_ROUND} restarts: {} ms (every restart {c0:.1} – {c100:.1}) | {} |",
+                cold.value,
+                of(cold),
+                self.cold_rounds.cell(usual, 1),
+                verdict(cold)
             ),
             format!(
                 "| idle RSS | {:.1} MB settled | {IDLE_RSS_MB} MB | after {:.1} s; {:.1} MB before the list was read | {} |",
@@ -1126,16 +1451,21 @@ impl Report {
                 mark(rss_ok)
             ),
             format!(
-                "| task list (`fresh=list`, its first page: {} tasks) | {l50:.2} ms median | {LIST_MS} ms | {} ({l0:.2} · {l95:.2} · {l100:.2} ms) | {} |",
+                "| task list (`fresh=list`, its first page: {} tasks) | {:.2} ms, median of {} | {LIST_MS} ms | each the median of {LIST_PER_ROUND} reads by a fresh client: {} ms (every read {l0:.2} · median {l50:.2} · max {l100:.2}) | {} |",
                 self.list_first,
-                self.list.len(),
-                mark(l50 <= LIST_MS)
+                list.value,
+                of(list),
+                self.list_rounds.cell(usual, 2),
+                verdict(list)
             ),
             format!(
-                "| patch latency ({RUNNING} running, {CLIENTS} clients) | {p99:.1} ms p99 | {PATCH_P99_MS} ms | {} of {} (min {p0:.1} · p50 {p50:.1} · max {pmax:.1} ms) | {} |",
+                "| patch latency ({RUNNING} running, {CLIENTS} clients) | {:.1} ms p99, median of {} | {PATCH_P99_MS} ms | each round's p99: {} ms; every round's {} of {} together: min {p0:.1} · p50 {p50:.1} · p99 {p99:.1} · max {pmax:.1} ms | {} |",
+                patch.value,
+                of(patch),
+                self.patch_rounds.cell(usual, 1),
                 self.patch.lat.len(),
                 self.patch.expected,
-                mark(patch_ok)
+                patch_mark
             ),
             format!(
                 "| durable append | {:.0} events/s | {APPEND_PER_S} events/s | {} events, 1 000 a transaction (spikes/events) | {} |",
@@ -1154,9 +1484,29 @@ impl Report {
             ),
             String::new(),
             format!(
-                "The stream: {RUNNING} tasks × {} lines ({} a second for {:.0} s, {}) through the fake claude, \
-                 each client on `list` and all {RUNNING} task topics; the last turn ended {:.1} s after the gate opened; \
-                 the clients read {} frames, {:.0} KB.",
+                "The timed budgets are the median of rounds spread over the job (ADR-0089). The runner's calibration (a fixed \
+                 workload in the bench's own process: 200 loopback round trips, CPU and file work; median of {CALIB_RUNS}, \
+                 before and after each round): \
+                 usual (the job's fastest) {cmin:.2} ms, slowest {cmax:.2} ms ({:.1}×). A round run while it was over \
+                 {NOISY}× the usual is marked † and left out of the median while most rounds are clean; over budget with \
+                 most rounds marked is *too noisy to judge* (exit 3), never a pass.",
+                cmax / cmin
+            ),
+            if stole {
+                format!(
+                    "\nThe hypervisor's steal (`/proc/stat`, reported, not judged), % of CPU time per round: cold start {}; list {}; stream {}.",
+                    steal(&self.cold_rounds),
+                    steal(&self.list_rounds),
+                    steal(&self.patch_rounds)
+                )
+            } else {
+                String::new()
+            },
+            String::new(),
+            format!(
+                "The stream, {PATCH_ROUNDS} rounds: {RUNNING} new tasks × {} lines ({} a second for {:.0} s, {}) through the fake claude, \
+                 {CLIENTS} new clients each on `list` and all {RUNNING} task topics; the last round's turns ended {:.1} s after its gate opened; \
+                 the clients read {} frames, {:.0} KB; write amplification is the last round's.",
                 self.stream.stamps(),
                 self.stream.per_s,
                 self.stream.ms as f64 / 1000.0,
@@ -1234,13 +1584,8 @@ fn run(o: &Opts, dir: &Path) -> Res<Report> {
     let (s, first_boot) = b.boot("first")?;
     drop(s);
     println!("first boot (migrations): {:.0} ms", ms(first_boot));
-    let mut cold = Vec::new();
-    for i in 0..COLD_RUNS {
-        let (s, took) = b.boot(&format!("cold-{i}"))?;
-        drop(s);
-        println!("  cold start {}: {:.1} ms", i + 1, ms(took));
-        cold.push(took);
-    }
+    // the cold starts boot on a copy, so they take turns with the list's rounds while the idle server keeps the home
+    copy_dir(&b.home(), &b.cold_home())?;
 
     // on the home as the gated idle server finds it (before the stream adds to it), and not gated
     let defaults = if cfg!(all(target_os = "linux", target_env = "gnu")) {
@@ -1256,29 +1601,99 @@ fn run(o: &Opts, dir: &Path) -> Res<Report> {
     if let Some(p) = &parts_before {
         println!("  where: {}", p.line());
     }
-    let first = list_once(s.port)?;
+    let first = list_once(s.port, "budgets")?;
     if first.tasks != TASKS {
         return Err(format!("the list snapshot had {} tasks, not {TASKS}", first.tasks));
     }
-    for _ in 0..LIST_WARMUP {
-        list_once(s.port)?;
-    }
-    let (mut list, mut list_all) = (Vec::new(), Vec::new());
-    for _ in 0..LIST_RUNS {
-        let r = list_once(s.port)?;
-        list.push(r.took);
-        list_all.push(r.all);
-    }
     println!("first list read (cold): first page {:.2} ms, every task {:.2} ms", ms(first.took), ms(first.all));
+
+    // ADR-0089: cold start and the list take turns, each round bracketed by the runner's calibration
+    let scratch = dir.join("calibration");
+    let mut calibrations = Vec::new();
+    // each bracket: the calibration (ms) and the machine's CPU ticks (Linux: a round's steal share, reported)
+    let mut calib = || -> Res<(f64, Option<(u64, u64)>)> {
+        let c = calibrate(&scratch)?;
+        calibrations.push(c);
+        Ok((c, cpu_ticks()))
+    };
+    let (mut cold, mut cold_rounds, mut list, mut list_all, mut list_rounds) =
+        (Vec::new(), Rounds::default(), Vec::new(), Vec::new(), Rounds::default());
+    let mut before = calib()?;
+    for r in 0..ROUNDS {
+        let mut round = Vec::new();
+        for i in 0..COLD_PER_ROUND {
+            let (s, took) = b.boot_in(&b.cold_home(), &format!("cold-{r}-{i}"), &[])?;
+            drop(s);
+            round.push(took);
+        }
+        let between = calib()?;
+        let value = spread(&round).1;
+        cold_rounds.push(value, before.0.max(between.0));
+        cold_rounds.steal.push(steal_pct(before.1, between.1));
+        cold.extend(round);
+        let client = format!("budgets-r{r}");
+        for _ in 0..LIST_WARMUP {
+            list_once(s.port, &client)?;
+        }
+        let mut round = Vec::new();
+        for _ in 0..LIST_PER_ROUND {
+            let read = list_once(s.port, &client)?;
+            round.push(read.took);
+            list_all.push(read.all);
+        }
+        let after = calib()?;
+        let reads = spread(&round).1;
+        list_rounds.push(reads, between.0.max(after.0));
+        list_rounds.steal.push(steal_pct(between.1, after.1));
+        list.extend(round);
+        println!(
+            "round {}: cold start {value:.1} ms, list {reads:.2} ms (calibration {:.2} · {:.2} · {:.2} ms)",
+            r + 1,
+            before.0,
+            between.0,
+            after.0
+        );
+        before = after;
+    }
     let rss = settle(pid)?;
     let parts = mem::parts(pid);
     println!("RSS settled after the list: {:.1} MB", mb(rss.kb));
     if let Some(p) = &parts {
         println!("  where: {}", p.line());
     }
-    // on the same server, once its idle numbers are in: 10 tasks stream to 4 clients
-    let st = stream(&b, s.port, &projects)?;
-    let patch = Patch { lat: st.lat, expected: st.expected, frames: st.frames, bytes: st.bytes, took: st.took };
+    // on the same server, once its idle numbers are in: 10 new tasks stream to 4 new clients, each round; the last
+    // round pins the WAL (write amplification)
+    let (mut lat, mut expected, mut frames, mut bytes, mut patch_rounds) = (Vec::new(), 0, 0, 0, Rounds::default());
+    let mut last = None;
+    let mut before = calib()?;
+    for r in 0..PATCH_ROUNDS {
+        let pin = r + 1 == PATCH_ROUNDS;
+        if pin && r > 0 {
+            // what the earlier rounds' turn ends still write (cursors saved within 1 s, ADR-0088) isn't the last round's
+            let quiet = wal_quiet(&b.home().join("wisp.db-wal"));
+            println!("the WAL was quiet {:.1} s after the last round ended", quiet.as_secs_f64());
+        }
+        let st = stream(&b, s.port, &projects, r, pin)?;
+        let after = calib()?;
+        let round = Patch { lat: st.lat.clone(), expected: st.expected, frames: 0, bytes: 0, took: st.took };
+        let p99 = round.spread().2;
+        println!(
+            "stream round {}: patch p99 {p99:.1} ms over {} of {} patches (calibration {:.2} · {:.2} ms)",
+            r + 1,
+            round.lat.len(),
+            round.expected,
+            before.0,
+            after.0
+        );
+        patch_rounds.push(p99, before.0.max(after.0));
+        patch_rounds.steal.push(steal_pct(before.1, after.1));
+        before = after;
+        (expected, frames, bytes) = (expected + st.expected, frames + st.frames, bytes + st.bytes);
+        lat.extend(st.lat.iter().copied());
+        last = Some(st);
+    }
+    let st = last.ok_or("no stream round")?;
+    let patch = Patch { lat, expected, frames, bytes, took: st.took };
     println!(
         "patch latency: p99 {:.1} ms over {} of {} patches; {} steps kept",
         patch.spread().2,
@@ -1300,18 +1715,22 @@ fn run(o: &Opts, dir: &Path) -> Res<Report> {
         seeded,
         first_boot,
         cold,
+        cold_rounds,
         rss_before,
         rss,
         parts_before,
         parts,
         defaults,
         list,
+        list_rounds,
         list_all,
         list_first: first.first,
         list_pages: first.pages,
         list_bytes: first.bytes,
         why,
         patch,
+        patch_rounds,
+        calibrations,
         append_per_s,
         amp: Amp { wal: st.wal, db, payload: st.payload, steps: st.steps },
         stream: o.stream,
@@ -1347,12 +1766,14 @@ fn main() {
             eprintln!("server budgets: could not write the summary to {}: {e}", to.display());
         }
     }
-    let over = r.over();
     let gh = std::env::var_os("GITHUB_ACTIONS").is_some();
-    for o in &over {
+    for o in &r.over() {
         eprintln!("{}OVER BUDGET: {o}", if gh { "::error title=Server budget::" } else { "" });
     }
-    std::process::exit(i32::from(!over.is_empty()));
+    for n in &r.noisy() {
+        eprintln!("{}NOT JUDGED: {n}", if gh { "::error title=Server budget: runner too noisy::" } else { "" });
+    }
+    std::process::exit(r.exit_code());
 }
 
 #[cfg(test)]
@@ -1364,12 +1785,26 @@ mod tests {
         report_all(cold, rss_mb, settled, list_us, 150_000, 20_000.0, 44)
     }
 
+    /// Rounds of `values` (ms), all at the usual calibration (1 ms), but those in `slow` at `slow_x`× it.
+    fn rounds(values: &[f64], slow: &[usize], slow_x: f64) -> Rounds {
+        let mut r = Rounds::default();
+        for (i, v) in values.iter().enumerate() {
+            r.push(*v, if slow.contains(&i) { slow_x } else { 1.0 });
+        }
+        r
+    }
+
+    #[allow(clippy::cast_precision_loss)]
     fn report_all(cold: u64, rss_mb: u64, settled: bool, list_us: u64, patch_us: u64, append: f64, amp_x: u64) -> Report {
         let rss = |kb| Rss { kb, after: Duration::from_secs(2), settled };
         Report {
             seeded: Duration::ZERO,
             first_boot: Duration::ZERO,
             cold: vec![Duration::from_millis(cold); 3],
+            cold_rounds: rounds(&[cold as f64; 5], &[], 1.0),
+            list_rounds: rounds(&[list_us as f64 / 1000.0; 5], &[], 1.0),
+            patch_rounds: rounds(&[patch_us as f64 / 1000.0; 3], &[], 1.0),
+            calibrations: vec![1.0, 1.2, 1.1],
             rss_before: rss(rss_mb * 1024),
             rss: rss(rss_mb * 1024),
             parts_before: None,
@@ -1476,7 +1911,11 @@ mod tests {
         let mut r = report(10, 50, true, 1_000);
         r.patch = Patch { lat: vec![1_000; 99], expected: 100, frames: 0, bytes: 0, took: Duration::ZERO };
         assert_eq!(r.over(), vec!["1 of 100 patches never reached their client".to_owned()]);
-        assert!(r.summary().contains("| 99 of 100 (min 1.0 · p50 1.0 · max 1.0 ms) | ❌ |"), "{}", r.summary());
+        assert!(
+            r.summary().contains("every round's 99 of 100 together: min 1.0 · p50 1.0 · p99 1.0 · max 1.0 ms | ❌ |"),
+            "{}",
+            r.summary()
+        );
     }
 
     #[test]
@@ -1537,5 +1976,151 @@ mod tests {
         let over = report(10, 50, false, 1_000).over();
         assert_eq!(over, vec!["idle RSS never settled in 30 s (last 50.0 MB, budget 120 MB)".to_owned()]);
         assert!(report(10, 50, false, 1_000).summary().contains("| ❌ |"));
+    }
+
+    // ADR-0089: the timed budgets' verdict, on the numbers PR CI recorded (the Linux jobs' gated values; /tmp/ci-*.log of
+    // runs db637559, e978…, df56a408, 9dcd…, 4612442b: every one the same list and cold-start code since ADR-0084).
+
+    /// The task list's job medians: 4612442b's quick job read 7.87 ms (p90 67, max 102: the whole runner slow then);
+    /// the other jobs on the same code 4.69 (4612442b full), 4.39 and 2.64 (9dcd), 3.86 and 4.47 (df56a408).
+    const LIST_CI: [f64; 5] = [7.87, 4.69, 4.39, 3.86, 4.47];
+
+    #[test]
+    fn a_round_the_runner_slowed_is_outvoted_and_the_old_single_measure_missed() {
+        // the old gate: one measure, the slow spell decides
+        assert_eq!(rounds(&[7.87], &[], 1.0).judge(1.0, LIST_MS).verdict, Verdict::Miss);
+        // in rounds, the slow one is outvoted even when the calibration didn't catch it
+        let j = rounds(&LIST_CI, &[], 1.0).judge(1.0, LIST_MS);
+        assert_eq!((j.verdict, j.value, j.clean), (Verdict::Pass, 4.47, 5));
+        // and left out when it did: the median of the 4 clean rounds (the upper of the middle two)
+        let j = rounds(&LIST_CI, &[0], 3.0).judge(1.0, LIST_MS);
+        assert_eq!((j.verdict, j.value, j.clean), (Verdict::Pass, 4.47, 4));
+        assert!(rounds(&LIST_CI, &[0], 3.0).cell(1.0, 2).starts_with("7.87† · 4.69 · "));
+    }
+
+    #[test]
+    fn a_list_twice_as_slow_misses_on_a_quiet_runner_and_is_never_passed_on_a_noisy_one() {
+        let slower: Vec<f64> = LIST_CI.iter().map(|v| v * 2.0).collect();
+        let j = rounds(&slower, &[], 1.0).judge(1.0, LIST_MS);
+        assert_eq!((j.verdict, j.value), (Verdict::Miss, 8.94));
+        // two rounds disturbed: still most clean, still a miss (the calibration has nothing of wisp's to hide)
+        assert_eq!(rounds(&slower, &[0, 1], 2.0).judge(1.0, LIST_MS).verdict, Verdict::Miss);
+        // three of five disturbed: this run can't tell, and says so: a failure, not a pass
+        let j = rounds(&slower, &[0, 1, 2], 2.0).judge(1.0, LIST_MS);
+        assert_eq!((j.verdict, j.clean, j.rounds), (Verdict::Noisy, 2, 5));
+        assert!((j.worst - 2.0).abs() < 1e-9);
+    }
+
+    /// Cold start restarts as CI printed them, 5 to a round: 4612442b's full job (its 424.5 ms first restart) and quick
+    /// job, then 9dcd's two jobs (its quick job's 226.2 ms first).
+    const COLD_CI: [f64; 25] = [
+        424.5, 93.8, 107.1, 85.5, 114.9, 99.0, 95.9, 146.9, 123.7, 105.7, 122.8, 110.9, 121.1, 104.8, 127.0, 112.3, 121.5, 101.2, 104.4,
+        99.7, 111.2, 226.2, 103.6, 108.3, 91.7,
+    ];
+
+    fn cold_rounds(restarts: &[f64], plus: f64) -> Rounds {
+        let mut r = Rounds::default();
+        for round in restarts.chunks(COLD_PER_ROUND) {
+            let mut v: Vec<f64> = round.iter().map(|m| m + plus).collect();
+            r.push(upper_median(&mut v), 1.0);
+        }
+        r
+    }
+
+    #[test]
+    fn cold_start_passes_on_ci_numbers_and_misses_50_ms_slower_or_on_the_build_before_adr_0084() {
+        let j = cold_rounds(&COLD_CI, 0.0).judge(1.0, COLD_START_MS);
+        assert_eq!((j.verdict, j.value), (Verdict::Pass, 107.1), "{:?}", cold_rounds(&COLD_CI, 0.0));
+        assert_eq!(cold_rounds(&COLD_CI, 50.0).judge(1.0, COLD_START_MS).verdict, Verdict::Miss);
+        // db637559's quick job, before ADR-0084 made the start do less: wisp was slower, and the gate says so
+        let before = [161.2, 205.5, 167.2, 174.3, 181.9, 165.3, 220.8, 161.2, 205.5, 167.2];
+        assert_eq!(cold_rounds(&before, 0.0).judge(1.0, COLD_START_MS).verdict, Verdict::Miss);
+    }
+
+    /// Patch p99 per job: 4612442b's full job 170.4 ms (p50 90.6, max 172.8: one stalled commit window), then 109.9,
+    /// 103.6, 104.2, 104.7, 103.7.
+    #[test]
+    fn patch_p99_rounds_outvote_one_stall_and_catch_50_ms_more_on_every_patch() {
+        let j = rounds(&[170.4, 109.9, 103.6], &[], 1.0).judge(1.0, PATCH_P99_MS);
+        assert_eq!((j.verdict, j.value), (Verdict::Pass, 109.9));
+        assert_eq!(rounds(&[220.4, 159.9, 153.6], &[], 1.0).judge(1.0, PATCH_P99_MS).verdict, Verdict::Miss);
+        assert_eq!(rounds(&[104.7, 153.7, 154.2], &[], 1.0).judge(1.0, PATCH_P99_MS).verdict, Verdict::Miss, "two slow rounds of three");
+    }
+
+    #[test]
+    fn one_stalled_commit_window_decides_a_p99_of_800_but_not_of_2400() {
+        // 10 tasks × 2 stamps a second: a 100 ms commit window carries ~2 stamps to 4 clients, 8 samples
+        let p99 = |n: usize| {
+            let mut lat: Vec<u64> = (0..n - 8).map(|i| 1_000 + (i as u64 * 104_000) / n as u64).collect();
+            lat.extend([171_000; 8]);
+            Patch { lat, expected: n, frames: 0, bytes: 0, took: Duration::ZERO }.spread().2
+        };
+        assert!((p99(800) - 171.0).abs() < 1e-9, "{}", p99(800));
+        assert!(p99(2_400) < 105.0, "{}", p99(2_400));
+    }
+
+    #[test]
+    fn noise_only_slows_so_a_pass_on_a_noisy_runner_is_a_pass_and_no_rounds_never_pass() {
+        assert_eq!(rounds(&[3.0, 3.1, 3.2], &[0, 1, 2], 5.0).judge(1.0, LIST_MS).verdict, Verdict::Pass);
+        let none = Rounds::default().judge(1.0, LIST_MS);
+        assert_eq!(none.verdict, Verdict::Miss);
+        assert!(none.value.is_infinite());
+        // a calibration that never ran (or a usual of 0) counts every round disturbed: over budget is Noisy, not judged clean
+        assert_eq!(rounds(&[6.0, 6.0, 6.0], &[], 1.0).judge(0.0, LIST_MS).verdict, Verdict::Noisy);
+        assert_eq!(rounds(&[6.0, 6.0, 6.0], &[], 1.0).judge(f64::INFINITY, LIST_MS).verdict, Verdict::Noisy);
+        let short = Rounds { values: vec![6.0, 6.0, 6.0], ..Rounds::default() };
+        assert_eq!(short.judge(1.0, LIST_MS).verdict, Verdict::Noisy, "a round with no calibration is never clean");
+    }
+
+    #[test]
+    fn at_the_budget_passes_and_the_noisy_threshold_is_exclusive() {
+        assert_eq!(rounds(&[5.0, 5.0, 5.0], &[], 1.0).judge(1.0, LIST_MS).verdict, Verdict::Pass);
+        assert_eq!(rounds(&[5.01, 5.01, 5.01], &[], 1.0).judge(1.0, LIST_MS).verdict, Verdict::Miss);
+        assert_eq!(rounds(&[6.0; 3], &[0, 1], NOISY).judge(1.0, LIST_MS).verdict, Verdict::Miss, "at 1.5× is still clean");
+        assert_eq!(rounds(&[6.0; 3], &[0, 1], NOISY + 0.01).judge(1.0, LIST_MS).verdict, Verdict::Noisy);
+    }
+
+    #[test]
+    fn a_miss_exits_1_a_run_too_noisy_to_judge_exits_3_and_says_why() {
+        assert_eq!(report(10, 50, true, 1_000).exit_code(), 0);
+        let mut r = report(10, 50, true, 1_000);
+        r.list_rounds = rounds(&[9.0, 9.0, 9.0, 4.0, 4.0], &[0, 1, 2], 2.5);
+        assert!(r.over().is_empty(), "{:?}", r.over());
+        let noisy = r.noisy();
+        assert_eq!(noisy.len(), 1);
+        assert!(noisy[0].starts_with("too noisy to judge task list: 3 of 5 rounds"), "{}", noisy[0]);
+        assert!(noisy[0].contains("up to 2.5×") && noisy[0].contains("not a pass"), "{}", noisy[0]);
+        assert_eq!(r.exit_code(), 3);
+        assert!(r.summary().contains("⚠️ too noisy to judge"), "{}", r.summary());
+        r.cold_rounds = rounds(&[200.0; 5], &[], 1.0);
+        assert_eq!(r.exit_code(), 1, "a miss wins over a run that couldn't judge another budget");
+    }
+
+    #[test]
+    fn the_calibration_is_a_fixed_workload_that_takes_time() {
+        let dir = std::env::temp_dir().join(format!("server-budgets-calib-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let c = calibrate(&dir.join("scratch")).unwrap();
+        std::fs::remove_dir_all(&dir).unwrap();
+        assert!(c.is_finite() && c > 0.0, "{c}");
+    }
+
+    #[test]
+    fn steal_is_the_share_of_ticks_between_two_readings_and_unknown_without_them() {
+        assert_eq!(steal_pct(Some((10, 1_000)), Some((30, 1_400))), Some(5.0));
+        assert_eq!(steal_pct(Some((10, 1_000)), Some((10, 1_000))), None, "no tick passed");
+        assert_eq!(steal_pct(None, Some((10, 1_000))), None);
+    }
+
+    #[test]
+    fn copy_dir_copies_folders_and_files() {
+        let dir = std::env::temp_dir().join(format!("server-budgets-copy-{}", std::process::id()));
+        std::fs::create_dir_all(dir.join("a/b")).unwrap();
+        std::fs::write(dir.join("a/b/f"), "x").unwrap();
+        std::fs::write(dir.join("a/g"), "y").unwrap();
+        copy_dir(&dir.join("a"), &dir.join("c")).unwrap();
+        assert_eq!(std::fs::read_to_string(dir.join("c/b/f")).unwrap(), "x");
+        assert_eq!(std::fs::read_to_string(dir.join("c/g")).unwrap(), "y");
+        std::fs::remove_dir_all(&dir).unwrap();
     }
 }

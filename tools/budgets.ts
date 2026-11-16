@@ -21,13 +21,15 @@ export const BUDGETS = { initialJsBr: 120 * 1024, initialCssBr: 30 * 1024 } as c
 /** `wisp serve`'s budgets (plan §8) on a home of 5 000 tasks, measured and gated in PR CI by `spikes/server-budgets` (it
  * exits 1 on a miss; its constants must equal these: tools/test/budgets.test.ts). */
 export const SERVER_BUDGETS = {
-  /** process start → the first successful HTTP response, median of 7 restarts */
+  /** process start → the first successful HTTP response: the median of 5 rounds, each the median of 5 restarts (ADR-0089) */
   coldStartMs: 150,
   /** the server's resident set once settled, after a client read the list */
   idleRssMb: 120,
-  /** the UI's first read (`GET /api/events?fresh=list` → the list snapshot's first page, ADR-0081), median of 30 */
+  /** the UI's first read (`GET /api/events?fresh=list` → the list snapshot's first page, ADR-0081), the median of 5
+   * rounds of 12 reads (ADR-0089) */
   listMs: 5,
-  /** a running task's output written → each client's patch carrying it, p99; 10 tasks streaming, 4 clients (ADR-0082) */
+  /** a running task's output written → each client's patch carrying it, p99; 10 tasks streaming, 4 clients (ADR-0082);
+   * the median of 3 rounds' p99 (ADR-0089) */
   patchP99Ms: 150,
   /** durable events a second into the event log, 1 000 a transaction (spikes/events' `append_rate`) */
   appendPerS: 20_000,
