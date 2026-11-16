@@ -7,6 +7,10 @@ Bugs go to `docs/qa/bugs.md`.
 1. [ ] **Fix the bugs a user hits**: limit send / Send anyway (B4), the 5-hour window on Claude Ultra (B5), the update
    spinner (B6), adding a crew member (B7), the top bar overlap (B8), not-started turns (B9), the held check-in text
    (B10), the task URL id (B11), and every one found while testing (`docs/qa/bugs.md`).
+   *2026-11-16:* B4, B6–B10, B12–B18, B20–B24, B26–B28, B30–B36 fixed or closed, each checked in the running app
+   (mock and real server, frames recorded); `qa/flicker.mjs` now gates "something appears then goes" (37 actions, two
+   widths, all clean). Open: **B5** (the 5-hour window on Ultra: not reproduced; the dev home's reports have only the
+   weekly window), B24's byte headroom (an ADR for a slimmer list row, after item 2).
 2. [ ] **Test the running app screen by screen**, every state a user reaches, desktop window and browser, real data,
    against v1.
 3. [ ] **Parity, layout and feedback checks against v1** on every view, width and theme (`qa/parity.mjs`,
