@@ -6,7 +6,7 @@
 import { afterEach, expect, test } from 'vitest';
 import { createClient, memoryHistory, peerId, type Client, type EntityKey } from '@wisp/client';
 import { commandErrorToast, createShell, nullPlatform, type Platform, type ShellContext, type ShellWindow } from '@wisp/shell';
-import { createToaster } from '@wisp/ui';
+import { createToaster, loadPlatformStyles } from '@wisp/ui';
 import { createMockPeer, type MockPeer } from '../dev/mock-peer.ts';
 import { memTransport } from '../dev/mem-transport.ts';
 import { pluginUis } from '../src/plugins.ts';
@@ -39,6 +39,10 @@ async function start(platform: Platform, o: { computers?: boolean; history?: Ret
     shell.dispose();
   });
   await until(() => root.querySelectorAll('[data-pane="list"] [data-part="card"][data-id]').length > 2);
+  // the look's chunks the shell started loading as it set data-platform (the overlays' phone halves: the long-press
+  // sheet), landed before the test presses anything, as on a phone they land with the first screen (B22: a cold
+  // chunk on a busy runner outlasted the long-press's wait)
+  await loadPlatformStyles(platform.kind === 'ios' ? 'ios' : 'android');
   return { root, mock, client, shell: shell.context };
 }
 
