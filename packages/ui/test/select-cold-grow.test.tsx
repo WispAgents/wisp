@@ -24,6 +24,7 @@ test('a_select_pressed_before_its_machine_that_grows_into_a_sheet_first_drops_th
   setItems(MANY); // in the same frame: before the machine's chunk can land
   expect(trigger()?.getAttribute('aria-expanded')).toBe('false');
   // the chunk lands and the list shrinks back: the machine mounts and binds, and replays nothing
+  // check:allow dynamic-import-in-test waits on the lazy machine chunk the press asked for; a top import would preload it and lose the before-the-machine state
   await import('../src/controls/select-machine.tsx');
   setItems(FEW);
   await vi.waitFor(() => expect(q('[data-kit="listbox"]')).not.toBeNull());

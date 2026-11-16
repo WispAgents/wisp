@@ -9,6 +9,7 @@ import { mount, tick } from './helpers.tsx';
 import { scenes } from './platform-scenes.tsx';
 import { Fab, Frame, NavigationBar, PlatformLookProvider, Text, Toolbar, TopAppBar, backTitle, englishT, watchGiveWay, type Look, type NavigationItem } from '../src/index.ts';
 import { FAB_SLOP, FAB_START, barCollapsed, fabOnScroll, type FabScroll } from '../src/pure.ts';
+import { createSignal, Show } from 'solid-js';
 
 const GOLDEN = JSON.parse(goldenRaw) as Record<string, string>;
 const ITEMS: readonly NavigationItem[] = [
@@ -84,7 +85,6 @@ describe('NavigationBar', () => {
   });
 
   it('selecting_a_destination_reports_it_and_marks_it_current_in_the_same_frame', async () => {
-    const { createSignal } = await import('solid-js');
     const [sel, setSel] = createSignal('tasks');
     const picked: string[] = [];
     as('android', () => <NavigationBar aria-label="D" items={ITEMS} selected={sel()} onSelect={(id) => { picked.push(id); setSel(id); }} />);
@@ -189,7 +189,6 @@ describe('Fab', () => {
 
   it('ios_compose_shows_on_tasks_only_not_on_my_stuffs_bar_r298', async () => {
     // the Tasks list stays mounted (hidden) under My Stuff with its Fab: My Stuff's root bar never draws New task
-    const { createSignal } = await import('solid-js');
     const [page, setPage] = createSignal<'list' | 'main'>('list');
     as('ios', () => (
       <Frame layout="stack" page={page()} top={<TopAppBar kind="root" title="Tasks" part="t.bar" />} list={<Fab icon="plus" label="New task" onClick={noop} />} main={<TopAppBar kind="root" title="My Stuff" part="s.bar" />} />
@@ -204,7 +203,6 @@ describe('Fab', () => {
   });
 
   it('ios_the_compose_button_leaves_with_its_fab', async () => {
-    const { createSignal, Show } = await import('solid-js');
     const [on, setOn] = createSignal(true);
     as('ios', () => <Frame layout="stack" page="list" top={null} list={<Show when={on()}><Fab icon="plus" label="New task" onClick={noop} /></Show>} main={null} />);
     expect(qa('[aria-label="New task"]').length).toBe(1);

@@ -31,6 +31,7 @@ describe('a press before the machine', () => {
     trigger?.click();
     // the same frame: pressed
     expect(trigger?.getAttribute('aria-expanded')).toBe('true');
+    // check:allow dynamic-import-in-test waits on the lazy machine chunk the press asked for; a top import would preload it and lose the before-the-machine state
     await landed(() => import('../src/controls/menu-machine.tsx'));
     expect(part('task.more')?.getAttribute('data-state')).toBe('open');
     expect(document.querySelectorAll('[data-part="task.more.item"]').length).toBe(2);
@@ -50,6 +51,7 @@ describe('a press before the machine', () => {
     trigger?.focus();
     key(trigger, 'ArrowDown');
     expect(trigger?.getAttribute('aria-expanded')).toBe('true');
+    // check:allow dynamic-import-in-test waits on the lazy machine chunk the press asked for; a top import would preload it and lose the before-the-machine state
     await landed(() => import('../src/controls/select-machine.tsx'));
     expect(part('ui.select.list')?.getAttribute('data-state')).toBe('open');
     expect(trigger?.textContent).toContain('Codex');
@@ -84,6 +86,7 @@ describe('a press before the machine', () => {
     expect(onChange).toHaveBeenLastCalledWith(true);
     // a hover fetches its machine (the app's preload would have)
     part('ui.checkbox')?.dispatchEvent(new PointerEvent('pointerenter'));
+    // check:allow dynamic-import-in-test waits on the lazy machine chunk the press asked for; a top import would preload it and lose the before-the-machine state
     await landed(() => import('../src/controls/checkbox-machine.ts'));
     expect(part('ui.checkbox')?.getAttribute('data-scope')).toBe('checkbox');
   });

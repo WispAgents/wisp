@@ -111,6 +111,9 @@ Checked by `npm run check` (`tools/check`: the TypeScript rules and the Rust one
    exists; a line opts out with `<!-- cmd-check: skip <why> -->`.
 10. **Paths work on Windows** (`file-urls`): a path comes from `fileURLToPath(new URL(…, import.meta.url))`
     and a file: URL from `pathToFileURL(p).href`, never a URL's `.pathname` or a glued `"file://"` (also in `qa/` and `mobile/scripts/`).
+11. **UI tests load their modules at the top** (`dynamic-import-in-test`): no `import(…)` inside a `test`/`it` or
+    hook body (it compiles on vitest's 5 s clock); a test that needs a fresh module says why with
+    `// check:allow dynamic-import-in-test <reason>`.
 
 ## How a feature is built
 

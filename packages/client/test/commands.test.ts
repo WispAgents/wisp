@@ -10,6 +10,7 @@ import { createScope } from '../src/scope.ts';
 import { untracked } from '../src/signals.ts';
 import type { EntityKey } from '../src/types.ts';
 import { fakeTimers, type FakeTimers, fakeTransport, tick, welcome } from './helpers.ts';
+import { createClient } from '../src/client.ts';
 
 const A = peerId('laptop');
 const S1 = entityKey(A, 's1');
@@ -255,7 +256,6 @@ test('an_offline_command_is_sent_once_on_reconnect', async () => {
 
 test('pending_commands_survive_a_restart', async () => {
   // the app killed with a command waiting: the next start shows it and sends it, once, with the same key
-  const { createClient } = await import('../src/client.ts');
   const persist = memoryPersist();
   const timers = fakeTimers(1_700_000_000_000);
   clockNow = timers;

@@ -13,7 +13,6 @@ test('new_task_prefills_its_team_from_settings_and_sends_each_delegate_as_settin
 });
 
 test('picking many delegates sends them all: no cap at six_v1_no_team_cap', async () => {
-  const { teamRows } = await import('../src/frame/pickers.ts');
   const picked = new Set(['claude', 'codex', 'opencode', 'cursor', 'copilot', 'grok', 'antigravity', 'gemini']);
   expect(teamRows(picked, undefined, (a) => a)).toHaveLength(8);
 });

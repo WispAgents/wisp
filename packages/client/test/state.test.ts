@@ -6,7 +6,7 @@ import { memoryPersist } from '../src/persist.ts';
 import { createScope } from '../src/scope.ts';
 import { byKeys, count, family, filterBy, groupBy, sortBy } from '../src/selectors.ts';
 import { effect, signal, subscribe } from '../src/signals.ts';
-import { fakeTimers } from './helpers.ts';
+import { fakeTimers, prng } from './helpers.ts';
 
 test('scope: timers and children go with it, newest cleanup first, and late registrations run at once', () => {
   const clock = fakeTimers();
@@ -132,7 +132,6 @@ test('devtools: a ring of the last 500 entries, machine states, exportable', () 
 });
 
 test('property: incremental filterBy and sortBy always equal a fresh filter and stable sort', async () => {
-  const { prng } = await import('./helpers.ts');
   for (let seed = 1; seed <= 200; seed++) {
     const r = prng(seed);
     type Row = { id: number; state: 'running' | 'idle'; at: number };

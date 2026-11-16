@@ -1,6 +1,8 @@
 import { expect, test } from 'vitest';
 import { TEMPLATES, addWake, draftOf, fromTemplate, patchOf, problemOf, toggleOn, wakeLabel, type Template, type TemplateText } from '../src/editor.ts';
 import type { Member } from '../src/types.ts';
+import { settled } from '../src/commands.ts';
+import { memberOf } from '../src/data.ts';
 
 const say = (k: string, v?: Readonly<Record<string, string | number>>): string => (k === 'wisp.crew.editor.wake.after' ? `After ${v?.['name']} reports` : k);
 
@@ -26,7 +28,6 @@ test('the_crew_editor_saves_only_what_changed_and_its_wakes_as_trigger_specs_for
 });
 
 test('a_crew_member_row_reads_its_fields_from_its_body_as_the_crew_host_writes_it', async () => {
-  const { memberOf } = await import('../src/data.ts');
   const m = memberOf({ id: 'm1', name: 'Ada', updated_at: 5, body: { id: 'm1', name: 'Ada', role: 'reviews', avatar: 'blob.teal', paused: true, wakes: [{ on: 'pr.opened' }] } });
   expect(m).toMatchObject({ id: 'm1', name: 'Ada', role: 'reviews', avatar: 'blob.teal', paused: true, wakes: [{ on: 'pr.opened' }] });
   // a row already flat (dev data, an optimistic upsert) is its own
@@ -54,7 +55,6 @@ test('a_template_fills_the_editor_as_v1s_does_and_the_event_chips_and_face_save_
 });
 
 test('settling_an_offer_shows_at_once_as_the_peer_will_keep_it', async () => {
-  const { settled } = await import('../src/commands.ts');
   const offers = [
     { id: 'o1', job: 's1', at: 1, state: 'open' as const, files: [] },
     { id: 'o2', job: 's2', at: 1, state: 'open' as const, files: [] },

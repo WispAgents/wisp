@@ -1,6 +1,8 @@
 // The sections' folds (docs/v2-round-7.md: on a phone "Needs you" showed folded, its task hidden).
 import { expect, test } from 'vitest';
-import { isOpenSection } from '../src/model/flat.ts';
+import { isOpenSection, flatten, itemKey, sectionGroups } from '../src/model/flat.ts';
+import { inProject } from '../src/model/sections.ts';
+import { listPlan } from '../src/model/wire.ts';
 
 test('Needs you and Working start open, Done and Archived folded, and a toggle flips each', () => {
   const none = new Set<never>();
@@ -11,7 +13,6 @@ test('Needs you and Working start open, Done and Archived folded, and a toggle f
 });
 
 test('the_crews_section_goes_right_after_needs_you_on_the_phone_and_first_when_nothing_needs_you', async () => {
-  const { flatten, itemKey } = await import('../src/model/flat.ts');
   const task = (k: string) => ({ kind: 'task' as const, key: k as never, s: {} as never });
   const none = { needs: [], working: [], scheduled: [], drafts: [], forLater: [], done: [], archived: [] };
   const sec = { ...none, needs: [task('a')], working: [task('b')] };
@@ -24,7 +25,6 @@ test('the_crews_section_goes_right_after_needs_you_on_the_phone_and_first_when_n
 });
 
 test('a compare task is one card: its head and a row per run, inside its section_v1_compare_card', async () => {
-  const { flatten, sectionGroups } = await import('../src/model/flat.ts');
   const task = (k: string) => ({ kind: 'task' as const, key: k as never, s: {} as never });
   const run = (k: string) => ({ key: k as never, s: {} as never });
   const group = { kind: 'group' as const, key: 'g:1', runs: [run('r1'), run('r2')], state: 'running' as const, updatedAt: 1 };
@@ -38,7 +38,6 @@ test('a compare task is one card: its head and a row per run, inside its section
 });
 
 test('an /after plan says what it waits for, as v1 did_v1_after_row', async () => {
-  const { listPlan } = await import('../src/model/wire.ts');
   expect(listPlan({ id: 'p:1', body: { id: 'p:1', kind: 'task', setAt: 5, after: { id: 'p:s1', title: 'Fix login' }, body: { prompt: 'write the notes' } } })).toMatchObject({
     kind: 'task',
     title: 'write the notes',
@@ -50,7 +49,6 @@ test('an /after plan says what it waits for, as v1 did_v1_after_row', async () =
 test('done_counts_every_task_and_lists_the_older_ones_past_60_v1_0_24', async () => {
   // F-task-5 (v1 0.24.0: the heading said 60 and older tasks never showed). v2 keeps every row in one VirtualList (only
   // the rows on screen are in the DOM), so the count is the real total and scrolling reaches the oldest.
-  const { flatten } = await import('../src/model/flat.ts');
   const task = (k: string) => ({ kind: 'task' as const, key: k as never, s: {} as never });
   const none = { needs: [], working: [], scheduled: [], drafts: [], forLater: [], done: [], archived: [] };
   const done = Array.from({ length: 250 }, (_, i) => task(`d${i}`));
@@ -63,8 +61,6 @@ test('done_counts_every_task_and_lists_the_older_ones_past_60_v1_0_24', async ()
 });
 
 test('pick_several_the_list_holds_their_tasks_grouped_by_project_in_the_picks_order', async () => {
-  const { flatten, itemKey } = await import('../src/model/flat.ts');
-  const { inProject } = await import('../src/model/sections.ts');
   const task = (k: string, projectId: string, also: string[] = []) => ({
     kind: 'task' as const,
     key: k as never,

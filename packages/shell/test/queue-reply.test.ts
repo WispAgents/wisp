@@ -1,6 +1,6 @@
 // A follow-up while the task works, with Settings → Follow-ups on Queue (v1 composer.js queueing, queued.js; F-comp-24).
 import { expect, test } from 'vitest';
-import { followUp, queuedOps } from '../src/frame/commands.ts';
+import { followUp, queuedOps, btw, btwDrop, btwOf, btwQuestion } from '../src/frame/commands.ts';
 import { field, optimisticOf, patchOps, patchValue, peekReader, wireOf } from './command.ts';
 
 test('a queued reply goes in the queue at once, not as a new turn, and the peer is told to queue_v1_queue_reply', () => {
@@ -33,7 +33,6 @@ test('a queued reply goes in the queue at once, not as a new turn, and the peer 
 });
 
 test('/btw asks on the side and shows answering at once; × drops it_v1_btw', async () => {
-  const { btw, btwDrop, btwOf, btwQuestion } = await import('../src/frame/commands.ts');
   expect(btwQuestion('/btw did you update the docs?')).toBe('did you update the docs?');
   expect(btwQuestion('/BTW  why?')).toBe('why?');
   expect(btwQuestion('btw not a command')).toBeUndefined();

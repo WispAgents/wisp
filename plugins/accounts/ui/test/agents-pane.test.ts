@@ -3,6 +3,7 @@
 import { expect, test } from 'vitest';
 import type { DetectRow, HarnessRow } from '../src/types.ts';
 import { harnessLine, harnessState, howToGet, mergeHarnesses, recheckSummary } from '../src/words.ts';
+import { recheck } from '../src/commands.ts';
 
 const h = (id: string, more: Partial<HarnessRow> = {}): HarnessRow => ({ id, name: id, ord: 1, available: true, models: [], signIn: 'cli', ...more });
 
@@ -34,7 +35,6 @@ test('recheck_finds_harnesses_and_models_again_and_says_what_changed', () => {
 });
 
 test('recheck_sends_no_arguments_the_server_reads_as_none', async () => {
-  const { recheck } = await import('../src/commands.ts');
   // `accounts.recheck` takes `()`: `{ peer }` was refused, so Re-check never ran
   expect((recheck as unknown as { wire: (a: unknown) => unknown }).wire({ peer: 'p1' })).toBeNull();
 });

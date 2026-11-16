@@ -1,6 +1,6 @@
 // The shell's entries in a task's row menu (frame/row-menu.ts, v1 actions.js forkable, side.js sideable).
 import { expect, test } from 'vitest';
-import { forkable, sideable } from '../src/frame/row-menu.ts';
+import { forkable, sideable, rowMenuItems } from '../src/frame/row-menu.ts';
 
 test('fork and side discussion only on a task of yours, as v1_v1_forkable_sideable', () => {
   const mine = { id: 'local:s1', agent: 'claude' };
@@ -17,7 +17,6 @@ test('fork and side discussion only on a task of yours, as v1_v1_forkable_sideab
 });
 
 test('the shell row entries sit in v1 #786 groups; Copy resume needs a resume id, the editor a desktop_v1_786_row_entries', async () => {
-  const { rowMenuItems } = await import('../src/frame/row-menu.ts');
   const at = (mobile: boolean) => Object.fromEntries(rowMenuItems({ platform: { mobile } } as never).map((d) => [d.id, d]));
   const xs = at(false);
   const place = (id: string): string | undefined => xs[id]?.bar?.sub ?? xs[id]?.bar?.section;

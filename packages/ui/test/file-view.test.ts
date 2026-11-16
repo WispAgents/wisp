@@ -1,6 +1,6 @@
 // The file view's ✦ and Go to definition: the selected lines, and the name under the caret.
 import { expect, test } from 'vitest';
-import { lineAt, nameAt } from '../src/content/file/file-text.ts';
+import { lineAt, nameAt, hoverWords, nameCellAt } from '../src/content/file/file-text.ts';
 
 test('the_file_view_says_which_lines_are_selected_and_which_name_is_under_the_caret', () => {
   const text = 'one\npub fn squash(s: &str)\nthree';
@@ -13,7 +13,6 @@ test('the_file_view_says_which_lines_are_selected_and_which_name_is_under_the_ca
 
 // F-page-25 (v1 editor.js hoverOn): rest the pointer on a name and the language server says what it is.
 test('hovering_a_name_asks_the_language_server_where_the_pointer_rests_and_shows_its_words', async () => {
-  const { hoverWords, nameCellAt } = await import('../src/content/file/file-text.ts');
   const m = { padTop: 10, padLeft: 14, lineHeight: 20, charWidth: 8 };
   const text = 'fn main() {\n    squash(&s);\n}';
   // line 2, col 5 is the s of squash: (14 + 4*8 + 1, 10 + 20 + 5)

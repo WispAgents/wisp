@@ -23,6 +23,7 @@ test('a_select_pressed_before_its_machine_reads_closed_once_it_grows_into_a_shee
   const trigger = (): HTMLElement | null => q('[data-kit="select-trigger"]');
   trigger()?.click();
   expect(trigger()?.getAttribute('aria-expanded')).toBe('true'); // in the press's frame, the machine not there yet
+  // check:allow dynamic-import-in-test waits on the lazy machine chunk the press asked for; a top import would preload it and lose the before-the-machine state
   await import('../src/controls/select-machine.tsx');
   await vi.waitFor(() => expect(q('[data-kit="listbox"]')?.getAttribute('data-state')).toBe('open'));
   // grown past six while its menu is open: the machine goes, and nothing is open

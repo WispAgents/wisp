@@ -4,6 +4,8 @@ import { expect, test } from 'vitest';
 import type { SessionRow } from '../src/types.ts';
 import { flatSession } from '../src/model/wire.ts';
 import { sections } from '../src/model/sections.ts';
+import { crewFaceOf } from '../src/model/crew-face.ts';
+import { underMemberOf } from '../src/state.ts';
 
 const row = (id: string, crew?: string): SessionRow =>
   flatSession({ id, title: id, state: 'review', agent: 'claude', created_at: 1, updated_at: 2, body: { cwd: '/p', ...(crew && { ext: { 'wisp.crew': { id: crew, job: 'task' } } }) }, summary: { status: 'done', preview: '' } } as unknown as SessionRow);
@@ -22,7 +24,6 @@ const job = (id: string, crew: string, kind: string, state: string, unread = fal
   flatSession({ id, title: id, state, agent: 'claude', unread, created_at: 1, updated_at: 2, body: { cwd: '/p', ext: { 'wisp.crew': { id: crew, job: kind } } }, summary: { status: state, preview: '' } } as unknown as SessionRow);
 
 test('with the phone Crew section there, a members jobs for other tasks leave the list until they need you_v1_under_member', async () => {
-  const { underMemberOf } = await import('../src/state.ts');
   const rows = [job('d', 'ada', 'delegated', 'running'), job('m', 'ada', 'mention', 'review', true), job('c', 'ada', 'checkin', 'running'), job('g', 'gone', 'delegated', 'running'), job('e', 'ada', 'event', 'done')];
   const keyed = rows.map((s) => ({ key: `p:${s.id}`, s }));
   const ids = (f: Parameters<typeof sections>[1]): string[] => Object.values(sections(keyed as never, f)).flat().map((e) => (e as { s?: SessionRow }).s?.id ?? '').filter(Boolean).sort();
@@ -34,7 +35,6 @@ test('with the phone Crew section there, a members jobs for other tasks leave th
 });
 
 test('a_crew_jobs_row_shows_its_members_face_read_from_the_crew_member_row_with_the_jobs_mood', async () => {
-  const { crewFaceOf } = await import('../src/model/crew-face.ts');
   const rows = [{ id: 'm1', name: 'Ada', updated_at: 1, body: { name: 'Ada', avatar: 'flame.teal.visor.smile.antenna', color: 'teal' } }, { id: 'm2', name: 'Bob', avatar: '🦊' }];
   // asking you (Needs you): the face asks
   expect(crewFaceOf(rows, { crew: { id: 'm1' }, state: 'waiting' })).toEqual({ name: 'Ada', avatar: 'flame.teal.visor.smile.antenna', color: 'teal', mood: 'asks' });

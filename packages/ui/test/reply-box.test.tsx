@@ -2,6 +2,7 @@
 import { afterEach, expect, test } from 'vitest';
 import { render } from 'solid-js/web';
 import { ReplyBox } from '../src/app/Task.tsx';
+import { createSignal, For } from 'solid-js';
 
 let dispose: (() => void) | undefined;
 afterEach(() => {
@@ -45,7 +46,6 @@ test('a press outside folds the awake box only once it is let go: what was press
 // F-comp-46: Send from a finished task (Enter, or the Send button) leaves the keyboard in the box, awake, even as the
 // task moves to Working and the box's props change under it (v1: the caret stays for the next follow-up).
 test('send keeps the caret in the reply box while the task moves to working_v1_send_keeps_focus', async () => {
-  const { createSignal } = await import('solid-js');
   const host = document.createElement('div');
   document.body.append(host);
   const [value, setValue] = createSignal('one more thing');
@@ -133,7 +133,6 @@ test('an_uncapped_tasks_box_has_no_cap_pill', () => {
 // v1 .c-queued: what a plugin puts over the text (wisp.later's follow-ups) sits inside the box, within its border, before
 // the text; a row coming or going leaves the textarea and the bar the same nodes, and a press on a row is inside the box.
 test('the_top_slot_sits_inside_the_box_over_the_text_and_a_row_coming_or_going_keeps_the_textarea_v1_c_queued', async () => {
-  const { createSignal, For } = await import('solid-js');
   const host = document.createElement('div');
   document.body.append(host);
   const [rows, setRows] = createSignal<string[]>([]);

@@ -1,9 +1,10 @@
 import { describe, expect, test, vi } from 'vitest';
 import { createSignal } from 'solid-js';
 import { mount, part, tick } from './helpers.tsx';
-import { Meter, SettingsBlock, SettingsFrame, SettingsGroup, SettingsInset, SettingsInsetAdd, SettingsItem, SettingsNote, type SettingsNavGroup } from '../src/settings/index.ts';
+import { Meter, SettingsBlock, SettingsFrame, SettingsGroup, SettingsInset, SettingsInsetAdd, SettingsItem, SettingsNote, type SettingsNavGroup, SwitchSetting, ChoiceSetting } from '../src/settings/index.ts';
 import { SettingsRow } from '../src/composites/index.ts';
 import { CopyCommand } from '../src/content/index.ts';
+import { signal } from 'alien-signals';
 
 const GROUPS: readonly SettingsNavGroup[] = [
   { id: 'a', items: [{ id: 'general', label: 'General', icon: 'settings' }, { id: 'theme', label: 'Appearance', icon: 'sun' }] },
@@ -111,8 +112,6 @@ describe('Meter', () => {
 
 describe('bound setting rows', () => {
   test('a switch shows the value and sets it', async () => {
-    const { SwitchSetting } = await import('../src/settings/index.ts');
-    const { signal } = await import('alien-signals');
     const v = signal(false);
     const set = vi.fn((x: boolean) => v(x));
     mount(() => <SwitchSetting part="t.sw" title="Worktree per task" source={{ value: v, set }} />);
@@ -122,7 +121,6 @@ describe('bound setting rows', () => {
   });
 
   test('a locked setting is disabled and says who set it', async () => {
-    const { SwitchSetting, ChoiceSetting } = await import('../src/settings/index.ts');
     const set = vi.fn();
     mount(() => (
       <>

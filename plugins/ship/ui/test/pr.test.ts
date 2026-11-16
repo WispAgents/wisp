@@ -4,6 +4,7 @@ import { expect, test } from 'vitest';
 import { shippable } from '../src/model/pr.ts';
 import { dialogTitle } from '../src/model/ship.ts';
 import type { ShipSession } from '../src/types.ts';
+import { shipRow } from '../src/row.ts';
 
 const row = (over: Partial<ShipSession> = {}): ShipSession => ({ id: 'p:t1', agent: 'claude', state: 'idle', branch: 'wisp/fix-login', ...over });
 const inPlace = (over: Partial<ShipSession>): ShipSession => {
@@ -35,7 +36,6 @@ test('the Ship it dialog is titled by its guess, also when opened from the task 
 });
 
 test('the synced store row reads flat, keyed by its entity key; a flat row passes through', async () => {
-  const { shipRow } = await import('../src/row.ts');
   const store = { id: '01a1', state: 'review', agent: 'claude', title: 'x', summary: { branch: 'wisp/a', toShip: { dirty: 1, ahead: 0, unpushed: 0 }, state: 'review', pr: null } };
   const r = shipRow(store, 'local:01a1');
   expect(r?.id).toBe('local:01a1');

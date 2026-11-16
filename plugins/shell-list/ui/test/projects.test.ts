@@ -5,7 +5,8 @@ import { projectList } from '@wisp/shell/pure';
 import type { SessionRow } from '../src/types.ts';
 import { flatSession } from '../src/model/wire.ts';
 import { sections } from '../src/model/sections.ts';
-import { inProjectOf } from '../src/state.ts';
+import { inProjectOf, machinesByPeer, onMachine } from '../src/state.ts';
+import { runOf } from '../src/model/row.ts';
 
 const row = (id: string, cwd: string): SessionRow =>
   flatSession({ id, title: id, state: 'review', agent: 'claude', created_at: 1, updated_at: 2, body: { cwd }, summary: { status: 'done', preview: '' } } as unknown as SessionRow);
@@ -43,8 +44,6 @@ test('a_task_is_in_the_project_holding_its_folder_and_the_filter_shows_only_that
 });
 
 test('a_row_from_a_sandbox_says_sandbox_in_the_machines_slot_and_one_from_this_wisp_says_nothing', async () => {
-  const { machinesByPeer, onMachine } = await import('../src/state.ts');
-  const { runOf } = await import('../src/model/row.ts');
   const ms = machinesByPeer([
     { id: 'h:m1', body: { peer: 'sbx1', name: 'Sandbox fix the login', data: { sandbox: 'a1' } } },
     { id: 'h:m2', body: { peer: 'studio', name: 'Studio' } },

@@ -14,6 +14,7 @@ test('ContextMenu: a right-click before the machine opens it at the pointer as i
   const e = new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: 40, clientY: 60 });
   area?.dispatchEvent(e);
   expect(e.defaultPrevented).toBe(true);
+  // check:allow dynamic-import-in-test waits on the lazy machine chunk the press asked for; a top import would preload it and lose the before-the-machine state
   await import('../src/controls/menu-machine.tsx');
   await tick(10);
   expect(part('row.menu')?.getAttribute('data-state')).toBe('open');

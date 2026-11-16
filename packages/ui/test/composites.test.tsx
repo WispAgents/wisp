@@ -4,6 +4,9 @@ import { mount, part } from './helpers.tsx';
 import {
   Banner, Callout, Card, Checklist, Composer, EmptyState, ListRow, Section, SettingsRow, Stats, Steps, Toolbar, nextInToolbar, sendsOn,
 } from '../src/composites/index.ts';
+import { RowRun, RowButton } from '../src/composites/ListRow.tsx';
+import { Time } from '../src/content/Time.tsx';
+import { Dot } from '../src/shell-list/Dot.tsx';
 
 const key = (k: string, extra: Partial<KeyboardEventInit> = {}): KeyboardEvent => new KeyboardEvent('keydown', { key: k, bubbles: true, cancelable: true, ...extra });
 
@@ -230,9 +233,6 @@ describe('the rest', () => {
 
 describe('the feed row (v1 #feed .it-head)', () => {
   test('a_feed_row_is_v1s_it_head_element_for_element_the_head_its_one_button', async () => {
-    const { Dot } = await import('../src/shell-list/Dot.tsx');
-    const { Time } = await import('../src/content/Time.tsx');
-    const { RowButton, RowRun } = await import('../src/composites/ListRow.tsx');
     const opened = vi.fn();
     const done = vi.fn();
     const host = mount(() => (
@@ -273,7 +273,6 @@ describe('the feed row (v1 #feed .it-head)', () => {
   });
   test('a_rows_third_line_names_harness_model_and_place_each_in_its_own_span_with_the_tip_on_the_line', async () => {
     // F-task-6, v1 feed.js runLine(): .ir-h, .ir-m (it ellipsises first), .ir-w; the tip on the whole .it-run
-    const { RowRun } = await import('../src/composites/ListRow.tsx');
     const host = mount(() => <RowRun name="Claude Code" model="Opus 4.7" title="Claude Code · Opus 4.7 · High thinking · on This computer" where={{ icon: 'laptop', text: 'This computer' }} />);
     const run = host.querySelector<HTMLElement>('[data-kit="row-run"]');
     expect([...(run?.children ?? [])].map((e) => (e as HTMLElement).dataset['kit'])).toEqual(['ir-h', 'ir-m', 'ir-w']);

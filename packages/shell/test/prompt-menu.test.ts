@@ -1,6 +1,7 @@
 import { expect, test } from 'vitest';
-import { applyPick, encodeMentions, itemsFor, menuAt } from '../src/frame/prompt-menu.ts';
+import { applyPick, encodeMentions, itemsFor, menuAt, usePromptMenu, insertedTasks, putMentions, pastedTasks } from '../src/frame/prompt-menu.ts';
 import type { PromptSourceDef } from '../src/contract.ts';
+import { createRoot, createSignal } from 'solid-js';
 
 test('a_prompt_box_opens_its_menu_where_the_caret_is_and_sends_picked_mentions_in_v1s_form', () => {
   expect(menuAt('/go', 3)).toEqual({ trigger: '/', start: 0, query: 'go' });
@@ -28,7 +29,6 @@ test('a_prompt_box_opens_its_menu_where_the_caret_is_and_sends_picked_mentions_i
 });
 
 test('a pasted task id becomes the task s mention; anything else is pasted as text_v1_paste_task_id', async () => {
-  const { pastedTasks, encodeMentions } = await import('../src/frame/prompt-menu.ts');
   const titles: Record<string, string> = { '0192f3a4-aaaa-7bbb': 'Fix login', 'local:s0002': 'Ship it' };
   const title = (id: string): string | undefined => titles[id];
   expect(pastedTasks('0192f3a4-aaaa-7bbb', title)).toEqual([{ scheme: 'wisp', id: '0192f3a4-aaaa-7bbb', title: 'Fix login' }]);
@@ -42,7 +42,6 @@ test('a pasted task id becomes the task s mention; anything else is pasted as te
 });
 
 test('a_task_id_a_phone_keyboards_clipboard_puts_in_becomes_its_mention_v1_800', async () => {
-  const { insertedTasks, putMentions } = await import('../src/frame/prompt-menu.ts');
   const id = '0192f3a4aaaa7bbb8ccc9ddd0eee1fff';
   const title = (x: string): string | undefined => (x === id ? 'Fix login' : undefined);
   // Gboard's clipboard chip: the id lands whole in one insert, ending at the caret
@@ -58,8 +57,6 @@ test('a_task_id_a_phone_keyboards_clipboard_puts_in_becomes_its_mention_v1_800',
 });
 
 test('the_prompt_menu_turns_a_clipboard_insert_with_no_paste_event_into_a_chip_and_sends_it_encoded_v1_800', async () => {
-  const { createRoot, createSignal } = await import('solid-js');
-  const { usePromptMenu } = await import('../src/frame/prompt-menu.ts');
   const id = '0192f3a4aaaa7bbb8ccc9ddd0eee1fff';
   const shell = {
     promptSources: () => [],

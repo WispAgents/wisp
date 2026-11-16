@@ -1,0 +1,59 @@
+Dynamic import in a UI test: import() inside a test/it/hook body fails; top level, vi.mock factories, allow comments and non-test files pass.
+=== packages/ui/package.json
+{ "name": "@wisp/ui", "exports": { ".": "./src/index.ts" } }
+=== packages/ui/src/index.ts
+export const plain = 1;
+export const later = async (): Promise<unknown> => import('./index.ts');
+=== packages/ui/test/bad.test.ts
+import { beforeAll, beforeEach, describe, expect, it, test, vi } from 'vitest';
+test('in a test', async () => {
+  const m = await import('../src/index.ts');
+  expect(m.plain).toBe(1);
+});
+describe('group', () => {
+  it.only('nested in describe, with a modifier', async () => {
+    await import('../src/index.ts');
+  });
+  test.each([1, 2])('each %i', async function () {
+    void import('../src/index.ts').then(() => undefined);
+  });
+});
+beforeEach(async () => {
+  await import('../src/index.ts');
+});
+beforeAll(async () => {
+  const load = async (): Promise<unknown> => import('../src/index.ts');
+  await load();
+});
+test('vi.importActual in a body', async () => {
+  await vi.importActual('../src/index.ts');
+});
+test('a reason is required', async () => {
+  // check:allow dynamic-import-in-test
+  await import('../src/index.ts');
+});
+=== packages/ui/test/good.test.tsx
+import { expect, test, vi } from 'vitest';
+const top = await import('../src/index.ts');
+vi.mock('../src/index.ts', async () => {
+  const real = await vi.importActual<object>('../src/index.ts');
+  return { ...real, plain: 2 };
+});
+test('allowed on the line above', async () => {
+  vi.resetModules();
+  // check:allow dynamic-import-in-test needs a fresh module after resetModules
+  const m = await import('../src/index.ts');
+  expect(m.plain).toBe(top.plain);
+});
+test('allowed on the same line', async () => {
+  const m = await import('../src/index.ts'); // check:allow dynamic-import-in-test fresh module state
+  test.skip('mock factory inside a test', () => {
+    vi.doMock('../src/index.ts', async () => import('../src/index.ts'));
+  });
+  expect(m).toBeDefined();
+});
+=== packages/ui/src/helper.ts
+import { test } from 'vitest';
+test('not a test file', async () => {
+  await import('./index.ts');
+});

@@ -1,8 +1,8 @@
 import { expect, test } from 'vitest';
+import { foldedFrom } from '../src/frame/rows-view.ts';
 
 // F-page-44 (v1 turns.js renderBody: "a new turn would push the one being read behind Show earlier: it stays")
 test('a_turn_landing_while_you_read_never_folds_away_the_turn_you_read', async () => {
-  const { foldedFrom } = await import('../src/frame/rows-view.ts');
   const turns = ['t1', 't2', 't3', 't4', 't5'].map((id) => ({ id }));
   // at the end: the last 3, the window slides as turns land
   expect(foldedFrom(turns, false, undefined).shown.map((t) => t.id)).toEqual(['t3', 't4', 't5']);

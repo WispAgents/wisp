@@ -1,6 +1,6 @@
 // A picture growing in a task (app/media-shift.ts, v1 tail.js mediaShift #776).
 import { expect, test } from 'vitest';
-import { atTail, dockShift, mediaShift } from '../src/app/media-shift.ts';
+import { atTail, dockShift, mediaShift, turnsShift } from '../src/app/media-shift.ts';
 
 test('a_picture_loading_in_a_task_keeps_the_view_where_the_reader_had_it', () => {
   const grew = [{ top: 40, from: 0, to: 300 }];
@@ -35,7 +35,6 @@ test('the_reply_box_growing_at_the_tail_keeps_the_last_block_above_it', () => {
 
 // F-page-44 (v1 turns.js renderBody: only the tail moves the view): a turn landing while you read keeps you on it.
 test('a_turn_that_lands_while_you_read_keeps_the_view_put_and_at_the_end_you_go_to_it', async () => {
-  const { turnsShift } = await import('../src/app/media-shift.ts');
   // reading further up: Chrome's anchoring holds it; WebKit undoes what moved the turn under the reading line
   expect(turnsShift({ tail: false, anchors: true, landed: true, held: { from: 40, to: 240 } })).toBe(0);
   expect(turnsShift({ tail: false, anchors: false, landed: true, held: { from: 40, to: 240 } })).toBe(200);

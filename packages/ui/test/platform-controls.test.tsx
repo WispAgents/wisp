@@ -317,6 +317,7 @@ describe('Select', () => {
     await frame();
     expect(trigger?.getAttribute('aria-expanded')).toBe('true');
     // wait for the machine itself, not for a guessed number of milliseconds
+    // check:allow dynamic-import-in-test waits on the lazy machine chunk the press asked for; a top import would preload it and lose the before-the-machine state
     await import('../src/controls/select-machine.tsx');
     await vi.waitFor(() => expect(q('[data-kit="listbox"]')?.getAttribute('data-state')).toBe('open'));
     expect(q('[data-kit="select-sheet"]')).toBeNull();
@@ -362,6 +363,7 @@ describe('Select', () => {
     as('android', () => <Select items={items()} value="codex" onChange={noop} aria-label="Model" />);
     const trigger = (): HTMLElement | null => q('[data-kit="select-trigger"]');
     trigger()?.click();
+    // check:allow dynamic-import-in-test waits on the lazy machine chunk the press asked for; a top import would preload it and lose the before-the-machine state
     await import('../src/controls/select-machine.tsx');
     await vi.waitFor(() => expect(q('[data-kit="listbox"]')?.getAttribute('data-state')).toBe('open'));
     trigger()?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
