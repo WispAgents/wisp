@@ -114,6 +114,9 @@ Checked by `npm run check` (`tools/check`: the TypeScript rules and the Rust one
 11. **UI tests load their modules at the top** (`dynamic-import-in-test`): no `import(…)` inside a `test`/`it` or
     hook body (it compiles on vitest's 5 s clock); a test that needs a fresh module says why with
     `// check:allow dynamic-import-in-test <reason>`.
+12. **UI tests wait on what they assert** (`timer-loop-in-test`): no loop that only awaits a fixed count of
+    `setTimeout` hops (each is a ~15.6 ms system tick on Windows); wait with `until(ok)` (a clock deadline) or fake
+    timers, or say why with `// check:allow timer-loop-in-test <reason>`.
 
 ## How a feature is built
 

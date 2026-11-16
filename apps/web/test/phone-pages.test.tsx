@@ -8,14 +8,7 @@ import { createShell, nullPlatform, type Platform, type ShellWindow } from '@wis
 import { createToaster } from '@wisp/ui';
 import { createMockPeer } from '../dev/mock-peer.ts';
 import { memTransport } from '../dev/mem-transport.ts';
-
-const settle = async (n = 30): Promise<void> => {
-  for (let i = 0; i < n; i++) await new Promise((r) => setTimeout(r, 0));
-};
-/** until `ok`: lazy chunks (the task page, the phone bars, the menu) land a beat after the navigation (2 s at most) */
-const until = async (ok: () => boolean): Promise<void> => {
-  for (let i = 0; i < 200 && !ok(); i++) await new Promise((r) => setTimeout(r, 10));
-};
+import { until } from './until.ts';
 
 let stops: (() => void)[] = [];
 afterEach(() => {
@@ -38,25 +31,28 @@ async function start(platform: Platform) {
     stop();
     shell.dispose();
   });
-  await settle();
   return { client, shell, root };
 }
 
 const phone = (kind: 'android' | 'ios'): Platform => nullPlatform({ kind, phone: true, mobile: true });
 const q = (sel: string): HTMLElement | null => document.querySelector<HTMLElement>(sel);
 
-async function openTask(client: Awaited<ReturnType<typeof start>>['client'], root: HTMLElement, ready: string): Promise<void> {
-  const first = client.entities.list<{ id: string; title: string }>('session')().find((r) => r.title.startsWith('Add rate limiting'));
+/** the mock's finished task, opened; back once every `ready` part is drawn (what the test then reads) */
+async function openTask(client: Awaited<ReturnType<typeof start>>['client'], root: HTMLElement, ...ready: string[]): Promise<void> {
+  const task = (): { id: string } | undefined => client.entities.list<{ id: string; title: string }>('session')().find((r) => r.title.startsWith('Add rate limiting'));
+  await until(() => task() !== undefined);
+  const first = task();
   expect(first, 'the mock’s finished task').toBeDefined();
   client.nav.navigate({ t: 'openTask', id: first?.id as EntityKey as never });
-  await until(() => root.querySelector(ready) !== null);
-  await settle();
+  await until(() => ready.every((sel) => root.querySelector(sel) !== null));
 }
+/** the phone's task page bar, its menu drawn */
+const PHONE_TASK = '[data-part="phone.task.bar"] [data-kit="app-bar-actions"] > [aria-label="More"]';
 
 for (const kind of ['android', 'ios'] as const) {
   test(`the_task_page_on_${kind}_is_the_platform_page_bar_with_back_and_the_task_menu_not_v1s_head`, async () => {
     const { client, root } = await start(phone(kind));
-    await openTask(client, root, '[data-part="phone.task.bar"]');
+    await openTask(client, root, PHONE_TASK, '[data-pane="main"] [data-kit="turns"]', '[data-pane="main"] [data-kit="reply-box"]');
     const bar = root.querySelector('[data-pane="main"] [data-kit="app-bar"][data-part="phone.task.bar"]');
     expect(bar, 'the page TopAppBar in the task’s pane').not.toBeNull();
     expect(bar?.getAttribute('data-kind')).toBe('page');
@@ -73,7 +69,7 @@ for (const kind of ['android', 'ios'] as const) {
 
 test('the_task_menu_on_a_phone_holds_v1s_task_actions_and_details_opens_the_side_panel_as_a_sheet', async () => {
   const { client, root } = await start(phone('android'));
-  await openTask(client, root, '[data-part="phone.task.bar"]');
+  await openTask(client, root, PHONE_TASK);
   (root.querySelector('[data-part="phone.task.bar"] [data-kit="app-bar-actions"] > [aria-label="More"]') as HTMLButtonElement).click();
   await until(() => document.querySelectorAll('[data-kit="menu-item"]').length > 0);
   // the open menu's rows (the list's row menus and the me menu are mounted elsewhere)
@@ -98,7 +94,7 @@ test('the_task_menu_on_a_phone_holds_v1s_task_actions_and_details_opens_the_side
 
 test('rename_on_a_phone_is_a_dialog_from_the_menu_not_an_inline_edit', async () => {
   const { client, root } = await start(phone('ios'));
-  await openTask(client, root, '[data-part="phone.task.bar"]');
+  await openTask(client, root, PHONE_TASK);
   (root.querySelector('[data-part="phone.task.bar"] [data-kit="app-bar-actions"] > [aria-label="More"]') as HTMLButtonElement).click();
   await until(() => document.querySelectorAll('[data-kit="menu-item"]').length > 0);
   [...document.querySelectorAll<HTMLElement>('[data-kit="menu-item"]')].find((e) => e.textContent?.includes('Rename'))?.click();
@@ -109,7 +105,7 @@ test('rename_on_a_phone_is_a_dialog_from_the_menu_not_an_inline_edit', async () 
 
 test('a_phones_browser_task_page_keeps_v1s_head_with_back_and_its_details_bar', async () => {
   const { client, root } = await start(nullPlatform({ mobile: true }));
-  await openTask(client, root, '[data-part~="split.head"]');
+  await openTask(client, root, '[data-part~="split.head"] [data-part="split.back"]', '[data-part="split.details"] [data-part="split.actions"]');
   expect(document.documentElement.hasAttribute('data-platform')).toBe(false);
   expect(root.querySelector('[data-part~="split.head"] [data-part="split.back"]'), 'v1’s Back').not.toBeNull();
   expect(root.querySelector('[data-part="split.details"] [data-part="split.actions"]'), 'v1’s details bar and its actions').not.toBeNull();
@@ -121,8 +117,9 @@ for (const kind of ['android', 'ios'] as const) {
     const { root } = await start(phone(kind));
     await until(() => root.querySelector('[data-part~="phone.tasks.new"]') !== null);
     (root.querySelector('[data-part~="phone.tasks.new"]') as HTMLElement).click();
-    await until(() => root.querySelector('[data-part="phone.new.bar"]') !== null);
-    await settle();
+    const PARTS = ['launcher.input', 'launcher.harness', 'launcher.projects', 'launcher.attach', 'launcher.team', 'launcher.goal', 'launcher.where', 'launcher.send'];
+    // the bar and the whole prompt box under it
+    await until(() => root.querySelector('[data-part="phone.new.bar"] [data-part="phone.new.bar.confirm"]') !== null && PARTS.every((part) => root.querySelector(`[data-part~="${part}"]`) !== null));
     const bar = root.querySelector('[data-part="phone.new.bar"]');
     expect(bar?.getAttribute('data-kind')).toBe('compose');
     expect(bar?.textContent).toContain('New task');
@@ -137,18 +134,18 @@ for (const kind of ['android', 'ios'] as const) {
     expect(root.querySelector('[data-kit="frame"]')?.hasAttribute('data-behind')).toBe(true);
     expect(root.querySelector('[data-part="split.back"]')).toBeNull();
     // the prompt box keeps every v1 feature: harness pill and picker, folder, attachments, delegate, goal, the place
-    for (const part of ['launcher.input', 'launcher.harness', 'launcher.projects', 'launcher.attach', 'launcher.team', 'launcher.goal', 'launcher.where', 'launcher.send'])
+    for (const part of PARTS)
       expect(root.querySelector(`[data-part~="${part}"]`), part).not.toBeNull();
     const input = root.querySelector<HTMLTextAreaElement>('[data-part~="launcher.input"]');
     if (input) {
       input.value = 'Add a rate limit';
       input.dispatchEvent(new Event('input', { bubbles: true }));
     }
-    await settle();
+    await until(() => bar?.querySelector<HTMLButtonElement>('[data-part="phone.new.bar.confirm"]')?.disabled === false);
     expect(bar?.querySelector<HTMLButtonElement>('[data-part="phone.new.bar.confirm"]')?.disabled, 'typed: Send is on').toBe(false);
     // Close / Cancel goes back to the list and keeps the draft
     (out as HTMLElement).click();
-    await settle();
+    await until(() => root.querySelector('[data-kit="frame"]')?.getAttribute('data-page') === 'list');
     expect(root.querySelector('[data-kit="frame"]')?.getAttribute('data-page')).toBe('list');
   });
 }
@@ -160,8 +157,13 @@ for (const kind of ['android', 'ios'] as const) {
     const { root } = await start(phone(kind));
     await until(() => root.querySelector('[data-part~="phone.tasks.new"]') !== null);
     (root.querySelector('[data-part~="phone.tasks.new"]') as HTMLElement).click();
-    await until(() => root.querySelector('[data-part="phone.new.bar"]') !== null && root.querySelector('[data-part~="launcher.input"]') !== null);
-    await settle();
+    // the sheet as it opened: the caret in the prompt (the last thing it does), Start from an issue drawn
+    await until(
+      () =>
+        root.querySelector('[data-part="phone.new.bar"]') !== null &&
+        document.activeElement === root.querySelector('[data-part~="launcher.input"]') &&
+        root.querySelector('[data-part="split.home"] [data-part~="launcher.issue"]') !== null,
+    );
     const home = root.querySelector('[data-part="split.home"]');
     expect(home?.querySelector('[data-part~="launcher.input"]'), 'the prompt').not.toBeNull();
     expect(home?.querySelector('[data-part~="launcher.projects"]'), 'the project selector').not.toBeNull();
@@ -192,7 +194,8 @@ test('new_task_in_a_phones_browser_keeps_v1s_back_and_greeting_and_no_compose_ba
 for (const kind of ['android', 'ios'] as const) {
   test(`search_on_${kind}_is_the_platform_search_view_over_the_same_task_search_with_its_way_back`, async () => {
     const { root } = await start(phone(kind));
-    await until(() => root.querySelector('[data-part="phone.tasks.bar"]') !== null);
+    // the bar, and the tasks it searches listed
+    await until(() => root.querySelector('[data-part="phone.tasks.bar"]') !== null && root.querySelector('[data-pane="list"]')?.textContent?.includes('Add rate limiting') === true);
     // Android: the bar's search icon; iOS: the search field under the large title
     const opener = kind === 'android' ? '[data-part="phone.tasks.bar.search"]' : '[data-part="phone.tasks.bar.search-field"]';
     expect(root.querySelector(opener), opener).not.toBeNull();

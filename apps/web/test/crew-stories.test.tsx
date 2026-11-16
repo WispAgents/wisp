@@ -13,14 +13,8 @@ import { COMMANDS } from '../dev/mock-commands.ts';
 import { createMockPeer, type MockPeer, type MockTimers } from '../dev/mock-peer.ts';
 import { memTransport } from '../dev/mem-transport.ts';
 import { pluginUis } from '../src/plugins.ts';
+import { until } from './until.ts';
 
-/** until `ok`, checked after each macrotask (the exact condition, never a fixed count of hops: on Windows a timer hop
- * is a ~15.6 ms system tick, so the 30-hop flushes this file used cost ~0.5 s each there). 4 s at most, by the clock:
- * a cold lazy chunk (the phone head, the crew's stories) lands a beat after the first frame. */
-const until = async (ok: () => boolean, ms = 4000): Promise<void> => {
-  const end = performance.now() + ms;
-  while (!ok() && performance.now() < end) await new Promise((r) => setTimeout(r, 0));
-};
 /** the mock's clock without its timers: no streamed turn after a follow-up or a job (what this file doesn't test)
  * repaints the shell under the assertions */
 const timers: MockTimers = { now: () => Date.now(), setTimeout: () => undefined, clearTimeout: () => undefined };

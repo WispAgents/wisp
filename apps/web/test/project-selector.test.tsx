@@ -9,13 +9,7 @@ import { createShell, nullPlatform, type Platform, type ShellWindow } from '@wis
 import { createToaster } from '@wisp/ui';
 import { createMockPeer } from '../dev/mock-peer.ts';
 import { memTransport } from '../dev/mem-transport.ts';
-
-const settle = async (n = 30): Promise<void> => {
-  for (let i = 0; i < n; i++) await new Promise((r) => setTimeout(r, 0));
-};
-const until = async (ok: () => boolean): Promise<void> => {
-  for (let i = 0; i < 200 && !ok(); i++) await new Promise((r) => setTimeout(r, 10));
-};
+import { until } from './until.ts';
 
 let stops: (() => void)[] = [];
 afterEach(() => {
@@ -56,7 +50,6 @@ async function start(platform: Platform, width: number) {
     stop();
     shell.dispose();
   });
-  await settle();
   return { client, shell, root };
 }
 
@@ -66,10 +59,10 @@ const row = (label: string): HTMLElement | undefined => rows().find((r) => r.que
 const place = (): HTMLElement | null => q('[data-part="launcher.place"]');
 const placeName = (): string => place()?.querySelector('[data-kit="p-name"]')?.textContent ?? '';
 
+/** the place list, open with every row drawn */
 async function openPlaces(): Promise<void> {
   place()?.click();
-  await until(() => row('api') !== undefined);
-  await settle();
+  await until(() => ['api', 'docs', 'web', 'No folder', 'Other folder…'].every((l) => row(l) !== undefined));
 }
 
 async function home(width = 1440) {
@@ -109,9 +102,9 @@ test('click_on_a_project_in_the_launchers_list_picks_only_that_project', async (
   await home();
   await openPlaces();
   row('web')?.querySelector<HTMLElement>('[data-part="shell.palette.add"]')?.click(); // api + web
-  await settle();
+  await until(() => placeName() === 'api + web');
   row('docs')?.click(); // only docs, whatever was picked
-  await settle();
+  await until(() => row('api') === undefined && placeName() === 'docs');
   expect(row('api'), 'the list closed').toBeUndefined();
   expect(placeName()).toBe('docs');
   expect(place()?.hasAttribute('data-several')).toBe(false);
@@ -121,7 +114,7 @@ test('plus_on_a_row_adds_that_project_to_the_task_and_the_list_stays_open', asyn
   await home();
   await openPlaces();
   row('web')?.querySelector<HTMLElement>('[data-part="shell.palette.add"]')?.click();
-  await settle();
+  await until(() => placeName() === 'api + web' && (row('web')?.querySelector('[data-part="shell.palette.check"]') ?? null) !== null);
   // still open, web now checked
   expect(row('web')?.querySelector('[data-part="shell.palette.check"]')).not.toBeNull();
   expect(placeName()).toBe('api + web');
@@ -133,12 +126,12 @@ test('no_folder_and_other_folder_are_reachable_inside_the_selectors_list', async
   const { client } = await home();
   await openPlaces();
   row('No folder')?.click();
-  await settle();
+  await until(() => placeName() === 'No folder');
   expect(placeName()).toBe('No folder');
   expect(place()?.querySelectorAll('[data-kit="p-dot"]').length).toBe(0);
   await openPlaces();
   row('Other folder…')?.click();
-  await settle();
+  await until(() => client.nav.nav().overlays.some((o) => String(o.id) === 'shell.projects'));
   // Other folder… is the Add a folder dialog (a folder that isn't a project yet)
   expect(client.nav.nav().overlays.some((o) => String(o.id) === 'shell.projects')).toBe(true);
 });
@@ -146,8 +139,7 @@ test('no_folder_and_other_folder_are_reachable_inside_the_selectors_list', async
 for (const kind of ['android', 'ios'] as const) {
   test(`the_phone_tasks_screen_on_${kind}_has_the_one_selector_in_its_bar_and_no_project_chips`, async () => {
     const { root } = await start(nullPlatform({ kind, phone: true, mobile: true }), 390);
-    await until(() => root.querySelector('[data-part="phone.tasks.project"]') !== null);
-    await settle();
+    await until(() => (root.querySelector('[data-part="phone.tasks.project"]')?.closest('[data-part~="phone.tasks.bar"]') ?? null) !== null);
     const sel = root.querySelector('[data-part="phone.tasks.project"]');
     expect(sel?.getAttribute('data-kit')).toBe('p-select');
     expect(sel?.getAttribute('data-where')).toBe('bar');
@@ -164,7 +156,7 @@ test('the_place_list_opened_again_with_no_new_task_box_behind_it_closes_rather_t
   const { client } = await start(nullPlatform(), 1440);
   // a reload or Back to the URL of an open place list: no prompt box set its place
   client.nav.navigate({ t: 'openOverlay', overlay: { kind: 'dialog', id: 'shell.palette' as never, params: { only: ['shell.places'] } } });
-  await settle();
+  expect(client.nav.nav().overlays.some((o) => String(o.id) === 'shell.palette'), 'opened').toBe(true);
   await until(() => !client.nav.nav().overlays.some((o) => String(o.id) === 'shell.palette'));
   expect(client.nav.nav().overlays.some((o) => String(o.id) === 'shell.palette')).toBe(false);
 });

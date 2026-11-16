@@ -5,6 +5,7 @@ import { expect, test } from 'vitest';
 import { createClient, peerId, type EntityKey, type Frame, type Transport } from '@wisp/client';
 import type { ClientMessage } from '@wisp/protocol';
 import { createMockPeer, type MockPeer, type MockTimers } from '../dev/mock-peer.ts';
+import { until } from './until.ts';
 
 function fakeTimers(): MockTimers & { run(ms: number): void } {
   let now = 1_800_000_000_000;
@@ -62,10 +63,6 @@ function memTransport(peer: MockPeer): Transport & { drop(): void } {
   };
 }
 
-const settle = async (): Promise<void> => {
-  for (let i = 0; i < 20; i++) await new Promise((r) => setTimeout(r, 0));
-};
-
 async function setup() {
   const timers = fakeTimers();
   const mock = createMockPeer({ timers, epoch: 'e1' });
@@ -76,7 +73,8 @@ async function setup() {
   const scope = client.scope.child('test');
   client.peers.watch(peerId('local'), 'list', scope);
   client.peers.watch(peerId('local'), 'config', scope);
-  await settle();
+  // the hello's snapshot: the list in, the peer online
+  await until(() => client.entities.list('session')().length > 0 && client.peers.status(peerId('local'))().kind === 'online');
   return { client, mock, timers, errors, tr };
 }
 
@@ -85,6 +83,7 @@ const title = (c: ReturnType<typeof createClient>, key: EntityKey): string => (c
 
 test('the hello brings the list, and the peer says what it offers', async () => {
   const { client } = await setup();
+  await until(() => client.entities.list('session')().length >= 12);
   expect(client.entities.list('session')().length).toBe(12); // the seed's tasks, Ada's delegated review and the capped #ops task among them
   expect(client.peers.status(peerId('local'))().kind).toBe('online');
   expect(client.peers.hasFeature(peerId('local'), { plugin: 'wisp.runtime', command: 'runtime.rename' }).ok).toBe(true);
@@ -94,14 +93,15 @@ test('a command patches and acks; a refusal rolls back and says why', async () =
   const { client, mock, errors } = await setup();
   const key = 'local:s0001' as EntityKey;
   await client.commands.run(rename(key) as never, { id: key, title: 'Renamed' } as never);
-  await settle();
+  // the peer's patch has replaced the optimistic one
+  await until(() => client.entities.pending()().length === 0);
   expect(title(client, key)).toBe('Renamed');
   mock.failNext('runtime.rename', 'Not now');
   const r2 = { ...rename(key), optimistic: () => [{ e: 'session', id: key, op: 'patch' as const, ops: [{ op: 'replace' as const, path: '/title', value: 'Nope' }] }] };
   const p = client.commands.run(r2 as never, { id: key, title: 'Nope' } as never).catch(() => 'refused');
   expect(title(client, key)).toBe('Nope'); // on screen at once
   expect(await p).toBe('refused');
-  await settle();
+  await until(() => title(client, key) === 'Renamed' && errors.length > 0);
   expect(title(client, key)).toBe('Renamed');
   expect(errors).toEqual(['Not now']);
 });
@@ -110,15 +110,16 @@ test('a streaming turn grows its text event and moves the list row along', async
   const { client, mock, timers } = await setup();
   const key = 'local:s0000' as EntityKey;
   const tr = client.transcripts.open<{ kind: string; body: { text?: string } }>(peerId('local'), key, client.scope.child('t'));
-  await settle();
+  await until(() => tr.events().length > 0);
   const before = tr.events().length;
   expect(before).toBe(4);
   mock.stream(key, { tokens: 30, everyMs: 16 });
   timers.run(16 * 10);
-  await settle();
+  // the turn's text event is in, part way
+  await until(() => tr.events().length === before + 2);
   const mid = tr.events().at(-1)?.body.text ?? '';
   timers.run(16 * 40);
-  await settle();
+  await until(() => (client.entities.peek('session', key) as { state: string }).state === 'review');
   const last = tr.events().at(-1)?.body.text ?? '';
   expect(tr.events().length).toBe(before + 2);
   expect(last.length).toBeGreaterThan(mid.length);
@@ -128,13 +129,13 @@ test('a streaming turn grows its text event and moves the list row along', async
 test('an unknown command is refused with a pointer to where to add it', async () => {
   const { client, errors } = await setup();
   await client.commands.run({ id: 'nope.do', owner: () => peerId('local'), optimistic: 'none', pending: 'the nope.do control' } as never, {} as never).catch(() => {});
-  await settle();
+  await until(() => errors.length > 0);
   expect(errors[0]).toMatch(/mock-commands\.ts/);
 });
 
 test('a dropped stream shows the peer offline', async () => {
   const { client, tr } = await setup();
   tr.drop();
-  await settle();
+  await until(() => client.peers.status(peerId('local'))().kind !== 'online');
   expect(client.peers.status(peerId('local'))().kind).not.toBe('online');
 });

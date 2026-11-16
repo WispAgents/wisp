@@ -3,7 +3,7 @@ import { expect, test } from 'vitest';
 import type { CommandDef } from '@wisp/client';
 import { PrPane } from '../src/side/PrPane.tsx';
 import { useTask } from '../src/task-context.tsx';
-import { mountTask, part, settle } from './helpers.tsx';
+import { mountTask, part, until } from './helpers.tsx';
 import type { PrPanel } from '../src/side/pr.ts';
 
 const PR: PrPanel = {
@@ -46,7 +46,7 @@ test('the_pr_pane_shows_the_verdict_failing_checks_first_the_passed_folded_and_t
     };
     return <PrPane />;
   });
-  await settle();
+  await until(() => part('side.pr.meta') !== null && part('side.pr.verdict.fail') !== null);
   expect(asked[0]).toBe(`ship.details {"key":"${m.key}","session":"s1"}`);
   expect(part('side.pr.verdict.fail')?.textContent).toContain('1 check failing');
   // the failing check is listed; the two that passed fold behind one line
@@ -55,7 +55,7 @@ test('the_pr_pane_shows_the_verdict_failing_checks_first_the_passed_folded_and_t
   const fold = part('side.pr.fold');
   expect(fold?.textContent).toBe('2 passed');
   fold?.click();
-  await settle();
+  await until(() => document.querySelectorAll('[data-kit="check-row"]').length === 3);
   expect([...document.querySelectorAll('[data-kit="check-row"]')].length).toBe(3);
   // reviewers, the conversation (the bot folded), the files, the foot
   expect(part('side.pr.reviews')?.textContent).toContain('Approved');

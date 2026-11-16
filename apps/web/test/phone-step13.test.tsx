@@ -10,13 +10,7 @@ import { createToaster } from '@wisp/ui';
 import { createMockPeer, type MockPeer } from '../dev/mock-peer.ts';
 import { memTransport } from '../dev/mem-transport.ts';
 import { pluginUis } from '../src/plugins.ts';
-
-const settle = async (n = 30): Promise<void> => {
-  for (let i = 0; i < n; i++) await new Promise((r) => setTimeout(r, 0));
-};
-const until = async (ok: () => boolean): Promise<void> => {
-  for (let i = 0; i < 300 && !ok(); i++) await new Promise((r) => setTimeout(r, 10));
-};
+import { until } from './until.ts';
 
 let stops: (() => void)[] = [];
 afterEach(() => {
@@ -44,7 +38,6 @@ async function start(platform: Platform, o: { computers?: boolean; history?: Ret
     stop();
     shell.dispose();
   });
-  await settle();
   await until(() => root.querySelectorAll('[data-pane="list"] [data-part="card"][data-id]').length > 2);
   return { root, mock, client, shell: shell.context };
 }
@@ -88,7 +81,7 @@ test('in_selection_a_tap_toggles_rows_and_unpicking_the_last_on_android_leaves_i
   shell.listSelect?.start(a.dataset['id']);
   await until(() => q('[data-part="phone.tasks.select"]') !== null);
   rowOf(b).click();
-  await settle(5);
+  await until(() => title() === '2 selected');
   expect(title()).toBe('2 selected');
   expect(rowOf(b).hasAttribute('data-picked')).toBe(true);
   rowOf(a).click();
@@ -119,13 +112,13 @@ test('on_ios_select_in_the_bar_is_edit_mode_in_the_same_bar_with_select_all_done
   const tools = q('[data-kit="select-toolbar"]') as HTMLElement;
   for (const l of ['Mark done', 'Archive', 'Delete']) expect(button(tools, l)?.disabled, l).toBe(true);
   button(bar, 'Select All')?.click();
-  await settle(5);
+  await until(() => title() === `${cards(root).length} Selected`);
   const n = cards(root).length;
   expect(title()).toBe(`${n} Selected`);
   expect(button(bar, 'Deselect All'), 'Select All turns into its undo').toBeDefined();
   // unpicking every row keeps iOS in edit mode, until Done
   button(bar, 'Deselect All')?.click();
-  await settle(5);
+  await until(() => title() === 'Select Items');
   expect(title()).toBe('Select Items');
   button(bar, 'Done')?.click();
   await until(() => !bar.hasAttribute('data-selecting'));

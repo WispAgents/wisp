@@ -9,6 +9,7 @@ import { createShell, defineExtension, definePluginUi, nullPlatform, type ShellW
 import { createToaster } from '@wisp/ui';
 import { createMockPeer } from '../dev/mock-peer.ts';
 import { memTransport } from '../dev/mem-transport.ts';
+import { until } from './until.ts';
 
 const INPUTS = [
   'shell.topbar:brand',
@@ -27,13 +28,8 @@ const INPUTS = [
   'shell.task:head',
 ] as const;
 
-const settle = async (n = 30): Promise<void> => {
-  for (let i = 0; i < n; i++) await new Promise((r) => setTimeout(r, 0));
-};
-/** until `ok`: the task screen is a lazy import, so it shows a beat after the navigation (2 s at most) */
-const until = async (ok: () => boolean): Promise<void> => {
-  for (let i = 0; i < 200 && !ok(); i++) await new Promise((r) => setTimeout(r, 10));
-};
+/** the task rows drawn (the row inputs are in them) */
+const listed = (root: HTMLElement): boolean => root.querySelector('[data-kit="slot"][data-input="shell.row:head"]') !== null;
 
 function Mark(input: string): () => JSX.Element {
   return () => <span data-test-ext={input}>{input}</span>;
@@ -55,17 +51,18 @@ async function start(withPlugin: boolean) {
   const root = document.createElement('div');
   document.body.append(root);
   const stop = shell.render(root);
-  await settle();
   return { client, shell, root, stop };
 }
 
 test('a plugin extension renders in every input of the frame', async () => {
   const { client, root, stop } = await start(true);
+  await until(() => client.entities.list('session')().length > 0);
   const first = client.entities.list<{ id: string }>('session')()[0];
   expect(first).toBeDefined();
   client.nav.navigate({ t: 'openTask', id: first?.id as EntityKey as never });
-  await until(() => root.querySelector('[data-part~="split.head"]') !== null);
-  await settle();
+  // the task screen is a lazy import: it shows a beat after the navigation, with every row drawn behind it
+  const live = (): number => client.entities.list<{ archived: boolean }>('session')().filter((s) => !s.archived).length;
+  await until(() => INPUTS.every((input) => root.querySelector(`[data-test-ext="${input}"]`) !== null) && root.querySelectorAll('[data-test-ext="shell.row:head"]').length === live());
   for (const input of INPUTS) expect(root.querySelector(`[data-test-ext="${input}"]`), input).not.toBeNull();
   // an area's extension replaces the built-in control it overrides
   expect(root.querySelector('[data-kit="brand"]')).toBeNull();
@@ -77,6 +74,8 @@ test('a plugin extension renders in every input of the frame', async () => {
 
 test('with nothing attached, the inputs add no element with a box: the built-ins show', async () => {
   const { root, stop } = await start(false);
+  await until(() => listed(root) && root.querySelector('[data-kit="brand"]') !== null && root.querySelector('[data-kit="search-btn"]') !== null);
+  expect(listed(root), 'the rows, with their inputs').toBe(true);
   expect(root.querySelector('[data-kit="brand"]')).not.toBeNull();
   expect(root.querySelector('[data-kit="search-btn"]')).not.toBeNull();
   for (const slot of root.querySelectorAll('[data-kit="slot"]')) expect(slot.hasAttribute('data-empty'), slot.getAttribute('data-input') ?? '').toBe(true);

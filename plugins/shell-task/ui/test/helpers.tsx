@@ -17,10 +17,11 @@ afterEach(() => {
   document.body.innerHTML = '';
 });
 
-export const tick = (ms = 0): Promise<void> => new Promise((r) => setTimeout(r, ms));
-/** lets the mock peer answer and the client apply it */
-export async function settle(n = 8): Promise<void> {
-  for (let i = 0; i < n; i++) await tick();
+/** until `ok`, checked after each macrotask (what the test then asserts, never a fixed count of timer hops: on Windows
+ * each is a ~15.6 ms system tick); gives up after `ms` by the clock, and the assertion after it fails with its message */
+export async function until(ok: () => boolean, ms = 4000): Promise<void> {
+  const end = performance.now() + ms;
+  while (!ok() && performance.now() < end) await new Promise((r) => setTimeout(r, 0));
 }
 export const part = (name: string): HTMLElement | null => document.querySelector<HTMLElement>(`[data-part="${name}"]`);
 export const parts = (name: string): HTMLElement[] => [...document.querySelectorAll<HTMLElement>(`[data-part="${name}"]`)];
@@ -35,13 +36,12 @@ export interface Mounted {
 
 /**
  * Mounts `view` inside the open task `sessionId` (its rows come from `o.rows`, keyed by topic).
- * Resolves once the task's topics are live.
+ * Resolves once the task's topics are live; what the view then draws, the test waits for (`until`).
  */
 export async function mountTask(o: Omit<HarnessOptions, 'plugin'> & { sessionId: string }, view: () => JSX.Element): Promise<Mounted> {
   const topics = o.watch ?? (Object.keys(o.rows) as Topic[]);
   const h = harness({ ...o, plugin: 'wisp.shell-task', watch: topics });
   await h.ready();
-  await settle();
   const key = entityKey(peerId(o.peer ?? 'laptop'), o.sessionId);
   const toaster = createToaster();
   const shell = devShell(h.client, toaster);
@@ -64,6 +64,5 @@ export async function mountTask(o: Omit<HarnessOptions, 'plugin'> & { sessionId:
     ),
   );
   mounted.push(() => h.client.dispose());
-  await settle();
   return { h, key, toaster, host, task: () => ctx as TaskContext };
 }

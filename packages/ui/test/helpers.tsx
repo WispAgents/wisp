@@ -18,6 +18,12 @@ export function mount(view: () => JSX.Element): HTMLElement {
 }
 
 export const tick = (ms = 0): Promise<void> => new Promise((r) => setTimeout(r, ms));
+/** until `ok`, checked after each macrotask (what the test then asserts, never a fixed count of timer hops: on Windows
+ * each is a ~15.6 ms system tick); gives up after `ms` by the clock, and the assertion after it fails with its message */
+export async function until(ok: () => boolean, ms = 4000): Promise<void> {
+  const end = performance.now() + ms;
+  while (!ok() && performance.now() < end) await tick();
+}
 
 /** After the next animation frame (happy-dom runs them in order, as setImmediate): Zag starts an open overlay's focus
  * trap and its Escape and outside-press listeners in a frame, so a test that presses keys next awaits this, not only a

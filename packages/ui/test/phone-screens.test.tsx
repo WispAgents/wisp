@@ -5,7 +5,7 @@
 // whole screen with Close / Done.
 import { beforeAll, describe, expect, it } from 'vitest';
 import { createSignal, type JSX } from 'solid-js';
-import { mount, tick } from './helpers.tsx';
+import { mount, tick, until } from './helpers.tsx';
 import { PlatformLookProvider, SettingsFrame, StuffPhone, StuffPhoneApp, GESTURES, type Look, type SettingsNavGroup, type StuffPhoneGroup } from '../src/index.ts';
 import { settingsPhone } from '../src/settings/settings-phone-load.ts';
 
@@ -164,7 +164,7 @@ describe('My Stuff on phones', () => {
     expect(ios.querySelector('[data-part~="stuff.phone.add"]'), 'iOS: in the ⋯ menu').toBeNull();
     ios.querySelector<HTMLElement>('[aria-label="More"]')?.click();
     const entry = (): Element | undefined => [...document.querySelectorAll('[data-kit="menu-item"]')].find((e) => e.textContent?.includes('Add files'));
-    for (let i = 0; i < 100 && !entry(); i++) await tick(10);
+    await until(() => entry() !== undefined);
     expect(entry(), 'Add files in ⋯').toBeDefined();
   });
 

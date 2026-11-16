@@ -6,11 +6,9 @@ import { createClient, peerId, type EntityKey } from '@wisp/client';
 import { create, dirsOf, launchOf, parsePick, projectList, taskPlaces, type ProjectView } from '@wisp/shell/pure';
 import { createMockPeer, type MockTimers } from '../dev/mock-peer.ts';
 import { memTransport } from '../dev/mem-transport.ts';
+import { until } from './until.ts';
 
 const timers: MockTimers = { now: () => 1_800_000_000_000, setTimeout: () => undefined, clearTimeout: () => undefined };
-const settle = async (): Promise<void> => {
-  for (let i = 0; i < 20; i++) await new Promise((r) => setTimeout(r, 0));
-};
 
 test('new_task_with_two_projects_picked_creates_a_task_whose_spec_has_dirs_and_its_page_shows_both_places', async () => {
   const mock = createMockPeer({ timers, epoch: 'e1' });
@@ -25,7 +23,7 @@ test('new_task_with_two_projects_picked_creates_a_task_whose_spec_has_dirs_and_i
   const scope = client.scope.child('test');
   client.peers.watch(peerId('local'), 'list', scope);
   client.peers.watch(peerId('local'), 'config', scope);
-  await settle();
+  await until(() => client.entities.list('session')().length > 0);
   // two projects on this computer (the mock adds them as `wisp add` would)
   const apply = { id: 'resources.apply', owner: () => peerId('local'), optimistic: 'none' as const };
   const resources = [
@@ -33,7 +31,7 @@ test('new_task_with_two_projects_picked_creates_a_task_whose_spec_has_dirs_and_i
     { kind: 'project', name: 'web', spec: { path: '/code/web' } },
   ];
   await client.commands.run(apply as never, { resources } as never);
-  await settle();
+  await until(() => client.entities.list('project')().length === 2);
   const projects: ProjectView[] = projectList(client.entities.list<unknown>('project')(), undefined);
   const [a, b] = projects;
   if (!a || !b) throw new Error('two projects were added');
@@ -48,7 +46,8 @@ test('new_task_with_two_projects_picked_creates_a_task_whose_spec_has_dirs_and_i
   const early = client.entities.peek('session', id as EntityKey) as { body?: Record<string, unknown> } | undefined;
   expect(early?.body?.['dirs']).toEqual([b.path]);
   await run;
-  await settle();
+  // the peer's row in place of the optimistic one
+  await until(() => sent.length > 0 && client.entities.pending()().length === 0);
   // the wire: runtime.create's args name the extra folder
   expect(sent).toHaveLength(1);
   expect((sent[0] as { dirs?: unknown }).dirs).toEqual([b.path]);
