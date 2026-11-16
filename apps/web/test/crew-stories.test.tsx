@@ -9,17 +9,21 @@ import { afterEach, expect, test } from 'vitest';
 import { createClient, peerId } from '@wisp/client';
 import { createShell, nullPlatform, type Platform, type ShellWindow } from '@wisp/shell';
 import { createToaster } from '@wisp/ui';
-import { createMockPeer, type MockPeer } from '../dev/mock-peer.ts';
+import { COMMANDS } from '../dev/mock-commands.ts';
+import { createMockPeer, type MockPeer, type MockTimers } from '../dev/mock-peer.ts';
 import { memTransport } from '../dev/mem-transport.ts';
 import { pluginUis } from '../src/plugins.ts';
 
-const settle = async (n = 30): Promise<void> => {
-  for (let i = 0; i < n; i++) await new Promise((r) => setTimeout(r, 0));
+/** until `ok`, checked after each macrotask (the exact condition, never a fixed count of hops: on Windows a timer hop
+ * is a ~15.6 ms system tick, so the 30-hop flushes this file used cost ~0.5 s each there). 4 s at most, by the clock:
+ * a cold lazy chunk (the phone head, the crew's stories) lands a beat after the first frame. */
+const until = async (ok: () => boolean, ms = 4000): Promise<void> => {
+  const end = performance.now() + ms;
+  while (!ok() && performance.now() < end) await new Promise((r) => setTimeout(r, 0));
 };
-/** until `ok`: the lazy chunks (the phone head, the crew's stories) land a beat after the first frame (3 s at most) */
-const until = async (ok: () => boolean): Promise<void> => {
-  for (let i = 0; i < 300 && !ok(); i++) await new Promise((r) => setTimeout(r, 10));
-};
+/** the mock's clock without its timers: no streamed turn after a follow-up or a job (what this file doesn't test)
+ * repaints the shell under the assertions */
+const timers: MockTimers = { now: () => Date.now(), setTimeout: () => undefined, clearTimeout: () => undefined };
 
 let stops: (() => void)[] = [];
 afterEach(() => {
@@ -32,10 +36,9 @@ afterEach(() => {
 const PLUGINS = new Set(['wisp.crew', 'wisp.shell-list', 'wisp.shell-task']);
 
 async function start(platform: Platform): Promise<{ root: HTMLElement; mock: MockPeer; sent: { cmd: string; args: Record<string, unknown> }[] }> {
-  const mock = createMockPeer({ epoch: 'e1', crew: true });
+  const mock = createMockPeer({ epoch: 'e1', crew: true, timers });
   // what the peer was asked (each command still runs as the mock answers it)
   const sent: { cmd: string; args: Record<string, unknown> }[] = [];
-  const { COMMANDS } = await import('../dev/mock-commands.ts');
   for (const cmd of ['runtime.followUp', 'crew.assign', 'runtime.answer']) {
     const fn = COMMANDS[cmd];
     if (fn) mock.handle(cmd, (a, ctx) => (sent.push({ cmd, args: a as Record<string, unknown> }), fn(a, ctx)));
@@ -52,27 +55,43 @@ async function start(platform: Platform): Promise<{ root: HTMLElement; mock: Moc
     stop();
     shell.dispose();
   });
-  await settle();
   return { root, mock, sent };
 }
 
 const phone = (kind: 'android' | 'ios'): Platform => nullPlatform({ kind, phone: true, mobile: true });
 const names = (root: ParentNode): string[] => [...root.querySelectorAll('[data-kit="story-bubble"] [data-kit="story-name"]')].map((e) => e.textContent ?? '');
 const rings = (root: ParentNode): string[] => [...root.querySelectorAll<HTMLElement>('[data-kit="story-bubble"]')].map((e) => e.dataset['ring'] ?? '');
+/** the row with the seeded crew in it and their states known: Org, the five members and Add (it draws Add before the
+ * crew's snapshot lands), and only Turing idle (a member's ring comes from its jobs, the `list` topic's rows, which
+ * may land a frame after the crew's) */
+const crewRow = (root: ParentNode): boolean => names(root).length === 7 && rings(root).filter((r) => r === 'idle').length === 1;
 const q = (sel: string): HTMLElement | null => document.querySelector<HTMLElement>(sel);
+
+// the lazy chunks these tests show (the phone head, the list, the crew's list top and its stories, the task page's
+// foot) compiled while the file loads, off the 5 s clock (as dynamic-import-in-test wants): one phone shell up to a
+// story's answer card, then gone
+{
+  const { root } = await start(phone('ios'));
+  await until(() => crewRow(root));
+  [...root.querySelectorAll<HTMLButtonElement>('[data-kit="story-bubble"]')].find((b) => b.textContent?.includes('Grace'))?.click();
+  await until(() => q('[data-part~="crew.story.waiting"] [data-part~="task.foot"]') !== null);
+  for (const s of stops) s();
+  stops = [];
+  document.documentElement.removeAttribute('data-platform');
+  document.body.innerHTML = '';
+}
 
 async function openStory(root: HTMLElement, name: string): Promise<void> {
   const bubble = [...root.querySelectorAll<HTMLButtonElement>('[data-kit="story-bubble"]')].find((b) => b.textContent?.includes(name));
   expect(bubble, name).toBeDefined();
   bubble?.click();
-  await until(() => q('[data-part~="crew.story.page"]') !== null);
-  await settle();
+  await until(() => q(`[data-part~="crew.story.page"] [data-kit="story-who"]`)?.textContent?.includes(name) === true);
 }
 
 for (const kind of ['android', 'ios'] as const) {
   test(`on_${kind}_the_crew_is_a_stories_row_under_the_top_bar_ordered_by_ring_and_not_a_section_in_the_list`, async () => {
     const { root } = await start(phone(kind));
-    await until(() => root.querySelector('[data-kit="stories"]') !== null);
+    await until(() => crewRow(root));
     const row = root.querySelector('[data-pane="list"] [data-kit="stories"]');
     expect(row, 'the stories row over the list').not.toBeNull();
     // Org first, + last; waiting on you, then the unread report, then working (a job you sent first: the crew's own
@@ -86,8 +105,8 @@ for (const kind of ['android', 'ios'] as const) {
 
 test('a_phones_browser_keeps_v1s_crew_section_and_draws_no_stories', async () => {
   const { root } = await start(nullPlatform({ mobile: true }));
-  await until(() => root.querySelector('[data-part~="section.crew"]') !== null);
-  await settle();
+  // the section with the seeded crew in it (it draws its empty state before the crew's snapshot lands)
+  await until(() => root.querySelector('[data-part~="section.crew"]')?.textContent?.includes('Grace') === true);
   expect(root.querySelector('[data-kit="stories"]')).toBeNull();
   // v1's Crew section, in the list
   expect(root.querySelector('[data-part~="section.crew"]')?.textContent).toContain('Grace');
@@ -99,7 +118,7 @@ test('a_phones_browser_keeps_v1s_crew_section_and_draws_no_stories', async () =>
 
 test('a_story_shows_what_waits_with_the_task_pages_own_answer_controls_and_steps_through_the_crew', async () => {
   const { root, sent } = await start(phone('android'));
-  await until(() => root.querySelector('[data-kit="stories"]') !== null);
+  await until(() => crewRow(root));
   await openStory(root, 'Grace');
   const page = q('[data-part~="crew.story.page"]') as HTMLElement;
   expect(page.querySelector('[data-kit="story-who"]')?.textContent).toContain('Grace');
@@ -118,24 +137,22 @@ test('a_story_shows_what_waits_with_the_task_pages_own_answer_controls_and_steps
   expect(sent.find((s) => s.cmd === 'runtime.answer')?.args['text']).toBe('Yes');
   // the next member, and the one after, in the row's order as it opened
   (q('[data-part~="crew.story.next"]') as HTMLButtonElement).click();
-  await settle();
+  await until(() => q('[data-kit="story-who"]')?.textContent?.includes('Hopper') === true);
   expect(q('[data-kit="story-who"]')?.textContent).toContain('Hopper');
   expect(q('[data-kit="story-where"]')?.textContent).toBe('2 of 5 · swipe down to close');
   (q('[data-part~="crew.story.close"]') as HTMLButtonElement).click();
-  await settle();
+  await until(() => q('[data-part~="crew.story.page"]') === null);
   expect(q('[data-part~="crew.story.page"]')).toBeNull();
 });
 
 test('the_story_reply_goes_to_the_running_job_and_starts_a_job_for_an_idle_member', async () => {
   const { root, mock, sent } = await start(phone('ios'));
-  await until(() => root.querySelector('[data-kit="stories"]') !== null);
+  await until(() => crewRow(root));
   const type = async (text: string): Promise<void> => {
     const box = q('[data-part~="crew.story.reply"] textarea') as HTMLTextAreaElement;
     box.value = text;
     box.dispatchEvent(new InputEvent('input', { bubbles: true }));
-    await settle(3);
     (q('[data-part~="crew.story.reply"] [data-part="composer.send"]') as HTMLButtonElement).click();
-    await settle();
   };
   // Linus works: "Message Linus…" is a follow-up on his running job
   await openStory(root, 'Linus');
@@ -148,7 +165,7 @@ test('the_story_reply_goes_to_the_running_job_and_starts_a_job_for_an_idle_membe
   // the box clears at once
   expect((q('[data-part~="crew.story.reply"] textarea') as HTMLTextAreaElement).value).toBe('');
   (q('[data-part~="crew.story.close"]') as HTMLButtonElement).click();
-  await settle();
+  await until(() => q('[data-part~="crew.story.page"]') === null);
   // Turing has no job: "Give Turing a job…" starts one
   await openStory(root, 'Turing');
   expect(q('[data-part~="crew.story.reply"] textarea')?.getAttribute('placeholder')).toBe('Give Turing a job…');

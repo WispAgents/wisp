@@ -8,17 +8,21 @@ import { afterEach, expect, test } from 'vitest';
 import { createClient, peerId, type Client } from '@wisp/client';
 import { createShell, nullPlatform, type Platform, type ShellWindow } from '@wisp/shell';
 import { createToaster } from '@wisp/ui';
-import { createMockPeer } from '../dev/mock-peer.ts';
+import { COMMANDS } from '../dev/mock-commands.ts';
+import { createMockPeer, type MockTimers } from '../dev/mock-peer.ts';
 import { memTransport } from '../dev/mem-transport.ts';
 import { pluginUis } from '../src/plugins.ts';
 
-const settle = async (n = 30): Promise<void> => {
-  for (let i = 0; i < n; i++) await new Promise((r) => setTimeout(r, 0));
+/** until `ok`, checked after each macrotask (the exact condition, never a fixed count of hops: on Windows a timer hop
+ * is a ~15.6 ms system tick, so the 30-hop flushes this file used cost ~0.5 s each there). 4 s at most, by the clock:
+ * a cold lazy chunk (the crew's pages, the phone screen) lands a beat after the navigation. */
+const until = async (ok: () => boolean, ms = 4000): Promise<void> => {
+  const end = performance.now() + ms;
+  while (!ok() && performance.now() < end) await new Promise((r) => setTimeout(r, 0));
 };
-/** until `ok`: the lazy chunks (the crew's pages, the phone screen) land a beat after the navigation (3 s at most) */
-const until = async (ok: () => boolean): Promise<void> => {
-  for (let i = 0; i < 300 && !ok(); i++) await new Promise((r) => setTimeout(r, 10));
-};
+/** the mock's clock without its timers: no streamed turn after a new job (what this file doesn't test) repaints the
+ * shell under the assertions */
+const timers: MockTimers = { now: () => Date.now(), setTimeout: () => undefined, clearTimeout: () => undefined };
 
 let stops: (() => void)[] = [];
 afterEach(() => {
@@ -34,9 +38,8 @@ async function start(platform: Platform): Promise<{
   client: Client;
   sent: { cmd: string; args: Record<string, unknown> }[];
 }> {
-  const mock = createMockPeer({ epoch: 'e1', crew: true });
+  const mock = createMockPeer({ epoch: 'e1', crew: true, timers });
   const sent: { cmd: string; args: Record<string, unknown> }[] = [];
-  const { COMMANDS } = await import('../dev/mock-commands.ts');
   for (const cmd of ['crew.assign', 'crew.update']) {
     const fn = COMMANDS[cmd];
     mock.handle(cmd, (a, ctx) => (sent.push({ cmd, args: a as Record<string, unknown> }), fn ? fn(a, ctx) : { ops: [] }));
@@ -59,7 +62,6 @@ async function start(platform: Platform): Promise<{
     stop();
     shell.dispose();
   });
-  await settle();
   return { client, sent };
 }
 
@@ -67,19 +69,35 @@ const phone = (kind: 'android' | 'ios'): Platform => nullPlatform({ kind, phone:
 const q = (sel: string): HTMLElement | null => document.querySelector<HTMLElement>(sel);
 const CREW = { t: 'openView', id: 'crew.org', params: null } as const;
 const members = (): string[] => [...document.querySelectorAll('[data-part~="crew.phone.member"] [data-kit="list-row-title"]')].map((e) => e.textContent ?? '');
+/** the members listed in their final order: Grace (she asks you something) first needs her job, a row of the `list`
+ * topic, which may land a frame after the crew's */
+const ranked = (): boolean => members()[0] === 'Grace';
+// the lazy chunks these tests show (the phone head, the crew's screen, its phone pages) compiled while the file loads,
+// off the 5 s clock (as dynamic-import-in-test wants): one phone shell up to a member's page, then gone
+{
+  const { client } = await start(phone('ios'));
+  client.nav.navigate(CREW as never);
+  await until(ranked);
+  q('[data-part~="crew.phone.member"] [data-kit="list-row-hit"]')?.click();
+  await until(() => q('[data-part~="crew.phone.member-bar"]') !== null);
+  for (const s of stops) s();
+  stops = [];
+  document.documentElement.removeAttribute('data-platform');
+  document.body.innerHTML = '';
+}
+
 const open = async (name: string): Promise<void> => {
   const row = [...document.querySelectorAll<HTMLElement>('[data-part~="crew.phone.member"]')].find((r) => r.textContent?.includes(name));
   expect(row, name).toBeDefined();
   row?.querySelector<HTMLElement>('[data-kit="list-row-hit"]')?.click();
-  await until(() => q('[data-part~="crew.phone.member-bar"]') !== null);
-  await settle();
+  await until(() => q('[data-part~="crew.phone.member-bar"] [data-kit="app-bar-title"]')?.textContent?.includes(name) === true);
 };
 
 for (const look of ['android', 'ios'] as const) {
   test(`crew_tab_on_${look}_is_the_platform_screen_listing_members_most_needed_first`, async () => {
     const { client } = await start(phone(look));
     client.nav.navigate(CREW as never);
-    await until(() => members().length > 0);
+    await until(ranked);
     expect(q('[data-part~="crew.phone.bar"]')?.getAttribute('data-kind')).toBe('root');
     expect(q('[data-part~="crew.phone.bar"] [data-kit="app-bar-title"]')?.textContent).toContain('Crew');
     // asks you, then the unread report, then working, then idle (the stories row's order)
@@ -94,7 +112,7 @@ for (const look of ['android', 'ios'] as const) {
   test(`a_member_on_${look}_pushes_its_page_with_back_tabs_and_new_job`, async () => {
     const { client, sent } = await start(phone(look));
     client.nav.navigate(CREW as never);
-    await until(() => members().length > 0);
+    await until(ranked);
     await open('Grace');
     expect(q('[data-part~="crew.phone.member-bar"]')?.getAttribute('data-kind')).toBe('page');
     expect(q('[data-part~="crew.phone.member-bar"] [data-kit="app-bar-title"]')?.textContent).toContain('Grace');
@@ -106,7 +124,6 @@ for (const look of ['android', 'ios'] as const) {
     expect(box).not.toBeNull();
     (box as HTMLTextAreaElement).value = 'Look at the flaky test';
     box?.dispatchEvent(new InputEvent('input', { bubbles: true }));
-    await settle(3);
     const send = [...document.querySelectorAll<HTMLButtonElement>('[data-part~="composer.send"], [data-part~="crew.phone.composer"] button')].find(
       (b) => b.getAttribute('aria-label') === 'New job' || b.textContent?.includes('New job'),
     );
@@ -125,7 +142,7 @@ for (const look of ['android', 'ios'] as const) {
 test('the_member_page_tabs_show_brief_notebook_and_wakes_and_pause_is_one_tap', async () => {
   const { client, sent } = await start(phone('android'));
   client.nav.navigate(CREW as never);
-  await until(() => members().length > 0);
+  await until(ranked);
   await open('Ada');
   const tab = (name: string): void =>
     [...document.querySelectorAll<HTMLElement>('[data-part~="crew.phone.tabs"] [role="tab"]')].find((e) => e.textContent?.startsWith(name))?.click();
@@ -145,7 +162,7 @@ test('the_member_page_tabs_show_brief_notebook_and_wakes_and_pause_is_one_tap', 
 test('org_is_pushed_from_the_crew_root_with_back', async () => {
   const { client } = await start(phone('ios'));
   client.nav.navigate(CREW as never);
-  await until(() => members().length > 0);
+  await until(ranked);
   q('[data-part~="crew.phone.org"]')?.click();
   await until(() => q('[data-part~="crew.phone.org-bar"]') !== null);
   expect(q('[data-part~="crew.phone.org-bar"]')?.getAttribute('data-kind')).toBe('page');
@@ -160,7 +177,6 @@ test('a_phones_browser_keeps_v1s_org_page_on_crew', async () => {
   const { client } = await start(nullPlatform({ mobile: true }));
   client.nav.navigate(CREW as never);
   await until(() => q('[data-kit^="org"]') !== null);
-  await settle();
   expect(q('[data-part~="crew.phone.bar"]')).toBeNull();
   expect(q('[data-kit^="org"]')).not.toBeNull();
 });
