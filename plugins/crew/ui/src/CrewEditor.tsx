@@ -35,11 +35,10 @@ const MODES = [
 ] as const;
 const EVENT_ICON = { finished: 'bolt', done: 'done', ci: 'warn' } as const;
 const HANDOFF = 'crew.reported';
-/** what you'd typed when the peer refused it: the dialog opens with it again (v1 crewEditor's `again()`) */
-let refused: { readonly key: string; readonly draft: Draft } | undefined;
+
 
 // size-ok: one form whose rows share its draft
-export default function CrewEditor(props: { readonly client: PluginClient; readonly params: { id?: string; task?: string } }): JSX.Element {
+export default function CrewEditor(props: { readonly client: PluginClient; readonly params: { id?: string; task?: string; again?: Draft } }): JSX.Element {
   const c = props.client;
   const shell = useShell();
   const say = t as (k: string, v?: Readonly<Record<string, string | number>>) => string;
@@ -62,8 +61,8 @@ export default function CrewEditor(props: { readonly client: PluginClient; reado
     const on = parsePick(shell.projectFilter?.value())[0]; // several picked: the first, where New task starts
     return all.find((p) => p.id === on)?.path ?? (all.length === 1 ? (all[0]?.path ?? '') : '');
   };
-  const again = refused?.key === (props.params.id ?? props.params.task ?? '') ? refused.draft : undefined;
-  refused = undefined;
+  // what you'd typed when the peer refused it: the dialog opens with it again (v1 crewEditor's `again()`)
+  const again = props.params.again;
   const [d, setD] = createSignal<Draft>(again ?? (editing() ? before : { ...before, ...faceOf(rollSpirit(String(Math.random()))), cwd: task ? '' : here() }));
   if (task)
     void c
@@ -114,8 +113,7 @@ export default function CrewEditor(props: { readonly client: PluginClient; reado
       const done = (m: Member | undefined): void =>
         void shell.toast.success(t('wisp.crew.editor.joined', { name: v.name }), { action: { label: t('wisp.crew.editor.open'), onClick: () => c.navigate({ t: 'openCrew', id: `${c.home}:${m?.id ?? ''}` as never }) } });
       const back = (): void => {
-        refused = { key: task ?? '', draft };
-        c.navigate({ t: 'openOverlay', overlay: { kind: 'dialog', id: VIEW.editor as never, params: task ? { task } : {} } });
+        c.navigate({ t: 'openOverlay', overlay: { kind: 'dialog', id: VIEW.editor as never, params: { ...(task && { task }), again: draft } as never } });
       };
       if (task) void c.run(adoptTask, { peer: c.home, sessionId: bare(task), member: v as unknown as Member }).then(done, back);
       else void c.run(createMember, { peer: c.home, id: newRowId(), member: v as unknown as Member, ...(checkin() && { checkin: true }) }).then(done, back);
