@@ -1,6 +1,6 @@
 //! How this copy of wisp was installed, from where its binary lives (v1 `installMethod`, now for the Rust
 //! binary). The npm package `wisp-agents` is a launcher (`bin/wisp.js`) plus a per-platform binary package
-//! (`@wisp/core-<os>-<arch>`), so the binary sits in a `node_modules` folder next to (or inside) the
+//! (`wisp-agents-<os>-<arch>`, ADR-0090), so the binary sits in a `node_modules` folder next to (or inside) the
 //! launcher; the launcher's folder is the install root, and its `package.json` says which version npm put
 //! there.
 //!   global  npm install -g wisp-agents@<tag> (also what install.sh does)
@@ -114,14 +114,27 @@ fn prefix_before(p: &str, idx: usize) -> String {
     p.to_owned()
 }
 
+/// A platform package's folder name: `wisp-agents-<os>-<arch>` (npm/wisp-agents/lib/resolve.js `packageName`),
+/// with an os and arch npm reports, so a sibling package such as `wisp-agents-mcp-server` is not one.
+fn is_platform_package(seg: &str) -> bool {
+    seg.strip_prefix(PKG)
+        .and_then(|rest| rest.strip_prefix('-'))
+        .and_then(|rest| rest.split_once('-'))
+        .is_some_and(|(os, arch)| matches!(os, "darwin" | "linux" | "win32") && matches!(arch, "arm64" | "x64" | "arm"))
+}
+
 /// The launcher package folder for a binary inside `node_modules`: `…/node_modules/wisp-agents` when the
 /// binary package is nested in it or hoisted next to it.
 fn launcher_root(exe: &str, platform: &Platform) -> Option<String> {
     let segs = segments(exe);
-    if let Some(i) = segs.iter().rposition(|s| *s == PKG) {
-        return (i > 0 && segs[i - 1] == "node_modules").then(|| prefix_before(exe, i + 1));
+    // `wisp-agents` counts only as a package folder (after node_modules): a keg's `Cellar/wisp-agents` falls through.
+    if let Some(i) = segs.iter().rposition(|s| *s == PKG)
+        && i > 0
+        && segs[i - 1] == "node_modules"
+    {
+        return Some(prefix_before(exe, i + 1));
     }
-    let i = segs.iter().rposition(|s| *s == "@wisp")?;
+    let i = segs.iter().rposition(|s| is_platform_package(s))?;
     (i > 0 && segs[i - 1] == "node_modules").then(|| platform.join(&prefix_before(exe, i), &[PKG]))
 }
 

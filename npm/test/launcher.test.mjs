@@ -76,12 +76,12 @@ test('forwards SIGTERM to the child and dies of the same signal', { skip: skipOn
   assert.equal(signal, 'SIGTERM');
 });
 
-test('finds the binary in the installed @wisp/core package for this platform', { skip: skipOnWindows }, async () => {
-  // The layout npm makes: node_modules/wisp-agents next to node_modules/@wisp/core-<os>-<arch>.
+test('finds the binary in the installed wisp-agents-<os>-<arch> package for this platform', { skip: skipOnWindows }, async () => {
+  // The layout npm makes: node_modules/wisp-agents next to node_modules/wisp-agents-<os>-<arch>.
   const nm = path.join(tmp, 'install', 'node_modules');
-  const core = path.join(nm, '@wisp', `core-${process.platform}-${process.arch}`);
+  const core = path.join(nm, `wisp-agents-${process.platform}-${process.arch}`);
   fs.mkdirSync(path.join(core, 'bin'), { recursive: true });
-  fs.writeFileSync(path.join(core, 'package.json'), JSON.stringify({ name: `@wisp/core-${process.platform}-${process.arch}`, version: '2.0.0' }));
+  fs.writeFileSync(path.join(core, 'package.json'), JSON.stringify({ name: `wisp-agents-${process.platform}-${process.arch}`, version: '2.0.0' }));
   fs.copyFileSync(fake, path.join(core, 'bin', 'wisp'));
   fs.chmodSync(path.join(core, 'bin', 'wisp'), 0o755);
   fs.cpSync(SRC, path.join(nm, 'wisp-agents'), { recursive: true });

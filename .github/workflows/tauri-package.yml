@@ -21,7 +21,7 @@ on:
         type: string
         required: true
       version:
-        description: A nightly's version, stamped into package.json before the build; empty keeps package.json's
+        description: A nightly's version, stamped into npm/wisp-agents/package.json before the build; empty keeps its own
         type: string
         default: ''
 
@@ -46,10 +46,15 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
           key: tauri-package-${{ runner.os }}-${{ hashFiles('desktop/src-tauri/Cargo.lock') }}
-      # The app reads its version from package.json: a nightly has to say it's one to update from it.
+      # The app reads its version from npm/wisp-agents/package.json (tauri.conf.json) and the wisp it carries
+      # from Cargo.toml: a nightly has to say it's one to update from it. The root package.json has no version.
+      # `cargo update --workspace` moves only the workspace crates in Cargo.lock, so --locked still holds.
       - name: Stamp the nightly version
         if: inputs.version != ''
-        run: npm version "${{ inputs.version }}" --no-git-tag-version --allow-same-version
+        run: |
+          (cd npm/wisp-agents && npm version "${{ inputs.version }}" --no-git-tag-version --allow-same-version)
+          node npm/scripts/release.mjs stamp-cargo "${{ inputs.version }}"
+          cargo update --workspace
       - run: npm ci # the web build the app carries (desktop/scripts/package.mjs)
       - run: node desktop/scripts/package.mjs --target aarch64-apple-darwin
       - run: node desktop/scripts/package.mjs --target x86_64-apple-darwin
@@ -88,10 +93,15 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
           key: tauri-package-${{ runner.os }}-${{ hashFiles('desktop/src-tauri/Cargo.lock') }}
-      # The app reads its version from package.json: a nightly has to say it's one to update from it.
+      # The app reads its version from npm/wisp-agents/package.json (tauri.conf.json) and the wisp it carries
+      # from Cargo.toml: a nightly has to say it's one to update from it. The root package.json has no version.
+      # `cargo update --workspace` moves only the workspace crates in Cargo.lock, so --locked still holds.
       - name: Stamp the nightly version
         if: inputs.version != ''
-        run: npm version "${{ inputs.version }}" --no-git-tag-version --allow-same-version
+        run: |
+          (cd npm/wisp-agents && npm version "${{ inputs.version }}" --no-git-tag-version --allow-same-version)
+          node npm/scripts/release.mjs stamp-cargo "${{ inputs.version }}"
+          cargo update --workspace
       - run: npm ci # the web build the app carries (desktop/scripts/package.mjs)
       - run: node desktop/scripts/package.mjs --target x86_64-pc-windows-msvc
       - run: node desktop/scripts/package.mjs --target aarch64-pc-windows-msvc
@@ -133,10 +143,15 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
           key: tauri-package-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('desktop/src-tauri/Cargo.lock') }}
-      # The app reads its version from package.json: a nightly has to say it's one to update from it.
+      # The app reads its version from npm/wisp-agents/package.json (tauri.conf.json) and the wisp it carries
+      # from Cargo.toml: a nightly has to say it's one to update from it. The root package.json has no version.
+      # `cargo update --workspace` moves only the workspace crates in Cargo.lock, so --locked still holds.
       - name: Stamp the nightly version
         if: inputs.version != ''
-        run: npm version "${{ inputs.version }}" --no-git-tag-version --allow-same-version
+        run: |
+          (cd npm/wisp-agents && npm version "${{ inputs.version }}" --no-git-tag-version --allow-same-version)
+          node npm/scripts/release.mjs stamp-cargo "${{ inputs.version }}"
+          cargo update --workspace
       - run: npm ci # the web build the app carries (desktop/scripts/package.mjs)
       - run: node desktop/scripts/package.mjs --target ${{ matrix.triple }}
       - uses: actions/upload-artifact@v4

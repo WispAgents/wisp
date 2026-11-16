@@ -1,5 +1,5 @@
 //! Windows npm installs run after wisp has quit. `npm install -g` swaps the whole `wisp-agents` folder, and wisp.exe
-//! runs from inside it (`node_modules\@wisp\core-win32-*\bin`): Windows locks a running exe, so npm fails with
+//! runs from inside it (`node_modules\wisp-agents-win32-*\bin`): Windows locks a running exe, so npm fails with
 //! EPERM/EBUSY, or leaves half a package. (v1 never hit this: node.exe lived outside the package. On macOS and Linux a
 //! running binary is an open inode: npm's rename and unlink leave it running, so the install stays where it was.)
 //!

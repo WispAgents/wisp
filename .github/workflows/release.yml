@@ -3,35 +3,50 @@ name: release
 # Three channels, the way most npm projects run them (TypeScript's next, React's canary, Neovim's
 # rolling nightly): stable on npm `latest`, beta on npm `next`, nightly on npm `nightly` plus a
 # GitHub prerelease tagged `nightly` that's replaced every night. wisp's updater follows whichever
-# one Settings → General → Updates names (server/update.js).
+# one Settings → General → Updates names.
 #
-# Stable and beta: merge a PR that bumps package.json's version (with its CHANGELOG section).
-# A version with a `-` (0.38.0-beta.1) is a beta: npm `next`, a GitHub prerelease, no Homebrew.
+# What ships on npm (npm/README.md, ADR-0013): `wisp-agents`, a dependency-free launcher carrying the
+# web build in web/, plus one unscoped `wisp-agents-<os>-<arch>` package per target holding the Rust `wisp`
+# binary (npm installs only the one that matches the machine). The targets, their Rust triples and
+# runners, the version checks, the dist-tag and the publish order are npm/scripts/release.mjs (tested
+# by npm/test/release.test.mjs), so this file only runs them.
+#
+# Stable and beta: merge a PR that bumps the version in Cargo.toml's [workspace.package] and
+# npm/wisp-agents/package.json together (with its CHANGELOG section; the release skill). The plan job
+# fails at once if the two (or the launcher's optionalDependencies pins, or a tag the run is on)
+# disagree. A version with a `-` (2.1.0-beta.1) is a beta: npm `next`, a GitHub prerelease, no Homebrew.
 # Either way this:
-#   1. builds the desktop app on Tauri (tauri-package.yml): macOS dmg + zip (Apple silicon, Intel),
-#      Windows installer (x64, Arm), Linux AppImage + deb (x64, Arm), and runs the install gate on them
-#   2. creates the GitHub release v<version> as a draft with the CHANGELOG notes, the downloads and
+#   1. builds `wisp` for every target (binaries) and the desktop app on Tauri (tauri-package.yml):
+#      macOS dmg + zip, Windows installer, Linux AppImage + deb, with the install gate on them
+#   2. fills the npm packages with npm/scripts/build.mjs, runs the launcher's tests and installs the
+#      packed linux-x64 tarballs to run `wisp --version` and `wisp serve` from them (packages)
+#   3. creates the GitHub release v<version> as a draft with the CHANGELOG notes, the downloads and
 #      SHA256SUMS.txt
-#   3. publishes wisp-agents to npm (with provenance)
-#   4. publishes the release, so the site's download links and the app's updater see it only once
+#   4. publishes those exact tarballs to npm with provenance: every wisp-agents-<os>-<arch> first, wisp-agents
+#      last (it pins them all at its version)
+#   5. publishes the release, so the site's download links and the app's updater see it only once
 #      everything is up
-#   5. bumps the Homebrew tap (WispAgents/homebrew-tap) to the new npm tarball
+#   6. bumps the Homebrew tap (WispAgents/homebrew-tap) to the new wisp-agents npm tarball
 # A push only releases a version npm doesn't have yet. Run it by hand (Actions → release → Run
-# workflow) to finish one that stopped half way: every step skips what's already done. With
-# "dry run" ticked it only builds the desktop apps and runs the install gate (kept as the run's
-# artifacts): try a branch with `gh workflow run release --ref <branch> -f dry_run=true`.
+# workflow) to finish one that stopped half way: every step skips what's already done (each npm
+# package whose version is already on npm is skipped). With "dry run" ticked it builds the binaries,
+# the npm tarballs (tested, kept as the npm-packages artifact) and the desktop apps, and publishes
+# nothing: try a branch with `gh workflow run release --ref <branch> -f dry_run=true`.
 #
 # Nightly: when the nightly workflow (the full matrix, three times over) passes on main, this
-# builds that commit as <next patch>-nightly.<yyyymmdd>.<hhmm> (scripts/nightly-version.mjs),
-# publishes it to npm under `nightly` and moves the `nightly` release to it, with the Unreleased
-# notes. Nothing happens when main hasn't moved since the last nightly. `gh workflow run release
-# -f nightly=true` makes one now, without waiting for the tests.
+# builds that commit as <next patch>-nightly.<yyyymmdd>.<hhmm> (scripts/nightly-version.mjs, from
+# npm/wisp-agents/package.json's version), stamped into Cargo.toml for the binaries (so `wisp --version`
+# says it) and into every npm package, publishes it to npm under `nightly` and moves the `nightly`
+# release to it, with the Unreleased notes. Nothing happens when main hasn't moved since the last
+# nightly. `gh workflow run release -f nightly=true` makes one now, without waiting for the tests.
 #
-# npm publishes through trusted publishing (OIDC, no token): npmjs.com → wisp-agents → Settings
-# trusts WispAgents/wisp, release.yml, environment `npm`. npm allows one trusted publisher per
-# package, so stable and nightly both publish from here. The `npm` environment only deploys from
-# main, and npm refuses publishes by token, so what reaches npm is what was merged to main: the
-# PR review is the gate, as in most projects, with no approval step in the run.
+# npm publishes through trusted publishing (OIDC, no token): on npmjs.com, wisp-agents and every
+# wisp-agents-<os>-<arch> package → Settings trusts WispAgents/wisp, release.yml, environment `npm`. npm allows
+# one trusted publisher per package, so stable and nightly both publish from here. npm can only trust a
+# package that exists, so the owner publishes each new wisp-agents-<os>-<arch> once by hand from the
+# npm account that maintains wisp-agents (the release skill), then trusts it; until then its publish fails. The `npm`
+# environment only deploys from main, and npm refuses publishes by token, so what reaches npm is what
+# was merged to main: the PR review is the gate, as in most projects, with no approval step in the run.
 #
 # Secrets (all optional):
 #   HOMEBREW_TAP_TOKEN          a token that can push to WispAgents/homebrew-tap; without it the tap is skipped
@@ -41,7 +56,7 @@ name: release
 on:
   push:
     branches: [main]
-    paths: [package.json]
+    paths: [Cargo.toml, npm/wisp-agents/package.json]
   workflow_run:
     workflows: [nightly]
     types: [completed]
@@ -49,7 +64,7 @@ on:
   workflow_dispatch:
     inputs:
       dry_run:
-        description: Only build the desktop apps; release nothing
+        description: Build the binaries, npm tarballs and desktop apps; release nothing
         type: boolean
         default: false
       nightly:
@@ -75,6 +90,8 @@ jobs:
       dry: ${{ steps.nightly.outputs.dry || steps.stable.outputs.dry }}
       channel: ${{ steps.nightly.outputs.channel || steps.stable.outputs.channel }}
       sha: ${{ steps.nightly.outputs.sha || steps.stable.outputs.sha }}
+      tag: ${{ steps.tag.outputs.tag }}
+      targets: ${{ steps.versions.outputs.targets }}
     steps:
       # A nightly builds the commit the nightly tests passed on, even if main has moved since.
       - uses: actions/checkout@v5
@@ -83,16 +100,29 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
+      # Before anything is built: Cargo.toml, npm/wisp-agents/package.json (and its pins) and the tag
+      # the run is on, if any, must name one version. The error says which file to fix.
+      - id: versions
+        name: Versions agree
+        env:
+          REF_TYPE: ${{ github.ref_type }}
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          tag=(); [ "$REF_TYPE" = tag ] && tag=(--tag "$REF_NAME")
+          base=$(node npm/scripts/release.mjs check "${tag[@]}")
+          echo "version $base in Cargo.toml and npm/wisp-agents/package.json"
+          { echo "base=$base"; echo "targets=$(node npm/scripts/release.mjs matrix)"; } >> "$GITHUB_OUTPUT"
       - id: nightly
         if: github.event_name == 'workflow_run' || inputs.nightly == true
         name: Plan a nightly
         env:
           GH_TOKEN: ${{ github.token }}
           TESTS: ${{ github.event.workflow_run.conclusion || 'skipped' }}
+          BASE: ${{ steps.versions.outputs.base }}
         run: |
           sha=$(git rev-parse HEAD)
           last=$(gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/nightly" -q .object.sha 2>/dev/null || true)
-          version=$(node scripts/nightly-version.mjs)
+          version=$(node scripts/nightly-version.mjs "$BASE")
           go=true
           if [ "$GITHUB_EVENT_NAME" = workflow_run ] && [ "$TESTS" != success ]; then echo "The nightly tests didn't pass ($TESTS): no nightly."; go=false; fi
           if [ "$sha" = "$last" ]; then echo "main hasn't moved since the last nightly ($sha): no nightly."; go=false; fi
@@ -104,8 +134,17 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           DRY: ${{ inputs.dry_run == true }}
+          BASE: ${{ steps.versions.outputs.base }}
+          BEFORE: ${{ github.event.before }}
         run: |
-          version=$(node -p "require('./package.json').version")
+          version=$BASE
+          # A push releases only when it changed the version: Cargo.toml also changes for dependencies.
+          changed=true
+          if [ "$GITHUB_EVENT_NAME" = push ]; then
+            prev=$( (git fetch -q --depth=1 origin "$BEFORE" && git show FETCH_HEAD:npm/wisp-agents/package.json | node -p 'JSON.parse(require("fs").readFileSync(0, "utf8")).version') 2>/dev/null || true)
+            [ "$prev" = "$version" ] && changed=false
+            echo "version before the push: ${prev:-unknown}, now $version"
+          fi
           npm=true
           npm view "wisp-agents@$version" version 2>/dev/null | grep -q . && npm=false
           published=false
@@ -113,18 +152,162 @@ jobs:
           go=false
           # npm's registry can take a minute to list a version it just took, so a push right after
           # a release also checks the GitHub release: once that's published, the version is out.
-          if [ "$GITHUB_EVENT_NAME" = push ]; then [ $npm = true ] && [ $published = false ] && go=true
+          if [ "$GITHUB_EVENT_NAME" = push ]; then [ $changed = true ] && [ $npm = true ] && [ $published = false ] && go=true
           elif [ $npm = true ] || [ $published = false ]; then go=true; fi
           [ "$DRY" = true ] && go=true
           case "$version" in *-*) prerelease=true ;; *) prerelease=false ;; esac
-          echo "version=$version npm-needed=$npm release-published=$published → go=$go"
+          echo "version=$version changed=$changed npm-needed=$npm release-published=$published → go=$go"
           { echo "channel=stable"; echo "sha=$GITHUB_SHA"; echo "version=$version"; echo "npm=$npm"; echo "go=$go"; echo "prerelease=$prerelease"; echo "dry=$DRY"; } >> "$GITHUB_OUTPUT"
       - name: CHANGELOG has notes for this version
         if: steps.stable.outputs.go == 'true'
         run: node scripts/release-notes.mjs "${{ steps.stable.outputs.version }}" > /dev/null
+      - name: The npm dist-tag
+        id: tag
+        if: steps.nightly.outputs.go == 'true' || steps.stable.outputs.go == 'true'
+        env:
+          VERSION: ${{ steps.nightly.outputs.version || steps.stable.outputs.version }}
+          CHANNEL: ${{ steps.nightly.outputs.channel || steps.stable.outputs.channel }}
+        run: echo "tag=$(node npm/scripts/release.mjs npm-tag "$VERSION" "$CHANNEL")" | tee -a "$GITHUB_OUTPUT"
 
-  # The same build for every channel. A nightly's version is stamped into package.json first: the
-  # app reads it from there, and it has to say it's a nightly to update from it.
+  # `wisp` for every target the launcher knows (npm/wisp-agents/lib/resolve.js TARGETS), on the runner
+  # release.mjs picks: Mac and Windows natively, Linux static musl for every arch through cargo-zigbuild.
+  # A nightly's version is stamped into Cargo.toml first, so the binary reports it, and
+  # `cargo update --workspace` moves only the workspace crates' lines in Cargo.lock: --locked still holds.
+  # These same binaries are the release's wisp-bin-<os>-<arch>.tar.gz (the machines plugin's installer).
+  binaries:
+    needs: plan
+    if: needs.plan.outputs.go == 'true'
+    name: wisp ${{ matrix.target }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(needs.plan.outputs.targets) }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 60
+    defaults:
+      run:
+        shell: bash
+    env:
+      VERSION: ${{ needs.plan.outputs.version }}
+      RUSTFLAGS: ${{ matrix.rustflags }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ needs.plan.outputs.sha }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      # rust-toolchain.toml's version, read from the checkout, so a toolchain bump needs no edit here
+      - run: rustup toolchain install && rustup target add ${{ matrix.triple }} && rustup show active-toolchain
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: release-bin-${{ matrix.target }}-${{ hashFiles('Cargo.lock') }}
+      - if: matrix.zig
+        uses: mlugg/setup-zig@v2
+        with:
+          version: 0.14.1
+      - if: matrix.zig
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-zigbuild
+      - name: Stamp the nightly version
+        if: needs.plan.outputs.channel == 'nightly'
+        run: node npm/scripts/release.mjs stamp-cargo "$VERSION" && cargo update --workspace
+      - name: Build
+        run: |
+          build=(build); [ "${{ matrix.zig }}" = true ] && build=(zigbuild)
+          cargo "${build[@]}" --release --locked -p wisp --target ${{ matrix.triple }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: wisp-bin-${{ matrix.target }}
+          if-no-files-found: error
+          path: target/${{ matrix.triple }}/release/${{ matrix.bin }}
+
+  # The npm tarballs, built once and tested here; the npm job publishes these same files. No `npm`
+  # environment here, so a dry run from a branch gets this far.
+  packages:
+    needs: [plan, binaries]
+    if: needs.plan.outputs.go == 'true'
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        shell: bash # -o pipefail: a failed step in a pipe fails the step
+    env:
+      VERSION: ${{ needs.plan.outputs.version }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ needs.plan.outputs.sha }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm ci
+      # apps/web/dist: the launcher carries it in web/ and sets WISP_WEB_DIR to it (wisp serve's web_dir())
+      - run: npm run build
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: wisp-bin-*
+          path: bins
+      - name: Fill every package (npm/scripts/build.mjs)
+        run: |
+          node npm/scripts/release.mjs matrix | node -e 'for (const e of JSON.parse(require("fs").readFileSync(0, "utf8"))) console.log(e.target, e.bin)' |
+          while read -r target bin; do
+            node npm/scripts/build.mjs --target "$target" --binary "bins/wisp-bin-$target/$bin" --web apps/web/dist --out npm/dist --version "$VERSION"
+          done
+      - name: The launcher's tests
+        run: node --test npm/test/ # npm/test/package.json runs npm/scripts/test-all.mjs
+      - name: Pack, in publish order
+        run: |
+          mkdir -p npm/packed
+          node npm/scripts/release.mjs packages npm/dist | while read -r dir; do
+            npm pack "$dir" --pack-destination npm/packed --json | node -e 'console.log(JSON.parse(require("fs").readFileSync(0, "utf8"))[0].filename)' >> npm/packed/order.txt
+          done
+          cat npm/packed/order.txt
+      - name: Every tarball holds what it must
+        run: |
+          # one per target, by name: a glob like wisp-agents-*.tgz would also match the launcher's tarball
+          for target in $(node npm/scripts/release.mjs matrix | node -e 'for (const e of JSON.parse(require("fs").readFileSync(0, "utf8"))) console.log(e.target)'); do
+            f="npm/packed/wisp-agents-$target-$VERSION.tgz"
+            test -s "$f" || { echo "::error::no $f"; exit 1; }
+            # a listing in a variable, not a pipe: grep -q quitting early would SIGPIPE tar under pipefail
+            list=$(tar -tvzf "$f")
+            grep -qE '^-rwx.* package/bin/wisp(\.exe)?$' <<<"$list" || { echo "::error::$f has no executable bin/wisp"; exit 1; }
+          done
+          list=$(tar -tzf "npm/packed/wisp-agents-$VERSION.tgz")
+          grep -qx package/web/index.html <<<"$list" || { echo "::error::wisp-agents-$VERSION.tgz has no web/index.html"; exit 1; }
+      # As npm would lay them out, without the registry (the platform packages aren't on it yet).
+      - name: The packed linux-x64 install runs
+        run: |
+          s=$(mktemp -d)
+          mkdir -p "$s/node_modules/wisp-agents" "$s/node_modules/wisp-agents-linux-x64" "$s/home"
+          tar -xzf "npm/packed/wisp-agents-$VERSION.tgz" -C "$s/node_modules/wisp-agents" --strip-components=1
+          tar -xzf "npm/packed/wisp-agents-linux-x64-$VERSION.tgz" -C "$s/node_modules/wisp-agents-linux-x64" --strip-components=1
+          wisp="$s/node_modules/wisp-agents/bin/wisp.js"
+          got=$(node "$wisp" --version)
+          [ "$got" = "$VERSION" ] || { echo "::error::wisp --version says $got, expected $VERSION"; exit 1; }
+          WISP_HOME="$s/home" WISP_PORT=4791 node "$wisp" serve > "$s/serve.log" 2>&1 &
+          pid=$!
+          ok=false
+          for _ in $(seq 1 60); do
+            page=$(curl -fsS http://127.0.0.1:4791/ 2>/dev/null || true)
+            if grep -qi '<!doctype html' <<<"$page"; then ok=true; break; fi
+            sleep 1
+          done
+          kill "$pid" 2>/dev/null || true
+          wait "$pid" 2>/dev/null || true
+          if [ $ok != true ]; then cat "$s/serve.log"; echo "::error::wisp serve from the packed tarballs didn't serve the web UI"; exit 1; fi
+          echo "wisp $got from the tarballs serves the web UI"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: npm-packages
+          if-no-files-found: error
+          path: npm/packed/
+
+  # The same build for every channel. A nightly's version is stamped into npm/wisp-agents/package.json
+  # first: the app reads it from there, and it has to say it's a nightly to update from it.
   desktop:
     needs: plan
     if: needs.plan.outputs.go == 'true'
@@ -134,7 +317,7 @@ jobs:
       version: ${{ needs.plan.outputs.channel == 'nightly' && needs.plan.outputs.version || '' }}
 
   release:
-    needs: [plan, desktop]
+    needs: [plan, binaries, desktop, packages]
     if: needs.plan.outputs.dry != 'true' && needs.plan.outputs.channel == 'stable'
     runs-on: ubuntu-latest
     permissions:
@@ -151,6 +334,18 @@ jobs:
           pattern: desktop-*
           merge-multiple: true
           path: out
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: wisp-bin-*
+          path: bins
+      # wisp-bin-<os>-<arch>.tar.gz, `wisp` at its root: what plugins/machines/core/bootstrap.sh installs on a
+      # remote machine, checked against SHA256SUMS.txt
+      - name: Pack the bare binaries
+        run: |
+          for d in bins/wisp-bin-*; do
+            chmod +x "$d"/wisp* && tar -czf "out/$(basename "$d").tar.gz" -C "$d" .
+          done
+          ls out/wisp-bin-*.tar.gz
       # wisp from npm opens its window from these (bin/desktop-shell.js): without one, a tab.
       - name: The shell archives are there
         run: for a in mac-arm64 mac-x64 windows-x64 windows-arm64; do test -s "out/wisp-shell-$a.tar.gz" || { echo "::error::no wisp-shell-$a.tar.gz"; exit 1; }; done
@@ -166,41 +361,46 @@ jobs:
           fi
           gh release upload "$TAG" out/* --clobber
 
-  # A stable release goes to npm once its draft is up; a nightly once its desktop builds are.
+  # A stable release goes to npm once its draft is up; a nightly once its desktop builds are. It
+  # publishes the tarballs the packages job tested, in its order.txt: every wisp-agents-<os>-<arch> first, then
+  # wisp-agents, skipping any name@version npm already has, so a re-run finishes a half-done publish.
   npm:
-    needs: [plan, desktop, release]
-    if: ${{ !cancelled() && needs.plan.outputs.npm == 'true' && needs.plan.outputs.dry != 'true' && needs.desktop.result == 'success' && (needs.release.result == 'success' || (needs.release.result == 'skipped' && needs.plan.outputs.channel == 'nightly')) }}
+    needs: [plan, packages, desktop, release]
+    if: ${{ !cancelled() && needs.plan.outputs.npm == 'true' && needs.plan.outputs.dry != 'true' && needs.packages.result == 'success' && needs.desktop.result == 'success' && (needs.release.result == 'success' || (needs.release.result == 'skipped' && needs.plan.outputs.channel == 'nightly')) }}
     runs-on: ubuntu-latest
-    # Deploys only from main. npm's trusted publisher for wisp-agents is bound to this repo,
+    # Deploys only from main. npm's trusted publisher for every package is bound to this repo,
     # release.yml and this environment, so nothing else can publish.
     environment: npm
     permissions:
       contents: read
-      id-token: write # provenance, and trusted publishing when it's set up
+      id-token: write # provenance, and trusted publishing
+    defaults:
+      run:
+        shell: bash
     steps:
-      - uses: actions/checkout@v5
-        with:
-          ref: ${{ needs.plan.outputs.sha }}
       - uses: actions/setup-node@v4
         with:
           node-version: 22
           registry-url: https://registry.npmjs.org
       - run: npm install -g npm@latest # trusted publishing needs npm 11.5+
+      - uses: actions/download-artifact@v4
+        with:
+          name: npm-packages
+          path: packed
       - name: Publish
         env:
-          CHANNEL: ${{ needs.plan.outputs.channel }}
           VERSION: ${{ needs.plan.outputs.version }}
+          TAG: ${{ needs.plan.outputs.tag }}
         run: |
-          tag=latest; [ "${{ needs.plan.outputs.prerelease }}" = true ] && tag=next
-          if [ "$CHANNEL" = nightly ]; then
-            tag=nightly
-            npm version "$VERSION" --no-git-tag-version --allow-same-version
-          fi
-          # Another run may have published this version since the plan looked.
-          if npm view "wisp-agents@$VERSION" version 2>/dev/null | grep -q .; then
-            echo "wisp-agents@$VERSION is already on npm: nothing to publish."; exit 0
-          fi
-          npm publish --provenance --access public --tag "$tag"
+          [ -n "$TAG" ] || { echo "::error::the plan job gave no npm dist-tag"; exit 1; }
+          # fd 3, so nothing npm runs can read the rest of the list from stdin
+          while read -r tgz <&3; do
+            pkg=$(tar -xzOf "packed/$tgz" package/package.json | node -e 'const p = JSON.parse(require("fs").readFileSync(0, "utf8")); console.log(`${p.name}@${p.version}`)')
+            [ "${pkg##*@}" = "$VERSION" ] || { echo "::error::$tgz is $pkg, not version $VERSION"; exit 1; }
+            # Another run may have published it since the plan looked.
+            if [ -n "$(npm view "$pkg" version 2>/dev/null || true)" ]; then echo "$pkg is already on npm: skipped."; continue; fi
+            npm publish "packed/$tgz" --provenance --access public --tag "$TAG"
+          done 3< packed/order.txt
 
   publish:
     needs: [plan, release, npm]
@@ -222,7 +422,7 @@ jobs:
   # commit and its title names the version, which is what the app's updater reads. Its download
   # links (releases/download/nightly/<name>) never change.
   nightly:
-    needs: [plan, desktop, npm]
+    needs: [plan, binaries, desktop, npm]
     if: ${{ !cancelled() && needs.plan.outputs.channel == 'nightly' && needs.npm.result == 'success' }}
     runs-on: ubuntu-latest
     permissions:
@@ -240,6 +440,18 @@ jobs:
           pattern: desktop-*
           merge-multiple: true
           path: out
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: wisp-bin-*
+          path: bins
+      # wisp-bin-<os>-<arch>.tar.gz, `wisp` at its root: what plugins/machines/core/bootstrap.sh installs on a
+      # remote machine, checked against SHA256SUMS.txt
+      - name: Pack the bare binaries
+        run: |
+          for d in bins/wisp-bin-*; do
+            chmod +x "$d"/wisp* && tar -czf "out/$(basename "$d").tar.gz" -C "$d" .
+          done
+          ls out/wisp-bin-*.tar.gz
       - name: The shell archives are there
         run: for a in mac-arm64 mac-x64 windows-x64 windows-arm64; do test -s "out/wisp-shell-$a.tar.gz" || { echo "::error::no wisp-shell-$a.tar.gz"; exit 1; }; done
       - name: Update the nightly release
@@ -255,6 +467,8 @@ jobs:
           fi
           echo "https://github.com/$GITHUB_REPOSITORY/releases/tag/nightly: $VERSION" >> "$GITHUB_STEP_SUMMARY"
 
+  # Homebrew installs wisp-agents from npm (packaging/homebrew/wisp-agents.rb), as v1 did: npm then
+  # pulls the wisp-agents-darwin-<arch> package for the Mac it runs on, which the npm job published first.
   homebrew:
     needs: [plan, publish]
     if: ${{ !cancelled() && needs.publish.result == 'success' && needs.plan.outputs.prerelease != 'true' }}
@@ -269,6 +483,7 @@ jobs:
           if [ -z "$TOKEN" ]; then echo "::notice::No HOMEBREW_TAP_TOKEN secret: bump the tap by hand."; exit 0; fi
           url="https://registry.npmjs.org/wisp-agents/-/wisp-agents-$VERSION.tgz"
           for i in $(seq 1 30); do curl -fsSLo pkg.tgz "$url" && break; sleep 10; done # the CDN can lag the publish
+          test -s pkg.tgz || { echo "::error::$url never came up"; exit 1; }
           sha=$(sha256sum pkg.tgz | cut -d' ' -f1)
           git clone --depth 1 "https://x-access-token:$TOKEN@github.com/WispAgents/homebrew-tap.git" tap
           sed -e "s#^  url \".*\"#  url \"$url\"#" -e "s#^  sha256 \".*\"#  sha256 \"$sha\"#" packaging/homebrew/wisp-agents.rb > tap/Formula/wisp-agents.rb

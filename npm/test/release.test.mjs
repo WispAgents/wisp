@@ -1,0 +1,145 @@
+import assert from 'node:assert/strict';
+import { spawnSync } from 'node:child_process';
+import fs from 'node:fs';
+import { test } from 'node:test';
+import { fileURLToPath } from 'node:url';
+import { TARGETS, packageName } from '../wisp-agents/lib/resolve.js';
+import { buildMatrix, cargoVersion, lockVersion, npmTag, publishOrder, stampCargoVersion, versionProblems } from '../scripts/release.mjs';
+
+const SCRIPT = fileURLToPath(new URL('../scripts/release.mjs', import.meta.url));
+const CARGO = `[workspace]
+members = ["crates/*"]
+
+[workspace.package]
+version = "2.1.0"
+edition = "2024"
+rust-version = "1.89"
+
+[workspace.dependencies]
+serde = { version = "1.0.200" }
+`;
+const pins = (v) => Object.fromEntries(Object.keys(TARGETS).map((t) => [packageName(...t.split('-')), v]));
+const launcher = (v, deps = pins(v)) => ({ name: 'wisp-agents', version: v, optionalDependencies: deps });
+
+test('cargo_version_reads_only_the_workspace_package_table', () => {
+  assert.equal(cargoVersion(CARGO), '2.1.0');
+  assert.equal(cargoVersion(CARGO.replace(/\n/g, '\r\n')), '2.1.0');
+  // a dependency's version, or rust-version, is never taken for the workspace's
+  assert.equal(cargoVersion('[workspace.package]\nrust-version = "1.89"\n\n[workspace.dependencies]\nversion = "9.9.9"\n'), null);
+  assert.equal(cargoVersion('[package]\nversion = "1.0.0"\n'), null);
+});
+
+test('stamp_cargo_version_changes_the_workspace_version_and_nothing_else', () => {
+  const out = stampCargoVersion(CARGO, '2.1.1-nightly.20261116.930');
+  assert.equal(cargoVersion(out), '2.1.1-nightly.20261116.930');
+  assert.equal(out, CARGO.replace('version = "2.1.0"', 'version = "2.1.1-nightly.20261116.930"'));
+  assert.throws(() => stampCargoVersion(CARGO, 'nope'), /not a semver/);
+  assert.throws(() => stampCargoVersion('[workspace]\n', '1.0.0'), /no version/);
+});
+
+test('lock_version_reads_the_wisp_crate_only', () => {
+  const lock = '[[package]]\nname = "wisp-kernel"\nversion = "9.0.0"\n\n[[package]]\nname = "wisp"\nversion = "2.1.0"\ndependencies = []\n';
+  assert.equal(lockVersion(lock), '2.1.0');
+  assert.equal(lockVersion(lock.replace(/\n/g, '\r\n')), '2.1.0');
+  assert.equal(lockVersion('[[package]]\nname = "wisp-kernel"\nversion = "9.0.0"\n'), null);
+});
+
+test('a_cargo_lock_behind_cargo_toml_says_to_run_cargo_update', () => {
+  const [p] = versionProblems({ cargo: '2.1.0', lock: '2.0.0', launcher: launcher('2.1.0') });
+  assert.match(p, /Cargo\.lock has wisp 2\.0\.0 but Cargo\.toml says 2\.1\.0: run `cargo update --workspace`/);
+  assert.match(versionProblems({ cargo: '2.1.0', lock: null, launcher: launcher('2.1.0') })[0], /Cargo\.lock has wisp \(none\)/);
+  assert.deepEqual(versionProblems({ cargo: '2.1.0', lock: '2.1.0', launcher: launcher('2.1.0') }), []);
+});
+
+test('versions_that_agree_have_no_problems', () => {
+  assert.deepEqual(versionProblems({ cargo: '2.1.0', launcher: launcher('2.1.0') }), []);
+  assert.deepEqual(versionProblems({ cargo: '2.1.0', launcher: launcher('2.1.0'), tag: 'v2.1.0' }), []);
+  assert.deepEqual(versionProblems({ cargo: '2.1.0-beta.1', launcher: launcher('2.1.0-beta.1'), tag: '2.1.0-beta.1' }), []);
+});
+
+test('a_cargo_and_npm_mismatch_names_both_versions_and_the_fix', () => {
+  const [p, ...rest] = versionProblems({ cargo: '2.0.0', launcher: launcher('2.1.0') });
+  assert.equal(rest.length, 0);
+  assert.match(p, /Cargo\.toml.*2\.0\.0.*npm\/wisp-agents\/package\.json.*2\.1\.0.*bump both/);
+});
+
+test('a_tag_that_differs_from_the_version_fails', () => {
+  const [p] = versionProblems({ cargo: '2.1.0', launcher: launcher('2.1.0'), tag: 'v2.2.0' });
+  assert.match(p, /tag v2\.2\.0 does not match the version 2\.1\.0/);
+});
+
+test('missing_or_bad_versions_are_reported', () => {
+  assert.match(versionProblems({ cargo: null, launcher: launcher('2.1.0') })[0], /Cargo\.toml has no/);
+  assert.match(versionProblems({ cargo: '2.1.0', launcher: { optionalDependencies: pins('2.1.0') } })[0], /has no "version"/);
+  assert.ok(versionProblems({ cargo: 'x', launcher: launcher('x', pins('x')) }).some((p) => /not semver/.test(p)));
+});
+
+test('optional_dependencies_must_be_every_target_pinned_to_the_version', () => {
+  const deps = pins('2.1.0');
+  const [first] = Object.keys(deps);
+  const stale = versionProblems({ cargo: '2.1.0', launcher: launcher('2.1.0', { ...deps, [first]: '2.0.0' }) });
+  assert.match(stale.join('\n'), new RegExp(`pins ${first}@2\\.0\\.0: pin each to 2\\.1\\.0`));
+  const { [first]: _, ...without } = deps;
+  assert.match(versionProblems({ cargo: '2.1.0', launcher: launcher('2.1.0', without) }).join('\n'), new RegExp(`lack ${first}`));
+  const extra = versionProblems({ cargo: '2.1.0', launcher: launcher('2.1.0', { ...deps, 'wisp-agents-aix-ppc64': '2.1.0' }) });
+  assert.match(extra.join('\n'), /wisp-agents-aix-ppc64, which no target builds/);
+});
+
+test('the_matrix_builds_every_launcher_target_on_its_own_os', () => {
+  const m = buildMatrix();
+  assert.deepEqual(m.map((e) => e.target), Object.keys(TARGETS));
+  for (const e of m) {
+    assert.equal(e.triple, TARGETS[e.target]);
+    const os = e.target.split('-')[0];
+    assert.equal(e.runner, { darwin: 'macos-latest', linux: 'ubuntu-latest', win32: 'windows-latest' }[os]);
+    assert.equal(e.zig, os === 'linux');
+    assert.equal(e.bin, os === 'win32' ? 'wisp.exe' : 'wisp');
+    assert.equal(e.rustflags, os === 'win32' ? '-C target-feature=+crt-static' : '');
+  }
+  // linux is musl on every arch: static, so one package runs on glibc and musl
+  for (const e of m.filter((x) => x.zig)) assert.match(e.triple, /-linux-musl/);
+  assert.throws(() => buildMatrix({ 'aix-ppc64': 'powerpc64-ibm-aix' }), /No runner builds aix-ppc64/);
+});
+
+test('npm_tag_is_latest_next_or_nightly', () => {
+  assert.equal(npmTag('2.1.0', 'stable'), 'latest');
+  assert.equal(npmTag('2.1.0-beta.1', 'stable'), 'next');
+  assert.equal(npmTag('2.1.1-nightly.20261116.930', 'nightly'), 'nightly');
+  assert.throws(() => npmTag('2.1.0', 'canary'), /Unknown channel/);
+});
+
+test('platform_packages_are_unscoped_wisp_agents_os_arch', () => {
+  // the @wisp scope on npm belongs to someone else: no published name may use it
+  for (const t of Object.keys(TARGETS)) assert.equal(packageName(...t.split('-')), `wisp-agents-${t}`);
+  const pkg = JSON.parse(fs.readFileSync(new URL('../wisp-agents/package.json', import.meta.url), 'utf8'));
+  for (const name of Object.keys(pkg.optionalDependencies)) assert.match(name, /^wisp-agents-[a-z0-9]+-[a-z0-9]+$/);
+  const template = fs.readFileSync(new URL('../platform/package.template.json', import.meta.url), 'utf8');
+  assert.match(template, /"name": "wisp-agents-\$\{os\}-\$\{arch\}"/);
+});
+
+test('publish_order_puts_every_platform_package_before_the_launcher', () => {
+  const core = Object.keys(TARGETS).map((t) => `/d/wisp-agents-${t}`);
+  const order = publishOrder(['/d/wisp-agents', ...core.slice().reverse()]);
+  assert.equal(order.at(-1), '/d/wisp-agents');
+  assert.deepEqual(order.slice(0, -1), core.slice().sort());
+  assert.throws(() => publishOrder(core), /exactly one wisp-agents/);
+  assert.throws(() => publishOrder(['/d/wisp-agents', ...core.slice(1)]), new RegExp(`No package built for wisp-agents-${Object.keys(TARGETS)[0]}`));
+  assert.throws(() => publishOrder(['/d/wisp-agents', '/d/wisp-agents-aix-ppc64', ...core]), /wisp-agents-aix-ppc64 is not a package/);
+});
+
+test('the_checked_in_versions_agree_and_check_prints_the_version', () => {
+  const r = spawnSync(process.execPath, [SCRIPT, 'check'], { encoding: 'utf8' });
+  assert.equal(r.status, 0, r.stderr);
+  const want = JSON.parse(fs.readFileSync(new URL('../wisp-agents/package.json', import.meta.url), 'utf8')).version;
+  assert.equal(r.stdout.trim(), want);
+  const bad = spawnSync(process.execPath, [SCRIPT, 'check', '--tag', 'v0.0.1'], { encoding: 'utf8' });
+  assert.equal(bad.status, 1);
+  assert.match(bad.stderr, /^::error::The tag v0\.0\.1 does not match/m);
+});
+
+test('the_matrix_command_prints_one_line_of_json', () => {
+  const r = spawnSync(process.execPath, [SCRIPT, 'matrix'], { encoding: 'utf8' });
+  assert.equal(r.status, 0, r.stderr);
+  assert.equal(r.stdout.trim().split('\n').length, 1);
+  assert.deepEqual(JSON.parse(r.stdout), buildMatrix());
+});

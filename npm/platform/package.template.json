@@ -1,5 +1,5 @@
 {
-  "name": "@wisp/core-${os}-${arch}",
+  "name": "wisp-agents-${os}-${arch}",
   "version": "${version}",
   "description": "The wisp binary for ${os}-${arch} (${triple}). Installed by wisp-agents; not meant to be used directly.",
   "license": "MIT",

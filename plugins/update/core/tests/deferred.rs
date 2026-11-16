@@ -16,7 +16,7 @@ fn win() -> Platform {
 }
 
 fn exe() -> String {
-    format!("{ROOT}\\node_modules\\@wisp\\core-win32-x64\\bin\\wisp.exe")
+    format!("{ROOT}\\node_modules\\wisp-agents-win32-x64\\bin\\wisp.exe")
 }
 
 fn files() -> Files {
@@ -103,7 +103,7 @@ fn the_waiter_traces_each_step() {
 fn only_a_windows_npm_install_is_deferred() {
     let mut mac = Updater::new(
         detect(
-            "/usr/local/lib/node_modules/wisp-agents/node_modules/@wisp/core-darwin-arm64/bin/wisp",
+            "/usr/local/lib/node_modules/wisp-agents/node_modules/wisp-agents-darwin-arm64/bin/wisp",
             &Platform::new("darwin", "arm64"),
             None,
             false,

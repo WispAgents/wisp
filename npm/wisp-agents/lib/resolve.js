@@ -16,11 +16,12 @@ export const TARGETS = Object.freeze({
   'win32-arm64': 'aarch64-pc-windows-msvc',
 });
 
-export const SCOPE = '@wisp';
+// The platform packages are unscoped, next to the launcher's own name: wisp-agents-<os>-<arch>.
+export const PREFIX = 'wisp-agents';
 
 export const isSupported = (platform, arch) => Object.hasOwn(TARGETS, `${platform}-${arch}`);
 
-export const packageName = (platform, arch) => `${SCOPE}/core-${platform}-${arch}`;
+export const packageName = (platform, arch) => `${PREFIX}-${platform}-${arch}`;
 
 export const binaryName = (platform) => (platform === 'win32' ? 'wisp.exe' : 'wisp');
 

@@ -13,14 +13,14 @@ const PLATFORMS = [
   ['win32', 'arm64'],
 ];
 
-test('every supported platform maps to its @wisp/core package and binary', () => {
+test('every supported platform maps to its wisp-agents-<os>-<arch> package and binary', () => {
   assert.deepEqual(Object.keys(TARGETS).sort(), PLATFORMS.map((p) => p.join('-')).sort());
   for (const [platform, arch] of PLATFORMS) {
     assert.ok(isSupported(platform, arch));
-    assert.equal(packageName(platform, arch), `@wisp/core-${platform}-${arch}`);
+    assert.equal(packageName(platform, arch), `wisp-agents-${platform}-${arch}`);
     const found = locate({ platform, arch, env: {}, resolvePkg: (id) => path.join('/nm', id) });
     const exe = platform === 'win32' ? 'wisp.exe' : 'wisp';
-    assert.equal(found.bin, path.join('/nm', `@wisp/core-${platform}-${arch}`, 'bin', exe));
+    assert.equal(found.bin, path.join('/nm', `wisp-agents-${platform}-${arch}`, 'bin', exe));
   }
 });
 
@@ -55,7 +55,7 @@ test('a missing platform package names the platform, the package and the fix', (
   const lines = found.error.split('\n');
   assert.ok(lines.length >= 3 && lines.length <= 5, `${lines.length} lines`);
   assert.match(found.error, /linux-arm64/);
-  assert.match(found.error, /@wisp\/core-linux-arm64/);
+  assert.match(found.error, /wisp-agents-linux-arm64/);
   assert.match(found.error, /npm install -g wisp-agents/);
   assert.match(found.error, /--omit=optional/);
   assert.match(found.error, /--no-optional/);

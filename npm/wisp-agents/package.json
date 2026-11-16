@@ -37,12 +37,12 @@
     "node": ">=18"
   },
   "optionalDependencies": {
-    "@wisp/core-darwin-arm64": "2.0.0",
-    "@wisp/core-darwin-x64": "2.0.0",
-    "@wisp/core-linux-x64": "2.0.0",
-    "@wisp/core-linux-arm64": "2.0.0",
-    "@wisp/core-linux-arm": "2.0.0",
-    "@wisp/core-win32-x64": "2.0.0",
-    "@wisp/core-win32-arm64": "2.0.0"
+    "wisp-agents-darwin-arm64": "2.0.0",
+    "wisp-agents-darwin-x64": "2.0.0",
+    "wisp-agents-linux-x64": "2.0.0",
+    "wisp-agents-linux-arm64": "2.0.0",
+    "wisp-agents-linux-arm": "2.0.0",
+    "wisp-agents-win32-x64": "2.0.0",
+    "wisp-agents-win32-arm64": "2.0.0"
   }
 }

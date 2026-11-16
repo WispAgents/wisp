@@ -71,7 +71,7 @@ async fn the_windows_waiter_installs_after_wisp_exits_and_restarts_it_when_npm_f
 
     let base = scratch("waiter");
     let root = base.join("npm").join("node_modules").join("wisp-agents");
-    let bin = root.join("node_modules").join("@wisp").join("core-win32-x64").join("bin");
+    let bin = root.join("node_modules").join("wisp-agents-win32-x64").join("bin");
     std::fs::create_dir_all(&bin).unwrap();
     let exe = bin.join("wisp.exe");
     std::fs::write(&exe, b"old").unwrap();

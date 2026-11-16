@@ -82,7 +82,7 @@ apps/
   grid/                 wisp Grid in Rust
 mobile/                 the phone apps (Capacitor, ADR-0065): android/ (Java, sshj), ios/ (Swift, Citadel), web/ (@wisp/mobile);
                         ship the bundle, their own frontend
-npm/                    the wisp-agents launcher and @wisp/core-<os>-<arch> binary packages
+npm/                    the wisp-agents launcher and wisp-agents-<os>-<arch> binary packages
 tools/                  check (structure rules), test runner, budgets, codegen, setup-monoflow
 docs/  design/  qa/  spikes/
 ```

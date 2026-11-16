@@ -10,14 +10,14 @@ use wisp_update_core::{
 
 const CURRENT: &str = "2.0.0";
 const KEG_BIN: &str =
-    "/opt/homebrew/Cellar/wisp-agents/2.0.0/libexec/lib/node_modules/wisp-agents/node_modules/@wisp/core-darwin-arm64/bin/wisp";
+    "/opt/homebrew/Cellar/wisp-agents/2.0.0/libexec/lib/node_modules/wisp-agents/node_modules/wisp-agents-darwin-arm64/bin/wisp";
 
 fn mac() -> Platform {
     Platform::new("darwin", "arm64")
 }
 
 fn global() -> Install {
-    detect("/usr/local/lib/node_modules/wisp-agents/node_modules/@wisp/core-darwin-arm64/bin/wisp", &mac(), None, false, None)
+    detect("/usr/local/lib/node_modules/wisp-agents/node_modules/wisp-agents-darwin-arm64/bin/wisp", &mac(), None, false, None)
 }
 
 fn files() -> Files {
@@ -80,7 +80,7 @@ fn homebrew_stays_on_stable_whatever_the_channel_says() {
 #[test]
 fn install_method_tells_a_clone_npx_a_keg_an_app_and_a_global_install_apart() {
     let p = mac();
-    assert_eq!(detect("/home/u/.npm/_npx/abc123/node_modules/@wisp/core-linux-x64/bin/wisp", &p, None, false, None).method, Method::Npx);
+    assert_eq!(detect("/home/u/.npm/_npx/abc123/node_modules/wisp-agents-linux-x64/bin/wisp", &p, None, false, None).method, Method::Npx);
     let keg = detect(KEG_BIN, &p, None, false, None);
     assert_eq!(keg.method, Method::Brew);
     assert_eq!(keg.brew.as_deref(), Some("/opt/homebrew"));
@@ -92,7 +92,7 @@ fn install_method_tells_a_clone_npx_a_keg_an_app_and_a_global_install_apart() {
     assert_eq!(g.method, Method::Global);
     assert_eq!(g.root, "/usr/local/lib/node_modules/wisp-agents", "hoisted or nested, the launcher's folder");
     assert_eq!(
-        detect("/usr/local/lib/node_modules/@wisp/core-darwin-arm64/bin/wisp", &p, None, false, None).root,
+        detect("/usr/local/lib/node_modules/wisp-agents-darwin-arm64/bin/wisp", &p, None, false, None).root,
         "/usr/local/lib/node_modules/wisp-agents"
     );
     assert_eq!(cargo_clone("/Users/me/wisp/target/release/wisp").as_deref(), Some("/Users/me/wisp"));
@@ -104,6 +104,36 @@ fn install_method_tells_a_clone_npx_a_keg_an_app_and_a_global_install_apart() {
     assert_eq!((image.method, image.root.as_str()), (Method::App, "/home/u/wisp.AppImage"));
     let win = detect("C:\\Users\\u\\AppData\\Local\\Programs\\wisp\\wisp.exe", &Platform::new("win32", "x64"), None, true, None);
     assert_eq!((win.method, win.root.as_str()), (Method::App, "C:\\Users\\u\\AppData\\Local\\Programs\\wisp"));
+}
+
+/// ADR-0090: the platform packages are `wisp-agents-<os>-<arch>`, unscoped; a look-alike package is not one.
+#[test]
+fn a_hoisted_binary_is_found_only_in_a_platform_package_folder() {
+    let p = Platform::new("linux", "x64");
+    let hoisted = detect("/usr/local/lib/node_modules/wisp-agents-linux-x64/bin/wisp", &p, None, false, None);
+    assert_eq!((hoisted.method, hoisted.root.as_str()), (Method::Global, "/usr/local/lib/node_modules/wisp-agents"));
+    let win = Platform::new("win32", "x64");
+    let exe = "C:\\npm\\node_modules\\wisp-agents-win32-arm64\\bin\\wisp.exe";
+    assert_eq!(detect(exe, &win, None, false, None).root, "C:\\npm\\node_modules\\wisp-agents");
+    for other in [
+        "/usr/local/lib/node_modules/wisp-agents-foo/bin/wisp",
+        "/usr/local/lib/node_modules/wisp-agents-linux-x64-extra/bin/wisp",
+        "/usr/local/lib/node_modules/wisp-agents-mcp-server/bin/wisp",
+        "/usr/local/lib/node_modules/@wisp/core-linux-x64/bin/wisp",
+        "/opt/wisp-agents-linux-x64/bin/wisp",
+    ] {
+        assert_eq!(detect(other, &p, None, false, None).root, other, "{other} has no launcher folder");
+    }
+    // hoisted inside a keg: the keg's Cellar/wisp-agents segment isn't the launcher folder
+    let keg = detect(
+        "/opt/homebrew/Cellar/wisp-agents/2.0.0/libexec/lib/node_modules/wisp-agents-darwin-arm64/bin/wisp",
+        &mac(),
+        None,
+        false,
+        None,
+    );
+    assert_eq!(keg.method, Method::Brew);
+    assert_eq!(keg.root, "/opt/homebrew/Cellar/wisp-agents/2.0.0/libexec/lib/node_modules/wisp-agents");
 }
 
 #[test]
@@ -330,7 +360,7 @@ fn an_installed_update_relaunches_wisp_through_a_detached_waiter() {
 fn an_installed_update_relaunches_wisp_on_windows_through_powershell() {
     let win = Platform::new("win32", "x64");
     let root = "C:\\Users\\O'Brien\\AppData\\Roaming\\npm\\node_modules\\wisp-agents";
-    let exe = format!("{root}\\node_modules\\@wisp\\core-win32-x64\\bin\\wisp.exe");
+    let exe = format!("{root}\\node_modules\\wisp-agents-win32-x64\\bin\\wisp.exe");
     let mut u = Updater::new(detect(&exe, &win, None, false, None), win, CURRENT, 4477, Env::default());
     assert_eq!(u.method(), Method::Global);
     let _ = check(&mut u, "stable", &json!({ "latest": "9.0.0" }));

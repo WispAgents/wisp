@@ -5,7 +5,7 @@
 //     [--web apps/web/dist] [--out npm/dist] [--version 2.0.0]
 //   node npm/scripts/build.mjs --list-targets
 //
-// Writes <out>/core-<target>/ (the platform package) and <out>/wisp-agents/ (the launcher, with the
+// Writes <out>/wisp-agents-<target>/ (the platform package) and <out>/wisp-agents/ (the launcher, with the
 // web bundle in web/). Every version is stamped the same, because the launcher pins its platform
 // packages exactly. Node built-ins only, so a bare CI runner can run it.
 
@@ -71,7 +71,7 @@ function fillTemplate(value, vars) {
 
 function buildPlatform({ target, bin, version, out }) {
   const [os, arch] = target.split('-');
-  const dir = path.join(out, `core-${target}`);
+  const dir = path.join(out, packageName(os, arch));
   fs.rmSync(dir, { recursive: true, force: true });
   fs.mkdirSync(path.join(dir, 'bin'), { recursive: true });
   const pkg = fillTemplate(readJson(TEMPLATE), { os, arch, version, triple: TARGETS[target] });
