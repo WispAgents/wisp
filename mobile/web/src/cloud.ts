@@ -278,6 +278,58 @@ export async function listComputers(fetch: FetchLike, grid: string, token: strin
   });
 }
 
+/**
+ * Signing out tells the grid (`POST /api/device/revoke` with the token itself, ADR-0078), so the token stops working
+ * there too, not only on this phone. True once the grid won't take it any more: `{ ok: true }` (revoked now or
+ * before), 401/403 (it doesn't know it), 404 (a grid from before the route: it can't be told; the account page removes
+ * the device there). False otherwise (offline, 5xx, 429, a portal's page, no answer within `ms`): tell it again later.
+ */
+export async function tellRevoked(fetch: FetchLike, grid: string, token: string, sleep?: PollDeps['sleep'], ms = 10_000): Promise<boolean> {
+  const ctl = new AbortController();
+  const timer = new AbortController();
+  if (sleep) void sleep(ms, timer.signal).then(() => ctl.abort(), () => undefined);
+  try {
+    const r = await call(fetch, `${grid}/api/device/revoke`, { method: 'POST', body: {}, token, signal: ctl.signal });
+    // a 2xx only from the grid itself (a captive portal's 200 page isn't), the grid's own refusals are final, the rest
+    // (5xx, 429, a proxy's 3xx or 421) is asked again later
+    if (r.status >= 200 && r.status < 300) return rec(r.body)['ok'] === true;
+    return r.status === 401 || r.status === 403 || r.status === 404;
+  } catch {
+    return false;
+  } finally {
+    timer.abort();
+  }
+}
+
+/** A sign-out the grid couldn't be told of yet: its grid, and where its token is sealed meanwhile (SecureStore). */
+export interface PendingRevoke {
+  readonly grid: string;
+  readonly slot: string;
+}
+
+/** Where the sign-outs to tell the grid of are listed: web storage, with no token in it (the token: `slot`). */
+export const REVOKES = 'wisp.phone.cloud.revoke';
+/** where a pending sign-out's token is sealed */
+export const revokeSlot = (n: string): string => `wisp.cloud.revoke.${n}`;
+
+export function loadRevokes(storage: KV): PendingRevoke[] {
+  try {
+    const raw: unknown = JSON.parse(storage.getItem(REVOKES) ?? '[]');
+    return (Array.isArray(raw) ? raw : []).flatMap((x) => {
+      const o = rec(x);
+      const grid = str(o['grid']);
+      const slot = str(o['slot']);
+      return grid && slot.startsWith(revokeSlot('')) ? [{ grid, slot }] : [];
+    });
+  } catch {
+    return [];
+  }
+}
+
+export function saveRevokes(storage: KV, list: readonly PendingRevoke[]): void {
+  storage.setItem(REVOKES, JSON.stringify(list.map((p) => ({ grid: p.grid, slot: p.slot }))));
+}
+
 /** The saved id of an account's computer: stable, so listing again updates it in place. The cloud box is `box`. */
 export const savedId = (a: Pick<CloudAccount, 'key'>, computer: string): string => `cloud:${a.key}:${computer}`;
 

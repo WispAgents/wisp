@@ -76,6 +76,8 @@
   "phone.cloud.error.cancelled": "Cancelled.",
   "phone.cloud.signedIn": "Signed in as {handle}",
   "phone.cloud.signedOut": "Signed out of {handle} on this phone",
+  "phone.cloud.signedOutLater": "Signed out of {handle} on this phone. {host} couldn’t be reached: it’s told the next time the phone connects.",
+  "phone.cloud.signedOutUntold": "Signed out of {handle} on this phone, but {host} couldn’t be told. Remove this phone on its account page.",
   "phone.cloud.signOutFailed": "Signed out of {handle}, but some of its computers are still on this phone.",
   "phone.cloud.via": "With {provider}",
   "phone.cloud.box": "Your cloud wisp",

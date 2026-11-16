@@ -157,6 +157,7 @@ impl Plugin for GridClientPlugin {
             let st2 = st.clone();
             st.ctx.spawn(async move {
                 calls::warn("the account's computers", peers::sync_computers(&st2).await);
+                calls::warn("telling the grid of a sign-out", accounts::tell_pending(&st2).await);
             });
             Ok(())
         });

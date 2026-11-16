@@ -220,6 +220,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Fixed
 
+- **v2: signing out of wisp Cloud signs the device out on the grid too.** Sign out on the phone app and in Settings → Cloud (or `wisp cloud signout`) now revokes that device's token on the grid before forgetting it, so it stops working there at once instead of waiting for you to remove the device on the grid's account page. Offline, you're signed out on the device at once and the grid is told the next time it can be reached (the phone's toast says so). The grid's audit records the removal either way.
 - **v2: a task ID put in by a phone keyboard's clipboard becomes its mention.** Gboard's clipboard chip (and any insert that isn't a paste event) puts the text in like typing; a task ID or link that lands whole in one go now turns into `@Title` in the reply box and New task, as a pasted one does. A pasted ID after a word gets a space before its mention, as in v1.
 
 - **v2: `wisp import` keeps each v1 turn's changed files.** An imported task's day cards count its files, an opened turn lists them and the Changes pane has their edits, as for a turn run in v2; a file v1 listed twice counts once, and importing again doesn't double them.

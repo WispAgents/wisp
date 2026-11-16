@@ -4,10 +4,10 @@
 //   with it (a new token must reach the computers already saved);
 // - a refresh waits for the screen's first list, and drops its answer when the account was signed out (or signed in
 //   again) meanwhile: each account has a generation that both bump;
-// - signing out takes the card and its computers off at once, unseals the token and forgets the computers; a computer
-//   the native side couldn't forget comes back on the list (as this phone's own: its card is gone) with a toast.
-// The grid has no route to revoke a device token from the device yet (apps/grid edge.rs): signing out is on this phone;
-// the grid's account page lists the device to remove it there.
+// - signing out takes the card and its computers off at once, sets the token aside, tells the grid to revoke it
+//   (ADR-0078), then forgets the computers; a computer the native side couldn't forget comes back on the list (as this
+//   phone's own: its card is gone) with a toast. A grid it couldn't reach is told later: the token stays sealed
+//   under its own slot (listed in web storage without it) and every refresh (start, back in the app) tells it again.
 import { signal, type WritableSignal } from '@wisp/client';
 import type { Computer, NativeBridge } from './bridge.ts';
 import {
@@ -15,6 +15,10 @@ import {
   accountKey,
   CloudError,
   gone,
+  loadRevokes,
+  revokeSlot,
+  saveRevokes,
+  tellRevoked,
   hostOf,
   keepToken,
   listComputers,
@@ -118,7 +122,43 @@ export function createCloudAccounts(o: CloudAccountsDeps): CloudAccounts {
     } else if (gen(a.key) === mine) stale.delete(a.key);
   };
 
+  /** seals `token` aside, listed to tell `grid` (written ahead: an app killed mid sign-out still tells it on the next
+   *  start); its slot, or undefined if this phone couldn't keep it */
+  const setAside = async (grid: string, token: string): Promise<string | undefined> => {
+    const slot = revokeSlot(`${d.now()}-${Math.random().toString(36).slice(2, 10)}`);
+    const r = await d.secure?.set(slot, token).catch(() => 'unsupported' as const);
+    if (r !== 'set') return undefined;
+    saveRevokes(d.storage, [...loadRevokes(d.storage), { grid, slot }]);
+    return slot;
+  };
+  /** the grid was told: the token set aside is let go */
+  const told = async (slot: string): Promise<void> => {
+    await d.secure?.remove(slot).catch(() => undefined);
+    saveRevokes(
+      d.storage,
+      loadRevokes(d.storage).filter((x) => x.slot !== slot),
+    );
+  };
+
+  // the sign-outs the grid missed, told again (one pass at a time: a resume during one doesn't start another)
+  let telling: Promise<void> | undefined;
+  const tellPending = (): Promise<void> =>
+    (telling ??= (async () => {
+      for (const p of loadRevokes(d.storage)) {
+        if (!alive) return;
+        let token: string | null;
+        try {
+          token = (await d.secure?.get(p.slot)) ?? null;
+        } catch {
+          continue; // the sealed store didn't answer this time: the token may still be there
+        }
+        if (token && !(await tellRevoked(d.fetch, p.grid, token, d.sleep))) continue; // still unreachable: next time
+        await told(p.slot);
+      }
+    })().finally(() => (telling = undefined)));
+
   const refresh = async (): Promise<void> => {
+    void tellPending();
     await o.ready.catch(() => undefined);
     await Promise.all(
       accounts()
@@ -174,20 +214,35 @@ export function createCloudAccounts(o: CloudAccountsDeps): CloudAccounts {
   const signOut = async (key: string): Promise<void> => {
     const a = has(key);
     if (!a) return; // a second tap: already on its way
-    bump(key);
+    const g = bump(key);
     stale.delete(key);
     const before = o.list();
     const mine = accountComputers(a, before);
     keep(accounts().filter((x) => x.key !== key)); // the card goes at once
     o.setList((now) => now.filter((c) => !mine.some((m) => m.id === c.id)));
-    await d.secure?.remove(tokenKey(key)).catch(() => undefined);
+    // the token is set aside (to tell the grid, now or on a later refresh) and off the account's key at once, so a
+    // sign-in again as this account meanwhile keeps its new token; then the grid is told, before the computers (each
+    // holding the token too) are forgotten
+    const token = await d.secure?.get(tokenKey(key)).catch(() => null);
+    if (gen(key) !== g) return; // signed in again before it was read: that token is the new sign-in's
+    const slot = token ? await setAside(a.grid, token) : undefined;
+    if (gen(key) === g) await d.secure?.remove(tokenKey(key)).catch(() => undefined);
+    let untold: 'later' | 'never' | undefined;
+    if (token) {
+      const ok = await tellRevoked(d.fetch, a.grid, token, d.sleep);
+      if (ok && slot) await told(slot);
+      if (!ok) untold = slot ? 'later' : 'never';
+    }
+    if (gen(key) !== g) return; // signed in again meanwhile: its computers are saved again with the new token
     const out = await Promise.allSettled(mine.map((c) => o.bridge.forget(c.id)));
     const kept = mine.filter((_, i) => out[i]?.status === 'rejected');
     if (kept.length) {
       // still on the phone: back on the list, as this phone's own (the card is gone)
       o.setList((now) => [...now, ...kept.filter((c) => !now.some((x) => x.id === c.id))]);
       o.toast?.error(t('phone.cloud.signOutFailed', { handle: a.handle }));
-    } else o.toast?.success(t('phone.cloud.signedOut', { handle: a.handle }));
+    } else if (untold === 'later') o.toast?.success(t('phone.cloud.signedOutLater', { handle: a.handle, host: hostOf(a.grid) }));
+    else if (untold === 'never') o.toast?.error(t('phone.cloud.signedOutUntold', { handle: a.handle, host: hostOf(a.grid) }));
+    else o.toast?.success(t('phone.cloud.signedOut', { handle: a.handle }));
   };
 
   return {

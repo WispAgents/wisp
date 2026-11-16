@@ -25,9 +25,9 @@ pub async fn switch(st: &Arc<St>, key: &str) -> Result<()> {
     Ok(())
 }
 
-/// `grid-client.accountRemove`: signed out of one account: its token gone, its cloud box, computers and
-/// sandboxes taken out of Machines (another account's on the same grid stay), and if it was current, the
-/// first one left is current.
+/// `grid-client.accountRemove`: signed out of one account: its token revoked on the grid (or kept aside to tell
+/// it later, `tell_pending`) and gone here, its cloud box, computers and sandboxes taken out of Machines (another
+/// account's on the same grid stay), and if it was current, the first one left is current.
 pub async fn remove(st: &Arc<St>, key: &str) -> Result<()> {
     let accounts = st.accounts();
     let Some(a) = accounts.get(key).cloned() else { return Err(WireError::not_found("Not signed in to that account here.")) };
@@ -40,10 +40,73 @@ pub async fn remove(st: &Arc<St>, key: &str) -> Result<()> {
             crate::calls::warn("machines.remove (signed out)", crate::calls::remove(&st.ctx, &p.id).await);
         }
     }
-    wisp_kernel::services::secrets(&st.ctx)?.delete(&token_key(key)).await?;
+    // the token is set aside first (in secrets, never a row: written ahead, so a wisp stopped mid sign-out still tells
+    // the grid at its next start) and off the account's key, so a sign-in again meanwhile keeps its new token; then
+    // the grid is told (ADR-0078) and the token let go, or it waits for the next start or sign-in
+    let sec = wisp_kernel::services::secrets(&st.ctx)?;
+    let token = st.token_for(key).await;
+    let aside = format!("{PENDING}/{}", crate::state::hex(16));
+    let kept = match &token {
+        Some(t) => sec.set(&aside, &format!("{}\n{t}", a.grid)).await.is_ok(),
+        None => false,
+    };
+    if let Err(e) = sec.delete(&token_key(key)).await {
+        // still signed in here: its token mustn't be revoked later behind its back
+        if kept {
+            crate::calls::warn("taking back a token set aside", sec.delete(&aside).await);
+        }
+        return Err(e);
+    }
     st.change(|x| x.remove(key)).await?;
     if current {
         crate::computer::follow_current(st).await;
+    }
+    if let Some(t) = token {
+        if tell_revoked(&st.http, &a.grid, &t).await {
+            if kept {
+                crate::calls::warn("letting go of a revoked token", sec.delete(&aside).await);
+            }
+        } else if kept {
+            tracing::warn!(grid = %a.grid, "grid-client: signed out here; the grid is told once it's reachable");
+        } else {
+            tracing::warn!(grid = %a.grid, "grid-client: signed out here, but the grid couldn't be told: remove this device on its account page");
+        }
+    }
+    Ok(())
+}
+
+/// Where a token signed out of here waits while its grid couldn't be told (`<prefix>/<id>` = `<grid>\n<token>`).
+pub const PENDING: &str = "grid-client/revoke";
+
+/// `POST <grid>/api/device/revoke` with the token itself: true once the grid won't take it any more (`ok: true`:
+/// revoked now or before; 401/403: it doesn't know it; 404: a grid from before the route, which can't be told: its
+/// account page removes the device), false otherwise (offline, 5xx, 429, a portal's page, no answer in 10 s): tell
+/// it again later.
+async fn tell_revoked(http: &reqwest::Client, grid: &str, token: &str) -> bool {
+    let (url, body) = (format!("{grid}/api/device/revoke"), serde_json::json!({}));
+    let call = crate::net::call(http, "POST", &url, Some(token), Some(&body), &[]);
+    match tokio::time::timeout(std::time::Duration::from_secs(10), call).await {
+        // a 2xx only from the grid itself (a captive portal's 200 page isn't); the grid's own refusals are final
+        Ok(Ok((status, v))) if (200..300).contains(&status) => v.get("ok").and_then(serde_json::Value::as_bool) == Some(true),
+        Ok(Ok((status, _))) => matches!(status, 401 | 403 | 404),
+        _ => false,
+    }
+}
+
+/// The grid is told of every sign-out it missed (at start, after a sign-in: it's reachable then); each told is
+/// forgotten, the rest wait for the next time.
+pub async fn tell_pending(st: &Arc<St>) -> Result<()> {
+    let sec = wisp_kernel::services::secrets(&st.ctx)?;
+    for k in sec.keys(&format!("{PENDING}/")).await? {
+        // one the secrets couldn't give this time waits for the next pass
+        let Ok(Some(v)) = sec.get(&k).await else { continue };
+        let told = match v.split_once('\n') {
+            Some((grid, token)) => tell_revoked(&st.http, grid, token).await,
+            None => true, // not ours to tell: let go
+        };
+        if told {
+            crate::calls::warn("letting go of a revoked token", sec.delete(&k).await);
+        }
     }
     Ok(())
 }

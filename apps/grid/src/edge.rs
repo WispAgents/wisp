@@ -381,6 +381,7 @@ impl Grid {
                 Ok(json(200, &v))
             }
             ("POST", ["api", "device", "token"]) => self.device_token(&head.headers, &bytes),
+            ("POST", ["api", "device", "revoke"]) => self.device_revoke(&head.headers),
             ("GET" | "POST", ["activate"]) => self.activate(&method, &head.headers, &bytes, q),
             ("GET", ["auth", "dev"]) => self.dev_sign_in(q),
             ("GET", ["signin"]) => Ok(self.signin_route(&head.headers, q)),
@@ -444,6 +445,22 @@ impl Grid {
             ),
             other => json(400, &json!({ "error": other.error().unwrap_or("invalid_grant") })),
         })
+    }
+
+    /// A device signs itself out (v1 grid/server.js `/api/device/revoke`): the token that asks is the one revoked,
+    /// never another (there is no id to name), with its computer and its tunnel. Asking again with the same token
+    /// answers 200 `revoked: false` (the first answer may have been lost); a token the grid never issued is 401.
+    fn device_revoke(&self, h: &HeaderMap) -> Result<Resp> {
+        if let Some(r) = no(&may(Credential::Device, Reach::GridDevice)) {
+            return Ok(r);
+        }
+        let Some(r) = self.accounts.revoke_own(header_str(h, "authorization"))? else {
+            return Err(bad("This device isn't signed in.", 401));
+        };
+        for c in &r.computers {
+            self.tunnels.close(c);
+        }
+        Ok(json(200, &json!({ "ok": true, "revoked": r.gone })))
     }
 
     /// `/activate`: a signed-in person allows (or declines) a device's code.

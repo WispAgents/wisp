@@ -211,7 +211,7 @@ pub fn lock<T>(m: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
     m.lock().unwrap_or_else(PoisonError::into_inner)
 }
 
-fn hex(n: usize) -> String {
+pub(crate) fn hex(n: usize) -> String {
     (0..n).fold(String::with_capacity(n * 2), |mut out, _| {
         let _ = write!(out, "{:02x}", rand::random::<u8>());
         out

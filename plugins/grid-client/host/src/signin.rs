@@ -140,6 +140,9 @@ async fn done(st: &Arc<St>, f: &SignIn, b: &Value, add_computer: bool) -> Result
         crate::calls::warn("this computer on the grid", crate::computer::set(st, true, None).await);
     }
     crate::calls::warn("the account's computers", crate::peers::sync_computers(st).await);
+    // reachable now, perhaps: the sign-outs it missed, told without holding up this sign-in's answer
+    let st2 = st.clone();
+    st.ctx.spawn(async move { crate::calls::warn("telling the grid of a sign-out", crate::accounts::tell_pending(&st2).await) });
     Ok((handle, machine))
 }
 

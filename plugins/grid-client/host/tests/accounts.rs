@@ -53,20 +53,27 @@ impl wisp_kernel::services::Secrets for Secrets {
 struct FakeGrid {
     url: String,
     who: Arc<Mutex<String>>,
+    /// the tokens a device revoked itself (`POST /api/device/revoke`)
+    revoked: Arc<Mutex<Vec<String>>>,
+    /// the grid answers 503 to a revoke (down for a moment)
+    down: Arc<std::sync::atomic::AtomicBool>,
 }
 
 async fn fake_grid(n: u8) -> FakeGrid {
     let who = Arc::new(Mutex::new(String::from("ada")));
+    let revoked: Arc<Mutex<Vec<String>>> = Arc::default();
+    let down: Arc<std::sync::atomic::AtomicBool> = Arc::default();
+    let (rv, dn) = (revoked.clone(), down.clone());
     let l = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let url = format!("http://127.0.0.1:{}", l.local_addr().unwrap().port());
     let (kept, base) = (who.clone(), url.clone());
     tokio::spawn(async move {
         loop {
             let Ok((sock, _)) = l.accept().await else { return };
-            let (who, base) = (kept.clone(), base.clone());
+            let (who, base, rv, dn) = (kept.clone(), base.clone(), rv.clone(), dn.clone());
             tokio::spawn(async move {
                 let svc = hyper::service::service_fn(move |req: http::Request<hyper::body::Incoming>| {
-                    let (who, base) = (who.clone(), base.clone());
+                    let (who, base, rv, dn) = (who.clone(), base.clone(), rv.clone(), dn.clone());
                     async move {
                         let (m, p) = (req.method().to_string(), req.uri().path().to_owned());
                         let auth = req.headers().get("authorization").map(|v| v.to_str().unwrap().to_owned()).unwrap_or_default();
@@ -82,6 +89,13 @@ async fn fake_grid(n: u8) -> FakeGrid {
                                     200,
                                     json!({ "token": format!("wgd_g{n}_{h}"), "user": { "handle": h }, "instance": { "url": format!("{base}/box/{h}") } }),
                                 )
+                            }
+                            ("POST", "/api/device/revoke") if dn.load(std::sync::atomic::Ordering::SeqCst) => {
+                                (503, json!({ "error": "down" }))
+                            }
+                            ("POST", "/api/device/revoke") => {
+                                rv.lock().unwrap().push(auth.trim_start_matches("Bearer ").to_owned());
+                                (200, json!({ "ok": true, "revoked": true }))
                             }
                             ("GET", "/api/computers") => match auth.strip_prefix(&format!("Bearer wgd_g{n}_")) {
                                 Some(h) => (
@@ -101,7 +115,7 @@ async fn fake_grid(n: u8) -> FakeGrid {
             });
         }
     });
-    FakeGrid { url, who }
+    FakeGrid { url, who, revoked, down }
 }
 
 struct App {
@@ -236,6 +250,47 @@ async fn signed_in_to_two_grids_and_twice_to_one_each_is_listed_with_its_own_tok
     let b = app(d.clone(), Arc::new(Secrets(Mutex::new(kept)))).await;
     let list = b.call("grid-client.accounts", json!({})).await;
     assert_eq!(keys(&list), [(k1a, true)]);
+    drop(b);
+    let _ = std::fs::remove_dir_all(&d);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn signing_out_tells_the_grid_and_one_it_couldnt_tell_is_told_on_the_next_start() {
+    let g = fake_grid(3).await;
+    let d = dir("revoke");
+    let a = app(d.clone(), Arc::default()).await;
+    let pending = |s: &Secrets| s.all().into_keys().filter(|k| k.starts_with("grid-client/revoke/")).count();
+
+    // online: the grid revokes the token before it's forgotten here
+    a.sign_in(&g, "ada").await;
+    a.call("grid-client.signout", json!({})).await;
+    assert_eq!(*g.revoked.lock().unwrap(), ["wgd_g3_ada"]);
+    assert!(a.secrets.grid_tokens().is_empty(), "nothing left: {:?}", a.secrets.all());
+
+    // the grid can't be told: signed out here at once all the same, the token kept aside (in secrets, never a row)
+    a.sign_in(&g, "bea").await;
+    g.down.store(true, std::sync::atomic::Ordering::SeqCst);
+    let st = a.call("grid-client.signout", json!({})).await;
+    assert_eq!(st["signedIn"], false, "{st}");
+    assert_eq!(g.revoked.lock().unwrap().len(), 1);
+    assert!(!a.secrets.all().contains_key(&format!("grid-client/token/{}#bea", g.url)));
+    assert_eq!(pending(&a.secrets), 1);
+    let disk: Vec<u8> = std::fs::read_dir(&d).unwrap().flat_map(|e| std::fs::read(e.unwrap().path()).unwrap_or_default()).collect();
+    assert!(!disk.windows(4).any(|w| w == b"wgd_"), "a device token reached the store");
+
+    // the next start tells it, then forgets it
+    g.down.store(false, std::sync::atomic::Ordering::SeqCst);
+    let kept = a.secrets.all();
+    drop(a);
+    let b = app(d.clone(), Arc::new(Secrets(Mutex::new(kept)))).await;
+    for _ in 0..100 {
+        if pending(&b.secrets) == 0 {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+    assert_eq!(*g.revoked.lock().unwrap(), ["wgd_g3_ada", "wgd_g3_bea"]);
+    assert_eq!(pending(&b.secrets), 0);
     drop(b);
     let _ = std::fs::remove_dir_all(&d);
 }

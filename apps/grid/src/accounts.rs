@@ -55,6 +55,28 @@ fn upgrade(c: &rusqlite::Connection, table: &str, col: &str, kept: &str, token: 
     Ok(())
 }
 
+/// What revoking a device did: whether it was signed in until now, and the computers that went with it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Revoked {
+    pub gone: bool,
+    pub computers: Vec<String>,
+}
+
+/// Revokes `user_id`'s device `id` (`by`: `account` from the account page, `device` from the device itself) inside
+/// the caller's transaction: the revocation, its audit line (v1's `device.revoke`) and its computer go together.
+fn revoke_in(c: &rusqlite::Connection, user_id: &str, id: &str, by: &str, now: i64) -> rusqlite::Result<Revoked> {
+    let n =
+        c.execute("UPDATE devices SET revoked_at = ?1 WHERE id = ?2 AND user_id = ?3 AND revoked_at IS NULL", params![now, id, user_id])?;
+    if n > 0 {
+        crate::rows::find::audit(c, Some(user_id), "device.revoke", Some(&json!({ "id": id, "by": by })), now)?;
+    }
+    let computers = c
+        .prepare("DELETE FROM computers WHERE device_id = ?1 AND user_id = ?2 RETURNING id")?
+        .query_map(params![id, user_id], |r| r.get::<_, String>(0))?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+    Ok(Revoked { gone: n > 0, computers })
+}
+
 /// `prefix` + 32 random bytes, base64url.
 pub fn token(prefix: &str) -> String {
     format!("{prefix}{}", B64URL.encode(rand::random::<[u8; 32]>()))
@@ -465,16 +487,31 @@ impl Accounts {
         Ok(Some((u, d)))
     }
 
-    /// A revoked device's computer goes with it: it can't hold its tunnel any more.
-    pub fn revoke_device(&self, user_id: &str, id: &str) -> Result<bool> {
+    /// The account page's Remove: the device `id` of `user_id`, revoked. A revoked device's computer goes with it:
+    /// it can't hold its tunnel any more (the ids returned, for the edge to close their tunnels).
+    pub fn revoke_device(&self, user_id: &str, id: &str) -> Result<Revoked> {
+        let now = self.now();
+        self.db.tx(|tx| Ok(revoke_in(tx, user_id, id, "account", now)?))
+    }
+
+    /// A device signing itself out (`POST /api/device/revoke`): the device that holds `bearer`, and only that one,
+    /// revoked with its computer in one transaction, audited as the account page's Remove is. The row is found by
+    /// the token's hash, revoked or not, so asking again (an answer lost on a bad network) is `gone: false`, not a
+    /// refusal; a token the grid never handed out is `None`.
+    pub fn revoke_own(&self, bearer: &str) -> Result<Option<Revoked>> {
+        let t = bearer.strip_prefix("Bearer ").or_else(|| bearer.strip_prefix("bearer ")).unwrap_or(bearer).trim();
+        if !t.starts_with("wgd_") {
+            return Ok(None);
+        }
         let now = self.now();
         self.db.tx(|tx| {
-            let n = tx.execute(
-                "UPDATE devices SET revoked_at = ?1 WHERE id = ?2 AND user_id = ?3 AND revoked_at IS NULL",
-                params![now, id, user_id],
-            )?;
-            tx.execute("DELETE FROM computers WHERE device_id = ?1 AND user_id = ?2", params![id, user_id])?;
-            Ok(n > 0)
+            let row: Option<(String, String)> = tx
+                .query_row("SELECT id, user_id FROM devices WHERE token_hash IN (?1, ?2)", params![sha256_hex(t), sha256_v1(t)], |r| {
+                    Ok((r.get(0)?, r.get(1)?))
+                })
+                .optional()?;
+            let Some((id, user_id)) = row else { return Ok(None) };
+            Ok(Some(revoke_in(tx, &user_id, &id, "device", now)?))
         })
     }
 

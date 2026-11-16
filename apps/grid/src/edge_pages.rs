@@ -251,7 +251,11 @@ impl Grid {
                 Ok(back("/", if gone { "Unpublished: that link no longer works." } else { "That app was already unpublished." }, !gone))
             }
             ["devices", id, "revoke"] => {
-                let gone = self.accounts.revoke_device(&u.id, id)?;
+                let r = self.accounts.revoke_device(&u.id, id)?;
+                for c in &r.computers {
+                    self.tunnels.close(c);
+                }
+                let gone = r.gone;
                 Ok(back("/account", if gone { "Removed. That device is signed out." } else { "That device was already removed." }, !gone))
             }
             ["identities", "unlink"] => {

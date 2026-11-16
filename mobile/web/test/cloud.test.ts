@@ -15,6 +15,7 @@ import {
   keepToken,
   listComputers,
   loadAccounts,
+  loadRevokes,
   pollFlow,
   providersFor,
   saveAccounts,
@@ -22,6 +23,7 @@ import {
   signInUrl,
   sleepOn,
   startFlow,
+  tellRevoked,
   tokenKey,
   toSave,
   withAccount,
@@ -302,7 +304,7 @@ test('several_accounts: the same one again replaces its card, another gets its o
 
 // --- the accounts as the Computers screen runs them (cloud-accounts.ts): the races a sign-in and a sign-out meet ---
 
-type Saved = { kind: 'save' | 'forget'; id: string; token?: string };
+type Saved = { kind: 'save' | 'forget' | 'revoke'; id: string; token?: string };
 
 function harness(o: { failForget?: boolean; secure?: SecureStore | null; list?: Computer[] } = {}) {
   const clock = fakeTimers();
@@ -315,18 +317,26 @@ function harness(o: { failForget?: boolean; secure?: SecureStore | null; list?: 
   let token = 'wgd_1';
   let computers: { id: string; name: string; url: string }[] = [{ id: 'c1', name: 'Work laptop', url: 'https://laptop--ada.grid.trywisp.dev' }];
   let hold: Promise<void> | undefined; // a /api/computers answer held back
+  let holdRevoke: Promise<void> | undefined; // a /api/device/revoke answer held back
+  let down = false; // the grid can't be reached for a revoke
+  const log: Saved[] = [];
   const g = grid({
     '/api/device/code': () => res(200, { device_code: 'dc', user_code: 'AB-CD', interval: 1, expires_in: 600 }),
     '/api/device/token': () => res(200, { token, user: { handle: 'ada', name: 'Ada' }, instance: { url: 'https://ada.grid.trywisp.dev', name: 'Cloud' } }),
     '/api/computers': (_b, h) => (h['authorization'] === `Bearer ${token}` ? res(200, computers) : res(401, {})),
+    '/api/device/revoke': (_b, h) => {
+      if (down) return new Error('offline');
+      log.push({ kind: 'revoke', id: '', token: (h['authorization'] ?? '').replace('Bearer ', '') });
+      return res(200, { ok: true, revoked: true });
+    },
   });
   const fetch: FetchLike = async (url, init) => {
     if (new URL(url).pathname === '/api/computers' && hold) await hold;
+    if (new URL(url).pathname === '/api/device/revoke' && holdRevoke) await holdRevoke;
     return g(url, init);
   };
   const opened: string[] = [];
   const resumes = new Set<() => void>();
-  const log: Saved[] = [];
   const toasts: string[] = [];
   let list: readonly Computer[] = o.list ?? [];
   let ready!: () => void;
@@ -376,7 +386,16 @@ function harness(o: { failForget?: boolean; secure?: SecureStore | null; list?: 
     ready,
     list: () => list,
     setToken: (t: string) => void (token = t),
+    setDown: (v: boolean) => void (down = v),
     setComputers: (c: typeof computers) => void (computers = c),
+    holdRevoke: () => {
+      let release!: () => void;
+      holdRevoke = new Promise<void>((r) => (release = r));
+      return () => {
+        holdRevoke = undefined;
+        release();
+      };
+    },
     hold: () => {
       let release!: () => void;
       hold = new Promise<void>((r) => (release = r));
@@ -500,6 +519,151 @@ test('signing_out_twice_does_it_once_and_a_computer_the_phone_couldnt_forget_sta
   );
   assert.equal(h.toasts.length, 1);
   assert.ok(h.toasts[0]?.startsWith('error: phone.cloud.signOutFailed'));
+});
+
+test('sign_out_calls_revoke_then_forgets: the grid revokes the token before the phone lets go of it', async () => {
+  const h = harness();
+  h.ready();
+  void h.cloud.begin(DEFAULT_GRID, 'github');
+  await h.run();
+  h.log.length = 0;
+  h.toasts.length = 0;
+  await h.cloud.signOut(A.key);
+  assert.deepEqual(
+    h.log.map((s) => `${s.kind} ${s.token ?? s.id}`),
+    ['revoke wgd_1', `forget ${savedId(A, 'box')}`, `forget ${savedId(A, 'c1')}`],
+    'revoked with its own token first, then forgotten',
+  );
+  assert.equal(h.sealed.size, 0, 'unsealed');
+  assert.deepEqual(h.toasts, [`phone.cloud.signedOut ${JSON.stringify({ handle: 'ada' })}`]);
+});
+
+test('sign_out_offline_queues_the_revoke: forgotten here at once, told on the next connect, and says so', async () => {
+  const h = harness();
+  h.ready();
+  void h.cloud.begin(DEFAULT_GRID, 'github');
+  await h.run();
+  h.log.length = 0;
+  h.toasts.length = 0;
+  h.setDown(true);
+  await h.cloud.signOut(A.key);
+  assert.deepEqual(h.cloud.accounts(), [], 'the card is gone all the same');
+  assert.deepEqual(h.list(), []);
+  assert.ok(!h.log.some((s) => s.kind === 'revoke'));
+  assert.equal(h.sealed.has(tokenKey(A.key)), false, 'no longer the account’s token');
+  const queued = loadRevokes(h.storage);
+  assert.equal(queued.length, 1);
+  assert.equal(queued[0]?.grid, DEFAULT_GRID);
+  assert.equal(h.sealed.get(queued[0]?.slot ?? ''), 'wgd_1', 'kept sealed to tell the grid later');
+  assert.ok(![...h.storage.map.values()].some((v) => v.includes('wgd_1')), 'no token in web storage');
+  assert.equal(h.toasts.length, 1);
+  assert.ok(h.toasts[0]?.startsWith('phone.cloud.signedOutLater'), String(h.toasts[0]));
+  assert.ok(h.toasts[0]?.includes('grid.trywisp.dev'));
+
+  // still offline: the next refresh keeps it
+  await h.cloud.refresh();
+  await settle();
+  assert.equal(loadRevokes(h.storage).length, 1);
+
+  // back online: the next refresh tells the grid and forgets it
+  h.setDown(false);
+  await h.cloud.refresh();
+  await settle();
+  assert.deepEqual(
+    h.log.filter((s) => s.kind === 'revoke').map((s) => s.token),
+    ['wgd_1'],
+  );
+  assert.deepEqual(loadRevokes(h.storage), []);
+  assert.equal(h.sealed.size, 0);
+});
+
+test('signing_in_again_while_the_grid_is_told_keeps_the_new_sign_in', async () => {
+  const h = harness();
+  h.ready();
+  void h.cloud.begin(DEFAULT_GRID, 'github');
+  await h.run();
+  const release = h.holdRevoke();
+  const out = h.cloud.signOut(A.key);
+  await settle();
+  h.setToken('wgd_2');
+  void h.cloud.begin(DEFAULT_GRID, 'github');
+  await h.run();
+  h.log.length = 0;
+  release();
+  await out;
+  await settle();
+  assert.equal(h.sealed.get(tokenKey(A.key)), 'wgd_2', 'the new token stays');
+  assert.deepEqual(
+    h.cloud.accounts().map((a) => a.key),
+    [A.key],
+  );
+  assert.ok(!h.log.some((s) => s.kind === 'forget'), 'its computers, saved again, aren’t forgotten');
+  assert.deepEqual(
+    h.log.filter((s) => s.kind === 'revoke').map((s) => s.token),
+    ['wgd_1'],
+    'only the old token revoked',
+  );
+  assert.deepEqual(loadRevokes(h.storage), [], 'and let go once told');
+});
+
+test('a_sign_out_is_written_ahead: the token is set aside before the grid is asked', async () => {
+  const h = harness();
+  h.ready();
+  void h.cloud.begin(DEFAULT_GRID, 'github');
+  await h.run();
+  const release = h.holdRevoke();
+  const out = h.cloud.signOut(A.key);
+  await settle();
+  // the app killed here: the next start still knows to tell the grid
+  assert.equal(loadRevokes(h.storage).length, 1);
+  assert.equal(h.sealed.has(tokenKey(A.key)), false);
+  release();
+  await out;
+  assert.deepEqual(loadRevokes(h.storage), []);
+});
+
+test('a_sealed_store_that_fails_once_keeps_the_queued_revoke', async () => {
+  const sealed = new Map<string, string>();
+  let failGet = false;
+  const secure: SecureStore = {
+    get: async (k) => {
+      if (failGet && k.startsWith('wisp.cloud.revoke.')) throw new Error('locked');
+      return sealed.get(k) ?? null;
+    },
+    set: async (k, v) => (sealed.set(k, v), 'set'),
+    remove: async (k) => void sealed.delete(k),
+  };
+  const h = harness({ secure });
+  h.ready();
+  void h.cloud.begin(DEFAULT_GRID, 'github');
+  await h.run();
+  h.setDown(true);
+  await h.cloud.signOut(A.key);
+  h.setDown(false);
+  failGet = true;
+  await h.cloud.refresh();
+  await settle();
+  assert.equal(loadRevokes(h.storage).length, 1, 'kept for the next time');
+  failGet = false;
+  await h.cloud.refresh();
+  await settle();
+  assert.deepEqual(loadRevokes(h.storage), []);
+  assert.equal(sealed.size, 0);
+});
+
+test('tell_revoked: done on the grid’s own ok, 401/403 and an older grid’s 404; again later on anything else', async () => {
+  const at = (status: number | Error) => grid({ '/api/device/revoke': () => (status instanceof Error ? status : res(status, {})) });
+  const ok = grid({ '/api/device/revoke': () => res(200, { ok: true, revoked: false }) });
+  assert.equal(await tellRevoked(ok, DEFAULT_GRID, 'wgd_1'), true, 'the grid’s own 200');
+  for (const s of [401, 403, 404]) assert.equal(await tellRevoked(at(s), DEFAULT_GRID, 'wgd_1'), true, String(s));
+  // a captive portal's 200 page, a proxy's redirect or 421, and the grid unwell or away: asked again later
+  for (const s of [200, 302, 421, 500, 503, 429, new Error('offline')]) assert.equal(await tellRevoked(at(s), DEFAULT_GRID, 'wgd_1'), false, String(s));
+  // a grid that never answers: the wait ends it
+  const clock = fakeTimers();
+  const hang: FetchLike = (_u, init) => new Promise((_r, reject) => init.signal?.addEventListener('abort', () => reject(new Error('aborted'))));
+  const p = tellRevoked(hang, DEFAULT_GRID, 'wgd_1', sleepOn(clock), 10_000);
+  clock.advance(10_000);
+  assert.equal(await p, false);
 });
 
 test('the_last_tap_wins_and_cancel_stops_the_poll', async () => {
