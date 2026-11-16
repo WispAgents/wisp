@@ -3,11 +3,12 @@
 // the `shell.palette` overlay view, so Back and Esc close it and Open on a toast closes it too.
 // Arrows move, Enter runs, an item with `fill` types into the input instead. A source's `deep`
 // answers come after a pause in typing and go under the rest, so nothing above them moves; an
-// answer for words no longer in the box is dropped.
+// answer for words no longer in the box is dropped. Its items follow what the sources read (the entity store, the nav,
+// a source's own state): a task that lands, is renamed or is deleted while it's open shows at once.
 
 import { createMemo, createSignal, onCleanup, type JSX } from 'solid-js';
 import type { PluginClient } from '@wisp/client';
-import { PaletteSheet, paletteRowId, useSignal, type IconName, type PaletteRow } from '@wisp/ui';
+import { PaletteSheet, paletteRowId, useDerived, useSignal, type IconName, type PaletteRow } from '@wisp/ui';
 import type { ProjectColor } from '@wisp/tokens';
 import type { PaletteContext, PaletteItem } from '../contract.ts';
 import { useShell } from '../context.tsx';
@@ -44,7 +45,9 @@ export default function Palette(_p: { readonly client: PluginClient; readonly pa
     const focused = shell.selection.get() ?? (n.main.kind === 'task' ? n.main.id : undefined);
     return { client: host.client(plugin), nav: n, focused, ...(params.only && { narrowed: true }) };
   };
-  const items = createMemo(() =>
+  // round 323: useDerived, not createMemo: a source's items() reads the entity store (alien signals), which a Solid memo
+  // doesn't follow, so the list was the tasks there when it opened (search before the list's snapshot never showed them)
+  const items = useDerived(() =>
     (changed(), sources()).filter((s) => !params.only || params.only.includes(s.id)).flatMap((s) => {
       try {
         return s.items(ctxFor(s.plugin));

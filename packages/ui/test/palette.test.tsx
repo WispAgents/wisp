@@ -96,3 +96,40 @@ test('the issue picker: its note sits over the list with its fix, placeholders w
   expect(pal.querySelector('[data-kit="pal-group"]')?.textContent).toBe('Other sources');
   expect(pal.querySelector('[data-kit="pal-sub"]')?.textContent).toBe('Sign in with your Linear account');
 });
+
+test('rows are keyed by id: a redrawn list keeps the nodes of the rows it kept and repaints what changed in them', () => {
+  const host = document.createElement('div');
+  document.body.append(host);
+  const t = (id: string, label: string, head?: string): PaletteRow => ({ id, label: [[label, false]], icon: 'arrow', ...(head !== undefined && { head }) });
+  const [rows, setRows] = createSignal<PaletteRow[]>([t('a', 'Fix sync', 'Tasks'), t('b', 'Review sync'), t('c', 'Sync docs')]);
+  dispose = render(
+    () => (
+      <PaletteSheet value="sync" placeholder="Search" label="Command palette" rows={rows()} selected={0} empty="No results" foot={{ navigate: 'navigate', open: 'open', close: 'close' }} onInput={() => {}} onKeyDown={() => {}} onPick={() => {}} onHover={() => {}} />
+    ),
+    host,
+  );
+  const node = (label: string): Element | undefined => [...host.querySelectorAll('[data-kit="pal-row"]')].find((r) => r.textContent?.startsWith(label));
+  const a = node('Fix sync');
+  const c = node('Sync docs');
+  // new row objects (a fresh pass): one joins first and takes the group line, b leaves, c is renamed
+  setRows([t('n', 'Add sync', 'Tasks'), t('a', 'Fix sync'), t('c', 'Sync the docs')]);
+  expect(node('Fix sync'), 'a kept its node').toBe(a);
+  expect(node('Sync the docs'), 'c kept its node, its label repainted').toBe(c);
+  expect(node('Review sync'), 'b left').toBeUndefined();
+  expect([...host.querySelectorAll('[data-kit="pal-group"]')].map((g) => g.nextElementSibling?.textContent), 'the group line moved to the new first row').toEqual(['Add sync']);
+  expect([...host.querySelectorAll('[data-kit="pal-row"]')].map((r) => r.id)).toEqual(['palette-row-0', 'palette-row-1', 'palette-row-2']);
+});
+
+test('two rows with one id each draw their own row', () => {
+  const host = document.createElement('div');
+  document.body.append(host);
+  const rows: PaletteRow[] = [
+    { id: 'x', label: [['First', false]] },
+    { id: 'x', label: [['Second', false]] },
+  ];
+  dispose = render(
+    () => <PaletteSheet value="" placeholder="Search" label="Command palette" rows={rows} selected={0} empty="No results" foot={{ navigate: 'navigate', open: 'open', close: 'close' }} onInput={() => {}} onKeyDown={() => {}} onPick={() => {}} onHover={() => {}} />,
+    host,
+  );
+  expect([...host.querySelectorAll('[data-kit="pal-label"]')].map((l) => l.textContent)).toEqual(['First', 'Second']);
+});

@@ -5,7 +5,7 @@
 // The phone apps (design/mobile.md §A.2 Search): the same sheet full screen as the platform's search: Android's M3
 // search view (Back at the field's start, the results under it), iOS's search field with Cancel at its end; no
 // keyboard hints. `close` names those controls; the browser draws neither.
-import { For, Show, type JSX } from 'solid-js';
+import { createMemo, For, Show, type JSX } from 'solid-js';
 import type { ProjectColor } from '@wisp/tokens';
 import { flag, type PartName } from '../core/props.ts';
 import { Icon } from '../content/Icon.tsx';
@@ -61,10 +61,26 @@ export interface PaletteSheetProps {
   readonly close?: { readonly back: string; readonly cancel: string; readonly onClose: () => void };
 }
 
+/** what a row reads in the beat between its id leaving and its node going */
+const GONE: PaletteRow = { id: '', label: [] };
+
 export const paletteRowId = (i: number): string => `palette-row-${i}`;
 
 export function PaletteSheet(props: PaletteSheetProps): JSX.Element {
   const look = usePlatform();
+  // keyed by id, not by the row object: a list redrawn (typing, a task that lands, is renamed or leaves) moves the rows
+  // it kept and repaints what changed in them, never remaking their nodes (no entry animation replays, nothing jumps)
+  // (a second row with the same id gets its own key, so each draws its own row)
+  const keyed = createMemo(() => {
+    const seen = new Map<string, number>();
+    return props.rows.map((r): [string, PaletteRow] => {
+      const n = seen.get(r.id) ?? 0;
+      seen.set(r.id, n + 1);
+      return [n === 0 ? r.id : `${r.id}\u0000${n}`, r];
+    });
+  });
+  const ids = createMemo(() => keyed().map(([k]) => k));
+  const byId = createMemo(() => new Map(keyed()));
   const close = (): PaletteSheetProps['close'] => (look() === 'web' ? undefined : props.close);
   return (
     <div data-kit="pal" data-part={props.part ?? 'shell.palette'} data-variant={props.variant}>
@@ -132,70 +148,74 @@ export function PaletteSheet(props: PaletteSheetProps): JSX.Element {
           </div>
         </Show>
         <Show when={props.rows.length > 0 || props.loading || props.note} fallback={<div data-kit="pal-empty">{props.empty}</div>}>
-          <For each={props.rows}>
-            {(r, i) => (
-              <>
-                <Show when={r.head}>
-                  <div data-kit="pal-group" data-part="shell.palette.group">
-                    {r.head}
-                  </div>
-                </Show>
-                <div
-                  id={paletteRowId(i())}
-                  data-kit="pal-row"
-                  data-part="shell.palette.row"
-                  data-on={flag(i() === props.selected)}
-                  role="option"
-                  aria-selected={i() === props.selected}
-                  title={r.tip}
-                  onMouseMove={() => i() !== props.selected && props.onHover(i())}
-                  onClick={() => props.onPick(i())}
-                >
-                  <span data-kit="pal-lead">
-                    <Show when={r.dot} fallback={<Icon name={r.icon ?? 'arrow'} size="sm" />}>
-                      {(c) => <Dot size="project" color={c()} />}
-                    </Show>
-                  </span>
-                  <span data-kit="pal-label">
-                    <For each={r.label}>{([text, hit]) => (hit ? <mark>{text}</mark> : text)}</For>
-                  </span>
-                  <Show when={r.sub}>
-                    <span data-kit="pal-sub">{r.sub}</span>
+          <For each={ids()}>
+            {(id, i) => {
+              // the row as it is now: its words, marks and group line follow it while its node stays
+              const r = (): PaletteRow => byId().get(id) ?? GONE;
+              return (
+                <>
+                  <Show when={r().head}>
+                    <div data-kit="pal-group" data-part="shell.palette.group">
+                      {r().head}
+                    </div>
                   </Show>
-                  <Show when={r.toggle?.on}>
-                    <span data-kit="pal-check" data-part="shell.palette.check">
-                      <Icon name="check" size="sm" />
+                  <div
+                    id={paletteRowId(i())}
+                    data-kit="pal-row"
+                    data-part="shell.palette.row"
+                    data-on={flag(i() === props.selected)}
+                    role="option"
+                    aria-selected={i() === props.selected}
+                    title={r().tip}
+                    onMouseMove={() => i() !== props.selected && props.onHover(i())}
+                    onClick={() => props.onPick(i())}
+                  >
+                    <span data-kit="pal-lead">
+                      <Show when={r().dot} fallback={<Icon name={r().icon ?? 'arrow'} size="sm" />}>
+                        {(c) => <Dot size="project" color={c()} />}
+                      </Show>
                     </span>
-                  </Show>
-                  <Show when={r.kbd}>
-                    {(k) => (
-                      <span data-kit="pal-kbd">
-                        <For each={k()}>{(key) => <kbd data-kit="kbd">{key}</kbd>}</For>
+                    <span data-kit="pal-label">
+                      <For each={r().label}>{([text, hit]) => (hit ? <mark>{text}</mark> : text)}</For>
+                    </span>
+                    <Show when={r().sub}>
+                      <span data-kit="pal-sub">{r().sub}</span>
+                    </Show>
+                    <Show when={r().toggle?.on}>
+                      <span data-kit="pal-check" data-part="shell.palette.check">
+                        <Icon name="check" size="sm" />
                       </span>
-                    )}
-                  </Show>
-                  <Show when={r.toggle}>
-                    {(tg) => (
-                      <button
-                        type="button"
-                        tabIndex={-1}
-                        data-kit="pal-add"
-                        data-part="shell.palette.add"
-                        data-on={flag(tg().on)}
-                        title={tg().label}
-                        aria-label={tg().label}
-                        // the row's own click means "only this one": the + is a second act that leaves it open, the
-                        // caret kept in the input
-                        onMouseDown={(e) => e.preventDefault()}
-                        onClick={(e) => (e.stopPropagation(), props.onToggle?.(i()))}
-                      >
-                        <Icon name={tg().on ? 'minus' : 'plus'} size="sm" />
-                      </button>
-                    )}
-                  </Show>
-                </div>
-              </>
-            )}
+                    </Show>
+                    <Show when={r().kbd}>
+                      {(k) => (
+                        <span data-kit="pal-kbd">
+                          <For each={k()}>{(key) => <kbd data-kit="kbd">{key}</kbd>}</For>
+                        </span>
+                      )}
+                    </Show>
+                    <Show when={r().toggle}>
+                      {(tg) => (
+                        <button
+                          type="button"
+                          tabIndex={-1}
+                          data-kit="pal-add"
+                          data-part="shell.palette.add"
+                          data-on={flag(tg().on)}
+                          title={tg().label}
+                          aria-label={tg().label}
+                          // the row's own click means "only this one": the + is a second act that leaves it open, the
+                          // caret kept in the input
+                          onMouseDown={(e) => e.preventDefault()}
+                          onClick={(e) => (e.stopPropagation(), props.onToggle?.(i()))}
+                        >
+                          <Icon name={tg().on ? 'minus' : 'plus'} size="sm" />
+                        </button>
+                      )}
+                    </Show>
+                  </div>
+                </>
+              );
+            }}
           </For>
         </Show>
       </div>
