@@ -1,5 +1,6 @@
 //! An exec-tier plugin for the kernel's tests: JSON-RPC 2.0 over stdio, one message per line, plain
-//! blocking IO. Modes (argv[1]): `ok`, `slowinit` (never finishes initialize), `dies` (exits at once).
+//! blocking IO. Modes (argv[1]): `ok`, `slowinit` (never finishes initialize), `dies` (exits at once), `idle <pidfile>`
+//! (writes its pid there, registers nothing and waits).
 #![allow(
     clippy::unwrap_used,
     clippy::expect_used,
@@ -65,6 +66,12 @@ impl Rpc {
                     loop {
                         std::thread::sleep(std::time::Duration::from_secs(60));
                     }
+                }
+                if std::env::args().nth(1).as_deref() == Some("idle") {
+                    if let Some(f) = std::env::args().nth(2) {
+                        std::fs::write(f, std::process::id().to_string()).unwrap();
+                    }
+                    return Self::answer(&m["id"], Ok(json!({ "ok": true })));
                 }
                 for c in ["say", "nested", "deep", "hook", "setting", "crash", "env", "path", "resolve"] {
                     self.request("command.register", json!({ "id": format!("echo.{c}") })).unwrap();

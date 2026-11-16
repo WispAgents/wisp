@@ -43,6 +43,52 @@ impl Work {
     }
 }
 
+/// Exec children not reaped yet, per plugin (ADR-0046): uninstalling a plugin waits for its process to be gone, so
+/// its folder can be replaced (on Windows a running program's folder can't be moved or emptied).
+#[derive(Debug, Default)]
+pub(crate) struct Children {
+    n: Mutex<HashMap<String, usize>>,
+    gone: Notify,
+}
+
+/// One live child of a plugin; dropped once the child is reaped.
+pub(crate) struct Child(Arc<Children>, String);
+
+impl Drop for Child {
+    fn drop(&mut self) {
+        if let Ok(mut n) = self.0.n.lock()
+            && let Some(c) = n.get_mut(&self.1)
+        {
+            *c = c.saturating_sub(1);
+            if *c == 0 {
+                n.remove(&self.1);
+            }
+        }
+        self.0.gone.notify_waiters();
+    }
+}
+
+impl Children {
+    pub(crate) fn live(self: &Arc<Self>, id: &str) -> Child {
+        if let Ok(mut n) = self.n.lock() {
+            *n.entry(id.to_owned()).or_default() += 1;
+        }
+        Child(self.clone(), id.to_owned())
+    }
+    /// Until every child of `id` is reaped.
+    pub(crate) async fn gone(&self, id: &str) {
+        loop {
+            let wait = self.gone.notified();
+            tokio::pin!(wait);
+            wait.as_mut().enable();
+            if self.n.lock().map_or(true, |n| !n.contains_key(id)) {
+                return;
+            }
+            wait.await;
+        }
+    }
+}
+
 /// Test-only knobs (plan §6.11.2 rule 8): a random order for interceptors of equal priority, and
 /// injected slowness per (plugin, hook).
 #[derive(Debug, Default, Clone)]
@@ -62,6 +108,7 @@ pub(crate) struct KernelState {
     pub(crate) settings: crate::settings::Settings,
     pub(crate) work: Arc<Work>,
     pub(crate) chaos: RwLock<Chaos>,
+    pub(crate) children: Arc<Children>,
 }
 
 impl Default for KernelState {
@@ -78,6 +125,7 @@ impl Default for KernelState {
             settings: crate::settings::Settings::default(),
             work,
             chaos: RwLock::default(),
+            children: Arc::default(),
         }
     }
 }

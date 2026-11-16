@@ -149,3 +149,106 @@ async fn an_untrusted_plugins_calls_are_checked_against_its_own_permissions() {
     assert!(k.call(me, "plugins.setEnabled", json!({ "id": "user.pane", "enabled": false })).await.is_err());
     let _ = std::fs::remove_dir_all(&home);
 }
+
+/// A plugin's folder held as a running plugin holds it on Windows: a file in it open with no sharing (Windows), or the
+/// folder read-only (Unix: a folder you can't write can't move to another folder). Let go when dropped.
+struct Held {
+    dir: PathBuf,
+    #[cfg(windows)]
+    _file: std::fs::File,
+}
+
+fn hold(dir: &Path) -> Held {
+    #[cfg(windows)]
+    {
+        use std::os::windows::fs::OpenOptionsExt;
+        let f = std::fs::OpenOptions::new().read(true).share_mode(0).open(dir.join("README.md")).unwrap();
+        Held { dir: dir.to_owned(), _file: f }
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(dir, std::fs::Permissions::from_mode(0o555)).unwrap();
+        Held { dir: dir.to_owned() }
+    }
+}
+
+impl Drop for Held {
+    fn drop(&mut self) {
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let _ = std::fs::set_permissions(&self.dir, std::fs::Permissions::from_mode(0o755));
+        }
+        let _ = &self.dir;
+    }
+}
+
+fn version_and_state(k: &wisp_kernel::Kernel, id: &str) -> Option<(String, String)> {
+    k.status().into_iter().find(|s| s.id == id).map(|s| (s.version, s.state))
+}
+
+/// r310: a reinstall (or uninstall) whose old folder can't be moved, as on Windows while the old version runs or a
+/// file in it is open, changes nothing: the old version stays installed, on and in its folder, nothing half-done is
+/// left in `~/.wisp/plugins`, and the error says what happened. Once the folder is free, the same install works.
+#[tokio::test]
+async fn a_reinstall_whose_old_folder_is_in_use_keeps_the_old_one_working() {
+    let home = dir("held");
+    let k = TestApp::new().with(wisp_plugins::PluginsPlugin).service(Paths::new(&home)).start().await;
+    let v1 = source(&home, "user.theme", "1.0.0");
+    k.call(Caller::user(), "plugins.install", json!({ "source": v1.display().to_string() })).await.unwrap();
+    k.call(Caller::user(), "plugins.setEnabled", json!({ "id": "user.theme", "enabled": true })).await.unwrap();
+    let on = version_and_state(&k, "user.theme").unwrap();
+    assert_eq!(on.0, "1.0.0");
+    assert_ne!(on.1, "off");
+    let folder = home.join("plugins/theme");
+    #[cfg(unix)]
+    if std::process::Command::new("id").arg("-u").output().is_ok_and(|o| o.stdout.trim_ascii() == b"0") {
+        eprintln!("skipped: as root a read-only folder still moves, so it can't stand in for one in use");
+        return;
+    }
+    let held = hold(&folder);
+    let v2 = source(&home, "user.theme", "2.0.0");
+    let e = k.call(Caller::user(), "plugins.install", json!({ "source": v2.display().to_string() })).await.unwrap_err();
+    assert!(e.message.contains("user.theme 1.0.0 is still installed and on"), "{}", e.message);
+    assert_eq!(version_and_state(&k, "user.theme"), Some(on.clone()), "the old one, as it was");
+    let text = std::fs::read_to_string(folder.join("wisp-plugin.json")).unwrap();
+    assert!(text.contains("\"1.0.0\""), "its folder untouched: {text}");
+    let left: Vec<String> = std::fs::read_dir(home.join("plugins"))
+        .unwrap()
+        .flatten()
+        .map(|e| e.file_name().to_string_lossy().into_owned())
+        .filter(|n| n != "theme" && n != ".old")
+        .collect();
+    assert!(left.is_empty(), "no staging folder left: {left:?}");
+    let e = k.call(Caller::user(), "plugins.uninstall", json!({ "id": "user.theme" })).await.unwrap_err();
+    assert!(e.message.contains("Couldn't remove user.theme") && e.message.contains("still installed"), "{}", e.message);
+    assert_eq!(version_and_state(&k, "user.theme"), Some(on), "an uninstall that couldn't remove it put it back");
+    drop(held);
+    let out = k.call(Caller::user(), "plugins.install", json!({ "source": v2.display().to_string() })).await.unwrap();
+    assert_eq!(out["version"], json!("2.0.0"));
+    assert_eq!(version_and_state(&k, "user.theme").map(|v| v.0).as_deref(), Some("2.0.0"));
+    let old: Vec<_> = std::fs::read_dir(home.join("plugins/.old")).map(|r| r.flatten().collect()).unwrap_or_default();
+    assert!(old.is_empty(), "the old folder deleted once swapped: {old:?}");
+    let _ = std::fs::remove_dir_all(&home);
+}
+
+/// r310: at start, `~/.wisp/plugins/.old/` is tidied: a folder a replace or remove set aside is deleted (an
+/// uninstalled plugin never comes back), and one a failed replace couldn't put back (its `.keep` mark) returns to its
+/// place and loads, unless something took that place.
+#[test]
+fn folders_set_aside_are_deleted_at_start_or_put_back_when_marked() {
+    let home = dir("tidy");
+    let plugins = home.join("plugins");
+    let manifest = |id: &str| json!({ "wispPlugin": 1, "id": id, "version": "1.0.0", "api": "^1" }).to_string();
+    for (name, id) in [("gone.1.a", "user.gone"), ("kept.1.b", "user.kept")] {
+        std::fs::create_dir_all(plugins.join(".old").join(name)).unwrap();
+        std::fs::write(plugins.join(".old").join(name).join("wisp-plugin.json"), manifest(id)).unwrap();
+    }
+    std::fs::write(plugins.join(".old/kept.1.b.keep"), "").unwrap();
+    let got = wisp_plugins::user_plugins(&plugins);
+    assert_eq!(got.iter().map(|p| wisp_kernel::Plugin::manifest(p).id).collect::<Vec<_>>(), ["user.kept"]);
+    assert!(plugins.join("kept/wisp-plugin.json").is_file() && !plugins.join("gone").exists());
+    assert!(!plugins.join(".old").exists(), "nothing left aside");
+    let _ = std::fs::remove_dir_all(&home);
+}

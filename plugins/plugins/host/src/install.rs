@@ -10,6 +10,8 @@ use serde::{Deserialize, Serialize};
 use wisp_kernel::{Ctx, Declarative, ExecOptions, ExecPlugin, Manifest, Plugin, Result, Setup, WireError};
 use wisp_proc::{ExecOpts, Proc};
 
+use crate::swap;
+
 pub const MANIFEST: &str = "wisp-plugin.json";
 
 /// A user's plugin as the kernel runs it: a child process (an `exec` server) rooted at its folder, or its manifest
@@ -88,6 +90,7 @@ pub use wisp_plugins_core::slug;
 /// plugin is skipped with a warning; it never stops wisp starting.
 pub fn at_start(plugins: &Path) -> Vec<UserPlugin> {
     let mut out = Vec::new();
+    swap::tidy_blocking(plugins);
     let Ok(rd) = std::fs::read_dir(plugins) else { return out };
     let mut dirs: Vec<PathBuf> = rd
         .flatten()
@@ -208,13 +211,25 @@ pub async fn install(ctx: &Ctx, a: &InstallArgs) -> Result<Installed> {
         Ok(m) => m,
         Err(e) => return gone(e.message).await,
     };
-    // the same plugin again replaces the one here, once the new one checked out
-    if ctx.plugins()?.iter().any(|p| p.id == m.id) {
-        ctx.uninstall_plugin(&m.id).await?;
-    }
+    // the same plugin again replaces the one here, once the new one checked out: stopped first (and its process
+    // gone: on Windows a running program's folder can't be moved), then the folders swapped
     let dir = root.join(slug(&m.id));
-    let _ = wisp_proc::remove_tree(&dir).await;
-    tokio::fs::rename(&staging, &dir).await.map_err(|e| WireError::internal(format!("couldn't move it into place: {e}")))?;
+    // `user.a.b` and `user.a-b` share a folder: never replace another plugin's
+    let here = tokio::fs::read_to_string(dir.join(MANIFEST)).await.ok().and_then(|t| Manifest::parse(&t).ok()).map(|h| h.id);
+    if let Some(other) = here.filter(|h| *h != m.id) {
+        return gone(format!("{} would go in {}, which {other} already uses: uninstall {other} first", m.id, dir.display())).await;
+    }
+    let was = ctx.plugins()?.into_iter().find(|p| p.id == m.id);
+    if was.is_some()
+        && let Err(e) = ctx.uninstall_plugin(&m.id).await
+    {
+        let _ = wisp_proc::remove_tree(&staging).await;
+        return Err(e);
+    }
+    if let Err(why) = swap::swap(&root, &staging, &dir).await {
+        let _ = wisp_proc::remove_tree(&staging).await;
+        return Err(swap::not_replaced(ctx, &dir, was, &m, &why).await);
+    }
     let text = tokio::fs::read_to_string(dir.join(MANIFEST)).await.unwrap_or_default();
     // what's installed starts untrusted, a reinstall too: trusting it again is your call
     ctx.install_plugin(Arc::new(read(&dir, &text, false)?)).await?;
@@ -244,11 +259,28 @@ async fn track(ctx: &Ctx, event: &str, props: serde_json::Value) {
     }
 }
 
-/// `plugins.uninstall`: off, out of the kernel, and its folder deleted.
+/// `plugins.uninstall`: off, out of the kernel, and its folder deleted. A folder that can't be moved out (in use, on
+/// Windows) puts the plugin back as it was, with the error: it would load again at the next start anyway.
 pub async fn uninstall(ctx: &Ctx, a: &UninstallArgs) -> Result<serde_json::Value> {
+    let on = ctx.plugins()?.iter().any(|p| p.id == a.id && swap::is_on(&p.state));
     ctx.uninstall_plugin(&a.id).await?;
     let home = ctx.service::<wisp_kernel::services::Paths>()?;
-    let _ = wisp_proc::remove_tree(home.join("plugins").join(slug(&a.id))).await;
+    let root = home.join("plugins");
+    let dir = root.join(slug(&a.id));
+    match swap::set_aside(&root, &dir).await {
+        Ok(aside) => swap::discard(aside).await,
+        Err(e) => {
+            let kept = match swap::restore(ctx, &dir, &a.id, on).await {
+                Ok(()) => "it's still installed".to_owned(),
+                Err(r) => format!("it's still in that folder but didn't load again: {}", r.message),
+            };
+            return Err(WireError::unavailable(format!(
+                "Couldn't remove {}: its folder {} couldn't be moved ({e}); {kept}. Close what is using it and try again.",
+                a.id,
+                dir.display()
+            )));
+        }
+    }
     Ok(serde_json::json!({ "ok": true, "id": a.id }))
 }
 

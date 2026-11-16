@@ -6,7 +6,7 @@ mod common;
 use std::sync::{Arc, Mutex};
 
 use serde_json::json;
-use wisp_kernel::{Caller, Ctx, PluginGroup};
+use wisp_kernel::{Caller, Ctx, ExecPlugin, PluginGroup};
 
 cmd!(Hello, "user.hello.say", (), String);
 
@@ -72,4 +72,33 @@ async fn an_invalid_manifest_is_refused_and_nothing_is_kept() {
     let bad = Arc::new(common::bare("invalid.manifest", json!({ "description": "broken" })));
     assert!(ctx.install_plugin(bad).await.is_err());
     assert!(!k.status().iter().any(|s| s.id == "invalid.manifest"));
+}
+
+/// r310: uninstall answers once the plugin's process has exited (bounded), not just been told to stop, so whatever
+/// replaces or deletes its folder next can: on Windows a running program's folder (here the program itself is in it,
+/// as a user's compiled plugin is) can't be moved or emptied.
+#[tokio::test]
+async fn uninstall_waits_for_its_process_to_exit() {
+    let (k, ctx) = kernel().await;
+    let root = std::env::temp_dir().join(format!("wisp-kernel-uninstall-{}", wisp_kernel::ids::uuid7()));
+    let dir = root.join("echo");
+    std::fs::create_dir_all(&dir).unwrap();
+    let exe = dir.join(if cfg!(windows) { "echo.exe" } else { "echo" });
+    std::fs::copy(env!("CARGO_BIN_EXE_wisp-kernel-exec-echo"), &exe).unwrap();
+    let pidfile = dir.join("pid");
+    let m =
+        common::manifest("user.echo", json!({ "server": { "exec": [exe.display().to_string(), "idle", pidfile.display().to_string()] } }));
+    ctx.install_plugin(Arc::new(ExecPlugin::new(m, Some(dir.clone())))).await.unwrap();
+    k.set_enabled("user.echo", true).await.unwrap();
+    assert_eq!(k.status().into_iter().find(|s| s.id == "user.echo").map(|s| s.state).as_deref(), Some("active"));
+    let pid = std::fs::read_to_string(&pidfile).unwrap();
+    ctx.uninstall_plugin("user.echo").await.unwrap();
+    #[cfg(unix)]
+    {
+        let alive = std::process::Command::new("kill").args(["-0", pid.trim()]).stderr(std::process::Stdio::null()).status().unwrap();
+        assert!(!alive.success(), "its process {pid} has exited (and been reaped) when uninstall answers");
+    }
+    let _ = &pid;
+    std::fs::rename(&dir, root.join("moved")).expect("its folder moves: the program in it isn't running any more");
+    let _ = std::fs::remove_dir_all(&root);
 }

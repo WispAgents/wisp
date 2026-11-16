@@ -6,6 +6,7 @@ mod agent;
 mod install;
 mod kinds;
 pub mod remote;
+mod swap;
 
 pub use install::{UserPlugin, at_start as user_plugins, read as read_plugin};
 

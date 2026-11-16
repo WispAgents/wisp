@@ -362,8 +362,12 @@ pub(crate) fn add(k: Arc<KernelState>, plugin: Arc<dyn Plugin>) -> BoxFuture<'st
     })
 }
 
+/// How long an uninstall waits for a stopped plugin's process to exit (it was killed: this is only its reaping).
+const STOP_MS: u64 = 5_000;
+
 /// ADR-0046: a user's plugin taken out while the kernel runs: switched off (everything it registered goes with
-/// it), then its slot dropped. Only `user.` plugins: a built-in can be switched off, never removed.
+/// it), its process waited for until it exited (bounded), then its slot dropped. Only `user.` plugins: a built-in can
+/// be switched off, never removed.
 pub(crate) fn remove(k: Arc<KernelState>, id: String) -> BoxFuture<'static, Result<()>> {
     Box::pin(async move {
         if !id.starts_with("user.") {
@@ -377,6 +381,11 @@ pub(crate) fn remove(k: Arc<KernelState>, id: String) -> BoxFuture<'static, Resu
             ps.off.insert(id.clone(), format!("{id} is being uninstalled"));
         }
         reconcile(&k).await;
+        // its process gone before this answers (bounded): what replaces or deletes its folder next needs that on Windows
+        tokio::select! {
+            () = k.children.gone(&id) => {}
+            () = k.sleep(STOP_MS) => tracing::warn!(plugin = %id, "its process didn't exit within {STOP_MS} ms of being stopped"),
+        }
         {
             let mut ps = k.lock_plugins()?;
             ps.slots.retain(|s| s.manifest.id != id);

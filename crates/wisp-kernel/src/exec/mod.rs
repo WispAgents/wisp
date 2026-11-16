@@ -249,6 +249,8 @@ fn supervise(
 ) {
     let (weak, scope, id, base, max) =
         (Arc::downgrade(k), ctx.scope().clone(), ctx.plugin().to_owned(), opts.restart_base_ms, opts.max_restarts);
+    // counted until reaped: an uninstall waits on it (ADR-0046)
+    let live = k.children.live(&id);
     tokio::spawn(async move {
         tokio::select! {
             status = child.wait() => {
@@ -274,6 +276,7 @@ fn supervise(
             }
         }
         drop(held);
+        drop(live);
     });
 }
 
