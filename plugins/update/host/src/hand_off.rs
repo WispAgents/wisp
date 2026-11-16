@@ -34,7 +34,7 @@ pub(crate) async fn write_pending(ctx: &Ctx, st: &St, p: &Pending) -> std::resul
     tokio::fs::create_dir_all(&files.dir).await.map_err(|e| e.to_string())?;
     let body = serde_json::to_vec(p).map_err(|e| e.to_string())?;
     // last run's answers would read as this one's
-    for f in [deferred::EXIT, deferred::LOG] {
+    for f in [deferred::EXIT, deferred::LOG, deferred::TRACE] {
         let _ = tokio::fs::remove_file(files.path(&platform, f)).await;
     }
     tokio::fs::write(files.path(&platform, deferred::PENDING), body).await.map_err(|e| e.to_string())

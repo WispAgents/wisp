@@ -23,6 +23,8 @@ pub const EXIT: &str = "update-exit.txt";
 pub const LOG: &str = "update-npm.log";
 /// wisp.exe as it was, for when npm fails and takes it with it.
 pub const BACKUP: &str = "wisp-old.exe";
+/// What the waiter did, a line per step (kept after the next start, for a bug report; cleared by the next hand-off).
+pub const TRACE: &str = "update-trace.txt";
 /// How long the waiter waits for wisp to exit before it gives up and installs nothing.
 pub const WAIT_S: u32 = 30;
 
@@ -94,32 +96,54 @@ pub fn ps_escape(s: &str) -> String {
 }
 
 /// The waiter's script on Windows when npm runs after wisp exits. `relaunch`: the command that starts wisp again
-/// (through `cmd /S /C`); `args`: its wisp arguments, for the copy set aside.
+/// (through `cmd /S /C`); `args`: its wisp arguments, for the copy set aside. Each step goes to [`TRACE`].
+///
+/// wisp's exit is read from a handle the waiter holds (`$w.WaitForExit`), never by looking the pid up again: an
+/// exited process stays listed while any handle to it is open (`bin/wisp.js`'s node, a test's `Child`), so
+/// `Get-Process -Id` after the wait found it "still running" and the waiter gave up as `busy` without running npm.
+/// npm runs through `System.Diagnostics.Process` (`CreateProcess`: this environment, the arguments verbatim, its
+/// exit code; no `ShellExecute` and no wait on the whole process tree as `Start-Process -Wait` does).
 pub fn script(pid: u32, npm: &str, relaunch: &str, args: &str, files: &Files, platform: &Platform) -> String {
     let exe = ps_quote(&files.exe);
     let exit = ps_quote(&files.path(platform, EXIT));
     let backup = ps_quote(&files.path(platform, BACKUP));
+    let trace = ps_quote(&files.path(platform, TRACE));
     // cmd /S /C "<line>": cmd drops the outer quotes and runs the rest as typed, inner quotes and all
     let install = ps_quote(&format!("/d /s /c \"{npm} > \"{}\" 2>&1\"", files.path(platform, LOG)));
     let restart = ps_quote(&format!("/S /C \"{relaunch}\""));
     let own = ps_quote(args.trim());
+    let wait_ms = WAIT_S * 1000;
     [
         "$ErrorActionPreference = 'Continue'".to_owned(),
+        format!("$trace = {trace}"),
+        "function Step($m) { Add-Content -LiteralPath $trace -Value ('{0:HH:mm:ss.fff} {1}' -f (Get-Date), $m) -ErrorAction SilentlyContinue }"
+            .to_owned(),
+        format!("Set-Content -LiteralPath $trace -Value 'waiter for {pid}' -ErrorAction SilentlyContinue"),
         "Start-Sleep -Seconds 1".to_owned(),
-        format!("Stop-Process -Id {pid} -Force -ErrorAction SilentlyContinue"),
-        format!("Wait-Process -Id {pid} -Timeout {WAIT_S} -ErrorAction SilentlyContinue"),
-        format!("if (Get-Process -Id {pid} -ErrorAction SilentlyContinue) {{ Set-Content -LiteralPath {exit} -Value 'busy'; exit 1 }}"),
-        format!("Copy-Item -LiteralPath {exe} -Destination {backup} -Force -ErrorAction SilentlyContinue"),
+        // the handle first: once wisp has exited and its last handle closed, the pid may be someone else's
+        format!("$w = Get-Process -Id {pid} -ErrorAction SilentlyContinue"),
         format!(
-            "try {{ $p = Start-Process -FilePath cmd.exe -ArgumentList {install} -Wait -PassThru -WindowStyle Hidden -ErrorAction Stop; \
-             $code = $p.ExitCode }} catch {{ $code = 'start' }}"
+            "if ($w) {{ try {{ $null = $w.Handle }} catch {{ Step \"no handle: $_\" }}; \
+             Stop-Process -InputObject $w -Force -ErrorAction SilentlyContinue; \
+             try {{ $gone = $w.WaitForExit({wait_ms}) }} catch {{ $gone = -not (Get-Process -Id {pid} -ErrorAction SilentlyContinue) }}; \
+             if (-not $gone) {{ Step 'wisp did not stop'; Set-Content -LiteralPath {exit} -Value 'busy'; exit 1 }} }}"
         ),
+        "Step 'wisp is gone'".to_owned(),
+        format!("Copy-Item -LiteralPath {exe} -Destination {backup} -Force -ErrorAction SilentlyContinue"),
+        "Step (\"npm on PATH: \" + ((& where.exe npm 2>$null) -join '; '))".to_owned(),
+        format!(
+            "try {{ $si = New-Object System.Diagnostics.ProcessStartInfo -ArgumentList 'cmd.exe'; $si.Arguments = {install}; \
+             $si.UseShellExecute = $false; $si.CreateNoWindow = $true; $p = [System.Diagnostics.Process]::Start($si); \
+             $p.WaitForExit(); $code = $p.ExitCode }} catch {{ $code = 'start'; Step \"cmd.exe did not start: $_\" }}"
+        ),
+        "Step \"npm exited: $code\"".to_owned(),
         format!("Set-Content -LiteralPath {exit} -Value $code"),
         format!(
             "if (Test-Path -LiteralPath {exe}) {{ Remove-Item -LiteralPath {backup} -Force -ErrorAction SilentlyContinue; \
-             Start-Process -FilePath cmd.exe -ArgumentList {restart} -WindowStyle Hidden }} \
-             else {{ Start-Process -FilePath {backup} -ArgumentList {own} -WindowStyle Hidden }}"
+             Step 'restart'; Start-Process -FilePath cmd.exe -ArgumentList {restart} -WindowStyle Hidden }} \
+             else {{ Step 'restart the copy set aside'; Start-Process -FilePath {backup} -ArgumentList {own} -WindowStyle Hidden }}"
         ),
+        "Step 'done'".to_owned(),
     ]
     .join("\n")
 }

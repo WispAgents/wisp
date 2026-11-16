@@ -58,7 +58,8 @@ async fn no_hand_off_no_word() {
     let _ = std::fs::remove_dir_all(&dir);
 }
 
-/// The real waiter on Windows: "wisp" (a sleeping process) is stopped and waited for, npm (a fake `npm.cmd` first on
+/// The real waiter on Windows: "wisp" (a sleeping process this test keeps a handle to, as `bin/wisp.js` does) is
+/// stopped and waited for, npm (a fake `npm.cmd` first on
 /// PATH) runs once it's gone and fails, and the old copy restarts through the launcher with the same args; the next
 /// start reads npm's error.
 #[cfg(windows)]
@@ -105,19 +106,49 @@ async fn the_windows_waiter_installs_after_wisp_exits_and_restarts_it_when_npm_f
     let files = Files { dir: plugin.display().to_string(), exe: exe.display().to_string() };
     let h = u.hand_off(wisp.id(), &files).unwrap();
     let path = format!("{};{}", tools.display(), std::env::var("PATH").unwrap_or_default());
-    let mut waiter = std::process::Command::new(h.bin).args(&h.args).env("PATH", path).spawn().unwrap();
+    // the waiter's own output, for when it goes wrong
+    let out = base.join("waiter-out.txt");
+    let err = base.join("waiter-err.txt");
+    let mut waiter = std::process::Command::new(h.bin)
+        .args(&h.args)
+        .env("PATH", path)
+        .stdout(std::fs::File::create(&out).unwrap())
+        .stderr(std::fs::File::create(&err).unwrap())
+        .spawn()
+        .unwrap();
 
     let start = Instant::now();
-    // node.cmd may still be writing when the file appears
-    while !std::fs::read_to_string(&restarted).is_ok_and(|t| t.contains("4477")) && start.elapsed() < Duration::from_secs(90) {
+    let mut exited: Option<Instant> = None;
+    // node.cmd may still be writing when the file appears, and it starts after the waiter is gone: a moment's grace
+    while !std::fs::read_to_string(&restarted).is_ok_and(|t| t.contains("4477"))
+        && start.elapsed() < Duration::from_secs(90)
+        && exited.is_none_or(|t| t.elapsed() < Duration::from_secs(10))
+    {
+        if exited.is_none() && waiter.try_wait().unwrap().is_some() {
+            exited = Some(Instant::now());
+        }
         tokio::time::sleep(Duration::from_millis(200)).await;
     }
+    let _ = waiter.kill();
     let _ = waiter.wait();
-    assert!(wisp.try_wait().unwrap().is_some(), "the waiter stopped wisp");
-    assert!(marker.exists(), "npm ran");
-    let args = std::fs::read_to_string(&restarted).unwrap_or_else(|_| panic!("wisp was restarted (script: {})", h.script));
-    assert!(args.contains("wisp.js") && args.contains("--browser --no-open --port 4477"), "same args: {args}");
-    assert!(exe.exists() && !plugin.join(deferred::BACKUP).exists(), "the copy set aside goes once wisp.exe is still there");
+    // PowerShell writes the ANSI code page and npm the OEM one: read lossily, so a localized message still shows
+    let read = |p: &Path| std::fs::read(p).map_or_else(|e| format!("<{e}>"), |b| String::from_utf8_lossy(&b).into_owned());
+    let why = format!(
+        "\n--- script\n{}\n--- trace\n{}\n--- exit\n{}\n--- npm log\n{}\n--- waiter stdout\n{}\n--- waiter stderr\n{}",
+        h.script,
+        read(&plugin.join(deferred::TRACE)),
+        read(&plugin.join(deferred::EXIT)),
+        read(&plugin.join(deferred::LOG)),
+        read(&out),
+        read(&err)
+    );
+    let stopped = wisp.try_wait().unwrap().is_some();
+    let _ = wisp.kill();
+    assert!(stopped, "the waiter stopped wisp{why}");
+    assert!(marker.exists(), "npm ran{why}");
+    let args = std::fs::read_to_string(&restarted).unwrap_or_else(|_| panic!("wisp was restarted{why}"));
+    assert!(args.contains("wisp.js") && args.contains("--browser --no-open --port 4477"), "same args: {args}{why}");
+    assert!(exe.exists() && !plugin.join(deferred::BACKUP).exists(), "the copy set aside goes once wisp.exe is still there{why}");
     let o = read_hand_off(&plugin, "2.0.0").await.unwrap();
     assert_eq!(o, Outcome::Failed("`npm install -g wisp-agents@latest` failed: npm error code EBUSY npm error syscall rename".into()));
     let _ = std::fs::remove_dir_all(&base);

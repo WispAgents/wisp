@@ -48,21 +48,53 @@ fn a_windows_npm_install_waits_for_wisp_to_exit() {
     let h = u.hand_off(9, &files()).expect("a hand-off");
     assert_eq!(h.bin, "powershell");
     assert_eq!(h.args[5], wisp_update_core::encode_ps(&h.script), "the script travels encoded");
-    // in order: stop, wait (bounded), give up if it's still there, set the exe aside, npm, its exit, restart
+    // in order: hold wisp's handle, stop it, wait on that handle (bounded), give up if it's still there, set the exe
+    // aside, npm, its exit, restart
     let at = |needle: &str| h.script.find(needle).unwrap_or_else(|| panic!("no {needle:?} in {}", h.script));
     let steps = [
-        "Stop-Process -Id 9 -Force",
-        "Wait-Process -Id 9 -Timeout 30",
-        "if (Get-Process -Id 9",
+        "$w = Get-Process -Id 9 ",
+        "$null = $w.Handle",
+        "Stop-Process -InputObject $w -Force",
+        "$gone = $w.WaitForExit(30000)",
+        "if (-not $gone)",
         "Copy-Item -LiteralPath",
         "npm install -g wisp-agents@latest > ",
-        "-Wait -PassThru",
+        "$p.WaitForExit(); $code = $p.ExitCode",
         "Set-Content -LiteralPath 'C:\\Users\\Ann O''Brien\\.wisp\\plugins\\wisp.update\\update-exit.txt' -Value $code",
         "if (Test-Path -LiteralPath",
     ];
     let order: Vec<usize> = steps.iter().map(|s| at(s)).collect();
     assert!(order.windows(2).all(|w| w[0] < w[1]), "{steps:?} out of order in {}", h.script);
     assert!(h.script.contains(&u.relaunch_command(false).replace('\'', "''")), "the same relaunch as after any update: {}", h.script);
+    // an exited process stays listed while a handle to it is open: looking the pid up again read as "still running"
+    assert!(
+        !h.script.contains("Wait-Process") && !h.script.contains("if (Get-Process"),
+        "wisp's exit is read from its handle: {}",
+        h.script
+    );
+    assert!(!h.script.contains("-Wait -PassThru"), "npm runs through CreateProcess, not ShellExecute: {}", h.script);
+}
+
+/// Every step of the waiter lands in its trace file, so a hand-off that went wrong says where.
+#[test]
+fn the_waiter_traces_each_step() {
+    let mut u = windows_npm("2.1.0");
+    let _ = u.begin_install().unwrap();
+    u.install_done();
+    let s = u.hand_off(9, &files()).unwrap().script;
+    assert!(s.contains("$trace = 'C:\\Users\\Ann O''Brien\\.wisp\\plugins\\wisp.update\\update-trace.txt'"), "{s}");
+    for step in [
+        "'waiter for 9'",
+        "'wisp did not stop'",
+        "'wisp is gone'",
+        "npm on PATH: ",
+        "cmd.exe did not start: $_",
+        "npm exited: $code",
+        "'restart'",
+        "'done'",
+    ] {
+        assert!(s.contains(step), "no {step:?} in {s}");
+    }
 }
 
 /// The other installs, and every install off Windows, run while wisp does (a running binary on macOS and Linux is
@@ -128,7 +160,7 @@ fn paths_with_spaces_and_quotes_survive_both_shells() {
     u.install_done();
     let s = u.hand_off(1, &files()).unwrap().script;
     assert!(
-        s.contains("-ArgumentList '/d /s /c \"npm install -g wisp-agents@latest > \"C:\\Users\\Ann O''Brien\\.wisp\\plugins\\wisp.update\\update-npm.log\" 2>&1\"'"),
+        s.contains("$si.Arguments = '/d /s /c \"npm install -g wisp-agents@latest > \"C:\\Users\\Ann O''Brien\\.wisp\\plugins\\wisp.update\\update-npm.log\" 2>&1\"'"),
         "{s}"
     );
     assert!(s.contains(&format!("Copy-Item -LiteralPath {} -Destination", ps_quote(&exe()))), "{s}");
