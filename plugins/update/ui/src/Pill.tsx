@@ -16,7 +16,7 @@ import { t } from './i18n.ts';
 import { usePaneScope, useTopic } from './live.ts';
 import { Confirm } from './panes/Updates.tsx';
 import { BACK_WITHIN_MS, cameBack, failureAction, notBack, pillOf, restartFailed, restartStep } from './pill.ts';
-import { KIND, ROW_ID, TOPIC, type UpdateState } from './types.ts';
+import { KIND, ROW_ID, TOPIC, stateOf, type UpdateState } from './types.ts';
 import './i18n/lazy.ts';
 
 /** The version that was restarting (pill.ts restartStep): reload once another answers, else say so after 2 min. */
@@ -54,7 +54,8 @@ export default function UpdatePill(props: ExtensionProps): JSX.Element {
   const client = props.client;
   useTopic(client, TOPIC);
   const scope = usePaneScope(client, 'pill');
-  const row = useSignal(client.entities.row<UpdateState>(KIND, entityKey(client.home, ROW_ID)));
+  const raw = useSignal(client.entities.row<unknown>(KIND, entityKey(client.home, ROW_ID)));
+  const row = (): UpdateState | undefined => stateOf(raw());
   const view = createMemo(() => pillOf(row()));
   const [asking, setAsking] = createSignal(false);
   useRestartWatch(row, shell, scope);

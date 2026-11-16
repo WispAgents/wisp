@@ -10,7 +10,7 @@ import { checkNow, installUpdate } from '../commands.ts';
 import { t } from '../i18n.ts';
 import { useCopy, useNow, useTopic } from '../live.ts';
 import { fromRow, text } from '../source.ts';
-import { KEYS, KIND, ROW_ID, TOPIC, type UpdateState } from '../types.ts';
+import { KEYS, KIND, ROW_ID, TOPIC, stateOf, type UpdateState } from '../types.ts';
 import { channelHint, channelItems, showsInstall, versionLine } from '../words.ts';
 import '../i18n/lazy.ts';
 
@@ -137,7 +137,8 @@ export function Confirm(props: { readonly open: boolean; readonly row: Row; read
 
 export default function Updates(props: { readonly client: PluginClient }): JSX.Element {
   useTopic(props.client, TOPIC);
-  const row = useSignal(props.client.entities.row<UpdateState>(KIND, entityKey(props.client.home, ROW_ID)));
+  const raw = useSignal(props.client.entities.row<unknown>(KIND, entityKey(props.client.home, ROW_ID)));
+  const row = (): UpdateState | undefined => stateOf(raw());
   const [asking, setAsking] = createSignal(false);
   const send = (force: boolean): void => quiet(props.client.run(installUpdate, { peer: props.client.home, force }));
   const install = (): void => {

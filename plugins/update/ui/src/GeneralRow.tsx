@@ -7,11 +7,12 @@ import { SettingsGroup, useSignal } from '@wisp/ui';
 import { t } from './i18n.ts';
 import { useTopic } from './live.ts';
 import { Channel } from './panes/Updates.tsx';
-import { KIND, ROW_ID, TOPIC, type UpdateState } from './types.ts';
+import { KIND, ROW_ID, TOPIC, stateOf, type UpdateState } from './types.ts';
 
 export default function GeneralRow(props: ExtensionProps): JSX.Element {
   useTopic(props.client, TOPIC);
-  const row = useSignal(props.client.entities.row<UpdateState>(KIND, entityKey(props.client.home, ROW_ID)));
+  const raw = useSignal(props.client.entities.row<unknown>(KIND, entityKey(props.client.home, ROW_ID)));
+  const row = (): UpdateState | undefined => stateOf(raw());
   return (
     <SettingsGroup part="settings.updates">
       <Channel client={props.client} row={row()} title={t('update.pane.updates')} part="settings.update.general" />

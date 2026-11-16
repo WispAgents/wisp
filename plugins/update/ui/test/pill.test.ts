@@ -2,7 +2,7 @@
 // offers, and when the page reloads onto the new wisp.
 import { describe, expect, it } from 'vitest';
 import { cameBack, failureAction, notBack, pillOf, restartFailed, restartStep } from '../src/pill.ts';
-import type { UpdateState } from '../src/types.ts';
+import { stateOf, type UpdateState } from '../src/types.ts';
 
 const row = (over: Partial<UpdateState> = {}): UpdateState => ({
   current: '2.0.0',
@@ -79,4 +79,16 @@ describe('a restart that failed after wisp quit', () => {
     expect(restartFailed('2.0.0', row({ ...failed, status: 'restarting' }))).toBe(false);
     expect(restartFailed('2.0.0', undefined)).toBe(false);
   });
+});
+
+// B6 (owner, 2026-11-16): the pill spun forever on a real server: its row keeps the state under `body`.
+
+it('the update row as the server syncs it ({ id, body }) is read, and an idle wisp with nothing newer shows no pill', () => {
+  const server = { id: 'update', body: { available: false, channel: 'stable', checked_at: null, checking: false, current: '2.0.0', enabled: false, error: null, latest: null, method: 'git', running: 0, status: 'idle' } };
+  const s = stateOf(server);
+  expect(s?.status).toBe('idle');
+  expect(s?.current).toBe('2.0.0');
+  expect(pillOf(s)).toBeUndefined();
+  expect(stateOf({ ...server.body })?.status).toBe('idle'); // a flat row (the dev mock) too
+  expect(stateOf({ id: 'update' })).toBeUndefined(); // nothing to read: no pill, never a spinner
 });

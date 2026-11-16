@@ -224,6 +224,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Fixed
 
+- **The update button no longer spins forever.** The top bar showed a loading spinner on every wisp with nothing to update, and Settings → Updates showed nothing about the version; both read the update state again.
+
 - **Near your plan's limit, wisp asks in the box again, as before.** A task or follow-up that would take a usage window past your Ask near the limit line shows a row in the prompt box (“Claude Code’s weekly window is at 91%…”) with Start anyway (Send anyway), Wait until the reset and ×, and your words stay; before, it made a task that failed with a message meant for agents. Start now on a held run now runs it (it was held again), in place, with no flash.
 
 - **v2: screens follow data that changes while they're open.** These used to keep the value they had when they opened, until you opened them again: Settings → Agents and the harness picker stayed on *Checking…* after a harness was detected; Home's Spare allowance card and window notices ignored their switches in Settings → Usage, and so did Home's limit-hold line; Settings → Usage's drain lines ignored the Drain watch switch; the PR row on a task didn't hide when the PR pane opened next to it (or come back when it closed); *Always do this* in Remove its worktrees? stayed visible after a formula locked the setting; My Stuff grouped by task kept old task titles; the `/` and `@` menus in the prompt box missed tasks that loaded or were renamed while they were open, and missed sources added later; list rows missed extensions a plugin added later. A `tools/check` rule (`alien-read-in-solid`) now refuses this kind of code.

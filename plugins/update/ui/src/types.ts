@@ -7,6 +7,16 @@
 import type { PeerId } from '@wisp/client';
 import type { Topic } from '@wisp/protocol';
 
+/** The update row as it syncs: the store keeps the state under `body` (`update_state (id, body)`); a flat row (the dev
+ *  mock, an older peer) is read as it is. The pill, Updates and General read it through `stateOf` only: reading it flat
+ *  made `status` missing, which counted as busy (the pill's spinner never stopped; owner, 2026-11-16, B6). */
+export function stateOf(row: unknown): UpdateState | undefined {
+  if (!row || typeof row !== 'object') return undefined;
+  const r = row as { body?: unknown };
+  const s = (r.body && typeof r.body === 'object' ? r.body : row) as Partial<UpdateState>;
+  return typeof s.status === 'string' && typeof s.current === 'string' ? (s as UpdateState) : undefined;
+}
+
 /** The home peer publishes one row, id `update`. */
 export const TOPIC: Topic = 'plugin:wisp.update:state';
 export const KIND = 'update.state';

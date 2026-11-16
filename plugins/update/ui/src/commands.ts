@@ -7,8 +7,10 @@ import './i18n/lazy.ts';
 
 const patchRow = (base: EntityReader, peer: PeerId, fields: Partial<UpdateState>): EntityOps => {
   const id = entityKey(peer, ROW_ID);
-  const row = base.peek<UpdateState>(KIND, id);
-  return row ? [{ e: KIND, id, op: 'upsert', v: { ...row, ...fields } }] : [];
+  const row = base.peek<{ body?: UpdateState } & UpdateState>(KIND, id);
+  if (!row) return [];
+  // the peer's row keeps the state under `body` (types.ts stateOf)
+  return [{ e: KIND, id, op: 'upsert', v: row.body ? { ...row, body: { ...row.body, ...fields } } : { ...row, ...fields } }];
 };
 
 /** Check now (v1 Updater.check, also run daily by the server). */
