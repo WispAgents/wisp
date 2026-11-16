@@ -193,7 +193,7 @@ impl Setup {
             })
         });
         let pattern = format!("{}|{}", E::TYPE, crate::durable::GAP);
-        self.durables.push(crate::durable::DSub { name: name.to_owned(), pattern, f: df, ctx: self.ctx.clone() });
+        self.durables.push(crate::durable::DSub { name: name.to_owned(), pattern, f: df, batch: None, ctx: self.ctx.clone() });
     }
 
     /// A durable subscription to every durable event matching `pattern` (`pr.*`, `*`), as envelopes (a
@@ -212,6 +212,32 @@ impl Setup {
             name: name.to_owned(),
             pattern: format!("{pattern}|{}", crate::durable::GAP),
             f: df,
+            batch: None,
+            ctx: self.ctx.clone(),
+        });
+    }
+
+    /// `on_durable_any`, but the events already in after the next one (matching, one after another, up to 64) come
+    /// in one call, so a handler that writes for each writes once for all, its cursor riding that write at the last
+    /// (ADR-0088). A batch that fails is delivered again one by one (3 tries each, parked alone). Gaps come alone, as
+    /// `event.gap`. Additive (2026-11-16).
+    pub fn on_durable_batch<F, Fut>(&mut self, name: &str, pattern: &str, f: F)
+    where
+        F: Fn(Ctx, Call, Vec<Arc<EventEnvelope>>) -> Fut + Send + Sync + 'static,
+        Fut: Future<Output = Result<()>> + Send + 'static,
+    {
+        let f = Arc::new(f);
+        let bf: crate::durable::BatchFn = Arc::new(move |ctx, call, envs| {
+            let f = f.clone();
+            Box::pin(async move { f(ctx, call, envs).await })
+        });
+        let one = bf.clone();
+        let df: crate::durable::DurableFn = Arc::new(move |ctx, call, env| one(ctx, call, vec![env]));
+        self.durables.push(crate::durable::DSub {
+            name: name.to_owned(),
+            pattern: format!("{pattern}|{}", crate::durable::GAP),
+            f: df,
+            batch: Some(bf),
             ctx: self.ctx.clone(),
         });
     }

@@ -33,7 +33,11 @@ On the same server, once those are read (ADR-0082):
   stopped, over the JSON of the steps the 10 turns kept (the runtime bench's payload) ≤ 15×
 - append rate: `spikes/events`' `append_rate` (its library), 100 000 events 1 000 a transaction ≥ 20 000/s
 
-`--keep` also keeps `stream.wal`, the frames the stream wrote (which pages, how many commits).
+Then where the stream's WAL went (ADR-0088, reported, not gated; `src/wal.rs`): every frame's page named by the b-tree
+it belongs to (SQLite's `dbstat` on the database once the server stopped), every commit by the tables it touched (but
+`change`, `change_topic` and page 1, which every commit touches), as commits and frames per kind of commit, then frames
+per table. A writer that commits alone per turn or per step shows as its own line. `--keep` also keeps `stream.wal`,
+the frames the stream wrote.
 `--stream=<lines a second>:<ms>:<agent|text>` runs another shape by hand (`20:6000:text` is ADR-0082's first stream:
 400 B of text a line); the gate is the default.
 

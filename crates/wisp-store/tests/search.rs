@@ -90,3 +90,30 @@ fn search_across_kinds_limited_and_refusing_a_kind_with_no_index() {
     assert!(f.store.search("x", Some(&["plugin"]), 50).unwrap_err().to_string().contains("no search index"));
     assert!(f.store.define_search("session", &["nope"]).is_err());
 }
+
+#[test]
+fn a_write_that_leaves_the_indexed_text_as_it_was_leaves_the_index_untouched() {
+    let f = open_disk(None);
+    f.store.define_search("session", &["title"]).unwrap();
+    f.store.write_blocking(|w| w.upsert("session", session_with("a", json!({"title": "alpha"})))).unwrap();
+    let raw = wisp_store::rusqlite::Connection::open(f.home.as_ref().unwrap().join("wisp.db")).unwrap();
+    let index = || -> String {
+        raw.query_row("SELECT group_concat(id || ':' || hex(block), ',') FROM (SELECT * FROM fts_t_session_data ORDER BY id)", [], |r| {
+            r.get(0)
+        })
+        .unwrap()
+    };
+    let before = index();
+    // a patch, and an upsert, of a column the index doesn't hold (a turn's end on its session)
+    f.store.write_blocking(|w| w.patch("session", "a", &[PatchOp::replace(&["state"], json!("running"))])).unwrap();
+    f.store.write_blocking(|w| w.upsert("session", session_with("a", json!({"title": "alpha", "state": "idle"})))).unwrap();
+    assert_eq!(index(), before, "the index's pages are as they were");
+    assert_eq!(ids(&f.store, "alpha"), vec!["a"]);
+    // the title itself still moves it
+    f.store.write_blocking(|w| w.patch("session", "a", &[PatchOp::replace(&["title"], json!("beta"))])).unwrap();
+    assert_ne!(index(), before);
+    assert_eq!(ids(&f.store, "alpha"), Vec::<String>::new());
+    assert_eq!(ids(&f.store, "beta"), vec!["a"]);
+    f.store.write_blocking(|w| w.del("session", "a")).unwrap();
+    assert_eq!(ids(&f.store, "beta"), Vec::<String>::new());
+}

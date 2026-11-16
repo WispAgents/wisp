@@ -265,3 +265,38 @@ async fn drain_watchs_note_is_queued_before_the_drained_spend_can_be_read() {
     eventually("Drain watch tells the phone", || !seen.notes().is_empty()).await;
     assert_eq!(*answers.lock().unwrap(), vec![1], "the reader of the drained spend heard the note");
 }
+
+/// ADR-0088: a turn's end saves its spend and the run cost Ask near the limit learned in one commit, not two (each
+/// commit pays the change feed's pages again: two per turn end were a tenth of the stream's other commits).
+#[tokio::test(flavor = "multi_thread")]
+async fn a_turns_end_saves_its_spend_and_the_learned_run_in_one_commit() {
+    let (seen, clock) = (Seen::default(), FakeClock::at(NOW));
+    let store = Store::open(Location::Memory, Arc::new(SystemClock)).unwrap();
+    let commits: Arc<Mutex<Vec<Vec<String>>>> = Arc::default();
+    let heard = commits.clone();
+    let _sub = store.on_commit(move |rows| {
+        let mut kinds: Vec<String> = rows.iter().map(|r| r.entity.clone()).filter(|e| e.starts_with("budget_")).collect();
+        kinds.dedup();
+        if !kinds.is_empty() {
+            heard.lock().unwrap().push(kinds);
+        }
+    });
+    let k = TestApp::new()
+        .clock(&clock)
+        .service(store.clone())
+        .with(BudgetPlugin)
+        .with(Runtime(seen.clone()))
+        .with(Channels(seen.clone()))
+        .start()
+        .await;
+    record(&k, "five_hour", 0.10, NOW + 3 * H, 5 * H).await;
+    commits.lock().unwrap().clear();
+    ended(&k, 1);
+    eventually("the learned run is saved", || commits.lock().unwrap().iter().any(|c| c.iter().any(|e| e == "budget_meta"))).await;
+    settle().await;
+    let c = commits.lock().unwrap().clone();
+    assert_eq!(c, vec![vec!["budget_acc".to_owned(), "budget_meta".to_owned()]], "one commit: the spend and the runs");
+    let runs: String =
+        store.read(|r| r.get("budget_meta", "runs")).unwrap().and_then(|row| row.get("body").map(ToString::to_string)).unwrap_or_default();
+    assert!(runs.contains("\"t1\""), "the run is kept: {runs}");
+}

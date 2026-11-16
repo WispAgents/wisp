@@ -643,3 +643,226 @@ async fn a_detached_writes_events_go_out_with_its_commit() {
         EventLog::read(&st, 0, 100).await.unwrap().iter().map(|e| u32::try_from(e.event.data["n"].as_u64().unwrap()).unwrap()).collect();
     assert_eq!(log, vec![1, 3]);
 }
+
+// --- ADR-0088: idle cursors saved together, batches written once ---------------------------------------------------
+
+/// Cursors as `set_cursors` takes them: (plugin, subscription, seq).
+type Cursors = Vec<(String, String, u64)>;
+
+/// The store's log, counting how cursors reach it: one at a time (`set_cursor`) or together (`set_cursors`).
+struct Counted {
+    st: Store,
+    singles: AtomicU32,
+    /// each `set_cursors` once its write landed
+    together: Arc<Mutex<Vec<Cursors>>>,
+}
+impl Counted {
+    fn new(st: &Store) -> Arc<Self> {
+        Arc::new(Self { st: st.clone(), singles: AtomicU32::new(0), together: Arc::default() })
+    }
+    /// Every cursor saved together past `0` (a new subscription's first, saved once at its start).
+    fn saved(&self) -> Vec<Cursors> {
+        self.together
+            .lock()
+            .unwrap()
+            .iter()
+            .map(|c| c.iter().filter(|r| r.2 > 0).cloned().collect::<Vec<_>>())
+            .filter(|c| !c.is_empty())
+            .collect()
+    }
+}
+type Fut<T> = wisp_kernel::BoxFuture<'static, Result<T>>;
+impl EventLog for Counted {
+    fn append(&self, rows: Vec<wisp_kernel::durable::NewEvent>) -> Fut<Vec<Option<u64>>> {
+        self.st.append(rows)
+    }
+    fn read(&self, after: u64, limit: usize) -> Fut<Vec<wisp_kernel::durable::StoredEvent>> {
+        EventLog::read(&self.st, after, limit)
+    }
+    fn get(&self, seq: u64) -> Fut<Option<wisp_kernel::durable::StoredEvent>> {
+        EventLog::get(&self.st, seq)
+    }
+    fn bounds(&self) -> Fut<(u64, u64)> {
+        self.st.bounds()
+    }
+    fn cursor(&self, plugin: &str, name: &str) -> Fut<Option<u64>> {
+        self.st.cursor(plugin, name)
+    }
+    fn set_cursor(&self, plugin: &str, name: &str, seq: u64) -> Fut<()> {
+        self.singles.fetch_add(1, Ordering::SeqCst);
+        self.st.set_cursor(plugin, name, seq)
+    }
+    fn set_cursors(&self, rows: Vec<(String, String, u64)>) -> Fut<()> {
+        let (write, seen) = (self.st.set_cursors(rows.clone()), self.together.clone());
+        Box::pin(async move {
+            write.await?;
+            seen.lock().unwrap().push(rows);
+            Ok(())
+        })
+    }
+    fn park(&self, p: wisp_kernel::durable::Parked) -> Fut<()> {
+        self.st.park(p)
+    }
+    fn parked(&self) -> Fut<Vec<wisp_kernel::durable::Parked>> {
+        self.st.parked()
+    }
+    fn unpark(&self, plugin: &str, name: &str, seq: u64) -> Fut<bool> {
+        self.st.unpark(plugin, name, seq)
+    }
+}
+
+async fn counted_kernel(st: &Store, log: Arc<Counted>, plugins: Vec<P>) -> Kernel {
+    let mut g = PluginGroup::new();
+    for p in plugins {
+        g = g.add(p);
+    }
+    App::new().service(st.clone()).service(EventLogService(log)).plugins(g).start().await.unwrap()
+}
+
+/// Two subscriptions whose handlers write nothing (a sink, telemetry).
+fn quiet(heard: Arc<AtomicU32>) -> P {
+    P {
+        id: "wisp.quiet",
+        f: Arc::new(move |s| {
+            for name in ["one", "two"] {
+                let heard = heard.clone();
+                s.on_durable_any(name, "src.*", move |_, _, _| {
+                    let heard = heard.clone();
+                    async move {
+                        heard.fetch_add(1, Ordering::SeqCst);
+                        Ok(())
+                    }
+                });
+            }
+        }),
+    }
+}
+
+async fn until(what: &str, mut ok: impl FnMut() -> bool) {
+    for _ in 0..400 {
+        if ok() {
+            return;
+        }
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
+    panic!("{what}");
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn idle_cursors_of_every_subscription_are_saved_together_within_a_second() {
+    let st = open(&temp("together"));
+    let log = Counted::new(&st);
+    let heard = Arc::new(AtomicU32::new(0));
+    let k = counted_kernel(&st, log.clone(), vec![source(), quiet(heard.clone())]).await;
+    // the new subscriptions' first cursors (0) are saved once, together: past that, nothing is due
+    until("the first cursors are saved", || !log.together.lock().unwrap().is_empty()).await;
+    make(&k, json!({ "n": 1, "no_write": true })).await.unwrap();
+    make(&k, json!({ "n": 2, "no_write": true })).await.unwrap();
+    settle(&k).await;
+    assert_eq!(heard.load(Ordering::SeqCst), 4, "both subscriptions had both");
+    // not one write each as they caught up: one write for both, within SAVE_WITHIN_MS of the first
+    until("the cursors are saved", || log.saved().iter().flatten().filter(|r| r.2 == 2).count() == 2).await;
+    let mut saved = log.saved();
+    assert_eq!(log.singles.load(Ordering::SeqCst), 0);
+    assert_eq!(saved.len(), 1, "{saved:?}");
+    saved[0].sort();
+    assert_eq!(saved[0], [("wisp.quiet".to_owned(), "one".to_owned(), 2), ("wisp.quiet".to_owned(), "two".to_owned(), 2)]);
+    assert_eq!(st.cursor("wisp.quiet", "two").await.unwrap(), Some(2));
+    // a new start replays nothing: they were saved
+    drop(k);
+    let again = Arc::new(AtomicU32::new(0));
+    let k = counted_kernel(&st, log.clone(), vec![source(), quiet(again.clone())]).await;
+    settle(&k).await;
+    assert_eq!(again.load(Ordering::SeqCst), 0);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_subscription_switched_off_saves_its_cursor_at_once() {
+    let st = open(&temp("off-saves"));
+    let log = Counted::new(&st);
+    let heard = Arc::new(AtomicU32::new(0));
+    let k = counted_kernel(&st, log.clone(), vec![source(), quiet(heard.clone())]).await;
+    make(&k, json!({ "n": 1, "no_write": true })).await.unwrap();
+    settle(&k).await;
+    // switched off (as wisp's stop switches every plugin off before it closes the store): saved when it returns
+    k.set_enabled("wisp.quiet", false).await.unwrap();
+    assert_eq!(st.cursor("wisp.quiet", "one").await.unwrap(), Some(1));
+    assert_eq!(st.cursor("wisp.quiet", "two").await.unwrap(), Some(1));
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn switched_off_and_straight_back_on_replays_nothing() {
+    let st = open(&temp("off-on"));
+    let heard = Arc::new(AtomicU32::new(0));
+    let k = kernel(&st, vec![source(), quiet(heard.clone())]).await;
+    for n in 1..=3 {
+        make(&k, json!({ "n": n, "no_write": true })).await.unwrap();
+    }
+    settle(&k).await;
+    assert_eq!(heard.load(Ordering::SeqCst), 6);
+    k.set_enabled("wisp.quiet", false).await.unwrap();
+    k.set_enabled("wisp.quiet", true).await.unwrap();
+    make(&k, json!({ "n": 4, "no_write": true })).await.unwrap();
+    settle(&k).await;
+    assert_eq!(heard.load(Ordering::SeqCst), 8, "only the new one, to each");
+}
+
+/// A batch subscription: what each call got, and one note a call (failing a batch of more than one when asked).
+fn batcher(calls: Arc<Mutex<Vec<Vec<u64>>>>, fail_many: bool) -> P {
+    P {
+        id: "wisp.batch",
+        f: Arc::new(move |s| {
+            let calls = calls.clone();
+            s.on_durable_batch("rows", "src.*", move |ctx, _, envs| {
+                let calls = calls.clone();
+                async move {
+                    let seqs: Vec<u64> = envs.iter().filter_map(|e| e.durable_seq).collect();
+                    calls.lock().unwrap().push(seqs.clone());
+                    if fail_many && seqs.len() > 1 {
+                        return Err(WireError::internal("too many"));
+                    }
+                    let id = format!("rows-{}", seqs.iter().map(u64::to_string).collect::<Vec<_>>().join("-"));
+                    store_of(&ctx)
+                        .write(move |w| w.upsert(NOTE.kind, note(&id)).map(|_| ()))
+                        .await
+                        .map_err(|e| WireError::internal(e.to_string()))
+                }
+            });
+        }),
+    }
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_batch_subscription_gets_a_commits_events_in_one_call_its_cursor_riding_its_one_write() {
+    let st = open(&temp("batch"));
+    let log = Counted::new(&st);
+    let calls = Arc::new(Mutex::new(Vec::new()));
+    let k = counted_kernel(&st, log.clone(), vec![source(), batcher(calls.clone(), false)]).await;
+    // three events logged in one commit (the command's write), then one more alone
+    make(&k, json!({ "n": 1, "count": 3 })).await.unwrap();
+    settle(&k).await;
+    make(&k, json!({ "n": 9, "no_write": true })).await.unwrap();
+    settle(&k).await;
+    assert_eq!(*calls.lock().unwrap(), [vec![1, 2, 3], vec![4]]);
+    let rows: Vec<String> = notes(&st).into_iter().filter(|n| n.starts_with("rows-")).collect();
+    assert_eq!(rows, ["rows-1-2-3", "rows-4"]);
+    // the cursor went with each write: nothing waits to be saved
+    assert_eq!(st.cursor("wisp.batch", "rows").await.unwrap(), Some(4));
+    tokio::time::sleep(Duration::from_millis(wisp_kernel::durable::SAVE_WITHIN_MS + 200)).await;
+    // (a new subscription's first cursor, 0, is saved once as before: where a restart resumes it)
+    let again = log.saved();
+    assert!(again.is_empty() && log.singles.load(Ordering::SeqCst) == 0, "no second write of the cursor: {again:?}");
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_batch_that_fails_is_delivered_again_one_by_one() {
+    let st = open(&temp("batch-fails"));
+    let calls = Arc::new(Mutex::new(Vec::new()));
+    let k = kernel(&st, vec![source(), batcher(calls.clone(), true)]).await;
+    make(&k, json!({ "n": 1, "count": 3 })).await.unwrap();
+    settle(&k).await;
+    assert_eq!(*calls.lock().unwrap(), [vec![1, 2, 3], vec![1], vec![2], vec![3]]);
+    let rows: Vec<String> = notes(&st).into_iter().filter(|n| n.starts_with("rows-")).collect();
+    assert_eq!(rows, ["rows-1", "rows-2", "rows-3"]);
+    assert_eq!(st.cursor("wisp.batch", "rows").await.unwrap(), Some(3));
+}

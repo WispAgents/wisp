@@ -187,27 +187,21 @@ fn catalogue(ctx: &Ctx) -> Value {
     Value::Array(out)
 }
 
-/// The view row for an event (and, every 500, the old rows trimmed), in the handler's write.
-async fn feed(ctx: &Ctx, e: &wisp_kernel::EventEnvelope) -> Result<()> {
-    if e.ty == wisp_kernel::durable::GAP {
-        return Ok(());
-    }
-    let seq = e.durable_seq.unwrap_or(0);
-    let mut row = Row::new();
-    row.insert("id".into(), json!(format!("{seq:012}")));
-    row.insert("seq".into(), json!(seq));
-    row.insert("type".into(), json!(e.ty));
-    row.insert("plugin".into(), json!(e.plugin));
-    row.insert("subject".into(), json!(e.subject));
-    row.insert("at".into(), json!(e.at));
-    row.insert("data".into(), e.data());
+/// The view rows for a batch of events (and, each time one's seq is a multiple of 500, the old rows trimmed), in the
+/// handler's one write: a turn's end logs its events together, and a write each was a commit each (ADR-0088).
+async fn feed(ctx: &Ctx, envs: &[Arc<wisp_kernel::EventEnvelope>]) -> Result<()> {
+    let rows: Vec<(u64, Row)> = envs.iter().filter(|e| e.ty != wisp_kernel::durable::GAP).map(|e| view_row(e)).collect();
+    let Some(newest) = rows.iter().map(|(seq, _)| *seq).max() else { return Ok(()) };
+    let trim = rows.iter().any(|(seq, _)| seq.is_multiple_of(500)) && newest > VIEW_KEEP;
     store(ctx)?
         .write(move |w| {
-            w.upsert(VIEW.kind, row)?;
-            if seq.is_multiple_of(500) && seq > VIEW_KEEP {
+            for (_, row) in rows {
+                w.upsert(VIEW.kind, row)?;
+            }
+            if trim {
                 let old = w.query(VIEW.kind, &wisp_store::Query::new().select(&["id", "seq"]))?;
                 for r in old {
-                    if r.get("seq").and_then(Value::as_u64).is_some_and(|s| s + VIEW_KEEP <= seq)
+                    if r.get("seq").and_then(Value::as_u64).is_some_and(|s| s + VIEW_KEEP <= newest)
                         && let Some(id) = r.get("id").and_then(Value::as_str)
                     {
                         w.del(VIEW.kind, id)?;
@@ -218,6 +212,20 @@ async fn feed(ctx: &Ctx, e: &wisp_kernel::EventEnvelope) -> Result<()> {
         })
         .await
         .map_err(|e| WireError::internal(e.to_string()))
+}
+
+/// An event's `events_view` row, and its seq.
+fn view_row(e: &wisp_kernel::EventEnvelope) -> (u64, Row) {
+    let seq = e.durable_seq.unwrap_or(0);
+    let mut row = Row::new();
+    row.insert("id".into(), json!(format!("{seq:012}")));
+    row.insert("seq".into(), json!(seq));
+    row.insert("type".into(), json!(e.ty));
+    row.insert("plugin".into(), json!(e.plugin));
+    row.insert("subject".into(), json!(e.subject));
+    row.insert("at".into(), json!(e.at));
+    row.insert("data".into(), e.data());
+    (seq, row)
 }
 
 fn mcp_tool() -> wisp_mcp_api::ToolContribution {
@@ -265,7 +273,7 @@ impl Plugin for EventsPlugin {
         s.command::<api::Ls, _, _>(|ctx, _call, _a| async move { Ok(catalogue(&ctx)) });
         sinks::register(s);
         s.contribute(&wisp_mcp_api::TOOL_POINT, Arc::new(mcp_tool()));
-        s.on_durable_any("feed", "*", |ctx, _call, e| async move { feed(&ctx, &e).await });
+        s.on_durable_batch("feed", "*", |ctx, _call, envs| async move { feed(&ctx, &envs).await });
         s.on_start(|ctx| async move {
             let st = store(&ctx)?;
             st.migrate(OWNER, MIGRATIONS).map_err(|e| WireError::internal(e.to_string()))?;

@@ -16,6 +16,7 @@
 //! `--wisp` and `--fake` default to `$CARGO_TARGET_DIR/budgets/{wisp,wisp-fake-agent}` (else `target/budgets/…`):
 //! `cargo build --profile budgets -p wisp -p wisp-testkit` first. Under GitHub Actions the table also goes to `$GITHUB_STEP_SUMMARY`.
 mod mem;
+mod wal;
 
 use std::collections::BTreeMap;
 use std::io::{Read, Write};
@@ -37,7 +38,7 @@ const IDLE_RSS_MB: f64 = 120.0;
 const LIST_MS: f64 = 5.0;
 const PATCH_P99_MS: f64 = 150.0;
 const APPEND_PER_S: f64 = 20_000.0;
-const WRITE_AMPLIFICATION: f64 = 48.0;
+const WRITE_AMPLIFICATION: f64 = 44.0;
 
 const TASKS: usize = 5_000;
 const COLD_RUNS: usize = 7;
@@ -1287,6 +1288,11 @@ fn run(o: &Opts, dir: &Path) -> Res<Report> {
     );
     drop(s);
     let db = db_after(&b.home())?.saturating_sub(st.db_before);
+    // which writers the WAL's frames are (reported, not gated)
+    match wal::writers(&b.dir.join("stream.wal"), &b.home().join("wisp.db")) {
+        Ok(w) => w.lines().iter().for_each(|l| println!("{l}")),
+        Err(e) => eprintln!("server budgets: no WAL breakdown: {e}"),
+    }
     let append_per_s = append(&dir.join("append"))?;
     println!("durable append: {append_per_s:.0} events/s");
     let why = breakdown(&b.home()).inspect_err(|e| eprintln!("server budgets: no breakdown: {e}")).ok();
@@ -1355,7 +1361,7 @@ mod tests {
     use super::*;
 
     fn report(cold: u64, rss_mb: u64, settled: bool, list_us: u64) -> Report {
-        report_all(cold, rss_mb, settled, list_us, 150_000, 20_000.0, 48)
+        report_all(cold, rss_mb, settled, list_us, 150_000, 20_000.0, 44)
     }
 
     fn report_all(cold: u64, rss_mb: u64, settled: bool, list_us: u64, patch_us: u64, append: f64, amp_x: u64) -> Report {
@@ -1447,7 +1453,7 @@ mod tests {
     #[test]
     fn each_budget_misses_on_its_own_and_the_budget_itself_passes() {
         assert!(report(150, 120, true, 5_000).over().is_empty());
-        let over = report_all(151, 121, true, 5_001, 150_001, 19_999.0, 49).over();
+        let over = report_all(151, 121, true, 5_001, 150_001, 19_999.0, 45).over();
         assert_eq!(over.len(), 6, "{over:?}");
         let starts = ["cold start", "idle RSS", "task list", "patch latency", "durable append", "write amplification"];
         for (o, s) in over.iter().zip(starts) {
@@ -1456,7 +1462,7 @@ mod tests {
         for (i, r) in [
             report_all(10, 50, true, 1_000, 150_001, 30_000.0, 2),
             report_all(10, 50, true, 1_000, 1_000, 19_999.0, 2),
-            report_all(10, 50, true, 1_000, 1_000, 30_000.0, 49),
+            report_all(10, 50, true, 1_000, 1_000, 30_000.0, 45),
         ]
         .iter()
         .enumerate()
@@ -1497,7 +1503,7 @@ mod tests {
         assert!(Amp { wal: 0, db: 0, payload: 0, steps: 0 }.x().is_infinite());
         let mut r = report(10, 50, true, 1_000);
         r.amp = Amp { wal: 0, db: 0, payload: 0, steps: 0 };
-        assert_eq!(r.over(), vec!["write amplification inf× > 48×".to_owned()]);
+        assert_eq!(r.over(), vec!["write amplification inf× > 44×".to_owned()]);
         assert!((Amp { wal: 9_000, db: 1_000, payload: 1_000, steps: 3 }.x() - 10.0).abs() < 1e-9);
     }
 

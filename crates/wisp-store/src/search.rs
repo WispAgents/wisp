@@ -81,11 +81,22 @@ fn build(db: &Connection, k: &Kind, ix: &SearchIndex) -> Result<()> {
     Ok(())
 }
 
-pub(crate) fn reindex(db: &Connection, shared: &Shared, k: &Kind, id: &str, row: Option<&Row>) -> Result<()> {
+/// Keeps a row's text in the index after a write: `old` is the row before it (None: new), `row` after it (None:
+/// deleted). A write that left every indexed column as it was touches nothing: a turn's end patches its session's
+/// state, not its title, and reindexing it anyway rewrote the index's pages in every such commit (ADR-0088).
+pub(crate) fn reindex(db: &Connection, shared: &Shared, k: &Kind, id: &str, old: Option<&Row>, row: Option<&Row>) -> Result<()> {
     let ix = shared.search.read().unwrap_or_else(PoisonError::into_inner).get(k.name()).cloned();
     match ix {
-        Some(ix) => index(db, &ix, k, id, row),
-        None => Ok(()),
+        Some(ix) if !same_text(&ix, old, row) => index(db, &ix, k, id, row),
+        _ => Ok(()),
+    }
+}
+
+/// Whether the index holds the same text for both: both rows there and every indexed column equal (as indexed).
+fn same_text(ix: &SearchIndex, old: Option<&Row>, row: Option<&Row>) -> bool {
+    match (old, row) {
+        (Some(a), Some(b)) => ix.columns.iter().all(|c| text_of(a.get(c)) == text_of(b.get(c))),
+        _ => false,
     }
 }
 

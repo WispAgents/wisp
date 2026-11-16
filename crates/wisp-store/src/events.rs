@@ -391,6 +391,13 @@ impl EventLog for Store {
         let (s, p, n) = (self.clone(), plugin.to_owned(), name.to_owned());
         Box::pin(async move { s.write(move |w| set_cursor_on(w.db, &p, &n, seq)).await.map_err(|e| wire(&e)) })
     }
+    /// Every idle subscription's cursor in one transaction (ADR-0088): one commit, not one each.
+    fn set_cursors(&self, rows: Vec<(String, String, u64)>) -> BoxFuture<'static, wisp_kernel::Result<()>> {
+        let s = self.clone();
+        Box::pin(async move {
+            s.write(move |w| rows.iter().try_for_each(|(p, n, seq)| set_cursor_on(w.db, p, n, *seq))).await.map_err(|e| wire(&e))
+        })
+    }
     fn park(&self, x: Parked) -> BoxFuture<'static, wisp_kernel::Result<()>> {
         let s = self.clone();
         Box::pin(async move {

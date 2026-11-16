@@ -146,14 +146,14 @@ impl Writer<'_> {
         }
         let next = self.returning(&k, &k.sql(Shape::Upsert, mask), vals, row)?;
         let sid = k.id_of(&next)?;
-        match old {
+        match &old {
             Some(old) => {
-                let ops = row_diff(&k, &old, &next);
-                self.record(&k, ChangeOp::Patch, sid.clone(), ops, topics_of(&k, &[&old, &next])?)?;
+                let ops = row_diff(&k, old, &next);
+                self.record(&k, ChangeOp::Patch, sid.clone(), ops, topics_of(&k, &[old, &next])?)?;
             }
             None => self.record(&k, ChangeOp::Upsert, sid.clone(), Value::Object(next.clone()), topics_of(&k, &[&next])?)?,
         }
-        crate::search::reindex(self.db, self.shared, &k, &sid, Some(&next))?;
+        crate::search::reindex(self.db, self.shared, &k, &sid, old.as_ref(), Some(&next))?;
         Ok(next)
     }
 
@@ -187,7 +187,7 @@ impl Writer<'_> {
         let sid = k.id_of(&stored)?;
         let ops = row_diff(&k, &old, &stored);
         self.record(&k, ChangeOp::Patch, sid.clone(), ops, topics_of(&k, &[&old, &stored])?)?;
-        crate::search::reindex(self.db, self.shared, &k, &sid, Some(&stored))?;
+        crate::search::reindex(self.db, self.shared, &k, &sid, Some(&old), Some(&stored))?;
         Ok(stored)
     }
 
@@ -199,7 +199,7 @@ impl Writer<'_> {
         self.db.prepare_cached(&k.del_sql)?.execute([k.key_param(id)])?;
         let sid = k.id_of(&old)?;
         self.record(&k, ChangeOp::Del, sid.clone(), Value::Null, topics_of(&k, &[&old])?)?;
-        crate::search::reindex(self.db, self.shared, &k, &sid, None)?;
+        crate::search::reindex(self.db, self.shared, &k, &sid, Some(&old), None)?;
         Ok(true)
     }
 
@@ -219,7 +219,7 @@ impl Writer<'_> {
                 Some((_, list)) => list.push(stored.len()),
                 None => groups.push((group, vec![stored.len()])),
             }
-            crate::search::reindex(self.db, self.shared, &k, &k.id_of(&next)?, Some(&next))?;
+            crate::search::reindex(self.db, self.shared, &k, &k.id_of(&next)?, None, Some(&next))?;
             stored.push(next);
         }
         for (group, idx) in groups {

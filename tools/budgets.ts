@@ -32,8 +32,9 @@ export const SERVER_BUDGETS = {
   /** durable events a second into the event log, 1 000 a transaction (spikes/events' `append_rate`) */
   appendPerS: 20_000,
   /** bytes the store wrote (WAL + database growth) ÷ the activity the 10 streaming tasks kept, at real agents' step
-   * sizes and rates (ADR-0085: a ratchet, lowered by each cut that lands) */
-  writeAmplification: 48,
+   * sizes and rates (ADR-0085: a ratchet, lowered by each cut that lands; ADR-0088: 48 → 44, other plugins' per-turn
+   * commits cut, 35.9–39.4 measured on macOS; Linux reads ~1.5 above) */
+  writeAmplification: 44,
 } as const;
 
 /** The durable event log's budgets (ADR-0044), measured and gated by `spikes/events` (it exits 1 on a miss). */

@@ -326,6 +326,10 @@ pub(crate) fn set_enabled(k: Arc<KernelState>, id: String, on: bool) -> BoxFutur
             }
         }
         reconcile(&k).await;
+        if !on {
+            // what its durable subscriptions delivered is saved before this returns (ADR-0088)
+            crate::durable::flush(&k).await;
+        }
         Ok(())
     })
 }

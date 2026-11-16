@@ -333,22 +333,26 @@ impl Bus {
         }
     }
 
-    /// A durable event is in the log: its durable subscribers may take it now.
-    pub(crate) fn remember(&self, k: &KernelState, seq: u64, p: &Pending) {
-        self.ring.insert(Arc::new(EventEnvelope {
-            seq: 0,
-            ty: p.ty.clone(),
-            plugin: p.plugin.to_string(),
-            at: if p.at > 0 { p.at } else { k.now_ms() },
-            root: p.root.clone(),
-            cursor: None,
-            durable_seq: Some(seq),
-            subject: p.subject.clone(),
-            key: p.key.clone(),
-            cause: p.cause,
-            depth: p.depth,
-            data: p.data.clone(),
-        }));
+    /// A commit's durable events are in the log: their durable subscribers may take them now, all at once (the head
+    /// moves once, so a worker never wakes between them: a batch subscription gets them together, ADR-0088).
+    pub(crate) fn remember(&self, k: &KernelState, fresh: &[(u64, Pending)]) {
+        let envs = fresh.iter().map(|(seq, p)| {
+            Arc::new(EventEnvelope {
+                seq: 0,
+                ty: p.ty.clone(),
+                plugin: p.plugin.to_string(),
+                at: if p.at > 0 { p.at } else { k.now_ms() },
+                root: p.root.clone(),
+                cursor: None,
+                durable_seq: Some(*seq),
+                subject: p.subject.clone(),
+                key: p.key.clone(),
+                cause: p.cause,
+                depth: p.depth,
+                data: p.data.clone(),
+            })
+        });
+        self.ring.insert(envs.collect());
     }
 
     /// Publishes one committed event to every queue that wants it. Returns its envelope.
@@ -516,9 +520,7 @@ impl Staged {
     pub fn commit(mut self) {
         self.settle(GO);
         if let Some(k) = self.kernel.upgrade() {
-            for (seq, p) in std::mem::take(&mut self.fresh) {
-                k.bus.remember(&k, seq, &p);
-            }
+            k.bus.remember(&k, &std::mem::take(&mut self.fresh));
         }
     }
 

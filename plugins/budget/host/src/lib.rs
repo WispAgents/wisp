@@ -50,6 +50,8 @@ struct State {
     notes: Mutex<wisp_budget_core::drain::DrainNotes>,
     /// Ask near the limit: the runs it learns from, per harness
     runs: Mutex<ask::Runs>,
+    /// `runs` learned something not saved yet: the next save writes them with the spend (one commit a turn's end)
+    runs_dirty: std::sync::atomic::AtomicBool,
     /// runs going now: turn → (agent, account, their likely units)
     running: Mutex<BTreeMap<String, (String, String, f64)>>,
     /// automations Ask near the limit holds
@@ -116,19 +118,29 @@ impl State {
     /// `save`, and `ob`'s events go out with its commit (ADR-0074): whoever reads the saved spend finds them queued.
     /// With nothing to save they still go out, with an empty write; a save that fails publishes none of them.
     async fn save_with(&self, ob: Option<wisp_kernel::Outbox>) {
+        use std::sync::atomic::Ordering::SeqCst;
         let dirty = lock(&self.budget).take_dirty();
         let ob = ob.filter(|o| !o.is_empty());
-        if dirty.is_empty() && ob.is_none() {
+        // the run costs Ask near the limit learned ride the same write (ADR-0088): a turn's end commits once
+        let runs = self.runs_dirty.swap(false, SeqCst).then(|| lock(&self.runs).clone());
+        if dirty.is_empty() && ob.is_none() && runs.is_none() {
             return;
         }
-        let n = dirty.len();
-        let job = move |w: &mut wisp_store::Writer<'_>| dirty.iter().try_for_each(|(g, a, acc)| store::put_acc(w, g, a, acc));
+        let (n, learned) = (dirty.len(), runs.is_some());
+        let job = move |w: &mut wisp_store::Writer<'_>| {
+            dirty.iter().try_for_each(|(g, a, acc)| store::put_acc(w, g, a, acc))?;
+            runs.as_ref().map_or(Ok(()), |r| store::put_runs(w, r))
+        };
         let r = match ob {
             Some(ob) => self.store.write_with(ob, job).await,
             None => self.store.write(job).await,
         };
         if let Err(e) = r {
-            tracing::warn!(accounts = n, "couldn't save the budget's spend per account: {e}");
+            if learned {
+                // tried again with the next save
+                self.runs_dirty.store(true, SeqCst);
+            }
+            tracing::warn!(accounts = n, learned, "couldn't save the budget's spend per account: {e}");
         }
     }
 
@@ -231,14 +243,15 @@ fn on_turns(s: &mut Setup, slot: &Slot) {
             if let Ok(st) = state(&slot) {
                 lock(&st.budget).end(e.session_id.as_str(), e.turn_id.as_str(), now(&ctx));
                 usage::note_turn(&ctx, &st, &e);
+                // learned first, so the spend's save below writes the runs too: one commit, not two (ADR-0088)
+                if ask::learn(&mut lock(&st.runs), &e, now(&ctx)) {
+                    st.runs_dirty.store(true, std::sync::atomic::Ordering::SeqCst);
+                }
                 st.ended(&ctx, &e).await;
                 lock(&st.running).remove(e.turn_id.as_str());
-                let learned = ask::learn(&mut lock(&st.runs), &e, now(&ctx));
-                if learned {
-                    let runs = lock(&st.runs).clone();
-                    if let Err(err) = st.store.write(move |w| store::put_runs(w, &runs)).await {
-                        tracing::warn!(turn = %e.turn_id, "couldn't save the budget's learned run costs: {err}");
-                    }
+                // a turn `ended` saved nothing for (no spend) learned nothing either; anything left goes now
+                if st.runs_dirty.load(std::sync::atomic::Ordering::SeqCst) {
+                    st.save().await;
                 }
             }
         }
@@ -389,6 +402,7 @@ impl Plugin for BudgetPlugin {
                 starting: Mutex::default(),
                 plans: Mutex::default(),
                 plan_seq: std::sync::atomic::AtomicU64::new(0),
+                runs_dirty: std::sync::atomic::AtomicBool::new(false),
             });
             let _ = start.set(st.clone());
             // held work starts when its windows reset on their own, or a live read says they reset early

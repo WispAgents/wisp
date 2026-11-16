@@ -12,7 +12,12 @@
 //!   it's behind (start, lag, after being off). Seqs are contiguous (one writer), so it never skips one.
 //! - **Effectively once:** the handler runs inside a scope that rides its cursor on the store writes it
 //!   makes (`InTx::cursor`): a crash before the commit replays it, after it doesn't. A handler that writes
-//!   nothing has its cursor set when it returns.
+//!   nothing has its cursor saved later (ADR-0088): every subscription's idle cursor goes in one write within
+//!   `SAVE_WITHIN_MS` of the first one waiting (and when its worker stops), so a crash in that second replays
+//!   those events to handlers that wrote nothing for them (they stay idempotent: the envelope has seq and key).
+//! - **Batches** (`Setup::on_durable_batch`, ADR-0088): the events already in after the next one, matching, one
+//!   after another, go to the handler in one call, its cursor riding its one write at the last of them; a batch
+//!   that fails is delivered again one by one (each with its own tries, parked alone).
 //! - **Retries:** 3 tries; then the event is parked for that subscription (with why) and the cursor moves on.
 //!   `retry` delivers a parked one again.
 //! - **Gaps:** a cursor that fell off the retention window gets `Durable::Gap` once (re-read current state).
@@ -40,6 +45,11 @@ pub const RING: usize = 8192;
 const ATTEMPTS: u32 = 3;
 /// A subscription's cursor is saved at least every this many deliveries (and whenever it catches up).
 const SAVE_EVERY: u32 = 256;
+/// Idle cursors are saved together, this long after the first one waiting (ADR-0088): one commit for every
+/// subscription a burst of events woke, not one each (what a crash in it replays to handlers that wrote nothing).
+pub const SAVE_WITHIN_MS: u64 = 1_000;
+/// The most events a batch subscription gets in one call.
+const BATCH: usize = 64;
 /// The type a subscription's gap is delivered as.
 pub const GAP: &str = "event.gap";
 
@@ -86,6 +96,16 @@ pub trait EventLog: Send + Sync + 'static {
     fn bounds(&self) -> BoxFuture<'static, Result<(u64, u64)>>;
     fn cursor(&self, plugin: &str, name: &str) -> BoxFuture<'static, Result<Option<u64>>>;
     fn set_cursor(&self, plugin: &str, name: &str, seq: u64) -> BoxFuture<'static, Result<()>>;
+    /// Sets several cursors (plugin, subscription, seq), one write when the log can (ADR-0088; additive, 2026-11-16).
+    fn set_cursors(&self, rows: Vec<(String, String, u64)>) -> BoxFuture<'static, Result<()>> {
+        let each: Vec<_> = rows.iter().map(|(p, n, seq)| self.set_cursor(p, n, *seq)).collect();
+        Box::pin(async move {
+            for f in each {
+                f.await?;
+            }
+            Ok(())
+        })
+    }
     fn park(&self, p: Parked) -> BoxFuture<'static, Result<()>>;
     fn parked(&self) -> BoxFuture<'static, Result<Vec<Parked>>>;
     fn unpark(&self, plugin: &str, name: &str, seq: u64) -> BoxFuture<'static, Result<bool>>;
@@ -303,9 +323,7 @@ pub(crate) async fn append_rest(k: &Arc<KernelState>, tx: &Arc<RootTx>) {
     }
     match r {
         Ok(_) => {
-            for (seq, p) in fresh {
-                k.bus.remember(k, seq, &p);
-            }
+            k.bus.remember(k, &fresh);
         }
         Err(e) => {
             tracing::warn!("durable events not kept: {}", e.message);
@@ -317,12 +335,84 @@ pub(crate) async fn append_rest(k: &Arc<KernelState>, tx: &Arc<RootTx>) {
 // --- the ring and the subscriptions ---------------------------------------------------------------------
 
 pub(crate) type DurableFn = Arc<dyn Fn(Ctx, Call, Arc<EventEnvelope>) -> BoxFuture<'static, Result<()>> + Send + Sync>;
+pub(crate) type BatchFn = Arc<dyn Fn(Ctx, Call, Vec<Arc<EventEnvelope>>) -> BoxFuture<'static, Result<()>> + Send + Sync>;
 
 pub(crate) struct DSub {
     pub(crate) name: String,
     pub(crate) pattern: String,
     pub(crate) f: DurableFn,
+    /// a batch subscription's handler (`f` is it called with one)
+    pub(crate) batch: Option<BatchFn>,
     pub(crate) ctx: Ctx,
+}
+
+/// Idle cursors waiting for their one write (ADR-0088).
+#[derive(Default)]
+pub(crate) struct Saver {
+    dirty: Mutex<BTreeMap<(String, String), u64>>,
+    armed: AtomicBool,
+    /// one save at a time: a flush that finds nothing waiting still returns only once a save in flight landed
+    writing: tokio::sync::Mutex<()>,
+}
+
+impl Saver {
+    /// A worker's cursor moved past what's saved and no write carried it: kept here until the next save (with the
+    /// others, or when it stops), so a stop saves what it delivered.
+    fn note(&self, plugin: &str, name: &str, seq: u64) {
+        let mut d = self.dirty.lock().unwrap_or_else(PoisonError::into_inner);
+        let at = d.entry((plugin.to_owned(), name.to_owned())).or_insert(seq);
+        *at = (*at).max(seq);
+    }
+    /// A worker's cursor moved: `note`d, or (`carried`: its handler's write carried it) nothing waits for it.
+    fn moved(&self, plugin: &str, name: &str, seq: u64, carried: bool) {
+        if carried {
+            self.dirty.lock().unwrap_or_else(PoisonError::into_inner).remove(&(plugin.to_owned(), name.to_owned()));
+        } else {
+            self.note(plugin, name, seq);
+        }
+    }
+    /// What waits for it (a worker started again before its last save landed resumes from here).
+    fn pending(&self, plugin: &str, name: &str) -> Option<u64> {
+        self.dirty.lock().unwrap_or_else(PoisonError::into_inner).get(&(plugin.to_owned(), name.to_owned())).copied()
+    }
+}
+
+/// A caught-up subscription's cursor, saved with the others within `SAVE_WITHIN_MS`.
+fn mark(k: &Arc<KernelState>, plugin: &str, name: &str, seq: u64) {
+    k.bus.ring.saver.note(plugin, name, seq);
+    arm(k);
+}
+
+/// The next save, `SAVE_WITHIN_MS` from now, unless one is already due.
+fn arm(k: &Arc<KernelState>) {
+    if !k.bus.ring.saver.armed.swap(true, Ordering::SeqCst) {
+        let (w, nap) = (Arc::downgrade(k), k.sleep(SAVE_WITHIN_MS));
+        tokio::spawn(async move {
+            nap.await;
+            if let Some(k) = w.upgrade() {
+                flush(&k).await;
+            }
+        });
+    }
+}
+
+/// Every waiting cursor, in one write (and when a plugin is switched off, before `set_enabled` returns: wisp's stop
+/// switches every plugin off before it closes the store).
+pub(crate) async fn flush(k: &Arc<KernelState>) {
+    let sv = &k.bus.ring.saver;
+    let _one = sv.writing.lock().await;
+    // disarmed before taking: a cursor marked after this arms the next write
+    sv.armed.store(false, Ordering::SeqCst);
+    let rows: Vec<(String, String, u64)> =
+        std::mem::take(&mut *sv.dirty.lock().unwrap_or_else(PoisonError::into_inner)).into_iter().map(|((p, n), s)| (p, n, s)).collect();
+    let Some(log) = k.event_log().filter(|_| !rows.is_empty()) else { return };
+    if let Err(e) = log.0.set_cursors(rows.clone()).await {
+        tracing::warn!(cursors = rows.len(), "durable cursors not saved (the next save tries again): {}", e.message);
+        for (p, n, seq) in rows {
+            sv.note(&p, &n, seq);
+        }
+        arm(k);
+    }
 }
 
 pub(crate) struct Ring {
@@ -333,11 +423,19 @@ pub(crate) struct Ring {
     /// lock, so `Kernel::idle` never resolves between an event and its delivery
     busy: Mutex<Vec<Arc<AtomicBool>>>,
     work: Arc<crate::state::Work>,
+    saver: Saver,
 }
 
 impl Ring {
     pub(crate) fn new(work: Arc<crate::state::Work>) -> Self {
-        Self { items: Mutex::default(), head: watch::channel(0).0, workers: Mutex::default(), busy: Mutex::default(), work }
+        Self {
+            items: Mutex::default(),
+            head: watch::channel(0).0,
+            workers: Mutex::default(),
+            busy: Mutex::default(),
+            work,
+            saver: Saver::default(),
+        }
     }
     fn wake_all(&self, flags: &[Arc<AtomicBool>]) {
         for f in flags {
@@ -374,16 +472,23 @@ impl Ring {
 }
 
 impl Ring {
-    pub(crate) fn insert(&self, env: Arc<EventEnvelope>) {
-        let Some(seq) = env.durable_seq else { return };
+    /// A commit's durable events, the head raised once to the newest.
+    pub(crate) fn insert(&self, envs: Vec<Arc<EventEnvelope>>) {
+        let mut top = None;
         {
             let mut m = self.items.lock().unwrap_or_else(PoisonError::into_inner);
-            m.insert(seq, env);
+            for env in envs {
+                let Some(seq) = env.durable_seq else { continue };
+                top = top.max(Some(seq));
+                m.insert(seq, env);
+            }
             while m.len() > RING {
                 m.pop_first();
             }
         }
-        self.raise(seq);
+        if let Some(seq) = top {
+            self.raise(seq);
+        }
     }
     fn first_after(&self, seq: u64) -> Option<u64> {
         self.items.lock().unwrap_or_else(PoisonError::into_inner).range(seq + 1..).next().map(|(s, _)| *s)
@@ -465,12 +570,9 @@ async fn worker(k: Weak<KernelState>, sub: DSub, stop: CancellationToken, flag: 
     let owner = sub.ctx.plugin().to_owned();
     let log = kk.event_log();
     let mut head_rx = kk.bus.ring.head.subscribe();
-    let stored = match &log {
-        Some(l) => l.0.cursor(&owner, &sub.name).await.ok().flatten(),
-        None => None,
-    };
-    // a new subscription starts from now; a known one from where it stopped
-    let mut cursor = stored.unwrap_or(from);
+    let stored = if let Some(l) = &log { l.0.cursor(&owner, &sub.name).await.ok().flatten() } else { None };
+    // a new subscription starts from now; a known one from where it stopped (its last save may not have landed yet)
+    let mut cursor = stored.max(kk.bus.ring.saver.pending(&owner, &sub.name)).unwrap_or(from);
     let mut persisted = stored;
     drop(kk);
     let mut batch: VecDeque<Arc<EventEnvelope>> = VecDeque::new();
@@ -478,15 +580,16 @@ async fn worker(k: Weak<KernelState>, sub: DSub, stop: CancellationToken, flag: 
     // the work counter counts this worker as busy only while it's behind
     loop {
         if stop.is_cancelled() {
+            stopped(&k, &owner, &sub.name, log.is_some() && persisted != Some(cursor), cursor).await;
             return;
         }
         let Some(kk) = k.upgrade() else { return };
         let head = kk.bus.ring.head();
         if cursor >= head {
-            if let (Some(l), true) = (&log, persisted != Some(cursor)) {
-                let _ = l.0.set_cursor(&owner, &sub.name, cursor).await;
-                persisted = Some(cursor);
-                unsaved = 0;
+            if log.is_some() && persisted != Some(cursor) {
+                // saved with every other caught-up cursor, in one write (ADR-0088)
+                mark(&kk, &owner, &sub.name, cursor);
+                (persisted, unsaved) = (Some(cursor), 0);
             }
             if !kk.bus.ring.rest(&flag, cursor) {
                 continue;
@@ -503,7 +606,8 @@ async fn worker(k: Weak<KernelState>, sub: DSub, stop: CancellationToken, flag: 
                 k.work.add(1);
             }
             if !woke {
-                return;
+                // the loop's top saves what it delivered and ends it
+                stop.cancel();
             }
             continue;
         }
@@ -529,8 +633,8 @@ async fn worker(k: Weak<KernelState>, sub: DSub, stop: CancellationToken, flag: 
                         Vec::new(),
                     );
                     let gap = gap_envelope(next, to);
-                    deliver(&kk, &sub, log.as_ref(), &gap, &stop).await;
-                    cursor = to;
+                    let Some(saved) = deliver(&kk, &sub, log.as_ref(), &gap, &stop).await else { continue };
+                    (cursor, persisted) = (to, if saved { Some(to) } else { persisted });
                     continue;
                 }
                 Some(_) => {
@@ -552,19 +656,80 @@ async fn worker(k: Weak<KernelState>, sub: DSub, stop: CancellationToken, flag: 
             continue;
         };
         let Some(env) = env else { continue };
-        if matches(&sub.pattern, &env.ty) {
-            deliver(&kk, &sub, log.as_ref(), &env, &stop).await;
-            unsaved += 1;
-        }
-        cursor = next;
-        if unsaved >= SAVE_EVERY
-            && let Some(l) = &log
-        {
-            let _ = l.0.set_cursor(&owner, &sub.name, cursor).await;
-            persisted = Some(cursor);
-            unsaved = 0;
+        let carried = if matches(&sub.pattern, &env.ty) {
+            // stopped before it was delivered: not past it
+            let Some((last, saved)) = hand(&kk, &sub, log.as_ref(), env, next, &mut batch, &stop).await else { continue };
+            let n = u32::try_from(last - cursor).unwrap_or(u32::MAX);
+            cursor = last;
+            (persisted, unsaved) = if saved { (Some(cursor), 0) } else { (persisted, unsaved.saturating_add(n)) };
+            saved
+        } else {
+            cursor = next;
+            false
+        };
+        // where it is, for the next save; a cursor its handler's write carried has nothing waiting
+        kk.bus.ring.saver.moved(&owner, &sub.name, cursor, carried);
+        if unsaved >= SAVE_EVERY && log.is_some() {
+            mark(&kk, &owner, &sub.name, cursor);
+            (persisted, unsaved) = (Some(cursor), 0);
         }
     }
+}
+
+/// The next event (seq `next`) delivered, and to a batch subscription those already in after it. → the last one's
+/// seq and whether its cursor reached the log with it; None when stopped before it was delivered.
+async fn hand(
+    k: &Arc<KernelState>,
+    sub: &DSub,
+    log: Option<&EventLogService>,
+    env: Arc<EventEnvelope>,
+    next: u64,
+    queue: &mut VecDeque<Arc<EventEnvelope>>,
+    stop: &CancellationToken,
+) -> Option<(u64, bool)> {
+    if sub.batch.is_none() {
+        return deliver(k, sub, log, &env, stop).await.map(|saved| (next, saved));
+    }
+    let envs = gather(env, next, k.bus.ring.head(), queue, &k.bus.ring, &sub.pattern);
+    let last = next + envs.len() as u64 - 1;
+    deliver_batch(k, sub, log, envs, stop).await.map(|saved| (last, saved))
+}
+
+/// Stopped (switched off, wisp stopping): what it delivered is saved now (`unsaved`: its cursor isn't yet), with
+/// whatever else waits.
+async fn stopped(k: &Weak<KernelState>, owner: &str, name: &str, unsaved: bool, cursor: u64) {
+    let Some(k) = k.upgrade() else { return };
+    if unsaved {
+        mark(&k, owner, name, cursor);
+    }
+    flush(&k).await;
+}
+
+/// `env` (seq `next`) and the events already in after it, matching, one after another, up to `BATCH`, from the
+/// worker's queue or the ring: one call, one write (ADR-0088).
+fn gather(
+    env: Arc<EventEnvelope>,
+    next: u64,
+    head: u64,
+    queue: &mut VecDeque<Arc<EventEnvelope>>,
+    ring: &Ring,
+    pattern: &str,
+) -> Vec<Arc<EventEnvelope>> {
+    let mut envs = vec![env];
+    while envs.len() < BATCH {
+        let s = next + envs.len() as u64;
+        if s > head {
+            break;
+        }
+        let queued = queue.front().is_some_and(|e| e.durable_seq == Some(s));
+        let e = if queued { queue.front().cloned() } else { ring.get(s) };
+        let Some(e) = e.filter(|e| matches(pattern, &e.ty)) else { break };
+        if queued {
+            queue.pop_front();
+        }
+        envs.push(e);
+    }
+    envs
 }
 
 /// `a|b*`: any of the alternatives.
@@ -589,14 +754,70 @@ fn gap_envelope(from: u64, to: u64) -> Arc<EventEnvelope> {
     })
 }
 
-/// One event to one subscription: 3 tries in its cursor scope, then parked with why.
-async fn deliver(k: &Arc<KernelState>, sub: &DSub, log: Option<&EventLogService>, env: &Arc<EventEnvelope>, stop: &CancellationToken) {
+/// Several events to a batch subscription in one call, its cursor riding its write at the last of them (ADR-0088);
+/// a batch that fails without having written goes again one by one. → as `deliver`.
+async fn deliver_batch(
+    k: &Arc<KernelState>,
+    sub: &DSub,
+    log: Option<&EventLogService>,
+    envs: Vec<Arc<EventEnvelope>>,
+    stop: &CancellationToken,
+) -> Option<bool> {
+    let (Some(f), [_, _, ..]) = (sub.batch.clone(), envs.as_slice()) else {
+        return match envs.first() {
+            Some(e) => deliver(k, sub, log, e, stop).await,
+            None => Some(false),
+        };
+    };
+    let owner = sub.ctx.plugin().to_owned();
+    let seq = envs.last().and_then(|e| e.durable_seq).unwrap_or(0);
+    let mark = Arc::new(CursorMark { plugin: owner.clone(), name: sub.name.clone(), seq, written: AtomicBool::new(false) });
+    let mut inner = CallInner::detached(k, Caller::plugin(&owner), Some(Arc::from(owner.as_str())), stop.child_token());
+    inner.cause = Some(seq);
+    inner.cause_depth = envs.iter().map(|e| e.depth).max().unwrap_or(0) + 1;
+    let call = inner.into_call();
+    let fut = std::panic::AssertUnwindSafe(scoped(Scope { tx: None, cursor: Some(mark.clone()) }, f(sub.ctx.clone(), call, envs.clone())))
+        .catch_unwind();
+    let r = tokio::select! {
+        () = stop.cancelled() => return None,
+        r = fut => r,
+    };
+    if matches!(r, Ok(Ok(()))) {
+        return Some(mark.written.load(Ordering::SeqCst));
+    }
+    if mark.written.load(Ordering::SeqCst) {
+        k.diag.record(
+            k.now_ms(),
+            &owner,
+            "event",
+            "internal",
+            format!("{} batch up to seq {seq} failed after its write", sub.name),
+            Vec::new(),
+        );
+        return Some(true);
+    }
+    let mut saved = false;
+    for e in &envs {
+        saved = deliver(k, sub, log, e, stop).await?;
+    }
+    Some(saved)
+}
+
+/// One event to one subscription: 3 tries in its cursor scope, then parked with why. → None when stopped before it
+/// was delivered, else whether its cursor reached the log with it (its handler's write, or parked).
+async fn deliver(
+    k: &Arc<KernelState>,
+    sub: &DSub,
+    log: Option<&EventLogService>,
+    env: &Arc<EventEnvelope>,
+    stop: &CancellationToken,
+) -> Option<bool> {
     let owner = sub.ctx.plugin().to_owned();
     let seq = env.durable_seq.unwrap_or(0);
     let mut why = String::new();
     for _ in 0..ATTEMPTS {
         if stop.is_cancelled() {
-            return;
+            return None;
         }
         let mark = Arc::new(CursorMark { plugin: owner.clone(), name: sub.name.clone(), seq, written: AtomicBool::new(false) });
         let mut inner = CallInner::detached(k, Caller::plugin(&owner), Some(Arc::from(owner.as_str())), stop.child_token());
@@ -609,13 +830,13 @@ async fn deliver(k: &Arc<KernelState>, sub: &DSub, log: Option<&EventLogService>
         ))
         .catch_unwind();
         let r = tokio::select! {
-            () = stop.cancelled() => return,
+            () = stop.cancelled() => return None,
             r = fut => r,
         };
         match r {
-            // a handler that wrote nothing has its cursor saved by the worker (every 256, and when caught up):
+            // a handler that wrote nothing has its cursor saved by the worker (every 256, and with the others once caught up, ADR-0088):
             // it changed nothing a replay could repeat, and handlers stay idempotent (the envelope has seq)
-            Ok(Ok(())) => return,
+            Ok(Ok(())) => return Some(mark.written.load(Ordering::SeqCst)),
             Ok(Err(e)) => why = e.message,
             Err(_) => why = "the subscriber panicked".into(),
         }
@@ -629,15 +850,16 @@ async fn deliver(k: &Arc<KernelState>, sub: &DSub, log: Option<&EventLogService>
                 format!("{} {} (seq {seq}) failed after its write: {why}", sub.name, env.ty),
                 Vec::new(),
             );
-            return;
+            return Some(true);
         }
     }
     tracing::warn!(plugin = %owner, sub = %sub.name, seq, "durable subscriber failed {ATTEMPTS} times, parked: {why}");
     k.diag.record(k.now_ms(), &owner, "event", "parked", format!("{} {} (seq {seq}): {why}", sub.name, env.ty), Vec::new());
     if let Some(l) = log {
         let _ = l.0.park(Parked { plugin: owner.clone(), name: sub.name.clone(), seq, why, at: k.now_ms() }).await;
-        let _ = l.0.set_cursor(&owner, &sub.name, seq).await;
+        return Some(l.0.set_cursor(&owner, &sub.name, seq).await.is_ok());
     }
+    Some(false)
 }
 
 /// `wisp events retry <seq>`: a parked event delivered again to the subscription that parked it.
@@ -662,7 +884,7 @@ pub(crate) async fn retry(k: &Arc<KernelState>, seq: u64) -> Result<usize> {
 
 impl Clone for DSub {
     fn clone(&self) -> Self {
-        Self { name: self.name.clone(), pattern: self.pattern.clone(), f: self.f.clone(), ctx: self.ctx.clone() }
+        Self { name: self.name.clone(), pattern: self.pattern.clone(), f: self.f.clone(), batch: self.batch.clone(), ctx: self.ctx.clone() }
     }
 }
 
