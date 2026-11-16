@@ -947,6 +947,9 @@ Source: `docs/v1-features.md` (each row's evidence and test). `[x]` built, `[ ]`
 |---|---|---|
 | 283 | DX: build bundle + Tauri lock: stopped before edits; plan in §4.6 | to redo |
 | 282 | Server perf budgets: stopped before edits; plan in §4.3 | to redo |
+| 306 | Task list first look in pages from the session table (ADR-0081): first page 1.3 ms, RSS 99 MB | committed |
+| 305 | Cold start 427 -> 67 ms: review's startup clear after serve, only running reviews | committed |
+| 304 | Server budgets gated in PR CI on a real wisp serve with 5k tasks (ADR-0080) | committed |
 | 303 | `npx vitest run <file>` from the repo root uses the file's package config (root vite.config.ts projects, shared with CI's); a bare root run refused by the hook | committed |
 | 302 | pull.test.ts: not load: run from the repo root, solid-js resolves its server build (no effects); the test now says so | committed |
 | 301 | Check rule `dynamic-import-in-test`: 46 test imports hoisted, 8 lazy-chunk waits allowed with a reason | committed |
