@@ -285,7 +285,10 @@ async fn a_restarted_app_slow_to_exit_ends_on_its_own_and_gets_its_own_port_back
     let api = Arc::new(Api { http: reqwest::Client::new(), port, n: 0.into() });
     let (_, task) = run_task(&api, &dir, "claude").await;
     let id = task["id"].as_str().unwrap().to_owned();
-    // holds PORT; on the hang-up (a PTY's) or a TERM it takes 2.2 s to go, the port still held, and says it ended
+    // holds PORT; on the hang-up (a PTY's) or a TERM it takes 2.2 s to go, the port still held, and says it ended. It
+    // binds with SO_REUSEADDR as dev servers do: it may close what `up` opened first (a race with `up`'s drop), and on
+    // Linux the TIME_WAIT that leaves on its port blocks every bind of it for 60 s unless the socket that made it had
+    // SO_REUSEADDR (ports.rs tests)
     let app = dir.join("slow_app.py");
     let clean = dir.join("clean.txt");
     std::fs::write(
@@ -293,7 +296,8 @@ async fn a_restarted_app_slow_to_exit_ends_on_its_own_and_gets_its_own_port_back
         "import os, signal, socket, sys, time\n\
          def bye(*_):\n    time.sleep(2.2); open(sys.argv[1], 'a').write('clean\\n'); sys.exit(0)\n\
          signal.signal(signal.SIGHUP, bye); signal.signal(signal.SIGTERM, bye)\n\
-         s = socket.socket(); s.bind(('127.0.0.1', int(os.environ['PORT']))); s.listen()\n\
+         s = socket.socket(); s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)\n\
+         s.bind(('127.0.0.1', int(os.environ['PORT']))); s.listen()\n\
          while True:\n    c, _ = s.accept(); c.close()\n",
     )
     .unwrap();
