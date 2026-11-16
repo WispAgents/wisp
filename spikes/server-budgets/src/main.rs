@@ -53,6 +53,10 @@ const COLD_PER_ROUND: usize = 5;
 const LIST_WARMUP: usize = 2;
 const LIST_PER_ROUND: usize = 12;
 const PATCH_ROUNDS: usize = 3;
+/// More rounds while a timed budget can't be judged yet (ADR-0092): over budget with most of its rounds on a slowed
+/// runner, the gate takes another round, up to these, and judges the clean ones; never a pass on noise.
+const MAX_ROUNDS: usize = 15;
+const MAX_PATCH_ROUNDS: usize = 6;
 /// The runner's calibration (`calibrate`): a round whose bracket ran over `NOISY`× the job's fastest is disturbed
 const NOISY: f64 = 1.5;
 const CALIB_RUNS: usize = 5;
@@ -1142,6 +1146,14 @@ impl Rounds {
         Judged { verdict, value, clean: clean.len(), rounds: n, worst }
     }
 
+    /// Whether one more round could still decide `budget` (ADR-0092): this many rounds taken is at least `min`, under
+    /// `max`, and the rounds so far can't be judged (over budget, most of them on a slowed runner). `usual` is the
+    /// job's fastest calibration so far.
+    fn wants_more(&self, usual: f64, budget: f64, min: usize, max: usize) -> bool {
+        let n = self.values.len();
+        n < min || (n < max && self.judge(usual, budget).verdict == Verdict::Noisy)
+    }
+
     /// `a · b† · c` in ms, † on a disturbed round
     fn cell(&self, usual: f64, decimals: usize) -> String {
         (0..self.values.len())
@@ -1611,22 +1623,27 @@ fn run(o: &Opts, dir: &Path) -> Res<Report> {
     let scratch = dir.join("calibration");
     let mut calibrations = Vec::new();
     // each bracket: the calibration (ms) and the machine's CPU ticks (Linux: a round's steal share, reported)
-    let mut calib = || -> Res<(f64, Option<(u64, u64)>)> {
+    let calib = |calibrations: &mut Vec<f64>| -> Res<(f64, Option<(u64, u64)>)> {
         let c = calibrate(&scratch)?;
         calibrations.push(c);
         Ok((c, cpu_ticks()))
     };
+    let fastest = |calibrations: &[f64]| calibrations.iter().copied().fold(f64::INFINITY, f64::min);
     let (mut cold, mut cold_rounds, mut list, mut list_all, mut list_rounds) =
         (Vec::new(), Rounds::default(), Vec::new(), Vec::new(), Rounds::default());
-    let mut before = calib()?;
-    for r in 0..ROUNDS {
+    let mut before = calib(&mut calibrations)?;
+    // ROUNDS rounds, and more while the list or the cold start can't be judged yet (ADR-0092)
+    let mut r = 0;
+    while list_rounds.wants_more(fastest(&calibrations), LIST_MS, ROUNDS, MAX_ROUNDS)
+        || cold_rounds.wants_more(fastest(&calibrations), COLD_START_MS, ROUNDS, MAX_ROUNDS)
+    {
         let mut round = Vec::new();
         for i in 0..COLD_PER_ROUND {
             let (s, took) = b.boot_in(&b.cold_home(), &format!("cold-{r}-{i}"), &[])?;
             drop(s);
             round.push(took);
         }
-        let between = calib()?;
+        let between = calib(&mut calibrations)?;
         let value = spread(&round).1;
         cold_rounds.push(value, before.0.max(between.0));
         cold_rounds.steal.push(steal_pct(before.1, between.1));
@@ -1641,7 +1658,7 @@ fn run(o: &Opts, dir: &Path) -> Res<Report> {
             round.push(read.took);
             list_all.push(read.all);
         }
-        let after = calib()?;
+        let after = calib(&mut calibrations)?;
         let reads = spread(&round).1;
         list_rounds.push(reads, between.0.max(after.0));
         list_rounds.steal.push(steal_pct(between.1, after.1));
@@ -1654,6 +1671,7 @@ fn run(o: &Opts, dir: &Path) -> Res<Report> {
             after.0
         );
         before = after;
+        r += 1;
     }
     let rss = settle(pid)?;
     let parts = mem::parts(pid);
@@ -1664,17 +1682,19 @@ fn run(o: &Opts, dir: &Path) -> Res<Report> {
     // on the same server, once its idle numbers are in: 10 new tasks stream to 4 new clients, each round; the last
     // round pins the WAL (write amplification)
     let (mut lat, mut expected, mut frames, mut bytes, mut patch_rounds) = (Vec::new(), 0, 0, 0, Rounds::default());
-    let mut last = None;
-    let mut before = calib()?;
-    for r in 0..PATCH_ROUNDS {
-        let pin = r + 1 == PATCH_ROUNDS;
+    let mut before = calib(&mut calibrations)?;
+    // PATCH_ROUNDS rounds, the last pinned (write amplification); more before it while patch p99 can't be judged yet
+    // (ADR-0092)
+    let mut r = 0;
+    let st = loop {
+        let pin = !patch_rounds.wants_more(fastest(&calibrations), PATCH_P99_MS, PATCH_ROUNDS - 1, MAX_PATCH_ROUNDS - 1);
         if pin && r > 0 {
             // what the earlier rounds' turn ends still write (cursors saved within 1 s, ADR-0088) isn't the last round's
             let quiet = wal_quiet(&b.home().join("wisp.db-wal"));
             println!("the WAL was quiet {:.1} s after the last round ended", quiet.as_secs_f64());
         }
         let st = stream(&b, s.port, &projects, r, pin)?;
-        let after = calib()?;
+        let after = calib(&mut calibrations)?;
         let round = Patch { lat: st.lat.clone(), expected: st.expected, frames: 0, bytes: 0, took: st.took };
         let p99 = round.spread().2;
         println!(
@@ -1690,9 +1710,11 @@ fn run(o: &Opts, dir: &Path) -> Res<Report> {
         before = after;
         (expected, frames, bytes) = (expected + st.expected, frames + st.frames, bytes + st.bytes);
         lat.extend(st.lat.iter().copied());
-        last = Some(st);
-    }
-    let st = last.ok_or("no stream round")?;
+        r += 1;
+        if pin {
+            break st;
+        }
+    };
     let patch = Patch { lat, expected, frames, bytes, took: st.took };
     println!(
         "patch latency: p99 {:.1} ms over {} of {} patches; {} steps kept",
@@ -1984,6 +2006,31 @@ mod tests {
     /// The task list's job medians: 4612442b's quick job read 7.87 ms (p90 67, max 102: the whole runner slow then);
     /// the other jobs on the same code 4.69 (4612442b full), 4.39 and 2.64 (9dcd), 3.86 and 4.47 (df56a408).
     const LIST_CI: [f64; 5] = [7.87, 4.69, 4.39, 3.86, 4.47];
+
+    /// ADR-0092 (CI 6f5a2542 and d58d7621: every list round on a runner 1.5–45× its usual, the run unjudgeable): the
+    /// gate takes another round while the rounds so far can't be judged, up to its cap, and stops once it can.
+    #[test]
+    fn an_unjudgeable_budget_takes_more_rounds_until_a_clean_majority_or_the_cap() {
+        let noisy = [5.96, 3.62, 5.82, 4.17, 7.22];
+        // the fixed rounds first, whatever they say
+        assert!(rounds(&noisy[..3], &[], 1.0).wants_more(1.0, LIST_MS, ROUNDS, MAX_ROUNDS));
+        // five rounds over budget, every one disturbed: one more
+        assert!(rounds(&noisy, &[0, 1, 2, 3, 4], 2.0).wants_more(1.0, LIST_MS, ROUNDS, MAX_ROUNDS));
+        // clean rounds come and outnumber the disturbed ones: judged (here a pass), no more
+        let mut later = noisy.to_vec();
+        later.extend([3.1, 3.0, 3.2, 2.9, 3.3, 3.0]);
+        let r = rounds(&later, &[0, 1, 2, 3, 4], 2.0);
+        assert!(!r.wants_more(1.0, LIST_MS, ROUNDS, MAX_ROUNDS));
+        assert_eq!(r.judge(1.0, LIST_MS).verdict, Verdict::Pass);
+        // still disturbed at the cap: stop, and it stays not judged (never a pass)
+        let capped = rounds(&[6.0; MAX_ROUNDS], &(0..MAX_ROUNDS).collect::<Vec<_>>(), 2.0);
+        assert!(!capped.wants_more(1.0, LIST_MS, ROUNDS, MAX_ROUNDS));
+        assert_eq!(capped.judge(1.0, LIST_MS).verdict, Verdict::Noisy);
+        // over budget on a quiet runner is a miss at once: no more rounds to wait it out
+        let slow = rounds(&[6.0; ROUNDS], &[], 1.0);
+        assert!(!slow.wants_more(1.0, LIST_MS, ROUNDS, MAX_ROUNDS));
+        assert_eq!(slow.judge(1.0, LIST_MS).verdict, Verdict::Miss);
+    }
 
     #[test]
     fn a_round_the_runner_slowed_is_outvoted_and_the_old_single_measure_missed() {

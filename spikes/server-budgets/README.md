@@ -21,7 +21,9 @@ on a slowed runner (*too noisy to judge*, below):
 **Rounds and the runner's calibration (ADR-0089).** Shared CI runners have slow spells (a cold start of 424 ms among
 85–115, 30 list reads with a p90 of 67 ms, one stalled commit window deciding a p99): a timed budget gated on one
 measure failed on them. So cold start and the list take turns, 5 rounds of each spread over the job, the stream runs 3
-rounds (fresh tasks, fresh clients), and each budget is the median of its rounds. Before and after each round the bench
+rounds (fresh tasks, fresh clients), and each budget is the median of its rounds; while a budget can't be judged yet
+(over budget, most of its rounds disturbed) the gate takes more rounds, up to 15 (cold start and the list) and 6 (the
+stream), ADR-0092. Before and after each round the bench
 times a fixed workload in its own process (200 loopback TCP round trips to an echo thread, then 4 xorshift passes over
 64 KB, each written and read back; median of 5): nothing of wisp's is in it, so it tracks the runner only (on Linux
 each round also reports the hypervisor's steal, `/proc/stat`, not judged). A round whose bracket ran over 1.5× the job's fastest
