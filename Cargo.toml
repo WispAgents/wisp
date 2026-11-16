@@ -223,5 +223,12 @@ panic = "abort"
 codegen-units = 1
 opt-level = 3
 
+# The server budgets' build in PR CI (spikes/server-budgets, ADR-0080): release, but thin LTO over 16 units so the
+# job doesn't pay fat LTO's single-threaded link; the shipped binary (fat LTO) is never slower than this one.
+[profile.budgets]
+inherits = "release"
+lto = "thin"
+codegen-units = 16
+
 [profile.dev.package."*"]
 opt-level = 1

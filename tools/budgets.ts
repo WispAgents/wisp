@@ -5,8 +5,9 @@
 //   initial CSS  every stylesheet index.html links                              ≤ 30 KB br
 // Lazy chunks (a task's view, the palette, a plugin's screens) and the stylesheets that load with them are
 // listed, not budgeted: they load when they show. CI (.github/workflows/suite.yml) runs this after the web build and
-// fails on a miss; under GitHub Actions the numbers also go to the job summary ($GITHUB_STEP_SUMMARY). The server half (cold start, RSS, list query, write amplification, patch latency)
-// is measured by the Rust benches (crates/*/benches, spikes/*) and gated there.
+// fails on a miss; under GitHub Actions the numbers also go to the job summary ($GITHUB_STEP_SUMMARY). The server half
+// is measured by the Rust spikes and gated there: `SERVER_BUDGETS` by spikes/server-budgets (a CI step, ADR-0080),
+// `EVENT_BUDGETS` by spikes/events; write amplification and patch latency aren't gated in CI yet (plan §4.3).
 //
 //   node tools/budgets.ts [--dist=apps/web/dist] [--json] [--summary=<file>]
 
@@ -15,6 +16,17 @@ import { appendFileSync, readFileSync, readdirSync, existsSync } from 'node:fs';
 import { join, relative } from 'node:path';
 
 export const BUDGETS = { initialJsBr: 120 * 1024, initialCssBr: 30 * 1024 } as const;
+
+/** `wisp serve`'s budgets (plan §8) on a home of 5 000 tasks, measured and gated in PR CI by `spikes/server-budgets` (it
+ * exits 1 on a miss; its constants must equal these: tools/test/budgets.test.ts). */
+export const SERVER_BUDGETS = {
+  /** process start → the first successful HTTP response, median of 7 restarts */
+  coldStartMs: 150,
+  /** the server's resident set once settled, after a client read the list */
+  idleRssMb: 120,
+  /** the UI's first read (`GET /api/events?fresh=list` → the list snapshot), median of 30 */
+  listMs: 5,
+} as const;
 
 /** The durable event log's budgets (ADR-0044), measured and gated by `spikes/events` (it exits 1 on a miss). */
 export const EVENT_BUDGETS = {

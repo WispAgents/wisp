@@ -1,0 +1,27 @@
+# ADR-0011's server budgets (cold start, idle RSS, the task list on 5k tasks) against a real `wisp serve`, gated in PR
+# CI (ADR-0080). Its own workspace, as spikes/events: the main `cargo build/clippy/test --workspace` never compiles it.
+[package]
+name = "server-budgets"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+[workspace]
+
+[dependencies]
+serde_json = "1"
+# the seed: the runtime's own schema and `repo::save_session`, the fixture builder its list bench uses
+wisp-runtime = { path = "../../plugins/runtime/host" }
+wisp-runtime-api = { path = "../../plugins/runtime/api" }
+wisp-runtime-core = { path = "../../plugins/runtime/core" }
+wisp-store = { path = "../../crates/wisp-store" }
+
+# the root's `budgets` profile, setting for setting: CI builds `wisp` and this spike with `--profile budgets` into one
+# target dir, so the dependencies both use compile once
+[profile.budgets]
+inherits = "release"
+lto = "thin"
+codegen-units = 16
+strip = true
+panic = "abort"
+opt-level = 3

@@ -5,7 +5,7 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'nod
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test, { after } from 'node:test';
-import { BUDGETS, initialFiles, measure, overBudget, summary } from '../budgets.ts';
+import { BUDGETS, SERVER_BUDGETS, initialFiles, measure, overBudget, summary } from '../budgets.ts';
 
 const roots: string[] = [];
 after(() => {
@@ -92,4 +92,13 @@ test('budgets: no build is a failure that says how to make one', () => {
   const empty = mkdtempSync(join(tmpdir(), 'wisp-budgets-'));
   roots.push(empty);
   assert.throws(() => execFileSync(process.execPath, [join(import.meta.dirname, '..', 'budgets.ts'), `--dist=${empty}`], { stdio: 'pipe' }), (err: { status: number; stderr: Buffer }) => err.status === 1 && /no build at/.test(String(err.stderr)));
+});
+
+test('budgets: spikes/server-budgets gates on SERVER_BUDGETS, the one list of the numbers', () => {
+  const src = readFileSync(join(import.meta.dirname, '..', '..', 'spikes', 'server-budgets', 'src', 'main.rs'), 'utf8');
+  const constant = (name: string): number => Number(new RegExp(`const ${name}: f64 = ([0-9.]+);`).exec(src)?.[1]);
+  assert.deepEqual(
+    { coldStartMs: constant('COLD_START_MS'), idleRssMb: constant('IDLE_RSS_MB'), listMs: constant('LIST_MS') },
+    { ...SERVER_BUDGETS },
+  );
 });
