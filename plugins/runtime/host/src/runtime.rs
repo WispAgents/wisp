@@ -56,6 +56,9 @@ pub struct Runtime {
     /// the lead's delegates elsewhere being watched, as `<lead> <job key>` (`more/far_watch.rs`): one watch each; the
     /// store's owed records are what it watches, and a restart arms them again
     pub(crate) far_watch: Mutex<std::collections::HashSet<String>>,
+    /// every running turn's activity buffer: one commit for all of them per window (`drive.rs`, ADR-0083), made on
+    /// the first turn's drive so its timer has the server's tokio runtime
+    pub(crate) coal: std::sync::OnceLock<wisp_store::Coalescer>,
 }
 
 impl std::fmt::Debug for Runtime {
@@ -89,6 +92,7 @@ impl Runtime {
             probes: Arc::new(crate::probes::Probes::new(clock.clone())),
             harness_rounds: crate::more::Rounds::default(),
             far_watch: Mutex::default(),
+            coal: std::sync::OnceLock::new(),
             clock,
         })
     }

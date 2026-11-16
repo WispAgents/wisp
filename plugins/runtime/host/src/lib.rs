@@ -43,6 +43,7 @@ pub mod turn_window;
 mod usage_row;
 mod watch;
 
+pub use drive::ACTIVITY_WINDOW_MS;
 pub use host::{Emitted, Host, Recorder};
 pub use plugin::RuntimePlugin;
 pub use runtime::Runtime;

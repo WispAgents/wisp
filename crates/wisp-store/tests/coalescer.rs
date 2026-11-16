@@ -114,3 +114,71 @@ async fn a_dropped_coalescer_still_flushes_on_its_timer() {
     next_commit(&mut rx).await;
     assert_eq!(f.store.count("event", &Query::new()).unwrap(), 1);
 }
+
+/// ADR-0083: one coalescer shared by many writers (wisp.runtime's running turns) commits all their lines in one
+/// transaction a window, one change row per parent, each parent's rows in the order they were buffered.
+#[tokio::test]
+async fn several_writers_lines_commit_together_one_change_row_each_in_order() {
+    let f = open();
+    f.store.write(|w| ["a", "b", "c"].into_iter().try_for_each(|s| w.upsert("session", session(s)).map(|_| ()))).await.unwrap();
+    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+    let _sub = f.store.on_commit(move |c| {
+        let _ = tx.send(c.iter().map(|r| (r.id.clone(), r.patch.as_array().map_or(0, Vec::len))).collect::<Vec<_>>());
+    });
+    let c = Coalescer::new(&f.store, CoalescerOptions { interval_ms: 100, ..CoalescerOptions::default() });
+    let writers: Vec<Coalescer> = (0..3).map(|_| c.clone()).collect();
+    for i in 0..4 {
+        for (w, s) in writers.iter().zip(["a", "b", "c"]) {
+            w.append("event", vec![event(s, i, "text", json!({"i": i}))]).unwrap();
+        }
+        f.clock.advance(20);
+    }
+    assert_eq!(f.clock.pending(), 1, "one timer for every writer");
+    f.clock.advance(20);
+    let commit = tokio::time::timeout(Duration::from_secs(5), rx.recv()).await.unwrap().unwrap();
+    assert_eq!(commit, [("a".to_owned(), 4), ("b".to_owned(), 4), ("c".to_owned(), 4)], "one commit, one change row per task");
+    assert!(rx.try_recv().is_err(), "and only one");
+    for s in ["a", "b", "c"] {
+        let seqs: Vec<i64> = f
+            .store
+            .query("event", &Query::new().eq("session_id", s).asc("id"))
+            .unwrap()
+            .iter()
+            .map(|r| r["seq"].as_i64().unwrap())
+            .collect();
+        assert_eq!(seqs, [0, 1, 2, 3], "{s}'s lines in the order they came");
+    }
+}
+
+/// ADR-0083: a shared batch the store refuses (rows of a task that is gone) commits the other writers' rows one task
+/// at a time; only the gone task's rows reach `on_error`.
+#[tokio::test]
+async fn a_refused_row_in_a_shared_batch_never_drops_the_other_writers_rows() {
+    let f = open();
+    f.store.write(|w| ["a", "b"].into_iter().try_for_each(|s| w.upsert("session", session(s)).map(|_| ()))).await.unwrap();
+    let refused = Arc::new(Mutex::new(Vec::new()));
+    let r = refused.clone();
+    let opts = CoalescerOptions {
+        on_error: Arc::new(move |_, item| {
+            if let Buffered::Append { rows, .. } = item {
+                r.lock().unwrap().extend(rows.iter().map(|row| row["session_id"].clone()));
+            }
+        }),
+        ..CoalescerOptions::default()
+    };
+    let c = Coalescer::new(&f.store, opts);
+    c.append("event", vec![event("a", 1, "x", json!(null))]).unwrap();
+    c.append("event", vec![event("gone", 1, "x", json!(null))]).unwrap();
+    c.append("event", vec![event("b", 1, "x", json!(null))]).unwrap();
+    c.append("event", vec![event("gone", 2, "x", json!(null))]).unwrap();
+    c.append("event", vec![event("a", 2, "x", json!(null))]).unwrap();
+    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+    let _sub = f.store.on_commit(move |c| {
+        let _ = tx.send(c.iter().map(|r| (r.id.clone(), r.patch.as_array().map_or(0, Vec::len))).collect::<Vec<_>>());
+    });
+    c.flush().await;
+    assert_eq!(*refused.lock().unwrap(), vec![json!("gone"), json!("gone")], "the gone task's rows, as one item");
+    assert_eq!(f.store.count("event", &Query::new()).unwrap(), 3, "a's two rows and b's kept");
+    let kept: Vec<_> = std::iter::from_fn(|| rx.try_recv().ok()).collect();
+    assert_eq!(kept, [vec![("a".to_owned(), 2)], vec![("b".to_owned(), 1)]], "one write and one change row per task");
+}

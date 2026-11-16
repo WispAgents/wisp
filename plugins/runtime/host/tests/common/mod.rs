@@ -259,6 +259,33 @@ async fn fake_cli(mut io: SimIo) -> Exit {
         }
         return Exit { code: Some(0), signal: None };
     }
+    // `stream <name>`: its conversation's line; at gate <name>, three text lines; at <name>.tool, a tool and its
+    // result; at <name>.end, its answer (ADR-0083: what the shared coalescer commits when)
+    if let Some(name) = prompt.strip_prefix("stream ").and_then(|r| r.split_whitespace().next()) {
+        io.print(format!("{}\n", json!({"type":"session","id":"conv-1"})).as_bytes()).await;
+        let phases = [
+            (name.to_owned(), (1..=3).map(|i| json!({"type":"text","text":format!("{name} line {i}")})).collect::<Vec<_>>()),
+            (
+                format!("{name}.tool"),
+                vec![
+                    json!({"type":"tool","kind":"run","label":"Run tests","id":"c1"}),
+                    json!({"type":"tool_output","id":"c1","text":"ok"}),
+                ],
+            ),
+            (format!("{name}.end"), vec![json!({"type":"result","text":"done","isError":false})]),
+        ];
+        for (g, lines) in phases {
+            let g = gate(&g);
+            tokio::select! {
+                () = g.notified() => {}
+                () = io.killed.cancelled() => return Exit { code: None, signal: Some("SIGTERM".into()) },
+            }
+            for l in lines {
+                io.print(format!("{l}\n").as_bytes()).await;
+            }
+        }
+        return Exit { code: Some(0), signal: None };
+    }
     if prompt.starts_with("hang") {
         // set as it goes, however: the sim's kill may end it by dropping it (its own `killed` branch wins the
         // select) before a store after this await ran, and a delete that waited for it read it as still running
@@ -328,6 +355,17 @@ pub async fn rig_on(host: Recorder, harnesses: Vec<Arc<dyn Harness>>) -> Rig {
     schema::install(&store).unwrap();
     let sim = SimProc::new().program("fake", fake_cli).program("deaf", deaf_cli).program("sh", sh_cli).closed_stdin("deaf");
     let host = Arc::new(Recorder { harnesses, ..host });
+    let rt = Runtime::new(Repo::new(store.clone()), host.clone(), Arc::new(sim.clone()), Arc::new(SystemClock));
+    rt.start().await.unwrap();
+    Rig { rt, host, store, sim }
+}
+
+/// A rig whose store runs on a clock the test moves (the coalescer's window waits on it); the runtime's own is real.
+pub async fn rig_clocked(clock: Arc<wisp_store::ManualClock>) -> Rig {
+    let store = Store::open(Location::Memory, clock).unwrap();
+    schema::install(&store).unwrap();
+    let sim = SimProc::new().program("fake", fake_cli);
+    let host = Arc::new(Recorder { harnesses: vec![Fake::harness()], ..Recorder::default() });
     let rt = Runtime::new(Repo::new(store.clone()), host.clone(), Arc::new(sim.clone()), Arc::new(SystemClock));
     rt.start().await.unwrap();
     Rig { rt, host, store, sim }

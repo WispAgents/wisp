@@ -1,7 +1,8 @@
 //! Driving a run (v1 runner.js `#startTurn`'s `onEvent`, `release`, `LINGER_MS`): output lines into the
 //! harness's driver, its events into the turn's head and log. Activity is appended through the store's
-//! Coalescer (one commit per 250 ms at most, plan §4.1) and published as one `turn.activity` per output
-//! chunk, never per token. A CLI may outlive its result: it gets `LINGER_MS`, then it is let go.
+//! Coalescer, one shared by every running turn (ADR-0083): all of them commit together, `ACTIVITY_WINDOW_MS` after
+//! the first line buffered, or at once on a tool's result, a wait and the turn's end (plan §4.1). It is
+//! published as one `turn.activity` per output chunk, never per token. A CLI may outlive its result: it gets `LINGER_MS`, then it is let go.
 
 use std::sync::Arc;
 use std::time::Duration;
@@ -28,6 +29,9 @@ pub const LINGER: Duration = Duration::from_secs(3);
 const STDERR_TAIL: usize = 8000;
 /// `turn.activity` goes out at most this often (and at the turn's end): never once per line or token.
 const PUBLISH_EVERY: Duration = Duration::from_millis(100);
+/// The shared coalescer's window (ADR-0083): a line waits at most this long for its commit. With every running
+/// turn in one commit, 10 commits a second keep the bytes written under the 15× budget at any number of tasks.
+pub const ACTIVITY_WINDOW_MS: u64 = 100;
 
 pub(crate) struct Drive {
     pub sid: String,
@@ -84,7 +88,7 @@ impl Runtime {
             tid,
             head: Head::seeded(known),
             seq,
-            coal: Coalescer::new(&self.repo.store, CoalescerOptions::default()),
+            coal: self.coalescer(),
             finished: false,
             pending: Vec::new(),
             published: Instant::now(),
@@ -167,7 +171,8 @@ impl Runtime {
             self.finish(&mut d, effect).await;
         }
         self.publish(&mut d, true);
-        d.coal.close().await;
+        // the shared buffer stays open for the other turns: this one's last lines commit now
+        d.coal.flush().await;
         self.env_remember(&d.sid, &d.head.env_values);
         self.release_run(&d.sid).await;
     }
@@ -197,12 +202,20 @@ impl Runtime {
         }
         let fallback = |t: &str| wisp_runtime_core::blocks::parse(t).fallback;
         let mut ended = false;
+        let mut now = false;
         for ev in &out.events {
             if d.finished {
                 break;
             }
             match activity::apply(&mut d.head, ev, false, &fallback) {
-                Effect::Append(a) | Effect::Waiting(a) => {
+                Effect::Append(a) => {
+                    // a tool's result is something to read now (and the next step waits on it): no window
+                    now |= matches!(a, Activity::ToolOutput { .. } | Activity::ToolError { .. } | Activity::Tool { output: Some(_), .. });
+                    let step = self.append(d, a);
+                    d.pending.push(step);
+                }
+                Effect::Waiting(a) => {
+                    now = true;
                     let step = self.append(d, a);
                     d.pending.push(step);
                 }
@@ -218,8 +231,20 @@ impl Runtime {
                 self.resumable(&d.sid, &id);
             }
         }
+        if now && !d.finished {
+            d.coal.step().await;
+        }
         self.publish(d, false);
         ended
+    }
+
+    /// The runtime's one activity buffer, made on first use (inside the server's tokio runtime, for its timer).
+    pub(crate) fn coalescer(&self) -> Coalescer {
+        self.coal
+            .get_or_init(|| {
+                Coalescer::new(&self.repo.store, CoalescerOptions { interval_ms: ACTIVITY_WINDOW_MS, ..CoalescerOptions::default() })
+            })
+            .clone()
     }
 
     fn append(&self, d: &mut Drive, a: Activity) -> Step {

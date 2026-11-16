@@ -4,7 +4,12 @@
 //! written stay within the 15× budget (one event per transaction costs ~113×, ten per transaction ~9×).
 //!
 //! Patches to one row are concatenated and committed as one net diff; appends of a kind are grouped per
-//! parent into one change row. The timer is the store's injected clock, so tests drive it by hand.
+//! parent into one change row. The window is `interval_ms` (250 by default). The timer is the store's injected
+//! clock, so tests drive it by hand.
+//!
+//! One coalescer may serve many writers (wisp.runtime shares one across every running task, ADR-0083): their
+//! writes in a window commit together, so the per-commit cost (the change feed's tail pages, the indexes'
+//! leaves, page 1) is paid once a window, not once per task.
 
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex, PoisonError};
@@ -191,8 +196,33 @@ impl Coalescer {
         }
         for item in batch {
             let one = item.clone();
-            if let Err(e) = self.inner.store.write(move |w| write(w, &one)).await {
-                (self.inner.opts.on_error)(&e, &item);
+            let Err(e) = self.inner.store.write(move |w| write(w, &one)).await else {
+                continue;
+            };
+            match item {
+                // a batch of many writers' rows: one refused parent (a deleted task's) never drops the others
+                Buffered::Append { kind, rows } if rows.len() > 1 => self.append_by_parent(kind, rows).await,
+                item => (self.inner.opts.on_error)(&e, &item),
+            }
+        }
+    }
+
+    /// A refused append, again one parent at a time (each parent's rows in their order, still one change row
+    /// each); only a parent the store refuses again goes to `on_error`, whole.
+    async fn append_by_parent(&self, kind: String, rows: Vec<Row>) {
+        let parent = self.inner.store.shared.kind(&kind).ok().and_then(|k| k.def.parent);
+        let mut groups: Vec<(serde_json::Value, Vec<Row>)> = Vec::new();
+        for row in rows {
+            let key = parent.and_then(|p| row.get(p).cloned()).unwrap_or(serde_json::Value::Null);
+            match groups.iter_mut().find(|(g, _)| *g == key) {
+                Some((_, list)) => list.push(row),
+                None => groups.push((key, vec![row])),
+            }
+        }
+        for (_, rows) in groups {
+            let (k, all) = (kind.clone(), rows.clone());
+            if let Err(e) = self.inner.store.write(move |w| w.append(&k, all).map(|_| ())).await {
+                (self.inner.opts.on_error)(&e, &Buffered::Append { kind: kind.clone(), rows });
             }
         }
     }
