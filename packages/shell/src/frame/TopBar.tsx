@@ -40,3 +40,13 @@ export function TopBar(): JSX.Element {
     </Inline>
   );
 }
+
+/** The sidebar head's lead (split view): the extensions on the bar's inputs after the brand (the update pill, This
+ *  computer's chip, Machines, …) as one Toolbar that fills what the brand leaves, folding label → icon → More by their
+ *  priority, so a full bar never runs under Search and the avatar (B8; design/layout.md §2). */
+export function HeadLead(props: { readonly inputs: readonly InputId[] }): JSX.Element {
+  const shell = useShell();
+  const lists = props.inputs.map((input) => useSignal(shell.extensions(input)));
+  const items = createMemo(() => lists.flatMap((l) => l()).map((ext) => useItem(ext)));
+  return <Toolbar aria-label={shell.t('shell.topbar')} items={items()} justify="start" gap="1" part="shell.topbar.lead" t={(k) => shell.t(`kit.${k}`)} />;
+}

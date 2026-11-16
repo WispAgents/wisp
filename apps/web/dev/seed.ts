@@ -7,6 +7,9 @@ import type { PeerInfo, Topic } from '@wisp/protocol';
 import { accountRows } from './mock-reads.ts';
 import { SEED_ACCOUNTS } from './mock-cloud.ts';
 
+/** MOCK_BUSY=1: a busy machine (the machine chip in the top bar). */
+const BUSY = typeof process !== 'undefined' && process.env['MOCK_BUSY'] === '1';
+
 interface Row {
   e: string;
   id: string;
@@ -728,7 +731,7 @@ export function seed(o: { peer: string; now: number; extra: number; firstRun?: b
     ]);
   // MOCK_UPDATE=2.1.0: a newer wisp is out (the top bar's Update pill, Settings → Updates); no release feed is read
   const latest = typeof process === 'undefined' ? undefined : process.env['MOCK_UPDATE'];
-  if (latest) topics.set('plugin:wisp.update:state', [{ e: 'update.state', id: 'update', v: { current: '2.0.0', latest, available: true, method: 'global', channel: 'stable', status: 'idle', error: null, enabled: true, command: 'npm install -g wisp-agents@latest', checked_at: o.now, checking: false, running: 1 } }]);
+  if (latest) topics.set('plugin:wisp.update:state', [{ e: 'update.state', id: 'update', v: { id: 'update', body: { current: '2.0.0', latest, available: true, method: 'global', channel: 'stable', status: 'idle', error: null, enabled: true, command: 'npm install -g wisp-agents@latest', checked_at: o.now, checking: false, running: 1 } } }]); // as the store syncs it: the state under `body` (B6)
   topics.set(
     'crew',
     CREW.map((c) => ({ e: 'crew_member', id: c.id, v: c.id === 'crew:ada' ? { ...c, ...ADA_KIT, offers: ADA_KIT.offers.map((x) => ({ ...x, job: `${o.peer}:s0000`, at: o.now - 2 * MIN })) } : c })),
@@ -835,7 +838,8 @@ function overlaps(v1: V1Seed, peer: string): Map<string, { id: string; files: st
 }
 
 const LOAD_ROWS: Row[] = [
-  { e: 'machine.load', id: 'this', v: { at: 0, platform: 'darwin', mem_free_pct: 71, cpu: 50, runs: 0, held: null, limits: { floor: 15, maxRuns: 8 }, paused_until: 0, left_behind: 0 } },
+  // MOCK_BUSY=1: the machine is busy (CPU over its ceiling, automations held): the top bar's machine chip shows
+  { e: 'machine.load', id: 'this', v: { at: 0, platform: 'darwin', mem_free_pct: BUSY ? 21 : 71, cpu: BUSY ? 357 : 50, runs: BUSY ? 3 : 0, held: BUSY ? { kind: 'cpu', why: 'Waiting for the CPU: load at 357% of its cores, needs under 200%' } : null, limits: { floor: 15, maxRuns: 8 }, paused_until: 0, left_behind: 0 } },
 ];
 
 /** Settings → Auto (wisp.router's view), as v1's QA box showed it: its defaults (learn from picks, try new models,

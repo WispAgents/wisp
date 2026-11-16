@@ -127,6 +127,7 @@ turn. When a screen or feature contradicts one, that's a bug: fix it toward the 
 
 - **Coders code; tests in CI**: coders write code and their named tests; full suites, e2e and gates are the outer loop
   (11-09 15:24, 15:34). Move fast, verify after.
+- **Heads down until it's done** (owner, 2026-11-16): "dont go back to me until v2 is ready merged check and linear tickets done, and you want me to test and you are super confident that it's perfect experience". The lead works through `docs/v2-replace-v1.md`, `docs/qa/bugs.md` and the Linear TODO tickets without reporting back, and returns only when v2 is merged, checked, the Linear tickets are done and the experience has been tested to be perfect.
 - **No coders: the lead does the work himself** (owner, 2026-11-16: "don't use coders, do them by yourself"), one item
   at a time from `docs/v2-replace-v1.md`, each checked in the real app before the next. (Was: one coder at a time.)
 - **One coder at a time** (latest: 11-15 17:40, "Dont use 3 coders please one coder"). A fresh session per job, one

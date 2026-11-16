@@ -6,6 +6,7 @@
 import type { JSX } from 'solid-js';
 import type { ExtensionProps } from '../contract.ts';
 import { Area, Slot, useExtensions } from '../slot.tsx';
+import { HeadLead } from './TopBar.tsx';
 
 type Session = ExtensionProps['session'];
 
@@ -20,14 +21,7 @@ export function useHeadSlots(): () => NonNullable<Parameters<typeof import('@wis
   const account = useExtensions('shell.topbar:account');
   const view = useExtensions('shell.topbar:view');
   return () => ({
-    lead: (
-      <>
-        <Slot input="shell.topbar:machines" layout="contents" form="full" />
-        <Slot input="shell.topbar:getapp" layout="contents" form="full" />
-        <Slot input="shell.topbar:automations" layout="contents" form="full" />
-        <Slot input="shell.topbar:settings" layout="contents" form="full" />
-      </>
-    ),
+    lead: <HeadLead inputs={['shell.topbar:machines', 'shell.topbar:getapp', 'shell.topbar:automations', 'shell.topbar:settings']} />,
     chips: <Slot input="shell.topbar:projects" layout="contents" form="full" />,
     brand: override('shell.topbar:brand', () => brand().length > 0),
     search: override('shell.topbar:search', () => search().length > 0),
