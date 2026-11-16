@@ -6,6 +6,7 @@ import { defineExtension, definePalette, definePluginUi, defineSettingsPane, def
 import { lazy } from 'solid-js';
 import catalogue from './i18n/en.json' with { type: 'json' };
 import { openSettings } from './host.ts';
+import { STATIC_NAME_KEY } from './view.ts';
 
 const Pane = lazy(() => import('./MachinePane.tsx'));
 const Chip = lazy(() => import('./Chip.tsx'));
@@ -16,7 +17,7 @@ const Load = lazy(() => import('./LoadGroup.tsx'));
 export default definePluginUi({
   id: 'wisp.machine',
   catalogue,
-  settings: [defineSettingsPane({ id: 'machine', group: 'computers', title: 'machine.name.computer', icon: 'laptop', component: Pane, order: 50 })],
+  settings: [defineSettingsPane({ id: 'machine', group: 'computers', title: STATIC_NAME_KEY, icon: 'laptop', component: Pane, order: 50 })],
   views: [
     defineView<{ peer?: string }>({
       kind: 'machine.this',
@@ -26,7 +27,7 @@ export default definePluginUi({
     }),
   ],
   extensions: [
-    defineExtension({ id: 'machine.chip', attachTo: { id: 'shell.topbar:machines' }, component: Chip, bar: { icon: 'laptop', label: 'machine.name.computer', priority: 40 }, order: -1 }),
+    defineExtension({ id: 'machine.chip', attachTo: { id: 'shell.topbar:machines' }, component: Chip, bar: { icon: 'laptop', label: STATIC_NAME_KEY, priority: 40 }, order: -1 }),
     // Settings → Usage → Machine load (v1 .sx-load)
     defineExtension({ id: 'machine.load', attachTo: { id: 'shell.settings:usageEnd' }, component: Load }),
     defineExtension({ id: 'machine.ram', attachTo: { id: 'shell.row:head' }, component: Ram, if: (p) => (p.session?.() as { res?: unknown } | undefined)?.res !== undefined }),

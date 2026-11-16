@@ -16,9 +16,12 @@ export const TIGHT = 10;
 /** wisp's default memory floor (v1 server/load.js LOAD_DEFAULTS) */
 export const FLOOR_DEFAULT = 15;
 
+/** The name registered before the OS is known (the pane title, the chip's bar label): never This Mac. */
+export const STATIC_NAME_KEY = 'machine.name.computer';
+
 /** The pane's name, by the OS wisp runs on (a phone looks at the computer, not itself). */
 export function machineLabelKey(platform: string | undefined): string {
-  return platform === 'darwin' ? 'machine.name.mac' : platform === 'win32' ? 'machine.name.pc' : 'machine.name.computer';
+  return platform === 'darwin' ? 'machine.name.mac' : platform === 'win32' ? 'machine.name.pc' : STATIC_NAME_KEY;
 }
 
 export function size(n: number | null | undefined): string {
