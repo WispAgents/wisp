@@ -44,6 +44,9 @@ use scripted::say;
 use serde_json::{Value, json};
 
 fn main() {
+    // before any thread: glibc's arenas are made per thread (ADR-0087)
+    #[cfg(feature = "proc")]
+    wisp_proc::tune_heap();
     let argv: Vec<String> = std::env::args().skip(1).collect();
     let user_home = services::user_home().unwrap_or_else(|| PathBuf::from("."));
     // the CLI's folder as every path in wisp is spelled (ADR-0071): `wisp "task"` in `C:\Users\RUNNER~1\…` runs in

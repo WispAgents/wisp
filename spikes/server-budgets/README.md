@@ -16,7 +16,11 @@ Seeds a home with 5 000 tasks through wisp.runtime's writer (`schema::install`, 
   the bytes are reported. A task in two pages, or pages at two seqs, fails the run.
 
 It also prints where the list's time goes (the first page's query, every task in one query, and the change-feed replay a
-first look made before ADR-0081), measured in process. PR CI runs it on Linux (`.github/workflows/suite.yml`, *server budgets*) and puts the table in the job
+first look made before ADR-0081), measured in process. And where the idle RSS is (ADR-0087, reported, not gated): on
+Linux `/proc/<pid>/smaps` sorted into the binary's pages, other files, `[heap]`, glibc's other arenas, thread stacks
+and the rest of the anonymous memory, plus the thread count (macOS: the thread count), before the list and once
+settled; then the same home on glibc's own malloc settings (`MALLOC_ARENA_MAX=<8 × cores>`, which turns
+`wisp_proc::tune_heap` off), before and after the same list reads, so one run shows what ADR-0087's settings save. PR CI runs it on Linux (`.github/workflows/suite.yml`, *server budgets*) and puts the table in the job
 summary. `--keep` keeps the bench's folder (the home and each server's log).
 
 On the same server, once those are read (ADR-0082):

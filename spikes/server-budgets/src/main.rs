@@ -15,6 +15,8 @@
 //!
 //! `--wisp` and `--fake` default to `$CARGO_TARGET_DIR/budgets/{wisp,wisp-fake-agent}` (else `target/budgets/…`):
 //! `cargo build --profile budgets -p wisp -p wisp-testkit` first. Under GitHub Actions the table also goes to `$GITHUB_STEP_SUMMARY`.
+mod mem;
+
 use std::collections::BTreeMap;
 use std::io::{Read, Write};
 use std::net::{SocketAddr, TcpListener, TcpStream};
@@ -233,7 +235,7 @@ impl Bench {
 
     /// `wisp serve` on the seeded home, in a cleared environment: fakes first on PATH, every CLI's home under the
     /// bench's folder, no telemetry, no update check, no web build.
-    fn spawn(&self, run: &str) -> Res<(Serve, Instant)> {
+    fn spawn(&self, run: &str, env: &[(&str, String)]) -> Res<(Serve, Instant)> {
         let port = free_port()?;
         let (bin, user) = (self.dir.join("bin"), self.dir.join("user"));
         let log = std::fs::File::create(self.dir.join(format!("serve-{run}.log"))).map_err(said("create the log"))?;
@@ -259,6 +261,7 @@ impl Bench {
             .env("FAKE_STREAM_MIX", if self.stream.mix == Mix::Agent { "agent" } else { "text" })
             .env("FAKE_GATE", self.dir.join("gates"))
             .envs(FAKES.map(|(n, var)| (var, bin.join(n))))
+            .envs(env.iter().map(|(k, v)| (k, v)))
             .stdin(Stdio::null())
             .stdout(Stdio::null())
             .stderr(log);
@@ -273,7 +276,12 @@ impl Bench {
 
     /// Starts a server and waits for its first successful response: the time from process start to it.
     fn boot(&self, run: &str) -> Res<(Serve, Duration)> {
-        let (mut s, t0) = self.spawn(run)?;
+        self.boot_with(run, &[])
+    }
+
+    /// `boot` with more environment.
+    fn boot_with(&self, run: &str, env: &[(&str, String)]) -> Res<(Serve, Duration)> {
+        let (mut s, t0) = self.spawn(run, env)?;
         loop {
             if status(s.port) == Some(200) {
                 return Ok((s, t0.elapsed()));
@@ -870,6 +878,39 @@ fn settle(pid: u32) -> Res<Rss> {
     }
 }
 
+/// An idle server's RSS before and after the list's reads, with its parts.
+struct Defaults {
+    arenas: usize,
+    before: Rss,
+    after: Rss,
+    parts: Option<mem::Parts>,
+}
+
+/// The idle measurement again on glibc's defaults (`MALLOC_ARENA_MAX` at glibc's own 8 × cores, so wisp's
+/// `tune_heap` leaves malloc alone): what ADR-0087's settings save, in the same CI run. Reported, not gated.
+fn glibc_defaults(b: &Bench) -> Res<Defaults> {
+    let arenas = 8 * std::thread::available_parallelism().map_or(1, std::num::NonZero::get);
+    let (s, _) = b.boot_with("glibc-defaults", &[("MALLOC_ARENA_MAX", arenas.to_string())])?;
+    let before = settle(s.child.id())?;
+    for _ in 0..=(LIST_WARMUP + LIST_RUNS) {
+        let r = list_once(s.port)?;
+        if r.tasks != TASKS {
+            return Err(format!("its list snapshot had {} tasks, not {TASKS}", r.tasks));
+        }
+    }
+    let after = settle(s.child.id())?;
+    let parts = mem::parts(s.child.id());
+    println!(
+        "glibc's defaults (MALLOC_ARENA_MAX={arenas}, tune_heap off): {:.1} MB before the list, {:.1} MB settled after it",
+        mb(before.kb),
+        mb(after.kb)
+    );
+    if let Some(p) = &parts {
+        println!("  where: {}", p.line());
+    }
+    Ok(Defaults { arenas, before, after, parts })
+}
+
 // ---------- where the list's time goes (reported, not gated) ----------
 
 struct Breakdown {
@@ -939,6 +980,11 @@ struct Report {
     cold: Vec<Duration>,
     rss_before: Rss,
     rss: Rss,
+    /// where the RSS is, before the list and settled (`mem`; Linux has every part, macOS the threads)
+    parts_before: Option<mem::Parts>,
+    parts: Option<mem::Parts>,
+    /// the same idle server on glibc's own malloc settings (Linux): wisp's `tune_heap` off (ADR-0087)
+    defaults: Option<Defaults>,
     /// to the first page (gated)
     list: Vec<Duration>,
     /// to the last page (reported)
@@ -1031,6 +1077,28 @@ impl Report {
         over
     }
 
+    /// "Where the idle RSS is (smaps, MB): before the list …; settled …", then a blank line; nothing without parts.
+    fn where_rss(&self) -> String {
+        let line = |p: &Option<mem::Parts>| p.as_ref().map(mem::Parts::line).filter(|l| !l.is_empty());
+        match (line(&self.parts_before), line(&self.parts)) {
+            (None, None) => String::new(),
+            (b, a) => format!(
+                "Where the idle RSS is (`/proc/<pid>/smaps` on Linux): before the list {}; settled after it {}.\n{}",
+                b.as_deref().unwrap_or("unread"),
+                a.as_deref().unwrap_or("unread"),
+                self.defaults.as_ref().map_or_else(String::new, |d| format!(
+                    "\nOn glibc's own malloc settings (`MALLOC_ARENA_MAX={}`, ADR-0087's `tune_heap` off), the same idle server: \
+                     {:.1} MB before the list, {:.1} MB settled after it{}; where: {}.\n",
+                    d.arenas,
+                    mb(d.before.kb),
+                    mb(d.after.kb),
+                    if d.after.settled { "" } else { " (never settled)" },
+                    d.parts.as_ref().map_or_else(|| "unread".to_owned(), mem::Parts::line)
+                ))
+            ),
+        }
+    }
+
     fn summary(&self) -> String {
         let mark = |ok: bool| if ok { "✅" } else { "❌" };
         let (c0, c50, c95, c100) = spread(&self.cold);
@@ -1103,6 +1171,7 @@ impl Report {
                 self.list_bytes as f64 / 1024.0,
             ),
             String::new(),
+            self.where_rss(),
             format!(
                 "Seeded in {:.1} s through wisp.runtime's writer; the first boot (every plugin's migrations) took {:.0} ms and isn't gated.",
                 self.seeded.as_secs_f64(),
@@ -1172,10 +1241,20 @@ fn run(o: &Opts, dir: &Path) -> Res<Report> {
         cold.push(took);
     }
 
+    // on the home as the gated idle server finds it (before the stream adds to it), and not gated
+    let defaults = if cfg!(all(target_os = "linux", target_env = "gnu")) {
+        glibc_defaults(&b).inspect_err(|e| eprintln!("server budgets: no glibc-defaults run: {e}")).ok()
+    } else {
+        None
+    };
     let (s, _) = b.boot("idle")?;
     let pid = s.child.id();
     let rss_before = settle(pid)?;
     println!("RSS before any client: {:.1} MB (after {:.1} s)", mb(rss_before.kb), rss_before.after.as_secs_f64());
+    let parts_before = mem::parts(pid);
+    if let Some(p) = &parts_before {
+        println!("  where: {}", p.line());
+    }
     let first = list_once(s.port)?;
     if first.tasks != TASKS {
         return Err(format!("the list snapshot had {} tasks, not {TASKS}", first.tasks));
@@ -1191,6 +1270,11 @@ fn run(o: &Opts, dir: &Path) -> Res<Report> {
     }
     println!("first list read (cold): first page {:.2} ms, every task {:.2} ms", ms(first.took), ms(first.all));
     let rss = settle(pid)?;
+    let parts = mem::parts(pid);
+    println!("RSS settled after the list: {:.1} MB", mb(rss.kb));
+    if let Some(p) = &parts {
+        println!("  where: {}", p.line());
+    }
     // on the same server, once its idle numbers are in: 10 tasks stream to 4 clients
     let st = stream(&b, s.port, &projects)?;
     let patch = Patch { lat: st.lat, expected: st.expected, frames: st.frames, bytes: st.bytes, took: st.took };
@@ -1212,6 +1296,9 @@ fn run(o: &Opts, dir: &Path) -> Res<Report> {
         cold,
         rss_before,
         rss,
+        parts_before,
+        parts,
+        defaults,
         list,
         list_all,
         list_first: first.first,
@@ -1279,6 +1366,9 @@ mod tests {
             cold: vec![Duration::from_millis(cold); 3],
             rss_before: rss(rss_mb * 1024),
             rss: rss(rss_mb * 1024),
+            parts_before: None,
+            parts: None,
+            defaults: None,
             list: vec![Duration::from_micros(list_us); 3],
             list_all: vec![Duration::from_micros(list_us * 10); 3],
             list_first: 100,

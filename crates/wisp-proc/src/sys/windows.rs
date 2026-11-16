@@ -185,6 +185,11 @@ pub fn trim_heap() -> bool {
     false
 }
 
+/// Windows' heap has no arenas to cap: nothing to do (ADR-0087).
+pub fn tune_heap(_arenas: i32, _mmap_at: i32) -> bool {
+    false
+}
+
 /// Makes this process's own stdin, stdout and stderr non-inheritable. `CreateProcess` hands a child every inheritable
 /// handle of its parent, whatever its stdio is set to, so a program started detached with null stdio would still hold
 /// the pipes wisp's caller reads (`wisp` run from a script, a test's `Command::output`): the caller then waits for

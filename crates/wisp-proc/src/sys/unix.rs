@@ -194,6 +194,27 @@ pub fn trim_heap() -> bool {
     false
 }
 
+/// glibc (ADR-0087): at most `arenas` malloc arenas, and every block of `mmap_at` bytes or more in its own mapping
+/// (which also turns off glibc's raising of that threshold to the biggest block freed so far). True when glibc took
+/// both.
+#[cfg(all(target_os = "linux", target_env = "gnu"))]
+pub fn tune_heap(arenas: i32, mmap_at: i32) -> bool {
+    // SAFETY: an integer setting, no pointer; mallopt takes glibc's own lock. Called first thing in `main`, before
+    // any other thread exists, so no arena is made under the old limit.
+    #[allow(unsafe_code)]
+    let a = unsafe { libc::mallopt(libc::M_ARENA_MAX, arenas) };
+    // SAFETY: as above.
+    #[allow(unsafe_code)]
+    let m = unsafe { libc::mallopt(libc::M_MMAP_THRESHOLD, mmap_at) };
+    a == 1 && m == 1
+}
+
+/// Not glibc: no arenas to cap (macOS, musl), nothing to do.
+#[cfg(not(all(target_os = "linux", target_env = "gnu")))]
+pub fn tune_heap(_arenas: i32, _mmap_at: i32) -> bool {
+    false
+}
+
 /// Unix has no job to be born in: the guard (guard.rs) ends each child's group with this process.
 #[allow(clippy::unnecessary_wraps, reason = "Windows' can fail")]
 pub fn nursery() -> io::Result<()> {

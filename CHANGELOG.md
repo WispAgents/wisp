@@ -207,6 +207,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Changed
 
+- **wisp uses less memory on Linux**: its server keeps two malloc arenas and hands big blocks back to the system, so an idle server with thousands of tasks stays small.
 - **wisp starts without waiting on your agents' CLIs**: a slow or stuck CLI no longer holds the server from starting; Settings → Auto's harness list fills in once they've answered.
 - **Projects looks as it did**: where you are, the folder field with Add (Clone for a link), your projects with their colour, a name you edit in place and their task count, and the repos found on this machine. On a phone, dialogs stay cards, as before.
 - **Start from an issue opens like ⌘K**, near the top and 640 wide, with each issue on two lines and why there's nothing to list above it.
