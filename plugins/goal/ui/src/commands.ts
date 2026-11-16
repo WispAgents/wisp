@@ -26,10 +26,21 @@ const rowOf = (base: EntityReader, key: EntityKey): SessionRow | undefined => ba
 
 const putGoal = (key: EntityKey, goal: GoalView): EntityOps => [{ e: KIND.session, id: key, op: 'patch', ops: [{ op: 'add', path: '/goal', value: goal }] }];
 
+/** A judge as `goal.set` and a task's spec name it (wisp.goal host `pick_of`). */
+export const judgeWire = (j: Judge): string => ('crew' in j ? j.crew : [j.agent, j.model, j.effort].join('/').replace(/\/+$/, ''));
+
 export const setGoal = defineCommand<SetArgs, GoalView>({
   id: 'goal.set',
   owner: (a) => a.session,
-  wire: (a) => ({ id: a.session.slice(a.session.indexOf(':') + 1), text: a.goal.text, ...(a.kick && { kick: true }) }),
+  // the judges and vote go too (B44: they were dropped), each judge as the server names one: a crew member or profile by
+  // name, else `harness/model/effort` (the trailing empty parts left out)
+  wire: (a) => ({
+    id: a.session.slice(a.session.indexOf(':') + 1),
+    text: a.goal.text,
+    ...(a.kick && { kick: true }),
+    ...(a.goal.judges?.length && { judges: a.goal.judges.map(judgeWire) }),
+    ...(a.goal.vote && { vote: a.goal.vote }),
+  }),
   optimistic: (base, a) => {
     const row = rowOf(base, a.session);
     if (!row) return [];

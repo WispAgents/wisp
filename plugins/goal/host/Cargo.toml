@@ -19,6 +19,7 @@ wisp-kernel.workspace = true
 wisp-goal-api.workspace = true
 wisp-goal-core.workspace = true
 wisp-runtime-api.workspace = true
+wisp-crew-api.workspace = true
 wisp-later-api.workspace = true
 wisp-machines-api.workspace = true
 wisp-sandbox-api.workspace = true

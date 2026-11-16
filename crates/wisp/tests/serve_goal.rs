@@ -129,6 +129,33 @@ async fn a_goal_set_on_an_idle_task_is_checked_at_once() {
     assert!(runs_in(&frames).iter().any(|r| r.to_string().contains("Goal: add adds")), "judged now, not after another turn: {frames}");
 }
 
+/// B44: the judges `goal.set` names judge it (they were dropped: the defaults judged), a harness with its model and
+/// effort as `harness/model/effort`.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_goal_set_with_judges_is_judged_by_them() {
+    let dir = temp("serve-goal-judges");
+    let (_serve, port) = start_with(&dir, &[]);
+    let api = Api { http: reqwest::Client::new(), port, n: 0.into() };
+    let made = api
+        .cmd("runtime.create", json!({ "prompt": "fix the add bug", "cwd": dir.join("proj"), "agent": "claude", "worktree": false }))
+        .await;
+    let id = made["id"].as_str().unwrap().to_owned();
+    api.until(&id, "the turn ends", |t| t.last().is_some_and(ended)).await;
+    api.cmd("goal.set", json!({ "id": id, "text": "add adds", "kick": true, "judges": ["claude/sonnet/high", "codex"], "vote": "all" }))
+        .await;
+    let names = |s: &str| -> Vec<String> {
+        runs_in(s).iter().filter_map(|r| r.pointer("/v/name").and_then(Value::as_str).map(str::to_owned)).collect()
+    };
+    let frames = stream(port, "g3", &format!("session:{id}"), |s| {
+        let n = names(s);
+        n.iter().any(|x| x == "claude/sonnet/high") && n.iter().any(|x| x == "codex")
+    })
+    .await;
+    // the first judge runs as the harness with that model
+    let first = runs_in(&frames).into_iter().find(|r| r.pointer("/v/name").and_then(Value::as_str) == Some("claude/sonnet/high")).unwrap();
+    assert_eq!((first.pointer("/v/agent"), first.pointer("/v/model")), (Some(&json!("claude")), Some(&json!("sonnet"))), "{first}");
+}
+
 /// A deleted task's goal checks go with it (`session.deleted`): no `goal_run` row of it is left in the store.
 #[tokio::test(flavor = "multi_thread")]
 async fn a_deleted_tasks_goal_checks_are_deleted_with_it() {

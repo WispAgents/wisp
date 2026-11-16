@@ -76,6 +76,13 @@ pub fn goal_with(spec: &Value, st: Option<&GoalState>, d: &kinds::GoalSpec) -> O
             let mut spec = spec.clone();
             let mut goal = spec.get("goal").filter(|g| g.is_object()).cloned().unwrap_or_else(|| json!({}));
             goal["text"] = Value::String(s.text.clone());
+            // the judges and vote it was set with, over the spec's (B44)
+            if !s.judges.is_empty() {
+                goal["judges"] = json!(s.judges);
+            }
+            if !s.vote.is_empty() {
+                goal["vote"] = Value::String(s.vote.clone());
+            }
             spec["goal"] = goal;
             goal_of(&spec, d)
         }
@@ -95,7 +102,7 @@ async fn set(ctx: &Ctx, defaults: &kinds::Defaults, live: &Inflight, a: &wisp_go
     let st = if text.is_empty() {
         GoalState { state: "cleared".into(), ..GoalState::default() }
     } else {
-        GoalState { text: text.to_owned(), ..GoalState::default() }
+        GoalState { text: text.to_owned(), judges: a.judges.clone(), vote: a.vote.clone(), ..GoalState::default() }
     };
     // the goal it replaced (or cleared) is no longer judged: its judges still running stop (only theirs: a round of
     // the new goal that starts meanwhile goes on)
@@ -350,6 +357,27 @@ mod tests {
     #[test]
     fn manifest_is_valid() {
         assert_eq!(GoalPlugin.manifest().id, "wisp.goal");
+    }
+
+    /// B44: the judges and vote `goal.set` chose are the goal's (they were sent and dropped); without them the spec's
+    #[test]
+    fn a_goal_set_with_judges_and_a_vote_is_judged_by_them() {
+        let d = kinds::GoalSpec::default();
+        let spec = json!({ "agent": "codex", "goal": { "text": "tests pass", "judges": ["claude"], "vote": "majority" } });
+        let set = GoalState {
+            text: "it works on a phone".into(),
+            judges: vec!["codex/gpt-5/high".into(), "Ada".into()],
+            vote: "all".into(),
+            ..GoalState::default()
+        };
+        let g = goal_with(&spec, Some(&set), &d).unwrap();
+        assert_eq!(
+            (g.text.as_str(), g.judges.clone(), g.vote.as_str()),
+            ("it works on a phone", vec!["codex/gpt-5/high".to_owned(), "Ada".to_owned()], "all")
+        );
+        let plain = GoalState { text: "it works on a phone".into(), ..GoalState::default() };
+        let g = goal_with(&spec, Some(&plain), &d).unwrap();
+        assert_eq!((g.judges.clone(), g.vote.as_str()), (vec!["claude".to_owned()], "majority"), "the spec's when none were chosen");
     }
 
     /// ADR-0047 (new in v2): a goal may ask for its judges in a sandbox; a goal that doesn't, judges here.

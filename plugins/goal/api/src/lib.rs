@@ -21,6 +21,16 @@ pub struct SetArgs {
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     #[ts(optional, as = "Option<bool>")]
     pub kick: bool,
+    /// who judges it: a harness (`claude`), a harness with its model and effort (`claude/opus/high`), or a profile or
+    /// crew member by name; none: the task's spec's, else Settings' defaults. Additive (2026-11-16, B44: they were
+    /// sent and dropped).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    #[ts(optional, as = "Option<Vec<String>>")]
+    pub judges: Vec<String>,
+    /// how their verdicts count (`all`, `majority`, `any`); none: the spec's, else Settings'. Additive (2026-11-16).
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    #[ts(optional, as = "Option<String>")]
+    pub vote: String,
 }
 
 /// `goal.pause` / `goal.resume` / `goal.drop` / `goal.check`: a task's goal held, going again, gone, or judged now.
@@ -87,6 +97,11 @@ pub struct GoalState {
     /// the goal set after the task started (`goal.set`), over its spec's
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub text: String,
+    /// the judges and vote `goal.set` chose, over the spec's (B44). Additive (2026-11-16).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub judges: Vec<String>,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub vote: String,
     /// the agent's own wake-up (a `wisp.later` entry) the goal waits for before it's checked (v1 #775). Additive.
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub wake: String,

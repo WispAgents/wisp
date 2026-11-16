@@ -4762,6 +4762,7 @@ dependencies = [
  "thiserror 2.0.21",
  "tokio",
  "tracing",
+ "wisp-crew-api",
  "wisp-goal-api",
  "wisp-goal-core",
  "wisp-kernel",

@@ -57,14 +57,24 @@ pub(crate) fn spec_of(task: &Session) -> Value {
     task.ext.get("wisp.runtime").and_then(|r| r.get("spec")).cloned().unwrap_or_default()
 }
 
-/// A judge's run: its profile's harness and model, or the harness itself.
+/// A judge's run: its profile's harness and model, a crew member's, `harness/model/effort`, or the harness itself.
 pub(crate) async fn pick_of(ctx: &Ctx, judge: &str) -> rt::RunPick {
     let profiles = ctx.run::<rt::Profiles>(&ctx.root_call(), json!({})).await.unwrap_or_default();
     let some = |s: &str| (!s.is_empty()).then(|| s.to_owned());
-    match profiles.iter().find(|p| p.name == judge) {
-        Some(p) => rt::RunPick { agent: some(&p.spec.harness), model: some(&p.spec.model), effort: some(&p.spec.effort) },
-        None => rt::RunPick { agent: Some(judge.to_owned()), ..rt::RunPick::default() },
+    if let Some(p) = profiles.iter().find(|p| p.name == judge) {
+        return rt::RunPick { agent: some(&p.spec.harness), model: some(&p.spec.model), effort: some(&p.spec.effort) };
     }
+    // a crew member by name brings their own harness, model and effort (the goal editor's crew judges, B44)
+    if !judge.contains('/') {
+        let crew = ctx.run::<wisp_crew_api::commands::List>(&ctx.root_call(), wisp_crew_api::commands::NoArgs {}).await.unwrap_or_default();
+        if let Some(m) = crew.iter().map(|v| &v.member).find(|m| m.name == judge) {
+            return rt::RunPick { agent: some(&m.agent), model: some(&m.model), effort: some(&m.effort) };
+        }
+    }
+    // a harness with its model and effort (`claude/opus/high`, the goal editor's judge), else the harness alone
+    let mut parts = judge.splitn(3, '/');
+    let (agent, model, effort) = (parts.next().unwrap_or_default(), parts.next().unwrap_or_default(), parts.next().unwrap_or_default());
+    rt::RunPick { agent: some(agent), model: some(model), effort: some(effort) }
 }
 
 /// The task's scheduled entries (`later.list`), as the goal reads them.

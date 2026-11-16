@@ -10,6 +10,7 @@
     "builtin": "wisp_goal"
   },
   "permissions": [
+    "crew:read",
     "runtime:get",
     "runtime:turns",
     "sandbox:place",

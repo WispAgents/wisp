@@ -224,6 +224,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Fixed
 
+- **The judges you pick for a goal are the ones that judge it** (they were ignored, and the defaults judged), including a crew member or a harness with its model and thinking level.
+
+- **Transcript, Rerun… and Open in are in More** when the task's pane is narrow, as before (they were out of reach below 860 px).
+
 - **Machines is in your avatar's menu, as before**, and opens the Machines dialog (it was a button in the list's head, and the menu item opened This computer). The list's head is its old height again.
 
 - **Marking a task done is quicker**: the next task opens without the page measuring itself several times first.
