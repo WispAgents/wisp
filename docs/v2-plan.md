@@ -775,6 +775,8 @@ Source: `docs/v1-features.md` (each row's evidence and test). `[x]` built, `[ ]`
 - [x] Lead's call (2026-11-16): agents (agent:session) and API keys may add projects through runtime.projectAdd (they already start tasks; capped tasks are refused)
 - [x] Tests keep timing out on an `await import()` inside the test body under CI load (pane-host, machine labels): a check rule against it (r301: `dynamic-import-in-test`, 46 imports hoisted, 8 lazy-chunk waits allowed)
 - [ ] Sign in with Apple on the grid, then on iOS (ADR-0065 open question 1)
+- [ ] Windows: a plugin reinstall while its binary runs fails (`plugins/plugins/host/src/install.rs` ~215: remove_tree errors ignored, rename onto a non-empty dir); `wisp update` runs `npm install -g` while wisp.exe runs (EBUSY/EPERM likely) (r310)
+- [ ] Write amplification 30x vs 15x on the 10-task stream (ADR-0082/0083): measure at real step sizes, trim the schema, then decide the budget with evidence
 - [ ] `ui-only`/MCP: nothing open
 
 ## 8. CI
@@ -948,6 +950,10 @@ Source: `docs/v1-features.md` (each row's evidence and test). `[x]` built, `[ ]`
 |---|---|---|
 | 283 | DX: build bundle + Tauri lock: stopped before edits; plan in §4.6 | to redo |
 | 282 | Server perf budgets: stopped before edits; plan in §4.3 | to redo |
+| 310 | Windows: fakes placed race-free (no rename over a running exe) | committed |
+| 309 | glibc heap trimmed after first looks (ADR-0084); start does less: cold start -25% | committed |
+| 308 | One commit window for every running turn (ADR-0083): patch p99 304 -> 103 ms | committed |
+| 307 | Patch p99, append, write amplification gated (ADR-0082); FAKE_STREAM | committed |
 | 306 | Task list first look in pages from the session table (ADR-0081): first page 1.3 ms, RSS 99 MB | committed |
 | 305 | Cold start 427 -> 67 ms: review's startup clear after serve, only running reviews | committed |
 | 304 | Server budgets gated in PR CI on a real wisp serve with 5k tasks (ADR-0080) | committed |
