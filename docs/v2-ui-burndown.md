@@ -236,3 +236,64 @@ Settings panes, parts off (light unless named).
 | settings.spells (390) | 4 | 4 | Folder… and "plugin" are longer words (§5, not masked), and a sub-pixel |
 | crew.org (1440) | 0 parts, 1.4 % px | 0 parts, 0.8 % px | v1's hint back with Org drag |
 | home, palette, task, stuff (1440); home, crew (390) | — | unchanged | the round's list, Home and Org changes moved nothing |
+
+## 2026-11-16: first whole pass since (lead, after B42/B43)
+
+Every view, width, theme and state: **0/844 shots pass; metrics ok on 134, pixels ok on 8**; 8 views not reachable by
+their openers. Fixed before this pass: the list's head was 4 px taller than v1 (B42) and had a Machines button v1 keeps
+in the avatar menu (B43); both moved every view. Home at 1440 after them: 1 of 158 parts off (the brand's 174 px
+spacer margin, v2 spaces with its bar), pixels 0.2 % but 19 regions over 8×8: rows 2 and 4 rasterize half a pixel
+apart from v1 (every box is within v1's 0.5 px rounding: v1's metrics are rounded, so the cause needs a v1 re-capture
+with exact boxes).
+
+| View | Shots | Pass | Pixels ok | Metrics ok | First gap |
+|---|---:|---:|---:|---:|---|
+| automations.trigger-new | 8 | 0 | 0 | 0 | 1440-light-rest: 0.3% px, 32 regions >8×8, 29/177 parts off (topbar.brand#0: mar 0px 174px 0px 0px→0) |
+| crew | 24 | 0 | 0 | 0 | 1440-light-rest: 1.6% px, 109 regions >8×8, 17/50 parts off (topbar.brand#0: mar 0px 174px 0px 0px→0) |
+| crew.add | 16 | 0 | 0 | 0 | 1440-light-rest: 5.1% px, 421 regions >8×8, 39/176 parts off (topbar.brand#0: mar 0px 174px 0px 0px→0) |
+| crew.org | 16 | 0 | 0 | 2 | 1440-light-rest: 0.8% px, 93 regions >8×8, 1/112 parts off (topbar.brand#0: mar 0px 174px 0px 0px→0) |
+| home | 48 | 0 | 8 | 30 | 1440-light-rest: 0.2% px, 19 regions >8×8, 1/158 parts off (topbar.brand#0: mar 0px 174px 0px 0px→0) |
+| home.auto-preview | 16 | 0 | 0 | 0 | 1440-light-rest: 0.3% px, 31 regions >8×8, 5/175 parts off (topbar.brand#0: mar 0px 174px 0px 0px→0) |
+| home.compare | 16 | 0 | 0 | 0 | 1440-light-rest: 0.6% px, 54 regions >8×8, 13/160 parts off (topbar.brand#0: mar 0px 174px 0px 0px→0) |
+| home.goal-judges | 12 | 0 | 0 | 0 | not reachable in v2 (1440-light): locator.click: Timeout 2500ms exceeded. |
+| home.goal-on | 16 | 0 | 0 | 0 | 1440-light-rest: 2.0% px, 189 regions >8×8, 23/162 parts off (topbar.brand#0: mar 0px 174px 0px 0px→0) |
+| home.issues | 16 | 0 | 0 | 0 | 1440-light-rest: 0.2% px, 17 regions >8×8, 2/162 parts off (topbar.brand#0: mar 0px 174px 0px 0px→0) |
+| home.later | 16 | 0 | 0 | 0 | 1440-light-rest: 1.2% px, 96 regions >8×8, 10/167 parts off (topbar.brand#0: mar 0px 174px 0px 0px→0) |
+| home.mode-menu | 16 | 0 | 0 | 0 | 1440-light-rest: 1.5% px, 123 regions >8×8, 10/165 parts off (topbar.brand#0: mar 0px 174px 0px 0px→0) |
+| home.runner | 16 | 0 | 0 | 0 | 1440-light-rest: 0.6% px, 65 regions >8×8, 5/163 parts off (topbar.brand#0: mar 0px 174px 0px 0px→0) |
+| home.team | 16 | 0 | 0 | 0 | 1440-light-rest: 3.3% px, 141 regions >8×8, 7/164 parts off (topbar.brand#0: mar 0px 174px 0px 0px→0) |
+| home.typed | 16 | 0 | 0 | 0 | 1440-light-rest: 0.2% px, 21 regions >8×8, 2/158 parts off (topbar.brand#0: mar 0px 174px 0px 0px→0) |
+| home.where | 16 | 0 | 0 | 0 | 1440-light-rest: 1.3% px, 78 regions >8×8, 8/163 parts off (topbar.brand#0: mar 0px 174px 0px 0px→0) |
+| home.worktree-off | 16 | 0 | 0 | 4 | 1440-light-rest: 0.3% px, 31 regions >8×8, 1/158 parts off (topbar.brand#0: mar 0px 174px 0px 0px→0) |
+| me-menu | 12 | 0 | 0 | 0 | 1440-light-rest: 3.5% px, 59 regions >8×8, 39/179 parts off (topbar.brand#0: mar 0px 174px 0px 0px→0) |
+| palette | 24 | 0 | 0 | 0 | 1440-light-rest: 0.2% px, 18 regions >8×8, 25/165 parts off (topbar.brand#0: mar 0px 174px 0px 0px→0) |
+| projects | 12 | 0 | 0 | 0 | 1440-light-rest: 4.7% px, 257 regions >8×8, 37/171 parts off (topbar.brand#0: mar 0px 174px 0px 0px→0) |
+| settings.agents | 16 | 0 | 0 | 0 | 1440-light-rest: 1.3% px, 139 regions >8×8, 29/185 parts off (topbar.brand#0: mar 0px 174px 0px 0px→0) |
+| settings.auto | 16 | 0 | 0 | 0 | 1440-light-rest: 0.7% px, 84 regions >8×8, 29/180 parts off (topbar.brand#0: mar 0px 174px 0px 0px→0) |
+| settings.automations | 16 | 0 | 0 | 0 | 1440-light-rest: 0.7% px, 81 regions >8×8, 29/181 parts off (topbar.brand#0: mar 0px 174px 0px 0px→0) |
+| settings.cloud | 16 | 0 | 0 | 0 | 1440-light-rest: 0.8% px, 86 regions >8×8, 30/183 parts off (topbar.brand#0: mar 0px 174px 0px 0px→0) |
+| settings.connectors | 16 | 0 | 0 | 0 | 1440-light-rest: 0.7% px, 75 regions >8×8, 30/182 parts off (topbar.brand#0: mar 0px 174px 0px 0px→0) |
+| settings.general | 24 | 0 | 0 | 0 | 1440-light-rest: 0.9% px, 90 regions >8×8, 29/187 parts off (topbar.brand#0: mar 0px 174px 0px 0px→0) |
+| settings.machines | 16 | 0 | 0 | 0 | 1440-light-rest: 1.0% px, 102 regions >8×8, 29/184 parts off (topbar.brand#0: mar 0px 174px 0px 0px→0) |
+| settings.memory | 16 | 0 | 0 | 0 | 1440-light-rest: 0.7% px, 86 regions >8×8, 29/180 parts off (topbar.brand#0: mar 0px 174px 0px 0px→0) |
+| settings.notifications | 16 | 0 | 0 | 0 | 1440-light-rest: 1.3% px, 158 regions >8×8, 29/181 parts off (topbar.brand#0: mar 0px 174px 0px 0px→0) |
+| settings.privacy | 16 | 0 | 0 | 0 | 1440-light-rest: 0.7% px, 83 regions >8×8, 29/182 parts off (topbar.brand#0: mar 0px 174px 0px 0px→0) |
+| settings.spells | 16 | 0 | 0 | 0 | 1440-light-rest: 1.0% px, 102 regions >8×8, 20/159 parts off (topbar.brand#0: mar 0px 174px 0px 0px→0) |
+| settings.usage | 16 | 0 | 0 | 0 | 1440-light-rest: 0.8% px, 87 regions >8×8, 29/194 parts off (topbar.brand#0: mar 0px 174px 0px 0px→0) |
+| settings.worktrees | 16 | 0 | 0 | 0 | 1440-light-rest: 0.7% px, 90 regions >8×8, 30/186 parts off (topbar.brand#0: mar 0px 174px 0px 0px→0) |
+| stuff | 24 | 0 | 0 | 2 | 1440-light-rest: 0.4% px, 20 regions >8×8, 1/118 parts off (topbar.brand#0: mar 0px 174px 0px 0px→0) |
+| task | 72 | 0 | 0 | 48 | 1440-light-rest: 0.2% px, 34 regions >8×8, 25/149 parts off (topbar.brand#0: mar 0px 174px 0px 0px→0) |
+| task.changes | 16 | 0 | 0 | 0 | 1440-light-rest: 0.6% px, 77 regions >8×8, 30/174 parts off (topbar.brand#0: mar 0px 174px 0px 0px→0) |
+| task.changes-diff | 8 | 0 | 0 | 0 | 1440-light-rest: 0.7% px, 82 regions >8×8, 31/174 parts off (topbar.brand#0: mar 0px 174px 0px 0px→0) |
+| task.composer | 72 | 0 | 0 | 48 | 1440-light-rest: 0.2% px, 34 regions >8×8, 25/149 parts off (topbar.brand#0: mar 0px 174px 0px 0px→0) |
+| task.composer-goal | 8 | 0 | 0 | 0 | not reachable in v2 (1440-light): locator.click: Timeout 2500ms exceeded. |
+| task.editor | 8 | 0 | 0 | 0 | not reachable in v2 (1440-light): locator.click: Timeout 2500ms exceeded. |
+| task.goal | 8 | 0 | 0 | 0 | 1440-light-rest: 18.8% px, 254 regions >8×8, 38/158 parts off (topbar.brand#0: mar 0px 174px 0px 0px→0) |
+| task.goal-judges | 8 | 0 | 0 | 0 | not reachable in v2 (1440-light): locator.click: Timeout 2500ms exceeded. |
+| task.goal-menu | 8 | 0 | 0 | 0 | not reachable in v2 (1440-light): locator.click: Timeout 2500ms exceeded. |
+| task.more | 8 | 0 | 0 | 0 | 1440-light-rest: 1.9% px, 153 regions >8×8, 46/169 parts off (topbar.brand#0: mar 0px 174px 0px 0px→0) |
+| task.preview | 8 | 0 | 0 | 0 | not reachable in v2 (1440-light): locator.click: Timeout 2500ms exceeded. |
+| task.rerun | 8 | 0 | 0 | 0 | not reachable in v2 (900-light): locator.click: Timeout 2500ms exceeded. |
+| task.right-click | 8 | 0 | 0 | 0 | 1440-light-rest: 3.9% px, 143 regions >8×8, 36/93 parts off (topbar.brand#0: mar 0px 174px 0px 0px→0) |
+| task.ship | 8 | 0 | 0 | 0 | 1440-light-rest: 16.9% px, 182 regions >8×8, 33/156 parts off (topbar.brand#0: mar 0px 174px 0px 0px→0) |
+| task.transcript | 8 | 0 | 0 | 0 | not reachable in v2 (900-light): locator.click: Timeout 2500ms exceeded. |

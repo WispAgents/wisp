@@ -15,7 +15,7 @@ Bugs go to `docs/qa/bugs.md`.
 3. [ ] **Parity, layout and feedback checks against v1** on every view, width and theme (`qa/parity.mjs`,
    `qa/layout.mjs`, `qa/feedback.mjs`, `qa/phone-selection.mjs`), one full pass.
    *2026-11-16:* layout (shell): 0 problems on 5 pages × 6 widths × 2 themes. Feedback, full run: 520 pass, 0 fail (home, task, composer; 1440/390/320; desktop and browser) after B39–B41.
-   Parity: running.
+   Parity, whole pass: 0/844 (metrics ok 134, pixels 8; 8 views unreachable); burn-down in `docs/v2-ui-burndown.md`.
 4. [ ] **Windows by hand once**: install, update, the desktop window.
 5. [ ] **Real Claude Code and Codex runs** in a wisp-init'ed repo: MCP tools, the skill, the CI action.
 6. [ ] **First npm release of v2**: the owner's one-time publish of the 7 `wisp-agents-<os>-<arch>` packages, trusted
