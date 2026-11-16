@@ -777,6 +777,8 @@ Source: `docs/v1-features.md` (each row's evidence and test). `[x]` built, `[ ]`
 - [ ] Sign in with Apple on the grid, then on iOS (ADR-0065 open question 1)
 - [ ] Windows: ~~a plugin reinstall while its binary runs fails~~ fixed r311 (uninstall waits for the exec child to exit, `kernel_install::uninstall_waits_for_its_process_to_exit`; install/uninstall swap through `plugins/.old/`, old one kept on failure, `install::a_reinstall_whose_old_folder_is_in_use_keeps_the_old_one_working`; Windows proof = next `ci:full`); ~~`wisp update` runs `npm install -g` while wisp.exe runs from the package npm replaces (EPERM/EBUSY on Windows; v1 never hit it: node.exe lived outside the package)~~ fixed r314: on Windows the npm install runs in the PowerShell hand-off after `Wait-Process` (≤ 30 s), wisp.exe set aside first, then wisp restarts with the same args (the old copy when npm fails); the next start reads `plugins/wisp.update/update-{pending.json,exit.txt,npm.log}` and the row's error says why, the waiting page toasts it (`wisp_update_core::deferred`, golden `plugins/update/core/tests/goldens/windows-hand-off.ps1`, `deferred::*`, `hand_off::*` with the real waiter + fake npm on Windows, `pill.test.ts` `a_restart_that_brings_the_old_version_back_with_an_error_says_why`; macOS/Linux unchanged: a running binary is an open inode npm's rename leaves alone; Windows proof = next `ci:full`)
 - [ ] Write amplification on the 10-task stream (ADR-0082/0083/0085): ~~measure at real step sizes~~ (275 374 real steps: mean 689 B, p50 290, p90 1 941; 0.2 steps/s a turn at p50, busiest 10 s p99 1.8/s; the gate now streams that mix at 2/s), ~~trim the schema~~ (no AUTOINCREMENT, an append's change row keeps keys: realistic 55.2 → 44.7–45.7×, ADR-0082's stream 31.5 → 26.2×). **Open: the budget, the owner's call** (ADR-0085's open question: ratchet 48× at this load (recommended), or cut the per-turn commits of other plugins first (543 of 1 363 frames, ~17× alone), or live apart from durable (31× at 1 s)); 15× holds and the gate stays red until then
+- [ ] Linux idle RSS 150-159 MB vs 120 (Mac 99; 129-135 before the list is read) (CI df56a408)
+- [ ] Write amplification 46-47x vs the 48x ratchet: cut other plugins' per-turn commits (ADR-0085 option 2), then lower the ratchet
 - [ ] `ui-only`/MCP: nothing open
 
 ## 8. CI
@@ -950,6 +952,11 @@ Source: `docs/v1-features.md` (each row's evidence and test). `[x]` built, `[ ]`
 |---|---|---|
 | 283 | DX: build bundle + Tauri lock: stopped before edits; plan in §4.6 | to redo |
 | 282 | Server perf budgets: stopped before edits; plan in §4.3 | to redo |
+| 315 | Windows `wisp update`: npm installs after wisp exits; old version back on failure | committed |
+| 314 | Plugin reinstall/uninstall: stop, wait for exit, swap; old version kept on failure | committed |
+| 313 | A run's app takes the next free port; v1's 3 s stop grace | committed |
+| 312 | Preview proxy takes the next free port (Windows reserved ranges) (ADR-0086) | committed |
+| 311 | Amplification gate on real agents' steps; feed writes less; ratchet 48x (ADR-0085) | committed |
 | 310 | Windows: fakes placed race-free (no rename over a running exe) | committed |
 | 309 | glibc heap trimmed after first looks (ADR-0084); start does less: cold start -25% | committed |
 | 308 | One commit window for every running turn (ADR-0083): patch p99 304 -> 103 ms | committed |
