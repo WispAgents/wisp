@@ -57,7 +57,7 @@ pub fn fake_bins() -> (PathBuf, PathBuf) {
     BUILT.get_or_init(|| fake_bins_into(&bin_dir().join("wisp-fakes"))).clone()
 }
 
-fn bin_dir() -> &'static Path {
+pub fn bin_dir() -> &'static Path {
     Path::new(env!("CARGO_BIN_EXE_wisp")).parent().unwrap()
 }
 
@@ -67,12 +67,26 @@ fn bin_dir() -> &'static Path {
 /// is running (or a symlink to it) is never missing or half-written. The copies also keep a later
 /// `cargo test -p wisp-testkit`, which re-links `<target>/<profile>/wisp-fake-agent`, from pulling a
 /// binary out from under a running test.
+///
+/// A copy already in place with the build's bytes is left alone: another process may be running it,
+/// and Windows refuses to rename over a running executable (os error 5, "Access is denied"). A copy of
+/// another build that is running is moved aside first (Windows lets a running executable be renamed,
+/// not replaced) and removed once nothing runs it, by this placement or a later one.
 pub fn fake_bins_into(out: &Path) -> (PathBuf, PathBuf) {
     let dir = bin_dir();
     let exe = |d: &Path, n: &str| d.join(format!("{n}{}", std::env::consts::EXE_SUFFIX));
     std::fs::create_dir_all(out).unwrap();
     let lock = std::fs::OpenOptions::new().create(true).truncate(false).write(true).open(out.join(".lock")).unwrap();
     lock.lock().unwrap();
+    // under the lock no placement is under way: what's left is a crashed one's temp file or a copy an
+    // earlier one moved aside, which goes once nothing runs it (on Windows a running one stays)
+    for e in std::fs::read_dir(out).unwrap().flatten() {
+        let name = e.file_name();
+        let name = name.to_string_lossy();
+        if name.starts_with('.') && (name.ends_with(".old") || name.ends_with(".tmp")) {
+            let _ = std::fs::remove_file(e.path());
+        }
+    }
     let target = dir.parent().unwrap();
     let mut cmd = Command::new(std::env::var("CARGO").unwrap_or_else(|_| "cargo".into()));
     cmd.args(["build", "--quiet", "-p", "wisp-testkit", "--bin", "wisp-fake-agent", "--bin", "wisp-fake-gh", "--target-dir"]).arg(target);
@@ -82,9 +96,18 @@ pub fn fake_bins_into(out: &Path) -> (PathBuf, PathBuf) {
     assert!(cmd.status().unwrap().success(), "building wisp-testkit's fakes into {}", target.display());
     let place = |n: &str| {
         let (src, dst) = (exe(dir, n), exe(out, n));
+        if wisp_testkit::same_bytes(&src, &dst) {
+            return dst;
+        }
         let tmp = out.join(format!(".{n}.{}.tmp", std::process::id()));
         std::fs::copy(&src, &tmp).unwrap_or_else(|e| panic!("copying {} to {}: {e}", src.display(), tmp.display()));
-        std::fs::rename(&tmp, &dst).unwrap();
+        if let Err(e) = std::fs::rename(&tmp, &dst) {
+            // another build's copy is running (Windows): move it aside, then the rename has a free name
+            let old = out.join(format!(".{n}.{}.old", std::process::id()));
+            std::fs::rename(&dst, &old).unwrap_or_else(|e2| panic!("placing {}: {e}; moving the old copy aside: {e2}", dst.display()));
+            std::fs::rename(&tmp, &dst).unwrap_or_else(|e| panic!("placing {} after moving the old copy aside: {e}", dst.display()));
+            let _ = std::fs::remove_file(&old);
+        }
         dst
     };
     let (agent, gh) = (place("wisp-fake-agent"), place("wisp-fake-gh"));

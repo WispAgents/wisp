@@ -268,7 +268,10 @@ pub fn install_fakes_from(dir: &Path, names: &[&str], agent: &Path, gh: &Path) -
         if cfg!(not(unix)) && same_bytes(src, &dst) {
             continue;
         }
-        let _ = std::fs::remove_file(&dst);
+        if std::fs::remove_file(&dst).is_err() && cfg!(not(unix)) && dst.is_file() {
+            // another build's copy that is running: Windows can't remove it but lets it be renamed aside
+            std::fs::rename(&dst, dir.join(format!(".{n}.{}.old", std::process::id())))?;
+        }
         #[cfg(unix)]
         std::os::unix::fs::symlink(src, &dst)?;
         #[cfg(not(unix))]
@@ -278,7 +281,7 @@ pub fn install_fakes_from(dir: &Path, names: &[&str], agent: &Path, gh: &Path) -
 }
 
 /// Whether `b` is a file with exactly `a`'s bytes (the length first, so a different build is told cheaply).
-fn same_bytes(a: &Path, b: &Path) -> bool {
+pub fn same_bytes(a: &Path, b: &Path) -> bool {
     match (std::fs::metadata(a), std::fs::metadata(b)) {
         (Ok(x), Ok(y)) if x.is_file() && y.is_file() && x.len() == y.len() => {
             matches!((std::fs::read(a), std::fs::read(b)), (Ok(x), Ok(y)) if x == y)
