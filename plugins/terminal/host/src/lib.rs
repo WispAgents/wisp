@@ -6,6 +6,7 @@
 //! late sees the screen) and streamed to every page that watches it as v1's event stream; numbered
 //! keys from a page go in in order.
 
+mod ports;
 mod proxy;
 mod registry;
 
@@ -87,7 +88,9 @@ async fn run_info(ctx: &Ctx, call: &wisp_kernel::Call, r: &Registry, id: &str) -
     let guess = wisp_terminal_core::run::guess(wt.as_deref(), pkg.as_deref(), &|f| locks.contains(&f));
     let open = r.live(TermKind::Run, id);
     let proxy = r.proxies.port(id).filter(|_| open);
-    Ok(wisp_terminal_api::RunInfo { open, port: wisp_terminal_core::run::port_for(id), dir, guess, proxy })
+    // running: the port it was given (ADR-0086); not: the one it tries first
+    let port = r.app_port(id).filter(|_| open).unwrap_or_else(|| wisp_terminal_core::run::port_for(id));
+    Ok(wisp_terminal_api::RunInfo { open, port, dir, guess, proxy })
 }
 
 /// Opens `argv` (a login shell when empty) in `cwd` in the terminal app Settings names (v1 POST /sessions/:id/open-shell,
@@ -148,9 +151,10 @@ fn plan_here(
 
 /// Runs the task's app in its folder on a PTY, `PORT` set (v1 POST /sessions/:id/run).
 /// Whether the task's app is running, on its row (`ext["wisp.terminal"].run`): the row menu's Run app / Stop app (v1
-/// panel.js runLabel) reads it. Best effort: a task that's gone has no row to mark.
-pub(crate) async fn mark_run(ctx: &Ctx, call: &wisp_kernel::Call, id: &str, running: bool) {
-    let port = wisp_terminal_core::run::port_for(id);
+/// panel.js runLabel) reads it, with the port the app was given (`None`: never started since wisp started, its first
+/// try). Best effort: a task that's gone has no row to mark.
+pub(crate) async fn mark_run(ctx: &Ctx, call: &wisp_kernel::Call, id: &str, running: bool, port: Option<u16>) {
+    let port = port.unwrap_or_else(|| wisp_terminal_core::run::port_for(id));
     let value = json!({ "run": { "running": running, "port": port } });
     // set-ext: whole the slot holds only `run`, set from the app's state now, never read back and merged
     let a = rt::SetExtArgs { id: SessionId(id.to_owned()), plugin: "wisp.terminal".into(), value, expect: None };
@@ -160,7 +164,6 @@ pub(crate) async fn mark_run(ctx: &Ctx, call: &wisp_kernel::Call, id: &str, runn
 }
 
 async fn start_run(ctx: &Ctx, call: &wisp_kernel::Call, r: &Arc<Registry>, a: &c::RunStartArgs) -> Result<wisp_terminal_api::RunStarted> {
-    let port = wisp_terminal_core::run::port_for(&a.id);
     if a.command.trim().is_empty() {
         return Err(WireError::invalid("Say what runs the app (npm run dev, …)."));
     }
@@ -169,19 +172,31 @@ async fn start_run(ctx: &Ctx, call: &wisp_kernel::Call, r: &Arc<Registry>, a: &c
             "Preview runs the app under a POSIX shell: it needs macOS or Linux on the computer the task runs on.",
         ));
     }
+    // already running: what it was given (never recomputed)
+    let running = |r: &Registry| wisp_terminal_api::RunStarted {
+        ok: true,
+        started: false,
+        port: r.app_port(&a.id).unwrap_or_else(|| wisp_terminal_core::run::port_for(&a.id)),
+        dir: String::new(),
+        proxy: r.proxies.port(&a.id),
+    };
     if r.live(TermKind::Run, &a.id) && !a.restart {
-        let proxy = r.proxies.port(&a.id);
-        return Ok(wisp_terminal_api::RunStarted { ok: true, started: false, port, dir: String::new(), proxy });
+        return Ok(running(r));
     }
     if a.restart {
         r.close(TermKind::Run, &a.id).await;
     }
     let (dir, _) = task_dir(ctx, call, &a.id).await?;
+    // its own port when free, else the next free one (ADR-0086); the app gets it as PORT and every caller reads it back
+    let port = r.claim_app_port(&a.id).await;
+    if r.live(TermKind::Run, &a.id) && !a.restart {
+        return Ok(running(r)); // a second Run (a double click) started it while this one looked for a port
+    }
     let mut argv = wisp_terminal_core::folder::shell_argv(std::env::var("SHELL").ok().as_deref());
     argv.truncate(1);
     argv.extend(["-lc".to_owned(), wisp_terminal_core::run::script(&a.command, port)]);
     // marked before it starts: an app that exits at once clears it after, never before (no stale "running")
-    mark_run(ctx, call, &a.id, true).await;
+    mark_run(ctx, call, &a.id, true, Some(port)).await;
     r.open(ctx, &c::OpenArgs { kind: TermKind::Run, id: a.id.clone(), argv, cwd: dir.clone(), cols: a.cols, rows: a.rows, tui: false });
     // Preview's proxy (ADR-0049): to the port the app prints, else its PORT; weak, so the registry isn't kept by it
     let weak = Arc::downgrade(r);
@@ -333,10 +348,11 @@ impl Plugin for TerminalPlugin {
         });
         on!(s, slot, c::Get, |r, ctx, call, a| Ok(r.info(a.kind, &a.id)));
         on!(s, slot, c::Close, |r, ctx, call, a| {
+            let port = r.app_port(&a.id); // what the row keeps saying: close forgets it
             let ok = r.close(a.kind, &a.id).await;
             if a.kind == TermKind::Run {
                 r.proxies.stop(&a.id); // the app stopped: so does its proxy
-                mark_run(&ctx, &call, &a.id, false).await;
+                mark_run(&ctx, &call, &a.id, false, port).await;
             }
             if ok {
                 // hung up: forgotten, and whoever owns the task hears it ended

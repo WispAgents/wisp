@@ -33,7 +33,7 @@ don't share an origin.
 - Preview's Pick works whatever the task id and whatever holds ports on the machine.
 - When the own port is taken, the app shows under another origin that run: its storage from earlier runs isn't seen
   (as v1).
-- The app's own port (`run::port_for`, 41000 + hash) is still fixed: the app binds it, not wisp; not changed here.
+- The app's own port has the same fallback (below, *The app's port too*).
 
 ## Edge cases
 
@@ -44,3 +44,32 @@ don't share an origin.
 | The candidate order | its own port first, 60 distinct ports, all in 42000–42899 (never an app's 41000–41899), the same each time | `pick.rs` `the_preview_proxy_frames_the_app_and_adds_the_picker_as_v1` |
 | The own port is free | it's the one taken (ADR-0049's stable origin) | `proxy.rs` `the_proxy_frames_the_app_adds_the_picker_and_refuses_a_foreign_host` (asserts `port(id)` is what `start` returned) |
 | The run is stopped | `port(id)` is none and the port is free again | same |
+
+## The app's port too
+
+The same flaw sat on the app's port: `terminal.run.start` gave the app `PORT=41000 + hash(id) % 900` whatever held it,
+so with that port taken (another program, a Windows excluded range) the dev server failed to start, or started
+elsewhere while `RunInfo.port` / `RunStarted.port` and the row's mark still named the derived one. v1 ran `pickPort`
+for the app as for the proxy (`APP_BASE`), passing over ports its own other runs held, and found where the app really
+listened from the first local address it printed, else `PORT`.
+
+1. **The app's port is chosen at each start, as the proxy's:** the task's own, then the next ones in 41000–41899
+   (wrapping), 60 in all (`wisp_terminal_core::run::ports_for`, pure), then any port the system gives. A port is free
+   when no other task's app has it (given and not ended: one still starting counts, its program may not have bound
+   yet), loopback binds it, and nothing answers on it on `127.0.0.1` or `[::1]` within 150 ms (v1 `listenable` +
+   `answers`: a dev server on `[::1]`, or one whose `SO_REUSEADDR` lets the bind through, is still seen). wisp only
+   probes; the app binds it.
+2. **The chosen port is recorded (`Registry::claim_app_port`) and read back:** the app's `PORT`, `RunStarted.port`
+   (started or already running), `RunInfo.port` while it runs, and the row's mark (`ext["wisp.terminal"].run.port`, set
+   at start, kept as it was at exit or Stop) all read the record; nothing recomputes it from the id (`run::port_for` is
+   only the first try, and what `RunInfo.port` says before any run). Choosing and recording is one step under one lock, so two starts never get one port; a second Run for a task that started while it probed answers the running app's port. Hanging the run up (Stop, its `DELETE` route, a restart) forgets it.
+3. Where the app really listens stays as ADR-0049 had it: the first local address it prints (`Registry::local_port`),
+   else the port it was given; the proxy targets that, and the panel's Open link reads the printed address.
+
+| Case | What happens | Test |
+|---|---|---|
+| The task's own app port is held by another program (or reserved) | the app gets the next free one of its 60 as `PORT`; Run's answer, `run.info`, a second Run and the row's mark all say it | `crates/wisp/tests/serve_terminal.rs` `a_taken_app_port_still_runs_the_app_and_every_caller_says_the_real_port` (fails on the fixed port) |
+| Another task's app has the port, still starting | not given to a second task | `registry.rs` `a_taken_app_port_moves_to_the_next_free_one_and_is_the_one_recorded` |
+| The own port free again (after Stop) | it's the one taken again (the stable origin) | same |
+| The candidate order | own first, 60 distinct, all in 41000–41899 (never a proxy's 42000–42899), the next ones wrapping | `run.rs` `preview_runs_the_worktree_run_else_the_dev_script_with_a_stable_port` |
+| The app exits or is stopped | the row's mark keeps the port it was given (`running: false`) | `serve_terminal.rs` `a_tasks_running_app_is_marked_on_its_row_until_it_stops_or_exits` |

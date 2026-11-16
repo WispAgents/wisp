@@ -2,9 +2,13 @@
 
 /**
  * The side panel's Preview before it runs (v1 GET /sessions/:id/run): whether the app runs, the port it gets
- * (`PORT`, stable per task), the folder, and a command to start from.
+ * (`PORT`), the folder, and a command to start from.
  */
-export type RunInfo = { open: boolean, port: number, dir: string, 
+export type RunInfo = { open: boolean, 
+/**
+ * Running: the port its app was given (ADR-0086: its own, else the next free one). Not: the one it tries first.
+ */
+port: number, dir: string, 
 /**
  * `.wisp/worktree.json`'s run, else package.json's dev or start script
  */

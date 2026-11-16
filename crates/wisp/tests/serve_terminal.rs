@@ -226,3 +226,47 @@ async fn a_tasks_running_app_is_marked_on_its_row_until_it_stops_or_exits() {
     assert_eq!(running(&api.cmd("runtime.get", json!({ "id": id })).await), Some(false), "an app that exits at once isn't left marked");
     drop(serve);
 }
+
+/// v1 runs.js pickPort for the app (ADR-0086): the task's own app port held by another program (or in a range Windows
+/// reserves) doesn't stop Run; the app gets the next free one as PORT, and Run's answer, run.info and the row's mark all
+/// say that port, never the one recomputed from the id.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_taken_app_port_still_runs_the_app_and_every_caller_says_the_real_port() {
+    if cfg!(windows) {
+        return;
+    }
+    let dir = temp("serve-run-port");
+    let (serve, port) = start_with(&dir, &[("SHELL", "/bin/sh")]);
+    let api = Arc::new(Api { http: reqwest::Client::new(), port, n: 0.into() });
+    let (_, task) = run_task(&api, &dir, "claude").await;
+    let id = task["id"].as_str().unwrap().to_owned();
+    // wisp_terminal_core::run::port_for: the app's own port, held here (listening) as another program would
+    let h = id.chars().fold(7_u32, |h, c| h.wrapping_mul(31).wrapping_add(u32::from(c)));
+    let derived = 41_000 + u16::try_from(h % 900).unwrap();
+    let _held = std::net::TcpListener::bind(("127.0.0.1", derived)).unwrap();
+    let said = dir.join("port.txt");
+    let command = format!("echo \"$PORT\" > '{}'; sleep 30", said.display());
+    let started = api.cmd("terminal.run.start", json!({ "id": id, "command": command, "cols": 80, "rows": 24 })).await;
+    assert_eq!(started["started"], true, "{started}");
+    let given = u16::try_from(started["port"].as_u64().unwrap()).unwrap();
+    assert_ne!(given, derived, "not the taken port: {started}");
+    let until = Instant::now() + Duration::from_secs(15);
+    let env = loop {
+        if let Ok(s) = std::fs::read_to_string(&said)
+            && !s.trim().is_empty()
+        {
+            break s.trim().to_owned();
+        }
+        assert!(Instant::now() < until, "the app never started");
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    };
+    assert_eq!(env, given.to_string(), "the app's PORT is the port Run says");
+    let info = api.cmd("terminal.run.info", json!({ "id": id })).await;
+    assert_eq!((info["open"].as_bool(), info["port"].as_u64()), (Some(true), Some(u64::from(given))), "{info}");
+    let again = api.cmd("terminal.run.start", json!({ "id": id, "command": command, "cols": 80, "rows": 24 })).await;
+    assert_eq!((again["started"].as_bool(), again["port"].as_u64()), (Some(false), Some(u64::from(given))), "{again}");
+    let row = api.cmd("runtime.get", json!({ "id": id })).await;
+    assert_eq!(row.pointer("/ext/wisp.terminal/run/port").and_then(Value::as_u64), Some(u64::from(given)), "the row's mark");
+    api.cmd("terminal.close", json!({ "kind": "run", "id": id })).await;
+    drop(serve);
+}

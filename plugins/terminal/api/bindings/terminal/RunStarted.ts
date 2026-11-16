@@ -3,7 +3,11 @@
 /**
  * Run's answer: started (or already running), on which port, in which folder.
  */
-export type RunStarted = { ok: boolean, started: boolean, port: number, dir: string, 
+export type RunStarted = { ok: boolean, started: boolean, 
+/**
+ * The port the app was given as `PORT` (ADR-0086: the task's own when free, else the next free one)
+ */
+port: number, dir: string, 
 /**
  * Preview's proxy, when it could start (ADR-0049); without it the panel shows the app itself, without Pick. Additive.
  */

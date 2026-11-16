@@ -1,4 +1,4 @@
-//! The side panel's Preview (v1 server/runs.js): the port a task's app gets (stable per task, so a reload finds it),
+//! The side panel's Preview (v1 server/runs.js): the ports a task's app tries (its own first, stable per task, ADR-0086),
 //! the command to start from (`.wisp/worktree.json`'s `run`, else package.json's `dev` or `start` script, as v1
 //! guessed), and the script the PTY runs: `PORT` set, then the command as typed. Pure: the host reads the files.
 
@@ -6,11 +6,26 @@
 const APP_BASE: u16 = 41_000;
 const SPAN: u32 = 900;
 
-/// The port task `id`'s app gets (`PORT`).
+/// v1 `pickPort`: how many ports from the task's own are tried before any free one the system gives.
+pub const APP_TRIES: u32 = 60;
+
+fn hash(id: &str) -> u32 {
+    id.chars().fold(7_u32, |h, c| h.wrapping_mul(31).wrapping_add(u32::from(c)))
+}
+
+/// The port task `id`'s app gets when it's free (stable per task: the same origin each run, so the app keeps its
+/// storage). Only the first try: the port an app was given is the one the host chose ([`ports_for`]), read from there.
 #[must_use]
 pub fn port_for(id: &str) -> u16 {
-    let h = id.chars().fold(7_u32, |h, c| h.wrapping_mul(31).wrapping_add(u32::from(c)));
-    APP_BASE + u16::try_from(h % SPAN).unwrap_or(0)
+    APP_BASE + u16::try_from(hash(id) % SPAN).unwrap_or(0)
+}
+
+/// The ports task `id`'s app tries, in order (v1 `pickPort`): its own, then the next ones in 41000–41899 (wrapping),
+/// [`APP_TRIES`] in all, the same each time. One another program holds or the system reserves (Windows' excluded
+/// ranges) is passed over; when none is free the host asks the system for any free one.
+pub fn ports_for(id: &str) -> impl Iterator<Item = u16> {
+    let h = hash(id);
+    (0..APP_TRIES).map(move |i| APP_BASE + u16::try_from(h.wrapping_add(i) % SPAN).unwrap_or(0))
 }
 
 /// The command to offer: `.wisp/worktree.json`'s `run`, else the package manager's `dev` (or `start`) script.
@@ -57,6 +72,13 @@ mod tests {
         let p = port_for("s1");
         assert!((41_000..41_900).contains(&p));
         assert_eq!(port_for("s1"), p, "the same task, the same port");
+        let tries: Vec<u16> = ports_for("s1").collect();
+        assert_eq!(tries.first(), Some(&p), "its own port first");
+        assert_eq!(tries.len(), 60);
+        assert!(tries.iter().all(|t| (41_000..41_900).contains(t)), "never on a proxy's port");
+        assert_eq!(tries.iter().collect::<std::collections::HashSet<_>>().len(), 60, "each tried once");
+        let last: Vec<u16> = ports_for("x").collect();
+        assert!(last.windows(2).all(|w| w[1] == w[0] + 1 || (w[0] == 41_899 && w[1] == 41_000)), "the next ones, wrapping");
         assert_eq!(script("  npm run dev \n", 41_234), "export PORT=41234\nnpm run dev");
     }
 }

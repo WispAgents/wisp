@@ -111,11 +111,12 @@ pub struct ShellInfo {
 }
 
 /// The side panel's Preview before it runs (v1 GET /sessions/:id/run): whether the app runs, the port it gets
-/// (`PORT`, stable per task), the folder, and a command to start from.
+/// (`PORT`), the folder, and a command to start from.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[ts(export, export_to = "terminal/")]
 pub struct RunInfo {
     pub open: bool,
+    /// Running: the port its app was given (ADR-0086: its own, else the next free one). Not: the one it tries first.
     pub port: u16,
     pub dir: String,
     /// `.wisp/worktree.json`'s run, else package.json's dev or start script
@@ -134,6 +135,7 @@ pub struct RunInfo {
 pub struct RunStarted {
     pub ok: bool,
     pub started: bool,
+    /// The port the app was given as `PORT` (ADR-0086: the task's own when free, else the next free one)
     pub port: u16,
     pub dir: String,
     /// Preview's proxy, when it could start (ADR-0049); without it the panel shows the app itself, without Pick. Additive.

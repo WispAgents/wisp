@@ -26,6 +26,8 @@ type Key = (TermKind, String);
 pub struct Registry {
     proc: Proc,
     map: Arc<Mutex<HashMap<Key, Term>>>,
+    /// The port each task's app was given (`PORT`, ADR-0086): chosen once per start, read by every caller after
+    apps: Arc<Mutex<HashMap<String, u16>>>,
     /// Preview's proxies (ADR-0049), under the plugin's scope: switched off, they stop
     pub proxies: crate::proxy::Proxies,
     pub scope: wisp_kernel::CancellationToken,
@@ -39,6 +41,11 @@ fn now(ctx: &Ctx) -> i64 {
     ctx.clock().map_or(0, |c| c.now_ms())
 }
 
+/// The port task `id`'s app was given (the guard dropped before any await).
+fn given(apps: &Mutex<HashMap<String, u16>>, id: &str) -> Option<u16> {
+    lock(apps).get(id).copied()
+}
+
 /// Sends `frame` to every page; a page that went away is dropped.
 fn broadcast(t: &mut Term, frame: &[u8]) {
     t.clients.retain(|c| c.try_send(frame.to_vec()).is_ok() || !c.is_closed());
@@ -47,7 +54,63 @@ fn broadcast(t: &mut Term, frame: &[u8]) {
 
 impl Registry {
     pub fn new(proc: Proc, scope: wisp_kernel::CancellationToken) -> Self {
-        Self { proc, map: Arc::new(Mutex::new(HashMap::new())), proxies: crate::proxy::Proxies::default(), scope }
+        Self {
+            proc,
+            map: Arc::new(Mutex::new(HashMap::new())),
+            apps: Arc::new(Mutex::new(HashMap::new())),
+            proxies: crate::proxy::Proxies::default(),
+            scope,
+        }
+    }
+
+    /// The port task `id`'s app was last given (`PORT`), if it was started since wisp started.
+    pub fn app_port(&self, id: &str) -> Option<u16> {
+        given(&self.apps, id)
+    }
+
+    /// Another task's app holds `port` in `apps`: given it and not ended (starting counts: its program may not have
+    /// bound yet; a hung-up run's record is gone, [`Self::close`]). Lock order: `apps`, then `map`.
+    fn held_in(&self, apps: &HashMap<String, u16>, id: &str, port: u16) -> bool {
+        let m = lock(&self.map);
+        apps.iter().any(|(k, &p)| p == port && k != id && m.get(&(TermKind::Run, k.clone())).is_none_or(|t| t.info.state.live()))
+    }
+
+    fn held_by_other(&self, id: &str, port: u16) -> bool {
+        self.held_in(&lock(&self.apps), id, port)
+    }
+
+    /// Records `port` as task `id`'s app's, checked and written under one lock: none when another task's app took it
+    /// while this one probed; the recorded one when this task's app already runs (a second Run won the race).
+    fn record(&self, id: &str, port: u16) -> Option<u16> {
+        let mut apps = lock(&self.apps);
+        if let Some(&theirs) = apps.get(id).filter(|_| self.live(TermKind::Run, id)) {
+            return Some(theirs);
+        }
+        if self.held_in(&apps, id, port) {
+            return None;
+        }
+        apps.insert(id.to_owned(), port);
+        Some(port)
+    }
+
+    /// Chooses task `id`'s app port and records it (v1 `pickPort`, ADR-0086): its own when free, else the next free of
+    /// [`wisp_terminal_core::run::ports_for`], else any free one the system gives. Free: no other task's app has it,
+    /// loopback binds it and nothing answers on it, so a port another program holds or the system reserves (Windows'
+    /// excluded ranges) is passed over. The chosen one is what every caller reads after ([`Self::app_port`]).
+    pub async fn claim_app_port(&self, id: &str) -> u16 {
+        for port in wisp_terminal_core::run::ports_for(id) {
+            if self.held_by_other(id, port) || !crate::ports::free(port).await {
+                continue;
+            }
+            // checked again as it's recorded: another start may have taken it while this one probed
+            if let Some(p) = self.record(id, port) {
+                return p;
+            }
+        }
+        // none of its own: the system's (only the task's own as a last resort, when loopback binds nothing at all)
+        let port = crate::ports::any_free().await.unwrap_or_else(|| wisp_terminal_core::run::port_for(id));
+        lock(&self.apps).insert(id.to_owned(), port);
+        port
     }
 
     pub fn info(&self, kind: TermKind, id: &str) -> Option<TermInfo> {
@@ -115,7 +178,7 @@ impl Registry {
             key.clone(),
             Term { info: info.clone(), handle: Some(handle.clone()), replay, clients: Vec::new(), order: order::InputOrder::new() },
         );
-        let map = self.map.clone();
+        let (map, apps) = (self.map.clone(), self.apps.clone());
         // a slow start says so (#440)
         if let Ok(clock) = ctx.clock() {
             let (map, key) = (map.clone(), key.clone());
@@ -166,7 +229,7 @@ impl Registry {
                 );
                 // the app exited by itself: its row says Run app again
                 if key.0 == TermKind::Run {
-                    crate::mark_run(&ectx, &ectx.root_call(), &key.1, false).await;
+                    crate::mark_run(&ectx, &ectx.root_call(), &key.1, false, given(&apps, &key.1)).await;
                 }
             }
         });
@@ -222,6 +285,9 @@ impl Registry {
 
     /// Hangs it up (a start in progress is cancelled, never raced: #435); the registry forgets it.
     pub async fn close(&self, kind: TermKind, id: &str) -> bool {
+        if kind == TermKind::Run {
+            lock(&self.apps).remove(id); // hung up (Stop, its route, a restart): its port is no one's
+        }
         let t = lock(&self.map).remove(&(kind, id.to_owned()));
         let Some(mut t) = t else { return false };
         t.info.state = step(t.info.state, FlowEvent::Stop);
@@ -230,5 +296,34 @@ impl Registry {
             let _ = h.kill().await;
         }
         true
+    }
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used)]
+mod tests {
+    use super::*;
+
+    /// v1 runs.js pickPort for the app (ADR-0086): the task's own port held by another program (or in a range Windows
+    /// reserves) isn't given to its app; the next free one is, and what's recorded is that one, not the id's.
+    #[tokio::test]
+    async fn a_taken_app_port_moves_to_the_next_free_one_and_is_the_one_recorded() {
+        let id = format!("app-taken-{}", wisp_kernel::ids::uuid7());
+        let derived = wisp_terminal_core::run::port_for(&id);
+        // held here, listening; a port the system refuses already (a reserved range) is the same case
+        let held = tokio::net::TcpListener::bind(("127.0.0.1", derived)).await.expect("the task's own port, to hold");
+        let r = Registry::new(wisp_proc::local(), wisp_kernel::CancellationToken::new());
+        assert_eq!(r.app_port(&id), None, "never started: nothing recorded");
+        let port = r.claim_app_port(&id).await;
+        assert_ne!(port, derived, "not the taken one");
+        assert!(wisp_terminal_core::run::ports_for(&id).any(|p| p == port), "the next of its own, while one is free");
+        assert_eq!(r.app_port(&id), Some(port), "the port it was given is what's read back");
+        // another task whose own port is this one doesn't get it while the first one's app starts
+        assert!(r.held_by_other("someone-else", port));
+        drop(held);
+        r.close(TermKind::Run, &id).await;
+        assert_eq!(r.app_port(&id), None, "hung up: forgotten");
+        // its own port free again: that's the one (the stable origin)
+        assert_eq!(r.claim_app_port(&id).await, derived);
     }
 }
