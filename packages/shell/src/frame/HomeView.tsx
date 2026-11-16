@@ -37,6 +37,7 @@ import { placeOn } from './run-on.ts';
 import { dirsOf, launchOf, parsePick, pickLabel, pickedProjects, placePick } from './project-pick.ts';
 import { openPlaces, releasePlaces, type PlaceTarget } from './project-switch.ts';
 import { promptKeys, remember, sentStore } from './prompt-keys.ts';
+import { displayCombo } from '../keys.ts';
 import { draftValue, launcherDraft } from './drafts.ts';
 import { MODE_ICON, agentName, modeMenu, teamMenu, teamPrefill, teamRows, whenAt, whenMenu, type Mode, type When } from './pickers.ts';
 
@@ -238,6 +239,11 @@ export function HomeView(props: { readonly onBack?: () => void }): JSX.Element {
   // the @ and / menus (plugins' prompt sources), New task's own
   const menu = usePromptMenu({ shell, where: 'home', text, setText, input: () => input, id: 'launcher-suggest', project: () => project()?.path });
   let goalInput: HTMLInputElement | undefined;
+  const [promptFocused, setPromptFocused] = createSignal(false);
+  // a phone or a touch-only screen has no shortcut to advertise (v1: MOBILE || (hover: none))
+  const touchOnly = phone || (typeof matchMedia === 'function' && matchMedia('(hover: none)').matches);
+  const promptHint = (): string =>
+    promptFocused() || touchOnly ? t('shell.home.placeholder') : t('shell.home.placeholderKey', { key: displayCombo('mod+l', shell.platform.apple).join('') });
   // the goal plugin's Judges at the end of Done when (v1 #judgesBtn): made once, shown while the line is
   const goalEnd = <Slot input="shell.home:goalLine" layout="contents" />;
   // ↑ brings back what you sent, Shift+Tab cycles the mode (v1 prompt-history.js, F-task-31, F-comp-4)
@@ -544,7 +550,7 @@ export function HomeView(props: { readonly onBack?: () => void }): JSX.Element {
       <Launcher
         inLabel={t('shell.home.in')}
         place={place()}
-        placeholder={t('shell.home.placeholder')}
+        placeholder={promptHint()}
         value={text()}
         onInput={(v, e) => {
           setText(v);
@@ -559,7 +565,13 @@ export function HomeView(props: { readonly onBack?: () => void }): JSX.Element {
         suggest={suggest()}
         onPaste={(e) => menu.paste(e) || att.paste(e)}
         onFiles={att.add}
-        inputRef={(el) => (input = el)}
+        inputRef={(el) => {
+          input = el;
+          // v1 launcher.js hint(): while focus is elsewhere the placeholder names the shortcut that brings it back
+          el.addEventListener('focus', () => setPromptFocused(true));
+          el.addEventListener('blur', () => setPromptFocused(false));
+          setPromptFocused(document.activeElement === el);
+        }}
         mode={{ label: t(`shell.mode.${mode()}`), title: t('shell.home.fullAutoTitle'), icon: MODE_ICON[mode()], act: { menu: { items: modeMenu(t, mode()), onSelect: (v) => setMode(v as Mode) } } }}
         runner={{
           label: agentName(t, harnesses(), agent()),

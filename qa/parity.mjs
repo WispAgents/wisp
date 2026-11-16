@@ -287,8 +287,8 @@ const EXTRA = {
   // the goal band's ⋯ (v1 .gb-more), its Edit goal (v1 goal-set: v2's action is `set`), the goal editor's judges
   '.gb-more': '[data-part~="goal.more.trigger"]',
   '.menu [data-a="goal-set"]': '[data-kit="menu-item"][data-value="set"]',
-  '.goal-pop .gp-judges': '[data-part~="goal.judgesButton"]',
-  '#judgesBtn': '[data-part~="goal.judgesButton"]',
+  '.goal-pop .gp-judges': '[data-part~="goal.judgesButton.trigger"]',
+  '#judgesBtn': '[data-part~="goal.judgesButton.trigger"]',
   // the reply box's Goal (v1 .c-goal)
   '.it-dock .c-goal': '[data-part~="composer.goal"]',
   // Changes' Edit on a file (v1 .cx-edit) and the side panel's Preview tab (v1 .pn-tabs [data-tab])
@@ -308,8 +308,9 @@ export function translator(seed) {
       .map((piece) => {
         const vis = piece.endsWith(':visible') ? ':visible' : '';
         const bare = vis ? piece.slice(0, -8) : piece;
-        if (bySel.has(bare)) return `[data-part="${bySel.get(bare)}"]${vis}`;
+        // an explicit translation wins over the PARTS name (a v1 id whose v2 part sits on a Popover's trigger)
         if (EXTRA[bare]) return `${EXTRA[bare]}${vis}`;
+        if (bySel.has(bare)) return `[data-part="${bySel.get(bare)}"]${vis}`;
         // an item of an open menu (v1 .menu [data-a]: on a phone, the task's Transcript under More)
         const mi = bare.match(/^\.menu \[data-a="([\w-]+)"\]$/);
         if (mi) return `[data-kit="menu-item"][data-value="${mi[1]}"]${vis}`;
@@ -441,6 +442,8 @@ const v2Sels = () => ({
   // an element may carry two PARTS names, as v1's did (`split.body card.body`): match one word of data-part
   ...Object.fromEntries(Object.keys(PARTS).map((n) => [n, `[data-part~="${n}"]`])),
   ...STRUCT,
+  // v1's #judgesBtn is the goal plugin's Judges, a Popover whose trigger carries its part (`goal.judgesButton.trigger`)
+  'launcher.goalJudges': '[data-part="launcher.goalLine"] [data-part~="goal.judgesButton.trigger"]',
   'x.row': '[data-part="card"], [data-part="list.row"]',
   // v1's .pill is a class; v2's kit names it by data-kit
   'x.pill': '[data-kit="it-pill"], [data-kit="it-state"]',

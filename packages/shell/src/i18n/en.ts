@@ -158,6 +158,7 @@ export const SHELL_STRINGS = {
   'shell.home.noFolderTitle': 'No folder: a general ask, with no project and no worktree. The agent gets an empty scratch directory.',
   'shell.home.otherFolder': 'Other folder…',
   'shell.home.placeholder': 'What should I go do? Paste screenshots, drop logs or videos…',
+  'shell.home.placeholderKey': 'What should I go do? Press {key} to start typing',
   'shell.home.fullAutoTitle': 'Full auto: No permission prompts at all. Trusted repos only.\nShift+Tab to switch',
   'shell.home.auto': 'Auto',
   'shell.home.autoTitle': 'Auto · Balanced',

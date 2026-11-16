@@ -218,6 +218,7 @@
   [data-kit='l-goal-input'] {
     flex: 1;
     min-width: 0;
+    border-radius: 0;
     height: 28px;
     border: 0;
     background: transparent;
@@ -228,6 +229,32 @@
   }
   [data-kit='l-goal-input']::placeholder {
     color: var(--faint);
+  }
+  /* ship.css .tog-btn + subagents.css .team-btn: the line's Judges is a toggle-sized button, lit (accent) once it has
+     judges (the goal plugin's Popover trigger: secondary then, ghost without) */
+  [data-kit='l-goal'] [data-kit='button'][data-size] > [data-kit='button-content'] {
+    gap: 5px;
+  }
+  [data-kit='l-goal'] [data-kit='button'][data-size] {
+    flex: none;
+    gap: 5px;
+    height: 30px;
+    min-width: 30px;
+    padding: 0 7px;
+    border-radius: var(--radius-control);
+    font-size: var(--fs-sm);
+  }
+  [data-kit='l-goal'] [data-kit='button'][data-size] [data-kit='icon'] {
+    width: var(--size-icon);
+    height: var(--size-icon);
+  }
+  [data-kit='l-goal'] [data-kit='button'][data-size][data-variant='ghost'] {
+    color: var(--muted);
+  }
+  [data-kit='l-goal'] [data-kit='button'][data-size][data-variant='secondary'] {
+    color: var(--accent-ink);
+    background: var(--accent-soft);
+    border-color: transparent;
   }
   /* goal.css ≤720px: the condition takes the label's room (the mark names it) and the field is 16px, so iOS doesn't
      zoom into it */
