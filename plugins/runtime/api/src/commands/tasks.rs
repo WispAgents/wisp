@@ -292,9 +292,15 @@ pub struct FollowUpArgs {
     #[ts(optional)]
     pub by: Option<String>,
     /// you said yes to going past Ask near the limit's line (v1 `confirmLimit`; the CLI's --yes). Additive (2026-11-11).
-    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    /// `confirmLimit` too, as `runtime.create` names it and the UI sends it (B35: the reply box's yes was dropped).
+    #[serde(default, alias = "confirmLimit", skip_serializing_if = "std::ops::Not::not")]
     #[ts(as = "Option<bool>", optional)]
     pub confirm_limit: bool,
+    /// the id the client drew for the turn (its queue item while it waits): kept when it's in wisp's shape and no turn
+    /// has it, so the card the client shows at once is the turn the server makes (B35). Additive (2026-11-16).
+    #[serde(default, alias = "turnId", skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub turn_id: Option<TurnId>,
 }
 
 /// Where a follow-up went: a new turn, or a place in the queue.

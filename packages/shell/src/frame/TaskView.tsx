@@ -10,6 +10,7 @@ import { entityKey, newRowId, ownerOf, uuidv7, type EntityKey, type Json } from 
 import {
   Answer,
   BtwList,
+  ForKeyed,
   Button,
   Dialog,
   Inline,
@@ -177,6 +178,20 @@ const LEDGER_TOOLS = 10;
 
 /** The ledger's words: `shell.ledger.<key>`, a count of one in its own words (`.one`). */
 const ONE: Readonly<Partial<Record<LedgerString, string>>> = { turns: 'n', matches: 'n', count: 'd', sum: 'files' };
+
+/** An object that reads `of()`'s latest value on every property read: in a JSX attribute or a memo that read is
+ * tracked, so a turn's view follows its row without being made again (B35). */
+function through<T extends object>(of: () => T | undefined): T {
+  return new Proxy({} as T, {
+    get: (_t, k) => (of() as Record<PropertyKey, unknown> | undefined)?.[k],
+    has: (_t, k) => k in ((of() ?? {}) as object),
+    ownKeys: () => Reflect.ownKeys((of() ?? {}) as object),
+    getOwnPropertyDescriptor: (_t, k) => {
+      const v = of() as Record<PropertyKey, unknown> | undefined;
+      return v && k in v ? { value: v[k], enumerable: true, configurable: true } : undefined;
+    },
+  });
+}
 
 export default function TaskView(props: { readonly id: string; readonly onBack?: () => void }): JSX.Element {
   const shell = useShell();
@@ -553,7 +568,7 @@ export default function TaskView(props: { readonly id: string; readonly onBack?:
     const g = goal();
     if (g) void run(setGoal, { id: key, text: g }).catch(() => undefined);
     setGoalText(undefined);
-    const turnId = entityKey(peer, uuidv7());
+    const turnId = entityKey(peer, newRowId());
     const at = Date.now();
     const idx = turns().length;
     // the box clears at once; with files, the turn starts once they're up (usually already)
@@ -583,7 +598,7 @@ export default function TaskView(props: { readonly id: string; readonly onBack?:
   };
   /** an answer's `next` chip, `question` option, `actions` reply: sent as a follow-up */
   const reply = (v: string): void => {
-    run(followUp, { id: key, text: v, turnId: entityKey(peer, uuidv7()), idx: turns().length, at: Date.now() }).catch(() => undefined);
+    run(followUp, { id: key, text: v, turnId: entityKey(peer, newRowId()), idx: turns().length, at: Date.now() }).catch(() => undefined);
   };
   /** an answer's chip without ⌘: into the reply box, to read first */
   const draft = (v: string): void => {
@@ -902,9 +917,13 @@ export default function TaskView(props: { readonly id: string; readonly onBack?:
           ),
         );
         // one turn whole: the latest (the live one) after the ledger, or an earlier one opened in it
-        const renderTurn = (turn: TurnRow): JSX.Element => {
-          const b = turn.body;
-          const hero = b.presentation?.blocks?.find((x) => x.type === 'hero');
+        // one turn, made once for its id (B35): its row changes as it runs and ends (status, stats, the answer), and each
+        // change was a new object, so the whole turn (its prompt card, its answer, its buttons) was made again. `turn`
+        // and `b` read the latest row; what's derived from them is a function, read where it's shown.
+        const renderTurn = (tr: () => TurnRow): JSX.Element => {
+          const turn = through(tr);
+          const b = through(() => tr().body);
+          const hero = (): { title?: string; summary?: string } | undefined => b.presentation?.blocks?.find((x) => x.type === 'hero');
           // the steps come as the turn's events (the task's topic); a turn row that carries its own still reads
           const steps = createMemo((): { kind: string; label?: string; title?: string; detail?: string; out?: string; bad?: boolean; seq?: number }[] => {
             const all = stepsOf(turn.id);
@@ -930,11 +949,11 @@ export default function TaskView(props: { readonly id: string; readonly onBack?:
           const cwd = String((s() as { body?: { cwd?: string } }).body?.cwd ?? s().summary['cwd'] ?? '');
           const here = (text: string): string => (cwd ? text.replace(new RegExp(`(/private)?${cwd.replace(/^\/private/, '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}/?`, 'g'), '') : text);
           const count = (k: string): number => steps().filter((a) => a.kind === k).length;
-          const blocks = b.presentation?.blocks ?? [];
-          const stubbed = isStub(b);
-          const changes = b.ext?.['wisp.runtime']?.changes ?? b.changes ?? [];
-          const figures = changeFigures(changes);
-          const tokens = (b.stats?.inputTokens ?? 0) + (b.stats?.outputTokens ?? 0);
+          const blocks = () => b.presentation?.blocks ?? [];
+          const stubbed = () => isStub(b);
+          const changes = () => b.ext?.['wisp.runtime']?.changes ?? b.changes ?? [];
+          const figures = () => changeFigures(changes());
+          const tokens = () => (b.stats?.inputTokens ?? 0) + (b.stats?.outputTokens ?? 0);
           // a follow-up with comments on lines: the cards over the words typed with them (v1 sentComments)
           const sent = readComments(turn.prompt);
           // comments on this answer (v1 comments.js): words or a whole block, for the next follow-up
@@ -1023,15 +1042,15 @@ export default function TaskView(props: { readonly id: string; readonly onBack?:
                 {...(b.checkpoint?.commit && {
                   sha: { short: b.checkpoint.commit.slice(0, 7), title: t('shell.task.checkpoint', { branch: b.checkpoint.branch ?? '', sha: b.checkpoint.commit }) },
                 })}
-                {...(hero?.title && { hero: { title: hero.title, summary: hero.summary ?? '' } })}
-                {...(stubbed && {
+                {...((h) => (h?.title ? { hero: { title: h.title, summary: h.summary ?? '' } } : {}))(hero())}
+                {...(stubbed() && {
                   answer: (
                     <Button size="sm" variant="ghost" icon="chevron" part="turn.open" loading={opener.opening(turn.id)} onClick={() => opener.open(turn.id)}>
                       {t('shell.task.openTurn')}
                     </Button>
                   ),
                 })}
-                {...(!stubbed && blocks.length > 0 && {
+                {...(!stubbed() && blocks().length > 0 && {
                   answer: (
                     <>
                       {/* v1 transcript.js renderTranscript: with Transcript on, the turn's timeline comes before its answer */}
@@ -1043,7 +1062,7 @@ export default function TaskView(props: { readonly id: string; readonly onBack?:
                               ? [{ kind: 'text', label: String((b as { presentation?: { notes?: string } }).presentation?.notes) }]
                               : []),
                           ]}
-                          changes={changes}
+                          changes={changes()}
                           env={env}
                           here={here}
                           status={turn.status ?? ''}
@@ -1051,7 +1070,7 @@ export default function TaskView(props: { readonly id: string; readonly onBack?:
                         />
                       </Show>
                       <Answer
-                        blocks={blocks}
+                        blocks={blocks()}
                         ctx={Object.assign(answerContext({
                           shell,
                           key,
@@ -1064,7 +1083,7 @@ export default function TaskView(props: { readonly id: string; readonly onBack?:
                           meta: () => [
                             ...(b.endedAt && b.endedAt > turn.started_at ? [duration(b.endedAt - turn.started_at)] : []),
                             ...(b.stats?.costUsd ? [`$${b.stats.costUsd.toFixed(2)}`] : []),
-                            ...(changes.length ? [t(changes.length === 1 ? 'shell.task.touched.one' : 'shell.task.touched.other', { n: changes.length })] : []),
+                            ...(changes().length ? [t(changes().length === 1 ? 'shell.task.touched.one' : 'shell.task.touched.other', { n: changes().length })] : []),
                           ],
                           reply,
                           draft,
@@ -1088,9 +1107,9 @@ export default function TaskView(props: { readonly id: string; readonly onBack?:
                   ...(b.endedAt && b.endedAt > turn.started_at && (b.stats || steps().length) ? [{ text: duration(b.endedAt - turn.started_at) }] : []),
                   ...(b.stats?.costUsd ? [{ text: `$${b.stats.costUsd.toFixed(2)}` }] : []),
                 ]}
-                {...(tokens > 0 && turn.status !== 'running' && { receipt: { text: t('shell.task.tokens', { n: tokens }), title: t('shell.task.tokensTitle', { n: tokens }) } })}
-                {...(changes.length > 0 && {
-                  files: { label: t('shell.task.files', { n: figures.files }), plus: `+${figures.plus}`, minus: `−${figures.minus}`, act: { onClick: () => side('changes') } },
+                {...(tokens() > 0 && turn.status !== 'running' && { receipt: { text: t('shell.task.tokens', { n: tokens() }), title: t('shell.task.tokensTitle', { n: tokens() }) } })}
+                {...(changes().length > 0 && {
+                  files: { label: t('shell.task.files', { n: figures().files }), plus: `+${figures().plus}`, minus: `−${figures().minus}`, act: { onClick: () => side('changes') } },
                 })}
                 activity={{
                   open: false,
@@ -1171,13 +1190,9 @@ export default function TaskView(props: { readonly id: string; readonly onBack?:
                     body={(id) => {
                       // the same row object keeps the same view; a stub that lands whole draws again
                       const x = createMemo(() => turns().find((y) => y.id === id));
-                      return (
-                        <Show when={x()} keyed>
-                          {(r) => renderTurn(r)}
-                        </Show>
-                      );
+                      return <Show when={x()}>{(r) => renderTurn(r)}</Show>;
                     }}
-                    tail={<For each={fold().shown}>{(turn) => renderTurn(turn)}</For>}
+                    tail={<ForKeyed each={fold().shown}>{(turn) => renderTurn(turn)}</ForKeyed>}
                     t={ledgerT}
                     dayName={dayName}
                     dayShort={dayShort}

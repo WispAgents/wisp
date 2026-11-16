@@ -5,7 +5,7 @@
 import { createMemo, createSignal, For, getOwner, lazy, runWithOwner, Show, type JSX } from 'solid-js';
 import type { ExtensionProps } from '@wisp/shell/contract';
 import { useShell } from '@wisp/shell';
-import { CrewListFewer, CrewListSection, CrewListStrip, useSignal, type CrewListRow } from '@wisp/ui';
+import { CrewListFewer, CrewListSection, CrewListStrip, ForKeyed, useSignal, type CrewListRow } from '@wisp/ui';
 import { foldedWords, statusLine } from './model.ts';
 import { sectionPlan, type SectionHold } from './fold.ts';
 import { crewData, emptyState } from './data.ts';
@@ -72,18 +72,15 @@ function CrewSection(props: ExtensionProps): JSX.Element {
   });
   // a member's job cards by task id, each made once: the jobs are new rows on every change of any task, and a new card
   // was taken down and put back (its hover lost; flicker hunt, B32)
-  const Jobs = (p: { readonly id: string }): JSX.Element => {
-    const ids = createMemo(() => (jobsOf().get(p.id)?.list ?? []).map((s) => s.id), [], { equals: (a, b) => a.length === b.length && a.every((v, i) => v === b[i]) });
-    return (
-      <For each={ids()}>
-        {(id) => (
-          <Show when={data.sessionKey(id)}>
-            {(k) => card()?.(k())}
-          </Show>
-        )}
-      </For>
-    );
-  };
+  const Jobs = (p: { readonly id: string }): JSX.Element => (
+    <ForKeyed each={jobsOf().get(p.id)?.list ?? []}>
+      {(_s, id) => (
+        <Show when={data.sessionKey(id)}>
+          {(k) => card()?.(k())}
+        </Show>
+      )}
+    </ForKeyed>
+  );
   // each member's Jobs made once, under this list's owner (made inside `rows` it was made again with every row)
   const owner = getOwner();
   const jobsEls = new Map<string, JSX.Element>();

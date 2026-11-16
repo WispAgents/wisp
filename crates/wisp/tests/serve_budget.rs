@@ -150,6 +150,17 @@ async fn a_run_that_would_take_the_window_past_your_line_is_asked_about_and_a_ye
     let auto = api.try_cmd("runtime.create", json!({ "prompt": "one more TOPIC[More]", "cwd": dir.join("proj"), "agent": "auto" })).await;
     assert_eq!(auto["error"]["reason"], "budget_hold", "{auto}");
     assert_eq!(tasks(api.cmd("runtime.list", json!({})).await), before, "no task was made");
+    // the reply box's Send anyway, as the UI sends it (camelCase, as runtime.create's): the follow-up goes, under the
+    // turn id the box drew it as, so its card is the same element when the server's turn lands (B35)
+    let mine = "0197f0aa0000700080000000000000aa";
+    let f = api.cmd("runtime.followUp", json!({ "id": last, "text": "and this", "confirmLimit": true, "turnId": mine })).await;
+    assert_eq!(f["turnId"], mine, "{f}");
+    let t = api.until(&last, "the yes runs", |t| t.last().is_some_and(|x| x["id"] == mine && ended(x))).await;
+    assert_eq!(t.last().unwrap()["status"], "done", "{t:?}");
+    // a turn id already taken (here the same again) is never reused: the server draws its own
+    let again = api.cmd("runtime.followUp", json!({ "id": last, "text": "once more", "confirmLimit": true, "turnId": mine })).await;
+    assert!(again["turnId"].as_str().is_some_and(|x| x != mine), "{again}");
+    let _ = api.until(&last, "the second runs", |t| t.last().is_some_and(ended)).await;
     // a yes: it goes, and the same window doesn't ask again below the next step
     let mut yes = ask.clone();
     yes["confirmLimit"] = json!(true);
@@ -157,7 +168,7 @@ async fn a_run_that_would_take_the_window_past_your_line_is_asked_about_and_a_ye
     let t = api.until(&id, "the yes runs", |t| t.last().is_some_and(ended)).await;
     assert_eq!(t.last().unwrap()["status"], "done", "{t:?}");
     // nobody's there to say yes to an automation: it waits for the reset
-    api.cmd("budget.record", at(0.92)).await;
+    api.cmd("budget.record", at(1.0)).await;
     let crew = api
         .cmd("runtime.create", json!({ "prompt": "nightly tidy", "cwd": dir.join("proj"), "agent": "claude", "by": "crew" }))
         .await["id"]
@@ -168,7 +179,7 @@ async fn a_run_that_would_take_the_window_past_your_line_is_asked_about_and_a_ye
     assert_eq!((t[0]["held"]["by"].as_str(), t[0]["held"]["kind"].as_str()), (Some("wisp.budget"), Some("ask")), "{:?}", t[0]);
     // its card says why in your words, not the agents' how-to (B10)
     let why = t[0]["held"]["data"]["why"].as_str().unwrap_or_default();
-    assert!(why.starts_with("5-hour usage window is at 92%") && !why.contains("confirmLimit"), "{why}");
+    assert!(why.starts_with("5-hour usage window is used up") && !why.contains("confirmLimit"), "{why}");
     // you press Start now: a yes (it isn't held again past the same line), and it runs as that same turn, in its
     // place, so the page updates the held card instead of dropping it (owner, 2026-11-16: "send anyway doesn't work")
     let held = t[0]["id"].as_str().unwrap().to_owned();

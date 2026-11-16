@@ -1,7 +1,7 @@
 // `shell-task.comments`: over the reply box, the comments (on lines of Changes, on answers) waiting for the next follow-up (v1 comments.js
 // tray): how many, Send comments (they go alone), and a row each with its number, its words, where, and ×.
 import { createMemo, type JSX } from 'solid-js';
-import { entityKey, uuidv7, type EntityKey } from '@wisp/client';
+import { entityKey, newRowId, type EntityKey } from '@wisp/client';
 import type { ExtensionProps } from '@wisp/shell/contract';
 import { CommentTray as Tray, useDerived, useSignal } from '@wisp/ui';
 import { commentStore, isLine, removed, waiting, whereOf, withComments } from '../comments.ts';
@@ -37,7 +37,7 @@ export default function CommentTray(props: ExtensionProps): JSX.Element {
     });
     const peer = k.slice(0, k.indexOf(':')) as never;
     props.client
-      .run(followUp, { id: k, text, turnId: entityKey(peer, uuidv7()), idx: Number((props.session?.() as { turns?: number } | undefined)?.turns ?? 0), at: Date.now() })
+      .run(followUp, { id: k, text, turnId: entityKey(peer, newRowId()), idx: Number((props.session?.() as { turns?: number } | undefined)?.turns ?? 0), at: Date.now() })
       .catch(() => store.set(was as never));
   };
   return (

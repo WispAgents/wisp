@@ -195,14 +195,15 @@ export const followUp = defineCommand<{
 }>({
   id: 'runtime.followUp',
   owner: (a) => a.id,
-  wire: (a) => ({ ...a, id: bare(a.id) }),
+  // the turn's id as the server keeps it (bare, 32 hex): its card is the server's turn when it lands (B35)
+  wire: (a) => ({ ...a, id: bare(a.id), turnId: bare(a.turnId) }),
   optimistic: (base, a) => (a.queue ? queuedOps(base.peek<SessionRow>(SESSION, a.id as EntityKey), a) : startedOps(a)),
 });
 
 /** A queued follow-up shows in the queue over the reply box at once, under its turn id (the peer's item id). */
 export function queuedOps(s: SessionRow | undefined, a: { id: string; text: string; turnId: string; at: number; attachments?: readonly Attachment[] }): LocalOp[] {
   const queue = ((s?.body as { queue?: readonly unknown[] } | undefined)?.queue ?? []) as readonly unknown[];
-  const item = { id: a.turnId, text: a.text, at: a.at, ...(a.attachments?.length && { attachments: a.attachments }) };
+  const item = { id: bare(a.turnId), text: a.text, at: a.at, ...(a.attachments?.length && { attachments: a.attachments }) };
   return [
     {
       e: SESSION,
@@ -233,7 +234,7 @@ function startedOps(a: { id: string; text: string; turnId: string; idx: number; 
       e: 'turn',
       id: a.turnId as EntityKey,
       op: 'upsert',
-      v: { id: a.turnId, session_id: a.id, idx: a.idx, status: 'running', started_at: a.at, ended_at: null, prompt: a.text, answer: '', body: { prompt: a.text, status: 'running' } } as never,
+      v: { id: bare(a.turnId), session_id: a.id, idx: a.idx, status: 'running', started_at: a.at, ended_at: null, prompt: a.text, answer: '', body: { prompt: a.text, status: 'running' } } as never,
     },
   ];
 }

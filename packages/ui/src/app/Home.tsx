@@ -6,6 +6,7 @@ import { LauncherSetup, type LauncherSetupProps } from './LauncherSetup.tsx';
 import { HoldRow, type HoldRowProps } from '../composer/HoldRow.tsx';
 import { flag } from '../core/props.ts';
 import { useOpenWithin } from '../core/open-within.ts';
+import { ForKeyed } from '../core/keyed.tsx';
 import { Icon } from '../content/Icon.tsx';
 import { PromptSuggestList, dropHandlers } from '../composer/PromptSuggest.tsx';
 import { suggestKeyDown, type PromptSuggest } from '../composer/suggest-keys.ts';
@@ -523,22 +524,23 @@ export function NextList(props: { readonly heading: string; readonly count: numb
         {props.heading}
         <span data-kit="sec-n">{props.count}</span>
       </h4>
-      <For each={props.rows}>
+      {/* by task, each row made once (the flicker gate: they were made again on every change) */}
+      <ForKeyed each={props.rows}>
         {(r) => (
-          <button type="button" data-kit="sh-task" data-color={r.color} data-id={r.id} onClick={() => props.onOpen(r.id)}>
+          <button type="button" data-kit="sh-task" data-color={r().color} data-id={r().id} onClick={() => props.onOpen(r().id)}>
             <span data-kit="q-dot" />
-            <span data-kit="sh-t" data-text="control" title={r.title}>
-              {r.title}
+            <span data-kit="sh-t" data-text="control" title={r().title}>
+              {r().title}
             </span>
-            <Show when={r.state}>
-              <span data-kit="sh-s">{r.state}</span>
+            <Show when={r().state}>
+              <span data-kit="sh-s">{r().state}</span>
             </Show>
-            <span data-kit="sh-time" title={r.timeTitle}>
-              {r.time}
+            <span data-kit="sh-time" title={r().timeTitle}>
+              {r().time}
             </span>
           </button>
         )}
-      </For>
+      </ForKeyed>
     </div>
   );
 }

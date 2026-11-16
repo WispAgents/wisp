@@ -5,7 +5,8 @@
 // `--toast-bottom` to the box's height so a toast never covers Send.
 import * as toast from '@zag-js/toast';
 import { normalizeProps, useMachine } from '@zag-js/solid';
-import { createEffect, createMemo, createUniqueId, Index, onCleanup, Show, type JSX } from 'solid-js';
+import { createEffect, createMemo, createUniqueId, onCleanup, Show, type JSX } from 'solid-js';
+import { ForKeyed } from '../core/keyed.tsx';
 import { Portal } from 'solid-js/web';
 import { sub, type KitProps, type PartName } from '../core/props.ts';
 import { useT, type Translate } from '../core/i18n.tsx';
@@ -99,9 +100,11 @@ export function ToastGroup(props: ToastGroupProps): JSX.Element {
   return (
     <Portal>
       <div ref={(el) => (group = el)} {...api().getGroupProps({ label: t('notifications') })} data-kit="toasts" data-part={sub(part(), 'group')}>
-        <Index each={api().getToasts()}>
-          {(item, index) => <ToastCard toast={item()} index={index} parent={service} part={part()} t={t} />}
-        </Index>
+        {/* by toast id: by position, a new toast moved every older one into another slot's machine and made the last
+            one again, so a toast showing went and came back (qa/flicker.mjs) */}
+        <ForKeyed each={api().getToasts()} by={(x) => x.id ?? ''}>
+          {(item, id) => <ToastCard toast={item()} index={api().getToasts().findIndex((x) => x.id === id)} parent={service} part={part()} t={t} />}
+        </ForKeyed>
       </div>
     </Portal>
   );

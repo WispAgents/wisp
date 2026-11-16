@@ -3,7 +3,8 @@
 // delegates below), the members with no links under a dashed rule, arrows from a member to its delegates, and the
 // column beside it. Selecting a member turns the rest into its picker: + makes one its delegate, ✓ takes it off.
 // The caller owns the graph and the selection; this draws them and measures where the arrows go.
-import { For, Show, createEffect, createMemo, createSignal, onCleanup, type JSX } from 'solid-js';
+import { For, Show, createEffect, createSignal, onCleanup, type JSX } from 'solid-js';
+import { ForKeyed } from '../core/keyed.tsx';
 import { flag } from '../core/props.ts';
 import { Icon } from '../content/Icon.tsx';
 import type { IconName } from '../content/icons.ts';
@@ -582,7 +583,6 @@ export function CrewListSection(props: {
   readonly onHold?: (on: boolean) => void;
 }): JSX.Element {
   const hold = (on: boolean) => () => props.onHold?.(on);
-  const rowIds = createMemo(() => props.rows.map((r) => r.id), [], { equals: (a, b) => a.length === b.length && a.every((v, i) => v === b[i]) });
   const leave = (e: FocusEvent): void => {
     if (!(e.currentTarget as HTMLElement).contains(e.relatedTarget as Node | null)) props.onHold?.(false);
   };
@@ -631,9 +631,8 @@ export function CrewListSection(props: {
           >
             {/* by member, each row made once: the list's rows are made again whenever any task changes, and a new row
                 restarted its avatar's breathing and lost hover (flicker hunt, B32) */}
-            <For each={rowIds()}>
-              {(id) => {
-                const m = (): CrewListRow => props.rows.find((r) => r.id === id) ?? (props.rows[0] as CrewListRow);
+            <ForKeyed each={props.rows}>
+              {(m) => {
                 return (
                   <div data-kit="cr-member" data-part="crew.member">
                     <div
@@ -680,7 +679,7 @@ export function CrewListSection(props: {
                   </div>
                 );
               }}
-            </For>
+            </ForKeyed>
             {props.foot}
           </Show>
         </div>

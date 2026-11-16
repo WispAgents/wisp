@@ -157,6 +157,10 @@ export const READS: Record<string, Fn> = {
   // the task's shell starts (no pty behind it: nothing it types comes back)
   'terminal.shell.start': () => ({ ops: [], result: { ok: true, started: true, dir: '~/code/wisp-repo' } }),
   'terminal.input': () => ({ ops: [], result: { ok: true } }),
+  // Mark done and archive ask which folders the task leaves on disk (plugins/worktrees/api/bindings DoneList): the
+  // mock's tasks run in no worktree of their own, so none, and Settings' "ask" (it was unanswered: a red toast on every
+  // archive in the dev app, found by qa/flicker.mjs)
+  'worktrees.done.list': () => ({ ops: [], result: { folders: [], onDone: 'ask' } }),
 };
 
 const ACTION = 'sent only by a click (not on open): unanswered, its refusal toast and rollback are what a check of that control wants';
@@ -197,6 +201,6 @@ export const NOT_MOCKED: Readonly<Record<string, string>> = Object.fromEntries([
     'runtime.appState', 'runtime.approveBlocked', 'runtime.compact', 'runtime.held', 'runtime.projectTest', 'runtime.release',
     'runtime.resumeCommand', 'runtime.setExt', 'runtime.setLean', 'runtime.turns', 'runtime.unmasked',
     'stuff.resetData', 'stuff.restore', 'stuff.reveal', 'stuff.save', 'stuff.stop', 'stuff.update', 'telemetry.set',
-    'worktrees.bringIn', 'worktrees.dismiss', 'worktrees.done.apply', 'worktrees.done.list', 'worktrees.keep',
+    'worktrees.bringIn', 'worktrees.dismiss', 'worktrees.done.apply', 'worktrees.keep',
   ]),
 ]);

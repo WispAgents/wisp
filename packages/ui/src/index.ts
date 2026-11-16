@@ -4,6 +4,7 @@ export { type CssVars, type KitProps, type Labelled, type NoStyling, type PartNa
 export { KitProvider, KIT_STRINGS, englishT, type KitString, type Translate } from './core/i18n.tsx';
 export { useDerived, useSignal, type Readable, type Subscribable } from './core/signal.ts';
 export { reorderable, reordered, type OnReorder, type ReorderAttrs } from './core/reorder.ts';
+export { ForKeyed } from './core/keyed.tsx';
 export * from './layout/index.ts';
 export * from './content/index.ts';
 export * from './content/rich.ts';

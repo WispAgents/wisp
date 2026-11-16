@@ -567,13 +567,18 @@ impl Runtime {
         if a.text.trim().is_empty() && a.attachments.is_empty() {
             return Err(RuntimeError::Invalid("a follow-up needs text".into()));
         }
+        // the client's id for the turn, when it's in wisp's shape and no turn or queued item has it (B35)
+        let mine = match a.turn_id.as_ref().filter(|t| is_task_id(t.as_str())) {
+            Some(t) if self.repo.turn(t.as_str()).await.is_err() && !s.queue.iter().any(|q| q.id == t.as_str()) => Some(t.0.clone()),
+            _ => None,
+        };
         let opts =
             serde_json::to_value(serde_json::json!({ "mode": a.mode, "run": a.run, "confirmLimit": a.confirm_limit.then_some(true) }))
                 .ok()
                 .filter(|v| v.as_object().is_some_and(|o| o.values().any(|x| !x.is_null())));
         let has_extras = opts.is_some() || a.by.is_some();
         let item = QueueItem {
-            id: wisp_kernel::ids::uuid7(),
+            id: mine.unwrap_or_else(wisp_kernel::ids::uuid7),
             text: a.text,
             attachments: a.attachments,
             at: self.now(),

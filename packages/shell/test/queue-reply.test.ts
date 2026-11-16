@@ -17,7 +17,8 @@ test('a queued reply goes in the queue at once, not as a new turn, and the peer 
           path: '/body/queue',
           value: [
             { id: 'p:t1', text: 'one', at: 1 },
-            { id: 'p:t2', text: 'two', at: 2 },
+            // bare, as the server's queue item is (and the turn it starts: B35)
+            { id: 't2', text: 'two', at: 2 },
           ],
         },
         { op: 'replace', path: '/summary/queued', value: 2 },
@@ -25,7 +26,7 @@ test('a queued reply goes in the queue at once, not as a new turn, and the peer 
     },
   ]);
   // what goes to the peer says queue; without it the follow-up steers the run (and shows as its turn)
-  expect(wireOf(followUp)({ id: 'p:s1', text: 'two', turnId: 'p:t2', idx: 1, at: 2, queue: true })).toMatchObject({ id: 's1', queue: true });
+  expect(wireOf(followUp)({ id: 'p:s1', text: 'two', turnId: 'p:t2', idx: 1, at: 2, queue: true })).toMatchObject({ id: 's1', turnId: 't2', queue: true });
   const reader = peekReader(s);
   const optimistic = optimisticOf(followUp);
   expect(optimistic(reader, { id: 'p:s1', text: 'x', turnId: 'p:t3', idx: 1, at: 3 }).map((o) => o.e)).toEqual(['session', 'turn']);

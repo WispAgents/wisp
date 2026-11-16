@@ -2,7 +2,8 @@
 // .it-bar, .it-actions, transcript.css .turn/.ask/.trail, ship.css .overlap-strip, composer.css):
 // its head, then its turns with the details column beside them, and the reply box docked at the foot.
 import { HoldRow, type HoldRowProps } from '../composer/HoldRow.tsx';
-import { For, Index, Show, createMemo, createSignal, onCleanup, onMount, type JSX } from 'solid-js';
+import { For, Index, Show, createSignal, onCleanup, onMount, type JSX } from 'solid-js';
+import { ForKeyed } from '../core/keyed.tsx';
 import { flag } from '../core/props.ts';
 import { ActIcon, WithAct, type Act } from './act.tsx';
 import { holdMedia } from './hold-view.ts';
@@ -152,7 +153,6 @@ export interface TaskDetailsProps {
 
 /** v1 .it-bar: the harness and project, the branch, then the task's actions. */
 export function TaskDetails(props: TaskDetailsProps): JSX.Element {
-  const actionIds = createMemo(() => props.actions.map((x) => x.id), [], { equals: (x, y) => x.length === y.length && x.every((v, k) => v === y[k]) });
   return (
     <div data-kit="it-bar" data-part="split.details">
       <div data-kit="it-props">
@@ -222,9 +222,8 @@ export function TaskDetails(props: TaskDetailsProps): JSX.Element {
       <div data-kit="it-actions" data-part="split.actions">
         {/* by id, each button made once: the task's row changes a few times a second while it runs, and each change
             hands a new list (B31: every button was taken down and put back, its hover and focus lost) */}
-        <For each={actionIds()}>
-          {(id) => {
-            const a = (): TaskAction => props.actions.find((x) => x.id === id) ?? (props.actions[0] as TaskAction);
+        <ForKeyed each={props.actions}>
+          {(a) => {
             return (
               <WithAct
                 act={a().act}
@@ -251,7 +250,7 @@ export function TaskDetails(props: TaskDetailsProps): JSX.Element {
               />
             );
           }}
-        </For>
+        </ForKeyed>
       </div>
     </div>
   );

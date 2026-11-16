@@ -262,7 +262,13 @@ impl Runtime {
             return Ok(Turn { id, ..self.new_turn(s, item, idx) });
         }
         let idx = self.repo.turns(s.id.as_str(), None, Some(1)).await?.last().map_or(0, |t| t.idx + 1);
-        Ok(self.new_turn(s, item, idx))
+        let turn = self.new_turn(s, item, idx);
+        // a follow-up's turn takes its queue item's id when the client drew it (`runtime.followUp`'s `turn_id`, checked
+        // unused there) and no turn has it yet, so the card the client showed at once is this turn (B35)
+        if crate::runtime::is_task_id(&item.id) && self.repo.turn(&item.id).await.is_err() {
+            return Ok(Turn { id: TurnId(item.id.clone()), ..turn });
+        }
+        Ok(turn)
     }
 
     fn new_turn(&self, s: &Session, item: &QueueItem, idx: u32) -> Turn {
