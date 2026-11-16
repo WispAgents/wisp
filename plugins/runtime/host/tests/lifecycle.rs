@@ -253,7 +253,7 @@ async fn before_run_can_veto_or_hold_a_run() {
     assert!(r.host.names().contains(&"turn.held"));
     assert_eq!(r.rt.list(&ListArgs::default())[0].status, "held");
     // Skip: it stays, stopped, saying why
-    r.rt.release(id.as_str(), t.id.as_str(), false).await.unwrap();
+    r.rt.release(id.as_str(), t.id.as_str(), false, false).await.unwrap();
     assert_eq!(last_status(&r, id.as_str()).await, Some(TurnStatus::Stopped));
 }
 
@@ -336,7 +336,7 @@ async fn mode_agent_for_later_and_queue_order_and_cancel_change_the_task() {
     r.rt.queue_cancel(id.as_str(), &ids[0]).await.unwrap();
     let texts: Vec<String> = r.rt.get(id.as_str()).await.unwrap().queue.into_iter().map(|x| x.text).collect();
     assert_eq!(texts, ["three", "two"]);
-    assert!(r.rt.held(id.as_str(), true).await.is_err(), "nothing is held: a conflict, not a silent no-op");
+    assert!(r.rt.held(id.as_str(), true, true).await.is_err(), "nothing is held: a conflict, not a silent no-op");
     r.rt.stop(id.as_str(), true).await.unwrap();
 }
 

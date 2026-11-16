@@ -304,11 +304,14 @@ fn an_ack_waits_until_the_effects_it_reports_have_been_sent() {
         Input::CommandResult {
             conn: C1,
             mid: "m2".into(),
-            outcome: CommandOutcome::Err { code: "vetoed".into(), message: "over budget".into() },
+            outcome: CommandOutcome::Err { code: "vetoed".into(), message: "over budget".into(), reason: Some("budget_hold".into()) },
         },
         s.now,
     );
-    assert_eq!(msgs(&s.tick(50)), vec![json!({"t": "reject", "mid": "m2", "code": "vetoed", "message": "over budget"})]);
+    assert_eq!(
+        msgs(&s.tick(50)),
+        vec![json!({"t": "reject", "mid": "m2", "code": "vetoed", "message": "over budget", "reason": "budget_hold"})]
+    );
 }
 
 #[test]

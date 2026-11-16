@@ -3,6 +3,7 @@
 // then the tips. On a phone it's its own page with a back button in its head.
 import { For, Index, Show, createSignal, type JSX } from 'solid-js';
 import { LauncherSetup, type LauncherSetupProps } from './LauncherSetup.tsx';
+import { HoldRow, type HoldRowProps } from '../composer/HoldRow.tsx';
 import { flag } from '../core/props.ts';
 import { useOpenWithin } from '../core/open-within.ts';
 import { Icon } from '../content/Icon.tsx';
@@ -150,6 +151,9 @@ export interface LauncherProps {
   readonly goal?: { readonly label: string; readonly placeholder: string; readonly value: string; readonly onInput: (v: string) => void; readonly ref?: (el: HTMLInputElement) => void };
   /** files attached, and when it starts if not now: chips under the prompt */
   readonly extras?: readonly { readonly id: string; readonly icon: IconName; readonly label: string; readonly removeLabel: string; readonly onRemove: () => void }[];
+  /** Ask near the limit (v1 .l-hold): the send waits for you under the bar, Start anyway / Wait until the reset / ×;
+   *  the recipes row steps aside while it shows (v1 .launcher.hold-on). Additive (2026-11-16). */
+  readonly hold?: Omit<HoldRowProps, 'place' | 'box'> | undefined;
   /** no coding agent on this computer (v1 .l-setup): the install strip over the prompt. Additive (2026-11-13). */
   readonly setup?: LauncherSetupProps | undefined;
   readonly recipes: {
@@ -446,7 +450,8 @@ export function Launcher(props: LauncherProps): JSX.Element {
             </ActIcon>
           </button>
         </div>
-        <div data-kit="l-foot">
+        <Show when={props.hold}>{(h) => <HoldRow {...h()} place="launcher" box={() => input} part="launcher.hold" />}</Show>
+        <div data-kit="l-foot" hidden={props.hold !== undefined}>
           <div data-kit="l-recipes" data-part="launcher.recipes">
             {/* v1 responsive.css: an empty Recipes list is an ad for a feature, not worth a phone's screen; the phone apps
                 hide it by data-empty and keep Start from an issue (v1 moved it to the bar there); the browser's HTML stays v1's */}

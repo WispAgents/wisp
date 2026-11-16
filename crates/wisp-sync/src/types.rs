@@ -76,8 +76,16 @@ pub struct SnapshotAnswer {
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum CommandOutcome {
-    Ok { seq: u64, result: Option<Value> },
-    Err { code: String, message: String },
+    Ok {
+        seq: u64,
+        result: Option<Value>,
+    },
+    /// `reason`: a veto's reason (the interceptor's code), when there is one (ADR-0091)
+    Err {
+        code: String,
+        message: String,
+        reason: Option<String>,
+    },
 }
 
 #[derive(Debug)]

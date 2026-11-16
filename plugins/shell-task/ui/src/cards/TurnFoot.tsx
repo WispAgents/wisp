@@ -16,7 +16,28 @@ import { WhatChanged } from './WhatChanged.tsx';
 
 const bare = (k: string): string => k.slice(k.indexOf(':') + 1);
 
-const release = defineCommand<{ key: EntityKey; turnId: string; action: 'start' | 'skip' }>({ id: 'runtime.release', owner: (a) => a.key, wire: (a) => ({ id: bare(a.key), turnId: a.turnId, action: a.action }), optimistic: 'none', pending: 'the held turn’s buttons' });
+/** Start now / Skip on a held turn (v1 hold.js): the card goes at once, the turn starting (the same turn: runtime's
+ *  `release_held`) or stopped, and the task with it; a refusal puts them back. */
+const release = defineCommand<{ key: EntityKey; turnId: string; action: 'start' | 'skip' }>({
+  id: 'runtime.release',
+  owner: (a) => a.key,
+  wire: (a) => ({ id: bare(a.key), turnId: a.turnId, action: a.action }),
+  optimistic: (base, a) => {
+    const key = entityKey(ownerOf(a.key), a.turnId);
+    const turn = base.peek<{ body?: { status?: unknown } }>('turn', key);
+    const status = a.action === 'start' ? 'running' : 'stopped';
+    // a start counts its time from now (the held turn's own start is when it was held)
+    const now = Date.now();
+    const at = (root: string): { op: 'add'; path: string; value: unknown }[] => [
+      { op: 'add', path: `${root}/status`, value: status },
+      ...(a.action === 'start' ? [{ op: 'add' as const, path: `${root}/started_at`, value: now }] : []),
+    ];
+    return [
+      ...(turn ? [{ e: 'turn', id: key, op: 'patch' as const, ops: [...at(''), ...(turn.body?.status !== undefined ? at('/body') : [])] }] : []),
+      { e: 'session', id: a.key, op: 'patch' as const, ops: [{ op: 'add' as const, path: '/state', value: a.action === 'start' ? 'running' : 'done' }] },
+    ];
+  },
+});
 const signIn = defineCommand<{ key: EntityKey; turnId: string }>({ id: 'runtime.signIn', owner: (a) => a.key, wire: (a) => ({ id: bare(a.key), turnId: a.turnId }), optimistic: 'none', pending: 'Sign in' });
 const followUp = defineCommand<{ key: EntityKey; text: string; run?: { agent: string; model?: string } }>({
   id: 'runtime.followUp',

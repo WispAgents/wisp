@@ -122,7 +122,7 @@ export type ClientOutput =
   | { kind: 'entityOps'; peer: string; ops: EntityOp[] }
   | { kind: 'rows'; peer: string; req: string; rows: Row[]; done: boolean }
   | { kind: 'ack'; mid: string; seq: number; result?: unknown }
-  | { kind: 'reject'; mid: string; code: string; message: string }
+  | { kind: 'reject'; mid: string; code: string; message: string; reason?: string }
   | { kind: 'needResubscribe'; topic: Topic }
   | { kind: 'denied'; topic: Topic; code: string }
   | { kind: 'notice'; notice: Notice }

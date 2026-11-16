@@ -208,6 +208,7 @@ impl Actor {
                 CommandOutcome::Err {
                     code: v["error"]["code"].as_str().unwrap_or("internal").to_owned(),
                     message: v["error"]["message"].as_str().unwrap_or("").to_owned(),
+                    reason: v["error"]["reason"].as_str().map(str::to_owned),
                 }
             };
             let _ = tx.send(Msg::In(Input::CommandResult { conn, mid, outcome }));

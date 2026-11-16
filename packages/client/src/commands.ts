@@ -56,11 +56,13 @@ export function defineCommand<A, R = unknown>(def: CommandDef<A, R>): CommandDef
 export class CommandError extends Error implements WireError {
   readonly code: string;
   readonly retry?: boolean;
+  readonly reason?: string;
   constructor(e: WireError) {
     super(e.message);
     this.name = 'CommandError';
     this.code = e.code;
     if (e.retry !== undefined) this.retry = e.retry;
+    if (e.reason !== undefined) this.reason = e.reason;
   }
 }
 
@@ -170,7 +172,7 @@ export function createCommands(o: CommandsOptions): Commands {
     } else {
       o.devtools?.record({ kind: 'reject', mid: a.mid, code: a.code, message: a.message });
       o.writer.dropPending(a.mid);
-      fail(r.cmd, new CommandError({ code: a.code, message: a.message }), w);
+      fail(r.cmd, new CommandError({ code: a.code, message: a.message, ...(a.reason !== undefined && { reason: a.reason }) }), w);
     }
   }
 

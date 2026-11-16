@@ -157,6 +157,13 @@
       "t": "reject"
     },
     {
+      "code": "vetoed",
+      "message": "5-hour usage window is at 85%",
+      "mid": "m3",
+      "reason": "budget_hold",
+      "t": "reject"
+    },
+    {
       "t": "resync",
       "topic": "session:a"
     },

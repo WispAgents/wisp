@@ -121,7 +121,12 @@ pub fn command_answer(out: Result<Value>, seq: i64) -> Done {
     match out {
         Ok(result) => (200, json!({"ok": true, "seq": seq, "result": result})),
         Err(e) => {
-            (e.status(), json!({"ok": false, "error": {"code": e.code, "message": e.message, "retry": e.retry}, "message": e.message}))
+            let mut error = json!({"code": e.code, "message": e.message, "retry": e.retry});
+            // a veto's reason (the interceptor's code: `budget_hold`), so a client can answer it in place (ADR-0091)
+            if let Some(r) = e.details.as_ref().and_then(|d| d.get("reason")).filter(|r| r.is_string()) {
+                error["reason"] = r.clone();
+            }
+            (e.status(), json!({"ok": false, "error": error, "message": e.message}))
         }
     }
 }

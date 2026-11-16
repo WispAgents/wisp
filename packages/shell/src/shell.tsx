@@ -8,7 +8,7 @@ import { render } from 'solid-js/web';
 import type { JSX } from 'solid-js';
 import { computed, effect, signal, untracked, type Client, type PeerId, type PluginClient, type Readable } from '@wisp/client';
 import { BLOCK_STRINGS, GestureHostProvider, KitProvider, KIT_STRINGS, loadPlatformStyles, type KitString, type Toaster } from '@wisp/ui';
-import type { PluginUiDef, PromptBox, SettingsPaneDef, ShellApi, ShellContext } from './contract.ts';
+import type { PluginUiDef, PromptBox, SendHold, SendHoldAsk, SettingsPaneDef, ShellApi, ShellContext } from './contract.ts';
 import { namespaceOf } from './define.ts';
 import { SHELL_STRINGS } from './i18n/en.ts';
 import { applyPlatformLook } from './platform/look.ts';
@@ -22,7 +22,7 @@ import { NONE as NO_SELECTION, pruneSelect, selectAll, startSelect, toggleSelect
 import { shellUi, SHELL_SETTINGS } from './builtins.tsx';
 import { installKeys } from './keyboard.ts';
 import { watchCoreTopics } from './watch.ts';
-import { wireNotices } from './toasts.ts';
+import { answeredInPlace, wireNotices } from './toasts.ts';
 
 /** The part of `window` the shell uses; tests pass happy-dom's. */
 export interface ShellWindow {
@@ -101,6 +101,17 @@ export function createShell(o: ShellOptions): Shell {
   const selected = signal<string | undefined>(undefined);
   const focusTargets = new Map<string, () => void>();
   const prompts = new Map<string, PromptBox>();
+  // what may make a send wait (ADR-0091): each plugin's sendHolds, with its client, then any provided by hand
+  const holdChecks = new Map<string, (a: SendHoldAsk) => Promise<SendHold | undefined>>();
+  const holdDefs = (): { reason: string; check: (a: SendHoldAsk) => Promise<SendHold | undefined> }[] =>
+    registry.sendHolds().flatMap((d) => {
+      const pc = clients.get(d.plugin);
+      return pc ? [{ reason: d.reason, check: (a: SendHoldAsk) => d.check({ client: pc }, a) }] : [];
+    });
+  const holdCheckList = (): ((a: SendHoldAsk) => Promise<SendHold | undefined>)[] => [...holdDefs().map((d) => d.check), ...holdChecks.values()];
+  const holdCheckFor = (reason: string): ((a: SendHoldAsk) => Promise<SendHold | undefined>) | undefined =>
+    holdDefs().find((d) => d.reason === reason)?.check ?? holdChecks.get(reason);
+  answeredInPlace((reason) => holdCheckFor(reason) !== undefined);
   const taskCard = signal<((key: string) => JSX.Element) | undefined>(undefined);
   // the list's order (published by the list) and the phone list's selection mode (frame/list-select.ts)
   const listOrder = signal<readonly string[]>([]);
@@ -164,6 +175,22 @@ export function createShell(o: ShellOptions): Shell {
         };
       },
       get: (name) => prompts.get(name),
+    },
+    sendHolds: {
+      provide(reason, check) {
+        holdChecks.set(reason, check);
+        return () => {
+          if (holdChecks.get(reason) === check) holdChecks.delete(reason);
+        };
+      },
+      async check(a) {
+        for (const check of holdCheckList()) {
+          const h = await check(a).catch(() => undefined);
+          if (h) return h;
+        }
+        return undefined;
+      },
+      answers: (reason) => (reason === undefined ? undefined : holdCheckFor(reason)),
     },
     taskCards: {
       provide(render) {

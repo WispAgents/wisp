@@ -7,6 +7,7 @@
 use std::collections::BTreeMap;
 
 use serde_json::json;
+pub use wisp_budget_api::AskHold;
 use wisp_budget_core::ask::{self, Kind, Run};
 use wisp_budget_core::drain::units_of;
 use wisp_kernel::{Ctx, Verdict};
@@ -51,14 +52,24 @@ fn ask_line(ctx: &Ctx) -> Option<f64> {
 }
 
 impl State {
-    /// The window this run would take past its line, with the windows the rule read.
-    fn ask_hold(&self, ctx: &Ctx, c: &BeforeRunCtx) -> Option<(ask::Hold, Vec<ask::Win>)> {
+    /// The window a run of `agent` on `account` (in task `session`) would take past its line, with the windows the
+    /// rule read. `turn`: the run being started, counted as running until it ends (None: a send only asked about).
+    #[allow(clippy::too_many_arguments)]
+    fn hold_of(
+        &self,
+        ctx: &Ctx,
+        agent: &str,
+        account: &str,
+        session: &str,
+        kind: Kind,
+        together: u32,
+        turn: Option<&str>,
+    ) -> Option<(ask::Hold, Vec<ask::Win>)> {
         let line = ask_line(ctx)?;
-        let (agent, account) = (c.agent.as_str(), account_of(c.account.as_deref().unwrap_or_default()));
+        let account = account_of(account);
         let at = now(ctx);
         let runs = lock(&self.runs).get(agent).cloned().unwrap_or_default();
-        let kind = if c.kind == RunKind::First { Kind::First } else { Kind::FollowUp };
-        let mine: Vec<f64> = runs.iter().filter(|r| r.session == c.session_id.0).map(|r| r.units).collect();
+        let mine: Vec<f64> = runs.iter().filter(|r| r.session == session).map(|r| r.units).collect();
         let units = ask::units(&runs, kind, &mine);
         // runs going on this account count at half what they'll likely take
         let running: f64 = lock(&self.running).values().filter(|(g, a, _)| g == agent && *a == account).map(|(_, _, mid)| mid / 2.0).sum();
@@ -67,12 +78,53 @@ impl State {
         let rate = |w: &wisp_budget_api::WindowNow| ask::rate(b.rate(agent, &account, &w.id), w, &runs, &account);
         let acked = |w: &wisp_budget_api::WindowNow| b.acked(agent, &account, &w.id, w.resets_at, at);
         // a launch's runs starting at once (Try it two ways' pair) are asked about as one: v1 `together`
-        let wins = ask::windows(&list, Some(line), ask::together(units, c.together), running, &rate, &acked);
+        let wins = ask::windows(&list, Some(line), ask::together(units, together), running, &rate, &acked);
         drop(b);
-        if let Some(u) = units {
-            lock(&self.running).insert(c.turn_id.0.clone(), (agent.to_owned(), account.clone(), u[1]));
+        if let (Some(u), Some(t)) = (units, turn) {
+            lock(&self.running).insert(t.to_owned(), (agent.to_owned(), account.clone(), u[1]));
         }
         ask::hold_for(&wins).map(|h| (h, wins))
+    }
+
+    /// The window this run would take past its line, with the windows the rule read.
+    fn ask_hold(&self, ctx: &Ctx, c: &BeforeRunCtx) -> Option<(ask::Hold, Vec<ask::Win>)> {
+        let kind = if c.kind == RunKind::First { Kind::First } else { Kind::FollowUp };
+        self.hold_of(ctx, &c.agent, c.account.as_deref().unwrap_or_default(), &c.session_id.0, kind, c.together, Some(&c.turn_id.0))
+    }
+
+    /// A yes to `wins`: each window it crosses asks again only higher up, or after its reset.
+    fn ack_all(&self, agent: &str, account: &str, wins: &[ask::Win]) {
+        let mut b = lock(&self.budget);
+        for w in wins.iter().filter(|w| ask::hold_for(std::slice::from_ref(*w)).is_some()) {
+            b.ack(agent, account, &w.id, w.resets_at, w.line.unwrap_or(0.0));
+        }
+    }
+
+    /// A send you're making (New task, a follow-up, a crew job): asked before the task or turn is made, so a send
+    /// near the limit makes nothing and the box keeps your words (v1 launcher.js / composer.js `holdNow`, the server's
+    /// 409 `hold`). None: it goes. A yes (`confirm`) is remembered as the turn's own guard would.
+    pub(crate) fn ask_send(&self, ctx: &Ctx, s: &Send<'_>) -> Option<AskHold> {
+        if s.agent.is_empty() || s.agent == "auto" {
+            return None; // wisp picks the harness later: the turn's own guard asks then
+        }
+        let kind = if s.first { Kind::First } else { Kind::FollowUp };
+        let (h, wins) = self.hold_of(ctx, s.agent, s.account, s.session, kind, s.together.max(1), None)?;
+        let account = account_of(s.account);
+        if s.confirm {
+            self.ack_all(s.agent, &account, &wins);
+            return None;
+        }
+        Some(AskHold {
+            agent: s.agent.to_owned(),
+            account,
+            window: h.id.clone(),
+            label: h.label.clone(),
+            used: h.used,
+            line: h.line,
+            to: h.to,
+            resets_at: h.resets_at,
+            why: ask::message(&h),
+        })
     }
 
     /// The guard's half: None lets it run.
@@ -85,10 +137,7 @@ impl State {
         let account = account_of(c.account.as_deref().unwrap_or_default());
         if c.confirm_limit {
             // you said yes: each window it crosses asks again only higher up, or after its reset
-            let mut b = lock(&self.budget);
-            for w in wins.iter().filter(|w| ask::hold_for(std::slice::from_ref(*w)).is_some()) {
-                b.ack(&c.agent, &account, &w.id, w.resets_at, w.line.unwrap_or(0.0));
-            }
+            self.ack_all(&c.agent, &account, &wins);
             return None;
         }
         lock(&self.running).remove(&c.turn_id.0);
@@ -122,6 +171,20 @@ impl State {
     pub(crate) fn ask_freed(&self, agent: &str, account: &str) -> Vec<crate::early::Due> {
         take(&mut lock(&self.asked), |a| a.agent == agent && a.account == account)
     }
+}
+
+/// A send asked about before it's made.
+pub struct Send<'a> {
+    pub agent: &'a str,
+    pub account: &'a str,
+    /// the task it goes to ('' for a new one)
+    pub session: &'a str,
+    /// a new task's first run (else a follow-up)
+    pub first: bool,
+    /// runs of this send starting at once on this account (Try it two ways)
+    pub together: u32,
+    /// you said yes to going past the line
+    pub confirm: bool,
 }
 
 /// An automation Ask near the limit holds: its task and turn, until when, and the account it waits on.

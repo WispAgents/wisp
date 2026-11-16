@@ -76,7 +76,8 @@ export interface CreateArgs {
   readonly dirs?: readonly string[];
   readonly steps?: readonly string[];
   /** in a worktree of its own (New task's Worktree / In place toggle, `defaults.worktree`) */
-  readonly worktree?: boolean;
+  readonly worktree?: boolean;  /** you said yes to going past Ask near the limit's line (the hold row's Start anyway; StartArgs.confirmLimit) */
+  readonly confirmLimit?: boolean;
 }
 
 /** A file sent with a prompt (runtime's Attachment): what stuff's upload answered. */
@@ -180,6 +181,8 @@ export const followUp = defineCommand<{
   run?: { agent?: string; model?: string; effort?: string };
   /** while the task works and Settings → Follow-ups says Queue (v1 queued.js): it waits behind the run */
   queue?: boolean;
+  /** you said yes to going past Ask near the limit's line (the hold row's Send anyway) */
+  confirmLimit?: boolean;
 }>({
   id: 'runtime.followUp',
   owner: (a) => a.id,

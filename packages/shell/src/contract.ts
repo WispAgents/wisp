@@ -119,6 +119,31 @@ export const INPUTS = {
 
 export type InputId = keyof typeof INPUTS;
 
+/** A send a check is asked about (`ShellContext.sendHolds`). */
+export interface SendHoldAsk {
+  readonly peer: string;
+  readonly agent: string;
+  readonly account?: string;
+  /** the task a follow-up goes to (missing: a new task) */
+  readonly session?: string;
+}
+
+/** Why a send waits: the row's sentence and when it may go without asking (the window's reset). */
+export interface SendHold {
+  readonly reason: string;
+  readonly say: string;
+  /** ms since the epoch */
+  readonly until?: number;
+}
+
+export interface SendHolds {
+  provide(reason: string, check: (a: SendHoldAsk) => Promise<SendHold | undefined>): () => void;
+  /** every check, in turn: the first hold, or undefined (a failing check counts as no hold: the server asks again) */
+  check(a: SendHoldAsk): Promise<SendHold | undefined>;
+  /** the check for one refusal reason, after the server gave it */
+  answers(reason: string | undefined): ((a: SendHoldAsk) => Promise<SendHold | undefined>) | undefined;
+}
+
 /** What an extension's component receives. `session` is set inside task-scoped inputs (row, task, composer). */
 export interface ExtensionProps<C = Record<string, unknown>> {
   client: PluginClient;
@@ -245,6 +270,16 @@ export interface PluginUiDef {
    *  Views, Settings panes, harnesses, the catalogue, setup and whatever the first screen draws stay in the
    *  definition: a link or the last place must find its view or pane at start. */
   later?: () => Promise<{ readonly default: PluginUiLater }>;
+  /** added 2026-11-16 (additive, ADR-0091): what may make a send wait for you (Ask near the limit), asked by the prompt
+   *  boxes before they send and when the server refuses one with `reason` (`ShellContext.sendHolds`) */
+  sendHolds?: SendHoldDef[];
+}
+
+/** One check a prompt box asks before a send (and after the server refuses one with `reason`). */
+export interface SendHoldDef {
+  /** the refusal reason its server-side guard gives (`budget_hold`) */
+  reason: string;
+  check(ctx: { client: PluginClient }, a: SendHoldAsk): Promise<SendHold | undefined>;
 }
 /** What a plugin's UI registers once it's loaded (PluginUiDef.later): the parts the first screen never calls. */
 export type PluginUiLater = Pick<PluginUiDef, 'extensions' | 'palette' | 'shortcuts' | 'prompt' | 'sideTabs'>;
@@ -528,6 +563,11 @@ export interface ShellContext {
   /** added 2026-11-11 (additive): the prompt boxes ('launcher' for New task) a plugin may fill, as v1's Start from an
    * issue fills New task's prompt; the owner registers its box while it shows */
   readonly prompts?: { provide(name: string, box: PromptBox): () => void; get(name: string): PromptBox | undefined };
+  /** added 2026-11-16 (additive, ADR-0091): what may make a send wait for you (Ask near the limit, v1 hold.js). A plugin
+   * provides a check under the refusal reason its server-side guard gives (`budget_hold`); the prompt boxes ask every
+   * check before they send (Send shows pending meanwhile) and show the first hold as a row in the box, and a send the
+   * server refuses with that reason gets the same row instead of a toast. */
+  readonly sendHolds?: SendHolds;
   /** added 2026-11-12 (additive): the list's task card, lent to other screens: the phone's Crew section nests a member's
    * jobs as list cards (v1 crew.js placeCards). The list registers its renderer while it shows; `render` is undefined
    * until then (and with no list plugin), so a borrower shows nothing rather than a card of its own. */

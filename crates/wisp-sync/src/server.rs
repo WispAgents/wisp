@@ -285,7 +285,9 @@ impl<C: Clone> SyncServer<C> {
             CommandOutcome::Ok { seq, result } => {
                 c.acks.push(crate::conn::PendingAck { mid, seq, result });
             }
-            CommandOutcome::Err { code, message } => c.control.push(json(&wisp_protocol::Reject { t: tag::Reject, mid, code, message })),
+            CommandOutcome::Err { code, message, reason } => {
+                c.control.push(json(&wisp_protocol::Reject { t: tag::Reject, mid, code, message, reason }));
+            }
         }
         self.core.maybe_flush(c, now);
     }

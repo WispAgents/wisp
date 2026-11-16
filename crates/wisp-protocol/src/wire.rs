@@ -209,6 +209,11 @@ pub struct Reject {
     pub mid: String,
     pub code: String,
     pub message: String,
+    /// added 2026-11-16 (additive, ADR-0091): why a vetoed command was refused, as the interceptor said it
+    /// (`budget_hold`: Ask near the limit; the composer shows its hold row instead of a toast)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub reason: Option<String>,
 }
 
 /// Outbox overflow: re-subscribe the topic from the cursor.

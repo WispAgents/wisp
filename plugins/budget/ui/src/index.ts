@@ -15,6 +15,9 @@ const ui: PluginUiDef = {
     defineExtension({ id: 'budget.spare', attachTo: { id: 'shell.home:cards' }, component: lazy(() => import('./Spare.tsx')) }),
     defineExtension({ id: 'budget.homeUsage', attachTo: { id: 'shell.home:usage' }, component: lazy(() => import('./HomeUsage.tsx')) }),
   ],
+  // Ask near the limit in the prompt boxes (v1 hold.js): asked before New task and a follow-up go
+  // (its code and words load on the first send: ADR-0067); `budget_hold` is the server-side guard's refusal reason
+  sendHolds: [{ reason: 'budget_hold', check: ({ client }, a) => import('./hold.ts').then((m) => m.checkHold(client, a)) }],
   catalogue,
 };
 export default ui;

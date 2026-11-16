@@ -64,6 +64,8 @@ const MOCK_AGENTS = [
 // MOCK_COMPOSER=1: Codex signed out, Claude's plan windows, two recipes; MOCK_NO_AGENTS=1: no harness set up here.
 const env = (k: string): boolean => typeof process !== 'undefined' && process.env[k] === '1';
 const COMPOSER = env('MOCK_COMPOSER');
+/** MOCK_HOLD: Ask near the limit holds Claude's sends (the hold row in New task and the reply box) */
+const HOLD = env('MOCK_HOLD');
 const NO_AGENTS = env('MOCK_NO_AGENTS');
 const agentsNow = (): unknown[] =>
   NO_AGENTS ? MOCK_AGENTS.map((a) => ({ ...a, available: false })) : COMPOSER ? MOCK_AGENTS.map((a) => (a.id === 'codex' ? { ...a, available: false, signedIn: false } : a)) : MOCK_AGENTS;
@@ -686,6 +688,15 @@ export const COMMANDS: Record<string, CommandFn> = {
   'budget.view': (a) =>
     // no plan windows reported yet (MOCK_COMPOSER: Claude's)
     ({ ops: [], result: COMPOSER && str(obj(a), 'agent') === 'claude' ? [{ account: 'default', at: null, windows: [{ id: 'five_hour', label: '5h', used: 0.42 }, { id: 'seven_day', label: 'Week', used: 0.18 }] }] : [] }),
+  // Ask near the limit (budget.ask, ADR-0091): the mock's windows are far from any line, so every send goes; with
+  // MOCK_HOLD the box shows the hold row (Claude's weekly window at 91%, past the 90% line, resetting in 2 days)
+  'budget.ask': (a) => ({
+    ops: [],
+    result:
+      HOLD && str(obj(a), 'agent') === 'claude'
+        ? { agent: 'claude', account: 'default', window: 'seven_day', label: 'Weekly', used: 0.91, line: 0.9, to: [0.91, 0.912], resetsAt: Date.now() + 2 * 86_400_000, why: 'Weekly usage window is at 91%, past your 90% line.' }
+        : null,
+  }),
   // the side panel's Preview: nothing runs yet, package.json's dev script to start from
   'terminal.run.info': () => ({ ops: [], result: { open: false, port: 41234, dir: '~/code/wisp-repo', guess: 'npm run dev' } }),
   'terminal.run.start': () => ({ ops: [], result: { ok: true, started: true, port: 41234, dir: '~/code/wisp-repo' } }),

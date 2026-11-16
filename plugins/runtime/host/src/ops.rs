@@ -379,15 +379,17 @@ impl Runtime {
     }
 
     /// A held turn: Start now, or Skip (it stays, stopped, saying what was skipped).
-    pub async fn release(self: &Arc<Self>, id: &str, turn: &str, start: bool) -> Result<()> {
+    /// `yes`: you pressed Start now (not wisp releasing it at the reset): a yes to what held it.
+    pub async fn release(self: &Arc<Self>, id: &str, turn: &str, start: bool, yes: bool) -> Result<()> {
         let mut s = self.repo.session(id).await?;
         let mut t = self.repo.turn(turn).await?;
         if t.status != TurnStatus::Held {
             return Err(RuntimeError::Conflict("that turn isn't waiting".into()));
         }
         if start {
-            self.release_held(&mut s).await?;
-            self.persist(&mut s, Vec::new()).await?;
+            // straight into its start: never written to the queue first, where the page would show it as a queued
+            // follow-up until the start (its folder, `before:run`) is done
+            self.release_held(&mut s, yes).await?;
             return self.kick(s).await.map(drop);
         }
         let held = t.held.clone();

@@ -81,14 +81,14 @@ fn with_slot<R>(ext: &mut BTreeMap<String, Value>, f: impl FnOnce(&mut serde_jso
 }
 
 impl Runtime {
-    /// `runtime.held`: the task's held turn (its last) started or skipped.
-    pub async fn held(self: &Arc<Self>, id: &str, start: bool) -> Result<()> {
+    /// `runtime.held`: the task's held turn (its last) started or skipped; `yes`: you pressed Start now.
+    pub async fn held(self: &Arc<Self>, id: &str, start: bool, yes: bool) -> Result<()> {
         let turn = self
             .last_turn(id)
             .await?
             .filter(|t| t.status == TurnStatus::Held)
             .ok_or_else(|| RuntimeError::Conflict("nothing is held on this task".into()))?;
-        self.release(id, turn.id.as_str(), start).await
+        self.release(id, turn.id.as_str(), start, yes).await
     }
 
     async fn last_turn(&self, id: &str) -> Result<Option<Turn>> {

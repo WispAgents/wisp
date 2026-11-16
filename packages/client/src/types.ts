@@ -30,6 +30,8 @@ export interface WireError {
   code: string;
   message: string;
   retry?: boolean;
+  /** a veto's reason, the interceptor's code (`budget_hold`: Ask near the limit), when it gave one (ADR-0091) */
+  reason?: string;
 }
 
 /** A manifest setting declaration (kernel `SettingDecl`). */

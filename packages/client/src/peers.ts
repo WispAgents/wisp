@@ -179,7 +179,7 @@ export function createPeers(o: PeersOptions): Peers {
         for (const fn of on.answer) fn(peer, { t: 'ack', mid: out.mid, seq: out.seq, ...(out.result !== undefined && { result: out.result }) });
         return;
       case 'reject':
-        for (const fn of on.answer) fn(peer, { t: 'reject', mid: out.mid, code: out.code, message: out.message });
+        for (const fn of on.answer) fn(peer, { t: 'reject', mid: out.mid, code: out.code, message: out.message, ...(out.reason !== undefined && { reason: out.reason }) });
         return;
       case 'rows':
         for (const fn of on.rows) fn(peer, out);

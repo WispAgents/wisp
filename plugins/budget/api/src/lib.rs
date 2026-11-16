@@ -25,6 +25,34 @@ pub use usage::{AccountTurns, COMPARE_DAYS, COMPARE_MIN, ModelCompare, PlanWindo
 
 // ---------- shared contract (crew, later, goal, automations depend on it) ----------
 
+/// Ask near the limit on a send (`budget.ask`; the `budget_hold` refusal of `runtime.create` / `runtime.followUp`): the
+/// window it would take past your line (Settings → Usage → Ask near the limit), for the hold row over the box (v1
+/// hold.js `showHold`): "Claude Code's weekly window is at 91%", Start anyway, Wait until the reset, Keep editing.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export, export_to = "budget/")]
+pub struct AskHold {
+    pub agent: String,
+    /// the account id, `default` when the harness has one
+    pub account: String,
+    /// the window id (`five_hour`, `seven_day`, …)
+    pub window: String,
+    /// its name ("Weekly", "5-hour")
+    pub label: String,
+    /// share of the window used, 0..=1
+    pub used: f64,
+    /// your Ask near the limit line, 0..=1 (higher after a yes, until the reset)
+    pub line: f64,
+    /// where this send would likely take it, low and high
+    pub to: [f64; 2],
+    /// ms since the epoch: when the window resets (None: not known)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(type = "number", optional)]
+    pub resets_at: Option<i64>,
+    /// the refusal's words (for agents and the CLI: how to go ahead)
+    pub why: String,
+}
+
 /// The window that holds unattended work back on an account (v1 `budget.hold`, budget.js ~456).
 /// `until` is the latest reset among the windows at or past the line.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]

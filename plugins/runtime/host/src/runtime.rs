@@ -606,7 +606,7 @@ impl Runtime {
             }
         }
         if d.release_held {
-            self.release_held(&mut s).await?;
+            self.release_held(&mut s, false).await?;
         }
         if d.release_linger {
             self.release_linger(a.id.as_str());
@@ -694,20 +694,26 @@ impl Runtime {
         false
     }
 
-    pub(crate) async fn release_held(self: &Arc<Self>, s: &mut Session) -> Result<()> {
+    /// The task's held turn goes back to the front of its queue, to start next. It starts as that same turn (its id and
+    /// place: `opts.turn`), so the page updates the held card in place rather than dropping it and drawing a new one.
+    /// `yes`: you pressed Start now: a yes to what held it (Ask near the limit's `confirmLimit`, as Send anyway).
+    pub(crate) async fn release_held(self: &Arc<Self>, s: &mut Session, yes: bool) -> Result<()> {
         let Some(t) = self.repo.turns(s.id.as_str(), None, Some(1)).await?.pop().filter(|t| t.status == TurnStatus::Held) else {
             return Ok(());
         };
+        let mut opts = serde_json::json!({ "turn": { "id": t.id.as_str(), "idx": t.idx } });
+        if yes {
+            opts["confirmLimit"] = serde_json::Value::Bool(true);
+        }
         let item = QueueItem {
             id: wisp_kernel::ids::uuid7(),
             text: t.prompt.clone(),
             attachments: t.attachments.clone(),
             at: self.now(),
             by: t.by.clone(),
+            opts: Some(opts),
             ..QueueItem::default()
         };
-        let tid = t.id.clone();
-        self.repo.store.write(move |w| w.del("turn", tid.as_str()).map(|_| ())).await?;
         s.queue.insert(0, item);
         Ok(())
     }

@@ -112,8 +112,7 @@ impl Runtime {
         let run = item.opts.as_ref().and_then(|o| o.get("run"));
         let next = self.harness(&s.agent).ok();
         crate::handoff::carry_over(&mut s, &was, opt_str(run, "model").is_some(), opt_str(run, "effort").is_some(), next.as_deref());
-        let idx = self.repo.turns(s.id.as_str(), None, Some(1)).await?.last().map_or(0, |t| t.idx + 1);
-        let mut turn = self.new_turn(&s, &item, idx);
+        let mut turn = self.next_turn(&s, &item).await?;
         let ctx = BeforeRunCtx {
             session_id: s.id.clone(),
             turn_id: turn.id.clone(),
@@ -135,10 +134,10 @@ impl Runtime {
                 .and_then(|o| o.pointer("/brief/untrusted"))
                 .and_then(serde_json::Value::as_bool)
                 .unwrap_or(false),
-            kind: if idx == 0 { RunKind::First } else { RunKind::FollowUp },
+            kind: if turn.idx == 0 { RunKind::First } else { RunKind::FollowUp },
             parent_id: s.parent_id.clone(),
             confirm_limit: item.opts.as_ref().and_then(|o| o.get("confirmLimit")).and_then(serde_json::Value::as_bool).unwrap_or(false),
-            together: crate::trial::together(&s, idx),
+            together: crate::trial::together(&s, turn.idx),
         };
         // its folder first (a worktree archiving removed comes back on its branch), before anything reads it
         if let Err(why) = self.folder_ready(&s, Some(&turn.id)).await {
@@ -251,6 +250,21 @@ impl Runtime {
     }
 
     /// The turn `item` starts, as it's saved (running, from now).
+    /// The turn `item` starts: a new one after the task's last, or, for a held turn started (Start now, its reset), that
+    /// same turn in its place (`release_held`'s `opts.turn`), so the page updates the held card instead of a new one.
+    async fn next_turn(&self, s: &Session, item: &QueueItem) -> Result<Turn> {
+        let again = item
+            .opts
+            .as_ref()
+            .and_then(|o| o.get("turn"))
+            .and_then(|t| Some((TurnId(t.get("id")?.as_str()?.to_owned()), u32::try_from(t.get("idx")?.as_u64()?).ok()?)));
+        if let Some((id, idx)) = again {
+            return Ok(Turn { id, ..self.new_turn(s, item, idx) });
+        }
+        let idx = self.repo.turns(s.id.as_str(), None, Some(1)).await?.last().map_or(0, |t| t.idx + 1);
+        Ok(self.new_turn(s, item, idx))
+    }
+
     fn new_turn(&self, s: &Session, item: &QueueItem, idx: u32) -> Turn {
         Turn {
             id: TurnId::new(),

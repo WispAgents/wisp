@@ -15,9 +15,17 @@ interface ToastNotice {
 
 const isTarget = (v: unknown): v is Target => typeof v === 'object' && v !== null && typeof (v as { to?: unknown }).to === 'string';
 
+/** Whether a prompt box answers a refusal reason in place (a hold row, `ShellContext.sendHolds`): no toast then. The
+ * shell sets it once its plugins are known; the toaster is made before it. */
+let inPlace: (reason: string) => boolean = () => false;
+export function answeredInPlace(is: (reason: string) => boolean): void {
+  inPlace = is;
+}
+
 /** ClientOptions.onError for createClient: the rollback toast. */
 export function commandErrorToast(toaster: Pick<Toaster, 'error'>): (err: CommandError, cmd: string) => void {
   return (err, cmd) => {
+    if (err.reason !== undefined && inPlace(err.reason)) return;
     toaster.error(err.message || cmd);
   };
 }

@@ -293,7 +293,7 @@ export class SyncClient {
         if (this.#pending.delete(m.mid)) settle.push({ kind: 'ack', mid: m.mid, seq: m.seq, ...(m.result !== undefined && { result: m.result }) });
         return;
       case 'reject':
-        if (this.#pending.delete(m.mid)) settle.push({ kind: 'reject', mid: m.mid, code: m.code, message: m.message });
+        if (this.#pending.delete(m.mid)) settle.push({ kind: 'reject', mid: m.mid, code: m.code, message: m.message, ...(m.reason !== undefined && { reason: m.reason }) });
         return;
       case 'resync':
         if (this.#topics.has(m.topic) && !resyncs.includes(m.topic)) resyncs.push(m.topic);

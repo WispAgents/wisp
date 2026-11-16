@@ -32,6 +32,7 @@ import {
   type TaskPlaceChip,
 } from '@wisp/ui';
 import { useShell } from '../context.tsx';
+import type { SendHold } from '../contract.ts';
 import { SESSION, type SessionRow } from '../rows.ts';
 import { Slot, useClients, usePluginClient } from '../slot.tsx';
 import { TaskHeadSlot } from './slots.tsx';
@@ -445,6 +446,10 @@ export default function TaskView(props: { readonly id: string; readonly onBack?:
   // ADR-0067: plugins' prompt sources may still be on their way (the page's first moments, or a load tried again):
   // a send waits for them once, then goes whatever they did
   let waited = false;
+  // Ask near the limit (v1 hold.js, ADR-0091): asked before the follow-up goes; `pass` lets the next send() through
+  const [hold, setHold] = createSignal<SendHold | undefined>(undefined);
+  const [checking, setChecking] = createSignal(false);
+  let pass: 'checked' | 'confirmed' | undefined;
   const send = (): void => {
     const wait = waited ? undefined : shell.laterReady?.();
     if (wait) {
@@ -477,6 +482,23 @@ export default function TaskView(props: { readonly id: string; readonly onBack?:
     if (gate === 'askGoal') {
       goalInput?.focus();
       shell.toast.show(t('shell.goal.empty'), { action: { label: t('shell.goal.sendWithout'), onClick: () => (setGoalText(undefined), send()) } });
+      return;
+    }
+    // asked before anything is taken (the box, the goal, the menu); not an answer to what the task asks (v1 composer.js)
+    const through = pass;
+    pass = undefined;
+    setHold(undefined);
+    const holds = shell.sendHolds;
+    const agent = runOf()?.agent ?? row()?.agent ?? '';
+    if (!through && holds && v && !v.startsWith('/') && row()?.state !== 'waiting') {
+      if (checking()) return;
+      setChecking(true);
+      void holds.check({ peer, agent, session: bare }).then((h) => {
+        setChecking(false);
+        if (h) return void (setHold(h), input?.focus());
+        pass = 'checked';
+        send();
+      });
       return;
     }
     menu.reset();
@@ -518,9 +540,14 @@ export default function TaskView(props: { readonly id: string; readonly onBack?:
         ...(attachments.length > 0 && { attachments }),
         ...(runOf() ? { run: runOf() as NonNullable<ReturnType<typeof runOf>> } : {}),
         ...(queues() && { queue: true }),
-      }).catch(() => {
+        ...(through === 'confirmed' && { confirmLimit: true }),
+      }).catch((err: unknown) => {
         extra?.back();
         setText(v);
+        // the peer knew better: the row, the words back in the box (v1: the 409 `hold`)
+        const reason = (err as { reason?: string } | null)?.reason;
+        const answer = shell.sendHolds?.answers(reason);
+        if (answer) void answer({ peer, agent, session: bare }).then((h) => setHold(h ?? { reason: reason ?? '', say: (err as Error).message }));
       });
     };
     if (files().length === 0) go([]);
@@ -1171,6 +1198,15 @@ export default function TaskView(props: { readonly id: string; readonly onBack?:
                   {/* what waits on you, over the reply box (shell-task's question and queue): `shell.task:foot` */}
                   <Slot input="shell.task:foot" layout="stack" id={key} session={() => s() as never} />
                   <ReplyBox
+                    hold={((hd) =>
+                      hd && {
+                        say: hd.say,
+                        goLabel: t('shell.hold.send'),
+                        goTitle: t('shell.hold.sendTitle'),
+                        keepLabel: t('shell.hold.keep'),
+                        onGo: () => ((pass = 'confirmed'), send()),
+                        onKeep: () => (setHold(undefined), input?.focus()),
+                      })(hold())}
                     placeholder={t(replyPlaceholderKey(row()), { name: h().name })}
                     value={text()}
                     onInput={(v, e) => {
@@ -1235,6 +1271,7 @@ export default function TaskView(props: { readonly id: string; readonly onBack?:
                     later={t('shell.home.later')}
                     laterAct={{ menu: { items: whenMenu(t), onSelect: (w) => setWhen(w as When) } }}
                     send={t('shell.home.send')}
+                    {...(checking() && { sendAct: { pending: true } })}
                     hint={hint()}
                     extras={[
                       ...files().map((f, i) => ({

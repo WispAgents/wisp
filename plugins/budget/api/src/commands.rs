@@ -36,6 +36,20 @@ pub struct AgentArgs {
     pub agent: String,
 }
 
+/// `budget.ask`: a send of `agent` on `account` (empty: the harness's own), to task `session` (a follow-up) or a new
+/// task (missing).
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export, export_to = "budget/")]
+pub struct AskArgs {
+    pub agent: String,
+    #[serde(default)]
+    pub account: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub session: Option<String>,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
 #[ts(export, export_to = "budget/")]
@@ -162,6 +176,8 @@ command!(Compare = "budget.compare", PERM_READ, true, AgentArgs => Vec<crate::us
 // Every account's windows this period with each task's traced part (crew's *what ate my limits*).
 command!(PlanWindows = "budget.planWindows", PERM_READ, true, PlanWindowsArgs => Vec<crate::usage::PlanWindow>);
 command!(Hold = "budget.hold", PERM_READ, true, AccountArgs => Option<PlanHold>);
+// Ask near the limit on a send not made yet (New task, a follow-up): the hold row's numbers, or None when it goes.
+command!(Ask = "budget.ask", PERM_READ, true, AskArgs => Option<crate::AskHold>);
 command!(ResetAt = "budget.resetAt", PERM_READ, true, AccountArgs => Option<i64>);
 command!(Shares = "budget.shares", PERM_READ, true, SessionArgs => Vec<TurnPlan>);
 command!(Record = "budget.record", PERM_WRITE, false, RecordArgs => RecordOut);

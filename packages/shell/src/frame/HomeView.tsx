@@ -17,6 +17,8 @@ import { Show, createEffect, createMemo, createSignal, lazy, on, onCleanup, type
 import { entityKey, newRowId, type EntityKey, type Json, type PeerId } from '@wisp/client';
 import { AutoPop, FeedbackLine, KeysHint, Launcher, NextList, SplitHome, Tips, lazyPart, lazyView, useSignal, warm as warmPart, type LauncherProps, type LauncherTool, type PlainTip } from '@wisp/ui';
 import { useShell } from '../context.tsx';
+import type { SendHold } from '../contract.ts';
+import { aheadLabel, waitable } from './hold.ts';
 import { Slot, usePluginClient } from '../slot.tsx';
 import { useNow } from '../clock.ts';
 import { SESSION, type SessionRow } from '../rows.ts';
@@ -248,6 +250,11 @@ export function HomeView(props: { readonly onBack?: () => void }): JSX.Element {
   // ADR-0067: plugins' prompt sources may still be on their way (the page's first moments, or a load tried again):
   // a send waits for them once, then goes whatever they did
   let waited = false;
+  // Ask near the limit (v1 hold.js, ADR-0091): asked before the send goes; `pass` lets the next send() through once
+  // checked ('checked'), after Start anyway ('confirmed': confirmLimit), or to wait for the reset ('wait': at)
+  const [hold, setHold] = createSignal<SendHold | undefined>(undefined);
+  const [checking, setChecking] = createSignal(false);
+  let pass: { readonly kind: 'checked' | 'confirmed' } | { readonly kind: 'wait'; readonly at: number } | undefined;
   const send = (): void => {
     const wait = waited ? undefined : shell.laterReady?.();
     if (wait) {
@@ -287,6 +294,31 @@ export function HomeView(props: { readonly onBack?: () => void }): JSX.Element {
       input?.focus();
       return;
     }
+    // asked before anything is taken (the goal, the menu, the box): a held send leaves New task as it was
+    const through = pass;
+    pass = undefined;
+    setHold(undefined);
+    const holds = shell.sendHolds;
+    if (!through && holds && !when() && !prompt.startsWith('/')) {
+      if (checking()) return;
+      setChecking(true);
+      // Auto: the harness its preview says it will run (the peer checks its own pick again)
+      const lead = agent() === 'auto' ? (autoPick(preview())?.agent ?? '') : agent();
+      const asks = [{ agent: lead, account: agent() === 'auto' ? undefined : account()?.id }, ...runs().map((r) => ({ agent: r.agent, account: r.account }))];
+      void (async () => {
+        for (const r of asks) {
+          const h = await holds.check({ peer: target(), agent: r.agent, ...(r.account && { account: r.account }) });
+          if (h) return h;
+        }
+        return undefined;
+      })().then((h) => {
+        setChecking(false);
+        if (h) return void (setHold(h), input?.focus());
+        pass = { kind: 'checked' };
+        send();
+      });
+      return;
+    }
     menu.reset();
     const p = project();
     const id = entityKey(target(), newRowId());
@@ -306,7 +338,7 @@ export function HomeView(props: { readonly onBack?: () => void }): JSX.Element {
       ...(agent() !== 'auto' && model() && { model: model() }),
       ...(effort() && { effort: effort() }),
       ...(g && { goal: g }),
-      ...(w && { at: whenAt(w, now()) }),
+      ...(w ? { at: whenAt(w, now()) } : through?.kind === 'wait' ? { at: through.at } : {}),
     };
     const pc = shell.client.plugin('shell');
     if (
@@ -369,6 +401,18 @@ export function HomeView(props: { readonly onBack?: () => void }): JSX.Element {
       shell.navigate({ t: 'openTask', id: id as EntityKey as never });
       return true;
     };
+    const yes = through?.kind === 'confirmed';
+    // the peer knew better (a harness wisp picked, another computer's plan): refused before anything was made, so
+    // back to Home with the row, the words back in the box (v1 launcher.js: the hold row once the prompt is back)
+    const heldBack = (err: unknown): void => {
+      const reason = (err as { reason?: string } | null)?.reason;
+      const answer = shell.sendHolds?.answers(reason);
+      if (!answer) return;
+      shell.navigate({ t: 'home' });
+      void answer({ peer: target(), agent: runner.agent, ...((a) => (a ? { account: a.id } : {}))(account()) }).then((h) =>
+        setHold(h ?? { reason: reason ?? '', say: (err as Error).message }),
+      );
+    };
     const start = (attachments: readonly Attachment[], cwd: string): void => {
       if (startTrial(attachments, cwd)) return;
       shell.client.commands
@@ -388,8 +432,9 @@ export function HomeView(props: { readonly onBack?: () => void }): JSX.Element {
           ...(agent() !== 'auto' && effort() && { effort: effort() }),
           ...((a) => (agent() !== 'auto' && a ? { account: a.id } : {}))(account()),
           ...(team().size > 0 && { team: teamRows(team(), subagents(), (a) => agentName(t, harnesses(), a)) }),
+          ...(yes && { confirmLimit: true }),
         })
-        .catch(() => (setText(prompt), goalBack()));
+        .catch((err: unknown) => (setText(prompt), goalBack(), heldBack(err)));
       // the other runs after the lead, so the lead is run A (Compare orders runs by when they started)
       for (const r of extra) {
         shell.client.commands
@@ -408,6 +453,7 @@ export function HomeView(props: { readonly onBack?: () => void }): JSX.Element {
             ...(p && { cwd, projectId: p.id, color: p.color, worktree: true }),
             ...(dirs.length > 0 && { dirs }),
             ...(attachments.length > 0 && { attachments }),
+            ...(yes && { confirmLimit: true }),
           })
           .catch(() => undefined);
       }
@@ -635,6 +681,18 @@ export function HomeView(props: { readonly onBack?: () => void }): JSX.Element {
           tool('more', 'launcher.more', 'dots', t('shell.home.moreOptions'), t('shell.home.moreOptionsTitle'), { text: true, act: { onClick: openFull } }),
         )}
         sendLabel={when() ? t('shell.when.send', { at: new Date(whenAt(when() ?? 'hour', now())).toLocaleString() }) : t('shell.home.send')}
+        {...(checking() && { sendAct: { pending: true } })}
+        hold={((h) =>
+          h && {
+            say: h.say,
+            goLabel: t('shell.hold.start'),
+            goTitle: t('shell.hold.startTitle'),
+            keepLabel: t('shell.hold.keep'),
+            ...(waitable(h.until, Date.now()) && { wait: { label: t('shell.hold.wait', { at: aheadLabel(h.until ?? 0, Date.now()) }), title: t('shell.hold.waitTitle') } }),
+            onGo: () => ((pass = { kind: 'confirmed' }), send()),
+            onWait: () => h.until !== undefined && ((pass = { kind: 'wait', at: h.until }), send()),
+            onKeep: () => (setHold(undefined), input?.focus()),
+          })(hold())}
         {...(goal() !== undefined && {
           goal: { label: t('shell.home.goal'), placeholder: t('shell.home.goalPlaceholder'), value: goal() ?? '', onInput: setGoal, ref: (el: HTMLInputElement) => (goalInput = el) },
         })}

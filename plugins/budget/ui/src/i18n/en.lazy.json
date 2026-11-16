@@ -110,5 +110,14 @@
   "budget.home.short.fiveHour": "5h",
   "budget.home.short.week": "Week",
   "budget.home.short.opus": "Opus week",
-  "budget.home.short.sonnet": "Sonnet week"
+  "budget.home.short.sonnet": "Sonnet week",
+  "budget.hold.head": "{who}’s {window} window is at {pct}",
+  "budget.hold.who": "{name} ({account})",
+  "budget.hold.past": "{head}, past your {line} line.",
+  "budget.hold.task": "{head}. This task may take it {where}.",
+  "budget.hold.follow": "{head}. A follow-up like this usually takes it {where}.",
+  "budget.hold.to": "to {to}",
+  "budget.hold.pastLimit": "past the limit",
+  "budget.hold.about": "about {pct}",
+  "budget.hold.usage": "usage"
 }

@@ -73,7 +73,12 @@ export type Rows = { t: 'rows', req: string, rows: Array<Row>, done: boolean, };
 
 export type Ack = { t: 'ack', mid: string, seq: number, result?: unknown, };
 
-export type Reject = { t: 'reject', mid: string, code: string, message: string, };
+export type Reject = { t: 'reject', mid: string, code: string, message: string, 
+/**
+ * added 2026-11-16 (additive, ADR-0091): why a vetoed command was refused, as the interceptor said it
+ * (`budget_hold`: Ask near the limit; the composer shows its hold row instead of a toast)
+ */
+reason?: string, };
 
 /**
  * Outbox overflow: re-subscribe the topic from the cursor.

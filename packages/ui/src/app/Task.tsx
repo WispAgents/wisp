@@ -1,6 +1,7 @@
 // The open task as v1 draws it in the main pane (web/css/split.css .split-head, panel.css .it-body,
 // .it-bar, .it-actions, transcript.css .turn/.ask/.trail, ship.css .overlap-strip, composer.css):
 // its head, then its turns with the details column beside them, and the reply box docked at the foot.
+import { HoldRow, type HoldRowProps } from '../composer/HoldRow.tsx';
 import { For, Show, createSignal, onCleanup, onMount, type JSX } from 'solid-js';
 import { flag } from '../core/props.ts';
 import { ActIcon, WithAct, type Act } from './act.tsx';
@@ -548,6 +549,9 @@ export interface ReplyBoxProps {
   /** what sits inside the box over the text (v1 .c-queued: the follow-ups set for later), within its border; the box
    * grows upward with it and the text and bar stay as they are. The host fills it (an extension slot). Additive (2026-11-15). */
   readonly top?: JSX.Element;
+  /** Ask near the limit (v1 .c-hold): the follow-up waits for you over the text, Send anyway / Wait until the reset / ×.
+   *  Additive (2026-11-16). */
+  readonly hold?: Omit<HoldRowProps, 'place' | 'box'> | undefined;
 }
 
 /** v1 .composer: the reply box under a task. It wakes (its toolbar shows) when the caret goes in, and
@@ -631,6 +635,7 @@ export function ReplyBox(given: ReplyBoxProps | CompactReplyBoxProps): JSX.Eleme
       <div data-kit="c-top" data-part="composer.top">
         {props.top}
       </div>
+      <Show when={'hold' in props ? props.hold : undefined}>{(h) => <HoldRow {...h()} place="reply" box={() => input} part="composer.hold" />}</Show>
       <div data-kit="mn-wrap">
         <PromptSuggestList suggest={props.suggest} place="above" />
         <textarea

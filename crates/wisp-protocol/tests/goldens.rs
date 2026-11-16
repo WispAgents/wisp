@@ -84,7 +84,21 @@ fn server() -> Vec<ServerMessage> {
         }),
         ServerMessage::Rows(Rows { t: tag::Rows, req: "w1".into(), rows: vec![], done: true }),
         ServerMessage::Ack(Ack { t: tag::Ack, mid: "m1".into(), seq: 51, result: Some(json!({"id": "s2"})) }),
-        ServerMessage::Reject(Reject { t: tag::Reject, mid: "m2".into(), code: "vetoed".into(), message: "over budget".into() }),
+        ServerMessage::Reject(Reject {
+            t: tag::Reject,
+            mid: "m2".into(),
+            code: "vetoed".into(),
+            message: "over budget".into(),
+            reason: None,
+        }),
+        // added 2026-11-16 (ADR-0091): a veto's reason, so the composer answers Ask near the limit in place
+        ServerMessage::Reject(Reject {
+            t: tag::Reject,
+            mid: "m3".into(),
+            code: "vetoed".into(),
+            message: "5-hour usage window is at 85%".into(),
+            reason: Some("budget_hold".into()),
+        }),
         ServerMessage::Resync(Resync { t: tag::Resync, topic: topic("session:a") }),
         ServerMessage::Notice(Notice { t: tag::Notice, kind: "denied".into(), data: json!({"topic": "session:x", "code": "forbidden"}) }),
     ]

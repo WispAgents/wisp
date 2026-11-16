@@ -52,6 +52,11 @@
         "readOnly": true
       },
       {
+        "id": "budget.ask",
+        "title": "Ask near the limit: the usage window a send would take past your line, before it's made",
+        "readOnly": true
+      },
+      {
         "id": "budget.resetAt",
         "title": "When an account at its usage limit can run again",
         "readOnly": true

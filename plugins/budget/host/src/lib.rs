@@ -23,7 +23,7 @@ use wisp_kernel::services::Paths;
 use wisp_kernel::{Ctx, Failure, InterceptOpts, Manifest, Plugin, Result, Setup, Verdict, WireError};
 use wisp_runtime_api::commands as rt;
 use wisp_runtime_api::events::{TurnEnded, TurnLimits, TurnStarted};
-use wisp_runtime_api::hooks::{BeforeRun, BeforeRunCtx};
+use wisp_runtime_api::hooks::{BeforeCreate, BeforeFollowUp, BeforeRun, BeforeRunCtx};
 use wisp_runtime_api::model::Held;
 use wisp_runtime_api::{SessionId, TurnId};
 use wisp_store::Store;
@@ -210,6 +210,59 @@ impl State {
 }
 
 /// `before:run`: unattended work on an account past its stop line is held until it resets.
+/// Ask near the limit before a send is made (v1: the page's `holdNow`, the server's 409 `hold`): a New task or a
+/// follow-up you send that would take its window past your line is refused with `budget_hold` before the task or turn
+/// exists, so nothing shows as failed and the box keeps your words; the composer asks `budget.ask` for the row. A
+/// send by an automation, a subagent, an answer to the task's question, or one wisp routes (`auto`) goes on to the
+/// turn's own guard (held there until the reset, or asked once the harness is known).
+fn sends(s: &mut Setup, slot: &Slot) {
+    let opts = InterceptOpts { priority: 30, failure: Failure::Open, timeout_ms: 500 };
+    let create = slot.clone();
+    s.intercept::<BeforeCreate, _, _>(opts, move |ctx, _call, a| {
+        let slot = create.clone();
+        async move {
+            let Ok(st) = state(&slot) else { return Verdict::Continue };
+            if a.parent_id.is_some() || wisp_budget_core::windows::unattended(a.by.as_deref()) {
+                return Verdict::Continue;
+            }
+            let agent = a.agent.clone().unwrap_or_default();
+            let account = a.account.clone().unwrap_or_default();
+            let send = ask::Send { agent: &agent, account: &account, session: "", first: true, together: 1, confirm: a.confirm_limit };
+            match st.ask_send(&ctx, &send) {
+                Some(h) => Verdict::Veto { code: wisp_budget_api::VETO_CODE.into(), message: h.why, then: Vec::new() },
+                None => Verdict::Continue,
+            }
+        }
+    });
+    let follow = slot.clone();
+    s.intercept::<BeforeFollowUp, _, _>(opts, move |ctx, _call, a| {
+        let slot = follow.clone();
+        async move {
+            let Ok(st) = state(&slot) else { return Verdict::Continue };
+            if wisp_budget_core::windows::unattended(a.by.as_deref()) {
+                return Verdict::Continue;
+            }
+            let Ok(task) =
+                ctx.run::<wisp_runtime_api::commands::Get>(&ctx.root_call(), wisp_runtime_api::commands::IdArgs { id: a.id.clone() }).await
+            else {
+                return Verdict::Continue;
+            };
+            // an answer to what the task asks, or a run inside a task you already said yes to
+            if task.parent_id.is_some() || task.state == wisp_runtime_api::model::SessionState::Waiting {
+                return Verdict::Continue;
+            }
+            let agent = a.run.as_ref().and_then(|r| r.agent.clone()).unwrap_or(task.agent);
+            let account = task.account.unwrap_or_default();
+            let send =
+                ask::Send { agent: &agent, account: &account, session: a.id.as_str(), first: false, together: 1, confirm: a.confirm_limit };
+            match st.ask_send(&ctx, &send) {
+                Some(h) => Verdict::Veto { code: wisp_budget_api::VETO_CODE.into(), message: h.why, then: Vec::new() },
+                None => Verdict::Continue,
+            }
+        }
+    });
+}
+
 fn guard(ctx: &Ctx, st: &State, mut c: BeforeRunCtx) -> Verdict<BeforeRunCtx> {
     lock(&st.starting).insert(c.turn_id.0.clone(), (c.agent.clone(), account_of(c.account.as_deref().unwrap_or(""))));
     let subject = wisp_budget_core::subject_of(&c.agent, c.account.as_deref(), c.by.as_deref());
@@ -308,6 +361,21 @@ fn commands(s: &mut Setup, slot: &Slot) {
         Ok(lock(&st.budget).plan_windows(only.as_ref(), now(&ctx)))
     });
     on!(s, slot, c::Hold, |st, ctx, a| Ok(st.hold(&a.agent, &a.account, now(&ctx))));
+    // Ask near the limit on a send not made yet: the hold row's numbers (the composer, after a `budget_hold` refusal)
+    on!(s, slot, c::Ask, |st, ctx, a| {
+        let first = a.session.is_none();
+        let session = a.session.unwrap_or_default();
+        // a follow-up runs on its task's account unless the box picked one
+        let mut account = a.account;
+        if account.is_empty() && !first {
+            let get = wisp_runtime_api::commands::IdArgs { id: wisp_runtime_api::SessionId(session.clone()) };
+            if let Ok(task) = ctx.run::<wisp_runtime_api::commands::Get>(&ctx.root_call(), get).await {
+                account = task.account.unwrap_or_default();
+            }
+        }
+        let send = ask::Send { agent: &a.agent, account: &account, session: &session, first, together: 1, confirm: false };
+        Ok(st.ask_send(&ctx, &send))
+    });
     // when the account can run again after a limit (v1 budget.resetAt): the runtime's limit card
     on!(s, slot, c::ResetAt, |st, ctx, a| {
         let account = account_of(&a.account);
@@ -371,6 +439,7 @@ impl Plugin for BudgetPlugin {
                 }
             }
         });
+        sends(s, &slot);
         let ev = slot.clone();
         s.on::<TurnLimits, _, _>(move |ctx, e| {
             let slot = ev.clone();
