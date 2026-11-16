@@ -462,6 +462,11 @@ export default function TaskView(props: { readonly id: string; readonly onBack?:
   const sent = sentStore(shell.client);
   const sentList = useSignal(sent.value);
   const replyMode = (): string => String(row()?.summary['mode'] ?? 'auto');
+  // the reply bar's Goal is lit while the task's goal is going (v1 goal.js: live || open)
+  const goalGoing = (): boolean => {
+    const g = row()?.summary['goal'] as { status?: unknown } | undefined;
+    return g?.status === 'working' || g?.status === 'checking';
+  };
   // ↑ brings back what you sent, Shift+Tab cycles the task's mode (v1 prompt-history.js, F-task-31, F-comp-4)
   const replyKeys = promptKeys({
     sent: () => sentList() as readonly string[],
@@ -1334,12 +1339,13 @@ export default function TaskView(props: { readonly id: string; readonly onBack?:
                       },
                     }}
                     goal={t('shell.task.goal')}
-                    goalOn={goal() !== undefined}
+                    goalOn={goal() !== undefined || goalGoing()}
                     goalAct={{ onClick: () => setGoalText(goal() === undefined ? '' : undefined) }}
                     {...(goal() !== undefined && {
                       goalLine: {
-                        label: t('shell.home.goal'),
+                        label: t('shell.home.doneWhen'),
                         placeholder: t('shell.home.goalPlaceholder'),
+                        keys: t('shell.home.goalKeys'),
                         value: goal() ?? '',
                         onInput: setGoalText,
                         ref: (el: HTMLInputElement) => (goalInput = el),

@@ -24,6 +24,9 @@ export interface PopoverProps extends KitProps, WithChildren, WithVars {
   readonly onOpenChange?: (open: boolean) => void;
   /** Keep focus inside while open (for small forms). */
   readonly modal?: boolean;
+  /** No padding of its own: the content is a panel with its head and foot edge to edge (TeamPop). Additive
+   *  (2026-11-16). */
+  readonly bare?: boolean;
   readonly t?: Translate;
 }
 
@@ -77,7 +80,7 @@ function Floating(props: PopoverProps): JSX.Element {
       <TriggerButton look={props.trigger} bind={api().getTriggerProps()} part={sub(part(), 'trigger')} />
       <Portal>
         <div {...api().getPositionerProps()} data-kit="positioner">
-          <div {...api().getContentProps()} data-kit="popover" data-part={part()} style={styleOf({}, props.vars)}>
+          <div {...api().getContentProps()} data-kit="popover" data-part={part()} data-bare={props.bare ? '' : undefined} style={styleOf({}, props.vars)}>
             <Show when={props.title}>
               {(title) => (
                 <div data-kit="popover-head">

@@ -238,6 +238,8 @@ export function HomeView(props: { readonly onBack?: () => void }): JSX.Element {
   // the @ and / menus (plugins' prompt sources), New task's own
   const menu = usePromptMenu({ shell, where: 'home', text, setText, input: () => input, id: 'launcher-suggest', project: () => project()?.path });
   let goalInput: HTMLInputElement | undefined;
+  // the goal plugin's Judges at the end of Done when (v1 #judgesBtn): made once, shown while the line is
+  const goalEnd = <Slot input="shell.home:goalLine" layout="contents" />;
   // ↑ brings back what you sent, Shift+Tab cycles the mode (v1 prompt-history.js, F-task-31, F-comp-4)
   const sent = sentStore(shell.client);
   const sentList = useSignal(sent.value);
@@ -694,7 +696,14 @@ export function HomeView(props: { readonly onBack?: () => void }): JSX.Element {
             onKeep: () => (setHold(undefined), input?.focus()),
           })(hold())}
         {...(goal() !== undefined && {
-          goal: { label: t('shell.home.goal'), placeholder: t('shell.home.goalPlaceholder'), value: goal() ?? '', onInput: setGoal, ref: (el: HTMLInputElement) => (goalInput = el) },
+          goal: {
+            label: t('shell.home.doneWhen'),
+            placeholder: t('shell.home.goalPlaceholder'),
+            value: goal() ?? '',
+            onInput: setGoal,
+            ref: (el: HTMLInputElement) => (goalInput = el),
+            end: goalEnd,
+          },
         })}
         extras={extras()}
         recipes={{

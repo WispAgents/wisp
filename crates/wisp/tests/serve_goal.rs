@@ -141,19 +141,24 @@ async fn a_goal_set_with_judges_is_judged_by_them() {
         .await;
     let id = made["id"].as_str().unwrap().to_owned();
     api.until(&id, "the turn ends", |t| t.last().is_some_and(ended)).await;
-    api.cmd("goal.set", json!({ "id": id, "text": "add adds", "kick": true, "judges": ["claude/sonnet/high", "codex"], "vote": "all" }))
+    // a crew member judges by the id the goal editor sends, on their own harness and model
+    let scout = api.cmd("crew.create", json!({ "name": "Scout", "agent": "codex", "model": "gpt-5" })).await;
+    let scout = scout["member"]["id"].as_str().or_else(|| scout["id"].as_str()).unwrap_or_else(|| panic!("{scout}")).to_owned();
+    api.cmd("goal.set", json!({ "id": id, "text": "add adds", "kick": true, "judges": ["claude/sonnet/high", scout], "vote": "all" }))
         .await;
     let names = |s: &str| -> Vec<String> {
         runs_in(s).iter().filter_map(|r| r.pointer("/v/name").and_then(Value::as_str).map(str::to_owned)).collect()
     };
     let frames = stream(port, "g3", &format!("session:{id}"), |s| {
         let n = names(s);
-        n.iter().any(|x| x == "claude/sonnet/high") && n.iter().any(|x| x == "codex")
+        n.iter().any(|x| x == "claude/sonnet/high") && n.iter().any(|x| *x == scout)
     })
     .await;
     // the first judge runs as the harness with that model
     let first = runs_in(&frames).into_iter().find(|r| r.pointer("/v/name").and_then(Value::as_str) == Some("claude/sonnet/high")).unwrap();
     assert_eq!((first.pointer("/v/agent"), first.pointer("/v/model")), (Some(&json!("claude")), Some(&json!("sonnet"))), "{first}");
+    let crew = runs_in(&frames).into_iter().find(|r| r.pointer("/v/name").and_then(Value::as_str) == Some(scout.as_str())).unwrap();
+    assert_eq!((crew.pointer("/v/agent"), crew.pointer("/v/model")), (Some(&json!("codex")), Some(&json!("gpt-5"))), "{crew}");
 }
 
 /// A deleted task's goal checks go with it (`session.deleted`): no `goal_run` row of it is left in the store.

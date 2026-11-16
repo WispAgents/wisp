@@ -239,3 +239,22 @@ export function earlierRounds(g: GoalView): CheckView[] {
   const ownRows = n > 0 && g.status !== 'checking' && lastVotes(g) !== null;
   return [...g.checks].reverse().slice(ownRows ? 1 : 0);
 }
+
+/** wisp.runtime's harnesses topic row (plugins/runtime/api/bindings/runtime/HarnessRow.ts), as far as a judge reads it. */
+export interface HarnessTopicRow {
+  readonly id: string;
+  readonly ord: number;
+  readonly state: 'checking' | 'installed' | 'missing';
+  readonly agent: { readonly name: string; readonly available: boolean; readonly models: readonly { readonly id: string; readonly label: string }[]; readonly efforts: readonly string[] };
+}
+
+/** A harness topic row as a judge reads it: its name, whether it's there, its models and thinking levels. */
+export function harnessOf(r: HarnessTopicRow): HarnessRow {
+  return {
+    id: r.id,
+    name: r.agent.name || r.id,
+    available: r.state !== 'missing' && r.agent.available,
+    models: r.agent.models.map((m) => ({ id: m.id, label: m.label })),
+    efforts: [...r.agent.efforts],
+  };
+}

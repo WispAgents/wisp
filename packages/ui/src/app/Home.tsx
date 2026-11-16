@@ -149,7 +149,15 @@ export interface LauncherProps {
   readonly sendLabel: string;
   readonly sendAct?: Act;
   /** Goal on: its condition, under the prompt (v1 .l-goal) */
-  readonly goal?: { readonly label: string; readonly placeholder: string; readonly value: string; readonly onInput: (v: string) => void; readonly ref?: (el: HTMLInputElement) => void };
+  readonly goal?: {
+    readonly label: string;
+    readonly placeholder: string;
+    readonly value: string;
+    readonly onInput: (v: string) => void;
+    readonly ref?: (el: HTMLInputElement) => void;
+    /** what goes at the line's end (v1 #judgesBtn: the goal plugin's Judges). Additive (2026-11-16, B44). */
+    readonly end?: JSX.Element;
+  };
   /** files attached, and when it starts if not now: chips under the prompt */
   readonly extras?: readonly { readonly id: string; readonly icon: IconName; readonly label: string; readonly removeLabel: string; readonly onRemove: () => void }[];
   /** Ask near the limit (v1 .l-hold): the send waits for you under the bar, Start anyway / Wait until the reset / ×;
@@ -260,8 +268,13 @@ export function Launcher(props: LauncherProps): JSX.Element {
         <Show when={props.goal}>
           {(g) => (
             <div data-kit="l-goal" data-part="launcher.goalLine">
-              <Icon name="target" />
+              {/* v1 .lg-k: the mark and "Done when" before the condition */}
+              <span data-kit="lg-k">
+                <Icon name="target" />
+                <span data-text="control">{g().label}</span>
+              </span>
               <input data-kit="l-goal-input" ref={(el) => g().ref?.(el)} aria-label={g().label} placeholder={g().placeholder} value={g().value} onInput={(e) => g().onInput(e.currentTarget.value)} />
+              {g().end}
             </div>
           )}
         </Show>

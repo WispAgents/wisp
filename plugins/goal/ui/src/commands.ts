@@ -3,7 +3,7 @@
 // patch on the session row's `goal`; a refusal rolls it back and the shell shows the toast.
 // `session` is the task's entity key (`<peer>:<id>`); `sessionId` is what the peer reads.
 
-import { defineCommand, type EntityKey, type EntityOps, type EntityReader } from '@wisp/client';
+import { defineCommand, type EntityKey, type EntityOps, type EntityReader, type PeerId } from '@wisp/client';
 import { optimisticGoal } from './rules.ts';
 import { KIND, type GoalView, type Judge, type SessionRow, type Vote } from './types.ts';
 
@@ -94,3 +94,43 @@ export const checkGoal = defineCommand<TaskArgs, Record<string, never>>({
 });
 
 export const COMMANDS = [setGoal, pauseGoal, resumeGoal, dropGoal, checkGoal] as const;
+
+// New task's Judges (HomeJudges.tsx): the `goal` resource's defaults, read and kept (v1 defaults.goalJudges / goalVote)
+export interface GoalResource {
+  readonly kind: string;
+  readonly name: string;
+  readonly spec: Record<string, unknown>;
+}
+
+/** The `goal` resource as the server has it (the default judges, vote and round limit). */
+export const goalDefaultsNow = defineCommand<{ peer: PeerId }, GoalResource[]>({
+  id: 'resources.export',
+  owner: (a) => a.peer,
+  wire: () => ({ kinds: ['goal'] }),
+  optimistic: 'none',
+  pending: 'the judges',
+});
+
+/** The `goal` resource with these judges and vote; its other fields (the round limit) as they were. */
+export function goalDefaults(have: readonly GoalResource[], judges: readonly Judge[], vote: Vote): GoalResource {
+  const spec = { ...(have.find((r) => r.kind === 'goal')?.spec ?? {}) };
+  delete spec['judges'];
+  delete spec['vote'];
+  return { kind: 'goal', name: 'default', spec: { ...spec, ...(judges.length && { judges: judges.map(judgeWire) }), vote } };
+}
+
+/** A judge as the server names it (`judgeWire`'s inverse): a crew member's id, else `harness/model/effort` or a harness. */
+export function judgeOf(name: string, crew: readonly { readonly id: string }[]): Judge {
+  const [agent = '', model = '', effort = ''] = name.split('/');
+  return !name.includes('/') && crew.some((m) => m.id === name) ? { crew: name } : { agent, model, effort };
+}
+
+/** Keep these as the default judges and vote. */
+export const saveGoalDefaults = defineCommand<{ peer: PeerId; judges: readonly Judge[]; vote: Vote; have: readonly GoalResource[] }>({
+  id: 'resources.apply',
+  owner: (a) => a.peer,
+  wire: (a) => ({ resources: [goalDefaults(a.have, a.judges, a.vote)], trust: true }),
+  // the button shows them at once (this device's store); a refusal is the shell's toast
+  optimistic: 'none',
+  pending: 'Judges',
+});

@@ -64,10 +64,10 @@ pub(crate) async fn pick_of(ctx: &Ctx, judge: &str) -> rt::RunPick {
     if let Some(p) = profiles.iter().find(|p| p.name == judge) {
         return rt::RunPick { agent: some(&p.spec.harness), model: some(&p.spec.model), effort: some(&p.spec.effort) };
     }
-    // a crew member by name brings their own harness, model and effort (the goal editor's crew judges, B44)
+    // a crew member, by id (as the goal editor sends it) or name, brings their harness, model and effort (B44)
     if !judge.contains('/') {
         let crew = ctx.run::<wisp_crew_api::commands::List>(&ctx.root_call(), wisp_crew_api::commands::NoArgs {}).await.unwrap_or_default();
-        if let Some(m) = crew.iter().map(|v| &v.member).find(|m| m.name == judge) {
+        if let Some(m) = crew.iter().map(|v| &v.member).find(|m| m.id == judge || m.name == judge) {
             return rt::RunPick { agent: some(&m.agent), model: some(&m.model), effort: some(&m.effort) };
         }
     }

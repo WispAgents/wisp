@@ -2,8 +2,9 @@
 // its row, the crew and the harnesses. One place, so every component reads them the same way.
 
 import type { EntityKey, PluginClient } from '@wisp/client';
-import { useSignal } from '@wisp/ui';
+import { useDerived, useSignal } from '@wisp/ui';
 import type { Accessor } from 'solid-js';
+import { harnessOf, type HarnessTopicRow } from './rules.ts';
 import { KIND, type HarnessRow, type MemberRow, type SessionRow } from './types.ts';
 
 /**
@@ -35,7 +36,22 @@ export function useCrew(client: PluginClient): Accessor<readonly MemberRow[]> {
   return () => (list() as readonly (MemberRow & { body?: Partial<MemberRow> })[]).map((r) => ({ ...r.body, ...r }) as MemberRow);
 }
 
+/** wisp.runtime's harnesses topic (ADR-0066) and its rows: every harness, each as its detect lands. */
+export const HARNESSES_TOPIC = 'plugin:wisp.runtime:harnesses';
+/** The harnesses on this wisp, in the picker's order. They're `runtime.harness` rows on wisp.runtime's harnesses
+ *  topic, watched while the plugin lives (B47: a `harness` row nobody writes was read, so a judge's harness was
+ *  never found: Add judge said none was installed and every harness judge was dropped). */
+const watching = new WeakSet<PluginClient>();
+
 export function useHarnesses(client: PluginClient): Accessor<readonly HarnessRow[]> {
-  const list = useSignal(client.entities.list<HarnessRow>(KIND.harness));
-  return () => list() as readonly HarnessRow[];
+  // once per plugin client: the topic stays live while the plugin does
+  if (!watching.has(client)) (watching.add(client), client.watch(client.home, HARNESSES_TOPIC));
+  return useDerived(() =>
+    client.entities
+      .keys(KIND.harness)()
+      .map((k) => client.entities.row<HarnessTopicRow>(KIND.harness, k)() as HarnessTopicRow | undefined)
+      .filter((r): r is HarnessTopicRow => r !== undefined && r.id.length > 0)
+      .sort((a, b) => a.ord - b.ord)
+      .map(harnessOf),
+  );
 }

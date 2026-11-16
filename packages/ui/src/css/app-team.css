@@ -1,0 +1,199 @@
+/* v1 subagents.css .team-pop and goal.css .judges-pop: a panel of people or runs that work together (the goal's
+   judges): a head with what it is, a row of how they decide, a row per member, and a foot to add one, the count and
+   Clear. It sits in a bare Popover, which gives the card. */
+@layer kit {
+  [data-kit='team-pop'] {
+    display: flex;
+    flex-direction: column;
+    width: min(480px, calc(100vw - 24px));
+    max-height: min(520px, 76vh);
+    overflow: hidden;
+  }
+  [data-kit='tp-head'] {
+    display: flex;
+    align-items: center;
+    gap: var(--space-6);
+    padding: 14px 14px var(--space-5);
+  }
+  [data-kit='tp-title'] {
+    flex: 1;
+    display: grid;
+    gap: var(--space-1);
+  }
+  [data-kit='tp-title'] > b {
+    font-weight: var(--fw-semibold);
+    font-size: var(--fs-lg);
+    color: var(--ink);
+  }
+  [data-kit='tp-title'] > small {
+    font-size: var(--fs-sm);
+    color: var(--muted);
+    line-height: 1.35;
+  }
+  /* goal.css .jp-vote: Met when, All · Majority · Any, and the rule in words */
+  [data-kit='tp-vote'] {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3) var(--space-5);
+    min-width: 0;
+    margin: 0 14px var(--space-5);
+  }
+  [data-kit='tp-vote-k'] {
+    flex: none;
+    font-size: var(--fs-sm);
+    font-weight: var(--fw-medium);
+    color: var(--muted);
+    white-space: nowrap;
+  }
+  [data-kit='tp-vote-rule'] {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: var(--fs-sm);
+    color: var(--muted);
+  }
+  /* v1 .pk-seg */
+  [data-kit='tp-seg'] {
+    flex: none;
+    display: flex;
+    gap: var(--space-1);
+    padding: var(--space-1);
+    border-radius: var(--radius-control);
+    background: var(--bg-2);
+    border: 1px solid var(--line);
+  }
+  [data-kit='tp-seg'] > button {
+    padding: var(--space-2) 7px;
+    border-radius: 7px;
+    font-size: var(--fs-sm);
+    color: var(--muted);
+    white-space: nowrap;
+    outline: 0;
+    transition:
+      background 0.12s,
+      color 0.12s;
+  }
+  [data-kit='tp-seg'] > button:hover {
+    color: var(--ink);
+  }
+  [data-kit='tp-seg'] > button:focus-visible {
+    box-shadow: inset 0 0 0 1px var(--accent);
+  }
+  [data-kit='tp-seg'] > button[aria-checked='true'] {
+    background: var(--surface);
+    color: var(--accent-ink);
+    font-weight: var(--fw-medium);
+    box-shadow: var(--shadow-1);
+  }
+  /* goal.css .jp-vote.off: fewer than two judges, nothing to vote on yet */
+  [data-kit='tp-vote'][data-off] > [data-kit='tp-seg'] {
+    opacity: 0.5;
+  }
+  [data-kit='tp-vote'][data-off] > [data-kit='tp-seg'] > button {
+    cursor: default;
+  }
+  [data-kit='tp-list'] {
+    flex: 1;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-4);
+    padding: 0 14px var(--space-6);
+  }
+  [data-kit='tp-row'] {
+    display: grid;
+    gap: var(--space-3);
+    padding: var(--space-4);
+    border-radius: 11px;
+    border: 1px solid var(--line);
+    background: var(--surface-2);
+  }
+  [data-kit='tp-top'] {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+    min-width: 0;
+  }
+  [data-kit='tp-row'][data-crew] > [data-kit='tp-top'] {
+    gap: var(--space-5);
+  }
+  [data-kit='tp-top'] > [data-kit='grow'] {
+    flex: 1;
+  }
+  [data-kit='tp-crew'] {
+    flex: 1;
+    min-width: 0;
+    display: grid;
+  }
+  [data-kit='tp-crew'] > b,
+  [data-kit='tp-crew'] > small {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  [data-kit='tp-crew'] > b {
+    font-weight: var(--fw-medium);
+    font-size: var(--fs-md);
+    color: var(--ink);
+  }
+  [data-kit='tp-crew'] > small {
+    font-size: var(--fs-sm);
+    color: var(--muted);
+  }
+  [data-kit='tp-empty'] {
+    display: flex;
+    align-items: center;
+    gap: var(--space-6);
+    padding: var(--space-7);
+    border-radius: 11px;
+    border: 1px dashed var(--line-2);
+    color: var(--muted);
+    font-size: var(--fs-md);
+  }
+  [data-kit='tp-empty'] > [data-kit='icon'] {
+    flex: none;
+    width: 22px;
+    height: 22px;
+    color: var(--faint);
+  }
+  [data-kit='tp-empty'] > p {
+    margin: 0;
+    line-height: 1.4;
+  }
+  [data-kit='tp-foot'] {
+    display: flex;
+    align-items: center;
+    gap: var(--space-4);
+    padding: var(--space-5) 14px;
+    border-top: 1px solid var(--line);
+    background: var(--surface-2);
+  }
+  [data-kit='tp-count'] {
+    font-size: var(--fs-sm);
+    color: var(--faint);
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+  }
+  [data-kit='tp-foot'] > [data-kit='grow'] {
+    flex: 1;
+  }
+  /* phones: the count steps aside so Add and Clear keep their room (v1 subagents.css ≤520px), and the rule goes under
+     Met when on a line of its own (v1 .jp-vote wraps there), one line still */
+  @media (max-width: 520px) {
+    [data-kit='tp-vote'] {
+      display: grid;
+      grid-template-columns: auto auto minmax(0, 1fr);
+    }
+    [data-kit='tp-vote-rule'] {
+      grid-column: 1 / -1;
+    }
+    [data-kit='tp-foot'] {
+      gap: var(--space-3);
+      padding: var(--space-5);
+    }
+    [data-kit='tp-count'] {
+      display: none;
+    }
+  }
+}

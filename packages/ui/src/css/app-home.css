@@ -197,10 +197,23 @@
     background: var(--surface-2);
     border: 1px solid var(--line);
   }
-  [data-kit='l-goal'] > [data-kit='icon'] {
-    width: var(--size-icon-md);
-    height: var(--size-icon-md);
-    color: var(--accent);
+  /* goal.css .lg-k: the mark and Done when */
+  [data-kit='lg-k'] {
+    flex: none;
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-3);
+    font-size: var(--fs-sm);
+    font-weight: var(--fw-medium);
+    color: var(--accent-ink);
+    white-space: nowrap;
+  }
+  [data-kit='lg-k'] > [data-kit='icon'] {
+    width: var(--size-icon-goal);
+    height: var(--size-icon-goal);
+  }
+  [data-kit='l-goal'] > :last-child:not([data-kit='l-goal-input']) {
+    flex: none;
   }
   [data-kit='l-goal-input'] {
     flex: 1;
@@ -215,6 +228,27 @@
   }
   [data-kit='l-goal-input']::placeholder {
     color: var(--faint);
+  }
+  /* goal.css ≤720px: the condition takes the label's room (the mark names it) and the field is 16px, so iOS doesn't
+     zoom into it */
+  @media (max-width: 720px) {
+    [data-kit='l-goal'] {
+      gap: var(--space-4);
+      margin: var(--space-1) var(--space-5) var(--space-2);
+      padding-left: var(--space-4);
+    }
+    [data-kit='lg-k'] > [data-text='control'] {
+      display: none;
+    }
+    [data-kit='l-goal-input'] {
+      font-size: var(--fs-xl);
+    }
+  }
+  /* subagents.css .team-btn .tb-label: a narrow prompt box keeps the Judges button's scales, not its words */
+  @container launcher (max-width: 640px) {
+    [data-kit='l-goal'] [data-kit='button-label'] {
+      display: none;
+    }
   }
   /* what's attached, and when it starts: chips under the prompt */
   [data-kit='l-extras'] {
@@ -325,6 +359,12 @@
   }
   [data-kit='tog-btn'][data-on] {
     color: var(--ink);
+  }
+  /* goal.css .goal-btn.on: Goal while its Done when line is open reads as the accent, hovered or not */
+  [data-kit='tog-btn'][data-a='goal'][data-on],
+  [data-kit='tog-btn'][data-a='goal'][data-on]:hover {
+    color: var(--accent-ink);
+    background: var(--accent-soft);
   }
   /* v1 .open: the button whose menu is open (Mode, Run with, Team, Later) stays pressed */
   [data-kit='launcher'] button[aria-expanded='true'] {

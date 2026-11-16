@@ -4,9 +4,10 @@
 // goes to onChange(judges, vote), named as the server keeps them. JudgesButton opens it from the
 // launcher's Done when line and from Set / Edit goal.
 
-import { For, Show, createSignal, type JSX } from 'solid-js';
+import { For, Show, type JSX } from 'solid-js';
 import type { PluginClient } from '@wisp/client';
-import { Button, EmptyState, IconButton, Inline, Menu, Popover, RadioGroup, Select, Stack, Text, type MenuEntry } from '@wisp/ui';
+import { useShell } from '@wisp/shell';
+import { Button, IconButton, Inline, Menu, Popover, Select, Stack, TeamCrew, TeamPop, TeamRow, Text, type MenuEntry } from '@wisp/ui';
 import { Face } from './Faces.tsx';
 import { t } from './i18n.ts';
 import { isCrew, judgesLabel, named, nextHarness, ruleLine, VOTE_KEY } from './rules.ts';
@@ -49,13 +50,14 @@ function HarnessRowEdit(props: { readonly j: HarnessJudge; readonly harnesses: r
 export function JudgesEditor(props: JudgesProps): JSX.Element {
   const crew = useCrew(props.client);
   const harnesses = useHarnesses(props.client);
-  const [error, setError] = createSignal('');
+  const shell = useShell();
   const commit = (list: readonly Judge[], vote: Vote = props.vote): void => props.onChange(named(list, crew(), harnesses()), vote);
   const crewFree = () => crew().filter((c) => !props.judges.some((j) => isCrew(j) && j.crew === c.id));
   const full = (): boolean => props.judges.length >= MAX_JUDGES;
   const addHarness = (): void => {
     const h = nextHarness(props.judges, harnesses());
-    if (!h) return void setError(t('wisp.goal.judges.noHarness'));
+    // v1 judges.js: said in a toast, the panel stays as it was
+    if (!h) return void shell.toast.show(t('wisp.goal.judges.noHarness'), { tone: 'error' });
     const model = h.model ?? h.models[0]?.id ?? '';
     commit([...props.judges, { agent: h.id, model, effort: h.effort ?? h.efforts?.[0] ?? '' }]);
   };
@@ -70,76 +72,57 @@ export function JudgesEditor(props: JudgesProps): JSX.Element {
     const r = ruleLine(props.vote, n);
     return r ? t(r.key, r.vars) : '';
   };
+  const remove = (i: number): JSX.Element => <IconButton icon="x" label={t('wisp.goal.judges.remove')} variant="ghost" size="sm" onClick={() => commit(props.judges.filter((_, k) => k !== i))} />;
   return (
-    <Stack gap="3" part="goal.judgesEditor">
-      <Text size="sm" tone="muted">
-        {t('wisp.goal.judges.intro')}
-      </Text>
-      <Stack gap="1">
-        <RadioGroup
-          label={t('wisp.goal.metWhen')}
-          orientation="horizontal"
-          options={VOTES.map((v) => ({ value: v, label: t(VOTE_KEY[v]), hint: t(HINT[v]) }))}
-          value={props.vote}
-          disabled={props.judges.length < 2}
-          onChange={(v) => commit(props.judges, v as Vote)}
-        />
-        <Text size="sm" tone="muted" part="goal.rule">
-          {rule()}
-        </Text>
-      </Stack>
-      <Show when={props.judges.length} fallback={<EmptyState icon="judge" title={t('wisp.goal.judges.empty')} compact />}>
-        <Stack gap="2">
-          <For each={props.judges}>
-            {(j, i) => (
-              <Inline gap="2" part="goal.judgeRow">
-                <Show
-                  when={isCrew(j) ? j : undefined}
-                  fallback={<HarnessRowEdit j={j as HarnessJudge} harnesses={harnesses()} onChange={(next) => commit(props.judges.map((x, k) => (k === i() ? next : x)))} />}
-                >
-                  {(c) => {
-                    const m = () => crew().find((x) => x.id === c().crew);
-                    return (
-                      <Inline gap="2">
-                        <Face client={props.client} who={c()} size="md" />
-                        <Stack gap="0">
-                          <Text weight="medium" truncate>
-                            {m()?.name ?? c().name ?? t('wisp.goal.crewMember')}
-                          </Text>
-                          <Text size="sm" tone="muted" truncate>
-                            {m() ? [m()?.role, t('wisp.goal.judges.ownHarness')].filter(Boolean).join(' · ') : t('wisp.goal.judges.gone')}
-                          </Text>
-                        </Stack>
-                      </Inline>
-                    );
-                  }}
-                </Show>
-                <IconButton icon="x" label={t('wisp.goal.judges.remove')} variant="ghost" size="sm" onClick={() => commit(props.judges.filter((_, k) => k !== i()))} />
-              </Inline>
-            )}
-          </For>
-        </Stack>
-      </Show>
-      <Inline gap="2" justify="between">
-        <Inline gap="2">
+    <Stack gap="0" part="goal.judgesEditor">
+      <TeamPop
+        part="goal.judgesPop"
+        title={t('wisp.goal.judges')}
+        intro={t('wisp.goal.judges.intro')}
+        vote={{
+          label: t('wisp.goal.metWhen'),
+          options: VOTES.map((v) => ({ value: v, label: t(VOTE_KEY[v]), hint: t(HINT[v]) })),
+          value: props.vote,
+          off: props.judges.length < 2,
+          rule: rule(),
+          onChange: (v) => commit(props.judges, v as Vote),
+        }}
+        count={props.judges.length}
+        empty={{ icon: 'judge', text: t('wisp.goal.judges.empty') }}
+        add={
           <Show when={crewFree().length > 0} fallback={<Button variant="ghost" size="sm" icon="plus" disabled={full()} onClick={addHarness}>{t('wisp.goal.judges.add')}</Button>}>
             <Menu trigger={{ label: t('wisp.goal.judges.add'), icon: 'plus', variant: 'ghost', size: 'sm' }} items={addMenu()} onSelect={onAdd} />
           </Show>
-          <Text size="sm" tone="muted" numeric nowrap>
-            {t('wisp.goal.judges.count', { n: props.judges.length, max: MAX_JUDGES })}
-          </Text>
-        </Inline>
-        <Show when={props.judges.length}>
-          <Button variant="ghost" size="xs" onClick={() => commit([])}>
-            {t('wisp.goal.judges.clear')}
-          </Button>
-        </Show>
-      </Inline>
-      <Show when={error()}>
-        <Text size="sm" tone="bad">
-          {error()}
-        </Text>
-      </Show>
+        }
+        tally={t('wisp.goal.judges.count', { n: props.judges.length, max: MAX_JUDGES })}
+        clear={props.judges.length ? { label: t('wisp.goal.judges.clear'), onClick: () => commit([]) } : undefined}
+      >
+        <For each={props.judges}>
+          {(j, i) => (
+            <Show
+              when={isCrew(j) ? j : undefined}
+              fallback={
+                <TeamRow part="goal.judgeRow" remove={remove(i())}>
+                  <HarnessRowEdit j={j as HarnessJudge} harnesses={harnesses()} onChange={(next) => commit(props.judges.map((x, k) => (k === i() ? next : x)))} />
+                </TeamRow>
+              }
+            >
+              {(c) => {
+                const m = () => crew().find((x) => x.id === c().crew);
+                return (
+                  <TeamRow part="goal.judgeRow" crew remove={remove(i())}>
+                    <TeamCrew
+                      face={<Face client={props.client} who={c()} size="md" />}
+                      name={m()?.name ?? c().name ?? t('wisp.goal.crewMember')}
+                      sub={m() ? [m()?.role, t('wisp.goal.judges.ownHarness')].filter(Boolean).join(' · ') : t('wisp.goal.judges.gone')}
+                    />
+                  </TeamRow>
+                );
+              }}
+            </Show>
+          )}
+        </For>
+      </TeamPop>
     </Stack>
   );
 }
@@ -153,7 +136,7 @@ export function JudgesButton(props: JudgesProps & { readonly part?: `${string}.$
   return (
     <Popover
       part={props.part ?? 'goal.judgesButton'}
-      title={t('wisp.goal.judges')}
+      bare
       trigger={props.compact ? { icon: 'judge', 'aria-label': label(), variant: 'ghost', size: 'sm' } : { icon: 'judge', label: label(), variant: props.judges.length ? 'secondary' : 'ghost', size: 'sm' }}
       placement="bottom-end"
     >

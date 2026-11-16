@@ -6,10 +6,10 @@
 // Assumed until the Rust side says otherwise:
 //   'session' rows (topic 'list') carry the goal as `goal: GoalView` (v1 summarize);
 //   'goal_run' rows (topic `session:<id>`) are the check records, keyed by run id;
-//   'harness' rows (topic 'config') are the harnesses a judge can run on;
+//   'runtime.harness' rows (wisp.runtime's harnesses topic, ADR-0066) are the harnesses a judge can run on;
 //   'crew_member' rows (topic 'crew') are the crew, read-only here (a crew member can judge).
 
-export const KIND = { session: 'session', run: 'goal_run', harness: 'harness', member: 'crew_member' } as const;
+export const KIND = { session: 'session', run: 'goal_run', harness: 'runtime.harness', member: 'crew_member' } as const;
 export const PLUGIN = 'wisp.goal';
 
 export const MAX_TEXT = 1000;

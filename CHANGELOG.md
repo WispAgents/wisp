@@ -224,7 +224,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Fixed
 
-- **The judges you pick for a goal are the ones that judge it** (they were ignored, and the defaults judged), including a crew member or a harness with its model and thinking level.
+- **v2: goal judges work.** Judges picked for a goal now judge it (they were dropped), a crew member judges on their own harness, and New task's goal line has *Done when* and the Judges button again, remembered as your default judges for the next goals and for Set goal…. Set goal… no longer opens blank, and the judges editor finds your installed harnesses.
 
 - **Transcript, Rerun… and Open in are in More** when the task's pane is narrow, as before (they were out of reach below 860 px).
 

@@ -27,6 +27,8 @@ export default definePluginUi({
   // the band over an open task's turns (design/goals.md): where its goal stands, its judges, its round
   extensions: [
     defineExtension({ id: 'wisp.goal.band', attachTo: { id: 'shell.task:band' }, component: lazy(() => import('./Band.tsx')) }),
+    // New task's Judges, at the end of its Done when line (v1 #judgesBtn)
+    defineExtension({ id: 'wisp.goal.homeJudges', attachTo: { id: 'shell.home:goalLine' }, component: lazy(() => import('./HomeJudges.tsx')) }),
   ],
   // Set goal… / Edit goal…, Goal checks…, one check read like a task: overlays over the task
   views: [

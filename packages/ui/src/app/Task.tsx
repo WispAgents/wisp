@@ -546,7 +546,15 @@ export interface ReplyBoxProps {
   readonly goalOn?: boolean;
   readonly goalAct?: Act;
   /** Goal on: its condition, over the box */
-  readonly goalLine?: { readonly label: string; readonly placeholder: string; readonly value: string; readonly onInput: (v: string) => void; readonly ref?: (el: HTMLInputElement) => void };
+  readonly goalLine?: {
+    readonly label: string;
+    readonly placeholder: string;
+    readonly value: string;
+    readonly onInput: (v: string) => void;
+    readonly ref?: (el: HTMLInputElement) => void;
+    /** v1 .lg-keys "Enter sets it", at the line's end (not on touch). Additive (2026-11-16). */
+    readonly keys?: string;
+  };
   readonly later: string;
   readonly laterAct?: Act;
   /** v1 .c-queue: while the task works, follow-ups queue (on) or interrupt it (off); its own switch look */
@@ -666,8 +674,14 @@ export function ReplyBox(given: ReplyBoxProps | CompactReplyBoxProps): JSX.Eleme
       <Show when={props.goalLine}>
         {(g) => (
           <div data-kit="l-goal" data-in="reply">
-            <Icon name="target" />
+            <span data-kit="lg-k">
+              <Icon name="target" />
+              <span data-text="control">{g().label}</span>
+            </span>
             <input data-kit="l-goal-input" ref={(el) => g().ref?.(el)} aria-label={g().label} placeholder={g().placeholder} value={g().value} onInput={(e) => g().onInput(e.currentTarget.value)} />
+            <Show when={g().keys}>
+              <span data-kit="lg-keys">{g().keys}</span>
+            </Show>
           </div>
         )}
       </Show>
@@ -771,6 +785,7 @@ export function ReplyBox(given: ReplyBoxProps | CompactReplyBoxProps): JSX.Eleme
                 type="button"
                 {...trigger()}
                 data-kit="icon-btn"
+                data-a="goal"
                 data-part="composer.goal"
                 data-on={flag(props.goalOn)}
                 aria-pressed={props.goalOn === true}

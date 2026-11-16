@@ -1,6 +1,8 @@
 // B44: goal.set carries the judges and vote you chose (they were sent nowhere), each judge as the server names one
 import { expect, it } from 'vitest';
-import { judgeWire, setGoal } from '../src/commands.ts';
+import { goalDefaults, judgeOf, judgeWire, setGoal } from '../src/commands.ts';
+import { harnessOf } from '../src/rules.ts';
+import { defaultsOf, judgesOf } from '../src/defaults.ts';
 
 it('a crew member by name, a harness as harness/model/effort without empty trailing parts', () => {
   expect(judgeWire({ crew: 'Ada' })).toBe('Ada');
@@ -16,4 +18,33 @@ it('goal.set sends the text, the judges and the vote', () => {
     judges: ['Ada', 'codex/gpt-5'],
     vote: 'all',
   });
+});
+
+// New task's Judges keep the `goal` resource's defaults (v1 defaults.goalJudges / goalVote)
+it('the defaults keep the round limit, name judges as the server does, and read back crew by id', () => {
+  const have = [{ kind: 'goal', name: 'default', spec: { judges: ['old'], vote: 'any', maxRounds: 7 } }];
+  expect(goalDefaults(have, [{ crew: 'c1' }, { agent: 'claude', model: 'opus', effort: 'high' }], 'all')).toEqual({
+    kind: 'goal',
+    name: 'default',
+    spec: { maxRounds: 7, judges: ['c1', 'claude/opus/high'], vote: 'all' },
+  });
+  expect(goalDefaults([], [], 'majority')).toEqual({ kind: 'goal', name: 'default', spec: { vote: 'majority' } });
+  expect(judgeOf('c1', [{ id: 'c1' }])).toEqual({ crew: 'c1' });
+  expect(judgeOf('codex', [{ id: 'c1' }])).toEqual({ agent: 'codex', model: '', effort: '' });
+  expect(judgeOf('claude/opus/high', [])).toEqual({ agent: 'claude', model: 'opus', effort: 'high' });
+});
+
+// B47: a judge's harnesses are wisp.runtime's harness rows (they were read from a `harness` row nobody writes)
+it('a harness topic row reads as a judge harness: missing or not available is not available', () => {
+  const row = { id: 'claude', ord: 0, state: 'installed' as const, agent: { name: 'Claude Code', available: true, models: [{ id: 'opus', label: 'Opus', hint: 'x' }], efforts: ['high'] } };
+  expect(harnessOf(row)).toEqual({ id: 'claude', name: 'Claude Code', available: true, models: [{ id: 'opus', label: 'Opus' }], efforts: ['high'] });
+  expect(harnessOf({ ...row, state: 'missing' }).available).toBe(false);
+  expect(harnessOf({ ...row, agent: { ...row.agent, name: '' } }).name).toBe('claude');
+});
+
+// New task's Judges and Set goal… read the same defaults: the server's `goal` resource
+it('the defaults read from the goal resource: names, a vote it knows, else majority; crew told apart by id', () => {
+  expect(defaultsOf([{ kind: 'goal', name: 'default', spec: { judges: ['c1', 'codex/gpt-5', 3], vote: 'all' } }])).toEqual({ judges: ['c1', 'codex/gpt-5'], vote: 'all' });
+  expect(defaultsOf([{ kind: 'goal', name: 'default', spec: { vote: 'most' } }])).toEqual({ judges: [], vote: 'majority' });
+  expect(judgesOf({ judges: ['c1', 'codex/gpt-5', { crew: 'c2' }], vote: 'any' }, [{ id: 'c1', name: 'Ada' } as never])).toEqual([{ crew: 'c1' }, { agent: 'codex', model: 'gpt-5', effort: '' }, { crew: 'c2' }]);
 });

@@ -5,12 +5,12 @@
 
 import { createSignal, Show, type JSX } from 'solid-js';
 import type { EntityKey, PluginClient } from '@wisp/client';
-import { Button, Inline, Stack, Text, TextArea } from '@wisp/ui';
+import { Button, Inline, Stack, Text, TextArea, useSignal } from '@wisp/ui';
 import { setGoal } from './commands.ts';
 import { t } from './i18n.ts';
 import { JudgesButton } from './Judges.tsx';
 import { liveJudges } from './rules.ts';
-import { launcherGoal } from './store.ts';
+import { goalDefaults, judgesOf } from './defaults.ts';
 import { bareId, useCrew, useHarnesses, useTask } from './task.ts';
 import { MAX_TEXT, type Judge, type Vote } from './types.ts';
 import './i18n/lazy.ts';
@@ -30,11 +30,14 @@ export default function EditGoal(props: { readonly client: PluginClient; readonl
   const row = useTask(props.client, () => key);
   const crew = useCrew(props.client);
   const harnesses = useHarnesses(props.client);
-  const launcher = launcherGoal(props.client).get();
+  const defaults = useSignal(goalDefaults(props.client));
   const g = row()?.goal;
   const [text, setText] = createSignal(g?.text ?? '');
-  const [judges, setJudges] = createSignal<Judge[]>(g ? (g.judges ?? []) : liveJudges(launcher.judges, crew(), harnesses()));
-  const [vote, setVote] = createSignal<Vote>((g ? g.vote : launcher.vote) ?? 'majority');
+  // a new goal's judges are New task's, those still there (read as the crew and harnesses arrive, not when it opens)
+  const [picked, setJudges] = createSignal<Judge[] | undefined>(g ? (g.judges ?? []) : undefined);
+  const judges = (): Judge[] => picked() ?? liveJudges(judgesOf(defaults(), crew()), crew(), harnesses());
+  const [chosen, setVote] = createSignal<Vote | undefined>(g?.vote);
+  const vote = (): Vote => chosen() ?? (g ? undefined : defaults().vote) ?? 'majority';
   let box: HTMLTextAreaElement | undefined;
   const close = (): void => props.client.navigate({ t: 'closeOverlay' });
   const save = (): void => {

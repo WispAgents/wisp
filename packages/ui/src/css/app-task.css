@@ -533,6 +533,24 @@
   [data-kit='l-goal'][data-in='reply'] {
     margin: 0 0 var(--space-2);
   }
+  /* goal.css .c-bar > .c-goal.on: the reply bar's Goal, lit while the task has a goal or its line is open */
+  [data-kit='c-bar'] [data-a='goal'][data-on],
+  [data-kit='c-bar'] [data-a='goal'][data-on]:hover {
+    color: var(--accent-ink);
+    background: var(--accent-soft);
+  }
+  /* goal.css .lg-keys: Enter sets it, not on touch */
+  [data-kit='lg-keys'] {
+    flex: none;
+    font-size: var(--fs-xs);
+    color: var(--faint);
+    white-space: nowrap;
+  }
+  @media (hover: none) {
+    [data-kit='lg-keys'] {
+      display: none;
+    }
+  }
   [data-kit='trail-bar'] {
     display: flex;
     align-items: center;

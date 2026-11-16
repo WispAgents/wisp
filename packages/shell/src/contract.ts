@@ -39,6 +39,9 @@ export const INPUTS = {
   'shell.home:cards': 'home.cards',
   // added 2026-11-14 (additive): under Home's prompt box, usage at a glance (wisp.budget's plan windows, v1 #790 .sh-usage)
   'shell.home:usage': 'home.usage',
+  // added 2026-11-16 (additive): at the end of New task's Done when line, who judges the goal (wisp.goal's Judges,
+  // v1 #judgesBtn)
+  'shell.home:goalLine': 'launcher.goalJudges',
   // added 2026-11-13 (additive): in the harness · model picker, a signed-out harness's sign-in, right there (wisp.accounts'
   // link-and-code steps, v1 runner-picker.js paintSignIn); its extension gets the harness as `id`
   'shell.runner:signin': 'runner.signin',

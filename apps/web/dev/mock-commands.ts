@@ -755,13 +755,18 @@ export const COMMANDS: Record<string, CommandFn> = {
   // your saved launch defaults (agent profiles): none saved here, so New task's own defaults apply
   // a computer's projects (`resources.export`, kind project): what Run on checks for a checkout first; the server's
   // shape, the resources themselves
-  'resources.export': (_a, ctx) => ({
-    ops: [],
-    result: ctx
-      .rows('config')
-      .filter((r) => r.e === 'project')
-      .map((r) => ({ kind: 'project', name: String(obj(r.v)['name'] ?? ''), spec: { path: String(obj(r.v)['path'] ?? '') } })),
-  }),
+  // (`kinds` given: only those, as the server's ExportArgs; the mock keeps no `goal` defaults, so New task's Judges start empty)
+  'resources.export': (a, ctx) => {
+    const kinds = Array.isArray(obj(a)['kinds']) ? (obj(a)['kinds'] as unknown[]) : [];
+    if (kinds.length && !kinds.includes('project')) return { ops: [], result: [] };
+    return {
+      ops: [],
+      result: ctx
+        .rows('config')
+        .filter((r) => r.e === 'project')
+        .map((r) => ({ kind: 'project', name: String(obj(r.v)['name'] ?? ''), spec: { path: String(obj(r.v)['path'] ?? '') } })),
+    };
+  },
   // a project added on this computer (`resources.apply`, kind project): a Run on checkout joins its projects
   'resources.apply': (a, ctx) => {
     const list = Array.isArray(obj(a)['resources']) ? (obj(a)['resources'] as Args[]) : [];
