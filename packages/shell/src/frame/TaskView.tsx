@@ -212,11 +212,27 @@ export default function TaskView(props: { readonly id: string; readonly onBack?:
       .sort((a, b) => a.seq - b.seq);
   const sessions = useSignal(shell.client.entities.list<SessionRow>(SESSION));
   // a turn names its session by the bare id the server gave it, or by the key (an optimistic one)
-  const turns = createMemo(() =>
+  const realTurns = createMemo(() =>
     allTurns()
       .filter((x) => x.session_id === key || x.session_id === bare)
       .sort((a, b) => a.idx - b.idx),
   );
+  // a task whose first prompt hasn't started yet (just sent, made held, waiting for its worktree) shows that prompt as
+  // its first turn, starting (v1: the prompt card at once), never as a queued follow-up (B16, B17): its first queued item
+  const allQueue = useSignal(shell.client.entities.list<{ session_id?: string; pos?: number; body?: { id?: string; text?: string; at?: number } }>('queue_item'));
+  const firstQueued = createMemo((): { id: string; text: string; at: number } | undefined => {
+    const own = (row()?.body as { queue?: readonly { id: string; text: string; at?: number }[] } | undefined)?.queue;
+    const q = own ?? allQueue().filter((r) => r.session_id === bare && r.body).toSorted((a, b) => (a.pos ?? 0) - (b.pos ?? 0)).map((r) => ({ id: r.body?.id ?? '', text: r.body?.text ?? '', at: r.body?.at ?? 0 }));
+    const f = q[0];
+    return f && f.text ? { id: f.id, text: f.text, at: f.at ?? 0 } : undefined;
+  });
+  const turns = createMemo((): TurnRow[] => {
+    const real = realTurns();
+    const f = real.length === 0 ? firstQueued() : undefined;
+    if (!f) return real;
+    // running: the working panel says so (Starting… while the run gets going); held: it waits to start
+    return [{ id: `first:${f.id}`, session_id: bare, idx: 0, prompt: f.text, started_at: f.at || (row()?.created_at ?? Date.now()), status: row()?.state === 'running' ? 'running' : 'starting', body: {} as TurnBody }];
+  });
   // the reply being written is a draft (kind 5): kept across reloads and updates, per task (v1 F-task-32)
   // each task keeps its place (v1 split.js keepPlace/backToPlace, F-task-17): written when it closes or the page hides,
   // read once on opening it, after its turns are there
@@ -294,6 +310,8 @@ export default function TaskView(props: { readonly id: string; readonly onBack?:
   const run = shell.client.commands.run;
   // the cold-cache line and Compact now (v1 cold-cache.js): asked again whenever the task settles or changes
   const now = useNow(shell.client);
+  // the running turn's elapsed time counts each second (v1); the rest of the page reads `now` (every 30 s) (B21)
+  const tick = useNow(shell.client, 1_000);
   // Stop asks first (v1 #781): what else stops (its running subagents, a subagent's report), and that queued follow-ups stay
   const [stopAsk, setStopAsk] = createSignal<StopQuestion | undefined>();
   const [stopping, setStopping] = createSignal(false);
@@ -1000,6 +1018,7 @@ export default function TaskView(props: { readonly id: string; readonly onBack?:
                   ),
                 })}
                 {...(turn.status === 'running' && { live: s().summary.live || t('shell.task.starting') })}
+                {...(turn.status === 'starting' && { live: t('shell.task.waitingToStart') })}
                 {...(turn.status === 'running' &&
                   turn.id === turns().at(-1)?.id &&
                   (s().state === 'running' || s().state === 'waiting') && {
@@ -1012,7 +1031,8 @@ export default function TaskView(props: { readonly id: string; readonly onBack?:
                             ? t('shell.work.compacting')
                             : t(s().state === 'waiting' ? 'shell.work.waiting' : 'shell.work.working', { name: harnessName() })
                         }
-                        elapsed={duration(now() - turn.started_at)}
+                        // a first turn counts from the send: its worktree and setup are part of the wait
+                        elapsed={duration(Math.max(0, tick() - (turn.idx === 0 ? Math.min(turn.started_at, s().created_at || turn.started_at) : turn.started_at)))}
                         count={t('shell.work.actions', { count: steps().filter((a) => a.kind !== 'text').length })}
                         note={noOutputLine(
                           {

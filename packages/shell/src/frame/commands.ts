@@ -94,8 +94,15 @@ export const create = defineCommand<CreateArgs, { id: string }>({
   owner: (a) => a.peer,
   // `id`: the bare id of the row and page shown at once; the peer makes the task under it (StartArgs.id)
   wire: ({ shows: _shows, group, ...a }) => ({ ...a, id: bare(a.id), ...(group && { ext: { 'wisp.runtime': { group } } }) }),
+  // its prompt as the task's first queued item: the page shows it as the first turn, starting, until the real one lands
+  // (TaskView `firstQueued`; v1: the prompt card at once, B16)
   optimistic: (_base, a) => [
-    { e: SESSION, id: a.id as EntityKey, op: 'upsert', v: startingRow({ ...a, agent: a.shows ?? a.agent, title: a.prompt.split('\n')[0]?.slice(0, 80) ?? a.prompt }) as never },
+    {
+      e: SESSION,
+      id: a.id as EntityKey,
+      op: 'upsert',
+      v: { ...startingRow({ ...a, agent: a.shows ?? a.agent, title: a.prompt.split('\n')[0]?.slice(0, 80) ?? a.prompt }), body: { queue: [{ id: 'first', text: a.prompt, at: a.at }] } } as never,
+    },
   ],
 });
 

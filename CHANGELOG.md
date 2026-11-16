@@ -224,6 +224,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Fixed
 
+- **A new task shows your prompt at once**, as before: no blank page while it starts, its own prompt never listed as a queued follow-up ("Held after Stop"), and the working time counts every second from when you sent it.
+
 - **The update button no longer spins forever.** The top bar showed a loading spinner on every wisp with nothing to update, and Settings → Updates showed nothing about the version; both read the update state again.
 
 - **Near your plan's limit, wisp asks in the box again, as before.** A task or follow-up that would take a usage window past your Ask near the limit line shows a row in the prompt box (“Claude Code’s weekly window is at 91%…”) with Start anyway (Send anyway), Wait until the reset and ×, and your words stay; before, it made a task that failed with a message meant for agents. Start now on a held run now runs it (it was held again), in place, with no flash.

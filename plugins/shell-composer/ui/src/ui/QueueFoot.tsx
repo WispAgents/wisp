@@ -36,9 +36,21 @@ export default function QueueFoot(props: ExtensionProps): JSX.Element {
   });
   const body = (): TaskBody => row()()?.body ?? {};
   const items = useSignal(c.entities.list<QueueItemRow>(KIND.queueItem));
+  // a task with no turn yet: its first queued item is its first prompt (the page shows it as the first turn, starting),
+  // not a follow-up (B17: "Held after Stop" on a task that never ran)
+  // and an item queued before the turn now running is the one that started it (the queue's update can reach the page a
+  // flush after the new turn's: never a queued follow-up for a frame)
+  const turns = useSignal(c.entities.list<{ session_id?: string; status?: string; started_at?: number; prompt?: string }>('turn'));
   const queue = createMemo((): readonly Row<QueueItem>[] => {
     const k = key();
-    return k ? taskQueue(row()(), items(), k.slice(k.indexOf(':') + 1)) : [];
+    if (!k) return [];
+    const id = k.slice(k.indexOf(':') + 1);
+    const q = taskQueue(row()(), items(), id);
+    const own = turns().filter((x) => x.session_id === id || x.session_id === k);
+    if (own.length === 0) return q.slice(1);
+    const live = own.find((x) => x.status === 'running');
+    // the item that started it: its words, queued before it started (never a follow-up typed since)
+    return live ? q.filter((x) => !(x.text === live.prompt && (x.at ?? 0) <= (live.started_at ?? 0))) : q;
   });
   // the harness as it calls itself (v1: "after Claude Code finishes"), from the harness plugins' registrations
   const harnesses = useSignal(useShellContext().harnesses());

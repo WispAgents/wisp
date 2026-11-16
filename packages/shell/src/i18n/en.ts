@@ -335,6 +335,7 @@ export const SHELL_STRINGS = {
   'shell.me.out': 'Not connected · Sign in',
   'shell.me.title': '{who} · Machines, Automations and Settings',
   'shell.task.starting': 'Starting…',
+  'shell.task.waitingToStart': 'Waiting to start',
   'shell.view.missing': 'Nothing to show here. The plugin that shows this may be off.',
 
   'shell.settings.theme': 'Theme',
