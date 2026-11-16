@@ -61,7 +61,9 @@ export default function TurnFoot(props: ExtensionProps): JSX.Element {
     const one = h?.kind === 'limit' ? limitTarget(from(), list) : undefined;
     return one ? [one] : [];
   };
-  const nameOf = (agent: string): string => shell.harnesses()().find((x) => x.id === agent)?.name ?? (set() ?? []).find((a) => a.id === agent)?.name ?? agent;
+  // the harnesses the shell knows, followed (a harness plugin that registers later names its runs)
+  const harnesses = useSignal(shell.harnesses());
+  const nameOf = (agent: string): string => harnesses().find((x) => x.id === agent)?.name ?? (set() ?? []).find((a) => a.id === agent)?.name ?? agent;
   const quiet = (p: Promise<unknown>): void => {
     p.catch(() => {}); // the shell's onError toasts it
   };

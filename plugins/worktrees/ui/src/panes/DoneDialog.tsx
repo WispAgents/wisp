@@ -5,7 +5,7 @@
 import { createSignal, For, onCleanup, onMount, Show, type JSX } from 'solid-js';
 import { setSetting, type ExtensionId, type PluginClient, type SettingRow } from '@wisp/client';
 import { useShell } from '@wisp/shell';
-import { Button, Checkbox, Inline, Skeleton, Stack, Text } from '@wisp/ui';
+import { Button, Checkbox, Inline, Skeleton, Stack, Text, useSignal } from '@wisp/ui';
 import { bare, forget, peerOf, rowsFor, settingKey, VIEW } from '../ask.ts';
 import { doneApply, doneList } from '../commands.ts';
 import { heading, initiallyTicked, losesOf, outcome, removal, removeButton, stateOf, withSizes, type Said } from '../done.ts';
@@ -55,7 +55,8 @@ export default function DoneDialog(props: { readonly client: PluginClient; reado
   const [ticked, setTicked] = createSignal<readonly string[]>([]);
   const [always, setAlways] = createSignal(false);
   const [only, setOnly] = createSignal(props.params.only);
-  const setting = c.entities.row<SettingRow>('setting', settingKey(key, SETTING.onDone));
+  // followed (useSignal, round 324): a row that lands or locks after the dialog opened hides Always do this
+  const setting = useSignal(c.entities.row<SettingRow>('setting', settingKey(key, SETTING.onDone)));
   // Remove already says what to do, and a formula or plugin's lock isn't the dialog's to change
   const lock = (): boolean => only() || !!setting()?.locked_by;
   const close = (): void => c.navigate({ t: 'closeOverlay', id: VIEW as ExtensionId });

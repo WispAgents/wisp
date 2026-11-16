@@ -5,7 +5,7 @@
 import { For, Match, onCleanup, Show, Switch as Pick, type JSX } from 'solid-js';
 import { entityKey, ownerOf, peerId, type EntityKey } from '@wisp/client';
 import type { ExtensionProps } from '@wisp/shell/contract';
-import { Button, Inline, Pill, SettingsRow, Stack, Text, useSignal } from '@wisp/ui';
+import { Button, Inline, Pill, SettingsRow, Stack, Text, useDerived, useSignal } from '@wisp/ui';
 import { loginCancel, loginStart } from '../commands.ts';
 import { t } from '../i18n.ts';
 import { HARNESS, LOGIN, TOPIC, loginId, type HarnessRow, type LoginRow } from '../types.ts';
@@ -24,18 +24,16 @@ export default function MachineAgents(props: ExtensionProps): JSX.Element {
   onCleanup(() => scope.dispose());
   c.watch(peer, TOPIC, scope);
   const keys = useSignal(c.entities.keys(HARNESS));
-  const rows = useSignal(c.entities.list<HarnessRow>(HARNESS));
-  const logins = useSignal(c.entities.list<LoginRow>(LOGIN));
   const mine = (): readonly EntityKey[] => (keys() as readonly EntityKey[]).filter((k) => ownerOf(k) === peer);
-  // rows() and logins() are read so these follow every change; the rows themselves are that computer's, by key
-  const list = (): HarnessRow[] => (void rows(), signable(mine().map((k) => c.entities.row<HarnessRow>(HARNESS, k)() as HarnessRow | undefined)));
-  const loginOf = (agent: string): LoginRow | undefined => (void logins(), c.entities.row<LoginRow>(LOGIN, entityKey(peer, loginId(agent)))() as LoginRow | undefined);
+  // that computer's rows, by key, each followed as it changes (useDerived: the store is alien signals)
+  const list = useDerived((): HarnessRow[] => signable(mine().map((k) => c.entities.row<HarnessRow>(HARNESS, k)() as HarnessRow | undefined)));
+  const loginOf = (agent: string): LoginRow | undefined => c.entities.row<LoginRow>(LOGIN, entityKey(peer, loginId(agent)))() as LoginRow | undefined;
   return (
     <Show when={list().length > 0} fallback={<Text size="sm" tone="muted">{t('accounts.machine.none')}</Text>}>
       <Stack gap="1" part="accounts.machine">
         <For each={list()}>
           {(h) => {
-            const login = (): LoginRow | undefined => loginOf(h.id);
+            const login = useDerived(() => loginOf(h.id));
             const ctl = () => loginControl(login(), { account: false, out: h.signedIn === false });
             const args = { peer, agent: h.id, account: '' };
             return (

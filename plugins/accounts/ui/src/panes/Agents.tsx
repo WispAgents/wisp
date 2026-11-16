@@ -4,7 +4,7 @@
 // that take one (opencode); Install for one wisp can install; the notice when a harness's program changed;
 // git and the GitHub CLI that Ship it needs; Re-check. Every write shows at once.
 import { createMemo, createSignal, For, Match, onCleanup, Show, Switch as Pick, type JSX } from 'solid-js';
-import { entityKey, ownerOf, type PluginClient } from '@wisp/client';
+import { entityKey, type PluginClient } from '@wisp/client';
 import { useShell } from '@wisp/shell';
 import {
   Button,
@@ -26,11 +26,12 @@ import {
   Text,
   useSignal,
 } from '@wisp/ui';
+import { useDetected } from '../detected.ts';
 import { fromRow, text } from '../source.ts';
 import { Steps } from './Steps.tsx';
 import { addAccount, install, keyRemove, keySet, loginCancel, loginInput, loginStart, logout, recheck, removeAccount, setAsk, trust } from '../commands.ts';
 import { t } from '../i18n.ts';
-import { ACCOUNT, DETECT, DETECT_TOPIC, HARNESS, KEY, LOGIN, PLACE, TOOL, TOPIC, loginId, type AccountRow, type DetectRow, type HarnessRow, type KeyRow, type LoginRow, type PlaceRow, type ToolRow } from '../types.ts';
+import { ACCOUNT, DETECT_TOPIC, HARNESS, KEY, LOGIN, PLACE, TOOL, TOPIC, loginId, type AccountRow, type HarnessRow, type KeyRow, type LoginRow, type PlaceRow, type ToolRow } from '../types.ts';
 import { accountLine, changeText, changeTip, harnessLine, harnessState, howToGet, loginControl, masked, mergeHarnesses, present, recheckSummary, site, stillChanged } from '../words.ts';
 import '../i18n/lazy.ts';
 
@@ -146,13 +147,7 @@ export default function Agents(props: { readonly client: PluginClient }): JSX.El
   c.watch(peer, DETECT_TOPIC, scope);
   const mine = useRows<HarnessRow>(c, HARNESS);
   // this wisp's own: the runner picker may also watch another computer's
-  const detectKeys = useSignal(c.entities.keys(DETECT));
-  const detected = createMemo(() =>
-    detectKeys()
-      .filter((k) => ownerOf(k) === peer)
-      .map((k) => c.entities.row<DetectRow>(DETECT, k)() as DetectRow | undefined)
-      .filter((r): r is DetectRow => r !== undefined),
-  );
+  const detected = useDetected(c.entities, peer);
   const harnesses = createMemo(() => mergeHarnesses(mine(), detected()));
   const accounts = useRows<AccountRow>(c, ACCOUNT);
   const logins = useRows<LoginRow>(c, LOGIN);

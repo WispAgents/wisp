@@ -7,13 +7,12 @@
 // Runs on wisp.runtime's `harnesses` topic (ADR-0066): every harness at once, `Checking…` until its own detect lands,
 // each row updated in place; `runtime.agents` is still asked once the box shows.
 import { Show, createEffect, createMemo, createResource, createSignal, onCleanup, type JSX } from 'solid-js';
-import { defineCommand, ownerOf, type EntityKey, type PeerId } from '@wisp/client';
+import { defineCommand, type PeerId } from '@wisp/client';
 import { HarnessPicker, Text, useSignal, type HarnessPickerPane, type HarnessPickerRow } from '@wisp/ui';
 import { useShell } from '../context.tsx';
 import { Slot } from '../slot.tsx';
 import {
   HARNESSES_TOPIC,
-  HARNESS_ROW,
   accountFor,
   effortsFor,
   fullest,
@@ -24,9 +23,9 @@ import {
   usedPct,
   type AccountOffer,
   type AgentOffer,
-  type HarnessTopicRow,
   type PlanWindow,
   type Runner,
+  useHarnessRows,
 } from './runner.ts';
 import { AUTO, AUTO_GOALS, firstFocus, goalOf, modelGroups, pickerRows, searchShown, useHarness, varyRows, withModel, withSetting, withVary, type SubLine, type VaryKey } from './picker.ts';
 import { SUBAGENT_NAME, type Variant } from './trial.ts';
@@ -112,13 +111,7 @@ function PickerOpen(props: RunnerPickerProps): JSX.Element {
     shell.client.peers.watch(props.peer as PeerId, HARNESSES_TOPIC, scope);
     onCleanup(() => scope.dispose());
   });
-  const rowKeys = useSignal(shell.client.entities.keys(HARNESS_ROW));
-  const topicRows = createMemo((): HarnessTopicRow[] =>
-    rowKeys()
-      .filter((k) => ownerOf(k) === props.peer)
-      .map((k) => shell.client.entities.row<HarnessTopicRow>(HARNESS_ROW, k as EntityKey)() as HarnessTopicRow | undefined)
-      .filter((r): r is HarnessTopicRow => r !== undefined),
-  );
+  const topicRows = useHarnessRows(shell.client.entities, () => props.peer);
   const [answered] = createResource(
     () => props.peer,
     (peer) => shell.client.commands.run(agentsOf, { peer }).catch(() => [] as AgentOffer[]),

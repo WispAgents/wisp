@@ -28,7 +28,7 @@ export interface PageParams {
 
 export default function AutomationsPage(props: { readonly client: PluginClient; readonly params: PageParams }): JSX.Element {
   const c = props.client;
-  const shell = useShell();
+  const projectFilter = useSignal(useShell().projectFilter?.value ?? ((): string | undefined => undefined)); // a new trigger starts in it
   const say = t as (k: string, v?: Readonly<Record<string, string | number>>) => string;
   const [tab, setTab] = createSignal<'recipes' | 'triggers'>(props.params.tab);
   const [rs] = createResource(() => c.run(recipes, { peer: c.home }).catch((): Recipe[] => []));
@@ -53,7 +53,7 @@ export default function AutomationsPage(props: { readonly client: PluginClient; 
           <TriggerForm
             client={c}
             recipes={rs() ?? []}
-            here={parsePick(shell.projectFilter?.value())[0]}
+            here={parsePick(projectFilter())[0]}
             onDone={(saved) => {
               setEditing(false);
               if (saved) void refetch();

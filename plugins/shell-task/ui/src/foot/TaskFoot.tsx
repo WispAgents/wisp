@@ -5,7 +5,7 @@
 import { Show, createMemo, type JSX } from 'solid-js';
 import { defineCommand, type EntityKey } from '@wisp/client';
 import type { ExtensionProps } from '@wisp/shell/contract';
-import { Stack, useSignal } from '@wisp/ui';
+import { Stack, useDerived, useSignal } from '@wisp/ui';
 import { AskCard } from '../cards/AskCard.tsx';
 import { useShell } from '../shell.ts';
 import { keyOf } from '../open-task.ts';
@@ -25,10 +25,11 @@ const answer = defineCommand<{ key: EntityKey; id: string; text: string }>({
 export default function TaskFoot(props: ExtensionProps): JSX.Element {
   const shell = useShell();
   const t = shell.t;
-  const key = (): EntityKey | undefined => {
+  // useDerived (round 324): a bare id is keyed by the home peer from the peer list, an alien signal
+  const key = useDerived((): EntityKey | undefined => {
     const id = props.id ?? props.session?.()?.id;
     return id ? (keyOf(shell.client, id) as EntityKey | undefined) : undefined;
-  };
+  });
   const row = createMemo(() => {
     const k = key();
     return k ? useSignal(props.client.entities.row<unknown>(KIND.session, k)) : () => undefined;

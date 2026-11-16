@@ -117,6 +117,10 @@ Checked by `npm run check` (`tools/check`: the TypeScript rules and the Rust one
 12. **UI tests wait on what they assert** (`timer-loop-in-test`): no loop that only awaits a fixed count of
     `setTimeout` hops (each is a ~15.6 ms system tick on Windows); wait with `until(ok)` (a clock deadline) or fake
     timers, or say why with `// check:allow timer-loop-in-test <reason>`.
+13. **Solid reads the client store through the bridge** (`alien-read-in-solid`): the entity store, settings, nav,
+    peers and every `signal`/`computed` are alien-signals, which Solid doesn't follow; a read of one inside
+    createMemo/createEffect/`on`'s deps/JSX (directly, through a helper that reads one, or a readable an object
+    holds) goes through `useSignal(…)`/`useDerived(…)`, or says why with `// check:allow alien-read-in-solid <reason>`.
 
 ## How a feature is built
 

@@ -6,7 +6,7 @@
 import { createResource, createSignal, For, Show, type JSX } from 'solid-js';
 import { entityKey, type PluginClient } from '@wisp/client';
 import { useShell } from '@wisp/shell';
-import { Button, Inline, Skeleton, Stack, Text, TextArea } from '@wisp/ui';
+import { Button, Inline, Skeleton, Stack, Text, TextArea, useSignal } from '@wisp/ui';
 import { addStarter, listStarters, makePane } from './commands.ts';
 import { useEntries } from './items.ts';
 import { PaneCards, pinsOf } from './pins.tsx';
@@ -27,7 +27,8 @@ export default function MakePane(props: { readonly client: PluginClient; readonl
   const [added, setAdded] = createSignal<ReadonlySet<string>>(new Set());
   const [starters] = createResource(() => c.run(listStarters, { peer: c.home }).then((r) => r.starters));
   const close = (): void => c.navigate({ t: 'closeOverlay', id: MAKE_VIEW as never });
-  const harness = (): string => shell.harnesses()()[0]?.name ?? '';
+  const harnesses = useSignal(shell.harnesses());
+  const harness = (): string => harnesses()[0]?.name ?? '';
 
   const make = (): void => {
     const prompt = askOf(text());

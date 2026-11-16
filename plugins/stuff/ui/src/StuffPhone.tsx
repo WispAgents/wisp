@@ -10,7 +10,7 @@ import { useShell } from '@wisp/shell';
 import { StuffPhone, StuffPhoneApp, type MenuEntry, type StuffPhoneGroup } from '@wisp/ui';
 import { itemActions, type ActionId } from './actions.ts';
 import { publishTargets } from './commands.ts';
-import { useEntries, type Entry } from './items.ts';
+import { useEntries, useTaskTitle, type Entry } from './items.ts';
 import { kindOf } from './kinds.ts';
 import { cardMeta, computerOf, groupItems, withComputer, kindChips, shownItems, when, type KindFilter } from './model.ts';
 import { pageRun } from './page-run.ts';
@@ -65,7 +65,7 @@ export default function StuffPhonePage(props: { readonly client: PluginClient })
   // an app launched: over the whole screen, in its frame (Close / Done brings My Stuff back)
   const [app, setApp] = createSignal<{ readonly title: string; readonly url: string }>();
   const { run, upload } = pageRun({ c, shell, pins, entries, launched: (e, url) => setApp({ title: e.it.title || e.it.name, url }) });
-  const sessions = c.entities.list<{ id: string; title: string }>('session');
+  const taskTitle = useTaskTitle(c);
   // rows are keyed by entity key, never the bare item id: two computers can each hold an `st1` (r298), and keyed by id
   // one copy stood for both (its name, its menu, its Remove)
   const byKey = createMemo(() => new Map<string, Entry>(entries().map((e) => [e.key, e])));
@@ -85,7 +85,7 @@ export default function StuffPhonePage(props: { readonly client: PluginClient })
     return groupItems(shown(), byTask() ? 'task' : 'time', {
       t,
       now,
-      task: (id) => sessions().find((s) => s.id === id || s.id.endsWith(`:${id}`))?.title,
+      task: taskTitle,
       month: (at, withYear) => new Date(at).toLocaleDateString(undefined, withYear ? { month: 'long', year: 'numeric' } : { month: 'long' }),
     }).map((g) => ({
       // its words are its key: a group appearing above another never shifts the others' (nothing rebuilds)

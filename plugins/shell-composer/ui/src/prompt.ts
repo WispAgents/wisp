@@ -107,13 +107,27 @@ function projectFiles(c: PluginClient, path: string | undefined): readonly strin
   return cached(`project:${path}`, () => c.run(listFiles, { key: `${c.home}:files` as EntityKey, path }));
 }
 
-function cached(key: string, ask: () => Promise<{ files: string[] }>): readonly string[] {
+/** when each refused ask was refused: asked again only after RETRY_MS (the menu reads its sources again on every change
+ * to the store while it's open, a stream's patches included, so a refusal asked at once would be asked many times a
+ * second; round 324 review) */
+const failedAt = new Map<string, number>();
+export const RETRY_MS = 10_000;
+
+export function cached(key: string, ask: () => Promise<{ files: string[] }>, now: () => number = Date.now): readonly string[] {
   const had = filesOf.get(key);
   if (had) return had;
+  const failed = failedAt.get(key);
+  if (failed !== undefined && now() - failed < RETRY_MS) return [];
   filesOf.set(key, []);
   void ask().then(
-    (r) => filesOf.set(key, r.files),
-    () => filesOf.delete(key),
+    (r) => {
+      filesOf.set(key, r.files);
+      failedAt.delete(key);
+    },
+    () => {
+      filesOf.delete(key);
+      failedAt.set(key, now());
+    },
   );
   return [];
 }

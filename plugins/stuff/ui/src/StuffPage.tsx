@@ -12,7 +12,7 @@ import { publishTargets } from './commands.ts';
 import { pageRun } from './page-run.ts';
 import { stuffState } from './state.ts';
 import { PaneCards, pinsOf } from './pins.tsx';
-import { useEntries, type Entry } from './items.ts';
+import { useEntries, useTaskTitle, type Entry } from './items.ts';
 import { kindOf } from './kinds.ts';
 import { cardMeta, groupItems, kindChips, shownItems, when, type KindFilter } from './model.ts';
 import { TOPIC } from './types.ts';
@@ -54,7 +54,7 @@ function BrowserPage(props: { readonly client: PluginClient }): JSX.Element {
   // v1's sort and layout: by time or by the task each came from; cards or rows
   const [byTask, setByTask] = createSignal(false);
   const [list, setList] = createSignal(false);
-  const sessions = c.entities.list<{ id: string; title: string }>('session');
+  const taskTitle = useTaskTitle(c);
   const byKey = createMemo(() => new Map(entries().map((e) => [e.it.id, e])));
   const filter = () => ({ query: q(), kind: kind(), starred: false });
   const chips = createMemo(() => kindChips(entries().map((e) => e.it), filter(), t));
@@ -63,7 +63,7 @@ function BrowserPage(props: { readonly client: PluginClient }): JSX.Element {
     groupItems(shown(), byTask() ? 'task' : 'time', {
       t,
       now: Date.now(),
-      task: (id) => sessions().find((s) => s.id === id || s.id.endsWith(`:${id}`))?.title,
+      task: taskTitle,
       month: (at, withYear) => new Date(at).toLocaleDateString(undefined, withYear ? { month: 'long', year: 'numeric' } : { month: 'long' }),
     }),
   );

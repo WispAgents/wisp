@@ -28,7 +28,8 @@ export default function HomeUsage(props: ExtensionProps): JSX.Element {
   // the plan's rows (budget_acc): each change is a new reading, so the windows are asked again
   const accs = useSignal(c.entities.list('budget_acc'));
   const meta = useSignal(c.entities.row<{ body: Record<string, string> }>(META, entityKey(peer, 'settings')));
-  const holdSrc = fromRow(c, 'budget.limitHold', '90');
+  // followed while Home shows (useSignal: the setting row is an alien signal; round 324)
+  const holdAt = useSignal(fromRow(c, 'budget.limitHold', '90').value as () => unknown);
   const marks = useSignal(useShell().harnesses());
   const logoOf = (id: string): string | undefined => marks().find((m) => m.id === id)?.logo;
   // which harnesses are set up here: detecting them takes a while, so the row shows before and drops one that isn't
@@ -51,7 +52,7 @@ export default function HomeUsage(props: ExtensionProps): JSX.Element {
     const known = setUp();
     const list: HomeHarness[] = (read.latest ?? []).map((h) => ({ ...h, available: known?.length ? (known.find((a) => a.id === h.agent)?.available ?? false) : undefined }));
     const body = meta()?.body ?? {};
-    const hold = holdLine((holdSrc.value as () => unknown)());
+    const hold = holdLine(holdAt());
     return homeUsage(list).map((r) => {
       const stop = stopLine(body[PLANNED.find((p) => p.agent === r.agent)?.key ?? ''], body['autoStop']);
       const who = r.accountLabel ? t('budget.home.who', { name: r.name, account: r.accountLabel }) : r.name;

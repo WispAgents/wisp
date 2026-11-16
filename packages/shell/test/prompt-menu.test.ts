@@ -2,6 +2,7 @@ import { expect, test } from 'vitest';
 import { applyPick, encodeMentions, itemsFor, menuAt, usePromptMenu, insertedTasks, putMentions, pastedTasks } from '../src/frame/prompt-menu.ts';
 import type { PromptSourceDef } from '../src/contract.ts';
 import { createRoot, createSignal } from 'solid-js';
+import { signal } from '@wisp/client';
 
 test('a_prompt_box_opens_its_menu_where_the_caret_is_and_sends_picked_mentions_in_v1s_form', () => {
   expect(menuAt('/go', 3)).toEqual({ trigger: '/', start: 0, query: 'go' });
@@ -87,6 +88,45 @@ test('the_prompt_menu_turns_a_clipboard_insert_with_no_paste_event_into_a_chip_a
     // composing (an IME word in progress) is left alone
     setText('');
     expect(input(id, new InputEvent('input', { inputType: 'insertText', data: id, isComposing: true }))).toBe(id);
+    dispose();
+  });
+  el.remove();
+});
+
+// round 324: the menu's items follow what its sources read in the entity store (alien signals) and the sources the
+// registry holds; a plain createMemo read both once, so an @ typed before the tasks landed, a task renamed while the
+// menu showed, or a source a plugin's later part registers never reached the menu
+test('the_prompt_menu_follows_rows_that_land_or_change_and_sources_registered_after_it_opened', () => {
+  const tasks = signal<readonly { id: string; title: string }[]>([]);
+  const at = (id: string): PromptSourceDef => ({ id, trigger: '@', items: (q) => tasks().filter((x) => x.title.toLowerCase().includes(q.toLowerCase())).map((x) => ({ value: `${id}:${x.id}`, label: x.title, insert: `@${x.title} ` })) });
+  const sources = signal<readonly PromptSourceDef[]>([at('tasks')]);
+  const shell = { promptSources: () => sources, t: (k: string) => k, client: { plugin: () => ({ home: 'local' }), entities: { peek: () => undefined } } };
+  const el = document.createElement('textarea');
+  document.body.append(el);
+  createRoot((dispose) => {
+    const [text, setText] = createSignal('');
+    const menu = usePromptMenu({ shell: shell as never, where: 'reply', text, setText, input: () => el, id: 'x' });
+    const type = (value: string): void => {
+      el.value = value;
+      el.setSelectionRange(value.length, value.length);
+      setText(value);
+      menu.typed(value);
+    };
+    const labels = (): string[] => menu.suggest()?.items.map((i) => i.label) ?? [];
+    type('ask @fi');
+    expect(labels(), 'no tasks yet').toEqual([]);
+    // the list's rows land while the menu shows: the match appears without typing again
+    tasks([{ id: 'a1', title: 'Fix login' }]);
+    expect(labels(), 'the late task').toEqual(['Fix login']);
+    // renamed elsewhere: the menu shows the new title
+    tasks([{ id: 'a1', title: 'Fix the login page' }]);
+    expect(labels(), 'the renamed task').toEqual(['Fix the login page']);
+    // a source registered after (a plugin's later part): its items join
+    sources([...sources(), { id: 'crew', trigger: '@', items: () => [{ value: 'crew:ada', label: 'Ada fixes', insert: '@Ada ' }] }]);
+    expect(labels(), 'the late source').toEqual(['Fix the login page', 'Ada fixes']);
+    // deleted: it goes
+    tasks([]);
+    expect(labels(), 'the deleted task').toEqual(['Ada fixes']);
     dispose();
   });
   el.remove();

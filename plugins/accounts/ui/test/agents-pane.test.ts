@@ -4,6 +4,9 @@ import { expect, test } from 'vitest';
 import type { DetectRow, HarnessRow } from '../src/types.ts';
 import { harnessLine, harnessState, howToGet, mergeHarnesses, recheckSummary } from '../src/words.ts';
 import { recheck } from '../src/commands.ts';
+import { createRoot } from 'solid-js';
+import { signal } from '@wisp/client';
+import { useDetected } from '../src/detected.ts';
 
 const h = (id: string, more: Partial<HarnessRow> = {}): HarnessRow => ({ id, name: id, ord: 1, available: true, models: [], signIn: 'cli', ...more });
 
@@ -72,4 +75,29 @@ test('settings_agents_shows_each_harness_checking_until_its_detect_lands', () =>
   expect(howToGet(gone[0] as HarnessRow)?.tip).toBe('npm i -g codex');
   // a wisp before the topic: wisp.accounts' rows as they were
   expect(mergeHarnesses([h('b', { ord: 2 }), h('a', { ord: 1 })], []).map((x) => x.id)).toEqual(['a', 'b']);
+});
+
+// round 324: the pane's harness rows follow each detect row as it settles (same key, the row changes in place); a
+// createMemo over the keys read each row once, so a harness stayed "Checking…" until the pane opened again
+test('settings_agents_follows_a_detect_row_that_settles_after_its_key_showed', () => {
+  const d = (id: string, state: DetectRow['state'], available = false): DetectRow => ({ id, ord: 0, state, agent: { name: id, available, models: [] } });
+  const keys = signal<readonly string[]>([]);
+  const rows = new Map<string, ReturnType<typeof signal<DetectRow | undefined>>>();
+  const at = (k: string) => rows.get(k) ?? (rows.set(k, signal<DetectRow | undefined>(undefined)), rows.get(k)!);
+  const entities = { keys: () => keys, row: (_kind: string, k: string) => at(k) };
+  createRoot((dispose) => {
+    const list = useDetected(entities as never, 'laptop');
+    const words = (): string[] => mergeHarnesses([], list()).map((h) => `${h.id}:${harnessState(h).label}`);
+    at('laptop:claude')(d('claude', 'checking'));
+    at('box:codex')(d('codex', 'installed', true));
+    keys(['laptop:claude', 'box:codex']);
+    expect(words(), 'this wisp’s only, checking').toEqual(['claude:Checking…']);
+    at('laptop:claude')(d('claude', 'installed', true));
+    expect(words(), 'its detect landed: one row, settled').toHaveLength(1);
+    expect(words()[0], 'no longer checking').not.toBe('claude:Checking…');
+    expect(list()[0]?.state, 'the row as it is now').toBe('installed');
+    at('laptop:claude')(undefined);
+    expect(words(), 'gone').toEqual([]);
+    dispose();
+  });
 });

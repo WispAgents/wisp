@@ -1,6 +1,8 @@
 // `@wisp/ui/pure`: the kit's plain functions, without the kit. The main entry pulls in every component (seconds to
 // compile in a test), so a plugin's plain module imports these from here and its tests stay fast. Only modules
 // that reach no component belong here.
+// the bridge from @wisp/client's signals into Solid (no component): plain modules that derive over the store use it
+export { useDerived, useSignal } from './core/signal.ts';
 export { reorderable, reordered, type OnReorder, type ReorderAttrs } from './core/reorder.ts';
 export { menuSections, type MenuEntry, type MenuGroup, type MenuItem, type MenuSeparator, type MenuSubmenu } from './controls/menu-entries.ts';
 export type { IconName } from './content/icons.ts';

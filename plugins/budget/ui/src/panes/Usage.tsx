@@ -86,8 +86,10 @@ export default function Usage(props: { readonly client: PluginClient }): JSX.Ele
   });
   // Drain watch (`budget.drainWatch`, a bool setting): the switch, and each account's card while it's on
   const drainSrc = fromRow(c, 'budget.drainWatch', false);
+  // followed (useSignal: the setting row is an alien signal; round 324): turned on, each card's drain line shows at once
+  const drainOn = useSignal(drainSrc.value as () => unknown);
   const watching = (): boolean => {
-    const v = (drainSrc.value as () => unknown)();
+    const v = drainOn();
     return v === true || v === 'on';
   };
   const drainWatch: SettingSource<boolean> = { value: watching, ...(drainSrc.lockedBy && { lockedBy: drainSrc.lockedBy }), set: (on) => drainSrc.set(on) };

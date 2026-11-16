@@ -3,7 +3,7 @@
 
 import { createMemo, type Accessor } from 'solid-js';
 import { entityKey, ownerOf, type EntityKey, type PluginClient, type SessionId } from '@wisp/client';
-import { useSignal } from '@wisp/ui';
+import { useSignal } from '@wisp/ui/pure';
 import { stuffState } from './state.ts';
 import { ITEM, type Item, type TaskRow } from './types.ts';
 
@@ -13,6 +13,13 @@ export interface Entry {
 }
 
 const order = (a: Entry, b: Entry): number => Number(!!b.it.pending) - Number(!!a.it.pending) || b.it.at - a.it.at;
+
+/** A task's title by its id (bare or keyed), for grouping by task; followed (useSignal, round 324): read straight from the
+ *  store inside the page's groups memo, a task that landed or was renamed after My Stuff opened kept its old heading. */
+export function useTaskTitle(client: PluginClient): (id: string) => string | undefined {
+  const sessions = useSignal(client.entities.list<{ id: string; title: string }>('session'));
+  return (id) => sessions().find((s) => s.id === id || s.id.endsWith(`:${id}`))?.title;
+}
 
 /** Every item, hidden ones left out. Reading it tracks every row: a change anywhere repaints the list's shape, not its cards. */
 export function useEntries(client: PluginClient): Accessor<Entry[]> {

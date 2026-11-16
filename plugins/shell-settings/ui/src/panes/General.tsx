@@ -5,7 +5,7 @@
 
 import { Slot, useShell } from '@wisp/shell';
 import { Show, createMemo, createResource, type JSX } from 'solid-js';
-import { computed, defineCommand, type PluginClient } from '@wisp/client';
+import { defineCommand, type PluginClient } from '@wisp/client';
 import { Input, SelectSetting, SettingsGroup, SettingsRow, SwitchSetting, useSignal, type SelectOption, Kbd, ChoiceSetting } from '@wisp/ui';
 import { t, type Key } from '../i18n.ts';
 import { fromRow, onOff, text } from '../source.ts';
@@ -99,11 +99,12 @@ function Review(props: { readonly client: PluginClient }): JSX.Element {
 
 export default function General(props: { readonly client: PluginClient }): JSX.Element {
   const shell = useShell();
-  const editors = computed(() => EDITORS.map((v) => ({ value: v, label: t(`shell-settings.editor.${v}`) })));
+  // plain words: t() reads no signal, so there's nothing to follow
+  const editors = EDITORS.map((v) => ({ value: v, label: t(`shell-settings.editor.${v}`) }));
   return (
     <>
       <SettingsGroup part="settings.general.open">
-        <SelectSetting title={t('shell-settings.editor')} description={t('shell-settings.editor.hint')} source={text(fromRow(props.client, KEYS.editor), 'vscode')} locked={locked} items={editors()} />
+        <SelectSetting title={t('shell-settings.editor')} description={t('shell-settings.editor.hint')} source={text(fromRow(props.client, KEYS.editor), 'vscode')} locked={locked} items={editors} />
         <TakeOver client={props.client} />
       </SettingsGroup>
       <SettingsGroup part="settings.general.answers">

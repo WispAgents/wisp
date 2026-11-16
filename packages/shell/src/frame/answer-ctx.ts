@@ -2,7 +2,7 @@
 // put text in the reply box, run a command in the task's folder (and show what it did), open another task or a
 // link, allow or deny a blocked turn, read another task's title and state. Live only on the latest answer.
 import type { EntityKey } from '@wisp/client';
-import { entityKey, ownerOf } from '@wisp/client';
+import { entityKey, ownerOf, untracked } from '@wisp/client';
 import { useSignal, type BlockContext, type EnvReveal, type StuffRef, type TaskRef } from '@wisp/ui';
 import type { ShellContext } from '../contract.ts';
 import { usePluginClient } from '../slot.tsx';
@@ -45,8 +45,10 @@ export function answerContext(h: AnswerHost): BlockContext {
   const home = usePluginClient('shell').home;
   const keyOf = (id: string): EntityKey => (id.includes(':') ? (id as EntityKey) : entityKey(peer, id));
   // where a `preview` block's page loads from here (ADR-0064: a box's localhost at the grid's preview address); set
-  // up once per answer, read reactively by the block; the first plugin that answers wins
-  const previews = (shell.previewAddresses?.()() ?? []).map((d) => d.map({ client: d.client, task: key }));
+  // up once per answer, read reactively by the block; the first plugin that answers wins. Read once on purpose
+  // (untracked): `ctx={answerContext(…)}` is a JSX getter, run again on each read of the prop, so a watcher here would
+  // be made per read (round 324 review)
+  const previews = untracked(shell.previewAddresses?.() ?? (() => [])).map((d) => d.map({ client: d.client, task: key }));
   return {
     // a .env file's values in a code or diff block: masked, revealed per task for the tab's life (env-reveal.ts)
     ...(h.env && { env: h.env }),

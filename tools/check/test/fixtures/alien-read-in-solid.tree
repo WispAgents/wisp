@@ -1,0 +1,106 @@
+Alien reads in Solid reactive scopes: the client store (entities, settings, nav, peers), a computed/signal, the shell's nav and selection, a const or a function that holds or returns one, a reader (local or imported), an object whose props are readables (returned, or typed by an interface), a getter a function hands back, and a getter handed to a call made now fail inside createMemo/createEffect/on's deps/JSX; the bridge (useSignal, useDerived, alien's computed/effect), handlers, onMount and timers, on's callback, untracked, a shadowed name, a getter handed to the kit as a readable prop, an allow comment with a reason, the client package and tests pass.
+=== plugins/demo/ui/package.json
+{ "name": "@wisp-plugin/demo-ui", "exports": { ".": "./src/index.ts" } }
+=== plugins/demo/ui/src/data.ts
+import { computed, type PluginClient, type Readable } from '@wisp/client';
+export function crewOf(c: PluginClient): Readable<readonly { id: string; name: string }[]> {
+  return c.entities.list('crew');
+}
+export const memberOf = (c: PluginClient, id: string) => crewOf(c)().find((m) => m.id === id);
+export function fromRow(c: PluginClient, key: string) {
+  const row = c.entities.row<{ value: unknown }>('setting', key);
+  return { value: computed(() => row()?.value), set: (_v: unknown) => undefined };
+}
+export function hasAny(c: PluginClient): () => boolean {
+  const keys = c.entities.keys('crew');
+  return () => keys().length > 0;
+}
+=== plugins/demo/ui/src/Bad.tsx
+import { createEffect, createMemo, on } from 'solid-js';
+import { computed, family, type PluginClient } from '@wisp/client';
+import { useShell } from '@wisp/shell';
+import { crewOf, fromRow, hasAny, memberOf } from './data.ts';
+interface Source { readonly value: Readable<boolean>; set(v: boolean): void }
+export function Bad(props: { c: PluginClient; k: string; src: Source }) {
+  const c = props.c;
+  const shell = useShell();
+  const rows = createMemo(() => [props.k].map((k) => c.entities.row(k, k)()));
+  const total = computed(() => rows().length);
+  createEffect(() => console.log(total()));
+  const who = createMemo(() => memberOf(c, props.k)?.name);
+  const spare = fromRow(c, 'spare');
+  const on1 = createMemo(() => spare.value());
+  const has = hasAny(c);
+  const settings = c.settings([]);
+  const theme = createMemo(() => settings.get('theme')());
+  const byKey = family((k: string) => c.entities.row('x', k));
+  createEffect(on(() => c.entities.keys('crew')(), () => undefined));
+  const titled = createMemo(() => group({ title: (id: string) => crewOf(c)().find((m) => m.id === id)?.name }));
+  // check:allow alien-read-in-solid
+  const noReason = createMemo(() => c.entities.list('crew')());
+  return (
+    <div>
+      {shell.nav().main.kind}
+      {shell.selection.get()}
+      {has() ? 'some' : 'none'}
+      {byKey(props.k)()}
+      {props.src.value() ? 'on' : 'off'}
+    </div>
+  );
+}
+=== plugins/demo/ui/src/Good.tsx
+import { createEffect, createMemo, createSignal, on, onMount } from 'solid-js';
+import { computed, untracked, type PluginClient } from '@wisp/client';
+import { useDerived, useSignal } from '@wisp/ui';
+import { useShell } from '@wisp/shell';
+interface Mic { readonly on: () => boolean }
+interface Lit { readonly on: Readable<boolean> }
+interface SettingSource { readonly value: Readable<string> }
+function outer(c: PluginClient, p: string) {
+  const where = c.peers.status(p);
+  return where;
+}
+export function Good(props: { c: PluginClient; k: string; mic: Mic }) {
+  const c = props.c;
+  const shell = useShell();
+  const row = useSignal(c.entities.row('session', props.k));
+  const rows = useDerived(() => c.entities.list('session')());
+  const nav = useSignal(shell.nav);
+  const total = computed(() => c.entities.list('session')().length);
+  const [where] = createSignal('here');
+  const place = createMemo(() => where());
+  onMount(() => console.log(c.entities.keys('session')()));
+  createEffect(on(row, () => console.log(shell.nav().side, untracked(shell.nav))));
+  setTimeout(() => c.entities.pending()(), 0);
+  // check:allow alien-read-in-solid read once on purpose: the size the dialog opens at
+  const first = createMemo(() => c.entities.keys('session')().length);
+  return (
+    <div onClick={() => console.log(c.entities.row('session', props.k)())}>
+      {row()?.title}
+      {rows().length}
+      {nav().main.kind}
+      {place()}
+      {props.mic.on() ? 'mic' : ''}
+      <Setting source={{ value: () => shell.theme.pref(), set: () => undefined }} />
+    </div>
+  );
+}
+=== plugins/demo/ui/src/More.tsx
+import { createDeferred, createMemo } from 'solid-js';
+import type { PluginClient } from '@wisp/client';
+export function More(props: { c: PluginClient }) {
+  const e = props.c.entities;
+  const one = createMemo(() => e.row('x', 'k')());
+  const compute = () => props.c.entities.list('x')().length;
+  const n = createMemo(compute);
+  const later = createDeferred(() => props.c.entities.keys('x')());
+  return null;
+}
+=== packages/client/package.json
+{ "name": "@wisp/client", "exports": { ".": "./src/index.ts" } }
+=== packages/client/src/index.ts
+import { createMemo } from 'solid-js';
+export const x = (c: { entities: { list(k: string): () => unknown[] } }) => createMemo(() => c.entities.list('k')());
+=== plugins/demo/ui/test/bad.test.tsx
+import { createMemo } from 'solid-js';
+export const y = (c: { entities: { list(k: string): () => unknown[] } }) => createMemo(() => c.entities.list('k')());

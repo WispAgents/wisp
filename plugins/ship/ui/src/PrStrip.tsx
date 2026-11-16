@@ -40,7 +40,9 @@ function Strip(props: { readonly client: PluginClient; readonly k: EntityKey }):
   const s = useSession(props.client, () => props.k);
   const ship = useShip(props.client, props.k);
   const run = useSignal(ship.flows.run);
-  const nav = (): ReturnType<typeof ship.shell.nav> => ship.shell.nav();
+  // through useSignal (round 324): the nav is an alien signal; read directly, the row didn't hide when the PR pane
+  // opened beside the task after it showed, nor come back when the pane closed
+  const nav = useSignal(ship.shell.nav);
   const paneOpen = (): boolean => nav().side.kind === 'pr' && (nav().side as { id?: string }).id === props.k;
   // Started here, or elsewhere (another tab, the API): the server's stage moves the track along.
   const live = (): ReturnType<typeof track> | undefined => {

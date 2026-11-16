@@ -3,7 +3,7 @@
 // through the kit's ExtensionSlot, so one extension that throws renders nothing and the rest stay.
 
 import { createMemo, Show, type JSX } from 'solid-js';
-import { ExtensionSlot, type ExtensionOutput } from '@wisp/ui';
+import { ExtensionSlot, useSignal, type ExtensionOutput } from '@wisp/ui';
 import type { ExtensionProps, InputId } from '@wisp/shell/contract';
 import { useEnv } from './env.ts';
 
@@ -11,7 +11,9 @@ type SessionOf = NonNullable<ExtensionProps['session']>;
 
 export function Slot(props: { readonly input: InputId; readonly session?: SessionOf; readonly layout?: 'inline' | 'stack' | 'contents' }): JSX.Element {
   const env = useEnv();
-  const resolved = env.shell.extensions(props.input);
+  // through useSignal (round 324): the registry is alien signals, so an extension attached after the list painted (a
+  // plugin's later part, one switched on) shows on the rows already there, and one switched off goes
+  const resolved = useSignal(env.shell.extensions(props.input));
   const outputs = createMemo<readonly ExtensionOutput[]>(() =>
     resolved()
       .map((ext) => {
@@ -33,6 +35,6 @@ export function Slot(props: { readonly input: InputId; readonly session?: Sessio
 /** Whether anything is attached to an input (a row skips the slot's box when not). */
 export function hasExtensions(input: InputId): () => boolean {
   const env = useEnv();
-  const resolved = env.shell.extensions(input);
+  const resolved = useSignal(env.shell.extensions(input));
   return () => resolved().length > 0;
 }

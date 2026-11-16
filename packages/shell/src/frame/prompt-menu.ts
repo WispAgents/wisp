@@ -3,6 +3,7 @@
 // Pure; `usePromptMenu` wires it to a box, the plugins' sources (contract PromptSourceDef) and the kit's list.
 import { createMemo, createSignal, type Accessor } from 'solid-js';
 import type { PromptSuggest } from '@wisp/ui';
+import { useDerived } from '@wisp/ui/pure';
 import type { PromptItem, PromptSourceDef, ShellContext } from '../contract.ts';
 
 export interface MenuAt {
@@ -134,7 +135,10 @@ export function usePromptMenu(o: {
     const project = o.project?.();
     return project ? { ...base, project } : base;
   };
-  const items = createMemo((): PromptItem[] => {
+  // useDerived, not createMemo (round 324): the sources the registry holds and what each source's items read (the
+  // entity store's tasks for @) are alien signals; a Solid memo read them once, so a task that landed, was renamed or
+  // went while the menu showed, or a source registered later, never reached it
+  const items = useDerived((): PromptItem[] => {
     const m = at();
     return m ? itemsFor(sources(), m, o.where, ctxNow()) : [];
   });

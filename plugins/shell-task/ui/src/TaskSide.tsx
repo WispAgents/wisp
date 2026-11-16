@@ -4,7 +4,7 @@
 import { Show, createMemo, type JSX } from 'solid-js';
 import type { EntityKey } from '@wisp/client';
 import type { ExtensionProps } from '@wisp/shell/contract';
-import { useSignal } from '@wisp/ui';
+import { useDerived, useSignal } from '@wisp/ui';
 import { keyOf, sideOf } from './open-task.ts';
 import { useShell } from './shell.ts';
 import { SidePanel } from './side/SidePanel.tsx';
@@ -14,7 +14,8 @@ export default function TaskSide(props: ExtensionProps): JSX.Element {
   const shell = useShell();
   const nav = useSignal(shell.client.nav.nav);
   const side = createMemo(() => sideOf(nav()));
-  const key = createMemo(() => {
+  // useDerived (round 324): a bare id is keyed by the home peer from the peer list, an alien signal
+  const key = useDerived(() => {
     const s = side();
     return s ? keyOf(shell.client, s.id) : undefined;
   });

@@ -29,8 +29,8 @@ export default function Spare(props: ExtensionProps): JSX.Element {
   c.watch(peer, TOPIC, scope, { passive: true });
   const marks = useSignal(useShell().harnesses());
   const logoOf = (id: string): string | undefined => marks().find((m) => m.id === id)?.logo;
-  const spareOn = fromRow(c, 'budget.spareCard', true);
-  const noticeOn = fromRow(c, 'budget.windowNotice', true);
+  const spareOn = useSignal(fromRow(c, 'budget.spareCard', true).value as () => unknown);
+  const noticeOn = useSignal(fromRow(c, 'budget.windowNotice', true).value as () => unknown); // followed while Home shows
   const seenStore = c.defineStore<Record<string, number>>({
     id: 'budget.spareSeen',
     version: 1,
@@ -50,7 +50,7 @@ export default function Spare(props: ExtensionProps): JSX.Element {
   const when = (at: number): string => timeLabel(at, now(), englishT);
   const cards = createMemo((): SpareCard[] => {
     const list = windows() ?? [];
-    const spare = on((spareOn.value as () => unknown)(), true) ? spareOf(list, { now: now(), seen: seen() as Record<string, number> }).slice(0, 2) : [];
+    const spare = on(spareOn(), true) ? spareOf(list, { now: now(), seen: seen() as Record<string, number> }).slice(0, 2) : [];
     const out: SpareCard[] = spare.map((x) => ({
       key: spareKey(x),
       logo: logoOf(x.agent),
@@ -61,7 +61,7 @@ export default function Spare(props: ExtensionProps): JSX.Element {
       ...(props.pickAgent && { use: { label: t('budget.spare.use', { name: x.name }), title: t('budget.spare.useTitle', { name: x.name }), onClick: () => props.pickAgent?.(x.agent) } }),
       hide: { label: t('budget.spare.hide'), onClick: () => seenStore.set((cur) => ({ ...pruneSeen(cur as Record<string, number>, now()), [spareKey(x)]: x.resetsAt })) },
     }));
-    if (on((noticeOn.value as () => unknown)(), true)) {
+    if (on(noticeOn(), true)) {
       const notes = list.flatMap((h) => h.accounts.flatMap((a) => (a.notices ?? []).map((n) => ({ h, a, n })))).slice(0, 2);
       for (const { h, a, n } of notes)
         out.push({

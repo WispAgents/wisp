@@ -1,5 +1,5 @@
 import { expect, test } from 'vitest';
-import { crewItems, slashItems, stuffItems, taskItems, fileItems } from '../src/prompt.ts';
+import { RETRY_MS, cached, crewItems, slashItems, stuffItems, taskItems, fileItems } from '../src/prompt.ts';
 import { HOME_SLASH, SLASH } from '../src/text/slash.ts';
 
 test('the_at_menu_names_tasks_crew_and_stuff_by_what_is_typed_and_the_slash_menu_its_commands', () => {
@@ -32,4 +32,28 @@ test('a_tasks_files_in_the_at_menu_insert_their_path_and_open_in_the_file_view',
   items[0]?.open?.();
   expect(opened).toEqual(['src/auth/login.ts']);
   expect(fileItems(['a.ts'], 'zzz', () => undefined)).toEqual([]);
+});
+
+// round 324 review: the @ menu reads its sources again on every store change while it's open (a running task's patches
+// included); a task whose files can't be listed (its worktree gone) is asked again only after RETRY_MS, not per patch
+test('a_refused_file_list_is_asked_again_only_after_a_pause_not_on_every_read', async () => {
+  let at = 1_000;
+  let asked = 0;
+  let ok = false;
+  const ask = (): Promise<{ files: string[] }> => {
+    asked += 1;
+    return ok ? Promise.resolve({ files: ['src/a.ts'] }) : Promise.reject(new Error('no worktree'));
+  };
+  const read = (): readonly string[] => cached('laptop:gone', ask, () => at);
+  expect(read()).toEqual([]);
+  await Promise.resolve();
+  await Promise.resolve();
+  for (let i = 0; i < 50; i++) read(); // a stream's patches while the menu shows
+  expect(asked, 'refused once: not asked again on each read').toBe(1);
+  at += RETRY_MS;
+  ok = true;
+  read();
+  expect(asked, 'after the pause it asks again').toBe(2);
+  await Promise.resolve();
+  expect(read()).toEqual(['src/a.ts']);
 });

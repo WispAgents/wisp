@@ -3,7 +3,7 @@
 import { createMemo, type JSX } from 'solid-js';
 import { entityKey, uuidv7, type EntityKey } from '@wisp/client';
 import type { ExtensionProps } from '@wisp/shell/contract';
-import { CommentTray as Tray, useSignal } from '@wisp/ui';
+import { CommentTray as Tray, useDerived, useSignal } from '@wisp/ui';
 import { commentStore, isLine, removed, waiting, whereOf, withComments } from '../comments.ts';
 import { keyOf } from '../open-task.ts';
 import { useShell } from '../shell.ts';
@@ -15,10 +15,11 @@ export default function CommentTray(props: ExtensionProps): JSX.Element {
   const t = shell.t;
   const store = commentStore(props.client);
   const all = useSignal(store.value);
-  const key = (): EntityKey | undefined => {
+  // useDerived (round 324): a bare id is keyed by the home peer from the peer list, an alien signal
+  const key = useDerived((): EntityKey | undefined => {
     const id = props.id ?? props.session?.()?.id;
     return id ? (keyOf(shell.client, id) as EntityKey | undefined) : undefined;
-  };
+  });
   const list = createMemo(() => {
     const k = key();
     return k ? waiting(all(), k) : [];

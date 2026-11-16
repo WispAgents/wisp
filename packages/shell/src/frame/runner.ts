@@ -1,6 +1,10 @@
 // The harness · model picker's data (v1 runner-picker.js), DOM-free: what each harness offers (runtime.agents), the
 // models matching what's typed (by label or id, the harness's name too), and the thinking levels the pick allows.
 
+import { ownerOf, type EntityKey, type EntityReader } from '@wisp/client';
+import { useDerived } from '@wisp/ui/pure';
+import type { Accessor } from 'solid-js';
+
 export interface AgentModel {
   readonly id: string;
   readonly label: string;
@@ -29,6 +33,19 @@ export interface HarnessTopicRow {
   readonly ord: number;
   readonly state: 'checking' | 'installed' | 'missing';
   readonly agent: Omit<AgentOffer, 'checking'>;
+}
+
+/** `peer()`'s rows on the harnesses topic, following each row as its detect settles (Checking… → found or missing). Through
+ * useDerived (round 324): a createMemo over the keys read each row once, so a row that settled after its key showed
+ * stayed Checking… until the picker reopened. */
+export function useHarnessRows(entities: Pick<EntityReader, 'keys' | 'row'>, peer: () => string): Accessor<HarnessTopicRow[]> {
+  return useDerived(() =>
+    entities
+      .keys(HARNESS_ROW)()
+      .filter((k) => ownerOf(k) === peer())
+      .map((k) => entities.row<HarnessTopicRow>(HARNESS_ROW, k as EntityKey)() as HarnessTopicRow | undefined)
+      .filter((r): r is HarnessTopicRow => r !== undefined),
+  );
 }
 
 /** What the picker offers: the topic's rows in their order, each marked while it's checking; none yet (a wisp that
