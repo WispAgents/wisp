@@ -117,8 +117,11 @@ turn. When a screen or feature contradicts one, that's a bug: fix it toward the 
 
 - **The decision ledger** (owner's #802, merged 2026-11-16): `decisions/D-NNNN.yml` records with hooks that bring each
   decision to the agent before it edits a file in scope. D-0001..D-0046 are v1's AGENTS.md rules (scoped to v1's
-  files; advice only, no checks). **D-0043 ("no new dependencies") contradicts v2** (a pinned dependency with an ADR is
-  allowed): to supersede for v2's paths. v2's decisions are here in §3 until they're recorded as decisions too.
+  files; advice only, no checks). **Recorded (owner, 2026-11-16: "yes do that, supersede D-43")**: D-0043 superseded by
+  D-0055 (a dependency only when pinned and justified in an ADR); §3's main decisions recorded as D-0047..D-0065 (v2
+  paths). §3 stays the full dated list; a new owner decision goes in both (§3 here, `decisions add` there).
+- **iOS: ignore it for now** (owner, 2026-11-16): phone step 10 is dropped from the plan until the owner says otherwise;
+  Android and the phone browser carry the phone work.
 
 ### How the work runs
 
@@ -225,7 +228,7 @@ turn. When a screen or feature contradicts one, that's a bug: fix it toward the 
 7. [x] Gestures with visible twins (round 225); seams (GestureHostProvider, row long-press) in round 227's work
 8. [x] The app's frontend (`@wisp/mobile` routes, launch on Computers, several peers) (round 281: its own entry `mobile/web` `npm run dev`/`build`; Stage → kit Frame + NavigationBar under a phone look; `Client.setHome` runs the shell on the launched computer, every peer stays connected; seams `secureStore`/`scanCode`/`registerPush`)
 9. [x] Android native: Keystore-sealed keys and tokens, QR host-key pinning, a port per computer (round 226)
-10. [ ] iOS native: **blocked: Xcode is not installed on this Mac**
+10. [ ] iOS native: **not now (owner, 2026-11-16: ignore iOS)**
 11. [x] Push (`wisp.push`, HPKE, grid relay) (round 228, reviewed by r241; no UI calls it yet: step 13)
 12. [x] Offline and bad network: core + shell hookups (round 229, reviewed by r241)
 13. [x] Screens part 1 (Tasks, task page, New task, search; Add computer with QR, Trust new key, Stay connected ON by default without push). Done (round 284): Tasks (root TopAppBar with the computer filter `shell.computerFilter` as title, Search, the me menu; project chips row; FAB / iOS compose for New task; shell-list filters by computer), Add computer (QR via `scanCode`, typed fallback, Trust the new key with confirm, Stay connected ON for SSH without push, `mobile/web/src/{add,stay}.ts`). Done (round 286): the task page's app bar (M3 medium / iOS navigation bar: Back + the task's menu from the one menu model, with the details bar's Transcript, Rerun, Open in, Changes, Shell, Ship it, Mark done and Details: the details column as a sheet; Rename as a dialog; plugins' `shell.task:head` items in the bar; the ledger and the reply box as they are, the composer M3 docked / Messages-like, `PhoneTaskBar` in `frame/PhoneHead.tsx`), New task as Android's full-screen dialog / iOS's sheet (Close × or Cancel, New task, Send; the prompt box unchanged, `PhoneCompose` in `frame/PhoneHead.tsx`, Frame `behind`), Search as the M3 search view / the iOS field under the large title (the palette's task search, Back / Cancel; `TopAppBar.search`, `PaletteSheet.close`); browser initial JS 107.8 KB br and CSS 27.1 KB as at HEAD; tests `apps/web/test/phone-pages.test.tsx`, `packages/ui/test/platform-pages.test.tsx`. Done (round 293): selection mode in the phone Tasks list (a row's long-press sheet's Select first on Android, Select in the Tasks bar on both; the kit's `SelectionBar`: Android's contextual top app bar that leaves with the last row unpicked, iOS's edit mode with Select All / Deselect All, n Selected, Done and a bottom toolbar; a tap toggles a row, its check in the dot's column (`ListRow.picked`); bulk Mark done, Save for later, Archive, Delete (asks first) on the tasks each fits, optimistic with the client's rollback toast and Undo, `frame/bulk.ts`; state `ShellContext.listSelect`, `frame/list-select.ts`; ends on navigation and Esc), the iOS computer filter as a pull-down from the title (`TopAppBar.titleMenu`, choices checked; Android keeps its sheet), and the task head's swipe to the next / previous task with Next task / Previous task in the task's menu (disabled at the list's ends), in the order the list shows now (`ShellContext.listOrder`, published by shell-list; `frame/task-step.ts`: a filter re-orders it, a task gone meanwhile keeps its place). Tests: `apps/web/test/phone-step13.test.tsx`, `packages/ui/test/selection-bar.test.tsx`, `packages/shell/test/{task-step,list-select,bulk}.test.ts`; screenshots `target/r293/`
@@ -880,7 +883,6 @@ Source: `docs/v1-features.md` (each row's evidence and test). `[x]` built, `[ ]`
 
 ## 9. Blocked
 
-- **iOS app (phone step 10):** needs Xcode installed on this Mac (owner).
 
 ## 10. Decisions (ADRs)
 

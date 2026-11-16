@@ -1,0 +1,11 @@
+id: D-0055
+decision: Add a dependency only when it is pinned in the root Cargo.toml (Rust) or package.json (UI) and justified in an ADR; match surrounding code style with short comments that explain why and consistent naming.
+reason: wisp v2 adds pinned, ADR-justified dependencies (AGENTS.md); 'no new dependencies' contradicted it. Owner, 2026-11-16.
+rejected:
+- Do not add new dependencies; match surrounding code style with short comments that explain why and consistent naming.
+scope:
+- '**'
+category: constraint
+status: accepted
+supersedes: D-0043
+date: 2026-11-16

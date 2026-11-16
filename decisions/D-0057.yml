@@ -1,0 +1,15 @@
+id: D-0057
+decision: Make the browser and desktop UI look exactly like v1 (spacing, padding, states); fix UI toward v1's exact control, never a new arrangement; one choice is one control.
+reason: Owner 2026-11-08, 2026-11-15 (ADR-0016).
+scope:
+- packages/ui/**
+- packages/shell/**
+- plugins/*/ui/**
+- apps/web/**
+- mobile/web/**
+category: constraint
+status: accepted
+sources:
+- docs/v2-plan.md §3
+author: M0xoo
+date: 2026-11-16

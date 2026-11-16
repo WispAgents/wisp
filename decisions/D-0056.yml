@@ -1,0 +1,10 @@
+id: D-0056
+decision: Show a design mock with screenshots for any redesign and build only after the owner picks.
+reason: Owner 2026-11-15.
+scope: []
+category: convention
+status: accepted
+sources:
+- docs/v2-plan.md §3
+author: M0xoo
+date: 2026-11-16

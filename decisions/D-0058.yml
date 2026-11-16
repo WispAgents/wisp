@@ -1,0 +1,17 @@
+id: D-0058
+decision: Treat performance budgets as CI gates (tools/budgets.ts); a miss blocks the merge or needs an ADR that changes the budget.
+reason: 'Owner 2026-11-07: the fastest dev tool (ADR-0011).'
+scope:
+- crates/**
+- plugins/**
+- packages/**
+- apps/**
+- mobile/**
+- tools/**
+- spikes/**
+category: constraint
+status: accepted
+sources:
+- docs/v2-plan.md §3
+author: M0xoo
+date: 2026-11-16

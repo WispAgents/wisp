@@ -1,0 +1,15 @@
+id: D-0047
+decision: Never let control text wrap; bars collapse labels to icons, then into More, by priority.
+reason: Owner 2026-11-07 (ADR-0012).
+scope:
+- packages/ui/**
+- packages/shell/**
+- plugins/*/ui/**
+- apps/web/**
+- mobile/web/**
+category: constraint
+status: accepted
+sources:
+- docs/v2-plan.md §3
+author: M0xoo
+date: 2026-11-16

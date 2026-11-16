@@ -1,0 +1,10 @@
+id: D-0051
+decision: Coders run only the tests they write; full suites, e2e and UI gates run in PR CI and one batched pass.
+reason: Owner 2026-11-09.
+scope: []
+category: convention
+status: accepted
+sources:
+- docs/v2-plan.md §3
+author: M0xoo
+date: 2026-11-16

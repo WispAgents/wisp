@@ -1,0 +1,17 @@
+id: D-0049
+decision: Keep every v1 feature and UI detail; drop one only by an owner decision or ADR (docs/v1-features.md is the inventory).
+reason: 'Owner 2026-11-10: v1 ui and features are amazing, don''t lose any.'
+scope:
+- crates/**
+- plugins/**
+- packages/**
+- apps/**
+- mobile/**
+- tools/**
+- spikes/**
+category: constraint
+status: accepted
+sources:
+- docs/v2-plan.md §3
+author: M0xoo
+date: 2026-11-16

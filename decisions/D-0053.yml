@@ -1,0 +1,10 @@
+id: D-0053
+decision: Fix a flaky test at its cause, never with a retry or a longer timeout.
+reason: AGENTS.md; owner's standing rule.
+scope: []
+category: constraint
+status: accepted
+sources:
+- docs/v2-plan.md §3
+author: M0xoo
+date: 2026-11-16

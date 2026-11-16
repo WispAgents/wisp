@@ -1,0 +1,15 @@
+id: D-0064
+decision: Say 'This computer' (or the OS's name when known), never a fixed 'This Mac'.
+reason: Owner 2026-11-08.
+scope:
+- packages/ui/**
+- packages/shell/**
+- plugins/*/ui/**
+- apps/web/**
+- mobile/web/**
+category: convention
+status: accepted
+sources:
+- docs/v2-plan.md §3
+author: M0xoo
+date: 2026-11-16

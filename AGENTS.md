@@ -176,7 +176,8 @@ Two tools keep agents in line with what was already decided:
   decision's check is refused. Don't edit the records: propose with
   `decisions add --propose "..." --reason "..." --scope <glob>`, or `decisions supersede D-NNNN ...`
   to change one; a person accepts with `decisions review`. The v1 rules were imported as D-0001 to
-  D-0046 (scoped to v1's files); v2's owner decisions live in `docs/v2-plan.md` §3 until they are recorded here too.
+  D-0046 (scoped to v1's files); v2's owner decisions are D-0047 onward (D-0055 supersedes D-0043), with the full dated list
+  in `docs/v2-plan.md` §3.
 - `.corrections/` holds lint rules learned from the corrections people make to agent code
   ([ingrain](https://github.com/WispAgents/ingrain)). It starts empty: `ingrain mine` and
   `ingrain propose` add rules once corrections repeat, and they start in shadow mode.
