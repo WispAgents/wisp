@@ -65,9 +65,14 @@ impl<C> Core<C> {
         }
     }
 
-    /// Past the high-water mark: drop each busy topic's queue and tell the client to resync it.
+    /// Past the high-water mark: drop each busy topic's queue and tell the client to resync it. A topic with pages of
+    /// its snapshot waiting keeps its queue: they go once the socket drains (ADR-0081), as a resync would only ask for
+    /// the same pages again, and again on a link slower than they come.
     fn shed(&mut self, c: &mut Conn<C>) {
         for topic in c.out.busy_topics() {
+            if c.out.has_snapshot(&topic) {
+                continue;
+            }
             let (oldest, any) = c.out.drop_topic(&topic, true);
             let Some(sub) = c.subs.get_mut(&topic) else {
                 continue;

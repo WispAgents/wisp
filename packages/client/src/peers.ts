@@ -170,6 +170,8 @@ export function createPeers(o: PeersOptions): Peers {
         return o.writer.resetPeer(peer);
       case 'snapshot':
         return o.writer.snapshot(peer, out.topic, out.rows);
+      case 'snapshotPage':
+        return o.writer.snapshotPage(peer, out.topic, out.rows);
       case 'entityOps':
         for (const topic of o.writer.applyServer(peer, out.ops)) drifted(p, topic);
         return;

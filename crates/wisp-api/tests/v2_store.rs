@@ -9,8 +9,8 @@ use std::time::Duration;
 
 use support::{Fake, config, json_h, send};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
-use wisp_api::v2::{Driver, Snapshots};
-use wisp_api::v2_store::{Live, StoreSnapshots, TopicReader, TopicSource, feed, live_changes, to_wire};
+use wisp_api::v2::{Driver, PageSink, Snapshots};
+use wisp_api::v2_store::{Live, PagedSource, StoreSnapshots, TopicReader, TopicSource, feed, live_changes, to_wire};
 use wisp_api::{Edge, Hub};
 use wisp_protocol::{Change, PeerInfo, Topic};
 use wisp_store::{Location, ManualClock, Query, Store, row};
@@ -218,4 +218,105 @@ async fn a_live_reader_sends_a_change_as_its_rows_and_a_resume_through_its_delta
     let resumed = snaps.snapshot(&Topic::parse("config").unwrap(), Some(head)).await;
     assert!(!resumed.full);
     assert_eq!(resumed.rows[0].v["value"], "stubbed", "a resume goes through delta");
+}
+
+// ---------- a first look in pages (ADR-0081) ----------
+
+/// Settings paged as wisp.runtime's tasks are on `list`: the `a` values first, then the `b` ones, each by key.
+fn paged(first: u64, page: u64) -> PagedSource {
+    PagedSource {
+        kind: "setting",
+        key: "key",
+        matches: |t| t == "config",
+        queries: |_| vec![Query::new().eq("value", "a").asc("key"), Query::new().eq("value", "b").asc("key")],
+        first,
+        page,
+    }
+}
+
+async fn seven(s: &Store) {
+    for (k, v) in [("k1", "a"), ("k2", "b"), ("k3", "a"), ("k4", "b"), ("k5", "a"), ("k6", "b"), ("k7", "a")] {
+        set(s, k, v).await;
+    }
+}
+
+/// Every page `snapshot_pages` hands over, in order: (seq, ids, more, full).
+async fn pages_of(snaps: &StoreSnapshots, topic: &str, since: Option<u64>) -> Vec<(u64, Vec<String>, bool, bool)> {
+    let got = Arc::new(std::sync::Mutex::new(Vec::new()));
+    let into = got.clone();
+    let sink: PageSink = Box::new(move |r, more| {
+        into.lock().unwrap().push((r.seq, r.rows.iter().map(|x| x.id.clone()).collect(), more, r.full));
+    });
+    snaps.snapshot_pages(&Topic::parse(topic).unwrap(), since, sink).await;
+    got.lock().unwrap().clone()
+}
+
+#[tokio::test]
+async fn a_paged_topic_sends_a_small_first_page_then_the_rest_every_row_once_at_one_seq() {
+    let s = store();
+    seven(&s).await;
+    let snaps = StoreSnapshots::new(s.clone(), Vec::new(), Vec::new()).with_pages(vec![paged(2, 3)]);
+    let pages = pages_of(&snaps, "config", None).await;
+    let ids: Vec<Vec<&str>> = pages.iter().map(|p| p.1.iter().map(String::as_str).collect()).collect();
+    // the queries in order (`a` values, then `b`), a page crossing from one to the next
+    assert_eq!(ids, vec![vec!["k1", "k3"], vec!["k5", "k7", "k2"], vec!["k4", "k6"]]);
+    assert_eq!(pages.iter().map(|p| p.2).collect::<Vec<_>>(), [true, true, false], "more on all but the last");
+    assert!(pages.iter().all(|p| p.0 == snaps.head_seq() && p.3), "every page full, at one seq");
+    // one read of the topic is every page joined
+    let all = snaps.snapshot(&Topic::parse("config").unwrap(), None).await;
+    assert_eq!(all.rows.iter().map(|r| r.id.as_str()).collect::<Vec<_>>(), ["k1", "k3", "k5", "k7", "k2", "k4", "k6"]);
+    assert!(all.full);
+}
+
+#[tokio::test]
+async fn rows_that_end_on_a_page_close_the_snapshot_with_an_empty_last_page_and_a_small_topic_is_one_page() {
+    let s = store();
+    for k in ["k1", "k2", "k3", "k4"] {
+        set(&s, k, "a").await;
+    }
+    let snaps = StoreSnapshots::new(s.clone(), Vec::new(), Vec::new()).with_pages(vec![paged(2, 2)]);
+    let sizes: Vec<(usize, bool)> = pages_of(&snaps, "config", None).await.iter().map(|p| (p.1.len(), p.2)).collect();
+    assert_eq!(sizes, [(2, true), (2, true), (0, false)]);
+    let one = StoreSnapshots::new(s.clone(), Vec::new(), Vec::new()).with_pages(vec![paged(100, 500)]);
+    let sizes: Vec<(usize, bool)> = pages_of(&one, "config", None).await.iter().map(|p| (p.1.len(), p.2)).collect();
+    assert_eq!(sizes, [(4, false)], "fewer rows than the first page: one page, as before");
+}
+
+#[tokio::test]
+async fn a_paged_topic_resumes_from_a_cursor_as_one_delta_of_what_changed() {
+    let s = store();
+    seven(&s).await;
+    let snaps = StoreSnapshots::new(s.clone(), Vec::new(), Vec::new()).with_pages(vec![paged(2, 3)]);
+    let at = snaps.head_seq();
+    set(&s, "k4", "a").await;
+    let pages = pages_of(&snaps, "config", Some(at)).await;
+    assert_eq!(pages.len(), 1);
+    assert_eq!((pages[0].1.clone(), pages[0].2, pages[0].3), (vec!["k4".to_owned()], false, false));
+}
+
+#[tokio::test]
+async fn a_paged_topic_reads_every_row_after_retention_pruned_its_change_feed() {
+    let clock = Arc::new(ManualClock::new(1_000));
+    let s = Store::open(Location::Memory, clock.clone()).unwrap();
+    seven(&s).await;
+    clock.advance(8 * 24 * 60 * 60 * 1000);
+    assert!(s.prune().await.unwrap().changes > 0);
+    assert!(s.changed_since("config", 0).unwrap().is_none(), "the feed no longer holds the topic");
+    let snaps = StoreSnapshots::new(s.clone(), Vec::new(), Vec::new()).with_pages(vec![paged(2, 3)]);
+    let n: usize = pages_of(&snaps, "config", None).await.iter().map(|p| p.1.len()).sum();
+    assert_eq!(n, 7, "a first look is a read of the rows, never a replay of the feed");
+    // a cursor retention dropped: the whole topic in pages, which the client takes in place of its rows
+    let pages = pages_of(&snaps, "config", Some(1)).await;
+    assert_eq!(pages.iter().map(|p| p.1.len()).sum::<usize>(), 7);
+    assert!(pages.iter().all(|p| p.3));
+}
+
+#[tokio::test]
+async fn a_paged_kind_not_defined_yet_reads_one_empty_page_that_closes_the_snapshot() {
+    let s = store();
+    set(&s, "theme", "a").await;
+    let ghost = PagedSource { kind: "not_yet", key: "id", matches: |t| t == "config", queries: |_| vec![Query::new()], first: 2, page: 3 };
+    let snaps = StoreSnapshots::new(s.clone(), Vec::new(), Vec::new()).with_pages(vec![ghost]);
+    let pages = pages_of(&snaps, "config", None).await;
+    assert_eq!(pages.iter().map(|p| (p.1.len(), p.2)).collect::<Vec<_>>(), [(0, false)]);
 }

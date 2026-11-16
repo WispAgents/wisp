@@ -115,6 +115,33 @@ fn snapshot_sources() -> Vec<wisp_api::v2_store::TopicSource> {
         .collect()
 }
 
+/// wisp.runtime's tasks on `list`, read from the session table in pages (ADR-0081): the 100 latest unarchived first
+/// (what the first screen draws, on the `(archived, updated_at)` index), then the rest 500 at a time, the archived
+/// last, all at one seq. A first look is one read, never a replay of every change the list ever had (~54 ms on
+/// 5 000 tasks, and empty once retention pruned the feed); a client with a cursor still resumes from the change feed.
+fn list_pages() -> Vec<wisp_api::v2_store::PagedSource> {
+    #[cfg(feature = "runtime")]
+    {
+        let s = wisp_runtime::schema::SESSION;
+        vec![wisp_api::v2_store::PagedSource {
+            kind: s.kind,
+            key: s.key,
+            matches: |t| t == wisp_runtime_api::TOPIC_LIST,
+            queries: |_| {
+                // ties on `updated_at` (an import) by id, so every page cuts the same order
+                let by = |archived: bool| wisp_store::Query::new().eq("archived", archived).desc("updated_at").desc("id");
+                vec![by(false), by(true)]
+            },
+            first: 100,
+            page: 500,
+        }]
+    }
+    #[cfg(not(feature = "runtime"))]
+    {
+        Vec::new()
+    }
+}
+
 /// wisp.goal's check records on their task's topic (`session:<id>`), read beside runtime's task window, so a check
 /// opened after it ran (Goal checks…) has its record on the first look.
 fn goal_sources() -> Vec<wisp_api::v2_store::TopicSource> {
@@ -242,6 +269,7 @@ pub async fn boot(home: &Path, port: u16, host: Option<&str>) -> Result<Running>
     let readers = snapshot_readers();
     let snaps = wisp_api::v2_store::StoreSnapshots::new(store.clone(), snapshot_sources(), Vec::new())
         .with_readers(readers.clone())
+        .with_pages(list_pages())
         .with_views(views.clone());
     let driver = wisp_api::v2::Driver::start(Arc::new(snaps), backend.clone(), peer(&kernel));
     let feed = wisp_api::v2_store::feed_read(&store, driver.clone(), views, readers.into());

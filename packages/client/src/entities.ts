@@ -46,6 +46,9 @@ export interface EntityWriter {
   applyServer(peer: PeerId, ops: readonly EntityOp[]): Topic[];
   /** a whole topic as of now: its rows replace the ones the topic held */
   snapshot(peer: PeerId, topic: Topic, rows: readonly { e: string; id: string; v: unknown }[]): void;
+  /** a page of a snapshot still coming (ADR-0081): its rows join the topic, none it held is dropped (`snapshot` does
+   *  that once every page is there) */
+  snapshotPage(peer: PeerId, topic: Topic, rows: readonly { e: string; id: string; v: unknown }[]): void;
   /** the peer's cursor moved: acked commands whose effect is now in base stop overlaying it */
   advance(peer: PeerId, cursor: number): void;
   /**
@@ -212,6 +215,15 @@ export function createEntityStore(warn: Warn = () => {}): { reader: EntityReader
     return gone.flatMap((p) => touchedBy(p.ops));
   }
 
+  /** A server row into base, on `topic`. */
+  function putBase(peer: PeerId, topic: Topic, row: { e: string; id: string; v: unknown }): ChangedRow {
+    const key = entityKey(peer, row.id);
+    const r = cell(row.e, key);
+    r.base = row.v;
+    r.topics.add(topic);
+    return { kind: row.e, key };
+  }
+
   const writer: EntityWriter = {
     applyServer(peer, ops) {
       const rows: ChangedRow[] = [];
@@ -227,16 +239,16 @@ export function createEntityStore(warn: Warn = () => {}): { reader: EntityReader
       recomputeAll(rows);
       return [...failed];
     },
+    snapshotPage(peer, topic, rows) {
+      recomputeAll(rows.map((row) => putBase(peer, topic, row)));
+    },
     snapshot(peer, topic, rows) {
       const seen = new Set<EntityKey>();
       const touched: ChangedRow[] = [];
       for (const row of rows) {
-        const key = entityKey(peer, row.id);
-        const r = cell(row.e, key);
-        r.base = row.v;
-        r.topics.add(topic);
-        seen.add(key);
-        touched.push({ kind: row.e, key });
+        const changed = putBase(peer, topic, row);
+        seen.add(changed.key);
+        touched.push(changed);
       }
       for (const [kind, c] of collections) {
         for (const [key, r] of c.rows) {

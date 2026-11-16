@@ -228,6 +228,9 @@ impl<C: Clone> SyncServer<C> {
             return;
         };
         let since = sub.since;
+        // a snapshot in pages goes page by page as each is read (ADR-0081): the first screen draws from the first
+        let paged = a.more || sub.paged;
+        sub.paged = a.more;
         let mut buffered = Vec::new();
         if !a.more {
             sub.state = SubState::Live;
@@ -255,7 +258,11 @@ impl<C: Clone> SyncServer<C> {
             let bytes = op.json().len();
             c.out.push_op(op, seq, bytes);
         }
-        self.core.maybe_flush(c, now);
+        if paged {
+            self.core.flush(c, now);
+        } else {
+            self.core.maybe_flush(c, now);
+        }
     }
 
     fn window_rows(&mut self, id: ConnId, req: String, rows: Vec<wisp_protocol::Row>, done: bool, now: u64) {
@@ -311,6 +318,8 @@ impl<C: Clone> SyncServer<C> {
                 sub.buffer_bytes += bytes;
                 // the host is slow to answer: start the topic over rather than hold changes without end
                 if sub.buffer_bytes > self.core.opts.load_buffer_bytes {
+                    // pages of the snapshot given up on, still queued, would only be started over by the client
+                    c.out.drop_topic(&topic, true);
                     let req = self.core.next_req();
                     Core::<C>::start_request(c.id, &topic, sub, req, &mut self.core.out);
                 }
@@ -342,7 +351,7 @@ impl<C> Core<C> {
         c.out.drop_topic(topic, true);
         // a cursor older than the change log can't be resumed from: take the whole topic
         let from = since.filter(|s| *s >= self.oldest && *s <= self.head);
-        let mut sub = Sub { passive, state: SubState::Waiting, since: from, req: 0, buffer: Vec::new(), buffer_bytes: 0 };
+        let mut sub = Sub { passive, state: SubState::Waiting, since: from, req: 0, buffer: Vec::new(), buffer_bytes: 0, paged: false };
         if c.buffered <= self.low_water() {
             let req = self.next_req();
             Self::start_request(c.id, topic, &mut sub, req, &mut self.out);
@@ -358,6 +367,7 @@ impl<C> Core<C> {
     pub(crate) fn start_request(conn: ConnId, topic: &Topic, sub: &mut Sub, req: u64, out: &mut Vec<Output<C>>) {
         sub.state = SubState::Loading;
         sub.req = req;
+        sub.paged = false;
         sub.buffer.clear();
         sub.buffer_bytes = 0;
         out.push(Output::SnapshotRequest { conn, topic: topic.clone(), since: sub.since, req });

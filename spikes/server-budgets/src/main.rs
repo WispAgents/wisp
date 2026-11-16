@@ -1,8 +1,9 @@
 //! ADR-0011's server budgets against a real `wisp serve` (ADR-0080), on a home seeded with 5 000 tasks:
 //!   cold start  process start → the first 200 from `GET /api/status`, median of 7 restarts   ≤ 150 ms
 //!   idle RSS    the server's resident set once it settles, after a client read the list      ≤ 120 MB
-//!   list        `GET /api/events?fresh=list` → the `list` snapshot's last byte, median of 30  ≤ 5 ms
-//! The list is the UI's first read (packages/sync's hello: `fresh=list`), answered by the server's own snapshot path.
+//!   list        `GET /api/events?fresh=list` → the `list` snapshot's first page, median of 30  ≤ 5 ms
+//! The list is the UI's first read (packages/sync's hello: `fresh=list`), answered by the server's own snapshot path in
+//! pages (ADR-0081): the first is what the first screen draws; the time to the last page (every task) is reported.
 //! The home is seeded through wisp.runtime's schema and `repo::save_session` (the fixture its list bench uses), never
 //! a hand-made database. Fake harness CLIs, a cleared environment, no network. Exits 1 on a miss, 2 when it can't run.
 //!
@@ -284,12 +285,69 @@ impl Chunked {
 }
 
 struct ListRead {
+    /// to the first page's last byte: what the first screen draws (ADR-0081), gated
     took: Duration,
+    /// to the last page's last byte: every task there (search, the counts), reported
+    all: Duration,
+    /// tasks in the first page
+    first: usize,
+    /// distinct tasks over every page
     tasks: usize,
+    pages: usize,
     bytes: usize,
 }
 
-/// The UI's first read: a v2 hello asking for `list` fresh, timed from connect to the snapshot frame's last byte.
+/// The `list` snapshot as its pages arrive (ADR-0081: the first small, then the rest, all at one seq; `more` on all
+/// but the last). A task in two pages, or pages at two seqs, is an error: the client would start over.
+#[derive(Default)]
+struct Pages {
+    first: Option<(Duration, usize)>,
+    seq: Option<u64>,
+    ids: std::collections::HashSet<String>,
+    pages: usize,
+    bytes: usize,
+}
+
+impl Pages {
+    /// One whole SSE frame read `at` after the hello; true once the snapshot's last page is in.
+    fn frame(&mut self, frame: &[u8], at: Duration) -> Res<bool> {
+        if find(frame, b"\"t\":\"snapshot\"").is_none() || find(frame, b"\"topic\":\"list\"").is_none() {
+            return Ok(false);
+        }
+        let data = frame.split(|b| *b == b'\n').find_map(|l| l.strip_prefix(b"data: ")).ok_or("a snapshot frame with no data")?;
+        let msgs: Vec<Value> = serde_json::from_slice(data).map_err(said("the snapshot frame"))?;
+        self.bytes += frame.len();
+        for snap in msgs.iter().filter(|m| m["t"] == "snapshot" && m["topic"] == "list") {
+            let seq = snap["seq"].as_u64().ok_or("a list page with no seq")?;
+            if self.seq.is_some_and(|s| s != seq) {
+                return Err(format!("list pages at seq {} and {seq}: a client would start over", self.seq.unwrap_or(0)));
+            }
+            self.seq = Some(seq);
+            self.pages += 1;
+            let rows = snap["rows"].as_array().map(Vec::as_slice).unwrap_or_default();
+            let mut tasks = 0;
+            for r in rows.iter().filter(|r| r["e"] == "session") {
+                let id = r["id"].as_str().unwrap_or_default().to_owned();
+                if !self.ids.insert(id.clone()) {
+                    return Err(format!("task {id} came in two pages of the list"));
+                }
+                tasks += 1;
+            }
+            self.first.get_or_insert((at, tasks));
+            if snap["more"] != true {
+                return Ok(true);
+            }
+        }
+        Ok(false)
+    }
+
+    fn read(self, all: Duration) -> Res<ListRead> {
+        let (took, first) = self.first.ok_or("no list page")?;
+        Ok(ListRead { took, all, first, tasks: self.ids.len(), pages: self.pages, bytes: self.bytes })
+    }
+}
+
+/// The UI's first read: a v2 hello asking for `list` fresh, timed from connect to each page's last byte.
 fn list_once(port: u16) -> Res<ListRead> {
     let t0 = Instant::now();
     let mut s = TcpStream::connect(addr(port)).map_err(said("connect"))?;
@@ -304,6 +362,7 @@ fn list_once(port: u16) -> Res<ListRead> {
     let mut head_done = false;
     let (mut scan, mut searched) = (0, 0);
     let mut buf = vec![0u8; 256 * 1024];
+    let mut pages = Pages::default();
     loop {
         let got = s.read(&mut buf).map_err(said("read the stream"))?;
         if got == 0 {
@@ -334,20 +393,12 @@ fn list_once(port: u16) -> Res<ListRead> {
         // whole SSE frames: `id`, `event`, `data: [messages]`, a blank line
         // (searched from where the last look stopped: rescanning a 4.5 MB frame on every read would time the bench)
         while let Some(end) = find(&body[searched..], b"\n\n").map(|e| searched + e) {
-            let took = t0.elapsed();
+            let at = t0.elapsed();
             let frame = &body[scan..end];
             (scan, searched) = (end + 2, end + 2);
-            if find(frame, b"\"t\":\"snapshot\"").is_none() || find(frame, b"\"topic\":\"list\"").is_none() {
-                continue;
+            if pages.frame(frame, at)? {
+                return pages.read(at);
             }
-            let data = frame.split(|b| *b == b'\n').find_map(|l| l.strip_prefix(b"data: ")).ok_or("a snapshot frame with no data")?;
-            let msgs: Vec<Value> = serde_json::from_slice(data).map_err(said("the snapshot frame"))?;
-            let snap = msgs.iter().find(|m| m["t"] == "snapshot" && m["topic"] == "list").ok_or("no list snapshot in its frame")?;
-            if snap["more"] == true {
-                return Err("the list snapshot came in pages: time every page".into());
-            }
-            let tasks = snap["rows"].as_array().map_or(0, |r| r.iter().filter(|r| r["e"] == "session").count());
-            return Ok(ListRead { took, tasks, bytes: frame.len() });
         }
         searched = body.len().saturating_sub(1).max(scan);
         if t0.elapsed() > Duration::from_secs(30) {
@@ -397,10 +448,12 @@ fn settle(pid: u32) -> Res<Rss> {
 // ---------- where the list's time goes (reported, not gated) ----------
 
 struct Breakdown {
-    /// `changed_since("list", 0)`: the store read the server's snapshot of `list` makes today (no full-read source)
+    /// `changed_since("list", 0)`: what a first look replayed before `list` had a paged source (ADR-0081)
     feed: Duration,
-    /// the same tasks in one query of the session table, as JSON (what a `list` source would read)
+    /// every task in one query of the session table, as JSON
     query: Duration,
+    /// the first page's query (the 100 latest unarchived, on the `(archived, updated_at)` index), as JSON
+    page: Duration,
     /// the change feed's rows encoded as JSON
     encode: Duration,
     rows: usize,
@@ -429,8 +482,10 @@ fn breakdown(home: &Path) -> Res<Breakdown> {
     let d = store.changed_since("list", 0).map_err(said("read the change feed"))?.ok_or("the change feed was pruned")?;
     let encode = median(&mut || serde_json::to_vec(&d.rows).map(drop).map_err(said("encode")))?;
     let query = median(&mut || store.query_json("session", &Query::new()).map(drop).map_err(said("query the sessions")))?;
+    let first = Query::new().eq("archived", false).desc("updated_at").desc("id").limit(100);
+    let page = median(&mut || store.query_json("session", &first).map(drop).map_err(said("query the first page")))?;
     store.close();
-    Ok(Breakdown { feed, query, encode, rows })
+    Ok(Breakdown { feed, query, page, encode, rows })
 }
 
 // ---------- the report ----------
@@ -459,7 +514,13 @@ struct Report {
     cold: Vec<Duration>,
     rss_before: Rss,
     rss: Rss,
+    /// to the first page (gated)
     list: Vec<Duration>,
+    /// to the last page (reported)
+    list_all: Vec<Duration>,
+    /// tasks in the first page, pages in all
+    list_first: usize,
+    list_pages: usize,
     list_bytes: usize,
     why: Option<Breakdown>,
 }
@@ -491,6 +552,7 @@ impl Report {
         let mark = |ok: bool| if ok { "✅" } else { "❌" };
         let (c0, c50, c95, c100) = spread(&self.cold);
         let (l0, l50, l95, l100) = spread(&self.list);
+        let (a0, a50, a95, a100) = spread(&self.list_all);
         let rss_ok = mb(self.rss.kb) <= IDLE_RSS_MB && self.rss.settled;
         [
             format!("### Server budgets (ADR-0011), `wisp serve` on {TASKS} tasks"),
@@ -510,10 +572,16 @@ impl Report {
                 mark(rss_ok)
             ),
             format!(
-                "| task list (`fresh=list` snapshot) | {l50:.2} ms median | {LIST_MS} ms | {} ({l0:.2} · {l95:.2} · {l100:.2} ms), {:.0} KB a read | {} |",
+                "| task list (`fresh=list`, its first page: {} tasks) | {l50:.2} ms median | {LIST_MS} ms | {} ({l0:.2} · {l95:.2} · {l100:.2} ms) | {} |",
+                self.list_first,
                 self.list.len(),
-                self.list_bytes as f64 / 1024.0,
                 mark(l50 <= LIST_MS)
+            ),
+            String::new(),
+            format!(
+                "Every task (the snapshot's last page, not gated): {a50:.2} ms median ({a0:.2} · {a95:.2} · {a100:.2} ms), {} pages, {:.0} KB a read.",
+                self.list_pages,
+                self.list_bytes as f64 / 1024.0,
             ),
             String::new(),
             format!(
@@ -524,12 +592,14 @@ impl Report {
             String::new(),
             self.why.as_ref().map_or_else(String::new, |b| {
                 format!(
-                    "Where the list's time goes (in process, medians of 10): the change feed read `changed_since(\"list\", 0)` {:.1} ms for {} rows, \
-                     their JSON {:.1} ms; one query of the session table as JSON {:.1} ms.\n",
+                    "Where the list's time goes (in process, medians of 10): the first page's query {:.2} ms; every task in one query \
+                     of the session table as JSON {:.1} ms; the change-feed replay a first look made before ADR-0081 \
+                     (`changed_since(\"list\", 0)`) {:.1} ms for {} rows, their JSON {:.1} ms.\n",
+                    ms(b.page),
+                    ms(b.query),
                     ms(b.feed),
                     b.rows,
-                    ms(b.encode),
-                    ms(b.query)
+                    ms(b.encode)
                 )
             }),
         ]
@@ -587,15 +657,29 @@ fn run(o: &Opts, dir: &Path) -> Res<Report> {
     for _ in 0..LIST_WARMUP {
         list_once(s.port)?;
     }
-    let mut list = Vec::new();
+    let (mut list, mut list_all) = (Vec::new(), Vec::new());
     for _ in 0..LIST_RUNS {
-        list.push(list_once(s.port)?.took);
+        let r = list_once(s.port)?;
+        list.push(r.took);
+        list_all.push(r.all);
     }
-    println!("first list read (cold): {:.2} ms", ms(first.took));
+    println!("first list read (cold): first page {:.2} ms, every task {:.2} ms", ms(first.took), ms(first.all));
     let rss = settle(pid)?;
     drop(s);
     let why = breakdown(&b.home()).inspect_err(|e| eprintln!("server budgets: no breakdown: {e}")).ok();
-    Ok(Report { seeded, first_boot, cold, rss_before, rss, list, list_bytes: first.bytes, why })
+    Ok(Report {
+        seeded,
+        first_boot,
+        cold,
+        rss_before,
+        rss,
+        list,
+        list_all,
+        list_first: first.first,
+        list_pages: first.pages,
+        list_bytes: first.bytes,
+        why,
+    })
 }
 
 fn main() {
@@ -649,6 +733,9 @@ mod tests {
             rss_before: rss(rss_mb * 1024),
             rss: rss(rss_mb * 1024),
             list: vec![Duration::from_micros(list_us); 3],
+            list_all: vec![Duration::from_micros(list_us * 10); 3],
+            list_first: 100,
+            list_pages: 6,
             list_bytes: 0,
             why: None,
         }
@@ -676,6 +763,37 @@ mod tests {
     fn the_last_chunk_before_the_snapshot_is_an_error_not_a_hang() {
         let mut out = Vec::new();
         assert!(Chunked::default().feed(b"0\r\n\r\n", &mut out).is_err());
+    }
+
+    fn page(seq: u64, ids: &[&str], more: bool) -> Vec<u8> {
+        let rows: Vec<Value> = ids.iter().map(|id| serde_json::json!({ "e": "session", "id": id, "v": {} })).collect();
+        let mut m = serde_json::json!({ "t": "snapshot", "topic": "list", "seq": seq, "rows": rows });
+        if more {
+            m["more"] = Value::Bool(true);
+        }
+        format!("id: {seq}\nevent: sync\ndata: {}", Value::Array(vec![m])).into_bytes()
+    }
+
+    #[test]
+    fn the_list_is_timed_at_its_first_page_and_whole_at_its_last() {
+        let mut p = Pages::default();
+        let ms = Duration::from_millis;
+        assert!(!p.frame(b"id: 1\nevent: sync\ndata: [{\"t\":\"welcome\"}]", ms(1)).unwrap());
+        assert!(!p.frame(&page(9, &["a", "b"], true), ms(2)).unwrap());
+        assert!(!p.frame(&page(9, &["c"], true), ms(5)).unwrap());
+        assert!(p.frame(&page(9, &[], false), ms(7)).unwrap());
+        let r = p.read(ms(7)).unwrap();
+        assert_eq!((r.took, r.all, r.first, r.tasks, r.pages), (ms(2), ms(7), 2, 3, 3));
+    }
+
+    #[test]
+    fn a_task_in_two_pages_or_pages_at_two_seqs_is_an_error() {
+        let mut p = Pages::default();
+        p.frame(&page(9, &["a"], true), Duration::ZERO).unwrap();
+        assert!(p.frame(&page(9, &["a"], false), Duration::ZERO).unwrap_err().contains("two pages"));
+        let mut p = Pages::default();
+        p.frame(&page(9, &["a"], true), Duration::ZERO).unwrap();
+        assert!(p.frame(&page(10, &["b"], false), Duration::ZERO).unwrap_err().contains("seq 9 and 10"));
     }
 
     #[test]

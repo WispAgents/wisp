@@ -72,6 +72,22 @@ test('a snapshot replaces its topic: rows it no longer has go, rows another topi
   assert.deepEqual([...reader.keys('session')()].sort(), [key(A, 's2'), key(A, 's3')]);
 });
 
+test('a snapshot in pages: each page shows its rows at once and drops none; the whole snapshot then drops what no page had (ADR-0081)', () => {
+  const { reader, writer } = createEntityStore();
+  writer.snapshot(A, 'list', [{ e: 'session', id: 'old', v: { title: 'from the cache' } }, { e: 'session', id: 's2', v: { title: 'stale' } }]);
+  const seen: number[] = [];
+  const stop = effect(() => void seen.push(reader.keys('session')().length));
+  writer.snapshotPage(A, 'list', [{ e: 'session', id: 's1', v: { title: 'newest' } }]);
+  assert.deepEqual(reader.peek('session', key(A, 's1')), { title: 'newest' }, 'the first page draws before the rest');
+  assert.deepEqual(reader.peek('session', key(A, 'old')), { title: 'from the cache' }, 'a page drops nothing');
+  writer.snapshotPage(A, 'list', [{ e: 'session', id: 's2', v: { title: 'fresh' } }]);
+  writer.snapshot(A, 'list', [{ e: 'session', id: 's1', v: { title: 'newest' } }, { e: 'session', id: 's2', v: { title: 'fresh' } }, { e: 'session', id: 's3', v: { title: 'last page' } }]);
+  assert.deepEqual(reader.keys('session')().map(String).sort(), [key(A, 's1'), key(A, 's2'), key(A, 's3')].map(String).sort());
+  assert.equal(reader.peek('session', key(A, 'old')), undefined, 'gone once every page is in');
+  assert.deepEqual(seen, [2, 3, 3], 'rows join as pages land; the count never dips mid-snapshot');
+  stop();
+});
+
 test('resetPeer drops one peer\'s base and keeps the other peers and the pending overlay', () => {
   const { reader, writer } = createEntityStore();
   writer.applyServer(A, [{ topic: 'list', e: 'session', id: 's1', op: 'upsert', v: 1 }]);

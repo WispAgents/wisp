@@ -24,7 +24,7 @@ export const SERVER_BUDGETS = {
   coldStartMs: 150,
   /** the server's resident set once settled, after a client read the list */
   idleRssMb: 120,
-  /** the UI's first read (`GET /api/events?fresh=list` → the list snapshot), median of 30 */
+  /** the UI's first read (`GET /api/events?fresh=list` → the list snapshot's first page, ADR-0081), median of 30 */
   listMs: 5,
 } as const;
 

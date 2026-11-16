@@ -11,7 +11,7 @@ use tokio::sync::mpsc;
 use wisp_kernel::{Caller, Result, WireError};
 use wisp_sync::{CommandOutcome, ConnId, Input, Output, SnapshotAnswer, SyncServer};
 
-use super::{Msg, Snapshots, now_ms};
+use super::{Msg, Read, Snapshots, now_ms};
 use crate::backend::Backend;
 use crate::sync::{Idempotency, command_answer};
 
@@ -59,14 +59,32 @@ impl Actor {
                 Some(Msg::Post { caller, client, body, reply }) => {
                     let _ = reply.send(self.post(&caller, &client, body));
                 }
-                Some(Msg::In(input)) => self.feed(input),
+                Some(Msg::In(input)) => {
+                    // a snapshot page meets the socket's backlog as it is now: the last report was taken just after
+                    // the previous page was written, so it still counts that page, and two pages in a row would read
+                    // as past the high-water mark and drop the topic for a resync (ADR-0081)
+                    if let Input::SnapshotRows(a) = &input
+                        && let Some(s) = self.conns.get(&a.conn)
+                    {
+                        self.feed(Input::Drained { conn: a.conn, buffered_bytes: s.queued.load(Ordering::Relaxed) });
+                    }
+                    self.feed(input);
+                }
                 Some(Msg::Gone(conn)) => {
                     if self.conns.contains_key(&conn) {
                         self.close(conn);
                         self.feed(Input::Close { conn });
                     }
                 }
-                None => self.feed(Input::Tick),
+                None => {
+                    // the machine ticks with each socket's backlog as it is now: pages held past the high-water mark
+                    // go once it drained, though nothing was written since the last report (ADR-0081)
+                    let now: Vec<(ConnId, usize)> = self.conns.iter().map(|(c, s)| (*c, s.queued.load(Ordering::Relaxed))).collect();
+                    for (conn, buffered_bytes) in now {
+                        self.feed(Input::Drained { conn, buffered_bytes });
+                    }
+                    self.feed(Input::Tick);
+                }
             }
             self.reap();
         }
@@ -146,20 +164,22 @@ impl Actor {
             Output::Close { conn, .. } => self.close(conn),
             Output::SnapshotRequest { conn, topic, since, req } => {
                 let (snaps, tx) = (self.snaps.clone(), self.tx.clone());
-                tokio::spawn(async move {
-                    let r = snaps.snapshot(&topic, since).await;
+                // each page reaches the machine as it is read (ADR-0081), one answer per page
+                let at = topic.clone();
+                let page = Box::new(move |r: Read, more: bool| {
                     let a = SnapshotAnswer {
                         conn,
-                        topic,
+                        topic: at.clone(),
                         req,
                         seq: r.seq,
                         rows: r.rows,
                         full: r.full || since.is_none(),
                         deleted: r.deleted,
-                        more: false,
+                        more,
                     };
                     let _ = tx.send(Msg::In(Input::SnapshotRows(a)));
                 });
+                tokio::spawn(async move { snaps.snapshot_pages(&topic, since, page).await });
             }
             Output::WindowRequest { conn, req, topic, before_seq, limit } => {
                 let (snaps, tx) = (self.snaps.clone(), self.tx.clone());

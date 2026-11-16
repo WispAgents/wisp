@@ -28,6 +28,8 @@ pub(crate) struct Sub {
     /// live changes that came while loading, sent after the snapshot when newer than it
     pub buffer: Vec<(u64, Arc<SharedOp>)>,
     pub buffer_bytes: usize,
+    /// a page of its snapshot came (`more`): the rest go out as they come, not at the flush rate (ADR-0081)
+    pub paged: bool,
 }
 
 #[derive(Debug)]

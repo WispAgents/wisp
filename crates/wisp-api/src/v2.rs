@@ -29,12 +29,22 @@ pub struct Read {
     pub deleted: Vec<Gone>,
 }
 
+/// Where [`Snapshots::snapshot_pages`] hands each page: `(rows, more)`.
+pub type PageSink = Box<dyn FnMut(Read, bool) + Send + 'static>;
+
 /// What the stream reads (wisp-store and each plugin's topic, wired by the binary).
 pub trait Snapshots: Send + Sync + 'static {
     fn epoch(&self) -> String;
     fn head_seq(&self) -> u64;
     fn oldest_seq(&self) -> u64;
     fn snapshot(&self, topic: &Topic, since: Option<u64>) -> BoxFuture<'static, Read>;
+    /// [`Snapshots::snapshot`] as pages, each handed to `page` as it is read with `more` on all but the last, every page
+    /// at the same seq (ADR-0081: the task list's first look goes first page first, so the first screen draws before
+    /// the rest is read). Default: one page. Additive (2026-11-16).
+    fn snapshot_pages(&self, topic: &Topic, since: Option<u64>, mut page: PageSink) -> BoxFuture<'static, ()> {
+        let read = self.snapshot(topic, since);
+        Box::pin(async move { page(read.await, false) })
+    }
     /// events before `before_seq`, newest first: (rows, done)
     fn window(&self, topic: &Topic, before_seq: u64, limit: u32) -> BoxFuture<'static, (Vec<Row>, bool)>;
 }

@@ -128,6 +128,11 @@ impl Outbox {
         self.topics.entry(topic.clone()).or_default().front.push_back(front);
     }
 
+    /// Whether pages of the topic's snapshot wait to go.
+    pub fn has_snapshot(&self, topic: &Topic) -> bool {
+        self.topics.get(topic).is_some_and(|q| q.front.iter().any(|f| f.kind == FrontKind::Snapshot))
+    }
+
     /// Drops the topic's queued ops and snapshot pages; window rows stay when `keep_rows` (someone
     /// asked for them). Returns the oldest dropped seq, and whether anything but rows was dropped.
     pub fn drop_topic(&mut self, topic: &Topic, keep_rows: bool) -> (Option<u64>, bool) {

@@ -6,6 +6,8 @@
 //! - A full snapshot is `Reader::query_json` on each kind a [`TopicSource`] names for the topic (the
 //!   JSON text the store wrote, parsed once). A topic no source names is read from the change feed
 //!   (`changed_since(topic, 0)`) while it still holds every change; past that it reads empty.
+//! - A [`PagedSource`]'s topic is read the same way, in pages (ADR-0081): the first page small (what the first screen
+//!   draws), sent before the rest is read; every page from one read transaction, so all are at one seq.
 //! - [`feed`] hands every committed transaction's change rows to `Driver::committed`, one wire change
 //!   per topic a row is on, from the store's writer thread (a channel send: it never blocks).
 //!
@@ -20,7 +22,12 @@ use wisp_store::{ChangeOp, Delta, Query, Reader, Store, Subscription};
 use wisp_sync::{ChangeRow, Gone};
 
 use crate::egress::{self, NoViews, ViewSource};
-use crate::v2::{Driver, Read, Snapshots};
+use crate::v2::{Driver, PageSink, Read, Snapshots};
+
+#[path = "v2_pages.rs"]
+mod pages;
+pub use pages::PagedSource;
+use pages::{TopicReads, resume};
 
 /// The kinds a topic's full snapshot reads: `matches` picks the topics, `query` the rows (the topic
 /// is passed in, so `session:<id>` can filter by its id).
@@ -100,6 +107,7 @@ pub struct StoreSnapshots {
     store: Store,
     sources: Arc<[TopicSource]>,
     readers: Arc<[TopicReader]>,
+    pages: Arc<[PagedSource]>,
     windows: Arc<[WindowSource]>,
     head: Arc<AtomicU64>,
     _heard: Arc<Subscription>,
@@ -127,6 +135,7 @@ impl StoreSnapshots {
             store,
             sources: sources.into(),
             readers: Arc::new([]),
+            pages: Arc::new([]),
             windows: windows.into(),
             head,
             _heard: Arc::new(heard),
@@ -138,6 +147,14 @@ impl StoreSnapshots {
     #[must_use]
     pub fn with_readers(mut self, readers: Vec<TopicReader>) -> Self {
         self.readers = readers.into();
+        self
+    }
+
+    /// Topics whose full snapshot goes in pages (the first that matches; before `sources` and `readers`). Additive
+    /// (2026-11-16).
+    #[must_use]
+    pub fn with_pages(mut self, pages: Vec<PagedSource>) -> Self {
+        self.pages = pages.into();
         self
     }
 
@@ -203,23 +220,16 @@ fn full_rows(r: &Reader<'_>, sources: &[TopicSource], topic: &str) -> wisp_store
     Ok(Some(out))
 }
 
-fn read_topic(
-    r: &Reader<'_>,
-    sources: &[TopicSource],
-    readers: &[TopicReader],
-    topic: &str,
-    since: Option<u64>,
-) -> wisp_store::Result<Read> {
+fn read_topic(r: &Reader<'_>, s: TopicReads<'_>, topic: &str, since: Option<u64>) -> wisp_store::Result<Read> {
+    let TopicReads { sources, readers, pages } = s;
     let key_of = |e: &str| sources.iter().find(|s| s.kind == e).map(|s| s.key);
-    if let Some(since) = since
-        && let Some(mut d) = r.changed_since(topic, i64::try_from(since).unwrap_or(i64::MAX))?
-    {
-        if let Some(live) = readers.iter().find(|x| (x.matches)(topic)).and_then(|x| x.live) {
-            (live.delta)(r, topic, &mut d.rows)?;
-        }
-        return Ok(delta_read(d, false, key_of));
+    if let Some(read) = resume(r, s, topic, since)? {
+        return Ok(read);
     }
     // a first look, or a cursor retention already dropped: the whole topic
+    if let Some(p) = pages.iter().find(|x| (x.matches)(topic)) {
+        return pages::read_joined(r, s, p, topic);
+    }
     let head = r.head_seq()?;
     if let Some(reader) = readers.iter().find(|x| (x.matches)(topic)) {
         let mut rows: Vec<Row> = (reader.read)(r, topic)?.into_iter().map(|(e, id, v)| Row { e, id, v: Value::Object(v) }).collect();
@@ -252,16 +262,23 @@ impl Snapshots for StoreSnapshots {
     }
     fn snapshot(&self, topic: &Topic, since: Option<u64>) -> BoxFuture<'static, Read> {
         let (store, sources, readers, topic) = (self.store.clone(), self.sources.clone(), self.readers.clone(), topic.as_str().to_owned());
-        let views = self.views.clone();
+        let (pages, views) = (self.pages.clone(), self.views.clone());
         Box::pin(async move {
             let t = topic.clone();
-            let mut read = store.read_async(move |r| read_topic(r, &sources, &readers, &t, since)).await.unwrap_or_else(|e| {
+            let read = move |r: &Reader<'_>| read_topic(r, TopicReads { sources: &sources, readers: &readers, pages: &pages }, &t, since);
+            let mut read = store.read_async(read).await.unwrap_or_else(|e| {
                 tracing::warn!(topic, "snapshot failed: {e}");
                 Read { full: since.is_none(), ..Read::default() }
             });
             egress::rows(&views.views(), &mut read.rows);
             read
         })
+    }
+    /// A [`PagedSource`]'s first look page by page: the store's reader hands each page over as it is read, and each
+    /// leaves through the views here, so the first goes out while the rest is still being read. A read that fails
+    /// partway closes the snapshot with the pages already sent (as a failed read answers empty), and says so.
+    fn snapshot_pages(&self, topic: &Topic, since: Option<u64>, page: PageSink) -> BoxFuture<'static, ()> {
+        pages::snapshot_pages(self, topic, since, page)
     }
     fn window(&self, topic: &Topic, before_seq: u64, limit: u32) -> BoxFuture<'static, (Vec<Row>, bool)> {
         let t = topic.as_str();

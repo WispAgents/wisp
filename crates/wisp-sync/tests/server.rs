@@ -381,10 +381,77 @@ fn snapshot_pages_go_in_order_and_the_cursor_holds_for_a_resumed_topic_until_the
     };
     let p1 = server.handle(Input::SnapshotRows(page(1, true)), 100);
     assert_eq!(sends(&p1)[0].2, Some(3), "not past the since until the whole topic is there");
-    assert!(server.handle(Input::SnapshotRows(page(2, false)), 100).is_empty(), "within the flush interval: it waits for the tick");
-    let p2 = server.handle(Input::Tick, 150);
+    // ADR-0081: a page goes as it comes, not at the flush rate (the first screen draws from the first)
+    let p2 = server.handle(Input::SnapshotRows(page(2, false)), 100);
     assert_eq!(msgs(&p2).iter().map(|m| m.get("more").is_some()).collect::<Vec<_>>(), vec![false]);
     assert_eq!(sends(&p2)[0].2, Some(5));
+}
+
+#[test]
+fn snapshot_pages_past_the_high_water_mark_wait_for_the_socket_instead_of_a_resync() {
+    let store = FakeStore::default();
+    let mut server = make_server(&store, |o| {
+        o.head_seq = 5;
+        o.high_water_bytes = 100;
+    });
+    server.handle(Input::Connect { conn: C1, caller: "me".into(), query: q(&[("fresh", "list")]) }, 0);
+    server.handle(Input::Drained { conn: C1, buffered_bytes: 0 }, 50); // the socket took the welcome
+    let page = |n: u32, more: bool| SnapshotAnswer {
+        conn: C1,
+        topic: topic("list"),
+        req: 1,
+        seq: 5,
+        rows: vec![wisp_protocol::Row { e: "x".into(), id: n.to_string(), v: json!("a page bigger than the high-water mark") }],
+        full: true,
+        deleted: vec![],
+        more,
+    };
+    let p1 = server.handle(Input::SnapshotRows(page(1, true)), 100);
+    assert_eq!(ts(&msgs(&p1)), vec!["snapshot"]);
+    // the socket hasn't taken the first page yet: the second waits, and nothing is dropped for a resync
+    assert!(server.handle(Input::Drained { conn: C1, buffered_bytes: 500 }, 101).is_empty());
+    let held = server.handle(Input::SnapshotRows(page(2, true)), 102);
+    assert!(sends(&held).is_empty(), "held past the mark: {:?}", ts(&msgs(&held)));
+    assert!(server.handle(Input::Tick, 160).is_empty(), "still past the mark at the tick");
+    let p3 = server.handle(Input::SnapshotRows(page(3, false)), 170);
+    assert!(sends(&p3).is_empty());
+    // drained: the held pages go, in order, the last one closing the snapshot; no resync was ever sent
+    let out = server.handle(Input::Drained { conn: C1, buffered_bytes: 0 }, 220);
+    let mut all = msgs(&out);
+    all.extend(msgs(&server.handle(Input::Drained { conn: C1, buffered_bytes: 0 }, 280)));
+    assert_eq!(ts(&all), vec!["snapshot", "snapshot"]);
+    assert_eq!(all.iter().map(|m| m["rows"][0]["id"].as_str().unwrap_or("").to_owned()).collect::<Vec<_>>(), vec!["2", "3"]);
+    assert_eq!(all.iter().map(|m| m.get("more").is_some()).collect::<Vec<_>>(), vec![true, false]);
+}
+
+#[test]
+fn a_snapshot_started_over_for_its_load_buffer_drops_its_old_pages_still_queued() {
+    let mut store = FakeStore::default();
+    let mut server = make_server(&store, |o| {
+        o.head_seq = 5;
+        o.high_water_bytes = 100;
+        o.load_buffer_bytes = 10;
+    });
+    server.handle(Input::Connect { conn: C1, caller: "me".into(), query: q(&[("fresh", "list")]) }, 0);
+    server.handle(Input::Drained { conn: C1, buffered_bytes: 0 }, 50);
+    let page = |n: u32| SnapshotAnswer {
+        conn: C1,
+        topic: topic("list"),
+        req: 1,
+        seq: 5,
+        rows: vec![wisp_protocol::Row { e: "x".into(), id: n.to_string(), v: json!("a page bigger than the high-water mark") }],
+        full: true,
+        deleted: vec![],
+        more: true,
+    };
+    server.handle(Input::SnapshotRows(page(1)), 100);
+    server.handle(Input::Drained { conn: C1, buffered_bytes: 500 }, 101);
+    assert!(sends(&server.handle(Input::SnapshotRows(page(2)), 102)).is_empty(), "held past the mark");
+    // changes past the load buffer while it loads: the topic is asked again, and the held page of the old read goes
+    let rows = store.commit(&[ch("list", "session", "s1", Op::Upsert(json!({"title": "a title longer than ten bytes"})))], 110);
+    let out = server.handle(Input::Committed { rows }, 110);
+    assert_eq!(requests(&out), vec![("list".to_owned(), None)]);
+    assert!(sends(&server.handle(Input::Drained { conn: C1, buffered_bytes: 0 }, 200)).is_empty(), "nothing of the old read is sent");
 }
 
 #[test]

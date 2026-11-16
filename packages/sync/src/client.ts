@@ -263,10 +263,18 @@ export class SyncClient {
       case 'snapshot': {
         const s = this.#topics.get(m.topic);
         if (s === undefined) return;
-        if (s.pages === null || s.pages.seq !== m.seq) s.pages = { seq: m.seq, rows: [] };
-        s.pages.rows.push(...m.rows);
-        if (m.more === true) return;
-        this.#out.push({ kind: 'snapshot', peer: this.peer, topic: m.topic, rows: s.pages.rows });
+        const held = s.pages;
+        const pages: { seq: number; rows: Row[] } = held !== null && held.seq === m.seq ? held : { seq: m.seq, rows: [] };
+        const first = pages !== held;
+        s.pages = pages;
+        pages.rows.push(...m.rows);
+        if (m.more === true) {
+          // the first page draws the first screen at once (ADR-0081); the others wait for the whole snapshot, so the
+          // list repaints twice, not once a page
+          if (first) this.#out.push({ kind: 'snapshotPage', peer: this.peer, topic: m.topic, rows: m.rows });
+          return;
+        }
+        this.#out.push({ kind: 'snapshot', peer: this.peer, topic: m.topic, rows: pages.rows });
         s.pages = null;
         s.synced = true;
         return;

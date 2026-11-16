@@ -115,6 +115,10 @@ export type ClientOutput =
   | { kind: 'send'; message: ClientMessage }
   | { kind: 'reset'; peer: string }
   | { kind: 'snapshot'; peer: string; topic: Topic; rows: Row[] }
+  /** the first page of a snapshot still coming (`more`, ADR-0081): its rows join the topic now, so the first screen
+   *  draws from it; the other pages wait, and nothing is dropped until `snapshot` brings the whole topic (every page,
+   *  this one included) */
+  | { kind: 'snapshotPage'; peer: string; topic: Topic; rows: Row[] }
   | { kind: 'entityOps'; peer: string; ops: EntityOp[] }
   | { kind: 'rows'; peer: string; req: string; rows: Row[]; done: boolean }
   | { kind: 'ack'; mid: string; seq: number; result?: unknown }

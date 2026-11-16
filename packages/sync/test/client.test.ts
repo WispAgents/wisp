@@ -89,15 +89,27 @@ test('version window: outside it, the side that is older must update', () => {
   assert.deepEqual(live(newClient({ protoMin: 2, protoMax: 4 })).filter((o) => o.kind === 'state'), [{ kind: 'state', state: 'live' }]);
 });
 
-test('snapshot pages are joined; a page at another seq starts over', () => {
+test('snapshot pages: the first joins the topic as it lands, the last brings every page as the snapshot; a page at another seq starts over (ADR-0081)', () => {
   const c = newClient();
   live(c);
   c.handle({ kind: 'subscribe', topic: 'list' }, 0);
   const page = (seq: number, id: string, more: boolean): ServerMessage => ({ t: 'snapshot', topic: 'list', seq, rows: [{ e: 's', id, v: id }], ...(more && { more: true }) });
-  assert.deepEqual(c.handle({ kind: 'frame', id: 10, messages: [page(10, 'a', true)] }, 0), []);
-  // the server started the topic over at a later seq: the old pages are worthless
-  const outs = c.handle({ kind: 'frame', id: 12, messages: [page(12, 'b', true), page(12, 'c', false)] }, 0);
-  assert.deepEqual(outs, [{ kind: 'snapshot', peer: 'laptop', topic: 'list', rows: [{ e: 's', id: 'b', v: 'b' }, { e: 's', id: 'c', v: 'c' }] }]);
+  // the first screen draws from the first page, before the rest is read
+  assert.deepEqual(c.handle({ kind: 'frame', id: 10, messages: [page(10, 'a', true)] }, 0), [{ kind: 'snapshotPage', peer: 'laptop', topic: 'list', rows: [{ e: 's', id: 'a', v: 'a' }] }]);
+  // the server started the topic over at a later seq: the old pages are worthless, and the snapshot replaces what they showed;
+  // only a snapshot's first page shows early (one repaint for it, one for the whole topic, not one a page)
+  const outs = c.handle({ kind: 'frame', id: 12, messages: [page(12, 'b', true), page(12, 'c', true), page(12, 'd', false)] }, 0);
+  assert.deepEqual(outs, [
+    { kind: 'snapshotPage', peer: 'laptop', topic: 'list', rows: [{ e: 's', id: 'b', v: 'b' }] },
+    { kind: 'snapshot', peer: 'laptop', topic: 'list', rows: [{ e: 's', id: 'b', v: 'b' }, { e: 's', id: 'c', v: 'c' }, { e: 's', id: 'd', v: 'd' }] },
+  ]);
+  // ops wait for the whole snapshot: a page doesn't make the topic synced
+  const op = { topic: 'list' as const, e: 's', id: 'x', op: 'patch' as const, ops: [] };
+  const d = newClient();
+  live(d);
+  d.handle({ kind: 'subscribe', topic: 'list' }, 0);
+  d.handle({ kind: 'frame', id: 10, messages: [page(10, 'a', true)] }, 0);
+  assert.deepEqual(d.handle({ kind: 'frame', id: 11, messages: [{ t: 'patch', seq: 11, ops: [op] }] }, 0), []);
 });
 
 test('ops for a topic still waiting for its snapshot are ignored', () => {
