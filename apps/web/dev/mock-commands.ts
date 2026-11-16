@@ -821,7 +821,7 @@ export const COMMANDS: Record<string, CommandFn> = {
     const id = typeof m['id'] === 'string' ? m['id'] : `crew:${String(m['name'] ?? 'new').toLowerCase()}`;
     const taken = ctx.rows('crew').filter((r) => r.e === 'crew_member').map((r) => r.v as { name?: string });
     if (taken.some((x) => x.name?.toLowerCase() === String(m['name'] ?? '').toLowerCase())) refuse('invalid', `${String(m['name'])} is taken`);
-    const member = { kit: [], team: [], paused: false, notebook: '', wakeAt: null, checkins: 0, lastCheckinAt: null, lastMinute: null, ...m, id };
+    const member = { kit: [], team: [], paused: false, notebook: '', wakeAt: null, checkins: 0, lastCheckinAt: null, lastMinute: null, ...m, id, createdAt: Date.now() };
     return { ops: [{ topic: 'crew', e: 'crew_member', id, op: 'upsert', v: member }], result: member };
   },
   'crew.update': (a, ctx) => {

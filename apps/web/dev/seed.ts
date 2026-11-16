@@ -734,7 +734,8 @@ export function seed(o: { peer: string; now: number; extra: number; firstRun?: b
   if (latest) topics.set('plugin:wisp.update:state', [{ e: 'update.state', id: 'update', v: { id: 'update', body: { current: '2.0.0', latest, available: true, method: 'global', channel: 'stable', status: 'idle', error: null, enabled: true, command: 'npm install -g wisp-agents@latest', checked_at: o.now, checking: false, running: 1 } } }]); // as the store syncs it: the state under `body` (B6)
   topics.set(
     'crew',
-    CREW.map((c) => ({ e: 'crew_member', id: c.id, v: c.id === 'crew:ada' ? { ...c, ...ADA_KIT, offers: ADA_KIT.offers.map((x) => ({ ...x, job: `${o.peer}:s0000`, at: o.now - 2 * MIN })) } : c })),
+    // joined in the seed's order (the rail and the crew list keep joining order: createdAt)
+    CREW.map((c, i) => ({ e: 'crew_member', id: c.id, v: { createdAt: o.now - (CREW.length - i) * 86_400_000, ...(c.id === 'crew:ada' ? { ...c, ...ADA_KIT, offers: ADA_KIT.offers.map((x) => ({ ...x, job: `${o.peer}:s0000`, at: o.now - 2 * MIN })) } : c) } })),
   );
   topics.set('machines', [
     ...MACHINES.map((m) => ({ e: 'machine', id: m.id, v: { ...m, addedAt: o.now - 30 * 24 * HOUR } })),

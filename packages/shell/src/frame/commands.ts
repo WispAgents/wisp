@@ -101,7 +101,9 @@ export const create = defineCommand<CreateArgs, { id: string }>({
       e: SESSION,
       id: a.id as EntityKey,
       op: 'upsert',
-      v: { ...startingRow({ ...a, agent: a.shows ?? a.agent, title: a.prompt.split('\n')[0]?.slice(0, 80) ?? a.prompt }), body: { queue: [{ id: 'first', text: a.prompt, at: a.at }] } } as never,
+      v: ((row) => ({ ...row, body: { ...(row.body ?? {}), queue: [{ id: 'first', text: a.prompt, at: a.at }] } }))(
+        startingRow({ ...a, agent: a.shows ?? a.agent, title: a.prompt.split('\n')[0]?.slice(0, 80) ?? a.prompt }),
+      ) as never,
     },
   ],
 });
