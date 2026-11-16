@@ -27,3 +27,7 @@ window and browser, every state it touches) before the line is ticked and before
 | B18 | A toast ("Ping is ready · Open") sits over the reply box's bar and hides its controls | lead, 2026-11-16, same frames | | open |
 | B20 | The list highlights another task than the one open ("Ok reply" lit while "QA held job 3" is open) | lead, 2026-11-16 (`target/qa/b4-qa-held.png`) | | open |
 | B21 | A running turn's "Claude Code is working 0ms" never ticks: it stays 0ms for the whole run | lead, 2026-11-16 (frames of a held job's start) | | open |
+| B22 | CI: `apps/web/test/phone-step13.test.tsx` long-press sheet test failed under load (780f67fc, Linux node 24) | CI | | open |
+| B23 | CI: `plugins/shell-composer/ui/test/queue-list.test.tsx` right-click menu failed again (780f67fc, Windows node 22) | CI | | open |
+| B24 | CI: the task list's first page sits at the 5 ms budget on Linux runners, so noisy runs end "too noisy to judge" (red): make it faster with headroom | CI (780f67fc) | | open |
+
