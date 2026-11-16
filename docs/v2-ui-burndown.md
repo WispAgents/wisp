@@ -303,3 +303,10 @@ fills the space v1's brand margin took): **home's metrics 12/12** (0 parts off a
 on the half-pixel rows only. Next: re-capture v1 with exact boxes (qa/v1-reference.mjs) to place that half pixel, then
 the unreachable openers (task.transcript, task.rerun, task.preview, task.editor, the goal menus).
 
+Later the same day: v1 re-captured with exact boxes (`REF_EXACT=1`): its rows are where v2's are to 1/64 px, so the
+half-pixel rows are a paint difference, not layout (rows 2 and 4's dot, sub line and run line; the title matches).
+Tried without change: the list's isolation, positioning and overflow, the row's position, the dot's position, v1's
+`.item` being the positioned box. Still open. The unreachable views: task.transcript, task.rerun (B45: More now folds
+them below 860 px), task.preview, task.editor, task.composer-goal, task.goal-menu (`goal.more`) and task.goal-judges
+open now (translations in qa/parity.mjs `EXTRA`); home.goal-judges needs B44 (New task has no Judges).
+

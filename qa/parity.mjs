@@ -284,6 +284,16 @@ const EXTRA = {
   'button[role="tab"][data-pane="spells"]': 'button[role="tab"][data-pane="plugins"]',
   // the phone list's Crew section: a member's row, not the dashed Add one (v2's empty row has no part)
   '#secCrew .cr-row:not(.cr-empty)': '[data-part="crew.row"]',
+  // the goal band's ⋯ (v1 .gb-more), its Edit goal (v1 goal-set: v2's action is `set`), the goal editor's judges
+  '.gb-more': '[data-part~="goal.more.trigger"]',
+  '.menu [data-a="goal-set"]': '[data-kit="menu-item"][data-value="set"]',
+  '.goal-pop .gp-judges': '[data-part~="goal.judgesButton"]',
+  '#judgesBtn': '[data-part~="goal.judgesButton"]',
+  // the reply box's Goal (v1 .c-goal)
+  '.it-dock .c-goal': '[data-part~="composer.goal"]',
+  // Changes' Edit on a file (v1 .cx-edit) and the side panel's Preview tab (v1 .pn-tabs [data-tab])
+  '.cx-edit': '[data-part~="panel.changes.edit"]',
+  '.pn-tabs [data-tab="preview"]': '[data-part="panel.tabs"] [data-kit="tab"][data-value="preview"]',
 };
 
 /** A seeded task's title (what v2's row shows). */

@@ -681,7 +681,11 @@ export default function TaskView(props: { readonly id: string; readonly onBack?:
   // Copy task ID, Copy resume command, Open project in editor, Fork…, Compact, Lean runs, what plugins attach to a
   // task's menu (Side discussion, Share, Changes and Shell where the bar doesn't have them, Run app, Save as recipe,
   // Add to crew, Set goal), Save for later, Keep worktree, Restore to before latest turn, Archive, Delete task
-  const barFolded = (): boolean => nav().layout === 'stack';
+  // the bar folds into More where its desk-only buttons don't show (v1 actions.js `folded`: split, not pane-wide): a
+  // phone's stack, or a pane under 860 × 520 (the kit's `pane` container query); at 900 px the bar hid Transcript,
+  // Rerun… and Open in and More didn't have them (the parity gate's task.transcript and task.rerun found nothing)
+  const [paneWide, setPaneWide] = createSignal(true);
+  const barFolded = (): boolean => nav().layout === 'stack' || !paneWide();
   const busyNow = (): boolean => row()?.state === 'running' || row()?.state === 'waiting';
   const lastTurn = (): (TurnBody & { id: string }) | undefined => {
     const x = turns().at(-1);
@@ -1171,6 +1175,19 @@ export default function TaskView(props: { readonly id: string; readonly onBack?:
                 bodyEl = el;
                 el.addEventListener('scroll', onBodyScroll, { passive: true });
                 onCleanup(() => el.removeEventListener('scroll', onBodyScroll));
+                // the pane the kit's `pane` container query reads: wide at 860 × 520 and up, as v1's split.js pane-wide
+                // (looked up once the body is in the page: a ref runs before it's inserted)
+                if (typeof ResizeObserver !== 'undefined') {
+                  const ro = new ResizeObserver(([e]) => {
+                    const b = e?.contentBoxSize[0];
+                    if (b) setPaneWide(b.inlineSize >= 860 && b.blockSize >= 520);
+                  });
+                  queueMicrotask(() => {
+                    const pane = el.closest('[data-kit="split-main"]');
+                    if (pane) ro.observe(pane);
+                  });
+                  onCleanup(() => ro.disconnect());
+                }
               }}
               {...(!phoneBar() && {
                 details: (

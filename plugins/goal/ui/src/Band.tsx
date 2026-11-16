@@ -110,7 +110,7 @@ export default function Band(props: ExtensionProps): JSX.Element {
                 <Pill tone={TONE[g().status]} dot={goalLive(g())}>
                   {state()}
                 </Pill>
-                <Menu trigger={{ icon: 'dots', 'aria-label': t('wisp.goal.actions'), variant: 'ghost', size: 'xs' }} items={items()} onSelect={(v) => runGoalAction(props.client, v as GoalAction, task())} placement="bottom-end" />
+                <Menu part="goal.more" trigger={{ icon: 'dots', 'aria-label': t('wisp.goal.actions'), variant: 'ghost', size: 'xs' }} items={items()} onSelect={(v) => runGoalAction(props.client, v as GoalAction, task())} placement="bottom-end" />
               </Inline>
               <Inline gap="2" align="center">
                 <Progress goal={g()} />

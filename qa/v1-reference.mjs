@@ -8,6 +8,7 @@
 //   VIEWS=home,task WIDTHS=1440 THEMES=dark   a subset (merges into the existing metrics.json)
 //   QA_REF_PORT=4496  REF_JOBS=3              port of the QA wisp, views captured at once
 //   REF_OUT=<dir>                             write somewhere else
+//   REF_EXACT=1                               boxes as layout has them (not to the half pixel), with REF_OUT: to find a sub-pixel gap
 //   REF_RESTORE=1 VIEWS=home,task             re-capture views from seed.json's exact state: before each
 //                                             view the capture run's own home and repo (seed.json home/repo)
 //                                             are put back as they were when seeded, a fresh v1 starts on
@@ -78,7 +79,7 @@ export const STATES = {
 
 // Runs in the page: every visible element matching each selector, with its box and computed style.
 // Values are kept as Chrome reports them (px strings, rgb()), with zero/none defaults dropped.
-export function collectInPage({ sels, scope, max }) {
+export function collectInPage({ sels, scope, max, exact = false }) {
   const root = scope ? document.querySelector(scope) : document;
   const out = [];
   if (!root) return out;
@@ -126,7 +127,8 @@ export function collectInPage({ sels, scope, max }) {
       if (!r.width || !r.height) continue;
       const cs = getComputedStyle(el);
       if (cs.visibility === 'hidden' || cs.display === 'none') continue;
-      const round = (n) => Math.round(n * 2) / 2;
+      // to the half pixel, as the references are kept; `exact` (REF_EXACT=1): as layout has it, to find a sub-pixel gap
+      const round = (n) => (exact ? n : Math.round(n * 2) / 2);
       out.push({ part, i: i++, box: [round(r.x), round(r.y), round(r.width), round(r.height)], s: pick(cs) });
     }
   }
@@ -202,7 +204,7 @@ async function captureView(browser, url, name, open, out, only, { at, modes = ['
         const rest = await p.screenshot();
         fs.writeFileSync(path.join(dir, `${key}-rest.png`), rest);
         report.shots++;
-        entry.states.rest = { png: `${key}-rest.png`, parts: await p.evaluate(collectInPage, { sels: partSels(), scope: null, max: 8 }) };
+        entry.states.rest = { png: `${key}-rest.png`, parts: await p.evaluate(collectInPage, { sels: partSels(), scope: null, max: 8, exact: process.env.REF_EXACT === '1' }) };
         const st = STATES[name];
         if (st) {
           const loc = p.locator(st.target).first();
