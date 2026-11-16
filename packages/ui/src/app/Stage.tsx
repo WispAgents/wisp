@@ -3,7 +3,7 @@
 // the sidebar button and the project chips; its body: New task and the list), the main pane, and the
 // grip on the sidebar's edge. Split (≥ 900 px) shows them side by side; stack shows one page.
 // Every element carries v1's PARTS name (web/js/spell-schema.js) as its data-part.
-import { createSignal, For, Show, type JSX } from 'solid-js';
+import { createEffect, createMemo, createSignal, For, on, Show, type JSX } from 'solid-js';
 import { flag, type PartName } from '../core/props.ts';
 import { reorderable, type OnReorder } from '../core/reorder.ts';
 import { Icon } from '../content/Icon.tsx';
@@ -58,6 +58,27 @@ export function Stage(props: StageProps): JSX.Element {
 }
 
 function WebStage(props: StageProps): JSX.Element {
+  // <main>'s attributes are one render effect, rerun as the page flips (each tap and Back on a phone): reading the rail
+  // and the side pane there to test them built each again, the crew rail with all its faces (F-phone-8). Built once here,
+  // and the rail only where it shows (split): a stack never draws it
+  const rail = createMemo(() => (props.layout === 'split' ? props.rail : undefined));
+  const side = createMemo(() => props.side);
+  // a stack's page flip is said on the panes themselves, never by an attribute of <main> that rules read on their
+  // descendants: Chrome invalidates such a rule's targets by attribute name, and every kit element has data-kit, so
+  // each tap and Back restyled the whole list (F-phone-8: ~30 ms at 4×). `pane-off`: the pane isn't the page; `pane-under`:
+  // Home's page over the list, which stays drawn behind it (the only case that changes the list's own descendants).
+  // Names no other rule uses: a descendant rule is invalidated by any element's attribute of that name (<main>'s data-behind, a picker's data-off).
+  const over = (): boolean => props.layout === 'stack' && props.page === 'main';
+  const behind = (): boolean => over() && props.listBehind === true;
+  // a pane going off keeps no focus: content-visibility skips it, but a control focused in it (the row just tapped, the
+  // search box with the keyboard up) would stay focused, as display: none and inert didn't let it
+  const off: { bar?: HTMLElement; list?: HTMLElement } = {};
+  createEffect(
+    on(over, (o) => {
+      const focused = document.activeElement;
+      if (o && focused instanceof HTMLElement && (off.bar?.contains(focused) || off.list?.contains(focused))) focused.blur();
+    }),
+  );
   return (
     <main
       data-kit="stage"
@@ -66,22 +87,43 @@ function WebStage(props: StageProps): JSX.Element {
       data-page={props.page}
       data-behind={flag(props.listBehind)}
       data-titlebar={props.titlebar}
-      data-rail={flag(props.rail !== undefined)}
-      data-side={flag(props.side !== undefined)}
+      data-rail={flag(rail() !== undefined)}
+      data-side={flag(side() !== undefined)}
     >
-      {props.layout === 'split' ? props.rail : null}
-      <header data-kit="topbar" data-part="topbar" data-drag={flag(props.titlebar !== undefined)} data-tint={flag(!!props.tint)} data-color={props.tint || undefined}>
+      {props.layout === 'split' ? rail() : null}
+      <header
+        ref={(el) => (off.bar = el)}
+        data-kit="topbar"
+        data-part="topbar"
+        data-drag={flag(props.titlebar !== undefined)}
+        data-tint={flag(!!props.tint)}
+        data-color={props.tint || undefined}
+        data-pane-off={flag(over())}
+        data-pane-under={flag(behind())}
+      >
         {props.head}
       </header>
-      <div data-kit="feed-wrap" data-part="sidebar" inert={props.layout === 'stack' && props.page === 'main'} data-tint={flag(!!props.tint)} data-color={props.tint || undefined}>
+      {/* under a task's page the list is skipped (content-visibility: hidden), which already keeps it out of the Tab
+          order, find in page and the accessibility tree; inert is only for Home's page, where it is drawn behind.
+          Toggling inert restyles every element under it (F-phone-8) */}
+      <div
+        ref={(el) => (off.list = el)}
+        data-kit="feed-wrap"
+        data-part="sidebar"
+        inert={behind()}
+        data-tint={flag(!!props.tint)}
+        data-color={props.tint || undefined}
+        data-pane-off={flag(over())}
+        data-pane-under={flag(behind())}
+      >
         {props.list}
       </div>
-      <section data-kit="split-main" data-part="split.main">
+      <section data-kit="split-main" data-part="split.main" data-pane-off={flag(props.layout === 'stack' && props.page === 'list')}>
         {props.main}
       </section>
-      <Show when={props.side}>
+      <Show when={side()}>
         <aside data-kit="side-pane" data-part="side">
-          {props.side}
+          {side()}
         </aside>
       </Show>
       <Show when={props.layout === 'split'}>

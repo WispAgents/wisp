@@ -52,11 +52,12 @@ function CrewSection(props: ExtensionProps): JSX.Element {
   const ranked = useSignal(data.ranked);
   const [all, setAll] = createSignal(false);
   const [hold, setHold] = createSignal<SectionHold>({ order: null, full: new Set() });
-  // the member open in the main pane, by id (navigation holds its key, `<peer>:<id>`)
-  const crewOpen = (): string | null => {
+  // the member open in the main pane, by id (navigation holds its key, `<peer>:<id>`). A memo: opening a task leaves it
+  // null, so the plan, its rows and each member's job rows aren't built again on every tap (F-phone-8)
+  const crewOpen = createMemo((): string | null => {
     const m = nav().main as { kind?: string; id?: unknown };
     return m.kind === 'crew' ? (data.byId(String(m.id ?? ''))?.id ?? null) : null;
-  };
+  });
   const plan = createMemo(() => sectionPlan(ranked() as unknown as readonly Member[], states(), { all: all(), open: none, hold: hold(), crewOpen: crewOpen() }));
   const onHold = (on: boolean): void => {
     const p = plan();

@@ -35,6 +35,7 @@ import { useShell } from '../context.tsx';
 import { SESSION, type SessionRow } from '../rows.ts';
 import { Slot, useClients, usePluginClient } from '../slot.tsx';
 import { TaskHeadSlot } from './slots.tsx';
+import { afterNextPaint, buildsAtOnce } from './task-paint.ts';
 import { useProjects } from './projects.ts';
 import { taskPlaces } from './project-pick.ts';
 import { switchTo } from './project-switch.ts';
@@ -182,10 +183,24 @@ export default function TaskView(props: { readonly id: string; readonly onBack?:
     t(ONE[k] && vars?.[ONE[k] ?? ''] === 1 ? `shell.ledger.${k}.one` : `shell.ledger.${k}`, vars as Record<string, string | number> | undefined);
   const key = props.id as EntityKey;
   const scope = shell.client.scope.child(`task:${key}`);
-  onCleanup(() => scope.dispose());
+  // on a phone, Back's frame shows the list first: the task's scope (its topic's unwatch is a request sent) goes after it
+  const later = !buildsAtOnce(props.onBack !== undefined, typeof requestAnimationFrame === 'function');
+  onCleanup(() => (later ? afterNextPaint(() => scope.dispose()) : scope.dispose()));
   // the topic names the session by its own id, the part after `<peer>:`
   const bare = key.slice(key.indexOf(':') + 1);
-  shell.client.peers.watch(ownerOf(key), `session:${bare}`, scope);
+  const watch = (): void => shell.client.peers.watch(ownerOf(key), `session:${bare}`, scope);
+  // on a phone the tap's frame draws the page with its head; the body (turns, reply box, details) comes the frame
+  // after, and so does the task's own topic, asked for with it (task-paint.ts, F-phone-8: each request sent is a
+  // fetch in the tap)
+  const [built, setBuilt] = createSignal(!later);
+  if (built()) watch();
+  else
+    onCleanup(
+      afterNextPaint(() => {
+        watch();
+        setBuilt(true);
+      }),
+    );
   const row = useSignal(shell.client.entities.row<SessionRow>(SESSION, key));
   const allTurns = useSignal(shell.client.entities.list<TurnRow>('turn'));
   const allEvents = useSignal(shell.client.entities.list<EventRow>('event'));
@@ -210,13 +225,30 @@ export default function TaskView(props: { readonly id: string; readonly onBack?:
     const at = el.getBoundingClientRect().top - el.scrollTop;
     return [...el.querySelectorAll<HTMLElement>('[data-turn]')].map((t) => ({ id: t.dataset['turn'] ?? '', top: t.getBoundingClientRect().top - at }));
   };
+  // kept by the page's own Back just before it leaves: read while the layout is still the frame's (free), where the
+  // close's read came after the stage had flipped and forced a style and layout of the half-changed page (F-phone-8).
+  // Back also lets go of the focus first (it goes to the page, as when the button is removed): removing the focused
+  // button with the page forced another style recalc of the list coming back
+  let kept = false;
   const keepPlace = (): void => {
     const el = bodyEl;
-    if (!el?.isConnected || !el.querySelector('[data-turn]')) return;
+    // a page already hidden (a phone's Back through history hides the main pane first) has no place to read: every
+    // turn would measure 0 and the kept place would become the top
+    if (kept || !el?.isConnected || el.checkVisibility?.() === false || !el.querySelector('[data-turn]')) return;
     const p = placeOf(el, turnTops(el));
     places.set((cur) => keep(cur as unknown as Record<string, Place>, key, p) as unknown as Json);
   };
   onCleanup(keepPlace);
+  const back = props.onBack;
+  const leave =
+    back &&
+    ((): void => {
+      keepPlace();
+      kept = true;
+      const focused = document.activeElement;
+      if (focused instanceof HTMLElement && bodyEl?.parentElement?.contains(focused)) focused.blur();
+      back();
+    });
   const onHide = (): void => {
     if (document.visibilityState === 'hidden') keepPlace();
   };
@@ -228,7 +260,7 @@ export default function TaskView(props: { readonly id: string; readonly onBack?:
   });
   let placed = false;
   createEffect(() => {
-    if (placed || turns().length === 0) return;
+    if (placed || !built() || turns().length === 0) return;
     placed = true;
     // after a reload the kept places are still loading from disk
     void places.ready.then(() => {
@@ -283,6 +315,8 @@ export default function TaskView(props: { readonly id: string; readonly onBack?:
   };
   const [cold] = createResource(
     () => {
+      // read for the reply box's hints, which come with the body
+      if (!built()) return undefined;
       const r = row();
       return r && r.state !== 'running' ? `${r.state}:${r.updated_at}` : undefined;
     },
@@ -315,7 +349,10 @@ export default function TaskView(props: { readonly id: string; readonly onBack?:
   const keepShown = (el: HTMLElement): void => {
     if (keepFrom() === undefined && el.scrollHeight - el.scrollTop - el.clientHeight >= 2) setKeepFrom(fold().shown[0]?.id);
   };
-  const onBodyScroll = (e: Event): void => keepShown(e.currentTarget as HTMLElement);
+  const onBodyScroll = (e: Event): void => {
+    kept = false;
+    keepShown(e.currentTarget as HTMLElement);
+  };
   // the older turns came as stubs (v1 #788): opening one asks for only that turn
   const opener = turnOpener({
     scope,
@@ -1048,6 +1085,7 @@ export default function TaskView(props: { readonly id: string; readonly onBack?:
               }}
               {...(!phoneBar() && {
                 details: (
+                <Show when={built()}>
                 <TaskDetails
                   harness={t('shell.task.harness', { name: h().name })}
                   {...(h().logo && { logo: h().logo })}
@@ -1059,10 +1097,11 @@ export default function TaskView(props: { readonly id: string; readonly onBack?:
                   {...((u) => (u ? { usage: u } : {}))(usage())}
                   actions={actions(s())}
                 />
+                </Show>
                 ),
               })}
               turns={
-                <>
+                <Show when={built()}>
                   {/* the band over the turns (wisp.goal's): `shell.task:band`, the task's row as its session */}
                   <Slot input="shell.task:band" layout="stack" id={key} session={() => s() as never} />
                   {/* the earlier turns as a ledger (ADR-0068): outcome rows, day cards, notice folds, search, the scrubber;
@@ -1103,10 +1142,10 @@ export default function TaskView(props: { readonly id: string; readonly onBack?:
                     dismiss={(pending) => t(pending ? 'shell.btw.cancel' : 'shell.btw.dismiss')}
                     onDismiss={(btwId) => void run(btwDrop, { id: key, btwId }).catch(() => undefined)}
                   />
-                </>
+                </Show>
               }
               dock={
-                <>
+                <Show when={built()}>
                   <Show when={ov()[0]}>
                     {(o) => (
                       <OverlapNote
@@ -1227,11 +1266,11 @@ export default function TaskView(props: { readonly id: string; readonly onBack?:
                     value={replyRun() ?? { agent: s().agent, model: String(s().summary.model ?? ''), effort: '' }}
                     onChange={setReplyRun}
                   />
-                </>
+                </Show>
               }
             />
             <Show
-              when={phoneBar() && props.onBack}
+              when={phoneBar() && leave}
               fallback={
             <TaskHead
               actions={<TaskHeadSlot id={key} session={() => s() as never} />}
@@ -1240,7 +1279,7 @@ export default function TaskView(props: { readonly id: string; readonly onBack?:
               renameLabel={t('shell.task.rename')}
               panelLabel={t('shell.task.panel')}
               closeLabel={t('shell.task.close')}
-              {...(props.onBack && { onBack: props.onBack, backLabel: t('shell.home.back') })}
+              {...(leave && { onBack: leave, backLabel: t('shell.home.back') })}
               onClose={() => shell.navigate({ t: 'home' })}
               onRename={(title) => void run(rename, { id: key, title }).catch(() => undefined)}
               onPanel={() => side('changes')}

@@ -80,7 +80,10 @@ function ListBody(): JSX.Element {
     const known = new Set(projects().map((p) => p.id));
     return picked() === undefined ? pickOf(view().filter).filter((id) => known.has(id)) : [];
   });
-  const items = createMemo(() => flatten(sections(), { toggled: toggled(), open: env.open(), split: env.split(), crew: !env.split() && crewInList(), byProject: byProject() }));
+  // the open task matters only beside the list (split: a folded section keeps its row); on a phone it changes nothing
+  // here, so a tap doesn't re-flatten 4,000 tasks and re-plan the list behind the task page (F-phone-8)
+  const open = createMemo(() => (env.split() ? env.open() : undefined));
+  const items = createMemo(() => flatten(sections(), { toggled: toggled(), open: open(), split: env.split(), crew: !env.split() && crewInList(), byProject: byProject() }));
   // the order the list shows (its filters, folds and sort): a phone's task page steps through it (Next task, the head's
   // swipe) and the selection's Select all picks it (ADR-0065 step 13)
   createEffect(() => env.shell.listOrder?.publish(taskKeys(items())));

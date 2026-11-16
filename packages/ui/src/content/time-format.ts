@@ -8,6 +8,25 @@ const MIN = 60_000;
 const HOUR = 60 * MIN;
 const DAY = 24 * HOUR;
 
+// Making an Intl.DateTimeFormat costs far more than formatting with one (a list row's hover title made one per row
+// each time it drew: F-phone-8), so each locale and style is made once.
+const FORMATS = {
+  clock: { hour: '2-digit', minute: '2-digit' },
+  weekday: { weekday: 'short' },
+  date: { month: 'short', day: 'numeric' },
+  full: { dateStyle: 'medium', timeStyle: 'short' },
+} as const satisfies Record<string, Intl.DateTimeFormatOptions>;
+const made = new Map<string, Intl.DateTimeFormat>();
+function format(locale: string | undefined, style: keyof typeof FORMATS): Intl.DateTimeFormat {
+  const key = `${locale ?? ''}|${style}`;
+  let f = made.get(key);
+  if (!f) {
+    f = new Intl.DateTimeFormat(locale, FORMATS[style]);
+    made.set(key, f);
+  }
+  return f;
+}
+
 export function toMs(at: number | Date | string): number {
   if (typeof at === 'number') return at;
   if (at instanceof Date) return at.getTime();
@@ -29,19 +48,19 @@ export function timeLabel(at: number, now: number, t: Translate, locale?: string
 
 /** The future, absolute: a clock time today, weekday and time this week, else the date. */
 export function futureLabel(at: number, now: number, locale?: string): string {
-  const clock = new Intl.DateTimeFormat(locale, { hour: '2-digit', minute: '2-digit' });
+  const clock = format(locale, 'clock');
   const sameDay = new Date(at).toDateString() === new Date(now).toDateString();
   if (sameDay) return clock.format(at);
   if (at - now < 6 * DAY) {
-    const day = new Intl.DateTimeFormat(locale, { weekday: 'short' }).format(at);
+    const day = format(locale, 'weekday').format(at);
     return `${day} ${clock.format(at)}`;
   }
-  return new Intl.DateTimeFormat(locale, { month: 'short', day: 'numeric' }).format(at);
+  return format(locale, 'date').format(at);
 }
 
 /** The hover text: the full date, and for the future how long until it. */
 export function timeTitle(at: number, now: number, t: Translate, locale?: string): string {
-  const full = new Intl.DateTimeFormat(locale, { dateStyle: 'medium', timeStyle: 'short' }).format(at);
+  const full = format(locale, 'full').format(at);
   if (at <= now || at - now > DAY) return full;
   return `${full} · ${t('time.in-minutes', { n: Math.max(1, Math.round((at - now) / MIN)) })}`;
 }

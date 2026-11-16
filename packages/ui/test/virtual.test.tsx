@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, test } from 'vitest';
+import { afterEach, describe, expect, test, vi } from 'vitest';
 import { createSignal } from 'solid-js';
 import { render } from 'solid-js/web';
 import { Each, VirtualList } from '../src/layout/VirtualList.tsx';
@@ -223,4 +223,68 @@ test('a_scroll_reads_layout_before_it_renders_rows_never_after', () => {
   expect(first()).not.toBe(before); // the rows at row 2000 are on screen now
   expect(seen.length).toBeGreaterThan(0);
   expect(seen.every((f) => f === before), `scrollTop read after rows changed: ${seen.join(',')}`).toBe(true);
+});
+
+/** A ResizeObserver the test drives: `report` delivers entries the way the browser does after a layout. */
+class FakeObserver {
+  static last: FakeObserver | undefined;
+  readonly watched = new Set<Element>();
+  private readonly cb: (entries: ResizeObserverEntry[]) => void;
+  constructor(cb: (entries: ResizeObserverEntry[]) => void) {
+    this.cb = cb;
+    FakeObserver.last = this;
+  }
+  observe(el: Element): void {
+    this.watched.add(el);
+  }
+  unobserve(el: Element): void {
+    this.watched.delete(el);
+  }
+  disconnect(): void {
+    this.watched.clear();
+  }
+  report(size: (el: Element) => { width: number; height: number }): void {
+    const entries = [...this.watched].map((target) => {
+      const { width, height } = size(target);
+      return { target, borderBoxSize: [{ inlineSize: width, blockSize: height }], contentRect: { width, height } } as unknown as ResizeObserverEntry;
+    });
+    this.cb(entries);
+  }
+}
+
+describe('VirtualList measured by a ResizeObserver', () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  // F-phone-8: a phone's task page hides the list (display: none / content-visibility: hidden); the observer then
+  // reports the list's box and every row at 0 px. Recording that re-planned the window and swapped its rows on every
+  // tap, and rebuilt them all on Back.
+  test('a_list_taken_off_screen_keeps_its_rows_and_their_heights', () => {
+    vi.stubGlobal('ResizeObserver', FakeObserver);
+    const host = mount(() => (
+      <VirtualList items={rows(200)} key={(r) => r.id} estimate={30} viewport={300} overscan={2}>
+        {(r) => <span data-id={r().id}>{r().text}</span>}
+      </VirtualList>
+    ));
+    const ro = FakeObserver.last;
+    if (!ro) throw new Error('no observer');
+    const box = host.querySelector('[data-kit="virtual-list"]');
+    const shown = (): (string | null)[] => [...host.querySelectorAll('[data-id]')].map((n) => n.getAttribute('data-id'));
+    const bottom = (): string | undefined => host.querySelectorAll<HTMLElement>('[data-kit="virtual-spacer"]')[1]?.style.height;
+    // on screen: the rows measure 30 px, as estimated: nothing moves
+    ro.report((el) => (el === box ? { width: 390, height: 300 } : { width: 390, height: 30 }));
+    const before = shown();
+    const nodes = [...host.querySelectorAll('[data-id]')];
+    const pad = bottom();
+    // hidden: the box and every row report 0 px
+    ro.report(() => ({ width: 0, height: 0 }));
+    expect(shown()).toEqual(before);
+    expect([...host.querySelectorAll('[data-id]')]).toEqual(nodes);
+    expect(bottom()).toBe(pad);
+    // shown again at the same sizes: still the same rows, the same nodes
+    ro.report((el) => (el === box ? { width: 390, height: 300 } : { width: 390, height: 30 }));
+    expect([...host.querySelectorAll('[data-id]')]).toEqual(nodes);
+    // while on screen a row that really grew is still recorded: the spacers move
+    ro.report((el) => (el === box ? { width: 390, height: 300 } : { width: 390, height: 60 }));
+    expect(shown()).not.toEqual(before);
+  });
 });

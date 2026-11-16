@@ -54,12 +54,18 @@ interface Measured {
   readonly get: (key: string) => number | undefined;
   readonly observe: (el: HTMLElement, key: string) => void;
   readonly unobserve: (el: HTMLElement) => void;
+  /** The list's own box: while it isn't rendered, what its rows report is ignored. */
+  readonly observeBox: (el: HTMLElement) => void;
 }
 
-/** Row heights by key, fed by one ResizeObserver per list. */
+/** Row heights by key, fed by one ResizeObserver per list. The same observer watches the list's box: a list taken
+ *  off screen (display: none: a phone's task page in front of it) reports every row at 0 px, and recording that would
+ *  re-plan the window and swap its rows on every tap, then rebuild them all on Back (F-phone-8). While the box isn't
+ *  rendered the heights stay what they were; rows that changed meanwhile report again when it shows. */
 function useMeasured(beforeChange: () => void): Measured {
   const heights = new Map<string, number>();
   const keys = new WeakMap<Element, string>();
+  const box: { el: Element | undefined; hidden: boolean } = { el: undefined, hidden: false };
   const [version, setVersion] = createSignal(0);
   const record = (el: Element, h: number): boolean => {
     const key = keys.get(el);
@@ -71,9 +77,15 @@ function useMeasured(beforeChange: () => void): Measured {
     typeof ResizeObserver === 'undefined'
       ? undefined
       : new ResizeObserver((entries) => {
+          for (const e of entries) {
+            if (e.target !== box.el) continue;
+            const b = e.borderBoxSize[0];
+            box.hidden = (b?.inlineSize ?? e.contentRect.width) === 0 && (b?.blockSize ?? e.contentRect.height) === 0;
+          }
+          if (box.hidden) return;
           beforeChange();
           let changed = false;
-          for (const e of entries) changed = record(e.target, e.borderBoxSize[0]?.blockSize ?? e.contentRect.height) || changed;
+          for (const e of entries) if (e.target !== box.el) changed = record(e.target, e.borderBoxSize[0]?.blockSize ?? e.contentRect.height) || changed;
           if (changed) setVersion((v) => v + 1);
         });
   onCleanup(() => ro?.disconnect());
@@ -85,6 +97,10 @@ function useMeasured(beforeChange: () => void): Measured {
       ro?.observe(el);
     },
     unobserve: (el) => ro?.unobserve(el),
+    observeBox: (el) => {
+      box.el = el;
+      ro?.observe(el);
+    },
   };
 }
 
@@ -206,6 +222,7 @@ export function VirtualList<T>(props: VirtualListProps<T>): JSX.Element {
     <div
       ref={(el) => {
         scroller.attach(el);
+        measured.observeBox(el);
         if (props.refresh) pullGesture(el);
         props.ref?.(el);
       }}

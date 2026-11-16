@@ -1,76 +1,173 @@
 {
   "cold": {
-    "fcpMs": 3812,
-    "firstListMs": 16265,
+    "fcpMs": 2420,
+    "firstListMs": 17556,
     "boot": {
       "count": 6,
-      "worst": 394,
-      "total": 703
+      "worst": 250,
+      "total": 605
     }
   },
   "warm": {
-    "fcpMs": 1628,
-    "firstListMs": 4103,
+    "fcpMs": 1480,
+    "firstListMs": 7850,
     "boot": {
       "count": 6,
-      "worst": 254,
-      "total": 659
+      "worst": 224,
+      "total": 556
     }
   },
   "rowsInDom": 19,
   "scroll": {
-    "height": 28269,
-    "over50": 2,
-    "worst": 68,
-    "p95": 39,
+    "height": 27990,
+    "over50": 1,
+    "worst": 76,
+    "p95": 29,
     "longTasks": {
       "count": 1,
-      "worst": 85,
-      "total": 85
+      "worst": 61,
+      "total": 61
     }
   },
   "fling": {
-    "frames": 298,
-    "over50": 2,
-    "p95": 36,
-    "worst": 96,
+    "frames": 482,
+    "over50": 3,
+    "p95": 21,
+    "worst": 84,
     "longTasks": {
-      "count": 2,
+      "count": 3,
       "worst": 76,
-      "total": 139
+      "total": 221
     }
-  },
-  "openLong0": {
-    "count": 3,
-    "worst": 195,
-    "total": 442
-  },
-  "openLong1": {
-    "count": 2,
-    "worst": 101,
-    "total": 183
-  },
-  "openLong2": {
-    "count": 3,
-    "worst": 107,
-    "total": 285
   },
   "open": {
     "task": "local:s0002",
+    "firstTapMs": 130,
     "tapToPageMs": [
-      276,
-      264,
-      418
+      46,
+      41,
+      39,
+      40,
+      41,
+      45,
+      41,
+      44,
+      41,
+      45,
+      44,
+      43,
+      39,
+      42,
+      43,
+      39,
+      51,
+      46,
+      38,
+      41
     ],
-    "backToListMs": [
+    "tapP95": 46,
+    "backTapMs": [
+      42,
+      43,
+      45,
+      43,
+      44,
+      45,
+      45,
+      42,
+      57,
+      39,
+      47,
+      43,
+      45,
+      44,
+      44,
+      45,
+      45,
+      42,
+      43,
+      44
+    ],
+    "backP95": 47,
+    "presented": {
+      "tapP95": 64,
+      "backP95": 64,
+      "tapMs": [
+        64,
+        56,
+        56,
+        56,
+        64,
+        56,
+        56,
+        56,
+        56,
+        48,
+        56,
+        64,
+        56,
+        56,
+        64,
+        56,
+        56,
+        80,
+        56,
+        56
+      ],
+      "backMs": [
+        56,
+        64,
+        64,
+        64,
+        64,
+        64,
+        56,
+        64,
+        64,
+        56,
+        64,
+        56,
+        64,
+        64,
+        64,
+        56,
+        64,
+        56,
+        56,
+        64
+      ]
+    },
+    "historyBackMs": [
+      37,
+      42,
+      32
+    ],
+    "worstLongTaskAfterTap": [
+      67,
+      60,
       59,
-      48,
-      48
+      63,
+      58,
+      60,
+      58,
+      62,
+      60,
+      61,
+      60,
+      59,
+      56,
+      60,
+      60,
+      56,
+      61,
+      65,
+      56,
+      60
     ]
   },
   "streaming": {
     "count": 1,
-    "worst": 53,
-    "total": 53
+    "worst": 68,
+    "total": 68
   }
 }

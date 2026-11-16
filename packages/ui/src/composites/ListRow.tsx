@@ -6,7 +6,7 @@
 // (44 pt min, inset separators, a chevron where it pushes). The row says how many lines it has
 // (`data-row-lines`) and whether it leads with something (`data-lead`) on a phone only, so the browser's
 // HTML stays byte for byte v1's (test/goldens/platform-browser-rows.json).
-import { Show, type JSX } from 'solid-js';
+import { Show, createMemo, type JSX } from 'solid-js';
 import { flag, sub, type CssVars, type KitProps, type PartName } from '../core/props.ts';
 import type { ReorderAttrs } from '../core/reorder.ts';
 import { Icon } from '../content/Icon.tsx';
@@ -66,6 +66,14 @@ export interface ListRowProps extends KitProps {
 
 /** How many lines the row's text takes on a phone (M3 one/two/three-line list items; iOS cell heights). */
 export const rowLines = (row: Pick<ListRowProps, 'sub' | 'foot'>): '1' | '2' | '3' => (row.foot ? '3' : row.sub !== undefined && row.sub !== null && row.sub !== false ? '2' : '1');
+
+/** A row's element props, each built once. The row's attributes test whether a cell is there (data-time, data-foot,
+ *  data-lead, data-row-lines) and all of them are one render effect, rerun when any changes (a tap moves `current`);
+ *  reading the prop there built the cell again each time just to test it, and once more to show it (F-phone-8). The
+ *  memo builds it once, and the attributes and the cell share it. */
+function cells(props: ListRowProps): { readonly lead: () => JSX.Element; readonly sub: () => JSX.Element; readonly foot: () => JSX.Element; readonly time: () => JSX.Element } {
+  return { lead: createMemo(() => props.lead), sub: createMemo(() => props.sub), foot: createMemo(() => props.foot), time: createMemo(() => props.time) };
+}
 
 type RowPiece = 'row' | 'lead' | 'main' | 'title' | 'sub' | 'foot' | 'pills' | 'time' | 'actions';
 
@@ -167,6 +175,7 @@ function FeedRow(props: ListRowProps & { readonly partName: PartName }): JSX.Ele
   const p = (): PartName => props.partName;
   const open = (e: MouseEvent): void => props.onOpen?.(e);
   const phone = ((look) => (): boolean => look() !== 'web')(usePlatform());
+  const c = cells(props);
   return (
     <div
       {...props.reorder}
@@ -180,13 +189,13 @@ function FeedRow(props: ListRowProps & { readonly partName: PartName }): JSX.Ele
       data-current={flag(props.current)}
       data-quiet={flag(props.quiet)}
       data-strong={flag(props.strong)}
-      data-time={flag(props.time !== undefined)}
+      data-time={flag(c.time() !== undefined)}
       data-layout="feed"
       data-quick={props.quick ? String(props.quick) : undefined}
-      data-foot={flag(!!props.foot)}
+      data-foot={flag(!!c.foot())}
       data-interactive={flag(props.onOpen !== undefined)}
-      data-row-lines={phone() ? rowLines(props) : undefined}
-      data-lead={flag(phone() && props.lead !== undefined)}
+      data-row-lines={phone() ? rowLines({ sub: c.sub(), foot: c.foot() }) : undefined}
+      data-lead={flag(phone() && c.lead() !== undefined)}
       data-picking={flag(props.picked !== undefined)}
       data-picked={flag(props.picked)}
       aria-pressed={props.picked}
@@ -198,7 +207,7 @@ function FeedRow(props: ListRowProps & { readonly partName: PartName }): JSX.Ele
       }}
       onContextMenu={(e) => props.onContextMenu?.(e)}
     >
-      <Show when={props.picked !== undefined} fallback={props.lead}>
+      <Show when={props.picked !== undefined} fallback={c.lead()}>
         <span data-kit="row-pick" data-part={sub(p(), 'pick')} aria-hidden="true">
           <Show when={props.picked}>
             <Icon name="check" size="sm" />
@@ -209,15 +218,15 @@ function FeedRow(props: ListRowProps & { readonly partName: PartName }): JSX.Ele
         {props.title}
       </span>
       <div data-kit="list-row-sub" data-part={named(props, p(), 'sub')} data-tone={props.subTone} title={props.subTitle}>
-        {props.sub}
+        {c.sub()}
       </div>
-      {props.foot}
+      {c.foot()}
       <div data-kit="list-row-pills" data-part={named(props, p(), 'pills')}>
         {props.pills}
-        <Show when={!phone()}>{props.time}</Show>
+        <Show when={!phone()}>{c.time()}</Show>
       </div>
       {/* on a phone the time is the row's own trailing cell: its line over the pills' line, never on them (r285) */}
-      <Show when={phone()}>{props.time}</Show>
+      <Show when={phone()}>{c.time()}</Show>
       {props.actions}
     </div>
   );
@@ -228,6 +237,7 @@ export function ListRow(props: ListRowProps): JSX.Element {
   if (props.layout === 'feed') return <FeedRow {...props} partName={part()} />;
   const look = usePlatform();
   const phone = (): boolean => look() !== 'web';
+  const c = cells(props);
   return (
     <div
       {...props.reorder}
@@ -239,32 +249,32 @@ export function ListRow(props: ListRowProps): JSX.Element {
       data-current={flag(props.current)}
       data-quiet={flag(props.quiet)}
       data-strong={flag(props.strong)}
-      data-time={flag(props.time !== undefined)}
-      data-foot={flag(!!props.foot)}
+      data-time={flag(c.time() !== undefined)}
+      data-foot={flag(!!c.foot())}
       data-interactive={flag(props.onOpen !== undefined || props.href !== undefined)}
-      data-row-lines={phone() ? rowLines(props) : undefined}
-      data-lead={flag(phone() && props.lead !== undefined)}
+      data-row-lines={phone() ? rowLines({ sub: c.sub(), foot: c.foot() }) : undefined}
+      data-lead={flag(phone() && c.lead() !== undefined)}
       onContextMenu={(e) => props.onContextMenu?.(e)}
     >
       <div data-kit="list-row-lead" data-part={named(props, part(), 'lead')}>
-        {props.lead}
+        {c.lead()}
       </div>
       <div data-kit="list-row-main" data-part={named(props, part(), 'main')}>
         <Hit row={props} part={part()} />
         <div data-kit="list-row-sub" data-part={named(props, part(), 'sub')}>
-          {props.sub}
+          {c.sub()}
         </div>
       </div>
-      <Show when={props.foot}>
+      <Show when={c.foot()}>
         <div data-kit="list-row-foot" data-part={named(props, part(), 'foot')}>
-          {props.foot}
+          {c.foot()}
         </div>
       </Show>
       <div data-kit="list-row-pills" data-part={named(props, part(), 'pills')}>
         {props.pills}
       </div>
       <div data-kit="list-row-time" data-part={named(props, part(), 'time')}>
-        {props.time}
+        {c.time()}
       </div>
       <div data-kit="list-row-actions" data-part={named(props, part(), 'actions')}>
         {props.actions}

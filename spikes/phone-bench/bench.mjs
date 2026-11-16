@@ -8,8 +8,16 @@
 // Measures (ADR-0011): first list paint cold (nothing cached) and warm (HTTP cache + IndexedDB),
 // long tasks while the list is flung top to bottom, tap → task page frame, Back → list frame, and
 // long tasks while a turn streams into a running task with 4,000 rows in the store (no full-list
-// work per event). Prints a table and writes spikes/phone-bench/out.json. Not a CI gate: a probe,
-// run before and after a change to the list, the stack layout or the boot path.
+// work per event). Prints a table and writes spikes/phone-bench/out.json.
+//
+// The gate (AGENTS.md §Performance, tap → frame ≤ 50 ms p95 on a 4× slowed CPU): the bench's two taps, TAPS times
+// each after a first one: a row → its task page, and the page's Back → the list; each p95, exit 1 when either is over.
+// A tap is timed from the touch's own timestamp (not from when Playwright was asked: its actionability checks are no
+// part of the tap) to the end of the layout of the first frame that shows the new page: found in that frame's rAF,
+// then a ResizeObserver on it, whose first callback runs right after that frame's layout. That's the main thread's
+// frame, the gate. Also reported: the browser's Event Timing entry for the tap (INP's measure: to the frame presented,
+// which adds the compositor's and the display's ~10-20 ms in headless Chrome). The first open after load (code still
+// cold) is reported, not gated, as is the browser's own Back (history). Part of the batched outer-loop pass.
 
 import { writeFileSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
@@ -19,6 +27,8 @@ const URL_ = process.argv[2] || 'http://127.0.0.1:5191/';
 const { chromium } = (await import(pathToFileURL(PW).href)).default;
 const SLOW_4G = { offline: false, latency: 562.5, downloadThroughput: (1.44e6 / 8) | 0, uploadThroughput: (675e3 / 8) | 0 };
 const BUDGET = { tapMs: 50, longTasksWhileStreaming: 0 };
+const TAPS = Number(process.env.TAPS ?? 20);
+const p95 = (xs) => [...xs].sort((a, b) => a - b)[Math.min(xs.length - 1, Math.ceil(xs.length * 0.95) - 1)] ?? 0;
 
 // in the page, before any module: long tasks, and the first frame a selector shows up in
 const init = () => {
@@ -32,17 +42,39 @@ const init = () => {
     requestAnimationFrame(look);
   };
   requestAnimationFrame(look);
-  // tap → the frame where `sel` is on screen (and `gone` isn't)
-  window.__until = (sel, gone) =>
+  // the last touch's own time (its event timestamp: when the finger came down)
+  window.__down = 0;
+  addEventListener('pointerdown', (e) => (window.__down = e.timeStamp), true);
+  // Event Timing: each input's time to the next frame presented after its handlers (≥ 16 ms are reported)
+  window.__events = [];
+  new PerformanceObserver((l) => {
+    for (const e of l.getEntries()) if (e.interactionId) window.__events.push({ start: e.startTime, dur: e.duration });
+  }).observe({ type: 'event', durationThreshold: 16, buffered: true });
+  // on screen: rendered (not under display: none or content-visibility: hidden) and inside the viewport
+  const shows = (el) => {
+    if (!el?.checkVisibility()) return false;
+    const r = el.getBoundingClientRect();
+    return r.width > 0 && r.right > 0 && r.left < innerWidth;
+  };
+  // from `t0` (default: the last touch) to the end of the layout of the frame where `sel` is on screen (and `gone`
+  // isn't): found in its rAF, then timed by a ResizeObserver's first callback (after that frame's layout)
+  window.__until = (sel, gone, t0) =>
     new Promise((done) => {
-      const t0 = performance.now();
       const tick = () => {
         const el = document.querySelector(sel);
-        if (el && el.getBoundingClientRect().width > 0 && !(gone && document.querySelector(gone)?.getBoundingClientRect().width)) return done(performance.now() - t0);
+        if (shows(el) && !(gone && shows(document.querySelector(gone)))) {
+          const ro = new ResizeObserver(() => {
+            ro.disconnect();
+            done(performance.now() - (t0 ?? window.__down));
+          });
+          return ro.observe(el);
+        }
         requestAnimationFrame(tick);
       };
-      tick();
+      requestAnimationFrame(tick);
     });
+  // the last touch's Event Timing (to the frame presented; 16 when under the threshold), never under `frame`
+  window.__presented = (frame) => Math.max(frame, 16, ...window.__events.filter((e) => e.start >= window.__down - 1).map((e) => e.dur));
 };
 
 async function page(ctx, net) {
@@ -128,21 +160,48 @@ out.rowsInDom = await p.evaluate(() => document.querySelectorAll('[data-kit="vir
 {
   const row = p.locator('[data-kit="feed-item"] [data-kit="list-row"]').first();
   const id = await p.locator('[data-kit="feed-item"]').first().getAttribute('data-id');
+  const PAGE = '[data-part="split.back"], [data-part="split.title"]';
+  const LIST = '[data-kit="virtual-list"][data-part~="list.rows"]';
+  // a tap on `loc`, timed to the frame that shows `sel` (and hides `gone`); its presented time goes in `presented`
+  const tap = async (loc, sel, gone, presented) => {
+    const shown = p.evaluate(([s, g]) => window.__until(s, g), [sel, gone]);
+    await loc.tap();
+    const ms = await shown;
+    await p.waitForTimeout(500); // the Event Timing entries come after the frame, and the page settles
+    presented?.push(Math.round(await p.evaluate((x) => window.__presented(x), ms)));
+    return Math.round(ms);
+  };
   const taps = [];
   const backs = [];
-  for (let i = 0; i < 3; i++) {
+  const history = [];
+  const tapShown = [];
+  const backShown = [];
+  const openLong = [];
+  for (let i = 0; i <= TAPS; i++) {
     const t = await now(p);
-    const wait = p.evaluate(() => window.__until('[data-part="split.back"], [data-part="split.title"]', '[data-kit="virtual-list"][data-part~="list.rows"]'));
-    await row.tap();
-    taps.push(await wait);
-    await p.waitForTimeout(500);
-    out[`openLong${i}`] = sum(await longs(p, t));
-    const wb = p.evaluate(() => window.__until('[data-kit="virtual-list"][data-part~="list.rows"]'));
-    await p.goBack();
-    backs.push(await wb);
+    taps.push(await tap(row, PAGE, LIST, tapShown));
+    openLong.push(sum(await longs(p, t)).worst);
+    backs.push(await tap(p.locator('[data-part="split.back"]'), LIST, PAGE, backShown));
+  }
+  // the browser's Back (history.back(): no input, so to the frame that shows the list)
+  for (let i = 0; i < 3; i++) {
+    await tap(row, PAGE, LIST);
+    history.push(Math.round(await p.evaluate(([l, g]) => { const t0 = performance.now(); const shown = window.__until(l, g, t0); window.history.back(); return shown; }, [LIST, PAGE])));
     await p.waitForTimeout(500);
   }
-  out.open = { task: id, tapToPageMs: taps.map(Math.round), backToListMs: backs.map(Math.round) };
+  const warm = taps.slice(1);
+  const back = backs.slice(1);
+  out.open = {
+    task: id,
+    firstTapMs: taps[0],
+    tapToPageMs: warm,
+    tapP95: p95(warm),
+    backTapMs: back,
+    backP95: p95(back),
+    presented: { tapP95: p95(tapShown.slice(1)), backP95: p95(backShown.slice(1)), tapMs: tapShown.slice(1), backMs: backShown.slice(1) },
+    historyBackMs: history,
+    worstLongTaskAfterTap: openLong.slice(1),
+  };
 }
 
 // 5. a turn streams into a running task (16 ms a token) with 4,000 rows in the store, the list on screen
@@ -157,5 +216,12 @@ out.rowsInDom = await p.evaluate(() => document.querySelectorAll('[data-kit="vir
 await browser.close();
 writeFileSync(new URL('./out.json', import.meta.url), JSON.stringify(out, null, 2));
 console.log(JSON.stringify(out, null, 2));
-const tapP = Math.max(...out.open.tapToPageMs.slice(1));
-console.log(`\ntap → task page (warm) ${tapP} ms, budget ${BUDGET.tapMs}; long tasks while streaming ${out.streaming.count}, budget ${BUDGET.longTasksWhileStreaming}`);
+const over = [out.open.tapP95 > BUDGET.tapMs && 'tap', out.open.backP95 > BUDGET.tapMs && 'Back'].filter(Boolean);
+console.log(`\ntap → task page p95 ${out.open.tapP95} ms (first tap ${out.open.firstTapMs} ms), Back → list p95 ${out.open.backP95} ms, budget ${BUDGET.tapMs} ms over ${TAPS} each`);
+console.log(`presented (Event Timing, INP's measure): tap p95 ${out.open.presented.tapP95} ms, Back p95 ${out.open.presented.backP95} ms: reported, not gated`);
+console.log(`long tasks while streaming ${out.streaming.count} (worst ${out.streaming.worst} ms), budget ${BUDGET.longTasksWhileStreaming}: reported, not gated here`);
+if (over.length) {
+  console.error(`FAIL: ${over.join(' and ')} over ${BUDGET.tapMs} ms p95`);
+  process.exit(1);
+}
+console.log('ok: tap and Back within budget');
