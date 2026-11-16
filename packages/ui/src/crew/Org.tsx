@@ -3,7 +3,7 @@
 // delegates below), the members with no links under a dashed rule, arrows from a member to its delegates, and the
 // column beside it. Selecting a member turns the rest into its picker: + makes one its delegate, ✓ takes it off.
 // The caller owns the graph and the selection; this draws them and measures where the arrows go.
-import { For, Show, createEffect, createSignal, onCleanup, type JSX } from 'solid-js';
+import { For, Show, createEffect, createMemo, createSignal, onCleanup, type JSX } from 'solid-js';
 import { flag } from '../core/props.ts';
 import { Icon } from '../content/Icon.tsx';
 import type { IconName } from '../content/icons.ts';
@@ -582,6 +582,7 @@ export function CrewListSection(props: {
   readonly onHold?: (on: boolean) => void;
 }): JSX.Element {
   const hold = (on: boolean) => () => props.onHold?.(on);
+  const rowIds = createMemo(() => props.rows.map((r) => r.id), [], { equals: (a, b) => a.length === b.length && a.every((v, i) => v === b[i]) });
   const leave = (e: FocusEvent): void => {
     if (!(e.currentTarget as HTMLElement).contains(e.relatedTarget as Node | null)) props.onHold?.(false);
   };
@@ -628,52 +629,57 @@ export function CrewListSection(props: {
               </button>
             }
           >
-            <For each={props.rows}>
-              {(m) => (
-                <div data-kit="cr-member" data-part="crew.member">
-                  <div
-                    data-kit="cr-row"
-                    data-part="crew.row"
-                    data-paused={flag(m.paused)}
-                    role="button"
-                    tabindex="0"
-                    title={props.openLabel(m.name)}
-                    onClick={() => props.onOpen(m.id)}
-                    onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && (e.preventDefault(), props.onOpen(m.id))}
-                  >
-                    <Face avatar={m.avatar} name={m.name} {...(m.color !== undefined && { color: m.color })} size="row" part="crew.avatar" />
-                    <span data-kit="cr-main">
-                      <span data-kit="cr-top">
-                        <b data-kit="cr-name">{m.name}</b>
-                        <Show when={m.role}>{(r) => <span data-kit="cr-role">{r()}</span>}</Show>
+            {/* by member, each row made once: the list's rows are made again whenever any task changes, and a new row
+                restarted its avatar's breathing and lost hover (flicker hunt, B32) */}
+            <For each={rowIds()}>
+              {(id) => {
+                const m = (): CrewListRow => props.rows.find((r) => r.id === id) ?? (props.rows[0] as CrewListRow);
+                return (
+                  <div data-kit="cr-member" data-part="crew.member">
+                    <div
+                      data-kit="cr-row"
+                      data-part="crew.row"
+                      data-paused={flag(m().paused)}
+                      role="button"
+                      tabindex="0"
+                      title={props.openLabel(m().name)}
+                      onClick={() => props.onOpen(m().id)}
+                      onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && (e.preventDefault(), props.onOpen(m().id))}
+                    >
+                      <Face avatar={m().avatar} name={m().name} {...((c) => (c !== undefined ? { color: c } : {}))(m().color)} size="row" part="crew.avatar" />
+                      <span data-kit="cr-main">
+                        <span data-kit="cr-top">
+                          <b data-kit="cr-name">{m().name}</b>
+                          <Show when={m().role}>{(r) => <span data-kit="cr-role">{r()}</span>}</Show>
+                        </span>
+                        <span data-kit="cr-sub" data-tone={m().tone} title={m().sub}>
+                          {m().sub}
+                        </span>
                       </span>
-                      <span data-kit="cr-sub" data-tone={m.tone} title={m.sub}>
-                        {m.sub}
+                      <span data-kit="cr-side">
+                        <Show when={m().live} fallback={<Show when={m().time}>{(tm) => <span>{tm()}</span>}</Show>}>
+                          {(n) => <span data-kit="cr-n">{n()}</span>}
+                        </Show>
+                        <Icon name="chevron" size="sm" />
                       </span>
-                    </span>
-                    <span data-kit="cr-side">
-                      <Show when={m.live} fallback={<Show when={m.time}>{(tm) => <span>{tm()}</span>}</Show>}>
-                        {(n) => <span data-kit="cr-n">{n()}</span>}
-                      </Show>
-                      <Icon name="chevron" size="sm" />
-                    </span>
+                    </div>
+                    <Show when={m().jobs}>
+                      {(jobs) => (
+                        <div data-kit="cr-jobs" data-part="crew.jobs">
+                          {jobs()}
+                        </div>
+                      )}
+                    </Show>
+                    <Show when={m().more?.()}>
+                      {(more) => (
+                        <button type="button" data-kit="cr-more" data-part="crew.more" onClick={() => props.onOpen(m().id)}>
+                          {more()}
+                        </button>
+                      )}
+                    </Show>
                   </div>
-                  <Show when={m.jobs}>
-                    {(jobs) => (
-                      <div data-kit="cr-jobs" data-part="crew.jobs">
-                        {jobs()}
-                      </div>
-                    )}
-                  </Show>
-                  <Show when={m.more?.()}>
-                    {(more) => (
-                      <button type="button" data-kit="cr-more" data-part="crew.more" onClick={() => props.onOpen(m.id)}>
-                        {more()}
-                      </button>
-                    )}
-                  </Show>
-                </div>
-              )}
+                );
+              }}
             </For>
             {props.foot}
           </Show>

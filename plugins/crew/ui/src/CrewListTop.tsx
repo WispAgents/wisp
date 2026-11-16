@@ -2,7 +2,7 @@
 // Crew heading with Org and +, a row per member opening their thread, a dashed row to add the first one. Under a member,
 // its jobs for other tasks (delegated, @mentions, checks) as the list's own cards, the most urgent first, 3 at most
 // (v1 crew.js paintCrew / memberJobs): the list lends its card (ShellApi.taskCards) and leaves those jobs out.
-import { createMemo, createSignal, For, lazy, Show, type JSX } from 'solid-js';
+import { createMemo, createSignal, For, getOwner, lazy, runWithOwner, Show, type JSX } from 'solid-js';
 import type { ExtensionProps } from '@wisp/shell/contract';
 import { useShell } from '@wisp/shell';
 import { CrewListFewer, CrewListSection, CrewListStrip, useSignal, type CrewListRow } from '@wisp/ui';
@@ -70,15 +70,31 @@ function CrewSection(props: ExtensionProps): JSX.Element {
     const p = plan();
     return new Map((members() as readonly (Member & { paused?: boolean })[]).map((m) => [m.id, memberJobs(m, states().get(m.id) ?? emptyState(!!m.paused), ctx, p.jobsMax(m.id))]));
   });
-  const Jobs = (p: { readonly id: string }): JSX.Element => (
-    <For each={jobsOf().get(p.id)?.list ?? []}>
-      {(s) => (
-        <Show when={data.sessionKey(s.id)}>
-          {(k) => card()?.(k())}
-        </Show>
-      )}
-    </For>
-  );
+  // a member's job cards by task id, each made once: the jobs are new rows on every change of any task, and a new card
+  // was taken down and put back (its hover lost; flicker hunt, B32)
+  const Jobs = (p: { readonly id: string }): JSX.Element => {
+    const ids = createMemo(() => (jobsOf().get(p.id)?.list ?? []).map((s) => s.id), [], { equals: (a, b) => a.length === b.length && a.every((v, i) => v === b[i]) });
+    return (
+      <For each={ids()}>
+        {(id) => (
+          <Show when={data.sessionKey(id)}>
+            {(k) => card()?.(k())}
+          </Show>
+        )}
+      </For>
+    );
+  };
+  // each member's Jobs made once, under this list's owner (made inside `rows` it was made again with every row)
+  const owner = getOwner();
+  const jobsEls = new Map<string, JSX.Element>();
+  const jobsEl = (id: string): JSX.Element => {
+    let el = jobsEls.get(id);
+    if (el === undefined) {
+      el = runWithOwner(owner, () => <Jobs id={id} />);
+      jobsEls.set(id, el);
+    }
+    return el;
+  };
   const orgOn = (): boolean => nav().main.kind === 'view' && String((nav().main as { id?: unknown }).id) === VIEW.org;
   const rows = createMemo((): CrewListRow[] =>
     (plan().rows as unknown as readonly (Member & { key: string })[]).map((m) => ({
@@ -89,7 +105,7 @@ function CrewSection(props: ExtensionProps): JSX.Element {
       color: m.color,
       sub: m.paused ? t('wisp.crew.org.paused') : cadenceText(m, say as never),
       paused: m.paused,
-      jobs: card() ? <Jobs id={m.id} /> : undefined,
+      jobs: card() ? jobsEl(m.id) : undefined,
       more: () => {
         const n = jobsOf().get(m.id)?.more ?? 0;
         return n > 0 ? say('wisp.crew.list.more', { count: n, name: m.name }) : undefined;
