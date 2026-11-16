@@ -151,7 +151,7 @@ async fn a_goal_set_with_judges_is_judged_by_them() {
     };
     let frames = stream(port, "g3", &format!("session:{id}"), |s| {
         let n = names(s);
-        n.iter().any(|x| x == "claude/sonnet/high") && n.iter().any(|x| *x == scout)
+        n.iter().any(|x| x == "claude/sonnet/high") && n.contains(&scout)
     })
     .await;
     // the first judge runs as the harness with that model
