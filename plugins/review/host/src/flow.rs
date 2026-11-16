@@ -243,12 +243,24 @@ fn finished_of(t: &Task, r: &Review) -> ReviewFinished {
     }
 }
 
-/// A review cut short by a restart starts over: the running ones are cleared at boot.
-pub async fn boot(env: &dyn Env, call: &Call, tasks: Vec<Task>) {
-    for t in tasks.into_iter().filter(|t| t.review.as_ref().is_some_and(|r| r.status == Status::Running)) {
-        // whole: at boot, before any run of this server can write the slot
-        if let Err(e) = env.save(call, &t.id, core::on_boot(t.review.clone()).as_ref(), false, None).await {
-            tracing::warn!(task = %t.id, "couldn't clear the review a restart cut short: {e}");
+/// A review cut short by a restart starts over: the running ones are cleared at boot. `ids`: the tasks whose list row
+/// says a review is running ([`crate::cut_short`]). Boot runs after startup, off its path, so a run of this server may
+/// get there first: a task it has claimed is left alone, and the clear lands only while the slot still holds the
+/// record boot read (a claim taken after the check writes over it, or makes the clear a `conflict`).
+pub async fn boot(r: &Reviewer, call: &Call, ids: Vec<String>) {
+    for id in ids {
+        let Ok(t) = r.env.task(call, &id).await else { continue };
+        let Some(was) = t.review.as_ref().filter(|x| x.status == Status::Running) else { continue };
+        if r.is_running(&t.id) {
+            continue;
+        }
+        match r.env.save(call, &t.id, core::on_boot(Some(was.clone())).as_ref(), false, Some(was)).await {
+            Ok(()) => {}
+            // a run's record since the read, or one this build doesn't write byte for byte (an older wisp's)
+            Err(e) if e.code == wisp_kernel::Code::Conflict => {
+                tracing::debug!(task = %t.id, "review: the slot changed before boot cleared it");
+            }
+            Err(e) => tracing::warn!(task = %t.id, "couldn't clear the review a restart cut short: {e}"),
         }
     }
 }

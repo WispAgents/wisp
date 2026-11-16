@@ -9,7 +9,7 @@ use std::sync::Arc;
 use serde_json::Value;
 use wisp_git_api::{Body, FileDiff, GitServiceV1};
 use wisp_kernel::{Call, Ctx, Manifest, Plugin, Result, Setup, WireError};
-use wisp_review_api::{CONSTRAINTS, EXT, HOLD, Maybe, MaybeReview, Pick, Review, ReviewFinished, TESTS, TestsRun, View};
+use wisp_review_api::{CONSTRAINTS, EXT, HOLD, Maybe, MaybeReview, Pick, Review, ReviewFinished, Status, TESTS, TestsRun, View};
 use wisp_review_core::Agent;
 use wisp_runtime_api::commands as rt;
 use wisp_runtime_api::events::TurnEnded;
@@ -54,20 +54,31 @@ impl Plugin for ReviewPlugin {
                 let _ = start(&ctx, &r, &ctx.root_call(), e.session_id.as_str(), false).await;
             }
         });
+        // off serve's start (ADR-0011: cold start ≤ 150 ms on 5k tasks): one list read, then only the tasks whose row says
+        // a review is running are read again (was: `runtime.get` on every task, in sequence, ~360 ms on 5k)
         s.on_start(move |ctx| async move {
-            let call = ctx.root_call();
-            let all = ctx.run::<rt::List>(&call, rt::ListArgs { archived: None, limit: None }).await.unwrap_or_default();
-            let mut tasks = Vec::new();
-            for s in all {
-                if let Ok(t) = env.task(&call, s.id.as_str()).await {
-                    tasks.push(t);
-                }
-            }
-            boot(env.as_ref(), &call, tasks).await;
+            let c = ctx.clone();
+            ctx.spawn(async move {
+                let call = c.root_call();
+                let rows = c.run::<rt::List>(&call, rt::ListArgs { archived: None, limit: None }).await.unwrap_or_default();
+                boot(&reviewer, &call, cut_short(&rows)).await;
+            });
             Ok(())
         });
         Ok(())
     }
+}
+
+/// The tasks whose list row (review's own `review` field, [`row_fields`]) says a review is running: the ones a restart
+/// may have cut short.
+pub fn cut_short(rows: &[wisp_runtime_api::model::Summary]) -> Vec<String> {
+    rows.iter()
+        .filter(|r| {
+            r.fields.get("review").and_then(|v| v.get("status")).and_then(|s| serde_json::from_value::<Status>(s.clone()).ok())
+                == Some(Status::Running)
+        })
+        .map(|r| r.id.as_str().to_owned())
+        .collect()
 }
 
 /// `runtime.summary@1`: the review on the task's row (`review`, as `review.view` says it, current when
