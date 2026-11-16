@@ -275,9 +275,10 @@ fn priority_acks_then_the_session_then_the_list_then_the_rest_and_the_watermark_
     let topics: Vec<&str> = patch["ops"].as_array().unwrap().iter().map(|o| o["topic"].as_str().unwrap()).collect();
     assert_eq!(topics, vec!["session:a", "list"]);
     assert_eq!(sends(&out)[0].2, Some(machines - 1), "a resume from this frame must still get the queued machines row");
-    s.server.handle(Input::CommandResult { conn: C1, mid: "m1".into(), outcome: CommandOutcome::Ok { seq: 1, result: None } }, s.now);
     s.drained(C1, 0);
-    let next = s.tick(50);
+    // the ack goes as it's known (a_commands_answer_goes_at_once_even_right_after_a_flush), first, with what's queued
+    let next =
+        s.server.handle(Input::CommandResult { conn: C1, mid: "m1".into(), outcome: CommandOutcome::Ok { seq: 1, result: None } }, s.now);
     assert_eq!(ts(&msgs(&next)), vec!["ack", "patch"]);
     assert_eq!(sends(&next)[0].2, Some(s.store.seq));
 }
@@ -293,14 +294,17 @@ fn an_ack_waits_until_the_effects_it_reports_have_been_sent() {
     assert_eq!(ts(&msgs(&first)), vec!["patch"]);
     assert_eq!(sends(&first)[0].2, Some(s.store.seq - 1));
     let seq = s.store.seq;
-    s.server.handle(
+    // its effect isn't out yet (the socket is full): the ack waits, then goes with it once the socket drained
+    let held = s.server.handle(
         Input::CommandResult { conn: C1, mid: "m1".into(), outcome: CommandOutcome::Ok { seq, result: Some(json!({"id": "s2"})) } },
         s.now,
     );
+    assert!(msgs(&held).iter().all(|m| m["t"] != "ack"), "no ack before its effect: {:?}", msgs(&held));
     s.drained(C1, 0);
     assert_eq!(msgs(&s.tick(50))[0], json!({"t": "ack", "mid": "m1", "seq": seq, "result": {"id": "s2"}}));
-    // a reject has nothing to wait for
-    s.server.handle(
+    s.drained(C1, 0);
+    // a reject has nothing to wait for: it goes as it's known
+    let out = s.server.handle(
         Input::CommandResult {
             conn: C1,
             mid: "m2".into(),
@@ -308,10 +312,37 @@ fn an_ack_waits_until_the_effects_it_reports_have_been_sent() {
         },
         s.now,
     );
-    assert_eq!(
-        msgs(&s.tick(50)),
-        vec![json!({"t": "reject", "mid": "m2", "code": "vetoed", "message": "over budget", "reason": "budget_hold"})]
+    assert_eq!(msgs(&out), vec![json!({"t": "reject", "mid": "m2", "code": "vetoed", "message": "over budget", "reason": "budget_hold"})]);
+}
+
+/// A command's answer is the user's feedback (ADR-0017): it goes when it's known, not at the next flush (the stream had
+/// just flushed a patch, so a `maybe_flush` held it up to `flush_ms`; a refused Mark done toasted ~50 ms late).
+#[test]
+fn a_commands_answer_goes_at_once_even_right_after_a_flush() {
+    let mut s = S::new(q(&[("fresh", "list")]), |_| {});
+    s.connect(C1);
+    s.drained(C1, 0);
+    s.tick(100);
+    // the stream flushes a change now
+    let rows = s.store.commit(&[title("t")], s.now);
+    let first = s.server.handle(Input::Committed { rows }, s.now);
+    assert_eq!(ts(&msgs(&first)), vec!["patch"]);
+    s.drained(C1, 0);
+    // a refusal at the same moment goes in this very step, not after flush_ms
+    let out = s.server.handle(
+        Input::CommandResult {
+            conn: C1,
+            mid: "m9".into(),
+            outcome: CommandOutcome::Err { code: "invalid".into(), message: "no".into(), reason: None },
+        },
+        s.now,
     );
+    assert_eq!(ts(&msgs(&out)), vec!["reject"]);
+    // and an ack whose effects are out goes at once too
+    let seq = s.store.seq;
+    let out =
+        s.server.handle(Input::CommandResult { conn: C1, mid: "m10".into(), outcome: CommandOutcome::Ok { seq, result: None } }, s.now);
+    assert_eq!(ts(&msgs(&out)), vec!["ack"]);
 }
 
 #[test]

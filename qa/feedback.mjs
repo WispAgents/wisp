@@ -5,7 +5,7 @@
 //      change, a style change seen in a screenshot, focus moving, or a new page (a link) within 100 ms
 //      passes;
 //   2. a control that went pending (aria-busy / data-pending) is pressed again: nothing may happen;
-//   3. a press that sent a command is repeated with the mock refusing that command: a toast must say why
+//   3. a press that sent a command that writes (not a manifest's readOnly one) is repeated with the mock refusing it: a toast must say why
 //      within 100 ms of the refusal arriving (DELAY + BUDGET after the press), and the screen must roll
 //      back: with the toast hidden, it no longer shows what the accepted press showed (the row read, the
 //      new task, the toggle flipped). A navigation the press also made (opening a task) stays; only the
@@ -46,6 +46,18 @@ const SIZES = { 1440: [1440, 900], 1024: [1024, 768], 900: [900, 900], 600: [600
 const INTERACTIVE = 'button, a[href], [role="button"], input:not([type=hidden]), textarea, select, [tabindex]:not([tabindex="-1"])';
 
 const PHONE = process.argv.includes('--phone');
+// the commands that only read (each plugin's manifest, `readOnly: true`): a press often reads on its way (opening a
+// task reads `runtime.cold`), and a refused read has nothing to roll back; step 3 refuses the first command that writes
+const READS = new Set(
+  fs.readdirSync(path.join(ROOT, 'plugins')).flatMap((p) => {
+    try {
+      const m = JSON.parse(fs.readFileSync(path.join(ROOT, 'plugins', p, 'host', 'wisp-plugin.json'), 'utf8'));
+      return (m.contributes?.commands ?? []).filter((c) => c.readOnly).map((c) => c.id);
+    } catch {
+      return [];
+    }
+  }),
+);
 const arg = (k) => process.argv.find((a) => a.startsWith(`--${k}=`))?.slice(k.length + 3) || process.env[`FEEDBACK_${k.toUpperCase()}`];
 
 async function startV2(seedFile) {
@@ -255,8 +267,9 @@ async function checkView(browser, url, name, opener, size, mode, at, outDir, ph)
       }
       // 3. refused: roll back and say why
       let refusal = '';
-      if (r.sent.length) {
-        const cmd = r.sent[0];
+      const writes = r.sent.filter((c) => !READS.has(c));
+      if (writes.length) {
+        const cmd = writes[0];
         const { ctx: c2, p: p2 } = await open(browser, url, opener, size, mode, at, ph);
         try {
           await fetch(new URL(`/__mock/fail?cmd=${encodeURIComponent(cmd)}`, url), { method: 'POST' });

@@ -289,7 +289,14 @@ impl<C: Clone> SyncServer<C> {
                 c.control.push(json(&wisp_protocol::Reject { t: tag::Reject, mid, code, message, reason }));
             }
         }
-        self.core.maybe_flush(c, now);
+        // the answer to what someone just did goes now, not at the next flush (ADR-0017): the flush still holds an ack
+        // until the effects it reports are out; a socket past its high-water mark waits to drain as before (a flush
+        // then would shed topics)
+        if c.buffered <= self.core.opts.high_water_bytes {
+            self.core.flush(c, now);
+        } else {
+            self.core.maybe_flush(c, now);
+        }
     }
 
     // ---------- the change feed ----------
