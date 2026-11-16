@@ -263,12 +263,25 @@ export default function TaskView(props: { readonly id: string; readonly onBack?:
   // Back also lets go of the focus first (it goes to the page, as when the button is removed): removing the focused
   // button with the page forced another style recalc of the list coming back
   let kept = false;
+  // the place is read as the reader scrolls (once a frame, while the layout is the frame's own), so keeping it on the
+  // way out reads nothing: read in the close it forced a layout of the half-changed page, 7.5 ms of a Mark done
+  // (the flicker gate's profile). Never scrolled since it opened: the kept place stands as it was.
+  let placeSeen: { place: Place | undefined } | undefined;
+  let reading = 0;
+  const notePlace = (el: HTMLElement): void => {
+    if (reading) return;
+    reading = requestAnimationFrame(() => {
+      reading = 0;
+      // a page already hidden (a phone's Back through history hides the main pane first) has no place to read: every
+      // turn would measure 0 and the kept place would become the top
+      if (!el.isConnected || el.checkVisibility?.() === false || !el.querySelector('[data-turn]')) return;
+      placeSeen = { place: placeOf(el, turnTops(el)) };
+    });
+  };
+  onCleanup(() => cancelAnimationFrame(reading));
   const keepPlace = (): void => {
-    const el = bodyEl;
-    // a page already hidden (a phone's Back through history hides the main pane first) has no place to read: every
-    // turn would measure 0 and the kept place would become the top
-    if (kept || !el?.isConnected || el.checkVisibility?.() === false || !el.querySelector('[data-turn]')) return;
-    const p = placeOf(el, turnTops(el));
+    if (kept || !placeSeen) return;
+    const p = placeSeen.place;
     places.set((cur) => keep(cur as unknown as Record<string, Place>, key, p) as unknown as Json);
   };
   onCleanup(keepPlace);
@@ -387,6 +400,7 @@ export default function TaskView(props: { readonly id: string; readonly onBack?:
   const onBodyScroll = (e: Event): void => {
     kept = false;
     keepShown(e.currentTarget as HTMLElement);
+    notePlace(e.currentTarget as HTMLElement);
   };
   // the older turns came as stubs (v1 #788): opening one asks for only that turn
   const opener = turnOpener({

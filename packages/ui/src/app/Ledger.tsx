@@ -39,6 +39,7 @@ import {
   type LedgerTurn,
   type Outcome,
 } from './ledger-model.ts';
+import { fontsReady } from '../core/fonts.ts';
 import '../css/ledger.css';
 
 /** The ledger's words, from the shell's catalogue (the kit shows no copy of its own). */
@@ -444,7 +445,7 @@ export function Ledger(props: LedgerProps): JSX.Element {
     onCleanup(() => ro.disconnect());
   });
   // a web font that lands after the first measure changes every label's length and every chip's width
-  void document.fonts?.ready.then(() => {
+  void fontsReady().then(() => {
     place();
     measure();
   });

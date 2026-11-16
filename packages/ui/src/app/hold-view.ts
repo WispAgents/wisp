@@ -8,9 +8,13 @@ import { atTail, dockShift, mediaShift, turnsShift, type Grew } from './media-sh
  *  The dock and the view are watched by the same observer: when the reply box grows, or the keyboard shortens the view,
  *  at the tail the view goes back to the end, so the last block never sits under the box (`dockShift`). Every read
  *  comes before the one write. */
+const PENDING = Symbol('pending');
+
 export function holdMedia(body: HTMLElement, dock: HTMLElement): () => void {
   const anchors = typeof CSS !== 'undefined' && CSS.supports?.('overflow-anchor', 'auto') === true;
-  const sizes = new WeakMap<Element, number | null>();
+  // a picture's height at the last layout; `PENDING` until the observer's first report (watch() never measures: it runs
+  // on a mutation, right after the writes, where a read forces a layout: 14 ms of a Mark done's frame)
+  const sizes = new WeakMap<Element, number | null | typeof PENDING>();
   const size = (m: Element): number | null => (m.getClientRects().length > 0 ? (m as HTMLElement).offsetHeight : null);
   const turnsEl = body.querySelector<HTMLElement>(':scope > [data-kit="turns"]');
   const turns = turnsEl ? turnFollower(body, turnsEl, anchors) : undefined;
@@ -38,7 +42,8 @@ export function holdMedia(body: HTMLElement, dock: HTMLElement): () => void {
       const from = sizes.get(m);
       const to = size(m);
       sizes.set(m, to);
-      if (from != null && to != null && Math.abs(to - from) >= 1) grew.push({ top: m.getBoundingClientRect().top, from, to });
+      // its first report is where it was laid out before anything was painted: nothing to hold
+      if (from !== PENDING && from != null && to != null && Math.abs(to - from) >= 1) grew.push({ top: m.getBoundingClientRect().top, from, to });
     }
     if (!body.isConnected || body.clientHeight === 0) return;
     // a picture growing is mediaShift's; the turns growing otherwise (a turn landed, steps came in) is the follower's
@@ -54,7 +59,7 @@ export function holdMedia(body: HTMLElement, dock: HTMLElement): () => void {
   const watch = (root: ParentNode): void => {
     for (const m of root.querySelectorAll('img, video')) {
       if (sizes.has(m)) continue;
-      sizes.set(m, size(m));
+      sizes.set(m, PENDING);
       ro.observe(m);
     }
   };

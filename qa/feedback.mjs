@@ -48,6 +48,11 @@ const INTERACTIVE = 'button, a[href], [role="button"], input:not([type=hidden]),
 const PHONE = process.argv.includes('--phone');
 // the commands that only read (each plugin's manifest, `readOnly: true`): a press often reads on its way (opening a
 // task reads `runtime.cold`), and a refused read has nothing to roll back; step 3 refuses the first command that writes
+// writes whose refusal is answered without a toast, on purpose (each with why); the rollback is still checked
+const QUIET = {
+  'runtime.markRead': 'opening a task marks it read on the way: a refused mark-read stays unread, no toast (B3: it was noise)',
+  'terminal.input': 'a keystroke into a terminal: the terminal shows what came back, a toast per key would be noise',
+};
 const READS = new Set(
   fs.readdirSync(path.join(ROOT, 'plugins')).flatMap((p) => {
     try {
@@ -267,9 +272,12 @@ async function checkView(browser, url, name, opener, size, mode, at, outDir, ph)
       }
       // 3. refused: roll back and say why
       let refusal = '';
-      const writes = r.sent.filter((c) => !READS.has(c));
+      const writes = r.sent.filter((c) => !READS.has(c) && !QUIET[c]);
       if (writes.length) {
         const cmd = writes[0];
+        // each read the press made before it (New task asks budget.ask first: ADR-0091) is a round trip before the refusal
+        const before = r.sent.slice(0, r.sent.indexOf(cmd)).filter((c) => READS.has(c)).length;
+        const arrives = DELAY * (1 + before);
         const { ctx: c2, p: p2 } = await open(browser, url, opener, size, mode, at, ph);
         try {
           await fetch(new URL(`/__mock/fail?cmd=${encodeURIComponent(cmd)}`, url), { method: 'POST' });
@@ -281,17 +289,23 @@ async function checkView(browser, url, name, opener, size, mode, at, outDir, ph)
             await p2.locator(INTERACTIVE).nth(target.nth).focus();
             await p2.keyboard.type('x');
           }
-          const t0 = Date.now();
+          // timed in the page, from the press's own event to the toast entering the DOM: Playwright's waitFor polls
+          // through the same channel this gate's delaying route holds, so it saw a toast up to a round trip late
+          const TOASTS = '[data-kit="toast"], [role="status"][data-part*="toast"], [data-part="ui.toast"]';
+          await p2.evaluate((sel) => {
+            const w = (window.__refusal = { pressed: 0, toast: 0 });
+            for (const ev of ['pointerdown', 'keydown']) addEventListener(ev, () => { if (!w.pressed) w.pressed = performance.now(); }, { capture: true, once: true });
+            new MutationObserver((ms, mo) => {
+              for (const m of ms) for (const n of m.addedNodes) if (n.nodeType === 1 && (n.matches?.(sel) || n.querySelector?.(sel)) && !w.toast) { w.toast = performance.now(); mo.disconnect(); }
+            }).observe(document.body, { childList: true, subtree: true });
+          }, TOASTS);
           if (text) await p2.keyboard.press('Enter');
           else await tapAt(p2, target2.box, touch);
-          // the refusal arrives after DELAY: a toast within BUDGET of it
-          const TOASTS = '[data-kit="toast"], [role="status"][data-part*="toast"], [data-part="ui.toast"]';
-          const toast = await p2
-            .locator(TOASTS)
-            .first()
-            .waitFor({ state: 'visible', timeout: Math.max(1, DELAY + BUDGET - (Date.now() - t0)) })
-            .then(() => true, () => false);
-          refusal = toast ? `refused ${cmd}: toast` : `refused ${cmd}: no toast within ${DELAY + BUDGET} ms`;
+          // the refusal arrives after `arrives` (DELAY a round trip): a toast within BUDGET of it
+          await p2.waitForTimeout(arrives + BUDGET + 200);
+          const took = await p2.evaluate(() => (window.__refusal.toast && window.__refusal.pressed ? window.__refusal.toast - window.__refusal.pressed : null));
+          const toast = took !== null && took <= arrives + BUDGET;
+          refusal = toast ? `refused ${cmd}: toast` : `refused ${cmd}: no toast within ${arrives + BUDGET} ms`;
           if (!toast) notes.push(`${cmd} refused: no toast within ${BUDGET} ms of the refusal`);
           // rolled back: the toast hidden, the accepted press's optimistic change is gone
           await p2.waitForTimeout(BUDGET);
