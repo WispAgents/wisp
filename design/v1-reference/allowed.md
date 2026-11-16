@@ -65,6 +65,11 @@ shift every later index. Everything outside the part still has to match.
   ⌘P list on New task's place: a project's name = only it, its + adds it, No folder and Other folder… after the
   projects. The phone apps' project chip row and New task's place chips are the same selector. Masked: the place line
   (`launcher.projects`) on every Home view; everything around it is still checked.
+- **The head's lead is a bar that folds** (the owner, 2026-11-07, D-0047 / ADR-0012: bars never wrap, they fold label →
+  icon → More; round B8, 2026-11-16, after the owner saw Machines and the memory chip overlap): v1 pushed its update
+  button and memory chip to the right with the brand's `margin-right: auto` (174 px with nothing in between); v2's
+  lead bar fills that space and right-aligns them, so the brand's margin is 0. Same places; `topbar.brand`'s metrics
+  are skipped and its box masked (the logo), everything around it still checked.
 - **Take over is Open in <harness>** (the owner, 2026-11-09, ADR-0033 "Name"): the task's details say "Open in Claude
   Code" where v1 said "Take over" (`details.openIn`).
 - **Settings-row titles never wrap** (the owner, 2026-11-12, round 26; ADR-0012, `design/layout.md` §1: settings-row
@@ -136,4 +141,5 @@ settings.spells  x.input  owner  900,1440
 task.right-click  list.menu  owner
 task.right-click  list.menu.*  owner
 *   block.files.path   owner
+*   topbar.brand       owner
 ```

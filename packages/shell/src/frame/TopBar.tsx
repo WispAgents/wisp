@@ -48,7 +48,7 @@ export function HeadLead(props: { readonly inputs: readonly InputId[] }): JSX.El
   const shell = useShell();
   const lists = props.inputs.map((input) => useSignal(shell.extensions(input)));
   const items = createMemo(() => lists.flatMap((l) => l()).map((ext) => useItem(ext)));
-  // compact (32 px): the head's row is v1's 36 (the account button sets it); a full bar (40) pushed the sidebar 4 px down
+  // at the end, as v1's brand pushed its update button and memory chip right; compact (32 px): the head's row is v1's 36 (the account button sets it); a full bar (40) pushed the sidebar 4 px down
   // and every parity view after it failed
-  return <Toolbar aria-label={shell.t('shell.topbar')} items={items()} justify="start" gap="1" compact part="shell.topbar.lead" t={(k) => shell.t(`kit.${k}`)} />;
+  return <Toolbar aria-label={shell.t('shell.topbar')} items={items()} justify="end" gap="1" compact part="shell.topbar.lead" t={(k) => shell.t(`kit.${k}`)} />;
 }

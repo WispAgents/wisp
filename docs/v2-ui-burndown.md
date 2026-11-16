@@ -297,3 +297,9 @@ with exact boxes).
 | task.right-click | 8 | 0 | 0 | 0 | 1440-light-rest: 3.9% px, 143 regions >8×8, 36/93 parts off (topbar.brand#0: mar 0px 174px 0px 0px→0) |
 | task.ship | 8 | 0 | 0 | 0 | 1440-light-rest: 16.9% px, 182 regions >8×8, 33/156 parts off (topbar.brand#0: mar 0px 174px 0px 0px→0) |
 | task.transcript | 8 | 0 | 0 | 0 | not reachable in v2 (900-light): locator.click: Timeout 2500ms exceeded. |
+
+After it (same day): the lead's items right-aligned as v1's, and `topbar.brand` an owner allowance (D-0047's folding bar
+fills the space v1's brand margin took): **home's metrics 12/12** (0 parts off at 1440 and 1024); its pixels still fail
+on the half-pixel rows only. Next: re-capture v1 with exact boxes (qa/v1-reference.mjs) to place that half pixel, then
+the unreachable openers (task.transcript, task.rerun, task.preview, task.editor, the goal menus).
+
