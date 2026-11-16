@@ -23,7 +23,7 @@ Rust for everything but the UI, Solid/TS for the UI, everything a plugin (ADR-00
 | CI, last full run (56405a3a) | Linux + macOS: one brittle test (platform-controls read only the last reduced-motion block) — fixed in the test; Windows running |
 | Budgets | initial JS 107.2 KB br (≤ 120) · CSS 27.1 KB (≤ 30) |
 | Weekly usage | 0 % (reset applied) · **owner 2026-11-15: one coder at a time** |
-| Coders running | coder-r301 (check rule: await import in tests) |
+| Coders running | coder-r302 (pull.test.ts flaky) |
 
 ## 3. Owner decisions (every one, dated; read before any change)
 
@@ -770,7 +770,7 @@ Source: `docs/v1-features.md` (each row's evidence and test). `[x]` built, `[ ]`
 - [x] Phone Tasks: a crew member's avatar touches the task title (no gap like the dot's): the phone feed row's leading column is one fixed width (`--size-avatar-sm`), dot / face / mark icon centred in it, so every title starts at one x (r291; `platform-css.test.ts` `a_crew_face_rows_title_starts_at_the_same_x_as_a_dot_rows`; Chrome: title x 47 on face and dot rows, android and ios, 390 and 320)
 - [x] Phone New task sheet shows the whole Home page under the composer (Needs you, Tips): a sheet should hold just the composer: the phone sheet holds the prompt box alone, caret in it (no greeting, Needs you, usage, cards, tips, keys, feedback line); an empty Recipes list hides on phones as in v1 responsive.css (Start from an issue stays) (r291; `phone-pages.test.tsx` `the_new_task_sheet_on_{android,ios}_holds_only_the_composer_focused_with_no_home_list_or_tips`)
 - [x] Lead's call (2026-11-16): agents (agent:session) and API keys may add projects through runtime.projectAdd (they already start tasks; capped tasks are refused)
-- [ ] Tests keep timing out on an `await import()` inside the test body under CI load (pane-host, machine labels): a check rule against it
+- [x] Tests keep timing out on an `await import()` inside the test body under CI load (pane-host, machine labels): a check rule against it (r301: `dynamic-import-in-test`, 46 imports hoisted, 8 lazy-chunk waits allowed)
 - [ ] Sign in with Apple on the grid, then on iOS (ADR-0065 open question 1)
 - [ ] `ui-only`/MCP: nothing open
 
@@ -945,7 +945,8 @@ Source: `docs/v1-features.md` (each row's evidence and test). `[x]` built, `[ ]`
 |---|---|---|
 | 283 | DX: build bundle + Tauri lock: stopped before edits; plan in §4.6 | to redo |
 | 282 | Server perf budgets: stopped before edits; plan in §4.3 | to redo |
-| 301 | Check rule: no `await import()` inside a UI test body (the 5 s timeouts under CI load) | in progress |
+| 302 | plugins/shell-list/ui pull.test.ts: spinner-at-once fails under load (flaky = bug) | in progress |
+| 301 | Check rule `dynamic-import-in-test`: 46 test imports hoisted, 8 lazy-chunk waits allowed with a reason | committed |
 | 300 | Sign out revokes the device's grid token (`POST /api/device/revoke`, ADR-0078); offline queued; desktop grid-client too | committed |
 | 299 | Phone step 14 done: Crew tab + wisp Cloud sign-in on Computers | committed (1febaf4e) |
 | 298 | "This Mac" labels follow the OS (owner 11-08); My Stuff says each item's computer; iOS compose only on Tasks | committed |
