@@ -14,6 +14,16 @@ pub fn until(reset_at: Option<i64>, account_until: Option<i64>, now: i64, said_m
     reset_at.or(account_until).filter(|u| *u > now).unwrap_or(now + said_ms.max(0))
 }
 
+/// Who's at the limit, in the hero: the harness, with its account's name when it has one of its own ("Codex (Main)").
+/// v1 said the account's label alone ("Main is at its usage limit"), which doesn't say which agent (B26).
+pub fn who(harness: &str, account: Option<&str>) -> String {
+    match account.map(str::trim).filter(|a| !a.is_empty() && *a != harness && !a.eq_ignore_ascii_case("default")) {
+        Some(a) if !harness.is_empty() => format!("{harness} ({a})"),
+        Some(a) => a.to_owned(),
+        None => harness.to_owned(),
+    }
+}
+
 /// The card and the hero. `who`: the account's label, else the harness's name.
 pub fn at_limit(who: &str, text: &str, limit: TurnLimit) -> (TurnLimit, Vec<Value>) {
     let who = if who.is_empty() { "This harness" } else { who };
@@ -81,5 +91,14 @@ mod tests {
             (Some("This harness is at its usage limit"), Some("No output."))
         );
         assert!(!alone[0]["summary"].as_str().unwrap().contains("accounts"));
+    }
+
+    #[test]
+    fn the_hero_names_the_harness_with_its_account_never_the_account_alone_b26() {
+        assert_eq!(who("Codex", Some("Main")), "Codex (Main)");
+        assert_eq!(who("Claude Code", Some("Claude Code")), "Claude Code");
+        assert_eq!(who("Claude Code", None), "Claude Code");
+        assert_eq!(who("Codex", Some(" ")), "Codex");
+        assert_eq!(who("", Some("Main")), "Main");
     }
 }

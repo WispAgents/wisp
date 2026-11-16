@@ -511,7 +511,7 @@ async fn a_run_at_its_usage_limit_gets_its_card_and_waits_for_the_reset_when_set
     let l = t.limit.clone().expect("the card");
     assert_eq!((l.until, l.others.len(), l.others[0].id.as_str(), l.waiting), (4_102_444_800_000, 1, "w", false));
     let blocks = t.presentation.unwrap().blocks;
-    assert_eq!((blocks[0]["title"].as_str(), blocks[0]["status"].as_str()), (Some("Me is at its usage limit"), Some("blocked")));
+    assert_eq!((blocks[0]["title"].as_str(), blocks[0]["status"].as_str()), (Some("Fake CLI (Me) is at its usage limit"), Some("blocked")));
     assert_eq!(blocks[1]["type"], "terminal");
     assert!(t.refusal.is_none());
     assert_eq!(r.rt.get(&id).await.unwrap().state, SessionState::Review, "off: it asks you");

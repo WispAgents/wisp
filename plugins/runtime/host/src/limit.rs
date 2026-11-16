@@ -54,7 +54,8 @@ impl Runtime {
         let this = if account.is_empty() { "default" } else { account.as_str() };
         let from = accounts.iter().find(|a| a.id == this);
         let h = self.harness(&agent).ok();
-        let name = from.map(|a| a.label.clone()).or_else(|| h.as_ref().map(|h| h.info().name.clone())).unwrap_or_default();
+        let harness = h.as_ref().map(|h| h.info().name.clone()).unwrap_or_default();
+        let name = limit::who(&harness, from.map(|a| a.label.as_str()));
         let listed = serde_json::json!({ "accounts": accounts });
         let card = TurnLimit {
             account: account.clone(),
