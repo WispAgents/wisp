@@ -96,6 +96,8 @@ pub struct Running {
     pub store: wisp_store::Store,
     /// the store's commits feeding the v2 stream: dropped, the feed stops
     pub feed: wisp_store::Subscription,
+    /// glibc's heap handed back after bursts of first looks (ADR-0084), stopped with the server
+    pub trimmer: Option<tokio::task::JoinHandle<()>>,
 }
 
 /// What `config` reads in full: the kernel's own kinds (settings, plugins). Plugins add theirs.
@@ -271,13 +273,14 @@ pub async fn boot(home: &Path, port: u16, host: Option<&str>) -> Result<Running>
         .with_readers(readers.clone())
         .with_pages(list_pages())
         .with_views(views.clone());
-    let driver = wisp_api::v2::Driver::start(Arc::new(snaps), backend.clone(), peer(&kernel));
+    let (snaps, trimmer) = crate::trim::wrap(Arc::new(snaps));
+    let driver = wisp_api::v2::Driver::start(snaps, backend.clone(), peer(&kernel));
     let feed = wisp_api::v2_store::feed_read(&store, driver.clone(), views, readers.into());
     hub.mount(driver);
     let edge = Edge::new(cfg, backend, hub);
 
     let server = wisp_api::serve(edge, listener).await?;
-    Ok(Running { server, kernel, started, store, feed })
+    Ok(Running { server, kernel, started, store, feed, trimmer })
 }
 
 /// What the desktop app may tell its server on the stdin pipe, one line each. Nothing else is read there, and nothing
@@ -349,6 +352,9 @@ pub async fn until_signal(r: Running) {
         () = stdin_closed() => {}
     }
     r.server.shutdown().await;
+    if let Some(t) = &r.trimmer {
+        t.abort();
+    }
     // every plugin off, in reverse order: their scopes end their tasks and children
     let ids: Vec<String> = r.kernel.status().into_iter().filter(|s| s.state == "active").map(|s| s.id).collect();
     for id in ids.iter().rev() {

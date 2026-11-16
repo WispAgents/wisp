@@ -157,6 +157,9 @@ tracing.workspace = true
 tracing-subscriber.workspace = true
 
 [dev-dependencies]
+# trim.rs: the trimmer's quiet window on tokio's paused clock, one poll of a Notify
+futures.workspace = true
+tokio = { workspace = true, features = ["test-util"] }
 portable-pty.workspace = true
 wisp-proc.workspace = true
 wisp-testkit.workspace = true

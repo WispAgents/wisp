@@ -229,3 +229,43 @@ async fn a_caller_that_hangs_up_never_leaves_rows_checking() {
     go.send(true).unwrap();
     assert_eq!(topic_is(&r.store, &[("h", "installed")]).await[0].3.as_deref(), Some("h 1.0"));
 }
+
+/// The harness rows written after `seq`: (id, state) in order.
+async fn harness_writes(store: &wisp_store::Store, seq: i64) -> Vec<(String, String)> {
+    let changes = store.read_async(move |r| r.changes_since(seq, None, 1_000)).await.unwrap();
+    changes
+        .iter()
+        .filter(|c| c.entity == "runtime.harness")
+        .map(|c| {
+            let state = c
+                .patch
+                .as_array()
+                .and_then(|ops| ops.iter().find(|o| o["path"] == "/state"))
+                .map_or("", |o| o["value"].as_str().unwrap_or(""));
+            let state = if c.patch.get("state").is_some() { c.patch["state"].as_str().unwrap_or("") } else { state };
+            (c.id.clone(), state.to_owned())
+        })
+        .collect()
+}
+
+/// ADR-0084: a round whose answers are what the rows already say writes nothing. A start runs several rounds at once
+/// (runtime's own, and router, telemetry, accounts asking `runtime.agents`): each rewrote every row for its `at` alone,
+/// 28 of a start's 42 harness writes, on the one writer thread every plugin's start waits on. A Re-check still shows
+/// `checking`, then the answer.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_round_that_finds_what_the_rows_already_say_writes_nothing_and_a_recheck_still_shows_checking() {
+    let r = rig_on(Recorder::default(), vec![Fake::named("a", "A", &[]), Fake::named("b", "B", &[])]).await;
+    r.rt.agents(&AgentsArgs::default()).await;
+    topic_is(&r.store, &[("a", "installed"), ("b", "installed")]).await;
+    let head = r.store.head_seq().unwrap();
+    r.rt.agents(&AgentsArgs::default()).await;
+    let plain = AgentsArgs::default();
+    let (x, y, z) = tokio::join!(r.rt.agents(&plain), r.rt.agents(&plain), r.rt.agents(&plain));
+    assert!([x, y, z].iter().all(|l| l.len() == 2 && l.iter().all(|a| a.available)), "every round still answers its caller");
+    assert_eq!(harness_writes(&r.store, head).await, Vec::<(String, String)>::new(), "rounds that found nothing new rewrote rows");
+    r.rt.agents(&AgentsArgs { fresh: Some("all".into()) }).await;
+    let wrote = harness_writes(&r.store, head).await;
+    let states: Vec<&str> = wrote.iter().map(|w| w.1.as_str()).collect();
+    assert_eq!(states, ["checking", "checking", "installed", "installed"], "a Re-check shows checking, then the answer: {wrote:?}");
+    topic_is(&r.store, &[("a", "installed"), ("b", "installed")]).await;
+}

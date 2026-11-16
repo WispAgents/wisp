@@ -180,6 +180,11 @@ pub fn resume(pid: u32) -> io::Result<()> {
     if resumed == 0 { Err(io::Error::other(format!("no thread of {pid} to resume"))) } else { Ok(()) }
 }
 
+/// Windows' heap gives freed pages back itself: nothing to do (ADR-0084).
+pub fn trim_heap() -> bool {
+    false
+}
+
 /// Makes this process's own stdin, stdout and stderr non-inheritable. `CreateProcess` hands a child every inheritable
 /// handle of its parent, whatever its stdio is set to, so a program started detached with null stdio would still hold
 /// the pipes wisp's caller reads (`wisp` run from a script, a test's `Command::output`): the caller then waits for

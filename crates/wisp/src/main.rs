@@ -30,6 +30,7 @@ mod tasks_cli;
 mod termctx_cli;
 mod trial_cli;
 mod trigger_cli;
+mod trim;
 mod tui;
 mod v1_formula;
 mod words;

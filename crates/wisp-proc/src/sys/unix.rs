@@ -177,6 +177,23 @@ pub fn processes() -> io::Result<Vec<ProcInfo>> {
 /// close-on-exec, so no child holds this process's stdio unless it asks for it.
 pub fn keep_std_handles() {}
 
+/// glibc (ADR-0084): hands the free pages of every malloc arena back to the OS. glibc keeps what a thread freed in
+/// that thread's arena and trims only an arena's top, so the garbage of a big read stays resident (a 5 000-task list
+/// read left ~5 MB a read, 300 MB in CI, where macOS gave it back). True when memory was released.
+#[cfg(all(target_os = "linux", target_env = "gnu"))]
+pub fn trim_heap() -> bool {
+    // SAFETY: no pointer in or out; glibc walks its own arenas under their locks, so any thread may call it at any time.
+    #[allow(unsafe_code)]
+    let released = unsafe { libc::malloc_trim(0) };
+    released == 1
+}
+
+/// Not glibc: the allocator gives freed pages back itself (macOS's does), nothing to do.
+#[cfg(not(all(target_os = "linux", target_env = "gnu")))]
+pub fn trim_heap() -> bool {
+    false
+}
+
 /// Unix has no job to be born in: the guard (guard.rs) ends each child's group with this process.
 #[allow(clippy::unnecessary_wraps, reason = "Windows' can fail")]
 pub fn nursery() -> io::Result<()> {

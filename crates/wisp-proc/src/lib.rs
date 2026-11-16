@@ -290,6 +290,13 @@ pub fn pid_alive(pid: u32) -> bool {
     sys::processes().is_ok_and(|t| t.iter().any(|p| p.pid == pid && !p.zombie))
 }
 
+/// Hands the heap's free pages back to the OS where the allocator keeps them (glibc, ADR-0084): a long-lived server
+/// calls it once a burst of big reads is over. False when nothing was released or there is nothing to do (macOS,
+/// Windows, musl).
+pub fn trim_heap() -> bool {
+    sys::trim_heap()
+}
+
 /// Call before starting a program that outlives this one (the desktop app, a browser): it then can't hold this
 /// process's stdout or stderr, so whoever reads them (a script, a test) sees EOF when this process ends. Windows hands
 /// a child every inheritable handle whatever its stdio is; this clears the flag on our own three. Unix: nothing to do.

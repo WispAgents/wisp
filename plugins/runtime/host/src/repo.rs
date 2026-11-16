@@ -112,11 +112,12 @@ impl Repo {
         Ok(rows.first().and_then(|r| r.get("seq")).and_then(Value::as_u64).map_or(1, |s| s + 1))
     }
 
-    /// Every list row, from the cached `summary` column only (a projection: one small JSON per task).
+    /// Every list row, from the cached `summary` column only (a projection: one small JSON per task), read as the
+    /// store's text and each summary parsed once from it (ADR-0084: the startup fills the list from this).
     pub async fn summaries(&self) -> Result<Vec<Summary>> {
         let q = Query::new().select(&["id", "summary"]).desc("updated_at");
-        let rows = self.store.read_async(move |r| r.query("session", &q)).await?;
-        Ok(rows.iter().filter_map(rows::summary_of).collect())
+        let text = self.store.read_async(move |r| r.query_json("session", &q)).await?;
+        Ok(rows::summaries_of(&text)?)
     }
 
     /// Every task (no queue), newest first: for history queries, which read each task's spec.

@@ -195,14 +195,16 @@ pub(crate) fn setup(s: &mut Setup) {
         if let Ok(store) = ctx.service::<wisp_store::Store>() {
             crate::rows::install(&store).map_err(|e| WireError::internal(e.to_string()))?;
         }
-        let total = total_memory(&proc, g.mac).await;
-        *lock(&g.total) = total;
-        if let Some(tz) = run(&proc, "date", &["+%z"]).await.and_then(|t| parse::parse_tz_offset(&t)) {
-            *lock(&g.tz) = tz;
-        }
         let clock = ctx.clock()?;
         let c2 = ctx.clone();
+        // the machine's size and time zone are read here, after the server is up, not in its start (ADR-0084:
+        // `sysctl` and `date` were ~12 ms of every cold start); the first sample waits for them
         ctx.spawn(async move {
+            let total = total_memory(&proc, g.mac).await;
+            *lock(&g.total) = total;
+            if let Some(tz) = run(&proc, "date", &["+%z"]).await.and_then(|t| parse::parse_tz_offset(&t)) {
+                *lock(&g.tz) = tz;
+            }
             loop {
                 tick(&c2, &g, &proc, &procs).await;
                 clock.sleep(SAMPLE_MS).await;

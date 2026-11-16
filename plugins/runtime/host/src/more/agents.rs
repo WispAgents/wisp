@@ -46,12 +46,22 @@ pub struct Rounds {
     rows: tokio::sync::Mutex<HashMap<String, Wrote>>,
 }
 
-#[derive(Debug, Clone, Copy, Default)]
+#[derive(Debug, Clone, Default)]
 struct Wrote {
     /// the newest round that wrote the row (`checking` or an answer): an older round's answer doesn't land
     round: u64,
     /// an answer was written this process (a plain round leaves it on screen instead of `checking`)
     settled: bool,
+    /// the row as this process last stored it, but its `at`: a write that would change nothing else is skipped
+    /// (ADR-0084: a start's four rounds wrote every row six times, four of them for its timestamp alone)
+    stored: Option<Row>,
+}
+
+/// A harness row but its `at`, what tells two writes apart.
+fn bare(row: &Row) -> Row {
+    let mut r = row.clone();
+    r.remove("at");
+    r
 }
 
 /// What a declared `harnesses:` entry changes in an answer (`kinds::declared`); applied to each harness as it lands,
@@ -168,44 +178,28 @@ impl Runtime {
     /// fresh; a row of a harness that's gone is deleted.
     async fn harnesses_checking(&self, harnesses: &[Arc<dyn Harness>], round: u64, fresh_for: &(dyn Fn(&str) -> bool + Sync)) {
         let mut wrote = self.harness_rounds.rows.lock().await;
-        // by the row's id: one whose `agent` no longer reads (an older shape) is still deleted when its harness goes
-        let kept: HashMap<String, Option<AgentStatus>> = match self
-            .repo
-            .store
-            .read_async(|r| {
-                Ok(r.query(HARNESS.kind, &Query::new())?
-                    .into_iter()
-                    .filter_map(|row| {
-                        let id = row.get("id").and_then(Value::as_str)?.to_owned();
-                        Some((id, row.get("agent").cloned().and_then(|v| serde_json::from_value::<AgentStatus>(v).ok())))
-                    })
-                    .collect())
-            })
-            .await
-        {
-            Ok(k) => k,
-            Err(err) => {
-                tracing::warn!(error = %err, "runtime: the harnesses topic's rows");
-                HashMap::new()
-            }
-        };
+        let kept = self.harness_rows().await;
         let now = self.clock.now_ms();
         let mut rows = Vec::new();
         for (ord, h) in harnesses.iter().enumerate() {
             let id = h.info().id.clone();
-            let w = wrote.get(&id).copied().unwrap_or_default();
+            let w = wrote.get(&id).cloned().unwrap_or_default();
             if w.round > round || (w.settled && !fresh_for(&id)) {
                 continue;
             }
-            wrote.insert(id.clone(), Wrote { round, settled: w.settled });
             let agent = kept.get(&id).cloned().flatten().unwrap_or_else(|| declared_status(h.as_ref()));
-            rows.push(row_of(&HarnessRow {
-                id,
+            let row = row_of(&HarnessRow {
+                id: id.clone(),
                 ord: u32::try_from(ord).unwrap_or(u32::MAX),
                 state: HarnessCheck::Checking,
                 agent,
                 at: now,
-            }));
+            });
+            let same = w.stored.as_ref().is_some_and(|had| *had == bare(&row));
+            wrote.insert(id.clone(), Wrote { round, settled: w.settled, stored: w.stored });
+            if !same {
+                rows.push((id, row));
+            }
         }
         let gone: Vec<String> = kept.into_keys().filter(|id| !harnesses.iter().any(|h| h.info().id == *id)).collect();
         for id in &gone {
@@ -214,11 +208,12 @@ impl Runtime {
         if rows.is_empty() && gone.is_empty() {
             return;
         }
+        let stored: Vec<(String, Row)> = rows.iter().map(|(id, row)| (id.clone(), bare(row))).collect();
         let written = self
             .repo
             .store
             .write(move |w| {
-                for row in rows {
+                for (_, row) in rows {
                     w.upsert(HARNESS.kind, row)?;
                 }
                 for id in gone {
@@ -227,22 +222,54 @@ impl Runtime {
                 Ok(())
             })
             .await;
-        if let Err(err) = written {
+        if let Err(err) = &written {
             tracing::warn!(error = %err, "runtime: the harnesses topic's checking rows");
         }
+        // what the store holds now; after a failed write, unknown (the next round writes again)
+        for (id, row) in stored {
+            if let Some(w) = wrote.get_mut(&id) {
+                w.stored = written.is_ok().then_some(row);
+            }
+        }
+    }
+
+    /// The topic's rows by id, each with what its `agent` says. By the row's id: one whose `agent` no longer reads (an
+    /// older shape) is still deleted when its harness goes.
+    async fn harness_rows(&self) -> HashMap<String, Option<AgentStatus>> {
+        let read = self.repo.store.read_async(|r| {
+            Ok(r.query(HARNESS.kind, &Query::new())?
+                .into_iter()
+                .filter_map(|row| {
+                    let id = row.get("id").and_then(Value::as_str)?.to_owned();
+                    Some((id, row.get("agent").cloned().and_then(|v| serde_json::from_value::<AgentStatus>(v).ok())))
+                })
+                .collect())
+        });
+        read.await.unwrap_or_else(|err| {
+            tracing::warn!(error = %err, "runtime: the harnesses topic's rows");
+            HashMap::new()
+        })
     }
 
     /// One harness's answer, on the topic: unless a later round already wrote its row.
     async fn harness_settled(&self, round: u64, ord: u32, status: &AgentStatus) {
         let mut wrote = self.harness_rounds.rows.lock().await;
-        if wrote.get(&status.id).is_some_and(|w| w.round > round) {
+        let w = wrote.get(&status.id).cloned().unwrap_or_default();
+        if w.round > round {
             return;
         }
-        wrote.insert(status.id.clone(), Wrote { round, settled: true });
         let row =
             row_of(&HarnessRow { id: status.id.clone(), ord, state: check_of(status), agent: status.clone(), at: self.clock.now_ms() });
-        if let Err(err) = self.repo.store.write(move |w| w.upsert(HARNESS.kind, row).map(|_| ())).await {
+        let stored = bare(&row);
+        if w.stored.as_ref() == Some(&stored) {
+            // the same answer the row already holds: only its `at` would change
+            wrote.insert(status.id.clone(), Wrote { round, settled: true, stored: w.stored });
+            return;
+        }
+        let written = self.repo.store.write(move |w| w.upsert(HARNESS.kind, row).map(|_| ())).await;
+        if let Err(err) = &written {
             tracing::warn!(error = %err, harness = %status.id, "runtime: a harness's row");
         }
+        wrote.insert(status.id.clone(), Wrote { round, settled: true, stored: written.is_ok().then_some(stored) });
     }
 }

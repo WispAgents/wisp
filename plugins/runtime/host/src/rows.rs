@@ -62,6 +62,19 @@ pub fn summary_of(row: &Row) -> Option<Summary> {
     row.get("summary").and_then(|v| serde_json::from_value(v.clone()).ok())
 }
 
+/// The list rows in `query_json`'s text of `id, summary`, each summary parsed once straight from the text (ADR-0084:
+/// no row maps and no copy of each, the startup's list fill ~3× faster on 5k tasks). A row whose summary is missing or
+/// doesn't parse is skipped, as [`summary_of`] skips it.
+pub fn summaries_of(text: &str) -> serde_json::Result<Vec<Summary>> {
+    #[derive(serde::Deserialize)]
+    struct Listed<'a> {
+        #[serde(borrow)]
+        summary: Option<&'a serde_json::value::RawValue>,
+    }
+    let rows: Vec<Listed<'_>> = serde_json::from_str(text)?;
+    Ok(rows.iter().filter_map(|r| serde_json::from_str(r.summary?.get()).ok()).collect())
+}
+
 /// A turn's row; `known`: what its task read (`None`: that couldn't be read), so its body keeps where its prose quotes
 /// one (`envHide`, ADR-0050). Only the row carries them: a `Turn` read back drops them.
 pub fn turn_row(t: &Turn, known: Option<&[String]>) -> Result<Row> {
@@ -131,4 +144,24 @@ pub fn step_of(row: &Row) -> Option<Step> {
     let v = row.get("v").and_then(Value::as_u64).and_then(|v| u32::try_from(v).ok()).unwrap_or(0);
     let activity = upcast::read(v, row.get("body")?)?;
     Some(Step { seq: row.get("seq").and_then(Value::as_u64)?, t: row.get("t").and_then(Value::as_i64).unwrap_or(0), activity })
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod summaries_tests {
+    use super::*;
+
+    #[test]
+    fn summaries_read_from_text_are_the_rows_summaries_and_skip_the_same_broken_ones() {
+        let good = serde_json::to_value(Summary { title: "a \"quoted\" title".into(), turn_count: 3, ..Summary::default() }).unwrap();
+        let text = format!(
+            r#"[{{"id":"a","summary":{good}}},{{"id":"b","summary":null}},{{"id":"c","summary":{{"title":7}}}},{{"id":"d"}},{{"id":"e","summary":{good}}}]"#
+        );
+        let rows: Vec<Row> = serde_json::from_str(&text).unwrap();
+        let by_row: Vec<Summary> = rows.iter().filter_map(summary_of).collect();
+        assert_eq!(summaries_of(&text).unwrap(), by_row);
+        assert_eq!(by_row.len(), 2, "the null, broken and missing summaries are skipped");
+        assert_eq!(summaries_of("[]").unwrap(), Vec::<Summary>::new());
+        assert!(summaries_of("not json").is_err());
+    }
 }
