@@ -224,6 +224,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Fixed
 
+- **Machines is in your avatar's menu, as before**, and opens the Machines dialog (it was a button in the list's head, and the menu item opened This computer). The list's head is its old height again.
+
+- **Marking a task done is quicker**: the next task opens without the page measuring itself several times first.
+
 - **No more "new 5-hour window" on a weekly-only plan**: a usage window's notice goes when the window does.
 
 - **Send anyway in a task's reply box works** near your usage limit (it asked again and sent nothing).
