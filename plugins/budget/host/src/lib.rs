@@ -222,7 +222,8 @@ fn sends(s: &mut Setup, slot: &Slot) {
         let slot = create.clone();
         async move {
             let Ok(st) = state(&slot) else { return Verdict::Continue };
-            if a.parent_id.is_some() || wisp_budget_core::windows::unattended(a.by.as_deref()) {
+            // a subagent's, an automation's, or one made held (it starts later: its turn's own guard asks then)
+            if a.parent_id.is_some() || a.hold || wisp_budget_core::windows::unattended(a.by.as_deref()) {
                 return Verdict::Continue;
             }
             let agent = a.agent.clone().unwrap_or_default();
