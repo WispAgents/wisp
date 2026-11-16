@@ -455,7 +455,8 @@ mod tests {
         // a task not in memory: unknown now (fail closed), read back once, known on the next send
         let row = json!({ "id": "t2", "session_id": "s2" });
         assert_eq!(turn_known(&slot, &loading, &row), None);
-        assert!(lock(&loading).contains("s2"));
+        // the read back is spawned: on a multi-thread runtime it may already be done here (CI, Windows)
+        assert!(lock(&loading).contains("s2") || rt(&slot).unwrap().env.get("s2").is_some(), "s2's read back started");
         loaded(&slot, &loading, "s2").await;
         assert_eq!(turn_known(&slot, &loading, &row), Some(Vec::new()), "nothing stored: nothing read");
     }
@@ -471,7 +472,7 @@ mod tests {
         assert!(lock(&loading).is_empty(), "a list of rows reads nothing back");
         let old = json!({ "id": "c", "body": { "ext": { "wisp.runtime": { "btw": [{ "answer": "x" }] } } } });
         assert_eq!(session_known(&slot, &loading, &old), None);
-        assert!(lock(&loading).contains("c"));
+        assert!(lock(&loading).contains("c") || rt(&slot).unwrap().env.get("c").is_some(), "c's read back started");
         loaded(&slot, &loading, "c").await;
         assert_eq!(session_known(&slot, &loading, &old), Some(Vec::new()));
     }
