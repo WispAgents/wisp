@@ -13,11 +13,26 @@ pub const HTML_MAX: u64 = 8 * 1024 * 1024;
 const PROXY_BASE: u16 = 42_000;
 const SPAN: u32 = 900;
 
-/// The port task `id`'s Preview proxy listens on (stable per task, as the app's).
+/// v1 `pickPort`: how many ports after the task's own are tried before any free one the system gives.
+pub const PROXY_TRIES: u32 = 60;
+
+fn proxy_hash(id: &str) -> u32 {
+    id.chars().fold(7_u32, |h, c| h.wrapping_mul(31).wrapping_add(u32::from(c)))
+}
+
+/// The port task `id`'s Preview proxy listens on when it's free (stable per task, as the app's: the same origin each
+/// time, so the app keeps its storage across restarts). Only the first try: the port a proxy runs on is the one it bound.
 #[must_use]
 pub fn proxy_port_for(id: &str) -> u16 {
-    let h = id.chars().fold(7_u32, |h, c| h.wrapping_mul(31).wrapping_add(u32::from(c)));
-    PROXY_BASE + u16::try_from(h % SPAN).unwrap_or(0)
+    PROXY_BASE + u16::try_from(proxy_hash(id) % SPAN).unwrap_or(0)
+}
+
+/// The ports task `id`'s proxy tries, in order (v1 `pickPort`): its own, then the next ones in the span (wrapping),
+/// [`PROXY_TRIES`] in all, the same each time. A port another program holds, or one in a range the system reserves
+/// (Windows' Hyper-V/WinNAT exclusions), is passed over; when none is free the host asks for any free one.
+pub fn proxy_ports_for(id: &str) -> impl Iterator<Item = u16> {
+    let h = proxy_hash(id);
+    (0..PROXY_TRIES).map(move |i| PROXY_BASE + u16::try_from(h.wrapping_add(i) % SPAN).unwrap_or(0))
 }
 
 /// Only the page's own frame: a request whose Host isn't this computer's loopback (a site elsewhere reaching the port
@@ -204,6 +219,12 @@ mod tests {
         let (app, proxy) = (crate::run::port_for("s1"), proxy_port_for("s1"));
         assert!((42_000..42_900).contains(&proxy) && app != proxy);
         assert_eq!(proxy_port_for("s1"), proxy, "the same task, the same port");
+        let tries: Vec<u16> = proxy_ports_for("s1").collect();
+        assert_eq!(tries.first(), Some(&proxy), "its own port first");
+        assert_eq!(tries.len(), 60);
+        assert!(tries.iter().all(|p| (42_000..42_900).contains(p)), "never on an app's port");
+        assert_eq!(tries.iter().collect::<std::collections::HashSet<_>>().len(), 60, "each tried once");
+        assert_eq!(tries, proxy_ports_for("s1").collect::<Vec<_>>(), "the same order each time");
         assert!(PICK_JS.contains("wisp: 'pick'") && PICK_JS.contains("window.parent"));
     }
 

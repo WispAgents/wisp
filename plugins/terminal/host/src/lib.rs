@@ -86,7 +86,7 @@ async fn run_info(ctx: &Ctx, call: &wisp_kernel::Call, r: &Registry, id: &str) -
     }
     let guess = wisp_terminal_core::run::guess(wt.as_deref(), pkg.as_deref(), &|f| locks.contains(&f));
     let open = r.live(TermKind::Run, id);
-    let proxy = (open && r.proxies.running(id)).then(|| wisp_terminal_core::pick::proxy_port_for(id));
+    let proxy = r.proxies.port(id).filter(|_| open);
     Ok(wisp_terminal_api::RunInfo { open, port: wisp_terminal_core::run::port_for(id), dir, guess, proxy })
 }
 
@@ -170,7 +170,7 @@ async fn start_run(ctx: &Ctx, call: &wisp_kernel::Call, r: &Arc<Registry>, a: &c
         ));
     }
     if r.live(TermKind::Run, &a.id) && !a.restart {
-        let proxy = r.proxies.running(&a.id).then(|| wisp_terminal_core::pick::proxy_port_for(&a.id));
+        let proxy = r.proxies.port(&a.id);
         return Ok(wisp_terminal_api::RunStarted { ok: true, started: false, port, dir: String::new(), proxy });
     }
     if a.restart {
@@ -187,7 +187,7 @@ async fn start_run(ctx: &Ctx, call: &wisp_kernel::Call, r: &Arc<Registry>, a: &c
     let weak = Arc::downgrade(r);
     let id = a.id.clone();
     let target: proxy::Target = Arc::new(move || weak.upgrade().and_then(|r| r.local_port(TermKind::Run, &id)).unwrap_or(port));
-    let proxy = r.proxies.start(&a.id, target, &r.scope).await.then(|| wisp_terminal_core::pick::proxy_port_for(&a.id));
+    let proxy = r.proxies.start(&a.id, target, &r.scope).await;
     Ok(wisp_terminal_api::RunStarted { ok: true, started: true, port, dir, proxy })
 }
 

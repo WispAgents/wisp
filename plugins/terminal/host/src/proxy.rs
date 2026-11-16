@@ -44,10 +44,10 @@ fn plain(status: u16, ctype: &str, body: impl Into<Bytes>) -> Response<Body> {
 /// What the app answered on: the port it printed, else the one it was given.
 pub type Target = Arc<dyn Fn() -> u16 + Send + Sync>;
 
-/// The proxies that run, by task.
+/// The proxies that run, by task: each one's stop and the port it bound.
 #[derive(Default)]
 pub struct Proxies {
-    map: Mutex<HashMap<String, CancellationToken>>,
+    map: Mutex<HashMap<String, (CancellationToken, u16)>>,
 }
 
 impl std::fmt::Debug for Proxies {
@@ -57,16 +57,25 @@ impl std::fmt::Debug for Proxies {
 }
 
 impl Proxies {
-    /// Starts task `id`'s proxy on its port unless it runs already. False when the port can't be had (the panel then
-    /// shows the app itself and doesn't offer Pick, as v1).
-    pub async fn start(&self, id: &str, target: Target, parent: &CancellationToken) -> bool {
-        if self.map.lock().unwrap_or_else(PoisonError::into_inner).get(id).is_some_and(|t| !t.is_cancelled()) {
-            return true;
+    /// Starts task `id`'s proxy unless it runs already; the port it answers on. Its own port when free, else the next
+    /// of [`pick::proxy_ports_for`], else any free one (v1 `pickPort`): a port another program holds or the system
+    /// reserves (Windows' excluded ranges) never keeps Preview from its proxy. None only when loopback takes no
+    /// listener at all (the panel then shows the app itself and doesn't offer Pick, as v1).
+    pub async fn start(&self, id: &str, target: Target, parent: &CancellationToken) -> Option<u16> {
+        if let Some(port) = self.port(id) {
+            return Some(port);
         }
-        let port = pick::proxy_port_for(id);
-        let Ok(listener) = tokio::net::TcpListener::bind(("127.0.0.1", port)).await else { return false };
+        let listener = bind_for(id).await?;
+        let port = listener.local_addr().ok()?.port();
         let stop = parent.child_token();
-        self.map.lock().unwrap_or_else(PoisonError::into_inner).insert(id.to_owned(), stop.clone());
+        {
+            let mut map = self.map.lock().unwrap_or_else(PoisonError::into_inner);
+            // another start for this task bound first (while this one was binding): keep that one, drop this listener
+            if let Some(&(_, theirs)) = map.get(id).filter(|(t, _)| !t.is_cancelled()) {
+                return Some(theirs);
+            }
+            map.insert(id.to_owned(), (stop.clone(), port));
+        }
         let mut c = HttpConnector::new();
         c.set_nodelay(true);
         let upstream: Upstream = Client::builder(TokioExecutor::new()).build(c);
@@ -92,20 +101,31 @@ impl Proxies {
                 });
             }
         });
-        true
+        Some(port)
     }
 
     /// Stops task `id`'s proxy (its run stopped).
     pub fn stop(&self, id: &str) {
-        if let Some(t) = self.map.lock().unwrap_or_else(PoisonError::into_inner).remove(id) {
+        if let Some((t, _)) = self.map.lock().unwrap_or_else(PoisonError::into_inner).remove(id) {
             t.cancel();
         }
     }
 
-    /// Whether task `id`'s proxy runs.
-    pub fn running(&self, id: &str) -> bool {
-        self.map.lock().unwrap_or_else(PoisonError::into_inner).get(id).is_some_and(|t| !t.is_cancelled())
+    /// The port task `id`'s proxy answers on, while it runs: what the panel frames (never recomputed from the id, which
+    /// is only its first try).
+    pub fn port(&self, id: &str) -> Option<u16> {
+        self.map.lock().unwrap_or_else(PoisonError::into_inner).get(id).filter(|(t, _)| !t.is_cancelled()).map(|&(_, p)| p)
     }
+}
+
+/// A listener for task `id`'s proxy: the first of its ports that binds, else one the system picks.
+async fn bind_for(id: &str) -> Option<tokio::net::TcpListener> {
+    for port in pick::proxy_ports_for(id) {
+        if let Ok(l) = tokio::net::TcpListener::bind(("127.0.0.1", port)).await {
+            return Some(l);
+        }
+    }
+    tokio::net::TcpListener::bind(("127.0.0.1", 0)).await.ok()
 }
 
 fn header_pairs(h: &HeaderMap) -> Vec<(String, String)> {
@@ -304,8 +324,8 @@ mod tests {
         let proxies = Proxies::default();
         let scope = CancellationToken::new();
         let id = format!("proxy-test-{}", wisp_kernel::ids::uuid7());
-        assert!(proxies.start(&id, Arc::new(move || app_port), &scope).await, "the proxy's port");
-        let port = pick::proxy_port_for(&id);
+        let port = proxies.start(&id, Arc::new(move || app_port), &scope).await.expect("the proxy's port");
+        assert_eq!(proxies.port(&id), Some(port), "it says where it answers");
 
         let page = get(port, "/", &format!("localhost:{port}")).await;
         assert!(page.starts_with("HTTP/1.1 200"), "{page}");
@@ -323,8 +343,27 @@ mod tests {
         assert!(foreign.starts_with("HTTP/1.1 403"), "{foreign}");
 
         proxies.stop(&id);
-        assert!(!proxies.running(&id));
+        assert_eq!(proxies.port(&id), None);
         tokio::time::sleep(std::time::Duration::from_millis(50)).await;
         assert!(tokio::net::TcpListener::bind(("127.0.0.1", port)).await.is_ok(), "stopped: the port is free again");
+    }
+
+    /// v1 runs.js pickPort: the task's own port taken (another program, or a range Windows reserves for Hyper-V)
+    /// isn't the end of Preview: the proxy takes the next free one, and what it says it runs on is where it answers.
+    #[tokio::test]
+    async fn a_taken_proxy_port_moves_to_a_free_one_and_says_which() {
+        let id = format!("proxy-taken-{}", wisp_kernel::ids::uuid7());
+        let derived = pick::proxy_port_for(&id);
+        // held here; a port the system refuses already (a reserved range) is the same case
+        let _held = tokio::net::TcpListener::bind(("127.0.0.1", derived)).await.ok();
+        let proxies = Proxies::default();
+        let scope = CancellationToken::new();
+        let port = proxies.start(&id, Arc::new(|| 9), &scope).await.expect("another port when its own is taken");
+        assert_ne!(port, derived, "not the taken one");
+        assert_eq!(proxies.port(&id), Some(port), "the port it bound, not the id's");
+        assert_eq!(proxies.start(&id, Arc::new(|| 9), &scope).await, Some(port), "started again: the same one");
+        let js = get(port, "/__wisp/pick.js", &format!("localhost:{port}")).await;
+        assert!(js.starts_with("HTTP/1.1 200"), "it answers where it says: {js}");
+        proxies.stop(&id);
     }
 }
