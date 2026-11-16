@@ -24,6 +24,8 @@
      quick actions float over the title's end (v1 .it-quick top 7px right 40px, .it-later right 68px: 24px, 4px
      apart), so the dot, the title and the time always share one line. */
   [data-kit='list-row'][data-layout='feed'] {
+    /* the time's width past v1's 26px (--k-time-w: the row's ResizeObserver, composites/time-width.ts) */
+    --k-time-x: max(0px, var(--k-time-w, 26px) - 26px);
     grid-template-columns: 10px minmax(0, 1fr) auto;
     grid-template-rows: auto;
     column-gap: 10px;
@@ -153,25 +155,25 @@
     color: var(--muted);
   }
   /* while the quick actions show (hover, the open or keyboard's row), the title ends before them (v1: one 64px, two
-     92px). Only with a mouse: a touch screen has no quick actions (below), so the title keeps its own edge. */
+     92px, and what a time wider than v1's 26px adds: B30). Only with a mouse: a touch screen has no quick actions (below), so the title keeps its own edge. */
   @media (hover: hover) {
     [data-kit='list-row'][data-layout='feed'][data-quick='1']:hover > [data-kit='list-row-title'] {
-      padding-right: 64px;
+      padding-right: calc(64px + var(--k-time-x));
     }
     [data-kit='list-row'][data-layout='feed'][data-quick='2']:hover > [data-kit='list-row-title'] {
-      padding-right: 92px;
+      padding-right: calc(92px + var(--k-time-x));
     }
     [data-kit='list-row'][data-layout='feed'][data-quick='1'][data-current] > [data-kit='list-row-title'] {
-      padding-right: 64px;
+      padding-right: calc(64px + var(--k-time-x));
     }
     [data-kit='list-row'][data-layout='feed'][data-quick='2'][data-current] > [data-kit='list-row-title'] {
-      padding-right: 92px;
+      padding-right: calc(92px + var(--k-time-x));
     }
     [data-kit='list-row'][data-layout='feed'][data-quick='1'][data-selected] > [data-kit='list-row-title'] {
-      padding-right: 64px;
+      padding-right: calc(64px + var(--k-time-x));
     }
     [data-kit='list-row'][data-layout='feed'][data-quick='2'][data-selected] > [data-kit='list-row-title'] {
-      padding-right: 92px;
+      padding-right: calc(92px + var(--k-time-x));
     }
   }
   /* the time is the pills' last, pinned in the row's corner (v1 split.css .it-side .q-time) */
@@ -188,11 +190,12 @@
     color: var(--faint);
     font-variant-numeric: tabular-nums;
   }
-  /* the quick actions float over the title's end: Mark done at 40px, Save for later at 68px before it (v1 .it-quick, .it-later) */
+  /* the quick actions float over the title's end: Mark done at 40px, Save for later at 68px before it (v1 .it-quick, .it-later),
+     moved left by what a time wider than v1's 26px adds, so a wide time (16:24, Mon 9:00) is never under them (B30) */
   [data-kit='list-row'][data-layout='feed'] > [data-kit='icon-button'] {
     position: absolute;
     top: 7px;
-    right: 40px;
+    right: calc(40px + var(--k-time-x));
     display: grid;
     place-items: center;
     width: 24px;
@@ -213,10 +216,10 @@
       color 0.15s;
   }
   [data-kit='list-row'][data-layout='feed'][data-quick='2'] > [data-kit='icon-button'] {
-    right: 68px;
+    right: calc(68px + var(--k-time-x));
   }
   [data-kit='list-row'][data-layout='feed'][data-quick='2'] > [data-kit='icon-button'] ~ [data-kit='icon-button'] {
-    right: 40px;
+    right: calc(40px + var(--k-time-x));
   }
   [data-kit='list-row'][data-layout='feed'] > [data-kit='icon-button'] > [data-kit='icon'] {
     width: 14px;

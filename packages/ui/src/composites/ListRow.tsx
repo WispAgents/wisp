@@ -6,7 +6,8 @@
 // (44 pt min, inset separators, a chevron where it pushes). The row says how many lines it has
 // (`data-row-lines`) and whether it leads with something (`data-lead`) on a phone only, so the browser's
 // HTML stays byte for byte v1's (test/goldens/platform-browser-rows.json).
-import { Show, createMemo, type JSX } from 'solid-js';
+import { Show, createEffect, createMemo, onCleanup, type JSX } from 'solid-js';
+import { watchTimeWidth } from './time-width.ts';
 import { flag, sub, type CssVars, type KitProps, type PartName } from '../core/props.ts';
 import type { ReorderAttrs } from '../core/reorder.ts';
 import { Icon } from '../content/Icon.tsx';
@@ -176,8 +177,18 @@ function FeedRow(props: ListRowProps & { readonly partName: PartName }): JSX.Ele
   const open = (e: MouseEvent): void => props.onOpen?.(e);
   const phone = ((look) => (): boolean => look() !== 'web')(usePlatform());
   const c = cells(props);
+  let row: HTMLDivElement | undefined;
+  let pills: HTMLDivElement | undefined;
+  // with a mouse the quick actions sit before the time, whatever its width (B30); the time is the pills' last
+  createEffect(() => {
+    const time = c.time();
+    if (!props.quick || phone() || time === undefined || !row || !pills) return;
+    const el = pills.lastElementChild;
+    if (el) onCleanup(watchTimeWidth(row, el));
+  });
   return (
     <div
+      ref={row}
       {...props.reorder}
       id={props.id}
       role="button"
@@ -221,7 +232,7 @@ function FeedRow(props: ListRowProps & { readonly partName: PartName }): JSX.Ele
         {c.sub()}
       </div>
       {c.foot()}
-      <div data-kit="list-row-pills" data-part={named(props, p(), 'pills')}>
+      <div ref={pills} data-kit="list-row-pills" data-part={named(props, p(), 'pills')}>
         {props.pills}
         <Show when={!phone()}>{c.time()}</Show>
       </div>

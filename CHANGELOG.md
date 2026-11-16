@@ -224,6 +224,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Fixed
 
+- **A task's Mark done and Save for later buttons no longer cover its time** when the time is long (16:24, Mon 9:00): they sit just before it.
+
 - **Send later in a task's reply box works**: the follow-up waits for the time you picked (it went at once); near the limit, Wait until the reset does the same.
 
 - **Notifications no longer cover the reply box**: they sit just above it (and above New task and the crew editor's buttons), as before.
