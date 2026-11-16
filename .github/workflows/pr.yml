@@ -60,11 +60,22 @@ jobs:
       - run: python -m pip install --disable-pip-version-check pytest==8.3.5
       # What monoflow itself runs for this PR. (The pinned 8c6bc74 ignores --base and --json; a later
       # monoflow honours both. Either way it's report-only.)
+      # Its own limit, under the job's: on a branch that touches everything (v2 against main) the affected set is the
+      # whole repo, and a job that hit its 30 minutes was cancelled, which turned a run whose every suite passed grey.
       - name: monoflow verify --affected
         shell: bash
+        timeout-minutes: 20
+        continue-on-error: true
         run: .agents/bin/monoflow verify --affected --base=origin/${{ github.base_ref }} --json > monoflow-affected.json || true
       - name: job summary
-        run: node tools/monoflow-report.ts monoflow-affected.json --title="Affected set (report-only, gate G14)" --affected=affected.json
+        if: always()
+        shell: bash
+        run: |
+          if [ -s monoflow-affected.json ]; then
+            node tools/monoflow-report.ts monoflow-affected.json --title="Affected set (report-only, gate G14)" --affected=affected.json
+          else
+            echo "Affected set (report-only, G14): the affected run didn't finish within its 20 minutes; affected.json is in the artifact." >> "$GITHUB_STEP_SUMMARY"
+          fi
       - if: always()
         uses: actions/upload-artifact@v4
         with:
