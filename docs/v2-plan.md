@@ -20,7 +20,7 @@ Rust for everything but the UI, Solid/TS for the UI, everything a plugin (ADR-00
 |---|---|
 | v1 features | **315 built · 7 partial · 5 missing · 4 dropped** of 331 (§6) |
 | Regressed | none (F-comp-1 picker restored to v1 in round 233) |
-| CI, last full run (56405a3a) | Linux + macOS: one brittle test (platform-controls read only the last reduced-motion block) — fixed in the test; Windows running |
+| CI, last full run (ca7e2525) | **all 8 suite jobs green** (Linux 4/4, macOS 2/2, Windows 2/2), server budgets green on Linux |
 | Budgets | initial JS 107.2 KB br (≤ 120) · CSS 27.1 KB (≤ 30) |
 | Weekly usage | 0 % (reset applied) · **owner 2026-11-15: one coder at a time** |
 | Coders running | none |
@@ -783,6 +783,7 @@ Source: `docs/v1-features.md` (each row's evidence and test). `[x]` built, `[ ]`
 - [ ] Phone tap: presented time (Event Timing) 64 ms p95 vs 50 (main-thread frame gated at 46); the task body build is one ~60 ms long task after the tap; 1 long task (~68 ms) while a turn streams (budget 0) (r319)
 - [x] ~~Server-budget timing gates read runner noise on shared CI~~ (patch p99 170 ms in one job, list 7.9 ms in the other, run 4612442b): ADR-0089, 2026-11-16: the three timed budgets are the median of rounds spread over the job (cold start 5 × 5 restarts on a copy of the home, the list 5 × 12 reads by a fresh client, the stream 3 × 10 s with new tasks and clients: 2 400 samples), each round bracketed by a wisp-free calibration; over budget with most rounds disturbed is *too noisy to judge* (exit 3), never a pass. Tests on CI's recorded numbers; planted +120 ms cold start caught (51 → 181 ms, exit 1); Mac run 52 s. Unproven until CI runs it: whether a Linux slow spell moves the calibration (a Mac's `yes` load didn't: reported per round with `/proc/stat` steal)
 - [ ] The list's first page has ~10 % headroom on CI's Linux runner (job medians 2.64–4.69 ms vs 5 on the same code; Mac 1.4): a uniformly slower runner misses, which rounds don't (and shouldn't) absorb; make it faster on Linux (ADR-0089 §Consequences)
+- [ ] Other Solid createMemos that read the entity store directly (not via useSignal/useDerived) miss late rows like the palette did (r324): sweep + a check rule
 - [ ] `ui-only`/MCP: nothing open
 
 ## 8. CI
@@ -956,6 +957,11 @@ Source: `docs/v1-features.md` (each row's evidence and test). `[x]` built, `[ ]`
 |---|---|---|
 | 283 | DX: build bundle + Tauri lock: stopped before edits; plan in §4.6 | to redo |
 | 282 | Server perf budgets: stopped before edits; plan in §4.3 | to redo |
+| 324 | Search follows late/changed/deleted tasks (v1 bug); useDerived; keyed palette rows | committed |
+| 323 | timer-loop-in-test rule; 16 loops + 38 settle() replaced (19.6 -> 7.3 s) | committed |
+| 322 | crew tests wait on conditions (Windows timeout) | committed |
+| 321 | Server budgets' timed gates: median of rounds + calibrated runner (ADR-0089) | committed |
+| 320 | Restart test app sets SO_REUSEADDR; self-connect guard | committed |
 | 319 | Phone warm tap 164 -> 46 ms p95 (hidden list not re-planned, no whole-list restyle, body a frame later), gated in phone-bench | committed |
 | 318 | Windows update waiter waits on the process handle, npm via CreateProcess, trace | committed |
 | 317 | Fewer per-turn commits: amplification 45.7 -> 36-39x, ratchet 44x (ADR-0088) | committed |
