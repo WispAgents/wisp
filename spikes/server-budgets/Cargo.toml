@@ -1,5 +1,6 @@
-# ADR-0011's server budgets (cold start, idle RSS, the task list on 5k tasks) against a real `wisp serve`, gated in PR
-# CI (ADR-0080). Its own workspace, as spikes/events: the main `cargo build/clippy/test --workspace` never compiles it.
+# ADR-0011's server budgets (cold start, idle RSS, the task list, patch latency, append rate, write amplification)
+# against a real `wisp serve`, gated in PR CI (ADR-0080, ADR-0082). Its own workspace, as spikes/events: the main `cargo build/clippy/test
+# --workspace` never compiles it.
 [package]
 name = "server-budgets"
 version = "0.0.0"
@@ -10,6 +11,9 @@ publish = false
 
 [dependencies]
 serde_json = "1"
+# the append rate: spikes/events' own measurement (its lib), gated here in PR CI (ADR-0082)
+events-bench = { path = "../events" }
+tokio = { version = "1", features = ["rt-multi-thread"] }
 # the seed: the runtime's own schema and `repo::save_session`, the fixture builder its list bench uses
 wisp-runtime = { path = "../../plugins/runtime/host" }
 wisp-runtime-api = { path = "../../plugins/runtime/api" }

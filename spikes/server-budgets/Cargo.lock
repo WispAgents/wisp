@@ -166,6 +166,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "events-bench"
+version = "0.0.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "tokio",
+ "wisp-kernel",
+ "wisp-store",
+]
+
+[[package]]
 name = "fallible-iterator"
 version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -649,7 +660,9 @@ dependencies = [
 name = "server-budgets"
 version = "0.0.0"
 dependencies = [
+ "events-bench",
  "serde_json",
+ "tokio",
  "wisp-runtime",
  "wisp-runtime-api",
  "wisp-runtime-core",

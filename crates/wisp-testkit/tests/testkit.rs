@@ -197,6 +197,38 @@ fn the_fake_harness_plays_claude_and_codex() {
     assert!(err.contains("failed on purpose"));
 }
 
+/// `FAKE_STREAM` (spikes/server-budgets' running tasks): stamped assistant text at the rate asked, each line the length
+/// asked, paced from the run's start, then the turn ends as usual; a detect probe (no prompt) streams nothing.
+#[test]
+fn the_fake_claude_streams_stamped_text_at_the_rate_asked() {
+    let d = tmp("stream");
+    let bin = d.join("bin");
+    install_fakes(&bin, &["claude"]);
+    let work = d.join("work");
+    std::fs::create_dir_all(&work).unwrap();
+    let env = [("FAKE_STREAM", "200"), ("FAKE_STREAM_MS", "100"), ("FAKE_STREAM_BYTES", "300")];
+    let (code, out, _) = run(&bin.join("claude"), &["-p", "--output-format", "stream-json"], &work, "go", &env);
+    assert_eq!(code, 0);
+    let stamped: Vec<&str> = out.lines().filter(|l| l.contains("~stamp:")).collect();
+    assert_eq!(stamped.len(), 20, "100 ms at 200 a second: {out}");
+    let mut at = Vec::new();
+    for (n, line) in stamped.iter().enumerate() {
+        assert_eq!(line.len(), 300, "{line}");
+        let v: Value = serde_json::from_str(line).unwrap();
+        assert_eq!(v["type"], "assistant");
+        let text = v["message"]["content"][0]["text"].as_str().unwrap();
+        let stamp: Vec<&str> = text.trim_start_matches("~stamp:").split('~').next().unwrap().split(':').collect();
+        assert_eq!(stamp[1], n.to_string(), "{text}");
+        at.push(stamp[2].parse::<u64>().unwrap());
+    }
+    assert!(at.windows(2).all(|w| w[0] <= w[1]), "{at:?}");
+    assert!(at[19] - at[0] >= 90_000, "paced over the 95 ms the 20th is due at, not all at once: {at:?}");
+    assert_eq!(serde_json::from_str::<Value>(out.lines().last().unwrap()).unwrap()["type"], "result");
+    let (code, out, _) = run(&bin.join("claude"), &["auth", "list"], &work, "", &env);
+    assert_eq!(code, 0);
+    assert!(!out.contains("~stamp:"), "a probe streams nothing: {out}");
+}
+
 #[test]
 fn the_fake_gh_keeps_pull_requests() {
     let d = tmp("gh");

@@ -14,6 +14,10 @@
 //!                      until the file `<dir>/<name>` exists: the test holds the turn running until it creates it
 //!   `FAKE_GATE_ALL`    a gate name: every run (no prompt prefix needed, e.g. one a Slack message started) waits on it
 //!   `FAKE_REPLAY`      claude: print this .jsonl as its stream and exit (a recorded run)
+//!   `FAKE_STREAM`      claude: events a second; a run streams assistant text for `FAKE_STREAM_MS` (5000) after its
+//!                      init, each line `FAKE_STREAM_BYTES` (400) long, its text starting `~stamp:<pid>:<n>:<unix µs>~`
+//!                      (when it was written: spikes/server-budgets times each one to the clients' patches), paced
+//!                      against its start so a slow write never makes the stream fall behind, then ends as usual
 //!   `FAKE_CODEX_USAGE` a file: codex app-server's `account/rateLimits/read` answers its JSON as `rateLimits`
 //!   `FAKE_CLI_VERSION` what --version says (9.9.9); `FAKE_AUTH_PROFILE`, `FAKE_AUTH_FAIL` for `auth status --text`
 //!   TOPIC[…] in the prompt: the hero names it
@@ -195,6 +199,9 @@ fn claude(prompt: &str, target: &Path, before: &str, after: &str) {
     out(
         &json!({ "type": "system", "subtype": "init", "session_id": s, "claude_code_version": env("FAKE_CLI_VERSION").unwrap_or_else(|| "9.9.9".into()), "apiKeySource": "none" }),
     );
+    if RUN.load(std::sync::atomic::Ordering::Relaxed) {
+        stream(s);
+    }
     out(
         &json!({ "type": "assistant", "session_id": s, "message": { "content": [{ "type": "tool_use", "id": "t1", "name": "Read", "input": { "file_path": t } }] } }),
     );
@@ -214,6 +221,34 @@ fn claude(prompt: &str, target: &Path, before: &str, after: &str) {
     out(
         &json!({ "type": "result", "subtype": "success", "is_error": false, "result": final_text("claude", prompt), "session_id": s, "duration_ms": 5, "num_turns": 1, "total_cost_usd": 0.01, "usage": { "input_tokens": 10, "output_tokens": 5 } }),
     );
+}
+
+/// `FAKE_STREAM`: `rate` assistant text lines a second for `FAKE_STREAM_MS`, each stamped with when it was written.
+/// The n-th line is due at start + n / rate: a late one goes at once and the next keeps the pace.
+#[allow(clippy::cast_precision_loss)] // n stays far below 2^52
+fn stream(session: &str) {
+    let Some(rate) = env("FAKE_STREAM").and_then(|v| v.parse::<f64>().ok()).filter(|r| *r > 0.0) else { return };
+    let ms = env("FAKE_STREAM_MS").and_then(|v| v.parse::<u64>().ok()).unwrap_or(5000);
+    let bytes = env("FAKE_STREAM_BYTES").and_then(|v| v.parse::<usize>().ok()).unwrap_or(400);
+    let start = std::time::Instant::now();
+    let until = std::time::Duration::from_millis(ms);
+    let pid = std::process::id();
+    for n in 0u64.. {
+        let due = std::time::Duration::from_secs_f64(n as f64 / rate);
+        if due >= until {
+            break;
+        }
+        if let Some(wait) = due.checked_sub(start.elapsed()) {
+            std::thread::sleep(wait);
+        }
+        let us = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_micros());
+        let mut text = format!("~stamp:{pid}:{n}:{us}~ ");
+        let line = |text: &str| json!({ "type": "assistant", "session_id": session, "message": { "content": [{ "type": "text", "text": text }] } });
+        // padded to the line length asked for (the JSON around the text is counted)
+        let pad = bytes.saturating_sub(line(&text).to_string().len());
+        text.extend(std::iter::repeat_n('x', pad));
+        out(&line(&text));
+    }
 }
 
 fn codex(prompt: &str, target: &Path, after: &str) {

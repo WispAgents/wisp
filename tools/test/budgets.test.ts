@@ -96,9 +96,16 @@ test('budgets: no build is a failure that says how to make one', () => {
 
 test('budgets: spikes/server-budgets gates on SERVER_BUDGETS, the one list of the numbers', () => {
   const src = readFileSync(join(import.meta.dirname, '..', '..', 'spikes', 'server-budgets', 'src', 'main.rs'), 'utf8');
-  const constant = (name: string): number => Number(new RegExp(`const ${name}: f64 = ([0-9.]+);`).exec(src)?.[1]);
+  const constant = (name: string): number => Number(new RegExp(`const ${name}: f64 = ([0-9._]+);`).exec(src)?.[1]?.replaceAll('_', ''));
   assert.deepEqual(
-    { coldStartMs: constant('COLD_START_MS'), idleRssMb: constant('IDLE_RSS_MB'), listMs: constant('LIST_MS') },
+    {
+      coldStartMs: constant('COLD_START_MS'),
+      idleRssMb: constant('IDLE_RSS_MB'),
+      listMs: constant('LIST_MS'),
+      patchP99Ms: constant('PATCH_P99_MS'),
+      appendPerS: constant('APPEND_PER_S'),
+      writeAmplification: constant('WRITE_AMPLIFICATION'),
+    },
     { ...SERVER_BUDGETS },
   );
 });

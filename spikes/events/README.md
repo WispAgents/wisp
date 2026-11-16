@@ -8,5 +8,7 @@ budgets in `tools/budgets.ts` (`EVENT_BUDGETS`) and exits non-zero when one is m
   carried by the command's own write (reported)
 - replay of 100 000 events to a durable subscription ≤ 1 s
 
+The append rate is this crate's library (`append_rate`): spikes/server-budgets gates it in PR CI (ADR-0082).
+
 Not measured here: the `events:*` topic's p99 to a client (`spikes/sync-bench-rs` measures the topic path it
 rides on) and write amplification (stream events stay ephemeral, so the streaming bench doesn't change).

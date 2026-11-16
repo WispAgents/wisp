@@ -2,15 +2,19 @@
 //!   cold start  process start → the first 200 from `GET /api/status`, median of 7 restarts   ≤ 150 ms
 //!   idle RSS    the server's resident set once it settles, after a client read the list      ≤ 120 MB
 //!   list        `GET /api/events?fresh=list` → the `list` snapshot's first page, median of 30  ≤ 5 ms
+//!   patch p99   a running task's output written → each client's patch carrying it, p99           ≤ 150 ms
+//!               (10 tasks streaming through the fake claude's `FAKE_STREAM`, 4 clients on `list` and all 10 tasks)
+//!   append      durable events a second (spikes/events' `append_rate`, 1 000 a transaction)      ≥ 20 000 /s
+//!   write amp   bytes the store wrote (WAL + database growth) ÷ the activity the 10 tasks kept    ≤ 15×
 //! The list is the UI's first read (packages/sync's hello: `fresh=list`), answered by the server's own snapshot path in
 //! pages (ADR-0081): the first is what the first screen draws; the time to the last page (every task) is reported.
 //! The home is seeded through wisp.runtime's schema and `repo::save_session` (the fixture its list bench uses), never
 //! a hand-made database. Fake harness CLIs, a cleared environment, no network. Exits 1 on a miss, 2 when it can't run.
 //!
-//!   cargo run --profile budgets --manifest-path spikes/server-budgets/Cargo.toml -- [--wisp=<bin>] [--summary=<file>]
+//!   cargo run --profile budgets --manifest-path spikes/server-budgets/Cargo.toml -- [--wisp=<bin>] [--fake=<bin>] [--summary=<file>]
 //!
-//! `--wisp` defaults to `$CARGO_TARGET_DIR/budgets/wisp` (else `target/budgets/wisp`):
-//! `cargo build --profile budgets -p wisp` first. Under GitHub Actions the table also goes to `$GITHUB_STEP_SUMMARY`.
+//! `--wisp` and `--fake` default to `$CARGO_TARGET_DIR/budgets/{wisp,wisp-fake-agent}` (else `target/budgets/…`):
+//! `cargo build --profile budgets -p wisp -p wisp-testkit` first. Under GitHub Actions the table also goes to `$GITHUB_STEP_SUMMARY`.
 use std::collections::BTreeMap;
 use std::io::{Read, Write};
 use std::net::{SocketAddr, TcpListener, TcpStream};
@@ -21,7 +25,7 @@ use std::time::{Duration, Instant};
 
 use serde_json::Value;
 use wisp_runtime::{repo, schema};
-use wisp_runtime_api::model::{Mode, Session, SessionState};
+use wisp_runtime_api::model::{Mode, Session, SessionState, Step};
 use wisp_runtime_core::summary::{RowFacts, summarize};
 use wisp_store::{Location, Query, Store, StoreError, SystemClock};
 
@@ -29,6 +33,9 @@ use wisp_store::{Location, Query, Store, StoreError, SystemClock};
 const COLD_START_MS: f64 = 150.0;
 const IDLE_RSS_MB: f64 = 120.0;
 const LIST_MS: f64 = 5.0;
+const PATCH_P99_MS: f64 = 150.0;
+const APPEND_PER_S: f64 = 20_000.0;
+const WRITE_AMPLIFICATION: f64 = 15.0;
 
 const TASKS: usize = 5_000;
 const COLD_RUNS: usize = 7;
@@ -39,6 +46,16 @@ const RSS_EVERY: Duration = Duration::from_millis(250);
 const RSS_WINDOW: usize = 8;
 const RSS_SPREAD_KB: u64 = 1024;
 const RSS_CAP: Duration = Duration::from_secs(30);
+/// One heavy user (plan §8): 10 running tasks, 4 clients each on `list` and every running task's topic (the worst
+/// fan-out: G3's clients hold one open task each). Each task streams 20 lines a second (10× G3's harness rate) for 6 s,
+/// 400 B a line (the runtime bench's 2 MB in 5 000 events).
+const RUNNING: usize = 10;
+const CLIENTS: usize = 4;
+const STREAM_PER_S: u64 = 20;
+const STREAM_MS: u64 = 6_000;
+const STREAM_BYTES: usize = 400;
+/// stamped lines each task writes: the n-th is due at n / rate, n from 0, while that is under `STREAM_MS`
+const STAMPS: usize = (STREAM_PER_S * STREAM_MS).div_ceil(1000) as usize;
 
 /// The harness CLIs wisp looks for, by file name and override variable (crates/wisp/tests/common `FAKES`, plus gh).
 const FAKES: [(&str, &str); 8] = [
@@ -51,7 +68,8 @@ const FAKES: [(&str, &str); 8] = [
     ("agy", "WISP_ANTIGRAVITY_BIN"),
     ("gh", "WISP_GH_BIN"),
 ];
-/// Answers a version probe and does nothing else: no harness ever runs here.
+/// Answers a version probe and does nothing else: every CLI but `claude`, which is wisp-testkit's fake agent (the
+/// patch latency's running tasks stream through it).
 const FAKE_CLI: &str = "#!/bin/sh\ncase \"$1\" in --version|-v|version) echo \"0.0.0 (fake)\" ;; esac\nexit 0\n";
 
 type Res<T> = Result<T, String>;
@@ -62,6 +80,7 @@ fn said<E: std::fmt::Display>(what: &str) -> impl FnOnce(E) -> String + '_ {
 
 struct Opts {
     wisp: PathBuf,
+    fake: PathBuf,
     summary: Option<PathBuf>,
     keep: bool,
 }
@@ -70,8 +89,10 @@ fn opts() -> Opts {
     let arg = |name: &str| std::env::args().find_map(|a| a.strip_prefix(&format!("--{name}=")).map(str::to_owned));
     let repo = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
     let target = std::env::var_os("CARGO_TARGET_DIR").map_or_else(|| repo.join("target"), PathBuf::from);
+    let built = |name: &str| target.join("budgets").join(format!("{name}{}", std::env::consts::EXE_SUFFIX));
     Opts {
-        wisp: arg("wisp").map_or_else(|| target.join("budgets").join(format!("wisp{}", std::env::consts::EXE_SUFFIX)), PathBuf::from),
+        wisp: arg("wisp").map_or_else(|| built("wisp"), PathBuf::from),
+        fake: arg("fake").map_or_else(|| built("wisp-fake-agent"), PathBuf::from),
         summary: arg("summary").or_else(|| std::env::var("GITHUB_STEP_SUMMARY").ok()).filter(|s| !s.is_empty()).map(PathBuf::from),
         keep: std::env::args().any(|a| a == "--keep"),
     }
@@ -191,6 +212,11 @@ impl Bench {
             .env("DO_NOT_TRACK", "1")
             .env("WISP_TELEMETRY", "0")
             .env("WISP_UPDATE_CHECK", "0")
+            // only a run streams or waits on the gate: the probes and the other servers here start none
+            .env("FAKE_STREAM", STREAM_PER_S.to_string())
+            .env("FAKE_STREAM_MS", STREAM_MS.to_string())
+            .env("FAKE_STREAM_BYTES", STREAM_BYTES.to_string())
+            .env("FAKE_GATE", self.dir.join("gates"))
             .envs(FAKES.map(|(n, var)| (var, bin.join(n))))
             .stdin(Stdio::null())
             .stdout(Stdio::null())
@@ -347,64 +373,421 @@ impl Pages {
     }
 }
 
-/// The UI's first read: a v2 hello asking for `list` fresh, timed from connect to each page's last byte.
-fn list_once(port: u16) -> Res<ListRead> {
-    let t0 = Instant::now();
-    let mut s = TcpStream::connect(addr(port)).map_err(said("connect"))?;
-    s.set_nodelay(true).map_err(said("nodelay"))?;
-    s.set_read_timeout(Some(Duration::from_secs(10))).map_err(said("timeout"))?;
-    write!(
-        s,
-        "GET /api/events?proto_min=2&proto_max=2&client_id=budgets&build=budgets&fresh=list HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\nAccept: text/event-stream\r\n\r\n"
-    )
-    .map_err(said("send the hello"))?;
-    let (mut raw, mut body, mut chunked) = (Vec::new(), Vec::new(), None::<Chunked>);
-    let mut head_done = false;
-    let (mut scan, mut searched) = (0, 0);
-    let mut buf = vec![0u8; 256 * 1024];
-    let mut pages = Pages::default();
-    loop {
-        let got = s.read(&mut buf).map_err(said("read the stream"))?;
-        if got == 0 {
-            return Err("the event stream closed before the list snapshot".into());
-        }
-        if head_done {
-            match chunked.as_mut() {
-                Some(c) => c.feed(&buf[..got], &mut body)?,
-                None => body.extend_from_slice(&buf[..got]),
+/// A sync stream (`GET /api/events`) read frame by frame: the head, the chunked body and whole SSE frames.
+struct Sse {
+    s: TcpStream,
+    raw: Vec<u8>,
+    body: Vec<u8>,
+    chunked: Option<Chunked>,
+    head_done: bool,
+    /// where the next frame starts, and where the search for its end goes on from
+    /// (searched from where the last look stopped: rescanning a 4.5 MB frame on every read would time the bench)
+    scan: usize,
+    searched: usize,
+    buf: Vec<u8>,
+}
+
+impl Sse {
+    /// Connects and sends a v2 hello with `query` (`client_id`, `fresh`, …); `wait` is each read's limit.
+    fn open(port: u16, query: &str, wait: Duration) -> Res<Self> {
+        let mut s = TcpStream::connect(addr(port)).map_err(said("connect"))?;
+        s.set_nodelay(true).map_err(said("nodelay"))?;
+        s.set_read_timeout(Some(wait)).map_err(said("timeout"))?;
+        write!(
+            s,
+            "GET /api/events?proto_min=2&proto_max=2&build=budgets&{query} HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\nAccept: text/event-stream\r\n\r\n"
+        )
+        .map_err(said("send the hello"))?;
+        Ok(Self { s, raw: Vec::new(), body: Vec::new(), chunked: None, head_done: false, scan: 0, searched: 0, buf: vec![0u8; 256 * 1024] })
+    }
+
+    /// One read: each whole frame it completes goes to `f` (`id`, `event`, `data: [messages]`, without the blank line);
+    /// `f` answering true stops there (Ok(true)). Ok(false) also when the read timed out with nothing new.
+    fn read(&mut self, f: &mut dyn FnMut(&[u8]) -> Res<bool>) -> Res<bool> {
+        let got = match self.s.read(&mut self.buf) {
+            Ok(0) => return Err("the event stream closed".into()),
+            Ok(n) => n,
+            Err(e) if matches!(e.kind(), std::io::ErrorKind::WouldBlock | std::io::ErrorKind::TimedOut) => return Ok(false),
+            Err(e) => return Err(format!("read the stream: {e}")),
+        };
+        if self.head_done {
+            match self.chunked.as_mut() {
+                Some(c) => c.feed(&self.buf[..got], &mut self.body)?,
+                None => self.body.extend_from_slice(&self.buf[..got]),
             }
         } else {
-            raw.extend_from_slice(&buf[..got]);
-            let Some(end) = find(&raw, b"\r\n\r\n") else { continue };
-            let head = String::from_utf8_lossy(&raw[..end]).to_ascii_lowercase();
+            self.raw.extend_from_slice(&self.buf[..got]);
+            let Some(end) = find(&self.raw, b"\r\n\r\n") else { return Ok(false) };
+            let head = String::from_utf8_lossy(&self.raw[..end]).to_ascii_lowercase();
             if !head.starts_with("http/1.1 200") {
                 return Err(format!("GET /api/events answered {}", head.lines().next().unwrap_or("")));
             }
-            head_done = true;
-            let rest = raw.split_off(end + 4);
+            self.head_done = true;
+            let rest = self.raw.split_off(end + 4);
             if head.contains("transfer-encoding: chunked") {
                 let mut c = Chunked::default();
-                c.feed(&rest, &mut body)?;
-                chunked = Some(c);
+                c.feed(&rest, &mut self.body)?;
+                self.chunked = Some(c);
             } else {
-                body = rest;
+                self.body = rest;
             }
         }
-        // whole SSE frames: `id`, `event`, `data: [messages]`, a blank line
-        // (searched from where the last look stopped: rescanning a 4.5 MB frame on every read would time the bench)
-        while let Some(end) = find(&body[searched..], b"\n\n").map(|e| searched + e) {
+        while let Some(end) = find(&self.body[self.searched..], b"\n\n").map(|e| self.searched + e) {
+            let start = self.scan;
+            (self.scan, self.searched) = (end + 2, end + 2);
+            if f(&self.body[start..end])? {
+                return Ok(true);
+            }
+        }
+        self.searched = self.body.len().saturating_sub(1).max(self.scan);
+        // a long-lived stream drops what it has read (the list's reads never get here: it ends at the snapshot)
+        if self.scan > 1 << 20 {
+            self.body.drain(..self.scan);
+            (self.searched, self.scan) = (self.searched - self.scan, 0);
+        }
+        Ok(false)
+    }
+}
+
+/// The UI's first read: a v2 hello asking for `list` fresh, timed from connect to each page's last byte.
+fn list_once(port: u16) -> Res<ListRead> {
+    let t0 = Instant::now();
+    let mut sse = Sse::open(port, "client_id=budgets&fresh=list", Duration::from_secs(10))?;
+    let mut pages = Pages::default();
+    let mut done = None;
+    loop {
+        let mut on = |frame: &[u8]| -> Res<bool> {
             let at = t0.elapsed();
-            let frame = &body[scan..end];
-            (scan, searched) = (end + 2, end + 2);
-            if pages.frame(frame, at)? {
-                return pages.read(at);
+            let last = pages.frame(frame, at)?;
+            if last {
+                done = Some(at);
             }
+            Ok(last)
+        };
+        sse.read(&mut on)?;
+        if let Some(at) = done {
+            return pages.read(at);
         }
-        searched = body.len().saturating_sub(1).max(scan);
         if t0.elapsed() > Duration::from_secs(30) {
             return Err("no list snapshot in 30 s (heartbeats only)".into());
         }
     }
+}
+
+// ---------- commands ----------
+
+/// An HTTP/1.1 chunked body read to its end.
+fn dechunk(mut raw: &[u8]) -> Res<Vec<u8>> {
+    let mut out = Vec::new();
+    loop {
+        let end = find(raw, b"\r\n").ok_or("a chunk with no size line")?;
+        let line = String::from_utf8_lossy(&raw[..end]);
+        let size = usize::from_str_radix(line.split(';').next().unwrap_or("").trim(), 16).map_err(said("a chunk size"))?;
+        if size == 0 {
+            return Ok(out);
+        }
+        let data = raw.get(end + 2..end + 2 + size).ok_or("a chunk cut short")?;
+        out.extend_from_slice(data);
+        raw = raw.get(end + 4 + size..).unwrap_or_default();
+    }
+}
+
+/// `POST /api/cmd`: the command's result, or its error as text.
+fn cmd(port: u16, name: &str, args: &Value) -> Res<Value> {
+    static N: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    let key = N.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    let body = serde_json::json!({ "cmd": name, "args": args }).to_string();
+    let mut s = TcpStream::connect(addr(port)).map_err(said("connect"))?;
+    s.set_read_timeout(Some(Duration::from_secs(30))).map_err(said("timeout"))?;
+    write!(
+        s,
+        "POST /api/cmd HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\nContent-Type: application/json\r\nIdempotency-Key: budgets-{}-{key}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+        std::process::id(),
+        body.len()
+    )
+    .map_err(said(name))?;
+    let mut raw = Vec::new();
+    s.read_to_end(&mut raw).map_err(said(name))?;
+    let end = find(&raw, b"\r\n\r\n").ok_or_else(|| format!("{name}: no answer"))?;
+    let head = String::from_utf8_lossy(&raw[..end]).to_ascii_lowercase();
+    let body = if head.contains("transfer-encoding: chunked") { dechunk(&raw[end + 4..])? } else { raw[end + 4..].to_vec() };
+    let v: Value = serde_json::from_slice(&body).map_err(said(name))?;
+    if v["ok"] == true { Ok(v["result"].clone()) } else { Err(format!("{name}: {v}")) }
+}
+
+/// A task's last turn: its id and status.
+fn last_turn(port: u16, id: &str) -> Res<(String, String)> {
+    let turns = cmd(port, "runtime.turns", &serde_json::json!({ "id": id }))?;
+    let t = turns.as_array().and_then(|a| a.last()).ok_or_else(|| format!("task {id} has no turn"))?;
+    Ok((t["id"].as_str().unwrap_or_default().to_owned(), t["status"].as_str().unwrap_or_default().to_owned()))
+}
+
+/// The JSON bytes of the steps a turn kept (the runtime bench's payload: `write_amplification_2mb_session_in_5000_events`).
+fn kept(port: u16, id: &str, turn: &str) -> Res<(u64, usize)> {
+    let (mut bytes, mut steps, mut since) = (0, 0, None::<u64>);
+    loop {
+        let mut args = serde_json::json!({ "id": id, "turnId": turn });
+        if let Some(s) = since {
+            args["sinceSeq"] = s.into();
+        }
+        let page = cmd(port, "runtime.activity", &args)?;
+        let items = page["items"].as_array().map(Vec::as_slice).unwrap_or_default();
+        if items.is_empty() {
+            return Ok((bytes, steps));
+        }
+        for i in items {
+            // a step flattens its activity beside `seq` and `t`: only the activity is payload, as in the bench
+            let step: Step = serde_json::from_value(i.clone()).map_err(said("a kept step"))?;
+            bytes += serde_json::to_string(&step.activity).map_err(said("a kept step"))?.len() as u64;
+            steps += 1;
+        }
+        let seq = page["seq"].as_u64();
+        if seq.is_none() || seq == since {
+            return Ok((bytes, steps));
+        }
+        since = seq;
+    }
+}
+
+// ---------- patch latency and write amplification ----------
+
+fn now_us() -> u64 {
+    std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| u64::try_from(d.as_micros()).unwrap_or(u64::MAX))
+}
+
+/// Each `~stamp:<pid>:<n>:<µs>~` the fake agent wrote that `frame` carries: ((pid, n), when it was written).
+fn stamps(frame: &[u8]) -> Vec<((u32, u64), u64)> {
+    let mut out = Vec::new();
+    let mut at = 0;
+    while let Some(i) = find(&frame[at..], b"~stamp:") {
+        let from = at + i + b"~stamp:".len();
+        let Some(end) = frame[from..].iter().position(|b| *b == b'~').map(|e| from + e) else { break };
+        let mut parts = std::str::from_utf8(&frame[from..end]).unwrap_or_default().split(':');
+        let (pid, n, us) = (parts.next(), parts.next(), parts.next());
+        if let (Some(Ok(pid)), Some(Ok(n)), Some(Ok(us)), None) = (pid.map(str::parse), n.map(str::parse), us.map(str::parse), parts.next())
+        {
+            out.push(((pid, n), us));
+        }
+        at = end + 1;
+    }
+    out
+}
+
+/// What one client saw of the stream.
+#[derive(Default)]
+struct Seen {
+    /// each stamp's first sight: its latency in µs (a later copy, a chunk row growing, never counts again)
+    first: std::collections::HashMap<(u32, u64), u64>,
+    frames: usize,
+    bytes: usize,
+}
+
+/// The topics a client has its first look at (each snapshot's last page), from one frame.
+fn snapshotted(frame: &[u8], done: &mut std::collections::HashSet<String>) -> Res<()> {
+    if find(frame, b"\"t\":\"snapshot\"").is_none() {
+        return Ok(());
+    }
+    let data = frame.split(|b| *b == b'\n').find_map(|l| l.strip_prefix(b"data: ")).ok_or("a snapshot frame with no data")?;
+    let msgs: Vec<Value> = serde_json::from_slice(data).map_err(said("a snapshot frame"))?;
+    for m in msgs.iter().filter(|m| m["t"] == "snapshot" && m["more"] != true) {
+        done.insert(m["topic"].as_str().unwrap_or_default().to_owned());
+    }
+    Ok(())
+}
+
+struct Shared {
+    stop: std::sync::atomic::AtomicBool,
+    ready: std::sync::atomic::AtomicUsize,
+    /// stamps seen, over every client
+    seen: std::sync::atomic::AtomicUsize,
+}
+
+/// One UI: `list` and every running task's topic, fresh; counts itself ready once each first look is in, then times
+/// every stamp it is sent until told to stop.
+fn client(port: u16, i: usize, topics: &[String], sh: &Shared) -> Res<Seen> {
+    use std::sync::atomic::Ordering::Relaxed;
+    let mut sse = Sse::open(port, &format!("client_id=budgets-{i}&fresh={}", topics.join(",")), Duration::from_millis(50))?;
+    let (mut seen, mut done, mut ready) = (Seen::default(), std::collections::HashSet::new(), false);
+    while !sh.stop.load(Relaxed) {
+        let mut on = |frame: &[u8]| -> Res<bool> {
+            let now = now_us();
+            seen.frames += 1;
+            seen.bytes += frame.len() + 2;
+            for (key, at) in stamps(frame) {
+                if let std::collections::hash_map::Entry::Vacant(e) = seen.first.entry(key) {
+                    e.insert(now.saturating_sub(at));
+                    sh.seen.fetch_add(1, Relaxed);
+                }
+            }
+            if !ready {
+                snapshotted(frame, &mut done)?;
+                if topics.iter().all(|t| done.contains(t)) {
+                    ready = true;
+                    sh.ready.fetch_add(1, Relaxed);
+                }
+            }
+            Ok(false)
+        };
+        sse.read(&mut on)?;
+    }
+    Ok(seen)
+}
+
+fn file_len(p: &Path) -> u64 {
+    std::fs::metadata(p).map_or(0, |m| m.len())
+}
+
+struct Stream {
+    /// every client's latency to every stamp it got, µs
+    lat: Vec<u64>,
+    /// stamps × clients
+    expected: usize,
+    frames: usize,
+    bytes: usize,
+    /// the gate opening → the last turn's end
+    took: Duration,
+    /// WAL bytes written while the stream ran (a read held open from before it, so nothing was checkpointed away)
+    wal: u64,
+    /// the database file's size before (its growth is read once the server stopped)
+    db_before: u64,
+    /// the steps the 10 turns kept, as JSON, and how many
+    payload: u64,
+    steps: usize,
+}
+
+/// 10 tasks gated before their first line, 4 clients on their topics, then the gate opens: each line the fake writes
+/// is stamped, and each client's first sight of a stamp is its latency. The store's WAL is pinned meanwhile.
+fn stream(b: &Bench, port: u16, projects: &[String]) -> Res<Stream> {
+    use std::sync::atomic::Ordering::Relaxed;
+    let mut ids = Vec::new();
+    for i in 0..RUNNING {
+        let args =
+            serde_json::json!({ "prompt": "gate go stream", "cwd": projects[i % projects.len()], "agent": "claude", "worktree": false });
+        let made = cmd(port, "runtime.create", &args)?;
+        ids.push(made["id"].as_str().ok_or("runtime.create gave no id")?.to_owned());
+    }
+    let t0 = Instant::now();
+    for id in &ids {
+        while last_turn(port, id)?.1 != "running" {
+            if t0.elapsed() > Duration::from_secs(30) {
+                return Err(format!("task {id} never started running: {:?}", last_turn(port, id)?));
+            }
+            std::thread::sleep(Duration::from_millis(20));
+        }
+    }
+    let mut topics = vec!["list".to_owned()];
+    topics.extend(ids.iter().map(|id| format!("session:{id}")));
+    let sh = Shared { stop: false.into(), ready: 0.into(), seen: 0.into() };
+    let expected = RUNNING * STAMPS * CLIENTS;
+    let (db, wal) = (b.home().join("wisp.db"), b.home().join("wisp.db-wal"));
+    std::thread::scope(|scope| -> Res<Stream> {
+        let clients: Vec<_> = (0..CLIENTS)
+            .map(|i| {
+                scope.spawn({
+                    let (topics, sh) = (&topics, &sh);
+                    move || client(port, i, topics, sh)
+                })
+            })
+            .collect();
+        let run = || -> Res<(Duration, u64, u64)> {
+            let t0 = Instant::now();
+            while sh.ready.load(Relaxed) < CLIENTS {
+                if clients.iter().any(|c| c.is_finished()) || t0.elapsed() > Duration::from_secs(60) {
+                    return Err(format!("{} of {CLIENTS} clients had their first look", sh.ready.load(Relaxed)));
+                }
+                std::thread::sleep(Duration::from_millis(5));
+            }
+            // the WAL from here on: emptied into the database, then held by a read so no checkpoint takes it back
+            // (as the runtime bench pins it; across processes, SQLite's shared memory makes it the same)
+            let pin = wisp_store::rusqlite::Connection::open(&db).map_err(said("open the store to pin its WAL"))?;
+            // each try answers busy at once (rusqlite waits 5 s by default): 100 tries are 2 s, not 500
+            pin.busy_timeout(Duration::ZERO).map_err(said("pin the WAL"))?;
+            let mut emptied = false;
+            for _ in 0..100 {
+                let busy: i64 = pin.query_row("PRAGMA wal_checkpoint(TRUNCATE)", [], |r| r.get(0)).map_err(said("checkpoint"))?;
+                if busy == 0 {
+                    emptied = true;
+                    break;
+                }
+                std::thread::sleep(Duration::from_millis(20));
+            }
+            if !emptied {
+                return Err("the WAL never emptied: the server kept it busy for 2 s while idle".into());
+            }
+            pin.execute_batch("BEGIN").map_err(said("pin the WAL"))?;
+            let _: i64 = pin.query_row("SELECT count(*) FROM runtime_session", [], |r| r.get(0)).map_err(said("pin the WAL"))?;
+            let (wal0, db0) = (file_len(&wal), file_len(&db));
+            std::fs::write(b.dir.join("gates").join("go"), "go").map_err(said("open the gate"))?;
+            let opened = Instant::now();
+            for id in &ids {
+                while last_turn(port, id)?.1 == "running" {
+                    if opened.elapsed() > Duration::from_millis(STREAM_MS) + Duration::from_secs(60) {
+                        return Err(format!("task {id}'s turn never ended"));
+                    }
+                    std::thread::sleep(Duration::from_millis(50));
+                }
+            }
+            let took = opened.elapsed();
+            // the last patches: every stamp to every client, or 5 s
+            let ended = Instant::now();
+            while sh.seen.load(Relaxed) < expected && ended.elapsed() < Duration::from_secs(5) {
+                std::thread::sleep(Duration::from_millis(10));
+            }
+            let wal1 = file_len(&wal);
+            // what the stream wrote, frame by frame, for `--keep` (where the bytes went: which pages, how many commits)
+            let _ = std::fs::copy(&wal, b.dir.join("stream.wal"));
+            pin.execute_batch("COMMIT").map_err(said("let the WAL go"))?;
+            Ok((took, wal1.saturating_sub(wal0), db0))
+        };
+        let ran = run();
+        // the gate opens however the run went: a fake still waiting on it would poll on after the bench is gone
+        let _ = std::fs::write(b.dir.join("gates").join("go"), "go");
+        sh.stop.store(true, Relaxed);
+        let mut seen = Vec::new();
+        for c in clients {
+            seen.push(c.join().map_err(|_| "a client panicked".to_owned())??);
+        }
+        let (took, wal, db_before) = ran?;
+        let (mut payload, mut steps) = (0, 0);
+        for id in &ids {
+            let (turn, _) = last_turn(port, id)?;
+            let (b, n) = kept(port, id, &turn)?;
+            (payload, steps) = (payload + b, steps + n);
+        }
+        Ok(Stream {
+            // only stamps a task writes (n under STAMPS): a stray one can never stand in for a patch that went missing
+            lat: seen
+                .iter()
+                .flat_map(|s| s.first.iter().filter(|((_, n), _)| usize::try_from(*n).is_ok_and(|n| n < STAMPS)).map(|(_, l)| *l))
+                .collect(),
+            expected,
+            frames: seen.iter().map(|s| s.frames).sum(),
+            bytes: seen.iter().map(|s| s.bytes).sum(),
+            took,
+            wal,
+            db_before,
+            payload,
+            steps,
+        })
+    })
+}
+
+/// The database's growth once the server stopped: its WAL emptied into it first.
+fn db_after(home: &Path) -> Res<u64> {
+    let c = wisp_store::rusqlite::Connection::open(home.join("wisp.db")).map_err(said("open the store"))?;
+    let _: i64 = c.query_row("PRAGMA wal_checkpoint(TRUNCATE)", [], |r| r.get(0)).map_err(said("checkpoint"))?;
+    drop(c);
+    Ok(file_len(&home.join("wisp.db")))
+}
+
+/// spikes/events' append rate on a store of its own in the bench's folder.
+fn append(dir: &Path) -> Res<f64> {
+    std::fs::create_dir_all(dir).map_err(said("create the append bench's folder"))?;
+    let st = Store::open(Location::Path(dir.join("wisp.db")), Arc::new(SystemClock)).map_err(said("open the store"))?;
+    let rt = tokio::runtime::Builder::new_multi_thread().enable_all().build().map_err(said("a tokio runtime"))?;
+    let rate = rt.block_on(events_bench::append_rate(&st));
+    st.close();
+    Ok(rate)
 }
 
 // ---------- RSS ----------
@@ -523,6 +906,50 @@ struct Report {
     list_pages: usize,
     list_bytes: usize,
     why: Option<Breakdown>,
+    patch: Patch,
+    append_per_s: f64,
+    amp: Amp,
+}
+
+/// The patch latency, as the report needs it.
+struct Patch {
+    /// each client's latency to each stamp it got, µs
+    lat: Vec<u64>,
+    expected: usize,
+    frames: usize,
+    bytes: usize,
+    took: Duration,
+}
+
+impl Patch {
+    fn missing(&self) -> usize {
+        self.expected.saturating_sub(self.lat.len())
+    }
+    /// min, p50, p99 and max in ms (index n × q, as spikes/events takes its p99)
+    fn spread(&self) -> (f64, f64, f64, f64) {
+        let mut v = self.lat.clone();
+        v.sort_unstable();
+        #[allow(clippy::cast_precision_loss)]
+        let at = |q: usize| v.get((v.len() * q / 100).min(v.len().saturating_sub(1))).map_or(0.0, |us| *us as f64 / 1000.0);
+        (at(0), at(50), at(99), at(100))
+    }
+}
+
+/// Write amplification: what the store wrote over the activity the turns kept.
+struct Amp {
+    wal: u64,
+    db: u64,
+    payload: u64,
+    steps: usize,
+}
+
+impl Amp {
+    /// ×; no payload at all is infinite (a miss), never a pass
+    fn x(&self) -> f64 {
+        #[allow(clippy::cast_precision_loss)]
+        let x = if self.payload == 0 { f64::INFINITY } else { (self.wal + self.db) as f64 / self.payload as f64 };
+        x
+    }
 }
 
 impl Report {
@@ -545,6 +972,18 @@ impl Report {
         if self.list_ms() > LIST_MS {
             over.push(format!("task list {:.2} ms (median of {}) > {LIST_MS} ms", self.list_ms(), self.list.len()));
         }
+        let (_, _, p99, _) = self.patch.spread();
+        if self.patch.missing() > 0 {
+            over.push(format!("{} of {} patches never reached their client", self.patch.missing(), self.patch.expected));
+        } else if p99 > PATCH_P99_MS {
+            over.push(format!("patch latency p99 {p99:.1} ms (of {}) > {PATCH_P99_MS} ms", self.patch.lat.len()));
+        }
+        if self.append_per_s < APPEND_PER_S {
+            over.push(format!("durable append {:.0} events/s < {APPEND_PER_S} events/s", self.append_per_s));
+        }
+        if self.amp.x() > WRITE_AMPLIFICATION {
+            over.push(format!("write amplification {:.1}× > {WRITE_AMPLIFICATION}×", self.amp.x()));
+        }
         over
     }
 
@@ -554,6 +993,8 @@ impl Report {
         let (l0, l50, l95, l100) = spread(&self.list);
         let (a0, a50, a95, a100) = spread(&self.list_all);
         let rss_ok = mb(self.rss.kb) <= IDLE_RSS_MB && self.rss.settled;
+        let (p0, p50, p99, pmax) = self.patch.spread();
+        let patch_ok = self.patch.missing() == 0 && p99 <= PATCH_P99_MS;
         [
             format!("### Server budgets (ADR-0011), `wisp serve` on {TASKS} tasks"),
             String::new(),
@@ -576,6 +1017,36 @@ impl Report {
                 self.list_first,
                 self.list.len(),
                 mark(l50 <= LIST_MS)
+            ),
+            format!(
+                "| patch latency ({RUNNING} running, {CLIENTS} clients) | {p99:.1} ms p99 | {PATCH_P99_MS} ms | {} of {} (min {p0:.1} · p50 {p50:.1} · max {pmax:.1} ms) | {} |",
+                self.patch.lat.len(),
+                self.patch.expected,
+                mark(patch_ok)
+            ),
+            format!(
+                "| durable append | {:.0} events/s | {APPEND_PER_S} events/s | {} events, 1 000 a transaction (spikes/events) | {} |",
+                self.append_per_s,
+                events_bench::APPENDED,
+                mark(self.append_per_s >= APPEND_PER_S)
+            ),
+            format!(
+                "| write amplification | {:.1}× | {WRITE_AMPLIFICATION}× | WAL {:.2} MB + database {:.2} MB over {:.2} MB kept in {} steps | {} |",
+                self.amp.x(),
+                mb(self.amp.wal / 1024),
+                mb(self.amp.db / 1024),
+                mb(self.amp.payload / 1024),
+                self.amp.steps,
+                mark(self.amp.x() <= WRITE_AMPLIFICATION)
+            ),
+            String::new(),
+            format!(
+                "The stream: {RUNNING} tasks × {STAMPS} lines ({STREAM_PER_S} a second, {STREAM_BYTES} B) through the fake claude, \
+                 each client on `list` and all {RUNNING} task topics; the last turn ended {:.1} s after the gate opened; \
+                 the clients read {} frames, {:.0} KB.",
+                self.patch.took.as_secs_f64(),
+                self.patch.frames,
+                self.patch.bytes as f64 / 1024.0
             ),
             String::new(),
             format!(
@@ -612,11 +1083,18 @@ fn run(o: &Opts, dir: &Path) -> Res<Report> {
         return Err(format!("no wisp binary at {} (cargo build --profile budgets -p wisp, or --wisp=<bin>)", o.wisp.display()));
     }
     let b = Bench { dir: dir.to_owned(), wisp: o.wisp.clone() };
-    for d in ["home", "bin", "user", "no-web", "code"] {
+    if !o.fake.is_file() {
+        return Err(format!("no fake agent at {} (cargo build --profile budgets -p wisp-testkit, or --fake=<bin>)", o.fake.display()));
+    }
+    for d in ["home", "bin", "user", "no-web", "code", "gates"] {
         std::fs::create_dir_all(dir.join(d)).map_err(said("create the bench's folders"))?;
     }
     for (name, _) in FAKES {
         let p = dir.join("bin").join(name);
+        if name == "claude" {
+            std::fs::copy(&o.fake, &p).map_err(said("copy the fake agent"))?;
+            continue;
+        }
         std::fs::write(&p, FAKE_CLI).map_err(said("write a fake CLI"))?;
         #[cfg(unix)]
         {
@@ -665,7 +1143,20 @@ fn run(o: &Opts, dir: &Path) -> Res<Report> {
     }
     println!("first list read (cold): first page {:.2} ms, every task {:.2} ms", ms(first.took), ms(first.all));
     let rss = settle(pid)?;
+    // on the same server, once its idle numbers are in: 10 tasks stream to 4 clients
+    let st = stream(&b, s.port, &projects)?;
+    let patch = Patch { lat: st.lat, expected: st.expected, frames: st.frames, bytes: st.bytes, took: st.took };
+    println!(
+        "patch latency: p99 {:.1} ms over {} of {} patches; {} steps kept",
+        patch.spread().2,
+        patch.lat.len(),
+        patch.expected,
+        st.steps
+    );
     drop(s);
+    let db = db_after(&b.home())?.saturating_sub(st.db_before);
+    let append_per_s = append(&dir.join("append"))?;
+    println!("durable append: {append_per_s:.0} events/s");
     let why = breakdown(&b.home()).inspect_err(|e| eprintln!("server budgets: no breakdown: {e}")).ok();
     Ok(Report {
         seeded,
@@ -679,6 +1170,9 @@ fn run(o: &Opts, dir: &Path) -> Res<Report> {
         list_pages: first.pages,
         list_bytes: first.bytes,
         why,
+        patch,
+        append_per_s,
+        amp: Amp { wal: st.wal, db, payload: st.payload, steps: st.steps },
     })
 }
 
@@ -725,6 +1219,10 @@ mod tests {
     use super::*;
 
     fn report(cold: u64, rss_mb: u64, settled: bool, list_us: u64) -> Report {
+        report_all(cold, rss_mb, settled, list_us, 150_000, 20_000.0, 15)
+    }
+
+    fn report_all(cold: u64, rss_mb: u64, settled: bool, list_us: u64, patch_us: u64, append: f64, amp_x: u64) -> Report {
         let rss = |kb| Rss { kb, after: Duration::from_secs(2), settled };
         Report {
             seeded: Duration::ZERO,
@@ -738,6 +1236,9 @@ mod tests {
             list_pages: 6,
             list_bytes: 0,
             why: None,
+            patch: Patch { lat: vec![patch_us; 100], expected: 100, frames: 0, bytes: 0, took: Duration::ZERO },
+            append_per_s: append,
+            amp: Amp { wal: amp_x * 1000, db: 0, payload: 1000, steps: 1 },
         }
     }
 
@@ -806,9 +1307,72 @@ mod tests {
     #[test]
     fn each_budget_misses_on_its_own_and_the_budget_itself_passes() {
         assert!(report(150, 120, true, 5_000).over().is_empty());
-        let over = report(151, 121, true, 5_001).over();
-        assert_eq!(over.len(), 3, "{over:?}");
-        assert!(over[0].starts_with("cold start") && over[1].starts_with("idle RSS") && over[2].starts_with("task list"));
+        let over = report_all(151, 121, true, 5_001, 150_001, 19_999.0, 16).over();
+        assert_eq!(over.len(), 6, "{over:?}");
+        let starts = ["cold start", "idle RSS", "task list", "patch latency", "durable append", "write amplification"];
+        for (o, s) in over.iter().zip(starts) {
+            assert!(o.starts_with(s), "{o} is the {s} line");
+        }
+        for (i, r) in [
+            report_all(10, 50, true, 1_000, 150_001, 30_000.0, 2),
+            report_all(10, 50, true, 1_000, 1_000, 19_999.0, 2),
+            report_all(10, 50, true, 1_000, 1_000, 30_000.0, 16),
+        ]
+        .iter()
+        .enumerate()
+        {
+            assert_eq!(r.over().len(), 1, "budget {i} alone: {:?}", r.over());
+        }
+    }
+
+    #[test]
+    fn a_patch_a_client_never_got_is_a_miss_even_when_the_rest_are_fast() {
+        let mut r = report(10, 50, true, 1_000);
+        r.patch = Patch { lat: vec![1_000; 99], expected: 100, frames: 0, bytes: 0, took: Duration::ZERO };
+        assert_eq!(r.over(), vec!["1 of 100 patches never reached their client".to_owned()]);
+        assert!(r.summary().contains("| 99 of 100 (min 1.0 · p50 1.0 · max 1.0 ms) | ❌ |"), "{}", r.summary());
+    }
+
+    #[test]
+    fn the_p99_is_the_99th_of_100_and_none_never_panics() {
+        let p = |lat: Vec<u64>| Patch { lat, expected: 0, frames: 0, bytes: 0, took: Duration::ZERO }.spread();
+        let lat: Vec<u64> = (1..=100).rev().map(|ms| ms * 1000).collect();
+        assert_eq!(p(lat), (1.0, 51.0, 100.0, 100.0));
+        assert_eq!(p(vec![]), (0.0, 0.0, 0.0, 0.0));
+    }
+
+    #[test]
+    fn no_payload_is_an_infinite_amplification_never_a_pass() {
+        assert!(Amp { wal: 0, db: 0, payload: 0, steps: 0 }.x().is_infinite());
+        let mut r = report(10, 50, true, 1_000);
+        r.amp = Amp { wal: 0, db: 0, payload: 0, steps: 0 };
+        assert_eq!(r.over(), vec!["write amplification inf× > 15×".to_owned()]);
+        assert!((Amp { wal: 9_000, db: 1_000, payload: 1_000, steps: 3 }.x() - 10.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn stamps_are_read_wherever_a_frame_carries_them_and_a_broken_one_is_skipped() {
+        let frame = br#"data: [{"rows":[{"v":"{\"text\":\"~stamp:12:0:1700~ xx\"}"},{"v":"~stamp:12:1:1750~ ~stamp:bad~ ~stamp:13:0:1800~"}],"t":"~stamp:9:9"}]"#;
+        assert_eq!(stamps(frame), vec![((12, 0), 1700), ((12, 1), 1750), ((13, 0), 1800)]);
+        assert!(stamps(b"data: []").is_empty());
+    }
+
+    #[test]
+    fn a_topic_counts_as_looked_at_once_its_last_page_is_in() {
+        let mut done = std::collections::HashSet::new();
+        snapshotted(&page(3, &["a"], true), &mut done).unwrap();
+        assert!(done.is_empty(), "a page with more to come");
+        snapshotted(&page(3, &[], false), &mut done).unwrap();
+        assert!(done.contains("list"));
+        snapshotted(b"id: 4\nevent: sync\ndata: [{\"t\":\"patch\",\"topic\":\"session:x\"}]", &mut done).unwrap();
+        assert_eq!(done.len(), 1);
+    }
+
+    #[test]
+    fn a_whole_chunked_body_decodes_and_a_cut_one_is_an_error() {
+        assert_eq!(dechunk(b"5\r\nhello\r\n1;x=y\r\n!\r\n0\r\n\r\n").unwrap(), b"hello!");
+        assert!(dechunk(b"5\r\nhel").is_err());
+        assert!(dechunk(b"").is_err());
     }
 
     #[test]

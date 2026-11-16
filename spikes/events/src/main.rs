@@ -5,7 +5,8 @@ use std::time::{Duration, Instant};
 
 use serde::{Deserialize, Serialize};
 use serde_json::json;
-use wisp_kernel::durable::{Durable, EventLog, EventLogService, NewEvent};
+use events_bench::append_rate;
+use wisp_kernel::durable::{Durable, EventLog, EventLogService};
 use wisp_kernel::{App, Caller, Command, Event, Manifest, Plugin, PluginGroup, Result, Setup};
 use wisp_store::{Location, Store, SystemClock};
 
@@ -84,22 +85,6 @@ async fn latency() -> f64 {
 
 fn store(dir: &std::path::Path) -> Store {
     Store::open(Location::Path(dir.join("wisp.db")), Arc::new(SystemClock)).unwrap_or_else(|e| panic!("{e}"))
-}
-
-fn row(n: u64) -> NewEvent {
-    NewEvent { ty: "bench.fact".into(), plugin: "wisp.bench".into(), subject: Some(format!("s{}", n % 100)), key: None, cause: None, root: "r".into(), at: 0, data: json!({ "n": n }) }
-}
-
-async fn append_rate(st: &Store) -> f64 {
-    let n = 100_000u64;
-    let t = Instant::now();
-    for chunk in 0..(n / 1000) {
-        let rows: Vec<NewEvent> = (0..1000).map(|i| row(chunk * 1000 + i)).collect();
-        st.append(rows).await.unwrap_or_else(|e| panic!("{e:?}"));
-    }
-    #[allow(clippy::cast_precision_loss)]
-    let r = n as f64 / t.elapsed().as_secs_f64();
-    r
 }
 
 async fn per_command(st: &Store) -> f64 {

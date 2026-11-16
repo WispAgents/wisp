@@ -131,8 +131,10 @@ jobs:
           cp verify-all-1.json verify-all.json
           [ "$failed" = 0 ]
 
-      # ADR-0011, ADR-0080: the server's budgets on a real `wisp serve` with 5 000 tasks (cold start ≤ 150 ms, idle RSS
-      # ≤ 120 MB, the task list ≤ 5 ms: tools/budgets.ts SERVER_BUDGETS), built in the `budgets` profile (release, thin
+      # ADR-0011, ADR-0080, ADR-0082: the server's budgets on a real `wisp serve` with 5 000 tasks (cold start ≤ 150 ms, idle
+      # RSS ≤ 120 MB, the task list ≤ 5 ms, patch p99 ≤ 150 ms with 10 tasks streaming to 4 clients, append ≥ 20k events/s,
+      # write amplification ≤ 15×: tools/budgets.ts SERVER_BUDGETS), `wisp` and the fake agent the running tasks stream
+      # through built in the `budgets` profile (release, thin
       # LTO: fat LTO's link would add minutes) into the job's target dir, the spike reusing the dependencies it shares with `wisp`. A miss fails
       # the job and the table goes to the job summary. Once per run: Linux, the first Node of the matrix.
       - name: server budgets
@@ -141,7 +143,7 @@ jobs:
         env:
           CARGO_TARGET_DIR: ${{ github.workspace }}/target
         run: |
-          cargo build --locked --profile budgets -p wisp
+          cargo build --locked --profile budgets -p wisp -p wisp-testkit
           cargo run --locked --profile budgets --manifest-path spikes/server-budgets/Cargo.toml
 
       # ADR-0011: the web bundle's budgets (initial JS ≤ 120 KB br, initial CSS ≤ 30 KB br), measured on the

@@ -6,8 +6,9 @@
 // Lazy chunks (a task's view, the palette, a plugin's screens) and the stylesheets that load with them are
 // listed, not budgeted: they load when they show. CI (.github/workflows/suite.yml) runs this after the web build and
 // fails on a miss; under GitHub Actions the numbers also go to the job summary ($GITHUB_STEP_SUMMARY). The server half
-// is measured by the Rust spikes and gated there: `SERVER_BUDGETS` by spikes/server-budgets (a CI step, ADR-0080),
-// `EVENT_BUDGETS` by spikes/events; write amplification and patch latency aren't gated in CI yet (plan §4.3).
+// is measured by the Rust spikes and gated there: `SERVER_BUDGETS` by spikes/server-budgets (a CI step, ADR-0080,
+// ADR-0082: cold start, idle RSS, the list, patch latency, append rate, write amplification), `EVENT_BUDGETS` by
+// spikes/events (not a CI step; its append rate is the function spikes/server-budgets gates).
 //
 //   node tools/budgets.ts [--dist=apps/web/dist] [--json] [--summary=<file>]
 
@@ -26,20 +27,26 @@ export const SERVER_BUDGETS = {
   idleRssMb: 120,
   /** the UI's first read (`GET /api/events?fresh=list` → the list snapshot's first page, ADR-0081), median of 30 */
   listMs: 5,
+  /** a running task's output written → each client's patch carrying it, p99; 10 tasks streaming, 4 clients (ADR-0082) */
+  patchP99Ms: 150,
+  /** durable events a second into the event log, 1 000 a transaction (spikes/events' `append_rate`) */
+  appendPerS: 20_000,
+  /** bytes the store wrote (WAL + database growth) ÷ the activity the 10 streaming tasks kept */
+  writeAmplification: 15,
 } as const;
 
 /** The durable event log's budgets (ADR-0044), measured and gated by `spikes/events` (it exits 1 on a miss). */
 export const EVENT_BUDGETS = {
   /** emit → in-process handler, p99 */
   emitToHandlerP99Ms: 1,
-  /** durable appends a second */
-  durableAppendPerS: 20_000,
+  /** durable appends a second: the server's budget, gated in PR CI by spikes/server-budgets */
+  durableAppendPerS: SERVER_BUDGETS.appendPerS,
   /** replay of 100 000 events to a durable subscription */
   replay100kMs: 1_000,
   /** the events:* topic to a client, p99 (the sync path's budget: spikes/sync-bench-rs) */
   topicP99Ms: 150,
-  /** write amplification on the streaming bench: unchanged, since stream events stay ephemeral */
-  writeAmplification: 15,
+  /** write amplification on the streaming bench: unchanged, since stream events stay ephemeral (the server's budget) */
+  writeAmplification: SERVER_BUDGETS.writeAmplification,
 } as const;
 
 const arg = (name: string): string | undefined => process.argv.find((a) => a.startsWith(`--${name}=`))?.slice(name.length + 3);
