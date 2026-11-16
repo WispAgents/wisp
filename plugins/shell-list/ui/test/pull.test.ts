@@ -1,10 +1,26 @@
 // Pull to refresh shows its spinner at once and holds it until the reconnect settles (ADR-0017), even when the
 // status only flips to `connecting` on the next tick; a no-op reconnect still spins briefly and clears.
-import { createRoot, createSignal } from 'solid-js';
+import { createEffect, createRoot, createSignal } from 'solid-js';
 import { expect, test } from 'vitest';
 import { createPull, type After } from '../src/model/pull.ts';
 
+// Without this package's vitest.config.ts (e.g. `vitest run <files>` from the repo root) `solid-js` resolves to its
+// server build, where createEffect is a no-op: the pull never sees the status flip and the first test fails with a
+// bare 'expected false to be true' (the others pass for the wrong reason). Say so instead.
+function effectsRun(): boolean {
+  let ran = false;
+  const dispose = createRoot((d) => {
+    createEffect(() => {
+      ran = true;
+    });
+    return d;
+  });
+  dispose();
+  return ran;
+}
+
 function harness() {
+  expect(effectsRun(), 'solid-js resolved to its server build (createEffect is a no-op): run from plugins/shell-list/ui so its vitest.config.ts applies').toBe(true);
   const [connecting, setConnecting] = createSignal(false);
   const timers: Array<() => void> = [];
   const after: After = (_ms, run) => {

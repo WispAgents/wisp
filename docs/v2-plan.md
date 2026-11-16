@@ -23,7 +23,7 @@ Rust for everything but the UI, Solid/TS for the UI, everything a plugin (ADR-00
 | CI, last full run (56405a3a) | Linux + macOS: one brittle test (platform-controls read only the last reduced-motion block) — fixed in the test; Windows running |
 | Budgets | initial JS 107.2 KB br (≤ 120) · CSS 27.1 KB (≤ 30) |
 | Weekly usage | 0 % (reset applied) · **owner 2026-11-15: one coder at a time** |
-| Coders running | coder-r302 (pull.test.ts flaky) |
+| Coders running | none |
 
 ## 3. Owner decisions (every one, dated; read before any change)
 
@@ -945,7 +945,7 @@ Source: `docs/v1-features.md` (each row's evidence and test). `[x]` built, `[ ]`
 |---|---|---|
 | 283 | DX: build bundle + Tauri lock: stopped before edits; plan in §4.6 | to redo |
 | 282 | Server perf budgets: stopped before edits; plan in §4.3 | to redo |
-| 302 | plugins/shell-list/ui pull.test.ts: spinner-at-once fails under load (flaky = bug) | in progress |
+| 302 | pull.test.ts: not load: run from the repo root, solid-js resolves its server build (no effects); the test now says so | committed |
 | 301 | Check rule `dynamic-import-in-test`: 46 test imports hoisted, 8 lazy-chunk waits allowed with a reason | committed |
 | 300 | Sign out revokes the device's grid token (`POST /api/device/revoke`, ADR-0078); offline queued; desktop grid-client too | committed |
 | 299 | Phone step 14 done: Crew tab + wisp Cloud sign-in on Computers | committed (1febaf4e) |
