@@ -3,12 +3,11 @@
 import { expect, test } from 'vitest';
 import en from '../src/i18n/en.json' with { type: 'json' };
 import lazy from '../src/i18n/en.lazy.json' with { type: 'json' };
-import { readFileSync } from 'node:fs';
 import { STATIC_NAME_KEY, machineLabelKey } from '../src/view.ts';
 
 // the registrations read as source: importing index.ts compiles every component (test-imports rule) and its load
 // counted against the test's 5 s under CI load (6f90a492)
-const index = readFileSync(new URL('../src/index.ts', import.meta.url), 'utf8');
+const index = Object.values(import.meta.glob<string>('../src/index.ts', { query: '?raw', import: 'default', eager: true }))[0] ?? '';
 
 const all: Record<string, string> = { ...en, ...lazy };
 
