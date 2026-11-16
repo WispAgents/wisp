@@ -4290,6 +4290,7 @@ dependencies = [
  "wisp-channels-api",
  "wisp-kernel",
  "wisp-resources-api",
+ "wisp-router-api",
  "wisp-runtime-api",
  "wisp-store",
  "wisp-testkit",

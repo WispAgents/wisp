@@ -144,6 +144,12 @@ async fn a_run_that_would_take_the_window_past_your_line_is_asked_about_and_a_ye
     let f = api.try_cmd("runtime.followUp", json!({ "id": last, "text": "and this" })).await;
     assert_eq!(f["error"]["reason"], "budget_hold", "{f}");
     assert_eq!(api.cmd("runtime.turns", json!({ "id": last })).await.as_array().map_or(0, Vec::len), turns, "no turn was made");
+    // Auto is asked about the harness its preview picks, as v1 resolved Auto first; it never lands "Not started" (B15)
+    let pick = api.cmd("router.preview", json!({ "prompt": "one more TOPIC[More]" })).await;
+    assert_eq!(pick["pick"]["agent"], "claude", "{pick}");
+    let auto = api.try_cmd("runtime.create", json!({ "prompt": "one more TOPIC[More]", "cwd": dir.join("proj"), "agent": "auto" })).await;
+    assert_eq!(auto["error"]["reason"], "budget_hold", "{auto}");
+    assert_eq!(tasks(api.cmd("runtime.list", json!({})).await), before, "no task was made");
     // a yes: it goes, and the same window doesn't ask again below the next step
     let mut yes = ask.clone();
     yes["confirmLimit"] = json!(true);
@@ -160,6 +166,9 @@ async fn a_run_that_would_take_the_window_past_your_line_is_asked_about_and_a_ye
         .to_owned();
     let t = api.until(&crew, "held", |t| t.len() == 1 && t[0]["status"] == "held").await;
     assert_eq!((t[0]["held"]["by"].as_str(), t[0]["held"]["kind"].as_str()), (Some("wisp.budget"), Some("ask")), "{:?}", t[0]);
+    // its card says why in your words, not the agents' how-to (B10)
+    let why = t[0]["held"]["data"]["why"].as_str().unwrap_or_default();
+    assert!(why.starts_with("5-hour usage window is at 92%") && !why.contains("confirmLimit"), "{why}");
     // you press Start now: a yes (it isn't held again past the same line), and it runs as that same turn, in its
     // place, so the page updates the held card instead of dropping it (owner, 2026-11-16: "send anyway doesn't work")
     let held = t[0]["id"].as_str().unwrap().to_owned();

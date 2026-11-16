@@ -224,6 +224,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Fixed
 
+- **Auto near the limit asks first**, as a named harness does: wisp asks about the harness Auto would pick, so the task never lands as Not started.
+
 - **A held run's row says which window and how full** ("5-hour at 97%"; it said "at 0%"), its card says why in plain words (no instructions meant for agents), and it has no empty bar of buttons under it.
 
 - **A run that never started says Blocked** in the list, as its card does (it said Failed), and its turn no longer shows empty figures (0 · 0 · 0, 0 tokens); a turn's bar shows only what it did.

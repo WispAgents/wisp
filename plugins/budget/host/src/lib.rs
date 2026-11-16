@@ -209,12 +209,30 @@ impl State {
     }
 }
 
+/// The harness Auto would run a New task on (`router.preview`: the same pick every time), or None when it can't say
+/// (no router, nothing to pick): the send goes on to its turn's own guard.
+async fn auto_pick(ctx: &Ctx, a: &wisp_runtime_api::commands::StartArgs) -> Option<String> {
+    let goal = a.goal.as_ref().and_then(|g| g.as_str().or_else(|| g.get("text").and_then(Value::as_str))).map(str::to_owned);
+    let args = wisp_router_api::view::PreviewArgs {
+        prompt: Some(a.prompt.clone()),
+        #[allow(clippy::cast_precision_loss)]
+        attachments: Some(a.attachments.len() as f64),
+        goal,
+        team: Some(a.team.as_ref().is_some_and(|t| !t.is_null())),
+        machine: None,
+    };
+    match ctx.run::<wisp_router_api::commands::Preview>(&ctx.root_call(), args).await.ok()? {
+        wisp_router_api::view::PreviewResult::Pick(p) => Some(p.pick.agent).filter(|x| !x.is_empty() && x != "auto"),
+        wisp_router_api::view::PreviewResult::Nothing(_) => None,
+    }
+}
+
 /// `before:run`: unattended work on an account past its stop line is held until it resets.
 /// Ask near the limit before a send is made (v1: the page's `holdNow`, the server's 409 `hold`): a New task or a
 /// follow-up you send that would take its window past your line is refused with `budget_hold` before the task or turn
 /// exists, so nothing shows as failed and the box keeps your words; the composer asks `budget.ask` for the row. A
-/// send by an automation, a subagent, an answer to the task's question, or one wisp routes (`auto`) goes on to the
-/// turn's own guard (held there until the reset, or asked once the harness is known).
+/// send by an automation, a subagent or an answer to the task's question goes on to the turn's own guard (held there
+/// until the reset); one wisp routes (`auto`) is asked about the harness Auto's preview picks (`auto_pick`).
 fn sends(s: &mut Setup, slot: &Slot) {
     let opts = InterceptOpts { priority: 30, failure: Failure::Open, timeout_ms: 500 };
     let create = slot.clone();
@@ -226,7 +244,12 @@ fn sends(s: &mut Setup, slot: &Slot) {
             if a.parent_id.is_some() || a.hold || wisp_budget_core::windows::unattended(a.by.as_deref()) {
                 return Verdict::Continue;
             }
-            let agent = a.agent.clone().unwrap_or_default();
+            let mut agent = a.agent.clone().unwrap_or_default();
+            // Auto: the harness its preview picks (the composer asks the same), as v1 resolved Auto before it asked;
+            // its first turn picks again, and a yes here (confirmLimit) goes with it (B15)
+            if agent == "auto" {
+                agent = auto_pick(&ctx, &a).await.unwrap_or_default();
+            }
             let account = a.account.clone().unwrap_or_default();
             let send = ask::Send { agent: &agent, account: &account, session: "", first: true, together: 1, confirm: a.confirm_limit };
             match st.ask_send(&ctx, &send) {
