@@ -161,6 +161,10 @@ export const READS: Record<string, Fn> = {
   // mock's tasks run in no worktree of their own, so none, and Settings' "ask" (it was unanswered: a red toast on every
   // archive in the dev app, found by qa/flicker.mjs)
   'worktrees.done.list': () => ({ ops: [], result: { folders: [], onDone: 'ask' } }),
+  // the Machines dialog reads its cards and the computers wisp found when it opens (wisp.machines' PeerView[] and
+  // Found[]): the mock has no other computer and finds none (they were unanswered: a red toast over the dialog)
+  'machines.list': () => ({ ops: [], result: [] }),
+  'machines.discover': () => ({ ops: [], result: [] }),
 };
 
 const ACTION = 'sent only by a click (not on open): unanswered, its refusal toast and rollback are what a check of that control wants';
@@ -179,7 +183,7 @@ export const NOT_MOCKED: Readonly<Record<string, string>> = Object.fromEntries([
     'share.create', 'share.import', 'share.peek', 'share.preview', 'share.stop', 'stuff.publish', 'stuff.unpublish', 'crew.share',
   ]),
   ...reason('another computer: the mock has one peer (?seed=computers adds a read-only Studio)', [
-    'machines.add', 'machines.connect', 'machines.disconnect', 'machines.discover', 'machines.letIn', 'machines.list', 'machines.remove',
+    'machines.add', 'machines.connect', 'machines.disconnect', 'machines.letIn', 'machines.remove',
     'machines.stop', 'machines.update',
   ]),
   ...reason('GitHub: needs gh and a real PR', ['ship.check_log', 'ship.details', 'ship.fix_conflicts', 'ship.merge', 'ship.refresh', 'ship.ship', 'ship.view', 'review.maybe', 'git.clone']),

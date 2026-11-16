@@ -145,7 +145,8 @@ export function useAccount() {
     // signed in: the grid's account page; signed out (or never): Settings → Cloud, to sign in
     if (v === 'me') return href && me().state !== 'out' ? shell.platform.openExternal(href) : sheet('cloud');
     if (v === 'theme') void shell.theme.set(shell.theme.resolved() === 'dark' ? 'light' : 'dark');
-    else if (v === 'machines') shell.navigate({ t: 'openView', id: 'machine.this' as never, params: null as Json });
+    // v1 #machinesBtn → openMachines: the Machines dialog (wisp.machines' overlay view); This computer is in Settings
+    else if (v === 'machines') shell.navigate({ t: 'openOverlay', overlay: { kind: 'dialog', id: 'machines.dialog' as never, params: {} as Json } });
     // Settings on a phone opens on its list, as v1's did; a wider window shows General beside the list
     else sheet(v === 'automations' ? 'automations' : nav().layout === 'stack' ? undefined : 'general');
   };

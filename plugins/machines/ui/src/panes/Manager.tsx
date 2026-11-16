@@ -131,7 +131,9 @@ function HowTo(): JSX.Element {
   );
 }
 
-export function MachinesDialog(props: { readonly client: PluginClient; readonly onClose: () => void; readonly withGrid?: boolean; readonly focusAdd?: boolean }): JSX.Element {
+/** `inOverlay`: drawn inside the shell's overlay (the avatar menu's Machines, `MachinesView`), which brings the dialog,
+ *  its title and close; else its own dialog (Settings → Machines' Manage). */
+export function MachinesDialog(props: { readonly client: PluginClient; readonly onClose: () => void; readonly withGrid?: boolean; readonly focusAdd?: boolean; readonly inOverlay?: boolean }): JSX.Element {
   const c = props.client;
   const peer = c.home;
   const shell = useShell();
@@ -203,9 +205,7 @@ export function MachinesDialog(props: { readonly client: PluginClient; readonly 
     queueMicrotask(() => setEditing('')); // a fresh form, filled in; connecting still waits for the button
   };
   const addOpen = (): boolean => list().length === 0 || editing() === '';
-  return (
-    <>
-      <Dialog open onOpenChange={(o) => !o && props.onClose()} title={t('machines.title')} description={t('machines.manage.description')} size="lg" part="machines.manage.dialog">
+  const body = (): JSX.Element => (
         <Stack gap="4">
           <Show when={props.withGrid}>
             <Slot input="shell.settings:machines" layout="contents" />
@@ -265,7 +265,22 @@ export function MachinesDialog(props: { readonly client: PluginClient; readonly 
             </Stack>
           </Show>
         </Stack>
-      </Dialog>
+  );
+  return (
+    <>
+      <Show
+        when={props.inOverlay}
+        fallback={
+          <Dialog open onOpenChange={(o) => !o && props.onClose()} title={t('machines.title')} description={t('machines.manage.description')} size="lg" part="machines.manage.dialog">
+            {body()}
+          </Dialog>
+        }
+      >
+        <Stack gap="4">
+          <Text tone="muted">{t('machines.manage.description')}</Text>
+          {body()}
+        </Stack>
+      </Show>
       <Show when={ask()}>
         {(q) => (
           <Dialog
