@@ -21,6 +21,7 @@ import { agentById, agentName, effortLabel, harnessesAt, harnessLogo, paintRunne
 import { ctxFor } from './turns.js';
 import { avatarHtml, crewList, memberById } from './crew.js';
 import { onSubSummary, openFrom, openSub } from './lineage.js';
+import { spellProp } from './spells.js';
 
 const MAX_COPIES = 5; // parallel copies of one row
 export const copiesOf = (m) => Math.max(1, m.count || 1);
@@ -491,19 +492,47 @@ const subStatus = (ct) => {
   return { cls: st, label: STATUS_LABEL[st] || STATUS_LABEL.done };
 };
 
+// A long team folds: the first few rows show (3, or a spell's delegate.more rows), the rest wait
+// behind Show N more. Folding one row alone isn't worth a button. Turns the user unfolded stay so.
+const unfolded = new Set();
+const shownRows = () => spellProp('delegate.more', 'rows') || 3;
+// Which rows stay shown: the live ones first (the newest of them), then the newest finished; in order.
+function shownOf(list, t) {
+  const n = shownRows();
+  if (unfolded.has(t.id) || list.length <= n + 1) return null;
+  const live = (x) => !x.ct || x.ct.status === 'running';
+  const rank = list.map((x, i) => i).sort((a, b) => live(list[b]) - live(list[a]) || b - a);
+  return new Set(rank.slice(0, n));
+}
+const moreHtml = (t, hidden) => `<button class="link xs team-more" data-turn="${esc(t.id)}">${icon('chevron', 'chev')}Show ${hidden} more</button>`;
+document.addEventListener('click', (e) => {
+  const b = e.target.closest('.team-more[data-turn]');
+  if (!b) return;
+  unfolded.add(b.dataset.turn);
+  const box = b.parentElement;
+  for (const row of box.querySelectorAll(':scope > [data-fold]')) {
+    row.hidden = false;
+    row.removeAttribute('data-fold');
+  }
+  b.remove();
+});
+
 // While the lead works: one live line per subagent it's waiting on.
 export function teamLiveHtml(s, t) {
   const list = delegationsOf(s, t);
   if (!list.length) return '';
+  const shown = shownOf(list, t);
+  const more = shown ? moreHtml(t, list.length - shown.size) : '';
   return `<div class="team-live">${list
-    .map(({ d, child, ct }) => {
+    .map(({ d, child, ct }, i) => {
+      const fold = shown && !shown.has(i) ? ' data-fold hidden' : '';
       const running = !ct || ct.status === 'running';
       const hero = ct?.presentation?.blocks?.find((b) => b.type === 'hero');
       const last = ct?.activity?.findLast((a) => a.kind !== 'text')?.label;
       const st = subStatus(ct);
       // Every row opens the delegate's run by itself (a crew member's job is a task of its own).
       const open = ` data-open="${esc(d.sessionId)}" role="link" tabindex="0" title="${esc(d.crew ? `Open @${d.name}’s job` : `Open @${d.name}’s task`)}"`;
-      return `<div class="tl-row ${running ? 'live' : `st-${st.cls}`}${open ? ' opens' : ''}" data-sub="${esc(d.sessionId)}"${open}>
+      return `<div class="tl-row ${running ? 'live' : `st-${st.cls}`}${open ? ' opens' : ''}" data-sub="${esc(d.sessionId)}"${open}${fold}>
         <span class="tl-logo${d.crew ? ' crew' : ''}">${faceOf(d, 22, { state: running ? 'live' : 'idle' })}</span>
         <b class="tl-name">@${esc(d.name)}</b>
         ${ranOn(s, d, child)}
@@ -511,7 +540,7 @@ export function teamLiveHtml(s, t) {
         ${running ? `<span class="elapsed" data-start="${ct?.startedAt || d.startedAt}">${fmtDuration(Date.now() - (ct?.startedAt || d.startedAt))}</span>` : `<span class="pill st-${st.cls}"><i></i>${st.label}</span>`}
       </div>`;
     })
-    .join('')}</div>`;
+    .join('')}${more}</div>`;
 }
 
 // A delegation's live row and its report's Open link open the delegate's run as a task of its own,
@@ -548,7 +577,8 @@ export function renderSubs(s, t) {
       <div class="subs-list"></div>
     </section>`);
   const box = $('.subs-list', node);
-  for (const { d, child, ct } of list) {
+  const shown = shownOf(list, t);
+  for (const [i, { d, child, ct }] of list.entries()) {
     const st = subStatus(ct);
     const hero = ct?.presentation?.blocks?.find((b) => b.type === 'hero');
     const files = ct?.changes?.length || 0;
@@ -588,8 +618,13 @@ export function renderSubs(s, t) {
       if (opening) fill();
       body.hidden = !opening;
     };
+    if (shown && !shown.has(i)) {
+      card.hidden = true;
+      card.dataset.fold = '';
+    }
     box.append(card);
   }
+  if (shown) box.append(el(moreHtml(t, list.length - shown.size)));
   return node;
 }
 

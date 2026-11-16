@@ -404,6 +404,8 @@ test('later: Scheduled, Coming up, the follow-up rows, Send later and the time c
   assert.deepEqual(problems({ ...base0, parts: { 'section.crew': { props: { rows: 4 } }, 'crew.strip': { style: { opacity: '0.8' } } } }), []);
   assert.ok(problems({ ...base0, parts: { 'section.crew': { props: { rows: 0 } } } }).some((x) => /rows: int from 1 to 40/.test(x)));
   assert.ok(problems({ ...base0, parts: { 'section.crew': { props: { rows: '3' } } } }).some((x) => /rows: int from 1 to 40/.test(x)));
+  assert.deepEqual(problems({ ...base0, parts: { 'delegate.more': { props: { rows: 5 }, style: { color: 'red' } } } }), []);
+  assert.ok(problems({ ...base0, parts: { 'delegate.more': { props: { rows: 0 } } } }).some((x) => /rows: int from 1 to 40/.test(x)));
   // The crew rail: its parts, an icon button in its slot, and a switch that gives the section back.
   assert.deepEqual(problems({ ...base0, ui: { hide: ['crew.rail'] }, parts: { sidebar: { props: { crewRail: false } }, 'crew.rail': { style: { opacity: '0.9' } }, 'crew.rail.face': { style: { borderRadius: '50%' } } } }), []);
   assert.deepEqual(normalizeSpell({ ...base0, parts: { sidebar: { props: { crewRail: false } } } }).spell.parts.sidebar.props, { crewRail: false });
