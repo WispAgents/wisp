@@ -21,6 +21,8 @@ if echo "$cmd" | grep -Eq '(^|[;&|(])[[:space:]]*(sudo[[:space:]]+)?(pkill|killa
 fi
 echo "$cmd" | grep -Eq '(^|[;&|[:space:]])cargo[[:space:]]+(test|nextest)' && ! echo "$cmd" | grep -Eq '(^|[[:space:]])(-p|--package)([[:space:]=])' && deny "a workspace-wide cargo test"
 echo "$cmd" | grep -Eq '(^|[;&|[:space:]])cargo[[:space:]]+(test|nextest).*--workspace' && deny "cargo test --workspace"
+# a bare `npx vitest [run]` from the root runs every workspace (vite.config.ts projects): name the file
+echo "$cmd" | grep -Eq '(^|[;&|[:space:]])npx[[:space:]]+vitest([[:space:]]+run)?([[:space:]]+-[^[:space:]]+)*[[:space:]]*($|[;&|)])' && deny "every vitest project at once; run the test you are writing: npx vitest run <file>"
 echo "$cmd" | grep -Eq '(^|[;&|[:space:]])npm[[:space:]]+(test|t|run[[:space:]]+(test|verify))([[:space:]]|$)' && deny "the npm test suite"
 echo "$cmd" | grep -Eq 'monoflow[^;&|]*[[:space:]]verify' && deny "monoflow verify (the outer loop)"
 # UI gates: running one on chosen views (--views=…) is a targeted check; only a full run is the outer loop. Reading the

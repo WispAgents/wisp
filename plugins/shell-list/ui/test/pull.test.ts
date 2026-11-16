@@ -4,7 +4,8 @@ import { createEffect, createRoot, createSignal } from 'solid-js';
 import { expect, test } from 'vitest';
 import { createPull, type After } from '../src/model/pull.ts';
 
-// Without this package's vitest.config.ts (e.g. `vitest run <files>` from the repo root) `solid-js` resolves to its
+// Without this package's vitest.config.ts (e.g. `--config` pointing elsewhere, or a root run before the root
+// vite.config.ts made each package a project) `solid-js` resolves to its
 // server build, where createEffect is a no-op: the pull never sees the status flip and the first test fails with a
 // bare 'expected false to be true' (the others pass for the wrong reason). Say so instead.
 function effectsRun(): boolean {
@@ -20,7 +21,7 @@ function effectsRun(): boolean {
 }
 
 function harness() {
-  expect(effectsRun(), 'solid-js resolved to its server build (createEffect is a no-op): run from plugins/shell-list/ui so its vitest.config.ts applies').toBe(true);
+  expect(effectsRun(), 'solid-js resolved to its server build (createEffect is a no-op): run it under plugins/shell-list/ui/vitest.config.ts (from that folder, or from the root via vite.config.ts)').toBe(true);
   const [connecting, setConnecting] = createSignal(false);
   const timers: Array<() => void> = [];
   const after: After = (_ms, run) => {

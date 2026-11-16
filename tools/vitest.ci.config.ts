@@ -3,17 +3,15 @@
 // vitest.config.ts, exactly what `npm run test` in that folder runs; one process and one worker pool instead of a
 // vitest start (config bundling, vite server, workers) per package.
 // Not named vitest.config.* at the root, so monoflow never takes it for a repo-wide test command.
-import { join } from 'node:path';
 import { defineConfig } from 'vitest/config';
+import { projectConfigs } from './vitest.projects.ts';
 
-const ROOT = join(import.meta.dirname, '..');
 const dirs: unknown = JSON.parse(process.env['WISP_VITEST_PROJECTS'] ?? '[]');
 
 export default defineConfig({
   test: {
     // a package whose script has no --passWithNoTests is held to having tests by ci-verify itself
     passWithNoTests: true,
-    // forward slashes: vitest reads each entry as a glob, where `\` escapes (Windows paths)
-    projects: (Array.isArray(dirs) ? dirs : []).filter((d): d is string => typeof d === 'string').map((d) => join(ROOT, d, 'vitest.config.ts').replaceAll('\\', '/')),
+    projects: projectConfigs((Array.isArray(dirs) ? dirs : []).filter((d): d is string => typeof d === 'string')),
   },
 });

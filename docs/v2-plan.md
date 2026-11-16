@@ -945,6 +945,7 @@ Source: `docs/v1-features.md` (each row's evidence and test). `[x]` built, `[ ]`
 |---|---|---|
 | 283 | DX: build bundle + Tauri lock: stopped before edits; plan in §4.6 | to redo |
 | 282 | Server perf budgets: stopped before edits; plan in §4.3 | to redo |
+| 303 | `npx vitest run <file>` from the repo root uses the file's package config (root vite.config.ts projects, shared with CI's); a bare root run refused by the hook | committed |
 | 302 | pull.test.ts: not load: run from the repo root, solid-js resolves its server build (no effects); the test now says so | committed |
 | 301 | Check rule `dynamic-import-in-test`: 46 test imports hoisted, 8 lazy-chunk waits allowed with a reason | committed |
 | 300 | Sign out revokes the device's grid token (`POST /api/device/revoke`, ADR-0078); offline queued; desktop grid-client too | committed |

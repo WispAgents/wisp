@@ -126,7 +126,8 @@ command.
 | one test by name | `cargo test -p wisp-claude-core --test context_window the_context_window` |
 | a core crate (pure, sans-IO) | `cargo test -p wisp-claude-core --test subagents` (`plugins/*/core/tests/`) |
 | a plugin host with a fake harness | `cargo test -p wisp-runtime --test quick_cancel` (runs the real `wisp-fake-agent` through the proc service) |
-| a UI vitest file | `npx vitest run packages/ui/test/app-frame.test.ts` |
+| a UI vitest file | `npx vitest run packages/ui/test/app-frame.test.ts` (4 tests; from the root or `npx vitest run test/app-frame.test.ts` inside the package) |
+| a plugin UI vitest file | `npx vitest run plugins/shell-list/ui/test/pull.test.ts` (3 tests) |
 | a tools test | `node --test tools/test/dev.test.ts` |
 | a UI gate on one view | `node qa/parity.mjs --views=home --widths=1440 --themes=dark` |
 
@@ -134,11 +135,15 @@ command.
 cargo test -p wisp-store --test migrate
 cargo test -p wisp-runtime --test quick_cancel
 npx vitest run packages/ui/test/app-frame.test.ts
+npx vitest run plugins/shell-list/ui/test/pull.test.ts
 node --test tools/test/dev.test.ts
 QA_PARITY_PORT=4597 node qa/parity.mjs --views=home --widths=1440 --themes=dark
 WISP_OUTER_LOOP=1 node qa/layout.mjs    # outer loop only: the full gate
 ```
 
+- A UI test file runs under its own package's `vitest.config.ts` from the root too: the root `vite.config.ts` makes
+  every workspace with one a vitest project (`tools/vitest.projects.ts`, shared with CI's run). Without it a root run
+  had no config and `solid-js` resolved its server build, where effects never run.
 - A crate's tests are in `<crate>/tests/*.rs`; `--test <file>` picks one. The crate names are in each
   `Cargo.toml` (`plugins/claude/host` is `wisp-claude`, `plugins/claude/core` is `wisp-claude-core`).
 - Fake harnesses: `crates/wisp-testkit` builds `wisp-fake-agent` and `wisp-fake-gh`. Serve tests build them
