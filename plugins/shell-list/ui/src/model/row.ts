@@ -108,7 +108,8 @@ function heldSub(s: SessionRow, agents: ReadonlyMap<string, Row<Agent>>): Txt {
   if (h.project) return tx(h.project.setup ? 'shell-list.held.setup' : 'shell-list.held.project');
   if (h.harness) return tx('shell-list.held.harness', { agent: agentName(s.agent, agents) });
   if (h.waiting) return tx('shell-list.held.reset', { label: (h.label ?? '').toLowerCase() });
-  return tx('shell-list.held.window', { label: h.label ?? '', pct: Math.floor((h.used ?? 0) * 100) });
+  if (h.label && h.used !== undefined) return tx('shell-list.held.window', { label: h.label, pct: Math.floor(h.used * 100) });
+  return raw(h.why ?? h.label ?? '');
 }
 
 function laterLine(s: SessionRow): SubView | undefined {

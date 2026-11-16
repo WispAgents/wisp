@@ -1026,6 +1026,7 @@ export default function TaskView(props: { readonly id: string; readonly onBack?:
                 })}
                 {...(turn.status === 'running' && { live: s().summary.live || t('shell.task.starting') })}
                 {...(turn.status === 'starting' && { live: t('shell.task.waitingToStart') })}
+                {...(turn.status === 'held' && { untold: true })}
                 {...(turn.status === 'running' &&
                   turn.id === turns().at(-1)?.id &&
                   (s().state === 'running' || s().state === 'waiting') && {

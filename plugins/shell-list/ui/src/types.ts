@@ -31,6 +31,8 @@ export interface Held {
   waiting?: boolean;
   harness?: string;
   project?: { count: number; changed?: boolean; setup?: unknown };
+  /** why it's held, in the holder's words: the row's line when it has no window to name */
+  why?: string;
 }
 
 /** A follow-up or reminder scheduled on a task (server/later.js laterView). */

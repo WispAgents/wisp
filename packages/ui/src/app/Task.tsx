@@ -287,6 +287,8 @@ export interface TurnViewProps {
   readonly notes?: string;
   /** still running: what it's doing, in place of the trail */
   readonly live?: string;
+  /** it hasn't run (held before it started): no trail, as v1 drew one only under a finished turn. Additive (B10). */
+  readonly untold?: boolean;
   /** still running: v1's working panel (status, last steps, Stop), in place of the live line. Additive (2026-11-12). */
   readonly working?: JSX.Element;
   /** 👍 / 👎 at the trail's end (a RateButtons). Additive (2026-11-12). */
@@ -393,7 +395,7 @@ export function TurnView(props: TurnViewProps): JSX.Element {
       <Show when={props.working} fallback={<Show when={props.live}>{(l) => <p data-kit="turn-live">{l()}</p>}</Show>}>
         <div data-kit="turn-working">{props.working}</div>
       </Show>
-      <div data-kit="trail" hidden={props.live !== undefined || props.working !== undefined}>
+      <div data-kit="trail" hidden={props.live !== undefined || props.working !== undefined || props.untold === true}>
         <div data-kit="trail-bar">
           {/* v1 renderTrail: no button when the turn did nothing (or the transcript shows its steps) */}
           <Show when={props.acts.length > 0}>

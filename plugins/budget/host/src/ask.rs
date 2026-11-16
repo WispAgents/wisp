@@ -150,7 +150,7 @@ impl State {
                 agent: c.agent.clone(),
                 account: account.clone(),
             });
-            let why = ask::message(&h);
+            let why = ask::said(&h);
             c.hold = Some(Held {
                 by: PLUGIN_ID.into(),
                 kind: HOLD_KIND.into(),

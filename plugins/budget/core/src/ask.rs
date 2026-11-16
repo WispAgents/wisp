@@ -175,9 +175,14 @@ pub fn hold_to(h: &Hold) -> String {
     format!("about {}%", hi.min(99))
 }
 
-/// The refusal, for whoever has no card (the CLI, MCP, the API).
-#[allow(clippy::cast_possible_truncation)]
+/// The refusal, for whoever has no card (the CLI, MCP, the API): why, and how to go ahead anyway.
 pub fn message(h: &Hold) -> String {
+    format!("{} Send it again with confirmLimit: true (the CLI: --yes) to go ahead anyway, only if the user agreed.", said(h))
+}
+
+/// Why it's held, in the user's words: a held run's card (Start now, Skip) says it, never the agents' how-to (B10).
+#[allow(clippy::cast_possible_truncation)]
+pub fn said(h: &Hold) -> String {
     let pct = |x: f64| format!("{}%", (x * 100.0).floor() as i64);
     let where_ = if h.used >= 1.0 {
         "is used up".to_owned()
@@ -187,11 +192,7 @@ pub fn message(h: &Hold) -> String {
         let to = hold_to(h);
         format!("is at {}; this would likely take it {}", pct(h.used), if to == "past the limit" { to } else { format!("to {to}") })
     };
-    format!(
-        "{} usage window {where_}, past your {} line (Settings → Usage → Ask near the limit). Send it again with confirmLimit: true (the CLI: --yes) to go ahead anyway, only if the user agreed.",
-        h.label,
-        pct(h.line)
-    )
+    format!("{} usage window {where_}, past your {} line (Settings → Usage → Ask near the limit).", h.label, pct(h.line))
 }
 
 /// When a held run goes by itself: its window's reset, or in an hour when that isn't known.
@@ -260,6 +261,9 @@ mod tests {
         assert!(message(&h).starts_with("week usage window is at 88%; this would likely take it to 90–96%, past your 90% line"));
         let full = Hold { id: "5h".into(), label: "5-hour".into(), used: 1.0, to: [1.0, 1.0], resets_at: None, line: 0.9 };
         assert!(message(&full).contains("is used up"));
+        // a held run's card says why in the user's words; only the refusal tells agents how to go ahead (B10)
+        assert!(message(&full).contains("confirmLimit") && !said(&full).contains("confirmLimit"));
+        assert!(message(&full).starts_with(&said(&full)));
         assert_eq!(until(&full, 100), 100 + UNKNOWN_RESET_MS);
     }
 

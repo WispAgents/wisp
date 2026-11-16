@@ -4,7 +4,7 @@
 // flattened: body, then the columns, then the summary on top. One flat row per server row, kept while
 // the row is unchanged, so memoised sections and keyed rows stay put.
 
-import type { Plan, SessionRow } from '../types.ts';
+import type { Held, Plan, SessionRow } from '../types.ts';
 
 const cache = new WeakMap<object, SessionRow>();
 
@@ -37,9 +37,34 @@ export function flatSession(raw: SessionRow | undefined): SessionRow | undefined
   const items = obj(later)?.['later'];
   // soonest first: the row's line and Scheduled's order read the first (the mirror keeps them in the order they were set)
   if (Array.isArray(items) && items.length && out['later'] === undefined) out['later'] = [...(items as { at?: number }[])].sort((x, y) => (x.at ?? 0) - (y.at ?? 0));
+  const held = obj(out['held']);
+  if (held && 'data' in held) out['held'] = heldView(held);
   const flat = out as unknown as SessionRow;
   cache.set(raw, flat);
   return flat;
+}
+
+/** The runtime's held turn (`{kind, by, until, data, turnId}`, runtime core summary.rs) read as v1's flat `held` the row
+ *  says: the window and how full it is (Ask near the limit: `data.label`, `data.used`; a stop line: `data.hold`), the
+ *  project's setup, the harness the watch holds it for, or a stop line's wait for the reset. Its `why` when none of
+ *  those (B10: a held check-in read "at 0%"). */
+function heldView(h: Record<string, unknown>): Held {
+  const data = obj(h['data']) ?? {};
+  const stop = obj(data['hold']);
+  const label = data['label'] ?? stop?.['label'];
+  const used = data['used'] ?? stop?.['used'];
+  const kind = String(h['kind'] ?? '');
+  return {
+    kind,
+    ...(typeof h['until'] === 'number' && { until: h['until'] }),
+    ...(typeof label === 'string' && label && { label }),
+    ...(typeof used === 'number' && { used }),
+    ...(typeof data['why'] === 'string' && { why: data['why'] }),
+    ...(kind === 'setup' && { project: { count: 1, setup: true } }),
+    ...(h['by'] === 'wisp.accounts' && typeof data['agent'] === 'string' && { harness: data['agent'] }),
+    // a stop line holds it until the reset, then it runs by itself
+    ...(h['by'] === 'wisp.budget' && kind === 'plan' && { waiting: true }),
+  };
 }
 
 /** wisp.later's topic: its plans (`later_plan`) and the follow-ups on tasks. */
