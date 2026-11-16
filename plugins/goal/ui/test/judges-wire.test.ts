@@ -1,6 +1,6 @@
 // B44: goal.set carries the judges and vote you chose (they were sent nowhere), each judge as the server names one
 import { expect, it } from 'vitest';
-import { goalDefaults, judgeOf, judgeWire, setGoal } from '../src/commands.ts';
+import { goalDefaults, judgeOf, judgeWire, setGoal, viewJudge } from '../src/commands.ts';
 import { harnessOf } from '../src/rules.ts';
 import { defaultsOf, judgesOf } from '../src/defaults.ts';
 
@@ -47,4 +47,12 @@ it('the defaults read from the goal resource: names, a vote it knows, else major
   expect(defaultsOf([{ kind: 'goal', name: 'default', spec: { judges: ['c1', 'codex/gpt-5', 3], vote: 'all' } }])).toEqual({ judges: ['c1', 'codex/gpt-5'], vote: 'all' });
   expect(defaultsOf([{ kind: 'goal', name: 'default', spec: { vote: 'most' } }])).toEqual({ judges: [], vote: 'majority' });
   expect(judgesOf({ judges: ['c1', 'codex/gpt-5', { crew: 'c2' }], vote: 'any' }, [{ id: 'c1', name: 'Ada' } as never])).toEqual([{ crew: 'c1' }, { agent: 'codex', model: 'gpt-5', effort: '' }, { crew: 'c2' }]);
+});
+
+// review r328: an existing goal's view names each judge by its wire name; Edit goal… reads them back
+it("a goal view's judge reads back as the judge it names; one already split stays", () => {
+  const crew = [{ id: 'c1' }];
+  expect(viewJudge({ agent: 'claude/opus/high', model: '', effort: '', name: 'claude/opus/high' }, crew)).toEqual({ agent: 'claude', model: 'opus', effort: 'high', name: 'claude/opus/high' });
+  expect(viewJudge({ agent: 'c1', model: '', effort: '' }, crew)).toEqual({ crew: 'c1' });
+  expect(viewJudge({ agent: 'codex', model: 'gpt-5', effort: '' }, crew)).toEqual({ agent: 'codex', model: 'gpt-5', effort: '' });
 });

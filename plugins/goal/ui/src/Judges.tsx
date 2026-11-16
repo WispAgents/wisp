@@ -65,7 +65,11 @@ export function JudgesEditor(props: JudgesProps): JSX.Element {
     { value: 'harness', label: t('wisp.goal.judges.addHarness'), icon: 'agent', hint: t('wisp.goal.judges.addHarnessHint') },
     { kind: 'group', id: 'crew', label: t('wisp.goal.judges.yourCrew'), items: crewFree().map((c) => ({ value: `crew:${c.id}`, label: c.name, icon: 'crew' as const, ...(c.role && { hint: c.role }) })) },
   ];
-  const onAdd = (v: string): void => (v.startsWith('crew:') ? commit([...props.judges, { crew: v.slice(5) }]) : addHarness());
+  const onAdd = (v: string): void => {
+    if (full()) return; // at most MAX_JUDGES, from the menu as from the button
+    if (v.startsWith('crew:')) commit([...props.judges, { crew: v.slice(5) }]);
+    else addHarness();
+  };
   const rule = (): string => {
     const n = props.judges.length;
     if (n < 2) return t(n ? 'wisp.goal.judges.oneDecides' : 'wisp.goal.judges.addTwo');
@@ -90,7 +94,7 @@ export function JudgesEditor(props: JudgesProps): JSX.Element {
         count={props.judges.length}
         empty={{ icon: 'judge', text: t('wisp.goal.judges.empty') }}
         add={
-          <Show when={crewFree().length > 0} fallback={<Button variant="ghost" size="sm" icon="plus" disabled={full()} onClick={addHarness}>{t('wisp.goal.judges.add')}</Button>}>
+          <Show when={crewFree().length > 0 && !full()} fallback={<Button variant="ghost" size="sm" icon="plus" disabled={full()} onClick={addHarness}>{t('wisp.goal.judges.add')}</Button>}>
             <Menu trigger={{ label: t('wisp.goal.judges.add'), icon: 'plus', variant: 'ghost', size: 'sm' }} items={addMenu()} onSelect={onAdd} />
           </Show>
         }

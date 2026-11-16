@@ -41,12 +41,21 @@ function load(client: PluginClient): WritableSignal<GoalDefaults> {
   return made;
 }
 
-/** Keep these as the defaults: shown at once, then saved. */
+/** Keep these as the defaults: shown at once, then saved. Saves go one after another (a quick second change can't land
+ *  before the first), and a refused one puts the server's defaults back (the shell's toast says why). */
+const queue = new WeakMap<PluginClient, Promise<unknown>>();
 export function setGoalDefaults(client: PluginClient, judges: readonly Judge[], vote: Vote): void {
-  (held.get(client) ?? load(client))({ judges, vote });
-  void client
-    .run(goalDefaultsNow, { peer: client.home })
-    .catch((): GoalResource[] => [])
-    .then((have) => client.run(saveGoalDefaults, { peer: client.home, judges, vote, have }))
-    .catch(() => {});
+  const s = held.get(client) ?? load(client);
+  s({ judges, vote });
+  const save = (): Promise<unknown> =>
+    client
+      .run(goalDefaultsNow, { peer: client.home })
+      .then((have) => client.run(saveGoalDefaults, { peer: client.home, judges, vote, have }))
+      .catch(() =>
+        client
+          .run(goalDefaultsNow, { peer: client.home })
+          .then((have) => s(defaultsOf(have)))
+          .catch(() => undefined),
+      );
+  queue.set(client, (queue.get(client) ?? Promise.resolve()).then(save));
 }

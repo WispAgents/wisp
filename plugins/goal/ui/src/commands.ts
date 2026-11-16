@@ -125,6 +125,14 @@ export function judgeOf(name: string, crew: readonly { readonly id: string }[]):
   return !name.includes('/') && crew.some((m) => m.id === name) ? { crew: name } : { agent, model, effort };
 }
 
+/** A judge from a goal's view: the server sends each as `{agent: <its wire name>, model: '', effort: ''}`; a name with
+ *  parts or a crew id is read back as the judge it names, one already split stays as it is. */
+export function viewJudge(j: Judge, crew: readonly { readonly id: string }[]): Judge {
+  if ('crew' in j || j.model || j.effort) return j;
+  const back = judgeOf(j.agent, crew);
+  return j.name ? { ...back, name: j.name } : back;
+}
+
 /** Keep these as the default judges and vote. */
 export const saveGoalDefaults = defineCommand<{ peer: PeerId; judges: readonly Judge[]; vote: Vote; have: readonly GoalResource[] }>({
   id: 'resources.apply',

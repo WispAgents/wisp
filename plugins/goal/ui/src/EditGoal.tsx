@@ -11,6 +11,7 @@ import { t } from './i18n.ts';
 import { JudgesButton } from './Judges.tsx';
 import { liveJudges } from './rules.ts';
 import { goalDefaults, judgesOf } from './defaults.ts';
+import { viewJudge } from './commands.ts';
 import { bareId, useCrew, useHarnesses, useTask } from './task.ts';
 import { MAX_TEXT, type Judge, type Vote } from './types.ts';
 import './i18n/lazy.ts';
@@ -34,7 +35,8 @@ export default function EditGoal(props: { readonly client: PluginClient; readonl
   const g = row()?.goal;
   const [text, setText] = createSignal(g?.text ?? '');
   // a new goal's judges are New task's, those still there (read as the crew and harnesses arrive, not when it opens)
-  const [picked, setJudges] = createSignal<Judge[] | undefined>(g ? (g.judges ?? []) : undefined);
+  // an existing goal's judges come as the server names them (`{agent: 'claude/opus/high'}`, a crew id): read as judges
+  const [picked, setJudges] = createSignal<Judge[] | undefined>(g ? (g.judges ?? []).map((j) => viewJudge(j, crew())) : undefined);
   const judges = (): Judge[] => picked() ?? liveJudges(judgesOf(defaults(), crew()), crew(), harnesses());
   const [chosen, setVote] = createSignal<Vote | undefined>(g?.vote);
   const vote = (): Vote => chosen() ?? (g ? undefined : defaults().vote) ?? 'majority';
