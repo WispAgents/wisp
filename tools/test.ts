@@ -10,7 +10,7 @@
 
 import { spawnSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
-import { join } from 'node:path';
+import { delimiter, join } from 'node:path';
 import { discover } from './check/core/workspace.ts';
 import type { Pkg } from './check/core/types.ts';
 
@@ -59,9 +59,29 @@ export function plan(root: string, opts: { monoflow: boolean; platform?: string 
   return steps;
 }
 
-function runStep(step: Step, verbose: boolean): boolean {
+/** The pytest CI pins (.github/workflows/suite.yml, pr.yml). */
+export const PYTEST = 'pytest==8.3.5';
+
+/** The interpreter sdk/python's tests run with: `python` with pytest on PATH (CI's setup-python), else a venv this
+ *  checkout keeps in target/py from `python3` (macOS ships python3 only, so `python -m pytest` failed every local
+ *  run), pytest pinned as in CI. The directory to put first on PATH, '' when `python` already works, or the reason
+ *  it can't (no python3; pip couldn't reach the index). */
+export function pythonPath(root: string, run: typeof spawnSync = spawnSync): { dir: string } | { error: string } {
+  const has = (cmd: string): boolean => run(cmd, ['-m', 'pytest', '--version'], { encoding: 'utf8' }).status === 0;
+  if (has('python')) return { dir: '' };
+  const venv = join(root, 'target', 'py');
+  const bin = join(venv, process.platform === 'win32' ? 'Scripts' : 'bin');
+  const py = join(bin, process.platform === 'win32' ? 'python.exe' : 'python');
+  if (existsSync(py) && has(py)) return { dir: bin };
+  if (run('python3', ['--version'], { encoding: 'utf8' }).status !== 0) return { error: 'sdk/python needs python3 (with pytest), and there is none on PATH' };
+  if (!existsSync(py) && run('python3', ['-m', 'venv', venv], { encoding: 'utf8' }).status !== 0) return { error: `python3 -m venv ${venv} failed` };
+  const pip = run(py, ['-m', 'pip', 'install', '--disable-pip-version-check', '--quiet', PYTEST], { encoding: 'utf8' });
+  return pip.status === 0 ? { dir: bin } : { error: `pip install ${PYTEST} into ${venv} failed: ${(pip.stderr ?? '').trim().split('\n').at(-1) ?? ''}` };
+}
+
+function runStep(step: Step, verbose: boolean, env?: NodeJS.ProcessEnv): boolean {
   const t0 = performance.now();
-  const r = spawnSync(step.cmd, step.args, { cwd: ROOT, stdio: verbose ? 'inherit' : 'pipe', encoding: 'utf8', shell: process.platform === 'win32' && step.cmd.endsWith('.cmd') });
+  const r = spawnSync(step.cmd, step.args, { cwd: ROOT, stdio: verbose ? 'inherit' : 'pipe', encoding: 'utf8', shell: process.platform === 'win32' && step.cmd.endsWith('.cmd'), ...(env && { env }) });
   const secs = ((performance.now() - t0) / 1000).toFixed(1);
   const ok = r.status === 0;
   process.stdout.write(`${ok ? '✔' : '✖'} ${step.name} (${secs}s)\n`);
@@ -75,7 +95,10 @@ function runStep(step: Step, verbose: boolean): boolean {
 if (import.meta.main) {
   const verbose = process.argv.includes('--verbose');
   const steps = plan(ROOT, { monoflow: !process.argv.includes('--no-monoflow') });
-  const failed = steps.filter((s) => !runStep(s, verbose));
+  const py = existsSync(join(ROOT, 'sdk', 'python')) ? pythonPath(ROOT) : { dir: '' };
+  if ('error' in py) process.stdout.write(`test: ${py.error}; sdk/python's tests will fail\n`);
+  const env = 'dir' in py && py.dir ? { ...process.env, PATH: `${py.dir}${delimiter}${process.env['PATH'] ?? ''}` } : undefined;
+  const failed = steps.filter((s) => !runStep(s, verbose, env));
   process.stdout.write(failed.length ? `test: ${failed.length} of ${steps.length} failed: ${failed.map((s) => s.name).join(', ')}\n` : `test: ${steps.length} passed\n`);
   process.exitCode = failed.length ? 1 : 0;
 }

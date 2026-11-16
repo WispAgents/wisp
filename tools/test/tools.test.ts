@@ -11,7 +11,7 @@ import { candidates, combine, manifestDirs, merge, monoflowPiece, WRAPPER_ENV } 
 import { affectedSet, parseImpact, scorePr, verdict, type PrScore } from '../g14.ts';
 import { clippedHint, fenceFor, markdown, packageFolders, readVerify, slowest } from '../monoflow-report.ts';
 import { MONOFLOW_COMMIT, WRAPPER, WRAPPER_SCRIPT, strays, writeWrapper } from '../setup-monoflow.ts';
-import { dependencyOrder, plan } from '../test.ts';
+import { dependencyOrder, plan, pythonPath, PYTEST } from '../test.ts';
 import { PROGRAMS } from '../typecheck.ts';
 
 const roots: string[] = [];
@@ -344,4 +344,23 @@ test("ci-verify: a split package's checks fold into one monoflow-shaped result, 
   // a monoflow call that printed no JSON still fails, with its error
   const broken = monoflowPiece({ status: 'failed', error: 'monoflow printed no JSON: x' }, 10, 'monoflow --test');
   assert.deepEqual([broken.ok, broken.ms, (broken.errors[0] as { message: string }).message], [false, 10, 'monoflow printed no JSON: x']);
+});
+
+// the local run on a Mac: `python` isn't there (python3 is), so sdk/python's `python -m pytest` failed every time
+test('sdk/python runs on python when it has pytest, else on a venv in target/py made from python3 with CI pytest', () => {
+  const root = mkdtempSync(join(tmpdir(), 'wisp-py-'));
+  const calls: string[] = [];
+  const fake = (has: (cmd: string, args: readonly string[]) => boolean) =>
+    ((cmd: string, args: readonly string[]) => {
+      calls.push(`${cmd} ${args.join(' ')}`);
+      return { status: has(cmd, args) ? 0 : 1, stderr: '' };
+    }) as never;
+  assert.deepEqual(pythonPath(root, fake((c) => c === 'python')), { dir: '' }, 'python with pytest: nothing to do');
+  calls.length = 0;
+  const r = pythonPath(root, fake((c) => c !== 'python'));
+  assert.ok('dir' in r && r.dir.startsWith(join(root, 'target', 'py')), JSON.stringify(r));
+  assert.ok(calls.some((c) => c.startsWith('python3 -m venv')), calls.join('\n'));
+  assert.ok(calls.some((c) => c.endsWith(`pip install --disable-pip-version-check --quiet ${PYTEST}`)), calls.join('\n'));
+  assert.ok('error' in pythonPath(root, fake(() => false)), 'no python3: says so');
+  rmSync(root, { recursive: true, force: true });
 });
