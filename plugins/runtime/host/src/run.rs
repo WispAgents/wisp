@@ -182,6 +182,8 @@ impl Runtime {
         s.unread = false;
         s.archived = false;
         s.updated_at = self.now();
+        // from the moment the turn is saved as running until its CLI is in `live`: a run to the queue (B37)
+        let _starting = self.mark_starting(s.id.as_str());
         let taken = self.persist_run_start(&mut s, &mut turn, &claim).await?;
         self.host.emit(Emitted::Started(TurnStarted { session_id: s.id.clone(), turn_id: turn.id.clone() }));
         // a task or My Stuff mentioned in the prompt (the turn as saved keeps the user's words)
@@ -551,6 +553,9 @@ impl Runtime {
                 ended,
             };
             self.live.lock().unwrap_or_else(std::sync::PoisonError::into_inner).insert(s.id.0.clone(), live);
+            // `live` has it now: no longer starting (cleared here, not when the start returns, so a run that ends at
+            // once never reads as starting after its end: B37)
+            self.starting.lock().unwrap_or_else(std::sync::PoisonError::into_inner).remove(s.id.as_str());
             Ok((handle, rx, ctl_rx, ended_tx))
         });
         let Some(spawned) = spawned else {

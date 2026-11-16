@@ -211,8 +211,9 @@ async fn attached_run_answers_a_question_inline_and_replies_from_the_box() {
     // the agent asks (as its MCP tool does); the terminal asks you and sends your pick
     let api2 = api;
     let ask = api2.cmd("runtime.ask", json!({ "id": id, "question": "Which branch?", "options": ["main", "dev"] })).await;
-    let seen = t.expect("Which branch?");
-    assert!(seen.contains("1. main") && seen.contains("2. dev"), "{seen}");
+    // wait for the last option (it can come in a later chunk than the question: Windows' ConPTY), then read them all
+    let seen = t.expect("2. dev");
+    assert!(seen.contains("Which branch?") && seen.contains("1. main"), "{seen}");
     t.keys("2\r");
     let ask_id = ask["askId"].as_str().unwrap().to_owned();
     let at = Instant::now();

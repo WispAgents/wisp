@@ -30,6 +30,9 @@ pub struct Runtime {
     pub clock: Arc<dyn Clock>,
     pub(crate) list: Mutex<BTreeMap<String, Arc<Summary>>>,
     pub(crate) live: Mutex<HashMap<String, Live>>,
+    /// tasks whose turn is saved as running but whose CLI isn't spawned yet (`Starting`): the queue reads them as
+    /// running, so a follow-up sent then waits instead of starting a second turn beside it (B37)
+    pub(crate) starting: Mutex<HashMap<String, u32>>,
     locks: Mutex<HashMap<String, Arc<tokio::sync::Mutex<()>>>>,
     /// open questions: ask id → its task (rebuilt at start from the tasks that wait on one)
     asks: Mutex<HashMap<String, String>>,
@@ -79,6 +82,7 @@ impl Runtime {
             proc,
             list: Mutex::default(),
             live: Mutex::default(),
+            starting: Mutex::default(),
             locks: Mutex::default(),
             asks: Mutex::default(),
             answers: Mutex::default(),
@@ -228,7 +232,17 @@ impl Runtime {
 
     /// What the task's run is doing, for the queue decider.
     pub(crate) fn run_state(&self, id: &str) -> Run {
-        lock(&self.live).get(id).map_or(Run::Idle, Live::state)
+        if let Some(l) = lock(&self.live).get(id) {
+            return l.state();
+        }
+        // its turn is saved as running and its CLI on its way: a run, not resumable yet (B37)
+        if lock(&self.starting).get(id).is_some_and(|n| *n > 0) { Run::Running { resumable: false } } else { Run::Idle }
+    }
+
+    /// `id`'s turn is starting until the returned guard drops (its CLI spawned and in `live`, or the start gave up).
+    pub(crate) fn mark_starting(&self, id: &str) -> Starting<'_> {
+        *lock(&self.starting).entry(id.to_owned()).or_insert(0) += 1;
+        Starting { rt: self, id: id.to_owned() }
     }
 
     /// Writes the task (and the turns given), rebuilds its list row, emits `session.changed`.
@@ -727,4 +741,22 @@ impl Runtime {
 /// wisp's own task id shape (`Uuid::simple`): what a client may name a new task by.
 pub(crate) fn is_task_id(id: &str) -> bool {
     id.len() == 32 && id.bytes().all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
+}
+
+/// A turn starting (`Runtime::mark_starting`); dropped once its CLI is in `live` or the start ended.
+pub(crate) struct Starting<'a> {
+    rt: &'a Runtime,
+    id: String,
+}
+
+impl Drop for Starting<'_> {
+    fn drop(&mut self) {
+        let mut m = lock(&self.rt.starting);
+        if let Some(n) = m.get_mut(&self.id) {
+            *n = n.saturating_sub(1);
+            if *n == 0 {
+                m.remove(&self.id);
+            }
+        }
+    }
 }
