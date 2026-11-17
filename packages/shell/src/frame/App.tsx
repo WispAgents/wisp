@@ -83,7 +83,8 @@ export function App(props: { readonly clients: Clients; readonly recent: Readabl
       n.kind === 'crew'
         ? crew()
             .map((r) => flatRow<TintMember>(r))
-            .find((m) => m.id === n.id)
+            // the page is keyed `<peer>:<id>`, a member's row by its bare id (the tint never matched)
+            .find((m) => m.id === n.id || m.id === String(n.id).slice(String(n.id).indexOf(':') + 1))
         : undefined;
     return crewTint(picked, settings().find((r) => r.key === 'crew.tint')?.value);
   });
