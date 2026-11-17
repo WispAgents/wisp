@@ -17,7 +17,7 @@ import { Show, createEffect, createMemo, createSignal, lazy, on, onCleanup, type
 import { entityKey, newRowId, type EntityKey, type Json, type PeerId } from '@wisp/client';
 import { AutoPop, KeysHint, Launcher, NextList, SplitHome, Tips, lazyPart, lazyView, useSignal, warm as warmPart, type LauncherProps, type LauncherTool, type PlainTip } from '@wisp/ui';
 import { useShell } from '../context.tsx';
-import type { SendHold } from '../contract.ts';
+import type { LaunchTargetDef, SendHold } from '../contract.ts';
 import { aheadLabel, waitable } from './hold.ts';
 import { Slot, usePluginClient } from '../slot.tsx';
 import { useNow } from '../clock.ts';
@@ -32,7 +32,7 @@ import { autoPick, neverRule, runnerParts, runnerPick, overrideOf, popOf, pct, P
 import { defaultHarness, harnessOf } from './harness.ts';
 import { MAX_RUNNERS, newGroup, nextRun } from './runs-small.ts';
 import { firstRunOf, firstRunTools, launcherFull } from './first-run.ts';
-import { whereItems } from './where.ts';
+import { sandboxPeers, targetValue, whereItems } from './where.ts';
 import { placeOn } from './run-on.ts';
 import { dirsOf, launchOf, parsePick, pickLabel, pickedProjects, placePick } from './project-pick.ts';
 import { openPlaces, releasePlaces, type PlaceTarget } from './project-switch.ts';
@@ -74,6 +74,15 @@ export function HomeView(props: { readonly onBack?: () => void }): JSX.Element {
   const peerIds = useSignal(shell.client.peers.list());
   const [runOn, setRunOn] = createSignal<string>(home);
   const target = (): PeerId => (peerIds().includes(runOn() as PeerId) ? runOn() : home) as PeerId;
+  // a sandbox is the task's that made it, never a computer to run on (where.ts); plugins' places come after (TRY-19)
+  const keptMachines = useSignal(shell.client.entities.list<{ id: unknown; body?: { data?: unknown } }>('machines_peer'));
+  const runOnPeers = (): readonly string[] => {
+    const boxes = sandboxPeers(keptMachines());
+    return peerIds().filter((p) => !boxes.has(p));
+  };
+  const launchTargets = useSignal(shell.launchTargets());
+  const targets = (): readonly LaunchTargetDef[] => launchTargets().filter((d) => d.offered?.(shell.client.plugin('shell')) ?? true);
+  const placeOf = (): LaunchTargetDef | undefined => targets().find((d) => targetValue(d.id) === runOn());
   const sessions = useSignal(shell.client.entities.list<SessionRow>(SESSION));
   const { list: projects } = useProjects(shell, usePluginClient('shell').home);
   const settings = useSignal(shell.client.entities.list<SettingRow>('setting'));
@@ -354,6 +363,18 @@ export function HomeView(props: { readonly onBack?: () => void }): JSX.Element {
       ...(w ? { at: whenAt(w, now()) } : through?.kind === 'wait' ? { at: through.at } : {}),
     };
     const pc = shell.client.plugin('shell');
+    const place = placeOf();
+    if (place) {
+      // a plugin's place (a sandbox) takes the prompt with New task's picks; attached files stay for a computer
+      if (files().length > 0) {
+        shell.toast.error(t('shell.home.placeNoFiles', { place: place.label() }));
+        return;
+      }
+      place.launch(prompt, { client: pc, launch });
+      setText('');
+      setWhen(undefined);
+      return;
+    }
     if (
       files().length === 0 &&
       shell
@@ -639,21 +660,35 @@ export function HomeView(props: { readonly onBack?: () => void }): JSX.Element {
         lead={firstRunTools(firstRun(), 'lead', [
           tool('attach', 'launcher.attach', 'clip', t('shell.home.attach'), t('shell.home.attach'), { act: attachAct(shell, attach, picking()) }),
           ...(mic ? [tool('mic', 'launcher.mic', 'mic', mic.label(), mic.label(), { on: mic.on(), act: { onClick: mic.toggle } })] : []),
-          tool('where', 'launcher.where', target() === home ? 'laptop' : 'server', target() === home ? t('shell.home.where') : shell.client.peers.name(target()), t('shell.home.where'), {
-            text: target() !== home,
-            ...(target() !== home && { on: true }),
-            act: {
-              menu: {
-                items: [
-                  ...whereItems(peerIds(), target(), home, (p) => shell.client.peers.name(p as PeerId), t),
-                  { kind: 'separator' },
-                  { value: 'add', label: t('shell.home.addMachine'), icon: 'plus' },
-                ],
-                // a pick is the one place (the menu closes on it, as every menu does)
-                onSelect: (v) => (v === 'add' ? view('machine.this') : setRunOn(v)),
+          tool(
+            'where',
+            'launcher.where',
+            placeOf()?.icon ?? (target() === home ? 'laptop' : 'server'),
+            placeOf()?.label() ?? (target() === home ? t('shell.home.where') : shell.client.peers.name(target())),
+            t('shell.home.where'),
+            {
+              text: target() !== home || placeOf() !== undefined,
+              ...((target() !== home || placeOf() !== undefined) && { on: true }),
+              act: {
+                menu: {
+                  items: [
+                    ...whereItems(
+                      runOnPeers(),
+                      placeOf() ? runOn() : target(),
+                      home,
+                      (p) => shell.client.peers.name(p as PeerId),
+                      t,
+                      targets().map((d) => ({ id: d.id, label: d.label(), icon: d.icon })),
+                    ),
+                    { kind: 'separator' },
+                    { value: 'add', label: t('shell.home.addMachine'), icon: 'plus' },
+                  ],
+                  // a pick is the one place (the menu closes on it, as every menu does)
+                  onSelect: (v) => (v === 'add' ? view('machine.this') : setRunOn(v)),
+                },
               },
             },
-          }),
+          ),
         ])}
         mid={firstRunTools(firstRun(), 'mid', [
           // v1 #771: no Try it two ways button; the runner's + adds the second run

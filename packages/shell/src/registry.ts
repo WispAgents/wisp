@@ -11,7 +11,7 @@
 // `if` is not applied here: it reads the render's props (the session), so the slot applies it.
 
 import { computed, signal, untracked, type Readable } from '@wisp/client';
-import type { BlockRendererDef, ExtensionDef, PaletteSourceDef, PluginUiDef, PluginUiLater, PromptSourceDef, ResolvedExtension, SettingsPaneDef, ShortcutDef, SideTabDef, PreviewAddressDef, SendHoldDef, TreeConfig, ViewDef, HarnessUiDef } from './contract.ts';
+import type { BlockRendererDef, ExtensionDef, LaunchTargetDef, PaletteSourceDef, PluginUiDef, PluginUiLater, PromptSourceDef, ResolvedExtension, SettingsPaneDef, ShortcutDef, SideTabDef, PreviewAddressDef, SendHoldDef, TreeConfig, ViewDef, HarnessUiDef } from './contract.ts';
 
 export type Warn = (msg: string, data?: unknown) => void;
 
@@ -34,6 +34,7 @@ export interface Registry {
   harnesses: Readable<readonly HarnessUiDef[]>;
   palette: Readable<readonly (PaletteSourceDef & { plugin: string })[]>;
   prompt: Readable<readonly (PromptSourceDef & { plugin: string })[]>;
+  launchTargets: Readable<readonly (LaunchTargetDef & { plugin: string })[]>;
   sideTabs: Readable<readonly (SideTabDef & { plugin: string })[]>;
   previewAddresses: Readable<readonly (PreviewAddressDef & { plugin: string })[]>;
   sendHolds: Readable<readonly (SendHoldDef & { plugin: string })[]>;
@@ -187,6 +188,7 @@ export function createRegistry(warn: Warn = () => {}): Registry {
     harnesses: computed(() => flat((d) => d.harnesses)().slice().sort((a, b) => (a.order ?? 0) - (b.order ?? 0))),
     palette: computed(() => flat((d) => d.palette)().slice().sort((a, b) => (a.order ?? 0) - (b.order ?? 0))),
     prompt: computed(() => flat((d) => d.prompt)().slice().sort((a, b) => (a.order ?? 0) - (b.order ?? 0))),
+    launchTargets: computed(() => flat((d) => d.launchTargets)().slice().sort((a, b) => (a.order ?? 0) - (b.order ?? 0))),
     sideTabs: computed(() => flat((d) => d.sideTabs)().slice().sort((a, b) => (a.order ?? 0) - (b.order ?? 0))),
     // in registration order: the first that maps a URL wins (answer-ctx.ts)
     previewAddresses: flat((d) => d.previewAddresses),

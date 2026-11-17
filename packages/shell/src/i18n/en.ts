@@ -348,6 +348,7 @@ export const SHELL_STRINGS = {
   'shell.view.missing': 'Nothing to show here. The plugin that shows this may be off.',
   'shell.pane.failed': 'This part of wisp hit an error',
   'shell.pane.retry': 'Try again',
+  'shell.home.placeNoFiles': "Files can't go to {place} yet: remove them, or run it on a computer.",
   'shell.err.not_found': "That isn't here any more.",
   'shell.err.invalid': "wisp couldn't do that as asked.",
   'shell.err.forbidden': "That isn't allowed here.",

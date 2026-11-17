@@ -223,6 +223,7 @@ export function createShell(o: ShellOptions): Shell {
     settingsPanes: () => registry.settingsPanes,
     harnesses: () => registry.harnesses,
     promptSources: () => registry.prompt,
+    launchTargets: () => registry.launchTargets,
     laterReady: () => {
       for (const retry of [...failedLaters]) retry();
       return laterLoads.size ? Promise.all([...laterLoads]).then(() => undefined) : undefined;

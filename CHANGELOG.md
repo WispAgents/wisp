@@ -68,6 +68,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - **v2: `wisp secret set NAME`.** Sets a secret a formula uses (`${secret:NAME}`), typed hidden or piped, never as an argument; `wisp validate` names a missing one with this command.
 - **v2: your plugin's commands in the CLI before it first runs.** `wisp help user` lists them and `wisp user <plugin> <verb> --flag value` calls one, waking the plugin; a command with no declared type takes any `--field value`. `wisp plugin enable` finds a plugin written into `~/.wisp/plugins` while wisp runs (`wisp plugin new`).
 - **v2: errors you can act on.** A view that fails while it draws shows what happened with Try again and Home in its own pane; the list and the rest of wisp keep working. A refused action says why in plain words (never a command name), and one that timed out or found a computer away offers Try again.
+- **v2: Run on → Sandbox.** Signed in to wisp Cloud, New task's Run on offers a fresh sandbox for the task, as `/sandbox` does; Run on no longer lists other tasks' sandboxes as computers. Plugins can add their own places to Run on (`launchTargets`).
 
 ### Changed
 

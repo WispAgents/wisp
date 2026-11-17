@@ -32,6 +32,7 @@ export function devShell(client: Client, toaster: Toaster = createToaster()): Sh
     settingsPanes: () => () => [],
     harnesses: () => () => [],
     promptSources: () => () => [],
+    launchTargets: () => () => [],
     block: () => undefined,
     view: () => undefined,
   };

@@ -5,7 +5,7 @@
 
 import type { Component, JSX } from 'solid-js';
 import type { Client, PluginClient, Nav, Intent, Readable } from '@wisp/client';
-import type { Toaster } from '@wisp/ui';
+import type { IconName, Toaster } from '@wisp/ui';
 import type { Platform } from './platform/types.ts';
 
 /** Inputs the shell's own extensions offer. v1 spell SLOTS map 1:1 (`feed.top` → `shell.list:top`). */
@@ -261,6 +261,9 @@ export interface PluginUiDef {
   shortcuts?: ShortcutDef[];
   /** added 2026-11-11 (additive): what a prompt box's @ and / menus offer (v1 composer.js) */
   prompt?: PromptSourceDef[];
+  /** added 2026-11-17 (additive, TRY-19): places New task's Run on offers besides your computers (wisp.sandbox: a fresh
+   *  cloud box); picked, the prompt goes to the place's `launch` instead of a computer */
+  launchTargets?: LaunchTargetDef[];
   /** added 2026-11-08 (additive): the coding agents it runs, as the screens name and mark them (a
    * harness plugin's UI: plugins/claude/ui). The shell knows none of them itself (ADR-0003). */
   harnesses?: HarnessUiDef[];
@@ -441,6 +444,20 @@ export interface LaunchPick {
   readonly at?: number;
 }
 
+/** A place New task can run a prompt besides your computers (Run on), from a plugin. Additive (2026-11-17, TRY-19). */
+export interface LaunchTargetDef {
+  id: string;
+  /** the plugin's own words for it (its `t`) */
+  label(): string;
+  icon: IconName;
+  /** among targets, lower first */
+  order?: number;
+  /** whether Run on offers it now (may read signals); unset: always */
+  offered?(client: PluginClient): boolean;
+  /** takes the prompt with New task's picks; New task clears its box once this returns */
+  launch(prompt: string, ctx: { client: PluginClient; launch: LaunchPick }): void;
+}
+
 /** What a prompt box's @ or / menu offers, from a plugin (shell-composer: tasks, crew, My Stuff, the commands). */
 export interface PromptSourceDef {
   id: string;
@@ -585,6 +602,8 @@ export interface ShellContext {
   harnesses(): () => readonly HarnessUiDef[];
   /** added 2026-11-11 (additive): every plugin's prompt sources (the @ and / menus) */
   promptSources(): () => readonly PromptSourceDef[];
+  /** added 2026-11-17 (additive, TRY-19): every plugin's Run on places, in order */
+  launchTargets(): () => readonly LaunchTargetDef[];
   /** added 2026-11-14 (additive, ADR-0067): plugins' later parts still on their way (a load that failed is tried
    *  again): a promise that settles when they have, or undefined when none is. A prompt box's send waits on it, so
    *  `/goal`, `@member` or `tomorrow 9am` sent as the page loads still reaches its prompt source. */

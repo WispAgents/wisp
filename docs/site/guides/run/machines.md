@@ -34,6 +34,14 @@ wisp ls --on studio
 
 Every wisp command takes `--on <machine>`. The task's row shows where it runs.
 
+## In a sandbox
+
+Signed in to wisp Cloud, **Run on → Sandbox** (or `/sandbox` before your prompt) runs the task in a fresh box of its
+own, with a copy of your project. It can install anything and run servers without touching your computers, and it's
+deleted with the task. Sign in to Claude once for every sandbox in Settings → Computers → Sandboxes, and set the
+environment variables they start with there. A subagent (`machine: "sandbox"`), a crew member and a goal's judges can
+work in a sandbox too.
+
 ## Keep work on one machine
 
 - A crew member's jobs: `machine: studio` in its spec.

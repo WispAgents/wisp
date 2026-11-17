@@ -334,6 +334,13 @@ turn. When a screen or feature contradicts one, that's a bug: fix it toward the 
     threw while drawing blanked the whole app (`frame/PaneBoundary.tsx`: what happened, Try again, Home); a refusal
     with no message toasted the command id (`runtime.setState`), now plain words per code (`shell.err.*`); a timeout,
     an away peer or `retry: true` get *Try again*, which runs the same command again (`onError`'s `again`)
+  - [x] TRY-19 sandboxed machine (11-17): New task's Run on offers **Sandbox** (wisp.sandbox's `launchTargets`, a new
+    additive `PluginUiDef` field: a plugin's place after your computers; picked, Send hands it the prompt and New
+    task's picks), shown while `sandbox.info` says the grid makes sandboxes. Fixed on the way: Run on listed every
+    task's sandbox box as a computer (a task started there went with that box's owner): `where.ts sandboxPeers`.
+    Already there: delegates (`machine: "sandbox"`), crew members and jobs, goal judges, deleted with their owner.
+    Kept (ADR-0047): a sandbox gets its own Claude sign-in and env vars, never the user's box's credentials (it runs
+    whatever it installs); other harnesses' keys go in as env vars
 - [ ] Continuous QA rounds by fresh low-context agents → `docs/qa/bugs.md` → one fix per coder
 
 ## 5. Waiting for the lead right now
