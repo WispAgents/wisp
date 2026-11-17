@@ -11,8 +11,10 @@ const TASK = `/task/${encodeURIComponent(`local:${SEED.seeded.tasks[0]}`)}`;
 
 export const AREAS = {
   shell: [
-    { name: 'home', path: '/', ready: '[data-kit="stage"] [data-part="sidebar"] [data-part="card"]' },
-    { name: 'task', path: TASK, ready: '[data-kit="stage"] [data-part="split.head"]' },
+    // `phoneReady`: the phone apps draw these as their own screens (ADR-0065 step 13: the Tasks bar over the list, the
+    // task's bar), with no sidebar or split head, so the browser's selectors never showed there
+    { name: 'home', path: '/', ready: '[data-kit="stage"] [data-part="sidebar"] [data-part="card"]', phoneReady: '[data-part~="phone.tasks.bar"]' },
+    { name: 'task', path: TASK, ready: '[data-kit="stage"] [data-part="split.head"]', phoneReady: '[data-part~="phone.task.bar"]' },
     { name: 'palette', path: '/?o=dialog:shell.palette', ready: '[data-part="shell.palette"]' },
     { name: 'shortcuts', path: '/?o=dialog:shell.shortcuts', ready: '[data-part="shell.shortcuts"]' },
     { name: 'diagnostics', path: '/?o=viewer:shell.devtools', ready: '[data-part="shell.devtools"]' },

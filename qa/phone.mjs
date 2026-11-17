@@ -16,7 +16,8 @@ import { gate, phoneEnv, phoneViews } from './phone-rules.ts';
 import { lookStatus } from './platform-rules.ts';
 
 /** The phone views: the app's `shell` area paths (qa/layout-areas.mjs), the list all three scripts check. */
-export const PHONE_VIEWS = AREAS.shell;
+/** the shell's views, each ready by its phone screen's own selector where it has one (layout-areas.mjs) */
+export const PHONE_VIEWS = AREAS.shell.map((v) => ({ ...v, ready: v.phoneReady ?? v.ready }));
 
 /** The env of a phone run plus its views, read once (throws on a value that picks nothing). */
 export function phoneConfig(env = process.env, defaults = {}) {
