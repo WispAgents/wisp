@@ -1,7 +1,7 @@
 // Reading a task and the people who can judge it, for the goal's components: the task's entity key,
 // its row, the crew and the harnesses. One place, so every component reads them the same way.
 
-import type { EntityKey, PluginClient } from '@wisp/client';
+import type { EntityKey, PeerId, PluginClient } from '@wisp/client';
 import { useDerived, useSignal } from '@wisp/ui';
 import type { Accessor } from 'solid-js';
 import { harnessOf, type HarnessTopicRow } from './rules.ts';
@@ -41,14 +41,18 @@ export const HARNESSES_TOPIC = 'plugin:wisp.runtime:harnesses';
 /** The harnesses on this wisp, in the picker's order. They're `runtime.harness` rows on wisp.runtime's harnesses
  *  topic, watched while the plugin lives (B47: a `harness` row nobody writes was read, so a judge's harness was
  *  never found: Add judge said none was installed and every harness judge was dropped). */
-const watching = new WeakSet<PluginClient>();
+const watching = new WeakMap<PluginClient, Set<string>>();
 
-export function useHarnesses(client: PluginClient): Accessor<readonly HarnessRow[]> {
-  // once per plugin client: the topic stays live while the plugin does
-  if (!watching.has(client)) (watching.add(client), client.watch(client.home, HARNESSES_TOPIC));
+/** `peer`: the machine the goal's task runs on (its judges run there), this wisp by default (B49). */
+export function useHarnesses(client: PluginClient, peer: string = client.home): Accessor<readonly HarnessRow[]> {
+  // once per plugin client and machine: the topic stays live while the plugin does
+  const seen = watching.get(client) ?? new Set<string>();
+  watching.set(client, seen);
+  if (!seen.has(peer)) (seen.add(peer), client.watch(peer as PeerId, HARNESSES_TOPIC));
   return useDerived(() =>
     client.entities
       .keys(KIND.harness)()
+      .filter((k) => k.startsWith(`${peer}:`))
       .map((k) => client.entities.row<HarnessTopicRow>(KIND.harness, k)() as HarnessTopicRow | undefined)
       .filter((r): r is HarnessTopicRow => r !== undefined && r.id.length > 0)
       .sort((a, b) => a.ord - b.ord)

@@ -54,9 +54,11 @@ pub fn goal_of(spec: &Value, d: &kinds::GoalSpec) -> Option<Goal> {
             .map(|a| a.iter().filter_map(Value::as_str).map(str::to_owned).collect::<Vec<_>>())
             .filter(|a| !a.is_empty())
     };
-    let judges = list(g.get("judges"))
-        .or_else(|| Some(d.judges.clone()).filter(|j| !j.is_empty()))
-        .unwrap_or_else(|| vec![spec.get("agent").and_then(Value::as_str).filter(|a| !a.is_empty()).unwrap_or("claude").to_owned()]);
+    // the task's own harness: its quick check, when no judge is named
+    let own = || vec![spec.get("agent").and_then(Value::as_str).filter(|a| !a.is_empty()).unwrap_or("claude").to_owned()];
+    // `judges: []` said on purpose is no judges (B49), not "the defaults"
+    let none_on_purpose = g.get("judges").and_then(Value::as_array).is_some_and(Vec::is_empty);
+    let judges = if none_on_purpose { own() } else { list(g.get("judges")).or_else(|| Some(d.judges.clone()).filter(|j| !j.is_empty())).unwrap_or_else(own) };
     let vote = g
         .get("vote")
         .and_then(Value::as_str)
@@ -77,8 +79,8 @@ pub fn goal_with(spec: &Value, st: Option<&GoalState>, d: &kinds::GoalSpec) -> O
             let mut goal = spec.get("goal").filter(|g| g.is_object()).cloned().unwrap_or_else(|| json!({}));
             goal["text"] = Value::String(s.text.clone());
             // the judges and vote it was set with, over the spec's (B44)
-            if !s.judges.is_empty() {
-                goal["judges"] = json!(s.judges);
+            if let Some(j) = &s.judges {
+                goal["judges"] = json!(j);
             }
             if !s.vote.is_empty() {
                 goal["vote"] = Value::String(s.vote.clone());
@@ -366,7 +368,7 @@ mod tests {
         let spec = json!({ "agent": "codex", "goal": { "text": "tests pass", "judges": ["claude"], "vote": "majority" } });
         let set = GoalState {
             text: "it works on a phone".into(),
-            judges: vec!["codex/gpt-5/high".into(), "Ada".into()],
+            judges: Some(vec!["codex/gpt-5/high".into(), "Ada".into()]),
             vote: "all".into(),
             ..GoalState::default()
         };
@@ -378,6 +380,10 @@ mod tests {
         let plain = GoalState { text: "it works on a phone".into(), ..GoalState::default() };
         let g = goal_with(&spec, Some(&plain), &d).unwrap();
         assert_eq!((g.judges.clone(), g.vote.as_str()), (vec!["claude".to_owned()], "majority"), "the spec's when none were chosen");
+        // B49: cleared on purpose, the task's own quick check, not the spec's or the defaults
+        let d = kinds::GoalSpec { judges: vec!["reviewer".into()], ..kinds::GoalSpec::default() };
+        let none = GoalState { text: "it works".into(), judges: Some(Vec::new()), ..GoalState::default() };
+        assert_eq!(goal_with(&spec, Some(&none), &d).unwrap().judges, vec!["codex".to_owned()], "no judges: the agent's own check");
     }
 
     /// ADR-0047 (new in v2): a goal may ask for its judges in a sandbox; a goal that doesn't, judges here.

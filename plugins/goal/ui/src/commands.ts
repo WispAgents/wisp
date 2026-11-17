@@ -38,7 +38,8 @@ export const setGoal = defineCommand<SetArgs, GoalView>({
     id: a.session.slice(a.session.indexOf(':') + 1),
     text: a.goal.text,
     ...(a.kick && { kick: true }),
-    ...(a.goal.judges?.length && { judges: a.goal.judges.map(judgeWire) }),
+    // given (even empty: no judges, B49) or not (the spec's, else the defaults)
+    ...(a.goal.judges && { judges: a.goal.judges.map(judgeWire) }),
     ...(a.goal.vote && { vote: a.goal.vote }),
   }),
   optimistic: (base, a) => {

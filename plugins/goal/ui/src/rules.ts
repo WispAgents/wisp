@@ -207,8 +207,10 @@ export function named(judges: readonly Judge[], crew: readonly MemberRow[], harn
 }
 
 /** Judges that still exist here: a harness wisp has, a crew member still on the crew. */
+/** The judges still there: a crew member on the crew, a harness wisp knows. A bare name no harness has (an agent
+ *  profile from a formula, which the server resolves) stays: dropping it hid it and the next save erased it (B49). */
 export const liveJudges = (list: readonly Judge[], crew: readonly MemberRow[], harnesses: readonly HarnessRow[]): Judge[] =>
-  list.filter((j) => (isCrew(j) ? crew.some((m) => m.id === j.crew) : harnesses.some((h) => h.id === j.agent)));
+  list.filter((j) => (isCrew(j) ? crew.some((m) => m.id === j.crew) : harnesses.some((h) => h.id === j.agent) || (!j.model && !j.effort && harnesses.length > 0)));
 
 /** The next harness nobody judges with yet, else the first one installed. */
 export function nextHarness(list: readonly Judge[], harnesses: readonly HarnessRow[]): HarnessRow | undefined {

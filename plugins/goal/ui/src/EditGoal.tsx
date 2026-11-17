@@ -30,8 +30,10 @@ export default function EditGoal(props: { readonly client: PluginClient; readonl
   const key = props.params.task as EntityKey;
   const row = useTask(props.client, () => key);
   const crew = useCrew(props.client);
-  const harnesses = useHarnesses(props.client);
-  const defaults = useSignal(goalDefaults(props.client));
+  // the task's machine: its harnesses and default judges are the ones that judge it there (B49)
+  const peer = key.slice(0, key.indexOf(':'));
+  const harnesses = useHarnesses(props.client, peer);
+  const defaults = useSignal(goalDefaults(props.client, peer));
   const g = row()?.goal;
   const [text, setText] = createSignal(g?.text ?? '');
   // a new goal's judges are New task's, those still there (read as the crew and harnesses arrive, not when it opens)
@@ -47,7 +49,9 @@ export default function EditGoal(props: { readonly client: PluginClient; readonl
     if (!goal) return void box?.focus();
     close();
     void props.client
-      .run(setGoal, { session: key, sessionId: bareId(key), goal: { text: goal, judges: judges(), vote: vote() }, kick: true, now: props.client.scope.timers.now() })
+      // judges said only when they're the goal's own or picked here: a new goal left as it was takes the defaults on the
+      // server (an empty list would mean "no judges", B49)
+      .run(setGoal, { session: key, sessionId: bareId(key), goal: { text: goal, ...((picked() !== undefined || judges().length > 0) && { judges: judges() }), vote: vote() }, kick: true, now: props.client.scope.timers.now() })
       .catch(() => {});
   };
   return (
@@ -77,7 +81,7 @@ export default function EditGoal(props: { readonly client: PluginClient; readonl
         {t('wisp.goal.hint')}
       </Text>
       <Inline gap="2" justify="between">
-        <JudgesButton client={props.client} judges={judges()} vote={vote()} onChange={(j, v) => (setJudges(j), setVote(v))} />
+        <JudgesButton client={props.client} peer={peer} judges={judges()} vote={vote()} onChange={(j, v) => (setJudges(j), setVote(v))} />
         <Inline gap="2">
           <Button variant="ghost" size="sm" onClick={close}>
             {t('wisp.goal.edit.cancel')}

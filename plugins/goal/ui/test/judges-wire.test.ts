@@ -1,7 +1,7 @@
 // B44: goal.set carries the judges and vote you chose (they were sent nowhere), each judge as the server names one
 import { expect, it } from 'vitest';
 import { goalDefaults, judgeOf, judgeWire, setGoal, viewJudge } from '../src/commands.ts';
-import { harnessOf } from '../src/rules.ts';
+import { harnessOf, liveJudges } from '../src/rules.ts';
 import { defaultsOf, judgesOf } from '../src/defaults.ts';
 
 it('a crew member by name, a harness as harness/model/effort without empty trailing parts', () => {
@@ -55,4 +55,14 @@ it("a goal view's judge reads back as the judge it names; one already split stay
   expect(viewJudge({ agent: 'claude/opus/high', model: '', effort: '', name: 'claude/opus/high' }, crew)).toEqual({ agent: 'claude', model: 'opus', effort: 'high', name: 'claude/opus/high' });
   expect(viewJudge({ agent: 'c1', model: '', effort: '' }, crew)).toEqual({ crew: 'c1' });
   expect(viewJudge({ agent: 'codex', model: 'gpt-5', effort: '' }, crew)).toEqual({ agent: 'codex', model: 'gpt-5', effort: '' });
+});
+
+// B49: a profile's name stays a judge; judges given empty are sent (no judges), not given are left out
+it('a bare unknown name (a profile) stays; a gone crew member or harness/model goes; [] is sent, undefined is not', () => {
+  const harnesses = [{ id: 'claude', name: 'Claude Code', available: true, models: [] }];
+  const live = liveJudges([{ agent: 'reviewer', model: '', effort: '' }, { agent: 'gone', model: 'm', effort: '' }, { crew: 'c9' }, { agent: 'claude', model: 'opus', effort: '' }], [], harnesses);
+  expect(live).toEqual([{ agent: 'reviewer', model: '', effort: '' }, { agent: 'claude', model: 'opus', effort: '' }]);
+  const wire = (setGoal as unknown as { wire: (a: unknown) => Record<string, unknown> }).wire;
+  expect(wire({ session: 'p:t1', goal: { text: 'x', judges: [] }, now: 1 })['judges']).toEqual([]);
+  expect('judges' in wire({ session: 'p:t1', goal: { text: 'x' }, now: 1 })).toBe(false);
 });

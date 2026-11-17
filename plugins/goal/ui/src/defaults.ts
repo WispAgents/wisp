@@ -3,7 +3,7 @@
 // is saved to the server (its other fields, the round limit, as they were). A goal sent without its own judges is
 // judged by these on the server, so this is the one place they live.
 
-import { signal, type PluginClient, type Readable, type WritableSignal } from '@wisp/client';
+import { signal, type PeerId, type PluginClient, type Readable, type WritableSignal } from '@wisp/client';
 import { goalDefaultsNow, judgeOf, saveGoalDefaults, type GoalResource } from './commands.ts';
 import { VOTES, type Judge, type MemberRow, type Vote } from './types.ts';
 
@@ -14,7 +14,8 @@ export interface GoalDefaults {
 }
 
 const EMPTY: GoalDefaults = { judges: [], vote: 'majority' };
-const held = new WeakMap<PluginClient, WritableSignal<GoalDefaults>>();
+const held = new WeakMap<PluginClient, Map<string, WritableSignal<GoalDefaults>>>();
+const slot = (client: PluginClient, peer: string): WritableSignal<GoalDefaults> | undefined => held.get(client)?.get(peer);
 
 /** What the server's `goal` resource says, as defaults. */
 export function defaultsOf(have: readonly GoalResource[]): GoalDefaults {
@@ -27,15 +28,17 @@ export function defaultsOf(have: readonly GoalResource[]): GoalDefaults {
 export const judgesOf = (d: GoalDefaults, crew: readonly MemberRow[]): Judge[] => d.judges.map((j) => (typeof j === 'string' ? judgeOf(j, crew) : j));
 
 /** The defaults, live: empty until the server answers (a change made meanwhile wins over the answer). */
-export function goalDefaults(client: PluginClient): Readable<GoalDefaults> {
-  return held.get(client) ?? load(client);
+export function goalDefaults(client: PluginClient, peer: string = client.home): Readable<GoalDefaults> {
+  return slot(client, peer) ?? load(client, peer);
 }
 
-function load(client: PluginClient): WritableSignal<GoalDefaults> {
+function load(client: PluginClient, peer: string = client.home): WritableSignal<GoalDefaults> {
   const made = signal<GoalDefaults>(EMPTY);
-  held.set(client, made);
+  const map = held.get(client) ?? new Map<string, WritableSignal<GoalDefaults>>();
+  held.set(client, map);
+  map.set(peer, made);
   void client
-    .run(goalDefaultsNow, { peer: client.home })
+    .run(goalDefaultsNow, { peer: peer as PeerId })
     .then((have) => made() === EMPTY && made(defaultsOf(have)))
     .catch(() => {});
   return made;
@@ -45,7 +48,7 @@ function load(client: PluginClient): WritableSignal<GoalDefaults> {
  *  before the first), and a refused one puts the server's defaults back (the shell's toast says why). */
 const queue = new WeakMap<PluginClient, Promise<unknown>>();
 export function setGoalDefaults(client: PluginClient, judges: readonly Judge[], vote: Vote): void {
-  const s = held.get(client) ?? load(client);
+  const s = slot(client, client.home) ?? load(client);
   s({ judges, vote });
   const save = (): Promise<unknown> =>
     client

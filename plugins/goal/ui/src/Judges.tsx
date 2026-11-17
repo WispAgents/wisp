@@ -20,6 +20,8 @@ export interface JudgesProps {
   readonly judges: readonly Judge[];
   readonly vote: Vote;
   readonly onChange: (judges: Judge[], vote: Vote) => void;
+  /** the machine the goal's task runs on (its judges run there); this wisp by default (B49) */
+  readonly peer?: string;
 }
 
 const HINT: Readonly<Record<Vote, 'wisp.goal.vote.allHint' | 'wisp.goal.vote.majorityHint' | 'wisp.goal.vote.anyHint'>> = {
@@ -30,7 +32,7 @@ const HINT: Readonly<Record<Vote, 'wisp.goal.vote.allHint' | 'wisp.goal.vote.maj
 
 /** A harness judge (v1 judges.js .tp-runner): ONE runner button, its logo, harness, model and thinking level, opening
  *  the same harness · model picker New task uses (B48: it was three selects). */
-function HarnessRowEdit(props: { readonly client: PluginClient; readonly j: HarnessJudge; readonly harnesses: readonly HarnessRow[]; readonly onChange: (j: HarnessJudge) => void }): JSX.Element {
+function HarnessRowEdit(props: { readonly client: PluginClient; readonly peer?: string | undefined; readonly j: HarnessJudge; readonly harnesses: readonly HarnessRow[]; readonly onChange: (j: HarnessJudge) => void }): JSX.Element {
   const shell = useShell();
   const logos = useSignal(shell.harnesses());
   const [open, setOpen] = createSignal(false);
@@ -52,7 +54,7 @@ function HarnessRowEdit(props: { readonly client: PluginClient; readonly j: Harn
         open={open()}
         onOpenChange={setOpen}
         anchor={() => btn}
-        peer={props.client.home}
+        peer={props.peer ?? props.client.home}
         value={{ agent: props.j.agent, model: props.j.model, effort: props.j.effort, account: '' }}
         onChange={(r) => props.onChange({ agent: r.agent, model: r.model, effort: r.effort })}
       />
@@ -63,7 +65,7 @@ function HarnessRowEdit(props: { readonly client: PluginClient; readonly j: Harn
 // size-ok: one editor's markup, its handlers are one-liners over the same list
 export function JudgesEditor(props: JudgesProps): JSX.Element {
   const crew = useCrew(props.client);
-  const harnesses = useHarnesses(props.client);
+  const harnesses = useHarnesses(props.client, props.peer);
   const shell = useShell();
   const commit = (list: readonly Judge[], vote: Vote = props.vote): void => props.onChange(named(list, crew(), harnesses()), vote);
   const crewFree = () => crew().filter((c) => !props.judges.some((j) => isCrew(j) && j.crew === c.id));
@@ -121,7 +123,7 @@ export function JudgesEditor(props: JudgesProps): JSX.Element {
               when={isCrew(j) ? j : undefined}
               fallback={
                 <TeamRow part="goal.judgeRow" remove={remove(i())}>
-                  <HarnessRowEdit client={props.client} j={j as HarnessJudge} harnesses={harnesses()} onChange={(next) => commit(props.judges.map((x, k) => (k === i() ? next : x)))} />
+                  <HarnessRowEdit client={props.client} peer={props.peer} j={j as HarnessJudge} harnesses={harnesses()} onChange={(next) => commit(props.judges.map((x, k) => (k === i() ? next : x)))} />
                 </TeamRow>
               }
             >
@@ -160,7 +162,7 @@ export function JudgesButton(props: JudgesProps & { readonly part?: `${string}.$
       inWindow
       cardPart="delegate.panel"
     >
-      <JudgesEditor client={props.client} judges={props.judges} vote={props.vote} onChange={props.onChange} />
+      <JudgesEditor client={props.client} judges={props.judges} vote={props.vote} onChange={props.onChange} {...(props.peer && { peer: props.peer })} />
     </Popover>
   );
 }
