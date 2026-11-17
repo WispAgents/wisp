@@ -219,7 +219,8 @@ function CrewPage(props: ExtensionProps): JSX.Element {
                 </Show>
               }
               earlier={items().earlier ? { label: t('wisp.crew.page.earlier', { n: items().earlier }), onClick: () => setShow(show() + SHOW) } : undefined}
-              about={{ label: t('wisp.crew.page.about', { name: m().name }), hint: line().text }}
+              // the header already says what they're doing ("On call"): the About row names their role instead (TRY-12)
+              about={{ label: t('wisp.crew.page.about', { name: m().name }), ...(m().role.trim() && { hint: m().role.trim() }) }}
               side={
                 <>
                   <CrewFacts items={facts(m(), { t: say as never, harness, place: (id) => id, onTeam: () => c.navigate({ t: 'openView', id: VIEW.org as never, params: null }) })} />

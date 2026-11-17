@@ -55,14 +55,21 @@ function ListBody(): JSX.Element {
   // a crew member's page open: the list holds only their jobs (v1 crew.js inPick), with v1's empty line
   const nav = useSignal(env.shell.nav);
   const members = useSignal(env.client.entities.list<{ id: string; name: string }>('crew_member'));
+  // the member's bare id: the page is keyed `<peer>:<id>`, while a member's row and a task's `crew.id` carry the bare
+  // one (keyed, the list held none of their jobs and its empty line read "No tasks for yet.")
   const picked = createMemo(() => {
     const m = nav().main;
-    return m.kind === 'crew' ? String(m.id) : undefined;
+    if (m.kind !== 'crew') return undefined;
+    const id = String(m.id);
+    return id.slice(id.indexOf(':') + 1);
   });
   createEffect(() => env.model.setCrew(picked()));
   const emptyTitle = (): string => {
     const who = picked();
-    if (who !== undefined) return t('shell-list.empty.crew', { name: members().find((m) => m.id === who)?.name ?? '' });
+    if (who !== undefined) {
+      const name = members().find((m) => m.id === who)?.name;
+      return name ? t('shell-list.empty.crew', { name }) : t('shell-list.empty.all');
+    }
     return t(view().filter !== 'all' ? 'shell-list.empty.project' : 'shell-list.empty.all');
   };
   const toggled = createMemo(() => new Set(view().toggled));

@@ -525,6 +525,10 @@ export interface NextRow {
   readonly title: string;
   readonly color: string;
   readonly state?: string;
+  /** the status's tone, for its colour (good, accent, warn, bad…) */
+  readonly tone?: string;
+  /** why it needs you, in one line: the question it asks, else the start of its answer (TRY-27) */
+  readonly why?: string;
   readonly time: string;
   readonly timeTitle: string;
 }
@@ -542,11 +546,20 @@ export function NextList(props: { readonly heading: string; readonly count: numb
         {(r) => (
           <button type="button" data-kit="sh-task" data-color={r().color} data-id={r().id} onClick={() => props.onOpen(r().id)}>
             <span data-kit="q-dot" />
-            <span data-kit="sh-t" data-text="control" title={r().title}>
-              {r().title}
+            <span data-kit="sh-main">
+              <span data-kit="sh-t" data-text="control" title={r().title}>
+                {r().title}
+              </span>
+              <Show when={r().why}>
+                <span data-kit="sh-why" title={r().why}>
+                  {r().why}
+                </span>
+              </Show>
             </span>
             <Show when={r().state}>
-              <span data-kit="sh-s">{r().state}</span>
+              <span data-kit="sh-s" data-tone={r().tone}>
+                {r().state}
+              </span>
             </Show>
             <span data-kit="sh-time" title={r().timeTitle}>
               {r().time}

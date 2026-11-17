@@ -264,7 +264,11 @@ export function SidebarList(props: { readonly onNew: () => void; readonly homeOn
   const crew = useSignal(shell.client.entities.list<CrewRow>('crew_member'));
   const picked = createMemo(() => {
     const m = nav().main;
-    return m.kind === 'crew' ? crew().find((c) => c.id === m.id) : undefined;
+    if (m.kind !== 'crew') return undefined;
+    // the page is keyed `<peer>:<id>`, a member's row by its bare id
+    const id = String(m.id);
+    const bare = id.slice(id.indexOf(':') + 1);
+    return crew().find((c) => c.id === id || c.id === bare);
   });
   // newest first within a section, as v1's feed
   const bySection = createMemo(() => {

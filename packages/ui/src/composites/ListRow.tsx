@@ -160,7 +160,8 @@ export function RowRun(props: {
     <div data-kit="row-run" data-part={props.part ?? 'ui.row-run'} title={props.title}>
       {props.logo}
       <span data-kit="ir-h">{props.name}</span>
-      <Show when={props.model}>{(m) => <span data-kit="ir-m">{m()}</span>}</Show>
+      {/* a model shorter than the 7ch floor keeps its own width (TRY-12: "opus" had a gap before the next dot) */}
+      <Show when={props.model}>{(m) => <span data-kit="ir-m" data-long={m().length > 5 ? '' : undefined}>{m()}</span>}</Show>
       <span data-kit="ir-w">
         <Icon name={props.where.icon} size="xs" />
         <span>{props.where.text}</span>

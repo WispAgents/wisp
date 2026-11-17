@@ -63,6 +63,10 @@ turn. When a screen or feature contradicts one, that's a bug: fix it toward the 
   (18:36), shows blocks well, not raw JSON (18:48); **a TUI mirrors the GUI** (18:49), inspired by opencode / Claude
   Code, not simple (11-09 20:52). CLI, TUI and GUI are plugins (18:49).
 
+- **Home's Needs you as an inbox** (TRY-27, decided by the owner's delegate 2026-11-17; before/after screenshots in
+  the task): each row says why it needs you (its question, else the start of its answer) and its status in its tone,
+  instead of the titles the list beside it already shows (v1 did the same). Scored with the other screens: the rest
+  keep v1's look; the smells found are fixed (TRY-12). allowed.md §7 masks `split.next`.
 - **Settings in sections, with search** (TRY-28, decided by the owner's delegate 2026-11-17; mock: before/after
   screenshots in the task): the browser and desktop side list uses the phone's sections (General, Agents, Computers,
   Advanced) with headings, a *Search settings* field above it (name, section, lede; Enter opens the first; the first

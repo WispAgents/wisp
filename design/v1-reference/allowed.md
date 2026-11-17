@@ -125,6 +125,11 @@ A place where v2 does better than v1 on purpose. Each names its rule below and i
   *Search settings* field above it, and ⌘K finds every pane. The panes themselves are v1's. Masked: the side list
   (`settings.nav`, `settings.group`, `settings.item`).
 
+- **Home's Needs you as an inbox** (TRY-27, the lead's call 2026-11-17 as the owner's delegate; test
+  `packages/ui/test/home-next.test.tsx`). v1's Home listed the same titles as the list beside it. Each row now says
+  why it needs you under its title (the question it asks, else the start of its answer) and its status in its tone
+  at the right, as the list's rows do. Masked: the rows (`split.next`).
+
 ## Rules (read by `qa/parity.mjs`)
 
 One rule a line: `<view glob> <part glob> <kind> [widths]` (widths: `390` or `320,390`; none means every width). `wrap` is §1, `pending` is §2, `fold` is §4
@@ -162,4 +167,5 @@ task.ship  ship.write  owner
 settings*  settings.nav  owner
 settings*  settings.group  owner
 settings*  settings.item  owner
+home*  split.next  owner
 ```

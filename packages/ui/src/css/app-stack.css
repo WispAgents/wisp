@@ -34,7 +34,6 @@
   [data-kit='stage'][data-layout='stack'] [data-kit='sh-bar'] { gap: var(--space-3); min-height: 56px; padding: calc(var(--space-3) - 1px) 0; margin: 0 0 var(--space-4); } /* v1: 5px, so a two-line greeting keeps the bar at 56 */
   [data-kit='stage'][data-layout='stack'] [data-kit='sh-bar'] > [data-kit='sh-hello'] { font-size: 19px; padding: 0; letter-spacing: -0.02em; }
   [data-kit='sh-back'] { display: flex; align-items: center; justify-content: center; flex: none; width: var(--size-touch); height: var(--size-touch); margin: 0 0 0 -10px; border-radius: var(--radius-control); color: var(--muted); }
-  [data-kit='stage'][data-layout='split'] [data-kit='sh-s'] { display: none; }
   [data-kit='stage'][data-layout='stack'] [data-kit='sh-task'] { grid-template-columns: 10px minmax(0, 1fr) auto auto; }
   [data-kit='stage'][data-layout='stack'] [data-kit='sh-tips'] { margin-top: 22px; }
   [data-kit='stage'][data-layout='stack'] [data-kit='sh-tips'] > h4, [data-kit='stage'][data-layout='stack'] [data-kit='sh-tip']:not([data-setup]) { display: none; }

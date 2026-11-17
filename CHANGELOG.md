@@ -72,6 +72,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - **v2: Settings you can find your way in.** The side list is in sections (General, Agents, Computers, Advanced), *Search settings* finds a pane by its name or what it's for, and ⌘K finds every Settings pane. Esc in a search field inside a dialog clears the field first instead of closing the dialog.
 - **v2: navigation that stays out of the way.** J and K step through tasks with the keys staying on the list, as in v1 (they no longer land in the reply box). Back leaves Settings in one step instead of walking back through every pane you looked at.
 - **v2: a TUI you can drive without the docs.** Ctrl-K and `/` list every command by name with how it's typed; the reply box shows a command's flags while you type it, and `/machines add studio --address me@studio` runs it. The crew view adds members, gives them jobs, checks in, pauses and removes. New task is a page where you pick the agent (Ctrl-A) and the mode. `wisp get <id>` and other tools' words no longer start an agent run: they say which wisp command you meant.
+- **v2: Home says why each task needs you.** Under each title in Needs you: the question it asks or the start of its answer, with its status in colour. A crew member's page lists their jobs again (it showed none, and "No tasks for yet."), a short model name no longer leaves a gap in a task's row, and a member's About row names their role instead of repeating "On call".
 
 ### Changed
 

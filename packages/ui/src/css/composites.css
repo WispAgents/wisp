@@ -114,12 +114,15 @@
   [data-kit='row-run'] > [data-kit='ir-h'] {
     color: var(--muted);
   }
-  /* v1 .ir-m: the model ellipsises first, never under 7ch */
+  /* v1 .ir-m: the model ellipsises first, never under 7ch; a shorter one is just its own width (no gap after it) */
   [data-kit='row-run'] > [data-kit='ir-m'] {
     flex: 0 1 auto;
-    min-width: 7ch;
+    min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
+  }
+  [data-kit='row-run'] > [data-kit='ir-m'][data-long] {
+    min-width: 7ch;
   }
   [data-kit='ir-m']::before {
     content: '·';

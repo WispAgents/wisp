@@ -983,7 +983,7 @@
   }
   [data-kit='sh-task'] {
     display: grid;
-    grid-template-columns: 10px minmax(0, 1fr) auto;
+    grid-template-columns: 10px minmax(0, 1fr) auto auto;
     grid-auto-columns: auto;
     gap: var(--space-6);
     align-items: center;
@@ -1003,6 +1003,24 @@
   [data-kit='sh-task'] > [data-kit='q-dot'] {
     grid-row: auto;
   }
+  /* Home's Needs you as an inbox (TRY-27): the title, then why it needs you; its status at the right */
+  [data-kit='sh-main'] {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-1);
+    min-width: 0;
+  }
+  [data-kit='sh-why'] {
+    font-size: var(--fs-sm);
+    color: var(--muted);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  [data-kit='sh-s'][data-tone='done'] { color: var(--good); }
+  [data-kit='sh-s'][data-tone='info'], [data-kit='sh-s'][data-tone='live'] { color: var(--accent-ink); }
+  [data-kit='sh-s'][data-tone='warn'] { color: var(--warn); }
+  [data-kit='sh-s'][data-tone='bad'] { color: var(--bad); }
   [data-kit='sh-t'] {
     font-size: var(--fs-md);
     font-weight: 500;

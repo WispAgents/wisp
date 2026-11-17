@@ -278,6 +278,10 @@ describe('the feed row (v1 #feed .it-head)', () => {
     expect([...(run?.children ?? [])].map((e) => (e as HTMLElement).dataset['kit'])).toEqual(['ir-h', 'ir-m', 'ir-w']);
     expect(run?.querySelector('[data-kit="ir-h"]')?.textContent).toBe('Claude Code');
     expect(run?.querySelector('[data-kit="ir-m"]')?.textContent).toBe('Opus 4.7');
+    expect(run?.querySelector('[data-kit="ir-m"]')?.hasAttribute('data-long')).toBe(true);
+    // a short model takes its own width, no 7ch floor (TRY-12: "opus   · This computer")
+    const short = mount(() => <RowRun name="Claude Code" model="opus" where={{ icon: 'laptop', text: 'This computer' }} />);
+    expect(short.querySelector('[data-kit="ir-m"]')?.hasAttribute('data-long')).toBe(false);
     expect(run?.title).toBe('Claude Code · Opus 4.7 · High thinking · on This computer');
     // no model: no empty span (v1 drops "Default model" from the row, the tip keeps it)
     const bare = mount(() => <RowRun name="Codex" where={{ icon: 'server', text: 'box-1' }} />);

@@ -895,6 +895,8 @@ export function HomeView(props: { readonly onBack?: () => void }): JSX.Element {
               title: s.title,
               color: String(s.summary['color'] ?? 'slate'),
               state: statusOf(s, t).label,
+              tone: statusOf(s, t).tone,
+              why: String(s.summary['question'] || s.summary['preview'] || '').split('\n')[0]?.trim() ?? '',
               time: shortAgo(s.updated_at, now()),
               timeTitle: longTime(s.updated_at),
             }))}

@@ -24,7 +24,7 @@ export interface CrewViewProps {
   /** what it is and how it works (CrewFacts, CrewSideActions, CrewSection) */
   readonly side: JSX.Element;
   /** the folded side's summary on a narrow page: "About Ada", and how it works */
-  readonly about: { readonly label: string; readonly hint: string };
+  readonly about: { readonly label: string; readonly hint?: string };
   readonly dock: {
     readonly placeholder: string;
     readonly value: string;
@@ -89,7 +89,7 @@ export function CrewView(props: CrewViewProps): JSX.Element {
             <button type="button" data-kit="cv-summary" aria-expanded={open()} onClick={() => setOpen(!open())}>
               <Icon name="info" />
               <b data-text="control">{props.about.label}</b>
-              <span data-text="control">{props.about.hint}</span>
+              <Show when={props.about.hint}>{(h) => <span data-text="control">{h()}</span>}</Show>
               <Icon name="chevron" />
             </button>
             <div data-kit="cv-side" data-part="crew.side">
