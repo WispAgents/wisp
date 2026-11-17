@@ -9,3 +9,4 @@ this table: a v1 item in neither file is an error.
 |---|---|---|
 | setting | `agentBeforeAuto` | v1's one-time migration memo (the pick before Auto became the default, store.js:170); v2 imports the pick itself (`wisp import`, ADR-0031) |
 | setting | `view` | already gone in v1: the layout switch was removed and store.js deletes the saved value (split view is the only layout) |
+| telemetry | `spell_hook` | v1's spells and their declarative hooks are gone (ADR-0031: plugins replace them; a plugin reacts to events in its own code, and automations are the declarative rules); the catalogue keeps the event `notSent` (plugins/telemetry/api/tests/goldens/emitters.json) |

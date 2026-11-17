@@ -462,7 +462,6 @@ kept). `npm run check` (rule `v1-coverage`) reads this table: every v1 item has 
 | telemetry | `shell` | `telemetry:shell` |
 | telemetry | `ship` | `telemetry:ship` |
 | telemetry | `side_task` | `telemetry:side_task` |
-| telemetry | `spell_hook` | `todo:plugins/spells install and hooks (emit spell_hook when a user plugin's hook runs)` |
 | telemetry | `spell_installed` | `telemetry:spell_installed` |
 | telemetry | `stuff_launch` | `telemetry:stuff_launch` |
 | telemetry | `stuff_publish` | `telemetry:stuff_publish` |
