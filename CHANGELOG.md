@@ -5,6 +5,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [2.0.0] - 2026-11-17
+
 ### Added
 
 - **v2: a lead's Team tab says where each job runs and for how long, as v1 did.** Each row shows its machine chip (This computer, or the member's machine, in accent when it isn't where the lead runs; the tooltip says where it ran) and its time: a running job's ticks every second, one that's back shows how long it took beside its state (now *Finished*, as v1). On a phone the machine's name gives way first, so the time stays inside the row at 320 px.
