@@ -73,6 +73,33 @@ fn dir_of(p: &str) -> String {
     }
 }
 
+/// The wisp binary the offload hook runs (this process: the hook is `wisp hook offload`, no Node in v2).
+fn wisp_exe() -> Option<String> {
+    std::env::current_exe().ok().map(|p| p.display().to_string())
+}
+
+/// Claude Code's `PreToolUse` hook on Bash that sends long output to a file (ADR-0079, `wisp hook offload`): only when
+/// the run names a folder for it (`WISP_OFFLOAD_DIR`, set by wisp.threads), never for a lean side run (it only
+/// answers).
+fn offload_hook(run: &HarnessRun) -> Option<serde_json::Value> {
+    run.env.get(wisp_runtime_api::points::OFFLOAD_DIR_ENV).filter(|d| !d.is_empty() && !run.lean)?;
+    let exe = wisp_exe()?;
+    let command = format!("\"{}\" hook offload", exe.replace('"', "\\\""));
+    Some(serde_json::json!({ "PreToolUse": [{ "matcher": "Bash", "hooks": [{ "type": "command", "command": command, "timeout": 10 }] }] }))
+}
+
+/// One --settings: the gate's ask rules, and the hook that sends long Bash output to a file (ADR-0079).
+fn settings(run: &HarnessRun) -> Option<String> {
+    let mut s = serde_json::Map::new();
+    if run.gate {
+        s.insert("permissions".into(), serde_json::json!({ "ask": GATED }));
+    }
+    if let Some(hook) = offload_hook(run) {
+        s.insert("hooks".into(), hook);
+    }
+    (!s.is_empty()).then(|| serde_json::Value::Object(s).to_string())
+}
+
 /// The launch for `run`, with `bin` the program to start.
 pub fn launch(run: &HarnessRun, bin: &str) -> Launch {
     // Plan that runs commands: a task you started (the runtime says), never past a side discussion's gate
@@ -91,9 +118,9 @@ pub fn launch(run: &HarnessRun, bin: &str) -> Launch {
         }
         .into(),
     );
-    if run.gate {
+    if let Some(s) = settings(run) {
         args.push("--settings".into());
-        args.push(serde_json::json!({ "permissions": { "ask": GATED } }).to_string());
+        args.push(s);
     }
     if run.lean {
         args.extend(LEAN.iter().map(|s| (*s).to_owned()));
@@ -224,6 +251,32 @@ mod tests {
         assert!(a.contains("--permission-prompt-tool mcp__wisp__approve --allowedTools mcp__wisp --disallowedTools Task Agent Workflow --add-dir /a /up --verbose"));
         let Stdin::Bytes(b) = launch(&r, "claude").stdin else { panic!("stdin") };
         assert!(String::from_utf8_lossy(&b).contains("- /up/pic.png  (image/png, 3 KB)"));
+    }
+
+    /// ADR-0079: a run that names an offload folder gets the `PreToolUse` hook on Bash, beside the gate's rules in the
+    /// one --settings; a lean run and a run without the folder get none.
+    #[test]
+    fn a_run_with_an_offload_folder_gets_the_bash_hook() {
+        let settings = |r: &HarnessRun| {
+            launch(r, "claude")
+                .args
+                .windows(2)
+                .find(|w| w[0] == "--settings")
+                .map(|w| serde_json::from_str::<serde_json::Value>(&w[1]).unwrap())
+        };
+        assert_eq!(settings(&run()), None);
+        let mut r = run();
+        r.env.insert(wisp_runtime_api::points::OFFLOAD_DIR_ENV.into(), "/home/.wisp/threads/out/t1".into());
+        r.gate = true;
+        let s = settings(&r).unwrap();
+        let hook = &s["hooks"]["PreToolUse"][0];
+        assert_eq!(hook["matcher"], "Bash");
+        assert!(hook["hooks"][0]["command"].as_str().unwrap().ends_with("\" hook offload"));
+        assert!(s["permissions"]["ask"].is_array(), "the gate's rules stay in the same --settings");
+        assert_eq!(launch(&r, "claude").args.iter().filter(|a| *a == "--settings").count(), 1);
+        r.lean = true;
+        r.gate = false;
+        assert_eq!(settings(&r), None, "a lean run only answers");
     }
 
     #[test]

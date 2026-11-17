@@ -19,6 +19,8 @@ mod folder;
 mod groups;
 mod history_cli;
 mod hook_cli;
+mod notes_cli;
+mod offload_cli;
 mod plugin_cmd;
 mod repo_cli;
 mod scripted;
@@ -49,6 +51,10 @@ fn main() {
     #[cfg(feature = "proc")]
     wisp_proc::tune_heap();
     let argv: Vec<String> = std::env::args().skip(1).collect();
+    // Claude Code's Bash hook runs on every command: answer before the runtime starts (ADR-0079)
+    if offload_cli::fast_path(&argv) {
+        return;
+    }
     let user_home = services::user_home().unwrap_or_else(|| PathBuf::from("."));
     // the CLI's folder as every path in wisp is spelled (ADR-0071): `wisp "task"` in `C:\Users\RUNNER~1\…` runs in
     // the folder its project stores as `C:\Users\runneradmin\…`
@@ -347,6 +353,10 @@ async fn shared_and_cloud(first: &str, p: &Parsed, o: &code::Opts, port: u16, cw
         }
         "events" if matches!(o.words.first().map(String::as_str), None | Some("tail" | "why" | "retry" | "parked" | "ls")) => {
             events_cli::run(&connect().await?, &p.argv, o.json).await?
+        }
+        // `wisp notes <task>`, `--set …` or bare (WISP_TASK); "notes on the refactor" stays a task
+        "notes" if o.words.first().is_none_or(|w| args::session_id(w) || w.starts_with("--set")) => {
+            notes_cli::run(&connect().await?, &o.words, o.json).await?
         }
         "shares" if o.words.is_empty() => cloud_cli::shares(&connect().await?, &o).await?,
         "cloud"

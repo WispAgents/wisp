@@ -1,0 +1,170 @@
+//! wisp.threads host (ADR-0079, long threads): what keeps a task's agent on track after hundreds of turns.
+//!
+//! - **Notes** (`notes.rs`, tables in `store.rs`): the task's state (goal, constraints, decisions, what failed, where
+//!   it stands, open questions, key files), each section rewritten, never appended to, every version kept with who
+//!   wrote it. `threads.notes`, `threads.notesUpdate`, `threads.revisions`; the agent's `wisp_notes` tool
+//!   (`parts.rs`); `wisp notes` in the CLI. A subagent reads its lead's Notes and can't write them. A task tracked in
+//!   its repo (ADR-0033) also has them in `.wisp/tasks/<id>/notes.md` (`files.rs`).
+//! - **The note** before each follow-up (`parts.rs`, `runtime.prompt@1` `before`): the Notes as they are now, what
+//!   you changed since the agent last read them, and a nudge when your message changes something said earlier.
+//! - **Health** (`health.rs`): how worn the thread is, worked out at each turn's end from what runtime already has,
+//!   on the task's `session:<id>` topic and `threads.health`.
+//! - **The offload folder** (`parts.rs`, `runtime.run@1`): each run is told where long command output goes
+//!   (`WISP_OFFLOAD_DIR`); Claude Code's `PreToolUse` hook (`wisp hook offload`) acts on it. Removed with the task.
+//!
+//! resources: data-only (a task's Notes, their versions and its health are the task's own state, written by its agent
+//! and you as the work goes; nothing in them is setup to declare in wisp.yml).
+
+mod files;
+mod health;
+mod notes;
+mod parts;
+mod store;
+
+use std::path::PathBuf;
+use std::sync::{Arc, OnceLock};
+
+use wisp_kernel::{Call, Ctx, Manifest, Plugin, Result, Setup, WireError};
+use wisp_runtime_api::events::{SessionDeleted, TurnEnded};
+use wisp_store::Store;
+use wisp_threads_api::{self as api, By};
+
+pub const PLUGIN_ID: &str = api::PLUGIN;
+
+pub(crate) struct State {
+    pub store: Store,
+    /// `<wisp home>/threads/out`: each task's long command output, under its id
+    pub out: PathBuf,
+}
+
+pub(crate) type Slot = Arc<OnceLock<Arc<State>>>;
+
+pub(crate) fn state(slot: &Slot) -> Result<Arc<State>> {
+    slot.get().cloned().ok_or_else(|| WireError::unavailable("wisp.threads is starting"))
+}
+
+pub(crate) fn now(ctx: &Ctx) -> i64 {
+    ctx.clock().map_or(0, |c| c.now_ms())
+}
+
+pub(crate) fn db(e: &wisp_store::StoreError) -> WireError {
+    WireError::internal(format!("threads: {e}"))
+}
+
+/// The task a task's Notes belong to: its own, or its lead's (a subagent works for its lead).
+pub(crate) async fn owner(ctx: &Ctx, call: &Call, task: &str) -> Result<(String, Option<String>)> {
+    let s = ctx.run::<wisp_runtime_api::commands::Get>(call, wisp_runtime_api::commands::IdArgs { id: task.into() }).await?;
+    Ok(match s.parent_id {
+        Some(lead) => (lead.0.clone(), Some(lead.0)),
+        None => (task.to_owned(), None),
+    })
+}
+
+async fn read(ctx: &Ctx, call: &Call, st: &State, task: &str) -> Result<api::Notes> {
+    let (whose, lead) = owner(ctx, call, task).await?;
+    let (mut n, _) = notes::load(&st.store, &whose).await.map_err(|e| db(&e))?;
+    n.lead = lead;
+    Ok(n)
+}
+
+async fn update(ctx: &Ctx, call: &Call, st: &State, a: api::UpdateArgs) -> Result<api::Notes> {
+    let (whose, lead) = owner(ctx, call, &a.id).await?;
+    if lead.is_some() {
+        return Err(WireError::invalid("A subagent reads its lead’s Notes and can’t change them: say in your report what should change."));
+    }
+    let by = a.by.unwrap_or(By::You);
+    let wrote =
+        notes::update(&st.store, &whose, &a.section, &a.text, by, now(ctx)).await.map_err(|e| db(&e))?.map_err(WireError::invalid)?;
+    if wrote.changed {
+        files::write_repo_file(ctx, call, &whose, &wrote.notes).await;
+    }
+    Ok(wrote.notes)
+}
+
+#[derive(Debug, Default)]
+pub struct ThreadsPlugin;
+
+impl Plugin for ThreadsPlugin {
+    fn manifest(&self) -> Manifest {
+        Manifest::embedded(include_str!("../wisp-plugin.json"))
+    }
+
+    fn setup(&self, s: &mut Setup) -> Result<()> {
+        let slot: Slot = Arc::new(OnceLock::new());
+        let sl = slot.clone();
+        s.command::<api::NotesCmd, _, _>(move |ctx, call, a| {
+            let sl = sl.clone();
+            async move {
+                let st = state(&sl)?;
+                read(&ctx, &call, &st, &a.id).await
+            }
+        });
+        let sl = slot.clone();
+        s.command::<api::NotesUpdate, _, _>(move |ctx, call, a| {
+            let sl = sl.clone();
+            async move {
+                let st = state(&sl)?;
+                update(&ctx, &call, &st, a).await
+            }
+        });
+        let sl = slot.clone();
+        s.command::<api::RevisionsCmd, _, _>(move |ctx, call, a| {
+            let sl = sl.clone();
+            async move {
+                let st = state(&sl)?;
+                let (whose, _) = owner(&ctx, &call, &a.id).await?;
+                notes::revisions(&st.store, &whose, a.section.as_deref()).await.map_err(|e| db(&e))
+            }
+        });
+        let sl = slot.clone();
+        s.command::<api::HealthCmd, _, _>(move |ctx, call, a| {
+            let sl = sl.clone();
+            async move {
+                let st = state(&sl)?;
+                health::read(&ctx, &call, &st, &a.id).await
+            }
+        });
+        parts::register(s, &slot);
+        let sl = slot.clone();
+        s.on::<TurnEnded, _, _>(move |ctx, e| {
+            let sl = sl.clone();
+            async move {
+                if let Ok(st) = state(&sl) {
+                    let call = ctx.root_call();
+                    if let Err(err) = health::work_out(&ctx, &call, &st, e.session_id.as_str()).await {
+                        tracing::debug!(error = %err.message, task = %e.session_id.0, "threads: no health");
+                    }
+                }
+            }
+        });
+        let sl = slot.clone();
+        s.on::<SessionDeleted, _, _>(move |_ctx, e| {
+            let sl = sl.clone();
+            async move {
+                if let Ok(st) = state(&sl) {
+                    files::forget(&st, e.id.as_str()).await;
+                }
+            }
+        });
+        s.on_start(move |ctx| async move {
+            let store = ctx.service::<Store>()?.as_ref().clone();
+            store::install(&store).map_err(|e| db(&e))?;
+            let home = ctx
+                .service::<wisp_kernel::services::Paths>()
+                .map_or_else(|_| std::env::temp_dir().join("wisp"), |p| p.home().to_path_buf());
+            let _ = slot.set(Arc::new(State { store, out: home.join("threads").join("out") }));
+            Ok(())
+        });
+        Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn manifest_is_valid() {
+        assert_eq!(ThreadsPlugin.manifest().id, PLUGIN_ID);
+    }
+}

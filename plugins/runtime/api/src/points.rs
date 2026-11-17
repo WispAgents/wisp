@@ -41,7 +41,28 @@ pub trait PromptPart: Send + Sync + 'static {
     fn expand(&self, _prompt: &str, _session: &Session, _tools: bool) -> String {
         String::new()
     }
+    /// The note in front of one follow-up, right before the user's words (v1 runner.js turn note: a long thread's
+    /// Notes, ADR-0079), read when the turn starts; '' adds nothing. Awaited, at most 2 s; a compaction turn gets none.
+    /// Additive (2026-11-17).
+    fn before(&self, _note: TurnNote) -> BoxFuture<'static, String> {
+        Box::pin(async { String::new() })
+    }
 }
+
+/// What `PromptPart::before` sees: the task, the turn about to run (its prompt as the user wrote it), and how this
+/// harness names wisp's tools (`mcp__wisp__`; None: the run can't take wisp's tools).
+#[derive(Debug, Clone)]
+pub struct TurnNote {
+    pub session: Session,
+    pub turn: Turn,
+    pub tools: Option<String>,
+}
+
+/// The run env naming the folder long command output goes to (ADR-0079, `wisp hook offload`): a plugin sets it through
+/// `RunPart::env`, a harness that can rewrite its commands (Claude Code's `PreToolUse` hook) acts on it.
+pub const OFFLOAD_DIR_ENV: &str = "WISP_OFFLOAD_DIR";
+/// From how many bytes output goes to the file (default 8000).
+pub const OFFLOAD_MIN_ENV: &str = "WISP_OFFLOAD_MIN";
 
 /// `runtime.block@1`: an answer block type the parser accepts and the UI renders.
 pub trait BlockType: Send + Sync + 'static {

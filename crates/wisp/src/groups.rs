@@ -18,9 +18,10 @@ pub struct Where {
     pub user_home: PathBuf,
 }
 
-pub const DEFAULT: [&str; 50] = [
+pub const DEFAULT: [&str; 51] = [
     "cli",
     "events",
+    "threads",
     "resources",
     "workflows",
     "share",
@@ -179,6 +180,8 @@ fn add(g: PluginGroup, name: &str, at: &Where) -> PluginGroup {
         "machines" => g.add(wisp_machines::MachinesPlugin),
         #[cfg(feature = "events")]
         "events" => g.add(wisp_events::EventsPlugin),
+        #[cfg(feature = "threads")]
+        "threads" => g.add(wisp_threads::ThreadsPlugin),
         #[cfg(feature = "termctx")]
         "termctx" => g.add(wisp_termctx::TermctxPlugin),
         #[cfg(feature = "grid-client")]
@@ -275,6 +278,7 @@ pub fn in_build(name: &str) -> bool {
         "machine" => cfg!(feature = "machine"),
         "machines" => cfg!(feature = "machines"),
         "events" => cfg!(feature = "events"),
+        "threads" => cfg!(feature = "threads"),
         "termctx" => cfg!(feature = "termctx"),
         "grid-client" => cfg!(feature = "grid-client"),
         "crew" => cfg!(feature = "crew"),

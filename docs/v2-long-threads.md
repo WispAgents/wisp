@@ -62,16 +62,66 @@ phones: in the task menu, platform look): the sections, each editable inline; th
 3 compactions · same error 4×"); Fresh thread (opens the brief to edit, then starts); the audit result on the
 turn ("Kept 6 of 8"). A mock with 2 variants goes to the owner before any build.
 
+## Thread tab: the mock for the owner to pick (D-0056)
+
+Nothing is built yet. Both variants use only kit components (`SidePanel` tabs, `Section`, `Field`/`TextArea`,
+`Chip`, `Meter`, `Button`, `Sheet`, `Menu`) and v1's sizes. They read `threads.notes`, `threads.health` and
+`threads.revisions` (all on the task's `session:<id>` topic, so no extra subscription) and write with
+`threads.notesUpdate` (optimistic patch on the section row, rolled back with a toast on reject). Strings go through
+`t()`. Health shows as **Fine**, **Getting long** or **Worn** (`ok`, `heavy`, `worn`).
+
+**Variant A: a section list, as v1's Thread tab** (desktop: a fourth tab, *Thread*, in the task's side panel, after
+Files; phone: *Thread* in the task menu opens a full-height sheet with the same content)
+
+```
+┌ Thread ─────────────────────────────── Worn ▮▮▮▯ ┐
+│ context 85% full · compacted 3× · same error 4×   │   ← health line (Meter + reasons), hidden when Fine
+│ [ Fresh thread ]  (next job; disabled until then) │
+├───────────────────────────────────────────────────┤
+│ Goal                                 agent · 2m   │   ← who wrote it last + when; hover: History (revisions)
+│ Import CSV files into the ledger                  │   ← click to edit inline (TextArea), Enter saves, Esc cancels
+│ Constraints                            you · 1h   │
+│ • No new dependencies                             │
+│ • Keep the public API                             │
+│ Decisions · Tried and failed · Where it stands ·  │   ← empty sections fold into one "+ Add" row
+│ Open questions · Key files                        │
+└───────────────────────────────────────────────────┘
+```
+
+**Variant B: the Notes as one document, with a health card on top** (desktop: the same *Thread* tab; phone: the task
+menu's *Thread* opens a page in the task's stack, platform back)
+
+```
+┌ Thread ───────────────────────────────────────────┐
+│ ┌ Worn ──────────────────────────────── ⓘ ┐       │   ← one card: level chip, reasons as chips, Fresh thread
+│ │ [85% context] [3 compactions] [error 4×] │       │
+│ └──────────────────────────────────────────┘       │
+│ Notes · rev 12 · updated by the agent 2m ago  [Edit]│
+│ ## Goal                                            │   ← read view: the same markdown the agent gets
+│ Import CSV files…                                  │
+│ ## Constraints                                     │   ← Edit turns the whole document into fields per section;
+│ - No new dependencies                              │     Save writes only the sections that changed
+└────────────────────────────────────────────────────┘
+```
+
+Trade-offs: A edits one section in place and shows who wrote each (closest to v1, more rows on a phone). B shows
+exactly what the agent reads and is calmer at a glance, but editing is a mode. **The lead's suggestion: A** (v1's
+look, one-click edits, and "you wrote it" per section is the v1 bug this port fixes). Screenshots come with the build,
+from the kit on a dev page, once a variant is picked.
+
 ## Order
 
-1. **Now:** this plan; ADR draft (`docs/adr/0079-long-threads.md`, status Proposed): naming settled (Notes, Thread tab).
-2. **When v1's PR merges:** read its final code and tests, list its bugs (port intent, not bugs), then:
-   1. `wisp.threads` data + `wisp_ledger` (MCP) + CLI + the note (no UI yet) — the core.
-   2. Output offload (`wisp hook offload`) in the Claude plugin, then others.
-   3. Health topic.
-   4. UI: the mock → owner's pick → build (desktop, then phones).
-   5. Fresh thread.
-   6. Compaction audit.
-3. **Later (research P7, P8):** the merge check for subagents, and the long-thread eval harness in `spikes/`.
+1. **Done:** this plan; ADR-0079 (accepted, 2026-11-17).
+2. **Step 1 (2026-11-17, done):** `wisp.threads` (`plugins/threads/{api,core,host}`): the Notes tables and
+   revisions, `threads.notes` / `notesUpdate` / `revisions` / `health`, `wisp_notes` (MCP), `wisp notes` (CLI), the
+   repo's `notes.md`, subagents read their lead's Notes, the note before each follow-up (`runtime.prompt@1`
+   `before`), the offload (`wisp hook offload` + Claude's `PreToolUse`), the health row. v1's bugs avoided are in
+   `docs/v1-bugs-fixed.md`.
+3. **Next:**
+   1. UI: the owner picks a mock above → build the Thread tab (desktop, then phones) in `plugins/threads/ui`.
+   2. Fresh thread (`threads.fresh`, the editable brief, the `fresh` flag health counts from).
+   3. Compaction audit (`defaults.compactAudit`).
+   4. Offload hooks for the other harnesses; formulas seeding Notes; the TUI health line.
+4. **Later (research P7, P8):** the merge check for subagents, and the long-thread eval harness in `spikes/`.
 
 One coder at a time (§3), each round one of the steps above.

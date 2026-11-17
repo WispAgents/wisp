@@ -58,6 +58,14 @@ turn. When a screen or feature contradicts one, that's a bug: fix it toward the 
 - **Sandboxes**: in the plan; they use the main box's subscriptions; usable as the main prompt, a delegate and judges
   (11-11 19:52).
 - **Crew and triggers** get more ways to start tasks and crew work; an event system that is fast and clear (11-09).
+- **Auto disabled until the owner reworks it** (decided by the owner, 2026-11-17: "Disable the Auto thing (don't remove
+  it), it needs more work I'll do later"). The code stays; one switch, the server setting `runtime.auto` (default off,
+  `plugins/runtime/host/wisp-plugin.json`), turns all of it back on: New task never offers or starts on Auto (no Auto
+  row in the harness picker, no Auto preview, no Auto tips), Settings → Auto and the switch's own row are hidden, crew
+  members offer no Auto, and a task that names no harness (CLI, MCP, crew, automations) runs on New task's last pick
+  (`runtime.launch`) or the first harness, never the router. On: `wisp settings set runtime.auto true`.
+- **New task keeps its pick** (owner, 2026-11-17): the harness, and each harness's model and thinking level, stay
+  across pages and reloads, as v1's `config.defaults` (server setting `runtime.launch`).
 - **PostHog events as in v1**, behind a swappable analytics interface (11-08 18:17).
 - **The CLI does everything the GUI does** (11-08 18:35), can read the terminal it ran from ("check the error above")
   (18:36), shows blocks well, not raw JSON (18:48); **a TUI mirrors the GUI** (18:49), inspired by opencode / Claude
@@ -107,6 +115,14 @@ turn. When a screen or feature contradicts one, that's a bug: fix it toward the 
   Only/All strip). **This applies everywhere a project is chosen, phones included: no chip rows of projects.**
 - **Badges** ("Done" etc.) as small as v1's (11-11 23:34). "This computer", never "This Mac" (11-08 19:16).
 - **Task history: direction A, the ledger**, inline expand on phones too (11-15 00:24).
+- **Submenus open on hover on desktop; drill-in stays on touch** (owner, 2026-11-17: "in desktop, I don't like that I need
+  to click to go to a submenu, they should show up on hover"). With a hovering fine pointer in the browser, a submenu (the
+  task row's View ›, Copy ›, Files ›) is a flyout beside its row, the standard cascading menu: it opens on hover after a
+  short delay and on → / Enter / a click, to the right (flipped left at the screen's edge, slid to stay on it), held open by
+  the safe triangle on a diagonal, closed by leaving for another row, by ← or by Escape (which closes only the flyout and
+  lights its row again); choosing an item closes the whole menu. Touch screens and the phone apps keep v1 #786's drill-in.
+  Built on Zag's nested menus (`packages/ui/src/controls/menu-flyout.tsx`, `menu-aim.ts`); tests
+  `packages/ui/test/menu-flyout.test.tsx`, `menu-aim.test.ts`. Recorded in design/v1-reference/allowed.md §7.
 
 ### Phone apps
 
@@ -202,9 +218,12 @@ turn. When a screen or feature contradicts one, that's a bug: fix it toward the 
 - [ ] **Long threads** (owner, 2026-11-15, from wisp task d8ee0a207d52; plan `docs/v2-long-threads.md`): the task
       ledger (goal, constraints, decisions, failed, state, open, files; rewritten, never appended; `wisp_ledger` MCP
       tool), the note before each follow-up, Fresh thread from an editable brief, the health meter, the compaction
-      audit, the Bash output offload (`wisp hook offload`). v1 is building it now (~/Downloads/wisp-long-threads):
-      **port once v1's PR merges**; before that: the ADR draft (naming settled: Notes in a Thread tab)
-      and the UI mock for the owner's approval
+      audit, the Bash output offload (`wisp hook offload`). **Step 1 done (2026-11-17, ADR-0079):** `wisp.threads`
+      (Notes tables + revisions, `threads.notes`/`notesUpdate`/`revisions`/`health`, `wisp_notes`, `wisp notes`,
+      `.wisp/tasks/<id>/notes.md`, subagents read their lead's Notes, the note before each follow-up through
+      `runtime.prompt@1` `before`, `wisp hook offload` as Claude's `PreToolUse` on Bash, the health row). **To do:**
+      the Thread tab (mock with 2 variants in `docs/v2-long-threads.md`, waiting on the owner's pick, D-0056), Fresh
+      thread, the compaction audit, offload for other harnesses, formulas seeding Notes, the TUI health line
 
 ### 4.2 GUI (browser and desktop), v1 parity
 

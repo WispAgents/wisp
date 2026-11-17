@@ -40,6 +40,8 @@ wisp-runtime-api = { path = "plugins/runtime/api" }
 wisp-runtime-core = { path = "plugins/runtime/core" }
 # wisp.events: the durable event log a trigger's dry run reads (`events.tail`)
 wisp-events-api = { path = "plugins/events/api" }
+wisp-threads-api = { path = "plugins/threads/api" }
+wisp-threads-core = { path = "plugins/threads/core" }
 # plugin contracts and cores (owned by the stuff/plugins/telemetry/update/settings agent)
 wisp-plugins-api = { path = "plugins/plugins/api" }
 wisp-plugins-core = { path = "plugins/plugins/core" }

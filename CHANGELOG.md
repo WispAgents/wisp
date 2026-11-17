@@ -5,6 +5,14 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Added
+
+- **v2: long threads, step 1: a task's Notes.** Each task keeps Notes: its goal, constraints, decisions and why, what failed and why, where it stands, open questions and key files. Each section is rewritten whole, never appended to, and every version is kept with who wrote it. The agent keeps them with the `wisp_notes` tool. Before each follow-up it gets them as they are now, a line when you edited them, and a nudge when your message takes something back ("actually…", "no, …"). A subagent reads its lead's Notes and can't change them. `wisp notes <task>` shows them, and `--set goal=…` rewrites one section. A task tracked in its repo also gets `.wisp/tasks/<id>/notes.md`. `threads.health` shows how worn a thread is (context, compactions, turns, the same error again, undone edits), with no model calls. In Claude Code runs, long Bash output goes to a file: the agent sees the start, the error lines, the end and the path (`wisp hook offload`, over 8 000 bytes, never for background commands). The Thread tab comes next, after a mock is picked (ADR-0079).
+
+### Fixed
+
+- **v2: theme plugins apply.** A plugin's `contributes.partStyles` (its styles by `data-part`, `:root` token overrides like `--accent`, and `@light` / `@dark` values for one theme) now restyles the app while the plugin is on and you trusted it (`wisp plugin trust <id>`, new), and stops the moment it's switched off, untrusted or removed, without a reload. An untrusted plugin's styles never apply. Only safe CSS gets in: installing a theme whose values could close their rule, add `!important`, `@import` or fetch a remote `url()` is refused with the reason. The plugin reference has a working theme example.
+
 ## [2.0.0] - 2026-11-17
 
 ### Added
