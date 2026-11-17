@@ -115,5 +115,7 @@
   "wisp.goal.reply.withMessage": "Sent with your message",
   "wisp.goal.reply.tipLive": "Done when: {text}",
   "wisp.goal.run.gone": "This check isn’t kept any more. A goal keeps its last 50.",
-  "wisp.goal.row.tip": "Done when: {text}"
+  "wisp.goal.row.tip": "Done when: {text}",
+  "wisp.goal.judges.defaultModel": "Default model",
+  "wisp.goal.judges.runnerTitle": "Harness, model and thinking level"
 }

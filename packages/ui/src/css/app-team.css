@@ -8,6 +8,7 @@
     width: calc(min(480px, 100vw - 24px) - 2 * var(--size-hairline)); /* the card's border goes around it: v1's 480 in all */
     max-height: min(520px, 76vh);
     overflow: hidden;
+    border-radius: inherit; /* the card's corners: the popover doesn't clip, so a picker opened inside it isn't cut */
     /* v1 drew it on the page's own type, not a popover body's */
     font-size: var(--fs-lg);
     line-height: var(--lh-base);

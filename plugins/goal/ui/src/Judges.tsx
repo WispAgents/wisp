@@ -4,11 +4,11 @@
 // goes to onChange(judges, vote), named as the server keeps them. JudgesButton opens it from the
 // launcher's Done when line and from Set / Edit goal.
 
-import { For, Show, type JSX } from 'solid-js';
+import { For, Show, createSignal, type JSX } from 'solid-js';
 import type { PluginClient } from '@wisp/client';
-import { useShell } from '@wisp/shell';
-import { Button, IconButton, Inline, Menu, Popover, Select, Stack, TeamCrew, TeamPop, TeamRow, Text, type MenuEntry } from '@wisp/ui';
-import { Face } from './Faces.tsx';
+import { RunnerPicker, useShell } from '@wisp/shell';
+import { AutoRunner, Button, IconButton, Menu, Popover, Stack, TeamCrew, TeamPop, TeamRow, useSignal, type MenuEntry } from '@wisp/ui';
+import { Face, Faces } from './Faces.tsx';
 import { t } from './i18n.ts';
 import { isCrew, judgesLabel, named, nextHarness, ruleLine, VOTE_KEY } from './rules.ts';
 import { useCrew, useHarnesses } from './task.ts';
@@ -28,21 +28,35 @@ const HINT: Readonly<Record<Vote, 'wisp.goal.vote.allHint' | 'wisp.goal.vote.maj
   any: 'wisp.goal.vote.anyHint',
 };
 
-function HarnessRowEdit(props: { readonly j: HarnessJudge; readonly harnesses: readonly HarnessRow[]; readonly onChange: (j: HarnessJudge) => void }): JSX.Element {
+/** A harness judge (v1 judges.js .tp-runner): ONE runner button, its logo, harness, model and thinking level, opening
+ *  the same harness · model picker New task uses (B48: it was three selects). */
+function HarnessRowEdit(props: { readonly client: PluginClient; readonly j: HarnessJudge; readonly harnesses: readonly HarnessRow[]; readonly onChange: (j: HarnessJudge) => void }): JSX.Element {
+  const shell = useShell();
+  const logos = useSignal(shell.harnesses());
+  const [open, setOpen] = createSignal(false);
+  let btn: HTMLButtonElement | undefined;
   const h = (): HarnessRow | undefined => props.harnesses.find((x) => x.id === props.j.agent);
-  const pickAgent = (agent: string): void => {
-    const next = props.harnesses.find((x) => x.id === agent);
-    const model = next?.model ?? next?.models[0]?.id ?? '';
-    props.onChange({ agent, model, effort: next?.effort ?? next?.efforts?.[0] ?? '' });
-  };
+  const model = (): string => h()?.models.find((m) => m.id === props.j.model)?.label ?? (props.j.model || t('wisp.goal.judges.defaultModel'));
   return (
-    <Inline gap="2">
-      <Select aria-label={t('wisp.goal.judges.harness')} size="sm" items={props.harnesses.map((x) => ({ value: x.id, label: x.name, disabled: !x.available }))} value={props.j.agent} onChange={pickAgent} />
-      <Select aria-label={t('wisp.goal.judges.model')} size="sm" items={(h()?.models ?? []).map((m) => ({ value: m.id, label: m.label }))} value={props.j.model} onChange={(model) => props.onChange({ ...props.j, model })} />
-      <Show when={(h()?.efforts?.length ?? 0) > 0}>
-        <Select aria-label={t('wisp.goal.judges.effort')} size="sm" items={(h()?.efforts ?? []).map((e) => ({ value: e, label: e }))} value={props.j.effort} onChange={(effort) => props.onChange({ ...props.j, effort })} />
-      </Show>
-    </Inline>
+    <>
+      <AutoRunner
+        part="goal.judgeRunner"
+        ref={(el) => (btn = el)}
+        harness={h()?.name ?? props.j.agent}
+        model={[model(), props.j.effort].filter(Boolean).join(' · ')}
+        logo={logos().find((x) => x.id === props.j.agent)?.logo}
+        title={t('wisp.goal.judges.runnerTitle')}
+        onClick={() => setOpen(!open())}
+      />
+      <RunnerPicker
+        open={open()}
+        onOpenChange={setOpen}
+        anchor={() => btn}
+        peer={props.client.home}
+        value={{ agent: props.j.agent, model: props.j.model, effort: props.j.effort, account: '' }}
+        onChange={(r) => props.onChange({ agent: r.agent, model: r.model, effort: r.effort })}
+      />
+    </>
   );
 }
 
@@ -107,7 +121,7 @@ export function JudgesEditor(props: JudgesProps): JSX.Element {
               when={isCrew(j) ? j : undefined}
               fallback={
                 <TeamRow part="goal.judgeRow" remove={remove(i())}>
-                  <HarnessRowEdit j={j as HarnessJudge} harnesses={harnesses()} onChange={(next) => commit(props.judges.map((x, k) => (k === i() ? next : x)))} />
+                  <HarnessRowEdit client={props.client} j={j as HarnessJudge} harnesses={harnesses()} onChange={(next) => commit(props.judges.map((x, k) => (k === i() ? next : x)))} />
                 </TeamRow>
               }
             >
@@ -141,7 +155,7 @@ export function JudgesButton(props: JudgesProps & { readonly part?: `${string}.$
     <Popover
       part={props.part ?? 'goal.judgesButton'}
       bare
-      trigger={props.compact ? { icon: 'judge', 'aria-label': label(), variant: 'ghost', size: 'sm' } : { icon: 'judge', label: label(), variant: props.judges.length ? 'secondary' : 'ghost', size: 'sm' }}
+      trigger={props.compact ? { icon: 'judge', 'aria-label': label(), variant: 'ghost', size: 'sm' } : { icon: 'judge', label: label(), variant: props.judges.length ? 'secondary' : 'ghost', size: 'sm', ...(props.judges.length && { lead: <Faces client={props.client} judges={props.judges} /> }) }}
       placement="bottom-start"
       inWindow
       cardPart="delegate.panel"

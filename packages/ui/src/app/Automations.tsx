@@ -3,7 +3,7 @@
 // form: the trigger kinds as tiles (v1 .au-kinds), then rows of a label and its control (.au-form), the When presets
 // with what the box will do read back, a warning, and Cancel / Create. Value for value; the owner draws the data.
 import { For, Index, Show, type JSX } from 'solid-js';
-import { flag } from '../core/props.ts';
+import { flag, type PartName } from '../core/props.ts';
 import { Icon } from '../content/Icon.tsx';
 import type { IconName } from '../content/icons.ts';
 import '../css/app-automations.css';
@@ -197,10 +197,14 @@ export function AutoRunner(props: {
   readonly title: string;
   readonly onClick: () => void;
   readonly reset?: { readonly label: string; readonly onClick: () => void } | undefined;
+  /** another owner's name for it (a goal judge's runner). Additive (2026-11-17). */
+  readonly part?: PartName;
+  /** the button, for the picker that opens under it. Additive (2026-11-17). */
+  readonly ref?: (el: HTMLButtonElement) => void;
 }): JSX.Element {
   return (
-    <div data-kit="au-runner" data-part="automations.runner">
-      <button type="button" data-kit="au-runner-btn" aria-haspopup="dialog" title={props.title} onClick={() => props.onClick()}>
+    <div data-kit="au-runner" data-part={props.part ?? 'automations.runner'}>
+      <button type="button" data-kit="au-runner-btn" ref={(el) => props.ref?.(el)} aria-haspopup="dialog" title={props.title} onClick={() => props.onClick()}>
         <span data-kit="rb-logo">
           <Show when={props.logo} fallback={<Icon name="spark" />}>
             {(src) => <img src={src()} alt="" />}

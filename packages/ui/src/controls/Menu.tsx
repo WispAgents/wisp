@@ -25,6 +25,8 @@ export type Placement = 'bottom-start' | 'bottom-end' | 'bottom' | 'top-start' |
 interface TriggerLook {
   readonly variant?: ButtonVariant;
   readonly size?: ButtonSize;
+  /** shown in place of the icon (a team's faces, v1 .tb-stack). Additive (2026-11-17). */
+  readonly lead?: JSX.Element;
 }
 
 /** What the menu's own button looks like: a label (and maybe an icon), or an icon with a name. */

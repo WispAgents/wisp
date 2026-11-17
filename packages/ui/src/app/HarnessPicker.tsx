@@ -218,8 +218,9 @@ export function HarnessPicker(props: HarnessPickerProps): JSX.Element {
   const p = (): HarnessPickerPane => props.pane;
   const count = (): number => p().groups.reduce((n, g) => n + g.items.length, 0);
   return (
-    // inside the dialog it opens from, if any (its focus trap keeps the keys inside it), else on the page
-    <Portal mount={props.anchor()?.closest('[role="dialog"]') ?? document.body}>
+    // inside the modal dialog it opens from, if any (its focus trap keeps the keys inside it), else on the page: a
+    // popover's card is moved with a transform, which `fixed` would follow (a goal judge's picker opened off screen)
+    <Portal mount={props.anchor()?.closest('[role="dialog"][aria-modal="true"]') ?? document.body}>
       <div
         ref={(el) => (box = el)}
         data-kit="picker"

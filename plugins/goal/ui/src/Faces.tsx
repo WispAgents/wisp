@@ -3,7 +3,8 @@
 
 import { For, type JSX } from 'solid-js';
 import type { ProjectColor } from '@wisp/tokens';
-import { Avatar, Inline, Tooltip } from '@wisp/ui';
+import { Avatar, Inline, Tooltip, useSignal } from '@wisp/ui';
+import { useShell } from '@wisp/shell';
 import type { PluginClient } from '@wisp/client';
 import { isCrew, judgeLabel, VOTE_TONE } from './rules.ts';
 import { useCrew, useHarnesses } from './task.ts';
@@ -24,6 +25,12 @@ export interface FaceProps {
 export function Face(props: FaceProps): JSX.Element {
   const crew = useCrew(props.client);
   const harnesses = useHarnesses(props.client);
+  // a harness judge shows its harness's logo (v1 judges.js faceOf), a crew member their initials and colour
+  const logos = useSignal(useShell().harnesses());
+  const logo = (): string | undefined => {
+    const w = props.who as { crew?: string; agent?: string };
+    return w.crew ? undefined : logos().find((h) => h.id === w.agent)?.logo;
+  };
   const member = (): MemberRow | undefined => {
     const w = props.who as { crew?: string };
     return w.crew ? crew().find((m) => m.id === w.crew) : undefined;
@@ -34,7 +41,7 @@ export function Face(props: FaceProps): JSX.Element {
     return (w as { name?: string }).name ?? '';
   };
   const avatar = (): JSX.Element => (
-    <Avatar part="goal.judge" name={name()} size={props.size ?? 'sm'} shape={isCrew(props.who as Judge) ? 'circle' : 'square'} {...(colorOf(member()) && { color: colorOf(member()) as ProjectColor })} {...(props.verdict && { status: VOTE_TONE[props.verdict] })} />
+    <Avatar part="goal.judge" name={name()} {...(logo() && { src: logo() as string })} size={props.size ?? 'sm'} shape={isCrew(props.who as Judge) ? 'circle' : 'square'} {...(colorOf(member()) && { color: colorOf(member()) as ProjectColor })} {...(props.verdict && { status: VOTE_TONE[props.verdict] })} />
   );
   return <Tooltip content={props.tip ?? name()}>{avatar()}</Tooltip>;
 }

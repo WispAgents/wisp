@@ -77,6 +77,8 @@ function Floating(props: PopoverProps): JSX.Element {
     onOpenChange: (d: popover.OpenChangeDetails) => props.onOpenChange?.(d.open),
     positioning: { placement: props.placement ?? 'bottom-start', gutter: 6, ...(props.inWindow && { boundary: () => document.documentElement, overflowPadding: 12, flip: false }) },
     ...(props.modal === undefined ? {} : { modal: props.modal }),
+    // a harness picker opened from inside it lives on the page (HarnessPicker): a click there isn't outside the card
+    persistentElements: [() => document.querySelector<HTMLElement>('[data-kit="picker"]')],
   }));
   const api = createMemo(() => popover.connect(service, normalizeProps));
   const part = (): PartName => props.part ?? 'ui.popover';
