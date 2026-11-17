@@ -328,6 +328,12 @@ turn. When a screen or feature contradicts one, that's a bug: fix it toward the 
   - [x] TRY-8 / TRY-9 / TRY-10 / TRY-20 / TRY-25 guides (11-17), pages of the docs site: software factory as code,
     track agent work, share skills and MCPs, from Slack and Linear, make wisp your own (+ your first plugin, tested
     end to end with a Node exec plugin)
+  - [x] TRY-15 error handling audit (11-17). Checked: a refused command rolls back and toasts (one `onError`, every
+    caller's `.catch` only marks a fire-and-forget call); a server panic is `internal` and kept in diagnostics; a
+    plugin's UI and a Settings pane sit in their own boundary. Fixed: the three panes had no boundary, so a view that
+    threw while drawing blanked the whole app (`frame/PaneBoundary.tsx`: what happened, Try again, Home); a refusal
+    with no message toasted the command id (`runtime.setState`), now plain words per code (`shell.err.*`); a timeout,
+    an away peer or `retry: true` get *Try again*, which runs the same command again (`onError`'s `again`)
 - [ ] Continuous QA rounds by fresh low-context agents → `docs/qa/bugs.md` → one fix per coder
 
 ## 5. Waiting for the lead right now

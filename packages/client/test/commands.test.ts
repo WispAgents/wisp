@@ -41,7 +41,18 @@ async function setup(persist: Persist = memoryPersist(), opts: { connect?: boole
   const { reader, writer } = createEntityStore();
   const peers = createPeers({ scope, writer, clientId: 'c1', build: 'test' });
   const errors: CommandError[] = [];
-  const commands = createCommands({ reader, writer, peers, persist, now: clock.now, onError: (e) => errors.push(e) });
+  const agains: ((() => void) | undefined)[] = [];
+  const commands = createCommands({
+    reader,
+    writer,
+    peers,
+    persist,
+    now: clock.now,
+    onError: (e, _cmd, again) => {
+      errors.push(e);
+      agains.push(again);
+    },
+  });
   const t = fakeTransport();
   peers.add({ peer: A, name: 'laptop', transport: t });
   peers.watch(A, 'list', scope);
@@ -59,7 +70,7 @@ async function setup(persist: Persist = memoryPersist(), opts: { connect?: boole
     assert.equal(reader.peek<{ title: string }>('session', S1)?.title, 'old');
   }
   const mutates = () => t.posted.filter((m): m is Mutate => m.t === 'mutate');
-  return { clock, scope, reader, writer, peers, commands, errors, t, conn, mutates, persist };
+  return { clock, scope, reader, writer, peers, commands, errors, agains, t, conn, mutates, persist };
 }
 
 test('a command shows its optimistic patch at once, and the ack keeps it as the server state', async () => {
@@ -86,6 +97,21 @@ test('a reject rolls the optimistic patch back and calls onError (the toast)', a
   await assert.rejects(done, (e: unknown) => e instanceof CommandError && e.code === 'vetoed');
   assert.equal(reader.peek<{ title: string }>('session', S1)?.title, 'old');
   assert.deepEqual(errors.map((e) => e.message), ['titles are locked']);
+});
+
+test('a refused command hands onError a way to run it again, with the same arguments and patch (TRY-15)', async () => {
+  const { reader, commands, conn, mutates, agains } = await setup();
+  void commands.run(rename, { id: S1, title: 'later' }).catch(() => {});
+  conn().push({ t: 'reject', mid: mutates()[0]?.mid ?? '', code: 'timeout', message: 'the peer was busy' });
+  await settle();
+  assert.equal(reader.peek<{ title: string }>('session', S1)?.title, 'old', 'rolled back');
+  const again = agains[0];
+  assert.ok(again, 'Try again is offered');
+  again();
+  assert.equal(reader.peek<{ title: string }>('session', S1)?.title, 'later', 'the optimistic patch is back at once');
+  const [first, second] = mutates();
+  assert.ok(first && second && first.mid !== second.mid, 'a new mid: a new command, not a resend');
+  assert.deepEqual([second.cmd, second.args], ['session.rename', { id: S1, title: 'later' }]);
 });
 
 test('a command can not run twice: the same run while in flight is the first run (#643)', async () => {

@@ -22,7 +22,7 @@ import { NONE as NO_SELECTION, pruneSelect, selectAll, startSelect, toggleSelect
 import { shellUi, SHELL_SETTINGS } from './builtins.tsx';
 import { installKeys } from './keyboard.ts';
 import { watchCoreTopics } from './watch.ts';
-import { answeredInPlace, wireNotices } from './toasts.ts';
+import { answeredInPlace, errorWords, wireNotices } from './toasts.ts';
 
 /** The part of `window` the shell uses; tests pass happy-dom's. */
 export interface ShellWindow {
@@ -53,6 +53,9 @@ export interface Shell extends ShellApi {
 }
 
 const RECENT_MAX = 20;
+
+/** the wire's error codes (wisp-kernel `Code`) that have words of their own in `shell.err.*` */
+const ERROR_CODES = new Set(['not_found', 'invalid', 'forbidden', 'conflict', 'unavailable', 'timeout', 'service_gone', 'vetoed', 'plugin_off', 'too_large', 'internal', 'unknown']);
 
 // size-ok: the factory wires the shell's parts together; each part lives in its own module
 export function createShell(o: ShellOptions): Shell {
@@ -112,6 +115,7 @@ export function createShell(o: ShellOptions): Shell {
   const holdCheckFor = (reason: string): ((a: SendHoldAsk) => Promise<SendHold | undefined>) | undefined =>
     holdDefs().find((d) => d.reason === reason)?.check ?? holdChecks.get(reason);
   answeredInPlace((reason) => holdCheckFor(reason) !== undefined);
+  errorWords((code) => (ERROR_CODES.has(code) ? t(`shell.err.${code}`) : undefined), t('shell.pane.retry'));
   const taskCard = signal<((key: string) => JSX.Element) | undefined>(undefined);
   // the list's order (published by the list) and the phone list's selection mode (frame/list-select.ts)
   const listOrder = signal<readonly string[]>([]);

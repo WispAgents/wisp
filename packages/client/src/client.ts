@@ -38,7 +38,7 @@ export interface ClientOptions {
   dev?: boolean;
   warn?: Warn;
   /** a command was refused: show the toast */
-  onError?: (err: CommandError, cmd: string) => void;
+  onError?: (err: CommandError, cmd: string, again?: () => void) => void;
 }
 
 export interface PluginClient {

@@ -17,6 +17,7 @@ import { backOf } from './rows-view.ts';
 import { PeerBanner } from './PeerBanner.tsx';
 import { HomeView } from './HomeView.tsx';
 import { stackView } from './stack-page.ts';
+import { PaneBoundary } from './PaneBoundary.tsx';
 
 /** lazy: the task page's own code; App warms it while the list sits idle (warm-task.ts) */
 export const TaskView = lazy(() => import('./TaskView.tsx'));
@@ -36,8 +37,10 @@ export function ListPane(): JSX.Element {
   return (
     <Stack gap="0" grow part="shell.list.pane">
       <PeerBanner />
-      <Slot input="shell.list:top" layout="stack" />
-      <Area input="shell.sidebar:list" fallback={<FallbackList />} />
+      <PaneBoundary pane="list">
+        <Slot input="shell.list:top" layout="stack" />
+        <Area input="shell.sidebar:list" fallback={<FallbackList />} />
+      </PaneBoundary>
     </Stack>
   );
 }
@@ -70,38 +73,39 @@ export function MainPane(props: { readonly onBack?: () => void; readonly launche
   const key = createMemo(() => `${mainKey(nav())}|${nav().layout}${idleHome() ? '|idle' : ''}`);
   return (
     <Show when={key()} keyed>
-      {(_k) => {
-        const now = untrack(nav);
-        const main = now.main;
-        switch (main.kind) {
-          case 'home':
-            if (untrack(idleHome)) return null;
-            return <Area input="shell.screen:home" fallback={<HomeView {...(now.layout === 'stack' && props.onBack && { onBack: props.onBack })} />} />;
-          case 'task': {
-            // v1 #773: Back from a subagent's run opens its lead; anything else goes back through history
-            const goBack = (id: string, row: { parent_id?: string | null } | undefined): void => {
-              const lead = backOf(id, row);
-              shell.navigate(lead ? { t: 'openTask', id: lead as never } : { t: 'back' });
-            };
-            const id = main.id;
-            const session = useSession(() => id);
-            return (
-              <Area
-                input="shell.screen:task"
-                id={id}
-                session={session}
-                fallback={<TaskView id={id} {...(now.layout === 'stack' && props.onBack && { onBack: () => goBack(id, session() as { parent_id?: string | null } | undefined) })} />}
-              />
-            );
-          }
-          case 'crew':
-            return <Area input="shell.screen:crew" id={main.id} fallback={<EmptyState icon="crew" title={shell.t('shell.view.missing')} compact />} />;
-          case 'view':
-            return <ViewOf kind={main.id} params={main.params} />;
-        }
-      }}
+      {(_k) => <PaneBoundary pane="main">{mainPage()}</PaneBoundary>}
     </Show>
   );
+  function mainPage(): JSX.Element {
+    const now = untrack(nav);
+    const main = now.main;
+    switch (main.kind) {
+      case 'home':
+        if (untrack(idleHome)) return null;
+        return <Area input="shell.screen:home" fallback={<HomeView {...(now.layout === 'stack' && props.onBack && { onBack: props.onBack })} />} />;
+      case 'task': {
+        // v1 #773: Back from a subagent's run opens its lead; anything else goes back through history
+        const goBack = (id: string, row: { parent_id?: string | null } | undefined): void => {
+          const lead = backOf(id, row);
+          shell.navigate(lead ? { t: 'openTask', id: lead as never } : { t: 'back' });
+        };
+        const id = main.id;
+        const session = useSession(() => id);
+        return (
+          <Area
+            input="shell.screen:task"
+            id={id}
+            session={session}
+            fallback={<TaskView id={id} {...(now.layout === 'stack' && props.onBack && { onBack: () => goBack(id, session() as { parent_id?: string | null } | undefined) })} />}
+          />
+        );
+      }
+      case 'crew':
+        return <Area input="shell.screen:crew" id={main.id} fallback={<EmptyState icon="crew" title={shell.t('shell.view.missing')} compact />} />;
+      case 'view':
+        return <ViewOf kind={main.id} params={main.params} />;
+    }
+  }
 }
 
 export function SidePane(): JSX.Element {
@@ -117,16 +121,18 @@ export function SidePane(): JSX.Element {
       {(_k) => {
         const s = side();
         return (
-          <Switch>
-            <Match when={s.kind === 'view' && s}>{(v) => <ViewOf kind={v().id} params={null} />}</Match>
-            <Match when={s.kind !== 'view' && s.kind !== 'none' && s}>
-              {(p) => {
-                const id = p().id;
-                const session = useSession(() => id);
-                return <Area input={`shell.side:${p().kind}`} id={id} session={session} fallback={<EmptyState icon="panel" title={shell.t('shell.view.missing')} compact />} />;
-              }}
-            </Match>
-          </Switch>
+          <PaneBoundary pane="side">
+            <Switch>
+              <Match when={s.kind === 'view' && s}>{(v) => <ViewOf kind={v().id} params={null} />}</Match>
+              <Match when={s.kind !== 'view' && s.kind !== 'none' && s}>
+                {(p) => {
+                  const id = p().id;
+                  const session = useSession(() => id);
+                  return <Area input={`shell.side:${p().kind}`} id={id} session={session} fallback={<EmptyState icon="panel" title={shell.t('shell.view.missing')} compact />} />;
+                }}
+              </Match>
+            </Switch>
+          </PaneBoundary>
         );
       }}
     </Show>

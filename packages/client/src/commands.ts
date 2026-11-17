@@ -98,7 +98,9 @@ export interface CommandsOptions {
   peers: Peers;
   persist?: Persist;
   devtools?: Devtools;
-  onError?: (err: CommandError, cmd: string) => void;
+  /** `again` runs the same command with the same arguments once more (a refusal worth retrying: a timeout, a peer
+   *  that was away); undefined for one restored from a past session */
+  onError?: (err: CommandError, cmd: string, again?: () => void) => void;
   warn?: Warn;
   now?: () => number;
 }
@@ -131,6 +133,7 @@ export function createCommands(o: CommandsOptions): Commands {
   const records = new Map<string, PendingRecord>(); // by mid, in the order they ran
   const sent = new Set<string>();
   const waiters = new Map<string, Waiter>(); // by mid; restored commands have none
+  const agains = new Map<string, () => void>(); // by mid: run it again, for the refusal's Try again
   const byKey = new Map<string, string>(); // dedupe key → mid
   const view = signal<readonly PendingView[]>([]);
 
@@ -155,8 +158,8 @@ export function createCommands(o: CommandsOptions): Commands {
     return r;
   }
 
-  function fail(cmd: string, err: CommandError, w?: Waiter): void {
-    o.onError?.(err, cmd);
+  function fail(cmd: string, err: CommandError, w?: Waiter, again?: () => void): void {
+    o.onError?.(err, cmd, again);
     w?.reject(err);
   }
 
@@ -165,6 +168,8 @@ export function createCommands(o: CommandsOptions): Commands {
     if (!r) return; // not ours, or answered already (a resend's second answer)
     const w = waiters.get(a.mid);
     waiters.delete(a.mid);
+    const again = agains.get(a.mid);
+    agains.delete(a.mid);
     if (a.t === 'ack') {
       o.devtools?.record({ kind: 'ack', mid: a.mid, seq: a.seq });
       o.writer.settle(a.mid, a.seq);
@@ -172,7 +177,7 @@ export function createCommands(o: CommandsOptions): Commands {
     } else {
       o.devtools?.record({ kind: 'reject', mid: a.mid, code: a.code, message: a.message });
       o.writer.dropPending(a.mid);
-      fail(r.cmd, new CommandError({ code: a.code, message: a.message, ...(a.reason !== undefined && { reason: a.reason }) }), w);
+      fail(r.cmd, new CommandError({ code: a.code, message: a.message, ...(a.reason !== undefined && { reason: a.reason }) }), w, again);
     }
   }
 
@@ -196,7 +201,7 @@ export function createCommands(o: CommandsOptions): Commands {
     return { resolve, reject, promise };
   }
 
-  return {
+  const api: Commands = {
     run<A, R>(def: CommandDef<A, R>, args: A): Promise<R> {
       const key = def.dedupe ? `${def.id}\u0000${def.dedupe(args)}` : `${def.id}\u0000${stableJson(args)}`;
       const running = byKey.get(key);
@@ -206,6 +211,7 @@ export function createCommands(o: CommandsOptions): Commands {
       const peer = ownerOf(def.owner(args));
       const w = deferred();
       const gate = def.feature && untracked(o.peers.info(peer)) ? o.peers.hasFeature(peer, def.feature) : { ok: true as const };
+      const rerun = (): void => void api.run(def, args).catch(() => {});
       if (!gate.ok) {
         fail(def.id, new CommandError({ code: 'unavailable', message: gate.reason }), w);
         return w.promise as Promise<R>;
@@ -221,6 +227,7 @@ export function createCommands(o: CommandsOptions): Commands {
       const r: PendingRecord = { mid, cmd: def.id, args: def.wire ? def.wire(args) : args, peer, ops, key, at: now() };
       records.set(mid, r);
       waiters.set(mid, w);
+      agains.set(mid, rerun);
       byKey.set(key, mid);
       o.devtools?.record({ kind: 'command', mid, cmd: def.id, peer });
       o.writer.addPending(mid, peer, ops);
@@ -244,6 +251,7 @@ export function createCommands(o: CommandsOptions): Commands {
     },
     pending: () => () => view(),
   };
+  return api;
 }
 
 /**

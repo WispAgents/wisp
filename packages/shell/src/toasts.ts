@@ -22,11 +22,24 @@ export function answeredInPlace(is: (reason: string) => boolean): void {
   inPlace = is;
 }
 
-/** ClientOptions.onError for createClient: the rollback toast. */
-export function commandErrorToast(toaster: Pick<Toaster, 'error'>): (err: CommandError, cmd: string) => void {
-  return (err, cmd) => {
+/** A refusal worth trying again as it was: wisp or the peer was busy or away, not a no. */
+const RETRY = new Set(['timeout', 'unavailable', 'service_gone']);
+
+/** The words for a refusal that came with none, by its code; the shell sets them once its strings load (the
+ * toaster is made before it). Until then: the code itself, never a command id. */
+let words: (code: string) => string | undefined = () => undefined;
+let tryAgain = 'Try again';
+export function errorWords(say: (code: string) => string | undefined, again: string): void {
+  words = say;
+  tryAgain = again;
+}
+
+/** ClientOptions.onError for createClient: the rollback toast, with Try again when trying again can help. */
+export function commandErrorToast(toaster: Pick<Toaster, 'error'>): (err: CommandError, cmd: string, again?: () => void) => void {
+  return (err, _cmd, again) => {
     if (err.reason !== undefined && inPlace(err.reason)) return;
-    toaster.error(err.message || cmd);
+    const text = err.message.trim() || words(err.code) || words('unknown') || err.code;
+    toaster.error(text, again && (RETRY.has(err.code) || err.retry === true) ? { action: { label: tryAgain, onClick: again } } : undefined);
   };
 }
 

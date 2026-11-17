@@ -67,6 +67,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - **v2: docs at trywisp.dev/docs.** Install, concepts, guides (software factory as code, track agent work, share skills and MCPs, from Slack and Linear, goals, triggers, machines, make wisp your own, your first plugin), moving from v1, and a reference generated from the code (CLI, commands, settings, MCP tools, kinds, triggers, plugin API). Search, light and dark, and `llms.txt` for agents. Every formula example on it is checked against wisp.
 - **v2: `wisp secret set NAME`.** Sets a secret a formula uses (`${secret:NAME}`), typed hidden or piped, never as an argument; `wisp validate` names a missing one with this command.
 - **v2: your plugin's commands in the CLI before it first runs.** `wisp help user` lists them and `wisp user <plugin> <verb> --flag value` calls one, waking the plugin; a command with no declared type takes any `--field value`. `wisp plugin enable` finds a plugin written into `~/.wisp/plugins` while wisp runs (`wisp plugin new`).
+- **v2: errors you can act on.** A view that fails while it draws shows what happened with Try again and Home in its own pane; the list and the rest of wisp keep working. A refused action says why in plain words (never a command name), and one that timed out or found a computer away offers Try again.
 
 ### Changed
 
