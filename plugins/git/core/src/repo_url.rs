@@ -159,8 +159,44 @@ pub fn same_repo(a: &str, b: &str) -> bool {
     matches!((key(a), key(b)), (Some(x), Some(y)) if x == y)
 }
 
+/// Projects' "Your GitHub repos" (v1 GET /projects/github): the listed repos minus the ones already a project here
+/// (`have`: their origins, however spelled), last pushed first, at most `max`.
+#[must_use]
+pub fn github_repos(listed: Vec<wisp_git_api::GhListed>, have: &[String], max: usize) -> Vec<wisp_git_api::GithubRepo> {
+    let mut out: Vec<wisp_git_api::GithubRepo> = listed
+        .into_iter()
+        .filter(|x| !x.name_with_owner.is_empty() && !have.iter().any(|o| same_repo(o, &x.url)))
+        .map(|x| wisp_git_api::GithubRepo {
+            repo: x.name_with_owner,
+            url: x.url,
+            description: x.description.unwrap_or_default(),
+            private: x.is_private,
+            fork: x.is_fork,
+            pushed_at: x.pushed_at,
+        })
+        .collect();
+    out.sort_by(|a, b| b.pushed_at.cmp(&a.pushed_at));
+    out.truncate(max);
+    out
+}
+
 #[cfg(test)]
 mod tests {
+    // v1 GET /projects/github: newest pushed first, a repo already a project left out however its origin is spelled
+    #[test]
+    fn github_repos_leave_out_projects_here_newest_first() {
+        let row = |n: &str, at: &str| wisp_git_api::GhListed {
+            name_with_owner: n.into(),
+            url: format!("https://github.com/{n}"),
+            pushed_at: at.into(),
+            ..wisp_git_api::GhListed::default()
+        };
+        let listed = vec![row("me/old", "2026-01-01"), row("me/wisp", "2026-11-01"), row("me/new", "2026-11-10")];
+        let got = super::github_repos(listed, &["git@github.com:Me/Wisp.git".to_owned()], 24);
+        assert_eq!(got.iter().map(|r| r.repo.as_str()).collect::<Vec<_>>(), ["me/new", "me/old"]);
+        assert_eq!(super::github_repos(vec![row("a/b", "1"), row("a/c", "2")], &[], 1).len(), 1);
+    }
+
     use super::*;
 
     fn gh(s: &str, short: bool) -> Option<String> {

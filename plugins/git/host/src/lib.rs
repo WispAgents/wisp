@@ -16,7 +16,7 @@ mod write;
 
 use std::sync::Arc;
 
-use wisp_git_api::commands::{Checkout, Clone as CloneCmd, Commit, GetChanges, GetOrigin, GetStatus, GetTools, Revert, Stage};
+use wisp_git_api::commands::{Checkout, Clone as CloneCmd, Commit, GetChanges, GetOrigin, GetStatus, GetTools, GithubRepos, Revert, Stage};
 use wisp_git_api::{Blobs, GitServiceV1};
 use wisp_kernel::{Manifest, Plugin, Result, Setup, WireError};
 use wisp_proc::Proc;
@@ -113,6 +113,15 @@ impl Plugin for GitPlugin {
             async move {
                 call.require("git:read")?;
                 Ok(sv.origin_at(&a.path).await)
+            }
+        });
+        let sv = svc.clone();
+        s.command::<GithubRepos, _, _>(move |_ctx, call, a| {
+            let sv = sv.clone();
+            async move {
+                call.require("git:read")?;
+                let home = std::env::var("HOME").or_else(|_| std::env::var("USERPROFILE")).unwrap_or_default();
+                Ok(sv.github_repos(&home, &a.paths).await)
             }
         });
         let sv = svc.clone();

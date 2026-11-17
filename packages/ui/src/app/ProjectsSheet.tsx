@@ -7,6 +7,7 @@ import { flag } from '../core/props.ts';
 import type { ReorderAttrs } from '../core/reorder.ts';
 import { Icon } from '../content/Icon.tsx';
 import { MenuOn, type MenuEntry } from '../controls/Menu.tsx';
+import { Button } from '../controls/Button.tsx';
 import '../css/app-projects.css';
 
 export interface ProjectsPlace {
@@ -47,6 +48,16 @@ export interface ProjectsSheetProps {
   readonly onRename: (id: string, name: string) => void;
   readonly removeLabel: (name: string) => string;
   readonly onRemove: (id: string) => void;
+  /** v1 #ghrepos: your GitHub repos (gh's sign-in), each a click to clone; six, then Show all. Additive (2026-11-17). */
+  readonly github?:
+    | {
+        readonly heading: string;
+        readonly sub: string;
+        readonly items: readonly { readonly url: string; readonly name: string; readonly owner: string; readonly title: string }[];
+        readonly onClone: (url: string) => void;
+        readonly more?: { readonly label: string; readonly onClick: () => void } | undefined;
+      }
+    | undefined;
   readonly found?:
     | {
         readonly heading: string;
@@ -150,6 +161,34 @@ export function ProjectsSheet(props: ProjectsSheetProps): JSX.Element {
           </For>
         </Show>
       </div>
+      <Show when={props.github && props.github.items.length > 0 && props.github}>
+        {(g) => (
+          <div data-kit="pj-discover" data-part="projects.github">
+            <h4>
+              <Icon name="github" />
+              {g().heading} <span>{g().sub}</span>
+              <Show when={g().more}>
+                {(m) => (
+                  <Button variant="link" size="xs" part="projects.github.more" onClick={() => m().onClick()}>
+                    {m().label}
+                  </Button>
+                )}
+              </Show>
+            </h4>
+            <div data-kit="pj-found">
+              <For each={g().items}>
+                {(it) => (
+                  <button type="button" data-kit="pj-repo" data-part="projects.github.repo" title={it.title} onClick={() => g().onClone(it.url)}>
+                    <Icon name="plus" />
+                    <b>{it.name}</b>
+                    <span>{it.owner}</span>
+                  </button>
+                )}
+              </For>
+            </div>
+          </div>
+        )}
+      </Show>
       <Show when={props.found && props.found.items.length > 0 && props.found}>
         {(f) => (
           <div data-kit="pj-discover" data-part="projects.found">

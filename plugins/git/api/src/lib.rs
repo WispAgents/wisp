@@ -298,6 +298,38 @@ pub struct Origin {
     pub root: String,
 }
 
+/// `git.githubRepos` (v1 GET /projects/github): the GitHub repos of the user `gh` is signed in as, for Projects' "Your
+/// GitHub repos · click to clone". `paths`: the folders of the projects already here (their repos are left out).
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct GithubReposArgs {
+    #[serde(default)]
+    pub paths: Vec<String>,
+}
+
+/// A row of `gh repo list --json nameWithOwner,description,isPrivate,isFork,pushedAt,url`.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct GhListed {
+    pub name_with_owner: String,
+    pub description: Option<String>,
+    pub is_private: bool,
+    pub is_fork: bool,
+    pub pushed_at: String,
+    pub url: String,
+}
+
+/// One repo to clone: `owner/name`, its URL, what it says it is, and when it was last pushed.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GithubRepo {
+    pub repo: String,
+    pub url: String,
+    pub description: String,
+    pub private: bool,
+    pub fork: bool,
+    pub pushed_at: String,
+}
+
 /// `git.checkout` (v1 POST /projects/checkout, services/places.js `checkout`): this computer's checkout of a repo:
 /// one already here (`known`: its projects' folders first, then the usual repo folders, two levels deep), else a
 /// fresh clone of it where clones go.

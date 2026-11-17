@@ -135,5 +135,6 @@ command!(Stage, "git.stage", "git:stage", false, StageArgs, Done);
 command!(Commit, "git.commit", "git:commit", false, CommitArgs, Committed);
 command!(GetTools, "git.tools", "git:read", true, (), Tools);
 command!(GetOrigin, "git.origin", "git:read", true, crate::OriginArgs, crate::Origin);
+command!(GithubRepos, "git.githubRepos", "git:read", true, crate::GithubReposArgs, Vec<crate::GithubRepo>);
 command!(Checkout, "git.checkout", "git:clone", false, crate::CheckoutArgs, Cloned);
 command!(Clone, "git.clone", "git:clone", false, crate::CloneRequest, Cloned);

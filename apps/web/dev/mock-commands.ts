@@ -767,6 +767,14 @@ export const COMMANDS: Record<string, CommandFn> = {
         .map((r) => ({ kind: 'project', name: String(obj(r.v)['name'] ?? ''), spec: { path: String(obj(r.v)['path'] ?? '') } })),
     };
   },
+  // your GitHub repos (git.githubRepos, wisp-git-api GithubRepo): two to clone, newest pushed first
+  'git.githubRepos': () => ({
+    ops: [],
+    result: [
+      { repo: 'octo/api', url: 'https://github.com/octo/api', description: 'The HTTP API', private: true, fork: false, pushedAt: '2026-11-16T10:00:00Z' },
+      { repo: 'octo/site', url: 'https://github.com/octo/site', description: '', private: false, fork: true, pushedAt: '2026-11-10T10:00:00Z' },
+    ],
+  }),
   // a project added on this computer (`resources.apply`, kind project): a Run on checkout joins its projects
   'resources.apply': (a, ctx) => {
     const list = Array.isArray(obj(a)['resources']) ? (obj(a)['resources'] as Args[]) : [];

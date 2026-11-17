@@ -71,6 +71,11 @@
         "readOnly": true
       },
       {
+        "id": "git.githubRepos",
+        "title": "Your GitHub repos (gh's sign-in), newest first, minus the projects here: Projects' click to clone",
+        "readOnly": true
+      },
+      {
         "id": "git.checkout",
         "title": "This computer's checkout of a repo: one already here, else a clone"
       },

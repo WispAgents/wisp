@@ -54,6 +54,21 @@ const renameProject = defineCommand<{ peer: string; from: string; to: string; sp
 /** v1 GET /fs?q=: the folders the typed path could go on to (answered in the form typed: `~/…` stays `~/…`) */
 const folders = defineCommand<{ peer: string; q: string }, string[]>({ id: 'runtime.folders', owner: (a) => a.peer, wire: (a) => ({ q: a.q }), optimistic: 'none', pending: 'the folder suggestions' });
 const discover = defineCommand<{ peer: string }, Found[]>({ id: 'runtime.discover', owner: (a) => a.peer, wire: () => ({}), optimistic: 'none', pending: 'Found on this machine' });
+/** v1 GET /projects/github: your GitHub repos (gh's sign-in), newest first, minus the projects here */
+interface GithubRepo {
+  readonly repo: string;
+  readonly url: string;
+  readonly description: string;
+  readonly private: boolean;
+  readonly fork: boolean;
+}
+const githubRepos = defineCommand<{ peer: string; paths: string[] }, GithubRepo[]>({
+  id: 'git.githubRepos',
+  owner: (a) => a.peer,
+  wire: (a) => ({ paths: a.paths }),
+  optimistic: 'none',
+  pending: 'Your GitHub repos',
+});
 const clone = defineCommand<{ peer: string; url: string }, { dir: string }>({ id: 'git.clone', owner: (a) => a.peer, wire: (a) => ({ url: a.url }), optimistic: 'none', pending: 'Add' });
 
 export default function Projects(_p: { readonly client: PluginClient; readonly params: unknown }): JSX.Element {
@@ -94,6 +109,20 @@ export default function Projects(_p: { readonly client: PluginClient; readonly p
       },
       () => undefined,
     );
+  };
+  // your GitHub repos (v1 #ghrepos), asked once the projects are known; a clone in flight leaves its row
+  const [repos] = createResource(
+    () => list().map((p) => p.path),
+    (paths) => shell.client.commands.run(githubRepos, { peer: home, paths }).catch((): GithubRepo[] => []),
+  );
+  const [cloning, setCloning] = createSignal<ReadonlySet<string>>(new Set());
+  const [ghAll, setGhAll] = createSignal(false);
+  const ghRepos = (): GithubRepo[] => (repos() ?? []).filter((r) => !cloning().has(r.url));
+  const cloneRepo = (url: string): void => {
+    setCloning(new Set([...cloning(), url]));
+    void shell.client.commands
+      .run(clone, { peer: home, url })
+      .then((c) => add(c.dir), () => setCloning(new Set([...cloning()].filter((u) => u !== url))));
   };
   const submit = (): void => {
     const v = source().trim();
@@ -188,6 +217,17 @@ export default function Projects(_p: { readonly client: PluginClient; readonly p
       onRename={renameTo}
       removeLabel={(name) => t('shell.projects.remove', { name })}
       onRemove={(id) => void shell.client.commands.run(dropProject, { peer: home, name: id }).catch(() => undefined)}
+      github={{
+        heading: t('shell.projects.github'),
+        sub: t('shell.projects.githubHint'),
+        items: (ghAll() ? ghRepos() : ghRepos().slice(0, 6)).map((r) => {
+          const [owner = '', name = r.repo] = r.repo.split('/');
+          const marks = [r.private && t('shell.projects.private'), r.fork && t('shell.projects.fork')].filter(Boolean).join(' · ');
+          return { url: r.url, name, owner: marks ? `${owner} · ${marks}` : owner, title: r.description || r.repo };
+        }),
+        onClone: cloneRepo,
+        more: ghRepos().length > 6 ? { label: ghAll() ? t('shell.projects.showFewer') : t('shell.projects.showAll', { count: ghRepos().length }), onClick: () => setGhAll(!ghAll()) } : undefined,
+      }}
       found={{
         heading: t('shell.projects.found'),
         sub: t('shell.projects.foundHint'),

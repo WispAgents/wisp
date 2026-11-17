@@ -100,7 +100,7 @@ kept). `npm run check` (rule `v1-coverage`) reads this table: every v1 item has 
 | route | `GET /projects` | `kind:projects` |
 | route | `GET /projects/:id/foreign-worktrees` | `cmd:worktrees.bringIn` |
 | route | `GET /projects/discover` | `route:/projects/discover` |
-| route | `GET /projects/github` | `todo:projects (GitHub repos to clone)` |
+| route | `GET /projects/github` | `cmd:git.githubRepos` |
 | route | `GET /projects/origin` | `cmd:git.origin` |
 | route | `GET /recipes` | `cmd:workflows.list` |
 | route | `GET /recipes/:key` | `cmd:workflows.list` |

@@ -25,6 +25,27 @@ impl GitServiceImpl {
         Origin { origin, root }
     }
 
+    /// Projects' "Your GitHub repos" (v1 GET /projects/github): `gh repo list` as the signed-in user, minus the repos of
+    /// the projects at `paths`, last pushed first. Empty when gh isn't installed or signed in (as v1).
+    pub async fn github_repos(&self, home: &str, paths: &[String]) -> Vec<wisp_git_api::GithubRepo> {
+        let args =
+            crate::run::args(&["repo", "list", "--limit", "40", "--json", "nameWithOwner,description,isPrivate,isFork,pushedAt,url"]);
+        let o = crate::run::Opts::timeout(20);
+        let Ok(r) = self.git.exec_bin("gh", Path::new(home), &args, o).await else { return Vec::new() };
+        if !r.exit.success() {
+            return Vec::new();
+        }
+        let listed: Vec<wisp_git_api::GhListed> = serde_json::from_slice(&r.stdout).unwrap_or_default();
+        let mut have = Vec::new();
+        for p in paths {
+            let o = self.origin_at(p).await.origin;
+            if !o.is_empty() {
+                have.push(o);
+            }
+        }
+        wisp_git_core::repo_url::github_repos(listed, &have, 24)
+    }
+
     /// This computer's checkout of `url`: a known folder or one in the usual repo folders with that origin, else a clone
     /// into `parent` (where clones go).
     ///
