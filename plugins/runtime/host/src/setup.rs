@@ -325,6 +325,7 @@ mod tests {
             seq: 0,
             t: 0,
             activity: Activity::Tool {
+                parent: None,
                 tool: kind,
                 label: label.into(),
                 file: None,

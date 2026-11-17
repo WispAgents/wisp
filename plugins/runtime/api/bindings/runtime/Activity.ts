@@ -23,7 +23,12 @@ title?: string,
  * per field (`label`, `detail`, `title`, `output`), the byte ranges that quote a .env value (ADR-0050): they
  * leave the server as `••••`. Additive (2026-11-14).
  */
-hide?: { [key in string]: Array<[number, number]> }, } | { "kind": "tool_output", callId: string, text: string, 
+hide?: { [key in string]: Array<[number, number]> }, 
+/**
+ * the call of the harness's own subagent this step ran inside (Claude Code's subagents): the task's subagent
+ * rows show it as that subagent's current step (TRY-24). Additive (2026-11-17).
+ */
+parent?: string, } | { "kind": "tool_output", callId: string, text: string, 
 /**
  * the call it answers read a .env file: its text leaves the server masked (ADR-0050). Always written, so a
  * row without it is one from before (its call decides). Additive (2026-11-13).

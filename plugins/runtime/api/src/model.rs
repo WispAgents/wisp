@@ -159,6 +159,11 @@ pub enum Activity {
         #[serde(default, skip_serializing_if = "std::collections::BTreeMap::is_empty")]
         #[ts(optional, as = "Option<std::collections::BTreeMap<String, Vec<[u32; 2]>>>")]
         hide: std::collections::BTreeMap<String, Vec<[u32; 2]>>,
+        /// the call of the harness's own subagent this step ran inside (Claude Code's subagents): the task's subagent
+        /// rows show it as that subagent's current step (TRY-24). Additive (2026-11-17).
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[ts(optional)]
+        parent: Option<String>,
     },
     ToolOutput {
         #[serde(rename = "callId")]

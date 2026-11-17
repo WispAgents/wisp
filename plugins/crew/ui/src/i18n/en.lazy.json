@@ -47,7 +47,7 @@
   "wisp.crew.palette.share": "Share your crew…",
   "wisp.crew.palette.import": "Import crew members…",
   "wisp.crew.team.tab": "Team",
-  "wisp.crew.team.tip": "The crew members this task handed work to",
+  "wisp.crew.team.tip": "The crew members and subagents this task handed work to",
   "wisp.crew.team.someone": "a member",
   "wisp.crew.team.done": "Finished",
   "wisp.crew.team.failed": "Failed",
@@ -490,5 +490,7 @@
   "wisp.crew.editor.delegateTitle": "Delegates: agents (or other crew members) every job of theirs can hand work to",
   "wisp.crew.editor.copies": "{name} copies",
   "wisp.crew.editor.joined": "{name} joined your crew",
-  "wisp.crew.editor.open": "Open"
+  "wisp.crew.editor.open": "Open",
+  "wisp.crew.team.subagent": "Subagent",
+  "wisp.crew.team.noSteps": "No steps yet"
 }

@@ -247,6 +247,7 @@ mod tests {
         };
         let step = |activity| Step { seq: 0, t: 0, activity };
         let tool = |tool, label: &str, detail: Option<&str>| Activity::Tool {
+            parent: None,
             tool,
             label: label.into(),
             file: None,
@@ -286,6 +287,7 @@ mod tests {
                 seq: 1,
                 t: 0,
                 activity: Activity::Tool {
+                    parent: None,
                     tool: ToolKind::Run,
                     label: "Run".into(),
                     file: None,

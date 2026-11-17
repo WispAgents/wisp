@@ -219,7 +219,8 @@ pub enum Effect {
 /// v1 `stepOf`: a tool call, a message or a failed call as a transcript step.
 pub fn step_of(ev: &HarnessEvent) -> Option<Activity> {
     Some(match ev {
-        HarnessEvent::Tool { kind, label, file, detail, id, output, title } => Activity::Tool {
+        HarnessEvent::Tool { kind, label, file, detail, id, output, title, parent } => Activity::Tool {
+            parent: parent.clone(),
             tool: *kind,
             label: label.clone(),
             title: title.clone(),
@@ -246,6 +247,7 @@ pub fn waiting_step(tasks: &[String]) -> Activity {
         many => format!("Waiting on {} background tasks", many.len()),
     };
     Activity::Tool {
+        parent: None,
         tool: ToolKind::Background,
         label: head16(&label, 200).to_owned(),
         file: None,

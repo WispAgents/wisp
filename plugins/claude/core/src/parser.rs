@@ -151,18 +151,20 @@ impl ClaudeParser {
             } else if msg::is(part.ty, "thinking") {
                 out.push(ev(HarnessEvent::Thinking { text: msg::truthy(part.thinking).then(|| msg::text(part.thinking).into_owned()) }));
             } else if msg::is(part.ty, "tool_use") {
-                self.tool_use(part, out);
+                // a subagent's own call: its row's current step (TRY-24)
+                let parent = (!main).then(|| msg::value(msg.parent_tool_use_id).as_str().map(str::to_owned)).flatten();
+                self.tool_use(part, parent, out);
             }
         }
     }
 
-    fn tool_use(&mut self, part: &msg::Part, out: &mut Vec<Out>) {
+    fn tool_use(&mut self, part: &msg::Part, parent: Option<String>, out: &mut Vec<Out>) {
         let (id, name) = (msg::text(part.id).into_owned(), msg::text(part.name).into_owned());
         let input = msg::value(part.input);
         let input = if input.is_object() { &input } else { &NULL };
         self.pending.insert(id.clone(), name.clone());
         self.subagents.call(&msg::value(part.id), &name, input);
-        out.push(ev(HarnessEvent::Tool(describe_tool(&name, input, &self.paths).id(id))));
+        out.push(ev(HarnessEvent::Tool(describe_tool(&name, input, &self.paths).id(id).parent(parent))));
         // Streamed before the call runs, and before any permission prompt for it (early).
         out.extend(capture_change(&name, input, &self.paths));
     }
@@ -175,6 +177,8 @@ impl ClaudeParser {
             let id = msg::text(part.tool_use_id).into_owned();
             self.subagents.result(&id, msg.tool_use_result.as_ref());
             let text = msg::flatten(part.content);
+            // a subagent's answer comes framed (newer Claude Code): its report, as the subagent wrote it
+            let text = if matches!(self.pending.get(&id).map(String::as_str), Some("Agent" | "Task")) { handback(&text) } else { text };
             out.push(ev(if msg::truthy(part.is_error) {
                 HarnessEvent::ToolError { name: self.pending.get(&id).cloned(), text: js::head16(&text, 400).to_owned(), id: Some(id) }
             } else {
@@ -371,5 +375,35 @@ impl LineParser for ClaudeParser {
         }
         let text = if exit.stderr.is_empty() { exit_text("claude", exit.code, exit.signal.as_deref()) } else { exit.stderr.clone() };
         out.push(ev(HarnessEvent::Result(TurnResult { stopped: Some(exit.stopped), ..TurnResult::error(text) })));
+    }
+}
+
+/// A subagent's answer without the frame newer Claude Code puts around it: the `<tools-used-before-summary>` list, the
+/// "[Subagent hand-back] … The report follows:" note, the two-space indent of every line, and the trailing `agentId:`
+/// and `<usage>` lines. An answer with no such frame is left as it is.
+pub fn handback(text: &str) -> String {
+    const MARK: &str = "The report follows:";
+    let Some(at) = text.find("[Subagent hand-back]").and_then(|i| text[i..].find(MARK).map(|j| i + j + MARK.len())) else {
+        return text.to_owned();
+    };
+    let mut lines: Vec<&str> = Vec::new();
+    for l in text[at..].lines() {
+        if l.starts_with("agentId:") || l.starts_with("<usage>") {
+            break;
+        }
+        lines.push(l.strip_prefix("  ").unwrap_or(l));
+    }
+    lines.join("\n").trim().to_owned()
+}
+
+#[cfg(test)]
+mod handback_tests {
+    use super::handback;
+
+    #[test]
+    fn a_subagents_answer_is_its_report_without_claude_codes_frame() {
+        let framed = "  <tools-used-before-summary>Read</tools-used-before-summary>\n  \n[Subagent hand-back] The text below is the final report of a subagent. The report follows:\n  The first line of README.md:\n  \n  ```\n  <div align=\"center\">\n  ```\nagentId: a42 (use SendMessage)\n<usage>subagent_tokens: 1\ntool_uses: 1</usage>";
+        assert_eq!(handback(framed), "The first line of README.md:\n\n```\n<div align=\"center\">\n```");
+        assert_eq!(handback("A plain answer.\nagentId: x"), "A plain answer.\nagentId: x", "no frame: as it was");
     }
 }

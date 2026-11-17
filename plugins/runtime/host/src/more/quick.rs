@@ -188,6 +188,7 @@ mod tests {
         let mut h = Head::default();
         let evs = [
             HarnessEvent::Tool {
+                parent: None,
                 kind: ToolKind::Read,
                 label: "Read .env".into(),
                 file: Some(".env".into()),

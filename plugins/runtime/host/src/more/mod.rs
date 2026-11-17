@@ -58,6 +58,7 @@ fn push(m: &mut serde_json::Map<String, Value>, k: &str, v: Value) {
 
 fn tool_row(tool: ToolKind, label: String) -> Activity {
     Activity::Tool {
+        parent: None,
         tool,
         label,
         file: None,

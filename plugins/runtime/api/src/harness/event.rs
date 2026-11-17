@@ -102,6 +102,9 @@ pub enum HarnessEvent {
         /// its whole title, when `label` had to be cut (v1 #780): an opened step shows it. Additive (2026-11-12).
         #[serde(default, skip_serializing_if = "Option::is_none")]
         title: Option<String>,
+        /// the harness's own subagent call this call ran inside (TRY-24). Additive (2026-11-17).
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        parent: Option<String>,
     },
     ToolOutput {
         id: String,

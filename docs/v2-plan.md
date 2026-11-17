@@ -306,6 +306,9 @@ turn. When a screen or feature contradicts one, that's a bug: fix it toward the 
 
 - [ ] The Linear TODO tickets (finish them all before the release; owner, 2026-11-17)
   - [x] TRY-16 (11-17)
+  - [x] TRY-24 live subagent rows (11-17): the Team tab lists wisp's delegates and the harness's own subagents
+    (`plugins/crew/ui/src/subagents.ts`); steps carry `parent` (the subagent call they ran inside, additive on
+    `Activity::Tool` / `HarnessEvent::Tool`); Claude Code's subagent hand-back frame unwrapped (`parser::handback`)
   - [x] TRY-23 silent runs (11-17): budget's watch (`plugins/budget/{core,host}/src/silent.rs`), the phone's Stop
     button on every channel (`ActionKind::Stop`, code `s`), Settings → Usage *Stop a run silent for*
   - [x] TRY-17 harness updates (11-17): Settings → Agents *Update to x.y.z* / *Update all*, `accounts.upgrade` updates the way it was installed (`claude update`, `codex update`, `opencode upgrade`, npm, wisp's tools folder; Homebrew: the command to run); latest versions from npm at start and every 12 h. Found and fixed on the way: B57 (idle CPU), B58 (Cursor *Not found*), B59

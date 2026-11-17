@@ -41,11 +41,20 @@ pub struct Tool {
     /// its whole title, when `label` had to be cut (v1 #780): an opened step shows it. Additive (2026-11-12).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub title: Option<String>,
+    /// the call of the harness's own subagent that made this call (Claude Code's `parent_tool_use_id`): the task's
+    /// subagent rows show it as that subagent's current step (TRY-24). Additive (2026-11-17).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub parent: Option<String>,
 }
 
 impl Tool {
     pub fn new(kind: ToolKind, label: impl Into<String>) -> Self {
-        Self { kind, label: label.into(), file: None, detail: None, id: None, output: None, title: None }
+        Self { kind, label: label.into(), file: None, detail: None, id: None, output: None, title: None, parent: None }
+    }
+    #[must_use]
+    pub fn parent(mut self, p: Option<String>) -> Self {
+        self.parent = p.filter(|p| !p.is_empty());
+        self
     }
     #[must_use]
     pub fn file(mut self, f: impl Into<String>) -> Self {

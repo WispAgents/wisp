@@ -33,6 +33,7 @@ pub fn from_v0(item: &Value) -> Option<Activity> {
         }
         k => match tool_kind(k) {
             Some(tool) => Activity::Tool {
+                parent: None,
                 tool,
                 label,
                 file: s(item, "file"),

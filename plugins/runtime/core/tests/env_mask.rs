@@ -88,6 +88,7 @@ fn the_turn_machine_flags_the_output_of_a_call_that_read_a_env_file() {
     let mut h = Head::default();
     let no = |_: &str| false;
     let call = |id: &str, detail: &str| HarnessEvent::Tool {
+        parent: None,
         kind: ToolKind::Run,
         label: "Run".into(),
         file: None,
@@ -216,6 +217,7 @@ fn quoting_turn() -> Vec<Value> {
     let mut h = Head::default();
     let no = |_: &str| false;
     let run = |id: &str, detail: &str| HarnessEvent::Tool {
+        parent: None,
         kind: ToolKind::Run,
         label: "Run".into(),
         file: None,
@@ -314,6 +316,7 @@ fn a_tool_error_printing_a_env_value_leaves_masked() {
 
 fn run_ev(id: &str, label: &str, detail: &str) -> HarnessEvent {
     HarnessEvent::Tool {
+        parent: None,
         kind: ToolKind::Run,
         label: label.into(),
         file: None,
@@ -567,6 +570,7 @@ fn a_hand_off_note_and_a_btw_digest_never_quote_a_value_the_task_read() {
     // a running turn's actions: a label the turn machine flagged, one cut short (`…`), a notice and its latest message
     let acts = vec![
         Activity::Tool {
+            parent: None,
             tool: ToolKind::Run,
             label: "curl -H 'Bearer sk-live-one'".into(),
             file: None,
@@ -577,6 +581,7 @@ fn a_hand_off_note_and_a_btw_digest_never_quote_a_value_the_task_read() {
             hide: [("label".to_owned(), vec![[16, 27]])].into_iter().collect(),
         },
         Activity::Tool {
+            parent: None,
             tool: ToolKind::Run,
             label: "echo PEMLINExyz01…".into(),
             file: None,

@@ -36,3 +36,27 @@ fn a_turn_keeps_claude_codes_subagents_by_type_from_the_captured_stream_v1_785()
     let result = r#"{"type":"result","subtype":"success","is_error":false,"result":"ok","session_id":"s1","usage":{"output_tokens":5}}"#;
     assert_eq!(subagents(&[init, result]), vec![None]);
 }
+
+/// TRY-24: a call a subagent made carries that subagent's call as its `parent` (its row's current step); the main
+/// thread's calls carry none. v1 had no such field (the G6 goldens drop it).
+#[test]
+fn a_subagents_own_calls_name_it_as_their_parent() {
+    let lines: Vec<&str> = include_str!("fixtures/subagents.jsonl").lines().collect();
+    let mut parser =
+        ClaudeParser::new(ClaudeOptions { paths: RunPaths::same("/tmp/wisp-subagent-types"), prior: None, unknown_prior: false });
+    let exit = Exit { code: Some(0), signal: None, stderr: String::new(), stopped: false, stop_requested: false };
+    let tools: Vec<(Option<String>, Option<String>)> = replay(&mut parser, &lines, &exit, &mut NoDisk, |i| i64::try_from(i).unwrap_or(0))
+        .into_iter()
+        .filter_map(|e| match e {
+            HarnessEvent::Tool(t) => Some((t.id, t.parent)),
+            _ => None,
+        })
+        .collect();
+    let nested: Vec<_> = tools.iter().filter(|(_, p)| p.is_some()).collect();
+    assert!(!nested.is_empty(), "{tools:?}");
+    // every parent is one of the run's Agent calls, made before it
+    for (i, (_, p)) in tools.iter().enumerate().filter(|(_, (_, p))| p.is_some()) {
+        assert!(tools[..i].iter().any(|(id, _)| id == p), "{p:?} at #{i} names no earlier call: {tools:?}");
+    }
+    assert!(tools.iter().any(|(_, p)| p.is_none()), "the main thread's calls have no parent");
+}
