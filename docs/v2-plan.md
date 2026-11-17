@@ -306,6 +306,8 @@ turn. When a screen or feature contradicts one, that's a bug: fix it toward the 
 
 - [ ] The Linear TODO tickets (finish them all before the release; owner, 2026-11-17)
   - [x] TRY-16 (11-17)
+  - [x] TRY-22 Tab fills a follow-up (11-17): the reply box's ghost from the newest answer's `next` block
+    (`packages/shell/src/frame/follow-ghost.ts`, kit `ReplyBox.ghost`); allowed.md §7 masks `composer.ghost`
   - [x] TRY-24 live subagent rows (11-17): the Team tab lists wisp's delegates and the harness's own subagents
     (`plugins/crew/ui/src/subagents.ts`); steps carry `parent` (the subagent call they ran inside, additive on
     `Activity::Tool` / `HarnessEvent::Tool`); Claude Code's subagent hand-back frame unwrapped (`parser::handback`)

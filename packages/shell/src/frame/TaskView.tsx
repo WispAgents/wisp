@@ -51,6 +51,7 @@ import { useNow } from '../clock.ts';
 import { turnClock } from './turn-clock.ts';
 import { stopQuestion, type StopQuestion } from './stop-question.ts';
 import { noOutputLine } from './no-output.ts';
+import { completionOf, suggestedFollowUps } from './follow-ghost.ts';
 import { promptKeys, remember, sentStore } from './prompt-keys.ts';
 import { draftValue, replyDraft } from './drafts.ts';
 import { keep, placeOf, placesStore, scrollFor, type Place } from './place.ts';
@@ -698,6 +699,12 @@ export default function TaskView(props: { readonly id: string; readonly onBack?:
     const x = turns().at(-1);
     return x ? ({ ...(x.body as TurnBody), id: x.id } as TurnBody & { id: string }) : undefined;
   };
+  // TRY-22: Tab fills one of the newest answer's suggested follow-ups (not while it works: those were for an older one)
+  const followUps = createMemo((): string[] => (busyNow() ? [] : suggestedFollowUps(lastTurn()?.presentation?.blocks)));
+  const ghost = (): { rest: string; key: string; full: string } | undefined => {
+    const full = completionOf(text(), followUps());
+    return full ? { rest: full.slice(text().length), key: t('shell.reply.tab'), full } : undefined;
+  };
   const canRollback = (): boolean => {
     const l = lastTurn();
     return row()?.agent !== 'wisp' && !busyNow() && !!l && (!!(l.changes ?? l.ext?.['wisp.runtime']?.changes)?.length || !!l.checkpoint?.commit);
@@ -1309,6 +1316,8 @@ export default function TaskView(props: { readonly id: string; readonly onBack?:
                       },
                     })}
                     suggest={menu.suggest()}
+                    // the @ and / menus win while they're open
+                    ghost={menu.suggest() ? undefined : ghost()}
                     onPaste={(e) => menu.paste(e) || att.paste(e)}
                     onFiles={att.add}
                     inputRef={(el) => (input = el)}

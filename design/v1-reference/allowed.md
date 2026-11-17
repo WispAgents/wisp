@@ -107,6 +107,12 @@ A place where v2 does better than v1 on purpose. Each names its rule below and i
   panel's `direction: rtl` folder with a `<bdi>`), no measuring per row. A path that fits renders exactly as v1's, so
   only a path that overflows differs: its box is masked (an `owner` rule), everything around it is still checked.
 
+- **Tab fills a suggested follow-up** (TRY-22, the lead's call 2026-11-17; test
+  `the_ghost_is_the_rest_of_the_first_suggestion_that_starts_with_what_is_typed`, `packages/shell/test/follow-ghost.test.ts`).
+  When the newest answer has a `next` block, the reply box shows its first suggestion faded behind the caret (the rest
+  of the first that starts with what's typed), with a Tab key, in place of the placeholder; Tab writes it. v1 only had
+  the Follow up chips, which stay. Touch screens show no ghost. Masked: the ghost's line (`composer.ghost`).
+
 ## Rules (read by `qa/parity.mjs`)
 
 One rule a line: `<view glob> <part glob> <kind> [widths]` (widths: `390` or `320,390`; none means every width). `wrap` is §1, `pending` is §2, `fold` is §4
@@ -139,4 +145,5 @@ task.right-click  list.menu  owner
 task.right-click  list.menu.*  owner
 *   block.files.path   owner
 *   topbar.brand       owner
+task*  composer.ghost  owner
 ```

@@ -387,5 +387,6 @@
   "shell.select.ask.title.other": "Delete {count} tasks from wisp?",
   "shell.select.ask.body": "The agents’ own history is kept.",
   "shell.select.ask.ok": "Delete",
-  "shell.select.ask.cancel": "Cancel"
+  "shell.select.ask.cancel": "Cancel",
+  "shell.reply.tab": "Tab"
 }

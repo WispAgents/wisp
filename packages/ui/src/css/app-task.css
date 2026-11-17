@@ -728,12 +728,30 @@
   [data-kit='c-top'] > [data-kit='slot'] > [data-kit='extension']:not(:empty) ~ [data-kit='extension']:not(:empty) {
     margin-top: calc(-1 * var(--space-1));
   }
-  [data-kit='reply'] {
+  [data-kit='reply'],
+  [data-kit='reply-ghost'] {
     min-height: 26px;
     height: 34px;
     padding: var(--space-3) var(--space-1);
     white-space: nowrap;
     overflow: hidden;
+  }
+  /* TRY-22: a suggested follow-up, faded behind the box's own text (same metrics), with its key */
+  [data-kit='reply-ghost'] {
+    position: absolute;
+    inset: 0 0 auto 0;
+    z-index: 0;
+    pointer-events: none;
+    font-size: var(--fs-lg);
+    line-height: var(--lh-base);
+    color: var(--faint);
+    text-overflow: ellipsis;
+  }
+  [data-kit='reply-ghost'] > [data-kit='rg-typed'] {
+    color: transparent;
+  }
+  [data-kit='reply-ghost'] > [data-kit='kbd'] {
+    margin-left: var(--space-3);
   }
   [data-kit='reply']:placeholder-shown {
     -webkit-mask-image: linear-gradient(90deg, var(--ink) calc(100% - 32px), transparent);

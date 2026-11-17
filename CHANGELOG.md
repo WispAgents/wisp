@@ -62,6 +62,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - **v2: update your agents from wisp.** Settings → Agents shows *Update to x.y.z* next to a harness with a newer version out (wisp looks on npm at start and twice a day), and *Update all* when there are several. It updates the way you installed it: `claude update`, `codex update`, `opencode upgrade`, npm, or wisp's own copy; a Homebrew install gets the command to run instead.
 - **v2: wisp tells you when a run goes silent but keeps spending.** A run with no output for 30 minutes while its plan still moves sends your phone *Silent 34 min, spent 4% of weekly*, with a Stop button (ntfy, Telegram, Slack, Discord, wisp's phone app). Settings → Usage → *Stop a run silent for* (off by default) stops such a run after 1–8 hours.
 - **v2: watch every subagent of a task live.** A task's Team tab now lists all its subagents, not only crew jobs: wisp's own delegates on any harness (with their model) and Claude Code's own subagents, each with what it does now, then what it came back with, and its time. A delegate opens its own task; a Claude Code subagent opens a view of its steps and its answer. Claude Code's framed subagent answers now read as the subagent wrote them.
+- **v2: Tab fills a suggested follow-up.** When an answer suggests follow-ups, the reply box shows the first one faded behind the caret; type and it narrows to the one that starts with what you wrote; Tab writes it. The Follow up chips stay, and touch screens keep their placeholder.
 
 ### Changed
 

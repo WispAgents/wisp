@@ -529,6 +529,9 @@ export interface ReplyBoxProps {
   readonly onKey?: (e: KeyboardEvent) => boolean;
   /** the @ and / menus: what the host offers for what's typed (over the box) */
   readonly suggest?: PromptSuggest | undefined;
+  /** TRY-22: the rest of a suggested follow-up after what's typed, faded behind the caret with its key ("Tab"); Tab
+   *  takes it. Additive (2026-11-17). */
+  readonly ghost?: { readonly rest: string; readonly key: string; /** what Tab writes: the suggestion as written */ readonly full?: string } | undefined;
   /** a paste into the box (files, a pasted task link): the host may take it */
   readonly onPaste?: (e: ClipboardEvent) => void;
   /** files dropped on the box (v1: anywhere on it); it lights up while they're over it */
@@ -598,6 +601,9 @@ export interface CompactReplyBoxProps {
 export function ReplyBox(given: ReplyBoxProps | CompactReplyBoxProps): JSX.Element {
   // the tools below read the full box's props; a compact box never draws them (`compact` guards each read)
   const props = given as ReplyBoxProps & { readonly compact?: boolean; readonly part?: string };
+  // TRY-22: a suggested follow-up behind the caret, where there's a Tab key (a touch screen has the chips)
+  const ghost = (): { readonly rest: string; readonly key: string; readonly full?: string } | undefined =>
+    !props.compact && props.ghost?.rest && !(typeof matchMedia === 'function' && matchMedia('(hover: none)').matches) ? props.ghost : undefined;
   const [awake, setAwake] = createSignal(false);
   let box: HTMLDivElement | undefined;
   // on the click the release makes (after the pressed control's own handler: Solid's sit on document first), or
@@ -624,6 +630,15 @@ export function ReplyBox(given: ReplyBoxProps | CompactReplyBoxProps): JSX.Eleme
   });
   const key = (e: KeyboardEvent): void => {
     if (suggestKeyDown(props.suggest, e)) return;
+    // Tab takes the suggested follow-up (Shift+Tab stays the mode's key)
+    const g = ghost();
+    if (g && e.key === 'Tab' && !e.shiftKey && !e.altKey && !e.metaKey && !e.ctrlKey) {
+      e.preventDefault();
+      const full = g.full ?? props.value + g.rest;
+      props.onInput(full);
+      queueMicrotask(() => input?.setSelectionRange(full.length, full.length));
+      return;
+    }
     if (props.onKey?.(e)) return;
     if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) {
       e.preventDefault();
@@ -658,11 +673,21 @@ export function ReplyBox(given: ReplyBoxProps | CompactReplyBoxProps): JSX.Eleme
       <Show when={'hold' in props ? props.hold : undefined}>{(h) => <HoldRow {...h()} place="reply" box={() => input} part="composer.hold" />}</Show>
       <div data-kit="mn-wrap">
         <PromptSuggestList suggest={props.suggest} place="above" />
+        <Show when={ghost()}>
+          {(g) => (
+            <div data-kit="reply-ghost" data-part="composer.ghost" aria-hidden="true">
+              <span data-kit="rg-typed">{props.value}</span>
+              <span data-kit="rg-rest">{g().rest}</span>
+              <kbd data-kit="kbd">{g().key}</kbd>
+            </div>
+          )}
+        </Show>
         <textarea
           data-kit="reply"
           data-part="composer.input"
           rows="1"
-          placeholder={props.placeholder}
+          // an empty box showing a suggestion has no placeholder under it
+          placeholder={ghost() && !props.value ? '' : props.placeholder}
           value={props.value}
           ref={(el) => ((input = el), props.inputRef?.(el))}
           onBlur={() => setNudge(false)}
