@@ -5,7 +5,7 @@
 // Mark done, a follow-up, Rerun and Fork show their result before the peer answers; Ship it and a
 // restore show their control working; the panes and menus open in the same frame.
 
-import { For, Show, createEffect, createMemo, createResource, createSignal, getOwner, lazy, onCleanup, runWithOwner, untrack, type JSX } from 'solid-js';
+import { Show, createEffect, createMemo, createResource, createSignal, getOwner, lazy, onCleanup, runWithOwner, untrack, type JSX } from 'solid-js';
 import { entityKey, newRowId, ownerOf, uuidv7, type EntityKey, type Json } from '@wisp/client';
 import {
   Answer,
@@ -41,7 +41,6 @@ import { TaskHeadSlot } from './slots.tsx';
 import { afterNextPaint, buildsAtOnce } from './task-paint.ts';
 import { useProjects } from './projects.ts';
 import { taskPlaces } from './project-pick.ts';
-import { switchTo } from './project-switch.ts';
 import { changeFigures, duration, foldedFrom, longTime, nextNeedsYou, overlapLine, overlapsOf, statusOf, trailActs } from './rows-view.ts';
 import { coldHint, compactItem } from './cold.ts';
 import { replyPlaceholderKey } from './reply-hint.ts';
@@ -101,6 +100,7 @@ import type { LedgerTurn } from '@wisp/ui/pure';
 import { envReveal } from './env-reveal.ts';
 import { runPick, type Runner } from './runner.ts';
 import { rowUsage, taskUsage, type TurnStatsLike } from './task-usage.ts';
+import { TELEMETRY_TOPIC, feedbackOn } from './feedback-on.ts';
 import { MODE_ICON, agentMenu, modeMenu, teamMenu, whenAt, whenMenu, type Mode, type When } from './pickers.ts';
 import { capOf } from './cap.ts';
 import '../i18n/lazy.ts';
@@ -205,7 +205,9 @@ export default function TaskView(props: { readonly id: string; readonly onBack?:
   onCleanup(() => (later ? afterNextPaint(() => scope.dispose()) : scope.dispose()));
   // the topic names the session by its own id, the part after `<peer>:`
   const bare = key.slice(key.indexOf(':') + 1);
-  const watch = (): void => shell.client.peers.watch(ownerOf(key), `session:${bare}`, scope);
+  // the task's topic, and whether its wisp takes feedback (a turn's 👍 👎 only then, v1 feedbackOn)
+  const watch = (): void => (shell.client.peers.watch(ownerOf(key), `session:${bare}`, scope), shell.client.peers.watch(ownerOf(key), TELEMETRY_TOPIC, scope, { passive: true }));
+  const rates = useSignal(feedbackOn(shell.client, ownerOf(key)));
   // on a phone the tap's frame draws the page with its head; the body (turns, reply box, details) comes the frame
   // after, and so does the task's own topic, asked for with it (task-paint.ts, F-phone-8: each request sent is a
   // fetch in the tap)
@@ -493,11 +495,9 @@ export default function TaskView(props: { readonly id: string; readonly onBack?:
       s.body?.['dirs'],
       projects(),
     ).map((p) => {
-      const id = p.id;
       const title = t(p.own ? 'shell.task.placeOwn' : 'shell.task.placeAlso', { path: p.path });
-      const chip = { name: p.name, color: p.color, title, ...(!p.own && { also: true as const }) };
-      if (id === undefined) return chip;
-      return { ...chip, onOpen: () => (switchTo(shell, id), shell.nav().layout === 'stack' && shell.navigate({ t: 'home' })) };
+      // a chip, as v1's .q-proj: it names the folder, it isn't a control
+      return { name: p.name, color: p.color, title, ...(!p.own && { also: true as const }) };
     });
   // ADR-0067: plugins' prompt sources may still be on their way (the page's first moments, or a load tried again):
   // a send waits for them once, then goes whatever they did
@@ -1036,7 +1036,7 @@ export default function TaskView(props: { readonly id: string; readonly onBack?:
             <>
               <TurnView
                 id={turn.id}
-                rate={<RateButtons rating={ratingOf(b)} labels={{ up: t('shell.rate.up'), down: t('shell.rate.down') }} onRate={(next) => rate(turn.id, next)} />}
+                {...(rates() && { rate: <RateButtons rating={ratingOf(b)} labels={{ up: t('shell.rate.up'), down: t('shell.rate.down') }} onRate={(next) => rate(turn.id, next)} /> })}
                 {...(whyFor() === turn.id && {
                   trailBody: (
                     <WhyForm

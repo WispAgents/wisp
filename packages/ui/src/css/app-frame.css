@@ -228,7 +228,7 @@
   /* v1 responsive.css: a list row (not WebKit) is content-visibility: auto, so it paints as its own box and its text
      lands on the same pixels at a half-pixel row offset; v2 virtualizes, so only the paint containment is kept */
   @supports not (-webkit-nbsp-mode: space) {
-    [data-kit='virtual-list'][data-part~='feed'] > [data-kit='virtual-row'] { contain: paint; }
+    [data-kit='virtual-list'][data-part~='feed'] > [data-kit='virtual-row']:not([data-current]) { contain: paint; } /* not the open task's row (v1 #feed .item:not(.open)) */
   }
   [data-kit='f-group'] { margin-bottom: 14px; }
   [data-kit='f-group'][data-collapsed] { margin-bottom: var(--space-1); }

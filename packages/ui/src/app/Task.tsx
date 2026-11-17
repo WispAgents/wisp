@@ -172,7 +172,6 @@ export function TaskDetails(props: TaskDetailsProps): JSX.Element {
             </span>
           )}
         </Show>
-        <Show when={props.usage}>{(u) => <TaskUsage {...u()} />}</Show>
         <span data-kit="model-logo" role="img" aria-label={props.harness}>
           <Show when={props.logo}>{(src) => <img src={src()} alt="" />}</Show>
           <span data-kit="ml-name">{props.harness}</span>
@@ -207,6 +206,8 @@ export function TaskDetails(props: TaskDetailsProps): JSX.Element {
             </Index>
           )}
         </Show>
+        {/* after the harness and the folder, as v1's it-props (split.js paintDetails: headPills, then planLine) */}
+        <Show when={props.usage}>{(u) => <TaskUsage {...u()} />}</Show>
       </div>
       <Show when={props.branch}>
         {(b) => (

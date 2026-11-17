@@ -670,6 +670,34 @@
       "widths": "all",
       "themes": "all",
       "reason": "v1 #771 (3435a2b9) dropped the launcher Try it two ways button after these four were captured; re-captured from seed.json so launcher.tryTwo is gone (the owner, round 31)"
+    },
+    {
+      "started": "2026-11-17T01:14:29.477Z",
+      "finished": "2026-11-17T01:16:05.620Z",
+      "views": [
+        "task"
+      ],
+      "modes": [
+        "browser"
+      ],
+      "widths": "all",
+      "themes": "all",
+      "reason": ""
+    },
+    {
+      "started": "2026-11-17T01:23:01.407Z",
+      "finished": "2026-11-17T01:29:18.452Z",
+      "views": [
+        "task",
+        "task.composer"
+      ],
+      "modes": [
+        "browser",
+        "desktop"
+      ],
+      "widths": "all",
+      "themes": "all",
+      "reason": ""
     }
   ]
 }

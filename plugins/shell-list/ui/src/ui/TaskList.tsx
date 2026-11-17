@@ -115,6 +115,7 @@ function ListBody(): JSX.Element {
             grow
             aria-label={t('shell-list.list.label')}
             part={'list.rows feed' as `${string}.${string}`}
+            current={(it) => open() !== undefined && itemKey(it) === open()}
             vars={feedDoneColumn(doneColumn())}
             gapBefore={(i) =>
               isTaskItem(items()[i]) && isTaskItem(items()[i - 1])

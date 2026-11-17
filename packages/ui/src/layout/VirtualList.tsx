@@ -35,6 +35,8 @@ export interface VirtualListProps<T> extends KitProps, WithVars, Labelled {
   readonly ref?: (el: HTMLDivElement) => void;
   /** the row at this index sits a list gap below the one before it (data-gap: v1 .f-list's 2px between two task rows). Additive (2026-11-12). */
   readonly gapBefore?: (index: number) => boolean | 'section';
+  /** the row of what's open beside the list (`data-current` on it; v1 painted it unlike the others). Additive. */
+  readonly current?: (item: T) => boolean;
   /** runs of rows that belong together (a section: its heading and rows), each drawn as one box behind them, named
    *  `part`, so it can be measured and restyled as v1's section was (#secNeeds). Item indices, inclusive. Additive. */
   readonly groups?: readonly { readonly part: string; readonly from: number; readonly to: number }[];
@@ -209,6 +211,7 @@ export function VirtualList<T>(props: VirtualListProps<T>): JSX.Element {
       data-kit="virtual-row"
       data-part={sub(part(), 'row')}
       data-gap={((g) => (g === 'section' ? 'section' : g ? '' : undefined))(props.gapBefore?.(range().start + i()))}
+      data-current={props.current?.(item()) ? '' : undefined}
       ref={(el) => {
         measured.observe(el, props.key(item()));
         onCleanup(() => measured.unobserve(el));

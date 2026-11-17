@@ -87,16 +87,13 @@ shift every later index. Everything outside the part still has to match.
 - **Pin and Mark read in a task's menu** (the owner, 2026-11-12, round 30): v2 keeps them, after every one of v1's
   entries (v1's taskMenu had neither), so the row menu is two items longer than v1's: masked in task.right-click.
 
-## 6. Known, not allowed: the list rows' glyph phase (the coder, round 25, 2026-11-12)
+## 6. The list rows' glyph phase: found and fixed (2026-11-17)
 
-Recorded, not masked: parity still counts these regions. On home, palette and task at 1440 the left list's 2nd and
-4th rows (the status pill's text, the harness · computer line, the dot) differ in regions a little over 8×8. Measured
-live against v1 (origin/main, its QA seed restored): every box and every text node's rect in those rows is v1's to
-1/64 px (rows 78.515625 px, the run line at 325.03125, the pill at 304.84375), the computed font, smoothing, kerning
-and letter-spacing are the same, and with `overscroll-behavior: auto` everywhere v2's layer tree is v1's (#document and
-the main column only). The glyphs still land a pixel apart on rows whose top falls near a whole pixel. Not found yet:
-the next step is a Chrome paint trace of one row on each side. Fixed on the way: v1's 1.55 line heights in the rows
-(20.140625 / 19.375 px), the section heading's chevron margin and count weight, the palette's inline keys and 7 px dots.
+Was recorded here as unexplained (round 25): the 2nd and 4th list rows drew their text a pixel off v1 although every
+box matched to 1/64 px. The cause: v1 gave a closed list row `content-visibility: auto` (responsive.css, not on WebKit),
+which paints the row as its own box, so text in a row at a fractional offset lands on the same pixels whatever the
+offset. v2 virtualizes the list instead, and now keeps only the paint containment, on the same rows (not the open
+task's, not WebKit): `packages/ui/src/css/app-frame.css`. Nothing is masked for it.
 
 ## 7. Improvements over v1 (the lead's call, 2026-11-13)
 

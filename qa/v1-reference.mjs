@@ -127,6 +127,11 @@ export function collectInPage({ sels, scope, max, exact = false }) {
       if (!r.width || !r.height) continue;
       const cs = getComputedStyle(el);
       if (cs.visibility === 'hidden' || cs.display === 'none') continue;
+      // inside a box whose content is skipped (content-visibility: hidden, a phone's page off the stage) the element's
+      // own style isn't computed, so it can read `visible`: the browser's own answer says what's on screen
+      if (typeof el.checkVisibility === 'function' && !el.checkVisibility({ contentVisibilityAuto: false, visibilityProperty: true })) continue;
+      // an answer block's comment button at rest: v1 made it on hover, v2 keeps it (opacity 0) so the keyboard reaches it
+      if (el.matches('[data-kit="cmt-add"]') && cs.opacity === '0') continue;
       // to the half pixel, as the references are kept; `exact` (REF_EXACT=1): as layout has it, to find a sub-pixel gap
       const round = (n) => (exact ? n : Math.round(n * 2) / 2);
       out.push({ part, i: i++, box: [round(r.x), round(r.y), round(r.width), round(r.height)], s: pick(cs) });

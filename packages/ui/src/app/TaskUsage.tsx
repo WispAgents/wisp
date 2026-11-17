@@ -137,14 +137,14 @@ function UsageLine(props: { readonly lead: JSX.Element; readonly text: string; r
 export function TaskUsage(props: TaskUsageProps): JSX.Element {
   return (
     <>
-      <Show when={props.plan}>{(p) => <UsageLine lead={<Icon name="stats" />} text={p().text} title={p().title} part="split.usage" card={props} />}</Show>
+      <Show when={props.plan}>{(p) => <UsageLine lead={<Icon name="stats" />} text={p().text} title={p().title} part="details.plan" card={props} />}</Show>
       <Show when={props.context}>
         {(c) => (
           <UsageLine
             lead={<span data-kit="pu-ring" data-hi={c().hi ? '' : undefined} style={{ '--ctx': `${Math.round((c().share ?? 0) * 100)}%` }} aria-hidden="true" />}
             text={c().text}
             title={c().title}
-            part="split.context"
+            part="details.context"
             card={props}
           />
         )}

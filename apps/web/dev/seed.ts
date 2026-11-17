@@ -874,6 +874,13 @@ const ROUTER_ROWS: Row[] = [
   },
 ];
 
+/** A v1 task's tokens: its turns' input and output, summed (v1 task-usage.js `tokens`). */
+const tokensOf = (turns: readonly { stats?: unknown }[] | undefined): number =>
+  (turns ?? []).reduce((n, t) => {
+    const st = (t.stats ?? {}) as { inputTokens?: number; outputTokens?: number };
+    return n + (st.inputTokens ?? 0) + (st.outputTokens ?? 0);
+  }, 0);
+
 export function fromV1(v1: V1Seed, peer: string): Seeded {
   const topics = new Map<Topic, Row[]>();
   const list: Row[] = [];
@@ -893,7 +900,8 @@ export function fromV1(v1: V1Seed, peer: string): Seeded {
       created_at: createdAt,
       updated_at: updatedAt,
       rev: 1,
-      summary: { ...summary, forLater: false, worktree: full.worktree ?? null, overlaps: shared.get(s.id) ?? [] },
+      // the server sums the turns' tokens on the row (usage_row.rs), as v1's task view did (the details' "15 tokens")
+      summary: { ...summary, forLater: false, worktree: full.worktree ?? null, overlaps: shared.get(s.id) ?? [], tokens: tokensOf(full.turns) },
       body: { cwd: s.cwd, dirs: [], queue_held: false, tags: [], ext: {}, ...(full.turns?.length && { resumeId: `fake-${s.id}` }) }, // the fake claude named a conversation (v1's agentSessionId)
     };
     list.push({ e: 'session', id, v });
