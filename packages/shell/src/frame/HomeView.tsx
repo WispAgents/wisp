@@ -15,7 +15,7 @@ import { useRecipes } from './recipes.ts';
 import type { PickOptions } from '../platform/types.ts';
 import { Show, createEffect, createMemo, createSignal, lazy, on, onCleanup, untrack, type JSX } from 'solid-js';
 import { entityKey, newRowId, type EntityKey, type Json, type PeerId } from '@wisp/client';
-import { AutoPop, KeysHint, Launcher, NextList, SplitHome, Tips, lazyPart, lazyView, useSignal, warm as warmPart, type LauncherProps, type LauncherTool, type PlainTip } from '@wisp/ui';
+import { AutoPop, KeysHint, Launcher, NextList, SplitHome, Tips, lazyPart, lazyView, useSignal, warm as warmPart, type Act, type LauncherProps, type LauncherTool, type PlainTip } from '@wisp/ui';
 import { useShell } from '../context.tsx';
 import type { LaunchTargetDef, SendHold } from '../contract.ts';
 import { aheadLabel, waitable } from './hold.ts';
@@ -39,7 +39,12 @@ import { openPlaces, releasePlaces, type PlaceTarget } from './project-switch.ts
 import { promptKeys, remember, sentStore } from './prompt-keys.ts';
 import { displayCombo } from '../keys.ts';
 import { draftValue, launcherDraft } from './drafts.ts';
-import { MODE_ICON, agentName, modeMenu, teamMenu, teamPrefill, teamRows, whenAt, whenMenu, type Mode, type When } from './pickers.ts';
+import { MODE_ICON, agentName, modeMenu, whenAt, whenMenu, type Mode, type When } from './pickers.ts';
+import { teamFromSetting, teamSize, teamToSend, type Delegate } from './team.ts';
+import type { DelegatePlace } from './DelegatePanel.tsx';
+
+// Delegate's panel: its own chunk, loaded when it first opens (ADR-0011)
+const DelegatePanel = lazy(() => import('./DelegatePanel.tsx'));
 
 // the harness picker opens on a press: it loads apart from the first page (ADR-0011, ADR-0067), as Home first draws,
 // with the controls once the page is idle (preloadControls) and on the pill's first hover or focus, so the first press
@@ -159,15 +164,15 @@ export function HomeView(props: { readonly onBack?: () => void }): JSX.Element {
   const varies = (r: Runner, i: number): readonly string[] =>
     // each run needs a worktree of its own: no project, no trial (the launch would be a plain compare)
     i === 0 && runs().length === 1 && sameSetup(r, { agent: agent(), model: model(), effort: effort() }) && project() ? (harnesses().find((h) => h.id === r.agent)?.variants ?? []) : [];
-  const [team, setTeam] = createSignal<ReadonlySet<string>>(new Set());
+  const [team, setTeam] = createSignal<readonly Delegate[]>([]);
   // the team new tasks start with (Settings, `runtime.subagents`): pre-filled until you pick your own
   let teamTouched = false;
   const subagents = (): unknown => settings().find((r) => r.key === 'runtime.subagents')?.value;
   createEffect(() => {
-    const pre = teamPrefill(subagents());
+    const pre = teamFromSetting(subagents());
     if (!teamTouched) setTeam(pre);
   });
-  const pickTeam = (next: ReadonlySet<string>): void => {
+  const pickTeam = (next: readonly Delegate[]): void => {
     teamTouched = true;
     setTeam(next);
   };
@@ -210,7 +215,7 @@ export function HomeView(props: { readonly onBack?: () => void }): JSX.Element {
           ...(files().length > 0 && { attachments: files().length }),
           // Auto's goal (balanced, cheap, best), not Done when's condition: the router reads it as the goal it picks for
           ...(agent() === 'auto' && model() ? { goal: model() } : {}),
-          ...(team().size > 0 && { team: true }),
+          ...(team().length > 0 && { team: true }),
         })
         .then((p) => n === asked && setPreview(p))
         .catch(() => undefined);
@@ -428,7 +433,7 @@ export function HomeView(props: { readonly onBack?: () => void }): JSX.Element {
             ...(model() && { model: model() }),
             ...(effort() && { effort: effort() }),
             ...((a) => (a ? { account: a.id } : {}))(account()),
-            ...(team().size > 0 && { team: teamRows(team(), subagents(), (a) => agentName(t, harnesses(), a)) }),
+            ...(team().length > 0 && { team: teamToSend(team()) }),
           },
         })
         .catch(() => (setText(prompt), goalBack()));
@@ -465,7 +470,7 @@ export function HomeView(props: { readonly onBack?: () => void }): JSX.Element {
           ...(agent() !== 'auto' && model() && { model: model() }),
           ...(agent() !== 'auto' && effort() && { effort: effort() }),
           ...((a) => (agent() !== 'auto' && a ? { account: a.id } : {}))(account()),
-          ...(team().size > 0 && { team: teamRows(team(), subagents(), (a) => agentName(t, harnesses(), a)) }),
+          ...(team().length > 0 && { team: teamToSend(team()) }),
           ...(yes && { confirmLimit: true }),
         })
         .catch((err: unknown) => (setText(prompt), goalBack(), heldBack(err)));
@@ -531,6 +536,33 @@ export function HomeView(props: { readonly onBack?: () => void }): JSX.Element {
   const settingsSheet = (pane: string): void => shell.navigate({ t: 'openOverlay', overlay: { kind: 'viewer', id: 'shell-settings.sheet' as never, params: { pane } } });
   const shown = (): { agent: string; label: string } | undefined => (agent() === 'auto' ? autoPick(preview()) : undefined);
   const pick = (): { name: string; logo?: string } => harnessOf(harnesses(), shown()?.agent ?? (agent() === 'auto' ? auto() : agent()));
+  // where New task runs (the bar's place button and the Delegate panel's lead): this computer, a machine, a plugin's place
+  const whereAct = (): Act => ({
+    menu: {
+      items: [
+        ...whereItems(
+          runOnPeers(),
+          placeOf() ? runOn() : target(),
+          home,
+          (p) => shell.client.peers.name(p as PeerId),
+          t,
+          targets().map((d) => ({ id: d.id, label: d.label(), icon: d.icon })),
+        ),
+        { kind: 'separator' },
+        { value: 'add', label: t('shell.home.addMachine'), icon: 'plus' },
+      ],
+      // a pick is the one place (the menu closes on it, as every menu does)
+      onSelect: (v) => (v === 'add' ? view('machine.this') : setRunOn(v)),
+    },
+  });
+  // where a delegate can run away from the lead (v1 team.js whereMenu): this computer when the lead is elsewhere, and
+  // every other machine
+  const delegatePlaces = (): DelegatePlace[] => [
+    ...(target() === home ? [] : [{ id: 'here', label: t('shell.card.thisComputer'), icon: 'laptop' as const }]),
+    ...runOnPeers()
+      .filter((p) => p !== home && p !== target())
+      .map((p) => ({ id: p, label: shell.client.peers.name(p as PeerId), icon: 'server' as const })),
+  ];
   // where it works (owner, 2026-11-15): the one project selector, the same list as ⌘P on this box's place
   const placeTarget: PlaceTarget = {
     pick: () => placePick(project()?.id, also()),
@@ -669,41 +701,37 @@ export function HomeView(props: { readonly onBack?: () => void }): JSX.Element {
             {
               text: target() !== home || placeOf() !== undefined,
               ...((target() !== home || placeOf() !== undefined) && { on: true }),
-              act: {
-                menu: {
-                  items: [
-                    ...whereItems(
-                      runOnPeers(),
-                      placeOf() ? runOn() : target(),
-                      home,
-                      (p) => shell.client.peers.name(p as PeerId),
-                      t,
-                      targets().map((d) => ({ id: d.id, label: d.label(), icon: d.icon })),
-                    ),
-                    { kind: 'separator' },
-                    { value: 'add', label: t('shell.home.addMachine'), icon: 'plus' },
-                  ],
-                  // a pick is the one place (the menu closes on it, as every menu does)
-                  onSelect: (v) => (v === 'add' ? view('machine.this') : setRunOn(v)),
-                },
-              },
+              act: whereAct(),
             },
           ),
         ])}
         mid={firstRunTools(firstRun(), 'mid', [
           // v1 #771: no Try it two ways button; the runner's + adds the second run
-          tool('team', 'launcher.team', 'agent', t('shell.home.delegate'), t('shell.home.delegateTitle'), {
+          // v1 team.js paintTeamBtn: "Delegate", or how many agents the lead can hand work to; its panel (teamEditor)
+          tool('team', 'launcher.team', 'agent', team().length ? t(teamSize(team()) === 1 ? 'shell.home.delegates.one' : 'shell.home.delegates.other', { count: teamSize(team()) }) : t('shell.home.delegate'), t('shell.home.delegateTitle'), {
             text: true,
-            ...(team().size > 0 && { on: true }),
+            ...(team().length > 0 && { on: true }),
             act: {
-              menu: {
-                items: teamMenu(t, harnesses(), team()),
-                onSelect: (v) => {
-                  const next = new Set(team());
-                  if (next.has(v)) next.delete(v);
-                  else next.add(v);
-                  pickTeam(next);
-                },
+              panel: {
+                label: t('shell.home.delegate'),
+                part: 'launcher.team.panel',
+                cardPart: 'delegate.panel',
+                content: () => (
+                  <DelegatePanel
+                    lead={{
+                      agent: agent(),
+                      run: [agentName(t, harnesses(), agent()), agent() === 'auto' ? (shown()?.label ?? '') : runnerPick({ agent: agent(), name: pick().name, model: modelWord({ model: model(), modelLabel: modelLabel() }), effort: effort(), account: '', fallback: t('shell.runner.default') })].filter(Boolean).join(' · '),
+                      logo: agent() === 'auto' ? undefined : harnessOf(harnesses(), agent()).logo,
+                      place: { icon: placeOf()?.icon ?? (target() === home ? 'laptop' : 'server'), label: placeOf()?.label() ?? (target() === home ? t('shell.card.thisComputer') : shell.client.peers.name(target())), title: t('shell.home.where') },
+                      placeAct: whereAct(),
+                    }}
+                    team={team()}
+                    onChange={pickTeam}
+                    peer={target()}
+                    places={delegatePlaces()}
+                    onAddMachine={() => view('machine.this')}
+                  />
+                ),
               },
             },
           }),

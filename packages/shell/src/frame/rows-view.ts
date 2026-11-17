@@ -3,6 +3,7 @@
 
 import type { SessionRow } from '../rows.ts';
 import type { ShellContext } from '../contract.ts';
+import { isHeld } from '../task-held.ts';
 
 export type SectionId = 'needs' | 'working' | 'done';
 export const SECTIONS: readonly SectionId[] = ['needs', 'working', 'done'];
@@ -41,6 +42,7 @@ export function statusOf(s: SessionRow, t: ShellContext['t']): { label: string; 
   if (s.state === 'running') return { label: t('shell.status.working'), tone: 'live' };
   // a question waits for you (an ask, a stalled goal): that's what the task's state says, whatever the last turn said
   if (s.state === 'waiting') return { label: t('shell.status.waiting'), tone: 'warn' };
+  if (isHeld(s.state, s.summary)) return { label: t('shell.status.held'), tone: 'warn' };
   if (st === 'info') return { label: t('shell.status.report'), tone: 'info' };
   // v1 format.js statusKey: a blocked run says why it stopped (a limit, a refusal, a crash), else Blocked, as the
   // list's pill does (B9: a run refused before it started read Failed here and Blocked on its card)

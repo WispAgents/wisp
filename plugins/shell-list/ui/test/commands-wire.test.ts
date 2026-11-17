@@ -3,7 +3,7 @@
 // the list toasted it, once the welcome stopped refusing Mark read).
 import { expect, test } from 'vitest';
 import type { EntityKey } from '@wisp/client';
-import { archive, markRead, remove, rename, setExt, setState } from '../src/commands.ts';
+import { archive, markRead, pin, remove, rename, setState } from '../src/commands.ts';
 
 const key = 'local:01a1db45c9977e1a8ae0e6b6d3c576cb' as EntityKey;
 const id = '01a1db45c9977e1a8ae0e6b6d3c576cb';
@@ -15,5 +15,5 @@ test('every list write sends the peer the bare task id, never the entity key_lis
   expect(sent(archive.wire, { id: key, archived: true })).toEqual({ id, archived: true });
   expect(sent(setState.wire, { id: key, state: 'done' })).toEqual({ id, state: 'done' });
   expect(sent(remove.wire, { id: key })).toEqual({ id });
-  expect(sent(setExt.wire, { id: key, plugin: 'pinned', value: true })).toEqual({ id, plugin: 'pinned', value: true });
+  expect(sent(pin.wire, { id: key, pinned: true })).toEqual({ id, pinned: true });
 });

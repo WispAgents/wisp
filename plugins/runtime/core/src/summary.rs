@@ -124,6 +124,10 @@ pub fn summarize(s: &Session, f: &RowFacts<'_>, fields: BTreeMap<String, Value>)
     if let Some(l) = s.ext.get("wisp.runtime").and_then(|r| r.get("forLater")).filter(|l| !l.is_null()) {
         out.insert("forLater".into(), l.clone());
     }
+    // pinned (`runtime.pin`): the row's Pinned pill
+    if s.ext.get("wisp.runtime").and_then(|r| r.get("pinned")).and_then(Value::as_bool) == Some(true) {
+        out.insert("pinned".into(), json!(true));
+    }
     // a mode cap (a channel's, F-chan-10): the row and the task page show it, and a restart reloads it from here
     if let Some(c) = crate::cap::of(s.ext.get("wisp.runtime")) {
         out.insert("capped".into(), json!(crate::agent_task::mode_id(c)));

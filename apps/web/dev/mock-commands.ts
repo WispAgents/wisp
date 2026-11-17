@@ -990,6 +990,10 @@ export const COMMANDS: Record<string, CommandFn> = {
     const x = obj(a);
     return { ops: sessionPatch(ctx, str(x, 'id'), [{ op: 'replace', path: '/summary/forLater', value: x['forLater'] === true }]) };
   },
+  'runtime.pin': (a, ctx) => {
+    const x = obj(a);
+    return { ops: sessionPatch(ctx, str(x, 'id'), [{ op: 'replace', path: '/summary/pinned', value: x['pinned'] === true }]) };
+  },
   'goal.set': (a, ctx) => {
     const x = obj(a);
     const text = str(x, 'text');

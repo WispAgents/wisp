@@ -17,6 +17,9 @@ import { Sheet } from './Dialog.tsx';
 
 export interface PopoverProps extends KitProps, WithChildren, WithVars {
   readonly trigger: MenuTrigger;
+  /** Draws its own trigger with the props to spread on it (a composer's icon button), instead of the kit's button
+   *  from `trigger` (which then only names it). Always a floating card. Additive (2026-11-17). */
+  readonly render?: (trigger: () => Record<string, unknown>) => JSX.Element;
   /** A heading inside the card; with one, the card also gets a close button. */
   readonly title?: string;
   readonly placement?: Placement;
@@ -41,7 +44,7 @@ const wide = (): boolean => typeof window !== 'undefined' && window.matchMedia?.
 export function Popover(props: PopoverProps): JSX.Element {
   const look = usePlatform();
   return (
-    <Show when={look() === 'android' || (look() === 'ios' && !wide())} fallback={<Floating {...props} />}>
+    <Show when={!props.render && (look() === 'android' || (look() === 'ios' && !wide()))} fallback={<Floating {...props} />}>
       <AsSheet {...props} />
     </Show>
   );
@@ -84,7 +87,9 @@ function Floating(props: PopoverProps): JSX.Element {
   const part = (): PartName => props.part ?? 'ui.popover';
   return (
     <>
-      <TriggerButton look={props.trigger} bind={api().getTriggerProps()} part={sub(part(), 'trigger')} />
+      <Show when={props.render} fallback={<TriggerButton look={props.trigger} bind={api().getTriggerProps()} part={sub(part(), 'trigger')} />}>
+        {(draw) => draw()(() => api().getTriggerProps() as Record<string, unknown>)}
+      </Show>
       <Portal>
         <div {...api().getPositionerProps()} data-kit="positioner">
           <div {...api().getContentProps()} data-kit="popover" data-part={props.cardPart ? `${part()} ${props.cardPart}` : part()} data-bare={props.bare ? '' : undefined} style={styleOf({}, props.vars)}>

@@ -13,3 +13,5 @@ export { STANDALONE_CHECK, HOME_SCREEN_TAGS, homeScreenTags, addHomeScreenTags, 
 // a task's turn rows as the history ledger reads them (ADR-0068)
 export { NOTICE_KINDS, clause, isNotice, ledgerTurn, outcomeOf, shippedOf, type TurnLike } from './frame/ledger-turns.ts';
 export { COMPUTERS_VIEW, destinationOf, destinationsOf, intentOf, type DestinationId } from './frame/destinations.ts';
+// a task held before it starts: the list, Home and the task header say Held by this one rule
+export { isHeld } from './task-held.ts';

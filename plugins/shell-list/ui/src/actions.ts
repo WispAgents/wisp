@@ -5,7 +5,7 @@
 
 import type { EntityKey, PluginClient, SessionId } from '@wisp/client';
 import type { Toaster } from '@wisp/ui';
-import { archive, forLater, markRead, remove, rename as renameCmd, setExt, setState } from './commands.ts';
+import { archive, forLater, markRead, pin, remove, rename as renameCmd, setState } from './commands.ts';
 import { canSaveForLater } from './model/menu.ts';
 import { busy } from './model/row.ts';
 import { isForLater } from './model/sections.ts';
@@ -115,7 +115,7 @@ export function readOnOpen(c: ActionCtx, key: EntityKey): void {
 export function togglePin(c: ActionCtx, key: EntityKey): void {
   const s = peek(c, key);
   if (!s) return;
-  quiet(c.client.run(setExt, { id: key, plugin: 'pinned', value: s.pinned ? null : true }));
+  quiet(c.client.run(pin, { id: key, pinned: !s.pinned }));
 }
 
 export async function copyId(c: ActionCtx, key: EntityKey, copy: (text: string) => Promise<boolean>): Promise<void> {

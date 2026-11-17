@@ -5,6 +5,7 @@
 
 import type { AutoPreview } from './auto.ts';
 import type { ColdOut } from './cold.ts';
+import type { SentDelegate } from './team.ts';
 import { defineCommand, entityKey, type EntityKey, type LocalOp, type PeerId } from '@wisp/client';
 
 /** the bare id the peer knows a task by: nav and rows name it by its entity key (`<peer>:<id>`) */
@@ -64,7 +65,8 @@ export interface CreateArgs {
   /** files that go with the prompt (uploaded first: stuff's /uploads) */
   readonly attachments?: readonly Attachment[];
   /** the delegates it starts with (runtime's StartArgs.team) */
-  readonly team?: readonly { readonly name: string; readonly agent: string; readonly model?: string; readonly effort?: string; readonly use?: string }[];
+  /** Delegate's team (`runtime.delegate` reads each row: frame/team.ts teamToSend) */
+  readonly team?: readonly SentDelegate[];
   /** you picked your own harness after Auto's preview showed `key` (runtime tells the router) */
   readonly autoOverride?: { readonly key: string; readonly type?: string };
   /** the harness the new row shows until the server's arrives (Auto's previewed pick); not sent */

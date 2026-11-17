@@ -54,6 +54,14 @@ pub struct ForLaterArgs {
     pub at: Option<i64>,
 }
 
+/// `runtime.pin`: pinned in the list (its Pinned pill), or not. Additive (2026-11-17).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[ts(export, export_to = "runtime/")]
+pub struct PinArgs {
+    pub id: SessionId,
+    pub pinned: bool,
+}
+
 /// `runtime.queue.order`: the queued follow-ups in this order (ids the queue doesn't have are skipped).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[ts(export, export_to = "runtime/")]

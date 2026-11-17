@@ -101,6 +101,23 @@ pub fn put_meta(w: &mut Writer<'_>, id: &str, v: &Value) -> wisp_store::Result<(
     w.upsert(META.kind, doc_row(id, v)?).map(|_| ())
 }
 
+/// The turns the harness watch held, by harness: (task, turn) each. Kept so Trust starts them after a restart too
+/// (TRY-17 #29: they lived only in memory).
+pub type HeldTurns = std::collections::HashMap<String, Vec<(String, String)>>;
+
+pub fn put_held(w: &mut Writer<'_>, held: &HeldTurns) -> wisp_store::Result<()> {
+    put_meta(w, "held", &serde_json::to_value(held)?)
+}
+
+pub async fn load_held(store: &Store) -> wisp_store::Result<HeldTurns> {
+    store
+        .read_async(|r| {
+            let row = r.query(META.kind, &Query::new())?.into_iter().find(|row| row.get("id").and_then(Value::as_str) == Some("held"));
+            Ok(row.and_then(|row| row.get("body").cloned()).and_then(|b| serde_json::from_value(b).ok()).unwrap_or_default())
+        })
+        .await
+}
+
 /// Everything stored: (agent → accounts in order, agent → watch, the settings).
 pub type Loaded = (Vec<(String, Vec<Stored>)>, Vec<(String, Watched)>, Value);
 

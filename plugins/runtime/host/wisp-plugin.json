@@ -113,6 +113,7 @@
       { "id": "runtime.setLean", "title": "Run a task's turns lean (on, off, or none to follow Settings)" },
       { "id": "runtime.setAgent", "title": "Set the harness a task's next turns run on" },
       { "id": "runtime.forLater", "title": "Save a task for later, or take it out" },
+      { "id": "runtime.pin", "title": "Pin a task in the list, or unpin it" },
       { "id": "runtime.queue.order", "title": "Reorder a task's queued follow-ups" },
       { "id": "runtime.queue.cancel", "title": "Take a queued follow-up out" },
       {

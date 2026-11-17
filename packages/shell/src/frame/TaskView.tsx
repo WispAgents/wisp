@@ -103,7 +103,11 @@ import { envReveal } from './env-reveal.ts';
 import { runPick, type Runner } from './runner.ts';
 import { rowUsage, taskUsage, type TurnStatsLike } from './task-usage.ts';
 import { TELEMETRY_TOPIC, feedbackOn } from './feedback-on.ts';
-import { MODE_ICON, agentMenu, modeMenu, teamMenu, whenAt, whenMenu, type Mode, type When } from './pickers.ts';
+import { MODE_ICON, agentMenu, modeMenu, whenAt, whenMenu, type Mode, type When } from './pickers.ts';
+import type { Delegate } from './team.ts';
+
+// Delegate's panel: its own chunk, loaded when it first opens (ADR-0011)
+const DelegatePanel = lazy(() => import('./DelegatePanel.tsx'));
 import { capOf } from './cap.ts';
 import '../i18n/lazy.ts';
 import { openedByStep } from './stepped.ts';
@@ -440,7 +444,8 @@ export default function TaskView(props: { readonly id: string; readonly onBack?:
   // files with the reply: picked, pasted or dropped, each uploading at once to the task's computer
   const att = useAttachments(shell, () => ownerOf(key));
   const files = att.files;
-  const [team, setTeam] = createSignal<ReadonlySet<string>>(new Set());
+  // the reply box's Delegate picks (v1 composer.js replyTeam)
+  const [team, setTeam] = createSignal<readonly Delegate[]>([]);
   const [goal, setGoalText] = createSignal<string | undefined>(undefined);
   const [when, setWhen] = createSignal<When | undefined>(undefined);
   const nav = useSignal(shell.nav);
@@ -1346,14 +1351,26 @@ export default function TaskView(props: { readonly id: string; readonly onBack?:
                     }}
                     team={t('shell.home.delegateTitle')}
                     teamAct={{
-                      menu: {
-                        items: teamMenu(t, harnesses(), team()),
-                        onSelect: (v) => {
-                          const next = new Set(team());
-                          if (next.has(v)) next.delete(v);
-                          else next.add(v);
-                          setTeam(next);
-                        },
+                      // v1 composer.js: the same Delegate panel as New task's, the lead this task's harness where it runs
+                      panel: {
+                        label: t('shell.home.delegate'),
+                        part: 'composer.team.panel',
+                        cardPart: 'delegate.panel',
+                        placement: 'top-start',
+                        content: () => (
+                          <DelegatePanel
+                            lead={{
+                              agent: replyRun()?.agent ?? s().agent,
+                              run: [h().name, replyRun()?.model || t('shell.runner.default'), replyRun()?.effort ?? ''].filter(Boolean).join(' · '),
+                              logo: h().logo,
+                              place: peer === shellHome ? { icon: 'laptop', label: t('shell.card.thisComputer'), title: t('shell.home.where') } : { icon: 'server', label: shell.client.peers.name(peer), title: t('shell.home.where') },
+                            }}
+                            team={team()}
+                            onChange={setTeam}
+                            peer={peer}
+                            places={[]}
+                          />
+                        ),
                       },
                     }}
                     goal={t('shell.task.goal')}

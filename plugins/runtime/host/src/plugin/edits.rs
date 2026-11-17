@@ -17,6 +17,7 @@ pub(super) fn edits(s: &mut Setup, slot: &Slot) {
     cmd!(s, slot, c::SetLean, |r, call, a| r.set_lean(a.id.as_str(), a.lean).await.map(|()| c::Ack {}));
     cmd!(s, slot, c::SetAgent, |r, call, a| r.set_agent(a.id.as_str(), &a.agent).await.map(|()| c::Ack {}));
     cmd!(s, slot, c::ForLater, |r, call, a| r.for_later(a.id.as_str(), a.for_later, a.at).await.map(|()| c::Ack {}));
+    cmd!(s, slot, c::Pin, |r, call, a| r.pin(a.id.as_str(), a.pinned).await.map(|()| c::Ack {}));
     cmd!(s, slot, c::QueueOrder, |r, call, a| r.queue_order(a.id.as_str(), &a.order).await.map(|()| c::Ack {}));
     cmd!(s, slot, c::QueueCancel, |r, call, a| r.queue_cancel(a.id.as_str(), &a.item_id).await.map(|()| c::Ack {}));
     // a person's Start now is a yes to what held it (Ask near the limit); wisp releasing it at the reset isn't

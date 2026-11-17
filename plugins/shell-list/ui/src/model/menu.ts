@@ -7,6 +7,7 @@ import { taskMenu, type TaskMenuEntry } from '@wisp/shell/pure';
 import type { MenuEntry, MenuItem } from '@wisp/ui/pure';
 import type { SessionRow } from '../types.ts';
 import { busy } from './row.ts';
+import { flatSession } from './wire.ts';
 import { isForLater } from './sections.ts';
 import '../i18n/lazy.ts';
 
@@ -25,7 +26,9 @@ export interface MenuInput {
 }
 
 export function rowMenu(m: MenuInput): MenuEntry[] {
-  const { s, t } = m;
+  // as the list reads it: a server row keeps its view under `summary` (pinned, unread, forLater…): TRY-17 #30
+  const s = flatSession(m.s);
+  const { t } = m;
   const k = (key: string): { keys?: string } => (m.keys ? { keys: key } : {});
   const own: TaskMenuEntry[] = [
     { section: 'open', order: -10, entry: { value: 'open', label: t('shell-list.menu.open'), icon: 'expand', ...k('O') } },

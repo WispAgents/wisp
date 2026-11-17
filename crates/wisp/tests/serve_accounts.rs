@@ -267,3 +267,53 @@ async fn an_early_reset_ends_the_accounts_cool_at_once() {
     assert_eq!(until_of("w1").await, old, "another account's plan didn't reset");
     drop(serve);
 }
+
+/// The fake codex with other bytes (the same other bytes each time, so a second change is the same program).
+fn change_codex(dir: &std::path::Path) {
+    let bin = dir.join("bin").join(format!("codex{}", std::env::consts::EXE_SUFFIX));
+    let mut bytes = std::fs::read(&bin).unwrap();
+    std::fs::remove_file(&bin).unwrap();
+    bytes.extend_from_slice(b"\0changed");
+    std::fs::write(&bin, bytes).unwrap();
+    #[cfg(unix)]
+    std::fs::set_permissions(&bin, std::os::unix::fs::PermissionsExt::from_mode(0o755)).unwrap();
+}
+
+/// TRY-17 #29: the turns the harness watch held lived only in memory. After a restart Trust (`accounts.watch.trust`)
+/// started none of them, and a held card stayed held until something else released it. Both ways work after a
+/// restart: Trust starts every turn it held, and Start now on a card (`runtime.release`) runs its turn.
+#[tokio::test(flavor = "multi_thread")]
+async fn after_a_restart_trust_starts_the_turns_the_watch_held_and_start_now_runs_one() {
+    let dir = temp("serve-watch-restart");
+    let (mut serve, port) = start(&dir);
+    let api = Arc::new(Api { http: reqwest::Client::new(), port, n: 0.into() });
+    api.cmd("accounts.watch.ask", json!({ "on": true })).await;
+    let (turn, _) = run_task(&api, &dir, "codex").await;
+    assert_eq!(turn["status"], "done", "{turn}");
+    change_codex(&dir);
+    let mut held = Vec::new();
+    for p in ["a", "b"] {
+        let id = api.cmd("runtime.create", json!({ "prompt": p, "cwd": dir.join("proj"), "agent": "codex" })).await["id"]
+            .as_str()
+            .unwrap()
+            .to_owned();
+        let t = api.until(&id, "held", |t| t.len() == 1 && t[0]["status"] == "held").await;
+        held.push((id, t[0]["id"].as_str().unwrap().to_owned()));
+    }
+    // a restart: the same home, the fakes installed again (the original codex), so it's changed again the same way
+    serve.keep = true;
+    drop(serve);
+    // the old server's address goes with it, so the new one's is the one read
+    std::fs::remove_file(dir.join("home").join("server.json")).unwrap();
+    let (serve, port) = start(&dir);
+    change_codex(&dir);
+    let api = Arc::new(Api { http: reqwest::Client::new(), port, n: 0.into() });
+    let ((a, a_turn), (b, _)) = (held[0].clone(), held[1].clone());
+    // Start now on one card
+    api.cmd("runtime.release", json!({ "id": a, "turnId": a_turn, "action": "start" })).await;
+    api.until(&a, "Start now runs it after a restart", |t| t.len() == 1 && t[0]["status"] == "done").await;
+    // Trust starts the other
+    api.cmd("accounts.watch.trust", json!({ "agent": "codex" })).await;
+    api.until(&b, "Trust starts the turn it held before the restart", |t| t.len() == 1 && t[0]["status"] == "done").await;
+    drop(serve);
+}

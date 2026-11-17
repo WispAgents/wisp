@@ -1,6 +1,7 @@
 // The task header's status pill (frame/rows-view.ts statusOf).
 import { describe, expect, it, test } from 'vitest';
 import { nextNeedsYou, statusOf, duration, changeFigures, folded, trailActs } from '../src/frame/rows-view.ts';
+import { isHeld } from '../src/pure.ts';
 import type { SessionRow } from '../src/rows.ts';
 
 const t = (key: string): string => key;
@@ -57,4 +58,16 @@ test("a finished turn's trail shows only the kinds it did; none when it never ra
   expect(trailActs(0, { read: 0, edit: 0, run: 0 }, t)).toEqual([]);
   expect(trailActs(3, { read: 2, edit: 0, run: 1 }, t).map((a) => a.icon)).toEqual(['read', 'terminal']);
   expect(trailActs(1, { read: 0, edit: 0, run: 0 }, t)).toEqual([{ text: 'shell.task.activityLabel' }]);
+});
+
+// TRY-17 #28: a held task read Finished on Home's Needs you and the phone task header while the list said Held. One
+// helper (`isHeld`) decides it for all three.
+test('a_held_task_says_held_on_home_the_task_header_and_the_list_alike', () => {
+  const held = { id: 'x', state: 'review', summary: { status: 'held', held: { kind: 'harness-changed', by: 'wisp.accounts', data: {} } } } as unknown as SessionRow;
+  expect(statusOf(held, t)).toEqual({ label: 'shell.status.held', tone: 'warn' });
+  expect(isHeld(held.state, held.summary)).toBe(true);
+  // the status alone (an older row without the held turn) is held too; a running or done task never is
+  expect(isHeld('review', { status: 'held' })).toBe(true);
+  expect(isHeld('running', { status: 'held' })).toBe(false);
+  expect(isHeld('review', { status: 'done' })).toBe(false);
 });

@@ -119,6 +119,7 @@ impl Plugin for AccountsPlugin {
                 store::import_v1(&store, h).await.map_err(store_err)?;
             }
             let (accounts, watch, settings) = store::load(&store).await.map_err(store_err)?;
+            let held = store::load_held(&store).await.map_err(store_err)?;
             let st = State {
                 store,
                 proc,
@@ -126,7 +127,7 @@ impl Plugin for AccountsPlugin {
                 accounts: Mutex::new(accounts.into_iter().collect()),
                 watch: Mutex::new(watch.into_iter().collect()),
                 settings: Mutex::new(settings),
-                held: Mutex::new(HashMap::new()),
+                held: Mutex::new(held),
                 hashes: Mutex::new(HashMap::new()),
                 flows: signin::Flows::default(),
                 installing: Mutex::default(),

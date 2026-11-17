@@ -103,6 +103,15 @@ pub(crate) async fn trust(ctx: &Ctx, st: &State, agent: &str) -> Result<(), wisp
     st.store.write(move |w| store::put_watch(w, &a, &next)).await
 }
 
+/// Saves the turns the watch holds (so Trust starts them after a restart); a failed save only loses them across one.
+/// The list is read inside the write, so two saves racing each write what's there then, never an older copy last.
+pub(crate) async fn save_held(st: &std::sync::Arc<State>) {
+    let st2 = st.clone();
+    if let Err(e) = st.store.write(move |w| store::put_held(w, &lock(&st2.held).clone())).await {
+        tracing::warn!("couldn't save the turns the harness watch held: {e}");
+    }
+}
+
 /// A person pressed Start now (`confirm_limit`: a yes to what held it) on a turn this watch held, and its card was
 /// this watch's (a later hook, budget's Ask near the limit, may have held it instead: a yes to that isn't a yes to the
 /// changed harness). Without this the release ran `before:run` against the old pin again and the turn was held again:
@@ -132,6 +141,18 @@ pub(crate) async fn before_run(ctx: &Ctx, _call: &Call, st: &std::sync::Arc<Stat
             changed = true;
         }
     }
+    // a turn this watch held, released by Start now, leaves its list (whatever the program is now, Ask on or off):
+    // Trust never starts it again after a restart
+    if c.released.as_ref().is_some_and(|r| r.by == PLUGIN_ID && r.kind == HOLD_KIND) {
+        let gone = lock(&st.held).get_mut(&c.agent).is_some_and(|l| {
+            let n = l.len();
+            l.retain(|(s, t)| !(*s == c.session_id.0 && *t == c.turn_id.0));
+            l.len() != n
+        });
+        if gone {
+            save_held(st).await;
+        }
+    }
     if let Some(bin) = h.program() {
         if st.ask() {
             if let Some(change) = observe(ctx, st, &c.agent, &bin).await {
@@ -139,9 +160,6 @@ pub(crate) async fn before_run(ctx: &Ctx, _call: &Call, st: &std::sync::Arc<Stat
                     // Start now on a turn this watch held: that yes trusts what's there now, and it runs
                     if let Err(e) = trust(ctx, st, &c.agent).await {
                         tracing::warn!(agent = c.agent, "couldn't save the trusted harness: {e}");
-                    }
-                    if let Some(l) = lock(&st.held).get_mut(&c.agent) {
-                        l.retain(|(s, t)| !(*s == c.session_id.0 && *t == c.turn_id.0));
                     }
                 } else {
                     let line = watch::change_line(&h.info().name, &change, "wisp last ran it");
@@ -152,11 +170,18 @@ pub(crate) async fn before_run(ctx: &Ctx, _call: &Call, st: &std::sync::Arc<Stat
                         data: json!({ "agent": c.agent, "change": change, "line": line, "what": watch::change_what(&change) }),
                     });
                     let key = (c.session_id.0.clone(), c.turn_id.0.clone());
-                    let mut held = lock(&st.held);
-                    let list = held.entry(c.agent.clone()).or_default();
-                    // held again (another yes-less release) is still one turn to start on trust
-                    if !list.contains(&key) {
-                        list.push(key);
+                    let added = {
+                        let mut held = lock(&st.held);
+                        let list = held.entry(c.agent.clone()).or_default();
+                        // held again (another yes-less release) is still one turn to start on trust
+                        let added = !list.contains(&key);
+                        if added {
+                            list.push(key);
+                        }
+                        added
+                    };
+                    if added {
+                        save_held(st).await;
                     }
                     changed = true;
                 }

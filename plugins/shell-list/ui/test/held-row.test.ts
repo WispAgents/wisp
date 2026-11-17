@@ -3,7 +3,8 @@
 import { expect, test } from 'vitest';
 import type { SessionRow } from '../src/types.ts';
 import { flatSession } from '../src/model/wire.ts';
-import { subOf, type RowContext } from '../src/model/row.ts';
+import { isHeld } from '@wisp/shell/pure';
+import { pillsOf, subOf, type RowContext } from '../src/model/row.ts';
 
 const ctx = { split: false, open: false, swipes: false, here: 'This computer', agents: new Map() } as unknown as RowContext;
 const held = (h: unknown): SessionRow =>
@@ -26,4 +27,14 @@ test('a stop line: it waits for the reset; a project setup; the harness watch', 
 test('no window to name: its why, never "at 0%"', () => {
   const s = held({ kind: 'other', by: 'my.plugin', data: { why: 'Waits for the deploy window' } });
   expect(subOf(s, ctx)?.text).toEqual({ key: 'shell-list.raw', vars: { text: 'Waits for the deploy window' } });
+});
+
+// TRY-17 #28: the list's Held comes from the same helper as Home's and the task header's (`@wisp/shell/pure` isHeld)
+test('a_held_row_is_held_by_the_shells_one_rule', () => {
+  const s = held({ kind: 'harness-changed', by: 'wisp.accounts', data: { line: 'Codex changed' } });
+  expect(isHeld(s.state, { status: s.status, held: s.held })).toBe(true);
+  expect(pillsOf(s).find((p) => p.id === 'status')?.label.key).toBe('shell-list.pill.held');
+  // a held status with no held turn yet still says Held, as the header does
+  const bare = flatSession({ id: 'b', title: 't', state: 'review', agent: 'codex', created_at: 1, updated_at: 2, body: { cwd: '/w' }, summary: { status: 'held' } } as unknown as SessionRow);
+  expect(pillsOf(bare).find((p) => p.id === 'status')?.label.key).toBe('shell-list.pill.held');
 });

@@ -114,6 +114,23 @@ impl Runtime {
         .map(drop)
     }
 
+    /// Pinned in the list (`ext["wisp.runtime"].pinned`, the row's Pinned pill), or not.
+    pub async fn pin(self: &Arc<Self>, id: &str, on: bool) -> Result<()> {
+        self.edit(id, |s| {
+            let slot = s.ext.entry("wisp.runtime".into()).or_insert_with(|| serde_json::json!({}));
+            if let Some(o) = slot.as_object_mut() {
+                if on {
+                    o.insert("pinned".into(), serde_json::Value::Bool(true));
+                } else {
+                    o.remove("pinned");
+                }
+            }
+            Ok(())
+        })
+        .await
+        .map(drop)
+    }
+
     /// The queue in this order (the composer's drag).
     pub async fn queue_order(self: &Arc<Self>, id: &str, order: &[String]) -> Result<()> {
         self.edit(id, |s| {

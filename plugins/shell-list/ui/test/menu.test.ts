@@ -72,3 +72,13 @@ test('no key hints on touch screens_v1_786_row_menu_keys', () => {
   const m = rowMenu({ s: row(), t, plugins: [], keys: false });
   expect(m.some((e) => 'keys' in e && e.keys)).toBe(false);
 });
+
+// TRY-17 #30: the open row's menu got the server's row (its view under `summary`), so a pinned task still offered Pin
+// (and a saved or unread one read as neither); the menu reads the row as the list does
+test('a_server_rows_menu_reads_its_summary_a_pinned_task_offers_unpin', () => {
+  const server = { id: 's1', title: 'T', agent: 'codex', state: 'review', created_at: 0, updated_at: 0, body: {}, summary: { status: 'done', pinned: true, unread: true } } as unknown as SessionRow;
+  const flat = (m: readonly MenuEntry[]): string[] => m.flatMap((e) => (e.kind === 'submenu' ? e.items : [e])).flatMap((e) => ('label' in e && 'value' in e ? [String(e.label)] : []));
+  const labels = flat(rowMenu({ s: server, t, plugins: [], keys: false }));
+  expect(labels).toContain('unpin');
+  expect(labels).toContain('mark-read');
+});

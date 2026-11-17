@@ -630,13 +630,27 @@ impl Runtime {
 /// its own under the temp dir, the same each turn for `scratch` so a resume finds it. A relative folder is
 /// refused: it would resolve against the server's folder.
 /// Every ext slot but runtime's own as `now` has it (other plugins write theirs under the task's lock).
+/// Runtime's own fields the list sets at any time (`runtime.pin`) come from `now` too: a pin made while the turn
+/// started was overwritten by the copy read before the start's awaits (TRY-17 #30).
 fn carry_others_ext(s: &mut Session, mut now: wisp_runtime_api::model::Ext) {
-    match s.ext.remove(OWN) {
+    let pinned = now.get(OWN).and_then(|o| o.get(PINNED)).cloned();
+    let mut own = s.ext.remove(OWN);
+    if let Some(o) = own.as_mut().and_then(Value::as_object_mut) {
+        match pinned {
+            Some(p) => o.insert(PINNED.to_owned(), p),
+            None => o.remove(PINNED),
+        };
+    } else if let Some(p) = pinned {
+        own = Some(serde_json::json!({ PINNED: p }));
+    }
+    match own {
         Some(own) => now.insert(OWN.to_owned(), own),
         None => now.remove(OWN),
     };
     s.ext = now;
 }
+
+const PINNED: &str = "pinned";
 
 const OWN: &str = "wisp.runtime";
 /// How long `stop_and_wait` waits for a stopped run (its CLI's kill grace and tree sweep are 2 s each).
@@ -737,5 +751,34 @@ mod folder_tests {
             assert!(e.to_string().contains("Not a project folder"), "{launch:?} {task:?}: {e}");
         }
         std::fs::remove_dir_all(scratch).ok();
+    }
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod tests {
+    use serde_json::json;
+    use wisp_runtime_api::model::Session;
+
+    /// TRY-17 #30 (review): a pin (`runtime.pin`) made while a turn starts was overwritten by the start's write of
+    /// runtime's own slot, read before the start's awaits: the pill showed, then went. The start keeps the pin as the
+    /// task has it now, and keeps its own fields (a cap) as it read them.
+    #[test]
+    fn a_pin_made_while_a_turn_starts_survives_the_starts_write() {
+        let mut s = Session::default();
+        s.ext.insert("wisp.runtime".into(), json!({ "cap": "plan" }));
+        let mut now = s.ext.clone();
+        now.insert("wisp.runtime".into(), json!({ "cap": "plan", "pinned": true }));
+        now.insert("wisp.goal".into(), json!({ "text": "x" }));
+        super::carry_others_ext(&mut s, now.clone());
+        assert_eq!(s.ext["wisp.runtime"], json!({ "cap": "plan", "pinned": true }));
+        assert_eq!(s.ext["wisp.goal"], json!({ "text": "x" }));
+        // unpinned meanwhile: it stays unpinned
+        let mut s = Session::default();
+        s.ext.insert("wisp.runtime".into(), json!({ "pinned": true }));
+        let mut now = s.ext.clone();
+        now.insert("wisp.runtime".into(), json!({}));
+        super::carry_others_ext(&mut s, now);
+        assert_eq!(s.ext["wisp.runtime"], json!({}));
     }
 }

@@ -1,3 +1,4 @@
+import './i18n/lazy.ts';
 // This computer on its grid, as Settings → Machines and Settings → Cloud say it: its state and, once it's on, its
 // address on the grid (TRY-17: the row said only "Online", never where). Pure, so the UI test imports it without a DOM.
 import type { Computer } from './commands.ts';

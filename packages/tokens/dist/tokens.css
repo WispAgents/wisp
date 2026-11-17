@@ -106,6 +106,12 @@
     --size-rail: 56px;
     --size-rail-w: 64px;
     --size-panel-w: 480px;
+    --size-team-w: 560px;
+    --size-team-place-max: 170px;
+    --size-team-name: 150px;
+    --size-team-name-min: 90px;
+    --size-team-use: 200px;
+    --size-team-face: 22px;
     --size-side: 340px;
     --size-icon-tile: 17px;
     --size-pill-row: 19px;

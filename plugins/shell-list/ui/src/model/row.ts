@@ -4,6 +4,7 @@
 
 import type { IconName } from '@wisp/ui';
 import type { Tone } from '@wisp/tokens';
+import { isHeld } from '@wisp/shell/pure';
 import type { Row, Agent, SessionRow } from '../types.ts';
 import { resText } from './machine.ts';
 import { isForLater, isScheduled, nextAt } from './sections.ts';
@@ -168,7 +169,7 @@ export function variantOf(s: SessionRow): Txt[] {
 function statusPill(s: SessionRow): PillView | undefined {
   if (s.state === 'waiting') return { id: 'status', label: tx(s.approval ? 'shell-list.pill.approval' : 'shell-list.pill.asking'), tone: 'warn', dot: true, live: true };
   if (s.state !== 'review') return undefined;
-  if (s.held) return { id: 'status', label: tx('shell-list.pill.held'), tone: 'warn', dot: true };
+  if (isHeld(s.state, s)) return { id: 'status', label: tx('shell-list.pill.held'), tone: 'warn', dot: true };
   if (s.reminder) return { id: 'status', label: tx('shell-list.pill.reminder'), tone: 'info', icon: 'bell', title: raw(s.reminder.text) };
   const k = statusKey(s);
   return { id: 'status', label: tx(`shell-list.status.${k}`), tone: STATUS_TONE[k] ?? 'neutral', dot: true };

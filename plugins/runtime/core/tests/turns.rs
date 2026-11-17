@@ -390,6 +390,18 @@ fn the_row_carries_for_later_and_the_held_turns_id() {
     assert!(plain.get("forLater").is_none());
 }
 
+/// TRY-17 #30: a pin (`runtime.pin` writes `ext["wisp.runtime"].pinned`) is on the row; the list wrote it with
+/// runtime.setExt, which the summary never read, so the pin went back as the server's row landed.
+#[test]
+fn the_row_carries_a_pin_from_runtime_pin() {
+    let mut s = session();
+    s.ext.insert("wisp.runtime".into(), json!({ "pinned": true }));
+    let v = serde_json::to_value(summarize(&s, &RowFacts::default(), BTreeMap::new())).unwrap();
+    assert_eq!(v["pinned"], json!(true));
+    let plain = serde_json::to_value(summarize(&session(), &RowFacts::default(), BTreeMap::new())).unwrap();
+    assert!(plain.get("pinned").is_none());
+}
+
 #[test]
 fn a_full_auto_runs_refusals_are_not_kept_to_allow_the_others_are() {
     use wisp_runtime_api::model::Mode;

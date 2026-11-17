@@ -1,15 +1,29 @@
 // What pressing one of the frame's controls does (design/feedback.md): a press, or a menu it opens
 // (the kit's menu, on the control as v1 draws it). While its command is in flight the control is
 // pending: a spinner in place of its icon, the same width, and pressing it again does nothing.
-import { Show, type JSX } from 'solid-js';
-import { MenuOn, type MenuEntry } from '../controls/Menu.tsx';
+import { Show, createSignal, splitProps, type JSX } from 'solid-js';
+import { Dynamic } from 'solid-js/web';
+import { MenuOn, type MenuEntry, type Placement } from '../controls/Menu.tsx';
 import { Spinner } from '../controls/Spinner.tsx';
+import { lazyPart, warm } from '../controls/lazy-part.ts';
+import type { PartName } from '../core/props.ts';
+
+/** the panel's popover, apart from the first page (most of it is Zag's) */
+const panelPart = lazyPart(() => import('./act-panel.tsx'));
 
 export interface Act {
   readonly onClick?: () => void;
   readonly menu?: { readonly items: readonly MenuEntry[]; readonly onSelect: (value: string) => void };
   /** its command is in flight */
   readonly pending?: boolean;
+  /** A panel it opens beside it (v1's Delegate .team-pop): what's in it, drawn while open. Additive (2026-11-17). */
+  readonly panel?: {
+    readonly label: string;
+    readonly part: PartName;
+    readonly cardPart?: PartName;
+    readonly placement?: Placement;
+    readonly content: () => JSX.Element;
+  };
 }
 
 /** The attributes a control gets for its act: pending (aria-busy, data-pending) and no second press. */
@@ -27,6 +41,56 @@ export function WithAct(props: { readonly act?: Act | undefined; readonly render
     },
     ...actAttrs(props.act),
   });
+  return (
+    <Show when={props.act?.panel} fallback={<WithMenu act={props.act} render={props.render} press={press} />}>
+      {(p) => <WithPanel panel={p()} act={props.act} render={props.render} />}
+    </Show>
+  );
+}
+
+function WithPanel(props: { readonly panel: NonNullable<Act['panel']>; readonly act?: Act | undefined; readonly render: (trigger: () => Record<string, unknown>) => JSX.Element }): JSX.Element {
+  const [open, setOpen] = createSignal(false);
+  // before its popover has loaded: the button as it looks, a press that opens it once it's here
+  const early = (): Record<string, unknown> => ({
+    'aria-haspopup': 'dialog',
+    'aria-expanded': 'false',
+    onPointerEnter: warm(panelPart),
+    onFocus: warm(panelPart),
+    onClick: (e: MouseEvent) => {
+      e.stopPropagation();
+      setOpen(true);
+      panelPart.load().catch(() => setOpen(false));
+    },
+    ...actAttrs(props.act),
+  });
+  return (
+    <Show when={panelPart.ready()} fallback={props.render(early)}>
+      {(m) => (
+        <ActPanelOf
+          m={m()}
+          label={props.panel.label}
+          part={props.panel.part}
+          cardPart={props.panel.cardPart}
+          placement={props.panel.placement ?? 'bottom-start'}
+          open={open()}
+          onOpenChange={setOpen}
+          content={props.panel.content}
+          render={(trigger: () => Record<string, unknown>) => props.render(() => ({ ...trigger(), ...actAttrs(props.act) }))}
+        />
+      )}
+    </Show>
+  );
+}
+
+type PanelModule = typeof import('./act-panel.tsx');
+function ActPanelOf(props: { readonly m: PanelModule } & Parameters<PanelModule['ActPanel']>[0]): JSX.Element {
+  // split, not destructured: the panel follows `open` and the rest as they change
+  const [own, rest] = splitProps(props, ['m']);
+  return <Dynamic component={own.m.ActPanel} {...rest} />;
+}
+
+function WithMenu(props: { readonly act?: Act | undefined; readonly render: (trigger: () => Record<string, unknown>) => JSX.Element; readonly press: () => Record<string, unknown> }): JSX.Element {
+  const press = props.press;
   return (
     <Show when={props.act?.menu} fallback={props.render(press)}>
       {(m) => (

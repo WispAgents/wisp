@@ -90,6 +90,7 @@ command!(SetMode = "runtime.setMode": SetModeArgs => Ack);
 command!(SetLean = "runtime.setLean": SetLeanArgs => Ack);
 command!(SetAgent = "runtime.setAgent": SetAgentArgs => Ack);
 command!(ForLater = "runtime.forLater": ForLaterArgs => Ack);
+command!(Pin = "runtime.pin": PinArgs => Ack);
 command!(QueueOrder = "runtime.queue.order": QueueOrderArgs => Ack);
 command!(QueueCancel = "runtime.queue.cancel": QueueItemArgs => Ack);
 command!(Get = "runtime.get": IdArgs => Session, read_only);

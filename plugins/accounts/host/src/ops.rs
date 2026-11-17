@@ -145,6 +145,9 @@ pub(crate) fn register(s: &mut Setup, slot: &Slot) {
         run::trust(&ctx, &st, &a.agent).await.map_err(crate::store_err)?;
         // the turns it held run now
         let held = lock(&st.held).remove(&a.agent).unwrap_or_default();
+        if !held.is_empty() {
+            run::save_held(&st).await;
+        }
         for (id, turn) in held {
             crate::calls::release(&ctx, &id, &turn).await;
         }

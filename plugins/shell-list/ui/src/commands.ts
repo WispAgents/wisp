@@ -1,8 +1,7 @@
 // Every write the list makes, as a command with its optimistic patch (ADR-0006): the row changes at
 // once, the peer that owns the task runs it, and a refusal rolls the patch back with a toast. The
 // ids and argument shapes are wisp.runtime's (plugins/runtime/api/src/commands.rs): rename, archive,
-// markRead, setState, delete, forLater. Pin is a field another plugin owns on the summary (`pinned`), written through
-// runtime.setExt, which sets one such field.
+// markRead, setState, delete, forLater, pin.
 
 import { defineCommand, type EntityKey, type EntityOps, type EntityReader } from '@wisp/client';
 import type { PatchOp } from '@wisp/protocol';
@@ -94,13 +93,15 @@ export const forLater = defineCommand<{ id: EntityKey; forLater: boolean; at?: n
   feature: { plugin: RUNTIME, command: 'runtime.forLater', label: 'Save for later' },
 });
 
-/** One summary field another plugin owns (`pinned`); `null` clears it. */
-export const setExt = defineCommand<{ id: EntityKey; plugin: 'pinned'; value: true | null }>({
-  id: 'runtime.setExt',
+/** Pin (or unpin) in the list. wisp.runtime keeps it in ext["wisp.runtime"].pinned and its summary shows it from there
+ *  (host ops.rs pin, core summary.rs): the Pinned pill. (runtime.setExt wrote ext["pinned"], which the summary never
+ *  reads: the pin went back, TRY-17 #30.) */
+export const pin = defineCommand<{ id: EntityKey; pinned: boolean }>({
+  id: 'runtime.pin',
   owner: (a) => a.id,
   wire: bare,
-  optimistic: (base, a) => patch(a.id, setField(row(base, a.id), a.plugin, a.value)),
-  feature: { plugin: RUNTIME, command: 'runtime.setExt', label: 'Save for later' },
+  optimistic: (base, a) => patch(a.id, summaryField(row(base, a.id), 'pinned', a.pinned ? true : undefined)),
+  feature: { plugin: RUNTIME, command: 'runtime.pin', label: 'Pin' },
 });
 
-export const COMMANDS = [rename, archive, markRead, setState, remove, forLater, setExt] as const;
+export const COMMANDS = [rename, archive, markRead, setState, remove, forLater, pin] as const;
