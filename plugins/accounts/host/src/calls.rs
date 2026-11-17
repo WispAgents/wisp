@@ -31,6 +31,45 @@ pub async fn release(ctx: &Ctx, id: &str, turn: &str) {
     }
 }
 
+/// Where a turn the harness watch held stands now (`runtime.get` + `runtime.turns`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum HeldNow {
+    /// still held by `by` for `kind`, its task there and not archived: Trust starts it
+    Ours,
+    /// gone for good: its task deleted or archived, or the turn no longer held (skipped, run, stopped)
+    Stale,
+    /// neither for sure: not written yet (held a moment ago), held by another hook since, or runtime refused
+    Unknown,
+}
+
+pub async fn held_now(ctx: &Ctx, id: &str, turn: &str, by: &str, kind: &str) -> HeldNow {
+    let sid = SessionId(id.to_owned());
+    let a = r::TurnsArgs { id: sid.clone(), before: None, limit: None, masked: None };
+    // the turn first: one not written yet says nothing (its task may be archived until its start un-archives it)
+    let found = match ctx.run::<r::Turns>(&ctx.root_call(), a).await {
+        Ok(ts) => ts.into_iter().find(|t| t.id.0 == turn),
+        Err(err) if err.code == wisp_kernel::Code::NotFound => return HeldNow::Stale,
+        Err(err) => {
+            tracing::debug!(error = %err.message, task = id, turn, "accounts: runtime.turns");
+            return HeldNow::Unknown;
+        }
+    };
+    let Some(t) = found else { return HeldNow::Unknown };
+    if t.status != wisp_runtime_api::model::TurnStatus::Held {
+        return HeldNow::Stale;
+    }
+    match ctx.run::<r::Get>(&ctx.root_call(), r::IdArgs { id: sid }).await {
+        Ok(s) if s.archived => HeldNow::Stale,
+        Ok(_) if t.held.as_ref().is_some_and(|h| h.by == by && h.kind == kind) => HeldNow::Ours,
+        Ok(_) => HeldNow::Unknown,
+        Err(err) if err.code == wisp_kernel::Code::NotFound => HeldNow::Stale,
+        Err(err) => {
+            tracing::debug!(error = %err.message, task = id, "accounts: runtime.get");
+            HeldNow::Unknown
+        }
+    }
+}
+
 /// `runtime.signInDone`: its models are looked up again, and the turn a sign-in card waits on runs again.
 pub async fn sign_in_done(ctx: &Ctx, agent: &str, account: &str) {
     let a = r::SignInDoneArgs { agent: agent.to_owned(), account: account.to_owned() };

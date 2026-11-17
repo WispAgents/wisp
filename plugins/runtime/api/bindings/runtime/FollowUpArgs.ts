@@ -20,4 +20,9 @@ confirm_limit?: boolean,
  * the id the client drew for the turn (its queue item while it waits): kept when it's in wisp's shape and no turn
  * has it, so the card the client shows at once is the turn the server makes (B35). Additive (2026-11-16).
  */
-turn_id?: TurnId, };
+turn_id?: TurnId, 
+/**
+ * Delegate's team from this follow-up on (v1 `subagents`, the same rows as `StartArgs.team`'s list); `[]` removes
+ * it, absent keeps the task's. Additive (2026-11-17).
+ */
+team?: unknown, };

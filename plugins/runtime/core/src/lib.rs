@@ -23,6 +23,7 @@ pub mod refused;
 pub mod summary;
 pub mod tags;
 pub mod task_usage;
+pub mod team;
 pub mod tool_stats;
 pub mod turn_window;
 pub mod upcast;

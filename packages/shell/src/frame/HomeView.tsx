@@ -40,7 +40,7 @@ import { promptKeys, remember, sentStore } from './prompt-keys.ts';
 import { displayCombo } from '../keys.ts';
 import { draftValue, launcherDraft } from './drafts.ts';
 import { MODE_ICON, agentName, modeMenu, whenAt, whenMenu, type Mode, type When } from './pickers.ts';
-import { teamFromSetting, teamSize, teamToSend, type Delegate } from './team.ts';
+import { TEAMS_SETTING, presetsOf, teamFromSetting, teamSize, teamToSend, type Delegate } from './team.ts';
 import type { DelegatePlace } from './DelegatePanel.tsx';
 
 // Delegate's panel: its own chunk, loaded when it first opens (ADR-0011)
@@ -172,6 +172,9 @@ export function HomeView(props: { readonly onBack?: () => void }): JSX.Element {
     const pre = teamFromSetting(subagents());
     if (!teamTouched) setTeam(pre);
   });
+  // the preset the team came from (v1 teamPreset): its name is the button's
+  const [preset, setPreset] = createSignal('');
+  const presetName = (): string | undefined => (preset() ? presetsOf(settings().find((r) => r.key === TEAMS_SETTING)?.value).find((p) => p.id === preset())?.name : undefined);
   const pickTeam = (next: readonly Delegate[]): void => {
     teamTouched = true;
     setTeam(next);
@@ -708,7 +711,7 @@ export function HomeView(props: { readonly onBack?: () => void }): JSX.Element {
         mid={firstRunTools(firstRun(), 'mid', [
           // v1 #771: no Try it two ways button; the runner's + adds the second run
           // v1 team.js paintTeamBtn: "Delegate", or how many agents the lead can hand work to; its panel (teamEditor)
-          tool('team', 'launcher.team', 'agent', team().length ? t(teamSize(team()) === 1 ? 'shell.home.delegates.one' : 'shell.home.delegates.other', { count: teamSize(team()) }) : t('shell.home.delegate'), t('shell.home.delegateTitle'), {
+          tool('team', 'launcher.team', 'agent', team().length ? presetName() ?? t(teamSize(team()) === 1 ? 'shell.home.delegates.one' : 'shell.home.delegates.other', { count: teamSize(team()) }) : t('shell.home.delegate'), t('shell.home.delegateTitle'), {
             text: true,
             ...(team().length > 0 && { on: true }),
             act: {
@@ -730,6 +733,8 @@ export function HomeView(props: { readonly onBack?: () => void }): JSX.Element {
                     peer={target()}
                     places={delegatePlaces()}
                     onAddMachine={() => view('machine.this')}
+                    preset={preset()}
+                    onPreset={setPreset}
                   />
                 ),
               },

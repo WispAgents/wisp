@@ -414,5 +414,15 @@
   "shell.team.count.one": "{count} agent",
   "shell.team.count.other": "{count} agents",
   "shell.team.clear": "Clear",
-  "shell.team.noHarness": "No harness is installed."
+  "shell.team.noHarness": "No harness is installed.",
+  "shell.team.presets": "Presets",
+  "shell.team.noPresets": "No presets yet. Set up a team, then Save as preset.",
+  "shell.team.deletePreset": "Delete a preset",
+  "shell.team.save": "Save as preset",
+  "shell.team.presetName": "Preset name, e.g. Review crew",
+  "shell.team.saveOk": "Save",
+  "shell.team.cancel": "Cancel",
+  "shell.team.saved": "Saved preset {name}",
+  "shell.team.updated": "Updated preset {name}",
+  "shell.team.deleted": "Deleted preset {name}"
 }

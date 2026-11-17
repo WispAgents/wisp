@@ -317,3 +317,36 @@ async fn after_a_restart_trust_starts_the_turns_the_watch_held_and_start_now_run
     api.until(&b, "Trust starts the turn it held before the restart", |t| t.len() == 1 && t[0]["status"] == "done").await;
     drop(serve);
 }
+
+/// TRY-17 (b): a held turn skipped, archived or deleted left its entry in the watch's list (kept across restarts since
+/// #29), so a later Trust started the archived one. They leave the list; Trust starts only what's still held.
+#[tokio::test(flavor = "multi_thread")]
+async fn trust_starts_only_turns_still_held_not_skipped_archived_or_deleted_ones() {
+    let dir = temp("serve-watch-stale");
+    let (serve, port) = start(&dir);
+    let api = Arc::new(Api { http: reqwest::Client::new(), port, n: 0.into() });
+    api.cmd("accounts.watch.ask", json!({ "on": true })).await;
+    let (turn, _) = run_task(&api, &dir, "codex").await;
+    assert_eq!(turn["status"], "done", "{turn}");
+    change_codex(&dir);
+    let mut held = Vec::new();
+    for p in ["skip", "archive", "delete", "keep"] {
+        let id = api.cmd("runtime.create", json!({ "prompt": p, "cwd": dir.join("proj"), "agent": "codex" })).await["id"]
+            .as_str()
+            .unwrap()
+            .to_owned();
+        let t = api.until(&id, "held", |t| t.len() == 1 && t[0]["status"] == "held").await;
+        held.push((id, t[0]["id"].as_str().unwrap().to_owned()));
+    }
+    let [(skip, skip_turn), (archive, _), (delete, _), (keep, _)] = <[(String, String); 4]>::try_from(held).unwrap();
+    api.cmd("runtime.release", json!({ "id": skip, "turnId": skip_turn, "action": "skip" })).await;
+    api.cmd("runtime.archive", json!({ "id": archive, "archived": true })).await;
+    api.cmd("runtime.delete", json!({ "id": delete })).await;
+    api.cmd("accounts.watch.trust", json!({ "agent": "codex" })).await;
+    api.until(&keep, "Trust starts the one still held", |t| t.len() == 1 && t[0]["status"] == "done").await;
+    let a = api.cmd("runtime.turns", json!({ "id": archive })).await;
+    assert_eq!(a[0]["status"], "held", "an archived held task stays held, never started by Trust: {a}");
+    let s = api.cmd("runtime.turns", json!({ "id": skip })).await;
+    assert_eq!(s[0]["status"], "stopped", "{s}");
+    drop(serve);
+}

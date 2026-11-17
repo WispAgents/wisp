@@ -497,6 +497,7 @@ impl Runtime {
             };
         }
         own.insert("titleAuto".into(), a.title.is_none().into());
+        self.own_team(&a, &mut own)?;
         // a channel's task stays one after its cap is lifted: its Plan only reads (v1 #794 `origin`, `plan::outside`)
         if let Some(by) = a.by.as_deref().filter(|b| b.starts_with(wisp_runtime_core::plan::CHANNEL)) {
             own.insert("startedBy".into(), by.into());
@@ -581,6 +582,10 @@ impl Runtime {
         if a.text.trim().is_empty() && a.attachments.is_empty() {
             return Err(RuntimeError::Invalid("a follow-up needs text".into()));
         }
+        // the reply box's Delegate: the lead's team from this follow-up on, checked before anything is queued
+        if let Some(team) = &a.team {
+            self.give_team(&mut s, team)?;
+        }
         // the client's id for the turn, when it's in wisp's shape and no turn or queued item has it (B35)
         let mine = match a.turn_id.as_ref().filter(|t| is_task_id(t.as_str())) {
             Some(t) if self.repo.turn(t.as_str()).await.is_err() && !s.queue.iter().any(|q| q.id == t.as_str()) => Some(t.0.clone()),
@@ -651,6 +656,36 @@ impl Runtime {
         drop(guard);
         self.kick(s).await?;
         Ok(out)
+    }
+
+    /// New task's own team (Delegate, a list of rows; a formula's team by name is specs.rs's): the lead's subagents.
+    fn own_team(&self, a: &StartArgs, own: &mut serde_json::Map<String, serde_json::Value>) -> Result<()> {
+        if let Some(serde_json::Value::Array(list)) = &a.team {
+            own.insert("subagents".into(), serde_json::Value::Array(self.roster(list)?));
+        }
+        Ok(())
+    }
+
+    /// A team's rows made the roster `wisp_delegate` reads (v1 normalizeTeam): an unknown harness refuses it.
+    fn roster(&self, list: &[serde_json::Value]) -> Result<Vec<serde_json::Value>> {
+        wisp_runtime_core::team::normalize_team(list, |agent| self.harness(agent).is_ok()).map_err(RuntimeError::Invalid)
+    }
+
+    /// A follow-up's team (v1 sessions.js followUpTeam): the task's subagents from now on, `[]` none; a subagent can't
+    /// have subagents of its own. Stored with the follow-up's own write.
+    fn give_team(&self, s: &mut Session, team: &serde_json::Value) -> Result<()> {
+        let list = team.as_array().ok_or_else(|| RuntimeError::Invalid("a team is a list of subagents".into()))?;
+        if s.parent_id.is_some() && !list.is_empty() {
+            return Err(RuntimeError::Invalid("A subagent can’t have subagents of its own.".into()));
+        }
+        let roster = self.roster(list)?;
+        let mut own = match s.ext.remove("wisp.runtime") {
+            Some(serde_json::Value::Object(m)) => m,
+            _ => serde_json::Map::new(),
+        };
+        own.insert("subagents".into(), serde_json::Value::Array(roster));
+        s.ext.insert("wisp.runtime".into(), serde_json::Value::Object(own));
+        Ok(())
     }
 
     /// Nothing runs and the queue isn't held: its first item goes (a released held turn, a release).

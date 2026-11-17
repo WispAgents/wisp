@@ -2,16 +2,19 @@
 // strip says who leads, on what and where; a row per delegate: where it runs (with the lead or a machine), its
 // harness · model · thinking (the same picker New task uses), its copies and Remove, then the @name the lead calls it
 // and what it's for; or the empty note. The foot: Add delegate (asking where when there are machines), how many
-// agents in all, Clear. Controlled: every change goes to onChange. Loaded with the panel (lazy), not the first page.
-// Not yet here: v1's Presets and Save as preset (v2 keeps no team presets), crew members as delegates.
+// agents in all, Clear, Save as preset (a name, Save, Cancel). Presets at the head's end: the saved teams (this wisp's
+// `runtime.teams` setting, v1 config.teams), one to use, or one to delete. Controlled: every change goes to onChange.
+// Loaded with the panel (lazy), not the first page. Not yet here: adding a crew member as a delegate.
 
 import { Index, Show, createSignal, type JSX } from 'solid-js';
-import type { PeerId } from '@wisp/client';
-import { AutoRunner, Button, IconButton, Menu, TeamCopies, TeamFields, TeamLead, TeamPop, TeamRow, TeamWhere, useSignal, type Act, type IconName, type MenuEntry, type TeamPlaceLook } from '@wisp/ui';
+import { entityKey, uuidv7, type Json, type PeerId, type SettingRow } from '@wisp/client';
+import { AutoRunner, Button, IconButton, Menu, TeamCopies, TeamFields, TeamLead, TeamPop, TeamRow, TeamSave, TeamWhere, useSignal, type Act, type IconName, type MenuEntry, type TeamPlaceLook } from '@wisp/ui';
 import { useShell } from '../context.tsx';
+import { usePluginClient } from '../slot.tsx';
+import { setSetting } from './commands.ts';
 import { RunnerPicker } from './RunnerPicker.tsx';
 import { useHarnessRows } from './runner.ts';
-import { MAX_COPIES, copiesOf, nextAgent, teamSize, uniqueNames, type Delegate } from './team.ts';
+import { MAX_COPIES, TEAMS_SETTING, copiesOf, deletePreset, nextAgent, presetsOf, savePreset, teamSize, uniqueNames, type Delegate, type TeamPreset } from './team.ts';
 import '../i18n/lazy.ts';
 
 /** A place a delegate can run away from the lead: this computer (`here`) or a machine (its peer id). */
@@ -32,6 +35,9 @@ export interface DelegatePanelProps {
   readonly places: readonly DelegatePlace[];
   /** Add a machine… (Settings → Machines) */
   readonly onAddMachine?: (() => void) | undefined;
+  /** the preset the team came from ('' or absent: none), and its change (v1 teamEditor's `presetId`) */
+  readonly preset?: string | undefined;
+  readonly onPreset?: ((id: string) => void) | undefined;
 }
 
 const LEAD = 'lead';
@@ -78,12 +84,77 @@ export function DelegatePanel(props: DelegatePanelProps): JSX.Element {
   ];
   const where = (v: string, then: (machine: string) => void): void => (v === ADD_MACHINE ? props.onAddMachine?.() : then(v === LEAD ? '' : v));
   const n = (): number => teamSize(props.team);
+  // Presets (v1 presetMenu, askName): this wisp's saved teams, written with the setting's own command (it shows at once)
+  const home = usePluginClient('shell').home;
+  const kept = useSignal(shell.client.entities.row<SettingRow>('setting', entityKey(home, TEAMS_SETTING)));
+  const presets = (): TeamPreset[] => presetsOf(kept()?.value);
+  const write = (list: readonly TeamPreset[], said: string): void =>
+    void shell.client.commands.run(setSetting, { peer: home, key: TEAMS_SETTING, value: list as unknown as Json }).then(
+      () => shell.toast.show(said),
+      () => undefined, // the client's onError says why
+    );
+  const presetItems = (): MenuEntry[] =>
+    presets().length
+      ? [
+          ...presets().map((p) => ({
+            value: `use:${p.id}`,
+            label: p.name,
+            hint: uniqueNames(p.members)
+              .map((m) => m.name)
+              .join(', '),
+            icon: 'agent' as const,
+            checked: p.id === props.preset,
+          })),
+          { kind: 'separator' as const },
+          { kind: 'submenu' as const, value: 'delete', label: t('shell.team.deletePreset'), icon: 'trash' as const, items: presets().map((p) => ({ value: `del:${p.id}`, label: p.name, danger: true })) },
+        ]
+      : [{ value: 'none', label: t('shell.team.noPresets'), disabled: true }];
+  const onPresetPick = (v: string): void => {
+    const p = presets().find((x) => `use:${x.id}` === v || `del:${x.id}` === v);
+    if (!p) return;
+    if (v.startsWith('del:')) {
+      if (props.preset === p.id) props.onPreset?.('');
+      return write(deletePreset(presets(), p.id), t('shell.team.deleted', { name: p.name }));
+    }
+    props.onChange(p.members.map((m) => ({ ...m })));
+    props.onPreset?.(p.id);
+  };
+  const [saving, setSaving] = createSignal(false);
+  const save = (name: string): void => {
+    setSaving(false);
+    // nothing to keep (Clear while the name was being typed): no empty preset
+    if (props.team.length === 0) return;
+    const out = savePreset(presets(), name, props.team, uuidv7());
+    props.onPreset?.(out.id);
+    write(out.list, t(out.updated ? 'shell.team.updated' : 'shell.team.saved', { name: name.trim() }));
+  };
   return (
     <TeamPop
       part="delegate.pop"
       wide
       title={t('shell.team.title')}
       intro={t('shell.team.intro')}
+      head={<Menu part="delegate.presets" trigger={{ label: t('shell.team.presets'), icon: 'agent', variant: 'ghost', size: 'xs' }} items={presetItems()} onSelect={onPresetPick} />}
+      end={
+        <Show when={props.team.length > 0}>
+          <Button variant="ghost" size="sm" icon="check" part="delegate.save" onClick={() => setSaving(true)}>
+            {t('shell.team.save')}
+          </Button>
+        </Show>
+      }
+      form={
+        saving() ? (
+          <TeamSave
+            part="delegate.saveForm"
+            value={presets().find((p) => p.id === props.preset)?.name ?? ''}
+            placeholder={t('shell.team.presetName')}
+            save={t('shell.team.saveOk')}
+            cancel={t('shell.team.cancel')}
+            onSave={save}
+            onCancel={() => setSaving(false)}
+          />
+        ) : undefined
+      }
       lead={<TeamLead part="delegate.lead" tag={t('shell.team.lead')} logo={props.lead.logo} run={props.lead.run} on={t('shell.team.on')} place={props.lead.place} placeAct={props.lead.placeAct} />}
       count={props.team.length}
       empty={{ icon: 'agent', text: t('shell.team.empty') }}
@@ -93,7 +164,7 @@ export function DelegatePanel(props: DelegatePanelProps): JSX.Element {
         </Show>
       }
       tally={t(n() === 1 ? 'shell.team.count.one' : 'shell.team.count.other', { count: n() })}
-      clear={props.team.length ? { label: t('shell.team.clear'), onClick: () => props.onChange([]) } : undefined}
+      clear={props.team.length ? { label: t('shell.team.clear'), onClick: () => (setSaving(false), props.onChange([]), props.onPreset?.('')) } : undefined}
     >
       {/* by place, not by object: a row keeps its node (and the field you type in) while its words change */}
       <Index each={props.team}>

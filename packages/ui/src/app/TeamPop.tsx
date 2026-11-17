@@ -5,7 +5,7 @@
 // team.js teamEditor) uses it wide, with the lead's strip under the head and a second line per row (TeamLead,
 // TeamWhere, TeamCopies, TeamFields).
 
-import { For, Show, type JSX } from 'solid-js';
+import { For, Show, createSignal, type JSX } from 'solid-js';
 import { Icon } from '../content/Icon.tsx';
 import { Button } from '../controls/Button.tsx';
 import { Input } from '../controls/Input.tsx';
@@ -43,6 +43,12 @@ export interface TeamPopProps extends KitProps {
   readonly wide?: boolean;
   /** Under the head: the lead's strip (TeamLead). Additive (2026-11-17). */
   readonly lead?: JSX.Element;
+  /** At the head's end: Delegate's Presets (v1 .tp-presets). Additive (2026-11-17). */
+  readonly head?: JSX.Element;
+  /** At the foot's end, after Clear: Save as preset (v1 .tp-save). Additive (2026-11-17). */
+  readonly end?: JSX.Element;
+  /** In place of the foot while it's there: Save as preset's name (TeamSave, v1 .tp-saveform). Additive (2026-11-17). */
+  readonly form?: JSX.Element;
 }
 
 export function TeamPop(props: TeamPopProps): JSX.Element {
@@ -54,6 +60,7 @@ export function TeamPop(props: TeamPopProps): JSX.Element {
           <b>{props.title}</b>
           <small>{props.intro}</small>
         </div>
+        {props.head}
       </header>
       {props.lead}
       <Show when={props.vote}>
@@ -89,15 +96,25 @@ export function TeamPop(props: TeamPopProps): JSX.Element {
         </Show>
       </div>
       <footer data-kit="tp-foot">
-        {props.add}
-        <span data-kit="tp-count">{props.tally}</span>
-        <span data-kit="grow" />
-        <Show when={props.clear}>
-          {(c) => (
-            <Button variant="link" size="xs" part={`${part()}.clear`} onClick={() => c().onClick()}>
-              {c().label}
-            </Button>
-          )}
+        <Show
+          when={props.form}
+          fallback={
+            <>
+              {props.add}
+              <span data-kit="tp-count">{props.tally}</span>
+              <span data-kit="grow" />
+              <Show when={props.clear}>
+                {(c) => (
+                  <Button variant="link" size="xs" part={`${part()}.clear`} onClick={() => c().onClick()}>
+                    {c().label}
+                  </Button>
+                )}
+              </Show>
+              {props.end}
+            </>
+          }
+        >
+          {props.form}
         </Show>
       </footer>
     </div>
@@ -241,5 +258,51 @@ export function TeamCrew(props: { readonly face: JSX.Element; readonly name: str
         <small>{props.sub}</small>
       </span>
     </>
+  );
+}
+
+/** Save as preset's name (v1 team.js askName, .tp-saveform): a field, Save, and Cancel. Enter saves; an empty name
+ *  keeps the field focused and saves nothing. */
+export function TeamSave(props: {
+  readonly value: string;
+  readonly placeholder: string;
+  readonly save: string;
+  readonly cancel: string;
+  readonly onSave: (name: string) => void;
+  readonly onCancel: () => void;
+  readonly part?: PartName;
+}): JSX.Element {
+  let input: HTMLInputElement | undefined;
+  const [name, setName] = createSignal(props.value);
+  const submit = (e: SubmitEvent): void => {
+    e.preventDefault();
+    const n = name().trim();
+    if (!n) return void input?.focus();
+    props.onSave(n);
+  };
+  return (
+    <form data-kit="tp-saveform" data-part={props.part ?? 'ui.teamSave'} onSubmit={submit}>
+      <Input
+        size="sm"
+        value={name()}
+        placeholder={props.placeholder}
+        maxLength={60}
+        aria-label={props.placeholder}
+        autofocus
+        ref={(el) => {
+          input = el;
+          queueMicrotask(() => (el.focus(), el.select()));
+        }}
+        onInput={setName}
+        onKeyDown={(e) => e.key === 'Escape' && (e.stopPropagation(), props.onCancel())}
+        part={`${props.part ?? 'ui.teamSave'}.name`}
+      />
+      <Button type="submit" variant="primary" size="sm" part={`${props.part ?? 'ui.teamSave'}.save`}>
+        {props.save}
+      </Button>
+      <Button variant="link" size="xs" part={`${props.part ?? 'ui.teamSave'}.cancel`} onClick={() => props.onCancel()}>
+        {props.cancel}
+      </Button>
+    </form>
   );
 }

@@ -194,6 +194,8 @@ export const followUp = defineCommand<{
   queue?: boolean;
   /** you said yes to going past Ask near the limit's line (the hold row's Send anyway) */
   confirmLimit?: boolean;
+  /** the reply box's Delegate: the lead's team from this follow-up on (`[]` none; absent keeps the task's) */
+  team?: readonly SentDelegate[];
 }>({
   id: 'runtime.followUp',
   owner: (a) => a.id,

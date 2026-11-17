@@ -15,6 +15,10 @@ export interface Delegate {
   readonly count?: number;
   /** '' or absent: with the lead; `here`, `sandbox` or a machine's peer id: away, on a copy of the lead's work */
   readonly machine?: string;
+  /** a crew member on the team (its id, name and role as the task keeps them): sent back as it came */
+  readonly crew?: string;
+  readonly label?: string;
+  readonly role?: string;
 }
 
 /** v1 team.js MAX_COPIES: parallel copies of one row */
@@ -52,7 +56,8 @@ export function nextAgent(lead: string, team: readonly Delegate[], ids: readonly
   return ids.find((a) => !used.has(a)) ?? ids.find((a) => a !== lead) ?? ids[0];
 }
 
-/** The team Settings starts New task with (`runtime.subagents`, v1 defaults.subagents): its well-formed rows. */
+/** A team as it's kept: the one Settings starts New task with (`runtime.subagents`, v1 defaults.subagents), or a
+ *  task's own (`ext['wisp.runtime'].subagents`): its well-formed rows. */
 export function teamFromSetting(setting: unknown): Delegate[] {
   if (!Array.isArray(setting)) return [];
   return setting.flatMap((r: unknown): Delegate[] => {
@@ -69,6 +74,9 @@ export function teamFromSetting(setting: unknown): Delegate[] {
         ...((v) => (v ? { effort: v } : {}))(str('effort')),
         ...((v) => (v ? { use: v } : {}))(str('use')),
         ...((v) => (v ? { machine: v } : {}))(str('machine')),
+        ...((v) => (v ? { crew: v } : {}))(str('crew')),
+        ...((v) => (v ? { label: v } : {}))(str('label')),
+        ...((v) => (v ? { role: v } : {}))(str('role')),
         ...(count !== undefined && count > 1 && { count: copiesOf({ count }) }),
       },
     ];
@@ -84,6 +92,9 @@ export interface SentDelegate {
   readonly use?: string;
   readonly count?: number;
   readonly machine?: string;
+  readonly crew?: string;
+  readonly label?: string;
+  readonly role?: string;
 }
 
 /** What New task sends as its team: every row (no cap, v1 #team-cap), named as the lead will call them, without the
@@ -97,5 +108,43 @@ export function teamToSend(team: readonly Delegate[]): SentDelegate[] {
     ...(m.use?.trim() && { use: m.use.trim() }),
     ...(copiesOf(m) > 1 && { count: copiesOf(m) }),
     ...(m.machine && { machine: m.machine }),
+    ...(m.crew && { crew: m.crew }),
+    ...(m.label && { label: m.label }),
+    ...(m.role && { role: m.role }),
   }));
 }
+
+/** The setting that keeps Delegate's presets on this wisp (`runtime.teams`, v1 config.teams). */
+export const TEAMS_SETTING = 'runtime.teams';
+
+/** A saved team (v1 Presets): its id, name and members as they're sent. */
+export interface TeamPreset {
+  readonly id: string;
+  readonly name: string;
+  readonly members: readonly Delegate[];
+}
+
+/** The presets the setting keeps: each with an id, a name and its members' well-formed rows. */
+export function presetsOf(value: unknown): TeamPreset[] {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((p: unknown): TeamPreset[] => {
+    if (!p || typeof p !== 'object') return [];
+    const o = p as Record<string, unknown>;
+    const id = typeof o['id'] === 'string' ? o['id'] : '';
+    const name = typeof o['name'] === 'string' ? o['name'].trim() : '';
+    return id && name ? [{ id, name, members: teamFromSetting(o['members']) }] : [];
+  });
+}
+
+/** Save as preset (v1 team.js askName): a name already there (any case) updates that preset, keeping its id; a new
+ *  one is added under `newId`. The members are kept as they're sent. */
+export function savePreset(list: readonly TeamPreset[], name: string, members: readonly Delegate[], newId: string): { list: TeamPreset[]; id: string; updated: boolean } {
+  const clean = name.trim().slice(0, 60);
+  const rows = teamFromSetting(teamToSend(members));
+  const same = list.find((p) => p.name.toLowerCase() === clean.toLowerCase());
+  if (same) return { list: list.map((p) => (p.id === same.id ? { id: p.id, name: clean, members: rows } : p)), id: same.id, updated: true };
+  return { list: [...list, { id: newId, name: clean, members: rows }], id: newId, updated: false };
+}
+
+/** Delete preset: the rest, in their order. */
+export const deletePreset = (list: readonly TeamPreset[], id: string): TeamPreset[] => list.filter((p) => p.id !== id);

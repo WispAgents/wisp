@@ -4,7 +4,7 @@ use std::sync::Arc;
 
 use serde_json::json;
 use wisp_accounts_api::commands as c;
-use wisp_accounts_api::{AccountsOut, AddOut};
+use wisp_accounts_api::{AccountsOut, AddOut, HOLD_KIND, PLUGIN_ID};
 use wisp_accounts_core::accounts::{self, Refused};
 use wisp_accounts_core::watch;
 use wisp_kernel::{Ctx, Setup, WireError};
@@ -70,6 +70,7 @@ macro_rules! on {
 pub(crate) fn register(s: &mut Setup, slot: &Slot) {
     keys(s, slot);
     install_and_more(s, slot);
+    held_tasks(s, slot);
     on!(s, slot, c::List, |st, ctx, a| Ok(out(&ctx, &st, &a.agent)));
     on!(s, slot, c::Harnesses, |st, ctx, _a| {
         let mut v = Vec::new();
@@ -145,12 +146,7 @@ pub(crate) fn register(s: &mut Setup, slot: &Slot) {
         run::trust(&ctx, &st, &a.agent).await.map_err(crate::store_err)?;
         // the turns it held run now
         let held = lock(&st.held).remove(&a.agent).unwrap_or_default();
-        if !held.is_empty() {
-            run::save_held(&st).await;
-        }
-        for (id, turn) in held {
-            crate::calls::release(&ctx, &id, &turn).await;
-        }
+        run::start_trusted(&ctx, &st, &a.agent, held).await;
         Ok(watch::view(&lock(&st.watch).get(&a.agent).cloned().unwrap_or_default()))
     });
     on!(s, slot, c::SetAsk, |st, _ctx, a| {
@@ -307,6 +303,39 @@ fn install_and_more(s: &mut Setup, slot: &Slot) {
             }
         }
         Ok(h.live_limits(&crate::sys::Sys(st.proc.clone()), &env).await.unwrap_or(serde_json::Value::Null))
+    });
+}
+
+/// A held task skipped, archived or deleted leaves the watch's list (kept across restarts): Trust never starts it.
+fn held_tasks(s: &mut Setup, slot: &Slot) {
+    let gone = slot.clone();
+    s.on::<wisp_runtime_api::events::SessionDeleted, _, _>(move |_ctx, e| {
+        let slot = gone.clone();
+        async move {
+            if let Ok(st) = state(&slot) {
+                run::forget_held(&st, e.id.as_str(), |_| false).await;
+            }
+        }
+    });
+    let changed = slot.clone();
+    s.on::<wisp_runtime_api::events::SessionChanged, _, _>(move |ctx, e| {
+        let slot = changed.clone();
+        async move {
+            let Ok(st) = state(&slot) else { return };
+            let id = e.id.as_str().to_owned();
+            // most changes are to tasks it never held: nothing to ask then
+            let turns: Vec<String> = lock(&st.held).values().flatten().filter(|(s, _)| *s == id).map(|(_, t)| t.clone()).collect();
+            // only what's gone for sure: a turn held a moment ago may not be written yet
+            let mut stale = Vec::new();
+            for t in turns {
+                if crate::calls::held_now(&ctx, &id, &t, PLUGIN_ID, HOLD_KIND).await == crate::calls::HeldNow::Stale {
+                    stale.push(t);
+                }
+            }
+            if !stale.is_empty() {
+                run::forget_held(&st, &id, |t| !stale.iter().any(|k| k == t)).await;
+            }
+        }
     });
 }
 

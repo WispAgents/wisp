@@ -93,15 +93,18 @@ export function mergeHarnesses(mine: readonly HarnessRow[], detected: readonly D
   return [...out, ...mine.filter((h) => !seen.has(h.id)).sort((a, b) => a.ord - b.ord)];
 }
 
-const label = (p: Pin): string => p.version ?? p.path;
+/** A program by its version, else its path (the server sends `version: ""` when the harness didn't say one). */
+const label = (p: Pin): string => p.version || p.path;
 
-/** "Claude Code changed since 2 Nov: 2.0.1 → 2.0.2" (v1 harness-watch changeText). */
+/** "Claude Code changed since 2 Nov: 2.0.1 → 2.0.2" (v1 harness-watch changeText). With no version: "…: its program’s
+ *  bytes differ", or from which path to which (never "…: , but…", TRY-17). */
 export function changeText(name: string, c: HarnessChange, locale?: string): string {
   const day = new Intl.DateTimeFormat(locale, { day: 'numeric', month: 'short' }).format(c.from.at);
   const from = label(c.from);
   const moved = c.kind !== 'update' && c.from.real !== c.to.real && c.from.path !== c.to.path;
-  const to = moved ? t('accounts.change.at', { what: label(c.to), path: c.to.path }) : label(c.to);
-  const what = from === to ? t('accounts.change.bytes', { what: from }) : `${from} → ${to}`;
+  // a version is said with where it is now; a path already says where
+  const to = moved && c.to.version ? t('accounts.change.at', { what: label(c.to), path: c.to.path }) : label(c.to);
+  const what = from !== to ? `${from} → ${to}` : c.from.version ? t('accounts.change.bytes', { what: from }) : t('accounts.change.bytesOnly');
   return t('accounts.change', { name, day, what });
 }
 

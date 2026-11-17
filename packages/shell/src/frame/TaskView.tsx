@@ -104,7 +104,7 @@ import { runPick, type Runner } from './runner.ts';
 import { rowUsage, taskUsage, type TurnStatsLike } from './task-usage.ts';
 import { TELEMETRY_TOPIC, feedbackOn } from './feedback-on.ts';
 import { MODE_ICON, agentMenu, modeMenu, whenAt, whenMenu, type Mode, type When } from './pickers.ts';
-import type { Delegate } from './team.ts';
+import { teamFromSetting, teamToSend, type Delegate } from './team.ts';
 
 // Delegate's panel: its own chunk, loaded when it first opens (ADR-0011)
 const DelegatePanel = lazy(() => import('./DelegatePanel.tsx'));
@@ -444,8 +444,20 @@ export default function TaskView(props: { readonly id: string; readonly onBack?:
   // files with the reply: picked, pasted or dropped, each uploading at once to the task's computer
   const att = useAttachments(shell, () => ownerOf(key));
   const files = att.files;
-  // the reply box's Delegate picks (v1 composer.js replyTeam)
-  const [team, setTeam] = createSignal<readonly Delegate[]>([]);
+  // the reply box's Delegate (v1 composer.js replyTeam): the task's own team until you change it; a change goes with the
+  // next follow-up (F-comp-33), the lead's team from then on
+  const [picked, setPicked] = createSignal<readonly Delegate[] | undefined>(undefined);
+  // changed since the last follow-up: what goes with the next one (the panel keeps showing what was sent until the
+  // task's own team syncs back)
+  const [teamChanged, setTeamChanged] = createSignal(false);
+  const setTeam = (next: readonly Delegate[]): void => {
+    setPicked(next);
+    setTeamChanged(true);
+  };
+  const ownTeam = (): Delegate[] =>
+    teamFromSetting((((row()?.body as { ext?: Record<string, unknown> } | undefined)?.ext?.['wisp.runtime'] ?? {}) as { subagents?: unknown }).subagents);
+  const team = (): readonly Delegate[] => picked() ?? ownTeam();
+  const [replyPreset, setReplyPreset] = createSignal('');
   const [goal, setGoalText] = createSignal<string | undefined>(undefined);
   const [when, setWhen] = createSignal<When | undefined>(undefined);
   const nav = useSignal(shell.nav);
@@ -605,6 +617,9 @@ export default function TaskView(props: { readonly id: string; readonly onBack?:
     const idx = turns().length;
     // the box clears at once; with files, the turn starts once they're up (usually already)
     extra?.taken();
+    // the team picked since the last follow-up goes with this one (none picked: the task keeps its own)
+    const sentTeam = teamChanged() ? (picked() ?? []) : undefined;
+    if (sentTeam !== undefined) setTeamChanged(false);
     const go = (attachments: readonly Attachment[]): void => {
       run(followUp, {
         id: key,
@@ -616,9 +631,11 @@ export default function TaskView(props: { readonly id: string; readonly onBack?:
         ...(runOf() ? { run: runOf() as NonNullable<ReturnType<typeof runOf>> } : {}),
         ...(queues() && { queue: true }),
         ...(through === 'confirmed' && { confirmLimit: true }),
+        ...(sentTeam !== undefined && { team: teamToSend(sentTeam) }),
       }).catch((err: unknown) => {
         extra?.back();
         setText(v);
+        if (sentTeam !== undefined && !teamChanged()) setTeamChanged(true);
         // the peer knew better: the row, the words back in the box (v1: the 409 `hold`)
         const reason = (err as { reason?: string } | null)?.reason;
         const answer = shell.sendHolds?.answers(reason);
@@ -1369,6 +1386,8 @@ export default function TaskView(props: { readonly id: string; readonly onBack?:
                             onChange={setTeam}
                             peer={peer}
                             places={[]}
+                            preset={replyPreset()}
+                            onPreset={setReplyPreset}
                           />
                         ),
                       },

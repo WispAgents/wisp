@@ -11,6 +11,8 @@
   "permissions": [
     "runtime:agents",
     "runtime:release",
+    "runtime:get",
+    "runtime:turns",
     "runtime:signInDone",
     "store:write{owner:accounts}",
     "telemetry:track",

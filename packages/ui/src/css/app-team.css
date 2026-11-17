@@ -380,6 +380,25 @@
     border-top: 1px solid var(--line);
     background: var(--surface-2);
   }
+  /* Save as preset's name (v1 .tp-saveform): the field takes the room, then Save and Cancel */
+  [data-kit='tp-saveform'] {
+    display: flex;
+    align-items: center;
+    gap: var(--space-4);
+    flex: 1;
+    min-width: 0;
+  }
+  [data-kit='tp-saveform'] > [data-kit='input'] {
+    flex: 1;
+    min-width: 0;
+  }
+  /* Delegate's head: what it is, Presets at its end, both from the top (v1 .tp-head) */
+  [data-kit='team-pop'][data-wide] > [data-kit='tp-head'] {
+    align-items: flex-start;
+  }
+  [data-kit='tp-head'] > :not([data-kit='tp-title']) {
+    flex: none;
+  }
   [data-kit='tp-count'] {
     font-size: var(--fs-sm);
     color: var(--faint);

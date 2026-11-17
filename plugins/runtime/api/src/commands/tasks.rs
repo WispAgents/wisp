@@ -309,6 +309,11 @@ pub struct FollowUpArgs {
     #[serde(default, alias = "turnId", skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub turn_id: Option<TurnId>,
+    /// Delegate's team from this follow-up on (v1 `subagents`, the same rows as `StartArgs.team`'s list); `[]` removes
+    /// it, absent keeps the task's. Additive (2026-11-17).
+    #[serde(default, alias = "subagents", skip_serializing_if = "Option::is_none")]
+    #[ts(type = "unknown", optional)]
+    pub team: Option<serde_json::Value>,
 }
 
 /// Where a follow-up went: a new turn, or a place in the queue.

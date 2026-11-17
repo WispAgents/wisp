@@ -3,7 +3,7 @@
 import { afterEach, describe, expect, test, vi } from 'vitest';
 import { createSignal } from 'solid-js';
 import { mount, part, until } from './helpers.tsx';
-import { TeamCopies, TeamFields, TeamLead, TeamPop, TeamRow, TeamWhere } from '../src/app/TeamPop.tsx';
+import { TeamCopies, TeamFields, TeamLead, TeamPop, TeamRow, TeamSave, TeamWhere } from '../src/app/TeamPop.tsx';
 import { WithAct } from '../src/app/act.tsx';
 
 afterEach(() => {
@@ -143,4 +143,43 @@ test('an open panel is drawn once while its caller rebuilds the act around it, s
   expect(document.querySelector('[data-testid="field"]')).toBe(field);
   // what it shows still follows its own signals
   expect(field.value).toBe('2');
+});
+
+test('presets sit at the head end and Save as preset swaps the foot for its name form_v1_tp_saveform', () => {
+  const [saving, setSaving] = createSignal(false);
+  const saved: string[] = [];
+  mount(() => (
+    <TeamPop
+      part="d.pop3"
+      wide
+      title="Delegate"
+      intro="…"
+      head={<button type="button" data-testid="presets">Presets</button>}
+      count={1}
+      empty={{ icon: 'agent', text: '' }}
+      add={<button type="button">Add delegate</button>}
+      tally="1 agent"
+      clear={{ label: 'Clear', onClick: () => undefined }}
+      end={<button type="button" data-testid="save" onClick={() => setSaving(true)}>Save as preset</button>}
+      form={saving() ? <TeamSave part="d.save" value="" placeholder="Preset name" save="Save" cancel="Cancel" onSave={(n) => (saved.push(n), setSaving(false))} onCancel={() => setSaving(false)} /> : undefined}
+    >
+      <span />
+    </TeamPop>
+  ));
+  const pop = part('d.pop3') as HTMLElement;
+  expect(pop.querySelector('[data-kit="tp-head"] [data-testid="presets"]')).not.toBeNull();
+  const foot = pop.querySelector('[data-kit="tp-foot"]') as HTMLElement;
+  expect(foot.textContent).toBe('Add delegate1 agentClearSave as preset');
+  (pop.querySelector('[data-testid="save"]') as HTMLButtonElement).click();
+  expect(foot.textContent).toBe('SaveCancel');
+  const form = part('d.save') as HTMLFormElement;
+  const input = form.querySelector('input') as HTMLInputElement;
+  // an empty name saves nothing
+  form.dispatchEvent(new SubmitEvent('submit', { bubbles: true, cancelable: true }));
+  expect(saved).toEqual([]);
+  input.value = '  Review crew ';
+  input.dispatchEvent(new InputEvent('input', { bubbles: true }));
+  form.dispatchEvent(new SubmitEvent('submit', { bubbles: true, cancelable: true }));
+  expect(saved).toEqual(['Review crew']);
+  expect(foot.textContent).toBe('Add delegate1 agentClearSave as preset');
 });

@@ -36,7 +36,7 @@ export {
   type SplitHomeProps,
 } from './Home.tsx';
 export { LauncherSetup, type LauncherSetupProps } from './LauncherSetup.tsx';
-export { TeamCopies, TeamCrew, TeamFields, TeamLead, TeamPop, TeamRow, TeamWhere, type TeamPlaceLook, type TeamPopProps, type TeamVote } from './TeamPop.tsx';
+export { TeamCopies, TeamCrew, TeamFields, TeamLead, TeamPop, TeamRow, TeamSave, TeamWhere, type TeamPlaceLook, type TeamPopProps, type TeamVote } from './TeamPop.tsx';
 export {
   OverlapNote,
   ReplyBox,

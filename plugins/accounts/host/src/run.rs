@@ -112,6 +112,47 @@ pub(crate) async fn save_held(st: &std::sync::Arc<State>) {
     }
 }
 
+/// Drops task `id`'s turns from the watch's list but those `keep` says to keep, and saves it when that changed.
+pub(crate) async fn forget_held(st: &std::sync::Arc<State>, id: &str, keep: impl Fn(&str) -> bool) {
+    let changed = {
+        let mut held = lock(&st.held);
+        let mut changed = false;
+        for l in held.values_mut() {
+            let n = l.len();
+            l.retain(|(s, t)| s != id || keep(t));
+            changed |= l.len() != n;
+        }
+        changed
+    };
+    if changed {
+        save_held(st).await;
+    }
+}
+
+/// Trust's held turns, taken out of the list: only those still held by this watch start (not skipped, archived, deleted
+/// or held by another hook since); one not sure yet (held a moment ago, not written) goes back in the list.
+pub(crate) async fn start_trusted(ctx: &Ctx, st: &std::sync::Arc<State>, agent: &str, held: Vec<(String, String)>) {
+    use crate::calls::{HeldNow, held_now, release};
+    let mut unsure = Vec::new();
+    for (id, turn) in held {
+        match held_now(ctx, &id, &turn, PLUGIN_ID, HOLD_KIND).await {
+            HeldNow::Ours => release(ctx, &id, &turn).await,
+            HeldNow::Unknown => unsure.push((id, turn)),
+            HeldNow::Stale => {}
+        }
+    }
+    {
+        let mut h = lock(&st.held);
+        let l = h.entry(agent.to_owned()).or_default();
+        for k in unsure {
+            if !l.contains(&k) {
+                l.push(k);
+            }
+        }
+    }
+    save_held(st).await;
+}
+
 /// A person pressed Start now (`confirm_limit`: a yes to what held it) on a turn this watch held, and its card was
 /// this watch's (a later hook, budget's Ask near the limit, may have held it instead: a yes to that isn't a yes to the
 /// changed harness). Without this the release ran `before:run` against the old pin again and the turn was held again:
