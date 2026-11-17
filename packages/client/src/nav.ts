@@ -37,7 +37,9 @@ export type Intent =
   | { t: 'openSide'; side: Exclude<Side, { kind: 'none' }> }
   | { t: 'toggleSide'; side: Exclude<Side, { kind: 'none' }> }
   | { t: 'closeSide' }
-  | { t: 'openOverlay'; overlay: Overlay }
+  /** `replace`: the overlay takes the open one's place in history (Settings switching panes beside its list: Back
+   *  leaves Settings, not each pane). Additive (2026-11-17, TRY-26). */
+  | { t: 'openOverlay'; overlay: Overlay; replace?: boolean }
   /** closes the top overlay, or the one named and everything above it */
   | { t: 'closeOverlay'; id?: ExtensionId }
   | { t: 'back' }
@@ -185,12 +187,13 @@ export function pushes(intent: Intent): boolean {
   switch (intent.t) {
     case 'openTask':
       return intent.replace !== true;
+    case 'openOverlay':
+      return intent.replace !== true;
     case 'openCrew':
     case 'openView':
     case 'home':
     case 'openSide':
     case 'toggleSide':
-    case 'openOverlay':
     case 'openFromToast':
       return true;
     case 'closeSide':

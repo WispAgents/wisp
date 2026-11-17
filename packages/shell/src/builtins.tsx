@@ -18,6 +18,7 @@ import { openFeedback, parseFeedback } from './frame/feedback.ts';
 import { rowMenuItems } from './frame/row-menu.ts';
 import { PLACE_SOURCE, PROJECT_ACTIONS, PROJECT_SOURCE, placeItems, projectItems, projectShortcuts, projectsNow } from './frame/project-switch.ts';
 import { flatRow, projectOf, shortAgo, statusOf } from './frame/rows-view.ts';
+import { markStepped } from './frame/stepped.ts';
 
 export const SHELL_SETTINGS = [
   { key: 'shell.theme', type: 'enum', values: THEMES, default: 'system', scope: 'server', overridable: true },
@@ -241,7 +242,10 @@ function step(ctx: ShellContext, by: 1 | -1): boolean {
   ctx.selection.set(next);
   document.querySelector<HTMLElement>(`[data-part="card"][data-id="${CSS.escape(next)}"]`)?.scrollIntoView({ block: 'nearest' });
   // j/k step in place (v1 replaced the address, web/js/features/feed.js syncUrl): Back leaves the task, not each step
-  if (ctx.nav().main.kind === 'task') ctx.navigate({ t: 'openTask', id: next as never, replace: true });
+  if (ctx.nav().main.kind === 'task') {
+    markStepped();
+    ctx.navigate({ t: 'openTask', id: next as never, replace: true });
+  }
   return true;
 }
 

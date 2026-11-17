@@ -95,6 +95,7 @@ shell.register(
     panes: paneEntries,
     t: (key, vars) => client.i18n.t(key, vars),
     phone: platform.phone,
+    sideBySide: () => shell.nav().layout === 'split',
   }),
 );
 

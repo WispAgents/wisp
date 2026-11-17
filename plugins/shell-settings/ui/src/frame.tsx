@@ -21,6 +21,8 @@ export interface FrameDeps {
   readonly t: (key: string, vars?: Vars) => string;
   /** the phone apps: no keyboard-only pane (v1 F-set-6), and the list's Back names the Tasks screen under it */
   readonly phone?: boolean;
+  /** the list and the pane show side by side (wide): picking a pane replaces Settings' place in history (TRY-26) */
+  readonly sideBySide?: () => boolean;
 }
 
 
@@ -30,7 +32,7 @@ export function shellDeps(): FrameDeps {
   const panes = useSignal(shell.settingsPanes());
   const clientOf = (plugin: string): PluginClient => usePluginClient(plugin);
   const entries = createMemo(() => panes().map((pane) => ({ pane, client: clientOf((pane as SettingsPaneDef & { plugin?: string }).plugin ?? 'shell') })));
-  return { panes: entries, t: (k, v) => shell.t(k, v), phone: shell.platform.phone };
+  return { panes: entries, t: (k, v) => shell.t(k, v), phone: shell.platform.phone, sideBySide: () => shell.nav().layout === 'split' };
 }
 
 export function SettingsView(props: { readonly client: PluginClient; readonly params: SettingsParams; readonly deps?: FrameDeps }): JSX.Element {
@@ -55,7 +57,7 @@ export function SettingsView(props: { readonly client: PluginClient; readonly pa
   const onSearchKey = (e: KeyboardEvent): void => {
     if (e.key === 'Enter') {
       const first = groups()[0]?.items[0]?.id;
-      if (first !== undefined) props.client.navigate(settingsIntent(first));
+      if (first !== undefined) props.client.navigate(settingsIntent(first, undefined, deps.sideBySide?.() === true));
     } else if (e.key === 'Escape' && query() !== '') {
       // the first Esc clears the search; the next closes Settings
       e.preventDefault();
@@ -103,7 +105,7 @@ export function SettingsView(props: { readonly client: PluginClient; readonly pa
       groups={groups()}
       search={search}
       current={current()?.pane.id ?? ''}
-      onPick={(id) => props.client.navigate(settingsIntent(id))}
+      onPick={(id) => props.client.navigate(settingsIntent(id, undefined, deps.sideBySide?.() === true))}
       paneTitle={current() ? deps.t(current()?.pane.title ?? '') : own('shell-settings.title')}
       lede={lede()}
       view={props.params.pane === undefined ? 'list' : 'pane'}

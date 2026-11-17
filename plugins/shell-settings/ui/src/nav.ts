@@ -55,7 +55,7 @@ export function parseParams(p: unknown): SettingsParams {
 }
 
 /** The intent that opens Settings on `pane` (or, on a phone, on the list). */
-export function settingsIntent(pane?: string, filter?: string) {
+export function settingsIntent(pane?: string, filter?: string, replace?: boolean) {
   const params = { ...(pane !== undefined && { pane }), ...(filter !== undefined && { filter }) };
-  return { t: 'openOverlay' as const, overlay: { kind: 'viewer' as const, id: VIEW_ID, params } };
+  return { t: 'openOverlay' as const, overlay: { kind: 'viewer' as const, id: VIEW_ID, params }, ...(replace === true && { replace }) };
 }

@@ -348,6 +348,12 @@ turn. When a screen or feature contradicts one, that's a bug: fix it toward the 
     whatever it installs); other harnesses' keys go in as env vars
   - [x] TRY-28 settings audit (11-17): sections + search + ⌘K (see §3); found on the way: Esc in any search field
     inside a dialog closed the dialog instead of clearing the field (`dialog-machine.ts onEscapeKeyDown`)
+  - [x] TRY-26 navigation audit (11-17), scripted in the real app at 1440 and 390 px: the address follows the page,
+    a reload lands on the same task, the browser's Back/Forward walk tasks, Back closes an overlay, Esc leaves the reply
+    box then closes the task, a phone's Settings goes list → pane → Back to the list. Fixed: j/k put the caret in the
+    reply box of the task they opened, so the next k was typed instead of stepping (v1 kept the keys on the list:
+    `frame/stepped.ts`); every Settings pane picked beside the list was a history entry, so Back walked the panes
+    (`openOverlay.replace`, additive; phones still push list → pane)
 - [ ] Continuous QA rounds by fresh low-context agents → `docs/qa/bugs.md` → one fix per coder
 
 ## 5. Waiting for the lead right now

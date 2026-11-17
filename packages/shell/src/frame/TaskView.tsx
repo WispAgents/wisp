@@ -105,6 +105,8 @@ import { TELEMETRY_TOPIC, feedbackOn } from './feedback-on.ts';
 import { MODE_ICON, agentMenu, modeMenu, teamMenu, whenAt, whenMenu, type Mode, type When } from './pickers.ts';
 import { capOf } from './cap.ts';
 import '../i18n/lazy.ts';
+import { openedByStep } from './stepped.ts';
+
 
 interface TurnBody {
   readonly prompt?: string;
@@ -327,7 +329,9 @@ export default function TaskView(props: { readonly id: string; readonly onBack?:
   const text = (): string => reply$() ?? '';
   const setText = (v: string): void => shell.client.drafts.set(rKey, rField, draftValue(v));
   let input: HTMLTextAreaElement | undefined;
-  queueMicrotask(() => shell.nav().layout === 'split' && input?.focus());
+  // opened by j or k: the keys stay on the list (stepped.ts, v1)
+  const stepped = openedByStep();
+  queueMicrotask(() => shell.nav().layout === 'split' && !stepped && input?.focus());
   const titleOf = (id: string): string => sessions().find((s) => s.id === id)?.title ?? '';
   // the overlap note's × (v1 #787): closed for this task until what it says changes; kept in this browser as v1 did
   const closedNotes = dismissedStore(shell.client);
