@@ -11,6 +11,7 @@ pub mod recheck;
 pub mod slot;
 pub mod text;
 pub mod time;
+pub mod write;
 
 pub use decide::Refusal;
 pub use detail::{check_list, pr_detail_of, pull_coords, threads_of};

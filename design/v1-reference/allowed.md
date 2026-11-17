@@ -113,6 +113,11 @@ A place where v2 does better than v1 on purpose. Each names its rule below and i
   of the first that starts with what's typed), with a Tab key, in place of the placeholder; Tab writes it. v1 only had
   the Follow up chips, which stay. Touch screens show no ghost. Masked: the ghost's line (`composer.ghost`).
 
+- **Ship it's Write it with <harness>** (TRY-13, the lead's call 2026-11-17; test
+  `the_prompt_carries_the_task_and_the_repos_template_and_asks_for_json`, `plugins/ship/core/src/write.rs`). The task's
+  own agent writes the PR's title and description from the diff, filling the repo's pull request template. A link at
+  the end of the draft box's line, no taller than it, so nothing in v1's dialog moves. Masked: the link (`ship.write`).
+
 ## Rules (read by `qa/parity.mjs`)
 
 One rule a line: `<view glob> <part glob> <kind> [widths]` (widths: `390` or `320,390`; none means every width). `wrap` is §1, `pending` is §2, `fold` is §4
@@ -146,4 +151,5 @@ task.right-click  list.menu.*  owner
 *   block.files.path   owner
 *   topbar.brand       owner
 task*  composer.ghost  owner
+task.ship  ship.write  owner
 ```

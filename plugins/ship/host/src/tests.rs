@@ -147,8 +147,18 @@ fn the_manifest_is_valid_and_names_every_command() {
     assert_eq!(m.id, "wisp.ship");
     assert!(m.requires.contains_key("git.service"));
     let cmds = m.contributes.get("commands").and_then(|v| v.as_array()).map_or(0, Vec::len);
-    assert_eq!(cmds, 11, "ship.agent.pr (wisp_pr) is the 11th");
-    for p in ["git:repo", "git:commit", "git:push", "git:merge.ff", "git:worktree.remove", "git:branch.delete", "proc:exec{bin:gh}"] {
+    assert_eq!(cmds, 12, "ship.agent.pr (wisp_pr) is the 11th, ship.write (TRY-13) the 12th");
+    for p in [
+        "git:repo",
+        "git:diff",
+        "runtime:quick",
+        "git:commit",
+        "git:push",
+        "git:merge.ff",
+        "git:worktree.remove",
+        "git:branch.delete",
+        "proc:exec{bin:gh}",
+    ] {
         assert!(m.permissions.iter().any(|x| x == p), "{p}");
     }
 }

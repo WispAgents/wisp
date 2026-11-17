@@ -44,6 +44,9 @@ export const ship = defineCommand<ShipArgs, ShipResult>({
   optimistic: (base, a) => (row(base, a.key) ? [set(base, a.key, '/shipping', { step: a.first, update: a.update })] : []),
 });
 
+/** TRY-13: the task's own agent writes the PR's title and description (a side run: its button is pending meanwhile). */
+export const write = defineCommand<Task, { readonly title: string; readonly body: string }>({ id: 'ship.write', owner, wire, optimistic: 'none', pending: 'the ship.write control' });
+
 /** POST /sessions/:id/pr: check the PR now (wisp also checks every minute). */
 export const refresh = defineCommand<Task, PrSummary>({ id: 'ship.refresh', owner, wire, optimistic: 'none', pending: 'the ship.refresh control' });
 

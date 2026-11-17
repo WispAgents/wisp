@@ -63,6 +63,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - **v2: wisp tells you when a run goes silent but keeps spending.** A run with no output for 30 minutes while its plan still moves sends your phone *Silent 34 min, spent 4% of weekly*, with a Stop button (ntfy, Telegram, Slack, Discord, wisp's phone app). Settings → Usage → *Stop a run silent for* (off by default) stops such a run after 1–8 hours.
 - **v2: watch every subagent of a task live.** A task's Team tab now lists all its subagents, not only crew jobs: wisp's own delegates on any harness (with their model) and Claude Code's own subagents, each with what it does now, then what it came back with, and its time. A delegate opens its own task; a Claude Code subagent opens a view of its steps and its answer. Claude Code's framed subagent answers now read as the subagent wrote them.
 - **v2: Tab fills a suggested follow-up.** When an answer suggests follow-ups, the reply box shows the first one faded behind the caret; type and it narrows to the one that starts with what you wrote; Tab writes it. The Follow up chips stay, and touch screens keep their placeholder.
+- **v2: the agent writes your pull request.** Ship it has *Write it with <agent>*: the task's own agent writes the PR title and description from the diff, the task and its answer, filling in the repo's pull request template when there is one (about 10 s).
 
 ### Changed
 
@@ -228,6 +229,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - **Plan mode only stops file edits.** On Claude Code a task in Plan now runs any command it needs (tests, builds, the app) and gets your connectors; only its file-editing tools are off, and it's told not to write files from the shell. Claude Code's own plan mode refused commands with side effects, so Plan answers ended with commands for you to run. A task a channel or trigger started stays read-only in Plan, as before.
 
 ### Fixed
+
+- **v2: Ship it's drafted title keeps a word in capitals.** "README first paragraph" was drafted as "docs: rEADME first paragraph".
 
 - **v2: an idle wisp no longer spins the CPU at start.** With many worktrees in a project, looking for worktrees to bring in re-read every agent's whole history once per worktree (16+ minutes at 100 % CPU for 145 worktrees); each agent's history is now read once per look (under a minute).
 - **v2: a slow agent isn't left *Not found*.** An agent whose CLI didn't answer while wisp started (a busy machine) is asked again a minute later, instead of showing install steps until Re-check.

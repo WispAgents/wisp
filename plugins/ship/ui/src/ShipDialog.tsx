@@ -5,8 +5,8 @@
 
 import { createSignal, For, Match, onCleanup, Show, Switch, type JSX } from 'solid-js';
 import type { EntityKey, PluginClient } from '@wisp/client';
-import { Button, Checkbox, Field, Icon, Inline, Input, Skeleton, Stack, Text, TextArea } from '@wisp/ui';
-import { prepare } from './commands.ts';
+import { Button, Checkbox, Field, Icon, Inline, Input, Skeleton, Stack, Text, TextArea, useSignal } from '@wisp/ui';
+import { prepare, write } from './commands.ts';
 import { flowsFor } from './flows.ts';
 import { t } from './i18n.ts';
 import { unsentLine } from './model/merge.ts';
@@ -104,6 +104,21 @@ export default function ShipDialog(props: { readonly client: PluginClient; reado
     const i = info();
     return i ? shipBlock(i) : undefined;
   };
+  // TRY-13: the task's own agent writes the title and the description (the repo's PR template filled in, when it has one)
+  const harnesses = useSignal(shell.harnesses());
+  const agentName = (): string => harnesses().find((h) => h.id === s()?.agent)?.name ?? s()?.agent ?? '';
+  const [writing, setWriting] = createSignal(false);
+  const writeIt = (): void => {
+    setWriting(true);
+    props.client
+      .run(write, { key })
+      .then((d) => {
+        if (d.title) setTitle(d.title);
+        if (d.body) setBody(d.body);
+      })
+      .catch(() => {}) // the shell's toast says why
+      .finally(() => setWriting(false));
+  };
   let titleBox: HTMLInputElement | undefined;
   const go = (): void => {
     const i = info();
@@ -138,7 +153,15 @@ export default function ShipDialog(props: { readonly client: PluginClient; reado
             <TextArea value={body()} onInput={setBody} mono spellcheck={false} minRows={6} maxRows={14} />
           </Show>
         </Field>
-        <Checkbox checked={draft()} onChange={setDraft} label={t('wisp.ship.dialog.draft')} disabled={!info()} />
+        {/* the draft box's line, Write at its end (v1's dialog has nothing there: nothing below moves) */}
+        <Inline justify="between">
+          <Checkbox checked={draft()} onChange={setDraft} label={t('wisp.ship.dialog.draft')} disabled={!info()} />
+          <Show when={agentName()}>
+            <Button size="xs" variant="link" part="ship.write" loading={writing()} disabled={!info() || writing()} onClick={writeIt}>
+              {writing() ? t('wisp.ship.dialog.writing', { name: agentName() }) : t('wisp.ship.dialog.write', { name: agentName() })}
+            </Button>
+          </Show>
+        </Inline>
       </Show>
       <Show when={s()?.overlap}>
         {(o) => (

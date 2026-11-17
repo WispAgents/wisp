@@ -19,6 +19,9 @@ fn draft_is_conventional_from_the_hero_title() {
     assert_eq!(draft(&input("Clean up the store", "")).title, "refactor: clean up the store");
     assert_eq!(draft(&input("Add tests for git", "")).title, "test: add tests for git");
     assert_eq!(draft(&input("Add a button", "")).title, "feat: add a button");
+    // a word in capitals keeps them (was "docs: rEADME first paragraph")
+    assert_eq!(draft(&input("README first paragraph", "")).title, "docs: README first paragraph");
+    assert!(draft(&input("CI runs on Windows", "")).title.ends_with(": CI runs on Windows"));
     assert_eq!(draft(&input("Prefix fixture", "")).title, "fix: prefix fixture", "\\bfix matches a word start, as v1's regex");
     let long = "x".repeat(300);
     assert_eq!(draft(&input(&long, "")).title.chars().count(), 100);

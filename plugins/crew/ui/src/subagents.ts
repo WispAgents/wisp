@@ -5,6 +5,7 @@
 // Pure: the rows from the task's rows and steps; the pane lays them out and opens them.
 import { computed, type PluginClient, type Readable } from '@wisp/client';
 import type { Say, TeamRow } from './team.ts';
+import './i18n/lazy.ts';
 
 /** A task row as the list sends it (runtime's `session` row). */
 export interface TaskRowLike {

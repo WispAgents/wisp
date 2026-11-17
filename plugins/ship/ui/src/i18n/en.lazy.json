@@ -120,5 +120,7 @@
   "wisp.ship.verdict.why.not": "not reviewed by another harness",
   "wisp.ship.verdict.why.partly": "only partly reviewed",
   "wisp.ship.verdict.why.running": "the review is still running",
-  "wisp.ship.verdict.why.tests": "the tests fail on its head"
+  "wisp.ship.verdict.why.tests": "the tests fail on its head",
+  "wisp.ship.dialog.write": "Write it with {name}",
+  "wisp.ship.dialog.writing": "{name} is writing…"
 }

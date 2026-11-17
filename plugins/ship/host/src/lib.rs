@@ -121,6 +121,21 @@ fn commands(s: &mut Setup, slot: &Slot) {
         }
     });
     let sl = slot.clone();
+    s.command::<api::Write, _, _>(move |ctx, call, a| {
+        let sl = sl.clone();
+        async move {
+            let ship = get(&sl)?;
+            // where the agent reads the diff: the task's worktree, else its folder
+            let task = ship.task(&a.session)?;
+            let folder = Ship::gh_dir(&task).await;
+            let base = task.repos.first().map(|r| r.worktree.base_ref.clone()).unwrap_or_default();
+            let diff = draft::diff_of(&ship, &call, &folder, &base).await;
+            let d = draft::write_for(&ctx, &call, &a.session, &folder, &diff).await?;
+            track(&ctx, "ship_write", serde_json::json!({}));
+            Ok(d)
+        }
+    });
+    let sl = slot.clone();
     s.command::<api::Refresh, _, _>(move |_ctx, call, a| {
         let sl = sl.clone();
         async move { Ok(get(&sl)?.refresh(&call, &a.session).await?) }

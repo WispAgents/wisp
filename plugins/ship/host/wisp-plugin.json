@@ -19,12 +19,14 @@
     "runtime:get",
     "runtime:list",
     "runtime:turns",
+    "runtime:quick",
     "runtime:setExt",
     "runtime:followUp",
     "review:maybe",
     "git:repo",
     "git:status",
     "git:read",
+    "git:diff",
     "git:fetch",
     "git:commit",
     "git:push",
@@ -81,6 +83,10 @@
       {
         "id": "ship.ship",
         "title": "Commit, push and open a pull request"
+      },
+      {
+        "id": "ship.write",
+        "title": "Have a task's agent write its pull request's title and description"
       },
       {
         "id": "ship.refresh",

@@ -102,17 +102,23 @@ pub fn presentation_parts(blocks: &[serde_json::Value]) -> (Option<&str>, Option
 }
 
 /// The default commit message and PR text: conventional, from the hero title.
+/// The line every PR wisp drafts ends with (v1).
+pub const FOOTER: &str = "_Shipped from [wisp](https://github.com/WispAgents/wisp)._";
+
 pub fn draft(d: &DraftInput<'_>) -> Draft {
     let text = d.hero_title.unwrap_or(d.session_title).trim();
     let title = if is_conventional(text) {
         text.to_owned()
     } else {
+        // "Fix the test" reads "fix the test" after the type; "README …" or "CI …" keep their capitals
         let mut chars = text.chars();
-        let lowered: String = chars.next().map(|c| c.to_lowercase().chain(chars).collect()).unwrap_or_default();
+        let caps = text.chars().nth(1).is_some_and(char::is_uppercase);
+        let lowered: String =
+            if caps { text.to_owned() } else { chars.next().map(|c| c.to_lowercase().chain(chars).collect()).unwrap_or_default() };
         format!("{}: {lowered}", commit_type(text, d.first_prompt))
     };
     let body = [d.hero_summary.unwrap_or_default(), d.markdown].iter().filter(|s| !s.is_empty()).copied().collect::<Vec<_>>().join("\n\n");
-    let body = format!("{}\n\n_Shipped from [wisp](https://github.com/WispAgents/wisp)._", body.trim());
+    let body = format!("{}\n\n{FOOTER}", body.trim());
     Draft { title: title.chars().take(100).collect(), body: body.trim().to_owned() }
 }
 

@@ -640,6 +640,8 @@ export const COMMANDS: Record<string, CommandFn> = {
   'worktrees.warm': () => ({ ops: [], result: null }),
   'accounts.install': () => ({ ops: [], result: {} }),
   'accounts.upgrade': () => ({ ops: [], result: {} }),
+  // TRY-13: the task's agent writes its PR (the mock's answer, in the real Draft shape)
+  'ship.write': () => ({ ops: [], result: { title: 'fix(login): wait for the session cookie', body: '## What\nThe login test waits for the session cookie.\n\n## Tested\n- npm test' } }),
   'accounts.recheck': () => ({ ops: [], result: {} }),
   // ⌘K past work: words in a task's prompts and answers (the peer's full-text index), a snippet around them
   'runtime.search': (a, ctx) => {

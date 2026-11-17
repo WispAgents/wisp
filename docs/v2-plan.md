@@ -306,6 +306,10 @@ turn. When a screen or feature contradicts one, that's a bug: fix it toward the 
 
 - [ ] The Linear TODO tickets (finish them all before the release; owner, 2026-11-17)
   - [x] TRY-16 (11-17)
+  - [x] TRY-13 the agent writes the PR (11-17): `ship.write` (a quick side run of the task's own harness with the
+    diff, the task, its answer and the repo's PR template; `plugins/ship/core/src/write.rs`), Ship it's *Write it with
+    <agent>* link on the draft line (allowed.md §7); drafted titles keep capitals. What others do: Cursor's and Codex's
+    agents, Devin and Copilot's PR summary write from the diff; wisp adds the task's ask and answer and the template
   - [x] TRY-22 Tab fills a follow-up (11-17): the reply box's ghost from the newest answer's `next` block
     (`packages/shell/src/frame/follow-ghost.ts`, kit `ReplyBox.ghost`); allowed.md §7 masks `composer.ghost`
   - [x] TRY-24 live subagent rows (11-17): the Team tab lists wisp's delegates and the harness's own subagents

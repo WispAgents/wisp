@@ -73,6 +73,16 @@ impl Command for Refresh {
     type Out = Option<PrSummary>;
 }
 
+/// TRY-13: the task's own agent writes its PR's title and description (a quick side run in its worktree, in Plan: it
+/// reads the diff itself, following the repo's pull request template when there is one). Additive (2026-11-17).
+#[derive(Debug)]
+pub struct Write;
+impl Command for Write {
+    const ID: &'static str = "ship.write";
+    type Args = SessionArgs;
+    type Out = Draft;
+}
+
 /// Every PR of the task in full, its own first (GET /sessions/:id/prs).
 #[derive(Debug)]
 pub struct Details;
