@@ -22,6 +22,7 @@
 import { blocksToMarkdown } from './render.js';
 import { cronMatches, nextRun, parseCron, readSchedule } from './triggers.js';
 import { adapters } from './adapters/index.js';
+import { showNotes } from './protocol.js';
 import { CREW_MENTION, crewMentions, handleOf } from './channels/mentions.js';
 import { messageOf } from './channels/policy.js';
 import { normalizeTeam } from './subagents.js';
@@ -374,11 +375,8 @@ export function takeCrewBlock(presentation) {
   out.remember = out.remember.slice(0, 12);
   if (out.followUps) out.followUps = out.followUps.slice(0, 3);
   if (out.kit) out.kit = out.kit.slice(0, OFFER_FILES);
-  // Only a crew block: a quick answer's text (its notes) is the report, else a hero says so.
-  if (!presentation.blocks.length && presentation.notes) {
-    presentation.blocks = [{ type: 'markdown', text: presentation.notes }];
-    delete presentation.notes;
-  }
+  // Only a crew block, or one beside a question: the text before it (its notes) is the report.
+  showNotes(presentation);
   if (!presentation.blocks.length) presentation.blocks = [{ type: 'hero', title: 'Nothing new', summary: '', status: 'info' }];
   return out;
 }

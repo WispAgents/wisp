@@ -24,6 +24,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Fixed
 
+- **An answer before a question is shown, not lost.** When an agent wrote its answer as text and ended with a block that only asks (a question, actions, next steps), the report showed the question alone and the answer sat behind *Agent notes*. The text now shows first in the report, in old tasks too, and the agent is told to put its answer in the blocks.
 - **A tests card's long command stays inside the card.** On a phone, a test command with long unbroken words (a long test name) ran past the card's right edge; it now wraps inside it.
 - **A task ID put in from a phone keyboard's clipboard shows as the task.** Gboard's clipboard suggestion puts text in like typing, with no paste event, so a copied task ID stayed a bare ID in the reply box and New task instead of becoming the task's `@title` chip. An ID that lands whole in one go now becomes the chip, wherever it goes in the text. Typing one a letter at a time still stays text.
 - **A check-in a lead scheduled goes while it waits on its subagents.** A task that delegated, scheduled a follow-up (`resume_later`) and ended its turn showed *Waiting on …*, and when the time came nothing happened: the follow-up was held until every subagent had finished. Now it goes on time, and the subagents' report still comes back to it when they're done.
