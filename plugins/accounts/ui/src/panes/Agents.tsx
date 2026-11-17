@@ -29,7 +29,7 @@ import {
 import { useDetected } from '../detected.ts';
 import { fromRow, text } from '../source.ts';
 import { Steps } from './Steps.tsx';
-import { addAccount, install, keyRemove, keySet, loginCancel, loginInput, loginStart, logout, recheck, removeAccount, setAsk, trust } from '../commands.ts';
+import { addAccount, install, keyRemove, keySet, loginCancel, loginInput, loginStart, logout, recheck, removeAccount, setAsk, trust, upgrade } from '../commands.ts';
 import { t } from '../i18n.ts';
 import { ACCOUNT, DETECT_TOPIC, HARNESS, KEY, LOGIN, PLACE, TOOL, TOPIC, loginId, type AccountRow, type HarnessRow, type KeyRow, type LoginRow, type PlaceRow, type ToolRow } from '../types.ts';
 import { accountLine, changeText, changeTip, harnessLine, harnessState, howToGet, loginControl, masked, mergeHarnesses, present, recheckSummary, site, stillChanged } from '../words.ts';
@@ -156,6 +156,24 @@ export default function Agents(props: { readonly client: PluginClient }): JSX.El
   const place = useSignal(c.entities.row<PlaceRow>(PLACE, entityKey(peer, 'this')));
   const [keysOf, setKeysOf] = createSignal<HarnessRow | undefined>();
   const [rechecking, setRechecking] = createSignal(false);
+  // TRY-17: harnesses with a newer version, and the ones an Update press is running for (their button stays, pending)
+  const [updating, setUpdating] = createSignal<ReadonlySet<string>>(new Set());
+  const outdated = createMemo(() => harnesses().filter((h) => present(h) && h.latest && !h.installing && !updating().has(h.id)));
+  const update = (list: readonly HarnessRow[]): void => {
+    for (const h of list) {
+      setUpdating((s) => new Set(s).add(h.id));
+      c.run(upgrade, { peer, agent: h.id })
+        .then(() => shell.toast.show(t('accounts.updated', { name: h.name, version: h.latest ?? '' })))
+        .catch(() => {}) // the shell's onError shows the rollback toast (with the command to run, for a copy wisp can't update)
+        .finally(() =>
+          setUpdating((s) => {
+            const n = new Set(s);
+            n.delete(h.id);
+            return n;
+          }),
+        );
+    }
+  };
   // keyed by id: a harness that settles updates its row in place (no remount, nothing moves)
   const byId = createMemo(() => new Map(harnesses().map((h) => [h.id, h])));
   const ids = createMemo(() => harnesses().map((h) => h.id), undefined, { equals: (a, b) => a.length === b.length && a.every((x, i) => x === b[i]) });
@@ -236,6 +254,11 @@ export default function Agents(props: { readonly client: PluginClient }): JSX.El
                       <Show when={!h().checking && !present(h()) && h().installable === true}>
                         <Button size="sm" disabled={h().installing === true} onClick={() => quiet(c.run(install, { peer, agent: h().id }))}>
                           {h().installing === true ? t('accounts.installing') : t('accounts.install')}
+                        </Button>
+                      </Show>
+                      <Show when={updating().has(h().id) || (!h().checking && present(h()) && h().latest)}>
+                        <Button size="sm" part="accounts.update" disabled={updating().has(h().id) || h().installing === true} onClick={() => update([h()])}>
+                          {updating().has(h().id) || h().installing === true ? t('accounts.updating') : t('accounts.update', { version: h().latest ?? '' })}
                         </Button>
                       </Show>
                       <Pill tone={state().tone} dot variant="plain">
@@ -334,6 +357,21 @@ export default function Agents(props: { readonly client: PluginClient }): JSX.El
       </SettingsGroup>
       {/* v1: Installed something new? Re-check, last */}
       <SettingsGroup part="accounts.recheck.group">
+        {/* TRY-17: two or more with a newer version: all of them in one press */}
+        <Show when={outdated().length > 1}>
+          <SettingsRow
+            part="accounts.updateAll"
+            title={t('accounts.updateAll.title')}
+            description={outdated()
+              .map((h) => t('accounts.updateAll.item', { name: h.name, version: h.latest ?? '' }))
+              .join(' · ')}
+            control={
+              <Button size="sm" variant="primary" icon="update" onClick={() => update(outdated())}>
+                {t('accounts.updateAll', { count: outdated().length })}
+              </Button>
+            }
+          />
+        </Show>
         <SettingsRow
           part="accounts.recheck"
           title={t('accounts.recheck.title')}

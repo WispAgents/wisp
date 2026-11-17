@@ -21,6 +21,7 @@ mod run;
 mod signin;
 mod store;
 mod sys;
+mod upgrade;
 mod view;
 
 use std::collections::HashMap;
@@ -54,6 +55,8 @@ pub(crate) struct State {
     pub installing: Mutex<std::collections::HashSet<String>>,
     /// each CLI login's last status (`login id` → signed in?), asked at start and after a change
     pub statuses: Mutex<HashMap<String, Option<bool>>>,
+    /// each harness's latest version on npm (TRY-17), read at start and twice a day
+    pub latest: Mutex<HashMap<String, String>>,
 }
 
 pub(crate) fn lock<T>(m: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
@@ -96,6 +99,7 @@ impl Plugin for AccountsPlugin {
         crate::kinds::register(s);
         let slot: Slot = Arc::new(OnceLock::new());
         ops::register(s, &slot);
+        upgrade::register(s, &slot);
         let hook = slot.clone();
         // before trust (50) and the budget guard: the account and the watch decide first
         s.intercept::<BeforeRun, _, _>(InterceptOpts { priority: 20, failure: Failure::Open, timeout_ms: 2000 }, move |ctx, call, c| {
@@ -127,11 +131,13 @@ impl Plugin for AccountsPlugin {
                 flows: signin::Flows::default(),
                 installing: Mutex::default(),
                 statuses: Mutex::default(),
+                latest: Mutex::default(),
             };
             view::install(&st.store).map_err(store_err)?;
             let st = Arc::new(st);
             let _ = start.set(st.clone());
             view::soon(&ctx, &st);
+            upgrade::follow(&ctx, &st);
             Ok(())
         });
         Ok(())

@@ -12,6 +12,7 @@ use wisp_runtime_api::commands::Adopt;
 use wisp_runtime_api::commands::{AdoptSession, AdoptSessionArgs, Get, IdArgs, List, ListArgs, Sessions, SessionsArgs, SetExt, SetExtArgs};
 use wisp_runtime_api::ext::{merged, update_ext};
 use wisp_runtime_api::model::SessionState;
+use wisp_runtime_api::paths::same_folder;
 use wisp_runtime_api::spec::AdoptArgs;
 use wisp_worktrees_api::{EXT, OfferItem, PrRef, Worktree};
 
@@ -195,9 +196,31 @@ impl Port for RuntimePort {
         })
     }
 
-    fn chat_in(&self, path: String) -> BoxFuture<'static, bool> {
+    fn chats_in(&self, paths: Vec<String>) -> BoxFuture<'static, std::collections::HashSet<String>> {
         let ctx = self.ctx.clone();
-        Box::pin(async move { ctx.run::<Sessions>(&ctx.root_call(), SessionsArgs { cwd: path }).await.is_ok_and(|v| !v.is_empty()) })
+        Box::pin(async move {
+            let mut out = std::collections::HashSet::new();
+            for h in ctx.contributions(&wisp_runtime_api::harness::sessions::SESSIONS) {
+                let left: Vec<&String> = paths.iter().filter(|p| !out.contains(*p)).collect();
+                if left.is_empty() {
+                    break;
+                }
+                // one pass over its store when it can; else its list per folder still to answer
+                let hits: Vec<String> = if let Some(dirs) = h.folders().await {
+                    left.into_iter().filter(|p| dirs.iter().any(|d| same_folder(d, p))).cloned().collect()
+                } else {
+                    let mut hit = Vec::new();
+                    for p in left {
+                        if !h.list(p).await.is_empty() {
+                            hit.push(p.clone());
+                        }
+                    }
+                    hit
+                };
+                out.extend(hits);
+            }
+            out
+        })
     }
 
     fn bring_in(&self, item: OfferItem, root: String) -> BoxFuture<'static, Option<String>> {

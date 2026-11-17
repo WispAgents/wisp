@@ -261,6 +261,12 @@ impl Harness for OpencodeHarness {
         Some("opencode-ai".into())
     }
 
+    /// Its latest version is the npm package's (TRY-17); its own `opencode upgrade` knows its install script's copy
+    /// (~/.opencode/bin) as well as an npm one. A copy in wisp's tools folder updates through npm there.
+    fn update(&self) -> Option<wisp_runtime_api::harness::HarnessUpdate> {
+        Some(wisp_runtime_api::harness::HarnessUpdate { package: "opencode-ai".into(), self_update: Some(vec!["upgrade".into()]) })
+    }
+
     fn setup(&self, _platform: &str) -> Option<SetupTip> {
         Some(SetupTip {
             tip: "wisp can install it here: free models, no account needed".into(),

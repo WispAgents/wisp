@@ -123,6 +123,13 @@ impl Harness for ClaudeHarness {
     fn vendor(&self) -> Option<&str> {
         Some("anthropic")
     }
+    /// Its latest version is the npm package's; it updates itself (`claude update`), native install or npm (TRY-17).
+    fn update(&self) -> Option<wisp_runtime_api::harness::HarnessUpdate> {
+        Some(wisp_runtime_api::harness::HarnessUpdate {
+            package: "@anthropic-ai/claude-code".into(),
+            self_update: Some(vec!["update".into()]),
+        })
+    }
     /// Claude Code runs a project's hooks and plugins from its settings files, and its MCP servers from `.mcp.json`.
     fn project_hooks(&self) -> Option<wisp_runtime_api::harness::ProjectHooks> {
         Some(wisp_runtime_api::harness::ProjectHooks {

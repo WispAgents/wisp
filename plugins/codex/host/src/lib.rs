@@ -199,6 +199,10 @@ impl Harness for CodexHarness {
     fn vendor(&self) -> Option<&str> {
         Some("openai")
     }
+    /// Its latest version is the npm package's (TRY-17); its own `codex update` knows its standalone install (~/.codex/packages/standalone) as well as an npm one
+    fn update(&self) -> Option<wisp_runtime_api::harness::HarnessUpdate> {
+        Some(wisp_runtime_api::harness::HarnessUpdate { package: "@openai/codex".into(), self_update: Some(vec!["update".into()]) })
+    }
 
     fn detect<'a>(&'a self, sys: &'a dyn HarnessSys) -> BoxFuture<'a, HarnessFound> {
         Box::pin(async move {

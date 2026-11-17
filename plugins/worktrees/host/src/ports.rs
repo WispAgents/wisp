@@ -73,9 +73,9 @@ pub trait Port: Send + Sync + 'static {
     fn extra_in_use(&self, _path: String) -> BoxFuture<'static, bool> {
         Box::pin(async { false })
     }
-    /// a harness session ran outside wisp in this folder (a chat Bring in resumes)
-    fn chat_in(&self, _path: String) -> BoxFuture<'static, bool> {
-        Box::pin(async { false })
+    /// of `paths`, the ones a harness session ran in outside wisp (a chat Bring in resumes); asked once per look
+    fn chats_in(&self, _paths: Vec<String>) -> BoxFuture<'static, std::collections::HashSet<String>> {
+        Box::pin(async { std::collections::HashSet::new() })
     }
     /// make a task in another tool's worktree (marked foreign: the cleanup never touches it); its id
     fn bring_in(&self, _item: wisp_worktrees_api::OfferItem, _root: String) -> BoxFuture<'static, Option<String>> {
@@ -94,6 +94,9 @@ pub struct MemPort {
     pub brought: Mutex<Vec<(String, String)>>,
     /// the extra folders (`dirs`) of the tasks working now
     pub extras: Mutex<Vec<String>>,
+    /// folders a harness chat ran in, and each `chats_in` call's folders (one call per look)
+    pub chats: Mutex<Vec<String>>,
+    pub asked: Mutex<Vec<Vec<String>>>,
 }
 
 impl MemPort {
@@ -105,11 +108,21 @@ impl MemPort {
             projects: Mutex::new(Vec::new()),
             brought: Mutex::new(Vec::new()),
             extras: Mutex::new(Vec::new()),
+            chats: Mutex::new(Vec::new()),
+            asked: Mutex::new(Vec::new()),
         })
     }
 }
 
 impl Port for MemPort {
+    fn chats_in(&self, paths: Vec<String>) -> BoxFuture<'static, std::collections::HashSet<String>> {
+        let chats = self.chats.lock().map(|c| c.clone()).unwrap_or_default();
+        let hit = paths.iter().filter(|p| chats.iter().any(|c| wisp_runtime_api::paths::same_folder(c, p))).cloned().collect();
+        if let Ok(mut a) = self.asked.lock() {
+            a.push(paths);
+        }
+        Box::pin(async move { hit })
+    }
     fn tasks(&self) -> BoxFuture<'static, Vec<TaskInfo>> {
         let v = self.tasks.lock().map(|t| t.clone()).unwrap_or_default();
         Box::pin(async move { v })

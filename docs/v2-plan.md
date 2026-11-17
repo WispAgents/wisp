@@ -300,7 +300,9 @@ turn. When a screen or feature contradicts one, that's a bug: fix it toward the 
 
 ### 4.10 After v2 is 100 %
 
-- [ ] The Linear TODO tickets
+- [ ] The Linear TODO tickets (finish them all before the release; owner, 2026-11-17)
+  - [x] TRY-16 (11-17)
+  - [x] TRY-17 harness updates (11-17): Settings → Agents *Update to x.y.z* / *Update all*, `accounts.upgrade` updates the way it was installed (`claude update`, `codex update`, `opencode upgrade`, npm, wisp's tools folder; Homebrew: the command to run); latest versions from npm at start and every 12 h. Found and fixed on the way: B57 (idle CPU), B58 (Cursor *Not found*), B59
 - [ ] Continuous QA rounds by fresh low-context agents → `docs/qa/bugs.md` → one fix per coder
 
 ## 5. Waiting for the lead right now

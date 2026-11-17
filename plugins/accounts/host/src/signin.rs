@@ -428,6 +428,7 @@ mod tests {
             flows: Flows::default(),
             installing: Mutex::default(),
             statuses: Mutex::default(),
+            latest: Mutex::default(),
         }
     }
 

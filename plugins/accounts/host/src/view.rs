@@ -13,7 +13,8 @@ use wisp_store::{Col, EntityDef, Migration, Query, Row, Store};
 
 use crate::{State, lock, now};
 
-const MIGRATIONS: &[Migration] = &[Migration::sql(
+const MIGRATIONS: &[Migration] = &[
+    Migration::sql(
     1,
     "CREATE TABLE accounts_v_harness (id TEXT PRIMARY KEY, name TEXT NOT NULL, ord INTEGER NOT NULL, available INTEGER NOT NULL, version TEXT, models TEXT,
        signedIn INTEGER, error TEXT, hasKey INTEGER, setup TEXT, signIn TEXT NOT NULL, installable INTEGER, installing INTEGER, brand TEXT, provider TEXT,
@@ -26,7 +27,10 @@ const MIGRATIONS: &[Migration] = &[Migration::sql(
        env TEXT NOT NULL, \"set\" INTEGER NOT NULL, hint TEXT NOT NULL, savedAt INTEGER, test TEXT) STRICT;
      CREATE TABLE accounts_v_tool (id TEXT PRIMARY KEY, name TEXT NOT NULL, installed INTEGER NOT NULL, setup TEXT) STRICT;
      CREATE TABLE accounts_v_place (id TEXT PRIMARY KEY, grid INTEGER NOT NULL, ask INTEGER NOT NULL) STRICT;",
-)];
+    ),
+    // TRY-17: a newer version than the one installed, when there is one
+    Migration::sql(2, "ALTER TABLE accounts_v_harness ADD COLUMN latest TEXT;"),
+];
 
 fn topics(_: &Row) -> Vec<String> {
     vec![TOPIC.into()]
@@ -54,6 +58,7 @@ pub const HARNESS: EntityDef = EntityDef {
         ("provider", Col::Text),
         ("changed", Col::Text),
         ("pinnedAt", Col::Int),
+        ("latest", Col::Text),
     ],
     json_columns: &["models", "setup", "changed"],
     parent: None,
@@ -177,11 +182,15 @@ pub fn sign_in_kind(has_keys: bool, has_login: bool) -> &'static str {
 }
 
 /// Every row, by kind, as they stand now.
-pub async fn rows(ctx: &Ctx, st: &State) -> Vec<(&'static EntityDef, Vec<Row>)> {
-    let agents = crate::calls::agents(ctx, None).await.unwrap_or_else(|err| {
-        tracing::warn!(error = %err.message, "accounts: runtime.agents");
-        Vec::new()
-    });
+pub async fn rows(ctx: &Ctx, st: &State) -> Option<Vec<(&'static EntityDef, Vec<Row>)>> {
+    // runtime.agents refused (starting, busy): no rows, rather than none (which would delete every row the pane shows)
+    let agents = match crate::calls::agents(ctx, None).await {
+        Ok(a) => a,
+        Err(err) => {
+            tracing::warn!(error = %err.message, "accounts: runtime.agents; the rows stay as they were");
+            return None;
+        }
+    };
     let mut harnesses = Vec::new();
     let mut keys = Vec::new();
     let mut accounts = Vec::new();
@@ -203,6 +212,10 @@ pub async fn rows(ctx: &Ctx, st: &State) -> Vec<(&'static EntityDef, Vec<Row>)> 
                 keys.push(row_of(&KEY, &json!({ "id": format!("{id}/{}", p.id), "agent": id, "agentName": a.name, "provider": p.id, "name": p.name, "url": kv.url, "env": kv.env, "set": p.set, "hint": "", "savedAt": null })));
             }
         }
+        let latest = lock(&st.latest)
+            .get(&id)
+            .filter(|l| a.available && wisp_accounts_core::update::newer(a.version.as_deref().unwrap_or(""), l))
+            .cloned();
         let models: Vec<Value> = a.models.iter().map(|m| json!({ "id": m.id, "label": m.label })).collect();
         harnesses.push(row_of(
             &HARNESS,
@@ -214,6 +227,7 @@ pub async fn rows(ctx: &Ctx, st: &State) -> Vec<(&'static EntityDef, Vec<Row>)> 
                 "installable": h.as_ref().is_some_and(|h| h.npm_package().is_some()), "installing": installing.contains(&id),
                 "brand": multi, "provider": null,
                 "changed": serde_json::to_value(&wv.changed).unwrap_or(Value::Null), "pinnedAt": wv.pinned_at,
+                "latest": latest,
             }),
         ));
         let list = lock(&st.accounts).get(&id).cloned().unwrap_or_default();
@@ -251,19 +265,19 @@ pub async fn rows(ctx: &Ctx, st: &State) -> Vec<(&'static EntityDef, Vec<Row>)> 
         })
         .unwrap_or_default();
     let grid = std::env::var("WISP_GRID").is_ok_and(|v| !v.is_empty());
-    vec![
+    Some(vec![
         (&HARNESS, harnesses),
         (&ACCOUNT, accounts),
         (&LOGIN, logins),
         (&KEY, keys),
         (&TOOL, tool_rows),
         (&PLACE, vec![row_of(&PLACE, &json!({ "id": "this", "grid": grid, "ask": st.ask() }))]),
-    ]
+    ])
 }
 
 /// Writes every row; a row no longer there is deleted.
 pub async fn publish(ctx: &Ctx, st: &State) {
-    let all = rows(ctx, st).await;
+    let Some(all) = rows(ctx, st).await else { return };
     let r = st
         .store
         .write(move |w| {

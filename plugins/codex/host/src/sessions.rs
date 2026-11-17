@@ -100,6 +100,21 @@ impl HarnessSessions for CodexSessions {
             out
         })
     }
+    /// the folders of the same rollouts `list` reads, in one pass (each rollout's own `cwd`)
+    fn folders(&self) -> BoxFuture<'static, Option<Vec<String>>> {
+        Box::pin(async move {
+            let mut out: Vec<String> = Vec::new();
+            for p in rollouts(500).await {
+                if let Ok(text) = tokio::fs::read_to_string(&p).await {
+                    let (s, _) = parse(&text);
+                    if s.prompts > 0 && !s.cwd.is_empty() && !out.contains(&s.cwd) {
+                        out.push(s.cwd);
+                    }
+                }
+            }
+            Some(out)
+        })
+    }
     fn raw(&self, id: &str) -> BoxFuture<'static, Option<Vec<u8>>> {
         let id = id.to_owned();
         Box::pin(async move {

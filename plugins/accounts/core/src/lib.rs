@@ -4,4 +4,5 @@
 
 pub mod accounts;
 pub mod login;
+pub mod update;
 pub mod watch;

@@ -210,6 +210,11 @@ command!(
     Install = "accounts.install" [PERM_WRITE] : InstallArgs => serde_json::Value
 );
 command!(
+    /// TRY-17: a harness to its latest version, the way it was installed (wisp's tools folder, a global npm
+    /// install, its own updater); one installed some other way answers with the command to run. Additive (2026-11-17).
+    Upgrade = "accounts.upgrade" [PERM_WRITE] : AgentArgs => serde_json::Value
+);
+command!(
     /// POST /agents/recheck: every harness detected again.
     Recheck = "accounts.recheck" [PERM_READ] : () => serde_json::Value
 );

@@ -106,6 +106,10 @@
         "title": "Install a harness wisp can install itself"
       },
       {
+        "id": "accounts.upgrade",
+        "title": "Update a harness to its latest version"
+      },
+      {
         "id": "accounts.recheck",
         "title": "Detect every harness again"
       },

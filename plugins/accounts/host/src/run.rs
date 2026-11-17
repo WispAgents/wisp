@@ -17,7 +17,7 @@ use crate::{State, folders, harness, lock, now, store};
 
 /// Where `bin` resolves: the path itself when it names a folder, else the first match on the PATH runs start with
 /// (`wisp_proc::search_path`: the login shell's, once the desktop app handed it over; ADR-0057).
-async fn resolve(bin: &str) -> Option<(PathBuf, PathBuf)> {
+pub(crate) async fn resolve(bin: &str) -> Option<(PathBuf, PathBuf)> {
     let candidates: Vec<PathBuf> = if bin.contains(['/', '\\']) {
         vec![PathBuf::from(bin)]
     } else {

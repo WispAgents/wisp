@@ -73,5 +73,11 @@
   "accounts.lean.on": "wisp’s side runs",
   "accounts.lean.all": "All Claude runs",
   "accounts.recheck.title": "Installed something new?",
-  "accounts.recheck.hint": "After installing a CLI, signing in or adding a provider, look for harnesses and models again"
+  "accounts.recheck.hint": "After installing a CLI, signing in or adding a provider, look for harnesses and models again",
+  "accounts.update": "Update to {version}",
+  "accounts.updating": "Updating…",
+  "accounts.updated": "{name} updated to {version}",
+  "accounts.updateAll.title": "Updates available",
+  "accounts.updateAll.item": "{name} {version}",
+  "accounts.updateAll": "Update all ({count})"
 }

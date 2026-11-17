@@ -39,6 +39,12 @@ pub trait HarnessSessions: Send + Sync + 'static {
     fn harness(&self) -> &'static str;
     /// this folder's sessions, newest first
     fn list(&self, cwd: &str) -> BoxFuture<'static, Vec<OutsideSession>>;
+    /// every folder this harness has a session in, read in one pass; None: ask `list` per folder. Additive
+    /// (2026-11-17): Bring in asks it once for all of a repo's worktrees, where `list` per folder rescanned the whole
+    /// store each time (145 worktrees took minutes of CPU at start).
+    fn folders(&self) -> BoxFuture<'static, Option<Vec<String>>> {
+        Box::pin(async { None })
+    }
     /// one session and its turns
     fn read(&self, id: &str) -> BoxFuture<'static, Option<(OutsideSession, Vec<SessionTurn>)>>;
     /// the CLI's own log of a session, as it keeps it (what `wisp open` restores elsewhere). Additive.

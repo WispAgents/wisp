@@ -178,7 +178,8 @@ pub async fn offers(engine: &Engine, port: &dyn Port, call: &Call) -> Vec<Offer>
     let dismissed = port.settings().await.dismissed;
     // compared by `folder_key`: on Windows git lists `C:/x/…` and wisp keeps `C:\x\…`
     let wisp_dir = format!("{}/worktrees", engine.home.trim_end_matches(['/', '\\']));
-    let mut out = Vec::new();
+    // each project's worktrees first, then which of them had a chat: every harness's store read once, not per folder
+    let mut found = Vec::new();
     for (name, root) in port.projects().await {
         if dismissed.contains(&name) || !fsx::exists(&root).await {
             continue;
@@ -192,17 +193,26 @@ pub async fn offers(engine: &Engine, port: &dyn Port, call: &Call) -> Vec<Offer>
                 && !same_folder(&e.path, &root)
                 && !known.contains(&folder_key(&e.path))
                 && !is_within(&e.path, &wisp_dir);
-            let (dirty, chat) = if candidate && !e.branch.is_empty() {
-                let dirty = match engine.repo(call, &e.path).await {
+            let dirty = if candidate && !e.branch.is_empty() {
+                match engine.repo(call, &e.path).await {
                     Ok(r) => r.status(call).await.map_or(0, |s| u32::try_from(s.dirty()).unwrap_or(u32::MAX)),
                     Err(_) => 0,
-                };
-                (dirty, port.chat_in(e.path.clone()).await)
+                }
             } else {
-                (0, false)
+                0
             };
-            listed.push(Listed { path: e.path, branch: e.branch, bare: e.bare, prunable: e.prunable, dirty, chat });
+            listed.push((
+                candidate && !e.branch.is_empty(),
+                Listed { path: e.path, branch: e.branch, bare: e.bare, prunable: e.prunable, dirty, chat: false },
+            ));
         }
+        found.push((name, root, listed));
+    }
+    let asked: Vec<String> = found.iter().flat_map(|(_, _, l)| l.iter().filter(|(c, _)| *c).map(|(_, x)| x.path.clone())).collect();
+    let chats = if asked.is_empty() { HashSet::new() } else { port.chats_in(asked).await };
+    let mut out = Vec::new();
+    for (name, root, listed) in found {
+        let listed: Vec<Listed> = listed.into_iter().map(|(_, l)| Listed { chat: chats.contains(&l.path), ..l }).collect();
         if let Some(o) = offer::offer(&name, &root, &listed, &known, &wisp_dir, &engine.user_home, &dismissed) {
             out.push(o);
         }

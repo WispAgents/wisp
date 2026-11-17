@@ -116,8 +116,11 @@ async fn a_projects_conductor_worktree_is_offered_and_published_on_the_panes_top
     add_tree(&root, &oslo, "oslo");
     std::fs::write(oslo.join("wip.txt"), "draft\n").unwrap();
     let mine = add_tree(&root, &t.0.join("h/worktrees/app-fix"), "wisp/fix");
+    let lima = t.0.join("u/conductor/workspaces/app/lima");
+    add_tree(&root, &lima, "lima");
     let port = MemPort::new(vec![task("t1", Some(&mine))], WtSettings::default());
     *port.projects.lock().unwrap() = vec![("app".into(), root.to_string_lossy().into_owned())];
+    *port.chats.lock().unwrap() = vec![lima.to_string_lossy().into_owned()];
 
     let offers = pane::offers(&e, port.as_ref(), &user()).await;
     assert_eq!(offers.len(), 1, "{offers:?}");
@@ -125,8 +128,13 @@ async fn a_projects_conductor_worktree_is_offered_and_published_on_the_panes_top
     assert_eq!((o.project.as_str(), o.from.as_str()), ("app", "Conductor"));
     // git's own spelling of the folder (`C:/…` on Windows), the same folder as the test's
     let paths: Vec<String> = o.items.iter().map(|i| wisp_runtime_api::paths::folder_key(&i.path)).collect();
-    assert_eq!(paths, [wisp_runtime_api::paths::folder_key(oslo.to_str().unwrap())]);
-    assert_eq!((o.items[0].branch.as_str(), o.items[0].name.as_str(), o.items[0].dirty), ("oslo", "oslo", 1));
+    let key = |p: &std::path::Path| wisp_runtime_api::paths::folder_key(p.to_str().unwrap());
+    assert_eq!(paths, [key(&lima), key(&oslo)]);
+    assert_eq!((o.items[1].branch.as_str(), o.items[1].name.as_str(), o.items[1].dirty), ("oslo", "oslo", 1));
+    // which worktrees had a chat: asked once for both (every harness's store read once, not once per folder)
+    assert_eq!(port.asked.lock().unwrap().len(), 1, "one ask per look");
+    assert_eq!(port.asked.lock().unwrap()[0].len(), 2);
+    assert_eq!((o.items[0].chat, o.items[1].chat), (true, false));
 
     let db = Store::open(Location::Memory, Arc::new(SystemClock)).unwrap();
     pane::install(&db).unwrap();

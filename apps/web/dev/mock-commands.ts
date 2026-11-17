@@ -639,6 +639,7 @@ export const COMMANDS: Record<string, CommandFn> = {
   // New task warms its project's remote while you type (nothing to fetch on the mock)
   'worktrees.warm': () => ({ ops: [], result: null }),
   'accounts.install': () => ({ ops: [], result: {} }),
+  'accounts.upgrade': () => ({ ops: [], result: {} }),
   'accounts.recheck': () => ({ ops: [], result: {} }),
   // ⌘K past work: words in a task's prompts and answers (the peer's full-text index), a snippet around them
   'runtime.search': (a, ctx) => {

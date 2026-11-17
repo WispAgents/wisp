@@ -106,6 +106,21 @@ fn list_in(root: &Path, forms: &[String]) -> Vec<OutsideSession> {
     out
 }
 
+/// Every folder a conversation with a prompt ran in: what `list_in` reads, for all folders at once.
+fn folders_in(root: &Path) -> Vec<String> {
+    let mut out: Vec<String> = Vec::new();
+    let Ok(rd) = std::fs::read_dir(root.join("conversations")) else { return out };
+    for e in rd.flatten() {
+        let name = e.file_name().to_string_lossy().into_owned();
+        let Some(id) = name.strip_suffix(".db").filter(|i| safe_id(i)) else { continue };
+        let Some(cwd) = folder(root, id).filter(|c| !out.contains(c)) else { continue };
+        if load(root, id, Some(cwd.clone())).is_some_and(|(s, _)| s.prompts > 0) {
+            out.push(cwd);
+        }
+    }
+    out
+}
+
 #[derive(Debug)]
 pub struct AntigravitySessions {
     pub root: PathBuf,
@@ -128,6 +143,10 @@ impl HarnessSessions for AntigravitySessions {
             let forms = folder_forms(&cwd, resolved.as_deref());
             tokio::task::spawn_blocking(move || list_in(&root, &forms)).await.unwrap_or_default()
         })
+    }
+    fn folders(&self) -> BoxFuture<'static, Option<Vec<String>>> {
+        let root = self.root.clone();
+        Box::pin(async move { tokio::task::spawn_blocking(move || folders_in(&root)).await.ok() })
     }
     fn read(&self, id: &str) -> BoxFuture<'static, Option<(OutsideSession, Vec<SessionTurn>)>> {
         let (root, id) = (self.root.clone(), id.to_owned());
@@ -189,5 +208,22 @@ mod tests {
         assert_eq!(a.list("/tmp/wisp-samples/run").await.len(), 1);
         assert_eq!(a.list("/tmp/wisp-samples").await, Vec::new());
         let _ = std::fs::remove_dir_all(root);
+    }
+
+    /// Bring in asks which folders had a chat once for all worktrees: the same folders `list` finds, each once, and
+    /// none for a conversation with no prompt.
+    #[tokio::test]
+    async fn every_folder_with_a_conversation_comes_in_one_pass() {
+        let root = home("folders");
+        // a second conversation in the same folder: the folder comes once
+        std::fs::copy(root.join("conversations").join(format!("{ID}.db")), root.join("conversations").join("b2.db")).unwrap();
+        std::fs::create_dir_all(root.join("brain").join("b2").join(".system_generated/logs")).unwrap();
+        std::fs::write(root.join("brain").join("b2").join(".system_generated/logs/transcript.jsonl"), TRANSCRIPT).unwrap();
+        // one with no transcript (no prompt): not a chat
+        std::fs::copy(root.join("conversations").join(format!("{ID}.db")), root.join("conversations").join("c3.db")).unwrap();
+        let a = AntigravitySessions { root: root.clone() };
+        assert_eq!(a.folders().await, Some(vec!["/tmp/wisp-samples/run".to_owned()]));
+        let _ = std::fs::remove_dir_all(&root);
+        assert_eq!(a.folders().await, Some(Vec::new()), "no store: no folders");
     }
 }

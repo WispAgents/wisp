@@ -72,6 +72,8 @@ export interface HarnessRow {
   /** wisp can install it itself (opencode) */
   installable?: boolean;
   installing?: boolean;
+  /** a newer version than the one installed (TRY-17: the server reads npm at start and twice a day) */
+  latest?: string;
   /** "Add another … account" calls it this (Claude, Codex); set only for harnesses that can have several */
   brand?: string;
   /** the account's provider in "sign in with your … account" (ChatGPT for Codex) */

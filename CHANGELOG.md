@@ -59,6 +59,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - **Make a member's face part by part.** Click the face in the crew editor for the spirit maker: body, glow, eyes, mouth and extra, Surprise me, or an emoji.
 - **Share a member, and see what they used.** A member's ⋯ has *Share…* (a `.crew.json` to download or copy, with their kit and, if you tick it, their notebook) and *Track record…* (the tokens their jobs used, where they went by kind of job, their biggest jobs, and how the jobs went).
 - **The phone's Crew section stays short.** Busy members and two more get a row; the rest fold into a row of faces (*2 on call · 1 paused*) that shows them all. A crew job's row shows the member's face.
+- **v2: update your agents from wisp.** Settings → Agents shows *Update to x.y.z* next to a harness with a newer version out (wisp looks on npm at start and twice a day), and *Update all* when there are several. It updates the way you installed it: `claude update`, `codex update`, `opencode upgrade`, npm, or wisp's own copy; a Homebrew install gets the command to run instead.
 
 ### Changed
 
@@ -224,6 +225,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - **Plan mode only stops file edits.** On Claude Code a task in Plan now runs any command it needs (tests, builds, the app) and gets your connectors; only its file-editing tools are off, and it's told not to write files from the shell. Claude Code's own plan mode refused commands with side effects, so Plan answers ended with commands for you to run. A task a channel or trigger started stays read-only in Plan, as before.
 
 ### Fixed
+
+- **v2: an idle wisp no longer spins the CPU at start.** With many worktrees in a project, looking for worktrees to bring in re-read every agent's whole history once per worktree (16+ minutes at 100 % CPU for 145 worktrees); each agent's history is now read once per look (under a minute).
+- **v2: a slow agent isn't left *Not found*.** An agent whose CLI didn't answer while wisp started (a busy machine) is asked again a minute later, instead of showing install steps until Re-check.
 
 - **v2: goal judges work.** Judges picked for a goal now judge it (they were dropped), a crew member judges on their own harness, and New task's goal line has *Done when* and the Judges button again, remembered as your default judges for the next goals and for Set goal…. Set goal… no longer opens blank, and the judges editor finds your installed harnesses.
 

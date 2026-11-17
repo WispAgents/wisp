@@ -61,6 +61,13 @@ export const install = defineCommand<AgentArgs>({
   optimistic: (base, a) => merge<HarnessRow>(base, HARNESS, at(a.peer, a.agent), { installing: true }),
 });
 
+/** Update to the latest (TRY-17), the way it was installed: the row says Updating… at once. */
+export const upgrade = defineCommand<AgentArgs>({
+  id: 'accounts.upgrade',
+  owner: (a) => a.peer,
+  optimistic: (base, a) => merge<HarnessRow>(base, HARNESS, at(a.peer, a.agent), { installing: true }),
+});
+
 /** Trust this version (POST /agents/:id/trust): the change notice goes at once. */
 export const trust = defineCommand<AgentArgs>({
   id: 'accounts.watch.trust',

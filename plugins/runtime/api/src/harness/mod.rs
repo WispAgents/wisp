@@ -67,6 +67,15 @@ pub struct ExecReq {
 
 /// The runtime's I/O for harness plugins (detect, trust, has-session): implemented over wisp-proc, faked
 /// in tests. Every call is async, never blocking the runtime.
+/// A harness's update route (`Harness::update`): where its latest version is published, and its own updater.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct HarnessUpdate {
+    /// the npm package (`@anthropic-ai/claude-code`): `npm view <it> version` is the latest
+    pub package: String,
+    /// its own updater's arguments (`["update"]`), run on the binary wisp found
+    pub self_update: Option<Vec<String>>,
+}
+
 pub trait HarnessSys: Send + Sync {
     fn exec(&self, req: ExecReq) -> BoxFuture<'_, Result<ExecOut>>;
     /// the first `program` on PATH (or the `WISP_<ID>_BIN` override), if any
@@ -187,6 +196,11 @@ pub trait Harness: Send + Sync + 'static {
     /// (2026-11-08).
     fn npm_package(&self) -> Option<String> {
         None
+    }
+    /// How to keep it up to date (TRY-17): the npm package its latest version is read from, and its own updater's
+    /// arguments when it has one (`claude update`). Default: the package wisp installs it from. Additive (2026-11-17).
+    fn update(&self) -> Option<HarnessUpdate> {
+        self.npm_package().map(|package| HarnessUpdate { package, self_update: None })
     }
     /// Signs out where the CLI has no sign-out command (agy keeps its login in the keychain or a
     /// file). None: use `login().logout`. Additive (2026-11-08).

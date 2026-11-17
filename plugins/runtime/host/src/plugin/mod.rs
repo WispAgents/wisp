@@ -12,6 +12,9 @@ use wisp_store::Store;
 use crate::repo::Repo;
 use crate::runtime::Runtime;
 
+/// When the harnesses not found at start are asked once more.
+const SECOND_LOOK_MS: u64 = 60_000;
+
 /// The plugin.
 #[derive(Debug, Default)]
 pub struct RuntimePlugin;
@@ -118,7 +121,18 @@ impl Plugin for RuntimePlugin {
             // its detect lands; off the start's way (a hung CLI takes 15 s)
             let rt = runtime.clone();
             runtime.host.spawn(Box::pin(async move {
-                more::detect(&rt, &harness_kind, &wisp_runtime_api::commands::AgentsArgs::default()).await;
+                let first = more::detect(&rt, &harness_kind, &wisp_runtime_api::commands::AgentsArgs::default()).await;
+                // a CLI that didn't answer while wisp and everything else started (a busy machine: its `--version` past
+                // its time limit) isn't left "Not found" until Re-check: each one not found is asked once more, a minute
+                // on, past the probes' memo. One that isn't installed costs a PATH lookup.
+                let missed: Vec<String> = first.into_iter().filter(|s| !s.available).map(|s| s.id).collect();
+                if missed.is_empty() {
+                    return;
+                }
+                rt.clock.sleep(SECOND_LOOK_MS).await;
+                for id in missed {
+                    more::detect(&rt, &harness_kind, &wisp_runtime_api::commands::AgentsArgs { fresh: Some(id) }).await;
+                }
             }));
             Ok(())
         });
