@@ -7,6 +7,7 @@ export const KIT_STRINGS = {
   close: 'Close',
   dismiss: 'Dismiss',
   loading: 'Loading',
+  'loading.slow': 'Still waiting: the computer it needs may be away or busy',
   send: 'Send',
   resize: 'Resize',
   more: 'More',

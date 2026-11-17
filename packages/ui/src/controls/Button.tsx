@@ -4,6 +4,7 @@ import { Show, type JSX } from 'solid-js';
 import { flag, type KitProps, type Labelled, type WithChildren } from '../core/props.ts';
 import { useT, type Translate } from '../core/i18n.tsx';
 import { Icon } from '../content/Icon.tsx';
+import { Spinner } from './Spinner.tsx';
 import type { IconName } from '../content/icons.ts';
 
 /** chip: v1's .chip-tog, a small bordered choice (Settings → Connectors' examples). link: v1's `button.link`, an
@@ -44,10 +45,6 @@ export interface ButtonProps extends ButtonBase, WithChildren {
   readonly kbd?: string;
   /** Fill the width of its container. */
   readonly fill?: boolean;
-}
-
-function Spinner(props: { readonly label: string }): JSX.Element {
-  return <span data-kit="spinner" role="status" aria-label={props.label} />;
 }
 
 export function Button(props: ButtonProps): JSX.Element {

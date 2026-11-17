@@ -3,6 +3,7 @@
 // pending: a spinner in place of its icon, the same width, and pressing it again does nothing.
 import { Show, type JSX } from 'solid-js';
 import { MenuOn, type MenuEntry } from '../controls/Menu.tsx';
+import { Spinner } from '../controls/Spinner.tsx';
 
 export interface Act {
   readonly onClick?: () => void;
@@ -41,7 +42,7 @@ export function WithAct(props: { readonly act?: Act | undefined; readonly render
 export function ActIcon(props: { readonly act?: Act | undefined; readonly children: JSX.Element }): JSX.Element {
   return (
     <Show when={props.act?.pending} fallback={props.children}>
-      <span data-kit="spinner" data-in="act" role="status" />
+      <Spinner in="act" />
     </Show>
   );
 }
