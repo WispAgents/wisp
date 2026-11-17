@@ -158,3 +158,28 @@ async fn a_pane_with_tasks_write_only_proposes_loses_it_when_its_code_changes_an
     assert_eq!(api.cmd("stuff.grant", json!({ "id": app })).await, json!({ "allowed": both, "changed": false }));
     drop(serve);
 }
+
+/// A Make a pane task (`ext: { wisp.stuff: { kind: pane } }`): its first run's agent is told it makes a wisp pane (v1
+/// pane-guide.js), before what the user asked; a plain task isn't. Asked for "a hello world pane" without it, an
+/// agent built its own harness's kind of pane (owner, 2026-11-17).
+#[tokio::test(flavor = "multi_thread")]
+async fn a_make_a_pane_task_is_told_how_a_wisp_pane_is_made() {
+    let dir = temp("serve-pane-guide");
+    let rec = dir.join("rec");
+    let (serve, port) = start_with(&dir, &[("FAKE_RECORD", rec.to_str().unwrap())]);
+    let api = std::sync::Arc::new(Api { http: reqwest::Client::new(), port, n: 0.into() });
+    std::fs::create_dir_all(dir.join("proj")).unwrap();
+    let pane = api.cmd("runtime.create", json!({ "prompt": "a hello world pane", "cwd": dir.join("proj"), "agent": "claude", "ext": { "wisp.stuff": { "kind": "pane" } } })).await;
+    let id = pane["id"].as_str().unwrap().to_owned();
+    api.until(&id, "the pane task's turn ends", |t| t.len() == 1 && t[0]["status"] == "done").await;
+    let plain = api.cmd("runtime.create", json!({ "prompt": "say hi", "cwd": dir.join("proj"), "agent": "claude" })).await;
+    let pid = plain["id"].as_str().unwrap().to_owned();
+    api.until(&pid, "the plain task's turn ends", |t| t.len() == 1 && t[0]["status"] == "done").await;
+    let runs = until_records(&rec.join("claude.jsonl"), "both runs recorded", |r| r.len() >= 2).await;
+    let said = |r: &serde_json::Value| format!("{} {}", r["argv"], r["stdin"]);
+    let guided: Vec<String> = runs.iter().map(said).filter(|s| s.contains("Making a pane")).collect();
+    assert_eq!(guided.len(), 1, "only the pane task gets the guide: {runs:?}");
+    assert!(guided[0].contains("wisp_save") && guided[0].contains("a hello world pane"), "{}", guided[0]);
+    assert!(runs.iter().map(said).any(|s| s.contains("say hi") && !s.contains("Making a pane")));
+    drop(serve);
+}

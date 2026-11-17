@@ -148,6 +148,8 @@ impl Runtime {
         if claim.cancelled() {
             return Err(RuntimeError::NoTask(s.id.0.clone()));
         }
+        // what the hooks were given: a hook that changes it (a Make a pane task's guide) is what the harness gets
+        let given = ctx.prompt.clone();
         let mut ctx = match self.host.before_run(ctx).await {
             Ok(c) => c,
             Err(e) => return self.refused(s, turn, &e.message, &claim).await,
@@ -189,7 +191,9 @@ impl Runtime {
         let taken = self.persist_run_start(&mut s, &mut turn, &claim).await?;
         self.host.emit(Emitted::Started(TurnStarted { session_id: s.id.clone(), turn_id: turn.id.clone() }));
         // a task or My Stuff mentioned in the prompt (the turn as saved keeps the user's words)
-        let mut asked = Turn { prompt: self.with_mentions(&s, &turn, harness.info()).await, ..turn.clone() };
+        // from the prompt as `before:run` left it (a Make a pane task's guide goes first); the turn keeps the user's words
+        let hooked = if ctx.prompt == given { turn.clone() } else { Turn { prompt: ctx.prompt.clone(), ..turn.clone() } };
+        let mut asked = Turn { prompt: self.with_mentions(&s, &hooked, harness.info()).await, ..turn.clone() };
         crate::more::still_working(&s, &turn, &taken, &mut asked.prompt);
         // another harness taking over: what it missed goes first, with the user's rules (v1 handoff.js)
         let asked = Turn { prompt: Box::pin(self.with_handoff(&s, &asked, asked.prompt.clone())).await, ..asked };

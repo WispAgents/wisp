@@ -17,6 +17,7 @@ mod files;
 pub mod import;
 mod kinds;
 pub mod launch;
+mod pane_guide;
 pub mod ports;
 mod routes;
 mod save;
@@ -51,6 +52,7 @@ impl Plugin for StuffPlugin {
             s.route(r);
         }
         commands::register(s, &cell);
+        pane_guide::register(s);
         agent_tools::register(s, &cell);
         bundle::register(s, &cell);
         s.contribute(&wisp_kernel::egress::VIEWS, Arc::new(egress::View(s.ctx())) as Arc<dyn wisp_kernel::egress::RowView>);

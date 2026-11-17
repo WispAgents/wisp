@@ -7,6 +7,7 @@
 pub mod agent;
 pub mod app;
 pub mod appdb;
+pub mod guide;
 pub mod import_v1;
 pub mod kind;
 pub mod make;
