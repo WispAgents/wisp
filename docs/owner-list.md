@@ -44,17 +44,17 @@ in the real app (or the owner drops it). Statuses: `done` (committed and checked
 
 | # | Point | Status |
 |---|---|---|
-| 31 | QA round 1: 32 findings (/tmp/qa-keep/qa-round1.md) | fixed except #16 ResizeObserver (benign browser message) and #31 (v1 layout); uncommitted |
-| 32 | QA rounds until a round finds nothing, for desktop, phone and web (Grid) | todo: round 2 after the current fixes land |
-| 33 | Phone New task: composer uses the full width; no scrollbar in the prompt | done, uncommitted (prompt grows to 340 px as v1; scrollbars hidden on phones) |
-| 34 | My Stuff matches v1 (opening a saved item, every flow) | in progress (ui-stuff) |
+| 31 | QA round 1: 32 findings (/tmp/qa-keep/qa-round1.md) | fixed except #16 ResizeObserver (benign browser message) and #31 (v1 layout); committed 1ab36eb9 |
+| 32 | QA rounds until a round finds nothing, for desktop, phone and web (Grid) | in progress: round 2 (phone + Grid web) running (qa-r1); desktop round 2 after the next commit |
+| 33 | Phone New task: composer uses the full width; no scrollbar in the prompt | done (1ab36eb9) (prompt grows to 340 px as v1; scrollbars hidden on phones) |
+| 34 | My Stuff matches v1 (opening a saved item, every flow) | mostly done (1ab36eb9); last gaps in progress (ui-stuff: anchored popovers, search focus, preview address) |
 | 35 | Apps made in wisp match v1; parity reviewed by other agents | in progress (ui-stuff), then an independent review |
-| 36 | Composer forgets the picked harness (back to Auto) | done, uncommitted (server setting runtime.launch, as v1 config.defaults; needs the dev server rebuilt) |
-| 37 | Disable Auto everywhere (keep the code, one switch) | done, uncommitted (setting runtime.auto, default off; picker, Settings, ⌘K, crew editor, server defaults) |
+| 36 | Composer forgets the picked harness (back to Auto) | done (1ab36eb9) (server setting runtime.launch, as v1 config.defaults; needs the dev server rebuilt) |
+| 37 | Disable Auto everywhere (keep the code, one switch) | done (1ab36eb9) (setting runtime.auto, default off; picker, Settings, ⌘K, crew editor, server defaults) |
 | 38 | **Last**, when UI reviewers find nothing more: UI consultants for desktop, phone and web; research similar tools; fewer options on screen (submenus); focus on composer, task list, task page, right panel; I pick what to build | todo (last) |
-| 39 | Opening a task from search shows a blank page | done, uncommitted (navigation resolves bare ids for every caller) |
-| 40 | Desktop submenus open on hover | in progress (kit) |
-| 41 | Transcript view does nothing on a running task | done, uncommitted (v1 renderLiveTranscript: timeline so far above the working panel, no end row; seen on the mock peer) |
+| 39 | Opening a task from search shows a blank page | done (1ab36eb9) (navigation resolves bare ids for every caller) |
+| 40 | Desktop submenus open on hover | done (1ab36eb9: flyout with a safe triangle; touch drills in) |
+| 41 | Transcript view does nothing on a running task | done (1ab36eb9) (v1 renderLiveTranscript: timeline so far above the working panel, no end row; seen on the mock peer) |
 | 42 | Theme plugins never apply their partStyles | done (ui-shell, 2026-11-17: `plugins.styles` + `plugins.changed`, the shell's @layer plugins sheet, one allow-list with the kernel check; `wisp plugin trust`) |
 | 43 | Long threads (wisp task d8ee0a207d52, plan docs/v2-long-threads.md): Notes in a Thread tab, the note before each follow-up, Fresh thread, health, compaction audit, output offload | in progress: ADR + core first, UI mock for the owner's pick (D-0056) |
 | 44 | Keep this list and check it every job | done (this file) |
@@ -63,8 +63,8 @@ in the real app (or the owner drops it). Statuses: `done` (committed and checked
 
 | Point | Status |
 |---|---|
-| Initial JS over budget (120.0 > 120 KB) | done, uncommitted (117.1 KB: machine and crew registrations load less) |
-| PR pane footer says "Checked time.now" (untranslated key) | done, uncommitted (PrPane reads the kit words under `kit.`) |
+| Initial JS over budget (120.0 > 120 KB) | done (1ab36eb9) (117.1 KB: machine and crew registrations load less) |
+| PR pane footer says "Checked time.now" (untranslated key) | done (1ab36eb9) (PrPane reads the kit words under `kit.`) |
 | Machines: the Mac's installed v1 app shows as a second machine | needs a machine id at registration; goes away once v2 replaces v1 |
 | WebKit "ResizeObserver loop" message from VirtualList | todo: a fix without the one-frame jump |
 
