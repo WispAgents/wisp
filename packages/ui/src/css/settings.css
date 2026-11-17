@@ -15,10 +15,12 @@
   [data-kit='settings-nav-head'] { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); }
   [data-kit='settings-nav-title'] { flex: 1; margin: 0 var(--space-4) 14px; font: var(--fw-semibold) var(--fs-title) / 1.2 var(--display); letter-spacing: -0.015em; color: var(--ink); min-width: 0; }
   [data-kit='settings-nav-close'] { display: none; }
-  [data-kit='settings-nav-search'] { padding: 0 var(--space-1); }
+  [data-kit='settings-nav-search'] { padding: 0 var(--space-1) var(--space-3); }
   [data-kit='settings-nav-list'] { display: flex; flex-direction: column; gap: 1px; } /* v1 .sx-nav: 32px rows, 1px apart */
   [data-kit='settings-nav-group'] { display: flex; flex-direction: column; gap: 1px; }
-  [data-kit='settings-nav-group-label'] { padding: 0 var(--space-3); font-size: var(--fs-xs); font-weight: var(--fw-medium); color: var(--faint); text-transform: uppercase; letter-spacing: 0.04em; }
+  [data-kit='settings-nav-group-label'] { padding: 0 var(--space-3) var(--space-1); font-size: var(--fs-xs); font-weight: var(--fw-medium); color: var(--faint); text-transform: uppercase; letter-spacing: 0.04em; }
+  /* a section after another starts with room above its heading (TRY-28: the side list in sections) */
+  [data-kit='settings-nav-group'] + [data-kit='settings-nav-group'] { margin-top: var(--space-4); }
   [data-kit='settings-nav-item'] {
     display: flex; align-items: center; gap: 9px; width: 100%; min-height: var(--size-control-md);
     padding: 0 var(--space-5); border: 0; border-radius: var(--radius-md); background: transparent;

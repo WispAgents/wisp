@@ -63,6 +63,11 @@ turn. When a screen or feature contradicts one, that's a bug: fix it toward the 
   (18:36), shows blocks well, not raw JSON (18:48); **a TUI mirrors the GUI** (18:49), inspired by opencode / Claude
   Code, not simple (11-09 20:52). CLI, TUI and GUI are plugins (18:49).
 
+- **Settings in sections, with search** (TRY-28, decided by the owner's delegate 2026-11-17; mock: before/after
+  screenshots in the task): the browser and desktop side list uses the phone's sections (General, Agents, Computers,
+  Advanced) with headings, a *Search settings* field above it (name, section, lede; Enter opens the first; the first
+  Esc clears it), and ⌘K lists every pane. Usage moved to Agents and Phone to General (each was alone in its
+  section). The panes are v1's; allowed.md §7 masks the side list. Why: 22 panes in one list had to be read top to bottom.
 - **Silent runs** (TRY-23, decided by the owner's delegate 2026-11-17): a run with no output for 30 minutes while its
   plan still moves is told to the phone once per silent stretch, with Stop; *Stop a run silent for* (Settings → Usage,
   off by default) stops one silent that long. It never adds a hold or an ask card, in Full auto or anywhere.
@@ -341,6 +346,8 @@ turn. When a screen or feature contradicts one, that's a bug: fix it toward the 
     Already there: delegates (`machine: "sandbox"`), crew members and jobs, goal judges, deleted with their owner.
     Kept (ADR-0047): a sandbox gets its own Claude sign-in and env vars, never the user's box's credentials (it runs
     whatever it installs); other harnesses' keys go in as env vars
+  - [x] TRY-28 settings audit (11-17): sections + search + ⌘K (see §3); found on the way: Esc in any search field
+    inside a dialog closed the dialog instead of clearing the field (`dialog-machine.ts onEscapeKeyDown`)
 - [ ] Continuous QA rounds by fresh low-context agents → `docs/qa/bugs.md` → one fix per coder
 
 ## 5. Waiting for the lead right now

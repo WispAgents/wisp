@@ -18,6 +18,12 @@ export function useDialog(props: DialogProps, open0: boolean, returnTo: () => HT
     onOpenChange: (d: dialog.OpenChangeDetails) => props.onOpenChange?.(d.open),
     role: props.role ?? 'dialog',
     closeOnInteractOutside: props.closeOnOutside ?? true,
+    // Escape in a search field with text in it clears the field (its own handler, or the browser's), and the dialog
+    // stays: the next Escape closes it, as in every OS's settings
+    onEscapeKeyDown: (e: KeyboardEvent) => {
+      const t = e.target;
+      if (t instanceof HTMLInputElement && t.type === 'search' && t.value !== '') e.preventDefault();
+    },
     ...(props.initialFocus ? { initialFocusEl: props.initialFocus } : {}),
     finalFocusEl: returnTo,
   }));

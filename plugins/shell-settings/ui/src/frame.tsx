@@ -4,15 +4,15 @@
 // explicit pane opens straight to it, as in v1. Each pane renders with its own plugin's client and
 // inside an ErrorBoundary, so one broken pane never takes Settings down.
 
-import { ErrorBoundary, Show, createMemo, type JSX } from 'solid-js';
+import { ErrorBoundary, Show, createMemo, createSignal, type JSX } from 'solid-js';
 import { Dynamic } from 'solid-js/web';
 import type { PluginClient, Vars } from '@wisp/client';
 import { usePluginClient, useShell, type SettingsPaneDef } from '@wisp/shell';
-import { Callout, EmptyState, SettingsFrame, useSignal } from '@wisp/ui';
+import { Callout, EmptyState, Input, SettingsFrame, useSignal } from '@wisp/ui';
 import { t as own } from './i18n.ts';
 import { VIEW_ID, type SettingsParams } from './types.ts';
-import { groupPanes, pickPane, settingsIntent, type PaneEntry } from './nav.ts';
-import { offeredPanes, phoneGroups } from './phone-nav.ts';
+import { pickPane, settingsIntent, type PaneEntry } from './nav.ts';
+import { filterSections, offeredPanes, sectionedPanes } from './phone-nav.ts';
 import './i18n/lazy.ts';
 
 /** What the frame reads: every registered pane and a translator (titles are other plugins' keys). */
@@ -41,9 +41,41 @@ export function SettingsView(props: { readonly client: PluginClient; readonly pa
     return s === key ? id : s;
   };
   const panes = createMemo(() => offeredPanes(deps.panes(), deps.phone === true));
-  // the phone apps: sections by group (M3 headers, iOS grouped sections); the browser: v1's one flat list
-  const groups = createMemo(() => (deps.phone ? phoneGroups : groupPanes)(panes(), (k) => deps.t(k), groupLabel));
-  const order = createMemo(() => groups().flatMap((g) => g.items.map((i) => i.id)));
+  // sections by group everywhere (TRY-28): M3 headers / iOS grouped sections on phones, headed groups in the side list
+  const all = createMemo(() => sectionedPanes(panes(), (k) => deps.t(k), groupLabel));
+  const order = createMemo(() => all().flatMap((g) => g.items.map((i) => i.id)));
+  // the search above the list (TRY-28): by a pane's name, its section and its lede
+  const [query, setQuery] = createSignal('');
+  const ledeOf = (id: string): string => {
+    const title = panes().find((e) => e.pane.id === id)?.pane.title ?? '';
+    const s = deps.t(`${title}.lede`);
+    return s === `${title}.lede` ? '' : s;
+  };
+  const groups = createMemo(() => filterSections(all(), query(), ledeOf));
+  const onSearchKey = (e: KeyboardEvent): void => {
+    if (e.key === 'Enter') {
+      const first = groups()[0]?.items[0]?.id;
+      if (first !== undefined) props.client.navigate(settingsIntent(first));
+    } else if (e.key === 'Escape' && query() !== '') {
+      // the first Esc clears the search; the next closes Settings
+      e.preventDefault();
+      e.stopPropagation();
+      setQuery('');
+    }
+  };
+  const search = (
+    <Input
+      type="search"
+      icon="search"
+      size="sm"
+      value={query()}
+      onInput={setQuery}
+      onKeyDown={onSearchKey}
+      placeholder={own('shell-settings.search')}
+      aria-label={own('shell-settings.search')}
+      part="shell-settings.search"
+    />
+  );
   const current = createMemo(() => pickPane(panes(), order(), props.params.pane));
   // the phone apps' list: Back is titled with the screen under Settings (iOS), Tasks, whose me menu opens it
   const backLabel = (): string | undefined => {
@@ -69,6 +101,7 @@ export function SettingsView(props: { readonly client: PluginClient; readonly pa
       rootPart={'settings.frame' as `${string}.${string}`}
       title={own('shell-settings.title')}
       groups={groups()}
+      search={search}
       current={current()?.pane.id ?? ''}
       onPick={(id) => props.client.navigate(settingsIntent(id))}
       paneTitle={current() ? deps.t(current()?.pane.title ?? '') : own('shell-settings.title')}

@@ -10,7 +10,7 @@
 
 import { createComponent, lazy } from 'solid-js';
 import type { Intent } from '@wisp/client';
-import type { PluginUiDef, SettingsPaneDef, ViewDef } from '@wisp/shell';
+import type { PaletteSourceDef, PluginUiDef, SettingsPaneDef, ViewDef } from '@wisp/shell';
 import type { FrameDeps } from './frame.tsx';
 import { parseParams } from './nav.ts';
 import { catalogue } from './i18n.ts';
@@ -67,11 +67,37 @@ export function settingsView(deps: FrameDeps): ViewDef<SettingsParams> {
   };
 }
 
+/** ⌘K finds every Settings pane by its name and what it's for (its lede), and opens it (TRY-28). After the rest. */
+export function settingsPalette(deps: ShellSettingsDeps): PaletteSourceDef {
+  return {
+    id: 'shell-settings.panes',
+    order: 300,
+    items: (ctx) =>
+      ctx.narrowed
+        ? []
+        : deps
+            .panes()
+            .filter(({ pane }) => !(deps.phone === true && pane.id === 'keys'))
+            .map(({ pane }) => {
+              const lede = deps.t(`${pane.title}.lede`);
+              return {
+                id: `settings:${pane.id}`,
+                group: 'shell-settings.title',
+                label: deps.t(pane.title),
+                icon: pane.icon,
+                keywords: `settings ${pane.id} ${lede === `${pane.title}.lede` ? '' : lede}`,
+                run: () => ctx.client.navigate(openSettings(pane.id)),
+              };
+            }),
+  };
+}
+
 export function shellSettingsUi(deps: ShellSettingsDeps): PluginUiDef {
   return {
     id: PLUGIN_ID,
     views: [settingsView(deps) as unknown as ViewDef],
     settings: shellSettingsPanes(),
+    palette: [settingsPalette(deps)],
     catalogue,
   };
 }

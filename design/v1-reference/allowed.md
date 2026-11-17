@@ -118,6 +118,13 @@ A place where v2 does better than v1 on purpose. Each names its rule below and i
   own agent writes the PR's title and description from the diff, filling the repo's pull request template. A link at
   the end of the draft box's line, no taller than it, so nothing in v1's dialog moves. Masked: the link (`ship.write`).
 
+- **Settings in sections, with search** (TRY-28, the lead's call 2026-11-17 as the owner's delegate; tests
+  `settings_are_sections_by_group_…`, `settings_search_keeps_the_panes_…`, `cmd_k_finds_every_settings_pane_…` in
+  `plugins/shell-settings/ui/test/nav.test.ts`). v1's one flat list had grown to 22 panes, read top to bottom to find
+  one. The side list now has the phone's sections (General, Agents, Computers, Advanced) with a heading each, a
+  *Search settings* field above it, and ⌘K finds every pane. The panes themselves are v1's. Masked: the side list
+  (`settings.nav`, `settings.group`, `settings.item`).
+
 ## Rules (read by `qa/parity.mjs`)
 
 One rule a line: `<view glob> <part glob> <kind> [widths]` (widths: `390` or `320,390`; none means every width). `wrap` is §1, `pending` is §2, `fold` is §4
@@ -152,4 +159,7 @@ task.right-click  list.menu.*  owner
 *   topbar.brand       owner
 task*  composer.ghost  owner
 task.ship  ship.write  owner
+settings*  settings.nav  owner
+settings*  settings.group  owner
+settings*  settings.item  owner
 ```

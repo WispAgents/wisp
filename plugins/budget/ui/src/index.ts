@@ -7,7 +7,7 @@ import { catalogue, t } from './i18n.ts';
 
 const ui: PluginUiDef = {
   id: 'wisp.budget',
-  settings: [{ id: 'usage', group: 'advanced', title: 'budget.usage.pane', icon: 'stats', order: 20, component: lazy(() => import('./panes/Usage.tsx')) }],
+  settings: [{ id: 'usage', group: 'agents', title: 'budget.usage.pane', icon: 'stats', order: 20, component: lazy(() => import('./panes/Usage.tsx')) }],
   views: [defineView({ kind: VIEW_USAGE, slot: 'overlay', overlay: 'dialog', parse: () => null, title: () => t('budget.view.title'), component: lazy(() => import('./UsageView.tsx')) })],
   // Spare allowance and window changes on Home, where v1 had them (.sh-spare)
   // and usage at a glance under its prompt box (v1 #790 .sh-usage)
