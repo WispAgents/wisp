@@ -59,14 +59,27 @@ pub enum NotATask {
     Usage(String),
     /// a plugin's name alone (`wisp runtime`): print its verbs
     Plugin(String),
-    /// one or two letters off a command word or a plugin (`wisp tsks`): did you mean
+    /// one or two letters off a command word or a plugin (`wisp tsks`), or another tool's name for one (`wisp get`
+    /// is `wisp show`): did you mean
     Near(String),
+    /// no command, but followed by a task id (`wisp fetch 01a1e9…`): never a prompt (it would start a run)
+    Unknown(String),
 }
 
-/// One word alone, or a first word followed by something flag-shaped, with no `--` before them.
+/// Other tools' words for wisp's (`gh`, `kubectl`, `docker`): `wisp get <id>` means `wisp show <id>`.
+const SYNONYMS: [(&str, &str); 6] =
+    [("get", "show"), ("view", "show"), ("cat", "show"), ("status", "show"), ("list", "ls"), ("logs", "attach")];
+
+/// A task's id as wisp prints it (12 to 32 hex digits), alone or as `<peer>:<id>`.
+fn id_shaped(w: &str) -> bool {
+    let id = w.rsplit_once(':').map_or(w, |(_, id)| id);
+    (12..=32).contains(&id.len()) && id.bytes().all(|b| b.is_ascii_hexdigit())
+}
+
+/// One word alone, or a first word followed by something flag-shaped or by task ids only, with no `--` before them.
 pub fn command_shaped(words: &[String], literal: Literal) -> bool {
     let Some((_, rest)) = words.split_first() else { return false };
-    literal == Literal::No && (rest.is_empty() || rest.iter().any(|w| flag_shaped(w)))
+    literal == Literal::No && (rest.is_empty() || rest.iter().any(|w| flag_shaped(w)) || rest.iter().all(|w| id_shaped(w)))
 }
 
 /// `-x` or `--word`; a bare `-` or `--` is punctuation in a prompt (`plan it - postgres first`).
@@ -89,8 +102,12 @@ pub fn not_a_task(words: &[String], literal: Literal, plugins: &[String]) -> Opt
         return Some(NotATask::Plugin(first.clone()));
     }
     let lower = first.to_lowercase();
+    if let Some((_, ours)) = SYNONYMS.iter().find(|(theirs, _)| *theirs == lower) {
+        return Some(NotATask::Near((*ours).to_owned()));
+    }
+    let with_ids = words.len() > 1 && words[1..].iter().all(|w| id_shaped(w));
     if lower.is_empty() || !lower.bytes().all(|b| b.is_ascii_lowercase() || b == b'-') {
-        return None;
+        return with_ids.then(|| NotATask::Unknown(first.clone()));
     }
     let candidates = COMMANDS.iter().chain(ROUTED.iter()).copied().chain(plugins.iter().map(String::as_str));
     // the closest wins, the table's order breaks ties
@@ -99,6 +116,7 @@ pub fn not_a_task(words: &[String], literal: Literal, plugins: &[String]) -> Opt
         .filter(|(d, c)| near(&lower, c, *d))
         .min_by_key(|(d, _)| *d)
         .map(|(_, c)| NotATask::Near(c.to_owned()))
+        .or_else(|| with_ids.then(|| NotATask::Unknown(first.clone())))
 }
 
 /// Whether `typed` reads as a slip of `cmd`, `d` apart. Under six letters only a dropped, added or

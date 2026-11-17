@@ -219,13 +219,14 @@ fn shift_tab_cycles_the_mode_and_esc_interrupts_a_running_turn() {
 fn the_composer_opens_the_at_and_slash_pickers() {
     let mut a = opened();
     a.catalogue = vec![("goal.set".into(), "Set a goal".into())];
+    a.cat = wisp_cli_core::verbs::Catalogue::new(vec![cmd("goal.set", "Set a goal", "{ id: SessionId, text: string, }")]);
     a.key(ch('i'));
     a.key(ch('/'));
     assert!(matches!(a.overlay, Some(Overlay::Palette(_, super::app::For::Slash))));
     a.key(ch('g'));
     a.key(ch(' '));
     a.key(key(KeyCode::Enter));
-    assert_eq!(a.composer.text(), "/goal.set ");
+    assert_eq!(a.composer.text(), "/goal set ", "typed as the CLI types it (TRY-7)");
     a.composer.clear();
     let fx = a.key(ch('@'));
     assert!(
@@ -642,4 +643,161 @@ fn o_opens_the_task_in_its_harness_and_space_opens_a_step() {
     let mut b = opened();
     b.key(ch('?'));
     assert!(screen(&b, 160, 48).contains("open in its harness"), "the help says so");
+}
+
+/// A failed command's step: its label carries the whole output (`Exit code 1\ntotal 16…`); the step's line shows its
+/// first line only, never the output run together (TRY-7).
+#[test]
+fn a_failed_steps_line_is_its_labels_first_line_not_its_output_run_together() {
+    let mut a = opened();
+    let t = a.open.as_mut().unwrap();
+    t.snapshot(vec![
+        row("session", "t2", json!({ "id": "t2", "title": "Add dark mode", "state": "review", "cwd": "/w/api", "agent": "codex" })),
+        row("turn", "T2", json!({ "id": "T2", "idx": 0, "body": { "status": "done", "prompt": "List the files" } })),
+        row("event", "4", json!({ "seq": 4, "turn_id": "T2", "body": { "kind": "tool", "tool": "bash", "status": "error", "label": "Exit code 1\ntotal 16\ndrwxr-xr-x  4 me wheel 128 .\n-rw-r--r--  1 me wheel 1458 hello.mjs" } })),
+    ]);
+    let sc = screen(&a, 120, 40);
+    assert!(sc.contains("Exit code 1"), "{sc}");
+    assert!(!sc.contains("Exit code 1total"), "the output ran into the label:\n{sc}");
+    assert!(!sc.contains("hello.mjs"), "the output belongs to the open step:\n{sc}");
+}
+
+/// A task in a wisp worktree reads as its project's, as in the app (TRY-7).
+#[test]
+fn a_worktree_task_reads_as_its_projects_not_its_folders() {
+    assert_eq!(draw::project_label("/Users/me/.wisp/worktrees/wisp-01a1e9e05eb6"), "wisp");
+    assert_eq!(draw::project_label("/Users/me/.wisp/worktrees/my-app-0123456789ab/"), "my-app");
+    assert_eq!(draw::project_label("/h/.wisp/worktrees/wisp-01a1e9e05eb676c799c41712ad5656b7"), "wisp", "a task's whole id");
+    assert_eq!(draw::project_label("/w/api"), "api");
+    assert_eq!(draw::project_label("/w/build-2024"), "build-2024", "a folder that only looks like one stays itself");
+    assert_eq!(draw::project_label("/w/worktrees/x-zzzzzzzzzzzz"), "x-zzzzzzzzzzzz");
+}
+
+fn cmd(id: &str, title: &str, args: &str) -> wisp_kernel::CommandInfo {
+    wisp_kernel::CommandInfo {
+        id: id.into(),
+        plugin: "wisp.x".into(),
+        title: Some(title.into()),
+        read_only: false,
+        permission: id.replace('.', ":"),
+        args: Some(args.into()),
+        ui_only: None,
+    }
+}
+
+fn cat() -> wisp_cli_core::verbs::Catalogue {
+    wisp_cli_core::verbs::Catalogue::new(vec![
+        cmd("machines.add", "Add a machine", "{ \n/**\n * what to call it\n */\nname: string, address?: string, port?: number, }"),
+        cmd("runtime.archive", "Archive or unarchive a task", "{ id: SessionId, archived?: boolean, }"),
+        cmd("crew.create", "Add a crew member", "{ name?: string, paused?: boolean, }"),
+    ])
+}
+
+/// TRY-7: commands read by their title with the words they're typed as, say how to use them while typed, and run
+/// from `/machines add studio --address me@studio` as the CLI would (the open task fills a required id).
+#[test]
+fn commands_read_by_title_say_how_to_use_them_and_run_as_the_cli_types_them() {
+    use super::commands::{items, parse, split, usage};
+    let c = cat();
+    let it = items(&c, false);
+    assert_eq!(
+        it.iter().map(|i| (i.label.as_str(), i.kind.as_str())).collect::<Vec<_>>(),
+        [("Add a crew member", "crew create"), ("Add a machine", "machines add"), ("Archive or unarchive a task", "runtime archive")]
+    );
+    assert_eq!(usage(&c, "/machines add stu").unwrap(), "Add a machine: machines add <name> [--address] [--port]   <name> what to call it");
+    assert_eq!(usage(&c, "/nothing here"), None);
+    assert_eq!(
+        parse(&c, "/machines add studio --address me@studio --port 22", None),
+        Some(Ok(("machines.add".to_owned(), json!({ "name": "studio", "address": "me@studio", "port": 22 }))))
+    );
+    assert_eq!(parse(&c, "/runtime archive", Some("t2")), Some(Ok(("runtime.archive".to_owned(), json!({ "id": "t2" })))), "the open task");
+    assert_eq!(
+        parse(&c, "/runtime archive --no-archived", Some("t2")),
+        Some(Ok(("runtime.archive".to_owned(), json!({ "id": "t2", "archived": false }))))
+    );
+    let no_task = parse(&c, "/runtime archive", None);
+    assert!(matches!(&no_task, Some(Err(e)) if e.contains("needs a task")), "{no_task:?}");
+    assert!(matches!(parse(&c, "/machines add --nope x", None), Some(Err(e)) if e.contains("--nope")));
+    assert_eq!(parse(&c, "/fix the bug", None), None, "not a command: the line is a reply");
+    assert_eq!(split("a \"b c\" 'd' e"), ["a", "b c", "d", "e"]);
+}
+
+#[test]
+fn a_palette_opened_before_the_catalogue_came_gets_its_commands_and_slash_runs_a_verb() {
+    let mut a = opened();
+    a.overlay = None;
+    let v = serde_json::to_value(vec![cmd("machines.add", "Add a machine", "{ name: string, }")]).unwrap();
+    let _ = a.key(KeyEvent::new(KeyCode::Char('k'), KeyModifiers::CONTROL));
+    let _ = a.done(Then::Catalogue, Ok(v));
+    let sc = screen(&a, 120, 40);
+    assert!(sc.contains("Add a machine") && sc.contains("machines add"), "{sc}");
+}
+
+/// TRY-7: the crew view manages the crew: a new member (asked for a name, even with no crew yet), a job for the one
+/// picked (asked for), check in, pause and resume, remove (confirmed).
+#[test]
+fn the_crew_view_adds_members_gives_jobs_pauses_and_removes() {
+    let mut a = opened();
+    a.open_view("crew");
+    a.done(Then::View("crew".into()), Ok(json!([])));
+    let typed = |a: &mut App, s: &str| {
+        for c in s.chars() {
+            a.key(ch(c));
+        }
+        a.key(key(KeyCode::Enter))
+    };
+    assert_eq!(a.key(ch('n')), vec![]);
+    assert!(matches!(&a.overlay, Some(Overlay::AskAct(l, _, _, _)) if l == "New member's name"), "{:?}", a.overlay);
+    assert!(screen(&a, 120, 30).contains("New member's name"));
+    assert_eq!(
+        typed(&mut a, "Ada"),
+        vec![Effect::Cmd { id: "crew.create".into(), args: json!({ "name": "Ada" }), then: Then::View("crew".into()) }]
+    );
+    a.done(Then::View("crew".into()), Ok(json!([{ "id": "m1", "name": "Ada", "role": "", "running": 0, "jobs": 0 }])));
+    a.key(ch('a'));
+    assert_eq!(
+        typed(&mut a, "review the PR"),
+        vec![Effect::Cmd {
+            id: "crew.assign".into(),
+            args: json!({ "id": "m1", "prompt": "review the PR" }),
+            then: Then::View("crew".into())
+        }]
+    );
+    assert_eq!(
+        a.key(ch('p')),
+        vec![Effect::Cmd { id: "crew.update".into(), args: json!({ "id": "m1", "paused": true }), then: Then::View("crew".into()) }]
+    );
+    assert_eq!(
+        a.key(ch('c')),
+        vec![Effect::Cmd { id: "crew.checkin".into(), args: json!({ "id": "m1" }), then: Then::View("crew".into()) }]
+    );
+    assert_eq!(a.key(ch('x')), vec![], "remove asks first");
+    assert!(matches!(&a.overlay, Some(Overlay::Confirm(q, c, _)) if q.contains("Ada") && c == "crew.remove"));
+}
+
+/// TRY-7: New task is a page (where, agent, mode, each with its key), not the last task under an empty box; Ctrl-A
+/// steps the agent through Auto and the installed harnesses, and the new task starts on the one picked.
+#[test]
+fn new_task_is_a_page_and_ctrl_a_picks_its_agent() {
+    let mut a = opened();
+    let _ = a.done(Then::Agents, Ok(json!([{ "id": "claude", "name": "Claude Code", "available": true }, { "id": "copilot", "name": "Copilot", "available": false }, { "id": "codex", "name": "Codex", "available": true }])));
+    a.focus = Zone::List;
+    a.key(ch('n'));
+    assert!(a.new_task);
+    let sc = screen(&a, 140, 40);
+    assert!(sc.contains("What should wisp do next?") && sc.contains("Auto: wisp picks the agent") && sc.contains("Ctrl-A"), "{sc}");
+    assert!(!sc.contains("Make sessions last longer"), "the last task's transcript isn't under it:\n{sc}");
+    let ctrl_a = KeyEvent::new(KeyCode::Char('a'), KeyModifiers::CONTROL);
+    a.key(ctrl_a);
+    assert!(screen(&a, 140, 40).contains("Claude Code"));
+    a.key(ctrl_a);
+    assert_eq!(a.launch_agent, "codex", "Copilot isn't installed: skipped");
+    a.key(ctrl_a);
+    assert_eq!(a.launch_agent, "", "back to Auto");
+    a.key(ctrl_a);
+    for c in "fix it".chars() {
+        a.key(ch(c));
+    }
+    let fx = a.key(key(KeyCode::Enter));
+    assert!(fx.iter().any(|e| matches!(e, Effect::Send { task: None, agent: Some(x), .. } if x == "claude")), "{fx:?}");
 }

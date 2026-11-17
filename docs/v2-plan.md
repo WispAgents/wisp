@@ -354,6 +354,16 @@ turn. When a screen or feature contradicts one, that's a bug: fix it toward the 
     reply box of the task they opened, so the next k was typed instead of stepping (v1 kept the keys on the list:
     `frame/stepped.ts`); every Settings pane picked beside the list was a history entry, so Back walked the panes
     (`openOverlay.replace`, additive; phones still push list → pane)
+  - [x] TRY-7 TUI (11-17), checked in a real terminal (tmux): every command in Ctrl-K and `/` by its title with the
+    words it's typed as (`Add a computer · machines add`), each typed word matching in any order; the reply box says
+    how to use the command being typed (`machines add [--name] …`) and `/machines add studio --address me@studio` runs
+    it as the CLI would (`tui/commands.rs`, the open task filling a required id); the crew view manages the crew (new
+    member, a job, check in, pause, resume, remove; row actions can ask for a value and work on an empty table);
+    New task is a page (where, agent (Ctrl-A through the installed harnesses), mode) and the status bar follows it.
+    Fixed on the way: a failed step's output ran into its line, worktree tasks named by their folder
+    (`wisp-01a1e9…`) instead of their project, a view's actions pushed its title off an 80-column line, and
+    `wisp get <id>` (or any unknown word with a task id) started a paid agent run: `get`/`view`/`cat`/`status`
+    say `show`, `logs` says `attach`, and an unknown command with a task id is refused
 - [ ] Continuous QA rounds by fresh low-context agents → `docs/qa/bugs.md` → one fix per coder
 
 ## 5. Waiting for the lead right now

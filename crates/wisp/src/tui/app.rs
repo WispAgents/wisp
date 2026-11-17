@@ -92,6 +92,9 @@ pub enum Overlay {
     Confirm(String, String, Value),
     /// a view whose source asks for a value first (`"{?File}"`): (view id, label, what's typed)
     Ask(String, String, String),
+    /// a row action that asks for a value first (`"{?Name}"`, TRY-7: a new crew member, a job): (label, command, args,
+    /// what's typed)
+    AskAct(String, String, Value, String),
 }
 
 /// A view's rows, as its source last gave them.
@@ -118,6 +121,8 @@ pub enum Then {
     Mentions(String),
     /// a new task: the optimistic row `local` is replaced by the real one
     Created(String),
+    /// `runtime.agents`: the harnesses the New task page offers
+    Agents,
     /// a follow-up shown at once under the composer: dropped when it lands, back in the box when refused
     Sent(String),
     /// a stop (or an interrupt) shown as pending on the task
@@ -142,6 +147,8 @@ pub enum Effect {
         mode: Mode,
         queue: bool,
         local: String,
+        /// a new task's agent picked on the New task page (None: Auto, wisp's default)
+        agent: Option<String>,
     },
     /// the composer's text in `$EDITOR`; what's saved comes back with [`App::edited`]
     Editor(String),
@@ -213,6 +220,12 @@ pub struct App {
     pub help_scroll: u16,
     /// the `/` menu's commands: (id, title)
     pub catalogue: Vec<(String, String)>,
+    /// the harnesses installed here (id, name), for the New task page's agent (TRY-7)
+    pub agents: Vec<(String, String)>,
+    /// the New task page's agent: '' is Auto (wisp's default); Ctrl-A steps through `agents`
+    pub launch_agent: String,
+    /// the same commands with their words and arguments, as the CLI types them (`commands.rs`, TRY-7)
+    pub cat: wisp_cli_core::verbs::Catalogue,
     /// the `@` picker's items by kind (crew, machines, stuff, files)
     pub mentions: BTreeMap<String, Vec<Item>>,
     /// follow-ups sent, not yet in the session's queue or a turn: (local id, text)
@@ -223,6 +236,16 @@ pub struct App {
     /// the border being dragged
     pub dragging: Option<Zone>,
     n: u64,
+}
+
+/// The New task page's next agent: Auto, then each installed harness, then Auto again.
+fn next_agent(agents: &[(String, String)], now: &str) -> String {
+    let at = agents.iter().position(|(id, _)| id == now);
+    match at {
+        None if now.is_empty() => agents.first().map(|(id, _)| id.clone()).unwrap_or_default(),
+        Some(i) if i + 1 < agents.len() => agents[i + 1].0.clone(),
+        _ => String::new(),
+    }
 }
 
 fn ctrl(k: &KeyEvent, c: char) -> bool {
@@ -264,6 +287,9 @@ impl App {
             goto: false,
             help_scroll: 0,
             catalogue: Vec::new(),
+            cat: wisp_cli_core::verbs::Catalogue::default(),
+            agents: Vec::new(),
+            launch_agent: String::new(),
             mentions: BTreeMap::new(),
             sending: Vec::new(),
             stopping: Vec::new(),
@@ -519,9 +545,20 @@ impl App {
                 return Vec::new();
             }
             KeyCode::Char(c) => {
-                let Some(row) = r.rows.get(r.sel).cloned() else { return Vec::new() };
-                if let Some(a) = v.actions().into_iter().find(|a| a.key == c) {
+                let Some(a) = v.actions().into_iter().find(|a| a.key == c) else { return Vec::new() };
+                // an action that reads its row needs one; one that doesn't (a new member) works on an empty table
+                let reads_row = a.args.to_string().contains("{/");
+                let row = match r.rows.get(r.sel).cloned() {
+                    Some(row) => row,
+                    None if !reads_row => Value::Null,
+                    None => return Vec::new(),
+                };
+                {
                     let args = wisp_tui_api::fill(&a.args, &row);
+                    if let Some(label) = wisp_tui_api::asks(&args) {
+                        self.overlay = Some(Overlay::AskAct(label, a.command, args, String::new()));
+                        return Vec::new();
+                    }
                     if a.confirm {
                         self.overlay = Some(Overlay::Confirm(
                             format!(
@@ -665,6 +702,10 @@ impl App {
             self.composer.newline();
             return Vec::new();
         }
+        if ctrl(&k, 'a') && self.new_task {
+            self.launch_agent = next_agent(&self.agents, &self.launch_agent);
+            return Vec::new();
+        }
         if ctrl(&k, 'e') {
             return vec![Effect::Editor(self.composer.text())];
         }
@@ -752,7 +793,8 @@ impl App {
             self.sending.push((local.clone(), text.clone()));
         }
         let queue = self.running();
-        vec![Effect::Send { task, text, attachments, mode: self.mode, queue, local }]
+        let agent = if task.is_none() && !self.launch_agent.is_empty() { Some(self.launch_agent.clone()) } else { None };
+        vec![Effect::Send { task, text, attachments, mode: self.mode, queue, local, agent }]
     }
 
     /// `/btw …`, `/fork`, `/stop`, or `/<catalogue command> [json args]` (the open task's id by default).
@@ -766,6 +808,17 @@ impl App {
             "help" => {
                 self.overlay = Some(Overlay::Help);
                 return Some(Vec::new());
+            }
+            _ if super::commands::parse(&self.cat, &format!("/{rest}"), task).is_some() => {
+                match super::commands::parse(&self.cat, &format!("/{rest}"), task) {
+                    Some(Ok((cmd, a))) => Effect::Cmd { id: cmd, args: a, then: Then::Nothing },
+                    Some(Err(why)) => {
+                        // the line stays in the box to fix
+                        self.toast(why, true);
+                        return Some(Vec::new());
+                    }
+                    None => return None,
+                }
             }
             w if self.catalogue.iter().any(|(c, _)| c == w) => {
                 let a = serde_json::from_str::<Value>(args)
@@ -788,11 +841,7 @@ impl App {
             kind: "view".into(),
             pick: Pick::View(v.id().to_owned()),
         }));
-        items.extend(self.catalogue.iter().map(|(id, title)| Item {
-            label: if title.is_empty() { id.clone() } else { format!("{title} · {id}") },
-            kind: "command".into(),
-            pick: Pick::Command(id.clone()),
-        }));
+        items.extend(super::commands::items(&self.cat, false));
         if let Some(rows) = self.views.get("settings") {
             items.extend(rows.rows.iter().map(|r| Item {
                 label: s(r, "key").to_owned(),
@@ -808,11 +857,7 @@ impl App {
             ["btw", "fork", "stop", "help"]
                 .iter()
                 .map(|c| Item { label: (*c).to_owned(), kind: "wisp".into(), pick: Pick::Insert(format!("/{c} ")) })
-                .chain(self.catalogue.iter().map(|(id, t)| Item {
-                    label: id.clone(),
-                    kind: t.clone(),
-                    pick: Pick::Insert(format!("/{id} ")),
-                }))
+                .chain(super::commands::items(&self.cat, true))
                 .collect()
         } else {
             let mut v: Vec<Item> = self
@@ -839,6 +884,25 @@ impl App {
             fx.push(Effect::Files);
         }
         fx
+    }
+
+    /// A row action asking for its value (TRY-7): Enter runs it with what's typed, Esc drops it.
+    fn ask_act_key(&mut self, label: String, cmd: String, args: Value, mut text: String, k: KeyEvent) -> Vec<Effect> {
+        match k.code {
+            KeyCode::Esc => return Vec::new(),
+            KeyCode::Enter if !text.trim().is_empty() => {
+                let args = wisp_tui_api::fill_asked(&args, text.trim(), &self.cwd);
+                let then = self.screen.clone().map_or(Then::Nothing, Then::View);
+                return vec![Effect::Cmd { id: cmd, args, then }];
+            }
+            KeyCode::Backspace => {
+                text.pop();
+            }
+            KeyCode::Char(c) => text.push(c),
+            _ => {}
+        }
+        self.overlay = Some(Overlay::AskAct(label, cmd, args, text));
+        Vec::new()
     }
 
     fn overlay_key(&mut self, o: Overlay, k: KeyEvent) -> Vec<Effect> {
@@ -879,6 +943,7 @@ impl App {
                 self.overlay = Some(Overlay::Ask(view, label, text));
                 Vec::new()
             }
+            Overlay::AskAct(label, cmd, args, text) => self.ask_act_key(label, cmd, args, text, k),
             Overlay::Confirm(_, cmd, args) => {
                 if matches!(k.code, KeyCode::Char('y') | KeyCode::Enter) {
                     let then = self.screen.clone().map_or(Then::Nothing, Then::View);
@@ -1034,9 +1099,33 @@ impl App {
     }
 
     /// A command answered.
+    /// `runtime.agents`: the installed harnesses New task offers.
+    fn agents_came(&mut self, v: &Value) {
+        self.agents = v
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter(|a| a.get("available") == Some(&Value::Bool(true)))
+            .map(|a| (s(a, "id").to_owned(), s(a, "name").to_owned()))
+            .collect();
+    }
+
+    /// `cli.catalogue`: the commands, for the `/` menu and the palette (one opened before it came gets them now).
+    fn catalogue_came(&mut self, v: Value) {
+        self.catalogue = v.as_array().into_iter().flatten().map(|c| (s(c, "id").to_owned(), s(c, "title").to_owned())).collect();
+        let list: Vec<wisp_kernel::CommandInfo> = serde_json::from_value(v).unwrap_or_default();
+        self.cat = wisp_cli_core::verbs::Catalogue::new(list);
+        match &mut self.overlay {
+            Some(Overlay::Palette(p, For::Slash)) => p.items.extend(super::commands::items(&self.cat, true)),
+            Some(Overlay::Palette(p, For::Everything)) => p.items.extend(super::commands::items(&self.cat, false)),
+            _ => {}
+        }
+    }
+
     pub fn done(&mut self, then: Then, got: std::result::Result<Value, String>) -> Vec<Effect> {
         match (then, got) {
-            (Then::Nothing, Ok(_)) => {}
+            // no agents list: New task offers Auto only
+            (Then::Nothing, Ok(_)) | (Then::Agents, Err(_)) => {}
             (Then::Nothing | Then::Catalogue | Then::Mentions(_), Err(e)) => self.toast(e, true),
             (Then::View(v), got) => {
                 let rows = self.views.entry(v.clone()).or_default();
@@ -1063,16 +1152,8 @@ impl App {
                     }
                 }
             }
-            (Then::Catalogue, Ok(v)) => {
-                self.catalogue = v.as_array().into_iter().flatten().map(|c| (s(c, "id").to_owned(), s(c, "title").to_owned())).collect();
-                if let Some(Overlay::Palette(p, For::Slash)) = &mut self.overlay {
-                    p.items.extend(self.catalogue.iter().map(|(id, t)| Item {
-                        label: id.clone(),
-                        kind: t.clone(),
-                        pick: Pick::Insert(format!("/{id} ")),
-                    }));
-                }
-            }
+            (Then::Agents, Ok(v)) => self.agents_came(&v),
+            (Then::Catalogue, Ok(v)) => self.catalogue_came(v),
             (Then::Mentions(kind), Ok(v)) => {
                 let items: Vec<Item> = v
                     .as_array()

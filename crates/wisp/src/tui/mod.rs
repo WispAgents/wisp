@@ -9,6 +9,7 @@
 //! the open task's topic, nothing polled) and the commands (each in its own task, so no key waits on the network).
 
 pub mod app;
+pub mod commands;
 pub mod composer;
 pub mod draw;
 pub mod keys;
@@ -169,6 +170,7 @@ pub async fn run(c: &Client, cwd: &str) -> Result<i32> {
     // the catalogue for the palette and the `/` menu, the settings for the palette
     let mut pending = fx;
     pending.push(Effect::Cmd { id: "cli.catalogue".into(), args: json!({}), then: Then::Catalogue });
+    pending.push(Effect::Cmd { id: "runtime.agents".into(), args: json!({}), then: Then::Agents });
     let (tx, mut inputs) = mpsc::channel::<Input>(64);
     let paused = Arc::new(AtomicBool::new(false));
     input_thread(tx, paused.clone());
@@ -188,8 +190,11 @@ pub async fn run(c: &Client, cwd: &str) -> Result<i32> {
                         let _ = tx.send((then, r)).await;
                     });
                 }
-                Effect::Send { task: t, text, attachments, mode, queue, local } => {
-                    let (id, args, then) = send_cmd(t, &text, &attachments, mode, queue, local, cwd);
+                Effect::Send { task: t, text, attachments, mode, queue, local, agent } => {
+                    let (id, mut args, then) = send_cmd(t, &text, &attachments, mode, queue, local, cwd);
+                    if let Some(a) = agent {
+                        args["agent"] = json!(a);
+                    }
                     pending.push(Effect::Cmd { id, args, then });
                 }
                 Effect::Files => list_files(cwd.to_owned(), done_tx.clone()),

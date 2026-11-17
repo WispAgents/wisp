@@ -20,7 +20,14 @@ pub fn registry() -> Registry {
             .col("Running", "/running", 8)
             .col("Jobs", "/jobs", 6)
             .col("Machine", "/machine", 0)
-            .act('w', "wake", "crew.wake", json!({ "id": "{/id}" }), false),
+            // the crew manager (TRY-7): add, give a job, check in, pause, resume, remove (never j/k/r/h: the table's own)
+            .act('n', "new member", "crew.create", json!({ "name": "{?New member's name}" }), false)
+            .act('a', "give a job", "crew.assign", json!({ "id": "{/id}", "prompt": "{?The job}" }), false)
+            .act('c', "check in", "crew.checkin", json!({ "id": "{/id}" }), false)
+            .act('w', "wake", "crew.wake", json!({ "id": "{/id}" }), false)
+            .act('p', "pause", "crew.update", json!({ "id": "{/id}", "paused": true }), false)
+            .act('u', "resume", "crew.update", json!({ "id": "{/id}", "paused": false }), false)
+            .act('x', "remove", "crew.remove", json!({ "id": "{/id}" }), true),
     );
     r.view(
         Table::new("automations", "Automations", cmd("automations.trigger.ls"))

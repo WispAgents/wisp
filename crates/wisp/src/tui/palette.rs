@@ -52,10 +52,25 @@ fn from(q: &[char], l: &[char], start: usize) -> Option<i64> {
     Some(score)
 }
 
+/// An item's score: each word typed matches, in any order (`add mach` finds *machines add*), in its label or, for a
+/// command, the words it's typed as (TRY-7). One word scores as before.
+fn item_score(query: &str, it: &Item) -> Option<i64> {
+    let command = matches!(&it.pick, Pick::Command(_)) || matches!(&it.pick, Pick::Insert(t) if t.starts_with('/'));
+    let words: Vec<&str> = query.split_whitespace().collect();
+    if words.len() <= 1 {
+        let own = score(query, &it.label);
+        return if command { own.max(score(query, &it.kind)) } else { own };
+    }
+    words.iter().try_fold(0, |sum, w| {
+        let best = if command { score(w, &it.label).max(score(w, &it.kind)) } else { score(w, &it.label) };
+        best.map(|b| sum + b)
+    })
+}
+
 /// The best matches, best first (ties keep their order).
 pub fn filter<'a>(items: &'a [Item], query: &str, max: usize) -> Vec<&'a Item> {
     let mut v: Vec<(i64, usize, &Item)> =
-        items.iter().enumerate().filter_map(|(i, it)| score(query, &it.label).map(|s| (s, i, it))).collect();
+        items.iter().enumerate().filter_map(|(i, it)| item_score(query, it).map(|s| (s, i, it))).collect();
     v.sort_by(|a, b| b.0.cmp(&a.0).then(a.1.cmp(&b.1)));
     v.into_iter().take(max).map(|x| x.2).collect()
 }
@@ -93,6 +108,15 @@ mod tests {
     fn fuzzy_finds_in_order_and_ranks_word_starts() {
         assert!(score("fl", "Fix the login").is_some());
         assert!(score("lf", "Fix the login").is_none(), "in order");
+        let items = [
+            Item { label: "Add a machine".into(), kind: "machines add".into(), pick: Pick::Command("machines add".into()) },
+            Item { label: "Machines".into(), kind: "view".into(), pick: Pick::View("machines".into()) },
+            Item { label: "Fix the view".into(), kind: "task".into(), pick: Pick::OpenTask("t1".into()) },
+        ];
+        let got = |q: &str| filter(&items, q, 9).iter().map(|i| i.label.clone()).collect::<Vec<_>>();
+        assert_eq!(got("add mach"), ["Add a machine"], "each word, any order, the command's words too");
+        assert_eq!(got("machines add"), ["Add a machine"]);
+        assert!(!got("view").contains(&"Machines".to_owned()), "a view's kind isn't searched");
         let items = vec![it("settings"), it("ship it"), it("show stuff")];
         let got: Vec<&str> = filter(&items, "st", 5).iter().map(|i| i.label.as_str()).collect();
         assert_eq!(got[0], "show stuff", "a word start wins: {got:?}");

@@ -289,17 +289,8 @@ pub fn draw(f: &mut Frame<'_>, app: &App) -> Hit {
     match &app.overlay {
         Some(Overlay::Help) => help(f, th, area, app.help_scroll),
         Some(Overlay::Palette(p, _)) => palette(f, app, p, area),
-        Some(Overlay::Ask(_, label, text)) => {
-            let r = centered(area, 64, 3);
-            f.render_widget(Clear, r);
-            let line = Line::from(vec![
-                Span::styled(format!("{} ", g(app).prompt()), Style::default().fg(th.accent_ink).add_modifier(Modifier::BOLD)),
-                Span::styled(text.clone(), th.text()),
-                Span::styled("▏", Style::default().fg(th.accent)),
-            ]);
-            let b = frame(th, label, true).title_bottom(Line::from(hints(th, &[("Enter", "show"), ("Esc", "back")])).right_aligned());
-            f.render_widget(Paragraph::new(line).block(b), r);
-        }
+        Some(Overlay::AskAct(label, _, _, text)) => ask_box(f, app, area, label, text, "go"),
+        Some(Overlay::Ask(_, label, text)) => ask_box(f, app, area, label, text, "show"),
         Some(Overlay::Confirm(q, _, _)) => {
             let r = centered(area, 56, 3);
             f.render_widget(Clear, r);
@@ -411,7 +402,7 @@ fn sidebar(f: &mut Frame<'_>, app: &App, r: Rect) -> BTreeMap<u16, String> {
         } else {
             glyph(state)
         };
-        let project = s(t, "cwd").trim_end_matches(['/', '\\']).rsplit(['/', '\\']).next().unwrap_or_default().to_owned();
+        let project = project_label(s(t, "cwd"));
         let meta = [s(t, "agent").to_owned(), project].into_iter().filter(|x| !x.is_empty()).collect::<Vec<_>>().join(" · ");
         let line2 = split(
             vec![
@@ -474,7 +465,7 @@ fn header(app: &App, session: &Value, w: usize) -> Vec<Line<'static>> {
         first.push(Span::raw("  "));
         first.push(Span::styled(pill, Style::default().bg(tone(th, state)).fg(th.on_accent).add_modifier(Modifier::BOLD)));
     }
-    let project = s(session, "cwd").trim_end_matches(['/', '\\']).rsplit(['/', '\\']).next().unwrap_or_default().to_owned();
+    let project = project_label(s(session, "cwd"));
     let run = [cell(session, "/agent"), cell(session, "/model")].into_iter().filter(|x| !x.is_empty()).collect::<Vec<_>>().join(" ");
     let mut meta: Vec<String> = [project, cell(session, "/branch"), run].into_iter().filter(|x| !x.is_empty()).collect();
     // the goal comes from wisp.goal's own tui crate (a TaskHeader input), as the GUI's band does
@@ -490,10 +481,28 @@ fn header(app: &App, session: &Value, w: usize) -> Vec<Line<'static>> {
 
 /// A tool step's one line: `✓ Edit src/auth.ts +12 −3` (a spinner while it runs), the verb in `ink-2`, the target
 /// in `ink`; the cursor's row on a band with the accent bar.
+/// The project a task works in, by its folder's name: a wisp worktree (`…/worktrees/<project>-<12 or 32 hex>`) is its
+/// project's, as the app names it, never `wisp-01a1e9…` (TRY-7).
+pub fn project_label(cwd: &str) -> String {
+    let mut parts = cwd.trim_end_matches(['/', '\\']).rsplit(['/', '\\']);
+    let name = parts.next().unwrap_or_default();
+    if parts.next() == Some("worktrees")
+        && let Some((project, id)) = name.rsplit_once('-')
+        && (id.len() == 12 || id.len() == 32)
+        && id.bytes().all(|b| b.is_ascii_hexdigit())
+        && !project.is_empty()
+    {
+        return project.to_owned();
+    }
+    name.to_owned()
+}
+
 fn tool_line(app: &App, b: &Value, live: bool, open: bool, at: bool, w: usize) -> Line<'static> {
     let th = &app.th;
     let gl = g(app);
+    // one line: a label can carry a failed command's whole output (`Exit code 1\ntotal 16…`), which the open step shows
     let label = if s(b, "label").is_empty() { s(b, "tool") } else { s(b, "label") };
+    let label = label.lines().find(|l| !l.trim().is_empty()).unwrap_or("").trim_end();
     let file = s(b, "file");
     let rel = file.strip_prefix(&format!("{}/", app.cwd)).unwrap_or(file);
     let (verb, target) = match label.split_once(' ') {
@@ -715,9 +724,74 @@ pub fn transcript(app: &App, t: &Transcript, w: u16) -> (Vec<Line<'static>>, Vec
 }
 
 /// The task: its header and transcript, a column of padding each side. → screen row → tool seq.
+/// A one-line question over the screen (a view's file to blame, a new member's name): what's typed, Enter does `enter`.
+fn ask_box(f: &mut Frame<'_>, app: &App, area: Rect, label: &str, text: &str, enter: &str) {
+    let th = &app.th;
+    let r = centered(area, 64, 3);
+    f.render_widget(Clear, r);
+    let line = Line::from(vec![
+        Span::styled(format!("{} ", g(app).prompt()), Style::default().fg(th.accent_ink).add_modifier(Modifier::BOLD)),
+        Span::styled(text.to_owned(), th.text()),
+        Span::styled("▏", Style::default().fg(th.accent)),
+    ]);
+    let b = frame(th, label, true).title_bottom(Line::from(hints(th, &[("Enter", enter), ("Esc", "back")])).right_aligned());
+    f.render_widget(Paragraph::new(line).block(b), r);
+}
+
+/// New task as a page (TRY-7, the app's New task): where it runs, on which agent and in which mode, each with the key
+/// that changes it; the box below takes the prompt. The task that was open doesn't show under it.
+fn new_task(f: &mut Frame<'_>, app: &App, r: Rect) {
+    let th = &app.th;
+    let key = |k: &str| Span::styled(k.to_owned(), th.text().add_modifier(Modifier::BOLD));
+    let agent = if app.launch_agent.is_empty() {
+        "Auto: wisp picks the agent".to_owned()
+    } else {
+        app.agents.iter().find(|(id, _)| *id == app.launch_agent).map_or_else(|| app.launch_agent.clone(), |(_, n)| n.clone())
+    };
+    let mode = match app.mode {
+        super::app::Mode::Plan => "Plan: reads and plans, changes nothing",
+        super::app::Mode::Edits => "Edits: asks before it runs a command",
+        super::app::Mode::Auto => "Full auto: no permission prompts",
+    };
+    let row = |name: &str, value: String, k: &str, what: &str| {
+        Line::from(vec![
+            Span::styled(format!("{name:<8}"), th.dim()),
+            Span::styled(value, th.strong()),
+            Span::raw("   "),
+            key(k),
+            Span::styled(format!(" {what}"), th.dim()),
+        ])
+    };
+    let lines = vec![
+        Line::from(""),
+        Line::from(Span::styled("What should wisp do next?", Style::default().fg(th.accent_ink).add_modifier(Modifier::BOLD))),
+        Line::from(""),
+        Line::from(vec![Span::styled(format!("{:<8}", "in"), th.dim()), Span::styled(project_label(&app.cwd), th.strong())]),
+        row("agent", agent, "Ctrl-A", "changes it"),
+        row("mode", mode.to_owned(), "Shift-Tab", "changes it"),
+        Line::from(""),
+        Line::from(vec![
+            Span::styled("Write it below, ", th.dim()),
+            key("Enter"),
+            Span::styled(" starts it · ", th.dim()),
+            key("@"),
+            Span::styled(" a task, file or crew member · ", th.dim()),
+            key("/"),
+            Span::styled(" a command · ", th.dim()),
+            key("Esc"),
+            Span::styled(" back", th.dim()),
+        ]),
+    ];
+    f.render_widget(Paragraph::new(lines).wrap(ratatui::widgets::Wrap { trim: false }), padded(r));
+}
+
 fn task(f: &mut Frame<'_>, app: &App, r: Rect) -> BTreeMap<u16, i64> {
     let th = &app.th;
     let inner = Rect { x: r.x + 1, y: r.y, width: r.width.saturating_sub(2), height: r.height };
+    if app.new_task {
+        new_task(f, app, inner);
+        return BTreeMap::new();
+    }
     let Some(t) = &app.open else {
         f.render_widget(
             Paragraph::new(vec![
@@ -890,9 +964,15 @@ fn view(f: &mut Frame<'_>, app: &App, id: &str, r: Rect) {
         keys.push(("A".to_owned(), label.to_lowercase()));
     }
     keys.extend([("r".to_owned(), "reload".to_owned()), ("Esc".to_owned(), "back".to_owned())]);
-    let key_refs: Vec<(&str, &str)> = keys.iter().map(|(k, l)| (k.as_str(), l.as_str())).collect();
     // a view that asked for something (the file it blames) names it
     let head = rows.asked.as_ref().map_or_else(|| format!("{}  {}", v.title(), rows.rows.len()), |x| format!("{}  {x}", v.title()));
+    // the title always shows: the actions that don't fit after it go from the end, Esc back stays (TRY-7)
+    let room = w.saturating_sub(head.chars().count() + 3);
+    let width = |ks: &[(String, String)]| ks.iter().map(|(k, l)| k.chars().count() + l.chars().count() + 3).sum::<usize>();
+    while keys.len() > 1 && width(&keys) > room {
+        keys.remove(keys.len() - 2);
+    }
+    let key_refs: Vec<(&str, &str)> = keys.iter().map(|(k, l)| (k.as_str(), l.as_str())).collect();
     let mut lines = pane_head(app, &head, hints(th, &key_refs), true, w);
     lines.push(Line::from(""));
     let row_of = |row: &Value, st: Style| -> Vec<Span<'static>> {
@@ -990,6 +1070,15 @@ fn composer(f: &mut Frame<'_>, app: &App, r: Rect) {
         })];
     }
     let mut b = frame(th, &title, focused);
+    // a `/command` being typed: how to use it, under the box (TRY-7)
+    let typed = app.composer.lines.join("\n");
+    if typed.starts_with('/')
+        && let Some(u) = super::commands::usage(&app.cat, &typed)
+    {
+        let room = usize::from(r.width.saturating_sub(6));
+        let u: String = if u.chars().count() > room { u.chars().take(room.saturating_sub(1)).chain(['…']).collect() } else { u };
+        b = b.title_bottom(Line::from(Span::styled(format!(" {u} "), th.dim())));
+    }
     if !app.composer.attachments.is_empty() {
         b = b.title_top(
             Line::from(Span::styled(format!(" {} attached ", app.composer.attachments.len()), Style::default().fg(th.accent_ink)))
@@ -1015,7 +1104,12 @@ fn composer(f: &mut Frame<'_>, app: &App, r: Rect) {
 /// tokens and cost, and the key hints at the right.
 fn status(f: &mut Frame<'_>, app: &App, r: Rect) {
     let th = &app.th;
-    let session = app.open.as_ref().map(Transcript::session).unwrap_or_default();
+    // on New task the bar says what the new task will run on, not the last task's (TRY-7)
+    let session = if app.new_task {
+        serde_json::json!({ "agent": if app.launch_agent.is_empty() { "Auto" } else { app.launch_agent.as_str() } })
+    } else {
+        app.open.as_ref().map(Transcript::session).unwrap_or_default()
+    };
     let turn = app.open.as_ref().and_then(Transcript::running).unwrap_or_default();
     let c = cx(app);
     let mode_bg = match app.mode {

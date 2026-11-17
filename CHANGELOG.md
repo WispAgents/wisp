@@ -71,6 +71,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - **v2: Run on → Sandbox.** Signed in to wisp Cloud, New task's Run on offers a fresh sandbox for the task, as `/sandbox` does; Run on no longer lists other tasks' sandboxes as computers. Plugins can add their own places to Run on (`launchTargets`).
 - **v2: Settings you can find your way in.** The side list is in sections (General, Agents, Computers, Advanced), *Search settings* finds a pane by its name or what it's for, and ⌘K finds every Settings pane. Esc in a search field inside a dialog clears the field first instead of closing the dialog.
 - **v2: navigation that stays out of the way.** J and K step through tasks with the keys staying on the list, as in v1 (they no longer land in the reply box). Back leaves Settings in one step instead of walking back through every pane you looked at.
+- **v2: a TUI you can drive without the docs.** Ctrl-K and `/` list every command by name with how it's typed; the reply box shows a command's flags while you type it, and `/machines add studio --address me@studio` runs it. The crew view adds members, gives them jobs, checks in, pauses and removes. New task is a page where you pick the agent (Ctrl-A) and the mode. `wisp get <id>` and other tools' words no longer start an agent run: they say which wisp command you meant.
 
 ### Changed
 

@@ -191,6 +191,10 @@ async fn not_a_task(p: &Parsed, home: &Path, port: u16) -> Option<i32> {
             eprintln!("  ✗ wisp {first} isn't a command: did you mean wisp {w}?   (a task that's just \"{first}\": wisp -- {first})");
             Some(cli::USAGE_EXIT)
         }
+        words::NotATask::Unknown(w) => {
+            eprintln!("  ✗ wisp {w} isn't a command: wisp help lists them   (a task that says this: wisp -- {})", p.words.join(" "));
+            Some(cli::USAGE_EXIT)
+        }
     }
 }
 

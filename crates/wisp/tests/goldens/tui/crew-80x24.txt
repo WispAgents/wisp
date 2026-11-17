@@ -1,4 +1,4 @@
- Crew  2                                             w wake  r reload  Esc back
+ Crew  2      n new member  a give a job  c check in  w wake  p pause  Esc back
  ──────────────────────────────────────────────────────────────────────────────
 
   NAME                ROLE                    RUNNING   JOBS    MACHINE

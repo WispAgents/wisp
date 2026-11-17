@@ -71,6 +71,26 @@ fn a_real_prompt_is_still_a_task() {
     assert_eq!(x.words, ["tasks"]);
 }
 
+/// TRY-7 audit: `wisp get <id>` launched an agent with the prompt "get 01a1e9…". Another tool's word for one of wisp's
+/// says which (`get` is `show`), and an unknown word followed by task ids is never a task.
+#[test]
+fn another_tools_word_or_an_unknown_one_with_a_task_id_is_never_a_task() {
+    let id = "01a1e9e05eb676c799c41712ad5656b7";
+    for (theirs, ours) in [("get", "show"), ("view", "show"), ("cat", "show"), ("status", "show"), ("logs", "attach")] {
+        let x = p(&[theirs, id]);
+        assert_eq!(not_a_task(&x.words, x.literal, &[]), Some(NotATask::Near(ours.to_owned())), "{theirs}");
+    }
+    let x = p(&["fetch", id]);
+    assert_eq!(not_a_task(&x.words, x.literal, &[]), Some(NotATask::Unknown("fetch".to_owned())));
+    let x = p(&["fetch", "local:01a1e9e05eb6"]);
+    assert_eq!(not_a_task(&x.words, x.literal, &[]), Some(NotATask::Unknown("fetch".to_owned())), "a peer-keyed id too");
+    // still tasks: a prompt that only mentions an id among other words, and a word followed by a non-id
+    for words in [&["fix", "the", "bug", "in", id][..], &["fetch", "the", "logs"], &["review", "abc123"]] {
+        let x = p(words);
+        assert_eq!(not_a_task(&x.words, x.literal, &[]), None, "{words:?}");
+    }
+}
+
 /// The table is main.rs's own: every first word one of its `match first` arms routes on is known.
 #[test]
 fn every_word_main_routes_on_is_a_known_word() {
