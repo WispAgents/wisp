@@ -235,6 +235,6 @@ async function usageNow(c: PluginClient, harnesses: readonly { id: string; name:
 /** Your saved launch defaults (v1 launchDefaults), read from the agent profiles and the worktree setting. */
 async function savedDefaults(c: PluginClient, harnesses: readonly { id: string }[]): Promise<LaunchDefaults> {
   const list = await c.run(savedProfiles, { peer: c.home }).catch(() => []);
-  const worktree = c.entities.peek<{ value?: unknown }>('setting', `${c.home}:defaults.worktree` as never)?.value;
+  const worktree = c.entities.peek<{ value?: unknown }>('setting', `${c.home}:worktrees.worktree` as never)?.value;
   return defaultsFrom(list, worktree, harnesses[0]?.id);
 }

@@ -75,7 +75,7 @@ export interface CreateArgs {
   readonly lineage?: { readonly rerunOf: string };
   readonly dirs?: readonly string[];
   readonly steps?: readonly string[];
-  /** in a worktree of its own (New task's Worktree / In place toggle, `defaults.worktree`) */
+  /** in a worktree of its own (New task's Worktree / In place toggle, `worktrees.worktree`) */
   readonly worktree?: boolean;  /** you said yes to going past Ask near the limit's line (the hold row's Start anyway; StartArgs.confirmLimit) */
   readonly confirmLimit?: boolean;
 }

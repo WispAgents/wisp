@@ -375,7 +375,9 @@ export default function TaskView(props: { readonly id: string; readonly onBack?:
   const hint = (): ReturnType<typeof coldHint> => (row()?.state === 'running' ? undefined : coldHint(cold(), now(), t));
   const compactOffer = (): ReturnType<typeof compactItem> => (row()?.state === 'running' ? undefined : compactItem(cold(), now(), t));
   // what's open in the page: the steps, the notes, a command in flight, the reply's extras
-  const [stepsOpen, setStepsOpen] = createSignal(false);
+  // Settings → Full transcript (`settings.transcript`: 'on'): a task opens on its transcript (v1 transcriptByDefault, B54)
+  const txDefault = shell.client.entities.peek<{ value?: unknown }>('setting', entityKey(ownerOf(key), 'settings.transcript'))?.value;
+  const [stepsOpen, setStepsOpen] = createSignal(txDefault === 'on' || txDefault === true);
   // the phone apps: the details column as a sheet from the menu, and Rename as a dialog (the bar's title isn't edited)
   const phone = shell.platform.phone;
   const [detailsOpen, setDetailsOpen] = createSignal(false);

@@ -18,9 +18,11 @@ const later: PluginUiLater = {
         const l = (ctx.launch ?? {}) as { cwd?: string; agent?: string; model?: string; effort?: string; mode?: string; at?: number };
         const home = ctx.client.home;
         const key = (id: string): EntityKey => (id.includes(':') ? id : `${home}:${id}`) as EntityKey;
+        const read = ctx.client.entities.peek<{ value?: unknown }>('setting', `${home}:settings.readTimes` as EntityKey)?.value;
         const p = launchPlan(text, {
           now: new Date(),
           at: l.at,
+          readTimes: read !== false && read !== 'off',
           title: (id) => ctx.client.entities.peek<{ title?: string }>('session', key(id))?.title,
         });
         if (!p) return false;
@@ -56,7 +58,7 @@ const later: PluginUiLater = {
       send: (text, ctx) => {
         const home = ctx.client.home;
         const task = ctx.task as EntityKey;
-        const setting = ctx.client.entities.peek<{ value?: unknown }>('setting', `${home}:shell-composer.readTimes` as EntityKey);
+        const setting = ctx.client.entities.peek<{ value?: unknown }>('setting', `${home}:settings.readTimes` as EntityKey);
         // a time picked on the box's clock (Send later, or the hold row's Wait until the reset), else one typed in it
         const picked = (ctx.launch as { at?: number } | undefined)?.at;
         const p =

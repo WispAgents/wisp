@@ -17,7 +17,10 @@ const AFTER_TASK = /^(?:@\[([^\]\n]{1,200})\]\(wisp:([\w:-]{6,80})\)|wisp:([\w:-
  * What Send does instead of starting the task now, or null (start it now). `at`: a time picked on the clock;
  * `title(id)`: a task's title, undefined when there's no such task here.
  */
-export function launchPlan(text: string, o: { readonly now: Date; readonly at?: number | undefined; readonly title: (id: string) => string | undefined }): LaunchPlan | null {
+export function launchPlan(
+  text: string,
+  o: { readonly now: Date; readonly at?: number | undefined; readonly title: (id: string) => string | undefined; readonly readTimes?: boolean },
+): LaunchPlan | null {
   const t = text.trim();
   if (!t) return null;
   if (DRAFT.test(t)) {
@@ -33,6 +36,8 @@ export function launchPlan(text: string, o: { readonly now: Date; readonly at?: 
     return id && prompt && title !== undefined ? { kind: 'task', after: { id, title: m?.[1] ?? title }, rest: prompt } : null;
   }
   if (o.at !== undefined && o.at > o.now.getTime()) return { kind: 'task', at: o.at, rest: t };
+  // Settings → Read times in prompts off: a time typed at the start is just words (v1 launcher.js readTimes)
+  if (o.readTimes === false) return null;
   const w = parseWhen(t, o.now);
   return w ? { kind: w.reminder ? 'reminder' : 'task', at: w.at, rest: w.rest } : null;
 }

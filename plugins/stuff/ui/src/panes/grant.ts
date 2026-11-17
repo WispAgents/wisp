@@ -56,7 +56,7 @@ export function defaultsFrom(profiles: unknown, worktree: unknown, firstHarness:
   const out: { -readonly [K in keyof LaunchDefaults]: LaunchDefaults[K] } = { mode: str('mode') ?? 'auto' };
   const agent = str('harness') ?? firstHarness;
   if (agent) out.agent = agent;
-  if (worktree === false) out.worktree = 'off';
+  if (worktree === false || worktree === 'off') out.worktree = 'off'; // worktrees.worktree is 'on' | 'off' (B54)
   for (const k of ['model', 'effort', 'account'] as const) {
     const v = str(k);
     if (v) out[k] = v;

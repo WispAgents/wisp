@@ -58,6 +58,9 @@ interface SettingRow {
 const TIPS = ['goal1', 'goal2', 'vs', 'compare', 'auto', 'limit'] as const;
 const GUIDE = 'https://trywisp.dev/guides';
 
+/** New task's Worktree / In place default (wisp.worktrees declares it). */
+const WORKTREE_KEY = 'worktrees.worktree';
+
 export function HomeView(props: { readonly onBack?: () => void }): JSX.Element {
   const shell = useShell();
   // the phone apps (Android, iPhone): New task's own bar; set once, as the platform never changes
@@ -230,7 +233,9 @@ export function HomeView(props: { readonly onBack?: () => void }): JSX.Element {
   createEffect(on(() => `${listPick().start ?? ''}|${listPick().also.join(',')}`, () => setOwnAlso(undefined), { defer: true }));
   const project = createMemo(() => (where() === 'none' ? undefined : (projects().find((p) => p.id === (where() ?? listPick().start)) ?? projects()[0])));
   const also = createMemo(() => (project() ? (ownAlso() ?? listPick().also).filter((id) => id !== project()?.id) : []));
-  const worktree = createMemo(() => settings().find((r) => r.key === 'defaults.worktree')?.value !== false);
+  // wisp.worktrees' `worktrees.worktree` ('on' | 'off'), the same switch as Settings → General (B54: New task read and
+  // wrote `defaults.worktree`, which no plugin declares, so its toggle never stuck and Settings' did nothing)
+  const worktree = createMemo(() => !['off', false].includes(settings().find((r) => r.key === WORKTREE_KEY)?.value as never));
   const needs = createMemo(() =>
     sessions()
       .filter((s) => !s.archived && sectionOf(s) === 'needs')
@@ -684,7 +689,7 @@ export function HomeView(props: { readonly onBack?: () => void }): JSX.Element {
                   tool('worktree', 'launcher.worktree', 'branch', worktree() ? t('shell.home.worktree') : t('shell.home.inPlace'), t('shell.home.worktreeTitle'), {
                     text: true,
                     on: worktree(),
-                    act: { onClick: () => void shell.client.commands.run(setSetting, { peer: home, key: 'defaults.worktree', value: !worktree() }).catch(() => undefined) },
+                    act: { onClick: () => void shell.client.commands.run(setSetting, { peer: home, key: WORKTREE_KEY, value: worktree() ? 'off' : 'on' }).catch(() => undefined) },
                   }),
                 ]),
             tool('later', 'launcher.later', 'clock', t('shell.home.later'), t('shell.home.later'), {

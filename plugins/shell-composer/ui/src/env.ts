@@ -14,9 +14,7 @@ export const SET = {
   followUp: 'shell-composer.followUp',
   mode: 'shell-composer.mode',
   runner: 'shell-composer.runner',
-  worktree: 'shell-composer.worktree',
   team: 'shell-composer.team',
-  readTimes: 'shell-composer.readTimes',
   project: 'shell-composer.project',
 } as const;
 
@@ -27,10 +25,7 @@ const DECLS = [
   { key: SET.mode, type: 'enum', values: MODES, default: DEFAULT_MODE },
   /** the harness New task starts on, and each harness's model, thinking level and account */
   { key: SET.runner, type: 'json', default: null },
-  { key: SET.worktree, type: 'bool', default: true },
   { key: SET.team, type: 'json', default: null },
-  /** read "in 10 min …" at the start of a prompt as a time */
-  { key: SET.readTimes, type: 'bool', default: true },
   /** the project New task is pointed at, on this device */
   { key: SET.project, type: 'string', default: '', scope: 'device' },
 ] as const;

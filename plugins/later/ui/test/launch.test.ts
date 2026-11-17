@@ -27,3 +27,12 @@ test('/draft keeps it in Drafts; /after a task starts it once that one is done_v
   expect(launchPlan('/after 0192f3a4-aaaa-7bbb-8ccc-1234567890ab write the notes', o)).toMatchObject({ after: { id: '0192f3a4-aaaa-7bbb-8ccc-1234567890ab', title: 'Fix login' } });
   expect(launchPlan('/after wisp:nope123 write the notes', o)).toBeNull(); // no such task here
 });
+
+// B54: Settings → Read times in prompts off: a time typed at the start stays words; a picked time still schedules
+test('with read times off a typed time is not read, a picked one still is', () => {
+  const now = new Date('2026-11-17T10:00:00Z');
+  const base = { now, title: () => undefined };
+  expect(launchPlan('in 5 min run the e2e suite', { ...base, readTimes: false })).toBeNull();
+  expect(launchPlan('in 5 min run the e2e suite', { ...base, readTimes: true })).toMatchObject({ kind: 'task' });
+  expect(launchPlan('run it', { ...base, readTimes: false, at: now.getTime() + 60_000 })).toMatchObject({ kind: 'task', at: now.getTime() + 60_000 });
+});
