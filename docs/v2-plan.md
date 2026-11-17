@@ -63,6 +63,10 @@ turn. When a screen or feature contradicts one, that's a bug: fix it toward the 
   (18:36), shows blocks well, not raw JSON (18:48); **a TUI mirrors the GUI** (18:49), inspired by opencode / Claude
   Code, not simple (11-09 20:52). CLI, TUI and GUI are plugins (18:49).
 
+- **Silent runs** (TRY-23, decided by the owner's delegate 2026-11-17): a run with no output for 30 minutes while its
+  plan still moves is told to the phone once per silent stretch, with Stop; *Stop a run silent for* (Settings → Usage,
+  off by default) stops one silent that long. It never adds a hold or an ask card, in Full auto or anywhere.
+
 ### Architecture and code
 
 - **Rust for everything but the UI**: backend, local runners and every plugin's backend; Solid + TypeScript only for
@@ -302,6 +306,8 @@ turn. When a screen or feature contradicts one, that's a bug: fix it toward the 
 
 - [ ] The Linear TODO tickets (finish them all before the release; owner, 2026-11-17)
   - [x] TRY-16 (11-17)
+  - [x] TRY-23 silent runs (11-17): budget's watch (`plugins/budget/{core,host}/src/silent.rs`), the phone's Stop
+    button on every channel (`ActionKind::Stop`, code `s`), Settings → Usage *Stop a run silent for*
   - [x] TRY-17 harness updates (11-17): Settings → Agents *Update to x.y.z* / *Update all*, `accounts.upgrade` updates the way it was installed (`claude update`, `codex update`, `opencode upgrade`, npm, wisp's tools folder; Homebrew: the command to run); latest versions from npm at start and every 12 h. Found and fixed on the way: B57 (idle CPU), B58 (Cursor *Not found*), B59
 - [ ] Continuous QA rounds by fresh low-context agents → `docs/qa/bugs.md` → one fix per coder
 

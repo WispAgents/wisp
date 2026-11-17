@@ -307,7 +307,9 @@ impl Discord {
         let b: Vec<(String, String, bool)> = msg
             .actions
             .iter()
-            .filter(|a| a.kind == ActionKind::Answer || (a.kind == ActionKind::Reply && sv.mode != Some(Mode::Auto)))
+            .filter(|a| {
+                matches!(a.kind, ActionKind::Answer | ActionKind::Stop) || (a.kind == ActionKind::Reply && sv.mode != Some(Mode::Auto))
+            })
             .map(|a| {
                 (
                     discord_text(&a.label),

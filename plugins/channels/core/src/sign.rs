@@ -50,6 +50,7 @@ fn kind_word(k: ActionKind) -> &'static str {
         ActionKind::Answer => "answer",
         ActionKind::Reply => "reply",
         ActionKind::Done => "done",
+        ActionKind::Stop => "stop",
     }
 }
 
@@ -76,4 +77,20 @@ pub fn signed(secret: &str, session_id: &str, kind: ActionKind, reference: &str,
 pub fn verify(secret: &str, p: &Signed) -> bool {
     let Some(kind) = ActionKind::from_code(&p.k) else { return false };
     !secret.is_empty() && same(&sign(secret, &p.s, kind, &p.r, p.i), &p.sig)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// TRY-23: a Stop button is signed and verified like the others, and its signature can't be reused as another kind.
+    #[test]
+    fn a_stop_tap_verifies_and_only_as_stop() {
+        let t = signed("secret", "t1", ActionKind::Stop, "u1", 0);
+        assert_eq!(t.k, "s");
+        assert!(verify("secret", &t));
+        assert!(!verify("secret", &Signed { k: "d".into(), ..t.clone() }), "the same signature as Done fails");
+        assert!(!verify("other", &t));
+        assert_eq!(ActionKind::from_code("s"), Some(ActionKind::Stop));
+    }
 }

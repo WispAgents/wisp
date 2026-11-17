@@ -16,6 +16,7 @@
     "runtime:answer",
     "runtime:followUp",
     "runtime:setState",
+    "runtime:stop",
     "resources:read",
     "resources:apply"
   ],

@@ -71,6 +71,9 @@ pub struct Empty {}
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SendArgs {
     pub msg: Msg,
+    /// the task it's about: its buttons (Stop) act on it. Additive (2026-11-17, TRY-23).
+    #[serde(default, rename = "sessionId", skip_serializing_if = "Option::is_none")]
+    pub session_id: Option<String>,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]

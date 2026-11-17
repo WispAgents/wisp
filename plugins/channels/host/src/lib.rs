@@ -144,6 +144,21 @@ async fn notify(ctx: &Ctx, live: &Arc<Live>, event: &str, session: &str, text: &
     }
 }
 
+/// `channels.send`: a notice to every running transport; about a task, with its view, so a button is signed for it.
+async fn send_notice(ctx: &Ctx, live: &Arc<Live>, a: &wisp_channels_api::SendArgs) -> Sent {
+    let view = match &a.session_id {
+        Some(id) => hub::typed::<wisp_runtime_api::commands::Get>(ctx, hub::get(id)).await.ok().map(|t| hub::session_view(&t)),
+        None => None,
+    };
+    let mut sent = 0;
+    for t in running(live) {
+        if t.publish(&a.msg, view.as_ref()).await.is_ok() {
+            sent += 1;
+        }
+    }
+    Sent { sent }
+}
+
 /// To a webhook (`https://…`: the event as JSON) or a declared channel's transport.
 async fn deliver(ctx: &Ctx, live: &Arc<Live>, to: &str, event: &str, msg: &Msg, s: &SessionView, fanned: bool) -> Result<()> {
     if to.starts_with("http://") || to.starts_with("https://") {
@@ -251,17 +266,9 @@ fn commands(s: &mut Setup, live: &Arc<Live>) {
         }
     });
     let l = live.clone();
-    s.command::<SendNotice, _, _>(move |_ctx, _call, a| {
+    s.command::<SendNotice, _, _>(move |ctx, _call, a| {
         let live = l.clone();
-        async move {
-            let mut sent = 0;
-            for t in running(&live) {
-                if t.publish(&a.msg, None).await.is_ok() {
-                    sent += 1;
-                }
-            }
-            Ok(Sent { sent })
-        }
+        async move { Ok(send_notice(&ctx, &live, &a).await) }
     });
     let l = live.clone();
     s.command::<Test, _, _>(move |ctx, _call, a| {

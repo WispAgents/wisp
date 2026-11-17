@@ -51,6 +51,8 @@ pub enum ActionKind {
     Answer,
     Reply,
     Done,
+    /// stop the run (TRY-23: a run silent while its plan moves). Additive (2026-11-17).
+    Stop,
 }
 
 impl ActionKind {
@@ -60,6 +62,7 @@ impl ActionKind {
             Self::Answer => "a",
             Self::Reply => "r",
             Self::Done => "d",
+            Self::Stop => "s",
         }
     }
     pub fn from_code(c: &str) -> Option<Self> {
@@ -67,6 +70,7 @@ impl ActionKind {
             "a" => Some(Self::Answer),
             "r" => Some(Self::Reply),
             "d" => Some(Self::Done),
+            "s" => Some(Self::Stop),
             _ => None,
         }
     }
@@ -460,6 +464,7 @@ pub enum ActKind {
     Reply,
     Done,
     Text,
+    Stop,
 }
 
 impl From<ActionKind> for ActKind {
@@ -468,6 +473,7 @@ impl From<ActionKind> for ActKind {
             ActionKind::Answer => Self::Answer,
             ActionKind::Reply => Self::Reply,
             ActionKind::Done => Self::Done,
+            ActionKind::Stop => Self::Stop,
         }
     }
 }

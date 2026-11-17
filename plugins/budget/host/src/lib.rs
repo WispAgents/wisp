@@ -8,6 +8,7 @@ mod drain;
 mod early;
 mod kinds;
 mod live;
+mod silent;
 mod store;
 mod usage;
 
@@ -64,6 +65,8 @@ struct State {
     /// each turn's plan shares so far (v1 turn.plan), the newest `MAX_PLANS` turns: written to its `wisp.budget` slot
     plans: Mutex<TurnPlans>,
     plan_seq: std::sync::atomic::AtomicU64,
+    /// running turns' last sign of life, per task (TRY-23: silent runs)
+    quiet: Mutex<BTreeMap<String, wisp_budget_core::silent::Quiet>>,
 }
 
 /// turns whose plan shares are kept in memory to add to (a share lands during the run or with the next report)
@@ -310,6 +313,17 @@ fn on_turns(s: &mut Setup, slot: &Slot) {
                 && let Some((agent, account)) = lock(&st.starting).remove(e.turn_id.as_str())
             {
                 lock(&st.budget).begin(&agent, &account, e.session_id.as_str(), e.turn_id.as_str(), now(&ctx));
+                st.quiet_begin(e.session_id.as_str(), e.turn_id.as_str(), &agent, &account, now(&ctx));
+            }
+        }
+    });
+    // each step is a sign of life (silent runs)
+    let steps = slot.clone();
+    s.on::<wisp_runtime_api::events::TurnActivity, _, _>(move |ctx, e| {
+        let slot = steps.clone();
+        async move {
+            if let Ok(st) = state(&slot) {
+                st.quiet_steps(e.session_id.as_str(), &e.items, now(&ctx));
             }
         }
     });
@@ -319,6 +333,7 @@ fn on_turns(s: &mut Setup, slot: &Slot) {
         async move {
             if let Ok(st) = state(&slot) {
                 lock(&st.budget).end(e.session_id.as_str(), e.turn_id.as_str(), now(&ctx));
+                st.quiet_end(e.session_id.as_str());
                 usage::note_turn(&ctx, &st, &e);
                 // learned first, so the spend's save below writes the runs too: one commit, not two (ADR-0088)
                 if ask::learn(&mut lock(&st.runs), &e, now(&ctx)) {
@@ -495,6 +510,7 @@ impl Plugin for BudgetPlugin {
                 starting: Mutex::default(),
                 plans: Mutex::default(),
                 plan_seq: std::sync::atomic::AtomicU64::new(0),
+                quiet: Mutex::default(),
                 runs_dirty: std::sync::atomic::AtomicBool::new(false),
             });
             let _ = start.set(st.clone());
@@ -510,6 +526,7 @@ impl Plugin for BudgetPlugin {
                                 st.requeue();
                                 st.live(&c2, &mut due).await;
                                 st.release(&c2).await;
+                                st.silent(&c2).await;
                             }
                         }
                     }

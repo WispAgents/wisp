@@ -19,6 +19,8 @@ pub enum Act {
     FollowUp(String),
     /// `runtime.setState done`
     Done,
+    /// `runtime.stop` (a silent run's Stop, TRY-23)
+    Stop,
 }
 
 fn text_of(text: Option<&str>) -> Result<String> {
@@ -56,6 +58,7 @@ pub fn decide(k: &str, r: &str, i: u32, text: Option<&str>, ask: Option<&AskView
         }
         Some(ActionKind::Reply) => Ok(Act::FollowUp(text_of(text)?)),
         Some(ActionKind::Done) => Ok(Act::Done),
+        Some(ActionKind::Stop) => Ok(Act::Stop),
         None => Err(PushError::Invalid(format!("k: not a tap kind: {k}"))),
     }
 }

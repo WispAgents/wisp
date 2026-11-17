@@ -78,7 +78,9 @@ impl State {
         ob.emit(&note);
         self.save_with(Some(ob)).await;
         let msg = wisp_channels_api::Msg { title: note.title.clone(), text: note.text.clone(), actions: Vec::new() };
-        if let Err(err) = ctx.run::<wisp_channels_api::SendNotice>(&ctx.root_call(), wisp_channels_api::SendArgs { msg }).await {
+        if let Err(err) =
+            ctx.run::<wisp_channels_api::SendNotice>(&ctx.root_call(), wisp_channels_api::SendArgs { msg, session_id: None }).await
+        {
             tracing::debug!(error = %err.message, "Drain watch: no phone to tell");
         }
         Some(note)

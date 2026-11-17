@@ -251,6 +251,10 @@ async fn answer(sh: &Shared, ctx: &Ctx, call: &Call, a: wisp_push_api::AnswerArg
             ctx.run::<rt::SetState>(call, rt::SetStateArgs { id, state: wisp_runtime_api::model::SessionState::Done }).await?;
             "Marked done."
         }
+        Act::Stop => {
+            ctx.run::<rt::Stop>(call, rt::StopArgs { id, clear_queue: false }).await?;
+            "Stopped."
+        }
     };
     let mut ran = lock(&sh.ran);
     ran.push_back(key);

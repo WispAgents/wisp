@@ -13,6 +13,7 @@ pub mod model;
 pub mod plan_shares;
 pub mod receipt;
 pub mod shape;
+pub mod silent;
 pub mod state;
 pub mod traced;
 pub mod views;

@@ -23,7 +23,7 @@ pub fn choices(msg: &Msg, sv: &SessionView, sign: &dyn Fn(ActionKind, &str, u32)
     let clean = |t: &str| defuse(&scrub_out(t, false).text);
     msg.actions
         .iter()
-        .filter(|a| a.kind == ActionKind::Answer || (a.kind == ActionKind::Reply && sv.mode != Some(Mode::Auto)))
+        .filter(|a| matches!(a.kind, ActionKind::Answer | ActionKind::Stop) || (a.kind == ActionKind::Reply && sv.mode != Some(Mode::Auto)))
         .map(|a| Choice {
             label: mrkdwn::label(if a.label.is_empty() { "OK" } else { &a.label }, &clean),
             code: a.kind.code(),

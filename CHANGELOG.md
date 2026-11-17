@@ -60,6 +60,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - **Share a member, and see what they used.** A member's ⋯ has *Share…* (a `.crew.json` to download or copy, with their kit and, if you tick it, their notebook) and *Track record…* (the tokens their jobs used, where they went by kind of job, their biggest jobs, and how the jobs went).
 - **The phone's Crew section stays short.** Busy members and two more get a row; the rest fold into a row of faces (*2 on call · 1 paused*) that shows them all. A crew job's row shows the member's face.
 - **v2: update your agents from wisp.** Settings → Agents shows *Update to x.y.z* next to a harness with a newer version out (wisp looks on npm at start and twice a day), and *Update all* when there are several. It updates the way you installed it: `claude update`, `codex update`, `opencode upgrade`, npm, or wisp's own copy; a Homebrew install gets the command to run instead.
+- **v2: wisp tells you when a run goes silent but keeps spending.** A run with no output for 30 minutes while its plan still moves sends your phone *Silent 34 min, spent 4% of weekly*, with a Stop button (ntfy, Telegram, Slack, Discord, wisp's phone app). Settings → Usage → *Stop a run silent for* (off by default) stops such a run after 1–8 hours.
 
 ### Changed
 

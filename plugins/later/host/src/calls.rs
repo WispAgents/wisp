@@ -144,7 +144,9 @@ pub(crate) async fn early_note(ctx: &Ctx, agent: &str, account: &str, n: u32) {
         .map_or_else(|| agent.to_owned(), |h| h.info().name.clone());
     let Some((title, text)) = wisp_budget_api::early_note(&name, account, n) else { return };
     let msg = wisp_channels_api::Msg { title, text, actions: Vec::new() };
-    if let Err(err) = ctx.run::<wisp_channels_api::SendNotice>(&ctx.root_call(), wisp_channels_api::SendArgs { msg }).await {
+    if let Err(err) =
+        ctx.run::<wisp_channels_api::SendNotice>(&ctx.root_call(), wisp_channels_api::SendArgs { msg, session_id: None }).await
+    {
         tracing::debug!(error = %err.message, "later: an early reset, no phone to tell");
     }
 }

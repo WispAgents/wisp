@@ -105,6 +105,9 @@ export default function Usage(props: { readonly client: PluginClient }): JSX.Ele
   // Ask near the limit (`budget.limitHold`: off, 80, 90, 95)
   const holdSrc = fromRow(c, 'budget.limitHold', '90');
   const hold: SettingSource<string> = { value: () => String((holdSrc.value as () => unknown)() ?? '90'), ...(holdSrc.lockedBy && { lockedBy: holdSrc.lockedBy }), set: (v) => holdSrc.set(v) };
+  // Stop a run silent for (`budget.silentStop`: off, or hours; TRY-23)
+  const silentSrc = fromRow(c, 'budget.silentStop', 'off');
+  const silent: SettingSource<string> = { value: () => String((silentSrc.value as () => unknown)() ?? 'off'), ...(silentSrc.lockedBy && { lockedBy: silentSrc.lockedBy }), set: (v) => silentSrc.set(v) };
   const when = (at: number): string => timeLabel(at, Date.now(), englishT);
   const hide = (p: Promise<unknown>): void =>
     void p.then(
@@ -252,6 +255,13 @@ export default function Usage(props: { readonly client: PluginClient }): JSX.Ele
           items={(['off', '80', '90', '95'] as const).map((v) => ({ value: v, label: v === 'off' ? t('budget.usage.stop.off') : `${v}%` }))}
         />
         <SwitchSetting part="settings.limitWait" title={t('budget.usage.wait.title')} description={t('budget.usage.wait.description')} source={onOff('runtime.limitWait', false)} />
+        <ChoiceSetting
+          part="settings.silentStop"
+          title={t('budget.usage.silent.title')}
+          description={t('budget.usage.silent.description')}
+          source={silent}
+          items={(['off', '1', '2', '4', '8'] as const).map((v) => ({ value: v, label: v === 'off' ? t('budget.usage.stop.off') : t('budget.usage.silent.hours', { count: Number(v) }) }))}
+        />
       </SettingsGroup>
       {/* v1 Machine load (wisp.machine), and anything else other plugins put at the end */}
       <Slot input="shell.settings:usageEnd" layout="contents" />

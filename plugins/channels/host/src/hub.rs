@@ -567,6 +567,7 @@ impl Phone for KPhone {
                 self.cmd_json::<rt::FollowUp>(json!({ "id": a.session_id, "text": text })).await?;
                 Ok("Sent.".into())
             }
+            ActKind::Stop => self.stop(&a.session_id).await,
         }
     }
     /// The `project` resources (`resources.export` answers `Vec<Resource>`), as a message picks from them.

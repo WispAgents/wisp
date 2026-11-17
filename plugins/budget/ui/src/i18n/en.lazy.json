@@ -119,5 +119,9 @@
   "budget.hold.to": "to {to}",
   "budget.hold.pastLimit": "past the limit",
   "budget.hold.about": "about {pct}",
-  "budget.hold.usage": "usage"
+  "budget.hold.usage": "usage",
+  "budget.usage.silent.title": "Stop a run silent for",
+  "budget.usage.silent.description": "A run with no output for 30 minutes while its plan still moves is told to your phone, with Stop. Set a time to stop such a run by itself",
+  "budget.usage.silent.hours.one": "{count} hour",
+  "budget.usage.silent.hours.other": "{count} hours"
 }
