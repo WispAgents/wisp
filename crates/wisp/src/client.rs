@@ -41,6 +41,15 @@ pub struct Client {
 static ON: std::sync::OnceLock<String> = std::sync::OnceLock::new();
 
 /// `--on <machine>`: every client made from now on runs its commands there (ADR-0041).
+/// How long a command for a waking box is waited for (a cloud computer's cold boot), past route's own 30 s each time.
+const WAKE_WAIT: Duration = Duration::from_secs(300);
+
+/// machines.route's "waiting for <box> to wake" (`retry: true`): the command is still queued for the box.
+fn still_waking(body: &Value) -> bool {
+    body.pointer("/error/retry") == Some(&Value::Bool(true))
+        && body.pointer("/error/message").and_then(Value::as_str).is_some_and(|m| m.ends_with(" to wake"))
+}
+
 pub fn set_on(machine: &str) {
     let _ = ON.set(machine.to_owned());
 }
@@ -142,7 +151,24 @@ impl Client {
         match self.on.as_deref() {
             Some(on) if !local_only(cmd) => {
                 let (id, _) = self.peer(on).await?;
-                self.local_cmd("machines.route", serde_json::json!({ "id": id, "cmd": cmd, "args": args, "mid": key }), &key).await
+                let route = serde_json::json!({ "id": id, "cmd": cmd, "args": args, "mid": key });
+                // A box still waking: machines.route answers "waiting for <box> to wake" (retry) after 30 s while the
+                // command stays queued on the link under `mid`. Ask again with the same mid (a fresh HTTP key, so the
+                // edge doesn't replay the refusal): it runs once, and its answer comes back here (B51).
+                let deadline = Instant::now() + WAKE_WAIT;
+                let mut attempt = 0u32;
+                loop {
+                    let http_key = if attempt == 0 { key.clone() } else { format!("{key}-{attempt}") };
+                    match self.local_cmd("machines.route", route.clone(), &http_key).await {
+                        Err(CliError::Http { body, message, .. }) if still_waking(&body) && Instant::now() < deadline => {
+                            if attempt == 0 {
+                                eprintln!("  ◌ {message}…");
+                            }
+                            attempt += 1;
+                        }
+                        other => return other,
+                    }
+                }
             }
             _ => self.local_cmd(cmd, args, &key).await,
         }
@@ -215,5 +241,23 @@ impl Client {
             tokio::time::sleep(Duration::from_millis(150)).await;
         }
         Err(CliError::said(format!("wisp did not start at {}", c.url)))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use serde_json::json;
+
+    use super::still_waking;
+
+    // B51: only route's "waiting for <box> to wake" (retry) is waited out; any other refusal is the answer
+    #[test]
+    fn a_waking_box_is_waited_for_and_nothing_else() {
+        assert!(still_waking(
+            &json!({ "ok": false, "error": { "code": "waiting", "message": "waiting for Cloud to wake", "retry": true } })
+        ));
+        assert!(!still_waking(&json!({ "ok": false, "error": { "message": "waiting for Cloud to wake", "retry": false } })));
+        assert!(!still_waking(&json!({ "ok": false, "error": { "message": "Cloud is offline", "retry": true } })));
+        assert!(!still_waking(&json!({})));
     }
 }
