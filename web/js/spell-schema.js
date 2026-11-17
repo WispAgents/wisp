@@ -190,6 +190,7 @@ export const PARTS = {
   // A task's delegates at work (one row each, a crew member's opens its job), their reports' link to
   // that job, and the line on a crew job saying which task it came from (a link back to it).
   'delegate.live': '.team-live .tl-row',
+  'delegate.more': '.team-more', // Show N more, under a long team (live rows or reports)
   'delegate.waiting': '#feed .w-panel.team-wait', // the lead's turn ended, its delegates still at work: Waiting on them, with Stop
   'delegate.open': '.sub-task .sub-open',
   'task.from': '.ask .ask-from',
@@ -643,6 +644,7 @@ export const PART_PROPS = {
   'split.home': { greeting: 'string' },
   'crew.page': { swipe: 'bool' }, // false stops swiping a thread left bringing in its About page (the phone app)
   'crew.record': { tips: 'bool' }, // the suggestion line under a member's numbers (on)
+  'delegate.more': { rows: 'int' }, // a task's delegates shown before Show N more folds the rest (3)
   'section.crew': { rows: 'int' }, // full rows shown when nobody's busy (2); the rest fold. Not with the crew rail: every member has its face
   'org.chart': { movable: 'bool' }, // cards can be moved by hand (on); off keeps the automatic tiers
   // movable: projects can be dragged into your own order there (on); off keeps them where they are.

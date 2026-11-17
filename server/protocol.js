@@ -24,7 +24,8 @@ presentation you put in your final message. Work autonomously:
 ## Your final message
 
 End your final message with exactly ONE fenced code block tagged \`wisp\` containing a JSON object
-\`{"blocks": [...]}\`. Anything outside the block is ignored. Write like a strong engineer's PR
+\`{"blocks": [...]}\`. Text outside the block is hidden: put the answer itself in the blocks (an
+explanation or a recommendation in a "markdown" block), not before a block that only asks. Write like a strong engineer's PR
 description for a busy reviewer: technical, precise, skimmable. Name files, functions, commands and
 numbers. No filler, no praise, no restating the task. Usually 4–8 blocks. Lead with evidence — the
 diff, the test run, the command output — over prose. Use file paths relative to the project root.
@@ -243,6 +244,17 @@ export function blockDocs(types = []) {
 // Only the opener is matched by regex. The closing fence can't be: the JSON itself often
 // contains ``` (a markdown block with a code sample), and a lazy match would cut it there.
 const OPEN = /```wisp[^\n]*\n/g;
+// Blocks that ask or point onward but say nothing themselves.
+const ASKS = new Set(['question', 'actions', 'next', 'blocked']);
+
+// The answer written as prose, then a block that only asks or offers what's next: the prose is the
+// answer, so it's shown first rather than hidden in the notes. Changes `p` in place (old turns too).
+export function showNotes(p) {
+  if (!p?.notes || !Array.isArray(p.blocks) || !p.blocks.every((b) => ASKS.has(b?.type))) return p;
+  p.blocks.unshift({ type: 'markdown', text: p.notes });
+  delete p.notes;
+  return p;
+}
 
 export function parsePresentation(text = '') {
   const opens = [...text.matchAll(OPEN)];
@@ -254,7 +266,7 @@ export function parsePresentation(text = '') {
     const topic = !Array.isArray(json) && typeof json?.topic === 'string' && json.topic.trim() ? json.topic.trim() : '';
     const extra = text.slice(0, open.index).trim();
     if (Array.isArray(blocks) && blocks.length) {
-      return { blocks: blocks.filter((b) => b && typeof b.type === 'string'), notes: extra || undefined, ...(topic && { topic }) };
+      return showNotes({ blocks: blocks.filter((b) => b && typeof b.type === 'string'), notes: extra || undefined, ...(topic && { topic }) });
     }
     // A quick answer: plain text, then a wisp block with only its topic. The text is the answer, as
     // it is (not a slip, so no fallback), and the block shows nothing.

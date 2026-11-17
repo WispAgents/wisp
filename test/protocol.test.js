@@ -3,7 +3,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { systemPrompt, SYSTEM_PROMPT, blockDocs, parsePresentation } from '../server/protocol.js';
+import { systemPrompt, SYSTEM_PROMPT, blockDocs, parsePresentation, showNotes } from '../server/protocol.js';
 
 const section = (p) => p.slice(p.indexOf('### Picking blocks'), p.indexOf('### Blocks'));
 
@@ -116,6 +116,26 @@ test('a quick answer names its task with a wisp block that holds only a topic', 
   assert.equal(full.blocks[0].type, 'hero');
   // An empty block with no topic (or a blank one) is still a slip, shown verbatim.
   for (const raw of ['{"blocks":[]}', '{"topic":" ","blocks":[]}']) assert.equal(parsePresentation('hi\n```wisp\n' + raw + '\n```').fallback, true);
+});
+
+test('an answer written as prose before a block that only asks is shown, not hidden in the notes', () => {
+  assert.match(SYSTEM_PROMPT, /Text outside the block is hidden/);
+  // The agent answers in prose, then ends with a question: the report must carry the answer.
+  const prose = 'Rust CLIs usually go through three stages of docs.\n\n1. **Markdown in the repo**';
+  const asked = parsePresentation(`${prose}\n\n\`\`\`wisp\n{"blocks":[{"type":"question","question":"Set up docs?","options":[{"label":"mdBook","reply":"mdBook"}]},{"type":"next","items":["x"]}]}\n\`\`\``);
+  assert.deepEqual(asked.blocks.map((b) => b.type), ['markdown', 'question', 'next']);
+  assert.equal(asked.blocks[0].text, prose);
+  assert.equal(asked.notes, undefined);
+  // A report that says something keeps the preamble ("Now the summary.") out of sight, as before.
+  const full = parsePresentation('Now the summary.\n```wisp\n{"blocks":[{"type":"hero","title":"Fixed"},{"type":"question","question":"Ship?","options":[]}]}\n```');
+  assert.deepEqual(full.blocks.map((b) => b.type), ['hero', 'question']);
+  assert.equal(full.notes, 'Now the summary.');
+  // Nothing before the block: nothing added.
+  assert.deepEqual(parsePresentation('```wisp\n{"blocks":[{"type":"actions","items":[]}]}\n```').blocks.map((b) => b.type), ['actions']);
+  // A turn saved before this (answer in the notes, a question alone in blocks) is repaired on load.
+  const old = { blocks: [{ type: 'question', question: 'Set up docs?' }], notes: prose };
+  showNotes(old);
+  assert.deepEqual(old, { blocks: [{ type: 'markdown', text: prose }, { type: 'question', question: 'Set up docs?' }] });
 });
 
 // A tiny harness for wisp's MCP server: lines in, replies back by id.

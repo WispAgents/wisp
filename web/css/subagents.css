@@ -161,6 +161,12 @@ button.tp-place[aria-expanded="true"] { border-color: color-mix(in srgb, var(--a
 .tl-row.opens { cursor: pointer; border-radius: 7px; }
 .tl-row.opens:hover, .tl-row.opens:focus-visible { background: var(--surface); }
 .tl-row.opens:hover .tl-name { color: var(--accent-ink); }
+/* a long team folds after a few rows (team.js shownOf) */
+.tl-row[hidden], .sub[hidden] { display: none; }
+.team-more { justify-self: start; display: inline-flex; align-items: center; gap: 4px; padding: 3px 4px; color: var(--muted); }
+.team-more:hover { color: var(--ink); }
+.team-more .chev { width: 11px; height: 11px; transform: rotate(90deg); }
+.subs-list > .team-more { padding: 2px 4px; }
 .tl-row .elapsed { flex: none; font-size: 12.5px; color: var(--faint); font-variant-numeric: tabular-nums; }
 
 /* after: the team's reports */

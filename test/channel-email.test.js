@@ -945,8 +945,9 @@ test('one person’s box can’t touch another’s thread, and one message to bo
   const raw = sealed(mime({ id, from: 'bob@work.example', subject: 'for both' }), 'bob@work.example');
   assert.equal((await g.post(notification(received(raw, [adaAt, bobAt], { source: 'bob@work.example' })))).status, 200);
   await settled();
-  await until(() => sentTo(id).length, { what: 'bob’s ack', timeout: 20_000 });
-  assert.deepEqual(sentTo(id).map((s) => s.from), [bobAt], 'ada refused a stranger; bob’s box answered');
+  // The ack and the task's report both answer this thread: wait for both, or a quick report races the check.
+  await until(() => sentTo(id).length >= 2, { what: 'bob’s ack and report', timeout: 20_000 });
+  assert.deepEqual([...new Set(sentTo(id).map((s) => s.from))], [bobAt], 'ada refused a stranger; bob’s box answered');
   assert.equal((await reply(ada, { replyTo: id, text: 'x' })).status, 404, 'ada’s box, bob’s thread');
   const n = ses.sent.length;
   assert.equal((await reply(bob, { replyTo: ada.thread.id, text: 'x' })).status, 404, 'bob’s box, ada’s thread');
