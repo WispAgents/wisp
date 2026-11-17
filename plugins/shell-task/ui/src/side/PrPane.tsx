@@ -8,7 +8,7 @@ import { Banner, Button, CheckList, CheckRow, EmptyState, Heading, IconButton, I
 import type { Tone as KitTone } from '@wisp/tokens';
 import { useShell } from '../shell.ts';
 import { useTask } from '../task-context.tsx';
-import { checkGroups, dur, gist, prFiles, talk, verdict, type PrNote, type PrPanel, type Tone } from './pr.ts';
+import { checkGroups, dur, gist, hasPr, prFiles, talk, verdict, type PrNote, type PrPanel, type Tone } from './pr.ts';
 import '../i18n/lazy.ts';
 
 const bare = (k: string): string => k.slice(k.indexOf(':') + 1);
@@ -26,14 +26,13 @@ export function PrPane(): JSX.Element {
   const shell = useShell();
   const task = useTask();
   const t = shell.t;
+  // the kit's own words (time.now, time.minutes…) live under `kit.` in the shell's catalogue: a bare key showed "time.now"
+  const kitT = (key: string, vars?: Readonly<Record<string, string | number>>): string => t(`kit.${key}`, vars);
   const c = task.client;
   const args = (): S => ({ key: task.key, session: bare(task.key) });
   const [at, setAt] = createSignal(0);
   // the PRs wisp.ship keeps on the task's row (v1 prsOf): none, and there is nothing to ask GitHub about
-  const known = (): boolean => {
-    const r = (task.task() ?? {}) as { pr?: unknown; also?: readonly { pr?: unknown }[]; prs?: readonly unknown[] };
-    return !!r.pr || (r.also ?? []).some((a) => !!a.pr) || (r.prs ?? []).length > 0;
-  };
+  const known = (): boolean => hasPr(task.task());
   const [list, { refetch }] = createResource(
     () => (known() ? task.key : undefined),
     // a task ship doesn't track (no worktree, never shipped) has no PR: v1's "This task has no pull request."
@@ -72,7 +71,7 @@ export function PrPane(): JSX.Element {
         <Show when={n.at}>
           {(a) => (
             <Text size="xs" tone="muted">
-              {timeLabel(a(), Date.now(), t)}
+              {timeLabel(a(), Date.now(), kitT)}
             </Text>
           )}
         </Show>
@@ -258,7 +257,7 @@ export function PrPane(): JSX.Element {
                   </Link>
                   <Inline gap="1">
                     <Text size="xs" tone="muted" nowrap>
-                      {t('shell-task.pr.checked', { when: timeLabel(at() || Date.now(), Date.now(), t) })}
+                      {t('shell-task.pr.checked', { when: timeLabel(at() || Date.now(), Date.now(), kitT) })}
                     </Text>
                     <IconButton icon="replay" size="xs" label={t('shell-task.pr.checkNow')} onClick={() => quiet(c.run(refresh, args()))} />
                   </Inline>

@@ -8,7 +8,7 @@ import { ErrorBoundary, Show, createMemo, createSignal, type JSX } from 'solid-j
 import { Dynamic } from 'solid-js/web';
 import type { PluginClient, Vars } from '@wisp/client';
 import { usePluginClient, useShell, type SettingsPaneDef } from '@wisp/shell';
-import { Callout, EmptyState, Input, SettingsFrame, useSignal } from '@wisp/ui';
+import { Callout, EmptyState, Input, SettingsFrame, useDerived, useSignal } from '@wisp/ui';
 import { t as own } from './i18n.ts';
 import { VIEW_ID, type SettingsParams } from './types.ts';
 import { pickPane, settingsIntent, type PaneEntry } from './nav.ts';
@@ -31,7 +31,10 @@ export function shellDeps(): FrameDeps {
   const shell = useShell();
   const panes = useSignal(shell.settingsPanes());
   const clientOf = (plugin: string): PluginClient => usePluginClient(plugin);
-  const entries = createMemo(() => panes().map((pane) => ({ pane, client: clientOf((pane as SettingsPaneDef & { plugin?: string }).plugin ?? 'shell') })));
+  const all = createMemo(() => panes().map((pane) => ({ pane, client: clientOf((pane as SettingsPaneDef & { plugin?: string }).plugin ?? 'shell') })));
+  // a pane with an `if` shows only while it says so (Auto's while its switch is on, owner #37); useDerived, as it may
+  // read the entity store
+  const entries = useDerived(() => all().filter((e) => e.pane.if?.(e.client) ?? true));
   return { panes: entries, t: (k, v) => shell.t(k, v), phone: shell.platform.phone, sideBySide: () => shell.nav().layout === 'split' };
 }
 

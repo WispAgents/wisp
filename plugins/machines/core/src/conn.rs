@@ -221,12 +221,12 @@ impl Conn {
         }
     }
 
-    /// The tunnel answered `/health`, with the peer's harnesses: online.
+    /// The tunnel answered `/health`, with the peer's harnesses (None: it didn't say, an older wisp): online.
     #[allow(clippy::too_many_arguments)] // each is one field of the /health answer
     pub fn online(
         &mut self,
         label: &str,
-        agents: Vec<RemoteAgent>,
+        agents: Option<Vec<RemoteAgent>>,
         home: Option<String>,
         version: Option<String>,
         pid: Option<u32>,
@@ -234,8 +234,11 @@ impl Conn {
         now: i64,
     ) {
         self.step(if self.grid { "wake" } else { TUNNEL }, StepStatus::Done, Some(label));
-        let ready: Vec<&str> = agents.iter().filter(|a| a.available).map(|a| a.name.as_str()).collect();
-        let (st, detail) = if ready.is_empty() {
+        let ready: Vec<&str> = agents.iter().flatten().filter(|a| a.available).map(|a| a.name.as_str()).collect();
+        let (st, detail) = if agents.is_none() {
+            // not answering isn't having none (QA r1 #22: v1's wisp read "No coding agent there yet")
+            (StepStatus::Warn, "Its wisp didn’t say which coding agents it has: update it to see them here.".to_owned())
+        } else if ready.is_empty() {
             (
                 StepStatus::Warn,
                 "No coding agent installed there yet. Install Claude Code, Codex or opencode on that computer and sign in once.".to_owned(),
@@ -248,7 +251,7 @@ impl Conn {
         r.version = version.or(r.version.take());
         r.pid = pid.or(r.pid);
         r.home = home;
-        r.agents = Some(agents);
+        r.agents = agents;
         r.proto = Some(proto);
         self.status.state = PeerState::Online;
         self.status.error.clear();

@@ -66,7 +66,11 @@ export function Tabs(props: TabsProps): JSX.Element {
       <div {...api().getListProps()} aria-label={props['aria-label']} data-kit="tab-list" data-part={sub(part(), 'list')} data-fill={flag(props.fill)} data-fieldset={flag(props.fieldset)}>
         <For each={props.items}>
           {(item) => (
-            <button {...api().getTriggerProps({ value: item.value, disabled: item.disabled })} data-kit="tab" data-part={sub(part(), 'tab')} data-value={item.value} data-icon={flag(item.icon !== undefined)} title={item.title}>
+            <button {...api().getTriggerProps({ value: item.value, disabled: item.disabled })} data-kit="tab" data-part={sub(part(), 'tab')} data-value={item.value} data-icon={flag(item.icon !== undefined)}
+              // an icon tab may show the icon alone (a narrow side panel hides its label): named and titled by it
+              aria-label={item.icon ? (item.count !== undefined ? `${item.label} ${item.count}` : item.label) : undefined}
+              title={item.title ?? (item.icon ? item.label : undefined)}
+            >
               <Show when={item.icon}>{(name) => <Icon name={name()} size="md" />}</Show>
               <span data-kit="tab-label" data-text="control">
                 {item.label}

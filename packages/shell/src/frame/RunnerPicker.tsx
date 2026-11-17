@@ -7,7 +7,7 @@
 // Runs on wisp.runtime's `harnesses` topic (ADR-0066): every harness at once, `Checking…` until its own detect lands,
 // each row updated in place; `runtime.agents` is still asked once the box shows.
 import { Show, createEffect, createMemo, createResource, createSignal, onCleanup, type JSX } from 'solid-js';
-import { defineCommand, type PeerId } from '@wisp/client';
+import { defineCommand, entityKey, type PeerId, type SettingRow } from '@wisp/client';
 import { HarnessPicker, Text, useSignal, type HarnessPickerPane, type HarnessPickerRow } from '@wisp/ui';
 import { useShell } from '../context.tsx';
 import { Slot } from '../slot.tsx';
@@ -29,6 +29,7 @@ import {
 } from './runner.ts';
 import { AUTO, AUTO_GOALS, firstFocus, goalOf, modelGroups, pickerRows, searchShown, useHarness, varyRows, withModel, withSetting, withVary, type SubLine, type VaryKey } from './picker.ts';
 import { SUBAGENT_NAME, type Variant } from './trial.ts';
+import { AUTO_SETTING, autoEnabled } from './launch-pick.ts';
 import '../i18n/lazy.ts';
 
 /** v1 effortLabel: "X-High", else the level capitalised */
@@ -137,9 +138,12 @@ function PickerOpen(props: RunnerPickerProps): JSX.Element {
     shown = [...shown, ...out.map((a) => a.id).filter((id) => !shown.includes(id))];
     return out;
   });
+  // Auto's row only while its one switch is on (`runtime.auto`, owner #37), whoever asked for it
+  const autoSwitch = useSignal(shell.client.entities.row<SettingRow>('setting', entityKey(props.peer as PeerId, AUTO_SETTING)));
+  const offerAuto = (): boolean => props.auto === true && autoEnabled(autoSwitch()?.value);
   const rows = createMemo(() =>
     pickerRows(ordered(), {
-      auto: props.auto === true,
+      auto: offerAuto(),
       autoName: t('shell.home.auto'),
       used: (id) => {
         const w = usage().get(id);
@@ -188,7 +192,7 @@ function PickerOpen(props: RunnerPickerProps): JSX.Element {
   };
   // Auto's goal: the router's, read once Auto's pane shows (the pick's own wins)
   const [seenGoal] = createResource(
-    () => (props.auto === true && focused() === AUTO ? props.peer : false),
+    () => (offerAuto() && focused() === AUTO ? props.peer : false),
     (peer) => shell.client.commands.run(autoView, { peer }).then((v) => v.goal, () => undefined),
   );
   const pickGoal = (goal: string): void => {

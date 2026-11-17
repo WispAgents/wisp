@@ -240,10 +240,11 @@ fn component_ok(s: &str) -> bool {
 }
 
 fn misc(o: &Map<String, Value>, p: &mut Problems) {
-    if let Some(s) = o.get("partStyles")
-        && !s.as_object().is_some_and(|m| m.values().all(|x| x.as_object().is_some_and(|y| y.values().all(Value::is_string))))
-    {
-        p.add("contributes.partStyles", "must map part names to {property: value}");
+    // a trusted theme's styles (ADR-0007): the allow-list the shell applies them with (part_styles.rs)
+    if let Some(s) = o.get("partStyles") {
+        for (at, why) in crate::part_styles::check(s) {
+            p.add(format!("contributes.partStyles{at}"), why);
+        }
     }
     if let Some(b) = o.get("blocks")
         && !b.as_array().is_some_and(|a| {

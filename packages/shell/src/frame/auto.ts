@@ -27,7 +27,10 @@ export interface AutoAlt {
 }
 
 /** v1 shortLabel: "Claude Code · Opus 4.7 · Medium" → "Opus 4.7 · Medium" (the logo says the harness). */
-export const shortLabel = (p: { readonly label: string; readonly model: string }): string => (p.model ? p.label.split(' · ').slice(1).join(' · ') : p.label);
+/** `defaultModel`: the words for a harness's default model, where the label is the harness alone (QA r1 #26: the row
+ *  said the harness twice, title and sub). */
+export const shortLabel = (p: { readonly label: string; readonly model: string }, defaultModel?: string): string =>
+  p.model ? p.label.split(' · ').slice(1).join(' · ') : (defaultModel ?? p.label);
 
 /** v1 neverRule: `<agent>:<model>@<type>`, 'codex:' for its default model. */
 export const neverRule = (p: { readonly agent: string; readonly model: string }, type: string): string => `${p.agent}:${p.model || ''}@${type}`;

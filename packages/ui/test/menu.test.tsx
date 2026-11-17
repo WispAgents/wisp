@@ -1,4 +1,4 @@
-import { beforeAll, describe, expect, test, vi } from 'vitest';
+import { afterEach, beforeAll, beforeEach, describe, expect, onTestFinished, test, vi } from 'vitest';
 import { createSignal } from 'solid-js';
 import { mount, part, tick } from './helpers.tsx';
 import { ContextMenu, Menu, menuSections, type MenuEntry } from '../src/controls/Menu.tsx';
@@ -86,7 +86,21 @@ describe('ContextMenu', () => {
   });
 });
 
-// v1 #786 (web/js/ui/submenu.js): a submenu drills in, its items under a Back row; → opens it, ← and Escape step back
+// v1 #786 (web/js/ui/submenu.js): a submenu drills in, its items under a Back row; → opens it, ← and Escape step back.
+// That is touch's (and the phone apps') behaviour now: a desktop pointer gets a flyout (owner 2026-11-17,
+// menu-flyout.test.tsx), so these run with a touch pointer.
+function touchPointer(): void {
+  vi.stubGlobal('matchMedia', (q: string) => ({
+    media: q,
+    matches: q.includes('coarse') || q.includes('hover: none'),
+    onchange: null,
+    addEventListener: () => {},
+    removeEventListener: () => {},
+    addListener: () => {},
+    removeListener: () => {},
+    dispatchEvent: () => false,
+  }));
+}
 const nested: MenuEntry[] = [
   { value: 'rename', label: 'Rename', icon: 'pen' },
   {
@@ -113,6 +127,10 @@ function openNested(onSelect = vi.fn()): { content: HTMLElement | null; onSelect
 }
 
 describe('Menu submenus', () => {
+  beforeEach(touchPointer);
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
   test('a submenu row drills in on click: its items under a Back row, the menu stays open_v1_786_submenu_drill', async () => {
     const { onSelect } = openNested();
     await tick(20);
@@ -187,6 +205,10 @@ describe('Menu submenus', () => {
 });
 
 test('a right-click on another row while drilled in opens the menu at its top level_v1_786_submenu_reanchor', async () => {
+  touchPointer();
+  onTestFinished(() => {
+    vi.unstubAllGlobals();
+  });
   mount(() => (
     <ContextMenu items={nested} onSelect={() => {}} part="row.menu">
       <p data-part="row.a">a</p>
@@ -207,6 +229,10 @@ test('a right-click on another row while drilled in opens the menu at its top le
 });
 
 test('a submenu that folds away while open leaves the top level, and one Escape closes_v1_786_submenu_gone', async () => {
+  touchPointer();
+  onTestFinished(() => {
+    vi.unstubAllGlobals();
+  });
   const [items, setItems] = createSignal<MenuEntry[]>(nested);
   mount(() => <Menu items={items()} onSelect={() => {}} trigger={{ icon: 'dots', 'aria-label': 'More' }} part="task.more" />);
   const trigger = part('task.more.trigger');
@@ -231,4 +257,22 @@ test('menuSections: a line between groups, empty groups dropped, a submenu of on
   const m = menuSections([[{ value: 'a', label: 'a' }, false], [], [null, sub('s:one', ['only']), sub('s:none', [])], [sub('s:two', ['x', 'y'])]]);
   expect(m.map((e) => ('value' in e ? e.value : e.kind))).toEqual(['a', 'separator', 'only', 'separator', 's:two']);
   expect(menuSections([[sub('s:none', [])], []])).toEqual([]);
+});
+
+test('an_item_without_an_icon_keeps_the_icon_column_where_others_have_one_qa_r1_29', async () => {
+  // the task's More menu: Lean runs' As in Settings / On / Off started at the section label's edge
+  const { trigger } = open();
+  key(trigger, 'ArrowDown');
+  await tick(20);
+  const later = document.querySelector('[data-part="task.more.item"][data-value="later"]');
+  expect(later?.firstElementChild?.getAttribute('data-kit')).toBe('menu-icon-gap');
+  const rerun = document.querySelector('[data-part="task.more.item"][data-value="rerun"]');
+  expect(rerun?.querySelector('[data-kit="menu-icon-gap"]')).toBeNull();
+});
+
+test('a_menu_with_no_icons_has_no_empty_icon_column', async () => {
+  mount(() => <Menu items={[{ value: 'a', label: 'A' }, { value: 'b', label: 'B' }]} onSelect={() => {}} trigger={{ icon: 'dots', 'aria-label': 'Plain' }} part="plain.menu" />);
+  key(part('plain.menu.trigger'), 'ArrowDown');
+  await tick(20);
+  expect(document.querySelector('[data-part="plain.menu.item"] [data-kit="menu-icon-gap"]')).toBeNull();
 });

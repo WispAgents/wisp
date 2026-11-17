@@ -110,6 +110,8 @@ fn is_ipv4ish(s: &str) -> bool {
 /// target can't say the port) are skipped, as are forges and loopback.
 pub fn known_hosts(text: &str) -> Vec<(String, String)> {
     let mut out: Vec<(String, String)> = Vec::new();
+    // each entry's host keys: lines with one key are one computer (an IP line and a name line: QA r1 #22)
+    let mut keys: Vec<Vec<String>> = Vec::new();
     for raw in text.lines() {
         let line = raw.trim();
         if line.is_empty() || line.starts_with(['#', '@', '|']) {
@@ -122,11 +124,40 @@ pub fn known_hosts(text: &str) -> Vec<(String, String)> {
             continue;
         };
         let loopback = host == "localhost" || host.starts_with("127.") || host == "::1";
-        if is_forge(host) || loopback || !is_target(host) || out.iter().any(|(h, _)| h == host) {
+        if is_forge(host) || loopback || !is_target(host) {
             continue;
         }
+        let key = line.split_whitespace().nth(2).unwrap_or("").to_owned();
         let detail = names.iter().find(|n| **n != host).copied().unwrap_or("");
-        out.push((host.to_owned(), detail.to_owned()));
+        // one key: an address and a name with no address yet are one computer (never two names, never two addresses;
+        // cloned machines can share a key)
+        let joins = |i: usize| {
+            let (h, d) = &out[i];
+            d.is_empty() && is_ipv4ish(h) != is_ipv4ish(host) && keys[i].contains(&key)
+        };
+        // the same name, or an address an entry already has as its detail
+        let same = out
+            .iter()
+            .position(|(h, d)| h == host || (is_ipv4ish(host) && d == host))
+            .or_else(|| if key.is_empty() { None } else { (0..out.len()).find(|&i| joins(i)) });
+        if let Some(i) = same {
+            if !key.is_empty() && !keys[i].contains(&key) {
+                keys[i].push(key);
+            }
+            let (h, d) = &mut out[i];
+            // a name wins over a bare address, which becomes its detail
+            if is_ipv4ish(h) && !is_ipv4ish(host) && h != host {
+                let ip = std::mem::replace(h, host.to_owned());
+                if d.is_empty() {
+                    *d = ip;
+                }
+            } else if d.is_empty() && h != host && is_ipv4ish(host) {
+                host.clone_into(d);
+            }
+        } else {
+            out.push((host.to_owned(), detail.to_owned()));
+            keys.push(if key.is_empty() { Vec::new() } else { vec![key] });
+        }
     }
     out
 }

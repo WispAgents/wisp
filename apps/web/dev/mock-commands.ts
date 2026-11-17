@@ -970,6 +970,7 @@ export const COMMANDS: Record<string, CommandFn> = {
   'crew.layout': () => ({ ops: [], result: mockLayout.value }),
   'crew.set_layout': (a) => ((mockLayout.value = (obj(a)['layout'] ?? {}) as Record<string, unknown>), { ops: [], result: mockLayout.value }),
   'plugins.list': () => ({ ops: [], result: [] }), // Settings → Plugins: nothing of your own, no built-ins listed by the mock
+  'plugins.styles': () => ({ ops: [], result: [] }), // trusted themes' part styles: none in the mock
   'runtime.fork': (a, ctx) => copyTask(obj(a), ctx, 'fork'),
   'runtime.setMode': (a, ctx) => {
     const x = obj(a);

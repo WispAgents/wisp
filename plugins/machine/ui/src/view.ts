@@ -3,6 +3,7 @@
 
 import type { HistoryPoint, MachineLoad, MachineSnapshot, ReclaimGroup, ReclaimKind } from './types.ts';
 import './i18n/lazy.ts';
+import { STATIC_NAME_KEY } from './names.ts';
 
 export type T = (key: string, vars?: Readonly<Record<string, string | number>>) => string;
 
@@ -16,8 +17,7 @@ export const TIGHT = 10;
 /** wisp's default memory floor (v1 server/load.js LOAD_DEFAULTS) */
 export const FLOOR_DEFAULT = 15;
 
-/** The name registered before the OS is known (the pane title, the chip's bar label): never This Mac. */
-export const STATIC_NAME_KEY = 'machine.name.computer';
+export { STATIC_NAME_KEY };
 
 /** The pane's name, by the OS wisp runs on (a phone looks at the computer, not itself). */
 export function machineLabelKey(platform: string | undefined): string {

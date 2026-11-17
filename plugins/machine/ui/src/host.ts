@@ -5,7 +5,7 @@
 // to change once useShell() ships.
 
 import { createContext, useContext } from 'solid-js';
-import type { ExtensionId, Intent, PluginClient } from '@wisp/client';
+import type { Intent, PluginClient } from '@wisp/client';
 import type { ShellContext } from '@wisp/shell/contract';
 import { nullPlatform } from '@wisp/shell/platform';
 import { createToaster } from '@wisp/ui';
@@ -25,10 +25,4 @@ export function useHost(client: PluginClient): Host {
   };
 }
 
-/**
- * Opens Settings at a pane. The shell hasn't named its Settings view yet: this asks for an overlay
- * `shell.settings` with `{ pane, filter? }` (in the report), in one place so it's one edit.
- */
-export function openSettings(navigate: (i: Intent) => void, pane: string, filter?: string): void {
-  navigate({ t: 'openOverlay', overlay: { kind: 'viewer', id: 'shell-settings.sheet' as ExtensionId, params: filter ? { pane, filter } : { pane } } });
-}
+export { openSettings } from './open-settings.ts';

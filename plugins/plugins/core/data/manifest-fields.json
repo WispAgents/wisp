@@ -30,7 +30,7 @@
     "setSettings": "{ \"<setting key>\": value }: values it sets for other plugins' settings while it's on (a theme, a preset).",
     "ui": "[{ \"id\": \"user.<name>.pane\", \"attachTo\": { \"id\": \"shell.settings\", \"input\": \"pane\" }, \"component\": \"./ui.js#default\", \"title\": \"…\" }]: what it shows. component is a .js module in its folder, run in a sandboxed Worker; where it may show is below.",
     "parts": "Part names it adds for themes to style (an untrusted UI draws only kit components; it can't style anything).",
-    "partStyles": "Styles for parts (a trusted theme; never applied to an untrusted plugin's UI).",
+    "partStyles": "A theme: { \"<part name>\": { \"<property>\": \"<value>\" } }, plus \":root\" for token overrides (--accent) and \"@light\" / \"@dark\" for one theme only. Applies in the app's @layer plugins while the plugin is on and you trusted it (wisp plugin trust <id>); an untrusted plugin's styles never apply. Only the properties and values listed under Themes below pass.",
     "icons": "Icons it adds by name (a trusted plugin; an untrusted UI's descriptors take no icons).",
     "blocks": "Answer block types it renders (its UI at shell.block).",
     "recipes": "Automation recipes it brings, read-only to the user.",

@@ -74,3 +74,10 @@ export function picked(resources: readonly Resource[], plan: Plan, off: Readonly
   const want = new Set(plan.ops.filter((o) => o.op !== 'delete' && !off.has(keyOf(o))).map(keyOf));
   return resources.filter((r) => want.has(keyOf(r)));
 }
+
+/** A kind's section as words (QA r1 #28: Setup listed "plugins", "router", "goal" as raw ids): sentence case, a dash
+ *  or underscore a space. */
+export const sectionTitle = (section: string): string => {
+  const w = section.replace(/[-_]+/g, ' ').trim();
+  return w.charAt(0).toUpperCase() + w.slice(1);
+};

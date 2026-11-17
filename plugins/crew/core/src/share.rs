@@ -321,11 +321,20 @@ pub fn harness_name(id: &str) -> &str {
     match id {
         "claude" => "Claude Code",
         "codex" => "Codex",
-        "opencode" => "OpenCode",
+        "opencode" => "opencode",
         "cursor" => "Cursor",
         "antigravity" => "Antigravity",
         "grok" => "Grok",
         "copilot" => "Copilot",
         _ => id,
+    }
+}
+
+#[cfg(test)]
+mod name_tests {
+    #[test]
+    fn opencode_is_named_as_its_plugin_names_it_qa_r1_28() {
+        assert_eq!(super::harness_name("opencode"), "opencode");
+        assert_eq!(super::harness_name("claude"), "Claude Code");
     }
 }

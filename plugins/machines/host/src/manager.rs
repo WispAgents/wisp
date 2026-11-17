@@ -177,7 +177,7 @@ async fn attempt(st: &Arc<State>, id: &str, t: &dyn Transport, token: &Cancellat
             })
         };
     };
-    let agents = if lists(AGENTS) { agents(ch.as_ref(), None).await } else { Vec::new() };
+    let agents = if lists(AGENTS) { agents(ch.as_ref(), None).await } else { Some(Vec::new()) };
     let (now, label) = (st.now(), ch.label());
     let s = |k: &str| health.get(k).and_then(Value::as_str).map(str::to_owned);
     let pid = health.get("pid").and_then(Value::as_u64).and_then(|p| u32::try_from(p).ok());
@@ -259,11 +259,12 @@ pub(crate) async fn cmd(ch: &dyn Channel, name: &str, args: Value) -> Option<Val
     (v.get("ok") == Some(&Value::Bool(true))).then(|| v.get("result").cloned().unwrap_or(Value::Null))
 }
 
-/// The peer's harnesses (`runtime.agents`); `fresh`: detect again first.
-pub(crate) async fn agents(ch: &dyn Channel, fresh: Option<&str>) -> Vec<RemoteAgent> {
+/// The peer's harnesses (`runtime.agents`); `fresh`: detect again first. None: it didn't answer (an older wisp has no
+/// `/api/cmd`), which isn't having none.
+pub(crate) async fn agents(ch: &dyn Channel, fresh: Option<&str>) -> Option<Vec<RemoteAgent>> {
     let args = fresh.map_or_else(|| json!({}), |f| json!({ "fresh": f }));
     // by-name: the peer's own command, over its POST /api/cmd (another wisp's version, not a call in this kernel)
-    cmd(ch, "runtime.agents", args).await.map(|v| view::remote_agents(&v)).unwrap_or_default()
+    cmd(ch, "runtime.agents", args).await.map(|v| view::remote_agents(&v))
 }
 
 /// Hung up by hand: nothing reconnects it.

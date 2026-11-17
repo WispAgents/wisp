@@ -2,7 +2,7 @@
 // props), a whole input as a kit ExtensionSlot (Slot), or the one extension that fills an area
 // (Area: the last one registered, so an override or a later plugin replaces the screen).
 
-import { Show, createContext, createMemo, useContext, type JSX } from 'solid-js';
+import { Show, createContext, createMemo, createSignal, useContext, type JSX } from 'solid-js';
 import { Dynamic } from 'solid-js/web';
 import type { PluginClient, Readable } from '@wisp/client';
 import { ExtensionSlot, useSignal } from '@wisp/ui';
@@ -90,12 +90,25 @@ export function Slot(props: { readonly input: `${string}.${string}`; readonly la
 }
 
 /** The one extension that fills an area: the last registered (an override, or a later plugin). */
-export function Area(props: { readonly input: string; readonly fallback: JSX.Element } & Scoped): JSX.Element {
+/** `loading`: drawn while the extension's own code loads (a lazy component), so the area is never blank (ADR-0017,
+ *  QA round 1 #12: the task list was empty for ~0.2–1 s after Home already showed its rows). */
+export function Area(props: { readonly input: string; readonly fallback: JSX.Element; readonly loading?: JSX.Element } & Scoped): JSX.Element {
   const list = useExtensions(props.input);
   const last = createMemo(() => list().at(-1));
   return (
     <Show when={last()} keyed fallback={props.fallback}>
-      {(ext) => <ExtView ext={ext} {...props} />}
+      {(ext) => {
+        // a lazy component (Solid's lazy(): its `preload`) draws `loading` until its code is there, then itself at
+        // once. Not a Suspense: one round the whole area would also fall back each time anything lazy inside it loads
+        const pre = (ext.def.component as { preload?: () => Promise<unknown> }).preload;
+        const [ready, setReady] = createSignal(!pre || props.loading === undefined);
+        if (!ready()) void pre?.().then(() => setReady(true), () => setReady(true));
+        return (
+          <Show when={ready()} fallback={props.loading}>
+            <ExtView ext={ext} {...props} />
+          </Show>
+        );
+      }}
     </Show>
   );
 }

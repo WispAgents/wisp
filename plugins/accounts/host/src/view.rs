@@ -30,6 +30,8 @@ const MIGRATIONS: &[Migration] = &[
     ),
     // TRY-17: a newer version than the one installed, when there is one
     Migration::sql(2, "ALTER TABLE accounts_v_harness ADD COLUMN latest TEXT;"),
+    // QA r1 #23: whether gh is signed in (the GitHub row said nothing)
+    Migration::sql(3, "ALTER TABLE accounts_v_tool ADD COLUMN signedIn INTEGER;"),
 ];
 
 fn topics(_: &Row) -> Vec<String> {
@@ -134,7 +136,7 @@ pub const TOOL: EntityDef = EntityDef {
     kind: "accounts.tool",
     table: "accounts_v_tool",
     key: "id",
-    columns: &[("id", Col::Text), ("name", Col::Text), ("installed", Col::Bool), ("setup", Col::Text)],
+    columns: &[("id", Col::Text), ("name", Col::Text), ("installed", Col::Bool), ("setup", Col::Text), ("signedIn", Col::Bool)],
     json_columns: &["setup"],
     parent: None,
     seq: None,
@@ -159,6 +161,11 @@ pub fn install(store: &Store) -> wisp_store::Result<()> {
         store.define_entity(d)?;
     }
     Ok(())
+}
+
+/// A tool's row (git, gh): installed, how to get it, and for gh whether it's signed in (None: its answer unknown).
+fn tool_row(id: &str, name: &str, t: &wisp_git_api::ToolState) -> Row {
+    row_of(&TOOL, &json!({ "id": id, "name": name, "installed": t.installed, "setup": t.setup, "signedIn": t.signed_in }))
 }
 
 /// A JSON object as a row of `def`: its own columns only, the rest null.
@@ -257,12 +264,7 @@ pub async fn rows(ctx: &Ctx, st: &State) -> Option<Vec<(&'static EntityDef, Vec<
     }
     let tool_rows: Vec<Row> = crate::calls::tools(ctx)
         .await
-        .map(|t| {
-            [("git", "git", t.git), ("gh", "GitHub CLI", t.gh)]
-                .into_iter()
-                .map(|(id, name, t)| row_of(&TOOL, &json!({ "id": id, "name": name, "installed": t.installed, "setup": t.setup })))
-                .collect()
-        })
+        .map(|t| [("git", "git", t.git), ("gh", "GitHub CLI", t.gh)].into_iter().map(|(id, name, t)| tool_row(id, name, &t)).collect())
         .unwrap_or_default();
     let grid = std::env::var("WISP_GRID").is_ok_and(|v| !v.is_empty());
     Some(vec![
@@ -353,5 +355,19 @@ mod tests {
         assert_eq!(sign_in_kind(false, true), "cli");
         assert_eq!(sign_in_kind(false, false), "none");
         assert_eq!((HARNESS.topics)(&h), vec![TOPIC.to_owned()]);
+    }
+
+    /// QA r1 #23: Settings → Agents' GitHub row said nothing of its sign-in (the row had no field for it) while Home
+    /// asked to sign in to GitHub. The tool row carries gh's `signedIn` (null: gh's answer unknown).
+    #[tokio::test]
+    async fn the_github_row_carries_whether_gh_is_signed_in() {
+        let db = Store::open(wisp_store::Location::Memory, std::sync::Arc::new(wisp_store::SystemClock)).unwrap();
+        install(&db).unwrap();
+        let r = tool_row("gh", "GitHub CLI", &wisp_git_api::ToolState { installed: true, signed_in: Some(true), setup: None });
+        db.write(move |w| w.upsert(TOOL.kind, r).map(|_| ())).await.unwrap();
+        let t = db.read(|x| x.get("accounts.tool", "gh")).unwrap().unwrap();
+        assert_eq!(t["signedIn"], true, "{t:?}");
+        let r = tool_row("git", "git", &wisp_git_api::ToolState { installed: true, signed_in: None, setup: None });
+        assert!(r.get("signedIn").is_none_or(serde_json::Value::is_null));
     }
 }

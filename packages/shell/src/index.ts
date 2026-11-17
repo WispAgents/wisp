@@ -27,3 +27,7 @@ export { routeOf, routeTip, type RouteSeen } from './frame/auto.ts';
 export { PROJECT_ORDER, movedOrder, projectList, projectOf, type ProjectView } from './frame/rows-view.ts';
 export { remoteUiDefs, RemoteView, clean as cleanDescriptor, frameDoc, SANDBOX as REMOTE_SANDBOX, CSP as REMOTE_CSP, type RemoteUi } from './remote/index.ts';
 export { COMPUTERS_VIEW, DESTINATIONS, destinationOf, destinationsOf, intentOf, type Destination, type DestinationId } from './frame/destinations.ts';
+// Auto's one switch (`runtime.auto`, default off: owner, 2026-11-17): plugins that show Auto ask it
+export { AUTO_SETTING, autoEnabled, autoOn } from './frame/launch-pick.ts';
+export { partStylesCss, partOk, propertyOk, valueProblem, type PluginStyles } from './theme-styles/part-styles.ts';
+export { mountPluginStyles, pluginStyles, STYLE_ID as PLUGIN_STYLE_ID } from './theme-styles/mount.ts';

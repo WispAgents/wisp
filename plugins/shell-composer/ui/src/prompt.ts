@@ -37,7 +37,7 @@ export function taskItems(rows: readonly TaskRow[], query: string, self?: string
     .slice(0, MAX)
     .map((r) => {
       const title = cleanTitle(r.title);
-      return { value: `task:${r.id}`, label: title, icon: 'agent', insert: `@${title} `, mention: { scheme: 'wisp', id: bare(r.id), title } };
+      return { value: `task:${r.id}`, label: title, icon: 'feed', insert: `@${title} `, mention: { scheme: 'wisp', id: bare(r.id), title } };
     });
 }
 

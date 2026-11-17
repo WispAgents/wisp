@@ -1,0 +1,23 @@
+{
+  "$comment": "What a trusted theme plugin may set through contributes.partStyles (ADR-0007: emitted in @layer plugins). Read by the kernel's manifest check (crates/wisp-kernel/src/part_styles.rs, include_str!) and by the shell's compiler (part-styles.ts), so a manifest that installs is exactly what the app applies. A key is a data-part name (`composer.send`), `:root` (token overrides: custom properties only) or a theme group `@light` / `@dark` holding the same map. A property is one of `properties` or a custom property (`--accent`). A value is plain CSS text: no `;`, braces, angle brackets, backslash, `@`, `!`, comments, control characters or unbalanced quotes; `url()` only with a `data:image/` URL; no image-set() or src().",
+  "properties": [
+    "accent-color", "align-items", "align-self", "backdrop-filter", "background", "background-color", "background-image",
+    "background-position", "background-repeat", "background-size", "border", "border-bottom", "border-bottom-color",
+    "border-bottom-left-radius", "border-bottom-right-radius", "border-bottom-style", "border-bottom-width", "border-color",
+    "border-left", "border-left-color", "border-left-style", "border-left-width", "border-radius", "border-right",
+    "border-right-color", "border-right-style", "border-right-width", "border-style", "border-top", "border-top-color",
+    "border-top-left-radius", "border-top-right-radius", "border-top-style", "border-top-width", "border-width",
+    "box-shadow", "caret-color", "color", "column-gap", "cursor", "display", "fill", "filter", "flex", "flex-direction",
+    "flex-grow", "flex-shrink", "font-family", "font-size", "font-style", "font-variant-numeric", "font-weight", "gap",
+    "height", "justify-content", "letter-spacing", "line-height", "margin", "margin-bottom", "margin-left", "margin-right",
+    "margin-top", "max-height", "max-width", "min-height", "min-width", "opacity", "order", "outline", "outline-color",
+    "outline-offset", "outline-style", "outline-width", "padding", "padding-bottom", "padding-left", "padding-right",
+    "padding-top", "row-gap", "stroke", "text-align", "text-decoration", "text-decoration-color", "text-shadow",
+    "text-transform", "transition", "visibility", "width"
+  ],
+  "groups": ["@light", "@dark"],
+  "tokens": ":root",
+  "maxValue": 200,
+  "maxName": 64,
+  "maxRules": 400
+}

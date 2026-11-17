@@ -20,11 +20,13 @@ use crate::shelf::Shelf;
 
 pub const PANE_JS: &str = include_str!("../assets/pane.js");
 const PANE_KIT: &str = include_str!("../assets/pane-kit.css");
+/// v1's base under the tokens (box-sizing, the page on --bg in --ink, buttons and links reset, focus ring).
+const PANE_BASE: &str = include_str!("../assets/pane-base.css");
 /// wisp's tokens (light and dark, off data-theme, which /_wisp/pane.js sets), from @wisp/tokens.
 const TOKENS: &str = include_str!("../../../../packages/tokens/dist/tokens.css");
 
 pub fn pane_css() -> String {
-    format!("{TOKENS}{PANE_KIT}")
+    format!("{TOKENS}{PANE_BASE}{PANE_KIT}")
 }
 
 struct Run {
@@ -250,5 +252,30 @@ async fn db_query(s: &Served, req: Request<Body>) -> Response<Body> {
     match s.appdb.query(file, seed, q).await {
         Ok(v) => json(200, &v),
         Err((st, m)) => json(st, &serde_json::json!({ "error": m })),
+    }
+}
+
+#[cfg(test)]
+mod pane_css_tests {
+    use super::pane_css;
+
+    #[test]
+    fn pane_css_carries_v1s_base_so_a_pane_sits_on_wisps_page_not_the_browsers() {
+        let css = pane_css();
+        // v1's /_wisp/pane.css was tokens.css (tokens + base) + the pane kit: without the base a pane kept the
+        // browser's 8px margin, black text on a transparent page and grey native buttons
+        for rule in [
+            "* { box-sizing: border-box; }",
+            "html, body { margin: 0; height: 100%; }",
+            "background: var(--bg);",
+            "button { cursor: pointer; background: none; border: 0; padding: 0; }",
+            "[hidden] { display: none !important; }",
+        ] {
+            assert!(css.contains(rule), "pane.css lacks {rule}");
+        }
+        // the pane kit's own body (padding 12px, 13px type) comes after the base, so it wins as in v1
+        let base = css.find("html, body { margin: 0").unwrap_or(usize::MAX);
+        let kit = css.find("body { padding: 12px").unwrap_or(0);
+        assert!(base < kit, "the pane kit must follow the base");
     }
 }

@@ -266,8 +266,7 @@ export const setState = defineCommand<{ id: string; state: 'running' | 'review' 
   optimistic: (_b, a) => patch(a.id, '/state', a.state),
 });
 
-/** Saved for later: the server's summary says `{at, by}`, an optimistic patch the same (or `true` from an older one). */
-export const isSaved = (v: unknown): boolean => v === true || (typeof v === 'object' && v !== null);
+export { isSaved } from './rows-view.ts';
 
 /** Save for later: the bookmark fills at once, and the list moves the row to For later with the time it reads
  *  (`{at, by}`, as the server's summary has it: runtime host ops.rs for_later). */

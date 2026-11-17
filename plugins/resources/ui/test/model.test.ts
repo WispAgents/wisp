@@ -1,5 +1,5 @@
 import { expect, test } from 'vitest';
-import { changeLines, formatOf, groups, kindCounts, picked, type Plan } from '../src/model.ts';
+import { changeLines, formatOf, groups, kindCounts, picked, sectionTitle, type Plan } from '../src/model.ts';
 
 test('setup_import_reads_the_plan_as_cards_and_applies_only_whats_ticked', () => {
   expect([formatOf('wisp: 1\n'), formatOf(' {"wisp":1}'), formatOf('wisp = 1\n')]).toEqual(['yaml', 'json', 'toml']);
@@ -28,4 +28,17 @@ test('setup_import_reads_the_plan_as_cards_and_applies_only_whats_ticked', () =>
   expect(changeLines(plan.ops[1]!)).toEqual(['model: sonnet → opus']);
   const pasted = [{ kind: 'crew', name: 'bob', spec: {} }, { kind: 'agent', name: 'fast', spec: {} }, { kind: 'trigger', name: 'ci', spec: {} }, { kind: 'agent', name: 'same', spec: {} }];
   expect(picked(pasted, plan, new Set(['trigger/ci'])).map((r) => r.name)).toEqual(['bob', 'fast']);
+});
+
+test('setup_names_each_kind_in_words_not_its_raw_id_qa_r1_28', () => {
+  expect(['plugins', 'projects', 'router', 'goal', 'channels', 'notifications', 'crew', 'mcp-servers'].map(sectionTitle)).toEqual([
+    'Plugins',
+    'Projects',
+    'Router',
+    'Goal',
+    'Channels',
+    'Notifications',
+    'Crew',
+    'Mcp servers',
+  ]);
 });

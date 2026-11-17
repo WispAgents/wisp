@@ -45,6 +45,27 @@ impl Runtime {
         format!("\n\n<wisp-stuff>\nThe user points at things they kept in My Stuff. {how}\n{}\n</wisp-stuff>", lines.join("\n"))
     }
 
+    /// `runtime.prompt@1`'s notes for this turn (`PromptPart::before`), put in front of `prompt`: each waited on for at
+    /// most 2 s (a slow plugin never holds a run up), none on a compaction.
+    pub(crate) async fn turn_notes(&self, s: &Session, t: &Turn, info: &HarnessInfo, prompt: &mut String) {
+        if t.by.as_deref() == Some("compact") {
+            return;
+        }
+        let tools = info.ask_tool.as_deref().map(|a| a.rsplit_once("ask_user").map_or_else(String::new, |(pre, _)| pre.to_owned()));
+        let mut notes = Vec::new();
+        for p in self.host.prompt_parts() {
+            let q = wisp_runtime_api::points::TurnNote { session: s.clone(), turn: t.clone(), tools: tools.clone() };
+            match tokio::time::timeout(std::time::Duration::from_secs(2), p.before(q)).await {
+                Ok(n) if !n.trim().is_empty() => notes.push(n),
+                Ok(_) => {}
+                Err(_) => tracing::warn!(part = p.id(), "runtime: a turn note took over 2 s, left out"),
+            }
+        }
+        if !notes.is_empty() {
+            *prompt = format!("{}\n\n{prompt}", notes.join("\n\n"));
+        }
+    }
+
     /// A turn's prompt with its mentions expanded (unchanged when it mentions nothing).
     pub(crate) async fn with_mentions(&self, s: &Session, t: &Turn, info: &HarnessInfo) -> String {
         let (tasks, stuff) = (mentions_in(&t.prompt), stuff_in(&t.prompt));

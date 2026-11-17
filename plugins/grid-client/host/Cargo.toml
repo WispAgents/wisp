@@ -27,6 +27,7 @@ wisp-grid-client-api = { path = "../api" }
 wisp-grid-client-core = { path = "../core" }
 wisp-channels-api.workspace = true
 wisp-kernel.workspace = true
+wisp-proc.workspace = true
 wisp-machines-api.workspace = true
 wisp-runtime-api.workspace = true
 wisp-share-api = { path = "../../share/api" }
@@ -36,7 +37,6 @@ wisp-store.workspace = true
 tokio = { workspace = true, features = ["test-util", "macros", "rt-multi-thread"] }
 # tests/accounts.rs: the accounts' peers in a real wisp.machines
 wisp-machines = { path = "../../machines/host" }
-wisp-proc.workspace = true
 wisp-testkit.workspace = true
 
 [lints]

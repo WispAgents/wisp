@@ -8,7 +8,7 @@
 // HTML stays byte for byte v1's (test/goldens/platform-browser-rows.json).
 import { Show, createEffect, createMemo, onCleanup, type JSX } from 'solid-js';
 import { watchTimeWidth } from './time-width.ts';
-import { flag, sub, type CssVars, type KitProps, type PartName } from '../core/props.ts';
+import { flag, sub, type KitProps, type PartName } from '../core/props.ts';
 import type { ReorderAttrs } from '../core/reorder.ts';
 import { Icon } from '../content/Icon.tsx';
 import type { IconName } from '../content/icons.ts';
@@ -113,13 +113,7 @@ function Hit(props: { readonly row: ListRowProps; readonly part: PartName }): JS
   );
 }
 
-/** The feed list's Mark done column on a touch screen (v1 split.css `#feed.has-quick`): set on the list (its `vars`)
- *  while some row in it shows Mark done. On touch (hover: none) Save for later leaves the row and Mark done takes a
- *  36px column of its own after the time, never over the title; with no row showing it there is no column. With a
- *  mouse the vars do nothing (the quick actions float over the title's end while they show). */
-export function feedDoneColumn(on: boolean): CssVars {
-  return on ? { '--k-feed-done': '36px', '--k-feed-done-pad': '48px' } : {};
-}
+export { feedDoneColumn } from './feed-done.ts';
 
 /** A row's quick action (v1 .it-quick, .it-later): an icon the pointer presses, hidden from assistive tech and the
  *  Tab order as v1's are (the row's head is the one button in it; the keys E and L do the same from the keyboard).

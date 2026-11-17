@@ -907,6 +907,10 @@
       padding-left: var(--space-3);
     }
   }
+  /* comparing runs: Worktree's word goes, so each run keeps its name (v1 .l-bar.l-cmp #wtBtn span; QA r1 #20) */
+  [data-kit='l-bar'][data-cmp] > [data-a='worktree'] > [data-text='control'] {
+    display: none;
+  }
   /* the bar's words give the pill room: Delegate's, then the mode's and Goal's (v1 .l-bar.l-try); tooltips name them */
   @container launcher (max-width: 800px) {
     [data-kit='l-bar'][data-try] > [data-a='team'] > [data-text='control'] {
@@ -948,20 +952,8 @@
       display: none;
     }
   }
-  /* the hint under the recipes wraps on a phone (launcher.css: nowrap from 401 px up) */
-  @container launcher (max-width: 400px) {
-    [data-kit='lr-list']:not([data-layout='wrap']) {
-      flex-direction: column;
-      align-items: flex-start;
-    }
-    [data-kit='lr-list'] > [data-kit='l-in'] {
-      align-self: flex-start;
-    }
-    [data-kit='lr-empty'] {
-      white-space-collapse: collapse;
-      text-wrap-mode: wrap;
-    } /* content text */
-  }
+  /* On a phone v1 let the hint under Recipes wrap (3 lines with + New); a bar stays one line (ADR-0012, QA r1 #18):
+     the hint is the part that gives way, cut with "…", its whole as the tooltip (Home.tsx) */
 
   /* split.css .sh-next, .sh-task */
   [data-kit='sh-next'] {
@@ -1198,6 +1190,8 @@
 
   /* v1 #790 .sh-usage / .hu-*: usage at a glance under the prompt box, one quiet row, a thin meter per window; the
      row opens Settings → Usage. Accounts wrap as wholes, never mid-meter. What needs you sits 22px under it, not 30. */
+  /* held in a Reserved box (HomeView: its last height, so it lands without moving Needs you), Home's column wide */
+  [data-kit='reserved'][data-part='home.usage'] { flex: none; width: 100%; max-width: var(--size-read); }
   /* in a display: contents slot, so it takes Home's column width itself */
   [data-kit='home-usage'] {
     flex: none;

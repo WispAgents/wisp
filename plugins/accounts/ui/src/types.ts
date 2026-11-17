@@ -170,6 +170,8 @@ export interface ToolRow {
   name: string;
   installed: boolean;
   setup?: { tip: string; command?: string; url?: string };
+  /** gh only: whether it's signed in (null or missing: its answer unknown) */
+  signedIn?: boolean | null;
 }
 
 export interface PlaceRow {

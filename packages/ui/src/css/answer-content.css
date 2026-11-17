@@ -195,4 +195,24 @@
   [data-part='block.files.toggle'] [data-kit='icon'] { transition: transform var(--dur-slow); }
   [data-kit='cb-file'][data-open] [data-part='block.files.toggle'] [data-kit='icon'] { transform: rotate(90deg); }
   [data-kit='cb-file-diff'] { margin: 0 var(--space-4) var(--space-5); }
+
+  /* commits (v1 .b-commits): a timeline, a node per commit on a line down the left, the message, then the short hash,
+     the files touched and +N −M, 10px apart (QA r1 #32: they ran together as "b9beff41 file+2 −1") */
+  [data-kit='cb-commits'] { position: relative; list-style: none; margin: 0; padding: 0; }
+  [data-kit='cb-commits']::before {
+    content: ''; position: absolute; left: var(--space-3); top: var(--space-4); bottom: var(--space-7); width: var(--size-ring);
+    background: var(--line-2);
+  }
+  [data-kit='cb-commit'] {
+    display: grid; grid-template-columns: var(--size-icon-md) minmax(0, 1fr); gap: var(--space-7); padding-bottom: var(--space-6);
+    animation: kit-rise var(--dur-slow) var(--ease) both;
+  }
+  [data-kit='cb-commit-node'] {
+    position: relative; z-index: var(--z-raised); width: var(--space-5); height: var(--space-5); margin-top: calc(var(--space-2) + var(--size-hairline));
+    border-radius: var(--radius-pill); background: var(--surface); border: var(--size-ring) solid var(--ink-2);
+  }
+  [data-kit='cb-commit-text'] { min-width: 0; }
+  [data-kit='cb-commit-msg'] { font-weight: var(--fw-medium); color: var(--ink); overflow-wrap: anywhere; }
+  [data-kit='cb-commit-sub'] { display: flex; align-items: baseline; gap: var(--space-5); margin-top: var(--space-1); font: var(--fs-sm) var(--mono); color: var(--muted); }
+  [data-kit='cb-commit-sub'] > [data-kit='cb-hash'] { padding: 0 calc(var(--space-2) + var(--size-hairline)); }
 }

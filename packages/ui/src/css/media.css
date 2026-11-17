@@ -143,6 +143,8 @@
     background: var(--term-line);
     color: var(--term-ink);
   }
+  /* v1 .lb-pct: the zoom as a number, its width held */
+  [data-kit='viewer-btn'][data-pct] { min-width: 56px; width: auto; padding: 0 6px; font: 500 12.5px var(--sans); font-variant-numeric: tabular-nums; }
   [data-kit='viewer-btn'][data-done] {
     color: var(--term-good);
   }

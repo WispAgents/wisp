@@ -38,7 +38,7 @@ pub fn builtins() -> Vec<Builtin> {
         Builtin { agent: "claude", label: "Claude Code", per_turn: true, kind: Kind::Claude },
         Builtin { agent: "codex", label: "Codex", per_turn: true, kind: Kind::Codex },
         Builtin { agent: "copilot", label: "Copilot", per_turn: true, kind: Kind::Copilot },
-        Builtin { agent: "opencode", label: "OpenCode", per_turn: true, kind: Kind::Opencode },
+        Builtin { agent: "opencode", label: "opencode", per_turn: true, kind: Kind::Opencode },
         Builtin { agent: "cursor", label: "Cursor", per_turn: false, kind: Kind::Cursor },
         Builtin { agent: "grok", label: "Grok", per_turn: true, kind: Kind::Bare },
     ]
@@ -256,4 +256,18 @@ pub fn found(sources: &[Source], list: &[Connector]) -> Vec<Found> {
         }
     }
     out
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod name_tests {
+    use super::*;
+
+    #[test]
+    fn each_harness_is_named_as_its_own_plugin_names_it_qa_r1_28() {
+        // Connectors said "OpenCode" where every other screen says "opencode" (plugins/opencode/ui: HARNESS.name)
+        let names: Vec<(String, String)> = builtins().iter().map(|b| (b.agent().to_owned(), b.label().to_owned())).collect();
+        assert!(names.contains(&("opencode".to_owned(), "opencode".to_owned())), "{names:?}");
+        assert!(names.contains(&("claude".to_owned(), "Claude Code".to_owned())), "{names:?}");
+    }
 }

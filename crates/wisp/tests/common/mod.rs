@@ -153,8 +153,21 @@ pub fn start(dir: &Path) -> (Serve, u16) {
 }
 
 pub fn start_with(dir: &Path, env: &[(&str, &str)]) -> (Serve, u16) {
+    install_fakes(&dir.join("bin"), &FAKES.map(|(n, _)| n));
+    spawn(dir, env)
+}
+
+/// `wisp serve` again on the same home and the same fake CLIs, as they are now (a test may have changed one): nothing
+/// is installed again. Installing replaced the fakes, and changing one back meant deleting a program the new server
+/// was already running to detect its harness, which Windows refuses (Access is denied). The last server's address
+/// goes with it, so the new one's is the one read. `serve` (kept, `keep: true`) must be dropped first.
+pub fn restart(dir: &Path) -> (Serve, u16) {
+    let _ = std::fs::remove_file(dir.join("home").join("server.json"));
+    spawn(dir, &[])
+}
+
+fn spawn(dir: &Path, env: &[(&str, &str)]) -> (Serve, u16) {
     let bin = dir.join("bin");
-    install_fakes(&bin, &FAKES.map(|(n, _)| n));
     let home = dir.join("home");
     std::fs::create_dir_all(&home).unwrap();
     let log = std::fs::File::create(dir.join("serve.log")).unwrap();

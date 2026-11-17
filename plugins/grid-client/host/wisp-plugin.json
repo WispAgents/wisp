@@ -9,7 +9,7 @@
   "server": { "builtin": "wisp_grid_client" },
   "permissions": [
     "machines:list", "machines:add", "machines:update", "machines:remove", "machines:follow",
-    "secrets:read", "secrets:write", "net:connect{host:*}", "stuff:publish", "channels:routed"
+    "secrets:read", "secrets:write", "net:connect{host:*}", "stuff:publish", "channels:routed", "proc:exec{bin:hostname}"
   ],
   "provides": { "stuff.publish": { "version": "1.0.0" } },
   "activation": ["onStartup"],

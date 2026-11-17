@@ -97,6 +97,15 @@ export function stepsOf(steps: readonly StepLike[] | undefined): KitStep[] {
   return (steps ?? []).map((s) => ({ title: s.label, status: map[s.status] ?? 'pending', ...(s.detail && { detail: s.detail }) }));
 }
 
+/** What a computer's line says of its coding agents: those ready, none (it said so), or nothing (it didn't say: an older
+ *  wisp has no `runtime.agents`; QA r1 #22 read "No coding agent there yet" for one that had two). */
+export function agentsOf(s: StatusLike | undefined): { kind: 'ready'; names: string[] } | { kind: 'none' } | { kind: 'unknown' } {
+  const list = s?.remote?.agents;
+  if (!list) return { kind: 'unknown' };
+  const names = list.filter((a) => a.available).map((a) => a.name || a.id);
+  return names.length ? { kind: 'ready', names } : { kind: 'none' };
+}
+
 /** The trouble box's headline (v1 trouble): a lost link says it's trying again (and how often), else the hint's title. */
 export function troubleTitle(s: StatusLike, say: Say): string {
   if (s.state === 'reconnecting') {

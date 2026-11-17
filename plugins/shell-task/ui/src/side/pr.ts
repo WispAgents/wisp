@@ -1,4 +1,15 @@
 import '../i18n/lazy.ts';
+
+type PrFields = { readonly pr?: unknown; readonly also?: readonly { readonly pr?: unknown }[]; readonly prs?: readonly unknown[] };
+
+/** Whether the task has a PR wisp.ship keeps on its row (v1 prsOf): `pr`, a compare run's `also`, or `prs`. A server
+ *  row keeps them under `summary`, a flattened one on itself (QA r1 #1: only the top was read, so a task with PR #806
+ *  said it had none). */
+export function hasPr(row: unknown): boolean {
+  const top = (row ?? {}) as PrFields & { readonly summary?: PrFields };
+  const has = (r: PrFields | undefined): boolean => !!r && (!!r.pr || (r.also ?? []).some((a) => !!a.pr) || (r.prs ?? []).length > 0);
+  return has(top) || has(top.summary);
+}
 // The PR pane, DOM-free (v1 features/panel.js paintPr, verdict, checksHtml, talkHtml, filesHtml): the one
 // sentence about where the PR stands with its one next step, the checks (failing and running first, the passed
 // folded behind one line), the reviewers, the conversation (live threads and people; outdated threads and bots

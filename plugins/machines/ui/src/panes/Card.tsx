@@ -6,7 +6,7 @@ import { createSignal, Show, type JSX } from 'solid-js';
 import { Button, Callout, CopyCommand, Inline, Input, Link, Menu, Pill, SettingsRow, Stack, Steps, Text } from '@wisp/ui';
 import type { PeerBody, PeerView, StatusBody } from '../commands.ts';
 import { t } from '../i18n.ts';
-import { kindOf, menuOf, offersLetIn, primaryOf, removeLabel, stepsOf, troubleTitle, whereOf } from '../view.ts';
+import { agentsOf, kindOf, menuOf, offersLetIn, primaryOf, removeLabel, stepsOf, troubleTitle, whereOf } from '../view.ts';
 import '../i18n/lazy.ts';
 
 const say = t as (k: string, v?: Readonly<Record<string, string | number>>) => string;
@@ -174,12 +174,14 @@ export function MachineCard(props: CardProps): JSX.Element {
               </Button>
             )}
           </Show>
-          <Show when={ready().length > 0} fallback={<Text size="sm" tone="bad">{t('machines.noAgents')}</Text>}>
-            <Text size="sm" tone="muted" part="machines.agents">
-              {ready()
-                .map((a) => a.name || a.id)
-                .join(' · ')}
-            </Text>
+          <Show when={agentsOf(props.s).kind !== 'unknown'}>
+            <Show when={ready().length > 0} fallback={<Text size="sm" tone="bad">{t('machines.noAgents')}</Text>}>
+              <Text size="sm" tone="muted" part="machines.agents">
+                {ready()
+                  .map((a) => a.name || a.id)
+                  .join(' · ')}
+              </Text>
+            </Show>
           </Show>
           <Show when={(props.view?.working ?? 0) > 0}>
             <Text size="sm" tone="muted">

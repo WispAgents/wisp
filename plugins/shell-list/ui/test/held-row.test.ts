@@ -38,3 +38,11 @@ test('a_held_row_is_held_by_the_shells_one_rule', () => {
   const bare = flatSession({ id: 'b', title: 't', state: 'review', agent: 'codex', created_at: 1, updated_at: 2, body: { cwd: '/w' }, summary: { status: 'held' } } as unknown as SessionRow);
   expect(pillsOf(bare).find((p) => p.id === 'status')?.label.key).toBe('shell-list.pill.held');
 });
+
+// QA r1 #10: a task marked done while held (older data: Mark done didn't skip its turn then) sat under Done saying
+// "Waiting for codex"; a done task's line never says it waits
+test('a_done_task_never_says_it_waits_even_with_a_held_turn_left', () => {
+  const done = flatSession({ id: 'd', title: 'test · Job', state: 'done', agent: 'codex', created_at: 1, updated_at: 2, body: { cwd: '/w' }, summary: { status: 'held', preview: '', held: { kind: 'harness-changed', by: 'wisp.accounts', data: { agent: 'codex', line: 'Codex changed' } } } } as unknown as SessionRow);
+  expect(subOf(done, ctx)?.held).toBeFalsy();
+  expect(subOf(done, ctx)?.text.key).not.toBe('shell-list.held.harness');
+});

@@ -133,7 +133,7 @@ test('on_touch_mark_done_keeps_its_own_column_after_the_time_and_save_for_later_
   // the column, the title's and the time's room for it come only from the list's var: unset, v1's three columns
   expect(at(row)).toMatch(/grid-template-columns:\s*10px minmax\(0, 1fr\) auto var\(--k-feed-done,\)/);
   expect(at(`${row} > [data-kit='list-row-title']`)).toMatch(/padding-right:\s*calc\(36px \+ var\(--k-feed-done-pad, 0px\)\)/);
-  expect(touch.some(([sel, body]) => sel.includes("[data-kit='time']") && /right:\s*calc\(12px \+ var\(--k-feed-done, 0px\)\)/.test(body))).toBe(true);
+  expect(touch.some(([sel, body]) => sel.includes("[data-kit='time']") && /right:\s*calc\(12px \+ var\(--k-feed-done-x, 0px\)\)/.test(body))).toBe(true);
   // every rule that pads the feed title for the floating quick buttons sits under (hover: hover)
   const reserve = rules.filter(([sel, body]) => sel.includes('[data-quick=') && sel.includes("[data-kit='list-row-title']") && /padding-right/.test(body));
   expect(reserve.length).toBe(6);

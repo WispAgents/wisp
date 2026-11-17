@@ -1,6 +1,6 @@
 // The Changes pane's model (side/changes.ts).
 import { expect, test } from 'vitest';
-import { envState, filesOf, gitFiles, hunkOf, revealedOf, seenMasked, setRevealed, type ChangeTurn } from '../src/side/changes.ts';
+import { envState, filesOf, gitFiles, hunkOf, outsideFolder, revealedOf, seenMasked, setRevealed, type ChangeTurn } from '../src/side/changes.ts';
 
 test('a task\'s turns become one diff per file, edits in turn order, kept lines as context', () => {
   const h = hunkOf('a\nb\nc\n', 'a\nB\nc\n');
@@ -66,4 +66,25 @@ test('ADR-0050: a revealed .env file the server sent masked shows each turn’s 
   // still masked (not revealed): the server's copy is never asked for
   const hidden = filesOf(turns, 's', '/w', () => true, () => [{ before: 'K=sk-1', after: 'K=sk-2' }]);
   expect(JSON.stringify(hidden)).not.toContain('sk-');
+});
+
+// QA r1 #2: the Changes tab said "No changes yet" on a task whose agent edited and committed in a folder of its own
+// (outside the task's worktree): git's diff of the worktree was empty and won over the edits wisp saw. Those outside the
+// git folder show beside git's files; the ones inside stay git's (a revert or a commit there is git's to say).
+test('edits_outside_the_tasks_folder_show_beside_gits_files', () => {
+  const turns = [
+    {
+      session_id: 's',
+      idx: 1,
+      id: 't1',
+      body: { ext: { 'wisp.runtime': { changes: [
+        { file: '/Users/me/wisp-v2-dev-md/docs/dev.md', op: 'modify', edits: [{ before: 'a', after: 'a\nb' }] },
+        { file: '/w/task/src/x.ts', op: 'modify', edits: [{ before: 'x', after: 'y' }] },
+      ] } } },
+    },
+  ] as unknown as Parameters<typeof filesOf>[0];
+  const seen = filesOf(turns, 's', '/w/task');
+  expect(seen.map((f) => f.path)).toEqual(['/Users/me/wisp-v2-dev-md/docs/dev.md', 'src/x.ts']);
+  expect(outsideFolder(seen).map((f) => f.path)).toEqual(['/Users/me/wisp-v2-dev-md/docs/dev.md']);
+  expect(outsideFolder([{ path: 'C:\\w\\a.ts' }, { path: 'docs/a.md' }]).map((f) => f.path)).toEqual(['C:\\w\\a.ts']);
 });

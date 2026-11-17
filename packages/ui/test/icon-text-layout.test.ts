@@ -50,3 +50,11 @@ test('mono_marks_follow_the_app_theme_and_colour_marks_are_left_alone', () => {
   expect(mono.matches(sel)).toBe(true);
   expect(colour.matches(sel)).toBe(false);
 });
+
+test('commit_rows_keep_the_hash_files_and_counts_apart_on_a_timeline_v1_b_commits', () => {
+  // QA r1 #32: "b9beff41 file+2 −1": the hash ran into "1 file" and the counts; the list showed "1." numbers
+  expect(rule(answer, "[data-kit='cb-commits']")).toContain('list-style: none');
+  expect(rule(answer, "[data-kit='cb-commit-sub']")).toMatch(/display: flex;[^]*gap: var\(--space-5\)/);
+  expect(rule(answer, "[data-kit='cb-commit']")).toContain('grid-template-columns');
+  expect(rule(answer, "[data-kit='cb-commit-node']")).toContain('border-radius: var(--radius-pill)');
+});

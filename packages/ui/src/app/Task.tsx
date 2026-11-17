@@ -172,7 +172,7 @@ export function TaskDetails(props: TaskDetailsProps): JSX.Element {
             </span>
           )}
         </Show>
-        <span data-kit="model-logo" role="img" aria-label={props.harness}>
+        <span data-kit="model-logo" role="img" aria-label={props.harness} title={props.harness}>
           <Show when={props.logo}>{(src) => <img src={src()} alt="" />}</Show>
           <span data-kit="ml-name">{props.harness}</span>
         </span>
@@ -281,6 +281,9 @@ export interface TurnViewProps {
   readonly actsTitle: string;
   readonly stats: readonly TrailItem[];
   readonly receipt?: TrailItem;
+  /** after the receipt's words, in the same item (one grid cell on a phone): what plugins add to it (the cache and
+   *  plan share, ADR-0095). Additive (2026-11-17). */
+  readonly receiptMore?: JSX.Element;
   readonly files?: { readonly label: string; readonly plus: string; readonly minus: string; readonly act?: Act };
   readonly tools: readonly { readonly id: string; readonly icon: IconName; readonly label: string; readonly part?: string; readonly act?: Act; readonly on?: boolean }[];
   /** the steps it took, shown under the brief (the trail's counts open them) */
@@ -419,10 +422,15 @@ export function TurnView(props: TurnViewProps): JSX.Element {
             </button>
           </Show>
           <Index each={props.stats}>{(s) => <span data-kit="tb">{s().text}</span>}</Index>
-          <Show when={props.receipt}>
+          <Show
+            when={props.receipt}
+            // no count of the shell's own (stats it doesn't sum): what plugins add stands as the item (ADR-0095)
+            fallback={<Show when={props.receiptMore}>{<span data-kit="tb" data-part="turn.receipt">{props.receiptMore}</span>}</Show>}
+          >
             {(r) => (
               <span data-kit="tb" data-part="turn.receipt" title={r().title}>
                 <span>{r().text}</span>
+                {props.receiptMore}
               </span>
             )}
           </Show>

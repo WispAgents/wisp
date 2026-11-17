@@ -17,6 +17,8 @@
     color: var(--ink-2); cursor: pointer; user-select: none; outline: 0;
   }
   [data-kit='menu-item'] > [data-kit='icon'] { color: var(--muted); }
+  /* an item with no icon in a menu where others have one: the icon's room, empty */
+  [data-kit='menu-icon-gap'] { flex: none; width: var(--size-icon-md); height: var(--size-icon-md); }
   [data-kit='menu-item'][data-highlighted] { background: var(--bg-2); color: var(--ink); }
   [data-kit='menu-item'][data-highlighted] > [data-kit='icon'] { color: var(--ink); }
   [data-kit='menu-item'][data-danger][data-highlighted] { color: var(--bad); background: var(--del-bg); }
@@ -32,6 +34,11 @@
      that names them, the menu as wide as it was */
   [data-kit='menu'][data-drilled] { min-width: var(--menu-w); }
   [data-kit='menu-item'][data-sub] > [data-kit='icon']:last-child { margin-left: auto; color: var(--faint); }
+  /* on a desktop pointer the submenu flies out beside its row instead (owner 2026-11-17): the flyout's first item level
+     with the row (up by its padding and border), and the row stays lit while its flyout is open */
+  [data-kit='menu'][data-flyout] { margin-block-start: calc(-1 * (var(--space-2) + var(--size-hairline))); }
+  [data-kit='menu-item'][data-sub][aria-expanded='true'] { background: var(--bg-2); color: var(--ink); }
+  [data-kit='menu-item'][data-sub][aria-expanded='true'] > [data-kit='icon'] { color: var(--ink); }
   [data-kit='menu-item'][data-back] {
     margin-bottom: var(--space-2); padding-bottom: var(--space-4); border-bottom: var(--size-hairline) solid var(--line);
     border-radius: var(--radius-md) var(--radius-md) 0 0; font-weight: var(--fw-medium); color: var(--ink);

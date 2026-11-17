@@ -24,7 +24,8 @@ import { phoneOverlays } from './phone-part.ts';
 import type { Detent } from './phone-math.ts';
 
 /** v1: v1's .modal (640 wide, 18px 20px 20px, its 600 18px title): the crew editor */
-export type DialogSize = 'sm' | 'md' | 'lg' | 'xl' | 'v1' | 'full';
+/** window: v1's reader and app window (.dr, .ap), 18px in from the window's edges, the whole screen on a phone */
+export type DialogSize = 'sm' | 'md' | 'lg' | 'xl' | 'v1' | 'full' | 'window';
 
 export interface DialogProps extends KitProps, WithChildren, WithVars {
   readonly title: string;

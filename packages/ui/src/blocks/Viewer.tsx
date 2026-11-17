@@ -25,11 +25,22 @@ export function mediaSet(from: Element): { readonly list: readonly ViewItem[]; r
 }
 
 const ZOOM = 2.5;
+/** v1 viewer.js: at most 8× (or the picture's own pixels, if bigger); each + or − is 1.6× */
+const MAX = 8;
+const STEP = 1.6;
 
 export function MediaViewer(props: { readonly list: readonly ViewItem[]; readonly at: number; readonly onClose: () => void }): JSX.Element {
   const t = useBlockT();
   const [at, setAt] = createSignal(Math.max(0, Math.min(props.list.length - 1, props.at)));
-  const [zoom, setZoom] = createSignal<{ x: number; y: number } | undefined>();
+  const [zoom, setZoom] = createSignal<{ s: number; x: number; y: number } | undefined>();
+  let pic: HTMLImageElement | undefined;
+  // how much bigger the picture's own pixels are than it shows on screen (v1 ratio): the % counts real pixels
+  const ratio = (): number => (pic && pic.offsetWidth && pic.naturalWidth ? pic.naturalWidth / pic.offsetWidth : 1);
+  const scaleTo = (ns: number, x = zoom()?.x ?? 50, y = zoom()?.y ?? 50): void => {
+    const s = Math.min(Math.max(MAX, ratio()), Math.max(1, ns));
+    setZoom(s > 1.01 ? { s, x, y } : undefined);
+  };
+  const pct = (): string => `${Math.round(((zoom()?.s ?? 1) * 100) / ratio())}%`;
   const [copied, setCopied] = createSignal(false);
   const item = (): ViewItem => props.list[at()] ?? { src: '', alt: '' };
   const many = (): boolean => props.list.length > 1;
@@ -54,6 +65,8 @@ export function MediaViewer(props: { readonly list: readonly ViewItem[]; readonl
     const vid = item().video;
     if ((e.key === 'ArrowLeft' || e.key === 'ArrowRight') && !(vid && e.target instanceof HTMLVideoElement)) return (own(), go(e.key === 'ArrowLeft' ? -1 : 1));
     if (!vid && (e.metaKey || e.ctrlKey) && !e.altKey && e.key.toLowerCase() === 'c') return (own(), copy());
+    if (!vid && (e.key === '+' || e.key === '=')) return (own(), scaleTo((zoom()?.s ?? 1) * STEP));
+    if (!vid && e.key === '-') return (own(), scaleTo((zoom()?.s ?? 1) / STEP));
   };
   onMount(() => {
     addEventListener('keydown', onKey, true);
@@ -63,7 +76,7 @@ export function MediaViewer(props: { readonly list: readonly ViewItem[]; readonl
   const onPic = (e: MouseEvent): void => {
     e.stopPropagation();
     const box = (e.currentTarget as HTMLElement).getBoundingClientRect();
-    setZoom(zoom() ? undefined : { x: ((e.clientX - box.left) / Math.max(1, box.width)) * 100, y: ((e.clientY - box.top) / Math.max(1, box.height)) * 100 });
+    setZoom(zoom() ? undefined : { s: Math.min(4, Math.max(ZOOM, ratio())), x: ((e.clientX - box.left) / Math.max(1, box.width)) * 100, y: ((e.clientY - box.top) / Math.max(1, box.height)) * 100 });
   };
   return (
     <Portal>
@@ -88,8 +101,16 @@ export function MediaViewer(props: { readonly list: readonly ViewItem[]; readonl
               src={item().src}
               alt={item().alt}
               draggable={false}
-              style={zoom() ? { '--vw-zoom': String(ZOOM), '--vw-x': `${zoom()?.x ?? 50}%`, '--vw-y': `${zoom()?.y ?? 50}%` } : {}}
+              ref={(el) => (pic = el)}
+              style={zoom() ? { '--vw-zoom': String(zoom()?.s ?? ZOOM), '--vw-x': `${zoom()?.x ?? 50}%`, '--vw-y': `${zoom()?.y ?? 50}%` } : {}}
               onClick={onPic}
+              // the wheel zooms at the pointer, as in v1
+              onWheel={(e) => {
+                e.preventDefault();
+                const box = (e.currentTarget as HTMLElement).getBoundingClientRect();
+                const at = zoom() ? undefined : { x: ((e.clientX - box.left) / Math.max(1, box.width)) * 100, y: ((e.clientY - box.top) / Math.max(1, box.height)) * 100 };
+                scaleTo((zoom()?.s ?? 1) * (e.deltaY < 0 ? 1.15 : 1 / 1.15), at?.x, at?.y);
+              }}
             />
           }
         >
@@ -129,6 +150,16 @@ export function MediaViewer(props: { readonly list: readonly ViewItem[]; readonl
             <span data-kit="viewer-sep" />
           </Show>
           <Show when={!item().video}>
+            <button type="button" data-kit="viewer-btn" data-part="block.viewer.out" aria-label={t('block.viewer.zoomOut')} title={t('block.viewer.zoomOut')} onClick={() => scaleTo((zoom()?.s ?? 1) / STEP)}>
+              <Icon name="minus" />
+            </button>
+            <button type="button" data-kit="viewer-btn" data-pct="" data-part="block.viewer.pct" title={t('block.viewer.zoomFit')} onClick={() => (zoom() ? setZoom(undefined) : scaleTo(Math.min(4, Math.max(ZOOM, ratio()))))}>
+              {pct()}
+            </button>
+            <button type="button" data-kit="viewer-btn" data-part="block.viewer.in" aria-label={t('block.viewer.zoomIn')} title={t('block.viewer.zoomIn')} onClick={() => scaleTo((zoom()?.s ?? 1) * STEP)}>
+              <Icon name="plus" />
+            </button>
+            <span data-kit="viewer-sep" data-zoom="" />
             <button
               type="button"
               data-kit="viewer-btn"

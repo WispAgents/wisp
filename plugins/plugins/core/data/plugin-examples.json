@@ -82,5 +82,39 @@
    }
   },
   "files": {}
+ },
+ {
+  "ask": "A theme: a pink send button, a warmer accent, and its own shade in dark mode",
+  "manifest": {
+   "wispPlugin": 1,
+   "id": "user.pink",
+   "name": "Pink",
+   "version": "1.0.0",
+   "api": "^1",
+   "description": "A pink send button and a warmer accent. A theme applies once you trust it: wisp plugin trust user.pink.",
+   "permissions": [],
+   "contributes": {
+    "partStyles": {
+     ":root": {
+      "--accent": "#d6336c"
+     },
+     "composer.send": {
+      "background": "#d6336c",
+      "color": "#ffffff",
+      "border-radius": "999px"
+     },
+     "@dark": {
+      ":root": {
+       "--accent": "#ff7aa8"
+      },
+      "composer.send": {
+       "background": "#ff7aa8",
+       "color": "#1a1a1a"
+      }
+     }
+    }
+   }
+  },
+  "files": {}
  }
 ]

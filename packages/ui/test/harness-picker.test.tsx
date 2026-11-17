@@ -2,6 +2,7 @@
 import { expect, test } from 'vitest';
 import { createSignal } from 'solid-js';
 import { mount } from './helpers.tsx';
+import { PlatformLookProvider } from '../src/platform/PlatformLook.tsx';
 import { HarnessPicker, pickerPlace, type HarnessPickerPane } from '../src/app/HarnessPicker.tsx';
 import { Launcher, type LauncherProps } from '../src/app/Home.tsx';
 import HOME_CSS from '../src/css/app-home.css?raw';
@@ -424,4 +425,24 @@ test('a_compare_run_on_its_harness_s_default_model_says_default_after_its_name_v
   expect(document.querySelector('[data-kit="l-bar"]')?.hasAttribute('data-try')).toBe(false);
   // "Default" gives way before the run's name, as v1 .rb-m (flex 0 10000 auto)
   expect(HOME_CSS.replace(/\s+/g, ' ')).toContain("[data-kit='runner-btn'][data-cmp] > [data-part~='launcher.compare.model'] { flex-shrink: 10000; margin-left: 13px; padding-left: 0; color: var(--muted); }");
+});
+
+test('on_a_phone_with_no_recipes_start_from_an_issue_is_a_tool_in_the_bar_not_alone_on_a_row_v1', () => {
+  // owner 2026-11-17: the phone sheet's "Start from an issue" chip sat alone on a row of its own under Send
+  mount(() => (
+    <PlatformLookProvider look={() => 'ios'}>
+      <Launcher {...launcher({})} />
+    </PlatformLookProvider>
+  ));
+  const issue = document.querySelector('[data-part~="launcher.issue"]');
+  expect(issue?.closest('[data-kit="l-bar"]')).not.toBeNull();
+  expect(document.querySelector('[data-kit="l-recipes"]')?.hasAttribute('hidden')).toBe(true);
+  expect(document.querySelectorAll('[data-part~="launcher.issue"]')).toHaveLength(1);
+});
+
+test('in_the_browser_start_from_an_issue_stays_at_the_end_of_the_recipes_row_v1', () => {
+  mount(() => <Launcher {...launcher({})} />);
+  const issue = document.querySelector('[data-part~="launcher.issue"]');
+  expect(issue?.closest('[data-kit="l-recipes"]')).not.toBeNull();
+  expect(document.querySelector('[data-kit="l-recipes"]')?.hasAttribute('hidden')).toBe(false);
 });

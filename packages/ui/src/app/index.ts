@@ -62,6 +62,8 @@ export { PickStrip, type PickStripChip, type PickStripProps } from './PickStrip.
 export { ProjectSelect, type ProjectSelectProps } from './ProjectSelect.tsx';
 export { PaletteSheet, paletteRowId, type PaletteRow, type PaletteSheetProps } from './Palette.tsx';
 export { StuffFrame, type StuffFrameProps } from './StuffFrame.tsx';
+export { StuffCard, StuffGroup, StuffKind, StuffNone, type StuffCardProps, type StuffThumb, type StuffTool } from './StuffCard.tsx';
+export { AppWindow, DocReader, type AppWindowProps, type DocReaderProps } from './StuffWindows.tsx';
 export { RunPreview, type RunPreviewLabels, type RunPreviewProps } from './RunPreview.tsx';
 export { CommentCard, CommentTray, type CommentCardProps, type CommentTrayProps } from './Comments.tsx';
 export { SpareCards, type SpareCard, type SpareCardsProps } from './Spare.tsx';

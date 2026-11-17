@@ -41,14 +41,15 @@ fn an_include_loop_ends() {
 #[test]
 fn known_hosts_skip_forges_hashes_ports_and_loopback() {
     let text = [
-        "github.com ssh-ed25519 AAAA",
-        "gpu.lan,192.168.1.20 ssh-ed25519 AAAA",
-        "192.168.1.30 ecdsa-sha2-nistp256 AAAA",
-        "[build.lan]:2222 ssh-ed25519 AAAA",
-        "|1|aGFzaA==|aGFzaA== ssh-ed25519 AAAA",
-        "@cert-authority *.corp ssh-ed25519 AAAA",
-        "devbox ssh-ed25519 AAAA",
-        "localhost ssh-ed25519 AAAA",
+        // each server's own key, as in a real known_hosts (lines with one key are one computer)
+        "github.com ssh-ed25519 AAAA1",
+        "gpu.lan,192.168.1.20 ssh-ed25519 AAAA2",
+        "192.168.1.30 ecdsa-sha2-nistp256 AAAA3",
+        "[build.lan]:2222 ssh-ed25519 AAAA4",
+        "|1|aGFzaA==|aGFzaA== ssh-ed25519 AAAA5",
+        "@cert-authority *.corp ssh-ed25519 AAAA6",
+        "devbox ssh-ed25519 AAAA7",
+        "localhost ssh-ed25519 AAAA8",
         "devbox ssh-rsa BBBB",
     ]
     .join("\n");
@@ -94,4 +95,17 @@ fn discover_one_entry_per_target_offline_last() {
     );
     assert_eq!(found[0].detail, "me@10.0.0.5");
     assert_eq!(found[1].detail, "macOS · online");
+}
+
+/// QA r1 #22: Computers wisp found listed "23.88.45.204" beside "grid": two `known_hosts` lines for one server (the IP
+/// and the name, with the same host key). One computer: its name, the address as its detail.
+#[test]
+fn known_hosts_lines_with_one_key_are_one_computer_named_not_a_bare_ip() {
+    let text =
+        ["23.88.45.204 ssh-ed25519 KEYA", "23.88.45.204 ssh-rsa KEYB", "grid.trywisp.dev ssh-ed25519 KEYA", "10.0.0.9 ssh-ed25519 KEYC"]
+            .join("\n");
+    assert_eq!(known_hosts(&text), [("grid.trywisp.dev".into(), "23.88.45.204".into()), ("10.0.0.9".into(), String::new())]);
+    // the IP again after the name took it: still one computer
+    let later = ["1.2.3.4 ssh-ed25519 KEYA", "grid ssh-ed25519 KEYA", "1.2.3.4 ssh-rsa KEYB"].join("\n");
+    assert_eq!(known_hosts(&later), [("grid".into(), "1.2.3.4".into())]);
 }

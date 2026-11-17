@@ -168,6 +168,8 @@ impl Runtime {
             Turn { prompt: if ctx.prompt == given { turn.prompt.clone() } else { ctx.prompt.clone() }, ..turn.clone() },
         );
         let mut asked = Turn { prompt: self.with_mentions(&s, &hooked, harness.info()).await, ..turn.clone() };
+        // what plugins put right before the user's words (a long thread's Notes, ADR-0079)
+        self.turn_notes(&s, &turn, harness.info(), &mut asked.prompt).await;
         crate::more::still_working(&s, &turn, &taken, &mut asked.prompt);
         // another harness taking over: what it missed goes first, with the user's rules (v1 handoff.js)
         let asked = Turn { prompt: Box::pin(self.with_handoff(&s, &asked, asked.prompt.clone())).await, ..asked };

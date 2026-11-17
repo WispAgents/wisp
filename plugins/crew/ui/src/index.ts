@@ -3,7 +3,7 @@
 
 import { lazy } from 'solid-js';
 import { defineExtension, defineView } from '@wisp/shell';
-import { parseEditor } from './editor.ts';
+import { parseEditor } from './editor-intent.ts';
 import { t } from './i18n.ts';
 import { VIEW } from './views.ts';
 

@@ -32,7 +32,7 @@ import { Steps } from './Steps.tsx';
 import { addAccount, install, keyRemove, keySet, loginCancel, loginInput, loginStart, logout, recheck, removeAccount, setAsk, trust, upgrade } from '../commands.ts';
 import { t } from '../i18n.ts';
 import { ACCOUNT, DETECT_TOPIC, HARNESS, KEY, LOGIN, PLACE, TOOL, TOPIC, loginId, type AccountRow, type HarnessRow, type KeyRow, type LoginRow, type PlaceRow, type ToolRow } from '../types.ts';
-import { accountLine, changeText, changeTip, harnessLine, harnessState, howToGet, loginControl, masked, mergeHarnesses, present, recheckSummary, site, stillChanged } from '../words.ts';
+import { accountLine, changeText, changeTip, harnessLine, harnessState, howToGet, loginControl, masked, mergeHarnesses, present, recheckSummary, site, stillChanged, toolState } from '../words.ts';
 import '../i18n/lazy.ts';
 
 const quiet = (p: Promise<unknown>): void => {
@@ -228,7 +228,9 @@ export default function Agents(props: { readonly client: PluginClient }): JSX.El
             // the last row it had: a harness that goes (its plugin switched off) may be read once more before its row unmounts
             let last = byId().get(id) as HarnessRow;
             const h = (): HarnessRow => (last = byId().get(id) ?? last);
-            const state = () => harnessState(h());
+            // its own Sign in (one account): the state says what that login says, never Ready beside Sign in
+            const ownLogin = (): boolean => h().signIn === 'cli' && present(h()) && (!h().brand || accs(h().id).length <= 1);
+            const state = () => harnessState(h(), ownLogin() ? (login(h().id, '')?.signedIn ?? undefined) : undefined);
             return (
               <>
                 <SettingsRow
@@ -247,7 +249,7 @@ export default function Agents(props: { readonly client: PluginClient }): JSX.El
                           {keysFor(h().id).some((k) => k.set) ? t('accounts.keys.edit') : t('accounts.keys.add')}
                         </Button>
                       </Show>
-                      <Show when={h().signIn === 'cli' && present(h()) && (!h().brand || accs(h().id).length <= 1)}>{signControl(h, '', false)}</Show>
+                      <Show when={ownLogin()}>{signControl(h, '', false)}</Show>
                       <Show when={!h().checking && !present(h()) && !h().installable}>
                         <Docs name={h().name} url={h().setup?.url} />
                       </Show>
@@ -326,14 +328,19 @@ export default function Agents(props: { readonly client: PluginClient }): JSX.El
               icon={x.id === 'gh' ? 'github' : 'branch'}
               description={x.installed ? t('accounts.tool.gh') : <HowTo tip={x.setup?.tip ?? t('accounts.tool.missing')} command={x.setup?.command} onCopy={copy} />}
               control={
-                <Show when={!x.installed}>
-                  <Inline gap="3">
+                <Inline gap="3">
+                  <Show when={!x.installed}>
                     <Docs name={x.id === 'gh' ? t('accounts.tool.ghCli') : x.name} url={x.setup?.url} />
-                    <Pill tone="bad" dot variant="plain">
-                      {t('accounts.state.notFound')}
-                    </Pill>
-                  </Inline>
-                </Show>
+                  </Show>
+                  {/* gh signed in or out, as Home's tip asks (QA r1 #23: the row said nothing) */}
+                  <Show when={toolState(x)}>
+                    {(s) => (
+                      <Pill tone={s().tone} dot variant="plain" part="accounts.tool.state">
+                        {s().label}
+                      </Pill>
+                    )}
+                  </Show>
+                </Inline>
               }
             />
           )}

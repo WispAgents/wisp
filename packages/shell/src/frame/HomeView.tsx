@@ -15,17 +15,18 @@ import { useRecipes } from './recipes.ts';
 import type { PickOptions } from '../platform/types.ts';
 import { Show, createEffect, createMemo, createSignal, lazy, on, onCleanup, untrack, type JSX } from 'solid-js';
 import { entityKey, newRowId, type EntityKey, type Json, type PeerId } from '@wisp/client';
-import { AutoPop, KeysHint, Launcher, NextList, SplitHome, Tips, lazyPart, lazyView, useSignal, warm as warmPart, type Act, type LauncherProps, type LauncherTool, type PlainTip } from '@wisp/ui';
+import { AutoPop, KeysHint, Launcher, NextList, Reserved, SplitHome, Tips, lazyPart, lazyView, useSignal, warm as warmPart, type Act, type LauncherProps, type LauncherTool, type PlainTip } from '@wisp/ui';
 import { useShell } from '../context.tsx';
 import type { LaunchTargetDef, SendHold } from '../contract.ts';
 import { aheadLabel, waitable } from './hold.ts';
-import { Slot, usePluginClient } from '../slot.tsx';
+import { Slot, useExtensions, usePluginClient } from '../slot.tsx';
 import { useNow } from '../clock.ts';
 import { SESSION, type SessionRow } from '../rows.ts';
-import { longTime, sectionOf, shortAgo, statusOf, sessionKey } from './rows-view.ts';
+import { longTime, needsYou, shortAgo, statusOf, sessionKey } from './rows-view.ts';
 import { autoBlocked, autoPreview, autoRules, create, setSetting, trial, type Attachment } from './commands.ts';
 import { newRun, runWords, sameSetup, settingModel, trialVary, variantWords, type Variant } from './trial.ts';
-import { modelWord, type Runner } from './runner.ts';
+import { modelWord, useHarnessRows, type Runner } from './runner.ts';
+import { AUTO_SETTING, LAUNCH_SETTING, autoEnabled, readLaunch, startRunner, withPick, type LaunchPick } from './launch-pick.ts';
 import { goalGate, goalOf, goalSent, isBareGoal, typedInFull, type HomeGoal } from './goal-gate.ts';
 import { feedbackCommand, isFeedback } from './feedback.ts';
 import { autoPick, neverRule, runnerParts, runnerPick, overrideOf, popOf, pct, PREVIEW_DEBOUNCE, shortLabel, usd, type AutoPreview } from './auto.ts';
@@ -40,6 +41,7 @@ import { promptKeys, remember, sentStore } from './prompt-keys.ts';
 import { displayCombo } from '../keys.ts';
 import { draftValue, launcherDraft } from './drafts.ts';
 import { MODE_ICON, agentName, modeMenu, whenAt, whenMenu, type Mode, type When } from './pickers.ts';
+import { newRecipeIntent } from './recipe-new.ts';
 import { TEAMS_SETTING, presetsOf, teamFromSetting, teamSize, teamToSend, type Delegate } from './team.ts';
 import type { DelegatePlace } from './DelegatePanel.tsx';
 
@@ -61,6 +63,8 @@ interface SettingRow {
 }
 
 const TIPS = ['goal1', 'goal2', 'vs', 'compare', 'auto', 'limit'] as const;
+/** the tips about Auto: shown only while its switch is on (owner #37) */
+const AUTO_TIPS: ReadonlySet<string> = new Set(['auto', 'limit']);
 const GUIDE = 'https://trywisp.dev/guides';
 
 /** New task's Worktree / In place default (wisp.worktrees declares it). */
@@ -102,20 +106,57 @@ export function HomeView(props: { readonly onBack?: () => void }): JSX.Element {
   const text = (): string => draft() ?? '';
   const setText = (v: string): void => shell.client.drafts.set(draftKey, draftField, draftValue(v));
   const [mode, setMode] = createSignal<Mode>('auto');
-  const [agent, setAgent] = createSignal('auto');
+  // the first frame starts on what's kept already, never on Auto while it's off (owner #36, #37)
+  const first = untrack(() =>
+    startRunner(
+      readLaunch(settings().find((r) => r.key === LAUNCH_SETTING)?.value),
+      harnesses().map((h) => h.id),
+      autoEnabled(settings().find((r) => r.key === AUTO_SETTING)?.value),
+    ),
+  );
+  const [agent, setAgent] = createSignal(first.agent);
   // the model and thinking level picked for the harness (Default: '')
-  const [model, setModel] = createSignal('');
+  const [model, setModel] = createSignal(first.model);
   // the model's name for the pill (v1 .rb-m shows the label, never the id)
-  const [modelLabel, setModelLabel] = createSignal('');
-  const [effort, setEffort] = createSignal('');
+  const [modelLabel, setModelLabel] = createSignal(first.modelLabel);
+  const [effort, setEffort] = createSignal(first.effort);
   // the account picked for the harness ('' : Auto, your saved one) and its name for the bar (F-acct-3)
   const [account, setAccount] = createSignal<{ id: string; label: string } | undefined>();
+  // Auto's one switch (`runtime.auto`, default off: owner #37) and New task's kept pick (`runtime.launch`, owner #36:
+  // the pick was a plain signal, so a page change or a reload put it back on Auto)
+  const autoOn = (): boolean => autoEnabled(settings().find((r) => r.key === AUTO_SETTING)?.value);
+  const kept = (): LaunchPick => readLaunch(settings().find((r) => r.key === LAUNCH_SETTING)?.value);
+  const harnessRows = useHarnessRows(shell.client.entities, () => home);
+  const readyIds = (): string[] => {
+    const found = harnessRows()
+      .filter((r) => r.state === 'installed')
+      .sort((a, b) => a.ord - b.ord)
+      .map((r) => r.id);
+    return found.length ? found : harnesses().map((h) => h.id);
+  };
+  // until you pick, New task follows what's kept (it lands after the first frame, as do the harnesses)
+  let runnerTouched = false;
+  createEffect(() => {
+    const r = startRunner(kept(), readyIds(), autoOn());
+    if (runnerTouched) return;
+    setAgent(r.agent);
+    setModel(r.model);
+    setModelLabel(r.modelLabel);
+    setEffort(r.effort);
+  });
+  const keepPick = (a: string, m: string, label: string, e: string): void => {
+    runnerTouched = true;
+    void shell.client.commands.run(setSetting, { peer: home, key: LAUNCH_SETTING, value: withPick(kept(), a, m, label, e) as unknown as Json }).catch(() => undefined);
+  };
   const pickAgent = (a: string): void => {
+    // the harness's own model and level, as it was last picked (v1 savedModel / savedEffort)
+    const r = startRunner({ ...kept(), agent: a }, [a], false);
     setAgent(a);
-    setModel('');
-    setModelLabel('');
-    setEffort('');
+    setModel(r.model);
+    setModelLabel(r.modelLabel);
+    setEffort(r.effort);
     setAccount(undefined);
+    keepPick(a, r.model, r.modelLabel, r.effort);
   };
   const [picker, setPicker] = createSignal(false);
   // What Auto will run (v1 auto-preview.js openPop): from the Auto pick while Auto picks
@@ -253,9 +294,15 @@ export function HomeView(props: { readonly onBack?: () => void }): JSX.Element {
   // wisp.worktrees' `worktrees.worktree` ('on' | 'off'), the same switch as Settings → General (B54: New task read and
   // wrote `defaults.worktree`, which no plugin declares, so its toggle never stuck and Settings' did nothing)
   const worktree = createMemo(() => !['off', false].includes(settings().find((r) => r.key === WORKTREE_KEY)?.value as never));
+  // the usage row's room from last time (Reserved): it loads after the first screen and must not move Needs you
+  const usageExt = useExtensions('shell.home:usage');
+  // none attached (wisp.budget off): no room held for it
+  const usageH = (): number => (usageExt().length ? usageSaved() : 0);
+  const usageSaved = useSignal(() => Number(shell.client.settings.get('shell.home.usageHeight')() ?? 0));
   const needs = createMemo(() =>
     sessions()
-      .filter((s) => !s.archived && sectionOf(s) === 'needs')
+      // the list's own rules (saved for later, Scheduled, a subagent's run: not here), so Home agrees with it
+      .filter(needsYou)
       .sort((a, b) => b.updated_at - a.updated_at),
   );
   // the @ and / menus (plugins' prompt sources), New task's own
@@ -596,9 +643,10 @@ export function HomeView(props: { readonly onBack?: () => void }): JSX.Element {
       ? [{ id: 'when', icon: 'clock' as const, label: t('shell.when.chip', { when: t(`shell.when.${when()}`) }), removeLabel: t('shell.when.clear'), onRemove: () => setWhen(undefined) }]
       : []),
   ];
+  const offeredTips = (): readonly string[] => (autoOn() ? TIPS : TIPS.filter((x) => !AUTO_TIPS.has(x)));
   const tips = (): PlainTip[] =>
     [0, 1, 2]
-      .map((k) => TIPS[(tipAt() + k) % TIPS.length] ?? 'goal1')
+      .map((k) => offeredTips()[(tipAt() + k) % offeredTips().length] ?? 'goal1')
       .map((id) => ({ before: t(`shell.tips.${id}`), bold: t(`shell.tips.${id}b`), after: t(`shell.tips.${id}a`), href: `${GUIDE}#${id}` }));
   return (
     <>
@@ -762,7 +810,7 @@ export function HomeView(props: { readonly onBack?: () => void }): JSX.Element {
                 ]),
             tool('later', 'launcher.later', 'clock', t('shell.home.later'), t('shell.home.later'), {
               ...(when() && { on: true }),
-              act: { menu: { items: whenMenu(t), onSelect: (v) => setWhen(v as When) } },
+              act: { menu: { items: whenMenu(t, now()), onSelect: (v) => setWhen(v as When) } },
             }),
           ],
           tool('more', 'launcher.more', 'dots', t('shell.home.moreOptions'), t('shell.home.moreOptionsTitle'), { text: true, act: { onClick: openFull } }),
@@ -798,7 +846,7 @@ export function HomeView(props: { readonly onBack?: () => void }): JSX.Element {
           add: t('shell.home.recipesNew'),
           issue: t('shell.home.issue'),
           issueTitle: t('shell.home.issueTitle'),
-          addAct: { onClick: () => settingsSheet('recipes') },
+          addAct: { onClick: () => shell.navigate(newRecipeIntent(project()?.path, mode())) },
           // Start from an issue (wisp.issues' picker, an overlay view; without that plugin, navigation drops it)
           issueAct: {
             onClick: () => shell.navigate({ t: 'openOverlay', overlay: { kind: 'dialog', id: 'issues.picker' as never, params: { project: project()?.id ?? '', name: project()?.name ?? '' } } }),
@@ -807,7 +855,9 @@ export function HomeView(props: { readonly onBack?: () => void }): JSX.Element {
       />
       {/* usage at a glance under the prompt box (wisp.budget's plan windows), v1 #790 .sh-usage; not in the phone sheet */}
       <Show when={!sheet()}>
-        <Slot input="shell.home:usage" layout="contents" />
+        <Reserved part="home.usage" height={usageH()} onHeight={(px) => void shell.client.settings.set('shell.home.usageHeight', Math.min(400, px)).catch(() => undefined)}>
+          <Slot input="shell.home:usage" layout="contents" />
+        </Reserved>
       </Show>
       {/* opened from the Auto pick (v1 openPop); before Auto answers it says it's still looking, then fills in */}
       <Show when={autoPop()}>
@@ -818,7 +868,7 @@ export function HomeView(props: { readonly onBack?: () => void }): JSX.Element {
           const row = (a: { agent: string; model: string; key: string; label: string; chance: number; usd: number; why?: string }, sug: boolean) => ({
             key: a.key,
             logo: harnessOf(harnesses(), a.agent).logo,
-            title: sug ? t('shell.auto.try', { label: shortLabel(a) }) : shortLabel(a),
+            title: sug ? t('shell.auto.try', { label: shortLabel(a, t('shell.auto.defaultPick')) }) : shortLabel(a, t('shell.auto.defaultPick')),
             sub: sug ? a.why || agentName(t, harnesses(), a.agent) : agentName(t, harnesses(), a.agent),
             chance: pct(a.chance),
             usd: usd(a.usd),
@@ -835,7 +885,7 @@ export function HomeView(props: { readonly onBack?: () => void }): JSX.Element {
               label={t('shell.auto.popLabel')}
               head={((x) =>
                 x
-                  ? { logo: harnessOf(harnesses(), x.agent).logo, title: shortLabel(x), sub: `${agentName(t, harnesses(), x.agent)} · ${goal()}` }
+                  ? { logo: harnessOf(harnesses(), x.agent).logo, title: shortLabel(x, t('shell.auto.defaultPick')), sub: `${agentName(t, harnesses(), x.agent)} · ${goal()}` }
                   : { nothing: t('shell.auto.nothing'), why: p().why || t('shell.auto.looking') })(pk())}
               why={pk() ? pop().why : undefined}
               facts={pk() ? facts() : []}
@@ -858,6 +908,7 @@ export function HomeView(props: { readonly onBack?: () => void }): JSX.Element {
                 // its name from Auto's label ("Codex · GPT-5 · High", v1 shortLabel), so the pill names it, not Default
                 setModelLabel(c.model ? (c.label.split(' · ')[1] ?? '') : '');
                 setEffort(c.effort);
+                keepPick(c.agent, c.model, c.model ? (c.label.split(' · ')[1] ?? '') : '', c.effort);
               }}
               onNever={() => {
                 setAutoPop(false);
@@ -874,7 +925,7 @@ export function HomeView(props: { readonly onBack?: () => void }): JSX.Element {
         anchor={() => document.querySelector('[data-part="launcher.harness"][data-lead]')}
         back={() => input}
         peer={target()}
-        auto
+        auto={autoOn()}
         accounts
         // the names ride along, so a thinking or account change (withSetting) keeps the model's and account's words
         value={{ agent: agent(), model: model(), effort: effort(), account: account()?.id ?? '', ...(modelLabel() && { modelLabel: modelLabel() }), ...(account() && { accountLabel: account()?.label ?? '' }) }}
@@ -885,6 +936,7 @@ export function HomeView(props: { readonly onBack?: () => void }): JSX.Element {
           setModelLabel(r.modelLabel ?? '');
           setEffort(r.effort);
           setAccount(r.account ? { id: r.account, label: r.accountLabel ?? r.account } : undefined);
+          keepPick(r.agent, r.model, r.modelLabel ?? '', r.effort);
           // back on Auto, or another goal: what it will run is asked again
           if (r.agent === 'auto') ask(text(), was !== 'auto');
         }}
@@ -921,6 +973,7 @@ export function HomeView(props: { readonly onBack?: () => void }): JSX.Element {
         <NextList
           heading={t('shell.section.needs')}
           count={needs().length}
+          countLabel={needs().length > 5 ? t('shell.home.needsOf', { shown: 5, all: needs().length }) : undefined}
           rows={needs()
             .slice(0, 5)
             .map((s) => ({
@@ -941,7 +994,7 @@ export function HomeView(props: { readonly onBack?: () => void }): JSX.Element {
           heading={t('shell.tips.heading')}
           more={t('shell.tips.more')}
           moreTitle={t('shell.tips.moreTitle')}
-          onMore={() => setTipAt((tipAt() + 3) % TIPS.length)}
+          onMore={() => setTipAt((tipAt() + 3) % offeredTips().length)}
           onOpen={(href) => shell.platform.openExternal(href)}
           setup={[
             { kind: 'tool', icon: 'github', title: t('shell.tips.github'), body: t('shell.tips.githubBody'), cta: t('shell.tips.signIn'), onClick: () => settingsSheet('accounts') },

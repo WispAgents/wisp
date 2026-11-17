@@ -1,7 +1,8 @@
 // Home as v1 draws it (web/css/split.css .split-home, launcher.css, composer.css, auto.css, tips):
 // the greeting, the prompt box (where it runs, the prompt, its toolbar, Recipes), what needs you,
 // then the tips. On a phone it's its own page with a back button in its head.
-import { For, Index, Show, createSignal, type JSX } from 'solid-js';
+import { For, Index, Show, createEffect, createSignal, on, type JSX } from 'solid-js';
+import { growTextarea } from '../core/autosize.ts';
 import { LauncherSetup, type LauncherSetupProps } from './LauncherSetup.tsx';
 import { HoldRow, type HoldRowProps } from '../composer/HoldRow.tsx';
 import { flag } from '../core/props.ts';
@@ -14,6 +15,9 @@ import type { IconName } from '../content/icons.ts';
 import { ActIcon, WithAct, actAttrs, type Act } from './act.tsx';
 import { ProjectSelect, type ProjectSelectProps } from './ProjectSelect.tsx';
 import { usePlatform } from '../platform/PlatformLook.tsx';
+
+/** v1 launcher.js: the prompt's tallest, in px, before it scrolls */
+const PROMPT_MAX = 340;
 
 export interface SplitHomeProps {
   /** none in the phone apps' New task sheet, whose bar says New task (r291) */
@@ -221,10 +225,15 @@ export function Launcher(props: LauncherProps): JSX.Element {
   };
   const empty = (): boolean => props.value.trim() === '';
   const phone = ((look) => (): boolean => look() !== 'web')(usePlatform());
+  // the phone apps with no recipes: no Recipes row, and Start from an issue is one of the bar's tools (v1 launcher.js:
+  // "the phone app has it in its bar"); it sat alone on a row of its own under Send
+  const issueInBar = (): boolean => phone() && (props.recipes.items?.length ?? 0) === 0;
   // Send with nothing written: the prompt takes the caret and its placeholder lights up until you type
   const [nudge, setNudge] = createSignal(false);
   const [over, setOver] = createSignal(false);
   let input: HTMLTextAreaElement | undefined;
+  // v1 launcher.js autosize(ta): the prompt grows with what's typed (or a restored draft) up to 340 px, then scrolls
+  createEffect(on(() => props.value, () => input && growTextarea(input, PROMPT_MAX)));
   const send = (): void => {
     if (props.sendAct?.pending) return;
     if (!empty()) return props.onSend();
@@ -259,7 +268,7 @@ export function Launcher(props: LauncherProps): JSX.Element {
             value={props.value}
             ref={(el) => ((input = el), props.inputRef?.(el))}
             onBlur={() => setNudge(false)}
-            onInput={(e) => (setNudge(false), props.onInput(e.currentTarget.value, e))}
+            onInput={(e) => (setNudge(false), growTextarea(e.currentTarget, PROMPT_MAX), props.onInput(e.currentTarget.value, e))}
             onKeyDown={key}
             onPaste={(e) => props.onPaste?.(e)}
           />
@@ -293,7 +302,7 @@ export function Launcher(props: LauncherProps): JSX.Element {
             </For>
           </div>
         </Show>
-        <div data-kit="l-bar" data-try={flag(trial())}>
+        <div data-kit="l-bar" data-try={flag(trial())} data-cmp={flag((props.runner.compares?.length ?? 0) > 0)}>
           <Index each={props.lead}>{(t) => <Tool t={t()} />}</Index>
           <WithAct
             act={props.mode.act}
@@ -458,6 +467,9 @@ export function Launcher(props: LauncherProps): JSX.Element {
           <Index each={props.mid}>{(t) => <Tool t={t()} />}</Index>
           <span data-kit="grow" />
           <Index each={props.tail}>{(t) => <Tool t={t()} />}</Index>
+          <Show when={issueInBar()}>
+            <Tool t={{ id: 'issue', part: 'launcher.issue', icon: 'issue', label: props.recipes.issue, title: props.recipes.issueTitle, ...(props.recipes.issueAct && { act: props.recipes.issueAct }) }} />
+          </Show>
           <button type="button" {...actAttrs(props.sendAct)} data-kit="send" data-part="launcher.send" title={props.sendLabel} aria-label={props.sendLabel} onClick={send}>
             <ActIcon act={props.sendAct}>
               <Icon name="enter" />
@@ -466,7 +478,7 @@ export function Launcher(props: LauncherProps): JSX.Element {
         </div>
         <Show when={props.hold}>{(h) => <HoldRow {...h()} place="launcher" box={() => input} part="launcher.hold" />}</Show>
         <div data-kit="l-foot" hidden={props.hold !== undefined}>
-          <div data-kit="l-recipes" data-part="launcher.recipes">
+          <div data-kit="l-recipes" data-part="launcher.recipes" hidden={issueInBar()}>
             {/* v1 responsive.css: an empty Recipes list is an ad for a feature, not worth a phone's screen; the phone apps
                 hide it by data-empty and keep Start from an issue (v1 moved it to the bar there); the browser's HTML stays v1's */}
             <div
@@ -479,7 +491,7 @@ export function Launcher(props: LauncherProps): JSX.Element {
                 <Icon name="bolt" />
                 {props.recipes.label}
               </span>
-              <For each={props.recipes.items} fallback={<span data-kit="lr-empty">{props.recipes.empty}</span>}>
+              <For each={props.recipes.items} fallback={<span data-kit="lr-empty" title={props.recipes.empty}>{props.recipes.empty}</span>}>
                 {(r) => (
                   <WithAct
                     act={r.act}
@@ -504,15 +516,17 @@ export function Launcher(props: LauncherProps): JSX.Element {
                 )}
               />
             </div>
-            <WithAct
-              act={props.recipes.issueAct}
-              render={(trigger) => (
-                <button type="button" {...trigger()} data-kit="lp-chip" data-small="" data-part="launcher.issue" title={props.recipes.issueTitle} aria-label={props.recipes.issueTitle}>
-                  <Icon name="issue" />
-                  <span data-text="control">{props.recipes.issue}</span>
-                </button>
-              )}
-            />
+            <Show when={!issueInBar()}>
+              <WithAct
+                act={props.recipes.issueAct}
+                render={(trigger) => (
+                  <button type="button" {...trigger()} data-kit="lp-chip" data-small="" data-part="launcher.issue" title={props.recipes.issueTitle} aria-label={props.recipes.issueTitle}>
+                    <Icon name="issue" />
+                    <span data-text="control">{props.recipes.issue}</span>
+                  </button>
+                )}
+              />
+            </Show>
           </div>
         </div>
       </section>
@@ -534,12 +548,19 @@ export interface NextRow {
 }
 
 /** v1 .sh-next: what needs you, up to five, each opening its task. */
-export function NextList(props: { readonly heading: string; readonly count: number; readonly rows: readonly NextRow[]; readonly onOpen: (id: string) => void }): JSX.Element {
+export function NextList(props: {
+  readonly heading: string;
+  readonly count: number;
+  /** said in place of the count when fewer rows show than it counts (v1 paintHome "5 of 9"). Additive (2026-11-17). */
+  readonly countLabel?: string | undefined;
+  readonly rows: readonly NextRow[];
+  readonly onOpen: (id: string) => void;
+}): JSX.Element {
   return (
     <div data-kit="sh-next" data-part="split.next">
       <h4>
         {props.heading}
-        <span data-kit="sec-n">{props.count}</span>
+        <span data-kit="sec-n">{props.countLabel ?? props.count}</span>
       </h4>
       {/* by task, each row made once (the flicker gate: they were made again on every change) */}
       <ForKeyed each={props.rows}>

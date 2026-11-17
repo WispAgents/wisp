@@ -19,7 +19,7 @@ fn line(p: &Value) -> String {
     format!("{on} {:<24} {:<8} {:<8}{desc}", s(p, "id"), format!("v{}", s(p, "version")), s(p, "state"))
 }
 
-/// `wisp plugin [ls] | enable <id> | disable <id>`.
+/// `wisp plugin [ls] | enable <id> | disable <id> | trust <id> | untrust <id>`.
 pub async fn run(c: &Client, p: &Parsed, args: &[String]) -> Result<()> {
     let f = &p.flags;
     match args.first().map_or("ls", String::as_str) {
@@ -67,6 +67,7 @@ pub async fn run(c: &Client, p: &Parsed, args: &[String]) -> Result<()> {
             );
             Ok(())
         }
+        sub @ ("trust" | "untrust") => trust(c, f, args.get(1), sub == "trust").await,
         "remove" | "uninstall" | "rm" => {
             let id = need(args.get(1), "plugin id")?;
             let r = c.cmd("plugins.uninstall", json!({ "id": id })).await?;
@@ -74,7 +75,7 @@ pub async fn run(c: &Client, p: &Parsed, args: &[String]) -> Result<()> {
             Ok(())
         }
         other => Err(CliError::said(format!(
-            "wisp plugin {other}: ls, install <folder or git URL>, enable <id>, disable <id>, remove <id> or new <name>"
+            "wisp plugin {other}: ls, install <folder or git URL>, enable <id>, disable <id>, trust <id>, untrust <id>, remove <id> or new <name>"
         ))),
     }
 }
@@ -122,6 +123,14 @@ pub fn new_plugin(home: &Path, name: &str) -> Result<std::path::PathBuf> {
         ),
     )?;
     Ok(dir)
+}
+
+/// ADR-0048: what you install is untrusted; trusting it gives it your environment and lets its theme apply.
+async fn trust(c: &Client, f: &crate::args::Flags, id: Option<&String>, trusted: bool) -> Result<()> {
+    let id = need(id, "plugin id")?;
+    let r = c.cmd("plugins.trust", json!({ "id": id, "trusted": trusted })).await?;
+    out(f, &r, &format!("  ✓ {id} {}", if trusted { "trusted" } else { "untrusted" }));
+    Ok(())
 }
 
 #[cfg(test)]

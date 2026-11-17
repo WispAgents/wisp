@@ -1177,7 +1177,18 @@
     animation: k-android-full var(--dur-medium) var(--ease-emph-out);
   }
   @keyframes k-android-full { from { opacity: 0; transform: translateY(var(--space-9)); } }
-  :root[data-platform='android'] [data-kit='frame'][data-behind] [data-kit='split-home'] { padding-top: var(--space-4); }
+  :root[data-platform='android'] [data-kit='frame'][data-behind] [data-kit='split-home'] { padding: var(--space-4) var(--space-4) var(--space-9); }
+  /* the composer on a phone (owner, 2026-11-17): the New task sheet's field runs the screen's width, inset only as far
+     as the sheet's Cancel (8), and its prompt and tool bar scroll with no bar drawn (reset.css styles WebKit's scrollbars,
+     which would draw a classic one inside the field; scrollbar-width alone doesn't hide that one) */
+  :root[data-platform='android'] [data-kit='launcher'] [data-kit='prompt'],
+  :root[data-platform='android'] [data-kit='reply-box'] [data-kit='reply'],
+  :root[data-platform='android'] [data-kit='launcher'] [data-kit='l-bar'],
+  :root[data-platform='android'] [data-kit='reply-box'] [data-kit='c-bar'] { scrollbar-width: none; }
+  :root[data-platform='android'] [data-kit='launcher'] [data-kit='prompt']::-webkit-scrollbar,
+  :root[data-platform='android'] [data-kit='reply-box'] [data-kit='reply']::-webkit-scrollbar,
+  :root[data-platform='android'] [data-kit='launcher'] [data-kit='l-bar']::-webkit-scrollbar,
+  :root[data-platform='android'] [data-kit='reply-box'] [data-kit='c-bar']::-webkit-scrollbar { display: none; }
   /* the composer as an M3 docked bar: a filled field with the extra-large shape, Send a filled icon button */
   :root[data-platform='android'] [data-kit='reply-box'],
   :root[data-platform='android'] [data-kit='launcher'] {

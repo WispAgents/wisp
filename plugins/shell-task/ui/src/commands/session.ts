@@ -111,15 +111,6 @@ export const compact = defineCommand<{ key: EntityKey }>({
   optimistic: (base, a) => (has(base, a.key) ? [patch(a.key, [{ path: '/state', value: 'running' }, { path: '/live', value: 'Compacting' }])] : []),
 });
 
-/** Releases a held turn: Run now / Trust and run / Wait for the reset (v1 /held). */
-export const releaseHeld = defineCommand<{ key: EntityKey; turnId: string; action: 'run' | 'trust' | 'wait' | 'cancel' | 'switch'; to?: string }>({
-  id: 'runtime.release',
-  // runtime.release runs or skips a held turn; waiting is the default (nothing to send), switching runs it
-  wire: (a) => ({ id: bare(a.key), turnId: a.turnId, action: a.action === 'cancel' ? 'skip' : 'start' }),
-  owner,
-  optimistic: 'none', pending: 'the session.held control',
-});
-
 /** Saves an `app` block's state (v1 /app-state). */
 export const appState = defineCommand<{ key: EntityKey; turnId: string; block: string; state: unknown }>({
   id: 'runtime.appState',

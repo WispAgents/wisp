@@ -160,27 +160,11 @@ export const cancelPlan = defineCommand<{ id: string }>({
   optimistic: (_base, a) => [{ e: KIND.plan, id: asKey(a.id), op: 'del' }],
 });
 
-export type HeldAction = 'start' | 'without' | 'wait' | 'skip';
-/**
- * Start / wait / skip a run held near the limit (v1 POST /sessions/:id/held). Assumed id: the
- * runtime owns held runs; Later only shows them. The row moves at once (Working, Scheduled, Done).
- */
-export const heldAction = defineCommand<{ sessionId: string; action: HeldAction }>({
-  // runtime.held finds the held turn itself; Wait is not answering (nothing to send for it)
-  id: 'runtime.held',
-  owner: (a) => a.sessionId,
-  wire: (a) => ({ id: bare(a.sessionId), action: a.action === 'skip' ? 'skip' : 'start' }),
-  optimistic: (base, a) =>
-    session(base, a.sessionId, (s) => {
-      if (a.action === 'start' || a.action === 'without') return { state: 'running', unread: false, held: undefined };
-      if (a.action === 'wait') return { state: 'done', unread: false, held: { ...(s.held as Held), waiting: true } };
-      return { state: 'done', unread: false, held: undefined };
-    }),
-});
-
 /** A schedule saved for something another plugin owns (a member's check-ins, a trigger): its own command. */
 export function applySchedule(cmd: string): ReturnType<typeof defineCommand<Record<string, unknown>>> {
   return defineCommand<Record<string, unknown>>({ id: cmd, owner: (a) => String(a['id'] ?? a['peer'] ?? ''), optimistic: 'none', pending: `the ${cmd} control` });
 }
 
-export const COMMANDS = [addFollowUp, editFollowUp, snoozeReminder, cancelFollowUp, park, addPlan, editPlan, startPlan, cancelPlan, heldAction];
+// a held run's Start / Skip are the task page's own card (runtime.release, a person's yes); Later sends none: its old
+// held command sent `start` for Wait too (QA r1)
+export const COMMANDS = [addFollowUp, editFollowUp, snoozeReminder, cancelFollowUp, park, addPlan, editPlan, startPlan, cancelPlan];

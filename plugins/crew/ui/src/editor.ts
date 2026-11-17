@@ -111,16 +111,6 @@ export function addWake(list: readonly Wake[], on: string, member?: string): Wak
   return list.some((x) => same(x, w)) ? [...list] : [...list, w];
 }
 
-/** The editor's params: `{ id }` to edit a member, nothing to add one. */
-/** the editor's params: a member to edit (`id`), or a task to make a member's first job (`task`, its entity key:
- *  v1 Add to crew…) */
-export const parseEditor = (p: unknown): { id?: string; task?: string; again?: Draft } => {
-  const o = p as { id?: unknown; task?: unknown; again?: unknown } | null;
-  // `again`: the form as you left it when the peer refused the add (v1 `again()`)
-  const again = o?.again && typeof o.again === 'object' && typeof (o.again as Draft).name === 'string' ? draftOf(o.again as Partial<Member>) : undefined;
-  return { ...(typeof o?.id === 'string' && o.id && { id: o.id }), ...(typeof o?.task === 'string' && o.task.includes(':') && { task: o.task }), ...(again && { again: { ...again, ...(o?.again as Draft) } }) };
-};
-
 /** v1 crew-templates.js: ready-made members (a spirit, a schedule, and a name, role and brief from the catalogue:
  * `wisp.crew.tpl.<key>.name|role|brief`) that already work. */
 export interface Template {

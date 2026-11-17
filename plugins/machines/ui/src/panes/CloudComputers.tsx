@@ -50,6 +50,21 @@ export default function CloudComputers(props: ExtensionProps): JSX.Element {
                   tile="cloud"
                   title={box.name}
                   description={row().who}
+                  // its agents in the row's words column, a hairline above (v1 .cg-agents; QA r1 #25: they sat flush
+                  // with the card's border)
+                  below={
+                    st() === 'online' ? (
+                      <Stack gap="1" part="machines.cloud.agents">
+                        <Text size="sm" weight="semibold" tone="muted">
+                          {t('machines.cloud.agents')}{' '}
+                          <Text size="sm" weight="regular" tone="faint">
+                            {t('machines.cloud.agents.note')}
+                          </Text>
+                        </Text>
+                        <Slot input="shell.machine:agents" layout="stack" id={peerId(box.id)} />
+                      </Stack>
+                    ) : undefined
+                  }
                   control={
                     <Inline gap="2">
                       <Pill tone={TONE[st()] ?? 'neutral'} dot live={busy()} variant="plain">
@@ -85,17 +100,7 @@ export default function CloudComputers(props: ExtensionProps): JSX.Element {
                     {t('machines.cloud.wakeFirst')}
                   </Text>
                 </Show>
-                <Show when={st() === 'online'}>
-                  <Stack gap="1" part="machines.cloud.agents">
-                    <Text size="sm" weight="semibold">
-                      {t('machines.cloud.agents')}{' '}
-                      <Text size="sm" tone="muted">
-                        {t('machines.cloud.agents.note')}
-                      </Text>
-                    </Text>
-                    <Slot input="shell.machine:agents" layout="stack" id={peerId(box.id)} />
-                  </Stack>
-                </Show>
+
               </Stack>
             );
           }}

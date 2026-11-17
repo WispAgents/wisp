@@ -23,3 +23,10 @@ test('a needs-you row says why under its title and its status in its tone', () =
   rows[1]?.click();
   expect(opened).toEqual(['b']);
 });
+
+// QA round 1 #14: "Needs you 9" over five rows, no word of the rest. v1 paintHome: "5 of 9" when there are more.
+test('needs you says how many it shows of how many when it shows fewer', () => {
+  const row = (id: string) => ({ id, title: id, color: 'slate', state: 'Report', tone: 'info' as const, time: '1m', timeTitle: '' });
+  const host = mount(() => <NextList heading="Needs you" count={9} countLabel="5 of 9" rows={['a', 'b', 'c', 'd', 'e'].map(row)} onOpen={() => {}} />);
+  expect(host.querySelector('[data-kit="sec-n"]')?.textContent).toBe('5 of 9');
+});

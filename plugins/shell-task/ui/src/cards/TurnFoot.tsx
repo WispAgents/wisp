@@ -1,5 +1,5 @@
 // `shell-task.turn`, under each turn (`shell.turn:foot`, the turn's key as its id): why it stopped (HaltCard), what
-// holds it (HeldCard), what moved in the CLI since the last turn (WhatChanged) and its receipt (Receipt). The turn
+// holds it (HeldCard), what moved in the CLI since the last turn (WhatChanged) and its subagents' share. The turn
 // and its siblings are the task's `turn` rows; the plan shares are wisp.budget's, in the turn's ext slot.
 import { Show, createMemo, createResource, type JSX } from 'solid-js';
 import { defineCommand, entityKey, ownerOf, type EntityKey } from '@wisp/client';
@@ -9,7 +9,7 @@ import { useShell } from '../shell.ts';
 import { HaltCard } from './HaltCard.tsx';
 import { HeldCard } from './HeldCard.tsx';
 import { agentsOf, type AgentStats } from './agents.ts';
-import { docOf, haltOf, heldOf, receiptOf, whatChanged, type TurnDoc } from './model.ts';
+import { docOf, haltOf, heldOf, whatChanged, type TurnDoc } from './model.ts';
 import { Receipt } from './Receipt.tsx';
 import { handoffTargets, limitTarget, type AgentLike, type Target } from './vendors.ts';
 import { WhatChanged } from './WhatChanged.tsx';
@@ -119,7 +119,7 @@ export default function TurnFoot(props: ExtensionProps): JSX.Element {
             )}
           </Show>
           <Show when={whatChanged(siblings(), d(), nameOf(from()))}>{(line) => <WhatChanged line={line()} t={t} />}</Show>
-          <Show when={receiptOf(d(), t)}>{(r) => <Receipt line={r()} />}</Show>
+          {/* its receipt is in the trail now, after the token count (TrailReceipt, ADR-0095) */}
           {/* where the tokens went: Claude Code's own subagents, by type and model (v1 turns.js agentsHtml) */}
           <Show when={agentsOf(d().stats as AgentStats | null | undefined, t)}>{(a) => <Receipt line={a()} part="turn.agents" />}</Show>
         </Stack>

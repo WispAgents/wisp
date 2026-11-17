@@ -312,3 +312,24 @@ describe('the feed row (v1 #feed .it-head)', () => {
     expect([...(bare.querySelector('[data-kit="row-run"]')?.children ?? [])].map((e) => (e as HTMLElement).dataset['kit'])).toEqual(['ir-h', 'ir-w']);
   });
 });
+
+test('a_settings_row_title_too_long_for_its_row_ends_in_an_ellipsis_with_the_whole_on_hover_qa_r1_21', () => {
+  const long = 'Ask near the limit: before a task would take a usage window past this percent, ask first (auto)';
+  mount(() => <SettingsRow part="a.long" title={long} control={<span />} />);
+  const title = part('a.long')?.querySelector('[data-kit="settings-row-title"]');
+  // the words in their own box: text-overflow ends a block's text, not a flex container's (the title is one)
+  const words = title?.querySelector('[data-kit="settings-row-words"]');
+  expect(words?.textContent).toBe(long);
+  expect(words?.getAttribute('title')).toBe(long);
+});
+
+test('a_settings_row_can_carry_more_under_its_words_under_its_words_and_control_qa_r1_25', () => {
+  // Cloud's "Agents on it" sat under the row, flush with the card's border, not with the row's words (v1 .cg-agents:
+  // grid-column 2 / -1, a hairline above)
+  mount(() => <SettingsRow part="a.below" tile="cloud" title="Cloud" description="m0xoo" below={<p data-testid="more">Agents on it</p>} control={<span />} />);
+  const row = part('a.below');
+  const below = row?.querySelector(':scope > [data-kit="settings-row-below"]');
+  expect(below?.querySelector('[data-testid="more"]')?.textContent).toBe('Agents on it');
+  // a row of its own in the row's grid, after the control, from the words' column to the end (v1 grid-column 2 / -1)
+  expect(below?.previousElementSibling?.getAttribute('data-kit')).toBe('settings-row-control');
+});

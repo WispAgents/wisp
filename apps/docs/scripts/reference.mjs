@@ -180,6 +180,8 @@ function triggers(all) {
 function pluginApi() {
   const m = JSON.parse(read('plugins/plugins/core/data/manifest-fields.json'));
   const kit = JSON.parse(read('packages/shell/src/remote/kit.json'));
+  // the allow-list the kernel checks a theme with and the shell applies it with (ADR-0007)
+  const styles = JSON.parse(read('packages/shell/src/theme-styles/part-styles.json'));
   const rows = (o) => Object.entries(o).map(([k, v]) => `| \`${k}\` | ${esc(v)} |`).join('\n');
   const comps = Object.entries(kit.components ?? {})
     .map(([name, props]) => {
@@ -234,7 +236,29 @@ ${comps}
 | --- | --- | --- |
 ${places}
 
-Limits: ${l.text} characters per text, ${l.nodes} nodes, ${l.depth} levels, ${l.items} items per Select.`,
+Limits: ${l.text} characters per text, ${l.nodes} nodes, ${l.depth} levels, ${l.items} items per Select.
+
+## Themes (\`partStyles\`)
+
+A theme is a plugin with only a manifest: \`contributes.partStyles\` maps the \`data-part\` names of what you want to restyle (see them in the browser's inspector: \`data-part="composer.send"\`) to CSS declarations. wisp writes them into the app's \`@layer plugins\`, after its own styles, so they win without \`!important\`. They apply while the plugin is on **and you trusted it**: a plugin you install is untrusted until you say otherwise, and an untrusted plugin's styles never apply.
+
+\`\`\`sh
+wisp plugin install ./pink      # installed, off and untrusted
+wisp plugin trust user.pink     # its styles may apply
+wisp plugin enable user.pink    # on: the app restyles at once; disable or remove it and they go
+\`\`\`
+
+\`\`\`json
+"partStyles": {
+  ":root": { "--accent": "#d6336c" },
+  "composer.send": { "background": "#d6336c", "color": "#ffffff", "border-radius": "999px" },
+  "@dark": { ":root": { "--accent": "#ff7aa8" }, "composer.send": { "background": "#ff7aa8", "color": "#1a1a1a" } }
+}
+\`\`\`
+
+- A key is a part name (\`composer.send\`: lowercase, dot-namespaced), \`${styles.tokens}\` for token overrides (custom properties only, like \`--accent\`), or ${styles.groups.map((g) => `\`${g}\``).join(' / ')} holding the same map for that theme only (when the app's theme is set to it, or follows the system and the system is in it).
+- A property is a custom property (\`--anything\`) or one of: ${styles.properties.map((x) => `\`${x}\``).join(', ')}.
+- A value is plain CSS of at most ${styles.maxValue} characters: no \`;\`, braces, \`<\`, \`>\`, \`\\\`, \`@\`, \`!\`, comments or unbalanced quotes; \`url()\` only with a \`data:image/\` URL, and no \`image-set()\`: a theme fetches nothing. At most ${styles.maxRules} declarations. Anything else is refused when the plugin installs.`,
   );
 }
 

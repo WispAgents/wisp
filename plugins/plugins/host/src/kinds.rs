@@ -56,6 +56,7 @@ impl ResourceKind for PluginKind {
                 // the kernel refuses an unknown plugin or wisp.plugins itself: nothing is stored then.
                 crate::find(&self.0.ctx, &op.name)?;
                 self.0.ctx.set_plugin_enabled(&op.name, on).await?;
+                crate::styles::changed(&self.0.ctx, &op.name);
             }
             self.0.apply(call, op).await
         })

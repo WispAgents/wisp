@@ -300,13 +300,17 @@ async fn after_a_restart_trust_starts_the_turns_the_watch_held_and_start_now_run
         let t = api.until(&id, "held", |t| t.len() == 1 && t[0]["status"] == "held").await;
         held.push((id, t[0]["id"].as_str().unwrap().to_owned()));
     }
-    // a restart: the same home, the fakes installed again (the original codex), so it's changed again the same way
+    // a restart: the same home and the same (changed) codex, never installed again or deleted while the new server
+    // may be running it (Windows refuses that: Access is denied)
+    let changed = std::fs::read(dir.join("bin").join(format!("codex{}", std::env::consts::EXE_SUFFIX))).unwrap();
     serve.keep = true;
     drop(serve);
-    // the old server's address goes with it, so the new one's is the one read
-    std::fs::remove_file(dir.join("home").join("server.json")).unwrap();
-    let (serve, port) = start(&dir);
-    change_codex(&dir);
+    let (serve, port) = restart(&dir);
+    assert_eq!(
+        std::fs::read(dir.join("bin").join(format!("codex{}", std::env::consts::EXE_SUFFIX))).unwrap(),
+        changed,
+        "the restart kept the changed program"
+    );
     let api = Arc::new(Api { http: reqwest::Client::new(), port, n: 0.into() });
     let ((a, a_turn), (b, _)) = (held[0].clone(), held[1].clone());
     // Start now on one card
@@ -348,5 +352,43 @@ async fn trust_starts_only_turns_still_held_not_skipped_archived_or_deleted_ones
     assert_eq!(a[0]["status"], "held", "an archived held task stays held, never started by Trust: {a}");
     let s = api.cmd("runtime.turns", json!({ "id": skip })).await;
     assert_eq!(s[0]["status"], "stopped", "{s}");
+    drop(serve);
+}
+
+/// QA r1 #10: a held task marked done (by hand, or an agent's `done`) sat under Done saying "Waiting for codex", and a
+/// later Trust could start it. Marked done, Trust leaves it alone; reopened, it's held as before (Mark done's Undo
+/// brings it back as it was) and Trust starts it.
+#[tokio::test(flavor = "multi_thread")]
+async fn trust_leaves_a_held_task_marked_done_and_starts_it_once_reopened() {
+    let dir = temp("serve-watch-done");
+    let (serve, port) = start(&dir);
+    let api = Arc::new(Api { http: reqwest::Client::new(), port, n: 0.into() });
+    api.cmd("accounts.watch.ask", json!({ "on": true })).await;
+    let (turn, _) = run_task(&api, &dir, "codex").await;
+    assert_eq!(turn["status"], "done", "{turn}");
+    change_codex(&dir);
+    let (done, kept) = {
+        let mut ids = Vec::new();
+        for p in ["done", "kept"] {
+            let id = api.cmd("runtime.create", json!({ "prompt": p, "cwd": dir.join("proj"), "agent": "codex" })).await["id"]
+                .as_str()
+                .unwrap()
+                .to_owned();
+            api.until(&id, "held", |t| t.len() == 1 && t[0]["status"] == "held").await;
+            ids.push(id);
+        }
+        (ids[0].clone(), ids[1].clone())
+    };
+    api.cmd("runtime.setState", json!({ "id": done, "state": "done" })).await;
+    api.cmd("accounts.watch.trust", json!({ "agent": "codex" })).await;
+    api.until(&kept, "Trust starts the one still waiting", |t| t.len() == 1 && t[0]["status"] == "done").await;
+    assert_eq!(api.cmd("runtime.turns", json!({ "id": done })).await[0]["status"], "held", "a task marked done isn't started");
+    // reopened (Undo): held as before, and its card's Start now still runs it
+    api.cmd("runtime.setState", json!({ "id": done, "state": "review" })).await;
+    let t = api.cmd("runtime.turns", json!({ "id": done })).await;
+    assert_eq!(t[0]["status"], "held", "{t}");
+    let tid = t[0]["id"].as_str().unwrap().to_owned();
+    api.cmd("runtime.release", json!({ "id": done, "turnId": tid, "action": "start" })).await;
+    api.until(&done, "Start now runs it once reopened", |t| t.len() == 1 && t[0]["status"] == "done").await;
     drop(serve);
 }

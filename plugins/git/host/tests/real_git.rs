@@ -153,6 +153,19 @@ async fn changes_from_the_merge_base_with_untracked_and_stage_state() {
     assert_eq!(c.base, "origin/main");
 }
 
+/// QA r1 #3: Changes on a task with no repo (a scratch folder) was refused with "<path> isn’t in a git repo", which
+/// the app showed as an error toast with the internal path. No repo is a normal answer: none (git can't tell).
+#[tokio::test]
+async fn changes_in_a_folder_with_no_repo_is_none_not_an_error() {
+    let t = tmp("norepo");
+    let dir = t.0.join("scratch");
+    std::fs::create_dir_all(&dir).unwrap();
+    let (svc, _) = service();
+    let a =
+        ChangesArgs { path: dir.display().to_string(), base: "HEAD".into(), reveal: vec![], mask: true, stage_state: true, inline: true };
+    assert_eq!(wisp_git::commands::changes(&svc, a).await.unwrap(), None);
+}
+
 #[tokio::test]
 #[allow(clippy::too_many_lines)] // v1's stage round trip, step by step
 async fn stage_a_hunk_unstage_it_commit_and_refuse_a_stale_key() {

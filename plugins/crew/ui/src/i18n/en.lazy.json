@@ -110,6 +110,7 @@
   "wisp.crew.editor.cron": "Checks in",
   "wisp.crew.page.editMember": "Edit…",
   "wisp.crew.editor.auto": "Auto",
+  "wisp.crew.editor.asNewTask": "As New task",
   "wisp.crew.answer.title": "Crew answers",
   "wisp.crew.answer.working": "Working on it…",
   "wisp.crew.answer.failed": "Couldn’t answer.",

@@ -79,7 +79,10 @@ pub async fn set(st: &Arc<St>, on: bool, name: Option<String>) -> Result<Compute
         return Ok(view(st));
     }
     let (mut a, token) = st.signed_in().await.map_err(WireError::invalid)?;
-    let name = name.unwrap_or_else(|| crate::signin::device_name().trim_end_matches(" (wisp)").to_owned());
+    let name = match name {
+        Some(n) => n,
+        None => crate::signin::label_of(crate::signin::host_name(st).await.as_deref()),
+    };
     if a.computer_id.is_empty() || a.computer_name != name {
         let (status, c) =
             net::call(&st.http, "POST", &format!("{}/api/computers", a.grid), Some(&token), Some(&json!({ "name": name })), &[]).await?;

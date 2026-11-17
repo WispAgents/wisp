@@ -76,6 +76,10 @@ export interface SettingsRowProps extends KitProps {
   readonly choices?: boolean;
   /** when the control drops under the text (a narrow pane), it keeps to the right (v1 .cn-found: Not now · Review) */
   readonly keepRight?: boolean;
+  /** more under the words and the control, from the words' edge to the row's end, a hairline above (v1 .cg-agents: a
+   *  cloud computer's agents). Additive
+   *  (2026-11-17). */
+  readonly below?: JSX.Element;
 }
 
 export function SettingsRow(props: SettingsRowProps): JSX.Element {
@@ -107,7 +111,11 @@ export function SettingsRow(props: SettingsRowProps): JSX.Element {
             <span data-kit="settings-row-title" data-text="control">
               <Show when={props.logo}>{(src) => <img data-kit="settings-row-logo" src={src()} alt="" />}</Show>
               <Show when={props.icon}>{(n) => <Icon name={n()} size="sm" />}</Show>
-              {props.title}
+              {/* the words in a box of their own: the title is a flex row, and a flex container's own text is cut with
+                  no "…" (QA r1 #21) */}
+              <span data-kit="settings-row-words" title={props.title}>
+                {props.title}
+              </span>
             </span>
           }
         >
@@ -115,7 +123,11 @@ export function SettingsRow(props: SettingsRowProps): JSX.Element {
             <label data-kit="settings-row-title" data-text="control" for={forId()}>
               <Show when={props.logo}>{(src) => <img data-kit="settings-row-logo" src={src()} alt="" />}</Show>
               <Show when={props.icon}>{(n) => <Icon name={n()} size="sm" />}</Show>
-              {props.title}
+              {/* the words in a box of their own: the title is a flex row, and a flex container's own text is cut with
+                  no "…" (QA r1 #21) */}
+              <span data-kit="settings-row-words" title={props.title}>
+                {props.title}
+              </span>
             </label>
           )}
         </Show>
@@ -126,6 +138,11 @@ export function SettingsRow(props: SettingsRowProps): JSX.Element {
       <Show when={props.control !== undefined}>
         <div data-kit="settings-row-control" data-part={sub(part(), 'control')}>
           {props.control}
+        </div>
+      </Show>
+      <Show when={props.below}>
+        <div data-kit="settings-row-below" data-part={sub(part(), 'below')}>
+          {props.below}
         </div>
       </Show>
     </div>

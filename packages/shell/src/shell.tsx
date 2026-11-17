@@ -23,6 +23,7 @@ import { shellUi } from './builtins.tsx';
 import { SHELL_SETTINGS, SIDE_MAX, SIDE_MIN } from './settings-decls.ts';
 import { installKeys } from './keyboard.ts';
 import { watchCoreTopics } from './watch.ts';
+import { pluginStyles } from './theme-styles/mount.ts';
 import { answeredInPlace, errorWords, wireNotices } from './toasts.ts';
 
 /** The part of `window` the shell uses; tests pass happy-dom's. */
@@ -311,6 +312,8 @@ export function createShell(o: ShellOptions): Shell {
   register(shellUi(context));
   watchCoreTopics(client, o.home, self.scope);
   wireNotices(context, self.scope);
+  // ADR-0007: trusted themes' contributes.partStyles, in @layer plugins, while the shell lives
+  pluginStyles(client, self, o.home, o.window.document, self.scope.child('plugin-styles'));
   self.scope.add(platform.onOpen((target) => client.nav.navigate({ t: 'openFromToast', target })));
 
   const shell: Shell = {

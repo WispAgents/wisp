@@ -13,3 +13,11 @@ export function fitTextarea(el: HTMLTextAreaElement, minRows: number, maxRows: n
   el.style.height = `${want}px`;
   el.style.overflowY = el.scrollHeight > max ? 'auto' : 'hidden';
 }
+
+/** v1's autosize (web/js/features/attachments.js): grow with the text up to `max` px, then scroll. The launcher's
+ *  prompt (v1 launcher.js: 340) - v2 had it fixed at its 64 px minimum, so any longer prompt scrolled inside. */
+export function growTextarea(el: HTMLTextAreaElement, max: number): void {
+  el.style.height = 'auto';
+  el.style.height = `${Math.min(max, el.scrollHeight)}px`;
+  el.style.overflowY = el.scrollHeight > max ? 'auto' : 'hidden';
+}

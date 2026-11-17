@@ -82,6 +82,9 @@ export const INPUTS = {
   'shell.task:composer-top': 'composer.top',
   // added 2026-11-10 (additive): under each turn (its key as the id), what plugins say of it (why it stopped, held, the receipt)
   'shell.turn:foot': 'turn.foot',
+  // added 2026-11-17 (additive, ADR-0095): in a turn's trail, after its token count, one line with it (its key as the id):
+  // the receipt's cache and plan share (v1 receipt.js, receiptHtml inside .trail-bar)
+  'shell.turn:trail': 'turn.trail',
   'shell.side:head': 'panel.head',
   'shell.term:head': 'term.head',
   // composer and new task
@@ -231,6 +234,8 @@ export interface SettingsPaneDef {
   icon: string;
   component: Component<{ client: PluginClient }>;
   order?: number;
+  /** shown only while this says so (read reactively: a setting, a switch); absent: always. Additive (2026-11-17). */
+  if?: (client: PluginClient) => boolean;
 }
 
 /** An answer block renderer (the `runtime.block` point's UI half). */

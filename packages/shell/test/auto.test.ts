@@ -76,3 +76,12 @@ test('the pick beside the harness never names the harness twice: Auto shows its 
   expect(runnerPick({ ...base, agent: 'claude', model: 'opus', effort: 'high', account: 'Work' })).toBe('opus · high · Work');
   expect(runnerPick({ ...base, agent: 'claude', model: 'opus' })).not.toContain('Claude Code');
 });
+
+test('an_or_run_row_on_a_default_model_says_default_model_not_the_harness_twice_qa_r1_26', () => {
+  // the router's label for a default model is the harness alone ("Claude Code"): it went in the title, and the sub
+  // under it named the harness again
+  expect(shortLabel({ label: 'Claude Code', model: '' }, 'Default model')).toBe('Default model');
+  expect(shortLabel({ label: 'Codex · GPT-6.1-Sol · High', model: 'gpt-6.1-sol' }, 'Default model')).toBe('GPT-6.1-Sol · High');
+  // without the word, as before
+  expect(shortLabel({ label: 'Claude Code', model: '' })).toBe('Claude Code');
+});

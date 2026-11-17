@@ -1133,7 +1133,18 @@
     box-shadow: var(--elev-3);
     animation: k-ios-sheet var(--spring-smooth-dur) var(--spring-smooth);
   }
-  :root[data-platform='ios'] [data-kit='frame'][data-behind] [data-kit='split-home'] { padding-top: var(--space-4); }
+  :root[data-platform='ios'] [data-kit='frame'][data-behind] [data-kit='split-home'] { padding: var(--space-4) var(--space-4) var(--space-9); }
+  /* the composer on a phone (owner, 2026-11-17): the New task sheet's field runs the screen's width, inset only as far
+     as the sheet's Cancel (8), and its prompt and tool bar scroll with no bar drawn (reset.css styles WebKit's scrollbars,
+     which would draw a classic one inside the field; scrollbar-width alone doesn't hide that one) */
+  :root[data-platform='ios'] [data-kit='launcher'] [data-kit='prompt'],
+  :root[data-platform='ios'] [data-kit='reply-box'] [data-kit='reply'],
+  :root[data-platform='ios'] [data-kit='launcher'] [data-kit='l-bar'],
+  :root[data-platform='ios'] [data-kit='reply-box'] [data-kit='c-bar'] { scrollbar-width: none; }
+  :root[data-platform='ios'] [data-kit='launcher'] [data-kit='prompt']::-webkit-scrollbar,
+  :root[data-platform='ios'] [data-kit='reply-box'] [data-kit='reply']::-webkit-scrollbar,
+  :root[data-platform='ios'] [data-kit='launcher'] [data-kit='l-bar']::-webkit-scrollbar,
+  :root[data-platform='ios'] [data-kit='reply-box'] [data-kit='c-bar']::-webkit-scrollbar { display: none; }
   @keyframes k-ios-sheet { from { transform: translateY(100%); } }
   /* the composer, Messages-like: a rounded field on the page, Send the filled up-arrow circle at its end */
   :root[data-platform='ios'] [data-kit='reply-box'],

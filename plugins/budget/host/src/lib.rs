@@ -212,6 +212,16 @@ impl State {
     }
 }
 
+/// Auto's one switch is on (`runtime.auto`, default off).
+fn auto_on(v: Option<&Value>) -> bool {
+    v == Some(&Value::Bool(true))
+}
+
+/// New task's last pick (`runtime.launch`'s `agent`), or '' (none: the turn's own guard asks).
+fn last_pick(v: Option<&Value>) -> String {
+    v.and_then(|l| l.get("agent")).and_then(Value::as_str).unwrap_or_default().to_owned()
+}
+
 /// The harness Auto would run a New task on (`router.preview`: the same pick every time), or None when it can't say
 /// (no router, nothing to pick): the send goes on to its turn's own guard.
 async fn auto_pick(ctx: &Ctx, a: &wisp_runtime_api::commands::StartArgs) -> Option<String> {
@@ -250,8 +260,14 @@ fn sends(s: &mut Setup, slot: &Slot) {
             let mut agent = a.agent.clone().unwrap_or_default();
             // Auto: the harness its preview picks (the composer asks the same), as v1 resolved Auto before it asked;
             // its first turn picks again, and a yes here (confirmLimit) goes with it (B15)
+            // Auto off (the one switch, `runtime.auto`: the owner, 2026-11-17): the harness New task last picked, the one
+            // runtime runs it on
             if agent == "auto" {
-                agent = auto_pick(&ctx, &a).await.unwrap_or_default();
+                agent = if auto_on(ctx.setting("runtime.auto").as_ref()) {
+                    auto_pick(&ctx, &a).await.unwrap_or_default()
+                } else {
+                    last_pick(ctx.setting("runtime.launch").as_ref())
+                };
             }
             let account = a.account.clone().unwrap_or_default();
             let send = ask::Send { agent: &agent, account: &account, session: "", first: true, together: 1, confirm: a.confirm_limit };
@@ -552,5 +568,19 @@ mod tests {
         let s = json!({ "autoStop": "90", "autoStopCodex": "50", "autoStopClaude": "same" });
         assert_eq!((stop_for(&s, "codex"), stop_for(&s, "claude"), stop_for(&s, "cursor")), (Some(0.5), Some(0.9), Some(0.9)));
         assert_eq!(stop_for(&json!({ "autoStop": "off" }), "codex"), None);
+    }
+}
+
+#[cfg(test)]
+mod auto_switch_tests {
+    use serde_json::json;
+
+    #[test]
+    fn with_auto_off_the_guard_asks_about_new_tasks_last_pick() {
+        assert!(!super::auto_on(None));
+        assert!(!super::auto_on(Some(&json!(false))));
+        assert!(super::auto_on(Some(&json!(true))));
+        assert_eq!(super::last_pick(Some(&json!({ "agent": "codex" }))), "codex");
+        assert_eq!(super::last_pick(None), "");
     }
 }

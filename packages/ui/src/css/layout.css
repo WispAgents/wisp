@@ -46,4 +46,7 @@
   [data-kit='slot'][data-layout='contents'] { display: contents; }
   [data-kit='slot'][data-empty] { display: contents; }
   [data-kit='extension'] { display: contents; }
+  /* Reserved (layout/Reserved.tsx): the room its content took last time, held while that content loads */
+  [data-kit='reserved'] { min-height: var(--reserve-h, 0px); }
+  [data-kit='reserved-body'] { display: flex; flex-direction: column; }
 }

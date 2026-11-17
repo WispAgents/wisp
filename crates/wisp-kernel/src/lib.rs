@@ -16,6 +16,7 @@ pub mod error;
 pub mod http;
 pub mod ids;
 pub mod manifest;
+pub mod part_styles;
 pub mod scope;
 pub mod services;
 

@@ -2,7 +2,7 @@
 // how much is kept, the head's actions and ×), the bar under it (the search with its / key, the kinds, then the
 // sort and the grid/list switch), and the shelf: the caller's groups, or v1's empty shelf (three tiles, the
 // lines, and "add files").
-import { For, Show, type JSX } from 'solid-js';
+import { createSignal, For, Show, type JSX } from 'solid-js';
 import { flag } from '../core/props.ts';
 import { Icon } from '../content/Icon.tsx';
 import type { IconName } from '../content/icons.ts';
@@ -15,10 +15,17 @@ export interface StuffFrameProps {
   readonly count?: string | undefined;
   readonly actions: readonly { readonly id: string; readonly icon: IconName; readonly label: string; readonly title?: string; readonly onClick: () => void }[];
   readonly close?: { readonly label: string; readonly onClick: () => void } | undefined;
+  /** stacked (one page at a time): Back at the start of the head, in place of × */
+  readonly back?: { readonly label: string; readonly onClick: () => void } | undefined;
   readonly search: { readonly value: string; readonly placeholder: string; readonly label: string; readonly onInput: (v: string) => void };
   /** the kind chips (v1 .sf-kinds), drawn by the caller */
   readonly kinds?: JSX.Element;
-  readonly sort: { readonly icon: IconName; readonly label: string; readonly onClick: () => void };
+  readonly sort: { readonly icon: IconName; readonly label: string; readonly title?: string; readonly onClick: () => void };
+  /** Starred (v1 .sf-star): only once something is starred, or while it's on */
+  readonly starred?: { readonly on: boolean; readonly label: string; readonly title: string; readonly onClick: () => void } | undefined;
+  /** files dropped anywhere on the page (v1 .sf-drop: a dashed box, its words, while files are over it) */
+  readonly drop?: { readonly title: string; readonly sub: string; readonly onFiles: (files: FileList) => void } | undefined;
+  readonly ref?: (el: HTMLElement) => void;
   readonly view: { readonly list: boolean; readonly gridLabel: string; readonly listLabel: string; readonly onPick: (list: boolean) => void };
   /** nothing kept yet: v1's empty shelf */
   readonly empty?: { readonly title: string; readonly keep: readonly [string, string]; readonly asks: readonly [string, string, string, string, string]; readonly mention: readonly [string, string, string]; readonly or: string; readonly add: string; readonly onAdd: () => void } | undefined;
@@ -26,9 +33,41 @@ export interface StuffFrameProps {
 }
 
 export function StuffFrame(props: StuffFrameProps): JSX.Element {
+  const [dropping, setDropping] = createSignal(false);
+  let depth = 0; // dragenter/leave pairs: a drag over the cards inside never flickers the box
+  const files = (e: DragEvent): boolean => !!props.drop && [...(e.dataTransfer?.types ?? [])].includes('Files');
   return (
-    <section data-kit="sf-view" data-part="stuff.page" data-list={flag(props.view.list)}>
+    <section
+      ref={props.ref}
+      data-kit="sf-view"
+      data-part="stuff.page"
+      data-list={flag(props.view.list)}
+      data-dropping={flag(dropping())}
+      onDragEnter={(e) => {
+        if (!files(e)) return;
+        depth++;
+        setDropping(true);
+      }}
+      onDragLeave={() => {
+        if (--depth <= 0) (depth = 0), setDropping(false);
+      }}
+      onDragOver={(e) => files(e) && e.preventDefault()}
+      onDrop={(e) => {
+        if (!files(e) || !e.dataTransfer) return;
+        e.preventDefault();
+        depth = 0;
+        setDropping(false);
+        props.drop?.onFiles(e.dataTransfer.files);
+      }}
+    >
       <header data-kit="sf-top" data-part="stuff.head">
+        <Show when={props.back}>
+          {(b) => (
+            <button type="button" data-kit="sf-back" title={b().label} aria-label={b().label} onClick={() => b().onClick()}>
+              <Icon name="back" />
+            </button>
+          )}
+        </Show>
         <span data-kit="sf-ic">
           <Icon name="stuff" />
         </span>
@@ -67,7 +106,15 @@ export function StuffFrame(props: StuffFrameProps): JSX.Element {
           {props.kinds}
         </div>
         <div data-kit="sf-opts">
-          <button type="button" data-kit="sf-opt" onClick={() => props.sort.onClick()}>
+          <Show when={props.starred}>
+            {(st) => (
+              <button type="button" data-kit="sf-opt" data-star="" data-on={flag(st().on)} aria-pressed={st().on} title={st().title} onClick={() => st().onClick()}>
+                <Icon name="star" size="sm" />
+                <span>{st().label}</span>
+              </button>
+            )}
+          </Show>
+          <button type="button" data-kit="sf-opt" title={props.sort.title} onClick={() => props.sort.onClick()}>
             <Icon name={props.sort.icon} size="sm" />
             <span>{props.sort.label}</span>
           </button>
@@ -126,6 +173,17 @@ export function StuffFrame(props: StuffFrameProps): JSX.Element {
           )}
         </Show>
       </div>
+      <Show when={props.drop}>
+        {(d) => (
+          <div data-kit="sf-drop" aria-hidden="true">
+            <div>
+              <Icon name="stuff" />
+              <b>{d().title}</b>
+              <span>{d().sub}</span>
+            </div>
+          </div>
+        )}
+      </Show>
     </section>
   );
 }

@@ -49,10 +49,34 @@ async fn ask(http: &reqwest::Client, grid: &str, token: &str, method: &str, path
     Ok(v)
 }
 
-pub async fn list_at(http: &reqwest::Client, grid: &str, token: &str) -> Result<api::Keys> {
+/// `handle`: the account's, for the cloud wisp's address when the grid doesn't say it (v1's grid sends `{ keys }` only).
+pub async fn list_at(http: &reqwest::Client, grid: &str, token: &str, handle: &str) -> Result<api::Keys> {
     let v = ask(http, grid, token, "GET", "", None).await?;
-    // typed: a field the grid adds (or a key it should never send) doesn't come through
-    serde_json::from_value(v).map_err(|e| WireError::internal(format!("the grid's keys: {e}")))
+    keys_of(v, grid, handle)
+}
+
+/// The grid's answer, typed: a field the grid adds (or a key it should never send) doesn't come through. With no
+/// `address`, the cloud wisp's (`<scheme>://<handle>.<grid's host>`, as both grids make it). A shape wisp can't read
+/// says so in plain words, never serde's (QA r1 #4: "the grid's keys: missing field `address`").
+fn keys_of(v: Value, grid: &str, handle: &str) -> Result<api::Keys> {
+    #[derive(serde::Deserialize)]
+    struct Answer {
+        keys: Vec<api::ApiKey>,
+        #[serde(default)]
+        address: String,
+    }
+    let a: Answer = serde_json::from_value(v).map_err(|e| {
+        tracing::warn!(error = %e, "grid-client: the grid's keys list");
+        WireError::internal(format!("{} answered with a list of keys wisp can’t read.", net::host_of(grid)))
+    })?;
+    let address = if a.address.is_empty() && !handle.is_empty() {
+        wisp_grid_client_core::label_host(grid, handle)
+            .map(|h| format!("{}://{h}", grid.split("://").next().unwrap_or("https")))
+            .unwrap_or_default()
+    } else {
+        a.address
+    };
+    Ok(api::Keys { keys: a.keys, address })
 }
 
 pub async fn create_at(http: &reqwest::Client, grid: &str, token: &str, name: &str) -> Result<api::NewKey> {
@@ -72,7 +96,7 @@ pub async fn revoke_at(http: &reqwest::Client, grid: &str, token: &str, id: &str
 
 pub async fn list(st: &Arc<St>) -> Result<api::Keys> {
     let (a, token) = st.signed_in().await.map_err(WireError::unavailable)?;
-    list_at(&st.http, &a.grid, &token).await
+    list_at(&st.http, &a.grid, &token, &a.handle).await
 }
 
 pub async fn create(st: &Arc<St>, name: &str) -> Result<api::NewKey> {
@@ -99,8 +123,13 @@ mod tests {
 
     type Seen = Arc<Mutex<Vec<String>>>;
 
-    /// A grid answering `/api/keys` as apps/grid does (`old`: one from before keys, 404 everywhere).
+    /// A grid answering `/api/keys` as apps/grid does (`old`: one from before keys, 404 everywhere; `v1`: v1's
+    /// grid/server.js, whose list is `{ keys }` with no `address`).
     async fn fake_grid(old: bool) -> (String, Seen) {
+        fake_grid_as(old, false).await
+    }
+
+    async fn fake_grid_as(old: bool, v1: bool) -> (String, Seen) {
         let seen: Seen = Arc::default();
         let l = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let port = l.local_addr().unwrap().port();
@@ -119,6 +148,10 @@ mod tests {
                             seen.lock().unwrap().push(format!("{m} {p} {auth} {body}"));
                             let (status, v) = match (old, m.as_str(), p.as_str()) {
                                 (true, ..) => (404, json!({ "error": "not found" })),
+                                (_, "GET", "/api/keys") if v1 => (
+                                    200,
+                                    json!({ "keys": [{ "id": "a1b2c3d4e5f6", "name": "ci", "hint": "Zq9x", "createdAt": 5, "lastUsedAt": null }] }),
+                                ),
                                 (_, "GET", "/api/keys") => (
                                     200,
                                     json!({ "keys": [{ "id": "a1b2c3d4e5f6", "name": "ci", "hint": "Zq9x", "createdAt": 5, "lastUsedAt": null, "key": "wgk_never" }], "address": "https://ada.example.dev" }),
@@ -148,7 +181,7 @@ mod tests {
         let http = net::client(false);
         let t = "wgd_device";
 
-        let got = list_at(&http, &grid, t).await.unwrap();
+        let got = list_at(&http, &grid, t, "ada").await.unwrap();
         assert_eq!(got.address, "https://ada.example.dev");
         assert_eq!(
             got.keys,
@@ -175,6 +208,20 @@ mod tests {
         );
     }
 
+    /// QA r1 #4: grid.trywisp.dev (v1's grid) answers the list with no `address`; Settings → Cloud read "the grid's
+    /// keys: missing field `address`". Its keys list, and the address is the cloud wisp's (`<handle>.<grid's domain>`,
+    /// as both grids make it); a shape wisp can't read says so in plain words.
+    #[tokio::test]
+    async fn a_v1_grids_keys_list_with_no_address_reads_with_the_cloud_wisps_address() {
+        let (grid, _) = fake_grid_as(false, true).await;
+        let http = net::client(false);
+        let got = list_at(&http, &grid, "wgd_d", "ada").await.unwrap();
+        assert_eq!(got.keys.len(), 1);
+        assert_eq!(got.address, format!("http://ada.{}", grid.trim_start_matches("http://")));
+        let e = keys_of(json!({ "keys": "nope" }), &grid, "ada").unwrap_err();
+        assert!(!e.message.contains("missing field") && !e.message.contains("invalid type"), "{}", e.message);
+    }
+
     #[tokio::test]
     async fn a_bad_name_or_id_never_reaches_the_grid_and_an_older_grid_says_so() {
         let (grid, seen) = fake_grid(false).await;
@@ -188,7 +235,9 @@ mod tests {
         assert!(seen.lock().unwrap().is_empty(), "{:?}", seen.lock().unwrap());
 
         let (old, _) = fake_grid(true).await;
-        for e in [list_at(&http, &old, "wgd_d").await.unwrap_err(), create_at(&http, &old, "wgd_d", "ci").await.map(|_| ()).unwrap_err()] {
+        for e in
+            [list_at(&http, &old, "wgd_d", "ada").await.unwrap_err(), create_at(&http, &old, "wgd_d", "ci").await.map(|_| ()).unwrap_err()]
+        {
             assert_eq!(e.code, Code::Unavailable);
             assert!(e.message.contains("doesn’t make API keys yet"), "{}", e.message);
         }

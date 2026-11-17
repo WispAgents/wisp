@@ -30,6 +30,12 @@ export function relative(file: string, cwd: string): string {
   return c && f.startsWith(`${c}/`) ? f.slice(c.length + 1) : file;
 }
 
+/** The files wisp saw edited outside the task's folder (`relative` left them absolute): git's diff of the folder can't
+ *  see them, so the pane shows them beside git's (QA r1 #2: an agent's own worktree read "No changes yet"). */
+export function outsideFolder<F extends { readonly path: string }>(seen: readonly F[]): F[] {
+  return seen.filter((f) => /^([A-Za-z]:)?[\\/]/.test(f.path));
+}
+
 const lines = (s: string): string[] => (s === '' ? [] : s.replace(/\n$/, '').split('\n'));
 
 /** One edit as a hunk: what stayed around the change as context, the removed lines, then the added ones. */

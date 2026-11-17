@@ -24,7 +24,7 @@ pub const HELP: &str = "usage:
   wisp recipes                  list recipes
   wisp plugin                   list plugins
   wisp plugin new <name>        start a plugin of your own in ~/.wisp/plugins/<name>
-  wisp plugin enable|disable <id>   switch a plugin on or off
+  wisp plugin enable|disable|trust|untrust <id>   switch a plugin on or off; trust one you installed (its theme applies)
   wisp plugin install <folder|git URL>  install one, off, and see what it asks for; remove <id> takes it out
   wisp crew                     list your crew
   wisp init                     a .wisp/ folder here: wisp.yml, the AGENTS.md note, its modules fetched and locked
@@ -38,6 +38,7 @@ pub const HELP: &str = "usage:
   wisp blame <file>:<line>      which task wrote that line, and what it was asked
   wisp resume <id>              a new task that carries on from where that one stopped, on today's code
   wisp adopt [<id>|--all]       bring in sessions you ran in a harness outside wisp   (--since 7d  --track)
+  wisp notes [<task>] [--set section=text]   a task's Notes (goal, decisions, what failed, state …); --set rewrites one
   wisp hook install|uninstall|status   a git hook that adds Wisp-Task: <id> to commits a task's agent makes
   wisp secret set|rm NAME       a secret your formulas reference as ${secret:NAME}: piped in or typed hidden, never an argument
   wisp import [v1 home]         bring a wisp v1 home (~/.wisp) in: its plan first, then on yes   (--dry-run  --yes)

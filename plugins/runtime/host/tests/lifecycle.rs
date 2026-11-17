@@ -430,7 +430,12 @@ impl wisp_router_api::service::RouterApi for Auto {
 #[tokio::test(flavor = "multi_thread")]
 async fn a_task_on_auto_runs_on_the_routers_pick_and_teaches_it() {
     let auto = std::sync::Arc::new(Auto::default());
-    let r = rig_with(Recorder { router: Some(auto.clone()), ..Recorder::default() }).await;
+    let r = rig_with(Recorder {
+        router: Some(auto.clone()),
+        settings: [("runtime.auto".to_owned(), serde_json::json!(true))].into(),
+        ..Recorder::default()
+    })
+    .await;
     let c = r.rt.create(StartArgs { agent: Some("auto".into()), ..start("fix the login") }).await.unwrap();
     let s = r.rt.get(c.id.as_str()).await.unwrap();
     assert_eq!((s.agent.as_str(), s.model.as_str(), s.effort.as_str()), ("fake", "m1", "high"));

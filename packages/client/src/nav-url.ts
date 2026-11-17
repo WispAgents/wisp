@@ -181,13 +181,17 @@ export interface NavigationOptions {
   /** the page's own wisp: a task named by a bare id in a URL (`/task/<id>`, a link the CLI printed) is its. A function
    *  when it can change (Client.setHome): read at each URL. */
   home?: string | (() => string);
+  /** the entity key of a task named by its bare id, when one is known (any peer's): an intent that opens a task by
+   *  the id a list row carries lands on it, not on a blank page (owner, 2026-11-17: search, Home and the list each
+   *  did). Else the home peer's, as for a URL. */
+  taskKey?: (id: string) => string | undefined;
 }
 
 /** A bare session id in a decoded URL becomes the home peer's entity key (`<home>:<id>`), as the app's own
  *  navigation names it; one that names its peer is kept. Without a home, ids stay as they are. */
-export function homed(nav: Omit<Nav, 'layout'>, home: string | undefined): Omit<Nav, 'layout'> {
-  if (!home) return nav;
-  const key = (id: string): SessionId => (id.includes(':') ? id : `${home}:${id}`) as SessionId;
+export function homed(nav: Omit<Nav, 'layout'>, home: string | undefined, taskKey?: (id: string) => string | undefined): Omit<Nav, 'layout'> {
+  if (!home && !taskKey) return nav;
+  const key = (id: string): SessionId => (id.includes(':') ? id : (taskKey?.(id) ?? (home ? `${home}:${id}` : id))) as SessionId;
   const main = nav.main.kind === 'task' ? { kind: 'task' as const, id: key(nav.main.id) } : nav.main;
   const side = nav.side.kind === 'changes' || nav.side.kind === 'shell' || nav.side.kind === 'pr' || nav.side.kind === 'preview' ? { ...nav.side, id: key(nav.side.id) } : nav.side;
   return main === nav.main && side === nav.side ? nav : { ...nav, main, side };
@@ -227,7 +231,7 @@ export function createNavigation(o: NavigationOptions): Navigation {
     nav: () => state(),
     navigate(intent) {
       const cur = untracked(state);
-      const next = navigate(cur, intent);
+      const next = homed(navigate(cur, intent), home(), o.taskKey) as Nav;
       const checked = { ...next, ...knownViews(next, o.views) };
       if (!sameNav(checked, next)) warn(`navigation to an unregistered view`, intent);
       commit(sameNav(checked, cur) ? cur : checked, pushes(intent));

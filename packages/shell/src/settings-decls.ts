@@ -24,6 +24,8 @@ export const SHELL_SETTINGS = [
   { key: 'shell.sidebar.open', type: 'bool', default: true, scope: 'device' },
   /** the side panel's width (Changes, PR, Shell), dragged on its inner edge (v1 panel.js pref.w: 480, at least 360) */
   { key: 'shell.panel.width', type: 'int', min: PANEL_MIN, max: PANEL_MAX, default: PANEL_W, scope: 'device' },
+  /** the room Home's usage row took last time (px), held while it loads so Needs you doesn't move (QA round 1 #13) */
+  { key: 'shell.home.usageHeight', type: 'int', min: 0, max: 400, default: 0, scope: 'device' },
   /** the project the list shows (the top bar's chips): a project's id, or 'all' (v1 wisp.filter) */
   { key: 'shell.projectFilter', type: 'string', default: 'all', scope: 'device' },
   /** the phone apps' computer filter (the Tasks bar's title): a peer id, or 'all' (ADR-0065 step 13) */

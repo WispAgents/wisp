@@ -11,7 +11,7 @@ import { added, commentStore, isLine, lineKey, lineLabel, placeOf, waiting } fro
 import { isStub, keepTurnsWhole } from '@wisp/shell';
 import { useShell } from '../shell.ts';
 import { useTask } from '../task-context.tsx';
-import { changesOf, envState, filesOf, relative, revealedOf, seenMasked, setRevealed, type ChangeTurn } from './changes.ts';
+import { changesOf, envState, filesOf, outsideFolder, relative, revealedOf, seenMasked, setRevealed, type ChangeTurn } from './changes.ts';
 import '../i18n/lazy.ts';
 
 interface GitFileRow {
@@ -141,8 +141,9 @@ export function ChangesPane(): JSX.Element {
   const [seenShown, setSeenShown] = createSignal<ReadonlyMap<string, Edits>>(new Map());
   const files = createMemo((): ChangeFile[] => {
     const g = git();
-    if (!g || g.body.kind !== 'inline') return seenFiles(turns() as readonly ChangeTurn[], task.id, dir(), maskOn(), revealed(), seenShown());
-    return g.body.files
+    const seen = seenFiles(turns() as readonly ChangeTurn[], task.id, dir(), maskOn(), revealed(), seenShown());
+    if (!g || g.body.kind !== 'inline') return seen;
+    const fromGit = g.body.files
       .filter((f) => !going().has(f.path))
       .map((f) => ({
         path: f.path,
@@ -157,6 +158,8 @@ export function ChangesPane(): JSX.Element {
         ...(staging() ? { stage: flipped().get(f.path) ?? stageOf(f) } : {}),
         ...(staging() && f.hunkStage ? { hunkStage: f.hunkStage.map((h) => (h.unstaged ? ('stage' as const) : h.staged ? ('unstage' as const) : undefined)) } : {}),
       }));
+    // what wisp saw edited outside the folder git reads (an agent's own worktree): git can't see it
+    return [...fromGit, ...outsideFolder(seen)];
   });
   // every diff opens by itself until you open, fold or view one (v1 opensNow)
   const isOpen = (p: string): boolean => open()?.has(p) ?? !viewed().has(p);

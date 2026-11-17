@@ -6,6 +6,7 @@ mod agent;
 mod install;
 mod kinds;
 pub mod remote;
+pub mod styles;
 mod swap;
 
 pub use install::{UserPlugin, at_start as user_plugins, read as read_plugin};
@@ -54,6 +55,17 @@ impl wisp_kernel::Command for Ui {
     type Out = Vec<remote::RemoteUi>;
 }
 
+/// `plugins.styles` (ADR-0007): the part styles of every plugin that is on and trusted, for `@layer plugins`.
+#[derive(Debug)]
+pub struct Styles;
+impl wisp_kernel::Command for Styles {
+    const ID: &'static str = "plugins.styles";
+    const PERMISSION: Option<&'static str> = Some(wisp_plugins_api::perm::READ);
+    const READ_ONLY: bool = true;
+    type Args = serde_json::Value;
+    type Out = Vec<styles::PluginStyles>;
+}
+
 #[derive(Debug, Default)]
 pub struct PluginsPlugin;
 
@@ -84,14 +96,19 @@ impl Plugin for PluginsPlugin {
                 if let Err(e) = crate::kinds::remember(&kind, &call, &a.id, a.enabled).await {
                     tracing::warn!(plugin = %a.id, "its switch isn't kept: {}", e.message);
                 }
+                styles::changed(&ctx, &a.id);
                 find(&ctx, &a.id)
             }
         });
         // ADR-0046: a user's plugin from a folder or a git URL, and taking one out
-        s.command::<Install, _, _>(|ctx, _call, a| async move { install::install(&ctx, &a).await });
-        s.command::<Uninstall, _, _>(|ctx, _call, a| async move { install::uninstall(&ctx, &a).await });
-        s.command::<Trust, _, _>(|ctx, _call, a| async move { install::trust(&ctx, &a).await });
+        // each tells the clients when what they show (styles, untrusted UIs) may have changed: plugins.changed
+        s.command::<Install, _, _>(|ctx, _call, a| async move { install::install(&ctx, &a).await.inspect(|_| styles::changed(&ctx, "")) });
+        s.command::<Uninstall, _, _>(|ctx, _call, a| async move {
+            install::uninstall(&ctx, &a).await.inspect(|_| styles::changed(&ctx, &a.id))
+        });
+        s.command::<Trust, _, _>(|ctx, _call, a| async move { install::trust(&ctx, &a).await.inspect(|_| styles::changed(&ctx, &a.id)) });
         s.command::<Ui, _, _>(|ctx, _call, _a| async move { remote::list(&ctx).await });
+        s.command::<Styles, _, _>(|ctx, _call, _a| async move { styles::list(&ctx) });
         // ADR-0048, ADR-0040: what an agent writing a plugin reads and runs (wisp_plugins, wisp_plugin_*)
         agent::register(s);
         Ok(())

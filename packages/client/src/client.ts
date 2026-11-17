@@ -122,7 +122,9 @@ export function createClient(o: ClientOptions): Client {
   const saveNav = (url: string): void => {
     persist.write([{ ns: 'nav', key: 'last', value: url }]).catch(() => {});
   };
-  const nav = createNavigation({ scope, width: o.width, views, warn, onChange: saveNav, home: homeNow, ...(o.history && { history: o.history }) });
+  // a task opened by the bare id its list row carries resolves to its entity key (whichever peer has it)
+  const taskKey = (id: string): string | undefined => untracked(reader.keys('session')).find((k) => k.slice(k.indexOf(':') + 1) === id);
+  const nav = createNavigation({ scope, width: o.width, views, warn, onChange: saveNav, home: homeNow, taskKey, ...(o.history && { history: o.history }) });
   const readPeers: PluginClient['peers'] = { list: peers.list, status: peers.status, info: peers.info, name: peers.name, hasFeature: peers.hasFeature, reconnect: peers.reconnect };
   const rows = persistEntities({ writer, persist, scope, warn, linkOf: (p) => peers.save(p) });
 

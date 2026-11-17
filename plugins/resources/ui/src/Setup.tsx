@@ -8,7 +8,7 @@ import { defineCommand, type PeerId, type PluginClient } from '@wisp/client';
 import { useShell } from '@wisp/shell';
 import { Button, Callout, Checkbox, Code, Inline, SettingsGroup, SettingsRow, Stack, Text, TextArea } from '@wisp/ui';
 import { t } from './i18n.ts';
-import { changeLines, formatOf, groups, keyOf, kindCounts, opTitle, picked, type KindInfo, type Plan, type Resource } from './model.ts';
+import { changeLines, formatOf, groups, keyOf, kindCounts, opTitle, picked, sectionTitle, type KindInfo, type Plan, type Resource } from './model.ts';
 import './i18n/lazy.ts';
 
 const kinds = defineCommand<{ peer: PeerId }, KindInfo[]>({ id: 'resources.kinds', owner: (a) => a.peer, wire: () => ({}), optimistic: 'none', pending: 'the kinds' });
@@ -117,7 +117,7 @@ export default function Setup(props: { readonly client: PluginClient }): JSX.Ele
             {(k) => (
               <SettingsRow
                 part="resources.kind"
-                title={k.section}
+                title={sectionTitle(k.section)}
                 description={say('resources.count', { count: k.count })}
                 control={<Checkbox aria-label={t('resources.share.include')} checked={sharing().has(k.kind)} onChange={() => setSharing(toggle(sharing(), k.kind))} />}
               />

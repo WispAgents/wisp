@@ -2,7 +2,7 @@
 // (v1 settings.js paintAgents, setup.js setupCommand, recheckSummary).
 import { expect, test } from 'vitest';
 import type { DetectRow, HarnessRow } from '../src/types.ts';
-import { harnessLine, harnessState, howToGet, mergeHarnesses, recheckSummary } from '../src/words.ts';
+import { harnessLine, harnessState, howToGet, mergeHarnesses, recheckSummary, toolState } from '../src/words.ts';
 import { recheck } from '../src/commands.ts';
 import { createRoot } from 'solid-js';
 import { signal } from '@wisp/client';
@@ -100,4 +100,17 @@ test('settings_agents_follows_a_detect_row_that_settles_after_its_key_showed', (
     expect(words(), 'gone').toEqual([]);
     dispose();
   });
+});
+
+// QA r1 #23: Antigravity read "Sign in" beside "● Ready" (the row said Ready from its detect, the button Sign in from
+// its CLI's own login check), and the GitHub row said nothing of gh's sign-in
+test('a_harness_its_cli_says_is_signed_out_reads_signed_out_and_github_says_its_sign_in', () => {
+  const agy = h('antigravity', { available: true, signIn: 'cli' });
+  expect(harnessState(agy).label).toBe(harnessState(h('x', { available: true })).label);
+  expect(harnessState(agy, false)).toEqual(harnessState(h('y', { available: false, signedIn: false })));
+  expect(harnessState(agy, true)).toEqual(harnessState(h('z', { available: true })));
+  expect(toolState({ id: 'gh', name: 'GitHub CLI', installed: true, signedIn: true })?.tone).toBe('good');
+  expect(toolState({ id: 'gh', name: 'GitHub CLI', installed: true, signedIn: false })?.tone).toBe('warn');
+  expect(toolState({ id: 'gh', name: 'GitHub CLI', installed: true })).toBeUndefined();
+  expect(toolState({ id: 'gh', name: 'GitHub CLI', installed: false })?.tone).toBe('bad');
 });

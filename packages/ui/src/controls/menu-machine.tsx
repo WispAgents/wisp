@@ -1,7 +1,9 @@
 // Menu and ContextMenu's machine half (Zag's menu, floating-ui): loaded apart from the first page (./lazy-part.ts), bound
-// to the trigger Menu.tsx draws at once. Arrow keys, typeahead, Home/End, Escape back to the trigger. A submenu drills in
-// (v1 #786 ui/submenu.js): its items take the menu's place under a Back row, at the same spot and width; → opens it, ←
-// or Escape steps back.
+// to the trigger Menu.tsx draws at once. Arrow keys, typeahead, Home/End, Escape back to the trigger.
+// A submenu, on a desktop pointer (the browser with a hovering fine pointer), is a flyout beside its row (owner
+// 2026-11-17): Zag's nested menu, a child machine per submenu, so hover intent, the safe triangle, flipping at the
+// screen's edge and → / ← come from Zag. On touch and in the phone apps it drills in (v1 #786 ui/submenu.js): its items
+// take the menu's place under a Back row, at the same spot and width; → opens it, ← or Escape steps back.
 import * as menu from '@zag-js/menu';
 import { normalizeProps, useMachine } from '@zag-js/solid';
 import { createMemo, createSignal, createUniqueId, For, Match, onMount, Show, Switch, type Accessor, type JSX } from 'solid-js';
@@ -11,6 +13,8 @@ import { Icon } from '../content/Icon.tsx';
 import type { MenuBaseProps, Placement } from './Menu.tsx';
 import { bound, type Replay } from './lazy-part.ts';
 import { tidySeparators, type MenuEntry, type MenuGroup, type MenuItem, type MenuSeparator, type MenuSubmenu } from './menu-entries.ts';
+import { usePlatform } from '../platform/PlatformLook.tsx';
+import { Flyout, flyoutPointer, type FlyContext } from './menu-flyout.tsx';
 
 const BACK = 'menu:back';
 
@@ -24,6 +28,8 @@ interface MenuState {
   readonly setBox: (el: HTMLElement) => void;
   /** back to the top level at its own width (a right-click on another row re-anchors the open menu) */
   readonly reset: () => void;
+  /** submenus fly out (desktop pointer) rather than drill in; read again each time the menu opens */
+  readonly fly: Accessor<FlyContext | undefined>;
 }
 
 const firstItem = (items: readonly MenuEntry[]): string | undefined => {
@@ -37,6 +43,18 @@ const firstItem = (items: readonly MenuEntry[]): string | undefined => {
   return undefined;
 };
 
+function flyContext(parent: menu.Service, onSelect: (value: string) => void, kids: Set<() => void>): FlyContext {
+  return {
+    parent,
+    onSelect,
+    adopt: (close) => {
+      kids.add(close);
+      return () => kids.delete(close);
+    },
+    Entries,
+  };
+}
+
 function useMenu(props: MenuBaseProps & { readonly placement?: Placement }, at?: 'pointer'): MenuState {
   const id = createUniqueId();
   const [chosen, setPane] = createSignal<string | undefined>();
@@ -46,9 +64,14 @@ function useMenu(props: MenuBaseProps & { readonly placement?: Placement }, at?:
     const v = chosen();
     return v !== undefined && props.items.some((e) => e.kind === 'submenu' && e.value === v) ? v : undefined;
   };
+  const look = usePlatform();
+  const [flying, setFlying] = createSignal(flyoutPointer(look()));
+  // the open flyouts' closes: the menu closing or re-anchoring closes them at once
+  const kids = new Set<() => void>();
   const reset = (): void => {
     setPane(undefined);
     setWidth(undefined);
+    for (const close of kids) close();
   };
   let box: HTMLElement | undefined;
   const subs = createMemo(() => new Set(props.items.flatMap((e) => (e.kind === 'submenu' ? [e.value] : []))));
@@ -80,16 +103,18 @@ function useMenu(props: MenuBaseProps & { readonly placement?: Placement }, at?:
     ...(props.open === undefined ? {} : { open: props.open }),
     onOpenChange: (d: menu.OpenChangeDetails) => {
       if (!d.open) reset();
+      else setFlying(flyoutPointer(look()));
       props.onOpenChange?.(d.open);
     },
     // at the pointer (a right-click): v1 clampToViewport, opened beside it and slid up or in to fit, never flipped
     positioning: at === 'pointer' ? { placement: 'bottom-start' as const, gutter: 0, flip: false, overlap: true, overflowPadding: 8 } : { placement: props.placement ?? 'bottom-start', gutter: 4, overlap: true, overflowPadding: 8 },
   }));
   api = createMemo(() => menu.connect(service, normalizeProps));
-  return { api, pane, drill, width, setBox: (el) => (box = el), reset };
+  const ctx = flyContext(service, (v) => props.onSelect(v), kids);
+  return { api, pane, drill, width, setBox: (el) => (box = el), reset, fly: () => (flying() ? ctx : undefined) };
 }
 
-function Item(props: { readonly api: menu.Api; readonly item: MenuItem; readonly part: PartName }): JSX.Element {
+function Item(props: { readonly api: menu.Api; readonly item: MenuItem; readonly part: PartName; readonly iconCol?: boolean }): JSX.Element {
   return (
     <div
       {...props.api.getItemProps({ value: props.item.value, disabled: props.item.disabled, valueText: props.item.label })}
@@ -98,7 +123,10 @@ function Item(props: { readonly api: menu.Api; readonly item: MenuItem; readonly
       data-danger={flag(props.item.danger)}
       data-value={props.item.value}
     >
-      <Show when={props.item.icon}>{(name) => <Icon name={name()} size="md" />}</Show>
+      {/* no icon of its own in a menu where others have one: the column stays, so its words line up with theirs */}
+      <Show when={props.item.icon} fallback={props.iconCol ? <span data-kit="menu-icon-gap" aria-hidden="true" /> : undefined}>
+        {(name) => <Icon name={name()} size="md" />}
+      </Show>
       <span data-kit="menu-item-text">
         <span data-kit="menu-item-label" data-text="control">
           {props.item.label}
@@ -150,22 +178,30 @@ function BackRow(props: { readonly api: menu.Api; readonly label: string; readon
   );
 }
 
-function Entries(props: { readonly api: menu.Api; readonly items: readonly MenuEntry[]; readonly part: PartName }): JSX.Element {
+function Entries(props: { readonly api: menu.Api; readonly items: readonly MenuEntry[]; readonly part: PartName; readonly fly?: FlyContext | undefined }): JSX.Element {
+  // any icon in this pane: then every row keeps the icon column (QA r1 #29: Lean runs' choices sat left of the rest)
+  const iconCol = createMemo(() => props.items.some((e) => (e.kind === 'group' ? e.items.some((i) => i.icon) : e.kind !== 'separator' && !!e.icon)));
   return (
     <For each={tidySeparators(props.items)}>
       {(entry) => (
-        <Switch fallback={<Item api={props.api} item={entry as MenuItem} part={props.part} />}>
+        <Switch fallback={<Item api={props.api} item={entry as MenuItem} part={props.part} iconCol={iconCol()} />}>
           <Match when={entry.kind === 'separator'}>
             <div {...props.api.getSeparatorProps()} data-kit="menu-separator" data-part={sub(props.part, 'separator')} />
           </Match>
-          <Match when={entry.kind === 'submenu' && entry}>{(e) => <SubRow api={props.api} entry={e()} part={props.part} />}</Match>
+          <Match when={entry.kind === 'submenu' && entry}>
+            {(e) => (
+              <Show when={props.fly} fallback={<SubRow api={props.api} entry={e()} part={props.part} />}>
+                {(fly) => <Flyout api={props.api} entry={e()} part={props.part} fly={fly()} />}
+              </Show>
+            )}
+          </Match>
           <Match when={entry.kind === 'group' && entry}>
             {(group) => (
               <div {...props.api.getItemGroupProps({ id: group().id })} data-kit="menu-group" data-part={sub(props.part, 'group')}>
                 <div {...props.api.getItemGroupLabelProps({ htmlFor: group().id })} data-kit="menu-group-label">
                   {group().label}
                 </div>
-                <For each={group().items}>{(item) => <Item api={props.api} item={item} part={props.part} />}</For>
+                <For each={group().items}>{(item) => <Item api={props.api} item={item} part={props.part} iconCol={iconCol()} />}</For>
               </div>
             )}
           </Match>
@@ -185,6 +221,7 @@ function MenuContent(props: { readonly state: MenuState; readonly items: readonl
   const drill = (v: string | undefined): void => props.state.drill(v);
   // → on a submenu's row opens it, ← in one steps back (before Zag's own keys)
   const keys = (e: KeyboardEvent): void => {
+    if (props.state.fly()) return;
     const lit = api().highlightedValue;
     if (e.key === 'ArrowRight' && !open() && lit && props.items.some((x) => x.kind === 'submenu' && x.value === lit)) drill(lit);
     else if (e.key === 'ArrowLeft' && open()) drill(undefined);
@@ -204,7 +241,7 @@ function MenuContent(props: { readonly state: MenuState; readonly items: readonl
           data-drilled={flag(!!open())}
           style={props.state.width() ? { '--menu-w': props.state.width() } : undefined}
         >
-          <Show when={open()} fallback={<Entries api={api()} items={props.items} part={props.part} />}>
+          <Show when={open()} fallback={<Entries api={api()} items={props.items} part={props.part} fly={props.state.fly()} />}>
             {(s) => (
               <div role="group" aria-label={s().label} data-kit="menu-pane" data-part={sub(props.part, 'pane')}>
                 <BackRow api={api()} label={s().label} part={props.part} />

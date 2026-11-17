@@ -1,0 +1,30 @@
+/* v1's base (web/css/tokens.css after the tokens): what an app with /_wisp/pane.css looked like in v1. Without it a pane
+   kept the browser's 8px margin, black text on a transparent page and grey native buttons. */
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; }
+body {
+  background: var(--bg);
+  color: var(--ink);
+  font: 14px/1.55 var(--sans);
+  -webkit-font-smoothing: antialiased;
+  letter-spacing: -0.003em;
+}
+button, input, textarea, select { font: inherit; color: inherit; }
+button { cursor: pointer; background: none; border: 0; padding: 0; }
+a { color: inherit; text-decoration: none; }
+code, kbd, pre { font-family: var(--mono); }
+/* The browser's own `smaller` (10.4px under 12.5px) is off the scale: a bare <small> is the hint size */
+small { font-size: 11.5px; }
+kbd {
+  font-size: 11.5px; padding: 1px 5px; border-radius: 5px; border: 1px solid var(--line-2);
+  border-bottom-width: 2px; color: var(--muted); background: var(--surface); line-height: 1.4;
+}
+.i { width: 16px; height: 16px; flex: none; vertical-align: -3px; }
+.muted { color: var(--muted); }
+.xs { font-size: 12.5px; }
+.grow { flex: 1; }
+[hidden] { display: none !important; }
+/* Keyboard focus shows on every control that doesn't draw its own (a click doesn't show it). */
+:where(button, a, summary, [tabindex]):focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 6px; }
+::selection { background: var(--accent-soft); }
+

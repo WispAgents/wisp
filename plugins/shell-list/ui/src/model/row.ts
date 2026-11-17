@@ -126,7 +126,8 @@ function laterLine(s: SessionRow): SubView | undefined {
 export function subOf(s: SessionRow, c: RowContext): SubView | undefined {
   if (busy(s)) return s.live ? { text: raw(s.live), live: s.state === 'running' ? 'running' : 'waiting' } : undefined;
   if (c.open && !c.split) return undefined;
-  if (s.held) return { icon: 'pause', held: true, text: heldSub(s, c.agents) };
+  // a done task never says it waits (QA r1 #10), but one waiting for its plan's reset does (Scheduled)
+  if (s.held && (isHeld(s.state, s) || s.held.waiting)) return { icon: 'pause', held: true, text: heldSub(s, c.agents) };
   if (isScheduled(s)) return laterLine(s);
   if (s.preview) return { text: raw(s.preview) };
   if (s.foreign) return { text: tx('shell-list.sub.brought-in', { tool: s.foreign.charAt(0).toUpperCase() + s.foreign.slice(1) }) };

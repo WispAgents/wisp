@@ -10,13 +10,13 @@ import type { PaletteItem, PluginUiDef, ShellContext, ShortcutDef } from './cont
 import { defineExtension, defineView } from './define.ts';
 import { SESSION, type SessionRow } from './rows.ts';
 import { archive, markRead, remove, setState } from './frame/commands.ts';
-import { pastWork, tagsOf } from './palette/tasks.ts';
+import { pastWork, taskItems } from './palette/tasks.ts';
 import { TASK_KEY, type TaskKey } from './frame/task-keys.ts';
 import { parseCompare } from './frame/runs-small.ts';
 import { openFeedback, parseFeedback } from './frame/feedback.ts';
 import { rowMenuItems } from './frame/row-menu.ts';
 import { PLACE_SOURCE, PROJECT_ACTIONS, PROJECT_SOURCE, placeItems, projectItems, projectShortcuts, projectsNow } from './frame/project-switch.ts';
-import { flatRow, projectOf, shortAgo, statusOf } from './frame/rows-view.ts';
+import { flatRow, projectOf, sessionKey, shortAgo, statusOf } from './frame/rows-view.ts';
 import { markStepped } from './frame/stepped.ts';
 
 
@@ -93,36 +93,6 @@ function appItems(ctx: ShellContext): PaletteItem[] {
   ];
 }
 
-/** Tasks: the title, then project · state · age, led by the project's dot (v1 taskSub), newest first. */
-function taskItems(ctx: ShellContext): PaletteItem[] {
-  const g = 'shell.palette.group.tasks';
-  const rows = ctx.client.entities.list<SessionRow>(SESSION)();
-  const projects = projectsNow(ctx);
-  const now = ctx.client.scope.timers.now();
-  const out: PaletteItem[] = [];
-  for (const s of rows) {
-    if (s.archived) continue;
-    const sum = s.summary as Record<string, unknown>;
-    const p = projectOf(String(sum['cwd'] ?? ''), projects);
-    const name = p?.name ?? (typeof sum['project'] === 'string' ? sum['project'] : '');
-    const color = p?.color ?? (typeof sum['color'] === 'string' && sum['color'] ? sum['color'] : 'slate');
-    out.push({
-      id: `task:${s.id}`,
-      group: g,
-      label: s.title,
-      sub: [name, statusOf(s, ctx.t).label, shortAgo(s.updated_at, now)].filter(Boolean).join(' · '),
-      color: color || 'slate',
-      keywords: [sum['preview'], sum['live'], s.agent].filter((x) => typeof x === 'string' && x).join(' '),
-      // what agents tagged it with (wisp_tag): a topic in ⌘K ("#auth", or the word) finds it (v1 F-task-21)
-      ...(tagsOf(s).length > 0 && { tags: tagsOf(s) }),
-      // live and waiting work floats up while typing (v1 rank)
-      rank: (s.state === 'waiting' ? 3 : 0) + (s.unread ? 2 : 0) + (s.state === 'running' ? 1 : 0),
-      at: s.updated_at,
-      run: () => ctx.navigate({ t: 'openTask', id: s.id as never }),
-    });
-  }
-  return out.sort((a, b) => (b.at ?? 0) - (a.at ?? 0));
-}
 
 interface CrewMember {
   readonly id: string;

@@ -5,8 +5,8 @@
 import { defineExtension, definePalette, definePluginUi, defineSettingsPane, defineView } from './define.ts';
 import { lazy } from 'solid-js';
 import catalogue from './i18n/en.json' with { type: 'json' };
-import { openSettings } from './host.ts';
-import { STATIC_NAME_KEY } from './view.ts';
+import { openSettings } from './open-settings.ts';
+import { STATIC_NAME_KEY } from './names.ts';
 
 const Pane = lazy(() => import('./MachinePane.tsx'));
 const Chip = lazy(() => import('./Chip.tsx'));

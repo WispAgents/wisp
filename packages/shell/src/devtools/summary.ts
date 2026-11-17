@@ -4,7 +4,16 @@
 
 import type { DevEntry } from '@wisp/client';
 
-export const STORE_KINDS = ['session', 'turn', 'event', 'setting', 'crew_member', 'machine', 'stuff'] as const;
+/** The kinds counted, as the client keeps them (`machines_peer`, `stuff.item`: QA r1 #11 counted `machine` and `stuff`,
+ *  which no row is). Rows this window has loaded: turns and events come with the tasks that are open. */
+export const STORE_KINDS = ['session', 'turn', 'event', 'setting', 'crew_member', 'machines_peer', 'stuff.item'] as const;
+
+/** A computer's line: its version, its build only when it's something else, and how many plugins. */
+export function peerLine(info: { readonly version?: string; readonly build?: string; readonly plugins?: readonly unknown[] }, plugins: (n: number) => string): string {
+  const v = info.version ?? '';
+  const b = info.build && info.build !== v ? info.build : '';
+  return [v, b, plugins((info.plugins ?? []).length)].filter(Boolean).join(' · ');
+}
 
 export function describe(e: DevEntry): string {
   switch (e.kind) {

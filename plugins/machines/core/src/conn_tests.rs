@@ -8,7 +8,7 @@ fn ssh() -> Conn {
 }
 
 fn online(c: &mut Conn) {
-    c.online("me@devbox", Vec::new(), None, Some("2.0.0".into()), Some(42), 2, 1_000);
+    c.online("me@devbox", Some(Vec::new()), None, Some("2.0.0".into()), Some(42), 2, 1_000);
 }
 
 #[test]
@@ -117,4 +117,21 @@ fn wake_answers() {
     assert_eq!(wake_answer(Some(503), "", false), WakeAnswer::Again("Starting…".into()));
     assert_eq!(refuse("devbox", PeerState::Asleep, true, false, true), None);
     assert!(refuse("mac", PeerState::Asleep, true, true, true).is_some());
+}
+
+/// QA r1 #22: a wisp that doesn't answer `runtime.agents` (an older one, v1's 0.58.0 through the grid) read "No coding
+/// agent there yet" in red though its computer had Claude Code and Codex. Not answering isn't having none: its agents
+/// stay unknown and the step says to update it.
+#[test]
+fn a_peer_that_doesnt_say_its_agents_isnt_said_to_have_none() {
+    let mut c = ssh();
+    c.online("me@devbox", None, None, Some("0.58.0".into()), Some(42), 2, 1_000);
+    let s = c.status.steps.iter().find(|s| s.id == AGENTS).unwrap_or_else(|| panic!("an agents step"));
+    assert!(!s.detail.contains("No coding agent"), "{}", s.detail);
+    assert!(s.detail.contains("update"), "{}", s.detail);
+    assert_eq!(c.status.remote.as_ref().and_then(|r| r.agents.clone()), None);
+    let mut c = ssh();
+    c.online("me@devbox", Some(Vec::new()), None, Some("2.0.0".into()), Some(42), 2, 1_000);
+    let s = c.status.steps.iter().find(|s| s.id == AGENTS).unwrap_or_else(|| panic!("an agents step"));
+    assert!(s.detail.contains("No coding agent"), "an answer with none still says so: {}", s.detail);
 }

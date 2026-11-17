@@ -4,8 +4,8 @@
 // reports, ADR-0043), then the project, harness, mode and how many at once, and First check-in now. Save shows at
 // once (crew.update or crew.create) and rolls back with the shell's toast if refused.
 import { createEffect, createMemo, createSignal, type JSX } from 'solid-js';
-import { defineCommand, newRowId, type PluginClient } from '@wisp/client';
-import { projectList, useShell } from '@wisp/shell';
+import { defineCommand, entityKey, newRowId, type PluginClient, type SettingRow } from '@wisp/client';
+import { AUTO_SETTING, autoEnabled, projectList, useShell } from '@wisp/shell';
 import { parsePick } from '@wisp/shell/pure';
 import { CrewEditorForm, isSpirit, parseSpirit, rollSpirit, useSignal, type CrewEditorBarItem, type CrewEditorChip } from '@wisp/ui';
 import { CREW_COLORS } from './types.ts';
@@ -38,7 +38,7 @@ const HANDOFF = 'crew.reported';
 
 
 // size-ok: one form whose rows share its draft
-export default function CrewEditor(props: { readonly client: PluginClient; readonly params: { id?: string; task?: string; again?: Draft } }): JSX.Element {
+export default function CrewEditor(props: { readonly client: PluginClient; readonly params: { id?: string; task?: string; again?: Partial<Draft> } }): JSX.Element {
   const c = props.client;
   const shell = useShell();
   const say = t as (k: string, v?: Readonly<Record<string, string | number>>) => string;
@@ -62,7 +62,8 @@ export default function CrewEditor(props: { readonly client: PluginClient; reado
     return all.find((p) => p.id === on)?.path ?? (all.length === 1 ? (all[0]?.path ?? '') : '');
   };
   // what you'd typed when the peer refused it: the dialog opens with it again (v1 crewEditor's `again()`)
-  const again = props.params.again;
+  const given = props.params.again;
+  const again: Draft | undefined = given && { ...draftOf(given as Partial<Member>), ...given };
   const [d, setD] = createSignal<Draft>(again ?? (editing() ? before : { ...before, ...faceOf(rollSpirit(String(Math.random()))), cwd: task ? '' : here() }));
   if (task)
     void c
@@ -123,7 +124,11 @@ export default function CrewEditor(props: { readonly client: PluginClient; reado
 
   const projects = createMemo(() => projectList(projectRows(), undefined));
   const projectName = (): string => projects().find((p) => p.path === d().cwd)?.name ?? (d().cwd ? (d().cwd.split(/[\\/]/).pop() ?? d().cwd) : t('wisp.crew.editor.noProject'));
-  const harnessName = (): string => (d().agent && d().agent !== 'auto' ? (harnesses().find((h) => h.id === d().agent)?.name ?? d().agent) : t('wisp.crew.editor.auto'));
+  // Auto only while its one switch is on (owner, 2026-11-17); off, a member with none runs on New task's harness
+  const autoRow = useSignal(c.entities.row<SettingRow>('setting', entityKey(c.home, AUTO_SETTING)));
+  const autoOn = (): boolean => autoEnabled(autoRow()?.value);
+  const harnessName = (): string =>
+    d().agent && d().agent !== 'auto' ? (harnesses().find((h) => h.id === d().agent)?.name ?? d().agent) : t(autoOn() ? 'wisp.crew.editor.auto' : 'wisp.crew.editor.asNewTask');
   const mode = (): (typeof MODES)[number] => MODES.find((m) => m.id === d().mode) ?? MODES[2];
   const bar = (): CrewEditorBarItem[] => [
     {
@@ -146,7 +151,7 @@ export default function CrewEditor(props: { readonly client: PluginClient; reado
       label: harnessName(),
       note: t('wisp.crew.editor.default'),
       title: t('wisp.crew.editor.runnerTitle'),
-      act: { menu: { items: [{ value: 'auto', label: t('wisp.crew.editor.auto') }, ...harnesses().map((h) => ({ value: h.id, label: h.name }))], onSelect: (agent) => set({ agent }) } },
+      act: { menu: { items: [...(autoOn() ? [{ value: 'auto', label: t('wisp.crew.editor.auto') }] : []), ...harnesses().map((h) => ({ value: h.id, label: h.name }))], onSelect: (agent) => set({ agent }) } },
     },
     {
       id: 'mode',

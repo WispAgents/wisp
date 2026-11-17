@@ -1,5 +1,5 @@
-import { describe, expect, it } from 'vitest';
-import { checkGroups, dur, gist, prFiles, talk, verdict, type PrPanel } from '../src/side/pr.ts';
+import { describe, expect, it, test } from 'vitest';
+import { checkGroups, dur, gist, hasPr, prFiles, talk, verdict, type PrPanel } from '../src/side/pr.ts';
 
 const pr = (o: Partial<PrPanel> = {}): PrPanel => ({ number: 7, url: 'https://github.com/o/r/pull/7', state: 'OPEN', base: 'main', ...o });
 
@@ -37,4 +37,16 @@ describe('the PR pane', () => {
     expect([f.shown[0]?.path, f.shown.length, f.more]).toEqual(['f0', 8, 4]);
     expect(prFiles(pr({ files }), true).more).toBe(0);
   });
+});
+
+// QA r1 #1: the PR tab said "This task has no pull request" on a task with PR #806: the open task's row is the
+// server's, its view (and `prs`) under `summary`, and the pane looked only on top
+test('a_server_rows_prs_under_summary_count_as_its_prs', () => {
+  const pr = { number: 806, state: 'OPEN' };
+  expect(hasPr({ id: 'x', summary: { prs: [{ pr }] } })).toBe(true);
+  expect(hasPr({ id: 'x', summary: { pr } })).toBe(true);
+  expect(hasPr({ id: 'x', prs: [{ pr }] })).toBe(true);
+  expect(hasPr({ id: 'x', also: [{ pr }] })).toBe(true);
+  expect(hasPr({ id: 'x', summary: { prs: [] } })).toBe(false);
+  expect(hasPr(undefined)).toBe(false);
 });

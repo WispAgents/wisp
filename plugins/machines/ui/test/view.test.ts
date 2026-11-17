@@ -2,7 +2,7 @@
 import { expect, test } from 'vitest';
 import en from '../src/i18n/en.json' with { type: 'json' };
 import '../src/i18n/lazy.ts'; // the lazily loaded strings too (they load with the code that shows them)
-import { barOf, cloudOf, foundOf, kindOf, menuOf, nameFor, offersLetIn, portOf, primaryOf, removeAsk, stepsOf, stopAsk, troubleTitle, whereOf, type PeerLike } from '../src/view.ts';
+import { agentsOf, barOf, cloudOf, foundOf, kindOf, menuOf, nameFor, offersLetIn, portOf, primaryOf, removeAsk, stepsOf, stopAsk, troubleTitle, whereOf, type PeerLike } from '../src/view.ts';
 
 const cat = en as Record<string, string>;
 const t = (k: string, v?: Readonly<Record<string, string | number>>): string => {
@@ -106,4 +106,12 @@ test('cloud_pane_lists_the_grids_boxes_with_open_and_says_wake_first_once', () =
   expect(out.map((x) => x.wakeLine)).toEqual([true, false]);
   const err = cloudOf([named], [{ id: 'c1', state: 'error', error: 'raw', hint: { title: 'The grid refused', text: 'Sign in again' } }]);
   expect(err[0]?.error).toBe('The grid refused · Sign in again');
+});
+
+// QA r1 #22: an older wisp through the grid read "No coding agent there yet" in red though its computer had Claude Code
+// and Codex: it never said (no `agents`), which isn't having none
+test('a_computer_that_didnt_say_its_agents_isnt_said_to_have_none', () => {
+  expect(agentsOf({ state: 'online', error: '', remote: { version: '0.58.0' } })).toEqual({ kind: 'unknown' });
+  expect(agentsOf({ state: 'online', error: '', remote: { agents: [] } })).toEqual({ kind: 'none' });
+  expect(agentsOf({ state: 'online', error: '', remote: { agents: [{ id: 'claude', name: 'Claude Code', available: true }, { id: 'x', name: 'X', available: false }] } })).toEqual({ kind: 'ready', names: ['Claude Code'] });
 });

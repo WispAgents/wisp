@@ -4,7 +4,7 @@
 // from navigation; the rest (whose menu is open, the dialogs) is local to this list.
 
 import { createEffect, createMemo, createSignal, Match, on, onCleanup, Show, Switch, type JSX } from 'solid-js';
-import { ContextMenu, EmptyState, ProjectHead, Stack, VirtualList, feedDoneColumn, useSignal, type MenuEntry } from '@wisp/ui';
+import { ContextMenu, EmptyState, ProjectHead, Stack, VirtualList, feedDoneColumn, useDerived, useSignal, type MenuEntry } from '@wisp/ui';
 import type { ProjectColor } from '@wisp/tokens';
 import type { EntityKey } from '@wisp/client';
 import type { ExtensionProps, ResolvedExtension } from '@wisp/shell/contract';
@@ -97,7 +97,7 @@ function ListBody(): JSX.Element {
   // on touch, Mark done keeps a column of its own only while some row on the list shows it (v1 feed.js has-quick)
   const doneColumn = createMemo(() => !env.swipes && anyShowsDone(shownRows(items()), (k) => env.rowCtx(k as EntityKey)));
   const plugins = useSignal(env.shell.extensions('shell.row:menu'));
-  const menu = createMemo<MenuEntry[]>(() => menuFor(env, plugins()));
+  const menu = useDerived<MenuEntry[]>(() => menuFor(env, plugins()));
   const refresh = pullRefresh(env, t);
   const box: { el?: HTMLElement } = {};
   // the keyboard's task (j / k, the palette) scrolls its row into view
@@ -215,10 +215,11 @@ function ProjectGroupHead(props: { readonly id: string }): JSX.Element {
 
 const sessionOf = (env: ListEnv, key: EntityKey): Session | undefined => env.client.entities.peek<Session>(KIND.session, key) as Session | undefined;
 
-/** The open row's menu: the list's actions, and what plugins attached to shell.row:menu. */
-function menuFor(env: ListEnv, plugins: readonly ResolvedExtension[]): MenuEntry[] {
+/** The open row's menu: the list's actions, and what plugins attached to shell.row:menu. It reads the row tracked
+ *  (built in a useDerived): after Save for later or Archive it says Unsave / Unarchive at once (QA round 1 #7). */
+export function menuFor(env: ListEnv, plugins: readonly ResolvedExtension[]): MenuEntry[] {
   const key = env.menuFor();
-  const s = key === undefined ? undefined : sessionOf(env, key);
+  const s = key === undefined ? undefined : (env.client.entities.row<Session>(KIND.session, key)() as Session | undefined);
   if (!key || !s) return [];
   // as the list reads it: summary and body flat (branch, toShip, pr…), its key in `id`
   const session = (): { id: string; agent: string } => ({ ...flatSession(s), id: key });

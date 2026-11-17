@@ -253,7 +253,8 @@
     }
     [data-kit='list-row'][data-layout='feed'] > [data-kit='list-row-pills'] > [data-kit='time'],
     [data-kit='list-row'][data-layout='feed'] > [data-kit='list-row-pills'] > [data-part~='list.row.time'] {
-      right: calc(12px + var(--k-feed-done, 0px));
+      /* the pills' right edge: past the done column and the gap before it (QA round 1 #30) */
+      right: calc(12px + var(--k-feed-done-x, 0px));
     }
     [data-kit='list-row'][data-layout='feed'] > [data-kit='icon-button']:not([data-tone='good']) {
       display: none;
@@ -833,6 +834,26 @@
     font-weight: var(--fw-medium);
     color: var(--ink);
     line-height: 1.55;
+  }
+  /* more under the words and the control (v1 .cg-agents: grid-column 2 / -1): a hairline, then it, from the words' edge */
+  [data-kit='settings-row-below'] {
+    grid-column: 1 / -1;
+    flex: 1 0 100%; /* a narrow pane's row is a Wrap: it takes a line of its own there too */
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-3);
+    margin-top: calc(var(--space-2) - var(--space-7));
+    padding-top: var(--space-5);
+    border-top: var(--size-hairline) solid var(--line);
+  }
+  [data-kit='settings-row'][data-tile] > [data-kit='settings-row-below'] {
+    grid-column: 2 / -1;
+  }
+  [data-kit='settings-row-words'] {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
   [data-kit='settings-row-title'] > [data-kit='icon'] {
     flex: none;

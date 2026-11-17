@@ -123,7 +123,9 @@ export function TurnTranscript(props: {
           <Text size="sm" weight="medium" tone="muted">
             {t('shell.task.transcript')}
           </Text>
-          <Text size="sm" tone="faint" truncate>{`· ${count()}`}</Text>
+          <Show when={count()}>
+            <Text size="sm" tone="faint" truncate>{`· ${count()}`}</Text>
+          </Show>
         </>
       }
     >
@@ -141,11 +143,14 @@ export function TurnTranscript(props: {
           </Show>
         )}
       </Index>
-      <TimelineEnd
-        icon={props.status === 'error' ? 'warn' : 'done'}
-        label={t(props.status === 'error' ? 'shell.task.endedError' : 'shell.task.finished')}
-        tone={props.status === 'error' ? 'bad' : 'good'}
-      />
+      {/* a running turn's timeline so far (v1 renderLiveTranscript) has no end yet */}
+      <Show when={props.status !== 'running' && props.status !== 'starting'}>
+        <TimelineEnd
+          icon={props.status === 'error' ? 'warn' : 'done'}
+          label={t(props.status === 'error' ? 'shell.task.endedError' : 'shell.task.finished')}
+          tone={props.status === 'error' ? 'bad' : 'good'}
+        />
+      </Show>
     </Timeline>
   );
 }

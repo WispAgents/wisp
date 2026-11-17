@@ -141,6 +141,14 @@ async fn sync_account(st: &Arc<St>, a: &crate::state::Account, token: &str) -> R
 mod tests {
     use super::*;
 
+    /// QA r1 #22: this wisp registered on the grid as "this computer" (it read `$HOSTNAME`, the shell's own, never set
+    /// for a server the app starts). It goes by the computer's host name, as v1 did (`os.hostname()`).
+    #[test]
+    fn this_computer_goes_by_its_host_name() {
+        assert_eq!(crate::signin::label_of(Some("Mokhless-MacBook-Pro.local\n")), "Mokhless-MacBook-Pro");
+        assert_eq!(crate::signin::label_of(None), "this computer");
+    }
+
     #[test]
     fn origins_split_into_host_and_port() {
         assert_eq!(host_port("http://ada.wisp.localhost:8080"), ("ada.wisp.localhost".into(), 8080));

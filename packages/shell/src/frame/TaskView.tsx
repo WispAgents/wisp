@@ -1025,6 +1025,15 @@ export default function TaskView(props: { readonly id: string; readonly onBack?:
           const live = createMemo(() => turn.status === 'running' && turn.id === turns().at(-1)?.id && (s().state === 'running' || s().state === 'waiting'));
           const owner = getOwner();
           let made: JSX.Element | undefined;
+          // v1 transcript.js renderLiveTranscript: with Transcript on, a running turn shows its timeline so far above the
+          // working panel, growing as steps come (owner, 2026-11-17: Transcript did nothing on a working task). Made once.
+          let madeTx: JSX.Element | undefined;
+          const liveTx = (): JSX.Element =>
+            (madeTx ??= runWithOwner(owner, () => (
+              <Show when={stepsOpen()}>
+                <TurnTranscript steps={steps()} changes={changes()} env={env} here={here} status={turn.status ?? ''} t={t} />
+              </Show>
+            )));
           const working = (): JSX.Element =>
             (made ??= runWithOwner(owner, () => (
               <WorkingPanel
@@ -1159,7 +1168,7 @@ export default function TaskView(props: { readonly id: string; readonly onBack?:
                 {...(turn.status === 'running' && { live: s().summary.live || t('shell.task.starting') })}
                 {...(turn.status === 'starting' && { live: t('shell.task.waitingToStart') })}
                 {...(turn.status === 'held' && { untold: true })}
-                {...(live() && { working: working() })}
+                {...(live() && { working: [liveTx(), working()] })}
                 actsTitle={t('shell.task.activity')}
                 acts={trailActs(stepsOpen() ? 0 : steps().length, { read: count('read'), edit: count('edit'), run: count('run') }, t)}
                 stats={[
@@ -1169,6 +1178,8 @@ export default function TaskView(props: { readonly id: string; readonly onBack?:
                   ...(b.stats?.costUsd ? [{ text: `$${b.stats.costUsd.toFixed(2)}` }] : []),
                 ]}
                 {...(tokens() > 0 && turn.status !== 'running' && { receipt: { text: t('shell.task.tokens', { n: tokens() }), title: t('shell.task.tokensTitle', { n: tokens() }) } })}
+                // after the tokens, on their line: the receipt's cache and plan share (shell-task, ADR-0095; QA r1 #19)
+                receiptMore={<Slot input="shell.turn:trail" layout="contents" id={entityKey(peer, turn.id)} session={() => s() as never} />}
                 {...(changes().length > 0 && {
                   files: { label: t('shell.task.files', { n: figures().files }), plus: `+${figures().plus}`, minus: `−${figures().minus}`, act: { onClick: () => side('changes') } },
                 })}
@@ -1406,7 +1417,7 @@ export default function TaskView(props: { readonly id: string; readonly onBack?:
                       },
                     })}
                     later={t('shell.home.later')}
-                    laterAct={{ menu: { items: whenMenu(t), onSelect: (w) => setWhen(w as When) } }}
+                    laterAct={{ menu: { items: whenMenu(t, now()), onSelect: (w) => setWhen(w as When) } }}
                     send={t('shell.home.send')}
                     {...(checking() && { sendAct: { pending: true } })}
                     hint={hint()}

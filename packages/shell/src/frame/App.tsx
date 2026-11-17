@@ -11,7 +11,7 @@ import { Area, ClientsProvider, type Clients } from '../slot.tsx';
 import { MainPane, SidePane, TaskView } from './Panes.tsx';
 import { TASK_PAGE_INPUTS, taskPagePreloads } from './warm-task.ts';
 import { Overlays } from './Overlays.tsx';
-import { Head, PickStripView, Rail, SidebarList, SidebarTop } from './Sidebar.tsx';
+import { Head, ListLoading, PickStripView, Rail, SidebarList, SidebarTop } from './Sidebar.tsx';
 import { crewTint, type TintMember } from './crew-tint.ts';
 import { flatRow } from './rows-view.ts';
 import { escLeavesLauncher, stackView } from './stack-page.ts';
@@ -139,7 +139,7 @@ export function App(props: { readonly clients: Clients; readonly recent: Readabl
           <>
             {phone ? <PhoneListTop onNew={onNew} /> : <SidebarTop onNew={onNew} homeOn={homeOn()} />}
             <PickStripView filter={filter} setFilter={setFilter} />
-            <Area input="shell.sidebar:list" fallback={<SidebarList onNew={onNew} homeOn={homeOn()} filter={filter} />} />
+            <Area input="shell.sidebar:list" loading={<ListLoading />} fallback={<SidebarList onNew={onNew} homeOn={homeOn()} filter={filter} />} />
           </>
         }
         main={<MainPane onBack={() => setLauncher(false)} launcher={launcher()} />}

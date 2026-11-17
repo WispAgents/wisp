@@ -63,6 +63,7 @@
       },
       { "id": "plugins.trust", "title": "Trust a plugin you installed (or take the trust back): it reloads" },
       { "id": "plugins.ui", "title": "What your untrusted plugins show in the app (their UI modules)", "readOnly": true },
+      { "id": "plugins.styles", "title": "The part styles of the plugins that are on and trusted (themes), for the app's @layer plugins", "readOnly": true },
       { "id": "plugins.agent.list", "title": "The plugins you have, in plain words, for an agent writing one (wisp_plugins)", "readOnly": true },
       { "id": "plugins.agent.schema", "title": "The reference for writing an untrusted plugin: manifest, kit descriptors, commands, examples (wisp_plugin_schema)", "readOnly": true },
       { "id": "plugins.agent.data", "title": "A sample of what a read-only command answers, for a plugin being written (wisp_plugin_data)", "readOnly": true },

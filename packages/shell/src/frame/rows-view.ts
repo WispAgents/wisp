@@ -8,6 +8,28 @@ import { isHeld } from '../task-held.ts';
 export type SectionId = 'needs' | 'working' | 'done';
 export const SECTIONS: readonly SectionId[] = ['needs', 'working', 'done'];
 
+/** Saved for later: the server's summary says `{at, by}`, an optimistic patch the same (or `true` from an older one). */
+export const isSaved = (v: unknown): boolean => v === true || (typeof v === 'object' && v !== null);
+
+const obj = (v: unknown): Record<string, unknown> | undefined => (typeof v === 'object' && v !== null && !Array.isArray(v) ? (v as Record<string, unknown>) : undefined);
+
+/** Needs you, by the list's own rules (shell-list model/sections.ts, v1 feed.js groups): finished or asking, and not
+ *  archived, saved for later, waiting on a follow-up (Scheduled), a subagent's run (under its lead) or a terminal task
+ *  with its terminal open. Home's Needs you, the project chips and the switcher count this, so they agree with the list. */
+export function needsYou(s: SessionRow): boolean {
+  if (s.archived || s.parent_id) return false;
+  if (s.state !== 'review' && s.state !== 'waiting') return false;
+  const sum = s.summary as Record<string, unknown>;
+  // saved for later (the list's isForLater: not while a reminder came due or a turn waits to send)
+  if (isSaved(sum['forLater']) && !sum['reminder'] && !sum['pending']) return false;
+  // a terminal task with its terminal open, finished: being worked on (the list's inTerm)
+  if (s.state === 'review' && sum['tui'] && sum['term']) return false;
+  const later = obj(obj(obj(s.body?.['ext'])?.['wisp.later']))?.['later'];
+  const followUp = Array.isArray(later) && later.some((l) => !obj(l)?.['remind']);
+  const scheduled = s.state === 'review' && followUp && !sum['reminder'] && !sum['held'] && !sum['pending'];
+  return !scheduled;
+}
+
 export function sectionOf(s: SessionRow): SectionId {
   if (s.state === 'running') return 'working';
   if (s.state === 'done') return 'done';
@@ -206,6 +228,20 @@ export function projectOf(cwd: string | undefined, projects: readonly ProjectVie
     return !!r && (cwd === r || cwd.startsWith(`${r}/`));
   };
   return projects.filter((p) => inside(p.path)).sort((a, b) => b.path.length - a.path.length)[0];
+}
+
+/** The project a task belongs to: a worktree run's is the repo its worktree was made from (wisp.worktrees' `root`;
+ *  its own folder is outside the project), else the one its folder is in, else the one its summary names (`project`:
+ *  that repo's folder name). */
+export function projectOfRow(s: { readonly summary?: unknown; readonly body?: unknown }, projects: readonly ProjectView[]): ProjectView | undefined {
+  const sum = obj(s.summary) ?? {};
+  const root = obj(obj(obj(s.body)?.['ext'])?.['wisp.worktrees'])?.['root'];
+  const fromRoot = typeof root === 'string' && root ? projectOf(root, projects) : undefined;
+  if (fromRoot) return fromRoot;
+  const fromCwd = projectOf(typeof sum['cwd'] === 'string' ? sum['cwd'] : undefined, projects);
+  if (fromCwd) return fromCwd;
+  const named = sum['project'];
+  return typeof named === 'string' && named ? projects.find((p) => p.id === named || p.name === named) : undefined;
 }
 
 /** The order after dragging `id` to where `to` is (before it; at the end when `to` is undefined). */

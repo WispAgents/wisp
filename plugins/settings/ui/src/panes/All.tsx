@@ -8,6 +8,8 @@ import { list, type SettingInfo } from '../commands.ts';
 import { t } from '../i18n.ts';
 import { fromRow } from '../source.ts';
 import '../i18n/lazy.ts';
+import { ownerTitle } from '../words.ts';
+import { AUTO_SETTING } from '@wisp/shell';
 
 const words = (v: unknown): string => (v === null || v === undefined ? '' : typeof v === 'string' ? v : JSON.stringify(v));
 
@@ -51,6 +53,8 @@ export default function All(props: { readonly client: PluginClient }): JSX.Eleme
     const needle = q().trim().toLowerCase();
     const by = new Map<string, SettingInfo[]>();
     for (const s of rows() ?? []) {
+      // Auto's switch isn't a control here while Auto is put away (owner, 2026-11-17): `wisp settings set runtime.auto true`
+      if (s.key === AUTO_SETTING) continue;
       if (needle && !`${s.key} ${s.decl.title ?? ''} ${s.owner}`.toLowerCase().includes(needle)) continue;
       by.set(s.owner, [...(by.get(s.owner) ?? []), s]);
     }
@@ -65,7 +69,7 @@ export default function All(props: { readonly client: PluginClient }): JSX.Eleme
       <Show when={groups().length > 0} fallback={<Text tone="muted">{rows.loading ? t('settings.all.loading') : t('settings.all.none')}</Text>}>
         <For each={groups()}>
           {([owner, items]) => (
-            <SettingsGroup part="settings.all.group" title={owner.replace(/^wisp\./, '')}>
+            <SettingsGroup part="settings.all.group" title={ownerTitle(owner)}>
               <For each={items}>
                 {(s) => (
                   <SettingsRow

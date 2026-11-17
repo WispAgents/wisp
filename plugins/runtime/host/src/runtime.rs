@@ -19,6 +19,10 @@ use wisp_runtime_core::summary::{RowFacts, summarize};
 use wisp_runtime_core::{cap, land, prompt};
 
 use crate::error::{Result, RuntimeError};
+
+/// Auto's one switch (a setting, default off) and New task's last pick (v1 config.defaults: harness, models, efforts).
+pub const AUTO_SETTING: &str = "runtime.auto";
+pub const LAUNCH_SETTING: &str = "runtime.launch";
 use crate::host::{Emitted, Host};
 use crate::repo::{self, Repo};
 use crate::run::Live;
@@ -359,6 +363,18 @@ impl Runtime {
         lock(&self.live).get(id).and_then(|l| l.label.clone())
     }
 
+    /// The one switch for Auto (`runtime.auto`, default off: the owner, 2026-11-17, docs/v2-plan.md §3): off, nothing
+    /// asks the router for a pick; every client reads the same setting to hide Auto.
+    pub(crate) fn auto_on(&self) -> bool {
+        self.host.setting(AUTO_SETTING).is_some_and(|v| v == serde_json::Value::Bool(true))
+    }
+
+    /// The harness New task last picked (`runtime.launch`'s `agent`, v1 config.defaults.agent), while it's installed.
+    fn last_pick(&self) -> Option<Arc<dyn Harness>> {
+        let id = self.host.setting(LAUNCH_SETTING)?.get("agent")?.as_str()?.to_owned();
+        self.host.harnesses().into_iter().find(|h| h.info().id == id)
+    }
+
     /// Auto's pick for a new task, or `None` (no router on, or nothing allowed can run now: the first
     /// harness then, as before).
     fn auto_pick(&self, a: &StartArgs) -> Option<wisp_router_api::Pick> {
@@ -439,9 +455,10 @@ impl Runtime {
         if a.prompt.trim().is_empty() {
             return Err(RuntimeError::Invalid("a task needs a prompt".into()));
         }
-        let first = self.host.harnesses().into_iter().next();
-        // Auto (v1 router.js): nothing named, or `auto`: the router picks harness, model and level
-        let pick = if a.agent.as_deref().is_none_or(|x| x.is_empty() || x == "auto") { self.auto_pick(&a) } else { None };
+        // nothing named (or `auto`), Auto off: New task's last pick (v1 config.defaults.agent), else the first harness
+        let first = self.last_pick().or_else(|| self.host.harnesses().into_iter().next());
+        // Auto (v1 router.js): nothing named, or `auto`: the router picks harness, model and level, while Auto is on
+        let pick = if self.auto_on() && a.agent.as_deref().is_none_or(|x| x.is_empty() || x == "auto") { self.auto_pick(&a) } else { None };
         let agent = pick
             .as_ref()
             .map(|p| p.agent.clone())

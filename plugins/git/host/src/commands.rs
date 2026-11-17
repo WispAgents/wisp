@@ -79,7 +79,11 @@ async fn target(root: &Path, rel: &str) -> Result<PathBuf> {
 }
 
 pub async fn changes(svc: &Arc<GitServiceImpl>, a: ChangesArgs) -> Result<Option<Changes>> {
-    let (repo, _g) = handle(svc, &a.path).await?;
+    // a folder with no repo (a task's scratch folder) has no changes git can tell: none, not an error naming the path
+    let (repo, _g) = match handle(svc, &a.path).await {
+        Err(GitError::NotARepo(_)) => return Ok(None),
+        r => r?,
+    };
     let me = &repo.inner;
     // the stage reads run beside the Changes diff: each is ~one full diff on a big change
     let (collected, reads) = tokio::join!(me.collect(&a.base), async { if a.stage_state { Some(me.stage_reads().await) } else { None } });

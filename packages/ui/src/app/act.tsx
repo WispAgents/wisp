@@ -1,7 +1,7 @@
 // What pressing one of the frame's controls does (design/feedback.md): a press, or a menu it opens
 // (the kit's menu, on the control as v1 draws it). While its command is in flight the control is
 // pending: a spinner in place of its icon, the same width, and pressing it again does nothing.
-import { Show, createSignal, splitProps, type JSX } from 'solid-js';
+import { Show, createMemo, createSignal, splitProps, type JSX } from 'solid-js';
 import { Dynamic } from 'solid-js/web';
 import { MenuOn, type MenuEntry, type Placement } from '../controls/Menu.tsx';
 import { Spinner } from '../controls/Spinner.tsx';
@@ -34,12 +34,16 @@ export function actAttrs(act: Act | undefined): Record<string, unknown> {
 /** Draws `render(trigger)`: with a menu, `trigger()` holds the menu's trigger props to spread on the
  * control; without one, its press. */
 export function WithAct(props: { readonly act?: Act | undefined; readonly render: (trigger: () => Record<string, unknown>) => JSX.Element }): JSX.Element {
+  // read once per change under this owner: the press reads it in its click handler, where reading the caller's prop
+  // getter (a compiled memo for `act={a ? x : y}`) made a new unowned memo on every press (QA round 1 #15)
+  const act = createMemo(() => props.act);
   const press = (): Record<string, unknown> => ({
     onClick: (e: MouseEvent) => {
       e.stopPropagation();
-      if (!props.act?.pending) props.act?.onClick?.();
+      const now = act();
+      if (!now?.pending) now?.onClick?.();
     },
-    ...actAttrs(props.act),
+    ...actAttrs(act()),
   });
   return (
     <Show when={props.act?.panel} fallback={<WithMenu act={props.act} render={props.render} press={press} />}>

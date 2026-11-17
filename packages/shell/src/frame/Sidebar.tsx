@@ -9,14 +9,14 @@ import { forLater, isSaved, markRead, setState } from './commands.ts';
 import { openSwitcher } from './project-switch.ts';
 import { parsePick, pickLabel, pickOnly, pickRemove, pickValue, pickedProjects, pickHas } from './project-pick.ts';
 import { displayCombo } from '../keys.ts';
-import { CrewRail, EmptyState, Feed, FeedSection, PickStrip, SidebarHead, SplitTop, TaskCard, useSignal, type MenuEntry, type ProjectChip, type RailMember } from '@wisp/ui';
+import { CrewRail, EmptyState, Feed, FeedSection, PickStrip, SidebarHead, Skeleton, SplitTop, Stack, TaskCard, useSignal, type MenuEntry, type ProjectChip, type RailMember } from '@wisp/ui';
 import { useShell } from '../context.tsx';
 import { routeOf, routeTip } from './auto.ts';
 import { useNow } from '../clock.ts';
 import { SESSION, type SessionRow } from '../rows.ts';
 import { rowSlots, useHeadSlots } from './slots.tsx';
 import { harnessOf } from './harness.ts';
-import { SECTIONS, crewOf, flatRow, goalOf, longTime, overlapOf, projectOf, sectionOf, shortAgo, statusOf, sessionKey, type SectionId } from './rows-view.ts';
+import { SECTIONS, crewOf, flatRow, goalOf, longTime, needsYou, overlapOf, projectOfRow, sectionOf, shortAgo, statusOf, sessionKey, type SectionId } from './rows-view.ts';
 import { useProjects } from './projects.ts';
 import { meOf, type PeerDoc, type StatusDoc } from './me.ts';
 import { Slot, useExtensions, usePluginClient } from '../slot.tsx';
@@ -82,14 +82,14 @@ export function useHeadChips(filter: () => string) {
   const sessions = useSessions();
   const pc = usePluginClient('shell');
   const { list: projects, reorder } = useProjects(shell, pc.home);
-  const needs = (pred: (s: SessionRow) => boolean): number => sessions().filter((s) => sectionOf(s) === 'needs' && pred(s)).length;
+  const needs = (pred: (s: SessionRow) => boolean): number => sessions().filter((s) => needsYou(s) && pred(s)).length;
   const needLabel = (n: number): string => shell.t(n === 1 ? 'shell.side.need.one' : 'shell.side.need.other', { count: n });
   const chips = createMemo<ProjectChip[]>(() => {
     const all = needs(() => true);
     return [
       { id: 'all', name: shell.t('shell.side.allChip'), title: shell.t('shell.side.all'), need: all, needLabel: needLabel(all) },
       ...projects().map((p) => {
-        const n = needs((s) => projectOf(String(s.summary['cwd'] ?? ''), projects())?.id === p.id);
+        const n = needs((s) => projectOfRow(s, projects())?.id === p.id);
         return { id: p.id, name: p.name, title: p.path, color: p.color || 'slate', need: n, needLabel: needLabel(n) };
       }),
     ];
@@ -277,7 +277,7 @@ export function SidebarList(props: { readonly onNew: () => void; readonly homeOn
     const out = new Map<SectionId, SessionRow[]>();
     const who = picked()?.id;
     const ids = knownPick(props.filter(), projects());
-    const shown = sessions().filter((s) => pickHas(ids, projectOf(String(s.summary['cwd'] ?? ''), projects())?.id) && (!who || crewOf(s) === who));
+    const shown = sessions().filter((s) => pickHas(ids, projectOfRow(s, projects())?.id) && (!who || crewOf(s) === who));
     for (const s of shown.sort((a, b) => b.updated_at - a.updated_at)) {
       const k = sectionOf(s);
       out.set(k, [...(out.get(k) ?? []), s]);
@@ -352,5 +352,20 @@ export function SidebarList(props: { readonly onNew: () => void; readonly homeOn
         <EmptyState title={shell.t('shell.crew.none', { name: picked()?.name ?? '' })} compact part="sidebar.crew.none" />
       </Show>
     </>
+  );
+}
+
+/** The task list's shape while its code loads (QA round 1 #12: blank under New task for up to a second): a few rows,
+ *  each its title and its harness line, where the rows will be. */
+export function ListLoading(): JSX.Element {
+  return (
+    <Stack gap="7" part="sidebar.loading">
+      {[0, 1, 2, 3, 4, 5].map(() => (
+        <Stack gap="3">
+          <Skeleton width="2/3" />
+          <Skeleton width="1/2" />
+        </Stack>
+      ))}
+    </Stack>
   );
 }

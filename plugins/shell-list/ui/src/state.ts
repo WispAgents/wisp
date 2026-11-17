@@ -4,7 +4,7 @@
 // (project filter, folded sections). The shell keeps the recent tasks (⌃Tab) itself.
 
 import { computed, defineCommand, entityKey, signal, type DeepReadonly, type EntityKey, type PeerId, type PluginClient, type PluginStore, type Readable } from '@wisp/client';
-import { PROJECT_ORDER, parsePick, pickValue, projectList, projectOf, type ProjectView } from '@wisp/shell/pure';
+import { PROJECT_ORDER, parsePick, pickValue, projectList, projectOfRow, type ProjectView } from '@wisp/shell/pure';
 import { reordered } from '@wisp/ui/pure';
 import { createPlacement } from './model/placement.ts';
 import { flatSession, LATER_TOPIC, listPlan } from './model/wire.ts';
@@ -111,7 +111,9 @@ const placed = new WeakMap<SessionRow, { ps: readonly ProjectView[]; out: Sessio
 export function inProjectOf(s: SessionRow, ps: readonly ProjectView[]): SessionRow {
   const had = placed.get(s);
   if (had?.ps === ps) return had.out;
-  const id = projectOf((s as { cwd?: string }).cwd, ps)?.id;
+  // a worktree run belongs to the repo its worktree came from, not the folder it runs in (QA round 1 #9); the flat row
+  // carries both its summary's fields and its body's `ext`
+  const id = projectOfRow({ summary: s, body: s }, ps)?.id;
   const out = had && had.out.projectId === id ? had.out : id === s.projectId ? s : ({ ...s, projectId: id } as SessionRow);
   placed.set(s, { ps, out });
   return out;

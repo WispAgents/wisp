@@ -9,7 +9,7 @@
 import type { PaletteItem, ShellContext, ShortcutDef } from '../contract.ts';
 import { SESSION, type SessionRow } from '../rows.ts';
 import { displayCombo } from '../keys.ts';
-import { PROJECT_ORDER, projectList, projectOf, sectionOf, type ProjectView } from './rows-view.ts';
+import { PROJECT_ORDER, needsYou, projectList, projectOfRow, type ProjectView } from './rows-view.ts';
 import { parsePick, pickOnly, pickToggle, pickValue } from './project-pick.ts';
 import { projectLabels } from './project-labels.ts';
 
@@ -32,9 +32,10 @@ export function needCounts(ctx: ShellContext, projects: readonly ProjectView[]):
   const by = new Map<string, number>();
   let all = 0;
   for (const s of ctx.client.entities.list<SessionRow>(SESSION)()) {
-    if (s.archived || sectionOf(s) !== 'needs') continue;
+    // the list's Needs you, and a worktree run in the project it was made from (QA round 1 #9)
+    if (!needsYou(s)) continue;
     all++;
-    const p = projectOf(String((s.summary as Record<string, unknown> | undefined)?.['cwd'] ?? ''), projects);
+    const p = projectOfRow(s, projects);
     if (p) by.set(p.id, (by.get(p.id) ?? 0) + 1);
   }
   return { all, by };

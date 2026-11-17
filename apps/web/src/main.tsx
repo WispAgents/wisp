@@ -86,7 +86,8 @@ effect(() => {
   setPaneEntries(
     shell.settingsPanes()().flatMap((pane) => {
       const c = shell.pluginClient(pane.plugin);
-      return c ? [{ pane, client: c }] : [];
+      // a pane with an `if` only while it says so (Settings → Auto while Auto's switch is on, owner 2026-11-17)
+      return c && (pane.if?.(c) ?? true) ? [{ pane, client: c }] : [];
     }),
   );
 });

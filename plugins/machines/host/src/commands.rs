@@ -169,7 +169,7 @@ async fn recheck(st: &Arc<State>, a: c::RecheckArgs) -> Res<Done> {
     for id in ids {
         let ch = st.channel(&id)?;
         let agents = manager::agents(ch.as_ref(), Some(&fresh)).await;
-        st.with_link(&id, |l| l.conn.status.remote.get_or_insert_with(Default::default).agents = Some(agents));
+        st.with_link(&id, |l| l.conn.status.remote.get_or_insert_with(Default::default).agents = agents);
         st.publish(&id);
     }
     Ok(Done::YES)

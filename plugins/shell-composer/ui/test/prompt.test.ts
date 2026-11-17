@@ -57,3 +57,10 @@ test('a_refused_file_list_is_asked_again_only_after_a_pause_not_on_every_read', 
   await Promise.resolve();
   expect(read()).toEqual(['src/a.ts']);
 });
+
+test('a_task_in_the_at_list_has_the_tasks_icon_not_the_crews_qa_r1_27', () => {
+  const tasks = [{ id: 'laptop:a', title: 'Fix the login bug' }];
+  // 'agent' is the two-people glyph (crew, delegates): a task is the list's own mark, as the Tasks tab shows it
+  expect(taskItems(tasks as never, '').map((x) => x.icon)).toEqual(['feed']);
+  expect(crewItems([{ id: 'c1', name: 'Ada' }] as never, '').map((x) => x.icon)).toEqual(['crew']);
+});

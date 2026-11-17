@@ -17,9 +17,27 @@ use crate::net;
 use crate::state::{Account, St, key_of, lock, token_key};
 
 /// What this computer calls itself to the grid.
-pub fn device_name() -> String {
-    let host = std::env::var("HOSTNAME").ok().filter(|h| !h.is_empty()).unwrap_or_else(|| "this computer".into());
-    format!("{} (wisp)", host.trim_end_matches(".local"))
+pub async fn device_name(st: &St) -> String {
+    format!("{} (wisp)", label_of(host_name(st).await.as_deref()))
+}
+
+/// This computer's host name, as the OS says it (`hostname`; v1 `os.hostname()`). `$HOSTNAME` is the shell's own and
+/// never reaches a server started from the app, so every Mac registered as "this computer" (QA r1 #22).
+pub async fn host_name(st: &St) -> Option<String> {
+    let proc = st.ctx.service::<wisp_proc::Proc>().ok()?;
+    let opts = wisp_proc::ExecOpts {
+        timeout: Some(Duration::from_secs(3)),
+        max_output: 4096,
+        scope: Some(st.ctx.scope().clone()),
+        ..wisp_proc::ExecOpts::default()
+    };
+    let r = proc.exec("hostname", &[], opts).await.ok()?;
+    (r.exit.success() && !r.timed_out).then(|| r.stdout_text()).filter(|h| !h.trim().is_empty())
+}
+
+/// The name a computer registers under: its host name without `.local`, else "this computer".
+pub fn label_of(host: Option<&str>) -> String {
+    host.map(str::trim).filter(|h| !h.is_empty()).map_or_else(|| "this computer".to_owned(), |h| h.trim_end_matches(".local").to_owned())
 }
 
 fn now(st: &St) -> i64 {
@@ -28,9 +46,10 @@ fn now(st: &St) -> i64 {
 
 pub async fn start(st: &Arc<St>, a: &SignInArgs) -> Result<SignIn> {
     let grid = grid_url(a.grid.as_deref().unwrap_or(DEFAULT_GRID)).ok_or_else(|| WireError::invalid("that isn't a grid's address"))?;
-    let (status, b) = net::call(&st.http, "POST", &format!("{grid}/api/device/code"), None, Some(&json!({ "name": device_name() })), &[])
-        .await
-        .map_err(|e| WireError::invalid(format!("Couldn’t reach {}: {}", net::host_of(&grid), e.message)))?;
+    let (status, b) =
+        net::call(&st.http, "POST", &format!("{grid}/api/device/code"), None, Some(&json!({ "name": device_name(st).await })), &[])
+            .await
+            .map_err(|e| WireError::invalid(format!("Couldn’t reach {}: {}", net::host_of(&grid), e.message)))?;
     let code = b.get("device_code").and_then(Value::as_str).unwrap_or_default().to_owned();
     if status >= 400 || code.is_empty() {
         return Err(WireError::invalid(format!("{} isn’t a wisp Grid (HTTP {status})", net::host_of(&grid))));

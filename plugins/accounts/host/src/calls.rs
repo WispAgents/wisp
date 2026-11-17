@@ -38,7 +38,7 @@ pub enum HeldNow {
     Ours,
     /// gone for good: its task deleted or archived, or the turn no longer held (skipped, run, stopped)
     Stale,
-    /// neither for sure: not written yet (held a moment ago), held by another hook since, or runtime refused
+    /// not now: not written yet (held a moment ago), its task marked done, held by another hook since, or runtime refused
     Unknown,
 }
 
@@ -60,6 +60,8 @@ pub async fn held_now(ctx: &Ctx, id: &str, turn: &str, by: &str, kind: &str) -> 
     }
     match ctx.run::<r::Get>(&ctx.root_call(), r::IdArgs { id: sid }).await {
         Ok(s) if s.archived => HeldNow::Stale,
+        // marked done: not now (Trust leaves it; reopened, its hold is as it was: QA r1 #10)
+        Ok(s) if s.state == wisp_runtime_api::model::SessionState::Done => HeldNow::Unknown,
         Ok(_) if t.held.as_ref().is_some_and(|h| h.by == by && h.kind == kind) => HeldNow::Ours,
         Ok(_) => HeldNow::Unknown,
         Err(err) if err.code == wisp_kernel::Code::NotFound => HeldNow::Stale,

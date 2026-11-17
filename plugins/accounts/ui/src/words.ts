@@ -3,7 +3,7 @@
 // recheckSummary; agent-login.js control/loginPanel; harness-watch.js changeText).
 
 import { t } from './i18n.ts';
-import type { AccountRow, DetectRow, HarnessChange, HarnessRow, KeyRow, LoginRow, Pin } from './types.ts';
+import type { AccountRow, DetectRow, HarnessChange, HarnessRow, KeyRow, LoginRow, Pin, ToolRow } from './types.ts';
 import './i18n/lazy.ts';
 
 type Tone = 'neutral' | 'good' | 'warn' | 'bad';
@@ -16,11 +16,22 @@ export const signedOut = (h: Pick<HarnessRow, 'available' | 'signedIn'>): boolea
 export const present = (h: Pick<HarnessRow, 'available' | 'signedIn'>): boolean => h.available || signedOut(h);
 
 /** "Checking…", "Ready", "Signed out", "Not found" and its tone (v1 sx-state). */
-export function harnessState(h: Pick<HarnessRow, 'available' | 'signedIn' | 'checking'>): { tone: Tone; label: string } {
+/** `cli`: its CLI's own login as last asked, where the row's Sign in follows it: a found harness its CLI says is signed
+ *  out reads Signed out, as its button says (QA r1 #23: "Sign in" beside "● Ready"). */
+export function harnessState(h: Pick<HarnessRow, 'available' | 'signedIn' | 'checking'>, cli?: boolean): { tone: Tone; label: string } {
   if (h.checking) return { tone: 'neutral', label: t('accounts.state.checking') };
+  if (h.available && cli === false) return { tone: 'warn', label: t('accounts.state.signedOut') };
   if (h.available) return { tone: 'good', label: t('accounts.state.ready') };
   if (signedOut(h)) return { tone: 'warn', label: t('accounts.state.signedOut') };
   return { tone: 'bad', label: t('accounts.state.notFound') };
+}
+
+/** The GitHub row's state (git's only while missing): Not found, gh signed in or out, or nothing when gh didn't say. */
+export function toolState(x: Pick<ToolRow, 'id' | 'name' | 'installed' | 'signedIn'>): { tone: Tone; label: string } | undefined {
+  if (!x.installed) return { tone: 'bad', label: t('accounts.state.notFound') };
+  if (x.signedIn === true) return { tone: 'good', label: t('accounts.login.signedIn') };
+  if (x.signedIn === false) return { tone: 'warn', label: t('accounts.state.signedOut') };
+  return undefined;
 }
 
 /** The harness's small line: "2.1.30 · 3 models · 2 accounts", or how to get it while it isn't found. */
