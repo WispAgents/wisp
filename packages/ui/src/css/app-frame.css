@@ -175,7 +175,8 @@
   [data-kit='feed-wrap'] {
     --side-bg: var(--panel);
     grid-row: 2; grid-column: 1; min-height: 0; min-width: 0; margin: 0 var(--space-4) var(--space-4) var(--size-rail); padding: 0 var(--space-5);
-    overflow-y: auto; border: 1px solid var(--line); border-top: 0; border-radius: 0 0 11px 11px; background: var(--side-bg);
+    /* never sideways (TRY: the desktop app's WebKit drew a scrollbar under the list for a pixel or two of overflow) */
+    overflow-x: hidden; overflow-y: auto; border: 1px solid var(--line); border-top: 0; border-radius: 0 0 11px 11px; background: var(--side-bg);
     /* a column, so a list that grows (a VirtualList) gets the height that's left and scrolls itself */
     display: flex; flex-direction: column;
   }

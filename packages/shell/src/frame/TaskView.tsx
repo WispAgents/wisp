@@ -5,7 +5,7 @@
 // Mark done, a follow-up, Rerun and Fork show their result before the peer answers; Ship it and a
 // restore show their control working; the panes and menus open in the same frame.
 
-import { Show, createEffect, createMemo, createResource, createSignal, getOwner, lazy, onCleanup, runWithOwner, untrack, type JSX } from 'solid-js';
+import { Show, createEffect, createMemo, createResource, createSignal, getOwner, lazy, on, onCleanup, runWithOwner, untrack, type JSX } from 'solid-js';
 import { entityKey, newRowId, ownerOf, uuidv7, type EntityKey, type Json } from '@wisp/client';
 import {
   Answer,
@@ -1045,49 +1045,10 @@ export default function TaskView(props: { readonly id: string; readonly onBack?:
                 }
               />
             )));
-          return (
-            <>
-              <TurnView
-                id={turn.id}
-                {...(rates() && { rate: <RateButtons rating={ratingOf(b)} labels={{ up: t('shell.rate.up'), down: t('shell.rate.down') }} onRate={(next) => rate(turn.id, next)} /> })}
-                {...(whyFor() === turn.id && {
-                  trailBody: (
-                    <WhyForm
-                      labels={{ placeholder: t('shell.rate.why'), note: t('shell.rate.whyNote'), skip: t('shell.rate.skip'), send: t('shell.rate.send') }}
-                      onSend={(text) => rate(turn.id, 'down', text)}
-                      onSkip={() => {
-                        setWhyFor(undefined);
-                        shell.toast.success(t('shell.rate.thanks'));
-                      }}
-                      onClose={() => setWhyFor(undefined)}
-                    />
-                  ),
-                })}
-                prompt={sent.rest}
-                askNotes={sent.notes.map((c) => ({
-                  n: c.n,
-                  on: c.kind === 'text' && c.quote ? `“${c.quote.replace(/\s+/g, ' ')}”` : c.label,
-                  removed: c.removed,
-                  removedLabel: t('shell.task.commentRemoved'),
-                  say: c.note,
-                }))}
-                harness={h().name}
-                {...(h().logo && { logo: h().logo })}
-                time={clock(turn.started_at)}
-                timeTitle={longTime(turn.started_at)}
-                {...(b.checkpoint?.commit && {
-                  sha: { short: b.checkpoint.commit.slice(0, 7), title: t('shell.task.checkpoint', { branch: b.checkpoint.branch ?? '', sha: b.checkpoint.commit }) },
-                })}
-                {...((h) => (h?.title ? { hero: { title: h.title, summary: h.summary ?? '' } } : {}))(hero())}
-                {...(stubbed() && {
-                  answer: (
-                    <Button size="sm" variant="ghost" icon="chevron" part="turn.open" loading={opener.opening(turn.id)} onClick={() => opener.open(turn.id)}>
-                      {t('shell.task.openTurn')}
-                    </Button>
-                  ),
-                })}
-                {...(!stubbed() && blocks().length > 0 && {
-                  answer: (
+          // the answer, made once while it shows: a 👍 patched the turn's ext, which made its body a new object, and a
+          // spread that read blocks() built the answer, its timeline and its bar again (owner, 2026-11-17)
+          const answerShown = createMemo(() => !stubbed() && blocks().length > 0);
+          const answerView = createMemo(on(answerShown, (shown) => (shown ? untrack(() => (
                     <>
                       {/* v1 transcript.js renderTranscript: with Transcript on, the turn's timeline comes before its answer */}
                       <Show when={stepsOpen()}>
@@ -1129,8 +1090,49 @@ export default function TaskView(props: { readonly id: string; readonly onBack?:
                         }), { comment })}
                       />
                     </>
+          )) : undefined)));
+          return (
+            <>
+              <TurnView
+                id={turn.id}
+                {...(rates() && { rate: <RateButtons rating={ratingOf(b)} labels={{ up: t('shell.rate.up'), down: t('shell.rate.down') }} onRate={(next) => rate(turn.id, next)} /> })}
+                {...(whyFor() === turn.id && {
+                  trailBody: (
+                    <WhyForm
+                      labels={{ placeholder: t('shell.rate.why'), note: t('shell.rate.whyNote'), skip: t('shell.rate.skip'), send: t('shell.rate.send') }}
+                      onSend={(text) => rate(turn.id, 'down', text)}
+                      onSkip={() => {
+                        setWhyFor(undefined);
+                        shell.toast.success(t('shell.rate.thanks'));
+                      }}
+                      onClose={() => setWhyFor(undefined)}
+                    />
                   ),
                 })}
+                prompt={sent.rest}
+                askNotes={sent.notes.map((c) => ({
+                  n: c.n,
+                  on: c.kind === 'text' && c.quote ? `“${c.quote.replace(/\s+/g, ' ')}”` : c.label,
+                  removed: c.removed,
+                  removedLabel: t('shell.task.commentRemoved'),
+                  say: c.note,
+                }))}
+                harness={h().name}
+                {...(h().logo && { logo: h().logo })}
+                time={clock(turn.started_at)}
+                timeTitle={longTime(turn.started_at)}
+                {...(b.checkpoint?.commit && {
+                  sha: { short: b.checkpoint.commit.slice(0, 7), title: t('shell.task.checkpoint', { branch: b.checkpoint.branch ?? '', sha: b.checkpoint.commit }) },
+                })}
+                {...((h) => (h?.title ? { hero: { title: h.title, summary: h.summary ?? '' } } : {}))(hero())}
+                {...(stubbed() && {
+                  answer: (
+                    <Button size="sm" variant="ghost" icon="chevron" part="turn.open" loading={opener.opening(turn.id)} onClick={() => opener.open(turn.id)}>
+                      {t('shell.task.openTurn')}
+                    </Button>
+                  ),
+                })}
+                {...(answerView() && { answer: answerView() })}
                 {...(turn.status === 'running' && { live: s().summary.live || t('shell.task.starting') })}
                 {...(turn.status === 'starting' && { live: t('shell.task.waitingToStart') })}
                 {...(turn.status === 'held' && { untold: true })}

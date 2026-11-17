@@ -3,13 +3,14 @@
 // scroll with no long tasks). Selecting follows the open task; the row the keyboard is on is the
 // shell's selection.
 
-import { Show, createMemo, type JSX } from 'solid-js';
+import { Show, createMemo, untrack, type JSX } from 'solid-js';
 import { byKeys, filterBy, sortBy, type EntityKey } from '@wisp/client';
 import type { Tone } from '@wisp/tokens';
 import { EmptyState, ListRow, Pill, Time, VirtualList, useSignal } from '@wisp/ui';
 import { useShell } from '../context.tsx';
 import { useNow } from '../clock.ts';
 import { SESSION, type SessionRow } from '../rows.ts';
+import { sessionKey } from './rows-view.ts';
 import '../i18n/lazy.ts';
 
 const TONE: Record<string, Tone> = { running: 'info', review: 'warn', done: 'good', error: 'bad' };
@@ -46,7 +47,7 @@ export function FallbackList(): JSX.Element {
             selected={selected() === s().id}
             onOpen={() => {
               shell.selection.set(s().id);
-              shell.navigate({ t: 'openTask', id: s().id as EntityKey as never });
+              shell.navigate({ t: 'openTask', id: sessionKey(untrack(shell.client.entities.keys(SESSION)), s().id) as never });
             }}
           />
         )}

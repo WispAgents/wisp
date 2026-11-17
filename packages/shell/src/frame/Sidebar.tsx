@@ -3,7 +3,7 @@
 // sections (Needs you, Working, Done), each task a row (the kit's TaskCard). The crew rail beside it.
 // Opening a row navigates at once (design/feedback.md); Mark done is optimistic through the command.
 
-import { For, Show, createMemo, createSignal, onCleanup, type JSX } from 'solid-js';
+import { For, Show, createMemo, createSignal, onCleanup, untrack, type JSX } from 'solid-js';
 import type { EntityKey, Json } from '@wisp/client';
 import { forLater, markRead, setState } from './commands.ts';
 import { openSwitcher } from './project-switch.ts';
@@ -16,7 +16,7 @@ import { useNow } from '../clock.ts';
 import { SESSION, type SessionRow } from '../rows.ts';
 import { rowSlots, useHeadSlots } from './slots.tsx';
 import { harnessOf } from './harness.ts';
-import { SECTIONS, crewOf, flatRow, goalOf, longTime, overlapOf, projectOf, sectionOf, shortAgo, statusOf, type SectionId } from './rows-view.ts';
+import { SECTIONS, crewOf, flatRow, goalOf, longTime, overlapOf, projectOf, sectionOf, shortAgo, statusOf, sessionKey, type SectionId } from './rows-view.ts';
 import { useProjects } from './projects.ts';
 import { meOf, type PeerDoc, type StatusDoc } from './me.ts';
 import { Slot, useExtensions, usePluginClient } from '../slot.tsx';
@@ -336,7 +336,7 @@ export function SidebarList(props: { readonly onNew: () => void; readonly homeOn
                       onOpen={() => {
                         shell.selection.set(s.id);
                         if (s.unread) void shell.client.commands.run(markRead, { id: s.id, unread: false }).catch(() => undefined);
-                        shell.navigate({ t: 'openTask', id: s.id as EntityKey as never });
+                        shell.navigate({ t: 'openTask', id: sessionKey(untrack(shell.client.entities.keys(SESSION)), s.id) as never });
                       }}
                     />
                   );

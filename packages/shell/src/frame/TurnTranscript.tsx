@@ -3,7 +3,7 @@
 // already its label, what it printed or the error in full behind a chevron), the agent's messages as prose, and
 // where the turn ended. The answer follows it (TaskView). What a step printed of a .env file (`cat .env`) reads
 // KEY=•••• under v1's Reveal line (env-reveal.ts keeps what's shown, per task).
-import { For, Show, createSignal, type JSX } from 'solid-js';
+import { For, Index, Show, createSignal, type JSX } from 'solid-js';
 import { EnvMask, Icon, Markdown, Text, Timeline, TimelineEnd, TimelineMessage, TimelineStep, DOTS, envFileNamed, envName, maskText, readsEnvFile, type EnvReveal, type IconName } from '@wisp/ui';
 import type { ShellContext } from '../contract.ts';
 import { changeFigures } from './rows-view.ts';
@@ -127,17 +127,20 @@ export function TurnTranscript(props: {
         </>
       }
     >
-      <For each={props.steps}>
-        {(a, i) =>
-          a.kind === 'text' ? (
+      {/* by place, updated in place: the steps are made again as new objects whenever the turn's row changes (a 👍),
+          and a list keyed by object made every step again */}
+      <Index each={props.steps}>
+        {(a, i) => (
+          <Show
+            when={a().kind === 'text'}
+            fallback={<Step a={a()} index={i} changes={props.changes} here={props.here} env={props.env} t={t} />}
+          >
             <TimelineMessage>
-              <Markdown source={props.here(a.label ?? '')} />
+              <Markdown source={props.here(a().label ?? '')} />
             </TimelineMessage>
-          ) : (
-            <Step a={a} index={i()} changes={props.changes} here={props.here} env={props.env} t={t} />
-          )
-        }
-      </For>
+          </Show>
+        )}
+      </Index>
       <TimelineEnd
         icon={props.status === 'error' ? 'warn' : 'done'}
         label={t(props.status === 'error' ? 'shell.task.endedError' : 'shell.task.finished')}

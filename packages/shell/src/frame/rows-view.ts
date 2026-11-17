@@ -237,3 +237,10 @@ export function trailActs(steps: number, n: { readonly read: number; readonly ed
     .map(({ n: _n, ...a }) => a);
   return acts.length ? acts : [{ text: t('shell.task.activityLabel') }];
 }
+
+/** A session row's entity key (`<peer>:<id>`): `entities.list` gives the rows with their bare ids, `entities.keys`
+ *  the keys; navigation and commands need the key (a bare id opened a blank task page from Home's Needs you). */
+export function sessionKey(keys: readonly string[], id: string): string {
+  if (id.includes(':')) return id;
+  return keys.find((k) => k.slice(k.indexOf(':') + 1) === id) ?? id;
+}

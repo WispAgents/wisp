@@ -10,7 +10,7 @@ import { flag, sub, type PartName } from '../core/props.ts';
 import { Icon } from '../content/Icon.tsx';
 import type { MenuBaseProps, Placement } from './Menu.tsx';
 import { bound, type Replay } from './lazy-part.ts';
-import type { MenuEntry, MenuGroup, MenuItem, MenuSeparator, MenuSubmenu } from './menu-entries.ts';
+import { tidySeparators, type MenuEntry, type MenuGroup, type MenuItem, type MenuSeparator, type MenuSubmenu } from './menu-entries.ts';
 
 const BACK = 'menu:back';
 
@@ -152,7 +152,7 @@ function BackRow(props: { readonly api: menu.Api; readonly label: string; readon
 
 function Entries(props: { readonly api: menu.Api; readonly items: readonly MenuEntry[]; readonly part: PartName }): JSX.Element {
   return (
-    <For each={props.items}>
+    <For each={tidySeparators(props.items)}>
       {(entry) => (
         <Switch fallback={<Item api={props.api} item={entry as MenuItem} part={props.part} />}>
           <Match when={entry.kind === 'separator'}>

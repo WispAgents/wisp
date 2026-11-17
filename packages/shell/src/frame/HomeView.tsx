@@ -13,7 +13,7 @@ import { warm, warmer } from './warm.ts';
 import { INSTALLABLE, useSetup } from './setup.ts';
 import { useRecipes } from './recipes.ts';
 import type { PickOptions } from '../platform/types.ts';
-import { Show, createEffect, createMemo, createSignal, lazy, on, onCleanup, type JSX } from 'solid-js';
+import { Show, createEffect, createMemo, createSignal, lazy, on, onCleanup, untrack, type JSX } from 'solid-js';
 import { entityKey, newRowId, type EntityKey, type Json, type PeerId } from '@wisp/client';
 import { AutoPop, KeysHint, Launcher, NextList, SplitHome, Tips, lazyPart, lazyView, useSignal, warm as warmPart, type LauncherProps, type LauncherTool, type PlainTip } from '@wisp/ui';
 import { useShell } from '../context.tsx';
@@ -22,7 +22,7 @@ import { aheadLabel, waitable } from './hold.ts';
 import { Slot, usePluginClient } from '../slot.tsx';
 import { useNow } from '../clock.ts';
 import { SESSION, type SessionRow } from '../rows.ts';
-import { longTime, sectionOf, shortAgo, statusOf } from './rows-view.ts';
+import { longTime, sectionOf, shortAgo, statusOf, sessionKey } from './rows-view.ts';
 import { autoBlocked, autoPreview, autoRules, create, setSetting, trial, type Attachment } from './commands.ts';
 import { newRun, runWords, sameSetup, settingModel, trialVary, variantWords, type Variant } from './trial.ts';
 import { modelWord, type Runner } from './runner.ts';
@@ -900,7 +900,7 @@ export function HomeView(props: { readonly onBack?: () => void }): JSX.Element {
               time: shortAgo(s.updated_at, now()),
               timeTitle: longTime(s.updated_at),
             }))}
-          onOpen={(id) => shell.navigate({ t: 'openTask', id: id as EntityKey as never })}
+          onOpen={(id) => shell.navigate({ t: 'openTask', id: sessionKey(untrack(shell.client.entities.keys(SESSION)), id) as never })}
         />
         {/* notes on plans other plugins add (wisp.budget's Spare allowance), v1 .sh-spare */}
         <Slot input="shell.home:cards" layout="contents" pickAgent={pickAgent} />

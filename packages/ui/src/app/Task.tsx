@@ -407,17 +407,18 @@ export function TurnView(props: TurnViewProps): JSX.Element {
           {/* v1 renderTrail: no button when the turn did nothing (or the transcript shows its steps) */}
           <Show when={props.acts.length > 0}>
             <button type="button" data-kit="tb-acts" title={props.actsTitle} aria-expanded={props.activity?.open ?? false} onClick={() => props.activity?.onToggle()}>
-              <For each={props.acts}>
+              {/* by place: the counts are new objects on every change of the turn's row */}
+              <Index each={props.acts}>
                 {(a) => (
-                  <span data-kit="tb" title={a.title}>
-                    <Show when={a.icon}>{(i) => <Icon name={i()} />}</Show>
-                    {a.text}
+                  <span data-kit="tb" title={a().title}>
+                    <Show when={a().icon}>{(i) => <Icon name={i()} />}</Show>
+                    {a().text}
                   </span>
                 )}
-              </For>
+              </Index>
             </button>
           </Show>
-          <For each={props.stats}>{(s) => <span data-kit="tb">{s.text}</span>}</For>
+          <Index each={props.stats}>{(s) => <span data-kit="tb">{s().text}</span>}</Index>
           <Show when={props.receipt}>
             {(r) => (
               <span data-kit="tb" data-part="turn.receipt" title={r().title}>

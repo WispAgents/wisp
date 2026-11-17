@@ -138,7 +138,8 @@ export function MachineCard(props: CardProps): JSX.Element {
           </>
         }
         control={
-          <Inline gap="2">
+          // the state and its button apart (owner: "Asleep" ran into Wake)
+          <Inline gap="4">
             <Pill tone={TONE[st()] ?? 'neutral'} dot live={busy()} variant="plain">
               {stateText()}
             </Pill>
