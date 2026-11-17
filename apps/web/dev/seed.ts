@@ -6,6 +6,7 @@
 import type { PeerInfo, Topic } from '@wisp/protocol';
 import { accountRows } from './mock-reads.ts';
 import { SEED_ACCOUNTS } from './mock-cloud.ts';
+import { THREAD_TASK, threadRows } from './mock-threads.ts';
 
 /** MOCK_BUSY=1: a busy machine (the machine chip in the top bar). */
 const BUSY = typeof process !== 'undefined' && process.env['MOCK_BUSY'] === '1';
@@ -347,6 +348,7 @@ const PLUGINS: PeerInfo['plugins'] = [
     blocks: ['hero', 'steps', 'diff', 'tests', 'files', 'callout', 'actions'],
   },
   { id: 'wisp.settings', version: '2.0.0', commands: ['settings.set'], topics: ['config'], blocks: [] },
+  { id: 'wisp.threads', version: '2.0.0', commands: ['threads.notes', 'threads.notesUpdate', 'threads.revisions', 'threads.health', 'threads.freshBrief', 'threads.fresh'], topics: [], blocks: [] },
   { id: 'wisp.crew', version: '2.0.0', commands: [], topics: ['crew'], blocks: [] },
   { id: 'wisp.machines', version: '2.0.0', commands: [], topics: ['machines'], blocks: [] },
   { id: 'wisp.stuff', version: '2.0.0', commands: ['stuff.delete', 'stuff.remove'], topics: ['stuff'], blocks: [] },
@@ -698,6 +700,8 @@ export function seed(o: { peer: string; now: number; extra: number; firstRun?: b
     list.push(s.list);
     topics.set(`session:${s.list.id.slice(s.list.id.indexOf(':') + 1)}`, s.own); // the bare id, as the client subscribes
   }
+  // long threads (ADR-0079): one task's Notes, revisions and a Worn health, for its Thread tab
+  topics.get(`session:${THREAD_TASK}`)?.push(...threadRows(o.now));
   if (o.media) withMedia(topics);
   if (o.env) withEnv(topics);
   if (o.usage) withUsage(list);

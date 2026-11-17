@@ -17,5 +17,8 @@
     "acceptEdits",
     "--chrome",
     "--verbose"
+  ],
+  "drop": [
+    "stats.compactions"
   ]
 }

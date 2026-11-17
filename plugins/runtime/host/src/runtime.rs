@@ -603,13 +603,22 @@ impl Runtime {
         if let Some(team) = &a.team {
             self.give_team(&mut s, team)?;
         }
+        // a new conversation starts from an idle task (a CLI only lingering is let go): not behind a running turn, follow-ups waiting or a question
+        // (a follow-up then would answer it with the brief)
+        if a.fresh
+            && (matches!(self.run_state(a.id.as_str()), Run::Running { .. }) || !s.queue.is_empty() || crate::more::ask_id(&s).is_some())
+        {
+            return Err(RuntimeError::Conflict(
+                "It’s still running, has follow-ups waiting or waits on your answer: start a fresh thread once it’s idle.".into(),
+            ));
+        }
         // the client's id for the turn, when it's in wisp's shape and no turn or queued item has it (B35)
         let mine = match a.turn_id.as_ref().filter(|t| is_task_id(t.as_str())) {
             Some(t) if self.repo.turn(t.as_str()).await.is_err() && !s.queue.iter().any(|q| q.id == t.as_str()) => Some(t.0.clone()),
             _ => None,
         };
         let opts =
-            serde_json::to_value(serde_json::json!({ "mode": a.mode, "run": a.run, "confirmLimit": a.confirm_limit.then_some(true) }))
+            serde_json::to_value(serde_json::json!({ "mode": a.mode, "run": a.run, "confirmLimit": a.confirm_limit.then_some(true), "fresh": a.fresh.then_some(true) }))
                 .ok()
                 .filter(|v| v.as_object().is_some_and(|o| o.values().any(|x| !x.is_null())));
         let has_extras = opts.is_some() || a.by.is_some();

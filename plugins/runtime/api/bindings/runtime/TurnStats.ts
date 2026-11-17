@@ -19,4 +19,10 @@ cacheTtlMs?: bigint,
  * the harness's own subagents that ran inside the turn (Claude Code's Agent/Task calls), by type, most output
  * first; their tokens are already in the turn's. The task usage card lists them (v1 #785). Additive (2026-11-13).
  */
-subagents?: Array<SubagentStat>, };
+subagents?: Array<SubagentStat>, 
+/**
+ * how many times the conversation compacted during the turn (a /compact, or the harness compacting on its own
+ * mid-turn: Claude Code's `compact_boundary`); absent: none, or the harness doesn't say. Long threads count and
+ * audit it (ADR-0096). Additive (2026-11-18).
+ */
+compactions?: number, };

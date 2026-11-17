@@ -58,3 +58,13 @@ fn an_errors_words_without_numbers_paths_or_hashes_are_its_signature() {
     assert_eq!(error_sig("commit 4f9a2c81d0 not found"), "commit # not found");
     assert_ne!(error_sig("Edit failed: no match"), error_sig("Bash failed: no match"));
 }
+
+/// ADR-0096: the harness compacting on its own inside a turn counts as a compaction, as a `/compact` turn does.
+#[test]
+fn compactions_inside_a_turn_count_as_compact_turns_do() {
+    let h = health("t1", &[t(), TurnIn { compacted: 2, ..t() }, TurnIn { compact: true, ..t() }, t()], None);
+    assert_eq!(h.compactions, 3);
+    assert_eq!(h.level, Level::Heavy, "{h:?}");
+    let after = health("t1", &[TurnIn { compacted: 3, ..t() }, TurnIn { fresh: true, ..t() }], None);
+    assert_eq!(after.compactions, 0, "a fresh thread starts the count again");
+}

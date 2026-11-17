@@ -39,6 +39,7 @@ pub const HELP: &str = "usage:
   wisp resume <id>              a new task that carries on from where that one stopped, on today's code
   wisp adopt [<id>|--all]       bring in sessions you ran in a harness outside wisp   (--since 7d  --track)
   wisp notes [<task>] [--set section=text]   a task's Notes (goal, decisions, what failed, state …); --set rewrites one
+  wisp fresh [<task>] [--print] [-f brief.md]   a new conversation on the same task, from a brief (--print shows it)
   wisp hook install|uninstall|status   a git hook that adds Wisp-Task: <id> to commits a task's agent makes
   wisp secret set|rm NAME       a secret your formulas reference as ${secret:NAME}: piped in or typed hidden, never an argument
   wisp import [v1 home]         bring a wisp v1 home (~/.wisp) in: its plan first, then on yes   (--dry-run  --yes)

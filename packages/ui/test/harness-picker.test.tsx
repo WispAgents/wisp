@@ -446,3 +446,22 @@ test('in_the_browser_start_from_an_issue_stays_at_the_end_of_the_recipes_row_v1'
   expect(issue?.closest('[data-kit="l-recipes"]')).not.toBeNull();
   expect(document.querySelector('[data-kit="l-recipes"]')?.hasAttribute('hidden')).toBe(false);
 });
+
+test('in_the_phone_apps_with_recipes_in_more_neither_their_row_nor_an_issue_tool_shows_qa_r2_2', () => {
+  mount(() => (
+    <PlatformLookProvider look={() => 'android'}>
+      <Launcher {...launcher({})} recipes={{ ...launcher({}).recipes, inMore: true }} />
+    </PlatformLookProvider>
+  ));
+  expect(document.querySelector('[data-kit="l-recipes"]')?.hasAttribute('hidden')).toBe(true);
+  expect(document.querySelector('[data-kit="l-bar"] [data-part~="launcher.issue"]')).toBeNull();
+});
+
+test('nothing_to_send_the_round_send_is_off_like_the_sheets_header_send_qa_r2_12', () => {
+  const [off, setOff] = createSignal(true);
+  mount(() => <Launcher {...launcher({})} sendOff={off()} />);
+  const send = document.querySelector('[data-part="launcher.send"]') as HTMLButtonElement;
+  expect(send.disabled).toBe(true);
+  setOff(false);
+  expect(send.disabled).toBe(false);
+});

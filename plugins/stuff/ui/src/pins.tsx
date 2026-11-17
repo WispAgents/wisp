@@ -3,10 +3,10 @@
 // so with Undo; an app that asks to use wisp gets the Allow card first, from your click, never by itself, and never
 // while the task it's for, or the task that made it, runs in Full auto. The cards (Allow, and a pane's write waiting
 // on your click) render here, wherever pins are made.
-import { createEffect, For, on, Show, untrack, type JSX } from 'solid-js';
+import { createEffect, on, Show, untrack, type JSX } from 'solid-js';
 import { entityKey, setSetting, type EntityKey, type PluginClient, type SettingRow } from '@wisp/client';
 import { useShell } from '@wisp/shell';
-import { Button, Dialog, Inline, PaneCard, Stack, Text, useSignal, type PaneSeg } from '@wisp/ui';
+import { AnchoredCard, AskCard, PaneCard, useSignal, type PaneSeg } from '@wisp/ui';
 import { allowPane } from './commands.ts';
 import { PANE_USES, hasInvisible, isUse, showInvisible } from './panes/bridge.ts';
 import { missingOf, panesAt, runsFullAuto, withPin } from './panes/grant.ts';
@@ -37,10 +37,11 @@ export interface Pins {
   /** the apps pinned at a place, in their order */
   at(where: PaneWhere, items: readonly Item[]): Item[];
   pinned(it: Item, where: PaneWhere, items: readonly Item[]): boolean;
-  pin(key: EntityKey, it: Item, where: PaneWhere, items: readonly Item[]): Promise<boolean>;
+  /** `anchor`: what asked (⋯ on its card): the Allow card sits by it, as in v1 */
+  pin(key: EntityKey, it: Item, where: PaneWhere, items: readonly Item[], anchor?: HTMLElement): Promise<boolean>;
   unpin(it: Item, where: PaneWhere, items: readonly Item[]): Promise<void>;
   /** the Allow card from your click (Allow… on a pane's bar); true once it's allowed */
-  allow(key: EntityKey, it: Item, task?: TaskRow | null): Promise<boolean>;
+  allow(key: EntityKey, it: Item, task?: TaskRow | null, anchor?: HTMLElement): Promise<boolean>;
 }
 
 /** Call inside a component: the pins follow the setting (a Solid signal over the store's row). */
@@ -55,13 +56,13 @@ export function pinsOf(c: PluginClient): Pins {
     return typeof v === 'string' ? v : '';
   };
   const setValue = (v: string): Promise<void> => c.run(setSetting, { peer: c.home, key: PANES_KEY, value: v }).then(() => undefined);
-  const ask = (head: string, lines: readonly string[], risky: boolean, ok: string, alt?: string): Promise<'ok' | 'alt' | false> =>
-    new Promise((done) => st.setModal({ kind: 'allow', head, lines, risky, ok, ...(alt && { alt }), done: (a) => (st.setModal(undefined), done(a)) }));
+  const ask = (head: string, lines: readonly string[], risky: boolean, ok: string, alt?: string, anchor?: HTMLElement): Promise<'ok' | 'alt' | false> =>
+    new Promise((done) => st.setModal({ kind: 'allow', head, lines, risky, ok, ...(alt && { alt }), ...(anchor && { anchor }), done: (a) => (st.setModal(undefined), done(a)) }));
   const fullAuto = (it: Item, task: TaskRow | null | undefined): TaskRow | undefined => {
     const from = it.from?.session ? (c.entities.peek<TaskRow>('session', `${c.home}:${it.from.session}` as EntityKey) as TaskRow | undefined) : undefined;
     return [task ?? undefined, from].find((s) => runsFullAuto(s as never));
   };
-  const allow = async (key: EntityKey, it: Item, task?: TaskRow | null, pinning?: PaneWhere): Promise<boolean> => {
+  const allow = async (key: EntityKey, it: Item, task?: TaskRow | null, pinning?: PaneWhere, anchor?: HTMLElement): Promise<boolean> => {
     const want = (it.uses ?? []).filter(isUse);
     if (!want.length) return true;
     const run = fullAuto(it, task);
@@ -76,6 +77,7 @@ export function pinsOf(c: PluginClient): Pins {
       !!it.risky?.includes('webrtc'),
       pinning ? say('stuff.pane.allowAndPin') : say('stuff.pane.allowOk'),
       pinning ? say('stuff.pane.pinWithout') : undefined,
+      anchor,
     );
     if (!answer) return false;
     if (answer === 'alt') return true;
@@ -87,9 +89,9 @@ export function pinsOf(c: PluginClient): Pins {
   const pins: Pins = {
     at: (where, items) => panesAt(value(), where, items),
     pinned: (it, where, items) => panesAt(value(), where, items).some((x) => x.id === it.id),
-    async pin(key, it, where, items) {
+    async pin(key, it, where, items, anchor) {
       if (pins.pinned(it, where, items)) return true;
-      if (missingOf(it).length && !(await allow(key, it, null, where))) return false;
+      if (missingOf(it).length && !(await allow(key, it, null, where, anchor))) return false;
       return setValue(withPin(value(), it, where, true, items)).then(
         () => {
           shell.toast.show(say(`stuff.pane.pinned.${where}`, { name: it.title }), { action: { label: say('stuff.pane.undo'), onClick: () => void pins.unpin(it, where, items) } });
@@ -103,7 +105,7 @@ export function pinsOf(c: PluginClient): Pins {
         () => void shell.toast.show(say('stuff.pane.unpinnedToast', { name: it.title })),
         () => undefined,
       ),
-    allow: (key, it, task) => allow(key, it, task),
+    allow: (key, it, task, anchor) => allow(key, it, task, undefined, anchor),
   };
   return pins;
 }
@@ -129,41 +131,21 @@ export function PaneCards(props: { readonly client: PluginClient }): JSX.Element
     <Show when={modal()}>
       {(m) => {
         const x = m();
+        // v1 panes.js allowApp → ask(): the card by what asked (⋯ on the card, Allow… on a pane's bar), near the top
+        // when nothing did; Escape or a click elsewhere is Cancel
         if (x.kind === 'allow')
           return (
-            <Dialog
-              open
-              role="alertdialog"
-              size="sm"
-              title={x.head}
-              part="stuff.allow"
-              onOpenChange={(o) => !o && x.done(false)}
-              footer={
-                <Inline gap="4">
-                  <Button variant="ghost" onClick={() => x.done(false)}>
-                    {say('stuff.pane.cancel')}
-                  </Button>
-                  <Show when={x.alt}>
-                    {(alt) => (
-                      <Button variant="secondary" onClick={() => x.done('alt')}>
-                        {alt()}
-                      </Button>
-                    )}
-                  </Show>
-                  <Button variant="primary" onClick={() => x.done('ok')}>
-                    {x.ok}
-                  </Button>
-                </Inline>
-              }
-            >
-              <Stack gap="3">
-                <For each={x.lines}>{(l) => <Text size="sm">{`• ${l}`}</Text>}</For>
-                <Text size="sm" tone="muted">
-                  {say('stuff.pane.allowFoot')}
-                  {x.risky ? ` ${say('stuff.pane.allowRisk')}` : ''}
-                </Text>
-              </Stack>
-            </Dialog>
+            <AnchoredCard anchor={x.anchor} align="end" size="ask" role="alertdialog" label={x.head} part="stuff.allow" onClose={() => x.done(false)}>
+              <AskCard
+                question={x.head}
+                more={[...x.lines.map((l) => `• ${l}`), '', `${say('stuff.pane.allowFoot')}${x.risky ? ` ${say('stuff.pane.allowRisk')}` : ''} ${say('stuff.pane.allowBack')}`]}
+                actions={[
+                  { label: say('stuff.pane.cancel'), onClick: () => x.done(false) },
+                  ...(x.alt ? [{ label: x.alt, onClick: () => x.done('alt') }] : []),
+                  { label: x.ok, primary: true, onClick: () => x.done('ok') },
+                ]}
+              />
+            </AnchoredCard>
           );
         // v1 pane-card.js: what a pane wrote, marked where a character doesn't print; Send waits a moment, Cancel has the focus
         const n = [...x.prompt].length;

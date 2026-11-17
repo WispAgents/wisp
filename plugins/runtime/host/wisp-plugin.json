@@ -215,6 +215,10 @@
         "title": "Drop a side question"
       },
       {
+        "id": "runtime.probe",
+        "title": "Ask a copy of a task's conversation something, answering only, kept nowhere"
+      },
+      {
         "id": "runtime.reveal",
         "title": "Show an answer's picture or video in its folder",
         "uiOnly": "opens the file manager on the computer running wisp; an agent already knows the path"

@@ -144,7 +144,9 @@ async fn a_run_that_would_take_the_window_past_your_line_is_asked_about_and_a_ye
     let f = api.try_cmd("runtime.followUp", json!({ "id": last, "text": "and this" })).await;
     assert_eq!(f["error"]["reason"], "budget_hold", "{f}");
     assert_eq!(api.cmd("runtime.turns", json!({ "id": last })).await.as_array().map_or(0, Vec::len), turns, "no turn was made");
-    // Auto is asked about the harness its preview picks, as v1 resolved Auto first; it never lands "Not started" (B15)
+    // Auto is asked about the harness its preview picks, as v1 resolved Auto first; it never lands "Not started" (B15).
+    // Auto is off by default until the owner reworks it (2026-11-17): this check turns it on
+    api.cmd("settings.set", json!({ "key": "runtime.auto", "value": true })).await;
     let pick = api.cmd("router.preview", json!({ "prompt": "one more TOPIC[More]" })).await;
     assert_eq!(pick["pick"]["agent"], "claude", "{pick}");
     let auto = api.try_cmd("runtime.create", json!({ "prompt": "one more TOPIC[More]", "cwd": dir.join("proj"), "agent": "auto" })).await;

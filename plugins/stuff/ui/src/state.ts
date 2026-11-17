@@ -49,7 +49,7 @@ export interface StuffState {
 
 /** An Allow card: resolves 'ok', 'alt' (Pin without) or false. A pane's card: true on Send. */
 export type Modal =
-  | { readonly kind: 'allow'; readonly head: string; readonly lines: readonly string[]; readonly risky: boolean; readonly ok: string; readonly alt?: string; readonly done: (a: 'ok' | 'alt' | false) => void }
+  | { readonly kind: 'allow'; readonly head: string; readonly lines: readonly string[]; readonly risky: boolean; readonly ok: string; readonly alt?: string; readonly anchor?: HTMLElement; readonly done: (a: 'ok' | 'alt' | false) => void }
   | { readonly kind: 'card'; readonly head: string; readonly rows: readonly (readonly [string, string, boolean?])[]; readonly prompt: string; readonly done: (yes: boolean) => void };
 
 const states = new WeakMap<PluginClient, StuffState>();

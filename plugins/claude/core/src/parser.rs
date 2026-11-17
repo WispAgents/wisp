@@ -223,6 +223,9 @@ impl ClaudeParser {
             self.turn.compacted = true;
             self.turn.boundary = Some(meta);
             self.turn.unshrunk = None;
+            if !msg::truthy(msg.parent_tool_use_id) {
+                self.turn.compactions += 1;
+            }
         }
         if sub == "status" && truthy(&msg::value(msg.compact_result)) {
             self.turn.unshrunk = (msg::value(msg.compact_result).as_str() != Some("success"))

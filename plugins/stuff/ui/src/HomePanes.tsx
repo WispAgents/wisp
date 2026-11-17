@@ -186,7 +186,7 @@ export function Pane(props: {
       name={it().title}
       need={need()}
       open={props.open}
-      allow={need() ? { label: say('stuff.pane.allow'), onClick: () => void pins.allow(key(), it(), taskRow()) } : undefined}
+      allow={need() ? { label: say('stuff.pane.allow'), onClick: (a) => void pins.allow(key(), it(), taskRow(), a) } : undefined}
       reload={{ label: say('stuff.pane.reload'), onClick: () => (frame ? frame.reload() : void refetch()) }}
       unpin={{ label: say('stuff.pane.unpin'), onClick: () => void pins.unpin(it(), props.where, [it()]) }}
       back={props.onBack ? { label: say('stuff.pane.back'), onClick: props.onBack } : undefined}

@@ -33,6 +33,8 @@ pub struct TurnIn {
     pub failed: bool,
     /// a fresh thread starts here (the count starts again)
     pub fresh: bool,
+    /// compactions the harness did on its own during this turn of the work (Claude Code's auto-compact)
+    pub compacted: u32,
     /// (context tokens, its window), when the harness said
     pub context: Option<(u64, u64)>,
     /// its failed steps' words
@@ -91,7 +93,10 @@ pub fn health(task: &str, turns: &[TurnIn], notes_age: Option<u32>) -> Health {
     let from = turns.iter().rposition(|t| t.fresh).unwrap_or(0);
     let thread = &turns[from..];
     let work: Vec<&TurnIn> = thread.iter().filter(|t| !t.compact && !t.held).collect();
-    let compactions = u32::try_from(thread.iter().filter(|t| t.compact).count()).unwrap_or(u32::MAX);
+    // `/compact` turns, and the harness compacting on its own inside a turn of the work
+    let compactions = u32::try_from(thread.iter().filter(|t| t.compact).count())
+        .unwrap_or(u32::MAX)
+        .saturating_add(thread.iter().filter(|t| !t.compact).map(|t| t.compacted).sum());
     let n = u32::try_from(work.len()).unwrap_or(u32::MAX);
     let share = work.iter().rev().find_map(|t| t.context).filter(|(_, w)| *w > 0).map(|(c, w)| (c as f64 / w as f64).min(1.0));
     let (mut score, mut reasons) = (0u32, Vec::new());

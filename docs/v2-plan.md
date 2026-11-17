@@ -143,6 +143,9 @@ turn. When a screen or feature contradicts one, that's a bug: fix it toward the 
 - **Long threads naming** (owner, 2026-11-15): **Ledger** stays the task history (ADR-0068). The long-threads state
   file (goal, constraints, decisions, failed, state, open, files) is called **Notes**, shown in a **Thread** tab.
   Its tool is `wisp_notes` (v1's `wisp_ledger`), its CLI `wisp notes`. See docs/v2-long-threads.md.
+- **Thread tab: variant A** (picked 2026-11-18, decided by the owner's delegate, D-0056): the Notes as a per-section
+  list as in v1 (each section edited in place, who wrote it and when, its versions), the health as one line with Fresh
+  thread when worn; desktop a *Thread* tab in the task's side panel, phones *Thread* in the task's menu (a sheet).
 
 - **The decision ledger** (owner's #802, merged 2026-11-16): `decisions/D-NNNN.yml` records with hooks that bring each
   decision to the agent before it edits a file in scope. D-0001..D-0046 are v1's AGENTS.md rules (scoped to v1's
@@ -221,9 +224,15 @@ turn. When a screen or feature contradicts one, that's a bug: fix it toward the 
       audit, the Bash output offload (`wisp hook offload`). **Step 1 done (2026-11-17, ADR-0079):** `wisp.threads`
       (Notes tables + revisions, `threads.notes`/`notesUpdate`/`revisions`/`health`, `wisp_notes`, `wisp notes`,
       `.wisp/tasks/<id>/notes.md`, subagents read their lead's Notes, the note before each follow-up through
-      `runtime.prompt@1` `before`, `wisp hook offload` as Claude's `PreToolUse` on Bash, the health row). **To do:**
-      the Thread tab (mock with 2 variants in `docs/v2-long-threads.md`, waiting on the owner's pick, D-0056), Fresh
-      thread, the compaction audit, offload for other harnesses, formulas seeding Notes, the TUI health line
+      `runtime.prompt@1` `before`, `wisp hook offload` as Claude's `PreToolUse` on Bash, the health row). **Thread tab
+      done (2026-11-18, variant A, `plugins/threads/ui`):** a *Thread* tab beside the task (sideTabs) and *Thread* in
+      the task's menu (a sheet on phones): the seven sections in place-editable, who wrote each and when, History,
+      the health line, Fresh thread (brief to edit, then `threads.fresh`; shown only when the task's wisp offers it).
+      **Fresh thread and the compaction audit done (2026-11-18, ADR-0096):** `threads.freshBrief`/`threads.fresh`
+      through `runtime.followUp { fresh }` (resumes nothing, no hand-off, the old conversation linked), `wisp fresh`;
+      `stats.compactions` (Claude Code), `runtime.probe`, the audit (setting `threads.compactAudit`, off; word-match
+      scorer, no model), `threads.audits`, the lost items in the next note. **To do:** compaction counts and offload
+      hooks for the other harnesses (none reports a compaction yet), formulas seeding Notes, the TUI health line
 
 ### 4.2 GUI (browser and desktop), v1 parity
 

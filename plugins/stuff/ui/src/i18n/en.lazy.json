@@ -25,7 +25,7 @@
   "stuff.pane.unpinnedToast": "Unpinned {name}",
   "stuff.pane.undo": "Undo",
   "stuff.pane.allowHead": "Allow {name} to:",
-  "stuff.pane.allowFoot": "wisp keeps it on its own address, but assume whoever wrote it can see what it reads. You can take back access from its menu in My Stuff.",
+  "stuff.pane.allowFoot": "wisp keeps it on its own address, but assume whoever wrote it can see what it reads.",
   "stuff.pane.allowRisk": "Its code uses WebRTC, which can send data straight out of wisp.",
   "stuff.pane.allowAndPin": "Allow and pin",
   "stuff.pane.allowOk": "Allow",
@@ -324,5 +324,6 @@
   "stuff.drop.sub": "Files go into My Stuff",
   "stuff.page.starred": "Starred",
   "stuff.page.starredTitle": "Only starred",
-  "stuff.page.back": "Back to tasks"
+  "stuff.page.back": "Back to tasks",
+  "stuff.pane.allowBack": "You can take back access from its menu in My Stuff."
 }

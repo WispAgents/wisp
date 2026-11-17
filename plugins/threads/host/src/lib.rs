@@ -15,7 +15,9 @@
 //! resources: data-only (a task's Notes, their versions and its health are the task's own state, written by its agent
 //! and you as the work goes; nothing in them is setup to declare in wisp.yml).
 
+mod audit;
 mod files;
+mod fresh;
 mod health;
 mod notes;
 mod parts;
@@ -35,6 +37,8 @@ pub(crate) struct State {
     pub store: Store,
     /// `<wisp home>/threads/out`: each task's long command output, under its id
     pub out: PathBuf,
+    /// the tasks whose compaction is being audited now
+    pub busy: audit::Busy,
 }
 
 pub(crate) type Slot = Arc<OnceLock<Arc<State>>>;
@@ -124,6 +128,31 @@ impl Plugin for ThreadsPlugin {
                 health::read(&ctx, &call, &st, &a.id).await
             }
         });
+        let sl = slot.clone();
+        s.command::<api::FreshBriefCmd, _, _>(move |ctx, call, a| {
+            let sl = sl.clone();
+            async move {
+                let st = state(&sl)?;
+                fresh::make_brief(&ctx, &call, &st, &a.id).await
+            }
+        });
+        let sl = slot.clone();
+        s.command::<api::FreshCmd, _, _>(move |ctx, call, a| {
+            let sl = sl.clone();
+            async move {
+                let st = state(&sl)?;
+                fresh::start(&ctx, &call, &st, a).await
+            }
+        });
+        let sl = slot.clone();
+        s.command::<api::AuditsCmd, _, _>(move |ctx, call, a| {
+            let sl = sl.clone();
+            async move {
+                let st = state(&sl)?;
+                let (whose, _) = owner(&ctx, &call, &a.id).await?;
+                audit::list(&st, &whose, now(&ctx)).await
+            }
+        });
         parts::register(s, &slot);
         let sl = slot.clone();
         s.on::<TurnEnded, _, _>(move |ctx, e| {
@@ -134,6 +163,7 @@ impl Plugin for ThreadsPlugin {
                     if let Err(err) = health::work_out(&ctx, &call, &st, e.session_id.as_str()).await {
                         tracing::debug!(error = %err.message, task = %e.session_id.0, "threads: no health");
                     }
+                    audit::after_turn(&ctx, &call, &st, e.session_id.as_str(), e.turn_id.as_str()).await;
                 }
             }
         });
@@ -152,7 +182,7 @@ impl Plugin for ThreadsPlugin {
             let home = ctx
                 .service::<wisp_kernel::services::Paths>()
                 .map_or_else(|_| std::env::temp_dir().join("wisp"), |p| p.home().to_path_buf());
-            let _ = slot.set(Arc::new(State { store, out: home.join("threads").join("out") }));
+            let _ = slot.set(Arc::new(State { store, out: home.join("threads").join("out"), busy: audit::Busy::default() }));
             Ok(())
         });
         Ok(())

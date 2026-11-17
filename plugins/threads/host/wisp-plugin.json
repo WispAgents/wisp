@@ -8,14 +8,20 @@
   "kind": "plugin",
   "server": { "builtin": "wisp_threads" },
   "requires": { "wisp.runtime": "^2" },
-  "permissions": ["runtime:get", "runtime:turns", "runtime:activity", "store:write{owner:threads}"],
+  "permissions": ["runtime:get", "runtime:turns", "runtime:activity", "runtime:followUp", "runtime:turn.setExt", "runtime:probe", "store:write{owner:threads}"],
   "activation": ["onStartup"],
   "contributes": {
     "commands": [
       { "id": "threads.notes", "title": "A task's Notes: its goal, constraints, decisions, what failed, where it stands", "readOnly": true },
       { "id": "threads.notesUpdate", "title": "Rewrite one section of a task's Notes" },
       { "id": "threads.revisions", "title": "Every earlier version of a task's Notes, with who wrote it", "readOnly": true },
-      { "id": "threads.health", "title": "How worn a task's thread is: context, compactions, turns, the same error again", "readOnly": true }
+      { "id": "threads.health", "title": "How worn a task's thread is: context, compactions, turns, the same error again", "readOnly": true },
+      { "id": "threads.freshBrief", "title": "The brief a fresh thread would start from (the Notes, the files changed, the last turns), to read and edit", "readOnly": true },
+      { "id": "threads.fresh", "title": "Start a new conversation on the same task from a brief; the old one stays linked" },
+      { "id": "threads.audits", "title": "What each compaction kept of a task's goal, constraints, decisions and what failed", "readOnly": true }
+    ],
+    "settings": [
+      { "key": "threads.compactAudit", "type": "bool", "default": false, "title": "Compaction audit: after a compaction, ask a copy of the conversation what it still remembers of the task's Notes, and remind the agent of what it lost (one short extra run each)" }
     ]
   }
 }

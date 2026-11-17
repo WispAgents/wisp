@@ -132,6 +132,9 @@
   [data-kit='st-tools'] > [data-kit='st-star'][data-on] { display: grid; color: var(--warn); background: var(--surface); box-shadow: var(--shadow-2); }
   [data-kit='st-card']:hover [data-kit='st-tools'], [data-kit='st-card']:focus-within [data-kit='st-tools'] { background: var(--surface); border-color: var(--line); box-shadow: var(--shadow-2); }
   [data-kit='st-card']:hover [data-kit='st-tools'] > button, [data-kit='st-card']:focus-within [data-kit='st-tools'] > button { display: grid; }
+  /* a card of its own is up by it (v1: its ⋯ kept the focus): the tools stay, so that card sits by the ⋯ */
+  [data-kit='st-card'][data-held] [data-kit='st-tools'] { background: var(--surface); border-color: var(--line); box-shadow: var(--shadow-2); }
+  [data-kit='st-card'][data-held] [data-kit='st-tools'] > button { display: grid; }
   [data-kit='st-card']:hover [data-kit='st-tools'] > [data-kit='st-star'][data-on], [data-kit='st-card']:focus-within [data-kit='st-tools'] > [data-kit='st-star'][data-on] { box-shadow: none; }
   @media (hover: none) {
     [data-kit='st-tools'] { background: var(--surface); border-color: var(--line); box-shadow: var(--shadow-2); }

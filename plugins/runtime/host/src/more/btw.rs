@@ -4,7 +4,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use serde_json::{Value, json};
-use wisp_runtime_api::commands::{BtwArgs, BtwEntry};
+use wisp_runtime_api::commands::{BtwArgs, BtwEntry, ProbeAnswer, ProbeArgs};
 use wisp_runtime_api::harness::HarnessRun;
 use wisp_runtime_api::model::Mode;
 
@@ -76,6 +76,43 @@ impl Runtime {
             drop(claim);
         }));
         Ok(entry)
+    }
+
+    /// `runtime.probe`: a question to a fork of the conversation, answering only, awaited, kept nowhere (ADR-0096).
+    pub async fn probe(self: &Arc<Self>, a: ProbeArgs) -> Result<ProbeAnswer> {
+        if a.question.trim().is_empty() {
+            return Err(RuntimeError::Invalid("Ask something first.".into()));
+        }
+        let claim = self.claims.claim(a.id.as_str());
+        let s = self.repo.session(a.id.as_str()).await?;
+        let h = self.harness(&s.agent)?;
+        let Some(resume) = s.resume_id.clone().filter(|_| h.info().fork) else {
+            return Err(RuntimeError::Conflict("This task's agent can't answer on a copy of its conversation.".into()));
+        };
+        self.folder_ready(&s, None).await.map_err(RuntimeError::Conflict)?;
+        let run = HarnessRun {
+            session_id: s.id.0.clone(),
+            prompt: a.question,
+            cwd: s.cwd.clone(),
+            dirs: s.dirs.clone(),
+            resume_id: Some(resume),
+            fork: true,
+            mode: Mode::Plan,
+            model: s.model.clone(),
+            effort: s.effort.clone(),
+            gate: h.info().side_gate,
+            lean: true,
+            quiet: true,
+            ..HarnessRun::default()
+        };
+        let wait =
+            Duration::from_millis(a.timeout_ms.unwrap_or(120_000).clamp(1_000, BTW_TIMEOUT.as_millis().try_into().unwrap_or(300_000)));
+        let o = self.side_run(h.as_ref(), &run, wait, Some(claim.stop())).await?;
+        drop(claim);
+        if o.is_error {
+            return Err(RuntimeError::Conflict(o.text));
+        }
+        Ok(ProbeAnswer { text: o.text, cost_usd: o.cost_usd })
     }
 
     async fn put_btw(self: &Arc<Self>, id: &str, e: &BtwEntry) -> Result<()> {

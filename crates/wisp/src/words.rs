@@ -5,7 +5,7 @@ use crate::args::{COMMANDS, HELP, Literal};
 
 /// The first words main.rs routes on itself besides COMMANDS (wisp as code, areas, shared and cloud: its
 /// `match first` arms). `every_word_main_routes_on_is_a_known_word` reads main.rs and keeps them in step.
-pub const ROUTED: [&str; 40] = [
+pub const ROUTED: [&str; 41] = [
     "apply",
     "secret",
     "diff",
@@ -46,6 +46,7 @@ pub const ROUTED: [&str; 40] = [
     "team",
     "teams",
     "notes",
+    "fresh",
 ];
 
 /// A word the CLI routes on as its first word (COMMANDS or ROUTED).

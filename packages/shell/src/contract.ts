@@ -321,6 +321,8 @@ export interface SideTabItem {
   label: string;
   /** its tooltip (v1: "Name: pinned from My Stuff") */
   title?: string;
+  /** added 2026-11-18 (additive, ADR-0079): its icon (a kit icon name); default 'app' (an app pinned from My Stuff) */
+  icon?: string;
 }
 
 /** A coding agent as the screens show it: its name, its mark, and whether it's the one a new task

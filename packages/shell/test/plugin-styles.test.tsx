@@ -8,6 +8,7 @@ import { createToaster } from '@wisp/ui';
 import { STYLE_ID, mountPluginStyles } from '../src/theme-styles/mount.ts';
 import type { PluginStyles } from '../src/theme-styles/part-styles.ts';
 import { createShell, type ShellWindow } from '../src/shell.tsx';
+import { commandErrorToast } from '../src/toasts.ts';
 import { nullPlatform } from '../src/platform/index.ts';
 
 const theme: PluginStyles = { plugin: 'user.pink', partStyles: { 'composer.send': { background: 'hotpink' } } };
@@ -64,7 +65,7 @@ test('a stale answer never lands and a failed read keeps what is there', async (
 });
 
 /** A home wisp in memory: welcome, `plugins.styles` answered from `trusted`, and a notice when asked. */
-function fakeHome() {
+function fakeHome(o: { refuseStyles?: boolean } = {}) {
   let trustedOn: PluginStyles[] = [];
   let push: ((f: Frame) => void) | undefined;
   const transport: Transport = {
@@ -83,7 +84,7 @@ function fakeHome() {
     },
     async post(m: ClientMessage) {
       if (m.t !== 'mutate') return;
-      const msg: ServerMessage = m.cmd === 'plugins.styles' ? { t: 'ack', mid: m.mid, seq: 0, result: trustedOn } : { t: 'reject', mid: m.mid, code: 'unknown_command', message: m.cmd };
+      const msg: ServerMessage = m.cmd === 'plugins.styles' && !o.refuseStyles ? { t: 'ack', mid: m.mid, seq: 0, result: trustedOn } : { t: 'reject', mid: m.mid, code: 'unknown_command', message: m.cmd };
       queueMicrotask(() => push?.({ id: null, messages: [msg] }));
     },
   };
@@ -114,4 +115,24 @@ test('through the shell: enabling a trusted theme adds its style, disabling remo
   await until(has);
   shell.dispose();
   expect(sheet()).toBeNull();
+});
+
+// QA r2 phone #1: a home wisp without `plugins.styles` (an older wisp, a remote peer) refused the shell's startup read,
+// and every load showed a red "unknown command plugins.styles (is its plugin off?)" toast. That's "no plugin styles":
+// nothing on the page, and no toast.
+test('a home wisp without plugins.styles means no plugin styles, never an error toast', async () => {
+  const home = peerId('local');
+  const fake = fakeHome({ refuseStyles: true });
+  const base = createToaster();
+  const errors: string[] = [];
+  const toaster = { ...base, error: (m: string, opts?: Parameters<typeof base.error>[1]) => (errors.push(m), base.error(m, opts)) };
+  const client = createClient({ clientId: 'c', build: 't', home, width: 1200, onError: commandErrorToast(toaster) });
+  const shell = createShell({ client, toaster, platform: nullPlatform(), home, window: window as unknown as ShellWindow });
+  await client.start([{ peer: home, name: 'local', transport: fake.transport }]);
+  await until(() => client.peers.status(home)().kind === 'online');
+  fake.set([theme]); // the notice asks again: still refused, still quiet
+  await new Promise((r) => setTimeout(r, 50));
+  expect(errors).toEqual([]);
+  expect(sheet()).toBeNull();
+  shell.dispose();
 });

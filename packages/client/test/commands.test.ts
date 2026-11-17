@@ -320,3 +320,15 @@ test('pending_commands_survive_a_restart', async () => {
   assert.deepEqual(await persist.entries('pending'), []);
   second.client.dispose();
 });
+
+// QA r2 phone #1: an older wisp without `plugins.styles` refused the shell's startup read, and every load showed a red
+// "unknown command plugins.styles" toast. A quiet read's caller handles its refusal: the promise rejects, no toast.
+test('a quiet read refused by the peer rejects to its caller and never reaches onError (no toast)', async () => {
+  const { commands, conn, mutates, errors } = await setup();
+  const styles = defineCommand<{ peer: string }, unknown[]>({ id: 'plugins.styles', owner: (a) => a.peer, optimistic: 'none', pending: 'none', quiet: true });
+  const done = commands.run(styles, { peer: A });
+  conn().push({ t: 'reject', mid: mutates()[0]?.mid ?? '', code: 'not_found', message: 'unknown command plugins.styles (is its plugin off?)' });
+  await settle();
+  await assert.rejects(done, (e: unknown) => e instanceof CommandError && e.code === 'not_found');
+  assert.deepEqual(errors, [], 'no toast');
+});

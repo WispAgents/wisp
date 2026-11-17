@@ -56,7 +56,7 @@ in the real app (or the owner drops it). Statuses: `done` (committed and checked
 | 40 | Desktop submenus open on hover | done (1ab36eb9: flyout with a safe triangle; touch drills in) |
 | 41 | Transcript view does nothing on a running task | done (1ab36eb9) (v1 renderLiveTranscript: timeline so far above the working panel, no end row; seen on the mock peer) |
 | 42 | Theme plugins never apply their partStyles | done (ui-shell, 2026-11-17: `plugins.styles` + `plugins.changed`, the shell's @layer plugins sheet, one allow-list with the kernel check; `wisp plugin trust`) |
-| 43 | Long threads (wisp task d8ee0a207d52, plan docs/v2-long-threads.md): Notes in a Thread tab, the note before each follow-up, Fresh thread, health, compaction audit, output offload | in progress: ADR + core first, UI mock for the owner's pick (D-0056) |
+| 43 | Long threads (wisp task d8ee0a207d52, plan docs/v2-long-threads.md): Notes in a Thread tab, the note before each follow-up, Fresh thread, health, compaction audit, output offload | step 1 done (8ee10b59: ADR-0079, Notes, wisp_notes, `wisp notes`, the note before follow-ups, `wisp hook offload`, health); in progress: Thread tab variant A (ui-task, picked by the owner's delegate 2026-11-18), Fresh thread + compaction audit (backend-coder) |
 | 44 | Keep this list and check it every job | done (this file) |
 
 ## Also found while fixing (not from the owner)

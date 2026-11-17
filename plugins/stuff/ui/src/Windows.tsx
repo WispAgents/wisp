@@ -3,7 +3,7 @@
 import { Show, type JSX } from 'solid-js';
 import type { PluginClient } from '@wisp/client';
 import { useShell } from '@wisp/shell';
-import { AppWindow, Button, Dialog, DocReader, docStats, Field, Inline, Input, MediaViewer, Stack, TextArea } from '@wisp/ui';
+import { AnchoredCard, AppWindow, Button, DocReader, docStats, Field, Inline, Input, MediaViewer, TextArea } from '@wisp/ui';
 import { bare, behind } from './model.ts';
 import type { Entry } from './items.ts';
 import type { Shown } from './page-run.ts';
@@ -93,15 +93,19 @@ export function Windows(props: WindowsProps): JSX.Element {
   );
 }
 
-/** Edit details… (v1 editItem): rename, note and tags in one small form. */
-export function EditDetails(props: { readonly client: PluginClient; readonly e: Entry | undefined; readonly close: () => void; readonly save: (e: Entry, f: { title: string; note: string; tags: string[] }) => void }): JSX.Element {
+/** Edit details… (v1 editItem): rename, note and tags in one small form by the card (left edges together). */
+export function EditDetails(props: {
+  readonly client: PluginClient;
+  readonly e: Entry | undefined;
+  readonly anchor: HTMLElement | undefined;
+  readonly close: () => void;
+  readonly save: (e: Entry, f: { title: string; note: string; tags: string[] }) => void;
+}): JSX.Element {
   const t = (k: string): string => props.client.t(k);
-  let form: HTMLFormElement | undefined;
-  const submit = (ev: Event): void => {
-    ev.preventDefault();
+  const submit = (ev: SubmitEvent): void => {
     const e = props.e;
-    if (!e || !form) return;
-    const f = new FormData(form);
+    if (!e) return;
+    const f = new FormData(ev.currentTarget as HTMLFormElement);
     const tags = String(f.get('tags') ?? '')
       .split(',')
       .map((x) => x.trim())
@@ -110,32 +114,28 @@ export function EditDetails(props: { readonly client: PluginClient; readonly e: 
     props.save(e, { title: String(f.get('title') ?? '').trim() || e.it.title, note: String(f.get('note') ?? ''), tags });
   };
   return (
-    <Dialog open={!!props.e} onOpenChange={(o) => !o && props.close()} title={t('stuff.edit.title')} size="sm" part="stuff.edit">
-      <Show when={props.e}>
-        {(e) => (
-          <form ref={(el) => (form = el)} onSubmit={submit}>
-            <Stack gap="5">
-              <Field label={t('stuff.edit.name')}>
-                <Input name="title" value={e().it.title} maxLength={140} autofocus />
-              </Field>
-              <Field label={t('stuff.edit.note')}>
-                <TextArea name="note" value={e().it.note ?? ''} minRows={3} maxLength={2000} placeholder={t('stuff.edit.notePlaceholder')} />
-              </Field>
-              <Field label={t('stuff.edit.tags')}>
-                <Input name="tags" value={(e().it.tags ?? []).join(', ')} placeholder={t('stuff.edit.tagsPlaceholder')} />
-              </Field>
-              <Inline gap="3" justify="end">
-                <Button variant="ghost" size="sm" onClick={() => props.close()}>
-                  {t('stuff.edit.cancel')}
-                </Button>
-                <Button variant="primary" size="sm" type="submit">
-                  {t('stuff.edit.save')}
-                </Button>
-              </Inline>
-            </Stack>
-          </form>
-        )}
-      </Show>
-    </Dialog>
+    <Show when={props.e}>
+      {(e) => (
+        <AnchoredCard anchor={props.anchor} align="start" size="form" label={t('stuff.edit.title')} part="stuff.edit" onClose={() => props.close()} onSubmit={submit} focus="input">
+          <Field label={t('stuff.edit.name')}>
+            <Input name="title" value={e().it.title} maxLength={140} />
+          </Field>
+          <Field label={t('stuff.edit.note')}>
+            <TextArea name="note" value={e().it.note ?? ''} minRows={3} maxLength={2000} placeholder={t('stuff.edit.notePlaceholder')} />
+          </Field>
+          <Field label={t('stuff.edit.tags')}>
+            <Input name="tags" value={(e().it.tags ?? []).join(', ')} placeholder={t('stuff.edit.tagsPlaceholder')} />
+          </Field>
+          <Inline gap="3" justify="end">
+            <Button variant="ghost" size="sm" onClick={() => props.close()}>
+              {t('stuff.edit.cancel')}
+            </Button>
+            <Button variant="primary" size="sm" type="submit">
+              {t('stuff.edit.save')}
+            </Button>
+          </Inline>
+        </AnchoredCard>
+      )}
+    </Show>
   );
 }

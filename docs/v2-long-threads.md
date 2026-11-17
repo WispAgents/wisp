@@ -118,10 +118,14 @@ from the kit on a dev page, once a variant is picked.
    `before`), the offload (`wisp hook offload` + Claude's `PreToolUse`), the health row. v1's bugs avoided are in
    `docs/v1-bugs-fixed.md`.
 3. **Next:**
-   1. UI: the owner picks a mock above → build the Thread tab (desktop, then phones) in `plugins/threads/ui`.
-   2. Fresh thread (`threads.fresh`, the editable brief, the `fresh` flag health counts from).
-   3. Compaction audit (`defaults.compactAudit`).
-   4. Offload hooks for the other harnesses; formulas seeding Notes; the TUI health line.
+   1. **Done (2026-11-18): variant A** (picked by the owner's delegate): the Thread tab in `plugins/threads/ui`
+      (desktop: a tab beside the task; phones: *Thread* in the task's menu, a sheet), Fresh thread's dialog wired and
+      shown only when the task's wisp offers `threads.fresh`.
+   2. **Done (2026-11-18, ADR-0096):** Fresh thread (`threads.freshBrief`, `threads.fresh` through
+      `runtime.followUp { fresh }`, `wisp fresh`; the `fresh` mark health counts from).
+   3. **Done (2026-11-18, ADR-0096):** the compaction audit (setting `threads.compactAudit`, off by default;
+      `stats.compactions` from Claude Code, `runtime.probe` on a fork, a word-match scorer, `threads.audits`).
+   4. Offload hooks and compaction counts for the other harnesses; formulas seeding Notes; the TUI health line.
 4. **Later (research P7, P8):** the merge check for subagents, and the long-thread eval harness in `spikes/`.
 
 One coder at a time (§3), each round one of the steps above.

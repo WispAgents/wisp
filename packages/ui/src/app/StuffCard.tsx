@@ -56,6 +56,8 @@ export interface StuffCardProps {
   readonly byAgent?: string | undefined;
   readonly pending?: boolean;
   readonly starred?: boolean;
+  /** a card of its own is up by it (Allow, Edit details): its tools stay shown, the ⋯ that card sits by included */
+  readonly held?: boolean;
   /** an app's Launch (or Running / Starting…) on its preview */
   readonly launch?: { readonly label: string; readonly title: string; readonly running?: boolean; readonly dot?: boolean; readonly onClick: () => void } | undefined;
   readonly copy?: StuffTool | undefined;
@@ -188,6 +190,7 @@ export function StuffCard(props: StuffCardProps): JSX.Element {
       data-id={props.id}
       data-pending={flag(props.pending)}
       data-starred={flag(props.starred)}
+      data-held={flag(props.held)}
       tabIndex={0}
       aria-label={props.label}
       onClick={(e) => {

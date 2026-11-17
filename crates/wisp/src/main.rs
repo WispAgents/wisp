@@ -16,6 +16,7 @@ mod desktop;
 mod events_cli;
 mod extras;
 mod folder;
+mod fresh_cli;
 mod groups;
 mod history_cli;
 mod hook_cli;
@@ -357,6 +358,10 @@ async fn shared_and_cloud(first: &str, p: &Parsed, o: &code::Opts, port: u16, cw
         // `wisp notes <task>`, `--set …` or bare (WISP_TASK); "notes on the refactor" stays a task
         "notes" if o.words.first().is_none_or(|w| args::session_id(w) || w.starts_with("--set")) => {
             notes_cli::run(&connect().await?, &o.words, o.json).await?
+        }
+        // `wisp fresh <task>` or bare (WISP_TASK); "fresh look at the parser" stays a task
+        "fresh" if o.words.first().is_none_or(|w| args::session_id(w)) && o.words.len() <= 1 => {
+            fresh_cli::run(&connect().await?, &o).await?
         }
         "shares" if o.words.is_empty() => cloud_cli::shares(&connect().await?, &o).await?,
         "cloud"

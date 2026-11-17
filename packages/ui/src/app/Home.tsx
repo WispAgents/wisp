@@ -151,6 +151,8 @@ export interface LauncherProps {
   /** after the gap: goal, worktree, later */
   readonly tail: readonly LauncherTool[];
   readonly sendLabel: string;
+  /** nothing to send yet: Send shows it, as the phone sheet's header Send does (one state, QA r2 #12). Additive. */
+  readonly sendOff?: boolean;
   readonly sendAct?: Act;
   /** Goal on: its condition, under the prompt (v1 .l-goal) */
   readonly goal?: {
@@ -177,6 +179,9 @@ export interface LauncherProps {
     readonly issueTitle: string;
     readonly addAct?: Act;
     readonly issueAct?: Act;
+    /** the phone apps: Recipes and Start from an issue are in the bar's More menu (the shell's), so no row of their
+     *  own (QA r2 #2). Additive (2026-11-18). */
+    readonly inMore?: boolean;
     /** the recipes for the picked project (v1 .lp-chip.rc), a "…" on one with fields to fill. Additive (2026-11-13). */
     readonly items?: readonly LauncherRecipe[];
   };
@@ -227,7 +232,7 @@ export function Launcher(props: LauncherProps): JSX.Element {
   const phone = ((look) => (): boolean => look() !== 'web')(usePlatform());
   // the phone apps with no recipes: no Recipes row, and Start from an issue is one of the bar's tools (v1 launcher.js:
   // "the phone app has it in its bar"); it sat alone on a row of its own under Send
-  const issueInBar = (): boolean => phone() && (props.recipes.items?.length ?? 0) === 0;
+  const issueInBar = (): boolean => phone() && (props.recipes.items?.length ?? 0) === 0 && props.recipes.inMore !== true;
   // Send with nothing written: the prompt takes the caret and its placeholder lights up until you type
   const [nudge, setNudge] = createSignal(false);
   const [over, setOver] = createSignal(false);
@@ -470,7 +475,7 @@ export function Launcher(props: LauncherProps): JSX.Element {
           <Show when={issueInBar()}>
             <Tool t={{ id: 'issue', part: 'launcher.issue', icon: 'issue', label: props.recipes.issue, title: props.recipes.issueTitle, ...(props.recipes.issueAct && { act: props.recipes.issueAct }) }} />
           </Show>
-          <button type="button" {...actAttrs(props.sendAct)} data-kit="send" data-part="launcher.send" title={props.sendLabel} aria-label={props.sendLabel} onClick={send}>
+          <button type="button" {...actAttrs(props.sendAct)} data-kit="send" data-part="launcher.send" title={props.sendLabel} aria-label={props.sendLabel} disabled={props.sendOff === true} onClick={send}>
             <ActIcon act={props.sendAct}>
               <Icon name="enter" />
             </ActIcon>
@@ -478,7 +483,7 @@ export function Launcher(props: LauncherProps): JSX.Element {
         </div>
         <Show when={props.hold}>{(h) => <HoldRow {...h()} place="launcher" box={() => input} part="launcher.hold" />}</Show>
         <div data-kit="l-foot" hidden={props.hold !== undefined}>
-          <div data-kit="l-recipes" data-part="launcher.recipes" hidden={issueInBar()}>
+          <div data-kit="l-recipes" data-part="launcher.recipes" hidden={issueInBar() || props.recipes.inMore === true}>
             {/* v1 responsive.css: an empty Recipes list is an ad for a feature, not worth a phone's screen; the phone apps
                 hide it by data-empty and keep Start from an issue (v1 moved it to the bar there); the browser's HTML stays v1's */}
             <div

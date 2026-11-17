@@ -43,6 +43,32 @@ pub struct BtwArgs {
     pub attachments: Vec<Attachment>,
 }
 
+/// `runtime.probe`: a question asked of a copy of the task's conversation (its harness forks it, as /btw), answering
+/// only (no tools, plan mode), awaited, and kept nowhere: not in the conversation, not on the task. A long thread's
+/// compaction audit asks what the compacted conversation still remembers (ADR-0096). A harness that can't fork, or
+/// a task with no conversation yet: `conflict`. Additive (2026-11-18).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export, export_to = "runtime/")]
+pub struct ProbeArgs {
+    pub id: SessionId,
+    pub question: String,
+    /// at most this long (default 120 s, at most 300 s)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub timeout_ms: Option<u64>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export, export_to = "runtime/")]
+pub struct ProbeAnswer {
+    pub text: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub cost_usd: Option<f64>,
+}
+
 /// A /btw side question and its answer (v1 btw.js), kept on the task, never in its conversation.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]

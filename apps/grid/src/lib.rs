@@ -22,6 +22,7 @@ pub mod trust;
 // accounts and sign-in
 pub mod accounts;
 pub mod auth;
+pub mod handoff;
 pub mod keys;
 pub mod previews;
 pub mod seats;

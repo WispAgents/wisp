@@ -42,6 +42,7 @@ import { displayCombo } from '../keys.ts';
 import { draftValue, launcherDraft } from './drafts.ts';
 import { MODE_ICON, agentName, modeMenu, whenAt, whenMenu, type Mode, type When } from './pickers.ts';
 import { newRecipeIntent } from './recipe-new.ts';
+import { foldTail } from './phone-bar.ts';
 import { TEAMS_SETTING, presetsOf, teamFromSetting, teamSize, teamToSend, type Delegate } from './team.ts';
 import type { DelegatePlace } from './DelegatePanel.tsx';
 
@@ -579,6 +580,13 @@ export function HomeView(props: { readonly onBack?: () => void }): JSX.Element {
   const setup = useSetup(shell, () => home, () => harnessOf(harnesses(), INSTALLABLE).logo, () => input?.focus());
   // the Recipes row: the picked project's recipes, each opening its run dialog (v1 renderLaunchRecipes)
   const recipes = useRecipes(shell, () => home, () => (target() === home ? project()?.path : undefined));
+  const newRecipeAct = { onClick: () => shell.navigate(newRecipeIntent(project()?.path, mode())) };
+  // Start from an issue (wisp.issues' picker, an overlay view; without that plugin, navigation drops it)
+  const issueAct = {
+    onClick: () => shell.navigate({ t: 'openOverlay', overlay: { kind: 'dialog', id: 'issues.picker' as never, params: { project: project()?.id ?? '', name: project()?.name ?? '' } } }),
+  };
+  // the phone apps fold the bar's tail into More, once it's full (a first run has its own More options)
+  const foldPhone = (): boolean => phone && !firstRun();
   // the phone app's mic (v1 dictate.js): none elsewhere
   const mic = useMic(shell, { text, set: (v) => (setText(v), menu.typed(v), ask(v)), el: () => input });
   const tool = (id: string, part: string, icon: LauncherTool['icon'], label: string, title: string, more: Partial<LauncherTool> = {}): LauncherTool => ({ id, part, icon, label, title, ...more });
@@ -789,7 +797,17 @@ export function HomeView(props: { readonly onBack?: () => void }): JSX.Element {
             },
           }),
         ])}
-        tail={firstRunTools(
+        tail={((tools: LauncherTool[]) =>
+          foldPhone()
+            ? [
+                foldTail(tools, {
+                  label: t('shell.home.moreOptions'),
+                  title: t('shell.home.moreOptionsTitle'),
+                  issue: { label: t('shell.home.issueTitle'), act: issueAct },
+                  recipes: { label: t('shell.home.recipes'), items: recipes.items().map((r) => ({ id: r.id, label: r.label, act: r.act })), add: { label: t('shell.home.recipesNew'), act: newRecipeAct } },
+                }),
+              ]
+            : tools)(firstRunTools(
           firstRun(),
           'tail',
           [
@@ -814,9 +832,11 @@ export function HomeView(props: { readonly onBack?: () => void }): JSX.Element {
             }),
           ],
           tool('more', 'launcher.more', 'dots', t('shell.home.moreOptions'), t('shell.home.moreOptionsTitle'), { text: true, act: { onClick: openFull } }),
-        )}
+        ))}
         sendLabel={when() ? t('shell.when.send', { at: new Date(whenAt(when() ?? 'hour', now())).toLocaleString() }) : t('shell.home.send')}
         {...(checking() && { sendAct: { pending: true } })}
+        // the phone sheet: the round Send says what the header's says (one state: nothing to send yet, QA r2 #12)
+        {...(sheet() && text().trim() === '' && files().length === 0 && { sendOff: true })}
         hold={((h) =>
           h && {
             say: h.say,
@@ -846,11 +866,10 @@ export function HomeView(props: { readonly onBack?: () => void }): JSX.Element {
           add: t('shell.home.recipesNew'),
           issue: t('shell.home.issue'),
           issueTitle: t('shell.home.issueTitle'),
-          addAct: { onClick: () => shell.navigate(newRecipeIntent(project()?.path, mode())) },
-          // Start from an issue (wisp.issues' picker, an overlay view; without that plugin, navigation drops it)
-          issueAct: {
-            onClick: () => shell.navigate({ t: 'openOverlay', overlay: { kind: 'dialog', id: 'issues.picker' as never, params: { project: project()?.id ?? '', name: project()?.name ?? '' } } }),
-          },
+          addAct: newRecipeAct,
+          issueAct,
+          // the phone apps: Recipes and Start from an issue are in the bar's More (phone-bar.ts), not a row of their own
+          ...(foldPhone() && { inMore: true }),
         }}
       />
       {/* usage at a glance under the prompt box (wisp.budget's plan windows), v1 #790 .sh-usage; not in the phone sheet */}

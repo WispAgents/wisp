@@ -243,3 +243,32 @@ test('runtime.projectAdd names as the server does (ADR-0077): wisp then wisp-2, 
   expect(() => add({ path: 'wisp' })).toThrow();
   expect(() => add({ path: '' })).toThrow();
 });
+
+test('long threads (ADR-0079): the seeded Thread and threads.* answer the api bindings; a rewrite keeps a version', () => {
+  const now = 1_700_000_000_000;
+  const data = seed({ peer: 'local', now, extra: 0 });
+  const rows = (t: string) => data.topics.get(t as never) ?? [];
+  const ctx = { peer: 'local', now: () => now, rows, row: () => undefined } as unknown as CommandCtx;
+  const run = (cmd: string, args: unknown): Record<string, unknown> => COMMANDS[cmd]?.(args, ctx).result as Record<string, unknown>;
+  const keys = (o: unknown): string[] => Object.keys(o as object).sort();
+  const at = (file: string): string => `plugins/threads/api/bindings/threads/${file}.ts`;
+  const id = 'local:s0002';
+  // the seeded task's topic carries its Notes, versions, meta and health, as plugins/threads/host/src/store.rs publishes them
+  expect([...new Set(rows('session:s0002').map((r) => r.e))].filter((e) => e.startsWith('threads_')).sort()).toEqual(['threads_health', 'threads_meta', 'threads_notes', 'threads_revisions']);
+  const notes = run('threads.notes', { id });
+  expect(keys(notes)).toEqual(bindingFields(at('Notes')).filter((k) => k !== 'lead'));
+  const sections = notes['sections'] as Record<string, unknown>[];
+  expect(sections.map((s) => s['id'])).toEqual(['goal', 'constraints', 'decisions', 'failed', 'state', 'open', 'files']);
+  expect(keys(sections[0])).toEqual(bindingFields(at('Section')));
+  expect(keys(run('threads.health', { id }))).toEqual(bindingFields(at('Health')));
+  for (const r of run('threads.revisions', { id, section: 'state' }) as unknown as unknown[]) expect(keys(r)).toEqual(bindingFields(at('Revision')));
+  expect(keys(run('threads.freshBrief', { id }))).toEqual(bindingFields(at('Brief')));
+  expect(bindingFields(at('Fresh'))).toEqual(expect.arrayContaining(keys(run('threads.fresh', { id }))));
+  // a rewrite: the section's row, a version, the Notes' rev; the same text again writes nothing; a bad section is refused
+  const wrote = COMMANDS['threads.notesUpdate']?.({ id, section: 'open', text: '- Redis later?\n- redis later' }, ctx);
+  expect(wrote?.ops.map((o) => [o.e, o.id])).toEqual([['threads_notes', 's0002|open'], ['threads_revisions', 's0002|open|1'], ['threads_meta', 's0002']]);
+  expect((wrote?.ops[0] as { v: { text: string; by: string } }).v).toMatchObject({ text: 'Redis later?', by: 'you' });
+  const goal = sections[0]?.['text'];
+  expect(COMMANDS['threads.notesUpdate']?.({ id, section: 'goal', text: goal }, ctx).ops).toEqual([]);
+  expect(() => COMMANDS['threads.notesUpdate']?.({ id, section: 'mood', text: 'x' }, ctx)).toThrow();
+});

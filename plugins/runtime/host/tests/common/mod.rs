@@ -59,6 +59,13 @@ impl Fake {
         })
     }
 
+    /// A fake harness that can work on a copy of a conversation (`HarnessInfo::fork`, as Claude Code's /btw).
+    pub fn forks(id: &str, name: &str) -> Arc<dyn Harness> {
+        let mut info = Self::named(id, name, &["low"]).info().clone();
+        info.fork = true;
+        Arc::new(Self { info, program: "fake", piped: false })
+    }
+
     /// `varies`, but its CLI isn't installed: every spawn fails (`ProcError::NotFound`).
     pub fn gone(id: &str, name: &str) -> Arc<dyn Harness> {
         let mut info = Self::varies(id, name).info().clone();

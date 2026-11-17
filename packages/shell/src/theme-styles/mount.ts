@@ -54,7 +54,8 @@ export function mountPluginStyles(d: PluginStylesDeps): PluginStylesHandle {
   return { refresh, css: () => css };
 }
 
-const stylesCmd = defineCommand<{ peer: PeerId }, PluginStyles[]>({ id: 'plugins.styles', owner: (a) => a.peer, wire: () => ({}), optimistic: 'none', pending: 'none: the page restyles when it lands' });
+// quiet: a peer without it (an older wisp, a remote peer) has no plugin styles, never an error toast (QA r2 phone #1)
+const stylesCmd = defineCommand<{ peer: PeerId }, PluginStyles[]>({ id: 'plugins.styles', owner: (a) => a.peer, wire: () => ({}), optimistic: 'none', pending: 'none: the page restyles when it lands', quiet: true });
 
 /** Wired to the home wisp: read when its link comes up (and back), and on every `plugins.changed`; `run` is the
  * shell's own plugin client (the read runs as the shell). */

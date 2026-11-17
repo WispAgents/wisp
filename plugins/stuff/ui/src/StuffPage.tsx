@@ -14,6 +14,7 @@ import { cardLook, headCount, launchLook, noneWhat, thumbOf } from './card.ts';
 import { publishTargets, updateItem } from './commands.ts';
 import { pageRun, type Shown } from './page-run.ts';
 import { removeWithUndo } from './remove.ts';
+import { openedByPress } from './opened.ts';
 import { stuffState } from './state.ts';
 import { PaneCards, pinsOf } from './pins.tsx';
 import { useEntries, useTaskTitle, type Entry } from './items.ts';
@@ -60,7 +61,7 @@ function BrowserPage(props: { readonly client: PluginClient }): JSX.Element {
   const byTask = (): boolean => picks().group === 'task';
   const list = (): boolean => picks().layout === 'list';
   const [shown, setShown] = createSignal<Shown | undefined>();
-  const [editing, setEditing] = createSignal<Entry | undefined>();
+  const [editing, setEditing] = createSignal<{ e: Entry; anchor: HTMLElement | undefined } | undefined>();
   const [menuFor, setMenuFor] = createSignal<Entry | undefined>();
   const taskTitle = useTaskTitle(c);
   const items = () => entries().map((e) => e.it);
@@ -83,12 +84,19 @@ function BrowserPage(props: { readonly client: PluginClient }): JSX.Element {
     pins,
     entries,
     show: setShown,
-    edit: setEditing,
+    edit: (e) => setEditing({ e, anchor: anchorOf(e) }),
+    anchor: (e) => anchorOf(e),
     removeSoon: (e, now) => removeWithUndo(c, shell, e, now),
     media: () => visible().flatMap((it) => (entryOf(it.id) ? [entryOf(it.id) as Entry] : [])),
   });
   let picker: HTMLInputElement | undefined;
   let root: HTMLElement | undefined;
+  // what a card's action came from (v1 act's `btn`): its ⋯ while it shows (the menu was opened from it), else the card
+  // (a card held by its Allow or Edit card keeps its ⋯ shown: see `held`)
+  function anchorOf(e: Entry): HTMLElement | undefined {
+    const card = root?.querySelector<HTMLElement>(`[data-kit='st-card'][data-id="${CSS.escape(e.it.id)}"]`) ?? undefined;
+    return card?.querySelector<HTMLElement>("[data-kit='st-more']") ?? card;
+  }
 
   // ⋯ and a right-click: v1's itemMenu, every action the page has
   const menuItems = () => {
@@ -148,7 +156,9 @@ function BrowserPage(props: { readonly client: PluginClient }): JSX.Element {
         root?.querySelector<HTMLElement>("[data-kit='st-card']")?.focus();
       }
     });
-    if (!matchMedia('(pointer: coarse)').matches) requestAnimationFrame(() => box?.focus({ preventScroll: true }));
+    // v1 openStuff: opened (the button, a toast's Open, ⌘K) puts the caret in the search; the page as it was left,
+    // back after a reload, doesn't. A press opened it when the page still has the user's activation from it.
+    if (openedByPress() && !matchMedia('(pointer: coarse)').matches) requestAnimationFrame(() => box?.focus({ preventScroll: true }));
     // '/' searches while the page is open; a pasted file (a screenshot) is kept
     const onKey = (ev: KeyboardEvent): void => {
       if (ev.key !== '/' || ev.metaKey || ev.ctrlKey || (ev.target as Element | null)?.closest?.('input, textarea, select, [contenteditable="true"]')) return;
@@ -172,6 +182,9 @@ function BrowserPage(props: { readonly client: PluginClient }): JSX.Element {
     });
   });
 
+  // the card whose Allow or Edit card is up: its tools stay (StuffCard `held`)
+  const modal = useSignal(st.modal);
+  const held = (id: string): boolean => editing()?.e.it.id === id || (modal()?.kind === 'allow' && menuFor()?.it.id === id);
   const card = (e: Entry): JSX.Element => {
     const it = e.it;
     const look = () => cardLook(it, t, Date.now());
@@ -200,6 +213,7 @@ function BrowserPage(props: { readonly client: PluginClient }): JSX.Element {
         byAgent={it.by === 'agent' ? t('stuff.card.byAgent') : undefined}
         pending={!!it.pending}
         starred={!!it.starred}
+        held={held(it.id)}
         launch={(() => {
           const l = launchLook(it, t);
           return l && { ...l, onClick: () => run(e, 'open') };
@@ -291,7 +305,7 @@ function BrowserPage(props: { readonly client: PluginClient }): JSX.Element {
         <PaneCards client={c} />
       </StuffFrame>
       <Windows client={c} shown={shown()} close={() => setShown(undefined)} live={(k) => entries().find((x) => x.key === k)} run={run} publishTo={() => st.publishTo()[0]} />
-      <EditDetails client={c} e={editing()} close={() => setEditing(undefined)} save={(e, f) => void c.run(updateItem, { key: e.key, id: e.it.id, title: f.title, note: f.note, tags: f.tags }).catch(() => {})} />
+      <EditDetails client={c} e={editing()?.e} anchor={editing()?.anchor} close={() => setEditing(undefined)} save={(e, f) => void c.run(updateItem, { key: e.key, id: e.it.id, title: f.title, note: f.note, tags: f.tags }).catch(() => {})} />
     </>
   );
 }

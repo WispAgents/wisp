@@ -314,6 +314,12 @@ pub struct FollowUpArgs {
     #[serde(default, alias = "subagents", skip_serializing_if = "Option::is_none")]
     #[ts(type = "unknown", optional)]
     pub team: Option<serde_json::Value>,
+    /// a new conversation on the same task (a long thread's Fresh thread, ADR-0096): its turn resumes nothing, hears
+    /// nothing of the turns before it, and is marked `ext["wisp.runtime"] = { fresh: true, after: <the conversation
+    /// it left> }`, so the old conversation stays linked. Additive (2026-11-18).
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    #[ts(as = "Option<bool>", optional)]
+    pub fresh: bool,
 }
 
 /// Where a follow-up went: a new turn, or a place in the queue.

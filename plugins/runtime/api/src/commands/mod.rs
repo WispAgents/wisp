@@ -110,6 +110,7 @@ command!(PollAnswerOf = "runtime.pollAnswer": PollAnswerArgs => PollAnswer, read
 command!(ApproveBlocked = "runtime.approveBlocked": ApproveBlockedArgs => Value);
 command!(Btw = "runtime.btw": BtwArgs => BtwEntry);
 command!(BtwDrop = "runtime.btw.drop": BtwDropArgs => Ack);
+command!(Probe = "runtime.probe": ProbeArgs => ProbeAnswer);
 command!(Reveal = "runtime.reveal": RevealArgs => Value);
 command!(Unmasked = "runtime.unmasked": UnmaskedArgs => Value, read_only);
 command!(Compact = "runtime.compact": IdArgs => FollowedUp);

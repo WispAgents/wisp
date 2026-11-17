@@ -1173,6 +1173,12 @@
     /* the tools scrolled under it don't show through: a ring of the box's colour */
     box-shadow: 0 0 0 var(--space-2) var(--surface-c0);
   }
+  /* nothing typed yet: Send is off, as the sheet's header Send (QA r2 #12); a solid fill, so the tools under it stay hidden */
+  :root[data-platform='ios'] [data-kit='launcher'] [data-kit='send']:disabled {
+    background: color-mix(in srgb, var(--on-surface) 12%, var(--surface-c0));
+    color: color-mix(in srgb, var(--on-surface) 38%, var(--surface-c0));
+    cursor: default;
+  }
   /* the task's Details (from its menu): the browser's details column as a list in the sheet: the state, the harness
      and model, its folders, the branch, its usage; its actions are the menu's */
   :root[data-platform='ios'] [data-kit='sheet'] [data-kit='it-bar'] { display: flex; flex-direction: column; align-items: stretch; gap: var(--space-6); margin: var(--space-0); padding: var(--space-0) var(--space-0) var(--space-6); background: transparent; }

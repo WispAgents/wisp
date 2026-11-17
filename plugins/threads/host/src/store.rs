@@ -4,21 +4,29 @@
 //! - `threads_meta`: per task, the Notes' revision, what the agent last read (`seen`), the task's turn count when they
 //!   were last written (`turn`) and as last seen (`count`).
 //! - `threads_health`: per task, the thread's health as last worked out (a turn's end).
+//! - `threads_audit`: per compaction (`<task>|<turn>`), what the compacted conversation still remembered (ADR-0096).
 
 use serde_json::{Value, json};
 use wisp_store::{Col, EntityDef, Migration, Query, Row, Store, Writer};
 
 pub const OWNER: &str = "threads";
 
-pub const MIGRATIONS: &[Migration] = &[Migration::sql(
-    1,
+pub const MIGRATIONS: &[Migration] = &[
+    Migration::sql(
+        1,
     "CREATE TABLE threads_notes (id TEXT PRIMARY KEY, task_id TEXT NOT NULL, section TEXT NOT NULL, text TEXT NOT NULL, rev INTEGER NOT NULL, by TEXT NOT NULL, at INTEGER NOT NULL) STRICT;
      CREATE INDEX threads_notes_task ON threads_notes(task_id);
      CREATE TABLE threads_revisions (id TEXT PRIMARY KEY, task_id TEXT NOT NULL, section TEXT NOT NULL, rev INTEGER NOT NULL, text TEXT NOT NULL, by TEXT NOT NULL, at INTEGER NOT NULL) STRICT;
      CREATE INDEX threads_revisions_task ON threads_revisions(task_id, section, rev);
      CREATE TABLE threads_meta (id TEXT PRIMARY KEY, rev INTEGER NOT NULL, seen INTEGER NOT NULL, turn INTEGER NOT NULL, count INTEGER NOT NULL, at INTEGER NOT NULL) STRICT;
      CREATE TABLE threads_health (id TEXT PRIMARY KEY, body TEXT NOT NULL) STRICT;",
-)];
+    ),
+    Migration::sql(
+        2,
+        "CREATE TABLE threads_audit (id TEXT PRIMARY KEY, task_id TEXT NOT NULL, at INTEGER NOT NULL, body TEXT NOT NULL) STRICT;
+     CREATE INDEX threads_audit_task ON threads_audit(task_id, at);",
+    ),
+];
 
 fn task_of(r: &Row) -> String {
     let id = r.get("task_id").or_else(|| r.get("id")).and_then(Value::as_str).unwrap_or_default();
@@ -86,9 +94,20 @@ pub const HEALTH: EntityDef = EntityDef {
     topics,
 };
 
+pub const AUDITS: EntityDef = EntityDef {
+    kind: "threads_audit",
+    table: "threads_audit",
+    key: "id",
+    columns: &[("id", Col::Text), ("task_id", Col::Text), ("at", Col::Int), ("body", Col::Text)],
+    json_columns: &["body"],
+    parent: None,
+    seq: None,
+    topics,
+};
+
 pub fn install(store: &Store) -> wisp_store::Result<()> {
     store.migrate(OWNER, MIGRATIONS)?;
-    for d in [NOTES, REVISIONS, META, HEALTH] {
+    for d in [NOTES, REVISIONS, META, HEALTH, AUDITS] {
         store.define_entity(d)?;
     }
     Ok(())
@@ -103,7 +122,7 @@ pub fn row(v: Value) -> Row {
 
 /// Everything a task has here goes (the task was deleted).
 pub fn forget(w: &mut Writer<'_>, task: &str) -> wisp_store::Result<()> {
-    for kind in [NOTES.kind, REVISIONS.kind] {
+    for kind in [NOTES.kind, REVISIONS.kind, AUDITS.kind] {
         for r in w.query(kind, &Query::new().eq("task_id", task))? {
             if let Some(id) = r.get("id").and_then(Value::as_str) {
                 w.del(kind, id.to_owned())?;

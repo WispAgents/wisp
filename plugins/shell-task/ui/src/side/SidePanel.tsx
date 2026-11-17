@@ -8,6 +8,7 @@ import { computed, defineCommand, readonly, entityKey, type EntityKey } from '@w
 import { Box, IconButton, type IconName, Icon, Inline, Menu, Stack, Tabs, Text, useSignal } from '@wisp/ui';
 import { editorUrl } from '../editor.ts';
 import { TAB_VIEW, TERM_VIEW, WATCH_VIEW, isTui, pickedTab, tabKey, type SidePane } from '../open-task.ts';
+import { showsPlace } from './place.ts';
 import { useShell } from '../shell.ts';
 import { useTask } from '../task-context.tsx';
 import { PrPane } from './PrPane.tsx';
@@ -115,14 +116,14 @@ export function SidePanel(props: { readonly pane: SidePane; readonly file?: stri
               label: t(`shell-task.side.${p}`),
               icon: (p === 'changes' ? 'file' : p === 'pr' ? 'merge' : p === 'preview' ? 'web' : p === 'watch' ? 'eye' : 'terminal') as IconName,
             })),
-            ...extra().map((x) => ({ value: x.key, label: x.label, icon: 'app' as const, ...(x.title !== undefined && { title: x.title }) })),
+            ...extra().map((x) => ({ value: x.key, label: x.label, icon: (x.icon ?? 'app') as IconName, ...(x.title !== undefined && { title: x.title }) })),
           ]}
         />
         <Box grow />
         <IconButton icon="x" label={t('shell-task.side.close')} onClick={() => shell.navigate({ t: 'closeSide' })} />
       </Inline>
       {/* v1 panel.js .pn-place: where the task's work is, its branch, and what isn't committed */}
-      <Show when={place()}>
+      <Show when={showsPlace(props.pane) && place()}>
         {(pl) => (
           <Inline gap="2" align="center" part="panel.place">
             <Icon name={pl().remote ? 'server' : 'laptop'} size="sm" tone="faint" />

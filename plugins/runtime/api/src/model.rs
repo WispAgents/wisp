@@ -294,6 +294,12 @@ pub struct TurnStats {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     #[ts(as = "Option<Vec<SubagentStat>>", optional)]
     pub subagents: Vec<SubagentStat>,
+    /// how many times the conversation compacted during the turn (a /compact, or the harness compacting on its own
+    /// mid-turn: Claude Code's `compact_boundary`); absent: none, or the harness doesn't say. Long threads count and
+    /// audit it (ADR-0096). Additive (2026-11-18).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub compactions: Option<u32>,
 }
 
 /// One subagent type's part of a turn (v1 `stats.subagents[]`).

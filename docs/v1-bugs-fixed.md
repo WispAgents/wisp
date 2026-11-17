@@ -70,6 +70,9 @@ Each line: area · what v1 did · what v2 does · the test. Visible changes are 
 | Long threads (offload) | the summary's start and end were cut with `head -c`/`tail -c`, which can split a UTF-8 character and leave the agent a broken byte | cut between characters, in Rust (`wisp hook offload-show`) | `plugins/threads/core/tests/offload.rs` `long_output_shows_its_start_its_errors_and_its_end` |
 | Long threads (offload) | the error-line grep (`error|fail…`) flagged "0 failed" and "0 errors", so a passing run's summary looked failed | counts of zero are not error lines | same test |
 | Long threads (offload) | the hook was a Node script, so it needed Node on the machine and started a Node process on every Bash call | `wisp hook offload` in the wisp binary, answered before its async runtime starts | `offload_cli.rs` `the_hook_rewrites_a_foreground_bash_command_and_leaves_the_rest` |
+| Long threads (audit) | an audit marked `running` was set to skipped only in memory (`finally`), so a restart mid-audit left it `running` on the turn for good | a `running` audit older than 10 minutes reads as skipped, "It didn’t finish." (ADR-0096) | `plugins/threads/host/src/audit.rs` `an_audit_a_restart_cut_off_reads_as_skipped` |
+| Long threads (audit) | scoring the recall took a second model run (`askJson`), so with no model free the audit was skipped and each one cost two runs | a word match in core (`audit::score`), no model call: the same answer every time | `plugins/threads/core/tests/audit.rs` |
+| Long threads (fresh) | after a fresh thread, a follow-up on another harness could carry a hand-off note of the old conversation's turns | the hand-off reads only the turns from the last fresh one on | `plugins/runtime/host/tests/fresh.rs` `a_fresh_follow_up_starts_a_new_conversation_linked_to_the_old_one` |
 
 ## Decided by the lead (2026-11-08; the owner asked not to be stopped for these)
 

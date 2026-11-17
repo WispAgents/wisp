@@ -157,6 +157,89 @@ pub struct Health {
     pub notes_age: Option<u32>,
 }
 
+/// `threads.freshBrief`: what a fresh thread would start from, for you to read and edit before it starts: the Notes as
+/// they are now and what changed in the task's folder lately. Nothing is written.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export, export_to = "threads/")]
+pub struct Brief {
+    pub task: String,
+    /// the whole brief as the new conversation's first message gets it (markdown); edit it and pass it to
+    /// `threads.fresh`
+    pub text: String,
+    /// the Notes' revision it was made from
+    pub notes_rev: u32,
+    /// the files the task's turns changed, one a line (the brief lists them too), when any
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub diff: Option<String>,
+}
+
+/// `threads.fresh`: a new conversation on the same task, from `brief` (the text of `threads.freshBrief`, edited or
+/// not; absent: made now). The old conversation stays on its turns; health counts from the new one.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export, export_to = "threads/")]
+pub struct FreshArgs {
+    pub id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub brief: Option<String>,
+}
+
+/// Where the fresh thread went: its first turn, or a place in the queue (a turn was running: it starts after it).
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export, export_to = "threads/")]
+pub struct Fresh {
+    pub task: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub turn_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub queued: Option<String>,
+}
+
+/// After a compaction (setting `threads.compactAudit`): what the compacted conversation still remembers of the
+/// goal, constraints, decisions and what failed. "Kept 6 of 8"; what it lost goes in front of the next follow-up.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export, export_to = "threads/")]
+pub struct Audit {
+    pub task: String,
+    /// the compaction's turn
+    pub turn: String,
+    pub status: AuditStatus,
+    /// why it was skipped ("Its agent can't answer on a copy of its conversation.")
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub why: Option<String>,
+    pub kept: u32,
+    /// the Notes items asked about
+    pub total: u32,
+    /// the items it lost, as the Notes say them ("constraints: No Redis")
+    pub lost: Vec<String>,
+    /// told to the agent in a follow-up's note already
+    pub told: bool,
+    #[ts(type = "number")]
+    pub at: i64,
+}
+
+/// Where an audit is: asking, done, or skipped (with why). One left `running` by a restart reads as skipped.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "lowercase")]
+#[ts(export, export_to = "threads/")]
+pub enum AuditStatus {
+    #[default]
+    Running,
+    Done,
+    Skipped,
+}
+
+/// The setting that turns the compaction audit on (default off: each audit is one more short run).
+pub const SETTING_COMPACT_AUDIT: &str = "threads.compactAudit";
+
 macro_rules! command {
     ($ty:ident, $id:literal, $perm:expr, $ro:literal, $args:ty, $out:ty) => {
         #[derive(Debug)]
@@ -178,3 +261,6 @@ command!(NotesCmd, "threads.notes", PERM_READ, true, TaskArgs, Notes);
 command!(NotesUpdate, "threads.notesUpdate", PERM_WRITE, false, UpdateArgs, Notes);
 command!(RevisionsCmd, "threads.revisions", PERM_READ, true, RevisionsArgs, Vec<Revision>);
 command!(HealthCmd, "threads.health", PERM_READ, true, TaskArgs, Health);
+command!(FreshBriefCmd, "threads.freshBrief", PERM_READ, true, TaskArgs, Brief);
+command!(FreshCmd, "threads.fresh", PERM_WRITE, false, FreshArgs, Fresh);
+command!(AuditsCmd, "threads.audits", PERM_READ, true, TaskArgs, Vec<Audit>);

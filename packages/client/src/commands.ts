@@ -29,6 +29,9 @@ interface CommandBase<A, R> {
   readonly dedupe?: (args: A) => string;
   /** the peer must offer this, or the command fails at once with the reason */
   readonly feature?: FeatureNeed;
+  /** a read whose caller handles a refusal (a startup read: an older peer without it is "none", not an error): it
+   *  rejects to the caller and never reaches `onError`, so no toast (QA r2 phone #1). Additive. */
+  readonly quiet?: boolean;
   /** phantom: the result type, for inference only */
   readonly __result?: R;
 }
@@ -158,8 +161,10 @@ export function createCommands(o: CommandsOptions): Commands {
     return r;
   }
 
-  function fail(cmd: string, err: CommandError, w?: Waiter, again?: () => void): void {
-    o.onError?.(err, cmd, again);
+  /** the mids of quiet commands: their refusal is their caller's alone */
+  const quiet = new Set<string>();
+  function fail(cmd: string, err: CommandError, w?: Waiter, again?: () => void, silent = false): void {
+    if (!silent) o.onError?.(err, cmd, again);
     w?.reject(err);
   }
 
@@ -171,13 +176,14 @@ export function createCommands(o: CommandsOptions): Commands {
     const again = agains.get(a.mid);
     agains.delete(a.mid);
     if (a.t === 'ack') {
+      quiet.delete(a.mid);
       o.devtools?.record({ kind: 'ack', mid: a.mid, seq: a.seq });
       o.writer.settle(a.mid, a.seq);
       w?.resolve(a.result);
     } else {
       o.devtools?.record({ kind: 'reject', mid: a.mid, code: a.code, message: a.message });
       o.writer.dropPending(a.mid);
-      fail(r.cmd, new CommandError({ code: a.code, message: a.message, ...(a.reason !== undefined && { reason: a.reason }) }), w, again);
+      fail(r.cmd, new CommandError({ code: a.code, message: a.message, ...(a.reason !== undefined && { reason: a.reason }) }), w, again, quiet.delete(a.mid));
     }
   }
 
@@ -213,14 +219,14 @@ export function createCommands(o: CommandsOptions): Commands {
       const gate = def.feature && untracked(o.peers.info(peer)) ? o.peers.hasFeature(peer, def.feature) : { ok: true as const };
       const rerun = (): void => void api.run(def, args).catch(() => {});
       if (!gate.ok) {
-        fail(def.id, new CommandError({ code: 'unavailable', message: gate.reason }), w);
+        fail(def.id, new CommandError({ code: 'unavailable', message: gate.reason }), w, undefined, def.quiet === true);
         return w.promise as Promise<R>;
       }
       let ops: EntityOps;
       try {
         ops = def.optimistic === 'none' ? [] : def.optimistic(o.reader, args);
       } catch (err) {
-        fail(def.id, new CommandError({ code: 'invalid', message: err instanceof Error ? err.message : String(err) }), w);
+        fail(def.id, new CommandError({ code: 'invalid', message: err instanceof Error ? err.message : String(err) }), w, undefined, def.quiet === true);
         return w.promise as Promise<R>;
       }
       const mid = uuidv7(now());
@@ -228,6 +234,7 @@ export function createCommands(o: CommandsOptions): Commands {
       records.set(mid, r);
       waiters.set(mid, w);
       agains.set(mid, rerun);
+      if (def.quiet) quiet.add(mid);
       byKey.set(key, mid);
       o.devtools?.record({ kind: 'command', mid, cmd: def.id, peer });
       o.writer.addPending(mid, peer, ops);

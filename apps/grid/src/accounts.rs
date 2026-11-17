@@ -347,8 +347,9 @@ impl Accounts {
         let uid: Option<String> = self.db.with(|c| {
             let row: Option<(String, String)> = c
                 .query_row(
-                    // a preview's sign-in (`p:<label>`, previews.rs) is good at its own address only, never here
-                    "SELECT id_hash, user_id FROM sessions WHERE id_hash IN (?1, ?2) AND expires_at > ?3 AND scope NOT LIKE 'p:%'",
+                    // the grid's own sign-in only: a preview's (`p:<label>`, previews.rs) or an address's (`i:<label>`,
+                    // handoff.rs) is good at its own address alone, never here
+                    "SELECT id_hash, user_id FROM sessions WHERE id_hash IN (?1, ?2) AND expires_at > ?3 AND scope = 'grid'",
                     params![sha256_hex(cookie), sha256_v1(cookie), now],
                     |r| Ok((r.get(0)?, r.get(1)?)),
                 )

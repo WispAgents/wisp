@@ -43,6 +43,13 @@ describe('StuffCard', () => {
   });
 });
 
+describe('a held card', () => {
+  it('says so, so its tools stay shown while its Allow or Edit card is up by its ⋯ (v1)', () => {
+    const host = mount(() => <StuffCard {...base} held thumb={{ kind: 'ext', label: 'ZIP' }} more={{ label: 'More', onClick: () => {} }} onOpen={() => {}} />);
+    expect(host.querySelector("[data-kit='st-card']")?.hasAttribute('data-held')).toBe(true);
+  });
+});
+
 describe('the shelf', () => {
   it('a kind chip has its icon and count; a group its label and count; nothing matches offers Show everything', () => {
     let cleared = 0;

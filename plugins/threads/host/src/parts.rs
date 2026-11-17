@@ -12,6 +12,7 @@ use wisp_mcp_api::{Audience, TOOL_POINT, ToolContribution, ToolText};
 use wisp_runtime_api::model::Session;
 use wisp_runtime_api::points::{OFFLOAD_DIR_ENV, PROMPT, PromptPart, RUN, RunPart, TurnNote};
 use wisp_threads_api::{self as api, By, SECTIONS};
+use wisp_threads_core::audit::lost_note;
 use wisp_threads_core::note::{LEAD_MAX, NOTE_MAX, NoteIn, lead_note, turn_note};
 
 use crate::{Slot, notes, state};
@@ -113,19 +114,27 @@ impl PromptPart for Before {
             let task = q.session.id.as_str();
             let Ok((n, _)) = notes::load(&st.store, task).await else { return String::new() };
             let md = notes::md(&n, &[], NOTE_MAX, &tool);
+            // a fresh thread's first turn is its brief, the Notes in it: how to keep them, nothing more (ADR-0096)
+            let fresh = crate::audit::fresh_mark(&q.turn);
             let mut out = Vec::new();
-            if q.turn.idx == 0 {
+            if q.turn.idx == 0 || fresh {
                 out.push(first_turn(&tool));
             }
-            if let Some(note) = turn_note(&NoteIn {
+            let ni = NoteIn {
                 notes: &md,
                 rev: n.rev,
                 yours_unseen: notes::yours_unseen(&n),
                 turn: q.turn.idx,
                 prompt: &q.turn.prompt,
                 tool: &tool,
-            }) {
+            };
+            if !fresh && let Some(note) = turn_note(&ni) {
                 out.push(note);
+            }
+            // what the last compaction lost, once (an older one's is moot on a fresh thread)
+            let lost = crate::audit::take_lost(&st, task, q.turn.started_at).await;
+            if !fresh && let Some(l) = lost_note(&lost, &tool) {
+                out.push(l);
             }
             if !md.is_empty()
                 && let Err(e) = notes::mark_seen(&st.store, task, n.rev).await

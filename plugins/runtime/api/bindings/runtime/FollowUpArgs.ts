@@ -25,4 +25,10 @@ turn_id?: TurnId,
  * Delegate's team from this follow-up on (v1 `subagents`, the same rows as `StartArgs.team`'s list); `[]` removes
  * it, absent keeps the task's. Additive (2026-11-17).
  */
-team?: unknown, };
+team?: unknown, 
+/**
+ * a new conversation on the same task (a long thread's Fresh thread, ADR-0096): its turn resumes nothing, hears
+ * nothing of the turns before it, and is marked `ext["wisp.runtime"] = { fresh: true, after: <the conversation
+ * it left> }`, so the old conversation stays linked. Additive (2026-11-18).
+ */
+fresh?: boolean, };

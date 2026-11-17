@@ -1207,6 +1207,10 @@
           "description": "Interactive answers: agents may answer with a small app",
           "type": "boolean"
         },
+        "runtime.auto": {
+          "description": "Auto: wisp picks the harness, model and thinking level for each task. Off until it's reworked (the owner, 2026-11-17): the one switch; the app hides Auto while it's off",
+          "type": "boolean"
+        },
         "runtime.blocks": {
           "description": "wisp blocks: answers come as cards (off: plain markdown)",
           "type": "boolean"
@@ -1218,6 +1222,9 @@
             "queue"
           ],
           "type": "string"
+        },
+        "runtime.launch": {
+          "description": "New task's last pick: { agent, models: { <harness>: model }, labels: { <harness>: name }, efforts: { <harness>: level } } (v1 defaults.agent / models / efforts); a task that names no harness runs on its agent"
         },
         "runtime.leanRuns": {
           "description": "Lean Claude Code runs (no telemetry or update checks, and no claude.ai connectors): on, only wisp's own side runs; all, every run; off, none",
@@ -1251,6 +1258,9 @@
         },
         "runtime.subagents": {
           "description": "The team new tasks start with: [{ name, agent, model?, effort?, use? }] (New task pre-fills it; a task's own team wins)"
+        },
+        "runtime.teams": {
+          "description": "Delegate's saved teams (presets): [{ id, name, members: [{ name, agent, model?, effort?, use?, count?, machine? }] }]; Presets picks one, Save as preset keeps one (v1 config.teams)"
         },
         "runtime.watch": {
           "description": "Watch agents work: agents may open what they built in wisp's browser to check it",
@@ -1311,6 +1321,10 @@
             "off"
           ],
           "type": "string"
+        },
+        "threads.compactAudit": {
+          "description": "Compaction audit: after a compaction, ask a copy of the conversation what it still remembers of the task's Notes, and remind the agent of what it lost (one short extra run each)",
+          "type": "boolean"
         },
         "update.updateChannel": {
           "description": "Update channel",

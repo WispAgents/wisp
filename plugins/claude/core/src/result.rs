@@ -93,6 +93,9 @@ pub struct TurnState {
     pub boundary: Option<Value>,
     /// a status that says compacting failed (its error), until a boundary says it worked
     pub unshrunk: Option<String>,
+    /// the main thread's compact_boundaries this turn (a /compact, or Claude Code compacting on its own mid-turn):
+    /// `stats.compactions`, which long threads count and audit (ADR-0096); v1 didn't report it
+    pub compactions: u32,
 }
 
 fn stats(ev: &mut TurnResult) -> &mut Stats {
@@ -150,6 +153,9 @@ pub fn is_final(ev: &mut TurnResult, msg: &Line, turn: &mut TurnState) -> bool {
     }
     if turn.cache_ttl_ms != 0.0 {
         stats(ev).extra.insert("cacheTtlMs".into(), json_num(turn.cache_ttl_ms));
+    }
+    if turn.compactions > 0 {
+        stats(ev).extra.insert("compactions".into(), json!(turn.compactions));
     }
     // One process can report several results.
     *turn = TurnState::default();

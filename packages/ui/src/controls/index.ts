@@ -23,6 +23,7 @@ export { PathField, type PathFieldProps } from './PathField.tsx';
 export { Switch, Checkbox, type SwitchProps, type CheckboxProps } from './Switch.tsx';
 export { RadioGroup, type RadioGroupProps, type RadioOption } from './RadioGroup.tsx';
 export { Popover, type PopoverProps } from './Popover.tsx';
+export { AnchoredCard, AskCard, type AnchoredCardProps, type AskAction, type AskCardProps } from './Anchored.tsx';
 export { Tooltip, type TooltipProps } from './Tooltip.tsx';
 export { Dialog, Sheet, type DialogProps, type DialogSize } from './Dialog.tsx';
 export { Tabs, type TabsProps, type TabItem } from './Tabs.tsx';

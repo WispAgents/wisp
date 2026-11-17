@@ -7,7 +7,11 @@
 //!   something said earlier (supersession).
 //! - `health`: how worn the thread is, from what wisp already has (no model call).
 //! - `offload`: long Bash output into a file: the command's rewrite, and what the agent sees of it.
+//! - `fresh`: the brief a fresh thread starts from (ADR-0096).
+//! - `audit`: after a compaction, what the compacted conversation still remembers, scored without a model (ADR-0096).
 
+pub mod audit;
+pub mod fresh;
 pub mod health;
 pub mod note;
 pub mod notes;

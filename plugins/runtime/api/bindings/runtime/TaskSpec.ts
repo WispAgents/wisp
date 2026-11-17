@@ -21,4 +21,10 @@ cwd?: string, dirs?: Array<string>, base?: Base, worktree?: boolean, goal?: unkn
 /**
  * the effective formula it ran with, by content hash (`runtime.snapshot`)
  */
-formula?: string, lineage?: Lineage, };
+formula?: string, lineage?: Lineage, 
+/**
+ * what kind of task it is, as plugins marked it when it started (`ext` entries with a `kind`: My Stuff's pane, a
+ * Cast plugin): a rerun is the same kind of task (a pane rerun on another harness didn't know it made a pane).
+ * Additive (2026-11-17).
+ */
+ext?: Record<string, unknown>, };

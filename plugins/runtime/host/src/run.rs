@@ -79,6 +79,18 @@ fn apply_opts(s: &mut Session, item: &QueueItem) {
     }
 }
 
+/// A follow-up that asked for a new conversation (`FollowUpArgs::fresh`): the task resumes nothing from here on, and
+/// the turn's mark (`{fresh: true, after: <the conversation it left>}`) for its `ext["wisp.runtime"]`.
+fn fresh_start(s: &mut Session, item: &QueueItem) -> Option<Value> {
+    (item.opts.as_ref().and_then(|o| o.get("fresh")) == Some(&Value::Bool(true)))
+        .then(|| serde_json::json!({ "fresh": true, "after": s.resume_id.take() }))
+}
+
+/// The turn started a new conversation (`fresh_start`'s mark).
+pub(crate) fn is_fresh(t: &Turn) -> bool {
+    t.ext.get("wisp.runtime").and_then(|r| r.get("fresh")) == Some(&Value::Bool(true))
+}
+
 /// The hero title of a turn `before:run` (or its folder) refused: it never started.
 pub(crate) const NOT_STARTED: &str = wisp_runtime_core::summary::NOT_STARTED;
 /// The turn's `ext["wisp.runtime"]` flag for a CLI that couldn't be spawned: it ended at once, nothing ran.
@@ -105,6 +117,7 @@ impl Runtime {
             return Err(RuntimeError::NoTask(s.id.0.clone()));
         }
         let was = s.agent.clone();
+        let fresh = fresh_start(&mut s, &item);
         apply_opts(&mut s, &item);
         // a capped task's turn never runs above its cap, whatever its queued item asked (F-chan-10)
         let capped = crate::capped::cap_of(&s);
@@ -113,6 +126,9 @@ impl Runtime {
         let next = self.harness(&s.agent).ok();
         crate::handoff::carry_over(&mut s, &was, opt_str(run, "model").is_some(), opt_str(run, "effort").is_some(), next.as_deref());
         let mut turn = self.next_turn(&s, &item).await?;
+        if let Some(Value::Object(m)) = fresh {
+            turn.ext.insert("wisp.runtime".into(), Value::Object(m));
+        }
         let ctx = run_ctx(&s, &turn, &item);
         // its folder first (a worktree archiving removed comes back on its branch), before anything reads it
         if let Err(why) = self.folder_ready(&s, Some(&turn.id)).await {

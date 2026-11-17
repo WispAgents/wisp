@@ -1,7 +1,7 @@
 //! A thread's health at each turn's end (`turn.ended`), from runtime's own reads: its turns (compactions, failures,
 //! context, edits) and the failed steps of the last three. Saved on the task's `session:<id>` topic; no model call.
 
-use serde_json::{Value, json};
+use serde_json::json;
 use wisp_kernel::{Call, Ctx, Result};
 use wisp_runtime_api::commands::{ActivityArgs, ActivityOf, Turns, TurnsArgs};
 use wisp_runtime_api::model::{Activity, FileChange, Turn, TurnStatus};
@@ -38,7 +38,9 @@ pub fn turn_in(t: &Turn, errors: Vec<String>) -> TurnIn {
         compact: t.by.as_deref() == Some("compact"),
         held: t.status == TurnStatus::Held,
         failed: failed(t),
-        fresh: t.ext.get(crate::PLUGIN_ID).and_then(|x| x.get("fresh")) == Some(&Value::Bool(true)),
+        fresh: crate::audit::fresh_mark(t),
+        // a `/compact` turn is counted as one already
+        compacted: if t.by.as_deref() == Some("compact") { 0 } else { stats.and_then(|s| s.compactions).unwrap_or(0) },
         context: stats.and_then(|s| Some((s.context_tokens?, s.context_window?))),
         errors,
         edits: edits(t),

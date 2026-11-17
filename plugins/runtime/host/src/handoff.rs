@@ -40,6 +40,10 @@ impl Runtime {
         all.retain(|t| t.id != turn.id);
         all.sort_by_key(|t| t.idx);
         all.push(turn.clone());
+        // a fresh conversation (Fresh thread) hears nothing from before it: its brief is what it starts from
+        if let Some(i) = all.iter().rposition(crate::run::is_fresh) {
+            all.drain(..i);
+        }
         // what the task's turns read of .env files (ADR-0050): the note quotes none of it, as it goes to another
         // harness and is stored as this turn's prompt. Unknown: no note rather than one that may carry a value.
         let known = match self.env_known(s.id.as_str()).await {
