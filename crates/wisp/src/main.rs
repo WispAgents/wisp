@@ -22,6 +22,7 @@ mod hook_cli;
 mod plugin_cmd;
 mod repo_cli;
 mod scripted;
+mod secret_cli;
 mod serve;
 mod services;
 mod settings_store;
@@ -241,6 +242,7 @@ async fn as_code(p: &Parsed, port: u16, cwd: &Path, home: &Path) -> Result<Optio
             repo_cli::log(&p.argv, &code::Opts { words: Vec::new(), ..o.clone() }, cwd)?
         }
         "resume" if o.words.len() == 1 => repo_cli::resume(&connect().await?, &o, cwd).await?,
+        "secret" => secret_cli::run(&connect().await?, &o.words).await?,
         "adopt" => repo_cli::adopt(&connect().await?, &p.argv, &o, cwd).await?,
         "fmt" if o.words.is_empty() => folder::fmt_cmd(&o, cwd)?,
         "workspace" => folder::workspace_cmd(&folder::folder(&o, cwd).unwrap_or_else(|| cwd.join(".wisp")), &o.words)?,

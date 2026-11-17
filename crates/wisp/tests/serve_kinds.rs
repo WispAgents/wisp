@@ -554,3 +554,65 @@ async fn an_api_key_speaks_with_its_capability_set_at_the_edge() {
     assert_eq!(st, 403, "an unknown key is refused, as a bad token is");
     drop(serve);
 }
+
+/// The docs' resource-kind reference (ADR-0039: generated, never stale) reads `apps/docs/data/kinds.schema.json`: it
+/// is what `wisp schema` prints. `WISP_UPDATE_GOLDENS=1` writes it after a change to a kind.
+#[tokio::test(flavor = "multi_thread")]
+async fn the_docs_kind_reference_is_what_wisp_schema_prints() {
+    let dir = temp("serve-schema");
+    let (serve, port) = start_with(&dir, &[]);
+    let (code, out, err) = wisp(&dir, &dir, port, &["schema"]);
+    drop(serve);
+    assert_eq!(code, 0, "{err}");
+    let file = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../apps/docs/data/kinds.schema.json");
+    let got: Value = serde_json::from_str(&out).unwrap();
+    if std::env::var("WISP_UPDATE_GOLDENS").is_ok_and(|v| v == "1") {
+        std::fs::write(&file, format!("{}\n", serde_json::to_string_pretty(&got).unwrap())).unwrap();
+    }
+    let want: Value = serde_json::from_str(&std::fs::read_to_string(&file).unwrap_or_default()).unwrap_or(Value::Null);
+    assert!(got == want, "apps/docs/data/kinds.schema.json is stale: run this test with WISP_UPDATE_GOLDENS=1 and commit it");
+}
+
+/// A formula's `${secret:NAME}` (a connector's token): `wisp secret set NAME`, piped, makes `validate` pass where it said
+/// the secret isn't set here; `rm` takes it away again; a name that could reach a plugin's own secrets is refused.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_formulas_secret_is_set_with_wisp_secret_set_never_as_an_argument() {
+    let dir = temp("serve-secret");
+    let (serve, port) = start_with(&dir, &[]);
+    let repo = dir.join("repo");
+    std::fs::create_dir_all(repo.join(".wisp")).unwrap();
+    std::fs::write(repo.join(".wisp/c.wisp.yml"), "wisp: 1\nconnectors:\n  linear: { url: \"https://mcp.example.com\", headers: { Authorization: \"Bearer ${secret:LINEAR_KEY}\" } }\n").unwrap();
+    let (code, out, _) = wisp(&dir, &repo, port, &["validate"]);
+    assert_ne!(code, 0);
+    assert!(out.contains("LINEAR_KEY isn't set here (wisp secret set LINEAR_KEY)"), "{out}");
+    let piped = |args: &[&str], input: &str| {
+        let mut c = Command::new(env!("CARGO_BIN_EXE_wisp"))
+            .args(args)
+            .env("WISP_HOME", dir.join("home"))
+            .env("WISP_PORT", port.to_string())
+            .env("NO_COLOR", "1")
+            .current_dir(&repo)
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .unwrap();
+        std::io::Write::write_all(c.stdin.as_mut().unwrap(), input.as_bytes()).unwrap();
+        drop(c.stdin.take());
+        let o = c.wait_with_output().unwrap();
+        (o.status.code().unwrap_or(-1), format!("{}{}", String::from_utf8_lossy(&o.stdout), String::from_utf8_lossy(&o.stderr)))
+    };
+    let (code, said) = piped(&["secret", "set", "LINEAR_KEY"], "lin_api_123\n");
+    assert_eq!(code, 0, "{said}");
+    let (code, out, err) = wisp(&dir, &repo, port, &["validate"]);
+    assert_eq!(code, 0, "{out}{err}");
+    let kept = std::fs::read_to_string(dir.join("home/secrets.json")).unwrap();
+    assert!(kept.contains("lin_api_123") && !kept.contains("lin_api_123\\n"), "its newline isn't part of it: {kept}");
+    let (code, said) = piped(&["secret", "set", "channels/sign"], "x");
+    assert_ne!(code, 0, "a plugin's own key is out of reach: {said}");
+    let (code, _, _) = wisp(&dir, &repo, port, &["secret", "rm", "LINEAR_KEY"]);
+    assert_eq!(code, 0);
+    let (code, _, _) = wisp(&dir, &repo, port, &["validate"]);
+    assert_ne!(code, 0, "removed: missing again");
+    drop(serve);
+}

@@ -50,6 +50,14 @@
         "readOnly": true
       },
       {
+        "id": "resources.secretSet",
+        "title": "Set a secret a formula references as ${secret:NAME} (kept in secrets.json, never in a formula)"
+      },
+      {
+        "id": "resources.secretRemove",
+        "title": "Remove a secret a formula references"
+      },
+      {
         "id": "resources.rename",
         "title": "Rename a resource in place (wisp mv)"
       },

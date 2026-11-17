@@ -382,5 +382,30 @@ pub struct WriteOut {
     pub count: u32,
 }
 
+/// `resources.secretSet` / `resources.secretRemove` (`wisp secret set|rm NAME`): a secret a formula references as
+/// `${secret:NAME}`, kept in the secrets file, never in the store or a formula. A name is letters, digits, `_` and
+/// `-`, so it can't reach a plugin's own secrets (theirs are `ns/…` or `ns:…`). Additive (2026-11-17).
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SecretArgs {
+    pub name: String,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub value: String,
+}
+
+/// What a secret write did: its name, and whether it's there now.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SecretOut {
+    pub name: String,
+    pub set: bool,
+}
+
+/// A secret's name as a formula references it: letters, digits, `_` and `-`, at most 64.
+pub fn secret_name_ok(name: &str) -> bool {
+    !name.is_empty() && name.len() <= 64 && name.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'_' || b == b'-')
+}
+
+command!(SecretSet = "resources.secretSet" ["resources:secrets"] : SecretArgs => SecretOut);
+command!(SecretRemove = "resources.secretRemove" ["resources:secrets"] : SecretArgs => SecretOut);
+
 command!(Read = "resources.read" ["resources:read"] read yes : ReadArgs => ReadOut);
 command!(Write = "resources.write" ["resources:read"] read yes : WriteArgs => WriteOut);

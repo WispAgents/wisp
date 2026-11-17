@@ -27,6 +27,18 @@ pub const HELP: &str = "usage:
   wisp plugin enable|disable <id>   switch a plugin on or off
   wisp plugin install <folder|git URL>  install one, off, and see what it asks for; remove <id> takes it out
   wisp crew                     list your crew
+  wisp init                     a .wisp/ folder here: wisp.yml, the AGENTS.md note, its modules fetched and locked
+  wisp plan|destroy             what applying .wisp/ would change; take out everything it declares   (--yes)
+  wisp fmt                      format the .wisp/ folder   (--check)
+  wisp workspace [list|show|select|new NAME]   the folder's workspaces: one set of variables each
+  wisp output [name]|graph|mv FROM TO   the folder's outputs, its references as Graphviz, rename an address
+  wisp track <id>               keep a task in this repo's .wisp/tasks, for you to commit   (--level spec|report|full)
+  wisp untrack <id>             take a tracked task out again
+  wisp log [path]               the tracked tasks, newest first; with a path, the ones that touched it
+  wisp blame <file>:<line>      which task wrote that line, and what it was asked
+  wisp resume <id>              a new task that carries on from where that one stopped, on today's code
+  wisp adopt [<id>|--all]       bring in sessions you ran in a harness outside wisp   (--since 7d  --track)
+  wisp secret set|rm NAME       a secret your formulas reference as ${secret:NAME}: piped in or typed hidden, never an argument
   wisp import [v1 home]         bring a wisp v1 home (~/.wisp) in: its plan first, then on yes   (--dry-run  --yes)
   wisp apply -f wisp.yml        your setup as code: plan, diff, confirm   (--dry-run  --yes  --prune  --trust  --profile P)
   wisp diff|validate -f F       what apply would change; schema and checks   (wisp schema: the editor schema)

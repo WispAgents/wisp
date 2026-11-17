@@ -220,6 +220,21 @@ fn need_files(o: &Opts, verb: &str) -> Result<()> {
 }
 
 /// The plan, as the terminal shows it.
+/// `wisp validate`'s answer: each problem, each secret that isn't set here with how to set it; 0 when there's none.
+fn show_validate(plan: &Plan, loaded: &Loaded, st: &wisp_cli_api::Style) -> i32 {
+    for p in &plan.problems {
+        say(&format!("  {} {p}", paint(st, RED, "✗")));
+    }
+    for s in &plan.missing_secrets {
+        say(&format!("  {} secret {s} isn't set here (wisp secret set {s})", paint(st, RED, "✗")));
+    }
+    if plan.problems.is_empty() && plan.missing_secrets.is_empty() {
+        say(&format!("  {} {} resources in {} (wisp: 1)", paint(st, GREEN, "✓"), loaded.resources.len(), loaded.sources.join(", ")));
+        return 0;
+    }
+    1
+}
+
 pub fn show_plan(p: &Plan, st: &wisp_cli_api::Style) {
     for (mark, line) in wisp_resources_core::plan::lines(&p.ops) {
         let painted = match mark {
@@ -262,6 +277,19 @@ fn ask(question: &str) -> String {
     line.trim().to_owned()
 }
 
+/// Paths in specs that name a file of the formula's own (a skill's `path`) made absolute from `base`: the server
+/// reads them, from wherever it runs. URLs and absolute paths stay as they are.
+pub fn anchor_paths(resources: &mut [wisp_resources_api::Resource], base: &Path) {
+    for r in resources.iter_mut().filter(|r| r.kind == "skill") {
+        let Some(p) = r.spec.get("path").and_then(Value::as_str).filter(|p| !p.is_empty() && !p.contains("://")) else { continue };
+        let p = Path::new(p);
+        // rooted is absolute enough (`/x` on Windows has no drive but isn't the formula's)
+        if !p.has_root() && p.is_relative() {
+            r.spec["path"] = Value::String(base.join(p).display().to_string());
+        }
+    }
+}
+
 /// `wisp apply -f`, `wisp diff -f`, `wisp validate -f`.
 pub async fn apply(c: &Client, verb: &str, o: &Opts, cwd: &Path) -> Result<i32> {
     let st = crate::cli::style();
@@ -279,6 +307,15 @@ pub async fn apply(c: &Client, verb: &str, o: &Opts, cwd: &Path) -> Result<i32> 
         need_files(o, verb)?;
         load(&o.files, &o.profiles, &ks, cwd)?
     };
+    let mut loaded = loaded;
+    // a skill's `path: docs/testing.md` is the repo's (the folder's parent), or next to the -f file: never wherever
+    // the server happens to run
+    let base = dir
+        .as_deref()
+        .and_then(Path::parent)
+        .map(Path::to_path_buf)
+        .or_else(|| o.files.first().and_then(|f| cwd.join(f).parent().map(Path::to_path_buf)));
+    anchor_paths(&mut loaded.resources, base.as_deref().unwrap_or(cwd));
     let foreign = formula::foreign(&loaded.sources);
     let destroy: Vec<String> =
         if verb == "destroy" { loaded.resources.iter().map(|r| format!("{}.{}", r.kind, r.name)).collect() } else { Vec::new() };
@@ -290,14 +327,7 @@ pub async fn apply(c: &Client, verb: &str, o: &Opts, cwd: &Path) -> Result<i32> 
         return Ok(i32::from(!plan.problems.is_empty()));
     }
     if verb == "validate" {
-        for p in plan.problems.iter().chain(plan.missing_secrets.iter().map(|s| s as &String)) {
-            say(&format!("  {} {p}", paint(&st, RED, "✗")));
-        }
-        if plan.problems.is_empty() && plan.missing_secrets.is_empty() {
-            say(&format!("  {} {} resources in {} (wisp: 1)", paint(&st, GREEN, "✓"), loaded.resources.len(), loaded.sources.join(", ")));
-            return Ok(0);
-        }
-        return Ok(1);
+        return Ok(show_validate(&plan, &loaded, &st));
     }
     say(&format!(
         "{} {}",
@@ -396,4 +426,24 @@ pub async fn schema(c: &Client) -> Result<i32> {
 /// Whether `words` after `export` name kinds (`wisp export crew agents`), not a task ("export the csv").
 pub fn kind_words(words: &[String], ks: &[KindInfo]) -> bool {
     words.iter().all(|w| ks.iter().any(|k| k.named(w)))
+}
+
+#[cfg(test)]
+mod anchor_tests {
+    use super::*;
+
+    #[test]
+    fn a_skills_relative_path_is_the_formulas_own() {
+        let mut rs = vec![
+            wisp_resources_api::Resource::new("skill", "a", serde_json::json!({ "path": "docs/testing.md" })),
+            wisp_resources_api::Resource::new("skill", "b", serde_json::json!({ "path": "/abs/SKILL.md" })),
+            wisp_resources_api::Resource::new("skill", "c", serde_json::json!({ "body": "inline" })),
+            wisp_resources_api::Resource::new("agent", "d", serde_json::json!({ "path": "x" })),
+        ];
+        anchor_paths(&mut rs, Path::new("/repo"));
+        assert_eq!(rs[0].spec["path"], Path::new("/repo").join("docs/testing.md").display().to_string());
+        assert_eq!(rs[1].spec["path"], "/abs/SKILL.md");
+        assert!(rs[2].spec.get("path").is_none());
+        assert_eq!(rs[3].spec["path"], "x", "only a skill's path");
+    }
 }

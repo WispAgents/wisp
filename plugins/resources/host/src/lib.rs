@@ -49,6 +49,16 @@ fn verb(op: OpKind) -> &'static str {
     }
 }
 
+/// A secret's name, checked (`wisp_resources_api::secret_name_ok`).
+fn secret_name(name: &str) -> Result<String> {
+    let n = name.trim();
+    if wisp_resources_api::secret_name_ok(n) {
+        Ok(n.to_owned())
+    } else {
+        Err(WireError::invalid(format!("{n:?} isn't a secret name: letters, digits, _ and - only")))
+    }
+}
+
 /// The plan's drift (wisp's copy isn't what was last applied) and the secrets it names that aren't here.
 async fn drift_and_secrets(ctx: &Ctx, out: &mut Plan) -> Result<()> {
     // drift: wisp's copy isn't what was last applied (the files' change is the rest of the diff)
@@ -311,6 +321,20 @@ impl Plugin for ResourcesPlugin {
                 let loaded = wisp_resources_core::formula::read_text(&a.text, format_named(&a.format), &ks).map_err(WireError::invalid)?;
                 Ok(ReadOut { resources: loaded.resources, secrets: loaded.secrets })
             }
+        });
+        // a formula's `${secret:NAME}`: set here (never in the store), so `apply` finds it
+        s.command::<wisp_resources_api::SecretSet, _, _>(|ctx, _call, a| async move {
+            let name = secret_name(&a.name)?;
+            if a.value.is_empty() {
+                return Err(WireError::invalid(format!("{name}: an empty secret (remove it with wisp secret rm {name})")));
+            }
+            wisp_kernel::services::secrets(&ctx)?.set(&name, &a.value).await?;
+            Ok(wisp_resources_api::SecretOut { name, set: true })
+        });
+        s.command::<wisp_resources_api::SecretRemove, _, _>(|ctx, _call, a| async move {
+            let name = secret_name(&a.name)?;
+            wisp_kernel::services::secrets(&ctx)?.delete(&name).await?;
+            Ok(wisp_resources_api::SecretOut { name, set: false })
         });
         s.command::<Write, _, _>(|ctx, call, a| async move {
             let ks: Vec<KindInfo> = kinds(&ctx).iter().map(|k| k.info()).collect();

@@ -1,0 +1,3495 @@
+{
+  "$defs": {
+    "account": {
+      "additionalProperties": false,
+      "description": "A harness account (its sign-in stays in the harness's own folder).",
+      "properties": {
+        "kind": {
+          "description": "personal | work",
+          "type": "string"
+        },
+        "label": {
+          "description": "what it shows as",
+          "type": "string"
+        }
+      },
+      "title": "AccountSpec",
+      "type": "object"
+    },
+    "agent": {
+      "additionalProperties": false,
+      "description": "A named, reusable agent: which harness and how it runs (\"reviewer = codex, high effort, plan mode,\nthe linear connector\"). A task, a crew member, a team slot or a judge names one, or gives one inline.",
+      "properties": {
+        "account": {
+          "description": "a harness account by name (accounts are personal: never exported unless asked)",
+          "type": "string"
+        },
+        "connectors": {
+          "description": "connectors (MCP servers) it gets, by name",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "effort": {
+          "description": "low | medium | high | the harness's own levels",
+          "type": "string"
+        },
+        "harness": {
+          "description": "the harness that runs it (`claude`, `codex`, `cursor`, `opencode`, …; `auto` lets the router pick)",
+          "type": "string"
+        },
+        "instructions": {
+          "description": "standing instructions every task it runs starts with",
+          "type": "string"
+        },
+        "mode": {
+          "description": "plan | edits | auto",
+          "type": "string"
+        },
+        "model": {
+          "description": "the harness's model id ('' = the harness's own default)",
+          "type": "string"
+        },
+        "skills": {
+          "description": "skills it gets, by name",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "subagentModel": {
+          "description": "the model its subagents use",
+          "type": "string"
+        }
+      },
+      "title": "AgentSpec",
+      "type": "object"
+    },
+    "app": {
+      "additionalProperties": false,
+      "description": "An app or a pane: where its code comes from and what it may do.",
+      "properties": {
+        "enabled": {
+          "description": "off: kept but not shown",
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "grants": {
+          "description": "what it may call (commands, topics)",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "inline": {
+          "description": "its code inline (a single-file app)",
+          "type": "string"
+        },
+        "schema": {
+          "description": "its data's shape (JSON Schema)"
+        },
+        "source": {
+          "description": "a folder, or `starter:<name>` for one wisp ships",
+          "type": "string"
+        }
+      },
+      "title": "AppSpec",
+      "type": "object"
+    },
+    "budget": {
+      "additionalProperties": false,
+      "description": "Where unattended work stops on a usage window, and what a task or workflow may spend.",
+      "properties": {
+        "claude": {
+          "description": "Claude Code's own line (same | off | 50 | 75 | 90)",
+          "type": "string"
+        },
+        "codex": {
+          "description": "Codex's own line (same | off | 50 | 75 | 90)",
+          "type": "string"
+        },
+        "drainWatch": {
+          "description": "warn when a window is about to drain",
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "stopAt": {
+          "description": "off | 50 | 75 | 90: percent of a window where automations stop",
+          "type": "string"
+        },
+        "taskUsd": {
+          "description": "at most this many dollars per task",
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        }
+      },
+      "title": "BudgetSpec",
+      "type": "object"
+    },
+    "capability": {
+      "additionalProperties": false,
+      "description": "A capability set: what its holder may do.",
+      "properties": {
+        "allow": {
+          "description": "permissions it grants (`runtime:create`, `crew:*`)",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "channels": {
+          "description": "the channels whose messages act with it",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "deny": {
+          "description": "permissions it never grants, over `allow`",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "key": {
+          "description": "an API key that holds it, as `${secret:NAME}`",
+          "type": "string"
+        }
+      },
+      "title": "CapabilitySpec",
+      "type": "object"
+    },
+    "channel": {
+      "additionalProperties": false,
+      "description": "A channel: where people talk to wisp and hear back from it.",
+      "properties": {
+        "allow": {
+          "description": "who may speak to it (chat ids, user names, addresses)",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "cap": {
+          "description": "the most a message may start: plan | edits (never auto)",
+          "type": "string"
+        },
+        "enabled": {
+          "description": "off by default: nothing is received or sent until it's on",
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "routing": {
+          "description": "the transport's own settings (ntfy: `server`, `topic`; Slack: `appToken`…), merged into its\nconfig; where its tasks run (a project or machine), and thread rules"
+        },
+        "token": {
+          "description": "its bot token or key, as `${secret:NAME}`",
+          "type": "string"
+        },
+        "transport": {
+          "description": "telegram | slack | discord | github | email | ntfy",
+          "type": "string"
+        }
+      },
+      "required": [
+        "transport"
+      ],
+      "title": "ChannelSpec",
+      "type": "object"
+    },
+    "connector": {
+      "additionalProperties": false,
+      "description": "An MCP server: a command wisp starts, or a URL it reaches.",
+      "properties": {
+        "agents": {
+          "description": "the agent profiles that get it (empty: every one)",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "args": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "command": {
+          "description": "the program (stdio servers)",
+          "type": "string"
+        },
+        "enabled": {
+          "description": "off: declared but no agent gets it",
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "env": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "description": "its environment; secrets as `${secret:NAME}`",
+          "type": "object"
+        },
+        "headers": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "description": "HTTP headers; secrets as `${secret:NAME}`",
+          "type": "object"
+        },
+        "modes": {
+          "description": "the modes that get it (plan, edits, auto; empty: all)",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "oauth": {
+          "description": "it signs in with OAuth (the token stays in secrets)",
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "url": {
+          "description": "the server's URL (HTTP servers)",
+          "type": "string"
+        }
+      },
+      "title": "ConnectorSpec",
+      "type": "object"
+    },
+    "crew": {
+      "additionalProperties": false,
+      "description": "A crew member: who they are, what runs their jobs, when they check in.",
+      "properties": {
+        "agent": {
+          "description": "an agent profile's name or a harness (`reviewer`, `codex`)",
+          "type": "string"
+        },
+        "avatar": {
+          "description": "a spirit code or an emoji ('' rolls one from the name)",
+          "type": "string"
+        },
+        "brief": {
+          "description": "the standing instructions every job of theirs starts with",
+          "type": "string"
+        },
+        "color": {
+          "type": "string"
+        },
+        "cron": {
+          "description": "when they check in: a cron, or words (\"every weekday at 9\")",
+          "type": "string"
+        },
+        "cwd": {
+          "description": "the folder they work in",
+          "type": "string"
+        },
+        "effort": {
+          "type": "string"
+        },
+        "kit": {
+          "description": "their kit: `[{ name, description?, body }]` skills and notes",
+          "items": true,
+          "type": "array"
+        },
+        "machine": {
+          "description": "the computer their jobs run on ('' = this one)",
+          "type": "string"
+        },
+        "mode": {
+          "description": "plan | edits | auto",
+          "type": "string"
+        },
+        "model": {
+          "type": "string"
+        },
+        "notebook": {
+          "description": "their notebook (a file: it stays a file)",
+          "type": "string"
+        },
+        "on": {
+          "description": "v1's \"also starts when\" (`ci`, `done`, `finished`): read as `wakes` on import",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "parallel": {
+          "description": "how many of their jobs may run at once",
+          "format": "uint32",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "paused": {
+          "description": "no check-ins or jobs until resumed",
+          "type": "boolean"
+        },
+        "role": {
+          "description": "what they do (\"reviewer\", \"release manager\")",
+          "type": "string"
+        },
+        "sandbox": {
+          "description": "'' | job | own: a worktree per job, or one of their own",
+          "type": "string"
+        },
+        "team": {
+          "description": "who they delegate to: `[{ crew, why? }]`",
+          "items": true,
+          "type": "array"
+        },
+        "wakes": {
+          "description": "what else wakes them (ADR-0043): triggers whose target is this member (`on: crew.reported`,\n`on: pr.review_requested`, `on: schedule` …); `cron` stays the shorthand for one schedule",
+          "items": {
+            "$ref": "#/$defs/crew.TriggerSpec"
+          },
+          "type": "array"
+        }
+      },
+      "title": "CrewSpec",
+      "type": "object"
+    },
+    "crew.Budget": {
+      "additionalProperties": false,
+      "description": "What a trigger may spend.",
+      "properties": {
+        "perDay": {
+          "description": "USD a day, across its runs",
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "perRun": {
+          "description": "USD a run (the run is stopped past it, by wisp.budget's guard)",
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        }
+      },
+      "type": "object"
+    },
+    "crew.TriggerSpec": {
+      "additionalProperties": false,
+      "description": "A trigger.",
+      "properties": {
+        "agent": {
+          "type": "string"
+        },
+        "approval": {
+          "description": "the job waits for a yes before it starts (never in Full auto)",
+          "type": "boolean"
+        },
+        "at": {
+          "description": "once: when (ms since the epoch)",
+          "format": "int64",
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "branch": {
+          "type": "string"
+        },
+        "budget": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/crew.Budget"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "concurrency": {
+          "description": "skip | queue | replace | parallel:<n> (skip by default)",
+          "type": "string"
+        },
+        "cooldown": {
+          "description": "after a failed run, wait this long before the next (\"30m\")",
+          "type": "string"
+        },
+        "crew": {
+          "description": "a crew member gets the work instead (a wake)",
+          "type": "string"
+        },
+        "cron": {
+          "description": "schedule: a cron or words (\"every weekday at 9\")",
+          "type": "string"
+        },
+        "debounce": {
+          "description": "events within this window become one job listing them all (\"10m\", \"30s\")",
+          "type": "string"
+        },
+        "enabled": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "every": {
+          "description": "minutes between polls (a polled source)",
+          "format": "uint32",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "followUp": {
+          "description": "or a follow-up to the task the event came from",
+          "type": "boolean"
+        },
+        "header": {
+          "description": "webhook: the header that signs each call (`X-Hub-Signature-256`, `Sentry-Hook-Signature`, `Linear-Signature`,\n`X-PagerDuty-Signature`): an HMAC-SHA256 of the body under the secret, hex, with or without `sha256=`/`v1=`.\nWith it the secret is never sent, only checked (v1 hooks.js `hmacOk`).",
+          "type": "string"
+        },
+        "if": {
+          "description": "an expression over `event` (`event.payload.branch == 'main'`), as workflows' `if`",
+          "type": "string"
+        },
+        "label": {
+          "description": "an issue's or PR's label",
+          "type": "string"
+        },
+        "match": {
+          "additionalProperties": true,
+          "description": "any other field of the source, matched against the event's payload (a string, a glob, or a list)",
+          "type": "object"
+        },
+        "mode": {
+          "description": "plan | edits | auto",
+          "type": "string"
+        },
+        "model": {
+          "type": "string"
+        },
+        "on": {
+          "description": "the source: `schedule`, `once`, `webhook`, `manual`, or an event type (`task.finished`, `pr.opened`, `chat.message`, …)",
+          "type": "string"
+        },
+        "project": {
+          "description": "the project it watches, and the folder its task runs in",
+          "type": "string"
+        },
+        "prompt": {
+          "description": "or a prompt of its own: `{event.summary}`, `{event.payload.x}` are filled in",
+          "type": "string"
+        },
+        "rate": {
+          "description": "at most this many runs: \"5/h\", \"20/d\"",
+          "type": "string"
+        },
+        "secret": {
+          "description": "webhook: its secret, as `${secret:NAME}`",
+          "type": "string"
+        },
+        "task": {
+          "description": "the declared task it starts (its `{params}` from the event)",
+          "type": "string"
+        },
+        "tz": {
+          "description": "schedule and `when`: an IANA zone (\"Europe/Zurich\"); this computer's by default",
+          "type": "string"
+        },
+        "users": {
+          "description": "chat.message: who may (names or ids; `anyone` for an open channel)",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "when": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/crew.When"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "workflow": {
+          "description": "or a workflow runs, with the event as its input",
+          "type": "string"
+        }
+      },
+      "required": [
+        "on"
+      ],
+      "type": "object"
+    },
+    "crew.When": {
+      "additionalProperties": false,
+      "description": "When a trigger may run: outside these, an event is skipped or queued until the window opens.",
+      "properties": {
+        "days": {
+          "description": "mon tue wed thu fri sat sun (every day when empty)",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "hours": {
+          "description": "\"9-17\" (local hours, start inclusive, end exclusive)",
+          "type": "string"
+        },
+        "outside": {
+          "description": "skip (default) | queue",
+          "type": "string"
+        },
+        "tz": {
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "goal": {
+      "additionalProperties": false,
+      "description": "How a goal is judged after each turn.",
+      "properties": {
+        "judges": {
+          "description": "the agent profiles that judge",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "maxRounds": {
+          "description": "turns a goal may take before it stops and asks",
+          "format": "uint32",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "vote": {
+          "description": "majority | all | any",
+          "type": "string"
+        }
+      },
+      "title": "GoalSpec",
+      "type": "object"
+    },
+    "harness": {
+      "additionalProperties": false,
+      "description": "A harness CLI: where it comes from, which version is trusted, its own defaults.",
+      "properties": {
+        "effort": {
+          "type": "string"
+        },
+        "enabled": {
+          "description": "installed or not (false: wisp never offers it)",
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "from": {
+          "description": "npm | brew | path",
+          "type": "string"
+        },
+        "lean": {
+          "description": "lean runs: wisp's short base prompt instead of the harness's own",
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "liveLimits": {
+          "description": "read its usage limits while it runs",
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "model": {
+          "type": "string"
+        },
+        "package": {
+          "description": "what `from` installs: the npm package (default: the harness's own) or the brew formula",
+          "type": "string"
+        },
+        "path": {
+          "description": "its program when `from: path`",
+          "type": "string"
+        },
+        "pin": {
+          "description": "the version wisp trusts (a newer one asks first); `from: npm` installs this one",
+          "type": "string"
+        }
+      },
+      "title": "HarnessSpec",
+      "type": "object"
+    },
+    "machine": {
+      "additionalProperties": false,
+      "description": "A computer: this one (`this`) or a peer wisp reaches.",
+      "properties": {
+        "address": {
+          "description": "its address (host, ssh target or grid name)",
+          "type": "string"
+        },
+        "limits": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/machine.MachineLimits"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "onGrid": {
+          "description": "this computer is on the grid, so other computers reach it",
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "port": {
+          "description": "its wisp's port (ssh, loopback), when it isn't the default",
+          "format": "uint16",
+          "maximum": 65535,
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "transport": {
+          "description": "local | ssh | grid | grid-tunnel",
+          "type": "string"
+        }
+      },
+      "title": "MachineSpec",
+      "type": "object"
+    },
+    "machine.MachineLimits": {
+      "additionalProperties": false,
+      "description": "What a computer may take on before automations wait.",
+      "properties": {
+        "batteryHold": {
+          "description": "on battery under this percent, check-ins and the crew queue wait (off, 20 or 40)",
+          "format": "uint32",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "cpuCeiling": {
+          "description": "automations wait while the CPU stays over this percent of its cores",
+          "format": "uint32",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "heavyLock": {
+          "description": "one heavy step (a build, the tests) at a time",
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "maxRuns": {
+          "description": "runs at once (default: one per 3 GB of memory)",
+          "format": "uint32",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "memoryFloor": {
+          "description": "automations wait while free memory is under this percent",
+          "format": "uint32",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        }
+      },
+      "type": "object"
+    },
+    "notification": {
+      "additionalProperties": false,
+      "description": "What notifies where: events to a channel or a webhook (v1 `notify`, `drainWatch`, `webhookTriggers`).",
+      "properties": {
+        "on": {
+          "description": "events: `finished`, `asks`, `failed`, `limit`, `drain`, a trigger's name",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "projects": {
+          "description": "only for these projects (empty: every one)",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "to": {
+          "description": "a channel's name, or a webhook URL",
+          "type": "string"
+        }
+      },
+      "required": [
+        "on",
+        "to"
+      ],
+      "title": "NotificationSpec",
+      "type": "object"
+    },
+    "pane": {
+      "additionalProperties": false,
+      "description": "An app or a pane: where its code comes from and what it may do.",
+      "properties": {
+        "enabled": {
+          "description": "off: kept but not shown",
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "grants": {
+          "description": "what it may call (commands, topics)",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "inline": {
+          "description": "its code inline (a single-file app)",
+          "type": "string"
+        },
+        "schema": {
+          "description": "its data's shape (JSON Schema)"
+        },
+        "source": {
+          "description": "a folder, or `starter:<name>` for one wisp ships",
+          "type": "string"
+        }
+      },
+      "title": "AppSpec",
+      "type": "object"
+    },
+    "pipeline": {
+      "additionalProperties": false,
+      "description": "The steps after a run, by name (a task or a workflow step names one: `pipeline: careful`).",
+      "properties": {
+        "atLimit": {
+          "description": "at a usage limit: next (another account or harness) | wait",
+          "type": "string"
+        },
+        "bestOf": {
+          "description": "run it this many times and keep the best",
+          "format": "uint32",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "judge": {
+          "description": "the agent profile that picks the best, or reviews",
+          "type": "string"
+        },
+        "onError": {
+          "description": "on an error: escalate (a stronger model) | retry | stop",
+          "type": "string"
+        },
+        "review": {
+          "description": "a review by this agent profile after each run",
+          "type": "string"
+        }
+      },
+      "title": "PipelineSpec",
+      "type": "object"
+    },
+    "plugin": {
+      "additionalProperties": false,
+      "description": "A plugin by its id (`wisp.telegram`, `user.mine`).",
+      "properties": {
+        "config": {
+          "description": "its own configuration"
+        },
+        "enabled": {
+          "description": "on or off",
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "source": {
+          "description": "where a user's plugin comes from: a path, `gist:<id>` or a URL",
+          "type": "string"
+        },
+        "version": {
+          "description": "the version it stays on",
+          "type": "string"
+        }
+      },
+      "title": "PluginSpec",
+      "type": "object"
+    },
+    "project": {
+      "additionalProperties": false,
+      "description": "A project: a folder wisp works in, and how.",
+      "properties": {
+        "agent": {
+          "description": "the agent profile or harness its tasks use unless they say",
+          "type": "string"
+        },
+        "color": {
+          "type": "string"
+        },
+        "instructions": {
+          "description": "notes every task in it starts with (learned preferences, per-project rules)",
+          "type": "string"
+        },
+        "path": {
+          "description": "the folder (absolute), or a repo URL cloned into the worktree dir",
+          "type": "string"
+        },
+        "run": {
+          "description": "commands that start the project (a dev server), for Run",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "setup": {
+          "description": "commands run in a new worktree before the first turn",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "test": {
+          "description": "the command that runs its tests (Auto learns from whether a task's tests pass)",
+          "type": "string"
+        },
+        "trust": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/project.ProjectTrust"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "worktree": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/project.WorktreePolicy"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "path"
+      ],
+      "title": "ProjectSpec",
+      "type": "object"
+    },
+    "project.ProjectTrust": {
+      "additionalProperties": false,
+      "description": "What a project trusts without asking: its hooks, MCP servers and setup script.",
+      "properties": {
+        "hooks": {
+          "type": "boolean"
+        },
+        "mcp": {
+          "description": "the project's own MCP servers, by name",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "setup": {
+          "type": "boolean"
+        }
+      },
+      "type": "object"
+    },
+    "project.WorktreePolicy": {
+      "additionalProperties": false,
+      "description": "How a project uses worktrees (v1 `worktree`, `worktreeOnDone`, `worktreeCleanup`, `worktreeMax`,\n`cloneDir`, `fixConflicts`, `.worktreeinclude`).",
+      "properties": {
+        "cleanupDays": {
+          "description": "days a finished task's worktree stays before cleanup",
+          "format": "uint32",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "dir": {
+          "description": "where clones and worktrees go",
+          "type": "string"
+        },
+        "enabled": {
+          "description": "each task in a worktree of its own",
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "fixConflicts": {
+          "description": "resolve merge conflicts with an agent",
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "include": {
+          "description": "untracked files copied into each worktree (`.env`, `node_modules`)",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "max": {
+          "description": "at most this many worktrees at once",
+          "format": "uint32",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "onDone": {
+          "description": "when a task is done: ask | remove-clean | keep",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "router": {
+      "additionalProperties": false,
+      "description": "How Auto picks a harness and model for a task.",
+      "properties": {
+        "allowed": {
+          "description": "the harnesses it may pick (null: every one)",
+          "items": {
+            "type": "string"
+          },
+          "type": [
+            "array",
+            "null"
+          ]
+        },
+        "best2": {
+          "description": "hard tasks run twice and the better answer is kept",
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "blocked": {
+          "description": "harnesses or models it never picks",
+          "items": {
+            "type": "string"
+          },
+          "type": [
+            "array",
+            "null"
+          ]
+        },
+        "escalate": {
+          "description": "a failed run goes again on a stronger model",
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "explore": {
+          "description": "try models it knows less about now and then",
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "goal": {
+          "description": "what it optimises for (`balanced`, `cheap`, `best`, …)",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "habits": {
+          "description": "learn from what you pick by hand",
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "prefer": {
+          "description": "ones it picks first when they fit",
+          "items": {
+            "type": "string"
+          },
+          "type": [
+            "array",
+            "null"
+          ]
+        },
+        "scout": true
+      },
+      "title": "RouterSpec",
+      "type": "object"
+    },
+    "setting": {
+      "additionalProperties": false,
+      "description": "Settings by key (wisp settings list)",
+      "properties": {
+        "automations.webhookTriggers": {
+          "description": "Webhook triggers: other services may start this computer's webhook triggers (POST /api/triggers/<name> with its secret)",
+          "type": "boolean"
+        },
+        "budget.drainWatch": {
+          "description": "Drain watch: tell the phone when a plan moves much faster than usual for the same work",
+          "type": "boolean"
+        },
+        "budget.limitHold": {
+          "description": "Ask near the limit: before a task would take a usage window past this percent, ask first (automations wait for the reset)",
+          "enum": [
+            "off",
+            "80",
+            "90",
+            "95"
+          ],
+          "type": "string"
+        },
+        "budget.liveLimits": {
+          "description": "Check Codex while work waits: read its usage every 10 minutes while work waits for its plan (spends nothing)",
+          "type": "boolean"
+        },
+        "budget.silentStop": {
+          "description": "Stop a run silent for: stop a run with no output for this many hours (a run silent 30 minutes while its plan moves is always told to your phone)",
+          "enum": [
+            "off",
+            "1",
+            "2",
+            "4",
+            "8"
+          ],
+          "type": "string"
+        },
+        "budget.spareCard": {
+          "description": "Spare allowance: say on home when a weekly window resets within a day with a fifth or more left",
+          "type": "boolean"
+        },
+        "budget.windowNotice": {
+          "description": "Window notices: say when a usage window changed length or resets early",
+          "type": "boolean"
+        },
+        "channels.acceptChannels": {
+          "description": "Accept tasks from channels: messages routed here through wisp Cloud (“on this computer …”) may start tasks. Switch it on at this computer.",
+          "type": "boolean"
+        },
+        "channels.project": {
+          "description": "Default project: where a task from a channel (Slack, Discord, Telegram, email) runs when its message names none ('': the last used)",
+          "type": "string"
+        },
+        "crew.tint": {
+          "description": "Crew tint: with the crew rail, the task list takes a very light tint of the colour of the member you pick.",
+          "type": "boolean"
+        },
+        "events.sinks": {
+          "description": "Event sinks"
+        },
+        "git.cloneDir": {
+          "description": "Where a pasted repo URL is cloned ('': the first of ~/code, ~/dev, ~/Developer, ~/projects… that exists, else ~/code)",
+          "type": "string"
+        },
+        "git.maskEnvFiles": {
+          "description": "Hide .env values: what a task shows of a .env file (its output, edits, blocks, Changes) leaves wisp as dots until you reveal one",
+          "type": "boolean"
+        },
+        "grid-client.previews": {
+          "description": "Show local pages in previews",
+          "type": "boolean"
+        },
+        "learn.enabled": {
+          "description": "Learn from your tasks: a short retro after each quiet task, kept as preferences and lessons later tasks follow",
+          "type": "boolean"
+        },
+        "machine.batteryHold": {
+          "description": "On battery under this percent, check-ins and the crew queue wait",
+          "enum": [
+            "off",
+            "20",
+            "40"
+          ],
+          "type": "string"
+        },
+        "machine.cpuCeiling": {
+          "description": "Automations wait while the CPU stays over this percent of a core per core",
+          "enum": [
+            "off",
+            "100",
+            "150",
+            "200"
+          ],
+          "type": "string"
+        },
+        "machine.maxRuns": {
+          "description": "Runs at once before automations wait",
+          "enum": [
+            "off",
+            "4",
+            "6",
+            "8",
+            "12",
+            "16",
+            "auto"
+          ],
+          "type": "string"
+        },
+        "machine.memoryFloor": {
+          "description": "Automations wait while free memory is under this percent",
+          "enum": [
+            "off",
+            "10",
+            "15",
+            "20",
+            "25"
+          ],
+          "type": "string"
+        },
+        "review.harness": {
+          "description": "Review by another harness",
+          "enum": [
+            "off",
+            "other",
+            "claude",
+            "codex",
+            "antigravity",
+            "copilot",
+            "opencode",
+            "cursor",
+            "grok"
+          ],
+          "type": "string"
+        },
+        "runtime.apps": {
+          "description": "Interactive answers: agents may answer with a small app",
+          "type": "boolean"
+        },
+        "runtime.blocks": {
+          "description": "wisp blocks: answers come as cards (off: plain markdown)",
+          "type": "boolean"
+        },
+        "runtime.followUp": {
+          "description": "A follow-up while a task works: interrupt it, or queue after it",
+          "enum": [
+            "interrupt",
+            "queue"
+          ],
+          "type": "string"
+        },
+        "runtime.leanRuns": {
+          "description": "Lean Claude Code runs (no telemetry or update checks, and no claude.ai connectors): on, only wisp's own side runs; all, every run; off, none",
+          "enum": [
+            "off",
+            "on",
+            "all"
+          ],
+          "type": "string"
+        },
+        "runtime.limitWait": {
+          "description": "Wait for the reset: a task at its usage limit carries on by itself after the reset, in the same conversation",
+          "type": "boolean"
+        },
+        "runtime.projectOrder": {
+          "description": "Your project order (names): the chips, New task's row and the Projects list show them so; drag to change it"
+        },
+        "runtime.retentionDays": {
+          "description": "Days a finished task stays in the list before it's archived (0: always)",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "runtime.subagentModel": {
+          "description": "The model Claude Code's subagents run on (task: the task's own)",
+          "enum": [
+            "task",
+            "haiku",
+            "sonnet"
+          ],
+          "type": "string"
+        },
+        "runtime.subagents": {
+          "description": "The team new tasks start with: [{ name, agent, model?, effort?, use? }] (New task pre-fills it; a task's own team wins)"
+        },
+        "runtime.watch": {
+          "description": "Watch agents work: agents may open what they built in wisp's browser to check it",
+          "type": "boolean"
+        },
+        "settings.editor": {
+          "description": "The editor files open in (vscode, cursor, windsurf, zed, idea, none)",
+          "type": "string"
+        },
+        "settings.notify": {
+          "description": "Desktop notifications when a task needs you or finishes",
+          "enum": [
+            "on",
+            "off"
+          ],
+          "type": "string"
+        },
+        "settings.readTimes": {
+          "description": "Show how long ago each task changed in the list",
+          "enum": [
+            "on",
+            "off"
+          ],
+          "type": "string"
+        },
+        "settings.timeZone": {
+          "description": "settings.timeZone (wisp.settings)",
+          "type": "string"
+        },
+        "settings.transcript": {
+          "description": "Open tasks on their transcript instead of the answer",
+          "enum": [
+            "on",
+            "off"
+          ],
+          "type": "string"
+        },
+        "ship.fixConflicts": {
+          "description": "Fix merge conflicts by itself: when a task's PR has conflicts, its agent is asked to fix them without waiting for you",
+          "type": "boolean"
+        },
+        "stuff.panes": {
+          "description": "Panes: <app>@task or <app>@home, comma separated",
+          "type": "string"
+        },
+        "termctx.enabled": {
+          "description": "Terminal context: wisp in a terminal may attach what just happened there",
+          "type": "boolean"
+        },
+        "terminal.command": {
+          "description": "Take over with a custom command ({cmd} is the agent's resume command)",
+          "type": "string"
+        },
+        "terminal.terminalSessions": {
+          "description": "Babysitting mode: each task opens straight in the agent's own terminal",
+          "enum": [
+            "on",
+            "off"
+          ],
+          "type": "string"
+        },
+        "update.updateChannel": {
+          "description": "Update channel",
+          "enum": [
+            "stable",
+            "beta",
+            "nightly"
+          ],
+          "type": "string"
+        },
+        "worktrees.cleanup": {
+          "description": "Idle worktrees go after this many days (unset: 7, counted from when wisp got it)",
+          "enum": [
+            "off",
+            "3",
+            "7",
+            "14",
+            "30"
+          ],
+          "type": "string"
+        },
+        "worktrees.max": {
+          "description": "Worktree folders kept before the oldest idle ones go",
+          "enum": [
+            "off",
+            "20",
+            "40",
+            "80"
+          ],
+          "type": "string"
+        },
+        "worktrees.onDone": {
+          "description": "When a task is done, its worktree folders",
+          "enum": [
+            "ask",
+            "remove",
+            "keep"
+          ],
+          "type": "string"
+        },
+        "worktrees.projectAsk": {
+          "description": "Ask before trusting a new project's setup scripts",
+          "enum": [
+            "on",
+            "off"
+          ],
+          "type": "string"
+        },
+        "worktrees.worktree": {
+          "description": "New tasks run in their own worktree by default",
+          "enum": [
+            "on",
+            "off"
+          ],
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "skill": {
+      "additionalProperties": false,
+      "description": "A skill given to agents: a folder or file, or the text inline.",
+      "properties": {
+        "body": {
+          "description": "the skill's text, when it isn't a file",
+          "type": "string"
+        },
+        "description": {
+          "description": "what it is for (agents read it to pick it)",
+          "type": "string"
+        },
+        "extra": {
+          "description": "extra fields a harness's skill format has"
+        },
+        "path": {
+          "description": "a SKILL.md or its folder",
+          "type": "string"
+        }
+      },
+      "title": "SkillSpec",
+      "type": "object"
+    },
+    "task": {
+      "additionalProperties": false,
+      "description": "A task you can run by name, by schedule or from a trigger.",
+      "properties": {
+        "agent": {
+          "description": "an agent profile's name or a harness",
+          "type": "string"
+        },
+        "connectors": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "crew": {
+          "description": "the crew member it runs for",
+          "type": "string"
+        },
+        "effort": {
+          "type": "string"
+        },
+        "goal": {
+          "description": "`{ text: tests pass }`: the goal judged after each turn"
+        },
+        "mode": {
+          "description": "plan | edits | auto",
+          "type": "string"
+        },
+        "model": {
+          "type": "string"
+        },
+        "paused": {
+          "description": "paused: its schedule doesn't fire (it still runs by hand)",
+          "type": "boolean"
+        },
+        "project": {
+          "description": "the folder it runs in",
+          "type": "string"
+        },
+        "prompt": {
+          "description": "what to do; `{param}` is filled from the run's values",
+          "type": "string"
+        },
+        "schedule": {
+          "description": "when it runs by itself: a cron or words (\"every day at 2\"), in UTC",
+          "type": "string"
+        },
+        "steps": {
+          "description": "prompts sent after the first, each when the turn before ends",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "worktree": {
+          "description": "run in a worktree of its own",
+          "type": [
+            "boolean",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "prompt"
+      ],
+      "title": "TaskDecl",
+      "type": "object"
+    },
+    "team": {
+      "additionalProperties": false,
+      "description": "A lead and the subagents it may hand work to (v1 `teams`, `subagents`).",
+      "properties": {
+        "lead": {
+          "description": "the lead's agent profile",
+          "type": "string"
+        },
+        "members": {
+          "additionalProperties": {
+            "$ref": "#/$defs/team.TeamSlot"
+          },
+          "description": "its subagents, by name",
+          "type": "object"
+        }
+      },
+      "title": "TeamSpec",
+      "type": "object"
+    },
+    "team.TeamSlot": {
+      "additionalProperties": false,
+      "description": "One seat on a team.",
+      "properties": {
+        "agent": {
+          "description": "an agent profile's name or a harness",
+          "type": "string"
+        },
+        "count": {
+          "description": "copies of it the lead may run at once",
+          "format": "uint32",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "why": {
+          "description": "what the lead gives it",
+          "type": "string"
+        }
+      },
+      "required": [
+        "agent"
+      ],
+      "type": "object"
+    },
+    "tools": {
+      "additionalProperties": false,
+      "description": "wisp's tools for one agent profile or mode (its name): what it gets and what it doesn't.",
+      "properties": {
+        "allow": {
+          "description": "tool names (`wisp_ask`, `wisp_delegate`, `wisp_*`); empty: every one",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "deny": {
+          "description": "tool names it never gets",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "title": "ToolsSpec",
+      "type": "object"
+    },
+    "trigger": {
+      "additionalProperties": false,
+      "description": "A trigger.",
+      "properties": {
+        "agent": {
+          "type": "string"
+        },
+        "approval": {
+          "description": "the job waits for a yes before it starts (never in Full auto)",
+          "type": "boolean"
+        },
+        "at": {
+          "description": "once: when (ms since the epoch)",
+          "format": "int64",
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "branch": {
+          "type": "string"
+        },
+        "budget": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/trigger.Budget"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "concurrency": {
+          "description": "skip | queue | replace | parallel:<n> (skip by default)",
+          "type": "string"
+        },
+        "cooldown": {
+          "description": "after a failed run, wait this long before the next (\"30m\")",
+          "type": "string"
+        },
+        "crew": {
+          "description": "a crew member gets the work instead (a wake)",
+          "type": "string"
+        },
+        "cron": {
+          "description": "schedule: a cron or words (\"every weekday at 9\")",
+          "type": "string"
+        },
+        "debounce": {
+          "description": "events within this window become one job listing them all (\"10m\", \"30s\")",
+          "type": "string"
+        },
+        "enabled": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "every": {
+          "description": "minutes between polls (a polled source)",
+          "format": "uint32",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "followUp": {
+          "description": "or a follow-up to the task the event came from",
+          "type": "boolean"
+        },
+        "header": {
+          "description": "webhook: the header that signs each call (`X-Hub-Signature-256`, `Sentry-Hook-Signature`, `Linear-Signature`,\n`X-PagerDuty-Signature`): an HMAC-SHA256 of the body under the secret, hex, with or without `sha256=`/`v1=`.\nWith it the secret is never sent, only checked (v1 hooks.js `hmacOk`).",
+          "type": "string"
+        },
+        "if": {
+          "description": "an expression over `event` (`event.payload.branch == 'main'`), as workflows' `if`",
+          "type": "string"
+        },
+        "label": {
+          "description": "an issue's or PR's label",
+          "type": "string"
+        },
+        "match": {
+          "additionalProperties": true,
+          "description": "any other field of the source, matched against the event's payload (a string, a glob, or a list)",
+          "type": "object"
+        },
+        "mode": {
+          "description": "plan | edits | auto",
+          "type": "string"
+        },
+        "model": {
+          "type": "string"
+        },
+        "on": {
+          "description": "the source: `schedule`, `once`, `webhook`, `manual`, or an event type (`task.finished`, `pr.opened`, `chat.message`, …)",
+          "type": "string"
+        },
+        "project": {
+          "description": "the project it watches, and the folder its task runs in",
+          "type": "string"
+        },
+        "prompt": {
+          "description": "or a prompt of its own: `{event.summary}`, `{event.payload.x}` are filled in",
+          "type": "string"
+        },
+        "rate": {
+          "description": "at most this many runs: \"5/h\", \"20/d\"",
+          "type": "string"
+        },
+        "secret": {
+          "description": "webhook: its secret, as `${secret:NAME}`",
+          "type": "string"
+        },
+        "task": {
+          "description": "the declared task it starts (its `{params}` from the event)",
+          "type": "string"
+        },
+        "tz": {
+          "description": "schedule and `when`: an IANA zone (\"Europe/Zurich\"); this computer's by default",
+          "type": "string"
+        },
+        "users": {
+          "description": "chat.message: who may (names or ids; `anyone` for an open channel)",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "when": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/trigger.When"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "workflow": {
+          "description": "or a workflow runs, with the event as its input",
+          "type": "string"
+        }
+      },
+      "required": [
+        "on"
+      ],
+      "title": "TriggerSpec",
+      "type": "object"
+    },
+    "trigger.Budget": {
+      "additionalProperties": false,
+      "description": "What a trigger may spend.",
+      "properties": {
+        "perDay": {
+          "description": "USD a day, across its runs",
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "perRun": {
+          "description": "USD a run (the run is stopped past it, by wisp.budget's guard)",
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        }
+      },
+      "type": "object"
+    },
+    "trigger.When": {
+      "additionalProperties": false,
+      "description": "When a trigger may run: outside these, an event is skipped or queued until the window opens.",
+      "properties": {
+        "days": {
+          "description": "mon tue wed thu fri sat sun (every day when empty)",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "hours": {
+          "description": "\"9-17\" (local hours, start inclusive, end exclusive)",
+          "type": "string"
+        },
+        "outside": {
+          "description": "skip (default) | queue",
+          "type": "string"
+        },
+        "tz": {
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "ui": {
+      "additionalProperties": false,
+      "description": "How wisp looks on this device.",
+      "properties": {
+        "editor": {
+          "description": "the editor files open in (`code`, `cursor`, `zed`)",
+          "type": "string"
+        },
+        "keys": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "description": "key → action",
+          "type": "object"
+        },
+        "layout": {
+          "description": "panel sizes and what's open"
+        },
+        "readTimes": {
+          "description": "show read times on answers",
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "terminal": {
+          "description": "the terminal app",
+          "type": "string"
+        },
+        "theme": {
+          "description": "light | dark | system",
+          "type": "string"
+        },
+        "transcript": {
+          "description": "compact | full",
+          "type": "string"
+        },
+        "view": {
+          "description": "list | board",
+          "type": "string"
+        }
+      },
+      "title": "UiSpec",
+      "type": "object"
+    },
+    "workflow": {
+      "additionalProperties": false,
+      "description": "A workflow: its steps by name, and what bounds a run.",
+      "properties": {
+        "budget": {
+          "description": "`{ usd: 20 }`: no new step starts once the run has cost this much"
+        },
+        "concurrency": {
+          "description": "at most this many steps run at once (0: no limit)",
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "description": {
+          "type": "string"
+        },
+        "inputs": {
+          "additionalProperties": true,
+          "description": "values a run takes (`wisp run release-check version=2.1`), with their defaults",
+          "type": "object"
+        },
+        "on": {
+          "description": "what starts it by itself (`{ trigger: nightly }`); by hand otherwise"
+        },
+        "project": {
+          "description": "the folder its steps run in unless they say",
+          "type": "string"
+        },
+        "tasks": {
+          "additionalProperties": {
+            "$ref": "#/$defs/workflow.StepSpec"
+          },
+          "type": "object"
+        }
+      },
+      "required": [
+        "tasks"
+      ],
+      "title": "WorkflowSpec",
+      "type": "object"
+    },
+    "workflow.StepSpec": {
+      "additionalProperties": false,
+      "description": "One step of a workflow: a task spec plus when it runs.",
+      "properties": {
+        "agent": {
+          "description": "an agent profile's name or a harness",
+          "type": "string"
+        },
+        "effort": {
+          "type": "string"
+        },
+        "goal": true,
+        "if": {
+          "description": "run only when this is true: `${{ tasks.tests.output.failed > 0 }}` (skipped otherwise)",
+          "type": "string"
+        },
+        "matrix": {
+          "additionalProperties": {
+            "items": true,
+            "type": "array"
+          },
+          "description": "one run per combination: `{ agent: [claude, codex] }`",
+          "type": "object"
+        },
+        "mode": {
+          "description": "plan | edits | auto",
+          "type": "string"
+        },
+        "model": {
+          "type": "string"
+        },
+        "needs": {
+          "description": "steps that must end first",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "on": {
+          "description": "the computer it runs on (a machine's name; '' = this one)",
+          "type": "string"
+        },
+        "optional": {
+          "description": "a failure doesn't fail the run (the steps after it still see it failed)",
+          "type": "boolean"
+        },
+        "output": {
+          "description": "its output's shape (a JSON Schema); without one, the output is what its answer gives"
+        },
+        "project": {
+          "description": "the folder it runs in (default: the run's)",
+          "type": "string"
+        },
+        "prompt": {
+          "description": "what to do; `${{ tasks.<step>.output.<field> }}`, `${{ inputs.<name> }}` and `${{ matrix.<key> }}`\nare filled in",
+          "type": "string"
+        },
+        "retries": {
+          "description": "tries again this many times when it fails",
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "steps": {
+          "description": "prompts after the first, each when the turn before ends",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "timeout": {
+          "description": "minutes it may run before it is stopped and counts as failed",
+          "format": "uint64",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "worktree": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "prompt"
+      ],
+      "type": "object"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "accounts": {
+      "anyOf": [
+        {
+          "items": {
+            "allOf": [
+              {
+                "$ref": "#/$defs/account"
+              },
+              {
+                "properties": {
+                  "name": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "name"
+                ],
+                "type": "object"
+              }
+            ]
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/account"
+          },
+          "type": "object"
+        }
+      ],
+      "description": "A harness account (its sign-in stays in the harness's own folder)."
+    },
+    "agents": {
+      "anyOf": [
+        {
+          "items": {
+            "allOf": [
+              {
+                "$ref": "#/$defs/agent"
+              },
+              {
+                "properties": {
+                  "name": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "name"
+                ],
+                "type": "object"
+              }
+            ]
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/agent"
+          },
+          "type": "object"
+        }
+      ],
+      "description": "A named, reusable agent: which harness and how it runs (\"reviewer = codex, high effort, plan mode,\nthe linear connector\"). A task, a crew member, a team slot or a judge names one, or gives one inline."
+    },
+    "apps": {
+      "anyOf": [
+        {
+          "items": {
+            "allOf": [
+              {
+                "$ref": "#/$defs/app"
+              },
+              {
+                "properties": {
+                  "name": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "name"
+                ],
+                "type": "object"
+              }
+            ]
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/app"
+          },
+          "type": "object"
+        }
+      ],
+      "description": "An app or a pane: where its code comes from and what it may do."
+    },
+    "budget": {
+      "anyOf": [
+        {
+          "items": {
+            "allOf": [
+              {
+                "$ref": "#/$defs/budget"
+              },
+              {
+                "properties": {
+                  "name": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "name"
+                ],
+                "type": "object"
+              }
+            ]
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/budget"
+          },
+          "type": "object"
+        }
+      ],
+      "description": "Where unattended work stops on a usage window, and what a task or workflow may spend."
+    },
+    "capabilities": {
+      "anyOf": [
+        {
+          "items": {
+            "allOf": [
+              {
+                "$ref": "#/$defs/capability"
+              },
+              {
+                "properties": {
+                  "name": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "name"
+                ],
+                "type": "object"
+              }
+            ]
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/capability"
+          },
+          "type": "object"
+        }
+      ],
+      "description": "A capability set: what its holder may do."
+    },
+    "channels": {
+      "anyOf": [
+        {
+          "items": {
+            "allOf": [
+              {
+                "$ref": "#/$defs/channel"
+              },
+              {
+                "properties": {
+                  "name": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "name"
+                ],
+                "type": "object"
+              }
+            ]
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/channel"
+          },
+          "type": "object"
+        }
+      ],
+      "description": "A channel: where people talk to wisp and hear back from it."
+    },
+    "connectors": {
+      "anyOf": [
+        {
+          "items": {
+            "allOf": [
+              {
+                "$ref": "#/$defs/connector"
+              },
+              {
+                "properties": {
+                  "name": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "name"
+                ],
+                "type": "object"
+              }
+            ]
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/connector"
+          },
+          "type": "object"
+        }
+      ],
+      "description": "An MCP server: a command wisp starts, or a URL it reaches."
+    },
+    "crew": {
+      "anyOf": [
+        {
+          "items": {
+            "allOf": [
+              {
+                "$ref": "#/$defs/crew"
+              },
+              {
+                "properties": {
+                  "name": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "name"
+                ],
+                "type": "object"
+              }
+            ]
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/crew"
+          },
+          "type": "object"
+        }
+      ],
+      "description": "A crew member: who they are, what runs their jobs, when they check in."
+    },
+    "goal": {
+      "anyOf": [
+        {
+          "items": {
+            "allOf": [
+              {
+                "$ref": "#/$defs/goal"
+              },
+              {
+                "properties": {
+                  "name": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "name"
+                ],
+                "type": "object"
+              }
+            ]
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/goal"
+          },
+          "type": "object"
+        }
+      ],
+      "description": "How a goal is judged after each turn."
+    },
+    "harnesses": {
+      "anyOf": [
+        {
+          "items": {
+            "allOf": [
+              {
+                "$ref": "#/$defs/harness"
+              },
+              {
+                "properties": {
+                  "name": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "name"
+                ],
+                "type": "object"
+              }
+            ]
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/harness"
+          },
+          "type": "object"
+        }
+      ],
+      "description": "A harness CLI: where it comes from, which version is trusted, its own defaults."
+    },
+    "include": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      ],
+      "description": "other formulas read first (paths, URLs)"
+    },
+    "machines": {
+      "anyOf": [
+        {
+          "items": {
+            "allOf": [
+              {
+                "$ref": "#/$defs/machine"
+              },
+              {
+                "properties": {
+                  "name": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "name"
+                ],
+                "type": "object"
+              }
+            ]
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/machine"
+          },
+          "type": "object"
+        }
+      ],
+      "description": "A computer: this one (`this`) or a peer wisp reaches."
+    },
+    "notifications": {
+      "anyOf": [
+        {
+          "items": {
+            "allOf": [
+              {
+                "$ref": "#/$defs/notification"
+              },
+              {
+                "properties": {
+                  "name": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "name"
+                ],
+                "type": "object"
+              }
+            ]
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/notification"
+          },
+          "type": "object"
+        }
+      ],
+      "description": "What notifies where: events to a channel or a webhook (v1 `notify`, `drainWatch`, `webhookTriggers`)."
+    },
+    "panes": {
+      "anyOf": [
+        {
+          "items": {
+            "allOf": [
+              {
+                "$ref": "#/$defs/pane"
+              },
+              {
+                "properties": {
+                  "name": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "name"
+                ],
+                "type": "object"
+              }
+            ]
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/pane"
+          },
+          "type": "object"
+        }
+      ],
+      "description": "An app or a pane: where its code comes from and what it may do."
+    },
+    "pipelines": {
+      "anyOf": [
+        {
+          "items": {
+            "allOf": [
+              {
+                "$ref": "#/$defs/pipeline"
+              },
+              {
+                "properties": {
+                  "name": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "name"
+                ],
+                "type": "object"
+              }
+            ]
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/pipeline"
+          },
+          "type": "object"
+        }
+      ],
+      "description": "The steps after a run, by name (a task or a workflow step names one: `pipeline: careful`)."
+    },
+    "plugins": {
+      "anyOf": [
+        {
+          "items": {
+            "allOf": [
+              {
+                "$ref": "#/$defs/plugin"
+              },
+              {
+                "properties": {
+                  "name": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "name"
+                ],
+                "type": "object"
+              }
+            ]
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/plugin"
+          },
+          "type": "object"
+        }
+      ],
+      "description": "A plugin by its id (`wisp.telegram`, `user.mine`)."
+    },
+    "profiles": {
+      "additionalProperties": {
+        "properties": {
+          "accounts": {
+            "anyOf": [
+              {
+                "items": {
+                  "allOf": [
+                    {
+                      "$ref": "#/$defs/account"
+                    },
+                    {
+                      "properties": {
+                        "name": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "name"
+                      ],
+                      "type": "object"
+                    }
+                  ]
+                },
+                "type": "array"
+              },
+              {
+                "additionalProperties": {
+                  "$ref": "#/$defs/account"
+                },
+                "type": "object"
+              }
+            ],
+            "description": "A harness account (its sign-in stays in the harness's own folder)."
+          },
+          "agents": {
+            "anyOf": [
+              {
+                "items": {
+                  "allOf": [
+                    {
+                      "$ref": "#/$defs/agent"
+                    },
+                    {
+                      "properties": {
+                        "name": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "name"
+                      ],
+                      "type": "object"
+                    }
+                  ]
+                },
+                "type": "array"
+              },
+              {
+                "additionalProperties": {
+                  "$ref": "#/$defs/agent"
+                },
+                "type": "object"
+              }
+            ],
+            "description": "A named, reusable agent: which harness and how it runs (\"reviewer = codex, high effort, plan mode,\nthe linear connector\"). A task, a crew member, a team slot or a judge names one, or gives one inline."
+          },
+          "apps": {
+            "anyOf": [
+              {
+                "items": {
+                  "allOf": [
+                    {
+                      "$ref": "#/$defs/app"
+                    },
+                    {
+                      "properties": {
+                        "name": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "name"
+                      ],
+                      "type": "object"
+                    }
+                  ]
+                },
+                "type": "array"
+              },
+              {
+                "additionalProperties": {
+                  "$ref": "#/$defs/app"
+                },
+                "type": "object"
+              }
+            ],
+            "description": "An app or a pane: where its code comes from and what it may do."
+          },
+          "budget": {
+            "anyOf": [
+              {
+                "items": {
+                  "allOf": [
+                    {
+                      "$ref": "#/$defs/budget"
+                    },
+                    {
+                      "properties": {
+                        "name": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "name"
+                      ],
+                      "type": "object"
+                    }
+                  ]
+                },
+                "type": "array"
+              },
+              {
+                "additionalProperties": {
+                  "$ref": "#/$defs/budget"
+                },
+                "type": "object"
+              }
+            ],
+            "description": "Where unattended work stops on a usage window, and what a task or workflow may spend."
+          },
+          "capabilities": {
+            "anyOf": [
+              {
+                "items": {
+                  "allOf": [
+                    {
+                      "$ref": "#/$defs/capability"
+                    },
+                    {
+                      "properties": {
+                        "name": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "name"
+                      ],
+                      "type": "object"
+                    }
+                  ]
+                },
+                "type": "array"
+              },
+              {
+                "additionalProperties": {
+                  "$ref": "#/$defs/capability"
+                },
+                "type": "object"
+              }
+            ],
+            "description": "A capability set: what its holder may do."
+          },
+          "channels": {
+            "anyOf": [
+              {
+                "items": {
+                  "allOf": [
+                    {
+                      "$ref": "#/$defs/channel"
+                    },
+                    {
+                      "properties": {
+                        "name": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "name"
+                      ],
+                      "type": "object"
+                    }
+                  ]
+                },
+                "type": "array"
+              },
+              {
+                "additionalProperties": {
+                  "$ref": "#/$defs/channel"
+                },
+                "type": "object"
+              }
+            ],
+            "description": "A channel: where people talk to wisp and hear back from it."
+          },
+          "connectors": {
+            "anyOf": [
+              {
+                "items": {
+                  "allOf": [
+                    {
+                      "$ref": "#/$defs/connector"
+                    },
+                    {
+                      "properties": {
+                        "name": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "name"
+                      ],
+                      "type": "object"
+                    }
+                  ]
+                },
+                "type": "array"
+              },
+              {
+                "additionalProperties": {
+                  "$ref": "#/$defs/connector"
+                },
+                "type": "object"
+              }
+            ],
+            "description": "An MCP server: a command wisp starts, or a URL it reaches."
+          },
+          "crew": {
+            "anyOf": [
+              {
+                "items": {
+                  "allOf": [
+                    {
+                      "$ref": "#/$defs/crew"
+                    },
+                    {
+                      "properties": {
+                        "name": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "name"
+                      ],
+                      "type": "object"
+                    }
+                  ]
+                },
+                "type": "array"
+              },
+              {
+                "additionalProperties": {
+                  "$ref": "#/$defs/crew"
+                },
+                "type": "object"
+              }
+            ],
+            "description": "A crew member: who they are, what runs their jobs, when they check in."
+          },
+          "goal": {
+            "anyOf": [
+              {
+                "items": {
+                  "allOf": [
+                    {
+                      "$ref": "#/$defs/goal"
+                    },
+                    {
+                      "properties": {
+                        "name": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "name"
+                      ],
+                      "type": "object"
+                    }
+                  ]
+                },
+                "type": "array"
+              },
+              {
+                "additionalProperties": {
+                  "$ref": "#/$defs/goal"
+                },
+                "type": "object"
+              }
+            ],
+            "description": "How a goal is judged after each turn."
+          },
+          "harnesses": {
+            "anyOf": [
+              {
+                "items": {
+                  "allOf": [
+                    {
+                      "$ref": "#/$defs/harness"
+                    },
+                    {
+                      "properties": {
+                        "name": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "name"
+                      ],
+                      "type": "object"
+                    }
+                  ]
+                },
+                "type": "array"
+              },
+              {
+                "additionalProperties": {
+                  "$ref": "#/$defs/harness"
+                },
+                "type": "object"
+              }
+            ],
+            "description": "A harness CLI: where it comes from, which version is trusted, its own defaults."
+          },
+          "machines": {
+            "anyOf": [
+              {
+                "items": {
+                  "allOf": [
+                    {
+                      "$ref": "#/$defs/machine"
+                    },
+                    {
+                      "properties": {
+                        "name": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "name"
+                      ],
+                      "type": "object"
+                    }
+                  ]
+                },
+                "type": "array"
+              },
+              {
+                "additionalProperties": {
+                  "$ref": "#/$defs/machine"
+                },
+                "type": "object"
+              }
+            ],
+            "description": "A computer: this one (`this`) or a peer wisp reaches."
+          },
+          "notifications": {
+            "anyOf": [
+              {
+                "items": {
+                  "allOf": [
+                    {
+                      "$ref": "#/$defs/notification"
+                    },
+                    {
+                      "properties": {
+                        "name": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "name"
+                      ],
+                      "type": "object"
+                    }
+                  ]
+                },
+                "type": "array"
+              },
+              {
+                "additionalProperties": {
+                  "$ref": "#/$defs/notification"
+                },
+                "type": "object"
+              }
+            ],
+            "description": "What notifies where: events to a channel or a webhook (v1 `notify`, `drainWatch`, `webhookTriggers`)."
+          },
+          "panes": {
+            "anyOf": [
+              {
+                "items": {
+                  "allOf": [
+                    {
+                      "$ref": "#/$defs/pane"
+                    },
+                    {
+                      "properties": {
+                        "name": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "name"
+                      ],
+                      "type": "object"
+                    }
+                  ]
+                },
+                "type": "array"
+              },
+              {
+                "additionalProperties": {
+                  "$ref": "#/$defs/pane"
+                },
+                "type": "object"
+              }
+            ],
+            "description": "An app or a pane: where its code comes from and what it may do."
+          },
+          "pipelines": {
+            "anyOf": [
+              {
+                "items": {
+                  "allOf": [
+                    {
+                      "$ref": "#/$defs/pipeline"
+                    },
+                    {
+                      "properties": {
+                        "name": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "name"
+                      ],
+                      "type": "object"
+                    }
+                  ]
+                },
+                "type": "array"
+              },
+              {
+                "additionalProperties": {
+                  "$ref": "#/$defs/pipeline"
+                },
+                "type": "object"
+              }
+            ],
+            "description": "The steps after a run, by name (a task or a workflow step names one: `pipeline: careful`)."
+          },
+          "plugins": {
+            "anyOf": [
+              {
+                "items": {
+                  "allOf": [
+                    {
+                      "$ref": "#/$defs/plugin"
+                    },
+                    {
+                      "properties": {
+                        "name": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "name"
+                      ],
+                      "type": "object"
+                    }
+                  ]
+                },
+                "type": "array"
+              },
+              {
+                "additionalProperties": {
+                  "$ref": "#/$defs/plugin"
+                },
+                "type": "object"
+              }
+            ],
+            "description": "A plugin by its id (`wisp.telegram`, `user.mine`)."
+          },
+          "projects": {
+            "anyOf": [
+              {
+                "items": {
+                  "allOf": [
+                    {
+                      "$ref": "#/$defs/project"
+                    },
+                    {
+                      "properties": {
+                        "name": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "name"
+                      ],
+                      "type": "object"
+                    }
+                  ]
+                },
+                "type": "array"
+              },
+              {
+                "additionalProperties": {
+                  "$ref": "#/$defs/project"
+                },
+                "type": "object"
+              }
+            ],
+            "description": "A project: a folder wisp works in, and how."
+          },
+          "router": {
+            "anyOf": [
+              {
+                "items": {
+                  "allOf": [
+                    {
+                      "$ref": "#/$defs/router"
+                    },
+                    {
+                      "properties": {
+                        "name": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "name"
+                      ],
+                      "type": "object"
+                    }
+                  ]
+                },
+                "type": "array"
+              },
+              {
+                "additionalProperties": {
+                  "$ref": "#/$defs/router"
+                },
+                "type": "object"
+              }
+            ],
+            "description": "How Auto picks a harness and model for a task."
+          },
+          "settings": {
+            "additionalProperties": {
+              "$ref": "#/$defs/setting"
+            },
+            "description": "Settings by key (wisp settings list)",
+            "type": "object"
+          },
+          "skills": {
+            "anyOf": [
+              {
+                "items": {
+                  "allOf": [
+                    {
+                      "$ref": "#/$defs/skill"
+                    },
+                    {
+                      "properties": {
+                        "name": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "name"
+                      ],
+                      "type": "object"
+                    }
+                  ]
+                },
+                "type": "array"
+              },
+              {
+                "additionalProperties": {
+                  "$ref": "#/$defs/skill"
+                },
+                "type": "object"
+              }
+            ],
+            "description": "A skill given to agents: a folder or file, or the text inline."
+          },
+          "tasks": {
+            "anyOf": [
+              {
+                "items": {
+                  "allOf": [
+                    {
+                      "$ref": "#/$defs/task"
+                    },
+                    {
+                      "properties": {
+                        "name": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "name"
+                      ],
+                      "type": "object"
+                    }
+                  ]
+                },
+                "type": "array"
+              },
+              {
+                "additionalProperties": {
+                  "$ref": "#/$defs/task"
+                },
+                "type": "object"
+              }
+            ],
+            "description": "A task you can run by name, by schedule or from a trigger."
+          },
+          "teams": {
+            "anyOf": [
+              {
+                "items": {
+                  "allOf": [
+                    {
+                      "$ref": "#/$defs/team"
+                    },
+                    {
+                      "properties": {
+                        "name": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "name"
+                      ],
+                      "type": "object"
+                    }
+                  ]
+                },
+                "type": "array"
+              },
+              {
+                "additionalProperties": {
+                  "$ref": "#/$defs/team"
+                },
+                "type": "object"
+              }
+            ],
+            "description": "A lead and the subagents it may hand work to (v1 `teams`, `subagents`)."
+          },
+          "tools": {
+            "anyOf": [
+              {
+                "items": {
+                  "allOf": [
+                    {
+                      "$ref": "#/$defs/tools"
+                    },
+                    {
+                      "properties": {
+                        "name": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "name"
+                      ],
+                      "type": "object"
+                    }
+                  ]
+                },
+                "type": "array"
+              },
+              {
+                "additionalProperties": {
+                  "$ref": "#/$defs/tools"
+                },
+                "type": "object"
+              }
+            ],
+            "description": "wisp's tools for one agent profile or mode (its name): what it gets and what it doesn't."
+          },
+          "triggers": {
+            "anyOf": [
+              {
+                "items": {
+                  "allOf": [
+                    {
+                      "$ref": "#/$defs/trigger"
+                    },
+                    {
+                      "properties": {
+                        "name": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "name"
+                      ],
+                      "type": "object"
+                    }
+                  ]
+                },
+                "type": "array"
+              },
+              {
+                "additionalProperties": {
+                  "$ref": "#/$defs/trigger"
+                },
+                "type": "object"
+              }
+            ],
+            "description": "A trigger."
+          },
+          "ui": {
+            "anyOf": [
+              {
+                "items": {
+                  "allOf": [
+                    {
+                      "$ref": "#/$defs/ui"
+                    },
+                    {
+                      "properties": {
+                        "name": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "name"
+                      ],
+                      "type": "object"
+                    }
+                  ]
+                },
+                "type": "array"
+              },
+              {
+                "additionalProperties": {
+                  "$ref": "#/$defs/ui"
+                },
+                "type": "object"
+              }
+            ],
+            "description": "How wisp looks on this device."
+          },
+          "workflows": {
+            "anyOf": [
+              {
+                "items": {
+                  "allOf": [
+                    {
+                      "$ref": "#/$defs/workflow"
+                    },
+                    {
+                      "properties": {
+                        "name": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "name"
+                      ],
+                      "type": "object"
+                    }
+                  ]
+                },
+                "type": "array"
+              },
+              {
+                "additionalProperties": {
+                  "$ref": "#/$defs/workflow"
+                },
+                "type": "object"
+              }
+            ],
+            "description": "A workflow: its steps by name, and what bounds a run."
+          }
+        },
+        "type": "object"
+      },
+      "description": "parts picked with --profile NAME",
+      "type": "object"
+    },
+    "projects": {
+      "anyOf": [
+        {
+          "items": {
+            "allOf": [
+              {
+                "$ref": "#/$defs/project"
+              },
+              {
+                "properties": {
+                  "name": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "name"
+                ],
+                "type": "object"
+              }
+            ]
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/project"
+          },
+          "type": "object"
+        }
+      ],
+      "description": "A project: a folder wisp works in, and how."
+    },
+    "router": {
+      "anyOf": [
+        {
+          "items": {
+            "allOf": [
+              {
+                "$ref": "#/$defs/router"
+              },
+              {
+                "properties": {
+                  "name": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "name"
+                ],
+                "type": "object"
+              }
+            ]
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/router"
+          },
+          "type": "object"
+        }
+      ],
+      "description": "How Auto picks a harness and model for a task."
+    },
+    "settings": {
+      "additionalProperties": {
+        "$ref": "#/$defs/setting"
+      },
+      "description": "Settings by key (wisp settings list)",
+      "type": "object"
+    },
+    "skills": {
+      "anyOf": [
+        {
+          "items": {
+            "allOf": [
+              {
+                "$ref": "#/$defs/skill"
+              },
+              {
+                "properties": {
+                  "name": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "name"
+                ],
+                "type": "object"
+              }
+            ]
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/skill"
+          },
+          "type": "object"
+        }
+      ],
+      "description": "A skill given to agents: a folder or file, or the text inline."
+    },
+    "tasks": {
+      "anyOf": [
+        {
+          "items": {
+            "allOf": [
+              {
+                "$ref": "#/$defs/task"
+              },
+              {
+                "properties": {
+                  "name": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "name"
+                ],
+                "type": "object"
+              }
+            ]
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/task"
+          },
+          "type": "object"
+        }
+      ],
+      "description": "A task you can run by name, by schedule or from a trigger."
+    },
+    "teams": {
+      "anyOf": [
+        {
+          "items": {
+            "allOf": [
+              {
+                "$ref": "#/$defs/team"
+              },
+              {
+                "properties": {
+                  "name": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "name"
+                ],
+                "type": "object"
+              }
+            ]
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/team"
+          },
+          "type": "object"
+        }
+      ],
+      "description": "A lead and the subagents it may hand work to (v1 `teams`, `subagents`)."
+    },
+    "tools": {
+      "anyOf": [
+        {
+          "items": {
+            "allOf": [
+              {
+                "$ref": "#/$defs/tools"
+              },
+              {
+                "properties": {
+                  "name": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "name"
+                ],
+                "type": "object"
+              }
+            ]
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/tools"
+          },
+          "type": "object"
+        }
+      ],
+      "description": "wisp's tools for one agent profile or mode (its name): what it gets and what it doesn't."
+    },
+    "triggers": {
+      "anyOf": [
+        {
+          "items": {
+            "allOf": [
+              {
+                "$ref": "#/$defs/trigger"
+              },
+              {
+                "properties": {
+                  "name": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "name"
+                ],
+                "type": "object"
+              }
+            ]
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/trigger"
+          },
+          "type": "object"
+        }
+      ],
+      "description": "A trigger."
+    },
+    "ui": {
+      "anyOf": [
+        {
+          "items": {
+            "allOf": [
+              {
+                "$ref": "#/$defs/ui"
+              },
+              {
+                "properties": {
+                  "name": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "name"
+                ],
+                "type": "object"
+              }
+            ]
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/ui"
+          },
+          "type": "object"
+        }
+      ],
+      "description": "How wisp looks on this device."
+    },
+    "wisp": {
+      "const": 1,
+      "description": "the formula format"
+    },
+    "workflows": {
+      "anyOf": [
+        {
+          "items": {
+            "allOf": [
+              {
+                "$ref": "#/$defs/workflow"
+              },
+              {
+                "properties": {
+                  "name": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "name"
+                ],
+                "type": "object"
+              }
+            ]
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/workflow"
+          },
+          "type": "object"
+        }
+      ],
+      "description": "A workflow: its steps by name, and what bounds a run."
+    }
+  },
+  "required": [
+    "wisp"
+  ],
+  "title": "wisp formula",
+  "type": "object"
+}

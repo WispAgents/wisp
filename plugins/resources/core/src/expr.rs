@@ -349,6 +349,12 @@ fn pieces(s: &str) -> Vec<(usize, usize, String)> {
             i += 3;
             continue;
         }
+        // `${{ … }}` is a workflow's own placeholder (`${{ tasks.tests.output }}`, `${{ inputs.v }}`), filled when the
+        // step runs: never a formula expression (`{` can't start one), so it's left as written
+        if b[i] == b'$' && b[i + 1] == b'{' && b.get(i + 2) == Some(&b'{') {
+            i = s[i..].find("}}").map_or(b.len(), |e| i + e + 2);
+            continue;
+        }
         if b[i] == b'$' && b[i + 1] == b'{' {
             let (mut depth, mut j, mut quoted) = (1, i + 2, false);
             while j < b.len() && depth > 0 {
@@ -509,6 +515,8 @@ mod tests {
         assert_eq!(e("${secret(\"LINEAR\")}"), json!("${secret:LINEAR}"));
         assert_eq!(e("${file(\"x.md\")}"), json!("file:x.md"));
         assert_eq!(e("keep ${secret:TOKEN} and ${env:HOME} and $${literal}"), json!("keep ${secret:TOKEN} and ${env:HOME} and ${literal}"));
+        // a workflow step's own placeholders pass through untouched, next to a formula expression
+        assert_eq!(e("Review ${{ tasks.deps.output }} for ${{ inputs.v }}"), json!("Review ${{ tasks.deps.output }} for ${{ inputs.v }}"));
         assert!(eval_str("${nope.x}", &s()).is_err());
         assert!(eval_str("${exec(\"rm\")}", &s()).unwrap_err().contains("isn't a wisp function"));
         assert_eq!(
