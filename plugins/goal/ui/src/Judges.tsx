@@ -142,7 +142,9 @@ export function JudgesButton(props: JudgesProps & { readonly part?: `${string}.$
       part={props.part ?? 'goal.judgesButton'}
       bare
       trigger={props.compact ? { icon: 'judge', 'aria-label': label(), variant: 'ghost', size: 'sm' } : { icon: 'judge', label: label(), variant: props.judges.length ? 'secondary' : 'ghost', size: 'sm' }}
-      placement="bottom-end"
+      placement="bottom-start"
+      inWindow
+      cardPart="delegate.panel"
     >
       <JudgesEditor client={props.client} judges={props.judges} vote={props.vote} onChange={props.onChange} />
     </Popover>

@@ -251,6 +251,11 @@
   [data-kit='l-goal'] [data-kit='button'][data-size][data-variant='ghost'] {
     color: var(--muted);
   }
+  /* subagents.css .team-btn.open: pressed while its panel is open */
+  [data-kit='l-goal'] [data-kit='button'][data-size][aria-expanded='true'] {
+    color: var(--ink);
+    background: var(--bg-2);
+  }
   [data-kit='l-goal'] [data-kit='button'][data-size][data-variant='secondary'] {
     color: var(--accent-ink);
     background: var(--accent-soft);

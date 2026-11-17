@@ -23,6 +23,7 @@
   [data-kit='stage'][data-layout='stack'] > [data-kit='feed-wrap'][data-pane-under] { display: flex; grid-row: 1 / -1; content-visibility: visible; }
   [data-kit='stage'][data-layout='stack'] > [data-kit='feed-wrap'][data-pane-under] [data-kit='split-top'],
   [data-kit='stage'][data-layout='stack'] > [data-kit='feed-wrap'][data-pane-under] [data-kit='sec-toggle'],
+  [data-kit='stage'][data-layout='stack'] > [data-kit='feed-wrap'][data-pane-under] [data-kit='fold-head'],
   [data-kit='stage'][data-layout='stack'] > [data-kit='feed-wrap'][data-pane-under] [data-kit='cr-org'],
   [data-kit='stage'][data-layout='stack'] > [data-kit='feed-wrap'][data-pane-under] [data-kit='cr-add'],
   [data-kit='stage'][data-layout='stack'] > [data-kit='feed-wrap'][data-pane-under] [data-kit='cr-row'] { visibility: hidden; }

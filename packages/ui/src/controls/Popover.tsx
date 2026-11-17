@@ -27,6 +27,11 @@ export interface PopoverProps extends KitProps, WithChildren, WithVars {
   /** No padding of its own: the content is a panel with its head and foot edge to edge (TeamPop). Additive
    *  (2026-11-16). */
   readonly bare?: boolean;
+  /** Kept inside the window 12 px from its edges, not inside the boxes around its button (v1's team panel: left =
+   *  min(button's left, window − 12 − width)). Additive (2026-11-17). */
+  readonly inWindow?: boolean;
+  /** One more part name on the card (v1's PARTS name for what it is: `delegate.panel` for a team panel). Additive. */
+  readonly cardPart?: PartName;
   readonly t?: Translate;
 }
 
@@ -70,7 +75,7 @@ function Floating(props: PopoverProps): JSX.Element {
     id,
     ...(props.open === undefined ? {} : { open: props.open }),
     onOpenChange: (d: popover.OpenChangeDetails) => props.onOpenChange?.(d.open),
-    positioning: { placement: props.placement ?? 'bottom-start', gutter: 6 },
+    positioning: { placement: props.placement ?? 'bottom-start', gutter: 6, ...(props.inWindow && { boundary: () => document.documentElement, overflowPadding: 12, flip: false }) },
     ...(props.modal === undefined ? {} : { modal: props.modal }),
   }));
   const api = createMemo(() => popover.connect(service, normalizeProps));
@@ -80,7 +85,7 @@ function Floating(props: PopoverProps): JSX.Element {
       <TriggerButton look={props.trigger} bind={api().getTriggerProps()} part={sub(part(), 'trigger')} />
       <Portal>
         <div {...api().getPositionerProps()} data-kit="positioner">
-          <div {...api().getContentProps()} data-kit="popover" data-part={part()} data-bare={props.bare ? '' : undefined} style={styleOf({}, props.vars)}>
+          <div {...api().getContentProps()} data-kit="popover" data-part={props.cardPart ? `${part()} ${props.cardPart}` : part()} data-bare={props.bare ? '' : undefined} style={styleOf({}, props.vars)}>
             <Show when={props.title}>
               {(title) => (
                 <div data-kit="popover-head">

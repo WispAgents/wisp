@@ -40,8 +40,7 @@ export interface TeamPopProps extends KitProps {
 export function TeamPop(props: TeamPopProps): JSX.Element {
   const part = (): PartName => props.part ?? 'ui.teamPop';
   return (
-    // `delegate.panel`: v1's PARTS name for its .team-pop, which this is (a plugin restyles every team panel by it)
-    <div data-kit="team-pop" data-part={`delegate.panel ${part()}`} role="group" aria-label={props.title}>
+    <div data-kit="team-pop" data-part={part()} role="group" aria-label={props.title}>
       <header data-kit="tp-head">
         <div data-kit="tp-title">
           <b>{props.title}</b>

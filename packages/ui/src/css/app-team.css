@@ -1,13 +1,17 @@
 /* v1 subagents.css .team-pop and goal.css .judges-pop: a panel of people or runs that work together (the goal's
    judges): a head with what it is, a row of how they decide, a row per member, and a foot to add one, the count and
-   Clear. It sits in a bare Popover, which gives the card. */
+   Clear. It sits in a bare Popover, the card (and dialog) around it. */
 @layer kit {
   [data-kit='team-pop'] {
     display: flex;
     flex-direction: column;
-    width: min(480px, calc(100vw - 24px));
+    width: calc(min(480px, 100vw - 24px) - 2 * var(--size-hairline)); /* the card's border goes around it: v1's 480 in all */
     max-height: min(520px, 76vh);
     overflow: hidden;
+    /* v1 drew it on the page's own type, not a popover body's */
+    font-size: var(--fs-lg);
+    line-height: var(--lh-base);
+    color: var(--ink);
   }
   [data-kit='tp-head'] {
     display: flex;
