@@ -117,7 +117,7 @@ kept). `npm run check` (rule `v1-coverage`) reads this table: every v1 item has 
 | route | `GET /sessions/:id/file` | `cmd:worktrees.source` |
 | route | `GET /sessions/:id/files` | `cmd:worktrees.files` |
 | route | `GET /sessions/:id/folders` | `cmd:runtime.get` |
-| route | `GET /sessions/:id/goal-runs/:run` | `todo:goal runs (v1 goal-runs.js: what one goal check said and did)` |
+| route | `GET /sessions/:id/goal-runs/:run` | `ui:the goal plugin's check view (RunView) reads the task topic's synced goal_run rows: nothing to ask for` |
 | route | `GET /sessions/:id/grep` | `cmd:worktrees.grep` |
 | route | `GET /sessions/:id/patch` | `cmd:git.changes` |
 | route | `GET /sessions/:id/presentation` | `cmd:runtime.presentation` |
@@ -127,7 +127,7 @@ kept). `npm run check` (rule `v1-coverage`) reads this table: every v1 item has 
 | route | `GET /sessions/:id/share` | `cmd:share.peek` |
 | route | `GET /sessions/:id/shell` | `route:/sessions/:id/shell`, `cmd:terminal.shell.info` |
 | route | `GET /sessions/:id/ship` | `cmd:ship.details` |
-| route | `GET /sessions/:id/source` | `todo:task source (v1 GET/PUT /sessions/:id/source: the folder or repo a task starts from)` |
+| route | `GET /sessions/:id/source` | `cmd:worktrees.source` |
 | route | `GET /sessions/:id/takeover` | `cmd:terminal.get` |
 | route | `GET /sessions/:id/term` | `route:/sessions/:id/term` |
 | route | `GET /sessions/:id/unmasked` | `cmd:runtime.unmasked` |
@@ -219,7 +219,7 @@ kept). `npm run check` (rule `v1-coverage`) reads this table: every v1 item has 
 | route | `POST /internal/task/:id` | `mcp:wisp_task` |
 | route | `POST /internal/watch` | `mcp:wisp_watch` |
 | route | `POST /later` | `cmd:later.plan` |
-| route | `POST /launch/warm` | `todo:launch warm-up (v1: pre-spawn the harness as you type)` |
+| route | `POST /launch/warm` | `cmd:worktrees.warm` |
 | route | `POST /lsp/install` | `cmd:lsp.install` |
 | route | `POST /machine/fix` | `cmd:machine.fix` |
 | route | `POST /machine/harness/clean` | `cmd:machine.harness.clean` |
@@ -234,7 +234,7 @@ kept). `npm run check` (rule `v1-coverage`) reads this table: every v1 item has 
 | route | `POST /machines/:id/disconnect` | `cmd:machines.disconnect` |
 | route | `POST /machines/:id/let-in` | `cmd:machines.letIn` |
 | route | `POST /machines/:id/stop` | `cmd:machines.stop` |
-| route | `POST /open` | `todo:open in editor (v1 POST /open: a file or folder in the user's editor)` |
+| route | `POST /open` | `ui:the task menu's Open project in editor (row-menu.ts: the editor's own URL scheme from settings.editor, else the path copied)` |
 | route | `POST /projects` | `kind:projects` |
 | route | `POST /projects/:id/foreign-worktrees` | `cmd:worktrees.bringIn` |
 | route | `POST /projects/:id/foreign-worktrees/dismiss` | `cmd:worktrees.dismiss` |
@@ -263,7 +263,7 @@ kept). `npm run check` (rule `v1-coverage`) reads this table: every v1 item has 
 | route | `POST /sessions/:id/crew-reply` | `cmd:crew.reply` |
 | route | `POST /sessions/:id/exec` | `cmd:runtime.exec` |
 | route | `POST /sessions/:id/fix-conflicts` | `cmd:ship.fix_conflicts` |
-| route | `POST /sessions/:id/folders` | `todo:task folders (v1: add or remove a task's extra folders)` |
+| route | `POST /sessions/:id/folders` | `cmd:worktrees.done.list` |
 | route | `POST /sessions/:id/fork` | `cmd:runtime.fork` |
 | route | `POST /sessions/:id/held` | `cmd:runtime.held` |
 | route | `POST /sessions/:id/later` | `cmd:later.add` |
@@ -274,7 +274,7 @@ kept). `npm run check` (rule `v1-coverage`) reads this table: every v1 item has 
 | route | `POST /sessions/:id/pr` | `cmd:ship.ship` |
 | route | `POST /sessions/:id/relay` | `todo:move a task (v1 services/move.js + relay.js: move a task to another computer)` |
 | route | `POST /sessions/:id/reply` | `cmd:runtime.followUp` |
-| route | `POST /sessions/:id/reveal` | `todo:reveal a task's folder (v1: show it in Finder/Explorer)` |
+| route | `POST /sessions/:id/reveal` | `cmd:runtime.reveal` |
 | route | `POST /sessions/:id/revert` | `cmd:git.restoreTurn` |
 | route | `POST /sessions/:id/review` | `cmd:review.view` |
 | route | `POST /sessions/:id/rollback` | `cmd:git.restoreTurn` |
@@ -316,7 +316,7 @@ kept). `npm run check` (rule `v1-coverage`) reads this table: every v1 item has 
 | route | `PUT /remote` | `cmd:channels.update` |
 | route | `PUT /sandbox/env` | `cmd:grid-client.sandboxEnv` |
 | route | `PUT /sessions/:id/goal` | `cmd:goal.set` |
-| route | `PUT /sessions/:id/source` | `todo:task source` |
+| route | `PUT /sessions/:id/source` | `cmd:worktrees.save` |
 | mcp | `approve` | `mcp:approve` |
 | mcp | `ask_user` | `mcp:ask_user` |
 | mcp | `delegate` | `mcp:delegate` |
