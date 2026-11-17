@@ -30,9 +30,9 @@ kept). `npm run check` (rule `v1-coverage`) reads this table: every v1 item has 
 | route | `DELETE /projects/:id` | `kind:projects` |
 | route | `DELETE /recipes/:key` | `cmd:workflows.remove` |
 | route | `DELETE /sandbox/:id` | `cmd:grid-client.sandboxRemove` |
-| route | `DELETE /sandbox/env/:key` | `todo:grid sandbox env (v1 sandbox.js)` |
-| route | `DELETE /sandbox/login` | `todo:grid sandbox harness sign-in` |
-| route | `DELETE /sandbox/logins/:agent` | `todo:grid sandbox harness sign-in` |
+| route | `DELETE /sandbox/env/:key` | `cmd:grid-client.sandboxEnv` |
+| route | `DELETE /sandbox/login` | `cmd:grid-client.sandboxLogout` |
+| route | `DELETE /sandbox/logins/:agent` | `cmd:grid-client.sandboxLogout` |
 | route | `DELETE /sessions/:id` | `cmd:runtime.delete` |
 | route | `DELETE /sessions/:id/btw` | `cmd:runtime.btw.drop` |
 | route | `DELETE /sessions/:id/goal` | `cmd:goal.drop` |
@@ -67,8 +67,8 @@ kept). `npm run check` (rule `v1-coverage`) reads this table: every v1 item has 
 | route | `GET /crew/:id` | `cmd:crew.get` |
 | route | `GET /crew/stats` | `cmd:crew.stats` |
 | route | `GET /events` | `route:/events` |
-| route | `GET /files` | `todo:workspace files (v1 GET /files: a folder's files for @ and the picker)` |
-| route | `GET /fs` | `todo:folder browser (v1 GET /fs: the folder picker's listing)` |
+| route | `GET /files` | `cmd:worktrees.files` |
+| route | `GET /fs` | `cmd:runtime.folders` |
 | route | `GET /health` | `route:/health` |
 | route | `GET /internal/ask/:id` | `mcp:ask_user` |
 | route | `GET /internal/available/:id` | `mcp:wisp_available` |
@@ -91,7 +91,7 @@ kept). `npm run check` (rule `v1-coverage`) reads this table: every v1 item has 
 | route | `GET /machines/:id/agents/:aid/keys` | `cmd:machines.call` |
 | route | `GET /machines/:id/agents/:aid/login` | `cmd:machines.call` |
 | route | `GET /machines/:id/discover` | `cmd:machines.discover` |
-| route | `GET /machines/:id/fs` | `todo:folder browser on a machine (v1 GET /machines/:id/fs)` |
+| route | `GET /machines/:id/fs` | `cmd:machines.call` |
 | route | `GET /machines/discover` | `cmd:machines.discover` |
 | route | `GET /machines/reachable` | `cmd:machines.reachable` |
 | route | `GET /machines/ssh-hosts` | `cmd:machines.hosts` |
@@ -101,7 +101,7 @@ kept). `npm run check` (rule `v1-coverage`) reads this table: every v1 item has 
 | route | `GET /projects/:id/foreign-worktrees` | `cmd:worktrees.bringIn` |
 | route | `GET /projects/discover` | `route:/projects/discover` |
 | route | `GET /projects/github` | `todo:projects (GitHub repos to clone)` |
-| route | `GET /projects/origin` | `todo:projects (a folder's git origin)` |
+| route | `GET /projects/origin` | `cmd:git.origin` |
 | route | `GET /recipes` | `cmd:workflows.list` |
 | route | `GET /recipes/:key` | `cmd:workflows.list` |
 | route | `GET /remote` | `cmd:channels.view` |
@@ -114,11 +114,11 @@ kept). `npm run check` (rule `v1-coverage`) reads this table: every v1 item has 
 | route | `GET /sessions/:id` | `cmd:runtime.get` |
 | route | `GET /sessions/:id/changes` | `cmd:git.changes` |
 | route | `GET /sessions/:id/check-log` | `cmd:ship.check_log` |
-| route | `GET /sessions/:id/file` | `todo:workspace file (v1: one file of a task's folder, for the file viewer)` |
-| route | `GET /sessions/:id/files` | `todo:workspace files (v1: a task folder's files, for @ mentions)` |
+| route | `GET /sessions/:id/file` | `cmd:worktrees.source` |
+| route | `GET /sessions/:id/files` | `cmd:worktrees.files` |
 | route | `GET /sessions/:id/folders` | `cmd:runtime.get` |
 | route | `GET /sessions/:id/goal-runs/:run` | `todo:goal runs (v1 goal-runs.js: what one goal check said and did)` |
-| route | `GET /sessions/:id/grep` | `todo:workspace grep (v1: search a task's folder)` |
+| route | `GET /sessions/:id/grep` | `cmd:worktrees.grep` |
 | route | `GET /sessions/:id/patch` | `cmd:git.changes` |
 | route | `GET /sessions/:id/presentation` | `cmd:runtime.presentation` |
 | route | `GET /sessions/:id/prs` | `cmd:ship.view` |
@@ -130,7 +130,7 @@ kept). `npm run check` (rule `v1-coverage`) reads this table: every v1 item has 
 | route | `GET /sessions/:id/source` | `todo:task source (v1 GET/PUT /sessions/:id/source: the folder or repo a task starts from)` |
 | route | `GET /sessions/:id/takeover` | `cmd:terminal.get` |
 | route | `GET /sessions/:id/term` | `route:/sessions/:id/term` |
-| route | `GET /sessions/:id/unmasked` | `todo:env unmask (v1: a masked .env value, shown on request)` |
+| route | `GET /sessions/:id/unmasked` | `cmd:runtime.unmasked` |
 | route | `GET /sessions/:id/wait` | `mcp:wisp_wait`, `cli:wait` |
 | route | `GET /sessions/:id/watch` | `mcp:wisp_watch` |
 | route | `GET /sessions/:id/workspace` | `cmd:worktrees.status` |
@@ -199,7 +199,7 @@ kept). `npm run check` (rule `v1-coverage`) reads this table: every v1 item has 
 | route | `POST /crew/:id/jobs` | `cmd:crew.assign` |
 | route | `POST /crew/export` | `cmd:crew.export` |
 | route | `POST /crew/import` | `cmd:crew.import` |
-| route | `POST /feedback` | `todo:feedback (v1 services/feedback.js: send feedback from Settings)` |
+| route | `POST /feedback` | `cmd:telemetry.feedback` |
 | route | `POST /hooks/:token` | `route:/hooks/:id` |
 | route | `POST /internal/approve` | `mcp:approve` |
 | route | `POST /internal/ask` | `mcp:ask_user` |
@@ -246,8 +246,8 @@ kept). `npm run check` (rule `v1-coverage`) reads this table: every v1 item has 
 | route | `POST /router/reset` | `cmd:router.reset` |
 | route | `POST /sandbox/browser` | `todo:grid sandbox browser` |
 | route | `POST /sandbox/desktop` | `todo:grid sandbox desktop` |
-| route | `POST /sandbox/login` | `todo:grid sandbox harness sign-in` |
-| route | `POST /sandbox/login/input` | `todo:grid sandbox harness sign-in` |
+| route | `POST /sandbox/login` | `cmd:grid-client.sandboxLogin` |
+| route | `POST /sandbox/login/input` | `cmd:grid-client.sandboxLogin` |
 | route | `POST /sandbox/seed` | `cmd:grid-client.sandbox` |
 | route | `POST /sessions` | `cmd:runtime.create` |
 | route | `POST /sessions/:id/answer` | `cmd:runtime.answer` |
@@ -260,7 +260,7 @@ kept). `npm run check` (rule `v1-coverage`) reads this table: every v1 item has 
 | route | `POST /sessions/:id/clash` | `todo:overlaps (v1 services/overlaps.js: two tasks edit the same lines)` |
 | route | `POST /sessions/:id/compact` | `cmd:runtime.compact` |
 | route | `POST /sessions/:id/crew` | `cmd:crew.assign` |
-| route | `POST /sessions/:id/crew-reply` | `todo:crew.reply (declared in wisp-crew-api, not in the manifest nor registered)` |
+| route | `POST /sessions/:id/crew-reply` | `cmd:crew.reply` |
 | route | `POST /sessions/:id/exec` | `cmd:runtime.exec` |
 | route | `POST /sessions/:id/fix-conflicts` | `cmd:ship.fix_conflicts` |
 | route | `POST /sessions/:id/folders` | `todo:task folders (v1: add or remove a task's extra folders)` |
@@ -282,7 +282,7 @@ kept). `npm run check` (rule `v1-coverage`) reads this table: every v1 item has 
 | route | `POST /sessions/:id/share` | `cmd:share.create` |
 | route | `POST /sessions/:id/shell` | `cmd:terminal.shell.start` |
 | route | `POST /sessions/:id/ship` | `cmd:ship.ship` |
-| route | `POST /sessions/:id/side` | `todo:side discussions (v1 /side: a task that talks over another, read-only)` |
+| route | `POST /sessions/:id/side` | `cmd:runtime.btw` |
 | route | `POST /sessions/:id/stop` | `cmd:runtime.stop` |
 | route | `POST /sessions/:id/takeover` | `cmd:terminal.open` |
 | route | `POST /sessions/:id/term` | `cmd:terminal.input` |
@@ -314,7 +314,7 @@ kept). `npm run check` (rule `v1-coverage`) reads this table: every v1 item has 
 | route | `PUT /crew-layout` | `cmd:crew.set_layout` |
 | route | `PUT /preferences` | `cmd:learn.set` |
 | route | `PUT /remote` | `cmd:channels.update` |
-| route | `PUT /sandbox/env` | `todo:grid sandbox env` |
+| route | `PUT /sandbox/env` | `cmd:grid-client.sandboxEnv` |
 | route | `PUT /sessions/:id/goal` | `cmd:goal.set` |
 | route | `PUT /sessions/:id/source` | `todo:task source` |
 | mcp | `approve` | `mcp:approve` |
@@ -354,7 +354,7 @@ kept). `npm run check` (rule `v1-coverage`) reads this table: every v1 item has 
 | mcp | `wisp_watch` | `mcp:wisp_watch` |
 | cli | `add` | `cli:add` |
 | cli | `btw` | `cli:btw` |
-| cli | `computer` | `todo:wisp computer (v1: this computer's grid link on/off/status)` |
+| cli | `computer` | `cli:computer` |
 | cli | `crew` | `cli:crew` |
 | cli | `grid` | `cli:grid` |
 | cli | `list` | `cli:list` |
