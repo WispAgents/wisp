@@ -37,15 +37,18 @@ const MIGRATIONS: &[Migration] = &[
         2,
         "CREATE TABLE telemetry_state (id TEXT PRIMARY KEY, \"on\" INTEGER NOT NULL, setting INTEGER NOT NULL, blocked INTEGER NOT NULL) STRICT;",
     ),
+    // whether feedback can be sent (WISP_FEEDBACK=0 turns it off): Home's "Hit a bug…" line shows only then (B50)
+    Migration::sql(3, "ALTER TABLE telemetry_state ADD COLUMN feedback INTEGER NOT NULL DEFAULT 1;"),
 ];
 
-/// Settings → Privacy reads one row, id `this`: stats on, the switch, and whether the environment turns them off.
+/// Settings → Privacy reads one row, id `this`: stats on, the switch, and whether the environment turns them off; Home
+/// reads its `feedback` (can feedback go out at all, v1 config.feedback).
 pub const STATE_TOPIC: &str = "plugin:wisp.telemetry:state";
 const STATE: EntityDef = EntityDef {
     kind: "telemetry.state",
     table: "telemetry_state",
     key: "id",
-    columns: &[("id", Col::Text), ("on", Col::Bool), ("setting", Col::Bool), ("blocked", Col::Bool)],
+    columns: &[("id", Col::Text), ("on", Col::Bool), ("setting", Col::Bool), ("blocked", Col::Bool), ("feedback", Col::Bool)],
     json_columns: &[],
     parent: None,
     seq: None,
@@ -60,6 +63,7 @@ pub fn state_row(setting: bool, env: &Env) -> Row {
     r.insert("on".into(), json!(setting && !blocked));
     r.insert("setting".into(), json!(setting));
     r.insert("blocked".into(), json!(blocked));
+    r.insert("feedback".into(), json!(wisp_telemetry_core::feedback_available(env)));
     r
 }
 /// The saved body's topic: no client subscribes (it's the install's id and queues), but the store keeps only rows that
@@ -438,6 +442,14 @@ mod tests {
         let dnt: Env = [("DO_NOT_TRACK".to_owned(), "1".to_owned())].into_iter().collect();
         let r = state_row(true, &dnt);
         assert_eq!((r["on"].clone(), r["setting"].clone(), r["blocked"].clone()), (json!(false), json!(true), json!(true)));
+    }
+
+    /// B50: feedback can go out unless `WISP_FEEDBACK` is 0, whatever the stats switch says (Home's line follows it).
+    #[test]
+    fn the_row_says_whether_feedback_can_be_sent() {
+        assert_eq!(state_row(false, &Env::default())["feedback"], true);
+        let off: Env = [("WISP_FEEDBACK".to_owned(), "0".to_owned())].into_iter().collect();
+        assert_eq!(state_row(true, &off)["feedback"], false);
     }
 
     #[test]

@@ -42,6 +42,8 @@ export const INPUTS = {
   // added 2026-11-16 (additive): at the end of New task's Done when line, who judges the goal (wisp.goal's Judges,
   // v1 #judgesBtn)
   'shell.home:goalLine': 'launcher.goalJudges',
+  // added 2026-11-17 (additive): Home's last line, wisp.telemetry's "Hit a bug…" while feedback can be sent (v1 .sh-fb)
+  'shell.home:feedback': 'split.feedback',
   // added 2026-11-13 (additive): in the harness · model picker, a signed-out harness's sign-in, right there (wisp.accounts'
   // link-and-code steps, v1 runner-picker.js paintSignIn); its extension gets the harness as `id`
   'shell.runner:signin': 'runner.signin',

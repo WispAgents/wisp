@@ -723,7 +723,7 @@ export function seed(o: { peer: string; now: number; extra: number; firstRun?: b
   // the machine guard's reading, as v1's QA box showed it (Settings → Usage → Machine load: Now)
   topics.set('plugin:wisp.machine:load', LOAD_ROWS);
   topics.set('plugin:wisp.router:view', ROUTER_ROWS);
-  topics.set('plugin:wisp.telemetry:state', [{ e: 'telemetry.state', id: 'this', v: { on: false, setting: true, blocked: true } }]);
+  topics.set('plugin:wisp.telemetry:state', [{ e: 'telemetry.state', id: 'this', v: { on: false, setting: true, blocked: true, feedback: true } }]);
   // signed in to wisp Cloud (?seed=cloud): Settings → Cloud's account, API keys and My shares (grid-client view.rs's row)
   if (o.cloud)
     topics.set('plugin:wisp.grid-client:cloud', [
@@ -936,7 +936,8 @@ export function fromV1(v1: V1Seed, peer: string): Seeded {
   // the machine guard's reading, as v1's QA box showed it (Settings → Usage → Machine load: Now)
   topics.set('plugin:wisp.machine:load', LOAD_ROWS);
   topics.set('plugin:wisp.router:view', ROUTER_ROWS);
-  topics.set('plugin:wisp.telemetry:state', [{ e: 'telemetry.state', id: 'this', v: { on: false, setting: true, blocked: true } }]);
+  // feedback as v1's capture had it (its config.feedback: off on the QA box, so Home had no feedback line)
+  topics.set('plugin:wisp.telemetry:state', [{ e: 'telemetry.state', id: 'this', v: { on: false, setting: true, blocked: true, feedback: v1.config['feedback'] !== false } }]);
   topics.set(
     'crew',
     v1.crew.map((c) => ({ e: 'crew_member', id: c.id, v: c })),

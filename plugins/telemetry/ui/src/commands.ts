@@ -10,6 +10,8 @@ export interface StateRow {
   readonly setting: boolean;
   /** DO_NOT_TRACK, WISP_TELEMETRY=0 or CI turn stats off whatever the switch says */
   readonly blocked: boolean;
+  /** feedback can be sent (WISP_FEEDBACK isn't 0): Home's feedback line shows (v1 config.feedback). Additive. */
+  readonly feedback?: boolean;
 }
 
 export const setStats = defineCommand<{ peer: PeerId; on: boolean }>({

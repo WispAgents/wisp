@@ -15,7 +15,7 @@ import { useRecipes } from './recipes.ts';
 import type { PickOptions } from '../platform/types.ts';
 import { Show, createEffect, createMemo, createSignal, lazy, on, onCleanup, type JSX } from 'solid-js';
 import { entityKey, newRowId, type EntityKey, type Json, type PeerId } from '@wisp/client';
-import { AutoPop, FeedbackLine, KeysHint, Launcher, NextList, SplitHome, Tips, lazyPart, lazyView, useSignal, warm as warmPart, type LauncherProps, type LauncherTool, type PlainTip } from '@wisp/ui';
+import { AutoPop, KeysHint, Launcher, NextList, SplitHome, Tips, lazyPart, lazyView, useSignal, warm as warmPart, type LauncherProps, type LauncherTool, type PlainTip } from '@wisp/ui';
 import { useShell } from '../context.tsx';
 import type { SendHold } from '../contract.ts';
 import { aheadLabel, waitable } from './hold.ts';
@@ -27,7 +27,7 @@ import { autoBlocked, autoPreview, autoRules, create, setSetting, trial, type At
 import { newRun, runWords, sameSetup, settingModel, trialVary, variantWords, type Variant } from './trial.ts';
 import { modelWord, type Runner } from './runner.ts';
 import { goalGate, goalOf, goalSent, isBareGoal, typedInFull, type HomeGoal } from './goal-gate.ts';
-import { feedbackCommand, isFeedback, openFeedback } from './feedback.ts';
+import { feedbackCommand, isFeedback } from './feedback.ts';
 import { autoPick, neverRule, runnerParts, runnerPick, overrideOf, popOf, pct, PREVIEW_DEBOUNCE, shortLabel, usd, type AutoPreview } from './auto.ts';
 import { defaultHarness, harnessOf } from './harness.ts';
 import { MAX_RUNNERS, newGroup, nextRun } from './runs-small.ts';
@@ -883,7 +883,8 @@ export function HomeView(props: { readonly onBack?: () => void }): JSX.Element {
             { keys: ['['], label: t('shell.keys.hide') },
           ]}
         />
-        <FeedbackLine label={t('shell.feedback.line')} onClick={() => openFeedback(shell)} />
+        {/* the telemetry plugin's "Hit a bug…" line, while feedback can be sent (v1 split.js .sh-fb, B50) */}
+        <Slot input="shell.home:feedback" layout="contents" />
       </Show>
     </SplitHome>
     </>

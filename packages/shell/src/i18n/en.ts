@@ -372,7 +372,6 @@ export const SHELL_STRINGS = {
   'shell.runOn.failed': 'Couldn’t set it up on {where}.',
   'shell.feedback.title': 'Send feedback',
   'shell.feedback.thanks': 'Thanks! Sent to the wisp team.',
-  'shell.feedback.line': 'Hit a bug, or wish wisp did something? Tell us',
   'shell.cmd.feedback': 'Send feedback…',
   // the offline/connecting bar (frame/peer-note.ts, PeerBanner.tsx): eager, it shows exactly when a lazy chunk may not load
   // a task's usage in its details (v1 #785, frame/task-usage.ts)
