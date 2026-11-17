@@ -177,6 +177,67 @@ function triggers(all) {
   );
 }
 
+function pluginApi() {
+  const m = JSON.parse(read('plugins/plugins/core/data/manifest-fields.json'));
+  const kit = JSON.parse(read('packages/shell/src/remote/kit.json'));
+  const rows = (o) => Object.entries(o).map(([k, v]) => `| \`${k}\` | ${esc(v)} |`).join('\n');
+  const comps = Object.entries(kit.components ?? {})
+    .map(([name, props]) => {
+      const p = Object.entries(props)
+        .map(([k, v]) => `\`${k}\`: ${Array.isArray(v) ? v.map((x) => `\`${x}\``).join(' · ') : esc(typeof v === 'object' ? JSON.stringify(v) : v)}`)
+        .join('; ');
+      const kids = (kit.parents ?? []).includes(name) ? ' Takes children (`k`).' : '';
+      const ev = kit.events?.[name] ? ` Fires \`on\`: ${kit.events[name]}.` : '';
+      return `| \`${name}\` | ${p}${kids}${ev} |`;
+    })
+    .join('\n');
+  const places = Object.entries(kit.places ?? {})
+    .map(([id, p]) => `| \`${id}\` | ${esc(p.words)} | ${p.drawn ? 'yes' : 'not drawn yet'} |`)
+    .join('\n');
+  const l = kit.limits ?? {};
+  page(
+    'plugin-api.md',
+    'Plugin manifest and UI',
+    "Every key of a plugin's wisp-plugin.json, and the components a plugin's UI can use, from the checker's own data.",
+    7,
+    `A plugin is a folder with a \`wisp-plugin.json\` and, for UI, one \`.js\` module. wisp checks the manifest against these keys: an unknown key is refused, with the one you probably meant. Start with [Your first plugin](../../plugins/first-plugin/).
+
+## Manifest keys
+
+| Key | What it is |
+| --- | --- |
+${rows(m.keys ?? {})}
+
+## \`contributes\`
+
+| Key | What it adds |
+| --- | --- |
+${rows(m.contributes ?? {})}
+
+## The UI module
+
+A \`contributes.ui\` entry's \`component\` is a \`.js\` file in the plugin's folder. It runs in a Worker in a sandboxed frame: no DOM, no network, no storage, no imports, one file of at most ${Math.round((l.module ?? 0) / 1024)} KB. Its \`wisp\` has only:
+
+- \`wisp.render(tree)\`: draw this tree of components (call it again to update; nodes update in place).
+- \`wisp.call(command, args)\`: run a wisp command as the plugin, checked against the plugin's own permissions (never yours). Every command is in [Commands](../commands/).
+- \`wisp.on(event, fn)\`: \`fn(value)\` runs when a component with \`on: event\` fires.
+
+A node is a string (text) or \`{ c: 'Component', p: { …props }, k: [ …children ], on: 'event' }\`. No HTML, no class, no style: anything not listed below is dropped, so a plugin always looks like wisp, in light and dark.
+
+| Component | Props |
+| --- | --- |
+${comps}
+
+## Where a plugin's UI shows (\`attachTo.id\`)
+
+| Place | Where | Drawn |
+| --- | --- | --- |
+${places}
+
+Limits: ${l.text} characters per text, ${l.nodes} nodes, ${l.depth} levels, ${l.items} items per Select.`,
+  );
+}
+
 function pluginExamples() {
   const list = JSON.parse(read('plugins/plugins/core/data/plugin-examples.json'));
   const body = list
@@ -189,7 +250,7 @@ function pluginExamples() {
     'plugin-examples.md',
     'Plugin examples',
     'Whole plugins, manifest and code, that wisp checks in its own tests: copy one into ~/.wisp/plugins/<name> to start.',
-    7,
+    9,
     `Each is a complete plugin: its manifest passes wisp's own check in its tests, and agents that write plugins for you are shown the same ones. Put the files in \`~/.wisp/plugins/<name>/\`, then \`wisp plugin enable <id>\`. See [Build plugins](../../plugins/first-plugin/).\n\n${body}`,
   );
 }
@@ -204,5 +265,6 @@ mcp();
 blocks();
 kinds();
 triggers(all);
+pluginApi();
 pluginExamples();
 console.log(`reference: ${fs.readdirSync(out).length} pages from ${all.length} plugins`);

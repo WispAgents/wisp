@@ -183,6 +183,31 @@ fn put(obj: &mut Map<String, Value>, f: &Field, v: Value) {
     obj.insert(f.name.clone(), v);
 }
 
+/// `dry-run` → `dryRun`.
+fn camel(flag: &str) -> String {
+    let mut out = String::new();
+    let mut up = false;
+    for c in flag.chars() {
+        if c == '-' || c == '_' {
+            up = !out.is_empty();
+        } else if up {
+            out.extend(c.to_uppercase());
+            up = false;
+        } else {
+            out.push(c);
+        }
+    }
+    out
+}
+
+/// An untyped flag's value: a number, `true`/`false`, `null` or JSON as such, else the text.
+fn untyped(raw: &str) -> Value {
+    match serde_json::from_str::<Value>(raw) {
+        Ok(v @ (Value::Number(_) | Value::Bool(_) | Value::Null | Value::Array(_) | Value::Object(_))) => v,
+        _ => json!(raw),
+    }
+}
+
 /// The command's arguments from the words after its verb.
 #[allow(clippy::many_single_char_names)]
 pub fn build(v: &Verb, rest: &[String]) -> Result<Value, Usage> {
@@ -225,6 +250,16 @@ pub fn build(v: &Verb, rest: &[String]) -> Result<Value, Usage> {
         let negated = name.strip_prefix("no-").and_then(|n| spec.field(n).filter(|f| f.kind == Kind::Bool));
         if let Some(f) = negated {
             put(&mut obj, f, json!(false));
+            continue;
+        }
+        if v.info.args.is_none() {
+            // no declared type (an exec plugin's command): each flag is a field, `--dry-run` → `dryRun`
+            let raw = match inline {
+                Some(x) => Some(x),
+                None if rest.get(i).is_some_and(|n| !n.starts_with("--")) => rest.get(i).cloned().inspect(|_| i += 1),
+                None => None,
+            };
+            obj.insert(camel(&name), raw.map_or(json!(true), |r| untyped(&r)));
             continue;
         }
         let Some(f) = spec.field(&name) else {
@@ -321,6 +356,9 @@ pub fn help_verb(v: &Verb) -> String {
             if v.spec.object { "the arguments as one JSON object".into() } else { "the arguments as JSON".into() },
         ));
     }
+    if v.info.args.is_none() {
+        rows.push(("--<field> VALUE".into(), "any field: a number, true/false or JSON as such, else text (--dry-run is dryRun)".into()));
+    }
     rows.push(("--json".into(), "print the result as JSON".into()));
     let w = rows.iter().map(|(f, _)| f.chars().count()).max().unwrap_or(0).min(34);
     for (f, d) in rows {
@@ -395,6 +433,19 @@ mod tests {
 
     fn w(s: &str) -> Vec<String> {
         s.split(' ').map(str::to_owned).collect()
+    }
+
+    #[test]
+    fn a_command_with_no_declared_type_takes_any_flag() {
+        let c = Catalogue::new(vec![info("user.hello.greet", None), info("plugins.list", Some("null"))]);
+        let (v, n) = c.resolve(&w("user hello greet")).unwrap();
+        assert_eq!(n, 3);
+        let args = build(v, &w("--name Ada --times 2 --dry-run --loud --tags [\"a\"] --note=x=y")).unwrap();
+        assert_eq!(args, json!({ "name": "Ada", "times": 2, "dryRun": true, "loud": true, "tags": ["a"], "note": "x=y" }));
+        assert!(help_verb(v).contains("--<field> VALUE"), "{}", help_verb(v));
+        let (typed, _) = c.resolve(&w("plugins list")).unwrap();
+        assert!(build(typed, &w("--name Ada")).is_err(), "a command that declares it takes nothing still refuses flags");
+        assert!(!help_verb(typed).contains("--<field>"));
     }
 
     #[test]

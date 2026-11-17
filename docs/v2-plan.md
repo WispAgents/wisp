@@ -318,6 +318,16 @@ turn. When a screen or feature contradicts one, that's a bug: fix it toward the 
   - [x] TRY-23 silent runs (11-17): budget's watch (`plugins/budget/{core,host}/src/silent.rs`), the phone's Stop
     button on every channel (`ActionKind::Stop`, code `s`), Settings → Usage *Stop a run silent for*
   - [x] TRY-17 harness updates (11-17): Settings → Agents *Update to x.y.z* / *Update all*, `accounts.upgrade` updates the way it was installed (`claude update`, `codex update`, `opencode upgrade`, npm, wisp's tools folder; Homebrew: the command to run); latest versions from npm at start and every 12 h. Found and fixed on the way: B57 (idle CPU), B58 (Cursor *Not found*), B59
+  - [x] TRY-21 docs site (11-17): `apps/docs` (Astro Starlight, ADR-0039) over `docs/site`, built by pages.yml into
+    trywisp.dev/docs; the reference (CLI, commands, settings, MCP tools, answer blocks, kinds, triggers, plugin
+    manifest and UI kit, plugin examples) is generated from the code (`apps/docs/scripts/reference.mjs`), `llms.txt`
+    and per-page markdown for agents; every formula example validates on a real serve (`crates/wisp/tests/serve_docs.rs`).
+    Found and fixed on the way: `${{ }}` in a formula string refused, a skill's relative path read from wisp's cwd,
+    `wisp secret set` missing (validate pointed at it), a lazy plugin's commands missing from `wisp help`/the CLI,
+    an exec plugin's command taking no flags, `wisp plugin new` → `enable` not finding the new folder
+  - [x] TRY-8 / TRY-9 / TRY-10 / TRY-20 / TRY-25 guides (11-17), pages of the docs site: software factory as code,
+    track agent work, share skills and MCPs, from Slack and Linear, make wisp your own (+ your first plugin, tested
+    end to end with a Node exec plugin)
 - [ ] Continuous QA rounds by fresh low-context agents → `docs/qa/bugs.md` → one fix per coder
 
 ## 5. Waiting for the lead right now

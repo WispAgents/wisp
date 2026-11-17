@@ -38,6 +38,7 @@ pub const HELP: &str = "usage:
   wisp blame <file>:<line>      which task wrote that line, and what it was asked
   wisp resume <id>              a new task that carries on from where that one stopped, on today's code
   wisp adopt [<id>|--all]       bring in sessions you ran in a harness outside wisp   (--since 7d  --track)
+  wisp hook install|uninstall|status   a git hook that adds Wisp-Task: <id> to commits a task's agent makes
   wisp secret set|rm NAME       a secret your formulas reference as ${secret:NAME}: piped in or typed hidden, never an argument
   wisp import [v1 home]         bring a wisp v1 home (~/.wisp) in: its plan first, then on yes   (--dry-run  --yes)
   wisp apply -f wisp.yml        your setup as code: plan, diff, confirm   (--dry-run  --yes  --prune  --trust  --profile P)

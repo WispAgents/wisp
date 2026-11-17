@@ -76,6 +76,9 @@ impl Plugin for PluginsPlugin {
         s.command::<SetEnabled, _, _>(move |ctx, call, a| {
             let kind = kind.clone();
             async move {
+                if a.enabled {
+                    install::load_from_its_folder(&ctx, &a.id).await?;
+                }
                 ctx.set_plugin_enabled(&a.id, a.enabled).await?;
                 // kept so it comes back that way; a store that can't keep it doesn't undo the switch
                 if let Err(e) = crate::kinds::remember(&kind, &call, &a.id, a.enabled).await {

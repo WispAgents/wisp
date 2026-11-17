@@ -132,7 +132,9 @@ export const css: Rule = {
     if (kitFiles.length && !sets) out.push(finding(TOKENS_DIR, 1, ID, 'no token files yet: px values in the kit are not checked', 'warn'));
     for (const file of kitFiles) out.push(...kitCss(ctx, file, sets));
     for (const file of ctx.files) {
-      if (inKit(file)) continue;
+      // apps/docs is trywisp.dev/docs (ADR-0039): a static Starlight site, not wisp's UI; its one sheet sets
+      // Starlight's colour variables from the tokens
+      if (inKit(file) || file.startsWith('apps/docs/')) continue;
       if (STYLE_FILE.test(file)) out.push(finding(file, 1, ID, 'CSS lives in packages/ui only'));
       if (!isCode(file)) continue;
       for (const imp of ctx.imports(file)) if (STYLE_IMPORT.test(imp.spec)) out.push(finding(file, imp.line, ID, `CSS import outside the kit: ${imp.spec}`));

@@ -158,6 +158,37 @@ async fn a_lazy_plugin_activates_on_its_command_and_its_routes_wait() {
 }
 
 #[tokio::test]
+async fn a_lazy_plugins_declared_commands_are_in_the_catalogue_before_it_wakes() {
+    cmd!(Cat, "cat.list", (), Value, read_only);
+    let lazy = common::plugin(
+        "wisp.lazy",
+        json!({ "activation": ["onCommand:lazy.*"], "contributes": { "commands": [{ "id": "lazy.hello", "title": "Hello" }] } }),
+        |s| {
+            s.command::<Lazy, _, _>(|_, _, ()| async move { Ok("hi".to_owned()) });
+        },
+    );
+    let cat = common::plugin("wisp.cat", json!({}), |s| {
+        s.command::<Cat, _, _>(|ctx, call, ()| {
+            let out = ctx.catalogue(call.caller());
+            async move { Ok(serde_json::to_value(out).unwrap()) }
+        });
+    });
+    let k = common::start(PluginGroup::new().add(lazy).add(cat)).await;
+    let ids = |v: &Value| v.as_array().unwrap().iter().map(|c| c["id"].as_str().unwrap().to_owned()).collect::<Vec<_>>();
+    let before = k.call(Caller::user(), "cat.list", json!(null)).await.unwrap();
+    assert_eq!(common::state(&k, "wisp.lazy").0, "resolved", "reading the catalogue doesn't wake it");
+    assert!(ids(&before).contains(&"lazy.hello".to_owned()), "{before}");
+    let row = before.as_array().unwrap().iter().find(|c| c["id"] == "lazy.hello").unwrap();
+    assert_eq!((row["plugin"].as_str(), row["title"].as_str()), (Some("wisp.lazy"), Some("Hello")));
+    assert_eq!(k.call(Caller::user(), "lazy.hello", json!(null)).await.unwrap(), json!("hi"));
+    let after = k.call(Caller::user(), "cat.list", json!(null)).await.unwrap();
+    assert_eq!(ids(&after).iter().filter(|i| *i == "lazy.hello").count(), 1, "listed once once it's awake");
+    k.set_enabled("wisp.lazy", false).await.unwrap();
+    let off = k.call(Caller::user(), "cat.list", json!(null)).await.unwrap();
+    assert!(!ids(&off).contains(&"lazy.hello".to_owned()), "a plugin switched off isn't listed: {off}");
+}
+
+#[tokio::test]
 async fn a_command_outside_the_namespace_refuses_the_plugin() {
     let bad = common::plugin("wisp.bad", json!({}), |s| {
         s.command::<Echo, _, _>(|_, _, a| async move { Ok(a) });

@@ -243,6 +243,21 @@ pub async fn install(ctx: &Ctx, a: &InstallArgs) -> Result<Installed> {
     })
 }
 
+/// A `user.*` plugin this wisp hasn't loaded whose folder is in `~/.wisp/plugins` (`wisp plugin new`, or a
+/// folder copied there while wisp runs): loaded as at start, off. Switching it on is the consent, as for an install.
+pub async fn load_from_its_folder(ctx: &Ctx, id: &str) -> Result<()> {
+    if !id.starts_with("user.") || ctx.plugins()?.iter().any(|p| p.id == id) {
+        return Ok(());
+    }
+    let dir = ctx.service::<wisp_kernel::services::Paths>()?.join("plugins").join(slug(id));
+    let Ok(text) = tokio::fs::read_to_string(dir.join(MANIFEST)).await else { return Ok(()) };
+    let m = Manifest::parse(&text)?;
+    if m.id != id {
+        return Err(WireError::invalid(format!("{} holds {}, not {id}", dir.display(), m.id)));
+    }
+    ctx.install_plugin(Arc::new(read(&dir, &text, dir.join(TRUSTED).is_file())?)).await
+}
+
 /// v1's `spell_installed` (plugins replace spells, ADR-0031): where it came from (`url` or `local`), that it's off
 /// (an install always is), and its kind (`exec` or `declarative`): never its id, name or source.
 pub fn installed_props(from_url: bool, server: Option<&serde_json::Value>) -> serde_json::Value {

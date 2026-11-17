@@ -10,6 +10,14 @@ on:
       - 'scripts/guides.mjs'
       - 'server/adapters/**'
       - 'web/js/spirit.js'
+      # trywisp.dev/docs (ADR-0039): its pages and the code its reference is generated from
+      - 'apps/docs/**'
+      - 'crates/wisp/src/args.rs'
+      - 'plugins/*/host/wisp-plugin.json'
+      - 'plugins/mcp/core/defs/**'
+      - 'plugins/plugins/core/data/**'
+      - 'plugins/runtime/core/tests/goldens/system-prompt.txt'
+      - 'packages/shell/src/remote/kit.json'
       - '.github/workflows/pages.yml'
   workflow_dispatch:
 
@@ -34,8 +42,12 @@ jobs:
           fetch-depth: 0 # sitemap lastmod comes from each page's last commit
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 24
       - run: node scripts/site.mjs
+      # the docs site: built from docs/site into docs/docs, served at trywisp.dev/docs
+      - run: npm ci --workspace apps/docs --include-workspace-root=false --ignore-scripts
+      - run: npm run build --workspace apps/docs
+      - run: rm -rf docs/docs && cp -R apps/docs/dist docs/docs
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v4
         with:

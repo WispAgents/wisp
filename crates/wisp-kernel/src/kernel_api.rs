@@ -260,9 +260,20 @@ impl Ctx {
     /// Additive (2026-11-08).
     pub fn catalogue(&self, caller: &Caller) -> Vec<CommandInfo> {
         let Ok(k) = self.k() else { return Vec::new() };
-        let decls: std::collections::HashMap<String, crate::manifest::CommandDecl> = k
+        // A lazy plugin (an exec plugin waiting for its first call) registers its commands when it
+        // starts, but calling one wakes it (`onCommand`): list what its manifest declares meanwhile.
+        let (decls, waiting): (std::collections::HashMap<String, crate::manifest::CommandDecl>, Vec<(String, String)>) = k
             .lock_plugins()
-            .map(|ps| ps.slots.iter().flat_map(|s| s.manifest.commands()).map(|c| (c.id.clone(), c)).collect())
+            .map(|ps| {
+                let decls = ps.slots.iter().flat_map(|s| s.manifest.commands()).map(|c| (c.id.clone(), c)).collect();
+                let waiting = ps
+                    .slots
+                    .iter()
+                    .filter(|s| matches!(s.phase, crate::life::Phase::Resolved))
+                    .flat_map(|s| s.manifest.commands().into_iter().map(|c| (c.id, s.manifest.id.clone())))
+                    .collect();
+                (decls, waiting)
+            })
             .unwrap_or_default();
         let set = k.caps.get(&caller.set);
         let Ok(reg) = k.reg.read() else { return Vec::new() };
@@ -280,6 +291,23 @@ impl Ctx {
                 args: (e.args_ts)(),
             })
             .collect();
+        for (id, plugin) in waiting {
+            let perm_s = crate::perm::of_command(&id);
+            let Some(perm) = crate::perm::parse(&perm_s) else { continue };
+            if reg.commands.contains_key(&id) || crate::call::check_sets(set.as_deref(), &caller.set, None, &perm).is_err() {
+                continue;
+            }
+            let d = decls.get(&id);
+            out.push(CommandInfo {
+                id,
+                plugin,
+                title: d.map(|d| d.title.clone()),
+                ui_only: d.and_then(|d| d.ui_only.clone()),
+                read_only: false,
+                permission: perm_s,
+                args: None,
+            });
+        }
         out.sort_by(|a, b| a.id.cmp(&b.id));
         out
     }

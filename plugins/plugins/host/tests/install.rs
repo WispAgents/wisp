@@ -57,6 +57,29 @@ async fn an_installed_plugin_starts_off_until_switched_on_and_uninstall_removes_
 }
 
 #[tokio::test]
+async fn a_plugin_written_into_the_folder_while_wisp_runs_is_switched_on_by_its_id() {
+    // `wisp plugin new` writes ~/.wisp/plugins/<slug> and says "wisp plugin enable user.<slug>"
+    let home = dir("home");
+    let k = TestApp::new().with(wisp_plugins::PluginsPlugin).service(Paths::new(&home)).start().await;
+    let src = source(&home, "user.late", "1.0.0");
+    std::fs::create_dir_all(home.join("plugins")).unwrap();
+    std::fs::rename(&src, home.join("plugins/late")).unwrap();
+    let list = k.call(Caller::user(), "plugins.list", json!({})).await.unwrap();
+    assert!(state(&list, "user.late").is_none(), "not read until asked for");
+    let row = k.call(Caller::user(), "plugins.setEnabled", json!({ "id": "user.late", "enabled": true })).await.unwrap();
+    assert_eq!(row["id"], "user.late");
+    let list = k.call(Caller::user(), "plugins.list", json!({})).await.unwrap();
+    assert!(state(&list, "user.late").is_some_and(|s| s != "off"), "{list}");
+    // a folder holding another id isn't loaded under this one, and switching off never loads anything
+    let other = source(&home, "user.someone-else", "1.0.0");
+    std::fs::rename(&other, home.join("plugins/mine")).unwrap();
+    let e = k.call(Caller::user(), "plugins.setEnabled", json!({ "id": "user.mine", "enabled": true })).await.unwrap_err();
+    assert!(e.message.contains("holds user.someone-else"), "{}", e.message);
+    assert!(k.call(Caller::user(), "plugins.setEnabled", json!({ "id": "user.nothing", "enabled": false })).await.is_err());
+    let _ = std::fs::remove_dir_all(&home);
+}
+
+#[tokio::test]
 async fn a_plugin_claiming_a_built_in_id_is_refused_and_nothing_is_kept() {
     let home = dir("refused");
     let k = TestApp::new().with(wisp_plugins::PluginsPlugin).service(Paths::new(&home)).start().await;
