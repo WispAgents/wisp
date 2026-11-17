@@ -78,6 +78,13 @@ export function losesOf(f: DoneFolder): Said | undefined {
   return (f.uncommitted ?? 0) > 0 ? { key: 'worktrees.folders.loses.uncommitted', vars: { count: f.uncommitted ?? 0 } } : { key: 'worktrees.folders.loses.off-branch' };
 }
 
+/** A row's one status, at its right (v1 .wd-state): what it holds, short, so a phone still has room for its name;
+ *  warn once Remove would lose it (a ticked row holding work), what goes said in full as its tip (v1 .wd-loses). */
+export function rowStatus(f: DoneFolder, ticked: boolean): Said & { readonly warn: boolean; readonly tip?: Said } {
+  const loses = ticked ? losesOf(f) : undefined;
+  return { ...stateOf(f), warn: loses !== undefined, ...(loses && { tip: loses }) };
+}
+
 /** Clean rows start ticked; one holding work only when you tick it. */
 export const initiallyTicked = (folders: readonly DoneFolder[]): string[] => folders.filter((f) => !holdsWork(f)).map((f) => f.path);
 

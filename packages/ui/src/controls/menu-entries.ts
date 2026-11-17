@@ -64,12 +64,13 @@ export function menuSections(groups: readonly (readonly (MenuEntry | false | nul
 
 /** The entries as a menu draws them: never a separator first, last or twice in a row (a menu whose only item followed
  *  a separator showed a line over it: Machines' ⋯ with Sign out of the grid alone). */
-export function tidySeparators<E extends { readonly kind?: string }>(items: readonly E[]): E[] {
+export function tidySeparators<E extends object>(items: readonly E[]): E[] {
+  const sep = (e: E | undefined): boolean => (e as { readonly kind?: string } | undefined)?.kind === 'separator';
   const out: E[] = [];
   for (const e of items) {
-    if (e.kind === 'separator' && (out.length === 0 || out[out.length - 1]?.kind === 'separator')) continue;
+    if (sep(e) && (out.length === 0 || sep(out[out.length - 1]))) continue;
     out.push(e);
   }
-  while (out.length && out[out.length - 1]?.kind === 'separator') out.pop();
+  while (out.length && sep(out[out.length - 1])) out.pop();
   return out;
 }

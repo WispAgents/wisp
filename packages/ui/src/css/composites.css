@@ -674,6 +674,26 @@
   [data-kit='banner'] [data-kit='notice-icon'] {
     margin-top: 0;
   }
+  /* a title over a body (a usage limit, its note, its buttons): everything starts at the top and the icon is
+     one title line tall, centred in it, so it sits on the title's line */
+  [data-kit='banner'][data-stacked] {
+    align-items: flex-start;
+  }
+  /* its lone action (Held's Send now) stays centred on the right */
+  [data-kit='banner'][data-stacked] > [data-kit='notice-action'] {
+    align-self: center;
+  }
+  /* a row of buttons under a notice's words stands a step below them */
+  [data-kit='notice-body'] > [data-kit='wrap']:not(:first-child),
+  [data-kit='notice-body'] > [data-kit='inline']:not(:first-child) {
+    margin-top: var(--space-4);
+  }
+  [data-kit='banner'][data-stacked] [data-kit='notice-icon'],
+  [data-kit='callout'][data-stacked] [data-kit='notice-icon'] {
+    align-items: center;
+    height: calc(1em * var(--lh-snug));
+    margin-top: 0;
+  }
   [data-kit='notice-icon'] {
     display: flex;
     flex: none;

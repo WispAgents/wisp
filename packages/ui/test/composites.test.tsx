@@ -188,6 +188,30 @@ describe('the rest', () => {
     expect(onDismiss).toHaveBeenCalledOnce();
   });
 
+  test('banner_with_a_title_over_a_body_is_stacked_so_its_icon_sits_on_the_title_line', () => {
+    // r330 #13: a usage limit (title, note, buttons) centred its warn icon on the whole card, below the title
+    let built = 0;
+    const Body = (): string => (built++, 'Wait for the reset.');
+    mount(() => (
+      <>
+        <Banner tone="warn" part="a.limit" title="Codex hit its usage limit">
+          <Body />
+        </Banner>
+        <Banner tone="info" part="a.title" title="Reconnecting to wisp…" />
+        <Banner tone="info" part="a.body">Update ready</Banner>
+        <Callout part="a.note" title="Assumption">Read X-Forwarded-For.</Callout>
+      </>
+    ));
+    expect(part('a.limit')?.hasAttribute('data-stacked')).toBe(true);
+    expect(part('a.note')?.hasAttribute('data-stacked')).toBe(true);
+    // one line: icon, words and action stay centred
+    expect(part('a.title')?.hasAttribute('data-stacked')).toBe(false);
+    expect(part('a.body')?.hasAttribute('data-stacked')).toBe(false);
+    expect(part('a.limit')?.textContent).toContain('Wait for the reset.');
+    // the body is built once, not once per read of it
+    expect(built).toBe(1);
+  });
+
   test('Stats formats numbers and shows unit and delta', () => {
     mount(() => <Stats items={[{ label: 'tests', value: 1234, unit: 'ms', delta: '+6', tone: 'good' }]} format={(n) => `#${n}`} />);
     const stat = part('ui.stats.item');

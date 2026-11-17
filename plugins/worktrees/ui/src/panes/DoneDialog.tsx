@@ -5,10 +5,10 @@
 import { createSignal, For, onCleanup, onMount, Show, type JSX } from 'solid-js';
 import { setSetting, type ExtensionId, type PluginClient, type SettingRow } from '@wisp/client';
 import { useShell } from '@wisp/shell';
-import { Button, Checkbox, Inline, Skeleton, Stack, Text, useSignal } from '@wisp/ui';
+import { Button, Checkbox, Divider, Inline, Skeleton, Stack, Text, useSignal } from '@wisp/ui';
 import { bare, forget, peerOf, rowsFor, settingKey, VIEW } from '../ask.ts';
 import { doneApply, doneList } from '../commands.ts';
-import { heading, initiallyTicked, losesOf, outcome, removal, removeButton, stateOf, withSizes, type Said } from '../done.ts';
+import { heading, initiallyTicked, outcome, removal, removeButton, rowStatus, withSizes, type Said } from '../done.ts';
 import { fmtSize } from '../format.ts';
 import { t } from '../i18n.ts';
 import { SETTING, type DoneFolder } from '../types.ts';
@@ -17,33 +17,59 @@ import '../i18n/lazy.ts';
 
 const say = (s: Said): string => t(s.key, s.vars);
 
+// One row a folder (v1 .wd-row): its tick, the task's name over its branch taking all the width there is (the branch
+// cut only when it must), one short status at the right (warn once Remove would lose what it holds) and its size.
 function Row(props: { readonly f: DoneFolder; readonly ticked: boolean; readonly onTick: (on: boolean) => void }): JSX.Element {
   const who = (): string => (props.f.own ? t('worktrees.folders.this') : props.f.title || props.f.branch);
-  const st = () => stateOf(props.f);
-  const loses = () => losesOf(props.f);
+  const st = () => rowStatus(props.f, props.ticked);
+  // what Remove would lose, in full, on hover
+  const tip = (): { title?: string } => {
+    const x = st().tip;
+    return x ? { title: say(x) } : {};
+  };
   return (
-    <Inline gap="3" align="center" part="worktrees.folders.row">
+    <Inline gap="5" align="center" padX="6" padY="4" part="worktrees.folders.row">
       <Checkbox checked={props.ticked} onChange={(on) => props.onTick(on)} aria-label={t('worktrees.folders.tick', { name: who() })} part="worktrees.folders.tick" />
-      <Stack gap="0" part="worktrees.folders.who">
-        <Text weight="semibold" truncate title={props.f.title}>
+      <Stack gap="0" grow part="worktrees.folders.who">
+        <Text weight="medium" truncate title={props.f.title}>
           {who()}
         </Text>
-        <Inline gap="2">
-          <Text size="sm" tone="muted" mono truncate title={props.f.path}>
-            {props.f.branch || props.f.path}
-          </Text>
-          <Show when={loses()}>{(l) => <Text size="sm" tone="warn" nowrap>{say(l())}</Text>}</Show>
-        </Inline>
+        <Text size="sm" tone="muted" mono truncate title={props.f.branch || props.f.path}>
+          {props.f.branch || props.f.path}
+        </Text>
       </Stack>
-      <Text size="sm" tone={st().warn ? 'warn' : 'muted'} nowrap part="worktrees.folders.state">
+      <Text size="sm" tone={st().warn ? 'warn' : 'muted'} nowrap part="worktrees.folders.state" {...tip()}>
         {say(st())}
       </Text>
       <Show when={props.f.size !== null} fallback={<Skeleton shape="line" width="time-col" part="worktrees.folders.size" />}>
-        <Text size="sm" tone="muted" numeric nowrap part="worktrees.folders.size">
+        <Text size="sm" tone="muted" numeric nowrap align="end" part="worktrees.folders.size">
           {fmtSize(props.f.size ?? 0)}
         </Text>
       </Show>
     </Inline>
+  );
+}
+
+/** The rows in their shape while git looks (v1 .wd-wait). */
+function Placeholders(props: { readonly n: number }): JSX.Element {
+  return (
+    <For each={Array.from({ length: props.n })}>
+      {(_, i) => (
+        <>
+          <Show when={i() > 0}>
+            <Divider />
+          </Show>
+          <Inline gap="5" align="center" padX="6" padY="4" aria-hidden="true">
+            <Skeleton shape="block" width="check" height="check" />
+            <Stack gap="1" grow>
+              <Skeleton shape="line" width="1/2" />
+              <Skeleton shape="line" width="1/3" />
+            </Stack>
+            <Skeleton shape="line" width="time-col" />
+          </Inline>
+        </>
+      )}
+    </For>
   );
 }
 
@@ -130,26 +156,22 @@ export default function DoneDialog(props: { readonly client: PluginClient; reado
       <Text as="p" tone="muted">
         {folders() ? say(head().hint) : t('worktrees.folders.hint')}
       </Text>
-      <Stack gap="3" part="worktrees.folders.rows">
+      {/* v1 .wd-rows: the rows in one bordered list, a hairline between two */}
+      <Stack gap="0" border="line" radius="lg" part="worktrees.folders.rows">
         <Show
           when={folders()}
-          fallback={
-            <For each={Array.from({ length: props.params.n })}>
-              {() => (
-                <Inline gap="3" align="center" aria-hidden="true">
-                  <Skeleton shape="block" width="check" height="check" />
-                  <Stack gap="1">
-                    <Skeleton shape="line" width="1/2" />
-                    <Skeleton shape="line" width="1/3" />
-                  </Stack>
-                </Inline>
-              )}
-            </For>
-          }
+          fallback={<Placeholders n={props.params.n} />}
         >
           {(list) => (
             <For each={list()}>
-              {(f) => <Row f={f} ticked={ticked().includes(f.path)} onTick={(on) => setTicked(on ? [...ticked(), f.path] : ticked().filter((p) => p !== f.path))} />}
+              {(f, i) => (
+                <>
+                  <Show when={i() > 0}>
+                    <Divider />
+                  </Show>
+                  <Row f={f} ticked={ticked().includes(f.path)} onTick={(on) => setTicked(on ? [...ticked(), f.path] : ticked().filter((p) => p !== f.path))} />
+                </>
+              )}
             </For>
           )}
         </Show>

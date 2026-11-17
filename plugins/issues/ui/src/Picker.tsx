@@ -52,11 +52,13 @@ export default function Picker(props: { readonly client: PluginClient; readonly 
     cancel = scope.timeout(DEEP_MS, () => setDeepQ(v.trim()));
   };
   const shown = createMemo((): Issue[] => {
+    if (res.loading) return [];
     const mine = (res()?.issues ?? []).filter((i) => matches(i, q()));
     const more = q().trim() && deepQ() === q().trim() ? (deep() ?? []).filter((i) => !mine.some((m) => m.id === i.id)) : [];
     return [...mine, ...more];
   });
-  const rest = createMemo(() => others(source(), res(), project, say).filter((o) => !q().trim() || o.label.toLowerCase().includes(q().trim().toLowerCase())));
+  // nothing under the placeholder while it asks: before the answer, Linear and Jira read as not connected (Connect…)
+  const rest = createMemo(() => (res.loading ? [] : others(source(), res(), project, say)).filter((o) => !q().trim() || o.label.toLowerCase().includes(q().trim().toLowerCase())));
   const close = (): void => c.navigate({ t: 'closeOverlay', id: PICKER as never });
   const settings = (pane: string, more: Record<string, string> = {}): void => {
     close();
@@ -140,6 +142,7 @@ export default function Picker(props: { readonly client: PluginClient; readonly 
       empty={t('issues.loading')}
       note={note()}
       loading={res.loading}
+      skeletonRows={1}
       foot={{ navigate: t('issues.foot.navigate'), open: t('issues.foot.open'), close: t('issues.foot.close') }}
       close={{ back: t('issues.back'), cancel: t('issues.cancel'), onClose: close }}
       onInput={typed}

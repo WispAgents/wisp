@@ -133,3 +133,37 @@ test('two rows with one id each draw their own row', () => {
   );
   expect([...host.querySelectorAll('[data-kit="pal-label"]')].map((l) => l.textContent)).toEqual(['First', 'Second']);
 });
+
+test('issue_picker_loading_shows_one_placeholder_row_and_no_group_line', () => {
+  // r330 #19: four placeholder rows under a group line, for a list whose length isn't known yet, looked odd
+  const host = document.createElement('div');
+  document.body.append(host);
+  const [n, setN] = createSignal<number | undefined>(1);
+  dispose = render(
+    () => (
+      <PaletteSheet
+        variant="issues"
+        value=""
+        placeholder="Search issues…"
+        label="Start from an issue"
+        rows={[]}
+        selected={0}
+        empty="Loading issues…"
+        loading
+        {...((v) => (v === undefined ? {} : { skeletonRows: v }))(n())}
+        foot={{ navigate: 'n', open: 'o', close: 'c' }}
+        onInput={() => {}}
+        onKeyDown={() => {}}
+        onPick={() => {}}
+        onHover={() => {}}
+      />
+    ),
+    host,
+  );
+  expect(host.querySelectorAll('[data-kit="pal-sk"]')).toHaveLength(1);
+  expect(host.querySelector('[data-kit="pal-sk-group"]')).toBeNull();
+  // the palette's own default stays: a group line and four rows
+  setN(undefined);
+  expect(host.querySelectorAll('[data-kit="pal-sk"]')).toHaveLength(4);
+  expect(host.querySelector('[data-kit="pal-sk-group"]')).not.toBeNull();
+});

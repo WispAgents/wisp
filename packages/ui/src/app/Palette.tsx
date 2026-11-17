@@ -57,6 +57,9 @@ export interface PaletteSheetProps {
   readonly note?: { readonly text: string; readonly tone?: 'info' | 'warn'; readonly action?: { readonly label: string; readonly onClick: () => void } } | undefined;
   /** added 2026-11-12: still asking: a group line and rows of placeholders in the rows' shape (v1 .pal-sk) */
   readonly loading?: boolean;
+  /** added 2026-11-17: how many placeholder rows `loading` shows (default 4, under a group line); one row alone for a
+   *  list whose length isn't known yet (the issue picker) */
+  readonly skeletonRows?: number;
   /** The phone apps' way out of the search (Android's Back, iOS's Cancel). The browser closes with Esc and outside. */
   readonly close?: { readonly back: string; readonly cancel: string; readonly onClose: () => void };
 }
@@ -129,10 +132,12 @@ export function PaletteSheet(props: PaletteSheetProps): JSX.Element {
       <div data-kit="pal-list" id="palList" role={props.rows.length > 0 ? 'listbox' : 'presentation'} aria-label={props.label} data-part="shell.palette.list">
         <Show when={props.loading}>
           <div data-kit="pal-sk-wrap" aria-hidden="true">
-            <span data-kit="pal-sk-group">
-              <Skeleton shape="pill" width="full" />
-            </span>
-            <For each={[0, 1, 2, 3]}>
+            <Show when={(props.skeletonRows ?? 4) > 1}>
+              <span data-kit="pal-sk-group">
+                <Skeleton shape="pill" width="full" />
+              </span>
+            </Show>
+            <For each={Array.from({ length: Math.max(1, props.skeletonRows ?? 4) })}>
               {() => (
                 <div data-kit="pal-sk">
                   <Skeleton shape="circle" />

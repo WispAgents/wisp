@@ -3,7 +3,7 @@
 // a harness on another company's model, the model pinned; or a note saying none is set up). One
 // click, never by itself; the buttons lock at once and come back if the hand-off is refused.
 import { For, Match, Show, Switch, createSignal, type JSX } from 'solid-js';
-import { Banner, Button, Inline, Text } from '@wisp/ui';
+import { Banner, Button, Text, Wrap } from '@wisp/ui';
 import type { Halt, T } from './model.ts';
 import type { Target } from './vendors.ts';
 import '../i18n/lazy.ts';
@@ -60,7 +60,8 @@ export function HaltCard(props: {
       <Show when={text()}>
         <Text size="sm">{text()}</Text>
       </Show>
-      <Inline gap="2" part="turn.halt.acts">
+      {/* v1 .lm-acts: the buttons 8px apart, onto a second line when the card is narrow */}
+      <Wrap gap="4" part="turn.halt.acts">
         <Switch>
           <Match when={h().kind === 'signedOut'}>
             <Button size="sm" variant="primary" onClick={() => props.onSignIn()}>
@@ -117,7 +118,7 @@ export function HaltCard(props: {
             }}
           </Match>
         </Switch>
-      </Inline>
+      </Wrap>
       <Show when={h().kind === 'refused' && props.targets.length === 0}>
         <Text size="sm" tone="muted">
           {props.t('shell-task.halt.noTarget')}

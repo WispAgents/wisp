@@ -23,6 +23,15 @@
   code, kbd, pre, samp { font-family: var(--mono); }
   small { font-size: var(--fs-xs); }
   img, svg, video { display: block; max-width: 100%; }
+  /* A plugin's mono mark (Cursor, opencode, Grok, Copilot: a data: SVG that picks dark or light by the OS) follows
+     the app's theme. WebKit (the desktop app) draws an <img> SVG by the OS's scheme whatever the page's color-scheme
+     says, so on a dark app over a light OS the mark was dark on dark: drawn here in the theme's ink instead. */
+  img[src^='data:image/svg+xml'][src*='prefers-color-scheme'] { filter: brightness(0) invert(0.09); }
+  @media (prefers-color-scheme: dark) {
+    :where(:root:not([data-theme='light'])) img[src^='data:image/svg+xml'][src*='prefers-color-scheme'] { filter: brightness(0) invert(0.93); }
+  }
+  :where([data-theme='dark']) img[src^='data:image/svg+xml'][src*='prefers-color-scheme'] { filter: brightness(0) invert(0.93); }
+  :where([data-theme='light']) img[src^='data:image/svg+xml'][src*='prefers-color-scheme'] { filter: brightness(0) invert(0.09); }
   [hidden] { display: none !important; }
   /* Keyboard focus shows on every control that doesn't draw its own; a click doesn't show it. */
   :where(button, a, summary, [tabindex], input, textarea, select):focus-visible {

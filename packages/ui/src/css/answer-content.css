@@ -146,6 +146,15 @@
   [data-kit='cb-diff'][data-missing] > [data-kit='cb-diff-foot'] { border-radius: 0 0 var(--radius) var(--radius); }
   [data-kit='cb-diff-foot'] > [data-kit='cb-caption'] { flex: 1; min-width: 0; border-top: 0; }
   [data-kit='cb-diff-foot'] > [data-kit='button'] { flex: none; margin: var(--space-3) var(--space-3) var(--space-3) auto; }
+  /* no captured edits (v1 .b-diff.missing): the file's head row (icon and path 10px apart, as v1's .diff-head), then the note */
+  [data-kit='cb-card'][data-type='diff-missing'] { padding: 0 0 var(--space-2); overflow: hidden; }
+  [data-kit='cb-diff-missing-head'] {
+    display: flex; align-items: center; gap: var(--space-5); min-width: 0;
+    padding: calc(var(--space-4) + var(--size-hairline)) var(--space-5) calc(var(--space-4) + var(--size-hairline)) var(--space-7);
+    border-bottom: var(--size-hairline) solid var(--line); background: var(--surface-2);
+  }
+  [data-kit='cb-diff-missing-head'] > :not([data-kit='icon']) { min-width: 0; }
+  [data-kit='cb-card'][data-type='diff-missing'] > [data-kit='cb-muted'] { margin: 0; padding: var(--space-5) var(--space-7); font-size: var(--fs-md); }
 
   /* a path in mono (v1 .path): the folder faint, the name in ink; one line, cut with an ellipsis */
   [data-kit='cb-path'] { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: var(--fs-sm) var(--mono); }

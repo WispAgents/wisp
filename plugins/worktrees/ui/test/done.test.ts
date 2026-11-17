@@ -2,7 +2,7 @@
 // folders, and what the dialog says (src/done.ts, src/view.ts).
 import { describe, expect, it } from 'vitest';
 import type { EntityKey, PendingInfo, PeerId } from '@wisp/client';
-import { heading, holdsWork, initiallyTicked, losesOf, newlyDone, outcome, planDone, removal, removeButton, stateOf, withSizes } from '../src/done.ts';
+import { heading, holdsWork, initiallyTicked, losesOf, newlyDone, outcome, planDone, removal, removeButton, rowStatus, stateOf, withSizes } from '../src/done.ts';
 import { t } from '../src/i18n.ts';
 import type { DoneFolder } from '../src/types.ts';
 import { doneTitle, parseDone } from '../src/view.ts';
@@ -65,6 +65,20 @@ describe('what a row says', () => {
     expect(l(folder('/a', { only: 1, uncommitted: 1 }))).toBe('1 uncommitted file will be lost');
     expect(l(folder('/a', { only: 1, uncommitted: 0 }))).toBe('Its commits off the branch will be lost');
     expect(l(folder('/a', { only: null }))).toBe('Git can’t read it: what’s in it may be lost');
+  });
+  it('row_says_one_short_status_at_its_right_warning_once_remove_would_lose_it', () => {
+    // r330 #9: the row said "1 uncommitted file will be lost" under the branch and "1 uncommitted file" beside it
+    const r = (f: DoneFolder, ticked: boolean): [string, boolean, string | undefined] => {
+      const s = rowStatus(f, ticked);
+      return [t(s.key, s.vars), s.warn, s.tip && t(s.tip.key, s.tip.vars)];
+    };
+    const dirty = folder('/a', { only: 1, uncommitted: 1 });
+    expect(r(dirty, false)).toEqual(['1 uncommitted file', false, undefined]);
+    expect(r(dirty, true)).toEqual(['1 uncommitted file', true, '1 uncommitted file will be lost']);
+    expect(r(folder('/a', { only: null }), true)).toEqual(['Can’t read it', true, 'Git can’t read it: what’s in it may be lost']);
+    // a clean one says its state, ticked or not, and never warns
+    expect(r(folder('/a'), true)).toEqual(['Clean', false, undefined]);
+    expect(r(folder('/a', { pr: { number: 9, url: '', state: 'OPEN' } }), false)).toEqual(['PR #9 open', false, undefined]);
   });
 });
 

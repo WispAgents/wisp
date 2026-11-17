@@ -1,6 +1,6 @@
 // Banner (a bar across a pane: *Reconnecting to wisp…*, an update) and Callout (a note inside
 // content, v1's .b-callout). The tone tints the fill and the full 1px border; no side stripes.
-import { Show, type JSX } from 'solid-js';
+import { Show, children, type JSX } from 'solid-js';
 import type { Tone } from '@wisp/tokens';
 import { sub, type KitProps, type PartName, type WithChildren } from '../core/props.ts';
 import { useT, type Translate } from '../core/i18n.tsx';
@@ -25,15 +25,19 @@ function Notice(props: NoticeProps & { readonly kit: 'banner' | 'callout'; reado
   const t = useT(() => props.t);
   const part = (): PartName => props.part ?? props.fallbackPart;
   const tone = (): Tone => props.tone ?? 'info';
+  // resolved once: read straight from props, each read would build the body again
+  const body = children(() => props.children);
+  const hasBody = (): boolean => body.toArray().some((c) => c !== undefined && c !== null && c !== false && c !== '');
   return (
-    <div id={props.id} role={props.role} data-kit={props.kit} data-part={part()} data-tone={tone()}>
+    // a title over a body is two lines or more: the icon sits on the title's line, not in the middle of them all
+    <div id={props.id} role={props.role} data-kit={props.kit} data-part={part()} data-tone={tone()} data-stacked={props.title && hasBody() ? '' : undefined}>
       <span data-kit="notice-icon" data-part={sub(part(), 'icon')}>
         <Icon name={props.icon ?? DEFAULT_ICON[tone()]} size="md" />
       </span>
       <div data-kit="notice-text" data-part={sub(part(), 'text')}>
         <Show when={props.title}>{(title) => <p data-kit="notice-title">{title()}</p>}</Show>
-        <Show when={props.children}>
-          <div data-kit="notice-body">{props.children}</div>
+        <Show when={hasBody()}>
+          <div data-kit="notice-body">{body()}</div>
         </Show>
       </div>
       <Show when={props.action}>
