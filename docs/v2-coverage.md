@@ -461,16 +461,16 @@ kept). `npm run check` (rule `v1-coverage`) reads this table: every v1 item has 
 | telemetry | `run_app` | `telemetry:run_app` |
 | telemetry | `shell` | `telemetry:shell` |
 | telemetry | `ship` | `telemetry:ship` |
-| telemetry | `side_task` | `todo:side discussions (v1 /side, services/fork.js side())` |
+| telemetry | `side_task` | `telemetry:side_task` |
 | telemetry | `spell_hook` | `todo:plugins/spells install and hooks (emit spell_hook when a user plugin's hook runs)` |
-| telemetry | `spell_installed` | `todo:plugins/spells install (emit spell_installed when a user plugin is installed)` |
+| telemetry | `spell_installed` | `telemetry:spell_installed` |
 | telemetry | `stuff_launch` | `telemetry:stuff_launch` |
 | telemetry | `stuff_publish` | `telemetry:stuff_publish` |
 | telemetry | `stuff_save` | `telemetry:stuff_save` |
 | telemetry | `takeover` | `telemetry:takeover` |
 | telemetry | `task_import` | `telemetry:task_import` |
 | telemetry | `task_share` | `telemetry:task_share` |
-| telemetry | `try_two_ways` | `todo:try two ways (v1 --try trial; v2's CLI says to use --compare: count it there, server side)` |
+| telemetry | `try_two_ways` | `telemetry:try_two_ways` |
 | telemetry | `turn_ended` | `telemetry:turn_ended` |
 | telemetry | `turn_started` | `telemetry:turn_started` |
 | telemetry | `update` | `telemetry:update` |
