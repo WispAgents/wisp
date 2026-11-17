@@ -5,7 +5,7 @@ import path from 'node:path';
 import os from 'node:os';
 import { randomUUID } from 'node:crypto';
 import { sameRepo } from './git.js';
-import { parsePresentation } from './protocol.js';
+import { parsePresentation, showNotes } from './protocol.js';
 import { activityFacts, lightFacts } from './usage.js';
 import { VERSION, writeJsonAtomic } from './util.js';
 
@@ -463,9 +463,10 @@ export class Store {
 }
 
 // Turns that fell back to plain text are re-parsed from their raw answer on load, so parser
-// fixes repair old turns too.
+// fixes repair old turns too; one that hid its answer in the notes shows it (showNotes).
 function reparse(session) {
   for (const t of session.turns || []) {
+    showNotes(t.presentation);
     if (!t.presentation?.fallback || typeof t.raw !== 'string') continue;
     const p = parsePresentation(t.raw);
     if (!p.fallback) t.presentation = p;
