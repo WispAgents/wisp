@@ -113,34 +113,7 @@ impl Runtime {
         let next = self.harness(&s.agent).ok();
         crate::handoff::carry_over(&mut s, &was, opt_str(run, "model").is_some(), opt_str(run, "effort").is_some(), next.as_deref());
         let mut turn = self.next_turn(&s, &item).await?;
-        let ctx = BeforeRunCtx {
-            session_id: s.id.clone(),
-            turn_id: turn.id.clone(),
-            agent: s.agent.clone(),
-            account: s.account.clone(),
-            model: s.model.clone(),
-            effort: s.effort.clone(),
-            mode: s.mode,
-            cwd: s.cwd.clone(),
-            prompt: item.text.clone(),
-            by: item.by.clone(),
-            hold: None,
-            account_env: BTreeMap::new(),
-            once: None,
-            // a project declared without trusting its hooks or MCP servers (crate::kinds)
-            untrusted: s
-                .ext
-                .get("wisp.runtime")
-                .and_then(|o| o.pointer("/brief/untrusted"))
-                .and_then(serde_json::Value::as_bool)
-                .unwrap_or(false),
-            kind: if turn.idx == 0 { RunKind::First } else { RunKind::FollowUp },
-            parent_id: s.parent_id.clone(),
-            confirm_limit: item.opts.as_ref().and_then(|o| o.get("confirmLimit")).and_then(serde_json::Value::as_bool).unwrap_or(false),
-            together: crate::trial::together(&s, turn.idx),
-            // boxed: the context rides in every run's future
-            released: item.opts.as_ref().and_then(|o| o.get("released")).and_then(|v| serde_json::from_value(v.clone()).ok()).map(Box::new),
-        };
+        let ctx = run_ctx(&s, &turn, &item);
         // its folder first (a worktree archiving removed comes back on its branch), before anything reads it
         if let Err(why) = self.folder_ready(&s, Some(&turn.id)).await {
             return self.refused(s, turn, &why, &claim).await;
@@ -148,8 +121,7 @@ impl Runtime {
         if claim.cancelled() {
             return Err(RuntimeError::NoTask(s.id.0.clone()));
         }
-        // what the hooks were given: a hook that changes it (a Make a pane task's guide) is what the harness gets
-        let given = ctx.prompt.clone();
+        let given = ctx.prompt.clone(); // a hook that changes it (a Make a pane task's guide) is what the harness gets
         let mut ctx = match self.host.before_run(ctx).await {
             Ok(c) => c,
             Err(e) => return self.refused(s, turn, &e.message, &claim).await,
@@ -191,8 +163,10 @@ impl Runtime {
         let taken = self.persist_run_start(&mut s, &mut turn, &claim).await?;
         self.host.emit(Emitted::Started(TurnStarted { session_id: s.id.clone(), turn_id: turn.id.clone() }));
         // a task or My Stuff mentioned in the prompt (the turn as saved keeps the user's words)
-        // from the prompt as `before:run` left it (a Make a pane task's guide goes first); the turn keeps the user's words
-        let hooked = if ctx.prompt == given { turn.clone() } else { Turn { prompt: ctx.prompt.clone(), ..turn.clone() } };
+        let hooked = Box::new(
+            // the prompt as `before:run` left it (boxed: in the run's future); the turn keeps the user's
+            Turn { prompt: if ctx.prompt == given { turn.prompt.clone() } else { ctx.prompt.clone() }, ..turn.clone() },
+        );
         let mut asked = Turn { prompt: self.with_mentions(&s, &hooked, harness.info()).await, ..turn.clone() };
         crate::more::still_working(&s, &turn, &taken, &mut asked.prompt);
         // another harness taking over: what it missed goes first, with the user's rules (v1 handoff.js)
@@ -711,6 +685,38 @@ pub(crate) async fn extra_there(dir: &str) -> std::result::Result<(), String> {
     match tokio::fs::metadata(dir).await {
         Ok(m) if m.is_dir() => Ok(()),
         _ => Err(format!("One of this task's extra folders is gone: {dir}. It runs only with all of them, so nothing was started.")),
+    }
+}
+
+/// What `before:run` hooks are handed for this turn: the task, the queued item and what it asked.
+fn run_ctx(s: &Session, turn: &Turn, item: &QueueItem) -> BeforeRunCtx {
+    BeforeRunCtx {
+        session_id: s.id.clone(),
+        turn_id: turn.id.clone(),
+        agent: s.agent.clone(),
+        account: s.account.clone(),
+        model: s.model.clone(),
+        effort: s.effort.clone(),
+        mode: s.mode,
+        cwd: s.cwd.clone(),
+        prompt: item.text.clone(),
+        by: item.by.clone(),
+        hold: None,
+        account_env: BTreeMap::new(),
+        once: None,
+        // a project declared without trusting its hooks or MCP servers (crate::kinds)
+        untrusted: s
+            .ext
+            .get("wisp.runtime")
+            .and_then(|o| o.pointer("/brief/untrusted"))
+            .and_then(serde_json::Value::as_bool)
+            .unwrap_or(false),
+        kind: if turn.idx == 0 { RunKind::First } else { RunKind::FollowUp },
+        parent_id: s.parent_id.clone(),
+        confirm_limit: item.opts.as_ref().and_then(|o| o.get("confirmLimit")).and_then(serde_json::Value::as_bool).unwrap_or(false),
+        together: crate::trial::together(s, turn.idx),
+        // the hold Start now released, boxed (the context rides in every run's future)
+        released: item.opts.as_ref().and_then(|o| o.get("released")).and_then(|v| serde_json::from_value(v.clone()).ok()).map(Box::new),
     }
 }
 
