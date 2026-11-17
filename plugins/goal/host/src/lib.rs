@@ -58,7 +58,11 @@ pub fn goal_of(spec: &Value, d: &kinds::GoalSpec) -> Option<Goal> {
     let own = || vec![spec.get("agent").and_then(Value::as_str).filter(|a| !a.is_empty()).unwrap_or("claude").to_owned()];
     // `judges: []` said on purpose is no judges (B49), not "the defaults"
     let none_on_purpose = g.get("judges").and_then(Value::as_array).is_some_and(Vec::is_empty);
-    let judges = if none_on_purpose { own() } else { list(g.get("judges")).or_else(|| Some(d.judges.clone()).filter(|j| !j.is_empty())).unwrap_or_else(own) };
+    let judges = if none_on_purpose {
+        own()
+    } else {
+        list(g.get("judges")).or_else(|| Some(d.judges.clone()).filter(|j| !j.is_empty())).unwrap_or_else(own)
+    };
     let vote = g
         .get("vote")
         .and_then(Value::as_str)
