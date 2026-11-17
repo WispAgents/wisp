@@ -310,10 +310,19 @@ mod tests {
     /// reserves) isn't given to its app; the next free one is, and what's recorded is that one, not the id's.
     #[tokio::test]
     async fn a_taken_app_port_moves_to_the_next_free_one_and_is_the_one_recorded() {
-        let id = format!("app-taken-{}", wisp_kernel::ids::uuid7());
-        let derived = wisp_terminal_core::run::port_for(&id);
-        // held here, listening; a port the system refuses already (a reserved range) is the same case
-        let held = tokio::net::TcpListener::bind(("127.0.0.1", derived)).await.expect("the task's own port, to hold");
+        // an id whose own port this test can hold: a random id's port may already be some other program's on the
+        // runner (CI: AddrInUse), which isn't the case under test
+        let mut found = None;
+        for _ in 0..50 {
+            let id = format!("app-taken-{}", wisp_kernel::ids::uuid7());
+            let derived = wisp_terminal_core::run::port_for(&id);
+            // held here, listening; a port the system refuses already (a reserved range) is the same case
+            if let Ok(held) = tokio::net::TcpListener::bind(("127.0.0.1", derived)).await {
+                found = Some((id, derived, held));
+                break;
+            }
+        }
+        let (id, derived, held) = found.expect("an id whose own port is free to hold");
         let r = Registry::new(wisp_proc::local(), wisp_kernel::CancellationToken::new());
         assert_eq!(r.app_port(&id), None, "never started: nothing recorded");
         let port = r.claim_app_port(&id).await;
