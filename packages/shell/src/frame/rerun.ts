@@ -11,6 +11,8 @@ export interface RerunSpec {
   readonly mode?: string;
   readonly cwd?: string;
   readonly dirs?: readonly string[];
+  /** the kind of task (My Stuff's pane, a Cast plugin): a rerun is the same kind */
+  readonly ext?: Readonly<Record<string, unknown>>;
 }
 
 export interface RerunEdits {
@@ -47,6 +49,7 @@ export function rerunArgs(s: RerunSpec, e: RerunEdits, o: { readonly of: string;
     ...(s.cwd && { cwd: s.cwd }),
     ...(s.dirs?.length && { dirs: [...s.dirs] }),
     ...(s.steps?.length && { steps: [...s.steps] }),
+    ...(s.ext && Object.keys(s.ext).length > 0 && { ext: { ...s.ext } }),
     lineage: { rerunOf: o.of },
   };
 }

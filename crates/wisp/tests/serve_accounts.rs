@@ -94,6 +94,38 @@ async fn a_changed_harness_holds_its_turn_until_trusted() {
     drop(serve);
 }
 
+/// TRY-17 #8: Start now on the card of a turn the watch held (`runtime.release`, a person's yes) trusts the changed
+/// program and runs the turn. Before, the release ran `before:run` again against the old pin, which held the turn
+/// again: a loop with nothing on screen, and Start now did nothing.
+#[tokio::test(flavor = "multi_thread")]
+async fn start_now_on_a_harness_changed_hold_trusts_the_program_and_runs() {
+    let dir = temp("serve-watch-start");
+    let (serve, port) = start(&dir);
+    let api = Arc::new(Api { http: reqwest::Client::new(), port, n: 0.into() });
+    api.cmd("accounts.watch.ask", json!({ "on": true })).await;
+    let (turn, _) = run_task(&api, &dir, "codex").await;
+    assert_eq!(turn["status"], "done", "{turn}");
+    let bin = dir.join("bin").join(format!("codex{}", std::env::consts::EXE_SUFFIX));
+    let mut bytes = std::fs::read(&bin).unwrap();
+    std::fs::remove_file(&bin).unwrap();
+    bytes.extend_from_slice(b"\0changed");
+    std::fs::write(&bin, bytes).unwrap();
+    #[cfg(unix)]
+    std::fs::set_permissions(&bin, std::os::unix::fs::PermissionsExt::from_mode(0o755)).unwrap();
+    let id = api.cmd("runtime.create", json!({ "prompt": "again", "cwd": dir.join("proj"), "agent": "codex" })).await["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let t = api.until(&id, "held", |t| t.len() == 1 && t[0]["status"] == "held").await;
+    assert_eq!(t[0]["held"]["kind"], "harness-changed", "{:?}", t[0]);
+    let tid = t[0]["id"].as_str().unwrap().to_owned();
+    api.cmd("runtime.release", json!({ "id": id, "turnId": tid, "action": "start" })).await;
+    api.until(&id, "Start now runs the held turn", |t| t.len() == 1 && t[0]["status"] == "done").await;
+    let w = api.cmd("accounts.watch", json!({ "agent": "codex" })).await;
+    assert!(w["changed"].is_null(), "Start now trusted the new program: {w}");
+    drop(serve);
+}
+
 /// opencode signs in with a key pasted into wisp: it goes where opencode keeps it, and only whether one
 /// is saved comes back. Codex's usage windows are read from its app-server (nothing spent). The v1
 /// routes answer as the commands do.

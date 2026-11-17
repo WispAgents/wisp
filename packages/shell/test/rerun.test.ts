@@ -29,3 +29,9 @@ test('picked on another computer, it runs there_v1_rerun_elsewhere', () => {
   const e = { ...startEdits(spec, 'laptop'), peer: 'studio' };
   expect(rerunArgs(spec, e, { of: 'laptop:s1', id: 'studio:s9', at: 1 })).toMatchObject({ peer: 'studio', id: 'studio:s9', lineage: { rerunOf: 'laptop:s1' } });
 });
+
+test('a rerun is the same kind of task: a My Stuff pane stays a pane on another harness (owner, 2026-11-17)', () => {
+  const args = rerunArgs({ prompt: 'a hello world pane', agent: 'claude', ext: { 'wisp.stuff': { kind: 'pane' } } }, { prompt: 'a hello world pane', mode: 'auto', agent: 'codex', model: '', effort: '', peer: 'local' }, { of: 'local:t1', id: 'local:t2', at: 1 });
+  expect(args).toMatchObject({ agent: 'codex', ext: { 'wisp.stuff': { kind: 'pane' } } });
+  expect('ext' in rerunArgs({ prompt: 'x' }, { prompt: 'x', mode: 'auto', agent: '', model: '', effort: '', peer: 'local' }, { of: 'a', id: 'b', at: 1 })).toBe(false);
+});

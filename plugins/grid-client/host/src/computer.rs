@@ -51,7 +51,9 @@ pub fn view(st: &St) -> ComputerState {
     if let Some(a) = st.account() {
         c.on = a.computer_on;
         c.label = a.computer_label;
-        c.url = if c.label.is_empty() {
+        c.url = if !a.computer_url.is_empty() {
+            a.computer_url
+        } else if c.label.is_empty() {
             String::new()
         } else {
             wisp_grid_client_core::label_host(&a.grid, &c.label)
@@ -85,7 +87,7 @@ pub async fn set(st: &Arc<St>, on: bool, name: Option<String>) -> Result<Compute
             return Err(net::refused(status, &c));
         }
         let s = |k: &str| c.get(k).and_then(Value::as_str).unwrap_or_default().to_owned();
-        (a.computer_id, a.computer_label, a.computer_name) = (s("id"), s("label"), name);
+        (a.computer_id, a.computer_label, a.computer_url, a.computer_name) = (s("id"), s("label"), s("url"), name);
     }
     a.computer_on = true;
     // the account may have been switched from or signed out of while the grid answered: the tunnel is the

@@ -111,6 +111,9 @@ fn tell_focus(w: &WebviewWindow, on: bool) {
     let _ = w.eval(format!("dispatchEvent(new CustomEvent('wisp-window-focus', {{ detail: {on} }}))"));
 }
 
+/// how many popped-out windows were made: each one's label
+static POPUPS: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+
 fn open_window(app: &AppHandle, port: u16) -> tauri::Result<()> {
     let home = base(port);
     let (nav, popup, inside_nav, inside_popup) = (app.clone(), app.clone(), home.clone(), home.clone());
@@ -137,9 +140,21 @@ fn open_window(app: &AppHandle, port: u16) -> tauri::Result<()> {
             }
             stay
         })
-        .on_new_window(move |url, _| {
+        .on_new_window(move |url, features| {
             if is_wisp(&url, &inside_popup) {
-                return NewWindowResponse::Allow;
+                // a wisp page in a window of its own (a My Stuff app, a page popped out): made here, as a Tauri window
+                // with the opener's features. `Allow` let WebKit make a bare view, and its first request to the app's
+                // own scheme reached wry's handler with no state: the app aborted (owner, 2026-11-17)
+                let label = format!("popup-{}", POPUPS.fetch_add(1, std::sync::atomic::Ordering::Relaxed));
+                match WebviewWindowBuilder::new(&popup, label, WebviewUrl::External(url.clone()))
+                    .title("wisp")
+                    .initialization_script(INIT)
+                    .window_features(features)
+                    .build()
+                {
+                    Ok(window) => return NewWindowResponse::Create { window },
+                    Err(e) => eprintln!("wisp: couldn't open {url} in a window: {e}"),
+                }
             }
             open_outside(&popup, &url);
             NewWindowResponse::Deny

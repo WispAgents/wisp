@@ -98,6 +98,14 @@ async fn fake_grid(n: u8) -> FakeGrid {
                                 (200, json!({ "ok": true, "revoked": true }))
                             }
                             ("GET", "/api/computers") => match auth.strip_prefix(&format!("Bearer wgd_g{n}_")) {
+                                // grid 9 is v1's (grid.trywisp.dev today): `{ computers }`, each with its url, no label
+                                Some(h) if n == 9 => (
+                                    200,
+                                    json!({ "computers": [
+                                        { "id": format!("c-{h}"), "url": format!("{base}/me"), "name": "this one" },
+                                        { "id": "c-other", "url": format!("{base}/other"), "name": format!("studio of {h} on g{n}") },
+                                    ] }),
+                                ),
                                 Some(h) => (
                                     200,
                                     json!([{ "id": format!("c-{h}"), "url": base, "name": format!("studio of {h} on g{n}"), "label": "studio" }]),
@@ -351,6 +359,40 @@ async fn the_one_account_shape_moves_to_several_with_its_token() {
         ids
     };
     assert_eq!(ids, ["account:https://g.test#ada", "current", "import:s1"]);
+    drop(a);
+    let _ = std::fs::remove_dir_all(&d);
+}
+
+/// TRY-17 #14: this computer's address on the grid is what the grid answers (`url`). v1's grid (grid.trywisp.dev) sends
+/// no `label`, so wisp knew no address and Settings → Machines said only "Online"; one added before wisp kept the url
+/// gets it from the grid's list, which v1 wraps in `{ computers }` (its other computers were never listed either).
+#[tokio::test(flavor = "multi_thread")]
+async fn this_computers_grid_address_comes_from_the_grids_answer_on_a_v1_grid_too() {
+    let g = fake_grid(9).await;
+    let d = dir("here-url");
+    {
+        let old = Store::open(Location::Path(d.join("wisp.db")), Arc::new(SystemClock)).unwrap();
+        old.migrate("grid-client", &[Migration::sql(1, "CREATE TABLE grid_client_doc (id TEXT PRIMARY KEY, body TEXT NOT NULL) STRICT;")])
+            .unwrap();
+        old.define_entity(OLD_DOC).unwrap();
+        let mut r = Row::new();
+        r.insert("id".into(), json!("account"));
+        r.insert("body".into(), json!({ "grid": g.url, "handle": "ada", "machine": "m1", "computerId": "c-ada", "computerOn": false }));
+        old.write(move |w| w.upsert("grid_client_doc", r).map(|_| ())).await.unwrap();
+    }
+    let secrets = Arc::new(Secrets::default());
+    secrets.0.lock().unwrap().insert("grid-client/token".into(), "wgd_g9_ada".into());
+    let a = app(d.clone(), secrets).await;
+    let mut url = Value::Null;
+    for _ in 0..100 {
+        url = a.call("grid-client.status", json!({})).await["computer"]["url"].clone();
+        if url != "" {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+    assert_eq!(url, json!(format!("{}/me", g.url)), "this computer's address, from the grid's list");
+    a.eventually_names(&g.url, "ada", &["studio of ada on g9"]).await;
     drop(a);
     let _ = std::fs::remove_dir_all(&d);
 }

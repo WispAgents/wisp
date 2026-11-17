@@ -138,6 +138,8 @@ impl Runtime {
             parent_id: s.parent_id.clone(),
             confirm_limit: item.opts.as_ref().and_then(|o| o.get("confirmLimit")).and_then(serde_json::Value::as_bool).unwrap_or(false),
             together: crate::trial::together(&s, turn.idx),
+            // boxed: the context rides in every run's future
+            released: item.opts.as_ref().and_then(|o| o.get("released")).and_then(|v| serde_json::from_value(v.clone()).ok()).map(Box::new),
         };
         // its folder first (a worktree archiving removed comes back on its branch), before anything reads it
         if let Err(why) = self.folder_ready(&s, Some(&turn.id)).await {

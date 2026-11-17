@@ -5,11 +5,22 @@ const t = (k: string, v?: Readonly<Record<string, string | number>>): string => 
 const turn = (idx: number, extra: Partial<TurnDoc> = {}): TurnDoc => ({ id: `t${idx}`, idx, status: 'done', agent: 'claude', ...extra });
 
 describe('turn cards', () => {
+  // TRY-17 #8: wisp.accounts' hold said 'Held: harness-changed' (its raw kind: accounts writes `line`, not label/why)
+  // and its Start now looped; it says what changed in plain words and its button trusts the new program
+  it('a_changed_harness_hold_says_what_changed_and_its_button_trusts_and_starts', () => {
+    const held = { by: 'wisp.accounts', kind: 'harness-changed', data: { line: 'Codex changed since wisp last ran it: 0.1 → 0.2', what: '0.1 → 0.2' } };
+    expect(heldOf(turn(1, { agent: 'codex', status: 'held', held }), t, 'Codex')).toEqual({ title: 'shell-task.held.harness{"name":"Codex"}', why: '0.1 → 0.2', start: 'shell-task.held.trust' });
+    // a hold from before `what`: its line
+    expect(heldOf(turn(1, { status: 'held', held: { ...held, data: { line: 'Codex changed' } } }), t, 'Codex')?.why).toBe('Codex changed');
+    // any hold without a label says it plainly, never its kind
+    expect(heldOf(turn(1, { status: 'held', held: { by: 'x', kind: 'some-kind' } }), t, 'Codex')?.title).toBe('shell-task.held.other');
+  });
+
   it('each_card_says_why_a_turn_stopped_was_held_what_changed_and_what_it_cost', () => {
     // the store's row: the Turn in `body`
     expect(docOf({ id: 'r', status: 'held', idx: 2, body: { held: { by: 'wisp.budget', kind: 'limit', data: { label: 'Near the limit', why: '91% of the 5-hour window' } } } })?.status).toBe('held');
-    expect(heldOf(turn(1, { status: 'held', held: { by: 'wisp.budget', kind: 'limit', data: { label: 'Near the limit', why: '91%' } } }))).toEqual({ label: 'Near the limit', why: '91%' });
-    expect(heldOf(turn(1))).toBeNull();
+    expect(heldOf(turn(1, { status: 'held', held: { by: 'wisp.budget', kind: 'limit', data: { label: 'Near the limit', why: '91%' } } }), t, 'Claude Code')).toEqual({ title: 'shell-task.held.title{"label":"Near the limit"}', why: '91%', start: 'shell-task.held.start' });
+    expect(heldOf(turn(1), t, 'Claude Code')).toBeNull();
     expect(haltOf(turn(1, { ext: { 'wisp.runtime': { authFailed: true } } }))).toEqual({ kind: 'signedOut' });
     expect(haltOf(turn(1, { status: 'error', text: "You've hit your usage limit · resets 3pm" }))).toEqual({ kind: 'limit', text: "You've hit your usage limit · resets 3pm", others: [] });
     expect(haltOf(turn(1, { status: 'done', refusal: { agent: 'claude', model: 'opus', vendor: 'anthropic', kind: 'policy', line: ' I can’t help with that. ' } }))).toEqual({ kind: 'refused', text: 'I can’t help with that.', agent: 'claude', model: 'opus', vendor: 'anthropic' });

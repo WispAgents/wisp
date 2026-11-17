@@ -142,12 +142,7 @@ pub(crate) fn register(s: &mut Setup, slot: &Slot) {
         Ok(watch::view(&lock(&st.watch).get(&a.agent).cloned().unwrap_or_default()))
     });
     on!(s, slot, c::Trust, |st, ctx, a| {
-        let w = lock(&st.watch).get(&a.agent).cloned().unwrap_or_default();
-        if let Some(next) = watch::trust(&w, now(&ctx)) {
-            lock(&st.watch).insert(a.agent.clone(), next.clone());
-            let ag = a.agent.clone();
-            st.store.write(move |w| store::put_watch(w, &ag, &next)).await.map_err(crate::store_err)?;
-        }
+        run::trust(&ctx, &st, &a.agent).await.map_err(crate::store_err)?;
         // the turns it held run now
         let held = lock(&st.held).remove(&a.agent).unwrap_or_default();
         for (id, turn) in held {

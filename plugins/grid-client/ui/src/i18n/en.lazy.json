@@ -8,7 +8,6 @@
   "grid-client.signOut": "Sign out",
   "grid-client.computer.title": "This computer on the grid",
   "grid-client.computer.off": "Off: turn it on to reach this wisp from any browser or your phone, with no SSH and no open ports",
-  "grid-client.computer.online": "Online at {url}",
   "grid-client.computer.onlineNoUrl": "Online",
   "grid-client.computer.connecting": "Connecting…",
   "grid-client.computer.retrying": "Trying again…",

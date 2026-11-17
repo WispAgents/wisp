@@ -11,7 +11,7 @@ export interface TurnDoc {
   readonly account?: string;
   readonly isError?: boolean;
   readonly text?: string;
-  readonly held?: { readonly by: string; readonly kind: string; readonly until?: number | null; readonly data?: { readonly label?: string; readonly why?: string } };
+  readonly held?: { readonly by: string; readonly kind: string; readonly until?: number | null; readonly data?: { readonly label?: string; readonly why?: string; readonly line?: string; readonly what?: string } };
   readonly stats?: { readonly costUsd?: number; readonly inputTokens?: number; readonly outputTokens?: number; readonly cacheTokens?: number; readonly models?: Readonly<Record<string, { readonly input?: number; readonly output?: number; readonly cacheRead?: number; readonly cacheWrite?: number }>> } | null;
   readonly presentation?: { readonly blocks?: readonly { readonly type: string; readonly title?: string; readonly summary?: string; readonly status?: string }[] } | null;
   /** the harness turned it down (runtime's TurnRefusal, v1 `turn.refusal`) */
@@ -35,11 +35,18 @@ export function docOf(row: unknown): TurnDoc | undefined {
 
 export type T = (key: string, vars?: Readonly<Record<string, string | number>>) => string;
 
-/** Held before it starts (v1 hold.js): what holds it and why; Start now / Skip release it. */
-export function heldOf(d: TurnDoc): { label: string; why: string; until?: number } | null {
+/** wisp.accounts' hold (`wisp_accounts_api::HOLD_KIND`): the harness's program changed since wisp last ran it. */
+const HARNESS_CHANGED = 'harness-changed';
+
+/** Held before it starts (v1 hold.js): what holds it, why, and what Start now says. A changed harness says so in plain
+ * words and Start now trusts the new program (wisp.accounts re-pins it on that yes); an unknown hold never shows its
+ * raw kind. `name`: the harness's name. */
+export function heldOf(d: TurnDoc, t: T, name: string): { title: string; why: string; start: string; until?: number } | null {
   if (d.status !== 'held' || !d.held) return null;
-  const label = d.held.data?.label ?? d.held.kind;
-  return { label, why: d.held.data?.why ?? '', ...(d.held.until ? { until: d.held.until } : {}) };
+  const data = d.held.data;
+  const until = d.held.until ? { until: d.held.until } : {};
+  if (d.held.kind === HARNESS_CHANGED) return { title: t('shell-task.held.harness', { name }), why: data?.what ?? data?.line ?? '', start: t('shell-task.held.trust'), ...until };
+  return { title: data?.label ? t('shell-task.held.title', { label: data.label }) : t('shell-task.held.other'), why: data?.why ?? '', start: t('shell-task.held.start'), ...until };
 }
 
 export type Halt =

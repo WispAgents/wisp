@@ -449,6 +449,8 @@ pub async fn prepare(
         schedule: a.schedule.clone(),
         formula: Some(h),
         lineage: a.lineage.clone(),
+        // the kind of task is read from the session's ext when the spec is asked for (spec_of)
+        ext: None,
     };
     let mut own = match a.ext.remove("wisp.runtime") {
         Some(Value::Object(m)) => m,
@@ -491,6 +493,16 @@ pub fn spec_of(s: &Session, turns: &[Turn]) -> TaskSpec {
     spec.steps = prompts.collect();
     if let Some(f) = s.ext.get("wisp.runtime").and_then(|m| m.get("forkOf")).and_then(|f| f.get("id")).and_then(Value::as_str) {
         spec.lineage.fork_of = Some(f.to_owned());
+    }
+    // the kind of task a plugin made it (an entry with a `kind`), never runtime state (changes, goal rounds…)
+    let kinds: serde_json::Map<String, Value> = s
+        .ext
+        .iter()
+        .filter(|(k, v)| k.as_str() != "wisp.runtime" && v.get("kind").is_some())
+        .map(|(k, v)| (k.clone(), v.clone()))
+        .collect();
+    if !kinds.is_empty() {
+        spec.ext = Some(Value::Object(kinds));
     }
     spec
 }

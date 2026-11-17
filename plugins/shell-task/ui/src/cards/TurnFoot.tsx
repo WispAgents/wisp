@@ -92,7 +92,7 @@ export default function TurnFoot(props: ExtensionProps): JSX.Element {
     <Show when={doc()}>
       {(d) => (
         <Stack gap="2" part="turn.foot">
-          <Show when={heldOf(d())}>{(h) => <HeldCard label={h().label} why={h().why} t={t} onStart={() => quiet(c.run(release, { key: taskKey(), turnId: d().id, action: 'start' }))} onSkip={() => quiet(c.run(release, { key: taskKey(), turnId: d().id, action: 'skip' }))} />}</Show>
+          <Show when={heldOf(d(), t, nameOf(d().agent ?? ''))}>{(h) => <HeldCard title={h().title} why={h().why} start={h().start} t={t} onStart={() => quiet(c.run(release, { key: taskKey(), turnId: d().id, action: 'start' }))} onSkip={() => quiet(c.run(release, { key: taskKey(), turnId: d().id, action: 'skip' }))} />}</Show>
           <Show when={halt()}>
             {(h) => (
               <HaltCard

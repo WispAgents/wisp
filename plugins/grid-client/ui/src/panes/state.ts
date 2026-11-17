@@ -5,6 +5,7 @@ import { entityKey, type PluginClient } from '@wisp/client';
 import { useSignal } from '@wisp/ui';
 import { DEFAULT_GRID, KIND, signIn, TOPIC, type CloudRow } from '../commands.ts';
 import { t } from '../i18n.ts';
+import { hereOf } from '../here.ts';
 import '../i18n/lazy.ts';
 
 export const host = (url: string): string => url.replace(/^https?:\/\//, '').replace(/\/$/, '');
@@ -29,12 +30,6 @@ export function useCloud(c: PluginClient) {
       .catch(() => {})
       .finally(() => setStarting(false));
   };
-  const computerLine = (): string => {
-    const k = r()?.computer;
-    if (!k?.on) return t('grid-client.computer.off');
-    if (k.state === 'online') return k.url ? t('grid-client.computer.online', { url: host(k.url) }) : t('grid-client.computer.onlineNoUrl');
-    if (k.state === 'retrying') return k.error || t('grid-client.computer.retrying');
-    return t('grid-client.computer.connecting');
-  };
-  return { c, peer, r, grid, setGrid, starting, waiting, failed, start, computerLine };
+  const here = () => hereOf(r()?.computer, t);
+  return { c, peer, r, grid, setGrid, starting, waiting, failed, start, here };
 }

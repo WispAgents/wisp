@@ -77,6 +77,9 @@ pub struct Account {
     pub computer_id: String,
     #[serde(default)]
     pub computer_label: String,
+    /// this computer's address on the grid, as the grid answers it (`url`): v1's grid sends no `label`
+    #[serde(default)]
+    pub computer_url: String,
     #[serde(default)]
     pub computer_name: String,
     #[serde(default)]

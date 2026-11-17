@@ -13,10 +13,11 @@ import { ApiKeys } from './ApiKeys.tsx';
 import { Confirm } from './Confirm.tsx';
 import { MyShares } from './MyShares.tsx';
 import { host, useCloud } from './state.ts';
+import { HereLine } from './HereLine.tsx';
 import '../i18n/lazy.ts';
 
 export default function Cloud(props: { readonly client: PluginClient }): JSX.Element {
-  const { c, peer, r, grid, setGrid, starting, waiting, failed, start, computerLine } = useCloud(props.client);
+  const { c, peer, r, grid, setGrid, starting, waiting, failed, start, here } = useCloud(props.client);
   const accounts = () => accountsOf(r());
   // Add an account: the form opens at once; a sign-in that ended (done, cancelled) folds it back (v1 cloudPane)
   const [adding, setAdding] = createSignal(false);
@@ -67,7 +68,7 @@ export default function Cloud(props: { readonly client: PluginClient }): JSX.Ele
             <SettingsRow
               part="grid-client.computer"
               title={t('grid-client.computer.title')}
-              description={computerLine()}
+              description={<HereLine here={here()} />}
               control={<Switch aria-label={t('grid-client.computer.title')} checked={r()?.computer?.on ?? false} onChange={(on) => void c.run(setComputer, { peer, on }).catch(() => {})} />}
             />
           </SettingsGroup>

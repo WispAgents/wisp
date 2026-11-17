@@ -724,6 +724,10 @@ impl Runtime {
         if yes {
             opts["confirmLimit"] = serde_json::Value::Bool(true);
         }
+        // what the yes was to: the hold it released (a hook trusts only a yes to its own hold)
+        if yes && let Some(h) = &t.held {
+            opts["released"] = serde_json::to_value(h).unwrap_or_default();
+        }
         let item = QueueItem {
             id: wisp_kernel::ids::uuid7(),
             text: t.prompt.clone(),

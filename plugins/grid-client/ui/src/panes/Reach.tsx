@@ -7,10 +7,11 @@ import { Button, Inline, Input, Link, SettingsBlock, SettingsInputRow, SettingsG
 import { cancelSignIn, DEFAULT_GRID, setComputer } from '../commands.ts';
 import { t } from '../i18n.ts';
 import { host, useCloud } from './state.ts';
+import { HereLine } from './HereLine.tsx';
 import '../i18n/lazy.ts';
 
 export default function Reach(props: ExtensionProps): JSX.Element {
-  const { c, peer, r, grid, setGrid, starting, waiting, failed, start, computerLine } = useCloud(props.client);
+  const { c, peer, r, grid, setGrid, starting, waiting, failed, start, here } = useCloud(props.client);
   return (
     <SettingsGroup part="machines.cloud" spaceAfter>
       <Pick>
@@ -18,7 +19,7 @@ export default function Reach(props: ExtensionProps): JSX.Element {
           <SettingsRow
             part="grid-client.here"
             title={t('grid-client.here.title')}
-            description={computerLine()}
+            description={<HereLine here={here()} />}
             control={
               <Show
                 when={r()?.computer?.on}

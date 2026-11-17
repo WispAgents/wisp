@@ -95,9 +95,19 @@ async fn sync_account(st: &Arc<St>, a: &crate::state::Account, token: &str) -> R
     }
     let have = calls::peers(&st.ctx).await;
     let mut n = 0;
-    for c in list.as_array().into_iter().flatten() {
+    // v2's grid answers the list, v1's `{ computers: [...] }`
+    for c in list.get("computers").unwrap_or(&list).as_array().into_iter().flatten() {
         let (Some(cid), Some(url)) = (c.get("id").and_then(Value::as_str), c.get("url").and_then(Value::as_str)) else { continue };
         if cid == a.computer_id {
+            // this computer: its address on the grid, for one added before wisp kept it (or that the grid moved)
+            if url != a.computer_url {
+                let (key, cid, url) = (a.key(), cid.to_owned(), url.to_owned());
+                st.change(move |x| {
+                    x.list.iter_mut().filter(|y| y.key() == key && y.computer_id == cid).for_each(|y| y.computer_url.clone_from(&url));
+                })
+                .await?;
+                crate::view::publish(st);
+            }
             continue;
         }
         let name = c.get("name").and_then(Value::as_str).unwrap_or("Computer");

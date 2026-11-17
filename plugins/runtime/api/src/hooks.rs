@@ -55,6 +55,10 @@ pub struct BeforeRunCtx {
     /// near the limit sums them as v1's `together` did; 0 or 1: this run alone. Additive (2026-11-14).
     #[serde(default, skip_serializing_if = "is_alone")]
     pub together: u32,
+    /// the hold a person released with Start now (its `by` and `kind`): what the yes was to, so a hook trusts only
+    /// its own hold's yes (wisp.accounts' changed harness, not budget's Ask). Additive (2026-11-17).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub released: Option<Box<Held>>,
 }
 
 #[allow(clippy::trivially_copy_pass_by_ref)] // serde's skip_serializing_if takes a reference

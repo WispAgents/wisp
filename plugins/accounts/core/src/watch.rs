@@ -109,6 +109,11 @@ pub fn view(w: &Watched) -> WatchView {
 
 /// "Claude Code changed since 2026-11-02: 2.0.1 → 2.0.2" (`date` formats the pin's time).
 pub fn change_line(name: &str, c: &WatchChange, date: &str) -> String {
+    format!("{name} changed since {date}: {}", change_what(c))
+}
+
+/// What changed, without who or since when: "2.0.1 → 2.0.2", or the path and the new bytes' hash.
+pub fn change_what(c: &WatchChange) -> String {
     let label = |x: &Fingerprint| if x.version.is_empty() { x.path.clone() } else { x.version.clone() };
     let from = label(&c.from);
     let to = if c.kind == ChangeKind::Update || c.from.real == c.to.real || c.from.path == c.to.path {
@@ -116,12 +121,11 @@ pub fn change_line(name: &str, c: &WatchChange, date: &str) -> String {
     } else {
         format!("{} at {}", label(&c.to), c.to.path)
     };
-    let what = if from == to {
+    if from == to {
         format!("{from} (other bytes: {}…)", c.to.sha256.chars().take(12).collect::<String>())
     } else {
         format!("{from} → {to}")
-    };
-    format!("{name} changed since {date}: {what}")
+    }
 }
 
 #[cfg(test)]
@@ -161,6 +165,7 @@ mod tests {
         let c = other.change.clone().unwrap_or_else(|| panic!("a change"));
         assert_eq!(c.kind, ChangeKind::Warn);
         assert_eq!(change_line("Codex", &c, "2026-11-02"), "Codex changed since 2026-11-02: 0.1.2 (other bytes: c…)");
+        assert_eq!(change_what(&c), "0.1.2 (other bytes: c…)", "the held card's why: what changed, without the title's words");
         let t = trust(&other, 9).unwrap_or_default();
         assert_eq!((t.pin.as_ref().map(|p| p.sha256.as_str()), t.change.is_none()), (Some("c"), true));
         assert!(trust(&t, 10).is_none());

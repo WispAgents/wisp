@@ -174,6 +174,12 @@ pub struct TaskSpec {
     #[serde(default, skip_serializing_if = "Lineage::is_empty")]
     #[ts(as = "Option<Lineage>", optional)]
     pub lineage: Lineage,
+    /// what kind of task it is, as plugins marked it when it started (`ext` entries with a `kind`: My Stuff's pane, a
+    /// Cast plugin): a rerun is the same kind of task (a pane rerun on another harness didn't know it made a pane).
+    /// Additive (2026-11-17).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional, type = "Record<string, unknown>")]
+    pub ext: Option<Value>,
 }
 
 /// `runtime.snapshot`: what a task ran with, stored once per content hash (ADR-0029). Secrets stay

@@ -93,6 +93,24 @@ pub(crate) async fn observe(ctx: &Ctx, st: &State, agent: &str, bin: &str) -> Op
     next.change
 }
 
+/// Trust what harness `agent` runs now: the change the watch saw becomes the pin (`accounts.watch.trust`, and Start
+/// now on a turn the watch held). Nothing to do when nothing changed.
+pub(crate) async fn trust(ctx: &Ctx, st: &State, agent: &str) -> Result<(), wisp_store::StoreError> {
+    let w = lock(&st.watch).get(agent).cloned().unwrap_or_default();
+    let Some(next) = watch::trust(&w, now(ctx)) else { return Ok(()) };
+    lock(&st.watch).insert(agent.to_owned(), next.clone());
+    let a = agent.to_owned();
+    st.store.write(move |w| store::put_watch(w, &a, &next)).await
+}
+
+/// A person pressed Start now (`confirm_limit`: a yes to what held it) on a turn this watch held, and its card was
+/// this watch's (a later hook, budget's Ask near the limit, may have held it instead: a yes to that isn't a yes to the
+/// changed harness). Without this the release ran `before:run` against the old pin again and the turn was held again:
+/// a loop, nothing on screen (TRY-17).
+fn started_by_hand(c: &BeforeRunCtx) -> bool {
+    c.confirm_limit && c.released.as_ref().is_some_and(|h| h.by == PLUGIN_ID && h.kind == HOLD_KIND)
+}
+
 /// v1 `byHand`: a launch you start yourself (no `by`), not the crew, a schedule or a subagent.
 fn by_hand(c: &BeforeRunCtx) -> bool {
     c.by.as_deref().is_none_or(|b| b == "user" || b.is_empty())
@@ -117,15 +135,31 @@ pub(crate) async fn before_run(ctx: &Ctx, _call: &Call, st: &std::sync::Arc<Stat
     if let Some(bin) = h.program() {
         if st.ask() {
             if let Some(change) = observe(ctx, st, &c.agent, &bin).await {
-                let line = watch::change_line(&h.info().name, &change, "the pin");
-                c.hold = Some(Held {
-                    by: PLUGIN_ID.into(),
-                    kind: HOLD_KIND.into(),
-                    until: None,
-                    data: json!({ "agent": c.agent, "change": change, "line": line }),
-                });
-                lock(&st.held).entry(c.agent.clone()).or_default().push((c.session_id.0.clone(), c.turn_id.0.clone()));
-                changed = true;
+                if started_by_hand(&c) {
+                    // Start now on a turn this watch held: that yes trusts what's there now, and it runs
+                    if let Err(e) = trust(ctx, st, &c.agent).await {
+                        tracing::warn!(agent = c.agent, "couldn't save the trusted harness: {e}");
+                    }
+                    if let Some(l) = lock(&st.held).get_mut(&c.agent) {
+                        l.retain(|(s, t)| !(*s == c.session_id.0 && *t == c.turn_id.0));
+                    }
+                } else {
+                    let line = watch::change_line(&h.info().name, &change, "wisp last ran it");
+                    c.hold = Some(Held {
+                        by: PLUGIN_ID.into(),
+                        kind: HOLD_KIND.into(),
+                        until: None,
+                        data: json!({ "agent": c.agent, "change": change, "line": line, "what": watch::change_what(&change) }),
+                    });
+                    let key = (c.session_id.0.clone(), c.turn_id.0.clone());
+                    let mut held = lock(&st.held);
+                    let list = held.entry(c.agent.clone()).or_default();
+                    // held again (another yes-less release) is still one turn to start on trust
+                    if !list.contains(&key) {
+                        list.push(key);
+                    }
+                    changed = true;
+                }
             }
         } else {
             // only noted: off the run's way
