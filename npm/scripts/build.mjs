@@ -5,15 +5,14 @@
 //     [--web apps/web/dist] [--out npm/dist] [--version 2.0.0]
 //   node npm/scripts/build.mjs --list-targets
 //
-// Writes <out>/wisp-agents-<target>/ (the platform package) and <out>/wisp-agents/ (the launcher, with the
-// web bundle in web/). Every version is stamped the same, because the launcher pins its platform
-// packages exactly. Node built-ins only, so a bare CI runner can run it.
+// Writes <out>/wisp-agents-<target>/ (the binary: wisp-agents@<version>-<target>, ADR-0094) and <out>/wisp-agents/ (the
+// launcher, with the web bundle in web/). The launcher pins each binary's version exactly, through an npm alias. Node built-ins only, so a bare CI runner can run it.
 
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseArgs } from 'node:util';
-import { TARGETS, binaryName, packageName } from '../wisp-agents/lib/resolve.js';
+import { PREFIX, TARGETS, binaryName, packageName, platformSpec, platformVersion } from '../wisp-agents/lib/resolve.js';
 
 const NPM_DIR = fileURLToPath(new URL('..', import.meta.url));
 const LAUNCHER_DIR = path.join(NPM_DIR, 'wisp-agents');
@@ -75,7 +74,9 @@ function buildPlatform({ target, bin, version, out }) {
   fs.rmSync(dir, { recursive: true, force: true });
   fs.mkdirSync(path.join(dir, 'bin'), { recursive: true });
   const pkg = fillTemplate(readJson(TEMPLATE), { os, arch, version, triple: TARGETS[target] });
-  if (pkg.name !== packageName(os, arch)) throw new Error(`Template produced ${pkg.name}, the launcher looks for ${packageName(os, arch)}.`);
+  if (pkg.name !== PREFIX || pkg.version !== platformVersion(version, os, arch)) {
+    throw new Error(`Template produced ${pkg.name}@${pkg.version}, the launcher depends on ${PREFIX}@${platformVersion(version, os, arch)}.`);
+  }
   writeJson(path.join(dir, 'package.json'), pkg);
   const dest = path.join(dir, 'bin', binaryName(os));
   fs.copyFileSync(bin, dest);
@@ -93,7 +94,7 @@ function buildLauncher({ web, version, out }) {
   const pkg = readJson(pkgFile);
   pkg.version = version;
   // Exactly the supported targets, so adding one to TARGETS can't be forgotten here.
-  pkg.optionalDependencies = Object.fromEntries(Object.keys(TARGETS).map((t) => [packageName(...t.split('-')), version]));
+  pkg.optionalDependencies = Object.fromEntries(Object.keys(TARGETS).map((t) => [packageName(...t.split('-')), platformSpec(version, ...t.split('-'))]));
   writeJson(pkgFile, pkg);
   fs.chmodSync(path.join(dir, 'bin', 'wisp.js'), 0o755);
   return dir;

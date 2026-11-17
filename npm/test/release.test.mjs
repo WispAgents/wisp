@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import { test } from 'node:test';
 import { fileURLToPath } from 'node:url';
 import { TARGETS, packageName } from '../wisp-agents/lib/resolve.js';
-import { buildMatrix, cargoVersion, lockVersion, npmTag, publishOrder, stampCargoVersion, versionProblems } from '../scripts/release.mjs';
+import { publishTag, buildMatrix, cargoVersion, lockVersion, npmTag, publishOrder, stampCargoVersion, versionProblems } from '../scripts/release.mjs';
 
 const SCRIPT = fileURLToPath(new URL('../scripts/release.mjs', import.meta.url));
 const CARGO = `[workspace]
@@ -18,7 +18,7 @@ rust-version = "1.89"
 [workspace.dependencies]
 serde = { version = "1.0.200" }
 `;
-const pins = (v) => Object.fromEntries(Object.keys(TARGETS).map((t) => [packageName(...t.split('-')), v]));
+const pins = (v) => Object.fromEntries(Object.keys(TARGETS).map((t) => [packageName(...t.split('-')), `npm:wisp-agents@${v}-${t}`]));
 const launcher = (v, deps = pins(v)) => ({ name: 'wisp-agents', version: v, optionalDependencies: deps });
 
 test('cargo_version_reads_only_the_workspace_package_table', () => {
@@ -78,7 +78,8 @@ test('optional_dependencies_must_be_every_target_pinned_to_the_version', () => {
   const deps = pins('2.1.0');
   const [first] = Object.keys(deps);
   const stale = versionProblems({ cargo: '2.1.0', launcher: launcher('2.1.0', { ...deps, [first]: '2.0.0' }) });
-  assert.match(stale.join('\n'), new RegExp(`pins ${first}@2\\.0\\.0: pin each to 2\\.1\\.0`));
+  const target = first.slice('wisp-agents-'.length);
+  assert.match(stale.join('\n'), new RegExp(`pins ${first}: 2\\.0\\.0: pin each to npm:wisp-agents@2\\.1\\.0-${target}`));
   const { [first]: _, ...without } = deps;
   assert.match(versionProblems({ cargo: '2.1.0', launcher: launcher('2.1.0', without) }).join('\n'), new RegExp(`lack ${first}`));
   const extra = versionProblems({ cargo: '2.1.0', launcher: launcher('2.1.0', { ...deps, 'wisp-agents-aix-ppc64': '2.1.0' }) });
@@ -108,13 +109,27 @@ test('npm_tag_is_latest_next_or_nightly', () => {
   assert.throws(() => npmTag('2.1.0', 'canary'), /Unknown channel/);
 });
 
-test('platform_packages_are_unscoped_wisp_agents_os_arch', () => {
-  // the @wisp scope on npm belongs to someone else: no published name may use it
+test('every_binary_is_a_version_of_wisp_agents_under_its_alias', () => {
+  // ADR-0094: one package name on npm (its trusted publisher covers every tarball); the launcher's alias keeps the
+  // folder the launcher looks in (wisp-agents-<os>-<arch>)
   for (const t of Object.keys(TARGETS)) assert.equal(packageName(...t.split('-')), `wisp-agents-${t}`);
   const pkg = JSON.parse(fs.readFileSync(new URL('../wisp-agents/package.json', import.meta.url), 'utf8'));
-  for (const name of Object.keys(pkg.optionalDependencies)) assert.match(name, /^wisp-agents-[a-z0-9]+-[a-z0-9]+$/);
+  for (const [name, spec] of Object.entries(pkg.optionalDependencies)) {
+    assert.match(name, /^wisp-agents-[a-z0-9]+-[a-z0-9]+$/);
+    assert.equal(spec, `npm:wisp-agents@${pkg.version}-${name.slice('wisp-agents-'.length)}`);
+  }
   const template = fs.readFileSync(new URL('../platform/package.template.json', import.meta.url), 'utf8');
-  assert.match(template, /"name": "wisp-agents-\$\{os\}-\$\{arch\}"/);
+  assert.match(template, /"name": "wisp-agents",/);
+  assert.match(template, /"version": "\$\{version\}-\$\{os\}-\$\{arch\}"/);
+});
+
+test('a_binary_goes_out_under_its_platform_tag_and_never_latest', () => {
+  assert.equal(publishTag('2.1.0', '2.1.0', 'latest'), 'latest');
+  assert.equal(publishTag('2.1.0-linux-x64', '2.1.0', 'latest'), 'platform-linux-x64');
+  assert.equal(publishTag('2.2.0-beta.1-darwin-arm64', '2.2.0-beta.1', 'next'), 'platform-darwin-arm64');
+  assert.equal(publishTag('2.1.1-nightly.20261117.930-win32-x64', '2.1.1-nightly.20261117.930', 'nightly'), 'platform-win32-x64');
+  assert.throws(() => publishTag('2.0.0-linux-x64', '2.1.0', 'latest'), /neither this release/);
+  assert.throws(() => publishTag('2.1.0-aix-ppc64', '2.1.0', 'latest'), /neither this release/);
 });
 
 test('publish_order_puts_every_platform_package_before_the_launcher', () => {

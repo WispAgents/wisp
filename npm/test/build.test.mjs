@@ -40,8 +40,9 @@ test('builds a platform package and the launcher with one version everywhere', (
   assert.equal(r.status, 0, r.stderr);
 
   const plat = readJson(out, 'wisp-agents-linux-arm64', 'package.json');
-  assert.equal(plat.name, 'wisp-agents-linux-arm64');
-  assert.equal(plat.version, '2.3.4');
+  // a version of wisp-agents itself (ADR-0094), under the folder the launcher's alias names
+  assert.equal(plat.name, 'wisp-agents');
+  assert.equal(plat.version, '2.3.4-linux-arm64');
   assert.deepEqual(plat.os, ['linux']);
   assert.deepEqual(plat.cpu, ['arm64']);
   assert.deepEqual(plat.files, ['bin']);
@@ -57,7 +58,7 @@ test('builds a platform package and the launcher with one version everywhere', (
   assert.equal(launcher.dependencies, undefined);
   const expected = Object.keys(TARGETS).map((t) => `wisp-agents-${t}`).sort();
   assert.deepEqual(Object.keys(launcher.optionalDependencies).sort(), expected);
-  for (const v of Object.values(launcher.optionalDependencies)) assert.equal(v, '2.3.4');
+  for (const [k, v] of Object.entries(launcher.optionalDependencies)) assert.equal(v, `npm:wisp-agents@2.3.4-${k.slice('wisp-agents-'.length)}`);
 
   for (const f of ['bin/wisp.js', 'lib/resolve.js', 'client.js', 'client.d.ts', 'web/index.html', 'web/assets/app.js']) {
     assert.ok(fs.existsSync(path.join(out, 'wisp-agents', f)), f);
@@ -70,7 +71,7 @@ test('a win32 target gets bin/wisp.exe', () => {
   assert.equal(r.status, 0, r.stderr);
   assert.ok(fs.existsSync(path.join(out, 'wisp-agents-win32-x64', 'bin', 'wisp.exe')));
   const version = readJson(fileURLToPath(new URL('../wisp-agents/package.json', import.meta.url))).version;
-  assert.equal(readJson(out, 'wisp-agents-win32-x64', 'package.json').version, version, 'defaults to the launcher version');
+  assert.equal(readJson(out, 'wisp-agents-win32-x64', 'package.json').version, `${version}-win32-x64`, 'defaults to the launcher version');
   assert.ok(!fs.existsSync(path.join(out, 'wisp-agents', 'web')), 'no --web, no web/');
 });
 

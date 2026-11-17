@@ -16,12 +16,20 @@ export const TARGETS = Object.freeze({
   'win32-arm64': 'aarch64-pc-windows-msvc',
 });
 
-// The platform packages are unscoped, next to the launcher's own name: wisp-agents-<os>-<arch>.
+// Each target's binary ships as a version of wisp-agents itself, `<version>-<os>-<arch>` (ADR-0094: npm's trusted
+// publisher, set on wisp-agents, covers it; a new package name would need a first publish by hand). The launcher
+// installs it under the alias wisp-agents-<os>-<arch>, which is the folder it looks in.
 export const PREFIX = 'wisp-agents';
 
 export const isSupported = (platform, arch) => Object.hasOwn(TARGETS, `${platform}-${arch}`);
 
 export const packageName = (platform, arch) => `${PREFIX}-${platform}-${arch}`;
+
+// The version of wisp-agents that holds a target's binary, and the launcher's dependency on it (an npm alias).
+export const platformVersion = (version, platform, arch) => `${version}-${platform}-${arch}`;
+export const platformSpec = (version, platform, arch) => `npm:${PREFIX}@${platformVersion(version, platform, arch)}`;
+// The dist-tag a binary's version goes out under: never latest, next or nightly, which stay the launcher's.
+export const platformTag = (platform, arch) => `platform-${platform}-${arch}`;
 
 export const binaryName = (platform) => (platform === 'win32' ? 'wisp.exe' : 'wisp');
 
@@ -39,7 +47,7 @@ export function unsupportedMessage(platform, arch) {
 export function missingMessage(platform, arch) {
   return [
     `wisp: the wisp binary for ${platform}-${arch} is not installed.`,
-    `It ships in the optional package ${packageName(platform, arch)}, which npm skipped.`,
+    `It ships in the optional dependency ${packageName(platform, arch)} (a version of wisp-agents), which npm skipped.`,
     'Fix: run `npm install -g wisp-agents` again, without --omit=optional or --no-optional,',
     'or set WISP_BINARY to the path of a wisp binary.',
   ].join('\n');

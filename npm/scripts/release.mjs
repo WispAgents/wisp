@@ -7,13 +7,14 @@
 //   node npm/scripts/release.mjs matrix                 # the binaries job's matrix (JSON, one line)
 //   node npm/scripts/release.mjs npm-tag <version> <stable|nightly>
 //   node npm/scripts/release.mjs packages <dist-dir>    # package dirs in publish order, one per line
+//   node npm/scripts/release.mjs publish-tag <pkg-version> <version> <tag>  # a tarball's dist-tag (a binary's: platform-<target>)
 //   node npm/scripts/release.mjs stamp-cargo <version>  # a nightly's version into Cargo.toml's [workspace.package]
 //                                                       # (then `cargo update --workspace` moves Cargo.lock with it)
 
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { PREFIX, TARGETS, binaryName, packageName } from '../wisp-agents/lib/resolve.js';
+import { PREFIX, TARGETS, binaryName, packageName, platformSpec, platformTag, platformVersion } from '../wisp-agents/lib/resolve.js';
 
 const ROOT = fileURLToPath(new URL('../..', import.meta.url));
 const SEMVER = /^\d+\.\d+\.\d+(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?$/;
@@ -68,8 +69,10 @@ export function versionProblems({ cargo, lock, launcher, tag }) {
   const extra = Object.keys(have).filter((n) => !want.includes(n));
   if (missing.length) problems.push(`npm/wisp-agents/package.json's optionalDependencies lack ${missing.join(', ')}.`);
   if (extra.length) problems.push(`npm/wisp-agents/package.json's optionalDependencies name ${extra.join(', ')}, which no target builds.`);
-  const stale = want.filter((n) => Object.hasOwn(have, n) && npm && have[n] !== npm);
-  if (stale.length) problems.push(`npm/wisp-agents/package.json pins ${stale.map((n) => `${n}@${have[n]}`).join(', ')}: pin each to ${npm}.`);
+  // each binary is a version of wisp-agents itself, through an npm alias (ADR-0094)
+  const spec = (n) => platformSpec(npm, ...n.slice(PREFIX.length + 1).split('-'));
+  const stale = want.filter((n) => Object.hasOwn(have, n) && npm && have[n] !== spec(n));
+  if (stale.length) problems.push(`npm/wisp-agents/package.json pins ${stale.map((n) => `${n}: ${have[n]}`).join(', ')}: pin each to ${stale.map(spec).join(', ')}.`);
   return problems;
 }
 
@@ -95,6 +98,16 @@ export function npmTag(version, channel) {
   if (channel === 'nightly') return 'nightly';
   if (channel !== 'stable') throw new Error(`Unknown channel "${channel}" (stable or nightly).`);
   return version.includes('-') ? 'next' : 'latest';
+}
+
+// The dist-tag a packed tarball goes out under: the launcher (`version`) under the release's own tag; a target's binary
+// (`<version>-<os>-<arch>`, ADR-0094) under platform-<os>-<arch>, so latest, next and nightly only ever name the
+// launcher. Anything else is refused: it isn't this release's.
+export function publishTag(pkgVersion, version, tag) {
+  if (pkgVersion === version) return tag;
+  const target = Object.keys(TARGETS).find((t) => pkgVersion === platformVersion(version, ...t.split('-')));
+  if (!target) throw new Error(`wisp-agents@${pkgVersion} is neither this release (${version}) nor one of its binaries.`);
+  return platformTag(...target.split('-'));
 }
 
 // Every platform package (wisp-agents-<os>-<arch>, build.mjs's folder names) before wisp-agents: the
@@ -141,6 +154,9 @@ function main([cmd, ...args]) {
       process.stdout.write(`${publishOrder(dirs).join('\n')}\n`);
       return 0;
     }
+    case 'publish-tag':
+      process.stdout.write(`${publishTag(args[0], args[1], args[2])}\n`);
+      return 0;
     case 'stamp-cargo':
       fs.writeFileSync(path.join(ROOT, 'Cargo.toml'), stampCargoVersion(read('Cargo.toml'), args[0]));
       return 0;

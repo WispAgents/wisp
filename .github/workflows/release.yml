@@ -6,8 +6,9 @@ name: release
 # one Settings → General → Updates names.
 #
 # What ships on npm (npm/README.md, ADR-0013): `wisp-agents`, a dependency-free launcher carrying the
-# web build in web/, plus one unscoped `wisp-agents-<os>-<arch>` package per target holding the Rust `wisp`
-# binary (npm installs only the one that matches the machine). The targets, their Rust triples and
+# web build in web/, and per target the Rust `wisp` binary as a version of wisp-agents itself,
+# `<version>-<os>-<arch>` under the dist-tag platform-<os>-<arch> (ADR-0094); the launcher depends on each through an
+# npm alias (wisp-agents-<os>-<arch>), so npm installs only the one that matches the machine. The targets, their Rust triples and
 # runners, the version checks, the dist-tag and the publish order are npm/scripts/release.mjs (tested
 # by npm/test/release.test.mjs), so this file only runs them.
 #
@@ -22,8 +23,8 @@ name: release
 #      packed linux-x64 tarballs to run `wisp --version` and `wisp serve` from them (packages)
 #   3. creates the GitHub release v<version> as a draft with the CHANGELOG notes, the downloads and
 #      SHA256SUMS.txt
-#   4. publishes those exact tarballs to npm with provenance: every wisp-agents-<os>-<arch> first, wisp-agents
-#      last (it pins them all at its version)
+#   4. publishes those exact tarballs to npm with provenance: every binary version first, the launcher last (it
+#      pins them all)
 #   5. publishes the release, so the site's download links and the app's updater see it only once
 #      everything is up
 #   6. bumps the Homebrew tap (WispAgents/homebrew-tap) to the new wisp-agents npm tarball
@@ -40,11 +41,10 @@ name: release
 # release to it, with the Unreleased notes. Nothing happens when main hasn't moved since the last
 # nightly. `gh workflow run release -f nightly=true` makes one now, without waiting for the tests.
 #
-# npm publishes through trusted publishing (OIDC, no token): on npmjs.com, wisp-agents and every
-# wisp-agents-<os>-<arch> package → Settings trusts WispAgents/wisp, release.yml, environment `npm`. npm allows
-# one trusted publisher per package, so stable and nightly both publish from here. npm can only trust a
-# package that exists, so the owner publishes each new wisp-agents-<os>-<arch> once by hand from the
-# npm account that maintains wisp-agents (the release skill), then trusts it; until then its publish fails. The `npm`
+# npm publishes through trusted publishing (OIDC, no token): on npmjs.com, wisp-agents → Settings trusts
+# WispAgents/wisp, release.yml, environment `npm`. Every tarball is a version of wisp-agents (ADR-0094), so that one
+# trusted publisher covers them all and nothing is ever published by hand. npm allows one trusted publisher per
+# package, so stable and nightly both publish from here. The `npm`
 # environment only deploys from main, and npm refuses publishes by token, so what reaches npm is what
 # was merged to main: the PR review is the gate, as in most projects, with no approval step in the run.
 #
@@ -270,7 +270,7 @@ jobs:
         run: |
           # one per target, by name: a glob like wisp-agents-*.tgz would also match the launcher's tarball
           for target in $(node npm/scripts/release.mjs matrix | node -e 'for (const e of JSON.parse(require("fs").readFileSync(0, "utf8"))) console.log(e.target)'); do
-            f="npm/packed/wisp-agents-$target-$VERSION.tgz"
+            f="npm/packed/wisp-agents-$VERSION-$target.tgz"
             test -s "$f" || { echo "::error::no $f"; exit 1; }
             # a listing in a variable, not a pipe: grep -q quitting early would SIGPIPE tar under pipefail
             list=$(tar -tvzf "$f")
@@ -278,13 +278,13 @@ jobs:
           done
           list=$(tar -tzf "npm/packed/wisp-agents-$VERSION.tgz")
           grep -qx package/web/index.html <<<"$list" || { echo "::error::wisp-agents-$VERSION.tgz has no web/index.html"; exit 1; }
-      # As npm would lay them out, without the registry (the platform packages aren't on it yet).
+      # As npm would lay them out (the binary under its alias's folder), without the registry: nothing is on it yet.
       - name: The packed linux-x64 install runs
         run: |
           s=$(mktemp -d)
           mkdir -p "$s/node_modules/wisp-agents" "$s/node_modules/wisp-agents-linux-x64" "$s/home"
           tar -xzf "npm/packed/wisp-agents-$VERSION.tgz" -C "$s/node_modules/wisp-agents" --strip-components=1
-          tar -xzf "npm/packed/wisp-agents-linux-x64-$VERSION.tgz" -C "$s/node_modules/wisp-agents-linux-x64" --strip-components=1
+          tar -xzf "npm/packed/wisp-agents-$VERSION-linux-x64.tgz" -C "$s/node_modules/wisp-agents-linux-x64" --strip-components=1
           wisp="$s/node_modules/wisp-agents/bin/wisp.js"
           got=$(node "$wisp" --version)
           [ "$got" = "$VERSION" ] || { echo "::error::wisp --version says $got, expected $VERSION"; exit 1; }
@@ -362,14 +362,14 @@ jobs:
           gh release upload "$TAG" out/* --clobber
 
   # A stable release goes to npm once its draft is up; a nightly once its desktop builds are. It
-  # publishes the tarballs the packages job tested, in its order.txt: every wisp-agents-<os>-<arch> first, then
-  # wisp-agents, skipping any name@version npm already has, so a re-run finishes a half-done publish.
+  # publishes the tarballs the packages job tested, in its order.txt: every binary version (<version>-<os>-<arch>)
+  # first, then the launcher, skipping any version npm already has, so a re-run finishes a half-done publish.
   npm:
     needs: [plan, packages, desktop, release]
     if: ${{ !cancelled() && needs.plan.outputs.npm == 'true' && needs.plan.outputs.dry != 'true' && needs.packages.result == 'success' && needs.desktop.result == 'success' && (needs.release.result == 'success' || (needs.release.result == 'skipped' && needs.plan.outputs.channel == 'nightly')) }}
     runs-on: ubuntu-latest
-    # Deploys only from main. npm's trusted publisher for every package is bound to this repo,
-    # release.yml and this environment, so nothing else can publish.
+    # Deploys only from main. npm's trusted publisher for wisp-agents is bound to this repo, release.yml and this
+    # environment, so nothing else can publish.
     environment: npm
     permissions:
       contents: read
@@ -383,6 +383,10 @@ jobs:
           node-version: 22
           registry-url: https://registry.npmjs.org
       - run: npm install -g npm@latest # trusted publishing needs npm 11.5+
+      # release.mjs only (publish-tag): the tarballs come from the packages job
+      - uses: actions/checkout@v5
+        with:
+          sparse-checkout: npm
       - uses: actions/download-artifact@v4
         with:
           name: npm-packages
@@ -396,10 +400,12 @@ jobs:
           # fd 3, so nothing npm runs can read the rest of the list from stdin
           while read -r tgz <&3; do
             pkg=$(tar -xzOf "packed/$tgz" package/package.json | node -e 'const p = JSON.parse(require("fs").readFileSync(0, "utf8")); console.log(`${p.name}@${p.version}`)')
-            [ "${pkg##*@}" = "$VERSION" ] || { echo "::error::$tgz is $pkg, not version $VERSION"; exit 1; }
+            # the launcher under the release's tag, each binary (<version>-<os>-<arch>) under platform-<os>-<arch>;
+            # anything else isn't this release's and stops the run
+            tag=$(node npm/scripts/release.mjs publish-tag "${pkg##*@}" "$VERSION" "$TAG") || exit 1
             # Another run may have published it since the plan looked.
             if [ -n "$(npm view "$pkg" version 2>/dev/null || true)" ]; then echo "$pkg is already on npm: skipped."; continue; fi
-            npm publish "packed/$tgz" --provenance --access public --tag "$TAG"
+            npm publish "packed/$tgz" --provenance --access public --tag "$tag"
           done 3< packed/order.txt
 
   publish:
