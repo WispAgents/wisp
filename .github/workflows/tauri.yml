@@ -45,6 +45,8 @@ jobs:
   # The v2 desktop on every OS (qa/desktop-v2.mjs): the shell starts the wisp binary's server, the page is v2's, and
   # the server never outlives the shell (quit, or killed hard). Linux under Xvfb with a session bus.
   smoke:
+    # after check: one macOS runner at a time for this workflow (the account's macOS runners are few; see pr.yml `full`)
+    needs: check
     strategy:
       fail-fast: false
       matrix:

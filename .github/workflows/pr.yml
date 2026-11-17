@@ -86,10 +86,13 @@ jobs:
           if-no-files-found: ignore
           retention-days: 90
 
+  # every OS on one Node: quick above already runs Linux on Node 22 and 24. With Node 22 here too, a push asked for four
+  # macOS runners at once (two suites, tauri's check and smoke); the ones past the account's macOS limit waited 15
+  # minutes for a runner and were cancelled, so no run came back green on every OS (2026-11-17)
   full:
     if: contains(github.event.pull_request.labels.*.name, 'ci:full')
     uses: ./.github/workflows/suite.yml
     with:
       os: '["ubuntu-latest", "macos-latest", "windows-latest"]'
-      node: '["22", "24"]'
+      node: '["24"]'
       artifact: verify-all-full
