@@ -2,7 +2,8 @@
 
 From a fresh clone to a running wisp you can debug and test. For a person or an agent. The rules are in
 `AGENTS.md`, the map is in `ARCHITECTURE.md`, and the plan is `docs/v2-plan.md`. Every command here was run on
-macOS (2026-11-15). `tools/check`'s `commands` rule checks that the commands still resolve.
+macOS (2026-11-15). `tools/check`'s `commands` rule checks that the commands still resolve. The dev server
+prints its URL when it starts.
 
 ## 1. Clone to running
 
