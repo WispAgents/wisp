@@ -591,6 +591,10 @@
     color: var(--accent-ink);
     font-variant-numeric: normal;
   }
+  /* a link says it's one under the pointer (TRY-12: it had no hover at all) */
+  [data-kit='link-xs']:hover {
+    text-decoration: underline;
+  }
   [data-kit='plus'] {
     color: var(--add);
   }
