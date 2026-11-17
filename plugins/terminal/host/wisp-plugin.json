@@ -69,6 +69,24 @@
         "readOnly": true,
         "uiOnly": "Settings → General's Take over in list for this computer; an agent has no use for it"
       }
+    ],
+    "settings": [
+      {
+        "key": "terminal.command",
+        "type": "string",
+        "default": "",
+        "title": "Take over with a custom command ({cmd} is the agent's resume command)"
+      },
+      {
+        "key": "terminal.terminalSessions",
+        "type": "enum",
+        "values": [
+          "on",
+          "off"
+        ],
+        "default": "off",
+        "title": "Babysitting mode: each task opens straight in the agent's own terminal"
+      }
     ]
   }
 }

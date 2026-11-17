@@ -423,7 +423,7 @@ kept). `npm run check` (rule `v1-coverage`) reads this table: every v1 item has 
 | setting | `telemetry` | `cmd:telemetry.set` |
 | setting | `telemetryNotice` | `ui:settings store (the one-time usage-stats notice)` |
 | setting | `terminal` | `kind:ui` |
-| setting | `terminalSessions` | `todo:setting terminalSessions` |
+| setting | `terminalSessions` | `setting:terminal.terminalSessions` |
 | setting | `theme` | `ui:settings store (light, dark, system)` |
 | setting | `transcript` | `ui:settings store (transcript density)` |
 | setting | `updateChannel` | `setting:update.updateChannel` |

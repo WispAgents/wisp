@@ -21,12 +21,12 @@ export const KEYS = {
   tui: 'terminal.terminalSessions', // 'on' | 'off', off by default
   blocks: 'runtime.blocks', // on unless 'off'
   worktree: 'worktrees.worktree', // on unless 'off'
-  review: 'review.review', // off | other | a harness id
+  review: 'review.harness', // off | other | a harness id (wisp.review's setting; B53: was review.review, which nothing declares)
   fixConflicts: 'ship.fixConflicts', // off unless 'on'
   readTimes: 'settings.readTimes', // on unless 'off'
   watch: 'runtime.watch', // on unless 'off'
   apps: 'runtime.apps', // on unless 'off'
-  transcript: 'shell-task.transcript', // off unless 'on'
+  transcript: 'settings.transcript', // off unless 'on' (B53: declared by wisp.settings)
   notify: 'settings.notify', // 'on' | 'off'
   acceptChannels: 'channels.acceptChannels', // off unless 'on'
   channelProject: 'channels.project', // a project id (its name), '' for the last used

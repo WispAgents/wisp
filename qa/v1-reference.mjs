@@ -263,30 +263,46 @@ async function captureView(browser, url, name, open, out, only, { at, modes = ['
 // The capture run's home and repo (seed.json home, repo) hold its tasks, worktrees and config. Their
 // state as seeded is kept once in a pristine copy (made the first time, with the read marks and the
 // Worktree default put back to what seed.json says), and restored before every view, so no view sees
-// what another one did. Nothing is deleted: files are copied back over the run's own.
+// what another one did. Only the QA run's own temp home and repo are replaced (a guard checks their names).
 const PRISTINE = process.env.REF_PRISTINE || '/tmp/wisp-v1-pristine';
 
+/** The copy is whole: its config and every seeded task's file (B52: an empty /tmp copy, left by an interrupted run
+ *  or a tmp sweep, was taken as made, so no view was restored and each saw what the ones before it did). */
+export const pristineReady = (seed, dir = PRISTINE) =>
+  fs.existsSync(path.join(dir, 'home', 'config.json')) && Object.keys(seed.sessions).every((id) => fs.existsSync(path.join(dir, 'home', 'sessions', `${id}.json`)));
+
 export function makePristine(seed, { fresh = false } = {}) {
-  if (fs.existsSync(PRISTINE) && !fresh) return;
-  if (fresh) fs.rmSync(PRISTINE, { recursive: true, force: true }); // our own copy, made from the run's
-  fs.cpSync(seed.home, path.join(PRISTINE, 'home'), { recursive: true });
-  fs.cpSync(seed.repo, path.join(PRISTINE, 'repo'), { recursive: true });
+  if (!fresh && pristineReady(seed)) return;
+  // made beside it, then moved in: an interrupted copy is never taken for a whole one
+  const tmp = `${PRISTINE}.making`;
+  fs.rmSync(tmp, { recursive: true, force: true });
+  fs.cpSync(seed.home, path.join(tmp, 'home'), { recursive: true });
+  fs.cpSync(seed.repo, path.join(tmp, 'repo'), { recursive: true });
   for (const [id, s] of Object.entries(seed.sessions)) {
-    const f = path.join(PRISTINE, 'home', 'sessions', `${id}.json`);
+    const f = path.join(tmp, 'home', 'sessions', `${id}.json`);
     if (!fs.existsSync(f)) continue;
     const row = JSON.parse(fs.readFileSync(f, 'utf8'));
     row.unread = s.unread;
     fs.writeFileSync(f, JSON.stringify(row, null, 2));
   }
-  const cf = path.join(PRISTINE, 'home', 'config.json');
+  const cf = path.join(tmp, 'home', 'config.json');
   const config = JSON.parse(fs.readFileSync(cf, 'utf8'));
   config.defaults = seed.config.defaults;
   fs.writeFileSync(cf, JSON.stringify(config, null, 2));
+  fs.rmSync(PRISTINE, { recursive: true, force: true });
+  fs.renameSync(tmp, PRISTINE);
+  if (!pristineReady(seed)) throw new Error(`${PRISTINE}: the copy of the seeded home isn't whole`);
 }
 
 export async function restoredWisp(seed, port) {
-  fs.cpSync(path.join(PRISTINE, 'home'), seed.home, { recursive: true, force: true });
-  if (fs.existsSync(path.join(PRISTINE, 'repo'))) fs.cpSync(path.join(PRISTINE, 'repo'), seed.repo, { recursive: true, force: true });
+  // the QA run's own temp home and repo (seed.json), put back whole: git's objects are read-only, so a copy over them
+  // fails, and files a view made would otherwise stay
+  for (const [from, to] of [[path.join(PRISTINE, 'home'), seed.home], [path.join(PRISTINE, 'repo'), seed.repo]]) {
+    if (!fs.existsSync(from)) continue;
+    if (!/[\\/]wisp-(qa-home|repo)-[^\\/]+$/.test(to)) throw new Error(`refusing to replace ${to}: not a QA run's own folder`);
+    fs.rmSync(to, { recursive: true, force: true });
+    fs.cpSync(from, to, { recursive: true });
+  }
   const busy = await fetch(`http://localhost:${port}/api/health`).then(() => true, () => false);
   if (busy) throw new Error(`port ${port} is taken: lsof -ti tcp:${port} -sTCP:LISTEN | xargs kill`);
   const { env } = qaEnv({ WISP_PORT: String(port), FAKE_DELAY: '300' });

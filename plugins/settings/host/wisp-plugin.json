@@ -38,6 +38,42 @@
         "type": "string",
         "default": "",
         "scope": "server"
+      },
+      {
+        "key": "settings.editor",
+        "type": "string",
+        "default": "vscode",
+        "title": "The editor files open in (vscode, cursor, windsurf, zed, idea, none)"
+      },
+      {
+        "key": "settings.notify",
+        "type": "enum",
+        "values": [
+          "on",
+          "off"
+        ],
+        "default": "off",
+        "title": "Desktop notifications when a task needs you or finishes"
+      },
+      {
+        "key": "settings.readTimes",
+        "type": "enum",
+        "values": [
+          "on",
+          "off"
+        ],
+        "default": "on",
+        "title": "Show how long ago each task changed in the list"
+      },
+      {
+        "key": "settings.transcript",
+        "type": "enum",
+        "values": [
+          "on",
+          "off"
+        ],
+        "default": "off",
+        "title": "Open tasks on their transcript instead of the answer"
       }
     ]
   }
