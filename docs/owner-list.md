@@ -45,10 +45,10 @@ in the real app (or the owner drops it). Statuses: `done` (committed and checked
 | # | Point | Status |
 |---|---|---|
 | 31 | QA round 1: 32 findings (/tmp/qa-keep/qa-round1.md) | fixed except #16 ResizeObserver (benign browser message) and #31 (v1 layout); committed 1ab36eb9 |
-| 32 | QA rounds until a round finds nothing, for desktop, phone and web (Grid) | in progress: round 2 (phone + Grid web) running (qa-r1); desktop round 2 after the next commit |
+| 32 | QA rounds until a round finds nothing, for desktop, phone and web (Grid) | in progress: round 1 done; round 2 (phone + Grid web) found 26, being fixed (fix-r329, fix-r330, fix-r331, rs-grid); desktop round 2 next |
 | 33 | Phone New task: composer uses the full width; no scrollbar in the prompt | done (1ab36eb9) (prompt grows to 340 px as v1; scrollbars hidden on phones) |
-| 34 | My Stuff matches v1 (opening a saved item, every flow) | mostly done (1ab36eb9); last gaps in progress (ui-stuff: anchored popovers, search focus, preview address) |
-| 35 | Apps made in wisp match v1; parity reviewed by other agents | in progress (ui-stuff), then an independent review |
+| 34 | My Stuff matches v1 (opening a saved item, every flow) | done (1ab36eb9, 77c0966e): v1 cards, viewer, doc reader, apps inside wisp, full menu, keys, Undo, anchored Allow/Edit cards |
+| 35 | Apps made in wisp match v1; parity reviewed by other agents | done (77c0966e; pane.css base as v1, live after the dev restart); independent parity review in the next QA round |
 | 36 | Composer forgets the picked harness (back to Auto) | done (1ab36eb9) (server setting runtime.launch, as v1 config.defaults; needs the dev server rebuilt) |
 | 37 | Disable Auto everywhere (keep the code, one switch) | done (1ab36eb9) (setting runtime.auto, default off; picker, Settings, ⌘K, crew editor, server defaults) |
 | 38 | **Last**, when UI reviewers find nothing more: UI consultants for desktop, phone and web; research similar tools; fewer options on screen (submenus); focus on composer, task list, task page, right panel; I pick what to build | todo (last) |
@@ -56,7 +56,7 @@ in the real app (or the owner drops it). Statuses: `done` (committed and checked
 | 40 | Desktop submenus open on hover | done (1ab36eb9: flyout with a safe triangle; touch drills in) |
 | 41 | Transcript view does nothing on a running task | done (1ab36eb9) (v1 renderLiveTranscript: timeline so far above the working panel, no end row; seen on the mock peer) |
 | 42 | Theme plugins never apply their partStyles | done (ui-shell, 2026-11-17: `plugins.styles` + `plugins.changed`, the shell's @layer plugins sheet, one allow-list with the kernel check; `wisp plugin trust`) |
-| 43 | Long threads (wisp task d8ee0a207d52, plan docs/v2-long-threads.md): Notes in a Thread tab, the note before each follow-up, Fresh thread, health, compaction audit, output offload | step 1 done (8ee10b59: ADR-0079, Notes, wisp_notes, `wisp notes`, the note before follow-ups, `wisp hook offload`, health); in progress: Thread tab variant A (ui-task, picked by the owner's delegate 2026-11-18), Fresh thread + compaction audit (backend-coder) |
+| 43 | Long threads (wisp task d8ee0a207d52, plan docs/v2-long-threads.md): Notes in a Thread tab, the note before each follow-up, Fresh thread, health, compaction audit, output offload | step 1 (8ee10b59) and Thread tab + Fresh thread + compaction audit (77c0966e) done; left: compaction/offload for other harnesses, formulas seeding Notes, TUI health line |
 | 44 | Keep this list and check it every job | done (this file) |
 
 ## Also found while fixing (not from the owner)
