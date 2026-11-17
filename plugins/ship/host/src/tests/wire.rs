@@ -100,3 +100,26 @@ async fn more_changes_after_a_merge_bring_ship_it_back_on_the_row() {
     assert_eq!(r["toShip"]["dirty"], 2);
     assert_eq!(r["pr"]["state"], "MERGED");
 }
+
+// B56: a task followed only for its attached PR, the PR detached: the next session events keep it with none. Dropped,
+// the one after restored it from the slot, which still held the PR (written before the detach), so it came back.
+#[tokio::test]
+async fn a_detached_pr_does_not_come_back_from_the_slot() {
+    let h = h();
+    let known = Known::default();
+    let attached = wisp_ship_api::model::AttachedPr {
+        repo: "acme/repo".into(),
+        pr: PrSummary { number: 12, state: "OPEN".into(), url: "https://github.com/acme/repo/pull/12".into(), ..PrSummary::default() },
+    };
+    let with_pr = wisp_ship_api::model::ShipTask { session: "t1".into(), prs: vec![attached], ..wisp_ship_api::model::ShipTask::default() };
+    // the slot as it was written while the PR was attached
+    let mut s = session("t1", None, SessionState::Review);
+    s.ext.insert("wisp.ship".into(), slot::ext_of(&with_pr));
+    follow_session(&h.ship, &known, &s);
+    assert_eq!(h.task("t1").prs.len(), 1, "followed for its PR");
+    // detached (ship saves the task with no PR); the slot isn't rewritten yet
+    h.ship.tasks.update("t1", |t| t.prs.clear());
+    follow_session(&h.ship, &known, &s);
+    follow_session(&h.ship, &known, &s);
+    assert!(h.ship.tasks.get("t1").is_some_and(|t| t.prs.is_empty()), "the PR stays detached");
+}

@@ -59,6 +59,9 @@ pub fn follow_session(ship: &Ship, known: &Known, s: &Session) {
     let fresh = had.is_none();
     match slot::sync(had.or_else(|| slot::restore(id, kept)), &facts_of(s)) {
         Some(t) => ship.tasks.put(t),
+        // a task already followed keeps its (now empty) state: dropped, the next event would restore it from the
+        // slot, which still held what it had before (B56: a detached PR came back, so detaching it twice worked twice)
+        None if !fresh => {}
         None => ship.tasks.remove(id),
     }
     // running comes from turn.started / turn.ended once followed: a read taken mid-turn that lands after
