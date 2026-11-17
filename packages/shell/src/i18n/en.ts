@@ -47,7 +47,6 @@ export const SHELL_STRINGS = {
   'shell.cmd.diagnostics': 'Diagnostics',
   'shell.cmd.sidebar': 'Show or hide the list',
 
-
   'shell.shortcuts.title': 'Keyboard shortcuts',
   'shell.key.palette': 'Search and commands',
   'shell.key.launcher': 'New task',
@@ -110,7 +109,6 @@ export const SHELL_STRINGS = {
   'shell.toast.reload': 'Reload',
   'shell.toast.open': 'Open',
 
-
   'shell.section.needs': 'Needs you',
   'shell.section.working': 'Working',
   'shell.section.done': 'Done',
@@ -139,6 +137,8 @@ export const SHELL_STRINGS = {
   'shell.side.manage': 'Manage projects',
   'shell.side.repo': 'Repo history',
   'shell.side.view': 'Hide the task list ([)',
+  'shell.side.show': 'Show the task list ([)',
+  'shell.panel.grip': 'Resize the side panel',
   'shell.side.search': 'Search (⌘K)',
   'shell.side.account': 'You, Machines, Automations and Settings',
   'shell.side.new': 'New task',
@@ -361,8 +361,6 @@ export const SHELL_STRINGS = {
   'shell.err.too_large': 'That is too large.',
   'shell.err.internal': 'Something went wrong in wisp.',
   'shell.err.unknown': "That didn't work.",
-
-  'shell.settings.theme': 'Theme',
 
   'shell.diag.title': 'Diagnostics',
   'shell.compare.title': 'Compare',

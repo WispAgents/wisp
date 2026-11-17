@@ -5,10 +5,11 @@
 
 import type { EntityKey, PluginClient, SessionId } from '@wisp/client';
 import type { Toaster } from '@wisp/ui';
-import { archive, markRead, remove, rename as renameCmd, setExt, setState } from './commands.ts';
+import { archive, forLater, markRead, remove, rename as renameCmd, setExt, setState } from './commands.ts';
 import { canSaveForLater } from './model/menu.ts';
 import { busy } from './model/row.ts';
 import { isForLater } from './model/sections.ts';
+import { flatSession } from './model/wire.ts';
 import { KIND, type Session, type SessionRow } from './types.ts';
 import './i18n/lazy.ts';
 
@@ -21,7 +22,8 @@ export interface ActionCtx {
   readonly now?: () => number;
 }
 
-const peek = (c: ActionCtx, key: EntityKey): SessionRow | undefined => c.client.entities.peek<Session>(KIND.session, key);
+// the row as the list reads it: a server row keeps its view under `summary` (forLater, status…), flattened here
+const peek = (c: ActionCtx, key: EntityKey): SessionRow | undefined => flatSession(c.client.entities.peek<Session>(KIND.session, key));
 const sid = (key: EntityKey): SessionId => key as unknown as SessionId;
 // a refusal already rolled back and toasted (the client's onError); nothing is left to do here
 const quiet = (p: Promise<unknown>): void => {
@@ -51,7 +53,7 @@ export function toggleForLater(c: ActionCtx, key: EntityKey, at?: number): void 
   if (!s) return;
   if (isForLater(s)) {
     const was = s.forLater?.at;
-    quiet(c.client.run(setExt, { id: key, plugin: 'forLater', value: null }));
+    quiet(c.client.run(forLater, { id: key, forLater: false }));
     c.toast.show(c.t('shell-list.toast.unsaved'), { action: { label: c.t('shell-list.toast.undo'), onClick: () => toggleForLater(c, key, was) } });
     return;
   }
@@ -59,7 +61,7 @@ export function toggleForLater(c: ActionCtx, key: EntityKey, at?: number): void 
     c.toast.show(c.t('shell-list.toast.still-working-later'));
     return;
   }
-  quiet(c.client.run(setExt, { id: key, plugin: 'forLater', value: { at: at ?? (c.now ?? Date.now)(), by: 'user' } }));
+  quiet(c.client.run(forLater, { id: key, forLater: true, at: at ?? (c.now ?? Date.now)() }));
   c.toast.show(c.t('shell-list.toast.saved'), { action: { label: c.t('shell-list.toast.undo'), onClick: () => toggleForLater(c, key) } });
 }
 

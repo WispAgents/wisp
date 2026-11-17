@@ -38,7 +38,9 @@ export function jobOf(r: PeerRow): SessionRow | undefined {
   const num = (v: unknown): number | undefined => (typeof v === 'number' && Number.isFinite(v) && v > 0 ? v : undefined);
   const startedAt = num(s['startedAt']);
   const endedAt = num(s['endedAt']);
-  const forLater = s['forLater'] === true ? { at: r.updated_at ?? created } : undefined;
+  // saved for later: the runtime's summary says `{at, by}` (host ops.rs for_later); `true` from an older row
+  const saved = s['forLater'];
+  const forLater = saved === true ? { at: r.updated_at ?? created } : typeof saved === 'object' && saved !== null && typeof (saved as { at?: unknown }).at === 'number' ? (saved as { at: number; by?: 'you' | 'crew' }) : undefined;
   return {
     id: r.id,
     title: r.title ?? '',

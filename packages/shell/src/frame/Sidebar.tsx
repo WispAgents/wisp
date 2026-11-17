@@ -5,7 +5,7 @@
 
 import { For, Show, createMemo, createSignal, onCleanup, untrack, type JSX } from 'solid-js';
 import type { EntityKey, Json } from '@wisp/client';
-import { forLater, markRead, setState } from './commands.ts';
+import { forLater, isSaved, markRead, setState } from './commands.ts';
 import { openSwitcher } from './project-switch.ts';
 import { parsePick, pickLabel, pickOnly, pickRemove, pickValue, pickedProjects, pickHas } from './project-pick.ts';
 import { displayCombo } from '../keys.ts';
@@ -162,13 +162,15 @@ export function Head(props: { readonly filter: () => string; readonly setFilter:
   const slots = useHeadSlots();
   const nav = useSignal(shell.nav);
   const homeOn = (): boolean => nav().main.kind === 'home';
+  const listOpen = useSignal(() => shell.sidebar.open() !== false);
   return (
     <SidebarHead
       homeOn={homeOn()}
       slots={slots()}
       brandLabel={shell.t('shell.brand')}
       searchLabel={shell.t('shell.side.search')}
-      viewLabel={shell.t('shell.side.view')}
+      viewLabel={shell.t(listOpen() ? 'shell.side.view' : 'shell.side.show')}
+      viewPressed={listOpen()}
       manageLabel={shell.t('shell.side.manage')}
       chips={chips()}
       on={on()}
@@ -329,9 +331,9 @@ export function SidebarList(props: { readonly onNew: () => void; readonly homeOn
                       time={shortAgo(s.updated_at, now())}
                       timeTitle={longTime(s.updated_at)}
                       laterLabel={shell.t('shell.card.later')}
-                      laterOn={s.summary['forLater'] === true}
+                      laterOn={isSaved(s.summary['forLater'])}
                       onDone={() => void shell.client.commands.run(setState, { id: s.id, state: 'done' }).catch(() => undefined)}
-                      onLater={() => void shell.client.commands.run(forLater, { id: s.id, forLater: s.summary['forLater'] !== true }).catch(() => undefined)}
+                      onLater={() => void shell.client.commands.run(forLater, { id: s.id, forLater: !isSaved(s.summary['forLater']) }).catch(() => undefined)}
                       doneLabel={shell.t('shell.card.done')}
                       onOpen={() => {
                         shell.selection.set(s.id);

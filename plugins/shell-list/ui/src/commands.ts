@@ -1,8 +1,8 @@
 // Every write the list makes, as a command with its optimistic patch (ADR-0006): the row changes at
 // once, the peer that owns the task runs it, and a refusal rolls the patch back with a toast. The
 // ids and argument shapes are wisp.runtime's (plugins/runtime/api/src/commands.rs): rename, archive,
-// markRead, setState, delete. Save for later and pin are fields other plugins own on the summary
-// (`forLater`, `pinned`), written through runtime.setExt, which sets one such field.
+// markRead, setState, delete, forLater. Pin is a field another plugin owns on the summary (`pinned`), written through
+// runtime.setExt, which sets one such field.
 
 import { defineCommand, type EntityKey, type EntityOps, type EntityReader } from '@wisp/client';
 import type { PatchOp } from '@wisp/protocol';
@@ -19,6 +19,15 @@ function setField(s: SessionRow | undefined, field: keyof Session, value: unknow
   const has = s !== undefined && s[field] !== undefined;
   if (value === undefined || value === null) return has ? [{ op: 'remove', path: `/${field}` }] : [];
   return [{ op: has ? 'replace' : 'add', path: `/${field}`, value }];
+}
+
+/** The same for a field of the list's view, which a server row keeps under `summary` (a flat row: on itself). */
+function summaryField(s: SessionRow | undefined, field: keyof Session, value: unknown): PatchOp[] {
+  const view = (s as { summary?: unknown } | undefined)?.summary;
+  if (typeof view !== 'object' || view === null) return setField(s, field, value);
+  const has = (view as Record<string, unknown>)[field] !== undefined;
+  if (value === undefined || value === null) return has ? [{ op: 'remove', path: `/summary/${field}` }] : [];
+  return [{ op: has ? 'replace' : 'add', path: `/summary/${field}`, value }];
 }
 
 export const rename = defineCommand<{ id: EntityKey; title: string }>({
@@ -74,8 +83,19 @@ export const remove = defineCommand<{ id: EntityKey }>({
   feature: { plugin: RUNTIME, command: 'runtime.delete', label: 'Delete task' },
 });
 
-/** One summary field another plugin owns (`forLater`, `pinned`); `null` clears it. */
-export const setExt = defineCommand<{ id: EntityKey; plugin: 'forLater' | 'pinned'; value: { at: number; by: 'user' } | true | null }>({
+/** Save for later (`at`: when; Undo of Unsave puts the old time back) or take it out. wisp.runtime keeps it in
+ *  ext["wisp.runtime"].forLater and its summary shows it from there (host ops.rs for_later, core summary.rs): the For
+ *  later section. (runtime.setExt wrote ext["forLater"], which the summary never reads: the row went back, #12.) */
+export const forLater = defineCommand<{ id: EntityKey; forLater: boolean; at?: number }>({
+  id: 'runtime.forLater',
+  owner: (a) => a.id,
+  wire: bare,
+  optimistic: (base, a) => patch(a.id, summaryField(row(base, a.id), 'forLater', a.forLater ? { at: a.at ?? 0, by: 'you' } : undefined)),
+  feature: { plugin: RUNTIME, command: 'runtime.forLater', label: 'Save for later' },
+});
+
+/** One summary field another plugin owns (`pinned`); `null` clears it. */
+export const setExt = defineCommand<{ id: EntityKey; plugin: 'pinned'; value: true | null }>({
   id: 'runtime.setExt',
   owner: (a) => a.id,
   wire: bare,
@@ -83,4 +103,4 @@ export const setExt = defineCommand<{ id: EntityKey; plugin: 'forLater' | 'pinne
   feature: { plugin: RUNTIME, command: 'runtime.setExt', label: 'Save for later' },
 });
 
-export const COMMANDS = [rename, archive, markRead, setState, remove, setExt] as const;
+export const COMMANDS = [rename, archive, markRead, setState, remove, forLater, setExt] as const;

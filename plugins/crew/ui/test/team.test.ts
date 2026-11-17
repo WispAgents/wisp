@@ -106,3 +106,12 @@ test('a long team shows three, running first, and never folds a single row', () 
   expect([...(shownOf([r(false), r(true), r(false), r(false), r(false)]) ?? [])].sort()).toEqual([1, 3, 4]);
   expect([...(shownOf([r(true), r(true), r(true), r(true), r(false)]) ?? [])].sort()).toEqual([1, 2, 3]);
 });
+
+// Owner's desktop test 2026-11-17 #12: runtime's summary says a saved task's forLater as `{at, by}` (host ops.rs
+// for_later), never `true`, so a job saved for later never read as saved.
+test('a_job_the_server_says_is_saved_for_later_reads_as_saved_with_its_time', () => {
+  const ext = { ext: { 'wisp.crew': { id: 'ada', job: 'delegated' } } };
+  expect(jobOf({ id: 's1', created_at: 1, summary: { forLater: { at: 77, by: 'you' } }, body: ext })?.forLater).toEqual({ at: 77, by: 'you' });
+  expect(jobOf({ id: 's1', created_at: 1, updated_at: 9, summary: { forLater: true }, body: ext })?.forLater).toEqual({ at: 9 });
+  expect(jobOf({ id: 's1', created_at: 1, summary: {}, body: ext })?.forLater).toBeUndefined();
+});

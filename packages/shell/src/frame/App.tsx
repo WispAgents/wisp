@@ -15,6 +15,8 @@ import { Head, PickStripView, Rail, SidebarList, SidebarTop } from './Sidebar.ts
 import { crewTint, type TintMember } from './crew-tint.ts';
 import { flatRow } from './rows-view.ts';
 import { escLeavesLauncher, stackView } from './stack-page.ts';
+import { listWidth, panelWidth } from './pane-widths.ts';
+import { PANEL_W, SIDE_W } from '../settings-decls.ts';
 
 const Switcher = lazy(() => import('../switcher/Switcher.tsx'));
 // the phone apps' destinations: their own chunk, so the browser's first download never carries the navigation bar
@@ -88,6 +90,37 @@ export function App(props: { readonly clients: Clients; readonly recent: Readabl
         : undefined;
     return crewTint(picked, settings().find((r) => r.key === 'crew.tint')?.value);
   });
+  // the list and the side panel: shown or hidden, and as wide as you dragged them (v1 wisp.sideHidden, wisp.sideW,
+  // the panel's pref.w), kept on this device. A drag shows at once and is saved as it's let go.
+  const [win, setWin] = createSignal(window.innerWidth);
+  onMount(() => {
+    const onResize = (): void => void setWin(window.innerWidth);
+    window.addEventListener('resize', onResize);
+    onCleanup(() => window.removeEventListener('resize', onResize));
+  });
+  const listOpen = useSignal(() => shell.sidebar.open() !== false);
+  const savedList = useSignal(() => shell.sidebar.width());
+  const savedPanel = useSignal(() => shell.client.settings.get('shell.panel.width')());
+  const [dragList, setDragList] = createSignal<number>();
+  const [dragPanel, setDragPanel] = createSignal<number>();
+  const railPx = (): number => (shell.platform.phone ? 0 : 64);
+  const listPx = createMemo(() => listWidth(dragList() ?? (typeof savedList() === 'number' ? savedList() : SIDE_W), win(), railPx()));
+  const panelPx = createMemo(() => {
+    const saved = savedPanel();
+    return panelWidth(dragPanel() ?? (typeof saved === 'number' ? saved : PANEL_W), win(), listOpen() ? listPx() + railPx() : 0);
+  });
+  const onListResize = (px: number, done: boolean): void => {
+    const w = listWidth(px, win(), railPx());
+    if (!done) return void setDragList(w);
+    shell.sidebar.setWidth(w);
+    setDragList(undefined);
+  };
+  const onPanelResize = (px: number, done: boolean): void => {
+    const w = panelWidth(px, win(), listOpen() ? listPx() + railPx() : 0);
+    if (!done) return void setDragPanel(w);
+    void shell.client.settings.set('shell.panel.width', w).catch(() => undefined);
+    setDragPanel(undefined);
+  };
   const homeOn = (): boolean => view().homeOn;
   const onNew = (): void => {
     setLauncher(true);
@@ -113,6 +146,14 @@ export function App(props: { readonly clients: Clients; readonly recent: Readabl
         // a plain prop, not a spread: a reactive spread rebuilds every prop (the task page too) when the side opens
         side={nav().side.kind !== 'none' ? <SidePane /> : undefined}
         gripLabel={shell.t('shell.side.grip')}
+        panelGripLabel={shell.t('shell.panel.grip')}
+        listWidth={listPx()}
+        listHidden={!listOpen()}
+        onListResize={onListResize}
+        onGripReset={() => shell.sidebar.setWidth(SIDE_W)}
+        panelWidth={panelPx()}
+        onPanelResize={onPanelResize}
+        onPanelReset={() => void shell.client.settings.set('shell.panel.width', PANEL_W).catch(() => undefined)}
         listBehind={view().listBehind}
         tint={tint()}
         // the phone apps (ADR-0065 step 8): Tasks · Crew · Stuff · Computers; the browser passes none

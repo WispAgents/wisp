@@ -14,6 +14,7 @@ import { useRailCard } from './RailCard.tsx';
 import { usePlatform } from '../platform/PlatformLook.tsx';
 import { ProjectSelect } from './ProjectSelect.tsx';
 import { phoneStage } from './phone-stage-load.ts';
+import { drag } from './grip-drag.ts';
 
 export type StagePage = 'list' | 'main';
 
@@ -29,6 +30,21 @@ export interface StageProps {
    *  Stacked (a phone), it covers the task as its own page, closed with its own close. */
   readonly side?: JSX.Element;
   readonly gripLabel: string;
+  /** split: the task list's width in px (--side-w; v1 wisp.sideW). Unset: the token's 340. Additive (2026-11-17). */
+  readonly listWidth?: number | undefined;
+  /** split: the task list hidden (the sidebar button, [; v1 body.side-hidden): the open task gets the window, the head's
+   *  buttons float over its corner. Additive (2026-11-17). */
+  readonly listHidden?: boolean | undefined;
+  /** the list's grip dragged: the width it asks for, while dragging (`done` false) and once as it's let go (v1 split.js
+   *  #splitGrip). The caller clamps it and passes it back as `listWidth`. Additive (2026-11-17). */
+  readonly onListResize?: ((px: number, done: boolean) => void) | undefined;
+  /** split: the side panel's width in px (--panel-w; v1 panel.js pref.w). Additive (2026-11-17). */
+  readonly panelWidth?: number | undefined;
+  /** the side panel's inner edge dragged (v1 .pn-grip), as `onListResize`. Additive (2026-11-17). */
+  readonly onPanelResize?: ((px: number, done: boolean) => void) | undefined;
+  /** a double press on the panel's edge: back to its default width */
+  readonly onPanelReset?: () => void;
+  readonly panelGripLabel?: string;
   /** stack, main page: the list stays laid out behind it (Home's prompt box opened from the list) */
   readonly listBehind?: boolean;
   /** the page is the window's title bar, its buttons over the top-left corner (the desktop app on a
@@ -79,6 +95,13 @@ function WebStage(props: StageProps): JSX.Element {
       if (o && focused instanceof HTMLElement && (off.bar?.contains(focused) || off.list?.contains(focused))) focused.blur();
     }),
   );
+  // the widths are custom properties on the stage (the only style a feature passes: --side-w, --panel-w)
+  const widths = (): Record<string, string> | undefined => {
+    const o: Record<string, string> = {};
+    if (props.listWidth !== undefined) o['--side-w'] = `${props.listWidth}px`;
+    if (props.panelWidth !== undefined) o['--panel-w'] = `${props.panelWidth}px`;
+    return Object.keys(o).length ? o : undefined;
+  };
   return (
     <main
       data-kit="stage"
@@ -89,6 +112,8 @@ function WebStage(props: StageProps): JSX.Element {
       data-titlebar={props.titlebar}
       data-rail={flag(rail() !== undefined)}
       data-side={flag(side() !== undefined)}
+      data-list-hidden={flag(props.layout === 'split' && props.listHidden === true)}
+      style={widths()}
     >
       {props.layout === 'split' ? rail() : null}
       <header
@@ -126,8 +151,28 @@ function WebStage(props: StageProps): JSX.Element {
           {side()}
         </aside>
       </Show>
-      <Show when={props.layout === 'split'}>
-        <div data-kit="split-grip" data-part="sidebar.grip" role="separator" aria-orientation="vertical" aria-label={props.gripLabel} onDblClick={() => props.onGripReset?.()} />
+      {/* v1 .pn-grip: the side panel's inner edge (beside it, not in it: the panel scrolls, and would clip it) */}
+      <Show when={props.layout === 'split' && side() !== undefined}>
+        <div
+          data-kit="pn-grip"
+          data-part="panel.grip"
+          role="separator"
+          aria-orientation="vertical"
+          aria-label={props.panelGripLabel ?? props.gripLabel}
+          onPointerDown={drag(() => props.panelWidth, -1, (px, done) => props.onPanelResize?.(px, done))}
+          onDblClick={() => props.onPanelReset?.()}
+        />
+      </Show>
+      <Show when={props.layout === 'split' && !props.listHidden}>
+        <div
+          data-kit="split-grip"
+          data-part="sidebar.grip"
+          role="separator"
+          aria-orientation="vertical"
+          aria-label={props.gripLabel}
+          onPointerDown={drag(() => props.listWidth, 1, (px, done) => props.onListResize?.(px, done))}
+          onDblClick={() => props.onGripReset?.()}
+        />
       </Show>
     </main>
   );
@@ -256,6 +301,8 @@ export interface SidebarHeadProps {
   readonly searchLabel: string;
   readonly accountLabel: string;
   readonly viewLabel: string;
+  /** the task list is shown (v1 .view-btn[aria-pressed]); unset: not said. Additive (2026-11-17). */
+  readonly viewPressed?: boolean | undefined;
   readonly manageLabel: string;
   readonly chips: readonly ProjectChip[];
   /** the chip on (All is '') */
@@ -402,7 +449,15 @@ export function SidebarHead(props: SidebarHeadProps): JSX.Element {
       </div>
       <div data-kit="tb-view">
         {props.slots?.view ?? (
-          <button type="button" data-kit="view-btn" data-part="topbar.view" title={props.viewLabel} aria-label={props.viewLabel} onClick={() => props.onView?.()}>
+          <button
+            type="button"
+            data-kit="view-btn"
+            data-part="topbar.view"
+            title={props.viewLabel}
+            aria-label={props.viewLabel}
+            aria-pressed={props.viewPressed === undefined ? undefined : props.viewPressed}
+            onClick={() => props.onView?.()}
+          >
             <Icon name="split" />
           </button>
         )}

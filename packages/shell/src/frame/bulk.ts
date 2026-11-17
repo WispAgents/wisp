@@ -6,7 +6,7 @@
 import type { Client } from '@wisp/client';
 import type { Toaster } from '@wisp/ui';
 import { SESSION, type SessionRow } from '../rows.ts';
-import { archive, forLater, remove, setState } from './commands.ts';
+import { archive, forLater, isSaved, remove, setState } from './commands.ts';
 import '../i18n/lazy.ts';
 
 export type BulkAction = 'done' | 'later' | 'archive' | 'delete';
@@ -20,7 +20,7 @@ export function canBulk(action: BulkAction, s: SessionRow): boolean {
   if (action === 'archive') return !s.archived && !busy(s);
   if (action === 'done') return !s.archived && !busy(s) && s.state !== 'done';
   // as the row's menu: finished, not archived, not waiting to send (`pending`), not saved already
-  return !s.archived && s.summary['pending'] !== true && s.body?.['pending'] !== true && (s.state === 'review' || s.state === 'done') && s.summary['forLater'] !== true;
+  return !s.archived && s.summary['pending'] !== true && s.body?.['pending'] !== true && (s.state === 'review' || s.state === 'done') && !isSaved(s.summary['forLater']);
 }
 
 /** The picked tasks that take the action, in the order picked (gone ones left out). */

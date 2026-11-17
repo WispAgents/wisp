@@ -2,6 +2,7 @@
 // leave the rest as they are (design/mobile.md §A.4: Mark done, Save for later, Archive, Delete).
 import { expect, test } from 'vitest';
 import { bulkTargets, canBulk } from '../src/frame/bulk.ts';
+import { isSaved } from '../src/frame/commands.ts';
 import type { SessionRow } from '../src/rows.ts';
 
 const row = (id: string, o: Partial<SessionRow> = {}): SessionRow => ({ id, title: id, state: 'review', agent: 'claude', archived: false, unread: false, created_at: 0, updated_at: 0, summary: {}, ...o }) as SessionRow;
@@ -29,4 +30,13 @@ test('a_working_task_is_never_marked_done_or_archived_in_bulk', () => {
     expect(canBulk('done', row('x', { state }))).toBe(false);
     expect(canBulk('archive', row('x', { state }))).toBe(false);
   }
+});
+
+// Owner's desktop test 2026-11-17 #12: the server's summary says a saved task's forLater as `{at, by}` (runtime host
+// ops.rs for_later), never `true`: read as not saved, its bookmark stayed empty and Save for later saved it again.
+test('a_task_the_server_says_is_saved_reads_as_saved', () => {
+  const saved = row('saved', { summary: { forLater: { at: 5, by: 'you' } } as never });
+  expect(canBulk('later', saved)).toBe(false);
+  expect(isSaved(saved.summary['forLater'])).toBe(true);
+  for (const v of [undefined, null, false]) expect(isSaved(v)).toBe(false);
 });

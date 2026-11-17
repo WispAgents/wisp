@@ -71,6 +71,7 @@ import {
   compactNow,
   followUp,
   forLater,
+  isSaved,
   setLean,
   type Attachment,
   fork,
@@ -713,7 +714,7 @@ export default function TaskView(props: { readonly id: string; readonly onBack?:
     const l = lastTurn();
     return row()?.agent !== 'wisp' && !busyNow() && !!l && (!!(l.changes ?? l.ext?.['wisp.runtime']?.changes)?.length || !!l.checkpoint?.commit);
   };
-  const forLaterNow = (): boolean => row()?.summary['forLater'] === true;
+  const forLaterNow = (): boolean => isSaved(row()?.summary['forLater']);
   const canSaveForLater = (): boolean => !row()?.archived && (row()?.state === 'review' || row()?.state === 'done');
   // the shell's Rerun is above (folded) or on the page; its Changes and Shell only where the bar doesn't have them
   const moreExts = (): ReturnType<typeof rowMenu> =>
@@ -892,7 +893,7 @@ export default function TaskView(props: { readonly id: string; readonly onBack?:
       } else if (act === 'pr') shell.navigate({ t: 'toggleSide', side: { kind: 'pr', id: key as never } });
       else if (act === 'ship') ship();
       else if (act === 'done') markDone();
-      else if (act === 'later') void run(forLater, { id: key, forLater: !(row()?.summary['forLater'] === true) }).catch(() => undefined);
+      else if (act === 'later') void run(forLater, { id: key, forLater: !isSaved(row()?.summary['forLater']) }).catch(() => undefined);
       else if (act === 'reply') input?.focus();
       else if (act === 'rename') startRename();
       else if (act === 'collapse') {

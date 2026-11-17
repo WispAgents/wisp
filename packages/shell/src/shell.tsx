@@ -19,7 +19,8 @@ import { createTheme } from './theme.ts';
 import { ShellProvider } from './context.tsx';
 import { App } from './frame/App.tsx';
 import { NONE as NO_SELECTION, pruneSelect, selectAll, startSelect, toggleSelect, type ListSelection } from './frame/list-select.ts';
-import { shellUi, SHELL_SETTINGS } from './builtins.tsx';
+import { shellUi } from './builtins.tsx';
+import { SHELL_SETTINGS, SIDE_MAX, SIDE_MIN } from './settings-decls.ts';
 import { installKeys } from './keyboard.ts';
 import { watchCoreTopics } from './watch.ts';
 import { answeredInPlace, errorWords, wireNotices } from './toasts.ts';
@@ -142,7 +143,7 @@ export function createShell(o: ShellOptions): Shell {
       open: () => settings.get('shell.sidebar.open')(),
       toggle: () => void settings.set('shell.sidebar.open', !untracked(settings.get('shell.sidebar.open'))),
       width: () => settings.get('shell.sidebar.width')(),
-      setWidth: (px) => void settings.set('shell.sidebar.width', Math.round(Math.min(640, Math.max(220, px)))),
+      setWidth: (px) => void settings.set('shell.sidebar.width', Math.round(Math.min(SIDE_MAX, Math.max(SIDE_MIN, px)))),
     },
     projectFilter: {
       value: settings.get('shell.projectFilter') as Readable<string>,

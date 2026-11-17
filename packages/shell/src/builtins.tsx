@@ -1,6 +1,6 @@
 // The shell's own pieces, registered like any plugin's (plan §6.0.3: built-ins get no private API):
 // (the frame draws the brand and Search itself: a plugin overrides them on shell.topbar:brand/search) the command palette, the shortcuts sheet and the
-// diagnostics inspector as overlay views, the Appearance and Diagnostics settings panes, the
+// diagnostics inspector as overlay views, the Diagnostics settings pane (the theme is General's, as v1's), the
 // palette's app commands and task list, and the keys the shell answers itself (v1 keys.js: ⌘K, ⌘L,
 // N, Esc, ?, [, ⌃Tab). Any plugin can override one by id or switch it off through `tree`.
 
@@ -8,7 +8,6 @@ import { lazy } from 'solid-js';
 import type { ExtensionId, Json } from '@wisp/client';
 import type { PaletteItem, PluginUiDef, ShellContext, ShortcutDef } from './contract.ts';
 import { defineExtension, defineView } from './define.ts';
-import { THEMES } from './theme.ts';
 import { SESSION, type SessionRow } from './rows.ts';
 import { archive, markRead, remove, setState } from './frame/commands.ts';
 import { pastWork, tagsOf } from './palette/tasks.ts';
@@ -20,22 +19,10 @@ import { PLACE_SOURCE, PROJECT_ACTIONS, PROJECT_SOURCE, placeItems, projectItems
 import { flatRow, projectOf, shortAgo, statusOf } from './frame/rows-view.ts';
 import { markStepped } from './frame/stepped.ts';
 
-export const SHELL_SETTINGS = [
-  { key: 'shell.theme', type: 'enum', values: THEMES, default: 'system', scope: 'server', overridable: true },
-  { key: 'shell.sidebar.width', type: 'int', min: 220, max: 640, default: 320, scope: 'device' },
-  { key: 'shell.sidebar.open', type: 'bool', default: true, scope: 'device' },
-  /** the project the list shows (the top bar's chips): a project's id, or 'all' (v1 wisp.filter) */
-  { key: 'shell.projectFilter', type: 'string', default: 'all', scope: 'device' },
-  /** the phone apps' computer filter (the Tasks bar's title): a peer id, or 'all' (ADR-0065 step 13) */
-  { key: 'shell.computerFilter', type: 'string', default: 'all', scope: 'device' },
-  /** other wisps this device connects to: [{ peer, name, base }] */
-  { key: 'shell.peers', type: 'json', default: [] as Json[], scope: 'device' },
-] as const;
 
 const Palette = lazy(() => import('./palette/Palette.tsx'));
 const Shortcuts = lazy(() => import('./frame/Shortcuts.tsx'));
 const Inspector = lazy(() => import('./devtools/Inspector.tsx'));
-const Appearance = lazy(() => import('./frame/Appearance.tsx'));
 
 const overlay = (id: string): { t: 'openOverlay'; overlay: { kind: 'dialog'; id: ExtensionId; params: null } } => ({
   t: 'openOverlay',
@@ -373,7 +360,6 @@ export function shellUi(ctx: ShellContext): PluginUiDef {
       defineView({ kind: 'shell.devtools', slot: 'overlay', overlay: 'viewer', parse: none, component: Inspector, title: () => ctx.t('shell.diag.title') }),
     ],
     settings: [
-      { id: 'shell.appearance', group: 'general', title: 'shell.settings.theme', icon: 'sun', component: Appearance, order: 0 },
       { id: 'shell.diagnostics', group: 'advanced', title: 'shell.diag.title', icon: 'bug', component: Inspector, order: 100 },
     ],
     palette: [

@@ -4,6 +4,7 @@
   /* split.css :root, body.has-rail */
   [data-kit='stage'] {
     --side-w: var(--size-side);
+    --panel-w: var(--size-panel-w);
     --rail-w: var(--size-rail-w);
     --pc: var(--pc-slate);
     position: relative; height: 100vh; overflow: hidden;
@@ -12,7 +13,7 @@
   }
   [data-kit='stage']:not([data-rail]) { --rail-w: 0px; }
   /* v1 #panel open: a third column at the right edge, the window's full height */
-  [data-kit='stage'][data-layout='split'][data-side] { grid-template-columns: calc(var(--side-w) + var(--rail-w)) minmax(0, 1fr) var(--size-panel-w); }
+  [data-kit='stage'][data-layout='split'][data-side] { grid-template-columns: calc(var(--side-w) + var(--rail-w)) minmax(0, 1fr) var(--panel-w); }
   [data-kit='side-pane'] {
     grid-row: 1 / -1; grid-column: 3; min-width: 0; min-height: 0; overflow-y: auto;
     padding: 0; background: var(--bg);
@@ -198,6 +199,32 @@
   }
   [data-kit='split-grip']::after { content: ''; position: absolute; inset: 0 3px; background: transparent; transition: background 0.15s; }
   [data-kit='split-grip']:hover::after { background: var(--line-2); }
+  /* panel.css .pn-grip: the side panel's inner edge, dragged to resize it (Stage draws it beside the panel) */
+  [data-kit='pn-grip'] { position: absolute; z-index: 6; top: 0; bottom: 0; right: calc(var(--panel-w) - 4px); width: 7px; cursor: col-resize; touch-action: none; }
+  [data-kit='pn-grip']:hover, [data-kit='stage'][data-resizing] > [data-kit='pn-grip'] { background: linear-gradient(90deg, transparent 3px, var(--line-2) 3px, var(--line-2) 4px, transparent 4px); }
+  [data-kit='stage'][data-resizing] > [data-kit='split-grip']::after { background: var(--line-2); }
+  /* body.resizing: the drag owns the pointer; nothing under it selects or shows its own cursor */
+  [data-kit='stage'][data-resizing] { cursor: col-resize; user-select: none; -webkit-user-select: none; }
+  [data-kit='stage'][data-resizing] > * { pointer-events: none; }
+  [data-kit='stage'][data-resizing] > [data-kit='split-grip'], [data-kit='stage'][data-resizing] > [data-kit='pn-grip'] { pointer-events: auto; }
+
+  /* split.css body.split.side-hidden: the list hidden (the sidebar button, [), the open task gets the window. The list
+     keeps its width off-screen; the rail goes with it; the head's buttons float over the main pane's corner, the
+     sidebar button first, without the brand or the project chips. */
+  [data-kit='stage'][data-layout='split'][data-list-hidden] { --rail-w: 0px; grid-template-columns: 0 minmax(0, 1fr); }
+  [data-kit='stage'][data-layout='split'][data-list-hidden][data-side] { grid-template-columns: 0 minmax(0, 1fr) var(--panel-w); }
+  [data-kit='stage'][data-list-hidden] > [data-kit='cl-rail'] { display: none; }
+  [data-kit='stage'][data-list-hidden] > [data-kit='feed-wrap'] {
+    position: absolute; top: 0; bottom: 0; left: calc(-1 * var(--side-w)); width: var(--side-w); margin: 0; visibility: hidden;
+  }
+  [data-kit='stage'][data-layout='split'][data-list-hidden] > [data-kit='topbar'] {
+    position: absolute; z-index: 5; top: 0; left: 0; width: auto; display: flex; align-items: center; gap: var(--space-1);
+    margin: 0; padding: 14px 12px 0; border: 0; border-radius: 0; background: none;
+  }
+  [data-kit='stage'][data-list-hidden] > [data-kit='topbar'] [data-kit='tb-view'] { order: -1; }
+  [data-kit='stage'][data-list-hidden] > [data-kit='topbar'] [data-kit='brand'], [data-kit='stage'][data-list-hidden] > [data-kit='topbar'] [data-kit='projects'] { display: none; }
+  /* the task's head starts past them (v1: the bar's width and 8px, or the wide pane's centred edge if further) */
+  [data-kit='stage'][data-list-hidden] [data-kit='split-head'] { padding-left: max(9rem, var(--pad, 0px)); }
 
   /* split.css .split-top, .st-row, .split-new, stuff.css .split-stuff */
   [data-kit='split-top'] {
@@ -273,6 +300,9 @@
   [data-titlebar='mac'] > [data-kit='topbar'] [data-kit='brand'] { margin-left: 74px; }
   [data-titlebar='mac'][data-layout='split'][data-rail] > [data-kit='topbar'] [data-kit='brand'] { margin-left: 0; }
   [data-kit='stage'][data-titlebar='mac'][data-layout='stack'] [data-kit='split-head'] { padding-left: 98px; }
+  /* split.css body.desktop.mac.split.side-hidden .topbar: the list hidden, the floating buttons clear the window's */
+  [data-kit='stage'][data-titlebar='mac'][data-layout='split'][data-list-hidden] > [data-kit='topbar'] { padding-left: calc(var(--size-mac-brand) + 14px); }
+  [data-kit='stage'][data-titlebar='mac'][data-list-hidden] [data-kit='split-head'] { padding-left: max(17rem, var(--pad, 0px)); }
   [data-kit='stage'][data-titlebar='mac'][data-layout='stack'] [data-kit='sh-bar'] { padding-left: 82px; }
   /* v1 #772: a project chip dragged over another shows where it lands (before it) */
   [data-reorder] { cursor: grab; }

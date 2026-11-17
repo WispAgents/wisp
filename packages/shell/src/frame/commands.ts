@@ -262,12 +262,16 @@ export const setState = defineCommand<{ id: string; state: 'running' | 'review' 
   optimistic: (_b, a) => patch(a.id, '/state', a.state),
 });
 
-/** Save for later: the bookmark fills at once. */
+/** Saved for later: the server's summary says `{at, by}`, an optimistic patch the same (or `true` from an older one). */
+export const isSaved = (v: unknown): boolean => v === true || (typeof v === 'object' && v !== null);
+
+/** Save for later: the bookmark fills at once, and the list moves the row to For later with the time it reads
+ *  (`{at, by}`, as the server's summary has it: runtime host ops.rs for_later). */
 export const forLater = defineCommand<{ id: string; forLater: boolean }>({
   id: 'runtime.forLater',
   owner: (a) => a.id,
   wire: (a) => ({ ...a, id: bare(a.id) }),
-  optimistic: (_b, a) => patch(a.id, '/summary/forLater', a.forLater),
+  optimistic: (_b, a) => patch(a.id, '/summary/forLater', a.forLater ? { at: Date.now(), by: 'you' } : null),
 });
 
 /** Stop: the run ends where it is; queued follow-ups stay, held (v1 /stop). It answers once the run has wound down. */
