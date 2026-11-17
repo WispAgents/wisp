@@ -81,3 +81,20 @@ fn every_built_in_block_type_the_prompt_documents_appears_in_a_golden_answer() {
         assert!(seen.iter().any(|s| s == ty), "{ty}");
     }
 }
+
+/// v1 2587a74a: an answer written as prose, then a block that only asks (question, actions, next, blocked), shows the
+/// prose first as the answer instead of hiding it in the notes; with any block that says something, the prose stays
+/// the notes.
+#[test]
+fn an_answer_before_a_block_that_only_asks_is_shown() {
+    let asks = "The cache is stale because the key ignores the locale.\n\n```wisp\n{\"blocks\":[{\"type\":\"question\",\"question\":\"Fix it?\",\"options\":[]}]}\n```";
+    let p = parse(asks);
+    assert_eq!(p.blocks[0]["type"], "markdown");
+    assert_eq!(p.blocks[0]["text"], "The cache is stale because the key ignores the locale.");
+    assert_eq!(p.blocks[1]["type"], "question");
+    assert!(p.notes.is_none());
+    let says = "Done.\n\n```wisp\n{\"blocks\":[{\"type\":\"hero\",\"title\":\"Fixed\"},{\"type\":\"next\",\"items\":[]}]}\n```";
+    let p = parse(says);
+    assert_eq!(p.blocks[0]["type"], "hero");
+    assert_eq!(p.notes.as_deref(), Some("Done."));
+}

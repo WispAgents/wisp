@@ -5,10 +5,10 @@
 // task of its own. A sideTabs pane: its tab shows only while the task has such jobs (later.ts).
 import { createMemo, createSignal, createEffect, For, Show, onCleanup, type Accessor, type JSX } from 'solid-js';
 import type { PluginClient } from '@wisp/client';
-import { Face, ListRow, Pill, Stack, TeamPlace, TeamTime, Text, useSignal } from '@wisp/ui';
+import { Button, Face, ListRow, Pill, Stack, TeamPlace, TeamTime, Text, useSignal } from '@wisp/ui';
 import { crewData } from './data.ts';
 import { t } from './i18n.ts';
-import { teamRows, timeOf, type Say, type TeamRow } from './team.ts';
+import { shownOf, teamRows, timeOf, type Say, type TeamRow } from './team.ts';
 import './i18n/lazy.ts';
 
 /** v1 app.js: the running times tick once a second */
@@ -16,10 +16,17 @@ export const TICK_MS = 1000;
 
 /** The rows, laid out. `now` is read only by each row's time, so a tick repaints those text nodes and nothing else. */
 export function TeamList(props: { readonly rows: readonly TeamRow[]; readonly now: Accessor<number>; readonly open: (id: string) => void }): JSX.Element {
+  // a long team folds to its first few (v1 c33f33e6): Show N more unfolds it, and it stays unfolded
+  const [unfolded, setUnfolded] = createSignal(false);
+  const shown = createMemo(() => (unfolded() ? undefined : shownOf(props.rows)));
+  const visible = (): readonly TeamRow[] => {
+    const keep = shown();
+    return keep ? props.rows.filter((_, i) => keep.has(i)) : props.rows;
+  };
   return (
     <Stack gap="1" part="crew.team">
       <Show when={props.rows.length} fallback={<Text tone="muted">{t('wisp.crew.team.none')}</Text>}>
-        <For each={props.rows}>
+        <For each={visible()}>
           {(r) => {
             const ms = (): number | undefined => timeOf(r, props.now());
             // whether it has a time at all: a boolean, so a tick doesn't rebuild the row's cells, only the time's text
@@ -52,6 +59,13 @@ export function TeamList(props: { readonly rows: readonly TeamRow[]; readonly no
             );
           }}
         </For>
+        <Show when={shown()}>
+          {(keep) => (
+            <Button variant="link" size="xs" icon="chevron" part="crew.team.more" onClick={() => setUnfolded(true)}>
+              {t('wisp.crew.team.more', { n: props.rows.length - keep().size })}
+            </Button>
+          )}
+        </Show>
       </Show>
     </Stack>
   );

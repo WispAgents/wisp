@@ -127,12 +127,12 @@ fn from_block(text: &str, at: usize, json: Option<Value>) -> Option<Parsed> {
         _ => None,
     };
     match blocks {
-        Some(Some(list)) if !list.is_empty() => Some(Parsed {
+        Some(Some(list)) if !list.is_empty() => Some(show_notes(Parsed {
             blocks: list.into_iter().filter(|b| b.get("type").is_some_and(Value::is_string)).collect(),
             notes: (!extra.is_empty()).then(|| extra.to_owned()),
             topic,
             fallback: false,
-        }),
+        })),
         // A quick answer: plain text, then a wisp block with only its topic. The text is the answer, as
         // it is (not a slip, so no fallback), and the block shows nothing.
         None | Some(Some(_)) if topic.is_some() => {
@@ -141,6 +141,20 @@ fn from_block(text: &str, at: usize, json: Option<Value>) -> Option<Parsed> {
         }
         _ => None,
     }
+}
+
+/// Blocks that ask or point onward but say nothing themselves (v1 protocol.js ASKS).
+const ASKS: [&str; 4] = ["question", "actions", "next", "blocked"];
+
+/// v1 `showNotes` (2587a74a): the answer written as prose, then a block that only asks or offers what's next. The prose
+/// is the answer, so it's shown first as a markdown block rather than hidden in the notes.
+fn show_notes(mut p: Parsed) -> Parsed {
+    let asks_only =
+        !p.blocks.is_empty() && p.blocks.iter().all(|b| b.get("type").and_then(Value::as_str).is_some_and(|t| ASKS.contains(&t)));
+    if asks_only && let Some(notes) = p.notes.take() {
+        p.blocks.insert(0, markdown(notes));
+    }
+    p
 }
 
 fn markdown(text: String) -> Value {

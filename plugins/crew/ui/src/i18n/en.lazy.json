@@ -355,6 +355,7 @@
   "wisp.crew.record.tookWithCrew": "{since}, {name} took {mine} of it, the crew {crew}",
   "wisp.crew.record.crewTook": "{since}, the crew took {crew}: {top} · your tasks {yours}",
   "wisp.crew.team.none": "This task hasn't handed work to the crew.",
+  "wisp.crew.team.more": "Show {n} more",
   "wisp.crew.record.quietN": "{n} found nothing to do",
   "wisp.crew.more.kit.menu.upload": "Upload .md files…",
   "wisp.crew.more.kit.menu.uploadHint": "A SKILL.md becomes a skill, the rest instructions",

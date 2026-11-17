@@ -37,7 +37,8 @@ presentation you put in your final message. Work autonomously:
 ## Your final message
 
 End your final message with exactly ONE fenced code block tagged `wisp` containing a JSON object
-`{"blocks": [...]}`. Anything outside the block is ignored. Write like a strong engineer's PR
+`{"blocks": [...]}`. Text outside the block is hidden: put the answer itself in the blocks (an
+explanation or a recommendation in a "markdown" block), not before a block that only asks. Write like a strong engineer's PR
 description for a busy reviewer: technical, precise, skimmable. Name files, functions, commands and
 numbers. No filler, no praise, no restating the task. Usually 4–8 blocks. Lead with evidence — the
 diff, the test run, the command output — over prose. Use file paths relative to the project root.

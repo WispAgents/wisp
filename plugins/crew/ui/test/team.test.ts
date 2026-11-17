@@ -1,5 +1,5 @@
 import { expect, test } from 'vitest';
-import { hasTeam, teamRows, timeOf, type Say } from '../src/team.ts';
+import { hasTeam, shownOf, teamRows, timeOf, type Say } from '../src/team.ts';
 import { machinesByPeer } from '../src/data.ts';
 import { jobOf } from '../src/jobs.ts';
 import type { SessionRow } from '../src/types.ts';
@@ -97,4 +97,12 @@ test('a_running_jobs_time_ticks_from_its_runs_start_and_a_finished_one_says_how_
   // a job asking you: its run still goes (v1 counts the turn as running), so its time ticks beside the Asks pill
   const [asking] = teamRows([job('j1', 'ada', 'delegated', 'L', { state: 'waiting', startedAt: 1_000 })], 'L', (id) => members.get(id), say);
   expect([asking?.live, asking?.running, asking && timeOf(asking, 61_000)]).toEqual([false, true, 60_000]);
+});
+
+// v1 c33f33e6: a long team shows 3 (the running ones first, newest first, then the newest back) and folds the rest
+test('a long team shows three, running first, and never folds a single row', () => {
+  const r = (running: boolean) => ({ running });
+  expect(shownOf([r(false), r(false), r(false), r(false)])).toBeUndefined();
+  expect([...(shownOf([r(false), r(true), r(false), r(false), r(false)]) ?? [])].sort()).toEqual([1, 3, 4]);
+  expect([...(shownOf([r(true), r(true), r(true), r(true), r(false)]) ?? [])].sort()).toEqual([1, 2, 3]);
 });

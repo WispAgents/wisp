@@ -123,3 +123,14 @@ export function teamRows(jobs: readonly SessionRow[], lead: string, memberOf: (i
       };
     });
 }
+
+/** A long team folds (v1 c33f33e6 team.js shownOf): this many rows show, the rest wait behind Show N more. */
+export const TEAM_SHOWN = 3;
+
+/** Which rows stay shown, by index, in their order: the running ones first (the newest of them), then the newest
+ *  that are back. Undefined: every row shows (folding a single row isn't worth a button). */
+export function shownOf(rows: readonly { readonly running: boolean }[], n = TEAM_SHOWN): ReadonlySet<number> | undefined {
+  if (rows.length <= n + 1) return undefined;
+  const rank = rows.map((_, i) => i).sort((a, b) => Number(rows[b]?.running) - Number(rows[a]?.running) || b - a);
+  return new Set(rank.slice(0, n));
+}
