@@ -11,6 +11,7 @@
 #![allow(clippy::format_collect, clippy::format_push_string)]
 
 mod account;
+mod answer;
 mod app_css;
 mod device;
 mod home;

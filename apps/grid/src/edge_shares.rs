@@ -89,7 +89,7 @@ impl Grid {
             }
             ("GET", ["gallery"]) => {
                 let qs = query(q, "q").unwrap_or_default();
-                Ok(html(200, pages::gallery_page(&self.page, &qs, &self.shares.gallery(&qs, None)?), &[]))
+                Ok(html(200, pages::gallery_page(&self.page, &qs, &self.shares.gallery(&qs, None)?, self.viewer(h).as_ref()), &[]))
             }
             ("GET" | "POST", ["s", id]) => self.share_page(method, id, q, h, bytes, who),
             _ => Ok(json(404, &json!({ "error": "not found" }))),
@@ -101,6 +101,8 @@ impl Grid {
         let password =
             if *method == Method::POST { parse_body(h, bytes)?.get("password").and_then(Value::as_str).map(str::to_owned) } else { None };
         let tried = password.is_some();
+        // who's signed in to the grid, for its header (QA round 6 #4)
+        let viewer = self.viewer(h);
         let read = match self.read_share(id, q, h, who, password, true) {
             Err(e) if e.status() == 404 => {
                 let m = MessagePage {
@@ -108,6 +110,7 @@ impl Grid {
                     text: "This isn’t shared any more, or its link has a typo.".into(),
                     link: Some((self.cfg.public_url.clone(), "Home".into())),
                     tone: Tone::Plain,
+                    user: viewer.clone(),
                 };
                 return Ok(html(404, pages::message_page(&self.page, &m), &[]));
             }
@@ -127,13 +130,15 @@ impl Grid {
                     access: s.access.clone(),
                     signed_in: matches!(who, Who::Session(_)),
                 };
-                Ok(html(200, pages::share_page(&self.page, &card, &content), &[]))
+                Ok(html(200, pages::share_page(&self.page, &card, &content, viewer.as_ref()), &[]))
             }
-            Err(Refused::Gone(why)) => Ok(html(410, pages::gone_page(&self.page, why), &[])),
-            Err(Refused::Locked(how)) => Ok(html(403, pages::locked_page(&self.page, id, &how, tried), &[])),
-            Err(Refused::NoVersion) => {
-                Ok(self.not_found_for(answer::Asker { page: true }, "Nothing here", "There’s no such version of this."))
-            }
+            Err(Refused::Gone(why)) => Ok(html(410, pages::gone_page(&self.page, why, viewer.as_ref()), &[])),
+            Err(Refused::Locked(how)) => Ok(html(403, pages::locked_page(&self.page, id, &how, tried, viewer.as_ref()), &[])),
+            Err(Refused::NoVersion) => Ok(self.not_found_for(
+                answer::Asker { page: true, viewer: viewer.clone() },
+                "Nothing here",
+                "There’s no such version of this.",
+            )),
         }
     }
 

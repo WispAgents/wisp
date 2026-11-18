@@ -725,6 +725,9 @@ export const COMMANDS: Record<string, CommandFn> = {
   'terminal.close': () => ({ ops: [], result: { ok: true } }),
   'terminal.app.open': () => ({ ops: [], result: { ok: true } }),
   'terminal.shell.info': () => ({ ops: [], result: { supported: true, open: false, app: true, name: 'zsh' } }),
+  // the side panel's Shell: a login shell starts (its stream is vite-mock.ts shellStream)
+  'terminal.shell.start': () => ({ ops: [], result: { ok: true, started: true, dir: '~/code/wisp' } }),
+  'terminal.input': () => ({ ops: [], result: { ok: true } }),
   // a member's track record (F-crew-13): Ada's jobs, the tokens they used, where they went
   'crew.stats': (a) => ({
     ops: [],

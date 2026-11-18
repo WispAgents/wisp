@@ -100,22 +100,41 @@ async fn api_keys_are_made_once_and_revoked_from_account() {
     let csrf = csrf_in(&account);
     // without the page's token nothing is made
     assert_eq!(g.form("/keys", &ada, "csrf=stale&name=deploy").await.status(), 403);
-    // made: the answer is the page itself, saying the key this once, never stored for a reload
+    // made (QA round 6 #3): post, then a redirect, then the page: the key is said once, from a one-time token in a
+    // short-lived cookie (never the key itself), and a reload neither says it again nor makes another
     let r = g.form("/keys", &ada, &format!("csrf={csrf}&name=deploy+bot")).await;
-    assert_eq!(r.status(), 200);
+    assert_eq!((r.status().as_u16(), r.headers()["location"].to_str().unwrap()), (303, "/account#keys"));
+    let set: Vec<String> = r.headers().get_all("set-cookie").iter().map(|v| v.to_str().unwrap().to_owned()).collect();
+    let once = set.iter().find(|c| c.starts_with("wisp_new_key=")).expect("the one-time token").clone();
+    assert!(once.contains("HttpOnly") && once.contains("Max-Age=60") && !once.contains("wgk_"), "{once}");
+    let token = once.trim_start_matches("wisp_new_key=").split(';').next().unwrap().to_owned();
+    let with = format!("{ada}; wisp_new_key={token}");
+    let r = g.c.get(format!("{}/account", g.root)).header("cookie", &with).header("accept", PAGE).send().await.unwrap();
     assert_eq!(r.headers()["cache-control"].to_str().unwrap(), "no-store");
+    let cleared = r.headers().get_all("set-cookie").iter().any(|v| v.to_str().unwrap().starts_with("wisp_new_key=;"));
+    assert!(cleared, "the token is dropped once shown");
     let made = r.text().await.unwrap();
     assert!(made.contains("deploy bot is made. Copy it now: it won’t be shown again."), "{made}");
     let key = made.split(r#"data-copy=""#).find(|s| s.starts_with("wgk_")).unwrap().split('"').next().unwrap().to_owned();
-    // it opens the cloud wisp's API (the keys table checks it), and the next Account never says it again
+    // it opens the cloud wisp's API (the keys table checks it), and a reload with the same token says nothing
     assert!(g.grid.keys.check(&format!("Bearer {key}")).unwrap().is_some());
-    let again = g.page("/account", &ada).await;
-    assert!(!again.contains(&key) && again.contains("<b>deploy bot</b>"), "{again}");
+    let again = g.page("/account", &with).await;
+    assert!(!again.contains(&key) && !again.contains("is made") && again.contains("<b>deploy bot</b>"), "{again}");
+    let uid = g.grid.accounts.dev_user("ada").unwrap().id;
+    assert_eq!(g.grid.keys.list(&uid).unwrap().len(), 1, "a reload makes no second key");
+    // someone else's token shows them nothing
+    let bob0 = g.session("bob");
+    let r = g.form("/keys", &ada, &format!("csrf={csrf}&name=second")).await;
+    let t2 =
+        r.headers().get_all("set-cookie").iter().map(|v| v.to_str().unwrap().to_owned()).find(|c| c.starts_with("wisp_new_key=")).unwrap();
+    let t2 = t2.trim_start_matches("wisp_new_key=").split(';').next().unwrap().to_owned();
+    assert!(!g.page("/account", &format!("{bob0}; wisp_new_key={t2}")).await.contains("wgk_"));
+    let id2 = g.grid.keys.list(&uid).unwrap()[0].id.clone();
+    assert_eq!(g.form(&format!("/keys/{id2}/revoke"), &ada, &format!("csrf={csrf}")).await.status(), 302);
     // a name it can't take is said on the page
     let r = g.form("/keys", &ada, &format!("csrf={csrf}&name=")).await;
     assert_eq!(r.headers()["location"].to_str().unwrap(), "/account#keys");
     // revoked: refused from now on, and gone from the list
-    let uid = g.grid.accounts.dev_user("ada").unwrap().id;
     let id = g.grid.keys.list(&uid).unwrap()[0].id.clone();
     let r = g.form(&format!("/keys/{id}/revoke"), &ada, &format!("csrf={csrf}")).await;
     assert_eq!((r.status().as_u16(), r.headers()["location"].to_str().unwrap()), (302, "/account#keys"));
@@ -181,5 +200,20 @@ async fn home_links_land_on_their_place_in_the_wisp() {
     let to = r.headers()["location"].to_str().unwrap().to_owned();
     let r_at = to.split("&r=").nth(1).unwrap();
     assert_eq!(r_at, "%2F%3Fo%3Dviewer%253Ashell-settings.sheet%253A%257B%2522pane%2522%253A%2522agents%2522%257D", "{to}");
+    g.done();
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn grid_pages_say_who_is_signed_in() {
+    // QA round 6 #4 (docs/ux/2026-11-18-grid.md #7): a page that says one thing, the share pages and the gallery carry
+    // Home, Account and you, as Home does, once you're signed in; signed out they don't
+    let g = rig("header").await;
+    let ada = g.session("ada");
+    let nav = r#"<nav class="navt" aria-label="Your grid"><a href="/">Home</a><a href="/account">Account</a></nav>"#;
+    for path in ["/nope", "/s/doesnotexist0000", "/gallery"] {
+        let page = g.page(path, &ada).await;
+        assert!(page.contains(nav) && page.contains(r#"<span class="who">ada</span>"#), "{path}: {page}");
+        assert!(!g.page(path, "").await.contains(nav), "{path} signed out");
+    }
     g.done();
 }

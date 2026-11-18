@@ -25,6 +25,8 @@ pub mod accounts;
 pub mod auth;
 pub mod handoff;
 pub mod keys;
+#[path = "keys_fresh.rs"]
+pub mod keys_fresh;
 pub mod previews;
 pub mod seats;
 pub mod waitlist;

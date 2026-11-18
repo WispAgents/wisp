@@ -96,6 +96,21 @@ test('in_selection_a_tap_toggles_rows_and_unpicking_the_last_on_android_leaves_i
   expect(rowOf(a).hasAttribute('data-picking'), 'rows back to themselves').toBe(false);
 });
 
+for (const kind of ['ios', 'android'] as const) {
+  test(`on_${kind}_the_tasks_bars_menu_holding_select_is_named_more_not_tasks_qa_r6_phone_12`, async () => {
+    await start(phone(kind));
+    await until(() => q('[data-part="phone.tasks.bar"] [aria-haspopup="menu"]') !== null);
+    const menus = [...document.querySelectorAll<HTMLElement>('[data-part="phone.tasks.bar"] [aria-haspopup="menu"]')].filter((b) => b.querySelector('[data-kit="icon"]') && !b.closest('[data-part~="phone.tasks.me"]'));
+    const labels = menus.map((b) => b.getAttribute('aria-label'));
+    expect(labels, 'the ⋯ / ⋮ says what it is').toContain('More');
+    expect(labels).not.toContain('Tasks');
+    // and More is the one holding Select
+    menus.find((b) => b.getAttribute('aria-label') === 'More')?.click();
+    await until(() => [...document.querySelectorAll('[data-kit="menu-item"]')].some((e) => e.textContent?.includes('Select')));
+    expect([...document.querySelectorAll('[data-kit="menu-item"]')].some((e) => e.textContent?.includes('Select'))).toBe(true);
+  });
+}
+
 test('on_ios_select_in_the_bar_is_edit_mode_in_the_same_bar_with_select_all_done_and_the_bulk_actions_in_a_bottom_toolbar', async () => {
   const { root, shell } = await start(phone('ios'));
   // the bar's Select (the twin of the long-press)
@@ -218,12 +233,15 @@ test('on_android_the_computer_filter_keeps_its_sheet', async () => {
 async function openMenu(): Promise<HTMLElement[]> {
   await until(() => q('[data-part="phone.task.bar"] [data-kit="app-bar-actions"] > [aria-label="More"]') !== null);
   (q('[data-part="phone.task.bar"] [data-kit="app-bar-actions"] > [aria-label="More"]') as HTMLButtonElement).click();
-  // on a phone the menu is three groups (UX 2026-11-18 phone #6): Next / Previous task are under This task
-  const show = (): HTMLElement | undefined => [...document.querySelectorAll<HTMLElement>('[data-kit="menu-item"][data-sub]')].find((e) => e.textContent?.trim().startsWith('This task'));
+  // on a phone the menu is three groups (UX 2026-11-18 phone #6, QA r6 #6): Next / Previous task are under Show ›, in
+  // iOS's menu or Android's bottom sheet (QA r6 #13)
+  const ITEM = '[data-kit="menu-item"], [data-kit="sheet-item"]';
+  const show = (): HTMLElement | undefined =>
+    [...document.querySelectorAll<HTMLElement>('[data-kit="menu-item"][data-sub], [data-kit="sheet-item"][aria-haspopup]')].find((e) => e.textContent?.trim().startsWith('Show'));
   await until(() => show() !== undefined);
   show()?.click();
-  await until(() => [...document.querySelectorAll('[data-kit="menu-item"]')].some((e) => e.textContent?.includes('Next task')));
-  return [...document.querySelectorAll<HTMLElement>('[data-kit="menu-item"]')].filter((e) => /Next task|Previous task/.test(e.textContent ?? ''));
+  await until(() => [...document.querySelectorAll(ITEM)].some((e) => e.textContent?.includes('Next task')));
+  return [...document.querySelectorAll<HTMLElement>(ITEM)].filter((e) => /Next task|Previous task/.test(e.textContent ?? ''));
 }
 
 for (const kind of ['android', 'ios'] as const) {
@@ -238,7 +256,7 @@ for (const kind of ['android', 'ios'] as const) {
     expect(q('[data-part="phone.task.bar"]')?.getAttribute('data-gesture')).toContain('task.head-swipe');
     let [next, prev] = await openMenu();
     expect(next?.textContent).toContain('Next task');
-    expect(prev?.hasAttribute('data-disabled') || prev?.getAttribute('aria-disabled') === 'true', 'the first task has no previous').toBe(true);
+    expect(prev?.hasAttribute('data-disabled') || prev?.hasAttribute('disabled') || prev?.getAttribute('aria-disabled') === 'true', 'the first task has no previous').toBe(true);
     next?.click();
     await until(() => client.nav.nav().main.kind === 'task' && String((client.nav.nav().main as { id: string }).id) === order[1]);
     expect(String((client.nav.nav().main as { id: string }).id)).toBe(order[1]);

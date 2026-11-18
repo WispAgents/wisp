@@ -25,6 +25,7 @@
 // large title's height is read once on mount, then one scrollTop read per event and one attribute write
 // when the state flips (scroll-math.ts barCollapsed).
 import { createSignal, onCleanup, onMount, Show, type JSX } from 'solid-js';
+import { Dynamic } from 'solid-js/web';
 import { flag, sub, type KitProps, type PartName } from '../core/props.ts';
 import { useT, type Translate } from '../core/i18n.tsx';
 import { Button, IconButton } from '../controls/Button.tsx';
@@ -34,6 +35,7 @@ import { Inline } from '../layout/Stack.tsx';
 import { Box } from '../layout/Box.tsx';
 import { Toolbar, type ToolbarItem } from '../composites/Toolbar.tsx';
 import { Menu, MenuOn, type MenuEntry } from '../controls/Menu.tsx';
+import { phoneOverlays } from '../controls/phone-part.ts';
 import { usePlatform } from '../platform/PlatformLook.tsx';
 import { ComposeButton, claimCompose, useComposeHost } from './compose.tsx';
 import { barCollapsed } from './scroll-math.ts';
@@ -61,6 +63,9 @@ export interface TopAppBarMenu {
   readonly label: string;
   readonly items: readonly MenuEntry[];
   readonly onSelect: (value: string) => void;
+  /** Android: the page's actions as an M3 modal bottom sheet (titled `sheet`) rather than a dropdown; iOS keeps its
+   *  pull-down (UX 2026-11-18 phone #6, QA r6 #13). Additive. */
+  readonly sheet?: string | undefined;
 }
 
 /** The screen's search: what opens it and its words (the iOS field's placeholder, the icon's name). */
@@ -210,13 +215,48 @@ function BackControl(props: { readonly back: TopAppBarBack; readonly ios: boolea
   );
 }
 
+/** Android's page actions as an M3 modal bottom sheet (the kit's phone ActionSheet: submenus drill in, Back out). */
+function SheetMenu(props: { readonly menu: TopAppBarMenu; readonly title: string; readonly part: PartName }): JSX.Element {
+  const [open, setOpen] = createSignal(false);
+  const press = (): void => {
+    setOpen(true);
+    void phoneOverlays.load().catch(() => setOpen(false));
+  };
+  let trigger: HTMLButtonElement | undefined;
+  return (
+    <>
+      <IconButton icon="dots-v" label={props.menu.label} variant="ghost" part={sub(props.part, 'trigger')} ref={(el) => (trigger = el)} onClick={press} haspopup="menu" expanded={open()} />
+      <Show when={open() && phoneOverlays.ready()}>
+        {(m) => (
+          <Dynamic
+            component={m().PhoneMenu}
+            look="android"
+            items={props.menu.items}
+            onSelect={props.menu.onSelect}
+            onClose={() => (setOpen(false), trigger?.focus())}
+            target={trigger as HTMLElement}
+            x={0}
+            title={props.title}
+            part={props.part}
+          />
+        )}
+      </Show>
+    </>
+  );
+}
+
 /** The bar's end after its actions: the page's menu (⋮ on Android, ⋯ on iOS) and a compose bar's confirm (Send). */
 function PageEnd(props: { readonly menu: TopAppBarMenu | undefined; readonly confirm: TopAppBarConfirm | undefined; readonly ios: boolean; readonly part: PartName }): JSX.Element {
   return (
     <>
       <Show when={props.menu}>
         {(m) => (
-          <Menu trigger={{ icon: props.ios ? 'dots' : 'dots-v', 'aria-label': m().label, variant: 'ghost' }} items={m().items} onSelect={m().onSelect} placement="bottom-end" part={sub(props.part, 'menu')} />
+          <Show
+            when={!props.ios && m().sheet}
+            fallback={<Menu trigger={{ icon: props.ios ? 'dots' : 'dots-v', 'aria-label': m().label, variant: 'ghost' }} items={m().items} onSelect={m().onSelect} placement="bottom-end" part={sub(props.part, 'menu')} />}
+          >
+            {(title) => <SheetMenu menu={m()} title={title()} part={sub(props.part, 'menu')} />}
+          </Show>
         )}
       </Show>
       <Show when={props.confirm}>

@@ -3,7 +3,7 @@
 // bottom sheet) holding what the bar held: the permissions as a choice list, the agent, Delegate, the goal, Send later
 // and the queue switch. Every act is the bar's own (the same menus, panel and presses), so nothing a phone could do is
 // lost, only one tap deeper. Only the phone looks draw it (ReplyBox reads the look); the browser's bar is unchanged.
-import { For, Show, createEffect, createSignal, on, type JSX } from 'solid-js';
+import { For, Show, createEffect, createSignal, on, untrack, type JSX } from 'solid-js';
 import { flag } from '../core/props.ts';
 import { Icon } from '../content/Icon.tsx';
 import type { IconName } from '../content/icons.ts';
@@ -67,6 +67,22 @@ export function ReplyOptions(props: ReplyOptionsProps): JSX.Element {
     pushed = true;
     after(props.runner.act);
   };
+  // a row with a panel (Delegate) pushes it as its own sheet (QA r6 phone #7, never the browser's popover over this
+  // one): the options give way, and closing it brings them back, as Agent › does. Drawn apart from the options sheet,
+  // which unmounts its rows when it closes.
+  type Panel = NonNullable<Act['panel']>;
+  const [shown, setShown] = createSignal<Panel | undefined>();
+  const toPanel = (p: Panel): void => {
+    setOpen(false);
+    setShown(p);
+    p.onOpenChange?.(true);
+  };
+  const fromPanel = (): void => {
+    const p = shown();
+    setShown(undefined);
+    p?.onOpenChange?.(false);
+    setOpen(true);
+  };
   createEffect(
     on(
       () => props.runner.open === true,
@@ -103,9 +119,16 @@ export function ReplyOptions(props: ReplyOptionsProps): JSX.Element {
       <Sheet title={props.labels.options} open={open()} onOpenChange={setOpen} part="composer.options" detents={['medium', 'large']}>
         <div data-kit="opts-list">
           <ModeRows mode={props.mode} label={props.labels.mode} />
-          <ToolRows {...props} after={after} toAgent={toAgent} />
+          <ToolRows {...props} after={after} toAgent={toAgent} toPanel={toPanel} />
         </div>
       </Sheet>
+      <Show when={shown()}>
+        {(p) => (
+          <Sheet title={p().label} open onOpenChange={(o) => !o && fromPanel()} part={p().part} detents={['large']}>
+            {untrack(() => p().content)()}
+          </Sheet>
+        )}
+      </Show>
     </>
   );
 }
@@ -149,7 +172,7 @@ function ModeRows(props: { readonly mode: ReplyOptionsProps['mode']; readonly la
 }
 
 /** the agent row (it leaves for the harness picker) and the bar's other tools, each its own act */
-function ToolRows(props: ReplyOptionsProps & { readonly after: (act: Act | undefined) => void; readonly toAgent: () => void }): JSX.Element {
+function ToolRows(props: ReplyOptionsProps & { readonly after: (act: Act | undefined) => void; readonly toAgent: () => void; readonly toPanel: (p: NonNullable<Act['panel']>) => void }): JSX.Element {
   const after = props.after;
   return (
     <div data-kit="opts-group">
@@ -166,7 +189,7 @@ function ToolRows(props: ReplyOptionsProps & { readonly after: (act: Act | undef
       <For each={props.rows}>
         {(r) => (
           <WithAct
-            act={r.act?.onClick && !r.act.menu && !r.act.panel ? { ...r.act, onClick: () => after(r.act) } : r.act}
+            act={((a) => (a?.panel ? { onClick: () => props.toPanel(a.panel as NonNullable<Act['panel']>) } : a?.onClick && !a.menu ? { ...a, onClick: () => after(a) } : a))(r.act)}
             render={(trigger) => (
               <button
                 type="button"

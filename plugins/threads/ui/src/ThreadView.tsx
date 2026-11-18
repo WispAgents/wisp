@@ -14,6 +14,8 @@ import './i18n/lazy.ts';
 type T = (key: Key, vars?: Vars) => string;
 
 export interface ThreadViewProps {
+  /** a phone (UX 2026-11-18 phone #14, QA r6 #10): an empty Thread says so in a short title, its why as body text */
+  readonly phone?: boolean | undefined;
   readonly sections: readonly SectionView[];
   readonly revisions: (section: SectionId, current: number) => readonly Revision[];
   readonly health?: Health | undefined;
@@ -99,7 +101,13 @@ export function ThreadView(props: ThreadViewProps): JSX.Element {
           {props.t('threads.unseen')}
         </Text>
       </Show>
-      <Show when={shown().length > 0} fallback={<EmptyState part="threads.empty" title={props.t('threads.empty')} compact icon="text" />}>
+      <Show when={shown().length > 0} fallback={
+          <Show when={props.phone} fallback={<EmptyState part="threads.empty" title={props.t('threads.empty')} compact icon="text" />}>
+            <EmptyState part="threads.empty" title={props.t('threads.emptyTitle')} compact icon="text">
+              {props.t('threads.emptyBody')}
+            </EmptyState>
+          </Show>
+        }>
         <Stack gap="6" part="threads.sections">
           {/* keyed by section: a rewrite of one updates it in place, the others stay as they are */}
           <ForKeyed each={shown()}>

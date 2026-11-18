@@ -15,6 +15,7 @@ import { Painter } from './paint.ts';
 import type { Screen } from './screen.ts';
 import '../css/terminal.css';
 import { bindAccessory } from './accessory.ts';
+import { addSymbolFaces } from './symbols.ts';
 import { usePlatform } from '../platform/PlatformLook.tsx';
 
 export const SYNC_MS = 150;
@@ -208,6 +209,8 @@ export function Terminal(props: TerminalProps): JSX.Element {
   };
 
   onMount(() => {
+    // the prompt's symbols when no Nerd Font is installed: fetched only for a glyph in their ranges (ADR-0101)
+    addSymbolFaces(document.fonts as never, typeof FontFace === 'undefined' ? undefined : (FontFace as never));
     Object.assign(host, { box, live, input });
     painter = new Painter(back, live);
     wireKeys(host);

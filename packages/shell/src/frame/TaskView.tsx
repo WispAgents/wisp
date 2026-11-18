@@ -36,10 +36,10 @@ import {
 } from '@wisp/ui';
 import { useShell } from '../context.tsx';
 import { blockStrings } from '../block-strings.ts';
-import { newestSide } from './side-newest.ts';
+import { newestSide, prBadge } from './side-newest.ts';
 import { usePlanRing } from './plan-ring.ts';
 import type { SendHold } from '../contract.ts';
-import { aheadLabel, waitable } from './hold.ts';
+import { aheadLabel, startsAt, waitable, whenTip } from './hold.ts';
 import { SESSION, type SessionRow } from '../rows.ts';
 import { Slot, useClients, usePluginClient } from '../slot.tsx';
 import { TaskHeadSlot } from './slots.tsx';
@@ -1083,8 +1083,8 @@ export default function TaskView(props: { readonly id: string; readonly onBack?:
                     id: 'later',
                     part: 'composer.sendLater',
                     icon: 'clock' as const,
-                    label: t('shell.when.chip', { when: t(`shell.when.${when()}`) }),
-                    title: t('shell.home.later'),
+                    label: t('shell.when.chip', { when: startsAt(whenAt(when() ?? 'hour', now()), now()) }),
+                    title: whenTip(whenAt(when() ?? 'hour', now()), now()),
                     text: true,
                     on: true,
                     act: { menu: { items: whenMenu(t, now()), onSelect: (w: string) => setWhen(w as When) } },
@@ -1561,7 +1561,7 @@ export default function TaskView(props: { readonly id: string; readonly onBack?:
                             {
                               id: 'when',
                               icon: 'clock' as const,
-                              label: t('shell.when.chip', { when: t(`shell.when.${when()}`) }),
+                              label: t('shell.when.chip', { when: startsAt(whenAt(when() ?? 'hour', now()), now()) }),
                               removeLabel: t('shell.when.clear'),
                               onRemove: () => setWhen(undefined),
                             },
@@ -1613,7 +1613,7 @@ export default function TaskView(props: { readonly id: string; readonly onBack?:
                     ...(diff().files > 0
                       ? [{ id: 'changes', icon: 'file' as const, label: t('shell.phone.files', { count: diff().files, n: diff().files, plus: `+${diff().plus}`, minus: `−${diff().minus}` }), on: nav().side.kind === 'changes', onSelect: () => side('changes') }]
                       : []),
-                    ...(hasPr() ? [{ id: 'pr', icon: 'branch' as const, label: t('shell.phone.pr'), on: nav().side.kind === 'pr', onSelect: () => shell.navigate({ t: 'toggleSide', side: { kind: 'pr', id: key as never } }) }] : []),
+                    ...(hasPr() ? [{ id: 'pr', icon: 'branch' as const, label: ((b) => (b ? t('shell.phone.prNumber', { pr: b }) : t('shell.phone.pr')))(prBadge(row() as never)), on: nav().side.kind === 'pr', onSelect: () => shell.navigate({ t: 'toggleSide', side: { kind: 'pr', id: key as never } }) }] : []),
                   ]}
                   details={() => (
                     <TaskDetails

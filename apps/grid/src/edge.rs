@@ -96,6 +96,8 @@ pub struct Grid {
     pub keys: crate::keys::ApiKeys,
     /// per-user and per-address rate limits (a minute's window)
     limits: crate::http::Limiter,
+    /// a key just made, held for the one Account page that says it (`keys_fresh.rs`)
+    fresh_keys: crate::keys_fresh::FreshKeys,
     pub shares: Shares,
     pub teams: Teams,
     pub tunnels: Arc<Tunnels>,
@@ -247,7 +249,7 @@ impl Grid {
     pub async fn handle(self: &Arc<Self>, req: http::Request<Incoming>) -> Resp {
         let host = req.headers().get("host").and_then(|h| h.to_str().ok()).unwrap_or_default().to_owned();
         let kind = host_kind(&host, self.as_ref());
-        let asker = answer::Asker::of(req.method(), req.headers());
+        let asker = self.asker(req.method(), req.headers());
         if let Some(r) = self.common(&req, &kind) {
             return r;
         }
@@ -320,7 +322,7 @@ impl Grid {
                 self.mail_reply(&Value::Object(b), &who).await
             }
             _ => {
-                let asker = answer::Asker::of(&method, &head.headers);
+                let asker = self.asker(&method, &head.headers);
                 Ok(if asker.page {
                     self.not_found_for(asker, "Nothing here", "This page doesn’t exist, or its link has a typo.")
                 } else {

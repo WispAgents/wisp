@@ -26,11 +26,22 @@ pub(super) struct AppPage<'a> {
     pub head: &'a str,
     pub narrow: bool,
     pub tab: Tab,
+    /// Where Home and Account are: "" on the grid's own address; its URL on another (a computer's offline page)
+    pub home: &'a str,
 }
 
 impl<'a> AppPage<'a> {
     pub fn new(cfg: &'a PageCfg, title: &'a str, body: &'a str) -> Self {
-        Self { cfg, title, user: None, csrf: "", body, head: "", narrow: false, tab: Tab::None }
+        Self { cfg, title, user: None, csrf: "", body, head: "", narrow: false, tab: Tab::None, home: "" }
+    }
+
+    /// A page for someone signed in, outside Home and Account (a message, a share): the same header, neither tab on.
+    pub fn signed(mut self, user: Option<&'a PageUser>) -> Self {
+        if user.is_some() {
+            self.user = user;
+            self.tab = Tab::Neither;
+        }
+        self
     }
 }
 
@@ -48,7 +59,10 @@ fn me(p: &AppPage<'_>) -> String {
     };
     let (who, av) = (esc(&user.handle), avatar(user));
     if p.tab != Tab::None {
-        return format!(r#"<div class="me"><a href="/account" title="Your account"><span class="who">{who}</span>{av}</a></div>"#);
+        return format!(
+            r#"<div class="me"><a href="{}/account" title="Your account"><span class="who">{who}</span>{av}</a></div>"#,
+            esc(p.home)
+        );
     }
     let out = if p.csrf.is_empty() {
         String::new()
@@ -67,16 +81,18 @@ pub(super) fn app_page(p: &AppPage<'_>) -> String {
     let nav = if tabbed {
         let cur = |t| if p.tab == t { r#" aria-current="page""# } else { "" };
         format!(
-            r#"<nav class="navt" aria-label="Your grid"><a href="/"{}>Home</a><a href="/account"{}>Account</a></nav>"#,
+            r#"<nav class="navt" aria-label="Your grid"><a href="{h}/"{}>Home</a><a href="{h}/account"{}>Account</a></nav>"#,
             cur(Tab::Home),
-            cur(Tab::Account)
+            cur(Tab::Account),
+            h = esc(p.home),
         )
     } else {
         String::new()
     };
     let wide = if tabbed { " wide" } else { "" };
     // a narrow page (Activate) keeps its narrow column under the wide header
-    let main_wide = if tabbed && !p.narrow { " wide" } else { "" };
+    // only Home and Account are wide pages; a message or a share keeps its reading width under the wide header
+    let main_wide = if matches!(p.tab, Tab::Home | Tab::Account) && !p.narrow { " wide" } else { "" };
     let narrow = if p.narrow { " narrow" } else { "" };
     // "wisp Grid · wisp Grid" says it twice: a page named after the grid is just the grid's name
     let title = if p.title == cfg.name { esc(&cfg.name) } else { format!("{} · {}", esc(p.title), esc(&cfg.name)) };

@@ -120,7 +120,7 @@ impl Grid {
         }
         let asker = answer::Asker::of(&head.method, &head.headers);
         let req = http::Request::from_parts(head, incoming(body));
-        Ok(self.tunnels.forward(&c.id, req, preview.is_some()).await.unwrap_or_else(|| self.offline(asker, c)))
+        Ok(self.tunnels.forward(&c.id, req, preview.is_some()).await.unwrap_or_else(|| self.offline(&asker, c)))
     }
 
     pub(super) async fn edge(&self, req: http::Request<Incoming>, handle: &str) -> Result<Resp> {

@@ -57,6 +57,7 @@ impl Grid {
             accounts,
             keys,
             limits: crate::http::Limiter::default(),
+            fresh_keys: crate::keys_fresh::FreshKeys::default(),
             shares,
             teams,
             tunnels,

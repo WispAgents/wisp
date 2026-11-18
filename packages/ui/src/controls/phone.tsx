@@ -48,6 +48,8 @@ export interface PhoneMenuProps {
   readonly part: PartName;
   /** Android: *Select* first (the list's selection mode) */
   readonly onSelectMode?: (() => void) | undefined;
+  /** the Android sheet's title when it isn't the pressed row's (a page's ⋮: the task's name). Additive. */
+  readonly title?: string | undefined;
 }
 
 /** what a long-press lifts as the iOS preview: the pressed row */
@@ -175,7 +177,7 @@ function Rows(props: { readonly rows: readonly PhoneRow[]; readonly part: PartNa
 /** Android: the row's actions in an M3 modal bottom sheet, *Select* first, the row's title as its headline. */
 function ActionSheet(props: PhoneMenuProps): JSX.Element {
   const t = useT();
-  const title = titleOf(props.target) || t('gesture.actions');
+  const title = props.title ?? (titleOf(props.target) || t('gesture.actions'));
   const m = useRows(props, () => (props.onSelectMode ? t('select') : undefined));
   return (
     <Sheet open title={title} onOpenChange={(open) => !open && props.onClose()} part={sub(props.part, 'sheet')}>

@@ -88,9 +88,10 @@ export function PhoneHead(props: { readonly filter: () => string }): JSX.Element
     },
   ]);
   // selection mode's visible way in (the twin of a row's long-press menu's Select): in the bar's ⋮ (Android) / ⋯ (iOS),
-  // as Files and Photos keep it, not a word of its own in the bar (UX 2026-11-18 phone #11)
+  // as Files and Photos keep it, not a word of its own in the bar (UX 2026-11-18 phone #11). Named More, as the system
+  // names its ⋯ / ⋮ (it was "Tasks", the bar's own name: QA round 6 phone #12)
   const barMenu = createMemo(() =>
-    shell.listSelect ? { label: shell.t('shell.phone.tasksActions'), items: [{ value: 'select', label: shell.t('shell.phone.select'), icon: 'check' as const }], onSelect: (v: string) => v === 'select' && shell.listSelect?.start() } : undefined,
+    shell.listSelect ? { label: shell.t('shell.phone.tasksMore'), items: [{ value: 'select', label: shell.t('shell.phone.select'), icon: 'check' as const }], onSelect: (v: string) => v === 'select' && shell.listSelect?.start() } : undefined,
   );
   // selection mode: the bar takes `selection` and the selection bar comes in; the kit picks what shows (iOS's edit mode
   // keeps this bar, its large title and its folded state; Android's contextual bar takes its place at its height)
@@ -326,7 +327,8 @@ export function PhoneTaskBar(props: PhoneTaskBarProps): JSX.Element {
         title={props.title}
         back={{ label: t('shell.dest.tasks'), onBack: props.onBack }}
         actions={[{ id: 'head', label: t('shell.phone.taskHead'), icon: 'dots', priority: 'pin', render: () => props.head() }]}
-        menu={{ label: t('shell.task.more'), items: props.menu(), onSelect: props.onSelect }}
+        // Android: the task's actions as an M3 bottom sheet titled with the task (UX 2026-11-18 phone #6, QA r6 #13)
+        menu={{ label: t('shell.task.more'), items: props.menu(), onSelect: props.onSelect, sheet: props.title }}
         swipe={props.swipe}
         t={kit}
       />

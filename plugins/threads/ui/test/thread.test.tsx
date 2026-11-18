@@ -145,3 +145,13 @@ test('History lists a section’s earlier versions; Use this version rewrites it
   use?.click();
   expect(onSave).toHaveBeenCalledWith('goal', 'Import files');
 });
+
+// QA r6 phone #10 (UX 2026-11-18 phone #14): on a phone the empty state's title is a few words; the why is body text
+test('on_a_phone_no_notes_yet_is_a_short_title_and_its_why_as_body_text', () => {
+  const { q } = mount({ phone: true }, sectionsOf([], 's1'));
+  const title = q('threads.empty.title')[0]?.textContent ?? '';
+  expect(title).toBe('No Notes yet');
+  expect(title.split(/\s+/).length, 'a title, not a sentence').toBeLessThanOrEqual(4);
+  expect(q('threads.empty.body')[0]?.textContent).toContain('outlast compaction');
+  expect(q('threads.add.item').length, 'every section can still be added').toBe(7);
+});

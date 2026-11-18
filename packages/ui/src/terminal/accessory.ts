@@ -21,9 +21,28 @@ export function keyboardInset(w: Pick<ViewportWindow, 'innerHeight' | 'visualVie
   return Math.max(0, Math.round(w.innerHeight - v.height - v.offsetTop));
 }
 
-/** Keeps `--k-kb` on `el` at the keyboard's height while it is bound. Returns the stop. */
+/** the key rows bound now, each with how much keyboard it last saw: the page's flag follows the last one still bound */
+const bound = new Map<HTMLElement, number>();
+
+/** The body's `data-kb` and `--k-kb` from the bound rows (the largest inset any of them sees). */
+function flag(body: HTMLElement): void {
+  const kb = Math.max(0, ...bound.values());
+  body.toggleAttribute('data-kb', kb > 0);
+  if (kb > 0) body.style.setProperty('--k-kb', `${kb}px`);
+  else body.style.removeProperty('--k-kb');
+}
+
+/** Keeps `--k-kb` on `el` at the keyboard's height while it is bound, and tells the page while the keyboard is up
+ *  (`data-kb` and `--k-kb` on the body: a sheet holding the terminal makes room, QA round 6 phone #1; with two rows
+ *  bound, the flag stays until the last lets go). Returns the stop. */
 export function bindAccessory(el: HTMLElement, w: ViewportWindow): () => void {
-  const write = (): void => el.style.setProperty('--k-kb', `${keyboardInset(w)}px`);
+  const body = el.ownerDocument.body;
+  const write = (): void => {
+    const kb = keyboardInset(w);
+    el.style.setProperty('--k-kb', `${kb}px`);
+    bound.set(el, kb);
+    flag(body);
+  };
   write();
   const v = w.visualViewport;
   v?.addEventListener('resize', write);
@@ -32,5 +51,7 @@ export function bindAccessory(el: HTMLElement, w: ViewportWindow): () => void {
     v?.removeEventListener('resize', write);
     v?.removeEventListener('scroll', write);
     el.style.removeProperty('--k-kb');
+    bound.delete(el);
+    flag(body);
   };
 }

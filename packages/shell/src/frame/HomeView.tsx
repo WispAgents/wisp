@@ -20,7 +20,7 @@ import { computed, entityKey, newRowId, ownerOf, type EntityKey, type Json, type
 import { KeysHint, Launcher, NextList, Reserved, SplitHome, Tips, lazyPart, lazyView, useSignal, warm as warmPart, type Act, type LauncherProps, type LauncherTool, type PlainTip, type SetupTip } from '@wisp/ui';
 import { useShell } from '../context.tsx';
 import type { LaunchTargetDef, SendHold } from '../contract.ts';
-import { aheadLabel, waitable } from './hold.ts';
+import { aheadLabel, startsAt, waitable, whenTip } from './hold.ts';
 import { Slot, useExtensions, usePluginClient } from '../slot.tsx';
 import { useNow } from '../clock.ts';
 import { SESSION, type SessionRow } from '../rows.ts';
@@ -342,7 +342,7 @@ export function HomeView(props: { readonly onBack?: () => void }): JSX.Element {
   // a phone or a touch-only screen has no shortcut to advertise (v1: MOBILE || (hover: none))
   const touchOnly = phone || (typeof matchMedia === 'function' && matchMedia('(hover: none)').matches);
   const promptHint = (): string =>
-    promptFocused() || touchOnly ? t('shell.home.placeholder') : t('shell.home.placeholderKey', { key: displayCombo('mod+l', shell.platform.apple).join('') });
+    phone ? t('shell.home.placeholderPhone') : promptFocused() || touchOnly ? t('shell.home.placeholder') : t('shell.home.placeholderKey', { key: displayCombo('mod+l', shell.platform.apple).join('') });
   // the goal plugin's Judges at the end of Done when (v1 #judgesBtn): made once, shown while the line is
   const goalEnd = <Slot input="shell.home:goalLine" layout="contents" />;
   // ↑ brings back what you sent, Shift+Tab cycles the mode (v1 prompt-history.js, F-task-31, F-comp-4)
@@ -697,7 +697,7 @@ export function HomeView(props: { readonly onBack?: () => void }): JSX.Element {
   const extras = () => [
     ...files().map((f, i) => ({ id: `file:${i}:${f.name}`, icon: 'clip' as const, label: f.name, removeLabel: t('shell.home.remove', { name: f.name }), onRemove: () => att.remove(f) })),
     ...(when()
-      ? [{ id: 'when', icon: 'clock' as const, label: t('shell.when.chip', { when: t(`shell.when.${when()}`) }), removeLabel: t('shell.when.clear'), onRemove: () => setWhen(undefined) }]
+      ? [{ id: 'when', icon: 'clock' as const, label: t('shell.when.chip', { when: startsAt(whenAt(when() ?? 'hour', now()), now()) }), removeLabel: t('shell.when.clear'), onRemove: () => setWhen(undefined) }]
       : []),
   ];
   const pluginTips = useSignal(computed(() => (shell.homeTips?.()() ?? []).filter((d) => d.offered?.(d.client) ?? true)));
@@ -880,7 +880,7 @@ export function HomeView(props: { readonly onBack?: () => void }): JSX.Element {
         : []),
       ...(when()
         ? [
-            tool('later', 'launcher.later', 'clock', t('shell.when.chip', { when: t(`shell.when.${when()}`) }), t('shell.home.later'), {
+            tool('later', 'launcher.later', 'clock', t('shell.when.chip', { when: startsAt(whenAt(when() ?? 'hour', now()), now()) }), whenTip(whenAt(when() ?? 'hour', now()), now()), {
               text: true,
               on: true,
               act: laterTool().act ?? {},
@@ -1013,7 +1013,7 @@ export function HomeView(props: { readonly onBack?: () => void }): JSX.Element {
         // a bar too narrow for Goal, Worktree and Start later folds the last of them into More (QA desktop r2 #4); the
         // phone's bar has its own More, the first run its More options
         {...(!phone && !firstRun() && { tailMore: { label: t('shell.home.moreOptions'), title: t('shell.home.moreTail') } })}
-        sendLabel={when() ? t('shell.when.send', { at: new Date(whenAt(when() ?? 'hour', now())).toLocaleString() }) : t('shell.home.send')}
+        sendLabel={when() ? t('shell.when.send', { at: aheadLabel(whenAt(when() ?? 'hour', now()), now()) }) : t('shell.home.send')}
         {...(checking() && { sendAct: { pending: true } })}
         // the phone sheet: the round Send says what the header's says (one state: nothing to send yet, QA r2 #12)
         {...(sheet() && text().trim() === '' && files().length === 0 && { sendOff: true })}

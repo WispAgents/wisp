@@ -70,6 +70,17 @@ function runStream(req: IncomingMessage, res: ServerResponse): void {
   req.on('close', () => timers.forEach(clearTimeout));
 }
 
+/** The side panel's Shell: a login shell's hello and a powerline prompt (Nerd Font glyphs: the terminal's symbols font,
+ *  ADR-0101), then it waits (keys go through terminal.input, which the mock takes and drops). */
+function shellStream(req: IncomingMessage, res: ServerResponse): void {
+  res.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-cache', connection: 'keep-alive' });
+  const send = (event: string, data: unknown): boolean => res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
+  send('hello', { cols: 80, rows: 24 });
+  const prompt = '\u001b[44;97m \uf179 ~/code/wisp \u001b[42;34m\ue0b0\u001b[30m \ue0a0 wisp/task-s0002 \uf418 \u001b[0;32m\ue0b0\u001b[0m \ue718 v22 \udb80\udc35 ❯ ';
+  const timer = setTimeout(() => send('data', `Last login: Tue Nov 18 08:10 on ttys004\r\n${prompt}`), 120);
+  req.on('close', () => clearTimeout(timer));
+}
+
 type Seed = 'first-run' | 'computers' | 'media' | 'ask' | 'env' | 'usage' | 'trial' | 'cloud' | 'crew' | 'team' | undefined;
 
 /** An answer's picture (v1 /sessions/:id/file): a drawn SVG naming the path; a video isn't there. */
@@ -104,6 +115,7 @@ function middleware(box: { peer: MockPeer; others: Map<string, MockPeer>; fresh:
     if (/^(\/api\/peer\/[^/]+)?\/api\/sessions\/[^/]+\/file$/.test(url.pathname) && req.method === 'GET') return mediaFile(url, res);
     const run = url.pathname.match(/^\/api\/sessions\/[^/]+\/run$/);
     if (run && req.method === 'GET') return runStream(req, res);
+    if (/^\/api\/sessions\/[^/]+\/shell$/.test(url.pathname) && req.method === 'GET') return shellStream(req, res);
     if (url.pathname === '/__mock/app') return void res.writeHead(200, { 'content-type': 'text/html' }).end(MOCK_APP);
     if (url.pathname === '/__mock/stream') {
       const id = peer.stream(url.searchParams.get('id') ?? undefined, { tokens: Number(url.searchParams.get('tokens') ?? 160), everyMs: Number(url.searchParams.get('every') ?? 16) });

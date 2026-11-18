@@ -119,6 +119,10 @@ function Item(props: { readonly api: menu.Api; readonly item: MenuItem; readonly
   return (
     <div
       {...props.api.getItemProps({ value: props.item.value, disabled: props.item.disabled, valueText: props.item.label })}
+      // a toggle (Transcript while the steps show) says it's on, as its check does (QA round 6 desktop #6; the phone's
+      // menu has done so since step 13)
+      role={props.item.checked === undefined ? 'menuitem' : 'menuitemcheckbox'}
+      aria-checked={props.item.checked === undefined ? undefined : props.item.checked}
       data-kit="menu-item"
       data-part={props.item.part ?? sub(props.part, 'item')}
       data-danger={flag(props.item.danger)}

@@ -8,11 +8,13 @@
   }
   [data-kit='term'][data-fixed] { flex: none; }
   [data-kit='term'][data-fixed] [data-kit='term-screen'] { flex: none; height: calc(var(--k-term-lines) * var(--k-term-lh, 1.3em) + 2 * var(--space-5)); }
-  /* after the mono stack, the Nerd Font families prompts are made for (powerline arrows, git and OS icons): the browser
-     falls back per glyph, so a prompt the user's own terminal draws shows here too, not boxes (UX 2026-11-18 #13) */
+  /* after the mono stack, the Nerd Font families prompts are made for (powerline arrows, git and OS icons), then wisp's
+     own symbols (terminal/symbols.ts: fetched only for a glyph in its ranges): the browser falls back per glyph, so a
+     prompt the user's own terminal draws shows here too, not boxes (UX 2026-11-18 #13, QA round 6 desktop #1) */
   [data-kit='term-rows'] {
     font: var(--fs-md) / 1.3 var(--mono), 'Symbols Nerd Font Mono', 'Symbols Nerd Font', 'MesloLGS NF', 'MesloLGS Nerd Font Mono',
-      'JetBrainsMono Nerd Font Mono', 'JetBrainsMono Nerd Font', 'Hack Nerd Font Mono', 'FiraCode Nerd Font Mono', 'CaskaydiaCove Nerd Font Mono', monospace;
+      'JetBrainsMono Nerd Font Mono', 'JetBrainsMono Nerd Font', 'Hack Nerd Font Mono', 'FiraCode Nerd Font Mono', 'CaskaydiaCove Nerd Font Mono',
+      'wisp Symbols', monospace;
     font-variant-ligatures: none; white-space: pre;
   }
   [data-kit='term-row'] { height: var(--k-term-lh, 1.3em); line-height: var(--k-term-lh, 1.3em); overflow: hidden; }

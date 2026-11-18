@@ -12,5 +12,19 @@ export function aheadLabel(at: number, now: number): string {
   return `${fmt(at, { day: 'numeric', month: 'short' })} ${hm}`;
 }
 
+/** Start later's chip (v1 launcher.js `startsAt`): "at 07:52" today, else the day and time ("Thu 09:00"). */
+export const startsAt = (at: number, now: number): string => `${new Date(at).toDateString() === new Date(now).toDateString() ? 'at ' : ''}${aheadLabel(at, now)}`;
+
+/** v1 later.js `inWords` for tooltips: "In 18 min", "In 2 h", "In 3 days". */
+function inWords(at: number, now: number): string {
+  const m = Math.max(1, Math.round((at - now) / 60_000));
+  if (m < 60) return `In ${m} min`;
+  const h = Math.round(m / 60);
+  return h < 48 ? `In ${h} h` : `In ${Math.round(h / 24)} days`;
+}
+
+/** v1 later.js `whenTip`: "In 10 min · Wed 18 Nov 07:52", never seconds. */
+export const whenTip = (at: number, now: number): string => `${inWords(at, now)} · ${fmt(at, { weekday: 'short' })} ${fmt(at, { day: 'numeric', month: 'short' })} ${fmt(at, HM)}`;
+
 /** Wait until the reset is offered only when the reset is known and more than a minute away (v1 `showHold`). */
 export const waitable = (until: number | undefined, now: number): until is number => until !== undefined && until > now + 60_000;

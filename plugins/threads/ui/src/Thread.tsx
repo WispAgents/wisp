@@ -56,6 +56,7 @@ export function Thread(props: { readonly client: PluginClient; readonly task: st
   return (
     <Box part="threads.pane" pad="6">
       <ThreadView
+        phone={shell.platform.phone}
         sections={sections()}
         revisions={(s, current) => revisionsOf(revs() as readonly RevisionRow[], id, s, current)}
         health={health()}

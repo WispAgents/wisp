@@ -129,6 +129,9 @@ for (const kind of ['android', 'ios'] as const) {
     await until(() => root.querySelector('[data-part~="launcher.where"]') !== null);
     expect(root.querySelector('[data-part~="launcher.where"]')?.getAttribute('aria-label')).toBe('This computer');
     for (const part of ['launcher.mode', 'launcher.harness', 'launcher.team', 'launcher.more']) expect(root.querySelector(`[data-part~="${part}"]`), part).not.toBeNull();
+    // QA r6 phone #11: the field in a phone's words, not the desktop's "Paste screenshots, drop logs or videos…"
+    const field = root.querySelector<HTMLTextAreaElement>('[data-kit="launcher"] textarea');
+    expect(field?.placeholder).toBe('What should I go do?');
   });
 }
 
@@ -191,4 +194,48 @@ test('on_android_a_shell_with_a_gone_folder_says_so_in_the_pane_and_no_raw_path_
   await until(() => (q('[data-part~="phone.side.sheet"]')?.textContent ?? '').includes('nowhere to start'));
   expect(q('[data-part~="phone.side.sheet"]')?.textContent).toContain('This task’s folder is gone');
   expect(document.body.textContent, 'no toast with the raw path').not.toContain('no such folder');
+});
+
+// QA r6 #5: the side sheet's tabs are labelled, every pane one tap away (Preview and Thread too, none behind +)
+for (const kind of ['android', 'ios'] as const) {
+  test(`on_${kind}_the_side_sheet_has_every_pane_as_a_labelled_tab_none_behind_more`, async () => {
+    const { client, root } = await start(phone(kind), { plugins: ['wisp.shell-task', 'wisp.threads'] });
+    const id = await openTask(client, root, '[data-part="phone.task.bar"]');
+    client.nav.navigate({ t: 'openSide', side: { kind: 'changes', id: id as never } });
+    const labels = (): string[] => [...document.querySelectorAll('[data-part~="phone.side.sheet"] [data-part="panel.tabs"] [data-kit="tab"]')].map((x) => (x.querySelector('[data-kit="tab-label"]')?.textContent ?? '').trim());
+    await until(() => labels().includes('Thread'));
+    for (const l of ['Changes', 'PR', 'Shell', 'Preview', 'Thread']) expect(labels(), l).toContain(l);
+    expect(labels().every((l) => l !== ''), 'no unlabelled icon tab').toBe(true);
+    expect(q('[data-part~="phone.side.sheet"] [data-part~="panel.tabs.more"]'), 'nothing behind +').toBeNull();
+  });
+}
+
+// QA r6 #13 (UX phone #6): the task's ⋮ on Android is an M3 bottom sheet (its rows, drill-in submenus); iOS keeps its menu
+test('on_android_the_tasks_menu_is_a_bottom_sheet_of_three_groups_with_drill_ins', async () => {
+  const { client, root } = await start(phone('android'));
+  await openTask(client, root, '[data-part="phone.task.bar.menu.trigger"]');
+  (root.querySelector('[data-part="phone.task.bar.menu.trigger"]') as HTMLElement).click();
+  await until(() => q('[data-kit="sheet-menu"]') !== null);
+  const rows = [...document.querySelectorAll<HTMLElement>('[data-kit="sheet-menu"] [data-kit="sheet-item"]')];
+  const words = rows.map((r) => (r.querySelector('[data-kit="sheet-item-label"]')?.textContent ?? '').trim());
+  expect(rows.length, 'nine rows at most (the 27-row menu is folded)').toBeLessThanOrEqual(9);
+  for (const w of ['This task', 'Show']) expect(words, `${w} in ${JSON.stringify(words)}`).toContain(w);
+  // Keep and copy › (a group of one is left inline by the kit's menuSections: no drill-in holds a single row)
+  expect(words.includes('Keep and copy') || words.includes('Copy task ID'), JSON.stringify(words)).toBe(true);
+  expect(document.querySelectorAll('[data-kit="sheet-menu"] [role="separator"], [data-kit="sheet-menu"] [data-kit="sheet-separator"]').length, 'three groups').toBe(2);
+  // a drill-in: Show › lists what you look at; Back returns
+  rows[words.indexOf('Show')]?.click();
+  await until(() => q('[data-kit="sheet-menu"] [data-back]') !== null);
+  expect(document.querySelector('[data-kit="sheet-menu"]')?.textContent).toMatch(/Transcript|Changes/);
+});
+
+test('on_ios_the_tasks_menu_stays_a_pull_down_menu_not_a_sheet', async () => {
+  const { client, root } = await start(phone('ios'));
+  await openTask(client, root, '[data-part="phone.task.bar"]');
+  expect(root.querySelector('[data-part="phone.task.bar"] [data-kit="sheet-menu"]')).toBeNull();
+  const trigger = root.querySelector<HTMLElement>('[data-part="phone.task.bar"] [aria-haspopup="menu"]');
+  expect(trigger, 'the ⋯').not.toBeNull();
+  trigger?.click();
+  await until(() => q('[role="menu"]') !== null);
+  expect(q('[data-kit="sheet-menu"]'), 'not an M3 sheet on iOS').toBeNull();
 });

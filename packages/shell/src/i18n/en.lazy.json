@@ -368,6 +368,7 @@
   "shell.phone.pickComputer": "Show tasks from",
   "shell.phone.search": "Search",
   "shell.phone.tasksActions": "Tasks",
+  "shell.phone.tasksMore": "More",
   "shell.phone.details": "Details",
   "shell.phone.save": "Save",
   "shell.phone.back": "Back",
@@ -451,6 +452,7 @@
   "shell.phone.files": "{n} files {plus} {minus}",
   "shell.phone.files.one": "1 file {plus} {minus}",
   "shell.phone.pr": "Pull request",
+  "shell.phone.prNumber": "PR {pr}",
   "shell.phone.thisTask": "This task",
   "shell.phone.start": "Start",
   "shell.mic.denied": "wisp needs the microphone to dictate. Tap the mic again to allow it.",
@@ -482,5 +484,7 @@
   "shell.peer.retry": "Retry",
   "shell.peer.update": "Update wisp on {name}",
   "shell.peer.updateApp": "Update the app to reach {name}",
-  "shell.peer.wake": "Wake"
+  "shell.peer.wake": "Wake",
+  "shell.phone.show": "Show",
+  "shell.phone.keep": "Keep and copy"
 }

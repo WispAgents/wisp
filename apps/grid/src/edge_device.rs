@@ -137,6 +137,7 @@ impl Grid {
                         text: "Sign in to the grid to let a device in.".into(),
                         link: Some((link, "Sign in".into())),
                         tone: Tone::Plain,
+                        user: None,
                     },
                 ),
                 &[],
@@ -186,6 +187,7 @@ impl Grid {
                     text,
                     link: Some(("/".into(), "Go to Home".into())),
                     tone: Tone::Plain,
+                    user: self.viewer(h),
                 },
             ),
             &[],
@@ -207,7 +209,7 @@ impl Grid {
                 200,
                 pages::message_page(
                     &self.page,
-                    &MessagePage { title: "Sign in (development)".into(), text: String::new(), link: None, tone: Tone::Plain },
+                    &MessagePage { title: "Sign in (development)".into(), text: String::new(), link: None, tone: Tone::Plain, user: None },
                 )
                 .replace("</h1>", &format!("</h1>{body}")),
                 &[],

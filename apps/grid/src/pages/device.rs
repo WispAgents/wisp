@@ -71,6 +71,8 @@ pub struct MessagePage {
     /// (href, label)
     pub link: Option<(String, String)>,
     pub tone: Tone,
+    /// signed in to the grid: its header, as on Home (QA round 6 #4)
+    pub user: Option<PageUser>,
 }
 
 pub fn message_page(cfg: &PageCfg, p: &MessagePage) -> String {
@@ -83,7 +85,7 @@ pub fn message_page(cfg: &PageCfg, p: &MessagePage) -> String {
         format!(r#"<p style="margin-top:20px"><a class="primary tall" href="{}">{}</a></p>"#, esc(href), esc(label))
     });
     let body = format!(r#"<h1 class="h1">{}</h1>{text}{link}"#, esc(&p.title));
-    app_page(&AppPage { narrow: true, ..AppPage::new(cfg, &p.title, &body) })
+    app_page(&AppPage { narrow: true, ..AppPage::new(cfg, &p.title, &body) }.signed(p.user.as_ref()))
 }
 
 /// A published app's address with nothing behind it (v1 server.js:1322).
@@ -95,6 +97,7 @@ pub fn site_not_found(cfg: &PageCfg) -> String {
             text: "This app was unpublished, or its link has a typo.".into(),
             link: Some((cfg.public_url.clone(), "Home".into())),
             tone: Tone::Plain,
+            user: None,
         },
     )
 }
@@ -109,6 +112,8 @@ pub struct OfflinePage {
     pub cloud: String,
     /// the grid's home
     pub home: String,
+    /// its owner, signed in at this address: the grid's header, linking to the grid
+    pub user: Option<PageUser>,
 }
 
 /// Not a dead end: when it was last seen, a wait that opens it by itself once it connects (the address answers
@@ -128,7 +133,8 @@ pub fn offline_page(cfg: &PageCfg, p: &OfflinePage) -> String {
         cloud = esc(&p.cloud),
         home = esc(&p.home),
     );
-    app_page(&AppPage { narrow: true, ..AppPage::new(cfg, &format!("{} is offline", p.name), &body) })
+    let title = format!("{} is offline", p.name);
+    app_page(&AppPage { narrow: true, home: &p.home, ..AppPage::new(cfg, &title, &body) }.signed(p.user.as_ref()))
 }
 
 /// Shown at `<handle>.<domain>` while its wisp starts; reloads itself once it answers.
@@ -177,6 +183,7 @@ mod tests {
             now_ms: 1_000 + 7_200_000,
             cloud: "https://grid.test/go".into(),
             home: "https://grid.test".into(),
+            user: None,
         };
         let h = offline_page(&cfg(), &p);
         assert!(h.contains("Studio is offline") && h.contains("Last seen 2 h ago."));
@@ -187,10 +194,34 @@ mod tests {
     }
 
     #[test]
+    fn a_signed_in_message_page_has_the_grid_s_header_and_one_elsewhere_links_home() {
+        let u = PageUser { handle: "ada".into(), ..PageUser::default() };
+        let m = MessagePage { title: "Nothing here".into(), text: "No.".into(), user: Some(u.clone()), ..MessagePage::default() };
+        assert!(message_page(&cfg(), &m).contains(r#"<a href="/">Home</a><a href="/account">Account</a>"#));
+        assert!(!message_page(&cfg(), &MessagePage { user: None, ..m }).contains(r#"<a href="/account">"#));
+        // the offline page sits at the computer's own address: its header links to the grid's
+        let p = OfflinePage {
+            name: "Studio".into(),
+            user: Some(u),
+            cloud: "https://grid.test/go".into(),
+            home: "https://grid.test".into(),
+            ..OfflinePage::default()
+        };
+        let h = offline_page(&cfg(), &p);
+        assert!(h.contains(r#"<a href="https://grid.test/">Home</a><a href="https://grid.test/account">Account</a>"#), "{h}");
+    }
+
+    #[test]
     fn a_bad_message_is_a_flash() {
         let p = message_page(
             &cfg(),
-            &MessagePage { title: "Slow down".into(), text: "Too many".into(), link: Some(("/".into(), "Back".into())), tone: Tone::Bad },
+            &MessagePage {
+                title: "Slow down".into(),
+                text: "Too many".into(),
+                link: Some(("/".into(), "Back".into())),
+                tone: Tone::Bad,
+                user: None,
+            },
         );
         assert!(p.contains(r#"<div class="flash bad">Too many</div>"#));
         assert!(p.contains(r#"<a class="primary tall" href="/">Back</a>"#));

@@ -1155,6 +1155,8 @@
   /* Step 13: the task page, New task and Search (design/mobile.md §A.2). A pushed page's TopAppBar sits at its pane's
      top, over the page's scroller (the browser's split head is laid out there by `order`, so is this). */
   :root[data-platform='android'] [data-kit='frame-pane'] > [data-kit='app-bar'] { order: -1; }
+  /* the task page's status pills under its bar, before the page (QA round 6 phone #14: they followed the reply box) */
+  :root[data-platform='android'] [data-kit='frame-pane'] > [data-kit='page-status'] { order: -1; }
   /* a menu's key hints: no keyboard on a phone (design/mobile.md §A.2: keyboard-only things are hidden) */
   :root[data-platform='android'] [data-kit='menu-item'] > [data-kit='kbd'] { display: none; }
   /* the bar's search icon (the M3 search view opens from it), the page's ⋮, a compose bar's Send (an M3 text button) */
@@ -1179,6 +1181,14 @@
   }
   :root[data-platform='android'] [data-kit='app-bar-confirm'] > [data-kit='button']:active { background: color-mix(in srgb, var(--primary) calc(var(--state-pressed) * 100%), transparent); }
   :root[data-platform='android'] [data-kit='app-bar-confirm'] > [data-kit='button']:disabled { color: var(--on-surface); opacity: var(--state-disabled); }
+  /* New task's Start: the full-screen dialog's one primary action, a filled M3 button (UX 2026-11-18 phone #5, QA r6 #11) */
+  :root[data-platform='android'] [data-kit='app-bar'][data-kind='compose'] [data-kit='app-bar-confirm'] > [data-kit='button'] { background: var(--primary); color: var(--on-primary); }
+  :root[data-platform='android'] [data-kit='app-bar'][data-kind='compose'] [data-kit='app-bar-confirm'] > [data-kit='button']:active { background: color-mix(in srgb, var(--on-primary) calc(var(--state-pressed) * 100%), var(--primary)); }
+  :root[data-platform='android'] [data-kit='app-bar'][data-kind='compose'] [data-kit='app-bar-confirm'] > [data-kit='button']:disabled {
+    background: color-mix(in srgb, var(--on-surface) 12%, transparent);
+    color: color-mix(in srgb, var(--on-surface) 38%, transparent);
+    opacity: 1;
+  }
   /* New task: the M3 full-screen dialog over the list (it comes up from the FAB's corner); the destinations give way */
   :root[data-platform='android'] [data-kit='frame'][data-behind][data-page='main'] > [data-kit='frame-nav'] { display: none; }
   :root[data-platform='android'] [data-kit='frame'][data-behind][data-page='main'] [data-kit='frame-pane'][data-pane='main'] {
@@ -1217,17 +1227,20 @@
   :root[data-platform='android'] [data-kit='launcher'] [data-kit='send'] {
     position: sticky;
     right: var(--space-0);
-    width: var(--icon-button-sm);
-    height: var(--icon-button-sm);
+    /* the touch size as drawn (QA r6 phone #8): the box is --tap-min, its circle the platform's small button inside it */
+    width: var(--tap-min);
+    height: var(--tap-min);
+    padding: calc((var(--tap-min) - var(--icon-button-sm)) / 2);
     border-radius: var(--radius-pill);
     background: var(--primary);
+    background-clip: content-box;
     color: var(--on-primary);
-    /* the tools scrolled under it don't show through: a ring of the box's colour */
-    box-shadow: 0 0 0 var(--space-2) var(--surface-c2);
+    /* the tools scrolled under it don't show through: the box's colour around the circle, and a ring past it */
+    box-shadow: inset 0 0 0 calc((var(--tap-min) - var(--icon-button-sm)) / 2) var(--surface-c2), 0 0 0 var(--space-2) var(--surface-c2);
   }
   /* nothing typed yet: Send is off, as the sheet's header Send (QA r2 #12); a solid fill, so the tools under it stay hidden */
   :root[data-platform='android'] [data-kit='launcher'] [data-kit='send']:disabled {
-    background: color-mix(in srgb, var(--on-surface) 12%, var(--surface-c2));
+    background-color: color-mix(in srgb, var(--on-surface) 12%, var(--surface-c2));
     color: color-mix(in srgb, var(--on-surface) 38%, var(--surface-c2));
     cursor: default;
   }
@@ -1401,10 +1414,6 @@
   :root[data-platform='android'] [data-kit='launcher'] [data-kit='l-bar'] > button:not([data-kit='send']) { min-width: var(--tap-min); min-height: var(--tap-min); }
   /* the harness pill (its logo, its ▾, Run on another agent too) keeps its shape, centred in the bar's touch height */
   :root[data-platform='android'] [data-kit='launcher'] [data-kit='l-bar'] > [data-kit='runners'] { align-self: center; }
-  :root[data-platform='android'] [data-kit='reply-box'] [data-kit='send'],
-  :root[data-platform='android'] [data-kit='launcher'] [data-kit='send'] { overflow: visible; }
-  :root[data-platform='android'] [data-kit='reply-box'] [data-kit='send']::after,
-  :root[data-platform='android'] [data-kit='launcher'] [data-kit='send']::after { content: ''; position: absolute; inset: calc((100% - var(--tap-min)) / 2); }
 
   /* UX 2026-11-18 phone #10: a task row says only what differs: the place goes when it is this computer (a row from
      another computer or a sandbox still names it), and a finished row's title stays ink (its dot says it's done) */
@@ -1530,7 +1539,10 @@
   :root[data-platform='android'] [data-kit='frame'][data-behind] [data-kit='l-bar'] > [data-a='where'] > [data-text='control'] { display: none; }
   :root[data-platform='android'] [data-kit='frame'][data-behind] [data-kit='l-bar'] > [data-kit='mode-btn'] > [data-text='control'],
   :root[data-platform='android'] [data-kit='frame'][data-behind] [data-kit='l-bar'] > [data-kit='runners'] [data-kit='runner-btn'] > [data-kit='rb-h'] { display: inline; }
-  :root[data-platform='android'] [data-kit='frame'][data-behind] [data-kit='l-bar'] > [data-kit='runners'] [data-kit='runner-btn'] { background: transparent; }
+  /* the harness row is a whole row to tap, as tall as the rows above and below it (QA r6 phone #8) */
+  :root[data-platform='android'] [data-kit='frame'][data-behind] [data-kit='l-bar'] > [data-kit='runners'] [data-kit='runner-btn'] { flex: 1; justify-content: flex-start; min-height: var(--tap-min); background: transparent; }
+  /* a control's panel as a sheet (Delegate, QA r6 phone #7): the sheet's width, not the popover card's */
+  :root[data-platform='android'] [data-kit='sheet'] [data-kit='team-pop'] { width: auto; max-height: none; }
   :root[data-platform='android'] [data-kit='frame'][data-behind] [data-kit='l-bar'] > [data-a='attach'] { grid-column: 1; order: 1; }
   :root[data-platform='android'] [data-kit='frame'][data-behind] [data-kit='l-bar'] > [data-kit='grow'] { grid-column: 2; order: 1; }
   :root[data-platform='android'] [data-kit='frame'][data-behind] [data-kit='l-bar'] > [data-a='more'] { grid-column: 3; order: 1; }
@@ -1539,4 +1551,20 @@
      Shell's terminal, a preview's frame), the task still showing above it */
   :root[data-platform='android'] [data-kit='sheet'][data-part~='phone.side.sheet'] { height: 70dvh; }
   :root[data-platform='android'] [data-kit='sheet'][data-part~='phone.side.sheet'] [data-part~='side.panel'] { height: 100%; }
+
+  /* QA r6 #5: the side sheet's tabs say their names (Changes · PR · Shell · Preview · Thread), each a touch target, one
+     row that scrolls sideways when it runs out of room; text tabs (M3 primary tabs / an iOS segment: the name, no icon),
+     the browser's pill frame gone, so the five fit a 360 px phone */
+  :root[data-platform='android'] [data-part~='phone.side.sheet'] [data-kit='tabs'][data-part='panel.tabs'] { flex: 1 1 auto; overflow-x: auto; scrollbar-width: none; margin-left: var(--space-0); padding: var(--space-0); border-width: 0; background: none; }
+  :root[data-platform='android'] [data-part~='phone.side.sheet'] [data-kit='tabs'][data-part='panel.tabs'] [data-kit='tab'] > [data-kit='icon'] { display: none; }
+  :root[data-platform='android'] [data-part~='phone.side.sheet'] [data-kit='tabs'][data-part='panel.tabs'] [data-kit='tab-label'] { display: inline; font: var(--type-title-s); letter-spacing: var(--track-title-s); }
+  :root[data-platform='android'] [data-part~='phone.side.sheet'] [data-kit='tabs'][data-part='panel.tabs'] > [data-kit='tab-list'] { gap: var(--space-0); }
+  :root[data-platform='android'] [data-part~='phone.side.sheet'] [data-kit='tabs'][data-part='panel.tabs'] [data-kit='tab'] { flex: none; width: auto; min-height: var(--tap-min); min-width: var(--tap-min); padding: var(--space-0) var(--space-2); font: var(--type-title-s); letter-spacing: var(--track-title-s); }
+  :root[data-platform='android'] [data-part~='phone.side.sheet'] [data-part~='side.head'] { margin-left: calc(var(--space-5) * -1); padding-left: var(--space-0); padding-right: var(--space-0); }
+  /* an M3 modal bottom sheet closes by its drag handle, the scrim and Back: no ✕ in its head (nor the spacer before
+     it), so the five tabs fit a 360 px phone */
+  :root[data-platform='android'] [data-part~='phone.side.sheet'] [data-part~='side.head'] > [data-kit='icon-button']:last-child,
+  :root[data-platform='android'] [data-part~='phone.side.sheet'] [data-part~='side.head'] > [data-kit='box'] { display: none; }
+  :root[data-platform='android'] [data-part~='phone.side.sheet'] [data-part~='side.head'] [data-kit='icon-button'],
+  :root[data-platform='android'] [data-part~='phone.side.sheet'] [data-part~='side.head'] button[aria-haspopup] { min-width: var(--tap-min); min-height: var(--tap-min); }
 }

@@ -67,5 +67,7 @@
   "threads.audit.lostTold": "Lost (the agent was reminded):",
   "threads.settings.compactAudit": "Check compactions",
   "threads.settings.compactAudit.hint": "After a compaction, wisp asks a copy of the conversation what it still remembers of the task's Notes, shows what it kept beside the task, and reminds the agent of what it lost. One short extra run each",
-  "threads.settings.locked": "Set by the plugin {by}"
+  "threads.settings.locked": "Set by the plugin {by}",
+  "threads.emptyTitle": "No Notes yet",
+  "threads.emptyBody": "The agent writes them once it knows the goal. wisp sends them back with every follow-up, so they outlast compaction."
 }

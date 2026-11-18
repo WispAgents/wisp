@@ -144,6 +144,7 @@ impl Grid {
                         text: "That way of signing in isn't set up on this grid.".into(),
                         link: Some(("/signin".into(), "Back".into())),
                         tone: Tone::Plain,
+                        user: None,
                     },
                 ),
                 &[],

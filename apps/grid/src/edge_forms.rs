@@ -3,29 +3,23 @@
 //! (`pages_route::form`): the session's own POST with its CSRF token, answered with a redirect back and a flash line,
 //! but for a new key, which the page itself says once.
 
-use http::HeaderMap;
 use serde_json::Value;
 
 use super::Grid;
 use crate::error::Result;
-use crate::http::Resp;
+use crate::http::{CookieOptions, Resp, add_cookie, cookie, redirect};
+
+/// The cookie that names a key just made, for Account to say once (never the key itself).
+pub(super) const NEW_KEY: &str = "wisp_new_key";
 use crate::pages::ShareView;
 use crate::rows::UserRow;
 
 impl Grid {
     /// `/keys`, `/keys/:id/revoke`, `/sites/:key/remove`, `/shares/:id/revoke`; None for any other form.
-    #[allow(clippy::many_single_char_names)] // u the user, q the query, h the headers, b the body, as `form` names them
-    pub(super) fn link_form(
-        &self,
-        u: &UserRow,
-        parts: &[&str],
-        q: &str,
-        h: &HeaderMap,
-        b: &serde_json::Map<String, Value>,
-    ) -> Option<Result<Resp>> {
+    pub(super) fn link_form(&self, u: &UserRow, parts: &[&str], b: &serde_json::Map<String, Value>) -> Option<Result<Resp>> {
         Some(match parts {
             ["sites", key, "remove"] => self.unpublish(u, key),
-            ["keys"] => self.make_key(u, h, q, b.get("name")),
+            ["keys"] => self.make_key(u, b.get("name")),
             ["keys", id, "revoke"] => self.revoke_key(u, id),
             ["shares", id, "revoke"] => self
                 .shares
@@ -53,8 +47,9 @@ impl Grid {
     }
 
     /// `POST /keys` from Account (#6): the session's own form (CSRF checked by `form`), so the browser makes keys while
-    /// the box sleeps; the page answers with the key said once (200, `no-store`), never a redirect that could keep it.
-    fn make_key(&self, u: &UserRow, h: &HeaderMap, q: &str, name: Option<&Value>) -> Result<Resp> {
+    /// the box sleeps; a 303 to Account, which says the key once (`fresh_keys`).
+    fn make_key(&self, user: &UserRow, name: Option<&Value>) -> Result<Resp> {
+        let u = user;
         self.limits.hit(&format!("apikey|{}", u.id), crate::keys::CREATES_PER_MINUTE, self.clock.now_ms())?;
         let name = match crate::keys::key_name(name) {
             Ok(n) => n,
@@ -63,7 +58,15 @@ impl Grid {
         match self.keys.create(&u.id, &name) {
             Ok((view, key)) => {
                 tracing::info!("grid: {} made API key {}", u.handle, view.id);
-                self.account_with(u, h, q, Some((view.name, key)))
+                // post, redirect, get (QA round 6 #3): a reload of Account never posts again; the key waits for that
+                // one page under a token, and the cookie carries only the token
+                let token = self.fresh_keys.put(&u.id, &view.name, &key, self.clock.now_ms());
+                let mut to_account = redirect("/account#keys", &[]);
+                *to_account.status_mut() = http::StatusCode::SEE_OTHER;
+                let held =
+                    CookieOptions { secure: self.cfg.secure, max_age: Some(crate::keys_fresh::FRESH_MS / 1000), path: None, framed: false };
+                add_cookie(&mut to_account, &cookie(NEW_KEY, &token, held));
+                Ok(to_account)
             }
             Err(e) if e.status() < 500 => Ok(self.back("/account#keys", &e.to_string(), true)),
             Err(e) => Err(e),

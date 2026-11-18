@@ -103,11 +103,13 @@ pub struct ClaudeHarness {
     bin: Mutex<Option<String>>,
     login: HarnessLogin,
     accounts: HarnessAccounts,
+    /// what Default runs on this computer's plan, when no config names it (QA r6 desktop #4)
+    plan: default_model::Plan,
 }
 
 impl Default for ClaudeHarness {
     fn default() -> Self {
-        Self { info: info(), bin: Mutex::new(None), login: login(), accounts: accounts() }
+        Self { info: info(), bin: Mutex::new(None), login: login(), accounts: accounts(), plan: default_model::Plan::default() }
     }
 }
 
@@ -181,8 +183,9 @@ impl Harness for ClaudeHarness {
             if let Ok(mut b) = self.bin.lock() {
                 *b = Some(bin.clone());
             }
-            // Default with the model it runs, when Claude Code's own config names it (UX 2026-11-18 #9)
-            let resolves = default_model::resolved(sys, None).await;
+            // Default with the model it runs: Claude Code's own config, else its plan's (UX 2026-11-18 #9, QA r6 #4)
+            self.plan.forget();
+            let resolves = self.plan.or_config(sys, &bin, None).await;
             let models = resolves.map(|r| {
                 let mut all = self.info().models.clone();
                 if let Some(d) = all.iter_mut().find(|m| m.id.is_empty()) {
@@ -194,9 +197,13 @@ impl Harness for ClaudeHarness {
         })
     }
 
-    /// What Default runs in `cwd`: the project's Claude Code settings, else this computer's (`default_model.rs`).
+    /// What Default runs in `cwd`: the project's Claude Code settings, else this computer's, else its plan's
+    /// (`default_model.rs`).
     fn default_model<'a>(&'a self, sys: &'a dyn HarnessSys, cwd: Option<&'a str>) -> BoxFuture<'a, Option<String>> {
-        Box::pin(default_model::resolved(sys, cwd))
+        Box::pin(async move {
+            let bin = self.program().unwrap_or_else(|| DEFAULT_BIN.to_owned());
+            self.plan.or_config(sys, &bin, cwd).await
+        })
     }
 
     /// v1 claude.js `resumeCommand`: the conversation resumed (`--resume`), or a new one named by wisp

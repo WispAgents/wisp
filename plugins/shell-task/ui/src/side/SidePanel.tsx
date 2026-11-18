@@ -155,6 +155,8 @@ export function SidePanel(props: { readonly pane: SidePane; readonly file?: stri
     const now = order().filter(has);
     const before = was?.task === task.key ? was.joined.filter((p) => order().includes(p)) : [];
     const joined = [...before, ...now.filter((p) => !before.includes(p))];
+    // a phone's sheet (QA r6 #5): every pane a labelled tab, none behind +, as the round-3 sheet had them
+    if (shell.platform.phone) return { task: task.key, joined, strip: order(), more: [] };
     return { task: task.key, joined, ...sideStrip({ order: order(), has: new Set(now), current: shown()?.key ?? props.pane, joined }) };
   });
   const tabOf = (p: string) => {

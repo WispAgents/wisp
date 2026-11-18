@@ -25,3 +25,11 @@ test('the_second_line_is_the_answer_else_the_run_and_the_machine_only_when_remot
   expect(secondLine(bare).line).toBe(bare.sub ? 'sub' : 'run');
   expect(secondLine(bare).where).toBe(false);
 });
+
+test('done_rows_have_no_save_for_later_in_the_slot_as_v1_qa_r6_5', () => {
+  // v1 feed.js quickLater: Save for later on a review row, Unsave on a saved one, a gap otherwise (a done row too); a
+  // done task saves for later from ⋯, the row's menu or L
+  expect(rowView(row({ state: 'done' }), c()).quickLater).toBe('gap');
+  expect(rowView(row({ state: 'review' }), c()).quickLater).toBe('save');
+  expect(rowView(row({ state: 'done', forLater: { at: 1, by: 'you' } } as Partial<SessionRow>), c()).quickLater).toBe('unsave');
+});

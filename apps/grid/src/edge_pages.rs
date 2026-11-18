@@ -198,8 +198,16 @@ impl Grid {
         Ok(self.shown(h, html(200, pages::home_page(&self.page, &p), &[])))
     }
 
+    /// Account; with a key just made, that key said this once (the token it was held under, dropped as it's read).
     fn account(&self, u: &UserRow, h: &HeaderMap, q: &str) -> Result<Resp> {
-        self.account_with(u, h, q, None)
+        let Some(token) = cookies(h).get(super::forms::NEW_KEY).cloned() else { return self.account_with(u, h, q, None) };
+        let fresh = self.fresh_keys.take(&token, &u.id, self.clock.now_ms());
+        let mut r = self.account_with(u, h, q, fresh)?;
+        add_cookie(
+            &mut r,
+            &cookie(super::forms::NEW_KEY, "", CookieOptions { secure: self.cfg.secure, max_age: Some(0), path: None, framed: false }),
+        );
+        Ok(r)
     }
 
     /// Account, with a key just made said once (`new_key`: its name and the key), never kept for a reload.
@@ -250,7 +258,7 @@ impl Grid {
         if field("csrf") != Self::csrf(&session) {
             return Err(bad("That form is stale. Go back and try again.", 403));
         }
-        if let Some(r) = self.link_form(u, parts, q, h, &b) {
+        if let Some(r) = self.link_form(u, parts, &b) {
             return r;
         }
         match parts {

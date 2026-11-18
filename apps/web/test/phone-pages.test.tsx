@@ -89,7 +89,8 @@ for (const kind of ['android', 'ios'] as const) {
 }
 
 test('the_task_menu_on_a_phone_holds_v1s_task_actions_and_details_opens_the_side_panel_as_a_sheet', async () => {
-  const { client, root } = await start(phone('android'));
+  // iOS's ⋯ menu (Android's is the same entries in an M3 bottom sheet: phone-fewer.test.tsx)
+  const { client, root } = await start(phone('ios'));
   await openTask(client, root, PHONE_TASK);
   (root.querySelector('[data-part="phone.task.bar"] [data-kit="app-bar-actions"] > [aria-label="More"]') as HTMLButtonElement).click();
   await until(() => document.querySelectorAll('[data-kit="menu-item"]').length > 0);
@@ -97,20 +98,26 @@ test('the_task_menu_on_a_phone_holds_v1s_task_actions_and_details_opens_the_side
   const open = [...document.querySelectorAll('[data-kit="menu"]')].find((m) => m.textContent?.includes('Mark done'));
   expect(open, 'the task’s menu').toBeDefined();
   const { top, inside } = await reach(open as Element);
-  // three groups (UX 2026-11-18 phone #6; HIG ≈3 groups): act (Ship it…, Mark done), work on it (Rerun…, Open in, This
-  // task ›), put it away (Save for later, Archive, Delete); v1's other task actions one submenu away, in This task
+  // three groups, nine rows at most (UX 2026-11-18 phone #6, QA r6 #6; HIG ≈3 groups): act (Ship it…, Mark done), work
+  // on it (Rerun…, This task ›, Show ›, Keep and copy ›), put it away (Save for later, Archive, Delete)
   expect(top.slice(0, 2)).toEqual(['Ship it…', 'Mark done']);
-  for (const w of ['Rerun…', 'Open in', 'This task', 'Archive', 'Delete task']) expect(top, w).toContain(w);
+  for (const w of ['Rerun…', 'This task', 'Show', 'Archive', 'Delete task']) expect(top, w).toContain(w);
   expect(top.indexOf('Rerun…')).toBeLessThan(top.indexOf('This task'));
   expect(top.at(-1)).toBe('Delete task');
-  expect(top.length, 'a menu that fits a phone').toBeLessThanOrEqual(10);
-  // every v1 action still reachable, once: Details, Transcript, Rename, Changes and Shell in This task
-  for (const w of ['Details', 'Transcript', 'Rename', 'Changes', 'Shell']) expect(inside['This task'], w).toContain(w);
+  expect(top.length, 'a menu that fits a phone').toBeLessThanOrEqual(9);
+  // every v1 action still reachable, once: Details, Rename, Open in in This task; Transcript, Changes, Shell in Show
+  for (const w of ['Details', 'Rename', 'Open in']) expect(inside['This task'], w).toContain(w);
+  // what you take away is in Keep and copy (Fork…, the copies), never in This task
+  expect([...(inside['Keep and copy'] ?? []), ...top], 'Fork…').toContain('Fork…');
+  expect(inside['This task'], 'no Fork in This task').not.toContain('Fork…');
+  for (const w of ['Transcript', 'Changes', 'Shell']) expect(inside['Show'], `${w} in ${JSON.stringify(inside)}`).toContain(w);
   const all = [...top, ...Object.values(inside).flat()];
   expect(all.filter((l) => l === 'Changes')).toHaveLength(1);
   expect(all.filter((l) => l === 'Shell')).toHaveLength(1);
   // Details from This task
-  (open as Element).querySelector<HTMLElement>('[data-kit="menu-item"][data-sub]:not([data-back])')?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+  [...((open as Element).querySelectorAll<HTMLElement>('[data-kit="menu-item"][data-sub]:not([data-back])') ?? [])]
+    .find((e) => labelOf(e) === 'This task')
+    ?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
   await until(() => (open as Element).hasAttribute('data-drilled'));
   const details = [...(open?.querySelectorAll<HTMLElement>('[data-kit="menu-item"]') ?? [])].find((e) => e.textContent?.includes('Details'));
   details?.click();

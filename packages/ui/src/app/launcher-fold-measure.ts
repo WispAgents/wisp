@@ -4,7 +4,7 @@
 // of the tail's tools go into More. Each form's widths are remembered while the other shows, so the plan is stable at
 // any width, in both engines alike (QA desktop r3 #3: WebKit's box was 10 px narrower and v1's 520 px rule took every
 // label with room to spare).
-import { createEffect, createSignal, on, onCleanup, type Accessor } from 'solid-js';
+import { createEffect, createMemo, createSignal, on, onCleanup, type Accessor } from 'solid-js';
 import { barPlan, type BarForm, type LauncherTool } from './launcher-fold.ts';
 
 /** the More button's width until it has been seen (an icon button, `--size-icon-btn`) */
@@ -46,7 +46,10 @@ export interface TailFold {
 
 /** A bar with no tail is measured too: its labels step to icons until it fits (UX 2026-11-18 #3's footer has a tail
  *  only while a feature is on). */
-export function useTailFold(o: { readonly tail: () => readonly LauncherTool[]; readonly on: () => boolean }): TailFold {
+export function useTailFold(given: { readonly tail: () => readonly LauncherTool[]; readonly on: () => boolean }): TailFold {
+  // read through memos the hook owns: the measure runs in a frame callback, outside any owner, and a host's prop getter
+  // builds its tools (memos) on each read: there they were computations nobody owned (QA round 6 desktop #3, phone #9)
+  const o = { tail: createMemo(given.tail), on: createMemo(given.on) };
   const [folded, setFolded] = createSignal(0);
   const [squeeze, setSqueeze] = createSignal(0);
   const [scroll, setScroll] = createSignal(false);
