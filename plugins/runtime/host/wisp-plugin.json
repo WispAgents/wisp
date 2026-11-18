@@ -178,6 +178,12 @@
         "readOnly": true
       },
       {
+        "id": "runtime.defaultModel",
+        "title": "The model a harness's Default runs in a folder",
+        "readOnly": true,
+        "uiOnly": "the composer's harness chip names it; an agent knows the model it runs on"
+      },
+      {
         "id": "runtime.card",
         "title": "Add a card to the list"
       },

@@ -81,7 +81,7 @@ async fn a_cancelled_quick_runs_process_is_gone() {
         info: HarnessInfo {
             id: "claude".into(),
             name: "Hangs".into(),
-            models: vec![HarnessModel { id: "m1".into(), label: "M1".into(), hint: None, efforts: vec![] }],
+            models: vec![HarnessModel { id: "m1".into(), label: "M1".into(), hint: None, efforts: vec![], resolves: None }],
             ..HarnessInfo::default()
         },
         bin: bins.join(format!("claude{}", std::env::consts::EXE_SUFFIX)),

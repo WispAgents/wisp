@@ -24,6 +24,7 @@ import zlib from 'node:zlib';
 import { PARTS } from '../web/js/spell-schema.js';
 import { inspect as layoutProblems } from './layout.mjs';
 import { launchBrowser, OUT, ROOT } from './lib.mjs';
+import { openPreview } from './panel-rules.ts';
 import { collectInPage, STATES, STRUCT } from './v1-reference.mjs';
 import { views } from './views.mjs';
 
@@ -291,9 +292,8 @@ const EXTRA = {
   '#judgesBtn': '[data-part~="goal.judgesButton.trigger"]',
   // the reply box's Goal (v1 .c-goal)
   '.it-dock .c-goal': '[data-part~="composer.goal"]',
-  // Changes' Edit on a file (v1 .cx-edit) and the side panel's Preview tab (v1 .pn-tabs [data-tab])
+  // Changes' Edit on a file (v1 .cx-edit); the side panel's Preview tab is V2_OPENERS['task.preview']
   '.cx-edit': '[data-part~="panel.changes.edit"]',
-  '.pn-tabs [data-tab="preview"]': '[data-part="panel.tabs"] [data-kit="tab"][data-value="preview"]',
 };
 
 /** A seeded task's title (what v2's row shows). */
@@ -356,6 +356,14 @@ const V2_OPENERS = {
     await p.locator('[data-part~="topbar.project-select"]').first().click({ force: true });
     await p.waitForTimeout(300);
     await p.locator('[data-kit="pal-row"]', { hasText: 'Manage projects' }).first().click({ force: true });
+    await p.waitForTimeout(450);
+  },
+  // v1 .pn-tabs [data-tab="preview"]: the side panel's Preview, a tab while the app runs, else behind the strip's +
+  // (docs/ux/2026-11-18-desktop.md #5, qa/panel-rules.ts); the panel opened on Changes first, as v1's opener did
+  'task.preview': async (p, _home, _title, v1) => {
+    await v1('task.changes');
+    await p.waitForTimeout(500);
+    await openPreview(p);
     await p.waitForTimeout(450);
   },
   // v1 #feed .item[data-id] .it-head, right-clicked: the row in the list (Home's Needs you names the same task)
@@ -756,7 +764,7 @@ if (import.meta.url === pathToFileURL(process.argv[1] ?? '').href) {
       const limit = Number(process.env.PARITY_VIEW_TIMEOUT) || 240_000;
       let timer;
       const r = await Promise.race([
-        checkView(browser, v2.url, name, (p) => (V2_OPENERS[name] ? V2_OPENERS[name](p, (x) => openers.home(v2Page(x, tr)), rowTitle(seed, seed.seeded.tasks[1])) : openers[name](v2Page(p, tr))), ref, allowed, only, outDir),
+        checkView(browser, v2.url, name, (p) => (V2_OPENERS[name] ? V2_OPENERS[name](p, (x) => openers.home(v2Page(x, tr)), rowTitle(seed, seed.seeded.tasks[1]), (v) => openers[v](v2Page(p, tr))) : openers[name](v2Page(p, tr))), ref, allowed, only, outDir),
         new Promise((done) => {
           timer = setTimeout(() => done({ view: name, shots: 1, pixelPass: 0, metricPass: 0, pass: 0, reachable: false, note: `timed out after ${limit / 1000} s at ${stepOf.get(name) ?? 'the start'}`, worst: [`timed out at ${stepOf.get(name) ?? 'the start'}`], metrics: {}, shotsBy: {} }), limit);
         }),

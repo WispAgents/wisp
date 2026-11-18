@@ -138,6 +138,9 @@ export interface LauncherProps {
     readonly compareFull?: boolean;
     /** Compare is in the composer's `+` menu: the pill's own + goes (its runs keep their ×). Additive (2026-11-18). */
     readonly compareInMenu?: boolean;
+    /** the picked harness past 80% of a plan window: a ring round its logo, its words in the ring's tooltip (UX
+     *  2026-11-18 #8, where Home's usage bar was). Additive (2026-11-18). */
+    readonly usage?: { readonly pct: number; readonly tone: 'warn' | 'bad'; readonly title: string } | undefined;
   };
   /** before the runner: attach, where */
   readonly lead: readonly LauncherTool[];
@@ -316,7 +319,8 @@ export function Launcher(props: LauncherProps): JSX.Element {
                   data-def={flag(!props.runner.auto && props.runner.pickParts?.def === true)}
                   aria-haspopup="dialog"
                   aria-expanded={props.runner.open ? 'true' : 'false'}
-                  title={props.runner.title}
+                  title={props.runner.usage ? `${props.runner.title} · ${props.runner.usage.title}` : props.runner.title}
+                  aria-description={props.runner.usage?.title}
                   onPointerEnter={() => props.runner.onWarm?.()}
                   onFocus={() => props.runner.onWarm?.()}
                 >
@@ -331,6 +335,7 @@ export function Launcher(props: LauncherProps): JSX.Element {
                     >
                       {(src) => <img src={src()} alt="" />}
                     </Show>
+                    <Show when={props.runner.usage}>{(u) => <span data-kit="rb-ring" data-part="launcher.harness.usage" data-tone={u().tone} aria-hidden="true" style={{ '--ctx': `${u().pct}%` }} />}</Show>
                   </span>
                   <span data-kit="rb-h" data-text="control">
                     {props.runner.label}

@@ -141,6 +141,7 @@ command!(AdoptSession = "runtime.adoptSession": AdoptSessionArgs => Created);
 command!(RestoreSession = "runtime.restoreSession": RestoreSessionArgs => Value);
 command!(TaskSetup = "runtime.setup": IdArgs => Value, read_only);
 command!(Agents = "runtime.agents": AgentsArgs => Vec<AgentStatus>, read_only);
+command!(DefaultModel = "runtime.defaultModel": DefaultModelArgs => Option<String>, read_only);
 command!(Card = "runtime.card": CardArgs => Created);
 command!(Fork = "runtime.fork": ForkArgs => Created);
 command!(

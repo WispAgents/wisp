@@ -4,4 +4,9 @@ export type HarnessModel = { id: string, label: string, hint?: string,
 /**
  * this model's own reasoning levels (wins over the harness's)
  */
-efforts?: Array<string>, };
+efforts?: Array<string>, 
+/**
+ * the default's (`id` ""): the model it runs, as the harness's own config names it ("Opus"), when the harness
+ * can tell without a run (UX 2026-11-18 #9: the chip names the real model). Additive (2026-11-18).
+ */
+resolves?: string, };

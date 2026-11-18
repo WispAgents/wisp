@@ -38,6 +38,7 @@ pub(super) fn more(s: &mut Setup, slot: &Slot, harness_kind: Arc<StoredKind>, ki
     super::sessions::sessions(s, slot);
     task_setup(s, slot);
     agents(s, slot, harness_kind);
+    cmd!(s, slot, c::DefaultModel, |r, call, a| Ok(r.default_model(&a).await));
 }
 
 /// `runtime.taskSetup`: what a task had set up when it ran, and what changed since.

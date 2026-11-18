@@ -1,7 +1,11 @@
+/// <reference types="vite/client" />
 // Feedback for the wisp team (src/frame/feedback.ts, v1 feedback.js): `/feedback …` and `/bug …` in any prompt box,
 // and what the dialog may send.
 import { expect, test } from 'vitest';
-import { canSend, feedbackOf, isFeedback, parseFeedback, sendFeedback } from '../src/frame/feedback.ts';
+import { isFeedback, parseFeedback } from '../src/frame/feedback.ts';
+import { canSend, feedbackOf, sendFeedback } from '../src/frame/feedback-send.ts';
+import home from '../src/frame/HomeView.tsx?raw';
+import task from '../src/frame/TaskView.tsx?raw';
 import { wireOf } from './command.ts';
 
 test('/feedback and /bug go to the team, not to a task; a bug needs words, an idea words or a thumb_v1_feedback_command', () => {
@@ -23,4 +27,12 @@ test('/feedback and /bug go to the team, not to a task; a bug needs words, an id
     sessionId: 's1',
   });
   expect(parseFeedback({ kind: 'bug', text: 'a', junk: 1 })).toEqual({ kind: 'bug', text: 'a' });
+});
+
+// the first page knows a /feedback is one (isFeedback); sending it is its own chunk, fetched when one is typed (budget)
+test('sending feedback loads when it is used, not with the first page', () => {
+  for (const src of [home, task]) {
+    expect(src).not.toMatch(/import \{[^}]*feedbackCommand[^}]*\} from '\.\/feedback\.ts'/);
+    expect(src).toMatch(/import\('\.\/feedback-send\.ts'\)/);
+  }
 });

@@ -38,6 +38,7 @@ pub fn info() -> HarnessInfo {
             label: "Default".into(),
             hint: Some("Whatever opencode is set to".into()),
             efforts: Vec::new(),
+            resolves: None,
         }],
         ask_tool: Some("wisp_ask_user".into()),
         fork: true,
@@ -107,7 +108,7 @@ async fn output(sys: &dyn HarnessSys, bin: &str, args: &[&str]) -> Option<String
 
 fn model(id: &str, efforts: Vec<String>) -> HarnessModel {
     let (provider, name) = id.split_once('/').unwrap_or(("", id));
-    HarnessModel { id: id.to_owned(), label: name.to_owned(), hint: Some(provider.to_owned()), efforts }
+    HarnessModel { id: id.to_owned(), label: name.to_owned(), hint: Some(provider.to_owned()), efforts, resolves: None }
 }
 
 /// `opencode models --verbose`: each id then its JSON, whose `variants` are the efforts it takes.

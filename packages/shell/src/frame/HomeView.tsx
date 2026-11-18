@@ -17,7 +17,7 @@ import { Show, createEffect, createMemo, createResource, createSignal, lazy, on,
 import { githubTip, tools as githubTools } from './github-tip.ts';
 import { tipPick } from './home-tips.ts';
 import { computed, entityKey, newRowId, ownerOf, type EntityKey, type Json, type PeerId } from '@wisp/client';
-import { AutoPop, KeysHint, Launcher, NextList, Reserved, SplitHome, Tips, lazyPart, lazyView, useSignal, warm as warmPart, type Act, type LauncherProps, type LauncherTool, type PlainTip, type SetupTip } from '@wisp/ui';
+import { KeysHint, Launcher, NextList, Reserved, SplitHome, Tips, lazyPart, lazyView, useSignal, warm as warmPart, type Act, type LauncherProps, type LauncherTool, type PlainTip, type SetupTip } from '@wisp/ui';
 import { useShell } from '../context.tsx';
 import type { LaunchTargetDef, SendHold } from '../contract.ts';
 import { aheadLabel, waitable } from './hold.ts';
@@ -27,11 +27,14 @@ import { SESSION, type SessionRow } from '../rows.ts';
 import { longTime, needsYou, shortAgo, statusOf, sessionKey } from './rows-view.ts';
 import { autoBlocked, autoPreview, autoRules, create, setSetting, trial, type Attachment } from './commands.ts';
 import { newRun, runWords, sameSetup, settingModel, trialVary, variantWords, type Variant } from './trial.ts';
-import { modelWord, useHarnessRows, type Runner } from './runner.ts';
+import { modelWord, useHarnessRows, type Runner, useDefaultWords } from './runner.ts';
+import { usePlanRing } from './plan-ring.ts';
 import { AUTO_SETTING, LAUNCH_SETTING, autoEnabled, readLaunch, startRunner, withPick, type LaunchPick } from './launch-pick.ts';
 import { goalGate, goalOf, goalSent, isBareGoal, typedInFull, type HomeGoal } from './goal-gate.ts';
-import { feedbackCommand, isFeedback } from './feedback.ts';
-import { autoPick, neverRule, runnerParts, runnerPick, overrideOf, popOf, pct, PREVIEW_DEBOUNCE, shortLabel, usd, type AutoPreview } from './auto.ts';
+import { isFeedback } from './feedback.ts';
+import { autoPick, neverRule, runnerParts, runnerPick, overrideOf, PREVIEW_DEBOUNCE, type AutoPreview } from './auto.ts';
+// what will Auto run (v1 openPop): its own chunk, drawn only when Auto's pick is pressed
+const HomeAutoPop = lazy(() => import('./home-auto-pop.tsx'));
 import { defaultHarness, harnessOf } from './harness.ts';
 import { MAX_RUNNERS, newGroup, nextRun } from './runs-small.ts';
 import { barMode, firstRunTools, launcherFull, type BarMode } from './first-run.ts';
@@ -41,7 +44,7 @@ import { dirsOf, launchOf, parsePick, pickLabel, pickedProjects, placePick } fro
 import { openPlaces, releasePlaces, type PlaceTarget } from './project-switch.ts';
 import { promptKeys, remember, sentStore } from './prompt-keys.ts';
 import { displayCombo } from '../keys.ts';
-import { draftValue, launcherDraft } from './drafts.ts';
+import { draftValue, launcherDraft, withShareLink } from './drafts.ts';
 import { MODE_ICON, agentName, modeMenu, whenAt, whenMenu, type Mode, type When } from './pickers.ts';
 import { newRecipeIntent } from './recipe-new.ts';
 import { foldTail } from './phone-bar.ts';
@@ -103,6 +106,9 @@ export function HomeView(props: { readonly onBack?: () => void }): JSX.Element {
   const settings = useSignal(shell.client.entities.list<SettingRow>('setting'));
   const now = useNow(shell.client);
   const harnesses = useSignal(shell.harnesses());
+  // what a harness's Default runs, by name, when its config says (UX 2026-11-18 #9: "Claude Code · Opus")
+  // in the picked project: what it pins, else this computer's (owner's delegate 2026-11-18)
+  const defaultName = useDefaultWords(shell.client, () => target(), () => project()?.path);
   /** what Auto runs today: the default harness (wisp's router picks per task once it's there) */
   const auto = (): string => defaultHarness(harnesses()) ?? '';
   // New task's text is a draft (kind 5): kept across reloads and updates (v1 F-task-32), under `<home>:launcher` → text,
@@ -111,6 +117,12 @@ export function HomeView(props: { readonly onBack?: () => void }): JSX.Element {
   const draft = useSignal(shell.client.drafts.get<string>(draftKey, draftField));
   const text = (): string => draft() ?? '';
   const setText = (v: string): void => shell.client.drafts.set(draftKey, draftField, draftValue(v));
+  // a share link the page was opened with (the Grid's share page: docs/ux/2026-11-18-grid.md #8): into the box as text,
+  // once; the person presses Send, nothing is sent for them
+  {
+    const link = shell.client.nav.takeShare?.();
+    if (link) setText(withShareLink(untrack(draft) ?? '', link));
+  }
   const [mode, setMode] = createSignal<Mode>('auto');
   // the first frame starts on what's kept already, never on Auto while it's off (owner #36, #37)
   const first = untrack(() =>
@@ -128,6 +140,8 @@ export function HomeView(props: { readonly onBack?: () => void }): JSX.Element {
   const [effort, setEffort] = createSignal(first.effort);
   // the account picked for the harness ('' : Auto, your saved one) and its name for the bar (F-acct-3)
   const [account, setAccount] = createSignal<{ id: string; label: string } | undefined>();
+  // UX 2026-11-18 #8: the picked harness's usage ring on its chip (where Home's usage bar was; plan-ring.ts)
+  const ring = usePlanRing(shell, { peer: () => target(), agent, account: () => account()?.id ?? '' });
   // Auto's one switch (`runtime.auto`, default off: owner #37) and New task's kept pick (`runtime.launch`, owner #36:
   // the pick was a plain signal, so a page change or a reload put it back on Auto)
   const autoOn = (): boolean => autoEnabled(settings().find((r) => r.key === AUTO_SETTING)?.value);
@@ -364,7 +378,8 @@ export function HomeView(props: { readonly onBack?: () => void }): JSX.Element {
     if (isFeedback(text())) {
       const typed = text();
       setText('');
-      return feedbackCommand(shell, typed, { home, restore: () => text() === '' && setText(typed) });
+      // sending it is its own chunk (feedback-send.ts)
+      return void import('./feedback-send.ts').then((m) => m.feedbackCommand(shell, typed, { home, restore: () => text() === '' && setText(typed) })).catch(() => text() === '' && setText(typed));
     }
     // a bare /goal: Done when opens, to type it there (v1 box.goalOpen); `/goal <condition>` goes, the peer reads it
     if (isBareGoal(text())) {
@@ -706,7 +721,8 @@ export function HomeView(props: { readonly onBack?: () => void }): JSX.Element {
       'where',
       'launcher.where',
       placeOf()?.icon ?? (target() === home ? 'laptop' : 'server'),
-      placeOf()?.label() ?? (target() === home ? t('shell.home.where') : shell.client.peers.name(target())),
+      // a phone's setup chip names the place in two words (UX 2026-11-18 phone #5); the sentence stays its tooltip
+      placeOf()?.label() ?? (target() === home ? t(shell.platform.phone ? 'shell.card.thisComputer' : 'shell.home.where') : shell.client.peers.name(target())),
       t('shell.home.where'),
       {
         text: target() !== home || placeOf() !== undefined,
@@ -727,7 +743,7 @@ export function HomeView(props: { readonly onBack?: () => void }): JSX.Element {
             <DelegatePanel
               lead={{
                 agent: agent(),
-                run: [agentName(t, harnesses(), agent()), agent() === 'auto' ? (shown()?.label ?? '') : runnerPick({ agent: agent(), name: pick().name, model: modelWord({ model: model(), modelLabel: modelLabel() }), effort: effort(), account: '', fallback: t('shell.runner.default') })].filter(Boolean).join(' · '),
+                run: [agentName(t, harnesses(), agent()), agent() === 'auto' ? (shown()?.label ?? '') : runnerPick({ agent: agent(), name: pick().name, model: modelWord({ model: model(), modelLabel: modelLabel() }), effort: effort(), account: '', fallback: defaultName(agent(), t('shell.runner.default')) })].filter(Boolean).join(' · '),
                 logo: agent() === 'auto' ? undefined : harnessOf(harnesses(), agent()).logo,
                 place: { icon: placeOf()?.icon ?? (target() === home ? 'laptop' : 'server'), label: placeOf()?.label() ?? (target() === home ? t('shell.card.thisComputer') : shell.client.peers.name(target())), title: t('shell.home.where') },
                 placeAct: whereAct(),
@@ -915,7 +931,7 @@ export function HomeView(props: { readonly onBack?: () => void }): JSX.Element {
           auto: agent() === 'auto',
           pick: runnerPick({ agent: agent(), shown: shown()?.label, name: pick().name, model: modelWord({ model: model(), modelLabel: modelLabel() }), effort: effort(), account: account()?.label ?? '', fallback: t('shell.runner.default') }),
           // a picked harness's model, thinking and account as v1's parts: the narrow bar folds them one by one (launcher.css)
-          ...(agent() !== 'auto' && { pickParts: runnerParts({ model: modelWord({ model: model(), modelLabel: modelLabel() }), effort: effort(), account: account()?.label ?? '', fallback: t('shell.runner.default') }) }),
+          ...(agent() !== 'auto' && { pickParts: runnerParts({ model: modelWord({ model: model(), modelLabel: modelLabel() }), effort: effort(), account: account()?.label ?? '', fallback: defaultName(agent(), t('shell.runner.default')) }) }),
           pickTitle:
             agent() !== 'auto'
               ? t('shell.runner.title')
@@ -924,6 +940,7 @@ export function HomeView(props: { readonly onBack?: () => void }): JSX.Element {
                 : t('shell.home.pickTitle', { name: pick().name }),
           ...(pick().logo && { logo: pick().logo }),
           compare: runs().length > 0 ? t('shell.home.compareMore', { n: MAX_RUNNERS }) : t('shell.home.compare'),
+          ...(ring() && { usage: ring() }),
           // ONE pill, ONE press: the two-pane harness picker (v1 runner-picker.js); model, thinking and account are its right pane
           act: { onClick: () => (setAutoPop(false), setCmpPicker(undefined), setPicker(!picker())) },
           open: picker(),
@@ -1041,65 +1058,30 @@ export function HomeView(props: { readonly onBack?: () => void }): JSX.Element {
           <Slot input="shell.home:usage" layout="contents" />
         </Reserved>
       </Show>
-      {/* opened from the Auto pick (v1 openPop); before Auto answers it says it's still looking, then fills in */}
+      {/* opened from the Auto pick; its own chunk (Auto is off unless its switch is on, owner #37) */}
       <Show when={autoPop()}>
-        {(_) => {
-          const p = (): AutoPreview => preview() ?? { pick: null, why: '' };
-          const pop = () => popOf(p());
-          const pk = () => p().pick;
-          const row = (a: { agent: string; model: string; key: string; label: string; chance: number; usd: number; why?: string }, sug: boolean) => ({
-            key: a.key,
-            logo: harnessOf(harnesses(), a.agent).logo,
-            title: sug ? t('shell.auto.try', { label: shortLabel(a, t('shell.auto.defaultPick')) }) : shortLabel(a, t('shell.auto.defaultPick')),
-            sub: sug ? a.why || agentName(t, harnesses(), a.agent) : agentName(t, harnesses(), a.agent),
-            chance: pct(a.chance),
-            usd: usd(a.usd),
-          });
-          const goal = (): string => t(`shell.auto.goal.${p().goal === 'cheap' || p().goal === 'best' ? (p().goal as string) : 'balanced'}`);
-          const facts = () => [
-            ...(pop().chance ? [{ strong: pop().chance, text: t('shell.auto.likely') }] : []),
-            ...(pop().usd ? [{ text: pop().usd }] : []),
-            ...(pop().minutes ? [{ text: t('shell.auto.minutes', { n: pop().minutes }) }] : []),
-          ];
-          return (
-            <AutoPop
-              anchor={() => document.querySelector('[data-part="launcher.autoPreview"]')}
-              label={t('shell.auto.popLabel')}
-              head={((x) =>
-                x
-                  ? { logo: harnessOf(harnesses(), x.agent).logo, title: shortLabel(x, t('shell.auto.defaultPick')), sub: `${agentName(t, harnesses(), x.agent)} · ${goal()}` }
-                  : { nothing: t('shell.auto.nothing'), why: p().why || t('shell.auto.looking') })(pk())}
-              why={pk() ? pop().why : undefined}
-              facts={pk() ? facts() : []}
-              suggest={((s) => (pk() && s ? { heading: t('shell.auto.worth'), row: row(s, true) } : undefined))(pop().suggest)}
-              others={pk() && pop().others.length ? { heading: t('shell.auto.orRun'), rows: pop().others.map((a) => row(a, false)) } : undefined}
-              never={((x) => (x ? t('shell.auto.never', { model: neverModel(x), kind: typeWord(p().type ?? '') }) : undefined))(pk())}
-              how={t('shell.auto.how')}
-              onClose={() => setAutoPop(false)}
-              onHow={() => {
-                setAutoPop(false);
-                shell.navigate({ t: 'openOverlay', overlay: { kind: 'viewer', id: 'shell-settings.sheet' as never, params: { pane: 'auto' } } });
-              }}
-              onPick={(key) => {
-                // run another pick instead: it's yours now, and the task tells Auto what it had shown (autoOverride)
-                const c = [p().suggest, ...(p().alternatives ?? [])].find((a) => a?.key === key);
-                setAutoPop(false);
-                if (!c) return;
-                pickAgent(c.agent);
-                setModel(c.model);
-                // its name from Auto's label ("Codex · GPT-5 · High", v1 shortLabel), so the pill names it, not Default
-                setModelLabel(c.model ? (c.label.split(' · ')[1] ?? '') : '');
-                setEffort(c.effort);
-                keepPick(c.agent, c.model, c.model ? (c.label.split(' · ')[1] ?? '') : '', c.effort);
-              }}
-              onNever={() => {
-                setAutoPop(false);
-                const x = pk();
-                if (x) void never(x, p().type ?? '');
-              }}
-            />
-          );
-        }}
+        <HomeAutoPop
+          preview={preview}
+          harnesses={harnesses}
+          neverModel={neverModel}
+          typeWord={typeWord}
+          onClose={() => setAutoPop(false)}
+          onPick={(c) => {
+            // run another pick instead: it's yours now, and the task tells Auto what it had shown (autoOverride)
+            setAutoPop(false);
+            if (!c) return;
+            pickAgent(c.agent);
+            setModel(c.model);
+            // its name from Auto's label ("Codex · GPT-5 · High", v1 shortLabel), so the pill names it, not Default
+            setModelLabel(c.model ? (c.label.split(' · ')[1] ?? '') : '');
+            setEffort(c.effort);
+            keepPick(c.agent, c.model, c.model ? (c.label.split(' · ')[1] ?? '') : '', c.effort);
+          }}
+          onNever={(x, type) => {
+            setAutoPop(false);
+            void never(x, type);
+          }}
+        />
       </Show>
       <RunnerPicker
         open={picker()}

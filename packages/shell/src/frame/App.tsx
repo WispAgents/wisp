@@ -3,7 +3,6 @@
 // from the width). On a phone (stack) one page shows: the list, or the main pane when a task, a
 // view or New task is open (New task from the list opens Home's prompt box as its own page).
 
-import '../i18n/lazy.ts';
 import { createMemo, createSignal, createEffect, lazy, on, onCleanup, onMount, Show, type JSX } from 'solid-js';
 import type { Readable } from '@wisp/client';
 import { Sheet, Stage, Toasts, useSignal, type StagePage } from '@wisp/ui';
@@ -30,7 +29,8 @@ export function App(props: { readonly clients: Clients; readonly recent: Readabl
   const shell = useShell();
   const nav = useSignal(shell.nav);
   // stack only: Home's prompt box as its own page (v1 body.stack-page), opened from New task
-  const [launcher, setLauncher] = createSignal(false);
+  // opened with a share link from the Grid (docs/ux/2026-11-18-grid.md #8): New task shows at once, holding it as text
+  const [launcher, setLauncher] = createSignal(shell.client.nav.hasShare?.() ?? false);
   // the top bar's project chips; the list (shell-list, or the fallback) follows it
   const picked = useSignal(shell.projectFilter?.value ?? (() => 'all'));
   const filter = (): string => picked() || 'all';

@@ -5,7 +5,7 @@
 // comes back. A refusal puts it back as it was, with the error. Without git, the edits wisp saw, per file.
 import { Show, createEffect, createMemo, createResource, createSignal, on, onCleanup, type JSX } from 'solid-js';
 import { defineCommand, entityKey, ownerOf, type EntityKey, type SettingRow } from '@wisp/client';
-import { ChangesList, CommentCard, EmptyState, isEnvFile, rowKey, useSignal, type ChangeFile, type ChangeRow, type StageState } from '@wisp/ui';
+import { Button, ChangesList, CommentCard, EmptyState, isEnvFile, rowKey, useSignal, type ChangeFile, type ChangeRow, type StageState } from '@wisp/ui';
 import { openFinder } from './open-file.ts';
 import { added, commentStore, isLine, lineKey, lineLabel, placeOf, waiting } from '../comments.ts';
 import { isStub, keepTurnsWhole } from '@wisp/shell';
@@ -41,6 +41,9 @@ export const read = defineCommand<{ key: EntityKey; path: string; base: string; 
   optimistic: 'none',
   pending: 'the Changes pane',
 });
+/** The same read on a phone (UX 2026-11-18 phone #14): its refusal is the pane's empty state, in words, not a toast
+ *  holding a raw worktree path over it */
+export const readHere = defineCommand({ ...read, quiet: true });
 /** Reveal a .env file's captured edits in one turn (ADR-0050): the turn rows carry them masked. */
 const unmasked = defineCommand<{ key: EntityKey; turnId: string; file: string }, { readonly edits?: readonly { readonly before: string; readonly after: string }[] }>({
   id: 'runtime.unmasked',
@@ -111,9 +114,18 @@ export function ChangesPane(): JSX.Element {
   const base = (): string => wt()?.baseRef || wt()?.base || 'HEAD';
   // .env files shown as they are (v1 Reveal): the button flips at once, git's unmasked read follows
   const [revealed, setRevealedHere] = createSignal(revealedOf(task.id));
+  // why the last read was refused (a phone says it where the files go; the browser keeps its toast)
+  const [refused, setRefused] = createSignal<{ readonly code: string; readonly message: string } | undefined>();
   const [git, { refetch }] = createResource(
     () => (dir() ? { path: dir(), base: base(), reveal: [...revealed()] } : undefined),
-    (a) => task.client.run(read, { key: task.key, ...a }).catch(() => null),
+    (a) =>
+      task.client
+        .run(shell.platform.phone ? readHere : read, { key: task.key, ...a })
+        .then((r) => (setRefused(undefined), r))
+        .catch((e: unknown) => {
+          setRefused(e instanceof Error ? { code: String((e as { code?: unknown }).code ?? ''), message: e.message } : { code: '', message: String(e) });
+          return null;
+        }),
   );
   // every turn whole while the pane is open: the task's topic sends older turns as stubs, without their edits (v1 #788)
   const turns = useSignal(task.client.entities.list<ChangeTurn>('turn'));
@@ -265,7 +277,7 @@ export function ChangesPane(): JSX.Element {
     return n ? t('shell-task.changes.viewedOf', { n, total: files().length }) : undefined;
   };
   return (
-    <Show when={files().length > 0} fallback={<ChangesEmpty loading={git.loading} />}>
+    <Show when={files().length > 0} fallback={<ChangesEmpty loading={git.loading} {...(shell.platform.phone && refused() && { refused: refused() as { code: string; message: string }, onRetry: () => void refetch() })} />}>
       <ChangesList
         part={'side.changes panel.changes' as `${string}.${string}`}
         files={files()}
@@ -396,7 +408,29 @@ export function ChangesPane(): JSX.Element {
 }
 
 /** Nothing changed (or not read yet): one line, as v1's .cx-msg. */
-export function ChangesEmpty(props: { readonly loading: boolean }): JSX.Element {
+export function ChangesEmpty(props: { readonly loading: boolean; readonly refused?: { readonly code: string; readonly message: string }; readonly onRetry?: () => void }): JSX.Element {
   const shell = useShell();
-  return <EmptyState icon="file" title={shell.t(props.loading ? 'shell-task.side.changes.loading' : 'shell-task.side.changes.empty')} compact />;
+  return (
+    <Show when={!props.loading && props.refused} fallback={<EmptyState icon="file" title={shell.t(props.loading ? 'shell-task.side.changes.loading' : 'shell-task.side.changes.empty')} compact />}>
+      {(r) => (
+        // a phone (UX 2026-11-18 phone #14): what happened in words; a gone folder is not an error to retry
+        <EmptyState
+          icon="file"
+          part="side.changes.refused"
+          title={shell.t(r().code === 'not_found' ? 'shell-task.side.changes.gone' : 'shell-task.side.changes.failed')}
+          compact
+          {...(r().code !== 'not_found' &&
+            props.onRetry && {
+              action: (
+                <Button size="sm" variant="ghost" onClick={() => props.onRetry?.()}>
+                  {shell.t('shell-task.side.changes.retry')}
+                </Button>
+              ),
+            })}
+        >
+          {r().code === 'not_found' ? shell.t('shell-task.side.changes.goneBody') : r().message}
+        </EmptyState>
+      )}
+    </Show>
+  );
 }

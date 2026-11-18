@@ -1,3 +1,4 @@
+// size-ok: one component, the picker (its two panes and their keys); a phone's Back adds its row (UX 2026-11-18 phone #9)
 // The harness picker (v1 runner-picker.js, launcher.css .picker): ONE two-pane popover under the runner pill. Left,
 // HARNESS: Auto ("Picks per task"), then every harness with its logo and a sub-line ("4 models", "Checking…", how full
 // its plan is), a dot on the one in use, the one whose pane shows lit. Right: that harness's pane: Auto's GOAL list, or
@@ -12,6 +13,8 @@ import { flag, styleOf } from '../core/props.ts';
 import { Icon } from '../content/Icon.tsx';
 import { ThinkingSlider, type ThinkingSliderProps } from '../controls/ThinkingSlider.tsx';
 import '../css/app-picker.css';
+import { usePlatform } from '../platform/PlatformLook.tsx';
+import { useT } from '../core/i18n.tsx';
 
 export interface HarnessPickerRow {
   readonly id: string;
@@ -115,6 +118,7 @@ export function pickerPlace(
 }
 
 export function HarnessPicker(props: HarnessPickerProps): JSX.Element {
+  const [look, kitT] = [usePlatform(), useT()];
   let box: HTMLDivElement | undefined;
   let input: HTMLInputElement | undefined;
   const [pos, setPos] = createSignal<{ x: number; w: number; top?: number; bottom?: number }>({ x: EDGE, w: WIDTH, top: EDGE });
@@ -233,6 +237,10 @@ export function HarnessPicker(props: HarnessPickerProps): JSX.Element {
         aria-label={props.label}
         style={styleOf({ '--k-x': `${pos().x}px`, '--k-w': `${pos().w}px`, '--k-top': pos().top === undefined ? 'auto' : `${pos().top}px`, '--k-bottom': pos().bottom === undefined ? 'auto' : `${pos().bottom}px` })}
       >
+        {/* a phone (UX 2026-11-18 phone #9): a page of its own; Back to where it came from (the reply's options) */}
+        <Show when={look() !== 'web'}>
+          <button type="button" data-kit="pk-back" data-part="runner.picker.back" onClick={() => close()}><Icon name="back" /><span data-text="control">{kitT('back')}</span></button>
+        </Show>
         <div data-kit="pk-side" role="listbox" aria-label={props.head} aria-orientation={narrow() ? 'horizontal' : 'vertical'}>
           <div data-kit="pk-head" aria-hidden="true">
             {props.head}

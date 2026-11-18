@@ -1,15 +1,17 @@
 // The harness · model picker's data (v1 runner-picker.js), DOM-free: what each harness offers (runtime.agents), the
 // models matching what's typed (by label or id, the harness's name too), and the thinking levels the pick allows.
 
-import { ownerOf, type EntityKey, type EntityReader } from '@wisp/client';
+import { defineCommand, ownerOf, type Client, type EntityKey, type EntityReader, type PeerId } from '@wisp/client';
 import { useDerived } from '@wisp/ui/pure';
-import type { Accessor } from 'solid-js';
+import { createEffect, createSignal, onCleanup, type Accessor } from 'solid-js';
 
 export interface AgentModel {
   readonly id: string;
   readonly label: string;
   readonly hint?: string;
   readonly efforts?: readonly string[];
+  /** the default's (`id` ''): the model it runs, as the harness's own config names it ("Opus"), when it can tell */
+  readonly resolves?: string;
 }
 export interface AgentOffer {
   readonly id: string;
@@ -21,6 +23,49 @@ export interface AgentOffer {
   readonly efforts: readonly string[];
   /** its detect hasn't answered yet (the `harnesses` topic, ADR-0066): the rest is what was known before */
   readonly checking?: boolean;
+}
+
+/** What `agent`'s Default runs, by name, when its harness can tell (HarnessModel.resolves, read from its own config by
+ *  its plugin, never a run): "Opus"; else `fallback` ("Default"). UX 2026-11-18 #9: the chip names the real model. */
+export function defaultWord(rows: readonly HarnessTopicRow[], agent: string, fallback: string): string {
+  return rows.find((r) => r.id === agent)?.agent.models.find((m) => m.id === '')?.resolves || fallback;
+}
+
+/** What Default runs, by name, for `peer`'s harnesses in `cwd` (owner's delegate 2026-11-18: what the harness will
+ *  run): the folder's answer (runtime.defaultModel, asked once per computer, harness and folder, and again for a new
+ *  folder), else this computer's (the harnesses topic, watched passively: it never wakes a sleeping box), else
+ *  `fallback`. So the pill names the model without the picker opening first. */
+export function useDefaultWords(
+  client: Pick<Client, 'scope' | 'peers' | 'entities' | 'commands'>,
+  peer: () => string,
+  cwd: () => string | undefined = () => undefined,
+): (agent: string, fallback: string) => string {
+  createEffect(() => {
+    const scope = client.scope.child('default-models');
+    client.peers.watch(peer() as PeerId, HARNESSES_TOPIC, scope, { passive: true });
+    onCleanup(() => scope.dispose());
+  });
+  const rows = useHarnessRows(client.entities, peer);
+  // answers by computer, harness and folder: undefined asked and waiting, null can't tell
+  const [answers, setAnswers] = createSignal<ReadonlyMap<string, string | null>>(new Map());
+  const asked = new Set<string>();
+  const there = (agent: string): string | undefined => {
+    const dir = cwd();
+    if (!dir || !agent || agent === 'auto') return undefined;
+    const on = peer();
+    const key = `${on}\u0000${agent}\u0000${dir}`;
+    if (!asked.has(key)) {
+      asked.add(key);
+      const put = (v: string | null): void => void setAnswers((m) => new Map([...m, [key, v]]));
+      // the asking is its own chunk (default-model-ask.ts): the answer comes after a request anyway. A failure (the
+      // chunk, the peer asleep) isn't an answer: it's asked again on the next look, the topic's word meanwhile
+      void import('./default-model-ask.ts')
+        .then((m) => m.askDefault(client, { peer: on, agent, cwd: dir }))
+        .then((v) => put(v ?? null), () => void asked.delete(key));
+    }
+    return answers().get(key) ?? undefined;
+  };
+  return (agent, fallback) => there(agent) ?? defaultWord(rows(), agent, fallback);
 }
 
 /** wisp.runtime's `harnesses` topic (ADR-0066): every harness at once as checking, each as its detect lands. */
@@ -197,3 +242,29 @@ export function fullest(accounts: readonly { readonly windows: readonly PlanWind
 
 /** v1's quiet line under a harness: "5h 42% used" (whole percents, rounded down). */
 export const usedPct = (w: PlanWindow): number => Math.floor(w.used * 100);
+
+/** A harness's plan windows per account (wisp.budget's `budget.view`); quiet: no budget plugin, no ring, no toast. */
+export const planWindows = defineCommand<{ peer: string; agent: string }, { account?: string; windows: PlanWindow[] }[]>({
+  id: 'budget.view',
+  owner: (a) => a.peer,
+  wire: (a) => ({ agent: a.agent }),
+  optimistic: 'none',
+  pending: 'the harness chip\'s usage ring',
+  quiet: true,
+});
+
+/** The harness chip's usage ring (UX 2026-11-18 #8): only once its fullest window passes 80%; past 95% it's nearly out. */
+export function usageRing(w: PlanWindow | undefined): { pct: number; tone: 'warn' | 'bad'; label: string } | undefined {
+  if (!w || !Number.isFinite(w.used) || w.used < 0.8) return undefined;
+  const pct = Math.min(100, usedPct(w));
+  return { pct, tone: pct >= 95 ? 'bad' : 'warn', label: w.label };
+}
+
+/** The ring for a harness's accounts as `budget.view` gives them: `account` the picked one ('': all, the fullest). */
+export function ringOf(
+  accounts: readonly { readonly account?: string; readonly windows: readonly PlanWindow[] }[] | undefined,
+  account: string,
+): { pct: number; tone: 'warn' | 'bad'; label: string } | undefined {
+  if (!accounts) return undefined;
+  return usageRing(fullest(account ? accounts.filter((a) => a.account === account) : accounts));
+}

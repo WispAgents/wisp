@@ -21,6 +21,11 @@ pub struct HarnessModel {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     #[ts(as = "Option<Vec<String>>", optional)]
     pub efforts: Vec<String>,
+    /// the default's (`id` ""): the model it runs, as the harness's own config names it ("Opus"), when the harness
+    /// can tell without a run (UX 2026-11-18 #9: the chip names the real model). Additive (2026-11-18).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub resolves: Option<String>,
 }
 
 /// What v1 adapters declared as fields. Plain data, read without running anything.

@@ -2,6 +2,7 @@
 // DOM: offline with when it was last heard from and Retry (reconnect now, skipping the backoff), asleep with Wake,
 // too old with the command that updates it. Rows from the last cursor stay on screen under it either way.
 
+import '../i18n/lazy.ts';
 import type { PeerStatus } from '@wisp/client';
 
 export interface PeerNote {

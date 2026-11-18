@@ -36,9 +36,9 @@ fn s<'a>(v: &'a Value, k: &str) -> &'a str {
     v.get(k).and_then(Value::as_str).unwrap_or("")
 }
 
-/// The way in (#8): signed in to this grid, the cloud wisp (the link copied on the way, to paste in New task, which
-/// imports a share link); anywhere, wisp on this computer (`wisp://open`), and for someone with no wisp at all, where
-/// to get it and the command.
+/// The way in (#8): signed in to this grid, the cloud wisp, its New task holding this link as text (`?share=`, which
+/// the wisp takes only as a share link and never sends: the person presses Send, and the share imports); anywhere, wisp
+/// on this computer (`wisp://open`); and for someone with no wisp at all, where to get it and the command.
 fn open_in_wisp(c: &ShareCard, public_url: &str) -> String {
     let link = format!("{public_url}/s/{}", c.id);
     let local = format!(
@@ -46,18 +46,17 @@ fn open_in_wisp(c: &ShareCard, public_url: &str) -> String {
         if c.signed_in { "ghost line" } else { "primary" },
         esc(&c.id)
     );
-    let cloud = if c.signed_in {
-        format!(
-            r#"<a class="primary tall" href="/go" data-copy="{}" title="Copies the link: paste it in New task">Open in your cloud wisp</a>"#,
-            esc(&link)
+    let (cloud, then) = if c.signed_in {
+        let to = super::home::wisp_at(&format!("/?share={}", crate::http::encode_component(&link)));
+        (
+            format!(r#"<a class="primary tall" href="{}">Open in your cloud wisp</a>"#, esc(&to)),
+            "In your cloud wisp it waits in New task: press Send to import it. ",
         )
     } else {
-        String::new()
+        (String::new(), "")
     };
-    let paste = if c.signed_in { "In your cloud wisp, paste the link in New task. " } else { "" };
     format!(
-        r#"<div class="hub-open"><div class="hub-acts">{cloud}{local}</div><p class="hub-alt">{paste}No wisp? <a href="https://trywisp.dev" target="_blank" rel="noopener">Get wisp</a> · or run <code>wisp open {link}</code></p></div>
-      <script>document.addEventListener('click',(e)=>{{const a=e.target.closest('a[data-copy]');if(a&&navigator.clipboard)navigator.clipboard.writeText(a.dataset.copy).catch(()=>{{}})}})</script>"#,
+        r#"<div class="hub-open"><div class="hub-acts">{cloud}{local}</div><p class="hub-alt">{then}No wisp? <a href="https://trywisp.dev" target="_blank" rel="noopener">Get wisp</a> · or run <code>wisp open {link}</code></p></div>"#,
         link = esc(&link)
     )
 }
@@ -253,10 +252,16 @@ mod tests {
         assert!(out.contains(r#"<a class="primary tall" href="wisp://open/abc">Open in wisp on this computer</a>"#));
         assert!(out.contains("No wisp? <a href=\"https://trywisp.dev\"") && out.contains("with its passkey"));
         assert!(!out.contains("Open in your cloud wisp"));
-        // signed in to the grid: the cloud wisp first (the link copied on the way), this computer second
+        // signed in to the grid: the cloud wisp first, New task there filled with this link (never sent), this computer second
         c.signed_in = true;
         let inn = share_page(&cfg(), &c, &json!({}));
-        assert!(inn.contains(r#"<a class="primary tall" href="/go" data-copy="http://wisp.localhost:8080/s/abc""#));
-        assert!(inn.contains(r#"<a class="ghost line tall" href="wisp://open/abc">"#) && inn.contains("paste the link in New task"));
+        let to = "/go?path=%2F%3Fshare%3Dhttp%253A%252F%252Fwisp.localhost%253A8080%252Fs%252Fabc";
+        assert_eq!(
+            super::super::home::wisp_at(&format!("/?share={}", crate::http::encode_component("http://wisp.localhost:8080/s/abc"))),
+            to
+        );
+        assert!(inn.contains(&format!(r#"<a class="primary tall" href="{}">Open in your cloud wisp</a>"#, esc(to))), "{inn}");
+        assert!(inn.contains(r#"<a class="ghost line tall" href="wisp://open/abc">"#) && inn.contains("press Send to import it"));
+        assert!(!inn.contains("data-copy") && !inn.contains("paste the link"));
     }
 }

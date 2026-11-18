@@ -65,8 +65,17 @@ turn. When a screen or feature contradicts one, that's a bug: fix it toward the 
   Building: desktop 1-9, 11, 13 (a question stays above the reply box; two-line task rows with hover actions; one
   composer footer with `+`, mode, harness · model, where, Send; one head action bar; side-panel tabs with content and
   counts; one menu order; quiet turn footers; one usage line and one tip on Home; installed harnesses only; a shorter
-  topbar; the Shell font); phone 1-14; Grid 1-11 (**Grid 1-11 built 2026-11-18**: apps/grid pages, `tests/grid_ux.rs`; #8 copies
-  the share link and opens the cloud wisp, since New task has no URL to prefill; #9 through two additive shell contract
+  topbar; the Shell font); phone 1-14 (**phone 1-14 built 2026-11-18**, phone looks only, through the kit's platform
+  variants: no tab bar on a task (Frame `pushed`); the reply bar is attach, one options chip (`ReplyOptions`: permissions,
+  agent, Delegate, Goal, Send later, queue in a sheet) and Send; the side panes are one sheet over the task (detents on
+  iOS) opened from status pills (`PageStatus`: Changes +n −n, the PR); 44 pt / 48 dp composer targets; New task has one
+  Start and its setup as a short list; the task ⋯ is three groups with the rest in This task › (`phone-menu.ts`); opaque
+  iOS menus; an older answer's actions in a ⋯ menu a long-press opens (`turn.long-press`); the agent picker a page pushed
+  from the options, thinking levels named; two-line task rows; the project selector is the title on both looks, Select in
+  the bar's ⋮ / ⋯; only busy crew on the Tasks strip; Shell keys on the keyboard (`terminal/accessory.ts`); a gone folder
+  said in words in Changes and Shell, no raw-path toast. Tests `apps/web/test/phone-fewer.test.tsx`,
+  `packages/ui/test/phone-fewer.test.tsx`, `packages/shell/test/phone-menu.test.ts`); Grid 1-11 (**Grid 1-11 built 2026-11-18**: apps/grid pages, `tests/grid_ux.rs`; #8 opens
+  the cloud wisp at `/?share=<grid>/s/<id>`: New task holds that link as text, once, never sent; nothing else a URL fills; #9 through two additive shell contract
   fields, `accountLinks` and `homeTips`, filled by wisp.grid-client). Not now: desktop 10 (folding the list below 1440 goes further than
   the 1180 rule just landed) and 12 (Transcript as a view switch: check on a running task first). These are owner-ruled
   departures from v1 (design/v1-reference/allowed.md §7); every feature stays reachable and every `launcher.*` part keeps

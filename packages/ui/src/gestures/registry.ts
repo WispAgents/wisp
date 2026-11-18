@@ -53,6 +53,14 @@ export const GESTURES = defineGestures({
     action: 'gesture.actions',
     haptic: { start: 'tap' },
   },
+  // an older answer on a phone (UX 2026-11-18 phone #8): its actions (Notes, Restore, Fork) as a menu
+  'turn.long-press': {
+    kind: 'long-press',
+    does: "an older answer's actions: Agent notes, Restore to before it, Fork from it",
+    twin: { command: 'ui.turn-menu', parts: ['turn.more.trigger'] },
+    action: 'gesture.actions',
+    haptic: { start: 'tap' },
+  },
   'list.pull': {
     kind: 'pull-down',
     does: 'reconnect every computer now (skips the backoff)',

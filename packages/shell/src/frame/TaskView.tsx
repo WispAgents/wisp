@@ -35,7 +35,9 @@ import {
   type TaskPlaceChip,
 } from '@wisp/ui';
 import { useShell } from '../context.tsx';
+import { blockStrings } from '../block-strings.ts';
 import { newestSide } from './side-newest.ts';
+import { usePlanRing } from './plan-ring.ts';
 import type { SendHold } from '../contract.ts';
 import { aheadLabel, waitable } from './hold.ts';
 import { SESSION, type SessionRow } from '../rows.ts';
@@ -49,7 +51,7 @@ import { changeFigures, duration, foldedFrom, longTime, nextNeedsYou, overlapLin
 import { coldHint, compactItem } from './cold.ts';
 import { replyPlaceholderKey } from './reply-hint.ts';
 import { goalGate } from './goal-gate.ts';
-import { feedbackCommand, isFeedback } from './feedback.ts';
+import { isFeedback } from './feedback.ts';
 import { readComments } from './comment-text.ts';
 import { useNow } from '../clock.ts';
 import { turnClock } from './turn-clock.ts';
@@ -106,7 +108,7 @@ import { isStub, turnOpener } from './turn-window.ts';
 import { NOTICE_KINDS, ledgerTurn } from './ledger-turns.ts';
 import type { LedgerTurn } from '@wisp/ui/pure';
 import { envReveal } from './env-reveal.ts';
-import { runPick, runWords, taskRunner, type Runner } from './runner.ts';
+import { runPick, runWords, taskRunner, useDefaultWords, type Runner } from './runner.ts';
 import { rowUsage, taskUsage, type TurnStatsLike } from './task-usage.ts';
 import { TELEMETRY_TOPIC, feedbackOn } from './feedback-on.ts';
 import { MODE_ICON, agentMenu, modeMenu, whenAt, whenMenu, type Mode, type When } from './pickers.ts';
@@ -210,6 +212,8 @@ function through<T extends object>(of: () => T | undefined): T {
 
 export default function TaskView(props: { readonly id: string; readonly onBack?: () => void }): JSX.Element {
   const shell = useShell();
+  // the answer blocks' copy, before the first answer draws (block-strings.ts)
+  blockStrings(shell.client);
   const t = shell.t;
   const ledgerT = (k: LedgerString, vars?: Readonly<Record<string, string | number>>): string =>
     t(ONE[k] && vars?.[ONE[k] ?? ''] === 1 ? `shell.ledger.${k}.one` : `shell.ledger.${k}`, vars as Record<string, string | number> | undefined);
@@ -483,6 +487,9 @@ export default function TaskView(props: { readonly id: string; readonly onBack?:
   const mic = useMic(shell, { text, set: replyBox.set, el: () => input });
   // the reply box's harness · model (v1 S.replyRunners): the next follow-ups run on it, the task keeps its own
   const [replyRun, setReplyRun] = createSignal<Runner | undefined>(undefined);
+  // what a harness's Default runs, by name, when its config says (UX 2026-11-18 #9)
+  // in the task's own folder: what that project pins, else this computer's (owner's delegate 2026-11-18)
+  const defaultName = useDefaultWords(shell.client, () => peer, () => String(row()?.summary['cwd'] ?? '') || undefined);
   const [runnerOpen, setPickingRunner] = createSignal(false);
   const runOf = (): ReturnType<typeof runPick> => runPick(replyRun());
   let goalInput: HTMLInputElement | undefined;
@@ -558,7 +565,8 @@ export default function TaskView(props: { readonly id: string; readonly onBack?:
     if (isFeedback(text())) {
       const typed = text();
       setText('');
-      return feedbackCommand(shell, typed, { home: shellHome, sessionId: key, restore: () => text() === '' && setText(typed) });
+      // sending it is its own chunk (feedback-send.ts)
+      return void import('./feedback-send.ts').then((m) => m.feedbackCommand(shell, typed, { home: shellHome, sessionId: key, restore: () => text() === '' && setText(typed) })).catch(() => text() === '' && setText(typed));
     }
     // /btw: a side question, answered beside the run (v1 btw.js), never a follow-up
     const q = btwQuestion(text());
@@ -982,6 +990,12 @@ export default function TaskView(props: { readonly id: string; readonly onBack?:
         const h = (): { name: string; logo?: string } => harnessView(replyRun()?.agent ?? s().agent);
         // the run a follow-up takes: the reply box's pick, else the task's own harness, model and thinking (QA desktop r3 #1)
         const shownRun = (): Runner => replyRun() ?? taskRunner(s());
+        // the reply's harness past 80% of a plan window: Home's ring on the reply box's chip (UX 2026-11-18 #8)
+        // the account the follow-up runs on: the task's own (its row's `account`; the harness's own login is budget's
+        // 'default'), or every account of another harness picked for the reply (it runs on that one's saved account)
+        const ringAccount = (): string =>
+          shownRun().agent === s().agent ? String((row()?.body as { account?: unknown } | undefined)?.account || 'default') : '';
+        const ring = usePlanRing(shell, { peer: () => peer, agent: () => shownRun().agent, account: ringAccount });
         // the task's own, for its details (not the reply box's pick)
         const own = (): { name: string; logo?: string } => harnessView(s().agent);
         const ownWords = (): string => t('shell.task.harness', { name: own().name, model: String(s().summary.model || '') || t('shell.task.defaultModel') });
@@ -997,7 +1011,7 @@ export default function TaskView(props: { readonly id: string; readonly onBack?:
               <DelegatePanel
                 lead={{
                   agent: replyRun()?.agent ?? s().agent,
-                  run: runWords(h().name, shownRun(), t('shell.runner.default')),
+                  run: runWords(h().name, shownRun(), defaultName(shownRun().agent, t('shell.runner.default'))),
                   logo: h().logo,
                   place: peer === shellHome ? { icon: 'laptop', label: t('shell.card.thisComputer'), title: t('shell.home.where') } : { icon: 'server', label: shell.client.peers.name(peer), title: t('shell.home.where') },
                 }}
@@ -1503,12 +1517,13 @@ export default function TaskView(props: { readonly id: string; readonly onBack?:
                       cap: capView(),
                     }}
                     runner={{
-                      title: t('shell.task.runner', { name: runWords(h().name, shownRun(), t('shell.runner.default')) }),
+                      title: t('shell.task.runner', { name: runWords(h().name, shownRun(), defaultName(shownRun().agent, t('shell.runner.default'))) }),
                       ...(h().logo && { logo: h().logo }),
                       act: { onClick: () => setPickingRunner(!runnerOpen()) },
                       open: runnerOpen(),
                       // the model it runs on beside the logo (UX 2026-11-18 #3), the phone keeps the bare logo
-                      ...(!phone && { model: shownRun().model || t('shell.runner.default') }),
+                      ...(!phone && { model: shownRun().model || defaultName(shownRun().agent, t('shell.runner.default')) }),
+                      ...(ring() && { usage: ring() }),
                     }}
                     {...(!phone && { plus: ((p: LauncherTool) => ({ label: p.label, title: p.title, act: p.act ?? {} }))(replyPlus()), chips: replyChips() })}
                     team={t('shell.home.delegateTitle')}

@@ -56,8 +56,11 @@ function Body(props: { readonly k: EntityKey; readonly s: SessionRow; readonly n
   const hover = hasExtensions('shell.row:hover');
   const subLook = createMemo(() => subOf(view().sub, env.shell.t, env.now()));
   // two lines and the slot's actions: a desktop's list (the phone apps swipe)
-  const two = (): boolean => !env.swipes && props.nested !== 'run';
+  // two lines on every look (desktop #2; phones too, docs/ux/2026-11-18-phone.md #10): a run's own nested row keeps three
+  const two = (): boolean => props.nested !== 'run';
   const line = createMemo(() => secondLine(view()));
+  /** the run line is in the second line already: with the answer's words (two lines), or alone on a phone */
+  const runInSub = (): boolean => (two() && line().line === 'sub') || (env.swipes === true && line().line === 'run');
   const name = (): string => agentName(props.s.agent, env.agents());
   const session = (): { id: string; agent: string } => ({ ...props.s, id: props.k, agent: props.s.agent });
   const side = (kind: SwipeKind): SwipeSide | undefined => {
@@ -80,9 +83,8 @@ function Body(props: { readonly k: EntityKey; readonly s: SessionRow; readonly n
       also={props.nested ? undefined : V1_ROW}
       title={props.s.title || t('shell-list.row.untitled')}
       lead={<Mark s={props.s} view={view()} name={name()} />}
-      // a desktop's row is two lines (docs/ux/2026-11-18-desktop.md #2): the harness's logo and the answer's last line
-      // (the machine first when it isn't this computer); with no answer, harness · model as that line. The phone apps
-      // keep their three.
+      // a row is two lines (docs/ux/2026-11-18-desktop.md #2, phone #10): the harness's logo and the answer's last line
+      // (the machine first when it isn't this computer); with no answer, harness · model as that line.
       sub={
         two() && line().line === 'sub' ? (
           <>
@@ -90,6 +92,9 @@ function Body(props: { readonly k: EntityKey; readonly s: SessionRow; readonly n
             <Show when={line().where && view().run}>{(r) => `${r().where} · `}</Show>
             <SubLine sub={view().sub} />
           </>
+        ) : env.swipes && line().line === 'run' && view().run ? (
+          // a phone, nothing said yet: harness · model is the second line itself, not a third under an empty one
+          <RunLine run={view().run as NonNullable<ReturnType<typeof view>['run']>} s={props.s} noWhere />
         ) : (
           <SubLine sub={view().sub} />
         )
@@ -98,9 +103,9 @@ function Body(props: { readonly k: EntityKey; readonly s: SessionRow; readonly n
       subTitle={subLook().title}
       // the third line only when it says something (v1: no run line on wisp's own Welcome task)
       foot={
-        (view().run && !(two() && line().line === 'sub')) || bottom() ? (
+        (view().run && !runInSub()) || bottom() ? (
           <>
-            <Show when={!(two() && line().line === 'sub') && view().run}>{(r) => <RunLine run={r()} s={props.s} noWhere={two()} />}</Show>
+            <Show when={!runInSub() && view().run}>{(r) => <RunLine run={r()} s={props.s} noWhere={two()} />}</Show>
             <Show when={bottom()}>
               <Slot input="shell.row:bottom" session={session} />
             </Show>

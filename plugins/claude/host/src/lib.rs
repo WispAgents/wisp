@@ -7,6 +7,7 @@
 
 pub mod sessions;
 
+mod default_model;
 mod driver;
 mod find;
 mod launch;
@@ -26,7 +27,7 @@ use wisp_runtime_api::{HARNESS, Harness};
 pub use launch::{DEFAULT_BIN, launch};
 
 fn model(id: &str, label: &str, hint: &str) -> HarnessModel {
-    HarnessModel { id: id.into(), label: label.into(), hint: Some(hint.into()), efforts: Vec::new() }
+    HarnessModel { id: id.into(), label: label.into(), hint: Some(hint.into()), efforts: Vec::new(), resolves: None }
 }
 
 /// v1 adapters/claude.js's static fields.
@@ -180,8 +181,22 @@ impl Harness for ClaudeHarness {
             if let Ok(mut b) = self.bin.lock() {
                 *b = Some(bin.clone());
             }
-            HarnessFound { available: true, version, bin: Some(bin), ..HarnessFound::default() }
+            // Default with the model it runs, when Claude Code's own config names it (UX 2026-11-18 #9)
+            let resolves = default_model::resolved(sys, None).await;
+            let models = resolves.map(|r| {
+                let mut all = self.info().models.clone();
+                if let Some(d) = all.iter_mut().find(|m| m.id.is_empty()) {
+                    d.resolves = Some(r);
+                }
+                all
+            });
+            HarnessFound { available: true, version, bin: Some(bin), models, ..HarnessFound::default() }
         })
+    }
+
+    /// What Default runs in `cwd`: the project's Claude Code settings, else this computer's (`default_model.rs`).
+    fn default_model<'a>(&'a self, sys: &'a dyn HarnessSys, cwd: Option<&'a str>) -> BoxFuture<'a, Option<String>> {
+        Box::pin(default_model::resolved(sys, cwd))
     }
 
     /// v1 claude.js `resumeCommand`: the conversation resumed (`--resume`), or a new one named by wisp

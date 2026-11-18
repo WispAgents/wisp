@@ -70,7 +70,9 @@ const DETECT_ROWS: Row[] = (
       available: state === 'installed',
       ...(version && { version }),
       ...(state === 'missing' && { setup: { tip: `Install the ${name} CLI and sign in, then re-check` } }),
-      models: state === 'installed' ? [{ id: '', label: 'Default' }, { id: `${id}-m0`, label: 'Model 1' }, { id: `${id}-m1`, label: 'Model 2' }] : [],
+      // Claude Code's Default names the model it runs, as the claude plugin reads it from ~/.claude/settings.json (UX
+      // 2026-11-18 #9); the others can't tell, so they say Default
+      models: state === 'installed' ? [{ id: '', label: 'Default', ...(id === 'claude' && { resolves: 'Opus' }) }, { id: `${id}-m0`, label: 'Model 1' }, { id: `${id}-m1`, label: 'Model 2' }] : [],
       efforts: [],
       delegates: false,
     },
@@ -705,7 +707,7 @@ function withTrial(peer: string, now: number, list: Row[], topics: Map<Topic, Ro
   });
 }
 
-export function seed(o: { peer: string; now: number; extra: number; firstRun?: boolean; computers?: boolean; media?: boolean; ask?: boolean; env?: boolean; usage?: boolean; trial?: boolean; cloud?: boolean; crew?: boolean; team?: boolean; farJob?: boolean }): Seeded {
+export function seed(o: { peer: string; now: number; extra: number; harnesses?: boolean; firstRun?: boolean; computers?: boolean; media?: boolean; ask?: boolean; env?: boolean; usage?: boolean; trial?: boolean; cloud?: boolean; crew?: boolean; team?: boolean; farJob?: boolean }): Seeded {
   const topics = new Map<Topic, Row[]>();
   const list: Row[] = [];
   (o.firstRun ? [] : TASKS).forEach((t, i) => {
@@ -748,7 +750,8 @@ export function seed(o: { peer: string; now: number; extra: number; firstRun?: b
   ]);
   // two accounts on Claude Code, Codex's own one (fromV1 adds none, so qa/parity.mjs's shots don't change)
   topics.set('plugin:wisp.accounts:harnesses', [...HARNESS_ROWS, ...accountRows(o.now)]);
-  if (HARNESSES_MID) topics.set('plugin:wisp.runtime:harnesses', DETECT_ROWS);
+  // the runtime's harnesses topic (ADR-0066), as a real wisp serves it: MOCK_HARNESSES=1, or a test's `harnesses`
+  if (HARNESSES_MID || o.harnesses) topics.set('plugin:wisp.runtime:harnesses', DETECT_ROWS);
   topics.set('plugin:wisp.connectors:list', CONNECTOR_ROWS);
   topics.set('plugin:wisp.worktrees:worktrees', WORKTREE_ROWS);
   // usage stats off by the environment, as on v1's QA box (DO_NOT_TRACK)

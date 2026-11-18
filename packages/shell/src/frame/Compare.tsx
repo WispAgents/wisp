@@ -7,6 +7,7 @@ import { createEffect, createMemo, createSignal, getOwner, onCleanup, runWithOwn
 import { defineCommand, ownerOf, type EntityKey } from '@wisp/client';
 import { Answer, Button, CompareRuns, Dialog, Inline, Text, useSignal, type CompareRunView } from '@wisp/ui';
 import { useShell } from '../context.tsx';
+import { blockStrings } from '../block-strings.ts';
 import { SESSION, type SessionRow } from '../rows.ts';
 import { answerContext } from './answer-ctx.ts';
 import { isStub, keepTurnsWhole } from './turn-window.ts';
@@ -50,6 +51,8 @@ const bareOf = (key: string): string => key.slice(key.indexOf(':') + 1);
 
 export default function Compare(props: { readonly params: { readonly id: string } }): JSX.Element {
   const shell = useShell();
+  // the answer blocks' copy, before the first answer draws (block-strings.ts)
+  blockStrings(shell.client);
   const t = shell.t;
   const sessions = useSignal(shell.client.entities.list<SessionRow>(SESSION));
   const allTurns = useSignal(shell.client.entities.list<TurnRow>('turn'));

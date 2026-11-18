@@ -36,6 +36,7 @@ pub fn info() -> HarnessInfo {
             label: "Default".into(),
             hint: Some("Whatever Codex is set to".into()),
             efforts: Vec::new(),
+            resolves: None,
         }],
         efforts: ["minimal", "low", "medium", "high", "xhigh"].map(str::to_owned).to_vec(),
         ask_tool: Some("mcp__wisp__ask_user".into()),
@@ -145,8 +146,19 @@ fn configured_model(config: &str) -> Option<String> {
     let top = config.split("\n[").next().unwrap_or("");
     top.lines().find_map(|l| {
         let (k, v) = l.split_once('=')?;
-        (k.trim() == "model").then(|| v.trim().trim_matches(['"', '\'']).to_owned())
+        // the value, not a comment after it (`model = "gpt-5" # note`)
+        (k.trim() == "model").then(|| v.split('#').next().unwrap_or("").trim().trim_matches(['"', '\'']).to_owned())
     })
+}
+
+/// The model Default runs, by its name, as codex's own files say (never a run): config.toml's `model`, else its
+/// catalog's first choice; the catalog's name for it, else its id. None: nothing named and no catalog. Default carries
+/// it (UX 2026-11-18 #9: the chip says "Codex · GPT-9", not "Default").
+fn default_runs(config: &str, catalog: &[HarnessModel]) -> Option<String> {
+    match configured_model(config) {
+        Some(id) => Some(catalog.iter().find(|m| m.id == id).map_or(id, |m| m.label.clone())),
+        None => catalog.first().map(|m| m.label.clone()),
+    }
 }
 
 /// v1 detect's catalog: what codex's own /model picker lists, best first, with each model's levels.
@@ -166,6 +178,7 @@ fn catalog_models(list: &[Value]) -> Vec<HarnessModel> {
                 label: m["display_name"].as_str().filter(|d| !d.is_empty()).unwrap_or(&slug).to_owned(),
                 hint: Some(clip(&hint, 60)),
                 efforts,
+                resolves: None,
             }
         })
         .collect()
@@ -246,6 +259,7 @@ impl Harness for CodexHarness {
             }
             let models = catalog_models(&list.unwrap_or_default());
             let mut found = HarnessFound { available: true, version, bin: Some(bin), ..HarnessFound::default() };
+            let default = HarnessModel { resolves: default_runs(&config, &models), ..self.info.models[0].clone() };
             if !models.is_empty() {
                 // Default runs the model config.toml names, else codex's first choice: it takes those levels
                 let want = configured_model(&config);
@@ -253,9 +267,11 @@ impl Harness for CodexHarness {
                 if !def.efforts.is_empty() {
                     found.efforts = Some(def.efforts.clone());
                 }
-                let mut all = vec![self.info.models[0].clone()];
+                let mut all = vec![default];
                 all.extend(models);
                 found.models = Some(all);
+            } else if default.resolves.is_some() {
+                found.models = Some(vec![default]);
             }
             found
         })
@@ -419,6 +435,23 @@ mod tests {
     #[test]
     fn manifest_is_valid() {
         assert_eq!(CodexPlugin.manifest().id, "wisp.codex");
+    }
+
+    /// UX 2026-11-18 #9: the chip names the model Default runs ("Codex · GPT-9 Mini"), read from codex's own config
+    /// and catalog, never a run: config.toml's `model`, else the catalog's first choice; its name from the catalog
+    #[test]
+    fn the_default_names_the_model_codex_runs_from_its_config_or_catalog() {
+        let m = |id: &str, label: &str| HarnessModel { id: id.into(), label: label.into(), hint: None, efforts: vec![], resolves: None };
+        let catalog = [m("gpt-9", "GPT-9"), m("gpt-9-mini", "GPT-9 Mini")];
+        assert_eq!(default_runs("model = \"gpt-9-mini\"\n", &catalog).as_deref(), Some("GPT-9 Mini"));
+        // no model in config.toml: codex's first choice
+        assert_eq!(default_runs("", &catalog).as_deref(), Some("GPT-9"));
+        // a model the catalog doesn't list: its own id
+        assert_eq!(default_runs("model = \"o9\"\n", &catalog).as_deref(), Some("o9"));
+        // nothing named and no catalog: unknown, the chip says Default
+        assert_eq!(default_runs("", &[]), None);
+        // a comment after the value is not the model's name
+        assert_eq!(default_runs("model = \"gpt-9-mini\" # the cheap one\n", &catalog).as_deref(), Some("GPT-9 Mini"));
     }
 
     #[test]

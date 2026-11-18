@@ -1474,9 +1474,9 @@
 
   /* UX 2026-11-18 phone #8: an older answer's icons wait behind its ⋯ (the latest answer's stay out); the ⋯ has the
      platform's touch target, as the icons it opens */
-  :root[data-platform='ios'] [data-kit='turn']:not([data-latest]) [data-kit='trail-bar'] > [data-kit='tb-tools']:not([data-open]) { display: none; }
-  :root[data-platform='ios'] [data-kit='tb-more'] { display: inline-grid; place-items: center; min-width: var(--tap-min); min-height: var(--tap-min); margin-inline-start: auto; color: var(--on-surface-var); }
-  :root[data-platform='ios'] [data-kit='tb-more'][aria-expanded='true'] { color: var(--primary); }
+  :root[data-platform='ios'] [data-kit='turn']:not([data-latest]) [data-kit='trail-bar'] > [data-kit='tb-tools'] { display: none; }
+  :root[data-platform='ios'] [data-kit='tb-more'] { display: inline-flex; margin-inline-start: auto; }
+  :root[data-platform='ios'] [data-kit='tb-more'] button { min-width: var(--tap-min); min-height: var(--tap-min); color: var(--on-surface-var); }
 
   /* UX 2026-11-18 phone #9: the thinking levels named under the track (each a tap target the width of its stop) */
   :root[data-platform='ios'] [data-kit='think-labels'] { position: relative; display: block; height: var(--tap-min); margin-top: var(--space-2); }
@@ -1496,4 +1496,53 @@
   /* the side panel as the phone's sheet (#3): the sheet is its edge, so the panel's own left rule (the browser's divider
      beside the task) goes */
   :root[data-platform='ios'] [data-part~='phone.side.sheet'] [data-part~='side.panel'] { border-left: 0; }
+
+  /* UX 2026-11-18 phone #13: with the keyboard up the Shell's key row rides on it (an input accessory, as Termius and
+     Prompt), the keyboard's height from the visual viewport (terminal/accessory.ts) */
+  :root[data-platform='ios'] [data-kit='term-keys'][data-accessory] {
+    position: fixed; left: 0; right: 0; bottom: var(--k-kb, var(--space-0)); z-index: var(--z-toast);
+    padding: var(--space-2) var(--inset); background: var(--surface-c1); border-top: var(--hairline) solid var(--outline);
+  }
+
+  /* UX 2026-11-18 phone #9: the agent picker is a page of its own (pushed from the reply's options): the screen's width
+     from the bottom, Back over it, its harnesses one row of segments, its models a list, the thinking levels named */
+  :root[data-platform='ios'] [data-kit='picker'] {
+    position: fixed; left: 0; right: 0; top: auto; bottom: 0; width: auto; max-height: calc(100% - var(--safe-top) - var(--tap-min));
+    grid-template-columns: minmax(0, 1fr); grid-template-rows: auto auto minmax(0, 1fr);
+    padding-bottom: var(--safe-bottom); border-radius: var(--radius-xl) var(--radius-xl) 0 0; transform: none;
+  }
+  :root[data-platform='ios'] [data-kit='pk-back'] {
+    grid-column: 1 / -1; display: inline-flex; align-items: center; gap: var(--space-2); justify-self: start;
+    min-height: var(--tap-min); padding: var(--space-0) var(--inset); color: var(--primary); font: var(--type-body, var(--type-body-l));
+  }
+  :root[data-platform='ios'] [data-kit='picker'] [data-kit='pk-side'] { flex-direction: row; overflow-x: auto; border-right: 0; scrollbar-width: none; }
+  :root[data-platform='ios'] [data-kit='picker'] [data-kit='pk-side'] > [data-kit='pk-head'],
+  :root[data-platform='ios'] [data-kit='picker'] [data-kit='pk-h'] > [data-kit='pk-text'] > small { display: none; }
+  :root[data-platform='ios'] [data-kit='picker'] [data-kit='pk-h'] { width: auto; flex: none; min-height: var(--tap-min); }
+
+  /* UX 2026-11-18 phone #5: New task's setup as a short list under the prompt (HIG's grouped rows, M3 list items): the
+     place, the permissions, the harness by name and Delegate, a row each saying what it is; attach and More (…) on the
+     last line; Start is the bar's (the box's own Send gave way) */
+  :root[data-platform='ios'] [data-kit='frame'][data-behind] [data-kit='launcher'] [data-kit='l-bar'] {
+    display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: var(--space-0); overflow: visible;
+  }
+  :root[data-platform='ios'] [data-kit='frame'][data-behind] [data-kit='l-bar'] > [data-a='where'],
+  :root[data-platform='ios'] [data-kit='frame'][data-behind] [data-kit='l-bar'] > [data-kit='mode-btn'],
+  :root[data-platform='ios'] [data-kit='frame'][data-behind] [data-kit='l-bar'] > [data-kit='runners'],
+  :root[data-platform='ios'] [data-kit='frame'][data-behind] [data-kit='l-bar'] > [data-a='team'] {
+    grid-column: 1 / -1; display: flex; justify-content: flex-start; align-items: center; gap: var(--space-5); width: 100%;
+    min-height: var(--tap-min); padding: var(--space-0) var(--space-2); border-bottom: var(--hairline) solid var(--outline); border-radius: 0; background: transparent;
+    font: var(--type-body); color: var(--on-surface);
+  }
+  :root[data-platform='ios'] [data-kit='frame'][data-behind] [data-kit='l-bar'] > [data-a='where']::after,
+  :root[data-platform='ios'] [data-kit='frame'][data-behind] [data-kit='l-bar'] > [data-a='team']::after {
+    content: attr(aria-label); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  :root[data-platform='ios'] [data-kit='frame'][data-behind] [data-kit='l-bar'] > [data-a='where'] > [data-text='control'] { display: none; }
+  :root[data-platform='ios'] [data-kit='frame'][data-behind] [data-kit='l-bar'] > [data-kit='mode-btn'] > [data-text='control'],
+  :root[data-platform='ios'] [data-kit='frame'][data-behind] [data-kit='l-bar'] > [data-kit='runners'] [data-kit='runner-btn'] > [data-kit='rb-h'] { display: inline; }
+  :root[data-platform='ios'] [data-kit='frame'][data-behind] [data-kit='l-bar'] > [data-kit='runners'] [data-kit='runner-btn'] { background: transparent; }
+  :root[data-platform='ios'] [data-kit='frame'][data-behind] [data-kit='l-bar'] > [data-a='attach'] { grid-column: 1; order: 1; }
+  :root[data-platform='ios'] [data-kit='frame'][data-behind] [data-kit='l-bar'] > [data-kit='grow'] { grid-column: 2; order: 1; }
+  :root[data-platform='ios'] [data-kit='frame'][data-behind] [data-kit='l-bar'] > [data-a='more'] { grid-column: 3; order: 1; }
 }

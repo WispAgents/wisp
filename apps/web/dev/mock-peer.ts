@@ -35,6 +35,8 @@ export interface MockPeerOptions {
   name?: string;
   /** extra sessions on top of the hand-written ones (a 5k list for perf) */
   sessions?: number;
+  /** the runtime's harnesses topic (ADR-0066), each harness as detect settled it (else only MOCK_HARNESSES=1) */
+  harnesses?: boolean;
   timers?: MockTimers;
   /** a fixed epoch makes resumes testable; default: one per process */
   epoch?: string;
@@ -101,7 +103,7 @@ export function createMockPeer(o: MockPeerOptions = {}): MockPeer {
   const epoch = o.epoch ?? `mock-${timers.now().toString(36)}`;
   const data: Seeded = o.v1
     ? fromV1(o.v1, peer)
-    : seed({ peer, now: timers.now(), extra: o.sessions ?? 0, ...(o.firstRun && { firstRun: true }), ...(o.computers && { computers: true }), ...(o.media && { media: true }), ...(o.ask && { ask: true }), ...(o.env && { env: true }), ...(o.usage && { usage: true }), ...(o.trial && { trial: true }), ...(o.cloud && { cloud: true }), ...(o.crew && { crew: true }), ...(o.team && { team: true, computers: true }), ...(o.farJob && { farJob: true }) });
+    : seed({ peer, now: timers.now(), extra: o.sessions ?? 0, ...(o.harnesses && { harnesses: true }), ...(o.firstRun && { firstRun: true }), ...(o.computers && { computers: true }), ...(o.media && { media: true }), ...(o.ask && { ask: true }), ...(o.env && { env: true }), ...(o.usage && { usage: true }), ...(o.trial && { trial: true }), ...(o.cloud && { cloud: true }), ...(o.crew && { crew: true }), ...(o.team && { team: true, computers: true }), ...(o.farJob && { farJob: true }) });
   const store = new Map<Topic, Map<string, Row>>();
   const conns = new Map<string, Conn>();
   const handlers = new Map<string, CommandFn>(Object.entries(COMMANDS));

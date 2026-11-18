@@ -13,7 +13,7 @@ import { useShell } from '../shell.ts';
 import { useTask } from '../task-context.tsx';
 import { PrPane } from './PrPane.tsx';
 import { ShellPane } from './ShellPane.tsx';
-import { ChangesPane, read as readChanges } from './ChangesPane.tsx';
+import { ChangesPane, read as readChanges, readHere as readChangesQuiet } from './ChangesPane.tsx';
 import { changeStat, setChangeStat } from './changes-stat.ts';
 import { hasPr } from './pr.ts';
 import { changesOf, outsideFolder, relative, type ChangeTurn } from './changes.ts';
@@ -132,7 +132,8 @@ export function SidePanel(props: { readonly pane: SidePane; readonly file?: stri
     (k) => {
       const [path = '', base = 'HEAD'] = k.split('\n');
       return task.client
-        .run(readChanges, { key: task.key as EntityKey, path, base, reveal: [] })
+        // a phone (UX 2026-11-18 phone #14): the tab's count is a look in the background; its refusal is no toast
+        .run(shell.platform.phone ? readChangesQuiet : readChanges, { key: task.key as EntityKey, path, base, reveal: [] })
         .then((g) => g?.body.kind === 'inline' && untrack(() => props.pane) !== 'changes' && setChangeStat(task.key, { files: g.body.files.length + untrack(outside) }))
         .catch(() => undefined);
     },

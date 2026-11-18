@@ -36,6 +36,7 @@ pub fn info() -> HarnessInfo {
             label: "Default".into(),
             hint: Some("Whatever Grok is set to".into()),
             efforts: Vec::new(),
+            resolves: None,
         }],
         efforts: ["low", "medium", "high", "xhigh"].map(str::to_owned).to_vec(),
         ask_tool: Some("wisp__ask_user".into()),
@@ -104,6 +105,7 @@ fn models_of(out: &str, cache: &Value) -> (Vec<HarnessModel>, Option<Vec<String>
                 hint: Some(clip(info["description"].as_str().unwrap_or(&id), 60)),
                 efforts: efforts.unwrap_or_default(),
                 id,
+                resolves: None,
             }
         })
         .collect();

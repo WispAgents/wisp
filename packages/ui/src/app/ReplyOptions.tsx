@@ -3,7 +3,7 @@
 // bottom sheet) holding what the bar held: the permissions as a choice list, the agent, Delegate, the goal, Send later
 // and the queue switch. Every act is the bar's own (the same menus, panel and presses), so nothing a phone could do is
 // lost, only one tap deeper. Only the phone looks draw it (ReplyBox reads the look); the browser's bar is unchanged.
-import { For, Show, createSignal, type JSX } from 'solid-js';
+import { For, Show, createEffect, createSignal, on, type JSX } from 'solid-js';
 import { flag } from '../core/props.ts';
 import { Icon } from '../content/Icon.tsx';
 import type { IconName } from '../content/icons.ts';
@@ -33,6 +33,8 @@ export interface ReplyOptionsProps {
     readonly logo?: string | undefined;
     readonly model?: string | undefined;
     readonly act?: Act | undefined;
+    /** the harness picker is open (the agent's page, pushed from the sheet) */
+    readonly open?: boolean | undefined;
   };
   /** a row per remaining tool, in the bar's order; `on` lights it (the goal while it's going, the queue while it holds) */
   readonly rows: readonly {
@@ -58,6 +60,24 @@ export function ReplyOptions(props: ReplyOptionsProps): JSX.Element {
     setOpen(false);
     queueMicrotask(() => act?.onClick?.());
   };
+  // the agent's page is pushed from the sheet (UX 2026-11-18 phone #9): when the picker it opened closes (Back, or a
+  // pick), the sheet comes back, as a navigation stack pops to the page under it
+  let pushed = false;
+  const toAgent = (): void => {
+    pushed = true;
+    after(props.runner.act);
+  };
+  createEffect(
+    on(
+      () => props.runner.open === true,
+      (now, was) => {
+        if (was && !now && pushed) {
+          pushed = false;
+          setOpen(true);
+        }
+      },
+    ),
+  );
   return (
     <>
       {/* the harness picker opens from here (its anchor), as it opened from the harness button */}
@@ -83,7 +103,7 @@ export function ReplyOptions(props: ReplyOptionsProps): JSX.Element {
       <Sheet title={props.labels.options} open={open()} onOpenChange={setOpen} part="composer.options" detents={['medium', 'large']}>
         <div data-kit="opts-list">
           <ModeRows mode={props.mode} label={props.labels.mode} />
-          <ToolRows {...props} after={after} />
+          <ToolRows {...props} after={after} toAgent={toAgent} />
         </div>
       </Sheet>
     </>
@@ -129,11 +149,11 @@ function ModeRows(props: { readonly mode: ReplyOptionsProps['mode']; readonly la
 }
 
 /** the agent row (it leaves for the harness picker) and the bar's other tools, each its own act */
-function ToolRows(props: ReplyOptionsProps & { readonly after: (act: Act | undefined) => void }): JSX.Element {
+function ToolRows(props: ReplyOptionsProps & { readonly after: (act: Act | undefined) => void; readonly toAgent: () => void }): JSX.Element {
   const after = props.after;
   return (
     <div data-kit="opts-group">
-      <button type="button" data-kit="opts-row" data-part="composer.options.agent" onClick={() => after(props.runner.act)}>
+      <button type="button" data-kit="opts-row" data-part="composer.options.agent" onClick={() => props.toAgent()}>
         <span data-kit="rb-logo" data-bare="">
           <Show when={props.runner.logo}>{(src) => <img src={src()} alt="" />}</Show>
         </span>

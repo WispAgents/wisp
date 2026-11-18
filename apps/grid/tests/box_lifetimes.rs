@@ -49,8 +49,27 @@ fn fake_box_serve() {
     }
 }
 
+/// Whether the process `pid` runs, asked of the OS itself. Not `kill -0` on Windows: there `kill` is Git Bash's, which
+/// takes MSYS process ids, not Windows ones, so a live box read as dead (and every "it's gone" passed unchecked).
 fn alive(pid: &str) -> bool {
+    let pid = pid.trim();
+    if cfg!(windows) {
+        // one CSV row, `"image.exe","1234",…`, for a running process; an INFO line for none
+        let out = std::process::Command::new("tasklist").args(["/FI", &format!("PID eq {pid}"), "/FO", "CSV", "/NH"]).output();
+        return out.is_ok_and(|o| String::from_utf8_lossy(&o.stdout).contains(&format!("\",\"{pid}\",")));
+    }
     std::process::Command::new("kill").args(["-0", pid]).stderr(std::process::Stdio::null()).status().is_ok_and(|s| s.success())
+}
+
+#[test]
+fn the_liveness_probe_sees_a_running_process_and_not_a_finished_one() {
+    let me = std::process::id().to_string();
+    assert!(alive(&me), "this test's own process runs");
+    let mut done =
+        std::process::Command::new(std::env::current_exe().unwrap()).arg("--list").stdout(std::process::Stdio::null()).spawn().unwrap();
+    let gone = done.id().to_string();
+    done.wait().unwrap();
+    assert!(!alive(&gone), "a process that has exited (and been waited for)");
 }
 
 async fn until(what: &str, mut ok: impl FnMut() -> bool) {
@@ -169,10 +188,12 @@ async fn home_says_when_the_cloud_wisp_started_slept_and_wakes_next() {
     assert_eq!(g.open(&cookie).await, "fake box");
     until("its start is recorded", || g.row().0 == "running" && g.row().1.is_some()).await;
     let home = g.home(&cookie).await;
-    assert!(home.contains("Started just now.") && !home.contains("Started never"), "{home}");
+    // the cloud wisp's row in Your machines (docs/ux/2026-11-18-grid.md #1) says when it started
+    assert!(home.contains("Running · started just now") && !home.contains("started never"), "{home}");
     // a tick reads its schedule, then Sleep: when, why, and what wakes it next, on Home
     tokio::time::sleep(Duration::from_millis(600)).await;
     let pid = g.pid();
+    assert!(alive(&pid), "the box runs before it sleeps");
     let r =
         g.c.post(format!("http://wisp.localhost:{}/instance/stop", g.port))
             .header("cookie", &cookie)
@@ -188,7 +209,9 @@ async fn home_says_when_the_cloud_wisp_started_slept_and_wakes_next() {
     assert_eq!((wake, why.as_deref()), (Some(next), Some("user")));
     assert!(!alive(&pid), "the box's process is gone");
     let home = g.home(&cookie).await;
-    assert!(!home.contains("Nothing scheduled"), "Next schedule has its time: {home}");
+    // asleep since when, and what wakes it next: on the row, and in its ⋯ with the machine
+    assert!(home.contains("Asleep · since just now · opens in a few seconds · next schedule "), "{home}");
+    assert!(home.contains("<small>Next schedule: ") && !home.contains("Next schedule: nothing scheduled"), "{home}");
     g.done().await;
 }
 

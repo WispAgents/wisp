@@ -1,5 +1,5 @@
 import { expect, test } from 'vitest';
-import { accountChoices, accountFor, effortsFor, harnessesFor, keepOrder, modelsFor, offerState, offersFrom, runnerWords, type AccountOffer, type AgentOffer, type HarnessTopicRow, runPick, fullest, usedPct } from '../src/frame/runner.ts';
+import { accountChoices, accountFor, defaultWord, effortsFor, harnessesFor, keepOrder, modelsFor, offerState, offersFrom, runnerWords, type AccountOffer, type AgentOffer, type HarnessTopicRow, runPick, fullest, usedPct } from '../src/frame/runner.ts';
 
 const AGENTS: AgentOffer[] = [
   { id: 'codex', name: 'Codex', available: true, models: [{ id: 'gpt-5.5', label: 'GPT-5.5' }], efforts: ['low', 'high'] },
@@ -108,4 +108,20 @@ test('the_picker_shows_every_harness_at_once_as_checking_and_each_row_settles_in
   // signed out stays its own state, checking first
   expect(offerState({ available: false, signedIn: false })).toBe('signedOut');
   expect(offerState({ available: true, signedIn: false, checking: true })).toBe('checking');
+});
+
+// UX 2026-11-18 #9: the chip names the model Default runs when the harness can tell (its own config, read by its plugin:
+// HarnessModel.resolves), else it says Default
+test('the_default_is_named_by_the_model_it_runs_when_the_harness_says_ux_2026_11_18_9', () => {
+  const row = (id: string, resolves?: string): HarnessTopicRow => ({
+    id,
+    ord: 0,
+    state: 'installed',
+    agent: { id, name: id, available: true, models: [{ id: '', label: 'Default', ...(resolves && { resolves }) }, { id: 'opus', label: 'Opus' }], efforts: [] },
+  });
+  const rows = [row('claude', 'Opus'), row('codex')];
+  expect(defaultWord(rows, 'claude', 'Default')).toBe('Opus');
+  expect(defaultWord(rows, 'codex', 'Default')).toBe('Default');
+  expect(defaultWord(rows, 'cursor', 'Default')).toBe('Default');
+  expect(defaultWord([], 'claude', 'Default')).toBe('Default');
 });

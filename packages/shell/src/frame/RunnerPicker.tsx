@@ -273,7 +273,8 @@ function PickerOpen(props: RunnerPickerProps): JSX.Element {
       ...base,
       groups: modelGroups(a, query()).map((g) => ({
         head: g.head,
-        items: g.items.map((m) => ({ id: m.id, label: m.id === '' ? t('shell.runner.default') : m.label, hint: m.id === '' ? (m.hint ?? t('shell.runner.asSet', { name })) : m.hint && m.hint !== g.head ? m.hint : undefined })),
+        // the Default named by the model it runs when the harness says ("Opus (default)", UX 2026-11-18 #9)
+        items: g.items.map((m) => ({ id: m.id, label: m.id === '' ? ((r) => (r ? t('shell.runner.defaultIs', { model: r }) : t('shell.runner.default')))(a?.models.find((x) => x.id === '')?.resolves) : m.label, hint: m.id === '' ? (m.hint ?? t('shell.runner.asSet', { name })) : m.hint && m.hint !== g.head ? m.hint : undefined })),
       })),
       ...(searchShown(a) && { search: { placeholder: t('shell.runner.searchModels', { name }), value: query(), onInput: setQuery } }),
       ...(levels.length > 0 && {

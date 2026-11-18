@@ -9,6 +9,7 @@ import { createShell, nullPlatform, type Platform, type ShellWindow } from '@wis
 import { createToaster } from '@wisp/ui';
 import { createMockPeer } from '../dev/mock-peer.ts';
 import { memTransport } from '../dev/mem-transport.ts';
+import { pluginUis } from '../src/plugins.ts';
 import { until } from './until.ts';
 
 let stops: (() => void)[] = [];
@@ -20,11 +21,13 @@ afterEach(() => {
 });
 
 /** `env`: the seed's first task changed files (seed.ts withEnv), so its page has Changes +n −n */
-async function start(platform: Platform, o: { env?: boolean } = {}) {
+/** `plugins`: the plugin UIs to register (the side panes are shell-task's) */
+async function start(platform: Platform, o: { env?: boolean; plugins?: readonly string[] } = {}) {
   const mock = createMockPeer({ epoch: 'e1', ...(o.env && { env: true }) });
   const home = peerId('local');
   const client = createClient({ clientId: 'c1', build: 't', home, width: 390 });
   const shell = createShell({ client, toaster: createToaster(), platform, home, window: window as unknown as ShellWindow });
+  for (const { def } of pluginUis()) if (def && o.plugins?.includes(def.id)) shell.register(def);
   await client.start([{ peer: home, name: 'mock', transport: memTransport(mock) }]);
   const root = document.createElement('div');
   document.body.append(root);
@@ -33,7 +36,7 @@ async function start(platform: Platform, o: { env?: boolean } = {}) {
     stop();
     shell.dispose();
   });
-  return { client, root };
+  return { client, root, mock };
 }
 
 const phone = (kind: 'android' | 'ios'): Platform => nullPlatform({ kind, phone: true, mobile: true });
@@ -122,6 +125,10 @@ for (const kind of ['android', 'ios'] as const) {
     (root.querySelector('[data-part~="phone.tasks.new"]') as HTMLElement).click();
     await until(() => root.querySelector('[data-part="phone.new.bar.confirm"]') !== null);
     expect(root.querySelector('[data-part="phone.new.bar.confirm"]')?.textContent).toBe('Start');
+    // the setup list's rows say what they are: the place in two words (its sentence stays the tooltip)
+    await until(() => root.querySelector('[data-part~="launcher.where"]') !== null);
+    expect(root.querySelector('[data-part~="launcher.where"]')?.getAttribute('aria-label')).toBe('This computer');
+    for (const part of ['launcher.mode', 'launcher.harness', 'launcher.team', 'launcher.more']) expect(root.querySelector(`[data-part~="${part}"]`), part).not.toBeNull();
   });
 }
 
@@ -132,4 +139,56 @@ test('a_phones_browser_keeps_v1s_reply_bar_no_chip_no_pills_no_pushed_frame', as
   expect(root.querySelector('[data-kit="page-status"]')).toBeNull();
   expect(root.querySelector('[data-kit="reply-box"] [data-part="composer.send"]'), 'the browser’s Send').not.toBeNull();
   expect(root.querySelector('[data-kit="tb-more"]'), 'no ⋯ on a turn').toBeNull();
+});
+
+// #14: a gone worktree is said in the Changes pane in words, not as a toast holding its raw path (the browser keeps its
+// toast: the same read, not quiet there)
+for (const kind of ['android', 'ios'] as const) {
+  test(`on_${kind}_a_gone_folder_is_the_changes_panes_empty_state_in_words_and_no_raw_path_toast`, async () => {
+    const { client, root, mock } = await start(phone(kind), { plugins: ['wisp.shell-task'] });
+    mock.handle('git.changes', () => {
+      throw { code: 'not_found', message: 'no such folder: /Users/me/.wisp/worktrees/wisp-01a1eb6bf0bd' };
+    });
+    const id = await openTask(client, root, '[data-part="phone.task.bar"]');
+    client.nav.navigate({ t: 'openSide', side: { kind: 'changes', id: id as never } });
+    await until(() => q('[data-part~="side.changes.refused"]') !== null);
+    expect(q('[data-part~="side.changes.refused"]')?.textContent).toContain('This task’s folder is gone');
+    expect(q('[data-part~="side.changes.refused"]')?.textContent, 'no path in it').not.toContain('/Users/');
+    expect(document.body.textContent, 'no toast with the raw path').not.toContain('no such folder');
+  });
+}
+
+
+// #10: a task row on a phone is two lines: the title, then the harness's logo and what the task says (the computer
+// only when it isn't this one); no third run line
+for (const kind of ['android', 'ios'] as const) {
+  test(`on_${kind}_a_task_row_is_two_lines_with_the_harness_mark_and_no_run_line`, async () => {
+    const { client, root } = await start(phone(kind), { plugins: ['wisp.shell-list'] });
+    await until(() => client.entities.list('session')().length > 0 && root.querySelector('[data-pane="list"] [data-kit="list-row"][data-row-lines]') !== null);
+    const rows = [...root.querySelectorAll<HTMLElement>('[data-pane="list"] [data-kit="list-row"][data-layout="feed"]')];
+    expect(rows.length).toBeGreaterThan(0);
+    const said = rows.filter((r) => (r.querySelector('[data-kit="list-row-sub"]')?.textContent ?? '').trim() !== '');
+    expect(said.length, 'rows with something to say').toBeGreaterThan(0);
+    for (const r of said) {
+      expect(r.getAttribute('data-row-lines'), r.textContent ?? '').toBe('2');
+      expect(r.querySelector('[data-kit="list-row-foot"] [data-kit="row-run"], :scope > [data-kit="row-run"]'), 'no run line under it').toBeNull();
+    }
+    // a row with nothing said yet: harness · model is its second line, never a third under an empty one
+    expect(rows.filter((r) => r.getAttribute('data-row-lines') === '3').map((r) => r.textContent)).toEqual([]);
+  });
+}
+
+// #14, the Shell: a gone folder is said in the pane, no raw-path toast
+test('on_android_a_shell_with_a_gone_folder_says_so_in_the_pane_and_no_raw_path_toast', async () => {
+  const { client, root, mock } = await start(phone('android'), { plugins: ['wisp.shell-task'] });
+  // the Shell's own reads, and the side panel's background count of Changes
+  for (const cmd of ['terminal.shell.info', 'terminal.shell.start', 'git.changes'])
+    mock.handle(cmd, () => {
+      throw { code: 'not_found', message: 'no such folder: /Users/me/.wisp/worktrees/wisp-01a1eb6bf0bd' };
+    });
+  const id = await openTask(client, root, '[data-part="phone.task.bar"]');
+  client.nav.navigate({ t: 'openSide', side: { kind: 'shell', id: id as never } });
+  await until(() => (q('[data-part~="phone.side.sheet"]')?.textContent ?? '').includes('nowhere to start'));
+  expect(q('[data-part~="phone.side.sheet"]')?.textContent).toContain('This task’s folder is gone');
+  expect(document.body.textContent, 'no toast with the raw path').not.toContain('no such folder');
 });

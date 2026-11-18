@@ -34,6 +34,7 @@ pub fn info() -> HarnessInfo {
             label: "Default".into(),
             hint: Some("Whatever Antigravity is set to".into()),
             efforts: Vec::new(),
+            resolves: None,
         }],
         efforts: ["low", "medium", "high"].map(str::to_owned).to_vec(),
         ..HarnessInfo::default()
@@ -156,6 +157,7 @@ impl Harness for AntigravityHarness {
                 id,
                 label,
                 efforts: Vec::new(),
+                resolves: None,
             }));
             let v = version_in(&line);
             HarnessFound {

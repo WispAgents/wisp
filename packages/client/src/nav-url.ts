@@ -169,6 +169,34 @@ export function memoryHistory(start = '/'): HistoryAdapter & { readonly entries:
 export interface Navigation {
   readonly nav: Readable<Nav>;
   navigate(intent: Intent): void;
+  /** added 2026-11-18 (additive, docs/ux/2026-11-18-grid.md #8): the share link the page was opened with
+   *  (`?share=<grid>/s/<id>`, the Grid's share page), once; undefined after, or when there was none */
+  takeShare?(): string | undefined;
+  /** added 2026-11-18 (additive, #8): whether a share link waits to be taken (a phone opens New task for it) */
+  hasShare?(): boolean;
+}
+
+// A Grid share link and nothing else: `http(s)://<host>/s/<16 characters>`, no user, path, query or fragment.
+const SHARE_LINK = /^https?:\/\/[a-z0-9][a-z0-9.:-]*\/s\/[A-Za-z0-9_-]{16}$/i;
+
+/** The share link a URL carries in `?share=` (docs/ux/2026-11-18-grid.md #8): only a Grid share link, which New task
+ *  then holds as text for the person to send; any other value, and any other parameter, fills nothing. */
+export function shareLinkOf(url: string): string | undefined {
+  const qi = url.indexOf('?');
+  if (qi < 0) return undefined;
+  const v = (new URLSearchParams(url.slice(qi + 1)).get('share') ?? '').trim().replace(/\/$/, '');
+  return SHARE_LINK.test(v) ? v : undefined;
+}
+
+/** The URL without its `share` parameter (taken at start, never kept in history). */
+function withoutShare(url: string): string {
+  const qi = url.indexOf('?');
+  if (qi < 0) return url;
+  const q = new URLSearchParams(url.slice(qi + 1));
+  if (!q.has('share')) return url;
+  q.delete('share');
+  const rest = q.toString();
+  return rest ? `${url.slice(0, qi)}?${rest}` : url.slice(0, qi);
 }
 
 export interface NavigationOptions {
@@ -212,6 +240,9 @@ export function createNavigation(o: NavigationOptions): Navigation {
   const home = (): string | undefined => (typeof o.home === 'function' ? o.home() : o.home);
   const start = knownViews(homed(decodeNav(url0), home()), o.views);
   const state = signal<Nav>({ ...initialNav(o.width), ...start });
+  // a share link to carry into New task: taken once, and gone from the URL (a reload or a Back doesn't bring it again)
+  let share = shareLinkOf(url0);
+  if (o.history && withoutShare(url0) !== url0) o.history.replace(withoutShare(url0));
 
   const commit = (next: Nav, push: boolean): void => {
     const cur = untracked(state);
@@ -229,6 +260,12 @@ export function createNavigation(o: NavigationOptions): Navigation {
 
   return {
     nav: () => state(),
+    hasShare: () => share !== undefined,
+    takeShare() {
+      const link = share;
+      share = undefined;
+      return link;
+    },
     navigate(intent) {
       const cur = untracked(state);
       const next = homed(navigate(cur, intent), home(), o.taskKey) as Nav;

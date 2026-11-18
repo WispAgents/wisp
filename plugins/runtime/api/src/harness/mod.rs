@@ -112,6 +112,13 @@ pub trait Harness: Send + Sync + 'static {
 
     fn detect<'a>(&'a self, sys: &'a dyn HarnessSys) -> BoxFuture<'a, HarnessFound>;
 
+    /// The model its Default runs in `cwd` (a project that pins one, else this computer's), as its own config names it,
+    /// read without a run: "Opus". None: it can't tell, and the chip says Default. Additive (2026-11-18, owner's
+    /// delegate: Default names the model it will run).
+    fn default_model<'a>(&'a self, _sys: &'a dyn HarnessSys, _cwd: Option<&'a str>) -> BoxFuture<'a, Option<String>> {
+        Box::pin(async { None })
+    }
+
     /// What to spawn for this run. Refuse (`invalid`) a run it can't do (a fork without `info().fork`).
     fn launch(&self, run: &HarnessRun) -> Result<Launch>;
 

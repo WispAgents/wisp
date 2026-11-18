@@ -5,7 +5,9 @@
 // render of the same components is unchanged (no chip, no labels).
 import { afterEach, expect, test } from 'vitest';
 import { mount, until } from './helpers.tsx';
-import { PageStatus, PlatformLookProvider, ReplyBox, ThinkingSlider, type Look } from '../src/index.ts';
+import { createSignal, Show } from 'solid-js';
+import { HarnessPicker, PageStatus, PlatformLookProvider, ReplyBox, ThinkingSlider, TurnView, type Look } from '../src/index.ts';
+import { bindAccessory, keyboardInset } from '../src/terminal/accessory.ts';
 
 const sheets = Object.entries(import.meta.glob<string>('../src/css/platform/*.css', { query: '?raw', import: 'default', eager: true })).map(([p, raw]) => ({
   look: p.replace(/^.*\/|\.css$/g, '') as 'android' | 'ios',
@@ -120,10 +122,111 @@ for (const look of ['android', 'ios'] as const) {
     expect(css).toMatch(new RegExp(`\\[data-kit='frame'\\]\\[data-pushed\\] > \\[data-kit='frame-nav'\\] \\{ display: none; \\}`));
     expect(css).toMatch(/\[data-kit='c-bar'\] > button:not\(\[data-kit='send'\]\)[^{]*\{ min-width: var\(--tap-min\); min-height: var\(--tap-min\); \}/);
     expect(css).toMatch(/\[data-kit='row-run'\]\[data-local\] > \[data-kit='ir-w'\] \{ display: none; \}/);
-    expect(css).toMatch(/\[data-kit='turn'\]:not\(\[data-latest\]\) \[data-kit='trail-bar'\] > \[data-kit='tb-tools'\]:not\(\[data-open\]\) \{ display: none; \}/);
+    // #5: New task's setup is a list (a row each) with attach and More on its last line
+    expect(css).toMatch(/\[data-kit='frame'\]\[data-behind\] \[data-kit='launcher'\] \[data-kit='l-bar'\] \{\s*display: grid;/);
+    expect(css).toMatch(/\[data-kit='l-bar'\] > \[data-a='where'\]::after/);
+    expect(css).toMatch(/\[data-kit='turn'\]:not\(\[data-latest\]\) \[data-kit='trail-bar'\] > \[data-kit='tb-tools'\] \{ display: none; \}/);
   });
 }
 
 test('the_ios_menu_and_popover_sit_on_an_opaque_base_under_the_material', () => {
   expect(sheet('ios')).toMatch(/\[data-kit='popover'\] \{ background: linear-gradient\(var\(--chrome\), var\(--chrome\)\), var\(--surface-c1\); \}/);
+});
+
+// #13: the Shell's key row rides the keyboard: its height from the visual viewport, kept on the row as --k-kb
+test('the_key_rows_keyboard_inset_follows_the_visual_viewport_and_its_binding_cleans_up', () => {
+  expect(keyboardInset({ innerHeight: 844, visualViewport: null })).toBe(0);
+  expect(keyboardInset({ innerHeight: 844, visualViewport: { height: 844, offsetTop: 0 } as never })).toBe(0);
+  expect(keyboardInset({ innerHeight: 844, visualViewport: { height: 508, offsetTop: 0 } as never }), 'the keyboard covers 336').toBe(336);
+  expect(keyboardInset({ innerHeight: 844, visualViewport: { height: 508, offsetTop: 40 } as never }), 'scrolled: what is under the visual viewport').toBe(296);
+  const fns: Record<string, () => void> = {};
+  const vv = { height: 844, offsetTop: 0, addEventListener: (t: string, fn: () => void) => void (fns[t] = fn), removeEventListener: (t: string) => void delete fns[t] };
+  const el = document.createElement('div');
+  const stop = bindAccessory(el, { innerHeight: 844, visualViewport: vv });
+  expect(el.style.getPropertyValue('--k-kb')).toBe('0px');
+  vv.height = 500;
+  fns['resize']?.();
+  expect(el.style.getPropertyValue('--k-kb')).toBe('344px');
+  stop();
+  expect(Object.keys(fns)).toEqual([]);
+  expect(el.style.getPropertyValue('--k-kb')).toBe('');
+});
+
+// #8: an older answer's actions are a ⋯ menu on a phone, the same menu a long-press on the answer opens; the latest keeps
+// its icons, the browser draws every icon
+test('an_older_answers_actions_are_a_menu_the_long_press_opens_and_the_latest_keeps_its_icons', async () => {
+  const hits: string[] = [];
+  const tools = [
+    { id: 'notes', icon: 'text' as const, label: 'Agent notes', act: { onClick: () => hits.push('notes') } },
+    { id: 'fork', icon: 'fork' as const, label: 'Fork from this turn', act: { onClick: () => hits.push('fork') } },
+  ];
+  const turn = (look: Look, latest: boolean): HTMLElement =>
+    mount(() => (
+      <PlatformLookProvider look={() => look}>
+        <TurnView id={latest ? 't2' : 't1'} prompt="Hey" harness="Codex" time="22:31" timeTitle="22:31" acts={[]} actsTitle="" latest={latest} stats={[]} tools={tools} />
+      </PlatformLookProvider>
+    ));
+  const older = turn('android', false);
+  expect(older.querySelector('[data-part="turn.more.trigger"]'), 'the ⋯').not.toBeNull();
+  expect(older.querySelector('[data-kit="turn"]')?.getAttribute('data-gestures') ?? older.querySelector('[data-kit="turn"]')?.outerHTML, 'the long-press is marked').toContain('turn.long-press');
+  (older.querySelector('[data-part="turn.more.trigger"]') as HTMLElement).click();
+  await until(() => [...document.querySelectorAll('[data-kit="menu-item"]')].some((e) => e.textContent?.includes('Fork from this turn')));
+  [...document.querySelectorAll<HTMLElement>('[data-kit="menu-item"]')].find((e) => e.textContent?.includes('Fork from this turn'))?.click();
+  await until(() => hits.includes('fork'));
+  expect(hits).toEqual(['fork']);
+  expect(turn('android', true).querySelector('[data-part="turn.more.trigger"]'), 'the latest keeps its icons').toBeNull();
+  expect(turn('web', false).querySelector('[data-part="turn.more.trigger"]'), 'the browser draws every icon').toBeNull();
+});
+
+
+// #9: the agent's page is pushed from the reply's options: Agent closes the sheet and opens the picker; the picker's
+// Back (a phone draws it) closes it, and the sheet comes back
+test('the_agent_page_is_pushed_from_the_options_and_back_pops_to_them', async () => {
+  const [pickerOpen, setPickerOpen] = createSignal(false);
+  let closed = 0;
+  mount(() => (
+    <PlatformLookProvider look={() => 'ios'}>
+      <ReplyBox
+        placeholder="Follow up…"
+        value=""
+        onInput={() => undefined}
+        onSend={() => undefined}
+        attach="Attach files"
+        mode={{ label: 'Full auto', title: 'Full auto', act: { menu: { items: MODES, onSelect: () => undefined } } }}
+        runner={{ title: 'Codex · gpt-6-sol', open: pickerOpen(), act: { onClick: () => setPickerOpen(true) } }}
+        team="Delegate"
+        goal="Add a goal"
+        later="Start later"
+        send="Send"
+        phoneOptions={{ options: 'Reply options', mode: 'Permissions', agent: 'Agent' }}
+      />
+      <Show when={pickerOpen()}>
+        <HarnessPicker
+          anchor={() => document.querySelector('[data-part="composer.harness"]')}
+          label="Harness and model"
+          head="Harness"
+          rows={[{ id: 'codex', name: 'Codex', sub: 'gpt-6-sol' }]}
+          inUse="codex"
+          inUseLabel="In use"
+          focused="codex"
+          onPreview={() => undefined}
+          onUse={() => undefined}
+          pane={{ label: 'Model', groups: [{ items: [{ id: '', label: 'Default' }] }], value: '', onPick: () => undefined, empty: 'No models' }}
+          onClose={() => (closed++, setPickerOpen(false))}
+        />
+      </Show>
+    </PlatformLookProvider>
+  ));
+  const sheetOpen = (): boolean => document.querySelector('[data-kit="opts-list"]') !== null;
+  document.querySelector<HTMLButtonElement>('[data-kit="c-opts"]')?.click();
+  await until(sheetOpen);
+  document.querySelector<HTMLButtonElement>('[data-part="composer.options.agent"]')?.click();
+  await until(() => pickerOpen() && !sheetOpen());
+  expect(pickerOpen(), 'the agent page').toBe(true);
+  const back = document.querySelector<HTMLButtonElement>('[data-part="runner.picker.back"]');
+  expect(back?.textContent).toBe('Back');
+  back?.click();
+  await until(() => !pickerOpen() && sheetOpen());
+  expect(closed).toBe(1);
+  expect(sheetOpen(), 'back on the options').toBe(true);
 });

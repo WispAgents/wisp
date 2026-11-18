@@ -4,7 +4,8 @@
 import { createRoot } from 'solid-js';
 import { expect, test } from 'vitest';
 import { attachAct, PICK } from '../src/frame/capture.ts';
-import { spoken, useMic } from '../src/frame/dictate.ts';
+import { useMic } from '../src/frame/dictate.ts';
+import { spoken } from '../src/frame/dictate-run.ts';
 import { androidDictation, androidPlatform } from '../src/platform/android.ts';
 import { nullPlatform } from '../src/platform/index.ts';
 import type { ShellContext } from '../src/contract.ts';
@@ -49,7 +50,7 @@ test('the phone app attach menu offers the camera first then files and a browser
   expect(androidPlatform(fakeWindow({ camera: () => true })).camera).toBe(true);
 });
 
-test('dictation types what is said at the caret a space from the words around it_v1_dictate', () => {
+test('dictation types what is said at the caret a space from the words around it_v1_dictate', async () => {
   expect(spoken('fix the', '', 'login page')).toEqual({ text: 'fix the login page', caret: 18 });
   expect(spoken('fix ', 'now', 'it')).toEqual({ text: 'fix it now', caret: 6 });
   expect(spoken('', '', '  hello ')).toEqual({ text: 'hello', caret: 5 });
@@ -59,34 +60,59 @@ test('dictation types what is said at the caret a space from the words around it
   expect(androidDictation(fakeWindow({ dictate: () => {}, dictateStop: () => {}, dictation: () => false }))).toBeUndefined();
   const calls: string[] = [];
   const w = fakeWindow({ dictate: () => calls.push('start'), dictateStop: () => calls.push('stop'), dictation: () => true });
-  const d = androidDictation(w);
-  expect(d).toBeDefined();
+  const d0 = androidDictation(w);
+  expect(d0).toBeDefined();
   const toasts: string[] = [];
-  createRoot((dispose) => {
-    let text = 'fix the bug';
-    const el = { selectionStart: 7, selectionEnd: 7, setSelectionRange: () => {} } as unknown as HTMLTextAreaElement;
-    const mic = useMic(shellOn(nullPlatform({ ...(d && { dictation: d }) }), toasts), { text: () => text, set: (v) => (text = v), el: () => el });
-    expect(mic).toBeDefined();
-    mic?.toggle();
-    expect(mic?.on()).toBe(true); // at once
-    expect(calls).toEqual(['start']);
-    w.fire({ state: 'partial', text: 'login' });
-    expect(text).toBe('fix the login bug');
-    w.fire({ state: 'final', text: 'login page' });
-    expect(text).toBe('fix the login page bug');
-    w.fire({ state: 'end' });
-    expect(mic?.on()).toBe(false);
-    // typed in while listening: it stops and leaves the box alone
-    mic?.toggle();
-    text = 'something else';
-    w.fire({ state: 'partial', text: 'ignored' });
-    expect(text).toBe('something else');
-    expect(calls.at(-1)).toBe('stop');
-    w.fire({ state: 'error', error: 'blocked' });
-    expect(mic?.on()).toBe(false);
-    expect(toasts).toEqual(['bad:shell.mic.blocked']);
-    dispose();
+  let text = 'fix the bug';
+  const el = { selectionStart: 7, selectionEnd: 7, setSelectionRange: () => {} } as unknown as HTMLTextAreaElement;
+  let dispose = (): void => {};
+  const mic = createRoot((d) => {
+    dispose = d;
+    return useMic(shellOn(nullPlatform({ ...(d0 && { dictation: d0 }) }), toasts), { text: () => text, set: (v) => (text = v), el: () => el });
   });
+  // the listening is its own chunk (dictate-run.ts): it starts once that's here, the mic shows on at once
+  const started = async (n: number): Promise<void> => {
+    // on what it asserts, to a clock deadline
+    const end = performance.now() + 4000;
+    while (calls.filter((c) => c === 'start').length < n && performance.now() < end) await new Promise((r) => setTimeout(r, 0));
+  };
+  expect(mic).toBeDefined();
+  mic?.toggle();
+  expect(mic?.on()).toBe(true); // at once
+  await started(1);
+  expect(calls).toEqual(['start']);
+  w.fire({ state: 'partial', text: 'login' });
+  expect(text).toBe('fix the login bug');
+  w.fire({ state: 'final', text: 'login page' });
+  expect(text).toBe('fix the login page bug');
+  w.fire({ state: 'end' });
+  expect(mic?.on()).toBe(false);
+  // typed in while listening: it stops and leaves the box alone
+  mic?.toggle();
+  await started(2);
+  text = 'something else';
+  w.fire({ state: 'partial', text: 'ignored' });
+  expect(text).toBe('something else');
+  expect(calls.at(-1)).toBe('stop');
+  w.fire({ state: 'error', error: 'blocked' });
+  expect(mic?.on()).toBe(false);
+  expect(toasts).toEqual(['bad:shell.mic.blocked']);
+  dispose();
+  // the recognizer fails at once (no speech service): the mic is off, and the next tap listens again
+  const failing = { start: (on: (e: { state: string; error?: string; text?: string }) => void) => (on({ state: 'error', error: 'busy' }), () => calls.push('stale stop')) };
+  let disposeF = (): void => {};
+  const micF = createRoot((d) => {
+    disposeF = d;
+    return useMic(shellOn(nullPlatform({ dictation: failing as never }), toasts), { text: () => '', set: () => {}, el: () => undefined });
+  });
+  micF?.toggle();
+  const end = performance.now() + 4000;
+  while (micF?.on() && performance.now() < end) await new Promise((r) => setTimeout(r, 0));
+  expect(micF?.on()).toBe(false);
+  micF?.toggle();
+  expect(micF?.on(), 'a tap after a failed start listens again').toBe(true);
+  expect(calls).not.toContain('stale stop');
+  disposeF();
   // a browser: no mic
   createRoot((dispose) => {
     expect(useMic(shellOn(nullPlatform()), { text: () => '', set: () => {}, el: () => undefined })).toBeUndefined();

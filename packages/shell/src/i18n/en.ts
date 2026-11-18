@@ -8,6 +8,8 @@ export const SHELL_STRINGS = {
   'shell.topbar': 'wisp',
   'shell.main': 'Open task',
   'shell.side': 'Side panel',
+  // the side panel as a sheet's title (App.tsx, the first page): here, not en.lazy.json
+  'shell.side.sheet': 'Side panel',
 
   'shell.palette.title': 'Command palette',
   'shell.palette.group.actions': 'Actions',
@@ -95,13 +97,6 @@ export const SHELL_STRINGS = {
   'shell.attach.files': 'Choose files',
   'shell.mic.start': 'Dictate',
   'shell.mic.stop': 'Stop dictating',
-  'shell.mic.denied': 'wisp needs the microphone to dictate. Tap the mic again to allow it.',
-  'shell.mic.blocked': 'The microphone is off for wisp. Allow it in Android Settings → Apps → wisp → Permissions, then tap the mic again.',
-  'shell.mic.silence': 'Didn’t hear anything. Tap the mic and speak.',
-  'shell.mic.network': 'Dictation needs a connection on this phone. Try again once you’re online.',
-  'shell.mic.busy': 'The phone’s speech service is busy. Try again in a moment.',
-  'shell.mic.audio': 'The phone couldn’t use its microphone.',
-  'shell.mic.failed': 'Dictation stopped. Try again.',
   'shell.prompt.mention': 'Mention a task, a crew member or something in My Stuff',
 
   'shell.toast.locked': 'The theme is set by {by}. Turn it off in Settings → Plugins to change it.',
@@ -176,17 +171,6 @@ export const SHELL_STRINGS = {
   'shell.auto.goal.best': 'Best',
   'shell.auto.head': 'Auto · {goal} → {label}',
   'shell.auto.previewed': ', as previewed',
-  'shell.auto.popLabel': 'What Auto will run',
-  'shell.auto.nothing': 'Nothing to run',
-  'shell.auto.looking': 'Auto is still looking',
-  'shell.auto.likely': 'likely to work',
-  'shell.auto.minutes': '~{n} min',
-  'shell.auto.worth': 'Worth a try',
-  'shell.auto.try': 'Try {label}',
-  'shell.auto.orRun': 'Or run',
-  'shell.auto.defaultPick': 'Default model',
-  'shell.auto.never': 'Never pick {model} for {kind} tasks',
-  'shell.auto.how': 'How Auto picks',
   'shell.auto.wont': 'Auto won’t pick {model} for {kind} tasks',
   'shell.auto.undo': 'Undo',
   'shell.auto.defaultModel': '{name}’s default model',
@@ -200,7 +184,6 @@ export const SHELL_STRINGS = {
   'shell.home.compareRow': 'Compare with another agent…',
   'shell.home.attach': 'Attach files',
   'shell.home.plus': 'Add',
-  'shell.reply.plusTitle': 'Attach files, set a goal, delegate, send later',
   'shell.home.plusTitle': 'Attach files, start from an issue or a recipe, set a goal, delegate, compare, start later',
   'shell.home.issueRow': 'Start from an issue…',
   'shell.home.goalRow': 'Goal…',
@@ -226,8 +209,6 @@ export const SHELL_STRINGS = {
   // Ask near the limit's row (v1 hold.js showHold)
   'shell.hold.start': 'Start anyway',
   'shell.hold.startTitle': 'Start anyway (Enter)',
-  'shell.hold.send': 'Send anyway',
-  'shell.hold.sendTitle': 'Send anyway (Enter)',
   'shell.hold.wait': 'Wait until {at}',
   'shell.hold.waitTitle': 'Wait until the window resets (⌥Enter)',
   'shell.hold.keep': 'Keep editing (Esc)',
@@ -317,6 +298,7 @@ export const SHELL_STRINGS = {
   'shell.task.reply': 'Follow up with {name}…',
   'shell.task.replyAnswer': 'Answer {name}…',
   'shell.task.replyOwn': 'Or answer in your own words…',
+  'shell.home.usageRing': '{label} {pct}% used',
   'shell.task.replyDenies': 'Or say what to do instead (denies it)…',
   'shell.task.runner': '{name}\nPick another harness or model for your next follow-up',
   'shell.task.goal': 'Add a goal: keep going until a condition holds (wisp checks after every round)',
@@ -344,7 +326,6 @@ export const SHELL_STRINGS = {
   'shell.home.remove': 'Remove {name}',
   'shell.home.goalPlaceholder': 'all tests pass and it works on a phone',
   'shell.home.doneWhen': 'Done when',
-  'shell.home.goalKeys': 'Enter sets it',
   'shell.tips.compare': 'Press ',
   'shell.tips.compareb': 'Compare',
   'shell.tips.comparea': ' to line runs up side by side: time, cost, tests and the diff',
@@ -415,15 +396,7 @@ export const SHELL_STRINGS = {
   // the offline/connecting bar (frame/peer-note.ts, PeerBanner.tsx): eager, it shows exactly when a lazy chunk may not load
   // a task's usage in its details (v1 #785, frame/task-usage.ts)
   // the offline/connecting bar (frame/peer-note.ts, PeerBanner.tsx): eager, it shows exactly when a lazy chunk may not load
-  'shell.peer.connecting': 'Connecting to {name}…',
-  'shell.peer.asleep': '{name} is asleep',
-  'shell.peer.waking': 'Waking {name}…',
-  'shell.peer.offline': '{name} is offline',
   'shell.peer.offline-since': '{name} is offline · last updated {at}',
-  'shell.peer.retry': 'Retry',
-  'shell.peer.update': 'Update wisp on {name}',
-  'shell.peer.updateApp': 'Update the app to reach {name}',
-  'shell.peer.wake': 'Wake',
 } as const;
 
 // the rest, which only lazily loaded screens use, are in en.lazy.json (merged in by ./lazy.ts when they load)

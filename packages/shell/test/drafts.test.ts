@@ -1,7 +1,7 @@
 // The prompt boxes' drafts (src/frame/drafts.ts, v1 F-task-32): what's half-typed is still there after a reload.
 import { expect, test } from 'vitest';
 import { createClient, memoryPersist, type PeerId } from '@wisp/client';
-import { draftValue, launcherDraft, replyDraft } from '../src/frame/drafts.ts';
+import { draftValue, launcherDraft, replyDraft, withShareLink } from '../src/frame/drafts.ts';
 
 const client = (persist: ReturnType<typeof memoryPersist>) => createClient({ clientId: 'c', build: 't', home: 'laptop' as PeerId, width: 1280, persist });
 
@@ -21,4 +21,11 @@ test('a half-typed prompt and reply are still there after a reload; New task kee
   await after.start([]);
   expect(after.drafts.get(...launcherDraft('laptop'))()).toBe('Bump the deps and');
   expect(after.drafts.get(...replyDraft('laptop:s1'))()).toBe('also the lockfile');
+});
+
+test('a share link carried from the grid goes into New task as text, never twice', () => {
+  const link = 'https://grid.trywisp.dev/s/mv7LhKCCVrTPUz7r';
+  expect(withShareLink('', link)).toBe(link);
+  expect(withShareLink('Try this on our repo', link)).toBe(`Try this on our repo\n${link}`);
+  expect(withShareLink(`Look: ${link}`, link)).toBe(`Look: ${link}`);
 });

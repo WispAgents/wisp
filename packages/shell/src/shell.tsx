@@ -7,7 +7,7 @@
 import { render } from 'solid-js/web';
 import type { JSX } from 'solid-js';
 import { computed, effect, signal, untracked, type Client, type PeerId, type PluginClient, type Readable } from '@wisp/client';
-import { BLOCK_STRINGS, GestureHostProvider, KitProvider, KIT_STRINGS, loadPlatformStyles, type KitString, type Toaster } from '@wisp/ui';
+import { GestureHostProvider, KitProvider, KIT_STRINGS, loadPlatformStyles, type KitString, type Toaster } from '@wisp/ui';
 import type { PluginUiDef, PromptBox, SendHold, SendHoldAsk, SettingsPaneDef, ShellApi, ShellContext } from './contract.ts';
 import { namespaceOf } from './define.ts';
 import { SHELL_STRINGS } from './i18n/en.ts';
@@ -72,8 +72,9 @@ export function createShell(o: ShellOptions): Shell {
   self.strings(SHELL_STRINGS);
   const kitScope = client.scope.child('kit');
   client.i18n.register('kit', Object.fromEntries(Object.entries(KIT_STRINGS).map(([k, v]) => [`kit.${k}`, v])), kitScope);
-  // the answer blocks' copy (`block.*`), the kit's like its own strings: every screen that shows blocks reads them here
-  client.i18n.register('block', BLOCK_STRINGS, kitScope);
+  // the answer blocks' copy (`block.*`): the screens that show blocks register it as they load; fetched here just after
+  // the start for any other, apart from the first page's bundle (block-strings.ts)
+  void import('./block-strings.ts').then((m) => m.blockStrings(client)).catch(() => undefined);
   const settings = self.settings(SHELL_SETTINGS);
   const t: ShellContext['t'] = (key, vars) => client.i18n.t(key, vars);
   const kitT = (key: KitString, vars?: Readonly<Record<string, string | number>>): string => client.i18n.t(`kit.${key}`, vars);

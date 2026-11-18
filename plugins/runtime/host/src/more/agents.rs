@@ -26,7 +26,7 @@ use futures::StreamExt;
 use serde_json::{Value, json};
 use wisp_kernel::BoxFuture;
 use wisp_runtime_api::Harness;
-use wisp_runtime_api::commands::{AgentStatus, AgentsArgs, HarnessCheck, HarnessRow};
+use wisp_runtime_api::commands::{AgentStatus, AgentsArgs, DefaultModelArgs, HarnessCheck, HarnessRow};
 use wisp_runtime_api::harness::HarnessFound;
 use wisp_store::{Query, Row};
 
@@ -133,6 +133,15 @@ impl Runtime {
     /// (Re-check): `all` (or empty) probes every harness again, a harness id that one.
     pub async fn agents(self: &Arc<Self>, a: &AgentsArgs) -> Vec<AgentStatus> {
         self.agents_as(a, Arc::new(|_| {})).await
+    }
+
+    /// `runtime.defaultModel`: what `agent`'s Default runs in `cwd`, as the harness reads its own config there (a
+    /// project that pins a model, else this computer's): its files only, never a run. None: it can't tell, or there's
+    /// no such harness.
+    pub async fn default_model(self: &Arc<Self>, a: &DefaultModelArgs) -> Option<String> {
+        let h = self.harness(&a.agent).ok()?;
+        let sys = ProcSys::probing(self.proc.clone(), self.probes.clone(), false);
+        h.default_model(&sys, a.cwd.as_deref()).await
     }
 
     /// [`Runtime::agents`], each answer changed by `adjust` (what `harnesses:` declares) before it's written to the

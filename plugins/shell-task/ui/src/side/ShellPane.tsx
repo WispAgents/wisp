@@ -31,6 +31,11 @@ const tuiStart = defineCommand<{ key: EntityKey; id: string; cols: number; rows:
   pending: 'the Terminal pane',
 });
 type Kind = 'shell' | 'takeover';
+// a phone (UX 2026-11-18 phone #14): the pane says why it can't start, in words, where the terminal goes; no toast with
+// a raw path over it (the browser keeps its toast)
+const infoHere = defineCommand({ ...info, quiet: true });
+const startHere = defineCommand({ ...start, quiet: true });
+const tuiStartHere = defineCommand({ ...tuiStart, quiet: true });
 const input = defineCommand<{ key: EntityKey; kind: Kind; id: string; data?: string; seq?: number; from?: string; cols?: number; rows?: number }, { ok: boolean }>({
   id: 'terminal.input',
   owner: (a) => a.key,
@@ -38,6 +43,7 @@ const input = defineCommand<{ key: EntityKey; kind: Kind; id: string; data?: str
   optimistic: 'none',
   pending: 'none: keys go in as typed',
 });
+const inputHere = defineCommand({ ...input, quiet: true });
 const close = defineCommand<{ key: EntityKey; kind: Kind; id: string }, { ok: boolean }>({
   id: 'terminal.close',
   owner: (a) => a.key,
@@ -59,6 +65,10 @@ export function ShellPane(props: { readonly kind: Kind }): JSX.Element {
   let es: AbortController | undefined;
   const [where, setWhere] = createSignal<Info | undefined>();
   const [error, setError] = createSignal('');
+  const phone = shell.platform.phone;
+  /** a refusal in words: a gone folder says so on a phone; anything else as the peer said it */
+  const say = (e: unknown): string =>
+    phone && (e as { code?: unknown }).code === 'not_found' ? t('shell-task.shell.gone') : e instanceof Error ? e.message : String(e);
   const [drawn, setDrawn] = createSignal(false);
   const [ended, setEnded] = createSignal<number | null | undefined>(undefined);
   const [size, setSize] = createSignal({ cols: 100, rows: 30 });
@@ -85,7 +95,7 @@ export function ShellPane(props: { readonly kind: Kind }): JSX.Element {
           }
         }
       } catch (e: unknown) {
-        if (!ac.signal.aborted) setError(e instanceof Error ? e.message : String(e));
+        if (!ac.signal.aborted) setError(say(e));
       }
     })();
   };
@@ -93,16 +103,16 @@ export function ShellPane(props: { readonly kind: Kind }): JSX.Element {
     setError('');
     setDrawn(false);
     setEnded(undefined);
-    const go = tui ? c.run(tuiStart, { key: task.key, id, ...size() }) : c.run(start, { key: task.key, id, ...size(), ...(restart && { restart: true }) });
-    go.then(connect, (e: unknown) => setError(e instanceof Error ? e.message : String(e)));
+    const go = tui ? c.run(phone ? tuiStartHere : tuiStart, { key: task.key, id, ...size() }) : c.run(phone ? startHere : start, { key: task.key, id, ...size(), ...(restart && { restart: true }) });
+    go.then(connect, (e: unknown) => setError(say(e)));
   };
   onMount(() => {
-    c.run(info, { key: task.key, id }).then(
+    c.run(phone ? infoHere : info, { key: task.key, id }).then(
       (i) => {
         setWhere(i);
         if (i.supported) begin();
       },
-      (e: unknown) => setError(e instanceof Error ? e.message : String(e)),
+      (e: unknown) => setError(say(e)),
     );
   });
   onCleanup(() => es?.abort());
@@ -111,11 +121,11 @@ export function ShellPane(props: { readonly kind: Kind }): JSX.Element {
     // numbered from 0 per page (wisp_terminal_core::order): they go in in order whatever order they land in
     const n = seq;
     seq += 1;
-    void c.run(input, { key: task.key, kind: props.kind, id, data, seq: n, from }).catch(() => undefined);
+    void c.run(phone ? inputHere : input, { key: task.key, kind: props.kind, id, data, seq: n, from }).catch(() => undefined);
   };
   const resize = (cols: number, rows: number): void => {
     setSize({ cols, rows });
-    if (ended() === undefined) void c.run(input, { key: task.key, kind: props.kind, id, cols, rows }).catch(() => undefined);
+    if (ended() === undefined) void c.run(phone ? inputHere : input, { key: task.key, kind: props.kind, id, cols, rows }).catch(() => undefined);
   };
   const end = (): void => {
     setEnded(0);

@@ -638,6 +638,10 @@ export const COMMANDS: Record<string, CommandFn> = {
   // the harnesses the picker offers (runtime.agents' AgentOffer): three set up, the rest registered but not on this
   // machine, so the trigger form's runner picker and New task's show and can be measured
   'runtime.agents': () => ({ ops: [], result: agentsNow() }),
+  // what a harness's Default runs in a folder (runtime.defaultModel, owner's delegate 2026-11-18): the two-computer seed's
+  // project here (/Users/me/code/wisp) pins Sonnet for Claude Code in its .claude/settings.json; elsewhere nothing, so
+  // this computer's answer (the harnesses topic) stands
+  'runtime.defaultModel': (a) => ({ ops: [], result: str(obj(a), 'agent') === 'claude' && str(obj(a), 'cwd') === '/Users/me/code/wisp' ? 'Sonnet' : null }),
   // New task warms its project's remote while you type (nothing to fetch on the mock)
   'worktrees.warm': () => ({ ops: [], result: null }),
   'accounts.install': () => ({ ops: [], result: {} }),
@@ -704,8 +708,8 @@ export const COMMANDS: Record<string, CommandFn> = {
     };
   },
   'budget.view': (a) =>
-    // no plan windows reported yet (MOCK_COMPOSER: Claude's)
-    ({ ops: [], result: COMPOSER && str(obj(a), 'agent') === 'claude' ? [{ account: 'default', at: null, windows: [{ id: 'five_hour', label: '5h', used: 0.42 }, { id: 'seven_day', label: 'Week', used: 0.18 }] }] : [] }),
+    // no plan windows reported yet (MOCK_COMPOSER: Claude's; MOCK_HOLD: Claude's weekly at 91%, the harness chip's ring)
+    ({ ops: [], result: HOLD && str(obj(a), 'agent') === 'claude' ? [{ account: 'default', at: null, windows: [{ id: 'five_hour', label: '5h', used: 0.3 }, { id: 'seven_day', label: 'Weekly', used: 0.91 }] }] : COMPOSER && str(obj(a), 'agent') === 'claude' ? [{ account: 'default', at: null, windows: [{ id: 'five_hour', label: '5h', used: 0.42 }, { id: 'seven_day', label: 'Week', used: 0.18 }] }] : [] }),
   // Ask near the limit (budget.ask, ADR-0091): the mock's windows are far from any line, so every send goes; with
   // MOCK_HOLD the box shows the hold row (Claude's weekly window at 91%, past the 90% line, resetting in 2 days)
   'budget.ask': (a) => ({

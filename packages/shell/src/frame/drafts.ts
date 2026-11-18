@@ -10,3 +10,8 @@ export const replyDraft = (task: string): readonly [string, string] => [task, 'r
 
 /** An empty box holds no draft (the store drops the key) */
 export const draftValue = (v: string): string | undefined => (v === '' ? undefined : v);
+
+/** New task's text with a share link carried from the Grid (docs/ux/2026-11-18-grid.md #8): on its own line after what's
+ *  there, once. It's text in the box, never sent: the person presses Send (wisp.stuff's share card imports it). */
+export const withShareLink = (draft: string, link: string): string =>
+  draft.includes(link) ? draft : draft.trim() === '' ? link : `${draft.trimEnd()}\n${link}`;

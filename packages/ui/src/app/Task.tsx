@@ -9,6 +9,10 @@ import { ActIcon, WithAct, type Act } from './act.tsx';
 import { ReplyOptions, type ReplyOptionLabels } from './ReplyOptions.tsx';
 import { usePlatform } from '../platform/PlatformLook.tsx';
 import { useT } from '../core/i18n.tsx';
+import { Menu } from '../controls/Menu.tsx';
+import type { MenuEntry } from '../controls/menu-entries.ts';
+import { bindLongPress } from '../gestures/bind.ts';
+import { useGesture } from '../gestures/use.ts';
 import { holdMedia } from './hold-view.ts';
 import { useBarLabels } from './bar-labels.ts';
 import { Tool } from './launcher-tool.tsx';
@@ -380,14 +384,22 @@ export interface TurnViewProps {
 
 /** v1 .turn: the ask, the answer's brief, and the trail under it. */
 export function TurnView(props: TurnViewProps): JSX.Element {
-  // a phone (UX 2026-11-18 phone #8): an older answer's icons fold behind one ⋯ (the latest keeps them out), so a long
-  // transcript isn't a column of icon rows; the browser draws them all, as before
+  // a phone (UX 2026-11-18 phone #8): an older answer's icons fold into one ⋯ menu (the latest keeps them out), which a
+  // long-press on the answer opens too (its visible twin is the ⋯), so a long transcript isn't a column of icon rows;
+  // the browser draws them all, as before
   const look = usePlatform();
   const kitT = useT();
-  const [toolsOpen, setToolsOpen] = createSignal(false);
+  const [menuOpen, setMenuOpen] = createSignal(false);
   const folds = (): boolean => look() !== 'web' && props.latest !== true && props.tools.length > 0;
+  const toolItems = (): MenuEntry[] => props.tools.map((x) => ({ value: x.id, label: x.label, icon: x.icon, ...(x.on !== undefined && { checked: x.on }), ...(x.act?.pending && { disabled: true }) }));
+  const pickTool = (id: string): void => props.tools.find((x) => x.id === id)?.act?.onClick?.();
+  const pressMenu = useGesture(
+    'turn.long-press',
+    (el, host) => bindLongPress(el, { host, onLongPress: () => folds() && setMenuOpen(true) }),
+    () => (folds() ? [{ label: kitT('gesture.actions'), run: () => setMenuOpen(true) }] : []),
+  );
   return (
-    <article data-kit="turn" data-turn={props.id} data-live={flag(props.live !== undefined || props.working !== undefined)} data-latest={flag(props.latest)}>
+    <article ref={pressMenu} data-kit="turn" data-turn={props.id} data-live={flag(props.live !== undefined || props.working !== undefined)} data-latest={flag(props.latest)}>
       <div data-kit="ask">
         <Show when={(props.askNotes ?? []).length > 0}>
           <ol data-kit="ask-notes" data-part="turn.notes">
@@ -531,11 +543,11 @@ export function TurnView(props: TurnViewProps): JSX.Element {
             )}
           </Show>
           <Show when={folds()}>
-            <button type="button" data-kit="tb-more" data-part="turn.more" aria-expanded={toolsOpen() ? 'true' : 'false'} aria-label={kitT('more')} title={kitT('more')} onClick={() => setToolsOpen(!toolsOpen())}>
-              <Icon name="dots" />
-            </button>
+            <span data-kit="tb-more">
+              <Menu trigger={{ icon: 'dots', 'aria-label': kitT('more'), variant: 'ghost', size: 'sm' }} items={toolItems()} onSelect={pickTool} open={menuOpen()} onOpenChange={setMenuOpen} placement="top-end" part="turn.more" />
+            </span>
           </Show>
-          <span data-kit="tb-tools" data-open={flag(toolsOpen())}>
+          <span data-kit="tb-tools">
             <For each={props.tools}>
               {(t) => (
                 <WithAct
@@ -647,6 +659,9 @@ export interface ReplyBoxProps {
     readonly open?: boolean;
     /** the model it runs on, beside the logo (docs/ux/2026-11-18-desktop.md #3: not a bare logo). Additive (2026-11-18). */
     readonly model?: string | undefined;
+    /** the reply's harness past 80% of a plan window: Home's ring round its logo, its words in the chip's name (UX
+     *  2026-11-18 #8). Additive (2026-11-18). */
+    readonly usage?: { readonly pct: number; readonly tone: 'warn' | 'bad'; readonly title: string } | undefined;
   };
   readonly team: string;
   readonly teamAct?: Act;
@@ -892,7 +907,7 @@ export function ReplyBox(given: ReplyBoxProps | CompactReplyBoxProps): JSX.Eleme
               <ReplyOptions
                 labels={phoneOpts() as ReplyOptionLabels}
                 mode={{ label: props.mode.label, icon: props.mode.icon, act: props.mode.act }}
-                runner={{ title: props.runner.title, logo: props.runner.logo, model: props.runner.model, act: props.runner.act }}
+                runner={{ title: props.runner.title, logo: props.runner.logo, model: props.runner.model, act: props.runner.act, open: props.runner.open }}
                 rows={[
                   ...(props.plus
                     ? []
@@ -943,11 +958,12 @@ export function ReplyBox(given: ReplyBoxProps | CompactReplyBoxProps): JSX.Eleme
                 data-part="composer.harness"
                 aria-haspopup="dialog"
                 aria-expanded={props.runner.open ? 'true' : 'false'}
-                title={props.runner.title}
-                aria-label={props.runner.title}
+                title={props.runner.usage ? `${props.runner.title}\n${props.runner.usage.title}` : props.runner.title}
+                aria-label={props.runner.usage ? `${props.runner.title}\n${props.runner.usage.title}` : props.runner.title}
               >
                 <span data-kit="rb-logo" data-bare="">
                   <Show when={props.runner.logo}>{(src) => <img src={src()} alt="" />}</Show>
+                  <Show when={props.runner.usage}>{(u) => <span data-kit="rb-ring" data-part="composer.harness.usage" data-tone={u().tone} aria-hidden="true" style={{ '--ctx': `${u().pct}%` }} />}</Show>
                 </span>
                 <Show when={props.runner.model}>
                   {(m) => (

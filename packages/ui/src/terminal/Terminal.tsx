@@ -7,12 +7,15 @@
 // callbacks only, all cancelled on unmount.
 
 import { createEffect, createSignal, For, on, onCleanup, onMount, Show, type JSX } from 'solid-js';
+import { Portal } from 'solid-js/web';
 import { flag, type KitProps } from '../core/props.ts';
 import { KEY_ROW, type RowKey } from './keys.ts';
 import { ownPaste, rowKey, wireKeys, wireMouse, wireScroll, type InputHost } from './input.ts';
 import { Painter } from './paint.ts';
 import type { Screen } from './screen.ts';
 import '../css/terminal.css';
+import { bindAccessory } from './accessory.ts';
+import { usePlatform } from '../platform/PlatformLook.tsx';
 
 export const SYNC_MS = 150;
 
@@ -78,6 +81,7 @@ export function Terminal(props: TerminalProps): JSX.Element {
   let back!: HTMLDivElement;
   let live!: HTMLDivElement;
   let input!: HTMLTextAreaElement;
+  const look = usePlatform();
   const [focused, setFocused] = createSignal(false);
   const [ctrl, setCtrl] = createSignal(false);
   const [drawn, setDrawn] = createSignal(false);
@@ -246,6 +250,29 @@ export function Terminal(props: TerminalProps): JSX.Element {
   });
 
   const part = (): `${string}.${string}` => props.part ?? 'ui.terminal';
+  // the key row; `riding`: a phone with the keyboard up, the row on the keyboard's top edge (UX 2026-11-18 phone #13),
+  // portaled out of any sheet so a transformed ancestor can't hold its fixed position
+  const keys = (riding: boolean): JSX.Element => (
+    <div
+      ref={(el) => {
+        if (riding) onCleanup(bindAccessory(el, window));
+      }}
+      data-kit="term-keys"
+      data-part={`${part()}.keys`}
+      data-accessory={flag(riding)}
+      role="toolbar"
+      aria-label={props.labels.keys}
+      onPointerDown={(e) => e.preventDefault()}
+    >
+      <For each={KEY_ROW}>
+        {(k) => (
+          <button type="button" data-kit="term-key" data-on={flag(k === 'ctrl' && ctrl())} aria-pressed={k === 'ctrl' ? ctrl() : undefined} onClick={() => void rowKey(host, k, () => navigator.clipboard.readText())}>
+            <span data-text="control">{k === 'paste' ? props.labels.paste : KEY_CAPS[k]}</span>
+          </button>
+        )}
+      </For>
+    </div>
+  );
   return (
     <div ref={root} id={props.id} data-kit="term" data-part={part()} data-focused={flag(focused())} data-touch={flag(touch())} data-ended={flag(props.ended)} data-fixed={flag(props.lines !== undefined)} style={props.lines === undefined ? undefined : { '--k-term-lines': String(props.lines) }}>
       <div ref={box} data-kit="term-screen" data-part={`${part()}.screen`}>
@@ -267,15 +294,9 @@ export function Terminal(props: TerminalProps): JSX.Element {
         </div>
       </div>
       <Show when={touch()}>
-        <div data-kit="term-keys" data-part={`${part()}.keys`} role="toolbar" aria-label={props.labels.keys} onPointerDown={(e) => e.preventDefault()}>
-          <For each={KEY_ROW}>
-            {(k) => (
-              <button type="button" data-kit="term-key" data-on={flag(k === 'ctrl' && ctrl())} aria-pressed={k === 'ctrl' ? ctrl() : undefined} onClick={() => void rowKey(host, k, () => navigator.clipboard.readText())}>
-                <span data-text="control">{k === 'paste' ? props.labels.paste : KEY_CAPS[k]}</span>
-              </button>
-            )}
-          </For>
-        </div>
+        <Show when={look() !== 'web' && focused()} fallback={keys(false)}>
+          <Portal>{keys(true)}</Portal>
+        </Show>
       </Show>
     </div>
   );

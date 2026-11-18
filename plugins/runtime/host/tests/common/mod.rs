@@ -33,7 +33,7 @@ impl Fake {
             info: HarnessInfo {
                 id: id.into(),
                 name: name.into(),
-                models: vec![HarnessModel { id: format!("{id}-m"), label: "M".into(), hint: None, efforts: vec![] }],
+                models: vec![HarnessModel { id: format!("{id}-m"), label: "M".into(), hint: None, efforts: vec![], resolves: None }],
                 efforts: efforts.iter().map(|e| (*e).to_owned()).collect(),
                 system_prompt_flag: true,
                 ..HarnessInfo::default()
@@ -49,7 +49,7 @@ impl Fake {
             info: HarnessInfo {
                 id: id.into(),
                 name: name.into(),
-                models: vec![HarnessModel { id: format!("{id}-m"), label: "M".into(), hint: None, efforts: vec![] }],
+                models: vec![HarnessModel { id: format!("{id}-m"), label: "M".into(), hint: None, efforts: vec![], resolves: None }],
                 system_prompt_flag: true,
                 variants: vec!["subagentModel".into(), "skills".into()],
                 ..HarnessInfo::default()
@@ -85,7 +85,7 @@ impl Fake {
             info: HarnessInfo {
                 id: "fake".into(),
                 name: "Fake CLI".into(),
-                models: vec![HarnessModel { id: "m1".into(), label: "M1".into(), hint: None, efforts: vec![] }],
+                models: vec![HarnessModel { id: "m1".into(), label: "M1".into(), hint: None, efforts: vec![], resolves: None }],
                 system_prompt_flag: true,
                 ..HarnessInfo::default()
             },

@@ -507,6 +507,23 @@
     color: var(--ink);
     flex: none;
   }
+  /* UX 2026-11-18 #8: the picked harness past 80% of a plan window, a ring round its logo (app-usage.css pu-ring's) */
+  [data-kit='rb-ring'] {
+    position: absolute;
+    inset: -3px;
+    border-radius: 50%;
+    background: conic-gradient(var(--warn) var(--ctx), transparent 0);
+    -webkit-mask: radial-gradient(circle closest-side, transparent 80%, var(--ink) 84%);
+    mask: radial-gradient(circle closest-side, transparent 80%, var(--ink) 84%);
+    pointer-events: none;
+  }
+  [data-kit='rb-ring'][data-tone='bad'] {
+    background: conic-gradient(var(--bad) var(--ctx), transparent 0);
+  }
+  /* the reply box's chip: its logo box has no margin before the model, so the ring stays inside it */
+  [data-kit='rb-logo'][data-bare] > [data-kit='rb-ring'] {
+    inset: 0;
+  }
   [data-kit='rb-logo'][data-small] {
     width: 18px;
     height: 18px;

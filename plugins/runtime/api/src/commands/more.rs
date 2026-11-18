@@ -322,6 +322,17 @@ pub struct AgentsArgs {
     pub fresh: Option<String>,
 }
 
+/// `runtime.defaultModel`: what `agent`'s Default runs in `cwd` (the picked project, a task's folder; none: this
+/// computer's), as the harness reads its own config, never a run (owner's delegate 2026-11-18).
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[ts(export, export_to = "runtime/")]
+pub struct DefaultModelArgs {
+    pub agent: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub cwd: Option<String>,
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
 #[ts(export, export_to = "runtime/")]
