@@ -78,41 +78,61 @@ function useMeasured(beforeChange: () => void): Measured {
   // the rows observed now (to set aside while a re-plan's scrollbar change goes by, below)
   const rows = new Set<Element>();
   let back: Element[] = [];
+  // a shown row's width now (rows all take the list's width)
+  const rowWidth = (): number | undefined => {
+    for (const el of rows) if (el.isConnected) return (el as HTMLElement).offsetWidth;
+    return undefined;
+  };
   let gone = false;
   const ro =
     typeof ResizeObserver === 'undefined'
       ? undefined
       : new ResizeObserver((entries) => {
-          for (const e of entries) {
-            if (e.target !== box.el) continue;
-            const b = e.borderBoxSize[0];
-            box.hidden = (b?.inlineSize ?? e.contentRect.width) === 0 && (b?.blockSize ?? e.contentRect.height) === 0;
-          }
-          if (box.hidden) return;
-          beforeChange();
-          let changed = false;
-          for (const e of entries) if (e.target !== box.el) changed = record(e.target, e.borderBoxSize[0]?.blockSize ?? e.contentRect.height) || changed;
-          if (!changed) return;
-          // the re-plan is made here, before paint (a frame later, the rows above the reader and a streaming tail jumped)
-          const wide = box.el?.clientWidth;
-          setVersion((v) => v + 1);
-          // ...but the heights it set can take the list's scrollbar away (or bring it): with a scrollbar that takes room
-          // (a desktop's classic one; a phone's overlays never do) every row is then a little wider, in this same pass,
-          // and the browser skips those changes at the rows' depth: WebKit's "ResizeObserver loop completed with
-          // undelivered notifications" (QA round 1 #16, round 2 #15). The rows step out of the observer until the next
-          // frame, which measures them again; what shows is right meanwhile (they're in the flow), only the spacers
-          // wait that frame for a width-only change.
-          if (wide === undefined || box.el?.clientWidth === wide) return;
-          if (!back.length) requestAnimationFrame(() => {
-            const now = back;
-            back = [];
-            if (!gone) for (const el of now) if (el.isConnected && rows.has(el)) ro?.observe(el);
-          });
-          for (const el of rows) {
-            ro?.unobserve(el);
-            back.push(el);
+          inPass = true;
+          try {
+            measure(entries);
+          } finally {
+            inPass = false;
           }
         });
+  // rows a re-plan mounts during the observer's own pass: observed on the next frame, not in this pass (where the
+  // browser skips their first size at the rows' depth anyway, and WebKit reports the loop: QA round 2 #16, the
+  // Diagnostics event list growing as it was measured). The re-plan itself is in this pass, before paint.
+  let inPass = false;
+  let fresh: Element[] = [];
+  const measure = (entries: readonly ResizeObserverEntry[]): void => {
+    for (const e of entries) {
+      if (e.target !== box.el) continue;
+      const b = e.borderBoxSize[0];
+      box.hidden = (b?.inlineSize ?? e.contentRect.width) === 0 && (b?.blockSize ?? e.contentRect.height) === 0;
+    }
+    if (box.hidden) return;
+    beforeChange();
+    let changed = false;
+    for (const e of entries) if (e.target !== box.el) changed = record(e.target, e.borderBoxSize[0]?.blockSize ?? e.contentRect.height) || changed;
+    if (!changed) return;
+    // the re-plan is made here, before paint (a frame later, the rows above the reader and a streaming tail jumped)
+    const wide = rowWidth();
+    setVersion((v) => v + 1);
+    // ...but the heights it set can take the list's scrollbar away (or bring it): with a scrollbar that takes room
+    // (a desktop's classic one; a phone's overlays never do) every row is then a little wider, in this same pass,
+    // and the browser skips those changes at the rows' depth: WebKit's "ResizeObserver loop completed with
+    // undelivered notifications" (QA round 1 #16, round 2 #15). The rows step out of the observer until the next
+    // frame, which measures them again; what shows is right meanwhile (they're in the flow), only the spacers
+    // wait that frame for a width-only change.
+    // (the rows' own width: the scrollbar may be the list's, or a scroller's it sits in, as in the sidebar)
+    if (wide === undefined || rowWidth() === wide) return;
+    if (!back.length)
+      requestAnimationFrame(() => {
+        const now = back;
+        back = [];
+        if (!gone) for (const el of now) if (el.isConnected && rows.has(el)) ro?.observe(el);
+      });
+    for (const el of rows) {
+      ro?.unobserve(el);
+      back.push(el);
+    }
+  };
   onCleanup(() => {
     gone = true;
     ro?.disconnect();
@@ -123,7 +143,14 @@ function useMeasured(beforeChange: () => void): Measured {
     observe: (el, key) => {
       keys.set(el, key);
       rows.add(el);
-      ro?.observe(el);
+      if (!inPass) return void ro?.observe(el);
+      if (!fresh.length)
+        requestAnimationFrame(() => {
+          const now = fresh;
+          fresh = [];
+          if (!gone) for (const r of now) if (r.isConnected && rows.has(r)) ro?.observe(r);
+        });
+      fresh.push(el);
     },
     unobserve: (el) => {
       rows.delete(el);

@@ -6,6 +6,7 @@
 import { For, Show, createMemo, createSignal, onCleanup, untrack, type JSX } from 'solid-js';
 import type { EntityKey, Json } from '@wisp/client';
 import { forLater, isSaved, markRead, setState } from './commands.ts';
+import { listShown } from './pane-widths.ts';
 import { openSwitcher } from './project-switch.ts';
 import { parsePick, pickLabel, pickOnly, pickRemove, pickValue, pickedProjects, pickHas } from './project-pick.ts';
 import { displayCombo } from '../keys.ts';
@@ -162,7 +163,9 @@ export function Head(props: { readonly filter: () => string; readonly setFilter:
   const slots = useHeadSlots();
   const nav = useSignal(shell.nav);
   const homeOn = (): boolean => nav().main.kind === 'home';
-  const listOpen = useSignal(() => shell.sidebar.open() !== false);
+  const listSet = useSignal(() => shell.sidebar.open() !== false);
+  // shown, as the frame shows it: the side panel takes the list's place in a window under 1180 (pane-widths listShown)
+  const listOpen = (): boolean => listShown(listSet(), nav().layout === 'split' && nav().side.kind !== 'none', window.innerWidth);
   return (
     <SidebarHead
       homeOn={homeOn()}

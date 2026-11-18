@@ -29,6 +29,9 @@ export interface ThinkingSliderProps {
   readonly label: (v: string) => string;
   /** what a stop does, in a few words */
   readonly hint?: (v: string) => string;
+  /** the track's tooltip for a stop (v1 bar.title: "Whatever the harness is set to", "High reasoning effort").
+   *  Additive (2026-11-18, QA desktop r2 #7). */
+  readonly title?: (v: string) => string;
   readonly aria: { readonly label: string; readonly valueText: (v: string) => string };
 }
 
@@ -64,6 +67,7 @@ export function ThinkingSlider(props: ThinkingSliderProps): JSX.Element {
         aria-valuemax={n() - 1}
         aria-valuenow={k()}
         aria-valuetext={props.aria.valueText(shown())}
+        title={props.title?.(shown())}
         onPointerDown={(e) => {
           if (e.button > 0) return;
           e.preventDefault();

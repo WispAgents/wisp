@@ -2,7 +2,7 @@
 import { expect, test } from 'vitest';
 import en from '../src/i18n/en.json' with { type: 'json' };
 import '../src/i18n/lazy.ts'; // the lazily loaded strings too (they load with the code that shows them)
-import { agentsOf, barOf, cloudOf, foundOf, kindOf, menuOf, nameFor, offersLetIn, portOf, primaryOf, removeAsk, stepsOf, stopAsk, troubleTitle, whereOf, type PeerLike } from '../src/view.ts';
+import { agentsOf, updateLine, versionLine, barOf, cloudOf, foundOf, kindOf, menuOf, nameFor, offersLetIn, portOf, primaryOf, removeAsk, stepsOf, stopAsk, troubleTitle, whereOf, type PeerLike } from '../src/view.ts';
 
 const cat = en as Record<string, string>;
 const t = (k: string, v?: Readonly<Record<string, string | number>>): string => {
@@ -114,4 +114,24 @@ test('a_computer_that_didnt_say_its_agents_isnt_said_to_have_none', () => {
   expect(agentsOf({ state: 'online', error: '', remote: { version: '0.58.0' } })).toEqual({ kind: 'unknown' });
   expect(agentsOf({ state: 'online', error: '', remote: { agents: [] } })).toEqual({ kind: 'none' });
   expect(agentsOf({ state: 'online', error: '', remote: { agents: [{ id: 'claude', name: 'Claude Code', available: true }, { id: 'x', name: 'X', available: false }] } })).toEqual({ kind: 'ready', names: ['Claude Code'] });
+});
+
+// QA desktop r2 #22: a grid machine's line read "Cloud · on grid  on grid.trywisp.dev": the kind pill and the address
+// after it both said where. v1 had them on two lines (the pill by the name); on one line, the pill says the kind only.
+test('a_grid_machines_line_names_the_grid_once', () => {
+  const cloud: PeerLike = { id: 'c', name: 'Cloud', transport: 'grid', address: 'ada.grid.trywisp.dev', port: 443, data: { grid: 'https://grid.trywisp.dev' } };
+  const mine: PeerLike = { ...cloud, id: 'm', name: 'Studio', data: { grid: 'https://grid.trywisp.dev', computer: 'c1' } };
+  for (const m of [cloud, mine]) {
+    const line = `${t(`machines.kind.${kindOf(m)}`)} ${whereOf(m, t)}`;
+    expect(line.match(/grid/gi)?.length, line).toBe(1);
+  }
+});
+
+// QA desktop r2 #22: the owner's v1 install on the grid read "wisp 0.58.0 · Update to 2.0.0", like a second v2 machine.
+// A 0.x wisp is v1: its line says so, and its update says what it moves to.
+test('a_v1_wisp_says_v1_and_its_update_says_v2', () => {
+  expect(versionLine('0.58.0', t)).toBe('wisp v1 (0.58.0)');
+  expect(versionLine('2.0.0', t)).toBe('wisp 2.0.0');
+  expect(updateLine('0.58.0', '2.0.0', t)).toBe('Update to v2');
+  expect(updateLine('2.0.0', '2.1.0', t)).toBe('Update to 2.1.0');
 });

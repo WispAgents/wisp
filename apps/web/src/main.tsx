@@ -52,6 +52,12 @@ for (const { path, def } of pluginUis()) {
     client.devtools.record({ kind: 'warn', message: `${path}: ${String(err)}` }); // one bad plugin never stops the app
   }
 }
+// the task list's own code (a lazy part), fetched while the client starts rather than at the first render: the list's
+// skeleton gives way to its rows that much sooner (QA round 2 #12)
+for (const e of shell.context.extensions('shell.sidebar:list')()) {
+  const pre = (e.def.component as { preload?: () => Promise<unknown> }).preload;
+  if (pre) void pre().catch(() => undefined);
+}
 
 // ADR-0048: what your untrusted plugins show (their UI modules run in a sandboxed frame, drawn with the kit); read
 // once the home peer is there

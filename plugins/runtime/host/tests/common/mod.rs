@@ -130,6 +130,9 @@ impl Harness for Fake {
     fn info(&self) -> &HarnessInfo {
         &self.info
     }
+    fn auth_failed(&self, text: &str) -> bool {
+        text.contains("401 Unauthorized")
+    }
     fn detect<'a>(&'a self, _sys: &'a dyn HarnessSys) -> BoxFuture<'a, HarnessFound> {
         Box::pin(async { HarnessFound { available: true, ..HarnessFound::default() } })
     }
@@ -307,6 +310,12 @@ async fn fake_cli(mut io: SimIo) -> Exit {
         return Exit { code: None, signal: Some("SIGKILL".into()) };
     }
 
+    // `expired…`: its sign-in expired: the CLI dies before any result, a 401 on stderr, exit 1 (Codex's own words)
+    if prompt.starts_with("expired") {
+        io.print(format!("{}\n", json!({"type":"session","id":"conv-1"})).as_bytes()).await;
+        io.eprint(b"unexpected status 401 Unauthorized: Missing bearer or basic authentication in header, url: https://api.example/v1/responses\n").await;
+        return Exit { code: Some(1), signal: None };
+    }
     if prompt.starts_with("slowexit") {
         for l in &script(&prompt)[..2] {
             io.print(format!("{l}\n").as_bytes()).await;

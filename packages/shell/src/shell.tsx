@@ -21,6 +21,7 @@ import { App } from './frame/App.tsx';
 import { NONE as NO_SELECTION, pruneSelect, selectAll, startSelect, toggleSelect, type ListSelection } from './frame/list-select.ts';
 import { shellUi } from './builtins.tsx';
 import { SHELL_SETTINGS, SIDE_MAX, SIDE_MIN } from './settings-decls.ts';
+import { listShown } from './frame/pane-widths.ts';
 import { installKeys } from './keyboard.ts';
 import { watchCoreTopics } from './watch.ts';
 import { pluginStyles } from './theme-styles/mount.ts';
@@ -142,7 +143,16 @@ export function createShell(o: ShellOptions): Shell {
     selection: { get: () => selected(), set: (k) => selected(k) },
     sidebar: {
       open: () => settings.get('shell.sidebar.open')(),
-      toggle: () => void settings.set('shell.sidebar.open', !untracked(settings.get('shell.sidebar.open'))),
+      toggle: () => {
+        const n = untracked(nav);
+        // the side panel has the list's place (a window under 1180): [ and the sidebar button bring the list back by
+        // putting the panel away, as v1's toggleSidebar did; there's room for one of the two
+        if (n.layout === 'split' && n.side.kind !== 'none' && !listShown(true, true, o.window.innerWidth) && untracked(settings.get('shell.sidebar.open')) !== false) {
+          client.nav.navigate({ t: 'closeSide' });
+          return;
+        }
+        void settings.set('shell.sidebar.open', !untracked(settings.get('shell.sidebar.open')));
+      },
       width: () => settings.get('shell.sidebar.width')(),
       setWidth: (px) => void settings.set('shell.sidebar.width', Math.round(Math.min(SIDE_MAX, Math.max(SIDE_MIN, px)))),
     },

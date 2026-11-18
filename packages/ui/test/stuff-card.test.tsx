@@ -79,3 +79,16 @@ describe('the viewer a saved picture opens in', () => {
     expect(pct?.textContent).toBe('100%');
   });
 });
+
+describe("a code card's preview (QA round 2 #8)", () => {
+  it('is coloured like v1: any language but plain text gets the default rules (a csv: its numbers)', () => {
+    const host = mount(() => <StuffCard {...base} kind="code" icon="terminal" thumb={{ kind: 'code', text: 'name,score\nada,9\nlinus,7', lang: 'csv' }} onOpen={() => {}} />);
+    const nums = [...host.querySelectorAll("[data-kit='st-code'] [data-tk='n']")].map((n) => n.textContent);
+    expect(nums).toEqual(['9', '7']);
+    expect(host.querySelector("[data-kit='st-lang']")?.textContent).toBe('csv');
+  });
+  it('plain text stays plain (v1: text, txt, plain, output, log)', () => {
+    const host = mount(() => <StuffCard {...base} kind="code" icon="terminal" thumb={{ kind: 'code', text: 'run 1 of 9', lang: 'txt' }} onOpen={() => {}} />);
+    expect(host.querySelector("[data-kit='st-code'] [data-tk]")).toBeNull();
+  });
+});

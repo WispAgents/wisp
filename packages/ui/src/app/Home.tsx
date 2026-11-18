@@ -1,7 +1,7 @@
 // Home as v1 draws it (web/css/split.css .split-home, launcher.css, composer.css, auto.css, tips):
 // the greeting, the prompt box (where it runs, the prompt, its toolbar, Recipes), what needs you,
 // then the tips. On a phone it's its own page with a back button in its head.
-import { For, Index, Show, createEffect, createSignal, on, type JSX } from 'solid-js';
+import { For, Index, Show, createEffect, createMemo, createSignal, on, type JSX } from 'solid-js';
 import { growTextarea } from '../core/autosize.ts';
 import { LauncherSetup, type LauncherSetupProps } from './LauncherSetup.tsx';
 import { HoldRow, type HoldRowProps } from '../composer/HoldRow.tsx';
@@ -13,6 +13,8 @@ import { PromptSuggestList, dropHandlers } from '../composer/PromptSuggest.tsx';
 import { suggestKeyDown, type PromptSuggest } from '../composer/suggest-keys.ts';
 import type { IconName } from '../content/icons.ts';
 import { ActIcon, WithAct, actAttrs, type Act } from './act.tsx';
+import { foldTail, type LauncherTool } from './launcher-fold.ts';
+import { useTailFold } from './launcher-fold-measure.ts';
 import { ProjectSelect, type ProjectSelectProps } from './ProjectSelect.tsx';
 import { usePlatform } from '../platform/PlatformLook.tsx';
 
@@ -51,18 +53,7 @@ export function SplitHome(props: SplitHomeProps): JSX.Element {
   );
 }
 
-export interface LauncherTool {
-  readonly id: string;
-  readonly part: string;
-  readonly icon: IconName;
-  readonly label: string;
-  readonly title: string;
-  /** shows its label beside the icon */
-  readonly text?: boolean;
-  readonly on?: boolean;
-  readonly disabled?: boolean;
-  readonly act?: Act;
-}
+export type { LauncherTool } from './launcher-fold.ts';
 
 /** One recipe in the launcher's Recipes row (v1 .lp-chip.rc): its name, its prompt as the tip, and whether it asks
  * for fields (a "…" after its name). */
@@ -150,6 +141,9 @@ export interface LauncherProps {
   readonly mid: readonly LauncherTool[];
   /** after the gap: goal, worktree, later */
   readonly tail: readonly LauncherTool[];
+  /** a bar too narrow for its tail folds the tail's last tools into a More menu with this name, as many as it must
+   *  (design/layout.md §2, QA desktop r2 #4); none: it never folds (the phone's own More, the first run). Additive. */
+  readonly tailMore?: { readonly label: string; readonly title: string } | undefined;
   readonly sendLabel: string;
   /** nothing to send yet: Send shows it, as the phone sheet's header Send does (one state, QA r2 #12). Additive. */
   readonly sendOff?: boolean;
@@ -229,6 +223,14 @@ export function Launcher(props: LauncherProps): JSX.Element {
     }
   };
   const empty = (): boolean => props.value.trim() === '';
+  // the tail as it fits: its last tools in More when the bar is too narrow for them (launcher-fold.ts)
+  const fold = useTailFold({ tail: () => props.tail, on: () => props.tailMore !== undefined });
+  const tail = createMemo((): readonly LauncherTool[] => {
+    const more = props.tailMore;
+    const n = props.tail.length;
+    const k = more ? Math.min(fold.folded(), n) : 0;
+    return more && k > 0 ? [...props.tail.slice(0, n - k), foldTail(props.tail.slice(n - k), more)] : props.tail;
+  });
   const phone = ((look) => (): boolean => look() !== 'web')(usePlatform());
   // the phone apps with no recipes: no Recipes row, and Start from an issue is one of the bar's tools (v1 launcher.js:
   // "the phone app has it in its bar"); it sat alone on a row of its own under Send
@@ -307,7 +309,7 @@ export function Launcher(props: LauncherProps): JSX.Element {
             </For>
           </div>
         </Show>
-        <div data-kit="l-bar" data-try={flag(trial())} data-cmp={flag((props.runner.compares?.length ?? 0) > 0)}>
+        <div data-kit="l-bar" ref={fold.ref} data-try={flag(trial())} data-cmp={flag((props.runner.compares?.length ?? 0) > 0)}>
           <Index each={props.lead}>{(t) => <Tool t={t()} />}</Index>
           <WithAct
             act={props.mode.act}
@@ -471,7 +473,7 @@ export function Launcher(props: LauncherProps): JSX.Element {
           </div>
           <Index each={props.mid}>{(t) => <Tool t={t()} />}</Index>
           <span data-kit="grow" />
-          <Index each={props.tail}>{(t) => <Tool t={t()} />}</Index>
+          <Index each={tail()}>{(t) => <Tool t={t()} />}</Index>
           <Show when={issueInBar()}>
             <Tool t={{ id: 'issue', part: 'launcher.issue', icon: 'issue', label: props.recipes.issue, title: props.recipes.issueTitle, ...(props.recipes.issueAct && { act: props.recipes.issueAct }) }} />
           </Show>
@@ -561,39 +563,42 @@ export function NextList(props: {
   readonly rows: readonly NextRow[];
   readonly onOpen: (id: string) => void;
 }): JSX.Element {
+  // nothing needs you: no section at all (v1 paintHome: .sh-next hidden when it has no rows)
   return (
-    <div data-kit="sh-next" data-part="split.next">
-      <h4>
-        {props.heading}
-        <span data-kit="sec-n">{props.countLabel ?? props.count}</span>
-      </h4>
-      {/* by task, each row made once (the flicker gate: they were made again on every change) */}
-      <ForKeyed each={props.rows}>
-        {(r) => (
-          <button type="button" data-kit="sh-task" data-color={r().color} data-id={r().id} onClick={() => props.onOpen(r().id)}>
-            <span data-kit="q-dot" />
-            <span data-kit="sh-main">
-              <span data-kit="sh-t" data-text="control" title={r().title}>
-                {r().title}
+    <Show when={props.rows.length > 0}>
+      <div data-kit="sh-next" data-part="split.next">
+        <h4>
+          {props.heading}
+          <span data-kit="sec-n">{props.countLabel ?? props.count}</span>
+        </h4>
+        {/* by task, each row made once (the flicker gate: they were made again on every change) */}
+        <ForKeyed each={props.rows}>
+          {(r) => (
+            <button type="button" data-kit="sh-task" data-color={r().color} data-id={r().id} onClick={() => props.onOpen(r().id)}>
+              <span data-kit="q-dot" />
+              <span data-kit="sh-main">
+                <span data-kit="sh-t" data-text="control" title={r().title}>
+                  {r().title}
+                </span>
+                <Show when={r().why}>
+                  <span data-kit="sh-why" title={r().why}>
+                    {r().why}
+                  </span>
+                </Show>
               </span>
-              <Show when={r().why}>
-                <span data-kit="sh-why" title={r().why}>
-                  {r().why}
+              <Show when={r().state}>
+                <span data-kit="sh-s" data-tone={r().tone}>
+                  {r().state}
                 </span>
               </Show>
-            </span>
-            <Show when={r().state}>
-              <span data-kit="sh-s" data-tone={r().tone}>
-                {r().state}
+              <span data-kit="sh-time" title={r().timeTitle}>
+                {r().time}
               </span>
-            </Show>
-            <span data-kit="sh-time" title={r().timeTitle}>
-              {r().time}
-            </span>
-          </button>
-        )}
-      </ForKeyed>
-    </div>
+            </button>
+          )}
+        </ForKeyed>
+      </div>
+    </Show>
   );
 }
 

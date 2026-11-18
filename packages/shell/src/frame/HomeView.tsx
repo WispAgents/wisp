@@ -15,7 +15,7 @@ import { useRecipes } from './recipes.ts';
 import type { PickOptions } from '../platform/types.ts';
 import { Show, createEffect, createMemo, createResource, createSignal, lazy, on, onCleanup, untrack, type JSX } from 'solid-js';
 import { githubTip, tools as githubTools } from './github-tip.ts';
-import { entityKey, newRowId, type EntityKey, type Json, type PeerId } from '@wisp/client';
+import { entityKey, newRowId, ownerOf, type EntityKey, type Json, type PeerId } from '@wisp/client';
 import { AutoPop, KeysHint, Launcher, NextList, Reserved, SplitHome, Tips, lazyPart, lazyView, useSignal, warm as warmPart, type Act, type LauncherProps, type LauncherTool, type PlainTip } from '@wisp/ui';
 import { useShell } from '../context.tsx';
 import type { LaunchTargetDef, SendHold } from '../contract.ts';
@@ -187,7 +187,10 @@ export function HomeView(props: { readonly onBack?: () => void }): JSX.Element {
   const full = useSignal(fullStore.value);
   const [ready, setReady] = createSignal(false);
   void fullStore.ready.then(() => setReady(true));
-  const mine = createMemo(() => sessions().some((x) => x.agent !== 'wisp'));
+  // a task of yours on this computer (v1 counted its own server's list, the one the first run waits for): another
+  // computer's tasks, synced later, would flip the bar when they land
+  const sessionKeys = useSignal(shell.client.entities.keys(SESSION));
+  const mine = createMemo(() => (sessions(), sessionKeys().some((k) => ownerOf(k) === home && shell.client.entities.peek<SessionRow>(SESSION, k)?.agent !== 'wisp')));
   createEffect(() => {
     if (mine() && full() !== true) fullStore.set(true);
   });
@@ -306,6 +309,10 @@ export function HomeView(props: { readonly onBack?: () => void }): JSX.Element {
   // none attached (wisp.budget off): no room held for it
   const usageH = (): number => (usageExt().length ? usageSaved() : 0);
   const usageSaved = useSignal(() => Number(shell.client.settings.get('shell.home.usageHeight')() ?? 0));
+  // the cards under Needs you (wisp.budget's Spare allowance) load after the first screen too: their room from last time
+  const cardsExt = useExtensions('shell.home:cards');
+  const cardsSaved = useSignal(() => Number(shell.client.settings.get('shell.home.cardsHeight')() ?? 0));
+  const cardsH = (): number => (cardsExt().length ? cardsSaved() : 0);
   const needs = createMemo(() =>
     sessions()
       // the list's own rules (saved for later, Scheduled, a subagent's run: not here), so Home agrees with it
@@ -839,6 +846,9 @@ export function HomeView(props: { readonly onBack?: () => void }): JSX.Element {
           ],
           tool('more', 'launcher.more', 'dots', t('shell.home.moreOptions'), t('shell.home.moreOptionsTitle'), { text: true, act: { onClick: openFull } }),
         ))}
+        // a bar too narrow for Goal, Worktree and Start later folds the last of them into More (QA desktop r2 #4); the
+        // phone's bar has its own More, the first run its More options
+        {...(!phone && !firstRun() && { tailMore: { label: t('shell.home.moreOptions'), title: t('shell.home.moreTail') } })}
         sendLabel={when() ? t('shell.when.send', { at: new Date(whenAt(when() ?? 'hour', now())).toLocaleString() }) : t('shell.home.send')}
         {...(checking() && { sendAct: { pending: true } })}
         // the phone sheet: the round Send says what the header's says (one state: nothing to send yet, QA r2 #12)
@@ -1014,7 +1024,9 @@ export function HomeView(props: { readonly onBack?: () => void }): JSX.Element {
           onOpen={(id) => shell.navigate({ t: 'openTask', id: sessionKey(untrack(shell.client.entities.keys(SESSION)), id) as never })}
         />
         {/* notes on plans other plugins add (wisp.budget's Spare allowance), v1 .sh-spare */}
-        <Slot input="shell.home:cards" layout="contents" pickAgent={pickAgent} />
+        <Reserved part="home.cards" height={cardsH()} onHeight={(px) => void shell.client.settings.set('shell.home.cardsHeight', Math.min(800, px)).catch(() => undefined)}>
+          <Slot input="shell.home:cards" layout="contents" pickAgent={pickAgent} />
+        </Reserved>
         <Tips
           heading={t('shell.tips.heading')}
           more={t('shell.tips.more')}

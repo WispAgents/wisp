@@ -8,7 +8,7 @@ import { For, Show, createSignal, onCleanup, type JSX } from 'solid-js';
 import type { DevEntry, PeerId, PluginClient } from '@wisp/client';
 import { Button, Inline, Pill, Section, SettingsRow, Stack, Text, Time, VirtualList, useSignal } from '@wisp/ui';
 import { useShell } from '../context.tsx';
-import { STORE_KINDS, describe, newestFirst, peerLine } from './summary.ts';
+import { STORE_KINDS, describe, newestFirst, peerLine, rowsLine } from './summary.ts';
 import '../i18n/lazy.ts';
 
 function Peer(props: { readonly peer: PeerId }): JSX.Element {
@@ -27,7 +27,7 @@ function Peer(props: { readonly peer: PeerId }): JSX.Element {
 function Store(props: { readonly kind: string }): JSX.Element {
   const shell = useShell();
   const keys = useSignal(shell.client.entities.keys(props.kind));
-  return <SettingsRow title={props.kind} control={<Text numeric tone="muted">{shell.t('shell.diag.rows', { count: keys().length })}</Text>} />;
+  return <SettingsRow title={props.kind} control={<Text numeric tone="muted">{rowsLine(props.kind, keys().length, shell.t)}</Text>} />;
 }
 
 export default function Inspector(_p: { readonly client: PluginClient; readonly params?: unknown }): JSX.Element {
@@ -57,7 +57,7 @@ export default function Inspector(_p: { readonly client: PluginClient; readonly 
       <Section title={shell.t('shell.diag.peers')} level={3}>
         <For each={peers()}>{(p) => <Peer peer={p} />}</For>
       </Section>
-      <Section title={shell.t('shell.diag.stores')} level={3}>
+      <Section title={shell.t('shell.diag.stores')} description={shell.t('shell.diag.storesHint')} level={3}>
         <For each={STORE_KINDS}>{(k) => <Store kind={k} />}</For>
       </Section>
       <Section title={shell.t('shell.diag.pending')} level={3}>

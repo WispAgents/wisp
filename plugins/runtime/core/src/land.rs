@@ -16,6 +16,7 @@ use wisp_runtime_api::points::Outcome;
 
 /// What ended the turn.
 #[derive(Debug, Clone, PartialEq)]
+#[allow(clippy::struct_excessive_bools)] // each is its own fact of how the run ended, read on its own
 pub struct Ending<'a> {
     pub stopped: bool,
     /// stopped because a follow-up interrupted it
@@ -27,6 +28,8 @@ pub struct Ending<'a> {
     pub changes: &'a [FileChange],
     /// a stop's own words (a restart), instead of "You stopped this run"
     pub reason: Option<(&'a str, &'a str)>,
+    /// it failed signed out (the harness read its own words): said plainly, the raw error kept under it
+    pub signed_out: bool,
 }
 
 fn clip_chars(s: &str, n: usize) -> String {
@@ -67,6 +70,19 @@ pub fn end_presentation(e: &Ending<'_>, answer: impl FnOnce(&str) -> Presentatio
         let mut blocks = vec![hero(title, summary, "partial")];
         blocks.extend(files_block(e.changes));
         return (TurnStatus::Stopped, shown(blocks));
+    }
+    if e.is_error && e.signed_out {
+        // QA desktop r2 #6: "unexpected status 401 Unauthorized: Missing bearer…" was the task's line in the list
+        let name = if e.harness.is_empty() { "This harness" } else { e.harness };
+        let blocks = vec![
+            hero(
+                &format!("{name} is signed out"),
+                &format!("{name}'s sign-in expired or was removed. Sign in again and this request runs again."),
+                "blocked",
+            ),
+            json!({ "type": "terminal", "output": if e.text.is_empty() { "No output." } else { e.text }, "exitCode": 1 }),
+        ];
+        return (TurnStatus::Error, shown(blocks));
     }
     if e.is_error {
         let summary = first_line(e.text);

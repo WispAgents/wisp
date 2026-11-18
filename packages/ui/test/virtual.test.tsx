@@ -309,8 +309,10 @@ describe('VirtualList measured by a ResizeObserver', () => {
     expect(ro.boxes.get(box), 'the box by its border box').toBe('border-box');
     const bottom = (): string | undefined => host.querySelectorAll<HTMLElement>('[data-kit="virtual-spacer"]')[1]?.style.height;
     const before = bottom();
-    // the scrollbar goes as the re-plan lands: the box's inner width grows by its 10px once the spacers moved
-    Object.defineProperty(box, 'clientWidth', { configurable: true, get: () => (bottom() === before ? 380 : 390) });
+    // the scrollbar goes as the re-plan lands (the list's, or one of a scroller around it: the sidebar's): every row is
+    // 10px wider once the spacers moved
+    const was = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'offsetWidth');
+    Object.defineProperty(HTMLElement.prototype, 'offsetWidth', { configurable: true, get: () => (bottom() === before ? 380 : 390) });
     const rowsWatched = (): number => [...ro.watched].filter((el) => el !== box).length;
     const watchedBefore = rowsWatched();
     expect(watchedBefore).toBeGreaterThan(0);
@@ -320,6 +322,7 @@ describe('VirtualList measured by a ResizeObserver', () => {
     expect(rowsWatched(), 'the rows step out while the width change goes by').toBe(0);
     await new Promise<void>((r) => requestAnimationFrame(() => r()));
     expect(rowsWatched(), 'and are measured again on the next frame').toBeGreaterThan(0);
+    if (was) Object.defineProperty(HTMLElement.prototype, 'offsetWidth', was);
   });
 
   test('a_replan_that_leaves_the_scrollbar_as_it_was_keeps_every_row_observed', () => {
@@ -332,10 +335,34 @@ describe('VirtualList measured by a ResizeObserver', () => {
     const ro = FakeObserver.last;
     const box = host.querySelector<HTMLElement>('[data-kit="virtual-list"]');
     if (!ro || !box) throw new Error('no list');
-    Object.defineProperty(box, 'clientWidth', { configurable: true, get: () => 390 });
     const watched = ro.watched.size;
     ro.report((el) => (el === box ? { width: 390, height: 300 } : { width: 390, height: 20 }));
     expect(ro.watched.size).toBeGreaterThanOrEqual(watched);
     expect([...ro.watched].some((el) => el !== box)).toBe(true);
+  });
+
+  // QA round 2 desktop #16: Settings → Diagnostics' event list grew as it was measured: the rows its re-plan mounted in
+  // the observer's own pass were observed in that pass, where their first size is skipped (the loop error). They're
+  // observed on the next frame instead; the re-plan itself still lands in the pass.
+  test('rows_a_replan_mounts_during_the_observers_pass_are_observed_next_frame', async () => {
+    vi.stubGlobal('ResizeObserver', FakeObserver);
+    const host = mount(() => (
+      <VirtualList items={rows(200)} key={(r) => r.id} estimate={30} viewport={300} overscan={2}>
+        {(r) => <span data-id={r().id}>{r().text}</span>}
+      </VirtualList>
+    ));
+    const ro = FakeObserver.last;
+    const box = host.querySelector<HTMLElement>('[data-kit="virtual-list"]');
+    if (!ro || !box) throw new Error('no list');
+    const shownIds = (): string[] => [...host.querySelectorAll('[data-id]')].map((n) => n.getAttribute('data-id') ?? '');
+    const before = new Set(shownIds());
+    // the rows are really 10px: the window takes in more rows at once
+    ro.report((el) => (el === box ? { width: 390, height: 300 } : { width: 390, height: 10 }));
+    const added = shownIds().filter((id) => !before.has(id));
+    expect(added.length, 'the re-plan mounted rows in the same pass').toBeGreaterThan(0);
+    const watchedIds = (): Set<string> => new Set([...ro.watched].map((el) => el.querySelector('[data-id]')?.getAttribute('data-id') ?? ''));
+    expect(added.filter((id) => watchedIds().has(id)), 'not observed in that pass').toEqual([]);
+    await new Promise<void>((r) => requestAnimationFrame(() => r()));
+    expect(added.filter((id) => !watchedIds().has(id)), 'observed on the next frame').toEqual([]);
   });
 });

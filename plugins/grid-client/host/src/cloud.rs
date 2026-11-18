@@ -60,7 +60,16 @@ impl ShareDestination for Cloud {
 /// My shares on the grid: kind, access, views, imports, versions.
 pub async fn mine(st: &St) -> Result<Value> {
     let (a, token) = st.signed_in().await.map_err(WireError::invalid)?;
-    let (status, v) = net::call(&st.http, "GET", &format!("{}/api/shares", a.grid), Some(&token), None, &[]).await?;
+    mine_at(&st.http, &a.grid, &token).await
+}
+
+/// Your shares on `grid`: v2's grid lists them at `/api/shares`, v1's (grid.trywisp.dev) at `/api/shares/mine` and
+/// answers `/api/shares` with a bare 404 "not found", which Settings → Cloud toasted on every open (QA desktop r2 #5).
+pub async fn mine_at(http: &reqwest::Client, grid: &str, token: &str) -> Result<Value> {
+    let (mut status, mut v) = net::call(http, "GET", &format!("{grid}/api/shares"), Some(token), None, &[]).await?;
+    if status == 404 {
+        (status, v) = net::call(http, "GET", &format!("{grid}/api/shares/mine"), Some(token), None, &[]).await?;
+    }
     if status >= 400 {
         return Err(net::refused(status, &v));
     }
@@ -203,5 +212,53 @@ mod tests {
         assert!(!verify("nope", &sig, b"files"));
         let l = link("grid://ada/review?ref=v1").unwrap_or(Link::Id { grid: None, id: String::new(), version: None });
         assert_eq!(url_of("http://g", &l), "http://g/api/shares/by/ada/review?ref=v1");
+    }
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod v1_shares_tests {
+    use std::sync::Arc;
+
+    use bytes::Bytes;
+    use http_body_util::Full;
+    use hyper_util::rt::TokioIo;
+    use serde_json::json;
+
+    /// A grid answering only v1's list (`GET /api/shares/mine`; `/api/shares` itself is a 404 there).
+    async fn v1_grid() -> String {
+        let l = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = l.local_addr().unwrap().port();
+        tokio::spawn(async move {
+            loop {
+                let Ok((sock, _)) = l.accept().await else { return };
+                tokio::spawn(async move {
+                    let svc = hyper::service::service_fn(|req: http::Request<hyper::body::Incoming>| async move {
+                        let (status, v) = match req.uri().path() {
+                            "/api/shares/mine" => (
+                                200,
+                                json!({ "enabled": true, "maxBytes": 1, "shares": [{ "id": "s1", "url": "https://g/s/s1", "title": "Plan" }] }),
+                            ),
+                            _ => (404, json!({ "error": "not found" })),
+                        };
+                        let mut r = http::Response::new(Full::new(Bytes::from(v.to_string())));
+                        *r.status_mut() = http::StatusCode::from_u16(status).unwrap();
+                        Ok::<_, std::convert::Infallible>(r)
+                    });
+                    let _ = hyper::server::conn::http1::Builder::new().serve_connection(TokioIo::new(sock), svc).await;
+                });
+            }
+        });
+        format!("http://127.0.0.1:{port}")
+    }
+
+    /// QA desktop r2 #5: Settings → Cloud toasted a bare "not found" each time it opened: grid.trywisp.dev (v1's grid)
+    /// lists your shares at `/api/shares/mine`, and wisp asked `/api/shares`. Asked again there, the list comes back.
+    #[tokio::test]
+    async fn a_v1_grid_lists_your_shares_at_its_own_route() {
+        let grid = v1_grid().await;
+        let http = Arc::new(crate::net::client(false));
+        let v = super::mine_at(&http, &grid, "wgd_d").await.unwrap();
+        assert_eq!(v["shares"][0]["id"], "s1", "{v}");
     }
 }

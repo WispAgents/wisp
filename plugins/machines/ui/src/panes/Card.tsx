@@ -6,7 +6,7 @@ import { createSignal, Show, type JSX } from 'solid-js';
 import { Button, Callout, CopyCommand, Inline, Input, Link, Menu, Pill, SettingsRow, Stack, Steps, Text } from '@wisp/ui';
 import type { PeerBody, PeerView, StatusBody } from '../commands.ts';
 import { t } from '../i18n.ts';
-import { agentsOf, kindOf, menuOf, offersLetIn, primaryOf, removeLabel, stepsOf, troubleTitle, whereOf } from '../view.ts';
+import { agentsOf, kindOf, menuOf, offersLetIn, primaryOf, removeLabel, stepsOf, troubleTitle, updateLine, versionLine, whereOf } from '../view.ts';
 import '../i18n/lazy.ts';
 
 const say = t as (k: string, v?: Readonly<Record<string, string | number>>) => string;
@@ -165,12 +165,12 @@ export function MachineCard(props: CardProps): JSX.Element {
       <Show when={st() === 'online'}>
         <Inline gap="2" part="machines.meta">
           <Text size="sm" tone="muted">
-            {t('machines.version', { version: props.s?.remote?.version ?? '' })}
+            {versionLine(props.s?.remote?.version ?? '', say)}
           </Text>
           <Show when={props.view?.outdated}>
             {(v) => (
               <Button size="sm" variant="ghost" icon="replay" title={t('machines.update.title', { name: props.m.name, version: v() })} onClick={() => props.onAct('update')} part="machines.update">
-                {t('machines.update', { version: v() })}
+                {updateLine(props.s?.remote?.version ?? '', v(), say)}
               </Button>
             )}
           </Show>

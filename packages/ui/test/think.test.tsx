@@ -29,3 +29,28 @@ test('the knob snaps to the nearest level; arrows, Home and End step it; Default
   expect(think.hasAttribute('data-dflt')).toBe(false);
   expect(host.querySelectorAll('[data-kit="think-stop"][data-past]')).toHaveLength(4);
 });
+
+// QA desktop r2 #7: the stops carry no words (v1's slider has none either); what a stop is shows in the head (its
+// name, its hint) and, as v1 did, in the track's tooltip: "Whatever the harness is set to", "High reasoning effort"
+test('the track says the level in its tooltip as v1 did, and the head names it with its hint_qa_desktop_r2_7', () => {
+  const [v, setV] = createSignal('');
+  const host = mount(() => (
+    <ThinkingSlider
+      heading="Thinking"
+      stops={['', 'low', 'high']}
+      value={v()}
+      onChange={setV}
+      label={(e) => (e ? e.charAt(0).toUpperCase() + e.slice(1) : 'Default')}
+      hint={(e) => (e ? `${e} hint` : 'as the harness is set')}
+      title={(e) => (e ? `${e.charAt(0).toUpperCase() + e.slice(1)} reasoning effort` : 'Whatever the harness is set to')}
+      aria={{ label: 'Thinking level', valueText: (e) => `${e || 'Default'} thinking` }}
+    />
+  ));
+  const track = host.querySelector('[data-kit="think-track"]') as HTMLElement;
+  const head = (): string[] => ['think-title', 'think-hint', 'think-value'].map((k) => host.querySelector(`[data-kit="${k}"]`)?.textContent ?? '');
+  expect(track.getAttribute('title')).toBe('Whatever the harness is set to');
+  expect(head()).toEqual(['Thinking', 'as the harness is set', 'Default']);
+  track.dispatchEvent(new KeyboardEvent('keydown', { key: 'End', bubbles: true }));
+  expect(track.getAttribute('title')).toBe('High reasoning effort');
+  expect(head()).toEqual(['Thinking', 'high hint', 'High']);
+});

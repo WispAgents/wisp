@@ -15,7 +15,7 @@ import { Head, ListLoading, PickStripView, Rail, SidebarList, SidebarTop } from 
 import { crewTint, type TintMember } from './crew-tint.ts';
 import { flatRow } from './rows-view.ts';
 import { escLeavesLauncher, stackView } from './stack-page.ts';
-import { listWidth, panelWidth } from './pane-widths.ts';
+import { listShown, listWidth, panelWidth } from './pane-widths.ts';
 import { PANEL_W, SIDE_W } from '../settings-decls.ts';
 
 const Switcher = lazy(() => import('../switcher/Switcher.tsx'));
@@ -98,7 +98,9 @@ export function App(props: { readonly clients: Clients; readonly recent: Readabl
     window.addEventListener('resize', onResize);
     onCleanup(() => window.removeEventListener('resize', onResize));
   });
-  const listOpen = useSignal(() => shell.sidebar.open() !== false);
+  // the list as you left it, unless the side panel has its place (a window under 1180, v1 panelSqueeze)
+  const listSet = useSignal(() => shell.sidebar.open() !== false);
+  const listOpen = (): boolean => listShown(listSet(), nav().layout === 'split' && nav().side.kind !== 'none', win());
   const savedList = useSignal(() => shell.sidebar.width());
   const savedPanel = useSignal(() => shell.client.settings.get('shell.panel.width')());
   const [dragList, setDragList] = createSignal<number>();

@@ -3,8 +3,9 @@
 // Server data comes from the entity store through the model's memoised sections; what's open comes
 // from navigation; the rest (whose menu is open, the dialogs) is local to this list.
 
-import { createEffect, createMemo, createSignal, Match, on, onCleanup, Show, Switch, type JSX } from 'solid-js';
-import { ContextMenu, EmptyState, ProjectHead, Stack, VirtualList, feedDoneColumn, useDerived, useSignal, type MenuEntry } from '@wisp/ui';
+import { createEffect, createMemo, createSignal, For, Match, on, onCleanup, Show, Switch, type JSX } from 'solid-js';
+import { ContextMenu, EmptyState, ProjectHead, Skeleton, Stack, VirtualList, feedDoneColumn, useDerived, useSignal, type MenuEntry } from '@wisp/ui';
+import { listFace } from '../model/list-face.ts';
 import type { ProjectColor } from '@wisp/tokens';
 import type { EntityKey } from '@wisp/client';
 import type { ExtensionProps, ResolvedExtension } from '@wisp/shell/contract';
@@ -98,6 +99,8 @@ function ListBody(): JSX.Element {
   const doneColumn = createMemo(() => !env.swipes && anyShowsDone(shownRows(items()), (k) => env.rowCtx(k as EntityKey)));
   const plugins = useSignal(env.shell.extensions('shell.row:menu'));
   const menu = useDerived<MenuEntry[]>(() => menuFor(env, plugins()));
+  // the peer's list topic landed (this run, or saved whole at the last): an empty list is then really empty
+  const loaded = useSignal(env.client.entities.loaded(env.client.home, 'list' as never));
   const refresh = pullRefresh(env, t);
   const box: { el?: HTMLElement } = {};
   // the keyboard's task (j / k, the palette) scrolls its row into view
@@ -105,7 +108,24 @@ function ListBody(): JSX.Element {
   return (
     <Stack gap="2" grow part="list.sidebar">
       <Slot input="shell.list:top" layout="stack" />
-      <Show when={items().length > 0} fallback={<EmptyState icon="spark" compact title={emptyTitle()} part="list.empty" />}>
+      <Show
+        when={items().length > 0}
+        fallback={
+          // still coming: the shape of rows, not "No tasks yet" (QA round 2 #12)
+          <Show when={listFace(0, loaded()) === 'loading'} fallback={<EmptyState icon="spark" compact title={emptyTitle()} part="list.empty" />}>
+            <Stack gap="7" part="list.loading">
+              <For each={[0, 1, 2, 3, 4, 5]}>
+                {() => (
+                  <Stack gap="3">
+                    <Skeleton width="2/3" />
+                    <Skeleton width="1/2" />
+                  </Stack>
+                )}
+              </For>
+            </Stack>
+          </Show>
+        }
+      >
         <ContextMenu
           items={menu()}
           onSelect={(v) => pick(env, v, plugins())}

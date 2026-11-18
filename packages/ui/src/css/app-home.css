@@ -1191,7 +1191,8 @@
   /* v1 #790 .sh-usage / .hu-*: usage at a glance under the prompt box, one quiet row, a thin meter per window; the
      row opens Settings → Usage. Accounts wrap as wholes, never mid-meter. What needs you sits 22px under it, not 30. */
   /* held in a Reserved box (HomeView: its last height, so it lands without moving Needs you), Home's column wide */
-  [data-kit='reserved'][data-part='home.usage'] { flex: none; width: 100%; max-width: var(--size-read); }
+  [data-kit='reserved'][data-part='home.usage'],
+  [data-kit='reserved'][data-part='home.cards'] { flex: none; width: 100%; max-width: var(--size-read); }
   /* in a display: contents slot, so it takes Home's column width itself */
   [data-kit='home-usage'] {
     flex: none;

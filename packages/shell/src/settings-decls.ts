@@ -25,7 +25,11 @@ export const SHELL_SETTINGS = [
   /** the side panel's width (Changes, PR, Shell), dragged on its inner edge (v1 panel.js pref.w: 480, at least 360) */
   { key: 'shell.panel.width', type: 'int', min: PANEL_MIN, max: PANEL_MAX, default: PANEL_W, scope: 'device' },
   /** the room Home's usage row took last time (px), held while it loads so Needs you doesn't move (QA round 1 #13) */
-  { key: 'shell.home.usageHeight', type: 'int', min: 0, max: 400, default: 0, scope: 'device' },
+  // the default is the row's one line (10px above it, 33 tall, 8 drawn back: app-home.css), so a first load doesn't
+  // jump either; a load where no row shows lets it go (Reserved reports 0)
+  { key: 'shell.home.usageHeight', type: 'int', min: 0, max: 400, default: 35, scope: 'device' },
+  /** the room Home's cards under Needs you took last time (wisp.budget's Spare allowance), held while they load */
+  { key: 'shell.home.cardsHeight', type: 'int', min: 0, max: 800, default: 0, scope: 'device' },
   /** the project the list shows (the top bar's chips): a project's id, or 'all' (v1 wisp.filter) */
   { key: 'shell.projectFilter', type: 'string', default: 'all', scope: 'device' },
   /** the phone apps' computer filter (the Tasks bar's title): a peer id, or 'all' (ADR-0065 step 13) */

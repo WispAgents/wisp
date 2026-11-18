@@ -281,6 +281,7 @@ function PickerOpen(props: RunnerPickerProps): JSX.Element {
           onChange: (effort: string) => change(withSetting(props.value, id, { effort })),
           label: (e: string) => (e ? levelLabel(e) : t('shell.runner.default')),
           hint: (e: string) => t(`shell.runner.hint.${e || 'default'}`),
+          title: (e: string) => (e ? t('shell.runner.effortTitle', { level: levelLabel(e) }) : t('shell.runner.effortDefault')),
           aria: { label: t('shell.runner.thinkingLevel'), valueText: (e: string) => t('shell.runner.thinkingIs', { level: e ? levelLabel(e) : t('shell.runner.default') }) },
         },
       }),

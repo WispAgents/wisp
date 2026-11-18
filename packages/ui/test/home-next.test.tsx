@@ -30,3 +30,9 @@ test('needs you says how many it shows of how many when it shows fewer', () => {
   const host = mount(() => <NextList heading="Needs you" count={9} countLabel="5 of 9" rows={['a', 'b', 'c', 'd', 'e'].map(row)} onOpen={() => {}} />);
   expect(host.querySelector('[data-kit="sec-n"]')?.textContent).toBe('5 of 9');
 });
+
+// QA round 2 desktop #2: "Needs you 0" stood alone on Home. v1 paintHome hid the section when nothing needed you.
+test('needs you draws nothing when nothing needs you', () => {
+  const host = mount(() => <NextList heading="Needs you" count={0} rows={[]} onOpen={() => {}} />);
+  expect(host.querySelector('[data-kit="sh-next"]')).toBeNull();
+});

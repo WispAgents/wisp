@@ -385,6 +385,7 @@ export const SHELL_STRINGS = {
   'shell.try.same': 'Same setup on both runs',
   'shell.home.moreOptions': 'More options',
   'shell.home.moreOptionsTitle': 'Run on another computer, compare, delegate, a goal, a worktree, start later',
+  'shell.home.moreTail': 'More: the goal, the worktree, when it starts',
   'shell.rerun.title': 'Rerun task',
   'shell.runOn.setting': 'Setting up {name} on {where}…',
   'shell.runOn.noOrigin': '{name} has no git remote (origin) to clone from, so wisp can’t set it up on {where}. Push it to a remote first, or add its folder there in Projects.',

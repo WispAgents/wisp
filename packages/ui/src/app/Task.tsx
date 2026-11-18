@@ -2,7 +2,7 @@
 // .it-bar, .it-actions, transcript.css .turn/.ask/.trail, ship.css .overlap-strip, composer.css):
 // its head, then its turns with the details column beside them, and the reply box docked at the foot.
 import { HoldRow, type HoldRowProps } from '../composer/HoldRow.tsx';
-import { For, Index, Show, createSignal, onCleanup, onMount, type JSX } from 'solid-js';
+import { For, Index, Show, createMemo, createSignal, onCleanup, onMount, type JSX } from 'solid-js';
 import { ForKeyed } from '../core/keyed.tsx';
 import { flag } from '../core/props.ts';
 import { ActIcon, WithAct, type Act } from './act.tsx';
@@ -611,8 +611,11 @@ export function ReplyBox(given: ReplyBoxProps | CompactReplyBoxProps): JSX.Eleme
   // the tools below read the full box's props; a compact box never draws them (`compact` guards each read)
   const props = given as ReplyBoxProps & { readonly compact?: boolean; readonly part?: string };
   // TRY-22: a suggested follow-up behind the caret, where there's a Tab key (a touch screen has the chips)
-  const ghost = (): { readonly rest: string; readonly key: string; readonly full?: string } | undefined =>
-    !props.compact && props.ghost?.rest && !(typeof matchMedia === 'function' && matchMedia('(hover: none)').matches) ? props.ghost : undefined;
+  // a memo, owned by the box: its key handler reads it, and reading the caller's prop getter there (a compiled memo
+  // for `ghost={a ? b : c}`) made an unowned computation on every key (QA round 2 #15, "computations created outside
+  // a createRoot")
+  const ghost = createMemo((): { readonly rest: string; readonly key: string; readonly full?: string } | undefined =>
+    !props.compact && props.ghost?.rest && !(typeof matchMedia === 'function' && matchMedia('(hover: none)').matches) ? props.ghost : undefined);
   const [awake, setAwake] = createSignal(false);
   let box: HTMLDivElement | undefined;
   // on the click the release makes (after the pressed control's own handler: Solid's sit on document first), or

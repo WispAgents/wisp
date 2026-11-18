@@ -3,10 +3,20 @@
 // no secrets): this only formats them.
 
 import type { DevEntry } from '@wisp/client';
+import '../i18n/lazy.ts';
 
 /** The kinds counted, as the client keeps them (`machines_peer`, `stuff.item`: QA r1 #11 counted `machine` and `stuff`,
  *  which no row is). Rows this window has loaded: turns and events come with the tasks that are open. */
 export const STORE_KINDS = ['session', 'turn', 'event', 'setting', 'crew_member', 'machines_peer', 'stuff.item'] as const;
+
+/** Rows that load with the task that's open (its turns, its events), not with the window. */
+const PER_TASK: ReadonlySet<string> = new Set(['turn', 'event']);
+
+/** A kind's count, as this window holds it; per-task rows with none loaded say they come with an open task, not "0
+ *  rows" (QA desktop r2 #11 read that as a broken store). */
+export function rowsLine(kind: string, count: number, t: (key: string, vars?: Readonly<Record<string, string | number>>) => string): string {
+  return count === 0 && PER_TASK.has(kind) ? t('shell.diag.perTask') : t('shell.diag.rows', { count });
+}
 
 /** A computer's line: its version, its build only when it's something else, and how many plugins. */
 export function peerLine(info: { readonly version?: string; readonly build?: string; readonly plugins?: readonly unknown[] }, plugins: (n: number) => string): string {

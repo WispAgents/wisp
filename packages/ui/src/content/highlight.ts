@@ -1,6 +1,6 @@
 // A tiny highlighter for code blocks: comments, strings, numbers, keywords and capitalised type
-// names, nothing else. It makes spans (never HTML), and gives up on unknown languages and on
-// very large blocks, which render plain.
+// names, nothing else. It makes spans (never HTML). Plain text and very large blocks render plain; a language it
+// doesn't name gets the C-like rules, as v1's did.
 
 export type TokenKind = 'k' | 's' | 'c' | 'n' | 't';
 
@@ -9,7 +9,6 @@ export interface Token {
   readonly text: string;
 }
 
-const C_LIKE = ['js', 'jsx', 'ts', 'tsx', 'javascript', 'typescript', 'mjs', 'cjs', 'json', 'jsonc', 'java', 'c', 'h', 'cpp', 'cc', 'cs', 'go', 'rust', 'rs', 'swift', 'kotlin', 'kt', 'css', 'scss', 'dart', 'scala', 'php'];
 const HASH = ['sh', 'bash', 'zsh', 'shell', 'console', 'py', 'python', 'rb', 'ruby', 'yaml', 'yml', 'toml', 'ini', 'dockerfile', 'make', 'makefile', 'r', 'perl', 'pl', 'nix'];
 
 const KEYWORDS = new Set(
@@ -28,11 +27,16 @@ const HASH_RULES = /(#[^\n]*)|("(?:[^"\\\n]|\\.)*"?|'(?:[^'\\\n]|\\.)*'?)|(\b\d[
 
 const MAX = 50_000;
 
+/** Plain text: never coloured (v1 md.js highlight's first line). */
+const PLAIN = ['text', 'txt', 'plain', 'output', 'log'];
+
+// v1 md.js highlight(): every language but plain text is coloured; one it doesn't know (csv, sql, …) gets the C-like
+// rules, where `#` isn't a comment
 function family(lang: string): RegExp | null {
   const l = lang.toLowerCase();
-  if (C_LIKE.includes(l)) return C_RULES;
+  if (!l || PLAIN.includes(l)) return null;
   if (HASH.includes(l)) return HASH_RULES;
-  return null;
+  return C_RULES;
 }
 
 function kindOf(m: RegExpExecArray): TokenKind | null {

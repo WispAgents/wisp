@@ -106,6 +106,19 @@ export function agentsOf(s: StatusLike | undefined): { kind: 'ready'; names: str
   return names.length ? { kind: 'ready', names } : { kind: 'none' };
 }
 
+/** A wisp 0.x is v1 (QA desktop r2 #22: the owner's v1 install read like a second v2 machine). */
+const isV1 = (version: string): boolean => /^v?0\./.test(version);
+
+/** The version line: "wisp 2.0.0", or "wisp v1 (0.58.0)" for a v1 install. */
+export function versionLine(version: string, say: Say): string {
+  return isV1(version) ? say('machines.version.v1', { version }) : say('machines.version', { version });
+}
+
+/** What its update button says: "Update to v2" for a v1 install, else the version it goes to. */
+export function updateLine(from: string, to: string, say: Say): string {
+  return isV1(from) ? say('machines.update.v2') : say('machines.update', { version: to });
+}
+
 /** The trouble box's headline (v1 trouble): a lost link says it's trying again (and how often), else the hint's title. */
 export function troubleTitle(s: StatusLike, say: Say): string {
   if (s.state === 'reconnecting') {

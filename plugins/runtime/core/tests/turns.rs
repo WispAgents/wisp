@@ -114,7 +114,7 @@ fn a_run_that_exits_without_a_result_ends_with_the_interim_or_an_error() {
 }
 
 fn ending(stopped: bool, interrupted: bool, is_error: bool, text: &str) -> Ending<'_> {
-    Ending { stopped, interrupted, is_error, text, harness: "Claude Code", changes: &[], reason: None }
+    Ending { stopped, interrupted, is_error, text, harness: "Claude Code", changes: &[], reason: None, signed_out: false }
 }
 
 #[test]
@@ -280,6 +280,10 @@ fn a_crashed_limited_or_refused_run_says_which_on_its_row() {
         ..Turn::default()
     };
     assert_eq!((row(&not_started).status.as_str(), row(&not_started).fields.get("halt")), ("blocked", None));
+    // QA desktop r2 #6: a run that failed signed out says Signed out on its row (Sign in), not Failed
+    let mut signed_out = Turn { status: TurnStatus::Error, ..Turn::default() };
+    signed_out.ext.insert("wisp.runtime".into(), json!({ "authFailed": true }));
+    assert_eq!(row(&signed_out).fields.get("halt"), Some(&json!("signedOut")));
 }
 
 #[test]

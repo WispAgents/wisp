@@ -22,3 +22,12 @@ export function panelWidth(want: number, win: number, list: number): number {
   const most = Math.max(PANEL_MIN, Math.min(PANEL_MAX, win - list - TASK_MIN));
   return Math.round(Math.min(Math.max(want, PANEL_MIN), most));
 }
+
+/** v1 panel.js PANEL_WIDE: narrower than this, the side panel takes the list's place while it's open */
+export const PANEL_WIDE = 1180;
+
+/** Whether the list shows beside the open task: as you left it, unless the side panel is open in a window too narrow
+ *  for both (v1 listHidden: sideHidden || panelSqueeze). Your choice is kept: it comes back as the panel closes. */
+export function listShown(open: boolean, sideOpen: boolean, win: number): boolean {
+  return open && !(sideOpen && win < PANEL_WIDE);
+}

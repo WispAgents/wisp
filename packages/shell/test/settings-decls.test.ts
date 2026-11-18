@@ -25,3 +25,9 @@ test('every shell setting kept on the server is declared by a plugin manifest', 
 test('the theme is a setting this device keeps (as the server treats it: crates/wisp/src/settings_store.rs)', () => {
   expect(SHELL_SETTINGS.find((d) => d.key === 'shell.theme')?.scope).toBe('device');
 });
+
+// QA round 2 desktop #13: a first load (nothing kept yet) still jumped 35 px as the usage row came in. Until a load has
+// measured it, Home holds one row's room for it (its one line: 35 px), and lets it go if no row ever shows.
+test('home holds one usage row s room before any load has measured it', () => {
+  expect(SHELL_SETTINGS.find((d) => d.key === 'shell.home.usageHeight')?.default).toBe(35);
+});

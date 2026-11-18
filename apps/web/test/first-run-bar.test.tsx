@@ -22,12 +22,16 @@ afterEach(() => {
 
 /** as main.tsx does: the client started, then the shell drawn, the mock's frames still coming (a cold start: nothing
  *  saved in this browser) */
-async function start(platform: Platform, o: { firstRun?: boolean; width?: number } = {}) {
+/** `studio`: a second saved computer with tasks of its own */
+async function start(platform: Platform, o: { firstRun?: boolean; width?: number; studio?: boolean } = {}) {
   const mock = createMockPeer({ epoch: 'e1', ...(o.firstRun && { firstRun: true }) });
   const home = peerId('local');
   const client = createClient({ clientId: 'c1', build: 't', home, width: o.width ?? 390 });
   const shell = createShell({ client, toaster: createToaster(), platform, home, window: window as unknown as ShellWindow });
-  await client.start([{ peer: home, name: 'mock', transport: memTransport(mock) }]);
+  await client.start([
+    { peer: home, name: 'mock', transport: memTransport(mock) },
+    ...(o.studio ? [{ peer: peerId('studio'), name: 'Studio', transport: memTransport(createMockPeer({ epoch: 'e2', name: 'Studio' })) }] : []),
+  ]);
   const root = document.createElement('div');
   document.body.append(root);
   const stop = shell.render(root);
@@ -83,4 +87,17 @@ test('with_no_task_yet_the_bar_settles_on_the_first_run_once_and_stays_there', a
   expect(w.modes.at(-1), 'the first run').toBe('first');
   expect(w.modes.filter((m) => m === 'first'), 'settled once').toHaveLength(1);
   expect(w.modes.length, 'at most one change').toBeLessThanOrEqual(2);
+});
+
+// v1 (launcher.js paintFirstRun over live.js loadSessions): the first run counts this computer's own list, the one it
+// waits for; another computer's tasks don't open New task here (and waiting on them would flip it when they land)
+test('tasks_on_another_computer_only_leave_this_computers_new_task_on_its_first_run_with_no_flip', async () => {
+  const { client, root } = await start(browser, { firstRun: true, width: 1280, studio: true });
+  const w = watchMode(root);
+  await until(() => client.entities.keys('session')().some((k) => k.startsWith('studio:')) && client.entities.loaded(peerId('local'), 'list')());
+  await until(() => false, 300);
+  w.stop();
+  expect(client.entities.keys('session')().some((k) => k.startsWith('studio:')), 'Studio’s tasks are in').toBe(true);
+  expect(w.modes.at(-1), 'still the first run').toBe('first');
+  expect(w.modes.filter((m) => m === 'first'), 'settled once').toHaveLength(1);
 });

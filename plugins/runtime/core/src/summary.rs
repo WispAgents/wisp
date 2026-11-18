@@ -79,6 +79,11 @@ fn halt(t: Option<&Turn>) -> Option<&'static str> {
         Some("limit")
     } else if t.refusal.is_some() {
         Some("refused")
+    } else if t.status == TurnStatus::Error
+        && t.ext.get("wisp.runtime").and_then(|r| r.get("authFailed")).and_then(Value::as_bool) == Some(true)
+    {
+        // signed out: the row says so (Sign in), not Failed (QA desktop r2 #6)
+        Some("signedOut")
     } else if t.status == TurnStatus::Error && hero(Some(t)).and_then(|h| h.get("title")).and_then(Value::as_str) != Some(NOT_STARTED) {
         Some("failed")
     } else {

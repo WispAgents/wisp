@@ -35,6 +35,7 @@ export {
   type SetupTip,
   type SplitHomeProps,
 } from './Home.tsx';
+export { foldTail, tailFold, type FoldExtras, type FoldInput } from './launcher-fold.ts';
 export { LauncherSetup, type LauncherSetupProps } from './LauncherSetup.tsx';
 export { TeamCopies, TeamCrew, TeamFields, TeamLead, TeamPop, TeamRow, TeamSave, TeamWhere, type TeamPlaceLook, type TeamPopProps, type TeamVote } from './TeamPop.tsx';
 export {

@@ -214,7 +214,6 @@ function Shell(props: DialogProps & { readonly kind: Kind }): JSX.Element {
     else close();
   };
   const part = (): PartName => props.part ?? (props.kind === 'sheet' ? 'ui.sheet' : 'ui.dialog');
-  const phone = usePlatform()() !== 'web';
   let content: HTMLElement | undefined;
   const trigger = (): Bind =>
     bound()?.getTriggerProps() ?? {
@@ -231,9 +230,10 @@ function Shell(props: DialogProps & { readonly kind: Kind }): JSX.Element {
     <>
       <Show when={machine.ready()}>
         {(m) => {
-          // the phone apps: with nothing of the caller's to focus, focus lands on the sheet itself, not its first button (no ring on × as it
-          // opens; VoiceOver and TalkBack read the sheet from its title: QA round 2 #14)
-          const own = phone ? mergeProps(props, { initialFocus: () => props.initialFocus?.() ?? content ?? null }) : props;
+          // with nothing of the caller's to focus, focus lands on the dialog itself, not its first button: no ring on × as it opens
+          // after a click, and VoiceOver, TalkBack and desktop readers read it from its title (phones: QA round 2 #14; desktop:
+          // the Machines dialog, QA desktop round 2 #22)
+          const own = mergeProps(props, { initialFocus: () => props.initialFocus?.() ?? content ?? null });
           setApi(() => m().useDialog(own, untrack(selfOpen), focus.to));
           return null;
         }}

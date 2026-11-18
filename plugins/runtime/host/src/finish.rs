@@ -49,6 +49,7 @@ impl Runtime {
             .map_or((false, false), |l| (l.stopping || l.interrupting, l.interrupting));
         let h = self.harness(&turn.agent).ok();
         let harness = h.as_ref().map(|h| h.info().name.clone()).unwrap_or_default();
+        let auth_failed = auth_failed || said_signed_out(h.as_deref(), is_error && !stopping, &text);
         let ending = Ending {
             stopped: stopped || stopping,
             interrupted,
@@ -57,6 +58,7 @@ impl Runtime {
             harness: &harness,
             changes: &head.changes,
             reason: None,
+            signed_out: auth_failed,
         };
         let blocks = self.host.blocks();
         let (status, mut presentation) = land::end_presentation(&ending, |t| wisp_runtime_core::blocks::presentation(t, &blocks));
@@ -74,20 +76,7 @@ impl Runtime {
         turn.changed_files = u32::try_from(head.changes.len()).ok().filter(|n| *n > 0);
         turn.n_events = n_events;
         turn.resume_id.clone_from(&head.resume_id);
-        // only what wisp can allow is kept for Allow & retry (a Full auto run's refusals are its harness's own: v1 #777)
-        let blocked = wisp_runtime_core::activity::allowable(turn.mode, &head.blocked);
-        if !head.changes.is_empty() || !blocked.is_empty() || auth_failed || head.cli.is_some() {
-            // `cli`: what the CLI was this turn (version, catalog), for the page's "since the last turn" line
-            keep_in_slot(
-                &mut turn,
-                [
-                    ("changes", json!(head.changes)),
-                    ("blocked", json!(blocked)),
-                    ("authFailed", json!(auth_failed)),
-                    ("cli", json!(head.cli)),
-                ],
-            );
-        }
+        keep_facts(&mut turn, head, auth_failed);
         if status == TurnStatus::Done
             && turn.idx == 0
             && title_auto(&s)
@@ -233,6 +222,7 @@ impl Runtime {
             harness: "",
             changes: &[],
             reason: Some(("Stopped", "wisp restarted while this was running. Follow up to pick it back up.")),
+            signed_out: false,
         };
         let (status, p) = land::end_presentation(&ending, |_| wisp_runtime_api::model::Presentation::default());
         t.status = status;
@@ -341,6 +331,25 @@ fn cache_reads(st: &wisp_runtime_api::model::TurnStats) -> Option<u64> {
         models.values().map(|m| m.get("cacheRead").and_then(serde_json::Value::as_u64)).try_fold(0u64, |a, x| x.map(|x| a + x))
     });
     reads.or(st.cache_tokens)
+}
+
+/// A failed end in the harness's own signed-out words, with or without a result line: a CLI that died with a 401 on
+/// stderr never said it in one, and its raw API error was the task's line in the list (QA desktop r2 #6).
+fn said_signed_out(h: Option<&dyn wisp_runtime_api::Harness>, failed: bool, text: &str) -> bool {
+    failed && h.is_some_and(|h| h.auth_failed(text))
+}
+
+/// What the turn's slot keeps: its changes, what wisp can allow for Allow & retry (a Full auto run's refusals are its
+/// harness's own: v1 #777), whether it failed signed out, and `cli`: what the CLI was this turn (version, catalog), for
+/// the page's "since the last turn" line.
+fn keep_facts(turn: &mut Turn, head: &Head, auth_failed: bool) {
+    let blocked = wisp_runtime_core::activity::allowable(turn.mode, &head.blocked);
+    if !head.changes.is_empty() || !blocked.is_empty() || auth_failed || head.cli.is_some() {
+        keep_in_slot(
+            turn,
+            [("changes", json!(head.changes)), ("blocked", json!(blocked)), ("authFailed", json!(auth_failed)), ("cli", json!(head.cli))],
+        );
+    }
 }
 
 #[cfg(test)]
