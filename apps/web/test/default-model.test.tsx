@@ -90,3 +90,30 @@ test('a_compared_agents_chip_names_its_default_model_too', async () => {
   expect(run()).toContain('Opus');
   expect(run()).not.toContain('Default');
 });
+
+// QA r8 desktop #1: the picker's Default row names the same model the chip does, from the same answer (runtime.defaultModel:
+// the project's pin, else the plan's), not only the harnesses topic's config read
+test('the_pickers_default_row_names_what_the_chip_names', async () => {
+  const mock = createMockPeer({ epoch: 'e1', harnesses: true, computers: true });
+  const home = peerId('local');
+  const client = createClient({ clientId: 'c1', build: 't', home, width: 1440 });
+  const shell = createShell({ client, toaster: createToaster(), platform: nullPlatform({ kind: 'browser' }), home, window: window as unknown as ShellWindow });
+  for (const { def } of pluginUis()) if (def?.id === 'wisp.claude') shell.register(def);
+  await client.start([{ peer: home, name: 'mock', transport: memTransport(mock) }]);
+  const root = document.createElement('div');
+  document.body.append(root);
+  const stop = shell.render(root);
+  stops.push(() => {
+    stop();
+    shell.dispose();
+  });
+  const pill = (): HTMLElement | null => root.querySelector<HTMLElement>('[data-part~="launcher.harness"]');
+  // the chip: the project's answer (Sonnet), where the topic says this computer's (Opus)
+  await until(() => (pill()?.textContent ?? '').includes('Sonnet'));
+  pill()?.click();
+  const row = (): string => [...document.querySelectorAll<HTMLElement>('[role="option"], [role="menuitemradio"], [data-part~="runner.picker.model"]')].map((e) => e.textContent ?? '').find((x) => /\(default\)|^Default/.test(x)) ?? '';
+  await until(() => row() !== '');
+  await until(() => row().includes('Sonnet'));
+  expect(row()).toContain('Sonnet');
+  expect(row()).not.toContain('Opus');
+});

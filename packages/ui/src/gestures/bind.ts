@@ -109,7 +109,8 @@ export function bindPageSwipe(el: HTMLElement, o: PageSwipeOptions): () => void 
 
 export interface LongPressOptions {
   readonly host: GestureHost;
-  readonly onLongPress: () => void;
+  /** `at`: where the finger was (a menu opens beside it). Additive (QA r8 #2). */
+  readonly onLongPress: (at: { readonly x: number; readonly y: number }) => void;
   /** the timer (tests pass a fake one) */
   readonly schedule?: Schedule;
   /** run `onLongPress` once the finger is up (a menu opened under the finger would take its lift for a press outside
@@ -167,12 +168,12 @@ export function bindLongPress(el: HTMLElement, o: LongPressOptions): () => void 
     st?.cancel();
     st = undefined;
   };
-  const fire = (): void => {
+  const fire = (at: { readonly x: number; readonly y: number }): void => {
     stop();
     fired = true;
     o.host.haptic('tap');
-    if (o.onLift) finger.whenUp(o.onLongPress);
-    else o.onLongPress();
+    if (o.onLift) finger.whenUp(() => o.onLongPress(at));
+    else o.onLongPress(at);
   };
   return all([
     timers.dispose,
@@ -183,7 +184,7 @@ export function bindLongPress(el: HTMLElement, o: LongPressOptions): () => void 
       finger.reset();
       if (e.pointerType !== 'touch' || !e.isPrimary || owns(e.target)) return;
       if (ownerOf(e.clientX, e.target, el) === 'system') return;
-      st = { x: e.clientX, y: e.clientY, cancel: schedule(fire, LONG_PRESS_MS) };
+      st = { x: e.clientX, y: e.clientY, cancel: schedule(() => fire({ x: e.clientX, y: e.clientY }), LONG_PRESS_MS) };
       finger.start();
     }),
     listen(el, 'pointermove', (e) => {
@@ -201,7 +202,7 @@ export function bindLongPress(el: HTMLElement, o: LongPressOptions): () => void 
     listen(el, 'contextmenu', (e) => {
       if (!st && !fired && !finger.still()) return;
       e.preventDefault();
-      if (!fired) fire();
+      if (!fired) fire({ x: e.clientX, y: e.clientY });
     }),
     listen(
       el,

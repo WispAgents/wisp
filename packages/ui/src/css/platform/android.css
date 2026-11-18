@@ -1586,6 +1586,9 @@
     -webkit-mask-image: linear-gradient(90deg, transparent, var(--on-surface) var(--space-8), var(--on-surface) calc(100% - var(--space-8)), transparent);
     mask-image: linear-gradient(90deg, transparent, var(--on-surface) var(--space-8), var(--on-surface) calc(100% - var(--space-8)), transparent);
   }
+  /* QA r8 #1: the tabs have the whole row, so no name is cut at 320 px: the panel's ⋯ (where the work is: copy it, open
+     it elsewhere) sits at the sheet's top corner, in its grabber's 48 dp row (22 dp above and below the handle) */
+  :root[data-platform='android'] [data-part~='phone.side.sheet'] [data-part~='side.head'] > [data-part='panel.place.more.trigger'] { position: absolute; top: var(--space-0); right: var(--space-2); }
   :root[data-platform='android'] [data-part~='phone.side.sheet'] [data-part~='side.head'] [data-kit='icon-button'],
   :root[data-platform='android'] [data-part~='phone.side.sheet'] [data-part~='side.head'] button[aria-haspopup] { min-width: var(--tap-min); min-height: var(--tap-min); }
 }

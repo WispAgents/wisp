@@ -10,3 +10,18 @@ export const underBox =
     const box = el.closest(selector)?.getBoundingClientRect();
     return { x: r.x, y: r.y, width: r.width, height: Math.max(r.height, (box?.bottom ?? r.bottom) - r.y) };
   };
+
+type AnchorRect = { x: number; y: number; width: number; height: number };
+
+/** A point to open from while `point` gives one (a long-press's finger, QA r8 #2), else the trigger's own box (or what
+ *  `fallback` makes of it). */
+export const fromPoint =
+  (point: () => { readonly x: number; readonly y: number } | undefined, fallback?: (el: unknown) => AnchorRect | null) =>
+  (el: unknown): AnchorRect | null => {
+    const at = point();
+    if (at) return { x: at.x, y: at.y, width: 0, height: 0 };
+    if (fallback) return fallback(el);
+    if (!(el instanceof HTMLElement)) return null;
+    const r = el.getBoundingClientRect();
+    return { x: r.x, y: r.y, width: r.width, height: r.height };
+  };

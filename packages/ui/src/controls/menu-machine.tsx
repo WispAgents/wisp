@@ -10,11 +10,11 @@ import { createMemo, createSignal, createUniqueId, For, Match, onMount, Show, Sw
 import { Portal } from 'solid-js/web';
 import { flag, sub, type PartName } from '../core/props.ts';
 import { Icon } from '../content/Icon.tsx';
-import type { MenuBaseProps, Placement } from './Menu.tsx';
+import type { MenuBaseProps, MenuPlace } from './Menu.tsx';
 import { bound, type Replay } from './lazy-part.ts';
 import { tidySeparators, type MenuEntry, type MenuGroup, type MenuItem, type MenuSeparator, type MenuSubmenu } from './menu-entries.ts';
 import { usePlatform } from '../platform/PlatformLook.tsx';
-import { underBox } from './menu-anchor.ts';
+import { fromPoint, underBox } from './menu-anchor.ts';
 import { Flyout, flyoutPointer, type FlyContext } from './menu-flyout.tsx';
 
 const BACK = 'menu:back';
@@ -60,12 +60,19 @@ function flyContext(parent: menu.Service, onSelect: (value: string) => void, kid
  * never flipped), else under its trigger; a phone's is drawn over the screen (fixed): as it grows drilling into a
  * submenu it never widens the page (QA r7 #4: WebKit kept the frame where the wider menu stood before it moved, and the
  * page scrolled sideways 11 px) */
-function positioningOf(at: 'pointer' | undefined, props: { readonly placement?: Placement; readonly below?: string }, look: string) {
-  const base = at === 'pointer' ? { placement: 'bottom-start' as const, gutter: 0, flip: false, overlap: true, overflowPadding: 8 } : { placement: props.placement ?? 'bottom-start', gutter: 4, overlap: true, overflowPadding: 8, ...(props.below !== undefined && { getAnchorRect: underBox(props.below) }) };
+/** what the menu is placed against: a point while `from` gives one (else the trigger, or the box `below` names) */
+function anchorOf(props: MenuPlace) {
+  const from = props.from;
+  if (from) return { getAnchorRect: fromPoint(from, props.below !== undefined ? underBox(props.below) : undefined) };
+  return props.below !== undefined ? { getAnchorRect: underBox(props.below) } : {};
+}
+
+function positioningOf(at: 'pointer' | undefined, props: MenuPlace, look: string) {
+  const base = at === 'pointer' ? { placement: 'bottom-start' as const, gutter: 0, flip: false, overlap: true, overflowPadding: 8 } : { placement: props.placement ?? 'bottom-start', gutter: 4, overlap: true, overflowPadding: 8, ...anchorOf(props) };
   return { ...base, ...(look !== 'web' && { strategy: 'fixed' as const }) };
 }
 
-function useMenu(props: MenuBaseProps & { readonly placement?: Placement; readonly below?: string }, at?: 'pointer'): MenuState {
+function useMenu(props: MenuBaseProps & MenuPlace, at?: 'pointer'): MenuState {
   const id = createUniqueId();
   const [chosen, setPane] = createSignal<string | undefined>();
   const [width, setWidth] = createSignal<string | undefined>();
@@ -271,7 +278,7 @@ function MenuContent(props: { readonly state: MenuState; readonly items: readonl
 
 /** What Menu.tsx hands the machine: the menu's props, how it opens, and where to report the trigger's props. */
 export interface MenuMachineProps {
-  readonly base: MenuBaseProps & { readonly placement?: Placement; readonly below?: string };
+  readonly base: MenuBaseProps & MenuPlace;
   readonly at?: 'pointer';
   readonly part: PartName;
   /** the trigger's props from now on (the button's, or the right-click area's) */

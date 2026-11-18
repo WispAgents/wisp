@@ -76,3 +76,45 @@ describe('an answer’s long-press on Android (QA r7)', () => {
     expect(open()).toBe(false);
   });
 });
+
+// QA r8 #2: the hold's menu opens where the finger was, kept on screen, never at the answer's ⋯ (in its footer, often
+// below the fold: the menu opened off screen and nothing seemed to happen). The ⋯ still opens it at the ⋯.
+describe('the long-press menu opens at the finger (QA r8 #2)', () => {
+  const positionerOf = (name: string): HTMLElement | undefined =>
+    [...document.querySelectorAll<HTMLElement>('[data-kit="menu"]')].find((m) => m.textContent?.includes(name) && m.getAttribute('data-state') === 'open')?.parentElement ?? undefined;
+  /** the positioner's place as Floating UI set it (Zag's --x, --y) */
+  const placeOf = (el: HTMLElement): { x: number; y: number } => ({ x: Number.parseFloat(el.style.getPropertyValue('--x')), y: Number.parseFloat(el.style.getPropertyValue('--y')) });
+  const placed = (name: string): boolean => (positionerOf(name)?.style.getPropertyValue('--y') ?? '') !== '';
+
+  test('qa_s_long_press_opens_the_menu_at_the_pressed_point_not_at_the_footers_dots', async () => {
+    const { ask, open } = mountTurn();
+    // the answer's ⋯ sits far below (its footer under the fold)
+    const dots = document.querySelector<HTMLElement>(`[data-turn="t${n}"] [data-kit="tb-more"] button`) as HTMLElement;
+    dots.getBoundingClientRect = () => ({ left: 330, right: 362, top: 1141, bottom: 1173, width: 32, height: 32, x: 330, y: 1141, toJSON: () => ({}) }) as DOMRect;
+    pe(ask, 'pointerdown');
+    // Android's long touch selects the word under the finger
+    getSelection()?.selectAllChildren(ask);
+    await wait(900);
+    pe(ask, 'pointerup');
+    ask.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: 120, clientY: 80 }));
+    await until(open, 2000);
+    await until(() => placed(label(n)), 2000);
+    const at = placeOf(positionerOf(label(n)) as HTMLElement);
+    // the text the browser selected under the hold is let go (its own bubble, "Comment", gave way to the menu)
+    expect(getSelection()?.toString() ?? '').toBe('');
+    // beside the finger (120, 80), nowhere near the ⋯ at y 1141
+    expect(Math.abs(at.y - 80), `y ${at.y}`).toBeLessThan(60);
+    expect(at.y).toBeLessThan(1000);
+  });
+
+  test('the_dots_still_open_it_at_the_dots', async () => {
+    const { open } = mountTurn();
+    const dots = document.querySelector<HTMLElement>(`[data-turn="t${n}"] [data-kit="tb-more"] button`) as HTMLElement;
+    dots.getBoundingClientRect = () => ({ left: 330, right: 362, top: 600, bottom: 632, width: 32, height: 32, x: 330, y: 600, toJSON: () => ({}) }) as DOMRect;
+    dots.click();
+    await until(open, 2000);
+    await until(() => placed(label(n)), 2000);
+    const at = placeOf(positionerOf(label(n)) as HTMLElement);
+    expect(Math.abs(at.y - 600), `y ${at.y}`).toBeLessThan(60);
+  });
+});

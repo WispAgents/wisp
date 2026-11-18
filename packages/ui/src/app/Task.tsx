@@ -9,7 +9,7 @@ import { ActIcon, WithAct, type Act } from './act.tsx';
 import { ReplyOptions, type ReplyOptionLabels } from './ReplyOptions.tsx';
 import { usePlatform } from '../platform/PlatformLook.tsx';
 import { useT } from '../core/i18n.tsx';
-import { Menu } from '../controls/Menu.tsx';
+import { Menu, type MenuPoint } from '../controls/Menu.tsx';
 import type { MenuEntry } from '../controls/menu-entries.ts';
 import { bindLongPress } from '../gestures/bind.ts';
 import { useGesture } from '../gestures/use.ts';
@@ -393,13 +393,34 @@ export function TurnView(props: TurnViewProps): JSX.Element {
   // every answer's actions are a menu on a phone: its ⋯ and a long-press on it (QA r6 #15); an older one's icons fold
   const folds = (): boolean => look() !== 'web' && props.tools.length > 0;
   const toolItems = (): MenuEntry[] => props.tools.map((x) => ({ value: x.id, label: x.label, icon: x.icon, ...(x.on !== undefined && { checked: x.on }), ...(x.act?.pending && { disabled: true }) }));
+  let turnEl: HTMLElement | undefined;
+  // where the hold's menu opens (the ⋯ opens it at the ⋯): forgotten as it closes
+  const [from, setFrom] = createSignal<MenuPoint | undefined>();
+  const openAt = (at: MenuPoint): void => {
+    setFrom(at);
+    setMenuOpen(true);
+  };
+  // the hold's own: the text the browser selected under it is let go, its bubble ("Comment") giving way to the menu
+  const heldOpen = (at: MenuPoint): void => {
+    getSelection()?.removeAllRanges();
+    openAt(at);
+  };
+  const onMenu = (open: boolean): void => {
+    setMenuOpen(open);
+    if (!open) setFrom(undefined);
+  };
   const pickTool = (id: string): void => props.tools.find((x) => x.id === id)?.act?.onClick?.();
   const pressMenu = useGesture(
     'turn.long-press',
     // the hold ticks (the haptic); the menu opens as the finger lifts: opened under it, that lift is a press outside
     // the menu and closed it at once (QA r6 #15)
-    (el, host) => bindLongPress(el, { host, onLift: true, onLongPress: () => folds() && setMenuOpen(true) }),
-    () => (folds() ? [{ label: kitT('gesture.actions'), run: () => setMenuOpen(true) }] : []),
+    // it opens where the finger was, kept on screen (QA r8 #2: at the ⋯ in the answer's footer it was often below the
+    // fold, and nothing seemed to happen); a screen reader's action opens it over the answer's visible top
+    (el, host) => {
+      turnEl = el;
+      return bindLongPress(el, { host, onLift: true, onLongPress: (at) => folds() && heldOpen(at) });
+    },
+    () => (folds() ? [{ label: kitT('gesture.actions'), run: () => (turnEl ? openAt(visibleTop(turnEl)) : onMenu(true)) }] : []),
   );
   return (
     <article ref={pressMenu} data-kit="turn" data-turn={props.id} data-live={flag(props.live !== undefined || props.working !== undefined)} data-latest={flag(props.latest)}>
@@ -547,7 +568,7 @@ export function TurnView(props: TurnViewProps): JSX.Element {
           </Show>
           <Show when={folds()}>
             <span data-kit="tb-more">
-              <Menu trigger={{ icon: 'dots', 'aria-label': kitT('more'), variant: 'ghost', size: 'sm' }} items={toolItems()} onSelect={pickTool} open={menuOpen()} onOpenChange={setMenuOpen} placement="top-end" part="turn.more" />
+              <Menu trigger={{ icon: 'dots', 'aria-label': kitT('more'), variant: 'ghost', size: 'sm' }} items={toolItems()} onSelect={pickTool} open={menuOpen()} onOpenChange={onMenu} from={from} placement="top-end" part="turn.more" />
             </span>
           </Show>
           <span data-kit="tb-tools">
@@ -1109,4 +1130,10 @@ export function TaskBody(props: {
       </div>
     </div>
   );
+}
+
+/** the top of `el` that is on screen, a little in: where a menu opened for it by a screen reader goes */
+function visibleTop(el: HTMLElement): MenuPoint {
+  const r = el.getBoundingClientRect();
+  return { x: r.left + 16, y: Math.min(Math.max(r.top, 0), innerHeight) + 16 };
 }

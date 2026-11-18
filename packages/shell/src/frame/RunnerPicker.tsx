@@ -82,6 +82,9 @@ export interface RunnerPickerProps {
   readonly back?: () => HTMLElement | undefined;
   /** Try it two ways (a compare run, v1 runnerPicker `variant`): What's different under the pane of a harness that runs
    * variants (`can`); a segment commits in place, moving the run to that harness if it wasn't on it */
+  /** what a harness's Default runs, by name, as the chip says it (useDefaultWords: the folder's answer, else this
+   *  computer's; '' unknown). Without it the harnesses topic's word (QA r8 desktop #1: one answer for chip and row) */
+  readonly defaultWord?: ((agent: string) => string) | undefined;
   readonly vary?:
     | {
         /** the settings `agent` can vary for the run as it would be there (`r`) */
@@ -274,7 +277,7 @@ function PickerOpen(props: RunnerPickerProps): JSX.Element {
       groups: modelGroups(a, query()).map((g) => ({
         head: g.head,
         // the Default named by the model it runs when the harness says ("Opus (default)", UX 2026-11-18 #9)
-        items: g.items.map((m) => ({ id: m.id, label: m.id === '' ? ((r) => (r ? t('shell.runner.defaultIs', { model: r }) : t('shell.runner.default')))(a?.models.find((x) => x.id === '')?.resolves) : m.label, hint: m.id === '' ? (m.hint ?? t('shell.runner.asSet', { name })) : m.hint && m.hint !== g.head ? m.hint : undefined })),
+        items: g.items.map((m) => ({ id: m.id, label: m.id === '' ? ((r) => (r ? t('shell.runner.defaultIs', { model: r }) : t('shell.runner.default')))(props.defaultWord?.(id) || a?.models.find((x) => x.id === '')?.resolves) : m.label, hint: m.id === '' ? (m.hint ?? t('shell.runner.asSet', { name })) : m.hint && m.hint !== g.head ? m.hint : undefined })),
       })),
       ...(searchShown(a) && { search: { placeholder: t('shell.runner.searchModels', { name }), value: query(), onInput: setQuery } }),
       ...(levels.length > 0 && {

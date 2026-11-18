@@ -1575,6 +1575,7 @@ export default function TaskView(props: { readonly id: string; readonly onBack?:
                     anchor={() => document.querySelector('[data-part="composer.harness"]')}
                     back={() => input}
                     peer={peer}
+                    defaultWord={(a) => defaultName(a, '')}
                     value={shownRun()}
                     onChange={setReplyRun}
                   />

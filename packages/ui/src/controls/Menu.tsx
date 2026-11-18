@@ -46,12 +46,23 @@ export interface MenuProps extends MenuBaseProps {
    *  trigger's side, instead of over what sits beside the trigger (a panel's head and its words, QA desktop r3 #5).
    *  Additive (2026-11-18). */
   readonly below?: string;
+  /** a point on the screen to open from instead of the trigger, while it gives one (a long-press's finger: the trigger
+   *  may be off screen, QA r8 #2); kept on screen like any menu. Additive (2026-11-18). */
+  readonly from?: () => MenuPoint | undefined;
 }
+
+export interface MenuPoint {
+  readonly x: number;
+  readonly y: number;
+}
+
+/** where a menu opens: its placement beside the trigger, under a box around it, or from a point */
+export type MenuPlace = Pick<MenuProps, 'placement' | 'below' | 'from'>;
 
 
 /** The trigger's props until the machine binds, then the machine's; and the machine itself, once it's loaded. `phone`:
  * a ContextMenu in the phone apps binds the phone chunk's stand-in (the same props) instead of Zag's. */
-function useLazyMenu(props: MenuBaseProps & { readonly placement?: Placement; readonly below?: string }, part: () => PartName, at?: 'pointer', phone?: boolean) {
+function useLazyMenu(props: MenuBaseProps & MenuPlace, part: () => PartName, at?: 'pointer', phone?: boolean) {
   const lazy = phone ? phoneOverlays : machine;
   const [bound, setBound] = createSignal<Accessor<Record<string, unknown>>>();
   const [pending, setPending] = createSignal<Replay>();

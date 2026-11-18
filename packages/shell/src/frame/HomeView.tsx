@@ -1090,6 +1090,7 @@ export function HomeView(props: { readonly onBack?: () => void }): JSX.Element {
         anchor={() => document.querySelector('[data-part="launcher.harness"][data-lead]')}
         back={() => input}
         peer={target()}
+        defaultWord={(a) => defaultName(a, '')}
         auto={autoOn()}
         accounts
         // the names ride along, so a thinking or account change (withSetting) keeps the model's and account's words
@@ -1115,6 +1116,7 @@ export function HomeView(props: { readonly onBack?: () => void }): JSX.Element {
             anchor={() => document.querySelectorAll('[data-part="launcher.compare.runner"]')[c().i]}
             back={() => input}
             peer={target()}
+            defaultWord={(a) => defaultName(a, '')}
             accounts
             value={c().r}
             onChange={(r) => {
