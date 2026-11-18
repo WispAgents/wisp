@@ -309,3 +309,75 @@ fn only_the_next_word_makes_a_line_command_shaped() {
     let x = p(&["review", "--strict"]);
     assert_eq!(not_a_task(&x.words, x.literal, &plugins), Some(NotATask::Plugin("review".to_owned())));
 }
+
+/// QA round 11 #1: `wisp version`, `wisp update now`, `wisp machine add` and `wisp share list` started tasks. Each
+/// word a user may type as a command (v2's, and v1's: usage, spell, version, update, machine) is a strict group, a
+/// command that takes an argument, or a word a prompt may start with ([`PROMPT_WORDS`]), never two of these.
+#[test]
+fn every_command_word_is_strict_takes_an_argument_or_starts_a_prompt() {
+    let cat: Vec<Vec<String>> = [
+        &["machines", "add"][..],
+        &["machines", "list"],
+        &["machine", "read"],
+        &["share", "send"],
+        &["share", "destinations"],
+        &["update", "check"],
+        &["update", "install"],
+    ]
+    .map(w)
+    .to_vec();
+    for (args, group) in [
+        (&["version", "now"][..], "version"),
+        (&["update", "now"], "update"),
+        (&["update", "now", "--yes"], "update"),
+        (&["machine", "frob"], "machine"),
+        (&["share", "list"], "share"),
+        (&["shares", "list"], "shares"),
+        (&["usage", "today"], "usage"),
+        (&["spell", "cast", "a", "button"], "spell"),
+        (&["serve", "now"], "serve"),
+        (&["tui", "please"], "tui"),
+        (&["shell-init", "powershell"], "shell-init"),
+        (&["schema", "dump"], "schema"),
+    ] {
+        let x = p(args);
+        let u = unknown_verb(&x.words, x.literal, &cat).unwrap_or_else(|| panic!("{args:?}"));
+        assert_eq!(u.group, group, "{args:?}");
+    }
+    let verbs = |args: &[&str]| unknown_verb(&p(args).words, Literal::No, &cat).map(|u| u.verbs).unwrap_or_default();
+    // `machine` is this machine's plugin, and `machines`' verbs are its too (`wisp machine add` is `wisp machines add`)
+    assert!(["read", "add", "list"].iter().all(|v| verbs(&["machine", "frob"]).contains(&(*v).to_owned())));
+    assert!(unknown_verb(&p(&["machine", "add"]).words, Literal::No, &cat).is_none());
+    assert_eq!(machines_alias(&w(&["machine", "add", "--name", "studio"])), Some(w(&["machines", "add", "--name", "studio"])));
+    assert_eq!(machines_alias(&w(&["machine", "read"])), Some(w(&["machines", "read"])), "tried after machine's own verbs");
+    assert_eq!(machines_alias(&w(&["machines", "add"])), None);
+    // share: its forms and its plugin's verbs, and where your shares are
+    let share = unknown_verb(&p(&["share", "list"]).words, Literal::No, &cat).unwrap();
+    assert!(share.verbs.contains(&"<task id>".to_owned()) && share.verbs.contains(&"send".to_owned()), "{share:?}");
+    assert!(share.said(&w(&["share", "list"])).contains("wisp shares"), "{}", share.said(&w(&["share", "list"])));
+    // `update` is a prompt's first word too: strict with one word after it, a prompt with more
+    assert!(unknown_verb(&p(&["update", "the", "readme"]).words, Literal::No, &cat).is_none());
+    // update's own `apply`, and its plugin's verbs
+    assert!(["apply", "check", "install"].iter().all(|v| verbs(&["update", "now"]).contains(&(*v).to_owned())));
+    // alone, each is a known word (its usage, or its command), never a one-word task
+    for word in ["version", "update", "usage", "spell", "spells", "machine", "share", "shares", "serve", "tui"] {
+        assert!(known(word), "{word}");
+        assert!(usage(word).contains(&format!("wisp {word}")) || usage(word).contains(&format!("|{word}")), "{word}: {}", usage(word));
+    }
+    // the three kinds never overlap: a prompt word is no group
+    for word in PROMPT_WORDS {
+        assert!(!is_group(word), "{word} is both a prompt word and a strict group");
+        assert!(known(word), "{word} isn't a command word at all");
+    }
+}
+
+/// A built-in group that's also a plugin (`machines`, `machine`), alone: its plugin's verbs, as before it was a group.
+#[test]
+fn a_group_that_is_a_plugin_alone_lists_its_verbs() {
+    let plugins = w(&["machines", "machine", "update"]);
+    for word in ["machines", "machine"] {
+        assert_eq!(not_a_task(&w(&[word]), Literal::No, &plugins), Some(NotATask::Plugin(word.to_owned())), "{word}");
+    }
+    // a group that's only wisp's: its usage
+    assert_eq!(not_a_task(&w(&["spell"]), Literal::No, &plugins), Some(NotATask::Usage("spell".to_owned())));
+}

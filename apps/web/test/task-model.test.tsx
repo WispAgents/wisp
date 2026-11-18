@@ -76,3 +76,38 @@ test('a_task_on_the_default_model_names_it_in_its_facts_as_its_chip_does', async
   expect(details()).toBe('Claude Code · Opus');
 });
 
+
+// QA r11 desktop #1: the reply box's Send said "Launch (Enter · Shift+Enter for newline)", scheduled or not. A reply
+// sends (v1 composer.js: "Send (Enter · …)"), and with Start later set it says when: "Send at 14:41", as New task's
+// Send says "Start at 14:41"
+test('the_reply_boxs_send_says_send_and_when_a_follow_up_is_scheduled', async () => {
+  const mock = createMockPeer({ epoch: 'e1' });
+  const home = peerId('local');
+  const client = createClient({ clientId: 'c1', build: 't', home, width: 1440 });
+  const shell = createShell({ client, toaster: createToaster(), platform: nullPlatform({ kind: 'browser' }), home, window: window as unknown as ShellWindow });
+  for (const { def } of pluginUis()) if (def?.id === 'wisp.claude') shell.register(def);
+  await client.start([{ peer: home, name: 'mock', transport: memTransport(mock) }]);
+  const root = document.createElement('div');
+  document.body.append(root);
+  const stop = shell.render(root);
+  stops.push(() => {
+    stop();
+    shell.dispose();
+  });
+  const task = (): { id: string } | undefined => client.entities.list<{ id: string; state: string }>('session')().find((r) => r.state === 'review');
+  await until(() => task() !== undefined);
+  client.nav.navigate({ t: 'openTask', id: task()?.id as EntityKey as never });
+  const send = (): HTMLElement | null => root.querySelector('[data-part="composer.send"]');
+  await until(() => send() !== null && root.querySelector('[data-part="composer.plus"]') !== null);
+  expect(send()?.getAttribute('aria-label')).toBe('Send (Enter · Shift+Enter for newline)');
+  // + › Start later › In 10 min
+  root.querySelector<HTMLElement>('[data-part="composer.plus"]')?.click();
+  const item = (re: RegExp): HTMLElement | undefined => [...document.querySelectorAll<HTMLElement>('[role^="menuitem"]')].find((e) => re.test((e.textContent ?? '').trim()));
+  await until(() => item(/^Start later/) !== undefined);
+  item(/^Start later/)?.click();
+  await until(() => item(/^In 10 min/) !== undefined);
+  item(/^In 10 min/)?.click();
+  await until(() => /^Send at /.test(send()?.getAttribute('aria-label') ?? ''));
+  expect(send()?.getAttribute('aria-label')).toMatch(/^Send at \d\d:\d\d$/);
+  expect(send()?.getAttribute('title')).toMatch(/^Send at \d\d:\d\d$/);
+});

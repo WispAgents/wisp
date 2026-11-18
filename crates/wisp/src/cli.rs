@@ -111,6 +111,13 @@ pub fn print_result(v: &Value, json: bool) {
 pub fn help(cat: &Catalogue, words: &[String]) -> i32 {
     match words.get(1..).unwrap_or_default() {
         [] => say(&verbs::help_all(cat, crate::args::HELP)),
+        // a built-in group (`wisp help computer`, QA round 11 #2): its usage, and its plugin's verbs when it has one
+        [p] if crate::words::is_group(p) => {
+            say(&crate::words::usage(p));
+            if let Some(h) = verbs::help_plugin(cat, p) {
+                say(&format!("\n{h}"));
+            }
+        }
         [p] => {
             let Some(h) = verbs::help_plugin(cat, p) else {
                 eprintln!("  ✗ no plugin named {p} in this wisp: wisp help lists them");

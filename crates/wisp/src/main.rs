@@ -36,6 +36,7 @@ mod trial_cli;
 mod trigger_cli;
 mod trim;
 mod tui;
+mod update_cli;
 mod v1_formula;
 mod words;
 
@@ -197,9 +198,18 @@ fn misused_verb_path(p: &Parsed, flags: bool) -> Option<i32> {
     if p.literal == args::Literal::Task || p.command.is_some() {
         return None;
     }
+    // `wisp update --help`: a group alone with --help is its usage, never the command (it ran a check)
+    if flags
+        && p.flags.help
+        && let [g] = p.words.as_slice()
+        && words::is_group(g)
+    {
+        say(&words::usage(g));
+        return Some(0);
+    }
     let Some((cmd, verb)) = words::verb_path(&p.words) else {
         // past every arm, a built-in group's line its own command refused (`wisp sdk types`, `wisp crew ls extra`)
-        let first = p.words.first().filter(|w| !flags && words::is_group(w))?;
+        let first = p.words.first().filter(|_| !flags && words::group_line(&p.words))?;
         eprintln!("  ✗ wisp {} isn't a {first} command", p.words.join(" "));
         eprintln!("{}", words::usage(first));
         return Some(cli::USAGE_EXIT);
@@ -229,7 +239,7 @@ async fn not_a_task(p: &Parsed, home: &Path, port: u16, mut cat: Option<wisp_cli
     // a built-in group and another word (`wisp crew start`): its plugin verbs too, to name them
     let maybe_group = p.words.len() >= 2 && p.literal != args::Literal::Task && words::is_group(first);
     if cat.is_none()
-        && ((words::command_shaped(&p.words, p.literal) && !words::known(first)) || maybe_group)
+        && ((words::command_shaped(&p.words, p.literal) && (!words::known(first) || words::is_group(first))) || maybe_group)
         && let Ok(c) = Client::connect(port, true).await
     {
         cat = cli::catalogue(&c, home).await.ok();
@@ -471,13 +481,34 @@ async fn areas(first: &str, p: &Parsed, o: &code::Opts, port: u16, cwd: &Path) -
             hook_cli::run(&o.words, cwd)?
         }
         "tui" if o.words.is_empty() => tui::run(&connect().await?, &cwd.display().to_string()).await?,
-        "shell-init" if o.words.len() == 1 => match termctx_cli::shell_init(&o.words[0]) {
-            Ok(script) => {
-                say(&script);
-                0
+        // QA round 11 #1: what people type for these (`wisp version`, v1's `wisp usage`)
+        "version" if o.words.is_empty() => {
+            say(serve::VERSION);
+            0
+        }
+        "update" if o.words.is_empty() => update_cli::check(&connect().await?, o.json).await?,
+        "update" if o.words.len() == 1 && matches!(o.words.first().map(String::as_str), Some("apply")) => {
+            update_cli::apply(&connect().await?, o.json).await?
+        }
+        // every account's limits this period and what each task took of them; `--agent X`: that harness's, named
+        "usage" if o.words.is_empty() => {
+            let c = connect().await?;
+            let v = match o.over.get("agent").and_then(Value::as_str) {
+                Some(a) => c.cmd("budget.view", json!({ "agent": a, "named": true })).await?,
+                None => c.cmd("budget.planWindows", json!({})).await?,
+            };
+            cli::print_result(&v, o.json);
+            0
+        }
+        "shell-init" if o.words.len() == 1 && matches!(o.words[0].as_str(), "zsh" | "bash" | "fish") => {
+            match termctx_cli::shell_init(&o.words[0]) {
+                Ok(script) => {
+                    say(&script);
+                    0
+                }
+                Err(e) => return Err(CliError::said(e)),
             }
-            Err(e) => return Err(CliError::said(e)),
-        },
+        }
         "trigger" | "triggers"
             if matches!(
                 o.words.first().map(String::as_str),
@@ -553,7 +584,22 @@ async fn live(p: &Parsed, home: &Path, port: u16, read: &mut Option<wisp_cli_cor
         None if p.literal != args::Literal::Task && words.first().is_some_and(|w| plugin_word(w)) && words.len() >= 2 => {
             let c = Client::connect(port, true).await?;
             let cat = cli::catalogue(&c, home).await?;
-            let Some(code) = cli::generated(&c, &cat, words, &p.argv).await? else {
+            let mut done = cli::generated(&c, &cat, words, &p.argv).await?;
+            // `wisp machine add`: this machine's plugin has no `add`, `machines` does (QA round 11 #1)
+            if done.is_none()
+                && let Some(alias) = words::machines_alias(words)
+            {
+                // the command word, not a flag's value named machine (`-C machine machine add`): followed by the verb
+                let at = p
+                    .argv
+                    .windows(2)
+                    .position(|w| w[0] == "machine" && w[1] == words[1])
+                    .or_else(|| p.argv.iter().position(|a| a == "machine"));
+                let argv: Vec<String> =
+                    p.argv.iter().enumerate().map(|(i, a)| if Some(i) == at { "machines".to_owned() } else { a.clone() }).collect();
+                done = cli::generated(&c, &cat, &alias, &argv).await?;
+            }
+            let Some(code) = done else {
                 *read = Some(cat);
                 return Ok(None);
             };

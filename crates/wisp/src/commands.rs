@@ -23,6 +23,8 @@ pub async fn run(p: &Parsed, cmd: &str, args: &[String], cwd: &str, port: u16) -
         "show" => sc::show(&c, f, need(args.first(), "session id")?, None).await,
         "wait" => {
             let id = need(args.first(), "session id")?;
+            // a task that isn't there is said at once, never waited for (QA round 11: `wisp wait x` hung 30 minutes)
+            c.cmd("runtime.get", json!({ "id": id })).await?;
             let w = sc::wait(&c, id, Duration::from_secs(30 * 60)).await?;
             sc::show(&c, f, id, Some(w)).await
         }

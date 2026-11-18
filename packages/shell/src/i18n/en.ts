@@ -318,6 +318,8 @@ export const SHELL_STRINGS = {
   'shell.when.chip': 'Starts {when}',
   'shell.when.clear': 'Start now instead',
   'shell.when.send': 'Start at {at}',
+  'shell.reply.send': 'Send (Enter · Shift+Enter for newline)',
+  'shell.reply.sendAt': 'Send at {at}',
   'shell.home.inPlace': 'In place',
   'shell.home.compareMore': 'Add another harness (up to {n} side by side)',
   'shell.home.compareRemove': 'Remove {name} from the comparison',

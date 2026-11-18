@@ -49,9 +49,27 @@ pub const ROUTED: [&str; 41] = [
     "fresh",
 ];
 
-/// A word the CLI routes on as its first word (COMMANDS or ROUTED).
+/// A word the CLI routes on as its first word (COMMANDS, ROUTED, or a built-in group).
 pub fn known(word: &str) -> bool {
-    COMMANDS.contains(&word) || ROUTED.contains(&word)
+    COMMANDS.contains(&word) || ROUTED.contains(&word) || is_group(word)
+}
+
+/// Command words a prompt may also start with: their command takes a particular argument (`ship <id>`, `run <recipe>`,
+/// `plan` in a `.wisp/` folder, `notes <task>`), and when it isn't there the words are a task (`wisp ship the docs`,
+/// `wisp plan the migration`, `wisp run the tests`). Every other command word is a strict group or a command that
+/// takes an argument, never a task (QA round 11 #1; `words_tests.rs` and the e2e in `tests/serve_cli_verbs.rs`, which
+/// reads this list from the source, hold each word to it: the routing itself lives in main.rs's arms and `args::fits`).
+#[cfg(test)]
+pub const PROMPT_WORDS: &[&str] = &[
+    "ship", "merge", "run", "plan", "apply", "diff", "validate", "destroy", "init", "track", "untrack", "blame", "log", "tasks", "resume",
+    "fmt", "output", "graph", "mv", "import", "export", "history", "rerun", "open", "notes", "fresh", "attach",
+];
+
+/// `wisp machine <verb>`: this machine's plugin first, else the same verb of `machines` (`wisp machine add` is
+/// `wisp machines add`, QA round 11 #1). The words as `machines`', for the caller to try.
+pub fn machines_alias(words: &[String]) -> Option<Vec<String>> {
+    (words.first().map(String::as_str) == Some("machine"))
+        .then(|| std::iter::once("machines".to_owned()).chain(words[1..].iter().cloned()).collect())
 }
 
 /// Why words that reached the launch path aren't a task (round 255: `wisp tasks` started one).
@@ -98,10 +116,12 @@ pub fn not_a_task(words: &[String], literal: Literal, plugins: &[String]) -> Opt
         return None;
     }
     let first = words.first()?;
-    if known(first) {
+    let plugin = plugins.iter().any(|p| p == first);
+    // a group that's also a plugin (`machines`): its plugin's verbs; a word that's only wisp's: its usage
+    if known(first) && !(plugin && !COMMANDS.contains(&first.as_str()) && !ROUTED.contains(&first.as_str())) {
         return Some(NotATask::Usage(first.clone()));
     }
-    if plugins.iter().any(|p| p == first) {
+    if plugin {
         return Some(NotATask::Plugin(first.clone()));
     }
     let lower = first.to_lowercase();
@@ -266,6 +286,7 @@ pub const VERB_PATHS: &[VerbPath] = &[
     vp("events", &["tail", "why", "retry", "parked", "ls"], &["--follow", "-f", "--limit", "--since", "--subject", "--type"]),
     vp("task", &["spec", "export", "formula", "setup", "history"], TASK),
     vp("grid", &["deploy"], APPLY),
+    vp("update", &["apply"], &[]),
 ];
 
 /// The built-in verb path the words start with (`computer on …` → `("computer", "on")`); None for a prompt that
@@ -326,7 +347,39 @@ const GROUPS: &[(&str, &[&str])] = &[
     ("recipes", &[]),
     ("crew", &["ls"]),
     ("machines", &[]),
+    // QA round 11 #1: words people type as commands, v1's included (`wisp usage`, `wisp spell`); `machine` is this
+    // machine's plugin, with `machines`' verbs too; `share` takes a task or a setup, or one of its plugin's verbs
+    ("version", &[]),
+    ("update", &["apply"]),
+    ("machine", &[]),
+    ("share", &["<task id>", "<kind>.<name>"]),
+    ("shares", &[]),
+    ("usage", &[]),
+    ("spell", &[]),
+    ("spells", &[]),
+    ("serve", &[]),
+    ("desktop", &[]),
+    ("tui", &[]),
+    ("shell-init", &["zsh", "bash", "fish"]),
+    ("schema", &[]),
 ];
+
+/// Groups that are also a common first word of a prompt: strict only when one word follows (`wisp update now`), a
+/// prompt when more do (`wisp update the readme`). Both decided by the owner's delegate (QA rounds 10 and 11).
+const ONE_WORD: &[&str] = &["update"];
+
+/// A group whose catalogue verbs include another plugin's (`machine`: `machines`').
+const ALSO: &[(&str, &str)] = &[("machine", "machines")];
+
+/// A line under a group's error: where else to look.
+const HINTS: &[(&str, &str)] = &[("share", "what you've shared: wisp shares")];
+
+/// Whether these words are a built-in group's command line (`wisp sdk types`), whatever follows: never a task. Not
+/// `update` with more than one word after it (`wisp update the readme`, [`ONE_WORD`]).
+pub fn group_line(words: &[String]) -> bool {
+    let Some((first, rest)) = words.split_first() else { return false };
+    is_group(first) && !(ONE_WORD.contains(&first.as_str()) && rest.iter().filter(|w| !flag_shaped(w)).count() > 1)
+}
 
 /// Whether `word` is a built-in command group (strict: a verb it doesn't have is an error, never a task).
 pub fn is_group(word: &str) -> bool {
@@ -350,7 +403,8 @@ impl UnknownVerb {
             format!("  ✗ wisp {} has no {typed}: {}", self.group, self.verbs.join(", "))
         };
         let all = words.join(" ").replace('"', "\\\"");
-        format!("{have}\n  To start a task with these words: wisp -- \"{all}\"   (or quote them as one: wisp \"{all}\")")
+        let hint = HINTS.iter().find(|(g, _)| *g == self.group).map(|(_, h)| format!("\n  {h}")).unwrap_or_default();
+        format!("{have}{hint}\n  To start a task with these words: wisp -- \"{all}\"   (or quote them as one: wisp \"{all}\")")
     }
 }
 
@@ -367,6 +421,9 @@ pub fn unknown_verb(words: &[String], literal: Literal, catalogue: &[Vec<String>
     if rest.first().is_none_or(|w| flag_shaped(w)) || !is_group(first) {
         return None;
     }
+    if !group_line(words) {
+        return None;
+    }
     let mut paths: Vec<Vec<&str>> = Vec::new();
     for vp in VERB_PATHS.iter().filter(|p| p.cmd == first) {
         paths.extend(vp.verbs.iter().map(|v| vec![*v]));
@@ -374,10 +431,12 @@ pub fn unknown_verb(words: &[String], literal: Literal, catalogue: &[Vec<String>
     for (_, verbs) in GROUPS.iter().filter(|(g, _)| g == first) {
         paths.extend(verbs.iter().map(|v| vec![*v]));
     }
-    for c in catalogue.iter().filter(|c| c.first() == Some(first) && c.len() > 1) {
+    let also = ALSO.iter().find(|(g, _)| g == first).map(|(_, o)| *o);
+    for c in catalogue.iter().filter(|c| c.len() > 1 && c.first().is_some_and(|n| n == first || Some(n.as_str()) == also)) {
         paths.push(c[1..].iter().map(String::as_str).collect());
     }
-    if paths.iter().any(|p| rest.len() >= p.len() && rest.iter().zip(p).all(|(a, b)| a == b)) {
+    // `<task id>`: a form, said in the list, never a word typed
+    if paths.iter().any(|p| !p[0].starts_with('<') && rest.len() >= p.len() && rest.iter().zip(p).all(|(a, b)| a == b)) {
         return None;
     }
     let mut verbs: Vec<String> = Vec::new();

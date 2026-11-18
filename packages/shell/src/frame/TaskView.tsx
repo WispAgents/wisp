@@ -1561,7 +1561,8 @@ export default function TaskView(props: { readonly id: string; readonly onBack?:
                     laterAct={{ menu: { items: whenMenu(t, now()), onSelect: (w) => setWhen(w as When) } }}
                     // the phone apps: the bar's options behind one chip and its sheet (UX 2026-11-18 phone #1)
                     {...(phone && { phoneOptions: { options: t('shell.reply.options'), mode: t('shell.reply.permissions'), agent: t('shell.reply.agent'), goal: t('shell.reply.goalShort') } })}
-                    send={t('shell.home.send')}
+                    // a reply sends (v1 composer.js), and a scheduled one says when (QA r11 #1), as New task's Start does
+                    send={when() ? t('shell.reply.sendAt', { at: aheadLabel(whenAt(when() ?? 'hour', now()), now()) }) : t('shell.reply.send')}
                     {...(checking() && { sendAct: { pending: true } })}
                     hint={hint()}
                     extras={[

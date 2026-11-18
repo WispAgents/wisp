@@ -234,3 +234,114 @@ async fn an_unknown_verb_under_any_group_is_an_error_and_a_quoted_prompt_is_stil
     }
     drop(serve);
 }
+
+/// The quoted words of a `const NAME… = [ … ];` list in a source file.
+fn listed(src: &str, name: &str) -> Vec<String> {
+    let after = src.split(name).nth(1).unwrap();
+    let body = after[after.find('=').unwrap()..].split_once('[').unwrap().1.split("];").next().unwrap();
+    body.split('"').skip(1).step_by(2).map(str::to_owned).collect()
+}
+
+/// `wisp <args>` with this test's home as HOME too: a command that reads harness sessions (adopt) reads none of yours.
+fn probe(dir: &Path, port: u16, args: &[&str]) -> (i32, String, String) {
+    let o = Command::new(env!("CARGO_BIN_EXE_wisp"))
+        .args(args)
+        .env("WISP_HOME", dir.join("home"))
+        .env("HOME", dir.join("home"))
+        .env("WISP_PORT", port.to_string())
+        .env("NO_COLOR", "1")
+        .current_dir(dir.join("proj"))
+        .stdin(Stdio::null())
+        .output()
+        .unwrap();
+    (o.status.code().unwrap_or(-1), String::from_utf8_lossy(&o.stdout).into_owned(), String::from_utf8_lossy(&o.stderr).into_owned())
+}
+
+/// QA round 11 #1: `wisp version`, `wisp update now`, `wisp machine add` and `wisp share list` started tasks. Every
+/// word a user may type as a command (v2's COMMANDS, routed words and groups, and v1's: bin/wisp.js's commands and
+/// `usage`, `spell`, `version`, `update`, `machine`) followed by words it doesn't take: never a task, unless it's one
+/// of `words::PROMPT_WORDS` (a command needing an argument that isn't there: `wisp ship the docs`), which always is.
+#[tokio::test(flavor = "multi_thread")]
+async fn every_command_word_is_a_command_a_strict_group_or_a_prompt_and_says_so() {
+    let dir = temp("serve-cli-words");
+    let (serve, port) = start(&dir);
+    let api = Api { http: reqwest::Client::new(), port, n: 0.into() };
+    let src = include_str!("../src/words.rs");
+    let prompt_words = listed(src, "pub const PROMPT_WORDS");
+    let v1 = [
+        "add", "ls", "list", "show", "wait", "reply", "btw", "stop", "mcp", "skill", "ship", "merge", "run", "recipes", "usage", "spell",
+        "spells", "crew", "grid", "computer", "version", "update", "machine", "help",
+    ];
+    let mut all: Vec<String> = listed(include_str!("../src/args.rs"), "pub const COMMANDS");
+    all.extend(listed(src, "pub const ROUTED"));
+    all.extend(built_in_groups());
+    all.extend(v1.iter().map(|w| (*w).to_owned()));
+    all.sort();
+    all.dedup();
+    assert!(all.len() > 70 && prompt_words.len() > 20, "{} words, {} prompt words", all.len(), prompt_words.len());
+
+    // the commands and groups: none of them a task
+    let mut wrong = Vec::new();
+    for word in all.iter().filter(|w| !prompt_words.contains(w)) {
+        let (code, out, err) = probe(&dir, port, &[word, "definitely-not-a-verb"]);
+        if out.contains("launched") || err.contains("launched") {
+            wrong.push(format!("wisp {word} definitely-not-a-verb → {code}: {}{}", out.trim(), err.trim()));
+        }
+    }
+    assert!(wrong.is_empty(), "{} command words started a task:\n{}", wrong.len(), wrong.join("\n"));
+    assert_eq!(api.cmd("runtime.list", json!({})).await.as_array().unwrap().len(), 0, "no task was made");
+
+    // what QA typed
+    let version = serde_json::to_string(env!("CARGO_PKG_VERSION")).unwrap();
+    for args in [&["version"][..], &["--version"], &["-v"]] {
+        let (code, out, err) = probe(&dir, port, args);
+        assert!(code == 0 && format!("\"{}\"", out.trim()) == version, "{args:?} → {code}: {out}{err}");
+    }
+    let (code, _, err) = probe(&dir, port, &["update", "now"]);
+    assert!(code == 2 && err.contains("wisp update has no now: apply"), "{code}: {err}");
+    let (code, _, err) = probe(&dir, port, &["share", "list"]);
+    assert!(code == 2 && err.contains("wisp share has no list: <task id>") && err.contains("wisp shares"), "{code}: {err}");
+    // `machine` is this machine's plugin, with `machines`' verbs: the same list
+    let (code, mine, err) = probe(&dir, port, &["machine", "list", "--json"]);
+    let (_, theirs, _) = probe(&dir, port, &["machines", "list", "--json"]);
+    assert!(code == 0 && mine == theirs, "{code}: {mine}{err}");
+    let (code, out, err) = probe(&dir, port, &["machine", "add"]);
+    assert!(code != 0 && !err.contains("has no add") && !out.contains("launched"), "{code}: {out}{err}");
+    // `-C machine`: a flag's value named machine is left alone
+    std::fs::create_dir_all(dir.join("proj").join("machine")).unwrap();
+    let (code, out, err) = probe(&dir, port, &["-C", "machine", "machine", "list", "--json"]);
+    assert!(code == 0 && out == theirs, "{code}: {out}{err}");
+    // alone: the verbs, as before (exit 0)
+    let (code, out, err) = probe(&dir, port, &["machines"]);
+    assert!(code == 0 && out.contains("list"), "{code}: {out}{err}");
+    // --help on a group is its usage, never the command (`update --help` ran a check)
+    for g in ["update", "usage", "version"] {
+        let (code, out, err) = probe(&dir, port, &[g, "--help"]);
+        assert!(code == 0 && out.contains(&format!("wisp {g}")) && !out.contains("is the latest"), "{g} --help → {code}: {out}{err}");
+    }
+    let (code, _, err) = probe(&dir, port, &["machine", "frob"]);
+    assert!(code == 2 && err.contains("wisp machine has no frob") && err.contains("list"), "{code}: {err}");
+    // v1's `wisp usage` and `wisp spell`
+    let (code, out, err) = probe(&dir, port, &["usage"]);
+    assert!(code == 0 && !out.contains("launched"), "{code}: {out}{err}");
+    let (code, _, err) = probe(&dir, port, &["spell", "cast", "a dark theme"]);
+    assert!(code == 2 && err.contains("wisp spell has no cast"), "{code}: {err}");
+    let (code, _, err) = probe(&dir, port, &["spell"]);
+    assert!(code == 2 && err.contains("plugin new"), "{code}: {err}");
+    // QA round 11 #2: help for a built-in group is its usage
+    for (group, line) in
+        [("computer", "wisp computer on|off|status"), ("update", "wisp update [apply]"), ("machines", "wisp machines|machine")]
+    {
+        let (code, out, err) = probe(&dir, port, &["help", group]);
+        assert!(code == 0 && out.contains(line), "help {group} → {code}: {out}{err}");
+    }
+    assert_eq!(api.cmd("runtime.list", json!({})).await.as_array().unwrap().len(), 0, "still no task");
+
+    // the prompt words: a prompt, always (the fake harness: nothing paid)
+    for word in &prompt_words {
+        let (code, out, err) = probe(&dir, port, &["--no-open", word, "definitely-not-a-verb", "please"]);
+        assert!(code == 0 && format!("{out}{err}").contains("launched"), "wisp {word} … → {code}: {out}{err}");
+    }
+    assert_eq!(api.cmd("runtime.list", json!({})).await.as_array().unwrap().len(), prompt_words.len());
+    drop(serve);
+}

@@ -59,6 +59,11 @@ pub const HELP: &str = "usage:
   wisp open <file|url|link>     a shared task or setup: its plan, then run, import or apply it   (--run  --their-setup  --compare  --import  --yes)
   wisp cloud signin|status|signout   wisp Cloud (or another grid: wisp cloud signin <url>)
   wisp cloud accounts|switch|remove  each grid account signed in to; switch or sign out of one
+  wisp version                  print this wisp's version (also --version, -v)
+  wisp update [apply]           is there a newer wisp? apply installs it   (wisp help update: check, view)
+  wisp usage                    your limits this period and what each task took   (--agent ID: that harness's, by task)
+  wisp machines|machine <verb>  your machines and this one: list, add, remove…   (wisp help machines)
+  wisp spell|spells             v1's spells are plugins now: wisp plugin new|install
   wisp computer on|off|status   this computer on the grid, reachable from your other wisps   (on --grid <url>: signs in there first)
   wisp --on <machine> …         run any command on that machine (wisp ls --on studio, wisp \"task\" --on cloud)
   wisp desktop                  open the wisp app window
@@ -277,7 +282,7 @@ fn fits(cmd: &str, w: &[String]) -> bool {
     let w1 = w.get(1).map_or("", String::as_str);
     match cmd {
         "grid" => n == 1 || GRID_SUB.contains(&w1),
-        "ship" | "merge" | "btw" => session_id(w1),
+        "ship" | "merge" => session_id(w1),
         "attach" => n == 2,
         // `wisp help`, `wisp help crew`, `wisp help crew create`: a task never starts with "help" and two words
         "help" => n <= 4 && w.iter().skip(1).all(|x| x.bytes().all(|b| b.is_ascii_lowercase() || b == b'-' || b == b'_' || b == b'.')),
