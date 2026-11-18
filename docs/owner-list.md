@@ -45,10 +45,10 @@ in the real app (or the owner drops it). Statuses: `done` (committed and checked
 | # | Point | Status |
 |---|---|---|
 | 31 | QA round 1: 32 findings (/tmp/qa-keep/qa-round1.md) | fixed except #16 ResizeObserver (benign browser message) and #31 (v1 layout); committed 1ab36eb9 |
-| 32 | QA rounds until a round finds nothing, for desktop, phone and web (Grid) | in progress: round 1 (32) fixed; round 2 phone + Grid (26) fixed (dd1215c0); round 2 desktop: 8 new + 7 open from round 1 being fixed (fix-r329/330/331, ui-stuff); round 3 on all three next |
+| 32 | QA rounds until a round finds nothing, for desktop, phone and web (Grid) | in progress: round 1 (32) and round 2 (phone+Grid 26, desktop 15) fixed (dd1215c0, 0f43f949, 7f2416b3); round 3 on all three running (verifier: desktop; qa-r1: phone + Grid) |
 | 33 | Phone New task: composer uses the full width; no scrollbar in the prompt | done (1ab36eb9) (prompt grows to 340 px as v1; scrollbars hidden on phones) |
 | 34 | My Stuff matches v1 (opening a saved item, every flow) | done (1ab36eb9, 77c0966e): v1 cards, viewer, doc reader, apps inside wisp, full menu, keys, Undo, anchored Allow/Edit cards |
-| 35 | Apps made in wisp match v1; parity reviewed by other agents | done: independent v1 review (QA r2 desktop) matches everywhere but code-card syntax colour (being fixed, ui-stuff) |
+| 35 | Apps made in wisp match v1; parity reviewed by other agents | done (0f43f949: the last difference, code-card colour, fixed); independent review by QA r2 |
 | 36 | Composer forgets the picked harness (back to Auto) | done (1ab36eb9) (server setting runtime.launch, as v1 config.defaults; needs the dev server rebuilt) |
 | 37 | Disable Auto everywhere (keep the code, one switch) | done (1ab36eb9) (setting runtime.auto, default off; picker, Settings, ⌘K, crew editor, server defaults) |
 | 38 | **Last**, when UI reviewers find nothing more: UI consultants for desktop, phone and web; research similar tools; fewer options on screen (submenus); focus on composer, task list, task page, right panel; I pick what to build | todo (last) |
@@ -63,11 +63,12 @@ in the real app (or the owner drops it). Statuses: `done` (committed and checked
 
 | Point | Status |
 |---|---|
-| Initial JS over budget (120.0 > 120 KB) | done (1ab36eb9) (117.1 KB: machine and crew registrations load less) |
+| Initial JS over budget | done (1ab36eb9: 117.1 KB; again 120.3 → 116.5 KB in 7f2416b3: logos as files, ship split) |
 | PR pane footer says "Checked time.now" (untranslated key) | done (1ab36eb9) (PrPane reads the kit words under `kit.`) |
 | Machines: the Mac's installed v1 app shows as a second machine | needs a machine id at registration; goes away once v2 replaces v1 |
 | Home's "Sign in to GitHub" tip shows even when gh is signed in | done (dd1215c0) |
-| WebKit "ResizeObserver loop" message from VirtualList | VirtualList + Toolbar fixed (dd1215c0); still seen on desktop, in progress (fix-r329) |
+| WebKit "ResizeObserver loop" message | done (dd1215c0, 0f43f949: VirtualList, Toolbar, Diagnostics) |
+| Server budget: write amplification 44.5× > 44× | done (7f2416b3: 39.8×, ADR-0100) |
 
 ## Then
 
