@@ -45,7 +45,7 @@ in the real app (or the owner drops it). Statuses: `done` (committed and checked
 | # | Point | Status |
 |---|---|---|
 | 31 | QA round 1: 32 findings (/tmp/qa-keep/qa-round1.md) | fixed except #16 ResizeObserver (benign browser message) and #31 (v1 layout); committed 1ab36eb9 |
-| 32 | QA rounds until a round finds nothing, for desktop, phone and web (Grid) | in progress: round 1 (32) and round 2 (phone+Grid 26, desktop 15) fixed (dd1215c0, 0f43f949, 7f2416b3); round 3 on all three running (verifier: desktop; qa-r1: phone + Grid) |
+| 32 | QA rounds until a round finds nothing, for desktop, phone and web (Grid) | in progress: rounds 1-3 fixed (latest f81f1dac; round 3: desktop 11+1, phone/Grid 7+4, all fixed); round 4 on all three next |
 | 33 | Phone New task: composer uses the full width; no scrollbar in the prompt | done (1ab36eb9) (prompt grows to 340 px as v1; scrollbars hidden on phones) |
 | 34 | My Stuff matches v1 (opening a saved item, every flow) | done (1ab36eb9, 77c0966e): v1 cards, viewer, doc reader, apps inside wisp, full menu, keys, Undo, anchored Allow/Edit cards |
 | 35 | Apps made in wisp match v1; parity reviewed by other agents | done (0f43f949: the last difference, code-card colour, fixed); independent review by QA r2 |
