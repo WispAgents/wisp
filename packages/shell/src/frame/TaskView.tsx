@@ -100,7 +100,7 @@ import { isStub, turnOpener } from './turn-window.ts';
 import { NOTICE_KINDS, ledgerTurn } from './ledger-turns.ts';
 import type { LedgerTurn } from '@wisp/ui/pure';
 import { envReveal } from './env-reveal.ts';
-import { runPick, type Runner } from './runner.ts';
+import { runPick, runWords, taskRunner, type Runner } from './runner.ts';
 import { rowUsage, taskUsage, type TurnStatsLike } from './task-usage.ts';
 import { TELEMETRY_TOPIC, feedbackOn } from './feedback-on.ts';
 import { MODE_ICON, agentMenu, modeMenu, whenAt, whenMenu, type Mode, type When } from './pickers.ts';
@@ -954,6 +954,11 @@ export default function TaskView(props: { readonly id: string; readonly onBack?:
         // a JSX prop beside the box's reactive spread would be rebuilt (rows, an edit in progress) each time the task starts or stops
         const composerTop = <Slot input="shell.task:composer-top" layout="contents" id={key} session={() => s() as never} />;
         const h = (): { name: string; logo?: string } => harnessView(replyRun()?.agent ?? s().agent);
+        // the run a follow-up takes: the reply box's pick, else the task's own harness, model and thinking (QA desktop r3 #1)
+        const shownRun = (): Runner => replyRun() ?? taskRunner(s());
+        // the task's own, for its details (not the reply box's pick)
+        const own = (): { name: string; logo?: string } => harnessView(s().agent);
+        const ownWords = (): string => t('shell.task.harness', { name: own().name, model: String(s().summary.model || '') || t('shell.task.defaultModel') });
         const branch = (): string => String(s().summary['branch'] ?? '');
         const color = (): string => String(s().summary['color'] ?? 'slate');
         const ov = createMemo(() => (!closedReady() ? [] : shownOverlaps(overlapsOf(s()), closed() as unknown as Dismissed | undefined, s().id)));
@@ -1251,8 +1256,8 @@ export default function TaskView(props: { readonly id: string; readonly onBack?:
                 details: (
                 <Show when={built()}>
                 <TaskDetails
-                  harness={t('shell.task.harness', { name: h().name })}
-                  {...(h().logo && { logo: h().logo })}
+                  harness={ownWords()}
+                  {...(own().logo && { logo: own().logo })}
                   project={String(s().summary['project'] ?? '')}
                   color={color()}
                   places={placeChips(s())}
@@ -1376,7 +1381,7 @@ export default function TaskView(props: { readonly id: string; readonly onBack?:
                       cap: capView(),
                     }}
                     runner={{
-                      title: t('shell.task.runner', { name: [h().name, replyRun()?.model ?? '', replyRun()?.effort ?? ''].filter(Boolean).join(' · ') }),
+                      title: t('shell.task.runner', { name: runWords(h().name, shownRun(), t('shell.runner.default')) }),
                       ...(h().logo && { logo: h().logo }),
                       act: { onClick: () => setPickingRunner(!runnerOpen()) },
                       open: runnerOpen(),
@@ -1393,7 +1398,7 @@ export default function TaskView(props: { readonly id: string; readonly onBack?:
                           <DelegatePanel
                             lead={{
                               agent: replyRun()?.agent ?? s().agent,
-                              run: [h().name, replyRun()?.model || t('shell.runner.default'), replyRun()?.effort ?? ''].filter(Boolean).join(' · '),
+                              run: runWords(h().name, shownRun(), t('shell.runner.default')),
                               logo: h().logo,
                               place: peer === shellHome ? { icon: 'laptop', label: t('shell.card.thisComputer'), title: t('shell.home.where') } : { icon: 'server', label: shell.client.peers.name(peer), title: t('shell.home.where') },
                             }}
@@ -1452,7 +1457,7 @@ export default function TaskView(props: { readonly id: string; readonly onBack?:
                     anchor={() => document.querySelector('[data-part="composer.harness"]')}
                     back={() => input}
                     peer={peer}
-                    value={replyRun() ?? { agent: s().agent, model: String(s().summary.model ?? ''), effort: '' }}
+                    value={shownRun()}
                     onChange={setReplyRun}
                   />
                 </Show>
@@ -1485,8 +1490,8 @@ export default function TaskView(props: { readonly id: string; readonly onBack?:
                   onSelect={onMore}
                   details={() => (
                     <TaskDetails
-                      harness={t('shell.task.harness', { name: h().name })}
-                      {...(h().logo && { logo: h().logo })}
+                      harness={ownWords()}
+                      {...(own().logo && { logo: own().logo })}
                       project={String(s().summary['project'] ?? '')}
                       color={color()}
                       places={placeChips(s())}

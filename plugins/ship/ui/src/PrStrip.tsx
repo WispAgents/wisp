@@ -117,7 +117,7 @@ function PrRow(props: { readonly client: PluginClient; readonly k: EntityKey; re
       });
     if (open().length && !open().some((o) => o.pr.conflict)) {
       const label = open().length > 1 ? t('wisp.ship.strip.mergeAll') : t('wisp.ship.strip.merge');
-      out.push({ id: 'merge', icon: 'check', label, priority: 'pin', render: (form) => <MergeButton label={label} form={form} busy={merge.merging()} onClick={merge.ask} /> });
+      out.push({ id: 'merge', icon: 'merge', label, priority: 'pin', render: (form) => <MergeButton label={label} form={form} busy={merge.merging()} onClick={merge.ask} /> });
     }
     return out;
   };

@@ -339,6 +339,9 @@ export function createShell(o: ShellOptions): Shell {
     pluginClient: (id) => clients.get(id),
     settingsPanes: () => registry.settingsPanes as () => readonly (SettingsPaneDef & { readonly plugin: string })[],
     render(root) {
+      // a reload (or the desktop app's relaunch) brings back the last place, never the ⌘K palette open over it: it was a
+      // moment's search, not a place (v1; QA round 3 #9). Closed before the first frame, the URL replaced, no history
+      if (untracked(client.nav.nav).overlays.some((ov) => ov.id === ('shell.palette' as never))) client.nav.navigate({ t: 'closeOverlay', id: 'shell.palette' as never });
       const scope = self.scope.child('render');
       scope.add(trackRecent());
       scope.add(installKeys(o.window, context, registry, (id) => clients.get(id) ?? self));

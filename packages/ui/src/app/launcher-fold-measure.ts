@@ -1,9 +1,11 @@
 // Measures the prompt box's toolbar for launcher-fold.ts (design/layout.md §2: collapsing is measured, not guessed):
 // one ResizeObserver on the bar and each item on it, read once a frame (so a fold never re-enters the observer: Chrome's
-// "ResizeObserver loop" and WebKit's page error, QA r1 #16), then how many of the tail's tools go into More. A tool's
-// width is remembered while it's folded, so the count is stable at any width.
+// "ResizeObserver loop" and WebKit's page error, QA r1 #16), then the bar's form (its labels, or its icons) and how many
+// of the tail's tools go into More. Each form's widths are remembered while the other shows, so the plan is stable at
+// any width, in both engines alike (QA desktop r3 #3: WebKit's box was 10 px narrower and v1's 520 px rule took every
+// label with room to spare).
 import { createEffect, createSignal, on, onCleanup, type Accessor } from 'solid-js';
-import { tailFold, type LauncherTool } from './launcher-fold.ts';
+import { barPlan, type BarForm, type LauncherTool } from './launcher-fold.ts';
 
 /** the More button's width until it has been seen (an icon button, `--size-icon-btn`) */
 const MORE = 30;
@@ -30,10 +32,23 @@ function sumBar(bar: HTMLElement, shown: ReadonlySet<string>, widths: Map<string
   return { others, count, more };
 }
 
-export function useTailFold(o: { readonly tail: () => readonly LauncherTool[]; readonly on: () => boolean }): { readonly ref: (el: HTMLElement) => void; readonly folded: Accessor<number> } {
+export interface TailFold {
+  readonly ref: (el: HTMLElement) => void;
+  /** how many of the tail's last tools are in More */
+  readonly folded: Accessor<number>;
+  /** how far its labels have gone to their icons (launcher-fold.ts SQUEEZE): 0 none */
+  readonly squeeze: Accessor<number>;
+  /** even so it runs past its box: it scrolls, Send pinned over its end */
+  readonly scroll: Accessor<boolean>;
+}
+
+export function useTailFold(o: { readonly tail: () => readonly LauncherTool[]; readonly on: () => boolean }): TailFold {
   const [folded, setFolded] = createSignal(0);
-  if (typeof ResizeObserver === 'undefined' || typeof MutationObserver === 'undefined') return { ref: () => {}, folded };
-  const widths = new Map<string, number>();
+  const [squeeze, setSqueeze] = createSignal(0);
+  const [scroll, setScroll] = createSignal(false);
+  const off = { ref: () => {}, folded, squeeze, scroll };
+  if (typeof ResizeObserver === 'undefined' || typeof MutationObserver === 'undefined') return off;
+  const forms: (BarForm | undefined)[] = [];
   let bar: HTMLElement | undefined;
   let frame = 0;
   const measure = (): void => {
@@ -42,14 +57,23 @@ export function useTailFold(o: { readonly tail: () => readonly LauncherTool[]; r
     const ids = o.tail().map((t) => t.id);
     if (!o.on() || ids.length === 0) {
       if (folded() !== 0) setFolded(0);
+      if (squeeze() !== 0) setSqueeze(0);
       return;
     }
+    const form = squeeze();
     const k = Math.min(folded(), ids.length);
     const shown = new Set(ids.slice(0, ids.length - k));
+    const widths = new Map(forms[form]?.tail ?? []);
     const { others, count, more } = sumBar(bar, shown, widths, k > 0);
     const gap = Number.parseFloat(getComputedStyle(bar).columnGap) || 0;
-    const next = tailFold({ available: bar.clientWidth, others: others + gap * Math.max(0, count - 1), tail: ids.map((id) => widths.get(id) ?? MORE), gap, more });
-    if (next !== folded()) setFolded(next);
+    forms[form] = { others: others + gap * Math.max(0, count - 1), gap, tail: widths };
+    const plan = barPlan({ available: bar.clientWidth, ids, forms, more });
+    setScroll(bar.scrollWidth > bar.clientWidth + 1);
+    if (plan.level === squeeze() && plan.fold === folded()) return;
+    if (plan.level !== squeeze()) setSqueeze(plan.level);
+    if (plan.fold !== folded()) setFolded(plan.fold);
+    // measured again next frame: a step that resizes nothing (Goal without its words) wakes no observer
+    soon();
   };
   const soon = (): void => {
     if (frame === 0) frame = requestAnimationFrame(measure);
@@ -74,5 +98,7 @@ export function useTailFold(o: { readonly tail: () => readonly LauncherTool[]; r
       mo.observe(el, { childList: true });
     },
     folded,
+    squeeze,
+    scroll,
   };
 }

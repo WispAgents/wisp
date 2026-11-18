@@ -108,6 +108,9 @@ const ITEMS: StuffPhoneGroup[] = [
       { id: 'a', title: 'Rewrite plan', sub: 'Doc · 98 KB', when: '2h', icon: 'file', menu: [{ value: 'open', label: 'Open' }, { value: 'share', label: 'Share' }, { value: 'remove', label: 'Remove', danger: true }] },
       { id: 'b', title: 'Budget dashboard', sub: 'App · 14 KB', when: '3h', icon: 'app', menu: [{ value: 'open', label: 'Launch' }] },
       { id: 'c', title: 'sunset', sub: 'Picture · 80 KB', when: '4h', icon: 'image', image: '/api/stuff/c/file?rev=1', menu: [{ value: 'open', label: 'Open' }] },
+      { id: 'd', title: 'release notes', sub: 'Doc · 151 B', when: '5h', icon: 'file', thumb: { kind: 'doc', markdown: '# Notes\n\nShipped the pane.' }, menu: [] },
+      { id: 'e', title: 'scores', sub: 'Code · 25 B', when: '5h', icon: 'terminal', thumb: { kind: 'code', text: 'const a = 1;', lang: 'js' }, menu: [] },
+      { id: 'f', title: 'Hello pane', sub: 'App · 2 files', when: '6h', icon: 'app', thumb: { kind: 'app', name: 'hello', initial: 'H' }, menu: [] },
     ],
   },
 ];
@@ -146,7 +149,7 @@ describe('My Stuff on phones', () => {
     expect(kinds).toEqual(['doc']);
     expect(host.querySelector('[data-kit="tabs"]'), 'no segmented control on Android').toBeNull();
     const tiles = [...host.querySelectorAll<HTMLElement>('[data-kit="stuff-tile"]')];
-    expect(tiles.length).toBe(3);
+    expect(tiles.length).toBe(6);
     expect(host.querySelector('[data-kit="stuff-phone-grid"]')).not.toBeNull();
     tiles[0]?.querySelector<HTMLButtonElement>('[data-kit="stuff-tile-open"]')?.click();
     expect(opened).toEqual(['a']);
@@ -181,6 +184,17 @@ describe('My Stuff on phones', () => {
     expect(list.querySelectorAll('[data-kit="stuff-thumb"] img').length).toBe(1);
   });
 
+  // QA phone r3 #5: apps, docs and code were grey boxes with a glyph; their tiles show the previews the desktop cards
+  // show (a doc's page, code's first lines, an app's window with its initial)
+  it('stuff_tiles_show_a_docs_page_codes_lines_and_an_apps_window', () => {
+    const grid = stuff('android', 'grid');
+    const thumb = (id: string): Element | null => grid.querySelector(`[data-kit="stuff-tile"][data-id="${id}"] [data-kit="stuff-tile-thumb"]`);
+    expect(thumb('d')?.querySelector('[data-kit="st-paper"]')?.textContent).toContain('Notes');
+    expect(thumb('e')?.querySelector('[data-kit="st-code"]')?.textContent).toContain('const a = 1;');
+    expect(thumb('f')?.querySelector('[data-kit="st-win"]')?.textContent).toContain('H');
+    expect(thumb('a')?.querySelector('[data-kit="icon"]'), 'no thumb: its glyph').not.toBeNull();
+  });
+
   it('stuff_on_ios_draws_the_kinds_as_a_segmented_control', () => {
     const host = stuff('ios', 'grid');
     expect(host.querySelector('[data-kit="stuff-phone-kinds"] [data-kit="tabs"][data-variant="pill"]')).not.toBeNull();
@@ -191,7 +205,7 @@ describe('My Stuff on phones', () => {
   it('stuff_list_rows_swipe_share_right_and_remove_left_with_the_rows_menu_as_their_twin', () => {
     const host = stuff('android', 'list');
     const swipes = [...host.querySelectorAll<HTMLElement>('[data-kit="swipe"]')];
-    expect(swipes.length).toBe(3);
+    expect(swipes.length).toBe(6);
     expect(swipes[0]?.getAttribute('data-gesture')).toBe('stuff.swipe');
     expect(swipes[0]?.getAttribute('data-twin')).toBe('stuff.phone.row.menu.trigger');
     expect(GESTURES['stuff.swipe'].twin).toEqual({ command: 'stuff.remove', parts: ['stuff.phone.row.menu.trigger'] });

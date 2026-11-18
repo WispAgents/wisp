@@ -30,7 +30,11 @@
   [data-kit='sf-search'] > input { flex: 1; min-width: 0; height: 100%; padding: 0; border: 0; outline: 0; background: none; font: inherit; color: var(--ink); }
   [data-kit='sf-search'] > input::placeholder { color: var(--faint); }
   [data-kit='sf-search'] > [data-kit='kbd'] { flex: none; }
-  [data-kit='sf-kinds'] { order: 3; flex: 1 1 100%; display: flex; gap: 6px; min-width: 0; overflow-x: auto; scrollbar-width: none; }
+  /* v1's row scrolls; its end fades so a chip cut at the edge reads as more to scroll (QA desktop r3 #7: cut, no sign) */
+  [data-kit='sf-kinds'] {
+    order: 3; flex: 1 1 100%; display: flex; gap: 6px; min-width: 0; overflow-x: auto; scrollbar-width: none;
+    padding-right: 24px; mask-image: linear-gradient(to right, var(--ink) calc(100% - 24px), transparent);
+  }
   [data-kit='sf-kinds']:empty { display: none; }
   [data-kit='sf-opts'] { flex: none; display: flex; align-items: center; gap: 4px; margin-left: auto; }
   [data-kit='sf-opt'] { display: inline-flex; align-items: center; justify-content: center; gap: 6px; height: 30px; min-width: 30px; padding: 0 8px; border-radius: 8px; font-size: 12.5px; font-weight: 400; color: var(--muted); }

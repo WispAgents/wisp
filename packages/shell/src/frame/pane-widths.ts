@@ -31,3 +31,18 @@ export const PANEL_WIDE = 1180;
 export function listShown(open: boolean, sideOpen: boolean, win: number): boolean {
   return open && !(sideOpen && win < PANEL_WIDE);
 }
+
+/** The list's and the panel's widths beside the open task (QA round 3 #2). The panel closed: the list as dragged
+ *  (`listWidth`). The panel open: the list as dragged, but never so wide that the panel's minimum and the task's 480
+ *  don't fit; the panel takes what it leaves (v1 paintWidth: the panel gives way), down to its minimum. */
+export function besideTask(o: { readonly win: number; readonly rail: number; readonly list: number; readonly panel: number; readonly sideOpen: boolean }): { list: number; panel: number } {
+  const want = listWidth(o.list, o.win, o.rail);
+  const list = o.sideOpen ? Math.round(Math.max(SIDE_MIN, Math.min(want, o.win - o.rail - PANEL_MIN - TASK_MIN))) : want;
+  return { list, panel: panelWidth(o.panel, o.win, o.rail + list) };
+}
+
+/** Dragging the list with the panel open (`panel`: its width now): it stops where the panel and the task's 480 begin,
+ *  so widening it takes room from the transcript's spare only, never the panel's or below the task's minimum. */
+export function listDrag(o: { readonly win: number; readonly rail: number; readonly want: number; readonly panel: number }): number {
+  return Math.round(Math.max(SIDE_MIN, Math.min(listWidth(o.want, o.win, o.rail), o.win - o.rail - o.panel - TASK_MIN)));
+}

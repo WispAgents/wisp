@@ -92,6 +92,11 @@
     min-height: 19px;
     padding-inline-start: 0;
   }
+  /* nothing on the second line (ListRow oneLine): the pills' cell, which holds only the time pinned in the corner, sits
+     on the title's line, so no empty line opens between the title and the run line (v1; QA round 3 #6) */
+  [data-kit='list-row'][data-layout='feed'][data-one-line] > [data-kit='list-row-pills'] {
+    grid-row: 1;
+  }
   /* v1 .it-run: harness, model and where, across the third line */
   [data-kit='list-row'][data-layout='feed'] > [data-kit='row-run'] {
     grid-column: 2 / -1;
@@ -511,14 +516,17 @@
   [data-kit='toolbar-item'][data-pinned] ~ [data-kit='toolbar-item'][data-pinned] {
     margin-inline-start: 0;
   }
-  /* The hidden copy every item is measured from, in both forms; never seen, never clicked. */
+  /* The hidden copy every item is measured from, in both forms; never seen, never clicked. No wider than nothing, its
+     items clipped at their own widths (flex: none): max-content wide from the bar's left, it ran past a phone's edge and
+     the page scrolled sideways (QA phone r3 A8) */
   [data-kit='toolbar-measure'] {
     position: absolute;
     top: 0;
     left: 0;
     display: flex;
     gap: var(--k-gap);
-    width: max-content;
+    width: 0;
+    overflow: hidden;
     visibility: hidden;
     pointer-events: none;
     contain: layout style;

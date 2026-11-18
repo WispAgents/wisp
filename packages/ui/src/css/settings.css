@@ -7,8 +7,10 @@
   [data-kit='settings-frame-grid'] { display: grid; grid-template-columns: var(--size-settings-nav) minmax(0, 1fr); height: 100%; min-height: 0; }
   @container settings (max-width: 800px) { [data-kit='settings-frame-grid'] { grid-template-columns: var(--size-settings-nav-narrow) minmax(0, 1fr); } }
 
+  /* the title and the search stay put; the list scrolls under them, so a lower pane picked (Updates, Diagnostics) never
+     scrolls them out of the nav (QA round 3 #10) */
   [data-kit='settings-nav'] {
-    display: flex; flex-direction: column; gap: var(--size-hairline); min-height: 0; overflow-y: auto; overscroll-behavior: contain;
+    display: flex; flex-direction: column; gap: var(--size-hairline); min-height: 0; overflow: hidden;
     padding: calc(var(--space-7) + var(--space-1)) var(--space-5); border-right: var(--size-hairline) solid var(--line); background: var(--bg-2);
   }
   /* v1 .sx-nav h2: the title is the block, 8px in and 14px above the list */
@@ -16,7 +18,7 @@
   [data-kit='settings-nav-title'] { flex: 1; margin: 0 var(--space-4) 14px; font: var(--fw-semibold) var(--fs-title) / 1.2 var(--display); letter-spacing: -0.015em; color: var(--ink); min-width: 0; }
   [data-kit='settings-nav-close'] { display: none; }
   [data-kit='settings-nav-search'] { padding: 0 var(--space-1) var(--space-3); }
-  [data-kit='settings-nav-list'] { display: flex; flex-direction: column; gap: 1px; } /* v1 .sx-nav: 32px rows, 1px apart */
+  [data-kit='settings-nav-list'] { display: flex; flex-direction: column; gap: 1px; flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; } /* v1 .sx-nav: 32px rows, 1px apart */
   [data-kit='settings-nav-group'] { display: flex; flex-direction: column; gap: 1px; }
   [data-kit='settings-nav-group-label'] { padding: 0 var(--space-3) var(--space-1); font-size: var(--fs-xs); font-weight: var(--fw-medium); color: var(--faint); text-transform: uppercase; letter-spacing: 0.04em; }
   /* a section after another starts with room above its heading (TRY-28: the side list in sections) */

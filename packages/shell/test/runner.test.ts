@@ -24,7 +24,9 @@ test('the_harness_model_picker_searches_every_harnesses_models_and_offers_the_pi
 
 test('the_reply_boxs_harness_model_pick_goes_with_the_next_follow_up_and_none_keeps_the_tasks_own', () => {
   expect(runPick(undefined)).toBeUndefined();
-  expect(runPick({ agent: 'codex', model: '', effort: '' })).toEqual({ agent: 'codex' });
+  // a pick names its model and thinking, '' its harness's default (QA desktop r3 #1: dropped, "Default" kept the
+  // task's Opus, and another harness was asked for the old one's model)
+  expect(runPick({ agent: 'codex', model: '', effort: '' })).toEqual({ agent: 'codex', model: '', effort: '' });
   expect(runPick({ agent: 'claude', model: 'opus', effort: 'high' })).toEqual({ agent: 'claude', model: 'opus', effort: 'high' });
 });
 

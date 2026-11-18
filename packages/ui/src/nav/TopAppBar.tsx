@@ -94,6 +94,10 @@ export interface TopAppBarProps extends KitProps {
   /** iOS: the title's button opens this pull-down menu (a UIMenu from the title, its choices with checkmarks) in place
    *  of `onTitle`, which Android and the browser keep. Additive (ADR-0065 step 13, 2026-11-15). */
   readonly titleMenu?: TopAppBarMenu;
+  /** The screen's one selector (the Tasks list's project pick): on Android (M3) the top app bar's title menu, its
+   *  `title` with the menu arrow, opening `onOpen`, and the action `action` leaves the actions; iOS and the browser keep
+   *  `title` and the action as given. Ignored while `onTitle` is set. Additive (QA round 3 A10, 2026-11-18). */
+  readonly titleSelect?: { readonly title: string; readonly onOpen: () => void; readonly action: string };
   readonly actions?: readonly ToolbarItem[];
   /** The actions toolbar's name (default: the title). */
   readonly actionsLabel?: string;
@@ -233,6 +237,14 @@ function PhoneBar(props: TopAppBarProps & { readonly part: PartName }): JSX.Elem
   const look = usePlatform();
   const kind = (): 'root' | 'page' | 'compose' => props.kind ?? 'page';
   const ios = (): boolean => look() === 'ios';
+  // Android: the screen's selector is the title menu (M3), not one more control among the actions
+  const select = (): TopAppBarProps['titleSelect'] => (!ios() && !props.onTitle ? props.titleSelect : undefined);
+  const title = (): string => select()?.title ?? props.title;
+  const onTitle = (): (() => void) | undefined => select()?.onOpen ?? props.onTitle;
+  const actions = (): readonly ToolbarItem[] => {
+    const s = select();
+    return s ? (props.actions ?? []).filter((a) => a.id !== s.action) : (props.actions ?? []);
+  };
   // M3 medium on a pushed page; the iOS large title on a destination's root; a compose bar is one line on both
   const large = (): boolean => (ios() ? kind() === 'root' : kind() === 'page');
   const host = useComposeHost();
@@ -274,7 +286,7 @@ function PhoneBar(props: TopAppBarProps & { readonly part: PartName }): JSX.Elem
       <Show when={editing()} fallback={
       <div data-kit="app-bar-row">
         <Show when={props.back}>{(b) => <BackControl back={b()} ios={ios()} part={sub(props.part, 'back')} t={t} />}</Show>
-        <Title title={props.title} onTitle={props.onTitle} menu={ios() ? props.titleMenu : undefined} part={sub(props.part, 'title')} />
+        <Title title={title()} onTitle={onTitle()} menu={ios() ? props.titleMenu : undefined} part={sub(props.part, 'title')} />
         <div data-kit="app-bar-actions">
           <Show when={props.search}>
             {(q) => (
@@ -283,8 +295,8 @@ function PhoneBar(props: TopAppBarProps & { readonly part: PartName }): JSX.Elem
               </span>
             )}
           </Show>
-          <Show when={props.actions?.length}>
-            <Toolbar aria-label={props.actionsLabel ?? props.title} items={props.actions ?? []} justify="end" part={sub(props.part, 'actions')} t={t} />
+          <Show when={actions().length}>
+            <Toolbar aria-label={props.actionsLabel ?? props.title} items={actions()} justify="end" part={sub(props.part, 'actions')} t={t} />
           </Show>
           <PageEnd menu={props.menu} confirm={props.confirm} ios={ios()} part={props.part} />
           <ComposeButton when={ios() && kind() === 'root'} />

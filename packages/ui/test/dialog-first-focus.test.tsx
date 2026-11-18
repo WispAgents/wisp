@@ -17,3 +17,26 @@ test('a_dialog_opens_with_focus_on_itself_not_its_close_button', async () => {
   expect(content?.contains(document.activeElement)).toBe(true);
   expect(document.activeElement?.tagName, 'not a button (the ×)').not.toBe('BUTTON');
 });
+
+// CI (2026-11-18): an uncaught "Your focus-trap needs to have at least one focusable element": after a close, the
+// dialog still offered the last open's content element (gone from the page) as the first focus; the trap refused it
+// and found nothing else. Opened again, focus lands on the new content and nothing throws.
+test('a_dialog_opened_again_focuses_its_new_content_never_the_last_ones', async () => {
+  await preloadControls();
+  const thrown: unknown[] = [];
+  const onError = (e: ErrorEvent): void => void thrown.push(e.error ?? e.message);
+  window.addEventListener('error', onError);
+  mount(() => <Dialog title="Machines" trigger={{ label: 'Machines' }} part="t.again">body</Dialog>);
+  for (let i = 0; i < 2; i++) {
+    part('t.again.trigger')?.click();
+    await tick(10);
+    await frame();
+    await tick(10);
+    expect(part('t.again')?.contains(document.activeElement), `open ${i + 1}`).toBe(true);
+    document.activeElement?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    await tick(10);
+    await frame();
+  }
+  window.removeEventListener('error', onError);
+  expect(thrown).toEqual([]);
+});

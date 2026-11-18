@@ -136,7 +136,20 @@ test('no_folder_and_other_folder_are_reachable_inside_the_selectors_list', async
   expect(client.nav.nav().overlays.some((o) => String(o.id) === 'shell.projects')).toBe(true);
 });
 
-for (const kind of ['android', 'ios'] as const) {
+// Android with one computer: the one selector is the M3 top app bar's title menu (QA round 3 A10), the same ⌘P list
+test('the_phone_tasks_screen_on_android_has_the_one_selector_as_its_title_menu_and_no_project_chips', async () => {
+  const { root } = await start(nullPlatform({ kind: 'android', phone: true, mobile: true }), 390);
+  const title = (): HTMLElement | null => root.querySelector<HTMLElement>('[data-part~="phone.tasks.bar"] [data-kit="app-bar-title-button"]');
+  await until(() => title() !== null);
+  expect(title()?.textContent).toContain('All projects');
+  expect(root.querySelector('[data-part~="phone.tasks.projects"]'), 'no chip row').toBeNull();
+  // a tap opens the same ⌘P list
+  title()?.click();
+  await until(() => row('api') !== undefined);
+  expect(row('All projects')).toBeDefined();
+});
+
+for (const kind of ['ios'] as const) {
   test(`the_phone_tasks_screen_on_${kind}_has_the_one_selector_in_its_bar_and_no_project_chips`, async () => {
     const { root } = await start(nullPlatform({ kind, phone: true, mobile: true }), 390);
     await until(() => (root.querySelector('[data-part="phone.tasks.project"]')?.closest('[data-part~="phone.tasks.bar"]') ?? null) !== null);

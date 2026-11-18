@@ -1,7 +1,7 @@
 // Owner's desktop test 2026-11-17 #18: the task list and the side panel couldn't be resized. Their widths, as v1
 // clamped them (split.js clampW, panel.js paintWidth).
 import { expect, test } from 'vitest';
-import { listShown, listWidth, panelWidth } from '../src/frame/pane-widths.ts';
+import { besideTask, listDrag, listShown, listWidth, panelWidth } from '../src/frame/pane-widths.ts';
 
 test('the list is 220 to 720 wide, and leaves the task 420 beside it (never under 260)', () => {
   expect(listWidth(100, 1600, 64)).toBe(220);
@@ -33,4 +33,22 @@ test('under 1180 the open panel takes the list s place, and the task keeps 480 b
   // the room it leaves: at 900 the panel may take 420, the task keeps 480
   expect(900 - panelWidth(600, 900, 0)).toBeGreaterThanOrEqual(480);
   expect(panelWidth(480, 1024, 0)).toBe(480);
+});
+
+// QA round 3 desktop #2: with the side panel open the list could be dragged to 720 px, the transcript dropping to
+// 136–296 px and the panel squeezed to its minimum. Opening the panel, it takes what the list leaves (v1: the panel
+// gives way), never so little the task is under 480; dragging the list, it stops where the panel as it is and the
+// task's 480 begin.
+test('with the panel open the task keeps 480, and dragging the list never squeezes the panel', () => {
+  // 1280, the list at 340: the panel gets 396 (v1), the task 480
+  expect(besideTask({ win: 1280, rail: 64, list: 340, panel: 480, sideOpen: true })).toEqual({ list: 340, panel: 396 });
+  // a list kept at 720 (dragged with the panel closed): the panel at its 360, the list what's left after the task's 480
+  expect(besideTask({ win: 1440, rail: 64, list: 720, panel: 480, sideOpen: true })).toEqual({ list: 536, panel: 360 });
+  // dragging the list with the panel at 480 (1440): it stops at 1440 - 64 - 480 - 480 = 416
+  expect(listDrag({ win: 1440, rail: 64, want: 720, panel: 480 })).toBe(416);
+  expect(listDrag({ win: 1440, rail: 64, want: 300, panel: 480 })).toBe(300);
+  // never under its 220
+  expect(listDrag({ win: 1180, rail: 64, want: 100, panel: 416 })).toBe(220);
+  // the panel closed: the list as before (220–720, the task 420 beside it)
+  expect(besideTask({ win: 1440, rail: 64, list: 720, panel: 480, sideOpen: false }).list).toBe(720);
 });

@@ -259,6 +259,9 @@ export function Launcher(props: LauncherProps): JSX.Element {
         data-nudge={flag(nudge())}
         data-drop={flag(over())}
         data-first-run={flag(props.firstRun)}
+        // the bar's form is measured (launcher-fold-measure.ts), not v1's 520 px rule: its icons only when its labels don't fit
+        data-measure={flag(props.tailMore !== undefined)}
+        data-squeeze={props.tailMore !== undefined && fold.squeeze() > 0 ? String(fold.squeeze()) : undefined}
         {...dropHandlers(() => props.onFiles, setOver)}
       >
         <div data-kit="l-projects" data-part="launcher.projects">
@@ -309,7 +312,7 @@ export function Launcher(props: LauncherProps): JSX.Element {
             </For>
           </div>
         </Show>
-        <div data-kit="l-bar" ref={fold.ref} data-try={flag(trial())} data-cmp={flag((props.runner.compares?.length ?? 0) > 0)}>
+        <div data-kit="l-bar" ref={fold.ref} data-scroll={flag(fold.scroll())} data-try={flag(trial())} data-cmp={flag((props.runner.compares?.length ?? 0) > 0)}>
           <Index each={props.lead}>{(t) => <Tool t={t()} />}</Index>
           <WithAct
             act={props.mode.act}

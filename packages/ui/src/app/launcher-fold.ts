@@ -106,3 +106,33 @@ export function tailFold(i: FoldInput): number {
   }
   return n;
 }
+
+/** The bar measured at one of its squeeze levels (`SQUEEZE`). `others`: every item but the tail's tools, with the gaps
+ *  between them; `tail`: each tool's width at that level, as last seen. */
+export interface BarForm {
+  readonly others: number;
+  readonly gap: number;
+  readonly tail: ReadonlyMap<string, number>;
+}
+
+/** How far the bar's labels have gone to their icons, one step at a time, in v1's order (its 720 and 640 px steps,
+ *  Worktree's and Delegate's, already happen by the box's width): 0 every label; 1 Goal's goes; 2 the mode's (Full
+ *  auto); 3 v1's narrow-box form, the pick down to its model, the bar scrolling under a pinned Send if it must. */
+export const SQUEEZE = 4;
+
+/** a tool not seen yet at a level: an icon button's width */
+const UNSEEN = 30;
+
+/** How the prompt box's toolbar fits (design/layout.md §2, QA desktop r3 #3 #4): the fewest labels gone to their
+ *  icons that holds every tool, one step at a time; at the last step the tail's last tools go into More, as many as it
+ *  takes. Nothing truncates (the pick keeps its words while a label can still go). A level not measured yet is tried as
+ *  is, so the next measure knows it. */
+export function barPlan(i: { readonly available: number; readonly ids: readonly string[]; readonly forms: readonly (BarForm | undefined)[]; readonly more: number }): { level: number; fold: number } {
+  const fold = (f: BarForm): number => tailFold({ available: i.available, others: f.others, tail: i.ids.map((id) => f.tail.get(id) ?? UNSEEN), gap: f.gap, more: i.more });
+  for (let level = 0; level < SQUEEZE; level++) {
+    const f = i.forms[level];
+    if (f === undefined || fold(f) === 0) return { level, fold: 0 };
+  }
+  const last = i.forms[SQUEEZE - 1];
+  return { level: SQUEEZE - 1, fold: last ? fold(last) : 0 };
+}

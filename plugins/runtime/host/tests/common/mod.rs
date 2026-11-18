@@ -131,7 +131,8 @@ impl Harness for Fake {
         &self.info
     }
     fn auth_failed(&self, text: &str) -> bool {
-        text.contains("401 Unauthorized")
+        // a LEGACY error is one an older wisp didn't know as signed out: known only once a test says so
+        text.contains("401 Unauthorized") && (!text.contains("LEGACY") || LEGACY_KNOWN.load(std::sync::atomic::Ordering::SeqCst))
     }
     fn detect<'a>(&'a self, _sys: &'a dyn HarnessSys) -> BoxFuture<'a, HarnessFound> {
         Box::pin(async { HarnessFound { available: true, ..HarnessFound::default() } })
@@ -170,6 +171,9 @@ impl Harness for Fake {
         pure(Lines { done: false })
     }
 }
+
+/// Whether the harness's own sign-in check knows a `LEGACY` 401 (a turn an older wisp saved without saying signed out).
+pub static LEGACY_KNOWN: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
 /// Whether the fake CLI is signed in: a `signedout…` prompt fails signed out until a test sets it.
 pub static SIGNED_IN: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
@@ -313,7 +317,8 @@ async fn fake_cli(mut io: SimIo) -> Exit {
     // `expired…`: its sign-in expired: the CLI dies before any result, a 401 on stderr, exit 1 (Codex's own words)
     if prompt.starts_with("expired") {
         io.print(format!("{}\n", json!({"type":"session","id":"conv-1"})).as_bytes()).await;
-        io.eprint(b"unexpected status 401 Unauthorized: Missing bearer or basic authentication in header, url: https://api.example/v1/responses\n").await;
+        let legacy = if prompt.contains("legacy") { " LEGACY" } else { "" };
+        io.eprint(format!("unexpected status 401 Unauthorized: Missing bearer or basic authentication in header, url: https://api.example/v1/responses{legacy}\n").as_bytes()).await;
         return Exit { code: Some(1), signal: None };
     }
     if prompt.starts_with("slowexit") {

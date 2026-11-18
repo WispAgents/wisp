@@ -146,6 +146,10 @@ turn. When a screen or feature contradicts one, that's a bug: fix it toward the 
 - **Thread tab: variant A** (picked 2026-11-18, decided by the owner's delegate, D-0056): the Notes as a per-section
   list as in v1 (each section edited in place, who wrote it and when, its versions), the health as one line with Fresh
   thread when worn; desktop a *Thread* tab in the task's side panel, phones *Thread* in the task's menu (a sheet).
+- **Pinned tasks lead the list** (decided by the owner's delegate 2026-11-18, QA round 3 #11): Pin moves the task into a
+  **Pinned** section at the top of the list, latest first, folded and unfolded like the other sections (open by
+  default); the task leaves its own section meanwhile (an archived one stays in Archived). v1 had no task pin; it was a
+  pill only. `plugins/shell-list/ui/src/model/sections.ts`, test `plugins/shell-list/ui/test/pinned-section.test.ts`.
 
 - **The decision ledger** (owner's #802, merged 2026-11-16): `decisions/D-NNNN.yml` records with hooks that bring each
   decision to the agent before it edits a file in scope. D-0001..D-0046 are v1's AGENTS.md rules (scoped to v1's

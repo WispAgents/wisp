@@ -2,7 +2,7 @@
 // picture: the phone screen got an icon only. A picture shows its file and an app its cover, as the page's cards do
 // (thumbOf); a still-arriving picture and every other kind keep their glyph.
 import { expect, test } from 'vitest';
-import { phoneImage } from '../src/card.ts';
+import { phoneImage, phoneThumb } from '../src/card.ts';
 import type { Item } from '../src/types.ts';
 
 const item = (o: Partial<Item>): Item => ({ id: 'x1', kind: 'doc', name: 'n', title: 't', at: 1, rev: 2, ...o }) as Item;
@@ -13,4 +13,14 @@ test('a_picture_or_an_apps_cover_is_its_phone_thumbnail', () => {
   expect(phoneImage(item({ id: 'ap', kind: 'app' }))).toBeUndefined();
   expect(phoneImage(item({ kind: 'image', pending: true } as Partial<Item>))).toBeUndefined();
   expect(phoneImage(item({ kind: 'doc' }))).toBeUndefined();
+});
+
+// QA phone r3 #5: apps, docs and code get the desktop card's preview on their tile; links, files and pictures still
+// arriving keep the glyph (a picture is its image)
+test('a_doc_code_or_app_tile_shows_the_desktop_cards_preview', () => {
+  expect(phoneThumb(item({ kind: 'doc', excerpt: '# Notes', name: 'n.md' } as Partial<Item>))?.kind).toBe('doc');
+  expect(phoneThumb(item({ kind: 'code', excerpt: 'const a = 1', name: 's.js' } as Partial<Item>))?.kind).toBe('code');
+  expect(phoneThumb(item({ kind: 'app', title: 'Hello' }))).toMatchObject({ kind: 'app', initial: 'H' });
+  expect(phoneThumb(item({ kind: 'image', name: 'x.jpg' })), 'a picture is its image').toBeUndefined();
+  expect(phoneThumb(item({ kind: 'file', name: 'b.zip' }))).toBeUndefined();
 });

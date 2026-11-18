@@ -44,8 +44,9 @@ const later: PluginUiLater = {
       component: () => null,
       order: 52,
       if: (p) => openPrs(sess(p)).length > 0,
+      // the merge mark, not v1's ✓ (it read as done or picked, QA phone r3 #6)
       bar: {
-        icon: 'check',
+        icon: 'merge',
         label: 'wisp.ship.menu.merge',
         priority: 52,
         section: 'waiting',
@@ -67,8 +68,9 @@ const later: PluginUiLater = {
       component: () => null,
       order: 75, // v1 #786 View ›: Changes, Shell, Review PR, Run app, Watch
       if: (p) => prsOf(sess(p)).length > 0,
+      // it looks at the PR; the merge mark is Merge PR's now
       bar: {
-        icon: 'merge',
+        icon: 'eye',
         label: 'wisp.ship.menu.review',
         priority: 75,
         sub: 'view',

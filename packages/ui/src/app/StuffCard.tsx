@@ -71,7 +71,8 @@ export interface StuffCardProps {
   readonly ref?: (el: HTMLElement) => void;
 }
 
-function ThumbBody(props: { readonly thumb: StuffThumb }): JSX.Element {
+/** A thing's preview, as its card shows it (the phone tiles show it too: QA phone r3 #5). */
+export function StuffThumbBody(props: { readonly thumb: StuffThumb }): JSX.Element {
   const th = props.thumb;
   switch (th.kind) {
     case 'image':
@@ -214,7 +215,7 @@ export function StuffCard(props: StuffCardProps): JSX.Element {
             <Icon name={props.icon} />
           </span>
         </Show>
-        <ThumbBody thumb={props.thumb} />
+        <StuffThumbBody thumb={props.thumb} />
         <Show when={props.launch}>
           {(l) => (
             <button

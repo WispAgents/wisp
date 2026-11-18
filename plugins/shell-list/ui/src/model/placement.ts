@@ -15,6 +15,7 @@ export function signature(s: SessionRow): string {
   return [
     s.state,
     s.archived ? 1 : 0,
+    s.pinned ? 1 : 0,
     s.forLater ? `${s.forLater.at}${s.forLater.by ?? ''}` : '',
     s.unread ? 1 : 0,
     s.state === 'running' ? '' : s.updatedAt,

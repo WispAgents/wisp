@@ -212,6 +212,35 @@ impl Runtime {
         self.end_turn(sid, tid, &Head::default(), e, 0).await
     }
 
+    /// A task's last turn failed in its harness's signed-out words but was saved before wisp read them on a failed end
+    /// (an older wisp): it's landed again as signed out (plain words, the sign-in card, the row's Signed out), never the
+    /// raw API error as the task's line (QA desktop r3; r2 #6 fixed new runs only).
+    pub(crate) async fn repair_signed_out(self: &Arc<Self>, id: &str) -> Result<()> {
+        let _guard = self.task_lock(id).await;
+        let Some(mut t) = self.repo.turns(id, None, Some(1)).await?.pop() else { return Ok(()) };
+        let marked = t.ext.get("wisp.runtime").and_then(|r| r.get("authFailed")).and_then(serde_json::Value::as_bool) == Some(true);
+        let text = t.text.clone().unwrap_or_default();
+        let Ok(h) = self.harness(&t.agent) else { return Ok(()) };
+        if t.status != TurnStatus::Error || marked || !said_signed_out(Some(h.as_ref()), true, &text) {
+            return Ok(());
+        }
+        let ending = Ending {
+            stopped: false,
+            interrupted: false,
+            is_error: true,
+            text: &text,
+            harness: &h.info().name,
+            changes: &[],
+            reason: None,
+            signed_out: true,
+        };
+        let (_, p) = land::end_presentation(&ending, |_| wisp_runtime_api::model::Presentation::default());
+        t.presentation = Some(p);
+        keep_in_slot(&mut t, [("authFailed", json!(true))]);
+        let mut s = self.repo.session(id).await?;
+        self.persist(&mut s, vec![t]).await.map(drop)
+    }
+
     /// A turn a crash or restart left running never finished: it shows stopped (v1 `restartReason`).
     pub(crate) async fn end_unfinished(self: &Arc<Self>, mut s: Session, mut t: Turn) -> Result<()> {
         let ending = Ending {

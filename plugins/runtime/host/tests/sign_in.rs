@@ -63,3 +63,33 @@ async fn a_run_that_dies_with_its_sign_in_expired_says_signed_out_not_the_raw_er
     assert!(!summary.contains("401") && !summary.contains("bearer"), "plain words, not the API error: {summary}");
     assert!(summary.to_lowercase().contains("sign"), "{summary}");
 }
+
+/// QA desktop r3 (r2 #6 still open): a task saved before signed-out ends were read on a failed end kept the raw
+/// "unexpected status 401 Unauthorized…" as its line in the list. On start, the last turn of a failed task is read again
+/// with its harness's own sign-in check: it says signed out in plain words, and its row's pill is Signed out.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_task_saved_with_a_raw_401_reads_signed_out_after_a_start() {
+    let r = rig().await;
+    let id =
+        r.rt.create(StartArgs { prompt: "expired legacy hello".into(), cwd: Some(common::tmp()), ..StartArgs::default() })
+            .await
+            .unwrap()
+            .id
+            .0;
+    until("the turn to fail", || async {
+        r.rt.turns(&id, None, Some(1)).await.unwrap().pop().is_some_and(|t| t.status == TurnStatus::Error)
+    })
+    .await;
+    let before = r.rt.turns(&id, None, Some(1)).await.unwrap().pop().unwrap();
+    assert!(before.ext.get("wisp.runtime").and_then(|x| x.get("authFailed")).is_none_or(|v| v != true), "saved as an older wisp did");
+    common::LEGACY_KNOWN.store(true, Ordering::SeqCst);
+    r.rt.start().await.unwrap();
+    let t = r.rt.turns(&id, None, Some(1)).await.unwrap().pop().unwrap();
+    assert_eq!(t.ext["wisp.runtime"]["authFailed"], true, "{:?}", t.ext);
+    let hero = t.presentation.as_ref().and_then(|p| p.blocks.iter().find(|b| b["type"] == "hero")).cloned().unwrap();
+    assert!(!hero["summary"].as_str().unwrap_or_default().contains("401"), "{hero}");
+    let row = r.rt.list(&wisp_runtime_api::commands::ListArgs::default()).into_iter().find(|x| x.id.0 == id).unwrap();
+    let row = serde_json::to_value(&*row).unwrap();
+    assert!(!row.to_string().contains("401 Unauthorized: Missing"), "no raw 401 on the row: {row}");
+    assert_eq!(row["halt"], "signedOut", "{row}");
+}

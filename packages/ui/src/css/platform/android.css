@@ -1324,6 +1324,13 @@
   :root[data-platform='android'] [data-kit='trail-bar'] [data-kit='rate-btn'],
   :root[data-platform='android'] [data-kit='story-head'] [data-kit='icon-button'],
   :root[data-platform='android'] [data-part~='stuff.phone.row.menu.trigger'] { min-width: var(--tap-min); min-height: var(--tap-min); }
+  /* QA phone r3 A6: the PR card's Check now and a block's Comment on this were 28 and 29 px: a finger's 48dp */
+  :root[data-platform='android'] [data-part~='side.pr.check'],
+  :root[data-platform='android'] [data-part~='pr.strip.check'] { min-width: var(--tap-min); min-height: var(--tap-min); }
+  :root[data-platform='android'] [data-kit='cmt-add'] { width: var(--tap-min); height: var(--tap-min); top: calc(var(--tap-min) / -2); right: calc(var(--space-4) * -1); }
+  /* QA phone r3 #3: the goal line says what it's for, as a native form names its field (v1's narrow box gave the label's
+     room to the condition; the hint now gives way with "…") */
+  :root[data-platform='android'] [data-kit='lg-k'] > [data-text='control'] { display: inline; }
 
   /* The task's side page (Changes, PR, Shell, Preview; QA round 2 #9): an M3 page head, not the browser's pill strip
      squeezed to icons. Close leads (a full-screen page), then the panel's primary tabs, each named, across the row;
@@ -1366,4 +1373,10 @@
   @media (not (min-width: 600px)) {
     :root[data-platform='android'] [data-kit='launcher'] [data-kit='runner-btn'] > [data-kit='rb-h'] { display: none; }
   }
+}
+
+@layer kit {
+  /* an Org card's role on a phone card (~150 px at 360): one line with an ellipsis, never "Crew / member" on two (QA
+     phone r3 #2; v1's two-line role is the desktop's) */
+  :root[data-platform='android'] [data-kit='org-who'] > small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 }

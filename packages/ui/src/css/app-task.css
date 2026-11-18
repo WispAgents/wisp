@@ -583,6 +583,9 @@
      (QA r2 #8: on a phone it ran past the card), its title says it all */
   [data-kit='tb'][data-part='turn.receipt'] {
     display: block;
+    /* its column's width, not its words' (the trail's grid starts each item: QA phone r3 #4) */
+    justify-self: stretch;
+    max-width: 100%;
     min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -774,6 +777,13 @@
   }
   [data-kit='mode-btn'][data-reply] {
     padding: 0 var(--space-4);
+  }
+  /* too narrow for its words (bar-labels.ts, ADR-0012: fold, never clip): the mode is its icon, its tooltip names it */
+  [data-kit='c-bar'][data-tight] > [data-kit='mode-btn'] > [data-text='control'] {
+    display: none;
+  }
+  [data-kit='c-bar'][data-tight] > [data-kit='mode-btn'][data-reply] {
+    padding: 0 var(--space-3);
   }
   [data-kit='c-runner'],
   [data-kit='c-team'] {

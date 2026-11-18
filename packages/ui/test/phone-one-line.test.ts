@@ -6,6 +6,7 @@ import stackCss from '../src/css/app-stack.css?raw';
 import taskCss from '../src/css/app-task.css?raw';
 import iosCss from '../src/css/platform/ios.css?raw';
 import androidCss from '../src/css/platform/android.css?raw';
+import compositesCss from '../src/css/composites.css?raw';
 
 const noComments = (css: string): string => css.replace(/\/\*[^]*?\*\//g, '');
 
@@ -56,4 +57,50 @@ test('on_a_phone_the_harness_pill_folds_to_its_logo_so_new_tasks_bar_fits_qa_r2_
   for (const [plat, css] of [['ios', iosCss], ['android', androidCss]] as const) {
     expect(noComments(css)).toMatch(new RegExp(`@media \\(not \\(min-width: 600px\\)\\) \\{\\s*:root\\[data-platform='${plat}'\\] \\[data-kit='launcher'\\] \\[data-kit='runner-btn'\\] > \\[data-kit='rb-h'\\] \\{ display: none; \\}`));
   }
+});
+
+test('check_now_and_comment_on_this_take_a_full_tap_target_on_the_phone_apps_qa_r3_a6', () => {
+  // QA phone r3 A6: the PR card's Check now was 28 px and a block's Comment on this 29 px
+  for (const [plat, css] of [['ios', iosCss], ['android', androidCss]] as const) {
+    const flat = noComments(css);
+    const rule = (sel: string): string => {
+      const at = flat.indexOf(`:root[data-platform='${plat}'] ${sel}`);
+      expect(at, `${plat} ${sel}`).toBeGreaterThan(-1);
+      return flat.slice(at, flat.indexOf('}', at));
+    };
+    expect(rule("[data-part~='side.pr.check']")).toContain('min-height: var(--tap-min)');
+    expect(rule("[data-part~='pr.strip.check']")).toContain('min-height: var(--tap-min)');
+    const cmt = rule("[data-kit='cmt-add']");
+    expect(cmt).toContain('width: var(--tap-min)');
+    expect(cmt).toContain('height: var(--tap-min)');
+  }
+});
+
+test('a_toolbars_hidden_measuring_copy_never_widens_the_page_it_sits_in_qa_r3_a8', () => {
+  // QA phone r3 A8 / #4: on an iOS task page the transcript scrolled sideways: the details bar's measuring copy (every
+  // item in both forms, max-content wide from the bar's left) ran 8 px past the screen. Its items keep their own
+  // widths (flex: none), so the copy itself is no wider than nothing and clips them
+  const css = noComments(compositesCss);
+  const copy = /\[data-kit='toolbar-measure'\] \{([^}]*)\}/.exec(css)?.[1] ?? '';
+  expect(copy).toContain('width: 0');
+  expect(copy).toContain('overflow: hidden');
+  expect(copy).not.toContain('max-content');
+  expect(css).toMatch(/\[data-kit='toolbar-measure'\] > span \{[^}]*flex: none/);
+});
+
+test('the_receipt_is_held_to_its_column_so_it_gives_way_with_an_ellipsis_qa_r3_4', () => {
+  // QA phone r3 #4 (A8, still): "… 2% of weekl" cut at the screen's edge and the transcript scrolling sideways: the
+  // trail's grid puts each item at its start (justify-items: start), so the receipt kept its own width past its column
+  const receipt = /\[data-kit='tb'\]\[data-part='turn.receipt'\] \{([^}]*)\}/.exec(noComments(taskCss))?.[1] ?? '';
+  expect(receipt).toContain('justify-self: stretch');
+  expect(receipt).toContain('max-width: 100%');
+});
+
+test('the_goal_line_says_done_when_on_the_phone_apps_and_its_placeholder_gives_way_with_an_ellipsis_qa_r3_3', () => {
+  // QA phone r3 #3: "all tests pass and it works on a ph", cut by the judges chip with no "…", and no "Done when" to
+  // say what the field is for (v1's ≤720 px rule gives a browser's narrow box the label's room; a native form names it)
+  const input = /\[data-kit='l-goal-input'\] \{([^}]*)\}/.exec(noComments(home))?.[1] ?? '';
+  expect(input).toContain('text-overflow: ellipsis');
+  for (const [plat, css] of [['ios', iosCss], ['android', androidCss]] as const)
+    expect(noComments(css)).toContain(`:root[data-platform='${plat}'] [data-kit='lg-k'] > [data-text='control'] { display: inline; }`);
 });

@@ -88,6 +88,7 @@
   "shell-list.group.compareTitle": "Side by side: time, cost, changes, tests and each presentation",
   "shell-list.section.new": "{n} new",
   "shell-list.row.unread": "Unread",
+  "shell-list.section.pinned": "Pinned",
   "shell-list.section.needs": "Needs you",
   "shell-list.section.working": "Working",
   "shell-list.section.scheduled": "Scheduled",

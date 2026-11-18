@@ -233,7 +233,10 @@ function Shell(props: DialogProps & { readonly kind: Kind }): JSX.Element {
           // with nothing of the caller's to focus, focus lands on the dialog itself, not its first button: no ring on × as it opens
           // after a click, and VoiceOver, TalkBack and desktop readers read it from its title (phones: QA round 2 #14; desktop:
           // the Machines dialog, QA desktop round 2 #22)
-          const own = mergeProps(props, { initialFocus: () => props.initialFocus?.() ?? content ?? null });
+          // Once the surface is gone, `false` (focus nothing, as Zag's trap takes it): closing moves focus back to the trigger
+          // while the trap is still armed, and a trap that never saw a focus (a dialog opened before its machine landed) then
+          // asked for a first focus, found no surface and threw "needs at least one focusable element" (CI, 2026-11-18)
+          const own = mergeProps(props, { initialFocus: () => props.initialFocus?.() ?? (content?.isConnected ? content : (false as unknown as null)) });
           setApi(() => m().useDialog(own, untrack(selfOpen), focus.to));
           return null;
         }}

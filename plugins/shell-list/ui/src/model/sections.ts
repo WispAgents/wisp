@@ -6,8 +6,9 @@
 import { parsePick } from '@wisp/shell/pure';
 import type { EntityKey, Plan, Row, Session, SessionRow } from '../types.ts';
 
-export type SectionId = 'needs' | 'working' | 'scheduled' | 'drafts' | 'forLater' | 'done' | 'archived';
-export const SECTION_IDS: readonly SectionId[] = ['needs', 'working', 'scheduled', 'drafts', 'forLater', 'done', 'archived'];
+export type SectionId = 'pinned' | 'needs' | 'working' | 'scheduled' | 'drafts' | 'forLater' | 'done' | 'archived';
+/** Pinned leads (the owner's delegate, 2026-11-18, QA round 3 #11: v2's own section; v1 had no pin), then v1's. */
+export const SECTION_IDS: readonly SectionId[] = ['pinned', 'needs', 'working', 'scheduled', 'drafts', 'forLater', 'done', 'archived'];
 
 export interface Keyed {
   readonly key: EntityKey;
@@ -136,8 +137,11 @@ const anyRun = (e: Entry, p: (s: SessionRow) => boolean): boolean => (e.kind ===
 export function sections(all: readonly Keyed[], f: Filter = ALL, plans: readonly Row<Plan>[] = []): Sections {
   const every = visibleEntries(all, f);
   const archived = (e: Entry): boolean => !!lead(e)?.archived;
-  const forLater = every.filter((e) => everyRun(e, isForLater)).sort((a, b) => forLaterAt(b) - forLaterAt(a));
-  const live = every.filter((e) => !archived(e) && !everyRun(e, isForLater));
+  // pinned: at the top, latest first, out of the other sections meanwhile (an archived one stays in Archived)
+  const isPinned = (e: Entry): boolean => e.kind !== 'plan' && !archived(e) && anyRun(e, (s) => s.pinned === true);
+  const pinned = every.filter(isPinned).sort((a, b) => updatedOf(b) - updatedOf(a));
+  const forLater = every.filter((e) => !isPinned(e) && everyRun(e, isForLater)).sort((a, b) => forLaterAt(b) - forLaterAt(a));
+  const live = every.filter((e) => !archived(e) && !isPinned(e) && !everyRun(e, isForLater));
   const scheduled = (e: Entry): boolean => e.kind === 'task' && isScheduled(e.s);
   const term = (e: Entry): boolean => e.kind === 'task' && inTerm(e.s);
   // Needs you: asking first, then the latest
@@ -153,7 +157,7 @@ export function sections(all: readonly Keyed[], f: Filter = ALL, plans: readonly
   const drafts = plansIn('drafts').sort((a, b) => (b.kind === 'plan' ? b.plan.at : 0) - (a.kind === 'plan' ? a.plan.at : 0));
   const done = live.filter((e) => stateOf(e) === 'done' && !scheduled(e)).sort((a, b) => updatedOf(b) - updatedOf(a));
   const arch = every.filter(archived).sort((a, b) => updatedOf(b) - updatedOf(a));
-  return { needs, working, scheduled: sched, drafts, forLater, done, archived: arch };
+  return { pinned, needs, working, scheduled: sched, drafts, forLater, done, archived: arch };
 }
 
 /** For later's heading says what a crew member filed there unread: nothing pings for it. */

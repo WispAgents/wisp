@@ -259,7 +259,7 @@ export function PrPane(): JSX.Element {
                     <Text size="xs" tone="muted" nowrap>
                       {t('shell-task.pr.checked', { when: timeLabel(at() || Date.now(), Date.now(), kitT) })}
                     </Text>
-                    <IconButton icon="replay" size="xs" label={t('shell-task.pr.checkNow')} onClick={() => quiet(c.run(refresh, args()))} />
+                    <IconButton icon="replay" size="xs" label={t('shell-task.pr.checkNow')} part="side.pr.check" onClick={() => quiet(c.run(refresh, args()))} />
                   </Inline>
                 </Inline>
               </>

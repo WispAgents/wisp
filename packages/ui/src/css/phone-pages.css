@@ -22,7 +22,9 @@
   }
   [data-kit='phone-settings-list']:focus, [data-kit='phone-settings-pane']:focus { outline: 0; }
   [data-kit='phone-settings-list'] { display: flex; flex-direction: column; gap: var(--space-6); padding-top: var(--space-4); }
-  [data-kit='phone-settings-pane'] { display: flex; flex-direction: column; gap: var(--space-6); padding: var(--space-4) 0; }
+  /* a `settings` container, as the desktop frame is: a row's wide control drops under its words in a narrow one (QA phone
+     r3 #1: Agents' rows squeezed their name and version to nothing) */
+  [data-kit='phone-settings-pane'] { container: settings / inline-size; display: flex; flex-direction: column; gap: var(--space-6); padding: var(--space-4) 0; }
   [data-kit='phone-settings-pane'] > [data-kit='settings-lede'] { margin: 0; padding: 0 var(--space-7); color: var(--muted); }
 
   /* My Stuff: the kinds (Android's filter chips, iOS's segmented control) on one line that scrolls sideways */
@@ -52,8 +54,9 @@
     display: flex; flex-direction: column; gap: var(--space-3); min-width: 0; padding: 0;
     border: 0; background: none; color: inherit; font: inherit; text-align: start; cursor: pointer; -webkit-tap-highlight-color: transparent;
   }
+  /* relative: a preview (the card's own, stuff-card.css) is placed against it and clipped by it (QA phone r3 #5) */
   [data-kit='stuff-tile-thumb'] {
-    display: grid; place-items: center; aspect-ratio: 4 / 3; overflow: hidden; border-radius: var(--radius-md);
+    position: relative; display: grid; place-items: center; aspect-ratio: 4 / 3; overflow: hidden; border-radius: var(--radius-md);
     background: var(--bg-2); color: var(--muted);
   }
   [data-kit='stuff-tile-thumb'] > img { width: 100%; height: 100%; object-fit: cover; }

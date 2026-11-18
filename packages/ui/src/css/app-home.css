@@ -218,6 +218,8 @@
   [data-kit='l-goal-input'] {
     flex: 1;
     min-width: 0;
+    /* a narrow line: the hint gives way with "…", never cut mid-word (QA phone r3 #3) */
+    text-overflow: ellipsis;
     border-radius: 0;
     height: 28px;
     border: 0;
@@ -817,73 +819,160 @@
     }
   }
   @container launcher (max-width: 520px) {
+    /* v1's narrow box (a phone, the first run): unmeasured, by the box's width */
     /* Auto's spark alone, centred, its chevron gone: the pick is the next thing to tap (v1 auto.css .pv-on) */
-    [data-kit='runner-btn'][data-lead][data-auto] {
+    [data-kit='launcher']:not([data-measure]) [data-kit='runner-btn'][data-lead][data-auto] {
       padding: 0 3px;
     }
-    [data-kit='runner-btn'][data-auto] > [data-kit='rb-logo'] {
+    [data-kit='launcher']:not([data-measure]) [data-kit='runner-btn'][data-auto] > [data-kit='rb-logo'] {
       margin-right: 0;
     }
-    [data-kit='runner-btn'][data-auto] > [data-kit='icon'] {
+    [data-kit='launcher']:not([data-measure]) [data-kit='runner-btn'][data-auto] > [data-kit='icon'] {
       display: none;
     }
     /* a phone (v1 launcher.css): the model is the pick that matters, so it alone keeps its name, the harness's name
        when the model is the default; the effort goes to the picker */
-    [data-kit='runner-btn'] > [data-kit='rb-h'],
-    [data-kit='runner-btn'][data-def] > [data-kit='auto-pv'],
-    [data-kit='rb-e'] {
+    [data-kit='launcher']:not([data-measure]) [data-kit='runner-btn'] > [data-kit='rb-h'],
+    [data-kit='launcher']:not([data-measure]) [data-kit='runner-btn'][data-def] > [data-kit='auto-pv'],
+    [data-kit='launcher']:not([data-measure]) [data-kit='rb-e'] {
       display: none;
     }
-    [data-kit='runners']:not([data-cmp]) > [data-kit='runner-btn'][data-def] > [data-kit='rb-h'] {
+    [data-kit='launcher']:not([data-measure]) [data-kit='runners']:not([data-cmp]):not([data-trial]) > [data-kit='runner-btn'][data-def] > [data-kit='rb-h'] {
       display: block;
     }
-    [data-kit='runners'][data-cmp] > [data-kit='runner-btn']:not([data-auto]) > [data-kit='rb-logo'] {
+    [data-kit='launcher']:not([data-measure]) [data-kit='runners'][data-cmp] > [data-kit='runner-btn']:not([data-auto]) > [data-kit='rb-logo'] {
       margin-right: var(--space-2);
     }
-    [data-kit='runner-btn']:not([data-auto]) > [data-kit='icon'] {
+    [data-kit='launcher']:not([data-measure]) [data-kit='runner-btn']:not([data-auto]) > [data-kit='icon'] {
       margin-left: var(--space-2);
     }
-    [data-kit='runners'][data-cmp] > [data-kit='runner-btn'] > [data-kit='icon'] {
+    [data-kit='launcher']:not([data-measure]) [data-kit='runners'][data-cmp] > [data-kit='runner-btn'] > [data-kit='icon'] {
       margin-left: 0;
     }
-    [data-kit='runner-btn'] > [data-kit='auto-pv'] {
+    [data-kit='launcher']:not([data-measure]) [data-kit='runner-btn'] > [data-kit='auto-pv'] {
       flex: none;
       padding: 0;
     }
-    [data-kit='runner-btn'] > [data-kit='auto-pv'] > [data-kit='apv-l'] {
+    [data-kit='launcher']:not([data-measure]) [data-kit='runner-btn'] > [data-kit='auto-pv'] > [data-kit='apv-l'] {
       max-width: var(--size-pick-max-phone);
       color: var(--ink);
       font-weight: 500;
     }
     /* the place, mode and the rest go to their icons (their tooltips and menus name them); the pill's own parts
        follow the rules above */
-    [data-kit='l-bar'] > :not([data-a='more']) > [data-text='control']:not([data-kit]) {
+    [data-kit='launcher']:not([data-measure]) [data-kit='l-bar'] > :not([data-a='more']) > [data-text='control']:not([data-kit]) {
       display: none;
     }
-    [data-kit='l-bar'] > [data-kit='mode-btn'] {
+    [data-kit='launcher']:not([data-measure]) [data-kit='l-bar'] > [data-kit='mode-btn'] {
       padding: 0 7px;
     }
     /* v1: first run on a phone the bar has room again, so the mode says Full auto beside its icon */
-    [data-kit='launcher'][data-first-run] [data-kit='l-bar'] > [data-kit='mode-btn'] > [data-text='control'] {
+    [data-kit='launcher']:not([data-measure])[data-first-run] [data-kit='l-bar'] > [data-kit='mode-btn'] > [data-text='control'] {
       display: inline;
     }
-    [data-kit='l-bar'] {
+    [data-kit='launcher']:not([data-measure]) [data-kit='l-bar'] {
       gap: var(--space-1);
       overflow-x: auto;
       scrollbar-width: none;
     }
     /* the bar scrolls (v1), so nothing on it gives way: the harness, the pick, vs keep their size */
-    [data-kit='l-bar'] > [data-kit='runners'],
-    [data-kit='runners'] > * {
+    [data-kit='launcher']:not([data-measure]) [data-kit='l-bar'] > [data-kit='runners'],
+    [data-kit='launcher']:not([data-measure]) [data-kit='runners'] > * {
       flex: none;
     }
-    [data-kit='l-bar'] > [data-kit='send'] {
+    [data-kit='launcher']:not([data-measure]) [data-kit='l-bar'] > [data-kit='send'] {
       position: sticky;
       right: 0;
       box-shadow:
         -8px 0 8px var(--surface),
         -20px 0 12px var(--surface);
     }
+  }
+  /* A measured bar (the desktop and browser launcher, launcher-fold-measure.ts): the same compact form, taken when its
+     labels don't fit with every tool shown, one step at a time (QA desktop r3 #3: by width alone, WebKit's 10 px
+     narrower box lost every label with 97 px to spare); the pick keeps its words until the last step (#4) */
+  [data-kit='launcher'][data-measure]:not([data-squeeze='3']) [data-kit='l-bar'] > [data-kit='runners'] {
+    flex: none;
+  }
+  /* the first steps, one label at a time (launcher-fold.ts SQUEEZE): Goal's, then the mode's; the step after is v1's
+     narrow-box form below */
+  [data-kit='launcher'][data-squeeze='1'] [data-kit='l-bar'] > [data-a='goal'] > [data-text='control'],
+  [data-kit='launcher'][data-squeeze='2'] [data-kit='l-bar'] > [data-a='goal'] > [data-text='control'],
+  [data-kit='launcher'][data-squeeze='2'] [data-kit='l-bar'] > [data-kit='mode-btn'] > [data-text='control'] {
+    display: none;
+  }
+  [data-kit='launcher'][data-squeeze='2'] [data-kit='l-bar'] > [data-kit='mode-btn'] {
+    padding: 0 7px;
+  }
+  /* Auto's spark alone, centred, its chevron gone: the pick is the next thing to tap (v1 auto.css .pv-on) */
+  [data-kit='launcher'][data-squeeze='3'] [data-kit='runner-btn'][data-lead][data-auto] {
+    padding: 0 3px;
+  }
+  [data-kit='launcher'][data-squeeze='3'] [data-kit='runner-btn'][data-auto] > [data-kit='rb-logo'] {
+    margin-right: 0;
+  }
+  [data-kit='launcher'][data-squeeze='3'] [data-kit='runner-btn'][data-auto] > [data-kit='icon'] {
+    display: none;
+  }
+  /* a phone (v1 launcher.css): the model is the pick that matters, so it alone keeps its name, the harness's name
+     when the model is the default; the effort goes to the picker */
+  [data-kit='launcher'][data-squeeze='3'] [data-kit='runner-btn'] > [data-kit='rb-h'],
+  [data-kit='launcher'][data-squeeze='3'] [data-kit='runner-btn'][data-def] > [data-kit='auto-pv'],
+  [data-kit='launcher'][data-squeeze='3'] [data-kit='rb-e'] {
+    display: none;
+  }
+  [data-kit='launcher'][data-squeeze='3'] [data-kit='runners']:not([data-cmp]):not([data-trial]) > [data-kit='runner-btn'][data-def] > [data-kit='rb-h'] {
+    display: block;
+  }
+  [data-kit='launcher'][data-squeeze='3'] [data-kit='runners'][data-cmp] > [data-kit='runner-btn']:not([data-auto]) > [data-kit='rb-logo'] {
+    margin-right: var(--space-2);
+  }
+  [data-kit='launcher'][data-squeeze='3'] [data-kit='runner-btn']:not([data-auto]) > [data-kit='icon'] {
+    margin-left: var(--space-2);
+  }
+  [data-kit='launcher'][data-squeeze='3'] [data-kit='runners'][data-cmp] > [data-kit='runner-btn'] > [data-kit='icon'] {
+    margin-left: 0;
+  }
+  [data-kit='launcher'][data-squeeze='3'] [data-kit='runner-btn'] > [data-kit='auto-pv'] {
+    flex: none;
+    padding: 0;
+  }
+  [data-kit='launcher'][data-squeeze='3'] [data-kit='runner-btn'] > [data-kit='auto-pv'] > [data-kit='apv-l'] {
+    max-width: var(--size-pick-max-phone);
+    color: var(--ink);
+    font-weight: 500;
+  }
+  /* the place, mode and the rest go to their icons (their tooltips and menus name them); the pill's own parts
+     follow the rules above */
+  [data-kit='launcher'][data-squeeze='3'] [data-kit='l-bar'] > :not([data-a='more']) > [data-text='control']:not([data-kit]) {
+    display: none;
+  }
+  [data-kit='launcher'][data-squeeze='3'] [data-kit='l-bar'] > [data-kit='mode-btn'] {
+    padding: 0 7px;
+  }
+  /* v1: first run on a phone the bar has room again, so the mode says Full auto beside its icon */
+  [data-kit='launcher'][data-squeeze='3'][data-first-run] [data-kit='l-bar'] > [data-kit='mode-btn'] > [data-text='control'] {
+    display: inline;
+  }
+  [data-kit='launcher'][data-squeeze='3'] [data-kit='l-bar'] {
+    gap: var(--space-1);
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+  /* the bar scrolls (v1), so nothing on it gives way: the harness, the pick, vs keep their size */
+  [data-kit='launcher'][data-squeeze='3'] [data-kit='l-bar'] > [data-kit='runners'],
+  [data-kit='launcher'][data-squeeze='3'] [data-kit='runners'] > * {
+    flex: none;
+  }
+  [data-kit='launcher'][data-squeeze='3'] [data-kit='l-bar'] > [data-kit='send'] {
+    position: sticky;
+    right: 0;
+  }
+  /* its fade over what runs under it, only when something does */
+  [data-kit='launcher'][data-squeeze='3'] [data-kit='l-bar'][data-scroll] > [data-kit='send'] {
+    box-shadow:
+      -8px 0 8px var(--surface),
+      -20px 0 12px var(--surface);
   }
   /* Try it two ways (v1 launcher.css .runners.trial): the same harness twice, so the words that matter are the run's
      difference (the copy says only that, [data-vary] above). Under 1100px the lead's harness goes to its logo and

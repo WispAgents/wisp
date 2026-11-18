@@ -98,6 +98,9 @@ export function PhoneHead(props: { readonly filter: () => string }): JSX.Element
         part="phone.tasks.bar"
         // one computer: nothing to narrow, the screen's name (QA round 2 #10: "All ▾" beside "All projects ▾")
         title={computers.filters() ? computers.title() : shell.t('shell.dest.tasks')}
+        // the one project selector (owner, 2026-11-15): with no computer filter in the title, Android draws it as the M3
+        // title menu instead of a dropdown among the actions (the kit's choice: QA round 3 A10)
+        titleSelect={{ title: project().label, onOpen: () => openSwitcher(shell), action: 'project' }}
         // iOS: the computer filter is a pull-down from the title (UIMenu), its choices checked; Android keeps its sheet
         {...(computers.filters() && {
           onTitle: () => setPicking(true),

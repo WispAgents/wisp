@@ -161,35 +161,38 @@ export function MachineCard(props: CardProps): JSX.Element {
             />
           </Inline>
         }
-      />
-      <Show when={st() === 'online'}>
-        <Inline gap="2" part="machines.meta">
-          <Text size="sm" tone="muted">
-            {versionLine(props.s?.remote?.version ?? '', say)}
-          </Text>
-          <Show when={props.view?.outdated}>
-            {(v) => (
-              <Button size="sm" variant="ghost" icon="replay" title={t('machines.update.title', { name: props.m.name, version: v() })} onClick={() => props.onAct('update')} part="machines.update">
-                {updateLine(props.s?.remote?.version ?? '', v(), say)}
-              </Button>
-            )}
-          </Show>
-          <Show when={agentsOf(props.s).kind !== 'unknown'}>
-            <Show when={ready().length > 0} fallback={<Text size="sm" tone="bad">{t('machines.noAgents')}</Text>}>
-              <Text size="sm" tone="muted" part="machines.agents">
-                {ready()
-                  .map((a) => a.name || a.id)
-                  .join(' · ')}
+        // its version, update and agents under its name, from the words' edge (QA desktop r3 #8: it sat at the dialog's edge)
+        below={
+          st() === 'online' ? (
+            <Inline gap="2" part="machines.meta">
+              <Text size="sm" tone="muted">
+                {versionLine(props.s?.remote?.version ?? '', say)}
               </Text>
-            </Show>
-          </Show>
-          <Show when={(props.view?.working ?? 0) > 0}>
-            <Text size="sm" tone="muted">
-              {t('machines.working', { count: props.view?.working ?? 0 })}
-            </Text>
-          </Show>
-        </Inline>
-      </Show>
+              <Show when={props.view?.outdated}>
+                {(v) => (
+                  <Button size="sm" variant="ghost" icon="replay" title={t('machines.update.title', { name: props.m.name, version: v() })} onClick={() => props.onAct('update')} part="machines.update">
+                    {updateLine(props.s?.remote?.version ?? '', v(), say)}
+                  </Button>
+                )}
+              </Show>
+              <Show when={agentsOf(props.s).kind !== 'unknown'}>
+                <Show when={ready().length > 0} fallback={<Text size="sm" tone="bad">{t('machines.noAgents')}</Text>}>
+                  <Text size="sm" tone="muted" part="machines.agents">
+                    {ready()
+                      .map((a) => a.name || a.id)
+                      .join(' · ')}
+                  </Text>
+                </Show>
+              </Show>
+              <Show when={(props.view?.working ?? 0) > 0}>
+                <Text size="sm" tone="muted">
+                  {t('machines.working', { count: props.view?.working ?? 0 })}
+                </Text>
+              </Show>
+            </Inline>
+          ) : undefined
+        }
+      />
       <Show when={(busy() || st() === 'error') && (props.s?.steps?.length ?? 0) > 0}>
         <Steps items={stepsOf(props.s?.steps)} part="machines.steps" />
       </Show>

@@ -162,9 +162,23 @@ export function runnerWords(agents: readonly AgentOffer[], r: Runner, name: (id:
   return [name(r.agent), model, r.effort, r.account ? (r.accountLabel ?? r.account) : ''].filter(Boolean).join(' · ');
 }
 
-/** A reply's own harness · model (the reply box's pick) as runtime.followUp's `run`; none: the task's own. */
-export function runPick(r: Runner | undefined): { agent: string; model?: string; effort?: string } | undefined {
-  return r ? { agent: r.agent, ...(r.model && { model: r.model }), ...(r.effort && { effort: r.effort }) } : undefined;
+/** The run a task's next follow-up takes when the reply box picks none: its own harness, model and thinking (runtime
+ *  keeps them, run.rs apply_opts). QA desktop r3 #1: the screen said "Default" while the task ran on Opus. */
+export function taskRunner(s: { readonly agent: string; readonly summary: Readonly<Record<string, unknown>> }): Runner {
+  const str = (v: unknown): string => (typeof v === 'string' ? v : '');
+  return { agent: s.agent, model: str(s.summary['model']), effort: str(s.summary['effort']) };
+}
+
+/** A thinking level in words: "High", "X-High"; '' for the harness's own. */
+export const effortWord = (e: string): string => (e === 'xhigh' ? 'X-High' : e ? e.charAt(0).toUpperCase() + e.slice(1) : '');
+
+/** "Claude Code · opus · High": a run in words, `defaultModel` where it picked none. */
+export const runWords = (name: string, r: Pick<Runner, 'model' | 'effort'>, defaultModel: string): string => [name, r.model || defaultModel, effortWord(r.effort)].filter(Boolean).join(' · ');
+
+/** A reply's own harness · model (the reply box's pick) as runtime.followUp's `run`; none: the task's own. The pick names
+ *  its model and thinking, '' for its harness's default (runtime run.rs apply_opts takes them as named). */
+export function runPick(r: Runner | undefined): { agent: string; model: string; effort: string } | undefined {
+  return r ? { agent: r.agent, model: r.model, effort: r.effort } : undefined;
 }
 
 /** A plan's usage window as `budget.view` gives it (0–1 used). */

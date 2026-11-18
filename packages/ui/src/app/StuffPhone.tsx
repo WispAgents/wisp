@@ -19,6 +19,7 @@ import { Menu, type MenuEntry } from '../controls/Menu.tsx';
 import { Tabs } from '../controls/Tabs.tsx';
 import { EmptyState } from '../composites/EmptyState.tsx';
 import { ListRow } from '../composites/ListRow.tsx';
+import { StuffThumbBody, type StuffThumb } from './StuffCard.tsx';
 import type { ToolbarItem } from '../composites/Toolbar.tsx';
 import { AppFrame } from '../frame/AppFrame.tsx';
 import { TopAppBar, type TopAppBarMenu } from '../nav/TopAppBar.tsx';
@@ -36,6 +37,8 @@ export interface StuffPhoneItem {
   readonly icon: IconName;
   /** a picture's own image, or an app's cover: shown in its thumbnail in place of the glyph (QA r2 phone #13) */
   readonly image?: string;
+  /** a doc's page, code's lines, an app's window: the card's preview, in its tile (QA phone r3 #5; a row keeps its glyph) */
+  readonly thumb?: StuffThumb;
   /** its ⋯ menu: every action it takes (open, share, star, the task it came from, delete, …) */
   readonly menu: readonly MenuEntry[];
 }
@@ -148,8 +151,15 @@ export function StuffPhone(props: StuffPhoneProps): JSX.Element {
       {(it) => (
         <li data-kit="stuff-tile" data-part={sub(part(), 'tile')} data-id={p.id}>
           <button type="button" data-kit="stuff-tile-open" data-part={sub(part(), 'tile.open')} onClick={() => props.onOpen(p.id)}>
-            <span data-kit="stuff-tile-thumb" aria-hidden="true">
-              <Show when={it().image} fallback={<Icon name={it().icon} size="lg" />}>
+            <span data-kit="stuff-tile-thumb" data-preview={it().thumb ? it().thumb?.kind : undefined} aria-hidden="true">
+              <Show
+                when={it().image}
+                fallback={
+                  <Show when={it().thumb} fallback={<Icon name={it().icon} size="lg" />}>
+                    {(th) => <StuffThumbBody thumb={th()} />}
+                  </Show>
+                }
+              >
                 {(src) => <img src={src()} alt="" loading="lazy" decoding="async" />}
               </Show>
             </span>

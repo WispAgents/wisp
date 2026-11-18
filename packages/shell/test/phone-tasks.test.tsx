@@ -42,9 +42,17 @@ for (const kind of ['android', 'ios'] as const) {
     expect(bar, 'the root TopAppBar is the frame’s top').not.toBeNull();
     expect(bar?.getAttribute('data-kind')).toBe('root');
     expect(bar?.getAttribute('data-part')).toBe('phone.tasks.bar');
-    // one computer: nothing for the computer filter to narrow, the bar says the screen's name (QA round 2 #10)
-    expect(bar?.querySelector('[data-kit="app-bar-title-button"]'), 'no computer filter with one computer').toBeNull();
-    expect(bar?.textContent).toContain('Tasks');
+    // one computer: nothing for the computer filter to narrow (QA round 2 #10)
+    if (kind === 'ios') {
+      // iOS: the large title says the screen's name, the project selector is the bar's pull-down
+      expect(bar?.querySelector('[data-kit="app-bar-title-button"]'), 'no computer filter with one computer').toBeNull();
+      expect(bar?.textContent).toContain('Tasks');
+    } else {
+      // Android (QA round 3 A10): the one project selector is the M3 top app bar's title menu, not an outlined
+      // dropdown among the actions (the owner's one-selector decision, 2026-11-15)
+      expect(bar?.querySelector('[data-kit="app-bar-title-button"]')?.textContent).toContain('All projects');
+      expect(bar?.querySelector('[data-part~="phone.tasks.project"]'), 'no dropdown among the actions').toBeNull();
+    }
     expect(bar?.querySelector('[aria-label="Search"]'), 'Search in the bar, no keyboard hint').not.toBeNull();
     expect(root.querySelector('[data-part="phone.tasks.me-trigger"], [data-part="phone.tasks.me.trigger"]'), 'the me menu').not.toBeNull();
     // v1's desktop head and New task row are gone on the phone

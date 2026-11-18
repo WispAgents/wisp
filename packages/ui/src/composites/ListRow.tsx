@@ -6,7 +6,8 @@
 // (44 pt min, inset separators, a chevron where it pushes). The row says how many lines it has
 // (`data-row-lines`) and whether it leads with something (`data-lead`) on a phone only, so the browser's
 // HTML stays byte for byte v1's (test/goldens/platform-browser-rows.json).
-import { Show, createEffect, createMemo, onCleanup, type JSX } from 'solid-js';
+import { Show, createEffect, createMemo, createSignal, onCleanup, onMount, type JSX } from 'solid-js';
+import { secondLineEmpty } from './second-line.ts';
 import { watchTimeWidth } from './time-width.ts';
 import { flag, sub, type KitProps, type PartName } from '../core/props.ts';
 import type { ReorderAttrs } from '../core/reorder.ts';
@@ -174,6 +175,22 @@ function FeedRow(props: ListRowProps & { readonly partName: PartName }): JSX.Ele
   const c = cells(props);
   let row: HTMLDivElement | undefined;
   let pills: HTMLDivElement | undefined;
+  let subEl: HTMLDivElement | undefined;
+  // nothing to see on the second line (no summary; the pills' cell holds only the time, or a plugin's pill that drew
+  // nothing): the row is its title and its run line, no blank line between (v1; QA round 3 #6). Read from what the row
+  // drew, as a plugin's pills come and go; only the rows on screen exist (VirtualList), each watching its two cells.
+  const [oneLine, setOneLine] = createSignal(false);
+  onMount(() => {
+    if (phone() || !subEl || !pills || typeof MutationObserver !== 'function') return;
+    const s = subEl;
+    const pl = pills;
+    const read = (): void => void setOneLine(secondLineEmpty(s, pl));
+    read();
+    const mo = new MutationObserver(read);
+    mo.observe(s, { childList: true, subtree: true, characterData: true });
+    mo.observe(pl, { childList: true, subtree: true, characterData: true });
+    onCleanup(() => mo.disconnect());
+  });
   // with a mouse the quick actions sit before the time, whatever its width (B30); the time is the pills' last
   createEffect(() => {
     const time = c.time();
@@ -199,6 +216,7 @@ function FeedRow(props: ListRowProps & { readonly partName: PartName }): JSX.Ele
       data-layout="feed"
       data-quick={props.quick ? String(props.quick) : undefined}
       data-foot={flag(!!c.foot())}
+      data-one-line={flag(oneLine())}
       data-interactive={flag(props.onOpen !== undefined)}
       data-row-lines={phone() ? rowLines({ sub: c.sub(), foot: c.foot() }) : undefined}
       data-lead={flag(phone() && c.lead() !== undefined)}
@@ -223,7 +241,7 @@ function FeedRow(props: ListRowProps & { readonly partName: PartName }): JSX.Ele
       <span data-kit="list-row-title" data-text="control" data-part={named(props, p(), 'title')} title={props.title}>
         {props.title}
       </span>
-      <div data-kit="list-row-sub" data-part={named(props, p(), 'sub')} data-tone={props.subTone} title={props.subTitle}>
+      <div ref={subEl} data-kit="list-row-sub" data-part={named(props, p(), 'sub')} data-tone={props.subTone} title={props.subTitle}>
         {c.sub()}
       </div>
       {c.foot()}

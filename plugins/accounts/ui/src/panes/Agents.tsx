@@ -25,6 +25,7 @@ import {
   Switch,
   Text,
   useSignal,
+  Wrap,
 } from '@wisp/ui';
 import { useDetected } from '../detected.ts';
 import { fromRow, text } from '../source.ts';
@@ -243,7 +244,7 @@ export default function Agents(props: { readonly client: PluginClient }): JSX.El
                     </Show>
                   }
                   control={
-                    <Inline gap="3">
+                    <Wrap gap="3" align="center">
                       <Show when={h().signIn === 'key' && present(h())}>
                         <Button size="sm" variant="primary" icon="lock" part="accounts.keys.open" onClick={() => setKeysOf(h())}>
                           {keysFor(h().id).some((k) => k.set) ? t('accounts.keys.edit') : t('accounts.keys.add')}
@@ -266,7 +267,7 @@ export default function Agents(props: { readonly client: PluginClient }): JSX.El
                       <Pill tone={state().tone} dot variant="plain">
                         {state().label}
                       </Pill>
-                    </Inline>
+                    </Wrap>
                   }
                 />
                 <Show when={stillChanged(h()) && h().changed}>

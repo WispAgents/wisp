@@ -68,13 +68,17 @@ fn apply_opts(s: &mut Session, item: &QueueItem) {
     let run = opts.and_then(|o| o.get("run"));
     if let Some(agent) = opt_str(run, "agent").filter(|a| *a != s.agent) {
         s.agent = agent;
-        // another harness keeps its own conversation
+        // another harness keeps its own conversation, and its own default model and thinking unless the run names them
         s.resume_id = None;
+        s.model.clear();
+        s.effort.clear();
     }
-    if let Some(m) = opt_str(run, "model") {
+    // a model or thinking the run names, '' its harness's default (QA desktop r3 #1: "Default" kept the task's Opus)
+    let named = |k: &str| run.and_then(|r| r.get(k)).and_then(Value::as_str).map(str::to_owned);
+    if let Some(m) = named("model") {
         s.model = m;
     }
-    if let Some(e) = opt_str(run, "effort") {
+    if let Some(e) = named("effort") {
         s.effort = e;
     }
 }
@@ -798,5 +802,37 @@ mod tests {
         now.insert("wisp.runtime".into(), json!({}));
         super::carry_others_ext(&mut s, now);
         assert_eq!(s.ext["wisp.runtime"], json!({}));
+    }
+
+    fn item(opts: &serde_json::Value) -> wisp_runtime_api::model::QueueItem {
+        serde_json::from_value(json!({ "id": "q1", "text": "go on", "at": 1, "opts": opts })).unwrap_or_else(|e| panic!("item: {e}"))
+    }
+
+    fn on_opus() -> Session {
+        Session { agent: "claude".into(), model: "opus".into(), effort: "high".into(), ..Session::default() }
+    }
+
+    /// QA desktop r3 #1: a follow-up runs on the task's own model unless the reply box picks another, and a pick is what
+    /// it says: "Default" is the harness's default (an empty model was dropped, so it kept Opus), and another harness
+    /// never takes the old one's model.
+    #[test]
+    fn a_follow_ups_pick_is_its_run_default_included_and_none_keeps_the_tasks_own() {
+        // nothing picked: the task's own
+        let mut s = on_opus();
+        super::apply_opts(&mut s, &item(&json!({ "mode": "auto" })));
+        assert_eq!((s.agent.as_str(), s.model.as_str(), s.effort.as_str()), ("claude", "opus", "high"));
+        // Default picked on the same harness: the harness's default model and thinking
+        let mut s = on_opus();
+        super::apply_opts(&mut s, &item(&json!({ "run": { "agent": "claude", "model": "", "effort": "" } })));
+        assert_eq!((s.model.as_str(), s.effort.as_str()), ("", ""));
+        // a model picked: that one, the thinking as it was unless named
+        let mut s = on_opus();
+        super::apply_opts(&mut s, &item(&json!({ "run": { "agent": "claude", "model": "sonnet" } })));
+        assert_eq!((s.model.as_str(), s.effort.as_str()), ("sonnet", "high"));
+        // another harness named alone: its own default, not Opus
+        let mut s = on_opus();
+        super::apply_opts(&mut s, &item(&json!({ "run": { "agent": "codex" } })));
+        assert_eq!((s.agent.as_str(), s.model.as_str(), s.effort.as_str()), ("codex", "", ""));
+        assert!(s.resume_id.is_none());
     }
 }

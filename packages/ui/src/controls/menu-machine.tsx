@@ -14,6 +14,7 @@ import type { MenuBaseProps, Placement } from './Menu.tsx';
 import { bound, type Replay } from './lazy-part.ts';
 import { tidySeparators, type MenuEntry, type MenuGroup, type MenuItem, type MenuSeparator, type MenuSubmenu } from './menu-entries.ts';
 import { usePlatform } from '../platform/PlatformLook.tsx';
+import { underBox } from './menu-anchor.ts';
 import { Flyout, flyoutPointer, type FlyContext } from './menu-flyout.tsx';
 
 const BACK = 'menu:back';
@@ -55,7 +56,7 @@ function flyContext(parent: menu.Service, onSelect: (value: string) => void, kid
   };
 }
 
-function useMenu(props: MenuBaseProps & { readonly placement?: Placement }, at?: 'pointer'): MenuState {
+function useMenu(props: MenuBaseProps & { readonly placement?: Placement; readonly below?: string }, at?: 'pointer'): MenuState {
   const id = createUniqueId();
   const [chosen, setPane] = createSignal<string | undefined>();
   const [width, setWidth] = createSignal<string | undefined>();
@@ -107,7 +108,7 @@ function useMenu(props: MenuBaseProps & { readonly placement?: Placement }, at?:
       props.onOpenChange?.(d.open);
     },
     // at the pointer (a right-click): v1 clampToViewport, opened beside it and slid up or in to fit, never flipped
-    positioning: at === 'pointer' ? { placement: 'bottom-start' as const, gutter: 0, flip: false, overlap: true, overflowPadding: 8 } : { placement: props.placement ?? 'bottom-start', gutter: 4, overlap: true, overflowPadding: 8 },
+    positioning: at === 'pointer' ? { placement: 'bottom-start' as const, gutter: 0, flip: false, overlap: true, overflowPadding: 8 } : { placement: props.placement ?? 'bottom-start', gutter: 4, overlap: true, overflowPadding: 8, ...(props.below !== undefined && { getAnchorRect: underBox(props.below) }) },
   }));
   api = createMemo(() => menu.connect(service, normalizeProps));
   const ctx = flyContext(service, (v) => props.onSelect(v), kids);
@@ -258,7 +259,7 @@ function MenuContent(props: { readonly state: MenuState; readonly items: readonl
 
 /** What Menu.tsx hands the machine: the menu's props, how it opens, and where to report the trigger's props. */
 export interface MenuMachineProps {
-  readonly base: MenuBaseProps & { readonly placement?: Placement };
+  readonly base: MenuBaseProps & { readonly placement?: Placement; readonly below?: string };
   readonly at?: 'pointer';
   readonly part: PartName;
   /** the trigger's props from now on (the button's, or the right-click area's) */

@@ -20,6 +20,13 @@ export function phoneImage(it: Item): string | undefined {
   return undefined;
 }
 
+/** The preview a phone tile draws in place of its glyph: a doc's page, code's lines, an app's window, as the page's cards
+ *  do (QA phone r3 #5); a picture is its image (phoneImage), and the rest keep the glyph. */
+export function phoneThumb(it: Item): StuffThumb | undefined {
+  const th = thumbOf(it);
+  return th.kind === 'doc' || th.kind === 'code' || th.kind === 'app' ? th : undefined;
+}
+
 /** The preview (v1 thumbBody): an app's window, the picture, a doc's opening, a snippet's first lines, a link's site. */
 export function thumbOf(it: Item): StuffThumb {
   const k = kindOf(it.kind);

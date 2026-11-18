@@ -42,12 +42,16 @@ export interface MenuBaseProps extends KitProps {
 export interface MenuProps extends MenuBaseProps {
   readonly trigger: MenuTrigger;
   readonly placement?: Placement;
+  /** a box around the trigger (a CSS selector for its ancestor): the menu opens under that box's bottom edge, at the
+   *  trigger's side, instead of over what sits beside the trigger (a panel's head and its words, QA desktop r3 #5).
+   *  Additive (2026-11-18). */
+  readonly below?: string;
 }
 
 
 /** The trigger's props until the machine binds, then the machine's; and the machine itself, once it's loaded. `phone`:
  * a ContextMenu in the phone apps binds the phone chunk's stand-in (the same props) instead of Zag's. */
-function useLazyMenu(props: MenuBaseProps & { readonly placement?: Placement }, part: () => PartName, at?: 'pointer', phone?: boolean) {
+function useLazyMenu(props: MenuBaseProps & { readonly placement?: Placement; readonly below?: string }, part: () => PartName, at?: 'pointer', phone?: boolean) {
   const lazy = phone ? phoneOverlays : machine;
   const [bound, setBound] = createSignal<Accessor<Record<string, unknown>>>();
   const [pending, setPending] = createSignal<Replay>();

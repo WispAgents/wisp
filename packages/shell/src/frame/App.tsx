@@ -15,7 +15,7 @@ import { Head, ListLoading, PickStripView, Rail, SidebarList, SidebarTop } from 
 import { crewTint, type TintMember } from './crew-tint.ts';
 import { flatRow } from './rows-view.ts';
 import { escLeavesLauncher, stackView } from './stack-page.ts';
-import { listShown, listWidth, panelWidth } from './pane-widths.ts';
+import { besideTask, listDrag, listShown, listWidth, panelWidth } from './pane-widths.ts';
 import { PANEL_W, SIDE_W } from '../settings-decls.ts';
 
 const Switcher = lazy(() => import('../switcher/Switcher.tsx'));
@@ -106,19 +106,27 @@ export function App(props: { readonly clients: Clients; readonly recent: Readabl
   const [dragList, setDragList] = createSignal<number>();
   const [dragPanel, setDragPanel] = createSignal<number>();
   const railPx = (): number => (shell.platform.phone ? 0 : 64);
-  const listPx = createMemo(() => listWidth(dragList() ?? (typeof savedList() === 'number' ? savedList() : SIDE_W), win(), railPx()));
-  const panelPx = createMemo(() => {
+  const sideOpen = (): boolean => nav().layout === 'split' && nav().side.kind !== 'none';
+  const wantList = (): number => dragList() ?? (typeof savedList() === 'number' ? (savedList() as number) : SIDE_W);
+  const wantPanel = (): number => {
     const saved = savedPanel();
-    return panelWidth(dragPanel() ?? (typeof saved === 'number' ? saved : PANEL_W), win(), listOpen() ? listPx() + railPx() : 0);
-  });
+    return dragPanel() ?? (typeof saved === 'number' ? saved : PANEL_W);
+  };
+  // both beside the task: the task keeps its 480 and the panel at least its minimum (QA round 3 #2: dragging the list to
+  // 720 left the transcript 136 px); the list hidden, the panel may take what it left
+  const widths = (list: number, panel: number): { list: number; panel: number } =>
+    listOpen() ? besideTask({ win: win(), rail: railPx(), list, panel, sideOpen: sideOpen() }) : { list: listWidth(list, win(), railPx()), panel: panelWidth(panel, win(), 0) };
+  const listPx = createMemo(() => widths(wantList(), wantPanel()).list);
+  const panelPx = createMemo(() => widths(wantList(), wantPanel()).panel);
   const onListResize = (px: number, done: boolean): void => {
-    const w = listWidth(px, win(), railPx());
+    // the panel open: the list stops where the panel (as it is) and the task's 480 begin
+    const w = listOpen() && sideOpen() ? listDrag({ win: win(), rail: railPx(), want: px, panel: panelPx() }) : widths(px, wantPanel()).list;
     if (!done) return void setDragList(w);
     shell.sidebar.setWidth(w);
     setDragList(undefined);
   };
   const onPanelResize = (px: number, done: boolean): void => {
-    const w = panelWidth(px, win(), listOpen() ? listPx() + railPx() : 0);
+    const w = widths(wantList(), px).panel;
     if (!done) return void setDragPanel(w);
     void shell.client.settings.set('shell.panel.width', w).catch(() => undefined);
     setDragPanel(undefined);

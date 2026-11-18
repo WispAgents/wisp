@@ -134,8 +134,9 @@ export function DelegatePanel(props: DelegatePanelProps): JSX.Element {
       wide
       title={t('shell.team.title')}
       intro={t('shell.team.intro')}
-      // above its button (QA desktop r2 #3): under it, the menu (or its No presets yet) lay over the intro beside it
-      head={<Menu part="delegate.presets" placement="top-end" trigger={{ label: t('shell.team.presets'), icon: 'agent', variant: 'ghost', size: 'xs' }} items={presetItems()} onSelect={onPresetPick} />}
+      // under the panel's head, at its button's side (QA desktop r3 #5): under the button it lay over the intro beside
+      // it (r2 #3), above it over the launcher's bar and Send; inside the panel it covers neither
+      head={<Menu part="delegate.presets" placement="bottom-end" below="[data-kit='tp-head']" trigger={{ label: t('shell.team.presets'), icon: 'agent', variant: 'ghost', size: 'xs' }} items={presetItems()} onSelect={onPresetPick} />}
       end={
         <Show when={props.team.length > 0}>
           <Button variant="ghost" size="sm" icon="check" part="delegate.save" onClick={() => setSaving(true)}>

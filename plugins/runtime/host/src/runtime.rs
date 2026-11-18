@@ -116,6 +116,16 @@ impl Runtime {
         }
         // every capped task's cap, from its list row: its agent speaks as agent:capped before the row is written again
         self.load_caps();
+        // a task an older wisp saved failed with its harness's raw sign-in error: it says signed out now (QA desktop r3)
+        let failed: Vec<String> = self
+            .lock_list()
+            .values()
+            .filter(|s| s.fields.get("halt").and_then(serde_json::Value::as_str) == Some("failed"))
+            .map(|s| s.id.0.clone())
+            .collect();
+        for id in failed {
+            self.repair_signed_out(&id).await?;
+        }
         // questions open when wisp stopped stay answerable: the ask is on the task (v1 `session.ask`)
         let waiting: Vec<String> = self.lock_list().values().filter(|s| s.state == SessionState::Waiting).map(|s| s.id.0.clone()).collect();
         let mut leads: Vec<String> = Vec::new();

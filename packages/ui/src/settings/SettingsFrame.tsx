@@ -70,8 +70,22 @@ function NavItems(props: { readonly frame: SettingsFrameProps; readonly part: Pa
     const nav = e.currentTarget as HTMLElement;
     nav.querySelector<HTMLElement>(`[data-pane="${CSS.escape(next)}"]`)?.focus();
   };
+  // the picked pane's row in view: the list scrolls (under the nav's title and search, which stay put: QA round 3 #10),
+  // only as far as it must, and never the page around it
+  let list: HTMLDivElement | undefined;
+  createEffect(() => {
+    const id = props.frame.current;
+    queueMicrotask(() => {
+      const el = list?.querySelector<HTMLElement>(`[data-pane="${CSS.escape(id)}"]`);
+      if (!list || !el) return;
+      const box = list.getBoundingClientRect();
+      const r = el.getBoundingClientRect();
+      if (r.top < box.top) list.scrollTop -= box.top - r.top;
+      else if (r.bottom > box.bottom) list.scrollTop += r.bottom - box.bottom;
+    });
+  });
   return (
-    <div data-kit="settings-nav-list" role="tablist" aria-orientation="vertical" onKeyDown={onKey}>
+    <div ref={list} data-kit="settings-nav-list" role="tablist" aria-orientation="vertical" onKeyDown={onKey}>
       <For each={props.frame.groups}>
         {(g) => (
           <div data-kit="settings-nav-group" role="presentation" data-part={sub(props.part, 'group')} data-group={g.id}>

@@ -7,6 +7,7 @@ import { ForKeyed } from '../core/keyed.tsx';
 import { flag } from '../core/props.ts';
 import { ActIcon, WithAct, type Act } from './act.tsx';
 import { holdMedia } from './hold-view.ts';
+import { useBarLabels } from './bar-labels.ts';
 import { Icon } from '../content/Icon.tsx';
 import { PromptSuggestList, dropHandlers } from '../composer/PromptSuggest.tsx';
 import { suggestKeyDown, type PromptSuggest } from '../composer/suggest-keys.ts';
@@ -661,6 +662,8 @@ export function ReplyBox(given: ReplyBoxProps | CompactReplyBoxProps): JSX.Eleme
   const [nudge, setNudge] = createSignal(false);
   const [over, setOver] = createSignal(false);
   let input: HTMLTextAreaElement | undefined;
+  // the bar's words go to their icons when they don't fit (bar-labels.ts; Android 360 ran 3 px over)
+  const barLabels = useBarLabels();
   const send = (): void => {
     if (props.sendAct?.pending) return;
     if (props.value.trim()) return props.onSend();
@@ -738,7 +741,7 @@ export function ReplyBox(given: ReplyBoxProps | CompactReplyBoxProps): JSX.Eleme
           </For>
         </div>
       </Show>
-      <div data-kit="c-bar">
+      <div data-kit="c-bar" ref={barLabels.ref} data-tight={flag(barLabels.tight())}>
         <Show when={!props.compact} fallback={<span data-kit="grow" />}>
           <WithAct
             act={props.attachAct}
