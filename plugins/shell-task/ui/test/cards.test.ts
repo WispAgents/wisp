@@ -39,7 +39,9 @@ describe('turn cards', () => {
     // the receipt (v1 receipt.js): cache share from Claude's per-model counts, the longest window first, Past your plan
     const plan = [{ window: 'five_hour', used: 0.2 }, { window: 'seven_day', used: 0.02 }, { window: 'seven_day', used: 0.01 }, { window: 'w2880m', used: 0 }];
     const r = receiptOf(turn(1, { stats: { inputTokens: 100, outputTokens: 800, models: { opus: { input: 100, cacheRead: 7100, cacheWrite: 2800, output: 800 } } }, ext: { 'wisp.budget': { plan }, 'wisp.runtime': { overage: { kind: 'extra' } } } }), t);
-    expect(r?.parts).toEqual(['shell-task.receipt.cache{"pct":"71%"}', 'shell-task.receipt.share{"pct":"3%","window":"weekly"}', 'shell-task.receipt.overage.extra']);
+    // the plan share isn't on the line (UX 2026-11-18 #7: the details column says it); the tooltip keeps every window
+    expect(r?.parts).toEqual(['shell-task.receipt.cache{"pct":"71%"}', 'shell-task.receipt.overage.extra']);
+    expect(r?.tip).toContain('shell-task.receipt.shareTip{"pct":"3%","window":"weekly"}');
     expect(r?.tip).toContain('shell-task.receipt.tokens{"n":"10,800"}');
     expect(r?.tip).toContain('shell-task.receipt.shareTip{"pct":"20%","window":"5-hour"}');
     // reads and writes folded together (no per-model counts): no cache share; nothing to add: no receipt

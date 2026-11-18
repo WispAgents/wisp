@@ -3,7 +3,7 @@
 
 use std::fmt::Write as _;
 
-use super::icons::{CHECK, CHEV, CLOUD, PLUS, X, named};
+use super::icons::{CHECK, CLOUD, X, named};
 use super::{PageUser, esc};
 
 /// What the grid's box gives and what this account asked for next.
@@ -96,20 +96,16 @@ pub(super) fn spec(m: &MachineView, memory_word: bool) -> String {
     parts.join(" · ")
 }
 
-/// The cloud section's last row.
+/// + Add's second item (#4): another cloud machine, which opens the waitlist dialog and says when you're on it.
 pub(super) fn add_machine_row(wish: Option<&Wish>) -> String {
     let wants: &[String] = wish.map_or(&[], |w| &w.wants);
     let pill = if wish.is_some() {
         format!(r#"<span class="pill listed">{CHECK}On the list</span>"#)
     } else {
-        r#"<span class="pill soon">Soon</span>"#.into()
+        r#"<span class="pill soon">Waitlist</span>"#.into()
     };
     format!(
-        r#"<button type="button" class="w add-m" data-open="machines" aria-haspopup="dialog">
-      <span class="w-ic">{PLUS}</span>
-      <div class="w-tx"><b>Add a cloud machine</b><small>{}</small></div>
-      {pill}<span class="chev">{CHEV}</span>
-    </button>"#,
+        r#"<button type="button" class="mi add-m" data-open="machines" aria-haspopup="dialog">{CLOUD}<div><span>Another cloud machine {pill}</span><small>{}</small></div></button>"#,
         esc(&wish_line(wants))
     )
 }
@@ -209,7 +205,7 @@ const row=()=>document.querySelector('[data-open=machines]');
 const rowFor=(p)=>{const r=row();if(!r)return;
 r.querySelector('small').textContent=TEXT[p.join(',')]||TEXT[''];
 const pill=r.querySelector('.pill');pill.className='pill '+(p.length?'listed':'soon');pill.innerHTML=p.length?";
-const MACHINES_JS_TAIL: &str = r"+'On the list':'Soon'};
+const MACHINES_JS_TAIL: &str = r"+'On the list':'Waitlist'};
 const send=async(wants)=>{const before={state:d.dataset.state,html:row()?.outerHTML};
 if(wants.length){chips(wants);d.dataset.fresh='';d.dataset.state='done'}else d.close();rowFor(wants);
 try{const r=await fetch('/machines/waitlist',{method:'POST',headers:{'content-type':'application/json',accept:'application/json'},body:JSON.stringify({csrf:f.csrf.value,wants,note:f.note.value})});

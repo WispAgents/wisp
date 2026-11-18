@@ -316,9 +316,10 @@ export function translator(seed) {
         if (mi) return `[data-kit="menu-item"][data-value="${mi[1]}"]${vis}`;
         const m = bare.match(/^#feed \.item\[data-id="(\w+)"\] \.it-head$/);
         if (m) return row(m[1]);
-        // the open task's actions (v1 .item.open .it-actions [data-a=…]): v2's task bar carries the same data-a
+        // the open task's actions (v1 .item.open .it-actions [data-a=…]): v2's head bar carries the same data-a
+        // (docs/ux/2026-11-18-desktop.md #4; Transcript, Rerun and Open in are in its ⋯, allowed.md §7)
         const act = bare.match(/^\.item\.open \.it-actions \[data-a="([\w-]+)"\]$/);
-        if (act) return `[data-part="split.actions"] [data-a="${act[1]}"]${vis}`;
+        if (act) return `[data-part~="split.head"] [data-a="${act[1]}"]${vis}`;
         return piece;
       })
       .join(', ');
@@ -349,11 +350,12 @@ const V2_OPENERS = {
     await p.locator('[data-part~="launcher.issue"]').first().click({ force: true });
     await p.waitForTimeout(800);
   },
-  // v1 #manageProjects: the + beside the project chips, then Manage projects
+  // v1 #manageProjects: the + beside the project chips, then Manage projects. v2 (docs/ux/2026-11-18-desktop.md #11): the
+  // project selector ("All ▾"), then Manage projects… at the end of its switcher
   projects: async (p) => {
-    await p.locator('[data-kit="p-chip"][data-add]').first().click({ force: true });
+    await p.locator('[data-part~="topbar.project-select"]').first().click({ force: true });
     await p.waitForTimeout(300);
-    await p.locator('[data-kit="menu-item"][data-value="manage"]').first().click({ force: true });
+    await p.locator('[data-kit="pal-row"]', { hasText: 'Manage projects' }).first().click({ force: true });
     await p.waitForTimeout(450);
   },
   // v1 #feed .item[data-id] .it-head, right-clicked: the row in the list (Home's Needs you names the same task)
@@ -375,7 +377,7 @@ const V2_STATES = {
   home: '[data-part="card.head"], [data-part="list.row"]',
   // v1's first match in document order is the open task's Transcript action (its body sits in #feed,
   // before #splitHead), so v2 targets the same button.
-  task: '[data-part="split.actions"] button:visible',
+  task: '[data-part~="split.head"] [data-kit="head-act"]:visible',
   'task.composer': '[data-part="composer.mode"]:visible, [data-part="composer"] button:visible',
 };
 

@@ -6,7 +6,6 @@
 // job when it's idle. Every v1 crew feature stays a tap away: Org and Add are the row's first and last bubbles; the
 // member's page, Edit, Check in, Pause, Share, Track record and Remove are the story's ⋯. Every write is a command
 // that shows at once and rolls back with the shell's toast when refused. Its own chunk: the browser never loads it.
-import { orgOpen } from './org-params.ts';
 import { createMemo, createSignal, Show, type JSX } from 'solid-js';
 import { uuidv7, type EntityKey } from '@wisp/client';
 import { ExtView, useExtensions, useShell, type ExtensionProps } from '@wisp/shell';
@@ -43,14 +42,17 @@ export default function CrewStoriesView(props: ExtensionProps): JSX.Element {
   let had = new Map<string, StoryBubble>();
   const bubbles = createMemo((): StoryBubble[] => {
     const next = new Map<string, StoryBubble>();
-    const out = order().map((m) => {
+    // only who is working, asking or has a report for you: an idle member is on the Crew tab, not over your tasks
+    // (UX 2026-11-18 phone #12; Org and Add are the Crew tab's too)
+    const out = order().flatMap((m) => {
       const ring = ringOf(stateOf(m));
+      if (ring === 'idle') return [];
       const b: StoryBubble = { id: m.id, name: m.name, avatar: m.avatar, color: m.color, ring, label: ringLabel(m.name, ring, say as never), dim: !!m.paused };
       const old = had.get(m.id);
       const same = old && old.name === b.name && old.avatar === b.avatar && old.color === b.color && old.ring === b.ring && old.label === b.label && old.dim === b.dim;
       const keep = same ? old : b;
       next.set(m.id, keep);
-      return keep;
+      return [keep];
     });
     had = next;
     return out;
@@ -62,7 +64,7 @@ export default function CrewStoriesView(props: ExtensionProps): JSX.Element {
   const at = createMemo(() => crew().findIndex((m) => m.id === open()));
   const member = createMemo(() => crew()[at()]);
   const show = (id: string): void => {
-    setHeld(order().map((m) => m.id));
+    setHeld(bubbles().map((b) => b.id));
     setOpen(id);
   };
   const close = (): void => void setOpen(null);
@@ -125,13 +127,9 @@ export default function CrewStoriesView(props: ExtensionProps): JSX.Element {
   };
   return (
     <>
-      <CrewStories
-        label={t('wisp.crew.list.name')}
-        members={bubbles()}
-        onOpen={show}
-        org={order().length > 0 ? { label: t('wisp.crew.org.title'), title: t('wisp.crew.list.orgTitle'), onClick: () => c.navigate(orgOpen() as never) } : undefined}
-        add={{ label: t('wisp.crew.stories.add'), title: t('wisp.crew.org.addTitle'), onClick: () => overlay(VIEW.editor, {}) }}
-      />
+      <Show when={bubbles().length > 0}>
+        <CrewStories label={t('wisp.crew.list.name')} members={bubbles()} onOpen={show} />
+      </Show>
       <Show when={member()}>
         {(m) => {
           const st = (): State => stateOf(m());

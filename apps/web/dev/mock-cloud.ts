@@ -42,7 +42,7 @@ function rewrite(ctx: CommandCtx, list: MockAccount[]): { ops: EntityOp[]; resul
   const { id, row } = current(ctx);
   const c = list.find((a) => a.current);
   const v = { ...row, signedIn: !!c, grid: c?.grid ?? '', handle: c?.handle ?? '', machine: c?.machine ?? '', accounts: list };
-  const status = { signedIn: v.signedIn, grid: v.grid, handle: v.handle, machine: v.machine, computer: row['computer'] ?? { on: false, state: 'off', label: '', url: '', error: '' }, accounts: list, preview: '' };
+  const status = { signedIn: v.signedIn, grid: v.grid, handle: v.handle, machine: v.machine, computer: row['computer'] ?? { on: false, state: 'off', label: '', url: '', error: '' }, accounts: list, preview: '', home: '' };
   return { ops: [{ topic: CLOUD_TOPIC, e: 'grid-client.cloud', id, op: 'upsert', v }], result: status };
 }
 

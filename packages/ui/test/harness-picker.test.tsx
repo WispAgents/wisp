@@ -465,3 +465,35 @@ test('nothing_to_send_the_round_send_is_off_like_the_sheets_header_send_qa_r2_12
   setOff(false);
   expect(send.disabled).toBe(false);
 });
+
+// UX 2026-11-18 #9: the list holds the harnesses that can run; the way to another is a row at its bottom
+test('the_harness_list_ends_with_set_up_another_agent_ux_2026_11_18_9', () => {
+  let opened = 0;
+  const anchor = document.createElement('button');
+  document.body.append(anchor);
+  mount(() => (
+    <HarnessPicker
+      anchor={() => anchor}
+      label="Harness and model"
+      head="Harness"
+      rows={[{ id: 'claude', name: 'Claude Code', sub: '' }]}
+      inUse="claude"
+      inUseLabel="In use"
+      focused="claude"
+      onPreview={() => undefined}
+      onUse={() => undefined}
+      pane={{ label: 'Model', groups: [{ items: [{ id: '', label: 'Default' }] }], value: '', onPick: () => undefined, empty: 'None' }}
+      onClose={() => undefined}
+      setup={{ label: 'Set up another agent…', onClick: () => opened++ }}
+    />
+  ));
+  const side = document.querySelector('[data-kit="pk-side"]') as HTMLElement;
+  const setup = side.querySelector<HTMLButtonElement>('[data-part="runner.picker.setup"]');
+  expect(setup?.textContent).toBe('Set up another agent…');
+  // last in the list, after every harness
+  expect(side.lastElementChild).toBe(setup);
+  setup?.click();
+  expect(opened).toBe(1);
+  // no second line where there's nothing to say
+  expect(side.querySelector('[data-kit="pk-h"] small')).toBeNull();
+});

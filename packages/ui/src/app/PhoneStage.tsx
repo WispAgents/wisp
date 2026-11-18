@@ -31,6 +31,8 @@ export function PhoneStage(props: StageProps): JSX.Element {
       nav={props.nav}
       // New task over the list (stack-page.ts): the platform's full-screen dialog / sheet
       behind={props.layout === 'stack' && page() === 'main' && props.listBehind === true}
+      // a task (and its side pane) is a pushed detail: the destinations give way under it (UX 2026-11-18 phone #2)
+      pushed={props.pushed === true}
       listLabel={props.listLabel}
       mainLabel={props.mainLabel}
       sideLabel={props.sideLabel}

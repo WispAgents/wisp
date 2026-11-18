@@ -148,6 +148,10 @@
     overflow: hidden;
     text-overflow: ellipsis;
   }
+  /* a desktop row's second line leads with the harness's logo (TaskRow) */
+  [data-kit='list-row'][data-layout='feed'] > [data-kit='list-row-sub'] > [data-kit='ir-logo'] {
+    vertical-align: -2px;
+  }
   [data-kit='ir-w'] > [data-kit='icon'] {
     flex: none;
     width: 11px;
@@ -244,6 +248,61 @@
   }
   [data-kit='list-row'][data-layout='feed'] > [data-kit='gap'] {
     display: none;
+  }
+  /* the quick actions in the time's slot (ListRow `slots`; docs/ux/2026-11-18-desktop.md #2): a fixed box in the row's
+     corner (3 × 24px and 1px between) holds the time at rest and Later · Done · ⋯ on hover and keyboard focus. Opacity
+     only, and the title always ends before the box, so nothing moves. With a mouse; a touch screen keeps the rules below. */
+  @media (hover: hover) {
+    /* two lines in less height (about 18 rows at 900px, not 12) */
+    [data-kit='list-row'][data-layout='feed'][data-slots] {
+      padding-block: 6px;
+    }
+    [data-kit='list-row'][data-layout='feed'][data-slots] > [data-kit='list-row-pills'] > [data-kit='time'],
+    [data-kit='list-row'][data-layout='feed'][data-slots] > [data-kit='list-row-pills'] > [data-part~='list.row.time'] {
+      top: 6px;
+      transition: opacity 0.15s;
+    }
+    [data-kit='list-row'][data-layout='feed'][data-slots] > [data-kit='list-row-title'],
+    [data-kit='list-row'][data-layout='feed'][data-slots][data-quick]:hover > [data-kit='list-row-title'],
+    [data-kit='list-row'][data-layout='feed'][data-slots][data-quick][data-current] > [data-kit='list-row-title'],
+    [data-kit='list-row'][data-layout='feed'][data-slots][data-quick][data-selected] > [data-kit='list-row-title'] {
+      padding-right: max(calc(3 * 24px + 2 * 1px + 4px), calc(var(--k-time-w, 26px) + 10px));
+    }
+    [data-kit='list-row'][data-layout='feed'][data-slots] > [data-kit='icon-button'][data-slot] {
+      top: 4px;
+      right: calc(12px + 2 * (24px + 1px));
+      background: none;
+    }
+    [data-kit='list-row'][data-layout='feed'][data-slots] > [data-kit='icon-button'][data-slot='2'] {
+      right: calc(12px + 24px + 1px);
+    }
+    [data-kit='list-row'][data-layout='feed'][data-slots] > [data-kit='icon-button'][data-slot='3'] {
+      right: 12px;
+    }
+    [data-kit='list-row'][data-layout='feed'][data-slots] > [data-kit='icon-button'][data-slot]:hover {
+      background: var(--line);
+      color: var(--ink);
+    }
+    [data-kit='list-row'][data-layout='feed'][data-slots] > [data-kit='icon-button'][data-slot][data-on] {
+      color: var(--accent-ink);
+    }
+    /* the open row at rest keeps its time (the actions come with the pointer or the keys) */
+    [data-kit='list-row'][data-layout='feed'][data-slots][data-current]:not(:hover):not(:focus-visible):not([data-selected]) > [data-kit='icon-button'][data-slot] {
+      opacity: 0;
+    }
+    [data-kit='list-row'][data-layout='feed'][data-slots]:hover > [data-kit='icon-button'][data-slot],
+    [data-kit='list-row'][data-layout='feed'][data-slots]:focus-visible > [data-kit='icon-button'][data-slot],
+    [data-kit='list-row'][data-layout='feed'][data-slots][data-selected] > [data-kit='icon-button'][data-slot] {
+      opacity: 1;
+    }
+    [data-kit='list-row'][data-layout='feed'][data-slots]:hover > [data-kit='list-row-pills'] > [data-kit='time'],
+    [data-kit='list-row'][data-layout='feed'][data-slots]:hover > [data-kit='list-row-pills'] > [data-part~='list.row.time'],
+    [data-kit='list-row'][data-layout='feed'][data-slots]:focus-visible > [data-kit='list-row-pills'] > [data-kit='time'],
+    [data-kit='list-row'][data-layout='feed'][data-slots]:focus-visible > [data-kit='list-row-pills'] > [data-part~='list.row.time'],
+    [data-kit='list-row'][data-layout='feed'][data-slots][data-selected] > [data-kit='list-row-pills'] > [data-kit='time'],
+    [data-kit='list-row'][data-layout='feed'][data-slots][data-selected] > [data-kit='list-row-pills'] > [data-part~='list.row.time'] {
+      opacity: 0;
+    }
   }
   /* No hover on touch (v1 feed.css .it-later, split.css #feed.has-quick): Save for later leaves the row (it is in the
      long-press menu and the swipe); Mark done stays, in a 36px column of its own after the time, never over the title.

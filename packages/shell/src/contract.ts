@@ -166,6 +166,8 @@ export interface ExtensionProps<C = Record<string, unknown>> {
   id?: string;
   /** added 2026-11-12: on Home's inputs, puts a harness in Home's prompt box (Spare allowance's Use) */
   pickAgent?: (agent: string) => void;
+  /** added 2026-11-18 (additive): on Home's inputs, the harness in Home's prompt box now ('' before one is picked) */
+  agent?: () => string;
 }
 
 /** A task's menu in sections, from the task itself to Delete (v1 #786, design/ux.md → Task menus): what the bar
@@ -289,6 +291,36 @@ export interface PluginUiDef {
   /** added 2026-11-16 (additive, ADR-0091): what may make a send wait for you (Ask near the limit), asked by the prompt
    *  boxes before they send and when the server refuses one with `reason` (`ShellContext.sendHolds`) */
   sendHolds?: SendHoldDef[];
+  /** added 2026-11-18 (additive, docs/ux/2026-11-18-grid.md #9): links it puts in the account menu, shown while `href`
+   *  gives one (wisp.grid-client: wisp Grid, from a cloud wisp back to its grid's Home) */
+  accountLinks?: AccountLinkDef[];
+  /** added 2026-11-18 (additive, docs/ux/2026-11-18-grid.md #9): set-up tips it puts on Home, shown while `offered`
+   *  says so (wisp.grid-client: Reach this wisp from anywhere, never on a grid box). The shell knows none of them. */
+  homeTips?: HomeTipDef[];
+}
+
+/** One link in the account menu, from a plugin: opened as a link (`href`, read with the plugin's own client). */
+export interface AccountLinkDef {
+  id: string;
+  /** the plugin's own words for it (its `t`) */
+  label(): string;
+  hint?(): string;
+  icon: IconName;
+  /** where it goes now (may read signals); undefined: not offered */
+  href(client: PluginClient): string | undefined;
+}
+
+/** One set-up tip on Home, from a plugin. */
+export interface HomeTipDef {
+  id: string;
+  icon: IconName;
+  title(): string;
+  body(): string;
+  cta(): string;
+  /** whether Home offers it now (may read signals); unset: always */
+  offered?(client: PluginClient): boolean;
+  /** its button; `settings(pane)` opens a Settings pane as the shell does */
+  open(ctx: { client: PluginClient; settings: (pane: string) => void }): void;
 }
 
 /** One check a prompt box asks before a send (and after the server refuses one with `reason`). */
@@ -326,6 +358,8 @@ export interface SideTabItem {
   title?: string;
   /** added 2026-11-18 (additive, ADR-0079): its icon (a kit icon name); default 'app' (an app pinned from My Stuff) */
   icon?: string;
+  /** added 2026-11-18 (additive, UX #5): nothing new in it for now: it waits behind the strip's + until opened */
+  quiet?: boolean;
 }
 
 /** A coding agent as the screens show it: its name, its mark, and whether it's the one a new task
@@ -623,6 +657,10 @@ export interface ShellContext {
   sideTabs?(): () => readonly (SideTabDef & { readonly plugin: string; readonly client: PluginClient })[];
   /** added 2026-11-14 (additive, ADR-0064): every plugin's preview addresses, each with its plugin's client */
   previewAddresses?(): () => readonly (PreviewAddressDef & { readonly plugin: string; readonly client: PluginClient })[];
+  /** added 2026-11-18 (additive, docs/ux/2026-11-18-grid.md #9): every plugin's account-menu links and Home set-up
+   *  tips, each with its plugin's client */
+  accountLinks?(): () => readonly (AccountLinkDef & { readonly plugin: string; readonly client: PluginClient })[];
+  homeTips?(): () => readonly (HomeTipDef & { readonly plugin: string; readonly client: PluginClient })[];
   block(type: string): BlockRendererDef | undefined;
   view(kind: string): ViewDef | undefined;
 }

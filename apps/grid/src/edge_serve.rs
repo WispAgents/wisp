@@ -84,6 +84,11 @@ pub async fn dev(
     let clock = crate::clock::system();
     let db = Arc::new(Db::open(data, clock.now_ms())?);
     let url_cfg = cfg.clone();
+    // the grid itself, as `serve` tells its boxes (cli.rs): a box links back to it (#9) and asks it for its channels
+    let mut env = env;
+    if !env.iter().any(|(k, _)| k == "WISP_GRID_URL") {
+        env.push(("WISP_GRID_URL".to_owned(), cfg.public_url.clone()));
+    }
     let boxes = ProcessHost::new(
         crate::hostd::ProcessOptions {
             bin: wisp_bin,

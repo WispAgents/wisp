@@ -218,8 +218,8 @@ test('on_android_the_computer_filter_keeps_its_sheet', async () => {
 async function openMenu(): Promise<HTMLElement[]> {
   await until(() => q('[data-part="phone.task.bar"] [data-kit="app-bar-actions"] > [aria-label="More"]') !== null);
   (q('[data-part="phone.task.bar"] [data-kit="app-bar-actions"] > [aria-label="More"]') as HTMLButtonElement).click();
-  // on a phone the menu's longer sections are submenus (QA r2 #5): Next / Previous task are under Show
-  const show = (): HTMLElement | undefined => [...document.querySelectorAll<HTMLElement>('[data-kit="menu-item"][data-sub]')].find((e) => e.textContent?.trim().startsWith('Show'));
+  // on a phone the menu is three groups (UX 2026-11-18 phone #6): Next / Previous task are under This task
+  const show = (): HTMLElement | undefined => [...document.querySelectorAll<HTMLElement>('[data-kit="menu-item"][data-sub]')].find((e) => e.textContent?.trim().startsWith('This task'));
   await until(() => show() !== undefined);
   show()?.click();
   await until(() => [...document.querySelectorAll('[data-kit="menu-item"]')].some((e) => e.textContent?.includes('Next task')));

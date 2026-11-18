@@ -65,7 +65,9 @@ turn. When a screen or feature contradicts one, that's a bug: fix it toward the 
   Building: desktop 1-9, 11, 13 (a question stays above the reply box; two-line task rows with hover actions; one
   composer footer with `+`, mode, harness · model, where, Send; one head action bar; side-panel tabs with content and
   counts; one menu order; quiet turn footers; one usage line and one tip on Home; installed harnesses only; a shorter
-  topbar; the Shell font); phone 1-14; Grid 1-11. Not now: desktop 10 (folding the list below 1440 goes further than
+  topbar; the Shell font); phone 1-14; Grid 1-11 (**Grid 1-11 built 2026-11-18**: apps/grid pages, `tests/grid_ux.rs`; #8 copies
+  the share link and opens the cloud wisp, since New task has no URL to prefill; #9 through two additive shell contract
+  fields, `accountLinks` and `homeTips`, filled by wisp.grid-client). Not now: desktop 10 (folding the list below 1440 goes further than
   the 1180 rule just landed) and 12 (Transcript as a view switch: check on a running task first). These are owner-ruled
   departures from v1 (design/v1-reference/allowed.md §7); every feature stays reachable and every `launcher.*` part keeps
   its name.

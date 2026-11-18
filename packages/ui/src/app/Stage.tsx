@@ -58,6 +58,9 @@ export interface StageProps {
    *  is the platform's Frame (the top app bar, the panes, the navigation bar or rail); the browser never draws it, and
    *  its DOM stays v1's whatever is passed here. */
   readonly nav?: JSX.Element;
+  /** stack, phone frame: the page on screen is a pushed detail (a task, its side pane), not a destination's root; the
+   *  navigation bar gives way under it. Additive (2026-11-18). */
+  readonly pushed?: boolean;
   /** the panes' names for a screen reader, on the phone frame */
   readonly listLabel?: string;
   readonly mainLabel?: string;
@@ -438,14 +441,17 @@ export function SidebarHead(props: SidebarHeadProps): JSX.Element {
           }}
         </Show>
         {props.slots?.chips}
-        <WithAct
-          act={props.manageAct ?? { onClick: () => props.onManage?.() }}
-          render={(trigger) => (
-            <button type="button" {...trigger()} data-kit="p-chip" data-add="" title={props.manageLabel} aria-label={props.manageLabel}>
-              <Icon name="plus" />
-            </button>
-          )}
-        />
+        {/* v1's + (Manage projects) only when given something to do: the app's is in the switcher now (docs/ux/2026-11-18 #11) */}
+        <Show when={props.manageAct || props.onManage}>
+          <WithAct
+            act={props.manageAct ?? { onClick: () => props.onManage?.() }}
+            render={(trigger) => (
+              <button type="button" {...trigger()} data-kit="p-chip" data-add="" title={props.manageLabel} aria-label={props.manageLabel}>
+                <Icon name="plus" />
+              </button>
+            )}
+          />
+        </Show>
       </div>
       <div data-kit="tb-view">
         {props.slots?.view ?? (

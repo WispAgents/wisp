@@ -16,6 +16,7 @@ import { ActIcon, WithAct, actAttrs, type Act } from './act.tsx';
 import { foldTail, type LauncherTool } from './launcher-fold.ts';
 import { useTailFold } from './launcher-fold-measure.ts';
 import { useBarLabels } from './bar-labels.ts';
+import { Tool } from './launcher-tool.tsx';
 import { ProjectSelect, type ProjectSelectProps } from './ProjectSelect.tsx';
 import { usePlatform } from '../platform/PlatformLook.tsx';
 
@@ -135,6 +136,8 @@ export interface LauncherProps {
     readonly compares?: readonly LauncherCompare[];
     /** four runs already: no vs + */
     readonly compareFull?: boolean;
+    /** Compare is in the composer's `+` menu: the pill's own + goes (its runs keep their ×). Additive (2026-11-18). */
+    readonly compareInMenu?: boolean;
   };
   /** before the runner: attach, where */
   readonly lead: readonly LauncherTool[];
@@ -182,34 +185,6 @@ export interface LauncherProps {
   };
 }
 
-function Tool(props: { readonly t: LauncherTool }): JSX.Element {
-  return (
-    <WithAct
-      act={props.t.disabled ? undefined : props.t.act}
-      render={(trigger) => (
-        <button
-          type="button"
-          {...trigger()}
-          data-kit={props.t.text === undefined ? 'icon-btn' : 'tog-btn'}
-          data-a={props.t.id}
-          data-part={props.t.part}
-          data-on={flag(props.t.on)}
-          title={props.t.title}
-          aria-label={props.t.label}
-          aria-pressed={props.t.on === undefined ? undefined : props.t.on}
-          aria-disabled={props.t.disabled ? 'true' : undefined}
-        >
-          <ActIcon act={props.t.act}>
-            <Icon name={props.t.icon} />
-          </ActIcon>
-          <Show when={props.t.text}>
-            <span data-text="control">{props.t.label}</span>
-          </Show>
-        </button>
-      )}
-    />
-  );
-}
 
 /** v1 #launcher: the prompt box on Home. */
 export function Launcher(props: LauncherProps): JSX.Element {
@@ -469,7 +444,7 @@ export function Launcher(props: LauncherProps): JSX.Element {
                   {...trigger()}
                   data-kit="vs-btn"
                   data-part="launcher.compare"
-                  hidden={props.runner.compareFull === true}
+                  hidden={props.runner.compareFull === true || props.runner.compareInMenu === true}
                   title={props.runner.compare}
                   aria-label={props.runner.compare}
                 >
@@ -480,7 +455,8 @@ export function Launcher(props: LauncherProps): JSX.Element {
           </div>
           <Index each={props.mid}>{(t) => <Tool t={t()} />}</Index>
           <span data-kit="grow" />
-          <Index each={tail()}>{(t) => <Tool t={t()} />}</Index>
+          {/* by tool, not by slot: a chip keeps its node (an open Delegate panel, its field's caret) as others come and go */}
+          <ForKeyed each={tail()}>{(t) => <Tool t={t()} />}</ForKeyed>
           <Show when={issueInBar()}>
             <Tool t={{ id: 'issue', part: 'launcher.issue', icon: 'issue', label: props.recipes.issue, title: props.recipes.issueTitle, ...(props.recipes.issueAct && { act: props.recipes.issueAct }) }} />
           </Show>

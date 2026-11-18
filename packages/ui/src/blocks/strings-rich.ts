@@ -94,7 +94,6 @@ export const RICH_STRINGS = {
   'block.run.empty': '(no output)',
   'block.run.sendFailure': 'Send failure to agent',
   'block.run.running': 'Running…',
-  'block.question.own': 'Answer in my own words',
   'block.blocked.deny': 'Deny',
   'block.blocked.denied': 'Denied',
   'block.blocked.note': 'Allows exactly these, for the retry only.',

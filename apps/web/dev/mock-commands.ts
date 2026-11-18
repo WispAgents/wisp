@@ -645,6 +645,19 @@ export const COMMANDS: Record<string, CommandFn> = {
   // TRY-13: the task's agent writes its PR (the mock's answer, in the real Draft shape)
   'ship.write': () => ({ ops: [], result: { title: 'fix(login): wait for the session cookie', body: '## What\nThe login test waits for the session cookie.\n\n## Tested\n- npm test' } }),
   'accounts.recheck': () => ({ ops: [], result: {} }),
+  // the side panel's PR pane: the task's PR as wisp.ship's PrPanel (the `ask` seed's #812), none for the rest
+  'ship.details': (a, ctx) => {
+    const id = str(obj(a), 'session');
+    const sum = (r: unknown): Args => obj(obj(r)['summary']);
+    const pr = obj((sum(ctx.row('list', 'session', id))['pr'] ?? sum(ctx.row(own(id), 'session', id))['pr']) as unknown);
+    if (!pr['number']) return { ops: [], result: [] };
+    const checkList = [
+      { name: 'suite (node 22)', workflow: 'suite', state: 'pass', ms: 412_000 },
+      { name: 'suite (node 24)', workflow: 'suite', state: 'pass', ms: 398_000 },
+      { name: 'ledger', workflow: 'ledger', state: 'pass', ms: 21_000 },
+    ];
+    return { ops: [], result: [{ ...pr, repo: 'WispAgents/wisp', branch: 'fix/retry-scope', base: 'main', author: 'you', additions: 2, deletions: 2, changedFiles: 2, review: 'REVIEW_REQUIRED', files: [{ path: 'packages/client/src/peers.ts', additions: 1, deletions: 1 }, { path: 'packages/client/test/peers.test.ts', additions: 1, deletions: 1 }], checkList, reviewers: [], notes: [], threads: [] }] };
+  },
   // ⌘K past work: words in a task's prompts and answers (the peer's full-text index), a snippet around them
   'runtime.search': (a, ctx) => {
     const q = str(obj(a), 'q').toLowerCase().trim();

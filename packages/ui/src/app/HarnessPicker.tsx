@@ -89,6 +89,9 @@ export interface HarnessPickerProps {
   readonly onUse: (id: string) => void;
   readonly pane: HarnessPickerPane;
   readonly onClose: () => void;
+  /** the way to a harness that isn't installed, under the list (UX 2026-11-18 #9: only the ones that can run are
+   *  listed). Additive (2026-11-18). */
+  readonly setup?: { readonly label: string; readonly onClick: () => void } | undefined;
 }
 
 const EDGE = 12;
@@ -257,7 +260,9 @@ export function HarnessPicker(props: HarnessPickerProps): JSX.Element {
                 </span>
                 <span data-kit="pk-text">
                   <b data-text="control">{r().name}</b>
-                  <small data-warn={flag(r().warn)}>{r().sub}</small>
+                  <Show when={r().sub}>
+                    <small data-warn={flag(r().warn)}>{r().sub}</small>
+                  </Show>
                 </span>
                 <Show when={r().id === props.inUse}>
                   <span data-kit="pk-dot" title={props.inUseLabel} />
@@ -265,6 +270,13 @@ export function HarnessPicker(props: HarnessPickerProps): JSX.Element {
               </button>
             )}
           </Index>
+          <Show when={props.setup}>
+            {(x) => (
+              <button type="button" data-kit="pk-setup" data-part="runner.picker.setup" onClick={() => x().onClick()}>
+                {x().label}
+              </button>
+            )}
+          </Show>
         </div>
         <div data-kit="pk-main">
           <Show when={p().search}>

@@ -28,11 +28,14 @@ import {
   type IconName,
   type LedgerString,
   type MenuEntry,
-  type TaskAction,
+  type HeadAction,
   type ReplyCap,
+  type Act,
+  type LauncherTool,
   type TaskPlaceChip,
 } from '@wisp/ui';
 import { useShell } from '../context.tsx';
+import { newestSide } from './side-newest.ts';
 import type { SendHold } from '../contract.ts';
 import { aheadLabel, waitable } from './hold.ts';
 import { SESSION, type SessionRow } from '../rows.ts';
@@ -41,6 +44,7 @@ import { TaskHeadSlot } from './slots.tsx';
 import { afterNextPaint, buildsAtOnce } from './task-paint.ts';
 import { useProjects } from './projects.ts';
 import { taskPlaces } from './project-pick.ts';
+import { phoneTaskMenu } from './phone-menu.ts';
 import { changeFigures, duration, foldedFrom, longTime, nextNeedsYou, overlapLine, overlapsOf, statusOf, trailActs } from './rows-view.ts';
 import { coldHint, compactItem } from './cold.ts';
 import { replyPlaceholderKey } from './reply-hint.ts';
@@ -72,6 +76,8 @@ import {
   followUp,
   forLater,
   isSaved,
+  markRead,
+  pin,
   setLean,
   type Attachment,
   fork,
@@ -104,7 +110,8 @@ import { runPick, runWords, taskRunner, type Runner } from './runner.ts';
 import { rowUsage, taskUsage, type TurnStatsLike } from './task-usage.ts';
 import { TELEMETRY_TOPIC, feedbackOn } from './feedback-on.ts';
 import { MODE_ICON, agentMenu, modeMenu, whenAt, whenMenu, type Mode, type When } from './pickers.ts';
-import { teamFromSetting, teamToSend, type Delegate } from './team.ts';
+import { teamFromSetting, teamSize, teamToSend, type Delegate } from './team.ts';
+import { plusTool } from './composer-plus.ts';
 
 // Delegate's panel: its own chunk, loaded when it first opens (ADR-0011)
 const DelegatePanel = lazy(() => import('./DelegatePanel.tsx'));
@@ -458,6 +465,8 @@ export default function TaskView(props: { readonly id: string; readonly onBack?:
     teamFromSetting((((row()?.body as { ext?: Record<string, unknown> } | undefined)?.ext?.['wisp.runtime'] ?? {}) as { subagents?: unknown }).subagents);
   const team = (): readonly Delegate[] => picked() ?? ownTeam();
   const [replyPreset, setReplyPreset] = createSignal('');
+  // Delegate… in the reply's `+` opens the Delegate panel on its chip (UX 2026-11-18 #3)
+  const [replyDelegateOpen, setReplyDelegateOpen] = createSignal(false);
   const [goal, setGoalText] = createSignal<string | undefined>(undefined);
   const [when, setWhen] = createSignal<When | undefined>(undefined);
   const nav = useSignal(shell.nav);
@@ -655,6 +664,12 @@ export default function TaskView(props: { readonly id: string; readonly onBack?:
     input?.focus();
   };
   const side = (kind: 'changes' | 'shell'): void => shell.navigate({ t: 'toggleSide', side: { kind, id: key as never } });
+  // the panel button and \ open it on the newest thing (UX 2026-11-18 #5): the PR, else Changes with a diff, else Shell
+  const sideNewest = (): void => {
+    if (nav().side.kind !== 'none') return shell.navigate({ t: 'closeSide' });
+    const touched = turns().reduce((n, x) => n + (x.body?.ext?.['wisp.runtime']?.changes ?? x.body?.changes ?? []).length, 0);
+    shell.navigate({ t: 'openSide', side: { kind: newestSide(row() as never, touched), id: key as never } });
+  };
   // Take over (T, Open in <harness>): the task's conversation in its harness's own CLI, in shell-task's Terminal tab
   const takeOver = (): void => shell.navigate({ t: 'openSide', side: { kind: 'view', id: 'shell-task.term' as never } });
   /** a new task from this one (Rerun, Fork): its row and page show at once */
@@ -738,25 +753,26 @@ export default function TaskView(props: { readonly id: string; readonly onBack?:
   };
   const forLaterNow = (): boolean => isSaved(row()?.summary['forLater']);
   const canSaveForLater = (): boolean => !row()?.archived && (row()?.state === 'review' || row()?.state === 'done');
-  // the shell's Rerun is above (folded) or on the page; its Changes and Shell only where the bar doesn't have them
+  // the shell's Rerun is More's own (above); Changes is on the head's bar (docs/ux/2026-11-18-desktop.md #4), and on a
+  // desktop Merge is under its Ship ▾; Shell is the row's entry here, but More's own on a phone
   const moreExts = (): ReturnType<typeof rowMenu> =>
     rowMenu().filter(
       (x) =>
-        x.def.bar && !x.def.bar.rowOnly && x.id !== 'shell.row.rerun' && !(barFolded() && (x.id === 'shell.row.changes' || x.id === 'shell.row.shell')) && (x.def.if?.(extProps(x) as never) ?? true),
+        x.def.bar && !x.def.bar.rowOnly && x.id !== 'shell.row.rerun' && x.id !== 'shell.row.changes' && !(phoneBar() && x.id === 'shell.row.shell') && !(!phoneBar() && x.id === 'wisp.ship.rowMerge') && (x.def.if?.(extProps(x) as never) ?? true),
     );
   // v1 #786 taskMenuHtml: the row's menu's sections and submenus (task-menu.ts), with what only More has: on a phone
   // the bar's folded Transcript, Rerun and Open in first; Compact and Lean runs with the task itself; Copy resume
   // command under Copy ›, Open project in editor and Restore under Files ›
   const more = (): MenuEntry[] => {
     const own: TaskMenuEntry[] = [];
-    if (barFolded()) {
-      own.push({ section: 'open', order: -30, entry: { value: 'transcript', label: t('shell.task.transcript'), icon: 'transcript', keys: 'V', checked: stepsOpen() } });
-      if (!row()?.summary['sideOf'])
-        own.push(
-          { section: 'open', order: -20, entry: { value: 'rerun', label: t('shell.task.rerun'), icon: 'rerun', keys: '⇧R' } },
-          { section: 'open', order: -10, entry: { value: 'openIn', label: t('shell.task.openIn', { harness: harnessName() }), icon: 'terminal', keys: 'T' } },
-        );
-    }
+    // the head's bar keeps Changes, Ship, Done (docs/ux/2026-11-18-desktop.md #4): Transcript, Rerun and Open in are
+    // here, with their keys, on every width
+    own.push({ section: 'open', order: -30, entry: { value: 'transcript', label: t('shell.task.transcript'), icon: 'transcript', keys: 'V', checked: stepsOpen() } });
+    if (!row()?.summary['sideOf'])
+      own.push(
+        { section: 'open', order: -20, entry: { value: 'rerun', label: t('shell.task.rerun'), icon: 'rerun', keys: '⇧R' } },
+        { section: 'open', order: -10, entry: { value: 'openIn', label: t('shell.task.openIn', { harness: harnessName() }), icon: 'terminal', keys: 'T' } },
+      );
     // the phone apps have no details bar: what it holds is here, after Open in (v1's order), and Details first
     if (phoneBar())
       own.push(
@@ -772,6 +788,11 @@ export default function TaskView(props: { readonly id: string; readonly onBack?:
         { section: 'look', order: 201, entry: { value: 'previous-task', label: t('shell.phone.previousTask'), icon: 'back', ...(steps().previous === undefined && { disabled: true }) } },
       );
     own.push({ section: 'task', order: -10, entry: { value: 'rename', label: t('shell.more.rename'), icon: 'pen', keys: 'M' } });
+    // Pin and Mark unread, as the row's menu has them (one menu: task-menu.ts group 2)
+    const pinned = row()?.summary['pinned'] === true;
+    // (desktop: the phone's menu keeps the sections its QA rounds settled, task-menu.ts phoneMenu)
+    if (!phoneBar()) own.push({ section: 'place', order: -40, entry: { value: 'pin', label: t(pinned ? 'shell.more.unpin' : 'shell.more.pin'), icon: 'pin' } });
+    if (!phoneBar() && !busyNow() && !row()?.archived) own.push({ section: 'place', order: -35, entry: { value: 'read', label: t('shell.more.unread'), icon: 'eye' } });
     if (compactOffer()) own.push({ section: 'task', order: 45, entry: { value: 'compact', label: t('shell.cold.compact'), icon: 'minus', hint: compactOffer()?.note ?? '' } });
     // v1's task menu: Lean runs for this task, or as Settings says (Claude Code only)
     if (row()?.agent === 'claude')
@@ -837,6 +858,15 @@ export default function TaskView(props: { readonly id: string; readonly onBack?:
     } else if (v === 'rename') startRename();
     else if (v === 'copy-id') void shell.platform.copy(bare).then((ok) => ok && shell.toast.show(t('shell.more.copiedId')));
     else if (v === 'later') void run(forLater, { id: key, forLater: !forLaterNow() }).catch(() => undefined);
+    else if (v === 'pin') void run(pin, { id: key, pinned: row()?.summary['pinned'] !== true }).catch(() => undefined);
+    else if (v === 'read') {
+      // Mark unread: it stays bold in the list, so the page leaves it (staying would read it again): the next task that
+      // needs you, else home
+      void run(markRead, { id: key, unread: true }).catch(() => undefined);
+      const to = nextNeedsYou(untrack(sessions), key);
+      if (to) shell.navigate({ t: 'openTask', id: (to.includes(':') ? to : entityKey(peer, to)) as never });
+      else shell.navigate({ t: 'home' });
+    }
     else if (v === 'unarchive') void run(archive, { id: key, archived: false }).catch(() => undefined);
     else if (v === 'rollback') {
       const l = lastTurn();
@@ -850,61 +880,54 @@ export default function TaskView(props: { readonly id: string; readonly onBack?:
       if (x) x.def.bar?.select?.(extProps(x) as never);
     }
   };
-  const actions = (s: SessionRow): TaskAction[] => [
-    {
-      id: 'transcript',
-      deskOnly: true,
-      key: 'V',
-      icon: 'transcript',
-      label: t('shell.task.transcript'),
-      title: t('shell.task.transcriptTitle'),
-      on: stepsOpen(),
-      act: { onClick: () => setStepsOpen(!stepsOpen()) },
-    },
-    {
-      id: 'rerun',
-      deskOnly: true,
-      key: '⇧R',
-      icon: 'rerun',
-      label: t('shell.task.rerun'),
-      title: t('shell.task.rerunTitle'),
-      act: { menu: { items: agentMenu(t, harnesses(), s.agent, false), onSelect: (a) => openRerun(a) } },
-    },
-    {
-      id: 'openIn',
-      // the owner's rename of v1's Take over (ADR-0033); parity knows it by this part (allowed.md §5)
-      part: 'details.openIn',
-      deskOnly: true,
-      key: 'T',
-      icon: 'terminal',
-      label: t('shell.task.openIn', { harness: harnessView(s.agent).name }),
-      title: t('shell.task.openInTitle', { harness: harnessView(s.agent).name }),
-      act: { onClick: () => side('shell') },
-    },
-    {
-      id: 'changes',
-      key: 'D',
-      icon: 'file',
-      label: t('shell.task.changes'),
-      title: t('shell.task.changesTitle'),
-      part: 'split.changes',
-      on: nav().side.kind === 'changes',
-      act: { onClick: () => side('changes') },
-    },
-    {
-      id: 'shell',
-      key: '⌃`',
-      icon: 'shell',
-      label: t('shell.task.shell'),
-      title: t('shell.task.shellTitle'),
-      part: 'split.shell',
-      on: nav().side.kind === 'shell',
-      act: { onClick: () => side('shell') },
-    },
-    { id: 'ship', key: 'S', icon: 'send', label: t('shell.task.ship'), title: t('shell.task.shipTitle'), act: { onClick: ship } },
-    { id: 'done', key: 'E', icon: 'done', label: t('shell.task.done'), title: t('shell.card.done'), tone: 'good', act: { onClick: markDone } },
-    { id: 'more', icon: 'dots', label: t('shell.task.more'), title: t('shell.task.more'), act: { menu: { items: more(), onSelect: onMore } } },
-  ];
+  const reopen = (): void => void run(setState, { id: key, state: 'review' }).catch(() => undefined);
+  const hasPr = (): boolean => newestSide(row() as never, 0) === 'pr';
+  const toShip = (): boolean => {
+    const w = row()?.summary['toShip'] as { dirty?: number; ahead?: number } | null | undefined;
+    return (w?.dirty ?? 0) > 0 || (w?.ahead ?? 0) > 0;
+  };
+  // the diff the task made, every turn's (the head's Changes +n −n; none: no Changes)
+  const diff = createMemo(() => changeFigures(turns().flatMap((x) => x.body?.ext?.['wisp.runtime']?.changes ?? x.body?.changes ?? [])));
+  // Ship ▾: Ship it…, the PR's pane, Merge when ready (wisp.ship's row entry, when it offers it); Ship it… alone is a button
+  const shipMenu = (): MenuEntry[] => {
+    const merge = rowMenu().find((x) => x.id === 'wisp.ship.rowMerge' && (x.def.if?.(extProps(x) as never) ?? true));
+    const mergeLabel = merge?.def.bar?.text?.(extProps(merge) as never) ?? (merge?.def.bar?.label ? t(merge.def.bar.label) : undefined);
+    return [
+      { value: 'ship', label: t('shell.task.ship'), icon: 'send', keys: 'S' },
+      ...(hasPr() ? [{ value: 'pr', label: t('shell.task.openPr'), icon: 'branch' as const, keys: 'P' }] : []),
+      ...(mergeLabel ? [{ value: 'x:wisp.ship.rowMerge', label: mergeLabel, icon: 'merge' as const }] : []),
+    ];
+  };
+  const onShip = (v: string): void => {
+    if (v === 'pr') shell.navigate({ t: 'toggleSide', side: { kind: 'pr', id: key as never } });
+    else onMore(v);
+  };
+  // the head's one bar (docs/ux/2026-11-18-desktop.md #4), the same with and without the panel: Changes +n −n, Ship ▾,
+  // Done (Reopen when done), ⋯; Transcript, Rerun, Open in and Shell are in ⋯ with their keys
+  const headBar = (s: SessionRow): HeadAction[] => {
+    const d = diff();
+    const ship = shipMenu();
+    const done = s.state === 'done';
+    return [
+      // a diff the turns made (with its figures), or work the worktree holds that they don't show (dirty, ahead)
+      ...(d.files > 0 || toShip()
+        ? [{ id: 'changes', key: 'D', icon: 'file' as const, label: t('shell.task.changes'), title: t('shell.task.changesTitle'), part: 'split.changes', ...(d.files > 0 && { figures: { plus: `+${d.plus}`, minus: `−${d.minus}` } }), act: { onClick: () => side('changes') } }]
+        : []),
+      {
+        id: 'ship',
+        key: 'S',
+        icon: 'send',
+        label: t('shell.task.shipShort'),
+        title: t('shell.task.shipTitle'),
+        part: 'split.ship',
+        act: ship.length > 1 ? { menu: { items: ship, onSelect: onShip } } : { onClick: () => onMore('ship') },
+      },
+      done
+        ? { id: 'done', key: 'E', icon: 'replay', label: t('shell.task.reopen'), title: t('shell.task.reopenTitle'), part: 'split.done', act: { onClick: reopen } }
+        : { id: 'done', key: 'E', icon: 'done', label: t('shell.task.doneShort'), title: t('shell.card.done'), tone: 'good', part: 'split.done', act: { onClick: markDone } },
+      { id: 'more', icon: 'dots', label: t('shell.task.more'), title: t('shell.task.more'), part: 'split.more', bare: true, act: { menu: { items: more(), onSelect: onMore } } },
+    ];
+  };
   // the shell's task keys (v1 kbd.js, builtins.tsx): what this page's buttons and More menu do
   const onKey = (e: Event): void => {
     const act = (e as CustomEvent<TaskKey>).detail;
@@ -915,11 +938,14 @@ export default function TaskView(props: { readonly id: string; readonly onBack?:
       else if (act === 'shell') side('shell');
       else if (act === 'changes' || act === 'panel') {
         if (act === 'panel' && nav().side.kind !== 'none') shell.navigate({ t: 'closeSide' });
+        else if (act === 'panel') sideNewest();
         else side('changes');
       } else if (act === 'pr') shell.navigate({ t: 'toggleSide', side: { kind: 'pr', id: key as never } });
       else if (act === 'ship') ship();
-      else if (act === 'done') markDone();
-      else if (act === 'later') void run(forLater, { id: key, forLater: !isSaved(row()?.summary['forLater']) }).catch(() => undefined);
+      else if (act === 'done') {
+        if (row()?.state === 'done') reopen();
+        else markDone();
+      } else if (act === 'later') void run(forLater, { id: key, forLater: !isSaved(row()?.summary['forLater']) }).catch(() => undefined);
       else if (act === 'reply') input?.focus();
       else if (act === 'rename') startRename();
       else if (act === 'collapse') {
@@ -959,6 +985,101 @@ export default function TaskView(props: { readonly id: string; readonly onBack?:
         // the task's own, for its details (not the reply box's pick)
         const own = (): { name: string; logo?: string } => harnessView(s().agent);
         const ownWords = (): string => t('shell.task.harness', { name: own().name, model: String(s().summary.model || '') || t('shell.task.defaultModel') });
+        // the reply box's Delegate panel: on its button in the old footer, on its chip in the desktop's one footer
+        const replyTeamAct = (): Act => ({
+          // v1 composer.js: the same Delegate panel as New task's, the lead this task's harness where it runs
+          panel: {
+            label: t('shell.home.delegate'),
+            part: 'composer.team.panel',
+            cardPart: 'delegate.panel',
+            placement: 'top-start',
+            content: () => (
+              <DelegatePanel
+                lead={{
+                  agent: replyRun()?.agent ?? s().agent,
+                  run: runWords(h().name, shownRun(), t('shell.runner.default')),
+                  logo: h().logo,
+                  place: peer === shellHome ? { icon: 'laptop', label: t('shell.card.thisComputer'), title: t('shell.home.where') } : { icon: 'server', label: shell.client.peers.name(peer), title: t('shell.home.where') },
+                }}
+                team={team()}
+                onChange={setTeam}
+                peer={peer}
+                places={[]}
+                preset={replyPreset()}
+                onPreset={setReplyPreset}
+              />
+            ),
+          },
+        });
+        // UX 2026-11-18 #3 (docs/ux/2026-11-18-desktop.md): the desktop reply box takes New task's one footer, `+` for what's
+        // off (attach, Goal, Delegate, send later), a chip with ✕ for what's on, the harness with its model
+        const replyGoalOn = (): boolean => goal() !== undefined || goalGoing();
+        const replyPlus = (): LauncherTool =>
+          plusTool({
+            part: 'composer.plus',
+            label: t('shell.home.plus'),
+            title: t('shell.reply.plusTitle'),
+            sections: [
+              [{ id: 'attach', part: 'composer.attach', icon: 'clip', label: t('shell.home.attach'), act: attachAct(shell, attach, picking()) }],
+              [
+                !replyGoalOn() && { id: 'goal', part: 'composer.goal', icon: 'target', label: t('shell.home.goalRow'), act: { onClick: () => (setGoalText(''), queueMicrotask(() => goalInput?.focus())) } },
+                team().length === 0 && !replyDelegateOpen() && { id: 'team', part: 'composer.team', icon: 'agent', label: t('shell.home.delegateRow'), act: { onClick: () => setReplyDelegateOpen(true) } },
+              ],
+              [!when() && { id: 'later', part: 'composer.sendLater', icon: 'clock', label: t('shell.home.later'), act: { menu: { items: whenMenu(t, now()), onSelect: (w) => setWhen(w as When) } } }],
+            ],
+          });
+        const replyChips = (): LauncherTool[] => {
+          const panel = replyTeamAct().panel;
+          const text = (goal() ?? '').trim();
+          return [
+            ...(replyGoalOn()
+              ? [
+                  {
+                    id: 'goal',
+                    part: 'composer.goal',
+                    icon: 'target' as const,
+                    label: text ? t('shell.home.goalChip', { text }) : t('shell.home.goal'),
+                    title: t('shell.task.goal'),
+                    text: true,
+                    on: true,
+                    act: { onClick: () => (goal() === undefined ? setGoalText('') : undefined, queueMicrotask(() => goalInput?.focus())) },
+                    ...(goal() !== undefined && { clear: { label: t('shell.home.goalOff'), act: { onClick: () => setGoalText(undefined) } } }),
+                  },
+                ]
+              : []),
+            ...(team().length > 0 || replyDelegateOpen()
+              ? [
+                  {
+                    id: 'team',
+                    part: 'composer.team',
+                    icon: 'agent' as const,
+                    label: team().length ? t(teamSize(team()) === 1 ? 'shell.home.delegates.one' : 'shell.home.delegates.other', { count: teamSize(team()) }) : t('shell.home.delegate'),
+                    title: t('shell.home.delegateTitle'),
+                    text: true,
+                    on: true,
+                    ...(panel && { act: { panel: { ...panel, open: replyDelegateOpen(), onOpenChange: setReplyDelegateOpen } } }),
+                    // its ✕ from the start, so the open panel is never drawn again on the first pick
+                    clear: team().length > 0 ? { label: t('shell.home.delegateOff'), act: { onClick: () => setTeam([]) } } : { label: t('shell.home.delegateClose'), act: { onClick: () => setReplyDelegateOpen(false) } },
+                  },
+                ]
+              : []),
+            ...(when()
+              ? [
+                  {
+                    id: 'later',
+                    part: 'composer.sendLater',
+                    icon: 'clock' as const,
+                    label: t('shell.when.chip', { when: t(`shell.when.${when()}`) }),
+                    title: t('shell.home.later'),
+                    text: true,
+                    on: true,
+                    act: { menu: { items: whenMenu(t, now()), onSelect: (w: string) => setWhen(w as When) } },
+                    clear: { label: t('shell.when.clear'), act: { onClick: () => setWhen(undefined) } },
+                  },
+                ]
+              : []),
+          ];
+        };
         const branch = (): string => String(s().summary['branch'] ?? '');
         const color = (): string => String(s().summary['color'] ?? 'slate');
         const ov = createMemo(() => (!closedReady() ? [] : shownOverlaps(overlapsOf(s()), closed() as unknown as Dismissed | undefined, s().id)));
@@ -1136,6 +1257,7 @@ export default function TaskView(props: { readonly id: string; readonly onBack?:
             <>
               <TurnView
                 id={turn.id}
+                latest={turn.id === turns().at(-1)?.id}
                 {...(rates() && { rate: <RateButtons rating={ratingOf(b)} labels={{ up: t('shell.rate.up'), down: t('shell.rate.down') }} onRate={(next) => rate(turn.id, next)} /> })}
                 {...(whyFor() === turn.id && {
                   trailBody: (
@@ -1264,7 +1386,7 @@ export default function TaskView(props: { readonly id: string; readonly onBack?:
                   status={statusOf(s(), t)}
                   {...(branch() && { branch: { head: branch().replace(/-[0-9a-f]{6}$/, ''), tail: branch().match(/-[0-9a-f]{6}$/)?.[0] ?? '', title: branch() } })}
                   {...((u) => (u ? { usage: u } : {}))(usage())}
-                  actions={actions(s())}
+                  actions={[]}
                 />
                 </Show>
                 ),
@@ -1347,7 +1469,7 @@ export default function TaskView(props: { readonly id: string; readonly onBack?:
                         onWait: () => ((waitUntil = hd.until), send()),
                         onKeep: () => (setHold(undefined), input?.focus()),
                       })(hold())}
-                    placeholder={t(replyPlaceholderKey(row()), { name: h().name })}
+                    placeholder={t(replyPlaceholderKey(row(), row()?.state !== 'running' && !!lastTurn()?.presentation?.blocks?.some((x) => x.type === 'question')), { name: h().name })}
                     value={text()}
                     onInput={(v, e) => {
                       setText(v);
@@ -1385,33 +1507,12 @@ export default function TaskView(props: { readonly id: string; readonly onBack?:
                       ...(h().logo && { logo: h().logo }),
                       act: { onClick: () => setPickingRunner(!runnerOpen()) },
                       open: runnerOpen(),
+                      // the model it runs on beside the logo (UX 2026-11-18 #3), the phone keeps the bare logo
+                      ...(!phone && { model: shownRun().model || t('shell.runner.default') }),
                     }}
+                    {...(!phone && { plus: ((p: LauncherTool) => ({ label: p.label, title: p.title, act: p.act ?? {} }))(replyPlus()), chips: replyChips() })}
                     team={t('shell.home.delegateTitle')}
-                    teamAct={{
-                      // v1 composer.js: the same Delegate panel as New task's, the lead this task's harness where it runs
-                      panel: {
-                        label: t('shell.home.delegate'),
-                        part: 'composer.team.panel',
-                        cardPart: 'delegate.panel',
-                        placement: 'top-start',
-                        content: () => (
-                          <DelegatePanel
-                            lead={{
-                              agent: replyRun()?.agent ?? s().agent,
-                              run: runWords(h().name, shownRun(), t('shell.runner.default')),
-                              logo: h().logo,
-                              place: peer === shellHome ? { icon: 'laptop', label: t('shell.card.thisComputer'), title: t('shell.home.where') } : { icon: 'server', label: shell.client.peers.name(peer), title: t('shell.home.where') },
-                            }}
-                            team={team()}
-                            onChange={setTeam}
-                            peer={peer}
-                            places={[]}
-                            preset={replyPreset()}
-                            onPreset={setReplyPreset}
-                          />
-                        ),
-                      },
-                    }}
+                    teamAct={replyTeamAct()}
                     goal={t('shell.task.goal')}
                     goalOn={goal() !== undefined || goalGoing()}
                     goalAct={{ onClick: () => setGoalText(goal() === undefined ? '' : undefined) }}
@@ -1427,6 +1528,8 @@ export default function TaskView(props: { readonly id: string; readonly onBack?:
                     })}
                     later={t('shell.home.later')}
                     laterAct={{ menu: { items: whenMenu(t, now()), onSelect: (w) => setWhen(w as When) } }}
+                    // the phone apps: the bar's options behind one chip and its sheet (UX 2026-11-18 phone #1)
+                    {...(phone && { phoneOptions: { options: t('shell.reply.options'), mode: t('shell.reply.permissions'), agent: t('shell.reply.agent'), goal: t('shell.reply.goalShort') } })}
                     send={t('shell.home.send')}
                     {...(checking() && { sendAct: { pending: true } })}
                     hint={hint()}
@@ -1438,7 +1541,7 @@ export default function TaskView(props: { readonly id: string; readonly onBack?:
                         removeLabel: t('shell.home.remove', { name: f.name }),
                         onRemove: () => att.remove(f),
                       })),
-                      ...(when()
+                      ...(when() && phone
                         ? [
                             {
                               id: 'when',
@@ -1476,8 +1579,9 @@ export default function TaskView(props: { readonly id: string; readonly onBack?:
               {...(leave && { onBack: leave, backLabel: t('shell.home.back') })}
               onClose={() => shell.navigate({ t: 'home' })}
               onRename={(title) => void run(rename, { id: key, title }).catch(() => undefined)}
-              onPanel={() => side('changes')}
+              onPanel={sideNewest}
               panelOn={nav().side.kind !== 'none'}
+              bar={headBar(s())}
             />
               }
             >
@@ -1486,8 +1590,16 @@ export default function TaskView(props: { readonly id: string; readonly onBack?:
                   title={s().title}
                   onBack={back()}
                   head={() => <TaskHeadSlot id={key} session={() => s() as never} />}
-                  menu={more}
+                  // UX 2026-11-18 phone #6: the same entries in three groups, the rest in This task ›
+                  menu={() => phoneTaskMenu(more(), t)}
                   onSelect={onMore}
+                  // UX 2026-11-18 phone #3: what the task holds, each a tap to its pane (a sheet over the task)
+                  status={() => [
+                    ...(diff().files > 0
+                      ? [{ id: 'changes', icon: 'file' as const, label: t('shell.phone.files', { count: diff().files, n: diff().files, plus: `+${diff().plus}`, minus: `−${diff().minus}` }), on: nav().side.kind === 'changes', onSelect: () => side('changes') }]
+                      : []),
+                    ...(hasPr() ? [{ id: 'pr', icon: 'branch' as const, label: t('shell.phone.pr'), on: nav().side.kind === 'pr', onSelect: () => shell.navigate({ t: 'toggleSide', side: { kind: 'pr', id: key as never } }) }] : []),
+                  ]}
                   details={() => (
                     <TaskDetails
                       harness={ownWords()}

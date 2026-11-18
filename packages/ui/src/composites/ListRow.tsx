@@ -64,6 +64,9 @@ export interface ListRowProps extends KitProps {
    *  leads with its check (Android's filled circle, iOS's edit-mode checkmark) in place of `lead`, a tap toggles it
    *  (`onOpen`), and it says so (aria-pressed). Unset, nothing of it is drawn. Additive (2026-11-15). */
   readonly picked?: boolean | undefined;
+  /** feed (docs/ux/2026-11-18-desktop.md #2): the quick actions (RowButton `slot` 1–3) take the time's fixed slot on
+   *  hover and keyboard focus, by opacity, so the title never moves. Additive (2026-11-18). */
+  readonly slots?: boolean | undefined;
 }
 
 /** How many lines the row's text takes on a phone (M3 one/two/three-line list items; iOS cell heights). */
@@ -119,7 +122,43 @@ export { feedDoneColumn } from './feed-done.ts';
 /** A row's quick action (v1 .it-quick, .it-later): an icon the pointer presses, hidden from assistive tech and the
  *  Tab order as v1's are (the row's head is the one button in it; the keys E and L do the same from the keyboard).
  *  It never opens the row. v1's element tree: the box, the glyph, its path. */
-export function RowButton(props: { readonly icon: IconName; readonly label: string; readonly tone?: 'good' | 'bad'; readonly pressed?: boolean; readonly part?: PartName; readonly onClick: () => void }): JSX.Element {
+export function RowButton(props: {
+  readonly icon: IconName;
+  readonly label: string;
+  readonly tone?: 'good' | 'bad';
+  readonly pressed?: boolean;
+  readonly part?: PartName;
+  /** its place in the time's slot (ListRow `slots`: 1 Later, 2 Done, 3 ⋯): a button with its name and tooltip, out of
+   *  the Tab order and the accessibility tree (the row is the one stop; its keys do the same). Additive (2026-11-18). */
+  readonly slot?: 1 | 2 | 3;
+  readonly onClick: (el: HTMLElement) => void;
+}): JSX.Element {
+  if (props.slot !== undefined)
+    return (
+      // out of the accessibility tree as the span was (the row is the one button; nested ones confuse readers): the
+      // keys E and L and the row's menu (its context-menu key) do the same; the name stays for the tooltip
+      <button
+        type="button"
+        tabIndex={-1}
+        aria-hidden="true"
+        aria-label={props.label}
+        title={props.label}
+        data-kit="icon-button"
+        data-part={props.part ?? 'ui.row-button'}
+        data-variant="ghost"
+        data-size="sm"
+        data-slot={props.slot}
+        data-tone={props.tone}
+        data-on={flag(props.pressed)}
+        aria-pressed={props.pressed === undefined ? undefined : props.pressed}
+        onClick={(e) => {
+          e.stopPropagation();
+          props.onClick(e.currentTarget);
+        }}
+      >
+        <Icon name={props.icon} size="md" />
+      </button>
+    );
   return (
     <span
       aria-hidden="true"
@@ -132,7 +171,7 @@ export function RowButton(props: { readonly icon: IconName; readonly label: stri
       data-on={flag(props.pressed)}
       onClick={(e) => {
         e.stopPropagation();
-        props.onClick();
+        props.onClick(e.currentTarget);
       }}
     >
       <Icon name={props.icon} size="md" />
@@ -149,18 +188,28 @@ export function RowRun(props: {
   /** v1 .it-run[title]: harness · model · effort · place, on the whole line */
   readonly title?: string | undefined;
   readonly where: { readonly icon: IconName; readonly text: string };
+  /** it runs on this computer: the phone looks leave the place out (it says nothing a row from elsewhere wouldn't; UX
+   *  2026-11-18 phone #10). Additive. */
+  readonly local?: boolean | undefined;
+  /** the browser's two-line rows (docs/ux/2026-11-18-desktop.md #2): no place at all (the host passes it only for a
+   *  task on this computer). Additive (2026-11-18). */
+  readonly noWhere?: boolean | undefined;
   readonly part?: PartName;
 }): JSX.Element {
+  const look = usePlatform();
   return (
-    <div data-kit="row-run" data-part={props.part ?? 'ui.row-run'} title={props.title}>
+    // the browser's line stays as it was: only a phone look marks it
+    <div data-kit="row-run" data-part={props.part ?? 'ui.row-run'} title={props.title} data-local={flag(look() !== 'web' && props.local === true)}>
       {props.logo}
       <span data-kit="ir-h">{props.name}</span>
       {/* a model shorter than the 7ch floor keeps its own width (TRY-12: "opus" had a gap before the next dot) */}
       <Show when={props.model}>{(m) => <span data-kit="ir-m" data-long={m().length > 5 ? '' : undefined}>{m()}</span>}</Show>
-      <span data-kit="ir-w">
-        <Icon name={props.where.icon} size="xs" />
-        <span>{props.where.text}</span>
-      </span>
+      <Show when={!props.noWhere}>
+        <span data-kit="ir-w">
+          <Icon name={props.where.icon} size="xs" />
+          <span>{props.where.text}</span>
+        </span>
+      </Show>
     </div>
   );
 }
@@ -215,6 +264,7 @@ function FeedRow(props: ListRowProps & { readonly partName: PartName }): JSX.Ele
       data-time={flag(c.time() !== undefined)}
       data-layout="feed"
       data-quick={props.quick ? String(props.quick) : undefined}
+      data-slots={flag(props.slots)}
       data-foot={flag(!!c.foot())}
       data-one-line={flag(oneLine())}
       data-interactive={flag(props.onOpen !== undefined)}

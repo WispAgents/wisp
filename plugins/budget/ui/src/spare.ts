@@ -30,15 +30,16 @@ export interface Spare {
 export const spareKey = (x: Pick<Spare, 'agent' | 'account' | 'window'>): string => `${x.agent}:${x.account}:${x.window}`;
 
 /** Each harness's accounts as budget.view reads them → the spare windows, soonest reset first. `seen`: the
- * dismissed ones, `{ [spareKey]: resetsAt }`. */
+ * dismissed ones, `{ [spareKey]: resetsAt }`; `not`: the harness already picked (no point suggesting it). */
 export function spareOf(
   harnesses: readonly { readonly agent: string; readonly name: string; readonly accounts: readonly AccountPlan[] }[],
-  o: { now: number; hours?: number; left?: number; seen?: Readonly<Record<string, number>> },
+  o: { now: number; hours?: number; left?: number; seen?: Readonly<Record<string, number>>; not?: string },
 ): Spare[] {
   const hours = o.hours ?? SPARE_HOURS;
   const min = o.left ?? SPARE_LEFT;
   const out: Spare[] = [];
   for (const h of harnesses) {
+    if (h.agent === o.not) continue;
     for (const a of h.accounts) {
       const live = a.windows.filter((w) => (w.resetsAt ?? 0) > o.now);
       // used up somewhere (the 5-hour window): a task started now would just wait

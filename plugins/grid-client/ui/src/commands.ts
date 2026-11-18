@@ -39,6 +39,8 @@ export interface CloudRow {
   readonly accounts?: readonly Account[] | null;
   /** in a grid box, where its pages show (`https://p{port}--ada.grid.example`, ADR-0064); "" or missing elsewhere */
   readonly preview?: string;
+  /** in a grid box, the grid's own address (its Home); "" or missing elsewhere (docs/ux/2026-11-18-grid.md #9) */
+  readonly home?: string;
 }
 
 const change = (base: EntityReader, peer: PeerId, fn: (r: CloudRow) => Partial<CloudRow>): EntityOps => {

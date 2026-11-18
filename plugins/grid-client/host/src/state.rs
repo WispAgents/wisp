@@ -202,6 +202,8 @@ pub struct St {
     pub mark: String,
     /// in a grid box, where its pages show (ADR-0064, `preview.rs`); "" anywhere else
     pub preview: String,
+    /// in a grid box, the grid's own address (`preview::grid_home`); "" anywhere else
+    pub home: String,
 }
 
 impl std::fmt::Debug for St {
@@ -260,6 +262,7 @@ impl St {
             dialer: Mutex::new(None),
             mark: hex(24),
             preview: crate::preview::template(&|k| std::env::var(k).ok()),
+            home: crate::preview::grid_home(&|k| std::env::var(k).ok()),
         }))
     }
 

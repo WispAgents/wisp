@@ -1,7 +1,9 @@
 // The `question` block (v1 R.question): the agent's question with its numbered options. Live only on the task's
-// latest answer (BlockContext.latest): a click sends the option (its own reply when it has one); Answer in my own
-// words puts the reply box in front. On an earlier answer it reads "Agent asked", greyed, its options inert.
-import { For, Show, type JSX } from 'solid-js';
+// latest answer (BlockContext.latest): a click sends the option (its own reply when it has one), and so does its
+// number key while the reply box is empty (UX 2026-11-18 #1). The reply box is the other way to answer: it says "Or
+// answer in your own words…" (no second control for it here). On an earlier answer it reads "Agent asked", greyed,
+// its options inert.
+import { For, Show, onCleanup, onMount, type JSX } from 'solid-js';
 import { Icon } from '../content/Icon.tsx';
 import { Wrap } from '../layout/Stack.tsx';
 import { InlineMd } from './content-parts.tsx';
@@ -29,6 +31,21 @@ export function QuestionBlock(props: BlockProps): JSX.Element {
       }),
       (s) => ({ label: s, detail: undefined, reply: s }),
     ).filter((o) => o.label);
+  // 1–9 pick an option while nothing is being typed: focus outside any field, or in an empty reply box
+  const onKey = (e: KeyboardEvent): void => {
+    if (!live() || e.metaKey || e.ctrlKey || e.altKey || e.isComposing || e.defaultPrevented || !/^[1-9]$/.test(e.key)) return;
+    const at = document.activeElement as HTMLElement | null;
+    // a menu, a dialog or a sheet over the page has the keys
+    if (at?.closest('[role="menu"], [role="dialog"], [role="listbox"], [aria-modal="true"]') || document.querySelector('[aria-modal="true"]')) return;
+    const field = !!at && (at.isContentEditable || at.tagName === 'INPUT' || at.tagName === 'TEXTAREA' || at.tagName === 'SELECT');
+    if (field && !(at.closest('[data-kit="reply-box"]') && ((at as HTMLTextAreaElement).value ?? at.textContent ?? '') === '')) return;
+    const o = options()[Number(e.key) - 1];
+    if (!o) return;
+    e.preventDefault();
+    ctx.reply?.(o.reply);
+  };
+  onMount(() => document.addEventListener('keydown', onKey));
+  onCleanup(() => document.removeEventListener('keydown', onKey));
   return (
     <div data-kit="rb-question" data-part="block.question" data-answered={live() ? undefined : ''}>
       <div data-kit="rb-q-head">
@@ -50,12 +67,6 @@ export function QuestionBlock(props: BlockProps): JSX.Element {
             </button>
           )}
         </For>
-        <Show when={live() && ctx.draft}>
-          <button type="button" data-kit="rb-opt" data-own="" onClick={() => ctx.draft?.('')}>
-            <Icon name="pen" size="sm" />
-            {t('block.question.own')}
-          </button>
-        </Show>
       </Wrap>
     </div>
   );

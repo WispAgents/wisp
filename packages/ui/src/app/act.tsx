@@ -1,7 +1,7 @@
 // What pressing one of the frame's controls does (design/feedback.md): a press, or a menu it opens
 // (the kit's menu, on the control as v1 draws it). While its command is in flight the control is
 // pending: a spinner in place of its icon, the same width, and pressing it again does nothing.
-import { Show, createMemo, createSignal, splitProps, type JSX } from 'solid-js';
+import { Show, createEffect, createMemo, createSignal, splitProps, type JSX } from 'solid-js';
 import { Dynamic } from 'solid-js/web';
 import { MenuOn, type MenuEntry, type Placement } from '../controls/Menu.tsx';
 import { Spinner } from '../controls/Spinner.tsx';
@@ -23,6 +23,10 @@ export interface Act {
     readonly cardPart?: PartName;
     readonly placement?: Placement;
     readonly content: () => JSX.Element;
+    /** opened from outside its button (the composer's `+` menu: Delegate…): it follows `open` and says when it
+     *  closes. Additive (2026-11-18). */
+    readonly open?: boolean;
+    readonly onOpenChange?: (open: boolean) => void;
   };
 }
 
@@ -53,7 +57,16 @@ export function WithAct(props: { readonly act?: Act | undefined; readonly render
 }
 
 function WithPanel(props: { readonly panel: NonNullable<Act['panel']>; readonly act?: Act | undefined; readonly render: (trigger: () => Record<string, unknown>) => JSX.Element }): JSX.Element {
-  const [open, setOpen] = createSignal(false);
+  const [own, setOwn] = createSignal(false);
+  // its own while nobody else holds it; the caller's `open` when it does (and it hears every change)
+  const open = (): boolean => props.panel.open ?? own();
+  const setOpen = (o: boolean): void => {
+    setOwn(o);
+    props.panel.onOpenChange?.(o);
+  };
+  createEffect(() => {
+    if (props.panel.open) panelPart.load().catch(() => setOpen(false));
+  });
   // before its popover has loaded: the button as it looks, a press that opens it once it's here
   const early = (): Record<string, unknown> => ({
     'aria-haspopup': 'dialog',

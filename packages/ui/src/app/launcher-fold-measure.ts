@@ -12,7 +12,7 @@ const MORE = 30;
 
 /** the bar's items other than the tail's shown tools (their widths and how many, for the gaps), and More's width; the
  *  shown tools' widths go into `widths` */
-function sumBar(bar: HTMLElement, shown: ReadonlySet<string>, widths: Map<string, number>, folded: boolean): { others: number; count: number; more: number } {
+export function sumBar(bar: HTMLElement, shown: ReadonlySet<string>, widths: Map<string, number>, folded: boolean): { others: number; count: number; more: number } {
   let others = 0;
   let count = 0;
   let more = MORE;
@@ -20,7 +20,9 @@ function sumBar(bar: HTMLElement, shown: ReadonlySet<string>, widths: Map<string
     if (!(el instanceof HTMLElement)) continue;
     // not drawn (display: none): no width and no gap; drawn at 0 px (the grow spacer): still a flex item, its gaps count
     if (el.getClientRects().length === 0) continue;
-    const w = el.offsetWidth;
+    // the grow spacer takes whatever is left: its gaps count, its width never does (else the bar always "fits" to the
+    // pixel, and a pixel of rounding squeezed a wide bar to its icons)
+    const w = el.dataset['kit'] === 'grow' ? 0 : el.offsetWidth;
     const a = el.dataset['a'];
     if (a !== undefined && shown.has(a)) widths.set(a, w);
     else if (a === 'more' && folded) more = w;
@@ -42,6 +44,8 @@ export interface TailFold {
   readonly scroll: Accessor<boolean>;
 }
 
+/** A bar with no tail is measured too: its labels step to icons until it fits (UX 2026-11-18 #3's footer has a tail
+ *  only while a feature is on). */
 export function useTailFold(o: { readonly tail: () => readonly LauncherTool[]; readonly on: () => boolean }): TailFold {
   const [folded, setFolded] = createSignal(0);
   const [squeeze, setSqueeze] = createSignal(0);
@@ -55,7 +59,7 @@ export function useTailFold(o: { readonly tail: () => readonly LauncherTool[]; r
     frame = 0;
     if (!bar?.isConnected) return;
     const ids = o.tail().map((t) => t.id);
-    if (!o.on() || ids.length === 0) {
+    if (!o.on()) {
       if (folded() !== 0) setFolded(0);
       if (squeeze() !== 0) setSqueeze(0);
       return;

@@ -28,8 +28,20 @@ addEventListener('pageshow',(e)=>{if(e.persisted){leaving=false;soon()}})})()</s
 /// Copy buttons ([data-copy]) say Copied for a moment.
 pub(super) const COPY_JS: &str = r"<script>document.addEventListener('click',async(e)=>{const b=e.target.closest('[data-copy]');if(!b)return;try{await navigator.clipboard.writeText(b.dataset.copy);const s=b.querySelector('span'),t=s.dataset.was||s.textContent;s.dataset.was=t;s.textContent='Copied';setTimeout(()=>s.textContent=t,1200)}catch{}})</script>";
 
-/// Add a computer from anywhere on the page. An old link to the account's Delete lands on its new page.
-pub(super) const HOME_JS: &str = r"<script>(()=>{if(location.hash==='#delete')location.replace('/account#delete');document.addEventListener('click',(e)=>{if(!e.target.closest('[data-add]'))return;const d=document.getElementById('add');d.open=true;d.scrollIntoView({block:'start',behavior:matchMedia('(prefers-reduced-motion:reduce)').matches?'auto':'smooth'});d.querySelector('summary').focus({preventScroll:true})})})()</script>";
+/// Home's few behaviours: `[data-add]` unfolds Add a computer (and `[data-add-close]` folds it); a row's ⋯ and + Add
+/// (`details.pop`) close on a choice (not a Copy, which says Copied there, nor a Remove that asks first), a click
+/// elsewhere or Escape, one open at a time; Getting started's Continue and ×
+/// remember the step in the page's own cookie (`wisp_start`, read back by the grid), × hiding the row at once. An old
+/// link to the account's Delete lands on its new page.
+pub(super) const HOME_JS: &str = r"<script>(()=>{if(location.hash==='#delete')location.replace('/account#delete');
+const pops=()=>document.querySelectorAll('details.pop[open]'),shut=(but)=>pops().forEach((p)=>{if(p!==but)p.open=false});
+const step=(k)=>{const was=(document.cookie.match(/(?:^|; )wisp_start=([^;]*)/)||[])[1]||'',set=new Set(decodeURIComponent(was).split(',').filter(Boolean));set.add(k);document.cookie='wisp_start='+encodeURIComponent([...set].join(','))+'; Path=/; Max-Age=31536000; SameSite=Lax'};
+document.addEventListener('click',(e)=>{const t=e.target;
+if(t.closest('[data-add]')){shut();const d=document.getElementById('add');d.open=true;const h=document.getElementById('addHow');h.scrollIntoView({block:'nearest',behavior:matchMedia('(prefers-reduced-motion:reduce)').matches?'auto':'smooth'});h.querySelector('.seg label')?.focus?.({preventScroll:true});return}
+if(t.closest('[data-add-close]')){document.getElementById('add').open=false;return}
+const s=t.closest('[data-step]');if(s){step(s.dataset.step);if(s.dataset.step==='x')s.closest('.start')?.remove()}
+const own=t.closest('details.pop');if(!own){shut();return}shut(own);const it=t.closest('.menu a,.menu button');if(it&&!it.closest('[data-copy],form[data-confirm]'))own.open=false});
+document.addEventListener('keydown',(e)=>{if(e.key==='Escape'&&pops().length){shut();e.preventDefault()}})})()</script>";
 
 /// A form with `data-confirm` asks once before it goes: the first press turns its button into the question (in the
 /// danger colour), the second sends it; it turns back after a few seconds, or on Escape or a click elsewhere. Capture

@@ -17,6 +17,21 @@ import { projectLabels } from './project-labels.ts';
 export const PROJECT_SOURCE = 'shell.projects';
 /** ⌘K's Actions head (New task, Add project…, Manage projects): the switcher lists it under its projects. */
 export const PROJECT_ACTIONS = 'shell.actions';
+/** The switcher's last rows: Add project…, Manage projects… and the repo's history (docs/ux/2026-11-18-desktop.md #11:
+ *  the bare + beside "All ▾" went, its menu is here). Only in the switcher (a narrowed palette); ⌘K has its own. */
+export const PROJECT_TAIL = 'shell.projects.tail';
+
+export function projectTail(ctx: ShellContext, pc: { readonly narrowed?: boolean | undefined }): PaletteItem[] {
+  if (!pc.narrowed) return [];
+  const g = ctx.t('shell.palette.group.projects');
+  const projects = (): void => ctx.navigate({ t: 'openOverlay', overlay: { kind: 'dialog', id: 'shell.projects' as never, params: null } });
+  return [
+    { id: 'project:add', group: g, label: ctx.t('shell.cmd.addProject'), icon: 'folder', keywords: 'new project folder repo directory', run: projects },
+    { id: 'project:manage', group: g, label: ctx.t('shell.side.manageMore'), icon: 'settings', keywords: 'order rename colour color remove', run: projects },
+    // a project's committed agent history (wisp.history's Repo view), when that plugin is on
+    ...(ctx.view('history.repo') ? [{ id: 'project:repo', group: g, label: ctx.t('shell.side.repo'), icon: 'branch', keywords: 'history repo commits agents', run: () => ctx.navigate({ t: 'openView', id: 'history.repo' as never, params: {} }) }] : []),
+  ];
+}
 
 /** The projects in your order, from the store as it is now. */
 export function projectsNow(ctx: ShellContext): readonly ProjectView[] {
@@ -71,7 +86,7 @@ export function openSwitcher(ctx: ShellContext): void {
     overlay: {
       kind: 'dialog',
       id: 'shell.palette' as never,
-      params: { only: [PROJECT_SOURCE, PROJECT_ACTIONS], placeholder: ctx.t('shell.projects.switchPlaceholder'), title: ctx.t('shell.projects.switch') },
+      params: { only: [PROJECT_SOURCE, PROJECT_TAIL], placeholder: ctx.t('shell.projects.switchPlaceholder'), title: ctx.t('shell.projects.switch') },
     },
   });
 }

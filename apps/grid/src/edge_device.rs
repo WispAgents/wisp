@@ -169,16 +169,22 @@ impl Grid {
             return Err(bad("That form is stale. Go back and try again.", 403));
         }
         let allow = field("answer") == "allow";
+        let name = self.accounts.pending(&field("code"))?.unwrap_or_else(|| "That device".to_owned());
         self.accounts.decide(&field("code"), user_id, allow)?;
-        let text = if allow { "It's in. You can close this page and go back to it." } else { "It wasn't let in." };
+        // not a dead end (docs/ux/2026-11-18-grid.md #7): what it can do now, and Home, where it shows
+        let text = if allow {
+            format!("{name} can use your wisp now. It’s listed on Account, under Signed-in devices. Go back to it, or to your grid.")
+        } else {
+            format!("{name} wasn't let in.")
+        };
         Ok(html(
             200,
             pages::message_page(
                 &self.page,
                 &MessagePage {
                     title: if allow { "Device connected".into() } else { "Not allowed".into() },
-                    text: text.into(),
-                    link: None,
+                    text,
+                    link: Some(("/".into(), "Go to Home".into())),
                     tone: Tone::Plain,
                 },
             ),

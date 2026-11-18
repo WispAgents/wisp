@@ -4,7 +4,7 @@
 // Opening a row navigates at once (design/feedback.md); Mark done is optimistic through the command.
 
 import { For, Show, createMemo, createSignal, onCleanup, untrack, type JSX } from 'solid-js';
-import type { EntityKey, Json } from '@wisp/client';
+import { computed, type EntityKey, type Json } from '@wisp/client';
 import { forLater, isSaved, markRead, setState } from './commands.ts';
 import { listShown } from './pane-widths.ts';
 import { openSwitcher } from './project-switch.ts';
@@ -122,16 +122,25 @@ export function useAccount() {
   const statuses = useSignal(shell.client.entities.list<StatusDoc>('machines_status'));
   const me = createMemo(() => meOf(peers(), statuses()));
   const nav = useSignal(shell.nav);
+  // plugins' links (docs/ux/2026-11-18-grid.md #9: a cloud wisp's way back to its grid), those offered now
+  const links = useSignal(
+    computed(() =>
+      (shell.accountLinks?.()() ?? []).flatMap((l) => {
+        const href = l.href(l.client);
+        return href ? [{ id: l.id, href, label: l.label(), icon: l.icon, ...(l.hint && { hint: l.hint() }) }] : [];
+      }),
+    ),
+  );
   const sheet = (pane: string | undefined): void => shell.navigate({ t: 'openOverlay', overlay: { kind: 'viewer', id: 'shell-settings.sheet' as never, params: pane === undefined ? {} : { pane } } });
-  // v1 #meMenu: you first, then Machines, Automations and Settings (the theme after, v2's)
+  // v1 #meMenu: you first, then Machines, Automations and Settings (the theme after, v2's). On a grid box, the grid's
+  // link stands where "sign in to a grid" would: that wisp is on one already.
+  const meRow = (): MenuEntry[] =>
+    me().state === 'out' && links().length > 0
+      ? []
+      : [{ value: 'me', label: me().who || shell.t('shell.me.grid'), hint: me().state === 'out' ? shell.t('shell.me.out') : me().sub, icon: 'user', part: 'topbar.me' }];
   const items = (): MenuEntry[] => [
-    {
-      value: 'me',
-      label: me().who || shell.t('shell.me.grid'),
-      hint: me().state === 'out' ? shell.t('shell.me.out') : me().sub,
-      icon: 'user',
-      part: 'topbar.me',
-    },
+    ...meRow(),
+    ...links().map((l): MenuEntry => ({ value: `link:${l.id}`, label: l.label, icon: l.icon, ...(l.hint !== undefined && { hint: l.hint }) })),
     { kind: 'separator' },
     { value: 'machines', label: shell.t('shell.account.machines'), icon: 'server' },
     { value: 'automations', label: shell.t('shell.account.automations'), icon: 'bolt' },
@@ -145,6 +154,8 @@ export function useAccount() {
     const href = me().href;
     // signed in: the grid's account page; signed out (or never): Settings → Cloud, to sign in
     if (v === 'me') return href && me().state !== 'out' ? shell.platform.openExternal(href) : sheet('cloud');
+    const link = v.startsWith('link:') ? links().find((l) => `link:${l.id}` === v) : undefined;
+    if (link) return shell.platform.openExternal(link.href);
     if (v === 'theme') void shell.theme.set(shell.theme.resolved() === 'dark' ? 'light' : 'dark');
     // v1 #machinesBtn → openMachines: the Machines dialog (wisp.machines' overlay view); This computer is in Settings
     else if (v === 'machines') shell.navigate({ t: 'openOverlay', overlay: { kind: 'dialog', id: 'machines.dialog' as never, params: {} as Json } });
@@ -188,20 +199,7 @@ export function Head(props: { readonly filter: () => string; readonly setFilter:
       accountAct={{ menu: { items: account.items(), onSelect: account.onSelect } }}
       accountLabel={account.label()}
       {...(me().initial !== undefined && { me: { initial: me().initial as string, state: me().state, ...(me().avatar !== undefined && { avatar: me().avatar as string }) } })}
-      manageAct={{
-        menu: {
-          items: [
-            { value: 'add', label: shell.t('shell.home.addProject'), icon: 'folder' },
-            { value: 'manage', label: shell.t('shell.side.manage'), icon: 'settings' },
-            // a project's committed agent history (wisp.history's Repo view), when that plugin is on
-            ...(shell.view('history.repo') ? [{ value: 'repo', label: shell.t('shell.side.repo'), icon: 'branch' as const }] : []),
-          ],
-          onSelect: (v: string) =>
-            v === 'repo'
-              ? shell.navigate({ t: 'openView', id: 'history.repo' as never, params: {} })
-              : shell.navigate({ t: 'openOverlay', overlay: { kind: 'dialog', id: 'shell.projects' as never, params: null } }),
-        },
-      }}
+      // no bare +: Add project…, Manage projects… and Repo history close the switcher "All ▾" opens (docs/ux #11)
     />
   );
 }

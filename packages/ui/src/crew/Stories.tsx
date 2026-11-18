@@ -44,8 +44,9 @@ export interface CrewStoriesProps extends KitProps {
   readonly onOpen: (id: string) => void;
   /** Org, the first bubble (none until there's a crew) */
   readonly org?: { readonly label: string; readonly title?: string; readonly onClick: () => void } | undefined;
-  /** Add a member, the last bubble */
-  readonly add: { readonly label: string; readonly title?: string; readonly onClick: () => void };
+  /** Add a member, the last bubble (none: the Tasks list's strip of who is busy; UX 2026-11-18 phone #12; optional
+   *  since 2026-11-18, additive) */
+  readonly add?: { readonly label: string; readonly title?: string; readonly onClick: () => void } | undefined;
 }
 
 const MOOD: Readonly<Record<StoryRing, SpiritMood>> = { wait: 'asks', report: 'idle', work: 'live', idle: 'idle' };
@@ -83,11 +84,15 @@ export function CrewStories(props: CrewStoriesProps): JSX.Element {
           </Bubble>
         )}
       </For>
-      <Bubble ring="add" name={props.add.label} label={props.add.title ?? props.add.label} part="crew.stories.add" onClick={props.add.onClick}>
-        <span data-kit="story-glyph">
-          <Icon name="plus" />
-        </span>
-      </Bubble>
+      <Show when={props.add}>
+        {(a) => (
+          <Bubble ring="add" name={a().label} label={a().title ?? a().label} part="crew.stories.add" onClick={a().onClick}>
+            <span data-kit="story-glyph">
+              <Icon name="plus" />
+            </span>
+          </Bubble>
+        )}
+      </Show>
     </div>
   );
 }

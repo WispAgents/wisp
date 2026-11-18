@@ -38,6 +38,8 @@ export interface Scoped {
   readonly id?: string;
   readonly form?: 'full' | 'icon';
   readonly pickAgent?: (agent: string) => void;
+  /** added 2026-11-18: on Home's inputs, the harness in the prompt box now */
+  readonly agent?: () => string;
 }
 
 export function extensionProps(ext: ResolvedExtension, client: PluginClient, s: Scoped): ExtensionProps {
@@ -48,6 +50,7 @@ export function extensionProps(ext: ResolvedExtension, client: PluginClient, s: 
     ...(s.id !== undefined && { id: s.id }),
     ...(s.form && { form: s.form }),
     ...(s.pickAgent && { pickAgent: s.pickAgent }),
+    ...(s.agent && { agent: s.agent }),
   };
 }
 

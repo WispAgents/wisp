@@ -22,5 +22,6 @@
   "shell-task.side.openApp": "Open in terminal app",
   "shell-task.side.runApp": "Run app",
   "shell-task.side.stopApp": "Stop app",
-  "shell-task.side.watch": "Watch"
+  "shell-task.side.watch": "Watch",
+  "shell-task.side.moreTabs": "More tabs"
 }

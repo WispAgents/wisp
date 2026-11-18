@@ -17,7 +17,9 @@ export type SubLine =
   | { readonly k: 'missing' }
   | { readonly k: 'used'; readonly label: string; readonly pct: number }
   | { readonly k: 'models'; readonly n: number }
-  | { readonly k: 'default' };
+  | { readonly k: 'default' }
+  /** nothing to say: no plan window (UX 2026-11-18 #9: the model count was noise when picking a harness) */
+  | { readonly k: 'none' };
 
 export interface PickerRow {
   readonly id: string;
@@ -36,14 +38,17 @@ export function subLine(a: AgentOffer, used?: { readonly label: string; readonly
   if (s === 'checking') return { k: 'checking' };
   if (s === 'signedOut') return { k: 'signedOut' };
   if (s === 'missing') return { k: 'missing' };
-  if (used) return { k: 'used', label: used.label, pct: used.pct };
-  const n = a.models.filter((m) => m.id !== '').length;
-  return n > 0 ? { k: 'models', n } : { k: 'default' };
+  return used ? { k: 'used', label: used.label, pct: used.pct } : { k: 'none' };
 }
 
-/** The left pane: Auto first when it's offered, then each harness in the order given. */
-export function pickerRows(offers: readonly AgentOffer[], o: { readonly auto: boolean; readonly autoName: string; readonly used?: (id: string) => { label: string; pct: number } | undefined }): PickerRow[] {
-  const rows = offers.map((a): PickerRow => {
+/** The left pane: Auto first when it's offered, then each harness that can run, in the order given (UX 2026-11-18 #9:
+ *  one that isn't installed is a choice that can't run; Set up another agent… under the list is the way to one). The
+ *  one in use stays even when it's gone, so the pill's harness is there with why it can't run. */
+export function pickerRows(
+  offers: readonly AgentOffer[],
+  o: { readonly auto: boolean; readonly autoName: string; readonly used?: (id: string) => { label: string; pct: number } | undefined; readonly inUse?: string },
+): PickerRow[] {
+  const rows = offers.filter((a) => offerState(a) !== 'missing' || a.id === o.inUse).map((a): PickerRow => {
     const s = offerState(a);
     return { id: a.id, name: a.name, sub: subLine(a, s === 'ready' ? o.used?.(a.id) : undefined), off: s === 'missing' || s === 'signedOut' || (s === 'checking' && !a.available), auto: false };
   });

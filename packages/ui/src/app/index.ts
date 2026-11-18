@@ -50,6 +50,7 @@ export {
   type CompactReplyBoxProps,
   type ReplyCap,
   type TaskAction,
+  type HeadAction,
   type TaskDetailsProps,
   type TaskPlaceChip,
   type TaskHeadProps,

@@ -55,10 +55,10 @@ async function start(platform: Platform): Promise<{ root: HTMLElement; mock: Moc
 const phone = (kind: 'android' | 'ios'): Platform => nullPlatform({ kind, phone: true, mobile: true });
 const names = (root: ParentNode): string[] => [...root.querySelectorAll('[data-kit="story-bubble"] [data-kit="story-name"]')].map((e) => e.textContent ?? '');
 const rings = (root: ParentNode): string[] => [...root.querySelectorAll<HTMLElement>('[data-kit="story-bubble"]')].map((e) => e.dataset['ring'] ?? '');
-/** the row with the seeded crew in it and their states known: Org, the five members and Add (it draws Add before the
- * crew's snapshot lands), and only Turing idle (a member's ring comes from its jobs, the `list` topic's rows, which
- * may land a frame after the crew's) */
-const crewRow = (root: ParentNode): boolean => names(root).length === 7 && rings(root).filter((r) => r === 'idle').length === 1;
+/** the row with the seeded crew's busy members in it, their states known: the four working, asking or with a report
+ * (UX 2026-11-18 phone #12: idle Turing, Org and Add are the Crew tab's; a member's ring comes from its jobs, the `list`
+ * topic's rows, which may land a frame after the crew's) */
+const crewRow = (root: ParentNode): boolean => names(root).length === 4 && !rings(root).includes('idle');
 const q = (sel: string): HTMLElement | null => document.querySelector<HTMLElement>(sel);
 
 // the lazy chunks these tests show (the phone head, the list, the crew's list top and its stories, the task page's
@@ -88,10 +88,10 @@ for (const kind of ['android', 'ios'] as const) {
     await until(() => crewRow(root));
     const row = root.querySelector('[data-pane="list"] [data-kit="stories"]');
     expect(row, 'the stories row over the list').not.toBeNull();
-    // Org first, + last; waiting on you, then the unread report, then working (a job you sent first: the crew's own
-    // rank), then idle
-    expect(names(root)).toEqual(['Org', 'Grace', 'Hopper', 'Linus', 'Ada', 'Turing', 'Add']);
-    expect(rings(root)).toEqual(['org', 'wait', 'report', 'work', 'work', 'idle', 'add']);
+    // only who needs a look: waiting on you, then the unread report, then working (a job you sent first: the crew's own
+    // rank); idle Turing, Org and Add are on the Crew tab (UX 2026-11-18 phone #12)
+    expect(names(root)).toEqual(['Grace', 'Hopper', 'Linus', 'Ada']);
+    expect(rings(root)).toEqual(['wait', 'report', 'work', 'work']);
     // v1's Crew section is not in the phone app's list
     expect(root.querySelector('[data-part~="section.crew"]')).toBeNull();
   });
@@ -133,13 +133,14 @@ test('a_story_shows_what_waits_with_the_task_pages_own_answer_controls_and_steps
   (q('[data-part~="crew.story.next"]') as HTMLButtonElement).click();
   await until(() => q('[data-kit="story-who"]')?.textContent?.includes('Hopper') === true);
   expect(q('[data-kit="story-who"]')?.textContent).toContain('Hopper');
-  expect(q('[data-kit="story-where"]')?.textContent).toBe('2 of 5 · swipe down to close');
+  // the stories step through the row as it shows (the busy four)
+  expect(q('[data-kit="story-where"]')?.textContent).toBe('2 of 4 · swipe down to close');
   (q('[data-part~="crew.story.close"]') as HTMLButtonElement).click();
   await until(() => q('[data-part~="crew.story.page"]') === null);
   expect(q('[data-part~="crew.story.page"]')).toBeNull();
 });
 
-test('the_story_reply_goes_to_the_running_job_and_starts_a_job_for_an_idle_member', async () => {
+test('the_story_reply_goes_to_the_running_job_and_an_idle_member_is_not_on_the_tasks_strip', async () => {
   const { root, mock, sent } = await start(phone('ios'));
   await until(() => crewRow(root));
   const type = async (text: string): Promise<void> => {
@@ -160,16 +161,7 @@ test('the_story_reply_goes_to_the_running_job_and_starts_a_job_for_an_idle_membe
   expect((q('[data-part~="crew.story.reply"] textarea') as HTMLTextAreaElement).value).toBe('');
   (q('[data-part~="crew.story.close"]') as HTMLButtonElement).click();
   await until(() => q('[data-part~="crew.story.page"]') === null);
-  // Turing has no job: "Give Turing a job…" starts one
-  await openStory(root, 'Turing');
-  expect(q('[data-part~="crew.story.reply"] textarea')?.getAttribute('placeholder')).toBe('Give Turing a job…');
-  expect(q('[data-part="crew.story.now"]')?.textContent).toContain('Idle');
-  await type('Bench the list query');
-  await until(() => sent.some((s) => s.cmd === 'crew.assign'));
-  expect(sent.find((s) => s.cmd === 'crew.assign')?.args).toMatchObject({ id: 'crew:turing', prompt: 'Bench the list query' });
-  // the job is there, Turing's, running
-  await until(() => mock.rows('list').some((r) => (r.v as { title?: string }).title === 'Bench the list query'));
-  const made = mock.rows('list').find((r) => (r.v as { title?: string }).title === 'Bench the list query')?.v as { state: string; body: { ext: Record<string, { id: string }> } };
-  expect(made.state).toBe('running');
-  expect(made.body.ext['wisp.crew']?.id).toBe('crew:turing');
+  // Turing has no job: idle members aren't on the Tasks strip (UX 2026-11-18 phone #12); a job for them starts from
+  // the Crew tab's member page (crew-phone.test.tsx, New job), and a story that goes idle still assigns (replyTarget)
+  expect(names(root)).not.toContain('Turing');
 });

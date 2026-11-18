@@ -18,7 +18,8 @@ const later: PluginUiLater = {
       tabs: ({ client, task }) => {
         if (!threadable(client.entities.row<TaskLike>(KIND.session, task as EntityKey)() as TaskLike | undefined)) return [];
         const level = client.entities.row<HealthRow>(KIND.health, task as EntityKey)()?.body.level;
-        return [{ value: 'thread', label: t('threads.tab'), title: t(level === 'worn' ? 'threads.tab.tipWorn' : 'threads.tab.tip'), icon: 'transcript' }];
+        // the task's own conversation, read in the page already: behind the panel's + (UX 2026-11-18 #5)
+        return [{ value: 'thread', label: t('threads.tab'), title: t(level === 'worn' ? 'threads.tab.tipWorn' : 'threads.tab.tip'), icon: 'transcript', quiet: true }];
       },
       component: lazy(() => import('./ThreadTab.tsx')),
     },

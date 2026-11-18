@@ -6,8 +6,13 @@ import { For, Index, Show, createMemo, createSignal, onCleanup, onMount, type JS
 import { ForKeyed } from '../core/keyed.tsx';
 import { flag } from '../core/props.ts';
 import { ActIcon, WithAct, type Act } from './act.tsx';
+import { ReplyOptions, type ReplyOptionLabels } from './ReplyOptions.tsx';
+import { usePlatform } from '../platform/PlatformLook.tsx';
+import { useT } from '../core/i18n.tsx';
 import { holdMedia } from './hold-view.ts';
 import { useBarLabels } from './bar-labels.ts';
+import { Tool } from './launcher-tool.tsx';
+import type { LauncherTool } from './launcher-fold.ts';
 import { Icon } from '../content/Icon.tsx';
 import { PromptSuggestList, dropHandlers } from '../composer/PromptSuggest.tsx';
 import { suggestKeyDown, type PromptSuggest } from '../composer/suggest-keys.ts';
@@ -34,6 +39,65 @@ export interface TaskHeadProps {
   readonly actions?: JSX.Element;
   /** rename in place (v1 split.js): a click on the title edits it; Enter keeps, Escape or an empty title cancels */
   readonly onRename?: (title: string) => void;
+  /** the task's actions, one bar in the head with and without the side panel (docs/ux/2026-11-18-desktop.md #4):
+   *  Changes +n −n, Ship ▾, Done, ⋯; after what plugins put there, before the panel toggle. A narrow pane keeps their
+   *  icons (the words in the tooltip). Additive (2026-11-18). */
+  readonly bar?: readonly HeadAction[];
+}
+
+/** One of the head's actions: a TaskAction, with a diff's figures after its words (Changes) or a ▾ (a menu). */
+export interface HeadAction extends TaskAction {
+  readonly figures?: { readonly plus: string; readonly minus: string };
+  /** its words show only in its tooltip (⋯) */
+  readonly bare?: boolean;
+}
+
+/** The head's actions (TaskHead `bar`): made once each, by id, as the details' were (B31). */
+function HeadBar(props: { readonly items: readonly HeadAction[] }): JSX.Element {
+  return (
+    <ForKeyed each={props.items}>
+      {(a) => (
+        <WithAct
+          act={a().act}
+          render={(trigger) => (
+            <button
+              type="button"
+              {...trigger()}
+              data-kit="head-act"
+              data-a={a().id}
+              data-part={a().part}
+              data-tone={a().tone}
+              data-key={a().key}
+              data-bare={flag(a().bare)}
+              data-on={flag(a().on)}
+              aria-pressed={a().on === undefined ? undefined : a().on}
+              aria-label={a().label}
+              title={a().title}
+            >
+              <ActIcon act={a().act}>
+                <Icon name={a().icon} />
+              </ActIcon>
+              <Show when={!a().bare}>
+                <span data-text="control">{a().label}</span>
+              </Show>
+              <Show when={a().figures}>
+                {(f) => (
+                  <span data-kit="ha-figs">
+                    <span data-kit="plus">{f().plus}</span> <span data-kit="minus">{f().minus}</span>
+                  </span>
+                )}
+              </Show>
+              <Show when={a().act?.menu && !a().bare}>
+                <span data-kit="ha-caret">
+                  <Icon name="chevron" size="xs" />
+                </span>
+              </Show>
+            </button>
+          )}
+        />
+      )}
+    </ForKeyed>
+  );
 }
 
 /** v1 #splitHead: the dot, the title, the side panel and close buttons (back on a phone). */
@@ -90,6 +154,7 @@ export function TaskHead(props: TaskHeadProps): JSX.Element {
         </h2>
         <span data-kit="sh-acts">
           {props.actions}
+          <Show when={props.bar}>{(b) => <HeadBar items={b()} />}</Show>
           <Show when={!props.onBack}>
             <button type="button" data-kit="head-btn" aria-label={props.panelLabel} title={props.panelLabel} aria-pressed={props.panelOn === true} onClick={() => props.onPanel?.()}>
               <Icon name="panel" />
@@ -221,6 +286,8 @@ export function TaskDetails(props: TaskDetailsProps): JSX.Element {
           </div>
         )}
       </Show>
+      {/* the actions moved to the head (TaskHead `bar`); a host that still hands them gets them here */}
+      <Show when={props.actions.length > 0}>
       <div data-kit="it-actions" data-part="split.actions">
         {/* by id, each button made once: the task's row changes a few times a second while it runs, and each change
             hands a new list (B31: every button was taken down and put back, its hover and focus lost) */}
@@ -254,6 +321,7 @@ export function TaskDetails(props: TaskDetailsProps): JSX.Element {
           }}
         </ForKeyed>
       </div>
+      </Show>
     </div>
   );
 }
@@ -285,6 +353,8 @@ export interface TurnViewProps {
   /** after the receipt's words, in the same item (one grid cell on a phone): what plugins add to it (the cache and
    *  plan share, ADR-0095). Additive (2026-11-17). */
   readonly receiptMore?: JSX.Element;
+  /** the task's latest turn: its footer's icons always show (an older turn's on hover or focus; UX 2026-11-18 #7). Additive. */
+  readonly latest?: boolean;
   readonly files?: { readonly label: string; readonly plus: string; readonly minus: string; readonly act?: Act };
   readonly tools: readonly { readonly id: string; readonly icon: IconName; readonly label: string; readonly part?: string; readonly act?: Act; readonly on?: boolean }[];
   /** the steps it took, shown under the brief (the trail's counts open them) */
@@ -310,8 +380,14 @@ export interface TurnViewProps {
 
 /** v1 .turn: the ask, the answer's brief, and the trail under it. */
 export function TurnView(props: TurnViewProps): JSX.Element {
+  // a phone (UX 2026-11-18 phone #8): an older answer's icons fold behind one ⋯ (the latest keeps them out), so a long
+  // transcript isn't a column of icon rows; the browser draws them all, as before
+  const look = usePlatform();
+  const kitT = useT();
+  const [toolsOpen, setToolsOpen] = createSignal(false);
+  const folds = (): boolean => look() !== 'web' && props.latest !== true && props.tools.length > 0;
   return (
-    <article data-kit="turn" data-turn={props.id} data-live={flag(props.live !== undefined || props.working !== undefined)}>
+    <article data-kit="turn" data-turn={props.id} data-live={flag(props.live !== undefined || props.working !== undefined)} data-latest={flag(props.latest)}>
       <div data-kit="ask">
         <Show when={(props.askNotes ?? []).length > 0}>
           <ol data-kit="ask-notes" data-part="turn.notes">
@@ -422,7 +498,13 @@ export function TurnView(props: TurnViewProps): JSX.Element {
               </Index>
             </button>
           </Show>
-          <Index each={props.stats}>{(s) => <span data-kit="tb">{s().text}</span>}</Index>
+          <Index each={props.stats}>
+            {(s) => (
+              <span data-kit="tb" data-a="stat">
+                {s().text}
+              </span>
+            )}
+          </Index>
           <Show
             when={props.receipt}
             // no count of the shell's own (stats it doesn't sum): what plugins add stands as the item (ADR-0095)
@@ -448,7 +530,12 @@ export function TurnView(props: TurnViewProps): JSX.Element {
               />
             )}
           </Show>
-          <span data-kit="tb-tools">
+          <Show when={folds()}>
+            <button type="button" data-kit="tb-more" data-part="turn.more" aria-expanded={toolsOpen() ? 'true' : 'false'} aria-label={kitT('more')} title={kitT('more')} onClick={() => setToolsOpen(!toolsOpen())}>
+              <Icon name="dots" />
+            </button>
+          </Show>
+          <span data-kit="tb-tools" data-open={flag(toolsOpen())}>
             <For each={props.tools}>
               {(t) => (
                 <WithAct
@@ -553,7 +640,14 @@ export interface ReplyBoxProps {
   readonly mic?: { readonly label: string; readonly on: boolean; readonly act: Act } | undefined;
   readonly mode: { readonly label: string; readonly title: string; readonly icon?: IconName; readonly act?: Act; readonly cap?: ReplyCap | undefined };
   /** the reply's harness (v1 composer runner): one press opens the harness picker; `open` while it shows */
-  readonly runner: { readonly title: string; readonly logo?: string; readonly act?: Act; readonly open?: boolean };
+  readonly runner: {
+    readonly title: string;
+    readonly logo?: string;
+    readonly act?: Act;
+    readonly open?: boolean;
+    /** the model it runs on, beside the logo (docs/ux/2026-11-18-desktop.md #3: not a bare logo). Additive (2026-11-18). */
+    readonly model?: string | undefined;
+  };
   readonly team: string;
   readonly teamAct?: Act;
   readonly goal: string;
@@ -571,6 +665,10 @@ export interface ReplyBoxProps {
   };
   readonly later: string;
   readonly laterAct?: Act;
+  /** the one footer (docs/ux/2026-11-18-desktop.md #3): `+` holds what's off (attach, Goal, Delegate, Send later) and
+   *  those buttons leave the bar; what's on shows as `chips` after the harness. Additive (2026-11-18). */
+  readonly plus?: { readonly label: string; readonly title: string; readonly act: Act } | undefined;
+  readonly chips?: readonly LauncherTool[] | undefined;
   /** v1 .c-queue: while the task works, follow-ups queue (on) or interrupt it (off); its own switch look */
   readonly queue?: { readonly label: string; readonly title: string; readonly on: boolean; readonly act: Act } | undefined;
   readonly send: string;
@@ -585,6 +683,9 @@ export interface ReplyBoxProps {
   /** Ask near the limit (v1 .c-hold): the follow-up waits for you over the text, Send anyway / Wait until the reset / ×.
    *  Additive (2026-11-16). */
   readonly hold?: Omit<HoldRowProps, 'place' | 'box'> | undefined;
+  /** the phone looks' words for the options chip and its sheet: given, a phone's bar holds attach, the chip and Send
+   *  (docs/ux/2026-11-18-phone.md #1); `goal` is the goal row's short name. Additive (2026-11-18). */
+  readonly phoneOptions?: (ReplyOptionLabels & { readonly goal?: string }) | undefined;
 }
 
 /** v1 .composer: the reply box under a task. It wakes (its toolbar shows) when the caret goes in, and
@@ -664,6 +765,9 @@ export function ReplyBox(given: ReplyBoxProps | CompactReplyBoxProps): JSX.Eleme
   let input: HTMLTextAreaElement | undefined;
   // the bar's words go to their icons when they don't fit (bar-labels.ts; Android 360 ran 3 px over)
   const barLabels = useBarLabels();
+  // the phone looks fold the bar's options into one chip and its sheet (UX 2026-11-18 phone #1); the browser's bar stays
+  const look = usePlatform();
+  const phoneOpts = (): (ReplyOptionLabels & { readonly goal?: string }) | undefined => (look() !== 'web' && !props.compact ? props.phoneOptions : undefined);
   const send = (): void => {
     if (props.sendAct?.pending) return;
     if (props.value.trim()) return props.onSend();
@@ -743,16 +847,32 @@ export function ReplyBox(given: ReplyBoxProps | CompactReplyBoxProps): JSX.Eleme
       </Show>
       <div data-kit="c-bar" ref={barLabels.ref} data-tight={flag(barLabels.tight())}>
         <Show when={!props.compact} fallback={<span data-kit="grow" />}>
-          <WithAct
-            act={props.attachAct}
-            render={(trigger) => (
-              <button type="button" {...trigger()} data-kit="icon-btn" data-part="composer.attach" title={props.attach} aria-label={props.attach}>
-                <ActIcon act={props.attachAct}>
-                  <Icon name="clip" />
-                </ActIcon>
-              </button>
+          <Show
+            when={props.plus}
+            fallback={
+              <WithAct
+                act={props.attachAct}
+                render={(trigger) => (
+                  <button type="button" {...trigger()} data-kit="icon-btn" data-part="composer.attach" title={props.attach} aria-label={props.attach}>
+                    <ActIcon act={props.attachAct}>
+                      <Icon name="clip" />
+                    </ActIcon>
+                  </button>
+                )}
+              />
+            }
+          >
+            {(p) => (
+              <WithAct
+                act={p().act}
+                render={(trigger) => (
+                  <button type="button" {...trigger()} data-kit="icon-btn" data-a="plus" data-part="composer.plus" title={p().title} aria-label={p().label}>
+                    <Icon name="plus" />
+                  </button>
+                )}
+              />
             )}
-          />
+          </Show>
           <Show when={props.mic}>
             {(m) => (
               <WithAct
@@ -765,6 +885,27 @@ export function ReplyBox(given: ReplyBoxProps | CompactReplyBoxProps): JSX.Eleme
               />
             )}
           </Show>
+          {/* the phone looks (UX 2026-11-18 phone #1): the mode, the harness and the tools behind one chip and its sheet */}
+          <Show
+            when={!phoneOpts()}
+            fallback={
+              <ReplyOptions
+                labels={phoneOpts() as ReplyOptionLabels}
+                mode={{ label: props.mode.label, icon: props.mode.icon, act: props.mode.act }}
+                runner={{ title: props.runner.title, logo: props.runner.logo, model: props.runner.model, act: props.runner.act }}
+                rows={[
+                  ...(props.plus
+                    ? []
+                    : [
+                        { id: 'team', part: 'composer.team', icon: 'agent' as const, label: props.teamAct?.panel?.label ?? props.team, act: props.teamAct },
+                        { id: 'goal', part: 'composer.goal', icon: 'target' as const, label: phoneOpts()?.goal ?? props.goal, on: props.goalOn === true, act: props.goalAct },
+                        { id: 'later', part: 'composer.sendLater', icon: 'clock' as const, label: props.later, act: props.laterAct },
+                      ]),
+                  ...(props.queue ? [{ id: 'queue', part: 'composer.queueSwitch', icon: 'queue' as const, label: props.queue.label, on: props.queue.on, act: props.queue.act }] : []),
+                ]}
+              />
+            }
+          >
           <WithAct
             act={props.mode.act}
             render={(trigger) => (
@@ -808,9 +949,17 @@ export function ReplyBox(given: ReplyBoxProps | CompactReplyBoxProps): JSX.Eleme
                 <span data-kit="rb-logo" data-bare="">
                   <Show when={props.runner.logo}>{(src) => <img src={src()} alt="" />}</Show>
                 </span>
+                <Show when={props.runner.model}>
+                  {(m) => (
+                    <span data-kit="c-model" data-text="control">
+                      {m()}
+                    </span>
+                  )}
+                </Show>
               </button>
             )}
           />
+          <Show when={!props.plus}>
           <WithAct
             act={props.teamAct}
             render={(trigger) => (
@@ -837,6 +986,10 @@ export function ReplyBox(given: ReplyBoxProps | CompactReplyBoxProps): JSX.Eleme
               </button>
             )}
           />
+          </Show>
+          {/* by chip, not by slot: an open Delegate panel keeps its node as Goal comes and goes */}
+          <ForKeyed each={props.chips ?? []}>{(t) => <Tool t={t()} />}</ForKeyed>
+          </Show>
           <Show when={props.hint} fallback={<span data-kit="grow" />}>
             {(h) => (
               <span data-kit="c-hint" data-part="composer.hint">
@@ -861,6 +1014,7 @@ export function ReplyBox(given: ReplyBoxProps | CompactReplyBoxProps): JSX.Eleme
               </span>
             )}
           </Show>
+          <Show when={!phoneOpts()}>
           <Show when={props.queue}>
             {(q) => (
               <WithAct
@@ -875,6 +1029,7 @@ export function ReplyBox(given: ReplyBoxProps | CompactReplyBoxProps): JSX.Eleme
               />
             )}
           </Show>
+          <Show when={!props.plus}>
           <WithAct
             act={props.laterAct}
             render={(trigger) => (
@@ -883,6 +1038,8 @@ export function ReplyBox(given: ReplyBoxProps | CompactReplyBoxProps): JSX.Eleme
               </button>
             )}
           />
+          </Show>
+          </Show>
         </Show>
         <button type="button" data-kit="send" data-part="composer.send" title={props.send} aria-label={props.send} onClick={send} aria-busy={props.sendAct?.pending ? 'true' : undefined}>
           <ActIcon act={props.sendAct}>
@@ -921,7 +1078,11 @@ export function TaskBody(props: {
         ref={(dock) => {
           // a child's ref runs after its parent's: the body is known here
           stop?.();
-          stop = typeof ResizeObserver === 'undefined' ? undefined : holdMedia(body, dock);
+          const held = typeof ResizeObserver === 'undefined' ? undefined : holdMedia(body, dock);
+          // the dock's height for what stops above it (a live question, UX 2026-11-18 #1)
+          const ro = typeof ResizeObserver === 'undefined' ? undefined : new ResizeObserver(() => body.style.setProperty('--dock-h', `${dock.offsetHeight}px`));
+          ro?.observe(dock);
+          stop = () => (held?.(), ro?.disconnect());
         }}
         data-kit="it-dock"
       >

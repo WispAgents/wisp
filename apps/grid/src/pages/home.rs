@@ -1,18 +1,20 @@
-//! Home (`/`), signed in: the cloud wisp with a picture of it, your own computers and published
-//! apps as cards, then what to try next, each tile saying so when the grid knows it's already done.
+//! Home (`/`), signed in (docs/ux/2026-11-18-grid.md #1–#5): one list of your machines (the cloud wisp first, then
+//! your own computers), each a row with Open and the rest in its ⋯; one + Add for a computer or another cloud machine;
+//! your links (published apps and shared tasks); and, while it's new, a Getting-started checklist. What else the grid
+//! does sits folded at the end, each idea linking to the exact place in the wisp (`wisp_at`).
 
 use super::account::DeviceView;
-use super::icons::{ARROW, CODE, COPY, GLOBE, LAPTOP, MOON, PLUS};
+use super::icons::{ARROW, CLOUD, CODE, COPY, LAPTOP, MOON, PLUS};
 use super::layout::{AppPage, Tab, app_page, state_label};
 use super::machines::{MachineView, add_machine_row, machines_dialog, machines_js, spec};
 use super::scripts::{COPY_JS, HOME_JS, LIVE};
-use super::site::{shot, tag};
 use super::time::{ago, locale_string};
-use tiles::tiles;
-
-#[path = "home_tiles.rs"]
-mod tiles;
 use super::{PageCfg, PageUser, Tone, esc};
+use crate::http::encode_component;
+
+#[path = "home_links.rs"]
+mod links;
+pub use links::{ShareView, Start};
 
 /// The account's cloud wisp, as its instance row has it.
 #[derive(Debug, Clone, Default)]
@@ -45,7 +47,7 @@ pub struct SiteView {
     pub updated_at: Option<i64>,
 }
 
-/// What this grid offers (a tile goes when it's off).
+/// What this grid offers (an idea goes when it's off).
 #[derive(Debug, Clone, Copy)]
 pub struct Offers {
     pub sites: bool,
@@ -68,7 +70,11 @@ pub struct HomePage {
     pub devices: Vec<DeviceView>,
     pub computers: Vec<ComputerView>,
     pub sites: Vec<SiteView>,
+    /// the shares that still open (not revoked), newest first
+    pub shares: Vec<ShareView>,
     pub offers: Offers,
+    /// the Getting-started steps you took (`wisp_start`, set by the page itself)
+    pub start: Start,
     pub csrf: String,
     pub flash: String,
     pub tone: Tone,
@@ -83,7 +89,7 @@ pub(super) fn flash(msg: &str, tone: Tone) -> String {
     if msg.is_empty() { String::new() } else { format!(r#"<div class="flash {}">{}</div>"#, tone.class(), esc(msg)) }
 }
 
-fn bare(u: &str) -> &str {
+pub(super) fn bare(u: &str) -> &str {
     u.strip_prefix("https://").or_else(|| u.strip_prefix("http://")).unwrap_or(u)
 }
 
@@ -92,7 +98,7 @@ fn host_of(url: &str) -> &str {
     b.split('/').next().unwrap_or(b)
 }
 
-fn copy_btn(v: &str, label: Option<&str>) -> String {
+pub(super) fn copy_btn(v: &str, label: Option<&str>) -> String {
     let v = esc(v);
     format!(
         r#"<button class="copy" type="button" data-copy="{v}" title="Copy {v}" aria-label="Copy {v}"><span>{}</span>{COPY}</button>"#,
@@ -100,87 +106,111 @@ fn copy_btn(v: &str, label: Option<&str>) -> String {
     )
 }
 
-/// What the state means now: every state has its own line.
+/// A ⋯ menu's Copy: says Copied for a moment (`COPY_JS`), the address under it.
+pub(super) fn copy_item(v: &str, label: &str) -> String {
+    format!(
+        r#"<button class="mi" type="button" data-copy="{v}">{COPY}<div><span>{label}</span><small>{shown}</small></div></button>"#,
+        v = esc(v),
+        shown = esc(bare(v).trim_end_matches('/')),
+    )
+}
+
+/// Where in the wisp a link lands (#3): `/go` hands the browser to the cloud wisp, then on to `path` there.
+pub fn wisp_at(path: &str) -> String {
+    format!("/go?path={}", encode_component(path))
+}
+
+/// A Settings pane of the cloud wisp (its navigation URL: the settings sheet as an overlay, `nav-url.ts`).
+pub fn wisp_settings(pane: &str) -> String {
+    wisp_at(&format!("/?o={}", encode_component(&format!(r#"viewer:shell-settings.sheet:{{"pane":"{pane}"}}"#))))
+}
+
+/// A row's ⋯: a native disclosure, so it works without script; `HOME_JS` closes it on a click elsewhere or Escape.
+pub(super) fn more_menu(label: &str, items: &str) -> String {
+    format!(
+        r#"<details class="pop"><summary class="more" aria-label="More for {label}" title="More">⋯</summary><div class="menu" role="menu">{items}</div></details>"#,
+        label = esc(label)
+    )
+}
+
+/// What the cloud wisp's state means now, short enough for one row.
 fn cloud_line(i: &InstanceView, now: i64) -> String {
     match i.state.as_str() {
-        "running" => format!("Started {}. Sleeps by itself when nothing’s going on.", ago(i.started_at, now)),
-        "starting" => "A few seconds. It opens as soon as it’s up.".into(),
-        "queued" => "The grid is busy. It starts as soon as there’s room.".into(),
-        "stopping" => "Your tasks and files stay where they are.".into(),
-        _ if i.stopped_at.is_some_and(|t| t != 0) => {
-            format!("Went to sleep {}. Opening it wakes it in a few seconds.", ago(i.stopped_at, now))
-        }
-        _ => "Starts the first time you open it, in a few seconds.".into(),
+        "running" => format!("started {}", ago(i.started_at, now)),
+        "starting" => "a few seconds: it opens as soon as it’s up".into(),
+        "queued" => "the grid is busy: it starts as soon as there’s room".into(),
+        "stopping" => "your tasks and files stay where they are".into(),
+        _ if i.stopped_at.is_some_and(|t| t != 0) => format!("since {} · opens in a few seconds", ago(i.stopped_at, now)),
+        _ => "starts the first time you open it".into(),
     }
 }
 
-fn cloud_block(p: &HomePage, hidden: &str) -> String {
+fn cloud_row(p: &HomePage, hidden: &str) -> String {
     let st = p.instance.state.as_str();
     let label = state_label(st).map_or_else(|| esc(st), str::to_owned);
-    let off = if st == "running" { "" } else { " off" };
-    let next = p.instance.next_wake_at.map_or_else(|| "Nothing scheduled".to_owned(), |t| esc(&locale_string(t)));
-    format!(
-        r#"<div class="h-state"><div class="state {cls}"><i></i>{label}</div><p class="h-line">{line}</p></div><div class="h-acts"><a class="primary" href="/go">Open{ARROW}</a><form class="inline{off}" method="post" action="/instance/stop">{hidden}<button class="ghost line">{MOON}Sleep</button></form></div><dl class="h-facts"><dt>Address</dt><dd>{addr}</dd><dt>Machine</dt><dd>{spec}</dd><dt>Next schedule</dt><dd>{next}</dd></dl>"#,
-        cls = esc(st),
-        line = cloud_line(&p.instance, p.now_ms),
-        addr = copy_btn(&p.url, Some(bare(&p.url))),
-        spec = esc(&spec(&p.machine, false)),
-    )
-}
-
-fn computer_card(c: &ComputerView, hidden: &str, now: i64) -> String {
-    let state = if c.online {
-        r#"<div class="state running"><i></i>Online</div>"#.to_owned()
-    } else {
-        let seen = c.last_seen_at.filter(|t| *t != 0).map_or_else(String::new, |_| format!(" · last seen {}", ago(c.last_seen_at, now)));
-        format!(r#"<div class="state stopped"><i></i>Offline{seen}</div>"#)
-    };
-    let open = if c.online {
-        format!(r#"<a class="primary" href="/go?computer={}">Open{ARROW}</a>"#, esc(&c.id))
-    } else {
+    let next = p.instance.next_wake_at.filter(|t| *t != 0);
+    let sched = next.map_or_else(String::new, |t| format!(" · next schedule {}", esc(&locale_string(t))));
+    let sleep = if st == "running" {
         format!(
-            r#"<span class="primary off" aria-disabled="true" title="Back when it’s switched on and wisp runs there.">Open{ARROW}</span>"#
+            r#"<form method="post" action="/instance/stop">{hidden}<button class="mi">{MOON}<div><span>Sleep now</span><small>Opening it wakes it</small></div></button></form>"#
         )
+    } else {
+        String::new()
     };
+    let items = format!(
+        r#"{copy}{sleep}<a class="mi" href="{agents}">{CODE}<div><span>Settings → Agents</span><small>Sign in to Claude Code, Codex, GitHub</small></div></a><a class="mi" href="/account#keys">{KEY_ICON}<div><span>API keys</span><small>For scripts</small></div></a><div class="mi note"><small>Machine: {spec}</small><small>Next schedule: {when}</small></div>"#,
+        copy = copy_item(&p.url, "Copy address"),
+        agents = esc(&wisp_settings("agents")),
+        KEY_ICON = super::icons::KEY,
+        spec = esc(&spec(&p.machine, false)),
+        when = next.map_or_else(|| "nothing scheduled".to_owned(), |t| esc(&locale_string(t))),
+    );
     format!(
-        r#"<div class="c">
-      <div class="c-head"><span class="w-ic">{LAPTOP}</span><div class="c-name"><b title="{name}">{name}</b>{state}</div></div>
-      {copy}
-      <div class="c-acts">{open}<form class="inline" method="post" action="/computers/{id}/remove" data-confirm="Remove it?">{hidden}<button class="ghost quiet" title="Take it off the grid. wisp on it keeps running.">Remove</button></form></div>
-    </div>"#,
-        name = esc(&c.name),
-        copy = copy_btn(&c.url, Some(bare(&c.url))),
+        r#"<div class="mrow" data-row="cloud"><span class="w-ic cloud">{CLOUD}</span><div class="m-tx"><b>Cloud wisp</b><small class="st"><span class="dot {cls}"></span>{label} · {line}{sched}</small></div><div class="m-acts"><a class="primary" href="/go">Open{ARROW}</a>{more}</div></div>"#,
+        cls = esc(st),
+        line = esc(&cloud_line(&p.instance, p.now_ms)),
+        more = more_menu("your cloud wisp", &items),
+    )
+}
+
+fn computer_row(c: &ComputerView, hidden: &str, now: i64) -> String {
+    let status = if c.online {
+        r#"<span class="dot running"></span>Online"#.to_owned()
+    } else if c.last_seen_at.is_some_and(|t| t != 0) {
+        format!(r#"<span class="dot"></span>Offline · last seen {}"#, ago(c.last_seen_at, now))
+    } else {
+        r#"<span class="dot"></span>Offline · never connected · <button class="lnk" type="button" data-add>How to connect</button>"#
+            .to_owned()
+    };
+    // offline, Open still goes: the computer's page waits for it and opens it once it connects (#7)
+    let (cls, title) = if c.online { ("primary", "") } else { ("ghost line", r#" title="It opens as soon as that computer connects""#) };
+    let items = format!(
+        r#"{copy}<form method="post" action="/computers/{id}/remove" data-confirm="Remove it?">{hidden}<button class="mi danger" title="Take it off the grid. wisp on it keeps running.">{X}<div><span>Remove</span><small>wisp on it keeps running</small></div></button></form>"#,
+        copy = copy_item(&c.url, "Copy address"),
         id = esc(&c.id),
-    )
-}
-
-fn site_card(x: &SiteView, hidden: &str, now: i64) -> String {
+        X = super::icons::TRASH,
+    );
     format!(
-        r#"<div class="c">
-      <div class="c-head"><span class="w-ic">{GLOBE}</span><div class="c-name"><b title="{title}">{title}</b><small>Updated {ago} · {n} file{s}</small></div></div>
-      {copy}
-      <div class="c-acts"><a class="ghost line" href="{url}" target="_blank" rel="noopener">Open{ARROW}</a><form class="inline" method="post" action="/sites/{key}/remove">{hidden}<button class="ghost quiet" title="Take it offline: the link stops working. It stays in My Stuff.">Unpublish</button></form></div>
-    </div>"#,
-        title = esc(&x.title),
-        ago = ago(x.updated_at, now),
-        n = x.files,
-        s = if x.files == 1 { "" } else { "s" },
-        copy = copy_btn(&x.url, Some(bare(&x.url).trim_end_matches('/'))),
-        url = esc(&x.url),
-        key = esc(&x.key),
+        r#"<div class="mrow" data-row="computer"><span class="w-ic">{LAPTOP}</span><div class="m-tx"><b title="{name}">{name}</b><small class="st">{status}</small></div><div class="m-acts"><a class="{cls}" href="/go?computer={id}"{title}>Open{ARROW}</a>{more}</div></div>"#,
+        name = esc(&c.name),
+        id = esc(&c.id),
+        more = more_menu(&c.name, &items),
     )
 }
 
-const FIRST_STEPS: &str = r#"<ol class="path">
-      <li><span class="n">1</span><div><b>Open your cloud wisp</b><p>It starts in a few seconds.</p></div></li>
-      <li><span class="n">2</span><div><b>Sign in to an agent</b><p>Settings → Agents: a link and a code, no terminal.</p></div></li>
-      <li><span class="n">3</span><div><b>Send a task, close the laptop</b><p>The report waits for you here and on your phone.</p></div></li>
-    </ol>"#;
+/// No computer yet: one row saying what it'd be, and the way to add one.
+fn no_computer_row() -> String {
+    format!(
+        r#"<div class="mrow empty"><span class="w-ic">{LAPTOP}</span><div class="m-tx"><b>No computers of yours yet</b><small>wisp on your desktop or laptop, reached from anywhere. No SSH, no open ports.</small></div><div class="m-acts"><button class="ghost line" type="button" data-add>{PLUS}Add a computer</button></div></div>"#
+    )
+}
 
+/// How a computer joins: the steps v1's "Add a computer" card unfolded, opened by `[data-add]` (`HOME_JS`).
 fn add_how(cli: &str, host: &str) -> String {
     format!(
-        r#"<details class="add" id="add"><summary aria-controls="addHow"><span class="add-plus">{PLUS}</span><b>Add a computer</b><small>One command in a terminal, or a few clicks in the app. No SSH, no open ports.</small></summary></details>
+        r#"<details class="add" id="add"><summary aria-controls="addHow">Add a computer</summary></details>
         <div class="how" id="addHow">
+          <div class="how-head"><b>Add a computer of yours</b><button class="m-x" type="button" data-add-close aria-label="Close">{X}</button></div>
           <input type="radio" name="addHow" id="addCli" checked><input type="radio" name="addHow" id="addApp">
           <div class="seg" role="presentation"><label for="addCli">{CODE}In a terminal</label><label for="addApp">{LAPTOP}With the app</label></div>
           <ol class="steps p-cli">
@@ -193,6 +223,7 @@ fn add_how(cli: &str, host: &str) -> String {
             <li><span class="n">3</span><div><b>Allow it here</b><p>A page from this grid opens with a code. Check it matches and press <i>Allow</i>. The computer then shows up in this list, and in the phone app.</p></div></li>
           </ol>
         </div>"#,
+        X = super::icons::X,
         cli = copy_btn(cli, None),
         host = copy_btn(host, None),
     )
@@ -203,74 +234,47 @@ fn cli_for(host: &str) -> String {
     if host == "grid.trywisp.dev" { "npx wisp-agents computer on".to_owned() } else { format!("npx wisp-agents computer on --grid {host}") }
 }
 
-/// Nothing yet: never started, no computer, app or device. Home shows the first steps.
-fn is_fresh(p: &HomePage) -> bool {
-    p.instance.started_at.is_none_or(|t| t == 0)
-        && p.instance.stopped_at.is_none_or(|t| t == 0)
-        && p.computers.is_empty()
-        && p.sites.is_empty()
-        && p.devices.is_empty()
-}
-
-/// The published apps, when there are some.
-fn apps_section(p: &HomePage, hidden: &str) -> String {
-    if p.sites.is_empty() {
-        return String::new();
-    }
-    let cards: String = p.sites.iter().map(|x| site_card(x, hidden, p.now_ms)).collect();
+/// + Add (#4): a computer of yours, or another cloud machine (the waitlist dialog, unchanged).
+fn add_menu(p: &HomePage) -> String {
     format!(
-        r#"<h2 class="sec" id="apps">Published apps <span class="n">{}</span></h2><p class="hint">Anyone with the link can open them, while your wisp sleeps too; search engines don’t list them.</p><div class="cards">{cards}</div>"#,
-        p.sites.len()
+        r#"<details class="pop add-pop"><summary class="ghost line">{PLUS}Add</summary><div class="menu" role="menu"><button class="mi" type="button" data-add>{LAPTOP}<div><span>A computer of yours</span><small>One command, or a few clicks in the app</small></div></button><div data-live="wish">{wish}</div></div></details>"#,
+        wish = add_machine_row(p.machine.wish.as_ref()),
     )
 }
 
 pub fn home_page(cfg: &PageCfg, p: &HomePage) -> String {
     let hidden = hidden(&p.csrf);
     let host = host_of(&cfg.public_url);
-    let online = p.computers.iter().filter(|c| c.online).count();
-    let cli = cli_for(host);
-    let fresh = is_fresh(p);
-    let apps = apps_section(p, &hidden);
     let first = p.user.name.as_deref().filter(|n| !n.is_empty()).unwrap_or(&p.user.handle);
     let first = first.split(' ').next().unwrap_or(first);
-    let count = if p.computers.is_empty() { String::new() } else { format!("{online} of {} online", p.computers.len()) };
-    let computers: String = p.computers.iter().map(|c| computer_card(c, &hidden, p.now_ms)).collect();
-    let what = if tag(cfg).eq_ignore_ascii_case("cloud") { "cloud" } else { "grid" };
+    let up = usize::from(p.instance.state == "running") + p.computers.iter().filter(|c| c.online).count();
+    let rows = if p.computers.is_empty() {
+        format!("{}{}", cloud_row(p, &hidden), no_computer_row())
+    } else {
+        let cs: String = p.computers.iter().map(|c| computer_row(c, &hidden, p.now_ms)).collect();
+        format!("{}{cs}", cloud_row(p, &hidden))
+    };
     let body = format!(
         r#"{flash}
-      <section class="hero" aria-labelledby="hi">
-        <div class="h-main">
-          <h1 class="h1" id="hi">Hi {first}</h1>
-          <p class="sub">Your cloud wisp runs here on {host}, so it keeps working while your computers are off.</p>
-          <div data-live="cloud">{cloud}</div>
-        </div>
-        <div class="h-shot"><a href="/go" tabindex="-1" aria-hidden="true">{shot}</a></div>
-        <div class="h-more" data-live="wish">{wish}</div>
+      <h1 class="h1 hi" id="hi">Hi {first}</h1>
+      <section class="block" aria-labelledby="mach">
+        <div class="sec-row"><h2 class="sec" id="mach">Your machines <span class="n" data-live="online">{up} of {all} up</span></h2>{add}</div>
+        <div class="ml" data-live="machines">{rows}</div>
+        {how}
       </section>
+      <div data-live="links">{links}</div>
       <div data-live="start">{start}</div>
-
-      <h2 class="sec">Your computers <span class="n" data-live="online">{count}</span></h2>
-      <p class="hint">wisp on your own desktop or laptop, reached through the grid. Your files and agents stay on it.</p>
-      <div class="cards">
-        <div class="cards-live" data-live="computers">{computers}</div>
-        {add}
-      </div>
-
-      <div data-live="sites">{apps}</div>
-
-      <h2 class="sec">What your {what} can do</h2>
-      <div class="can" data-live="can">{tiles}</div>
+      {ideas}
       {dialog}
       {COPY_JS}{machines_js}{HOME_JS}{LIVE}"#,
         flash = flash(&p.flash, p.tone),
         first = esc(first),
-        host = esc(host),
-        cloud = cloud_block(p, &hidden),
-        shot = shot("app", ""),
-        wish = add_machine_row(p.machine.wish.as_ref()),
-        start = if fresh { FIRST_STEPS } else { "" },
-        add = add_how(&cli, host),
-        tiles = tiles(p, host),
+        all = 1 + p.computers.len(),
+        add = add_menu(p),
+        how = add_how(&cli_for(host), host),
+        links = links::links(p, &hidden),
+        start = links::checklist(p),
+        ideas = links::ideas(p, host),
         dialog = machines_dialog(&p.machine, &p.user, &hidden),
         machines_js = machines_js(),
     );

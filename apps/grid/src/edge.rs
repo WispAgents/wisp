@@ -47,6 +47,8 @@ mod common;
 mod device;
 #[path = "edge_events.rs"]
 mod events;
+#[path = "edge_forms.rs"]
+mod forms;
 #[path = "edge_handoff.rs"]
 mod handoff;
 #[path = "edge_inbox.rs"]

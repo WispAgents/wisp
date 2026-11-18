@@ -325,6 +325,32 @@
     width: 11px;
     height: 11px;
   }
+  /* a feature that's on in the composer's one footer (docs/ux/2026-11-18-desktop.md #3): its tool and its ✕ in one
+     pill, in the accent's tint ("◎ Goal: tests pass ✕"); it takes room only while it's on */
+  [data-kit='l-chip'] {
+    display: inline-flex;
+    flex: none;
+    align-items: center;
+    height: 30px;
+    padding-right: var(--space-1);
+    border-radius: var(--radius-control);
+    background: var(--accent-soft);
+    color: var(--accent-ink);
+  }
+  [data-kit='l-chip'] > [data-kit='tog-btn'],
+  [data-kit='l-chip'] > [data-kit='tog-btn']:hover {
+    padding-right: var(--space-2);
+    background: transparent;
+    color: inherit;
+  }
+  [data-kit='l-chip'] > [data-kit='tog-btn'] > [data-text='control'] {
+    max-width: var(--size-pick-max);
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  [data-kit='l-chip'] > [data-kit='chip-x'] {
+    color: inherit;
+  }
   /* a control whose command is in flight: its spinner where its icon was, the same box */
   [data-kit='spinner'][data-in='act'] {
     position: static;
@@ -898,6 +924,8 @@
      narrow-box form below */
   [data-kit='launcher'][data-squeeze='1'] [data-kit='l-bar'] > [data-a='goal'] > [data-text='control'],
   [data-kit='launcher'][data-squeeze='2'] [data-kit='l-bar'] > [data-a='goal'] > [data-text='control'],
+  [data-kit='launcher'][data-squeeze='1'] [data-kit='l-bar'] > [data-a='where'] > [data-text='control'],
+  [data-kit='launcher'][data-squeeze='2'] [data-kit='l-bar'] > [data-a='where'] > [data-text='control'],
   [data-kit='launcher'][data-squeeze='2'] [data-kit='l-bar'] > [data-kit='mode-btn'] > [data-text='control'] {
     display: none;
   }

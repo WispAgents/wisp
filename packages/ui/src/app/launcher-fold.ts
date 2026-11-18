@@ -19,6 +19,9 @@ export interface LauncherTool {
   readonly on?: boolean;
   readonly disabled?: boolean;
   readonly act?: Act;
+  /** a feature that's on, cleared in one press: the tool is a chip with an ✕ (docs/ux/2026-11-18-desktop.md #3).
+   *  Additive (2026-11-18). */
+  readonly clear?: { readonly label: string; readonly act: Act } | undefined;
 }
 
 export interface FoldExtras {
@@ -120,7 +123,7 @@ export interface BarForm {
 }
 
 /** How far the bar's labels have gone to their icons, one step at a time, in v1's order (its 720 and 640 px steps,
- *  Worktree's and Delegate's, already happen by the box's width): 0 every label; 1 Goal's goes; 2 the mode's (Full
+ *  Worktree's and Delegate's, already happen by the box's width): 0 every label; 1 Goal's and Where's go; 2 the mode's (Full
  *  auto); 3 v1's narrow-box form, the pick down to its model, the bar scrolling under a pinned Send if it must. */
 export const SQUEEZE = 4;
 
@@ -133,9 +136,11 @@ const UNSEEN = 30;
  *  is, so the next measure knows it. */
 export function barPlan(i: { readonly available: number; readonly ids: readonly string[]; readonly forms: readonly (BarForm | undefined)[]; readonly more: number }): { level: number; fold: number } {
   const fold = (f: BarForm): number => tailFold({ available: i.available, others: f.others, tail: i.ids.map((id) => f.tail.get(id) ?? UNSEEN), gap: f.gap, more: i.more });
+  // holds every tool as it is: what's not the tail and the whole tail fit (a bar with no tail still has to fit)
+  const whole = (f: BarForm): boolean => f.others + i.ids.reduce((s, id) => s + f.gap + (f.tail.get(id) ?? UNSEEN), 0) <= i.available;
   for (let level = 0; level < SQUEEZE; level++) {
     const f = i.forms[level];
-    if (f === undefined || fold(f) === 0) return { level, fold: 0 };
+    if (f === undefined || (fold(f) === 0 && whole(f))) return { level, fold: 0 };
   }
   const last = i.forms[SQUEEZE - 1];
   return { level: SQUEEZE - 1, fold: last ? fold(last) : 0 };

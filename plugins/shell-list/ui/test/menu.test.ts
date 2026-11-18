@@ -1,6 +1,6 @@
-// A task's row menu (model/menu.ts, v1 #786 actions.js taskMenuHtml): the list's own entries in v1's sections, the
-// ones plugins attach to `shell.row:menu` placed by their section / submenu (View ›, Goal ›, Copy ›, Files ›), a line
-// between sections, Delete alone; v2's own Pin and Mark read after every v1 entry (the owner, round 30).
+// A task's row menu (model/menu.ts; docs/ux/2026-11-18-desktop.md #6): the list's own entries and the ones plugins attach
+// to `shell.row:menu` in the task menu's one order (task-menu.ts): Open and the panes, Rerun/Fork/Open in ›, Rename/Pin/
+// Mark unread/Save for later, Task options ›/Copy ›/Share…, Archive and Delete last.
 import { expect, test } from 'vitest';
 import type { TaskMenuEntry } from '@wisp/shell/pure';
 import type { MenuEntry } from '@wisp/ui/pure';
@@ -12,60 +12,53 @@ const row = (o: Partial<SessionRow> = {}): SessionRow => ({ id: 's1', title: 'Wr
 const values = (m: readonly MenuEntry[]): string[] =>
   m.map((e) => (e.kind === 'separator' ? '|' : e.kind === 'submenu' ? `${e.label}[${e.items.map((x) => ('value' in x ? x.value : x.kind)).join(',')}]` : 'value' in e ? e.value : e.kind));
 const x = (v: string, at: Omit<TaskMenuEntry, 'entry'>): TaskMenuEntry => ({ entry: { value: `x:${v}`, label: v }, ...at });
+// the built-ins' real ids (row-menu.ts, ship, goal, crew, worktrees…): the menu places them by id
 
 // what the built-ins attach, with their bar.section / bar.sub and order (row-menu.ts, ship, goal, crew, worktrees…)
 const plugins: TaskMenuEntry[] = [
-  x('rerun', { section: 'open', order: 10 }),
-  x('fork', { section: 'task', order: 20 }),
-  x('side', { section: 'task', order: 30 }),
-  x('share', { section: 'task', order: 40 }),
-  x('ship', { section: 'waiting', order: 50 }),
-  x('merge', { section: 'waiting', order: 52 }),
-  x('changes', { sub: 'view', order: 60 }),
-  x('shell', { sub: 'view', order: 70 }),
-  x('review', { sub: 'view', order: 75 }),
-  x('run', { sub: 'view', order: 80 }),
-  x('recipe', { section: 'keep', order: 90 }),
-  x('crew', { section: 'look', order: 100 }),
-  x('goal-set', { sub: 'goal', order: 110 }),
-  x('goal-checks', { sub: 'goal', order: 111 }),
-  x('keep', { sub: 'files', order: 120 }),
+  x('shell.row.rerun', { section: 'open', order: 10 }),
+  x('shell.row.fork', { section: 'task', order: 20 }),
+  x('shell.row.side', { section: 'task', order: 30 }),
+  x('wisp.stuff.rowShare', { section: 'task', order: 40 }),
+  x('wisp.ship.rowShip', { section: 'waiting', order: 50 }),
+  x('wisp.ship.rowMerge', { section: 'waiting', order: 52 }),
+  x('shell.row.changes', { sub: 'view', order: 60 }),
+  x('shell.row.shell', { sub: 'view', order: 70 }),
+  x('wisp.ship.rowReview', { sub: 'view', order: 75 }),
+  x('shell-task.rowRun', { sub: 'view', order: 80 }),
+  x('wisp.automations.rowRecipe', { section: 'keep', order: 90 }),
+  x('wisp.crew.rowCrew', { section: 'look', order: 100 }),
+  x('wisp.goal.set', { sub: 'goal', order: 110 }),
+  x('wisp.goal.checks', { sub: 'goal', order: 111 }),
+  x('wisp.worktrees.rowKeep', { sub: 'files', order: 120 }),
 ];
 
-test('v1 #786: sections, View/Goal/Copy/Files submenus, Delete alone, Pin and Mark read last_v1_786_row_menu_groups', () => {
+test('one_order_open_and_the_panes_then_four_groups_archive_and_delete_last_ux_6', () => {
   expect(values(rowMenu({ s: row(), t, plugins, keys: true }))).toEqual([
     'open',
-    'x:rerun',
+    'x:shell.row.changes',
+    'x:wisp.ship.rowReview',
+    'x:shell.row.shell',
+    '|',
+    'x:shell.row.rerun',
+    'x:shell.row.fork',
     '|',
     'rename',
-    'x:fork',
-    'x:side',
-    'x:share',
-    '|',
-    'x:ship',
-    'x:merge',
-    '|',
-    'view[x:changes,x:shell,x:review,x:run]',
-    'goal[x:goal-set,x:goal-checks]',
-    'x:crew',
-    '|',
-    'copy-id',
-    'x:recipe',
-    'x:keep',
-    '|',
-    'done',
-    'later',
-    'archive',
-    '|',
-    'delete',
-    '|',
     'pin',
     'read',
+    'later',
+    '|',
+    'options[x:wisp.goal.set,x:wisp.goal.checks,x:shell.row.side,x:wisp.crew.rowCrew,x:wisp.automations.rowRecipe,x:wisp.ship.rowShip,x:wisp.ship.rowMerge,group,group]',
+    'copy-id',
+    'x:wisp.stuff.rowShare',
+    '|',
+    'archive',
+    'delete',
   ]);
 });
 
-test('a busy task: no Mark done, no Archive, no Mark read; one-item submenus stay inline_v1_786_row_menu_busy', () => {
-  expect(values(rowMenu({ s: row({ state: 'running' }), t, plugins: [], keys: true }))).toEqual(['open', '|', 'rename', '|', 'copy-id', '|', 'delete', '|', 'pin']);
+test('a busy task: no Archive, no Save for later, no Mark read; Delete still last_ux_6_row_menu_busy', () => {
+  expect(values(rowMenu({ s: row({ state: 'running' }), t, plugins: [], keys: true }))).toEqual(['open', '|', 'rename', 'pin', '|', 'copy-id', '|', 'delete']);
 });
 
 test('no key hints on touch screens_v1_786_row_menu_keys', () => {

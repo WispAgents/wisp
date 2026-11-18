@@ -6,6 +6,7 @@
 //   POST /__mock/fail?cmd=       the next run of that command is refused (see a rollback)
 //   POST /__mock/reset           the mock starts over from its seed (?seed=computers: a second computer,
 //                                 Studio, at /api/peer/studio, and a project here; MOCK_COMPUTERS=1 starts that way;
+//                                 ?seed=ask: the first answer ends in a question (Needs your call);
 //                                 ?seed=first-run: no tasks yet; ?seed=usage: a lead's usage and context fill;
 //                                 ?seed=trial: a Try it two ways pair (Compare says what differed);
 //                                 ?seed=cloud: signed in to wisp Cloud (Settings → Cloud → API keys), MOCK_CLOUD=1;
@@ -69,7 +70,7 @@ function runStream(req: IncomingMessage, res: ServerResponse): void {
   req.on('close', () => timers.forEach(clearTimeout));
 }
 
-type Seed = 'first-run' | 'computers' | 'media' | 'env' | 'usage' | 'trial' | 'cloud' | 'crew' | 'team' | undefined;
+type Seed = 'first-run' | 'computers' | 'media' | 'ask' | 'env' | 'usage' | 'trial' | 'cloud' | 'crew' | 'team' | undefined;
 
 /** An answer's picture (v1 /sessions/:id/file): a drawn SVG naming the path; a video isn't there. */
 function mediaFile(url: URL, res: ServerResponse): void {
@@ -133,7 +134,7 @@ export function mockPeer(): Plugin {
     const peer = createMockPeer({
       sessions: Number(process.env['MOCK_SESSIONS'] ?? 0),
       ...(process.env['MOCK_PEER'] && { peer: process.env['MOCK_PEER'] }),
-      ...(seed === 'first-run' ? { firstRun: true } : seed === 'team' ? { team: true } : computers ? { computers: true } : seed === 'media' ? { media: true } : seed === 'env' ? { env: true } : seed === 'usage' ? { usage: true } : seed === 'trial' ? { trial: true } : seed === 'cloud' ? { cloud: true } : seed === 'crew' ? { crew: true } : v1Seed()),
+      ...(seed === 'first-run' ? { firstRun: true } : seed === 'team' ? { team: true } : computers ? { computers: true } : seed === 'media' ? { media: true } : seed === 'ask' ? { ask: true } : seed === 'env' ? { env: true } : seed === 'usage' ? { usage: true } : seed === 'trial' ? { trial: true } : seed === 'cloud' ? { cloud: true } : seed === 'crew' ? { crew: true } : v1Seed()),
     });
     // Studio: a wisp of its own with no tasks yet (and no projects: Run on sets one up there)
     const others = new Map<string, MockPeer>(computers ? [[STUDIO, createMockPeer({ peer: STUDIO, name: 'Studio', firstRun: true, ...(seed === 'team' && { farJob: true }) })]] : []);

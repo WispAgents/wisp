@@ -125,7 +125,7 @@ async fn the_dialog_puts_you_on_the_list_and_home_says_so() {
     let r = g.wish(&cookie, &json!({ "csrf": csrf, "wants": [] })).await;
     assert_eq!(r.json::<Value>().await.unwrap(), json!({ "ok": true, "wish": null }));
     let home = g.home(&cookie).await;
-    assert!(home.contains(r#"data-state="pick""#) && home.contains(r#"<span class="pill soon">Soon</span>"#), "{home}");
+    assert!(home.contains(r#"data-state="pick""#) && home.contains(r#"<span class="pill soon">Waitlist</span>"#), "{home}");
     g.done();
 }
 
@@ -169,6 +169,6 @@ async fn home_says_what_the_cloud_machine_is() {
     // a process box has no limits of its own: it says none
     let g = rig("spec3", json!({})).await;
     let home = g.home(&g.session()).await;
-    assert!(home.contains("<dd>sleeps when idle</dd>"), "{home}");
+    assert!(home.contains("<small>Machine: sleeps when idle</small>"), "{home}");
     g.done();
 }

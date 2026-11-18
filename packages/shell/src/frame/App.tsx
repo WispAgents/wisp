@@ -3,9 +3,10 @@
 // from the width). On a phone (stack) one page shows: the list, or the main pane when a task, a
 // view or New task is open (New task from the list opens Home's prompt box as its own page).
 
-import { createMemo, createSignal, createEffect, lazy, on, onCleanup, onMount, type JSX } from 'solid-js';
+import '../i18n/lazy.ts';
+import { createMemo, createSignal, createEffect, lazy, on, onCleanup, onMount, Show, type JSX } from 'solid-js';
 import type { Readable } from '@wisp/client';
-import { Stage, Toasts, useSignal, type StagePage } from '@wisp/ui';
+import { Sheet, Stage, Toasts, useSignal, type StagePage } from '@wisp/ui';
 import { useShell } from '../context.tsx';
 import { Area, ClientsProvider, type Clients } from '../slot.tsx';
 import { MainPane, SidePane, TaskView } from './Panes.tsx';
@@ -154,7 +155,8 @@ export function App(props: { readonly clients: Clients; readonly recent: Readabl
         }
         main={<MainPane onBack={() => setLauncher(false)} launcher={launcher()} />}
         // a plain prop, not a spread: a reactive spread rebuilds every prop (the task page too) when the side opens
-        side={nav().side.kind !== 'none' ? <SidePane /> : undefined}
+        // the phone apps' stack: the side pane is a sheet over the task (UX 2026-11-18 phone #3), not a page of its own
+        side={nav().side.kind !== 'none' && !(phone && nav().layout === 'stack') ? <SidePane /> : undefined}
         gripLabel={shell.t('shell.side.grip')}
         panelGripLabel={shell.t('shell.panel.grip')}
         listWidth={listPx()}
@@ -165,6 +167,8 @@ export function App(props: { readonly clients: Clients; readonly recent: Readabl
         onPanelResize={onPanelResize}
         onPanelReset={() => void shell.client.settings.set('shell.panel.width', PANEL_W).catch(() => undefined)}
         listBehind={view().listBehind}
+        // the phone apps: a task and its side pane are pushed pages, the destinations give way (UX 2026-11-18 phone #2)
+        pushed={phone && (nav().main.kind === 'task' || nav().side.kind !== 'none')}
         tint={tint()}
         // the phone apps (ADR-0065 step 8): Tasks · Crew · Stuff · Computers; the browser passes none
         nav={phone ? <PhoneNav /> : undefined}
@@ -172,6 +176,19 @@ export function App(props: { readonly clients: Clients; readonly recent: Readabl
         sideLabel={shell.t('shell.side')}
         {...(titlebar && { titlebar })}
       />
+      <Show when={phone && nav().layout === 'stack' && nav().side.kind !== 'none'}>
+        <Sheet
+          title={shell.t('shell.side.sheet')}
+          open
+          bare
+          detents={['medium', 'large']}
+          onOpenChange={(open) => !open && shell.navigate({ t: 'closeSide' })}
+          part="phone.side.sheet"
+          t={(k) => shell.t(`kit.${k}`)}
+        >
+          <SidePane />
+        </Sheet>
+      </Show>
       <Overlays />
       <Toasts toaster={shell.toast} />
       {switcher ? <Switcher recent={props.recent} /> : null}

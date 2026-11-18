@@ -18,4 +18,10 @@ accounts: Array<AccountInfo>,
  * ADR-0064: when this wisp runs in a grid box, where a page on its loopback shows (`https://p{port}--ada.grid.example`,
  * `{port}` literal); "" anywhere else. A `preview` block of this wisp's own task loads `localhost:<port>` there.
  */
-preview: string, };
+preview: string, 
+/**
+ * When this wisp runs in a grid box, the grid's own address (`WISP_GRID_URL`, its Home: your machines, keys and
+ * links); "" anywhere else. The account menu links back to it (docs/ux/2026-11-18-grid.md #9), and a box isn't
+ * offered to be put on a grid.
+ */
+home: string, };

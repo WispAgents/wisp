@@ -15,8 +15,9 @@ import { useRecipes } from './recipes.ts';
 import type { PickOptions } from '../platform/types.ts';
 import { Show, createEffect, createMemo, createResource, createSignal, lazy, on, onCleanup, untrack, type JSX } from 'solid-js';
 import { githubTip, tools as githubTools } from './github-tip.ts';
-import { entityKey, newRowId, ownerOf, type EntityKey, type Json, type PeerId } from '@wisp/client';
-import { AutoPop, KeysHint, Launcher, NextList, Reserved, SplitHome, Tips, lazyPart, lazyView, useSignal, warm as warmPart, type Act, type LauncherProps, type LauncherTool, type PlainTip } from '@wisp/ui';
+import { tipPick } from './home-tips.ts';
+import { computed, entityKey, newRowId, ownerOf, type EntityKey, type Json, type PeerId } from '@wisp/client';
+import { AutoPop, KeysHint, Launcher, NextList, Reserved, SplitHome, Tips, lazyPart, lazyView, useSignal, warm as warmPart, type Act, type LauncherProps, type LauncherTool, type PlainTip, type SetupTip } from '@wisp/ui';
 import { useShell } from '../context.tsx';
 import type { LaunchTargetDef, SendHold } from '../contract.ts';
 import { aheadLabel, waitable } from './hold.ts';
@@ -44,6 +45,7 @@ import { draftValue, launcherDraft } from './drafts.ts';
 import { MODE_ICON, agentName, modeMenu, whenAt, whenMenu, type Mode, type When } from './pickers.ts';
 import { newRecipeIntent } from './recipe-new.ts';
 import { foldTail } from './phone-bar.ts';
+import { plusTool } from './composer-plus.ts';
 import { TEAMS_SETTING, presetsOf, teamFromSetting, teamSize, teamToSend, type Delegate } from './team.ts';
 import type { DelegatePlace } from './DelegatePanel.tsx';
 
@@ -683,11 +685,195 @@ export function HomeView(props: { readonly onBack?: () => void }): JSX.Element {
       ? [{ id: 'when', icon: 'clock' as const, label: t('shell.when.chip', { when: t(`shell.when.${when()}`) }), removeLabel: t('shell.when.clear'), onRemove: () => setWhen(undefined) }]
       : []),
   ];
+  const pluginTips = useSignal(computed(() => (shell.homeTips?.()() ?? []).filter((d) => d.offered?.(d.client) ?? true)));
   const offeredTips = (): readonly string[] => (autoOn() ? TIPS : TIPS.filter((x) => !AUTO_TIPS.has(x)));
+  // UX 2026-11-18 #8: one tip at a time, the setup cards (GitHub, the Grid) among them; More tips moves one on
+  const setupTips = (): SetupTip[] => [
+    ...(githubTip(ghTools())
+      ? [{ kind: 'tool' as const, icon: 'github' as const, title: t('shell.tips.github'), body: t('shell.tips.githubBody'), cta: t('shell.tips.signIn'), onClick: () => settingsSheet('accounts') }]
+      : []),
+    // plugins' set-up tips (wisp.grid-client: Reach this wisp from anywhere, never on a grid box; docs/ux/2026-11-18-grid.md #9)
+    ...pluginTips().map((d): SetupTip => ({ kind: 'grid', icon: d.icon, title: d.title(), body: d.body(), cta: d.cta(), onClick: () => d.open({ client: d.client, settings: settingsSheet }) })),
+  ];
+  const tipNow = () => tipPick(tipAt(), setupTips().length, offeredTips());
   const tips = (): PlainTip[] =>
-    [0, 1, 2]
-      .map((k) => offeredTips()[(tipAt() + k) % offeredTips().length] ?? 'goal1')
-      .map((id) => ({ before: t(`shell.tips.${id}`), bold: t(`shell.tips.${id}b`), after: t(`shell.tips.${id}a`), href: `${GUIDE}#${id}` }));
+    ((p) => (p?.kind === 'tip' ? [{ before: t(`shell.tips.${p.id}`), bold: t(`shell.tips.${p.id}b`), after: t(`shell.tips.${p.id}a`), href: `${GUIDE}#${p.id}` }] : []))(tipNow());
+  const setupNow = (): SetupTip[] => ((p) => (p?.kind === 'setup' ? setupTips().slice(p.i, p.i + 1) : []))(tipNow());
+  // the footer's tools, one definition each: the old footer (the phone's sheet, the first run) and the desktop's one
+  // footer (docs/ux/2026-11-18-desktop.md #3) draw the same controls
+  const whereTool = (): LauncherTool =>
+    tool(
+      'where',
+      'launcher.where',
+      placeOf()?.icon ?? (target() === home ? 'laptop' : 'server'),
+      placeOf()?.label() ?? (target() === home ? t('shell.home.where') : shell.client.peers.name(target())),
+      t('shell.home.where'),
+      {
+        text: target() !== home || placeOf() !== undefined,
+        ...((target() !== home || placeOf() !== undefined) && { on: true }),
+        act: whereAct(),
+      },
+    );
+  const teamTool = (): LauncherTool =>
+    tool('team', 'launcher.team', 'agent', team().length ? presetName() ?? t(teamSize(team()) === 1 ? 'shell.home.delegates.one' : 'shell.home.delegates.other', { count: teamSize(team()) }) : t('shell.home.delegate'), t('shell.home.delegateTitle'), {
+      text: true,
+      ...(team().length > 0 && { on: true }),
+      act: {
+        panel: {
+          label: t('shell.home.delegate'),
+          part: 'launcher.team.panel',
+          cardPart: 'delegate.panel',
+          content: () => (
+            <DelegatePanel
+              lead={{
+                agent: agent(),
+                run: [agentName(t, harnesses(), agent()), agent() === 'auto' ? (shown()?.label ?? '') : runnerPick({ agent: agent(), name: pick().name, model: modelWord({ model: model(), modelLabel: modelLabel() }), effort: effort(), account: '', fallback: t('shell.runner.default') })].filter(Boolean).join(' · '),
+                logo: agent() === 'auto' ? undefined : harnessOf(harnesses(), agent()).logo,
+                place: { icon: placeOf()?.icon ?? (target() === home ? 'laptop' : 'server'), label: placeOf()?.label() ?? (target() === home ? t('shell.card.thisComputer') : shell.client.peers.name(target())), title: t('shell.home.where') },
+                placeAct: whereAct(),
+              }}
+              team={team()}
+              onChange={pickTeam}
+              peer={target()}
+              places={delegatePlaces()}
+              onAddMachine={() => view('machine.this')}
+              preset={preset()}
+              onPreset={setPreset}
+            />
+          ),
+        },
+      },
+    });
+  const goalTool = (): LauncherTool =>
+    tool('goal', 'launcher.goal', 'target', t('shell.home.goal'), t('shell.home.goalTitle'), {
+      text: true,
+      ...(goalOn() && { on: true }),
+      act: { onClick: () => (setGoalOn(!goalOn()), queueMicrotask(() => (goalOn() ? goalInput : input)?.focus())) },
+    });
+  const worktreeTool = (): LauncherTool =>
+    tool('worktree', 'launcher.worktree', 'branch', worktree() ? t('shell.home.worktree') : t('shell.home.inPlace'), t('shell.home.worktreeTitle'), {
+      text: true,
+      on: worktree(),
+      act: { onClick: () => void shell.client.commands.run(setSetting, { peer: home, key: WORKTREE_KEY, value: worktree() ? 'off' : 'on' }).catch(() => undefined) },
+    });
+  const laterTool = (): LauncherTool =>
+    tool('later', 'launcher.later', 'clock', t('shell.home.later'), t('shell.home.later'), {
+      ...(when() && { on: true }),
+      act: { menu: { items: whenMenu(t, now()), onSelect: (v) => setWhen(v as When) } },
+    });
+  // UX 2026-11-18 #3 (docs/ux/2026-11-18-desktop.md, decided by the owner's delegate): the desktop's one footer, `+`, the
+  // mode, the harness · model, Where and Send; what's on shows as a chip with its ✕. The phone's sheet and the first run
+  // keep their own bar
+  const desk = (): boolean => !phone && !firstRun();
+  // Delegate… in `+` opens the Delegate panel on its chip (shown while the panel is open or the team has someone)
+  const [delegateOpen, setDelegateOpen] = createSignal(false);
+  const canCompare = (): boolean =>
+    runs().length < MAX_RUNNERS - 1 &&
+    nextRun(
+      agent(),
+      runs().map((r) => r.agent),
+      harnesses().map((h) => h.id),
+    ) !== undefined;
+  const setWorktree = (on: boolean): void => void shell.client.commands.run(setSetting, { peer: home, key: WORKTREE_KEY, value: on ? 'on' : 'off' }).catch(() => undefined);
+  const plus = (): LauncherTool =>
+    plusTool({
+      part: 'launcher.plus',
+      label: t('shell.home.plus'),
+      title: t('shell.home.plusTitle'),
+      sections: [
+        [
+          { id: 'attach', part: 'launcher.attach', icon: 'clip', label: t('shell.home.attach'), act: attachAct(shell, attach, picking()) },
+          { id: 'issue', part: 'launcher.issue', icon: 'issue', label: t('shell.home.issueRow'), act: issueAct },
+          {
+            id: 'recipes',
+            part: 'launcher.recipes',
+            icon: 'bolt',
+            label: t('shell.home.recipes'),
+            act: {
+              menu: {
+                items: [...recipes.items().map((r) => ({ value: `recipe:${r.id}`, label: r.label })), { value: 'recipe:new', label: t('shell.home.recipesNew'), icon: 'plus' as const }],
+                onSelect: (v) => (v === 'recipe:new' ? newRecipeAct.onClick() : recipes.items().find((r) => `recipe:${r.id}` === v)?.act.onClick?.()),
+              },
+            },
+          },
+        ],
+        [
+          !goalOn() && { id: 'goal', part: 'launcher.goal', icon: 'target', label: t('shell.home.goalRow'), act: { onClick: () => (setGoalOn(true), queueMicrotask(() => goalInput?.focus())) } },
+          team().length === 0 && !delegateOpen() && { id: 'team', part: 'launcher.team', icon: 'agent', label: t('shell.home.delegateRow'), act: { onClick: () => setDelegateOpen(true) } },
+          canCompare() && { id: 'compare', part: 'launcher.compare', icon: 'split', label: t('shell.home.compareRow'), act: compareAct },
+        ],
+        [!when() && { id: 'later', part: 'launcher.later', icon: 'clock', label: t('shell.home.later'), act: laterTool().act }],
+      ],
+    });
+  // Where it runs and how, one chip (Where and Worktree were two chips for one question): "This computer · Worktree"
+  const whereChip = (): LauncherTool => {
+    const place = placeOf()?.label() ?? (target() === home ? t('shell.card.thisComputer') : shell.client.peers.name(target()));
+    // No folder: no git repo, so no worktree either (v1 paintScratch)
+    const how = project() === undefined ? '' : worktree() ? t('shell.home.worktree') : t('shell.home.inPlace');
+    const where = whereAct().menu;
+    return tool('where', 'launcher.where', placeOf()?.icon ?? (target() === home ? 'laptop' : 'server'), how ? `${place} · ${how}` : place, t('shell.home.whereHow'), {
+      text: true,
+      act: {
+        menu: {
+          items: [
+            ...(where?.items ?? []),
+            ...(how
+              ? [
+                  {
+                    kind: 'group' as const,
+                    id: 'how',
+                    label: t('shell.home.folderHow'),
+                    items: [
+                      { value: 'how:worktree', label: t('shell.home.worktree'), icon: 'branch' as const, checked: worktree(), part: 'launcher.worktree' as const },
+                      { value: 'how:inPlace', label: t('shell.home.inPlace'), icon: 'folder' as const, checked: !worktree(), part: 'launcher.worktree' as const },
+                    ],
+                  },
+                ]
+              : []),
+          ],
+          onSelect: (v) => (v === 'how:worktree' || v === 'how:inPlace' ? setWorktree(v === 'how:worktree') : where?.onSelect(v)),
+        },
+      },
+    });
+  };
+  // what's on, after Where: a chip each, cleared in one press (Compare's runs stay in the harness pill with their ×)
+  const onChips = (): LauncherTool[] => {
+    const team0 = teamTool();
+    const panel = team0.act?.panel;
+    return [
+      ...(goalOn()
+        ? [
+            tool('goal', 'launcher.goal', 'target', (goalDraft() ?? '').trim() ? t('shell.home.goalChip', { text: (goalDraft() ?? '').trim() }) : t('shell.home.goal'), t('shell.home.goalTitle'), {
+              text: true,
+              on: true,
+              act: { onClick: () => goalInput?.focus() },
+              clear: { label: t('shell.home.goalOff'), act: { onClick: () => setGoalOn(false) } },
+            }),
+          ]
+        : []),
+      ...(team().length > 0 || delegateOpen()
+        ? [
+            {
+              ...team0,
+              ...(panel && { act: { panel: { ...panel, open: delegateOpen(), onOpenChange: setDelegateOpen } } }),
+              // its ✕ from the start (a chip that gained one on the first pick was drawn again, the open panel with it):
+              // it clears the team, or with nobody yet closes the panel
+              clear: team().length > 0 ? { label: t('shell.home.delegateOff'), act: { onClick: () => (pickTeam([]), setPreset('')) } } : { label: t('shell.home.delegateClose'), act: { onClick: () => setDelegateOpen(false) } },
+            },
+          ]
+        : []),
+      ...(when()
+        ? [
+            tool('later', 'launcher.later', 'clock', t('shell.when.chip', { when: t(`shell.when.${when()}`) }), t('shell.home.later'), {
+              text: true,
+              on: true,
+              act: laterTool().act ?? {},
+              clear: { label: t('shell.when.clear'), act: { onClick: () => setWhen(undefined) } },
+            }),
+          ]
+        : []),
+    ];
+  };
   return (
     <>
     {/* the phone apps: New task is a page (Android's full-screen dialog) or a sheet (iOS) with Close / Cancel and Send in
@@ -699,7 +885,7 @@ export function HomeView(props: { readonly onBack?: () => void }): JSX.Element {
       <Launcher
         inLabel={t('shell.home.in')}
         place={place()}
-        placeholder={promptHint()}
+        placeholder={desk() ? t('shell.home.placeholderPlus') : promptHint()}
         value={text()}
         onInput={(v, e) => {
           setText(v);
@@ -747,6 +933,8 @@ export function HomeView(props: { readonly onBack?: () => void }): JSX.Element {
           pickOpen: autoPop(),
           compareAct,
           compareFull: firstRun() || runs().length >= MAX_RUNNERS - 1,
+          // the desktop's one footer: Compare is in `+` (UX 2026-11-18 #3)
+          ...(desk() && { compareInMenu: true }),
           compares: runs().map((r, i) => {
             const h = harnessOf(harnesses(), r.agent);
             const can = varies(r, i);
@@ -763,56 +951,17 @@ export function HomeView(props: { readonly onBack?: () => void }): JSX.Element {
             };
           }),
         }}
-        lead={firstRunTools(firstRun(), 'lead', [
+        lead={desk() ? [plus()] : firstRunTools(firstRun(), 'lead', [
           tool('attach', 'launcher.attach', 'clip', t('shell.home.attach'), t('shell.home.attach'), { act: attachAct(shell, attach, picking()) }),
           ...(mic ? [tool('mic', 'launcher.mic', 'mic', mic.label(), mic.label(), { on: mic.on(), act: { onClick: mic.toggle } })] : []),
-          tool(
-            'where',
-            'launcher.where',
-            placeOf()?.icon ?? (target() === home ? 'laptop' : 'server'),
-            placeOf()?.label() ?? (target() === home ? t('shell.home.where') : shell.client.peers.name(target())),
-            t('shell.home.where'),
-            {
-              text: target() !== home || placeOf() !== undefined,
-              ...((target() !== home || placeOf() !== undefined) && { on: true }),
-              act: whereAct(),
-            },
-          ),
+          whereTool(),
         ])}
-        mid={firstRunTools(firstRun(), 'mid', [
+        mid={desk() ? [whereChip()] : firstRunTools(firstRun(), 'mid', [
           // v1 #771: no Try it two ways button; the runner's + adds the second run
           // v1 team.js paintTeamBtn: "Delegate", or how many agents the lead can hand work to; its panel (teamEditor)
-          tool('team', 'launcher.team', 'agent', team().length ? presetName() ?? t(teamSize(team()) === 1 ? 'shell.home.delegates.one' : 'shell.home.delegates.other', { count: teamSize(team()) }) : t('shell.home.delegate'), t('shell.home.delegateTitle'), {
-            text: true,
-            ...(team().length > 0 && { on: true }),
-            act: {
-              panel: {
-                label: t('shell.home.delegate'),
-                part: 'launcher.team.panel',
-                cardPart: 'delegate.panel',
-                content: () => (
-                  <DelegatePanel
-                    lead={{
-                      agent: agent(),
-                      run: [agentName(t, harnesses(), agent()), agent() === 'auto' ? (shown()?.label ?? '') : runnerPick({ agent: agent(), name: pick().name, model: modelWord({ model: model(), modelLabel: modelLabel() }), effort: effort(), account: '', fallback: t('shell.runner.default') })].filter(Boolean).join(' · '),
-                      logo: agent() === 'auto' ? undefined : harnessOf(harnesses(), agent()).logo,
-                      place: { icon: placeOf()?.icon ?? (target() === home ? 'laptop' : 'server'), label: placeOf()?.label() ?? (target() === home ? t('shell.card.thisComputer') : shell.client.peers.name(target())), title: t('shell.home.where') },
-                      placeAct: whereAct(),
-                    }}
-                    team={team()}
-                    onChange={pickTeam}
-                    peer={target()}
-                    places={delegatePlaces()}
-                    onAddMachine={() => view('machine.this')}
-                    preset={preset()}
-                    onPreset={setPreset}
-                  />
-                ),
-              },
-            },
-          }),
+          teamTool(),
         ])}
-        tail={((tools: LauncherTool[]) =>
+        tail={desk() ? onChips() : ((tools: LauncherTool[]) =>
           foldPhone()
             ? [
                 foldTail(tools, {
@@ -833,25 +982,14 @@ export function HomeView(props: { readonly onBack?: () => void }): JSX.Element {
           firstRun(),
           'tail',
           [
-            tool('goal', 'launcher.goal', 'target', t('shell.home.goal'), t('shell.home.goalTitle'), {
-              text: true,
-              ...(goalOn() && { on: true }),
-              act: { onClick: () => (setGoalOn(!goalOn()), queueMicrotask(() => (goalOn() ? goalInput : input)?.focus())) },
-            }),
+            goalTool(),
             // No folder: no git repo, so no worktree either; the toggle would only mislead (v1 paintScratch)
             ...(project() === undefined
               ? []
               : [
-                  tool('worktree', 'launcher.worktree', 'branch', worktree() ? t('shell.home.worktree') : t('shell.home.inPlace'), t('shell.home.worktreeTitle'), {
-                    text: true,
-                    on: worktree(),
-                    act: { onClick: () => void shell.client.commands.run(setSetting, { peer: home, key: WORKTREE_KEY, value: worktree() ? 'off' : 'on' }).catch(() => undefined) },
-                  }),
+                  worktreeTool(),
                 ]),
-            tool('later', 'launcher.later', 'clock', t('shell.home.later'), t('shell.home.later'), {
-              ...(when() && { on: true }),
-              act: { menu: { items: whenMenu(t, now()), onSelect: (v) => setWhen(v as When) } },
-            }),
+            laterTool(),
           ],
           tool('more', 'launcher.more', 'dots', t('shell.home.moreOptions'), t('shell.home.moreOptionsTitle'), { text: true, act: { onClick: openFull } }),
         ))}
@@ -883,7 +1021,7 @@ export function HomeView(props: { readonly onBack?: () => void }): JSX.Element {
             end: goalEnd,
           },
         })}
-        extras={extras()}
+        extras={desk() ? extras().filter((x) => x.id !== 'when') : extras()}
         recipes={{
           label: t('shell.home.recipes'),
           empty: recipes.empty(),
@@ -894,7 +1032,7 @@ export function HomeView(props: { readonly onBack?: () => void }): JSX.Element {
           addAct: newRecipeAct,
           issueAct,
           // the phone apps: Recipes and Start from an issue are in the bar's More (phone-bar.ts), not a row of their own
-          ...(foldPhone() && { inMore: true }),
+          ...((foldPhone() || desk()) && { inMore: true }),
         }}
       />
       {/* usage at a glance under the prompt box (wisp.budget's plan windows), v1 #790 .sh-usage; not in the phone sheet */}
@@ -1034,20 +1172,15 @@ export function HomeView(props: { readonly onBack?: () => void }): JSX.Element {
         />
         {/* notes on plans other plugins add (wisp.budget's Spare allowance), v1 .sh-spare */}
         <Reserved part="home.cards" height={cardsH()} onHeight={(px) => void shell.client.settings.set('shell.home.cardsHeight', Math.min(800, px)).catch(() => undefined)}>
-          <Slot input="shell.home:cards" layout="contents" pickAgent={pickAgent} />
+          <Slot input="shell.home:cards" layout="contents" pickAgent={pickAgent} agent={agent} />
         </Reserved>
         <Tips
           heading={t('shell.tips.heading')}
           more={t('shell.tips.more')}
           moreTitle={t('shell.tips.moreTitle')}
-          onMore={() => setTipAt((tipAt() + 3) % offeredTips().length)}
+          onMore={() => setTipAt(tipAt() + 1)}
           onOpen={(href) => shell.platform.openExternal(href)}
-          setup={[
-            ...(githubTip(ghTools())
-              ? [{ kind: 'tool' as const, icon: 'github' as const, title: t('shell.tips.github'), body: t('shell.tips.githubBody'), cta: t('shell.tips.signIn'), onClick: () => settingsSheet('accounts') }]
-              : []),
-            { kind: 'grid', icon: 'cloud', title: t('shell.tips.grid'), body: t('shell.tips.gridBody'), cta: t('shell.tips.setUp'), onClick: () => settingsSheet('cloud') },
-          ]}
+          setup={setupNow()}
           tips={tips()}
         />
         <KeysHint

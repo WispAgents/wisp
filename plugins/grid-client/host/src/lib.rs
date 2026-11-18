@@ -177,6 +177,7 @@ pub(crate) fn status(st: &St) -> api::Status {
         computer: computer::view(st),
         accounts: all.infos(),
         preview: st.preview.clone(),
+        home: st.home.clone(),
     }
 }
 

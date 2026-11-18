@@ -35,23 +35,26 @@ const OPENCODE: AgentOffer = {
 };
 const ALL = [CLAUDE, CODEX, CURSOR, GROK, OPENCODE];
 
-test('the_left_pane_lists_auto_first_then_each_harness_with_its_sub_line_v1_runner_picker', () => {
+test('the_left_pane_lists_auto_first_then_each_harness_that_can_run_with_its_usage_ux_2026_11_18_9', () => {
+  // UX 2026-11-18 #9: installed harnesses only (Cursor isn't: Set up another agent… at the bottom says how), and the
+  // second line is the plan's usage where there's a window, else nothing ("279 models" was noise at that moment)
   const rows = pickerRows(ALL, { auto: true, autoName: 'Auto', used: (id) => (id === 'codex' ? { label: '5h', pct: 42 } : undefined) });
   expect(rows.map((r) => [r.id, r.sub, r.off])).toEqual([
     ['auto', { k: 'auto' }, false],
-    // "4 models": the Default isn't counted (v1 models.length - 1)
-    ['claude', { k: 'models', n: 4 }, false],
-    // how full its plan is, in place of the count (v1 usageNote)
+    ['claude', { k: 'none' }, false],
+    // how full its plan is (v1 usageNote)
     ['codex', { k: 'used', label: '5h', pct: 42 }, false],
-    ['cursor', { k: 'missing' }, true],
+    // installed, signed out: it stays, its sign-in in its pane
     ['grok', { k: 'signedOut' }, true],
     // still detecting (ADR-0066): Checking…, and what was known still picks
     ['opencode', { k: 'checking' }, false],
   ]);
   expect(pickerRows(ALL, { auto: false, autoName: 'Auto' })[0]?.id).toBe('claude');
-  expect(subLine({ ...CODEX, models: [] })).toEqual({ k: 'default' });
-  // a never-seen harness still checking can't run yet: dimmed
+  expect(subLine({ ...CODEX, models: [] })).toEqual({ k: 'none' });
+  // a never-seen harness still checking may yet be found: it's listed, dimmed
   expect(pickerRows([{ ...CURSOR, checking: true }], { auto: false, autoName: 'Auto' })[0]?.off).toBe(true);
+  // the one in use stays even when it's gone, so the pill's harness is in the list with why it can't run
+  expect(pickerRows(ALL, { auto: false, autoName: 'Auto', inUse: 'cursor' }).map((r) => [r.id, r.sub.k])).toContainEqual(['cursor', 'missing']);
 });
 
 test('the_right_pane_opens_on_the_harness_in_use_else_the_first_usable_one', () => {
@@ -60,7 +63,8 @@ test('the_right_pane_opens_on_the_harness_in_use_else_the_first_usable_one', () 
   expect(firstFocus(rows, 'auto')).toBe('auto');
   // one that can't run: the first usable one shows instead
   expect(firstFocus(rows, 'cursor')).toBe('auto');
-  expect(firstFocus(pickerRows([CURSOR], { auto: false, autoName: 'Auto' }), 'x')).toBe('cursor');
+  // nothing installed: nothing to open on (Set up another agent… is the way on)
+  expect(firstFocus(pickerRows([CURSOR], { auto: false, autoName: 'Auto' }), 'x')).toBe('');
   expect(firstFocus([], 'x')).toBe('');
   // the one in use while it's still checking: its pane, not one that switches under you once it lands
   expect(firstFocus(pickerRows([{ ...CURSOR, checking: true }, CODEX], { auto: true, autoName: 'Auto' }), 'cursor')).toBe('cursor');

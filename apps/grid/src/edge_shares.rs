@@ -124,6 +124,8 @@ impl Grid {
                     from: s.handle.clone(),
                     version: c.version,
                     source: format!("grid://{}/{}", s.handle, s.key),
+                    access: s.access.clone(),
+                    signed_in: matches!(who, Who::Session(_)),
                 };
                 Ok(html(200, pages::share_page(&self.page, &card, &content), &[]))
             }

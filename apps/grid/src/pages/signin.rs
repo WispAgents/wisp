@@ -46,6 +46,10 @@ pub struct SignInPage {
     pub analytics: Option<String>,
     /// The caller's user agent (an app's own browser gets the way out).
     pub ua: String,
+    /// The way this browser signed in last (#10): first, with a Last used tag.
+    pub last: String,
+    /// `/signin` itself: the page opens at the way in, its first button focused.
+    pub focus: bool,
 }
 
 pub fn sign_in_page(cfg: &PageCfg, p: &SignInPage) -> String {
@@ -65,6 +69,7 @@ pub fn sign_in_page(cfg: &PageCfg, p: &SignInPage) -> String {
             linking,
             waitlisted: p.waitlisted,
             in_app: in_app.as_ref(),
+            last: &p.last,
         })
     };
     let top = in_app.as_ref().map(|a| in_app_box(a, &here)).unwrap_or_default() + &join(&p.error, p.linking);
@@ -86,6 +91,9 @@ pub fn sign_in_page(cfg: &PageCfg, p: &SignInPage) -> String {
     out += "\n";
     if in_app.is_some() {
         out += INAPP_JS;
+    }
+    if p.focus {
+        out += r"<script>(()=>{const b=document.querySelector('#join .btn');if(b){b.scrollIntoView({block:'center'});b.focus({preventScroll:true})}})()</script>";
     }
     out + &site_foot(cfg)
 }
@@ -234,4 +242,39 @@ pub fn dev_sign_in_page(cfg: &PageCfg, ret: &str, csrf: &str) -> String {
         esc(ret),
         site_foot(cfg)
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn page(last: &str, focus: bool) -> String {
+        let way = |id: &str, label: &str| Provider { id: id.into(), label: label.into() };
+        let p = SignInPage {
+            providers: vec![way("google", "Google"), way("github", "GitHub"), way("oidc:corp", "Corp SSO")],
+            last: last.into(),
+            focus,
+            ..SignInPage::default()
+        };
+        sign_in_page(&PageCfg { name: "wisp Grid".into(), domain: "grid.test".into(), public_url: "https://grid.test".into() }, &p)
+    }
+
+    #[test]
+    fn the_way_used_last_comes_first_with_its_tag() {
+        let fresh = page("", false);
+        let gh = fresh.find("/auth/github/start").unwrap_or(usize::MAX);
+        assert!(gh < fresh.find("/auth/google/start").unwrap_or(0), "GitHub first by default");
+        assert!(!fresh.contains("Last used"));
+        let back = page("google", false);
+        let g = back.find("/auth/google/start").unwrap_or(usize::MAX);
+        assert!(g < back.find("/auth/github/start").unwrap_or(0), "the last way first");
+        assert!(back.contains(r#"Continue with Google<span class="last">Last used</span>"#), "{back}");
+        assert!(back.contains(r#"<a class="btn first" href="/auth/google/start">"#));
+    }
+
+    #[test]
+    fn signin_lands_on_the_way_in() {
+        assert!(page("", true).contains("querySelector('#join .btn')"));
+        assert!(!page("", false).contains("querySelector('#join .btn')"));
+    }
 }

@@ -220,8 +220,8 @@ async fn the_pages_keep_what_people_type_and_say_the_right_things() {
     assert!(home.contains(".input.code{font:15px var(--mono);letter-spacing:.08em;text-transform:uppercase}"));
     let activate = g.page("/activate", &ada).await;
     assert!(activate.contains(r#"<input class="input code" name="code""#), "{activate}");
-    // keys are under Settings → Cloud
-    assert!(home.contains("Settings → Cloud → API keys") && !home.contains("Settings → Connect"));
+    // keys are on Account (docs/ux/2026-11-18-grid.md #6), and Home's links lead there
+    assert!(home.contains(r#"href="/account#keys""#) && !home.contains("Settings → Connect"));
     // a dev account says how it signs in, and its name isn't said twice
     let account = g.page("/account", &ada).await;
     assert!(account.contains("Development sign-in") && account.contains("By handle (ada)"), "{account}");

@@ -18,6 +18,8 @@ pub(super) struct Join<'a> {
     pub linking: bool,
     pub waitlisted: bool,
     pub in_app: Option<&'a InApp>,
+    /// the way this browser signed in last (`wisp_last_way`), first with a Last used tag (#10)
+    pub last: &'a str,
 }
 
 /// A provider's logo: its own icon, else the one before a `:` (`oidc:corp`), else a key (dev: code).
@@ -26,21 +28,23 @@ pub(super) fn logo(id: &str) -> &'static str {
     named(id).or_else(|| named(id.split(':').next().unwrap_or_default())).unwrap_or(if id == "dev" { CODE } else { KEY })
 }
 
-/// GitHub first, dev last, the rest as the grid lists them; Google left out in an app's browser,
-/// where its sign-in can only fail (it refuses web views).
-fn ordered(providers: &[Provider], in_app: bool) -> Vec<&Provider> {
+/// The way this browser used last first (so a returning person doesn't make a second account with another one), then
+/// GitHub, dev last, the rest as the grid lists them; Google left out in an app's browser, where its sign-in can only
+/// fail (it refuses web views).
+fn ordered<'p>(providers: &'p [Provider], in_app: bool, last: &str) -> Vec<&'p Provider> {
     let mut list: Vec<&Provider> = providers.iter().filter(|p| !(in_app && p.id == "google")).collect();
     list.sort_by_key(|p| match p.id.as_str() {
-        "github" => 0,
-        "dev" => 2,
-        _ => 1,
+        id if !last.is_empty() && id == last => 0,
+        "github" => 1,
+        "dev" => 3,
+        _ => 2,
     });
     list
 }
 
 fn buttons(j: &Join<'_>, wl: bool) -> String {
     let q = if j.ret.is_empty() { String::new() } else { format!("?return={}", encode_component(j.ret)) };
-    let list = ordered(j.providers, j.in_app.is_some());
+    let list = ordered(j.providers, j.in_app.is_some(), j.last);
     // Two ways in share one row, so adding Google doesn't push the page down; "Continue with" drops
     // on phones.
     let pair = list.len() == 2;
@@ -50,7 +54,9 @@ fn buttons(j: &Join<'_>, wl: bool) -> String {
         let label = esc(&p.label);
         let text =
             if pair { format!(r#"<span><span class="cw">Continue with </span>{label}</span>"#) } else { format!("Continue with {label}") };
-        out += &format!(r#"<a class="btn{first}" href="/auth/{}/start{q}">{}{text}</a>"#, encode_component(&p.id), logo(&p.id));
+        // with one way in there's nothing to tell apart
+        let tag = if list.len() > 1 && !j.last.is_empty() && p.id == j.last { r#"<span class="last">Last used</span>"# } else { "" };
+        out += &format!(r#"<a class="btn{first}" href="/auth/{}/start{q}">{}{text}{tag}</a>"#, encode_component(&p.id), logo(&p.id));
     }
     if pair { format!(r#"<div class="ways">{out}</div>"#) } else { out }
 }

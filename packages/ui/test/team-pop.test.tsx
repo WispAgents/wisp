@@ -216,3 +216,38 @@ test('a_note_under_the_head_is_part_of_the_panel_not_a_bubble_over_it_qa_desktop
   expect(note?.closest('[data-kit="positioner"]')).toBeNull();
   expect(note?.getAttribute('role')).toBe('status');
 });
+
+// the composer's `+` (docs/ux/2026-11-18-desktop.md #3): Delegate… in the menu opens the Delegate panel on its chip, so
+// the panel can be opened from outside its button, and says when it closes
+test('a panel opened from outside (open) draws on its button and reports its close (onOpenChange)', async () => {
+  const [open, setOpen] = createSignal(false);
+  const changes: boolean[] = [];
+  mount(() => (
+    <WithAct
+      act={{
+        panel: {
+          label: 'Delegate',
+          part: 'd.panel3',
+          cardPart: 'd.card3',
+          open: open(),
+          onOpenChange: (o) => (changes.push(o), setOpen(o)),
+          content: () => <p data-testid="inside3">Delegate</p>,
+        },
+      }}
+      render={(trigger) => (
+        <button type="button" {...trigger()} data-part="d.button3">
+          Delegate
+        </button>
+      )}
+    />
+  ));
+  const btn = part('d.button3') as HTMLButtonElement;
+  expect(btn.getAttribute('aria-expanded')).toBe('false');
+  setOpen(true);
+  await until(() => btn.getAttribute('aria-expanded') === 'true' && document.querySelector('[data-testid="inside3"]') !== null);
+  expect(btn.getAttribute('aria-expanded')).toBe('true');
+  // Escape closes it: the owner hears it
+  document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+  await until(() => changes.includes(false));
+  expect(changes).toContain(false);
+});

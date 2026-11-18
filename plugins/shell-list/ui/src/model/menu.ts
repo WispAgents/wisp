@@ -35,13 +35,13 @@ export function rowMenu(m: MenuInput): MenuEntry[] {
     { section: 'task', order: -10, entry: { value: 'rename', label: t('shell-list.menu.rename'), icon: 'pen', ...k('M') } },
     { sub: 'copy', order: -20, entry: { value: 'copy-id', label: t('shell-list.menu.copy-id'), icon: 'copy' } },
   ];
-  // where it sits (v1): Mark done, Save for later, Archive, then the plugins' own ('place', the default)
-  if (!busy(s) && !s.archived) own.push({ section: 'place', order: -30, entry: { value: 'done', label: t(s.state === 'done' ? 'shell-list.menu.reopen' : 'shell-list.menu.done'), icon: s.state === 'done' ? 'replay' : 'done', ...k('E') } });
+  // Save for later, Archive (docs/ux/2026-11-18-desktop.md #6: Mark done / Reopen left the menu; it's the row's hover
+  // Done, the open task's Done and E)
   if (isForLater(s)) own.push({ section: 'place', order: -20, entry: { value: 'later', label: t('shell-list.menu.unsave'), icon: 'bookmark', ...k('L') } });
   else if (canSaveForLater(s)) own.push({ section: 'place', order: -20, entry: { value: 'later', label: t('shell-list.menu.save'), icon: 'bookmark', ...k('L') } });
   if (s.archived) own.push({ section: 'place', order: -10, entry: { value: 'archive', label: t('shell-list.menu.unarchive'), icon: 'archive', ...k('A') } });
   else if (!busy(s)) own.push({ section: 'place', order: -10, entry: { value: 'archive', label: t('shell-list.menu.archive'), icon: 'archive', ...k('A') } });
-  // v2's own, after every v1 entry (the owner, round 30: design/v1-reference/allowed.md §5)
+  // Pin and Mark read: with Rename and Save for later (taskMenu's group 2)
   const after: MenuItem[] = [{ value: 'pin', label: t(s.pinned ? 'shell-list.menu.unpin' : 'shell-list.menu.pin'), icon: 'pin' }];
   if (!busy(s)) after.push({ value: 'read', label: t(s.unread ? 'shell-list.menu.mark-read' : 'shell-list.menu.mark-unread'), icon: 'eye' });
   return taskMenu({

@@ -50,7 +50,7 @@ export default function Spare(props: ExtensionProps): JSX.Element {
   const when = (at: number): string => timeLabel(at, now(), englishT);
   const cards = createMemo((): SpareCard[] => {
     const list = windows() ?? [];
-    const spare = on(spareOn(), true) ? spareOf(list, { now: now(), seen: seen() as Record<string, number> }).slice(0, 2) : [];
+    const spare = on(spareOn(), true) ? spareOf(list, { now: now(), seen: seen() as Record<string, number>, not: props.agent?.() ?? '' }).slice(0, 2) : [];
     const out: SpareCard[] = spare.map((x) => ({
       key: spareKey(x),
       logo: logoOf(x.agent),

@@ -7,7 +7,8 @@
 //!   sign in, sign out, delete.
 //! - `GET /go[?computer=]`: to your cloud wisp, or one of your computers.
 //! - `POST /instance/stop`, `/computers/:id/remove`, `/sites/:key/remove`, `/devices/:id/revoke`,
-//!   `/identities/unlink`, `/channels/route`, `/channels/route/remove`, `/signout[?all=1]`, `/account/delete`:
+//!   `/identities/unlink`, `/channels/route`, `/channels/route/remove`, `/signout[?all=1]`, `/account/delete`, and
+//!   `/keys` (make an API key: the page says it once), `/keys/:id/revoke`, `/shares/:id/revoke` (docs/ux/2026-11-18-grid.md):
 //!   each answers with a redirect back and a flash line (`?m=…&tone=bad`), as v1 did.
 
 use std::sync::Arc;
@@ -21,14 +22,16 @@ use crate::boxhost::BoxHost;
 use crate::error::{Result, bad};
 use crate::http::{CookieOptions, Resp, add_cookie, cookie, cookies, encode_component, html, parse_body, redirect, safe_path};
 use crate::pages::{
-    self, AccountPage, ComputerView, DeviceView, HomePage, IdentityView, InstanceView, MachineView, Offers, PageUser, RouteView, SiteView,
-    Tone, Wish,
+    self, AccountPage, ComputerView, DeviceView, HomePage, IdentityView, InstanceView, KeyView, MachineView, Offers, PageUser, RouteView,
+    SiteView, Start, Tone, Wish,
 };
 use crate::rows::{BoxUser, UserRow};
 
 /// What a form did, said once on the next page: a cookie the page reads and drops, so a reload doesn't say it again
 /// (v1 kept it in the URL, `?m=`, and every reload repeated it).
 const FLASH: &str = "wisp_flash";
+/// Home's Getting-started steps you took (`a`, `t`) or dismissed (`x`), set by the page's own script (`HOME_JS`).
+const START: &str = "wisp_start";
 
 fn page_user(u: &UserRow) -> PageUser {
     PageUser { handle: u.handle.clone(), name: u.name.clone(), email: u.email.clone(), avatar: u.avatar.clone() }
@@ -68,11 +71,11 @@ impl Grid {
                 "POST",
                 ["instance", "stop"]
                 | ["computers" | "sites", _, "remove"]
-                | ["devices", _, "revoke"]
+                | ["keys" | "signout"]
+                | ["keys" | "shares" | "devices", _, "revoke"]
                 | ["identities", "unlink"]
                 | ["channels", "route", ..]
                 | ["machines", "waitlist"]
-                | ["signout"]
                 | ["account", "delete"],
             ) => match &user {
                 Some(u) => self.form(u, parts, q, h, bytes).await,
@@ -88,7 +91,7 @@ impl Grid {
     }
 
     /// Back to `to`, with what happened.
-    fn back(&self, to: &str, msg: &str, bad_tone: bool) -> Resp {
+    pub(super) fn back(&self, to: &str, msg: &str, bad_tone: bool) -> Resp {
         let mut r = redirect(to, &[]);
         let v = format!("{}{msg}", if bad_tone { "!" } else { "" });
         add_cookie(&mut r, &cookie(FLASH, &v, CookieOptions { secure: self.cfg.secure, max_age: Some(60), path: None, framed: false }));
@@ -175,6 +178,7 @@ impl Grid {
                 updated_at: Some(s.updated_at),
             })
             .collect();
+        let shares = self.shares_of(&u.id)?;
         let p = HomePage {
             user: page_user(u),
             url: self.cfg.instance_url(&u.handle),
@@ -183,6 +187,8 @@ impl Grid {
             devices: self.devices_of(&u.id)?,
             computers: self.computers_of(&u.id)?,
             sites,
+            shares,
+            start: Start::from_cookie(&cookies(h).get(START).cloned().unwrap_or_default()),
             offers: Offers { sites: self.sites.enabled, sandboxes: self.sandboxes.enabled && self.sandboxes.secrets.is_some() },
             csrf: Self::csrf_of(h),
             flash,
@@ -193,6 +199,11 @@ impl Grid {
     }
 
     fn account(&self, u: &UserRow, h: &HeaderMap, q: &str) -> Result<Resp> {
+        self.account_with(u, h, q, None)
+    }
+
+    /// Account, with a key just made said once (`new_key`: its name and the key), never kept for a reload.
+    pub(super) fn account_with(&self, u: &UserRow, h: &HeaderMap, q: &str, new_key: Option<(String, String)>) -> Result<Resp> {
         let (flash, tone) = Self::flash_of(h, q);
         let route = if self.routes.on {
             let v = self.routes.view(&u.id).unwrap_or(Value::Null);
@@ -216,6 +227,13 @@ impl Grid {
             identities: self.identities_of(&u.id)?,
             providers: self.page_providers(),
             route,
+            keys: self
+                .keys
+                .list(&u.id)?
+                .into_iter()
+                .map(|k| KeyView { id: k.id, name: k.name, hint: k.hint, created_at: Some(k.created_at), last_used_at: k.last_used_at })
+                .collect(),
+            new_key,
             csrf: Self::csrf_of(h),
             flash,
             tone,
@@ -232,6 +250,9 @@ impl Grid {
         if field("csrf") != Self::csrf(&session) {
             return Err(bad("That form is stale. Go back and try again.", 403));
         }
+        if let Some(r) = self.link_form(u, parts, q, h, &b) {
+            return r;
+        }
         match parts {
             ["instance", "stop"] => {
                 let was = self.boxes.stop(&u.id, "user").await?;
@@ -243,14 +264,6 @@ impl Grid {
             }
             ["computers", id, "remove"] => self.remove_computer(u, id),
             ["machines", "waitlist"] => self.machines_waitlist(u, &b, h),
-            ["sites", key, "remove"] => {
-                let gone = self.sites.remove(&u.id, key)?;
-                Ok(self.back(
-                    "/",
-                    if gone { "Unpublished: that link no longer works." } else { "That app was already unpublished." },
-                    !gone,
-                ))
-            }
             ["devices", id, "revoke"] => {
                 let r = self.accounts.revoke_device(&u.id, id)?;
                 for c in &r.computers {

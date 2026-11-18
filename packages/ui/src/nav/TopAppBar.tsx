@@ -237,8 +237,9 @@ function PhoneBar(props: TopAppBarProps & { readonly part: PartName }): JSX.Elem
   const look = usePlatform();
   const kind = (): 'root' | 'page' | 'compose' => props.kind ?? 'page';
   const ios = (): boolean => look() === 'ios';
-  // Android: the screen's selector is the title menu (M3), not one more control among the actions
-  const select = (): TopAppBarProps['titleSelect'] => (!ios() && !props.onTitle ? props.titleSelect : undefined);
+  // the screen's selector is the title menu, not one more control among the actions: M3's title menu on Android, and
+  // the large title's pull-down on iOS (Mail's mailboxes, Notes' folders; UX 2026-11-18 phone #11)
+  const select = (): TopAppBarProps['titleSelect'] => (!props.onTitle ? props.titleSelect : undefined);
   const title = (): string => select()?.title ?? props.title;
   const onTitle = (): (() => void) | undefined => select()?.onOpen ?? props.onTitle;
   const actions = (): readonly ToolbarItem[] => {
@@ -327,10 +328,11 @@ function PhoneBar(props: TopAppBarProps & { readonly part: PartName }): JSX.Elem
           <Show
             when={ios() ? props.titleMenu : undefined}
             fallback={
-              <Show when={props.onTitle} fallback={<span data-kit="app-bar-large-title" aria-hidden="true">{props.title}</span>}>
+              // the screen's selector (titleSelect) is the large title too: its words and its pull-down (UX 2026-11-18 phone #11)
+              <Show when={onTitle()} fallback={<span data-kit="app-bar-large-title" aria-hidden="true">{title()}</span>}>
                 {(go) => (
                   <button type="button" data-kit="app-bar-title-button" data-large="" aria-hidden="true" tabIndex={-1} onClick={() => go()()}>
-                    <span data-kit="app-bar-large-title">{props.title}</span>
+                    <span data-kit="app-bar-large-title">{title()}</span>
                     <Icon name="chevron" size="md" />
                   </button>
                 )}

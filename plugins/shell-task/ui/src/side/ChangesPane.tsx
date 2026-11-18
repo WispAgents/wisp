@@ -11,6 +11,7 @@ import { added, commentStore, isLine, lineKey, lineLabel, placeOf, waiting } fro
 import { isStub, keepTurnsWhole } from '@wisp/shell';
 import { useShell } from '../shell.ts';
 import { useTask } from '../task-context.tsx';
+import { setChangeStat } from './changes-stat.ts';
 import { changesOf, envState, filesOf, outsideFolder, relative, revealedOf, seenMasked, setRevealed, type ChangeTurn } from './changes.ts';
 import '../i18n/lazy.ts';
 
@@ -33,7 +34,7 @@ interface GitRead {
   readonly body: { readonly kind: 'inline'; readonly files: readonly GitFileRow[] } | { readonly kind: 'blob' };
 }
 
-const read = defineCommand<{ key: EntityKey; path: string; base: string; reveal: readonly string[] }, GitRead | null>({
+export const read = defineCommand<{ key: EntityKey; path: string; base: string; reveal: readonly string[] }, GitRead | null>({
   id: 'git.changes',
   owner: (a) => a.key,
   wire: (a) => ({ path: a.path, base: a.base, stageState: true, ...(a.reveal.length ? { reveal: [...a.reveal] } : {}) }),
@@ -161,6 +162,8 @@ export function ChangesPane(): JSX.Element {
     // what wisp saw edited outside the folder git reads (an agent's own worktree): git can't see it
     return [...fromGit, ...outsideFolder(seen)];
   });
+  // the side panel's Changes tab counts what this read found (UX 2026-11-18 #5)
+  createEffect(() => !git.loading && setChangeStat(task.key, { files: files().length }));
   // every diff opens by itself until you open, fold or view one (v1 opensNow)
   const isOpen = (p: string): boolean => open()?.has(p) ?? !viewed().has(p);
   const touch = (): Set<string> =>

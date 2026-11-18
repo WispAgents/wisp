@@ -65,16 +65,13 @@ impl Grid {
         if !who.page {
             return json_with(503, &json!({ "error": "This computer isn’t online.", "offline": true }), &retry);
         }
-        let text = format!(
-            "wisp on {} isn’t connected to the grid right now. It comes back when that computer is on and wisp runs there.",
-            c.name
-        );
-        let m = MessagePage {
-            title: format!("{} is offline", c.name),
-            text,
-            link: Some((self.cfg.public_url.clone(), "Home".into())),
-            tone: Tone::Plain,
+        let p = pages::OfflinePage {
+            name: c.name.clone(),
+            last_seen_at: c.last_seen_at,
+            now_ms: self.clock.now_ms(),
+            cloud: format!("{}/go", self.cfg.public_url),
+            home: self.cfg.public_url.clone(),
         };
-        html(503, pages::message_page(&self.page, &m), &retry)
+        html(503, pages::offline_page(&self.page, &p), &retry)
     }
 }

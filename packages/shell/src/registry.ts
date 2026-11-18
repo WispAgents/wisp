@@ -11,7 +11,7 @@
 // `if` is not applied here: it reads the render's props (the session), so the slot applies it.
 
 import { computed, signal, untracked, type Readable } from '@wisp/client';
-import type { BlockRendererDef, ExtensionDef, LaunchTargetDef, PaletteSourceDef, PluginUiDef, PluginUiLater, PromptSourceDef, ResolvedExtension, SettingsPaneDef, ShortcutDef, SideTabDef, PreviewAddressDef, SendHoldDef, TreeConfig, ViewDef, HarnessUiDef } from './contract.ts';
+import type { BlockRendererDef, ExtensionDef, LaunchTargetDef, PaletteSourceDef, PluginUiDef, PluginUiLater, PromptSourceDef, ResolvedExtension, SettingsPaneDef, ShortcutDef, SideTabDef, PreviewAddressDef, SendHoldDef, TreeConfig, ViewDef, HarnessUiDef, AccountLinkDef, HomeTipDef } from './contract.ts';
 
 export type Warn = (msg: string, data?: unknown) => void;
 
@@ -37,6 +37,8 @@ export interface Registry {
   launchTargets: Readable<readonly (LaunchTargetDef & { plugin: string })[]>;
   sideTabs: Readable<readonly (SideTabDef & { plugin: string })[]>;
   previewAddresses: Readable<readonly (PreviewAddressDef & { plugin: string })[]>;
+  accountLinks: Readable<readonly (AccountLinkDef & { plugin: string })[]>;
+  homeTips: Readable<readonly (HomeTipDef & { plugin: string })[]>;
   sendHolds: Readable<readonly (SendHoldDef & { plugin: string })[]>;
   shortcuts: Readable<readonly (ShortcutDef & { plugin: string })[]>;
   block(type: string): BlockRendererDef | undefined;
@@ -192,6 +194,9 @@ export function createRegistry(warn: Warn = () => {}): Registry {
     sideTabs: computed(() => flat((d) => d.sideTabs)().slice().sort((a, b) => (a.order ?? 0) - (b.order ?? 0))),
     // in registration order: the first that maps a URL wins (answer-ctx.ts)
     previewAddresses: flat((d) => d.previewAddresses),
+    // in registration order (docs/ux/2026-11-18-grid.md #9)
+    accountLinks: flat((d) => d.accountLinks),
+    homeTips: flat((d) => d.homeTips),
     sendHolds: flat((d) => d.sendHolds),
     shortcuts: flat((d) => d.shortcuts),
     // a later plugin's renderer for the same block type wins: that's how one is replaced

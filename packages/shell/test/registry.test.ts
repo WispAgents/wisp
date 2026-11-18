@@ -88,3 +88,15 @@ test('a_later_part_joins_its_plugin_in_place_ADR_0067', () => {
   r.remove('wisp.a');
   expect(ids(r, 'x:y')).toEqual(['b.one']);
 });
+
+test('account_links_and_home_tips_come_from_plugins_and_go_with_them', () => {
+  const r = createRegistry();
+  const link = { id: 'g.home', label: () => 'wisp Grid', icon: 'cloud' as const, href: () => 'https://grid.example/' };
+  const tip = { id: 'g.reach', icon: 'cloud' as const, title: () => 'Reach', body: () => 'b', cta: () => 'Set up', open: () => undefined };
+  r.add({ id: 'g', accountLinks: [link], homeTips: [tip] } as PluginUiDef);
+  expect(r.accountLinks().map((l) => [l.plugin, l.id])).toEqual([['g', 'g.home']]);
+  expect(r.homeTips().map((d) => [d.plugin, d.id])).toEqual([['g', 'g.reach']]);
+  r.remove('g');
+  expect(r.accountLinks()).toEqual([]);
+  expect(r.homeTips()).toEqual([]);
+});

@@ -152,7 +152,9 @@ export function receiptOf(d: TurnDoc, t: T): ReceiptLine | null {
   for (const p of d.ext?.['wisp.budget']?.plan ?? []) if (p.window && p.used > 0) by.set(p.window, (by.get(p.window) ?? 0) + p.used);
   const plan = [...by].map(([window, used]) => ({ window, used })).sort((a, b) => lengthOf(b.window) - lengthOf(a.window));
   const over = OVERAGE[d.ext?.['wisp.runtime']?.overage?.kind ?? ''];
-  const parts = [cache !== null && tokens ? t('shell-task.receipt.cache', { pct: pct(cache) }) : '', plan[0] ? t('shell-task.receipt.share', { pct: pct(plan[0].used), window: windowName(plan[0].window) }) : '', over ? t(over.label) : ''].filter(Boolean);
+  // the plan share leaves the line (UX 2026-11-18 #7: the details column says the task's share): it stays in this tip
+  // while the line has a cache figure or an overage to say; a turn with neither shows no receipt
+  const parts = [cache !== null && tokens ? t('shell-task.receipt.cache', { pct: pct(cache) }) : '', over ? t(over.label) : ''].filter(Boolean);
   if (!parts.length) return null;
   const tip = [
     tokens ? t('shell-task.receipt.tokens', { n: tokens.toLocaleString('en-US') }) : '',

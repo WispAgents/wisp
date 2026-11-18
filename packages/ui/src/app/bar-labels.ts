@@ -14,7 +14,8 @@ function contentWidth(bar: HTMLElement): number {
   let n = 0;
   for (const el of bar.children) {
     if (!(el instanceof HTMLElement) || el.getClientRects().length === 0) continue;
-    sum += el.offsetWidth;
+    // the grow spacer: its gaps, never its width (it takes what's left)
+    sum += el.dataset['kit'] === 'grow' ? 0 : el.offsetWidth;
     n++;
   }
   return sum + (Number.parseFloat(getComputedStyle(bar).columnGap) || 0) * Math.max(0, n - 1);

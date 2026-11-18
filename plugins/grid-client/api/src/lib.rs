@@ -98,6 +98,11 @@ pub struct Status {
     /// `{port}` literal); "" anywhere else. A `preview` block of this wisp's own task loads `localhost:<port>` there.
     #[serde(default)]
     pub preview: String,
+    /// When this wisp runs in a grid box, the grid's own address (`WISP_GRID_URL`, its Home: your machines, keys and
+    /// links); "" anywhere else. The account menu links back to it (docs/ux/2026-11-18-grid.md #9), and a box isn't
+    /// offered to be put on a grid.
+    #[serde(default)]
+    pub home: String,
 }
 
 /// One (grid, account) signed in to here (ADR-0061). Its token stays in secrets, never here.

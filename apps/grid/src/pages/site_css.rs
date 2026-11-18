@@ -28,7 +28,7 @@ h1.big{font-size:clamp(40px,5.4vw,64px);line-height:1.02;font-weight:700}h1.big 
 .join{margin-top:28px;max-width:440px}
 .join .btn{display:flex;align-items:center;justify-content:center;gap:10px;width:100%;height:52px;border-radius:12px;border:1px solid var(--line-2);background:var(--surface);color:var(--ink);font:550 15.5px var(--sans);text-decoration:none;cursor:pointer;transition:border-color .15s,transform .15s}
 .join .btn:hover{border-color:var(--faint);transform:translateY(-1px)}.join .btn svg,.join .btn img{width:19px;height:19px}
-.join .btn.first{background:var(--ink);color:var(--bg);border-color:var(--ink)}
+.join .btn.first{background:var(--ink);color:var(--bg);border-color:var(--ink)}.btn{position:relative}.btn .last{position:absolute;right:12px;top:50%;transform:translateY(-50%);padding:2px 7px;border-radius:99px;background:color-mix(in srgb,currentColor 14%,transparent);font:550 11px var(--sans);letter-spacing:0}
 .join .btn+.btn,.join .btn+.ways{margin-top:10px}
 .join .ways{display:grid;grid-template-columns:1fr 1fr;gap:10px}.join .ways .btn{gap:8px;white-space:nowrap}.join .ways .btn+.btn{margin-top:0}
 @media (max-width:480px){.join .ways .cw{display:none}}

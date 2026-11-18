@@ -8,7 +8,13 @@
   }
   [data-kit='term'][data-fixed] { flex: none; }
   [data-kit='term'][data-fixed] [data-kit='term-screen'] { flex: none; height: calc(var(--k-term-lines) * var(--k-term-lh, 1.3em) + 2 * var(--space-5)); }
-  [data-kit='term-rows'] { font: var(--fs-md) / 1.3 var(--mono); font-variant-ligatures: none; white-space: pre; }
+  /* after the mono stack, the Nerd Font families prompts are made for (powerline arrows, git and OS icons): the browser
+     falls back per glyph, so a prompt the user's own terminal draws shows here too, not boxes (UX 2026-11-18 #13) */
+  [data-kit='term-rows'] {
+    font: var(--fs-md) / 1.3 var(--mono), 'Symbols Nerd Font Mono', 'Symbols Nerd Font', 'MesloLGS NF', 'MesloLGS Nerd Font Mono',
+      'JetBrainsMono Nerd Font Mono', 'JetBrainsMono Nerd Font', 'Hack Nerd Font Mono', 'FiraCode Nerd Font Mono', 'CaskaydiaCove Nerd Font Mono', monospace;
+    font-variant-ligatures: none; white-space: pre;
+  }
   [data-kit='term-row'] { height: var(--k-term-lh, 1.3em); line-height: var(--k-term-lh, 1.3em); overflow: hidden; }
   /* Scrollback rows off screen skip layout and paint: a reopened terminal brings thousands. */
   [data-kit='term-back'] > [data-kit='term-row'] { content-visibility: auto; contain-intrinsic-size: auto var(--k-term-lh, 1.3em); }

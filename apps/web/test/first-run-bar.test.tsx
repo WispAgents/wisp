@@ -42,12 +42,14 @@ async function start(platform: Platform, o: { firstRun?: boolean; width?: number
   return { client, root };
 }
 
-/** the bar's mode on each change from its first draw: full has Delegate, a first run keeps it behind More options */
+/** the bar's mode on each change from its first draw: full has Delegate or `+`, a first run keeps them behind More options */
 function watchMode(root: HTMLElement): { modes: string[]; stop: () => void } {
   const modes: string[] = [];
   const note = (): void => {
     if (root.querySelector('[data-part~="launcher.input"]') === null) return;
-    const mode = root.querySelector('[data-part~="launcher.team"]') === null ? 'first' : 'full';
+    // full: Delegate on the bar (the phone's) or the one footer's `+` (the desktop's, UX 2026-11-18 #3); a first run has
+    // neither, only More options
+    const mode = root.querySelector('[data-part~="launcher.team"], [data-part~="launcher.plus"]') === null ? 'first' : 'full';
     if (modes.at(-1) !== mode) modes.push(mode);
   };
   const mo = new MutationObserver(note);

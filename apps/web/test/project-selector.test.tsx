@@ -149,17 +149,18 @@ test('the_phone_tasks_screen_on_android_has_the_one_selector_as_its_title_menu_a
   expect(row('All projects')).toBeDefined();
 });
 
-for (const kind of ['ios'] as const) {
+for (const kind of ['ios', 'android'] as const) {
+  // the one selector (owner, 2026-11-15) is the bar's title menu on both looks (UX 2026-11-18 phone #11: the iOS large
+  // title's pull-down, M3's title menu), not a dropdown among the actions; no chip row
   test(`the_phone_tasks_screen_on_${kind}_has_the_one_selector_in_its_bar_and_no_project_chips`, async () => {
     const { root } = await start(nullPlatform({ kind, phone: true, mobile: true }), 390);
-    await until(() => (root.querySelector('[data-part="phone.tasks.project"]')?.closest('[data-part~="phone.tasks.bar"]') ?? null) !== null);
-    const sel = root.querySelector('[data-part="phone.tasks.project"]');
-    expect(sel?.getAttribute('data-kit')).toBe('p-select');
-    expect(sel?.getAttribute('data-where')).toBe('bar');
-    expect(sel?.closest('[data-part~="phone.tasks.bar"]'), 'in the top bar').not.toBeNull();
+    const title = (): HTMLElement | null => root.querySelector<HTMLElement>('[data-part~="phone.tasks.bar"] [data-kit="app-bar-title-button"]');
+    await until(() => title()?.textContent?.includes('All projects') === true);
+    expect(title()?.textContent).toContain('All projects');
+    expect(root.querySelector('[data-part="phone.tasks.project"]'), 'not among the actions').toBeNull();
     expect(root.querySelector('[data-part~="phone.tasks.projects"]'), 'no chip row').toBeNull();
     // a tap opens the same ⌘P list
-    (sel as HTMLElement).click();
+    title()?.click();
     await until(() => row('api') !== undefined);
     expect(row('All projects')).toBeDefined();
   });

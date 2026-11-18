@@ -41,7 +41,8 @@ impl Credential {
 /// Where a request goes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize)]
 pub enum Reach {
-    /// the grid's pages: account, devices, delete, sign out
+    /// the grid's pages and their CSRF forms: account, devices, API keys and shared links (made, revoked, stopped:
+    /// docs/ux/2026-11-18-grid.md #5, #6), delete, sign out
     #[serde(rename = "grid:pages")]
     GridPages,
     /// /channels/route: giving the grid a bot to own (only here, never at <handle>/_grid/*)

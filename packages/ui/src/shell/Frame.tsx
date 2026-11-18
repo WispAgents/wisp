@@ -42,6 +42,10 @@ export interface FrameProps extends KitProps, WithVars {
   /** stack only: the main page is New task, over the list (Android's full-screen dialog, iOS's sheet: the list stays
    *  behind it, and the destinations give way) */
   readonly behind?: boolean;
+  /** stack only: the main or side page is a pushed detail (a task and its sheets), not a destination's root: the phone
+   *  looks hide the destinations under it (HIG hidesBottomBarWhenPushed, an M3 detail screen) and its own bottom bar
+   *  sits on the safe area. Additive (2026-11-18, docs/ux/2026-11-18-phone.md #2). */
+  readonly pushed?: boolean;
 }
 
 /** The compose button at the top bar's end, on iOS, while no root TopAppBar draws it and the pane it came from is on
@@ -100,6 +104,7 @@ function FrameBody(props: FrameProps): JSX.Element {
       data-list={props.listOpen === false ? 'closed' : 'open'}
       data-side={flag(props.sideOpen)}
       data-behind={flag(props.behind)}
+      data-pushed={flag(props.layout === 'stack' && props.pushed === true && props.page !== 'list')}
       data-contained={flag(props.contained)}
       style={styleOf({}, props.vars)}
     >

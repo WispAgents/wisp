@@ -3,9 +3,10 @@
 // approval_decision: typed words that aren't a yes or no deny the call and go to the agent). Pure.
 
 /** the i18n key for the reply box's placeholder */
-export function replyPlaceholderKey(row: { readonly state?: string; readonly body?: Readonly<Record<string, unknown>> } | undefined): string {
+/** `question`: the latest answer ends in a live `question` block (its options above the box, UX 2026-11-18 #1) */
+export function replyPlaceholderKey(row: { readonly state?: string; readonly body?: Readonly<Record<string, unknown>> } | undefined, question = false): string {
   const ext = row?.body?.['ext'] as Record<string, unknown> | undefined;
   const ask = (ext?.['wisp.runtime'] as { ask?: unknown } | undefined)?.ask;
-  if (!ask || typeof ask !== 'object') return 'shell.task.reply';
+  if (!ask || typeof ask !== 'object') return question ? 'shell.task.replyOwn' : 'shell.task.reply';
   return (ask as { permission?: unknown }).permission ? 'shell.task.replyDenies' : 'shell.task.replyAnswer';
 }

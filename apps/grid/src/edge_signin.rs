@@ -64,6 +64,9 @@ impl SignIn {
     }
 }
 
+/// The way this browser signed in last (a provider's id): the sign-in page puts it first.
+const LAST_WAY: &str = "wisp_last_way";
+
 impl Grid {
     fn redirect_uri(&self, id: &str) -> String {
         format!("{}/auth/{}/callback", self.cfg.public_url, crate::http::encode_component(id))
@@ -79,6 +82,11 @@ impl Grid {
     }
 
     pub(super) fn sign_in_page(&self, h: &HeaderMap, ret: &str, error: &str, linking: bool, status: u16) -> Resp {
+        self.sign_in_page_at(h, ret, error, linking, status, false)
+    }
+
+    /// The sign-in page; `focus`: opened as `/signin`, so it lands on the way in.
+    pub(super) fn sign_in_page_at(&self, h: &HeaderMap, ret: &str, error: &str, linking: bool, status: u16, focus: bool) -> Resp {
         let a = &self.cfg.auth;
         let seats = pages::Seats {
             left: None,
@@ -98,6 +106,8 @@ impl Grid {
             waitlisted: false,
             analytics: None,
             ua,
+            last: cookies(h).get(LAST_WAY).filter(|v| self.page_providers().iter().any(|p| &p.id == *v)).cloned().unwrap_or_default(),
+            focus,
         };
         html(status, pages::sign_in_page(&self.page, &p), &[])
     }
@@ -109,16 +119,19 @@ impl Grid {
         if signed_in && query(q, "link").is_none() {
             return redirect(safe_path(&ret, "/"), &[]);
         }
-        self.sign_in_page(h, safe_path(&ret, ""), "", false, 200)
+        self.sign_in_page_at(h, safe_path(&ret, ""), "", false, 200, true)
     }
 
     /// `GET /auth/<id>/start?return=…[&link=1]`
     #[allow(clippy::many_single_char_names)] // h, q, p, f: the request's parts and the flow
     pub(super) async fn auth_start(&self, h: &HeaderMap, id: &str, q: &str) -> Result<Resp> {
         if id == "dev" && self.cfg.auth.dev {
-            return Ok(redirect(
-                &format!("/auth/dev?next={}", crate::http::encode_component(safe_path(&query(q, "return").unwrap_or_default(), "/"))),
-                &[],
+            return Ok(self.remember_way(
+                redirect(
+                    &format!("/auth/dev?next={}", crate::http::encode_component(safe_path(&query(q, "return").unwrap_or_default(), "/"))),
+                    &[],
+                ),
+                id,
             ));
         }
         let Some(p) = self.signin.providers.iter().find(|p| p.id == id) else {
@@ -153,7 +166,16 @@ impl Grid {
                 CookieOptions { secure: self.cfg.secure, max_age: Some(600), path: Some("/auth"), framed: false },
             ),
         );
-        Ok(r)
+        // linking a second way isn't how this browser signs in: only a sign-in is remembered
+        Ok(if link { r } else { self.remember_way(r, &p.id) })
+    }
+
+    /// The way in this browser took, for the sign-in page to put first next time (#10): the provider's id only, a
+    /// year, readable by nothing but this grid's own pages.
+    fn remember_way(&self, mut r: Resp, id: &str) -> Resp {
+        let o = CookieOptions { secure: self.cfg.secure, max_age: Some(31_536_000), path: None, framed: false };
+        add_cookie(&mut r, &cookie(LAST_WAY, id, o));
+        r
     }
 
     /// `GET /auth/<id>/callback?code=…&state=…`

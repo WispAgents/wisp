@@ -97,20 +97,21 @@ test('the_task_menu_on_a_phone_holds_v1s_task_actions_and_details_opens_the_side
   const open = [...document.querySelectorAll('[data-kit="menu"]')].find((m) => m.textContent?.includes('Mark done'));
   expect(open, 'the task’s menu').toBeDefined();
   const { top, inside } = await reach(open as Element);
-  // short (QA r2 #5): v1's task actions (the browser's details bar) on top, Details first, in v1's order; the rest of
-  // its More one submenu away; Archive and Delete on top
-  const first = ['Details', 'Transcript', 'Rerun…', 'Open in', 'Ship it…', 'Mark done'];
-  for (const w of [...first, 'Archive', 'Delete task']) expect(top, w).toContain(w);
-  expect(top.indexOf('Details')).toBe(0);
-  const order = first.map((w) => top.indexOf(w));
-  expect(order, 'in v1’s order').toEqual([...order].sort((a, b) => a - b));
-  expect(top.length, 'a menu that fits a phone').toBeLessThanOrEqual(16);
-  // every v1 action still reachable: Rename in This task; Changes and Shell in Show (one control per choice)
-  expect(inside['This task'], 'This task').toContain('Rename');
+  // three groups (UX 2026-11-18 phone #6; HIG ≈3 groups): act (Ship it…, Mark done), work on it (Rerun…, Open in, This
+  // task ›), put it away (Save for later, Archive, Delete); v1's other task actions one submenu away, in This task
+  expect(top.slice(0, 2)).toEqual(['Ship it…', 'Mark done']);
+  for (const w of ['Rerun…', 'Open in', 'This task', 'Archive', 'Delete task']) expect(top, w).toContain(w);
+  expect(top.indexOf('Rerun…')).toBeLessThan(top.indexOf('This task'));
+  expect(top.at(-1)).toBe('Delete task');
+  expect(top.length, 'a menu that fits a phone').toBeLessThanOrEqual(10);
+  // every v1 action still reachable, once: Details, Transcript, Rename, Changes and Shell in This task
+  for (const w of ['Details', 'Transcript', 'Rename', 'Changes', 'Shell']) expect(inside['This task'], w).toContain(w);
   const all = [...top, ...Object.values(inside).flat()];
   expect(all.filter((l) => l === 'Changes')).toHaveLength(1);
   expect(all.filter((l) => l === 'Shell')).toHaveLength(1);
-  expect(inside['Show'], 'Show').toEqual(expect.arrayContaining(['Changes', 'Shell']));
+  // Details from This task
+  (open as Element).querySelector<HTMLElement>('[data-kit="menu-item"][data-sub]:not([data-back])')?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+  await until(() => (open as Element).hasAttribute('data-drilled'));
   const details = [...(open?.querySelectorAll<HTMLElement>('[data-kit="menu-item"]') ?? [])].find((e) => e.textContent?.includes('Details'));
   details?.click();
   await until(() => q('[data-part~="phone.task.details"] [data-part="split.details"]') !== null);
@@ -135,10 +136,12 @@ test('rename_on_a_phone_is_a_dialog_from_the_menu_not_an_inline_edit', async () 
 
 test('a_phones_browser_task_page_keeps_v1s_head_with_back_and_its_details_bar', async () => {
   const { client, root } = await start(nullPlatform({ mobile: true }));
-  await openTask(client, root, '[data-part~="split.head"] [data-part="split.back"]', '[data-part="split.details"] [data-part="split.actions"]');
+  await openTask(client, root, '[data-part~="split.head"] [data-part="split.back"]', '[data-part="split.details"]');
   expect(document.documentElement.hasAttribute('data-platform')).toBe(false);
   expect(root.querySelector('[data-part~="split.head"] [data-part="split.back"]'), 'v1’s Back').not.toBeNull();
-  expect(root.querySelector('[data-part="split.details"] [data-part="split.actions"]'), 'v1’s details bar and its actions').not.toBeNull();
+  expect(root.querySelector('[data-part="split.details"]'), 'v1’s details bar').not.toBeNull();
+  // its actions are the head's one bar now (docs/ux/2026-11-18-desktop.md #4): Ship, Done, ⋯
+  expect(root.querySelector('[data-part~="split.head"] [data-part="split.more"]'), 'the head’s actions').not.toBeNull();
   expect(root.querySelector('[data-part="phone.task.bar"]')).toBeNull();
 });
 
@@ -161,7 +164,8 @@ for (const kind of ['android', 'ios'] as const) {
     if (kind === 'android') expect(out?.getAttribute('aria-label')).toBe('Close');
     else expect(out?.textContent).toBe('Cancel');
     const send = bar?.querySelector<HTMLButtonElement>('[data-part="phone.new.bar.confirm"]');
-    expect(send?.textContent).toBe('Send');
+    // one primary action, named for what it does (UX 2026-11-18 phone #5)
+    expect(send?.textContent).toBe('Start');
     expect(send?.disabled, 'nothing typed yet').toBe(true);
     // over the list, which stays behind it; v1's Back and greeting bar are not drawn
     expect(root.querySelector('[data-kit="frame"]')?.hasAttribute('data-behind')).toBe(true);

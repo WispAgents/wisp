@@ -24,28 +24,59 @@ pub struct ShareCard {
     pub version: i64,
     /// `grid://<handle>/<key>`
     pub source: String,
+    /// who may open it: `anyone` | `people` | `teams` | `password`
+    pub access: String,
+    /// the reader is signed in to this grid, so has a cloud wisp to open it in
+    pub signed_in: bool,
 }
 
-const STYLE: &str = "<style>.hub-meta{color:var(--muted,#666);font-size:13px;margin:4px 0 16px}.hub-list{list-style:none;padding:0;margin:0 0 16px}.hub-list li{padding:6px 0;border-bottom:1px solid rgba(127,127,127,.18)}.hub-pre{white-space:pre-wrap;word-break:break-word;font:13px/1.5 ui-monospace,Menlo,monospace;background:rgba(127,127,127,.08);padding:12px;border-radius:8px;overflow:auto}.hub-k{font:12px ui-monospace,Menlo,monospace;opacity:.7;margin-right:6px}.hub-open{margin:12px 0 20px}.hub-open code{font:13px ui-monospace,Menlo,monospace}</style>";
+const STYLE: &str = "<style>.hub-meta{color:var(--muted,#666);font-size:13px;margin:4px 0 16px}.hub-list{list-style:none;padding:0;margin:0 0 16px}.hub-list li{padding:6px 0;border-bottom:1px solid rgba(127,127,127,.18)}.hub-pre{white-space:pre-wrap;word-break:break-word;font:13px/1.5 ui-monospace,Menlo,monospace;background:rgba(127,127,127,.08);padding:12px;border-radius:8px;overflow:auto}.hub-k{font:12px ui-monospace,Menlo,monospace;opacity:.7;margin-right:6px}.hub-open{margin:14px 0 24px}.hub-acts{display:flex;flex-wrap:wrap;gap:8px}.hub-alt{margin-top:8px;color:var(--muted,#666);font-size:12.5px}.hub-alt a{color:var(--accent)}.hub-alt code,.hub-open code{font:12px ui-monospace,Menlo,monospace}.hub-prose{white-space:pre-wrap;word-break:break-word;font:14px/1.55 var(--sans,system-ui);background:rgba(127,127,127,.06);border:1px solid rgba(127,127,127,.16);padding:12px 14px;border-radius:10px}.main h2.h2{margin:22px 0 8px;font-size:15px;font-weight:600}.hub-list code{font:13px ui-monospace,Menlo,monospace}.hub-n{font-weight:400;color:var(--muted,#666);font-size:12.5px;margin-left:4px}</style>";
 
 fn s<'a>(v: &'a Value, k: &str) -> &'a str {
     v.get(k).and_then(Value::as_str).unwrap_or("")
 }
 
+/// The way in (#8): signed in to this grid, the cloud wisp (the link copied on the way, to paste in New task, which
+/// imports a share link); anywhere, wisp on this computer (`wisp://open`), and for someone with no wisp at all, where
+/// to get it and the command.
 fn open_in_wisp(c: &ShareCard, public_url: &str) -> String {
     let link = format!("{public_url}/s/{}", c.id);
+    let local = format!(
+        r#"<a class="{} tall" href="wisp://open/{}">Open in wisp on this computer</a>"#,
+        if c.signed_in { "ghost line" } else { "primary" },
+        esc(&c.id)
+    );
+    let cloud = if c.signed_in {
+        format!(
+            r#"<a class="primary tall" href="/go" data-copy="{}" title="Copies the link: paste it in New task">Open in your cloud wisp</a>"#,
+            esc(&link)
+        )
+    } else {
+        String::new()
+    };
+    let paste = if c.signed_in { "In your cloud wisp, paste the link in New task. " } else { "" };
     format!(
-        r#"<div class="hub-open"><a class="primary tall" href="wisp://open/{id}">Open in wisp</a> <span class="sub">or run <code>wisp open {link}</code></span></div>"#,
-        id = esc(&c.id),
+        r#"<div class="hub-open"><div class="hub-acts">{cloud}{local}</div><p class="hub-alt">{paste}No wisp? <a href="https://trywisp.dev" target="_blank" rel="noopener">Get wisp</a> · or run <code>wisp open {link}</code></p></div>
+      <script>document.addEventListener('click',(e)=>{{const a=e.target.closest('a[data-copy]');if(a&&navigator.clipboard)navigator.clipboard.writeText(a.dataset.copy).catch(()=>{{}})}})</script>"#,
         link = esc(&link)
     )
+}
+
+/// Who opens it, in the reader's words.
+fn access_words(a: &str) -> &'static str {
+    match a {
+        "people" => "the people named",
+        "teams" => "its teams",
+        "password" => "with its passkey",
+        _ => "anyone with the link",
+    }
 }
 
 fn task_body(v: &Value) -> String {
     let mut out = String::new();
     let prompt = v.pointer("/spec/prompt").and_then(Value::as_str).unwrap_or_default();
     if !prompt.is_empty() {
-        out.push_str(&format!(r#"<h2 class="h2">The ask</h2><div class="hub-pre">{}</div>"#, esc(prompt)));
+        out.push_str(&format!(r#"<h2 class="h2">The ask</h2><div class="hub-prose">{}</div>"#, esc(prompt)));
     }
     let answers = v.pointer("/report/answers").and_then(Value::as_array).cloned().unwrap_or_default();
     if !answers.is_empty() {
@@ -53,7 +84,7 @@ fn task_body(v: &Value) -> String {
         for a in &answers {
             let text = s(a, "text");
             let text = if text.is_empty() { a.get("blocks").map(Value::to_string).unwrap_or_default() } else { text.to_owned() };
-            out.push_str(&format!(r#"<div class="hub-pre">{}</div>"#, esc(&text)));
+            out.push_str(&format!(r#"<div class="hub-prose">{}</div>"#, esc(&text)));
         }
     }
     let files: Vec<String> = v
@@ -63,8 +94,9 @@ fn task_body(v: &Value) -> String {
         .unwrap_or_default();
     if !files.is_empty() {
         out.push_str(&format!(
-            r#"<h2 class="h2">Files it changed</h2><ul class="hub-list">{}</ul>"#,
-            files.iter().map(|f| format!("<li>{f}</li>")).collect::<String>()
+            r#"<h2 class="h2">Files it changed <span class="hub-n">{}</span></h2><ul class="hub-list">{}</ul>"#,
+            files.len(),
+            files.iter().map(|f| format!("<li><code>{f}</code></li>")).collect::<String>()
         ));
     }
     if out.is_empty() {
@@ -105,12 +137,13 @@ pub fn share_page(cfg: &PageCfg, c: &ShareCard, content: &Value) -> String {
     };
     let summary = if c.summary.is_empty() { String::new() } else { format!(r#"<p class="sub">{}</p>"#, esc(&c.summary)) };
     let body = format!(
-        r#"<h1 class="h1">{title}</h1>{summary}<div class="hub-meta">A {kind} shared by <b>{from}</b> · v{v} · <code>{src}</code></div>{open}{what}"#,
+        r#"<div class="hub-meta">A {kind} shared by <b>{from}</b> · v{v} · {who} · <code>{src}</code></div><h1 class="h1">{title}</h1>{summary}{open}{what}"#,
         title = esc(&c.title),
         kind = esc(&c.kind),
         from = esc(&c.from),
         v = c.version,
         src = esc(&c.source),
+        who = access_words(&c.access),
         open = open_in_wisp(c, &cfg.public_url),
     );
     app_page(&AppPage { head: STYLE, ..AppPage::new(cfg, &c.title, &body) })
@@ -209,5 +242,21 @@ mod tests {
         assert!(locked.contains("password isn’t right") && !locked.contains("Review"));
         assert!(gone_page(&cfg(), "expired").contains("expired"));
         assert!(gallery_page(&cfg(), "<q>", &[]).contains("Nothing matches"));
+    }
+
+    #[test]
+    fn the_way_in_works_with_or_without_wisp_and_says_who_opens_it() {
+        let mut c =
+            ShareCard { id: "abc".into(), kind: "task".into(), title: "T".into(), access: "password".into(), ..ShareCard::default() };
+        let out = share_page(&cfg(), &c, &json!({}));
+        // signed out: wisp on this computer is the way, with where to get wisp
+        assert!(out.contains(r#"<a class="primary tall" href="wisp://open/abc">Open in wisp on this computer</a>"#));
+        assert!(out.contains("No wisp? <a href=\"https://trywisp.dev\"") && out.contains("with its passkey"));
+        assert!(!out.contains("Open in your cloud wisp"));
+        // signed in to the grid: the cloud wisp first (the link copied on the way), this computer second
+        c.signed_in = true;
+        let inn = share_page(&cfg(), &c, &json!({}));
+        assert!(inn.contains(r#"<a class="primary tall" href="/go" data-copy="http://wisp.localhost:8080/s/abc""#));
+        assert!(inn.contains(r#"<a class="ghost line tall" href="wisp://open/abc">"#) && inn.contains("paste the link in New task"));
     }
 }

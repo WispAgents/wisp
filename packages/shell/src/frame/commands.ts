@@ -277,6 +277,15 @@ export const forLater = defineCommand<{ id: string; forLater: boolean }>({
   optimistic: (_b, a) => patch(a.id, '/summary/forLater', a.forLater ? { at: Date.now(), by: 'you' } : null),
 });
 
+/** Pin (or unpin) in the list, from the task's More (docs/ux/2026-11-18-desktop.md #6: one menu everywhere): the
+ *  summary's `pinned`, as the list's own Pin writes it (runtime host ops.rs pin). */
+export const pin = defineCommand<{ id: string; pinned: boolean }>({
+  id: 'runtime.pin',
+  owner: (a) => a.id,
+  wire: (a) => ({ ...a, id: bare(a.id) }),
+  optimistic: (_b, a) => patch(a.id, '/summary/pinned', a.pinned ? true : null),
+});
+
 /** Stop: the run ends where it is; queued follow-ups stay, held (v1 /stop). It answers once the run has wound down. */
 export const stopRun = defineCommand<{ id: string }>({ id: 'runtime.stop', owner: (a) => a.id, wire: (a) => ({ id: bare(a.id) }), optimistic: 'none', pending: 'Stopping…' });
 

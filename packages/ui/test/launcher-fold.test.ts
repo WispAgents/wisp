@@ -3,6 +3,7 @@
 // measured widths need, never clipped, and at the edge it never flaps.
 import { describe, expect, test } from 'vitest';
 import { barPlan, tailFold } from '../src/app/launcher-fold.ts';
+import { sumBar } from '../src/app/launcher-fold-measure.ts';
 
 // Goal 60, Worktree 90, Start later 40, gaps of 4, More 30: all three need 300 + 64 + 94 + 44 = 502
 const bar = (available: number): number => tailFold({ available, others: 300, tail: [60, 90, 40], gap: 4, more: 30 });
@@ -83,4 +84,35 @@ describe('the bar steps its labels to icons by measure, then folds_qa_desktop_r3
       last = p;
     }
   });
+});
+
+// UX 2026-11-18 #3: a chip turned on squeezed a wide bar to its icons: the grow spacer (whatever's left) was counted at
+// its stretched width, so the items always "filled" the bar to the pixel and rounding tipped it over
+test('the grow spacer counts for its gaps, never its width', () => {
+  const bar = document.createElement('div');
+  const kid = (kit: string, w: number, a?: string): void => {
+    const el = document.createElement('span');
+    el.setAttribute('data-kit', kit);
+    if (a) el.setAttribute('data-a', a);
+    Object.defineProperty(el, 'offsetWidth', { value: w });
+    el.getClientRects = () => [{}] as unknown as DOMRectList;
+    bar.append(el);
+  };
+  kid('icon-btn', 30, 'plus');
+  kid('grow', 437);
+  kid('send', 30);
+  const r = sumBar(bar, new Set(), new Map(), false);
+  expect(r).toEqual({ others: 60, count: 3, more: 30 });
+});
+
+// UX 2026-11-18 #3: the one footer has no tail until a feature is on, and at 900 px it ran 127 px past its box: with
+// nothing to fold, the bar still steps its labels to icons
+test('a bar with no tail still steps its labels to icons until it fits', () => {
+  const f = (others: number) => ({ others, gap: 2, tail: new Map<string, number>() });
+  const forms = [f(533), f(533), f(480), f(380)];
+  expect(barPlan({ available: 600, ids: [], forms, more: 30 })).toEqual({ level: 0, fold: 0 });
+  expect(barPlan({ available: 406, ids: [], forms, more: 30 })).toEqual({ level: 3, fold: 0 });
+  expect(barPlan({ available: 500, ids: [], forms, more: 30 })).toEqual({ level: 2, fold: 0 });
+  // not measured yet at a level: that level is tried next
+  expect(barPlan({ available: 406, ids: [], forms: [f(533)], more: 30 })).toEqual({ level: 1, fold: 0 });
 });

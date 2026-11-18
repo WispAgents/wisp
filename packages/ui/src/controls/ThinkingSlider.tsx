@@ -2,7 +2,8 @@
 // a quiet accent tint the knob reveals, the knob is the logo's orb, and wisps (motes along the track) show only where
 // it's filled, brighter and quicker the harder it thinks. Dragging previews, letting go commits; arrows, Home and
 // End step it.
-import { For, createSignal, type JSX } from 'solid-js';
+import { For, Show, createSignal, type JSX } from 'solid-js';
+import { usePlatform } from '../platform/PlatformLook.tsx';
 import { flag } from '../core/props.ts';
 
 const MOTES = 14;
@@ -36,6 +37,7 @@ export interface ThinkingSliderProps {
 }
 
 export function ThinkingSlider(props: ThinkingSliderProps): JSX.Element {
+  const look = usePlatform();
   const n = (): number => props.stops.length;
   const committed = (): number => Math.max(0, props.stops.indexOf(props.value));
   // while dragging: where the finger is (0…1); else the committed stop
@@ -100,6 +102,25 @@ export function ThinkingSlider(props: ThinkingSliderProps): JSX.Element {
         <For each={props.stops}>{(_, i) => <span data-kit="think-stop" data-past={flag(i() <= k())} style={{ '--at': String(n() > 1 ? i() / (n() - 1) : 0) }} />}</For>
         <span data-kit="think-knob" />
       </span>
+      <Show when={look() !== 'web'}>
+        <ThinkLabels stops={props.stops} at={k()} label={props.label} onPick={props.onChange} />
+      </Show>
     </div>
+  );
+}
+
+/** a phone (UX 2026-11-18 phone #9): each stop named under the track, a tap picks it (the drag stays) */
+function ThinkLabels(props: { readonly stops: readonly string[]; readonly at: number; readonly label: (v: string) => string; readonly onPick: (v: string) => void }): JSX.Element {
+  const n = (): number => props.stops.length;
+  return (
+    <span data-kit="think-labels">
+      <For each={props.stops}>
+        {(s, i) => (
+          <button type="button" data-kit="think-label" data-on={flag(i() === props.at)} aria-pressed={i() === props.at} style={{ '--at': String(n() > 1 ? i() / (n() - 1) : 0) }} onClick={() => props.onPick(s)}>
+            <span data-text="control">{props.label(s)}</span>
+          </button>
+        )}
+      </For>
+    </span>
   );
 }

@@ -144,6 +144,7 @@ function PickerOpen(props: RunnerPickerProps): JSX.Element {
   const rows = createMemo(() =>
     pickerRows(ordered(), {
       auto: offerAuto(),
+      inUse: props.value.agent,
       autoName: t('shell.home.auto'),
       used: (id) => {
         const w = usage().get(id);
@@ -165,6 +166,8 @@ function PickerOpen(props: RunnerPickerProps): JSX.Element {
         return t('shell.runner.used', { label: s.label, pct: s.pct });
       case 'models':
         return s.n === 1 ? t('shell.runner.oneModel') : t('shell.runner.models', { n: s.n });
+      case 'none':
+        return '';
       default:
         return t('shell.runner.defaultModel');
     }
@@ -331,6 +334,8 @@ function PickerOpen(props: RunnerPickerProps): JSX.Element {
       }}
       pane={pane()}
       onClose={close}
+      // the harnesses that can run are listed; another is set up in Settings → Agents (UX 2026-11-18 #9)
+      setup={{ label: t('shell.runner.setupAnother'), onClick: () => (close(), shell.navigate({ t: 'openOverlay', overlay: { kind: 'viewer', id: 'shell-settings.sheet' as never, params: { pane: 'agents' } } })) }}
     />
   );
 }

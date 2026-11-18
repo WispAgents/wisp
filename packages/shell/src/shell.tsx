@@ -94,6 +94,19 @@ export function createShell(o: ShellOptions): Shell {
       return pc ? [{ ...d, client: pc }] : [];
     }),
   );
+  // each plugin's account-menu links and Home tips (docs/ux/2026-11-18-grid.md #9), with the client they read as
+  const accountLinks = computed(() =>
+    registry.accountLinks().flatMap((d) => {
+      const pc = clients.get(d.plugin);
+      return pc ? [{ ...d, client: pc }] : [];
+    }),
+  );
+  const homeTips = computed(() =>
+    registry.homeTips().flatMap((d) => {
+      const pc = clients.get(d.plugin);
+      return pc ? [{ ...d, client: pc }] : [];
+    }),
+  );
   const theme = createTheme({
     pref: settings.get('shell.theme'),
     lockedBy: settings.lockedBy('shell.theme'),
@@ -246,6 +259,8 @@ export function createShell(o: ShellOptions): Shell {
     },
     sideTabs: () => sideTabs,
     previewAddresses: () => previewAddresses,
+    accountLinks: () => accountLinks,
+    homeTips: () => homeTips,
     block: (type) => registry.block(type),
     view: (kind) => registry.view(kind),
   };

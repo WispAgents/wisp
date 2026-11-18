@@ -186,7 +186,7 @@ export const NOT_MOCKED: Readonly<Record<string, string>> = Object.fromEntries([
     'machines.add', 'machines.connect', 'machines.disconnect', 'machines.letIn', 'machines.remove',
     'machines.stop', 'machines.update',
   ]),
-  ...reason('GitHub: needs gh and a real PR', ['ship.check_log', 'ship.details', 'ship.fix_conflicts', 'ship.merge', 'ship.refresh', 'ship.ship', 'ship.view', 'review.maybe', 'git.clone']),
+  ...reason('GitHub: needs gh and a real PR', ['ship.check_log', 'ship.fix_conflicts', 'ship.merge', 'ship.refresh', 'ship.ship', 'ship.view', 'review.maybe', 'git.clone']),
   ...reason('a real repo, language server or pty on disk: the mock git (mock-git.ts) has no files to read', [
     'history.blame', 'history.list', 'history.report', 'lsp.ask', 'worktrees.files', 'worktrees.grep', 'worktrees.save', 'worktrees.source',
     'runtime.terminal', 'runtime.exec', 'git.restoreTurn',

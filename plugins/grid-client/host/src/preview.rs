@@ -19,6 +19,22 @@ pub fn template(env: &dyn Fn(&str) -> Option<String>) -> String {
     if matches!(scheme, "http" | "https") && host_ok { format!("{scheme}://p{{port}}--{host}") } else { String::new() }
 }
 
+/// The grid a box's wisp belongs to (`WISP_GRID_URL`, which hostd sets), or "": only in a box (`WISP_BOX=1`, a sandbox
+/// too, since it's the same grid), only a bare `http(s)://<host>` (no path, query, fragment or user), so a link back
+/// can't be steered anywhere else.
+pub fn grid_home(env: &dyn Fn(&str) -> Option<String>) -> String {
+    if env("WISP_BOX").as_deref() != Some("1") {
+        return String::new();
+    }
+    let raw = env("WISP_GRID_URL").unwrap_or_default();
+    let raw = raw.trim().trim_end_matches('/');
+    let Some((scheme, host)) = raw.split_once("://") else { return String::new() };
+    let host_ok = !host.is_empty()
+        && host.bytes().all(|b| b.is_ascii_alphanumeric() || matches!(b, b'.' | b'-' | b':'))
+        && !host.starts_with(['.', '-', ':']);
+    if matches!(scheme, "http" | "https") && host_ok { format!("{scheme}://{host}") } else { String::new() }
+}
+
 #[cfg(test)]
 #[allow(clippy::unwrap_used)]
 mod tests {
@@ -51,5 +67,29 @@ mod tests {
         assert_eq!(template(&env(&[("WISP_PREVIEW_URL", "https://p{port}--ada.grid.example")])), "");
         let sb = env(&[("WISP_BOX", "1"), ("WISP_SANDBOX", "1"), ("WISP_PREVIEW_URL", "https://p{port}--ada.grid.example")]);
         assert_eq!(template(&sb), "");
+    }
+
+    #[test]
+    fn a_box_links_back_to_its_grid_and_nothing_else_does() {
+        let boxed = |url: &str| grid_home(&env(&[("WISP_BOX", "1"), ("WISP_GRID_URL", url)]));
+        assert_eq!(boxed("https://grid.trywisp.dev"), "https://grid.trywisp.dev");
+        assert_eq!(boxed("http://wisp.localhost:8391/"), "http://wisp.localhost:8391");
+        assert_eq!(
+            grid_home(&env(&[("WISP_BOX", "1"), ("WISP_SANDBOX", "1"), ("WISP_GRID_URL", "https://g.example")])),
+            "https://g.example"
+        );
+        for bad in [
+            "",
+            "grid.trywisp.dev",
+            "ftp://g.example",
+            "https://g.example/x",
+            "https://u@g.example",
+            "https://g.example?x",
+            "javascript://x",
+        ] {
+            assert_eq!(boxed(bad), "", "{bad}");
+        }
+        // not in a box: someone's own computer never says it's on a grid by an env var alone
+        assert_eq!(grid_home(&env(&[("WISP_GRID_URL", "https://g.example")])), "");
     }
 }

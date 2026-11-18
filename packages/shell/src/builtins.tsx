@@ -15,7 +15,7 @@ import { TASK_KEY, type TaskKey } from './frame/task-keys.ts';
 import { parseCompare } from './frame/runs-small.ts';
 import { openFeedback, parseFeedback } from './frame/feedback.ts';
 import { rowMenuItems } from './frame/row-menu.ts';
-import { PLACE_SOURCE, PROJECT_ACTIONS, PROJECT_SOURCE, placeItems, projectItems, projectShortcuts, projectsNow } from './frame/project-switch.ts';
+import { PLACE_SOURCE, PROJECT_ACTIONS, PROJECT_SOURCE, PROJECT_TAIL, placeItems, projectItems, projectShortcuts, projectTail, projectsNow } from './frame/project-switch.ts';
 import { flatRow, projectOf, sessionKey, shortAgo, statusOf } from './frame/rows-view.ts';
 import { markStepped } from './frame/stepped.ts';
 
@@ -348,6 +348,8 @@ export function shellUi(ctx: ShellContext): PluginUiDef {
       { id: PROJECT_SOURCE, order: 200, items: () => projectItems(ctx) },
       // New task's place list (its selector opens the palette on it alone): nothing in ⌘K
       { id: PLACE_SOURCE, order: 201, items: (pc) => (pc.narrowed ? placeItems(ctx) : []) },
+      // the switcher's last rows (Add project…, Manage projects…, Repo history): nothing in ⌘K, which has its own
+      { id: PROJECT_TAIL, order: 202, items: (pc) => projectTail(ctx, pc) },
     ],
     shortcuts: shortcuts(ctx),
   };

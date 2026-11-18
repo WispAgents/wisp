@@ -551,6 +551,33 @@ function withMedia(topics: Map<Topic, Row[]>): void {
   }
 }
 
+/** `ask`: the first finished task's latest answer ends in a question with options (the `question` block, Needs your
+ *  call); its turn edited two files and its PR #812 passed its checks (the side panel's Changes 2 and #812 ✓) */
+function withAsk(topics: Map<Topic, Row[]>, list: Row[]): void {
+  for (const [topic, rows] of topics) {
+    const turn = rows.filter((r) => r.e === 'turn').at(-1);
+    const v0 = turn?.v as { status?: string; body?: { presentation?: unknown } } | undefined;
+    if (!turn || v0?.status !== 'done' || !v0.body?.presentation) continue;
+    const v = turn.v as { body: Record<string, unknown> };
+    const question = { type: 'question', question: 'Which way should the retry go?', options: [{ label: 'Keep it in the scope', detail: 'what this change does' }, { label: 'Drop the retry', detail: 'the stream reconnects itself' }, { label: 'Back off exponentially' }] };
+    // the figures its footer says, as runtime sends them (camelCase)
+    const at = Number((turn.v as { started_at?: number }).started_at ?? 0);
+    const stats = { costUsd: 0.93, inputTokens: 6000, outputTokens: 623, ms: 149_000 };
+    const changes = [
+      { file: 'packages/client/src/peers.ts', op: 'modify', beforeFile: 'setTimeout(() => feed(p, { kind: "open" }), delay);\n', edits: [{ before: 'setTimeout(() => feed(p, { kind: "open" }), delay);', after: 'p.scope.timeout(delay, () => feed(p, { kind: "open" }));' }] },
+      { file: 'packages/client/test/peers.test.ts', op: 'modify', beforeFile: 'await sleep(50);\n', edits: [{ before: 'await sleep(50);', after: 'await welcome(peer);' }] },
+    ];
+    v.body = { ...v.body, endedAt: at + 149_000, stats, changes, presentation: { ...PRESENTATION, blocks: [...PRESENTATION.blocks.filter((b) => b.type !== 'actions'), question] } };
+    const id = topic.slice(topic.indexOf(':') + 1);
+    const pr = { number: 812, url: 'https://github.com/WispAgents/wisp/pull/812', title: 'Keep the retry in the stream scope', state: 'OPEN', checks: { pass: 3, fail: 0, pending: 0 } };
+    for (const r of [...rows.filter((x) => x.e === 'session'), ...list.filter((x) => x.e === 'session' && x.id.endsWith(`:${id}`))]) {
+      const sv = r.v as { summary?: Record<string, unknown> };
+      sv.summary = { ...sv.summary, pr };
+    }
+    return;
+  }
+}
+
 /** `firstRun`: no tasks yet (New task's first-run launcher, F-comp-35); the rest of the seed as it is. */
 /**
  * `computers`: a second computer, Studio (its own mock peer at /api/peer/studio), listed on this one's machines, and one
@@ -678,7 +705,7 @@ function withTrial(peer: string, now: number, list: Row[], topics: Map<Topic, Ro
   });
 }
 
-export function seed(o: { peer: string; now: number; extra: number; firstRun?: boolean; computers?: boolean; media?: boolean; env?: boolean; usage?: boolean; trial?: boolean; cloud?: boolean; crew?: boolean; team?: boolean; farJob?: boolean }): Seeded {
+export function seed(o: { peer: string; now: number; extra: number; firstRun?: boolean; computers?: boolean; media?: boolean; ask?: boolean; env?: boolean; usage?: boolean; trial?: boolean; cloud?: boolean; crew?: boolean; team?: boolean; farJob?: boolean }): Seeded {
   const topics = new Map<Topic, Row[]>();
   const list: Row[] = [];
   (o.firstRun ? [] : TASKS).forEach((t, i) => {
@@ -703,6 +730,7 @@ export function seed(o: { peer: string; now: number; extra: number; firstRun?: b
   // long threads (ADR-0079): one task's Notes, revisions and a Worn health, for its Thread tab
   topics.get(`session:${THREAD_TASK}`)?.push(...threadRows(o.now));
   if (o.media) withMedia(topics);
+  if (o.ask) withAsk(topics, list);
   if (o.env) withEnv(topics);
   if (o.usage) withUsage(list);
   if (o.trial) withTrial(o.peer, o.now, list, topics, TASKS.length + o.extra);

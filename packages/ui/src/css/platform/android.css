@@ -49,6 +49,10 @@
   :root[data-platform='android'] [data-kit='frame'][data-layout='stack'] [data-kit='frame-pane'][data-pane='list'] { background: var(--surface-c0); }
   /* without a navigation bar the bottom pane sits over the gesture bar itself */
   :root[data-platform='android'] [data-kit='frame'] > [data-kit='frame-body']:last-child { padding-bottom: var(--safe-bottom); }
+  /* a pushed page (a task, its side pane; UX 2026-11-18 phone #2): the destinations give way, as HIG's
+     hidesBottomBarWhenPushed and an M3 detail screen; the page's own bottom (the reply box) sits on the safe area */
+  :root[data-platform='android'] [data-kit='frame'][data-pushed] > [data-kit='frame-nav'] { display: none; }
+  :root[data-platform='android'] [data-kit='frame'][data-pushed] > [data-kit='frame-body'] { padding-bottom: var(--safe-bottom); }
 
   @media (min-width: 600px) {
     :root[data-platform='android'] [data-kit='frame'] {
@@ -59,6 +63,8 @@
     }
     :root[data-platform='android'] [data-kit='frame'] > [data-kit='frame-nav'] { padding-left: var(--safe-left); background: var(--surface-c0); }
     :root[data-platform='android'] [data-kit='frame'] > [data-kit='frame-body'] { padding-bottom: var(--safe-bottom); }
+    /* the rail (a tablet) stays beside a pushed page: it isn't under it */
+    :root[data-platform='android'] [data-kit='frame'][data-pushed] > [data-kit='frame-nav'] { display: block; }
   }
 
   /* NavigationBar (step 3): M3 navigation bar, 80 dp; the 64 × 32 active indicator pill behind the icon */
@@ -1387,4 +1393,96 @@
 
   /* Settings' search on a phone (M3 Search: the search bar keeps the screen's 16 dp margins), as the list under it; it stood on the screen's edge (QA round 4 #4) */
   :root[data-platform='android'] [data-kit='settings-nav-search'] { padding: var(--space-0) var(--inset) var(--space-4); }
+
+  /* UX 2026-11-18 phone #4: every composer control has the platform's touch target (HIG 44 pt, M3 48 dp); the icon
+     keeps its size, its box takes the room. Send keeps its filled circle and gets the room as an invisible hit slop. */
+  :root[data-platform='android'] [data-kit='reply-box'] [data-kit='c-bar'] > button:not([data-kit='send']),
+  :root[data-platform='android'] [data-kit='reply-box'] [data-kit='c-bar'] [data-kit='c-chips'] > button,
+  :root[data-platform='android'] [data-kit='launcher'] [data-kit='l-bar'] > button:not([data-kit='send']) { min-width: var(--tap-min); min-height: var(--tap-min); }
+  /* the harness pill (its logo, its ▾, Run on another agent too) keeps its shape, centred in the bar's touch height */
+  :root[data-platform='android'] [data-kit='launcher'] [data-kit='l-bar'] > [data-kit='runners'] { align-self: center; }
+  :root[data-platform='android'] [data-kit='reply-box'] [data-kit='send'],
+  :root[data-platform='android'] [data-kit='launcher'] [data-kit='send'] { overflow: visible; }
+  :root[data-platform='android'] [data-kit='reply-box'] [data-kit='send']::after,
+  :root[data-platform='android'] [data-kit='launcher'] [data-kit='send']::after { content: ''; position: absolute; inset: calc((100% - var(--tap-min)) / 2); }
+
+  /* UX 2026-11-18 phone #10: a task row says only what differs: the place goes when it is this computer (a row from
+     another computer or a sandbox still names it), and a finished row's title stays ink (its dot says it's done) */
+  :root[data-platform='android'] [data-kit='row-run'][data-local] > [data-kit='ir-w'] { display: none; }
+  :root[data-platform='android'] [data-kit='list-row'][data-layout='feed'][data-quiet] [data-kit='list-row-title'] { color: var(--on-surface); }
+
+  /* UX 2026-11-18 phone #13: the Shell's key row is the pane's bottom edge, right over the keyboard (an input accessory,
+     as Termius and Prompt keep it); the shell's name and End shell go to the top, under the sheet's tabs */
+  :root[data-platform='android'] [data-part~='side.shell.foot'] { order: -1; padding: var(--space-2) var(--inset); }
+  :root[data-platform='android'] [data-part~='side.shell.screen'] [data-kit='term-keys'] { padding-bottom: var(--space-2); }
+
+  /* UX 2026-11-18 phone #1: the reply bar's options chip (an M3 assist chip: the mode, its harness's logo, ▾) and its
+     sheet's rows (M3 list items: icon, label and its supporting line, the check of the one in use) */
+  :root[data-platform='android'] [data-kit='reply-box'] [data-kit='c-opts'] {
+    display: inline-flex; align-items: center; gap: var(--space-3); flex: 0 1 auto; min-width: 0; min-height: var(--tap-min);
+    padding: var(--space-0) var(--space-5); border: var(--hairline) solid var(--outline-var); border-radius: var(--radius-sm);
+    background: transparent; color: var(--on-surface); font: var(--type-label-l);
+  }
+  :root[data-platform='android'] [data-kit='c-opts'] > [data-kit='icon']:last-child { transform: rotate(90deg); }
+  :root[data-platform='android'] [data-kit='c-opts'] > [data-kit='c-opts-mode'] { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  :root[data-platform='android'] [data-kit='c-opts'] > [data-kit='icon'] { flex: none; color: var(--on-surface-var); }
+  :root[data-platform='android'] [data-kit='c-opts']:active { background: color-mix(in srgb, var(--on-surface) calc(var(--state-pressed) * 100%), transparent); }
+  :root[data-platform='android'] [data-kit='opts-list'] { display: flex; flex-direction: column; gap: var(--space-4); padding-bottom: var(--space-6); }
+  :root[data-platform='android'] [data-kit='opts-group'] { display: flex; flex-direction: column; }
+  :root[data-platform='android'] [data-kit='opts-head'] { padding: var(--space-4) var(--inset); font: var(--type-title-s); color: var(--on-surface-var); }
+  :root[data-platform='android'] [data-kit='opts-row'] {
+    display: grid; grid-template-columns: var(--size-icon-lg) minmax(0, 1fr) auto; align-items: center; gap: var(--space-7);
+    min-height: var(--tap-min); padding: var(--space-4) var(--inset); text-align: start; color: var(--on-surface); font: var(--type-body-l);
+  }
+  :root[data-platform='android'] [data-kit='opts-row'] > [data-kit='icon'] { color: var(--on-surface-var); }
+  :root[data-platform='android'] [data-kit='opts-row'][aria-checked='true'],
+  :root[data-platform='android'] [data-kit='opts-row'][data-on] { background: var(--primary-container); color: var(--on-primary-container); }
+  :root[data-platform='android'] [data-kit='opts-row']:active { background: color-mix(in srgb, var(--on-surface) calc(var(--state-pressed) * 100%), transparent); }
+  :root[data-platform='android'] [data-kit='opts-text'] { display: flex; flex-direction: column; min-width: 0; }
+  :root[data-platform='android'] [data-kit='opts-text'] > small { font: var(--type-body-m); color: var(--on-surface-var); }
+
+  /* UX 2026-11-18 phone #3: the task page's status pills under its bar (M3 assist chips, 32 dp in a 48 dp target), one
+     line that scrolls sideways; a pill whose pane is open is selected */
+  :root[data-platform='android'] [data-kit='page-status'] {
+    display: flex; flex-wrap: nowrap; gap: var(--space-4); overflow-x: auto; scrollbar-width: none;
+    padding: var(--space-0) var(--inset) var(--space-4); background: var(--surface-c0);
+  }
+  :root[data-platform='android'] [data-kit='page-status']::-webkit-scrollbar { display: none; }
+  :root[data-platform='android'] [data-kit='page-pill'] {
+    display: inline-flex; flex: none; align-items: center; gap: var(--space-3); min-height: var(--tap-min);
+    padding: var(--space-0) var(--space-6); border: var(--hairline) solid var(--outline-var); border-radius: var(--radius-sm);
+    background-clip: content-box; color: var(--on-surface); font: var(--type-label-l);
+  }
+  :root[data-platform='android'] [data-kit='page-pill'] > [data-kit='icon'] { color: var(--primary); }
+  :root[data-platform='android'] [data-kit='page-pill'][aria-pressed='true'] { background-color: var(--primary-container); color: var(--on-primary-container); border-color: transparent; }
+
+  /* UX 2026-11-18 phone #5: New task has one primary action, the bar's Start (the sheet's / full-screen dialog's
+     confirm); the box's round Send and the harness's + (Run on another agent too, in More) give way to it */
+  :root[data-platform='android'] [data-kit='frame'][data-behind] [data-kit='launcher'] [data-kit='l-bar'] [data-kit='send'],
+  :root[data-platform='android'] [data-kit='frame'][data-behind] [data-kit='launcher'] [data-kit='l-bar'] [data-kit='vs-btn']:not([data-del]) { display: none; }
+
+  /* UX 2026-11-18 phone #8: an older answer's icons wait behind its ⋯ (the latest answer's stay out); the ⋯ has the
+     platform's touch target, as the icons it opens */
+  :root[data-platform='android'] [data-kit='turn']:not([data-latest]) [data-kit='trail-bar'] > [data-kit='tb-tools']:not([data-open]) { display: none; }
+  :root[data-platform='android'] [data-kit='tb-more'] { display: inline-grid; place-items: center; min-width: var(--tap-min); min-height: var(--tap-min); margin-inline-start: auto; color: var(--on-surface-var); }
+  :root[data-platform='android'] [data-kit='tb-more'][aria-expanded='true'] { color: var(--primary); }
+
+  /* UX 2026-11-18 phone #9: the thinking levels named under the track (each a tap target the width of its stop) */
+  :root[data-platform='android'] [data-kit='think-labels'] { position: relative; display: block; height: var(--tap-min); margin-top: var(--space-2); }
+  :root[data-platform='android'] [data-kit='think-label'] {
+    position: absolute; top: 0; left: calc(var(--at) * 100%); transform: translateX(-50%);
+    min-width: var(--tap-min); max-width: calc(100% / 6); height: var(--tap-min); padding: var(--space-0);
+    color: var(--on-surface-var); font: var(--type-label-s, var(--type-footnote)); text-align: center;
+  }
+  :root[data-platform='android'] [data-kit='think-label']:first-child { transform: none; left: 0; text-align: start; }
+  :root[data-platform='android'] [data-kit='think-label']:last-child { transform: none; left: auto; right: 0; text-align: end; }
+  :root[data-platform='android'] [data-kit='think-label'][data-on] { color: var(--primary); font-weight: var(--fw-semibold); }
+
+  /* UX 2026-11-18 phone #14: an empty state that explains itself in a sentence (Thread's Notes) reads as body text,
+     not a 30-word title */
+  :root[data-platform='android'] [data-kit='empty-state'][data-part~='threads.empty'] [data-kit='empty-state-title'] { font: var(--type-body, var(--type-body-l)); color: var(--on-surface-var); text-wrap: pretty; }
+
+  /* the side panel as the phone's sheet (#3): the sheet is its edge, so the panel's own left rule (the browser's divider
+     beside the task) goes */
+  :root[data-platform='android'] [data-part~='phone.side.sheet'] [data-part~='side.panel'] { border-left: 0; }
 }

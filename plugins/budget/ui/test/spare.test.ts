@@ -32,3 +32,16 @@ test('spare_allowance_offers_a_long_window_resetting_within_a_day_with_a_fifth_l
   // a second account keeps its name
   expect(spareOf([{ ...codex, accounts: [{ account: 'work', windows: [win('weekly', 0.5, H, WEEK)] }] }], { now })[0]?.account).toBe('work');
 });
+
+// UX 2026-11-18 desktop #8: Home's spare-window card said "Use Claude Code" while Claude Code was the picked harness: it
+// suggests another harness with room, never the one you're on
+test('the_spare_card_never_suggests_the_harness_already_picked', () => {
+  const now = Date.UTC(2026, 10, 18, 12);
+  const H = 3_600_000;
+  const WEEK = 7 * 24 * H;
+  const win = (id: string, used: number, inMs: number, ms: number) => ({ id, label: id, used, resetsAt: now + inMs, ms });
+  const codex = { agent: 'codex', name: 'Codex', accounts: [{ account: 'default', windows: [win('weekly', 0.4, 10 * H, WEEK)] }] };
+  expect(spareOf([codex], { now }).length).toBe(1);
+  expect(spareOf([codex], { now, not: 'codex' })).toEqual([]);
+  expect(spareOf([codex], { now, not: 'claude' }).length).toBe(1);
+});

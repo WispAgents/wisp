@@ -59,6 +59,62 @@
     background: var(--bg-2);
     color: var(--ink);
   } /* v1 .icon-btn.open: the panel it opens is open */
+  /* the task's actions in the head (docs/ux/2026-11-18-desktop.md #4): one bar with and without the panel, words then
+     icons as the pane narrows (design/layout.md: a bar folds, it never wraps); keys in the tooltips, no keycaps */
+  [data-kit='head-act'] {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-2);
+    height: var(--size-control-md);
+    min-width: var(--size-control-md);
+    padding: 0 var(--space-3);
+    flex: none;
+    border-radius: var(--radius-control);
+    font-size: var(--fs-sm);
+    color: var(--ink-2);
+    white-space: nowrap;
+    transition:
+      background 0.15s,
+      color 0.15s;
+  }
+  [data-kit='head-act'][data-bare] {
+    justify-content: center;
+    padding: 0;
+    color: var(--muted);
+  }
+  [data-kit='head-act']:hover,
+  [data-kit='head-act'][aria-expanded='true'] {
+    background: var(--bg-2);
+    color: var(--ink);
+  }
+  [data-kit='head-act']:focus-visible {
+    outline: 2px solid var(--focus);
+    outline-offset: 1px;
+  }
+  [data-kit='head-act'][data-a='ship'] {
+    border: 1px solid var(--line-2);
+  }
+  [data-kit='head-act'][data-tone='good'] {
+    color: var(--good);
+  }
+  [data-kit='head-act'] > [data-kit='icon'] {
+    width: var(--size-icon);
+    height: var(--size-icon);
+  }
+  [data-kit='ha-figs'] {
+    font: var(--fs-xs) var(--mono);
+  }
+  [data-kit='ha-caret'] {
+    display: inline-flex;
+    transform: rotate(90deg);
+    color: var(--faint);
+  }
+  @container pane (max-width: 720px) {
+    [data-kit='head-act'] > [data-text='control'],
+    [data-kit='ha-caret'] {
+      display: none;
+    }
+  }
 
   /* panel.css .it-body; the narrow pane (split.css body.split:not(.pane-wide)): the details as a row
      over the turns, the actions in a row under them. A grid, not a wrapping row (design/layout.md). */
@@ -109,6 +165,23 @@
   }
   [data-kit='ml-name'] {
     display: none;
+  }
+  /* the narrow pane (the side panel open): the harness's name beside its logo, not a lone logo (UX 2026-11-18 #4) */
+  [data-kit='stage']:not([data-layout='stack']) [data-kit='it-bar'] [data-kit='model-logo'] {
+    flex: 0 1 auto;
+    min-width: 0;
+    align-items: center;
+    gap: var(--space-3);
+  }
+  [data-kit='stage']:not([data-layout='stack']) [data-kit='it-bar'] [data-kit='ml-name'] {
+    display: inline;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  [data-kit='stage']:not([data-layout='stack']) [data-kit='it-bar'] [data-kit='q-proj'] {
+    flex: none;
   }
   [data-kit='q-proj'] {
     min-width: 6ch;
@@ -269,6 +342,16 @@
     }
     [data-kit='ml-name'] {
       display: inline;
+    }
+    /* the narrow bar's one-line name (above) doesn't reach the column: the logo top-aligned, the words wrapping */
+    [data-kit='stage']:not([data-layout='stack']) [data-kit='it-bar'] [data-kit='model-logo'] {
+      flex: none;
+      align-items: flex-start;
+      gap: 9px;
+    }
+    [data-kit='stage']:not([data-layout='stack']) [data-kit='it-bar'] [data-kit='ml-name'] {
+      overflow: visible;
+      white-space: inherit;
     }
     [data-kit='q-proj'] {
       position: relative;
@@ -785,6 +868,13 @@
   [data-kit='c-bar'][data-tight] > [data-kit='mode-btn'][data-reply] {
     padding: 0 var(--space-3);
   }
+  /* the reply's harness with its model (docs/ux/2026-11-18-desktop.md #3: not a bare logo) */
+  [data-kit='c-runner'] > [data-kit='c-model'] {
+    margin-left: var(--space-2);
+    padding-right: var(--space-2);
+    color: var(--ink-2);
+    white-space: nowrap;
+  }
   [data-kit='c-runner'],
   [data-kit='c-team'] {
     display: inline-flex;
@@ -989,6 +1079,19 @@
     }
     [data-kit='cc-short'] {
       display: inline;
+    }
+  }
+
+  /* UX 2026-11-18 #7: a turn's footer says its time and cost at rest; its steps, receipt and icons come on hover or
+     focus within the turn (opacity only: every box stays, nothing reflows), the latest turn's icons always, and all of
+     it on a touch screen (no hover) */
+  [data-kit='trail-bar'] > [data-kit='tb'][data-a='stat'] { order: -1; }
+  @media (hover: hover) {
+    [data-kit='turn']:not(:hover):not(:focus-within) [data-kit='trail-bar'] > [data-kit='tb-acts'],
+    [data-kit='turn']:not(:hover):not(:focus-within) [data-kit='trail-bar'] > [data-part~='turn.receipt'],
+    [data-kit='turn']:not([data-latest]):not(:hover):not(:focus-within) [data-kit='trail-bar'] > [data-kit='tb-tools'] {
+      opacity: 0;
+      transition: opacity 0.12s var(--ease);
     }
   }
 }

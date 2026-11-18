@@ -8,7 +8,7 @@
 // own chunk: only the phone apps load it, so the
 // browser's first download is unchanged.
 import { createMemo, createSignal, onCleanup, onMount, Show, type JSX } from 'solid-js';
-import { Button, Dialog, Fab, Inline, Input, Menu, ProjectSelect, RadioGroup, SelectionBar, Sheet, TopAppBar, useSignal, type MenuEntry, type SelectionAction, type TaskSwipe, type ToolbarItem, type TopAppBarSelection } from '@wisp/ui';
+import { Button, Dialog, Fab, Inline, Input, Menu, PageStatus, ProjectSelect, RadioGroup, SelectionBar, Sheet, TopAppBar, useSignal, type PageStatusItem, type MenuEntry, type SelectionAction, type TaskSwipe, type ToolbarItem, type TopAppBarSelection } from '@wisp/ui';
 import { useShell } from '../context.tsx';
 import { Slot } from '../slot.tsx';
 import '../i18n/lazy.ts';
@@ -86,9 +86,12 @@ export function PhoneHead(props: { readonly filter: () => string }): JSX.Element
       priority: 'pin',
       render: () => <Menu trigger={{ icon: 'user', 'aria-label': account.label() }} items={account.items()} onSelect={account.onSelect} placement="bottom-end" part="phone.tasks.me" />,
     },
-    // selection mode's visible way in (the twin of a row's long-press menu's Select): iOS's Select, Android's in ⋮
-    ...(shell.listSelect ? [{ id: 'select', label: shell.t('shell.phone.select'), icon: 'check' as const, priority: 1, onSelect: () => shell.listSelect?.start() }] : []),
   ]);
+  // selection mode's visible way in (the twin of a row's long-press menu's Select): in the bar's ⋮ (Android) / ⋯ (iOS),
+  // as Files and Photos keep it, not a word of its own in the bar (UX 2026-11-18 phone #11)
+  const barMenu = createMemo(() =>
+    shell.listSelect ? { label: shell.t('shell.phone.tasksActions'), items: [{ value: 'select', label: shell.t('shell.phone.select'), icon: 'check' as const }], onSelect: (v: string) => v === 'select' && shell.listSelect?.start() } : undefined,
+  );
   // selection mode: the bar takes `selection` and the selection bar comes in; the kit picks what shows (iOS's edit mode
   // keeps this bar, its large title and its folded state; Android's contextual bar takes its place at its height)
   return (
@@ -108,6 +111,7 @@ export function PhoneHead(props: { readonly filter: () => string }): JSX.Element
         })}
         search={{ label: shell.t('shell.phone.search'), onOpen: () => shell.palette.open() }}
         actions={actions()}
+        {...(barMenu() && { menu: barMenu() as NonNullable<ReturnType<typeof barMenu>> })}
         actionsLabel={shell.t('shell.phone.tasksActions')}
         {...(selection() && { selection: selection() as TopAppBarSelection })}
         t={(k, v) => shell.t(`kit.${k}`, v)}
@@ -276,7 +280,8 @@ export function PhoneCompose(props: { readonly onClose: () => void; readonly onS
       part="phone.new.bar"
       title={t('shell.phone.newTask')}
       back={{ label: t('shell.phone.close'), onBack: props.onClose, close: t('shell.phone.cancel') }}
-      confirm={{ label: t('shell.phone.send'), onSelect: props.onSend, disabled: !props.canSend }}
+      // one primary action, named for what it does (UX 2026-11-18 phone #5): the box's own round Send gives way to it
+      confirm={{ label: t('shell.phone.start'), onSelect: props.onSend, disabled: !props.canSend }}
       t={(k) => t(`kit.${k}`)}
     />
   );
@@ -305,6 +310,8 @@ export interface PhoneTaskBarProps {
   readonly head: () => JSX.Element;
   /** the head's swipe to the next / previous task in the list's order (its twins: Next task / Previous task in the menu) */
   readonly swipe: TaskSwipe;
+  /** the pills under the bar (UX 2026-11-18 phone #3): Changes +n −n, the PR, each opening its pane's sheet. Additive. */
+  readonly status?: () => readonly PageStatusItem[];
 }
 
 export function PhoneTaskBar(props: PhoneTaskBarProps): JSX.Element {
@@ -323,6 +330,7 @@ export function PhoneTaskBar(props: PhoneTaskBarProps): JSX.Element {
         swipe={props.swipe}
         t={kit}
       />
+      <PageStatus items={props.status?.() ?? []} label={t('shell.phone.taskStatus')} part="phone.task.status" />
       <Sheet title={t('shell.phone.details')} open={props.detailsOpen} onOpenChange={props.onDetails} part="phone.task.details" t={kit}>
         {props.details()}
       </Sheet>

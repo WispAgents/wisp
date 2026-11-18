@@ -6,11 +6,11 @@ import { createMemo, Show, type JSX } from 'solid-js';
 import { FeedItem, ListRow, Swipe, useSignal, type SwipeDir, type SwipeSide } from '@wisp/ui';
 import type { EntityKey } from '@wisp/client';
 import { deleteTask, toggleArchived, toggleDone, toggleForLater } from '../actions.ts';
-import { agentName, rowView } from '../model/row.ts';
+import { agentName, rowView, secondLine } from '../model/row.ts';
 import { actionFor, type SwipeKind } from '../model/swipe.ts';
 import type { SessionRow } from '../types.ts';
 import { useEnv } from './env.ts';
-import { Actions, Mark, Pills, RunLine, SubLine, TimeCell, subOf } from './RowParts.tsx';
+import { Actions, HarnessMark, Mark, Pills, RunLine, SubLine, TimeCell, subOf } from './RowParts.tsx';
 import { Slot, hasExtensions } from './Slot.tsx';
 import '../i18n/lazy.ts';
 
@@ -55,6 +55,9 @@ function Body(props: { readonly k: EntityKey; readonly s: SessionRow; readonly n
   const head = hasExtensions('shell.row:head');
   const hover = hasExtensions('shell.row:hover');
   const subLook = createMemo(() => subOf(view().sub, env.shell.t, env.now()));
+  // two lines and the slot's actions: a desktop's list (the phone apps swipe)
+  const two = (): boolean => !env.swipes && props.nested !== 'run';
+  const line = createMemo(() => secondLine(view()));
   const name = (): string => agentName(props.s.agent, env.agents());
   const session = (): { id: string; agent: string } => ({ ...props.s, id: props.k, agent: props.s.agent });
   const side = (kind: SwipeKind): SwipeSide | undefined => {
@@ -77,14 +80,27 @@ function Body(props: { readonly k: EntityKey; readonly s: SessionRow; readonly n
       also={props.nested ? undefined : V1_ROW}
       title={props.s.title || t('shell-list.row.untitled')}
       lead={<Mark s={props.s} view={view()} name={name()} />}
-      sub={<SubLine sub={view().sub} />}
+      // a desktop's row is two lines (docs/ux/2026-11-18-desktop.md #2): the harness's logo and the answer's last line
+      // (the machine first when it isn't this computer); with no answer, harness · model as that line. The phone apps
+      // keep their three.
+      sub={
+        two() && line().line === 'sub' ? (
+          <>
+            <HarnessMark s={props.s} />
+            <Show when={line().where && view().run}>{(r) => `${r().where} · `}</Show>
+            <SubLine sub={view().sub} />
+          </>
+        ) : (
+          <SubLine sub={view().sub} />
+        )
+      }
       subTone={subLook().tone}
       subTitle={subLook().title}
       // the third line only when it says something (v1: no run line on wisp's own Welcome task)
       foot={
-        view().run || bottom() ? (
+        (view().run && !(two() && line().line === 'sub')) || bottom() ? (
           <>
-            <Show when={view().run}>{(r) => <RunLine run={r()} s={props.s} />}</Show>
+            <Show when={!(two() && line().line === 'sub') && view().run}>{(r) => <RunLine run={r()} s={props.s} noWhere={two()} />}</Show>
             <Show when={bottom()}>
               <Slot input="shell.row:bottom" session={session} />
             </Show>
@@ -102,6 +118,7 @@ function Body(props: { readonly k: EntityKey; readonly s: SessionRow; readonly n
       time={<TimeCell view={view()} />}
       actions={props.nested === 'sub' ? undefined : <Actions k={props.k} view={view()} hover={hover() ? <Slot input="shell.row:hover" session={session} layout="contents" /> : undefined} />}
       quick={props.nested === 'sub' ? 0 : quickCount(view())}
+      slots={!env.swipes && props.nested !== 'sub'}
       current={open()}
       selected={env.selected() === props.k && !open()}
       quiet={view().quiet}

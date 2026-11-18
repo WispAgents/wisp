@@ -71,7 +71,8 @@ export interface RowView {
   /** a finished task's title reads quieter (ink-2) */
   readonly quiet: boolean;
   readonly quickLater: 'save' | 'unsave' | 'gap';
-  readonly quickDone: 'show' | 'gap' | 'none';
+  /** Mark done (review), Reopen (done; docs/ux/2026-11-18-desktop.md #2), its empty slot, or none (the phone's swipes) */
+  readonly quickDone: 'show' | 'reopen' | 'gap' | 'none';
 }
 
 export interface RowContext {
@@ -226,7 +227,16 @@ function timeOf(s: SessionRow): TimeView {
 /** One-click Mark done on review rows; rows without one keep its space, so columns line up. */
 function quickDone(s: SessionRow, c: RowContext): RowView['quickDone'] {
   if (c.swipes) return 'none';
-  return s.state === 'review' && !s.parentId && !s.archived && (!c.open || c.split) ? 'show' : 'gap';
+  if (s.parentId || s.archived || (c.open && !c.split)) return 'gap';
+  return s.state === 'review' ? 'show' : s.state === 'done' ? 'reopen' : 'gap';
+}
+
+/** The row's second line on a desktop (docs/ux/2026-11-18-desktop.md #2): the answer's last line (live words, the
+ *  question, the report) with the harness's logo; with none, harness · model. The machine only when it isn't this
+ *  computer (a sandbox says so too): "This computer" on every row said nothing. */
+export function secondLine(v: Pick<RowView, 'sub' | 'run'>): { readonly line: 'sub' | 'run' | 'none'; readonly where: boolean } {
+  const where = !!v.run && (v.run.remote || !!v.run.sandbox);
+  return { line: v.sub ? 'sub' : v.run ? 'run' : 'none', where };
 }
 
 /** Some row the list shows has Mark done: on touch the list keeps its 36px column (v1 feed.js `has-quick`). */

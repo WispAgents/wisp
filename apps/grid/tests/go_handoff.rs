@@ -214,7 +214,11 @@ async fn open_on_a_computer_hands_the_sign_in_to_that_computer_only() {
     // a browser hears it in a page, as v1 did
     let r = web.get(format!("{}/", g.at("studio--ada"))).header("cookie", &cookie).header("accept", PAGE).send().await.unwrap();
     assert_eq!(r.status(), 503);
-    assert!(r.text().await.unwrap().contains("Studio is offline"));
+    let page = r.text().await.unwrap();
+    assert!(page.contains("Studio is offline"));
+    // not a dead end (docs/ux/2026-11-18-grid.md #7): it waits and opens it once it connects, and offers the cloud wisp
+    assert!(page.contains("It hasn’t connected yet.") && page.contains("this page opens it as soon as it connects"), "{page}");
+    assert!(page.contains(&format!(r#"href="{}/go">Open your cloud wisp instead"#, g.root())), "{page}");
     // signed out there, a browser goes to /go?computer=… for one
     let r = web.get(format!("{}/x", g.at("studio--ada"))).header("accept", PAGE).send().await.unwrap();
     assert_eq!(location(&r), format!("{}/go?computer={}&path=%2Fx", g.root(), comp.id));

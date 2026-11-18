@@ -99,6 +99,38 @@ pub fn site_not_found(cfg: &PageCfg) -> String {
     )
 }
 
+/// A computer of yours that isn't connected (#7), at its own address.
+#[derive(Debug, Clone, Default)]
+pub struct OfflinePage {
+    pub name: String,
+    pub last_seen_at: Option<i64>,
+    pub now_ms: i64,
+    /// `/go` on the grid: your cloud wisp, to keep working meanwhile
+    pub cloud: String,
+    /// the grid's home
+    pub home: String,
+}
+
+/// Not a dead end: when it was last seen, a wait that opens it by itself once it connects (the address answers
+/// something other than its 503), the cloud wisp to keep working meanwhile, and what to do on that computer.
+pub fn offline_page(cfg: &PageCfg, p: &OfflinePage) -> String {
+    let seen = match p.last_seen_at.filter(|t| *t != 0) {
+        Some(_) => format!("Last seen {}. ", super::time::ago(p.last_seen_at, p.now_ms)),
+        None => "It hasn’t connected yet. ".into(),
+    };
+    let body = format!(
+        r#"<h1 class="h1">{name} is offline</h1><p class="sub">{seen}wisp on {name} comes back when that computer is on and wisp runs there.</p>
+      <div class="wait-row" role="status"><span class="dot starting"></span><span id="msg">Waiting for it… this page opens it as soon as it connects.</span></div>
+      <p class="acts"><a class="primary tall" href="{cloud}">Open your cloud wisp instead</a><a class="ghost line tall" href="{home}">Home</a></p>
+      <details class="fold"><summary>On that computer?</summary><p class="sub">Start wisp there, or run <code>wisp computer on</code> in a terminal.</p></details>
+      <script>(async function poll(n){{try{{const r=await fetch(location.href,{{cache:'no-store',headers:{{accept:'application/json'}}}});if(r.status!==503)return location.reload()}}catch{{}}setTimeout(()=>poll(n+1),n<40?3000:10000)}})(0)</script>"#,
+        name = esc(&p.name),
+        cloud = esc(&p.cloud),
+        home = esc(&p.home),
+    );
+    app_page(&AppPage { narrow: true, ..AppPage::new(cfg, &format!("{} is offline", p.name), &body) })
+}
+
 /// Shown at `<handle>.<domain>` while its wisp starts; reloads itself once it answers.
 pub fn waking_page(cfg: &PageCfg, user: &PageUser) -> String {
     let body = format!(
@@ -135,6 +167,23 @@ mod tests {
         );
         assert!(allow.contains("<b>Pixel</b> asks to use your wisp as <b>ada</b>"));
         assert!(allow.contains("/signout?return=%2Factivate%3Fcode%3DABCD-EFGH%26app%3Dandroid"));
+    }
+
+    #[test]
+    fn an_offline_computer_waits_and_offers_a_way_on() {
+        let p = OfflinePage {
+            name: "Studio".into(),
+            last_seen_at: Some(1_000),
+            now_ms: 1_000 + 7_200_000,
+            cloud: "https://grid.test/go".into(),
+            home: "https://grid.test".into(),
+        };
+        let h = offline_page(&cfg(), &p);
+        assert!(h.contains("Studio is offline") && h.contains("Last seen 2 h ago."));
+        assert!(h.contains("this page opens it as soon as it connects") && h.contains("r.status!==503"));
+        assert!(h.contains(r#"href="https://grid.test/go">Open your cloud wisp instead"#));
+        let never = offline_page(&cfg(), &OfflinePage { name: "New".into(), ..OfflinePage::default() });
+        assert!(never.contains("It hasn’t connected yet."));
     }
 
     #[test]

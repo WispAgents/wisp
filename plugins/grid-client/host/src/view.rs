@@ -21,6 +21,8 @@ const MIGRATIONS: &[Migration] = &[
     Migration::sql(2, "ALTER TABLE grid_client_cloud ADD COLUMN accounts TEXT;"),
     // ADR-0064: in a grid box, where its pages show
     Migration::sql(3, "ALTER TABLE grid_client_cloud ADD COLUMN preview TEXT NOT NULL DEFAULT '';"),
+    // docs/ux/2026-11-18-grid.md #9: in a grid box, the grid's own address
+    Migration::sql(4, "ALTER TABLE grid_client_cloud ADD COLUMN home TEXT NOT NULL DEFAULT '';"),
 ];
 
 pub const CLOUD: EntityDef = EntityDef {
@@ -37,6 +39,7 @@ pub const CLOUD: EntityDef = EntityDef {
         ("signin", Col::Text),
         ("accounts", Col::Text),
         ("preview", Col::Text),
+        ("home", Col::Text),
     ],
     json_columns: &["computer", "signin", "accounts"],
     parent: None,
@@ -61,6 +64,7 @@ pub fn row(status: &wisp_grid_client_api::Status, signin: Option<&wisp_grid_clie
     r.insert("signin".into(), signin.map_or(Value::Null, |s| serde_json::to_value(s).unwrap_or(Value::Null)));
     r.insert("accounts".into(), serde_json::to_value(&status.accounts).unwrap_or(Value::Null));
     r.insert("preview".into(), json!(status.preview));
+    r.insert("home".into(), json!(status.home));
     r
 }
 
@@ -96,6 +100,7 @@ mod tests {
             computer: ComputerState::default(),
             accounts: Vec::new(),
             preview: String::new(),
+            home: String::new(),
         };
         let waiting = SignIn {
             id: "s1".into(),
@@ -124,6 +129,7 @@ mod tests {
                 current: true,
             }],
             preview: "https://p{port}--ada.grid.trywisp.dev".into(),
+            home: "https://grid.trywisp.dev".into(),
         };
         let r = row(&signed, None);
         db.write(move |w| w.upsert(CLOUD.kind, r).map(|_| ())).await.unwrap();

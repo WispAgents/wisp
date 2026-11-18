@@ -92,7 +92,27 @@ export function subOf(sub: SubView | undefined, t: (k: string) => string, now: n
 
 /** Harness · model · where: the row's third line (v1 feed.js runLine(): nothing else; the project and the branch are
  *  the task page's details, split.css hides .q-proj in the sidebar). */
-export function RunLine(props: { readonly run: RunView; readonly s: SessionRow }): JSX.Element {
+/** The harness's logo as the row shows it (v1 runBadge: Auto's accent dot on its corner when it picked the run). */
+export function HarnessMark(props: { readonly s: SessionRow }): JSX.Element {
+  const env = useEnv();
+  const route = (): RouteSeen | undefined => routeOf({ ext: (props.s as { ext?: unknown }).ext });
+  const harnesses = useSignal(env.shell.harnesses());
+  const harness = (): HarnessUiDef | undefined => harnesses().find((h) => h.id === props.s.agent);
+  return (
+    <Show
+      when={harness()?.logo}
+      fallback={
+        <Show when={route()}>
+          <Dot tone="accent" />
+        </Show>
+      }
+    >
+      {(src) => <RowLogo src={src()} routed={!!route()} />}
+    </Show>
+  );
+}
+
+export function RunLine(props: { readonly run: RunView; readonly s: SessionRow; /** this computer goes unsaid (a desktop's two-line row) */ readonly noWhere?: boolean }): JSX.Element {
   const env = useEnv();
   const route = (): RouteSeen | undefined => routeOf({ ext: (props.s as { ext?: unknown }).ext });
   const harnesses = useSignal(env.shell.harnesses());
@@ -102,25 +122,15 @@ export function RunLine(props: { readonly run: RunView; readonly s: SessionRow }
   return (
     <RowRun
       part="list.row.run card.run"
-      // v1 runBadge: the harness's logo (Auto's accent dot on its corner when it picked the run)
-      logo={
-        <Show
-          when={harness()?.logo}
-          fallback={
-            <Show when={route()}>
-              <Dot tone="accent" />
-            </Show>
-          }
-        >
-          {(src) => <RowLogo src={src()} routed={!!route()} />}
-        </Show>
-      }
+      logo={<HarnessMark s={props.s} />}
       name={name()}
       // a trial's runs share a harness: the run's one change leads, so a long model name never cuts it (v1 runVariant)
       model={[...(props.run.variant ?? []).map((v) => say(env.shell.t, v, env.now())), props.run.model].filter(Boolean).join(' · ') || undefined}
       // the tip names the harness as its plugin registered it, as the line does
       title={route() ? routeTip(route() as RouteSeen, env.shell.t) : say(env.shell.t, { ...props.run.title, vars: { ...props.run.title.vars, agent: name() } }, env.now())}
       where={{ icon: props.run.sandbox ? 'box' : props.run.remote ? 'server' : 'laptop', text: props.run.where }}
+      local={!props.run.sandbox && !props.run.remote}
+      noWhere={props.noWhere === true && !props.run.sandbox && !props.run.remote}
     />
   );
 }
@@ -206,6 +216,9 @@ const V1_PILL: Readonly<Record<string, string>> = { status: 'card.status', pr: '
 export function Actions(props: { readonly k: EntityKey; readonly view: RowView; readonly hover?: JSX.Element }): JSX.Element {
   const env = useEnv();
   const t = env.shell.t;
+  // a desktop's row (docs/ux/2026-11-18-desktop.md #2): Later · Done (Reopen) · ⋯ in the time's slot; the phone apps
+  // keep their swipes and long-press
+  if (!env.swipes) return <SlotActions k={props.k} view={props.view} hover={props.hover} />;
   return (
     <>
       {props.hover}
@@ -223,6 +236,35 @@ export function Actions(props: { readonly k: EntityKey; readonly view: RowView; 
           <RowButton icon="done" tone="good" part={'list.row.done card.quickDone' as `${string}.${string}`} label={t('shell-list.quick.done')} onClick={() => toggleDone(env.actions, props.k)} />
         </Show>
       </Show>
+    </>
+  );
+}
+
+/** Later, Done (Reopen when done) and ⋯, each in its place in the time's slot (ListRow `slots`): a row without Later
+ *  leaves its place empty, so Done and ⋯ never move. ⋯ opens the row's menu under it (right-click's twin). */
+function SlotActions(props: { readonly k: EntityKey; readonly view: RowView; readonly hover?: JSX.Element }): JSX.Element {
+  const env = useEnv();
+  const t = env.shell.t;
+  return (
+    <>
+      {props.hover}
+      <Show when={props.view.quickLater !== 'gap'}>
+        <RowButton
+          slot={1}
+          icon="bookmark"
+          part={'list.row.later card.quickLater' as `${string}.${string}`}
+          pressed={props.view.quickLater === 'unsave'}
+          label={t(props.view.quickLater === 'unsave' ? 'shell-list.quick.unsave' : 'shell-list.quick.save')}
+          onClick={() => toggleForLater(env.actions, props.k)}
+        />
+      </Show>
+      <Show when={props.view.quickDone === 'show'}>
+        <RowButton slot={2} icon="done" tone="good" part={'list.row.done card.quickDone' as `${string}.${string}`} label={t('shell-list.quick.done')} onClick={() => toggleDone(env.actions, props.k)} />
+      </Show>
+      <Show when={props.view.quickDone === 'reopen'}>
+        <RowButton slot={2} icon="replay" part={'list.row.reopen' as `${string}.${string}`} label={t('shell-list.quick.reopen')} onClick={() => toggleDone(env.actions, props.k)} />
+      </Show>
+      <RowButton slot={3} icon="dots" part={'list.row.more' as `${string}.${string}`} label={t('shell-list.quick.more')} onClick={(el) => env.menuAt(props.k, el)} />
     </>
   );
 }

@@ -6,6 +6,9 @@ export { useDerived, useSignal } from './core/signal.ts';
 export { reorderable, reordered, type OnReorder, type ReorderAttrs } from './core/reorder.ts';
 export { menuSections, type MenuEntry, type MenuGroup, type MenuItem, type MenuSeparator, type MenuSubmenu } from './controls/menu-entries.ts';
 export type { IconName } from './content/icons.ts';
+// the composer's `+` (the shell's composer-plus.ts) builds a tool from acts: types only, nothing of act.tsx loads
+export type { Act } from './app/act.tsx';
+export type { PartName } from './core/props.ts';
 export { isSpirit, parseSpirit, spiritCode, type SpiritPart, type SpiritParts } from './home/spirit-shape.ts';
 export { themeCss, type FrameScheme } from './frame/theme.ts';
 export { LOOK_ATTR, documentLook, lookOf, type Look } from './platform/look.ts';
