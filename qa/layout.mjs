@@ -142,6 +142,26 @@ export function inspect() {
     out.push({ rule: 'overflow-x', part: outer.map(name).join(', ') || 'body', detail: `page is ${document.documentElement.scrollWidth} px wide in ${vw}` });
   }
 
+  // a prompt box's tools are each reachable: nothing drawn under Send or past the bar (QA phone r4 #1: the harness pill
+  // pushed New task's More under Send at 360 px; a tap there pressed Send)
+  // the phone apps (data-platform) only: a browser's narrow box may scroll its bar under Send, as v1's did
+  const bars = document.documentElement.hasAttribute('data-platform') ? document.querySelectorAll('[data-kit="l-bar"], [data-kit="c-bar"]') : [];
+  for (const bar of bars) {
+    if (!visible(bar)) continue;
+    for (const el of bar.querySelectorAll('button')) {
+      if (!visible(el) || el.closest('[hidden]')) continue;
+      const r = el.getBoundingClientRect();
+      const x = r.left + r.width / 2;
+      const y = r.top + r.height / 2;
+      // a bar below the fold: what's on screen is checked
+      if (y < 0 || y > innerHeight || x < 0) continue;
+      const hit = document.elementFromPoint(x, y);
+      // a menu, a toast or a sheet over the bar is not the bar's doing
+      if (hit && !bar.contains(hit) && hit.closest('[data-kit="menu"], [data-kit="positioner"], [data-kit="toast"], [data-kit="dialog"], [data-kit="sheet"]')) continue;
+      if (!hit || !el.contains(hit)) out.push({ rule: 'covered', part: name(el), detail: hit ? `under ${name(hit)}` : 'off screen' });
+    }
+  }
+
   for (const el of document.querySelectorAll('[data-priority="pin"]')) {
     const form = el.getAttribute('data-form');
     if (!visible(el) || (form && form !== 'full')) out.push({ rule: 'pin-hidden', part: name(el), detail: visible(el) ? `form ${form}` : 'hidden' });
@@ -205,6 +225,10 @@ async function mainPhone() {
       page.on('pageerror', (e) => errors.push(e.message));
       await page.goto(`${server.url}${view.path}`, { waitUntil: 'load' });
       await page.waitForSelector(view.ready, { timeout: 15_000 }).catch(() => errors.push(`${view.ready} never showed`));
+      if (view.phoneTap) {
+        await page.click(view.phoneTap).catch(() => errors.push(`${view.phoneTap} never took a tap`));
+        await page.waitForSelector(view.phoneAfter, { timeout: 15_000 }).catch(() => errors.push(`${view.phoneAfter} never showed`));
+      }
       await settlePhone(page, scale, errors);
       const g = await phoneGate(page, size.look, env.force);
       const found = g.run ? await page.evaluate(inspect) : 'fail' in g ? [g.fail] : [];

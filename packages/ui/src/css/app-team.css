@@ -24,6 +24,14 @@
     gap: var(--space-6);
     padding: 14px 14px var(--space-5);
   }
+  /* v1 .tp-mempty: Presets with none yet, said in the panel under its head (QA desktop r4 #1: as a bubble it lay over
+     the panel's words, then the launcher's bar, then the lead's row) */
+  [data-kit='tp-note'] {
+    margin: 0;
+    padding: 0 14px var(--space-5);
+    font-size: var(--fs-sm);
+    color: var(--muted);
+  }
   [data-kit='tp-title'] {
     flex: 1;
     display: grid;

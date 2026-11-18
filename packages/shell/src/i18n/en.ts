@@ -196,6 +196,7 @@ export const SHELL_STRINGS = {
   'shell.auto.usd': '~${usd}',
   'shell.auto.suggest': 'worth trying {label}',
   'shell.home.compare': 'Compare: run the same task on another harness, side by side',
+  'shell.home.compareRow': 'Run on another agent too',
   'shell.home.attach': 'Attach files',
   'shell.home.where': 'Runs on this computer. Add a machine to run on other computers too.',
   'shell.home.delegate': 'Delegate',

@@ -24,6 +24,8 @@ export interface LauncherTool {
 export interface FoldExtras {
   readonly label: string;
   readonly title: string;
+  /** Try another agent (the pill's +): in More too, so a narrow bar folds the + and loses nothing (QA phone r4 #1) */
+  readonly compare?: { readonly label: string; readonly act?: Act | undefined } | undefined;
   readonly issue?: { readonly label: string; readonly act?: Act | undefined } | undefined;
   readonly recipes?:
     | {
@@ -50,6 +52,7 @@ export function foldTail(tools: readonly LauncherTool[], x: FoldExtras): Launche
     return { value: `${TOOL}${t.id}`, label: t.label, icon: t.icon, ...(t.on !== undefined && { checked: t.on }), ...(t.disabled && { disabled: true }) };
   });
   const extras: MenuEntry[] = [
+    ...(x.compare ? [{ value: 'compare', label: x.compare.label, icon: 'plus' as const }] : []),
     ...(x.issue ? [{ value: 'issue', label: x.issue.label, icon: 'issue' as const }] : []),
     ...(x.recipes
       ? [
@@ -65,6 +68,7 @@ export function foldTail(tools: readonly LauncherTool[], x: FoldExtras): Launche
   ];
   const onSelect = (v: string): void => {
     if (v.startsWith(TOOL)) return press(tools.find((t) => `${TOOL}${t.id}` === v)?.act);
+    if (v === 'compare') return press(x.compare?.act);
     if (v === 'issue') return press(x.issue?.act);
     if (v === `${RECIPE}new`) return press(x.recipes?.add.act);
     if (v.startsWith(RECIPE)) return press(x.recipes?.items.find((r) => `${RECIPE}${r.id}` === v)?.act);

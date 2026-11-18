@@ -895,6 +895,29 @@
       grid-template-columns: minmax(0, 1fr);
       gap: var(--space-4) var(--space-7);
     }
+    /* with its icon tile: the tile beside the words, the control and what's below under the words, a line each (QA phone
+       r4 #2: the below asked for column 2 of one, and the version line, Online and Disconnect drew over each other) */
+    [data-kit='settings-row'][data-wide][data-tile] {
+      grid-template-columns: auto minmax(0, 1fr);
+    }
+    [data-kit='settings-row'][data-wide][data-tile] > [data-kit='settings-row-control'] {
+      grid-column: 2;
+    }
+    /* a narrow screen is a narrow pane: a row in a phone's dialog (not a `settings` container) drops its control under
+       its words as the container rule above does, instead of cutting its name to "This co…" (QA phone r4 #2) */
+    [data-kit='settings-row'][data-layout='wrap'] {
+      display: flex;
+      gap: 8px 16px;
+    }
+    [data-kit='settings-row'][data-layout='wrap'] > [data-kit='settings-row-text'] {
+      flex: 1 1 12.5rem;
+    }
+    [data-kit='settings-row'][data-layout='wrap'] > [data-kit='settings-row-control'] {
+      max-width: 100%;
+    }
+    [data-kit='settings-row'][data-layout='wrap'][data-tile] > [data-kit='settings-row-tile'] {
+      flex: none;
+    }
     [data-kit='settings-row'][data-wide] [data-kit='settings-row-control'] {
       justify-content: stretch;
     }

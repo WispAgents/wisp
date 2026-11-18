@@ -23,3 +23,30 @@ test('a_restored_palette_is_closed_as_the_app_draws_and_the_place_under_it_stays
   stop();
   shell.dispose();
 });
+
+// QA round 4 #2: the same for every overlay (Machines, Settings): one rule, keepsOverlaysOnLoad
+const loadWith = (navigation: string, search: string): ShellWindow =>
+  new Proxy(window, {
+    get: (t, k) => (k === 'performance' ? { getEntriesByType: () => [{ type: navigation }] } : k === 'location' ? { search } : Reflect.get(t, k)),
+  }) as unknown as ShellWindow;
+
+for (const [name, nav, search, kept] of [
+  ['a reload drops Machines and Settings', 'reload', '?o=dialog:machines.dialog:{}', false],
+  ['a link opened on purpose keeps them', 'navigate', '?o=dialog:machines.dialog:{}', true],
+] as const) {
+  test(name, () => {
+    const home = peerId('local');
+    const client = createClient({ clientId: 'c1', build: 't', home, width: 1440 });
+    const shell = createShell({ client, toaster: createToaster(), platform: nullPlatform(), home, window: loadWith(nav, search) });
+    // the shell's own viewer and dialog stand in for Settings and Machines (any overlay: one rule)
+    client.nav.navigate({ t: 'openOverlay', overlay: { kind: 'viewer', id: 'shell.devtools' as never, params: null } });
+    client.nav.navigate({ t: 'openOverlay', overlay: { kind: 'dialog', id: 'shell.shortcuts' as never, params: null } });
+    expect(client.nav.nav().overlays.length, 'both open as the page loads').toBe(2);
+    const root = document.createElement('div');
+    document.body.append(root);
+    const stop = shell.render(root);
+    expect(client.nav.nav().overlays.length).toBe(kept ? 2 : 0);
+    stop();
+    shell.dispose();
+  });
+}

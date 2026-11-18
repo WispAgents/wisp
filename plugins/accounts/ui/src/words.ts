@@ -107,17 +107,31 @@ export function mergeHarnesses(mine: readonly HarnessRow[], detected: readonly D
 /** A program by its version, else its path (the server sends `version: ""` when the harness didn't say one). */
 const label = (p: Pin): string => p.version || p.path;
 
-/** "Claude Code changed since 2 Nov: 2.0.1 → 2.0.2" (v1 harness-watch changeText). With no version: "…: its program’s
- *  bytes differ", or from which path to which (never "…: , but…", TRY-17). */
-export function changeText(name: string, c: HarnessChange, locale?: string): string {
-  const day = new Intl.DateTimeFormat(locale, { day: 'numeric', month: 'short' }).format(c.from.at);
+const dayOf = (c: HarnessChange, locale?: string): string => new Intl.DateTimeFormat(locale, { day: 'numeric', month: 'short' }).format(c.from.at);
+
+/** What changed: "2.0.1 → 2.0.2", "2.0.1, but its program’s bytes differ", or with no version "its program’s bytes differ"
+ *  or from which path to which (never "…: , but…", TRY-17). */
+export function changeWhat(c: HarnessChange): string {
   const from = label(c.from);
   const moved = c.kind !== 'update' && c.from.real !== c.to.real && c.from.path !== c.to.path;
   // a version is said with where it is now; a path already says where
   const to = moved && c.to.version ? t('accounts.change.at', { what: label(c.to), path: c.to.path }) : label(c.to);
-  const what = from !== to ? `${from} → ${to}` : c.from.version ? t('accounts.change.bytes', { what: from }) : t('accounts.change.bytesOnly');
-  return t('accounts.change', { name, day, what });
+  return from !== to ? `${from} → ${to}` : c.from.version ? t('accounts.change.bytes', { what: from }) : t('accounts.change.bytesOnly');
 }
+
+/** "Claude Code changed since 2 Nov: 2.0.1 → 2.0.2" (v1 harness-watch changeText): the whole sentence. */
+export function changeText(name: string, c: HarnessChange, locale?: string): string {
+  return t('accounts.change', { name, day: dayOf(c, locale), what: changeWhat(c) });
+}
+
+/** The notice's title: who and since when, which fits a row's one line; what changed opens its description (QA phone r4
+ *  #5: the whole sentence, cut to fit, read "Codex changed since 16 Nov:…" on Android). */
+export function changeTitle(name: string, c: HarnessChange, locale?: string): string {
+  return t('accounts.change.since', { name, day: dayOf(c, locale) });
+}
+
+/** A phrase as a sentence's start: "its program’s bytes differ" → "Its program’s bytes differ". */
+export const sentence = (s: string): string => s.charAt(0).toUpperCase() + s.slice(1);
 
 /** The tooltip: both programs' paths and hashes. */
 export function changeTip(c: HarnessChange): string {

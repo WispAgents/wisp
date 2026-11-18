@@ -47,14 +47,15 @@ export function toggleDone(c: ActionCtx, key: EntityKey): void {
   if (next === 'done') c.toast.success(c.t('shell-list.toast.done'), { action: { label: c.t('shell-list.toast.undo'), onClick: () => toggleDone(c, key) } });
 }
 
-/** Save for later ↔ Unsave, both with Undo; Undo of Unsave puts it back where it was. */
+/** Save for later ↔ Unsave, both with Undo; Undo of Unsave puts it back where it was. An Undo says nothing new: its
+ *  toast closes with the press and the task is back (QA round 4 #3: Undo showed "Unsaved · Undo", which stayed up). */
 export function toggleForLater(c: ActionCtx, key: EntityKey, at?: number): void {
   const s = peek(c, key);
   if (!s) return;
   if (isForLater(s)) {
     const was = s.forLater?.at;
     quiet(c.client.run(forLater, { id: key, forLater: false }));
-    c.toast.show(c.t('shell-list.toast.unsaved'), { action: { label: c.t('shell-list.toast.undo'), onClick: () => toggleForLater(c, key, was) } });
+    c.toast.show(c.t('shell-list.toast.unsaved'), { action: { label: c.t('shell-list.toast.undo'), onClick: () => quiet(c.client.run(forLater, { id: key, forLater: true, ...(was !== undefined && { at: was }) })) } });
     return;
   }
   if (!canSaveForLater(s)) {
@@ -62,7 +63,7 @@ export function toggleForLater(c: ActionCtx, key: EntityKey, at?: number): void 
     return;
   }
   quiet(c.client.run(forLater, { id: key, forLater: true, at: at ?? (c.now ?? Date.now)() }));
-  c.toast.show(c.t('shell-list.toast.saved'), { action: { label: c.t('shell-list.toast.undo'), onClick: () => toggleForLater(c, key) } });
+  c.toast.show(c.t('shell-list.toast.saved'), { action: { label: c.t('shell-list.toast.undo'), onClick: () => quiet(c.client.run(forLater, { id: key, forLater: false })) } });
 }
 
 /** Archive (with Undo) ↔ Unarchive (quiet). A busy task can't be archived. */

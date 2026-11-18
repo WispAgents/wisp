@@ -22,6 +22,7 @@ import { NONE as NO_SELECTION, pruneSelect, selectAll, startSelect, toggleSelect
 import { shellUi } from './builtins.tsx';
 import { SHELL_SETTINGS, SIDE_MAX, SIDE_MIN } from './settings-decls.ts';
 import { listShown } from './frame/pane-widths.ts';
+import { keepsOverlaysOnLoad } from './frame/overlays-on-load.ts';
 import { installKeys } from './keyboard.ts';
 import { watchCoreTopics } from './watch.ts';
 import { pluginStyles } from './theme-styles/mount.ts';
@@ -32,6 +33,9 @@ export interface ShellWindow {
   readonly innerWidth: number;
   readonly document: Document;
   readonly localStorage?: Storage;
+  /** how the page was loaded (a reload, a link) and its URL's search: what the first frame keeps open (overlays-on-load) */
+  readonly performance?: { getEntriesByType?(type: string): readonly object[] };
+  readonly location?: { readonly search: string };
   matchMedia(q: string): MediaQueryList;
   addEventListener(type: string, fn: (e: Event) => void, opts?: boolean | AddEventListenerOptions): void;
   removeEventListener(type: string, fn: (e: Event) => void, opts?: boolean | EventListenerOptions): void;
@@ -339,9 +343,13 @@ export function createShell(o: ShellOptions): Shell {
     pluginClient: (id) => clients.get(id),
     settingsPanes: () => registry.settingsPanes as () => readonly (SettingsPaneDef & { readonly plugin: string })[],
     render(root) {
-      // a reload (or the desktop app's relaunch) brings back the last place, never the ⌘K palette open over it: it was a
-      // moment's search, not a place (v1; QA round 3 #9). Closed before the first frame, the URL replaced, no history
-      if (untracked(client.nav.nav).overlays.some((ov) => ov.id === ('shell.palette' as never))) client.nav.navigate({ t: 'closeOverlay', id: 'shell.palette' as never });
+      // a reload (or the desktop app reopening its last place) brings back the place, never what was open over it: the
+      // palette, Settings, Machines… (v1 kept only the open task; QA round 3 #9, round 4 #2). One rule for every overlay
+      // (frame/overlays-on-load.ts); a link opened on purpose with `?o=` keeps its overlay. Closed before the first
+      // frame, the URL replaced, no history entry
+      const entry = o.window.performance?.getEntriesByType?.('navigation')[0] as { readonly type?: string } | undefined;
+      if (!keepsOverlaysOnLoad({ navigation: entry?.type, search: o.window.location?.search ?? '' }))
+        while (untracked(client.nav.nav).overlays.length > 0) client.nav.navigate({ t: 'closeOverlay' });
       const scope = self.scope.child('render');
       scope.add(trackRecent());
       scope.add(installKeys(o.window, context, registry, (id) => clients.get(id) ?? self));

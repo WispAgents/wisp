@@ -600,6 +600,25 @@ export function HomeView(props: { readonly onBack?: () => void }): JSX.Element {
   };
   // the phone apps fold the bar's tail into More, once it's full (a first run has its own More options)
   const foldPhone = (): boolean => phone && !firstRun();
+  // vs + (v1 launcher.js compare): the next harness as another run; the phone's More offers it too (QA phone r4 #1)
+  const compareAct: Act = {
+    onClick: () => {
+      const was = runs();
+      const next = nextRun(
+        agent(),
+        was.map((r) => r.agent),
+        harnesses().map((h) => h.id),
+      );
+      if (next) {
+        const a = account();
+        setRuns([...was, newRun(next, { agent: agent(), model: model(), effort: effort(), account: a?.id ?? '', ...(modelLabel() && { modelLabel: modelLabel() }), ...(a && { accountLabel: a.label }) })]);
+        // What's different is for one copy: a third run makes it a compare again
+        setVary(undefined);
+        // a repeat is rarely the one you want: straight into picking it (v1 vsBtn.onclick)
+        if (next === agent() || was.some((r) => r.agent === next)) (setPicker(false), setAutoPop(false), setCmpPicker(was.length));
+      }
+    },
+  };
   // the phone app's mic (v1 dictate.js): none elsewhere
   const mic = useMic(shell, { text, set: (v) => (setText(v), menu.typed(v), ask(v)), el: () => input });
   const tool = (id: string, part: string, icon: LauncherTool['icon'], label: string, title: string, more: Partial<LauncherTool> = {}): LauncherTool => ({ id, part, icon, label, title, ...more });
@@ -726,24 +745,7 @@ export function HomeView(props: { readonly onBack?: () => void }): JSX.Element {
           // what will Auto run: Auto's pick, the pill's own segment (v1 #autoPv), opens the AutoPop
           pickAct: { onClick: () => (setPicker(false), setCmpPicker(undefined), setAutoPop(!autoPop())) },
           pickOpen: autoPop(),
-          compareAct: {
-            onClick: () => {
-              const was = runs();
-              const next = nextRun(
-                agent(),
-                was.map((r) => r.agent),
-                harnesses().map((h) => h.id),
-              );
-              if (next) {
-                const a = account();
-                setRuns([...was, newRun(next, { agent: agent(), model: model(), effort: effort(), account: a?.id ?? '', ...(modelLabel() && { modelLabel: modelLabel() }), ...(a && { accountLabel: a.label }) })]);
-                // What's different is for one copy: a third run makes it a compare again
-                setVary(undefined);
-                // a repeat is rarely the one you want: straight into picking it (v1 vsBtn.onclick)
-                if (next === agent() || was.some((r) => r.agent === next)) (setPicker(false), setAutoPop(false), setCmpPicker(was.length));
-              }
-            },
-          },
+          compareAct,
           compareFull: firstRun() || runs().length >= MAX_RUNNERS - 1,
           compares: runs().map((r, i) => {
             const h = harnessOf(harnesses(), r.agent);
@@ -816,6 +818,13 @@ export function HomeView(props: { readonly onBack?: () => void }): JSX.Element {
                 foldTail(tools, {
                   label: t('shell.home.moreOptions'),
                   title: t('shell.home.moreOptionsTitle'),
+                  // only while there's another harness to add: a press that did nothing would answer nothing (ADR-0017)
+                  ...(runs().length < MAX_RUNNERS - 1 &&
+                    nextRun(
+                      agent(),
+                      runs().map((r) => r.agent),
+                      harnesses().map((h) => h.id),
+                    ) !== undefined && { compare: { label: t('shell.home.compareRow'), act: compareAct } }),
                   issue: { label: t('shell.home.issueTitle'), act: issueAct },
                   recipes: { label: t('shell.home.recipes'), items: recipes.items().map((r) => ({ id: r.id, label: r.label, act: r.act })), add: { label: t('shell.home.recipesNew'), act: newRecipeAct } },
                 }),

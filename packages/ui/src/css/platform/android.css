@@ -1331,6 +1331,11 @@
   /* QA phone r3 #3: the goal line says what it's for, as a native form names its field (v1's narrow box gave the label's
      room to the condition; the hint now gives way with "…") */
   :root[data-platform='android'] [data-kit='lg-k'] > [data-text='control'] { display: inline; }
+  /* QA phone r4 #1: New task's bar too narrow for its tools (bar-labels.ts measures it): the pill keeps its logo alone, its +
+     (Try another agent, in More too) and its model's words fold, so More never goes under Send */
+  :root[data-platform='android'] [data-kit='l-bar'][data-tight] [data-kit='vs-btn']:not([data-del]),
+  :root[data-platform='android'] [data-kit='l-bar'][data-tight] [data-kit='runner-btn'] > [data-kit='rb-h'] { display: none; }
+  :root[data-platform='android'] [data-kit='l-bar'][data-tight] [data-kit='runner-btn'] > [data-kit='auto-pv'] { display: none; }
 
   /* The task's side page (Changes, PR, Shell, Preview; QA round 2 #9): an M3 page head, not the browser's pill strip
      squeezed to icons. Close leads (a full-screen page), then the panel's primary tabs, each named, across the row;
@@ -1379,4 +1384,7 @@
   /* an Org card's role on a phone card (~150 px at 360): one line with an ellipsis, never "Crew / member" on two (QA
      phone r3 #2; v1's two-line role is the desktop's) */
   :root[data-platform='android'] [data-kit='org-who'] > small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+  /* Settings' search on a phone (M3 Search: the search bar keeps the screen's 16 dp margins), as the list under it; it stood on the screen's edge (QA round 4 #4) */
+  :root[data-platform='android'] [data-kit='settings-nav-search'] { padding: var(--space-0) var(--inset) var(--space-4); }
 }

@@ -104,3 +104,17 @@ test('the_goal_line_says_done_when_on_the_phone_apps_and_its_placeholder_gives_w
   for (const [plat, css] of [['ios', iosCss], ['android', androidCss]] as const)
     expect(noComments(css)).toContain(`:root[data-platform='${plat}'] [data-kit='lg-k'] > [data-text='control'] { display: inline; }`);
 });
+
+test('a_tight_phone_bar_folds_the_pills_plus_and_model_before_anything_reaches_send_qa_r4_1', () => {
+  // QA phone r4 #1: "Claude Code ▾ +" pushed More under Send. The bar measures itself (bar-labels.ts); tight, the pill
+  // keeps its logo alone (Try another agent is in More)
+  for (const [plat, css] of [['ios', iosCss], ['android', androidCss]] as const) {
+    const flat = noComments(css);
+    expect(flat).toContain(`:root[data-platform='${plat}'] [data-kit='l-bar'][data-tight] [data-kit='vs-btn']:not([data-del]),`);
+    expect(flat).toMatch(new RegExp(`:root\\[data-platform='${plat}'\\] \\[data-kit='l-bar'\\]\\[data-tight\\] \\[data-kit='runner-btn'\\] > \\[data-kit='auto-pv'\\] \\{ display: none; \\}`));
+  }
+  // and the rule that shows the harness's name never outranks the phone's that hides it (round 3's :not() did)
+  // (0,4,0) under the phone's (0,5,0): it loses whatever order the sheets load in
+  expect(noComments(home)).toContain("[data-kit='runners']:where(:not([data-cmp]):not([data-trial])) > [data-kit='runner-btn'][data-def] > [data-kit='rb-h']");
+  expect(noComments(home)).not.toMatch(/\[data-kit='runners'\]:not\(\[data-cmp\]\)[^{]*> \[data-kit='rb-h'\] \{\s*display: block/);
+});

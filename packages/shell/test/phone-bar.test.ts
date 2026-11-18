@@ -53,3 +53,16 @@ describe('the phone bar folds its tail into More_qa_r2_2', () => {
     expect(foldTail([{ ...tools[1]! }], { label: 'More', title: 'More' }).on).toBeFalsy();
   });
 });
+
+// QA phone r4 #1: the pill grew to "Claude Code ▾ +" and pushed More under Send (Goal, Worktree, Start later and Recipes
+// out of reach). Try another agent (the pill's +) is in More too, so a tight bar can fold the + and lose nothing
+describe('the phone bar folds the pill before More_qa_r4_1', () => {
+  test('More holds Try another agent, first of the extras', () => {
+    const compare = vi.fn();
+    const m = foldTail(tools, { label: 'More', title: 'More', compare: { label: 'Try another agent', act: { onClick: compare } }, issue: { label: 'Start from an issue', act: { onClick: issue } } });
+    const items = m.act?.menu?.items ?? [];
+    expect(items.map((e) => ('value' in e ? e.value : e.kind))).toEqual(['tool:goal', 'tool:worktree', 'tool:later', 'separator', 'compare', 'issue']);
+    m.act?.menu?.onSelect('compare');
+    expect(compare).toHaveBeenCalledOnce();
+  });
+});

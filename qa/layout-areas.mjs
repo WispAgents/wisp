@@ -15,6 +15,10 @@ export const AREAS = {
     // task's bar), with no sidebar or split head, so the browser's selectors never showed there
     { name: 'home', path: '/', ready: '[data-kit="stage"] [data-part="sidebar"] [data-part="card"]', phoneReady: '[data-part~="phone.tasks.bar"]' },
     { name: 'task', path: TASK, ready: '[data-kit="stage"] [data-part="split.head"]', phoneReady: '[data-part~="phone.task.bar"]' },
+    // New task as the phone apps open it (no URL: a tap on the FAB), its bar measured at each size: every tool reachable
+    // before Send (QA phone r4 #1: the pill pushed More under Send at 360). `phoneTap`/`phoneAfter`: qa/layout.mjs --phone
+    // taps it once the view is ready; the browser and the other phone scripts see Home
+    { name: 'new-task', path: '/', ready: '[data-kit="stage"] [data-part="sidebar"] [data-part="card"]', phoneReady: '[data-part~="phone.tasks.bar"]', phoneTap: '[data-part~="phone.tasks.new"]', phoneAfter: '[data-kit="l-bar"]' },
     { name: 'palette', path: '/?o=dialog:shell.palette', ready: '[data-part="shell.palette"]' },
     { name: 'shortcuts', path: '/?o=dialog:shell.shortcuts', ready: '[data-part="shell.shortcuts"]' },
     { name: 'diagnostics', path: '/?o=viewer:shell.devtools', ready: '[data-part="shell.devtools"]' },

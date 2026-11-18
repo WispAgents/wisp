@@ -15,6 +15,7 @@ import type { IconName } from '../content/icons.ts';
 import { ActIcon, WithAct, actAttrs, type Act } from './act.tsx';
 import { foldTail, type LauncherTool } from './launcher-fold.ts';
 import { useTailFold } from './launcher-fold-measure.ts';
+import { useBarLabels } from './bar-labels.ts';
 import { ProjectSelect, type ProjectSelectProps } from './ProjectSelect.tsx';
 import { usePlatform } from '../platform/PlatformLook.tsx';
 
@@ -225,6 +226,9 @@ export function Launcher(props: LauncherProps): JSX.Element {
   const empty = (): boolean => props.value.trim() === '';
   // the tail as it fits: its last tools in More when the bar is too narrow for them (launcher-fold.ts)
   const fold = useTailFold({ tail: () => props.tail, on: () => props.tailMore !== undefined });
+  // an unmeasured bar (the phone apps'): its pill's + and words fold when it doesn't fit, so More never goes under Send
+  // (QA phone r4 #1; Try another agent is in More)
+  const barLabels = useBarLabels();
   const tail = createMemo((): readonly LauncherTool[] => {
     const more = props.tailMore;
     const n = props.tail.length;
@@ -312,7 +316,7 @@ export function Launcher(props: LauncherProps): JSX.Element {
             </For>
           </div>
         </Show>
-        <div data-kit="l-bar" ref={fold.ref} data-scroll={flag(fold.scroll())} data-try={flag(trial())} data-cmp={flag((props.runner.compares?.length ?? 0) > 0)}>
+        <div data-kit="l-bar" ref={(el) => (fold.ref(el), barLabels.ref(el))} data-tight={flag(props.tailMore === undefined && barLabels.tight())} data-scroll={flag(fold.scroll())} data-try={flag(trial())} data-cmp={flag((props.runner.compares?.length ?? 0) > 0)}>
           <Index each={props.lead}>{(t) => <Tool t={t()} />}</Index>
           <WithAct
             act={props.mode.act}

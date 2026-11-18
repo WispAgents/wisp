@@ -31,7 +31,10 @@ export function useBarLabels(): { readonly ref: (el: HTMLElement) => void; reado
     if (!bar?.isConnected) return;
     // with their words: what they need now; without, the need last seen stands (the words are what it's about)
     if (!tight()) need = contentWidth(bar);
-    const next = labelsGo(need, bar.clientWidth);
+    const cs = getComputedStyle(bar);
+    // its content box: a bar's own padding is no room for its items
+    const room = bar.clientWidth - (Number.parseFloat(cs.paddingLeft) || 0) - (Number.parseFloat(cs.paddingRight) || 0);
+    const next = labelsGo(need, room);
     if (next === tight()) return;
     setTight(next);
     soon();
@@ -41,7 +44,10 @@ export function useBarLabels(): { readonly ref: (el: HTMLElement) => void; reado
   };
   const ro = new ResizeObserver(soon);
   const mo = new MutationObserver((records) => {
-    for (const r of records) for (const n of r.addedNodes) if (n instanceof HTMLElement) ro.observe(n);
+    for (const r of records) {
+      for (const n of r.addedNodes) if (n instanceof HTMLElement) ro.observe(n);
+      for (const n of r.removedNodes) if (n instanceof HTMLElement) ro.unobserve(n);
+    }
     // an item came or went: what the words need is measured again, with them
     if (tight()) {
       need = undefined;

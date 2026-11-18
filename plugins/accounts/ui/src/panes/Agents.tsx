@@ -33,7 +33,7 @@ import { Steps } from './Steps.tsx';
 import { addAccount, install, keyRemove, keySet, loginCancel, loginInput, loginStart, logout, recheck, removeAccount, setAsk, trust, upgrade } from '../commands.ts';
 import { t } from '../i18n.ts';
 import { ACCOUNT, DETECT_TOPIC, HARNESS, KEY, LOGIN, PLACE, TOOL, TOPIC, loginId, type AccountRow, type HarnessRow, type KeyRow, type LoginRow, type PlaceRow, type ToolRow } from '../types.ts';
-import { accountLine, changeText, changeTip, harnessLine, harnessState, howToGet, loginControl, masked, mergeHarnesses, present, recheckSummary, site, stillChanged, toolState } from '../words.ts';
+import { accountLine, changeTip, changeTitle, changeWhat, harnessLine, harnessState, howToGet, loginControl, masked, mergeHarnesses, present, recheckSummary, site, sentence, stillChanged, toolState } from '../words.ts';
 import '../i18n/lazy.ts';
 
 const quiet = (p: Promise<unknown>): void => {
@@ -274,8 +274,8 @@ export default function Agents(props: { readonly client: PluginClient }): JSX.El
                   {(ch) => (
                     <SettingsRow
                       part="accounts.changed"
-                      title={changeText(h().name, ch())}
-                      description={<span title={changeTip(ch())}>{t('accounts.change.why')}</span>}
+                      title={changeTitle(h().name, ch())}
+                      description={<span title={changeTip(ch())}>{t('accounts.change.whatWhy', { what: sentence(changeWhat(ch())) })}</span>}
                       control={
                         <Button size="sm" onClick={() => quiet(c.run(trust, { peer, agent: h().id }))}>
                           {t('accounts.change.trust')}

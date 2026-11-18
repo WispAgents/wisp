@@ -120,6 +120,8 @@ export function DelegatePanel(props: DelegatePanelProps): JSX.Element {
     props.onPreset?.(p.id);
   };
   const [saving, setSaving] = createSignal(false);
+  // Presets with none saved yet: its line under the panel's head, shown while Presets is pressed
+  const [noneOpen, setNoneOpen] = createSignal(false);
   const save = (name: string): void => {
     setSaving(false);
     // nothing to keep (Clear while the name was being typed): no empty preset
@@ -134,9 +136,22 @@ export function DelegatePanel(props: DelegatePanelProps): JSX.Element {
       wide
       title={t('shell.team.title')}
       intro={t('shell.team.intro')}
-      // under the panel's head, at its button's side (QA desktop r3 #5): under the button it lay over the intro beside
-      // it (r2 #3), above it over the launcher's bar and Send; inside the panel it covers neither
-      head={<Menu part="delegate.presets" placement="bottom-end" below="[data-kit='tp-head']" trigger={{ label: t('shell.team.presets'), icon: 'agent', variant: 'ghost', size: 'xs' }} items={presetItems()} onSelect={onPresetPick} />}
+      // the saved teams: a menu under the panel's head (QA desktop r3 #5). None yet: Presets says so as a line of the panel
+      // under its head (v1's empty menu row, said in place), never a bubble over it (r4 #1: over the words, the launcher's
+      // bar, the lead's row in turn)
+      head={
+        <Show
+          when={presets().length > 0}
+          fallback={
+            <Button variant="ghost" size="xs" icon="agent" part="delegate.presets" expanded={noneOpen()} onClick={() => setNoneOpen(!noneOpen())}>
+              {t('shell.team.presets')}
+            </Button>
+          }
+        >
+          <Menu part="delegate.presets" placement="bottom-end" below="[data-kit='tp-head']" trigger={{ label: t('shell.team.presets'), icon: 'agent', variant: 'ghost', size: 'xs' }} items={presetItems()} onSelect={onPresetPick} />
+        </Show>
+      }
+      note={presets().length === 0 && noneOpen() ? { text: t('shell.team.noPresets'), part: 'delegate.presets.none' } : undefined}
       end={
         <Show when={props.team.length > 0}>
           <Button variant="ghost" size="sm" icon="check" part="delegate.save" onClick={() => setSaving(true)}>

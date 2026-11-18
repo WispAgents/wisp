@@ -183,3 +183,36 @@ test('presets sit at the head end and Save as preset swaps the foot for its name
   expect(saved).toEqual(['Review crew']);
   expect(foot.textContent).toBe('Add delegate1 agentClearSave as preset');
 });
+
+// QA desktop r4 #1 (third try): with no presets, Presets' "No presets yet" floated over the panel's words, then the
+// launcher's bar, then the lead's row. It is a line of the panel now, under its head (v1's empty menu row, said in
+// place): it pushes the panel down and covers nothing.
+test('a_note_under_the_head_is_part_of_the_panel_not_a_bubble_over_it_qa_desktop_r4_1', () => {
+  const [on, setOn] = createSignal(false);
+  mount(() => (
+    <TeamPop
+      part="d.pop"
+      wide
+      title="Delegate"
+      intro="Agents the lead can hand parts of the task to"
+      head={<button type="button" onClick={() => setOn(!on())}>Presets</button>}
+      note={on() ? { text: 'No presets yet. Set up a team, then Save as preset.', part: 'd.none' } : undefined}
+      lead={<TeamLead part="d.lead" tag="Lead" run="Claude Code" on="on" place={{ icon: 'laptop', label: 'This computer', title: 'Where' }} />}
+      count={0}
+      empty={{ icon: 'agent', text: 'No delegates yet.' }}
+      add={<button type="button">Add delegate</button>}
+      tally="0 agents"
+    />
+  ));
+  expect(part('d.none')).toBeNull();
+  setOn(true);
+  const note = part('d.none');
+  expect(note?.textContent).toBe('No presets yet. Set up a team, then Save as preset.');
+  // in the panel's flow, after its head and before the lead: no portal, no positioner
+  const pop = part('d.pop');
+  const kids = [...(pop?.children ?? [])].map((e) => e.getAttribute('data-kit'));
+  expect(kids.indexOf('tp-note')).toBe(kids.indexOf('tp-head') + 1);
+  expect(note?.parentElement).toBe(pop);
+  expect(note?.closest('[data-kit="positioner"]')).toBeNull();
+  expect(note?.getAttribute('role')).toBe('status');
+});

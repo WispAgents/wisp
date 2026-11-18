@@ -45,6 +45,9 @@ export interface TeamPopProps extends KitProps {
   readonly lead?: JSX.Element;
   /** At the head's end: Delegate's Presets (v1 .tp-presets). Additive (2026-11-17). */
   readonly head?: JSX.Element;
+  /** A line of the panel under its head (v1 .tp-mempty: Presets with none yet), in its flow: it pushes the panel down,
+   *  it never lies over it (QA desktop r4 #1). Additive (2026-11-18). */
+  readonly note?: { readonly text: string; readonly part?: PartName } | undefined;
   /** At the foot's end, after Clear: Save as preset (v1 .tp-save). Additive (2026-11-17). */
   readonly end?: JSX.Element;
   /** In place of the foot while it's there: Save as preset's name (TeamSave, v1 .tp-saveform). Additive (2026-11-17). */
@@ -62,6 +65,7 @@ export function TeamPop(props: TeamPopProps): JSX.Element {
         </div>
         {props.head}
       </header>
+      <TeamNote note={props.note} part={part()} />
       {props.lead}
       <Show when={props.vote}>
         {(v) => (
@@ -123,6 +127,19 @@ export function TeamPop(props: TeamPopProps): JSX.Element {
 
 /** One member's row: its controls or face and name, then Remove (v1 .tp-row .tp-top … .tp-del); a delegate's second
  *  line (its @name and what it's for, v1 .tp-bottom) under them. */
+/** TeamPopProps.note: a line of the panel under its head */
+function TeamNote(props: { readonly note: TeamPopProps['note']; readonly part: PartName }): JSX.Element {
+  return (
+    <Show when={props.note}>
+      {(n) => (
+        <p data-kit="tp-note" data-part={n().part ?? `${props.part}.note`} role="status">
+          {n().text}
+        </p>
+      )}
+    </Show>
+  );
+}
+
 export function TeamRow(props: { readonly crew?: boolean; readonly part?: PartName; readonly remove: JSX.Element; readonly bottom?: JSX.Element; readonly children?: JSX.Element }): JSX.Element {
   return (
     <div data-kit="tp-row" data-crew={flag(props.crew)} data-part={props.part ?? 'ui.teamRow'}>

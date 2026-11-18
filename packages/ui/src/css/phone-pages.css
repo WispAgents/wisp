@@ -61,10 +61,15 @@
   }
   [data-kit='stuff-tile-thumb'] > img { width: 100%; height: 100%; object-fit: cover; }
   [data-kit='stuff-tile-thumb'] > [data-kit='icon'] { width: var(--size-icon-lg); height: var(--size-icon-lg); }
-  [data-kit='stuff-tile-name'] { display: flex; flex-direction: column; min-width: 0; padding: 0 var(--space-2); }
+  /* room at the end for the ⋯ beside it */
+  [data-kit='stuff-tile-name'] { display: flex; flex-direction: column; min-width: 0; padding: 0 var(--size-touch) 0 var(--space-2); }
   [data-kit='stuff-tile-name'] > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   [data-kit='stuff-tile-name'] > span + span { color: var(--muted); font-size: var(--fs-xs); }
-  [data-kit='stuff-tile-menu'] { position: absolute; top: var(--space-2); right: var(--space-2); }
+  /* the ⋯ beside the name under the preview, as the Files apps put it, never on the preview (QA phone r4 #3) */
+  [data-kit='stuff-tile-menu'] { position: absolute; bottom: 0; right: 0; }
+  /* an app's window in a tile: its description one line with an ellipsis, ending inside the tile (QA phone r4 #3) */
+  [data-kit='stuff-tile-thumb'] [data-kit='st-win-body'] { padding: 8px 12px 10px; }
+  [data-kit='stuff-tile-thumb'] [data-kit='st-win-body'] > span { -webkit-line-clamp: 1; }
   [data-kit='stuff-thumb'] {
     display: grid; place-items: center; width: var(--size-avatar-md); height: var(--size-avatar-md); overflow: hidden;
     border-radius: var(--radius-sm); background: var(--bg-2); color: var(--muted);
