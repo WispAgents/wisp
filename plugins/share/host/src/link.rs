@@ -234,6 +234,17 @@ async fn peek(ctx: &Ctx, call: &Call, a: PeekArgs) -> Result<Value> {
     }
 }
 
+/// The link a task keeps (`ext["wisp.share"]`, set by `share.create`), when it has one.
+pub(crate) fn shared_of(session: &Session) -> Option<wisp_share_api::SharedLink> {
+    let v = session.ext.get(PLUGIN_ID)?;
+    let url = v.get("url")?.as_str()?.to_owned();
+    Some(wisp_share_api::SharedLink {
+        url,
+        locked: v.get("locked").and_then(Value::as_bool).unwrap_or(false),
+        at: v.get("at").and_then(Value::as_i64),
+    })
+}
+
 /// The list row's `shared`: the link, when the task has one.
 struct Shared;
 

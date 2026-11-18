@@ -99,11 +99,9 @@ pub async fn ls(c: &Client, f: &Flags) -> Result<()> {
     {
         return Err(CliError::said(format!("unknown state {}: use {} or needs (review + waiting)", bad.join(", "), LS_STATES.join(", "))));
     }
-    let mut args = json!({});
-    if f.all {
-        args["archived"] = json!(true);
-    }
-    let list = c.cmd("runtime.list", args).await?;
+    // every task, archived ones too (`--all` keeps them below); `{archived: true}` is the archived ones only, which made
+    // `ls --all` say "No sessions." with tasks there (QA round 13 #2)
+    let list = c.cmd("runtime.list", json!({})).await?;
     let cwd = f.cwd.as_ref().map(|p| p.display().to_string());
     let rows: Vec<&Value> = list
         .as_array()

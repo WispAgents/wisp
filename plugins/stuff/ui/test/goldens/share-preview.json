@@ -1,0 +1,41 @@
+{
+  "bundle": {
+    "createdAt": 0,
+    "formula": {},
+    "from": {
+      "key": "",
+      "name": ""
+    },
+    "id": "share-…",
+    "level": "spec",
+    "needs": [
+      "harness:claude"
+    ],
+    "redacted": {
+      "path": 1
+    },
+    "sig": "",
+    "spec": {
+      "agent": "claude",
+      "cwd": "<project>",
+      "formula": "…",
+      "prompt": "fix the add bug TOPIC[Fix add]"
+    },
+    "title": "Fix add",
+    "version": "…",
+    "wispTask": 1
+  },
+  "redactions": [
+    {
+      "at": "spec/cwd",
+      "kind": "path",
+      "now": "<project>",
+      "was": "/tmp/…/proj"
+    }
+  ],
+  "shared": null,
+  "targets": [],
+  "work": {
+    "kind": "files"
+  }
+}

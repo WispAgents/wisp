@@ -39,3 +39,39 @@ async fn a_share_keeps_words_that_are_another_tasks_title_and_takes_out_a_mentio
     assert!(!names.iter().any(|(was, _)| was == "login" && text.contains("fix the <task> bug")), "{names:?}");
     drop(serve);
 }
+
+/// QA round 13 #1: the Share dialog read `targets` (and `shared`, `work`) that `share.preview` never answered, and
+/// crashed on open. The answer the dialog gets (`share.preview { id }`, as plugins/stuff/ui/src/share/commands.ts
+/// sends it) is kept as a golden (plugins/stuff/ui/test/goldens/share-preview.json); the dialog's readers are tested
+/// on this same file
+/// (`plugins/stuff/ui/test/share-preview.test.ts`), so a field one side drops fails on both.
+#[tokio::test(flavor = "multi_thread")]
+async fn the_share_dialogs_preview_is_the_golden_its_readers_are_tested_on() {
+    let dir = temp("serve-share-preview");
+    let (serve, port) = start(&dir);
+    let api = Api { http: reqwest::Client::new(), port, n: 0.into() };
+    let made =
+        api.cmd("runtime.create", json!({ "prompt": "fix the add bug TOPIC[Fix add]", "cwd": dir.join("proj"), "agent": "claude" })).await;
+    let id = made["id"].as_str().unwrap().to_owned();
+    api.until(&id, "its turn ends", |t| t.last().is_some_and(ended)).await;
+    let mut p = api.cmd("share.preview", json!({ "id": id })).await;
+    // the dialog's fields: no link yet, the files it changed, no grid signed in here (so nowhere to go)
+    assert_eq!(p["shared"], serde_json::Value::Null, "{p}");
+    assert_eq!(p["work"], json!({ "kind": "files" }), "{p}");
+    assert_eq!(p["targets"], json!([]), "{p}");
+    // what changes run to run
+    let b = &mut p["bundle"];
+    b["id"] = json!("share-…");
+    b["createdAt"] = json!(0);
+    b["version"] = json!("…");
+    b["spec"]["formula"] = json!("…");
+    for r in p["redactions"].as_array_mut().unwrap() {
+        if r["kind"] == "path" {
+            r["was"] = json!("/tmp/…/proj");
+        }
+    }
+    // in the UI package that reads it (a package imports nothing from outside itself)
+    let goldens = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../plugins/stuff/ui/test/goldens");
+    wisp_testkit::assert_golden_at(&goldens, "share-preview", &p);
+    drop(serve);
+}

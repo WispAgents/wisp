@@ -180,7 +180,8 @@ async fn dispatch(p: &Parsed, user_home: &Path, cwd: &Path) -> Result<i32> {
                 dir.file_name().map(|n| n.to_string_lossy()).unwrap_or_default()
             ));
         }
-        Some("add") => add(&home, port, p.words.get(1), cwd).await?,
+        // `-C dir` is where the folder is, as the parser looked; `~` is the user's home
+        Some("add") => add(user_home, port, p.words.get(1), f.cwd.as_deref().unwrap_or(cwd)).await?,
         // `wisp run the tests`: no recipe of that name, so a prompt, launched as every prompt is (its title, attached in
         // a terminal; QA round 12 #2 printed the id where the title goes)
         Some("run") if !(f.json || f.wait || !f.tries.is_empty() || f.compare.is_some()) => {
@@ -648,7 +649,7 @@ pub(crate) async fn serve_here(home: &Path, port: u16, host: Option<&str>, open:
 }
 
 /// `wisp add [path|repo URL]`: a `project` resource (a URL is cloned here first, through git).
-async fn add(_home: &Path, port: u16, what: Option<&String>, cwd: &Path) -> Result<()> {
+async fn add(user_home: &Path, port: u16, what: Option<&String>, cwd: &Path) -> Result<()> {
     let c = Client::connect(port, true).await?;
     let w = what.map_or("", String::as_str);
     let lower = w.to_ascii_lowercase();
@@ -658,11 +659,16 @@ async fn add(_home: &Path, port: u16, what: Option<&String>, cwd: &Path) -> Resu
         let cloned = c.cmd("git.clone", json!({ "url": w, "parent": cwd.display().to_string() })).await?;
         cloned.get("dir").and_then(Value::as_str).unwrap_or_default().to_owned()
     } else {
+        let at = args::expand(if w.is_empty() { "." } else { w }, user_home, cwd);
+        // a folder that isn't there is never a project (QA round 13 #1 made "a", "tests", "dark")
+        if !at.is_dir() {
+            return Err(CliError::said(format!(
+                "no folder {}: wisp add <folder>   (a task that starts with add: wisp -- add {w} …)",
+                at.display()
+            )));
+        }
         // `wisp add .` is the folder itself, never "/repo/." (and no `\\?\` on Windows): canonical before it's sent
-        wisp_runtime_api::paths::canonical_project_path(
-            &args::expand(if w.is_empty() { "." } else { w }, cwd, cwd).display().to_string(),
-            None,
-        )
+        wisp_runtime_api::paths::canonical_project_path(&at.display().to_string(), None)
     };
     // named on the server, in the store's transaction (ADR-0076, ADR-0077): `/a/wisp` then `/b/wisp` are `wisp` and
     // `wisp-2`, never the second replacing the first; a folder that's a project already stays that one

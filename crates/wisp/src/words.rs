@@ -61,8 +61,8 @@ pub fn known(word: &str) -> bool {
 /// reads this list from the source, hold each word to it: the routing itself lives in main.rs's arms and `args::fits`).
 #[cfg(test)]
 pub const PROMPT_WORDS: &[&str] = &[
-    "ship", "merge", "run", "plan", "apply", "diff", "validate", "destroy", "init", "track", "untrack", "blame", "log", "tasks", "resume",
-    "fmt", "output", "graph", "mv", "import", "export", "history", "rerun", "open", "notes", "fresh", "attach",
+    "add", "ship", "merge", "run", "plan", "apply", "diff", "validate", "destroy", "init", "track", "untrack", "blame", "log", "tasks",
+    "resume", "fmt", "output", "graph", "mv", "import", "export", "history", "rerun", "open", "notes", "fresh", "attach",
 ];
 
 /// `wisp machine <verb>`: this machine's plugin first, else the same verb of `machines` (`wisp machine add` is
@@ -117,6 +117,12 @@ const INSTEAD: &[(&str, &str)] = &[
     ("delete", "wisp runtime delete <id>"),
     ("kill", "wisp stop <id>"),
     ("upgrade", "wisp update"),
+    // QA round 13 #3: read-only intents get read-only answers (`top` was "did you mean wisp stop?")
+    ("agents", "wisp accounts harnesses (the agents it can run)"),
+    ("top", "wisp ls --watch (your tasks, live)"),
+    ("ps", "wisp ls"),
+    ("cancel", "wisp stop <id>"),
+    ("pause", "wisp stop <id>"),
     ("start", "wisp serve (runs wisp here; wisp alone opens it)"),
     ("restart", "wisp serve (runs wisp here; wisp alone opens it)"),
     ("new", "wisp \"<what to do>\""),

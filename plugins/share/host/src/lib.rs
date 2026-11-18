@@ -146,7 +146,7 @@ async fn preview(ctx: &Ctx, call: &Call, a: &ShareArgs) -> Result<Preview> {
         from: Signer::default(),
         sig: String::new(),
     };
-    Ok(Preview { bundle, redactions: red })
+    Ok(Preview { bundle, redactions: red, ..Preview::default() })
 }
 
 async fn make(ctx: &Ctx, call: &Call, a: &ShareArgs) -> Result<Bundle> {
@@ -258,6 +258,28 @@ async fn send(ctx: &Ctx, call: &Call, a: SendArgs) -> Result<Value> {
     dest.send(out).await
 }
 
+/// What the Share dialog reads beside the bundle (QA round 13 #1: it read `targets` that `share.preview` never
+/// answered, so it crashed on open): the link the task has, whether "Its work" has anything to send (the files it
+/// changed, as a report sends), and the destinations ready to take a link.
+async fn dialog_facts(ctx: &Ctx, call: &Call, task: &str, p: &mut Preview) -> Result<()> {
+    let session = calls::task(ctx, call, task).await?;
+    p.shared = link::shared_of(&session);
+    let changed = match p.bundle.report.as_ref().and_then(|r| r.get("files")).and_then(Value::as_array) {
+        Some(files) => !files.is_empty(),
+        None => calls::changed_anything(ctx, call, task).await,
+    };
+    p.work = changed.then_some(wisp_share_api::ShareWork::Files);
+    p.targets = destinations(ctx)
+        .await
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter(|d| d.get("ready") == Some(&Value::Bool(true)))
+        .map(|d| wisp_share_api::ShareTarget { id: s(d, "id").to_owned(), host: s(d, "label").to_owned() })
+        .collect();
+    Ok(())
+}
+
 async fn destinations(ctx: &Ctx) -> Value {
     let mut out = Vec::new();
     for d in ctx.contributions(&DESTINATION) {
@@ -276,7 +298,11 @@ impl Plugin for SharePlugin {
     }
 
     fn setup(&self, s: &mut Setup) -> Result<()> {
-        s.command::<PreviewCmd, _, _>(|ctx, call, a| async move { preview(&ctx, &call, &a).await });
+        s.command::<PreviewCmd, _, _>(|ctx, call, a| async move {
+            let mut p = preview(&ctx, &call, &a).await?;
+            dialog_facts(&ctx, &call, &a.id, &mut p).await?;
+            Ok(p)
+        });
         s.command::<Make, _, _>(|ctx, call, a| async move { make(&ctx, &call, &a).await });
         s.command::<Open, _, _>(|ctx, call, a| async move { open(&ctx, &call, a.bundle).await });
         s.command::<Import, _, _>(|ctx, call, a| async move { import(&ctx, &call, a.bundle).await });

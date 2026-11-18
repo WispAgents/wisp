@@ -29,16 +29,23 @@ export interface Shared {
   readonly notes?: readonly string[];
 }
 
-/** Where a share can go: a grid this wisp is signed in to. */
+/** Where a share can go: a destination ready to take a link (plugins/share/api/bindings/share/ShareTarget.ts). */
 export interface ShareTarget {
+  readonly id?: string;
+  /** what the dialog names it by ("wisp Cloud") */
   readonly host: string;
 }
 
-/** share.preview: what a share of the task would carry, and where it would go. */
+/** share.preview: what a share of the task would carry, and where it would go (plugins/share/api/bindings/share/
+ *  Preview.ts; test/goldens/share-preview.json is a real answer, and test/share-preview.test.ts runs
+ *  the dialog's readers on it). `shared`, `work` and `targets` came with the 2026-11-18 server: an older one answers
+ *  without them, and the readers take that as nothing to say. */
 export interface SharePreview {
-  readonly shared: Shared | null;
-  readonly work: ShareWork | null;
-  readonly targets: readonly ShareTarget[];
+  readonly bundle?: unknown;
+  readonly redactions?: readonly unknown[];
+  readonly shared?: Shared | null;
+  readonly work?: ShareWork | null;
+  readonly targets?: readonly ShareTarget[];
   readonly delegates?: number;
   readonly crew?: readonly string[];
   readonly connectors?: readonly string[];

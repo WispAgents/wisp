@@ -17,6 +17,9 @@ const ui: PluginUiDef = {
       parse: parseShareParams,
       component: lazy(() => import('./share/ShareDialog.tsx')) as never,
       title: () => (catalogue as Record<string, string>)['stuff.share.title'] ?? 'Share task',
+      // the overlay is its dialog: v1's small share box, named as before
+      size: 'sm',
+      part: 'share.dialog',
     },
     // Make a pane (v1 pane-make.js): the head's Make a pane, ⌘K
     {

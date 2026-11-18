@@ -74,3 +74,42 @@ fn session_ids() {
     assert!(!session_id("0123456789AB"));
     assert!(!session_id("the"));
 }
+
+/// QA round 13 #1: `wisp add a README` registered a project "a" for a folder that doesn't exist and lost the prompt.
+/// `add` is the command only alone or with one argument that is a folder here or reads as a path or a link; else the
+/// words are a task.
+#[test]
+fn add_is_a_command_only_for_a_folder_a_path_or_a_link() {
+    let here = std::env::temp_dir().join(format!("wisp-add-{}", std::process::id()));
+    std::fs::create_dir_all(here.join("api")).unwrap();
+    let at = |args: &[&str]| {
+        let v: Vec<String> = args.iter().map(|s| (*s).to_owned()).collect();
+        parse(&v, None, Path::new("/home/ada"), &here).unwrap().command
+    };
+    for args in [
+        &["add"][..],
+        &["add", "."],
+        &["add", "api"],
+        &["add", "./web"],
+        &["add", "../other"],
+        &["add", "~/code/site"],
+        &["add", "/srv/app"],
+        &["add", "code/site"],
+        &["add", "https://github.com/acme/api"],
+        &["add", "git@github.com:acme/api.git"],
+    ] {
+        assert_eq!(at(args), Some("add"), "{args:?}");
+    }
+    for args in [
+        &["add", "a", "README"][..],
+        &["add", "tests", "for", "math.js"],
+        &["add", "dark", "mode"],
+        &["add", "tests"],
+        &["add", "api", "docs"],
+    ] {
+        assert_eq!(at(args), None, "{args:?} is a task");
+    }
+    // `-C dir`: the folder is looked for there
+    assert_eq!(at(&["-C", here.to_str().unwrap(), "add", "api"]), Some("add"));
+    let _ = std::fs::remove_dir_all(&here);
+}

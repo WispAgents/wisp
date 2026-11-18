@@ -412,3 +412,61 @@ async fn one_word_slips_say_what_to_type_and_a_run_prompt_launches_with_its_titl
     assert_eq!(api.cmd("runtime.list", json!({})).await.as_array().unwrap().len(), 3);
     drop(serve);
 }
+
+/// QA round 13: `wisp add a README` registered a project "a" and lost the prompt (#1); `wisp ls --all` said "No
+/// sessions." with tasks there (#2); `wisp top` was "did you mean wisp stop?", and `ps`, `cancel`, `pause` and `agents`
+/// pointed nowhere or the wrong way (#3).
+#[tokio::test(flavor = "multi_thread")]
+async fn add_a_readme_is_a_task_ls_all_lists_every_task_and_slips_point_the_right_way() {
+    let dir = temp("serve-cli-add");
+    let (serve, port) = start(&dir);
+    let api = Api { http: reqwest::Client::new(), port, n: 0.into() };
+    std::fs::create_dir_all(dir.join("proj/web")).unwrap();
+
+    // #1: prompts that start with add are tasks, with their titles, and no project is made
+    for prompt in ["add a README", "add tests for math.js", "add dark mode to the settings page"] {
+        let words: Vec<&str> = std::iter::once("--no-open").chain(prompt.split(' ')).collect();
+        let (code, out, err) = probe(&dir, port, &words);
+        assert!(
+            code == 0 && out.contains(&format!("launched: {prompt}  (")) && !out.contains("project added"),
+            "{prompt} → {code}: {out}{err}"
+        );
+    }
+    // a folder here, or a path, is the command; a path that isn't there is refused, never a phantom project
+    let (code, out, err) = probe(&dir, port, &["add", "web"]);
+    assert!(code == 0 && out.contains("project added: web"), "{code}: {out}{err}");
+    // `-C dir`: the folder there; `~/…` (no shell expanded it): the user's home (HOME is this test's home)
+    std::fs::create_dir_all(dir.join("other/api")).unwrap();
+    let other = dir.join("other").display().to_string();
+    let (code, out, err) = probe(&dir, port, &["-C", &other, "add", "api"]);
+    assert!(code == 0 && out.contains("project added: api"), "{code}: {out}{err}");
+    std::fs::create_dir_all(dir.join("home/code/site")).unwrap();
+    let (code, out, err) = probe(&dir, port, &["add", "~/code/site"]);
+    assert!(code == 0 && out.contains("project added: site"), "{code}: {out}{err}");
+    let (code, out, err) = probe(&dir, port, &["add", "./nope"]);
+    assert!(code != 0 && err.contains("no folder") && !out.contains("project added") && !out.contains("launched"), "{code}: {out}{err}");
+
+    // #2: --all is the open tasks and the archived ones
+    let tasks = api.cmd("runtime.list", json!({})).await;
+    let ids: Vec<String> = tasks.as_array().unwrap().iter().map(|t| t["id"].as_str().unwrap().to_owned()).collect();
+    assert_eq!(ids.len(), 3, "{tasks}");
+    api.cmd("runtime.archive", json!({ "id": ids[0], "archived": true })).await;
+    let (_, open, _) = probe(&dir, port, &["ls"]);
+    let (code, all, err) = probe(&dir, port, &["ls", "--all"]);
+    assert!(code == 0 && !all.contains("No sessions."), "{code}: {all}{err}");
+    assert!(!open.contains(&ids[0]) && ids.iter().all(|id| all.contains(id.as_str())), "ls:\n{open}\nls --all:\n{all}");
+
+    // #3: each slip points the right way
+    for (words, said) in [
+        (&["agents"][..], "wisp accounts harnesses"),
+        (&["top"], "wisp ls --watch"),
+        (&["ps"], "did you mean wisp ls"),
+        (&["cancel", "123"], "wisp stop <id>"),
+        (&["pause"], "wisp stop <id>"),
+    ] {
+        let (code, out, err) = probe(&dir, port, words);
+        assert!(code == 2 && err.contains(said) && !out.contains("launched"), "{words:?} → {code}: {out}{err}");
+    }
+    assert_eq!(api.cmd("runtime.list", json!({ "archived": true })).await.as_array().unwrap().len(), 1);
+    drop(serve);
+}

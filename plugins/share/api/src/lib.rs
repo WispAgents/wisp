@@ -26,7 +26,8 @@ pub enum Level {
 }
 
 /// One thing taken out before a share leaves.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ts_rs::TS)]
+#[ts(export, export_to = "share/")]
 pub struct Redaction {
     /// secret | env | path | name
     pub kind: String,
@@ -90,11 +91,64 @@ pub struct ShareArgs {
     pub level: Level,
 }
 
-/// `share.preview`: exactly what goes, and every redaction.
-#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+/// `share.preview`: exactly what goes, and every redaction; and what the Share dialog reads beside it (the link the
+/// task has, whether it has work to send, where a link would go). The UI's `SharePreview`
+/// (plugins/stuff/ui/src/share/types.ts) reads this binding's fields; `plugins/stuff/ui/test/goldens/share-preview.json`
+/// is a real answer, and the dialog's readers are tested on it.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, ts_rs::TS)]
+#[ts(export, export_to = "share/")]
 pub struct Preview {
+    #[ts(type = "unknown")]
     pub bundle: Bundle,
     pub redactions: Vec<Redaction>,
+    /// the task's live link, if it has one (`share.create` keeps it on the task). Additive (2026-11-18).
+    #[serde(default)]
+    pub shared: Option<SharedLink>,
+    /// what "Its work" would send: the files it changed; none when it changed nothing. Additive (2026-11-18).
+    #[serde(default)]
+    pub work: Option<ShareWork>,
+    /// where a link can go now: the destinations that are ready (none: sign in first). Additive (2026-11-18).
+    #[serde(default)]
+    pub targets: Vec<ShareTarget>,
+}
+
+/// A task's live share link. `locked`: it needs a passkey.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, ts_rs::TS)]
+#[ts(export, export_to = "share/")]
+pub struct SharedLink {
+    pub url: String,
+    #[serde(default)]
+    pub locked: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional, type = "number")]
+    pub at: Option<i64>,
+}
+
+/// What goes with the work. A v2 share sends the answers and the files changed (`Level::Report`): `files`.
+/// (`git` is a v1 grid's: its branch and remote.)
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ts_rs::TS)]
+#[serde(tag = "kind", rename_all = "lowercase")]
+#[ts(export, export_to = "share/")]
+pub enum ShareWork {
+    Git {
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[ts(optional)]
+        branch: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[ts(optional)]
+        repo: Option<String>,
+    },
+    Files,
+}
+
+/// A place a link can go: a ready destination, by its name (`wisp Cloud`).
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, ts_rs::TS)]
+#[ts(export, export_to = "share/")]
+pub struct ShareTarget {
+    /// the destination's id (`wisp-cloud`)
+    pub id: String,
+    /// what the dialog names it by
+    pub host: String,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]

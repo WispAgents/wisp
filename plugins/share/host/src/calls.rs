@@ -19,6 +19,13 @@ pub(crate) async fn task(ctx: &Ctx, call: &Call, id: &str) -> Result<Session> {
     ctx.run::<rt::Get>(call, rt::IdArgs { id: id.into() }).await
 }
 
+/// Whether any of the task's turns changed a file (`runtime.turns`' counts; none read: no).
+pub(crate) async fn changed_anything(ctx: &Ctx, call: &Call, id: &str) -> bool {
+    ctx.run::<rt::Turns>(call, rt::TurnsArgs { id: id.into(), before: None, limit: None, masked: None })
+        .await
+        .is_ok_and(|turns| turns.iter().any(|t| t.changed_files.unwrap_or(0) > 0))
+}
+
 /// `runtime.spec`: the task's spec, as JSON.
 pub(crate) async fn spec(ctx: &Ctx, call: &Call, id: &str) -> Result<Value> {
     to_json(&ctx.run::<rt::SpecOf>(call, rt::IdArgs { id: id.into() }).await?)

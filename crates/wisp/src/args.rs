@@ -6,7 +6,7 @@ pub const HELP: &str = "usage:
   wisp                          open wisp
   wisp \"task\"                   launch a task in this folder
   wisp serve                    run wisp here, in this terminal, without opening anything   (--port N  --host ADDR)
-  wisp add [path]               add a project
+  wisp add [folder]             add a project: a folder here, a path or a git link (wisp add a README is a task)
   wisp \"task\" -d                launch it and return with its id (the default outside a terminal; --wait blocks)
   wisp attach <id>              follow a task live: its steps, its answer, its questions; a reply box after
                                 (Ctrl-C detaches, a second Ctrl-C stops it)
@@ -278,13 +278,21 @@ pub fn session_id(s: &str) -> bool {
 
 /// Newer commands are also common first words of a task ("ship the docs", "usage of X"), so they only
 /// count when the rest fits; `wisp run` falls back to a task when no recipe has that name.
-fn fits(cmd: &str, w: &[String]) -> bool {
+/// `wisp add <x>`: a folder (there, or here), something that reads as a path (`./web`, `~/code/site`, `code/site`), or
+/// a link to clone. `wisp add a README` is a prompt (QA round 13 #1 registered a project "a").
+fn addable(w: &str, home: &Path, cwd: &Path) -> bool {
+    let link = ["https:", "http:", "ssh:", "git:", "git@"].iter().any(|p| w.to_ascii_lowercase().starts_with(p));
+    link || w == "." || w == ".." || w.starts_with("~/") || w.contains('/') || w.contains('\\') || expand(w, home, cwd).is_dir()
+}
+
+fn fits(cmd: &str, w: &[String], home: &Path, cwd: &Path) -> bool {
     let n = w.len();
     let w1 = w.get(1).map_or("", String::as_str);
     match cmd {
         "grid" => n == 1 || GRID_SUB.contains(&w1),
         "ship" | "merge" => session_id(w1),
         "attach" => n == 2,
+        "add" => n == 1 || (n == 2 && addable(w1, home, cwd)),
         // `wisp help`, `wisp help crew`, `wisp help crew create`: a task never starts with "help" and two words
         "help" => n <= 4 && w.iter().skip(1).all(|x| x.bytes().all(|b| b.is_ascii_lowercase() || b == b'-' || b == b'_' || b == b'.')),
         "completions" => n == 2 && ["zsh", "bash", "fish"].contains(&w1),
@@ -296,13 +304,13 @@ fn fits(cmd: &str, w: &[String]) -> bool {
     }
 }
 
-pub fn command_of(words: &[String], literal: Literal) -> Option<&'static str> {
+pub fn command_of(words: &[String], literal: Literal, home: &Path, cwd: &Path) -> Option<&'static str> {
     if literal == Literal::Task {
         return None;
     }
     let first = words.first()?;
     let cmd = COMMANDS.iter().find(|c| **c == first.as_str())?;
-    fits(cmd, words).then_some(*cmd)
+    fits(cmd, words, home, cwd).then_some(*cmd)
 }
 
 /// A flag that needs a value and got none.
@@ -410,7 +418,9 @@ pub fn parse(input: &[String], env_port: Option<&str>, home: &Path, cwd: &Path) 
         }
         i += 1;
     }
-    let command = command_of(&words, literal);
+    // `-C dir` is where `wisp add <folder>` looks
+    let at = flags.cwd.clone().unwrap_or_else(|| cwd.to_owned());
+    let command = command_of(&words, literal, home, &at);
     Ok(Parsed { action: Action::Run, flags, words, literal, command, argv })
 }
 

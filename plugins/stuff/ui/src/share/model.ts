@@ -33,8 +33,18 @@ export function carryTip(t: T, p: SharePreview): string {
   return lines.join('\n');
 }
 
+/** The dialog's note under its choices once the preview is in: where the link goes, or to sign in first. */
+export function previewNote(t: T, p: SharePreview): { readonly text: string; readonly tone: 'info' | 'bad' } {
+  const to = p.targets?.[0];
+  return to ? { text: t('stuff.share.where', { host: to.host }), tone: 'info' } : { text: t('stuff.share.signIn'), tone: 'bad' };
+}
+
+/** Share can go: the preview is in and a destination is ready (QA round 13 #1: it read `targets` the server didn't
+ *  answer, and threw). */
+export const canShare = (p: SharePreview | undefined): boolean => (p?.targets?.length ?? 0) > 0;
+
 /** The "Its work" checkbox: whether it can go, and the line under it. */
-export function workOption(t: T, work: ShareWork | null): { readonly can: boolean; readonly hint: string } {
+export function workOption(t: T, work: ShareWork | null | undefined): { readonly can: boolean; readonly hint: string } {
   if (!work) return { can: false, hint: t('stuff.share.work.none') };
   if (work.kind === 'files') return { can: true, hint: t('stuff.share.work.files') };
   const branch = work.branch ? t('stuff.share.work.branch', { branch: work.branch }) : t('stuff.share.work.itsBranch');

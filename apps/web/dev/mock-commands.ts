@@ -766,6 +766,18 @@ export const COMMANDS: Record<string, CommandFn> = {
   }),
   'runtime.cold': () => ({ ops: [], result: { cache: null, compact: null } }), // a small task: no cache hint, no Compact now
   'stuff.targets': () => ({ ops: [], result: [] }), // no grid to publish to
+  // a read (QA round 13 #1), in the shape a real `wisp serve` answers (plugins/stuff/ui/test/goldens/share-preview.json):
+  // no grid signed in here, so Share says sign in first
+  'share.preview': () => ({
+    ops: [],
+    result: {
+      bundle: { wispTask: 1, id: 'share-mock', level: 'spec', title: 'Fix add', needs: ['harness:claude'], spec: { prompt: 'fix the add bug', cwd: '<project>' }, formula: {}, redacted: { path: 1 } },
+      redactions: [{ kind: 'path', at: 'spec/cwd', was: '/Users/dev/proj', now: '<project>' }],
+      shared: null,
+      work: { kind: 'files' },
+      targets: [],
+    },
+  }),
   // the panes wisp ships (v1 GET /stuff/starters); Add keeps one in My Stuff
   'stuff.starters': () => ({
     ops: [],

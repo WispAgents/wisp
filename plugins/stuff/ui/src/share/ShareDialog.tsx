@@ -3,18 +3,19 @@
 // shape it will have; what goes with the share fills in where its placeholders were. Stop sharing is
 // optimistic (the link goes at once, back with a red toast); Share waits for the link, busy in place.
 
-import { untracked, type EntityKey, type ExtensionId, type PluginClient } from '@wisp/client';
-import { Button, Callout, Dialog, Stack, Text, Toolbar, useSignal, type ToolbarItem } from '@wisp/ui';
+import { untracked, type EntityKey, type PluginClient } from '@wisp/client';
+import { Button, Callout, Stack, Text, Toolbar, useSignal, type ToolbarItem } from '@wisp/ui';
 import { createSignal, For, Show, type JSX } from 'solid-js';
 import { copyText } from './clipboard.ts';
 import { sharePreview, shareCreate, shareStop, SESSION } from './commands.ts';
 import { CarryChips, LinkRow, WhoPicker, WorkOption } from './DialogParts.tsx';
 import { suggestPasskey } from './link.ts';
+import { canShare, previewNote } from './model.ts';
 import type { ShareableTask, Shared, SharePreview } from './types.ts';
 import '../i18n/lazy.ts';
 
 export { SHARE_VIEW, parseShareParams, type ShareParams } from './params.ts';
-import { SHARE_VIEW, type ShareParams } from './params.ts';
+import type { ShareParams } from './params.ts';
 
 interface Note {
   readonly text: string;
@@ -34,15 +35,14 @@ export default function ShareDialog(props: { client: PluginClient; params: Share
   const [work, setWork] = createSignal(true);
   const [busy, setBusy] = createSignal(false);
   const [notes, setNotes] = createSignal<readonly Note[]>([]);
-  const close = (): void => c.navigate({ t: 'closeOverlay', id: SHARE_VIEW });
 
   c.run(sharePreview, { session: props.params.session }).then(
     (p) => {
       setInfo(p);
-      setShared(p.shared);
+      setShared(p.shared ?? null);
       setWork(!!p.work);
       if (p.shared?.locked) setWho('pass');
-      setNotes(p.targets[0] ? [{ text: t('stuff.share.where', { host: p.targets[0].host }), tone: 'info' }] : [{ text: t('stuff.share.signIn'), tone: 'bad' }]);
+      setNotes([previewNote(t, p)]);
     },
     (err: unknown) => setFailed(err instanceof Error ? err.message : String(err)),
   );
@@ -78,7 +78,7 @@ export default function ShareDialog(props: { client: PluginClient; params: Share
       setNotes([{ text: err instanceof Error ? err.message : String(err), tone: 'bad' }]);
     });
   };
-  const ready = (): boolean => !!info()?.targets.length && !failed();
+  const ready = (): boolean => canShare(info()) && !failed();
   const items = (): ToolbarItem[] => [
     ...(shared() ? [{ id: 'stop', label: t('stuff.share.stop'), icon: 'x' as const, tone: 'bad' as const, priority: 1, onSelect: stop }] : []),
     {
@@ -103,14 +103,8 @@ export default function ShareDialog(props: { client: PluginClient; params: Share
   ];
 
   return (
-    <Dialog
-      part="share.dialog"
-      title={t('stuff.share.title')}
-      open
-      onOpenChange={(o) => !o && close()}
-      size="sm"
-      footer={<Toolbar part="share.foot" aria-label={t('stuff.share.actions')} justify="end" items={items()} />}
-    >
+    // the shell's overlay is the dialog (its title, ✕, Esc and a click outside close it): this is its body, the
+    // actions at its foot (QA round 13 #1: a Dialog of its own drew a second, empty "Share task" box behind)
       <Stack gap="5">
         <Text part="share.task" weight="medium" truncate title={task()?.title ?? ''}>
           {task()?.title ?? ''}
@@ -125,7 +119,7 @@ export default function ShareDialog(props: { client: PluginClient; params: Share
           <Show when={failed()}>{(f) => <Callout tone="bad">{f()}</Callout>}</Show>
           <For each={notes()}>{(n) => <Callout tone={n.tone}>{n.text}</Callout>}</For>
         </Stack>
+        <Toolbar part="share.foot" aria-label={t('stuff.share.actions')} justify="end" items={items()} />
       </Stack>
-    </Dialog>
   );
 }
