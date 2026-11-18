@@ -242,12 +242,92 @@ fn verify_sig(kind: Kind, der: &[u8], data: &[u8], sig: &[u8]) -> Result<bool, &
     }
 }
 
+/// What a signature's tags say, once they pass every check that costs nothing.
+struct Tags<'a> {
+    kind: Kind,
+    head_how: &'a str,
+    body_how: &'a str,
+    names: Vec<String>,
+    selector: String,
+    i_domain: String,
+}
+
+/// The tag checks, in RFC 6376's order: the tags there must be, v=, a=, no l=, c=, q=, what h= must name, d= and s=,
+/// i= inside d=, x=. Why they fail, or the tags as read.
+#[allow(clippy::many_single_char_names, reason = "RFC 6376's tags by their names (d=, c=, i=, x=)")]
+fn tag_problem<'a>(tags: &'a HashMap<String, String>, d: &str, now_s: i64) -> std::result::Result<Tags<'a>, String> {
+    let no = |s: &str| Err(s.to_owned());
+    for t in ["a", "b", "bh", "d", "h", "s"] {
+        if tags.get(t).is_none_or(String::is_empty) {
+            return Err(format!("missing tag {t}="));
+        }
+    }
+    if tags.get("v").map(String::as_str) != Some("1") {
+        return no("v= is not 1");
+    }
+    let kind = match tags["a"].as_str() {
+        "rsa-sha256" => Kind::Rsa,
+        "ed25519-sha256" => Kind::Ed25519,
+        a => return Err(format!("algorithm {a} refused")),
+    };
+    if tags.contains_key("l") {
+        return no("l= leaves part of the body unsigned");
+    }
+    let c = tags.get("c").map_or("simple", String::as_str);
+    let (head_how, body_how) = c.split_once('/').unwrap_or((c, "simple"));
+    if !matches!(head_how, "simple" | "relaxed") || !matches!(body_how, "simple" | "relaxed") {
+        return no("unknown canonicalization");
+    }
+    if tags.get("q").is_some_and(|q| !q.split(':').any(|x| x.trim() == "dns/txt")) {
+        return no("q= is not dns/txt");
+    }
+    let names: Vec<String> = tags["h"].split(':').map(|n| n.trim().to_lowercase()).collect();
+    if let Some(m) = MUST_SIGN.iter().find(|m| !names.iter().any(|n| n == *m)) {
+        return Err(format!("{m} is not in h="));
+    }
+    let selector = tags["s"].to_lowercase();
+    let domain_ok = d.len() <= 253 && d.split('.').count() >= 2 && d.split('.').all(label_ok);
+    if !domain_ok || !selector.split('.').all(label_ok) {
+        return no("bad d= or s=");
+    }
+    let i = tags.get("i").cloned().unwrap_or_else(|| format!("@{d}"));
+    let i_domain = i.rsplit_once('@').map(|(_, x)| x.to_lowercase()).unwrap_or_default();
+    if !i.contains('@') || !(i_domain == d || i_domain.ends_with(&format!(".{d}"))) {
+        return no("i= is outside d=");
+    }
+    if let Some(x) = tags.get("x") {
+        let Ok(xs) = x.parse::<i64>() else { return no("bad x=") };
+        if tags.get("t").and_then(|t| t.parse::<i64>().ok()).is_some_and(|t| xs < t) {
+            return no("bad x=");
+        }
+        if now_s > xs {
+            return no("expired");
+        }
+    }
+    Ok(Tags { kind, head_how, body_how, names, selector, i_domain })
+}
+
+/// The header data a signature covers: each name in h= takes the lowest instance left of it (a name with none left
+/// adds nothing), then the signature's own field without its b= value.
+fn signed_data(field: &Field, fields: &[Field], names: &[String], head_how: &str) -> String {
+    let mut left: HashMap<&str, Vec<&Field>> = HashMap::new();
+    for f in fields.iter().filter(|f| *f != field) {
+        left.entry(f.name.as_str()).or_default().push(f);
+    }
+    let canon = |raw: &str| if head_how == "relaxed" { relaxed_field(raw) } else { raw.to_owned() };
+    let mut data = String::new();
+    for name in names {
+        if let Some(f) = left.get_mut(name.as_str()).and_then(Vec::pop) {
+            data.push_str(&canon(&f.raw));
+            data.push_str(CRLF);
+        }
+    }
+    data.push_str(&canon(&without_b(&field.raw)));
+    data
+}
+
 /// One signature: why it fails, or "". What costs nothing comes first, and the DNS lookup last of all.
-#[allow(
-    clippy::too_many_lines,
-    clippy::many_single_char_names,
-    reason = "RFC 6376's checks in its order, its tags by their names (d=, c=, i=, x=, b=)"
-)]
+#[allow(clippy::many_single_char_names, reason = "RFC 6376's tags by their names (d=, b=)")]
 async fn problem(
     field: &Field,
     fields: &[Field],
@@ -259,66 +339,23 @@ async fn problem(
 ) -> (String, bool) {
     let say = |s: &str| (s.to_owned(), false);
     let Some(tags) = tags else { return say("bad tag list") };
-    for t in ["a", "b", "bh", "d", "h", "s"] {
-        if tags.get(t).is_none_or(String::is_empty) {
-            return say(&format!("missing tag {t}="));
-        }
-    }
-    if tags.get("v").map(String::as_str) != Some("1") {
-        return say("v= is not 1");
-    }
-    let kind = match tags["a"].as_str() {
-        "rsa-sha256" => Kind::Rsa,
-        "ed25519-sha256" => Kind::Ed25519,
-        a => return say(&format!("algorithm {a} refused")),
+    let t = match tag_problem(tags, d, now_s) {
+        Ok(t) => t,
+        Err(why) => return (why, false),
     };
-    if tags.contains_key("l") {
-        return say("l= leaves part of the body unsigned");
-    }
-    let c = tags.get("c").map_or("simple", String::as_str);
-    let (head_how, body_how) = c.split_once('/').unwrap_or((c, "simple"));
-    if !matches!(head_how, "simple" | "relaxed") || !matches!(body_how, "simple" | "relaxed") {
-        return say("unknown canonicalization");
-    }
-    if tags.get("q").is_some_and(|q| !q.split(':').any(|x| x.trim() == "dns/txt")) {
-        return say("q= is not dns/txt");
-    }
-    let names: Vec<String> = tags["h"].split(':').map(|n| n.trim().to_lowercase()).collect();
-    if let Some(m) = MUST_SIGN.iter().find(|m| !names.iter().any(|n| n == *m)) {
-        return say(&format!("{m} is not in h="));
-    }
-    let selector = tags["s"].to_lowercase();
-    let domain_ok = d.len() <= 253 && d.split('.').count() >= 2 && d.split('.').all(label_ok);
-    if !domain_ok || !selector.split('.').all(label_ok) {
-        return say("bad d= or s=");
-    }
-    let i = tags.get("i").cloned().unwrap_or_else(|| format!("@{d}"));
-    let i_domain = i.rsplit_once('@').map(|(_, x)| x.to_lowercase()).unwrap_or_default();
-    if !i.contains('@') || !(i_domain == d || i_domain.ends_with(&format!(".{d}"))) {
-        return say("i= is outside d=");
-    }
-    if let Some(x) = tags.get("x") {
-        let Ok(xs) = x.parse::<i64>() else { return say("bad x=") };
-        if tags.get("t").and_then(|t| t.parse::<i64>().ok()).is_some_and(|t| xs < t) {
-            return say("bad x=");
-        }
-        if now_s > xs {
-            return say("expired");
-        }
-    }
     let (Some(bh), Some(b)) = (b64(&no_ws(&tags["bh"])), b64(&no_ws(&tags["b"]))) else { return say("bad base64") };
-    let canon_body = if body_how == "relaxed" { relaxed_body(body) } else { simple_body(body) };
+    let canon_body = if t.body_how == "relaxed" { relaxed_body(body) } else { simple_body(body) };
     if Sha256::digest(bytes(&canon_body)).as_slice() != bh.as_slice() {
         return say("body hash mismatch");
     }
-    let records = match txt(format!("{selector}._domainkey.{d}")).await {
+    let records = match txt(format!("{}._domainkey.{d}", t.selector)).await {
         Ok(r) => r,
         Err(Lookup::NoSuchKey) => return say("no such key"),
         Err(Lookup::Failed) => return (DNS_FAILED.to_owned(), true),
     };
     let [record] = records.as_slice() else { return say("no usable key") };
     let Some(rec) = tag_list(&record.concat()) else { return say("no usable key") };
-    if let Some(w) = key_problem(&rec, kind, d, &i_domain) {
+    if let Some(w) = key_problem(&rec, t.kind, d, &t.i_domain) {
         return say(w);
     }
     let p = no_ws(&rec["p"]);
@@ -326,21 +363,7 @@ async fn problem(
         return say("key revoked");
     }
     let Some(der) = b64(&p) else { return say("no usable key") };
-    // each name in h= takes the lowest instance left of it; a name with none left adds nothing
-    let mut left: HashMap<&str, Vec<&Field>> = HashMap::new();
-    for f in fields.iter().filter(|f| *f != field) {
-        left.entry(f.name.as_str()).or_default().push(f);
-    }
-    let canon = |raw: &str| if head_how == "relaxed" { relaxed_field(raw) } else { raw.to_owned() };
-    let mut data = String::new();
-    for name in &names {
-        if let Some(f) = left.get_mut(name.as_str()).and_then(Vec::pop) {
-            data.push_str(&canon(&f.raw));
-            data.push_str(CRLF);
-        }
-    }
-    data.push_str(&canon(&without_b(&field.raw)));
-    match verify_sig(kind, &der, &bytes(&data), &b) {
+    match verify_sig(t.kind, &der, &bytes(&signed_data(field, fields, &t.names, t.head_how)), &b) {
         Ok(true) => (String::new(), false),
         Ok(false) => say("signature mismatch"),
         Err(e) => say(e),

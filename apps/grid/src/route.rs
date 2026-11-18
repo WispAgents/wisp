@@ -28,6 +28,9 @@ use crate::error::{Result, bad};
 use crate::rows::{ComputerRow, UserRow};
 use crate::secrets::{Secrets, safe_equal, sha256, token};
 
+mod bot;
+pub use bot::{Bot, HttpTelegram, bot_token_ok, person, senders_of};
+
 pub const ROUTE_MARK: &str = "x-wisp-route";
 const MAX_SENDERS: usize = 20;
 const TEXT_MAX: usize = 4000;
@@ -36,57 +39,6 @@ const THREAD_KEEP_MS: i64 = 30 * 86_400_000;
 const THREAD_MSGS: i64 = 40;
 const SEALED: &str = "route:telegram";
 pub const EXPIRED: &str = "That thread has expired, so this wasn’t sent. Start again with “on” and the computer’s name.";
-
-/// What's sealed for a user's route.
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-pub struct Bot {
-    pub bot: String,
-    pub name: String,
-    pub secret: String,
-    pub senders: Vec<String>,
-}
-
-/// `BotFather`'s `123456:ABC-DEF`.
-pub fn bot_token_ok(t: &str) -> bool {
-    t.split_once(':').is_some_and(|(id, rest)| {
-        (1..=20).contains(&id.len())
-            && id.bytes().all(|b| b.is_ascii_digit())
-            && (1..=100).contains(&rest.len())
-            && rest.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'_' || b == b'-')
-    })
-}
-
-/// The people who may route, as typed (ids, comma or space apart).
-pub fn senders_of(text: &str) -> std::result::Result<Vec<String>, String> {
-    let mut ids: Vec<String> = Vec::new();
-    for x in text.split([',', ' ', '\n', '\t']).filter(|x| !x.is_empty()) {
-        if !(1..=20).contains(&x.len()) || !x.bytes().all(|b| b.is_ascii_digit()) {
-            return Err("Telegram user ids are numbers: @userinfobot tells you yours.".into());
-        }
-        if !ids.iter().any(|i| i == x) {
-            ids.push(x.to_owned());
-        }
-    }
-    if ids.is_empty() {
-        return Err("Telegram user ids are numbers: @userinfobot tells you yours.".into());
-    }
-    if ids.len() > MAX_SENDERS {
-        return Err(format!("At most {MAX_SENDERS} people."));
-    }
-    Ok(ids)
-}
-
-/// A listed person, in a private chat with the bot, not a forward.
-pub fn person(m: &Value, b: &Bot) -> bool {
-    let from = &m["from"];
-    let id = from["id"].as_i64().map(|n| n.to_string()).unwrap_or_default();
-    from.is_object()
-        && from["is_bot"] != json!(true)
-        && m["chat"]["type"] == "private"
-        && b.senders.contains(&id)
-        && m.get("forward_origin").is_none()
-        && m.get("forward_date").is_none()
-}
 
 /// Telegram's Bot API, as the grid calls it.
 #[async_trait::async_trait]
@@ -261,16 +213,7 @@ impl Routes {
         let sender = m["from"]["first_name"].as_str().unwrap_or_default().to_owned();
         let body = |thread: &str, text: &str, follow: bool| json!({ "channel": "telegram", "name": "Telegram", "text": text, "sender": sender, "id": u["update_id"].to_string(), "at": m["date"], "thread": thread, "follow": follow });
         if let Some(up) = m["reply_to_message"]["message_id"].as_i64() {
-            let tid: Option<String> = self.db.with(|c| {
-                c.query_row(
-                    "SELECT thread_id FROM channel_thread_msgs WHERE user_id = ?1 AND chat = ?2 AND message = ?3",
-                    params![user.id, chat, up],
-                    |r| r.get(0),
-                )
-                .optional()
-            })?;
-            let t = tid.map(|t| self.thread(&t)).transpose()?.flatten().filter(|t| self.fresh(t));
-            let Some(t) = t.filter(|t| computers.iter().any(|c| c.id == t.computer_id)) else { return Ok(say(EXPIRED)) };
+            let Some(t) = self.replied_in(&user.id, &chat, up, computers)? else { return Ok(say(EXPIRED)) };
             let r = self.thread_ref(&t.id)?;
             return Ok(Some(Next::Forward {
                 thread: t.id.clone(),
@@ -290,9 +233,7 @@ impl Routes {
                 Ok(say(&format!("{} They share that name, so nothing was sent.", p.first().map_or("", |x| x.text.as_str()))))
             }
             Some(wisp_channels_core::grammar::Route::To { machine, text }) => {
-                let id = token("", 12);
-                let now = self.clock.now_ms();
-                self.db.with(|c| c.execute("INSERT INTO channel_threads (id, user_id, computer_id, channel, chat, message, created_at) VALUES (?1, ?2, ?3, 'telegram', ?4, ?5, ?6)", params![id, user.id, machine, chat, at, now]))?;
+                let id = self.new_thread(&user.id, &machine, &chat, at)?;
                 let r = self.thread_ref(&id)?;
                 Ok(Some(Next::Forward { thread: id, computer: machine, body: body(&r, &text, false), chat, reply_to: at, fresh: true }))
             }
@@ -303,6 +244,33 @@ impl Routes {
                 )))
             }
         }
+    }
+
+    /// The thread a reply in the chat answers: one the grid sent, still fresh, to a computer this user still has.
+    fn replied_in(&self, user_id: &str, chat: &str, up: i64, computers: &[ComputerRow]) -> Result<Option<Thread>> {
+        let tid: Option<String> = self.db.with(|c| {
+            c.query_row(
+                "SELECT thread_id FROM channel_thread_msgs WHERE user_id = ?1 AND chat = ?2 AND message = ?3",
+                params![user_id, chat, up],
+                |r| r.get(0),
+            )
+            .optional()
+        })?;
+        let t = tid.map(|t| self.thread(&t)).transpose()?.flatten().filter(|t| self.fresh(t));
+        Ok(t.filter(|t| computers.iter().any(|c| c.id == t.computer_id)))
+    }
+
+    /// A routed message's thread, where the computer's report goes: its id.
+    fn new_thread(&self, user_id: &str, machine: &str, chat: &str, at: i64) -> Result<String> {
+        let id = token("", 12);
+        let now = self.clock.now_ms();
+        self.db.with(|c| {
+            c.execute(
+                "INSERT INTO channel_threads (id, user_id, computer_id, channel, chat, message, created_at) VALUES (?1, ?2, ?3, 'telegram', ?4, ?5, ?6)",
+                params![id, user_id, machine, chat, at, now],
+            )
+        })?;
+        Ok(id)
     }
 
     /// A line in the chat; one sent in a thread is kept, so a reply to it is a follow-up there.
@@ -389,33 +357,6 @@ impl Routes {
     pub fn sweep(&self) -> Result<usize> {
         let before = self.clock.now_ms() - THREAD_KEEP_MS;
         self.db.with(|c| c.execute("DELETE FROM channel_threads WHERE created_at < ?1", [before]))
-    }
-}
-
-/// Telegram over HTTPS (grid.json `channels.telegramApi` for tests).
-#[derive(Debug, Default)]
-pub struct HttpTelegram {
-    pub base: String,
-    pub client: reqwest::Client,
-}
-
-#[async_trait::async_trait]
-impl Telegram for HttpTelegram {
-    async fn call(&self, bot: &str, method: &str, body: Value) -> std::result::Result<Value, String> {
-        let r = self
-            .client
-            .post(format!("{}/bot{bot}/{method}", self.base.trim_end_matches('/')))
-            .json(&body)
-            .timeout(std::time::Duration::from_secs(15))
-            .send()
-            .await
-            .map_err(|e| e.to_string())?;
-        let status = r.status().as_u16();
-        let j: Value = r.json().await.unwrap_or(Value::Null);
-        if j["ok"] != json!(true) {
-            return Err(j["description"].as_str().map_or_else(|| status.to_string(), str::to_owned));
-        }
-        Ok(j["result"].clone())
     }
 }
 

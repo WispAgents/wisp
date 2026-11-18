@@ -29,10 +29,8 @@ export function infoGuess(info: ShipInfo): ShipGuess {
   return { repos: repos.length, update: repos.every((r) => r.pr?.state === 'OPEN'), branches: repos.map((r) => r.branch), ...(pr !== undefined && { pr }) };
 }
 
-export function dialogTitle(t: T, g: ShipGuess): string {
-  if (g.update) return g.repos > 1 ? t('wisp.ship.dialog.pushMany', { count: g.repos }) : t('wisp.ship.dialog.pushOne', { n: g.pr ?? 0 });
-  return g.repos > 1 ? t('wisp.ship.dialog.shipMany', { count: g.repos }) : t('wisp.ship.dialog.ship');
-}
+// the dialog's title, which the view's registration reads: its own module (the rest loads with the dialog)
+export { dialogTitle } from './title.ts';
 
 export function goLabel(t: T, g: ShipGuess): string {
   if (g.update) return t('wisp.ship.dialog.goPush');

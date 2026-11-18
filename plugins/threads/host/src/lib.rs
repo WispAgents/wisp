@@ -84,14 +84,28 @@ async fn read(ctx: &Ctx, call: &Call, st: &State, task: &str) -> Result<api::Not
     Ok(n)
 }
 
+/// The task's turns now (its last turn's index + 1), read when the Notes are written: no per-turn count is kept
+/// (it cost a write at every turn's end, ADR-0100).
+async fn turns_now(ctx: &Ctx, call: &Call, task: &str) -> u32 {
+    let last = ctx
+        .run::<wisp_runtime_api::commands::Turns>(
+            call,
+            wisp_runtime_api::commands::TurnsArgs { id: task.into(), before: None, limit: Some(1), masked: None },
+        )
+        .await;
+    last.ok().and_then(|t| t.iter().map(|t| t.idx + 1).max()).unwrap_or(0)
+}
+
 async fn update(ctx: &Ctx, call: &Call, st: &State, a: api::UpdateArgs) -> Result<api::Notes> {
     let (whose, lead) = owner(ctx, call, &a.id).await?;
     if lead.is_some() {
         return Err(WireError::invalid("A subagent reads its lead’s Notes and can’t change them: say in your report what should change."));
     }
     let by = a.by.unwrap_or(By::You);
-    let wrote =
-        notes::update(&st.store, &whose, &a.section, &a.text, by, now(ctx)).await.map_err(|e| db(&e))?.map_err(WireError::invalid)?;
+    let wrote = notes::update(&st.store, &whose, &a.section, &a.text, by, now(ctx), turns_now(ctx, call, &whose).await)
+        .await
+        .map_err(|e| db(&e))?
+        .map_err(WireError::invalid)?;
     if wrote.changed {
         files::write_repo_file(ctx, call, &whose, &wrote.notes).await;
     }

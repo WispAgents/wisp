@@ -2,12 +2,16 @@
 //! apps as cards, then what to try next, each tile saying so when the grid knows it's already done.
 
 use super::account::DeviceView;
-use super::icons::{ARROW, CHECK, CODE, COPY, GLOBE, KEY, LAPTOP, MOON, PHONE, PLUS, SHARE, STACK};
+use super::icons::{ARROW, CODE, COPY, GLOBE, LAPTOP, MOON, PLUS};
 use super::layout::{AppPage, Tab, app_page, state_label};
 use super::machines::{MachineView, add_machine_row, machines_dialog, machines_js, spec};
 use super::scripts::{COPY_JS, HOME_JS, LIVE};
 use super::site::{shot, tag};
 use super::time::{ago, locale_string};
+use tiles::tiles;
+
+#[path = "home_tiles.rs"]
+mod tiles;
 use super::{PageCfg, PageUser, Tone, esc};
 
 /// The account's cloud wisp, as its instance row has it.
@@ -173,113 +177,6 @@ const FIRST_STEPS: &str = r#"<ol class="path">
       <li><span class="n">3</span><div><b>Send a task, close the laptop</b><p>The report waits for you here and on your phone.</p></div></li>
     </ol>"#;
 
-struct Tile<'a> {
-    icon: &'a str,
-    title: &'a str,
-    text: String,
-    on: String,
-    go: &'a str,
-    href: &'a str,
-    add: bool,
-}
-
-fn tile(t: &Tile<'_>) -> String {
-    let step = if t.add {
-        format!(r#"<button class="t-go" type="button" data-add>{}{ARROW}</button>"#, t.go)
-    } else {
-        let ext = if t.href.starts_with("http:") || t.href.starts_with("https:") { r#" target="_blank" rel="noopener""# } else { "" };
-        format!(r#"<a class="t-go" href="{}"{ext}>{}{ARROW}</a>"#, esc(t.href), t.go)
-    };
-    let on = if t.on.is_empty() { String::new() } else { format!(r#"<span class="t-on">{CHECK}{}</span>"#, esc(&t.on)) };
-    format!(
-        r#"<div class="t"><span class="w-ic">{}</span><b>{}</b><p>{}</p><div class="t-foot">{step}{on}</div></div>"#,
-        t.icon, t.title, t.text
-    )
-}
-
-fn tiles(p: &HomePage, host: &str) -> String {
-    let phone = p.devices.iter().any(|d| d.name.to_lowercase().contains("phone"));
-    let n = p.computers.len();
-    let scheduled = if p.instance.next_wake_at.is_some_and(|t| t != 0) {
-        format!(r#"<span class="t-on">{CHECK}Scheduled</span>"#)
-    } else {
-        String::new()
-    };
-    let big = format!(
-        r#"<div class="t big"><div class="t-tx"><span class="w-ic cloud">{MOON}</span><b>Keeps working with your laptop closed</b><p>Leave a task running or schedule one. Your cloud wisp wakes for it, does the work and goes back to sleep. The report waits for you.</p><div class="t-foot"><a class="t-go" href="/go">Schedule a task{ARROW}</a>{scheduled}</div></div><div class="t-shot" aria-hidden="true">{}</div></div>"#,
-        shot("report", "")
-    );
-    let s = p.sites.len();
-    let mut list = vec![tile(&Tile {
-        icon: KEY,
-        title: "Bring your own agents",
-        text: "Sign in to Claude Code, Codex and GitHub in Settings → Agents. A link and a code, no terminal.".into(),
-        on: String::new(),
-        go: "Sign in to an agent",
-        href: "/go",
-        add: false,
-    })];
-    if p.offers.sites {
-        list.push(tile(&Tile {
-            icon: GLOBE,
-            title: "Publish an app",
-            text: "From My Stuff, an app an agent built goes up at a public link, and stays up while your wisp sleeps.".into(),
-            on: if s > 0 { format!("{s} published") } else { String::new() },
-            go: if s > 0 { "See your apps" } else { "Publish from My Stuff" },
-            href: if s > 0 { "#apps" } else { "/go" },
-            add: false,
-        }));
-    }
-    if p.offers.sandboxes {
-        list.push(tile(&Tile {
-            icon: STACK,
-            title: "A fresh box for one task",
-            text: "Start a task with /sandbox and it gets a box of its own, deleted with the task.".into(),
-            on: String::new(),
-            go: "Try /sandbox",
-            href: "/go",
-            add: false,
-        }));
-    }
-    list.push(tile(&Tile {
-        icon: PHONE,
-        title: "On your phone",
-        text: format!("Sign in with {} in the wisp app, or add your cloud wisp to an iPhone’s Home Screen.", esc(host)),
-        on: if phone { "Phone connected".into() } else { String::new() },
-        go: "How to set it up",
-        href: "https://trywisp.dev/guides/use-wisp-cloud",
-        add: false,
-    }));
-    list.push(tile(&Tile {
-        icon: SHARE,
-        title: "Share a task",
-        text: "Share… on a task makes a link to what it did, with a passkey if you want one.".into(),
-        on: String::new(),
-        go: "Pick a task",
-        href: "/go",
-        add: false,
-    }));
-    list.push(tile(&Tile {
-        icon: LAPTOP,
-        title: "Reach your own computers",
-        text: "Your phone and other computers open them through the grid. No SSH, no open ports.".into(),
-        on: if n > 0 { format!("{n} added") } else { String::new() },
-        go: "Add a computer",
-        href: "",
-        add: true,
-    }));
-    list.push(tile(&Tile {
-        icon: CODE,
-        title: "API keys for scripts",
-        text: "Settings → Cloud → API keys makes a key, so a script can start tasks in your cloud wisp.".into(),
-        on: String::new(),
-        go: "Make a key",
-        href: "/go",
-        add: false,
-    }));
-    format!("{big}{}", list.join(""))
-}
-
 fn add_how(cli: &str, host: &str) -> String {
     format!(
         r#"<details class="add" id="add"><summary aria-controls="addHow"><span class="add-plus">{PLUS}</span><b>Add a computer</b><small>One command in a terminal, or a few clicks in the app. No SSH, no open ports.</small></summary></details>
@@ -301,30 +198,39 @@ fn add_how(cli: &str, host: &str) -> String {
     )
 }
 
+/// `wisp computer on` signs in to grid.trywisp.dev unless told another grid.
+fn cli_for(host: &str) -> String {
+    if host == "grid.trywisp.dev" { "npx wisp-agents computer on".to_owned() } else { format!("npx wisp-agents computer on --grid {host}") }
+}
+
+/// Nothing yet: never started, no computer, app or device. Home shows the first steps.
+fn is_fresh(p: &HomePage) -> bool {
+    p.instance.started_at.is_none_or(|t| t == 0)
+        && p.instance.stopped_at.is_none_or(|t| t == 0)
+        && p.computers.is_empty()
+        && p.sites.is_empty()
+        && p.devices.is_empty()
+}
+
+/// The published apps, when there are some.
+fn apps_section(p: &HomePage, hidden: &str) -> String {
+    if p.sites.is_empty() {
+        return String::new();
+    }
+    let cards: String = p.sites.iter().map(|x| site_card(x, hidden, p.now_ms)).collect();
+    format!(
+        r#"<h2 class="sec" id="apps">Published apps <span class="n">{}</span></h2><p class="hint">Anyone with the link can open them, while your wisp sleeps too; search engines don’t list them.</p><div class="cards">{cards}</div>"#,
+        p.sites.len()
+    )
+}
+
 pub fn home_page(cfg: &PageCfg, p: &HomePage) -> String {
     let hidden = hidden(&p.csrf);
     let host = host_of(&cfg.public_url);
     let online = p.computers.iter().filter(|c| c.online).count();
-    // `wisp computer on` signs in to grid.trywisp.dev unless told another grid
-    let cli = if host == "grid.trywisp.dev" {
-        "npx wisp-agents computer on".to_owned()
-    } else {
-        format!("npx wisp-agents computer on --grid {host}")
-    };
-    let fresh = p.instance.started_at.is_none_or(|t| t == 0)
-        && p.instance.stopped_at.is_none_or(|t| t == 0)
-        && p.computers.is_empty()
-        && p.sites.is_empty()
-        && p.devices.is_empty();
-    let apps = if p.sites.is_empty() {
-        String::new()
-    } else {
-        let cards: String = p.sites.iter().map(|x| site_card(x, &hidden, p.now_ms)).collect();
-        format!(
-            r#"<h2 class="sec" id="apps">Published apps <span class="n">{}</span></h2><p class="hint">Anyone with the link can open them, while your wisp sleeps too; search engines don’t list them.</p><div class="cards">{cards}</div>"#,
-            p.sites.len()
-        )
-    };
+    let cli = cli_for(host);
+    let fresh = is_fresh(p);
+    let apps = apps_section(p, &hidden);
     let first = p.user.name.as_deref().filter(|n| !n.is_empty()).unwrap_or(&p.user.handle);
     let first = first.split(' ').next().unwrap_or(first);
     let count = if p.computers.is_empty() { String::new() } else { format!("{online} of {} online", p.computers.len()) };
@@ -372,63 +278,5 @@ pub fn home_page(cfg: &PageCfg, p: &HomePage) -> String {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn cfg() -> PageCfg {
-        PageCfg { name: "wisp Cloud".into(), domain: "grid.trywisp.dev".into(), public_url: "https://grid.trywisp.dev".into() }
-    }
-
-    fn page() -> HomePage {
-        HomePage {
-            user: PageUser { handle: "ada".into(), name: Some("Ada Lovelace".into()), ..PageUser::default() },
-            url: "https://ada.grid.trywisp.dev".into(),
-            instance: InstanceView { state: "stopped".into(), ..InstanceView::default() },
-            now_ms: 1_793_000_000_000,
-            ..HomePage::default()
-        }
-    }
-
-    #[test]
-    fn a_fresh_account_gets_the_first_steps() {
-        let h = home_page(&cfg(), &page());
-        assert!(h.contains("Hi Ada</h1>"));
-        assert!(h.contains("Open your cloud wisp"));
-        assert!(h.contains("Starts the first time you open it"));
-        assert!(h.contains("What your cloud can do"));
-        assert!(h.contains(r#"data-copy="npx wisp-agents computer on""#));
-        assert!(h.contains(r#"<form class="inline off" method="post" action="/instance/stop">"#));
-    }
-
-    #[test]
-    fn computers_and_apps_show_as_cards() {
-        let mut p = page();
-        p.instance = InstanceView { state: "running".into(), started_at: Some(p.now_ms - 120_000), ..InstanceView::default() };
-        p.computers = vec![
-            ComputerView {
-                id: "c1".into(),
-                name: "mac".into(),
-                url: "https://mac--ada.grid".into(),
-                online: true,
-                ..ComputerView::default()
-            },
-            ComputerView { id: "c2".into(), name: "<pc>".into(), last_seen_at: Some(p.now_ms - 3_600_000), ..ComputerView::default() },
-        ];
-        p.sites = vec![SiteView {
-            key: "k".into(),
-            title: "Demo".into(),
-            url: "https://demo.grid/".into(),
-            files: 1,
-            updated_at: Some(p.now_ms),
-        }];
-        let h = home_page(&cfg(), &p);
-        assert!(!h.contains("Open your cloud wisp</b>"));
-        assert!(h.contains("Started 2 min ago."));
-        assert!(h.contains("1 of 2 online"));
-        assert!(h.contains("Offline · last seen 1 h ago"));
-        assert!(h.contains("&#60;pc&#62;"));
-        assert!(h.contains("Updated just now · 1 file</small>"));
-        assert!(h.contains("1 published"));
-        assert!(h.contains("2 added"));
-    }
-}
+#[path = "home_tests.rs"]
+mod tests;

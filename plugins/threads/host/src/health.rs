@@ -5,7 +5,7 @@ use serde_json::json;
 use wisp_kernel::{Call, Ctx, Result};
 use wisp_runtime_api::commands::{ActivityArgs, ActivityOf, Turns, TurnsArgs};
 use wisp_runtime_api::model::{Activity, FileChange, Turn, TurnStatus};
-use wisp_threads_api::Health;
+use wisp_threads_api::{Health, Level, Repeat};
 use wisp_threads_core::health::{EditIn, TurnIn, health};
 
 use crate::store;
@@ -75,7 +75,6 @@ pub async fn work_out(ctx: &Ctx, call: &Call, st: &State, task: &str) -> Result<
         }
         ins.push(turn_in(t, errors));
     }
-    notes::count_turns(&st.store, task, total).await.map_err(|e| db(&e))?;
     let (_, m) = notes::load(&st.store, task).await.map_err(|e| db(&e))?;
     // the Notes' age: the task's turns now, less its turns when they were last written
     let h = health(task, &ins, (m.rev > 0).then(|| total.saturating_sub(m.turn)));
@@ -83,17 +82,33 @@ pub async fn work_out(ctx: &Ctx, call: &Call, st: &State, task: &str) -> Result<
     Ok(h)
 }
 
-async fn save(st: &State, h: &Health) -> Result<()> {
-    let row = store::row(json!({ "id": h.task, "body": h }));
-    st.store.write(move |w| w.upsert(store::HEALTH.kind, row).map(drop)).await.map_err(|e| db(&e))
+/// What the Thread tab and the TUI show of a thread's health: its level, what made it so, the error it repeats. The
+/// counts behind them (turns, the context's share) move every turn; a row is written only when this changes, and a
+/// thread with no row is Fine (ADR-0100: a write at every turn's end cost the stream's write amplification).
+fn shown(h: &Health) -> (Level, &[String], Option<&Repeat>) {
+    (h.level, &h.reasons, h.repeat.as_ref())
 }
 
-/// The health as last worked out; worked out now if it never was.
+/// Saves `h` when what it shows differs from the kept row's (none kept: Fine, nothing to say), in one read-and-write.
+async fn save(st: &State, h: &Health) -> Result<()> {
+    let h = h.clone();
+    st.store
+        .write(move |w| {
+            let kept: Option<Health> = w
+                .get(store::HEALTH.kind, h.task.clone())?
+                .and_then(|r| r.get("body").cloned())
+                .and_then(|b| serde_json::from_value(b).ok());
+            let was = kept.as_ref().map_or((Level::Ok, &[][..], None), shown);
+            if was == shown(&h) {
+                return Ok(());
+            }
+            w.upsert(store::HEALTH.kind, store::row(json!({ "id": h.task, "body": h }))).map(drop)
+        })
+        .await
+        .map_err(|e| db(&e))
+}
+
+/// The health now, worked out from the task's turns (the kept row may be behind on the counts).
 pub async fn read(ctx: &Ctx, call: &Call, st: &State, task: &str) -> Result<Health> {
-    let t = task.to_owned();
-    let kept = st.store.read_async(move |r| r.get(store::HEALTH.kind, t)).await.map_err(|e| db(&e))?;
-    if let Some(h) = kept.and_then(|r| r.get("body").cloned()).and_then(|b| serde_json::from_value(b).ok()) {
-        return Ok(h);
-    }
     work_out(ctx, call, st, task).await
 }

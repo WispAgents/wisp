@@ -22,6 +22,10 @@ use sha2::{Digest, Sha256};
 use crate::config::{GridConfig, ProviderConfig};
 use crate::error::{Result, bad};
 
+#[path = "auth_jwt.rs"]
+mod jwt;
+pub use jwt::verify_id_token;
+
 /// How long a sign-in may take, from the redirect out to the callback.
 pub const FLOW_TTL_MS: i64 = 10 * 60_000;
 /// The cookie holding the flow's state.
@@ -264,63 +268,64 @@ impl Provider {
         }
         match &self.kind {
             Kind::Github { auth_base, api_base, want_orgs } => {
-                let body = json!({ "client_id": self.client_id, "client_secret": self.client_secret, "code": code, "redirect_uri": redirect_uri, "code_verifier": f.verifier });
-                let t = get_json(
-                    http,
-                    "POST",
-                    &format!("{auth_base}/login/oauth/access_token"),
-                    Vec::new(),
-                    Some(("application/json".into(), body.to_string().into_bytes())),
-                )
-                .await?;
-                let Some(tok) = t.get("access_token").and_then(Value::as_str) else {
-                    return Err(bad(
-                        t.get("error_description").and_then(Value::as_str).unwrap_or("GitHub didn't send an access token."),
-                        502,
-                    ));
-                };
-                let auth = vec![
-                    ("authorization".to_owned(), format!("Bearer {tok}")),
-                    ("x-github-api-version".to_owned(), "2022-11-28".to_owned()),
-                ];
-                let user = get_json(http, "GET", &format!("{api_base}/user"), auth.clone(), None).await?;
-                let emails = get_json(http, "GET", &format!("{api_base}/user/emails"), auth.clone(), None).await.unwrap_or_default();
-                let orgs = if *want_orgs {
-                    Some(get_json(http, "GET", &format!("{api_base}/user/orgs"), auth, None).await.unwrap_or_default())
-                } else {
-                    None
-                };
-                github_identity(&user, &emails, orgs.as_ref())
+                self.github(http, code, redirect_uri, f, (auth_base, api_base, *want_orgs)).await
             }
-            Kind::Oidc { issuer, .. } => {
-                let d = self.discovery(http).await?;
-                let token_at = d
-                    .get("token_endpoint")
-                    .and_then(Value::as_str)
-                    .ok_or_else(|| bad(format!("{} has no token endpoint.", self.label), 502))?;
-                let form = url::form_urlencoded::Serializer::new(String::new())
-                    .extend_pairs([
-                        ("grant_type", "authorization_code"),
-                        ("code", code),
-                        ("redirect_uri", redirect_uri),
-                        ("client_id", &self.client_id),
-                        ("client_secret", &self.client_secret),
-                        ("code_verifier", &f.verifier),
-                    ])
-                    .finish();
-                let t = get_json(http, "POST", token_at, Vec::new(), Some(("application/x-www-form-urlencoded".into(), form.into_bytes())))
-                    .await?;
-                let id_token = t
-                    .get("id_token")
-                    .and_then(Value::as_str)
-                    .ok_or_else(|| bad(format!("{} didn't send an ID token.", self.label), 502))?;
-                let jwks_at = d.get("jwks_uri").and_then(Value::as_str).unwrap_or_default().to_owned();
-                let jwks = get_json(http, "GET", &jwks_at, Vec::new(), None).await?;
-                let issuers = [d.get("issuer").and_then(Value::as_str).unwrap_or(issuer).to_owned(), issuer.clone()];
-                let claims = verify_id_token(id_token, &jwks, &issuers, &self.client_id, &f.nonce, now)?;
-                Ok(oidc_identity(&self.id, &claims))
-            }
+            Kind::Oidc { issuer, .. } => self.oidc(http, code, redirect_uri, f, (issuer, now)).await,
         }
+    }
+
+    /// GitHub: the code for an access token, then the user, their verified emails, and their orgs when an allow list
+    /// names any.
+    async fn github(&self, http: &dyn AuthHttp, code: &str, redirect_uri: &str, f: &Flow, at: (&str, &str, bool)) -> Result<Identity> {
+        let (auth_base, api_base, want_orgs) = at;
+        let body = json!({ "client_id": self.client_id, "client_secret": self.client_secret, "code": code, "redirect_uri": redirect_uri, "code_verifier": f.verifier });
+        let t = get_json(
+            http,
+            "POST",
+            &format!("{auth_base}/login/oauth/access_token"),
+            Vec::new(),
+            Some(("application/json".into(), body.to_string().into_bytes())),
+        )
+        .await?;
+        let Some(tok) = t.get("access_token").and_then(Value::as_str) else {
+            return Err(bad(t.get("error_description").and_then(Value::as_str).unwrap_or("GitHub didn't send an access token."), 502));
+        };
+        let auth =
+            vec![("authorization".to_owned(), format!("Bearer {tok}")), ("x-github-api-version".to_owned(), "2022-11-28".to_owned())];
+        let user = get_json(http, "GET", &format!("{api_base}/user"), auth.clone(), None).await?;
+        let emails = get_json(http, "GET", &format!("{api_base}/user/emails"), auth.clone(), None).await.unwrap_or_default();
+        let orgs = if want_orgs {
+            Some(get_json(http, "GET", &format!("{api_base}/user/orgs"), auth, None).await.unwrap_or_default())
+        } else {
+            None
+        };
+        github_identity(&user, &emails, orgs.as_ref())
+    }
+
+    /// An OIDC issuer: the code for an `id_token`, checked against the issuer's keys, its audience and the flow's nonce.
+    async fn oidc(&self, http: &dyn AuthHttp, code: &str, redirect_uri: &str, f: &Flow, at: (&str, i64)) -> Result<Identity> {
+        let (issuer, now) = at;
+        let d = self.discovery(http).await?;
+        let token_at =
+            d.get("token_endpoint").and_then(Value::as_str).ok_or_else(|| bad(format!("{} has no token endpoint.", self.label), 502))?;
+        let form = url::form_urlencoded::Serializer::new(String::new())
+            .extend_pairs([
+                ("grant_type", "authorization_code"),
+                ("code", code),
+                ("redirect_uri", redirect_uri),
+                ("client_id", &self.client_id),
+                ("client_secret", &self.client_secret),
+                ("code_verifier", &f.verifier),
+            ])
+            .finish();
+        let t = get_json(http, "POST", token_at, Vec::new(), Some(("application/x-www-form-urlencoded".into(), form.into_bytes()))).await?;
+        let id_token =
+            t.get("id_token").and_then(Value::as_str).ok_or_else(|| bad(format!("{} didn't send an ID token.", self.label), 502))?;
+        let jwks_at = d.get("jwks_uri").and_then(Value::as_str).unwrap_or_default().to_owned();
+        let jwks = get_json(http, "GET", &jwks_at, Vec::new(), None).await?;
+        let issuers = [d.get("issuer").and_then(Value::as_str).unwrap_or(issuer).to_owned(), issuer.to_owned()];
+        let claims = verify_id_token(id_token, &jwks, &issuers, &self.client_id, &f.nonce, now)?;
+        Ok(oidc_identity(&self.id, &claims))
     }
 }
 
@@ -364,81 +369,6 @@ fn oidc_identity(provider: &str, c: &Value) -> Identity {
         avatar: s("picture"),
         orgs: None,
     }
-}
-
-fn b64(part: &str) -> Result<Vec<u8>> {
-    B64URL.decode(part.trim_end_matches('=')).map_err(|_| bad("The ID token isn't readable.", 401))
-}
-
-/// An OIDC ID token's claims, once its signature (RS256 or ES256, by `kid` in `jwks`), issuer, audience, nonce and
-/// times check out (a minute of clock skew).
-pub fn verify_id_token(token: &str, jwks: &Value, issuers: &[String], audience: &str, nonce: &str, now_ms: i64) -> Result<Value> {
-    let refuse = |why: &str| bad(format!("The sign-in couldn't be checked: {why}."), 401);
-    let parts: Vec<&str> = token.split('.').collect();
-    let [h, p, sig] = parts.as_slice() else { return Err(refuse("not a JWT")) };
-    let header: Value = serde_json::from_slice(&b64(h)?).map_err(|_| refuse("its header isn't JSON"))?;
-    let claims: Value = serde_json::from_slice(&b64(p)?).map_err(|_| refuse("its claims aren't JSON"))?;
-    let alg = header.get("alg").and_then(Value::as_str).unwrap_or_default();
-    let kid = header.get("kid").and_then(Value::as_str);
-    let keys = jwks.get("keys").and_then(Value::as_array).cloned().unwrap_or_default();
-    let key = keys
-        .iter()
-        .find(|k| kid.is_none_or(|kid| k.get("kid").and_then(Value::as_str) == Some(kid)))
-        .ok_or_else(|| refuse("its key isn't the issuer's"))?;
-    let signed = format!("{h}.{p}");
-    let sig = b64(sig)?;
-    let ok = match alg {
-        "RS256" => rs256(key, signed.as_bytes(), &sig),
-        "ES256" => es256(key, signed.as_bytes(), &sig),
-        _ => return Err(refuse(&format!("it's signed with {alg}, not RS256 or ES256"))),
-    };
-    if !ok {
-        return Err(refuse("its signature is wrong"));
-    }
-    let iss = claims.get("iss").and_then(Value::as_str).unwrap_or_default();
-    if !issuers.iter().any(|i| i == iss) {
-        return Err(refuse("another issuer signed it"));
-    }
-    let aud_ok = match claims.get("aud") {
-        Some(Value::String(a)) => a == audience,
-        Some(Value::Array(a)) => a.iter().any(|x| x.as_str() == Some(audience)),
-        _ => false,
-    };
-    if !aud_ok {
-        return Err(refuse("it's for another app"));
-    }
-    if claims.get("nonce").and_then(Value::as_str) != Some(nonce) {
-        return Err(refuse("its nonce isn't this sign-in's"));
-    }
-    let now = now_ms / 1_000;
-    let skew = 60;
-    if claims.get("exp").and_then(Value::as_i64).is_none_or(|e| e + skew < now) {
-        return Err(refuse("it expired"));
-    }
-    if claims.get("iat").and_then(Value::as_i64).is_some_and(|i| i - skew > now) {
-        return Err(refuse("it's from the future"));
-    }
-    Ok(claims)
-}
-
-fn rs256(jwk: &Value, msg: &[u8], sig: &[u8]) -> bool {
-    use rsa::signature::Verifier as _;
-    let n = jwk.get("n").and_then(Value::as_str).and_then(|s| B64URL.decode(s).ok());
-    let e = jwk.get("e").and_then(Value::as_str).and_then(|s| B64URL.decode(s).ok());
-    let (Some(n), Some(e)) = (n, e) else { return false };
-    let Ok(key) = rsa::RsaPublicKey::new(rsa::BigUint::from_bytes_be(&n), rsa::BigUint::from_bytes_be(&e)) else { return false };
-    let Ok(sig) = rsa::pkcs1v15::Signature::try_from(sig) else { return false };
-    rsa::pkcs1v15::VerifyingKey::<Sha256>::new(key).verify(msg, &sig).is_ok()
-}
-
-fn es256(jwk: &Value, msg: &[u8], sig: &[u8]) -> bool {
-    use p256::ecdsa::signature::Verifier as _;
-    let coord = |k: &str| jwk.get(k).and_then(Value::as_str).and_then(|s| B64URL.decode(s).ok()).filter(|b| b.len() == 32);
-    let (Some(x), Some(y)) = (coord("x"), coord("y")) else { return false };
-    let point = p256::EncodedPoint::from_affine_coordinates(x.as_slice().into(), y.as_slice().into(), false);
-    let Ok(key) = p256::ecdsa::VerifyingKey::from_encoded_point(&point) else { return false };
-    let Ok(sig) = p256::ecdsa::Signature::from_slice(sig) else { return false };
-    key.verify(msg, &sig).is_ok()
 }
 
 #[cfg(test)]

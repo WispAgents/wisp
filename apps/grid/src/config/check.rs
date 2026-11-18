@@ -29,22 +29,6 @@ pub(super) fn validate_auth(cfg: &GridConfig) -> Result<()> {
     if cfg.auth.signup != "open" && cfg.auth.signup != "closed" {
         return e("auth.signup: open or closed.");
     }
-    let st = &cfg.auth.seats;
-    if st.min < 1 {
-        return e("auth.seats.min: a whole number above 0 (the seats \"auto\" starts with).");
-    }
-    if st.cap < st.min {
-        return e("auth.seats.cap: a whole number, at least auth.seats.min (the most seats \"auto\" opens).");
-    }
-    if !(st.target > 0.0 && st.target <= 1.0) {
-        return e("auth.seats.target: a share of the host above 0, up to 1 (0.7: open seats while under 70% busy).");
-    }
-    if st.every_hours <= 0.0 {
-        return e("auth.seats.everyHours: hours between new seats, above 0.");
-    }
-    if st.hold_days < 0.0 {
-        return e("auth.seats.holdDays: days a seat stays held for an invited person on the waitlist, 0 or more.");
-    }
     Ok(())
 }
 

@@ -64,6 +64,9 @@ export default defineConfig(({ command }) => ({
     emptyOutDir: true,
     target: 'es2022',
     modulePreload: { polyfill: false },
+    // a harness's mark (plugins/*/ui/src/logo.svg) is a file beside the bundle, never a data: URL inside it: seven of
+    // them were ~4 KB br of the first page's JS (budget, ADR-0011); the rest keep Vite's own rule
+    assetsInlineLimit: (file: string) => (/[\\/]plugins[\\/][^\\/]+[\\/]ui[\\/]src[\\/]logo\.svg$/.test(file) ? false : undefined),
     rollupOptions: {
       treeshake: { moduleSideEffects },
       input: { index: fileURLToPath(new URL('index.html', import.meta.url)), sw: fileURLToPath(new URL('../../packages/shell/src/platform/sw.ts', import.meta.url)) },

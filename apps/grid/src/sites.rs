@@ -22,110 +22,15 @@ use crate::db::Db;
 use crate::error::{Result, bad};
 use crate::rows::{SiteRow, UserRow};
 
+mod bundle;
+pub use bundle::{bundle_path, pack, private_file, public_file, unpack};
+
 pub const MAX_BYTES: i64 = 50 * 1024 * 1024;
 pub const PER_USER: i64 = 20;
 const MAX_FILES: usize = 5000;
 const HEADER_MAX: usize = 2048;
 
 // ---------- the bundle (server/bundle.js) ----------
-
-fn segments(rel: &str) -> Vec<String> {
-    rel.to_lowercase().split(['/', '\\']).map(str::to_owned).collect()
-}
-
-fn env_name(n: &str) -> bool {
-    n == ".env" || n.starts_with(".env.")
-}
-
-/// A file that never goes in an app, saved or published: what holds secrets, and source maps.
-#[allow(clippy::case_sensitive_file_extension_comparisons)] // `name` is lowercased already
-pub fn private_file(rel: &str) -> bool {
-    let mut dirs = segments(rel);
-    let name = dirs.pop().unwrap_or_default();
-    let ends = |exts: &[&str]| exts.iter().any(|e| name.ends_with(e));
-    let secret = env_name(&name)
-        || name.ends_with(".env")
-        || name == ".envrc"
-        || name.trim_start_matches('.').starts_with("credentials")
-            && (name.trim_start_matches('.') == "credentials"
-                || ends(&[".json", ".yml", ".yaml", ".toml", ".ini", ".txt", ".csv", ".xml"]))
-        || name.starts_with("client_secret") && name.ends_with(".json")
-        || (name.starts_with("service-account") || name.starts_with("service_account") || name.starts_with("serviceaccount"))
-            && name.ends_with(".json")
-        || ["secret.json", "secrets.json", "secret.yml", "secrets.yml", "secret.yaml", "secrets.yaml", "secret.toml", "secrets.toml"]
-            .contains(&name.as_str())
-        || [".npmrc", ".netrc", ".pgpass", ".pypirc", ".htpasswd", ".git-credentials", ".dockercfg"].contains(&name.as_str())
-        || ends(&[".pem", ".key", ".p12", ".pfx", ".jks", ".keystore", ".ppk", ".map"])
-        || ["id_rsa", "id_dsa", "id_ecdsa", "id_ed25519"].contains(&name.as_str());
-    secret || dirs.iter().any(|d| env_name(d))
-}
-
-/// May a visitor open this file: nothing private and no dotfile, but `.well-known` at the top.
-pub fn public_file(rel: &str) -> bool {
-    !private_file(rel) && segments(rel).iter().enumerate().all(|(i, s)| !s.starts_with('.') || (i == 0 && s == ".well-known"))
-}
-
-/// A file's path from a bundle, or None when it would land outside the folder.
-pub fn bundle_path(p: &str) -> Option<String> {
-    if p.is_empty() || p.len() > 400 || p.starts_with('/') || p.chars().any(|c| c.is_control() || c == '\\') {
-        return None;
-    }
-    p.split('/').all(|x| !x.is_empty() && x != "." && x != "..").then(|| p.to_owned())
-}
-
-/// Writes a bundle into `dir` (made), leaving out what `skip` names. → (files, bytes) written.
-pub fn unpack(buf: &[u8], dir: &Path, skip: &dyn Fn(&str) -> bool) -> std::result::Result<(usize, u64), String> {
-    std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
-    let (mut at, mut files, mut size) = (0usize, 0usize, 0u64);
-    while at < buf.len() {
-        let len4: [u8; 4] = buf.get(at..at + 4).and_then(|b| b.try_into().ok()).ok_or("The bundle ends early.")?;
-        let n = u32::from_be_bytes(len4) as usize;
-        at += 4;
-        if n > HEADER_MAX || at + n > buf.len() {
-            return Err("A file header in the bundle is broken.".into());
-        }
-        let head: Value = serde_json::from_slice(&buf[at..at + n]).map_err(|_| "A file header in the bundle is broken.")?;
-        at += n;
-        let raw = head.get("path").and_then(Value::as_str).unwrap_or_default();
-        let len = head.get("size").and_then(Value::as_u64).and_then(|l| usize::try_from(l).ok());
-        let (Some(rel), Some(len)) = (bundle_path(raw), len) else {
-            return Err(format!("The bundle has a bad file: {}", raw.chars().take(80).collect::<String>()));
-        };
-        if at + len > buf.len() {
-            return Err(format!("The bundle has a bad file: {}", rel.chars().take(80).collect::<String>()));
-        }
-        if skip(&rel) {
-            at += len;
-            continue;
-        }
-        files += 1;
-        if files > MAX_FILES {
-            return Err(format!("More than {MAX_FILES} files."));
-        }
-        let file = rel.split('/').fold(dir.to_path_buf(), |p, s| p.join(s));
-        if let Some(parent) = file.parent() {
-            std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
-        }
-        // create_new: a bundle naming one file twice can't overwrite it
-        let mut f = std::fs::OpenOptions::new().write(true).create_new(true).open(&file).map_err(|e| e.to_string())?;
-        std::io::Write::write_all(&mut f, &buf[at..at + len]).map_err(|e| e.to_string())?;
-        at += len;
-        size += len as u64;
-    }
-    Ok((files, size))
-}
-
-/// One file as a bundle (for tests and wisp's own publish).
-pub fn pack(files: &[(&str, &[u8])]) -> Vec<u8> {
-    let mut out = Vec::new();
-    for (p, data) in files {
-        let head = json!({ "path": p, "size": data.len() }).to_string();
-        out.extend_from_slice(&u32::try_from(head.len()).unwrap_or(u32::MAX).to_be_bytes());
-        out.extend_from_slice(head.as_bytes());
-        out.extend_from_slice(data);
-    }
-    out
-}
 
 // ---------- names and files ----------
 
@@ -329,53 +234,13 @@ impl Sites {
 
     /// Publish (or update) the app keyed `key` from a bundle.
     pub fn publish(&self, user: &UserRow, key: &str, buf: &[u8], title: &str, entry: &str) -> Result<Value> {
-        if !self.enabled {
-            return Err(bad("This grid doesn’t publish apps.", 403));
-        }
-        if !valid_key(key) {
-            return Err(bad("Bad app key.", 400));
-        }
-        if i64::try_from(buf.len()).unwrap_or(i64::MAX) > self.max_bytes {
-            return Err(bad(format!("That app is too big to publish here ({} MB at most).", self.max_bytes / 1024 / 1024), 413));
-        }
+        let have = self.checked(user, key, buf)?;
         let name: String = title.split_whitespace().collect::<Vec<_>>().join(" ").chars().take(140).collect();
         let name = if name.is_empty() { "App".to_owned() } else { name };
         let start =
             if entry.trim_start_matches('/').is_empty() { "index.html".to_owned() } else { entry.trim_start_matches('/').to_owned() };
-        let have = self.own(&user.id, key)?;
-        if have.is_none() {
-            let n: i64 = self.db.with(|c| c.query_row("SELECT count(*) FROM sites WHERE user_id = ?1", [&user.id], |r| r.get(0)))?;
-            if n >= self.per_user {
-                return Err(bad(
-                    format!("You have {} published apps, as many as this grid keeps. Unpublish one first.", self.per_user),
-                    409,
-                ));
-            }
-        }
         let id = have.as_ref().map_or_else(|| hex(6), |h| h.id.clone());
-        let tmp = self.root.join(format!("{id}.new-{}", hex(3)));
-        let got = unpack(buf, &tmp, &private_file).map_err(|e| {
-            let _ = std::fs::remove_dir_all(&tmp);
-            bad(e, 400)
-        })?;
-        if got.0 == 0 || app_file(&tmp, "/", &start).is_none() {
-            let _ = std::fs::remove_dir_all(&tmp);
-            return Err(bad(format!("No {start} in the app."), 400));
-        }
-        // swap it in: the old version moves aside, the new one takes its name, the old one goes
-        let dir = self.dir_of(&id);
-        let old = self.root.join(format!("{id}.old-{}", hex(3)));
-        if dir.exists() {
-            std::fs::rename(&dir, &old)?;
-        }
-        if let Err(e) = std::fs::rename(&tmp, &dir) {
-            if old.exists() {
-                let _ = std::fs::rename(&old, &dir);
-            }
-            let _ = std::fs::remove_dir_all(&tmp);
-            return Err(e.into());
-        }
-        let _ = std::fs::remove_dir_all(&old);
+        let got = self.swap_in(&id, buf, &start)?;
         let t = self.clock.now_ms();
         let (files, size) = (i64::try_from(got.0).unwrap_or(i64::MAX), i64::try_from(got.1).unwrap_or(i64::MAX));
         if let Some(h) = have {
@@ -387,13 +252,7 @@ impl Sites {
             })?;
             return Ok(self.view(&SiteRow { title: name, entry: start, files, size, updated_at: t, ..h }));
         }
-        let slug = site_slug(&name);
-        let mut label = format!("{slug}--app--{}", user.handle);
-        let mut k = 2;
-        while self.db.with(|c| crate::rows::find::site_by_label(c, &label))?.is_some() {
-            label = format!("{slug}-{k}--app--{}", user.handle);
-            k += 1;
-        }
+        let label = self.free_label(&site_slug(&name), &user.handle)?;
         let row = SiteRow {
             id,
             user_id: user.id.clone(),
@@ -414,6 +273,70 @@ impl Sites {
             )
         })?;
         Ok(self.view(&row))
+    }
+
+    /// A publish as asked, checked: this grid publishes, the key's shape, the size, and room for one more app. The app
+    /// it updates, if any.
+    fn checked(&self, user: &UserRow, key: &str, buf: &[u8]) -> Result<Option<SiteRow>> {
+        if !self.enabled {
+            return Err(bad("This grid doesn’t publish apps.", 403));
+        }
+        if !valid_key(key) {
+            return Err(bad("Bad app key.", 400));
+        }
+        if i64::try_from(buf.len()).unwrap_or(i64::MAX) > self.max_bytes {
+            return Err(bad(format!("That app is too big to publish here ({} MB at most).", self.max_bytes / 1024 / 1024), 413));
+        }
+        let have = self.own(&user.id, key)?;
+        if have.is_none() {
+            let n: i64 = self.db.with(|c| c.query_row("SELECT count(*) FROM sites WHERE user_id = ?1", [&user.id], |r| r.get(0)))?;
+            if n >= self.per_user {
+                return Err(bad(
+                    format!("You have {} published apps, as many as this grid keeps. Unpublish one first.", self.per_user),
+                    409,
+                ));
+            }
+        }
+        Ok(have)
+    }
+
+    /// The bundle unpacked beside the app's folder, then swapped in: the old version moves aside, the new one takes
+    /// its name, the old one goes. `(files, bytes)`.
+    fn swap_in(&self, id: &str, buf: &[u8], start: &str) -> Result<(usize, u64)> {
+        let tmp = self.root.join(format!("{id}.new-{}", hex(3)));
+        let got = unpack(buf, &tmp, &private_file).map_err(|e| {
+            let _ = std::fs::remove_dir_all(&tmp);
+            bad(e, 400)
+        })?;
+        if got.0 == 0 || app_file(&tmp, "/", start).is_none() {
+            let _ = std::fs::remove_dir_all(&tmp);
+            return Err(bad(format!("No {start} in the app."), 400));
+        }
+        let dir = self.dir_of(id);
+        let old = self.root.join(format!("{id}.old-{}", hex(3)));
+        if dir.exists() {
+            std::fs::rename(&dir, &old)?;
+        }
+        if let Err(e) = std::fs::rename(&tmp, &dir) {
+            if old.exists() {
+                let _ = std::fs::rename(&old, &dir);
+            }
+            let _ = std::fs::remove_dir_all(&tmp);
+            return Err(e.into());
+        }
+        let _ = std::fs::remove_dir_all(&old);
+        Ok(got)
+    }
+
+    /// `<slug>--app--<handle>`, or `<slug>-2--…` and on while the label is taken.
+    fn free_label(&self, slug: &str, handle: &str) -> Result<String> {
+        let mut label = format!("{slug}--app--{handle}");
+        let mut k = 2;
+        while self.db.with(|c| crate::rows::find::site_by_label(c, &label))?.is_some() {
+            label = format!("{slug}-{k}--app--{handle}");
+            k += 1;
+        }
+        Ok(label)
     }
 
     /// Unpublish: its row and its files. false: no app by that key.

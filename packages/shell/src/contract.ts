@@ -333,7 +333,8 @@ export interface SideTabItem {
 export interface HarnessUiDef {
   id: string;
   name: string;
-  /** an image URL (a data: URL in the plugin's own code) */
+  /** an image URL: the plugin's own file (`new URL('./logo.svg', import.meta.url).href`) or a data: URL. A one-colour
+   *  mark ends in `#mono` (updated 2026-11-18, additive): it is drawn in the app theme's ink, whatever the OS's scheme */
   logo?: string;
   /** the default for a new task (the first registered default wins) */
   default?: boolean;

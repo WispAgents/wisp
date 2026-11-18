@@ -117,12 +117,10 @@ fn defaults() -> Value {
         // the port in public URLs; null: the listen port for http, none for https
         "publicPort": null,
         "name": "wisp Grid",
-        // seats: how maxUsers "auto" grows (accounts), and how long a waitlist seat is held.
         "auth": {
             "dev": false, "providers": {}, "signup": "open",
             "allow": { "emails": [], "domains": [], "githubOrgs": [], "accounts": [] },
-            "admins": [],
-            "seats": { "min": 5, "cap": 20, "target": 0.7, "everyHours": 24, "holdDays": 7 }
+            "admins": []
         },
         "hostd": { "driver": "process", "idleMs": 120_000, "checkMs": 5_000, "startMs": 45_000, "maxRunning": 50, "env": {}, "path": "" },
         "sessionDays": 30
@@ -233,8 +231,8 @@ pub fn load(opts: LoadOptions) -> Result<GridConfig> {
 
 fn config_error(e: &serde_json::Error) -> GridError {
     let text = e.to_string();
-    // serde's text for MaxUsers is already ours; anything else names the field that's wrong.
-    GridError::Config(if text.starts_with("auth.") { text } else { format!("grid.json: {text}") })
+    // serde names the field that's wrong
+    GridError::Config(format!("grid.json: {text}"))
 }
 
 /// Check a merged config value (`load` without the files).

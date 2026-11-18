@@ -20,7 +20,7 @@ pub async fn seed(ctx: &Ctx, call: &Call, st: &State, task: &str) -> Result<usiz
     }
     let mut wrote = 0;
     for (section, text) in seed.sections() {
-        let w = notes::update(&st.store, task, section, &text, By::You, crate::now(ctx))
+        let w = notes::update(&st.store, task, section, &text, By::You, crate::now(ctx), 0)
             .await
             .map_err(|e| db(&e))?
             .map_err(WireError::invalid)?;

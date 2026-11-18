@@ -30,40 +30,7 @@ fn wisp_beside() -> PathBuf {
 
 pub async fn main(args: Vec<String>) -> i32 {
     match args.first().map(String::as_str) {
-        Some("dev") => {
-            let port = flag(&args, "--port").and_then(|p| p.parse().ok()).unwrap_or(8080);
-            let data = flag(&args, "--data")
-                .map_or_else(|| PathBuf::from(std::env::var("HOME").unwrap_or_default()).join(".wisp-grid-dev"), PathBuf::from);
-            let bin = flag(&args, "--wisp").map_or_else(wisp_beside, PathBuf::from);
-            let idle = flag(&args, "--idle-ms").and_then(|p| p.parse().ok()).unwrap_or(120_000);
-            if let Err(e) = std::fs::create_dir_all(&data) {
-                eprintln!("  ✗ {}: {e}", data.display());
-                return 1;
-            }
-            // dev only: a fake harness and the web bundle for the boxes too, when set here
-            let pass: Vec<(String, String)> = ["WISP_CLAUDE_BIN", "WISP_CODEX_BIN", "WISP_WEB_DIR"]
-                .iter()
-                .filter_map(|k| std::env::var(k).ok().map(|v| ((*k).to_owned(), v)))
-                .collect();
-            match crate::edge::dev(&data, port, bin, pass, idle).await {
-                Ok((grid, port, stop)) => {
-                    eprintln!(
-                        "\n  ◌ wisp Grid (dev) at http://wisp.localhost:{port}  ·  sign in at /auth/dev\n    sign in from wisp: wisp cloud signin http://wisp.localhost:{port}\n"
-                    );
-                    stopped().await;
-                    eprintln!("  ◌ stopping every box…");
-                    // the boxes first, while the grid still records their stops
-                    grid.boxes.close_all().await;
-                    grid.boxes_stopped();
-                    stop.cancel();
-                    0
-                }
-                Err(e) => {
-                    eprintln!("  ✗ {e}");
-                    1
-                }
-            }
-        }
+        Some("dev") => dev(&args).await,
         Some("serve") => match serve(flag(&args, "--data").map(PathBuf::from)).await {
             Ok(()) => 0,
             Err(e) => {
@@ -103,6 +70,42 @@ pub async fn stopped() {
         return;
     }
     let _ = tokio::signal::ctrl_c().await;
+}
+
+/// `wisp-grid dev …`: until Ctrl-C or SIGTERM, then every box stopped first.
+async fn dev(args: &[String]) -> i32 {
+    let port = flag(args, "--port").and_then(|p| p.parse().ok()).unwrap_or(8080);
+    let data =
+        flag(args, "--data").map_or_else(|| PathBuf::from(std::env::var("HOME").unwrap_or_default()).join(".wisp-grid-dev"), PathBuf::from);
+    let bin = flag(args, "--wisp").map_or_else(wisp_beside, PathBuf::from);
+    let idle = flag(args, "--idle-ms").and_then(|p| p.parse().ok()).unwrap_or(120_000);
+    if let Err(e) = std::fs::create_dir_all(&data) {
+        eprintln!("  ✗ {}: {e}", data.display());
+        return 1;
+    }
+    // dev only: a fake harness and the web bundle for the boxes too, when set here
+    let pass: Vec<(String, String)> = ["WISP_CLAUDE_BIN", "WISP_CODEX_BIN", "WISP_WEB_DIR"]
+        .iter()
+        .filter_map(|k| std::env::var(k).ok().map(|v| ((*k).to_owned(), v)))
+        .collect();
+    match crate::edge::dev(&data, port, bin, pass, idle).await {
+        Ok((grid, port, stop)) => {
+            eprintln!(
+                "\n  ◌ wisp Grid (dev) at http://wisp.localhost:{port}  ·  sign in at /auth/dev\n    sign in from wisp: wisp cloud signin http://wisp.localhost:{port}\n"
+            );
+            stopped().await;
+            eprintln!("  ◌ stopping every box…");
+            // the boxes first, while the grid still records their stops
+            grid.boxes.close_all().await;
+            grid.boxes_stopped();
+            stop.cancel();
+            0
+        }
+        Err(e) => {
+            eprintln!("  ✗ {e}");
+            1
+        }
+    }
 }
 
 /// The hostd options from the config: the container driver when it says so.

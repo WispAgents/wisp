@@ -27,6 +27,7 @@ pub mod handoff;
 pub mod keys;
 pub mod previews;
 pub mod seats;
+pub mod waitlist;
 pub mod wishes;
 
 // boxes

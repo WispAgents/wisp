@@ -38,17 +38,28 @@ test('working_orb_is_one_status_line_tall_and_centred_in_it', () => {
 });
 
 test('mono_marks_follow_the_app_theme_and_colour_marks_are_left_alone', () => {
-  // #7: WebKit draws an <img> SVG by the OS's scheme, so a dark app on a light OS drew Cursor/opencode/Grok dark on dark
-  const sel = "img[src^='data:image/svg+xml'][src*='prefers-color-scheme']";
-  expect(reset).toContain(`:where([data-theme='dark']) ${sel} { filter: brightness(0) invert(0.93); }`);
-  expect(reset).toContain(`:where([data-theme='light']) ${sel} { filter: brightness(0) invert(0.09); }`);
-  // the shape of a mono mark (plugins/{cursor,opencode,grok,copilot}/ui/src/logo.ts) and of a colour one
-  const mono = document.createElement('img');
-  mono.setAttribute('src', "data:image/svg+xml,%3Csvg fill=%22%23171717%22%3E%3Cstyle%3E%40media (prefers-color-scheme: dark)%7B%2A%7Bfill:%23ededed%7D%7D%3C/style%3E%3C/svg%3E");
-  const colour = document.createElement('img');
-  colour.setAttribute('src', 'data:image/svg+xml,%3Csvg%3E%3Cpath fill=%22%23D97757%22/%3E%3C/svg%3E');
-  expect(mono.matches(sel)).toBe(true);
-  expect(colour.matches(sel)).toBe(false);
+  // #7: WebKit draws an <img> SVG by the OS's scheme, so a dark app on a light OS drew Cursor/opencode/Grok dark on dark.
+  // The marks are files now (plugins/*/ui/src/logo.svg, out of the first page's JS); a mono one says so with `#mono`
+  const sel = "img[src$='#mono']";
+  expect(reset).toContain(`:where([data-theme='dark']) ${sel},`);
+  expect(reset).toContain(`:where([data-theme='light']) ${sel},`);
+  expect(reset).toMatch(/:where\(\[data-theme='dark'\]\) img\[src\$='#mono'\],\n[^{]*\{ filter: brightness\(0\) invert\(0\.93\); \}/);
+  expect(reset).toMatch(/:where\(\[data-theme='light'\]\) img\[src\$='#mono'\],\n[^{]*\{ filter: brightness\(0\) invert\(0\.09\); \}/);
+  // no theme picked: the OS's (the light ink, the dark one under a dark OS)
+  expect(reset).toMatch(/\n  img\[src\$='#mono'\],\n[^{]*\{ filter: brightness\(0\) invert\(0\.09\); \}/);
+  expect(reset).toMatch(/@media \(prefers-color-scheme: dark\) \{\n    :where\(:root:not\(\[data-theme='light'\]\)\) img\[src\$='#mono'\],\n[^{]*\{ filter: brightness\(0\) invert\(0\.93\); \}/);
+  // a mono mark as the plugins give it (plugins/{cursor,opencode,grok,copilot}/ui/src/logo.ts), a colour one, and a
+  // data: URL with its own scheme rule (a user's plugin as the contract allows)
+  const img = (src: string): HTMLImageElement => {
+    const el = document.createElement('img');
+    el.setAttribute('src', src);
+    return el;
+  };
+  const both = `${sel}, img[src^='data:image/svg+xml'][src*='prefers-color-scheme']`;
+  expect(img('/assets/logo-Bl3UK_BM.svg#mono').matches(both)).toBe(true);
+  expect(img('/assets/logo-DvGkpdRw.svg').matches(both)).toBe(false);
+  expect(img("data:image/svg+xml,%3Csvg fill=%22%23171717%22%3E%3Cstyle%3E%40media (prefers-color-scheme: dark)%7B%2A%7Bfill:%23ededed%7D%7D%3C/style%3E%3C/svg%3E").matches(both)).toBe(true);
+  expect(img('data:image/svg+xml,%3Csvg%3E%3Cpath fill=%22%23D97757%22/%3E%3C/svg%3E').matches(both)).toBe(false);
 });
 
 test('commit_rows_keep_the_hash_files_and_counts_apart_on_a_timeline_v1_b_commits', () => {

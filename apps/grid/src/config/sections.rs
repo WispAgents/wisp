@@ -32,16 +32,6 @@ pub struct ProviderConfig {
     pub extra: Map<String, Value>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-#[serde(rename_all = "camelCase")]
-pub struct Seats {
-    pub min: i64,
-    pub cap: i64,
-    pub target: f64,
-    pub every_hours: f64,
-    pub hold_days: f64,
-}
-
 #[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct Allow {
@@ -55,44 +45,16 @@ pub struct Allow {
     pub accounts: Vec<String>,
 }
 
-/// `auth.maxUsers`: a number, or "auto" (seats that grow with the host).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum MaxUsers {
-    Fixed(i64),
-    Auto,
-}
-
-impl Serialize for MaxUsers {
-    fn serialize<S: serde::Serializer>(&self, s: S) -> std::result::Result<S::Ok, S::Error> {
-        match self {
-            Self::Fixed(n) => s.serialize_i64(*n),
-            Self::Auto => s.serialize_str("auto"),
-        }
-    }
-}
-
-impl<'de> Deserialize<'de> for MaxUsers {
-    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> std::result::Result<Self, D::Error> {
-        let v = Value::deserialize(d)?;
-        match &v {
-            Value::String(s) if s == "auto" => Ok(Self::Auto),
-            Value::Number(n) if n.as_i64().is_some_and(|n| n > 0) => Ok(Self::Fixed(n.as_i64().unwrap_or(1))),
-            _ => Err(serde::de::Error::custom("auth.maxUsers: a whole number above 0, \"auto\", or leave it out for no limit.")),
-        }
-    }
-}
-
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
+/// No seat cap: the owner removed `maxUsers` on 2026-10-27, so every grid takes everyone `signup` and `allow` let in. A
+/// grid.json that still says `maxUsers` or `seats` loads with them ignored (serde skips keys it doesn't know).
 pub struct AuthConfig {
     pub dev: bool,
     pub providers: BTreeMap<String, ProviderConfig>,
     pub signup: String,
     pub allow: Allow,
     pub admins: Vec<String>,
-    pub seats: Seats,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub max_users: Option<MaxUsers>,
 }
 
 /// The container driver's settings (the defaults are boxd's `CONTAINER`).

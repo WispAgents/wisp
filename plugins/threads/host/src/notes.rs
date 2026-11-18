@@ -74,7 +74,16 @@ pub struct Wrote {
 }
 
 /// Rewrites one section (`text` as it should be from now on; '' clears it). Unchanged text is no new revision.
-pub async fn update(st: &Store, task: &str, section: &str, text: &str, by: By, now: i64) -> wisp_store::Result<Result<Wrote, String>> {
+/// `turns`: the task's turns now (how old the Notes are is counted from it: health's "Notes N turns old").
+pub async fn update(
+    st: &Store,
+    task: &str,
+    section: &str,
+    text: &str,
+    by: By,
+    now: i64,
+    turns: u32,
+) -> wisp_store::Result<Result<Wrote, String>> {
     if meta(section).is_none() {
         return Ok(Err(unknown(section)));
     }
@@ -95,7 +104,7 @@ pub async fn update(st: &Store, task: &str, section: &str, text: &str, by: By, n
             w.upsert(store::REVISIONS.kind, store::row(json!({ "id": format!("{t}|{sec}|{rev}"), "task_id": t, "section": sec, "rev": rev, "text": clean_text, "by": by, "at": now })))?;
             let mut m = Meta::of(w.get(store::META.kind, t.clone())?.as_ref());
             m.rev += 1;
-            m.turn = m.count;
+            m.turn = turns;
             m.at = now;
             // the agent knows what it wrote
             if by == "agent" {
@@ -118,21 +127,6 @@ pub async fn mark_seen(st: &Store, task: &str, rev: u32) -> wisp_store::Result<(
             return Ok(());
         }
         m.seen = rev;
-        w.upsert(store::META.kind, m.row(&t))?;
-        Ok(())
-    })
-    .await
-}
-
-/// The task's turn count as last seen (a turn ended): how old the Notes are is counted from it.
-pub async fn count_turns(st: &Store, task: &str, count: u32) -> wisp_store::Result<()> {
-    let t = task.to_owned();
-    st.write(move |w| {
-        let mut m = Meta::of(w.get(store::META.kind, t.clone())?.as_ref());
-        if m.count == count {
-            return Ok(());
-        }
-        m.count = count;
         w.upsert(store::META.kind, m.row(&t))?;
         Ok(())
     })

@@ -3,6 +3,7 @@
 // Pure: the pill, the strip, the dialog and the pane all read these.
 import type { T } from '../i18n.ts';
 import type { ConflictFix, PrSummary, RepoPr, ShipSession } from '../types.ts';
+import { prsOf, shippedPrs } from './prs.ts';
 
 export type PrTone = 'fail' | 'pending' | 'pass' | 'merged' | 'closed';
 
@@ -47,20 +48,8 @@ export function prLine(t: T, pr: PrSummary, fix?: ConflictFix | null): string {
 /** The pill's tooltip: "PR #412: Open · 3 checks passed". */
 export const pillTitle = (t: T, pr: PrSummary, fix?: ConflictFix | null): string => t('wisp.ship.pill.title', { n: pr.number, line: prLine(t, pr, fix) });
 
-/** The PRs Ship it opened: the task's own first, then its other repos'. */
-export function shippedPrs(s: ShipSession | undefined): RepoPr[] {
-  if (!s) return [];
-  const own: RepoPr[] = s.pr ? [{ repo: s.project, pr: s.pr }] : [];
-  const also = (s.also ?? []).flatMap((a): RepoPr[] => (a.pr ? [{ repo: a.project, pr: a.pr }] : []));
-  return [...own, ...also];
-}
-
-/** Every PR the row shows: shipped ones, then the ones its agent attached (wisp_pr). */
-export const prsOf = (s: ShipSession | undefined): RepoPr[] => [...shippedPrs(s), ...(s?.prs ?? []).map((x): RepoPr => ({ repo: x.repo, pr: x.pr }))];
-
-/** The PR the row's pill shows. */
-export const prOf = (s: ShipSession | undefined): PrSummary | undefined => prsOf(s)[0]?.pr;
-
+// the row's PRs, what the pill's `if` reads as the list draws: their own module, so this one loads with the pill
+export { prOf, prsOf, shippedPrs } from './prs.ts';
 export const openPrs = (s: ShipSession | undefined): RepoPr[] => prsOf(s).filter((x) => x.pr.state === 'OPEN');
 
 /** Its branches: the task's own, then its other repos'. */

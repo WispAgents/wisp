@@ -55,6 +55,8 @@ struct Fixture {
     k: Kernel,
     rt: Runtime,
     home: std::path::PathBuf,
+    /// the kernel's store, to count what a turn's end wrote
+    store: Store,
 }
 
 async fn kernel(name: &str) -> Fixture {
@@ -65,8 +67,8 @@ async fn kernel(name: &str) -> Fixture {
     rt.task("t1", None);
     rt.task("c1", Some("t1"));
     let store = Store::open(Location::Memory, Arc::new(SystemClock)).unwrap();
-    let k = TestApp::new().service(store).service(Paths::new(&home)).with(ThreadsPlugin).with(rt.clone()).start().await;
-    Fixture { k, rt, home }
+    let k = TestApp::new().service(store.clone()).service(Paths::new(&home)).with(ThreadsPlugin).with(rt.clone()).start().await;
+    Fixture { k, rt, home, store }
 }
 
 async fn set(k: &Kernel, id: &str, section: &str, text: &str, by: &str) -> std::result::Result<Value, WireError> {
@@ -210,5 +212,62 @@ async fn writing_notes_needs_the_permission() {
     let e = f.k.call(Caller::set("pane:wisp-testkit-nobody"), "threads.notesUpdate", args.clone()).await.unwrap_err();
     assert_eq!(e.code, wisp_kernel::Code::Forbidden, "{}", e.message);
     f.k.call(Caller::set("agent:session"), "threads.notesUpdate", args).await.unwrap();
+    let _ = std::fs::remove_dir_all(&f.home);
+}
+
+/// ADR-0100: a turn's end of a healthy thread writes no row of wisp.threads (no per-turn count, no Fine health row); a
+/// worn thread's health is written once, and again only when what it shows changes, not when only its counts move.
+#[tokio::test]
+async fn a_turns_end_writes_nothing_for_a_healthy_thread_and_health_only_when_it_shows_something_new() {
+    let f = kernel("quiet").await;
+    let rows = |kind: &'static str| {
+        let st = f.store.clone();
+        async move { st.read_async(move |r| r.query(kind, &wisp_store::Query::new())).await.unwrap() }
+    };
+    let turn = |idx: u32, context: Option<(u64, u64)>| Turn {
+        id: format!("u{idx}").as_str().into(),
+        idx,
+        stats: context.map(|(c, w)| TurnStats { context_tokens: Some(c), context_window: Some(w), ..Default::default() }),
+        ..Default::default()
+    };
+    let end = |turn: &str| {
+        let e: wisp_runtime_api::events::TurnEnded = serde_json::from_value(
+            json!({ "sessionId": "t1", "turnId": turn, "status": "done", "interrupted": false, "agent": "claude", "model": "" }),
+        )
+        .unwrap();
+        let ctx = f.k.ctx("wisp.runtime").unwrap();
+        ctx.emit(&ctx.root_call(), &e);
+    };
+    for i in 0..3 {
+        f.rt.turns.lock().unwrap().push(turn(i, Some((10_000, 200_000))));
+        end(&format!("u{i}"));
+        f.k.idle().await;
+    }
+    assert!(rows("threads_meta").await.is_empty(), "no per-turn count");
+    assert!(rows("threads_health").await.is_empty(), "Fine: nothing to say");
+    // worn: written once
+    f.rt.turns.lock().unwrap().push(turn(3, Some((170_000, 200_000))));
+    end("u3");
+    f.k.idle().await;
+    let kept = rows("threads_health").await;
+    assert_eq!(kept.len(), 1);
+    assert_eq!(kept[0]["body"]["level"], "heavy", "{kept:?}");
+    // the same reasons a turn later: the row isn't written again (its turns count moved, what it shows didn't)
+    f.rt.turns.lock().unwrap().push(turn(4, Some((170_000, 200_000))));
+    end("u4");
+    f.k.idle().await;
+    assert_eq!(rows("threads_health").await[0]["body"]["turns"], 4, "kept as it was written");
+    // the command answers with the counts now
+    let h = f.k.call(Caller::user(), "threads.health", json!({ "id": "t1" })).await.unwrap();
+    assert_eq!(h["turns"], 5);
+    // what it shows changes: written
+    f.rt.turns.lock().unwrap().push(turn(5, Some((190_000, 200_000))));
+    end("u5");
+    f.k.idle().await;
+    assert_eq!(rows("threads_health").await[0]["body"]["reasons"], json!(["context 95% full"]));
+    // Notes written now are counted from the task's turns at the write (6), so they're 0 turns old
+    f.k.call(Caller::user(), "threads.notesUpdate", json!({ "id": "t1", "section": "goal", "text": "Ship", "by": "agent" })).await.unwrap();
+    let h = f.k.call(Caller::user(), "threads.health", json!({ "id": "t1" })).await.unwrap();
+    assert_eq!(h["notesAge"], 0, "{h}");
     let _ = std::fs::remove_dir_all(&f.home);
 }

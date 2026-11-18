@@ -19,7 +19,6 @@ fn refuses_bad_settings() {
     let bad = |v: Value| for_test(Path::new("/tmp/g"), v).unwrap_err().to_string();
     assert!(bad(json!({ "domain": "a b" })).contains("isn’t a host name"));
     assert!(bad(json!({ "auth": { "signup": "maybe" } })).contains("open or closed"));
-    assert!(bad(json!({ "auth": { "maxUsers": 0 } })).contains("auth.maxUsers"));
     assert!(bad(json!({ "hostd": { "container": { "boxd": "rel/box.sock" } } })).contains("boxd’s socket"));
     assert!(bad(json!({ "channels": { "route": true } })).contains("channels.route needs"));
     assert!(
@@ -30,9 +29,12 @@ fn refuses_bad_settings() {
 }
 
 #[test]
-fn max_users_auto_and_providers_from_env() {
-    let c = for_test(Path::new("/tmp/g"), json!({ "auth": { "maxUsers": "auto" } })).unwrap();
-    assert_eq!(c.auth.max_users, Some(MaxUsers::Auto));
+fn a_seat_cap_left_in_grid_json_is_ignored_and_providers_come_from_env() {
+    // the owner removed maxUsers (2026-10-27): an old grid.json still loads, capping nothing
+    for old in [json!(5), json!("auto"), json!(0)] {
+        let c = for_test(Path::new("/tmp/g"), json!({ "auth": { "maxUsers": old, "seats": { "min": 0 } } })).unwrap();
+        assert!(!serde_json::to_string(&c.auth).unwrap().contains("maxUsers"));
+    }
     let mut env = Env::new();
     env.insert("GRID_GITHUB_CLIENT_ID".into(), "cid".into());
     env.insert("GRID_GITHUB_CLIENT_SECRET".into(), "shh".into());

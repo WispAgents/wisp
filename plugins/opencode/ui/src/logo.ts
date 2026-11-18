@@ -1,2 +1,4 @@
-// opencode's mark (v1 web/logos/opencode.svg, vendored from @lobehub/icons), as a data: URL: the plugin carries its own image. A mono mark: dark on a light OS, light on a dark one (v1 drew it in the text colour).
-export const LOGO = "data:image/svg+xml,%3Csvg fill=%22%23171717%22 fill-rule=%22evenodd%22 height=%221em%22 style=%22flex:none;line-height:1%22 viewBox=%220 0 24 24%22 width=%221em%22 xmlns=%22http://www.w3.org/2000/svg%22%3E%3Cstyle%3E%40media (prefers-color-scheme: dark)%7B%2A%7Bfill:%23ededed%7D%7D%3C/style%3E%3Ctitle%3Eopencode%3C/title%3E%3Cpath d=%22M16 6H8v12h8V6zm4 16H4V2h16v20z%22%3E%3C/path%3E%3C/svg%3E";
+// opencode's mark (v1 web/logos/opencode.svg, vendored from @lobehub/icons): the plugin carries its own image, a file the build emits beside the bundle (vite.config.ts never inlines it), so the marks stay out of the first page's JS (budget, ADR-0011). A mono mark: dark on a light OS, light on a dark one (v1 drew it in the text colour).
+// `#mono`: a one-colour mark, drawn in the app theme's ink (packages/ui/src/css/reset.css; WebKit picks an <img> SVG's
+// scheme from the OS, not the page)
+export const LOGO = `${new URL('./logo.svg', import.meta.url).href}#mono`;

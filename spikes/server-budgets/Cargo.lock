@@ -1073,6 +1073,7 @@ dependencies = [
  "serde_json",
  "ts-rs",
  "wisp-kernel",
+ "wisp-threads-api",
 ]
 
 [[package]]
@@ -1314,6 +1315,17 @@ dependencies = [
  "ts-rs",
  "wisp-kernel",
  "wisp-runtime-api",
+]
+
+[[package]]
+name = "wisp-threads-api"
+version = "2.0.0"
+dependencies = [
+ "schemars",
+ "serde",
+ "serde_json",
+ "ts-rs",
+ "wisp-kernel",
 ]
 
 [[package]]

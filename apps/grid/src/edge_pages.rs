@@ -274,50 +274,60 @@ impl Grid {
                     .with(|c| c.execute("DELETE FROM identities WHERE user_id = ?1 AND provider = ?2", params![u.id, provider]))?;
                 Ok(redirect("/account", &[]))
             }
-            ["channels", "route"] => match self.routes.set(u, &field("token"), &field("senders")).await {
-                Ok(name) => Ok(self.back(
-                    "/account",
-                    &if name.is_empty() { "Your bot is connected.".to_owned() } else { format!("@{name} is connected.") },
-                    false,
-                )),
-                Err(e) if e.status() == 400 || e.status() == 404 => Ok(self.back("/account", &e.to_string(), true)),
-                Err(e) => {
-                    tracing::warn!("grid: route for {}: {e}", u.handle);
-                    Ok(self.back("/account", "That didn’t work: Telegram couldn’t be reached. Try again.", true))
-                }
-            },
+            ["channels", "route"] => self.route_form(u, &field("token"), &field("senders")).await,
             ["channels", "route", "remove"] => {
                 self.routes.remove(u).await?;
                 Ok(self.back("/account", "Removed. That bot no longer reaches your computers.", false))
             }
-            ["signout"] => {
-                let all = query(q, "all").as_deref() == Some("1");
-                self.accounts.db.with(|c| {
-                    if all {
-                        c.execute("DELETE FROM sessions WHERE user_id = ?1", [&u.id])
-                    } else {
-                        c.execute(
-                            "DELETE FROM sessions WHERE id_hash IN (?1, ?2)",
-                            [crate::accounts::sha256_hex(&session), crate::accounts::sha256_v1(&session)],
-                        )
-                    }
-                })?;
-                Ok(self.cleared(redirect("/", &[])))
-            }
-            ["account", "delete"] => {
-                if field("confirm").trim().to_lowercase() != u.handle {
-                    return Ok(self.back("/account", &format!("Type {} to delete your account.", u.handle), true));
-                }
-                let bu = BoxUser { id: u.id.clone(), handle: u.handle.clone(), sandbox: None, owner: None };
-                if let Err(e) = self.boxes.remove(&bu).await {
-                    tracing::warn!("grid: deleting {}'s box: {e}", u.handle);
-                }
-                self.sites.remove_all(&u.id)?;
-                self.accounts.db.with(|c| c.execute("DELETE FROM users WHERE id = ?1", [&u.id]))?;
-                Ok(self.cleared(redirect(&format!("/signin?m={}", encode_component("Your account is deleted.")), &[])))
-            }
+            ["signout"] => self.sign_out(u, &session, query(q, "all").as_deref() == Some("1")),
+            ["account", "delete"] => self.delete_account(u, &field("confirm")).await,
             _ => Err(bad("not found", 404)),
         }
+    }
+
+    /// `POST /channels/route`: giving the grid a Telegram bot for `on laptop`; what went wrong said on Account.
+    async fn route_form(&self, u: &UserRow, token: &str, senders: &str) -> Result<Resp> {
+        match self.routes.set(u, token, senders).await {
+            Ok(name) => Ok(self.back(
+                "/account",
+                &if name.is_empty() { "Your bot is connected.".to_owned() } else { format!("@{name} is connected.") },
+                false,
+            )),
+            Err(e) if e.status() == 400 || e.status() == 404 => Ok(self.back("/account", &e.to_string(), true)),
+            Err(e) => {
+                tracing::warn!("grid: route for {}: {e}", u.handle);
+                Ok(self.back("/account", "That didn’t work: Telegram couldn’t be reached. Try again.", true))
+            }
+        }
+    }
+
+    /// `POST /signout[?all=1]`: this browser's session, or every one of this account's.
+    fn sign_out(&self, u: &UserRow, session: &str, all: bool) -> Result<Resp> {
+        self.accounts.db.with(|c| {
+            if all {
+                c.execute("DELETE FROM sessions WHERE user_id = ?1", [&u.id])
+            } else {
+                c.execute(
+                    "DELETE FROM sessions WHERE id_hash IN (?1, ?2)",
+                    [crate::accounts::sha256_hex(session), crate::accounts::sha256_v1(session)],
+                )
+            }
+        })?;
+        Ok(self.cleared(redirect("/", &[])))
+    }
+
+    /// `POST /account/delete` with the handle typed: the box and its home, the published apps, then the account.
+    async fn delete_account(&self, u: &UserRow, confirm: &str) -> Result<Resp> {
+        if confirm.trim().to_lowercase() != u.handle {
+            return Ok(self.back("/account", &format!("Type {} to delete your account.", u.handle), true));
+        }
+        let bu = BoxUser { id: u.id.clone(), handle: u.handle.clone(), sandbox: None, owner: None };
+        if let Err(e) = self.boxes.remove(&bu).await {
+            tracing::warn!("grid: deleting {}'s box: {e}", u.handle);
+        }
+        self.sites.remove_all(&u.id)?;
+        self.accounts.db.with(|c| c.execute("DELETE FROM users WHERE id = ?1", [&u.id]))?;
+        Ok(self.cleared(redirect(&format!("/signin?m={}", encode_component("Your account is deleted.")), &[])))
     }
 
     /// What the cloud wisp is (the container's limits: v1 showed boxd's defaults when grid.json set none; a process
