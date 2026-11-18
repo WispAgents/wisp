@@ -17,3 +17,13 @@ test('this_computer_on_the_grid_shows_its_address_as_a_link_once_it_is_on', () =
   // only a web address is a link
   expect(hereOf(k({ url: 'javascript:alert(1)' }), t).url).toBeUndefined();
 });
+
+// QA round 9 #1: removed on the Grid's Home, this computer is off here, says so, and Turn on (Add to grid) adds it anew
+test('a_computer_removed_on_the_grid_is_off_and_says_turning_it_on_adds_it_again', () => {
+  expect(hereOf(k({ on: false, state: 'gone', error: 'The grid doesn’t know this computer any more.' }), t)).toEqual({
+    line: t('grid-client.computer.removed'),
+  });
+  expect(t('grid-client.computer.removed')).not.toBe('grid-client.computer.removed');
+  // still on but refused (this device's sign-in ended): why, never "Connecting…"
+  expect(hereOf(k({ state: 'gone', error: 'Sign in again.' }), t)).toEqual({ line: 'Sign in again.' });
+});

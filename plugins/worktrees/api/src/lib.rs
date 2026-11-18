@@ -83,7 +83,7 @@ impl Command for Status {
     type Out = WorktreeStatus;
 }
 
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, ts_rs::TS)]
 pub struct Empty {}
 
 /// Settings → Worktrees (GET /api/worktrees).
@@ -93,17 +93,30 @@ impl Command for View {
     const ID: &'static str = "worktrees.view";
     const READ_ONLY: bool = true;
     type Args = Empty;
+    /// typed for the generated CLI (flags, --help) and the MCP tools (ADR-0022): a flag it doesn't take is refused
+    fn args_ts() -> Option<String> {
+        Some(format!(
+            "{}{}",
+            <Empty as ::ts_rs::TS>::docs().unwrap_or_default(),
+            <Empty as ::ts_rs::TS>::inline(&::ts_rs::Config::default())
+        ))
+    }
     type Out = WorktreesView;
 }
 
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, ts_rs::TS)]
 pub struct CleanArgs {
     /// None: every idle one
     #[serde(default)]
+    #[ts(optional)]
     pub ids: Option<Vec<String>>,
+    /// leftover folders (no task) to remove
     #[serde(default)]
+    #[ts(as = "Option<Vec<String>>", optional)]
     pub leftovers: Vec<String>,
+    /// even ones with work not saved
     #[serde(default)]
+    #[ts(as = "Option<bool>", optional)]
     pub force: bool,
 }
 
@@ -119,6 +132,14 @@ pub struct Clean;
 impl Command for Clean {
     const ID: &'static str = "worktrees.clean";
     type Args = CleanArgs;
+    /// typed for the generated CLI (flags, --help) and the MCP tools (ADR-0022): a flag it doesn't take is refused
+    fn args_ts() -> Option<String> {
+        Some(format!(
+            "{}{}",
+            <CleanArgs as ::ts_rs::TS>::docs().unwrap_or_default(),
+            <CleanArgs as ::ts_rs::TS>::inline(&::ts_rs::Config::default())
+        ))
+    }
     type Out = CleanOut;
 }
 
@@ -135,6 +156,14 @@ pub struct Sweep;
 impl Command for Sweep {
     const ID: &'static str = "worktrees.sweep";
     type Args = Empty;
+    /// typed for the generated CLI (flags, --help) and the MCP tools (ADR-0022): a flag it doesn't take is refused
+    fn args_ts() -> Option<String> {
+        Some(format!(
+            "{}{}",
+            <Empty as ::ts_rs::TS>::docs().unwrap_or_default(),
+            <Empty as ::ts_rs::TS>::inline(&::ts_rs::Config::default())
+        ))
+    }
     type Out = SweepOut;
 }
 

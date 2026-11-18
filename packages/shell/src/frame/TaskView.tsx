@@ -1361,6 +1361,21 @@ export default function TaskView(props: { readonly id: string; readonly onBack?:
                   },
                   { id: 'fork', icon: 'fork', label: t('shell.task.fork'), part: 'turn.fork', act: { onClick: () => copy(fork) } },
                 ]}
+                // a phone's answer menu (its ⋯ and a long-press, UX 2026-11-18 phone #8, QA r9 #2): Copy, Comment… on the
+                // block held, the tools above, and Good / Bad result (their buttons are on the trail already)
+                phoneMenu={{
+                  copy: { label: t('shell.answer.copy'), onCopy: (text) => void shell.platform.copy(text).then((ok) => ok || shell.toast.show(t('shell.task.copyFailed'), { tone: 'error' })) },
+                  comment: t('shell.answer.comment'),
+                  more: rates()
+                    ? (['up', 'down'] as const).map((r) => ({
+                        id: `rate:${r}`,
+                        icon: r === 'up' ? ('thumb-up' as const) : ('thumb-down' as const),
+                        label: t(r === 'up' ? 'shell.rate.good' : 'shell.rate.bad'),
+                        on: ratingOf(b) === r,
+                        act: { onClick: () => rate(turn.id, ratingOf(b) === r ? null : r) },
+                      }))
+                    : [],
+                }}
               />
               {/* under each turn, what plugins say of it (shell-task's cards: why it stopped, held, what changed, the receipt): `shell.turn:foot`, the turn's key as its id */}
               <Slot input="shell.turn:foot" layout="stack" id={entityKey(peer, turn.id)} session={() => s() as never} />

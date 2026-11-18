@@ -28,9 +28,9 @@ in the real app (or the owner drops it). Statuses: `done` (committed and checked
 | 17 | Sidebar view button does nothing | done (743fc711) |
 | 18 | Can't resize the list or the right panel | done (743fc711) |
 | 19 | Issue picker loading: one skeleton row | done (80fa6b0d) |
-| 20 | Delegate button does nothing | not reproduced in Chrome, WebKit or Safari 18.6 with native clicks; recheck in the desktop app after install |
-| 21 | Full auto pill does nothing | not reproduced (as 20); recheck in the desktop app |
-| 22 | Profile circle does nothing | not reproduced (as 20); recheck in the desktop app |
+| 20 | Delegate button does nothing | not reproduced in Chrome, WebKit or Safari 18.6 with native clicks; recheck in the desktop app after install; likely the same cause as #45 (the dev app died under the open window) |
+| 21 | Full auto pill does nothing | not reproduced (as 20); recheck in the desktop app; likely the same cause as #45 (the dev app died under the open window) |
+| 22 | Profile circle does nothing | not reproduced (as 20); recheck in the desktop app; likely the same cause as #45 (the dev app died under the open window) |
 | 23 | Crew tint doesn't change | done (55dccadf) |
 | 24 | Make a pane rerun forgets it's a pane | done (45f288d7) |
 | 25 | Make a pane: agent never told how a wisp pane is made | done (4bef036f) |
@@ -58,6 +58,8 @@ in the real app (or the owner drops it). Statuses: `done` (committed and checked
 | 42 | Theme plugins never apply their partStyles | done (ui-shell, 2026-11-17: `plugins.styles` + `plugins.changed`, the shell's @layer plugins sheet, one allow-list with the kernel check; `wisp plugin trust`) |
 | 43 | Long threads (wisp task d8ee0a207d52, plan docs/v2-long-threads.md): Notes in a Thread tab, the note before each follow-up, Fresh thread, health, compaction audit, output offload | done (8ee10b59, 77c0966e, dd1215c0, baf6cebd): Notes, wisp_notes, `wisp notes`, note before follow-ups, offload (Claude; Codex in Full auto), health, Thread tab (variant A), Fresh thread, compaction audit; left by ADR-0097: opencode offload once checkable |
 | 44 | Keep this list and check it every job | done (this file) |
+| 45 | The project selector does nothing when clicked (owner, 2026-11-18) | cause found 2026-11-18: not the selector (it opens in Chrome and WebKit, both kinds); the dev app (Vite, wisp serve, the desktop window) ran as a child of the lead's shell and died at each session restart, so the open window's clicks went nowhere. The dev app now runs in its own session (/tmp/devrestart.sh, setsid); recheck in the restarted window |
+| 46 | A crew member's task row: its title and details don't line up with a normal task's (dot) rows (owner, 2026-11-18) | done: the face sits centred on the dot's spot (18 px over the 7 px dot, as v1's crew dot), titles and details line up at x 100 on every row, 7 px gap (Chrome, WebKit) |
 
 ## Also found while fixing (not from the owner)
 

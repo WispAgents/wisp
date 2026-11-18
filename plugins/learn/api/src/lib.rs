@@ -133,7 +133,7 @@ pub struct RetroArgs {
 }
 
 macro_rules! command {
-    ($(#[$m:meta])* $name:ident = $id:literal [$perm:expr] : $args:ty => $out:ty $(, $ro:ident)?) => {
+    ($(#[$m:meta])* $name:ident = $id:literal [$perm:expr] : $args:ty => $out:ty $(, $ro:ident)? $(; $typed:ident)?) => {
         $(#[$m])*
         #[derive(Debug)]
         pub struct $name;
@@ -142,6 +142,11 @@ macro_rules! command {
             const PERMISSION: Option<&'static str> = Some($perm);
             $(const READ_ONLY: bool = { let _ = stringify!($ro); true };)?
             type Args = $args;
+            $(fn args_ts() -> Option<String> {
+                // `; typed`: the generated CLI's flags and --help come from the argument type (ADR-0022)
+                let _ = stringify!($typed);
+                Some(format!("{}{}", <$args as ::ts_rs::TS>::docs().unwrap_or_default(), <$args as ::ts_rs::TS>::inline(&::ts_rs::Config::default())))
+            })?
             type Out = $out;
         }
     };
@@ -150,7 +155,7 @@ macro_rules! command {
 command!(
     /// Every list and the recent retros (v1 GET /preferences).
     Read = "learn.view" [PERM_READ] : Empty => View, read_only
-);
+; typed);
 command!(
     /// Replace one list (v1 PUT /preferences): cleaned, deduped and capped.
     Set = "learn.set" [PERM_WRITE] : SetArgs => Lists

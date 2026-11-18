@@ -98,12 +98,15 @@ pub struct Problem {
 #[ts(export, export_to = "issues/")]
 pub struct ListArgs {
     #[serde(default)]
+    #[ts(as = "Option<Source>", optional)]
     pub source: Source,
     /// a project id; None (or "none") for Linear and Jira
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub project: Option<String>,
+    /// words to look for
     #[serde(default)]
+    #[ts(as = "Option<String>", optional)]
     pub q: String,
 }
 

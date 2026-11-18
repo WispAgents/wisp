@@ -300,9 +300,11 @@ pub struct Origin {
 
 /// `git.githubRepos` (v1 GET /projects/github): the GitHub repos of the user `gh` is signed in as, for Projects' "Your
 /// GitHub repos · click to clone". `paths`: the folders of the projects already here (their repos are left out).
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, ts_rs::TS)]
 pub struct GithubReposArgs {
+    /// folders of projects already here: their repos are left out
     #[serde(default)]
+    #[ts(as = "Option<Vec<String>>", optional)]
     pub paths: Vec<String>,
 }
 

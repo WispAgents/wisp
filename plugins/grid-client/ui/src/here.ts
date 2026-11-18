@@ -12,9 +12,11 @@ export interface Here {
 }
 
 export function hereOf(k: Computer | null | undefined, t: (key: Key, vars?: Vars) => string): Here {
-  if (!k?.on) return { line: t('grid-client.computer.off') };
+  // removed on the Grid's Home (QA round 9 #1): off here too, and turning it on adds it anew
+  if (!k?.on) return { line: t(k?.state === 'gone' ? 'grid-client.computer.removed' : 'grid-client.computer.off') };
   const url = /^https?:\/\/[^\s]+$/.test(k.url) ? { url: k.url } : {};
   if (k.state === 'online') return { line: t('grid-client.computer.onlineNoUrl'), ...url };
   if (k.state === 'retrying') return { line: k.error || t('grid-client.computer.retrying'), ...url };
+  if (k.state === 'gone') return { line: k.error || t('grid-client.computer.removed') };
   return { line: t('grid-client.computer.connecting'), ...url };
 }

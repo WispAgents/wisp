@@ -9,7 +9,7 @@ use wisp_kernel::{BoxFuture, Call, Command, Event, Result, Service};
 use crate::{Grant, Published, StuffFrom, StuffItem, StuffKind, StuffView, Upload};
 
 macro_rules! command {
-    ($(#[$m:meta])* $name:ident, $id:literal, $perm:expr, $ro:expr, $args:ty => $out:ty) => {
+    ($(#[$m:meta])* $name:ident, $id:literal, $perm:expr, $ro:expr, $args:ty => $out:ty $(; $typed:ident)?) => {
         $(#[$m])*
         #[derive(Debug)]
         pub struct $name;
@@ -18,6 +18,11 @@ macro_rules! command {
             const PERMISSION: Option<&'static str> = $perm;
             const READ_ONLY: bool = $ro;
             type Args = $args;
+            $(fn args_ts() -> Option<String> {
+                // `; typed`: the generated CLI's flags and --help come from the argument type (ADR-0022)
+                let _ = stringify!($typed);
+                Some(format!("{}{}", <$args as ::ts_rs::TS>::docs().unwrap_or_default(), <$args as ::ts_rs::TS>::inline(&::ts_rs::Config::default())))
+            })?
             type Out = $out;
         }
     };
@@ -28,7 +33,7 @@ pub struct Id {
     pub id: String,
 }
 
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, ts_rs::TS)]
 pub struct Empty {}
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
@@ -88,13 +93,17 @@ pub struct UpdateArgs {
     pub starred: Option<bool>,
 }
 
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, ts_rs::TS)]
 pub struct FindArgs {
+    /// words to look for
     #[serde(default)]
+    #[ts(as = "Option<String>", optional)]
     pub query: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
     pub kind: Option<StuffKind>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional, type = "number")]
     pub limit: Option<usize>,
 }
 
@@ -133,13 +142,15 @@ pub struct Launched {
     pub url: String,
 }
 
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, ts_rs::TS)]
 pub struct Ids {
+    /// these uploads only; none: all of them
     #[serde(default)]
+    #[ts(as = "Option<Vec<String>>", optional)]
     pub ids: Vec<String>,
 }
 
-command!(List, "stuff.list", Some("stuff:read"), true, Empty => Vec<StuffView>);
+command!(List, "stuff.list", Some("stuff:read"), true, Empty => Vec<StuffView>; typed);
 command!(
     /// One record, paths included: for agents and plugins on this computer.
     Get, "stuff.get", Some("stuff:read"), true, Id => Option<StuffItem>
@@ -147,7 +158,7 @@ command!(
 command!(
     /// `wisp_stuff`'s list: filtered by words and kind, with where each file is.
     Find, "stuff.find", Some("stuff:read"), true, FindArgs => FindOut
-);
+; typed);
 command!(
     /// One item in full, for an agent (@-mentions, `wisp_stuff` with an id).
     Describe, "stuff.describe", Some("stuff:read"), true, Id => Option<Text>
@@ -180,12 +191,12 @@ pub struct ReceiveArgs {
 command!(
     /// v1 `uploads.resolve`: unknown ids are dropped.
     Uploads, "stuff.uploads", Some("stuff:read"), true, Ids => Vec<Upload>
-);
+; typed);
 command!(RemoveUpload, "stuff.removeUpload", Some("stuff:save"), false, Id => Done);
 command!(
     /// The panes wisp ships, each with the item it was added as (v1 GET /stuff/starters).
     Starters, "stuff.starters", Some("stuff:read"), true, Empty => Value
-);
+; typed);
 command!(
     /// Adds a starter pane once (it grants and pins nothing).
     AddStarter, "stuff.addStarter", Some("stuff:save"), false, Id => StuffView
@@ -197,7 +208,7 @@ command!(
 command!(
     /// Where an app can be published (the publisher's targets): none without a publisher.
     Targets, "stuff.targets", Some("stuff:read"), true, Empty => Vec<Value>
-);
+; typed);
 command!(
     /// Publish (again) to the publisher's grid: a link anyone can open.
     PublishApp, "stuff.publish", Some("stuff:publish"), false, Id => StuffView

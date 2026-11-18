@@ -3,7 +3,8 @@
 //! - `wisp cloud signin [grid]` (the device flow: a code to approve in the browser; another grid or account is added
 //!   next to the others and becomes current), `status`, `signout` (the current account), and `accounts`,
 //!   `switch <account>`, `remove <account>` (ADR-0061; an account is `handle`, `handle@host` or its key);
-//! - `wisp computer on|off|status`: this computer on the grid, reachable from your other wisps;
+//! - `wisp computer on [--grid <grid>]|off|status`: this computer on the grid, reachable from your other wisps; `on`
+//!   signs in first when it needs to (to that grid, the way the Grid's Add a computer prints it);
 //! - `wisp share <kind>.<name> --to cloud`: a setup (with what it references) to wisp Cloud, previewed;
 //!   `wisp share <task> --to cloud` is `share_cli`'s, through `share.send`;
 //! - `wisp shares [--revoke <id>] [--updates]`: what you've shared (access, views, imports, versions), and
@@ -108,37 +109,68 @@ pub fn said_shared(v: &Value) {
     ));
 }
 
+/// The device flow (`wisp cloud signin [grid]`): the link and code to check, then waits for the browser's answer.
+/// 0 signed in, 1 refused or expired (said why).
+async fn signin(c: &Client, grid: Option<&str>) -> Result<i32> {
+    let st = crate::cli::style();
+    let mut args = json!({});
+    if let Some(g) = grid {
+        args["grid"] = json!(g);
+    }
+    let f = c.cmd("grid-client.signin", args).await?;
+    say(&format!("  Open {}\n  and check the code: {}", paint(&st, BOLD, s(&f, "verifyUrl")), paint(&st, BOLD, s(&f, "userCode"))));
+    if tty() {
+        crate::serve::open_url(s(&f, "verifyUrl"));
+    }
+    let id = s(&f, "id").to_owned();
+    loop {
+        tokio::time::sleep(std::time::Duration::from_millis(700)).await;
+        let f = c.cmd("grid-client.signinStatus", json!({ "id": id })).await?;
+        match s(&f, "state") {
+            "waiting" => {}
+            "done" => {
+                say(&format!("  {} signed in to {} as {}", paint(&st, GREEN, "✓"), s(&f, "grid"), s(&f, "handle")));
+                return Ok(0);
+            }
+            _ => {
+                eprintln!("  ✗ {}", s(&f, "error"));
+                return Ok(1);
+            }
+        }
+    }
+}
+
+/// `wisp computer on [--grid <grid>]` (what the Grid's Add a computer prints, QA round 9 #1; v1 did the same): this wisp
+/// signed in there first. Already its current account: nothing to do; signed in there too: that account becomes the
+/// current one; else the device flow (no `--grid`: only when signed in nowhere, to wisp Cloud). Some(exit) when it
+/// couldn't.
+async fn onto_grid(c: &Client, grid: Option<&str>) -> Result<Option<i32>> {
+    let st = crate::cli::style();
+    let status = c.cmd("grid-client.status", json!({})).await?;
+    let signed_in = status["signedIn"] == json!(true);
+    if let Some(grid) = grid {
+        let want = grid_host(grid);
+        if signed_in && grid_host(s(&status, "grid")) == want {
+            return Ok(None);
+        }
+        let all = c.cmd("grid-client.accounts", json!({})).await?;
+        if let Some(a) = all.as_array().into_iter().flatten().find(|a| grid_host(s(a, "grid")) == want) {
+            let v = c.cmd("grid-client.accountSwitch", json!({ "key": s(a, "key") })).await?;
+            say(&format!("  {} now {}@{}", paint(&st, GREEN, "✓"), s(&v, "handle"), host_of(s(&v, "grid"))));
+            return Ok(None);
+        }
+    } else if signed_in {
+        return Ok(None);
+    }
+    let code = signin(c, grid).await?;
+    Ok((code != 0).then_some(code))
+}
+
 /// `wisp cloud signin|status|signout|accounts|switch|remove`.
 pub async fn cloud(c: &Client, o: &Opts) -> Result<i32> {
     let st = crate::cli::style();
     match o.words.first().map(String::as_str) {
-        Some("signin" | "login") => {
-            let mut args = json!({});
-            if let Some(g) = o.words.get(1) {
-                args["grid"] = json!(g);
-            }
-            let f = c.cmd("grid-client.signin", args).await?;
-            say(&format!("  Open {}\n  and check the code: {}", paint(&st, BOLD, s(&f, "verifyUrl")), paint(&st, BOLD, s(&f, "userCode"))));
-            if tty() {
-                crate::serve::open_url(s(&f, "verifyUrl"));
-            }
-            let id = s(&f, "id").to_owned();
-            loop {
-                tokio::time::sleep(std::time::Duration::from_millis(700)).await;
-                let f = c.cmd("grid-client.signinStatus", json!({ "id": id })).await?;
-                match s(&f, "state") {
-                    "waiting" => {}
-                    "done" => {
-                        say(&format!("  {} signed in to {} as {}", paint(&st, GREEN, "✓"), s(&f, "grid"), s(&f, "handle")));
-                        return Ok(0);
-                    }
-                    _ => {
-                        eprintln!("  ✗ {}", s(&f, "error"));
-                        return Ok(1);
-                    }
-                }
-            }
-        }
+        Some("signin" | "login") => signin(c, o.words.get(1).map(String::as_str)).await,
         Some("signout" | "logout") => {
             c.cmd("grid-client.signout", json!({})).await?;
             say(&format!("  {} signed out", paint(&st, GREEN, "✓")));
@@ -191,6 +223,11 @@ fn host_of(url: &str) -> &str {
     url.split_once("://").map_or(url, |(_, h)| h)
 }
 
+/// A grid's host as typed or stored (`https://Grid.trywisp.dev/home` → `grid.trywisp.dev`), to compare two.
+fn grid_host(url: &str) -> String {
+    host_of(url.trim()).split('/').next().unwrap_or_default().to_lowercase()
+}
+
 /// The account `want` names (its key, `handle@host`, or a handle signed in to on one grid only) → its key.
 pub fn pick_account(all: &[Value], want: &str) -> std::result::Result<String, String> {
     let (handle, host) = want.split_once('@').map_or((want, None), |(h, g)| (h, Some(g)));
@@ -207,6 +244,10 @@ pub fn pick_account(all: &[Value], want: &str) -> std::result::Result<String, St
 
 fn computer_line(c: &Value) -> String {
     let state = s(c, "state");
+    if c["on"] != json!(true) && state == "gone" {
+        // removed on the Grid's Home: `on` adds it anew (QA round 9 #1)
+        return "off · removed from the grid: wisp computer on adds it again".to_owned();
+    }
     let mut line = if c["on"] == json!(true) { format!("on, {state}") } else { "off".to_owned() };
     if !s(c, "url").is_empty() {
         let _ = write!(line, " · {}", s(c, "url"));
@@ -217,11 +258,35 @@ fn computer_line(c: &Value) -> String {
     line
 }
 
-/// `wisp computer on|off|status`.
+/// grid-client said this wisp's sign-in is missing or ended (its refusal's reason, `sign_in`).
+fn needs_signin(e: &CliError) -> bool {
+    matches!(e, CliError::Http { body, .. } if body.pointer("/error/reason") == Some(&json!("sign_in")))
+}
+
+/// `wisp computer on [--grid <grid>]|off|status`.
 pub async fn computer(c: &Client, o: &Opts) -> Result<i32> {
     let st = crate::cli::style();
-    let v = match o.words.first().map(String::as_str) {
-        Some("on") => c.cmd("grid-client.computer", json!({ "on": true })).await?,
+    let verb = o.words.first().map(String::as_str);
+    if let Some(g) = o.grid.as_ref().filter(|_| verb != Some("on")) {
+        eprintln!("  ✗ --grid goes with wisp computer on: wisp computer on --grid {g}");
+        return Ok(crate::cli::USAGE_EXIT);
+    }
+    if verb == Some("on")
+        && let Some(code) = onto_grid(c, o.grid.as_deref()).await?
+    {
+        return Ok(code);
+    }
+    let v = match verb {
+        Some("on") => match c.cmd("grid-client.computer", json!({ "on": true })).await {
+            // signed in, but its sign-in is gone (revoked on the grid, its token lost): sign in again, then on
+            Err(e) if needs_signin(&e) => {
+                if signin(c, o.grid.as_deref()).await? != 0 {
+                    return Ok(1);
+                }
+                c.cmd("grid-client.computer", json!({ "on": true })).await?
+            }
+            v => v?,
+        },
         Some("off") => c.cmd("grid-client.computer", json!({ "on": false })).await?,
         _ => c.cmd("grid-client.status", json!({})).await?["computer"].clone(),
     };
@@ -587,6 +652,23 @@ mod tests {
                 && is_link("wisp://open/AbC")
                 && !is_link("https://example.com/x.wisp-task")
         );
+    }
+
+    #[test]
+    fn computer_on_signs_in_again_only_when_grid_client_says_so_and_names_a_grid_by_its_host() {
+        let http = |body: Value| CliError::Http { status: 400, message: "x".into(), body };
+        // `POST /api/cmd`'s refusal (wisp-api `command_answer`): the reason beside the message
+        assert!(needs_signin(&http(
+            json!({ "ok": false, "error": { "code": "invalid", "message": "Not signed in", "reason": "sign_in" } })
+        )));
+        assert!(!needs_signin(&http(
+            json!({ "ok": false, "error": { "code": "forbidden", "message": "A box never gets a laptop token" } })
+        )));
+        assert!(!needs_signin(&CliError::said("Not signed in to wisp Cloud: wisp cloud signin")));
+        for g in ["wisp.localhost:4797", "http://wisp.localhost:4797", "HTTP://Wisp.localhost:4797/home ", "wisp.localhost:4797/"] {
+            assert_eq!(grid_host(g), "wisp.localhost:4797", "{g}");
+        }
+        assert_ne!(grid_host("grid.trywisp.dev"), grid_host("wisp.localhost:4797"));
     }
 
     #[test]

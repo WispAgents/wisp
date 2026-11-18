@@ -119,6 +119,10 @@ export interface LongPressOptions {
   readonly onLift?: boolean;
 }
 
+/** how soon after the lift the browser's own click comes; a later click is a new press (QA r9: a hold with no click of
+ *  its own, Android's or a script's, ate the next tap on the answer) */
+const TRAILING_CLICK_MS = 350;
+
 /** the lift events of a finger on the screen, read on the window (it may lift anywhere) */
 const LIFTS = ['touchend', 'touchcancel', 'pointerup'] as const;
 
@@ -128,8 +132,10 @@ const LIFTS = ['touchend', 'touchcancel', 'pointerup'] as const;
 function fingerPress() {
   let held: { moved: boolean; down: boolean } | undefined;
   let waiting: (() => void) | undefined;
+  let liftedAt = Number.NEGATIVE_INFINITY;
   const lifted = (): void => {
     for (const k of LIFTS) removeEventListener(k, lifted, true);
+    liftedAt = performance.now();
     if (held) held.down = false;
     const run = waiting;
     waiting = undefined;
@@ -145,6 +151,8 @@ function fingerPress() {
       waiting = undefined;
     },
     moved: (): void => void (held && (held.moved = true)),
+    /** a click this soon after the finger lifted is the press's own (the browser's, after touchend) */
+    trailing: (): boolean => performance.now() - liftedAt < TRAILING_CLICK_MS,
     /** held down and still: Android's contextmenu after it took the touch is this press's */
     still: (): boolean => held?.down === true && !held.moved,
     whenUp: (run: () => void): void => {
@@ -194,8 +202,7 @@ export function bindLongPress(el: HTMLElement, o: LongPressOptions): () => void 
       }
     }),
     listen(el, 'pointerup', stop),
-    // the browser took the touch (a scroll, or its own long-press): the timer stops, the finger may still be down
-    listen(el, 'pointercancel', stop),
+    listen(el, 'pointercancel', stop), // the browser took the touch (a scroll, its own long-press): the finger may stay
     // a click from a key (Enter, a screen reader) is never the press's
     listen(el, 'keydown', () => void (fired = false), { capture: true }),
     // Android's own contextmenu on a long touch is this gesture, run once (also after it ended the pointer stream)
@@ -210,6 +217,7 @@ export function bindLongPress(el: HTMLElement, o: LongPressOptions): () => void 
       (e) => {
         if (!fired) return;
         fired = false;
+        if (!finger.trailing()) return;
         e.preventDefault();
         e.stopPropagation();
       },

@@ -97,6 +97,14 @@ impl Command for Flush {
     const ID: &'static str = "telemetry.flush";
     const PERMISSION: Option<&'static str> = Some(PERM_TRACK);
     type Args = Value;
+    /// typed for the generated CLI (flags, --help) and the MCP tools (ADR-0022): a flag it doesn't take is refused
+    fn args_ts() -> Option<String> {
+        Some(format!(
+            "{}{}",
+            <Value as ::ts_rs::TS>::docs().unwrap_or_default(),
+            <Value as ::ts_rs::TS>::inline(&::ts_rs::Config::default())
+        ))
+    }
     type Out = Tracked;
 }
 

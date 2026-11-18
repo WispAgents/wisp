@@ -83,19 +83,30 @@ pub struct SessionInfo {
 /// One JSON-RPC message (or batch) in, its answer out; `None` for notifications. What `POST /api/mcp` runs.
 #[derive(Debug)]
 pub struct Rpc;
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, ts_rs::TS)]
 pub struct RpcArgs {
+    /// the JSON-RPC message (or batch)
     pub msg: Value,
     /// the folder the user's editor runs `wisp mcp` in (v1 `process.cwd()`)
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
     pub cwd: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
     pub turn: Option<String>,
 }
 impl Command for Rpc {
     const ID: &'static str = "mcp.rpc";
     const PERMISSION: Option<&'static str> = Some("mcp:call");
     type Args = RpcArgs;
+    /// typed for the generated CLI (flags, --help) and the MCP tools (ADR-0022): a flag it doesn't take is refused
+    fn args_ts() -> Option<String> {
+        Some(format!(
+            "{}{}",
+            <RpcArgs as ::ts_rs::TS>::docs().unwrap_or_default(),
+            <RpcArgs as ::ts_rs::TS>::inline(&::ts_rs::Config::default())
+        ))
+    }
     type Out = Option<Value>;
 }
 
@@ -107,22 +118,39 @@ impl Command for Tools {
     const PERMISSION: Option<&'static str> = Some("mcp:call");
     const READ_ONLY: bool = true;
     type Args = Value;
+    /// typed for the generated CLI (flags, --help) and the MCP tools (ADR-0022): a flag it doesn't take is refused
+    fn args_ts() -> Option<String> {
+        Some(format!(
+            "{}{}",
+            <Value as ::ts_rs::TS>::docs().unwrap_or_default(),
+            <Value as ::ts_rs::TS>::inline(&::ts_rs::Config::default())
+        ))
+    }
     type Out = Vec<Value>;
 }
 
 /// The runtime says what a session's run is (v1 set the env of the `mcp-ask.js` child when it spawned it).
 #[derive(Debug)]
 pub struct SessionSet;
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, ts_rs::TS)]
 pub struct SessionSetArgs {
     pub session: String,
     /// `None` forgets the session (it was deleted)
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional, type = "unknown")]
     pub info: Option<SessionInfo>,
 }
 impl Command for SessionSet {
     const ID: &'static str = "mcp.session.set";
     type Args = SessionSetArgs;
+    /// typed for the generated CLI (flags, --help) and the MCP tools (ADR-0022): a flag it doesn't take is refused
+    fn args_ts() -> Option<String> {
+        Some(format!(
+            "{}{}",
+            <SessionSetArgs as ::ts_rs::TS>::docs().unwrap_or_default(),
+            <SessionSetArgs as ::ts_rs::TS>::inline(&::ts_rs::Config::default())
+        ))
+    }
     type Out = ();
 }
 

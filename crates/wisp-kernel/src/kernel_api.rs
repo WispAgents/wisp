@@ -312,6 +312,21 @@ impl Ctx {
         out
     }
 
+    /// [`Ctx::catalogue`] with `command`'s plugin woken first when it waits for its first call (`onCommand`), so its
+    /// entry has the argument type the plugin registers: a frontend about to run that command (the generated CLI)
+    /// learns its flags without waking every lazy plugin to list them. Nothing wakes for a command the caller can't
+    /// run or one already registered. Additive (2026-11-18).
+    pub fn catalogue_waking(&self, caller: &Caller, command: &str) -> BoxFuture<'static, Vec<CommandInfo>> {
+        let (me, caller, id) = (self.clone(), caller.clone(), command.to_owned());
+        Box::pin(async move {
+            let waits = me.catalogue(&caller).iter().any(|c| c.id == id && c.args.is_none());
+            if waits && let Ok(k) = me.k() {
+                crate::life::wake(&k, "onCommand", &id, None).await;
+            }
+            me.catalogue(&caller)
+        })
+    }
+
     /// A setting's value: a lock first, then the user's value, then the default.
     pub fn setting(&self, key: &str) -> Option<Value> {
         self.k().ok()?.settings.get(key)

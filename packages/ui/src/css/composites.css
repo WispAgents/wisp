@@ -48,6 +48,16 @@
     height: 7px;
     color: var(--ink);
   }
+  /* a crew job's face in the dot's place (v1 crew.css .q-dot.crew-dot: an 18 px avatar centred on the 7 px dot): its
+     box stays the dot's, so the face sits on the dot's centre and keeps the dot's gap to the title (owner 2026-11-18:
+     the face started flush and touched the title) */
+  [data-kit='list-row'][data-layout='feed'] > [data-kit='face'][data-part~='crew.dot'] {
+    --k-face: var(--size-icon-lg);
+    grid-column: 1;
+    grid-row: 1;
+    align-self: center;
+    margin-inline: calc((var(--size-v1-tight) - var(--k-face)) / 2);
+  }
   [data-kit='list-row'][data-layout='feed'] > [data-kit='icon'][data-part~='list.row.mark'] {
     grid-column: 1;
     grid-row: 1;

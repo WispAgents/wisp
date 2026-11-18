@@ -115,7 +115,7 @@ pub struct Done {
 }
 
 macro_rules! command {
-    ($name:ident, $id:literal, $perm:literal, $ro:literal, $args:ty, $out:ty) => {
+    ($name:ident, $id:literal, $perm:literal, $ro:literal, $args:ty, $out:ty $(; $typed:ident)?) => {
         #[derive(Debug)]
         pub struct $name;
         impl Command for $name {
@@ -123,6 +123,11 @@ macro_rules! command {
             const PERMISSION: Option<&'static str> = Some($perm);
             const READ_ONLY: bool = $ro;
             type Args = $args;
+            $(fn args_ts() -> Option<String> {
+                // `; typed`: the generated CLI's flags and --help come from the argument type (ADR-0022)
+                let _ = stringify!($typed);
+                Some(format!("{}{}", <$args as ::ts_rs::TS>::docs().unwrap_or_default(), <$args as ::ts_rs::TS>::inline(&::ts_rs::Config::default())))
+            })?
             type Out = $out;
         }
     };
@@ -135,6 +140,6 @@ command!(Stage, "git.stage", "git:stage", false, StageArgs, Done);
 command!(Commit, "git.commit", "git:commit", false, CommitArgs, Committed);
 command!(GetTools, "git.tools", "git:read", true, (), Tools);
 command!(GetOrigin, "git.origin", "git:read", true, crate::OriginArgs, crate::Origin);
-command!(GithubRepos, "git.githubRepos", "git:read", true, crate::GithubReposArgs, Vec<crate::GithubRepo>);
+command!(GithubRepos, "git.githubRepos", "git:read", true, crate::GithubReposArgs, Vec<crate::GithubRepo>; typed);
 command!(Checkout, "git.checkout", "git:clone", false, crate::CheckoutArgs, Cloned);
 command!(Clone, "git.clone", "git:clone", false, crate::CloneRequest, Cloned);

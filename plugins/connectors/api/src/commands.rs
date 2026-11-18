@@ -96,9 +96,11 @@ pub struct UpdateArgs {
 pub struct ImportArgs {
     /// found servers to import, by name; their values are read on the server, never sent by the page
     #[serde(default)]
+    #[ts(as = "Option<Vec<String>>", optional)]
     pub names: Vec<String>,
     /// names to hide from the found list
     #[serde(default)]
+    #[ts(as = "Option<Vec<String>>", optional)]
     pub dismiss: Vec<String>,
 }
 
@@ -182,7 +184,7 @@ pub struct AgentSigninArgs {
 // ---------- commands ----------
 
 macro_rules! command {
-    ($(#[$doc:meta])* $name:ident, $id:literal, $perm:literal, $read:literal, $args:ty, $out:ty) => {
+    ($(#[$doc:meta])* $name:ident, $id:literal, $perm:literal, $read:literal, $args:ty, $out:ty $(; $typed:ident)?) => {
         $(#[$doc])*
         #[derive(Debug)]
         pub struct $name;
@@ -191,6 +193,11 @@ macro_rules! command {
             const PERMISSION: Option<&'static str> = Some($perm);
             const READ_ONLY: bool = $read;
             type Args = $args;
+            $(fn args_ts() -> Option<String> {
+                // `; typed`: the generated CLI's flags and --help come from the argument type (ADR-0022)
+                let _ = stringify!($typed);
+                Some(format!("{}{}", <$args as ::ts_rs::TS>::docs().unwrap_or_default(), <$args as ::ts_rs::TS>::inline(&::ts_rs::Config::default())))
+            })?
             type Out = $out;
         }
     };
@@ -204,7 +211,7 @@ command!(
     true,
     NoArgs,
     ConnectorsView
-);
+; typed);
 command!(
     /// Adds one; its secrets go to the secrets file, and it is tested in the background.
     Add,
@@ -225,7 +232,7 @@ command!(
     IdArgs,
     ConnectorsView
 );
-command!(Import, "connectors.import", "connectors:import", false, ImportArgs, ImportView);
+command!(Import, "connectors.import", "connectors:import", false, ImportArgs, ImportView; typed);
 command!(
     /// OAuth sign-in (discovery, dynamic registration, PKCE): the URL the page opens.
     Signin,

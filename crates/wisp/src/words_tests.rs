@@ -121,3 +121,95 @@ fn every_word_main_routes_on_is_a_known_word() {
         assert!(include_str!("main.rs").contains(&format!("\"{r}\"")), "{r} is in ROUTED but main.rs no longer routes on it");
     }
 }
+
+/// QA round 9 #1: `wisp computer on --grid wisp.localhost:4797` (what the Grid's Add a computer prints) launched an
+/// agent task titled "computer on", twice. A line that starts with a built-in verb path is that command: a flag it
+/// doesn't take is an error with its usage, and nothing on it ever falls through to a task.
+#[test]
+fn a_built_in_verb_path_refuses_a_flag_it_does_not_take_and_is_never_a_task() {
+    let mut n = 0;
+    for vp in VERB_PATHS {
+        for verb in vp.verbs {
+            let x = p(&[vp.cmd, verb, "--definitely-not-a-flag"]);
+            let (cmd, v) = verb_path(&x.words).unwrap_or_else(|| panic!("{} {verb}", vp.cmd));
+            assert_eq!((cmd, v), (vp.cmd, *verb));
+            assert_eq!(bad_flag(&x.words, &x.argv).as_deref(), Some("--definitely-not-a-flag"), "{} {verb}", vp.cmd);
+            // its own flags, and the ones every command takes, are fine
+            for f in vp.flags.iter().chain(["--json", "--yes", "--port"].iter()) {
+                let x = p(&[vp.cmd, verb, f, "1"]);
+                assert_eq!(bad_flag(&x.words, &x.argv), None, "{} {verb} {f}", vp.cmd);
+            }
+            // whatever follows the verb path, the words are that command's, never a prompt
+            let x = p(&[vp.cmd, verb, "and", "then", "some"]);
+            assert!(verb_path(&x.words).is_some(), "{} {verb} …", vp.cmd);
+            n += 1;
+        }
+    }
+    assert!(n > 40, "{n} verb paths");
+    // what the Grid prints: --grid goes with `computer on`, and a task never starts from it
+    let x = p(&["computer", "on", "--grid", "wisp.localhost:4797"]);
+    assert_eq!(x.words, w(&["computer", "on"]));
+    assert_eq!((verb_path(&x.words), bad_flag(&x.words, &x.argv)), (Some(("computer", "on")), None));
+    let x = p(&["computer", "on", "--grid=http://wisp.localhost:4797"]);
+    assert_eq!(bad_flag(&x.words, &x.argv), None);
+    // a flag's value is never read as a flag; the word after a switch is
+    let x = p(&["trigger", "add", "--prompt", "-v flag broken", "--json"]);
+    assert_eq!(bad_flag(&x.words, &x.argv), None);
+    for (args, bad) in [
+        (&["trigger", "add", "--off", "--bogus"][..], "--bogus"),
+        (&["events", "tail", "-f", "--bogus"], "--bogus"),
+        (&["computer", "on", "--json", "--bogus"], "--bogus"),
+        // hook runs git with -q and -m; it takes neither
+        (&["hook", "install", "-q"], "-q"),
+    ] {
+        let x = p(args);
+        assert_eq!(bad_flag(&x.words, &x.argv).as_deref(), Some(bad), "{args:?}");
+    }
+    // after `--`, words are words: a task on purpose
+    let x = p(&["--", "computer", "on", "--definitely-not-a-flag"]);
+    assert_eq!(bad_flag(&x.words, &x.argv), None);
+    // not a verb path: a prompt that merely starts with a command's name stays a task
+    for prompt in [&["computer", "science", "notes"][..], &["cloud", "costs", "report"]] {
+        assert_eq!(verb_path(&w(prompt)), None, "{prompt:?}");
+    }
+}
+
+/// Every verb a built-in arm in main.rs routes is in `VERB_PATHS`, so none of them can fall through to a task.
+#[test]
+fn every_verb_main_routes_for_a_built_in_is_in_the_table() {
+    let lines: Vec<&str> = include_str!("main.rs").lines().collect();
+    for vp in VERB_PATHS {
+        // its arms: a line whose pattern (before ` if` or `=>`) names it, and the verbs in the guard that follows
+        let quoted = format!("\"{}\"", vp.cmd);
+        let arms: Vec<usize> = (0..lines.len())
+            .filter(|&i| {
+                let l = lines[i].trim_start();
+                l.starts_with('"') && l.split(" if").next().unwrap_or("").split("=>").next().unwrap_or("").contains(&quoted)
+            })
+            .collect();
+        assert!(!arms.is_empty(), "main.rs routes {}", vp.cmd);
+        for at in arms {
+            let arm = lines[at..(at + 6).min(lines.len())].join(" ");
+            for verb in arm.split("Some(").nth(1).unwrap_or("").split(')').next().unwrap_or("").split('|') {
+                let verb = verb.trim().trim_matches('"');
+                if verb.is_empty() || verb.contains(' ') {
+                    continue;
+                }
+                assert!(vp.verbs.contains(&verb), "main.rs routes `wisp {} {verb}`: add it to words::VERB_PATHS", vp.cmd);
+            }
+        }
+    }
+}
+
+/// `wisp mcp` takes `--repo <dir>` and the global flags only; `wisp plugin ls` the global ones: anything else is named,
+/// a flag's value is never read as one, and a `--` ends the flags.
+#[test]
+fn a_command_that_reads_its_own_flags_names_the_first_it_doesnt_take() {
+    let a = |s: &str| s.split(' ').map(str::to_owned).collect::<Vec<_>>();
+    assert_eq!(stray_flag("mcp", &["--repo"], &a("mcp --repo /w --port 4800")), None);
+    assert_eq!(stray_flag("mcp", &["--repo"], &a("mcp tools --definitely-not-a-flag")).as_deref(), Some("--definitely-not-a-flag"));
+    assert_eq!(stray_flag("mcp", &["--repo"], &a("mcp --repo --x")), None, "--repo's value");
+    assert_eq!(stray_flag("plugins", &[], &a("plugins list --json")), None);
+    assert_eq!(stray_flag("plugins", &[], &a("plugins list --all")).as_deref(), Some("--all"));
+    assert_eq!(stray_flag("plugins", &[], &a("plugins list -- --all")), None);
+}

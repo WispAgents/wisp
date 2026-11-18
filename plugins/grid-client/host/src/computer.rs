@@ -7,7 +7,8 @@
 //! - A stream with `x-wisp-preview: <port>` is a page on this computer, passed to that port only while
 //!   "Show local pages in previews" (`grid-client.previews`) is on; 403 with why otherwise.
 //! - It redials after a drop (Wi-Fi, sleep, a grid restart) after 1, 2, 5, 15, then every 30 s, and gives
-//!   up only when the grid says this device or computer is gone (401/404).
+//!   up only when the grid says this device or computer is gone (401/404). A computer removed on the Grid's Home
+//!   (404) is off here too and its registration forgotten, so turning it on again adds it anew (QA round 9 #1).
 //! - The tunnel is the current account's (ADR-0061): switching accounts closes it and dials the new one's grid
 //!   if this computer is on there.
 //! - **A box never gets a laptop token:** on a grid box (`WISP_BOX`) this refuses to run.
@@ -29,6 +30,9 @@ use crate::net;
 use crate::state::{St, lock};
 
 type Body = http_body_util::combinators::BoxBody<Bytes, std::io::Error>;
+
+/// The reason on a refusal that signing in again would fix (no sign-in here, or the grid ended it).
+pub const SIGN_IN: &str = "sign_in";
 
 pub const BOX_REFUSAL: &str = "A box never gets a laptop token: a grid box can't be one of your computers.";
 
@@ -78,20 +82,24 @@ pub async fn set(st: &Arc<St>, on: bool, name: Option<String>) -> Result<Compute
         set_state(st, "off", "", None);
         return Ok(view(st));
     }
-    let (mut a, token) = st.signed_in().await.map_err(WireError::invalid)?;
+    // reason `sign_in` (`/api/cmd` passes an error's reason on): the CLI's `wisp computer on` signs in and tries again
+    let (mut a, token) = st.signed_in().await.map_err(|m| WireError::invalid(m).with_details(json!({ "reason": SIGN_IN })))?;
     let name = match name {
         Some(n) => n,
         None => crate::signin::label_of(crate::signin::host_name(st).await.as_deref()),
     };
-    if a.computer_id.is_empty() || a.computer_name != name {
-        let (status, c) =
-            net::call(&st.http, "POST", &format!("{}/api/computers", a.grid), Some(&token), Some(&json!({ "name": name })), &[]).await?;
-        if status >= 400 {
-            return Err(net::refused(status, &c));
-        }
-        let s = |k: &str| c.get(k).and_then(Value::as_str).unwrap_or_default().to_owned();
-        (a.computer_id, a.computer_label, a.computer_url, a.computer_name) = (s("id"), s("label"), s("url"), name);
+    // always asked, not only the first time: the grid adds a computer once per device and answers the same one after
+    // that, and one removed on its Home (QA round 9 #1) is added anew, a new registration under the same name
+    let (status, c) =
+        net::call(&st.http, "POST", &format!("{}/api/computers", a.grid), Some(&token), Some(&json!({ "name": name })), &[]).await?;
+    if status == 401 {
+        return Err(net::refused(status, &c).with_details(json!({ "reason": SIGN_IN })));
     }
+    if status >= 400 {
+        return Err(net::refused(status, &c));
+    }
+    let s = |k: &str| c.get(k).and_then(Value::as_str).unwrap_or_default().to_owned();
+    (a.computer_id, a.computer_label, a.computer_url, a.computer_name) = (s("id"), s("label"), s("url"), name);
     a.computer_on = true;
     // the account may have been switched from or signed out of while the grid answered: the tunnel is the
     // current account's only (ADR-0061), and a signed-out token never dials
@@ -120,8 +128,8 @@ pub fn start(st: &Arc<St>, grid: &str, id: &str, token: &str) {
 }
 
 enum Ended {
-    /// the grid doesn't know us any more
-    Gone(String),
+    /// the grid doesn't know us any more: this device's sign-in (401), or the computer, removed on its Home (`true`)
+    Gone(String, bool),
     /// it was up and dropped, or never came up
     Retry(String),
     Closed,
@@ -137,7 +145,10 @@ async fn dial_loop(st: Arc<St>, grid: String, id: String, token: String, cancel:
         }
         match ended {
             Ended::Closed => return,
-            Ended::Gone(why) => {
+            Ended::Gone(why, removed) => {
+                if removed {
+                    forget(&st, &id).await;
+                }
                 set_state(&st, "gone", &why, None);
                 return;
             }
@@ -151,6 +162,25 @@ async fn dial_loop(st: Arc<St>, grid: String, id: String, token: String, cancel:
                 }
             }
         }
+    }
+}
+
+/// The grid doesn't know this computer any more (removed on its Home, QA round 9 #1): it's off here too, its old
+/// registration forgotten, so turning it on again (the CLI, Settings) adds it anew. Only if the account still holds
+/// that registration: a newer one, made meanwhile, stays.
+async fn forget(st: &Arc<St>, id: &str) {
+    let id = id.to_owned();
+    // looked up and cleared in one change: a `set` saving a newer registration meanwhile is never overwritten
+    let forgot = st.change(move |x| {
+        let Some(mut a) = x.list.iter().find(|a| a.computer_id == id).cloned() else { return false };
+        a.computer_on = false;
+        a.computer_id.clear();
+        a.computer_label.clear();
+        a.computer_url.clear();
+        x.update(a)
+    });
+    if let Err(e) = forgot.await {
+        tracing::warn!(error = %e.message, "couldn't forget a removed computer");
     }
 }
 
@@ -173,10 +203,8 @@ async fn dial_once(st: &Arc<St>, grid: &str, id: &str, token: &str, cancel: &Can
         Dialed::Up => {}
         Dialed::Gone => {
             let v: Value = resp.json().await.unwrap_or_default();
-            return (
-                Ended::Gone(v.get("error").and_then(Value::as_str).unwrap_or("The grid doesn’t know this computer any more.").to_owned()),
-                false,
-            );
+            let why = v.get("error").and_then(Value::as_str).unwrap_or("The grid doesn’t know this computer any more.").to_owned();
+            return (Ended::Gone(why, status != 401), false);
         }
         Dialed::Retry => return (Ended::Retry(format!("The grid said {status}.")), false),
     }

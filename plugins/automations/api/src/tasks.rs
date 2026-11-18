@@ -106,7 +106,7 @@ pub fn fill(text: &str, values: &BTreeMap<String, String>) -> Result<String, Str
 }
 
 macro_rules! command {
-    ($name:ident = $id:literal [$perm:literal] $(read $ro:ident)? : $args:ty => $out:ty) => {
+    ($name:ident = $id:literal [$perm:literal] $(read $ro:ident)? : $args:ty => $out:ty $(; $typed:ident)?) => {
         #[derive(Debug)]
         pub struct $name;
         impl Command for $name {
@@ -114,12 +114,17 @@ macro_rules! command {
             const PERMISSION: Option<&'static str> = Some($perm);
             $(const READ_ONLY: bool = { let _ = stringify!($ro); true };)?
             type Args = $args;
+            $(fn args_ts() -> Option<String> {
+                // `; typed`: the generated CLI's flags and --help come from the argument type (ADR-0022)
+                let _ = stringify!($typed);
+                Some(format!("{}{}", <$args as ::ts_rs::TS>::docs().unwrap_or_default(), <$args as ::ts_rs::TS>::inline(&::ts_rs::Config::default())))
+            })?
             type Out = $out;
         }
     };
 }
 
-command!(Tasks = "automations.tasks" ["automations:read"] read yes : Value => Vec<NamedTask>);
+command!(Tasks = "automations.tasks" ["automations:read"] read yes : Value => Vec<NamedTask>; typed);
 command!(TaskSet = "automations.task.set" ["automations:write"] : NamedTask => NamedTask);
 command!(TaskRemove = "automations.task.remove" ["automations:write"] : TaskName => Value);
 command!(TaskRun = "automations.task.run" ["automations:run"] : RunTask => Value);

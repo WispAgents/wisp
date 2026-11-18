@@ -146,6 +146,8 @@
   "shell.feedback.saved": "Saved: it goes out once wisp is back online.",
   "shell.rate.up": "Good result: tell the wisp team",
   "shell.rate.down": "Bad result: tell the wisp team",
+  "shell.rate.good": "Good result",
+  "shell.rate.bad": "Bad result",
   "shell.rate.why": "What went wrong? Optional, goes to the wisp team",
   "shell.rate.whyNote": "Sent with the harness and model, not your prompt or code.",
   "shell.rate.skip": "Skip",
@@ -486,5 +488,7 @@
   "shell.peer.updateApp": "Update the app to reach {name}",
   "shell.peer.wake": "Wake",
   "shell.phone.show": "Show",
-  "shell.phone.keep": "Keep and copy"
+  "shell.phone.keep": "Keep and copy",
+  "shell.answer.copy": "Copy",
+  "shell.answer.comment": "Comment…"
 }

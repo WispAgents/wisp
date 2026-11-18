@@ -11,6 +11,7 @@
   "grid-client.computer.onlineNoUrl": "Online",
   "grid-client.computer.connecting": "Connecting…",
   "grid-client.computer.retrying": "Trying again…",
+  "grid-client.computer.removed": "Removed from the grid: turn it on to add it again",
   "grid-client.note": "A cloud computer shows up under Machines and in Run on, like any other computer. It sleeps when nothing’s going on (watching it from here doesn’t keep it up), and wakes when you send it something or a schedule is due.",
   "grid-client.shares.title": "My shares",
   "grid-client.shares.description": "What you've shared through wisp Cloud. A stopped link no longer opens, for anyone.",

@@ -1441,6 +1441,9 @@
   }
   :root[data-platform='android'] [data-kit='c-opts'] > [data-kit='icon']:last-child { transform: rotate(90deg); }
   :root[data-platform='android'] [data-kit='c-opts'] > [data-kit='c-opts-mode'] { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  /* too tight for the mode's words: the chip folds to its icons, never cutting a word (QA r9 #3; ReplyOptions.tsx) */
+  :root[data-platform='android'] [data-kit='c-opts'][data-folded] { flex-shrink: 0; }
+  :root[data-platform='android'] [data-kit='c-opts'][data-folded] > [data-kit='c-opts-mode'] { display: none; }
   :root[data-platform='android'] [data-kit='c-opts'] > [data-kit='icon'] { flex: none; color: var(--on-surface-var); }
   :root[data-platform='android'] [data-kit='c-opts']:active { background: color-mix(in srgb, var(--on-surface) calc(var(--state-pressed) * 100%), transparent); }
   :root[data-platform='android'] [data-kit='opts-list'] { display: flex; flex-direction: column; gap: var(--space-4); padding-bottom: var(--space-6); }

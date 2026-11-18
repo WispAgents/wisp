@@ -118,7 +118,7 @@ pub struct Opened {
 }
 
 macro_rules! command {
-    ($name:ident = $id:literal [$perm:literal] $(read $ro:ident)? : $args:ty => $out:ty) => {
+    ($name:ident = $id:literal [$perm:literal] $(read $ro:ident)? : $args:ty => $out:ty $(; $typed:ident)?) => {
         #[derive(Debug)]
         pub struct $name;
         impl Command for $name {
@@ -126,6 +126,11 @@ macro_rules! command {
             const PERMISSION: Option<&'static str> = Some($perm);
             $(const READ_ONLY: bool = { let _ = stringify!($ro); true };)?
             type Args = $args;
+            $(fn args_ts() -> Option<String> {
+                // `; typed`: the generated CLI's flags and --help come from the argument type (ADR-0022)
+                let _ = stringify!($typed);
+                Some(format!("{}{}", <$args as ::ts_rs::TS>::docs().unwrap_or_default(), <$args as ::ts_rs::TS>::inline(&::ts_rs::Config::default())))
+            })?
             type Out = $out;
         }
     };
@@ -211,7 +216,7 @@ pub struct SendArgs {
 }
 
 command!(SendCmd = "share.send" ["share:make"] : SendArgs => Value);
-command!(Destinations = "share.destinations" ["share:make"] read yes : NoArgs => Value);
+command!(Destinations = "share.destinations" ["share:make"] read yes : NoArgs => Value; typed);
 
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, ts_rs::TS)]
 pub struct NoArgs {}

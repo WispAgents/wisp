@@ -9,10 +9,8 @@ import { ActIcon, WithAct, type Act } from './act.tsx';
 import { ReplyOptions, type ReplyOptionLabels } from './ReplyOptions.tsx';
 import { usePlatform } from '../platform/PlatformLook.tsx';
 import { useT } from '../core/i18n.tsx';
-import { Menu, type MenuPoint } from '../controls/Menu.tsx';
-import type { MenuEntry } from '../controls/menu-entries.ts';
-import { bindLongPress } from '../gestures/bind.ts';
-import { useGesture } from '../gestures/use.ts';
+import { Menu } from '../controls/Menu.tsx';
+import { useTurnMenu, type TurnPhoneMenu, type TurnTool } from './turn-menu.ts';
 import { holdMedia } from './hold-view.ts';
 import { useBarLabels } from './bar-labels.ts';
 import { Tool } from './launcher-tool.tsx';
@@ -360,7 +358,9 @@ export interface TurnViewProps {
   /** the task's latest turn: its footer's icons always show (an older turn's on hover or focus; UX 2026-11-18 #7). Additive. */
   readonly latest?: boolean;
   readonly files?: { readonly label: string; readonly plus: string; readonly minus: string; readonly act?: Act };
-  readonly tools: readonly { readonly id: string; readonly icon: IconName; readonly label: string; readonly part?: string; readonly act?: Act; readonly on?: boolean }[];
+  readonly tools: readonly TurnTool[];
+  /** a phone's answer menu beyond the tools: Copy, Comment…, Good / Bad result (turn-menu.ts). Additive (QA r9 #2). */
+  readonly phoneMenu?: TurnPhoneMenu;
   /** the steps it took, shown under the brief (the trail's counts open them) */
   /** the turn's steps; a step with `out` (its output, an error's text) folds open to it (v1 transcript.js) */
   readonly activity?: {
@@ -387,43 +387,10 @@ export function TurnView(props: TurnViewProps): JSX.Element {
   // a phone (UX 2026-11-18 phone #8): an older answer's icons fold into one ⋯ menu (the latest keeps them out), which a
   // long-press on the answer opens too (its visible twin is the ⋯), so a long transcript isn't a column of icon rows;
   // the browser draws them all, as before
-  const look = usePlatform();
   const kitT = useT();
-  const [menuOpen, setMenuOpen] = createSignal(false);
-  // every answer's actions are a menu on a phone: its ⋯ and a long-press on it (QA r6 #15); an older one's icons fold
-  const folds = (): boolean => look() !== 'web' && props.tools.length > 0;
-  const toolItems = (): MenuEntry[] => props.tools.map((x) => ({ value: x.id, label: x.label, icon: x.icon, ...(x.on !== undefined && { checked: x.on }), ...(x.act?.pending && { disabled: true }) }));
-  let turnEl: HTMLElement | undefined;
-  // where the hold's menu opens (the ⋯ opens it at the ⋯): forgotten as it closes
-  const [from, setFrom] = createSignal<MenuPoint | undefined>();
-  const openAt = (at: MenuPoint): void => {
-    setFrom(at);
-    setMenuOpen(true);
-  };
-  // the hold's own: the text the browser selected under it is let go, its bubble ("Comment") giving way to the menu
-  const heldOpen = (at: MenuPoint): void => {
-    getSelection()?.removeAllRanges();
-    openAt(at);
-  };
-  const onMenu = (open: boolean): void => {
-    setMenuOpen(open);
-    if (!open) setFrom(undefined);
-  };
-  const pickTool = (id: string): void => props.tools.find((x) => x.id === id)?.act?.onClick?.();
-  const pressMenu = useGesture(
-    'turn.long-press',
-    // the hold ticks (the haptic); the menu opens as the finger lifts: opened under it, that lift is a press outside
-    // the menu and closed it at once (QA r6 #15)
-    // it opens where the finger was, kept on screen (QA r8 #2: at the ⋯ in the answer's footer it was often below the
-    // fold, and nothing seemed to happen); a screen reader's action opens it over the answer's visible top
-    (el, host) => {
-      turnEl = el;
-      return bindLongPress(el, { host, onLift: true, onLongPress: (at) => folds() && heldOpen(at) });
-    },
-    () => (folds() ? [{ label: kitT('gesture.actions'), run: () => (turnEl ? openAt(visibleTop(turnEl)) : onMenu(true)) }] : []),
-  );
+  const menu = useTurnMenu(props);
   return (
-    <article ref={pressMenu} data-kit="turn" data-turn={props.id} data-live={flag(props.live !== undefined || props.working !== undefined)} data-latest={flag(props.latest)}>
+    <article ref={menu.bind} data-kit="turn" data-turn={props.id} data-live={flag(props.live !== undefined || props.working !== undefined)} data-latest={flag(props.latest)}>
       <div data-kit="ask">
         <Show when={(props.askNotes ?? []).length > 0}>
           <ol data-kit="ask-notes" data-part="turn.notes">
@@ -566,9 +533,9 @@ export function TurnView(props: TurnViewProps): JSX.Element {
               />
             )}
           </Show>
-          <Show when={folds()}>
+          <Show when={menu.folds()}>
             <span data-kit="tb-more">
-              <Menu trigger={{ icon: 'dots', 'aria-label': kitT('more'), variant: 'ghost', size: 'sm' }} items={toolItems()} onSelect={pickTool} open={menuOpen()} onOpenChange={onMenu} from={from} placement="top-end" part="turn.more" />
+              <Menu trigger={{ icon: 'dots', 'aria-label': kitT('more'), variant: 'ghost', size: 'sm' }} items={menu.items()} onSelect={menu.pick} open={menu.open()} onOpenChange={menu.onOpenChange} from={menu.from} placement="top-end" part="turn.more" />
             </span>
           </Show>
           <span data-kit="tb-tools">
@@ -1132,8 +1099,3 @@ export function TaskBody(props: {
   );
 }
 
-/** the top of `el` that is on screen, a little in: where a menu opened for it by a screen reader goes */
-function visibleTop(el: HTMLElement): MenuPoint {
-  const r = el.getBoundingClientRect();
-  return { x: r.left + 16, y: Math.min(Math.max(r.top, 0), innerHeight) + 16 };
-}

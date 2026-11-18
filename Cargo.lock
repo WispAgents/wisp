@@ -4425,6 +4425,7 @@ version = "2.0.0"
 dependencies = [
  "serde",
  "serde_json",
+ "ts-rs",
  "wisp-kernel",
 ]
 
@@ -5254,6 +5255,7 @@ version = "2.0.0"
 dependencies = [
  "serde",
  "serde_json",
+ "ts-rs",
  "wisp-kernel",
 ]
 
@@ -5347,6 +5349,7 @@ version = "2.0.0"
 dependencies = [
  "serde",
  "serde_json",
+ "ts-rs",
  "wisp-kernel",
 ]
 
@@ -5474,6 +5477,7 @@ dependencies = [
  "schemars",
  "serde",
  "serde_json",
+ "ts-rs",
  "wisp-kernel",
  "wisp-store",
 ]
@@ -5649,6 +5653,7 @@ version = "2.0.0"
 dependencies = [
  "serde",
  "serde_json",
+ "ts-rs",
  "wisp-kernel",
 ]
 
@@ -5679,6 +5684,7 @@ version = "2.0.0"
 dependencies = [
  "serde",
  "serde_json",
+ "ts-rs",
  "wisp-kernel",
 ]
 
@@ -5713,6 +5719,7 @@ version = "2.0.0"
 dependencies = [
  "serde",
  "serde_json",
+ "ts-rs",
  "wisp-kernel",
 ]
 
@@ -5915,6 +5922,7 @@ version = "2.0.0"
 dependencies = [
  "serde",
  "serde_json",
+ "ts-rs",
  "wisp-kernel",
 ]
 
@@ -6066,6 +6074,7 @@ dependencies = [
  "serde_json",
  "tokio",
  "tracing",
+ "ts-rs",
  "wisp-kernel",
  "wisp-proc",
  "wisp-runtime-api",
@@ -6111,6 +6120,7 @@ dependencies = [
  "schemars",
  "serde",
  "serde_json",
+ "ts-rs",
  "wisp-kernel",
 ]
 

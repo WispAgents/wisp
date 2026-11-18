@@ -65,7 +65,7 @@ macro_rules! typed_command {
     };
 }
 
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, ts_rs::TS)]
 pub struct Empty {}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -130,18 +130,18 @@ pub struct ExtraArgs {
     pub what: String,
 }
 
-command!(View, "channels.view", Empty, Value, read_only = true);
+typed_command!(View, "channels.view", Empty, Value, read_only = true);
 command!(Update, "channels.update", Value, Value);
 typed_command!(Test, "channels.test", TestArgs, Vec<Tested>);
 command!(SendNotice, "channels.send", SendArgs, Sent);
 command!(Notify, "channels.notify", NotifyArgs, Empty);
 command!(Act, "channels.act", ActArgs, Line);
 command!(Inbound, "channels.inbound", InboundArgs, HttpOut);
-command!(Routed, "channels.routed", Value, HttpOut);
+typed_command!(Routed, "channels.routed", Value, HttpOut);
 command!(Rotate, "channels.rotate", ChannelArg, HttpOut);
 command!(Extra, "channels.extra", ExtraArgs, Value, read_only = true);
-command!(Refresh, "channels.refresh", Empty, Empty);
-command!(PhoneView, "channels.status", Empty, PhoneStatus, read_only = true);
+typed_command!(Refresh, "channels.refresh", Empty, Empty);
+typed_command!(PhoneView, "channels.status", Empty, PhoneStatus, read_only = true);
 typed_command!(SetupChannel, "channels.setup", SetupArgs, ChannelSetup);
 
 /// Settings should look again.

@@ -53,8 +53,9 @@ const STATE: EntityDef = EntityDef {
     topics,
 };
 
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, ts_rs::TS)]
 pub struct PeerArgs {
+    /// a machine's id: check, install or view the update there
     #[serde(default)]
     pub peer: Option<String>,
 }
@@ -68,6 +69,9 @@ macro_rules! command {
             const PERMISSION: Option<&'static str> = Some(if $ro { "update:read" } else { "update:install" });
             const READ_ONLY: bool = $ro;
             type Args = PeerArgs;
+            fn args_ts() -> Option<String> {
+                Some(<PeerArgs as ::ts_rs::TS>::inline(&::ts_rs::Config::default()))
+            }
             type Out = Value;
         }
     };

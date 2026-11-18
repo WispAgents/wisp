@@ -70,6 +70,18 @@ fn rest_after(argv: &[String], first: &str, taken: usize) -> Vec<String> {
 /// `wisp <plugin> <verb> …` when the words name one; None: they don't (a task, then).
 pub async fn generated(c: &Client, cat: &Catalogue, words: &[String], argv: &[String]) -> Result<Option<i32>> {
     let Some((v, taken)) = cat.resolve(words) else { return Ok(None) };
+    // a verb whose plugin waits for its first call is listed without its argument type: ask again with it woken, so
+    // its flags are checked (a flag it doesn't take refused, not sent as a field) and `--help` lists them
+    let woken;
+    let (v, taken) = if v.info.args.is_none() {
+        let list = c.cmd("cli.catalogue", json!({ "wake": v.info.id })).await?;
+        let list: Vec<wisp_kernel::CommandInfo> =
+            serde_json::from_value(list).map_err(|e| CliError::said(format!("cli.catalogue: {e}")))?;
+        woken = Catalogue::new(list);
+        woken.resolve(words).filter(|(w, _)| w.info.args.is_some()).unwrap_or((v, taken))
+    } else {
+        (v, taken)
+    };
     let (own, rest) = verbs::own(&rest_after(argv, &words[0], taken));
     if own.help {
         say(&verbs::help_verb(v));

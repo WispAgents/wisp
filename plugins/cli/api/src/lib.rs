@@ -18,8 +18,27 @@ impl Command for Catalogue {
     const ID: &'static str = "cli.catalogue";
     const PERMISSION: Option<&'static str> = Some("cli:catalogue");
     const READ_ONLY: bool = true;
+    /// `{}` or [`CatalogueArgs`] (taken as JSON, so a caller's `null` still lists everything)
     type Args = Value;
+    /// typed for the generated CLI (flags, --help) and the MCP tools (ADR-0022): a flag it doesn't take is refused
+    fn args_ts() -> Option<String> {
+        Some(format!(
+            "{}{}",
+            <CatalogueArgs as ::ts_rs::TS>::docs().unwrap_or_default(),
+            <CatalogueArgs as ::ts_rs::TS>::inline(&::ts_rs::Config::default())
+        ))
+    }
     type Out = Vec<CommandInfo>;
+}
+
+/// `cli.catalogue`'s arguments.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, ts_rs::TS)]
+pub struct CatalogueArgs {
+    /// a command about to run: its plugin, if it waits for its first call, is woken first so the entry carries its
+    /// argument type (the generated CLI's flags)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub wake: Option<String>,
 }
 
 /// How the terminal draws: its width, whether it takes colour (not under `NO_COLOR` or a pipe),

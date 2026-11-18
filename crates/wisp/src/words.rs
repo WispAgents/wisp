@@ -121,6 +121,190 @@ pub fn not_a_task(words: &[String], literal: Literal, plugins: &[String]) -> Opt
         .or_else(|| with_ids.then(|| NotATask::Unknown(first.clone())))
 }
 
+/// A built-in command's verb path (`wisp computer on`, `wisp trigger add`): its first word, the verbs main.rs routes
+/// for it, and the flags they read besides the ones every command takes ([`GLOBAL_FLAGS`]).
+#[derive(Debug, Clone, Copy)]
+pub struct VerbPath {
+    pub cmd: &'static str,
+    pub verbs: &'static [&'static str],
+    pub flags: &'static [&'static str],
+}
+
+const fn vp(cmd: &'static str, verbs: &'static [&'static str], flags: &'static [&'static str]) -> VerbPath {
+    VerbPath { cmd, verbs, flags }
+}
+
+/// Flags any command takes: where wisp is (`--port`, `--on`, `--cwd`), how it answers (`--json`, `--yes`), `--help`.
+pub const GLOBAL_FLAGS: [&str; 11] = ["--json", "--yes", "-y", "--port", "-p", "--on", "--cwd", "-C", "--help", "-h", "--no-open"];
+
+/// The flags above that are switches, not followed by a value (`events`' `-f` is `--follow`; elsewhere `-f` is a file).
+const SWITCHES: &[&str] = &[
+    "--json",
+    "--yes",
+    "-y",
+    "--help",
+    "-h",
+    "--no-open",
+    "--approval",
+    "--follow-up",
+    "--off",
+    "--no",
+    "--follow",
+    "--fill-from-snapshot",
+    "--wait",
+    "-w",
+    "--single-file",
+    "--with-deps",
+    "--dry-run",
+    "--prune",
+    "--trust",
+    "--upgrade",
+    "-upgrade",
+    "--refresh-only",
+    "-refresh-only",
+];
+
+fn takes_value(cmd: &str, flag: &str) -> bool {
+    let follow = cmd == "events" && flag == "-f";
+    !follow && !SWITCHES.contains(&flag)
+}
+
+const TRIGGER: &[&str] = &[
+    "--agent",
+    "-a",
+    "--approval",
+    "--branch",
+    "--budget-day",
+    "--concurrency",
+    "--cooldown",
+    "--crew",
+    "--cron",
+    "--debounce",
+    "--event",
+    "--every",
+    "--follow-up",
+    "--if",
+    "--label",
+    "--last",
+    "--match",
+    "--mode",
+    "-m",
+    "--model",
+    "--no",
+    "--off",
+    "--payload",
+    "--prompt",
+    "--rate",
+    "--secret",
+    "--task",
+    "--tz",
+    "--users",
+    "--why",
+    "--workflow",
+];
+const TASK: &[&str] = &[
+    "--formula",
+    "--profile",
+    "--include",
+    "--format",
+    "--from",
+    "--steps",
+    "--last",
+    "--project",
+    "--agent",
+    "-a",
+    "--model",
+    "--effort",
+    "--mode",
+    "-m",
+    "--out",
+    "-o",
+    "-f",
+    "--file",
+    "--fill-from-snapshot",
+    "--wait",
+    "-w",
+    "--to",
+    "--single-file",
+    "--with-deps",
+];
+const APPLY: &[&str] = &[
+    "-f",
+    "--file",
+    "--formula",
+    "--profile",
+    "--var",
+    "-var",
+    "--var-file",
+    "-var-file",
+    "--dry-run",
+    "--prune",
+    "--trust",
+    "--upgrade",
+    "-upgrade",
+    "--refresh-only",
+    "-refresh-only",
+    "--wait",
+    "-w",
+];
+
+/// Every built-in verb path main.rs routes (its `areas` and `shared_and_cloud` arms), one per line: the e2e
+/// (`tests/serve_cli_verbs.rs`) reads these lines, and `every_verb_main_routes_for_a_built_in_is_in_the_table` keeps
+/// them in step with main.rs. A line starting with one is that command, never a task (QA round 9 #1).
+pub const VERB_PATHS: &[VerbPath] = &[
+    vp("computer", &["on", "off", "status"], &["--grid"]),
+    vp("cloud", &["signin", "login", "signout", "logout", "status", "accounts", "switch", "remove", "rm"], &[]),
+    vp("sandbox", &["new", "add", "ls", "list", "rm", "remove", "delete"], &[]),
+    vp("sandboxes", &["new", "add", "ls", "list", "rm", "remove", "delete"], &[]),
+    vp("team", &["ls", "list", "new", "create", "show", "add", "rm", "remove"], &[]),
+    vp("teams", &["ls", "list", "new", "create", "show", "add", "rm", "remove"], &[]),
+    vp("trigger", &["add", "ls", "list", "rm", "remove", "fire", "test", "log", "resume", "approve", "sources"], TRIGGER),
+    vp("triggers", &["add", "ls", "list", "rm", "remove", "fire", "test", "log", "resume", "approve", "sources"], TRIGGER),
+    vp("crew", &["wake", "graph"], TRIGGER),
+    vp("hook", &["install", "uninstall", "remove", "status"], &[]),
+    vp("events", &["tail", "why", "retry", "parked", "ls"], &["--follow", "-f", "--limit", "--since", "--subject", "--type"]),
+    vp("task", &["spec", "export", "formula", "setup", "history"], TASK),
+    vp("grid", &["deploy"], APPLY),
+];
+
+/// The built-in verb path the words start with (`computer on …` → `("computer", "on")`); None for a prompt that
+/// merely starts with a command's name (`computer science notes`).
+pub fn verb_path(words: &[String]) -> Option<(&'static str, &'static str)> {
+    let (first, verb) = (words.first()?, words.get(1)?);
+    VERB_PATHS.iter().find(|p| p.cmd == first).and_then(|p| p.verbs.iter().find(|v| **v == verb).map(|v| (p.cmd, *v)))
+}
+
+/// The first flag after a verb path that it doesn't take (`computer on --definitely-not-a-flag`); None when they're
+/// all its own or global, when the words aren't a verb path, and for anything after a `--` (words, on purpose).
+pub fn bad_flag(words: &[String], argv: &[String]) -> Option<String> {
+    let (cmd, _) = verb_path(words)?;
+    let path = VERB_PATHS.iter().find(|p| p.cmd == cmd)?;
+    stray_flag(cmd, path.flags, argv)
+}
+
+/// The first flag after `cmd` in `argv` that is neither one of `own` nor global, before any `--`: a built-in command
+/// that reads its own flags (`wisp mcp --repo <dir>`, `wisp plugin ls`) refuses the rest with its usage.
+pub fn stray_flag(cmd: &str, own: &[&str], argv: &[String]) -> Option<String> {
+    let at = argv.iter().position(|a| a == cmd)?;
+    if argv[..at].iter().any(|a| a == "--") {
+        return None;
+    }
+    let mut rest = argv[at + 1..].iter().take_while(|a| *a != "--");
+    while let Some(a) = rest.next() {
+        if !flag_shaped(a) {
+            continue;
+        }
+        if !own.contains(&a.as_str()) && !GLOBAL_FLAGS.contains(&a.as_str()) {
+            return Some(a.clone());
+        }
+        // its value is never read as a flag (`--prompt "-v is broken"`)
+        if takes_value(cmd, a) {
+            rest.next();
+        }
+    }
+    None
+}
+
 /// Whether `typed` reads as a slip of `cmd`, `d` apart. Under six letters only a dropped, added or
 /// swapped letter counts (`tsks`, `taks`, `sl`, `shwo`); one letter changed is another word (`lint`,
 /// `trace`), and so are two (`tests`, `start`). Two letters off counts when both are six or longer.

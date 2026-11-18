@@ -24,6 +24,11 @@ pub async fn run(c: &Client, p: &Parsed, args: &[String]) -> Result<()> {
     let f = &p.flags;
     match args.first().map_or("ls", String::as_str) {
         "ls" | "list" => {
+            if let Some(bad) =
+                crate::words::stray_flag(if p.argv.iter().any(|a| a == "plugins") { "plugins" } else { "plugin" }, &[], &p.argv)
+            {
+                return Err(CliError::said(format!("wisp plugin ls doesn't take {bad}\n{}", crate::words::usage("plugin"))));
+            }
             let list = c.cmd("plugins.list", json!({})).await?;
             let rows: Vec<String> = list.get("plugins").or(Some(&list)).and_then(Value::as_array).into_iter().flatten().map(line).collect();
             out(f, &list, &if rows.is_empty() { "No plugins.".to_owned() } else { rows.join("\n") });

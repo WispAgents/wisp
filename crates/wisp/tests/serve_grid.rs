@@ -19,7 +19,8 @@ struct Grid {
     port: u16,
     url: String,
     _stop: tokio_util_stop::Stop,
-    _g: std::sync::Arc<wisp_grid::edge::Grid>,
+    /// the grid itself, for what only it knows (its accounts' computers)
+    edge: std::sync::Arc<wisp_grid::edge::Grid>,
 }
 
 mod tokio_util_stop {
@@ -45,7 +46,7 @@ async fn grid(dir: &Path) -> Grid {
     )
     .await
     .unwrap();
-    Grid { port, url: format!("http://wisp.localhost:{port}"), _stop: tokio_util_stop::Stop(Box::new(move || stop.cancel())), _g: g }
+    Grid { port, url: format!("http://wisp.localhost:{port}"), _stop: tokio_util_stop::Stop(Box::new(move || stop.cancel())), edge: g }
 }
 
 /// What each box's wisp wrote as it started (`grid/users/<id>/wisp.log`), so a box that stops as it starts says why.
@@ -614,4 +615,157 @@ async fn an_api_key_scripts_the_cloud_wisp_without_a_browser_until_revoked() {
     let again = a.try_cmd("grid-client.keysRevoke", json!({ "id": id })).await;
     assert_eq!(again["ok"], false, "revoked once: {again}");
     drop((s, g));
+}
+
+/// What `wisp computer status` says, and the computer's state in this wisp.
+async fn computer_state(a: &Api) -> (bool, String) {
+    let c = a.cmd("grid-client.status", json!({})).await["computer"].clone();
+    (c["on"].as_bool().unwrap_or(false), c["state"].as_str().unwrap_or_default().to_owned())
+}
+
+async fn until_state(a: &Api, want: &str) {
+    let at = Instant::now();
+    loop {
+        let (on, state) = computer_state(a).await;
+        if state == want {
+            return;
+        }
+        assert!(at.elapsed() < Duration::from_secs(30), "never {want}: on {on}, {state}");
+        tokio::time::sleep(Duration::from_millis(200)).await;
+    }
+}
+
+/// `wisp <args>` that signs in first: reads the device code it prints, approves it as ada, and waits for it to end
+/// (exit 0). → all it printed.
+async fn on_through_a_code(g: &Grid, dir: &Path, args: &[&str]) -> String {
+    let mut child = Command::new(env!("CARGO_BIN_EXE_wisp"))
+        .args(args)
+        .env("WISP_HOME", dir.join("home"))
+        .env("NO_COLOR", "1")
+        .current_dir(dir.join("proj"))
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    let mut out = std::io::BufReader::new(child.stdout.take().unwrap());
+    let mut seen = String::new();
+    let code = loop {
+        let mut line = String::new();
+        if std::io::BufRead::read_line(&mut out, &mut line).unwrap() == 0 {
+            let mut err = String::new();
+            std::io::Read::read_to_string(&mut child.stderr.take().unwrap(), &mut err).unwrap();
+            panic!("it ended without a code: {seen}{err}");
+        }
+        seen.push_str(&line);
+        if let Some(c) = line.split("check the code: ").nth(1) {
+            break c.trim().to_owned();
+        }
+    };
+    approve(g, "ada", &code, true).await;
+    let (status, rest) = tokio::task::spawn_blocking(move || {
+        let mut rest = String::new();
+        std::io::Read::read_to_string(&mut out, &mut rest).unwrap();
+        (child.wait().unwrap(), rest)
+    })
+    .await
+    .unwrap();
+    assert!(status.success(), "{seen}{rest}");
+    seen + &rest
+}
+
+/// Home's Remove (⋯ → Remove, with the page's token), as the person does it in their browser.
+async fn remove_from_home(g: &Grid, handle: &str) -> String {
+    let b = browser(g.port, &["wisp.localhost"]);
+    let r = b.get(format!("{}/auth/dev?handle={handle}", g.url)).send().await.unwrap();
+    let cookie = r.headers().get("set-cookie").unwrap().to_str().unwrap().split(';').next().unwrap().to_owned();
+    let home = b.get(format!("{}/", g.url)).header("cookie", &cookie).send().await.unwrap().text().await.unwrap();
+    let csrf = home.split("name=\"csrf\" value=\"").nth(1).unwrap().split('"').next().unwrap().to_owned();
+    let id = home
+        .split("action=\"/computers/")
+        .nth(1)
+        .unwrap_or_else(|| panic!("no computer on Home: {home}"))
+        .split('/')
+        .next()
+        .unwrap()
+        .to_owned();
+    let r = b
+        .post(format!("{}/computers/{id}/remove", g.url))
+        .header("cookie", &cookie)
+        .header("content-type", "application/x-www-form-urlencoded")
+        .body(format!("csrf={csrf}"))
+        .send()
+        .await
+        .unwrap();
+    assert!(r.status().is_redirection(), "{}", r.status());
+    id
+}
+
+/// QA round 9 #1: the Grid's Add a computer command signs in and adds this computer (it used to start a task titled
+/// "computer on"), and a computer removed from the Grid comes back when it's turned on again, from the CLI and from
+/// Settings (it used to stay "gone" for good): a new registration, under the same name.
+#[tokio::test(flavor = "multi_thread")]
+async fn the_grid_s_add_command_adds_this_computer_and_a_removed_one_comes_back() {
+    let root = temp("serve-grid-readd");
+    let g = grid(&root).await;
+    let da = root.join("a");
+    std::fs::create_dir_all(da.join("proj")).unwrap();
+    let (sa, pa) = start_with(&da, &[]);
+    let a = api(pa);
+
+    // exactly what Home's + Add → A computer of yours prints, after `npx wisp-agents`
+    let b = browser(g.port, &["wisp.localhost"]);
+    let r = b.get(format!("{}/auth/dev?handle=ada", g.url)).send().await.unwrap();
+    let cookie = r.headers().get("set-cookie").unwrap().to_str().unwrap().split(';').next().unwrap().to_owned();
+    let home = b.get(format!("{}/", g.url)).header("cookie", &cookie).send().await.unwrap().text().await.unwrap();
+    let printed =
+        home.split("data-copy=\"npx wisp-agents ").nth(1).unwrap_or_else(|| panic!("{home}")).split('"').next().unwrap().to_owned();
+    let args: Vec<&str> = printed.split(' ').collect();
+    assert_eq!(&args[..3], ["computer", "on", "--grid"], "{printed}");
+    let said = on_through_a_code(&g, &da, &args).await;
+    assert!(said.contains("this computer"), "{said}");
+    until_state(&a, "online").await;
+    let uid = g.edge.accounts.user_by_handle("ada").unwrap().unwrap().id;
+    let first = g.edge.accounts.computers(&uid).unwrap();
+    assert_eq!(first.len(), 1);
+
+    // removed on Home: this wisp hears it's gone and says it's off, so turning it on is offered again
+    let gone = remove_from_home(&g, "ada").await;
+    assert_eq!(gone, first[0].id);
+    until_state(&a, "gone").await;
+    assert!(!computer_state(&a).await.0, "a removed computer is off here");
+    let (code, out, err) = wisp(&da, &da.join("proj"), &["computer", "status"]);
+    assert_eq!(code, 0, "{err}");
+    assert!(out.contains("off"), "{out}");
+
+    // the CLI: on again is a new registration, the same name
+    let (code, out, err) = wisp(&da, &da.join("proj"), &["computer", "on"]);
+    assert_eq!(code, 0, "{out}{err}");
+    until_state(&a, "online").await;
+    let second = g.edge.accounts.computers(&uid).unwrap();
+    assert_eq!(second.len(), 1);
+    assert!(second[0].id != first[0].id && second[0].name == first[0].name, "{second:?} vs {first:?}");
+
+    // Settings (Machines → Add to grid, Cloud's switch): the same command, after another removal
+    remove_from_home(&g, "ada").await;
+    until_state(&a, "gone").await;
+    a.cmd("grid-client.computer", json!({ "on": true })).await;
+    until_state(&a, "online").await;
+    let third = g.edge.accounts.computers(&uid).unwrap();
+    assert!(third.len() == 1 && third[0].id != second[0].id && third[0].name == first[0].name, "{third:?}");
+
+    // its sign-in revoked on the grid (Account → Devices): the same command signs in again, then it's on
+    // (as Account's Remove does it: the device revoked, its tunnel closed)
+    for c in g.edge.accounts.revoke_device(&uid, &third[0].device_id).unwrap().computers {
+        g.edge.tunnels.close(&c);
+    }
+    until_state(&a, "gone").await;
+    assert!(computer_state(&a).await.0, "a device signed out isn't a computer removed: still on");
+    let said = on_through_a_code(&g, &da, &args).await;
+    assert!(said.contains("signed in to") && said.contains("this computer"), "{said}");
+    until_state(&a, "online").await;
+
+    // and nothing of it was ever a task
+    assert_eq!(a.cmd("runtime.list", json!({})).await.as_array().unwrap().len(), 0);
+    drop(sa);
 }

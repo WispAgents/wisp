@@ -319,18 +319,20 @@ pub struct Applied {
     pub applied: usize,
 }
 
-#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, ts_rs::TS)]
 pub struct ExportArgs {
     /// only these kinds (or sections); empty: every shared kind
     #[serde(default)]
+    #[ts(as = "Option<Vec<String>>", optional)]
     pub kinds: Vec<String>,
     /// personal and device kinds to add (`account`, `ui`)
     #[serde(default)]
+    #[ts(as = "Option<Vec<String>>", optional)]
     pub include: Vec<String>,
 }
 
 macro_rules! command {
-    ($name:ident = $id:literal [$perm:literal] $(read $ro:ident)? : $args:ty => $out:ty) => {
+    ($name:ident = $id:literal [$perm:literal] $(read $ro:ident)? : $args:ty => $out:ty $(; $typed:ident)?) => {
         #[derive(Debug)]
         pub struct $name;
         impl Command for $name {
@@ -338,15 +340,20 @@ macro_rules! command {
             const PERMISSION: Option<&'static str> = Some($perm);
             $(const READ_ONLY: bool = { let _ = stringify!($ro); true };)?
             type Args = $args;
+            $(fn args_ts() -> Option<String> {
+                // `; typed`: the generated CLI's flags and --help come from the argument type (ADR-0022)
+                let _ = stringify!($typed);
+                Some(format!("{}{}", <$args as ::ts_rs::TS>::docs().unwrap_or_default(), <$args as ::ts_rs::TS>::inline(&::ts_rs::Config::default())))
+            })?
             type Out = $out;
         }
     };
 }
 
-command!(Kinds = "resources.kinds" ["resources:read"] read yes : Value => Vec<KindInfo>);
+command!(Kinds = "resources.kinds" ["resources:read"] read yes : Value => Vec<KindInfo>; typed);
 command!(PlanCmd = "resources.plan" ["resources:read"] read yes : PlanArgs => Plan);
 command!(Apply = "resources.apply" ["resources:apply"] : PlanArgs => Applied);
-command!(Export = "resources.export" ["resources:read"] read yes : ExportArgs => Vec<Resource>);
+command!(Export = "resources.export" ["resources:read"] read yes : ExportArgs => Vec<Resource>; typed);
 command!(Rename = "resources.rename" ["resources:apply"] : RenameArgs => Value);
 command!(Refresh = "resources.refresh" ["resources:apply"] : RefreshArgs => Vec<String>);
 
@@ -368,11 +375,15 @@ pub struct ReadOut {
 
 /// `resources.write`: the setup (or some kinds of it) as a formula's text, as `wisp export` writes it, for the
 /// app's Share setup. Additive (2026-11-11).
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, ts_rs::TS)]
 pub struct WriteArgs {
+    /// only these kinds; empty: every shared kind
     #[serde(default)]
+    #[ts(as = "Option<Vec<String>>", optional)]
     pub kinds: Vec<String>,
+    /// `yaml` (the default), `json` or `toml`
     #[serde(default)]
+    #[ts(as = "Option<String>", optional)]
     pub format: String,
 }
 
@@ -408,4 +419,4 @@ command!(SecretSet = "resources.secretSet" ["resources:secrets"] : SecretArgs =>
 command!(SecretRemove = "resources.secretRemove" ["resources:secrets"] : SecretArgs => SecretOut);
 
 command!(Read = "resources.read" ["resources:read"] read yes : ReadArgs => ReadOut);
-command!(Write = "resources.write" ["resources:read"] read yes : WriteArgs => WriteOut);
+command!(Write = "resources.write" ["resources:read"] read yes : WriteArgs => WriteOut; typed);

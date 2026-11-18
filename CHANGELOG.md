@@ -14,6 +14,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Fixed
 
+- **v2: `wisp computer on --grid <grid>` adds this computer, and a removed one comes back.** The command the Grid's *+ Add → A computer of yours* prints used to start an agent task called "computer on". Now it signs in to that grid first when needed (the code to check in the browser) and turns the computer on; `wisp computer on` alone signs in to wisp Cloud when you're signed in nowhere. A line that starts with one of wisp's own commands (`computer on`, `trigger add`, `cloud status`, …) is never a task: a flag it doesn't take, or words it doesn't, prints that command's usage and exits 2 (`wisp -- …` still makes it a task). A computer removed on the Grid's Home is off on that computer too and says so, and turning it on again (the CLI, or Settings → Machines or Cloud) adds it anew under the same name.
 - **v2: theme plugins apply.** A plugin's `contributes.partStyles` (its styles by `data-part`, `:root` token overrides like `--accent`, and `@light` / `@dark` values for one theme) now restyles the app while the plugin is on and you trusted it (`wisp plugin trust <id>`, new), and stops the moment it's switched off, untrusted or removed, without a reload. An untrusted plugin's styles never apply. Only safe CSS gets in: installing a theme whose values could close their rule, add `!important`, `@import` or fetch a remote `url()` is refused with the reason. The plugin reference has a working theme example.
 
 ## [2.0.0] - 2026-11-17

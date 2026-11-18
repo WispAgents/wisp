@@ -118,3 +118,102 @@ describe('the long-press menu opens at the finger (QA r8 #2)', () => {
     expect(Math.abs(at.y - 600), `y ${at.y}`).toBeLessThan(60);
   });
 });
+
+// QA r9 #2 (UX 2026-11-18 phone #8): the answer's menu holds what the answer offers: Copy, Comment… (on the block held),
+// its trail's tools (Agent notes, Restore, Fork) and Good / Bad result; the ⋯ the same, without Comment… (no block held)
+const mountFull = (onCopy: (text: string) => void, commented: () => void, rated: (r: string) => void) => {
+  n += 1;
+  const host = { haptic: () => undefined, actions: () => () => undefined } as unknown as GestureHost;
+  const box = mount(() => (
+    <GestureHostProvider host={host}>
+      <PlatformLookProvider look={() => 'android'}>
+        <TurnView
+          id={`t${n}`}
+          prompt="Hey"
+          harness="Codex"
+          time="22:31"
+          timeTitle="22:31"
+          acts={[]}
+          actsTitle=""
+          stats={[]}
+          answer={
+            <div data-kit="answer">
+              <div data-kit="answer-block">
+                <p>I committed the docs/dev.md sentence.</p>
+                <button type="button" data-kit="cmt-add" onClick={commented}>
+                  c
+                </button>
+              </div>
+            </div>
+          }
+          tools={[
+            { id: 'notes', icon: 'text', label: 'Agent notes', act: { onClick: () => undefined } },
+            { id: 'fork', icon: 'fork', label: `Fork ${n}`, act: { onClick: () => undefined } },
+          ]}
+          phoneMenu={{
+            copy: { label: 'Copy', onCopy },
+            comment: 'Comment…',
+            more: [
+              { id: 'good', icon: 'thumb-up', label: 'Good result', on: false, act: { onClick: () => rated('up') } },
+              { id: 'bad', icon: 'thumb-down', label: 'Bad result', on: false, act: { onClick: () => rated('down') } },
+            ],
+          }}
+        />
+      </PlatformLookProvider>
+    </GestureHostProvider>
+  ));
+  const rows = (): HTMLElement[] =>
+    [...document.querySelectorAll<HTMLElement>('[data-kit="menu"][data-state="open"]')].filter((m) => m.textContent?.includes(`Fork ${n}`)).flatMap((m) => [...m.querySelectorAll<HTMLElement>('[data-kit="menu-item"]')]);
+  return { box, rows, words: () => rows().map((r) => r.textContent?.trim() ?? '') };
+};
+
+describe('the answer menu holds the answer’s actions (QA r9 #2)', () => {
+  test('a_hold_on_a_block_offers_copy_comment_the_tools_and_good_bad_in_that_order', async () => {
+    const copied: string[] = [];
+    let comments = 0;
+    const rated: string[] = [];
+    const { box, rows, words } = mountFull((t) => copied.push(t), () => (comments += 1), (r) => rated.push(r));
+    const p = box.querySelector('[data-kit="answer-block"] p') as HTMLElement;
+    p.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, cancelable: true, pointerType: 'touch', isPrimary: true, pointerId: 1, clientX: 120, clientY: 80 }));
+    await wait(900);
+    p.dispatchEvent(new PointerEvent('pointerup', { bubbles: true, cancelable: true, pointerType: 'touch', isPrimary: true, pointerId: 1, clientX: 120, clientY: 80 }));
+    await until(() => rows().length > 0, 2000);
+    expect(words()).toEqual(['Copy', 'Comment…', 'Agent notes', `Fork ${n}`, 'Good result', 'Bad result']);
+    rows()[0]?.click();
+    await until(() => copied.length > 0);
+    expect(copied[0]).toContain('I committed the docs/dev.md sentence.');
+    expect(copied[0], 'not the Comment button’s own text').not.toMatch(/c$/);
+  });
+
+  test('comment_opens_the_held_blocks_comment_and_good_rates', async () => {
+    let comments = 0;
+    const rated: string[] = [];
+    const { box, rows } = mountFull(() => undefined, () => (comments += 1), (r) => rated.push(r));
+    const hold = async (): Promise<void> => {
+      const p = box.querySelector('[data-kit="answer-block"] p') as HTMLElement;
+      p.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, cancelable: true, pointerType: 'touch', isPrimary: true, pointerId: 1, clientX: 120, clientY: 80 }));
+      await wait(900);
+      p.dispatchEvent(new PointerEvent('pointerup', { bubbles: true, cancelable: true, pointerType: 'touch', isPrimary: true, pointerId: 1, clientX: 120, clientY: 80 }));
+      await until(() => rows().length > 0, 2000);
+    };
+    await hold();
+    // read, then tapped (a person's tap comes well after the hold's lift)
+    await wait(400);
+    rows()[1]?.click();
+    await until(() => comments === 1, 2000);
+    expect(comments, 'the held block’s own Comment').toBe(1);
+    await until(() => rows().length === 0, 2000);
+    expect(rows(), 'the menu closed').toEqual([]);
+    await hold();
+    rows().find((r) => r.textContent?.includes('Good result'))?.click();
+    await until(() => rated.length > 0);
+    expect(rated).toEqual(['up']);
+  }, 15_000);
+
+  test('the_dots_offer_the_same_without_comment', async () => {
+    const { box, words, rows } = mountFull(() => undefined, () => undefined, () => undefined);
+    (box.querySelector('[data-kit="tb-more"] button') as HTMLElement).click();
+    await until(() => rows().length > 0, 2000);
+    expect(words()).toEqual(['Copy', 'Agent notes', `Fork ${n}`, 'Good result', 'Bad result']);
+  });
+});

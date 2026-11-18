@@ -124,7 +124,7 @@ pub struct Dropped {
     pub dropped: u32,
 }
 
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, ts_rs::TS)]
 pub struct Empty {}
 
 /// A project's changes in a sandbox since it came in (`sandbox.patch`, inside), or brought back here (`sandbox.bring`).
@@ -214,13 +214,18 @@ pub struct AgentArgs {
 }
 
 macro_rules! command {
-    ($name:ident = $id:literal : $args:ty => $out:ty $(, $ro:ident)?) => {
+    ($name:ident = $id:literal : $args:ty => $out:ty $(, $ro:ident)? $(; $typed:ident)?) => {
         #[derive(Debug)]
         pub struct $name;
         impl Command for $name {
             const ID: &'static str = $id;
             $(const READ_ONLY: bool = { let _ = stringify!($ro); true };)?
             type Args = $args;
+            $(fn args_ts() -> Option<String> {
+                // `; typed`: the generated CLI's flags and --help come from the argument type (ADR-0022)
+                let _ = stringify!($typed);
+                Some(format!("{}{}", <$args as ::ts_rs::TS>::docs().unwrap_or_default(), <$args as ::ts_rs::TS>::inline(&::ts_rs::Config::default())))
+            })?
             type Out = $out;
         }
     };
@@ -233,9 +238,9 @@ command!(Drop = "sandbox.drop" : DropArgs => Dropped);
 command!(Own = "sandbox.own" : OwnArgs => Empty);
 command!(PatchCmd = "sandbox.patch" : PatchArgs => Patch, ro);
 command!(Bring = "sandbox.bring" : BringArgs => Brought);
-command!(InfoCmd = "sandbox.info" : Empty => Info, ro);
+command!(InfoCmd = "sandbox.info" : Empty => Info, ro; typed);
 command!(ClaudeBegin = "sandbox.claude.begin" : Empty => ClaudeSignIn);
 command!(ClaudeCode = "sandbox.claude.code" : CodeArgs => ClaudeSignIn);
-command!(ClaudeState = "sandbox.claude.state" : Empty => ClaudeSignIn, ro);
+command!(ClaudeState = "sandbox.claude.state" : Empty => ClaudeSignIn, ro; typed);
 command!(Logout = "sandbox.logout" : AgentArgs => Info);
 command!(Env = "sandbox.env" : EnvArgs => Info);

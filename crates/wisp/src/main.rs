@@ -119,6 +119,9 @@ async fn dispatch(p: &Parsed, user_home: &Path, cwd: &Path) -> Result<i32> {
     if !matches!(p.command, Some("serve" | "mcp" | "grid" | "desktop" | "completions" | "sdk")) && Client::new(port).ping().await {
         attach::notices(&Client::new(port), &home).await;
     }
+    if let Some(code) = misused_verb_path(p, true) {
+        return Ok(code);
+    }
     if let Some(code) = as_code(p, port, f.cwd.as_deref().unwrap_or(cwd), &home).await? {
         return Ok(code);
     }
@@ -134,9 +137,20 @@ async fn dispatch(p: &Parsed, user_home: &Path, cwd: &Path) -> Result<i32> {
     {
         return Ok(code);
     }
+    // a built-in verb path its arm didn't take (`computer on --try x`) is that command misused, never a task
+    if let Some(code) = misused_verb_path(p, false) {
+        return Ok(code);
+    }
     match p.command {
         Some("grid") => return extras::grid(&p.argv),
-        Some("mcp") => return repo_cli::mcp(&p.argv, cwd, port).await,
+        Some("mcp") => {
+            // the stdio server takes `--repo <dir>` only: any other flag is a slip (`wisp mcp tools --x` served on)
+            if let Some(bad) = words::stray_flag("mcp", &["--repo"], &p.argv) {
+                eprintln!("  ✗ wisp mcp doesn't take {bad}\n{}", words::usage("mcp"));
+                return Ok(cli::USAGE_EXIT);
+            }
+            return repo_cli::mcp(&p.argv, cwd, port).await;
+        }
         Some("skill") => {
             extras::skill(p.words.get(1).map(String::as_str), f, user_home, cwd)?;
             if p.words.get(1).map(String::as_str) == Some("install") {
@@ -165,6 +179,31 @@ async fn dispatch(p: &Parsed, user_home: &Path, cwd: &Path) -> Result<i32> {
         None => desktop::open(&home, user_home, port, f.open, f.browser).await?,
     }
     Ok(0)
+}
+
+/// QA round 9 #1 (`wisp computer on --grid …` started a task): words that start with a built-in verb path are that
+/// command. `flags`: refuse a flag it doesn't take, before anything runs; else (past every arm, on the launch path)
+/// refuse whatever it was given. Either way its usage, exit 2. None: not a verb path, or after `--` (a task on purpose).
+fn misused_verb_path(p: &Parsed, flags: bool) -> Option<i32> {
+    if p.literal == args::Literal::Task || p.command.is_some() {
+        return None;
+    }
+    let (cmd, verb) = words::verb_path(&p.words)?;
+    if flags && p.flags.help {
+        // `wisp computer on --help` is its usage, never the command
+        say(&words::usage(cmd));
+        return Some(0);
+    }
+    if flags {
+        let bad = words::bad_flag(&p.words, &p.argv)?;
+        eprintln!("  ✗ wisp {cmd} {verb} doesn't take {bad}");
+    } else if p.words.len() > 2 {
+        eprintln!("  ✗ wisp {cmd} {verb} doesn't take {}", p.words[2..].join(" "));
+    } else {
+        eprintln!("  ✗ wisp {cmd} {verb} needs more");
+    }
+    eprintln!("{}", words::usage(cmd));
+    Some(cli::USAGE_EXIT)
 }
 
 /// Words on the launch path that aren't a task (`wisp tasks`, `wisp tsks`, `wisp runtime`): what they
@@ -228,6 +267,8 @@ async fn as_code(p: &Parsed, port: u16, cwd: &Path, home: &Path) -> Result<Optio
         yes: o.yes || p.flags.yes,
         dry_run: o.dry_run || p.flags.dry_run,
         wait: o.wait || p.flags.wait,
+        // `wisp --grid <grid> computer on`: the flag before the command word counts too
+        grid: o.grid.or_else(|| p.flags.grid.clone()),
         ..o
     };
     if let Some(code) = areas(first, p, &o, port, cwd).await? {

@@ -3,7 +3,7 @@
 // bottom sheet) holding what the bar held: the permissions as a choice list, the agent, Delegate, the goal, Send later
 // and the queue switch. Every act is the bar's own (the same menus, panel and presses), so nothing a phone could do is
 // lost, only one tap deeper. Only the phone looks draw it (ReplyBox reads the look); the browser's bar is unchanged.
-import { For, Show, createEffect, createSignal, on, untrack, type JSX } from 'solid-js';
+import { For, Show, createEffect, createSignal, on, onCleanup, onMount, untrack, type JSX } from 'solid-js';
 import { flag } from '../core/props.ts';
 import { Icon } from '../content/Icon.tsx';
 import type { IconName } from '../content/icons.ts';
@@ -98,6 +98,7 @@ export function ReplyOptions(props: ReplyOptionsProps): JSX.Element {
     <>
       {/* the harness picker opens from here (its anchor), as it opened from the harness button */}
       <button
+        ref={(el) => foldWhenCut(el, () => props.mode.label)}
         type="button"
         data-kit="c-opts"
         data-part="composer.harness"
@@ -213,4 +214,34 @@ function ToolRows(props: ReplyOptionsProps & { readonly after: (act: Act | undef
       </For>
     </div>
   );
+}
+
+/** The chip never cuts its words (QA r9 #3: "Full au…" at iOS 320): when the mode's words don't fit it folds to its
+ * icons (`data-folded`: the mode's icon, the harness's logo, ▾), its name still saying them, as a bar folds a control
+ * to its icon (design/layout.md). Measured with the words shown, as it draws, as the bar resizes and as the mode
+ * changes, and as what's beside it on the bar takes room. */
+function foldWhenCut(chip: HTMLElement, label: () => string): void {
+  const fit = (): void => {
+    const words = chip.querySelector<HTMLElement>("[data-kit='c-opts-mode']");
+    if (!words) return;
+    chip.removeAttribute('data-folded');
+    chip.toggleAttribute('data-folded', words.scrollWidth > words.clientWidth + 0.5);
+  };
+  onMount(() => {
+    requestAnimationFrame(fit);
+    const seen = typeof ResizeObserver === 'undefined' ? undefined : new ResizeObserver(() => fit());
+    // the bar (a wider or narrower screen), the chip itself (something beside it took room: a fold settles its size, so
+    // the second look finds the same and stops) and the bar's spacer (room given back: it grows)
+    seen?.observe(chip);
+    const bar = chip.parentElement;
+    if (bar) seen?.observe(bar);
+    const room = bar?.querySelector(":scope > [data-kit='grow']");
+    if (room) seen?.observe(room);
+    addEventListener('resize', fit);
+    onCleanup(() => {
+      seen?.disconnect();
+      removeEventListener('resize', fit);
+    });
+  });
+  createEffect(on(label, () => requestAnimationFrame(fit), { defer: true }));
 }
