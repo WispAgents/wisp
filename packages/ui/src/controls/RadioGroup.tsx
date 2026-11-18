@@ -2,6 +2,8 @@
 // submission for free, so no machine is needed.
 import { createUniqueId, For, Show, type JSX } from 'solid-js';
 import { flag, sub, type KitProps, type PartName } from '../core/props.ts';
+import { Icon } from '../content/Icon.tsx';
+import { usePlatform } from '../platform/PlatformLook.tsx';
 
 export interface RadioOption {
   readonly value: string;
@@ -29,6 +31,8 @@ export interface RadioGroupProps extends KitProps {
 export function RadioGroup(props: RadioGroupProps): JSX.Element {
   const name = props.name ?? `radio-${createUniqueId()}`;
   const part = (): PartName => props.part ?? 'ui.radio-group';
+  const look = usePlatform();
+  const ios = (): boolean => look() === 'ios';
   return (
     <fieldset
       id={props.id}
@@ -43,7 +47,7 @@ export function RadioGroup(props: RadioGroupProps): JSX.Element {
       </legend>
       <For each={props.options}>
         {(option) => (
-          <label data-kit="radio" data-part={sub(part(), 'option')} data-disabled={flag(option.disabled)}>
+          <label data-kit="radio" data-part={sub(part(), 'option')} data-disabled={flag(option.disabled)} data-checked={flag(ios() && props.value === option.value)}>
             <input
               type="radio"
               name={name}
@@ -64,6 +68,12 @@ export function RadioGroup(props: RadioGroupProps): JSX.Element {
               <span data-kit="toggle-label">{option.label}</span>
               <Show when={option.hint}>{(hint) => <span data-kit="radio-hint">{hint()}</span>}</Show>
             </span>
+            {/* iOS has no radio button: the chosen row's ✓ at its end, the radio kept for keyboards and screen readers (QA r14 #3) */}
+            <Show when={ios()}>
+              <span data-kit="radio-check" aria-hidden="true">
+                <Icon name="check" size="md" />
+              </span>
+            </Show>
           </label>
         )}
       </For>

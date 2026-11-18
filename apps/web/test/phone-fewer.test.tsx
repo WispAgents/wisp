@@ -248,3 +248,23 @@ test('on_ios_the_tasks_menu_stays_a_pull_down_menu_not_a_sheet', async () => {
   await until(() => q('[role="menu"]') !== null);
   expect(q('[data-kit="sheet-menu"]'), 'not an M3 sheet on iOS').toBeNull();
 });
+
+// QA r14 #3: an overlay view (Share…) brings only its body, no Cancel: on a phone it is never drawn as an alert (a
+// confirm's centred lines, no ✕) but as the platform's own surface with its way out (iOS: a sheet, its ✕ and the Close
+// grabber; Android: the M3 dialog with its ✕)
+for (const kind of ['android', 'ios'] as const) {
+  test(`on_${kind}_share_is_a_${kind === 'ios' ? 'sheet' : 'dialog'}_with_its_close_not_an_alert`, async () => {
+    const { client, root } = await start(phone(kind), { plugins: ['wisp.stuff'] });
+    const id = await openTask(client, root, '[data-part="phone.task.bar"]');
+    client.nav.navigate({ t: 'openOverlay', overlay: { kind: 'dialog', id: 'stuff.share' as never, params: { session: id } } });
+    await until(() => q('[data-part~="share.dialog"]') !== null && (q('[data-part~="share.dialog"]')?.getAttribute('data-gesture') ?? '').includes('sheet') === (kind === 'ios'));
+    const box = q('[data-part~="share.dialog"]') as HTMLElement;
+    expect(box.hasAttribute('data-alert'), 'not an alert').toBe(false);
+    expect(box.getAttribute('data-kit')).toBe(kind === 'ios' ? 'sheet' : 'dialog');
+    const close = box.querySelector<HTMLElement>('[data-kit="dialog-head"] > [data-kit="icon-button"]');
+    expect(close?.getAttribute('aria-label'), 'its ✕').toBe('Close');
+    close?.click();
+    await until(() => q('[data-part~="share.dialog"]') === null);
+    expect(q('[data-part~="share.dialog"]'), 'closed by its ✕').toBeNull();
+  });
+}

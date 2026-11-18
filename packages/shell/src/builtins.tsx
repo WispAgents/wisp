@@ -308,6 +308,17 @@ export function shellUi(ctx: ShellContext): PluginUiDef {
         component: lazy(() => import('./frame/Rerun.tsx')),
         title: () => ctx.t('shell.rerun.title'),
       }),
+      // Fork… (v1 forkTask): what the fork should try, its mode and harness, then a copy carrying on from a turn; nothing
+      // is sent before its Fork (QA round 14 desktop #1)
+      defineView({
+        kind: 'shell.fork',
+        slot: 'overlay',
+        overlay: 'dialog',
+        part: 'fork.modal',
+        parse: (p) => ({ id: String((p as { id?: unknown } | null)?.id ?? ''), ...(typeof (p as { turn?: unknown } | null)?.turn === 'string' && { turn: (p as { turn: string }).turn }) }),
+        component: lazy(() => import('./frame/Fork.tsx')),
+        title: () => ctx.t('shell.fork.title'),
+      }),
       // Send feedback (v1 feedback.js openFeedback): ⌘K, Home's foot, `/feedback` with no words
       defineView({
         kind: 'shell.feedback',

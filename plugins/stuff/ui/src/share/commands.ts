@@ -18,7 +18,8 @@ const sharedOf = (base: EntityReader, key: EntityKey): unknown => (base.peek<{ s
 export const sharePreview = defineCommand<{ session: EntityKey }, SharePreview>({
   id: 'share.preview',
   owner: (a) => a.session,
-  wire: (a) => ({ id: bare(a.session) }),
+  // the report level: what "Its work" sends; the dialog shows less when it's off (QA round 14 #5)
+  wire: (a) => ({ id: bare(a.session), level: 'report' }),
   optimistic: 'none', pending: 'the share.preview control',
 });
 

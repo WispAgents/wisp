@@ -85,3 +85,11 @@ export function useCopy(): { readonly copied: Accessor<boolean>; readonly copy: 
     },
   };
 }
+
+/** `run` once the current task is over (its events and their default actions done): a menu's choice handed on after
+ *  the press that made it (its click, the menu's focus going back to its button), so a dialog the choice opens isn't
+ *  closed by that same press (QA r14 #4). Never cleared: the menu that chose may unmount as it closes, and the choice
+ *  must still happen. */
+export function nextTask(run: () => void): void {
+  setTimeout(run, 0);
+}

@@ -325,5 +325,21 @@
   "stuff.page.starred": "Starred",
   "stuff.page.starredTitle": "Only starred",
   "stuff.page.back": "Back to tasks",
-  "stuff.pane.allowBack": "You can take back access from its menu in My Stuff."
+  "stuff.pane.allowBack": "You can take back access from its menu in My Stuff.",
+  "stuff.share.goes": "What goes",
+  "stuff.share.goes.steps.one": "{count} more step",
+  "stuff.share.goes.steps.other": "{count} more steps",
+  "stuff.share.goes.answers.one": "{count} answer",
+  "stuff.share.goes.answers.other": "{count} answers",
+  "stuff.share.goes.files.one": "{count} file changed",
+  "stuff.share.goes.files.other": "{count} files changed",
+  "stuff.share.hidden": "Hidden before it goes",
+  "stuff.share.hidden.secret": "a secret",
+  "stuff.share.hidden.env": "an environment value",
+  "stuff.share.hidden.path": "your folder",
+  "stuff.share.hidden.name": "another task",
+  "stuff.share.hidden.other": "taken out",
+  "stuff.share.hidden.times": "{count}×",
+  "stuff.share.hidden.more.one": "and {count} more",
+  "stuff.share.hidden.more.other": "and {count} more"
 }

@@ -11,6 +11,7 @@ import { createMemo, createSignal, onCleanup, onMount, Show, type JSX } from 'so
 import { Button, Dialog, Fab, Inline, Input, Menu, PageStatus, ProjectSelect, RadioGroup, SelectionBar, Sheet, TopAppBar, useSignal, type PageStatusItem, type MenuEntry, type SelectionAction, type TaskSwipe, type ToolbarItem, type TopAppBarSelection } from '@wisp/ui';
 import { useShell } from '../context.tsx';
 import { Slot } from '../slot.tsx';
+import { RenameDialog } from './RenameDialog.tsx';
 import '../i18n/lazy.ts';
 import { displayCombo } from '../keys.ts';
 import { computerOptions, computerTitle, hasComputerFilter, knownComputer } from './computer-filter.ts';
@@ -337,52 +338,9 @@ export function PhoneTaskBar(props: PhoneTaskBarProps): JSX.Element {
         {props.details()}
       </Sheet>
       <Show when={props.renaming}>
-        <RenameDialog title={props.title} onClose={() => props.onRenaming(false)} onRename={props.onRename} />
+        <RenameDialog title={props.title} onClose={() => props.onRenaming(false)} onRename={props.onRename} part="phone.task.rename" />
       </Show>
     </>
-  );
-}
-
-function RenameDialog(props: { readonly title: string; readonly onClose: () => void; readonly onRename: (title: string) => void }): JSX.Element {
-  const shell = useShell();
-  const t = shell.t;
-  const [value, setValue] = createSignal(props.title);
-  const save = (): void => {
-    const next = value().replace(/\s+/g, ' ').trim();
-    props.onClose();
-    if (next && next !== props.title) props.onRename(next);
-  };
-  return (
-    <Dialog
-      open
-      size="sm"
-      title={t('shell.more.rename')}
-      onOpenChange={(open) => !open && props.onClose()}
-      part="phone.task.rename"
-      t={(k) => t(`kit.${k}`)}
-      footer={
-        <Inline gap="4" justify="end">
-          <Button variant="ghost" onClick={() => props.onClose()}>
-            {t('shell.stop.cancel')}
-          </Button>
-          <Button variant="primary" part="phone.task.rename.save" onClick={save}>
-            {t('shell.phone.save')}
-          </Button>
-        </Inline>
-      }
-    >
-      <Input
-        value={value()}
-        aria-label={t('shell.more.rename')}
-        onInput={setValue}
-        onKeyDown={(e: KeyboardEvent) => {
-          if (e.key === 'Enter' && !e.isComposing) {
-            e.preventDefault();
-            save();
-          }
-        }}
-      />
-    </Dialog>
   );
 }
 

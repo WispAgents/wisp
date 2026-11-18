@@ -141,8 +141,10 @@ async fn dispatch(p: &Parsed, user_home: &Path, cwd: &Path) -> Result<i32> {
         return Ok(code);
     }
     // a group command with a verb it doesn't have (`wisp plugin frob`, `wisp mcp start`): its verbs, exit 2
+    // a group that routed as a command (`mcp`, `skill`, `plugin`): its next word decides, however many follow (`wisp
+    // mcp foo bar` would serve on stdin)
     if p.command.is_some()
-        && let Some(u) = words::unknown_verb(&p.words, p.literal, &[])
+        && let Some(u) = words::unknown_verb(&p.words[..p.words.len().min(2)], p.literal, &[])
     {
         eprintln!("{}", u.said(&p.words));
         return Ok(cli::USAGE_EXIT);
@@ -275,7 +277,8 @@ async fn not_a_task(p: &Parsed, home: &Path, port: u16, mut cat: Option<wisp_cli
             }
         }
         words::NotATask::Near(w) => {
-            eprintln!("  ✗ wisp {first} isn't a command: did you mean wisp {w}?   (a task that's just \"{first}\": wisp -- {first})");
+            let line = p.words.join(" ");
+            eprintln!("  ✗ wisp {line} isn't a command: did you mean wisp {w}?   (a task that says this: wisp -- {line})");
             Some(cli::USAGE_EXIT)
         }
         words::NotATask::Instead(said) => {
@@ -582,15 +585,16 @@ async fn live(p: &Parsed, home: &Path, port: u16, read: &mut Option<wisp_cli_cor
     let words = &p.words;
     let tty = std::io::stdin().is_terminal() && std::io::stdout().is_terminal();
     let code = match p.command {
+        // `last` is the newest task; a task that isn't there is said at once (QA round 14 #7: `attach last` hung)
         Some("attach") => {
             let c = Client::connect(port, true).await?;
-            let id = scripted::need(words.get(1), "session id")?;
-            attach::attach(&c, home, id, attach::Mode { interactive: tty, until_idle: !tty, fresh: false }).await?
+            let id = scripted::task_id(&c, scripted::need(words.get(1), "session id")?).await?;
+            attach::attach(&c, home, &id, attach::Mode { interactive: tty, until_idle: !tty, fresh: false }).await?
         }
         Some("show") if f.watch => {
             let c = Client::connect(port, true).await?;
-            let id = scripted::need(words.get(1), "session id")?;
-            attach::attach(&c, home, id, attach::Mode { interactive: false, until_idle: true, fresh: false }).await?
+            let id = scripted::task_id(&c, scripted::need(words.get(1), "session id")?).await?;
+            attach::attach(&c, home, &id, attach::Mode { interactive: false, until_idle: true, fresh: false }).await?
         }
         Some("ls" | "list") if f.watch => attach::ls_watch(&Client::connect(port, true).await?, f.all).await?,
         Some("help") => {

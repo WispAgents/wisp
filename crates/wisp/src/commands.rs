@@ -17,6 +17,14 @@ fn s<'a>(v: &'a Value, k: &str) -> &'a str {
 pub async fn run(p: &Parsed, cmd: &str, args: &[String], cwd: &str, port: u16) -> Result<()> {
     let f = &p.flags;
     let c = Client::connect(port, true).await?;
+    // `wisp show last`, `stop last`, …: the newest task (QA round 14 #7)
+    let resolved: Vec<String>;
+    let args = if matches!(cmd, "show" | "stop" | "wait" | "reply" | "btw") && args.first().is_some_and(|a| a == "last") {
+        resolved = std::iter::once(sc::task_id(&c, "last").await?).chain(args[1..].iter().cloned()).collect();
+        &resolved[..]
+    } else {
+        args
+    };
     match cmd {
         "launch" => launch(&c, p, args, cwd).await,
         "ls" | "list" => sc::ls(&c, f).await,

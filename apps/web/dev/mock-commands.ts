@@ -771,8 +771,23 @@ export const COMMANDS: Record<string, CommandFn> = {
   'share.preview': () => ({
     ops: [],
     result: {
-      bundle: { wispTask: 1, id: 'share-mock', level: 'spec', title: 'Fix add', needs: ['harness:claude'], spec: { prompt: 'fix the add bug', cwd: '<project>' }, formula: {}, redacted: { path: 1 } },
-      redactions: [{ kind: 'path', at: 'spec/cwd', was: '/Users/dev/proj', now: '<project>' }],
+      bundle: {
+        wispTask: 1,
+        id: 'share-mock',
+        level: 'report',
+        title: 'Fix add',
+        needs: ['harness:claude'],
+        spec: { prompt: 'fix the add bug, <secret>', cwd: '<project>' },
+        formula: {},
+        report: { answers: [{ prompt: 'fix the add bug, <secret>', status: 'done', blocks: [] }], files: ['<project>/math.js'] },
+        redacted: { path: 2, secret: 2 },
+      },
+      redactions: [
+        { kind: 'path', at: 'spec/cwd', was: '/Users/dev/proj', now: '<project>' },
+        { kind: 'secret', at: 'spec/prompt', was: 'toke…efgh', now: '<secret>' },
+        { kind: 'secret', at: 'report/answers/0/prompt', was: 'toke…efgh', now: '<secret>' },
+        { kind: 'path', at: 'report/files/0', was: '/Users/dev/proj', now: '<project>' },
+      ],
       shared: null,
       work: { kind: 'files' },
       targets: [],

@@ -1,12 +1,13 @@
 // The pieces of Share…: what goes with it (chips, placeholders until the answer), who can open it
-// (a passkey suggested the moment you pick it), its work, and the link with Copy.
+// (a passkey suggested the moment you pick it), its work, what goes and what is hidden before it goes, and the link
+// with Copy.
 
 import type { Scope } from '@wisp/client';
 import { Button, Checkbox, IconButton, Inline, Input, RadioGroup, Skeleton, Stack, Text, Wrap, Pill } from '@wisp/ui';
 import { createSignal, For, Show, type JSX } from 'solid-js';
 import { copyText } from './clipboard.ts';
 import { PASSKEY_MAX, suggestPasskey } from './link.ts';
-import { carryChips, carryTip, workOption, type T } from './model.ts';
+import { carryChips, carryTip, goesFacts, hiddenLines, whatGoes, workOption, type T } from './model.ts';
 import type { SharePreview } from './types.ts';
 import '../i18n/lazy.ts';
 
@@ -79,6 +80,78 @@ export function WorkOption(props: { t: T; info: SharePreview | undefined; checke
         {opt().hint}
       </Text>
     </Stack>
+  );
+}
+
+/** What goes and what is hidden before it goes (QA round 14 #5), from the preview: the ask, with its work the answers
+ *  and the files changed, then each redaction as it was → what it becomes (the CLI's preview line), a few and how many
+ *  more. Nothing until the preview is in: the chips above hold the place. */
+export function WhatGoes(props: { t: T; info: SharePreview | undefined; work: boolean }): JSX.Element {
+  const t = props.t;
+  return (
+    <Show when={props.info}>
+      {(info) => {
+        const w = (): ReturnType<typeof whatGoes> => whatGoes(info(), props.work);
+        const h = (): ReturnType<typeof hiddenLines> => hiddenLines(t, info(), props.work);
+        return (
+          <Stack part="share.preview" gap="2">
+            <Text size="sm" weight="medium">
+              {t('stuff.share.goes')}
+            </Text>
+            <Show when={w().ask}>
+              <Text part="share.preview.ask" size="sm" lines={2} title={w().ask}>
+                {w().ask}
+              </Text>
+            </Show>
+            <Show when={goesFacts(t, w())}>
+              {(f) => (
+                <Text size="sm" tone="muted">
+                  {f()}
+                </Text>
+              )}
+            </Show>
+            <Show when={w().files.length}>
+              <Text part="share.preview.files" size="sm" tone="muted" mono truncate title={w().files.join('\n')}>
+                {w().files.join(', ')}
+              </Text>
+            </Show>
+            <Show when={h().lines.length}>
+              <Text size="sm" weight="medium">
+                {t('stuff.share.hidden')}
+              </Text>
+              <Stack part="share.hidden" gap="1">
+                <For each={h().lines}>
+                  {(l) => (
+                    <Inline part="share.hidden.row" gap="2">
+                      <Text size="sm" tone="muted" nowrap>
+                        {l.label}
+                      </Text>
+                      {/* what it was gives way to the width; what it becomes always shows */}
+                      <Text part="share.hidden.was" size="sm" mono truncate title={`${l.was} → ${l.now}`}>
+                        {l.was}
+                      </Text>
+                      <Text part="share.hidden.now" size="sm" mono nowrap>
+                        {`→ ${l.now}`}
+                      </Text>
+                      <Show when={l.n > 1}>
+                        <Text size="sm" tone="muted" nowrap>
+                          {t('stuff.share.hidden.times', { count: l.n })}
+                        </Text>
+                      </Show>
+                    </Inline>
+                  )}
+                </For>
+                <Show when={h().more}>
+                  <Text size="sm" tone="muted">
+                    {t('stuff.share.hidden.more', { count: h().more })}
+                  </Text>
+                </Show>
+              </Stack>
+            </Show>
+          </Stack>
+        );
+      }}
+    </Show>
   );
 }
 

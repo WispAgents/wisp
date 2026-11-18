@@ -10,7 +10,7 @@
   "wisp.ship.merge.okOne": "Merge PR",
   "wisp.ship.merge.one": "PR #{n}",
   "wisp.ship.merge.oneDraft": "draft PR #{n}",
-  "wisp.ship.merge.question": "Squash-merge {what}?{after}.",
+  "wisp.ship.merge.question": "Squash-merge {what}?{after}",
   "wisp.ship.merge.these": "these {count} PRs ({list})",
   "wisp.ship.rv.andFound.one": ", and {by} found {count} issue",
   "wisp.ship.rv.andFound.other": ", and {by} found {count} issues",

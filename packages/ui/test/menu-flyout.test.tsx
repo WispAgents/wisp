@@ -5,6 +5,8 @@
 import { afterEach, beforeAll, describe, expect, test, vi } from 'vitest';
 import { frame, mount, part, tick, until } from './helpers.tsx';
 import { ContextMenu, Menu, type MenuEntry } from '../src/controls/Menu.tsx';
+import { Dialog } from '../src/controls/Dialog.tsx';
+import { createSignal } from 'solid-js';
 import { preloadControls } from '../src/controls/lazy-part.ts';
 
 beforeAll(() => preloadControls());
@@ -199,6 +201,8 @@ describe('desktop: the flyout from the keyboard, and choosing in it', () => {
     await until(() => state('task.more.flyout') === 'open', 500);
     part('task.more.flyout')?.querySelector<HTMLElement>('[data-value="copy-resume"]')?.click();
     await until(() => state('task.more') === 'closed', 500);
+    // chosen once the press has ended (its click done): see the next test
+    await until(() => onSelect.mock.calls.length > 0, 500);
     expect(onSelect).toHaveBeenCalledTimes(1);
     expect(onSelect).toHaveBeenCalledWith('copy-resume');
     expect(state('task.more.flyout')).toBe('closed');
@@ -220,7 +224,46 @@ describe('desktop: the flyout from the keyboard, and choosing in it', () => {
     expect(state('row.menu.flyout')).toBe('open');
     part('row.menu.flyout')?.querySelector<HTMLElement>('[data-value="copy-id"]')?.click();
     await until(() => state('row.menu') === 'closed', 500);
+    await until(() => onSelect.mock.calls.length > 0, 500);
     expect(onSelect).toHaveBeenCalledWith('copy-id');
+  });
+
+  // QA r14 #4: + › Recipes › New opened the recipe dialog and the same press closed it again (its click, the menu
+  // handing focus back to its button: both outside the dialog): nothing seemed to happen. What a flyout's item does
+  // runs once the press and the menu's close are over, so a dialog it opens stays
+  test('a dialog a flyout item opens stays open_flyout_choose_opens', async () => {
+    pointer('mouse');
+    const [open, setOpen] = createSignal(false);
+    const closes: boolean[] = [];
+    mount(() => (
+      <>
+        <Menu items={items} onSelect={() => setOpen(true)} trigger={{ icon: 'dots', 'aria-label': 'More' }} part="task.more" />
+        <Dialog title="New recipe" open={open()} onOpenChange={(o) => (closes.push(o), setOpen(o))} part="t.dialog">
+          <input data-part="t.dialog.field" />
+        </Dialog>
+      </>
+    ));
+    const trigger = part('task.more.trigger');
+    trigger?.focus();
+    key(trigger, 'ArrowDown');
+    await until(() => state('task.more') === 'open');
+    await frame();
+    row()?.click();
+    await until(() => state('task.more.flyout') === 'open', 500);
+    const item = part('task.more.flyout')?.querySelector<HTMLElement>('[data-value="copy-id"]');
+    for (const type of ['pointerdown', 'pointerup'] as const) item?.dispatchEvent(new PointerEvent(type, { pointerType: 'mouse', bubbles: true, button: 0 }));
+    item?.click();
+    // not within the press's own task (its microtasks included): a browser's click and the menu's focus hand-back
+    // come there, and would close what the item opened
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(open(), 'not yet: the press is still going').toBe(false);
+    await until(() => open(), 500);
+    await until(() => state('task.more') === 'closed', 500);
+    await tick(100);
+    expect(closes, 'nothing closed it').not.toContain(false);
+    expect(open()).toBe(true);
+    expect(part('t.dialog.field'), 'the dialog is drawn').not.toBeNull();
   });
 });
 

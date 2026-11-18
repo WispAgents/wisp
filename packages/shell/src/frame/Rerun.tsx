@@ -2,7 +2,7 @@
 // there are others), its mode and harness, then Rerun: a new task from this one's spec (`rerun.ts`); the old one stays.
 import { Show, createResource, createSignal, type JSX } from 'solid-js';
 import { entityKey, newRowId, ownerOf, type EntityKey, type PeerId } from '@wisp/client';
-import { AutoRunner, Button, Inline, Select, Stack, Text, TextArea, useSignal } from '@wisp/ui';
+import { AutoRunner, Button, Select, Stack, Text, TextArea, useSignal, Wrap } from '@wisp/ui';
 import { useShell } from '../context.tsx';
 import { SESSION, type SessionRow } from '../rows.ts';
 import { create, specOf } from './commands.ts';
@@ -54,7 +54,9 @@ export default function Rerun(props: { readonly params: { readonly id: string; r
       {(x) => (
         <Stack gap="4" part="rerun.body">
           <TextArea value={x().prompt} onInput={(v) => set({ prompt: v })} minRows={3} maxRows={12} spellcheck={false} aria-label={t('shell.rerun.prompt')} />
-          <Inline gap="2" align="center" part="rerun.bar">
+          {/* a Wrap group (design/layout.md): on a phone the bar doesn't fit one line, and an Inline shrank the mode's
+              select to its frame with no value showing (QA r14 phone #6); what doesn't fit goes to the next line whole */}
+          <Wrap gap="2" align="center" part="rerun.bar">
             <Show when={peers().length > 1}>
               <Select
                 aria-label={t('shell.rerun.where')}
@@ -75,7 +77,7 @@ export default function Rerun(props: { readonly params: { readonly id: string; r
             <Button variant="primary" size="sm" icon="rerun" disabled={!x().prompt.trim()} onClick={go} part="rerun.go">
               {t('shell.rerun.go')}
             </Button>
-          </Inline>
+          </Wrap>
           <Text size="sm" tone="muted">
             {t('shell.rerun.hint', { cwd: (spec() as { cwd?: string } | undefined)?.cwd ?? '', where: shell.client.peers.name(x().peer as PeerId), title: row()?.title ?? '' })}
           </Text>

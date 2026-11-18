@@ -8,9 +8,9 @@ import { Button, Callout, Stack, Text, Toolbar, useSignal, type ToolbarItem } fr
 import { createSignal, For, Show, type JSX } from 'solid-js';
 import { copyText } from './clipboard.ts';
 import { sharePreview, shareCreate, shareStop, SESSION } from './commands.ts';
-import { CarryChips, LinkRow, WhoPicker, WorkOption } from './DialogParts.tsx';
+import { CarryChips, LinkRow, WhatGoes, WhoPicker, WorkOption } from './DialogParts.tsx';
 import { suggestPasskey } from './link.ts';
-import { canShare, previewNote } from './model.ts';
+import { canShare, previewNote, workOption } from './model.ts';
 import type { ShareableTask, Shared, SharePreview } from './types.ts';
 import '../i18n/lazy.ts';
 
@@ -114,6 +114,7 @@ export default function ShareDialog(props: { client: PluginClient; params: Share
         </Show>
         <WhoPicker t={t} who={who()} onWho={pickWho} passkey={passkey()} onPasskey={setPasskey} kept={!!shared()?.locked} />
         <WorkOption t={t} info={info()} checked={work()} onChange={setWork} />
+        <WhatGoes t={t} info={info()} work={work() && workOption(t, info()?.work).can} />
         <Show when={shared()}>{(s) => <LinkRow t={t} url={s().url} scope={c.scope} />}</Show>
         <Stack part="share.notes" gap="2" aria-live="polite">
           <Show when={failed()}>{(f) => <Callout tone="bad">{f()}</Callout>}</Show>

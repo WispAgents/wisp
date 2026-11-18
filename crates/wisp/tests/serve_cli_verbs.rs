@@ -324,7 +324,8 @@ async fn every_command_word_is_a_command_a_strict_group_or_a_prompt_and_says_so(
     // v1's `wisp usage` and `wisp spell`
     let (code, out, err) = probe(&dir, port, &["usage"]);
     assert!(code == 0 && !out.contains("launched"), "{code}: {out}{err}");
-    let (code, _, err) = probe(&dir, port, &["spell", "cast", "a dark theme"]);
+    // (one word after it: a slip; QA round 14's rule makes two or more a prompt)
+    let (code, _, err) = probe(&dir, port, &["spell", "cast"]);
     assert!(code == 2 && err.contains("wisp spell has no cast"), "{code}: {err}");
     let (code, _, err) = probe(&dir, port, &["spell"]);
     assert!(code == 2 && err.contains("plugin new"), "{code}: {err}");
@@ -468,5 +469,91 @@ async fn add_a_readme_is_a_task_ls_all_lists_every_task_and_slips_point_the_righ
         assert!(code == 2 && err.contains(said) && !out.contains("launched"), "{words:?} → {code}: {out}{err}");
     }
     assert_eq!(api.cmd("runtime.list", json!({ "archived": true })).await.as_array().unwrap().len(), 1);
+    drop(serve);
+}
+
+/// `probe`, but it must end within `secs` (QA round 14 #7: `wisp attach last` hung until killed).
+fn probe_within(dir: &Path, port: u16, args: &[&str], secs: u64) -> (i32, String, String) {
+    let mut child = Command::new(env!("CARGO_BIN_EXE_wisp"))
+        .args(args)
+        .env("WISP_HOME", dir.join("home"))
+        .env("HOME", dir.join("home"))
+        .env("WISP_PORT", port.to_string())
+        .env("NO_COLOR", "1")
+        .current_dir(dir.join("proj"))
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    let at = std::time::Instant::now();
+    while child.try_wait().unwrap().is_none() {
+        if at.elapsed() > std::time::Duration::from_secs(secs) {
+            let _ = child.kill();
+            panic!("wisp {} still running after {secs} s", args.join(" "));
+        }
+        std::thread::sleep(std::time::Duration::from_millis(100));
+    }
+    let o = child.wait_with_output().unwrap();
+    (o.status.code().unwrap_or(-1), String::from_utf8_lossy(&o.stdout).into_owned(), String::from_utf8_lossy(&o.stderr).into_owned())
+}
+
+/// QA round 14 (the owner's delegate's rule): after a command word, one word it doesn't take is a slip (exit 2, with
+/// the `wisp -- …` way out), and two or more are a prompt; a command that takes a task is one only for an id or
+/// `last`. #1: four prompts were refused; #2: `wisp settings open` and `wisp status all` launched tasks; #7: `wisp
+/// attach last` hung.
+#[tokio::test(flavor = "multi_thread")]
+async fn after_a_command_word_one_word_is_a_slip_and_more_are_a_prompt() {
+    let dir = temp("serve-cli-r14");
+    let (serve, port) = start(&dir);
+    let api = Api { http: reqwest::Client::new(), port, n: 0.into() };
+
+    // #7, no task yet: said at once
+    let (code, _, err) = probe_within(&dir, port, &["attach", "last"], 20);
+    assert!(code != 0 && err.contains("no tasks yet"), "{code}: {err}");
+
+    // #2 and the one-word slips: refused, the way out shown, no task
+    for words in [
+        &["update", "deps"][..],
+        &["settings", "open"],
+        &["status", "all"],
+        &["computer", "start"],
+        &["stop", "it"],
+        &["show", "foo"],
+        &["wait", "x"],
+        &["channels", "refresh", "--bad"],
+        // a group that routes as a command: refused however many words follow (it served on stdin)
+        &["mcp", "foo", "bar"],
+        &["skill", "foo", "bar"],
+    ] {
+        let (code, out, err) = probe(&dir, port, words);
+        assert!(code == 2 && !out.contains("launched") && err.contains("wisp -- "), "{words:?} → {code}: {out}{err}");
+    }
+    assert_eq!(api.cmd("runtime.list", json!({})).await.as_array().unwrap().len(), 0, "no task was made");
+
+    // #1 and QA's six that ran: prompts, launched with their titles (the fake harness: nothing paid)
+    let prompts = [
+        "show me where the bug is",
+        "stop using var in math.js",
+        "share the results with the team",
+        "add logging to math.js",
+        "open a PR for the math fix",
+        "settings page needs a dark mode",
+        "status badge in the README",
+        "merge the two helper functions",
+        "attach a screenshot of the failing test",
+    ];
+    for prompt in prompts {
+        let words: Vec<&str> = std::iter::once("--no-open").chain(prompt.split(' ')).collect();
+        let (code, out, err) = probe(&dir, port, &words);
+        assert!(code == 0 && out.contains(&format!("launched: {prompt}  (")), "{prompt} → {code}: {out}{err}");
+    }
+    assert_eq!(api.cmd("runtime.list", json!({})).await.as_array().unwrap().len(), prompts.len());
+
+    // #7: `last` is the newest task, at once
+    let (code, out, err) = probe_within(&dir, port, &["show", "last"], 20);
+    assert!(code == 0 && out.contains("attach a screenshot of the failing test"), "{code}: {out}{err}");
+    let (code, out, err) = probe_within(&dir, port, &["attach", "last"], 30);
+    assert!(code == 0, "{code}: {out}{err}");
     drop(serve);
 }

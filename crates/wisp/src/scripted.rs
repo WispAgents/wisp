@@ -61,6 +61,30 @@ pub async fn wait(c: &Client, id: &str, timeout: Duration) -> Result<Value> {
     }
 }
 
+/// The task a command names: `last` is the newest one here; an id is checked, so a task that isn't there is said at
+/// once instead of waited for (QA round 14 #7: `wisp attach last` hung).
+pub async fn task_id(c: &Client, w: &str) -> Result<String> {
+    if w != "last" {
+        c.cmd("runtime.get", json!({ "id": w })).await?;
+        return Ok(w.to_owned());
+    }
+    let list = c.cmd("runtime.list", json!({})).await?;
+    let newest = list
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter(|t| t.get("archived") != Some(&json!(true)))
+        // made in the same millisecond: the ids are time-ordered (UUIDv7), the later one is newer
+        .max_by_key(|t| {
+            let at = t.get("createdAt").or_else(|| t.get("created_at")).and_then(Value::as_i64).unwrap_or(0);
+            (at, t.get("id").and_then(Value::as_str).unwrap_or_default().to_owned())
+        });
+    newest
+        .and_then(|t| t.get("id").and_then(Value::as_str))
+        .map(str::to_owned)
+        .ok_or_else(|| CliError::said("no tasks yet: wisp \"<what to do>\" starts one"))
+}
+
 /// `wisp show <id>`: its state and its last answer, drawn for the terminal (`--json`: the task and the
 /// presentation).
 pub async fn show(c: &Client, f: &Flags, id: &str, summary: Option<Value>) -> Result<()> {

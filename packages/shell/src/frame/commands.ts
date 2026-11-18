@@ -190,6 +190,8 @@ export const followUp = defineCommand<{
   at: number;
   attachments?: readonly Attachment[];
   run?: { agent?: string; model?: string; effort?: string };
+  /** the mode it runs in from this turn on (a fork's first message, Fork…'s mode) */
+  mode?: string;
   /** while the task works and Settings → Follow-ups says Queue (v1 queued.js): it waits behind the run */
   queue?: boolean;
   /** you said yes to going past Ask near the limit's line (the hold row's Send anyway) */
@@ -331,11 +333,12 @@ export const setGoal = defineCommand<{ id: string; text: string }>({
 
 /** Rerun and Fork: the new task's row and page show at once (the client names it). */
 function copyOf(id: 'runtime.rerun' | 'runtime.fork') {
-  return defineCommand<{ id: string; newId: string; agent?: string; at: number }, { id: string }>({
+  // `turnId` (a fork): after that turn, not the last (v1 forkTask from a turn's Fork)
+  return defineCommand<{ id: string; newId: string; agent?: string; turnId?: string; title?: string; at: number }, { id: string }>({
     id,
     owner: (a) => a.id,
     // `newId`: the bare id of the row and page shown at once (runtime.fork makes the copy under it)
-    wire: (a) => ({ ...a, id: bare(a.id), newId: bare(a.newId) }),
+    wire: (a) => ({ ...a, id: bare(a.id), newId: bare(a.newId), ...(a.turnId && { turnId: bare(a.turnId) }) }),
     optimistic: (base, a) => {
       const src = base.peek<SessionRow>(SESSION, a.id as EntityKey) as SessionRow | undefined;
       if (!src) return [];
@@ -347,6 +350,7 @@ function copyOf(id: 'runtime.rerun' | 'runtime.fork') {
         created_at: a.at,
         updated_at: a.at,
         ...(a.agent && { agent: a.agent }),
+        ...(a.title && { title: a.title }),
         summary: { ...src.summary, status: 'running', live: 'Starting…', overlaps: [] },
       };
       return [{ e: SESSION, id: a.newId as EntityKey, op: 'upsert', v: row as never }];

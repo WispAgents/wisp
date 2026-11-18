@@ -43,6 +43,70 @@ export function previewNote(t: T, p: SharePreview): { readonly text: string; rea
  *  answer, and threw). */
 export const canShare = (p: SharePreview | undefined): boolean => (p?.targets?.length ?? 0) > 0;
 
+/** What a share carries, read from the preview's bundle: the ask, its later steps, and with its work the answers and
+ *  the files it changed (the report "Its work" sends; QA round 14 #5). */
+export interface WhatGoes {
+  readonly ask: string;
+  readonly steps: number;
+  readonly answers: number;
+  readonly files: readonly string[];
+}
+
+const obj = (v: unknown): Readonly<Record<string, unknown>> => (v && typeof v === 'object' && !Array.isArray(v) ? (v as Record<string, unknown>) : {});
+const arr = (v: unknown): readonly unknown[] => (Array.isArray(v) ? v : []);
+
+export function whatGoes(p: SharePreview, work: boolean): WhatGoes {
+  const b = obj(p.bundle);
+  const spec = obj(b['spec']);
+  const report = work ? obj(b['report']) : {};
+  return {
+    ask: typeof spec['prompt'] === 'string' ? spec['prompt'] : '',
+    steps: arr(spec['steps']).length,
+    answers: arr(report['answers']).length,
+    files: arr(report['files']).filter((f): f is string => typeof f === 'string'),
+  };
+}
+
+/** "2 more steps · 3 answers · 2 files changed" ('' when only the ask goes). */
+export function goesFacts(t: T, w: WhatGoes): string {
+  return [
+    w.steps ? t('stuff.share.goes.steps', { count: w.steps }) : '',
+    w.answers ? t('stuff.share.goes.answers', { count: w.answers }) : '',
+    w.files.length ? t('stuff.share.goes.files', { count: w.files.length }) : '',
+  ]
+    .filter(Boolean)
+    .join(' · ');
+}
+
+/** One kind of thing taken out before it goes: what it was (shortened by the server), what it becomes, how often. */
+export interface Hidden {
+  readonly kind: string;
+  readonly label: string;
+  readonly was: string;
+  readonly now: string;
+  readonly n: number;
+}
+
+/** The preview's redactions as lines: the same one in several places is one line with its count; the report's only
+ *  when its work goes; the first `max`, and how many more. */
+export function hiddenLines(t: T, p: SharePreview, work: boolean, max = 4): { readonly lines: readonly Hidden[]; readonly more: number } {
+  const all: Hidden[] = [];
+  for (const raw of p.redactions ?? []) {
+    const r = obj(raw);
+    const at = typeof r['at'] === 'string' ? r['at'] : '';
+    if (!work && (at.startsWith('report') || at.startsWith('history'))) continue;
+    const [kind, was, now] = [r['kind'], r['was'], r['now']].map((x) => (typeof x === 'string' ? x : '')) as [string, string, string];
+    const same = all.findIndex((h) => h.kind === kind && h.was === was && h.now === now);
+    if (same >= 0) {
+      const h = all[same];
+      if (h) all[same] = { ...h, n: h.n + 1 };
+    } else {
+      all.push({ kind, label: t(`stuff.share.hidden.${['secret', 'env', 'path', 'name'].includes(kind) ? kind : 'other'}`), was, now, n: 1 });
+    }
+  }
+  return { lines: all.slice(0, max), more: Math.max(0, all.length - max) };
+}
+
 /** The "Its work" checkbox: whether it can go, and the line under it. */
 export function workOption(t: T, work: ShareWork | null | undefined): { readonly can: boolean; readonly hint: string } {
   if (!work) return { can: false, hint: t('stuff.share.work.none') };

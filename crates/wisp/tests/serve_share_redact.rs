@@ -41,8 +41,9 @@ async fn a_share_keeps_words_that_are_another_tasks_title_and_takes_out_a_mentio
 }
 
 /// QA round 13 #1: the Share dialog read `targets` (and `shared`, `work`) that `share.preview` never answered, and
-/// crashed on open. The answer the dialog gets (`share.preview { id }`, as plugins/stuff/ui/src/share/commands.ts
-/// sends it) is kept as a golden (plugins/stuff/ui/test/goldens/share-preview.json); the dialog's readers are tested
+/// crashed on open. QA round 14 #5: it draws what goes and what is hidden from this same answer. The answer the
+/// dialog gets (`share.preview { id, level: "report" }`, as plugins/stuff/ui/src/share/commands.ts sends it: what
+/// "Its work" sends) is kept as a golden (plugins/stuff/ui/test/goldens/share-preview.json); the dialog's readers are tested
 /// on this same file
 /// (`plugins/stuff/ui/test/share-preview.test.ts`), so a field one side drops fails on both.
 #[tokio::test(flavor = "multi_thread")]
@@ -50,11 +51,15 @@ async fn the_share_dialogs_preview_is_the_golden_its_readers_are_tested_on() {
     let dir = temp("serve-share-preview");
     let (serve, port) = start(&dir);
     let api = Api { http: reqwest::Client::new(), port, n: 0.into() };
-    let made =
-        api.cmd("runtime.create", json!({ "prompt": "fix the add bug TOPIC[Fix add]", "cwd": dir.join("proj"), "agent": "claude" })).await;
+    let made = api
+        .cmd(
+            "runtime.create",
+            json!({ "prompt": "fix the add bug, token=abcd1234efgh TOPIC[Fix add]", "cwd": dir.join("proj"), "agent": "claude" }),
+        )
+        .await;
     let id = made["id"].as_str().unwrap().to_owned();
     api.until(&id, "its turn ends", |t| t.last().is_some_and(ended)).await;
-    let mut p = api.cmd("share.preview", json!({ "id": id })).await;
+    let mut p = api.cmd("share.preview", json!({ "id": id, "level": "report" })).await;
     // the dialog's fields: no link yet, the files it changed, no grid signed in here (so nowhere to go)
     assert_eq!(p["shared"], serde_json::Value::Null, "{p}");
     assert_eq!(p["work"], json!({ "kind": "files" }), "{p}");

@@ -131,6 +131,28 @@ const INSTEAD: &[(&str, &str)] = &[
     ("doctor", "wisp version, wisp accounts harnesses (the agents it can run) and wisp cloud status"),
 ];
 
+/// The commands that take a task (`wisp show <id>`; args.rs `fits` routes them only for a task's id or `last`).
+const TASK_COMMANDS: [&str; 6] = ["show", "stop", "wait", "reply", "attach", "btw"];
+
+/// QA round 14 (decided rule): a word that means a command (another tool's, `wisp status`, or one that takes a task,
+/// `wisp stop`) and exactly one word it doesn't take (`wisp status all`, `wisp stop it`): a slip, its hint or its usage.
+/// Two or more words are a prompt (`wisp stop using var in math.js`).
+fn one_word_slip(words: &[String], literal: Literal) -> Option<NotATask> {
+    let (first, rest) = words.split_first()?;
+    let said: Vec<&String> = rest.iter().filter(|w| !flag_shaped(w)).collect();
+    if literal != Literal::No || said.len() != 1 || crate::args::task_ref(said[0]) {
+        return None;
+    }
+    let lower = first.to_lowercase();
+    if let Some((_, ours)) = SYNONYMS.iter().find(|(theirs, _)| *theirs == lower) {
+        return Some(NotATask::Near((*ours).to_owned()));
+    }
+    if let Some((_, instead)) = INSTEAD.iter().find(|(theirs, _)| *theirs == lower) {
+        return Some(NotATask::Instead((*instead).to_owned()));
+    }
+    TASK_COMMANDS.contains(&first.as_str()).then(|| NotATask::Usage(first.clone()))
+}
+
 /// One word alone, or a first word followed at once by something flag-shaped, or by task ids only, with no `--` before
 /// them. Only the next word counts: `wisp review the auth module --strict` is a prompt (owner's delegate, QA round 10).
 pub fn command_shaped(words: &[String], literal: Literal) -> bool {
@@ -147,6 +169,9 @@ fn flag_shaped(w: &str) -> bool {
 /// first word followed by something flag-shaped the parser didn't take (`wisp tasks --touchng x`). A
 /// prompt of several words (`wisp ship the docs`) and anything after a leading `--` stay a task.
 pub fn not_a_task(words: &[String], literal: Literal, plugins: &[String]) -> Option<NotATask> {
+    if let Some(slip) = one_word_slip(words, literal) {
+        return Some(slip);
+    }
     if !command_shaped(words, literal) {
         return None;
     }
@@ -386,6 +411,8 @@ const GROUPS: &[(&str, &[&str])] = &[
     ("recipes", &[]),
     ("crew", &["ls"]),
     ("machines", &[]),
+    // QA round 14 #2: `wisp settings open` launched a task (its verbs: the settings plugin's)
+    ("settings", &[]),
     // QA round 11 #1: words people type as commands, v1's included (`wisp usage`, `wisp spell`); `machine` is this
     // machine's plugin, with `machines`' verbs too; `share` takes a task or a setup, or one of its plugin's verbs
     ("version", &[]),
@@ -403,21 +430,26 @@ const GROUPS: &[(&str, &[&str])] = &[
     ("schema", &[]),
 ];
 
-/// Groups that are also a common first word of a prompt: strict only when one word follows (`wisp update now`), a
-/// prompt when more do (`wisp update the readme`). Both decided by the owner's delegate (QA rounds 10 and 11).
-const ONE_WORD: &[&str] = &["update"];
-
 /// A group whose catalogue verbs include another plugin's (`machine`: `machines`').
 const ALSO: &[(&str, &str)] = &[("machine", "machines")];
 
 /// A line under a group's error: where else to look.
 const HINTS: &[(&str, &str)] = &[("share", "what you've shared: wisp shares")];
 
-/// Whether these words are a built-in group's command line (`wisp sdk types`), whatever follows: never a task. Not
-/// `update` with more than one word after it (`wisp update the readme`, [`ONE_WORD`]).
+/// Whether these words are a built-in group's command line, never a task: the group and at most one word that isn't
+/// a flag (`wisp update deps`, a slip), or one of its own verbs first (`wisp crew ls extra`, that command misused). Two
+/// or more other words are a prompt (`wisp share the results with the team`): the owner's delegate's rule, QA round 14.
 pub fn group_line(words: &[String]) -> bool {
     let Some((first, rest)) = words.split_first() else { return false };
-    is_group(first) && !(ONE_WORD.contains(&first.as_str()) && rest.iter().filter(|w| !flag_shaped(w)).count() > 1)
+    if !is_group(first) {
+        return false;
+    }
+    let said: Vec<&String> = rest.iter().filter(|w| !flag_shaped(w)).collect();
+    let own = said.first().is_some_and(|v| {
+        VERB_PATHS.iter().filter(|p| p.cmd == first).any(|p| p.verbs.contains(&v.as_str()))
+            || GROUPS.iter().filter(|(g, _)| g == first).any(|(_, vs)| vs.contains(&v.as_str()))
+    });
+    said.len() <= 1 || own
 }
 
 /// Whether `word` is a built-in command group (strict: a verb it doesn't have is an error, never a task).
@@ -460,7 +492,9 @@ pub fn unknown_verb(words: &[String], literal: Literal, catalogue: &[Vec<String>
     if rest.first().is_none_or(|w| flag_shaped(w)) || !is_group(first) {
         return None;
     }
-    if !group_line(words) {
+    // a catalogue verb's first word counts as the group's own too (`wisp mcp session bogus`)
+    let catalogue_own = catalogue.iter().any(|c| c.len() > 1 && c[0] == *first && rest.first().is_some_and(|w| *w == c[1]));
+    if !group_line(words) && !catalogue_own {
         return None;
     }
     let mut paths: Vec<Vec<&str>> = Vec::new();

@@ -10,6 +10,12 @@ import { Dialog, EmptyState, Sheet, useSignal } from '@wisp/ui';
 import { useShell } from '../context.tsx';
 import { useViewClient } from '../slot.tsx';
 
+/** A view's dialog size on a phone: never `sm`, which the kit's phone looks draw as an alert (a confirm, its own Cancel
+ * under centred lines, no ✕). An overlay view brings only its body, no Cancel, so it is the platform's dialog with its
+ * way out: an iOS sheet with its ✕ and Close grabber, the M3 dialog with its ✕ (QA r14 #3: Share… had none). The size
+ * only sets a card's width, which a phone doesn't use. */
+const phoneSize = <S extends string>(size: S, phone: boolean): S | 'md' => (phone && size === 'sm' ? 'md' : size);
+
 function OverlayView(props: { readonly overlay: Overlay }): JSX.Element {
   const shell = useShell();
   const nav = useSignal(shell.nav);
@@ -45,7 +51,7 @@ function OverlayView(props: { readonly overlay: Overlay }): JSX.Element {
           {...(def?.place && { place: def.place })}
           onOpenChange={close}
           initialFocus={initialFocus}
-          size={page() ? 'full' : props.overlay.kind === 'viewer' ? 'xl' : (def?.size ?? 'md')}
+          size={page() ? 'full' : props.overlay.kind === 'viewer' ? 'xl' : phoneSize(def?.size ?? 'md', shell.platform.phone)}
           part={(def?.part ? `shell.overlay ${def.part}` : 'shell.overlay') as `${string}.${string}`}
         >
           {body()}

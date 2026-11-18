@@ -6,7 +6,7 @@
 import { expect, test } from 'vitest';
 import goldenRaw from './goldens/share-preview.json?raw';
 import lazy from '../src/i18n/en.lazy.json' with { type: 'json' };
-import { canShare, carryChips, previewNote, workOption } from '../src/share/model.ts';
+import { canShare, carryChips, goesFacts, hiddenLines, previewNote, whatGoes, workOption } from '../src/share/model.ts';
 import type { SharePreview } from '../src/share/types.ts';
 
 const S = lazy as Record<string, string>;
@@ -39,4 +39,31 @@ test('an answer without the dialog’s fields (the server before the fix) never 
   expect(previewNote(t, old).tone).toBe('bad');
   expect(workOption(t, old.work)).toEqual({ can: false, hint: S['stuff.share.work.none'] });
   expect(canShare(undefined)).toBe(false);
+});
+
+// QA round 14 #5: the dialog shows what goes and what is hidden before it goes, from the same answer (the CLI's
+// preview line: what it was → what it becomes). "Its work" unticked: the report's parts and their redactions don't go.
+test('what goes: the ask, and with its work the answers and the files changed', () => {
+  expect(whatGoes(golden, true)).toEqual({ ask: 'fix the add bug, <secret> TOPIC[Fix add]', steps: 0, answers: 1, files: ['<project>/math.js'] });
+  expect(whatGoes(golden, false)).toEqual({ ask: 'fix the add bug, <secret> TOPIC[Fix add]', steps: 0, answers: 0, files: [] });
+  expect(goesFacts(t, whatGoes(golden, true))).toBe('1 answer · 1 file changed');
+  expect(goesFacts(t, whatGoes(golden, false))).toBe('');
+  const more: SharePreview = { ...golden, bundle: { spec: { prompt: 'a', steps: ['b', 'c'] }, report: { answers: [{}, {}, {}], files: ['x', 'y'] } } };
+  expect(goesFacts(t, whatGoes(more, true))).toBe('2 more steps · 3 answers · 2 files changed');
+  expect(whatGoes({}, true)).toEqual({ ask: '', steps: 0, answers: 0, files: [] });
+});
+
+test('what is hidden: each kind once with how often, the report’s only with its work, a few then how many more', () => {
+  expect(hiddenLines(t, golden, true)).toEqual({
+    lines: [
+      { kind: 'path', label: S['stuff.share.hidden.path'], was: '/tmp/…/proj', now: '<project>', n: 2 },
+      { kind: 'secret', label: S['stuff.share.hidden.secret'], was: 'toke…efgh', now: '<secret>', n: 2 },
+    ],
+    more: 0,
+  });
+  expect(hiddenLines(t, golden, false).lines.map((l) => [l.kind, l.n])).toEqual([['path', 1], ['secret', 1]]);
+  const many: SharePreview = { redactions: ['a', 'b', 'c', 'd', 'e', 'f'].map((w) => ({ kind: 'name', at: 'spec/prompt', was: w, now: '<task>' })) };
+  expect(hiddenLines(t, many, true, 4)).toMatchObject({ more: 2 });
+  expect(hiddenLines(t, many, true, 4).lines).toHaveLength(4);
+  expect(hiddenLines(t, {}, true)).toEqual({ lines: [], more: 0 });
 });

@@ -52,7 +52,8 @@ export function mergePlan(t: T, s: ShipSession | undefined, ctx: ReviewContext):
   const removed = shipped.filter((x) => !(s.foreign && x.pr === s.pr)).length;
   const after = shipped.length ? `${t('wisp.ship.merge.after', { count: shipped.length })}${removed ? t('wisp.ship.merge.andRemove', { count: removed }) : ''}` : '';
   return {
-    question: t('wisp.ship.merge.question', { what, after }),
+    // what follows is its own sentence, its full stop with it: none after the question mark when nothing follows (QA r14 #5)
+    question: t('wisp.ship.merge.question', { what, after: after ? `${after}.` : '' }),
     lines: [...warn, unsentLine(t, s.unsentComments)].filter(Boolean),
     ok: several ? t('wisp.ship.merge.okMany') : t('wisp.ship.merge.okOne'),
     danger: warn.length > 0,

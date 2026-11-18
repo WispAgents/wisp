@@ -14,7 +14,7 @@ import { Icon } from '../content/Icon.tsx';
 import type { Look } from '../platform/look.ts';
 import type { MenuEntry, MenuSubmenu } from './menu-entries.ts';
 import { aimTriangle, emptyBox, inBox, inTriangle, type Box, type Point } from './menu-aim.ts';
-import { useTimeout } from '../blocks/rich-scope.ts';
+import { nextTask, useTimeout } from '../blocks/rich-scope.ts';
 
 /** Submenus fly out for a hovering fine pointer in the browser; touch screens and the phone apps drill in. */
 export function flyoutPointer(look: Look): boolean {
@@ -175,7 +175,12 @@ export function Flyout(props: { readonly api: menu.Api; readonly entry: MenuSubm
     id,
     open: state.open(),
     onOpenChange: (d: menu.OpenChangeDetails) => state.request(d.open),
-    onSelect: (d: menu.SelectionDetails) => props.fly.onSelect(d.value),
+    // a flyout's item is chosen on the pointer's release, before the click that ends the press: what it opens (a dialog)
+    // would take that click as one outside it and close at once (QA r14 #4: Recipes › New). Chosen once the press ends.
+    onSelect: (d: menu.SelectionDetails) => {
+      const v = d.value;
+      nextTask(() => props.fly.onSelect(v));
+    },
     positioning: { overflowPadding: 8, flip: true, slide: true },
   }));
   send = (event) => child.send(event);

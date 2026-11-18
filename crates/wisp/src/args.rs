@@ -77,10 +77,10 @@ pub const HELP: &str = "usage:
   wisp tasks --touching <path>|--tracked   the tracked tasks (.wisp/tasks) behind a path, or all of them   (--json)
   wisp sdk types ts|py [FILE]   typed commands for the SDKs (a .d.ts or a .pyi), from the same catalogue
   wisp -- ls the repo           a task that starts with a command's word; or quote it as one: wisp \"computer start fails\"
-                                (a line that starts with a command group, computer, cloud, grid, crew, plugin, recipes,
-                                machines…, is that command: a verb it doesn't have is an error naming its verbs, never a
-                                task; a plugin's name is its command only with one of its verbs: wisp review the auth module
-                                is a task)
+                                (after a command group, computer, cloud, grid, crew, plugin, settings…, one word it
+                                doesn't have is an error naming its verbs; two or more are a task: wisp share the results
+                                with the team. show, stop, wait, reply, attach and btw take a task's id or last; other
+                                words after them are a task: wisp show me where the bug is)
 
 launch options: --mode plan|edits|auto  --agent claude|codex|opencode|cursor|antigravity|grok|copilot  --model ID  --effort LEVEL
                 --cwd DIR  --also DIR (repeatable)  --wait  --json  --no-worktree  --compare agent[:model],…: one task per harness
@@ -276,8 +276,6 @@ pub fn session_id(s: &str) -> bool {
         || (s.len() == 36 && s.split('-').map(str::len).eq([8, 4, 4, 4, 12]) && hex(&s.replace('-', "")))
 }
 
-/// Newer commands are also common first words of a task ("ship the docs", "usage of X"), so they only
-/// count when the rest fits; `wisp run` falls back to a task when no recipe has that name.
 /// `wisp add <x>`: a folder (there, or here), something that reads as a path (`./web`, `~/code/site`, `code/site`), or
 /// a link to clone. `wisp add a README` is a prompt (QA round 13 #1 registered a project "a").
 fn addable(w: &str, home: &Path, cwd: &Path) -> bool {
@@ -285,13 +283,23 @@ fn addable(w: &str, home: &Path, cwd: &Path) -> bool {
     link || w == "." || w == ".." || w.starts_with("~/") || w.contains('/') || w.contains('\\') || expand(w, home, cwd).is_dir()
 }
 
+/// What names a task on the command line: its id (12 to 32 hex digits, or a UUID), a number, or `last` (the newest).
+pub fn task_ref(w: &str) -> bool {
+    let hex = (12..=32).contains(&w.len()) && w.bytes().all(|b| b.is_ascii_hexdigit());
+    w == "last" || session_id(w) || hex || (!w.is_empty() && w.bytes().all(|b| b.is_ascii_digit()))
+}
+
+/// Newer commands are also common first words of a task ("ship the docs", "usage of X"), so they only
+/// count when the rest fits; `wisp run` falls back to a task when no recipe has that name. A command that takes a task
+/// counts only when its argument names one (QA round 14: `wisp show me where the bug is` is a prompt).
 fn fits(cmd: &str, w: &[String], home: &Path, cwd: &Path) -> bool {
     let n = w.len();
     let w1 = w.get(1).map_or("", String::as_str);
     match cmd {
         "grid" => n == 1 || GRID_SUB.contains(&w1),
         "ship" | "merge" => session_id(w1),
-        "attach" => n == 2,
+        "attach" => n == 2 && task_ref(w1),
+        "show" | "stop" | "wait" | "reply" | "btw" => task_ref(w1),
         "add" => n == 1 || (n == 2 && addable(w1, home, cwd)),
         // `wisp help`, `wisp help crew`, `wisp help crew create`: a task never starts with "help" and two words
         "help" => n <= 4 && w.iter().skip(1).all(|x| x.bytes().all(|b| b.is_ascii_lowercase() || b == b'-' || b == b'_' || b == b'.')),

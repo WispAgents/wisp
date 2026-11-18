@@ -233,9 +233,9 @@ fn an_unknown_verb_under_a_command_group_is_an_error_naming_its_verbs_and_never_
         (&["computer", "enable"], "computer"),
         (&["recipes", "list"], "recipes"),
         (&["grid", "start"], "grid"),
-        (&["crew", "frobnicate", "now"], "crew"),
+        (&["crew", "frobnicate"], "crew"),
         (&["mcp", "session", "bogus"], "mcp"),
-        (&["trigger", "make", "one"], "trigger"),
+        (&["trigger", "make"], "trigger"),
         (&["completions", "powershell"], "completions"),
         (&["machines", "frob"], "machines"),
     ] {
@@ -327,7 +327,7 @@ fn every_command_word_is_strict_takes_an_argument_or_starts_a_prompt() {
         (&["share", "list"], "share"),
         (&["shares", "list"], "shares"),
         (&["usage", "today"], "usage"),
-        (&["spell", "cast", "a", "button"], "spell"),
+        (&["spell", "cast"], "spell"),
         (&["serve", "now"], "serve"),
         (&["tui", "please"], "tui"),
         (&["shell-init", "powershell"], "shell-init"),
@@ -434,4 +434,43 @@ fn one_word_or_a_word_and_ids_is_never_a_task_and_says_what_to_type() {
         let x = p(args);
         assert_eq!(not_a_task(&x.words, x.literal, &[]), None, "{args:?}");
     }
+}
+
+/// QA round 14 (decided rule): after a word that is a command, one word it doesn't take is a slip (its usage and the
+/// `wisp -- …` way out, exit 2); two or more are a prompt. For every strict group (`settings` too), the words other
+/// tools use (`status`), and the commands that take a task (`show foo` isn't an id).
+#[test]
+fn one_word_after_a_command_word_is_a_slip_and_two_or_more_are_a_prompt() {
+    let cat: Vec<Vec<String>> = [&["settings", "list"][..], &["settings", "get"], &["settings", "set"], &["share", "send"]].map(w).to_vec();
+    // strict groups: one unknown word
+    for args in [&["update", "deps"][..], &["settings", "open"], &["computer", "start"], &["share", "list"]] {
+        assert!(unknown_verb(&p(args).words, Literal::No, &cat).is_some(), "{args:?}");
+    }
+    // two or more: a prompt (a group's own verb first stays its command)
+    for args in [
+        &["share", "the", "results", "with", "the", "team"][..],
+        &["settings", "page", "needs", "a", "dark", "mode"],
+        &["computer", "start", "it", "now"],
+        &["update", "the", "readme"],
+    ] {
+        let x = p(args);
+        assert!(unknown_verb(&x.words, x.literal, &cat).is_none() && !group_line(&x.words), "{args:?}");
+        assert_eq!(not_a_task(&x.words, x.literal, &w(&["settings", "share"])), None, "{args:?}");
+    }
+    assert!(group_line(&w(&["crew", "ls", "extra"])), "a group's verb then words: its command, refused");
+    // another tool's word, one more word: its hint; more: a prompt
+    let x = p(&["status", "all"]);
+    assert_eq!(not_a_task(&x.words, x.literal, &[]), Some(NotATask::Near("show".to_owned())));
+    let x = p(&["status", "badge", "in", "the", "README"]);
+    assert_eq!(not_a_task(&x.words, x.literal, &[]), None);
+    // a command that takes a task, one word that's no id: its usage
+    for args in [&["show", "foo"][..], &["stop", "it"], &["wait", "x"], &["reply", "here"], &["attach", "it"]] {
+        let x = p(args);
+        assert_eq!(not_a_task(&x.words, x.literal, &[]), Some(NotATask::Usage(args[0].to_owned())), "{args:?}");
+    }
+    assert!(settings_is_a_group());
+}
+
+fn settings_is_a_group() -> bool {
+    is_group("settings")
 }

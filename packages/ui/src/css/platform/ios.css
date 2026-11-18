@@ -1450,6 +1450,26 @@
   :root[data-platform='ios'] [data-kit='c-opts'][data-folded] > [data-kit='c-opts-mode'] { display: none; }
   :root[data-platform='ios'] [data-kit='c-opts'] > [data-kit='icon'] { flex: none; color: var(--on-surface-var); }
   :root[data-platform='ios'] [data-kit='c-opts']:active { background: var(--fill); }
+  /* QA r14 #3: a choice is a table, not radio buttons (iOS has none): an inset grouped list, each option a row (its
+     label and hint at the start, an inset separator under it), the chosen one's ✓ at its end in the tint. The radio
+     stays for keyboards and screen readers, out of sight; a keyboard's focus rings the row. */
+  :root[data-platform='ios'] [data-kit='radio-group'][data-orientation='vertical'] { gap: var(--space-0); }
+  :root[data-platform='ios'] [data-kit='radio-group'][data-orientation='vertical'] > [data-kit='radio-legend'] { padding: var(--space-0) var(--inset) var(--space-3); font: var(--type-footnote); color: var(--on-surface-var); }
+  :root[data-platform='ios'] [data-kit='radio-group'][data-orientation='vertical'] > [data-kit='radio'] {
+    position: relative; display: flex; align-items: center; gap: var(--space-5); min-height: var(--tap-min); padding: var(--row-pad-y) var(--inset);
+    background: linear-gradient(var(--outline), var(--outline)) right bottom / calc(100% - var(--inset)) var(--hairline) no-repeat, var(--surface-grouped-2);
+    font: var(--type-body); color: var(--on-surface); text-align: start;
+  }
+  :root[data-platform='ios'] [data-kit='radio-group'][data-orientation='vertical'] > [data-kit='radio-legend'] + [data-kit='radio'] { border-radius: var(--radius-md) var(--radius-md) var(--space-0) var(--space-0); }
+  :root[data-platform='ios'] [data-kit='radio-group'][data-orientation='vertical'] > [data-kit='radio']:last-child { border-radius: var(--space-0) var(--space-0) var(--radius-md) var(--radius-md); background: var(--surface-grouped-2); }
+  :root[data-platform='ios'] [data-kit='radio-group'][data-orientation='vertical'] > [data-kit='radio-legend'] + [data-kit='radio']:last-child { border-radius: var(--radius-md); }
+  :root[data-platform='ios'] [data-kit='radio-group'][data-orientation='vertical'] > [data-kit='radio']:active { background: var(--fill); }
+  :root[data-platform='ios'] [data-kit='radio'] > [data-kit='radio-input'] { position: absolute; opacity: 0; pointer-events: none; }
+  :root[data-platform='ios'] [data-kit='radio']:focus-within { outline: var(--size-ring) solid var(--primary); outline-offset: calc(var(--size-ring) * -1); }
+  :root[data-platform='ios'] [data-kit='radio'] > [data-kit='radio-text'] { flex: 1 1 auto; min-width: 0; }
+  :root[data-platform='ios'] [data-kit='radio'] [data-kit='radio-hint'] { font: var(--type-subhead); color: var(--on-surface-var); }
+  :root[data-platform='ios'] [data-kit='radio-check'] { flex: none; display: inline-flex; color: var(--primary); visibility: hidden; }
+  :root[data-platform='ios'] [data-kit='radio'][data-checked] > [data-kit='radio-check'] { visibility: visible; }
   :root[data-platform='ios'] [data-kit='opts-list'] { display: flex; flex-direction: column; gap: var(--space-4); padding-bottom: var(--space-6); }
   :root[data-platform='ios'] [data-kit='opts-group'] { display: flex; flex-direction: column; }
   :root[data-platform='ios'] [data-kit='opts-head'] { padding: var(--space-4) var(--inset); font: var(--type-footnote); color: var(--on-surface-var); }

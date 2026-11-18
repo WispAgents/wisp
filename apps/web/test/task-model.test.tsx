@@ -111,3 +111,29 @@ test('the_reply_boxs_send_says_send_and_when_a_follow_up_is_scheduled', async ()
   expect(send()?.getAttribute('aria-label')).toMatch(/^Send at \d\d:\d\d$/);
   expect(send()?.getAttribute('title')).toMatch(/^Send at \d\d:\d\d$/);
 });
+
+// QA r14 phone #6: on a 360 px phone the Rerun dialog's bar (the mode, the harness, Rerun) didn't fit one line, so the
+// mode's select shrank to its frame and showed no value. The bar is a Wrap group (design/layout.md: only Wrap groups
+// wrap): what doesn't fit goes to the next line whole, and the select keeps its words
+test('the_rerun_bar_wraps_so_its_pickers_keep_their_values', async () => {
+  const mock = createMockPeer({ epoch: 'e1' });
+  const home = peerId('local');
+  const client = createClient({ clientId: 'c1', build: 't', home, width: 360 });
+  const shell = createShell({ client, toaster: createToaster(), platform: nullPlatform({ kind: 'android', phone: true, mobile: true }), home, window: window as unknown as ShellWindow });
+  await client.start([{ peer: home, name: 'mock', transport: memTransport(mock) }]);
+  const root = document.createElement('div');
+  document.body.append(root);
+  const stop = shell.render(root);
+  stops.push(() => {
+    stop();
+    shell.dispose();
+  });
+  await until(() => client.entities.keys('session')().length > 0);
+  const key = client.entities.keys('session')()[0] as EntityKey;
+  client.nav.navigate({ t: 'openOverlay', overlay: { kind: 'dialog', id: 'shell.rerun' as never, params: { id: key } } });
+  const bar = (): HTMLElement | null => document.querySelector('[data-part~="rerun.bar"]');
+  await until(() => bar() !== null);
+  expect(bar()?.getAttribute('data-kit'), 'a Wrap group').toBe('wrap');
+  // the mode's select says its value
+  expect(bar()?.querySelector('[data-kit="select-trigger"]')?.textContent).toContain('Full auto');
+});

@@ -82,10 +82,8 @@ import {
   pin,
   setLean,
   type Attachment,
-  fork,
   remove,
   rename,
-  rerun,
   restore,
   setGoal,
   setMode,
@@ -103,6 +101,7 @@ import type { PickOptions } from '../platform/types.ts';
 import { harnessOf } from './harness.ts';
 import { placeIn, taskSteps, type TaskSteps } from './task-step.ts';
 import { RunnerPicker } from './RunnerPicker.tsx';
+import { RenameDialog } from './RenameDialog.tsx';
 import { TurnTranscript } from './TurnTranscript.tsx';
 import { isStub, turnOpener } from './turn-window.ts';
 import { NOTICE_KINDS, ledgerTurn } from './ledger-turns.ts';
@@ -680,14 +679,10 @@ export default function TaskView(props: { readonly id: string; readonly onBack?:
   };
   // Take over (T, Open in <harness>): the task's conversation in its harness's own CLI, in shell-task's Terminal tab
   const takeOver = (): void => shell.navigate({ t: 'openSide', side: { kind: 'view', id: 'shell-task.term' as never } });
-  /** a new task from this one (Rerun, Fork): its row and page show at once */
   // Rerun… (v1 rerunDialog): the task's prompt, mode, harness and computer, editable, then a new task (F-task-43/44)
+  // Fork… (v1 forkTask): its dialog first, from a turn's Fork too (that turn); nothing is made until its Fork
+  const openFork = (turn?: string): void => shell.navigate({ t: 'openOverlay', overlay: { kind: 'dialog', id: 'shell.fork' as never, params: { id: key, ...(turn && { turn }) } } });
   const openRerun = (agent?: string): void => shell.navigate({ t: 'openOverlay', overlay: { kind: 'dialog', id: 'shell.rerun' as never, params: { id: key, ...(agent && { agent }) } } });
-  const copy = (cmd: typeof rerun, agent?: string): void => {
-    const newId = entityKey(peer, newRowId());
-    void run(cmd, { id: key, newId, at: Date.now(), ...(agent && { agent }) }).catch(() => undefined);
-    shell.navigate({ t: 'openTask', id: newId as never });
-  };
   // Ship it is wisp.ship's dialog (an overlay view, `ship.dialog`); without that plugin, navigation drops it
   const ship = (): void => shell.navigate({ t: 'openOverlay', overlay: { kind: 'dialog', id: 'ship.dialog' as never, params: { key } } });
   // v1: leaving a task (done, archived, deleted) opens the next that needs you, else New task
@@ -834,10 +829,9 @@ export default function TaskView(props: { readonly id: string; readonly onBack?:
     });
   };
   // the browser edits the head's title in place; the phone apps' bar asks in a dialog
-  const startRename = (): void => {
-    if (phoneBar()) setRenaming(true);
-    else document.querySelector<HTMLElement>('[data-part="split.title"]')?.click();
-  };
+  // Rename (⋯, M): a dialog on every screen, as the row's (QA round 14 desktop #3: the head's in-place edit lost its
+  // caret to the menu giving focus back to ⋯); a click on the title still edits it in place
+  const startRename = (): void => void setRenaming(true);
   const onMore = (v: string): void => {
     if (v === 'next-task') stepTo(steps().next);
     else if (v === 'previous-task') stepTo(steps().previous);
@@ -849,7 +843,7 @@ export default function TaskView(props: { readonly id: string; readonly onBack?:
     else if (v === 'changes') side('changes');
     else if (v === 'ship') ship();
     else if (v === 'done') markDone();
-    else if (v === 'fork') copy(fork);
+    else if (v === 'fork') openFork();
     else if (v === 'compact') void run(compactNow, { id: key }).catch(() => undefined);
     else if (v.startsWith('lean:')) {
       const lean = v.slice(5);
@@ -1360,7 +1354,7 @@ export default function TaskView(props: { readonly id: string; readonly onBack?:
                       },
                     },
                   },
-                  { id: 'fork', icon: 'fork', label: t('shell.task.fork'), part: 'turn.fork', act: { onClick: () => copy(fork) } },
+                  { id: 'fork', icon: 'fork', label: t('shell.task.fork'), part: 'turn.fork', act: { onClick: () => openFork(turn.id) } },
                 ]}
                 // a phone's answer menu (its ⋯ and a long-press, UX 2026-11-18 phone #8, QA r9 #2): Copy, Comment… on the
                 // block held, the tools above, and Good / Bad result (their buttons are on the trail already)
@@ -1602,6 +1596,10 @@ export default function TaskView(props: { readonly id: string; readonly onBack?:
             <Show
               when={phoneBar() && leave}
               fallback={
+            <>
+            <Show when={renaming() && !phoneBar()}>
+              <RenameDialog title={s().title} part="task.rename" onClose={() => setRenaming(false)} onRename={(title) => void run(rename, { id: key, title }).catch(() => undefined)} />
+            </Show>
             <TaskHead
               actions={<TaskHeadSlot id={key} session={() => s() as never} />}
               title={s().title}
@@ -1616,6 +1614,7 @@ export default function TaskView(props: { readonly id: string; readonly onBack?:
               panelOn={nav().side.kind !== 'none'}
               bar={headBar(s())}
             />
+            </>
               }
             >
               {(back) => (

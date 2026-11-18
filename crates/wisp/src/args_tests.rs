@@ -113,3 +113,35 @@ fn add_is_a_command_only_for_a_folder_a_path_or_a_link() {
     assert_eq!(at(&["-C", here.to_str().unwrap(), "add", "api"]), Some("add"));
     let _ = std::fs::remove_dir_all(&here);
 }
+
+/// QA round 14 #1, #7: `wisp show me where the bug is` and `wisp stop using var in math.js` were refused ("no task
+/// me"), and `wisp attach last` hung. A command that takes a task is that command only when its argument is a task's
+/// id (or `last`, the newest); otherwise the words are a prompt.
+#[test]
+fn a_task_command_is_a_command_only_for_a_task_id_or_last() {
+    let id = "01a1ef07823670f68eb62f4ddb8ededc";
+    for args in [
+        &["show", id][..],
+        &["show", "last"],
+        &["stop", "0123456789ab"],
+        &["stop", "last"],
+        &["wait", id],
+        &["attach", "last"],
+        &["reply", id, "also cover the empty list"],
+        &["btw", "last", "did you touch the migrations?"],
+        &["stop", "123"],
+    ] {
+        assert_eq!(p(args).command, Some(args[0]), "{args:?}");
+    }
+    for args in [
+        &["show", "me", "where", "the", "bug", "is"][..],
+        &["stop", "using", "var", "in", "math.js"],
+        &["wait", "for", "the", "build"],
+        &["attach", "a", "screenshot", "of", "the", "failing", "test"],
+        &["reply", "to", "the", "review", "comments"],
+        &["btw", "also", "fix", "the", "tests"],
+        &["show", "foo"],
+    ] {
+        assert_eq!(p(args).command, None, "{args:?}");
+    }
+}

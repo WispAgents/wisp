@@ -90,7 +90,8 @@ pub async fn generated(c: &Client, cat: &Catalogue, words: &[String], argv: &[St
     let args = match verbs::build(v, &rest) {
         Ok(a) => a,
         Err(u) => {
-            eprintln!("  ✗ {u}");
+            // every refusal says the way out (QA round 14)
+            eprintln!("  ✗ {u}\n  a task that says this: wisp -- {}", words.join(" "));
             return Ok(Some(USAGE_EXIT));
         }
     };
