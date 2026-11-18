@@ -123,6 +123,8 @@ export function useAccount() {
   const statuses = useSignal(shell.client.entities.list<StatusDoc>('machines_status'));
   const me = createMemo(() => meOf(peers(), statuses()));
   const nav = useSignal(shell.nav);
+  // the theme as it is now, tracked (audit A F6: read bare, the menu kept the label of the theme it opened with)
+  const theme = useSignal(shell.theme.resolved);
   // plugins' links (docs/ux/2026-11-18-grid.md #9: a cloud wisp's way back to its grid), those offered now
   const links = useSignal(
     computed(() =>
@@ -147,7 +149,7 @@ export function useAccount() {
     { value: 'automations', label: shell.t('shell.account.automations'), icon: 'bolt' },
     { value: 'settings', label: shell.t('shell.account.settings'), icon: 'settings', part: 'topbar.settings' },
     { kind: 'separator' },
-    { value: 'theme', label: shell.t(shell.theme.resolved() === 'dark' ? 'shell.cmd.theme.light' : 'shell.cmd.theme.dark'), icon: shell.theme.resolved() === 'dark' ? 'sun' : 'moon' },
+    { value: 'theme', label: shell.t(theme() === 'dark' ? 'shell.cmd.theme.light' : 'shell.cmd.theme.dark'), icon: theme() === 'dark' ? 'sun' : 'moon' },
   ];
   // v1 meBtn's title: "<you> · Machines, Automations and Settings"
   const label = (): string => (me().who ? shell.t('shell.me.title', { who: me().who }) : shell.t('shell.side.account'));
@@ -157,7 +159,7 @@ export function useAccount() {
     if (v === 'me') return href && me().state !== 'out' ? shell.platform.openExternal(href) : sheet('cloud');
     const link = v.startsWith('link:') ? links().find((l) => `link:${l.id}` === v) : undefined;
     if (link) return shell.platform.openExternal(link.href);
-    if (v === 'theme') void shell.theme.set(shell.theme.resolved() === 'dark' ? 'light' : 'dark');
+    if (v === 'theme') void shell.theme.set(theme() === 'dark' ? 'light' : 'dark');
     // v1 #machinesBtn → openMachines: the Machines dialog (wisp.machines' overlay view); This computer is in Settings
     else if (v === 'machines') shell.navigate({ t: 'openOverlay', overlay: { kind: 'dialog', id: 'machines.dialog' as never, params: {} as Json } });
     // Settings on a phone opens on its list, as v1's did; a wider window shows General beside the list

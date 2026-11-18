@@ -34,6 +34,11 @@ test('a_member_with_no_jobs_in_the_range_says_so_and_an_old_peer_without_tokens_
   expect(r.outcome).toBe('wisp.crew.record.finishedOf(n=2,of=2)');
 });
 
+test('check_ins_under_one_a_day_say_how_many_ran_never_0_a_day_audit_A_22', () => {
+  const r = memberRecord({ id: 'm1', jobs: 3, done: 3, failed: 0, quiet: 2, tokens: 45, byKind: { checkin: { runs: 3, tokens: 45, quiet: 2 } } }, 30, say);
+  expect(r.kinds[0]?.line).toBe('wisp.crew.record.kindFew(count=3,each=15,quiet=67)');
+});
+
 const lim = (window: string, used: number, mine: number, crew: number, over: Partial<MemberLimit> = {}): MemberLimit => ({
   agent: 'claude',
   account: 'default',

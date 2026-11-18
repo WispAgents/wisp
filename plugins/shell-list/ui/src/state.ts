@@ -119,6 +119,30 @@ export function inProjectOf(s: SessionRow, ps: readonly ProjectView[]): SessionR
   return out;
 }
 
+/**
+ * The list's rows from the server's, each made once per server row: the entity list keeps an unchanged row as the same
+ * object, so a patch to one task (a stream's token, every 20th) makes that one row again, not all 5,000 (perf r1 #15:
+ * 190 ms of a phone's stream at 4×). A new projects or machines list makes them all again.
+ */
+export function rowMaker(): (raw: readonly SessionRow[], keys: readonly unknown[], ps: readonly ProjectView[], ms: ReadonlyMap<string, MachineRef>) => SessionRow[] {
+  let made = new WeakMap<object, { key: string; row: SessionRow }>();
+  let at: [unknown, unknown] = [undefined, undefined];
+  return (raw, keys, ps, ms) => {
+    if (at[0] !== ps || at[1] !== ms) {
+      at = [ps, ms];
+      made = new WeakMap();
+    }
+    return raw.map((r, i) => {
+      const key = String(keys[i] ?? '');
+      const hit = made.get(r as object);
+      if (hit?.key === key) return hit.row;
+      const row = onMachine(inProjectOf(flatSession(r), ps), ms.get(key.split(':')[0] ?? ''));
+      made.set(r as object, { key, row });
+      return row;
+    });
+  };
+}
+
 function createModel(client: PluginClient): ListModel {
   const view = client.defineStore<ViewState>({ id: `${client.id}.view`, version: 1, defaults: { filter: 'all', toggled: [] }, check: checkView, persist: true });
   const keys = client.entities.keys(KIND.session);
@@ -131,12 +155,8 @@ function createModel(client: PluginClient): ListModel {
   // a row from another wisp: which machine it is (a sandbox shows as Sandbox), from wisp.machines' rows
   const machineRows = client.entities.list<{ id: string; body?: { peer?: string | null; name?: string; data?: Record<string, unknown> } }>('machines_peer');
   const machines = computed(() => machinesByPeer(machineRows()));
-  const rows = computed(() => {
-    const ps = projects();
-    const ms = machines();
-    const ks = keys();
-    return raw().map((r, i) => onMachine(inProjectOf(flatSession(r), ps), ms.get(String(ks[i] ?? '').split(':')[0] ?? '')));
-  });
+  const make = rowMaker();
+  const rows = computed(() => make(raw(), keys(), projects(), machines()));
   // Scheduled and Drafts: wisp.later's plans, on its own topic
   client.watch(client.home, LATER_TOPIC as never);
   const planRows = client.entities.list<unknown>(KIND.plan);

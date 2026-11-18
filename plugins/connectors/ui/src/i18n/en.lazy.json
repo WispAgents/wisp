@@ -49,6 +49,7 @@
   "connectors.form.addKey": "Add",
   "connectors.form.paste": "Or paste a config",
   "connectors.form.paste.hint": "Claude's or Cursor's mcpServers, or one server's JSON",
+  "connectors.form.paste.more": "This config has {count} servers: {names} will be added with it",
   "connectors.review.title": "Found in your harnesses",
   "connectors.review.description": "Servers your harnesses already have. Add them as connectors to give every task's agent their tools.",
   "connectors.review.add.one": "Add {count}",

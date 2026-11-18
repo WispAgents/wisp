@@ -292,4 +292,9 @@ pub struct AdoptArgs {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub resume_id: Option<String>,
+    /// a task with nothing run yet, to go on in `cwd` (Settings › Worktrees: Bring in, audit A orch #6): no turns
+    /// needed, and it isn't read-only. Additive (2026-11-18).
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    #[ts(optional, as = "Option<bool>")]
+    pub fresh: bool,
 }

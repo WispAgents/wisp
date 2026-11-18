@@ -76,7 +76,32 @@ impl wisp_kernel::Command for Styles {
 pub struct PluginsPlugin;
 
 fn row(p: PluginStatus) -> PluginRow {
-    PluginRow { enabled: p.state != "off", id: p.id, version: p.version, state: p.state, builtin: p.builtin, reason: p.reason }
+    PluginRow {
+        enabled: p.state != "off",
+        id: p.id,
+        version: p.version,
+        state: p.state,
+        builtin: p.builtin,
+        reason: p.reason,
+        ..PluginRow::default()
+    }
+}
+
+/// The list's rows, a plugin of yours with its trust, what it asks for and its name (its folder's, audit A F19).
+async fn rows(ctx: &Ctx) -> Result<Vec<PluginRow>> {
+    let mut out = Vec::new();
+    for p in ctx.plugins()? {
+        let mut r = row(p);
+        if r.id.starts_with("user.")
+            && let Some(a) = install::about(ctx, &r.id).await
+        {
+            r.trusted = Some(a.trusted);
+            r.permissions = a.permissions;
+            r.name = a.name;
+        }
+        out.push(r);
+    }
+    Ok(out)
 }
 
 pub(crate) fn find(ctx: &Ctx, id: &str) -> Result<PluginRow> {
@@ -89,14 +114,15 @@ impl Plugin for PluginsPlugin {
     }
 
     fn setup(&self, s: &mut Setup) -> Result<()> {
-        s.command::<List, _, _>(|ctx, _call, _args| async move { Ok(ctx.plugins()?.into_iter().map(row).collect()) });
+        s.command::<List, _, _>(|ctx, _call, _args| async move { rows(&ctx).await });
         let kind = crate::kinds::register(s);
+        let kept = kind.clone();
         s.command::<SetEnabled, _, _>(move |ctx, call, a| {
             let kind = kind.clone();
             async move {
-                if a.enabled {
-                    install::load_from_its_folder(&ctx, &a.id).await?;
-                }
+                // a user's plugin known by its folder only (`wisp plugin new`): loaded, so it's listed, on or off (setup
+                // audit F18: one you were writing showed nowhere until you switched it on)
+                install::load_from_its_folder(&ctx, &a.id).await?;
                 ctx.set_plugin_enabled(&a.id, a.enabled).await?;
                 // kept so it comes back that way; a store that can't keep it doesn't undo the switch
                 if let Err(e) = crate::kinds::remember(&kind, &call, &a.id, a.enabled).await {
@@ -109,8 +135,17 @@ impl Plugin for PluginsPlugin {
         // ADR-0046: a user's plugin from a folder or a git URL, and taking one out
         // each tells the clients when what they show (styles, untrusted UIs) may have changed: plugins.changed
         s.command::<Install, _, _>(|ctx, _call, a| async move { install::install(&ctx, &a).await.inspect(|_| styles::changed(&ctx, "")) });
-        s.command::<Uninstall, _, _>(|ctx, _call, a| async move {
-            install::uninstall(&ctx, &a).await.inspect(|_| styles::changed(&ctx, &a.id))
+        s.command::<Uninstall, _, _>(move |ctx, call, a| {
+            let kept = kept.clone();
+            async move {
+                let out = install::uninstall(&ctx, &a).await?;
+                // taken out, so its kept switch goes too: never in `wisp export` or a formula, enabled (setup audit F20)
+                if let Err(e) = crate::kinds::forget(&kept, &call, &a.id).await {
+                    tracing::warn!(plugin = %a.id, "its kept switch stays: {}", e.message);
+                }
+                styles::changed(&ctx, &a.id);
+                Ok(out)
+            }
         });
         s.command::<Trust, _, _>(|ctx, _call, a| async move { install::trust(&ctx, &a).await.inspect(|_| styles::changed(&ctx, &a.id)) });
         s.command::<Ui, _, _>(|ctx, _call, _a| async move { remote::list(&ctx).await });

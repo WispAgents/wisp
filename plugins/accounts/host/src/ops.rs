@@ -128,6 +128,7 @@ pub(crate) fn register(s: &mut Setup, slot: &Slot) {
         signin::cancel(&ctx, &st, &a.agent, &a.account).await;
         // its login goes with it
         let _ = signin::logout(&ctx, &st, h.as_ref(), &a.account).await;
+        signin::forget(&st, &a.agent, &a.account);
         save(&st, &a.agent, next).await?;
         if let Some(spec) = h.accounts() {
             folders::remove(&st.home, &a.agent, spec, &a.account).await;
@@ -343,17 +344,17 @@ fn held_tasks(s: &mut Setup, slot: &Slot) {
 #[allow(clippy::many_single_char_names)]
 fn signing_in(s: &mut Setup, slot: &Slot) {
     on!(s, slot, c::LoginStart, |st, ctx, a| {
-        let h = harness(&ctx, &a.agent).ok_or_else(|| WireError::not_found("No such harness."))?;
+        let h = crate::gh::signer(&ctx, &a.agent).ok_or_else(|| WireError::not_found("No such harness."))?;
         signin::start(&ctx, &st, h, &a.account).await
     });
     on!(s, slot, c::LoginInput, |st, _ctx, a| signin::input(&st, &a.agent, &a.account, &a.code).await);
     on!(s, slot, c::LoginCancel, |st, ctx, a| Ok(signin::cancel(&ctx, &st, &a.agent, &a.account).await));
     on!(s, slot, c::Status, |st, ctx, a| {
-        let h = harness(&ctx, &a.agent).ok_or_else(|| WireError::not_found("No such harness."))?;
+        let h = crate::gh::signer(&ctx, &a.agent).ok_or_else(|| WireError::not_found("No such harness."))?;
         signin::status(&ctx, &st, h.as_ref(), &a.account).await
     });
     on!(s, slot, c::Logout, |st, ctx, a| {
-        let h = harness(&ctx, &a.agent).ok_or_else(|| WireError::not_found("No such harness."))?;
+        let h = crate::gh::signer(&ctx, &a.agent).ok_or_else(|| WireError::not_found("No such harness."))?;
         signin::logout(&ctx, &st, h.as_ref(), &a.account).await
     });
 }

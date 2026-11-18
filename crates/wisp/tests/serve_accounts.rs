@@ -392,3 +392,119 @@ async fn trust_leaves_a_held_task_marked_done_and_starts_it_once_reopened() {
     api.until(&done, "Start now runs it once reopened", |t| t.len() == 1 && t[0]["status"] == "done").await;
     drop(serve);
 }
+
+/// Subscribes to `topic` on the sync stream and collects its frames until `until` holds (20 s at most).
+async fn stream(port: u16, client: &str, topic: &str, until: impl Fn(&str) -> bool) -> String {
+    let http = reqwest::Client::new();
+    let mut r =
+        http.get(format!("http://127.0.0.1:{port}/api/events?proto_min=2&proto_max=2&client_id={client}&build=t")).send().await.unwrap();
+    let (mut seen, at, mut subbed) = (String::new(), Instant::now(), false);
+    while at.elapsed() < Duration::from_secs(20) {
+        let Ok(Ok(Some(c))) = tokio::time::timeout(Duration::from_millis(300), r.chunk()).await else {
+            if subbed && until(&seen) {
+                break;
+            }
+            continue;
+        };
+        seen.push_str(&String::from_utf8_lossy(&c));
+        if !subbed && seen.contains("welcome") {
+            let ok = http
+                .post(format!("http://127.0.0.1:{port}/api/events"))
+                .header("content-type", "application/json")
+                .header("x-wisp-client", client)
+                .body(json!({ "t": "sub", "topic": topic }).to_string())
+                .send()
+                .await
+                .unwrap();
+            assert_eq!(ok.status(), 200);
+            subbed = true;
+        }
+        if subbed && until(&seen) {
+            break;
+        }
+    }
+    seen
+}
+
+/// Each `accounts.login` row as a sync stream left it, by id: a snapshot or an upsert puts the whole row, a patch
+/// replaces its fields (`/state`, `/code`…); with every state it went through, in order.
+fn logins_in(frames: &str) -> std::collections::BTreeMap<String, (Value, Vec<String>)> {
+    fn ops<'a>(v: &'a Value, out: &mut Vec<&'a Value>) {
+        match v {
+            Value::Object(m) if m.get("e").and_then(Value::as_str) == Some("accounts.login") => out.push(v),
+            Value::Object(m) => m.values().for_each(|x| ops(x, out)),
+            Value::Array(a) => a.iter().for_each(|x| ops(x, out)),
+            _ => {}
+        }
+    }
+    let mut rows = std::collections::BTreeMap::<String, (Value, Vec<String>)>::new();
+    for line in frames.lines() {
+        let Ok(v) = serde_json::from_str::<Value>(line.trim_start_matches("data:").trim()) else { continue };
+        let mut seen = Vec::new();
+        ops(&v, &mut seen);
+        for op in seen {
+            let id = op["id"].as_str().unwrap_or_default().to_owned();
+            let e = rows.entry(id).or_insert_with(|| (json!({}), Vec::new()));
+            if let Some(row) = op.get("v") {
+                e.0 = row.clone();
+            }
+            for p in op["ops"].as_array().into_iter().flatten() {
+                if let Some(field) = p["path"].as_str().and_then(|x| x.strip_prefix('/')) {
+                    e.0[field] = p["value"].clone();
+                }
+            }
+            if let Some(st) = e.0["state"].as_str()
+                && e.1.last().map(String::as_str) != Some(st)
+            {
+                e.1.push(st.to_owned());
+            }
+        }
+    }
+    rows
+}
+
+/// The owner's audit (2026-11-18, Settings → Agents): a sign-in's link, code and end reached the page only with the next
+/// command (the rows were written after commands alone), so an open pane showed nothing and a finished sign-in stayed
+/// "waiting". Its progress reaches the topic as it happens.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_sign_ins_progress_and_its_end_reach_the_agents_pane_without_another_command() {
+    let dir = temp("serve-accounts-live");
+    std::fs::create_dir_all(dir.join("codex-home")).unwrap();
+    let (serve, port) = start_with(&dir, &[("FAKE_LOGIN_MS", "2500")]);
+    let api = Arc::new(Api { http: reqwest::Client::new(), port, n: 0.into() });
+    let done = |f: &str| logins_in(f).get("codex@w1").is_some_and(|(row, _)| row["state"] == "done");
+    let watch = tokio::spawn(stream(port, "c-live", "plugin:wisp.accounts:harnesses", done));
+    tokio::time::sleep(Duration::from_millis(600)).await;
+    api.cmd("accounts.add", json!({ "agent": "codex", "id": "w1", "label": "Work", "kind": "work" })).await;
+    let frames = watch.await.unwrap();
+    let (row, states) = logins_in(&frames).remove("codex@w1").unwrap_or_default();
+    assert_eq!(row["code"], "ABCD-12345", "its code, as it was printed: {states:?}");
+    assert_eq!(states.last().map(String::as_str), Some("done"), "its end, with no command after it: {states:?}");
+    // and signed in: the row says Signed in, not just that a sign-in ended (v1 agent-login: done → signedIn)
+    assert_eq!(row["signedIn"], true, "{row}");
+    drop(serve);
+}
+
+/// A sign-in under way when wisp stopped has no CLI behind it after a restart: it isn't left "waiting" (a link that
+/// leads nowhere, a Cancel that cancels nothing); the account can sign in again.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_sign_in_cut_by_a_restart_is_not_left_waiting() {
+    let dir = temp("serve-accounts-restart-login");
+    std::fs::create_dir_all(dir.join("codex-home")).unwrap();
+    let (mut serve, port) = start_with(&dir, &[("FAKE_LOGIN_MS", "60000")]);
+    let api = Arc::new(Api { http: reqwest::Client::new(), port, n: 0.into() });
+    api.cmd("accounts.add", json!({ "agent": "codex", "id": "w1", "label": "Work", "kind": "work" })).await;
+    until("the sign-in waits", async || {
+        let v = api.cmd("accounts.login", json!({ "agent": "codex", "account": "w1" })).await;
+        (v["state"] == "waiting").then_some(v)
+    })
+    .await;
+    serve.keep = true;
+    drop(serve);
+    let (serve, port) = restart(&dir);
+    // what an open Settings → Agents reads: the rows on the topic, once the plugin is up
+    let frames = stream(port, "c-restart", "plugin:wisp.accounts:harnesses", |f| f.contains("accounts.harness")).await;
+    let w1 = logins_in(&frames).remove("codex@w1");
+    assert!(w1.as_ref().is_none_or(|(row, _)| !["running", "waiting"].contains(&row["state"].as_str().unwrap_or(""))), "{w1:?}");
+    drop(serve);
+}

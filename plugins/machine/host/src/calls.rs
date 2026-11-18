@@ -63,7 +63,8 @@ fn start_args(prompt: String, title: String, cwd: Option<&str>) -> r::StartArgs 
 
 /// `worktrees.view` (none, logged, when refused: the page shows no worktrees).
 pub(crate) async fn worktrees(ctx: &Ctx, call: &Call) -> Option<WtView> {
-    match ctx.run::<w::View>(call, w::Empty {}).await {
+    // the last look, never a new one (a git and disk scan) or a republish: this runs every sample
+    match ctx.run::<w::ViewLast>(call, w::Empty {}).await {
         Ok(v) => Some(wt_of(&v)),
         Err(err) => {
             tracing::warn!(error = %err.message, "machine: worktrees.view");

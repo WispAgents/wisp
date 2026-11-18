@@ -34,6 +34,12 @@ import { CONTEXT_MARGIN, contextPlace, detentAfter, detentsOf, phoneRows, rowsHe
 import { markRoot } from '../src/platform/root-mark.ts';
 
 const GOLDEN = JSON.parse(goldenRaw) as Record<string, string>;
+
+// The browser halves of the lazy controls, loaded as the file loads: their first import is transformed in the same
+// process as every other package's (CI's Windows suite: one run, 800 s of transforms), which no test should time.
+// Inside the test it took the browser-look render past its 5 s on Windows (CI 1b971518). The phone halves stay
+// unloaded: `the_browser_never_fetches_the_phone_halves_not_even_on_idle` checks that.
+await preloadControls();
 const noop = (): void => {};
 const q = (sel: string): HTMLElement | null => document.querySelector<HTMLElement>(sel);
 const qa = (sel: string): HTMLElement[] => [...document.querySelectorAll<HTMLElement>(sel)];
@@ -105,14 +111,12 @@ async function htmlOf(s: OverlayScene): Promise<string> {
 
 describe('the browser look is unchanged', () => {
   it('a_browser_render_of_every_overlay_is_byte_identical_to_before', async () => {
-    await preloadControls();
     // the phone-only props passed too (detents, Select): the browser ignores every one
     const extra = (kind: string): Record<string, unknown> => (kind === 'sheet' || kind === 'dialog' ? { detents: ['large'] } : kind === 'context' ? { onSelectMode: noop } : {});
     for (const s of overlayScenes(extra)) expect(await htmlOf(s), s.name).toBe(GOLDEN[s.name]);
   });
 
   it('the_browser_never_fetches_the_phone_halves_not_even_on_idle', async () => {
-    await preloadControls();
     for (const s of overlayScenes()) await htmlOf(s);
     expect(phoneOverlays.ready()).toBeUndefined();
   });

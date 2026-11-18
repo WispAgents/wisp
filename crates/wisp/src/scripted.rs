@@ -1,5 +1,6 @@
 //! The curated verbs that read and steer tasks (ls, show, wait, reply, btw), on v2's commands
 //! (`runtime.*` over `POST /api/cmd`) and topics: no v1 route (ADR-0031).
+use std::fmt::Write as _;
 use std::io::Write;
 use std::time::Duration;
 
@@ -52,6 +53,39 @@ pub fn launch_args(f: &Flags, prompt: &str, cwd: &str) -> Value {
     a
 }
 
+/// Setup audit F4: a task started from a project's folder is that project's, as New task's is. Its cwd is spelled as
+/// the project's path (the shell's `/private/var/…` is the project's `/var/…`, so the app files it under the project),
+/// and it gets its own worktree when Worktree per task (`worktrees.worktree`) is on, unless `--worktree` or
+/// `--no-worktree` said. Outside every project the arguments stay as they are.
+pub async fn in_project(c: &Client, a: &mut Value) {
+    let Some(cwd) = a.get("cwd").and_then(Value::as_str).map(str::to_owned) else { return };
+    let Ok(projects) = c.cmd("resources.export", json!({ "kinds": ["project"] })).await else { return };
+    let mut best: Option<(usize, String)> = None;
+    for p in projects.as_array().into_iter().flatten() {
+        let Some(path) = p.pointer("/spec/path").and_then(Value::as_str) else { continue };
+        let root = path.trim_end_matches('/');
+        for here in [Some(cwd.as_str()), cwd.strip_prefix("/private")].into_iter().flatten() {
+            // the subfolder as this spelling has it (`is_within` may match `/private/var/…` to `/var/…` too)
+            let Some(rest) = here.strip_prefix(root).filter(|r| r.is_empty() || r.starts_with('/')) else { continue };
+            if !wisp_runtime_api::paths::is_within(here, root) {
+                continue;
+            }
+            if best.as_ref().is_none_or(|(n, _)| root.len() > *n) {
+                best = Some((root.len(), format!("{root}{rest}")));
+            }
+        }
+    }
+    let Some((_, spelled)) = best else { return };
+    a["cwd"] = json!(spelled);
+    if a.get("worktree").is_none() {
+        let on = c.cmd("settings.get", json!({ "key": "worktrees.worktree" })).await.ok().is_none_or(|v| {
+            let v = v.get("value").unwrap_or(&v);
+            !(v == "off" || *v == json!(false))
+        });
+        a["worktree"] = json!(on);
+    }
+}
+
 /// Until the task needs you (it isn't running), from its topic: no polling.
 pub async fn wait(c: &Client, id: &str, timeout: Duration) -> Result<Value> {
     let done = crate::attach::until(c, id, |s| !matches!(s.get("state").and_then(Value::as_str), Some("running") | None));
@@ -68,21 +102,28 @@ pub async fn task_id(c: &Client, w: &str) -> Result<String> {
         c.cmd("runtime.get", json!({ "id": w })).await?;
         return Ok(w.to_owned());
     }
-    let list = c.cmd("runtime.list", json!({})).await?;
-    let newest = list
-        .as_array()
-        .into_iter()
-        .flatten()
-        .filter(|t| t.get("archived") != Some(&json!(true)))
+    newest(c).await?.ok_or_else(|| CliError::said("no tasks yet: wisp \"<what to do>\" starts one"))
+}
+
+/// The newest task made (not archived), reading the list a page at a time, newest changed first (perf audit 2026-11-18
+/// #10: it read every task, 2.3 MB at 5,000): a task changes when it's made, so once a page's oldest change is before
+/// the newest making seen so far, no task further down was made later.
+async fn newest(c: &Client) -> Result<Option<String>> {
+    let made = |t: &Value| t.get("createdAt").or_else(|| t.get("created_at")).and_then(Value::as_i64).unwrap_or(0);
+    let changed = |t: &Value| t.get("updatedAt").or_else(|| t.get("updated_at")).and_then(Value::as_i64).unwrap_or(0);
+    let mut limit = 50u32;
+    loop {
+        let list = c.cmd("runtime.list", json!({ "archived": false, "limit": limit })).await?;
+        let rows = list.as_array().cloned().unwrap_or_default();
         // made in the same millisecond: the ids are time-ordered (UUIDv7), the later one is newer
-        .max_by_key(|t| {
-            let at = t.get("createdAt").or_else(|| t.get("created_at")).and_then(Value::as_i64).unwrap_or(0);
-            (at, t.get("id").and_then(Value::as_str).unwrap_or_default().to_owned())
-        });
-    newest
-        .and_then(|t| t.get("id").and_then(Value::as_str))
-        .map(str::to_owned)
-        .ok_or_else(|| CliError::said("no tasks yet: wisp \"<what to do>\" starts one"))
+        let best = rows.iter().max_by_key(|t| (made(t), t.get("id").and_then(Value::as_str).unwrap_or_default().to_owned()));
+        let short = rows.len() < limit as usize;
+        let settled = best.is_some_and(|b| rows.last().is_some_and(|l| changed(l) < made(b)));
+        if short || settled || limit >= 1 << 20 {
+            return Ok(best.and_then(|t| t.get("id").and_then(Value::as_str)).map(str::to_owned));
+        }
+        limit *= 4;
+    }
 }
 
 /// `wisp show <id>`: its state and its last answer, drawn for the terminal (`--json`: the task and the
@@ -104,8 +145,30 @@ pub async fn show(c: &Client, f: &Flags, id: &str, summary: Option<Value>) -> Re
     let family = crate::history_cli::lineage_line(c, id).await.map_or_else(String::new, |l| format!("\n{l}"));
     let blocks = p.get("blocks").and_then(Value::as_array).cloned().unwrap_or_default();
     let body = if blocks.is_empty() { String::new() } else { wisp_cli_core::Renderers::builtin().answer(&blocks, &st).join("\n") };
-    say(&format!("◌ {}  [{}{still}]  {id}{family}\n\n{body}", s(&task, "title"), s(&task, "state")));
+    let asks = asking(&task);
+    say(&format!("◌ {}  [{}{still}]  {id}{family}\n\n{body}{asks}", s(&task, "title"), s(&task, "state")));
     Ok(())
+}
+
+/// The question the task waits on (an `ask_user`, a live approval), its context and options, and how to answer it from
+/// here: a CLI user sees what the page shows (orch #11). '' when it asks nothing.
+pub fn asking(task: &Value) -> String {
+    let Some(ask) = task.pointer("/ext/wisp.runtime/ask") else { return String::new() };
+    let q = ask.get("question").and_then(Value::as_str).unwrap_or_default().trim();
+    if q.is_empty() {
+        return String::new();
+    }
+    let head = if ask.get("permission").is_some() { "Needs your OK" } else { "Asks" };
+    let mut out = format!("\n\n? {head}: {q}");
+    if let Some(ctx) = ask.get("context").and_then(Value::as_str).map(str::trim).filter(|c| !c.is_empty()) {
+        let _ = write!(out, "\n  {ctx}");
+    }
+    for (i, o) in ask.get("options").and_then(Value::as_array).into_iter().flatten().filter_map(Value::as_str).enumerate() {
+        let _ = write!(out, "\n  {}. {o}", i + 1);
+    }
+    let id = task.get("id").and_then(Value::as_str).unwrap_or_default();
+    let _ = write!(out, "\n  Answer: wisp reply {id} \"<your answer>\"");
+    out
 }
 
 pub async fn ls(c: &Client, f: &Flags) -> Result<()> {
@@ -125,7 +188,16 @@ pub async fn ls(c: &Client, f: &Flags) -> Result<()> {
     }
     // every task, archived ones too (`--all` keeps them below); `{archived: true}` is the archived ones only, which made
     // `ls --all` say "No sessions." with tasks there (QA round 13 #2)
-    let list = c.cmd("runtime.list", json!({})).await?;
+    // what the server can narrow it reads there (perf audit 2026-11-18 #10, as v1 asked): live tasks unless `--all`, and
+    // only `--limit` of them when no state or folder filter comes after
+    let mut ask = serde_json::Map::new();
+    if !f.all {
+        ask.insert("archived".into(), json!(false));
+    }
+    if let Some(l) = f.limit.filter(|_| states.is_empty() && f.cwd.is_none()) {
+        ask.insert("limit".into(), json!(l));
+    }
+    let list = c.cmd("runtime.list", Value::Object(ask)).await?;
     let cwd = f.cwd.as_ref().map(|p| p.display().to_string());
     let rows: Vec<&Value> = list
         .as_array()
@@ -220,5 +292,17 @@ mod tests {
         f.agent = Some("reviewer".into());
         f.worktree = Some(false);
         assert_eq!(launch_args(&f, "x", "/w"), json!({ "prompt": "x", "cwd": "/w", "agent": "reviewer", "worktree": false }));
+    }
+
+    /// orch #11: `wisp show` / `wisp wait` say what a waiting task asks, with its options and how to answer.
+    #[test]
+    fn a_waiting_tasks_question_is_shown_with_its_options() {
+        let task = json!({ "id": "t1", "state": "waiting", "ext": { "wisp.runtime": { "ask": { "id": "a", "question": "Which database?", "context": "Both work.", "options": ["Postgres", "SQLite"] } } } });
+        let out = asking(&task);
+        assert!(out.contains("? Asks: Which database?") && out.contains("Both work."), "{out}");
+        assert!(out.contains("1. Postgres") && out.contains("2. SQLite") && out.contains("wisp reply t1"), "{out}");
+        let ok = json!({ "id": "t2", "ext": { "wisp.runtime": { "ask": { "id": "b", "question": "Allow npm publish?", "permission": { "tool": "Bash" } } } } });
+        assert!(asking(&ok).contains("? Needs your OK: Allow npm publish?"));
+        assert_eq!(asking(&json!({ "id": "t3", "ext": {} })), "", "nothing asked: nothing said");
     }
 }

@@ -197,7 +197,11 @@ impl Plugin for ShipPlugin {
                 let proc = ctx.service::<Proc>()?;
                 let shipper = Shipper {
                     git: ctx.use_service::<GitServiceV1>()?,
-                    gh: gh::Gh::new((*proc).clone(), "gh"),
+                    // `WISP_GH_BIN` as wisp.github, wisp.history and wisp.accounts read it (a test's fake gh, a gh off PATH)
+                    gh: gh::Gh::new(
+                        (*proc).clone(),
+                        std::env::var("WISP_GH_BIN").ok().filter(|b| !b.is_empty()).unwrap_or_else(|| "gh".into()),
+                    ),
                     owner: ctx.scope().clone(),
                     clock: ctx.clock()?,
                 };

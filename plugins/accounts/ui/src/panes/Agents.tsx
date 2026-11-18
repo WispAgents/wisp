@@ -30,10 +30,11 @@ import {
 import { useDetected } from '../detected.ts';
 import { fromRow, text } from '../source.ts';
 import { Steps } from './Steps.tsx';
-import { addAccount, install, keyRemove, keySet, loginCancel, loginInput, loginStart, logout, recheck, removeAccount, setAsk, trust, upgrade } from '../commands.ts';
+import { addAccount, install, keyRemove, keySet, loginCancel, loginInput, loginStart, logout, recheck, removeAccount, setAsk, trust, updateAccount, upgrade } from '../commands.ts';
+import { AddAccount, RemoveAccount, RenameAccount } from './AccountDialogs.tsx';
 import { t } from '../i18n.ts';
-import { ACCOUNT, DETECT_TOPIC, HARNESS, KEY, LOGIN, PLACE, TOOL, TOPIC, loginId, type AccountRow, type HarnessRow, type KeyRow, type LoginRow, type PlaceRow, type ToolRow } from '../types.ts';
-import { accountLine, changeTip, changeTitle, changeWhat, harnessLine, harnessState, howToGet, loginControl, masked, mergeHarnesses, present, recheckSummary, site, sentence, stillChanged, toolState } from '../words.ts';
+import { ACCOUNT, DETECT_TOPIC, HARNESS, KEY, LOGIN, PLACE, TOOL, TOPIC, loginId, type AccountKind, type AccountRow, type HarnessRow, type KeyRow, type LoginRow, type PlaceRow, type ToolRow } from '../types.ts';
+import { accOf, accountMenu, accountState, withPending, accountLine, changeTip, changeTitle, changeWhat, harnessLine, harnessState, howToGet, loginControl, masked, mergeHarnesses, present, recheckSummary, site, sentence, stillChanged, toolState } from '../words.ts';
 import '../i18n/lazy.ts';
 
 const quiet = (p: Promise<unknown>): void => {
@@ -149,7 +150,8 @@ export default function Agents(props: { readonly client: PluginClient }): JSX.El
   const mine = useRows<HarnessRow>(c, HARNESS);
   // this wisp's own: the runner picker may also watch another computer's
   const detected = useDetected(c.entities, peer);
-  const harnesses = createMemo(() => mergeHarnesses(mine(), detected()));
+  // no answer yet (a restart, a first start): every known harness at once, Checking… until its row lands
+  const harnesses = createMemo(() => withPending(mergeHarnesses(mine(), detected()), marks(), mine().length === 0));
   const accounts = useRows<AccountRow>(c, ACCOUNT);
   const logins = useRows<LoginRow>(c, LOGIN);
   const keys = useRows<KeyRow>(c, KEY);
@@ -185,9 +187,12 @@ export default function Agents(props: { readonly client: PluginClient }): JSX.El
       .sort((a, b) => a.ord - b.ord);
   const keysFor = (agent: string): KeyRow[] => keys().filter((k) => k.agent === agent);
 
-  /** `row`: the harness's row as it is now (it updates in place as its detect settles) */
-  const signControl = (row: () => HarnessRow, account: string, isAccount: boolean): JSX.Element => {
-    const ctl = (): ReturnType<typeof loginControl> => loginControl(login(row().id, account), { account: isAccount, out: row().signedIn === false });
+  /** `row`: the harness's (or GitHub's) row as it is now: its id, and whether it's known signed out (it updates in place
+   *  as its detect settles) */
+  const signControl = (row: () => { readonly id: string; readonly signedIn?: boolean | null | undefined }, account: string, isAccount: boolean): JSX.Element => {
+    // no sign-in yet: what the row knows (GitHub's row says gh is signed in before any sign-in from here)
+    const known = (): LoginRow | undefined => login(row().id, account) ?? (row().signedIn === true ? { agent: row().id, account, state: 'idle', signedIn: true } : undefined);
+    const ctl = (): ReturnType<typeof loginControl> => loginControl(known(), { account: isAccount, out: row().signedIn === false });
     const args = { peer, agent: row().id, account };
     return (
       <Pick>
@@ -215,9 +220,23 @@ export default function Agents(props: { readonly client: PluginClient }): JSX.El
     );
   };
 
-  const addAnother = (h: HarnessRow): void => {
+  // v1 addBox: a name (blank: "Claude 2"), Personal or Work and the notice, then its row and its sign-in at once
+  const [adding, setAdding] = createSignal<HarnessRow | undefined>();
+  const addAnother = (h: HarnessRow, label: string, kind: AccountKind): void => {
     const n = accs(h.id).length + 1;
-    quiet(c.run(addAccount, { peer, agent: h.id, id: `a${Date.now().toString(36)}`, label: t('accounts.account.n', { brand: h.brand ?? h.name, n }), kind: 'personal' }));
+    quiet(c.run(addAccount, { peer, agent: h.id, id: `a${Date.now().toString(36)}`, label: label || t('accounts.account.n', { brand: h.brand ?? h.name, n }), kind }));
+  };
+  // the account whose Rename or Remove box is open
+  const [renaming, setRenaming] = createSignal<AccountRow | undefined>();
+  const [removing, setRemoving] = createSignal<AccountRow | undefined>();
+  /** v1 accounts.js moreMenu, every action on its account (the row's account is after its harness in its id) */
+  const onAccount = (a: AccountRow, v: string): void => {
+    const args = { peer, agent: a.agent, account: accOf(a) };
+    if (v === 'rename') setRenaming(a);
+    if (v === 'kind') quiet(c.run(updateAccount, { ...args, kind: a.kind === 'work' ? 'personal' : 'work' }));
+    if (v === 'up' || v === 'down') quiet(c.run(updateAccount, { ...args, move: v }));
+    if (v === 'out') quiet(c.run(logout, args));
+    if (v === 'remove') setRemoving(a);
   };
 
   return (
@@ -288,32 +307,33 @@ export default function Agents(props: { readonly client: PluginClient }): JSX.El
                 <Show when={h().brand && present(h())}>
                   <SettingsInset part="settings.accounts">
                     <For each={accs(h().id).length > 1 ? accs(h().id) : []}>
-                      {(a) => (
-                        <SettingsInsetRow
-                          part="accounts.account"
-                          title={a.label}
-                          description={accountLine(a)}
-                          state={a.state === 'limit' ? a.why || t('accounts.state.limit') : a.state === 'signedOut' ? t('accounts.state.signedOut') : undefined}
-                          control={
-                            <Inline gap="2">
-                              {signControl(h, a.id, true)}
-                              <Show when={!a.default}>
+                      {(a, i) => (
+                        <>
+                          <SettingsInsetRow
+                            part="accounts.account"
+                            title={a.label}
+                            description={accountLine(a)}
+                            state={accountState(a)}
+                            control={
+                              <Inline gap="2">
+                                {/* signed out or not is the account's own (v1: its state), not its harness's */}
+                                {signControl(() => ({ id: h().id, signedIn: a.state === 'signedOut' ? false : null }), accOf(a), true)}
+                                {/* v1: the same ⋯ on every row, what can't apply disabled (the CLI's own login: Sign out, not Remove) */}
                                 <Menu
+                                  part="accounts.account.menu"
                                   trigger={{ icon: 'dots', 'aria-label': t('accounts.account.more', { name: a.label }), variant: 'ghost', size: 'sm' }}
-                                  items={[
-                                    { value: 'out', label: t('accounts.login.signOut'), icon: 'lock' },
-                                    { kind: 'separator' },
-                                    { value: 'remove', label: t('accounts.account.remove'), icon: 'trash', danger: true },
-                                  ]}
-                                  onSelect={(v) => quiet(v === 'out' ? c.run(logout, { peer, agent: h().id, account: a.id }) : c.run(removeAccount, { peer, agent: h().id, account: a.id }))}
+                                  items={accountMenu(a, i(), accs(h().id).length)}
+                                  onSelect={(v) => onAccount(a, v)}
                                 />
-                              </Show>
-                            </Inline>
-                          }
-                        />
+                              </Inline>
+                            }
+                          />
+                          {/* its sign-in under its row (v1 loginPanel): the page to open, the code, the paste box */}
+                          <Steps c={c} agent={h().id} account={accOf(a)} login={login(h().id, accOf(a))} />
+                        </>
                       )}
                     </For>
-                    <SettingsInsetAdd part="accounts.add" label={t('accounts.account.add', { brand: h().brand ?? h().name })} onClick={() => addAnother(h())} />
+                    <SettingsInsetAdd part="accounts.add" label={t('accounts.account.add', { brand: h().brand ?? h().name })} onClick={() => setAdding(h())} />
                   </SettingsInset>
                 </Show>
               </>
@@ -333,8 +353,10 @@ export default function Agents(props: { readonly client: PluginClient }): JSX.El
                   <Show when={!x.installed}>
                     <Docs name={x.id === 'gh' ? t('accounts.tool.ghCli') : x.name} url={x.setup?.url} />
                   </Show>
+                  {/* v1: GitHub signs in and out from its row (gh's web login: a code and a link, under it) */}
+                  <Show when={x.id === 'gh' && x.installed}>{signControl(() => ({ id: 'gh', signedIn: login('gh')?.signedIn ?? x.signedIn }), '', false)}</Show>
                   {/* gh signed in or out, as Home's tip asks (QA r1 #23: the row said nothing) */}
-                  <Show when={toolState(x)}>
+                  <Show when={!x.installed && toolState(x)}>
                     {(s) => (
                       <Pill tone={s().tone} dot variant="plain" part="accounts.tool.state">
                         {s().label}
@@ -346,6 +368,9 @@ export default function Agents(props: { readonly client: PluginClient }): JSX.El
             />
           )}
         </For>
+        <Show when={tools().some((x) => x.id === 'gh' && x.installed)}>
+          <Steps c={c} agent="gh" account="" login={login('gh')} />
+        </Show>
       </SettingsGroup>
       <SettingsGroup part="accounts.watch">
         {/* v1 Lean Claude Code runs (`runtime.leanRuns`): off, wisp's side runs, every run */}
@@ -406,6 +431,13 @@ export default function Agents(props: { readonly client: PluginClient }): JSX.El
         />
       </SettingsGroup>
       <Show when={keysOf()}>{(h) => <Keys c={c} h={h()} keys={keysFor(h().id)} onClose={() => setKeysOf(undefined)} />}</Show>
+      <Show when={adding()}>{(h) => <AddAccount brand={h().brand ?? h().name} onAdd={(label, kind) => addAnother(h(), label, kind)} onClose={() => setAdding(undefined)} />}</Show>
+      <Show when={renaming()}>
+        {(a) => <RenameAccount label={a().label} onRename={(label) => quiet(c.run(updateAccount, { peer, agent: a().agent, account: accOf(a()), label }))} onClose={() => setRenaming(undefined)} />}
+      </Show>
+      <Show when={removing()}>
+        {(a) => <RemoveAccount label={a().label} onRemove={() => quiet(c.run(removeAccount, { peer, agent: a().agent, account: accOf(a()) }))} onClose={() => setRemoving(undefined)} />}
+      </Show>
     </>
   );
 }

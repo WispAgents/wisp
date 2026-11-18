@@ -1,7 +1,7 @@
 // Settings → All settings: every setting wisp's plugins declare, the same registry `wisp settings` and a
 // formula's `settings:` reach, searchable, grouped by the plugin that owns it. Each row has the control its type
 // takes (a switch, a choice, a number or text), shows its default when unset, and says what locks it (a formula).
-import { createMemo, createResource, createSignal, For, Show, type JSX } from 'solid-js';
+import { createEffect, createMemo, createResource, createSignal, For, on, Show, type JSX } from 'solid-js';
 import type { Json, PluginClient } from '@wisp/client';
 import { Input, Select, SettingsGroup, SettingsRow, Switch, Text, useSignal } from '@wisp/ui';
 import { list, type SettingInfo } from '../commands.ts';
@@ -45,10 +45,12 @@ function Control(props: { readonly c: PluginClient; readonly s: SettingInfo }): 
   }
 }
 
-export default function All(props: { readonly client: PluginClient }): JSX.Element {
+export default function All(props: { readonly client: PluginClient; /** Settings' search opened it on one setting (its key) */ readonly filter?: string }): JSX.Element {
   const c = props.client;
   const [rows] = createResource(() => c.run(list, { peer: c.home }).catch((): SettingInfo[] => []));
-  const [q, setQ] = createSignal('');
+  const [q, setQ] = createSignal(props.filter ?? '');
+  // Settings' search opening it again on another setting while it's open (the same pane is kept)
+  createEffect(on(() => props.filter, (f) => f !== undefined && setQ(f), { defer: true }));
   const groups = createMemo(() => {
     const needle = q().trim().toLowerCase();
     const by = new Map<string, SettingInfo[]>();

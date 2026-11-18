@@ -187,7 +187,7 @@ mod tests {
     async fn an_audit_a_restart_cut_off_reads_as_skipped() {
         let store = wisp_store::Store::open(wisp_store::Location::Memory, std::sync::Arc::new(wisp_store::SystemClock)).unwrap();
         store::install(&store).unwrap();
-        let st = State { store, out: std::env::temp_dir(), busy: Busy::default() };
+        let st = State { store, out: std::env::temp_dir(), busy: Busy::default(), windows: crate::health::Windows::default() };
         let a = Audit { task: "t1".into(), turn: "u1".into(), total: 3, at: 1_000, ..Audit::default() };
         save(&st, &a).await.unwrap();
         assert_eq!(list(&st, "t1", 1_000 + 60_000).await.unwrap()[0].status, AuditStatus::Running, "still asking a minute on");

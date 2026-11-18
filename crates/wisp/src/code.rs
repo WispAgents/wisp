@@ -214,6 +214,11 @@ pub fn load(files: &[String], profiles: &[String], kinds: &[KindInfo], cwd: &Pat
         }
         all.sources.extend(got.sources);
         all.secrets.extend(got.secrets);
+        for k in got.kinds {
+            if !all.kinds.contains(&k) {
+                all.kinds.push(k);
+            }
+        }
     }
     Ok(all)
 }
@@ -262,7 +267,24 @@ pub fn show_plan(p: &Plan, st: &wisp_cli_api::Style) {
             wisp_resources_api::OpKind::Delete => del += 1,
         }
     }
-    say(&format!("\n  {}", paint(st, BOLD, &format!("{add} to add, {change} to change, {del} to remove, {} unchanged", p.unchanged))));
+    if p.problems.is_empty() {
+        say(&format!("\n  {}", paint(st, BOLD, &format!("{add} to add, {change} to change, {del} to remove, {} unchanged", p.unchanged))));
+    } else {
+        // a formula with problems applies nothing: never "1 to add" above the reason it can't (audit A #14)
+        let n = p.problems.len();
+        say(&format!(
+            "\n  {}",
+            paint(
+                st,
+                BOLD,
+                &format!(
+                    "{n} problem{}: nothing can be applied until {} fixed",
+                    if n == 1 { "" } else { "s" },
+                    if n == 1 { "it's" } else { "they're" }
+                )
+            )
+        ));
+    }
     for s in &p.sensitive {
         say(&format!("  {} {}", paint(st, YELLOW, "!"), s));
     }
@@ -326,7 +348,7 @@ pub async fn apply(c: &Client, verb: &str, o: &Opts, cwd: &Path) -> Result<i32> 
     let destroy: Vec<String> =
         if verb == "destroy" { loaded.resources.iter().map(|r| format!("{}.{}", r.kind, r.name)).collect() } else { Vec::new() };
     let resources = if verb == "destroy" { Vec::new() } else { loaded.resources.clone() };
-    let args = json!({ "resources": resources, "prune": o.prune, "foreign": foreign, "trust": o.trust, "destroy": destroy });
+    let args = json!({ "resources": resources, "prune": o.prune, "foreign": foreign, "trust": o.trust, "destroy": destroy, "kinds": loaded.kinds });
     let plan: Plan = serde_json::from_value(c.cmd("resources.plan", args.clone()).await?).map_err(|e| CliError::said(e.to_string()))?;
     if o.json {
         say(&serde_json::to_string_pretty(&plan).unwrap_or_default());
@@ -356,6 +378,7 @@ pub async fn apply(c: &Client, verb: &str, o: &Opts, cwd: &Path) -> Result<i32> 
         if plan.ops.is_empty() && !matches!(verb, "diff" | "plan") {
             say(&format!("  {} nothing to change", paint(&st, GREEN, "✓")));
         }
+        prune_hint(o, &plan, &loaded, verb, &st);
         return Ok(i32::from(!plan.problems.is_empty()));
     }
     if !plan.problems.is_empty() || !plan.missing_secrets.is_empty() {
@@ -390,6 +413,16 @@ pub async fn apply(c: &Client, verb: &str, o: &Opts, cwd: &Path) -> Result<i32> 
     let done = c.cmd("resources.apply", args).await?;
     say(&format!("  {} applied {} change{}", paint(&st, GREEN, "✓"), done["applied"], if done["applied"] == 1 { "" } else { "s" }));
     Ok(0)
+}
+
+/// --prune empties only the sections the formula names: one deleted whole names nothing, so say how (audit A #15).
+fn prune_hint(o: &Opts, plan: &Plan, loaded: &Loaded, verb: &str, st: &wisp_cli_api::Style) {
+    if o.prune && plan.ops.is_empty() && loaded.kinds.is_empty() && verb != "destroy" {
+        say(&format!(
+            "  {}",
+            paint(st, DIM, "--prune removes what a section no longer lists: keep the section (triggers: []) or wisp destroy <kind>.<name>")
+        ));
+    }
 }
 
 /// `wisp export [kinds…] [--include ui,account] [--format yaml|json|toml]`.

@@ -3,7 +3,7 @@
 // remove; and the git repos found on this computer, one click to add. Every write is a resource op on wisp.runtime's
 // `project` kind, shown at once and rolled back with a toast if refused.
 
-import { createMemo, createResource, createSignal, type JSX } from 'solid-js';
+import { createMemo, createResource, createSignal, onMount, type JSX } from 'solid-js';
 import { defineCommand, entityKey, type PeerId, type PluginClient } from '@wisp/client';
 import { PathField, ProjectsSheet, reorderable, useSignal } from '@wisp/ui';
 import { useShell } from '../context.tsx';
@@ -173,6 +173,11 @@ export default function Projects(_p: { readonly client: PluginClient; readonly p
     const [before, after] = t('shell.projects.hint').split('wisp add');
     return after === undefined ? [before ?? ''] : [before ?? '', { code: 'wisp add' }, after];
   };
+  // the caret in the path field as it opens (audit A F26: the dialog focused its first tab, so typing went nowhere)
+  let pathEl: HTMLInputElement | undefined;
+  onMount(() => requestAnimationFrame(() => pathEl?.focus()));
+  // the empty state points only at what's there: "pick one below" with nothing below read as a broken page (F26)
+  const below = (): boolean => (found() ?? []).length > 0 || ghRepos().length > 0;
   const openMachines = (): void => shell.navigate({ t: 'openOverlay', overlay: { kind: 'viewer', id: 'shell-settings.sheet' as never, params: { pane: 'machines' } } });
   return (
     <ProjectsSheet
@@ -181,6 +186,7 @@ export default function Projects(_p: { readonly client: PluginClient; readonly p
       addMachine={{ label: t('shell.projects.machine'), title: t('shell.projects.machineTitle'), onClick: openMachines }}
       field={
         <PathField
+          ref={(el) => (pathEl = el)}
           size="lg"
           value={source()}
           onInput={setSource}
@@ -206,7 +212,7 @@ export default function Projects(_p: { readonly client: PluginClient; readonly p
         color: COLORS.includes(p.color as never) ? (p.color as string) : 'slate',
         reorder: reorderable('projects', p.id, ids, reorder),
       }))}
-      empty={t('shell.projects.none')}
+      empty={t(below() ? 'shell.projects.none' : 'shell.projects.noneAbove')}
       nameLabel={t('shell.projects.name')}
       colourLabel={t('shell.projects.colour')}
       colours={COLORS.map((c) => ({ value: c, label: t(`shell.projects.color.${c}`) }))}

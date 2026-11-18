@@ -194,6 +194,12 @@ impl Runtime {
         // another harness taking over: what it missed goes first, with the user's rules (v1 handoff.js)
         let asked = Turn { prompt: Box::pin(self.with_handoff(&s, &asked, asked.prompt.clone())).await, ..asked };
         let mut run = self.harness_run(&s, &asked, &ctx, harness.as_ref());
+        // the files the turn names by upload id, on disk where the harness can read them (orch #1)
+        run.attachments = self.files_for_run(&run.attachments).await;
+        // a side discussion runs in the main task's folder, with where it stands before the user's words (orch #5)
+        if is_side(&s) {
+            self.side_discussion_run(&s, harness.info(), &mut run, &hooked.prompt).await;
+        }
         run.grants = next
             .get("grants")
             .and_then(Value::as_array)
@@ -428,6 +434,21 @@ impl Runtime {
         wisp_runtime_core::plan::outside(&origins)
     }
 
+    /// v1 `teamNote` for the lead's roster (`ext["wisp.runtime"].subagents`), '' without one or a harness that
+    /// can't take wisp's tools.
+    fn team_note(&self, s: &Session, ask_tool: Option<&str>) -> String {
+        let team: Vec<wisp_runtime_core::prompt::subagents::Member> = s
+            .ext
+            .get("wisp.runtime")
+            .and_then(|o| o.get("subagents"))
+            .and_then(Value::as_array)
+            .map(|list| list.iter().filter_map(|m| serde_json::from_value(m.clone()).ok()).collect())
+            .unwrap_or_default();
+        let tool = ask_tool.map(|a| a.rsplit_once("ask_user").map_or_else(|| "delegate".to_owned(), |(pre, _)| format!("{pre}delegate")));
+        let name = |id: &str| self.harness(id).ok().map(|h| h.info().name.clone());
+        wisp_runtime_core::prompt::subagents::team_note(&team, &name, tool.as_deref())
+    }
+
     fn harness_run(&self, s: &Session, t: &Turn, ctx: &BeforeRunCtx, h: &dyn Harness) -> HarnessRun {
         let info = h.info();
         let parts: Vec<String> = self.host.prompt_parts().iter().map(|p| p.part(s)).filter(|p| !p.is_empty()).collect();
@@ -437,6 +458,13 @@ impl Runtime {
         let plain = !self.on_unless_off("runtime.blocks") && s.parent_id.is_none() && !s.ext.contains_key("wisp.crew");
         let mut system =
             system_prompt(&SystemOpts { ask_tool: info.ask_tool.clone(), apps, watch, blocks: !plain, ..SystemOpts::default() });
+        // a lead hears about its team (v1 runner.js:1379 `teamNote`): Delegate's rows, a preset, a crew member's
+        // linked delegates (orch #2); only where wisp's MCP server (and so `delegate`) is there to use it
+        if s.parent_id.is_none() && self.host.agent_access().is_some() {
+            system.push_str(&self.team_note(s, info.ask_tool.as_deref()));
+        }
+        // a side discussion: what it is and what it may do (v1 sideNote)
+        system.push_str(&self.side_system(s, info));
         for p in &parts {
             system.push_str("\n\n");
             system.push_str(p);

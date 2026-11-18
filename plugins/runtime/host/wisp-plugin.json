@@ -132,6 +132,12 @@
         "readOnly": true
       },
       {
+        "id": "runtime.slots",
+        "title": "Plugins' slots of every task",
+        "readOnly": true,
+        "uiOnly": "a plugin's own read of its slots across every task (worktrees, ship, the machine view); an agent reads its task with wisp_session"
+      },
+      {
         "id": "runtime.turns",
         "title": "A task's turns",
         "readOnly": true
@@ -198,6 +204,10 @@
       {
         "id": "runtime.answer",
         "title": "Answer an agent's question"
+      },
+      {
+        "id": "runtime.unask",
+        "title": "Take back a question a plugin put on a task"
       },
       {
         "id": "runtime.pollAnswer",

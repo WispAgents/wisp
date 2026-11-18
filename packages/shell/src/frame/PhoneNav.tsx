@@ -5,7 +5,6 @@
 import { createMemo, type JSX } from 'solid-js';
 import { NavigationBar, useSignal, type IconName, type NavigationItem } from '@wisp/ui';
 import { useShell } from '../context.tsx';
-import '../i18n/lazy.ts';
 import { destinationOf, destinationsOf, intentOf } from './destinations.ts';
 
 export function PhoneNav(): JSX.Element {

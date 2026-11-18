@@ -47,6 +47,13 @@ export function pickPane(entries: readonly PaneEntry[], order: readonly string[]
   return found ?? entries.find((e) => e.pane.id === order[0]);
 }
 
+/** The same open pane: its id, component and plugin (QA setup audit F8: the pane list is made again when a setting
+ *  changes, and a new entry for the same pane remade it whole, every control new). */
+export function samePane(a: PaneEntry | undefined, b: PaneEntry | undefined): boolean {
+  if (a === undefined || b === undefined) return a === b;
+  return a.pane.id === b.pane.id && a.pane.component === b.pane.component && a.client === b.client;
+}
+
 export function parseParams(p: unknown): SettingsParams {
   const o = p && typeof p === 'object' ? (p as Record<string, unknown>) : {};
   const pane = typeof o['pane'] === 'string' && o['pane'] !== '' ? o['pane'] : undefined;

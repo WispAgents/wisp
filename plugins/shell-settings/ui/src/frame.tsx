@@ -4,15 +4,16 @@
 // explicit pane opens straight to it, as in v1. Each pane renders with its own plugin's client and
 // inside an ErrorBoundary, so one broken pane never takes Settings down.
 
-import { ErrorBoundary, Show, createMemo, createSignal, type JSX } from 'solid-js';
+import { ErrorBoundary, Show, createMemo, createResource, createSignal, type JSX } from 'solid-js';
 import { Dynamic } from 'solid-js/web';
-import type { PluginClient, Vars } from '@wisp/client';
-import { usePluginClient, useShell, type SettingsPaneDef } from '@wisp/shell';
+import { defineCommand, type PeerId, type PluginClient, type Vars } from '@wisp/client';
+import { titleParts, usePluginClient, useShell, type SettingsPaneDef } from '@wisp/shell';
 import { Callout, EmptyState, Input, SettingsFrame, useDerived, useSignal } from '@wisp/ui';
 import { t as own } from './i18n.ts';
 import { VIEW_ID, type SettingsParams } from './types.ts';
-import { pickPane, settingsIntent, type PaneEntry } from './nav.ts';
+import { pickPane, samePane, settingsIntent, type PaneEntry } from './nav.ts';
 import { filterSections, offeredPanes, sectionedPanes } from './phone-nav.ts';
+import { foundSettings, settingTarget, type FoundSetting } from './search.ts';
 import './i18n/lazy.ts';
 
 /** What the frame reads: every registered pane and a translator (titles are other plugins' keys). */
@@ -25,6 +26,15 @@ export interface FrameDeps {
   readonly sideBySide?: () => boolean;
 }
 
+
+/** every declared setting (wisp.settings' read, as All settings lists them): what the search finds besides panes */
+const settingsList = defineCommand<{ peer: PeerId }, readonly { key: string; owner: string; decl: { title?: string | null } }[]>({
+  id: 'settings.list',
+  owner: (a) => a.peer,
+  wire: () => ({}),
+  optimistic: 'none',
+  pending: 'the settings list',
+});
 
 /** Inside the shell: its panes (each with its plugin's client) and its translator. */
 export function shellDeps(): FrameDeps {
@@ -56,11 +66,41 @@ export function SettingsView(props: { readonly client: PluginClient; readonly pa
     const s = deps.t(`${title}.lede`);
     return s === `${title}.lede` ? '' : s;
   };
-  const groups = createMemo(() => filterSections(all(), query(), ledeOf));
+  // a pane's rows' words (`<title>.keywords`: "theme light dark …"), so "theme" finds General (audit A F11)
+  const aboutOf = (id: string): string => {
+    const title = panes().find((e) => e.pane.id === id)?.pane.title ?? '';
+    const k = deps.t(`${title}.keywords`);
+    return `${ledeOf(id)} ${k === `${title}.keywords` ? '' : k}`;
+  };
+  // every declared setting, read once a search starts, through All settings' plugin (wisp.settings owns the read)
+  const reader = (): PluginClient | undefined => panes().find((e) => e.pane.id === 'all')?.client;
+  const [declared] = createResource(
+    () => (query().trim() !== '' ? reader() : undefined),
+    (c) =>
+      c
+        .run(settingsList, { peer: c.home })
+        .then((rows) => rows.map((r): FoundSetting => ({ key: r.key, owner: r.owner, ...titleParts(r.decl.title ?? r.key) })))
+        .catch((): FoundSetting[] => []),
+  );
+  const paneOwners = (): { id: string; plugin: string }[] => panes().map((e) => ({ id: e.pane.id, plugin: (e.pane as { plugin?: string }).plugin ?? '' }));
+  const groups = createMemo(() => {
+    const byPane = filterSections(all(), query(), aboutOf);
+    const found = foundSettings(declared() ?? [], query()).slice(0, 20);
+    if (found.length === 0) return byPane;
+    return [...byPane, { id: 'found', label: own('shell-settings.search.settings'), items: found.map((f) => ({ id: `setting:${f.key}`, label: f.label, icon: 'settings' as const })) }];
+  });
+  const open = (id: string): void => {
+    if (!id.startsWith('setting:')) return props.client.navigate(settingsIntent(id, undefined, deps.sideBySide?.() === true));
+    const f = (declared() ?? []).find((x) => `setting:${x.key}` === id);
+    if (!f) return;
+    const to = settingTarget(f, paneOwners());
+    props.client.navigate(settingsIntent(to.pane, to.filter, deps.sideBySide?.() === true));
+  };
+  const nothing = (): boolean => query().trim() !== '' && !declared.loading && groups().length === 0;
   const onSearchKey = (e: KeyboardEvent): void => {
     if (e.key === 'Enter') {
       const first = groups()[0]?.items[0]?.id;
-      if (first !== undefined) props.client.navigate(settingsIntent(first, undefined, deps.sideBySide?.() === true));
+      if (first !== undefined) open(first);
     } else if (e.key === 'Escape' && query() !== '') {
       // the first Esc clears the search; the next closes Settings
       e.preventDefault();
@@ -81,7 +121,8 @@ export function SettingsView(props: { readonly client: PluginClient; readonly pa
       part="shell-settings.search"
     />
   );
-  const current = createMemo(() => pickPane(panes(), order(), props.params.pane));
+  // the same pane keeps its entry: a pane list made again (a setting changed) doesn't remake the open pane
+  const current = createMemo(() => pickPane(panes(), order(), props.params.pane), undefined, { equals: samePane });
   // the phone apps' list: Back is titled with the screen under Settings (iOS), Tasks, whose me menu opens it
   const backLabel = (): string | undefined => {
     if (!deps.phone) return undefined;
@@ -108,7 +149,7 @@ export function SettingsView(props: { readonly client: PluginClient; readonly pa
       groups={groups()}
       search={search}
       current={current()?.pane.id ?? ''}
-      onPick={(id) => props.client.navigate(settingsIntent(id, undefined, deps.sideBySide?.() === true))}
+      onPick={open}
       paneTitle={current() ? deps.t(current()?.pane.title ?? '') : own('shell-settings.title')}
       lede={lede()}
       view={props.params.pane === undefined ? 'list' : 'pane'}
@@ -119,6 +160,7 @@ export function SettingsView(props: { readonly client: PluginClient; readonly pa
       backLabel={backLabel()}
       onKeyDown={onKey}
     >
+      <Show when={!nothing()} fallback={<EmptyState compact icon="search" title={own('shell-settings.search.none', { q: query().trim() })} part="shell-settings.search.empty" />}>
       <Show when={current()} keyed fallback={<EmptyState compact icon="settings" title={own('shell-settings.empty')} />}>
         {(entry) => (
           <ErrorBoundary
@@ -131,6 +173,7 @@ export function SettingsView(props: { readonly client: PluginClient; readonly pa
             <Dynamic component={entry.pane.component} client={entry.client} {...(props.params.filter !== undefined && { filter: props.params.filter })} />
           </ErrorBoundary>
         )}
+      </Show>
       </Show>
     </SettingsFrame>
   );

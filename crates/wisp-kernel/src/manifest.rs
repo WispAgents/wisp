@@ -111,6 +111,16 @@ pub struct SettingDecl {
 }
 
 impl SettingDecl {
+    /// `value` as this declaration takes it: a number or true/false that spells one of an enum's values is that value
+    /// (`wisp settings set worktrees.max 80`, a formula's `worktrees.max: 20`; setup audit F22). Anything else as it is.
+    pub fn coerce(&self, value: Value) -> Value {
+        if self.ty != "enum" || !(value.is_number() || value.is_boolean()) {
+            return value;
+        }
+        let text = value.to_string();
+        if self.values.as_deref().unwrap_or_default().contains(&text) { Value::String(text) } else { value }
+    }
+
     /// Why `value` doesn't fit this declaration, or `None`.
     pub fn problem(&self, value: &Value) -> Option<String> {
         match self.ty.as_str() {

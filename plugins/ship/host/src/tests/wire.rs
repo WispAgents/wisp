@@ -123,3 +123,57 @@ async fn a_detached_pr_does_not_come_back_from_the_slot() {
     follow_session(&h.ship, &known, &s);
     assert!(h.ship.tasks.get("t1").is_some_and(|t| t.prs.is_empty()), "the PR stays detached");
 }
+
+/// Perf audit 2026-11-18 #5: the boot follow reads every task in one list read and one slots read; it read
+/// `runtime.get` for each of 5,000 tasks after every start. The tasks with a worktree or a ship slot are followed
+/// as before; one with neither (or only a crew slot) is not.
+#[tokio::test]
+async fn boot_follows_from_one_list_and_one_slots_read_never_a_get_per_task() {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use wisp_kernel::{App, Declarative, Manifest, Plugin, PluginGroup, Result, Setup};
+    use wisp_runtime_api::commands::{Get, List, Slots, TaskSlots};
+    use wisp_runtime_api::model::Summary;
+
+    struct Runtime(Arc<AtomicUsize>, serde_json::Value);
+    impl Plugin for Runtime {
+        fn manifest(&self) -> Manifest {
+            Manifest::from_value(json!({ "wispPlugin": 1, "id": "wisp.runtime", "version": "2.0.0", "api": "^1" })).unwrap_or_default()
+        }
+        fn setup(&self, s: &mut Setup) -> Result<()> {
+            s.command::<List, _, _>(|_, _, _| async {
+                let row = |id: &str| Summary { id: id.into(), cwd: "/code/app".into(), state: SessionState::Review, ..Summary::default() };
+                Ok(vec![row("wt"), row("plain"), row("crew")])
+            });
+            let tree = self.1.clone();
+            s.command::<Slots, _, _>(move |_, _, _| {
+                let tree = tree.clone();
+                async move {
+                    Ok(vec![
+                        TaskSlots { id: "wt".into(), ext: [("wisp.worktrees".to_owned(), tree)].into() },
+                        TaskSlots { id: "crew".into(), ext: [("wisp.crew".to_owned(), json!({ "member": "ops" }))].into() },
+                    ])
+                }
+            });
+            let gets = self.0.clone();
+            s.command::<Get, _, _>(move |_, _, _| {
+                gets.fetch_add(1, Ordering::SeqCst);
+                async { Ok(Session::default()) }
+            });
+            Ok(())
+        }
+    }
+    let h = h();
+    let w = h.wt("app");
+    let tree = json!({ "path": w.path, "cwd": w.path, "branch": w.branch, "base": "main", "baseRef": "origin/main", "remote": "origin", "root": w.root, "createdAt": 1 });
+    let gets = Arc::new(AtomicUsize::new(0));
+    let me = Declarative(
+        Manifest::from_value(json!({ "wispPlugin": 1, "id": "wisp.ship", "version": "2.0.0", "api": "^1", "permissions": ["runtime:list", "runtime:slots", "runtime:get"] }))
+            .unwrap_or_default(),
+    );
+    let k = App::new().plugins(PluginGroup::new().add(Runtime(gets.clone(), tree)).add(me)).start().await.unwrap_or_else(|e| panic!("{e}"));
+    let ctx = k.ctx("wisp.ship").unwrap_or_else(|| panic!("ship's context"));
+    crate::wire::boot(&ctx, &h.ship, &Known::default()).await;
+    assert_eq!(gets.load(Ordering::SeqCst), 0, "no runtime.get per task");
+    assert_eq!(h.task("wt").repos[0].worktree.path, w.path);
+    assert!(h.ship.tasks.get("plain").is_none() && h.ship.tasks.get("crew").is_none());
+}

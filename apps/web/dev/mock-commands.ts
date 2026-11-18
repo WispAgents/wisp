@@ -95,7 +95,11 @@ function gitCtx(ctx: CommandCtx): GitCtx {
       return ctx
         .rows(`session:${bare}` as never)
         .filter((r) => r.e === 'turn')
-        .map((r) => (((r.v ?? {}) as Record<string, unknown>)['body'] ?? {}) as { changes?: never[] });
+        // a turn's edits as the runtime keeps them (`ext["wisp.runtime"].changes`), or flat (an older row)
+        .map((r) => {
+          const body = (((r.v ?? {}) as Record<string, unknown>)['body'] ?? {}) as { changes?: never[]; ext?: { 'wisp.runtime'?: { changes?: never[] } } };
+          return { changes: body.ext?.['wisp.runtime']?.changes ?? body.changes ?? [] };
+        });
     },
     base: (dir) => {
       const sum = ((task(dir)?.v['summary'] ?? {}) as Record<string, unknown>)['worktree'] as Record<string, unknown> | undefined;
@@ -789,14 +793,13 @@ export const COMMANDS: Record<string, CommandFn> = {
         needs: ['harness:claude'],
         spec: { prompt: 'fix the add bug, <secret>', cwd: '<project>' },
         formula: {},
-        report: { answers: [{ prompt: 'fix the add bug, <secret>', status: 'done', blocks: [] }], files: ['<project>/math.js'] },
-        redacted: { path: 2, secret: 2 },
+        report: { answers: [{ prompt: 'fix the add bug, <secret>', status: 'done', blocks: [] }], files: ['math.js'] },
+        redacted: { path: 1, secret: 2 },
       },
       redactions: [
         { kind: 'path', at: 'spec/cwd', was: '/Users/dev/proj', now: '<project>' },
         { kind: 'secret', at: 'spec/prompt', was: 'toke…efgh', now: '<secret>' },
         { kind: 'secret', at: 'report/answers/0/prompt', was: 'toke…efgh', now: '<secret>' },
-        { kind: 'path', at: 'report/files/0', was: '/Users/dev/proj', now: '<project>' },
       ],
       shared: null,
       work: { kind: 'files' },

@@ -81,19 +81,44 @@ async fn narrowed(ctx: &Ctx, call: &Call, sessions: &Sessions, session: &str) ->
     sessions.1.for_run(profile, s.get("mode").and_then(Value::as_str).unwrap_or_default())
 }
 
-/// What `mcp.session@1` contributors know of the session (a side discussion, spells, watch).
+/// What `mcp.session@1` contributors know of the session (a side discussion, spells, watch), and the lead's team
+/// as the runtime keeps it (`ext["wisp.runtime"].subagents`, v1 `WISP_TEAM`): `delegate` names them (orch #2).
 async fn merge_flags(ctx: &Ctx, call: &Call, session: &str, info: &mut wisp_mcp_api::SessionInfo) {
     let flags = ctx.contributions(&wisp_mcp_api::SESSION_POINT);
-    if flags.is_empty() {
-        return;
-    }
     let ext = typed::<rt::Get>(ctx, call, get(session)).await.ok().and_then(|s| s.get("ext").cloned()).unwrap_or(Value::Null);
+    if info.team.is_empty() {
+        info.team = team_of(&ext);
+    }
     for f in flags {
         let more = f.flags(session, &ext);
         info.read_only |= more.read_only;
         info.spells |= more.spells;
         info.watch |= more.watch;
     }
+}
+
+/// The roster `delegate` describes, from the runtime's slot: each member with its copies (`x#1`, `x#2`).
+fn team_of(ext: &Value) -> Vec<wisp_mcp_api::TeamEntry> {
+    let list = ext.pointer("/wisp.runtime/subagents").and_then(Value::as_array).cloned().unwrap_or_default();
+    let text = |m: &Value, k: &str| m.get(k).and_then(Value::as_str).filter(|x| !x.is_empty()).map(str::to_owned);
+    list.iter()
+        .filter_map(|m| {
+            let name = text(m, "name")?;
+            let count = m.get("count").and_then(Value::as_u64).and_then(|n| u32::try_from(n).ok()).unwrap_or(1).max(1);
+            let copies = if count > 1 { (1..=count).map(|i| format!("{name}#{i}")).collect() } else { Vec::new() };
+            // a crew member reads as who it is (v1 WISP_TEAM): "Ada of the user's crew, CI watcher"
+            let agent = match text(m, "crew") {
+                Some(_) => {
+                    let who = text(m, "label").unwrap_or_else(|| name.clone());
+                    text(m, "role").map_or_else(|| format!("{who} of the user's crew"), |r| format!("{who} of the user's crew, {r}"))
+                }
+                None => text(m, "agent").unwrap_or_default(),
+            };
+            let model = if text(m, "crew").is_some() { Some("own folder and memory".to_owned()) } else { text(m, "model") };
+            let place = text(m, "machine").map(|_| text(m, "place").unwrap_or_else(|| "another machine".into()));
+            Some(wisp_mcp_api::TeamEntry { name, agent, model, effort: text(m, "effort"), use_for: text(m, "use"), count, copies, place })
+        })
+        .collect()
 }
 
 /// A command chosen at runtime by name (an owner tool from the table, a connector, `crew.*`): by name, with JSON.
@@ -340,5 +365,30 @@ async fn user_tool(ctx: &Ctx, call: &Call, name: &str, a: Map<String, Value>, cw
         other => crate::crew::tool(ctx, call, other, &a, cwd)
             .await
             .unwrap_or_else(|| Outcome::Failed(format!("{other} isn't something this server does"))),
+    }
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod team_tests {
+    use super::team_of;
+    use serde_json::json;
+
+    /// orch #2: `delegate`'s roster is the lead's team as the runtime keeps it (Delegate's rows, a crew member's links).
+    #[test]
+    fn the_delegate_roster_is_the_sessions_team() {
+        let ext = json!({ "wisp.runtime": { "subagents": [
+            { "name": "tester", "agent": "claude", "model": "", "use": "run the tests", "count": 2 },
+            { "name": "bob", "crew": "bob123", "label": "Bob", "role": "CI watcher", "agent": "auto", "count": 1 },
+        ] } });
+        let team = team_of(&ext);
+        assert_eq!(team.len(), 2);
+        assert_eq!(
+            (team[0].name.as_str(), team[0].count, team[0].copies.clone()),
+            ("tester", 2, vec!["tester#1".to_owned(), "tester#2".to_owned()])
+        );
+        assert_eq!(team[0].use_for.as_deref(), Some("run the tests"));
+        assert_eq!(team[1].agent, "Bob of the user's crew, CI watcher");
+        assert_eq!(team_of(&json!({})), Vec::<wisp_mcp_api::TeamEntry>::new());
     }
 }

@@ -23,37 +23,86 @@ fn tree(c: &Catalogue) -> Tree {
         .collect()
 }
 
+/// What the catalogue doesn't say: the built-in groups' verbs (`wisp plugin enable`, `wisp cloud signin`), the
+/// harnesses `--agent` takes, and the setting keys (setup audit F27). Empty: the catalogue alone.
+#[derive(Debug, Clone, Default)]
+pub struct Extra {
+    pub groups: Vec<(String, Vec<String>)>,
+    pub agents: Vec<String>,
+    pub settings: Vec<String>,
+}
+
 /// The script for `shell`, or None for a shell it doesn't know.
 pub fn script(shell: &str, c: &Catalogue, curated: &[&str]) -> Option<String> {
+    script_with(shell, c, curated, &Extra::default())
+}
+
+/// [`script`], with what the catalogue doesn't say ([`Extra`]). Additive (2026-11-19).
+pub fn script_with(shell: &str, c: &Catalogue, curated: &[&str], extra: &Extra) -> Option<String> {
     match shell {
         "zsh" => Some(zsh(c, curated)),
-        "bash" => Some(bash(c, curated)),
+        "bash" => Some(bash(c, curated, extra)),
         "fish" => Some(fish(c, curated)),
         _ => None,
     }
 }
 
-fn bash(c: &Catalogue, curated: &[&str]) -> String {
+/// Each word once, in the order first seen.
+fn once(words: impl IntoIterator<Item = String>) -> Vec<String> {
+    let mut out: Vec<String> = Vec::new();
+    for w in words {
+        if !out.contains(&w) {
+            out.push(w);
+        }
+    }
+    out
+}
+
+fn bash(c: &Catalogue, curated: &[&str], extra: &Extra) -> String {
     let t = tree(c);
     let mut s = String::from(
-        "# wisp completions for bash: eval \"$(wisp completions bash)\"\n_wisp() {\n  local cur=${COMP_WORDS[COMP_CWORD]} p=${COMP_WORDS[1]} v=${COMP_WORDS[2]}\n  if [ \"$COMP_CWORD\" -eq 1 ]; then\n",
+        "# wisp completions for bash: eval \"$(wisp completions bash)\"\n_wisp() {\n  local cur=${COMP_WORDS[COMP_CWORD]} prev=${COMP_WORDS[COMP_CWORD-1]} p=${COMP_WORDS[1]} v=${COMP_WORDS[2]}\n",
     );
-    let firsts: Vec<String> = curated
-        .iter()
-        .map(|x| (*x).to_owned())
-        .chain(t.iter().map(|(p, _)| p.clone()))
-        .chain(["help".into(), "completions".into(), "attach".into()])
-        .collect();
+    if !extra.agents.is_empty() {
+        let _ = writeln!(
+            s,
+            "  case \"$prev\" in\n    --agent|-a) COMPREPLY=($(compgen -W '{}' -- \"$cur\")); return ;;\n  esac",
+            q(&extra.agents.join(" "))
+        );
+    }
+    s.push_str("  if [ \"$COMP_CWORD\" -eq 1 ]; then\n");
+    let firsts = once(
+        curated
+            .iter()
+            .map(|x| (*x).to_owned())
+            .chain(t.iter().map(|(p, _)| p.clone()))
+            .chain(extra.groups.iter().map(|(g, _)| g.clone()))
+            .chain(["help".into(), "completions".into(), "attach".into()]),
+    );
     let _ = writeln!(s, "    COMPREPLY=($(compgen -W '{}' -- \"$cur\")); return\n  fi\n  case \"$p\" in", q(&firsts.join(" ")));
-    for (p, verbs) in &t {
-        let names: Vec<&str> = verbs.iter().map(|(v, _)| v.as_str()).collect();
+    // every group: its built-in verbs, then its plugin's, each once
+    let names = once(extra.groups.iter().map(|(g, _)| g.clone()).chain(t.iter().map(|(p, _)| p.clone())));
+    for p in &names {
+        let built: Vec<String> = extra.groups.iter().filter(|(g, _)| g == p).flat_map(|(_, vs)| vs.clone()).collect();
+        let plugin: &[(String, Vec<String>)] = t.iter().find(|(x, _)| x == p).map_or(&[], |(_, vs)| vs.as_slice());
+        let verbs = once(built.into_iter().chain(plugin.iter().map(|(v, _)| v.clone())));
         let _ = writeln!(
             s,
             "    {p}) if [ \"$COMP_CWORD\" -eq 2 ]; then COMPREPLY=($(compgen -W '{}' -- \"$cur\")); return; fi\n      case \"$v\" in",
-            q(&names.join(" "))
+            q(&verbs.join(" "))
         );
-        for (v, flags) in verbs {
-            let _ = writeln!(s, "        {v}) COMPREPLY=($(compgen -W '{} --json --help' -- \"$cur\")) ;;", q(&flags.join(" ")));
+        for (v, flags) in plugin {
+            // `wisp settings set <key>` and `--key <key>`: the setting keys
+            if p == "settings" && matches!(v.as_str(), "set" | "get") && !extra.settings.is_empty() {
+                let keys = q(&extra.settings.join(" "));
+                let _ = writeln!(
+                    s,
+                    "        {v}) if [ \"$COMP_CWORD\" -eq 3 ] || [ \"$prev\" = --key ]; then COMPREPLY=($(compgen -W '{keys}' -- \"$cur\")); else COMPREPLY=($(compgen -W '{} --json --help' -- \"$cur\")); fi ;;",
+                    q(&flags.join(" "))
+                );
+            } else {
+                let _ = writeln!(s, "        {v}) COMPREPLY=($(compgen -W '{} --json --help' -- \"$cur\")) ;;", q(&flags.join(" ")));
+            }
         }
         s.push_str("      esac ;;\n");
     }
@@ -134,5 +183,42 @@ mod tests {
             assert!(s.contains("crew") && s.contains("create") && s.contains("name") && s.contains("ls"), "{sh}: {s}");
         }
         assert!(script("tcsh", &c, &[]).is_none());
+    }
+
+    /// Setup audit F27: bash offered `plugins` twice, nothing after `wisp plugin` or `wisp cloud`, no harness after
+    /// `--agent`, and no setting keys after `wisp settings set`.
+    #[test]
+    fn bash_offers_each_word_once_the_built_in_verbs_the_harnesses_and_the_setting_keys() {
+        let info = |id: &str| CommandInfo {
+            id: id.into(),
+            plugin: format!("wisp.{}", id.split('.').next().unwrap_or_default()),
+            title: None,
+            read_only: false,
+            permission: "x".into(),
+            args: Some("{ key?: string, value?: string, }".into()),
+            ui_only: None,
+        };
+        let c = Catalogue::new(vec![info("plugins.list"), info("settings.set"), info("settings.get")]);
+        let extra = Extra {
+            groups: vec![
+                ("plugin".into(), vec!["enable".into(), "disable".into(), "install".into()]),
+                ("cloud".into(), vec!["signin".into(), "status".into()]),
+            ],
+            agents: vec!["claude".into(), "codex".into()],
+            settings: vec!["worktrees.max".into(), "budget.limitHold".into()],
+        };
+        let s = script_with("bash", &c, &["plugin", "plugins", "attach"], &extra).unwrap();
+        let firsts =
+            s.lines().find(|l| l.contains("COMP_CWORD\" -eq 1") || l.contains("compgen -W 'plugin")).unwrap_or_default().to_owned();
+        let words: Vec<&str> =
+            s.split("compgen -W '").nth(1).unwrap_or_default().split('\'').next().unwrap_or_default().split(' ').collect();
+        let mut sorted = words.clone();
+        sorted.sort_unstable();
+        sorted.dedup();
+        assert_eq!(sorted.len(), words.len(), "each first word once: {words:?} {firsts}");
+        assert!(s.contains("    plugin) ") && s.contains("enable disable install"), "{s}");
+        assert!(s.contains("    cloud) ") && s.contains("signin status"), "{s}");
+        assert!(s.contains("--agent|-a) COMPREPLY=($(compgen -W 'claude codex'"), "{s}");
+        assert!(s.contains("worktrees.max budget.limitHold"), "{s}");
     }
 }

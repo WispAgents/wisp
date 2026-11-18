@@ -115,6 +115,20 @@ export function parsePasted(text: string): Draft[] | null {
     .filter((d): d is Draft => d !== null);
 }
 
+/** What a paste fills: the form with the first server (its name, else the one typed), and the others, added with it
+ *  (QA setup audit F10: only the first was taken, the rest dropped without a word). null: not a config. */
+export function pasteDrafts(text: string, typedName: string): { draft: Draft; more: Draft[] } | null {
+  const found = parsePasted(text);
+  if (!found || found.length === 0) return null;
+  // names as the server takes them ([a-z0-9_]: a raw key like "Sequential-Thinking" was refused), each once
+  const seen = new Set<string>();
+  const all = found
+    .map((d, i) => ({ ...d, name: tidyName(d.name || (i === 0 ? typedName : '')) }))
+    .filter((d) => d.name === '' || (!seen.has(d.name) && (seen.add(d.name), true)));
+  const [first, ...more] = all;
+  return first ? { draft: first, more: more.filter((d) => d.name !== '') } : null;
+}
+
 /** Starting points for the empty list: the form filled in, the secret left for you. */
 export interface Example {
   readonly label: string;

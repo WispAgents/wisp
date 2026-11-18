@@ -144,6 +144,9 @@ async fn done(st: &Arc<St>, f: &SignIn, b: &Value, add_computer: bool) -> Result
     let prev = st.accounts().get(&key).map(|a| a.machine.clone()).unwrap_or_default();
     let machine = crate::peers::cloud_box(st, &prev, &f.grid, &handle, &url, token).await?;
     let was = st.accounts().current;
+    // a second account is added beside the current one, which keeps this computer on its grid; one added to put this
+    // computer on (Sign in and add it) is the one it goes on
+    let switch = was.is_empty() || add_computer;
     // the account as it is now (a sign-out or a computer change may have landed while the box was added), then its
     // token: written last, so a sign-out racing this one can't leave the account without it, nor a failed box a
     // token no account owns
@@ -151,11 +154,11 @@ async fn done(st: &Arc<St>, f: &SignIn, b: &Value, add_computer: bool) -> Result
     st.change(move |x| {
         let mut a = x.get(&key_of(&grid, &who)).cloned().unwrap_or_else(|| Account { grid, handle: who, added, ..Account::default() });
         a.machine = m;
-        x.add(a);
+        if switch { x.add(a) } else { x.add_beside(a) }
     })
     .await?;
     wisp_kernel::services::secrets(&st.ctx)?.set(&token_key(&key), token).await?;
-    if was != key {
+    if switch && was != key {
         crate::computer::follow_current(st).await;
     }
     if add_computer {

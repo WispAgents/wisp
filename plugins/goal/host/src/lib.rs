@@ -175,9 +175,12 @@ async fn move_goal(ctx: &Ctx, live: &Inflight, a: &wisp_goal_api::TaskArgs, to: 
     // read, decided and written in one compare-and-set: a round's result (its count, its verdicts) or a drop that
     // lands between the read and the write is moved on from, never written back over as it was read
     let mut out = None;
+    let mut asked = None;
     update_ext(ctx, &call, &a.id, PLUGIN, |_, task| {
         let had = goal_with(&spec_of(task), state_of(task).as_ref(), &kinds::GoalSpec::default()).is_some();
         refuse_no_goal(had, to)?;
+        // a stalled goal asked "Keep going?" (its `why`): dropped, paused or resumed, that question is answered
+        asked = state_of(task).filter(|st| st.state == "stalled" && !st.why.is_empty()).map(|st| st.why);
         let st = moved(state_of(task).as_ref(), to, a.why.as_deref());
         let v = serde_json::to_value(&st).map_err(|e| WireError::internal(e.to_string()))?;
         out = Some((st, task.clone()));
@@ -188,6 +191,16 @@ async fn move_goal(ctx: &Ctx, live: &Inflight, a: &wisp_goal_api::TaskArgs, to: 
     // dropped: its judges still running stop (a pause lets them finish on their records, as v1 did)
     if to == "cleared" {
         live.stop(ctx, &a.id, None).await;
+    }
+    // its question goes with it, unless something else was asked since: the task stops waiting (audit A tasks #15:
+    // after Drop goal "Keep going?" stayed pinned, the row said Asking and Save refused "the agent is working")
+    if let Some(question) = asked
+        && to != "stalled"
+        && let Err(e) = ctx
+            .run::<wisp_runtime_api::commands::Unask>(&call, wisp_runtime_api::commands::UnaskArgs { id: a.id.as_str().into(), question })
+            .await
+    {
+        tracing::warn!(task = %a.id, "goal: its question stays: {}", e.message);
     }
     Ok(view_of(&spec_of(&task), Some(&st), task.created_at, task.updated_at, &kinds::GoalSpec::default()).unwrap_or(Value::Null))
 }

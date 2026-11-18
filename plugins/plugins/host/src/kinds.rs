@@ -44,8 +44,13 @@ impl ResourceKind for PluginKind {
     fn info(&self) -> KindInfo {
         self.0.info()
     }
+    /// The kept switches of the plugins there are: one taken out (or never installed here) isn't exported (setup
+    /// audit F20: a removed plugin stayed in `wisp export`, enabled).
     fn read<'a>(&'a self, call: &'a Call) -> BoxFuture<'a, Result<Vec<Resource>>> {
-        self.0.read(call)
+        Box::pin(async move {
+            let there: Vec<String> = self.0.ctx.plugins().map(|ps| ps.into_iter().map(|p| p.id).collect()).unwrap_or_default();
+            Ok(self.0.read(call).await?.into_iter().filter(|r| there.contains(&r.name)).collect())
+        })
     }
     fn describe(&self, op: &Op) -> Option<String> {
         wanted(op).map(|on| format!("switches {} {}", op.name, if on { "on" } else { "off" }))
@@ -87,6 +92,23 @@ pub async fn remember(inner: &StoredKind, call: &Call, id: &str, on: bool) -> Re
         kind: "plugin".into(),
         name: id.to_owned(),
         spec: serde_json::json!({ "enabled": on }),
+        id: None,
+        changes: Vec::new(),
+        before: None,
+    };
+    inner.apply(call, &op).await
+}
+
+/// A user's plugin taken out: its kept switch goes with it.
+pub async fn forget(inner: &StoredKind, call: &Call, id: &str) -> Result<()> {
+    if !inner.specs().await?.into_iter().any(|(n, _)| n == id) {
+        return Ok(());
+    }
+    let op = Op {
+        op: OpKind::Delete,
+        kind: "plugin".into(),
+        name: id.to_owned(),
+        spec: serde_json::json!({}),
         id: None,
         changes: Vec::new(),
         before: None,

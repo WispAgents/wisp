@@ -122,7 +122,8 @@ export interface Template {
 
 export const TEMPLATES: readonly Template[] = [
   { key: 'verify', avatar: 'bean.teal.visor.smile.halo', cron: '', on: ['finished'] },
-  { key: 'ci', avatar: 'ghost.sky.visor.flat.antenna', cron: '*/30 * * * *' },
+  // a CI watcher also starts when CI fails, not only on its check-ins (audit A #22: v1's template left it off)
+  { key: 'ci', avatar: 'ghost.sky.visor.flat.antenna', cron: '*/30 * * * *', on: ['ci'] },
   { key: 'review', avatar: 'blob.violet.wide.flat.headphones', cron: '0 * * * *' },
   { key: 'triage', avatar: 'bean.amber.happy.smile.leaf', cron: '0 9 * * 1-5' },
   { key: 'deps', avatar: 'star.lime.dots.grin.beanie', cron: '0 9 * * 1' },

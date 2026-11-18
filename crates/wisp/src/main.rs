@@ -20,6 +20,7 @@ mod fresh_cli;
 mod groups;
 mod history_cli;
 mod hook_cli;
+mod mcp_tasks;
 mod notes_cli;
 mod offload_cli;
 mod plugin_cmd;
@@ -176,11 +177,14 @@ async fn dispatch(p: &Parsed, user_home: &Path, cwd: &Path) -> Result<i32> {
         Some("plugin" | "plugins") if rest.first().map(String::as_str) == Some("new") => {
             let name = scripted::need(rest.get(1), "a plugin name")?;
             let dir = plugin_cmd::new_plugin(&home, name)?;
-            say(&format!(
-                "  ✓ {}\n    edit wisp-plugin.json, then: wisp plugin enable user.{}",
-                dir.display(),
-                dir.file_name().map(|n| n.to_string_lossy()).unwrap_or_default()
-            ));
+            let id = format!("user.{}", dir.file_name().map(|n| n.to_string_lossy()).unwrap_or_default());
+            say(&format!("  ✓ {}\n    edit wisp-plugin.json, then: wisp plugin enable {id}", dir.display()));
+            // listed at once, off (setup audit F18: `wisp plugin` and Settings → Plugins showed nothing until enabled)
+            if let Ok(c) = Client::connect(port, false).await
+                && let Err(e) = c.cmd("plugins.setEnabled", json!({ "id": id, "enabled": false })).await
+            {
+                eprintln!("  ◌ {id} isn't listed yet: {e}");
+            }
         }
         // `-C dir` is where the folder is, as the parser looked; `~` is the user's home
         Some("add") => add(user_home, port, p.words.get(1), f.cwd.as_deref().unwrap_or(cwd)).await?,
@@ -395,7 +399,7 @@ async fn as_code(p: &Parsed, port: u16, cwd: &Path, home: &Path) -> Result<Optio
         }
         "run" if !o.files.is_empty() => tasks_cli::run_file(&connect().await?, &o, cwd).await?,
         "run" if !o.formulas.is_empty() && !o.words.is_empty() => tasks_cli::run_overlay(&connect().await?, &o, cwd).await?,
-        "run" if !o.words.is_empty() => match tasks_cli::run_named(&connect().await?, &o.words, &o).await? {
+        "run" if !o.words.is_empty() => match tasks_cli::run_named(&connect().await?, &o.words, &o, &p.flags).await? {
             Some(code) => code,
             None => return Ok(None),
         },
@@ -611,7 +615,7 @@ async fn live(p: &Parsed, home: &Path, port: u16, read: &mut Option<wisp_cli_cor
         }
         Some("completions") => {
             let c = Client::connect(port, true).await?;
-            cli::completions(&cli::catalogue(&c, home).await?, words.get(1))
+            cli::completions(&c, &cli::catalogue(&c, home).await?, words.get(1)).await
         }
         Some("sdk") => {
             let c = Client::connect(port, true).await?;
@@ -701,6 +705,7 @@ async fn launch_and_open(p: &Parsed, home: &Path, port: u16, cwd: &str) -> Resul
     let c = Client::connect(port, true).await?;
     let prompt = p.words.join(" ");
     let mut args = scripted::launch_args(&p.flags, &prompt, cwd);
+    scripted::in_project(&c, &mut args).await;
     termctx_cli::attach(&c, p, &mut args, &prompt, cwd, home).await;
     let made = c.cmd("runtime.create", args).await?;
     let id = made.get("id").and_then(Value::as_str).unwrap_or("").to_owned();

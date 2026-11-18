@@ -11,6 +11,7 @@
 pub mod commands;
 pub mod model;
 pub mod ports;
+mod sync_words;
 
 use std::sync::Arc;
 
@@ -19,6 +20,8 @@ use wisp_kernel::{BoxFuture, Call, CancellationToken, Result, Service};
 
 pub use model::*;
 pub use ports::Blobs;
+/// the base not brought up to date, in one line (the merge toast; audit A #16)
+pub use sync_words::not_updated;
 
 /// The contract id `git.service`, major 1.
 #[derive(Debug)]

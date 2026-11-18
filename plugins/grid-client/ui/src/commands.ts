@@ -49,10 +49,13 @@ const change = (base: EntityReader, peer: PeerId, fn: (r: CloudRow) => Partial<C
   return r ? [{ e: KIND, id, op: 'upsert', v: { ...r, ...fn(r) } }] : [];
 };
 
-/** The grid's address as typed: `grid.trywisp.dev` means https. */
+/** The grid's address as typed: `grid.trywisp.dev` means https; a local one (`wisp.localhost:4971`, `127.0.0.1`) plain
+ *  http, as the server reads it (grid-client core `grid_url`). */
 export const gridUrl = (typed: string): string => {
   const t = typed.trim() || DEFAULT_GRID;
-  return /^https?:\/\//.test(t) ? t : `https://${t}`;
+  if (/^https?:\/\//.test(t)) return t;
+  const local = /^(localhost|127\.0\.0\.1)(:|$)/.test(t) || /\.localhost(:|$|\/)/.test(t);
+  return `${local ? 'http' : 'https'}://${t}`;
 };
 
 export const signIn = defineCommand<{ peer: PeerId; grid: string }, SignIn>({

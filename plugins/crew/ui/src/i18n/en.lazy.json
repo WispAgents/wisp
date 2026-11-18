@@ -339,7 +339,7 @@
   "wisp.crew.record.noneFor": "No jobs for {name} in this range.",
   "wisp.crew.record.where": "Where it went",
   "wisp.crew.record.biggest": "Biggest jobs",
-  "wisp.crew.record.head": "{tokens} tokens · {day} a day",
+  "wisp.crew.record.head": "{tokens} tokens · {day} tokens a day",
   "wisp.crew.record.kindRepeating": "{n} a day × {each} each · {quiet}% found nothing to do",
   "wisp.crew.record.kindAsked.one": "1 job × {each}",
   "wisp.crew.record.kindAsked.other": "{count} jobs × {each} each",
@@ -493,5 +493,7 @@
   "wisp.crew.editor.joined": "{name} joined your crew",
   "wisp.crew.editor.open": "Open",
   "wisp.crew.team.subagent": "Subagent",
-  "wisp.crew.team.noSteps": "No steps yet"
+  "wisp.crew.team.noSteps": "No steps yet",
+  "wisp.crew.record.kindFew.one": "1 run × {each} · {quiet}% found nothing to do",
+  "wisp.crew.record.kindFew.other": "{count} runs × {each} each · {quiet}% found nothing to do"
 }

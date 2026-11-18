@@ -217,3 +217,26 @@ async fn grid_pages_say_who_is_signed_in() {
     }
     g.done();
 }
+
+/// Setup audit F17: on a device's sign-in page, "Not you? Use another account" signed out and landed on Home: the code
+/// was gone, so the sign-in in wisp couldn't finish. It signs out, then asks for a sign-in that comes back to the code.
+#[tokio::test(flavor = "multi_thread")]
+async fn use_another_account_comes_back_to_the_device_code() {
+    let g = rig("another").await;
+    let ada = g.session("ada");
+    let code = g.grid.accounts.device_code("studio").unwrap();
+    let user_code = code["user_code"].as_str().unwrap().to_owned();
+    let page = g.page(&format!("/activate?code={user_code}"), &ada).await;
+    assert!(page.contains("Use another account"), "{page}");
+    let action = page.split(r#"action="/signout?return="#).nth(1).unwrap().split('"').next().unwrap().replace("&amp;", "&");
+    let r = g.form(&format!("/signout?return={action}"), &ada, &format!("csrf={}", csrf_in(&page))).await;
+    assert!(r.status().is_redirection(), "{}", r.status());
+    let to = r.headers()["location"].to_str().unwrap().to_owned();
+    assert!(to.starts_with("/signin?return=") && to.contains(&user_code), "back to the code after signing in: {to}");
+    // only a path here: anything else goes Home
+    let bea = g.session("bea");
+    let page = g.page("/account", &bea).await;
+    let r = g.form("/signout?return=%2F%2Fevil.example", &bea, &format!("csrf={}", csrf_in(&page))).await;
+    assert_eq!(r.headers()["location"].to_str().unwrap(), "/");
+    g.done();
+}

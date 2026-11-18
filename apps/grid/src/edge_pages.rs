@@ -300,7 +300,7 @@ impl Grid {
                 self.routes.remove(u).await?;
                 Ok(self.back("/account", "Removed. That bot no longer reaches your computers.", false))
             }
-            ["signout"] => self.sign_out(u, &session, query(q, "all").as_deref() == Some("1")),
+            ["signout"] => self.sign_out(u, &session, query(q, "all").as_deref() == Some("1"), query(q, "return").as_deref()),
             ["account", "delete"] => self.delete_account(u, &field("confirm")).await,
             _ => Err(bad("not found", 404)),
         }
@@ -323,7 +323,9 @@ impl Grid {
     }
 
     /// `POST /signout[?all=1]`: this browser's session, or every one of this account's.
-    fn sign_out(&self, u: &UserRow, session: &str, all: bool) -> Result<Resp> {
+    /// `back`: a path here to come back to after signing in again (the device page's "Use another account", setup
+    /// audit F17: the code was lost), else Home.
+    fn sign_out(&self, u: &UserRow, session: &str, all: bool, back: Option<&str>) -> Result<Resp> {
         self.accounts.db.with(|c| {
             if all {
                 c.execute("DELETE FROM sessions WHERE user_id = ?1", [&u.id])
@@ -334,7 +336,11 @@ impl Grid {
                 )
             }
         })?;
-        Ok(self.cleared(redirect("/", &[])))
+        let to = match back.map(|b| crate::http::safe_path(b, "")).filter(|b| !b.is_empty() && *b != "/") {
+            Some(b) => format!("/signin?return={}", crate::http::encode_component(b)),
+            None => "/".to_owned(),
+        };
+        Ok(self.cleared(redirect(&to, &[])))
     }
 
     /// `POST /account/delete` with the handle typed: the box and its home, the published apps, then the account.

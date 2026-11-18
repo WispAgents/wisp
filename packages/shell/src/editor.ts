@@ -14,3 +14,11 @@ export function editorUrl(editor: string | undefined, path: string, line?: numbe
   const make = EDITORS[e];
   return make && path.startsWith('/') ? make(path, line) : undefined;
 }
+
+/** A file an answer names (`path`, maybe relative to the task's folder `dir`) at `line`, in `editor`: its URL, or
+ *  undefined when there's no absolute path to give it or no editor wisp knows (audit A #10). */
+export function fileUrl(editor: string | undefined, dir: string, path: string, line?: number): string | undefined {
+  const rel = path.replace(/^\.\//, '');
+  const abs = path.startsWith('/') ? path : dir ? `${dir.replace(/\/+$/, '')}/${rel}` : '';
+  return abs ? editorUrl(editor, abs, line) : undefined;
+}

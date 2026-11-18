@@ -149,6 +149,18 @@ mod tests {
         assert!(x.remove("https://g2#ada").is_none());
     }
 
+    /// Setup audit F16: adding a second account made it current, which took this computer off the grid. An account
+    /// added while another is current is kept beside it; the first one is current; the last grid is remembered.
+    #[test]
+    fn adding_an_account_keeps_the_current_one() {
+        let mut x = Accounts::default();
+        x.add_beside(acct("https://g1", "ada", 1));
+        assert_eq!(x.current, "https://g1#ada", "the first is current");
+        x.add_beside(acct("https://g2", "bob", 2));
+        assert_eq!(x.current, "https://g1#ada", "still ada's");
+        assert_eq!((x.list.len(), x.last_grid.as_str()), (2, "https://g2"));
+    }
+
     /// QA round 10 #4: a sign-in without a grid goes where this wisp was last signed in to, wisp Cloud only at first.
     #[test]
     fn the_default_grid_is_the_current_one_else_the_last_signed_in_to() {

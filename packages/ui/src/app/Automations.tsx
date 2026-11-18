@@ -80,7 +80,7 @@ export function AutoList(props: {
                     <RichText text={it.line} />
                   </p>
                   <Show when={(it.tags?.length ?? 0) > 0}>
-                    <span data-kit="au-tags">
+                    <span data-kit="au-tags" data-layout="wrap">
                       <For each={it.tags}>{(t) => <i>{t}</i>}</For>
                     </span>
                   </Show>

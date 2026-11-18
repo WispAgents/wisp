@@ -173,14 +173,35 @@ async fn turn_ended(ctx: &Ctx, ship: &Arc<Ship>, known: &Known, e: &TurnEnded) {
     let _ = ship.recheck(&call, id, false).await;
 }
 
-/// Every open task with a worktree, once the page has loaded; then the boot recheck drains them.
+/// Every task with a worktree or a ship slot, once the page has loaded; then the boot recheck drains them. One list
+/// read and one slots read (perf audit 2026-11-18 #5: was `runtime.get` for every task, 5,000 reads after each start).
 pub(crate) async fn boot(ctx: &Ctx, ship: &Arc<Ship>, known: &Known) {
     let call = ctx.root_call();
     let list = ctx.run::<rt::List>(&call, rt::ListArgs { archived: None, limit: None }).await.unwrap_or_default();
-    for row in list {
-        if let Some(s) = session(ctx, &call, row.id.as_str()).await {
-            follow_session(ship, known, &s);
+    let plugins = vec![PLUGIN.to_owned(), WORKTREES.to_owned(), "wisp.crew".to_owned()];
+    let Ok(slots) = ctx.run::<rt::Slots>(&call, rt::SlotsArgs { plugins, all: false }).await else { return };
+    let mut ext: HashMap<String, BTreeMap<String, Value>> = slots.into_iter().map(|t| (t.id.0, t.ext)).collect();
+    for row in &list {
+        let Some(e) = ext.remove(row.id.as_str()) else { continue };
+        // nothing to follow without either (`slot::sync`): a crew slot alone is only the `child` fact
+        if e.contains_key(PLUGIN) || e.contains_key(WORKTREES) {
+            follow_session(ship, known, &session_of(row, e));
         }
+    }
+}
+
+/// What ship reads of a task (`facts_of`, `follow_session`), from its list row and its slots.
+pub(crate) fn session_of(row: &wisp_runtime_api::model::Summary, ext: BTreeMap<String, Value>) -> Session {
+    Session {
+        id: row.id.clone(),
+        cwd: row.cwd.clone(),
+        state: row.state,
+        archived: row.archived,
+        parent_id: row.parent_id.clone(),
+        updated_at: row.updated_at,
+        created_at: row.created_at,
+        ext: ext.into_iter().collect(),
+        ..Session::default()
     }
 }
 

@@ -56,11 +56,18 @@ pub struct RestoreTurnArgs {
     /// the task
     pub id: String,
     pub turn: String,
+    /// put the folder back as it was just before that restore (its answer's `undo`), not to the turn's checkpoint.
+    /// Additive (2026-11-18).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub undo: Option<Checkpoint>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Restored {
     pub restored: bool,
+    /// the folder as it was just before this restore: send it back as `undo` to undo it. Additive (2026-11-18).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub undo: Option<Checkpoint>,
 }
 
 /// `git.restoreTurn`: the task's folder back as it was just before `turn` ran.
@@ -77,15 +84,21 @@ async fn restore(ctx: &Ctx, svc: &Service, a: RestoreTurnArgs) -> Result<Restore
     let task = ctx.run::<rt::Get>(&call, rt::IdArgs { id: SessionId(a.id.clone()) }).await?;
     let turns = ctx.run::<rt::Turns>(&call, rt::TurnsArgs { id: SessionId(a.id.clone()), before: None, limit: None, masked: None }).await?;
     let turn = turns.iter().find(|t| t.id.as_str() == a.turn.as_str()).ok_or_else(|| WireError::not_found("No such turn on this task."))?;
-    let Some(cp) = of_turn(&turn.ext) else {
-        return Err(WireError::invalid("This turn ran before checkpoints were kept: there's nothing to go back to."));
+    let cp = match a.undo {
+        Some(back) => back,
+        None => of_turn(&turn.ext)
+            .ok_or_else(|| WireError::invalid("This turn ran before checkpoints were kept: there's nothing to go back to."))?,
     };
+    // the task's own folder, and only it (the repo resolved from it works in its checkout, a worktree's own)
     let repo = svc.repo(&call, ctx.scope(), &task.cwd).await?;
+    // the folder as it is now, kept as a commit no branch points at: the restore can be undone
+    let head = repo.rev_parse(&call, "HEAD").await?.unwrap_or_default();
+    let now = repo.snapshot(&call).await?.unwrap_or_else(|| head.clone());
     repo.restore(&call, &cp.to, &cp.head).await?;
     if let Err(err) = repo.touch(&call, "restore") {
         tracing::warn!(error = %err.message, task = %a.id, "git: touch after a restore");
     }
-    Ok(Restored { restored: true })
+    Ok(Restored { restored: true, undo: (!head.is_empty()).then_some(Checkpoint { to: now, head }) })
 }
 
 pub(crate) fn register(s: &mut Setup, svc: &Arc<GitServiceImpl>) {

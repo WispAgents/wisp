@@ -108,8 +108,9 @@ test('the_reply_boxs_send_says_send_and_when_a_follow_up_is_scheduled', async ()
   await until(() => item(/^In 10 min/) !== undefined);
   item(/^In 10 min/)?.click();
   await until(() => /^Send at /.test(send()?.getAttribute('aria-label') ?? ''));
-  expect(send()?.getAttribute('aria-label')).toMatch(/^Send at \d\d:\d\d$/);
-  expect(send()?.getAttribute('title')).toMatch(/^Send at \d\d:\d\d$/);
+  // the time, or the weekday and the time when it falls on another day (after midnight: "Send at Thu 00:09")
+  expect(send()?.getAttribute('aria-label')).toMatch(/^Send at (\w{3} )?\d\d:\d\d$/);
+  expect(send()?.getAttribute('title')).toMatch(/^Send at (\w{3} )?\d\d:\d\d$/);
 });
 
 // QA r14 phone #6: on a 360 px phone the Rerun dialog's bar (the mode, the harness, Rerun) didn't fit one line, so the

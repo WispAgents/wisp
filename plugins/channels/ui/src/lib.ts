@@ -38,6 +38,10 @@ export const isTransport = (t: string): t is Transport => Object.hasOwn(FIELDS, 
 
 /** The fields shown here: a cloud-only field on a cloud computer, a computer-only one elsewhere. Telegram's Start
  * tasks shows once a chat is linked (v1). */
+/** The channels Settings → Phone sets up, in the server's order. Not `push` (QA setup audit F7): the phone app pairs
+ *  itself and that turns it on (wisp.push); here it was a card with nothing to set up and a switch the server refused. */
+export const settable = (names: readonly string[]): string[] => names.filter((x) => x !== 'push');
+
 export function fieldsFor(row: ChannelSetup, cloud: boolean): readonly FieldDef[] {
   if (!isTransport(row.transport)) return [];
   return FIELDS[row.transport].filter((f) => (f.cloud === undefined || f.cloud === cloud) && !(f.key === 'allowStart' && row.linked === 0));

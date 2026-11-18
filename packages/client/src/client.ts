@@ -148,7 +148,11 @@ export function createClient(o: ClientOptions): Client {
       // plugins registered their views by now, so the URL may name one; when it says nothing
       // (`/`), the app goes back where it was
       const url = o.history?.read() ?? '/';
-      nav.navigate({ t: 'restore', to: homed(decodeNav(url === '/' && typeof last === 'string' ? last : url), untracked(home)) });
+      // the last place, never what was open over it (Settings, a dialog): `/` comes back as a reload does (audit A F31;
+      // the shell's overlays-on-load rule); a URL that names an overlay keeps it
+      const back = url === '/' && typeof last === 'string';
+      const to = decodeNav(back ? last : url);
+      nav.navigate({ t: 'restore', to: homed(back ? { ...to, overlays: [] } : to, untracked(home)) });
       for (const cfg of list) {
         const link = saved.get(cfg.peer)?.link;
         peers.add(link && !cfg.saved ? { ...cfg, saved: link } : cfg);

@@ -241,11 +241,11 @@ function FeedRow(props: ListRowProps & { readonly partName: PartName }): JSX.Ele
     onCleanup(() => mo.disconnect());
   });
   // with a mouse the quick actions sit before the time, whatever its width (B30); the time is the pills' last
+  // watched per element, not per label: "12m" becoming "13m" re-ran this and unwatched/rewatched the same time (#13)
+  const timeEl = createMemo(() => (c.time() === undefined || !props.quick || phone() || !pills ? undefined : (pills.lastElementChild ?? undefined)));
   createEffect(() => {
-    const time = c.time();
-    if (!props.quick || phone() || time === undefined || !row || !pills) return;
-    const el = pills.lastElementChild;
-    if (el) onCleanup(watchTimeWidth(row, el));
+    const el = timeEl();
+    if (el && row) onCleanup(watchTimeWidth(row, el));
   });
   return (
     <div

@@ -9,7 +9,8 @@ import { candidates, imeArtifact } from './keys.ts';
 import type { Registry } from './registry.ts';
 import type { ShellWindow } from './shell.tsx';
 
-const TYPING = 'input, textarea, select, [contenteditable="true"], [contenteditable=""]';
+// a title renamed in place is `plaintext-only` (audit A review: ⌫ there opened Delete, E marked the task done)
+const TYPING = 'input, textarea, select, [contenteditable="true"], [contenteditable=""], [contenteditable="plaintext-only"]';
 
 export function isTyping(target: EventTarget | null): boolean {
   const el = target as Element | null;

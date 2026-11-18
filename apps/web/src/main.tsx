@@ -80,7 +80,8 @@ function loadRemoteUis(): void {
 
 // A task finishing or asking: a toast, and a system notification when wisp isn't in front (v1 notify.js)
 const homeClient = shell.pluginClient('wisp.shell-home');
-if (homeClient) startNotifier({ client: homeClient, platform, toast: toaster, nav: shell.nav, focused: () => document.hasFocus() });
+// after the first screen (ADR-0105): it watches tasks change state, nothing the first screen draws waits for it
+if (homeClient) shell.afterFirstScreen(() => void startNotifier({ client: homeClient, platform, toast: toaster, nav: shell.nav, focused: () => document.hasFocus() }));
 
 // Settings: the frame (an overlay view) and its own panes, given what only the shell has (ADR-0003: inputs, no
 // private API): every plugin's panes, each with its plugin's client, and the translator. It has no default
@@ -157,10 +158,9 @@ void client.start([{ peer: home, name: 'wisp', transport: httpTransport({ base: 
   const root = document.getElementById('app');
   if (root) shell.render(root);
   performance.mark('wisp:painted');
-  // ADR-0011: the overlays' machines load apart from the first page; fetched once it's up, so a press finds them there
-  const preload = (): void => void preloadControls().catch(() => undefined);
-  if ('requestIdleCallback' in window) window.requestIdleCallback(preload, { timeout: 2000 });
-  else client.scope.timeout(200, preload);
+  // ADR-0011, ADR-0105: the overlays' machines load apart from the first page; fetched once the first screen is drawn,
+  // so a press finds them there and they never compete with it
+  shell.afterFirstScreen(() => void preloadControls().catch(() => undefined));
 });
 
 // what's waiting (rows, drafts) is written before the page goes away

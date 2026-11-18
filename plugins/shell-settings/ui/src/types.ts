@@ -16,7 +16,7 @@ export interface SettingsParams {
 /** The registry keys behind the General, Appearance and Notifications rows (v1 config.defaults names after the dot). */
 export const KEYS = {
   editor: 'settings.editor', // vscode | cursor | windsurf | zed | idea | none
-  terminal: 'terminal', // a terminal.app id, or 'custom'
+  terminal: 'terminal.terminal', // a terminal.app id, or 'custom' (wisp.terminal's; audit A F5: was `terminal`, undeclared)
   terminalCommand: 'terminal.command',
   tui: 'terminal.terminalSessions', // 'on' | 'off', off by default
   blocks: 'runtime.blocks', // on unless 'off'

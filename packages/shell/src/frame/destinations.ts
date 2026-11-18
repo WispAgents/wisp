@@ -5,8 +5,6 @@
 // from a press, so Back, a notification or a link keep it right. Pure.
 
 import type { ExtensionId, Intent, Json, Main } from '@wisp/client';
-// its labels are lazy strings: they load with this module (PhoneNav's chunk), so the bar's first frame has them
-import '../i18n/lazy.ts';
 
 export type DestinationId = 'tasks' | 'crew' | 'stuff' | 'computers';
 

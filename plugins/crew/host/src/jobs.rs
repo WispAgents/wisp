@@ -122,6 +122,28 @@ async fn start(ctx: &Ctx, call: &Call, st: &State, m: &Member, w: &WaitingJob, c
     if let Some(l) = outside_lineage(w.origin.as_ref()) {
         args["lineage"] = l;
     }
+    // the job's delegates (v1 crew.js): the member's own (Org chart links, "Make Bob Ada's delegate") and the
+    // members tagged in what it was asked; the runtime makes them the lead's roster (orch #2)
+    // a linked row names only the member (`{ crew }`): the lead hears who it is, as v1's roster said (its name, role,
+    // harness), read from the crew now
+    let team: Vec<Value> = m
+        .team
+        .iter()
+        .chain(w.team.iter())
+        .filter_map(|r| {
+            let mut v = serde_json::to_value(r).ok()?;
+            if let Some(who) = r.crew.as_deref().and_then(|id| st.member(id).ok()) {
+                v["name"] = json!(who.name);
+                v["label"] = json!(who.name);
+                v["role"] = json!(who.role);
+                v["agent"] = json!(who.agent);
+            }
+            Some(v)
+        })
+        .collect();
+    if !team.is_empty() {
+        args["team"] = Value::Array(team);
+    }
     if let Some(cap) = capped {
         args["ext"][wisp_runtime_api::PLUGIN_ID] = json!({ "capped": cap });
     }

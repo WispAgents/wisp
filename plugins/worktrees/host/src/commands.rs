@@ -107,6 +107,15 @@ macro_rules! handle {
     }};
 }
 
+/// `worktrees.viewLast`: the last look as it is, no look started and nothing republished (a frequent reader: the
+/// Machine page's sample, perf audit 2026-11-18 #4).
+pub fn view_last(s: &mut Setup, st: &Arc<State>) {
+    handle!(s, st, api::ViewLast, |st, ctx, _call, _args| {
+        let (_, c, _) = st.parts(&ctx).await?;
+        Ok(c.view(false).await)
+    });
+}
+
 pub fn register(s: &mut Setup, st: &Arc<State>) {
     handle!(s, st, api::Create, |st, ctx, call, args| create(&st, &ctx, &call, args).await);
     handle!(s, st, api::Warm, |st, ctx, call, args| {

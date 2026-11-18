@@ -325,6 +325,32 @@ describe('VirtualList measured by a ResizeObserver', () => {
     if (was) Object.defineProperty(HTMLElement.prototype, 'offsetWidth', was);
   });
 
+  // perf r1 #4: a list from the top read its height as it mounted, mid render, forcing the page's whole first layout
+  // (109 ms of the first screen at 4×). It takes it from its observer's first pass, after layout and before paint.
+  test('a_list_from_the_top_takes_its_height_from_its_observer_not_a_read_at_mount', () => {
+    vi.stubGlobal('ResizeObserver', FakeObserver);
+    let reads = 0;
+    let h = 0;
+    const was = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'clientHeight');
+    Object.defineProperty(HTMLElement.prototype, 'clientHeight', { configurable: true, get(this: HTMLElement) { if (this.dataset['kit'] === 'virtual-list') reads++; return this.dataset['kit'] === 'virtual-list' ? h : 0; } });
+    try {
+      const host = mount(() => (
+        <VirtualList items={rows(400)} key={(r) => r.id} estimate={30} viewport={300} overscan={0}>
+          {(r) => <span data-id={r().id}>{r().text}</span>}
+        </VirtualList>
+      ));
+      expect(reads, 'no layout read as it mounts').toBe(0);
+      const shown = (): number => host.querySelectorAll('[data-id]').length;
+      const before = shown();
+      const box = host.querySelector('[data-kit="virtual-list"]');
+      h = 600;
+      FakeObserver.last?.report((el) => (el === box ? { width: 390, height: 600 } : { width: 390, height: 30 }));
+      expect(shown(), 'the observer pass gave it its real height: more rows').toBeGreaterThan(before);
+    } finally {
+      if (was) Object.defineProperty(HTMLElement.prototype, 'clientHeight', was);
+    }
+  });
+
   test('a_replan_that_leaves_the_scrollbar_as_it_was_keeps_every_row_observed', () => {
     vi.stubGlobal('ResizeObserver', FakeObserver);
     const host = mount(() => (

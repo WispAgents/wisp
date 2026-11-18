@@ -12,6 +12,7 @@
   "permissions": [
     "crew:assign",
     "events:tail",
+    "resources:read",
     "runtime:create",
     "runtime:followUp",
     "runtime:get",

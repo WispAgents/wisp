@@ -15,6 +15,8 @@
 use std::sync::OnceLock;
 
 use regex::Regex;
+
+mod prepared;
 use serde_json::{Map, Value};
 use wisp_share_api::{Bundle, Redaction};
 
@@ -34,48 +36,6 @@ pub struct Scrub {
 fn mention() -> Option<&'static Regex> {
     static M: OnceLock<Option<Regex>> = OnceLock::new();
     M.get_or_init(|| Regex::new(r"@\[([^\]\n]{1,200})\]\((wisp|crew):([A-Za-z0-9_-]{4,64})\)").ok()).as_ref()
-}
-
-/// `t` with each mention chip of one of `ids` (of `kind`, `wisp` or `crew`) and each whole occurrence of one of the
-/// ids (not inside a longer word) as `to`; what went, by its title or the id, in `went`.
-fn others(t: &str, kind: &str, ids: &[String], to: &str, went: &mut Vec<String>) -> String {
-    if ids.is_empty() {
-        return t.to_owned();
-    }
-    let chips = mention().map_or_else(
-        || t.to_owned(),
-        |m| {
-            m.replace_all(t, |c: &regex::Captures<'_>| {
-                if &c[2] == kind && ids.iter().any(|i| *i == c[3]) {
-                    went.push(c[1].to_owned());
-                    to.to_owned()
-                } else {
-                    c[0].to_owned()
-                }
-            })
-            .into_owned()
-        },
-    );
-    let word = |ch: Option<char>| ch.is_some_and(|c| c.is_alphanumeric() || c == '_' || c == '-');
-    let mut out = chips;
-    for id in ids.iter().filter(|i| i.len() >= 8) {
-        let mut next = String::with_capacity(out.len());
-        let mut rest = out.as_str();
-        while let Some(at) = rest.find(id.as_str()) {
-            let (before, after) = (rest[..at].chars().next_back(), rest[at + id.len()..].chars().next());
-            next.push_str(&rest[..at]);
-            if word(before) || word(after) {
-                next.push_str(id);
-            } else {
-                next.push_str(to);
-                went.push(id.clone());
-            }
-            rest = &rest[at + id.len()..];
-        }
-        next.push_str(rest);
-        out = next;
-    }
-    out
 }
 
 /// Environment variables whose values a share masks.
@@ -203,6 +163,10 @@ fn folder_forms(project: &str, home: &str) -> Vec<(String, &'static str)> {
 
 /// `text` scrubbed, with what was taken out (`at` is where it is).
 pub fn scrub_text(text: &str, s: &Scrub, at: &str, out: &mut Vec<Redaction>) -> String {
+    scrub_with(text, s, &prepared::Prepared::of(s), at, out)
+}
+
+fn scrub_with(text: &str, s: &Scrub, p: &prepared::Prepared, at: &str, out: &mut Vec<Redaction>) -> String {
     let mut t = text.to_owned();
     for re in patterns() {
         if re.is_match(&t) {
@@ -228,27 +192,33 @@ pub fn scrub_text(text: &str, s: &Scrub, at: &str, out: &mut Vec<Redaction>) -> 
             out.push(Redaction { kind: "env".into(), at: at.into(), was: hint(v), now });
         }
     }
-    for (from, to) in folder_forms(&s.project, &s.home) {
-        if let Some(next) = replace_path(&t, &from, to) {
+    for (from, to) in &p.forms {
+        if let Some(next) = replace_path(&t, from, to) {
             t = next;
-            out.push(Redaction { kind: "path".into(), at: at.into(), was: from, now: to.into() });
+            out.push(Redaction { kind: "path".into(), at: at.into(), was: from.clone(), now: (*to).into() });
         }
     }
-    for (kind, ids, to) in [("wisp", &s.tasks, "<task>"), ("crew", &s.crew, "<crew>")] {
+    for ids in &p.ids {
         let mut went = Vec::new();
-        t = others(&t, kind, ids, to, &mut went);
-        out.extend(went.into_iter().map(|was| Redaction { kind: "name".into(), at: at.into(), was, now: to.into() }));
+        t = ids.replace(&t, &mut went);
+        out.extend(went.into_iter().map(|was| Redaction { kind: "name".into(), at: at.into(), was, now: ids.to.into() }));
     }
     t
 }
 
 /// Every string in `v` scrubbed (keys too, for paths).
 pub fn scrub(v: &Value, s: &Scrub, at: &str, out: &mut Vec<Redaction>) -> Value {
+    scrub_value(v, s, &prepared::Prepared::of(s), at, out)
+}
+
+fn scrub_value(v: &Value, s: &Scrub, p: &prepared::Prepared, at: &str, out: &mut Vec<Redaction>) -> Value {
     match v {
-        Value::String(t) => Value::String(scrub_text(t, s, at, out)),
-        Value::Array(a) => Value::Array(a.iter().enumerate().map(|(i, x)| scrub(x, s, &format!("{at}/{i}"), out)).collect()),
+        Value::String(t) => Value::String(scrub_with(t, s, p, at, out)),
+        Value::Array(a) => Value::Array(a.iter().enumerate().map(|(i, x)| scrub_value(x, s, p, &format!("{at}/{i}"), out)).collect()),
         Value::Object(o) => Value::Object(
-            o.iter().map(|(k, x)| (scrub_text(k, s, at, &mut Vec::new()), scrub(x, s, &format!("{at}/{k}"), out))).collect::<Map<_, _>>(),
+            o.iter()
+                .map(|(k, x)| (scrub_with(k, s, p, at, &mut Vec::new()), scrub_value(x, s, p, &format!("{at}/{k}"), out)))
+                .collect::<Map<_, _>>(),
         ),
         other => other.clone(),
     }

@@ -121,5 +121,7 @@
   "shell-settings.diag.status.unreachable": "Unreachable",
   "shell-settings.diag.status.incompatible": "Needs an update",
   "shell-settings.diag.cursor": "At {seq}",
-  "shell-settings.search": "Search settings"
+  "shell-settings.search": "Search settings",
+  "shell-settings.search.settings": "Settings",
+  "shell-settings.search.none": "No settings match “{q}”"
 }

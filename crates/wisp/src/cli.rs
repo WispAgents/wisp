@@ -165,8 +165,20 @@ pub fn sdk_types(cat: &Catalogue, lang: Option<&String>, out: Option<&String>) -
     }
 }
 
-pub fn completions(cat: &Catalogue, shell: Option<&String>) -> i32 {
-    let Some(s) = shell.and_then(|sh| completions::script(sh, cat, &crate::args::COMMANDS)) else {
+pub async fn completions(c: &Client, cat: &Catalogue, shell: Option<&String>) -> i32 {
+    // what the catalogue doesn't say (setup audit F27): wisp's own groups' verbs, the harnesses, the setting keys
+    let agents = c.cmd("accounts.harnesses", Value::Null).await.ok();
+    let settings = c.cmd("settings.list", json!({})).await.ok();
+    let strings = |v: Option<Value>, k: &str| -> Vec<String> {
+        v.and_then(|v| v.as_array().cloned())
+            .into_iter()
+            .flatten()
+            .filter_map(|x| x.get(k).and_then(Value::as_str).map(str::to_owned))
+            .collect()
+    };
+    let extra =
+        completions::Extra { groups: crate::words::group_verbs(), agents: strings(agents, "agent"), settings: strings(settings, "key") };
+    let Some(s) = shell.and_then(|sh| completions::script_with(sh, cat, &crate::args::COMMANDS, &extra)) else {
         eprintln!("  ✗ wisp completions zsh|bash|fish");
         return USAGE_EXIT;
     };

@@ -9,7 +9,8 @@
     "./styles": "./src/shell/styles.ts",
     "./styles/android": "./src/platform/android-styles.ts",
     "./styles/ios": "./src/platform/ios-styles.ts",
-    "./pure": "./src/pure.ts"
+    "./pure": "./src/pure.ts",
+    "./vite": "./build/kit-classes.ts"
   },
   "dependencies": {
     "@wisp/tokens": "*",

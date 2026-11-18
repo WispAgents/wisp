@@ -21,11 +21,16 @@ export interface KeysView {
   readonly address: string;
 }
 
-/** The key just made, until Done: its name and the key. */
+/** The key just made, until Done: its row's id, its name and the key. */
 export interface Fresh {
+  readonly id: string;
   readonly name: string;
   readonly key: string;
 }
+
+/** The panel of the key just made once `revoked` is gone: none when it was that key (setup audit F15: a revoked key
+ *  stayed on show, ready to copy). */
+export const freshAfter = (fresh: Fresh | undefined, revoked: string): Fresh | undefined => (fresh?.id === revoked ? undefined : fresh);
 
 type T = (k: string, vars?: Readonly<Record<string, string | number>>) => string;
 

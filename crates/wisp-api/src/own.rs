@@ -46,6 +46,13 @@ fn health(edge: &Edge) -> Value {
     json!({"ok": true, "name": "wisp", "version": edge.cfg.version, "apiVersion": API_VERSION, "pid": std::process::id(), "url": url})
 }
 
+fn encoded(mut a: Answer, enc: respond::Encoding) -> Answer {
+    let h = a.headers_mut();
+    h.insert("content-encoding", http::HeaderValue::from_static(enc.name()));
+    h.insert("vary", http::HeaderValue::from_static("accept-encoding"));
+    a
+}
+
 fn sse(rx: tokio::sync::mpsc::Receiver<Bytes>) -> Answer {
     http::Response::builder()
         .header("content-type", "text/event-stream")
@@ -61,7 +68,12 @@ fn events(edge: &Edge, caller: Caller, parts: &http::request::Parts) -> Result<A
     if has_hello(&query) {
         let m = edge.hub.mounted().ok_or_else(not_mounted)?;
         let last = header(&parts.headers, "last-event-id").map(str::to_owned);
-        return Ok(sse(m.events(caller, query, last)?));
+        // compressed when the client takes it (every browser and webview does): the list's first look is megabytes
+        let rx = m.events(caller, query, last)?;
+        return Ok(match respond::encoding_for(&parts.headers) {
+            Some(enc) => encoded(sse(crate::sse_enc::compressed(enc, rx)), enc),
+            None => sse(rx),
+        });
     }
     // v2 only (ADR-0031): a stream starts with its hello
     Err(WireError::invalid("GET /api/events takes the sync hello (proto_min, proto_max, client_id, topics…)").into())
@@ -77,26 +89,26 @@ async fn cmd(edge: &Edge, caller: Caller, h: &http::HeaderMap, body: &[u8]) -> A
         .and_then(|v| Some((v.get("cmd")?.as_str()?.to_owned(), v.get("args").cloned().unwrap_or(Value::Null))))
         .ok_or_else(|| WireError::invalid("body must be {cmd, args}"));
     let id = format!("{}|{}|{key}", caller.set, caller.session.as_deref().unwrap_or(""));
+    // a read runs again on a retry: keeping its answer protects nothing and only grows the server (perf audit #1)
+    let read = parsed.as_ref().is_ok_and(|(cmd, _)| edge.backend.read_only(cmd));
     let backend = edge.backend.clone();
     let seq = || edge.hub.mounted().map_or(0, |m| m.head_seq());
-    let (status, v) = edge
-        .idem
-        .once(id, async move {
-            match parsed {
-                Ok((cmd, args)) => {
-                    let span = tracing::info_span!("cmd", cmd = %cmd, set = %caller.set);
-                    let out = tracing::Instrument::instrument(backend.call(caller, &cmd, args), span).await;
-                    if let Err(e) = &out
-                        && e.status() >= 500
-                    {
-                        tracing::error!(cmd = %cmd, "{e}");
-                    }
-                    command_answer(out, seq())
+    let run = async move {
+        match parsed {
+            Ok((cmd, args)) => {
+                let span = tracing::info_span!("cmd", cmd = %cmd, set = %caller.set);
+                let out = tracing::Instrument::instrument(backend.call(caller, &cmd, args), span).await;
+                if let Err(e) = &out
+                    && e.status() >= 500
+                {
+                    tracing::error!(cmd = %cmd, "{e}");
                 }
-                Err(e) => command_answer(Err(e), 0),
+                command_answer(out, seq())
             }
-        })
-        .await;
+            Err(e) => command_answer(Err(e), 0),
+        }
+    };
+    let (status, v) = if read { run.await } else { edge.idem.once(id, run).await };
     respond::plain_json(status, &v)
 }
 

@@ -307,6 +307,9 @@ pub struct StoredKind {
     ready: std::sync::OnceLock<()>,
     /// the owner's normalisation of a spec before it's stored (a project's path made canonical). Additive (2026-11-12).
     tidy: Option<fn(&mut Value)>,
+    /// a spec field no two resources of the kind may share (a project's `path`: one project per folder). Additive
+    /// (2026-11-19, setup audit F23).
+    unique: Option<&'static str>,
 }
 
 impl std::fmt::Debug for StoredKind {
@@ -356,6 +359,7 @@ impl StoredKind {
             ctx,
             ready: std::sync::OnceLock::new(),
             tidy: None,
+            unique: None,
         }
     }
 
@@ -366,6 +370,13 @@ impl StoredKind {
     pub fn published(mut self, entity: &'static str) -> Self {
         self.def.kind = entity;
         self.def.topics = config_topics;
+        self
+    }
+
+    /// No two of the kind may share `field` (tidied first): an apply that would is refused (`check_all`).
+    #[must_use]
+    pub fn unique(mut self, field: &'static str) -> Self {
+        self.unique = Some(field);
         self
     }
 
@@ -442,6 +453,29 @@ impl ResourceKind for StoredKind {
         Box::pin(async move { Ok(self.specs().await?.into_iter().map(|(n, s)| Resource::new(self.info.kind.clone(), n, s)).collect()) })
     }
 
+    /// Two that would share the unique field (`path`: a formula naming a folder that's already a project under
+    /// another name, setup audit F23): refused, naming both.
+    fn check_all(&self, after: &[Resource]) -> Vec<String> {
+        let Some(field) = self.unique else { return Vec::new() };
+        let mut seen: Vec<(String, &str)> = Vec::new();
+        let mut out = Vec::new();
+        for r in after.iter().filter(|r| r.kind == self.info.kind) {
+            let mut spec = r.spec.clone();
+            if let Some(f) = self.tidy {
+                f(&mut spec);
+            }
+            let Some(v) = spec.get(field).and_then(Value::as_str).map(str::to_owned) else { continue };
+            match seen.iter().find(|(x, _)| *x == v) {
+                Some((_, other)) => out.push(format!(
+                    "{} {} and {} have the same {field} ({v}): one {} per {field}; name it {other} in the formula",
+                    self.info.kind, other, r.name, self.info.kind
+                )),
+                None => seen.push((v, r.name.as_str())),
+            }
+        }
+        out
+    }
+
     /// In place: one write moves the row to its new name.
     fn rename<'a>(&'a self, _call: &'a Call, from: &'a str, to: &'a str) -> BoxFuture<'a, Result<()>> {
         Box::pin(async move {
@@ -494,6 +528,22 @@ pub fn stored_published<S: schemars::JsonSchema>(
     info: impl FnOnce(Value) -> KindInfo,
 ) -> std::sync::Arc<StoredKind> {
     let k = std::sync::Arc::new(StoredKind::new(info(crate::schema_of::<S>()), s.ctx()).published(entity));
+    let as_kind: std::sync::Arc<dyn ResourceKind> = k.clone();
+    s.contribute(&crate::RESOURCE_KIND, as_kind);
+    let start = k.clone();
+    s.on_start(move |_| async move { start.ensure() });
+    k
+}
+
+/// [`stored_published_tidied`], no two sharing `field` ([`StoredKind::unique`]: a project's path). Additive (2026-11-19).
+pub fn stored_published_unique<S: schemars::JsonSchema>(
+    s: &mut wisp_kernel::Setup,
+    entity: &'static str,
+    info: impl FnOnce(Value) -> KindInfo,
+    tidy: fn(&mut Value),
+    field: &'static str,
+) -> std::sync::Arc<StoredKind> {
+    let k = std::sync::Arc::new(StoredKind::new(info(crate::schema_of::<S>()), s.ctx()).published(entity).tidied(tidy).unique(field));
     let as_kind: std::sync::Arc<dyn ResourceKind> = k.clone();
     s.contribute(&crate::RESOURCE_KIND, as_kind);
     let start = k.clone();

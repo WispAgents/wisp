@@ -56,17 +56,36 @@ async fn create(ctx: &Ctx, call: &Call, slot: &Slot, kinds: &Kinds, a: StartArgs
     }
     // a task you start under another is a side discussion (`/side`, a row's Side discussion…): v1's `side_task`
     let side_of = a.parent_id.clone().filter(|_| call.caller().set.starts_with("user"));
-    let main_title = match &side_of {
-        Some(main) => Some(rt(slot)?.repo.session(main.as_str()).await.map(|m| m.title).unwrap_or_default()),
+    let main = match &side_of {
+        Some(main) => rt(slot)?.repo.session(main.as_str()).await.ok(),
         None => None,
     };
+    let main_title = side_of.as_ref().map(|_| main.as_ref().map(|m| m.title.clone()).unwrap_or_default());
     mark_side(&mut a, side_of.as_ref().zip(main_title.as_deref()));
+    // a side discussion works in the main task's folder, on its harness unless one was picked (v1 side_task); never
+    // in a worktree of its own: it talks the main task's work over (orch #5)
+    if let Some(m) = &main {
+        if a.cwd.as_deref().is_none_or(str::is_empty) {
+            a.cwd = Some(m.cwd.clone());
+            a.dirs.clone_from(&m.dirs);
+        }
+        if a.agent.as_deref().is_none_or(str::is_empty) {
+            a.agent = Some(m.agent.clone());
+            a.model.get_or_insert_with(|| m.model.clone());
+        }
+        a.worktree = None;
+    }
     let (store, proc) = (ctx.service::<Store>()?, ctx.service::<Proc>()?);
     let home = wisp_kernel::services::paths(ctx).ok().map(|p| p.home().to_owned());
+    // what the caller said about a worktree, before the project's default fills it in
+    let asked_tree = a.worktree;
     // a worktree of its own: made before the first turn, the project's setup run in it
     let p = crate::specs::prepare(&store, &proc, home.as_deref(), Some(kinds), a).await?;
     let rt = rt(slot)?;
     let mut args = p.args;
+    if own_tree(&rt, &args, asked_tree).await {
+        args.worktree = Some(true);
+    }
     let on = ctx.setting("terminal.terminalSessions").is_some_and(|v| v == true || v == "on");
     args.terminal = crate::term::starts_in_terminal(&args, on)
         && rt
@@ -81,7 +100,7 @@ async fn create(ctx: &Ctx, call: &Call, slot: &Slot, kinds: &Kinds, a: StartArgs
     let made = if wants_tree {
         let mode =
             mode.map(|m| serde_json::to_value(m).ok().and_then(|v| v.as_str().map(str::to_owned)).unwrap_or_default()).unwrap_or_default();
-        let wa = wisp_worktrees_api::CreateArgs { session_id: made.id.0.clone(), cwd, title, mode };
+        let wa = wisp_worktrees_api::CreateArgs { session_id: made.id.0.clone(), cwd, title, mode, from: None };
         in_worktree(ctx, call, &rt, &proc, made, wa, &setup).await?
     } else {
         made
@@ -100,6 +119,23 @@ async fn create(ctx: &Ctx, call: &Call, slot: &Slot, kinds: &Kinds, a: StartArgs
         super::track(ctx, "side_task", serde_json::json!({ "agent": agent, "running": running })).await;
     }
     Ok(made)
+}
+
+/// A task that must run in a worktree of its own whatever Worktree per task says (audit A, 2026-11-18): one of
+/// Compare's runs (a group: side by side in one folder they edit each other's files, orch #7), and a rerun of a task
+/// that ran in its own worktree when the rerun didn't say (it ran in the main checkout, tasks #3).
+async fn own_tree(rt: &crate::runtime::Runtime, a: &StartArgs, asked: Option<bool>) -> bool {
+    if a.ext.get("wisp.runtime").and_then(|o| o.get("group")).and_then(serde_json::Value::as_str).is_some_and(|g| !g.is_empty()) {
+        return true;
+    }
+    match (asked, a.lineage.rerun_of.as_deref()) {
+        (None, Some(of)) => rt
+            .repo
+            .session(of)
+            .await
+            .is_ok_and(|s| s.ext.get("wisp.worktrees").and_then(|w| w.get("path")).is_some_and(serde_json::Value::is_string)),
+        _ => false,
+    }
 }
 
 /// v1 `sideOf: { id, title }` in runtime's slot: only the user's create makes a side discussion, so one a caller wrote

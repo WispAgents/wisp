@@ -640,6 +640,9 @@ export interface ShellContext {
    * until then (and with no list plugin), so a borrower shows nothing rather than a card of its own. */
   readonly taskCards?: { provide(render: (key: string) => JSX.Element): () => void; readonly render: Readable<((key: string) => JSX.Element) | undefined> };
   readonly palette: { open(query?: string): void };
+  /** `run` once the first screen is drawn (ADR-0105): deferred work (a warm-up, a preload) never competes with it, and
+   *  the budget gate's run never sees it. Additive (2026-11-18). */
+  readonly afterFirstScreen?: (run: () => void) => void;
   /** What a harness's Default runs, by name, on `peer` in `cwd` (runtime.defaultModel: the folder's config, else the
    *  plan's; else the computer's harnesses topic), one answer the whole UI shares, so a task on the default model reads
    *  the same everywhere (the chip, the facts, the list, Compare). Undefined while asked or when it can't tell. Reactive.

@@ -275,3 +275,27 @@ fn folders_set_aside_are_deleted_at_start_or_put_back_when_marked() {
     assert!(!plugins.join(".old").exists(), "nothing left aside");
     let _ = std::fs::remove_dir_all(&home);
 }
+
+/// Audit A F19: Settings → Plugins had no Trust (ADR-0048) and never showed what a plugin asks for. The list says, for
+/// a plugin of yours, whether it's trusted, what it asks for and its name; trusting it there flips it.
+#[tokio::test]
+async fn the_list_says_a_plugins_trust_what_it_asks_for_and_its_name() {
+    let home = dir("home");
+    let k = TestApp::new().with(wisp_plugins::PluginsPlugin).service(Paths::new(&home)).start().await;
+    let src = source(&home, "user.qa-pink", "1.0.0");
+    k.call(Caller::user(), "plugins.install", json!({ "source": src.display().to_string() })).await.unwrap();
+    let row = |list: &Value| list.as_array().unwrap().iter().find(|p| p["id"] == "user.qa-pink").cloned().unwrap();
+    let list = k.call(Caller::user(), "plugins.list", json!({})).await.unwrap();
+    let r = row(&list);
+    assert_eq!(
+        (r["trusted"].clone(), r["permissions"].clone(), r["name"].clone()),
+        (json!(false), json!(["settings:read"]), json!("Theme")),
+        "{r}"
+    );
+    k.call(Caller::user(), "plugins.trust", json!({ "id": "user.qa-pink", "trusted": true })).await.unwrap();
+    let list = k.call(Caller::user(), "plugins.list", json!({})).await.unwrap();
+    assert_eq!(row(&list)["trusted"], json!(true));
+    // a built-in has no trust to change: none said
+    assert!(list.as_array().unwrap().iter().find(|p| p["id"] == "wisp.plugins").unwrap().get("trusted").is_none());
+    let _ = std::fs::remove_dir_all(&home);
+}

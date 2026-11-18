@@ -64,6 +64,19 @@ export const warm = (part: LazyPart<unknown>) => (): void => {
   part.load().catch(() => undefined);
 };
 
+/** Work that waits for the first screen (ADR-0105): the shell calls `firstScreenDrawn()` at its `wisp:first-screen`
+ *  mark (never in the budget gate's run), then each waiting `run` goes; after that, `run` goes at once. */
+const afterFirst: (() => void)[] = [];
+const first = { drawn: false };
+export function afterFirstScreen(run: () => void): void {
+  if (first.drawn) run();
+  else afterFirst.push(run);
+}
+export function firstScreenDrawn(): void {
+  first.drawn = true;
+  for (const run of afterFirst.splice(0)) run();
+}
+
 /** Fetches every control's machine (the app calls it once its first screen is up and the page is idle). */
 export function preloadControls(): Promise<void> {
   return Promise.all(parts.map((p) => p.load())).then(() => undefined);

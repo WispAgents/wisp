@@ -212,7 +212,8 @@ async fn signed_in_to_two_grids_and_twice_to_one_each_is_listed_with_its_own_tok
     a.sign_in(&g1, "bea").await;
     let (k1a, k2a, k1b) = (format!("{}#ada", g1.url), format!("{}#ada", g2.url), format!("{}#bea", g1.url));
     let list = a.call("grid-client.accounts", json!({})).await;
-    assert_eq!(keys(&list), [(k1a.clone(), false), (k2a.clone(), false), (k1b.clone(), true)], "each listed, the newest current");
+    // setup audit F16: adding an account keeps the current one (it took this computer off the grid)
+    assert_eq!(keys(&list), [(k1a.clone(), true), (k2a.clone(), false), (k1b.clone(), false)], "each listed, the first still current");
 
     // secrets_are_keyed_per_grid_and_account: three tokens, none in the old one-account place
     let want: BTreeMap<String, String> = [
@@ -416,7 +417,7 @@ async fn signing_in_without_a_grid_goes_to_the_one_this_wisp_was_last_signed_in_
     };
     a.sign_in(&g1, "ada").await;
     a.sign_in(&g2, "ada").await;
-    assert!(start(&a).await.starts_with(&g2.url), "signed in: the current account's grid");
+    assert!(start(&a).await.starts_with(&g1.url), "signed in: the current account's grid (adding g2 kept g1 current)");
     a.call("grid-client.signout", json!({})).await;
     a.call("grid-client.signout", json!({})).await;
     assert_eq!(a.call("grid-client.accounts", json!({})).await, json!([]));

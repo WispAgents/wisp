@@ -173,8 +173,10 @@ pub(crate) fn setup(s: &mut Setup) {
         async move { g.reading(&call) }
     });
     let p = g.clone();
+    let shown = procs.clone();
     s.command::<c::AutomationsPause, _, _>(move |ctx, call, a| {
         let g = p.clone();
+        let shown = shown.clone();
         async move {
             let now = ctx.clock()?.now_ms();
             let until = holds::check_pause(Some(&a.until), now).map_err(|e| WireError::invalid(e.message))?;
@@ -182,6 +184,8 @@ pub(crate) fn setup(s: &mut Setup) {
             *lock(&g.now) = now;
             let paused = Paused { paused_until: until.unwrap_or(0) };
             ctx.emit(&call, &c::AutomationsPaused { paused });
+            // the page's snapshot and the chip's load row say so now
+            shown.republish(&ctx, &g, now).await;
             // resumed: what the pause held may go now
             if until.is_none() && g.with(Load::hold).is_none() {
                 let reading = g.with(Load::reading);

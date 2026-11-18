@@ -44,10 +44,22 @@ pub(super) fn project_add(s: &mut Setup, projects: Arc<StoredKind>) {
     s.command::<c::ProjectAdd, _, _>(move |_ctx, _call, a| {
         let projects = projects.clone();
         async move {
-            // spelled once where it enters (ADR-0071): `~`, `/repo/.`, `\\?\C:\x`, `RUNNER~1` all as stored
-            let path = crate::kinds::project_path(&a.path).await;
-            wisp_runtime_api::paths::Folder::of(&path)
-                .map_err(|e| WireError::invalid(format!("path: {e} (clone a repo URL first: git.clone)")))?;
+            // spelled once where it enters (ADR-0071): `~`, `/repo/.`, `\\?\C:\x`, `RUNNER~1` all as stored; a
+            // `file://` URL is its folder
+            let given = file_url_path(a.path.trim());
+            let given = given.as_str();
+            let path = crate::kinds::project_path(given).await;
+            // in plain words, as `wisp add` says it (audit A F3: it named a command id)
+            wisp_runtime_api::paths::Folder::of(&path).map_err(|_| {
+                WireError::invalid(format!("{} isn't a full path: type the folder's full path, like ~/code/app", given.trim()))
+            })?;
+            // a project is a folder that's there (audit A F1: a missing folder and a file became projects)
+            match tokio::fs::metadata(&path).await {
+                Ok(m) if m.is_dir() => {}
+                Ok(_) => return Err(WireError::invalid(format!("{path} is a file, not a folder: pick the folder it's in"))),
+                Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Err(WireError::invalid(format!("No folder at {path}"))),
+                Err(e) => return Err(WireError::invalid(format!("Can't open {path}: {e}"))),
+            }
             // a resource name: no path separators or `:` (`project.<name>` in a formula), no control characters
             if let Some(n) =
                 a.name.as_deref().map(str::trim).filter(|n| n.chars().any(|ch| ch.is_control() || matches!(ch, '/' | '\\' | ':')))
@@ -60,6 +72,28 @@ pub(super) fn project_add(s: &mut Setup, projects: Arc<StoredKind>) {
             Ok(c::ProjectAdded { name, path, created })
         }
     });
+}
+
+/// A `file://` URL's path (`file:///a/My%20App`, `file://localhost/a` → `/a/My App`, `/a`); anything else as given.
+fn file_url_path(given: &str) -> String {
+    let Some(rest) = given.strip_prefix("file://") else { return given.to_owned() };
+    let rest = rest.strip_prefix("localhost").unwrap_or(rest);
+    let bytes = rest.as_bytes();
+    let mut out = Vec::with_capacity(bytes.len());
+    let mut i = 0;
+    while i < bytes.len() {
+        let hex = |b: u8| char::from(b).to_digit(16);
+        if bytes[i] == b'%'
+            && let (Some(h), Some(l)) = (bytes.get(i + 1).copied().and_then(hex), bytes.get(i + 2).copied().and_then(hex))
+        {
+            out.push(u8::try_from(h * 16 + l).unwrap_or(b'%'));
+            i += 3;
+            continue;
+        }
+        out.push(bytes[i]);
+        i += 1;
+    }
+    String::from_utf8_lossy(&out).into_owned()
 }
 
 /// `runtime.projectTest`: a declared project's test command, written through its resource kind.

@@ -212,7 +212,8 @@ impl Inner {
         };
         let out = match go.await {
             Ok(()) => Synced { ok: true, text: format!("Local {base} is up to date with origin/{base}.") },
-            Err(e) => Synced { ok: false, text: format!("Local {base} was not updated: {e}") },
+            // one line, in words, the files named (audit A #16: the toast stopped at git's colon)
+            Err(e) => Synced { ok: false, text: wisp_git_api::not_updated(base, &e.to_string()) },
         };
         self.notify("branches");
         Ok(out)
@@ -241,7 +242,8 @@ impl Inner {
     /// The folder back as `to` has it, the branch back at `head` (see `Repo::restore`). Untracked files `to`
     /// doesn't hold are removed first (`read-tree -u` leaves untracked files alone); then the tree is read
     /// into the index and the folder, and a mixed reset puts the index and the branch at `head`, so what
-    /// was untracked then is untracked again.
+    /// was untracked then is untracked again. All of it in this checkout's own folder (`top`): a task's worktree,
+    /// never the repository's main checkout (`root`), which audit A tasks #1 found reset, its untracked files gone.
     pub async fn restore(&self, to: &str, head: &str) -> Result<()> {
         let Some(to) = self.rev_parse(to).await? else {
             return Err(GitError::Refused(format!("no checkpoint {to} in this repo")));
@@ -249,7 +251,7 @@ impl Inner {
         let Some(head) = self.rev_parse(head).await? else {
             return Err(GitError::Refused(format!("no commit {head} in this repo")));
         };
-        let root = std::path::Path::new(&self.info.root).to_path_buf();
+        let root = std::path::Path::new(&self.info.top).to_path_buf();
         let held = self.git.raw(&root, &["ls-tree", "-r", "-z", "--name-only", &to]).await?;
         let held: std::collections::HashSet<&[u8]> = held.split(|b| *b == 0).filter(|p| !p.is_empty()).collect();
         let loose = self.git.raw(&root, &["ls-files", "-z", "--others", "--exclude-standard"]).await?;

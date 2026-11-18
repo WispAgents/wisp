@@ -200,6 +200,69 @@ pub async fn lineage_line(c: &Client, id: &str) -> Option<String> {
     (!l.is_empty()).then(|| format!("  {}", l.join(" · ")))
 }
 
+/// Whether two project paths name one folder (stored canonical; macOS's `/tmp` is `/private/tmp`).
+fn same_folder(a: &str, b: &str) -> bool {
+    let canon = |p: &str| wisp_runtime_api::paths::canonical_project_path(p, None);
+    let (a, b) = (canon(a), canon(b));
+    a == b || a.strip_prefix("/private") == Some(b.as_str()) || b.strip_prefix("/private") == Some(a.as_str())
+}
+
+/// Setup audit F23: a v1 project whose folder is already a project here is that project: left out of the import (it
+/// would be a second project for one folder, which the plan refuses), and the import's `project:` fields that named
+/// it name the one here. The notes say which.
+fn same_folder_projects(resources: &mut Vec<wisp_resources_api::Resource>, existing: &Value) -> Vec<String> {
+    fn repoint(v: &mut Value, from: &str, to: &str) {
+        match v {
+            Value::Object(o) => {
+                for (k, x) in o.iter_mut() {
+                    if k == "project" && x.as_str() == Some(from) {
+                        *x = json!(to);
+                    } else {
+                        repoint(x, from, to);
+                    }
+                }
+            }
+            Value::Array(a) => a.iter_mut().for_each(|x| repoint(x, from, to)),
+            _ => {}
+        }
+    }
+    let here: Vec<(String, String)> = existing
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|r| Some((r.get("name")?.as_str()?.to_owned(), r.pointer("/spec/path")?.as_str()?.to_owned())))
+        .collect();
+    let mut renamed: Vec<(String, String)> = Vec::new();
+    resources.retain(|r| {
+        if r.kind != "project" {
+            return true;
+        }
+        let path = r.spec.get("path").and_then(Value::as_str).unwrap_or_default();
+        match here.iter().find(|(_, p)| same_folder(path, p)) {
+            Some((name, _)) => {
+                renamed.push((r.name.clone(), name.clone()));
+                false
+            }
+            None => true,
+        }
+    });
+    for r in resources.iter_mut() {
+        for (from, to) in &renamed {
+            repoint(&mut r.spec, from, to);
+        }
+    }
+    renamed
+        .into_iter()
+        .map(|(from, to)| {
+            if from == to {
+                format!("project {to} is here already")
+            } else {
+                format!("project {from}: its folder is {to} here, kept as {to}")
+            }
+        })
+        .collect()
+}
+
 /// `wisp import [v1 home] [--dry-run] [--yes]`.
 pub async fn import(c: &Client, o: &Opts, home: &Path) -> Result<i32> {
     let v1 = o.words.first().map_or_else(|| home.to_owned(), |p| Path::new(p).to_owned());
@@ -207,7 +270,9 @@ pub async fn import(c: &Client, o: &Opts, home: &Path) -> Result<i32> {
     let text =
         std::fs::read_to_string(&file).map_err(|e| CliError::said(format!("{}: {e} (wisp import [v1 home folder])", file.display())))?;
     let cfg: Value = serde_json::from_str(&text).map_err(|e| CliError::said(format!("{}: {e}", file.display())))?;
-    let (resources, notes) = crate::v1_formula::formula_of(&cfg);
+    let (mut resources, mut notes) = crate::v1_formula::formula_of(&cfg);
+    let existing = c.cmd("resources.export", json!({ "kinds": ["project"] })).await.unwrap_or(Value::Null);
+    notes.extend(same_folder_projects(&mut resources, &existing));
     let st = crate::cli::style();
     let args = json!({ "resources": resources, "prune": false });
     let plan: Plan = serde_json::from_value(c.cmd("resources.plan", args.clone()).await?).map_err(|e| CliError::said(e.to_string()))?;
@@ -259,6 +324,22 @@ pub async fn import(c: &Client, o: &Opts, home: &Path) -> Result<i32> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Setup audit F23: importing a v1 project whose folder is a project here made a second project for it.
+    #[test]
+    fn a_v1_project_for_a_folder_that_is_a_project_here_is_that_one() {
+        let mut rs = vec![
+            wisp_resources_api::Resource::new("project", "repo", json!({ "path": "/tmp/qaB/repo" })),
+            wisp_resources_api::Resource::new("project", "new-one", json!({ "path": "/tmp/qaB/other" })),
+            wisp_resources_api::Resource::new("task", "nightly", json!({ "prompt": "x", "project": "repo" })),
+        ];
+        let existing = json!([{ "kind": "project", "name": "second-repo", "spec": { "path": "/private/tmp/qaB/repo" } }]);
+        let notes = same_folder_projects(&mut rs, &existing);
+        let names: Vec<&str> = rs.iter().map(|r| r.name.as_str()).collect();
+        assert_eq!(names, ["new-one", "nightly"]);
+        assert_eq!(rs[1].spec["project"], "second-repo");
+        assert!(notes[0].contains("kept as second-repo"), "{notes:?}");
+    }
 
     #[test]
     fn since_reads_days_hours_minutes_weeks() {

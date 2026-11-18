@@ -2,6 +2,7 @@
   "shell-settings.title": "Settings",
   "shell-settings.pane.general": "General",
   "shell-settings.pane.general.lede": "Where files open, where tasks open, and how tasks start.",
+  "shell-settings.pane.general.keywords": "theme light dark appearance editor vscode cursor terminal take over open tasks in babysitting worktree review read times transcript blocks",
   "shell-settings.pane.appearance.lede": "Light or dark, on this computer and every device that opens it.",
   "shell-settings.pane.notifications": "Notifications",
   "shell-settings.pane.notifications.lede": "Hear about questions and finished tasks, here or on your phone.",

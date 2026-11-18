@@ -499,3 +499,19 @@ fn one_stray_word_after_a_prompt_word_is_a_slip_and_fork_points_to_runtime_fork(
         other => panic!("{other:?}"),
     }
 }
+
+/// Setup audit F30: `wisp budget stop-at` launched a Full-auto task (from a script, with no terminal, as in one). A
+/// plugin's name and one word shaped like a verb (kebab or camel case, or a letter or two off one of its verbs) is a
+/// slip; a plain word stays a prompt (`wisp learn rust`, round 10).
+#[test]
+fn a_plugin_name_and_one_verb_shaped_word_is_a_slip() {
+    let cat: Vec<Vec<String>> = [&["budget", "view"][..], &["budget", "set-stop"], &["learn", "view"], &["learn", "run"]].map(w).to_vec();
+    for args in [&["budget", "stop-at"][..], &["budget", "setStop"], &["budget", "veiw"], &["learn", "viewed"]] {
+        let u = unknown_verb(&p(args).words, Literal::No, &cat).unwrap_or_else(|| panic!("{args:?}"));
+        assert!(u.verbs.contains(&"set-stop".to_owned()) || u.verbs.contains(&"view".to_owned()), "{u:?}");
+    }
+    // `rust` is two edits from `run`: on a short verb that's a word, not a typo
+    for args in [&["learn", "rust"][..], &["budget", "dashboard", "for", "the", "team"], &["budget", "view"]] {
+        assert!(unknown_verb(&p(args).words, Literal::No, &cat).is_none(), "{args:?}");
+    }
+}

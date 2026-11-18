@@ -60,12 +60,7 @@ pub fn formula_of(cfg: &Value) -> (Vec<Resource>, Vec<String>) {
     if !def.is_empty() {
         out.push(Resource::new("agent", "default", Value::Object(def)));
     }
-    // the defaults that are settings now (wisp-settings-api V1_ALIASES)
-    for (v1, key) in wisp_settings_api_aliases() {
-        if let Some(v) = d.get(v1).filter(|v| !v.is_null()) {
-            out.push(Resource::new("setting", key, v.clone()));
-        }
-    }
+    defaults_of(&d, &mut out, &mut notes);
     for r in list("recipes") {
         let spec = pick(
             &r,
@@ -129,15 +124,22 @@ pub fn formula_of(cfg: &Value) -> (Vec<Resource>, Vec<String>) {
     }
     if let Some(r) = cfg.get("remote").and_then(Value::as_object) {
         for (k, v) in r.iter().filter(|(k, v)| *k != "secret" && v.is_object()) {
-            let allow: Vec<Value> = ["chatId", "user", "topic"]
-                .iter()
-                .filter_map(|f| v.get(*f).filter(|x| !x.is_null()).map(|x| json!(x.as_str().map_or_else(|| x.to_string(), str::to_owned))))
-                .collect();
-            out.push(Resource::new(
-                "channel",
-                k.clone(),
-                json!({ "transport": k, "enabled": v.get("enabled").cloned().unwrap_or(json!(true)), "allow": allow }),
-            ));
+            let text = |x: &Value| json!(x.as_str().map_or_else(|| x.to_string(), str::to_owned));
+            // who may speak to it; ntfy's `topic` is where it publishes, kept with its server (setup audit F24: it
+            // became an `allow` entry and the phone listening on it heard nothing)
+            let speakers: &[&str] = if k == "ntfy" { &["user"] } else { &["chatId", "user", "topic"] };
+            let allow: Vec<Value> = speakers.iter().filter_map(|f| v.get(*f).filter(|x| !x.is_null()).map(text)).collect();
+            let mut spec = json!({ "transport": k, "enabled": v.get("enabled").cloned().unwrap_or(json!(true)), "allow": allow });
+            if k == "ntfy" {
+                let routing: Map<String, Value> = ["topic", "server"]
+                    .iter()
+                    .filter_map(|f| v.get(*f).filter(|x| !x.is_null()).map(|x| ((*f).to_owned(), text(x))))
+                    .collect();
+                if !routing.is_empty() {
+                    spec["routing"] = Value::Object(routing);
+                }
+            }
+            out.push(Resource::new("channel", k.clone(), spec));
             notes.push(format!("channel {k}: its token stays in secrets (${{secret:…}} when you declare it)"));
         }
     }
@@ -190,6 +192,87 @@ fn triggers_of(triggers: Vec<Value>, out: &mut Vec<Resource>, notes: &mut Vec<St
     }
 }
 
+/// The type a v1 default takes as its v2 setting.
+#[derive(Debug, Clone, Copy)]
+enum As {
+    /// true/false (v1 kept "on"/"off" too)
+    Bool,
+    /// "on"/"off" (v1 kept true/false too)
+    OnOff,
+    /// text as it is (a number's digits)
+    Text,
+    /// a whole number (v1 kept "30" too)
+    Int,
+}
+
+impl As {
+    /// None: not a value this type takes (an object, a word that's no number): named, never sent to fail the import.
+    fn of(self, v: &Value) -> Option<Value> {
+        if v.is_object() || v.is_array() {
+            return None;
+        }
+        let text = v.as_str().map_or_else(|| v.to_string(), str::to_owned);
+        Some(match self {
+            Self::Bool => json!(match v {
+                Value::Bool(b) => *b,
+                _ => !matches!(text.as_str(), "off" | "false" | "0" | ""),
+            }),
+            Self::OnOff => json!(match v {
+                Value::Bool(b) =>
+                    if *b {
+                        "on"
+                    } else {
+                        "off"
+                    },
+                _ => text.as_str(),
+            }),
+            Self::Text => json!(text),
+            Self::Int => json!(v.as_i64().or_else(|| text.trim().parse().ok())?),
+        })
+    }
+}
+
+/// v1 defaults with a v2 setting beyond the aliases (setup audit F25: they were dropped), and the type each takes.
+/// v1's defaults that are settings now (wisp-settings-api `V1_ALIASES`, and the rest with a v2 setting: setup audit
+/// F25), each in its setting's type; the ones with none are named in `notes`, never dropped without a word.
+fn defaults_of(d: &Value, out: &mut Vec<Resource>, notes: &mut Vec<String>) {
+    for (v1, key) in wisp_settings_api_aliases() {
+        if let Some(v) = d.get(v1).filter(|v| !v.is_null()) {
+            out.push(Resource::new("setting", key, v.clone()));
+        }
+    }
+    let mut odd = Vec::new();
+    for (v1, key, to) in V1_DEFAULTS {
+        if let Some(v) = d.get(*v1).filter(|v| !v.is_null()) {
+            match to.of(v) {
+                Some(v) => out.push(Resource::new("setting", *key, v)),
+                None => odd.push(format!("{v1} ({key})")),
+            }
+        }
+    }
+    if !odd.is_empty() {
+        notes.push(format!("v1 defaults in a shape v2 doesn't read, not carried: {}", odd.join(", ")));
+    }
+    let carried = |k: &str| {
+        ["model", "effort", "mode", "subagentModel", "agent"].contains(&k)
+            || wisp_settings_api_aliases().iter().any(|(v1, _)| *v1 == k)
+            || V1_DEFAULTS.iter().any(|(v1, _, _)| *v1 == k)
+    };
+    let left: Vec<&str> = d.as_object().into_iter().flatten().map(|(k, _)| k.as_str()).filter(|k| !carried(k)).collect();
+    if !left.is_empty() {
+        notes.push(format!("v1 defaults with no v2 setting, not carried: {}", left.join(", ")));
+    }
+}
+
+const V1_DEFAULTS: &[(&str, &str, As)] = &[
+    ("maskEnvFiles", "git.maskEnvFiles", As::Bool),
+    ("leanRuns", "runtime.leanRuns", As::OnOff),
+    ("editor", "settings.editor", As::Text),
+    ("notify", "settings.notify", As::OnOff),
+    ("limitHold", "budget.limitHold", As::Text),
+    ("retentionDays", "runtime.retentionDays", As::Int),
+];
+
 /// v1's `defaults` names that are settings now, and their keys (as wisp-settings-api's `V1_ALIASES`).
 fn wisp_settings_api_aliases() -> [(&'static str, &'static str); 6] {
     [
@@ -235,5 +318,41 @@ mod tests {
         let nightly = rs.iter().find(|r| r.name == "nightly").unwrap();
         assert_eq!(nightly.spec["schedule"], "0 2 * * *");
         assert!(notes.iter().any(|n| n.contains("linear")), "{notes:?}");
+    }
+
+    /// Setup audit F24, F25: the v1 ntfy topic became an `allow` entry (its server dropped), so the phone that listened
+    /// on it heard nothing; and v1 defaults beyond six were dropped without a word. ntfy's topic and server are where it
+    /// publishes (`routing`), each default with a v2 setting is that setting, in its type, and the rest are named.
+    #[test]
+    fn ntfy_keeps_its_topic_and_server_and_every_v1_default_is_carried_or_named() {
+        let cfg = json!({
+            "remote": { "ntfy": { "enabled": true, "topic": "wisp-old-topic-1", "server": "https://ntfy.example" },
+                        "telegram": { "enabled": false, "chatId": 42 } },
+            "defaults": { "maskEnvFiles": "off", "leanRuns": "all", "editor": "zed", "notify": true, "limitHold": 90,
+                          "retentionDays": "30", "timeZone": "Europe/Zurich", "model": "opus", "someOldThing": 1 }
+        });
+        let (rs, notes) = formula_of(&cfg);
+        let get = |kind: &str, name: &str| {
+            rs.iter().find(|r| r.kind == kind && r.name == name).unwrap_or_else(|| panic!("{kind}/{name}: {rs:?}")).spec.clone()
+        };
+        let ntfy = get("channel", "ntfy");
+        assert_eq!(ntfy["routing"], json!({ "topic": "wisp-old-topic-1", "server": "https://ntfy.example" }), "{ntfy}");
+        assert_eq!(ntfy["allow"], json!([]), "a topic isn't someone allowed to speak: {ntfy}");
+        assert_eq!(get("channel", "telegram")["allow"], json!(["42"]), "a chat id still is");
+        for (key, want) in [
+            ("git.maskEnvFiles", json!(false)),
+            ("runtime.leanRuns", json!("all")),
+            ("settings.editor", json!("zed")),
+            ("settings.notify", json!("on")),
+            ("budget.limitHold", json!("90")),
+            ("runtime.retentionDays", json!(30)),
+            ("settings.timeZone", json!("Europe/Zurich")),
+        ] {
+            assert_eq!(get("setting", key), want, "{key}");
+        }
+        assert!(notes.iter().any(|n| n.contains("someOldThing") && !n.contains("maskEnvFiles")), "{notes:?}");
+        // a shape v2 doesn't read: named, not sent (it would fail the whole import)
+        let (rs, notes) = formula_of(&json!({ "defaults": { "notify": { "sound": true } } }));
+        assert!(rs.iter().all(|r| r.name != "settings.notify") && notes.iter().any(|n| n.contains("notify")), "{notes:?}");
     }
 }

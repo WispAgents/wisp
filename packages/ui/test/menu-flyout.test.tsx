@@ -205,7 +205,8 @@ describe('desktop: the flyout from the keyboard, and choosing in it', () => {
     await until(() => onSelect.mock.calls.length > 0, 500);
     expect(onSelect).toHaveBeenCalledTimes(1);
     expect(onSelect).toHaveBeenCalledWith('copy-resume');
-    expect(state('task.more.flyout')).toBe('closed');
+    // the flyout went with its menu: a closed menu draws no rows (perf audit 2026-11-18 #12)
+    expect(part('task.more.flyout')).toBeNull();
     expect(state('task.more')).toBe('closed');
   });
 

@@ -113,7 +113,7 @@ impl Shipper {
 
     /// Squash-merge the exact head that was reviewed (a draft readied first), fast-forward the user's
     /// base, then tidy wisp's own worktree and branch (edge cases Git 7, 8).
-    pub async fn merge(&self, call: &Call, wt: &Worktree, number: u64) -> Result<(PrSummary, Synced)> {
+    pub async fn merge(&self, call: &Call, wt: &Worktree, number: u64) -> Result<(PrSummary, Synced, Option<String>)> {
         let dir = Self::dir_of(wt).await;
         let n = number.to_string();
         let pr = self.gh.pr_view(&dir, &n, self.now()).await?;
@@ -124,14 +124,25 @@ impl Shipper {
         self.gh.run(&dir, &plan.merge, None).await?;
         let pr = self.gh.pr_view(&dir, &n, self.now()).await?;
         let root = self.repo(call, &wt.root).await?;
-        let sync = root.sync_base(call, &wt.base).await.map_or_else(
-            |e| Synced { ok: false, text: format!("Local {} was not updated: {}", wt.base, e.message) },
+        let mut sync = root.sync_base(call, &wt.base).await.map_or_else(
+            |e| Synced { ok: false, text: wisp_git_api::not_updated(&wt.base, &e.message) },
             |s| Synced { ok: s.ok, text: s.text },
         );
         if cleans_up(wt) {
+            // work the merge didn't take (uncommitted, or commits after the PR's head) keeps the folder and its branch
+            // (audit A orch #3: a merge removed a worktree holding uncommitted work, without a word)
+            let left = self.status(call, wt, Some(&pr)).await.unwrap_or_default();
+            if let Some(why) = kept_because(&left) {
+                let note = format!("The worktree {} was kept: {why}.", wt.path);
+                if !sync.text.is_empty() {
+                    sync.text.push(' ');
+                }
+                sync.text.push_str(&note);
+                return Ok((pr, sync, Some(note)));
+            }
             self.tidy(call, &root, wt).await;
         }
-        Ok((pr, sync))
+        Ok((pr, sync, None))
     }
 
     /// The merged task's worktree and branch go, here and on the remote. Best effort: the merge landed.
@@ -182,6 +193,18 @@ impl Shipper {
         let m = repo.base_merged(call, &base).await?;
         Ok(if m.ok { Ok(()) } else { Err(m.why.unwrap_or_else(|| "The base is not merged in.".into())) })
     }
+}
+
+/// Why a merged task's worktree stays: what's in it that the merge didn't take. None: nothing, it can go.
+pub fn kept_because(st: &RepoStatus) -> Option<String> {
+    let mut why = Vec::new();
+    if st.dirty > 0 {
+        why.push(format!("it has {} uncommitted change{}", st.dirty, if st.dirty == 1 { "" } else { "s" }));
+    }
+    if st.unpushed > 0 {
+        why.push(format!("{} commit{} the pull request doesn't have", st.unpushed, if st.unpushed == 1 { "" } else { "s" }));
+    }
+    (!why.is_empty()).then(|| why.join(" and "))
 }
 
 /// What a Ship it asks for.

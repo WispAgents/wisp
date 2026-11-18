@@ -18,4 +18,9 @@ ext: Record<string, unknown>,
  * a session run outside wisp (ADR-0035): its id in that CLI. The task isn't read-only then, and its
  * next follow-up continues the same session there. Additive (2026-11-09).
  */
-resumeId?: string, };
+resumeId?: string, 
+/**
+ * a task with nothing run yet, to go on in `cwd` (Settings › Worktrees: Bring in, audit A orch #6): no turns
+ * needed, and it isn't read-only. Additive (2026-11-18).
+ */
+fresh?: boolean, };

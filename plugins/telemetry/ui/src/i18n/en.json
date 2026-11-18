@@ -2,5 +2,6 @@
   "telemetry.privacy.pane": "Privacy",
   "telemetry.privacy.lede": "What wisp sends about itself (never prompts, paths or code), and what it asks before a repo's own programs run.",
   "telemetry.privacy.pane.lede": "What wisp sends about itself (never prompts, paths or code), and what it hides on screen.",
+  "telemetry.privacy.pane.keywords": "telemetry usage stats analytics crash reports privacy",
   "telemetry.feedback.line": "Hit a bug, or wish wisp did something? Tell us"
 }

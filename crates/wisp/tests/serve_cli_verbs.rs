@@ -615,3 +615,31 @@ async fn one_stray_word_is_a_slip_more_is_a_prompt_for_every_command_word() {
     assert!(code == 0 && applied, "only running tasks, or none: {code}: {out}{err}");
     drop(serve);
 }
+
+/// Setup audit F30 (H): from a script, an agent or CI (no terminal), a mistyped verb launched a real Full-auto task.
+/// The slip rules hold with no terminal: every line here is refused (exit 2, the `wisp -- …` way out), and no task.
+#[tokio::test(flavor = "multi_thread")]
+async fn with_no_terminal_a_mistyped_verb_is_refused_never_launched() {
+    let dir = temp("serve-cli-notty");
+    let (serve, port) = start(&dir);
+    let api = Api { http: reqwest::Client::new(), port, n: 0.into() };
+    let mut wrong = Vec::new();
+    for words in [
+        &["budget", "stop-at"][..],
+        &["crew", "frobnicate"],
+        &["settings", "frobnicate"],
+        &["plugin", "frobnicate"],
+        &["cloud", "frobnicate"],
+        &["crew", "frobnicate", "--json"],
+        &["--wait", "crew", "frobnicate"],
+        &["-d", "settings", "frobnicate"],
+    ] {
+        let (code, out, err) = probe(&dir, port, words);
+        if code != 2 || out.contains("launched") || err.contains("launched") || !err.contains("wisp -- ") {
+            wrong.push(format!("wisp {} → {code}: {}{}", words.join(" "), out.trim(), err.trim()));
+        }
+    }
+    assert!(wrong.is_empty(), "{} launched or weren't refused:\n{}", wrong.len(), wrong.join("\n"));
+    assert_eq!(api.cmd("runtime.list", json!({})).await.as_array().unwrap().len(), 0, "no task was made");
+    drop(serve);
+}

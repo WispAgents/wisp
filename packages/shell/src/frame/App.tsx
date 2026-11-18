@@ -73,9 +73,13 @@ export function App(props: { readonly clients: Clients; readonly recent: Readabl
       const comps = [TaskView, ...TASK_PAGE_INPUTS.flatMap((i) => shell.extensions(i)().map((e) => e.def.component))];
       for (const run of taskPagePreloads(comps)) void run();
     };
+    // after the first screen (ADR-0105): it never competes with what the list and Home draw first
+    let gone = false;
+    onCleanup(() => (gone = true));
     const idle = window.requestIdleCallback?.bind(window);
-    const t = setTimeout(() => (idle ? idle(warm, { timeout: 4000 }) : warm()), 1500);
-    onCleanup(() => clearTimeout(t));
+    const go = (): void => void (!gone && (idle ? idle(() => !gone && warm(), { timeout: 4000 }) : warm()));
+    if (shell.afterFirstScreen) shell.afterFirstScreen(go);
+    else go();
   });
   // a crew member picked on the rail tints the list beside it (v1 #768); Settings → General → Crew tint turns it off
   const crew = useSignal(shell.client.entities.list<TintMember>('crew_member'));

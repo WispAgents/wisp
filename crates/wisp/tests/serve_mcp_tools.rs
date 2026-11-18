@@ -129,6 +129,10 @@ async fn an_agent_adds_a_project_through_its_mcp_tool_and_the_server_names_it() 
     let a = Agent::start("mcp-project-add").await;
     assert!(a.names(true).await.iter().any(|n| n == "runtime_projectAdd"), "the agent has the tool");
     let (one, two) = (a.dir.join("a/wisp"), a.dir.join("b/wisp"));
+    // a project is a folder that's there (audit A F1)
+    for d in [&one, &two] {
+        std::fs::create_dir_all(d).unwrap();
+    }
     for (p, want) in [(&one, "\"name\":\"wisp\""), (&two, "\"name\":\"wisp-2\""), (&one, "\"created\":false")] {
         let (t, err) = a.call("runtime_projectAdd", json!({ "path": p })).await;
         assert!(!err && t.replace(' ', "").contains(want), "{}: {t}", p.display());

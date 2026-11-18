@@ -18,6 +18,7 @@
     "telemetry:track",
     "runtime:get",
     "runtime:list",
+    "runtime:slots",
     "runtime:turns",
     "runtime:quick",
     "runtime:setExt",

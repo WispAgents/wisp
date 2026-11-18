@@ -1,5 +1,5 @@
 import { expect, test } from 'vitest';
-import { groupPanes, type PaneEntry } from '../src/nav.ts';
+import { groupPanes, samePane, type PaneEntry } from '../src/nav.ts';
 import { filterSections, offeredPanes, sectionedPanes } from '../src/phone-nav.ts';
 import { settingsPalette } from '../src/index.ts';
 
@@ -58,4 +58,20 @@ test('settings_search_keeps_the_panes_whose_name_section_or_lede_has_every_word_
   expect(ids('LIMITS day')).toEqual([['Agents', ['usage']]]);
   expect(ids('nothing like it')).toEqual([]);
   expect(ids('  ')).toHaveLength(groups.length);
+});
+
+// QA setup audit F8: flipping a setting (Settings → Agents' "Ask before running a changed harness") remade the whole
+// open pane, every row and its switch new, because the list of panes is made again when a setting changes and the
+// sheet keyed the pane on its entry. The open pane is the same while its id, its component and its plugin are.
+test('the_open_pane_is_the_same_while_its_id_component_and_plugin_are', () => {
+  const component = (): null => null;
+  const client = {} as PaneEntry['client'];
+  const a: PaneEntry = { pane: { id: 'agents', group: 'agents', title: 't', icon: 'agent', component }, client };
+  const again: PaneEntry = { pane: { ...a.pane }, client };
+  expect(samePane(a, again)).toBe(true);
+  expect(samePane(a, { pane: { ...a.pane, id: 'usage' }, client })).toBe(false);
+  expect(samePane(a, { pane: { ...a.pane, component: (): null => null }, client })).toBe(false);
+  expect(samePane(a, { pane: a.pane, client: {} as PaneEntry['client'] })).toBe(false);
+  expect(samePane(undefined, undefined)).toBe(true);
+  expect(samePane(a, undefined)).toBe(false);
 });

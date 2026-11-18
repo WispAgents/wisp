@@ -46,6 +46,8 @@ pub struct Loaded {
     pub sources: Vec<String>,
     /// the `${secret:NAME}` names it references
     pub secrets: Vec<String>,
+    /// every section it names, an empty one too (`triggers: []`), as kinds: what `--prune` may empty
+    pub kinds: Vec<String>,
 }
 
 /// The documents in `text`.
@@ -197,6 +199,9 @@ impl Reader<'_> {
                 let known: Vec<&str> = self.kinds.iter().map(|k| k.section.as_str()).collect();
                 return Err(format!("{at}: no plugin in this wisp owns `{section}:` (sections: {})", known.join(", ")));
             };
+            if !self.out.kinds.contains(&kind.kind) {
+                self.out.kinds.push(kind.kind.clone());
+            }
             for (name, spec) in items(kind, v, &format!("{at} {section}"))? {
                 self.add(Resource::new(kind.kind.clone(), name, spec));
             }

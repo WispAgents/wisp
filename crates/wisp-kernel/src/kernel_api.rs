@@ -110,6 +110,12 @@ pub struct RouteEntry {
 }
 
 impl Kernel {
+    /// Whether `cmd` is registered and declared read-only (a read: the edge keeps no answer of it for a retry). A
+    /// command not registered yet (its lazy plugin hasn't started) is not. Additive (2026-11-18).
+    pub fn command_read_only(&self, cmd: &str) -> bool {
+        self.state.reg.read().is_ok_and(|r| r.commands.get(cmd).is_some_and(|e| e.read_only))
+    }
+
     /// Waits until every queued event is delivered and every follow-up has run.
     pub fn idle(&self) -> BoxFuture<'static, ()> {
         let w = self.state.work.clone();

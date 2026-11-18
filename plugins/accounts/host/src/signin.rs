@@ -56,9 +56,13 @@ async fn env_of(st: &State, h: &dyn Harness, acc: &str) -> Result<Vec<(String, S
     Ok(vec![(spec.env.clone(), dir.to_string_lossy().into_owned())])
 }
 
-/// Saves the login's row (what the Sign-in pane shows). The store's error is the caller's to report.
+/// Saves the login's row (what the Sign-in pane shows) and has Settings → Agents' rows written again: a sign-in moves
+/// on its own (its link, its code, its end), with no command after it (the owner's audit, 2026-11-18). The store's
+/// error is the caller's to report.
 async fn put(st: &State, id: String, v: LoginView) -> Result<(), WireError> {
-    st.store.write(move |w| store::put_login(w, &id, &v)).await.map_err(crate::store_err)
+    let r = st.store.write(move |w| store::put_login(w, &id, &v)).await.map_err(crate::store_err);
+    st.changed.notify_one();
+    r
 }
 
 /// [`put`] from a flow nobody waits on (the CLI's output, its end): a failed save is logged, the flow goes on.
@@ -72,7 +76,9 @@ async fn put_or_warn(st: &State, id: String, v: LoginView) {
 /// Saves a harness's accounts (who each is signed in as, its cool).
 async fn put_accounts(st: &State, agent: &str, list: Vec<accounts::Stored>) -> Result<(), WireError> {
     let a = agent.to_owned();
-    st.store.write(move |w| store::put_accounts(w, &a, &list)).await.map_err(crate::store_err)
+    let r = st.store.write(move |w| store::put_accounts(w, &a, &list)).await.map_err(crate::store_err);
+    st.changed.notify_one();
+    r
 }
 
 pub fn view(st: &State, agent: &str, acc: &str) -> LoginView {
@@ -82,6 +88,13 @@ pub fn view(st: &State, agent: &str, acc: &str) -> LoginView {
 /// Every sign-in wisp knows of, by its row id.
 pub fn all(st: &State) -> Vec<(String, LoginView)> {
     lock(&st.flows.0).iter().map(|(k, f)| (k.clone(), f.view.clone())).collect()
+}
+
+/// A removed account's sign-in and status are forgotten (its row goes from the pane).
+pub fn forget(st: &State, agent: &str, acc: &str) {
+    let id = login_id(agent, acc);
+    lock(&st.flows.0).remove(&id);
+    lock(&st.statuses).remove(&id);
 }
 
 /// Signed in or not, and as whom; kept on the account for the page.
@@ -257,6 +270,10 @@ async fn finish(ctx: &Ctx, st: &State, id: &str, agent: &str, acc: &str, state: 
         f.handle = None;
         f.view.clone()
     };
+    // done is signed in (v1 agent-login): the row says Signed in at once, before the next status asks the CLI
+    if state == LoginState::Done {
+        lock(&st.statuses).insert(id.to_owned(), Some(true));
+    }
     put_or_warn(st, id.to_owned(), v).await;
     let step = match state {
         LoginState::Done => "done",
@@ -267,6 +284,14 @@ async fn finish(ctx: &Ctx, st: &State, id: &str, agent: &str, acc: &str, state: 
     if state == LoginState::Done {
         // the turn a sign-in card waits on runs again
         crate::calls::sign_in_done(ctx, agent, account_key(acc)).await;
+        // GitHub: git pushes with gh's login from now on (v1 gitFromGh), off the sign-in's way
+        // only with a real git, as the git plugin found it: on a Mac without the developer tools, /usr/bin/git is
+        // Apple's shim and running it opens the installer
+        let git = lock(&st.tools).as_ref().is_some_and(|t| t.git.installed);
+        if agent == crate::gh::ID && git {
+            let (p, gh) = (st.proc.clone(), bin(&crate::gh::login()));
+            ctx.spawn(async move { crate::gh::after_sign_in(&p, &gh).await });
+        }
     }
 }
 
@@ -360,6 +385,8 @@ async fn signed_out(st: &State, agent: &str, acc: &str) -> Result<(), WireError>
     if ended {
         lock(&st.flows.0).remove(&id);
     }
+    // signed out as last known, at once (the row's Signed in goes before the next status asks)
+    lock(&st.statuses).insert(id.clone(), Some(false));
     let list = {
         let mut map = lock(&st.accounts);
         map.get_mut(agent).filter(|l| accounts::multi(l)).map(|list| {
@@ -429,6 +456,9 @@ mod tests {
             installing: Mutex::default(),
             statuses: Mutex::default(),
             latest: Mutex::default(),
+            changed: tokio::sync::Notify::new(),
+            publishing: tokio::sync::Mutex::new(()),
+            tools: Mutex::default(),
         }
     }
 

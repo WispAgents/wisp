@@ -4,6 +4,7 @@
 // new task's row and page straight away (Starting…), the box cleared; a refusal puts the text back
 // and the client toasts why.
 
+import { afterNextPaint } from './task-paint.ts';
 import { useProjects } from './projects.ts';
 import { usePromptMenu } from './prompt-menu.ts';
 import { useAttachments } from './attach.ts';
@@ -13,7 +14,7 @@ import { warm, warmer } from './warm.ts';
 import { INSTALLABLE, useSetup } from './setup.ts';
 import { useRecipes } from './recipes.ts';
 import type { PickOptions } from '../platform/types.ts';
-import { Show, createEffect, createMemo, createResource, createSignal, lazy, on, onCleanup, untrack, type JSX } from 'solid-js';
+import { Show, createEffect, createMemo, createResource, createSignal, getOwner, lazy, on, onCleanup, runWithOwner, untrack, type JSX } from 'solid-js';
 import { githubTip, tools as githubTools } from './github-tip.ts';
 import { tipPick } from './home-tips.ts';
 import { computed, entityKey, newRowId, ownerOf, type EntityKey, type Json, type PeerId } from '@wisp/client';
@@ -80,6 +81,8 @@ const WORKTREE_KEY = 'worktrees.worktree';
 
 export function HomeView(props: { readonly onBack?: () => void }): JSX.Element {
   const shell = useShell();
+  // the harness picker's code: fetched once the first screen is drawn (ADR-0105), so the first press finds it
+  shell.afterFirstScreen?.(() => void pickerPart.load().catch(() => undefined));
   // the phone apps (Android, iPhone): New task's own bar; set once, as the platform never changes
   const phone = shell.platform.phone;
   // the phone apps' New task sheet / page holds the prompt box alone (r291): no greeting (its bar says New task), no
@@ -304,11 +307,16 @@ export function HomeView(props: { readonly onBack?: () => void }): JSX.Element {
   if (shell.prompts) onCleanup(shell.prompts.provide('launcher', box));
   // v1 puts the caret in the prompt a beat after Home shows; never taken from what holds it already (a menu or a
   // dialog opened while Home was still loading kept its focus in v1, whose Home was there from the start)
-  queueMicrotask(() => {
+  // in the frame after Home's first: focusing in the click's render forced a style and layout of the whole half-built
+  // Home inside the click (perf r1 #10: New task 357 ms at 4×). What holds the focus by then keeps it
+  const caret = (): void => {
     const at = document.activeElement;
     // the phone sheet opens to write in: the caret is in the prompt (the keyboard comes up), whatever was pressed
     if (sheet() || !at || at === document.body) input?.focus();
-  });
+  };
+  // the phone sheet focuses in the tap itself: a keyboard comes up only for a focus inside the tap's gesture
+  if (typeof requestAnimationFrame === 'function' && !sheet()) onCleanup(afterNextPaint(caret));
+  else queueMicrotask(caret);
   // several projects picked over the list (project-pick.ts): New task starts in the first, and also works in the others
   // (runtime.create `dirs`, F-comp-47) until you leave one out with its ×; + on any other chip (or ⌘-click) adds it
   const listFilter = useSignal(shell.projectFilter?.value ?? (() => 'all'));
@@ -343,8 +351,11 @@ export function HomeView(props: { readonly onBack?: () => void }): JSX.Element {
   // a phone or a touch-only screen has no shortcut to advertise (v1: MOBILE || (hover: none))
   const touchOnly = phone || (typeof matchMedia === 'function' && matchMedia('(hover: none)').matches);
   const promptHint = (): string => t(homePlaceholderKey({ touch: touchOnly, focused: promptFocused() }), { key: displayCombo('mod+l', shell.platform.apple).join('') });
-  // the goal plugin's Judges at the end of Done when (v1 #judgesBtn): made once, shown while the line is
-  const goalEnd = <Slot input="shell.home:goalLine" layout="contents" />;
+  // the goal plugin's Judges at the end of Done when (v1 #judgesBtn): made once, the first time the line shows (made at
+  // setup it loaded the Judges chain, popovers and pickers, ~45 KB br, on every first screen: perf r1 #1), then kept
+  const owner = getOwner();
+  let goalEndEl: JSX.Element | undefined;
+  const goalEnd = (): JSX.Element => (goalEndEl ??= runWithOwner(owner, () => <Slot input="shell.home:goalLine" layout="contents" />));
   // ↑ brings back what you sent, Shift+Tab cycles the mode (v1 prompt-history.js, F-task-31, F-comp-4)
   const sent = sentStore(shell.client);
   const sentList = useSignal(sent.value);
@@ -439,7 +450,8 @@ export function HomeView(props: { readonly onBack?: () => void }): JSX.Element {
     // a plugin's prompt source may take it (`/sandbox …`: a sandbox of its own), with what New task picked
     const w = when();
     const launch = {
-      ...(p && { cwd: p.path }),
+      // the project and its Worktree / In place pick go with it: Start later's plan starts as Send would (orch #13)
+      ...(p && { cwd: p.path, projectId: p.id, worktree: worktree() }),
       agent: agent(),
       mode: mode(),
       // Auto's 'model' is its goal, the router's own: never sent as a model
@@ -1036,7 +1048,7 @@ export function HomeView(props: { readonly onBack?: () => void }): JSX.Element {
             value: goal() ?? '',
             onInput: setGoal,
             ref: (el: HTMLInputElement) => (goalInput = el),
-            end: goalEnd,
+            end: goalEnd(),
           },
         })}
         extras={desk() ? extras().filter((x) => x.id !== 'when') : extras()}
@@ -1084,29 +1096,33 @@ export function HomeView(props: { readonly onBack?: () => void }): JSX.Element {
           }}
         />
       </Show>
-      <RunnerPicker
-        open={picker()}
-        onOpenChange={setPicker}
-        anchor={() => document.querySelector('[data-part="launcher.harness"][data-lead]')}
-        back={() => input}
-        peer={target()}
-        defaultWord={(a) => defaultName(a, '')}
-        auto={autoOn()}
-        accounts
-        // the names ride along, so a thinking or account change (withSetting) keeps the model's and account's words
-        value={{ agent: agent(), model: model(), effort: effort(), account: account()?.id ?? '', ...(modelLabel() && { modelLabel: modelLabel() }), ...(account() && { accountLabel: account()?.label ?? '' }) }}
-        onChange={(r) => {
-          const was = agent();
-          setAgent(r.agent);
-          setModel(r.model);
-          setModelLabel(r.modelLabel ?? '');
-          setEffort(r.effort);
-          setAccount(r.account ? { id: r.account, label: r.accountLabel ?? r.account } : undefined);
-          keepPick(r.agent, r.model, r.modelLabel ?? '', r.effort);
-          // back on Auto, or another goal: what it will run is asked again
-          if (r.agent === 'auto') ask(text(), was !== 'auto');
-        }}
-      />
+      {/* mounted once its code is here (fetched after the first screen, on the pill's hover, or on the press): mounted
+          at once it loaded the picker, 8 KB br, on every first screen (perf r1 #1) */}
+      <Show when={picker() || pickerPart.ready()}>
+        <RunnerPicker
+          open={picker()}
+          onOpenChange={setPicker}
+          anchor={() => document.querySelector('[data-part="launcher.harness"][data-lead]')}
+          back={() => input}
+          peer={target()}
+          defaultWord={(a) => defaultName(a, '')}
+          auto={autoOn()}
+          accounts
+          // the names ride along, so a thinking or account change (withSetting) keeps the model's and account's words
+          value={{ agent: agent(), model: model(), effort: effort(), account: account()?.id ?? '', ...(modelLabel() && { modelLabel: modelLabel() }), ...(account() && { accountLabel: account()?.label ?? '' }) }}
+          onChange={(r) => {
+            const was = agent();
+            setAgent(r.agent);
+            setModel(r.model);
+            setModelLabel(r.modelLabel ?? '');
+            setEffort(r.effort);
+            setAccount(r.account ? { id: r.account, label: r.accountLabel ?? r.account } : undefined);
+            keepPick(r.agent, r.model, r.modelLabel ?? '', r.effort);
+            // back on Auto, or another goal: what it will run is asked again
+            if (r.agent === 'auto') ask(text(), was !== 'auto');
+          }}
+        />
+      </Show>
       {/* a compare run's harness picker: the same one, anchored on that run's button; picks here don't touch the lead */}
       <Show when={((i) => (i === undefined ? undefined : runs()[i] && { i, r: runs()[i] as Runner }))(cmpPicker())}>
         {(c) => (

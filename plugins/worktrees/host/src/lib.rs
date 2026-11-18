@@ -196,6 +196,7 @@ impl Plugin for WorktreesPlugin {
     fn setup(&self, s: &mut Setup) -> WireResult<()> {
         let st = State::new(self.clone());
         commands::register(s, &st);
+        commands::view_last(s, &st);
         source::register(s);
         files::register(s);
         s.contribute(&wisp_runtime_api::points::SUMMARY, Arc::new(summary::Summary) as Arc<dyn wisp_runtime_api::points::SummaryField>);

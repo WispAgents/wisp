@@ -261,13 +261,17 @@ function MenuContent(props: { readonly state: MenuState; readonly items: readonl
           data-drilled={flag(!!open())}
           style={props.state.width() ? { '--menu-w': props.state.width() } : undefined}
         >
-          <Show when={open()} fallback={<Entries api={api()} items={props.items} part={props.part} fly={props.state.fly()} />}>
-            {(s) => (
-              <div role="group" aria-label={s().label} data-kit="menu-pane" data-part={sub(props.part, 'pane')}>
-                <BackRow api={api()} label={s().label} part={props.part} />
-                <Entries api={api()} items={s().items} part={props.part} />
-              </div>
-            )}
+          {/* rows only while open: a closed menu (the open task's More, rebuilt by every patch to the task) holds
+              none, and no flyout portals (perf audit 2026-11-18 #12) */}
+          <Show when={api().open}>
+            <Show when={open()} fallback={<Entries api={api()} items={props.items} part={props.part} fly={props.state.fly()} />}>
+              {(s) => (
+                <div role="group" aria-label={s().label} data-kit="menu-pane" data-part={sub(props.part, 'pane')}>
+                  <BackRow api={api()} label={s().label} part={props.part} />
+                  <Entries api={api()} items={s().items} part={props.part} />
+                </div>
+              )}
+            </Show>
           </Show>
         </div>
       </div>

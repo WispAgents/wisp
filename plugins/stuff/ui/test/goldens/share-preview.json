@@ -12,7 +12,7 @@
       "harness:claude"
     ],
     "redacted": {
-      "path": 2,
+      "path": 1,
       "secret": 2
     },
     "report": {
@@ -33,7 +33,7 @@
         }
       ],
       "files": [
-        "<project>/math.js"
+        "math.js"
       ]
     },
     "sig": "",
@@ -65,12 +65,6 @@
       "kind": "secret",
       "now": "<secret>",
       "was": "toke…efgh"
-    },
-    {
-      "at": "report/files/0",
-      "kind": "path",
-      "now": "<project>",
-      "was": "/tmp/…/proj"
     }
   ],
   "shared": null,

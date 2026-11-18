@@ -118,7 +118,8 @@ export function TaskHead(props: TaskHeadProps): JSX.Element {
           data-kit="sh-title"
           data-part="split.title"
           title={props.renameLabel}
-          data-no-drag=""
+          // the Mac app: a press that moves drags the window, a click renames (audit A #18)
+          data-drag-click=""
           contentEditable={editing() ? 'plaintext-only' : undefined}
           aria-label={editing() ? props.renameLabel : undefined}
           onClick={(e) => {

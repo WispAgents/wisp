@@ -194,7 +194,12 @@ export function PreviewPane(): JSX.Element {
   });
   const run = (restart = false): void => {
     const cmd = command().trim();
-    if (!cmd) return;
+    // nothing to run: say what it needs and put the caret there (audit A #17: Run did nothing)
+    if (!cmd) {
+      setSaid(t('shell-task.preview.needCommand'));
+      document.querySelector<HTMLElement>('[data-kit="run-preview"] #rn-cmd')?.focus();
+      return;
+    }
     const was = state();
     // the bar at once, "Starting"; back as it was with the reason if the computer refuses
     setState('live');

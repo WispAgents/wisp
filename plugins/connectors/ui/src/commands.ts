@@ -54,7 +54,9 @@ export const addConnector = defineCommand<OnPeer & ConnectorBody>({
 export const updateConnector = defineCommand<OnPeer & { id: string } & ConnectorBody>({
   id: 'connectors.update',
   owner: (a) => keyOf(a.peer, a.id),
-  wire: (a) => ({ id: a.id, body: bodyOf(a) }),
+  // flat beside the id, as the server reads it (UpdateArgs: `#[serde(flatten)] body`); nested, it was ignored and an
+  // edit saved nothing (QA setup audit F9)
+  wire: (a) => ({ id: a.id, ...bodyOf(a) }),
   optimistic: (base, a) =>
     change(base, a.peer, a.id, (c) => {
       // the switch alone keeps the last check; anything else makes it say nothing (v1 PATCH)

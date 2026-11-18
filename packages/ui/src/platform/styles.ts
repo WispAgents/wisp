@@ -6,6 +6,7 @@
 
 import type { Look } from './look.ts';
 import { phoneOverlays } from '../controls/phone-part.ts';
+import { afterFirstScreen } from '../controls/lazy-part.ts';
 import { loadPhoneStage } from '../app/phone-stage-load.ts';
 
 const LOADERS: Record<Exclude<Look, 'web'>, () => Promise<unknown>> = {
@@ -13,10 +14,13 @@ const LOADERS: Record<Exclude<Look, 'web'>, () => Promise<unknown>> = {
   ios: () => import('./ios-styles.ts'),
 };
 
-/** Loads a phone look's stylesheet and the overlays' phone halves (once; a second call reuses them). The browser's
- * look loads nothing. */
+/** Loads a phone look's stylesheet and frame, and the overlays' phone halves after the first screen (once; a second
+ * call reuses them). The browser's look loads nothing. */
 export function loadPlatformStyles(look: Look): Promise<void> {
   if (look === 'web') return Promise.resolve();
-  // the overlays' phone halves and the phone frame (app/PhoneStage.tsx) come with the look
-  return Promise.all([LOADERS[look](), phoneOverlays.load(), loadPhoneStage()]).then(() => undefined);
+  // the overlays' phone halves: no overlay is open on the first screen (ADR-0105), so they come once it's drawn, or
+  // with a control's first press (lazy-part.ts), whichever is first
+  afterFirstScreen(() => void phoneOverlays.load().catch(() => undefined));
+  // the phone frame (app/PhoneStage.tsx) comes with the look
+  return Promise.all([LOADERS[look](), loadPhoneStage()]).then(() => undefined);
 }

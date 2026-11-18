@@ -47,6 +47,7 @@ import { isTab, jobRows, memberMenu, memberRow, rootMenu, TABS, wakeLines, type 
 import { KitSection } from './more/index.ts';
 import type { SessionRow } from './types.ts';
 import { VIEW } from './views.ts';
+import { useHarnessLabel } from './harness.ts';
 import './i18n/lazy.ts';
 
 type Say = (k: string, v?: Readonly<Record<string, string | number>>) => string;
@@ -207,11 +208,8 @@ export function CrewPhoneMember(props: { readonly client: PluginClient; readonly
   const [editing, setEditing] = createSignal<'notebook' | 'brief' | undefined>();
   const [text, setText] = createSignal('');
   const back = (): void => toOrg(c, false);
-  const harness = (id: string): { name: string; logo?: string | undefined } => {
-    if (id === 'auto') return { name: t('wisp.crew.editor.auto') };
-    const h = harnesses().find((x) => x.id === id) ?? (id ? undefined : harnesses()[0]);
-    return { name: h?.name ?? id, logo: h?.logo };
-  };
+  // a member with no harness of its own runs as New task does while Auto is off (audit A #22)
+  const harness = useHarnessLabel(c, harnesses);
   const open = (s: Pick<SessionRow, 'id'>): void => {
     const key = data.sessionKey(s.id);
     if (key) shell.navigate({ t: 'openTask', id: key as never });

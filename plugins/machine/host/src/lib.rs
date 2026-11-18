@@ -4,6 +4,7 @@
 
 mod calls;
 mod hold;
+mod index;
 mod kinds;
 mod procs;
 mod rows;

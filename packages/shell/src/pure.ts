@@ -17,3 +17,5 @@ export { COMPUTERS_VIEW, destinationOf, destinationsOf, intentOf, type Destinati
 export { isHeld } from './task-held.ts';
 // Auto's one switch (`runtime.auto`, default off: owner, 2026-11-17): plugins that show Auto ask it
 export { AUTO_SETTING, autoEnabled, autoOn } from './frame/launch-pick.ts';
+// a declared setting's title as Settings shows it: All settings' rows and Settings' search say the same
+export { titleParts } from './setting-title.ts';

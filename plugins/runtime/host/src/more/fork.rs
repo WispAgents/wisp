@@ -87,7 +87,7 @@ impl Runtime {
         // an outside session stays live: its follow-ups continue it in its CLI (ADR-0035)
         if a.resume_id.is_some() {
             s.resume_id.clone_from(&a.resume_id);
-        } else {
+        } else if !a.fresh {
             with_slot(&mut s.ext, |m| m.insert("readOnly".into(), json!(true)));
         }
         with_slot(&mut s.ext, |m| m.insert("spec".into(), spec));
@@ -97,7 +97,7 @@ impl Runtime {
             .filter_map(|t| serde_json::from_value::<Turn>(t).ok())
             .map(|t| Turn { id: TurnId::new(), session_id: s.id.clone(), ..t })
             .collect();
-        if copies.is_empty() {
+        if copies.is_empty() && !a.fresh {
             return Err(RuntimeError::Invalid("a shared task to import has its turns (a full share)".into()));
         }
         let summary = self.persist(&mut s, copies).await?;

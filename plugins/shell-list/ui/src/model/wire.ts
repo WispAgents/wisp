@@ -79,7 +79,7 @@ interface LaterPlan {
   readonly draft?: boolean;
   readonly title?: string;
   readonly text?: string;
-  readonly body?: { readonly prompt?: string; readonly agent?: string; readonly cwd?: string } | null;
+  readonly body?: { readonly prompt?: string; readonly agent?: string; readonly cwd?: string; readonly projectId?: string } | null;
 }
 
 /** A `later_plan` row as the list draws it: Scheduled (a time, or after a task) or Drafts. */
@@ -100,6 +100,8 @@ export function listPlan(row: unknown): Plan | undefined {
     at: p.at ?? p.setAt ?? 0,
     ...(p.body?.agent && { agent: p.body.agent }),
     ...(project && { project }),
+    // in its project, so a project picked on the list still shows it under Scheduled (orch #13)
+    ...(p.body?.projectId && { projectId: p.body.projectId }),
     ...(after && { after: after.title ?? '' }),
   };
 }

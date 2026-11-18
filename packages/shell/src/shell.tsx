@@ -7,7 +7,7 @@
 import { render } from 'solid-js/web';
 import type { JSX } from 'solid-js';
 import { computed, effect, signal, untracked, type Client, type PeerId, type PluginClient, type Readable } from '@wisp/client';
-import { GestureHostProvider, KitProvider, KIT_STRINGS, loadPlatformStyles, type KitString, type Toaster } from '@wisp/ui';
+import { afterFirstScreen as afterFirstScreenKit, firstScreenDrawn, GestureHostProvider, KitProvider, KIT_STRINGS, loadPlatformStyles, type KitString, type Toaster } from '@wisp/ui';
 import type { PluginUiDef, PromptBox, SendHold, SendHoldAsk, SettingsPaneDef, ShellApi, ShellContext } from './contract.ts';
 import { namespaceOf } from './define.ts';
 import { SHELL_STRINGS } from './i18n/en.ts';
@@ -30,12 +30,17 @@ import { answeredInPlace, errorWords, wireNotices } from './toasts.ts';
 import { defaultModelName } from './frame/default-models.ts';
 
 /** The part of `window` the shell uses; tests pass happy-dom's. */
+/** the latest the first screen counts as drawn after the render, whatever the home list does (ADR-0105) */
+const FIRST_SCREEN_CAP_MS = 10_000;
+
 export interface ShellWindow {
   readonly innerWidth: number;
   readonly document: Document;
   readonly localStorage?: Storage;
   /** how the page was loaded (a reload, a link) and its URL's search: what the first frame keeps open (overlays-on-load) */
-  readonly performance?: { getEntriesByType?(type: string): readonly object[] };
+  readonly performance?: { getEntriesByType?(type: string): readonly object[]; mark?(name: string): unknown };
+  /** the first screen's frames (ADR-0105); without it (a test's window) a microtask stands in. Additive. */
+  readonly requestAnimationFrame?: (cb: () => void) => number;
   readonly location?: { readonly search: string };
   matchMedia(q: string): MediaQueryList;
   addEventListener(type: string, fn: (e: Event) => void, opts?: boolean | AddEventListenerOptions): void;
@@ -53,6 +58,9 @@ export interface ShellOptions {
 }
 
 export interface Shell extends ShellApi {
+  /** `run` once the first screen is drawn (ADR-0105), with the plugins' later parts: deferred work (the overlays'
+   *  machines) never competes with it. In the budget gate's run (`?first-screen`) it never runs. Additive. */
+  afterFirstScreen(run: () => void): void;
   /** the shell's own plugin client (for its built-ins and tests) */
   readonly self: PluginClient;
   pluginClient(id: string): PluginClient | undefined;
@@ -75,7 +83,8 @@ export function createShell(o: ShellOptions): Shell {
   client.i18n.register('kit', Object.fromEntries(Object.entries(KIT_STRINGS).map(([k, v]) => [`kit.${k}`, v])), kitScope);
   // the answer blocks' copy (`block.*`): the screens that show blocks register it as they load; fetched here just after
   // the start for any other, apart from the first page's bundle (block-strings.ts)
-  void import('./block-strings.ts').then((m) => m.blockStrings(client)).catch(() => undefined);
+  // (once the first screen is drawn, ADR-0105: Home draws no answer)
+  afterFirstScreenKit(() => void import('./block-strings.ts').then((m) => m.blockStrings(client)).catch(() => undefined));
   const settings = self.settings(SHELL_SETTINGS);
   const t: ShellContext['t'] = (key, vars) => client.i18n.t(key, vars);
   const kitT = (key: KitString, vars?: Readonly<Record<string, string | number>>): string => client.i18n.t(`kit.${key}`, vars);
@@ -251,12 +260,16 @@ export function createShell(o: ShellOptions): Shell {
     },
     palette: { open: () => client.nav.navigate({ t: 'openOverlay', overlay: { kind: 'dialog', id: 'shell.palette' as never, params: null } }) },
     defaultModel: (agent, at) => defaultModelName(client, at.peer, agent, at.cwd),
+    afterFirstScreen: (run) => afterFirstScreen(run),
     extensions: (input) => registry.input(input),
     settingsPanes: () => registry.settingsPanes,
     harnesses: () => registry.harnesses,
     promptSources: () => registry.prompt,
     launchTargets: () => registry.launchTargets,
     laterReady: () => {
+      // asked for (a test, a screen that needs every plugin's later part): every deferred thing starts now, first
+      // screen or not
+      runDeferred();
       for (const retry of [...failedLaters]) retry();
       return laterLoads.size ? Promise.all([...laterLoads]).then(() => undefined) : undefined;
     },
@@ -268,9 +281,27 @@ export function createShell(o: ShellOptions): Shell {
     view: (kind) => registry.view(kind),
   };
 
-  /** each plugin's later part, waiting for the first render */
+  /** each plugin's later part, waiting for the first screen (ADR-0105) */
   const laters: (() => void)[] = [];
   let rendered = false;
+  /** the later parts go: from now on a plugin's later part loads as it registers */
+  const startLaters = (): void => {
+    rendered = true;
+    for (const load of laters.splice(0)) load();
+  };
+  /** the app's own deferred work, waiting with the later parts */
+  const afterFirst: (() => void)[] = [];
+  /** everything that waits for the first screen (ADR-0105), once: the later parts, the app's, the kit's */
+  function runDeferred(): void {
+    startLaters();
+    for (const run of afterFirst.splice(0)) run();
+    // the kit's own deferred work (the phone's Settings pages)
+    firstScreenDrawn();
+  }
+  function afterFirstScreen(run: () => void): void {
+    if (rendered) run();
+    else afterFirst.push(run);
+  }
   /** later parts on their way, and the loads that failed (laterReady tries them again) */
   const laterLoads = new Set<Promise<void>>();
   const failedLaters = new Set<() => void>();
@@ -335,7 +366,7 @@ export function createShell(o: ShellOptions): Shell {
         laterLoads.add(p);
       };
       retry = load;
-      // ADR-0067: as the first screen draws (with the other lazy chunks it asks for), or at once after that
+      // ADR-0067, ADR-0105: once the first screen is drawn (nothing on it waits for them), or at once after that
       if (rendered) load();
       else laters.push(load);
     }
@@ -358,6 +389,7 @@ export function createShell(o: ShellOptions): Shell {
       if (id === 'shell') return;
       clients.get(id)?.scope.dispose();
     },
+    afterFirstScreen: (run) => afterFirstScreen(run),
     pluginClient: (id) => clients.get(id),
     settingsPanes: () => registry.settingsPanes as () => readonly (SettingsPaneDef & { readonly plugin: string })[],
     render(root) {
@@ -386,8 +418,16 @@ export function createShell(o: ShellOptions): Shell {
         root,
       );
       scope.add(stop);
-      rendered = true;
-      for (const load of laters.splice(0)) load();
+      // the plugins' later parts (their palette entries, panes, blocks) wait for the first screen: drawn, the home list
+      // here, painted (ADR-0105); the budget gate counts what loads before that mark (tools/first-screen.ts)
+      // `?first-screen` (the budget gate's run, tools/first-screen.ts): they never start, so what the first screen loads
+      // is all that loads, to the end of its lazy chains
+      const measuring = /[?&]first-screen(?:&|=|$)/.test(o.window.location?.search ?? '');
+      scope.add(
+        whenFirstScreen(o.window, () => {
+          if (!measuring) runDeferred();
+        }),
+      );
       return () => scope.dispose();
     },
     dispose() {
@@ -396,6 +436,46 @@ export function createShell(o: ShellOptions): Shell {
       kitScope.dispose();
     },
   };
+
+  /** `run` once the first screen is there (ADR-0105): the home list's snapshot here (or restored as whole), or the home
+   *  computer away (asleep, unreachable: nothing more is coming), then two frames painted; `wisp:first-screen` is
+   *  marked then and `run` goes when the page is idle. Returns its stop. */
+  function whenFirstScreen(win: ShellWindow, run: () => void): () => void {
+    let done = false;
+    let stopped = false;
+    const frame = (f: () => void): void => {
+      if (typeof win.requestAnimationFrame === 'function') win.requestAnimationFrame(() => f());
+      else queueMicrotask(f);
+    };
+    const idle = (f: () => void): void => {
+      const ric = (win as { requestIdleCallback?: (cb: () => void, o?: { timeout: number }) => number }).requestIdleCallback;
+      if (typeof ric === 'function') ric(() => f(), { timeout: 1000 });
+      else frame(f);
+    };
+    const go = (): void => {
+      if (done) return;
+      done = true;
+      frame(() =>
+        frame(() => {
+          win.performance?.mark?.('wisp:first-screen');
+          idle(() => !stopped && run());
+        }),
+      );
+    };
+    // a safety cap: a home list that never arrives (a refused subscription, a peer stuck connecting) still lets the
+    // deferred work start, FIRST_SCREEN_CAP_MS after the render
+    const cap = self.scope.timeout(FIRST_SCREEN_CAP_MS, () => untracked(go));
+    const watch = effect(() => {
+      const here = client.entities.loaded(o.home, 'list' as never)();
+      const status = client.peers.status(o.home)().kind;
+      if (here || (status !== 'connecting' && status !== 'online' && status !== 'waking')) untracked(go);
+    });
+    return () => {
+      stopped = true;
+      cap();
+      watch();
+    };
+  }
 
   /** the tasks you were on, latest first (⌃Tab's order): the open task moves to the front */
   function trackRecent(): () => void {

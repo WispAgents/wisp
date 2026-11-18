@@ -3,6 +3,7 @@
 // recheckSummary; agent-login.js control/loginPanel; harness-watch.js changeText).
 
 import { t } from './i18n.ts';
+import type { MenuEntry } from '@wisp/ui/pure';
 import type { AccountRow, DetectRow, HarnessChange, HarnessRow, KeyRow, LoginRow, Pin, ToolRow } from './types.ts';
 import './i18n/lazy.ts';
 
@@ -80,7 +81,7 @@ export function recheckSummary(before: ReadonlyMap<string, Pick<HarnessRow, 'ava
  * own row adds (sign-in, keys, accounts, Install); a detection row is the fresher of the two. With no detection rows
  * (a wisp before the topic), this plugin's rows as they are. */
 export function mergeHarnesses(mine: readonly HarnessRow[], detected: readonly DetectRow[]): HarnessRow[] {
-  if (detected.length === 0) return [...mine].sort((a, b) => a.ord - b.ord);
+  if (detected.length === 0) return foundFirst([...mine].sort((a, b) => a.ord - b.ord));
   const byId = new Map(mine.map((h) => [h.id, h]));
   const out = [...detected]
     .sort((a, b) => a.ord - b.ord)
@@ -101,7 +102,54 @@ export function mergeHarnesses(mine: readonly HarnessRow[], detected: readonly D
       };
     });
   const seen = new Set(out.map((h) => h.id));
-  return [...out, ...mine.filter((h) => !seen.has(h.id)).sort((a, b) => a.ord - b.ord)];
+  return foundFirst([...out, ...mine.filter((h) => !seen.has(h.id)).sort((a, b) => a.ord - b.ord)]);
+}
+
+/** The harnesses found first, then the missing ones (v1: Copilot, not found, came last), each in wisp's order. */
+// one still being checked keeps its place (nothing jumps as they settle); only one known missing goes last
+const missingNow = (h: HarnessRow): boolean => !h.available && h.signedIn !== false && h.checking !== true;
+const foundFirst = (list: readonly HarnessRow[]): HarnessRow[] => [...list.filter((h) => !missingNow(h)), ...list.filter(missingNow)];
+
+/** Before the server's first answer: a row per harness the plugins registered, each Checking… (a restart or a first
+ *  start showed the lede alone until every harness was detected). */
+export const pendingHarnesses = (known: readonly { readonly id: string; readonly name: string; readonly order?: number | undefined }[]): HarnessRow[] =>
+  [...known]
+    .sort((a, b) => (a.order ?? 0) - (b.order ?? 0))
+    .map((k, i) => ({ id: k.id, name: k.name, ord: k.order ?? i, available: false, models: [], signIn: 'none', checking: true }));
+
+/** The rows with the known harnesses that haven't answered yet added, Checking…, while the pane's own rows aren't in
+ *  (`waiting`): the answers land one by one, and a row never vanishes to come back. */
+export function withPending(rows: readonly HarnessRow[], known: Parameters<typeof pendingHarnesses>[0], waiting: boolean): HarnessRow[] {
+  if (!waiting) return [...rows];
+  const have = new Set(rows.map((r) => r.id));
+  return [...rows, ...pendingHarnesses(known).filter((p) => !have.has(p.id))].sort((a, b) => a.ord - b.ord);
+}
+
+/** An account row's account (its id is its entity's, `claude/w1`; an optimistic one may be bare). */
+export const accOf = (a: Pick<AccountRow, 'agent' | 'id'>): string => (a.id.startsWith(`${a.agent}/`) ? a.id.slice(a.agent.length + 1) : a.id);
+
+/** v1 accounts.js moreMenu: Rename, Make it a work / personal account, Move up, Move down, Sign out, Remove. What can't
+ *  apply stays, disabled, so every row's menu has the same shape (the CLI's own login can be signed out, not removed). */
+type Tr = (k: string, v?: Readonly<Record<string, string>>) => string;
+const tt: Tr = (k, v) => t(k as Parameters<typeof t>[0], v);
+
+export function accountMenu(a: AccountRow, i: number, n: number, tr: Tr = tt): MenuEntry[] {
+  return [
+    { value: 'rename', label: tr('accounts.account.rename'), icon: 'pen' },
+    { value: 'kind', label: tr(a.kind === 'work' ? 'accounts.account.personal' : 'accounts.account.work'), icon: 'user' },
+    { value: 'up', label: tr('accounts.account.up'), disabled: i === 0 },
+    { value: 'down', label: tr('accounts.account.down'), disabled: i === n - 1 },
+    { value: 'out', label: tr('accounts.login.signOut'), icon: 'lock', disabled: a.state === 'signedOut' },
+    { kind: 'separator' },
+    { value: 'remove', label: tr('accounts.account.remove'), icon: 'trash', danger: true, disabled: a.default, ...(a.default && { hint: tr('accounts.account.keepsOwn') }) },
+  ];
+}
+
+/** An account's state when it isn't ready (v1: "At its limit until 9 pm", "Signed out"); ready says nothing. */
+export function accountState(a: AccountRow, tr: Tr = tt): string | undefined {
+  if (a.state === 'limit') return a.until ? tr('accounts.state.limitUntil', { until: new Date(a.until).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }) }) : a.why || tr('accounts.state.limit');
+  if (a.state === 'signedOut') return tr('accounts.state.signedOut');
+  return undefined;
 }
 
 /** A program by its version, else its path (the server sends `version: ""` when the harness didn't say one). */
@@ -148,6 +196,8 @@ export const busy = (l: Pick<LoginRow, 'state'> | undefined): boolean => l?.stat
 export type LoginControl = 'cancel' | 'signIn' | 'signedIn' | 'none';
 export function loginControl(l: LoginRow | undefined, opts: { account: boolean; out: boolean }): LoginControl {
   if (busy(l)) return 'cancel';
+  // a sign-in that failed or was cancelled: Sign in again (a failed one's panel says why)
+  if (l?.state === 'failed' || l?.state === 'cancelled') return 'signIn';
   // An account row says "Signed out" itself and keeps Sign out in its ⋯ menu
   if (opts.account) return l?.signedIn === false || (l?.signedIn !== true && opts.out) ? 'signIn' : 'none';
   if (l?.signedIn === true) return 'signedIn';

@@ -58,6 +58,9 @@ export interface EntityPersister {
   flush(): Promise<void>;
 }
 
+/** rows a save writes per transaction */
+const SAVE_CHUNK = 500;
+
 export function persistEntities(o: PersistEntitiesOptions): EntityPersister {
   const wait = o.debounceMs ?? 250;
   const eventKind = o.eventKind ?? 'event';
@@ -96,7 +99,10 @@ export function persistEntities(o: PersistEntitiesOptions): EntityPersister {
     cancel?.();
     cancel = undefined;
     if (dirty.size === 0) return;
-    await o.persist.write(capture());
+    // in chunks, each its own transaction (and task): 5 000 rows in one were a long task as the first screen settled
+    // (perf r1 #4). The links come last in `capture()`, so a save cut short never records a cursor ahead of its rows.
+    const all = capture();
+    for (let i = 0; i < all.length; i += SAVE_CHUNK) await o.persist.write(all.slice(i, i + SAVE_CHUNK));
   }
 
   const stop = o.writer.onChange((rows) => {

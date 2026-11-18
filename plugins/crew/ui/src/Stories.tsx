@@ -6,10 +6,10 @@
 // job when it's idle. Every v1 crew feature stays a tap away: Org and Add are the row's first and last bubbles; the
 // member's page, Edit, Check in, Pause, Share, Track record and Remove are the story's ⋯. Every write is a command
 // that shows at once and rolls back with the shell's toast when refused. Its own chunk: the browser never loads it.
-import { createMemo, createSignal, Show, type JSX } from 'solid-js';
+import { createMemo, createSignal, lazy, Show, type JSX } from 'solid-js';
 import { uuidv7, type EntityKey } from '@wisp/client';
 import { ExtView, useExtensions, useShell, type ExtensionProps } from '@wisp/shell';
-import { Button, CrewStories, CrewStory, Dialog, Face, ReplyBox, StoryCard, StoryText, timeLabel, englishT, useSignal, Wrap, type MenuEntry } from '@wisp/ui';
+import { Button, CrewStories, CrewStory, Dialog, Face, StoryCard, StoryText, timeLabel, englishT, useSignal, Wrap, type MenuEntry } from '@wisp/ui';
 import type { StoryBubble } from '@wisp/ui';
 import { assignJob, checkIn, followJob, removeMember, updateMember } from './commands.ts';
 import { crewData, emptyState, type CrewMember } from './data.ts';
@@ -19,6 +19,9 @@ import { askJob, lastReport, nextLine, nowJob, replyTarget, ringLabel, ringOf, s
 import type { SessionRow } from './types.ts';
 import { VIEW } from './views.ts';
 import './i18n/lazy.ts';
+
+// the story's reply box: its own chunk, loaded as a story opens (the task page's kit chunk, perf r1 #1)
+const ReplyBox = lazy(() => import('./StoryReply.tsx'));
 
 type Say = (k: string, v?: Readonly<Record<string, string | number>>) => string;
 const say = t as Say;

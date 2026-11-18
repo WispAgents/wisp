@@ -521,36 +521,41 @@ pub fn skill_install(argv: &[String], cwd: &Path) -> Result<i32> {
         }
         std::fs::write(p, format!("{}\n", serde_json::to_string_pretty(&v).unwrap_or_default())).map_err(|e| CliError::said(e.to_string()))
     };
-    match agent {
-        "claude" => {
-            rw(&root.join(".mcp.json"), &|v| v["mcpServers"]["wisp"] = json!({ "command": exe, "args": ["mcp"] }))?;
-            rw(&root.join(".claude/settings.json"), &|v| {
-                let hook = json!({ "hooks": [{ "type": "command", "command": format!("{exe} adopt --hook") }] });
-                let list = v["hooks"]["SessionEnd"].as_array().cloned().unwrap_or_default();
-                if !list.iter().any(|h| h.to_string().contains("adopt --hook")) {
-                    let mut l = list;
-                    l.push(hook);
-                    v["hooks"]["SessionEnd"] = Value::Array(l);
-                }
-            })?;
-            let skill = root.join(".claude/skills/wisp/SKILL.md");
-            std::fs::create_dir_all(skill.parent().unwrap_or(&root)).map_err(|e| CliError::said(e.to_string()))?;
-            std::fs::write(&skill, "---\nname: wisp\ndescription: Read why code is the way it is: the wisp tasks behind a file, a line, a commit or a PR.\n---\n\nBefore changing a file, ask wisp which tasks shaped it: the `wisp_history` tool (paths) or `wisp_blame` (a file:line, a commit, a PR), then `wisp_task` for one task's prompt and report. To pick an old task up, `wisp_resume` asks the user. Without MCP: `wisp tasks --touching <path> --json`, `wisp blame <target> --json`, or read `.wisp/tasks/`.\n").map_err(|e| CliError::said(e.to_string()))?;
-            say("  ✓ .mcp.json (wisp mcp), .claude/settings.json (SessionEnd: wisp adopt --hook), .claude/skills/wisp/SKILL.md");
-        }
-        "codex" => {
-            let home = std::env::var("CODEX_HOME")
-                .map_or_else(|_| PathBuf::from(std::env::var("HOME").unwrap_or_default()).join(".codex"), PathBuf::from);
-            let cfg = home.join("config.toml");
-            let had = std::fs::read_to_string(&cfg).unwrap_or_default();
-            if !had.contains("[mcp_servers.wisp]") {
-                std::fs::create_dir_all(&home).map_err(|e| CliError::said(e.to_string()))?;
-                std::fs::write(&cfg, format!("{had}\n[mcp_servers.wisp]\ncommand = \"{exe}\"\nargs = [\"mcp\"]\n"))
-                    .map_err(|e| CliError::said(e.to_string()))?;
+    // `--agent all`: each in turn, one outcome each (setup audit F29: three ✓, then "not all yet")
+    let agents: &[&str] = if agent == "all" { &["claude", "codex", "opencode"] } else { std::slice::from_ref(&agent) };
+    for agent in agents {
+        match *agent {
+            "claude" => {
+                rw(&root.join(".mcp.json"), &|v| v["mcpServers"]["wisp"] = json!({ "command": exe, "args": ["mcp"] }))?;
+                rw(&root.join(".claude/settings.json"), &|v| {
+                    let hook = json!({ "hooks": [{ "type": "command", "command": format!("{exe} adopt --hook") }] });
+                    let list = v["hooks"]["SessionEnd"].as_array().cloned().unwrap_or_default();
+                    if !list.iter().any(|h| h.to_string().contains("adopt --hook")) {
+                        let mut l = list;
+                        l.push(hook);
+                        v["hooks"]["SessionEnd"] = Value::Array(l);
+                    }
+                })?;
+                let skill = root.join(".claude/skills/wisp/SKILL.md");
+                std::fs::create_dir_all(skill.parent().unwrap_or(&root)).map_err(|e| CliError::said(e.to_string()))?;
+                std::fs::write(&skill, "---\nname: wisp\ndescription: Read why code is the way it is: the wisp tasks behind a file, a line, a commit or a PR.\n---\n\nBefore changing a file, ask wisp which tasks shaped it: the `wisp_history` tool (paths) or `wisp_blame` (a file:line, a commit, a PR), then `wisp_task` for one task's prompt and report. To pick an old task up, `wisp_resume` asks the user. Without MCP: `wisp tasks --touching <path> --json`, `wisp blame <target> --json`, or read `.wisp/tasks/`.\n").map_err(|e| CliError::said(e.to_string()))?;
+                say("  ✓ .mcp.json (wisp mcp), .claude/settings.json (SessionEnd: wisp adopt --hook), .claude/skills/wisp/SKILL.md");
             }
-            say(&format!("  ✓ {} ([mcp_servers.wisp]); Codex has no session-end hook: wisp adopt --all --since 1d", cfg.display()));
+            "codex" => {
+                let home = std::env::var("CODEX_HOME")
+                    .map_or_else(|_| PathBuf::from(std::env::var("HOME").unwrap_or_default()).join(".codex"), PathBuf::from);
+                let cfg = home.join("config.toml");
+                let had = std::fs::read_to_string(&cfg).unwrap_or_default();
+                if !had.contains("[mcp_servers.wisp]") {
+                    std::fs::create_dir_all(&home).map_err(|e| CliError::said(e.to_string()))?;
+                    std::fs::write(&cfg, format!("{had}\n[mcp_servers.wisp]\ncommand = \"{exe}\"\nargs = [\"mcp\"]\n"))
+                        .map_err(|e| CliError::said(e.to_string()))?;
+                }
+                say(&format!("  ✓ {} ([mcp_servers.wisp]); Codex has no session-end hook: wisp adopt --all --since 1d", cfg.display()));
+            }
+            "opencode" => say("  · opencode: its skill is in place; add wisp mcp to its MCP servers by hand (opencode.json) for the tools"),
+            other => return Err(CliError::said(format!("wisp skill install --agent claude|codex|opencode|all (not {other})"))),
         }
-        other => return Err(CliError::said(format!("wisp skill install --agent claude|codex (not {other} yet)"))),
     }
     Ok(0)
 }
@@ -625,7 +630,10 @@ pub fn mcp_reply(root: &Path, msg: &Value) -> Option<Value> {
         "initialize" => {
             json!({ "protocolVersion": msg.pointer("/params/protocolVersion").cloned().unwrap_or(json!("2025-06-18")), "capabilities": { "tools": {} }, "serverInfo": { "name": "wisp", "version": env!("CARGO_PKG_VERSION") } })
         }
-        "tools/list" => json!({ "tools": mcp_tools() }),
+        // the history tools, and v1's task tools (setup audit F28; they need a wisp, started on the first call)
+        "tools/list" => {
+            json!({ "tools": mcp_tools().as_array().cloned().unwrap_or_default().into_iter().chain(crate::mcp_tasks::tools()).collect::<Vec<_>>() })
+        }
         "tools/call" => mcp_tool(
             root,
             msg.pointer("/params/name").and_then(Value::as_str).unwrap_or_default(),
@@ -661,9 +669,26 @@ pub async fn mcp(argv: &[String], cwd: &Path, port: u16) -> Result<i32> {
     let root = root(&at);
     let stdin = std::io::stdin();
     let mut out = std::io::stdout().lock();
-    let client = Client::connect(port, false).await.ok();
+    let mut client = Client::connect(port, false).await.ok();
     for line in stdin.lock().lines().map_while(std::result::Result::ok) {
         let Ok(msg) = serde_json::from_str::<Value>(&line) else { continue };
+        let tool = msg.pointer("/params/name").and_then(Value::as_str).unwrap_or_default().to_owned();
+        if msg.get("method").and_then(Value::as_str) == Some("tools/call") && crate::mcp_tasks::is_task_tool(&tool) {
+            // a task tool: the running wisp, started headless when none answers (as v1's server did)
+            if client.is_none() {
+                client = Client::connect(port, true).await.ok();
+            }
+            let id = msg.get("id").cloned().unwrap_or(Value::Null);
+            let result = match &client {
+                Some(c) => crate::mcp_tasks::call(c, &tool, msg.pointer("/params/arguments").unwrap_or(&json!({})), &at).await,
+                None => {
+                    json!({ "content": [{ "type": "text", "text": "wisp isn't running and didn't start: run wisp serve" }], "isError": true })
+                }
+            };
+            let _ = writeln!(out, "{}", json!({ "jsonrpc": "2.0", "id": id, "result": result }));
+            let _ = out.flush();
+            continue;
+        }
         let reply = match (&client, msg.pointer("/params/name").and_then(Value::as_str)) {
             (Some(c), Some("wisp_resume")) if msg.get("method").and_then(Value::as_str) == Some("tools/call") => Some(
                 json!({ "jsonrpc": "2.0", "id": msg.get("id").cloned().unwrap_or(Value::Null), "result": resume_request(c, &root, msg.pointer("/params/arguments").unwrap_or(&json!({}))).await }),

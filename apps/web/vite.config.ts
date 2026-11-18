@@ -9,6 +9,8 @@ import { fileURLToPath } from 'node:url';
 import { defineConfig, type ProxyOptions } from 'vite';
 import solid from 'vite-plugin-solid';
 import { mockPeer } from './dev/vite-mock.ts';
+// the kit's class mirror of data-kit, so its rules are bucketed by class (ADR-0104, perf audit 2026-11-18 #5)
+import { kitClasses } from '@wisp/ui/vite';
 import { proxiedOrigin } from './dev/dev-proxy.ts';
 
 function build(): string {
@@ -55,7 +57,7 @@ export function devProxy(target: string, vitePort: number): Record<string, Proxy
 
 export default defineConfig(({ command }) => ({
   root: fileURLToPath(new URL('.', import.meta.url)),
-  plugins: [solid(), ...(command === 'serve' && !DEV_API && process.env['WISP_MOCK'] !== '0' ? [mockPeer()] : [])],
+  plugins: [kitClasses(), solid(), ...(command === 'serve' && !DEV_API && process.env['WISP_MOCK'] !== '0' ? [mockPeer()] : [])],
   define: { __WISP_BUILD__: JSON.stringify(build()) },
   server: { port: Number(process.env['PORT'] ?? 5180), strictPort: false, host: '127.0.0.1', ...(DEV_API ? { proxy: devProxy(DEV_API, Number(process.env['PORT'] ?? 5180)) } : {}) },
   preview: { port: Number(process.env['PORT'] ?? 5181), host: '127.0.0.1' },

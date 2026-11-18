@@ -197,11 +197,10 @@ impl Actor {
         let (backend, idem, tx, snaps) = (self.backend.clone(), self.idem.clone(), self.tx.clone(), self.snaps.clone());
         tokio::spawn(async move {
             let key = format!("{}|{}|{mid}", caller.set, caller.session.as_deref().unwrap_or(""));
-            let (status, v) =
-                idem.once(key, async move {
-                    command_answer(backend.call(caller, &cmd, args).await, i64::try_from(snaps.head_seq()).unwrap_or(0))
-                })
-                .await;
+            // a read runs again on a retry; only a write's answer is kept (perf audit #1)
+            let read = backend.read_only(&cmd);
+            let run = async move { command_answer(backend.call(caller, &cmd, args).await, i64::try_from(snaps.head_seq()).unwrap_or(0)) };
+            let (status, v) = if read { run.await } else { idem.once(key, run).await };
             let outcome = if status == 200 {
                 CommandOutcome::Ok { seq: v["seq"].as_u64().unwrap_or(0), result: v.get("result").cloned().filter(|r| !r.is_null()) }
             } else {

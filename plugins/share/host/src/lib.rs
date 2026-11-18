@@ -61,16 +61,41 @@ fn me() -> String {
 }
 
 /// The files a turn's steps edited or wrote.
-fn files_of(steps: &Value, out: &mut Vec<String>) {
+/// `file` as a name inside the task's folder `cwd` when it's under it, in any spelling of that folder (macOS's
+/// `/private` twin of `/tmp` and `/var`, either separator): a harness reports `/private/var/…/proj/a.js` for a task in
+/// `/var/…/proj` on macOS and `a.js` elsewhere, and a share lists the same file the same way on every computer. A
+/// file outside it stays as written (the scrub takes out what's private in it).
+fn in_folder(cwd: &str, file: &str) -> String {
+    let cwd = cwd.trim_end_matches(['/', '\\']);
+    if cwd.is_empty() {
+        return file.to_owned();
+    }
+    let mut spellings = vec![cwd.to_owned(), cwd.replace('\\', "/")];
+    if let Some(bare) = cwd.strip_prefix("/private").filter(|r| r.starts_with("/tmp") || r.starts_with("/var")) {
+        spellings.push(bare.to_owned());
+    } else if cwd.starts_with("/tmp") || cwd.starts_with("/var") {
+        spellings.push(format!("/private{cwd}"));
+    }
+    let unified = file.replace('\\', "/");
+    for c in spellings {
+        let c = c.replace('\\', "/");
+        if let Some(rest) = unified.strip_prefix(c.as_str()).and_then(|r| r.strip_prefix('/')).filter(|r| !r.is_empty()) {
+            return rest.to_owned();
+        }
+    }
+    file.to_owned()
+}
+
+fn files_of(steps: &Value, cwd: &str, out: &mut Vec<String>) {
     for st in steps.get("items").and_then(Value::as_array).into_iter().flatten() {
         let tool = s(st, "tool");
-        let f = s(st, "file");
+        let f = in_folder(cwd, s(st, "file"));
         if s(st, "kind") == "tool"
             && !f.is_empty()
             && matches!(tool, "edit" | "write" | "multi_edit" | "patch" | "create")
-            && !out.iter().any(|x| x == f)
+            && !out.contains(&f)
         {
-            out.push(f.to_owned());
+            out.push(f);
         }
     }
 }
@@ -89,7 +114,7 @@ async fn preview(ctx: &Ctx, call: &Call, a: &ShareArgs) -> Result<Preview> {
         let mut full = Vec::new();
         for (turn, t) in &turns {
             let steps = calls::masked_steps(ctx, call, &a.id, turn).await;
-            files_of(&steps, &mut files);
+            files_of(&steps, &task.cwd, &mut files);
             answers.push(json!({ "prompt": t["prompt"], "status": t["status"], "blocks": t.pointer("/presentation/blocks").cloned().unwrap_or(json!([])), "text": t["text"] }));
             if a.level == Level::Full {
                 full.push(json!({ "turn": t, "steps": steps["items"] }));
@@ -317,6 +342,25 @@ impl Plugin for SharePlugin {
 #[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
+
+    /// CI on 1b971518: the share golden had `<project>/math.js` on macOS and `math.js` on Linux and Windows. The harness
+    /// reported the file under `/private/var/…` for a task in `/var/…`; a share lists files inside the task's folder by
+    /// their names there, on every computer.
+    #[test]
+    fn a_changed_file_is_named_inside_the_tasks_folder_however_the_folder_is_spelled() {
+        assert_eq!(in_folder("/var/folders/x/T/proj", "/private/var/folders/x/T/proj/math.js"), "math.js");
+        assert_eq!(in_folder("/private/tmp/proj", "/tmp/proj/src/a.js"), "src/a.js");
+        assert_eq!(in_folder("/home/runner/proj", "math.js"), "math.js");
+        assert_eq!(in_folder("/home/runner/proj/", "/home/runner/proj/math.js"), "math.js");
+        assert_eq!(
+            in_folder(r"C:\Users\RUNNER~1\AppData\Local\Temp\proj", r"C:\Users\RUNNER~1\AppData\Local\Temp\proj\math.js"),
+            "math.js"
+        );
+        // outside the folder, or a sibling that only starts like it: as written
+        assert_eq!(in_folder("/home/runner/proj", "/home/runner/proj-old/math.js"), "/home/runner/proj-old/math.js");
+        assert_eq!(in_folder("/home/runner/proj", "/etc/hosts"), "/etc/hosts");
+        assert_eq!(in_folder("", "/a/b.js"), "/a/b.js");
+    }
 
     #[test]
     fn a_signed_bundle_verifies_and_a_changed_one_doesnt() {

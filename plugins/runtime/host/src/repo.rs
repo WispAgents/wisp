@@ -120,6 +120,13 @@ impl Repo {
         Ok(rows::summaries_of(&text)?)
     }
 
+    /// Plugins' `ext` slots of every task, newest first, from one query (`runtime.slots`, `slots.rs`).
+    pub async fn slots(&self, a: wisp_runtime_api::commands::SlotsArgs) -> Result<Vec<wisp_runtime_api::commands::TaskSlots>> {
+        let q = Query::new().select(&["id", "body"]).desc("updated_at");
+        let text = self.store.read_async(move |r| r.query_json("session", &q)).await?;
+        Ok(crate::slots::of(&text, &a)?)
+    }
+
     /// Every task (no queue), newest first: for history queries, which read each task's spec.
     pub async fn sessions(&self) -> Result<Vec<Session>> {
         let q = Query::new().desc("created_at");

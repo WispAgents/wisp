@@ -217,6 +217,38 @@ async fn cmd_runs_once_per_idempotency_key() {
     s.shutdown().await;
 }
 
+/// Perf audit 2026-11-18 #1: the edge kept the last 10,000 answers of any size (60 task-list reads took a server to
+/// 1 GB). A read's answer is never kept (a retry just reads again), so 1,000 of them leave nothing behind; a write's
+/// still answers its retry once.
+#[tokio::test]
+async fn a_thousand_list_reads_keep_nothing_and_a_write_still_runs_once() {
+    let (s, fake) = start(config()).await;
+    let p = s.addr.port();
+    for i in 0..1_000 {
+        let key = format!("read-{i}");
+        let r = send(p, "POST", "/api/cmd", &[json_h(), ("idempotency-key", &key)], br#"{"cmd":"x.list","args":{}}"#).await;
+        assert_eq!(r.status, 200);
+    }
+    assert_eq!(s.edge().kept_answers(), (0, 0), "no read's answer is kept");
+    // the same key read twice runs twice: nothing is replayed for a read
+    let before = fake.calls.load(Ordering::SeqCst);
+    for _ in 0..2 {
+        send(p, "POST", "/api/cmd", &[json_h(), ("idempotency-key", "same")], br#"{"cmd":"x.list","args":{}}"#).await;
+    }
+    assert_eq!(fake.calls.load(Ordering::SeqCst), before + 2);
+    // a write's retry is still answered once
+    let w = br#"{"cmd":"runtime.create","args":{"prompt":"x"}}"#;
+    let before = fake.calls.load(Ordering::SeqCst);
+    for _ in 0..2 {
+        send(p, "POST", "/api/cmd", &[json_h(), ("idempotency-key", "w1")], w).await;
+    }
+    assert_eq!(fake.calls.load(Ordering::SeqCst), before + 1);
+    let (n, bytes) = s.edge().kept_answers();
+    assert_eq!(n, 1);
+    assert!(bytes < 1_000, "{bytes}");
+    s.shutdown().await;
+}
+
 #[tokio::test]
 async fn health_and_every_route_documented() {
     let (s, _) = start(config()).await;

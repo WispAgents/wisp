@@ -38,6 +38,15 @@
     text-overflow: ellipsis;
     border-radius: 5px;
   }
+  /* renaming in place: it looks like the field it is (audit A #18: a click showed only a caret) */
+  [data-kit='sh-title'][contenteditable] {
+    padding: 0 var(--space-2);
+    background-color: var(--surface);
+    box-shadow: 0 0 0 calc(var(--size-ring) + var(--size-hairline)) var(--accent-soft), inset 0 0 0 var(--size-hairline) var(--accent);
+    outline: 0;
+    text-overflow: clip;
+    cursor: text;
+  }
   [data-kit='sh-acts'] {
     display: flex;
     align-items: center;

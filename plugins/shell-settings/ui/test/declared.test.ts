@@ -19,8 +19,8 @@ function declared(): Set<string> {
 test('every setting key the Settings panes write is declared by a plugin manifest', () => {
   const have = declared();
   expect(Object.keys(manifests).length).toBeGreaterThan(20);
-  // `terminal` is the take-over app's id (a terminal.app row), not a setting key of its own
-  // and Notifications' switch (wisp.shell-home's notify.ts reads it as `settings.notify`)
-  const keys = [...Object.values(KEYS).filter((k) => k.includes('.')), 'settings.notify'];
+  // every key, Open tasks in's too (audit A F5: it wrote `terminal`, which no plugin declares, so no pick stuck; the
+  // test skipped keys without a dot), and Notifications' switch (wisp.shell-home's notify.ts reads `settings.notify`)
+  const keys = [...Object.values(KEYS), 'settings.notify'];
   expect(keys.filter((k) => !have.has(k))).toEqual([]);
 });

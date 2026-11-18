@@ -214,7 +214,13 @@ export default function Connectors(props: { readonly client: PluginClient }): JS
           {t('connectors.reach', { harnesses: reachLine() })}
         </SettingsNote>
       </Stack>
-      <Show when={editing()}>{(e) => <Editor draft={e().draft} editing={e().id !== undefined} onSave={(d) => save(d, e().id)} onClose={() => setEditing(undefined)} />}</Show>
+      <Show when={editing()}>
+        {(e) => {
+          // read once: a paste with several servers saves each after the first closed the editor (F10), when e() is gone
+          const id = e().id;
+          return <Editor draft={e().draft} editing={id !== undefined} onSave={(d) => save(d, id)} onClose={() => setEditing(undefined)} />;
+        }}
+      </Show>
       <Review
         open={reviewing()}
         found={found() as FoundServer[]}

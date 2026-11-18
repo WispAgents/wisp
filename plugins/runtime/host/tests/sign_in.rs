@@ -66,7 +66,8 @@ async fn a_run_that_dies_with_its_sign_in_expired_says_signed_out_not_the_raw_er
 
 /// QA desktop r3 (r2 #6 still open): a task saved before signed-out ends were read on a failed end kept the raw
 /// "unexpected status 401 Unauthorized…" as its line in the list. On start, the last turn of a failed task is read again
-/// with its harness's own sign-in check: it says signed out in plain words, and its row's pill is Signed out.
+/// with its harness's own sign-in check, just after the start: it says signed out in plain words, and its row's pill
+/// is Signed out.
 #[tokio::test(flavor = "multi_thread")]
 async fn a_task_saved_with_a_raw_401_reads_signed_out_after_a_start() {
     let r = rig().await;
@@ -84,6 +85,15 @@ async fn a_task_saved_with_a_raw_401_reads_signed_out_after_a_start() {
     assert!(before.ext.get("wisp.runtime").and_then(|x| x.get("authFailed")).is_none_or(|v| v != true), "saved as an older wisp did");
     common::LEGACY_KNOWN.store(true, Ordering::SeqCst);
     r.rt.start().await.unwrap();
+    // repaired just after the start, off its way (perf audit 2026-11-18 #8: it held the first response)
+    until("the repair", || async {
+        r.rt.turns(&id, None, Some(1))
+            .await
+            .unwrap()
+            .pop()
+            .is_some_and(|t| t.ext.get("wisp.runtime").and_then(|x| x.get("authFailed")) == Some(&serde_json::json!(true)))
+    })
+    .await;
     let t = r.rt.turns(&id, None, Some(1)).await.unwrap().pop().unwrap();
     assert_eq!(t.ext["wisp.runtime"]["authFailed"], true, "{:?}", t.ext);
     let hero = t.presentation.as_ref().and_then(|p| p.blocks.iter().find(|b| b["type"] == "hero")).cloned().unwrap();

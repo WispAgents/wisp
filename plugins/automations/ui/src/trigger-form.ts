@@ -205,3 +205,99 @@ export function specOfForm(f: TriggerFormState): { name: string; spec: Record<st
   }
   return { name, spec };
 }
+
+/** The fields the form writes: an edit replaces these and keeps every other field a formula gave the trigger
+ * (`debounce`, `rate`, `if`, `when` …), which the form doesn't show. */
+const FORM_KEYS = ['on', 'task', 'prompt', 'crew', 'project', 'mode', 'agent', 'model', 'cron', 'branch', 'label', 'every', 'secret', 'header', 'match', 'users'] as const;
+
+const str = (v: unknown): string => (typeof v === 'string' ? v : '');
+
+/** The tile a saved spec belongs to (v1 opened Edit on the trigger's own kind), or undefined when the form has none
+ * for it (a source only a formula can declare: edit it there). */
+export function keyOfSpec(spec: Readonly<Record<string, unknown>>): string | undefined {
+  const on = str(spec['on']);
+  const header = str(spec['header']).toLowerCase();
+  if (on === 'webhook') return header === 'linear-signature' ? 'linear' : header === 'sentry-hook-signature' ? 'webhook:sentry' : header === 'x-pagerduty-signature' ? 'webhook:pagerduty' : 'webhook';
+  if (on === 'chat.message') return (spec['match'] as { channel?: unknown } | undefined)?.channel === 'slack' ? 'slack' : undefined;
+  const k = Object.entries(SOURCE).find(([, v]) => v === on)?.[0];
+  return k && k !== 'linear' ? k : undefined;
+}
+
+/** A saved trigger back in the form, for Edit (v1 triggerForm with the trigger's draft). The secret is never put
+ * back on screen: left empty, the edit keeps the one it has. */
+export function formOfSpec(name: string, spec: Readonly<Record<string, unknown>>): TriggerFormState | undefined {
+  const key = keyOfSpec(spec);
+  if (!key) return undefined;
+  const match = (spec['match'] ?? {}) as Record<string, unknown>;
+  const users = Array.isArray(spec['users']) ? (spec['users'] as unknown[]).map(String) : [];
+  return {
+    ...emptyForm(str(spec['project'])),
+    key,
+    name,
+    crew: str(spec['crew']),
+    when: str(spec['cron']),
+    branch: str(spec['branch']),
+    label: key === 'linear' ? str(match['data.labels.name']) : str(spec['label']),
+    every: typeof spec['every'] === 'number' ? spec['every'] : 5,
+    header: key.startsWith('webhook') ? str(spec['header']) : '',
+    users: users.join(', '),
+    keyword: str(match['keyword']),
+    recipe: str(spec['task']),
+    prompt: str(spec['prompt']),
+    mode: str(spec['mode']) || (key === 'issues' || HOOK_KINDS.has(kindOf(key).kind) ? 'plan' : 'auto'),
+    agent: str(spec['agent']),
+    model: str(spec['model']),
+  };
+}
+
+/** What an edit saves: the form's fields over the trigger's own, the rest kept. A webhook left without a new secret
+ * keeps its old one; the name is the trigger's (a rename would be a new trigger beside the old one). */
+export function specOfEdit(f: TriggerFormState, old: { readonly name: string; readonly spec: Readonly<Record<string, unknown>> }): ReturnType<typeof specOfForm> {
+  const keep = str(old.spec['secret']);
+  const out = specOfForm(keep && !cut(f.secret) && HOOK_KINDS.has(kindOf(f.key).kind) ? { ...f, secret: keep } : f);
+  if (!('spec' in out)) return out;
+  const spec: Record<string, unknown> = { ...old.spec };
+  for (const k of FORM_KEYS) delete spec[k];
+  return { name: old.name, spec: { ...spec, ...out.spec } };
+}
+
+/** A trigger's line in the list, in v1's words (automations.js describe): what starts it, where, and what it hands
+ * the work to. `place` names a project's folder, `member` a crew member's id, `words` a cron. */
+export function describeSpec(
+  spec: Readonly<Record<string, unknown>>,
+  o: { readonly place: (path: string) => string; readonly member: (id: string) => string | undefined; readonly words: (cron: string) => string | null },
+): string {
+  const key = keyOfSpec(spec) ?? '';
+  const kind = kindOf(key).kind;
+  const who = str(spec['crew']) ? o.member(str(spec['crew'])) : undefined;
+  const path = str(spec['project']);
+  if (TASK_KINDS.has(kind) && key) {
+    const where = path ? o.place(path) : who ? `${who}’s project` : 'any project';
+    return `When a task in ${where} ${kind === 'done' ? 'is marked done' : 'finishes'}${who ? ` → ${who}` : ', a new task in its folder'}`;
+  }
+  const proj = `${path ? o.place(path) : who ? `${who}’s folder` : 'its folder'}${who ? ` → ${who}` : ''}`;
+  if (HOOK_KINDS.has(kind) && key) {
+    const match = (spec['match'] ?? {}) as Record<string, unknown>;
+    const what =
+      kind === 'slack'
+        ? `When someone mentions wisp in Slack${str(match['keyword']) ? ` with “${str(match['keyword'])}”` : ''}`
+        : kind === 'linear'
+          ? `When a Linear issue is created${str(match['data.labels.name']) ? ` with the label “${str(match['data.labels.name'])}”` : ''}`
+          : 'When its URL is called';
+    return `${what}, in ${proj}`;
+  }
+  if (kind === 'schedule' && key) return `${o.words(str(spec['cron'])) ?? str(spec['cron'])} in ${proj}`;
+  if (key === 'ci' || key === 'issues') {
+    const what = key === 'ci' ? `failed CI${str(spec['branch']) ? ` on ${str(spec['branch'])}` : ''}` : `issues labelled ${str(spec['label'])}`;
+    return `Watches ${what} in ${proj} every ${typeof spec['every'] === 'number' ? spec['every'] : 5} min`;
+  }
+  // a source only a formula declares (ADR-0043): its event, and where
+  return `On ${str(spec['on'])}${path ? ` in ${o.place(path)}` : ''}${who ? ` → ${who}` : ''}`;
+}
+
+/** Run now on a trigger (v1): a schedule runs now, a GitHub watcher checks now; what an event or a call starts has none. */
+export function fireLabel(spec: Readonly<Record<string, unknown>>): 'run' | 'check' | undefined {
+  const key = keyOfSpec(spec);
+  if (key === 'schedule' || str(spec['on']) === 'manual') return 'run';
+  return key && POLLED.has(kindOf(key).kind) ? 'check' : undefined;
+}

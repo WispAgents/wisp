@@ -21,6 +21,7 @@
     "runtime:setExt",
     "runtime:followUp",
     "runtime:ask",
+    "runtime:unask",
     "later:list",
     "store:write{owner:goal}"
   ],

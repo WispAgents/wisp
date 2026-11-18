@@ -1,7 +1,7 @@
 // wisp.automations' UI: Settings → Automations (recipes and the triggers that launch them).
 import { lazy } from 'solid-js';
 import { defineExtension, definePalette, type PluginUiDef } from '@wisp/shell';
-import { parseDraft, parseRun } from './recipe.ts';
+import { parseDraft, parseRun, recipeName } from './recipe.ts';
 import { catalogue } from './i18n.ts';
 
 const parsePage = (p: unknown): { tab: 'recipes' | 'triggers' } => ({ tab: (p as { tab?: unknown } | null)?.tab === 'recipes' ? 'recipes' : 'triggers' });
@@ -55,7 +55,7 @@ const ui: PluginUiDef = {
         select: (p) => {
           const s = p.session?.() as { id: string; title?: string; mode?: string; agent?: string; model?: string; effort?: string } | undefined;
           if (!s) return;
-          const params = { session: s.id, name: (s.title ?? '').slice(0, 60), prompt: '', mode: s.mode ?? '', agent: s.agent ?? '', model: s.model ?? '', effort: s.effort ?? '' };
+          const params = { session: s.id, name: recipeName(s.title ?? ''), prompt: '', mode: s.mode ?? '', agent: s.agent ?? '', model: s.model ?? '', effort: s.effort ?? '' };
           p.client.navigate({ t: 'openOverlay', overlay: { kind: 'dialog', id: 'automations.recipe' as never, params } });
         },
       },

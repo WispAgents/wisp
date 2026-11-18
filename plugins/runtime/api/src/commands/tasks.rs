@@ -548,6 +548,16 @@ pub struct AppStateArgs {
     pub state: Value,
 }
 
+/// `runtime.unask`: the open question on task `id` taken back, unanswered, when it is still `question` (so a question
+/// asked since, by its agent or anyone, stays): the task stops waiting (audit A tasks #15: after Drop goal its
+/// "Keep going?" stayed and the task stayed Asking).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[ts(export, export_to = "runtime/")]
+pub struct UnaskArgs {
+    pub id: SessionId,
+    pub question: String,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[ts(export, export_to = "runtime/")]
 pub struct AnswerArgs {

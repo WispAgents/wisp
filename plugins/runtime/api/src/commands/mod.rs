@@ -6,10 +6,12 @@ use serde_json::Value;
 use wisp_kernel::Command;
 
 mod more;
+mod slots;
 mod tasks;
 mod trial;
 
 pub use more::*;
+pub use slots::*;
 pub use tasks::*;
 pub use trial::*;
 
@@ -38,7 +40,7 @@ macro_rules! command {
 /// (`of`: the task an agent tool reads, `runtime.agent.session` / `taskState`)
 const TASK_ARGS: &[&str] = &["id", "sessionId", "session", "parentId", "from", "taskId", "of"];
 /// Its commands that answer about every task: refused to an agent's token (`wisp_kernel::scope`).
-const EVERY_TASK: Lists = Lists(&["runtime.list", "runtime.search", "runtime.history"]);
+const EVERY_TASK: Lists = Lists(&["runtime.list", "runtime.search", "runtime.history", "runtime.slots"]);
 
 struct Lists(&'static [&'static str]);
 impl Lists {
@@ -96,6 +98,7 @@ command!(QueueCancel = "runtime.queue.cancel": QueueItemArgs => Ack);
 command!(Get = "runtime.get": IdArgs => Session, read_only);
 command!(ResumeCommand = "runtime.resumeCommand": IdArgs => ResumeLine, read_only);
 command!(List = "runtime.list": ListArgs => Vec<Summary>, read_only);
+command!(Slots = "runtime.slots": SlotsArgs => Vec<TaskSlots>, read_only);
 command!(Turns = "runtime.turns": TurnsArgs => Vec<Turn>, read_only);
 command!(ActivityOf = "runtime.activity": ActivityArgs => ActivityPage, read_only);
 command!(PresentationOf = "runtime.presentation": PresentationArgs => Option<Presentation>, read_only);
@@ -105,6 +108,8 @@ command!(Exec = "runtime.exec": ExecArgs => ExecOut);
 command!(AppState = "runtime.appState": AppStateArgs => Ack);
 command!(Answer = "runtime.answer": AnswerArgs => Value);
 command!(Ask = "runtime.ask": AskArgs => Asked);
+// a plugin takes back the question it put (the goal's "Keep going?" once the goal is dropped). Additive (2026-11-18).
+command!(Unask = "runtime.unask": UnaskArgs => Value);
 command!(Approval = "runtime.approval": ApprovalArgs => Value);
 command!(PollAnswerOf = "runtime.pollAnswer": PollAnswerArgs => PollAnswer, read_only);
 command!(ApproveBlocked = "runtime.approveBlocked": ApproveBlockedArgs => Value);

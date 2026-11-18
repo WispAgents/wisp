@@ -14,6 +14,7 @@
 
 mod calls;
 mod folders;
+mod gh;
 mod keys;
 mod kinds;
 mod ops;
@@ -57,6 +58,14 @@ pub(crate) struct State {
     pub statuses: Mutex<HashMap<String, Option<bool>>>,
     /// each harness's latest version on npm (TRY-17), read at start and twice a day
     pub latest: Mutex<HashMap<String, String>>,
+    /// something Settings → Agents shows changed outside a command (a sign-in's output, its end): its rows are written
+    /// again (`view::follow`); changes that come together are written once
+    pub changed: tokio::sync::Notify,
+    /// one `publish` at a time: two at once (a command's and a sign-in's) could write an older snapshot last
+    pub publishing: tokio::sync::Mutex<()>,
+    /// git's and gh's state as last asked (`git.tools`, up to two CLI calls): asked again after a command, not on every
+    /// line a sign-in prints
+    pub tools: Mutex<Option<wisp_git_api::Tools>>,
 }
 
 pub(crate) fn lock<T>(m: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
@@ -133,11 +142,15 @@ impl Plugin for AccountsPlugin {
                 installing: Mutex::default(),
                 statuses: Mutex::default(),
                 latest: Mutex::default(),
+                changed: tokio::sync::Notify::new(),
+                publishing: tokio::sync::Mutex::new(()),
+                tools: Mutex::default(),
             };
             view::install(&st.store).map_err(store_err)?;
             let st = Arc::new(st);
             let _ = start.set(st.clone());
             view::soon(&ctx, &st);
+            view::follow(&ctx, &st);
             upgrade::follow(&ctx, &st);
             Ok(())
         });

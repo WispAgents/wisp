@@ -156,6 +156,20 @@ fn one_word_slip(words: &[String], literal: Literal) -> Option<NotATask> {
     (TASK_COMMANDS.contains(&first.as_str()) || PROMPT_WORDS.contains(&first.as_str())).then(|| NotATask::Usage(first.clone()))
 }
 
+/// Each built-in group and its verbs, for the shell completions (a form like `<task id>` left out).
+pub fn group_verbs() -> Vec<(String, Vec<String>)> {
+    let mut out: Vec<(String, Vec<String>)> = Vec::new();
+    let all = VERB_PATHS.iter().map(|p| (p.cmd, p.verbs)).chain(GROUPS.iter().map(|(g, vs)| (*g, *vs)));
+    for (g, vs) in all {
+        let vs: Vec<String> = vs.iter().filter(|v| !v.starts_with('<')).map(|v| (*v).to_owned()).collect();
+        match out.iter_mut().find(|(x, _)| x == g) {
+            Some((_, have)) => have.extend(vs.into_iter().filter(|v| !have.contains(v)).collect::<Vec<_>>()),
+            None => out.push((g.to_owned(), vs)),
+        }
+    }
+    out
+}
+
 /// Whether `word` is one of `group`'s own built-in verbs (`plugin install`, `skill install`, `crew ls`).
 pub fn own_verb(group: &str, word: &str) -> bool {
     VERB_PATHS.iter().filter(|p| p.cmd == group).any(|p| p.verbs.contains(&word))
@@ -484,6 +498,21 @@ impl UnknownVerb {
     }
 }
 
+/// Setup audit F30: a plugin's name and one word shaped like a verb (kebab or camel case, or a letter or two off one
+/// of its verbs: `wisp budget stop-at`) is a slip, never a task; a plain word stays a prompt (`wisp learn rust`).
+fn plugin_slip(first: &str, rest: &[String], catalogue: &[Vec<String>]) -> bool {
+    let verbs: Vec<&str> = catalogue.iter().filter(|c| c.len() > 1 && c[0] == first).map(|c| c[1].as_str()).collect();
+    let said: Vec<&String> = rest.iter().filter(|w| !flag_shaped(w)).collect();
+    let [word] = said.as_slice() else { return false };
+    if verbs.is_empty() || verbs.contains(&word.as_str()) {
+        return false;
+    }
+    let lower = word.to_lowercase();
+    // two edits only on a long verb: `rust` is a word, not `run` mistyped
+    let near = |v: &&str| distance(&lower, v) <= if v.len() <= 3 { 1 } else { 2 };
+    word.contains('-') || word.chars().skip(1).any(char::is_uppercase) || verbs.iter().any(near)
+}
+
 /// QA round 10 #1: the words start with a built-in command group (a [`VERB_PATHS`] or [`GROUPS`] word; `catalogue`,
 /// each command's path such as `["crew", "create"]`, adds its plugin verbs) and the next word is none of its verbs: a
 /// command line typed wrong, never a task. None: no group (another plugin's name included: a prompt), one of its
@@ -494,12 +523,16 @@ pub fn unknown_verb(words: &[String], literal: Literal, catalogue: &[Vec<String>
         return None;
     }
     let (first, rest) = words.split_first()?;
-    if rest.first().is_none_or(|w| flag_shaped(w)) || !is_group(first) {
+    if rest.first().is_none_or(|w| flag_shaped(w)) {
+        return None;
+    }
+    let slip = !is_group(first) && plugin_slip(first, rest, catalogue);
+    if !is_group(first) && !slip {
         return None;
     }
     // a catalogue verb's first word counts as the group's own too (`wisp mcp session bogus`)
     let catalogue_own = catalogue.iter().any(|c| c.len() > 1 && c[0] == *first && rest.first().is_some_and(|w| *w == c[1]));
-    if !group_line(words) && !catalogue_own {
+    if !slip && !group_line(words) && !catalogue_own {
         return None;
     }
     let mut paths: Vec<Vec<&str>> = Vec::new();

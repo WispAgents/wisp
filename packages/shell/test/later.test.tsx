@@ -1,5 +1,5 @@
-// ADR-0067: a plugin UI's `later` part (what only a press reaches: row menu items, the palette's, prompt sources) loads
-// as the first screen draws and joins the same plugin; and strings a plugin's lazy code adds to its catalogue
+// ADR-0067, ADR-0105: a plugin UI's `later` part (what only a press reaches: row menu items, the palette's, prompt
+// sources) loads once the first screen is drawn (the home list here, two frames painted) and joins the same plugin; and strings a plugin's lazy code adds to its catalogue
 // (i18n/lazy.ts) show through the client, both halves of a catalogue with full-id keys included.
 import { expect, test } from 'vitest';
 import { createClient, peerId } from '@wisp/client';
@@ -10,6 +10,15 @@ import { nullPlatform } from '../src/platform/index.ts';
 
 const C = (() => null) as unknown as ExtensionDef['component'];
 const tick = (ms = 0): Promise<void> => new Promise((r) => setTimeout(r, ms));
+/** until `ok`, to a clock deadline (the first screen is two frames after the home list is here) */
+async function until(ok: () => boolean, ms = 2000): Promise<void> {
+  const end = performance.now() + ms;
+  while (!ok() && performance.now() < end) await tick(5);
+}
+/** the home list is here (its snapshot landed): the first screen can be drawn */
+const listHere = (client: ReturnType<typeof createClient>): void => {
+  (client.entities as unknown as { loaded: () => () => boolean }).loaded = () => () => true;
+};
 
 function setup() {
   const home = peerId('local');
@@ -24,25 +33,34 @@ const later = (ids: string[]): (() => Promise<{ default: PluginUiLater }>) => ()
   Promise.resolve({ default: { extensions: ids.map((id) => ({ id, attachTo: { id: 'shell.row:menu' }, component: C })) } });
 
 test('a_plugin_s_later_part_joins_it_once_the_first_screen_draws_after_its_own_extensions', async () => {
-  const { shell, menu } = setup();
+  const { client, shell, menu } = setup();
   shell.register({ id: 'wisp.demo', extensions: [{ id: 'demo.first', attachTo: { id: 'shell.row:menu' }, component: C }], later: later(['demo.rename', 'demo.ship']) });
   await tick();
   // not before the first render: the first page's work comes first
   expect(menu()).toEqual(['wisp.demo:demo.first']);
   const root = document.createElement('div');
   document.body.append(root);
+  listHere(client);
   const stop = shell.render(root);
-  await tick();
+  // not as it renders: the first screen is drawn two frames after the home list is here, then the page is idle
+  expect(menu()).toEqual(['wisp.demo:demo.first']);
+  await until(() => menu().length === 3);
   expect(menu()).toEqual(['wisp.demo:demo.first', 'wisp.demo:demo.rename', 'wisp.demo:demo.ship']);
+  expect(performance.getEntriesByName('wisp:first-screen').length, 'the mark the budget gate reads').toBeGreaterThan(0);
   stop();
   shell.dispose();
 });
 
-test('a_plugin_registered_after_the_first_render_loads_its_later_part_at_once_and_one_switched_off_first_gets_none', async () => {
-  const { shell, menu } = setup();
+test('a_plugin_registered_after_the_first_screen_loads_its_later_part_at_once_and_one_switched_off_first_gets_none', async () => {
+  const { client, shell, menu } = setup();
+  listHere(client);
   const root = document.createElement('div');
   document.body.append(root);
   const stop = shell.render(root);
+  // the first screen drawn: from now on a later part loads as its plugin registers
+  let drawn = false;
+  shell.afterFirstScreen(() => (drawn = true));
+  await until(() => drawn);
   shell.register({ id: 'wisp.on', later: later(['on.item']) });
   shell.register({ id: 'wisp.off', later: later(['off.item']) });
   shell.unregister('wisp.off');

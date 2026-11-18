@@ -72,14 +72,13 @@ pub struct Busy {
 pub enum Fix {
     /// leave it
     Skip,
-    /// ask git first whether it really conflicts with its freshly fetched base (GitHub can lag a push)
+    /// ask git first whether it really conflicts with its freshly fetched base (GitHub can lag a push); then send
+    /// the follow-up. The user's Fix conflicts asks too (audit A orch #21: it spent a turn on GitHub's stale word)
     CheckBase,
-    /// send the follow-up now: the user asked
-    Start,
 }
 
-/// Auto-fix (`fixConflicts: on`) runs once per PR head and at most 3 times; Fix conflicts (force)
-/// always starts, at once, trusting the conflict wisp last saw.
+/// Auto-fix (`fixConflicts: on`) runs once per PR head and at most 3 times; Fix conflicts (force) skips those
+/// limits and the setting, but git is asked first either way: a turn is spent only on a conflict git sees.
 pub fn should_fix(task: &ShipTask, auto: bool, force: bool, busy: Busy) -> Fix {
     let Some(pr) = task.pr() else {
         return Fix::Skip;
@@ -92,7 +91,7 @@ pub fn should_fix(task: &ShipTask, auto: bool, force: bool, busy: Busy) -> Fix {
         return Fix::Skip;
     }
     if force {
-        return Fix::Start;
+        return Fix::CheckBase;
     }
     let fix = task.conflict_fix.as_ref();
     if fix.is_some_and(|f| f.head == pr.head || f.tries >= MAX_CONFLICT_FIXES) {

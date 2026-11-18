@@ -5,11 +5,11 @@
 import { createMemo, Show, type JSX } from 'solid-js';
 import { FeedItem, ListRow, Swipe, useSignal, type SwipeDir, type SwipeSide } from '@wisp/ui';
 import type { EntityKey } from '@wisp/client';
-import { deleteTask, toggleArchived, toggleDone, toggleForLater } from '../actions.ts';
 import { agentName, rowView, secondLine } from '../model/row.ts';
 import { actionFor, type SwipeKind } from '../model/swipe.ts';
 import type { SessionRow } from '../types.ts';
 import { useEnv } from './env.ts';
+import { runSwipe } from './swipe-run.ts';
 import { Actions, HarnessMark, Mark, Pills, RunLine, SubLine, TimeCell, subOf } from './RowParts.tsx';
 import { Slot, hasExtensions } from './Slot.tsx';
 import '../i18n/lazy.ts';
@@ -67,13 +67,8 @@ function Body(props: { readonly k: EntityKey; readonly s: SessionRow; readonly n
     const a = actionFor(kind, props.s);
     return a ? { label: t(a.label), icon: a.icon, tone: a.tone } : undefined;
   };
-  const swiped = (dir: SwipeDir): void => {
-    const kind = dir === 'left' ? props.swipe.left : props.swipe.right;
-    if (kind === 'done') toggleDone(env.actions, props.k);
-    else if (kind === 'later') toggleForLater(env.actions, props.k);
-    else if (kind === 'archive') toggleArchived(env.actions, props.k);
-    else deleteTask(env.actions, props.k);
-  };
+  // the side's action, as the menu runs it; Delete task asks first (swipe-run.ts)
+  const swiped = (dir: SwipeDir): void => runSwipe(dir === 'left' ? props.swipe.left : props.swipe.right, env, props.k);
   const list = (): JSX.Element => (
     <ListRow
       layout="feed"

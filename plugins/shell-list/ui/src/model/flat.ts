@@ -101,6 +101,24 @@ export function byProject(list: readonly Entry[], pick: readonly string[]): [str
   return out;
 }
 
+/** Every task the folded sections hold (a group's runs too): the only places the open task changes what's flattened. */
+export function foldedKeys(sec: Sections, toggled: ReadonlySet<SectionId>): ReadonlySet<EntityKey> {
+  const out = new Set<EntityKey>();
+  for (const id of SECTION_IDS) {
+    if (isOpenSection(id, toggled)) continue;
+    for (const e of sec[id]) {
+      out.add(e.key as EntityKey);
+      if (e.kind === 'group') for (const r of e.runs) out.add(r.key);
+    }
+  }
+  return out;
+}
+
+/** The `open` to flatten with: the open task when a folded section holds it, else none (it changes nothing there). So
+ *  j / k through the open sections never re-flattens the list (perf r1 #7: 5,000 rows re-flattened, re-planned and
+ *  re-measured on every step). */
+export const flatOpen = (open: EntityKey | undefined, folded: ReadonlySet<EntityKey>): EntityKey | undefined => (open !== undefined && folded.has(open) ? open : undefined);
+
 /** The task rows in list order (j / k, the switcher's neighbours, the palette's "next"). */
 export function taskKeys(items: readonly Item[]): EntityKey[] {
   const out: EntityKey[] = [];

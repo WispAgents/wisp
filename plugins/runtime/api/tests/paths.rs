@@ -55,14 +55,14 @@ fn a_folder_is_a_full_path_and_never_empty_or_relative() {
 /// "inside" holds across `\` and `/` (a task in `C:\repo\src` is the `C:/repo` project's).
 #[test]
 fn a_folder_is_the_same_folder_in_every_spelling_and_holds_what_is_inside_it() {
-    use wisp_runtime_api::paths::{folder_key, is_within, same_folder};
-    assert!(same_folder(r"C:\Repo\", "c:/repo"));
-    assert!(same_folder(r"\\?\C:\Repo", r"C:\repo\."));
-    assert!(same_folder(r"\\host\share\x", r"\\HOST\share\x\"));
+    use wisp_runtime_api::paths::{folder_key, is_within};
+    assert!(wisp_runtime_api::paths::same_folder(r"C:\Repo\", "c:/repo"));
+    assert!(wisp_runtime_api::paths::same_folder(r"\\?\C:\Repo", r"C:\repo\."));
+    assert!(wisp_runtime_api::paths::same_folder(r"\\host\share\x", r"\\HOST\share\x\"));
     assert_eq!(folder_key(r"\\?\UNC\host\share\X"), "//host/share/x");
-    assert!(same_folder("/repo/.", "/repo/"));
-    assert!(!same_folder("/Repo", "/repo"), "POSIX names keep their case");
-    assert!(!same_folder("", ""), "no folder is no folder");
+    assert!(wisp_runtime_api::paths::same_folder("/repo/.", "/repo/"));
+    assert!(!wisp_runtime_api::paths::same_folder("/Repo", "/repo"), "POSIX names keep their case");
+    assert!(!wisp_runtime_api::paths::same_folder("", ""), "no folder is no folder");
     assert!(is_within(r"C:\repo\src\a", "C:/Repo"));
     assert!(is_within("C:/repo/src", r"C:\repo\"));
     assert!(is_within(r"C:\repo", r"c:\repo"));
@@ -73,7 +73,7 @@ fn a_folder_is_the_same_folder_in_every_spelling_and_holds_what_is_inside_it() {
     assert!(!is_within("/repository", "/repo") && !is_within("/repo/src", "") && !is_within("src", "."));
     // a POSIX name may hold a `\`: it's no separator there, and the case still counts
     assert!(is_within(r"/Work/a\b", "/Work"));
-    assert!(!same_folder(r"/Repo\x", r"/repo\X"));
+    assert!(!wisp_runtime_api::paths::same_folder(r"/Repo\x", r"/repo\X"));
     assert!(!is_within("/a/b/c", r"/a\b"));
     assert_eq!(folder_key("/repo/./web/../api/"), "/repo/api");
 }
@@ -103,4 +103,15 @@ fn a_second_folder_with_a_taken_name_gets_its_own_name_and_the_same_folder_stays
     assert_eq!(project_name_for("/w/My App", &none), ProjectName::New("my-app".into()));
     assert_eq!(project_name_for(r"C:\work\Api\", &none), ProjectName::New("api".into()));
     assert_eq!(project_name_for("/", &none), ProjectName::New("project".into()));
+}
+
+/// Audit A orch #6: git lists a macOS worktree by its real path (`/private/var/…`), wisp keeps the one it was given
+/// (`/var/…`): one folder, so Bring in never offers wisp's own worktree back.
+#[test]
+fn a_macos_private_path_is_the_folder_its_link_names() {
+    assert!(wisp_runtime_api::paths::same_folder("/private/var/folders/x/wt", "/var/folders/x/wt"));
+    assert!(wisp_runtime_api::paths::same_folder("/private/tmp/repo", "/tmp/repo/"));
+    assert!(wisp_runtime_api::paths::same_folder("/private/etc/hosts", "/etc/hosts"));
+    assert!(!wisp_runtime_api::paths::same_folder("/private/home/a", "/home/a"), "only the folders macOS links");
+    assert!(!wisp_runtime_api::paths::same_folder("/srv/private/tmp/a", "/srv/tmp/a"), "only at the root");
 }

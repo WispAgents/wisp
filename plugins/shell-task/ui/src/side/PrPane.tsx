@@ -4,7 +4,7 @@
 // folded), the files, and Open on GitHub · Checked … · Check now. Skeleton rows while the first answer comes.
 import { For, Show, createMemo, createResource, createSignal, type JSX } from 'solid-js';
 import { defineCommand, type EntityKey } from '@wisp/client';
-import { Banner, Button, CheckList, CheckRow, EmptyState, Heading, IconButton, Inline, Link, Skeleton, Stack, Text, ToneChip, Wrap, timeLabel } from '@wisp/ui';
+import { Banner, Button, CheckList, CheckRow, Dialog, EmptyState, Heading, IconButton, Inline, Link, Skeleton, Stack, Text, ToneChip, Wrap, timeLabel } from '@wisp/ui';
 import type { Tone as KitTone } from '@wisp/tokens';
 import { useShell } from '../shell.ts';
 import { useTask } from '../task-context.tsx';
@@ -16,7 +16,7 @@ type S = { key: EntityKey; session: string };
 const wire = (a: S): { session: string } => ({ session: a.session });
 const details = defineCommand<S, PrPanel[]>({ id: 'ship.details', owner: (a) => a.key, wire, optimistic: 'none', pending: 'the PR pane' });
 const refresh = defineCommand<S, unknown>({ id: 'ship.refresh', owner: (a) => a.key, wire, optimistic: 'none', pending: 'Check now' });
-const merge = defineCommand<S, unknown>({ id: 'ship.merge', owner: (a) => a.key, wire, optimistic: 'none', pending: 'Merge' });
+const merge = defineCommand<S, { kept?: readonly string[] }>({ id: 'ship.merge', owner: (a) => a.key, wire, optimistic: 'none', pending: 'Merge' });
 const fixConflicts = defineCommand<S, unknown>({ id: 'ship.fix_conflicts', owner: (a) => a.key, wire, optimistic: 'none', pending: 'Fix conflicts' });
 
 const TONE: Readonly<Record<Tone, KitTone>> = { merged: 'accent', closed: 'neutral', fail: 'bad', pending: 'warn', draft: 'neutral', pass: 'good' };
@@ -56,6 +56,19 @@ export function PrPane(): JSX.Element {
       () => refetch(),
       () => {},
     );
+  // Merge asks first (v1 ship.js mergePr → ask(); audit A tasks #5: the pane merged at a click). A worktree with work
+  // the merge doesn't take stays, and the answer says so: that's the one line shown after.
+  const [mergeAsk, setMergeAsk] = createSignal(false);
+  const doMerge = (): void => {
+    setMergeAsk(false);
+    void c.run(merge, args()).then(
+      (r) => {
+        for (const line of r?.kept ?? []) shell.toast.show(line);
+        void refetch();
+      },
+      () => {},
+    );
+  };
   const fixing = (): boolean => ['fixing', 'pushing'].includes(raw().body?.conflictFix?.step ?? '');
   const canAsk = (): boolean => raw().agent !== 'wisp' && raw().status !== 'running';
 
@@ -135,7 +148,7 @@ export function PrPane(): JSX.Element {
                             size="sm"
                             variant={v().primary ? 'primary' : 'ghost'}
                             icon={v().act === 'merge' ? 'check' : 'merge'}
-                            onClick={() => quiet(c.run(v().act === 'fix' ? fixConflicts : merge, args()))}
+                            onClick={() => (v().act === 'fix' ? quiet(c.run(fixConflicts, args())) : setMergeAsk(true))}
                           >
                             {t(v().act === 'fix' ? 'shell-task.pr.fix' : 'shell-task.pr.merge')}
                           </Button>
@@ -266,6 +279,27 @@ export function PrPane(): JSX.Element {
             );
           }}
         </Show>
+      </Show>
+      <Show when={mergeAsk()}>
+        <Dialog
+          open
+          role="alertdialog"
+          size="sm"
+          title={t('shell-task.pr.mergeAsk.title')}
+          description={t('shell-task.pr.mergeAsk.body')}
+          onOpenChange={(o) => !o && setMergeAsk(false)}
+          part="side.pr.mergeAsk"
+          footer={
+            <Inline gap="4" justify="end">
+              <Button variant="ghost" onClick={() => setMergeAsk(false)}>
+                {t('shell-task.pr.mergeAsk.cancel')}
+              </Button>
+              <Button variant="primary" icon="check" part="side.pr.mergeAsk.ok" onClick={doMerge}>
+                {t('shell-task.pr.merge')}
+              </Button>
+            </Inline>
+          }
+        />
       </Show>
     </Stack>
   );

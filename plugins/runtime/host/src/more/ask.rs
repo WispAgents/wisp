@@ -148,6 +148,24 @@ impl Runtime {
         Ok(json!({ "answered": true, "askId": ask_id }))
     }
 
+    /// `runtime.unask`: the open question taken back when it is still `question` (its owner's, word for word): the
+    /// task stops waiting, as a stop leaves it (`cancel_asks`), and its turn says the question went. Another question
+    /// asked since stays. `{ withdrawn }` says which.
+    pub async fn unask(self: &Arc<Self>, id: &SessionId, question: &str) -> Result<Value> {
+        let _g = self.task_lock(id.as_str()).await;
+        let mut s = self.repo.session(id.as_str()).await?;
+        let open = slot(&s).and_then(|m| m.get("ask")).and_then(|a| a.get("question")).and_then(Value::as_str).map(str::to_owned);
+        if open.is_none_or(|q| q != question.trim()) {
+            return Ok(json!({ "withdrawn": false }));
+        }
+        self.cancel_asks(&mut s);
+        self.persist(&mut s, Vec::new()).await?;
+        if let Some(t) = self.last_turn(id.as_str()).await? {
+            self.add_row(id.as_str(), t.id.as_str(), tool_row(ToolKind::Answer, "The question was taken back".to_owned())).await?;
+        }
+        Ok(json!({ "withdrawn": true }))
+    }
+
     /// `runtime.pollAnswer`: the answer once (then it's gone), pending while the question is on its
     /// task (also after a restart), else cancelled.
     pub fn poll_answer(&self, ask_id: &str) -> PollAnswer {

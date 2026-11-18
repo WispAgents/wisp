@@ -155,6 +155,16 @@ impl Accounts {
         self.put(a);
     }
 
+    /// Added (or renewed in its place) without switching: current only when there's none (setup audit F16: adding a
+    /// second account switched to it and took this computer off the grid).
+    pub fn add_beside(&mut self, a: Account) {
+        a.grid.clone_into(&mut self.last_grid);
+        if self.current.is_empty() || self.get(&self.current).is_none() {
+            self.current = a.key();
+        }
+        self.put(a);
+    }
+
     /// Replaced in its place, or added at the end; current stays.
     pub fn put(&mut self, a: Account) {
         match self.list.iter_mut().find(|x| x.key() == a.key()) {

@@ -363,10 +363,15 @@ export const fork = copyOf('runtime.fork');
 /** Ship it: no result to show before the push, so the button shows it's working. */
 
 /** Restore the worktree to before a turn (git keeps a checkpoint as each turn starts): the rollback button shows it's working. */
-export const restore = defineCommand<{ id: string; turn: string }, { restored: boolean }>({
+/** The folder as it was just before a restore (`undo` in the answer): sent back, the restore is undone (audit A tasks #1). */
+export interface RestorePoint {
+  readonly to: string;
+  readonly head: string;
+}
+export const restore = defineCommand<{ id: string; turn: string; undo?: RestorePoint }, { restored: boolean; undo?: RestorePoint }>({
   id: 'git.restoreTurn',
   owner: (a) => a.id,
-  wire: (a) => ({ id: bare(a.id), turn: a.turn }),
+  wire: (a) => ({ id: bare(a.id), turn: a.turn, ...(a.undo && { undo: a.undo }) }),
   optimistic: 'none',
   pending: 'the turn’s restore button (tb-btn rollback)',
 });
@@ -472,6 +477,25 @@ export const specOf = defineCommand<{ id: string }, { prompt: string; steps?: st
   wire: (a) => ({ id: bare(a.id) }),
   optimistic: 'none',
   pending: 'Rerun',
+});
+
+/** "/side why …": the opening message ('' for a bare /side), or undefined (v1 side.js sideAsk; runtime's prompt/side.rs). */
+export const sideAsk = (text: string): string | undefined => (/^\/side(?:\s+|$)/i.test(text.trim()) ? text.trim().replace(/^\/side\s*/i, '') : undefined);
+
+/**
+ * /side (v1 side.js): a side discussion of its own about task `main`, never a follow-up into its conversation. A task
+ * the user starts under another is one (runtime.create's `parentId`): it works in the main task's folder and hears
+ * where it stands with each message. Its row and page show at once, Starting….
+ */
+export const sideStart = defineCommand<{ id: string; main: string; text: string; at: number; attachments?: readonly Attachment[] }, { id: string }>({
+  id: 'runtime.create',
+  owner: (a) => a.main,
+  wire: (a) => ({ id: bare(a.id), prompt: a.text, parentId: bare(a.main), ...(a.attachments?.length && { attachments: a.attachments }) }),
+  optimistic: (base, a) => {
+    const main = base.peek<SessionRow>(SESSION, a.main as EntityKey) as SessionRow | undefined;
+    const row = startingRow({ id: a.id, title: a.text.split('\n')[0]?.slice(0, 80) ?? a.text, agent: main?.agent ?? '', at: a.at, mode: 'plan', ...(typeof main?.summary['cwd'] === 'string' && { cwd: main.summary['cwd'] }) });
+    return [{ e: SESSION, id: a.id as EntityKey, op: 'upsert', v: { ...row, summary: { ...row.summary, sideOf: { id: bare(a.main), title: main?.title ?? '' } } } as never }];
+  },
 });
 
 /** "/btw did you …": the side question, or undefined (v1 btw.js btwQuestion; runtime's prompt/btw.rs). */

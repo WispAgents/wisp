@@ -44,7 +44,7 @@ test('an answer without the dialog’s fields (the server before the fix) never 
 // QA round 14 #5: the dialog shows what goes and what is hidden before it goes, from the same answer (the CLI's
 // preview line: what it was → what it becomes). "Its work" unticked: the report's parts and their redactions don't go.
 test('what goes: the ask, and with its work the answers and the files changed', () => {
-  expect(whatGoes(golden, true)).toEqual({ ask: 'fix the add bug, <secret> TOPIC[Fix add]', steps: 0, answers: 1, files: ['<project>/math.js'] });
+  expect(whatGoes(golden, true)).toEqual({ ask: 'fix the add bug, <secret> TOPIC[Fix add]', steps: 0, answers: 1, files: ['math.js'] });
   expect(whatGoes(golden, false)).toEqual({ ask: 'fix the add bug, <secret> TOPIC[Fix add]', steps: 0, answers: 0, files: [] });
   expect(goesFacts(t, whatGoes(golden, true))).toBe('1 answer · 1 file changed');
   expect(goesFacts(t, whatGoes(golden, false))).toBe('');
@@ -56,7 +56,7 @@ test('what goes: the ask, and with its work the answers and the files changed', 
 test('what is hidden: each kind once with how often, the report’s only with its work, a few then how many more', () => {
   expect(hiddenLines(t, golden, true)).toEqual({
     lines: [
-      { kind: 'path', label: S['stuff.share.hidden.path'], was: '/tmp/…/proj', now: '<project>', n: 2 },
+      { kind: 'path', label: S['stuff.share.hidden.path'], was: '/tmp/…/proj', now: '<project>', n: 1 },
       { kind: 'secret', label: S['stuff.share.hidden.secret'], was: 'toke…efgh', now: '<secret>', n: 2 },
     ],
     more: 0,

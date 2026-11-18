@@ -43,9 +43,10 @@ describe('the task page after the tap', () => {
     expect(ran).toBe(0);
   });
 
-  it('split_and_frameless_pages_build_all_at_once', () => {
-    expect(buildsAtOnce(false, true)).toBe(true);
-    expect(buildsAtOnce(true, false)).toBe(true);
-    expect(buildsAtOnce(true, true)).toBe(false);
+  it('every_page_that_paints_builds_its_body_the_frame_after_split_too_perf_r1_6', () => {
+    // split built its whole body in the click: 399 ms at 4× to the first frame; now the head and the skeleton come first
+    expect(buildsAtOnce(true)).toBe(false);
+    // where nothing paints (tests, a server render) there's no frame to wait for
+    expect(buildsAtOnce(false)).toBe(true);
   });
 });

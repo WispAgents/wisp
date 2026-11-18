@@ -46,7 +46,7 @@
   [data-kit='dialog'][data-size='v1'] [data-kit='dialog-title'] { font: 600 18px/1.2 var(--display); letter-spacing: -0.015em; }
   [data-kit='dialog'][data-size='xl'] { --dialog-w: var(--size-dialog-xl); height: min(var(--size-dialog-xl-h), calc(100dvh - 2.5rem)); max-height: none; }
   /* bare: the content is the whole surface, its own head and close; the title is for screen readers only */
-  [data-kit='dialog'][data-bare], [data-kit='sheet'][data-bare] { padding: 0; overflow: hidden; }
+  [data-kit='dialog'][data-bare], [data-kit='sheet'][data-bare] { padding: 0; overflow: clip; }
   /* a bare dialog is v1's .modal.sx: the dialog keeps its line, corners and surface, its content fills it edge to edge */
   [data-kit='dialog'][data-bare] { border: var(--size-hairline) solid var(--line); background: var(--surface); }
   /* its content brings its own head and close (Settings' title and ×, the palette's Esc): the dialog's own would be a

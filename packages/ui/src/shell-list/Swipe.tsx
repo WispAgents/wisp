@@ -2,7 +2,7 @@
 // under the row says the action in the menus' words, warms with the pull and fills once letting go
 // would run it. A side with no action only gives a little. Letting go past the line flies the row off
 // its edge, closes its height, then calls onSwipe; anything short springs back. Touch only: a mouse
-// or pen drag is a text selection. No timers: each step waits for its own transition to end.
+// or pen drag is a text selection. No timers: each step waits for the row's own animations to finish (none: at once).
 // In the phone apps (ADR-0065 build step 4, design/mobile.md §A.4) Android draws the same band in Material 3
 // (tonal, the icon leading, warming with --k-sw-p); iOS draws Mail's action instead: a button revealed from
 // the edge, where a short pull lets the row rest open on it (tap it to run, tap the row to close) and a pull
@@ -71,7 +71,8 @@ export function Swipe(props: SwipeProps): JSX.Element {
   const [armed, setArmed] = createSignal(false);
   const [height, setHeight] = createSignal<number | undefined>(undefined);
   const [progress, setProgress] = createSignal(0);
-  const st: { track: Track | undefined; swallow: boolean; dir: SwipeDir; width: number; el: HTMLDivElement | undefined } = { track: undefined, swallow: false, dir: 'right', width: 0, el: undefined };
+  /** `run`: which fly the steps belong to (a reset or a new fly makes an older one's steps do nothing) */
+  const st: { track: Track | undefined; swallow: boolean; dir: SwipeDir; width: number; el: HTMLDivElement | undefined; run: number } = { track: undefined, swallow: false, dir: 'right', width: 0, el: undefined, run: 0 };
   const side = (d: number): SwipeSide | undefined => (d > 0 ? props.right : d < 0 ? props.left : undefined);
   const host = useGestureHost();
   const t = useT();
@@ -107,6 +108,7 @@ export function Swipe(props: SwipeProps): JSX.Element {
   onCleanup(unlisten);
   const reset = (): void => {
     unlisten();
+    st.run += 1;
     st.track = undefined;
     setPhase('idle');
     setDx(0);
@@ -114,14 +116,31 @@ export function Swipe(props: SwipeProps): JSX.Element {
     setHeight(undefined);
     setProgress(0);
   };
-  /** fly the row off its edge; `ended` then closes its height and runs the action */
+  /** fly the row off its edge, close its height, then run the action: each step once the row's own animations have
+   *  finished, at once when there are none (audit A #8: waiting on a `transitionend` that never came, the row sat at
+   *  `closing` and nothing ran) */
   const fly = (dir: SwipeDir, width: number): void => {
     unlisten();
+    const run = (st.run += 1);
     st.dir = dir;
     setArmed(true);
     setPhase('gone');
     setProgress(1);
     setDx((dir === 'right' ? 1 : -1) * (width + 24));
+    settled(st.el, () => {
+      if (st.run !== run) return;
+      setHeight(st.el?.getBoundingClientRect().height ?? 0);
+      requestAnimationFrame(() => {
+        if (st.run !== run) return;
+        setPhase('closing');
+        setHeight(0);
+        settled(st.el, () => {
+          if (st.run !== run) return;
+          reset();
+          props.onSwipe(dir);
+        });
+      });
+    });
   };
   const down = (e: PointerEvent): void => {
     st.swallow = false;
@@ -197,21 +216,6 @@ export function Swipe(props: SwipeProps): JSX.Element {
     e.stopPropagation();
     if (phase() === 'open') fly(st.dir, st.width);
   };
-  // the row has flown off: close its height, then run the action
-  const ended = (e: TransitionEvent): void => {
-    if (e.target !== e.currentTarget) return;
-    if (phase() === 'gone' && e.propertyName === 'transform') {
-      setHeight(st.el?.getBoundingClientRect().height ?? 0);
-      requestAnimationFrame(() => {
-        setPhase('closing');
-        setHeight(0);
-      });
-    } else if (phase() === 'closing' && e.propertyName === 'height') {
-      const dir = st.dir;
-      reset();
-      props.onSwipe(dir);
-    }
-  };
   const click = (e: MouseEvent): void => {
     if (!st.swallow) return;
     st.swallow = false;
@@ -246,7 +250,6 @@ export function Swipe(props: SwipeProps): JSX.Element {
       onPointerCancel={reset}
       onContextMenu={() => phase() === 'drag' && reset()}
       on:click={{ handleEvent: click, capture: true }}
-      onTransitionEnd={ended}
     >
       <Show when={band()}>
         {(b) => (
@@ -269,9 +272,20 @@ export function Swipe(props: SwipeProps): JSX.Element {
           </Show>
         )}
       </Show>
-      <div data-kit="swipe-row" data-part={sub(part(), 'row')} onTransitionEnd={ended}>
+      <div data-kit="swipe-row" data-part={sub(part(), 'row')}>
         {props.children}
       </div>
     </div>
   );
+}
+
+/** `then`, once what `el` and its children are animating (the fly's transform, the close's height) has finished, from the
+ * next frame (the step's styles applied); at once when nothing is (no transition on this look, reduced motion, a test
+ * page). Finished or cancelled alike: the action must run. */
+function settled(el: HTMLElement | undefined, then: () => void): void {
+  requestAnimationFrame(() => {
+    const running = (el?.getAnimations?.({ subtree: true }) ?? []).filter((a) => a.playState === 'running');
+    if (running.length === 0) return then();
+    void Promise.allSettled(running.map((a) => a.finished)).then(then);
+  });
 }

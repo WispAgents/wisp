@@ -163,7 +163,18 @@ async fn onto_grid(c: &Client, grid: Option<&str>) -> Result<Option<i32>> {
         return Ok(None);
     }
     let code = signin(c, grid).await?;
-    Ok((code != 0).then_some(code))
+    if code != 0 {
+        return Ok(Some(code));
+    }
+    // signed in beside another account (it stays current, setup audit F16): `--grid` named this one, so it's the one
+    if let Some(grid) = grid {
+        let want = grid_host(grid);
+        let all = c.cmd("grid-client.accounts", json!({})).await?;
+        if let Some(a) = all.as_array().into_iter().flatten().find(|a| grid_host(s(a, "grid")) == want && a["current"] != json!(true)) {
+            c.cmd("grid-client.accountSwitch", json!({ "key": s(a, "key") })).await?;
+        }
+    }
+    Ok(None)
 }
 
 /// `wisp cloud signin|status|signout|accounts|switch|remove`.

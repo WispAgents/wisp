@@ -351,6 +351,12 @@ fn reads(s: &mut Setup, slot: &Slot) {
         }
     });
     let sl = slot.clone();
+    // plugins' slots of every task in one read, for the ones that looked at every task one by one (perf audit #3)
+    s.command::<c::Slots, _, _>(move |_ctx, _call, a| {
+        let slot = sl.clone();
+        async move { rt(&slot)?.repo.slots(a).await.map_err(WireError::from) }
+    });
+    let sl = slot.clone();
     s.command::<c::Search, _, _>(move |ctx, call, a| {
         let slot = sl.clone();
         async move {

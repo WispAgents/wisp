@@ -7,7 +7,6 @@ import type { Client } from '@wisp/client';
 import type { Toaster } from '@wisp/ui';
 import { SESSION, type SessionRow } from '../rows.ts';
 import { archive, forLater, isSaved, remove, setState } from './commands.ts';
-import '../i18n/lazy.ts';
 
 export type BulkAction = 'done' | 'later' | 'archive' | 'delete';
 export const BULK_ACTIONS: readonly BulkAction[] = ['done', 'later', 'archive', 'delete'];

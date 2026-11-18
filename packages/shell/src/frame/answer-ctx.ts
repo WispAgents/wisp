@@ -10,6 +10,7 @@ import { SESSION, type SessionRow } from '../rows.ts';
 import { appState, approveBlocked, exec, reveal } from './commands.ts';
 import { mediaUrl } from './answer-of.ts';
 import { keepHost } from './keep.ts';
+import { fileUrl } from '../editor.ts';
 import '../i18n/lazy.ts';
 
 export interface AnswerHost {
@@ -82,7 +83,16 @@ export function answerContext(h: AnswerHost): BlockContext {
     },
     openTask: (id) => shell.navigate({ t: 'openTask', id: keyOf(id) as never }),
     openUrl: (url) => shell.platform.openExternal(url),
-    openFile: () => h.openChanges(),
+    // a file the answer names: in the editor Settings names, at its line, on this computer's own tasks (v1
+    // openInEditor); elsewhere, or with no editor, the Changes pane (audit A #10: it always opened an empty Changes pane)
+    openFile: (path, line) => {
+      const r = shell.client.entities.peek<{ body?: { cwd?: string; ext?: Record<string, { path?: string } | undefined> }; summary?: { cwd?: string } }>(SESSION, key);
+      const dir = String(r?.body?.ext?.['wisp.worktrees']?.path ?? r?.body?.cwd ?? r?.summary?.cwd ?? '');
+      const editor = String(shell.client.entities.peek<{ value?: unknown }>('setting', entityKey(peer, 'settings.editor'))?.value ?? '');
+      const url = peer === home ? fileUrl(editor, dir, path, line) : undefined;
+      if (url) shell.platform.openExternal(url);
+      else h.openChanges();
+    },
     media: (p) => mediaUrl(home, key, p),
     previewUrl: (url) => {
       for (const m of previews) {

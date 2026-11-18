@@ -1,6 +1,6 @@
 // The sections' folds (docs/v2-round-7.md: on a phone "Needs you" showed folded, its task hidden).
 import { expect, test } from 'vitest';
-import { isOpenSection, flatten, itemKey, sectionGroups } from '../src/model/flat.ts';
+import { flatOpen, foldedKeys, isOpenSection, flatten, itemKey, sectionGroups } from '../src/model/flat.ts';
 import { inProject } from '../src/model/sections.ts';
 import { listPlan } from '../src/model/wire.ts';
 
@@ -77,4 +77,29 @@ test('pick_several_the_list_holds_their_tasks_grouped_by_project_in_the_picks_or
   // one project, or All: no project lines
   expect(keys(['a'])).toEqual(['h:needs', '1', '2', '3', 'h:working', '4']);
   expect(keys()).toEqual(['h:needs', '1', '2', '3', 'h:working', '4']);
+});
+
+test('the_open_task_changes_the_flat_list_only_where_a_folded_section_holds_it_perf_r1_7', () => {
+  // j / k through the open sections must leave the list's items as they are (no re-flatten of 5,000 tasks per step);
+  // property: for any toggles and any open task, flattening with flatOpen(open) is flattening with open itself
+  const task = (k: string) => ({ kind: 'task' as const, key: k as never, s: {} as never });
+  const run = (k: string) => ({ key: k as never, s: {} as never });
+  const group = { kind: 'group' as const, key: 'g:1', runs: [run('r1'), run('r2')], state: 'done' as const, updatedAt: 1 };
+  const sec = { pinned: [], needs: [task('n1'), task('n2')], working: [task('w1')], scheduled: [], drafts: [], forLater: [task('l1')], done: [task('d1'), group as never, task('d2')], archived: [task('a1')] };
+  const ids = ['needs', 'working', 'forLater', 'done', 'archived'] as const;
+  const keys = ['n1', 'n2', 'w1', 'l1', 'd1', 'd2', 'r1', 'r2', 'a1', 'gone'];
+  for (let mask = 0; mask < 1 << ids.length; mask++) {
+    const toggled = new Set(ids.filter((_, i) => mask & (1 << i)));
+    const folded = foldedKeys(sec as never, toggled);
+    for (const open of keys) {
+      const a = flatten(sec as never, { toggled, split: true, open: open as never }).map(itemKey);
+      const b = flatten(sec as never, { toggled, split: true, open: flatOpen(open as never, folded) }).map(itemKey);
+      expect(b, `${[...toggled]} ${open}`).toEqual(a);
+    }
+  }
+  // stepping through an open section: nothing for the list to redo
+  const none = foldedKeys(sec as never, new Set());
+  expect(flatOpen('n1' as never, none)).toBeUndefined();
+  expect(flatOpen('d1' as never, none)).toBe('d1');
+  expect(flatOpen('r2' as never, none)).toBe('r2'); // a group's run in a folded section keeps its card
 });

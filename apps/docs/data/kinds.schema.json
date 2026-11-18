@@ -1279,7 +1279,7 @@
           "type": "string"
         },
         "settings.readTimes": {
-          "description": "Show how long ago each task changed in the list",
+          "description": "Read times in prompts: a prompt that starts with a time (“in 5 min …”, “tomorrow at 9 …”) is scheduled for then",
           "enum": [
             "on",
             "off"
@@ -1287,7 +1287,7 @@
           "type": "string"
         },
         "settings.timeZone": {
-          "description": "settings.timeZone (wisp.settings)",
+          "description": "Time zone: the one scheduled times are read in, an IANA name like Europe/Zurich (the app sets it from your device)",
           "type": "string"
         },
         "settings.transcript": {
@@ -1312,6 +1312,10 @@
         },
         "terminal.command": {
           "description": "Take over with a custom command ({cmd} is the agent's resume command)",
+          "type": "string"
+        },
+        "terminal.terminal": {
+          "description": "Open tasks in: wisp, one of this computer's terminal apps (its id) or custom",
           "type": "string"
         },
         "terminal.terminalSessions": {

@@ -4,14 +4,17 @@
 //! `kept` rides in the same slot. What the cleanup remembers between sweeps (when the cleanup clock
 //! started, the last record, project trust) is kept in memory: it starts again on a restart.
 
+use std::collections::{BTreeMap, HashMap};
 use std::sync::{Arc, Mutex};
 
 use serde_json::Value;
 use wisp_kernel::{BoxFuture, Ctx};
 use wisp_runtime_api::commands::Adopt;
-use wisp_runtime_api::commands::{AdoptSession, AdoptSessionArgs, Get, IdArgs, List, ListArgs, Sessions, SessionsArgs, SetExt, SetExtArgs};
+use wisp_runtime_api::commands::{
+    AdoptSession, AdoptSessionArgs, Get, IdArgs, List, ListArgs, Sessions, SessionsArgs, SetExt, SetExtArgs, Slots, SlotsArgs,
+};
 use wisp_runtime_api::ext::{merged, update_ext};
-use wisp_runtime_api::model::SessionState;
+use wisp_runtime_api::model::{SessionState, Summary};
 use wisp_runtime_api::paths::same_folder;
 use wisp_runtime_api::spec::AdoptArgs;
 use wisp_worktrees_api::{EXT, OfferItem, PrRef, Worktree};
@@ -58,9 +61,43 @@ pub(crate) fn pr_of(ship: Option<&Value>) -> Option<PrRef> {
 
 /// Each task's kids: the sessions whose parent is it (subagents, delegated jobs), in list order.
 pub(crate) fn fill_kids(tasks: &mut [TaskInfo]) {
-    let parents: Vec<(String, String)> = tasks.iter().filter_map(|t| t.parent_id.as_ref().map(|p| (p.clone(), t.id.clone()))).collect();
+    let mut kids: HashMap<String, Vec<String>> = HashMap::new();
+    for t in tasks.iter() {
+        if let Some(p) = &t.parent_id {
+            kids.entry(p.clone()).or_default().push(t.id.clone());
+        }
+    }
     for t in tasks.iter_mut() {
-        t.kids = parents.iter().filter(|(p, _)| *p == t.id).map(|(_, k)| k.clone()).collect();
+        t.kids = kids.remove(&t.id).unwrap_or_default();
+    }
+}
+
+/// A list row and the task's slots (`runtime.slots`: worktrees', ship's, runtime's facts) as what the clean-up reads.
+pub(crate) fn task_info(s: &Summary, ext: &BTreeMap<String, Value>, now: i64) -> TaskInfo {
+    let slot = ext.get(EXT).cloned().unwrap_or(Value::Null);
+    let pr = pr_of(ext.get("wisp.ship"));
+    let trees = serde_json::from_value::<Worktree>(slot.clone())
+        .ok()
+        .filter(|w| !w.path.is_empty())
+        .map(|worktree| TaskTree { worktree, pr })
+        .into_iter()
+        .collect();
+    let runtime = ext.get("wisp.runtime");
+    TaskInfo {
+        id: s.id.0.clone(),
+        title: s.title.clone(),
+        project: project_of(&s.cwd),
+        done: s.state == SessionState::Done,
+        busy: s.state == SessionState::Running || s.queued > 0 || crate::archived::side_pending(runtime, now),
+        kept: slot.get("kept").and_then(Value::as_bool).unwrap_or(false),
+        parked: slot.get("parked").and_then(Value::as_bool).unwrap_or(false),
+        updated_at: s.updated_at,
+        created_at: s.created_at,
+        trees,
+        kids: Vec::new(),
+        parent_id: s.parent_id.as_ref().map(|p| p.0.clone()),
+        // the runs of one compare (runtime's slot, wisp --compare): cleaning one up offers its done siblings
+        group_id: runtime.and_then(|o| o.get("group")).and_then(Value::as_str).filter(|g| !g.is_empty()).map(str::to_owned),
     }
 }
 
@@ -70,51 +107,23 @@ impl Port for RuntimePort {
         Box::pin(async move {
             let call = ctx.root_call();
             let now = ctx.clock().map_or(0, |c| c.now_ms());
-            let Ok(list) = ctx
-                .run::<List>(
-                    &call, // every task, archived ones too (`Some(true)` would list only the archived ones)
-                    ListArgs { archived: None, limit: None },
-                )
-                .await
-            else {
+            // every task, archived ones too (`Some(true)` would list only the archived ones)
+            let Ok(list) = ctx.run::<List>(&call, ListArgs { archived: None, limit: None }).await else {
                 return Vec::new();
             };
-            let mut out = Vec::with_capacity(list.len());
-            for s in list {
-                let Ok(full) = ctx.run::<Get>(&call, IdArgs { id: s.id.clone() }).await else { continue };
-                let slot = full.ext.get(EXT).cloned().unwrap_or(Value::Null);
-                let pr = pr_of(full.ext.get("wisp.ship"));
-                let trees = serde_json::from_value::<Worktree>(slot.clone())
-                    .ok()
-                    .filter(|w| !w.path.is_empty())
-                    .map(|worktree| TaskTree { worktree, pr })
-                    .into_iter()
-                    .collect();
-                out.push(TaskInfo {
-                    id: s.id.0.clone(),
-                    title: s.title.clone(),
-                    project: project_of(&s.cwd),
-                    done: s.state == SessionState::Done,
-                    busy: s.state == SessionState::Running
-                        || s.queued > 0
-                        || crate::archived::side_pending(full.ext.get("wisp.runtime"), now),
-                    kept: slot.get("kept").and_then(Value::as_bool).unwrap_or(false),
-                    parked: slot.get("parked").and_then(Value::as_bool).unwrap_or(false),
-                    updated_at: s.updated_at,
-                    created_at: s.created_at,
-                    trees,
-                    kids: Vec::new(),
-                    parent_id: s.parent_id.as_ref().map(|p| p.0.clone()),
-                    // the runs of one compare (runtime's slot, wisp --compare): cleaning one up offers its done siblings
-                    group_id: full
-                        .ext
-                        .get("wisp.runtime")
-                        .and_then(|o| o.get("group"))
-                        .and_then(Value::as_str)
-                        .filter(|g| !g.is_empty())
-                        .map(str::to_owned),
-                });
-            }
+            // the slots it reads, every task's in one store read (perf audit 2026-11-18 #3: was `runtime.get` per task)
+            let plugins = vec![EXT.to_owned(), "wisp.ship".to_owned(), "wisp.runtime".to_owned()];
+            let Ok(slots) = ctx.run::<Slots>(&call, SlotsArgs { plugins, all: false }).await else {
+                return Vec::new();
+            };
+            let mut ext: HashMap<String, BTreeMap<String, Value>> = slots.into_iter().map(|t| (t.id.0, t.ext)).collect();
+            let mut out: Vec<TaskInfo> = list
+                .into_iter()
+                .map(|s| {
+                    let slots = ext.remove(s.id.as_str()).unwrap_or_default();
+                    task_info(&s, &slots, now)
+                })
+                .collect();
             fill_kids(&mut out);
             out
         })
@@ -232,7 +241,11 @@ impl Port for RuntimePort {
             let made = match chat {
                 Some(c) => ctx.run::<AdoptSession>(&call, AdoptSessionArgs { harness: c.harness, id: c.id }).await,
                 None => {
-                    ctx.run::<Adopt>(&call, AdoptArgs { title: item.branch.clone(), cwd: item.path.clone(), ..AdoptArgs::default() }).await
+                    ctx.run::<Adopt>(
+                        &call,
+                        AdoptArgs { title: item.branch.clone(), cwd: item.path.clone(), fresh: true, ..AdoptArgs::default() },
+                    )
+                    .await
                 }
             };
             let id = match made {
@@ -250,6 +263,93 @@ impl Port for RuntimePort {
             }
             Some(id.0)
         })
+    }
+}
+
+/// Perf audit 2026-11-18 #3: the pane's tasks come from one list read and one slots read, never a `runtime.get` per
+/// task (5,000 store reads answered `worktrees.view` in 0.2–0.5 s).
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod reads_tests {
+    use std::sync::Arc;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    use serde_json::json;
+    use wisp_kernel::{App, Declarative, Manifest, Plugin, PluginGroup, Result, Setup};
+    use wisp_runtime_api::commands::{Get, List, Slots, TaskSlots};
+    use wisp_runtime_api::model::{Session, SessionState, Summary};
+
+    use crate::ports::Port;
+
+    struct Runtime(Arc<AtomicUsize>);
+    impl Plugin for Runtime {
+        fn manifest(&self) -> Manifest {
+            Manifest::from_value(json!({ "wispPlugin": 1, "id": "wisp.runtime", "version": "2.0.0", "api": "^1" })).unwrap()
+        }
+        fn setup(&self, s: &mut Setup) -> Result<()> {
+            s.command::<List, _, _>(|_, _, _| async {
+                let row = |id: &str, state, parent: Option<&str>| Summary {
+                    id: id.into(),
+                    title: format!("task {id}"),
+                    cwd: "/code/app".into(),
+                    state,
+                    parent_id: parent.map(Into::into),
+                    ..Summary::default()
+                };
+                Ok(vec![
+                    row("a", SessionState::Done, None),
+                    row("b", SessionState::Review, Some("a")),
+                    row("c", SessionState::Review, None),
+                ])
+            });
+            s.command::<Slots, _, _>(|_, _, a| async move {
+                assert!(a.plugins.iter().any(|p| p == "wisp.worktrees"));
+                let tree =
+                    json!({ "path": "/w/a", "cwd": "/w/a", "branch": "wisp/a", "base": "main", "baseRef": "origin/main", "root": "/code/app", "createdAt": 1, "kept": true });
+                Ok(vec![
+                    TaskSlots {
+                        id: "a".into(),
+                        ext: [
+                            ("wisp.worktrees".to_owned(), tree),
+                            ("wisp.ship".to_owned(), json!({ "pr": { "number": 4, "url": "u", "state": "MERGED" } })),
+                        ]
+                        .into(),
+                    },
+                    TaskSlots {
+                        id: "c".into(),
+                        ext: [("wisp.runtime".to_owned(), json!({ "group": "g", "btw": [{ "pending": true, "at": 1_000 }] }))].into(),
+                    },
+                ])
+            });
+            let gets = self.0.clone();
+            s.command::<Get, _, _>(move |_, _, _| {
+                gets.fetch_add(1, Ordering::SeqCst);
+                async { Ok(Session::default()) }
+            });
+            Ok(())
+        }
+    }
+
+    #[tokio::test]
+    async fn the_pane_reads_every_task_in_two_reads_and_no_get() {
+        let gets = Arc::new(AtomicUsize::new(0));
+        let caller = Declarative(
+            Manifest::from_value(json!({ "wispPlugin": 1, "id": "wisp.worktrees", "version": "2.0.0", "api": "^1", "permissions": ["runtime:list", "runtime:slots", "runtime:get"] }))
+                .unwrap(),
+        );
+        let k = App::new().plugins(PluginGroup::new().add(Runtime(gets.clone())).add(caller)).start().await.unwrap();
+        let port = super::RuntimePort::new(k.ctx("wisp.worktrees").unwrap(), 2_000);
+        let tasks = port.tasks().await;
+        assert_eq!(gets.load(Ordering::SeqCst), 0, "no runtime.get per task");
+        let a = tasks.iter().find(|t| t.id == "a").unwrap();
+        assert!(a.kept && a.done && !a.busy);
+        assert_eq!(a.trees[0].worktree.path, "/w/a");
+        assert_eq!(a.trees[0].pr.as_ref().map(|p| p.number), Some(4));
+        assert_eq!(a.kids, ["b"]);
+        let c = tasks.iter().find(|t| t.id == "c").unwrap();
+        assert!(c.busy, "a side question asked in the last minutes keeps it busy");
+        assert_eq!(c.group_id.as_deref(), Some("g"));
+        assert_eq!(tasks.iter().find(|t| t.id == "b").unwrap().trees.len(), 0);
     }
 }
 
@@ -294,7 +394,7 @@ mod tests {
     #[tokio::test]
     async fn the_tasks_are_every_task_live_and_archived() {
         use wisp_kernel::{Manifest, Plugin, Result, Setup};
-        use wisp_runtime_api::model::{Session, Summary};
+        use wisp_runtime_api::model::Summary;
         struct Rt;
         impl Plugin for Rt {
             fn manifest(&self) -> Manifest {
@@ -309,10 +409,13 @@ mod tests {
                     let row = |id: &str, archived: bool| Summary { id: id.into(), archived, ..serde_json::from_value(json!({ "id": id, "title": "", "agent": "claude", "model": "", "effort": "", "mode": "auto", "cwd": "/w", "state": "review", "status": "done", "unread": false, "archived": archived, "createdAt": 0, "updatedAt": 0, "turnCount": 1, "queued": 0, "preview": "", "live": "" })).unwrap() };
                     Ok([row("live", false), row("old", true)].into_iter().filter(|r| a.archived.is_none_or(|x| r.archived == x)).collect())
                 });
-                s.command::<super::Get, _, _>(|_c, _call, a| async move {
-                    let mut s = Session { id: a.id.clone(), ..Session::default() };
-                    s.ext.insert("wisp.worktrees".into(), json!({ "path": format!("/w/{}", a.id.0), "cwd": "/w", "branch": "b", "base": "main", "baseRef": "origin/main", "root": "/w", "createdAt": 0 }));
-                    Ok(s)
+                // every task's worktree slot in one read (`runtime.slots`), as the real one answers it
+                s.command::<super::Slots, _, _>(|_c, _call, _a| async move {
+                    let slot = |id: &str| wisp_runtime_api::commands::TaskSlots {
+                        id: id.into(),
+                        ext: [("wisp.worktrees".to_owned(), json!({ "path": format!("/w/{id}"), "cwd": "/w", "branch": "b", "base": "main", "baseRef": "origin/main", "root": "/w", "createdAt": 0 }))].into(),
+                    };
+                    Ok(vec![slot("live"), slot("old")])
                 });
                 Ok(())
             }
@@ -320,7 +423,7 @@ mod tests {
         struct Me;
         impl Plugin for Me {
             fn manifest(&self) -> Manifest {
-                Manifest::from_value(json!({ "wispPlugin": 1, "id": "wisp.worktrees", "version": "2.0.0", "api": "^1", "activation": ["onStartup"], "permissions": ["runtime:list", "runtime:get"] })).unwrap()
+                Manifest::from_value(json!({ "wispPlugin": 1, "id": "wisp.worktrees", "version": "2.0.0", "api": "^1", "activation": ["onStartup"], "permissions": ["runtime:list", "runtime:slots"] })).unwrap()
             }
             fn setup(&self, _s: &mut Setup) -> Result<()> {
                 Ok(())

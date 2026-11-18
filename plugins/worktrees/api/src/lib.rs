@@ -26,6 +26,10 @@ pub struct CreateArgs {
     /// the task's permission mode (`auto` runs an untrusted setup at once)
     #[serde(default)]
     pub mode: String,
+    /// a fork's parent folder: the new branch starts at its commit and the folder gets a copy of its files,
+    /// uncommitted and untracked ones too (audit A orch #4: a fork used to run in its parent's folder)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub from: Option<String>,
 }
 
 /// A fresh worktree and branch for a session; None outside a repo with commits.
@@ -100,6 +104,21 @@ impl Command for View {
             <Empty as ::ts_rs::TS>::docs().unwrap_or_default(),
             <Empty as ::ts_rs::TS>::inline(&::ts_rs::Config::default())
         ))
+    }
+    type Out = WorktreesView;
+}
+
+/// `worktrees.view` without a look: the last look's answer (what the pane shows), no scan of the disk and nothing
+/// republished, for a reader that asks often (the Machine page's sample, every 10 s while a task runs; perf audit
+/// 2026-11-18 #4: each `worktrees.view` started a look and two republishes). Additive.
+#[derive(Debug)]
+pub struct ViewLast;
+impl Command for ViewLast {
+    const ID: &'static str = "worktrees.viewLast";
+    const READ_ONLY: bool = true;
+    type Args = Empty;
+    fn args_ts() -> Option<String> {
+        View::args_ts()
     }
     type Out = WorktreesView;
 }

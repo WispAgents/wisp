@@ -59,12 +59,15 @@ export function SidePanel(props: { readonly pane: SidePane; readonly file?: stri
       | {
           cwd?: string;
           ext?: { 'wisp.worktrees'?: { path?: string } };
-          summary?: { branch?: string; machine?: { name?: string } | null; toShip?: { dirty?: number } | null; worktree?: { branch?: string; path?: string } | null };
+          body?: { cwd?: string; ext?: { 'wisp.worktrees'?: { path?: string } } };
+          summary?: { cwd?: string; branch?: string; machine?: { name?: string } | null; toShip?: { dirty?: number } | null; worktree?: { branch?: string; path?: string } | null };
         }
       | undefined;
     const sum = r?.summary;
     if (!sum) return undefined;
-    const dir = r?.ext?.['wisp.worktrees']?.path ?? sum.worktree?.path ?? r?.cwd ?? '';
+    // a synced row keeps its folder under `body` (audit A #19: read from the top, it was always empty, and the ⋯ had
+    // only Copy branch name); a flat row (a test's, an optimistic one) at the top
+    const dir = r?.body?.ext?.['wisp.worktrees']?.path ?? r?.ext?.['wisp.worktrees']?.path ?? sum.worktree?.path ?? r?.body?.cwd ?? r?.cwd ?? sum.cwd ?? '';
     return { where: sum.machine?.name ?? t('shell-task.side.here'), remote: !!sum.machine, branch: sum.worktree?.branch ?? sum.branch ?? '', dirty: sum.toShip?.dirty ?? 0, dir };
   };
   // the place row's ⋯ (v1 panel.js placeMenu): copy where the work is, open it in the editor Settings names (its URL

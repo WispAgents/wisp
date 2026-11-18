@@ -76,11 +76,13 @@ impl ResourceKind for SettingKind {
         if let Some(by) = &s.locked_by {
             out.push(format!("{key} is set by {by}"));
         }
+        // `worktrees.max: 20` in YAML is a number: the enum's "20" (setup audit F22)
+        let spec = s.decl.coerce(r.spec.clone());
         let ok = match s.decl.ty.as_str() {
-            "int" => r.spec.as_i64().is_some(),
-            "bool" => r.spec.is_boolean(),
-            "string" => r.spec.is_string(),
-            "enum" => r.spec.as_str().is_some_and(|v| s.decl.values.as_ref().is_none_or(|vs| vs.iter().any(|x| x == v))),
+            "int" => spec.as_i64().is_some(),
+            "bool" => spec.is_boolean(),
+            "string" => spec.is_string(),
+            "enum" => spec.as_str().is_some_and(|v| s.decl.values.as_ref().is_none_or(|vs| vs.iter().any(|x| x == v))),
             _ => true,
         };
         if !ok && !r.spec.is_null() {

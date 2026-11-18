@@ -3,6 +3,7 @@ import { expect, test } from 'vitest';
 import type { CommandDef } from '@wisp/client';
 import { PrPane } from '../src/side/PrPane.tsx';
 import { useTask } from '../src/task-context.tsx';
+import { useShell } from '../src/shell.ts';
 import { mountTask, part, until } from './helpers.tsx';
 import type { PrPanel } from '../src/side/pr.ts';
 
@@ -64,4 +65,31 @@ test('the_pr_pane_shows_the_verdict_failing_checks_first_the_passed_folded_and_t
   expect(part('side.pr.talk')?.textContent).toContain('1 from bots');
   expect(part('side.pr.files')?.textContent).toContain('+3 −1');
   expect(part('side.pr.meta')?.textContent).toBe('#42 · Open · wisp/fix-add → main · by wisp-bot');
+});
+
+// audit A tasks #5: Merge asks first (v1 ship.js mergePr → ask()); a worktree the merge kept is said
+test('merge_asks_first_and_says_when_the_worktree_was_kept', async () => {
+  const asked: string[] = [];
+  const shown: string[] = [];
+  const ready: PrPanel = { ...PR, checks: { fail: 0, pending: 0, pass: 3 }, checkList: [{ name: 'lint', state: 'pass' }] };
+  await mountTask({ sessionId: 's1', rows: {} }, () => {
+    const task = useTask();
+    const shell = useShell();
+    (shell.toast as { show: unknown }).show = (m: string) => (shown.push(m), 'x');
+    (task as { task: unknown }).task = () => ({ id: 's1', pr: { number: 42 } });
+    (task.client as { run: unknown }).run = (cmd: CommandDef<unknown, unknown>) => {
+      asked.push(cmd.id);
+      if (cmd.id === 'ship.details') return Promise.resolve([ready]);
+      return Promise.resolve(cmd.id === 'ship.merge' ? { kept: ['The worktree /w/t was kept: it has 1 uncommitted change.'] } : null);
+    };
+    return <PrPane />;
+  });
+  await until(() => part('side.pr.verdict.pass') !== null);
+  (part('side.pr.verdict.pass')?.querySelector('button') as HTMLButtonElement).click();
+  await until(() => part('side.pr.mergeAsk.ok') !== null);
+  expect(asked).not.toContain('ship.merge');
+  (part('side.pr.mergeAsk.ok') as HTMLButtonElement).click();
+  await until(() => shown.length > 0);
+  expect(asked).toContain('ship.merge');
+  expect(shown).toEqual(['The worktree /w/t was kept: it has 1 uncommitted change.']);
 });

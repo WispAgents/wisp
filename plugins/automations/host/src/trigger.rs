@@ -19,6 +19,7 @@ pub const WEBHOOK_MAX: usize = 1024 * 1024;
 struct TriggerKind {
     inner: Arc<StoredKind>,
     engine: Shared,
+    ctx: Ctx,
 }
 
 async fn refresh(inner: &StoredKind, engine: &Engine) {
@@ -64,11 +65,42 @@ impl ResourceKind for TriggerKind {
     }
     fn apply<'a>(&'a self, call: &'a Call, op: &'a Op) -> BoxFuture<'a, Result<()>> {
         Box::pin(async move {
-            self.inner.apply(call, op).await?;
+            let mut op = op.clone();
+            if op.op != wisp_resources_api::OpKind::Delete {
+                project_folder(&self.ctx, call, &mut op.spec).await?;
+            }
+            self.inner.apply(call, &op).await?;
             refresh(&self.inner, &self.engine).await;
             Ok(())
         })
     }
+}
+
+/// `project: api` names a declared project rather than a folder (no `/`, `\`, `:` or `~`), as a formula names one:
+/// the engine compares folders and starts its task in one, so it's kept as that project's folder. A name no project
+/// has is refused at apply: it would have matched no task and started none, saying nothing (audit A #14).
+pub(crate) fn project_name(spec: &Value) -> Option<&str> {
+    let p = spec.get("project")?.as_str()?.trim();
+    (!p.is_empty() && p != "." && p != ".." && !p.starts_with('~') && !p.contains(['/', '\\', ':'])).then_some(p)
+}
+
+async fn project_folder(ctx: &Ctx, call: &Call, spec: &mut Value) -> Result<()> {
+    let Some(name) = project_name(spec).map(str::to_owned) else { return Ok(()) };
+    let args = wisp_resources_api::ExportArgs { kinds: vec!["project".into()], include: Vec::new() };
+    let projects = ctx.run::<wisp_resources_api::Export>(call, args).await?;
+    let folder =
+        projects.iter().find(|r| r.kind == "project" && r.name == name).and_then(|r| r.spec.get("path")?.as_str().map(str::to_owned));
+    let Some(folder) = folder else {
+        let known: Vec<&str> = projects.iter().filter(|r| r.kind == "project").map(|r| r.name.as_str()).collect();
+        let hint = if known.is_empty() {
+            "there are no projects yet: give its folder".to_owned()
+        } else {
+            format!("give its folder, or one of {}", known.join(", "))
+        };
+        return Err(wisp_kernel::WireError::invalid(format!("project: no project is named {name:?}; {hint}")));
+    };
+    spec["project"] = json!(folder);
+    Ok(())
 }
 
 /// `${secret:NAME}` read from secrets; a literal stays as it is.
@@ -333,7 +365,7 @@ pub fn register(s: &mut Setup, engine: &Shared) {
         KindInfo::new("trigger", "triggers", "wisp.automations", schema_of::<TriggerSpec>()).order(85).sensitive(),
         s.ctx(),
     ));
-    let k: Arc<dyn ResourceKind> = Arc::new(TriggerKind { inner: inner.clone(), engine: engine.clone() });
+    let k: Arc<dyn ResourceKind> = Arc::new(TriggerKind { inner: inner.clone(), engine: engine.clone(), ctx: s.ctx() });
     s.contribute(&RESOURCE_KIND, k);
     let e = engine.clone();
     s.on_durable_any("engine", "*", move |ctx, _call, env| on_event(ctx, e.clone(), env));
@@ -393,6 +425,17 @@ fn spell_project(spec: &mut Value) {
 #[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_project_given_by_its_name_is_told_from_a_folder_audit_a_14() {
+        assert_eq!(project_name(&json!({ "project": "api" })), Some("api"));
+        assert_eq!(project_name(&json!({ "project": " my-app " })), Some("my-app"));
+        for folder in ["/w/api", "~/api", "~", "C:\\w\\api", "./api", ".", "..", "", "https://x/api"] {
+            assert_eq!(project_name(&json!({ "project": folder })), None, "{folder} is a folder, not a name");
+        }
+        assert_eq!(project_name(&json!({})), None);
+        assert_eq!(project_name(&json!({ "project": ["a", "b"] })), None);
+    }
 
     #[test]
     fn webhook_secret_compared_constant_time_and_body_capped() {

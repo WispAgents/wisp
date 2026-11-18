@@ -11,7 +11,6 @@ import { createMemo, createSignal, onCleanup, onMount, Show, type JSX } from 'so
 import { Button, Dialog, Fab, Inline, Input, Menu, PageStatus, ProjectSelect, RadioGroup, SelectionBar, Sheet, TopAppBar, useSignal, type PageStatusItem, type MenuEntry, type SelectionAction, type TaskSwipe, type ToolbarItem, type TopAppBarSelection } from '@wisp/ui';
 import { useShell } from '../context.tsx';
 import { Slot } from '../slot.tsx';
-import '../i18n/lazy.ts';
 import { displayCombo } from '../keys.ts';
 import { computerOptions, computerTitle, hasComputerFilter, knownComputer } from './computer-filter.ts';
 import { openSwitcher } from './project-switch.ts';
@@ -69,10 +68,15 @@ export function PhoneHead(props: { readonly filter: () => string }): JSX.Element
   const selection = createMemo((): TopAppBarSelection | undefined =>
     selecting() ? { count: picked.count(), allPicked: picked.all(), onAll: () => shell.listSelect?.all(), onExit: () => shell.listSelect?.exit(), part: 'phone.tasks.select' } : undefined,
   );
-  const actions = createMemo((): ToolbarItem[] => [
+  // the same two items for good, their words and contents read where they show: a memo over project() made new items on
+  // every patch to any task (a need count moved), and the bar drew both again, the account menu's machine with it, 18
+  // times in 100 streamed tokens behind an open task (perf r1 #15)
+  const actions: ToolbarItem[] = [
     {
       id: 'project',
-      label: project().label,
+      get label() {
+        return project().label;
+      },
       icon: 'folder',
       priority: 'pin',
       render: () => <ProjectSelect {...project()} part="phone.tasks.project" where="bar" onOpen={() => openSwitcher(shell)} />,
@@ -81,12 +85,17 @@ export function PhoneHead(props: { readonly filter: () => string }): JSX.Element
     // opens the M3 search view, iOS's field sits under the large title; both are the palette's task search
     {
       id: 'me',
-      label: account.label(),
+      get label() {
+        return account.label();
+      },
       icon: 'user',
       priority: 'pin',
       render: () => <Menu trigger={{ icon: 'user', 'aria-label': account.label() }} items={account.items()} onSelect={account.onSelect} placement="bottom-end" part="phone.tasks.me" />,
     },
-  ]);
+  ];
+  // the same object while the title reads the same: the bar filters its actions by it, and a new one each time a need
+  // count moved (every patch to any task) made it draw its actions again, the account menu's machine with them
+  const titleSelect = createMemo(() => ({ title: project().label, onOpen: () => openSwitcher(shell), action: 'project' }), undefined, { equals: (a, b) => a?.title === b.title });
   // selection mode's visible way in (the twin of a row's long-press menu's Select): in the bar's ⋮ (Android) / ⋯ (iOS),
   // as Files and Photos keep it, not a word of its own in the bar (UX 2026-11-18 phone #11). Named More, as the system
   // names its ⋯ / ⋮ (it was "Tasks", the bar's own name: QA round 6 phone #12)
@@ -104,14 +113,14 @@ export function PhoneHead(props: { readonly filter: () => string }): JSX.Element
         title={computers.filters() ? computers.title() : shell.t('shell.dest.tasks')}
         // the one project selector (owner, 2026-11-15): with no computer filter in the title, Android draws it as the M3
         // title menu instead of a dropdown among the actions (the kit's choice: QA round 3 A10)
-        titleSelect={{ title: project().label, onOpen: () => openSwitcher(shell), action: 'project' }}
+        titleSelect={titleSelect()}
         // iOS: the computer filter is a pull-down from the title (UIMenu), its choices checked; Android keeps its sheet
         {...(computers.filters() && {
           onTitle: () => setPicking(true),
           titleMenu: { label: shell.t('shell.phone.pickComputer'), items: computers.menu(), onSelect: (id: string) => computers.set(id) },
         })}
         search={{ label: shell.t('shell.phone.search'), onOpen: () => shell.palette.open() }}
-        actions={actions()}
+        actions={actions}
         {...(barMenu() && { menu: barMenu() as NonNullable<ReturnType<typeof barMenu>> })}
         actionsLabel={shell.t('shell.phone.tasksActions')}
         {...(selection() && { selection: selection() as TopAppBarSelection })}

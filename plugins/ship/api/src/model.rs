@@ -329,6 +329,11 @@ pub struct Merged {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub prs: Option<Vec<PrRef>>,
+    /// a worktree the merge left in place, and why (uncommitted work, commits the PR doesn't have), one line
+    /// each: never removed with work in it (audit A orch #3). Additive (2026-11-18).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    #[ts(optional, as = "Option<Vec<String>>")]
+    pub kept: Vec<String>,
 }
 
 /// What Ship it returns: the PR (the task's own, else the first shipped), and every PR in a task

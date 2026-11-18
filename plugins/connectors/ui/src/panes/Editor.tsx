@@ -4,7 +4,7 @@
 import { createSignal, Index, Show, type JSX } from 'solid-js';
 import { Button, Dialog, Field, IconButton, Inline, Input, RadioGroup, Stack, Text, TextArea } from '@wisp/ui';
 import { t } from '../i18n.ts';
-import { missing, parsePasted, tidyName, type Draft, type Pair } from '../lib.ts';
+import { missing, pasteDrafts, tidyName, type Draft, type Pair } from '../lib.ts';
 import '../i18n/lazy.ts';
 
 export interface EditorProps {
@@ -41,19 +41,23 @@ export function Editor(props: EditorProps): JSX.Element {
   const [d, setD] = createSignal<Draft>(props.draft);
   const [paste, setPaste] = createSignal('');
   const [tried, setTried] = createSignal(false);
+  // the other servers a paste held: added with this one (F10)
+  const [more, setMore] = createSignal<Draft[]>([]);
   const up = (p: Partial<Draft>): void => {
     setD({ ...d(), ...p });
   };
   const lack = (): ReturnType<typeof missing> => (tried() ? missing(d()) : null);
   const save = (): void => {
     setTried(true);
-    if (missing(d()) === null) props.onSave(d());
+    if (missing(d()) !== null) return;
+    props.onSave(d());
+    for (const x of more()) if (missing(x) === null) props.onSave(x);
   };
   const pasted = (text: string): void => {
     setPaste(text);
-    const found = parsePasted(text);
-    const first = found?.[0];
-    if (first) setD({ ...first, name: first.name || d().name });
+    const got = pasteDrafts(text, d().name);
+    setMore(got?.more ?? []);
+    if (got) setD(got.draft);
   };
   return (
     <Dialog
@@ -108,6 +112,11 @@ export function Editor(props: EditorProps): JSX.Element {
           <Field label={t('connectors.form.paste')} hint={t('connectors.form.paste.hint')}>
             <TextArea mono minRows={3} value={paste()} onInput={pasted} placeholder='{ "mcpServers": { … } }' />
           </Field>
+          <Show when={more().length > 0}>
+            <Text tone="muted" part="connectors.paste.more">
+              {t('connectors.form.paste.more', { count: more().length + 1, names: more().map((x) => x.name).join(', ') })}
+            </Text>
+          </Show>
         </Show>
       </Stack>
     </Dialog>

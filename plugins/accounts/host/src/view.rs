@@ -189,7 +189,7 @@ pub fn sign_in_kind(has_keys: bool, has_login: bool) -> &'static str {
 }
 
 /// Every row, by kind, as they stand now.
-pub async fn rows(ctx: &Ctx, st: &State) -> Option<Vec<(&'static EntityDef, Vec<Row>)>> {
+pub async fn rows(ctx: &Ctx, st: &State, fresh_tools: bool) -> Option<Vec<(&'static EntityDef, Vec<Row>)>> {
     // runtime.agents refused (starting, busy): no rows, rather than none (which would delete every row the pane shows)
     let agents = match crate::calls::agents(ctx, None).await {
         Ok(a) => a,
@@ -246,24 +246,42 @@ pub async fn rows(ctx: &Ctx, st: &State) -> Option<Vec<(&'static EntityDef, Vec<
             accounts.push(row_of(&ACCOUNT, &x));
         }
     }
+    // git and gh: asked again when asked to (after a command), else as last asked
+    let cached = lock(&st.tools).clone();
+    let tools = match cached {
+        Some(t) if !fresh_tools => Some(t),
+        _ => crate::calls::tools(ctx).await.inspect(|t| *lock(&st.tools) = Some(t.clone())),
+    };
     let flows = crate::signin::all(st);
+    // gh's own answer, freshly asked, is the GitHub row's Signed in (signed in or out in a terminal shows here too),
+    // unless a sign-in from here is under way; a cached one never overrides what a sign-in from here just ended with
+    if fresh_tools
+        && let Some(on) = tools.as_ref().and_then(|t| t.gh.signed_in)
+        && !flows.iter().any(|(f, v)| f == crate::gh::ID && v.state.live())
+    {
+        lock(&st.statuses).insert(crate::gh::ID.to_owned(), Some(on));
+    }
+    let statuses = lock(&st.statuses).clone();
     let mut logins: Vec<Row> = flows
         .iter()
         .map(|(lid, v)| {
             let mut x = serde_json::to_value(v).unwrap_or(Value::Null);
             x["id"] = json!(lid);
+            // signed in or not as last known (a sign-in that ended done is): Signed in · Sign out on its row
+            if let Some(Some(on)) = statuses.get(lid) {
+                x["signedIn"] = json!(on);
+            }
             row_of(&LOGIN, &x)
         })
         .collect();
     // the CLIs' own logins as last asked: Signed in / Sign out on their rows
-    for (lid, on) in lock(&st.statuses).iter() {
+    for (lid, on) in &statuses {
         if on.is_some() && !flows.iter().any(|(f, _)| f == lid) {
             let (agent, account) = lid.split_once('@').unwrap_or((lid.as_str(), ""));
             logins.push(row_of(&LOGIN, &json!({ "id": lid, "agent": agent, "account": account, "state": "idle", "signedIn": on })));
         }
     }
-    let tool_rows: Vec<Row> = crate::calls::tools(ctx)
-        .await
+    let tool_rows: Vec<Row> = tools
         .map(|t| [("git", "git", t.git), ("gh", "GitHub CLI", t.gh)].into_iter().map(|(id, name, t)| tool_row(id, name, &t)).collect())
         .unwrap_or_default();
     let grid = std::env::var("WISP_GRID").is_ok_and(|v| !v.is_empty());
@@ -277,9 +295,16 @@ pub async fn rows(ctx: &Ctx, st: &State) -> Option<Vec<(&'static EntityDef, Vec<
     ])
 }
 
-/// Writes every row; a row no longer there is deleted.
+/// Writes every row; a row no longer there is deleted. git's and gh's state is asked again.
 pub async fn publish(ctx: &Ctx, st: &State) {
-    let Some(all) = rows(ctx, st).await else { return };
+    publish_with(ctx, st, true).await;
+}
+
+/// `publish`, one at a time, the snapshot taken inside (an older one never lands last); `fresh_tools`: ask git and gh
+/// again.
+async fn publish_with(ctx: &Ctx, st: &State, fresh_tools: bool) {
+    let _one = st.publishing.lock().await;
+    let Some(all) = rows(ctx, st, fresh_tools).await else { return };
     let r = st
         .store
         .write(move |w| {
@@ -302,17 +327,39 @@ pub async fn publish(ctx: &Ctx, st: &State) {
     }
 }
 
-/// Asks each CLI that signs in by itself whether it's signed in (its status command), for the rows.
-pub async fn probe(ctx: &Ctx, st: &State) {
+/// Asks each CLI that signs in by itself whether it's signed in (its status command), for the rows. All at once: one
+/// slow CLI (up to its 8 s timeout) no longer holds the others' answers, and the rows after a change, back (the
+/// owner's audit: "when I add something it takes time").
+pub async fn probe(ctx: &Ctx, st: &std::sync::Arc<State>) {
+    let mut asks = tokio::task::JoinSet::new();
     for h in ctx.contributions(&wisp_runtime_api::HARNESS) {
         if h.login().is_none() || h.keys().is_some() {
             continue;
         }
-        let agent = h.info().id.clone();
-        if let Ok(s) = crate::signin::status(ctx, st, h.as_ref(), "").await {
-            lock(&st.statuses).insert(agent, s.signed_in);
+        let (c, s) = (ctx.clone(), st.clone());
+        asks.spawn(async move {
+            let agent = h.info().id.clone();
+            crate::signin::status(&c, &s, h.as_ref(), "").await.ok().map(|x| (agent, x.signed_in))
+        });
+    }
+    while let Some(r) = asks.join_next().await {
+        // an answer only: a timeout or an output it can't read keeps what's known (a sign-in that ended done)
+        if let Ok(Some((agent, Some(on)))) = r {
+            lock(&st.statuses).insert(agent, Some(on));
         }
     }
+}
+
+/// Writes the rows again whenever something changed outside a command (`State::changed`), for as long as the plugin
+/// runs.
+pub fn follow(ctx: &Ctx, st: &std::sync::Arc<State>) {
+    let (c, s) = (ctx.clone(), st.clone());
+    ctx.spawn(async move {
+        loop {
+            s.changed.notified().await;
+            publish_with(&c, &s, false).await;
+        }
+    });
 }
 
 /// The CLIs asked again, then `publish`, off the caller's way (at start, after a command).

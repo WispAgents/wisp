@@ -106,7 +106,9 @@ async fn open_app(ctx: &Ctx, a: &c::OpenAppArgs) -> Result<c::Done> {
             found.push(bin.to_owned());
         }
     }
-    let terminal = apps::chosen_app(ctx.setting("terminal").and_then(|v| v.as_str().map(str::to_owned)).as_deref());
+    // Settings → General → Open tasks in (`terminal.terminal`; a value kept under the old undeclared `terminal` still counts)
+    let pick = ctx.setting("terminal.terminal").or_else(|| ctx.setting("terminal"));
+    let terminal = apps::chosen_app(pick.and_then(|v| v.as_str().map(str::to_owned)).as_deref());
     let custom = ctx.setting("terminal.command").and_then(|v| v.as_str().map(str::to_owned)).unwrap_or_default();
     let launches = plan_here(platform, &found, a, &terminal, &custom)?;
     let mut waited = 0;

@@ -179,7 +179,21 @@ impl Engine {
         let branch = naming::branch_for(&args.title, &args.session_id, taken);
         let dir = naming::worktree_dir(&self.home, &info.root, &args.session_id);
         fsx::mkdirp(fsx::parent(&dir)).await?;
-        root.worktree_add(call, WorktreeAdd { path: dir.clone(), branch: branch.clone(), start: Some(base.reference.clone()) }).await?;
+        // a fork: its parent's commit and a copy of its folder as it is now (snapshotted before the add)
+        let copy = match &args.from {
+            Some(from) => {
+                let src = self.repo(call, from).await?;
+                let head = src.rev_parse(call, "HEAD").await?;
+                let snap = src.snapshot(call).await?;
+                head.map(|h| (h, snap))
+            }
+            None => None,
+        };
+        let start = copy.as_ref().map_or_else(|| base.reference.clone(), |(h, _)| h.clone());
+        root.worktree_add(call, WorktreeAdd { path: dir.clone(), branch: branch.clone(), start: Some(start) }).await?;
+        if let Some((head, Some(snap))) = &copy {
+            self.repo(call, &dir).await?.restore(call, snap, head).await?;
+        }
         let prepared = crate::prepare::prepare(self, &info.root, &dir, hold, &base.branch).await;
         if !prepared.problems.is_empty() {
             tracing::warn!(dir = %dir, problems = ?prepared.problems, "worktree prepared with problems");

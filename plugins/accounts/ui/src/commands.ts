@@ -25,6 +25,7 @@ import {
   type RecheckArgs,
   type UpdateArgs,
 } from './types.ts';
+import { accOf } from './words.ts';
 import './i18n/lazy.ts';
 
 const at = (peer: PeerId, id: string): EntityKey => entityKey(peer, id);
@@ -89,7 +90,8 @@ export const addAccount = defineCommand<AddArgs>({
   owner: (a) => a.peer,
   optimistic: (base, a) => {
     const last = accountsOf(base, a.agent).at(-1);
-    const row: AccountRow = { agent: a.agent, id: a.id, ord: (last?.ord ?? 0) + 1, label: a.label, email: '', plan: '', default: false, kind: a.kind, state: 'signedOut', until: null, why: '' };
+    // the id the server's row has (`claude/w2`), so the row the server sends replaces this one in place
+    const row: AccountRow = { agent: a.agent, id: accountId(a.agent, a.id), ord: (last?.ord ?? 0) + 1, label: a.label, email: '', plan: '', default: false, kind: a.kind, state: 'signedOut', until: null, why: '' };
     const login = starting({ peer: a.peer, agent: a.agent, account: a.id }, undefined);
     return [
       { e: ACCOUNT, id: at(a.peer, accountId(a.agent, a.id)), op: 'upsert', v: row },
@@ -106,13 +108,13 @@ export const updateAccount = defineCommand<UpdateArgs>({
     const id = at(a.peer, accountId(a.agent, a.account));
     if (!a.move) return merge<AccountRow>(base, ACCOUNT, id, { ...(a.label !== undefined && { label: a.label }), ...(a.kind && { kind: a.kind }) });
     const list = accountsOf(base, a.agent);
-    const i = list.findIndex((x) => x.id === a.account);
+    const i = list.findIndex((x) => accOf(x) === a.account);
     const other = list[i + (a.move === 'up' ? -1 : 1)];
     const self = list[i];
     if (!self || !other) return [];
     return [
       { e: ACCOUNT, id, op: 'upsert', v: { ...self, ord: other.ord } },
-      { e: ACCOUNT, id: at(a.peer, accountId(a.agent, other.id)), op: 'upsert', v: { ...other, ord: self.ord } },
+      { e: ACCOUNT, id: at(a.peer, accountId(a.agent, accOf(other))), op: 'upsert', v: { ...other, ord: self.ord } },
     ];
   },
 });
@@ -156,7 +158,10 @@ export const logout = defineCommand<LoginArgs>({
   id: 'accounts.logout',
   owner: (a) => a.peer,
   optimistic: (base, a) => {
-    const ops: EntityOps[number][] = [...merge<LoginRow>(base, LOGIN, at(a.peer, loginId(a.agent, a.account)), { state: 'idle', signedIn: false })];
+    // its sign-in row, there or not yet (GitHub's: gh was signed in outside wisp): signed out at once
+    const lid = at(a.peer, loginId(a.agent, a.account));
+    const was = base.peek<LoginRow>(LOGIN, lid) as LoginRow | undefined;
+    const ops: EntityOps[number][] = [{ e: LOGIN, id: lid, op: 'upsert', v: { ...(was ?? { agent: a.agent, account: a.account }), state: 'idle', signedIn: false } }];
     if (a.account) ops.push(...merge<AccountRow>(base, ACCOUNT, at(a.peer, accountId(a.agent, a.account)), { state: 'signedOut' }));
     // The harness's own login, with no list of accounts: the harness reads signed out (v1 markSignedIn)
     else if (accountsOf(base, a.agent).length < 2) ops.push(...merge<HarnessRow>(base, HARNESS, at(a.peer, a.agent), { available: false, signedIn: false }));

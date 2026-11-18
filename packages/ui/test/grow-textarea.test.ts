@@ -3,9 +3,10 @@
 import { describe, expect, it } from 'vitest';
 import { growTextarea } from '../src/core/autosize.ts';
 
-const area = (content: number): HTMLTextAreaElement => {
+const area = (content: number | (() => number), value = 'a prompt'): HTMLTextAreaElement => {
   const el = document.createElement('textarea');
-  Object.defineProperty(el, 'scrollHeight', { get: () => content });
+  el.value = value;
+  Object.defineProperty(el, 'scrollHeight', { get: () => (typeof content === 'number' ? content : content()) });
   return el;
 };
 
@@ -21,5 +22,20 @@ describe('growTextarea', () => {
     growTextarea(el, 340);
     expect(el.style.height).toBe('340px');
     expect(el.style.overflowY).toBe('auto');
+  });
+  // perf r1 #4: the empty prompt on the first screen was measured (a forced style and layout pass) for nothing
+  it('an_empty_prompt_never_grown_is_left_to_its_stylesheet_and_one_emptied_shrinks_back', () => {
+    let read = 0;
+    const el = area(() => (read++, 0), '');
+    growTextarea(el, 340);
+    expect(read, 'not measured').toBe(0);
+    expect(el.style.height).toBe('');
+    let h = 180;
+    const grown = area(() => h);
+    growTextarea(grown, 340);
+    grown.value = '';
+    h = 60;
+    growTextarea(grown, 340);
+    expect(grown.style.height, 'emptied: back to its text').toBe('60px');
   });
 });

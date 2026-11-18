@@ -70,6 +70,11 @@ fn own(method: &str, pattern: &str, permission: &str, summary: &str) -> Spec {
 }
 
 impl Edge {
+    /// (command answers kept for a retry, their bytes): bounded (`idem`), and no read's answer is ever in it.
+    pub fn kept_answers(&self) -> (usize, usize) {
+        self.idem.kept()
+    }
+
     /// Must run inside a tokio runtime (the web bundle's compressor is a task).
     pub fn new(cfg: EdgeConfig, backend: Arc<dyn Backend>, hub: Arc<Hub>) -> Arc<Self> {
         let stop = CancellationToken::new();

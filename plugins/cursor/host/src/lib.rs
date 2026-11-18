@@ -16,8 +16,8 @@ use wisp_harness_kit::detect::version_in;
 use wisp_harness_kit::protocol::{FileNote, attachment_note};
 use wisp_kernel::{BoxFuture, Manifest, Plugin, Result, Setup};
 use wisp_runtime_api::harness::{
-    ExecReq, HarnessFound, HarnessInfo, HarnessModel, HarnessRun, HarnessSys, Launch, ResumeCommand, ResumeOptions, RunDriver, SetupTip,
-    Stdin,
+    ExecReq, HarnessFound, HarnessInfo, HarnessLogin, HarnessModel, HarnessRun, HarnessSys, Launch, ResumeCommand, ResumeOptions,
+    RunDriver, SetupTip, Stdin,
 };
 use wisp_runtime_api::model::Mode;
 use wisp_runtime_api::{HARNESS, Harness};
@@ -70,15 +70,44 @@ pub fn launch(run: &HarnessRun, bin: &str) -> Launch {
     }
 }
 
+/// Signing in from wisp (v1 agent-login.js LOGINS.cursor): its own login, with no browser opened by the CLI (the page
+/// shows the link), its logout and status.
+pub fn login() -> HarnessLogin {
+    HarnessLogin {
+        bin: DEFAULT_BIN.into(),
+        bin_env: "WISP_CURSOR_BIN".into(),
+        args: vec!["login".into()],
+        logout: vec!["logout".into()],
+        status: vec!["status".into()],
+        keys: vec!["CURSOR_API_KEY".into()],
+        extra_env: [("NO_OPEN_BROWSER".to_owned(), "1".to_owned())].into_iter().collect(),
+        ..HarnessLogin::default()
+    }
+}
+
+/// What a CLI's status said (v1 agent-login.js `said`): "not logged / signed in" is out, "logged / signed in" is in, the
+/// rest isn't an answer.
+fn said(out: &str) -> Option<bool> {
+    let o = out.to_lowercase();
+    if o.contains("not logged in") || o.contains("not signed in") {
+        Some(false)
+    } else if o.contains("logged in") || o.contains("signed in") {
+        Some(true)
+    } else {
+        None
+    }
+}
+
 #[derive(Debug)]
 pub struct CursorHarness {
     info: HarnessInfo,
     bin: Mutex<Option<String>>,
+    login: HarnessLogin,
 }
 
 impl Default for CursorHarness {
     fn default() -> Self {
-        Self { info: info(), bin: Mutex::new(None) }
+        Self { info: info(), bin: Mutex::new(None), login: login() }
     }
 }
 
@@ -96,6 +125,12 @@ impl CursorHarness {
 impl Harness for CursorHarness {
     fn info(&self) -> &HarnessInfo {
         &self.info
+    }
+    fn login(&self) -> Option<&HarnessLogin> {
+        Some(&self.login)
+    }
+    fn signed_in(&self, out: &str, _code: Option<i32>) -> Option<bool> {
+        said(out)
     }
 
     fn detect<'a>(&'a self, sys: &'a dyn HarnessSys) -> BoxFuture<'a, HarnessFound> {
@@ -194,6 +229,24 @@ impl Plugin for CursorPlugin {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The owner's Agents audit (2026-11-18): v1 signed in to and out of Cursor from Settings → Agents (agent-login.js
+    /// LOGINS.cursor); v2 had no login for it, so its row said Ready and nothing else.
+    #[test]
+    fn cursor_signs_in_and_out_from_wisp_as_v1() {
+        let h = CursorHarness::default();
+        let l = h.login().unwrap();
+        assert_eq!((l.bin.as_str(), l.bin_env.as_str()), ("cursor-agent", "WISP_CURSOR_BIN"));
+        assert_eq!(
+            (l.args.clone(), l.logout.clone(), l.status.clone()),
+            (vec!["login".to_owned()], vec!["logout".to_owned()], vec!["status".to_owned()])
+        );
+        assert_eq!(l.keys, vec!["CURSOR_API_KEY".to_owned()]);
+        assert_eq!(l.extra_env.get("NO_OPEN_BROWSER").map(String::as_str), Some("1"));
+        assert_eq!(h.signed_in("✓ Logged in as me@example.com", Some(0)), Some(true));
+        assert_eq!(h.signed_in("Not logged in", Some(1)), Some(false));
+        assert_eq!(h.signed_in("something else", Some(0)), None);
+    }
 
     #[test]
     fn manifest_is_valid() {

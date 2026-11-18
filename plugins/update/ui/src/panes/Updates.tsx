@@ -5,7 +5,7 @@
 
 import { createSignal, Show, type JSX } from 'solid-js';
 import { entityKey, type DeepReadonly, type PluginClient } from '@wisp/client';
-import { Banner, Button, Dialog, Link, SelectSetting, SettingsGroup, SettingsRow, Text, Time, useSignal } from '@wisp/ui';
+import { Banner, Button, Link, SelectSetting, SettingsGroup, SettingsRow, Text, Time, useSignal } from '@wisp/ui';
 import { checkNow, installUpdate } from '../commands.ts';
 import { t } from '../i18n.ts';
 import { useCopy, useNow, useTopic } from '../live.ts';
@@ -13,6 +13,7 @@ import { fromRow, text } from '../source.ts';
 import { KEYS, KIND, ROW_ID, TOPIC, stateOf, type UpdateState } from '../types.ts';
 import { channelHint, channelItems, showsInstall, versionLine } from '../words.ts';
 import '../i18n/lazy.ts';
+import { Confirm } from '../Confirm.tsx';
 
 type Row = DeepReadonly<UpdateState>;
 const quiet = (p: Promise<unknown>): void => void p.catch(() => {}); // the shell toasts a refusal
@@ -110,30 +111,6 @@ function Failed(props: { readonly client: PluginClient; readonly row: Row }): JS
   );
 }
 
-export function Confirm(props: { readonly open: boolean; readonly row: Row; readonly onClose: () => void; readonly onConfirm: () => void }): JSX.Element {
-  return (
-    <Dialog
-      part="settings.update.confirm"
-      open={props.open}
-      onOpenChange={(o) => !o && props.onClose()}
-      role="alertdialog"
-      size="sm"
-      title={t('update.confirm.title', { latest: props.row.latest ?? '' })}
-      footer={
-        <>
-          <Button variant="ghost" onClick={() => props.onClose()}>
-            {t('update.cancel')}
-          </Button>
-          <Button variant="primary" icon="update" onClick={() => props.onConfirm()}>
-            {t('update.confirm.ok')}
-          </Button>
-        </>
-      }
-    >
-      <Text as="p">{t('update.confirm.body', { count: props.row.running ?? 0 })}</Text>
-    </Dialog>
-  );
-}
 
 export default function Updates(props: { readonly client: PluginClient }): JSX.Element {
   useTopic(props.client, TOPIC);

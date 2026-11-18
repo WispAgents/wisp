@@ -20,6 +20,7 @@
     "machines:update",
     "machines:remove",
     "runtime:list",
+    "runtime:slots",
     "proc:exec{bin:sysctl}",
     "proc:exec{bin:vm_stat}",
     "proc:exec{bin:pmset}",
@@ -27,6 +28,7 @@
     "proc:exec{bin:ps}",
     "runtime:create",
     "worktrees:view",
+    "worktrees:viewLast",
     "settings:read"
   ],
   "provides": { "machine.service": { "version": "1.0.0" } },

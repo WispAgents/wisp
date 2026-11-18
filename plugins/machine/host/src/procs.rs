@@ -9,7 +9,7 @@
 //! The runs: `machine.runs@1` contributors, else each running task's harness CLI is the process wisp
 //! started whose tag names it.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -20,9 +20,9 @@ use wisp_machine_api::this_mac::{FACTS, FIXER, HARNESS_DISK, HistoryPoint, Lefto
 use wisp_machine_core::this_mac::attribute::{Attributor, Placed};
 use wisp_machine_core::this_mac::history::History;
 use wisp_machine_core::this_mac::load::Load;
-use wisp_machine_core::this_mac::view::{self, TaskInfo, ViewInput};
+use wisp_machine_core::this_mac::view::{self, ViewInput};
 use wisp_machine_core::this_mac::{AFTER_MS, KILL_MS, POINT_MS, Platform, READ_MS, Refusal, RefusalKind, holds, parse};
-use wisp_runtime_api::model::SessionState;
+use wisp_runtime_api::events::{SessionChanged, SessionCreated, SessionDeleted};
 use wisp_store::Store;
 
 use crate::calls;
@@ -45,6 +45,8 @@ pub struct Procs {
     sampled_at: Mutex<i64>,
     point_at: Mutex<i64>,
     ran_at: Mutex<i64>,
+    /// the tasks a sample names, kept current from runtime's events (never every task each sample)
+    index: crate::index::TaskIndex,
 }
 
 impl std::fmt::Debug for Procs {
@@ -99,6 +101,7 @@ impl Procs {
             sampled_at: Mutex::new(0),
             point_at: Mutex::new(0),
             ran_at: Mutex::new(0),
+            index: crate::index::TaskIndex::default(),
         }
     }
 
@@ -148,9 +151,7 @@ impl Procs {
                 lock(&self.attr).set_environ(pid, since, parse::tag_in_environ(&text));
             }
         }
-        let list = calls::tasks(ctx, &call, Some(false)).await;
-        let running: HashSet<String> = list.iter().filter(|t| t.state == SessionState::Running).map(|t| t.id.0.clone()).collect();
-        let mut tasks: HashMap<String, TaskInfo> = list.iter().map(calls::task_of).map(|t| (t.id.clone(), t)).collect();
+        let crate::index::Known { mut tasks, running } = self.index.current(ctx, &call).await;
         let contributed: Vec<LiveRun> = ctx.contributions(&RUNS).iter().flat_map(|r| r.live()).collect();
         if platform == Platform::Mac {
             let pids: Vec<u32> = procs.iter().map(|p| p.pid).collect();
@@ -247,6 +248,17 @@ impl Procs {
         v
     }
 
+    /// The last view again, with the guard as it is now: a pause or a resume shows at once, not at the next sample
+    /// (audit A F14: the pane kept "Running as usual" until a reload). Nothing before the first sample.
+    pub async fn republish(&self, ctx: &Ctx, g: &Guard, now: i64) {
+        let Some(mut v) = lock(&self.last).as_ref().map(|(v, _, _)| v.clone()) else { return };
+        v.guard.paused_until = holds::paused_until(&lock(&g.knobs), now);
+        let hold = g.with(Load::hold);
+        v.guard.held = hold.as_ref().map(|h| h.kind);
+        v.guard.why = hold.map(|h| h.why);
+        self.publish(ctx, g, &v, now).await;
+    }
+
     async fn publish(&self, ctx: &Ctx, g: &Guard, v: &MachineView, now: i64) {
         let Ok(store) = ctx.service::<Store>() else { return };
         let reading = g.with(Load::reading);
@@ -326,6 +338,22 @@ async fn fix(p: &Procs, ctx: &Ctx, call: &Call, group: &Value, now: i64) -> Resu
 pub(crate) fn setup(s: &mut Setup, g: &Arc<Guard>) -> Arc<Procs> {
     let home = std::env::var("WISP_HOME").ok().or_else(|| std::env::var("HOME").ok().map(|h| format!("{h}/.wisp"))).unwrap_or_default();
     let p = Arc::new(Procs::new(&home));
+    // the sample's tasks follow runtime's events (perf audit 2026-11-18 #4)
+    let ip = p.clone();
+    s.on::<SessionChanged, _, _>(move |_ctx, e| {
+        ip.index.changed(e.id.as_str());
+        async {}
+    });
+    let ip = p.clone();
+    s.on::<SessionCreated, _, _>(move |_ctx, e| {
+        ip.index.created(&e.session);
+        async {}
+    });
+    let ip = p.clone();
+    s.on::<SessionDeleted, _, _>(move |_ctx, e| {
+        ip.index.deleted(e.id.as_str());
+        async {}
+    });
     let (rp, rg) = (p.clone(), g.clone());
     s.command::<c::Read, _, _>(move |ctx, _call, _| {
         let (p, g) = (rp.clone(), rg.clone());
@@ -407,7 +435,7 @@ mod tests {
                 battery: None,
                 battery_hold: None,
                 rows: &std::collections::BTreeMap::default(),
-                tasks: &HashMap::new(),
+                tasks: &std::collections::HashMap::new(),
                 worktrees: None,
                 harness: None,
                 wisp: WispUse { rss: 0, cpu: None },

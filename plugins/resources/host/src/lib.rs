@@ -111,7 +111,9 @@ async fn make_plan(ctx: &Ctx, call: &Call, a: &PlanArgs) -> Result<Plan> {
             .collect();
         let gone: Vec<&str> =
             a.destroy.iter().filter_map(|d| d.split_once('.')).filter(|(kind, _)| info.named(kind)).map(|(_, n)| n).collect();
-        if desired.is_empty() && gone.is_empty() {
+        // a section the formula names with nothing left in it (`triggers: []`) still prunes: its last one went
+        let emptied = a.prune && a.kinds.iter().any(|k| info.named(k));
+        if desired.is_empty() && gone.is_empty() && !emptied {
             continue;
         }
         let current = k.read(call).await?;
@@ -164,7 +166,10 @@ async fn make_plan(ctx: &Ctx, call: &Call, a: &PlanArgs) -> Result<Plan> {
         after.extend(
             ops.iter().filter(|o| o.op != OpKind::Delete).map(|o| Resource::new(info.kind.clone(), o.name.clone(), o.spec.clone())),
         );
-        out.problems.extend(k.check_all(&after).into_iter().map(|p| format!("{}: {p}", info.section)));
+        // only what this apply brings: a problem the home already has (two projects for one folder made before
+        // projects were one per folder) never blocks an apply that doesn't touch it
+        let had = k.check_all(&current);
+        out.problems.extend(k.check_all(&after).into_iter().filter(|p| !had.contains(p)).map(|p| format!("{}: {p}", info.section)));
         out.ops.extend(ops);
         infos.push(info);
     }

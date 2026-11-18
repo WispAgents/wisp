@@ -60,6 +60,11 @@ pub fn folder_key(path: &str) -> String {
             s => parts.push(s),
         }
     }
+    // macOS: `/tmp`, `/var` and `/etc` are links into `/private`, and git names a worktree by the real path (audit A
+    // orch #6: wisp's own worktrees, kept as `/var/…`, were offered again as `/private/var/…`)
+    if p.starts_with('/') && parts.len() >= 2 && parts[0] == "private" && matches!(parts[1], "tmp" | "var" | "etc") {
+        parts.remove(0);
+    }
     let body = parts.join("/");
     if p.starts_with('/') { format!("/{body}") } else { body }
 }

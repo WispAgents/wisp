@@ -6,4 +6,9 @@ import type { Synced } from "./Synced";
 /**
  * What Merge did: the task's own PR (else the first), the user's checkout synced, every PR.
  */
-export type Merged = { pr: PrSummary, sync: Synced, prs?: Array<PrRef>, };
+export type Merged = { pr: PrSummary, sync: Synced, prs?: Array<PrRef>, 
+/**
+ * a worktree the merge left in place, and why (uncommitted work, commits the PR doesn't have), one line
+ * each: never removed with work in it (audit A orch #3). Additive (2026-11-18).
+ */
+kept?: Array<string>, };

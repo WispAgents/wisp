@@ -135,9 +135,13 @@ export function memberRecord(s: MemberStats | undefined, days: number, say: Say)
     .sort((a, b) => b[1].tokens - a[1].tokens)
     .map(([k, u]) => {
       const each = toks(Math.round(u.tokens / (u.runs || 1)));
-      const line = REPEATING.includes(k as StatKind)
-        ? say('wisp.crew.record.kindRepeating', { n: Math.round(u.runs / (days || 1)), each, quiet: u.quiet ? share(u.quiet, u.runs) : 0 })
-        : say('wisp.crew.record.kindAsked', { count: u.runs, each });
+      const quiet = u.quiet ? share(u.quiet, u.runs) : 0;
+      // under one a day it's the runs themselves (v1 crew-record.js kindLine), never "0 a day" (audit A #22)
+      const line = !REPEATING.includes(k as StatKind)
+        ? say('wisp.crew.record.kindAsked', { count: u.runs, each })
+        : u.runs / (days || 1) >= 1
+          ? say('wisp.crew.record.kindRepeating', { n: Math.round(u.runs / (days || 1)), each, quiet })
+          : say('wisp.crew.record.kindFew', { count: u.runs, each, quiet });
       return { key: k, label: say(`wisp.crew.record.kind.${k}`), line, pct: share(u.tokens, tokens) };
     });
   const top = (s?.top ?? []).map((j) => ({ id: j.id, title: j.title || say('wisp.crew.record.untitled'), tokens: toks(j.tokens), pct: share(j.tokens, tokens) }));

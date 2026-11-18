@@ -6,7 +6,7 @@
 // restore show their control working; the panes and menus open in the same frame.
 
 import { Show, createEffect, createMemo, createResource, createSignal, getOwner, lazy, on, onCleanup, runWithOwner, untrack, type JSX } from 'solid-js';
-import { entityKey, newRowId, ownerOf, uuidv7, type EntityKey, type Json } from '@wisp/client';
+import { defineCommand, entityKey, newRowId, ownerOf, uuidv7, type EntityKey, type Json } from '@wisp/client';
 import {
   Answer,
   BtwList,
@@ -18,6 +18,8 @@ import {
   OverlapNote,
   RateButtons,
   ReplyBox,
+  Skeleton,
+  Stack,
   TaskBody,
   TaskDetails,
   TaskHead,
@@ -45,6 +47,7 @@ import { SESSION, type SessionRow } from '../rows.ts';
 import { Slot, useClients, usePluginClient } from '../slot.tsx';
 import { TaskHeadSlot } from './slots.tsx';
 import { afterNextPaint, buildsAtOnce } from './task-paint.ts';
+import { sameEntries } from './same-entries.ts';
 import { useProjects } from './projects.ts';
 import { taskPlaces } from './project-pick.ts';
 import { phoneTaskMenu } from './phone-menu.ts';
@@ -71,6 +74,8 @@ import {
   btwDrop,
   btwOf,
   btwQuestion,
+  sideAsk,
+  sideStart,
   setSetting,
   archive,
   stopRun,
@@ -93,7 +98,7 @@ import {
 import { answerContext } from './answer-ctx.ts';
 import { answerComments } from './answer-comments.ts';
 import { blockedOf } from './answer-of.ts';
-import { TASK_KEY, type TaskKey } from './task-keys.ts';
+import { TASK_KEY, takePendingKey, type TaskKey } from './task-keys.ts';
 import { usePromptMenu } from './prompt-menu.ts';
 import { useAttachments } from './attach.ts';
 import { attachAct } from './capture.ts';
@@ -209,6 +214,28 @@ function through<T extends object>(of: () => T | undefined): T {
   });
 }
 
+/** Where the turns will be, the frame before they're built: a prompt's and an answer's lines. */
+function TurnsSkeleton(): JSX.Element {
+  return (
+    <Stack gap="4" part="split.placeholder" aria-hidden="true">
+      <Skeleton shape="block" width="2/3" height="bar" />
+      <Skeleton width="full" />
+      <Skeleton width="3/4" />
+      <Skeleton width="1/2" />
+    </Stack>
+  );
+}
+
+/** git's read of the task's folder (wisp.git's `git.changes`): its files' stats are the head's Changes figures */
+const changesNow = defineCommand<{ key: string; path: string; base: string }, { readonly stats?: readonly { readonly add: number; readonly del: number }[] } | null>({
+  id: 'git.changes',
+  owner: (a) => a.key as EntityKey,
+  wire: (a) => ({ path: a.path, base: a.base, stageState: false }),
+  optimistic: 'none',
+  quiet: true,
+  pending: 'what changed',
+});
+
 export default function TaskView(props: { readonly id: string; readonly onBack?: () => void }): JSX.Element {
   const shell = useShell();
   // the answer blocks' copy, before the first answer draws (block-strings.ts)
@@ -218,8 +245,10 @@ export default function TaskView(props: { readonly id: string; readonly onBack?:
     t(ONE[k] && vars?.[ONE[k] ?? ''] === 1 ? `shell.ledger.${k}.one` : `shell.ledger.${k}`, vars as Record<string, string | number> | undefined);
   const key = props.id as EntityKey;
   const scope = shell.client.scope.child(`task:${key}`);
-  // on a phone, Back's frame shows the list first: the task's scope (its topic's unwatch is a request sent) goes after it
-  const later = !buildsAtOnce(props.onBack !== undefined, typeof requestAnimationFrame === 'function');
+  // the click's (or the key's, or the tap's) frame draws the page's head and the turns' skeleton; the body is built in the
+  // frame after (task-paint.ts), on a phone and in split alike. On a phone, Back's frame shows the list first: the task's
+  // scope (its topic's unwatch is a request sent) goes after it
+  const later = !buildsAtOnce(typeof requestAnimationFrame === 'function');
   onCleanup(() => (later ? afterNextPaint(() => scope.dispose()) : scope.dispose()));
   // the topic names the session by its own id, the part after `<peer>:`
   const bare = key.slice(key.indexOf(':') + 1);
@@ -346,7 +375,37 @@ export default function TaskView(props: { readonly id: string; readonly onBack?:
   let input: HTMLTextAreaElement | undefined;
   // opened by j or k: the keys stay on the list (stepped.ts, v1)
   const stepped = openedByStep();
-  queueMicrotask(() => shell.nav().layout === 'split' && !stepped && input?.focus());
+  // in split the reply box takes the caret, once the body is there and in a frame of its own: focusing in the render forced
+  // a style and layout of the half-built page in the click's frame (46 ms of 399 at 4×, perf r1 #6). Unless you clicked
+  // meanwhile: a click on the head (its ⋯, the title) keeps its own focus. Focus an overlay puts back as it closes (the
+  // palette's Open) is not a click, so the caret still comes here
+  let clicked = false;
+  let unwatch = (): void => undefined;
+  if (typeof document !== 'undefined') {
+    const down = (): void => {
+      clicked = true;
+    };
+    document.addEventListener('pointerdown', down, true);
+    document.addEventListener('click', down, true);
+    unwatch = () => {
+      document.removeEventListener('pointerdown', down, true);
+      document.removeEventListener('click', down, true);
+    };
+    onCleanup(unwatch);
+  }
+  const focusReply = (): void => {
+    unwatch();
+    if (!clicked) input?.focus();
+  };
+  createEffect(
+    on(built, (ready) => {
+      if (!ready) return;
+      if (stepped || untrack(() => shell.nav().layout) !== 'split') return unwatch();
+      if (typeof requestAnimationFrame !== 'function') return focusReply(); // nothing paints: no frame to wait for
+      const id = requestAnimationFrame(focusReply);
+      onCleanup(() => cancelAnimationFrame(id));
+    }),
+  );
   const titleOf = (id: string): string => sessions().find((s) => s.id === id)?.title ?? '';
   // the overlap note's × (v1 #787): closed for this task until what it says changes; kept in this browser as v1 did
   const closedNotes = dismissedStore(shell.client);
@@ -372,6 +431,33 @@ export default function TaskView(props: { readonly id: string; readonly onBack?:
     if (!r) return;
     const live = allRows().filter((x) => x.parent_id === key && x.state === 'running').length;
     setStopAsk(stopQuestion({ sub: !!r.parent_id, name: harnessView(r.agent).name, live, queued: Number(r.summary.queued ?? 0) }, t));
+  };
+  // Restore to before a turn asks first (orch #17): it undoes every change made in the folder since that turn
+  const [restoreAsk, setRestoreAsk] = createSignal<string | undefined>();
+  const doRestore = (): void => {
+    const turnId = restoreAsk();
+    setRestoreAsk(undefined);
+    if (!turnId) return;
+    setRestoring(true);
+    void run(restore, { id: key, turn: turnId })
+      .then(
+        // the head's Changes figure shows it; one that restored nothing says so. What the folder held just before
+        // is kept: Undo puts it back (audit A tasks #1: a restore lost work with no way back)
+        (r) => {
+          if (r?.restored === false) return void shell.toast.show(t('shell.restore.nothing'), { tone: 'error' });
+          const undo = r?.undo;
+          if (!undo) return;
+          shell.toast.show(t('shell.restore.done'), {
+            action: { label: t('shell.restore.undo'), onClick: () => void run(restore, { id: key, turn: turnId, undo }).then(() => refetchChanges(), () => undefined) },
+          });
+        },
+        () => undefined,
+      )
+      .finally(() => {
+        setRestoring(false);
+        // what git shows now in the folder, read again: the figure isn't left at what it was before (orch #17)
+        void refetchChanges();
+      });
   };
   const doStop = (): void => {
     setStopAsk(undefined);
@@ -573,6 +659,22 @@ export default function TaskView(props: { readonly id: string; readonly onBack?:
       void run(btw, { id: key, question: q, tmp: uuidv7(), at: Date.now() }).catch(() => setText(`/btw ${q}`));
       return;
     }
+    // /side: a side discussion of its own beside this task (v1 side.js), never a follow-up into its conversation; its
+    // page opens at once, Starting… (orch #5)
+    const sq = sideAsk(text());
+    if (sq !== undefined && !row()?.summary['sideOf']) {
+      if (!sq) return void shell.toast.show(t('shell.side.empty'));
+      setText('');
+      const sideId = entityKey(peer, newRowId());
+      const at = Date.now();
+      const open = (attachments: readonly Attachment[]): void => {
+        run(sideStart, { id: sideId, main: key, text: menu.encode(sq), at, ...(attachments.length > 0 && { attachments }) }).catch(() => text() === '' && setText(`/side ${sq}`));
+        shell.navigate({ t: 'openTask', id: sideId as never });
+      };
+      if (files().length === 0) open([]);
+      else void att.take().then(open);
+      return;
+    }
     const v = menu.encode(text().trim());
     if (v) sent.set((cur) => remember(cur as readonly string[], v));
     // the Done when line open and empty: nothing goes, the line takes the focus (v1 #769 replyGoalEmpty)
@@ -704,9 +806,15 @@ export default function TaskView(props: { readonly id: string; readonly onBack?:
     shell.navigate({ t: 'openTask', id: to as never, replace: true });
   };
   const markDone = (): void => {
+    const was = row()?.state;
+    // v1 actions.js: a task still working stays where it is and says why; never off to the next task with an
+    // error about this one shown there (orch #18)
+    if (was === 'running' || was === 'waiting') return void shell.toast.show(t('shell.done.working'));
     void run(setState, { id: key, state: 'done' }).catch(() => undefined);
     shell.navigate({ t: 'markDone', id: key as never });
     next();
+    // with Undo, as the row's Done (audit A #13)
+    shell.toast.success(t('shell.toast.done'), { action: { label: t('shell.toast.undo'), onClick: () => void run(setState, { id: key, state: was && was !== 'done' ? was : 'review' }).catch(() => undefined) } });
   };
   // "Open in Claude Code" (v1's Take over; owner, 2026-11-10)
   const harnessName = (): string => harnessView(row()?.agent ?? '').name;
@@ -765,7 +873,7 @@ export default function TaskView(props: { readonly id: string; readonly onBack?:
   // v1 #786 taskMenuHtml: the row's menu's sections and submenus (task-menu.ts), with what only More has: on a phone
   // the bar's folded Transcript, Rerun and Open in first; Compact and Lean runs with the task itself; Copy resume
   // command under Copy ›, Open project in editor and Restore under Files ›
-  const more = (): MenuEntry[] => {
+  const moreEntries = (): MenuEntry[] => {
     const own: TaskMenuEntry[] = [];
     // the head's bar keeps Changes, Ship, Done (docs/ux/2026-11-18-desktop.md #4): Transcript, Rerun and Open in are
     // here, with their keys, on every width
@@ -827,6 +935,9 @@ export default function TaskView(props: { readonly id: string; readonly onBack?:
       ...(phoneBar() && { compact: true }),
     });
   };
+  // the same array while the menu says the same: every patch to the open task (a streamed token) built new entries, and
+  // the kit, keying rows by object, rebuilt the closed menu each time (perf r1 #12, #15)
+  const more = createMemo(moreEntries, [], { equals: sameEntries });
   // the browser edits the head's title in place; the phone apps' bar asks in a dialog
   // Rename (⋯, M): a dialog on every screen, as the row's (QA round 14 desktop #3: the head's in-place edit lost its
   // caret to the menu giving focus back to ⋯); a click on the title still edits it in place
@@ -852,11 +963,11 @@ export default function TaskView(props: { readonly id: string; readonly onBack?:
       void run(archive, { id: key, archived: true }).catch(() => undefined);
       shell.navigate({ t: 'archive', id: key as never });
       next();
-    } else if (v === 'delete') {
-      void run(remove, { id: key }).catch(() => undefined);
-      shell.navigate({ t: 'delete', id: key as never });
-      next();
-    } else if (v === 'rename') startRename();
+      // with Undo, as the row's Archive (audit A #13)
+      shell.toast.success(t('shell.toast.archived'), { action: { label: t('shell.toast.undo'), onClick: () => void run(archive, { id: key, archived: false }).catch(() => undefined) } });
+    } else if (v === 'delete')
+      // asked first, as the row's Delete (audit A #4): the shell's one Delete task dialog
+      shell.navigate({ t: 'openOverlay', overlay: { kind: 'dialog', id: 'shell.delete' as never, params: { id: key } } }); else if (v === 'rename') startRename();
     else if (v === 'copy-id') void shell.platform.copy(bare).then((ok) => ok && shell.toast.show(t('shell.more.copiedId')));
     else if (v === 'later') void run(forLater, { id: key, forLater: !forLaterNow() }).catch(() => undefined);
     else if (v === 'pin') void run(pin, { id: key, pinned: row()?.summary['pinned'] !== true }).catch(() => undefined);
@@ -871,11 +982,7 @@ export default function TaskView(props: { readonly id: string; readonly onBack?:
     else if (v === 'unarchive') void run(archive, { id: key, archived: false }).catch(() => undefined);
     else if (v === 'rollback') {
       const l = lastTurn();
-      if (l)
-        void run(restore, { id: key, turn: l.id }).then(
-          () => shell.toast.success(t('shell.task.restored')),
-          () => undefined,
-        );
+      if (l) setRestoreAsk(l.id);
     } else if (v.startsWith('x:')) {
       const x = rowMenu().find((e) => `x:${e.id}` === v);
       if (x) x.def.bar?.select?.(extProps(x) as never);
@@ -887,8 +994,29 @@ export default function TaskView(props: { readonly id: string; readonly onBack?:
     const w = row()?.summary['toShip'] as { dirty?: number; ahead?: number } | null | undefined;
     return (w?.dirty ?? 0) > 0 || (w?.ahead ?? 0) > 0;
   };
-  // the diff the task made, every turn's (the head's Changes +n −n; none: no Changes)
-  const diff = createMemo(() => changeFigures(turns().flatMap((x) => x.body?.ext?.['wisp.runtime']?.changes ?? x.body?.changes ?? [])));
+  // what's changed now in the task's folder, as git says it (the head's Changes +n −n, as the Changes pane shows): not
+  // every turn's edits added up (audit A #9: +6 −6 for a one-line fix after two follow-ups, still there after Revert
+  // or after the merged PR's worktree went). Read again when a turn ends or what the worktree holds changes; none when
+  // git can't read the folder (it's gone) or shows nothing.
+  const changeWhere = createMemo((): string => {
+    const r = row();
+    if (!r) return '';
+    const body = (r.body ?? {}) as { ext?: Record<string, { path?: string; cwd?: string; baseRef?: string; base?: string } | undefined>; cwd?: string };
+    const sum = r.summary as Record<string, unknown>;
+    const wt = body.ext?.['wisp.worktrees'] ?? (sum['worktree'] as { path?: string; cwd?: string; baseRef?: string; base?: string } | undefined);
+    const dir = String(wt?.path ?? wt?.cwd ?? body.cwd ?? sum['cwd'] ?? '');
+    if (!dir) return '';
+    const last = turns().at(-1);
+    return JSON.stringify([dir, wt?.baseRef || wt?.base || 'HEAD', last?.id ?? '', last?.status ?? '', sum['toShip'] ?? null]);
+  });
+  const [changedNow, { refetch: refetchChanges }] = createResource(changeWhere, (w) => {
+    const [path, base] = JSON.parse(w) as [string, string];
+    return run(changesNow, { key, path, base }).catch(() => null);
+  });
+  const diff = createMemo(() => {
+    const stats = changeWhere() ? (changedNow.latest?.stats ?? []) : [];
+    return { files: stats.length, plus: stats.reduce((n, f) => n + f.add, 0), minus: stats.reduce((n, f) => n + f.del, 0) };
+  });
   // Ship ▾: Ship it…, the PR's pane, Merge when ready (wisp.ship's row entry, when it offers it); Ship it… alone is a button
   const shipMenu = (): MenuEntry[] => {
     const merge = rowMenu().find((x) => x.id === 'wisp.ship.rowMerge' && (x.def.if?.(extProps(x) as never) ?? true));
@@ -967,6 +1095,9 @@ export default function TaskView(props: { readonly id: string; readonly onBack?:
   };
   document.addEventListener(TASK_KEY, onKey);
   onCleanup(() => document.removeEventListener(TASK_KEY, onKey));
+  // a key pressed on this task's row in the list (V, T, P, D, S, ⌃`): the list opened it, the page does it (audit A #12)
+  const pendingAct = takePendingKey(key, Date.now());
+  if (pendingAct) queueMicrotask(() => onKey(new CustomEvent(TASK_KEY, { detail: pendingAct, cancelable: true })));
   const attach = (o: PickOptions): void => {
     setPicking(true);
     void shell.platform.pickFiles(o).then((picked) => {
@@ -1022,6 +1153,9 @@ export default function TaskView(props: { readonly id: string; readonly onBack?:
         // UX 2026-11-18 #3 (docs/ux/2026-11-18-desktop.md): the desktop reply box takes New task's one footer, `+` for what's
         // off (attach, Goal, Delegate, send later), a chip with ✕ for what's on, the harness with its model
         const replyGoalOn = (): boolean => goal() !== undefined || goalGoing();
+        // the reply box's menus keep their entries while they say the same: their props are made again on every patch to
+        // the task (the cap reads the row), and new entries rebuilt the closed mode and + menus on each streamed token
+        // (perf r1 #15). The mode's memo is made after `mode` below
         const replyPlus = (): LauncherTool =>
           plusTool({
             part: 'composer.plus',
@@ -1036,6 +1170,8 @@ export default function TaskView(props: { readonly id: string; readonly onBack?:
               [!when() && { id: 'later', part: 'composer.sendLater', icon: 'clock', label: t('shell.home.later'), act: { menu: { items: whenMenu(t, now()), onSelect: (w) => setWhen(w as When) } } }],
             ],
           });
+        const plusEntries = (x: LauncherTool): readonly MenuEntry[] => x.act?.menu?.items ?? [];
+        const replyPlusNow = createMemo(replyPlus, undefined, { equals: (a, b) => a !== undefined && a.label === b.label && a.title === b.title && sameEntries(plusEntries(a), plusEntries(b)) });
         const replyChips = (): LauncherTool[] => {
           const panel = replyTeamAct().panel;
           const text = (goal() ?? '').trim();
@@ -1092,6 +1228,7 @@ export default function TaskView(props: { readonly id: string; readonly onBack?:
         const color = (): string => String(s().summary['color'] ?? 'slate');
         const ov = createMemo(() => (!closedReady() ? [] : shownOverlaps(overlapsOf(s()), closed() as unknown as Dismissed | undefined, s().id)));
         const mode = (): Mode => (['plan', 'edits', 'auto'].includes(String(s().summary['mode'])) ? (s().summary['mode'] as Mode) : 'auto');
+        const modeItems = createMemo(() => modeMenu(t, mode()), [], { equals: sameEntries });
         // a channel's cap (F-chan-10): the pill after the mode; Lift is the user's switch above it, to Full auto
         const capView = (): ReplyCap | undefined => {
           const c = capOf(s().summary);
@@ -1122,8 +1259,11 @@ export default function TaskView(props: { readonly id: string; readonly onBack?:
           const b = through(() => tr().body);
           const hero = (): { title?: string; summary?: string } | undefined => b.presentation?.blocks?.find((x) => x.type === 'hero');
           // the steps come as the turn's events (the task's topic); a turn row that carries its own still reads
+          // the turn's events, once per change of them: its steps, the working panel's count, ticker and quiet note all read
+          // these (the note read them again, filtered and sorted from every event, on each streamed token: perf r1 #15)
+          const turnEvents = createMemo(() => stepsOf(turn.id));
           const steps = createMemo((): { kind: string; label?: string; title?: string; detail?: string; out?: string; bad?: boolean; seq?: number }[] => {
-            const all = stepsOf(turn.id);
+            const all = turnEvents();
             const kindOf = (e: EventRow): string => e.kind ?? e.body?.kind ?? '';
             // a tool's output: on the step itself, or the tool_output that names its call
             const outputs = new Map(all.filter((e) => kindOf(e) === 'tool_output' && e.body?.callId).map((e) => [e.body?.callId ?? '', { text: e.body?.text ?? '', seq: e.seq }]));
@@ -1144,7 +1284,13 @@ export default function TaskView(props: { readonly id: string; readonly onBack?:
             );
           });
           const cwd = String((s() as { body?: { cwd?: string } }).body?.cwd ?? s().summary['cwd'] ?? '');
-          const here = (text: string): string => (cwd ? text.replace(new RegExp(`(/private)?${cwd.replace(/^\/private/, '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}/?`, 'g'), '') : text);
+          // the task's folder out of a step's words: one expression for the turn, not one per line per token
+          const inFolder = cwd ? new RegExp(`(/private)?${cwd.replace(/^\/private/, '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}/?`, 'g') : undefined;
+          const here = (text: string): string => (inFolder ? text.replace(inFolder, '') : text);
+          // the quiet note's view of the steps and whether a delegate still works: memos, not work done on every token (a
+          // scan of every task's row per token, perf r1 #15)
+          const quietSteps = createMemo(() => turnEvents().map((e) => ({ kind: e.kind ?? e.body?.kind, t: e.t, outAt: e.body?.outAt, call: e.body?.callId, output: e.body?.output })));
+          const delegating = createMemo(() => allRows().some((x) => x.parent_id === key && x.state === 'running'));
           const count = (k: string): number => steps().filter((a) => a.kind === k).length;
           const blocks = () => b.presentation?.blocks ?? [];
           const stubbed = () => isStub(b);
@@ -1190,9 +1336,9 @@ export default function TaskView(props: { readonly id: string; readonly onBack?:
                     running: turn.status === 'running',
                     waiting: s().state === 'waiting',
                     startedAt: turn.started_at,
-                    steps: stepsOf(turn.id).map((e) => ({ kind: e.kind ?? e.body?.kind, t: e.t, outAt: e.body?.outAt, call: e.body?.callId, output: e.body?.output })),
+                    steps: quietSteps(),
                     // a delegate of this task still works: its row says so
-                    delegating: allRows().some((x) => x.parent_id === key && x.state === 'running'),
+                    delegating: delegating(),
                   },
                   now(),
                   t,
@@ -1342,15 +1488,7 @@ export default function TaskView(props: { readonly id: string; readonly onBack?:
                     label: t('shell.task.rollback'),
                     act: {
                       pending: restoring(),
-                      onClick: () => {
-                        setRestoring(true);
-                        run(restore, { id: key, turn: turn.id })
-                          .then(
-                            () => shell.toast.success(t('shell.task.restored')),
-                            () => undefined,
-                          )
-                          .finally(() => setRestoring(false));
-                      },
+                      onClick: () => setRestoreAsk(turn.id),
                     },
                   },
                   { id: 'fork', icon: 'fork', label: t('shell.task.fork'), part: 'turn.fork', act: { onClick: () => openFork(turn.id) } },
@@ -1415,7 +1553,13 @@ export default function TaskView(props: { readonly id: string; readonly onBack?:
                 ),
               })}
               turns={
-                <Show when={built()}>
+                <Show
+                  when={built()}
+                  fallback={
+                    // the turns' place, the frame before they're built (design/feedback.md: the destination's shell at once)
+                    <TurnsSkeleton />
+                  }
+                >
                   {/* the band over the turns (wisp.goal's): `shell.task:band`, the task's row as its session */}
                   <Slot input="shell.task:band" layout="stack" id={key} session={() => s() as never} />
                   {/* the earlier turns as a ledger (ADR-0068): outcome rows, day cards, notice folds, search, the scrubber;
@@ -1522,7 +1666,7 @@ export default function TaskView(props: { readonly id: string; readonly onBack?:
                       label: t(`shell.mode.${mode()}`),
                       title: t('shell.home.fullAutoTitle'),
                       icon: MODE_ICON[mode()],
-                      act: { menu: { items: modeMenu(t, mode()), onSelect: (m) => void run(setMode, { id: key, mode: m }).catch(() => undefined) } },
+                      act: { menu: { items: modeItems(), onSelect: (m) => void run(setMode, { id: key, mode: m }).catch(() => undefined) } },
                       cap: capView(),
                     }}
                     runner={{
@@ -1531,10 +1675,10 @@ export default function TaskView(props: { readonly id: string; readonly onBack?:
                       act: { onClick: () => setPickingRunner(!runnerOpen()) },
                       open: runnerOpen(),
                       // the model it runs on beside the logo (UX 2026-11-18 #3), the phone keeps the bare logo
-                      ...(!phone && { model: shownRun().model || defaultName(shownRun().agent, t('shell.runner.default')) }),
+                      ...(!phone && { model: (shownRun().model ? modelWords(shownRun().model) : '') || defaultName(shownRun().agent, t('shell.runner.default')) }),
                       ...(ring() && { usage: ring() }),
                     }}
-                    {...(!phone && { plus: ((p: LauncherTool) => ({ label: p.label, title: p.title, act: p.act ?? {} }))(replyPlus()), chips: replyChips(), chipsMore: { label: t('shell.home.moreOptions'), title: t('shell.reply.moreChips') } })}
+                    {...(!phone && { plus: ((p: LauncherTool) => ({ label: p.label, title: p.title, act: p.act ?? {} }))(replyPlusNow()), chips: replyChips(), chipsMore: { label: t('shell.home.moreOptions'), title: t('shell.reply.moreChips') } })}
                     team={t('shell.home.delegateTitle')}
                     teamAct={replyTeamAct()}
                     goal={t('shell.task.goal')}
@@ -1678,6 +1822,27 @@ export default function TaskView(props: { readonly id: string; readonly onBack?:
                   }
                 />
               )}
+            </Show>
+            <Show when={restoreAsk()}>
+              <Dialog
+                open
+                role="alertdialog"
+                size="sm"
+                title={t('shell.restore.title')}
+                description={t('shell.restore.body')}
+                onOpenChange={(open) => !open && setRestoreAsk(undefined)}
+                part="task.restoreAsk"
+                footer={
+                  <Inline gap="4" justify="end">
+                    <Button variant="ghost" onClick={() => setRestoreAsk(undefined)}>
+                      {t('shell.stop.cancel')}
+                    </Button>
+                    <Button variant="danger" part="task.restoreAsk.ok" onClick={doRestore}>
+                      {t('shell.restore.ok')}
+                    </Button>
+                  </Inline>
+                }
+              />
             </Show>
           </>
         );

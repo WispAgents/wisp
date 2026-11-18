@@ -43,6 +43,11 @@ pub trait Backend: Send + Sync + 'static {
     fn key_set(&self, _key: &str) -> Option<String> {
         None
     }
+    /// A read (its command is declared read-only): its answer isn't kept for a retry, it just runs again. Unknown or
+    /// not yet registered: a write. Additive (perf audit 2026-11-18 #1).
+    fn read_only(&self, _cmd: &str) -> bool {
+        false
+    }
 }
 
 impl Backend for Kernel {
@@ -85,6 +90,10 @@ impl Backend for Kernel {
 
     fn key_set(&self, key: &str) -> Option<String> {
         Kernel::key_set(self, key)
+    }
+
+    fn read_only(&self, cmd: &str) -> bool {
+        Kernel::command_read_only(self, cmd)
     }
 
     /// whoever owns tasks (`kernel.tasks`) says which set a task's agent speaks with (`agent:capped`)

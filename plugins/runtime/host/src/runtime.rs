@@ -123,8 +123,18 @@ impl Runtime {
             .filter(|s| s.fields.get("halt").and_then(serde_json::Value::as_str) == Some("failed"))
             .map(|s| s.id.0.clone())
             .collect();
-        for id in failed {
-            self.repair_signed_out(&id).await?;
+        // off the start's way (perf audit 2026-11-18 #8: it re-read every failed task's last turn before the first
+        // response, on every start): the plugin's scope runs it once start is done; a repaired turn reaches clients as
+        // any change does
+        if !failed.is_empty() {
+            let rt = self.clone();
+            self.host.spawn(Box::pin(async move {
+                for id in failed {
+                    if let Err(e) = rt.repair_signed_out(&id).await {
+                        tracing::warn!(task = %id, error = %e, "the signed-out repair");
+                    }
+                }
+            }));
         }
         // questions open when wisp stopped stay answerable: the ask is on the task (v1 `session.ask`)
         let waiting: Vec<String> = self.lock_list().values().filter(|s| s.state == SessionState::Waiting).map(|s| s.id.0.clone()).collect();

@@ -12,7 +12,7 @@
 
 mod adapters;
 
-pub use adapters::{CrudKind, SettingsKind, StoredKind, stored, stored_published, stored_published_tidied};
+pub use adapters::{CrudKind, SettingsKind, StoredKind, stored, stored_published, stored_published_tidied, stored_published_unique};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use wisp_kernel::{BoxFuture, Call, Command, Point, Result};
@@ -311,6 +311,11 @@ pub struct PlanArgs {
     /// `kind.name` addresses to delete (`wisp destroy`), whatever `resources` says. Additive (2026-11-09).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub destroy: Vec<String>,
+    /// the sections (kinds) the formula names, an empty one too (`triggers: []`): with `prune`, a kind named here with
+    /// nothing left in it is emptied. Without it a formula whose last trigger was deleted pruned nothing (audit A #15).
+    /// Additive (2026-11-18).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub kinds: Vec<String>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]

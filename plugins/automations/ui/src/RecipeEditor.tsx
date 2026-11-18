@@ -7,24 +7,20 @@ import { defineCommand, type PeerId, type PluginClient } from '@wisp/client';
 import { projectList, useRunWords, useShell } from '@wisp/shell';
 import { Button, Dialog, Field, Input, Inline, Select, Stack, Text, TextArea, useSignal } from '@wisp/ui';
 import { t } from './i18n.ts';
-import { recipeParams, type RecipeDraft } from './recipe.ts';
+import { recipeBody, recipeName, recipeParams, type RecipeDraft } from './recipe.ts';
 import './i18n/lazy.ts';
 
-const save = defineCommand<{ peer: PeerId; draft: RecipeDraft }, unknown>({
+const save = defineCommand<{ peer: PeerId; draft: RecipeDraft; base?: Readonly<Record<string, unknown>> | undefined }, unknown>({
   id: 'automations.task.set',
   owner: (a) => a.peer,
-  wire: ({ draft: d }) => ({
-    name: d.name.trim(),
-    prompt: d.prompt,
-    ...(d.project && { project: d.project }),
-    ...(d.mode && { mode: d.mode }),
-    ...(d.agent && { agent: d.agent }),
-    ...(d.model && { model: d.model }),
-    ...(d.effort && { effort: d.effort }),
-  }),
+  wire: (a) => recipeBody(a.draft, a.base),
   optimistic: 'none',
   pending: 'Create recipe',
 });
+/** Edit that renamed it: the old name goes once the new one is saved (v1 PATCHed one row; v2 keys a task by name) */
+const removeOld = defineCommand<{ peer: PeerId; name: string }, unknown>({ id: 'automations.task.remove', owner: (a) => a.peer, wire: (a) => ({ name: a.name }), optimistic: 'none', pending: 'Save' });
+/** the recipe as saved, for an edit: what the editor doesn't show is kept */
+const saved = defineCommand<{ peer: PeerId }, readonly Record<string, unknown>[]>({ id: 'automations.tasks', owner: (a) => a.peer, wire: () => ({}), optimistic: 'none', pending: 'Save' });
 
 /** the task's first turn (v1 saveAsRecipe: `s.turns[0].prompt`) */
 const firstTurn = defineCommand<{ key: string; id: string }, readonly { prompt?: string }[]>({
@@ -42,7 +38,8 @@ export default function RecipeEditor(props: { readonly client: PluginClient; rea
   const say = t as (k: string, v?: Readonly<Record<string, string | number>>) => string;
   // the run in the picker's words (QA r15 #3: it printed "claude · opus · high")
   const runWords = useRunWords(useShell());
-  const [name, setName] = createSignal(props.params.name);
+  const [name, setName] = createSignal(recipeName(props.params.name));
+  const editing = props.params.editing;
   const [prompt, setPrompt] = createSignal(props.params.prompt);
   const from = props.params.session;
   if (from && !props.params.prompt)
@@ -59,27 +56,34 @@ export default function RecipeEditor(props: { readonly client: PluginClient; rea
   const params = createMemo(() => recipeParams(prompt()));
   const close = (): void => c.navigate({ t: 'closeOverlay', id: RECIPE_VIEW as never });
   const create = (): void => {
-    if (!name().trim() || !prompt().trim()) {
+    if (!recipeName(name()) || !prompt().trim()) {
       setError(say('automations.recipe.need'));
       return;
     }
     setBusy(true);
     setError('');
-    c.run(save, { peer: c.home, draft: { ...props.params, name: name(), prompt: prompt(), project: project(), mode: mode() } }).then(
-      () => {
-        close();
-        c.navigate({ t: 'openOverlay', overlay: { kind: 'viewer', id: 'shell-settings.sheet' as never, params: { pane: 'automations' } } });
-      },
-      (e: unknown) => {
-        setBusy(false);
-        setError(e instanceof Error ? e.message : String(e));
-      },
-    );
+    const as = recipeName(name());
+    const draft = { ...props.params, name: as, prompt: prompt(), project: project(), mode: mode() };
+    (editing ? c.run(saved, { peer: c.home }).then((all) => all.find((r) => r['name'] === editing)) : Promise.resolve(undefined))
+      .then((base) => c.run(save, { peer: c.home, draft, base }))
+      .then(() => (editing && editing !== as ? c.run(removeOld, { peer: c.home, name: editing }) : undefined))
+      .then(
+        () => {
+          close();
+          // Edit came from the Automations list, which reads its lists again; Save as recipe… opens it on the recipe
+          if (editing) return;
+          c.navigate({ t: 'openOverlay', overlay: { kind: 'viewer', id: 'shell-settings.sheet' as never, params: { pane: 'automations' } } });
+        },
+        (e: unknown) => {
+          setBusy(false);
+          setError(e instanceof Error ? e.message : String(e));
+        },
+      );
   };
   return (
     <Dialog
       part="automations.recipe"
-      title={say('automations.recipe.title')}
+      title={say(editing ? 'automations.recipe.edit' : 'automations.recipe.title')}
       open
       onOpenChange={(o) => !o && close()}
       closeOnOutside={false}
@@ -89,13 +93,13 @@ export default function RecipeEditor(props: { readonly client: PluginClient; rea
             {say('automations.recipe.cancel')}
           </Button>
           <Button variant="primary" size="sm" loading={busy()} onClick={create}>
-            {say('automations.recipe.create')}
+            {say(editing ? 'automations.recipe.save' : 'automations.recipe.create')}
           </Button>
         </Inline>
       }
     >
       <Stack gap="4">
-        <Field label={say('automations.recipe.name')}>
+        <Field label={say('automations.recipe.name')} {...(recipeName(name()) && recipeName(name()) !== name().trim() && { hint: say('automations.recipe.savedAs', { name: recipeName(name()) }) })}>
           <Input value={name()} onInput={setName} maxLength={60} spellcheck={false} placeholder={say('automations.recipe.namePlaceholder')} autofocus />
         </Field>
         <Field

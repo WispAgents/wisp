@@ -72,6 +72,12 @@
     ],
     "settings": [
       {
+        "key": "terminal.terminal",
+        "type": "string",
+        "default": "wisp",
+        "title": "Open tasks in: wisp, one of this computer's terminal apps (its id) or custom"
+      },
+      {
         "key": "terminal.command",
         "type": "string",
         "default": "",

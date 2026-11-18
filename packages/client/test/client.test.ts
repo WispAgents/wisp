@@ -134,6 +134,26 @@ test('a share link names a task: the URL wins over the last place', async () => 
   client.dispose();
 });
 
+// audit A F31: the app opened at `/` came back with the last place *and* what was open over it (Settings), the URL
+// rewritten to `?o=viewer:…`; on a phone it opened straight into Settings → General. `/` brings back the place only,
+// as a reload does (shell frame/overlays-on-load.ts); a link naming an overlay still opens it.
+test('the app at slash comes back to its last place without the overlay that was over it', async () => {
+  const persist = memoryPersist();
+  await persist.write([{ ns: 'nav', key: 'last', value: '/task/laptop%3As1?o=viewer%3Ashell-settings.sheet%3A%7B%22pane%22%3A%22general%22%7D' }]);
+  const { client } = make(persist, '/');
+  client.views.register(client.scope, { id: 'shell-settings.sheet', slot: 'overlay', overlay: 'viewer', parse: (p) => p });
+  await client.start([]);
+  assert.deepEqual(client.nav.nav().main, { kind: 'task', id: 'laptop:s1' as EntityKey });
+  assert.deepEqual(client.nav.nav().overlays, []);
+  client.dispose();
+  // a link opened on purpose that names it keeps it
+  const two = make(memoryPersist(), '/?o=viewer%3Ashell-settings.sheet%3A%7B%22pane%22%3A%22general%22%7D');
+  two.client.views.register(two.client.scope, { id: 'shell-settings.sheet', slot: 'overlay', overlay: 'viewer', parse: (p) => p });
+  await two.client.start([]);
+  assert.equal(two.client.nav.nav().overlays.length, 1);
+  two.client.dispose();
+});
+
 test('a plugin translates, watches topics in its scope and reads peers, nothing more', async () => {
   const { client } = make();
   const inputs: string[] = [];

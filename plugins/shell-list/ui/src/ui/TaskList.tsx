@@ -10,7 +10,7 @@ import type { ProjectColor } from '@wisp/tokens';
 import type { EntityKey } from '@wisp/client';
 import type { ExtensionProps, ResolvedExtension } from '@wisp/shell/contract';
 import { copyId, setUnread, toggleArchived, toggleDone, toggleForLater, togglePin } from '../actions.ts';
-import { flatten, itemKey, sectionGroups, taskKeys, type Item } from '../model/flat.ts';
+import { flatOpen, flatten, foldedKeys, itemKey, sectionGroups, taskKeys, type Item } from '../model/flat.ts';
 import { pickOf } from '../model/sections.ts';
 import { createPull } from '../model/pull.ts';
 import { rowMenu } from '../model/menu.ts';
@@ -91,7 +91,11 @@ function ListBody(): JSX.Element {
   // the open task matters only beside the list (split: a folded section keeps its row); on a phone it changes nothing
   // here, so a tap doesn't re-flatten 4,000 tasks and re-plan the list behind the task page (F-phone-8)
   const open = createMemo(() => (env.split() ? env.open() : undefined));
-  const items = createMemo(() => flatten(sections(), { toggled: toggled(), open: open(), split: env.split(), crew: !env.split() && crewInList(), byProject: byProject() }));
+  // the open task changes the rows only where a folded section keeps its row: j / k through the open sections leave the
+  // list as it is (perf r1 #7: every step re-flattened 5,000 tasks and the list re-planned and re-measured them all)
+  const folded = createMemo(() => foldedKeys(sections(), toggled()));
+  const openRow = createMemo(() => (env.split() ? flatOpen(open(), folded()) : undefined));
+  const items = createMemo(() => flatten(sections(), { toggled: toggled(), open: openRow(), split: env.split(), crew: !env.split() && crewInList(), byProject: byProject() }));
   // the order the list shows (its filters, folds and sort): a phone's task page steps through it (Next task, the head's
   // swipe) and the selection's Select all picks it (ADR-0065 step 13)
   createEffect(() => env.shell.listOrder?.publish(taskKeys(items())));

@@ -11,7 +11,7 @@ import { useShell } from '@wisp/shell';
 import { Button, CopyCommand, Inline, Input, Pill, SettingsBlock, SettingsGroup, SettingsNote, SettingsRow, Skeleton, Stack, Steps, Switch, Text, useSignal } from '@wisp/ui';
 import { channelExtra, phoneStatus, rotateChannel, setupChannel, testChannel } from '../commands.ts';
 import { t, type Key } from '../i18n.ts';
-import { fieldsFor, inviteOf, isTransport, linkLine, manifestText, marked, newer, optimistic, pinOf, readAgain, shown, STATE_KEY, stepsOf, testNote, toneOf, withRow, type FieldDef } from '../lib.ts';
+import { fieldsFor, inviteOf, isTransport, settable, linkLine, manifestText, marked, newer, optimistic, pinOf, readAgain, shown, STATE_KEY, stepsOf, testNote, toneOf, withRow, type FieldDef } from '../lib.ts';
 import { ORDER, PHONE_KIND, PHONE_TOPIC, type ChannelSetup, type PhoneRow, type PhoneStatus, type SetupArgs, type Tested } from '../types.ts';
 import { EmailAddress, Endpoint, Invite, Manifest, SendMe, Who, type Extras } from './Extras.tsx';
 import '../i18n/lazy.ts';
@@ -344,7 +344,8 @@ function usePhone(c: PluginClient) {
 
 export default function Phone(props: { readonly client: PluginClient }): JSX.Element {
   const p = usePhone(props.client);
-  const names = createMemo(() => (p.status()?.channels ?? []).map((x) => x.transport), undefined, { equals: (a, b) => a.length === b.length && a.every((x, i) => x === b[i]) });
+  // the channels this pane sets up (not the phone app's own push: F7)
+  const names = createMemo(() => settable((p.status()?.channels ?? []).map((x) => x.transport)), undefined, { equals: (a, b) => a.length === b.length && a.every((x, i) => x === b[i]) });
   return (
     <Stack part="settings.phone">
       <SettingsNote part="channels.lede" after={8}>

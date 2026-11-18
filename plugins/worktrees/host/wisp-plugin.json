@@ -20,6 +20,8 @@
     "git:status",
     "git:fetch",
     "git:worktree.add",
+    "git:snapshot",
+    "git:restore",
     "git:worktree.remove",
     "git:branch.delete",
     "proc:exec{bin:cp}",
@@ -28,6 +30,7 @@
     "proc:exec{bin:df}",
     "proc:exec{bin:sh}",
     "runtime:list",
+    "runtime:slots",
     "runtime:get",
     "runtime:setExt",
     "runtime:sessions",
@@ -75,6 +78,12 @@
         "id": "worktrees.view",
         "title": "Worktrees on disk",
         "readOnly": true
+      },
+      {
+        "id": "worktrees.viewLast",
+        "title": "Worktrees on disk, as last looked",
+        "readOnly": true,
+        "uiOnly": "the Machine page's frequent read of the last look; an agent uses worktrees.view"
       },
       {
         "id": "worktrees.clean",

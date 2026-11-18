@@ -107,12 +107,16 @@ impl Ship {
         if n == 0 {
             return Err(Refusal::Invalid("No pull request to merge.".into()).into());
         }
-        let mut synced = Vec::new();
+        let (mut synced, mut kept) = (Vec::new(), Vec::new());
         for i in own {
             let (wt, number, name) =
                 (task.repos[i].worktree.clone(), task.repos[i].pr.as_ref().map_or(0, |p| p.number), task.repos[i].name.clone());
             match self.shipper.merge(call, &wt, number).await {
-                Ok((pr, sync)) => (task.repos[i].pr, ()) = (Some(pr), synced.push(sync)),
+                Ok((pr, sync, left)) => {
+                    task.repos[i].pr = Some(pr);
+                    synced.push(sync);
+                    kept.extend(left);
+                }
                 Err(e) => return Err(self.merge_failed(task, e.in_repo(&name, n))),
             }
         }
@@ -129,7 +133,7 @@ impl Ship {
         let pr = task.pr().cloned().or_else(|| task.prs.first().map(|x| x.pr.clone())).unwrap_or_default();
         self.save(task);
         self.emit(Out::Merged { session: session.into(), prs: prs.clone(), sync: sync.clone() });
-        Ok(Merged { pr, sync, prs: (prs.len() > 1).then_some(prs) })
+        Ok(Merged { pr, sync, prs: (prs.len() > 1).then_some(prs), kept })
     }
 
     fn merge_failed(&self, task: ShipTask, e: ShipError) -> ShipError {

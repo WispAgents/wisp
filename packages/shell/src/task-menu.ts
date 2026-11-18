@@ -4,7 +4,6 @@
 // submenus, so the menu stays about a dozen rows. Pure.
 import { menuSections, type MenuEntry, type MenuItem, type MenuGroup, type MenuSeparator, type MenuSubmenu, type IconName } from '@wisp/ui/pure';
 import type { ExtensionProps, ResolvedExtension, TaskMenuSection, TaskMenuSub } from './contract.ts';
-import './i18n/lazy.ts';
 
 /** One entry of a task's menu and where it goes: the shell's, the list's or a plugin's (`bar.section`, `bar.sub`). */
 export interface TaskMenuEntry {

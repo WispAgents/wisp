@@ -139,11 +139,13 @@
     font-size: 12.5px;
     color: var(--muted);
   }
+  /* v1 .au-tags wraps (a Wrap group: data-layout='wrap', layout.css): a narrow screen's actions take the row's
+     width, and a clipped tag read "not run y" */
   [data-kit='au-tags'] {
+    --k-gap: 4px;
     display: flex;
     gap: 4px;
     margin-top: 6px;
-    overflow: hidden;
   }
   [data-kit='au-tags'] > i {
     flex: none;

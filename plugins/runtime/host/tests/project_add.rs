@@ -27,7 +27,16 @@ async fn kernel() -> K {
     K { k, store }
 }
 
+/// `path` made on disk first: a project is a folder that's there (audit A F1)
+fn made(path: &str) -> &str {
+    std::fs::create_dir_all(path).unwrap();
+    path
+}
+
 async fn add(k: &K, args: Value) -> Value {
+    if let Some(p) = args["path"].as_str().filter(|p| p.starts_with('/')) {
+        made(p.trim_end_matches("/."));
+    }
     k.k.call(Caller::user(), "runtime.projectAdd", args).await.unwrap_or_else(|e| panic!("runtime.projectAdd: {}", e.message))
 }
 
@@ -102,7 +111,7 @@ async fn a_relative_path_is_refused_and_so_is_a_caller_without_the_permission() 
 #[tokio::test(flavor = "multi_thread")]
 async fn a_capped_task_is_refused_and_an_uncapped_agent_adds() {
     let k = kernel().await;
-    let e = k.k.call(Caller::agent("t1", true), "runtime.projectAdd", json!({ "path": "/tmp/cap/web" })).await.unwrap_err();
+    let e = k.k.call(Caller::agent("t1", true), "runtime.projectAdd", json!({ "path": made("/tmp/cap/web") })).await.unwrap_err();
     assert_eq!(e.code, Code::Forbidden, "{}", e.message);
     assert!(e.message.contains("add a folder to the user’s projects"), "{}", e.message);
     assert_eq!(projects(&k).await, Vec::<(String, String)>::new());
@@ -115,8 +124,40 @@ async fn a_capped_task_is_refused_and_an_uncapped_agent_adds() {
 async fn a_name_with_separators_or_control_characters_is_refused() {
     let k = kernel().await;
     for bad in ["a/b", "a\\b", "x:y", "two\nlines"] {
-        let e = k.k.call(Caller::user(), "runtime.projectAdd", json!({ "path": "/tmp/nm/web", "name": bad })).await.unwrap_err();
+        let e = k.k.call(Caller::user(), "runtime.projectAdd", json!({ "path": made("/tmp/nm/web"), "name": bad })).await.unwrap_err();
         assert_eq!(e.code, Code::Invalid, "{bad:?}: {}", e.message);
     }
     assert_eq!(add(&k, json!({ "path": "/tmp/nm/web", "name": "my.app" })).await["name"], "my.app");
+}
+
+/// Audit A F1: a folder that isn't there, or a file, was added as a project from the UI ("nope-not-here", "math.js");
+/// the CLI refused both. The server refuses them for every client, in plain words. F3: no command ids in what it says
+/// (it read "(clone a repo URL first: git.clone)").
+#[tokio::test(flavor = "multi_thread")]
+async fn a_missing_folder_or_a_file_is_refused_in_plain_words() {
+    let k = kernel().await;
+    let missing = "/tmp/wisp-audit-f1/nope-not-here";
+    let _ = std::fs::remove_dir_all("/tmp/wisp-audit-f1");
+    made("/tmp/wisp-audit-f1");
+    let file = "/tmp/wisp-audit-f1/math.js";
+    std::fs::write(file, "1").unwrap();
+    for (bad, says) in
+        [(missing, "No folder at /tmp/wisp-audit-f1/nope-not-here"), (file, "/tmp/wisp-audit-f1/math.js is a file, not a folder")]
+    {
+        let e = k.k.call(Caller::user(), "runtime.projectAdd", json!({ "path": bad })).await.unwrap_err();
+        assert_eq!(e.code, Code::Invalid, "{bad}: {}", e.message);
+        assert!(e.message.contains(says), "{bad}: {}", e.message);
+    }
+    for bad in ["repo2", "https://github.com/x/y"] {
+        let e = k.k.call(Caller::user(), "runtime.projectAdd", json!({ "path": bad })).await.unwrap_err();
+        assert!(!e.message.contains("git.clone") && !e.message.starts_with("path:"), "{bad}: {}", e.message);
+        assert!(e.message.contains("full path"), "{bad}: {}", e.message);
+    }
+    assert_eq!(projects(&k).await, Vec::<(String, String)>::new());
+    // a file:// URL of a folder is that folder
+    made("/tmp/wisp-audit-f1/repo2");
+    assert_eq!(add(&k, json!({ "path": "file:///tmp/wisp-audit-f1/repo2" })).await["path"], "/tmp/wisp-audit-f1/repo2");
+    // spaces as a file URL writes them, and localhost as its host
+    made("/tmp/wisp-audit-f1/My App");
+    assert_eq!(add(&k, json!({ "path": "file://localhost/tmp/wisp-audit-f1/My%20App" })).await["path"], "/tmp/wisp-audit-f1/My App");
 }

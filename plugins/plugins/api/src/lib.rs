@@ -24,6 +24,16 @@ pub struct PluginRow {
     pub builtin: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub reason: Option<String>,
+    /// a plugin of yours: trusted (its own process with your environment, its styles applied) or not (ADR-0048).
+    /// None for a built-in, which has no trust to change. Additive (2026-11-18, audit A F19).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub trusted: Option<bool>,
+    /// a plugin of yours: what it asks for (its manifest's permissions), as Settings shows them. Additive.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub permissions: Vec<String>,
+    /// a plugin of yours: its manifest's name ("QA Pink"), where the id is all a built-in has. Additive.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]

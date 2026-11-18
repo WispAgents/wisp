@@ -1,5 +1,5 @@
 import { expect, test } from 'vitest';
-import { adding, keyLine, keysOf, madeOf, nameProblem, restored, settled, tryLine, without } from '../src/keys.ts';
+import { adding, freshAfter, keyLine, keysOf, madeOf, nameProblem, restored, settled, tryLine, without } from '../src/keys.ts';
 import { t } from '../src/i18n.ts';
 
 const say = t as never;
@@ -50,4 +50,13 @@ test('a_name_is_needed_and_60_characters_at_most_and_the_try_line_names_no_key',
   expect(nameProblem('🔑'.repeat(60))).toBeUndefined();
   expect(nameProblem(' deploy ')).toBeUndefined();
   expect(tryLine('https://ada.trywisp.dev/')).toBe('curl -H "Authorization: Bearer $WISP_KEY" https://ada.trywisp.dev/api/health');
+});
+
+// Setup audit F15: after Revoke, "No keys yet" showed under a panel that still said "qa-script is ready · Copy it now",
+// with the full key and its curl line. Revoking the key you just made takes its panel away; another key's stays.
+test('revoking_the_key_just_made_takes_its_copy_panel_away', () => {
+  const made = { id: 'k1', name: 'qa-script', key: 'wgk_secret' };
+  expect(freshAfter(made, 'k1')).toBeUndefined();
+  expect(freshAfter(made, 'k2')).toBe(made);
+  expect(freshAfter(undefined, 'k1')).toBeUndefined();
 });

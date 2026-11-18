@@ -8,7 +8,7 @@ import { defineCommand, type PeerId, type PluginClient } from '@wisp/client';
 import { useShell } from '@wisp/shell';
 import { Button, Code, englishT, Inline, Input, SettingsBlock, SettingsGroup, SettingsInputRow, SettingsRow, Stack, Text, timeLabel } from '@wisp/ui';
 import { t } from '../i18n.ts';
-import { adding, keyLine, keysOf, madeOf, nameProblem, NAME_MAX, restored, settled, tryLine, without, type ApiKey, type Fresh, type KeysView } from '../keys.ts';
+import { adding, freshAfter, keyLine, keysOf, madeOf, nameProblem, NAME_MAX, restored, settled, tryLine, without, type ApiKey, type Fresh, type KeysView } from '../keys.ts';
 import { Confirm } from './Confirm.tsx';
 import '../i18n/lazy.ts';
 
@@ -63,7 +63,7 @@ export function ApiKeys(props: { readonly client: PluginClient }): JSX.Element {
       (v) => {
         const made = madeOf(v);
         edit((l) => settled(l, tmp, made?.row));
-        if (made) setFresh({ name: made.row.name, key: made.key });
+        if (made) setFresh({ id: made.row.id, name: made.row.name, key: made.key });
       },
       () => {
         edit((l) => settled(l, tmp, undefined));
@@ -75,7 +75,11 @@ export function ApiKeys(props: { readonly client: PluginClient }): JSX.Element {
   const drop = (k: ApiKey): void => {
     edit((l) => without(l, k.id));
     c.run(revoke, { peer: c.home, id: k.id }).then(
-      () => shell.toast.show(t('grid-client.keys.revoked', { name: k.name })),
+      () => {
+        // the key just made, revoked: its panel goes too (kept until then: a refused revoke leaves the key working)
+        setFresh(freshAfter(fresh(), k.id));
+        shell.toast.show(t('grid-client.keys.revoked', { name: k.name }));
+      },
       () => {
         edit((l) => restored(l, k));
         load(); // gone from another computer already: the list says so

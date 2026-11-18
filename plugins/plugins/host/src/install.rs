@@ -299,6 +299,22 @@ pub async fn uninstall(ctx: &Ctx, a: &UninstallArgs) -> Result<serde_json::Value
     Ok(serde_json::json!({ "ok": true, "id": a.id }))
 }
 
+/// A plugin of yours as its folder has it: trusted or not, what it asks for, its name.
+pub struct About {
+    pub trusted: bool,
+    pub permissions: Vec<String>,
+    pub name: Option<String>,
+}
+
+/// Read from `~/.wisp/plugins/<slug>`; None when it has no folder (or no readable manifest) there.
+pub async fn about(ctx: &Ctx, id: &str) -> Option<About> {
+    let dir = ctx.service::<wisp_kernel::services::Paths>().ok()?.join("plugins").join(slug(id));
+    let text = tokio::fs::read_to_string(dir.join(MANIFEST)).await.ok()?;
+    let m = Manifest::parse(&text).ok()?;
+    let trusted = tokio::fs::metadata(dir.join(TRUSTED)).await.is_ok_and(|x| x.is_file());
+    Some(About { trusted, permissions: m.permissions.clone(), name: m.name.clone() })
+}
+
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct TrustArgs {
     pub id: String,

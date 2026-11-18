@@ -210,6 +210,13 @@
       cursor: pointer;
       -webkit-tap-highlight-color: transparent;
     }
+    /* a long queue scrolls in its own area, so the reply box's mode, harness, Queue and Send stay on screen (audit A
+       orch #23: nine follow-ups pushed them off a 390 px phone) */
+    [data-kit='cq-list'] {
+      max-height: 30vh;
+      overflow-y: auto;
+      overscroll-behavior: contain;
+    }
   }
   @media (pointer: coarse) {
     [data-kit='cq-editbox'] > [data-kit='textarea'][data-part] {

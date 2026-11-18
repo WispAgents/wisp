@@ -1,16 +1,18 @@
 @layer kit {
   /* The frame is its own container: it lays out by its width, not the viewport's, so it works in
      a sheet, beside a task, or on a phone. */
-  [data-kit='settings-frame'] { container: settings / inline-size; height: 100%; min-height: 0; background: var(--surface); font-size: var(--fs-lg); line-height: 1.55; color: var(--ink); }
+  /* the boxes round the pane's body clip, never scroll: a field focused deep in a pane slid the whole sheet up (audit A
+     F32; `hidden` is still scrollable by focus and script) */
+  [data-kit='settings-frame'] { container: settings / inline-size; height: 100%; min-height: 0; overflow: clip; background: var(--surface); font-size: var(--fs-lg); line-height: 1.55; color: var(--ink); }
   /* in a dialog the dialog is the card (v1 .modal.sx: its line and corners); the frame fills it */
-  [data-kit='dialog'] [data-kit='settings-frame'] { overflow: hidden; }
+  [data-kit='dialog'] [data-kit='settings-frame'] { overflow: clip; }
   [data-kit='settings-frame-grid'] { display: grid; grid-template-columns: var(--size-settings-nav) minmax(0, 1fr); height: 100%; min-height: 0; }
   @container settings (max-width: 800px) { [data-kit='settings-frame-grid'] { grid-template-columns: var(--size-settings-nav-narrow) minmax(0, 1fr); } }
 
   /* the title and the search stay put; the list scrolls under them, so a lower pane picked (Updates, Diagnostics) never
      scrolls them out of the nav (QA round 3 #10) */
   [data-kit='settings-nav'] {
-    display: flex; flex-direction: column; gap: var(--size-hairline); min-height: 0; overflow: hidden;
+    display: flex; flex-direction: column; gap: var(--size-hairline); min-height: 0; overflow: clip;
     padding: calc(var(--space-7) + var(--space-1)) var(--space-5); border-right: var(--size-hairline) solid var(--line); background: var(--bg-2);
   }
   /* v1 .sx-nav h2: the title is the block, 8px in and 14px above the list */
@@ -37,7 +39,7 @@
   [data-kit='settings-nav-alert'] { flex: none; width: var(--size-dot-lg); height: var(--size-dot-lg); border-radius: var(--radius-pill); background: var(--k-tone); }
   [data-kit='settings-nav-chevron'] { display: none; flex: none; color: var(--faint); }
 
-  [data-kit='settings-main'] { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
+  [data-kit='settings-main'] { display: flex; flex-direction: column; min-width: 0; min-height: 0; overflow: clip; }
   [data-kit='settings-main'] > [data-kit='bar'] {
     display: flex; flex-wrap: nowrap; align-items: center; gap: var(--space-3); flex: none;
     min-height: var(--size-settings-head); padding: var(--space-5) var(--space-6) var(--space-5) var(--space-8); border-bottom: var(--size-hairline) solid var(--line);

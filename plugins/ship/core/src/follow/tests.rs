@@ -20,7 +20,7 @@ fn a_conflicting_pr_is_left_alone_by_default() {
     let t = task(open("h1", true));
     assert_eq!(should_fix(&t, false, false, Busy::default()), Fix::Skip);
     assert_eq!(should_fix(&t, true, false, Busy::default()), Fix::CheckBase, "auto: git is asked first");
-    assert_eq!(should_fix(&t, false, true, Busy::default()), Fix::Start, "the user clicked: at once");
+    assert_eq!(should_fix(&t, false, true, Busy::default()), Fix::CheckBase, "the user clicked: git is asked first too (audit A #21)");
 }
 
 #[test]
@@ -31,7 +31,7 @@ fn auto_fix_runs_once_per_head_and_at_most_three_times() {
     // still CONFLICTING on the stale GitHub side, same head: no second follow-up
     assert_eq!(should_fix(&t, true, false, Busy::default()), Fix::Skip);
     // ...but Fix conflicts retries
-    assert_eq!(should_fix(&t, true, true, Busy::default()), Fix::Start);
+    assert_eq!(should_fix(&t, true, true, Busy::default()), Fix::CheckBase);
     // a new head may try again, up to three
     t.repos[0].pr = Some(open("h2", true));
     assert_eq!(should_fix(&t, true, false, Busy::default()), Fix::CheckBase);

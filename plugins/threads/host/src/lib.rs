@@ -52,6 +52,8 @@ pub(crate) struct State {
     pub out: PathBuf,
     /// the tasks whose compaction is being audited now
     pub busy: audit::Busy,
+    /// what health reads of the last turns of the tasks whose turns ended lately (`health::Window`)
+    pub windows: health::Windows,
 }
 
 pub(crate) type Slot = Arc<OnceLock<Arc<State>>>;
@@ -126,7 +128,7 @@ fn events(s: &mut Setup, slot: &Slot) {
                 let call = ctx.root_call();
                 // first what a harness's compaction hook counted (Codex), so health and the audit see it
                 let marked = audit::take_marked(&ctx, &call, &st, e.session_id.as_str(), e.turn_id.as_str()).await;
-                if let Err(err) = health::work_out(&ctx, &call, &st, e.session_id.as_str()).await {
+                if let Err(err) = health::work_out(&ctx, &call, &st, e.session_id.as_str(), Some(e.turn_id.as_str())).await {
                     tracing::debug!(error = %err.message, task = %e.session_id.0, "threads: no health");
                 }
                 audit::after_turn(&ctx, &call, &st, e.session_id.as_str(), e.turn_id.as_str(), marked).await;
@@ -150,6 +152,7 @@ fn events(s: &mut Setup, slot: &Slot) {
         let sl = sl.clone();
         async move {
             if let Ok(st) = state(&sl) {
+                st.windows.forget(e.id.as_str());
                 files::forget(&st, e.id.as_str()).await;
             }
         }
@@ -229,7 +232,12 @@ impl Plugin for ThreadsPlugin {
             let home = ctx
                 .service::<wisp_kernel::services::Paths>()
                 .map_or_else(|_| std::env::temp_dir().join("wisp"), |p| p.home().to_path_buf());
-            let _ = slot.set(Arc::new(State { store, out: home.join("threads").join("out"), busy: audit::Busy::default() }));
+            let _ = slot.set(Arc::new(State {
+                store,
+                out: home.join("threads").join("out"),
+                busy: audit::Busy::default(),
+                windows: health::Windows::default(),
+            }));
             Ok(())
         });
         Ok(())

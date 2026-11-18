@@ -64,6 +64,19 @@ pub fn put_settings(w: &mut Writer<'_>, v: &Value) -> wisp_store::Result<()> {
     w.upsert(META.kind, row("settings", v)?).map(|_| ())
 }
 
+/// The settings row alone (the stop lines as Usage set them), for the `budget` kind's read.
+pub async fn settings(store: &Store) -> wisp_store::Result<Value> {
+    store
+        .read_async(|r| {
+            Ok(r.query(META.kind, &Query::new())?
+                .into_iter()
+                .find(|row| row.get("id").and_then(Value::as_str) == Some("settings"))
+                .and_then(|row| row.get("body").cloned())
+                .unwrap_or_else(|| json!({})))
+        })
+        .await
+}
+
 /// Ask near the limit's runs, per harness.
 pub fn put_runs(w: &mut Writer<'_>, runs: &crate::ask::Runs) -> wisp_store::Result<()> {
     w.upsert(META.kind, row("runs", runs)?).map(|_| ())

@@ -3,9 +3,10 @@
 import { createSignal, onCleanup } from 'solid-js';
 import { entityKey, type PluginClient } from '@wisp/client';
 import { useSignal } from '@wisp/ui';
-import { DEFAULT_GRID, KIND, signIn, TOPIC, type CloudRow } from '../commands.ts';
+import { KIND, signIn, TOPIC, type CloudRow } from '../commands.ts';
 import { t } from '../i18n.ts';
 import { hereOf } from '../here.ts';
+import { gridField } from '../grid-field.ts';
 import '../i18n/lazy.ts';
 
 export const host = (url: string): string => url.replace(/^https?:\/\//, '').replace(/\/$/, '');
@@ -17,7 +18,9 @@ export function useCloud(c: PluginClient) {
   c.watch(peer, TOPIC, scope);
   const row = useSignal(c.entities.row<CloudRow>(KIND, entityKey(peer, 'this')));
   const r = (): CloudRow | undefined => row() as CloudRow | undefined;
-  const [grid, setGrid] = createSignal(DEFAULT_GRID);
+  // what you typed; until then, the grid of the sign-in under way, or yours, else wisp Cloud (setup audit F2)
+  const [typed, setGrid] = createSignal<string>();
+  const grid = (): string => typed() ?? gridField(r());
   const [starting, setStarting] = createSignal(false);
   const waiting = () => (r()?.signin?.state === 'waiting' ? r()?.signin : undefined);
   const failed = () => (r()?.signin && ['denied', 'expired', 'failed'].includes(r()?.signin?.state ?? '') ? r()?.signin?.error : undefined);

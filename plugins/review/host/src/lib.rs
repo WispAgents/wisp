@@ -34,9 +34,12 @@ impl Plugin for ReviewPlugin {
         let env: Arc<dyn Env> = Arc::new(KernelEnv(ctx.clone()));
         let reviewer = Reviewer::new(env.clone());
         let r = reviewer.clone();
-        s.command::<MaybeReview, _, _>(move |ctx, call, args| {
+        s.command::<MaybeReview, _, _>(move |ctx, _call, args| {
             let r = r.clone();
-            async move { start(&ctx, &r, &call, &args.id, args.force).await }
+            // the run outlives this command: the kernel cancels a command's call once it answers, and a review run on
+            // it had its every later step refused, so it never asked the reviewer and stayed "running" (orch #20).
+            // It goes on the plugin's own call, as a run started by a turn's end does.
+            async move { start(&ctx, &r, &ctx.root_call(), &args.id, args.force).await }
         });
         let e = env.clone();
         s.command::<View, _, _>(move |_ctx, call, args| {

@@ -1,11 +1,11 @@
 // Settings → Plugins (v1's Spells, ADR-0031: a change to wisp is a plugin now): every plugin this wisp runs,
 // built-in or yours, with its state (on, off, refused and why) and its switch. A switch shows at once and
 // the list is read again after it; switching off frees everything the plugin made (its scope).
-import { createResource, createSignal, For, Show, type JSX } from 'solid-js';
+import { createResource, createSignal, For, onCleanup, Show, type JSX } from 'solid-js';
 import type { PluginClient } from '@wisp/client';
 import { Button, Callout, Code, IconButton, Inline, PathField, Pill, SettingsCast, SettingsEmpty, SettingsFieldRow, SettingsGroup, SettingsNote, SettingsRow, Stack, Switch, Text } from '@wisp/ui';
 import { useShell } from '@wisp/shell';
-import { cast, castPrompt, folders, install, list, permissionWords, setEnabled, uninstall, type Installed, type PluginRow } from '../commands.ts';
+import { cast, castPrompt, folders, install, list, permissionWords, rowAbout, setEnabled, trust, uninstall, type Installed, type PluginRow } from '../commands.ts';
 import { t } from '../i18n.ts';
 import '../i18n/lazy.ts';
 
@@ -17,6 +17,21 @@ export default function Plugins(props: { readonly client: PluginClient }): JSX.E
   const peer = c.home;
   const [rows, { refetch, mutate }] = createResource(() => c.run(list, { peer }).catch((): PluginRow[] => []));
   const [busy, setBusy] = createSignal<string | undefined>();
+  // a change made elsewhere (`wisp plugin enable`, an agent, another window) shows here too: the server's
+  // plugins.changed notice reads the list again (audit A F21: the pane kept its first list)
+  const shell = useShell();
+  onCleanup(shell.client.peers.onNotice((from, n) => from === peer && n.kind === 'plugins.changed' && void refetch()));
+  // Trust (ADR-0048): a plugin of yours trusted or back; it reloads, so the list is read again after
+  const setTrust = (p: PluginRow, next: boolean): void => {
+    mutate((rs) => (rs ?? []).map((x) => (x.id === p.id ? { ...x, trusted: next } : x)));
+    setBusy(p.id);
+    c.run(trust, { peer, id: p.id, trusted: next })
+      .catch(() => {})
+      .finally(() => {
+        setBusy(undefined);
+        void refetch();
+      });
+  };
   const flip = (p: PluginRow, on: boolean): void => {
     mutate((rs) => (rs ?? []).map((x) => (x.id === p.id ? { ...x, enabled: on, state: on ? 'active' : 'off' } : x)));
     setBusy(p.id);
@@ -32,7 +47,7 @@ export default function Plugins(props: { readonly client: PluginClient }): JSX.E
   const [source, setSource] = createSignal('');
   // Folder… (v1 File…): the system's folder dialog in the desktop app; in a browser the box, which suggests the
   // folders under what you type (Tab goes into one)
-  const platform = useShell().platform;
+  const platform = shell.platform;
   let field: HTMLInputElement | undefined;
   const browse = async (): Promise<void> => {
     if (platform.pickFolder) {
@@ -79,13 +94,30 @@ export default function Plugins(props: { readonly client: PluginClient }): JSX.E
     for (const p of yours()) if (p.enabled) flip(p, false);
   };
   const builtins = (): PluginRow[] => (rows() ?? []).filter((p) => p.builtin).sort((a, b) => a.id.localeCompare(b.id));
-  const row = (p: PluginRow): JSX.Element => (
+  const row = (p: PluginRow): JSX.Element => {
+    const about = (): ReturnType<typeof rowAbout> => rowAbout(p, say);
+    return (
     <SettingsRow
       part="plugins.row"
-      title={p.id.replace(/^wisp\./, '')}
-      description={p.reason ?? t('plugins.version', { version: p.version })}
+      title={about().title}
+      description={
+        <For each={about().lines}>
+          {(line) => (
+            <Text as="div" size="sm" tone="muted">
+              {line}
+            </Text>
+          )}
+        </For>
+      }
       control={
         <>
+          <Show when={about().trust}>
+            {(tr) => (
+              <Button size="sm" variant="ghost" part="plugins.trust" disabled={busy() === p.id} title={say(tr().next ? 'plugins.trustOf' : 'plugins.untrustOf', { name: about().title })} onClick={() => setTrust(p, tr().next)}>
+                {tr().label}
+              </Button>
+            )}
+          </Show>
           <Pill tone={TONE[p.state] ?? 'neutral'} dot variant="outline">
             {t(`plugins.state.${(TONE[p.state] ? p.state : 'off') as 'active'}`)}
           </Pill>
@@ -96,7 +128,8 @@ export default function Plugins(props: { readonly client: PluginClient }): JSX.E
         </>
       }
     />
-  );
+    );
+  };
   // Cast (v1 Settings → Spells' box): describe the change, an agent makes it as a plugin and installs it off
   const [ask, setAsk] = createSignal('');
   const [casting, setCasting] = createSignal(false);

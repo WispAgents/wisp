@@ -136,6 +136,7 @@ impl Settings {
             if !decl.overridable {
                 return Err(WireError::forbidden(format!("{by} can't set {key}: {owner} doesn't let other plugins set it")));
             }
+            let value = decl.coerce(value);
             if let Some(why) = decl.problem(&value) {
                 return Err(WireError::invalid(format!("{by} sets {key}: {why}")));
             }
@@ -191,7 +192,7 @@ impl Settings {
     /// The user's (or a command's) write. `None` resets it to the default.
     #[allow(clippy::needless_pass_by_value)] // the caller gives the value up
     pub(crate) fn set(&self, key: &str, value: Option<Value>, backend: Option<&dyn SettingsBackend>) -> Result<()> {
-        let (fired, device) = {
+        let (fired, device, value) = {
             let mut i = self.lock()?;
             let Some((_, decl)) = i.decls.get(key) else {
                 return Err(WireError::not_found(format!("no plugin declares the setting {key}")));
@@ -199,6 +200,7 @@ impl Settings {
             if let Some((by, _)) = i.locks.get(key) {
                 return Err(WireError::conflict(format!("{key} is locked by {by}")));
             }
+            let value = value.map(|v| decl.coerce(v));
             if let Some(why) = value.as_ref().and_then(|v| decl.problem(v)) {
                 return Err(WireError::invalid(format!("{key} {why}")));
             }
@@ -208,7 +210,7 @@ impl Settings {
                 Some(v) => i.values.insert(key.to_owned(), v.clone()),
                 None => i.values.remove(key),
             };
-            (if before == i.get(key) { Vec::new() } else { i.fire(key) }, device)
+            (if before == i.get(key) { Vec::new() } else { i.fire(key) }, device, value)
         };
         if let Some(b) = backend {
             b.save(key, value.as_ref(), device);

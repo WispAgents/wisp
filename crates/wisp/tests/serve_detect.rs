@@ -97,8 +97,10 @@ async fn a_second_ask_is_answered_from_the_cache_and_a_changed_cli_is_probed_aga
     eprintln!("runtime.agents, healthy, first: {took:?}, probes {once:?}");
     let (second, again) = timed(&api, json!({})).await;
     eprintln!("runtime.agents, healthy, second: {again:?}");
-    // `agy models` is also agy's sign-in status (wisp.accounts reads it apart from detect)
-    assert!(once.iter().all(|(p, &n)| n == 1 || p == "agy models"), "a probe ran more than once: {once:?}");
+    // `agy models` and `grok models` are also their sign-in status (wisp.accounts reads it apart from detect): at most
+    // twice, once each; every other probe once
+    let status = ["agy models", "grok models"];
+    assert!(once.iter().all(|(p, &n)| n == 1 || (status.contains(&p.as_str()) && n <= 2)), "a probe ran more than once: {once:?}");
     assert_eq!(once.len(), DETECT.len(), "{once:?}");
     assert_eq!(first, second, "the kept answer is the same answer");
     assert!(again < Duration::from_millis(500), "the second ask took {again:?}");

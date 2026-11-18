@@ -1,0 +1,36 @@
+// The icons the first screen draws (Home, the list, the rail, the phone's tabs and New task; ADR-0105): with the page,
+// so its first frame has them. The rest of the set (icons.ts) loads after the first screen, or the moment an icon not
+// here is drawn (Icon.tsx). Picked by drawing the first screen at a desktop width and as both phone apps; an icon left
+// out still shows, a fetch later.
+
+export const FIRST_ICONS = {
+  check: ['0 0 24 24', '<path d="M5 12.5l4.5 4.5L19 7.5" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>'],
+  x: ['0 0 24 24', '<path d="M6.5 6.5l11 11M17.5 6.5l-11 11" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/>'],
+  plus: ['0 0 24 24', '<path d="M12 6v12M6 12h12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>'],
+  chevron: ['0 0 24 24', '<path d="M9 6l6 6-6 6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>'],
+  external: ['0 0 24 24', '<path d="M14 4h6v6M20 4l-9 9M18 14v5a1 1 0 01-1 1H5a1 1 0 01-1-1V7a1 1 0 011-1h5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>'],
+  dots: ['0 0 24 24', '<circle cx="6" cy="12" r="1.6" fill="currentColor"/><circle cx="12" cy="12" r="1.6" fill="currentColor"/><circle cx="18" cy="12" r="1.6" fill="currentColor"/>'],
+  lock: ['0 0 24 24', '<rect x="5" y="10.5" width="14" height="9.5" rx="2.2" fill="none" stroke="currentColor" stroke-width="1.7"/><path d="M8.5 10.5V8a3.5 3.5 0 017 0v2.5M12 14.3v2" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>'],
+  spark: ['0 0 24 24', '<path d="M12 3l1.8 5.4L19 10l-5.2 1.6L12 17l-1.8-5.4L5 10l5.2-1.6L12 3zM18.5 15.5l.8 2.2 2.2.8-2.2.8-.8 2.2-.8-2.2-2.2-.8 2.2-.8.8-2.2z" fill="currentColor"/>'],
+  enter: ['0 0 24 24', '<path d="M19 5v7a3 3 0 01-3 3H5m4-4l-4 4 4 4" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>'],
+  done: ['0 0 24 24', '<circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="1.7"/><path d="M8 12.3l2.8 2.8L16.2 9.5" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/>'],
+  bookmark: ['0 0 24 24', '<path d="M7 4.5h10a1 1 0 011 1v14l-6-4.2-6 4.2v-14a1 1 0 011-1z" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/>'],
+  stuff: ['0 0 24 24', '<path d="M3.8 13.2L6 7.5h2.2M15.8 7.5H18l2.2 5.7v4.8a1.5 1.5 0 01-1.5 1.5H5.3A1.5 1.5 0 013.8 18zM3.8 13.2h4.6l1.2 2.3h4.8l1.2-2.3h4.6" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/><path d="M12 3.6l1.05 2.13 2.35.34-1.7 1.66.4 2.34L12 8.96l-2.1 1.1.4-2.33-1.7-1.66 2.35-.34z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>'],
+  app: ['0 0 24 24', '<rect x="3.5" y="4.5" width="17" height="15" rx="2.2" fill="none" stroke="currentColor" stroke-width="1.7"/><path d="M3.8 8.8h16.4" fill="none" stroke="currentColor" stroke-width="1.7"/><path d="M10.5 11.8v4.6l3.9-2.3z" fill="currentColor" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/>'],
+  search: ['0 0 24 24', '<circle cx="10.5" cy="10.5" r="6" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M15 15l5 5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>'],
+  org: ['0 0 24 24', '<rect x="9" y="3" width="6" height="5" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.7"/><rect x="3" y="16" width="6" height="5" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.7"/><rect x="15" y="16" width="6" height="5" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.7"/><path d="M12 8v4M6 16v-2a2 2 0 012-2h8a2 2 0 012 2v2" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>'],
+  rerun: ['0 0 24 24', '<path d="M19.5 12a7.5 7.5 0 11-1.8-4.9M20 4v4h-4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>'],
+  text: ['0 0 24 24', '<path d="M5 7h14M5 12h14M5 17h9" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>'],
+  bolt: ['0 0 24 24', '<path d="M13.5 3L5 13.5h6L10.5 21 19 10.5h-6L13.5 3z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/>'],
+  laptop: ['0 0 24 24', '<rect x="4.5" y="5" width="15" height="10.5" rx="1.8" fill="none" stroke="currentColor" stroke-width="1.7"/><path d="M2.5 19h19" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>'],
+  split: ['0 0 24 24', '<rect x="3.5" y="4.5" width="17" height="15" rx="2.5" fill="none" stroke="currentColor" stroke-width="1.7"/><path d="M9.5 4.5v15M5.8 8.5h1.6M5.8 11.5h1.6M5.8 14.5h1.6" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>'],
+  feed: ['0 0 24 24', '<rect x="5" y="4" width="14" height="5" rx="1.6" fill="none" stroke="currentColor" stroke-width="1.7"/><rect x="5" y="11.5" width="14" height="8.5" rx="1.6" fill="none" stroke="currentColor" stroke-width="1.7"/>'],
+  bug: ['0 0 24 24', '<path d="M8 9.5a4 4 0 018 0V15a4 4 0 01-8 0V9.5zM12 11v8M9 6.5 7.5 4.5M15 6.5l1.5-2M8 11.5H4.5M19.5 11.5H16M8 15.5l-3 1.5M16 15.5l3 1.5M8.2 8.5h7.6" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>'],
+  issue: ['0 0 24 24', '<circle cx="12" cy="12" r="8.2" fill="none" stroke="currentColor" stroke-width="1.7"/><path d="M12 7.6v5.2" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"/><circle cx="12" cy="16.1" r="1.15" fill="currentColor"/>'],
+  user: ['0 0 24 24', '<circle cx="12" cy="8.5" r="3.5" fill="none" stroke="currentColor" stroke-width="1.7"/><path d="M5.5 19.5c.8-3.4 3.4-5.3 6.5-5.3s5.7 1.9 6.5 5.3" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>'],
+  crew: ['0 0 24 24', '<circle cx="12" cy="8" r="3" fill="none" stroke="currentColor" stroke-width="1.7"/><path d="M6.5 19.5c.6-3 2.8-4.8 5.5-4.8s4.9 1.8 5.5 4.8" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/><path d="M5.2 6.6a2.4 2.4 0 00.4 4.6M2.5 17.5c.3-1.8 1.2-3 2.6-3.6M18.8 6.6a2.4 2.4 0 01-.4 4.6M21.5 17.5c-.3-1.8-1.2-3-2.6-3.6" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>'],
+  'feed-fill': ['0 0 24 24', '<rect x="5" y="4" width="14" height="5" rx="1.6" fill="currentColor"/><rect x="5" y="11.5" width="14" height="8.5" rx="1.6" fill="currentColor"/>'],
+  compose: ['0 0 24 24', '<path d="M11 4.5H6.5a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2V13" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/><path d="M17.6 3.6l2.8 2.8-8.2 8.2-3.6.8.8-3.6z" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/>'],
+  'dots-v': ['0 0 24 24', '<circle cx="12" cy="6" r="1.6" fill="currentColor"/><circle cx="12" cy="12" r="1.6" fill="currentColor"/><circle cx="12" cy="18" r="1.6" fill="currentColor"/>'],
+  info: ['0 0 24 24', '<circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="1.7"/><path d="M12 11v6M12 7.5v.5" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>'],
+} as const satisfies Record<string, readonly [viewBox: string, markup: string]>;

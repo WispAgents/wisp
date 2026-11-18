@@ -19,8 +19,8 @@ use wisp_harness_kit::protocol::{FileNote, attachment_note};
 use wisp_harness_kit::{RunPaths, clip};
 use wisp_kernel::{BoxFuture, Manifest, Plugin, Result, Setup};
 use wisp_runtime_api::harness::{
-    ExecReq, HarnessFound, HarnessInfo, HarnessModel, HarnessRun, HarnessSys, Launch, LaunchFile, ResumeCommand, ResumeOptions, RunDriver,
-    SetupTip,
+    ExecReq, HarnessFound, HarnessInfo, HarnessLogin, HarnessModel, HarnessRun, HarnessSys, Launch, LaunchFile, ResumeCommand,
+    ResumeOptions, RunDriver, SetupTip,
 };
 use wisp_runtime_api::model::Mode;
 use wisp_runtime_api::{HARNESS, Harness};
@@ -114,15 +114,30 @@ fn models_of(out: &str, cache: &Value) -> (Vec<HarnessModel>, Option<Vec<String>
     (models, levels)
 }
 
+/// Signing in from wisp (v1 agent-login.js LOGINS.grok): its device login (a link and a code), its logout; `models`
+/// says whether it's signed in.
+pub fn login() -> HarnessLogin {
+    HarnessLogin {
+        bin: DEFAULT_BIN.into(),
+        bin_env: "WISP_GROK_BIN".into(),
+        args: vec!["login".into(), "--device-auth".into()],
+        logout: vec!["logout".into()],
+        status: vec!["models".into()],
+        keys: vec!["XAI_API_KEY".into()],
+        ..HarnessLogin::default()
+    }
+}
+
 #[derive(Debug)]
 pub struct GrokHarness {
     info: HarnessInfo,
     bin: Mutex<Option<String>>,
+    login: HarnessLogin,
 }
 
 impl Default for GrokHarness {
     fn default() -> Self {
-        Self { info: info(), bin: Mutex::new(None) }
+        Self { info: info(), bin: Mutex::new(None), login: login() }
     }
 }
 
@@ -140,6 +155,21 @@ impl GrokHarness {
 impl Harness for GrokHarness {
     fn info(&self) -> &HarnessInfo {
         &self.info
+    }
+    fn login(&self) -> Option<&HarnessLogin> {
+        Some(&self.login)
+    }
+    /// "not authenticated" is out; "logged in", or `grok models` answering at all, is in (v1 read only "logged in", so a
+    /// sign-in that worked ended "failed": the list of models says neither)
+    fn signed_in(&self, out: &str, code: Option<i32>) -> Option<bool> {
+        let o = out.to_lowercase();
+        if o.contains("not authenticated") || o.contains("not signed in") {
+            Some(false)
+        } else if o.contains("logged in") || (code == Some(0) && !o.trim().is_empty()) {
+            Some(true)
+        } else {
+            None
+        }
     }
     fn vendor(&self) -> Option<&str> {
         Some("xai")
@@ -242,6 +272,23 @@ impl Plugin for GrokPlugin {
 mod tests {
     use super::*;
     use serde_json::json;
+
+    /// The owner's Agents audit (2026-11-18): v1 signed in to and out of Grok from Settings → Agents (agent-login.js
+    /// LOGINS.grok); v2 had no login for it.
+    #[test]
+    fn grok_signs_in_and_out_from_wisp_as_v1() {
+        let h = GrokHarness::default();
+        let l = h.login().unwrap();
+        assert_eq!((l.bin.as_str(), l.bin_env.as_str()), ("grok", "WISP_GROK_BIN"));
+        assert_eq!(l.args, vec!["login".to_owned(), "--device-auth".to_owned()]);
+        assert_eq!((l.logout.clone(), l.status.clone()), (vec!["logout".to_owned()], vec!["models".to_owned()]));
+        assert_eq!(l.keys, vec!["XAI_API_KEY".to_owned()]);
+        assert_eq!(h.signed_in("Logged in as me", Some(0)), Some(true));
+        assert_eq!(h.signed_in("Error: not authenticated", Some(1)), Some(false));
+        // its models listed: signed in (v1 said nothing, and a sign-in that worked ended failed)
+        assert_eq!(h.signed_in("grok-4.7\ngrok-4.6", Some(0)), Some(true));
+        assert_eq!(h.signed_in("", Some(1)), None);
+    }
 
     #[test]
     fn manifest_is_valid() {

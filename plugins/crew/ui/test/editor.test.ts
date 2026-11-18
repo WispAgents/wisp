@@ -43,7 +43,7 @@ test('a_template_fills_the_editor_as_v1s_does_and_the_event_chips_and_face_save_
   const a = fromTemplate(draftOf(undefined), verify, text('verify'), names);
   expect(a).toMatchObject({ name: 'N-verify', role: 'R-verify', brief: 'B-verify', cron: '', on: ['finished'], avatar: verify.avatar });
   // another template replaces a template's name (a suggestion), never one you typed
-  expect(fromTemplate(a, ci, text('ci'), names)).toMatchObject({ name: 'N-ci', cron: '*/30 * * * *', on: [] });
+  expect(fromTemplate(a, ci, text('ci'), names)).toMatchObject({ name: 'N-ci', cron: '*/30 * * * *', on: ['ci'] }); // audit A #22: CI fails preselected
   expect(fromTemplate({ ...a, name: 'Mine' }, ci, text('ci'), names).name).toBe('Mine');
   // the event chips toggle; an event v1 doesn't know is dropped when a member is read
   expect(toggleOn(['finished'], 'ci')).toEqual(['finished', 'ci']);

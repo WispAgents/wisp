@@ -35,6 +35,7 @@ import type { SessionRow } from './types.ts';
 import { VIEW } from './views.ts';
 import { KitSection, OffersSection } from './more/index.ts';
 import { offerOf } from './more/kit-view.ts';
+import { useHarnessLabel } from './harness.ts';
 import './i18n/lazy.ts';
 
 const SHOW = 30;
@@ -70,12 +71,8 @@ function CrewPage(props: ExtensionProps): JSX.Element {
   const say = t as (k: string, v?: Readonly<Record<string, string | number>>) => string;
   const now = (): number => c.scope.timers.now();
   const ago = (at: number): string => timeLabel(at, now(), englishT);
-  // a member with no harness of its own runs on the default one (the first the harness plugins list)
-  const harness = (id: string): { name: string; logo?: string | undefined } => {
-    if (id === 'auto') return { name: t('wisp.crew.editor.auto') };
-    const h = harnesses().find((x) => x.id === id) ?? (id ? undefined : harnesses()[0]);
-    return { name: h?.name ?? id, logo: h?.logo };
-  };
+  // a member with no harness of its own runs as New task does while Auto is off (audit A #22)
+  const harness = useHarnessLabel(c, harnesses);
   const close = (): void => shell.navigate({ t: 'home' });
   const open = (s: SessionRow): void => {
     const key = data.sessionKey(s.id);

@@ -4,6 +4,9 @@
 // gets it as `--k-time-w`, which the feed CSS adds to the actions' offsets and the title's room.
 
 const rows = new WeakMap<Element, HTMLElement>();
+/** The width last written on each row: a callback that reports the same width writes nothing, so the row's style
+ * isn't invalidated (perf audit 2026-11-18 #13: every row was rewritten on each observer callback). */
+const written = new WeakMap<HTMLElement, number>();
 const observer =
   typeof ResizeObserver === 'undefined'
     ? undefined
@@ -11,7 +14,9 @@ const observer =
         for (const e of entries) {
           const row = rows.get(e.target);
           const w = Math.ceil(e.borderBoxSize[0]?.inlineSize ?? e.contentRect.width);
-          row?.style.setProperty('--k-time-w', `${w}px`);
+          if (!row || written.get(row) === w) continue;
+          written.set(row, w);
+          row.style.setProperty('--k-time-w', `${w}px`);
         }
       });
 
@@ -23,6 +28,7 @@ export function watchTimeWidth(row: HTMLElement, time: Element): () => void {
   return () => {
     observer.unobserve(time);
     rows.delete(time);
+    written.delete(row);
     row.style.removeProperty('--k-time-w');
   };
 }

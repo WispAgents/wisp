@@ -64,7 +64,7 @@ interface Measured {
  *  off screen (display: none: a phone's task page in front of it) reports every row at 0 px, and recording that would
  *  re-plan the window and swap its rows on every tap, then rebuild them all on Back (F-phone-8). While the box isn't
  *  rendered the heights stay what they were; rows that changed meanwhile report again when it shows. */
-function useMeasured(beforeChange: () => void): Measured {
+function useMeasured(beforeChange: () => void, onBox: (el: HTMLElement) => void = () => {}): Measured {
   const heights = new Map<string, number>();
   const keys = new WeakMap<Element, string>();
   const box: { el: Element | undefined; hidden: boolean } = { el: undefined, hidden: false };
@@ -103,6 +103,8 @@ function useMeasured(beforeChange: () => void): Measured {
   const measure = (entries: readonly ResizeObserverEntry[]): void => {
     for (const e of entries) {
       if (e.target !== box.el) continue;
+      // the list's own height, from the layout this pass follows (no forced layout: perf r1 #4)
+      onBox(e.target as HTMLElement);
       const b = e.borderBoxSize[0];
       box.hidden = (b?.inlineSize ?? e.contentRect.width) === 0 && (b?.blockSize ?? e.contentRect.height) === 0;
     }
@@ -172,10 +174,12 @@ interface Scroller {
   readonly onScroll: () => void;
   /** Note the row under the viewport's top before something changes heights (`top`: a scrollTop already read). */
   readonly remember: (top?: number) => void;
+  /** the list's box as its ResizeObserver reported it: the viewport's height from that pass */
+  readonly boxed: (el: HTMLElement) => void;
 }
 
 /** Scroll position, the tail rule and the anchor row, for one list. */
-function useScroller<T>(props: VirtualListProps<T>, offs: Accessor<readonly number[]>): Scroller {
+function useScroller<T>(props: VirtualListProps<T>, offs: Accessor<readonly number[]>, indexOf: (key: string) => number): Scroller {
   const box: { el: HTMLDivElement | undefined } = { el: undefined };
   const bottom = (): boolean => props.anchor === 'bottom';
   const [scrollTop, setScrollTop] = createSignal(0);
@@ -223,7 +227,9 @@ function useScroller<T>(props: VirtualListProps<T>, offs: Accessor<readonly numb
         if (!el) return;
         if (bottom() && following()) return scrollTo(el, el.scrollHeight);
         const a = anchor.at;
-        const index = a ? props.items.findIndex((item) => props.key(item) === a.key) : -1;
+        // by the key → index map (built once per change of items): this runs after every measurement pass and scroll
+        // frame, where a findIndex over 5,000 rows was the list's own top cost (perf audit 2026-11-18 #14)
+        const index = a ? indexOf(a.key) : -1;
         if (!a || index < 0) return;
         const want = restoreAnchor(o, { index, delta: a.delta });
         if (Math.abs(el.scrollTop - want) > 0.5) scrollTo(el, want);
@@ -235,23 +241,38 @@ function useScroller<T>(props: VirtualListProps<T>, offs: Accessor<readonly numb
   onMount(() => {
     const el = box.el;
     if (!el) return;
+    // a list from the top takes its height from the first layout (the list's ResizeObserver pass, before paint: `boxed`):
+    // read here, mid render, it forced the whole page's first layout (perf r1 #4: 109 ms of the first screen at 4×). A
+    // list from the bottom scrolls to its end now, as before.
+    if (!bottom() && typeof ResizeObserver !== 'undefined') return;
     if (el.clientHeight > 0) setViewportH(el.clientHeight);
     if (bottom()) scrollTo(el, el.scrollHeight);
   });
 
-  return { attach: (el) => (box.el = el), scrollTop, viewportH, onScroll, remember };
+  /** the list's box as its ResizeObserver saw it: its height now (layout is fresh in that pass) */
+  const boxed = (el: HTMLElement): void => {
+    if (el.clientHeight > 0 && el.clientHeight !== viewportH()) setViewportH(el.clientHeight);
+  };
+  return { attach: (el) => (box.el = el), scrollTop, viewportH, onScroll, remember, boxed };
 }
 
 export function VirtualList<T>(props: VirtualListProps<T>): JSX.Element {
   const part = (): PartName => props.part ?? 'ui.virtual-list';
   // The observer calls back only after mount, by which time `scroller` exists.
-  const measured = useMeasured(() => scroller.remember());
+  const measured = useMeasured(
+    () => scroller.remember(),
+    (el) => scroller.boxed(el),
+  );
+  // the rows' keys and where each sits, once per change of items: a measurement pass (every scroll frame that brings
+  // rows in) then reads heights by key without calling `key` 5,000 times (perf audit 2026-11-18 #14)
+  const keys = createMemo(() => props.items.map((item) => props.key(item)));
+  const indexes = createMemo(() => new Map(keys().map((k, i) => [k, i] as const)));
   const offs = createMemo(() => {
     measured.version();
     const est = props.estimate ?? 36;
-    return offsets(props.items.map((item) => measured.get(props.key(item)) ?? est));
+    return offsets(keys().map((k) => measured.get(k) ?? est));
   });
-  const scroller = useScroller(props, offs);
+  const scroller = useScroller(props, offs, (key) => indexes().get(key) ?? -1);
   const range = createMemo(() => computeRange(offs(), scroller.scrollTop(), scroller.viewportH(), props.overscan ?? 6));
   const visible = createMemo(() => props.items.slice(range().start, range().end));
   const [pulled, setPulled] = createSignal(0);

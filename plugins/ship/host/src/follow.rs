@@ -9,7 +9,7 @@ use std::sync::atomic::Ordering;
 use futures::future::join_all;
 use wisp_kernel::{BoxFuture, Call};
 use wisp_ship_api::{ConflictFix, PrSummary, Shipping, ToShip};
-use wisp_ship_core::decide::to_ship;
+use wisp_ship_core::decide::{Refusal, to_ship};
 use wisp_ship_core::follow::{self, Fix, after_restart, clear_fix, conflict_free, fix_ended, fix_started, is_also_news, is_news};
 use wisp_ship_core::recheck::{BOOT_CHECKS, BOOT_PAUSE_MS, Begin, BootTask, boot_order};
 use wisp_ship_core::text::{conflict_prompt, fix_title};
@@ -78,12 +78,24 @@ impl Ship {
         let task = self.task(session)?;
         match follow::should_fix(&task, self.auto_fix(), force, self.tasks.busy(&task, self.is_starting(session))) {
             Fix::Skip => return Ok(None),
-            Fix::Start => {}
             Fix::CheckBase => {
                 self.starting(session, true);
                 let base = self.shipper.conflicts_with_base(call, &task.repos[0].worktree).await;
                 self.starting(session, false);
-                if conflict_free(base.ok().flatten()) || self.tasks.is_live(session) {
+                if conflict_free(base.ok().flatten()) {
+                    // the user asked: say why nothing ran rather than spend a turn on GitHub's stale word
+                    if force {
+                        let wt = &task.repos[0].worktree;
+                        return Err(Refusal::Invalid(format!(
+                            "Git sees no conflict between this branch and {}/{}: GitHub hasn't caught up yet, so no turn was spent. Refresh in a minute.",
+                            wt.remote.as_deref().unwrap_or("origin"),
+                            wt.base
+                        ))
+                        .into());
+                    }
+                    return Ok(None);
+                }
+                if self.tasks.is_live(session) {
                     return Ok(None);
                 }
             }

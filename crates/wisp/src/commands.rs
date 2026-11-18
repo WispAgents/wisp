@@ -88,6 +88,7 @@ async fn launch(c: &Client, p: &Parsed, args: &[String], cwd: &str) -> Result<()
         let group = format!("g-{}", crate::services::hex(&rand::random::<[u8; 8]>()));
         for r in runs {
             let mut a = sc::launch_args(f, &prompt, cwd);
+            sc::in_project(c, &mut a).await;
             a["ext"] = json!({ "wisp.runtime": { "group": group } });
             a["agent"] = json!(r.agent);
             if let Some(m) = &r.model {
@@ -97,6 +98,7 @@ async fn launch(c: &Client, p: &Parsed, args: &[String], cwd: &str) -> Result<()
         }
     } else {
         let mut a = sc::launch_args(f, &prompt, cwd);
+        sc::in_project(c, &mut a).await;
         let home =
             crate::services::home(std::env::var("WISP_HOME").ok().as_deref(), std::env::var_os("HOME").map(std::path::PathBuf::from));
         crate::termctx_cli::attach(c, p, &mut a, &prompt, cwd, &home).await;
@@ -159,7 +161,9 @@ async fn recipe_run(c: &Client, p: &Parsed, args: &[String], cwd: &str) -> Resul
     let mut all = vec!["run".to_owned()];
     all.extend(args.iter().cloned());
     let prompt = all.join(" ");
-    let m = c.cmd("runtime.create", sc::launch_args(&p.flags, &prompt, cwd)).await?;
+    let mut a = sc::launch_args(&p.flags, &prompt, cwd);
+    sc::in_project(c, &mut a).await;
+    let m = c.cmd("runtime.create", a).await?;
     out(&p.flags, &m, &format!("  ◌ launched: {prompt}  ({})\n    wisp attach {}", s(&m, "id"), s(&m, "id")));
     Ok(())
 }

@@ -5,19 +5,16 @@
 //! wisp-sync plugs in through `SyncMount`; until it is mounted the v2 calls answer 503 (retry) and v1
 //! clients work as before. The `Hub` is also the kernel's `notify` service: a notice reaches v2 streams
 //! as a `notice` frame and v1 streams as an event of that name.
-use std::collections::{HashMap, VecDeque};
-use std::sync::{Arc, Mutex, RwLock};
+use std::sync::{Arc, RwLock};
 
 use bytes::Bytes;
 use serde_json::{Value, json};
-use tokio::sync::{OnceCell, mpsc};
+use tokio::sync::mpsc;
 use wisp_kernel::services::Notify;
 use wisp_kernel::{BoxFuture, Caller, Result, WireError};
 
 /// The query keys that make GET /api/events a v2 hello (packages/sync `HelloQuery`).
 pub const HELLO_KEYS: [&str; 9] = ["proto_min", "proto_max", "client_id", "build", "epoch", "cursor", "topics", "fresh", "passive"];
-/// Command results remembered for a retry over a flaky tunnel.
-const IDEM_KEPT: usize = 10_000;
 
 /// What wisp-sync provides to the edge.
 pub trait SyncMount: Send + Sync + 'static {
@@ -76,44 +73,7 @@ impl Notify for Hub {
     }
 }
 
-/// A command's answer, kept by `(caller, Idempotency-Key)` so a retry gets the same answer and the
-/// command runs once, even when the retry arrives while the first is still running.
-pub type Done = (u16, Value);
-
-#[derive(Debug, Default)]
-pub struct Idempotency {
-    inner: Mutex<(HashMap<String, Cell>, VecDeque<String>)>,
-}
-
-type Cell = Arc<OnceCell<Done>>;
-
-impl Idempotency {
-    pub async fn once<F>(&self, key: String, run: F) -> Done
-    where
-        F: std::future::Future<Output = Done>,
-    {
-        let cell = {
-            let Ok(mut g) = self.inner.lock() else {
-                return run.await;
-            };
-            let (map, order) = &mut *g;
-            if let Some(c) = map.get(&key) {
-                c.clone()
-            } else {
-                let c = Arc::new(OnceCell::new());
-                map.insert(key.clone(), c.clone());
-                order.push_back(key);
-                while order.len() > IDEM_KEPT {
-                    if let Some(old) = order.pop_front() {
-                        map.remove(&old);
-                    }
-                }
-                c
-            }
-        };
-        cell.get_or_init(|| run).await.clone()
-    }
-}
+pub use crate::idem::{Done, Idempotency};
 
 /// `POST /api/cmd`'s answer: `{ok: true, seq, result}` or `{ok: false, error: {code, message, retry}}`
 /// (packages/protocol `CommandResponse`), with the error's HTTP status.
@@ -138,7 +98,6 @@ pub fn not_mounted() -> WireError {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::sync::atomic::{AtomicU64, Ordering};
 
     #[test]
     fn hello_keys() {
@@ -146,22 +105,6 @@ mod tests {
         assert!(has_hello(&[("cursor".into(), "12".into())]));
         assert!(!has_hello(&[("x".into(), "1".into())]));
         assert!(!has_hello(&[]));
-    }
-
-    #[tokio::test]
-    async fn a_retry_gets_the_first_answer_and_runs_nothing() {
-        let idem = Idempotency::default();
-        let runs = AtomicU64::new(0);
-        let run = || async {
-            runs.fetch_add(1, Ordering::SeqCst);
-            (200, json!({"n": 1}))
-        };
-        let (a, b) = tokio::join!(idem.once("k".into(), run()), idem.once("k".into(), run()));
-        assert_eq!(a, b);
-        assert_eq!(idem.once("k".into(), run()).await.1["n"], 1);
-        assert_eq!(runs.load(Ordering::SeqCst), 1);
-        idem.once("k2".into(), run()).await;
-        assert_eq!(runs.load(Ordering::SeqCst), 2);
     }
 
     #[test]

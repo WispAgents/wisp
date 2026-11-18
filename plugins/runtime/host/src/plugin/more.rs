@@ -13,6 +13,7 @@ use super::{Slot, rt, track};
 pub(super) fn more(s: &mut Setup, slot: &Slot, harness_kind: Arc<StoredKind>, kinds_for_run: Arc<StoredKind>) {
     cmd!(s, slot, c::Ask, |r, call, a| r.ask(a).await.map(|ask_id| c::Asked { ask_id }));
     cmd!(s, slot, c::Answer, |r, call, a| r.answer(&a.id, &a.text).await);
+    cmd!(s, slot, c::Unask, |r, call, a| r.unask(&a.id, &a.question).await);
     cmd!(s, slot, c::PollAnswerOf, |r, call, a| Ok(r.poll_answer(&a.ask_id)));
     cmd!(s, slot, c::Approval, |r, call, a| r.approval(a).await);
     cmd!(s, slot, c::ApproveBlocked, |r, call, a| r.approve_blocked(&a.id, a.turn_id.as_ref(), a.allow, &call.caller().set).await);
@@ -130,17 +131,63 @@ pub(crate) fn delegate_props(agent: &str, out: &[c::Delegation]) -> serde_json::
 /// `runtime.fork`, counted as `fork_task`.
 fn fork(s: &mut Setup, slot: &Slot) {
     let sl = slot.clone();
-    s.command::<c::Fork, _, _>(move |ctx, _call, a| {
+    s.command::<c::Fork, _, _>(move |ctx, call, a| {
         let slot = sl.clone();
         async move {
             let r = rt(&slot)?;
             let (id, latest) = (a.id.clone(), a.turn_id.is_none());
             let out = r.fork(a).await.map_err(WireError::from)?;
+            own_folder(&ctx, &call, &r, id.as_str(), out.id.as_str()).await;
             let agent = r.get(id.as_str()).await.map(|x| x.agent).unwrap_or_default();
             track(&ctx, "fork_task", serde_json::json!({ "agent": agent, "switched": false, "latest": latest })).await;
             Ok(out)
         }
     });
+}
+
+/// A fork works in a worktree and branch of its own, holding a copy of its parent's folder as it is (audit A orch #4,
+/// tasks #2: it ran in its parent's worktree, so both edited one folder). Its harness conversation is copied there too,
+/// so the fork's first turn resumes it. Outside a repo (or if git fails) it keeps its parent's folder, as before.
+async fn own_folder(ctx: &wisp_kernel::Ctx, call: &wisp_kernel::Call, r: &Arc<crate::runtime::Runtime>, parent: &str, fork: &str) {
+    let (Ok(src), Ok(made)) = (r.get(parent).await, r.get(fork).await) else { return };
+    if src.cwd.is_empty() {
+        return;
+    }
+    // made from the project's own checkout (its base, its folder for worktrees), the parent's folder copied in
+    let parent_tree =
+        src.ext.get(wisp_worktrees_api::EXT).and_then(|w| serde_json::from_value::<wisp_worktrees_api::Worktree>(w.clone()).ok());
+    let project = match &parent_tree {
+        Some(w) if !w.root.is_empty() => match src.cwd.strip_prefix(w.path.as_str()) {
+            Some(sub) => format!("{}{sub}", w.root),
+            None => w.root.clone(),
+        },
+        _ => src.cwd.clone(),
+    };
+    let wa = wisp_worktrees_api::CreateArgs {
+        session_id: fork.to_owned(),
+        cwd: project,
+        title: made.title.clone(),
+        mode: serde_json::to_value(made.mode).ok().and_then(|m| m.as_str().map(str::to_owned)).unwrap_or_default(),
+        from: Some(src.cwd.clone()),
+    };
+    let wt = match ctx.run::<wisp_worktrees_api::Create>(call, wa).await {
+        Ok(Some(w)) => w,
+        Ok(None) => return,
+        Err(err) => {
+            tracing::warn!(error = %err.message, task = fork, "runtime: a fork's worktree (it runs in its parent's folder)");
+            return;
+        }
+    };
+    if let Some(resume) = made.resume_id.as_deref() {
+        for h in ctx.contributions(&wisp_runtime_api::harness::sessions::SESSIONS).into_iter().filter(|h| h.harness() == made.agent) {
+            if let Some(raw) = h.raw(resume).await {
+                let _ = h.restore(resume, &wt.cwd, raw).await;
+            }
+        }
+    }
+    if let Err(err) = r.worktree_ready(fork, serde_json::to_value(&wt).ok(), None).await {
+        tracing::warn!(error = %err, task = fork, "runtime: a fork's worktree not saved");
+    }
 }
 
 #[cfg(test)]

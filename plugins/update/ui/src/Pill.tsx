@@ -14,7 +14,7 @@ import { Button, IconButton, useSignal } from '@wisp/ui';
 import { installUpdate } from './commands.ts';
 import { t } from './i18n.ts';
 import { usePaneScope, useTopic } from './live.ts';
-import { Confirm } from './panes/Updates.tsx';
+import { Confirm } from './Confirm.tsx';
 import { BACK_WITHIN_MS, cameBack, failureAction, notBack, pillOf, restartFailed, restartStep } from './pill.ts';
 import { KIND, ROW_ID, TOPIC, stateOf, type UpdateState } from './types.ts';
 import './i18n/lazy.ts';

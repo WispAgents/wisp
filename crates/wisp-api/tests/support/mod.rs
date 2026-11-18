@@ -92,8 +92,16 @@ impl Backend for Fake {
         self.calls.fetch_add(1, Ordering::SeqCst);
         let cmd = cmd.to_owned();
         Box::pin(async move {
-            if cmd == "no.such" { Err(WireError::not_found("no.such")) } else { Ok(json!({"cmd": cmd, "args": args, "set": caller.set})) }
+            match cmd.as_str() {
+                "no.such" => Err(WireError::not_found("no.such")),
+                // a read with a list-sized answer (~100 KB)
+                "x.list" => Ok(json!({ "rows": "r".repeat(100_000) })),
+                _ => Ok(json!({"cmd": cmd, "args": args, "set": caller.set})),
+            }
         })
+    }
+    fn read_only(&self, cmd: &str) -> bool {
+        cmd == "x.list"
     }
     fn explain(&self, caller: &Caller, permission: &str) -> std::result::Result<(), String> {
         match caller.set.as_str() {

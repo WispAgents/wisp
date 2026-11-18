@@ -150,10 +150,11 @@ async fn two_grids_and_two_people_on_one_each_listed_switched_and_signed_out_of_
     sign_in(&a, &g1, "cy").await;
     let (k1a, k2b, k1c) = (format!("{}#ada", g1.url), format!("{}#bo", g2.url), format!("{}#cy", g1.url));
 
-    // each_account_is_listed: in sign-in order, the newest current
+    // each_account_is_listed: in sign-in order; adding one doesn't switch to it, so the first stays current (setup
+    // audit F16: switching took this computer off the grid)
     let st = a.cmd("grid-client.status", json!({})).await;
-    assert_eq!(keys(&st["accounts"]), [(k1a.clone(), false), (k2b.clone(), false), (k1c.clone(), true)], "{st}");
-    assert_eq!(st["handle"], "cy");
+    assert_eq!(keys(&st["accounts"]), [(k1a.clone(), true), (k2b.clone(), false), (k1c.clone(), false)], "{st}");
+    assert_eq!(st["handle"], "ada");
 
     // each account's cloud box and computers in Machines, with the grid they came from
     let (h1, h2) = (g1.url.clone(), g2.url.clone());
@@ -178,7 +179,7 @@ async fn two_grids_and_two_people_on_one_each_listed_switched_and_signed_out_of_
     let (code, out, err) = wisp(&d, &["cloud", "accounts"]);
     assert_eq!(code, 0, "{out}{err}");
     let host1 = g1.url.trim_start_matches("http://");
-    assert!(out.contains(&format!("● cy@{host1}")) && out.contains(&format!("ada@{host1}")) && out.contains("bo@"), "{out}");
+    assert!(out.contains(&format!("● ada@{host1}")) && out.contains(&format!("cy@{host1}")) && out.contains("bo@"), "{out}");
     let (code, out, err) = wisp(&d, &["cloud", "switch", "bo"]);
     assert_eq!(code, 0, "{out}{err}");
     let st = a.cmd("grid-client.status", json!({})).await;

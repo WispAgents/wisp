@@ -99,6 +99,22 @@ export function ShellPane(props: { readonly kind: Kind }): JSX.Element {
       }
     })();
   };
+  // the terminal mounts the frame after the panel's first: measuring and painting it in the open put 100 ms of forced
+  // layout and paint in the panel's frame at 4× (perf r1 #8: 194 ms to the panel, 285 ms in WebKit). The panel, its tabs
+  // and the screen's box show at once; the shell starts once the terminal has measured its box, so it starts at the
+  // pane's size, not the 100×30 default
+  const [mounted, setMounted] = createSignal(typeof requestAnimationFrame !== 'function');
+  let measured: (() => void) | undefined;
+  if (!mounted()) {
+    let frame = requestAnimationFrame(() => {
+      frame = requestAnimationFrame(() => {
+        setMounted(true);
+        measured?.();
+        measured = undefined;
+      });
+    });
+    onCleanup(() => cancelAnimationFrame(frame));
+  }
   const begin = (restart = false): void => {
     setError('');
     setDrawn(false);
@@ -110,7 +126,9 @@ export function ShellPane(props: { readonly kind: Kind }): JSX.Element {
     c.run(phone ? infoHere : info, { key: task.key, id }).then(
       (i) => {
         setWhere(i);
-        if (i.supported) begin();
+        if (!i.supported) return;
+        if (mounted()) begin();
+        else measured = begin;
       },
       (e: unknown) => setError(say(e)),
     );
@@ -153,6 +171,7 @@ export function ShellPane(props: { readonly kind: Kind }): JSX.Element {
         }
       >
         <Stack gap="0" grow part="side.shell.screen">
+          <Show when={mounted()}>
           <Terminal
             screen={screen}
             onData={send}
@@ -162,6 +181,7 @@ export function ShellPane(props: { readonly kind: Kind }): JSX.Element {
             {...(!drawn() && { waiting: where() ? t('shell-task.shell.starting', { name: name() || 'a shell', where: peerName() }) : t('shell-task.shell.finding', { where: peerName() }) })}
             labels={{ input: t('shell-task.shell.input'), keys: t('shell-task.shell.keys'), paste: t('shell-task.shell.paste') }}
           />
+          </Show>
         </Stack>
         <Inline gap="2" justify="between" part="side.shell.foot">
           <Text size="sm" tone="muted" truncate>

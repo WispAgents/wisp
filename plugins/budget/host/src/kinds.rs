@@ -33,17 +33,44 @@ pub struct BudgetSpec {
 
 struct BudgetKind(Arc<StoredKind>);
 
+/// Each stop line: its field in the spec, its key in the plugin's settings, and its default.
+const LINES: [(&str, &str, &str); 3] =
+    [("stopAt", "autoStop", "off"), ("claude", "autoStopClaude", "same"), ("codex", "autoStopCodex", "same")];
+
 impl ResourceKind for BudgetKind {
     fn info(&self) -> KindInfo {
         self.0.info()
     }
+    /// What was declared, with the stop lines as they are now: one set in Usage (`budget.setStop`) is exported too
+    /// (setup audit F13: `wisp export budget` and Setup → Make the formula left it out).
     fn read<'a>(&'a self, call: &'a Call) -> BoxFuture<'a, Result<Vec<Resource>>> {
-        self.0.read(call)
+        Box::pin(async move {
+            let mut out = self.0.read(call).await?;
+            let Ok(store) = self.0.ctx.service::<wisp_store::Store>() else { return Ok(out) };
+            let live = crate::store::settings(&store).await.unwrap_or_default();
+            let at = out.iter().position(|r| r.name == "default");
+            let mut spec = at.map_or_else(|| json!({}), |i| out[i].spec.clone());
+            let Some(o) = spec.as_object_mut() else { return Ok(out) };
+            for (field, key, default) in LINES {
+                match live.get(key).and_then(Value::as_str) {
+                    Some(v) if v != default => o.insert(field.to_owned(), json!(v)),
+                    _ => o.remove(field),
+                };
+            }
+            match (at, spec.as_object().is_some_and(serde_json::Map::is_empty)) {
+                (Some(i), true) => {
+                    out.remove(i);
+                }
+                (Some(i), false) => out[i].spec = spec,
+                (None, false) => out.push(Resource::new(self.0.info.kind.clone(), "default", spec)),
+                (None, true) => {}
+            }
+            Ok(out)
+        })
     }
     fn apply<'a>(&'a self, call: &'a Call, op: &'a Op) -> BoxFuture<'a, Result<()>> {
         Box::pin(async move {
-            let lines = [("stopAt", "autoStop", "off"), ("claude", "autoStopClaude", "same"), ("codex", "autoStopCodex", "same")];
-            for (field, key, reset) in lines {
+            for (field, key, reset) in LINES {
                 let v = op.spec.get(field).and_then(Value::as_str).filter(|_| op.op != OpKind::Delete);
                 let was = op.before.as_ref().and_then(|b| b.get(field)).is_some() || op.op == OpKind::Delete;
                 if let Some(v) = v {

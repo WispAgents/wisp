@@ -9,6 +9,7 @@ import { t } from './i18n.ts';
 import { cadenceLabel } from './model.ts';
 import { VIEW } from './views.ts';
 import { joining, lockedOf, srcOf, withPassword, type Picks, type Src } from './import-picks.ts';
+import { useHarnessLabel } from './harness.ts';
 import './i18n/lazy.ts';
 
 interface Proposed {
@@ -39,8 +40,9 @@ const importCrew = defineCommand<{ peer: PeerId; src: Src; dryRun: boolean; choi
 export default function ImportCrew(props: { readonly client: PluginClient; readonly params: unknown }): JSX.Element {
   // a member's harness by its name, never its id (QA r15 #3)
   const harnesses = useSignal(useShell().harnesses());
-  const harnessName = (id: string): string => harnesses().find((h) => h.id === id)?.name ?? id;
   const c = props.client;
+  const label = useHarnessLabel(c, harnesses);
+  const harnessName = (id: string): string => label(id).name;
   const say = t as (k: string, v?: Readonly<Record<string, string | number>>) => string;
   const [text, setText] = createSignal('');
   const [bad, setBad] = createSignal('');

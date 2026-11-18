@@ -9,14 +9,14 @@ import type { ExtensionId, Json } from '@wisp/client';
 import type { PaletteItem, PluginUiDef, ShellContext, ShortcutDef } from './contract.ts';
 import { defineExtension, defineView } from './define.ts';
 import { SESSION, type SessionRow } from './rows.ts';
-import { archive, markRead, remove, setState } from './frame/commands.ts';
+import { archive, forLater, markRead, setState } from './frame/commands.ts';
 import { pastWork, taskItems } from './palette/tasks.ts';
-import { TASK_KEY, type TaskKey } from './frame/task-keys.ts';
+import { PENDING_KEY, TASK_KEY, type TaskKey } from './frame/task-keys.ts';
 import { parseCompare } from './frame/runs-small.ts';
 import { openFeedback, parseFeedback } from './frame/feedback.ts';
 import { rowMenuItems } from './frame/row-menu.ts';
 import { PLACE_SOURCE, PROJECT_ACTIONS, PROJECT_SOURCE, PROJECT_TAIL, placeItems, projectItems, projectShortcuts, projectTail, projectsNow } from './frame/project-switch.ts';
-import { flatRow, projectOf, sessionKey, shortAgo, statusOf } from './frame/rows-view.ts';
+import { flatRow, isSaved, projectOf, sessionKey, shortAgo, statusOf } from './frame/rows-view.ts';
 import { markStepped } from './frame/stepped.ts';
 
 
@@ -163,6 +163,8 @@ function open(ctx: ShellContext): boolean {
   if (f && f !== document.body && !f.closest('[data-part="card"]')) return false;
   const id = ctx.selection.get();
   if (!id || (ctx.nav().main.kind === 'task' && String((ctx.nav().main as { id?: unknown }).id) === id)) return false;
+  // a picked row that's gone (deleted, archived away) opens nothing (audit A #11: "no task <id>")
+  if (!rowIds().includes(id)) return false;
   void ctx.client.commands.run(markRead, { id, unread: false }).catch(() => undefined);
   ctx.navigate({ t: 'openTask', id: id as never });
   return true;
@@ -206,22 +208,63 @@ function step(ctx: ShellContext, by: 1 | -1): boolean {
   return true;
 }
 
-/** E, A, Delete on the open task or the picked row: as its button or menu item does. */
+/** E, A, Delete on the open task or the picked row: as its button or menu item does. Done and Archive say so with
+ *  Undo, as the row's buttons do (audit A #13); Delete asks first (audit A #4). */
 function rowAct(ctx: ShellContext, act: 'done' | 'archive' | 'delete'): boolean {
   if (taskKey(ctx, act)) return true;
   const id = target(ctx);
   if (!id) return false;
+  if (act === 'delete') {
+    ctx.navigate({ t: 'openOverlay', overlay: { kind: 'dialog', id: 'shell.delete' as ExtensionId, params: { id } } });
+    return true;
+  }
   const run = ctx.client.commands.run;
+  const undo = (message: string, back: () => void): void => void ctx.toast.success(ctx.t(message), { action: { label: ctx.t('shell.toast.undo'), onClick: back } });
   if (act === 'done') {
+    const was = ctx.client.entities.peek<SessionRow>(SESSION, id as never)?.state;
+    // v1 actions.js: still working, it stays put and says so (orch #18)
+    if (was === 'running' || was === 'waiting') {
+      ctx.toast.show(ctx.t('shell.done.working'));
+      return true;
+    }
     void run(setState, { id, state: 'done' }).catch(() => undefined);
     ctx.navigate({ t: 'markDone', id: id as never });
-  } else if (act === 'archive') {
+    undo('shell.toast.done', () => void run(setState, { id, state: was && was !== 'done' ? was : 'review' }).catch(() => undefined));
+  } else {
     void run(archive, { id, archived: true }).catch(() => undefined);
     ctx.navigate({ t: 'archive', id: id as never });
-  } else {
-    void run(remove, { id }).catch(() => undefined);
-    ctx.navigate({ t: 'delete', id: id as never });
+    undo('shell.toast.archived', () => void run(archive, { id, archived: false }).catch(() => undefined));
   }
+  return true;
+}
+
+/** the open task's keys that open a dialog: on the picked row (no task open) they open it for that row (audit A #12) */
+const ROW_DIALOGS: Partial<Record<TaskKey, string>> = { rename: 'shell.rename', rerun: 'shell.rerun', fork: 'shell.fork' };
+/** the open task's keys that need its page: on the picked row they open it, then the page does them */
+const ROW_OPENS = new Set<TaskKey>(['transcript', 'openIn', 'shell', 'pr', 'changes', 'ship']);
+
+/** A task key on the picked row while no task is open (v1 keys.js acts on the focused row): L saves it for later, M,
+ *  ⇧R and ⇧F open their dialog for it, the rest open the task and do there what the key does (audit A #12). */
+function rowKey(ctx: ShellContext, act: TaskKey): boolean {
+  if (ctx.nav().main.kind === 'task') return false;
+  const id = ctx.selection.get();
+  if (!id || !rowIds().includes(id)) return false;
+  const dialog = ROW_DIALOGS[act];
+  if (dialog) {
+    ctx.navigate({ t: 'openOverlay', overlay: { kind: 'dialog', id: dialog as ExtensionId, params: { id } } });
+    return true;
+  }
+  if (act === 'later') {
+    const saved = isSaved((ctx.client.entities.peek<SessionRow>(SESSION, id as never) as { summary?: Record<string, unknown> } | undefined)?.summary?.['forLater']);
+    void ctx.client.commands.run(forLater, { id, forLater: !saved }).catch(() => undefined);
+    return true;
+  }
+  if (!ROW_OPENS.has(act)) return false;
+  PENDING_KEY.id = id;
+  PENDING_KEY.act = act;
+  PENDING_KEY.at = Date.now();
+  void ctx.client.commands.run(markRead, { id, unread: false }).catch(() => undefined);
+  ctx.navigate({ t: 'openTask', id: id as never });
   return true;
 }
 
@@ -231,7 +274,7 @@ function shortcuts(ctx: ShellContext): ShortcutDef[] {
     keys,
     label,
     group,
-    run: () => taskKey(ctx, act),
+    run: () => taskKey(ctx, act) || rowKey(ctx, act),
   });
   return [
     // the list (v1 kbd.js): J/K, O/Enter, and the row's own keys on the picked row
@@ -307,6 +350,16 @@ export function shellUi(ctx: ShellContext): PluginUiDef {
         parse: (p) => ({ id: String((p as { id?: unknown } | null)?.id ?? ''), ...(typeof (p as { agent?: unknown } | null)?.agent === 'string' && { agent: (p as { agent: string }).agent }) }),
         component: lazy(() => import('./frame/Rerun.tsx')),
         title: () => ctx.t('shell.rerun.title'),
+      }),
+      // Delete task, asked first: the head's ⋯, ⌫ and Delete on the open task or the picked row (audit A #4)
+      defineView({
+        kind: 'shell.delete',
+        slot: 'overlay',
+        overlay: 'dialog',
+        part: 'task.delete.modal',
+        parse: (p) => ({ id: String((p as { id?: unknown } | null)?.id ?? '') }),
+        component: lazy(() => import('./frame/DeleteDialog.tsx')),
+        title: () => ctx.t('shell.delete.title'),
       }),
       // Rename task: one dialog for the head, the rows and the phone (QA round 15 #2; v1 actions.js rename's rules)
       defineView({

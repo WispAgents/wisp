@@ -30,5 +30,6 @@ export { remoteUiDefs, RemoteView, clean as cleanDescriptor, frameDoc, SANDBOX a
 export { COMPUTERS_VIEW, DESTINATIONS, destinationOf, destinationsOf, intentOf, type Destination, type DestinationId } from './frame/destinations.ts';
 // Auto's one switch (`runtime.auto`, default off: owner, 2026-11-17): plugins that show Auto ask it
 export { AUTO_SETTING, autoEnabled, autoOn } from './frame/launch-pick.ts';
+export { titleParts } from './setting-title.ts';
 export { partStylesCss, partOk, propertyOk, valueProblem, type PluginStyles } from './theme-styles/part-styles.ts';
 export { mountPluginStyles, pluginStyles, STYLE_ID as PLUGIN_STYLE_ID } from './theme-styles/mount.ts';

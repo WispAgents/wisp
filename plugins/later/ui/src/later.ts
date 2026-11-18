@@ -15,7 +15,7 @@ const later: PluginUiLater = {
       order: 90,
       items: () => [],
       send: (text, ctx) => {
-        const l = (ctx.launch ?? {}) as { cwd?: string; agent?: string; model?: string; effort?: string; mode?: string; at?: number };
+        const l = (ctx.launch ?? {}) as { cwd?: string; projectId?: string; worktree?: boolean; agent?: string; model?: string; effort?: string; mode?: string; at?: number };
         const home = ctx.client.home;
         const key = (id: string): EntityKey => (id.includes(':') ? id : `${home}:${id}`) as EntityKey;
         const read = ctx.client.entities.peek<{ value?: unknown }>('setting', `${home}:settings.readTimes` as EntityKey)?.value;
@@ -29,6 +29,9 @@ const later: PluginUiLater = {
         const body = {
           prompt: p.rest,
           ...(l.cwd && { cwd: l.cwd }),
+          // where it starts, as New task said: in a worktree of its own or in place, and its project for the list
+          ...(l.cwd && l.worktree !== undefined && { worktree: l.worktree }),
+          ...(l.projectId && { projectId: l.projectId }),
           ...(l.agent && { agent: l.agent }),
           ...(l.model && { model: l.model }),
           ...(l.effort && { effort: l.effort }),

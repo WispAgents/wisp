@@ -463,6 +463,9 @@ impl Engine {
         let t = self.find(ctx, name)?;
         let events = if let Some(e) = event {
             vec![e]
+        } else if let Some(e) = own_next(&t, now) {
+            // what it makes itself never reaches the event log: its next run is the one to try (audit A #15)
+            vec![e]
         } else {
             let a = wisp_events_api::TailArgs {
                 ty: Some(t.spec.on.clone()),
@@ -577,6 +580,33 @@ fn due_event(t: &Live, st: &State, now: i64) -> Option<TriggerEvent> {
         }),
         _ => None,
     }
+}
+
+/// The next event a trigger makes itself, for a dry run: a schedule's next minute, a one-off's time, a hand fire.
+/// None of them is in the event log, so `wisp trigger test` on a schedule tried nothing and printed "(none)".
+fn own_next(t: &Live, now: i64) -> Option<TriggerEvent> {
+    let at = match t.spec.on.as_str() {
+        "schedule" => {
+            let z = zone(&t.spec.tz);
+            let at = wisp_automations_api::next_run(&parse_cron(&t.spec.cron).ok()?, now, &z)?;
+            let when = jiff::Timestamp::from_millisecond(at)
+                .map_or_else(|_| at.to_string(), |ts| ts.to_zoned(z.0.clone()).strftime("%a %Y-%m-%d %H:%M %Z").to_string());
+            let minute = wisp_automations_core::schedule::local_minute(at, &z);
+            return Some(TriggerEvent {
+                on: "schedule".into(),
+                key: format!("schedule:{minute}"),
+                at,
+                payload: json!({ "minute": minute, "late": false }),
+                summary: format!("its next run, {when}"),
+                ..TriggerEvent::default()
+            });
+        }
+        "once" => t.spec.at?,
+        "manual" => now,
+        _ => return None,
+    };
+    let (key, summary) = if t.spec.on == "once" { (format!("once:{at}"), "its time") } else { (format!("manual:{now}"), "fired by hand") };
+    Some(TriggerEvent { on: t.spec.on.clone(), key, at, payload: json!({ "at": at }), summary: summary.into(), ..TriggerEvent::default() })
 }
 
 /// A durable event as a trigger sees it.

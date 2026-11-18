@@ -5,8 +5,12 @@ import { defineCommand, type PeerId } from '@wisp/client';
 export interface Recipe {
   readonly name: string;
   readonly prompt: string;
+  readonly steps?: readonly string[];
   readonly project?: string;
   readonly agent?: string;
+  readonly model?: string;
+  readonly effort?: string;
+  readonly mode?: string;
 }
 
 export interface Trigger {
@@ -18,6 +22,8 @@ export interface Trigger {
   readonly why?: string;
   readonly lastRunAt?: number | null;
   readonly runs: number;
+  /** its declaration (`trigger` resource spec): Edit opens the form on it, the switch turns `enabled` off and on */
+  readonly spec?: Readonly<Record<string, unknown>>;
 }
 
 export const recipes = defineCommand<{ peer: PeerId }, Recipe[]>({ id: 'automations.tasks', owner: (a) => a.peer, wire: () => ({}), optimistic: 'none', pending: 'the recipes list' });
@@ -59,4 +65,21 @@ export const testTrigger = defineCommand<{ peer: PeerId; name: string }, Tried[]
   wire: (a) => ({ name: a.name, last: 5 }),
   optimistic: 'none',
   pending: 'the trigger’s Test',
+});
+
+/** Save a trigger (Create, Edit, the on/off switch): its whole declaration, as `wisp apply` writes it (ADR-0043). */
+export const saveTrigger = defineCommand<{ peer: PeerId; name: string; spec: Readonly<Record<string, unknown>> }>({
+  id: 'resources.apply',
+  owner: (a) => a.peer,
+  wire: (a) => ({ resources: [{ kind: 'trigger', name: a.name, spec: a.spec }] }),
+  optimistic: 'none',
+  pending: 'the trigger',
+});
+/** Delete a trigger (v1's trash button, after its confirm): `wisp destroy trigger.<name>`. */
+export const removeTrigger = defineCommand<{ peer: PeerId; name: string }>({
+  id: 'resources.apply',
+  owner: (a) => a.peer,
+  wire: (a) => ({ resources: [], destroy: [`trigger.${a.name}`] }),
+  optimistic: 'none',
+  pending: 'the trigger’s Delete',
 });

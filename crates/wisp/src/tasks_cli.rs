@@ -374,7 +374,7 @@ pub async fn rerun(c: &Client, o: &Opts, cwd: &Path) -> Result<i32> {
 
 /// `wisp run <name> [k=v…] [words…]`: a workflow, else a declared task. None: neither has that name.
 #[allow(clippy::many_single_char_names)]
-pub async fn run_named(c: &Client, words: &[String], o: &Opts) -> Result<Option<i32>> {
+pub async fn run_named(c: &Client, words: &[String], o: &Opts, f: &crate::args::Flags) -> Result<Option<i32>> {
     let Some(name) = words.first() else { return Ok(None) };
     let st = crate::cli::style();
     let mut kv = Map::new();
@@ -420,11 +420,39 @@ pub async fn run_named(c: &Client, words: &[String], o: &Opts) -> Result<Option<
         Err(e) if e.status() != 404 => return Err(e),
         Err(_) => {}
     }
-    let params: Map<String, Value> = kv;
-    match c.cmd("automations.task.run", json!({ "name": name, "params": params, "words": rest, "over": o.over })).await {
+    run_recipe(c, name, kv, rest, o, f).await
+}
+
+/// `wisp run <recipe> [field=value…] [words…]` (a declared task). `--wait`: until it needs you, then what it did.
+#[allow(clippy::many_single_char_names)] // c, o, f as in the rest of the CLI
+async fn run_recipe(
+    c: &Client,
+    name: &str,
+    kv: Map<String, Value>,
+    rest: Vec<String>,
+    o: &Opts,
+    f: &crate::args::Flags,
+) -> Result<Option<i32>> {
+    let st = crate::cli::style();
+    // `wisp run <name>` alone, or with `field=value`s, asks for a recipe: one nobody has is said, never sent to an agent
+    // as the prompt "nosuchrecipe" (audit A #16). Several plain words are a prompt (`wisp run the tests`).
+    // One quoted argument with spaces (`wisp run "the tests"`) is a prompt too, never a recipe name.
+    let named = (rest.is_empty() && !name.contains(char::is_whitespace)) || !kv.is_empty();
+    match c.cmd("automations.task.run", json!({ "name": name, "params": kv, "words": rest, "over": o.over })).await {
         Ok(v) => {
-            say(&format!("  {} {name}: {}  wisp attach {}", paint(&st, GREEN, "◌"), s(&v, "id"), s(&v, "id")));
+            let id = s(&v, "id").to_owned();
+            say(&format!("  {} {name}: {id}  wisp attach {id}", paint(&st, GREEN, "◌")));
+            if o.wait || f.wait {
+                // --wait: until the task needs you, then what it did, as `wisp wait` says it (audit A #16: it returned at once)
+                let w = crate::scripted::wait(c, &id, std::time::Duration::from_secs(30 * 60)).await?;
+                crate::scripted::show(c, f, &id, Some(w)).await?;
+            }
             Ok(Some(0))
+        }
+        // a slip, as main.rs says it: the usage with the `wisp -- …` escape, exit 2 (QA round 15 #2, audit A #16)
+        Err(e) if e.status() == 404 && named => {
+            eprintln!("  ✗ no recipe or workflow named {name}: wisp recipes lists them\n{}", crate::words::usage("run"));
+            Ok(Some(crate::cli::USAGE_EXIT))
         }
         Err(e) if e.status() == 404 => Ok(None),
         Err(e) => Err(e),

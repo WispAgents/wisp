@@ -15,7 +15,7 @@ mod project;
 mod team;
 
 use wisp_kernel::Setup;
-use wisp_resources_api::{KindInfo, stored, stored_published_tidied};
+use wisp_resources_api::{KindInfo, stored, stored_published_unique};
 
 pub use brief::Brief;
 pub use harness::{HarnessSpec, declared};
@@ -37,11 +37,13 @@ pub fn register(s: &mut Setup) -> std::sync::Arc<Kinds> {
     std::sync::Arc::new(Kinds {
         // every screen shows projects (chips, New task's "in", Home): published as `project` on `config`
         // its path canonical whoever applies it (`wisp add .` sent "/repo/.", a pasted "C:\\x\\" or "\\\\?\\C:\\x")
-        project: stored_published_tidied::<ProjectSpec>(
+        // one project per folder (setup audit F23: a formula's second name for a folder was a second project)
+        project: stored_published_unique::<ProjectSpec>(
             s,
             "project",
             |sc| KindInfo::new("project", "projects", owner, sc).order(10),
             project::tidy_project,
+            "path",
         ),
         harness: harness::harness_kind(s),
         skill: stored::<SkillSpec>(s, |sc| KindInfo::new("skill", "skills", owner, sc).order(15)),

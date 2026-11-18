@@ -49,12 +49,15 @@ export function shortAgo(at: number, now: number): string {
   return `${Math.floor(d / DAY)}d`;
 }
 
+// made once: a DateTimeFormat costs far more to build than to use, and every list row and turn asks for its title
+// (4.6 ms of a task's opening at 4×, perf r1 #6)
+const DAY_FMT = new Intl.DateTimeFormat('en-GB', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' });
+const CLOCK_FMT = new Intl.DateTimeFormat('en-GB', { hour: '2-digit', minute: '2-digit' });
+
 /** v1's hover title for a time: Sun, 8 Nov 2026, 03:28 */
 export function longTime(at: number): string {
   const d = new Date(at);
-  const day = new Intl.DateTimeFormat('en-GB', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' }).format(d);
-  const clock = new Intl.DateTimeFormat('en-GB', { hour: '2-digit', minute: '2-digit' }).format(d);
-  return `${day}, ${clock}`;
+  return `${DAY_FMT.format(d)}, ${CLOCK_FMT.format(d)}`;
 }
 
 export type Tone = 'done' | 'info' | 'warn' | 'bad' | 'live';

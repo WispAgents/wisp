@@ -130,3 +130,24 @@ fn a_ui_only_without_a_reason_is_refused() {
     assert!(with(json!(true)).iter().any(|(p, _)| p == "contributes.commands[0].uiOnly"));
     assert_eq!(with(json!("a drag on the canvas; there's nothing to type")), Vec::new());
 }
+
+/// Setup audit F22: `wisp settings set worktrees.max 80` and a formula's `worktrees.max: 20` were refused ("must be
+/// one of off, 20, 40, 80"): the CLI and YAML read 80 as a number. A number (or true/false) whose text is one of an
+/// enum's values is that value.
+#[test]
+fn an_enum_takes_a_number_that_spells_one_of_its_values() {
+    let decl: wisp_kernel::SettingDecl =
+        serde_json::from_value(json!({ "key": "max", "type": "enum", "values": ["off", "20", "40", "80"], "default": "40" })).unwrap();
+    assert_eq!(decl.coerce(json!(80)), json!("80"));
+    assert_eq!(decl.problem(&decl.coerce(json!(80))), None);
+    assert_eq!(decl.coerce(json!("off")), json!("off"));
+    // not one of them: left as it is, and refused as before
+    assert_eq!(decl.coerce(json!(81)), json!(81));
+    assert!(decl.problem(&decl.coerce(json!(81))).is_some());
+    let bools: wisp_kernel::SettingDecl =
+        serde_json::from_value(json!({ "key": "b", "type": "enum", "values": ["true", "false", "ask"] })).unwrap();
+    assert_eq!(bools.coerce(json!(true)), json!("true"));
+    // other types are untouched
+    let int: wisp_kernel::SettingDecl = serde_json::from_value(json!({ "key": "n", "type": "int" })).unwrap();
+    assert_eq!(int.coerce(json!(80)), json!(80));
+}

@@ -78,6 +78,22 @@ jobs:
         run: npm run typecheck 2>&1 | tee "$RUNNER_TEMP/typecheck.log"
       - name: cargo fmt
         run: cargo fmt --all --check
+      # Each spike is its own Cargo workspace over the workspace's crates, so a dependency added to one of those crates
+      # leaves the spike's Cargo.lock stale while the workspace's lock is fine; `--locked` then refuses the spike, and
+      # the server budgets gate measured nothing for hours (perf audit 2026-11-18 #2). Fails at once, on every runner,
+      # naming the spike and the fix.
+      - name: spike locks are current
+        shell: bash
+        run: |
+          stale=0
+          for lock in spikes/*/Cargo.lock; do
+            dir=$(dirname "$lock")
+            if ! cargo metadata --locked --format-version 1 --manifest-path "$dir/Cargo.toml" > /dev/null; then
+              echo "::error file=$lock::$lock is stale: run cargo metadata --format-version 1 --manifest-path $dir/Cargo.toml > /dev/null and commit the lock"
+              stale=1
+            fi
+          done
+          exit $stale
       - name: cargo clippy
         run: cargo clippy --workspace --all-targets --locked -- -D warnings
       - name: cargo test

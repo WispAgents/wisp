@@ -639,6 +639,7 @@ pub fn adopted(
         spec,
         ext,
         resume_id: Some(s.id.clone()),
+        fresh: false,
     }
 }
 
