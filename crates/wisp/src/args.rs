@@ -28,6 +28,7 @@ pub const HELP: &str = "usage:
   wisp plugin install <folder|git URL>  install one, off, and see what it asks for; remove <id> takes it out
   wisp crew                     list your crew
   wisp init                     a .wisp/ folder here: wisp.yml, the AGENTS.md note, its modules fetched and locked
+                                (asks first outside a git repo or project; --here: make it anyway)
   wisp plan|destroy             what applying .wisp/ would change; take out everything it declares   (--yes)
   wisp fmt                      format the .wisp/ folder   (--check)
   wisp workspace [list|show|select|new NAME]   the folder's workspaces: one set of variables each

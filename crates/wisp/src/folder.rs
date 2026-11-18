@@ -582,7 +582,56 @@ pub const AGENTS_NOTE: &str = "\n## wisp: the tasks behind this code\n\nBefore c
 /// `wisp init`: `.wisp/` with its `wisp.yml` (history tracked: `ask`), the AGENTS.md note (and CLAUDE.md's
 /// when there is one), and the modules fetched and locked.
 pub fn init(cwd: &Path, o: &Opts) -> Result<i32> {
+    init_with(cwd, o, &ask_in_terminal)
+}
+
+/// A yes/no question in the terminal; None: there's no terminal to ask in.
+fn ask_in_terminal(q: &str) -> Option<bool> {
+    use std::io::{BufRead as _, IsTerminal as _, Write as _};
+    if !std::io::stdin().is_terminal() || !std::io::stderr().is_terminal() {
+        return None;
+    }
+    eprint!("  {q} [y/N] ");
+    let _ = std::io::stderr().flush();
+    let mut line = String::new();
+    std::io::stdin().lock().read_line(&mut line).ok()?;
+    Some(matches!(line.trim().to_lowercase().as_str(), "y" | "yes"))
+}
+
+/// Whether `dir` is somewhere `.wisp/` belongs: in a git work tree (a `.git` here or above), or wisp's already.
+fn a_project(dir: &Path) -> bool {
+    // a `.git`, a `.wisp/` or a `*.wisp.yml` here or above
+    dir.ancestors().any(|d| d.join(".git").exists() || folder(&Opts::default(), d).is_some())
+}
+
+/// `wisp init` with its question (`ask`: None when there's no terminal). QA round 12 #4: in a folder that's no git
+/// repo or project (/tmp), it asks first, or refuses with `--here` to do it anyway; the note goes beside `.wisp/`.
+pub fn init_with(cwd: &Path, o: &Opts, ask: &dyn Fn(&str) -> Option<bool>) -> Result<i32> {
     let st = crate::cli::style();
+    let here_hint = "--here makes .wisp/ in a folder that isn't a git repo or a project";
+    if let Some(bad) = o.words.iter().find(|w| w.starts_with('-')) {
+        eprintln!("  ✗ wisp init doesn't take {bad} ({here_hint})");
+        return Ok(crate::cli::USAGE_EXIT);
+    }
+    // where it goes: `-f <dir>`'s folder, else here
+    let target = o.files.first().map_or_else(|| cwd.to_owned(), |f| cwd.join(f));
+    if !o.here && !a_project(&target) {
+        let q = format!("{} isn't a git repo or a project. Make .wisp/ here anyway?", target.display());
+        match ask(&q) {
+            Some(true) => {}
+            Some(false) => {
+                say("  nothing made");
+                return Ok(1);
+            }
+            None => {
+                eprintln!(
+                    "  ✗ {} isn't a git repo or a project: run wisp init in one, or wisp init --here to make .wisp/ here anyway",
+                    target.display()
+                );
+                return Ok(crate::cli::USAGE_EXIT);
+            }
+        }
+    }
     let dir = folder(o, cwd).unwrap_or_else(|| cwd.join(".wisp"));
     std::fs::create_dir_all(dir.join("tasks")).map_err(|e| CliError::said(e.to_string()))?;
     let main = dir.join("wisp.yml");
@@ -598,7 +647,8 @@ pub fn init(cwd: &Path, o: &Opts) -> Result<i32> {
             "# .wisp\n\nThis repo's agent setup and history (wisp, ADR-0033/0034):\n\n- `*.wisp.yml`: the formula (agents, crew, workflows, rules).\n- `tasks/`: one file per task that built this code (`<id>.task.yml`, `<id>.report.md`), and `history/<id>.jsonl.zst`, its transcript, scrubbed.\n- `lock.yml`: the modules' pinned versions.\n\n`wisp log`, `wisp blame <file>:<line>`, `wisp tasks --touching <path>`, `wisp resume <id>`.\n",
         );
     }
-    let root = dir.parent().unwrap_or(cwd);
+    // beside `.wisp/`, or the folder that holds the formula itself (`app.wisp.yml`): never a parent's AGENTS.md
+    let root = if dir.file_name().is_some_and(|n| n == ".wisp") { dir.parent().unwrap_or(cwd) } else { dir.as_path() };
     for name in ["AGENTS.md", "CLAUDE.md"] {
         let p = root.join(name);
         if name == "CLAUDE.md" && !p.exists() {
@@ -631,6 +681,70 @@ pub fn fmt_cmd(o: &Opts, cwd: &Path) -> Result<i32> {
 #[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
+
+    fn scratch(name: &str) -> PathBuf {
+        let d = std::env::temp_dir().join(format!("wisp-init-{name}-{}", crate::services::hex(&rand::random::<[u8; 6]>())));
+        std::fs::create_dir_all(&d).unwrap();
+        d
+    }
+
+    fn opts(words: &[&str], here: bool) -> Opts {
+        Opts { words: words.iter().map(|w| (*w).to_owned()).collect(), here, ..Opts::default() }
+    }
+
+    /// QA round 12 #4: `wisp init --force` in /tmp made /tmp/.wisp and edited /tmp/AGENTS.md without a word. A folder
+    /// that's no git repo and no project: asked first in a terminal, refused elsewhere (with `--here` to do it anyway);
+    /// a flag it doesn't take is refused; and the AGENTS.md note goes beside `.wisp/`, never into a parent's.
+    #[test]
+    fn init_asks_before_making_wisp_in_a_folder_that_is_no_project_and_never_writes_a_parent_s_agents_md() {
+        let no_term = |_: &str| None;
+        // no repo, no project, no terminal: refused, nothing written
+        let d = scratch("plain");
+        assert_eq!(init_with(&d, &opts(&[], false), &no_term).unwrap(), 2);
+        assert!(!d.join(".wisp").exists() && !d.join("AGENTS.md").exists());
+        // `--force` isn't how: refused with what is
+        assert_eq!(init_with(&d, &opts(&["--force"], false), &no_term).unwrap(), 2);
+        assert!(!d.join(".wisp").exists());
+        // asked in a terminal: no is no; yes makes it
+        assert_eq!(init_with(&d, &opts(&[], false), &|_| Some(false)).unwrap(), 1);
+        assert!(!d.join(".wisp").exists());
+        let asked = std::cell::RefCell::new(String::new());
+        let yes = |q: &str| {
+            q.clone_into(&mut asked.borrow_mut());
+            Some(true)
+        };
+        assert_eq!(init_with(&d, &opts(&[], false), &yes).unwrap(), 0);
+        assert!(asked.borrow().contains("isn't a git repo or a project"), "{}", asked.borrow());
+        assert!(d.join(".wisp/wisp.yml").is_file() && d.join("AGENTS.md").is_file());
+        // `--here`: made without asking
+        let h = scratch("here");
+        assert_eq!(init_with(&h, &opts(&[], true), &no_term).unwrap(), 0);
+        assert!(h.join(".wisp/wisp.yml").is_file());
+        // a sub-folder of a wisp project with no git repo: no question, and no second .wisp/ asked for
+        let w = scratch("wproj");
+        std::fs::create_dir_all(w.join(".wisp")).unwrap();
+        std::fs::create_dir_all(w.join("web")).unwrap();
+        assert!(a_project(&w.join("web")));
+        // `auto --force`: refused whatever comes first
+        assert_eq!(init_with(&d, &opts(&["auto", "--force"], false), &no_term).unwrap(), 2);
+        // in a git repo (its sub-folder too): no question
+        let r = scratch("repo");
+        std::fs::create_dir_all(r.join(".git")).unwrap();
+        std::fs::create_dir_all(r.join("web")).unwrap();
+        assert_eq!(init_with(&r.join("web"), &opts(&[], false), &no_term).unwrap(), 0);
+        // the formula beside the files (`x.wisp.yml` here): the note goes here, the parent's AGENTS.md is left alone
+        let parent = scratch("parent");
+        std::fs::write(parent.join("AGENTS.md"), "# parent\n").unwrap();
+        let child = parent.join("svc");
+        std::fs::create_dir_all(&child).unwrap();
+        std::fs::write(child.join("app.wisp.yml"), "wisp: 1\n").unwrap();
+        assert_eq!(init_with(&child, &opts(&[], false), &no_term).unwrap(), 0);
+        assert_eq!(std::fs::read_to_string(parent.join("AGENTS.md")).unwrap(), "# parent\n");
+        assert!(std::fs::read_to_string(child.join("AGENTS.md")).unwrap().contains("## wisp: the tasks behind this code"));
+        for x in [d, h, r, parent] {
+            let _ = std::fs::remove_dir_all(x);
+        }
+    }
 
     #[test]
     fn mv_renames_the_declaration_and_its_references_only() {

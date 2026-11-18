@@ -100,22 +100,21 @@ async fn preview(ctx: &Ctx, call: &Call, a: &ShareArgs) -> Result<Preview> {
             history = Some(Value::Array(full));
         }
     }
-    // the scrub: secrets, this server's secret env values, paths, names the sharer didn't pick
-    let mut names: Vec<(String, String)> = Vec::new();
-    if let Ok(list) = calls::titles(ctx, call).await {
-        names.extend(
-            list.into_iter().filter(|(id, _)| *id != a.id).map(|(_, title)| (title, "<task>".to_owned())).filter(|(t, _)| t.len() > 3),
-        );
-    }
-    let crew = spec.get("crew").and_then(Value::as_str).unwrap_or_default().to_owned();
-    if let Ok(list) = calls::crew(ctx, call).await {
-        names.extend(list.into_iter().filter(|(id, name)| *name != crew && *id != crew).map(|(_, name)| (name, "<crew>".to_owned())));
-    }
+    // the scrub: secrets, this server's secret env values, paths, and where the text refers to another task or a
+    // crew member the sharer didn't pick (a mention, an id): never their titles or names as words (QA round 12 #3)
+    let tasks: Vec<String> =
+        calls::titles(ctx, call).await.map(|l| l.into_iter().map(|(id, _)| id).filter(|id| *id != a.id).collect()).unwrap_or_default();
+    let chosen = spec.get("crew").and_then(Value::as_str).unwrap_or_default().to_owned();
+    let crew: Vec<String> = calls::crew(ctx, call)
+        .await
+        .map(|l| l.into_iter().filter(|(id, name)| *name != chosen && *id != chosen).map(|(id, _)| id).collect())
+        .unwrap_or_default();
     let scrub_with = Scrub {
         env: secret_env(std::env::vars()),
         project: s(&spec, "cwd").to_owned(),
         home: std::env::var("HOME").unwrap_or_default(),
-        names,
+        tasks,
+        crew,
     };
     let mut red = Vec::new();
     let title = wisp_share_core::scrub_text(&task.title, &scrub_with, "title", &mut red);

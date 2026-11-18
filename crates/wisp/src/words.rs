@@ -82,19 +82,48 @@ pub enum NotATask {
     /// one or two letters off a command word or a plugin (`wisp tsks`), or another tool's name for one (`wisp get`
     /// is `wisp show`): did you mean
     Near(String),
-    /// no command, but followed by a task id (`wisp fetch 01a1e9…`): never a prompt (it would start a run)
+    /// no command, but followed by a task id (`wisp fetch 01a1e9…`), or one word alone (`wisp refactor`): never a
+    /// prompt (it would start a run)
     Unknown(String),
+    /// a word another tool or habit uses (`wisp login`, `wisp rm 123`): what to type in wisp (QA round 12 #1)
+    Instead(String),
 }
 
 /// Other tools' words for wisp's (`gh`, `kubectl`, `docker`): `wisp get <id>` means `wisp show <id>`.
 const SYNONYMS: [(&str, &str); 6] =
     [("get", "show"), ("view", "show"), ("cat", "show"), ("status", "show"), ("list", "ls"), ("logs", "attach")];
 
-/// A task's id as wisp prints it (12 to 32 hex digits), alone or as `<peer>:<id>`.
+/// A task's id as wisp prints it (12 to 32 hex digits), alone or as `<peer>:<id>` (a machine's name: no `/` or `.`,
+/// so `src/lib.rs:42` is a place in a file, not an id), or a bare number (`wisp kill 123`).
 fn id_shaped(w: &str) -> bool {
-    let id = w.rsplit_once(':').map_or(w, |(_, id)| id);
-    (12..=32).contains(&id.len()) && id.bytes().all(|b| b.is_ascii_hexdigit())
+    let hex = |id: &str| (12..=32).contains(&id.len()) && id.bytes().all(|b| b.is_ascii_hexdigit());
+    match w.rsplit_once(':') {
+        Some((peer, id)) => !peer.is_empty() && peer.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_') && hex(id),
+        None => hex(w) || (!w.is_empty() && w.bytes().all(|b| b.is_ascii_digit())),
+    }
 }
+
+/// Words other tools (or habit) use, and what to type in wisp instead (QA round 12 #1: each launched an agent).
+const INSTEAD: &[(&str, &str)] = &[
+    ("login", "wisp cloud signin"),
+    ("signin", "wisp cloud signin"),
+    ("logout", "wisp cloud signout"),
+    ("signout", "wisp cloud signout"),
+    ("whoami", "wisp cloud status"),
+    ("config", "wisp settings list"),
+    ("projects", "wisp ls (each task with its project; wisp add [path] adds one)"),
+    ("remove", "wisp runtime delete <id>"),
+    ("rm", "wisp runtime delete <id>"),
+    ("delete", "wisp runtime delete <id>"),
+    ("kill", "wisp stop <id>"),
+    ("upgrade", "wisp update"),
+    ("start", "wisp serve (runs wisp here; wisp alone opens it)"),
+    ("restart", "wisp serve (runs wisp here; wisp alone opens it)"),
+    ("new", "wisp \"<what to do>\""),
+    ("info", "wisp version (a task's: wisp show <id>)"),
+    // outside a wisp checkout (main.rs points a checkout at `npm run doctor`)
+    ("doctor", "wisp version, wisp accounts harnesses (the agents it can run) and wisp cloud status"),
+];
 
 /// One word alone, or a first word followed at once by something flag-shaped, or by task ids only, with no `--` before
 /// them. Only the next word counts: `wisp review the auth module --strict` is a prompt (owner's delegate, QA round 10).
@@ -128,18 +157,22 @@ pub fn not_a_task(words: &[String], literal: Literal, plugins: &[String]) -> Opt
     if let Some((_, ours)) = SYNONYMS.iter().find(|(theirs, _)| *theirs == lower) {
         return Some(NotATask::Near((*ours).to_owned()));
     }
-    let with_ids = words.len() > 1 && words[1..].iter().all(|w| id_shaped(w));
-    if lower.is_empty() || !lower.bytes().all(|b| b.is_ascii_lowercase() || b == b'-') {
-        return with_ids.then(|| NotATask::Unknown(first.clone()));
+    // one quoted argument is the prompt (`wisp "log me in with SSO"`)
+    if first.contains(char::is_whitespace) {
+        return None;
     }
-    let candidates = COMMANDS.iter().chain(ROUTED.iter()).copied().chain(plugins.iter().map(String::as_str));
-    // the closest wins, the table's order breaks ties
-    candidates
-        .map(|c| (distance(&lower, c), c))
-        .filter(|(d, c)| near(&lower, c, *d))
-        .min_by_key(|(d, _)| *d)
-        .map(|(_, c)| NotATask::Near(c.to_owned()))
-        .or_else(|| with_ids.then(|| NotATask::Unknown(first.clone())))
+    if let Some((_, instead)) = INSTEAD.iter().find(|(theirs, _)| *theirs == lower) {
+        return Some(NotATask::Instead((*instead).to_owned()));
+    }
+    if !lower.is_empty() && lower.bytes().all(|b| b.is_ascii_lowercase() || b == b'-') {
+        let candidates = COMMANDS.iter().chain(ROUTED.iter()).copied().chain(plugins.iter().map(String::as_str));
+        // the closest wins, the table's order breaks ties
+        if let Some((_, c)) = candidates.map(|c| (distance(&lower, c), c)).filter(|(d, c)| near(&lower, c, *d)).min_by_key(|(d, _)| *d) {
+            return Some(NotATask::Near(c.to_owned()));
+        }
+    }
+    // one word, or a word and ids, that's no command: never a task (QA round 12 #1)
+    Some(NotATask::Unknown(first.clone()))
 }
 
 /// A built-in command's verb path (`wisp computer on`, `wisp trigger add`): its first word, the verbs main.rs routes

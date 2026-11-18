@@ -6,7 +6,9 @@
 //! - **Env**: the values of the sharer's secret-looking environment variables (`*KEY*`, `*TOKEN*`,
 //!   `*SECRET*`, `*PASSWORD*`) → `<env:NAME>`.
 //! - **Paths**: the project folder → `<project>`, the home folder → `~`.
-//! - **Names**: other tasks' titles and crew names the sharer didn't choose → `<task>` / `<crew>`.
+//! - **Others**: where the text refers to another task or a crew member the sharer didn't choose (a mention chip,
+//!   `@[Title](wisp:<id>)` / `@[Name](crew:<id>)`, or the bare id) → `<task>` / `<crew>`. Their titles and names as
+//!   words stay: a task titled "login" never blanks "fix the login bug" (QA round 12 #3).
 //!
 //! The same scrub serves `wisp history export`.
 
@@ -23,8 +25,57 @@ pub struct Scrub {
     pub env: Vec<(String, String)>,
     pub project: String,
     pub home: String,
-    /// (text, what it becomes): other tasks' titles, crew names not chosen
-    pub names: Vec<(String, String)>,
+    /// other tasks' ids: a mention of one, or the id, → `<task>`
+    pub tasks: Vec<String>,
+    /// the ids of crew members the sharer didn't choose: a mention of one, or the id, → `<crew>`
+    pub crew: Vec<String>,
+}
+
+fn mention() -> Option<&'static Regex> {
+    static M: OnceLock<Option<Regex>> = OnceLock::new();
+    M.get_or_init(|| Regex::new(r"@\[([^\]\n]{1,200})\]\((wisp|crew):([A-Za-z0-9_-]{4,64})\)").ok()).as_ref()
+}
+
+/// `t` with each mention chip of one of `ids` (of `kind`, `wisp` or `crew`) and each whole occurrence of one of the
+/// ids (not inside a longer word) as `to`; what went, by its title or the id, in `went`.
+fn others(t: &str, kind: &str, ids: &[String], to: &str, went: &mut Vec<String>) -> String {
+    if ids.is_empty() {
+        return t.to_owned();
+    }
+    let chips = mention().map_or_else(
+        || t.to_owned(),
+        |m| {
+            m.replace_all(t, |c: &regex::Captures<'_>| {
+                if &c[2] == kind && ids.iter().any(|i| *i == c[3]) {
+                    went.push(c[1].to_owned());
+                    to.to_owned()
+                } else {
+                    c[0].to_owned()
+                }
+            })
+            .into_owned()
+        },
+    );
+    let word = |ch: Option<char>| ch.is_some_and(|c| c.is_alphanumeric() || c == '_' || c == '-');
+    let mut out = chips;
+    for id in ids.iter().filter(|i| i.len() >= 8) {
+        let mut next = String::with_capacity(out.len());
+        let mut rest = out.as_str();
+        while let Some(at) = rest.find(id.as_str()) {
+            let (before, after) = (rest[..at].chars().next_back(), rest[at + id.len()..].chars().next());
+            next.push_str(&rest[..at]);
+            if word(before) || word(after) {
+                next.push_str(id);
+            } else {
+                next.push_str(to);
+                went.push(id.clone());
+            }
+            rest = &rest[at + id.len()..];
+        }
+        next.push_str(rest);
+        out = next;
+    }
+    out
 }
 
 /// Environment variables whose values a share masks.
@@ -104,11 +155,10 @@ pub fn scrub_text(text: &str, s: &Scrub, at: &str, out: &mut Vec<Redaction>) -> 
             out.push(Redaction { kind: "path".into(), at: at.into(), was: from.into(), now: to.into() });
         }
     }
-    for (name, to) in &s.names {
-        if name.len() > 2 && t.contains(name.as_str()) {
-            t = t.replace(name.as_str(), to);
-            out.push(Redaction { kind: "name".into(), at: at.into(), was: name.clone(), now: to.clone() });
-        }
+    for (kind, ids, to) in [("wisp", &s.tasks, "<task>"), ("crew", &s.crew, "<crew>")] {
+        let mut went = Vec::new();
+        t = others(&t, kind, ids, to, &mut went);
+        out.extend(went.into_iter().map(|was| Redaction { kind: "name".into(), at: at.into(), was, now: to.into() }));
     }
     t
 }
@@ -175,10 +225,11 @@ mod tests {
             env: secret_env([("MY_API_KEY".into(), "hunter2hunter2".into()), ("PATH".into(), "/usr/bin:/bin".into())]),
             project: "/Users/me/api".into(),
             home: "/Users/me".into(),
-            names: vec![("Payroll migration".into(), "<task>".into())],
+            tasks: vec!["01aa0000payroll0000000000000001".into()],
+            ..Scrub::default()
         };
         let mut r = Vec::new();
-        let v = json!({ "prompt": "use sk-ant-abcdefghijklmnopqrstuvwx and token=abcd1234efgh in /Users/me/api/src/a.ts, see ~/notes and /Users/me/x; key hunter2hunter2; like Payroll migration", "n": 3 });
+        let v = json!({ "prompt": "use sk-ant-abcdefghijklmnopqrstuvwx and token=abcd1234efgh in /Users/me/api/src/a.ts, see ~/notes and /Users/me/x; key hunter2hunter2; like @[Payroll migration](wisp:01aa0000payroll0000000000000001)", "n": 3 });
         let got = scrub(&v, &s, "spec", &mut r);
         let p = got["prompt"].as_str().unwrap();
         assert_eq!(p, "use <secret> and <secret> in <project>/src/a.ts, see ~/notes and ~/x; key <env:MY_API_KEY>; like <task>");
@@ -189,6 +240,29 @@ mod tests {
         let key = "-----BEGIN OPENSSH PRIVATE KEY-----\nabc\n-----END OPENSSH PRIVATE KEY-----";
         assert_eq!(scrub_text(key, &Scrub::default(), "x", &mut Vec::new()), "<secret>");
         assert_eq!(slug("Fix the login: 401s!"), "fix-the-login-401s");
+    }
+
+    /// QA round 12 #3: a task titled "login" made the shared prompt "fix the login bug" read "fix the <task> bug". Other
+    /// tasks and crew members are taken out where they are referred to (a mention chip, an id), never as words.
+    #[test]
+    fn other_tasks_and_crew_go_where_they_are_named_never_as_words() {
+        let login = "01ab0000000070008000000000000a11";
+        let me = "01ab0000000070008000000000000b22";
+        let ada = "crew0ada01";
+        let s = Scrub { tasks: vec![login.into()], crew: vec![ada.into()], ..Scrub::default() };
+        let mut r = Vec::new();
+        // the QA example: the words stay, whatever other task is titled "login"
+        assert_eq!(scrub_text("fix the login bug", &s, "report/answers/0/prompt", &mut r), "fix the login bug");
+        assert!(r.is_empty(), "{r:?}");
+        // a mention of that task, and its id, go; a mention of the shared task itself stays
+        let t = format!("like @[login](wisp:{login}), see {login}, and @[this one](wisp:{me}); ask @[Ada](crew:{ada}) or Ada herself");
+        let got = scrub_text(&t, &s, "spec/prompt", &mut r);
+        assert_eq!(got, format!("like <task>, see <task>, and @[this one](wisp:{me}); ask <crew> or Ada herself"));
+        let was: Vec<(&str, &str)> = r.iter().map(|x| (x.was.as_str(), x.now.as_str())).collect();
+        assert_eq!(was, [("login", "<task>"), (login, "<task>"), ("Ada", "<crew>")], "the preview names what went");
+        assert!(r.iter().all(|x| x.kind == "name"));
+        // an id inside a longer word is someone else's text
+        assert_eq!(scrub_text(&format!("x{login}y"), &s, "x", &mut Vec::new()), format!("x{login}y"));
     }
 
     #[test]

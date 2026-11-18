@@ -181,6 +181,11 @@ async fn dispatch(p: &Parsed, user_home: &Path, cwd: &Path) -> Result<i32> {
             ));
         }
         Some("add") => add(&home, port, p.words.get(1), cwd).await?,
+        // `wisp run the tests`: no recipe of that name, so a prompt, launched as every prompt is (its title, attached in
+        // a terminal; QA round 12 #2 printed the id where the title goes)
+        Some("run") if !(f.json || f.wait || !f.tries.is_empty() || f.compare.is_some()) => {
+            return launch_and_open(p, &home, port, &cwd_s).await;
+        }
         Some(cmd) => commands::run(p, cmd, rest, &cwd_s, port).await?,
         None if !p.words.is_empty() && (f.json || f.wait || !f.tries.is_empty() || f.compare.is_some()) => {
             commands::run(p, "launch", &p.words, &cwd_s, port).await?;
@@ -272,11 +277,28 @@ async fn not_a_task(p: &Parsed, home: &Path, port: u16, mut cat: Option<wisp_cli
             eprintln!("  ✗ wisp {first} isn't a command: did you mean wisp {w}?   (a task that's just \"{first}\": wisp -- {first})");
             Some(cli::USAGE_EXIT)
         }
+        words::NotATask::Instead(said) => {
+            let line = p.words.join(" ");
+            // in a wisp checkout, `npm run doctor` is the one that checks it (AGENTS.md)
+            let said = if first == "doctor" && wisp_checkout(p.flags.cwd.clone()).is_some() {
+                "npm run doctor (checks this checkout)".to_owned()
+            } else {
+                said
+            };
+            eprintln!("  ✗ wisp {line} isn't a command: did you mean {said}?   (a task that says this: wisp -- {line})");
+            Some(cli::USAGE_EXIT)
+        }
         words::NotATask::Unknown(w) => {
             eprintln!("  ✗ wisp {w} isn't a command: wisp help lists them   (a task that says this: wisp -- {})", p.words.join(" "));
             Some(cli::USAGE_EXIT)
         }
     }
+}
+
+/// The wisp checkout this folder is in (`tools/doctor.ts` beside `crates/wisp`), if any.
+fn wisp_checkout(cwd: Option<std::path::PathBuf>) -> Option<std::path::PathBuf> {
+    let here = cwd.or_else(|| std::env::current_dir().ok())?;
+    here.ancestors().find(|d| d.join("tools/doctor.ts").is_file() && d.join("crates/wisp").is_dir()).map(Path::to_path_buf)
 }
 
 /// Whether `word` could be a plugin's first word (`crew`, `runtime`, `grid-client`).
@@ -317,7 +339,9 @@ async fn as_code(p: &Parsed, port: u16, cwd: &Path, home: &Path) -> Result<Optio
         "apply" | "diff" | "validate" | "plan" | "destroy" if !o.files.is_empty() || folder::folder(&o, cwd).is_some() => {
             code::apply(&connect().await?, first, &o, cwd).await?
         }
-        "init" if o.words.len() <= 1 => folder::init(cwd, &o)?,
+        // a prompt that starts with init (`wisp init the database schema`) stays one; a flag goes to init, which refuses
+        // the ones it doesn't take (`wisp init auto --force` launched an agent)
+        "init" if o.words.len() <= 1 || o.words.iter().any(|w| w.starts_with('-')) => folder::init(cwd, &o)?,
         "track" if o.words.len() == 1 => repo_cli::track(&connect().await?, &o, cwd).await?,
         "untrack" if o.words.len() == 1 => repo_cli::untrack_cmd(Client::connect(port, false).await.ok().as_ref(), &o, cwd).await?,
         "blame" if o.words.len() == 1 => repo_cli::blame_any(Client::connect(port, false).await.ok().as_ref(), &o, cwd).await?,

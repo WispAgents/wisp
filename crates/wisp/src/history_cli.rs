@@ -171,7 +171,7 @@ pub async fn export(c: &Client, o: &Opts, cwd: &Path) -> Result<i32> {
         env: wisp_share_core::secret_env(std::env::vars()),
         project: String::new(),
         home: std::env::var("HOME").unwrap_or_default(),
-        names: Vec::new(),
+        ..wisp_share_core::Scrub::default()
     };
     let mut out = std::io::stdout().lock();
     for r in rows {

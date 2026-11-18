@@ -49,16 +49,9 @@ fn a_real_prompt_is_still_a_task() {
         &["fix the add bug"],
         &["tasks", "are", "slow", "to", "list"],
         &["ship", "the", "docs"],
-        &["refactor"],
-        &["fix"],
-        &["test"],
         &["help me"],
-        &["tests"],
-        &["lint"],
-        &["start"],
-        &["state"],
-        &["trace"],
-        &["go"],
+        &["run", "the", "tests"],
+        &["enable", "2fa", "on", "login"],
         &["plan", "the", "migration", "-", "postgres", "first"],
         &["tasks", "are", "slow", "--", "fix", "them"],
     ] {
@@ -380,4 +373,60 @@ fn a_group_that_is_a_plugin_alone_lists_its_verbs() {
     }
     // a group that's only wisp's: its usage
     assert_eq!(not_a_task(&w(&["spell"]), Literal::No, &plugins), Some(NotATask::Usage("spell".to_owned())));
+}
+
+/// QA round 12 #1: `wisp login`, `wisp doctor`, `wisp rm 123`, `wisp kill 123`… each launched an agent (a paid run).
+/// One word that isn't a command, or a word followed only by id-shaped arguments, is never a task: the words other tools
+/// use say what to type instead, and the rest say they aren't commands. One quoted argument, or `--`, is the task.
+#[test]
+fn one_word_or_a_word_and_ids_is_never_a_task_and_says_what_to_type() {
+    for (args, instead) in [
+        (&["login"][..], "wisp cloud signin"),
+        (&["signin"], "wisp cloud signin"),
+        (&["logout"], "wisp cloud signout"),
+        (&["signout"], "wisp cloud signout"),
+        (&["whoami"], "wisp cloud status"),
+        (&["config"], "wisp settings list"),
+        (&["projects"], "wisp ls"),
+        (&["remove"], "wisp runtime delete <id>"),
+        (&["rm", "123"], "wisp runtime delete <id>"),
+        (&["delete", "01a1ef07823670f68eb62f4ddb8ededc"], "wisp runtime delete <id>"),
+        (&["kill", "123"], "wisp stop <id>"),
+        (&["upgrade"], "wisp update"),
+        (&["start"], "wisp serve"),
+        (&["restart"], "wisp serve"),
+        (&["new"], "wisp \"<what to do>\""),
+        (&["info"], "wisp version"),
+        (&["doctor"], "wisp accounts harnesses"),
+    ] {
+        let x = p(args);
+        match not_a_task(&x.words, x.literal, &[]) {
+            Some(NotATask::Instead(t)) => assert!(t.contains(instead), "{args:?}: {t}"),
+            other => panic!("{args:?}: {other:?}"),
+        }
+    }
+    // any other word alone, or with ids: not a command, never a task
+    for args in [
+        &["refactor"][..],
+        &["fix"],
+        &["test"],
+        &["tests"],
+        &["lint"],
+        &["state"],
+        &["trace"],
+        &["go"],
+        &["frobnicate", "--x"],
+        &["README.md"],
+        &["fetch", "123"],
+    ] {
+        let x = p(args);
+        assert!(matches!(not_a_task(&x.words, x.literal, &[]), Some(NotATask::Unknown(_) | NotATask::Near(_))), "{args:?}");
+    }
+    // the task, on purpose: `--` first, or one quoted argument; a `file:line` isn't an id
+    for args in
+        [&["--", "login"][..], &["--", "refactor"], &["log me in with the new SSO"], &["explain", "src/lib.rs:42"], &["fix", "main.rs:120"]]
+    {
+        let x = p(args);
+        assert_eq!(not_a_task(&x.words, x.literal, &[]), None, "{args:?}");
+    }
 }

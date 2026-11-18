@@ -150,7 +150,8 @@ fn wisp_automations_params(prompt: &str) -> String {
 async fn recipe_run(c: &Client, p: &Parsed, args: &[String], cwd: &str) -> Result<()> {
     let mut all = vec!["run".to_owned()];
     all.extend(args.iter().cloned());
-    let m = c.cmd("runtime.create", sc::launch_args(&p.flags, &all.join(" "), cwd)).await?;
-    out(&p.flags, &m, &format!("  ◌ launched: {}  wisp attach {}", s(&m, "id"), s(&m, "id")));
+    let prompt = all.join(" ");
+    let m = c.cmd("runtime.create", sc::launch_args(&p.flags, &prompt, cwd)).await?;
+    out(&p.flags, &m, &format!("  ◌ launched: {prompt}  ({})\n    wisp attach {}", s(&m, "id"), s(&m, "id")));
     Ok(())
 }

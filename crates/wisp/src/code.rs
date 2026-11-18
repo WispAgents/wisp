@@ -47,6 +47,8 @@ pub struct Opts {
     pub over: serde_json::Map<String, Value>,
     /// the words that aren't options
     pub words: Vec<String>,
+    /// `wisp init --here`: make `.wisp/` in a folder that's no git repo or project, without asking
+    pub here: bool,
     /// `wisp computer on --grid <grid>`: sign in to that grid first if needed (what the Grid's Add a computer prints)
     pub grid: Option<String>,
     /// `-var k=v` (ADR-0034), in order
@@ -126,6 +128,7 @@ pub fn opts(argv: &[String]) -> Opts {
             "--refresh-only" | "-refresh-only" => o.refresh_only = true,
             "--in" => o.open_in = Some(val(&mut it)),
             "--grid" => o.grid = Some(val(&mut it)),
+            "--here" => o.here = true,
             "--print" => o.print = true,
             "--no-adopt" => o.no_adopt = true,
             "--access" => o.access = Some(val(&mut it)),

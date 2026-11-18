@@ -345,3 +345,70 @@ async fn every_command_word_is_a_command_a_strict_group_or_a_prompt_and_says_so(
     assert_eq!(api.cmd("runtime.list", json!({})).await.as_array().unwrap().len(), prompt_words.len());
     drop(serve);
 }
+
+/// QA round 12 #1, #2, #4: fifteen one-word slips (and their aliases) each launched an agent; `wisp run the tests` said
+/// its id where the title belongs; `wisp init` in a folder that's no project wrote there without a word.
+#[tokio::test(flavor = "multi_thread")]
+async fn one_word_slips_say_what_to_type_and_a_run_prompt_launches_with_its_title() {
+    let dir = temp("serve-cli-slips");
+    let (serve, port) = start(&dir);
+    let api = Api { http: reqwest::Client::new(), port, n: 0.into() };
+    let lines: [(&[&str], &str); 21] = [
+        (&["upgrade"], "wisp update"),
+        (&["login"], "wisp cloud signin"),
+        (&["logout"], "wisp cloud signout"),
+        (&["signin"], "wisp cloud signin"),
+        (&["signout"], "wisp cloud signout"),
+        (&["whoami"], "wisp cloud status"),
+        (&["doctor"], "wisp accounts harnesses"),
+        (&["config"], "wisp settings list"),
+        (&["projects"], "wisp ls"),
+        (&["remove"], "wisp runtime delete <id>"),
+        (&["rm", "123"], "wisp runtime delete <id>"),
+        (&["delete", "01a1ef07823670f68eb62f4ddb8ededc"], "wisp runtime delete <id>"),
+        (&["start"], "wisp serve"),
+        (&["restart"], "wisp serve"),
+        (&["kill", "123"], "wisp stop <id>"),
+        (&["new"], "<what to do>"),
+        (&["info"], "wisp version"),
+        // any other word alone, or with an id: not a command
+        (&["refactor"], "isn't a command"),
+        (&["fetch", "123"], "isn't a command"),
+        (&["frobnicate", "--x"], "isn't a command"),
+        (&["README.md"], "isn't a command"),
+    ];
+    let mut wrong = Vec::new();
+    for (words, said) in lines {
+        let (code, out, err) = probe(&dir, port, words);
+        if code != 2 || out.contains("launched") || !err.contains(said) || !err.contains("wisp -- ") {
+            wrong.push(format!("wisp {} → {code}: {}{}", words.join(" "), out.trim(), err.trim()));
+        }
+    }
+    assert!(wrong.is_empty(), "{} slips:\n{}", wrong.len(), wrong.join("\n"));
+    assert_eq!(api.cmd("runtime.list", json!({})).await.as_array().unwrap().len(), 0, "no task was made");
+
+    // #4: `wisp init` here (a scratch folder: no git repo, no project, no terminal) refuses and writes nothing
+    let (code, _, err) = probe(&dir, port, &["init"]);
+    assert!(
+        code == 2 && err.contains("--here") && !dir.join("proj/.wisp").exists() && !dir.join("proj/AGENTS.md").exists(),
+        "{code}: {err}"
+    );
+    for words in [&["init", "--force"][..], &["init", "auto", "--force"]] {
+        let (code, out, err) = probe(&dir, port, words);
+        assert!(
+            code == 2 && err.contains("--here") && !out.contains("launched") && !dir.join("proj/.wisp").exists(),
+            "{words:?} → {code}: {out}{err}"
+        );
+    }
+
+    // on purpose, a task: `--` first, or one quoted argument (the fake harness: nothing paid)
+    for words in [&["--no-open", "--", "login"][..], &["--no-open", "log me in with the new SSO"]] {
+        let (code, out, err) = probe(&dir, port, words);
+        assert!(code == 0 && out.contains("launched"), "{words:?} → {code}: {out}{err}");
+    }
+    // #2: a prompt that starts with `run` says its title, as every prompt does
+    let (code, out, err) = probe(&dir, port, &["--no-open", "run", "the", "tests"]);
+    assert!(code == 0 && out.contains("launched: run the tests  ("), "{code}: {out}{err}");
+    assert_eq!(api.cmd("runtime.list", json!({})).await.as_array().unwrap().len(), 3);
+    drop(serve);
+}
