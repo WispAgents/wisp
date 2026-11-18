@@ -66,11 +66,21 @@ for (const name of ['open', 'xdg-open']) {
 const opened = () => (fs.existsSync(OPENED) ? fs.readFileSync(OPENED, 'utf8') : '');
 const clearOpened = () => fs.rmSync(OPENED, { force: true });
 
+// The release a machine finds for `wisp` alone: one with no shell in it, as a version is until
+// release.yml publishes it. Without this, rows got the real shell from GitHub once v<version> was out
+// (0.58.0, 11 Nov): on a Mac `wisp` alone opened its window, not the tab INST-02f and 04f wait for,
+// and on Windows that window stayed open, so INST-21's wisp.exe handed over to it (single instance)
+// and never served. INST-25 to 28 serve their own release.
+const noShell = http.createServer((req, res) => (req.url.endsWith('/SHA256SUMS.txt') ? res.end('') : ((res.statusCode = 404), res.end())));
+await new Promise((r) => noShell.listen(0, '127.0.0.1', r));
+noShell.unref();
+const NO_SHELL = `http://127.0.0.1:${noShell.address().port}`;
+
 // A clean machine, as near as a folder gets: its own HOME, only the system's tools, this Node and
 // the fake agents. No shell rc, so no nvm and no node but the one named here.
 function machine(extra = {}, { withNode = true } = {}) {
   const home = dirIn('home');
-  const { env, bins } = qaEnv({ HOME: home, USERPROFILE: home, SHELL: '/bin/sh', WISP_UPDATE_CHECK: '0', ...CACHE });
+  const { env, bins } = qaEnv({ HOME: home, USERPROFILE: home, SHELL: '/bin/sh', WISP_UPDATE_CHECK: '0', WISP_SHELL_URL: NO_SHELL, ...CACHE });
   delete env.ELECTRON_RUN_AS_NODE;
   delete env.CI; // Updater turns itself off on CI, which GET /update shouldn't hide
   env.PATH = [STUBS, bins, ...(withNode ? [path.dirname(process.execPath)] : []), SYSTEM].join(path.delimiter);
