@@ -7,6 +7,7 @@
 import { For, Show, createSignal, type JSX } from 'solid-js';
 import type { PluginClient } from '@wisp/client';
 import { RunnerPicker, useShell } from '@wisp/shell';
+import { effortWord, modelWords } from '@wisp/shell/pure';
 import { AutoRunner, Button, IconButton, Menu, Popover, Stack, TeamCrew, TeamPop, TeamRow, useSignal, type MenuEntry } from '@wisp/ui';
 import { Face, Faces } from './Faces.tsx';
 import { t } from './i18n.ts';
@@ -38,14 +39,14 @@ function HarnessRowEdit(props: { readonly client: PluginClient; readonly peer?: 
   const [open, setOpen] = createSignal(false);
   let btn: HTMLButtonElement | undefined;
   const h = (): HarnessRow | undefined => props.harnesses.find((x) => x.id === props.j.agent);
-  const model = (): string => h()?.models.find((m) => m.id === props.j.model)?.label ?? (props.j.model || t('wisp.goal.judges.defaultModel'));
+  const model = (): string => h()?.models.find((m) => m.id === props.j.model)?.label ?? (props.j.model ? modelWords(props.j.model) : t('wisp.goal.judges.defaultModel'));
   return (
     <>
       <AutoRunner
         part="goal.judgeRunner"
         ref={(el) => (btn = el)}
         harness={h()?.name ?? props.j.agent}
-        model={[model(), props.j.effort].filter(Boolean).join(' · ')}
+        model={[model(), effortWord(props.j.effort ?? '')].filter(Boolean).join(' · ')}
         logo={logos().find((x) => x.id === props.j.agent)?.logo}
         title={t('wisp.goal.judges.runnerTitle')}
         onClick={() => setOpen(!open())}

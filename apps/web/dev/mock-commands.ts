@@ -430,6 +430,16 @@ export const COMMANDS: Record<string, CommandFn> = {
     return { ops: [{ topic: 'plugin:wisp.later:later' as Topic, e: 'later_plan', id: `${ctx.peer}:${id}`, op: 'upsert', v }], result: v };
   },
   // a task's spec (ADR-0027), what Rerun… starts from: its first prompt, the steps after, how and where it ran
+  // a task's turns, oldest first (a dialog opened from the list, with no task page: Fork…)
+  'runtime.turns': (a, ctx) => {
+    const id = str(obj(a), 'id');
+    const turns = ctx
+      .rows(own(id))
+      .filter((r) => r.e === 'turn')
+      .map((r) => obj(r.v))
+      .sort((x, y) => Number(x['idx']) - Number(y['idx']));
+    return { ops: [], result: turns };
+  },
   'runtime.spec': (a, ctx) => {
     const id = str(obj(a), 'id');
     const row = obj(ctx.row('list', 'session', id));

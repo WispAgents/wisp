@@ -2,6 +2,7 @@
 // quickDone, quickLater; core/format.js statusPill). Pure and DOM-free: the row component only lays
 // it out, so every rule here has a test. Text is an i18n key and its vars, never English.
 
+import { modelWords } from '@wisp/shell/pure';
 import type { IconName } from '@wisp/ui';
 import type { Tone } from '@wisp/tokens';
 import { isHeld } from '@wisp/shell/pure';
@@ -142,7 +143,8 @@ export function subOf(s: SessionRow, c: RowContext): SubView | undefined {
 export function runOf(s: SessionRow, c: RowContext): RunView | undefined {
   if (!s.agent || s.agent === 'wisp' || s.kind === 'reminder') return undefined;
   const a = c.agents.get(s.agent);
-  const model = (s.model && a?.models?.find((m) => m.id === s.model)?.label) || s.model || undefined;
+  // the offer's label, else a Claude id in words (QA r15 #3: never the raw id)
+  const model = (s.model && a?.models?.find((m) => m.id === s.model)?.label) || (s.model ? modelWords(s.model) : undefined);
   const sandbox = s.machine?.kind === 'sandbox';
   const where = sandbox ? (c.sandbox ?? 'Sandbox') : (s.machine?.name ?? c.here);
   const name = agentName(s.agent, c.agents);

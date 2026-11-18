@@ -6,6 +6,7 @@
 // `runtime.teams` setting, v1 config.teams), one to use, or one to delete. Controlled: every change goes to onChange.
 // Loaded with the panel (lazy), not the first page. Not yet here: adding a crew member as a delegate.
 
+import { effortWord, modelWords } from './run-words.ts';
 import { Index, Show, createSignal, type JSX } from 'solid-js';
 import { entityKey, uuidv7, type Json, type PeerId, type SettingRow } from '@wisp/client';
 import { AutoRunner, Button, IconButton, Menu, TeamCopies, TeamFields, TeamLead, TeamPop, TeamRow, TeamSave, TeamWhere, useSignal, type Act, type IconName, type MenuEntry, type TeamPlaceLook } from '@wisp/ui';
@@ -236,7 +237,7 @@ function DelegateRunner(props: { readonly peer: string; readonly m: Delegate; re
   const model = (): string => {
     if (props.m.modelLabel) return props.m.modelLabel;
     const offer = rows().find((r) => r.id === props.m.agent)?.agent;
-    return offer?.models.find((x) => x.id === props.m.model)?.label ?? (props.m.model || t('shell.team.defaultModel'));
+    return offer?.models.find((x) => x.id === props.m.model)?.label ?? (props.m.model ? modelWords(props.m.model) : t('shell.team.defaultModel'));
   };
   return (
     <>
@@ -244,7 +245,7 @@ function DelegateRunner(props: { readonly peer: string; readonly m: Delegate; re
         part="delegate.runner"
         ref={(el) => (btn = el)}
         harness={def()?.name ?? props.m.agent}
-        model={[model(), props.m.effort].filter(Boolean).join(' · ')}
+        model={[model(), effortWord(props.m.effort ?? '')].filter(Boolean).join(' · ')}
         logo={def()?.logo}
         title={t('shell.team.runner')}
         onClick={() => setOpen(!open())}

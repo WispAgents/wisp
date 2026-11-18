@@ -5,7 +5,7 @@
 
 import type { EntityKey, PluginClient, SessionId } from '@wisp/client';
 import type { Toaster } from '@wisp/ui';
-import { archive, forLater, markRead, pin, remove, rename as renameCmd, setState } from './commands.ts';
+import { archive, forLater, markRead, pin, remove, setState } from './commands.ts';
 import { canSaveForLater } from './model/menu.ts';
 import { busy } from './model/row.ts';
 import { isForLater } from './model/sections.ts';
@@ -89,16 +89,6 @@ export function deleteTask(c: ActionCtx, key: EntityKey): void {
   c.handOff?.(key);
   c.client.navigate({ t: 'delete', id: sid(key) });
   quiet(c.client.run(remove, { id: key }));
-}
-
-/** A new title, trimmed; nothing is sent when it is empty or the same. Renaming keeps it open (#406). */
-export function renameTask(c: ActionCtx, key: EntityKey, title: string): boolean {
-  const s = peek(c, key);
-  const next = title.trim();
-  if (!s || !next || next === s.title) return false;
-  c.client.navigate({ t: 'rename', id: sid(key) });
-  quiet(c.client.run(renameCmd, { id: key, title: next }));
-  return true;
 }
 
 export function setUnread(c: ActionCtx, key: EntityKey, unread: boolean): void {

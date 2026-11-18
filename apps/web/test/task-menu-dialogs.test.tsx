@@ -23,7 +23,7 @@ afterEach(() => {
 
 const WRITES = /^runtime\.(fork|followUp|create|rename|rerun)$|^goal\.|^crew\.|^automations\.(save|create)/;
 
-async function openTask() {
+async function openTask(o: { readonly page?: boolean } = {}) {
   const mock = createMockPeer({ epoch: 'e1' });
   const home = peerId('local');
   const client = createClient({ clientId: 'c1', build: 't', home, width: 1440 });
@@ -44,8 +44,10 @@ async function openTask() {
   const sessions = (): readonly { id: string; title: string; state: string; agent: string }[] => client.entities.list<{ id: string; title: string; state: string; agent: string }>('session')();
   const task = (): { id: string; title: string } | undefined => sessions().find((r) => r.title.startsWith('Add rate limiting'));
   await until(() => task() !== undefined);
-  client.nav.navigate({ t: 'openTask', id: task()?.id as EntityKey as never });
-  await until(() => root.querySelector('[data-part~="split.more"]') !== null);
+  if (o.page !== false) {
+    client.nav.navigate({ t: 'openTask', id: task()?.id as EntityKey as never });
+    await until(() => root.querySelector('[data-part~="split.more"]') !== null);
+  }
   return { client, root, sent, sessions, task: task() as { id: string; title: string } };
 }
 
@@ -104,11 +106,39 @@ test('the_fork_starts_only_on_its_confirm_with_what_it_should_try_qa_r14_1', asy
   expect(sent.findIndex((c) => c.id === 'runtime.fork')).toBeLessThan(sent.findIndex((c) => c.id === 'runtime.followUp'));
 });
 
-test('rename_in_the_heads_menu_opens_the_rename_dialog_with_the_title_qa_r14_3', async () => {
+// QA round 15 #2: one Rename, one dialog (v1 actions.js rename: the title selected, Enter keeps, Escape leaves it,
+// an empty or unchanged title sends nothing), from the head's ⋯ and a row's menu alike
+async function renameDialog(): Promise<{ input: HTMLInputElement; save: HTMLButtonElement }> {
+  await until(() => document.activeElement === dialog('list.rename')?.querySelector('input'));
+  const d = dialog('list.rename') as HTMLElement;
+  return { input: d.querySelector('input') as HTMLInputElement, save: d.querySelector('[data-part~="list.rename.save"]') as HTMLButtonElement };
+}
+
+test('rename_in_the_heads_menu_is_the_one_rename_dialog_qa_r14_3_r15_2', async () => {
   const { root, sent, task } = await openTask();
   await pick(root, /^Rename/);
-  await until(() => dialog('task.rename') !== null);
-  expect((dialog('task.rename')?.querySelector('input') as HTMLInputElement).value).toBe(task.title);
+  const { input, save } = await renameDialog();
+  expect(input.value).toBe(task.title);
+  expect([input.selectionStart, input.selectionEnd], 'the title selected, to type over').toEqual([0, task.title.length]);
+  expect(save.disabled, 'nothing to save until it changes').toBe(true);
+  expect(document.querySelectorAll('[data-part~="task.rename"], [data-part~="phone.task.rename"]').length, 'no second dialog').toBe(0);
+  input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+  await until(() => dialog('list.rename') === null);
+  expect(writes(sent)).toEqual([]);
+});
+
+test('rename_in_a_rows_menu_is_the_same_dialog_qa_r15_2', async () => {
+  const { root, sent, task } = await openTask({ page: false });
+  const row = (): HTMLElement | undefined => [...root.querySelectorAll<HTMLElement>('[data-kit="list-row"]')].find((r) => r.textContent?.includes(task.title));
+  await until(() => row() !== undefined);
+  row()?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: 40, clientY: 40 }));
+  await until(() => item(/^Rename/) !== undefined);
+  item(/^Rename/)?.click();
+  const { input, save } = await renameDialog();
+  expect(input.value).toBe(task.title);
+  expect(save.disabled).toBe(true);
+  input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+  await until(() => dialog('list.rename') === null);
   expect(writes(sent)).toEqual([]);
 });
 
@@ -124,3 +154,15 @@ for (const [label, part] of [
     expect(writes(sent)).toEqual([]);
   });
 }
+
+test('fork_from_a_row_reads_the_tasks_turns_before_deciding_qa_r15_1', async () => {
+  // the list's Fork… opens the dialog with no task page open: no turns of it in the store yet
+  const { client, sent, sessions, task } = await openTask({ page: false });
+  const before = sessions().length;
+  client.nav.navigate({ t: 'openOverlay', overlay: { kind: 'dialog', id: 'shell.fork' as never, params: { id: task.id } } });
+  await until(() => dialog('fork.modal')?.querySelector('textarea') != null);
+  await until(() => /whole conversation|conversation up to/.test(dialog('fork.modal')?.textContent ?? ''));
+  expect(dialog('fork.modal')?.textContent).not.toMatch(/Nothing to fork yet/);
+  expect(writes(sent)).toEqual([]);
+  expect(sessions().length).toBe(before);
+});

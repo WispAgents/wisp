@@ -60,6 +60,8 @@ in the real app (or the owner drops it). Statuses: `done` (committed and checked
 | 44 | Keep this list and check it every job | done (this file) |
 | 45 | The project selector does nothing when clicked (owner, 2026-11-18) | cause found 2026-11-18: not the selector (it opens in Chrome and WebKit, both kinds); the dev app (Vite, wisp serve, the desktop window) ran as a child of the lead's shell and died at each session restart, so the open window's clicks went nowhere. The dev app now runs in its own session (/tmp/devrestart.sh, setsid); recheck in the restarted window |
 | 46 | A crew member's task row: its title and details don't line up with a normal task's (dot) rows (owner, 2026-11-18) | done: the face sits centred on the dot's spot (18 px over the 7 px dot, as v1's crew dot), titles and details line up at x 100 on every row, 7 px gap (Chrome, WebKit) |
+| 47 | Desktop: on the composer page (Home / New task) the window can't be dragged from the top; the task page can (owner, 2026-11-18) | done: a drag strip in Home's top padding on desktop and in the browser (not on phones); pressing it asks the window to move (start_drag), as the task head does |
+| 48 | Separate parallel agents check performance and find problems; fix until a round finds nothing new (owner, 2026-11-18) | in progress |
 
 ## Also found while fixing (not from the owner)
 

@@ -10,7 +10,7 @@ pub const HELP: &str = "usage:
   wisp \"task\" -d                launch it and return with its id (the default outside a terminal; --wait blocks)
   wisp attach <id>              follow a task live: its steps, its answer, its questions; a reply box after
                                 (Ctrl-C detaches, a second Ctrl-C stops it)
-  wisp ls                       list sessions        (--state running,waiting,review,done|needs  --limit N  --all: archived too
+  wisp ls                       list sessions        (--state running,waiting,review,done|needs  --limit N  --all, -a: archived too
                                 --watch: follow the list)
   wisp show <id>                state + latest presentation as markdown   (--watch: follow its turn live)
   wisp wait <id>                block until it finishes or asks you something
@@ -300,6 +300,9 @@ fn fits(cmd: &str, w: &[String], home: &Path, cwd: &Path) -> bool {
         "ship" | "merge" => session_id(w1),
         "attach" => n == 2 && task_ref(w1),
         "show" | "stop" | "wait" | "reply" | "btw" => task_ref(w1),
+        // groups that route as commands (QA round 15 #1): bare, a flag, one word (a slip, said in main.rs) or their own
+        // verb; two or more other words are a prompt (`wisp plugin for prettier`)
+        "plugin" | "plugins" | "mcp" | "skill" => n <= 2 || w1.starts_with('-') || crate::words::own_verb(cmd, w1),
         "add" => n == 1 || (n == 2 && addable(w1, home, cwd)),
         // `wisp help`, `wisp help crew`, `wisp help crew create`: a task never starts with "help" and two words
         "help" => n <= 4 && w.iter().skip(1).all(|x| x.bytes().all(|b| b.is_ascii_lowercase() || b == b'-' || b == b'_' || b == b'.')),
@@ -420,7 +423,10 @@ pub fn parse(input: &[String], env_port: Option<&str>, home: &Path, cwd: &Path) 
                 i += 1;
                 argv.get(i).cloned().ok_or_else(|| UsageError(a.clone()))
             };
-            if !set(&mut flags, &a, &mut next, home, cwd)? {
+            // `wisp ls -a` is --all (QA round 15 #6 said "-a needs a value"); `-a` is --agent everywhere else
+            if a == "-a" && matches!(words.first().map(String::as_str), Some("ls" | "list")) {
+                flags.all = true;
+            } else if !set(&mut flags, &a, &mut next, home, cwd)? {
                 words.push(a);
             }
         }

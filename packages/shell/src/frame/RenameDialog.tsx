@@ -1,50 +1,62 @@
-// Rename a task in a dialog (the phone's task menu, and the desktop head's ⋯ since QA round 14 desktop #3: the in-place
-// edit it started lost the caret to the menu handing focus back to ⋯): its title to edit, Enter or Save keeps it.
-import { createSignal, type JSX } from 'solid-js';
-import { Button, Dialog, Inline, Input } from '@wisp/ui';
+// Rename a task: one dialog, from the task head's ⋯ (and M), a row's menu and the phone's menu alike (QA round 15 #2:
+// the head and the row had two). v1 actions.js rename's rules: the title selected to type over, Enter keeps it,
+// Escape leaves it as it was, an empty or unchanged title sends nothing, so Save waits for a change.
+import { createSignal, onMount, type JSX } from 'solid-js';
+import type { EntityKey } from '@wisp/client';
+import { Button, Inline, Input, Stack, useSignal } from '@wisp/ui';
 import { useShell } from '../context.tsx';
+import { SESSION, type SessionRow } from '../rows.ts';
+import { rename } from './commands.ts';
 import '../i18n/lazy.ts';
 
-export function RenameDialog(props: { readonly title: string; readonly onClose: () => void; readonly onRename: (title: string) => void; readonly part: 'phone.task.rename' | 'task.rename' }): JSX.Element {
+/** The rename dialog's overlay id: `{ id }` is the task's key. */
+export const RENAME = 'shell.rename';
+
+export default function RenameDialog(props: { readonly params: { readonly id: string } }): JSX.Element {
   const shell = useShell();
   const t = shell.t;
-  const [value, setValue] = createSignal(props.title);
+  const key = props.params.id as EntityKey;
+  const row = useSignal(shell.client.entities.row<SessionRow>(SESSION, key));
+  const was = row()?.title ?? '';
+  const [text, setText] = createSignal(was);
+  let field: HTMLInputElement | undefined;
+  const next = (): string => text().replace(/\s+/g, ' ').trim();
+  const changed = (): boolean => next() !== '' && next() !== was;
+  const close = (): void => shell.navigate({ t: 'closeOverlay', id: RENAME as never });
   const save = (): void => {
-    const next = value().replace(/\s+/g, ' ').trim();
-    props.onClose();
-    if (next && next !== props.title) props.onRename(next);
+    if (!changed()) return;
+    void shell.client.commands.run(rename, { id: key, title: next() }).catch(() => undefined);
+    close();
   };
+  onMount(() =>
+    queueMicrotask(() => {
+      field?.focus();
+      field?.select();
+    }),
+  );
   return (
-    <Dialog
-      open
-      size="sm"
-      title={t('shell.more.rename')}
-      onOpenChange={(open) => !open && props.onClose()}
-      part={props.part}
-      t={(k) => t(`kit.${k}`)}
-      footer={
-        <Inline gap="4" justify="end">
-          <Button variant="ghost" onClick={() => props.onClose()}>
-            {t('shell.stop.cancel')}
-          </Button>
-          <Button variant="primary" part={`${props.part}.save` as never} onClick={save}>
-            {t('shell.phone.save')}
-          </Button>
-        </Inline>
-      }
-    >
+    <Stack gap="4" part="rename.body">
       <Input
-        value={value()}
-        aria-label={t('shell.more.rename')}
-        onInput={setValue}
-        onKeyDown={(e: KeyboardEvent) => {
+        ref={(el) => (field = el)}
+        value={text()}
+        onInput={setText}
+        aria-label={t('shell.rename.label')}
+        maxLength={200}
+        onKeyDown={(e) => {
           if (e.key === 'Enter' && !e.isComposing) {
             e.preventDefault();
             save();
           }
         }}
       />
-    </Dialog>
+      <Inline gap="3" justify="end">
+        <Button variant="ghost" onClick={close} part="list.rename.cancel">
+          {t('shell.stop.cancel')}
+        </Button>
+        <Button variant="primary" onClick={save} disabled={!changed()} part="list.rename.save">
+          {t('shell.phone.save')}
+        </Button>
+      </Inline>
+    </Stack>
   );
 }
-

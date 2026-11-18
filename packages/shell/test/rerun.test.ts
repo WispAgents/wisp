@@ -35,3 +35,14 @@ test('a rerun is the same kind of task: a My Stuff pane stays a pane on another 
   expect(args).toMatchObject({ agent: 'codex', ext: { 'wisp.stuff': { kind: 'pane' } } });
   expect('ext' in rerunArgs({ prompt: 'x' }, { prompt: 'x', mode: 'auto', agent: '', model: '', effort: '', peer: 'local' }, { of: 'a', id: 'b', at: 1 })).toBe(false);
 });
+
+// QA round 15 phone #4: a task started on Auto keeps `auto` in its spec, and the Rerun dialog's harness chip read
+// "auto" though the task ran on Claude Code and Auto is no longer offered: it starts on the harness it ran on
+test('a_rerun_of_an_auto_task_starts_on_the_harness_it_ran_on_qa_r15_phone_4', () => {
+  const ran = { agent: 'claude', model: 'opus', effort: 'high' };
+  expect(startEdits({ prompt: 'p', agent: 'auto', mode: 'auto' }, 'laptop', undefined, ran)).toMatchObject({ agent: 'claude', model: 'opus', effort: 'high' });
+  expect(startEdits({ prompt: 'p', mode: 'auto' }, 'laptop', undefined, ran)).toMatchObject({ agent: 'claude' });
+  // a spec naming its harness keeps it; a pick from the toolbar's menu still wins
+  expect(startEdits({ prompt: 'p', agent: 'codex', model: 'gpt-5' }, 'laptop', undefined, ran)).toMatchObject({ agent: 'codex', model: 'gpt-5' });
+  expect(startEdits({ prompt: 'p', agent: 'auto' }, 'laptop', 'cursor', ran)).toMatchObject({ agent: 'cursor', model: '', effort: '' });
+});

@@ -6,7 +6,7 @@ import { effortWord, runPick, runWords, taskRunner } from '../src/frame/runner.t
 test('the reply runs on the task’s own model and says so; Default only when it picked none_qa_desktop_r3_1', () => {
   const opus = taskRunner({ agent: 'claude', summary: { model: 'opus', effort: 'high' } });
   expect(opus).toEqual({ agent: 'claude', model: 'opus', effort: 'high' });
-  expect(runWords('Claude Code', opus, 'Default')).toBe('Claude Code · opus · High');
+  expect(runWords('Claude Code', opus, 'Default')).toBe('Claude Code · Opus · High');
   expect(runWords('Claude Code', taskRunner({ agent: 'claude', summary: {} }), 'Default')).toBe('Claude Code · Default');
   expect(taskRunner({ agent: 'codex', summary: { model: 7, effort: null } })).toEqual({ agent: 'codex', model: '', effort: '' });
   expect([effortWord('xhigh'), effortWord('low'), effortWord('')]).toEqual(['X-High', 'Low', '']);

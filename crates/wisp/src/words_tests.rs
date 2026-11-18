@@ -474,3 +474,28 @@ fn one_word_after_a_command_word_is_a_slip_and_two_or_more_are_a_prompt() {
 fn settings_is_a_group() -> bool {
     is_group("settings")
 }
+
+/// QA round 15 #2, #6: `wisp export foo` launched a task (one stray word after a command is a slip; more is a prompt),
+/// and `wisp fork` pointed nowhere.
+#[test]
+fn one_stray_word_after_a_prompt_word_is_a_slip_and_fork_points_to_runtime_fork() {
+    for args in [&["export", "foo"][..], &["ship", "foo"], &["add", "tests"], &["plan", "x"], &["fresh", "x"]] {
+        let x = p(args);
+        assert_eq!(not_a_task(&x.words, x.literal, &[]), Some(NotATask::Usage(args[0].to_owned())), "{args:?}");
+    }
+    for args in [
+        &["export", "the", "results", "as", "CSV"][..],
+        &["fork", "the", "repo", "and", "set", "up", "CI"],
+        &["add", "a", "README"],
+        &["ship", "the docs"],
+        &["add", "tests for login"],
+        &["export", "--", "foo"],
+    ] {
+        let x = p(args);
+        assert_eq!(not_a_task(&x.words, x.literal, &[]), None, "{args:?}");
+    }
+    match not_a_task(&w(&["fork"]), Literal::No, &[]) {
+        Some(NotATask::Instead(t)) => assert!(t.contains("wisp runtime fork --id <id>"), "{t}"),
+        other => panic!("{other:?}"),
+    }
+}

@@ -16,6 +16,14 @@ import type { AgentOffer } from './runner.ts';
 import '../i18n/lazy.ts';
 
 const agentsOf = defineCommand<{ peer: string }, AgentOffer[]>({ id: 'runtime.agents', owner: (a) => a.peer, wire: () => ({}), optimistic: 'none', pending: 'the harness list' });
+/** the task's turns, read (the list's Fork… opens with no task page, so the store has none of them: QA round 15 #1) */
+const turnsOf = defineCommand<{ key: string; id: string }, readonly { id: string; idx: number; status?: string; started_at?: number; startedAt?: number }[]>({
+  id: 'runtime.turns',
+  owner: (a) => a.key,
+  wire: (a) => ({ id: a.id }),
+  optimistic: 'none',
+  pending: 'the task’s turns',
+});
 
 interface TurnLike {
   readonly id: string;
@@ -34,7 +42,17 @@ export default function Fork(props: { readonly params: { readonly id: string; re
   const row = useSignal(shell.client.entities.row<SessionRow>(SESSION, key));
   const allTurns = useSignal(shell.client.entities.list<TurnLike>('turn'));
   const harnesses = useSignal(shell.harnesses());
-  const turns = (): TurnLike[] => allTurns().filter((x) => x.session_id === key || x.session_id === bare).toSorted((a, b) => a.idx - b.idx);
+  // what the store has (its page open: live), else what the peer says it has; nothing is decided before that answer
+  const [read] = createResource(() =>
+    shell.client.commands
+      .run(turnsOf, { key, id: bare })
+      .then((r) => r.map((x): TurnLike => ({ id: x.id, session_id: bare, idx: x.idx, ...(x.status !== undefined && { status: x.status }), started_at: x.started_at ?? x.startedAt ?? 0 })))
+      .catch(() => [] as TurnLike[]),
+  );
+  const turns = (): TurnLike[] => {
+    const own = allTurns().filter((x) => x.session_id === key || x.session_id === bare);
+    return (own.length > 0 ? own : (read() ?? [])).toSorted((a, b) => a.idx - b.idx);
+  };
   const turn = (): TurnLike | undefined => forkTurn(turns(), props.params.turn);
   // the harnesses its machine has (v1 harnessesAt([place]).filter(available))
   const [offers] = createResource(() => shell.client.commands.run(agentsOf, { peer }).catch(() => [] as AgentOffer[]));
@@ -73,8 +91,10 @@ export default function Fork(props: { readonly params: { readonly id: string; re
     return !at || at.id === turns().at(-1)?.id ? t('shell.fork.whole') : t('shell.fork.upTo', { when: longTime(at.started_at ?? 0) });
   };
   return (
-    <Show when={pick()} fallback={<Text tone="muted">{t('shell.rerun.loading')}</Text>}>
-      {(x) => (
+    <Show when={pick() && read.state !== 'pending' && read.state !== 'unresolved'} fallback={<Text tone="muted">{t('shell.rerun.loading')}</Text>}>
+      {(_ready) => {
+        const x = (): ForkPick => pick() as ForkPick;
+        return (
         <Stack gap="4" part="fork.body">
           <TextArea
             value={x().prompt}
@@ -121,7 +141,8 @@ export default function Fork(props: { readonly params: { readonly id: string; re
             onChange={(r) => set({ agent: r.agent, model: r.model, effort: r.effort })}
           />
         </Stack>
-      )}
+        );
+      }}
     </Show>
   );
 }

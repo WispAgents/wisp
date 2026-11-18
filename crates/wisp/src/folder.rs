@@ -613,6 +613,11 @@ pub fn init_with(cwd: &Path, o: &Opts, ask: &dyn Fn(&str) -> Option<bool>) -> Re
         eprintln!("  ✗ wisp init doesn't take {bad} ({here_hint})");
         return Ok(crate::cli::USAGE_EXIT);
     }
+    // its one word is how history is tracked (`wisp init foo` wrote `track: foo`)
+    if let Some(bad) = o.words.first().filter(|w| !matches!(w.as_str(), "auto" | "ask" | "manual")) {
+        eprintln!("  ✗ wisp init {bad}: history is tracked auto, ask or manual   (a task that says this: wisp -- init {bad})");
+        return Ok(crate::cli::USAGE_EXIT);
+    }
     // where it goes: `-f <dir>`'s folder, else here
     let target = o.files.first().map_or_else(|| cwd.to_owned(), |f| cwd.join(f));
     if !o.here && !a_project(&target) {
@@ -702,6 +707,9 @@ mod tests {
         let d = scratch("plain");
         assert_eq!(init_with(&d, &opts(&[], false), &no_term).unwrap(), 2);
         assert!(!d.join(".wisp").exists() && !d.join("AGENTS.md").exists());
+        // its word is how history is tracked: anything else is refused (`wisp init foo` wrote `track: foo`)
+        assert_eq!(init_with(&d, &opts(&["foo"], true), &no_term).unwrap(), 2);
+        assert!(!d.join(".wisp").exists());
         // `--force` isn't how: refused with what is
         assert_eq!(init_with(&d, &opts(&["--force"], false), &no_term).unwrap(), 2);
         assert!(!d.join(".wisp").exists());

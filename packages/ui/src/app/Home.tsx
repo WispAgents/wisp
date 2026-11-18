@@ -33,8 +33,14 @@ export interface SplitHomeProps {
 }
 
 export function SplitHome(props: SplitHomeProps): JSX.Element {
+  const look = usePlatform();
   return (
     <div data-kit="split-home" data-part="split.home">
+      {/* the desktop app's window moves from Home's top as from a task's head (owner 2026-11-18): a strip in the top
+          padding, so it never covers content; [data-drag] does nothing outside the desktop app; the phone apps have no window */}
+      <Show when={look() === 'web'}>
+        <div data-kit="sh-drag" data-drag="" aria-hidden="true" />
+      </Show>
       <Show when={props.onBack}>
         <div data-kit="sh-bar">
           <button type="button" data-kit="sh-back" data-part="split.back" aria-label={props.backLabel} title={props.backLabel} onClick={() => props.onBack?.()}>

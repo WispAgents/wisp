@@ -52,6 +52,9 @@ const filterOf = (q: string): { grep?: string; path?: string } => {
 export default function Repo(props: { readonly client: PluginClient; readonly params: { project?: string } }): JSX.Element {
   const c = props.client;
   const shell = useShell();
+  // the agent by its harness's name, never its id (QA r15 #3)
+  const harnesses = useSignal(shell.harnesses());
+  const harnessName = (id: string): string => harnesses().find((h) => h.id === id)?.name ?? id;
   const say = t as (k: string, v?: Readonly<Record<string, string | number>>) => string;
   // the projects as every screen reads them (wisp.runtime's `project` rows on `config`), in your order
   const projectRows = useSignal(c.entities.list<unknown>('project'));
@@ -144,7 +147,7 @@ export default function Repo(props: { readonly client: PluginClient; readonly pa
                           <ListRow
                             part="history.repo.row"
                             title={r.title}
-                            sub={repoLine(r, say)}
+                            sub={repoLine(r, say, harnessName)}
                             lead={<Icon name="branch" size="sm" tone="faint" />}
                             time={
                               <Text size="xs" tone="faint">
@@ -182,7 +185,7 @@ export default function Repo(props: { readonly client: PluginClient; readonly pa
                 <Stack gap="1">
                   <Text weight="semibold">{r().task.title}</Text>
                   <Text size="sm" tone="muted">
-                    {repoLine(r().task, say)}
+                    {repoLine(r().task, say, harnessName)}
                   </Text>
                 </Stack>
                 <Text size="xs" tone="faint" weight="medium">

@@ -4,7 +4,7 @@
 // opens Settings → Automations on it; Cancel keeps nothing.
 import { createMemo, createSignal, Show, type JSX } from 'solid-js';
 import { defineCommand, type PeerId, type PluginClient } from '@wisp/client';
-import { projectList } from '@wisp/shell';
+import { projectList, useRunWords, useShell } from '@wisp/shell';
 import { Button, Dialog, Field, Input, Inline, Select, Stack, Text, TextArea, useSignal } from '@wisp/ui';
 import { t } from './i18n.ts';
 import { recipeParams, type RecipeDraft } from './recipe.ts';
@@ -40,6 +40,8 @@ export const RECIPE_VIEW = 'automations.recipe';
 export default function RecipeEditor(props: { readonly client: PluginClient; readonly params: RecipeDraft }): JSX.Element {
   const c = props.client;
   const say = t as (k: string, v?: Readonly<Record<string, string | number>>) => string;
+  // the run in the picker's words (QA r15 #3: it printed "claude · opus · high")
+  const runWords = useRunWords(useShell());
   const [name, setName] = createSignal(props.params.name);
   const [prompt, setPrompt] = createSignal(props.params.prompt);
   const from = props.params.session;
@@ -129,7 +131,7 @@ export default function RecipeEditor(props: { readonly client: PluginClient; rea
         <Show when={props.params.agent}>
           {(a) => (
             <Text size="sm" tone="muted">
-              {say('automations.recipe.runsOn', { runner: [a(), props.params.model, props.params.effort].filter(Boolean).join(' · ') })}
+              {say('automations.recipe.runsOn', { runner: runWords({ agent: a(), model: props.params.model, effort: props.params.effort, cwd: props.params.project || undefined }) })}
             </Text>
           )}
         </Show>

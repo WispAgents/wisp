@@ -3,7 +3,8 @@
 // what starts it and how it runs. Add puts them on the crew at once, paused; a refusal comes back with the toast.
 import { createSignal, For, Show, type JSX } from 'solid-js';
 import { defineCommand, type PeerId, type PluginClient } from '@wisp/client';
-import { Button, Checkbox, Inline, Input, Stack, Text, TextArea } from '@wisp/ui';
+import { useShell } from '@wisp/shell';
+import { Button, Checkbox, Inline, Input, Stack, Text, TextArea, useSignal } from '@wisp/ui';
 import { t } from './i18n.ts';
 import { cadenceLabel } from './model.ts';
 import { VIEW } from './views.ts';
@@ -36,6 +37,9 @@ const importCrew = defineCommand<{ peer: PeerId; src: Src; dryRun: boolean; choi
 
 // size-ok: one dialog, its two steps share the answer
 export default function ImportCrew(props: { readonly client: PluginClient; readonly params: unknown }): JSX.Element {
+  // a member's harness by its name, never its id (QA r15 #3)
+  const harnesses = useSignal(useShell().harnesses());
+  const harnessName = (id: string): string => harnesses().find((h) => h.id === id)?.name ?? id;
   const c = props.client;
   const say = t as (k: string, v?: Readonly<Record<string, string | number>>) => string;
   const [text, setText] = createSignal('');
@@ -169,7 +173,7 @@ export default function ImportCrew(props: { readonly client: PluginClient; reado
                   </Show>
                 </Inline>
                 <Text size="sm" tone="faint">
-                  {[p.cron ? cadenceLabel(p.cron, say as never) : t('wisp.crew.cadence.oncall'), p.agent ?? ''].filter(Boolean).join(' · ')}
+                  {[p.cron ? cadenceLabel(p.cron, say as never) : t('wisp.crew.cadence.oncall'), p.agent ? harnessName(p.agent) : ''].filter(Boolean).join(' · ')}
                 </Text>
                 <For each={p.notes ?? []}>
                   {(note) => (

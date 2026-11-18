@@ -25,15 +25,21 @@ export interface RerunEdits {
   readonly peer: string;
 }
 
-/** What the dialog starts with: as it ran (a harness picked from the toolbar's menu wins). */
-export const startEdits = (s: RerunSpec, peer: string, agent?: string): RerunEdits => ({
-  prompt: s.prompt,
-  mode: s.mode || 'auto',
-  agent: agent ?? s.agent ?? '',
-  model: agent && agent !== s.agent ? '' : (s.model ?? ''),
-  effort: agent && agent !== s.agent ? '' : (s.effort ?? ''),
-  peer,
-});
+/** What the dialog starts with: as it ran (a harness picked from the toolbar's menu wins). A spec on Auto (or none)
+ *  starts on the harness, model and thinking the task ran on (`ran`): Auto isn't offered any more, and the chip read
+ *  "auto" (QA round 15 phone #4). */
+export const startEdits = (s: RerunSpec, peer: string, agent?: string, ran?: { readonly agent: string; readonly model?: string | undefined; readonly effort?: string | undefined }): RerunEdits => {
+  const routed = !s.agent || s.agent === 'auto';
+  const base = routed && ran?.agent ? { agent: ran.agent, model: ran.model ?? '', effort: ran.effort ?? '' } : { agent: s.agent ?? '', model: s.model ?? '', effort: s.effort ?? '' };
+  return {
+    prompt: s.prompt,
+    mode: s.mode || 'auto',
+    agent: agent ?? base.agent,
+    model: agent && agent !== base.agent ? '' : base.model,
+    effort: agent && agent !== base.agent ? '' : base.effort,
+    peer,
+  };
+};
 
 /** `runtime.create`'s args (the shell's create command): a new task, its lineage pointing at the one rerun. */
 export function rerunArgs(s: RerunSpec, e: RerunEdits, o: { readonly of: string; readonly id: string; readonly at: number }) {

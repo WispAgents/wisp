@@ -14,6 +14,8 @@ export interface DefaultModels {
   /** the name a computer's harnesses topic gives its Default (its config there), when it's watched. A Solid read: the
    *  store mirrors the client's rows (an alien effect), so a memo or JSX that reads it follows a late row */
   topic(peer: string, agent: string): string | undefined;
+  /** what the picker calls a harness's model ("GPT-6.1-Sol"), from any computer's harnesses topic; a Solid read */
+  label(agent: string, model: string): string | undefined;
 }
 
 const stores = new WeakMap<object, DefaultModels>();
@@ -35,21 +37,27 @@ export function defaultModels(client: Pick<Client, 'commands' | 'peers'> & Parti
   };
   // the harnesses topic's words by computer and harness, mirrored for Solid readers (made once, for the client's life)
   const [topics, setTopics] = createSignal<ReadonlyMap<string, string>>(new Map());
+  // and the models' labels by harness and model (the same on every computer)
+  const [labels, setLabels] = createSignal<ReadonlyMap<string, string>>(new Map());
   const entities = client.entities;
   if (entities) {
     // made on its own (no parent effect it would die with): it lives as long as the client does
     untracked(() => effect(() => {
       const m = new Map<string, string>();
+      const l = new Map<string, string>();
       for (const k of entities.keys('runtime.harness')()) {
-        const r = entities.row<{ id?: string; agent?: { models?: readonly { id: string; resolves?: string }[] } }>('runtime.harness', k as EntityKey)();
+        const r = entities.row<{ id?: string; agent?: { models?: readonly { id: string; label?: string; resolves?: string }[] } }>('runtime.harness', k as EntityKey)();
         const w = r?.agent?.models?.find((x) => x.id === '')?.resolves;
         if (r?.id && w) m.set(`${ownerOf(k as EntityKey)}\u0000${r.id}`, w);
+        for (const x of r?.agent?.models ?? []) if (r?.id && x.id && x.label) l.set(`${r.id}\u0000${x.id}`, x.label);
       }
       setTopics(m);
+      setLabels(l);
     }));
   }
   const store: DefaultModels = {
     topic: (peer, agent) => topics().get(`${peer}\u0000${agent}`),
+    label: (agent, model) => labels().get(`${agent}\u0000${model}`),
     word(peer, agent, dir) {
       if (!dir || !agent || agent === 'auto') return undefined;
       const key = `${peer}\u0000${agent}\u0000${dir}`;

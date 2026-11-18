@@ -20,6 +20,7 @@ export { isStub, keepTurnsWhole, turnTopic, turnsTopic } from './frame/turn-wind
 export { useNow } from './clock.ts';
 // the harness · model picker New task uses, for any plugin that picks a runner (a trigger, a crew member's job)
 export { RunnerPicker } from './frame/RunnerPicker.tsx';
+export { useRunWords, type RunIds } from './frame/use-run-words.ts';
 export type { Runner } from './frame/runner.ts';
 export { detectPlatform, nullPlatform, browserPlatform, desktopPlatform, androidPlatform, iosPlatform } from './platform/index.ts';
 export type * from './platform/types.ts';

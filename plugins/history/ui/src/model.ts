@@ -30,10 +30,10 @@ export function byMonth(list: readonly RepoTask[], month: (at: number) => string
   return out;
 }
 
-/** The row's second line: who, the agent, then the PR or how many commits. */
-export function repoLine(r: RepoTask, t: T): string {
+/** The row's second line: who, the agent (by its harness's name: `name`, QA r15 #3), then the PR or how many commits. */
+export function repoLine(r: RepoTask, t: T, name: (agent: string) => string = (a) => a): string {
   const made = r.pr ? r.pr : r.commits ? t('history.commits', { count: r.commits }) : '';
-  return [r.by, r.agent, made].filter(Boolean).join(' · ');
+  return [r.by, r.agent ? name(r.agent) : '', made].filter(Boolean).join(' · ');
 }
 
 /** Resume (v1-less, ADR-0033): a new task that carries on from where that one stopped, on today's code. */

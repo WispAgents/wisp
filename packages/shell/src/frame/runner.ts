@@ -5,6 +5,7 @@ import { defineCommand, ownerOf, type Client, type EntityKey, type EntityReader,
 import { useDerived } from '@wisp/ui/pure';
 import { createEffect, createSignal, onCleanup, type Accessor } from 'solid-js';
 import { defaultModels } from './default-models.ts';
+import { effortWord, modelWords } from './run-words.ts';
 
 export interface AgentModel {
   readonly id: string;
@@ -188,8 +189,9 @@ export function effortsFor(agents: readonly AgentOffer[], r: Runner): readonly s
 /** The bar's words: "Claude Code · Opus", "Codex" (its default model), with the thinking level when set. */
 export function runnerWords(agents: readonly AgentOffer[], r: Runner, name: (id: string) => string): string {
   const a = agents.find((x) => x.id === r.agent);
-  const model = a?.models.find((m) => m.id === r.model)?.label ?? (r.model || '');
-  return [name(r.agent), model, r.effort, r.account ? (r.accountLabel ?? r.account) : ''].filter(Boolean).join(' · ');
+  // the picker's words: the offer's label, else a Claude id in words; the thinking level in words (QA r15 #3)
+  const model = a?.models.find((m) => m.id === r.model)?.label ?? (r.model ? modelWords(r.model) : '');
+  return [name(r.agent), model, effortWord(r.effort), r.account ? (r.accountLabel ?? r.account) : ''].filter(Boolean).join(' · ');
 }
 
 /** The run a task's next follow-up takes when the reply box picks none: its own harness, model and thinking (runtime
@@ -199,11 +201,10 @@ export function taskRunner(s: { readonly agent: string; readonly summary: Readon
   return { agent: s.agent, model: str(s.summary['model']), effort: str(s.summary['effort']) };
 }
 
-/** A thinking level in words: "High", "X-High"; '' for the harness's own. */
-export const effortWord = (e: string): string => (e === 'xhigh' ? 'X-High' : e ? e.charAt(0).toUpperCase() + e.slice(1) : '');
+export { effortWord } from './run-words.ts';
 
 /** "Claude Code · opus · High": a run in words, `defaultModel` where it picked none. */
-export const runWords = (name: string, r: Pick<Runner, 'model' | 'effort'>, defaultModel: string): string => [name, r.model || defaultModel, effortWord(r.effort)].filter(Boolean).join(' · ');
+export const runWords = (name: string, r: Pick<Runner, 'model' | 'effort'>, defaultModel: string): string => [name, r.model ? modelWords(r.model) : defaultModel, effortWord(r.effort)].filter(Boolean).join(' · ');
 
 /** A reply's own harness · model (the reply box's pick) as runtime.followUp's `run`; none: the task's own. The pick names
  *  its model and thinking, '' for its harness's default (runtime run.rs apply_opts takes them as named). */

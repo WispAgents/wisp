@@ -393,6 +393,7 @@ export const SHELL_STRINGS = {
   'shell.reply.moreChips': 'More: the goal, delegates, when it sends',
   'shell.rerun.title': 'Rerun task',
   'shell.fork.title': 'Fork task',
+  'shell.rename.title': 'Rename task',
   'shell.runOn.setting': 'Setting up {name} on {where}…',
   'shell.runOn.noOrigin': '{name} has no git remote (origin) to clone from, so wisp can’t set it up on {where}. Push it to a remote first, or add its folder there in Projects.',
   'shell.runOn.failed': 'Couldn’t set it up on {where}.',

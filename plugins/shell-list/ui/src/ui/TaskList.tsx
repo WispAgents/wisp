@@ -20,7 +20,7 @@ import { flatSession } from '../model/wire.ts';
 import { useShell } from '../shell.ts';
 import { KIND, type Session, type SessionRow } from '../types.ts';
 import { buildEnv } from './build-env.ts';
-import { DeleteDialog, RenameDialog } from './Dialogs.tsx';
+import { DeleteDialog } from './Dialogs.tsx';
 import { Env, useEnv, type ListEnv } from './env.ts';
 import { GroupRow, PlanRow, SectionHead } from './OtherRows.tsx';
 import { revealIn } from './reveal.ts';
@@ -159,7 +159,6 @@ function ListBody(): JSX.Element {
           </VirtualList>
         </ContextMenu>
       </Show>
-      <RenameDialog />
       <DeleteDialog />
     </Stack>
   );

@@ -568,6 +568,9 @@
   :root[data-platform='android'] [data-kit='dialog'] > [data-kit='dialog-head'] { margin-bottom: var(--dialog-gap); }
   :root[data-platform='android'] [data-kit='dialog'] [data-kit='dialog-title'] { font: var(--type-headline-s); letter-spacing: normal; color: var(--on-surface); }
   :root[data-platform='android'] [data-kit='dialog'][data-alert] > [data-kit='dialog-head'] > [data-kit='icon-button'] { display: none; }
+  /* a sheet's or dialog's ✕ is a finger's target, 48 dp (M3 touch target); its glyph keeps its size (QA r15 #5: it was 40) */
+  :root[data-platform='android'] [data-kit='dialog'] > [data-kit='dialog-head'] > [data-kit='icon-button'],
+  :root[data-platform='android'] [data-kit='sheet'] > [data-kit='dialog-head'] > [data-kit='icon-button'] { flex: none; min-width: var(--tap-min); min-height: var(--tap-min); }
   :root[data-platform='android'] [data-kit='dialog'] > [data-kit='dialog-description'],
   :root[data-platform='android'] [data-kit='dialog'] > [data-kit='dialog-body'] { margin: var(--space-0); font: var(--type-body-m); letter-spacing: var(--track-body-m); color: var(--on-surface-var); }
   :root[data-platform='android'] [data-kit='dialog'] > [data-kit='dialog-description'] + [data-kit='dialog-body'] { margin-top: var(--dialog-gap); }

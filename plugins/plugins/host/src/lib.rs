@@ -52,6 +52,9 @@ impl wisp_kernel::Command for Ui {
     const PERMISSION: Option<&'static str> = Some(wisp_plugins_api::perm::READ);
     const READ_ONLY: bool = true;
     type Args = serde_json::Value;
+    fn args_ts() -> Option<String> {
+        wisp_plugins_api::any_args_ts()
+    }
     type Out = Vec<remote::RemoteUi>;
 }
 
@@ -63,6 +66,9 @@ impl wisp_kernel::Command for Styles {
     const PERMISSION: Option<&'static str> = Some(wisp_plugins_api::perm::READ);
     const READ_ONLY: bool = true;
     type Args = serde_json::Value;
+    fn args_ts() -> Option<String> {
+        wisp_plugins_api::any_args_ts()
+    }
     type Out = Vec<styles::PluginStyles>;
 }
 

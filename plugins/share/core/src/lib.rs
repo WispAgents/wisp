@@ -121,6 +121,86 @@ fn hint(s: &str) -> String {
     format!("{}…{}", c[..4].iter().collect::<String>(), c[c.len() - 4..].iter().collect::<String>())
 }
 
+/// A character a file or folder name goes on with: after a match, it means the match was only the start of a longer
+/// name (`/x/proj` in `/x/proj-old`); before one, that the match sits inside a longer path (`/mnt/x/proj`).
+fn name_char(c: char) -> bool {
+    c.is_alphanumeric() || matches!(c, '-' | '_' | '~' | '+' | '@')
+}
+
+/// `from` matched as a whole path in `t` at `at`: nothing of a path before it, and after it a separator, the end, or
+/// a character no name has (a `.` counts only when no name goes on after it: `proj.` ends a sentence, `proj.old`
+/// is another folder).
+fn whole_at(t: &str, at: usize, from: &str) -> bool {
+    let before = t[..at].chars().next_back();
+    if before.is_some_and(|c| name_char(c) || matches!(c, '/' | '\\' | '.')) {
+        return false;
+    }
+    let mut rest = t[at + from.len()..].chars();
+    match rest.next() {
+        None | Some('/' | '\\') => true,
+        Some('.') => !rest.next().is_some_and(|c| name_char(c) || c == '.'),
+        Some(c) => !name_char(c),
+    }
+}
+
+/// `t` with each whole-path occurrence of `from` as `to`; None when there's none.
+fn replace_path(t: &str, from: &str, to: &str) -> Option<String> {
+    let mut out = String::with_capacity(t.len());
+    let mut done = 0;
+    let mut any = false;
+    for (at, _) in t.match_indices(from) {
+        if at < done || !whole_at(t, at, from) {
+            continue;
+        }
+        out.push_str(&t[done..at]);
+        out.push_str(to);
+        done = at + from.len();
+        any = true;
+    }
+    any.then(|| {
+        out.push_str(&t[done..]);
+        out
+    })
+}
+
+/// The ways the project and home folders are written, each with what it becomes, longest first (so the project goes
+/// before the home it's in): as given, macOS's `/private` twin of `/tmp` and `/var`, the other separator (Windows),
+/// and the project relative to home (`~/src/app`).
+fn folder_forms(project: &str, home: &str) -> Vec<(String, &'static str)> {
+    let trim = |p: &str| p.trim_end_matches(['/', '\\']).to_owned();
+    let (project, home) = (trim(project), trim(home));
+    let mut forms: Vec<(String, &'static str)> = Vec::new();
+    let mut add = |p: String, to: &'static str| {
+        let spellings = [p.clone(), p.replace('\\', "/"), p.replace('/', "\\")];
+        for p in spellings {
+            let twin = p
+                .strip_prefix("/private")
+                .filter(|r| r.starts_with("/tmp") || r.starts_with("/var"))
+                .map(str::to_owned)
+                .or_else(|| (p.starts_with("/tmp") || p.starts_with("/var")).then(|| format!("/private{p}")));
+            for f in std::iter::once(p).chain(twin) {
+                if f.len() > 1 && !forms.iter().any(|(g, _)| *g == f) {
+                    forms.push((f, to));
+                }
+            }
+        }
+    };
+    if !project.is_empty() {
+        add(project.clone(), "<project>");
+        // `~/Downloads/wisp`: the project as home-relative text writes it
+        if !home.is_empty()
+            && let Some(rel) = project.strip_prefix(home.as_str()).filter(|r| r.starts_with(['/', '\\']))
+        {
+            add(format!("~{rel}"), "<project>");
+        }
+    }
+    if !home.is_empty() {
+        add(home, "~");
+    }
+    forms.sort_by_key(|(f, _)| std::cmp::Reverse(f.len()));
+    forms
+}
+
 /// `text` scrubbed, with what was taken out (`at` is where it is).
 pub fn scrub_text(text: &str, s: &Scrub, at: &str, out: &mut Vec<Redaction>) -> String {
     let mut t = text.to_owned();
@@ -148,11 +228,10 @@ pub fn scrub_text(text: &str, s: &Scrub, at: &str, out: &mut Vec<Redaction>) -> 
             out.push(Redaction { kind: "env".into(), at: at.into(), was: hint(v), now });
         }
     }
-    for (from, to) in [(s.project.as_str(), "<project>"), (s.home.as_str(), "~")] {
-        let from = from.trim_end_matches('/');
-        if from.len() > 1 && t.contains(from) {
-            t = t.replace(&format!("/private{from}"), to).replace(from, to);
-            out.push(Redaction { kind: "path".into(), at: at.into(), was: from.into(), now: to.into() });
+    for (from, to) in folder_forms(&s.project, &s.home) {
+        if let Some(next) = replace_path(&t, &from, to) {
+            t = next;
+            out.push(Redaction { kind: "path".into(), at: at.into(), was: from, now: to.into() });
         }
     }
     for (kind, ids, to) in [("wisp", &s.tasks, "<task>"), ("crew", &s.crew, "<crew>")] {
@@ -263,6 +342,49 @@ mod tests {
         assert!(r.iter().all(|x| x.kind == "name"));
         // an id inside a longer word is someone else's text
         assert_eq!(scrub_text(&format!("x{login}y"), &s, "x", &mut Vec::new()), format!("x{login}y"));
+    }
+
+    /// QA round 15 (desktop #4, phone #3): the folders were replaced as plain text, so a sibling folder whose name starts
+    /// with the project's path came out as `<project>-v2-dev-md/…`, and the project's `~/` form went out as it was. Each
+    /// is taken out only as a whole path (followed by a separator, the end, or a character no name has), longest first.
+    #[test]
+    fn folders_go_only_as_whole_paths_in_any_of_their_forms() {
+        let mac = Scrub { project: "/Users/mokh/Downloads/wisp".into(), home: "/Users/mokh".into(), ..Scrub::default() };
+        let go = |s: &Scrub, text: &str| scrub_text(text, s, "x", &mut Vec::new());
+        // desktop #4: the sibling checkout keeps its own name; only the home part of it goes
+        assert_eq!(go(&mac, "/Users/mokh/Downloads/wisp-v2-dev-md/docs/dev.md"), "~/Downloads/wisp-v2-dev-md/docs/dev.md");
+        assert_eq!(
+            go(&mac, "Commit it in ~/Downloads/wisp-v2-dev-md and open a PR"),
+            "Commit it in ~/Downloads/wisp-v2-dev-md and open a PR"
+        );
+        // the project in each of its forms, at the end of a sentence or in quotes too
+        assert_eq!(go(&mac, "/Users/mokh/Downloads/wisp/docs/dev.md"), "<project>/docs/dev.md");
+        assert_eq!(go(&mac, "see ~/Downloads/wisp/src and ~/Downloads/wisp."), "see <project>/src and <project>.");
+        assert_eq!(
+            go(&mac, "cd \"/Users/mokh/Downloads/wisp\" && ls /Users/mokh/Downloads/wisp.old"),
+            "cd \"<project>\" && ls ~/Downloads/wisp.old"
+        );
+        // the home folder itself, and never a longer user name
+        assert_eq!(go(&mac, "home is /Users/mokh, not /Users/mokhtar/x"), "home is ~, not /Users/mokhtar/x");
+        // a path that only contains it is another folder
+        assert_eq!(go(&mac, "/mnt/Users/mokh/Downloads/wisp/a"), "/mnt/Users/mokh/Downloads/wisp/a");
+        // phone #3: macOS spells /tmp as /private/tmp either way
+        let tmp = Scrub { project: "/private/tmp/qa15-proj".into(), home: "/Users/mokh".into(), ..Scrub::default() };
+        assert_eq!(
+            go(&tmp, "compare math.js with /private/tmp/qa15-proj-old/math.js"),
+            "compare math.js with /private/tmp/qa15-proj-old/math.js"
+        );
+        assert_eq!(go(&tmp, "/private/tmp/qa15-proj/math.js and /tmp/qa15-proj/a.js"), "<project>/math.js and <project>/a.js");
+        // Windows: either separator, the drive as written
+        let win = Scrub { project: r"C:\Users\x\proj".into(), home: r"C:\Users\x".into(), ..Scrub::default() };
+        assert_eq!(go(&win, r"C:\Users\x\proj\src\a.rs"), r"<project>\src\a.rs");
+        assert_eq!(go(&win, r"C:\Users\x\proj-old\a.rs"), r"~\proj-old\a.rs");
+        assert_eq!(go(&win, "C:/Users/x/proj/b.rs, then C:/Users/x/proj2"), "<project>/b.rs, then ~/proj2");
+        // what the preview lists: each form that went, once a text
+        let mut r = Vec::new();
+        scrub_text("/Users/mokh/Downloads/wisp/a and /Users/mokh/Downloads/wisp-old and ~/Downloads/wisp", &mac, "spec/prompt", &mut r);
+        let went: Vec<(&str, &str)> = r.iter().map(|x| (x.was.as_str(), x.now.as_str())).collect();
+        assert_eq!(went, [("/Users/mokh/Downloads/wisp", "<project>"), ("~/Downloads/wisp", "<project>"), ("/Users/mokh", "~")]);
     }
 
     #[test]

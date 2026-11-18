@@ -308,6 +308,16 @@ export function shellUi(ctx: ShellContext): PluginUiDef {
         component: lazy(() => import('./frame/Rerun.tsx')),
         title: () => ctx.t('shell.rerun.title'),
       }),
+      // Rename task: one dialog for the head, the rows and the phone (QA round 15 #2; v1 actions.js rename's rules)
+      defineView({
+        kind: 'shell.rename',
+        slot: 'overlay',
+        overlay: 'dialog',
+        part: 'list.rename',
+        parse: (p) => ({ id: String((p as { id?: unknown } | null)?.id ?? '') }),
+        component: lazy(() => import('./frame/RenameDialog.tsx')),
+        title: () => ctx.t('shell.rename.title'),
+      }),
       // Fork… (v1 forkTask): what the fork should try, its mode and harness, then a copy carrying on from a turn; nothing
       // is sent before its Fork (QA round 14 desktop #1)
       defineView({

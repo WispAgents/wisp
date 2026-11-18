@@ -4,7 +4,7 @@
 // (`automations.task.run`) and the dialog closes; a refusal keeps it open with why.
 import { createMemo, createResource, createSignal, For, Show, type JSX } from 'solid-js';
 import { defineCommand, type PeerId, type PluginClient } from '@wisp/client';
-import { projectList } from '@wisp/shell';
+import { projectList, useRunWords, useShell } from '@wisp/shell';
 import { Button, Dialog, Field, Inline, Input, Select, Stack, Text, useSignal } from '@wisp/ui';
 import { t } from './i18n.ts';
 import { fieldsOf } from './recipe.ts';
@@ -32,6 +32,8 @@ const start = defineCommand<{ peer: PeerId; name: string; params: Record<string,
 });
 
 export default function RecipeRun(props: { readonly client: PluginClient; readonly params: { name: string; project: string } }): JSX.Element {
+  // the run in the picker's words, never its ids (QA r15 #3)
+  const runWords = useRunWords(useShell());
   const c = props.client;
   const say = t as (k: string, v?: Readonly<Record<string, string | number>>) => string;
   const [list] = createResource(() => c.run(tasks, { peer: c.home }).catch(() => [] as Declared[]));
@@ -64,7 +66,7 @@ export default function RecipeRun(props: { readonly client: PluginClient; readon
       footer={
         <Inline gap="2" justify="between">
           <Text size="xs" tone="muted">
-            {recipe()?.agent ? [recipe()?.agent, recipe()?.model].filter(Boolean).join(' · ') : say('automations.run.launcher')}
+            {((r) => (r?.agent ? runWords({ agent: r.agent, model: r.model, cwd: r.project || props.params.project || undefined }) : say('automations.run.launcher')))(recipe())}
           </Text>
           <Button variant="primary" size="sm" icon="enter" loading={busy()} disabled={missing() || !recipe()} onClick={run}>
             {say('automations.run.run')}

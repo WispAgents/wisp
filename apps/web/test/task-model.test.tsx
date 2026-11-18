@@ -42,10 +42,10 @@ test('a_task_on_opus_says_opus_in_its_details_and_on_its_reply_harness_not_defau
   const details = (): string => root.querySelector('[data-part="split.details"] [data-kit="ml-name"]')?.textContent ?? '';
   const harness = (): HTMLElement | null => root.querySelector('[data-part="composer.harness"]');
   await until(() => details() !== '' && harness() !== null);
-  // its details: the harness and the model it ran on
-  expect(details()).toBe(`Claude Code · ${model}`);
+  // its details: the harness and the model it ran on, in the picker's words (QA r15 #3: never the id)
+  expect(details()).toBe('Claude Code · Opus 5.5');
   // the reply box: a follow-up runs on the task's own model, and its button says so
-  expect(harness()?.getAttribute('title') ?? '').toContain(`Claude Code · ${model}`);
+  expect(harness()?.getAttribute('title') ?? '').toContain('Claude Code · Opus 5.5');
   expect(harness()?.getAttribute('title') ?? '').not.toContain('Default');
 });
 
@@ -137,3 +137,30 @@ test('the_rerun_bar_wraps_so_its_pickers_keep_their_values', async () => {
   // the mode's select says its value
   expect(bar()?.querySelector('[data-kit="select-trigger"]')?.textContent).toContain('Full auto');
 });
+
+// QA r15 #3: Save as recipe… said "Runs on claude · opus · high": the run in the picker's words, the harness's name,
+// the model's, the thinking level's; on its Default, what Default runs
+for (const [given, says] of [
+  [{ agent: 'claude', model: 'claude-opus-5-5', effort: 'high' }, 'Runs on Claude Code · Opus 5.5 · High'],
+  [{ agent: 'claude', model: '', effort: '' }, 'Runs on Claude Code · Opus'],
+] as const) {
+  test(`save_as_recipe_names_its_run_in_words_${given.model || 'default'}`, async () => {
+    const mock = createMockPeer({ epoch: 'e1', harnesses: true });
+    const home = peerId('local');
+    const client = createClient({ clientId: 'c1', build: 't', home, width: 1440 });
+    const shell = createShell({ client, toaster: createToaster(), platform: nullPlatform({ kind: 'browser' }), home, window: window as unknown as ShellWindow });
+    for (const { def } of pluginUis()) if (def && ['wisp.claude', 'wisp.automations'].includes(def.id)) shell.register(def);
+    await client.start([{ peer: home, name: 'mock', transport: memTransport(mock) }]);
+    const root = document.createElement('div');
+    document.body.append(root);
+    const stop = shell.render(root);
+    stops.push(() => {
+      stop();
+      shell.dispose();
+    });
+    client.nav.navigate({ t: 'openOverlay', overlay: { kind: 'dialog', id: 'automations.recipe' as never, params: { name: 'x', prompt: 'y', project: '', mode: '', ...given } } });
+    const line = (): string => [...document.querySelectorAll('[data-part~="automations.recipe"] [data-kit="text"], [role="dialog"] [data-kit="text"]')].map((e) => e.textContent ?? '').find((x) => x.startsWith('Runs on')) ?? '';
+    await until(() => line() === says);
+    expect(line()).toBe(says);
+  });
+}

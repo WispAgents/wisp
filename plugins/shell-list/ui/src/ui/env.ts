@@ -33,7 +33,6 @@ export interface ListEnv {
   setMenuFor(key: EntityKey): void;
   /** the More button: the shared row menu opens under it */
   menuAt(key: EntityKey, el: HTMLElement): void;
-  readonly renaming: Accessor<EntityKey | undefined>;
   readonly deleting: Accessor<EntityKey | undefined>;
   askRename(key: EntityKey | undefined): void;
   askDelete(key: EntityKey | undefined): void;

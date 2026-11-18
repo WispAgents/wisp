@@ -5,6 +5,7 @@
 import type { TaskUsageProps, TaskUsageRow, TaskUsageSection } from '@wisp/ui';
 import type { ShellContext } from '../contract.ts';
 import { windowName } from './runs-small.ts';
+import { modelWords } from './run-words.ts';
 import '../i18n/lazy.ts';
 
 type T = ShellContext['t'];
@@ -72,16 +73,7 @@ export function rowUsage(f: Readonly<Record<string, unknown>>): RowUsage {
   };
 }
 
-/** "claude-haiku-5-5" → "Haiku 5.5", "claude-opus-5-5[1m]" → "Opus 5.5 (1M)", an alias capitalised (v1 modelWords). */
-export function modelWords(id: string): string {
-  const m = /^claude-(?:(\d+)-(?:(\d)-)?)?(opus|sonnet|haiku|fable)(?:-(\d{1,2})(?:-(\d{1,2}))?)?(?:-\d{8})?(\[1m\])?$/i.exec(id);
-  const cap = (w: string): string => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase();
-  if (m?.[3]) {
-    const v = m[4] ? `${m[4]}${m[5] ? `.${m[5]}` : ''}` : m[1] ? `${m[1]}${m[2] ? `.${m[2]}` : ''}` : '';
-    return `${cap(m[3])}${v ? ` ${v}` : ''}${m[6] ? ' (1M)' : ''}`;
-  }
-  return /^(opus|sonnet|haiku|fable)$/i.test(id) ? cap(id) : id;
-}
+export { modelWords };
 
 const DAY = 864e5;
 const LENGTH: Readonly<Record<string, number>> = { seven_day: 7 * DAY, seven_day_opus: 7 * DAY - 1, seven_day_sonnet: 7 * DAY - 2, five_hour: 5 * 36e5 };

@@ -15,6 +15,14 @@
     width: 100%;
     max-width: 760px;
   }
+  /* the window's drag strip in Home's top padding (always ≥ 32 px): Home moves the desktop window as a task's head does */
+  [data-kit='split-home'] { position: relative; }
+  [data-kit='split-home'] > [data-kit='sh-drag'] {
+    position: absolute;
+    inset: 0 0 auto 0;
+    height: var(--space-9);
+    max-width: none;
+  }
   [data-kit='sh-hello'] {
     width: auto;
     margin: 0 0 18px;

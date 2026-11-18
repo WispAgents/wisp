@@ -40,6 +40,7 @@ import { newestSide, prBadge } from './side-newest.ts';
 import { usePlanRing } from './plan-ring.ts';
 import type { SendHold } from '../contract.ts';
 import { aheadLabel, startsAt, waitable, whenTip } from './hold.ts';
+import { modelWords } from './run-words.ts';
 import { SESSION, type SessionRow } from '../rows.ts';
 import { Slot, useClients, usePluginClient } from '../slot.tsx';
 import { TaskHeadSlot } from './slots.tsx';
@@ -101,7 +102,6 @@ import type { PickOptions } from '../platform/types.ts';
 import { harnessOf } from './harness.ts';
 import { placeIn, taskSteps, type TaskSteps } from './task-step.ts';
 import { RunnerPicker } from './RunnerPicker.tsx';
-import { RenameDialog } from './RenameDialog.tsx';
 import { TurnTranscript } from './TurnTranscript.tsx';
 import { isStub, turnOpener } from './turn-window.ts';
 import { NOTICE_KINDS, ledgerTurn } from './ledger-turns.ts';
@@ -401,7 +401,6 @@ export default function TaskView(props: { readonly id: string; readonly onBack?:
   // the phone apps: the details column as a sheet from the menu, and Rename as a dialog (the bar's title isn't edited)
   const phone = shell.platform.phone;
   const [detailsOpen, setDetailsOpen] = createSignal(false);
-  const [renaming, setRenaming] = createSignal(false);
   // a phone's page (stack): the app bar and its menu; a tablet's split keeps the browser's head and details column
   const phoneBar = (): boolean => phone && nav().layout === 'stack';
   const [notesOpen, setNotesOpen] = createSignal(false);
@@ -831,7 +830,7 @@ export default function TaskView(props: { readonly id: string; readonly onBack?:
   // the browser edits the head's title in place; the phone apps' bar asks in a dialog
   // Rename (⋯, M): a dialog on every screen, as the row's (QA round 14 desktop #3: the head's in-place edit lost its
   // caret to the menu giving focus back to ⋯); a click on the title still edits it in place
-  const startRename = (): void => void setRenaming(true);
+  const startRename = (): void => shell.navigate({ t: 'openOverlay', overlay: { kind: 'dialog', id: 'shell.rename' as never, params: { id: key } } });
   const onMore = (v: string): void => {
     if (v === 'next-task') stepTo(steps().next);
     else if (v === 'previous-task') stepTo(steps().previous);
@@ -993,7 +992,7 @@ export default function TaskView(props: { readonly id: string; readonly onBack?:
         // the task's own, for its details (not the reply box's pick)
         const own = (): { name: string; logo?: string } => harnessView(s().agent);
         // on its harness's Default: the model that runs, by the same answer as the reply chip (QA r10 #2), else "Default model"
-        const ownWords = (): string => t('shell.task.harness', { name: own().name, model: String(s().summary.model || '') || defaultName(s().agent, t('shell.task.defaultModel')) });
+        const ownWords = (): string => t('shell.task.harness', { name: own().name, model: modelWords(String(s().summary.model || '')) || defaultName(s().agent, t('shell.task.defaultModel')) });
         // the reply box's Delegate panel: on its button in the old footer, on its chip in the desktop's one footer
         const replyTeamAct = (): Act => ({
           // v1 composer.js: the same Delegate panel as New task's, the lead this task's harness where it runs
@@ -1597,9 +1596,6 @@ export default function TaskView(props: { readonly id: string; readonly onBack?:
               when={phoneBar() && leave}
               fallback={
             <>
-            <Show when={renaming() && !phoneBar()}>
-              <RenameDialog title={s().title} part="task.rename" onClose={() => setRenaming(false)} onRename={(title) => void run(rename, { id: key, title }).catch(() => undefined)} />
-            </Show>
             <TaskHead
               actions={<TaskHeadSlot id={key} session={() => s() as never} />}
               title={s().title}
@@ -1647,9 +1643,6 @@ export default function TaskView(props: { readonly id: string; readonly onBack?:
                   )}
                   detailsOpen={detailsOpen()}
                   onDetails={setDetailsOpen}
-                  renaming={renaming()}
-                  onRenaming={setRenaming}
-                  onRename={(title) => void run(rename, { id: key, title }).catch(() => undefined)}
                   swipe={{
                     get onNext() {
                       const to = steps().next;

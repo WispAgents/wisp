@@ -29,9 +29,12 @@ export function LockedBody(props: { t: T; card: ShareCardInfo | undefined; busy:
   );
 }
 
-const runWords = (c: ShareCardInfo, r: NonNullable<ShareCardInfo['run']>): string => [r.agent, r.model].filter(Boolean).join(' · ') || c.agent || '';
+/** the run in words: the shell's (the picker's names, QA r15 #3) when given, else as the card has it */
+type Words = (r: { readonly agent: string; readonly model?: string | undefined; readonly effort?: string | undefined }) => string;
+const runWords = (c: ShareCardInfo, r: NonNullable<ShareCardInfo['run']>, words?: Words): string =>
+  (words ? words({ agent: r.agent, model: r.model, effort: r.effort }) : [r.agent, r.model].filter(Boolean).join(' · ')) || c.agent || '';
 
-export function OpenBody(props: { t: T; card: ShareCardInfo; choice: CardChoice; onChoice: (c: CardChoice) => void; onOpen: (id: string) => void }): JSX.Element {
+export function OpenBody(props: { t: T; card: ShareCardInfo; choice: CardChoice; onChoice: (c: CardChoice) => void; onOpen: (id: string) => void; words?: Words }): JSX.Element {
   const t = props.t;
   const c = (): ShareCardInfo => props.card;
   const r = (): ShareCardInfo['run'] => props.choice.run ?? c().run;
@@ -54,7 +57,7 @@ export function OpenBody(props: { t: T; card: ShareCardInfo; choice: CardChoice;
       <Text size="sm" truncate>
         {(() => {
           const run = r();
-          return run ? t('stuff.share.card.carriesOn', { run: runWords(c(), run) }) : t('stuff.share.card.noAgentHere');
+          return run ? t('stuff.share.card.carriesOn', { run: runWords(c(), run, props.words) }) : t('stuff.share.card.noAgentHere');
         })()}
       </Text>
       <Show when={!props.choice.run && c().run?.note}>

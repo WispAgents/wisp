@@ -145,3 +145,32 @@ fn a_task_command_is_a_command_only_for_a_task_id_or_last() {
         assert_eq!(p(args).command, None, "{args:?}");
     }
 }
+
+/// QA round 15 #1, #6: `wisp plugin for prettier` was refused (two or more words after a command word are a prompt),
+/// and `wisp ls -a` said "-a needs a value" (it's `--all` there).
+#[test]
+fn a_group_that_routes_as_a_command_takes_its_verb_or_one_word_and_ls_dash_a_is_all() {
+    for args in [
+        &["plugin"][..],
+        &["plugin", "foo"],
+        &["plugin", "install", "./x"],
+        &["plugins", "ls"],
+        &["mcp"],
+        &["mcp", "--repo", "x"],
+        &["skill", "install"],
+    ] {
+        assert_eq!(p(args).command, Some(args[0]), "{args:?}");
+    }
+    for args in [
+        &["plugin", "for", "prettier"][..],
+        &["plugin", "to", "format", "the", "code"],
+        &["mcp", "server", "for", "the", "docs"],
+        &["skill", "for", "writing", "tests"],
+    ] {
+        assert_eq!(p(args).command, None, "{args:?} is a prompt");
+    }
+    let x = p(&["ls", "-a"]);
+    assert!(x.command == Some("ls") && x.flags.all && x.flags.agent.is_none(), "{x:?}");
+    let x = p(&["fix", "it", "-a", "codex"]);
+    assert_eq!(x.flags.agent.as_deref(), Some("codex"), "-a is --agent elsewhere");
+}

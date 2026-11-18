@@ -19,7 +19,7 @@ test('the_harness_model_picker_searches_every_harnesses_models_and_offers_the_pi
   // a model's own levels, else the harness's
   expect(effortsFor(AGENTS, { agent: 'claude', model: 'opus', effort: '' })).toEqual(['low', 'medium', 'high', 'max']);
   expect(effortsFor(AGENTS, { agent: 'claude', model: 'haiku', effort: '' })).toEqual(['low', 'high']);
-  expect(runnerWords(AGENTS, { agent: 'claude', model: 'opus', effort: 'high' }, (id) => (id === 'claude' ? 'Claude Code' : id))).toBe('Claude Code · Opus 5.5 · high');
+  expect(runnerWords(AGENTS, { agent: 'claude', model: 'opus', effort: 'high' }, (id) => (id === 'claude' ? 'Claude Code' : id))).toBe('Claude Code · Opus 5.5 · High');
 });
 
 test('the_reply_boxs_harness_model_pick_goes_with_the_next_follow_up_and_none_keeps_the_tasks_own', () => {

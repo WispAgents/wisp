@@ -522,9 +522,9 @@ async fn after_a_command_word_one_word_is_a_slip_and_more_are_a_prompt() {
         &["show", "foo"],
         &["wait", "x"],
         &["channels", "refresh", "--bad"],
-        // a group that routes as a command: refused however many words follow (it served on stdin)
-        &["mcp", "foo", "bar"],
-        &["skill", "foo", "bar"],
+        // a group that routes as a command, one word: a slip (two or more are a prompt, QA round 15)
+        &["mcp", "foo"],
+        &["skill", "foo"],
     ] {
         let (code, out, err) = probe(&dir, port, words);
         assert!(code == 2 && !out.contains("launched") && err.contains("wisp -- "), "{words:?} → {code}: {out}{err}");
@@ -555,5 +555,63 @@ async fn after_a_command_word_one_word_is_a_slip_and_more_are_a_prompt() {
     assert!(code == 0 && out.contains("attach a screenshot of the failing test"), "{code}: {out}{err}");
     let (code, out, err) = probe_within(&dir, port, &["attach", "last"], 30);
     assert!(code == 0, "{code}: {out}{err}");
+    drop(serve);
+}
+
+/// QA round 15: `wisp plugin for prettier` was refused (#1, two or more words after a command word are a prompt);
+/// `wisp export foo` launched a task (#2, one stray word is a slip); `wisp ls -a` said "-a needs a value", `wisp fork`
+/// pointed nowhere, and `wisp help me` said "no plugin named me" (#6).
+#[tokio::test(flavor = "multi_thread")]
+async fn one_stray_word_is_a_slip_more_is_a_prompt_for_every_command_word() {
+    let dir = temp("serve-cli-r15");
+    let (serve, port) = start(&dir);
+    let api = Api { http: reqwest::Client::new(), port, n: 0.into() };
+    for (words, said) in [
+        (&["export", "foo"][..], "wisp -- export"),
+        (&["run", "foo"], "no recipe or workflow named foo"),
+        (&["ship", "foo"], "wisp -- ship"),
+        (&["plugin", "foo"], "wisp plugin has no foo"),
+        (&["mcp", "foo"], "wisp mcp has no foo"),
+        (&["init", "foo"], "auto, ask or manual"),
+        (&["fork"], "wisp runtime fork --id <id>"),
+        (&["help", "me"], "wisp help lists every command and plugin"),
+    ] {
+        let (code, out, err) = probe(&dir, port, words);
+        assert!(code == 2 && !out.contains("launched") && err.contains(said) && err.contains("wisp -- "), "{words:?} → {code}: {out}{err}");
+    }
+    assert!(!dir.join("proj/.wisp").exists(), "`init foo` made nothing");
+    assert_eq!(api.cmd("runtime.list", json!({})).await.as_array().unwrap().len(), 0, "no task was made");
+
+    // prompts (the fake harness: nothing paid)
+    let prompts = [
+        "plugin for prettier",
+        "plugin to format the code",
+        "mcp server for the docs",
+        "fork the repo and set up CI",
+        "export the results as CSV",
+        "help me write a test for add()",
+        "run the failing tests twice",
+    ];
+    // one quoted argument, or `--`, after a prompt word: the prompt
+    for words in [&["--no-open", "ship", "the docs"][..], &["--no-open", "run", "the tests"], &["--no-open", "run", "--", "deploy"]] {
+        let (code, out, err) = probe(&dir, port, words);
+        assert!(code == 0 && out.contains("launched"), "{words:?} → {code}: {out}{err}");
+    }
+    for prompt in prompts {
+        let words: Vec<&str> = std::iter::once("--no-open").chain(prompt.split(' ')).collect();
+        let (code, out, err) = probe(&dir, port, &words);
+        assert!(code == 0 && out.contains(&format!("launched: {prompt}  (")), "{prompt} → {code}: {out}{err}");
+    }
+    // #6: `ls -a` is --all
+    let ids: Vec<String> =
+        api.cmd("runtime.list", json!({})).await.as_array().unwrap().iter().map(|t| t["id"].as_str().unwrap().to_owned()).collect();
+    assert_eq!(ids.len(), prompts.len() + 3);
+    api.cmd("runtime.archive", json!({ "id": ids[0], "archived": true })).await;
+    let (code, out, err) = probe(&dir, port, &["ls", "-a"]);
+    assert!(code == 0 && ids.iter().all(|id| out.contains(id.as_str())), "{code}: {out}{err}");
+    // with a filter too (`-a` was read as --agent and swallowed `--state`)
+    let (code, out, err) = probe(&dir, port, &["ls", "-a", "--state", "running"]);
+    let applied = out.trim() == "No sessions." || out.lines().filter(|l| !l.trim().is_empty()).all(|l| l.contains(" running "));
+    assert!(code == 0 && applied, "only running tasks, or none: {code}: {out}{err}");
     drop(serve);
 }

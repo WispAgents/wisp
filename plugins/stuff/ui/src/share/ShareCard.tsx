@@ -5,6 +5,7 @@
 // can't go yet. × leaves the link as text.
 
 import { entityKey, type Json, type PluginClient } from '@wisp/client';
+import { useRunWords, useShell } from '@wisp/shell';
 import { Avatar, Card, IconButton, Icon, Inline, Skeleton, Stack, Text, useSignal } from '@wisp/ui';
 import { createEffect, createSignal, on, Show, type JSX } from 'solid-js';
 import { cardMachine, type CardCtx, type CardState } from './card-machine.ts';
@@ -74,6 +75,8 @@ export default function ShareCard(props: { client: PluginClient }): JSX.Element 
 }
 
 function Body(props: { state: CardState; ctx: CardCtx; t: (k: string, v?: Readonly<Record<string, string | number>>) => string; client: PluginClient; face: () => JSX.Element; choice: CardChoice; onChoice: (c: CardChoice) => void; onUnlock: (p: string) => void }): JSX.Element {
+  // the run it carries on with, in the picker's words (QA r15 #3)
+  const runWords = useRunWords(useShell());
   const t = props.t;
   return (
     <>
@@ -101,7 +104,7 @@ function Body(props: { state: CardState; ctx: CardCtx; t: (k: string, v?: Readon
         {(card) => (
           <>
             {props.face()}
-            <OpenBody t={t} card={card()} choice={props.choice} onChoice={props.onChoice} onOpen={(id) => props.client.navigate({ t: 'openTask', id: entityKey(props.client.home, id) as never })} />
+            <OpenBody words={runWords} t={t} card={card()} choice={props.choice} onChoice={props.onChoice} onOpen={(id) => props.client.navigate({ t: 'openTask', id: entityKey(props.client.home, id) as never })} />
           </>
         )}
       </Show>

@@ -59,7 +59,6 @@ pub fn known(word: &str) -> bool {
 /// `wisp plan the migration`, `wisp run the tests`). Every other command word is a strict group or a command that
 /// takes an argument, never a task (QA round 11 #1; `words_tests.rs` and the e2e in `tests/serve_cli_verbs.rs`, which
 /// reads this list from the source, hold each word to it: the routing itself lives in main.rs's arms and `args::fits`).
-#[cfg(test)]
 pub const PROMPT_WORDS: &[&str] = &[
     "add", "ship", "merge", "run", "plan", "apply", "diff", "validate", "destroy", "init", "track", "untrack", "blame", "log", "tasks",
     "resume", "fmt", "output", "graph", "mv", "import", "export", "history", "rerun", "open", "notes", "fresh", "attach",
@@ -117,6 +116,8 @@ const INSTEAD: &[(&str, &str)] = &[
     ("delete", "wisp runtime delete <id>"),
     ("kill", "wisp stop <id>"),
     ("upgrade", "wisp update"),
+    // QA round 15 #6: Fork is a task's ⋯ in the app
+    ("fork", "wisp runtime fork --id <id> (Fork… in a task's ⋯)"),
     // QA round 13 #3: read-only intents get read-only answers (`top` was "did you mean wisp stop?")
     ("agents", "wisp accounts harnesses (the agents it can run)"),
     ("top", "wisp ls --watch (your tasks, live)"),
@@ -140,7 +141,8 @@ const TASK_COMMANDS: [&str; 6] = ["show", "stop", "wait", "reply", "attach", "bt
 fn one_word_slip(words: &[String], literal: Literal) -> Option<NotATask> {
     let (first, rest) = words.split_first()?;
     let said: Vec<&String> = rest.iter().filter(|w| !flag_shaped(w)).collect();
-    if literal != Literal::No || said.len() != 1 || crate::args::task_ref(said[0]) {
+    // one quoted argument is the prompt (`wisp ship "the docs"`)
+    if literal != Literal::No || said.len() != 1 || crate::args::task_ref(said[0]) || said[0].contains(char::is_whitespace) {
         return None;
     }
     let lower = first.to_lowercase();
@@ -150,7 +152,14 @@ fn one_word_slip(words: &[String], literal: Literal) -> Option<NotATask> {
     if let Some((_, instead)) = INSTEAD.iter().find(|(theirs, _)| *theirs == lower) {
         return Some(NotATask::Instead((*instead).to_owned()));
     }
-    TASK_COMMANDS.contains(&first.as_str()).then(|| NotATask::Usage(first.clone()))
+    // a command that takes a task, or a word a prompt may start with (`wisp export foo`, QA round 15 #2): its usage
+    (TASK_COMMANDS.contains(&first.as_str()) || PROMPT_WORDS.contains(&first.as_str())).then(|| NotATask::Usage(first.clone()))
+}
+
+/// Whether `word` is one of `group`'s own built-in verbs (`plugin install`, `skill install`, `crew ls`).
+pub fn own_verb(group: &str, word: &str) -> bool {
+    VERB_PATHS.iter().filter(|p| p.cmd == group).any(|p| p.verbs.contains(&word))
+        || GROUPS.iter().filter(|(g, _)| *g == group).any(|(_, vs)| vs.contains(&word))
 }
 
 /// One word alone, or a first word followed at once by something flag-shaped, or by task ids only, with no `--` before
@@ -445,11 +454,7 @@ pub fn group_line(words: &[String]) -> bool {
         return false;
     }
     let said: Vec<&String> = rest.iter().filter(|w| !flag_shaped(w)).collect();
-    let own = said.first().is_some_and(|v| {
-        VERB_PATHS.iter().filter(|p| p.cmd == first).any(|p| p.verbs.contains(&v.as_str()))
-            || GROUPS.iter().filter(|(g, _)| g == first).any(|(_, vs)| vs.contains(&v.as_str()))
-    });
-    said.len() <= 1 || own
+    said.len() <= 1 || said.first().is_some_and(|v| own_verb(first, v))
 }
 
 /// Whether `word` is a built-in command group (strict: a verb it doesn't have is an error, never a task).

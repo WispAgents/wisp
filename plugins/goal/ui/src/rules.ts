@@ -4,6 +4,7 @@
 
 import type { CheckView, GoalStatus, GoalView, HarnessRow, Judge, JudgeVote, MemberRow, SessionRow, Verdict, Vote } from './types.ts';
 import { STALL } from './types.ts';
+import { effortWord, modelWords } from '@wisp/shell/pure';
 import { t, type Key, type Vars } from './i18n.ts';
 import './i18n/lazy.ts';
 
@@ -191,8 +192,9 @@ export const isCrew = (j: Judge): j is { crew: string; name?: string } => 'crew'
 export function judgeLabel(j: Judge, crew: readonly MemberRow[], harnesses: readonly HarnessRow[]): string {
   if (isCrew(j)) return crew.find((m) => m.id === j.crew)?.name ?? j.name ?? t('wisp.goal.crewMember');
   const h = harnesses.find((x) => x.id === j.agent);
-  const model = (j.model && h?.models.find((m) => m.id === j.model)?.label) || j.model;
-  return [h?.name ?? j.agent, model, j.effort].filter(Boolean).join(' · ');
+  // the picker's words, never the ids (QA r15 #3)
+  const model = (j.model && h?.models.find((m) => m.id === j.model)?.label) || (j.model ? modelWords(j.model) : '');
+  return [h?.name ?? j.agent, model, effortWord(j.effort ?? '')].filter(Boolean).join(' · ');
 }
 
 /** Names as the server keeps them (and the band shows): repeats get 2, 3… */

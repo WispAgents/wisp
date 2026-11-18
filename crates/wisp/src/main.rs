@@ -186,6 +186,11 @@ async fn dispatch(p: &Parsed, user_home: &Path, cwd: &Path) -> Result<i32> {
         Some("add") => add(user_home, port, p.words.get(1), f.cwd.as_deref().unwrap_or(cwd)).await?,
         // `wisp run the tests`: no recipe of that name, so a prompt, launched as every prompt is (its title, attached in
         // a terminal; QA round 12 #2 printed the id where the title goes)
+        // `wisp run foo`, no recipe or workflow of that name: one stray word is a slip (QA round 15 #2); more is a prompt
+        Some("run") if p.words.len() == 2 && p.literal == args::Literal::No && !p.words[1].contains(char::is_whitespace) => {
+            eprintln!("  ✗ no recipe or workflow named {}: wisp recipes lists them\n{}", p.words[1], words::usage("run"));
+            return Ok(cli::USAGE_EXIT);
+        }
         Some("run") if !(f.json || f.wait || !f.tries.is_empty() || f.compare.is_some()) => {
             return launch_and_open(p, &home, port, &cwd_s).await;
         }
@@ -322,7 +327,10 @@ async fn as_code(p: &Parsed, port: u16, cwd: &Path, home: &Path) -> Result<Optio
         return Ok(None);
     }
     let start = p.argv.iter().position(|a| a == first).map_or(0, |i| i + 1);
-    let o = code::opts(&p.argv[start.min(p.argv.len())..]);
+    // `wisp ls -a` is --all (the parser said so); here `-a` would read as --agent
+    let rest: Vec<String> =
+        p.argv[start.min(p.argv.len())..].iter().filter(|a| !(matches!(first, "ls" | "list") && *a == "-a")).cloned().collect();
+    let o = code::opts(&rest);
     let o = code::Opts {
         json: o.json || p.flags.json,
         yes: o.yes || p.flags.yes,

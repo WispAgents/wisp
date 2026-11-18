@@ -64,6 +64,7 @@
   "shell.env.reveal": "Reveal",
   "shell.env.hide": "Hide",
   "shell.more.rename": "Rename",
+  "shell.rename.label": "Title",
   "shell.more.pin": "Pin",
   "shell.more.unpin": "Unpin",
   "shell.more.unread": "Mark unread",

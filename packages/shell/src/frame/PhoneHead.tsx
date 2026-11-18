@@ -11,7 +11,6 @@ import { createMemo, createSignal, onCleanup, onMount, Show, type JSX } from 'so
 import { Button, Dialog, Fab, Inline, Input, Menu, PageStatus, ProjectSelect, RadioGroup, SelectionBar, Sheet, TopAppBar, useSignal, type PageStatusItem, type MenuEntry, type SelectionAction, type TaskSwipe, type ToolbarItem, type TopAppBarSelection } from '@wisp/ui';
 import { useShell } from '../context.tsx';
 import { Slot } from '../slot.tsx';
-import { RenameDialog } from './RenameDialog.tsx';
 import '../i18n/lazy.ts';
 import { displayCombo } from '../keys.ts';
 import { computerOptions, computerTitle, hasComputerFilter, knownComputer } from './computer-filter.ts';
@@ -305,9 +304,6 @@ export interface PhoneTaskBarProps {
   readonly details: () => JSX.Element;
   readonly detailsOpen: boolean;
   readonly onDetails: (open: boolean) => void;
-  readonly renaming: boolean;
-  readonly onRenaming: (open: boolean) => void;
-  readonly onRename: (title: string) => void;
   /** what plugins put in the task's head (`shell.task:head`), before the menu */
   readonly head: () => JSX.Element;
   /** the head's swipe to the next / previous task in the list's order (its twins: Next task / Previous task in the menu) */
@@ -337,9 +333,6 @@ export function PhoneTaskBar(props: PhoneTaskBarProps): JSX.Element {
       <Sheet title={t('shell.phone.details')} open={props.detailsOpen} onOpenChange={props.onDetails} part="phone.task.details" t={kit}>
         {props.details()}
       </Sheet>
-      <Show when={props.renaming}>
-        <RenameDialog title={props.title} onClose={() => props.onRenaming(false)} onRename={props.onRename} part="phone.task.rename" />
-      </Show>
     </>
   );
 }

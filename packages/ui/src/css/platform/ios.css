@@ -589,6 +589,9 @@
   :root[data-platform='ios'] [data-kit='dialog'][data-alert] > [data-kit='dialog-head'] { justify-content: center; margin: var(--space-0); padding: var(--alert-pad-top) var(--alert-pad) var(--space-1); }
   :root[data-platform='ios'] [data-kit='dialog'][data-alert] [data-kit='dialog-title'] { font: var(--type-headline); letter-spacing: normal; color: var(--on-surface); }
   :root[data-platform='ios'] [data-kit='dialog'][data-alert] > [data-kit='dialog-head'] > [data-kit='icon-button'] { display: none; }
+  /* a sheet's or dialog's ✕ is a finger's target, 44 pt (HIG hit targets); its glyph keeps its size (QA r15 #5: it was 28) */
+  :root[data-platform='ios'] [data-kit='dialog'] > [data-kit='dialog-head'] > [data-kit='icon-button'],
+  :root[data-platform='ios'] [data-kit='sheet'] > [data-kit='dialog-head'] > [data-kit='icon-button'] { flex: none; min-width: var(--tap-min); min-height: var(--tap-min); }
   :root[data-platform='ios'] [data-kit='dialog'][data-alert] > [data-kit='dialog-description'],
   :root[data-platform='ios'] [data-kit='dialog'][data-alert] > [data-kit='dialog-body'] { margin: var(--space-0); padding: var(--space-0) var(--alert-pad); font: var(--type-footnote); color: var(--on-surface); }
   :root[data-platform='ios'] [data-kit='dialog'][data-alert] > [data-kit='dialog-body']:empty { display: none; }

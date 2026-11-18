@@ -16,6 +16,7 @@ import { differsWords, runOrder, trialOf, variantOf, variantWords } from './tria
 import { compareRows, compareSentence, letter, planShares, type CompareRun, type CompareTurn, type PlanShare } from './compare.ts';
 import { useNow } from '../clock.ts';
 import { defaultModelName, runModelWord } from './default-models.ts';
+import { effortWord, modelWords } from './run-words.ts';
 import { harnessOf } from './harness.ts';
 import { statusOf } from './rows-view.ts';
 import '../i18n/lazy.ts';
@@ -149,14 +150,14 @@ export default function Compare(props: { readonly params: { readonly id: string 
       const st = statusOf(s, t);
       const effort = String(s.body?.['effort'] ?? '');
       // on its Default: the model that runs, the same answer as the chip (one name everywhere), else "Default model"
-      const model = runModelWord(String(s.summary.model || ''), defaultModelName(shell.client, ownerOf(s.id as EntityKey), s.agent, String(s.summary.cwd ?? '') || undefined), t('shell.compare.defaultModel'));
+      const model = runModelWord(modelWords(String(s.summary.model || '')), defaultModelName(shell.client, ownerOf(s.id as EntityKey), s.agent, String(s.summary.cwd ?? '') || undefined), t('shell.compare.defaultModel'));
       return {
         id: s.id,
         letter: letter(i),
         harness: h.name,
         logo: h.logo,
         // a trial's runs share a harness: the variant is what tells them apart (v1 runVariant)
-        base: [model, effort && effort.charAt(0).toUpperCase() + effort.slice(1), ...variantWords(t, variantOf(s.summary))].filter(Boolean).join(' · '),
+        base: [model, effortWord(effort), ...variantWords(t, variantOf(s.summary))].filter(Boolean).join(' · '),
         state: live(s) ? { label: t(s.state === 'waiting' ? 'shell.compare.asking' : 'shell.compare.workingPill'), tone: 'warn', live: true } : st,
         body: answerOf(s),
         working: live(s),

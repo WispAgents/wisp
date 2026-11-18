@@ -5,6 +5,7 @@
 
 import { For, Show, createMemo, createSignal, onCleanup, type JSX } from 'solid-js';
 import type { EntityKey, PeerId, PluginClient } from '@wisp/client';
+import { useRunWords, useShell } from '@wisp/shell';
 import { Box, Button, Callout, Icon, Inline, Markdown, Pill, Skeleton, Stack, Text, Timeline, TimelineMessage, TimelineStep, useSignal } from '@wisp/ui';
 import { Face } from './Faces.tsx';
 import { t, type Key } from './i18n.ts';
@@ -35,7 +36,9 @@ const END: Readonly<Record<NonNullable<GoalRun['end']>, Key>> = {
 function Head(props: { readonly client: PluginClient; readonly hint: RunHint; readonly rec: GoalRun | undefined }): JSX.Element {
   const h = (): RunHint & Partial<GoalRun> => ({ ...props.hint, ...(props.rec ?? {}) });
   const running = (): boolean => props.rec?.status === 'running' || (!props.rec && props.hint.live === true);
-  const sub = (): string => [t('wisp.goal.run.round', { round: h().round }), [h().agent, h().model].filter(Boolean).join(' · ')].filter(Boolean).join(' · ');
+  // the judge's run in the picker's words, never its ids (QA r15 #3)
+  const runWords = useRunWords(useShell());
+  const sub = (): string => [t('wisp.goal.run.round', { round: h().round }), runWords({ agent: h().agent ?? '', model: h().model })].filter(Boolean).join(' · ');
   return (
     <Stack gap="3" part="goal.runHead">
       <Inline gap="2">

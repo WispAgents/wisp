@@ -22,7 +22,13 @@ export default function Rerun(props: { readonly params: { readonly id: string; r
   const peers = useSignal(shell.client.peers.list());
   const [spec] = createResource(() => shell.client.commands.run(specOf, { id: key }));
   const [edits, setEdits] = createSignal<RerunEdits | undefined>();
-  const e = (): RerunEdits | undefined => edits() ?? (spec() ? startEdits(spec() as never, peer, props.params.agent) : undefined);
+  // what it ran on: the row's harness and its summary's model and thinking
+  const ran = (): { agent: string; model?: string; effort?: string } | undefined => {
+    const r = row();
+    const sum = (r?.summary ?? {}) as { model?: string; effort?: string };
+    return r ? { agent: r.agent, ...(sum.model && { model: sum.model }), ...(sum.effort && { effort: sum.effort }) } : undefined;
+  };
+  const e = (): RerunEdits | undefined => edits() ?? (spec() ? startEdits(spec() as never, peer, props.params.agent, ran()) : undefined);
   const set = (p: Partial<RerunEdits>): void => {
     const cur = e();
     if (cur) setEdits({ ...cur, ...p });

@@ -80,29 +80,33 @@ impl AgentText {
 }
 
 /// `wisp_plugins`, `wisp_plugin_schema`: nothing but the caller's task (set by wisp.mcp; none from `wisp mcp`).
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, ts_rs::TS)]
 pub struct AgentArgs {
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
     pub session: Option<String>,
 }
 
 /// `wisp_plugin_data`: a read-only command a plugin would call, and its arguments.
-#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, ts_rs::TS)]
 pub struct AgentDataArgs {
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
     pub session: Option<String>,
     /// the command's id (`plugins.list`)
     #[serde(default)]
     pub command: String,
     /// its arguments (`{}` when left out)
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
     pub args: Option<Value>,
 }
 
 /// `wisp_plugin_check`: a plugin as files, never installed and never run.
-#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, ts_rs::TS)]
 pub struct AgentCheckArgs {
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
     pub session: Option<String>,
     /// its whole `wisp-plugin.json`
     #[serde(default)]
@@ -110,6 +114,12 @@ pub struct AgentCheckArgs {
     /// its other files' text by path in its folder (`{ "ui.js": "…" }`)
     #[serde(default)]
     pub files: std::collections::BTreeMap<String, String>,
+}
+
+/// The argument type of a command that takes any JSON (`plugins.ui`, `plugins.styles`), for the generated CLI: it takes
+/// no flag, so one it's given is refused (QA round 15).
+pub fn any_args_ts() -> Option<String> {
+    Some(<Value as ts_rs::TS>::inline(&ts_rs::Config::default()))
 }
 
 /// `plugins.agent.list` (`wisp_plugins`): the plugins the user has, in plain words; theirs with their manifests.
@@ -120,6 +130,10 @@ impl Command for AgentList {
     const PERMISSION: Option<&'static str> = Some("plugins:agent.list");
     const READ_ONLY: bool = true;
     type Args = AgentArgs;
+    fn args_ts() -> Option<String> {
+        // typed for the generated CLI: its flags, and a flag it doesn't take refused (QA round 15)
+        Some(<Self::Args as ts_rs::TS>::inline(&ts_rs::Config::default()))
+    }
     type Out = AgentText;
 }
 
@@ -131,6 +145,10 @@ impl Command for AgentSchema {
     const PERMISSION: Option<&'static str> = Some("plugins:agent.schema");
     const READ_ONLY: bool = true;
     type Args = AgentArgs;
+    fn args_ts() -> Option<String> {
+        // typed for the generated CLI: its flags, and a flag it doesn't take refused (QA round 15)
+        Some(<Self::Args as ts_rs::TS>::inline(&ts_rs::Config::default()))
+    }
     type Out = AgentText;
 }
 
@@ -142,6 +160,10 @@ impl Command for AgentData {
     const PERMISSION: Option<&'static str> = Some("plugins:agent.data");
     const READ_ONLY: bool = true;
     type Args = AgentDataArgs;
+    fn args_ts() -> Option<String> {
+        // typed for the generated CLI: its flags, and a flag it doesn't take refused (QA round 15)
+        Some(<Self::Args as ts_rs::TS>::inline(&ts_rs::Config::default()))
+    }
     type Out = AgentText;
 }
 
@@ -153,5 +175,9 @@ impl Command for AgentCheck {
     const PERMISSION: Option<&'static str> = Some("plugins:agent.check");
     const READ_ONLY: bool = true;
     type Args = AgentCheckArgs;
+    fn args_ts() -> Option<String> {
+        // typed for the generated CLI: its flags, and a flag it doesn't take refused (QA round 15)
+        Some(<Self::Args as ts_rs::TS>::inline(&ts_rs::Config::default()))
+    }
     type Out = AgentText;
 }

@@ -72,3 +72,8 @@ test('a_row_on_the_default_model_names_it_in_the_tip_as_the_chip_does', () => {
   expect(asked).toHaveLength(2);
   expect(runOf(row({ agent: 'codex' }), withDefault)?.title.key).toBe('shell-list.run.tip-default');
 });
+
+// QA r15 #3: a model the harness's offers don't list still reads in words (a Claude id), never the id
+test('a_rows_model_reads_in_words_when_the_offers_dont_name_it', () => {
+  expect(runOf(row({ model: 'claude-opus-5-5' } as Partial<SessionRow>), c)?.model).toBe('Opus 5.5');
+});

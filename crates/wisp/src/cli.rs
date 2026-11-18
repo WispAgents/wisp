@@ -121,7 +121,10 @@ pub fn help(cat: &Catalogue, words: &[String]) -> i32 {
         }
         [p] => {
             let Some(h) = verbs::help_plugin(cat, p) else {
-                eprintln!("  ✗ no plugin named {p} in this wisp: wisp help lists them");
+                // `wisp help me` (QA round 15 #6): how to get help, and the way to a task
+                eprintln!(
+                    "  ✗ wisp help {p}: no command or plugin named {p}\n  wisp help lists every command and plugin; wisp help <plugin> its verbs; wisp --help the usage\n  a task that says this: wisp -- help {p}"
+                );
                 return USAGE_EXIT;
             };
             say(&h);

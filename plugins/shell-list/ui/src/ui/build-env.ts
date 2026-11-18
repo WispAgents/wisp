@@ -41,7 +41,6 @@ export function buildEnv(shell: ShellContext, client: PluginClient): ListEnv {
   const [now, setNow] = createSignal(scope.timers.now());
   scope.interval(TICK_MS, () => setNow(scope.timers.now()));
   const [menuFor, setMenuFor] = createSignal<EntityKey | undefined>(undefined);
-  const [renaming, askRename] = createSignal<EntityKey | undefined>(undefined);
   const [deleting, askDelete] = createSignal<EntityKey | undefined>(undefined);
   const open = createMemo(() => {
     const m = nav().main;
@@ -91,9 +90,9 @@ export function buildEnv(shell: ShellContext, client: PluginClient): ListEnv {
       const r = el.getBoundingClientRect();
       el.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: r.left, clientY: r.bottom }));
     },
-    renaming,
     deleting,
-    askRename: (key) => askRename(() => key),
+    // the shell's one Rename task dialog (QA round 15 #2: the head and the row had two)
+    askRename: (key) => key && client.navigate({ t: 'openOverlay', overlay: { kind: 'dialog', id: 'shell.rename' as never, params: { id: key } } }),
     askDelete: (key) => askDelete(() => key),
   };
 }

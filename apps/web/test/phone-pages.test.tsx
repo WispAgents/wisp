@@ -136,9 +136,10 @@ test('rename_on_a_phone_is_a_dialog_from_the_menu_not_an_inline_edit', async () 
   [...document.querySelectorAll<HTMLElement>('[data-kit="menu-item"][data-sub]')].find((e) => e.textContent?.includes('This task'))?.click();
   await until(() => [...document.querySelectorAll('[data-kit="menu-item"]')].some((e) => e.textContent?.includes('Rename')));
   [...document.querySelectorAll<HTMLElement>('[data-kit="menu-item"]')].find((e) => e.textContent?.includes('Rename'))?.click();
-  await until(() => q('[data-part~="phone.task.rename"] input') !== null);
-  expect((q('[data-part~="phone.task.rename"] input') as HTMLInputElement).value).toContain('Add rate limiting');
-  expect(q('[data-part="phone.task.rename.save"]')).not.toBeNull();
+  // the one Rename task dialog, as the desktop's head and rows open it (QA round 15 #2)
+  await until(() => q('[data-part~="list.rename"] input') !== null);
+  expect((q('[data-part~="list.rename"] input') as HTMLInputElement).value).toContain('Add rate limiting');
+  expect(q('[data-part~="list.rename.save"]')).not.toBeNull();
 });
 
 test('a_phones_browser_task_page_keeps_v1s_head_with_back_and_its_details_bar', async () => {
