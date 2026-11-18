@@ -17,6 +17,7 @@ import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { until, makeRepo } from '../test/helpers.js';
 import { OUT, ROOT, ok, qaEnv, runner, win32 } from './lib.mjs';
+import { closeFetch } from './close-fetch.mjs';
 import { Updater } from '../server/update.js';
 import { artefacts, shellArtefact } from '../desktop/scripts/package.mjs';
 import { NODE_VERSION, hostTarget } from '../desktop/scripts/fetch-node.mjs';
@@ -77,11 +78,8 @@ function machine(extra = {}, { withNode = true } = {}) {
   return { ...env, ...extra };
 }
 
-// Each request to a wisp under test on a connection of its own. A pooled one can go stale while
-// sh()'s execFileSync blocks this loop: wisp closes it after 65 idle seconds (KEEP_ALIVE_MS), this
-// process can't see that until it runs again, and the next request goes out on it and gets a reset
-// ("fetch failed") from a wisp that's still up. Slow npx on Windows took INST-04b to 04d past that.
-const local = (url, opts = {}) => fetch(url, { ...opts, headers: { ...opts.headers, connection: 'close' } });
+// Each request to a wisp under test on a connection of its own, its body read at once (qa/close-fetch.mjs).
+const local = closeFetch;
 const health = async (port) => (await local(`http://127.0.0.1:${port}/api/health`)).json();
 const up = (port, what = 'wisp') => until(() => health(port), { timeout: 60_000, every: 200, what });
 const down = (port) => until(() => health(port).then(() => false, () => true), { timeout: 20_000, every: 100, what: `port ${port} to free up` });
