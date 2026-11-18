@@ -99,6 +99,13 @@ task's, not WebKit): `packages/ui/src/css/app-frame.css`. Nothing is masked for 
 
 A place where v2 does better than v1 on purpose. Each names its rule below and its test.
 
+- **Fewer options on screen (the 2026-11-18 UX proposals, owner's ask, decided by the owner's delegate)**: the composer's
+  footer (one `+` menu, mode, harness · model, where, Send; features on show as removable chips), two-line task rows
+  with hover actions, one head action bar, side-panel tabs only with content, one menu order, quiet turn footers, one
+  usage line and one tip on Home, installed harnesses only in the picker, a shorter topbar. Each change's screens get
+  an `owner` rule in the parity list as it lands, with its test; docs/ux/2026-11-18-desktop.md has the why and the
+  sources. Every v1 feature stays reachable (D-0049) and every `launcher.*` part keeps its name.
+
 - **The Files block cuts a path in its middle, not at its end** (`block.files.path`; test
   `files_block_path_truncates_in_the_middle_so_the_name_stays_visible`, `packages/ui/test/blocks-files.test.tsx`).
   v1's `.b-files .path` was one span cut with an ellipsis at its end, so on a 320 px phone a long path lost the file
@@ -129,6 +136,16 @@ A place where v2 does better than v1 on purpose. Each names its rule below and i
   `packages/ui/test/home-next.test.tsx`). v1's Home listed the same titles as the list beside it. Each row now says
   why it needs you under its title (the question it asks, else the start of its answer) and its status in its tone
   at the right, as the list's rows do. Masked: the rows (`split.next`).
+
+- **Submenus open on hover on desktop** (the owner's ruling, 2026-11-17: "submenus open on hover on desktop; drill-in
+  stays on touch"; tests in `packages/ui/test/menu-flyout.test.tsx` and `menu-aim.test.ts`). v1 #786 drilled into a
+  submenu on a click: its items replaced the menu under a Back row. With a hovering fine pointer in the browser, v2
+  shows the submenu as a flyout beside its row (Zag's nested menus): hover opens it after a short delay, → / Enter / a
+  click too; it opens to the right, flips left at the screen's edge and slides to stay on it; a safe triangle keeps it
+  open while the pointer crosses the rows on the way; leaving for another row, ← or Escape closes it (Escape only the
+  flyout, its row lit again); choosing an item closes the whole menu. The flyout is the kit's menu card (same rows,
+  tokens, `data-part` `<menu>.flyout`), its first item level with its row. Touch screens and the phone apps keep v1's
+  drill-in unchanged. Masked: already covered by `task.right-click list.menu.*`.
 
 ## Rules (read by `qa/parity.mjs`)
 

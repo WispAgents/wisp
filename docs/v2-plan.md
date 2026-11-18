@@ -58,6 +58,17 @@ turn. When a screen or feature contradicts one, that's a bug: fix it toward the 
 - **Sandboxes**: in the plan; they use the main box's subscriptions; usable as the main prompt, a delegate and judges
   (11-11 19:52).
 - **Crew and triggers** get more ways to start tasks and crew work; an event system that is fast and clear (11-09).
+- **Fewer options on screen: the 2026-11-18 UX proposals** (owner, 2026-11-17: "run some UI consultant subagents for
+  desktop, mobile and web … propose UI/UX changes, decide which make sense … minimize the number of options showing, use
+  submenus … work on the composer, the task bar, the task page and the right panel"; decided by the owner's delegate
+  2026-11-18 after QA round 5 found nothing). Proposals with their sources and mocks: docs/ux/2026-11-18-{desktop,phone,grid}.md.
+  Building: desktop 1-9, 11, 13 (a question stays above the reply box; two-line task rows with hover actions; one
+  composer footer with `+`, mode, harness · model, where, Send; one head action bar; side-panel tabs with content and
+  counts; one menu order; quiet turn footers; one usage line and one tip on Home; installed harnesses only; a shorter
+  topbar; the Shell font); phone 1-14; Grid 1-11. Not now: desktop 10 (folding the list below 1440 goes further than
+  the 1180 rule just landed) and 12 (Transcript as a view switch: check on a running task first). These are owner-ruled
+  departures from v1 (design/v1-reference/allowed.md §7); every feature stays reachable and every `launcher.*` part keeps
+  its name.
 - **Auto disabled until the owner reworks it** (decided by the owner, 2026-11-17: "Disable the Auto thing (don't remove
   it), it needs more work I'll do later"). The code stays; one switch, the server setting `runtime.auto` (default off,
   `plugins/runtime/host/wisp-plugin.json`), turns all of it back on: New task never offers or starts on Auto (no Auto
