@@ -167,6 +167,8 @@ pub async fn run(ctx: &Ctx, call: &Call, st: &State, task: &str, turn: &str) -> 
         }
     }
     save(st, &a).await?;
+    // it ran in the background: say it's over (a watcher, a test, never a poll)
+    ctx.emit(call, &wisp_threads_api::Audited { audit: a.clone() });
     Ok(a)
 }
 

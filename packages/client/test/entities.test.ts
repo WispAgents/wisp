@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import type { EntityOp, Topic } from '@wisp/protocol';
 import { createEntityStore } from '../src/entities.ts';
+import { restoreFirstPaint } from '../src/first-paint.ts';
 import { entityKey, peerId } from '../src/ids.ts';
 import type { LocalOp } from '../src/ops.ts';
 import { effect } from '../src/signals.ts';
@@ -238,4 +239,47 @@ function runCase(seed: number): void {
 
 test('property: any interleaving of patches from two peers and commands acked or rejected in any order converges to the server state', () => {
   for (let seed = 1; seed <= 400; seed++) runCase(seed);
+});
+
+test('a topic is loaded once its whole snapshot lands or first paint restores it as synced, and not after a reset', () => {
+  const { reader, writer } = createEntityStore();
+  const list = 'list' as Topic;
+  const loaded = reader.loaded(A, list);
+  assert.equal(loaded(), false, 'nothing yet');
+  // a page of a snapshot still coming: not whole yet
+  writer.snapshotPage(A, list, [{ e: 'session', id: 's1', v: { id: 's1' } }]);
+  assert.equal(loaded(), false, 'one page of several');
+  // the whole snapshot, empty: an empty list is then really empty
+  writer.snapshot(A, list, []);
+  assert.equal(loaded(), true, 'a whole (empty) snapshot');
+  assert.equal(reader.loaded(B, list)(), false, 'per peer');
+  assert.equal(reader.loaded(A, 'config' as Topic)(), false, 'per topic');
+  // a reset (a new epoch): the cache is no longer trusted
+  writer.resetPeer(A);
+  assert.equal(loaded(), false, 'after a reset');
+  // first paint: the saved link had the topic whole
+  writer.restore(A, 3, [], [list]);
+  assert.equal(loaded(), true, 'restored as synced');
+  writer.restore(B, 3, []);
+  assert.equal(reader.loaded(B, list)(), false, 'restored rows alone are not the whole topic');
+  // it is a signal: an effect sees it change
+  const seen: boolean[] = [];
+  const stop = effect(() => void seen.push(reader.loaded(B, list)()));
+  writer.snapshot(B, list, []);
+  stop();
+  assert.deepEqual(seen, [false, true]);
+});
+
+test('first paint counts the topics its saved link held as loaded, synced or held as of a seq, and no others', () => {
+  const { reader, writer } = createEntityStore();
+  const saved = new Map([
+    [A, { link: { epoch: 'e1', cursor: 9, synced: ['list' as Topic], pending: [], held: [['crew' as Topic, 4] as [Topic, number]] }, rows: [] }],
+    [B, { rows: [] }],
+  ]);
+  restoreFirstPaint(writer, saved);
+  assert.equal(reader.loaded(A, 'list' as Topic)(), true, 'synced');
+  // held as of an older seq: its rows are the whole topic then; the stream sends what changed since (no snapshot)
+  assert.equal(reader.loaded(A, 'crew' as Topic)(), true, 'held');
+  assert.equal(reader.loaded(A, 'config' as Topic)(), false, 'not saved');
+  assert.equal(reader.loaded(B, 'list' as Topic)(), false, 'rows with no link');
 });

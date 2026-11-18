@@ -18,8 +18,9 @@ afterEach(() => {
   document.body.innerHTML = '';
 });
 
-async function start(platform: Platform) {
-  const mock = createMockPeer({ epoch: 'e1' });
+/** `computers`: the seed with a project on this computer (a git repo), so New task starts in a folder */
+async function start(platform: Platform, o: { computers?: boolean } = {}) {
+  const mock = createMockPeer({ epoch: 'e1', ...(o.computers && { computers: true }) });
   const home = peerId('local');
   const client = createClient({ clientId: 'c1', build: 't', home, width: 390 });
   const shell = createShell({ client, toaster: createToaster(), platform, home, window: window as unknown as ShellWindow });
@@ -197,6 +198,38 @@ for (const kind of ['android', 'ios'] as const) {
     (out as HTMLElement).click();
     await until(() => root.querySelector('[data-kit="frame"]')?.getAttribute('data-page') === 'list');
     expect(root.querySelector('[data-kit="frame"]')?.getAttribute('data-page')).toBe('list');
+  });
+}
+
+// QA r2 #2: with a folder picked (a git repo) Worktree is in More too, a toggle showing its state, and a tap flips it
+for (const kind of ['android', 'ios'] as const) {
+  test(`new_task_on_${kind}_in_a_folder_has_worktree_in_more_with_its_state`, async () => {
+    const { client, root } = await start(phone(kind), { computers: true });
+    await until(() => client.entities.list('session')().length > 0);
+    await until(() => root.querySelector('[data-part~="phone.tasks.new"]') !== null);
+    (root.querySelector('[data-part~="phone.tasks.new"]') as HTMLElement).click();
+    await until(() => root.querySelector('[data-part~="launcher.projects"]')?.textContent?.includes('wisp') === true);
+    expect(root.querySelector('[data-part~="launcher.projects"]')?.textContent, 'the folder').toContain('wisp');
+    expect(root.querySelector('[data-part~="launcher.worktree"]'), 'not in the bar: in More').toBeNull();
+    const more = root.querySelector<HTMLElement>('[data-part~="launcher.more"]');
+    expect(more?.getAttribute('aria-haspopup')).toBe('menu');
+    more?.click();
+    const row = (): HTMLElement | undefined =>
+      [...document.querySelectorAll<HTMLElement>('[data-kit="menu"] [role^="menuitem"]')].find((e) => /^(Worktree|In place)/.test((e.textContent ?? '').trim()));
+    await until(() => row() !== undefined);
+    const before = row();
+    expect(before, 'Worktree in More').toBeDefined();
+    // a toggle: its state on the row, the kit's check at the end (on = a worktree), its words following it
+    const on = (e: HTMLElement | undefined): boolean => (e?.querySelector('[data-icon="check"]') ?? null) !== null;
+    const was = on(before);
+    expect((before?.textContent ?? '').trim().startsWith(was ? 'Worktree' : 'In place'), 'its words follow its state').toBe(true);
+    // the tap flips it (the worktree setting, optimistic), seen on the bar's More as reopened
+    before?.click();
+    await until(() => row() === undefined);
+    more?.click();
+    await until(() => row() !== undefined && on(row()) !== was);
+    expect(on(row()), 'flipped').toBe(!was);
+    expect((row()?.textContent ?? '').trim().startsWith(was ? 'In place' : 'Worktree'), 'and its words').toBe(true);
   });
 }
 

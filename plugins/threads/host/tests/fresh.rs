@@ -73,7 +73,29 @@ impl Plugin for Runtime {
         s.command::<r::Probe, _, _>(move |_, _, a: r::ProbeArgs| {
             me.probes.lock().unwrap().push(a.question);
             let out = me.answer.lock().unwrap().clone().unwrap_or_else(|| Ok(String::new()));
-            async move { out.map(|text| r::ProbeAnswer { text, cost_usd: None }).map_err(WireError::conflict) }
+            async move {
+                // a copy of the conversation takes a while to answer: a test must wait on the audit's end, not on luck
+                tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+                out.map(|text| r::ProbeAnswer { text, cost_usd: None }).map_err(WireError::conflict)
+            }
+        });
+        Ok(())
+    }
+}
+
+/// Hears each `threads.audited`: the audit runs in the background, and its event is the sign it ended.
+struct Watch(tokio::sync::mpsc::UnboundedSender<wisp_threads_api::Audit>);
+
+impl Plugin for Watch {
+    fn manifest(&self) -> Manifest {
+        Manifest::from_value(json!({ "wispPlugin": 1, "id": "test.watch", "version": "1.0.0", "api": "^1", "activation": ["onStartup"] }))
+            .unwrap()
+    }
+    fn setup(&self, s: &mut Setup) -> Result<()> {
+        let tx = self.0.clone();
+        s.on::<wisp_threads_api::Audited, _, _>(move |_ctx, e| {
+            let _ = tx.send(e.audit);
+            async {}
         });
         Ok(())
     }
@@ -83,6 +105,15 @@ struct Fixture {
     k: Kernel,
     rt: Runtime,
     home: std::path::PathBuf,
+    audited: tokio::sync::Mutex<tokio::sync::mpsc::UnboundedReceiver<wisp_threads_api::Audit>>,
+}
+
+impl Fixture {
+    /// The next audit to end (its `threads.audited`). The bound only turns a lost event into a failure, not a hang.
+    async fn audited(&self) -> wisp_threads_api::Audit {
+        let mut rx = self.audited.lock().await;
+        tokio::time::timeout(std::time::Duration::from_secs(30), rx.recv()).await.expect("the audit ended").expect("the watch is on")
+    }
 }
 
 async fn kernel(name: &str) -> Fixture {
@@ -93,8 +124,9 @@ async fn kernel(name: &str) -> Fixture {
     rt.task("t1", None);
     rt.task("c1", Some("t1"));
     let store = Store::open(Location::Memory, Arc::new(SystemClock)).unwrap();
-    let k = TestApp::new().service(store).service(Paths::new(&home)).with(ThreadsPlugin).with(rt.clone()).start().await;
-    Fixture { k, rt, home }
+    let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
+    let k = TestApp::new().service(store).service(Paths::new(&home)).with(ThreadsPlugin).with(rt.clone()).with(Watch(tx)).start().await;
+    Fixture { k, rt, home, audited: tokio::sync::Mutex::new(rx) }
 }
 
 async fn call(k: &Kernel, cmd: &str, args: Value) -> std::result::Result<Value, WireError> {
@@ -189,11 +221,8 @@ async fn end(f: &Fixture, turn_id: &str) {
     .unwrap();
     let ctx = f.k.ctx("wisp.runtime").unwrap();
     ctx.emit(&ctx.root_call(), &e);
-    f.k.idle().await;
-    // the audit runs in the background
-    for _ in 0..50 {
-        tokio::task::yield_now().await;
-    }
+    // the turn's end is handled (health, the hook's count, whether to audit); an audit then runs in the background,
+    // and a test that wants it waits on its end (`Fixture::audited`)
     f.k.idle().await;
 }
 
@@ -223,6 +252,8 @@ async fn the_audit_is_off_by_default_and_on_says_what_the_compaction_lost_once()
     end(&f, "u2").await;
     assert!(f.rt.probes.lock().unwrap().is_empty());
     end(&f, "u1").await;
+    let done = f.audited().await;
+    assert_eq!((done.turn.as_str(), done.kept, done.total), ("u1", 2, 3));
     let probes = f.rt.probes.lock().unwrap().clone();
     assert_eq!(probes.len(), 1);
     assert!(probes[0].contains("Do not use tools"), "{}", probes[0]);
@@ -243,6 +274,7 @@ async fn the_audit_is_off_by_default_and_on_says_what_the_compaction_lost_once()
     *f.rt.answer.lock().unwrap() = Some(Err("This task's agent can't answer on a copy of its conversation.".into()));
     *f.rt.turns.lock().unwrap() = vec![compacted("u5", 5)];
     end(&f, "u5").await;
+    assert_eq!(f.audited().await.status, wisp_threads_api::AuditStatus::Skipped);
     let a = call(&f.k, "threads.audits", json!({ "id": "t1" })).await.unwrap();
     assert_eq!(a.as_array().unwrap().len(), 2);
     let skipped = a.as_array().unwrap().iter().find(|x| x["turn"] == "u5").unwrap();
@@ -269,7 +301,8 @@ async fn compactions_a_hook_counted_are_kept_on_the_turn_and_audited() {
     let m = marks.iter().find(|m| m.turn_id.as_str() == "u1").expect("the turn is marked");
     assert_eq!(m.value, json!({ "fresh": true, "compactions": 2 }), "the count beside what the slot had");
     assert!(!dir.join("compactions").exists(), "counted once");
-    assert_eq!(f.rt.probes.lock().unwrap().len(), 1, "a counted compaction is audited");
+    assert_eq!(f.audited().await.turn, "u1", "a counted compaction is audited");
+    assert_eq!(f.rt.probes.lock().unwrap().len(), 1);
     let _ = std::fs::remove_dir_all(&f.home);
 }
 

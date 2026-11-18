@@ -20,6 +20,7 @@
       { "id": "threads.fresh", "title": "Start a new conversation on the same task from a brief; the old one stays linked" },
       { "id": "threads.audits", "title": "What each compaction kept of a task's goal, constraints, decisions and what failed", "readOnly": true }
     ],
+    "events": ["threads.audited"],
     "settings": [
       { "key": "threads.compactAudit", "type": "bool", "default": false, "title": "Check compactions: after a compaction, wisp asks a copy of the conversation what it still remembers of the task's Notes and reminds the agent of what it lost (one short extra run each)" }
     ]

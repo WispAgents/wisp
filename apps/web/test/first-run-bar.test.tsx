@@ -20,12 +20,14 @@ afterEach(() => {
   document.body.innerHTML = '';
 });
 
-/** the shell drawn at once, the mock's frames still coming (a cold start: nothing saved in this browser) */
-function start(platform: Platform, o: { firstRun?: boolean } = {}) {
+/** as main.tsx does: the client started, then the shell drawn, the mock's frames still coming (a cold start: nothing
+ *  saved in this browser) */
+async function start(platform: Platform, o: { firstRun?: boolean; width?: number } = {}) {
   const mock = createMockPeer({ epoch: 'e1', ...(o.firstRun && { firstRun: true }) });
   const home = peerId('local');
-  const client = createClient({ clientId: 'c1', build: 't', home, width: 390 });
+  const client = createClient({ clientId: 'c1', build: 't', home, width: o.width ?? 390 });
   const shell = createShell({ client, toaster: createToaster(), platform, home, window: window as unknown as ShellWindow });
+  await client.start([{ peer: home, name: 'mock', transport: memTransport(mock) }]);
   const root = document.createElement('div');
   document.body.append(root);
   const stop = shell.render(root);
@@ -33,8 +35,7 @@ function start(platform: Platform, o: { firstRun?: boolean } = {}) {
     stop();
     shell.dispose();
   });
-  const started = client.start([{ peer: home, name: 'mock', transport: memTransport(mock) }]);
-  return { client, root, started };
+  return { client, root };
 }
 
 /** the bar's mode on each change from its first draw: full has Delegate, a first run keeps it behind More options */
@@ -51,20 +52,19 @@ function watchMode(root: HTMLElement): { modes: string[]; stop: () => void } {
 }
 
 const phone: Platform = nullPlatform({ kind: 'android', phone: true, mobile: true });
-const browser: Platform = nullPlatform({ kind: 'web' });
+const browser: Platform = nullPlatform({ kind: 'browser' });
 
 for (const [where, platform] of [
   ['phone', phone],
   ['browser', browser],
 ] as const) {
   test(`on_a_${where}_with_tasks_new_tasks_bar_draws_full_and_never_flips_to_the_first_run_bar_while_it_loads`, async () => {
-    const { client, root, started } = start(platform);
+    const { client, root } = await start(platform, where === 'browser' ? { width: 1280 } : {});
     const w = watchMode(root);
     if (where === 'phone') {
       await until(() => root.querySelector('[data-part~="phone.tasks.new"]') !== null);
       root.querySelector<HTMLElement>('[data-part~="phone.tasks.new"]')?.click();
     }
-    await started;
     await until(() => client.entities.list('session')().length > 0 && w.modes.length > 0);
     // a few frames more: the saved answer and the list both in
     await until(() => false, 300);
@@ -74,9 +74,8 @@ for (const [where, platform] of [
 }
 
 test('with_no_task_yet_the_bar_settles_on_the_first_run_once_and_stays_there', async () => {
-  const { client, root, started } = start(browser, { firstRun: true });
+  const { client, root } = await start(browser, { firstRun: true, width: 1280 });
   const w = watchMode(root);
-  await started;
   await until(() => client.entities.loaded(peerId('local'), 'list')() && w.modes.at(-1) === 'first');
   await until(() => false, 300);
   w.stop();

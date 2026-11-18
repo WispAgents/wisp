@@ -22,7 +22,7 @@ export function peekReader(row: unknown): EntityReader {
   const unused = (): never => {
     throw new Error('not used by this test');
   };
-  return { peek: <T>() => row as DeepReadonly<T> | undefined, row: unused, keys: unused, list: unused, pending: unused };
+  return { peek: <T>() => row as DeepReadonly<T> | undefined, row: unused, keys: unused, list: unused, pending: unused, loaded: unused };
 }
 
 /** the JSON-patch ops of the i-th entity op, [] when it is not a patch */

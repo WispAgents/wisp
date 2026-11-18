@@ -7,8 +7,18 @@ import type { LauncherTool } from '@wisp/ui';
 /** what a first run keeps of each group of the bar: attach (it's how a prompt gets its files) and the phone's mic */
 const KEEP: Readonly<Record<'lead' | 'mid' | 'tail', readonly string[]>> = { lead: ['attach', 'mic'], mid: [], tail: [] };
 
-/** First run: not opened yet (`full`), no task of yours yet, and the saved answer is in (no flash for a returning user). */
-export const firstRunOf = (full: boolean, mine: boolean, ready = true): boolean => ready && !full && !mine;
+/** The bar as drawn: full, or the first run's. */
+export type BarMode = 'full' | 'first';
+
+/** What the bar is now, from what it drew (ADR-0017: nothing jumps while it loads). Full once opened (`full`) or with a
+ *  task of yours (`mine`); the first run only once the data says so: the saved answer in (`ready`) and the task list
+ *  in whole (`loaded`), with none of yours. Until then the bar keeps what it drew, so it never goes full, first run,
+ *  full again as the stores come in (that replaced its tools and lost a tap on More). It starts full: a returning
+ *  user's bar, the common case. */
+export function barMode(drawn: BarMode, d: { readonly full: boolean; readonly mine: boolean; readonly ready: boolean; readonly loaded: boolean }): BarMode {
+  if (d.full || d.mine) return 'full';
+  return d.ready && d.loaded ? 'first' : drawn;
+}
 
 /** The bar's group as the first run shows it: what it keeps, and More options at the end of the tail. */
 export function firstRunTools(first: boolean, group: 'lead' | 'mid' | 'tail', tools: readonly LauncherTool[], more?: LauncherTool): LauncherTool[] {

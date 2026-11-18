@@ -226,6 +226,22 @@ pub struct Audit {
     pub at: i64,
 }
 
+/// `threads.audited`: a compaction's audit ended, done or skipped (its final `threads_audit` row is saved). What it
+/// kept and lost, for whoever watches (a channel, a test waiting on it: it runs in the background, ADR-0096).
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export, export_to = "threads/")]
+pub struct Audited {
+    pub audit: Audit,
+}
+
+impl wisp_kernel::Event for Audited {
+    const TYPE: &'static str = "threads.audited";
+    fn subject(&self) -> Option<String> {
+        Some(self.audit.task.clone())
+    }
+}
+
 /// Where an audit is: asking, done, or skipped (with why). One left `running` by a restart reads as skipped.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "lowercase")]

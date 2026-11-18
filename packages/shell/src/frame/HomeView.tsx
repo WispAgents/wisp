@@ -33,7 +33,7 @@ import { feedbackCommand, isFeedback } from './feedback.ts';
 import { autoPick, neverRule, runnerParts, runnerPick, overrideOf, popOf, pct, PREVIEW_DEBOUNCE, shortLabel, usd, type AutoPreview } from './auto.ts';
 import { defaultHarness, harnessOf } from './harness.ts';
 import { MAX_RUNNERS, newGroup, nextRun } from './runs-small.ts';
-import { firstRunOf, firstRunTools, launcherFull } from './first-run.ts';
+import { barMode, firstRunTools, launcherFull, type BarMode } from './first-run.ts';
 import { sandboxPeers, targetValue, whereItems } from './where.ts';
 import { placeOn } from './run-on.ts';
 import { dirsOf, launchOf, parsePick, pickLabel, pickedProjects, placePick } from './project-pick.ts';
@@ -191,7 +191,10 @@ export function HomeView(props: { readonly onBack?: () => void }): JSX.Element {
   createEffect(() => {
     if (mine() && full() !== true) fullStore.set(true);
   });
-  const firstRun = (): boolean => firstRunOf(full() === true, mine(), ready());
+  // the task list in whole: an empty one is then really empty, not still coming
+  const loaded = useSignal(shell.client.entities.loaded(home, 'list'));
+  const barNow = createMemo<BarMode>((drawn) => barMode(drawn, { full: full() === true, mine: mine(), ready: ready(), loaded: loaded() }), 'full');
+  const firstRun = (): boolean => barNow() === 'first';
   const openFull = (): void => {
     fullStore.set(true);
     input?.focus();

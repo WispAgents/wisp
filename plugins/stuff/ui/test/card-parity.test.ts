@@ -30,7 +30,8 @@ test('a_cards_facts_line_says_picture_and_its_time_today_is_the_hour', () => {
   const look = cardLook(item({ kind: 'image', name: 'sunset.png', title: 'sunset', size: 81415 }), t, NOW);
   expect(look.facts).toBe('Picture · 80 KB');
   expect(look.label).toBe('Picture: sunset');
-  expect(look.time.label).toMatch(/22:31/);
+  // today reads as the hour (v1): 22:31 on a 24-hour locale, 10:31 PM on en-US (CI's)
+  expect(look.time.label).toMatch(/22:31|10:31/);
   expect(look.version).toBeUndefined();
   expect(cardLook(item({ kind: 'doc', name: 'r.md', size: 151, rev: 3, updatedAt: at, prev: { at } }), t, NOW).version?.label).toBe('v3');
 });
