@@ -68,10 +68,10 @@ fn apply_opts(s: &mut Session, item: &QueueItem) {
     let run = opts.and_then(|o| o.get("run"));
     if let Some(agent) = opt_str(run, "agent").filter(|a| *a != s.agent) {
         s.agent = agent;
-        // another harness keeps its own conversation, and its own default model and thinking unless the run names them
+        // another harness keeps its own conversation and its own default model unless the run names one (a model is one
+        // harness's); the user's thinking level carries over, the new harness taking its nearest (v1 handoff: max → xhigh)
         s.resume_id = None;
         s.model.clear();
-        s.effort.clear();
     }
     // a model or thinking the run names, '' its harness's default (QA desktop r3 #1: "Default" kept the task's Opus)
     let named = |k: &str| run.and_then(|r| r.get(k)).and_then(Value::as_str).map(str::to_owned);
@@ -829,10 +829,10 @@ mod tests {
         let mut s = on_opus();
         super::apply_opts(&mut s, &item(&json!({ "run": { "agent": "claude", "model": "sonnet" } })));
         assert_eq!((s.model.as_str(), s.effort.as_str()), ("sonnet", "high"));
-        // another harness named alone: its own default, not Opus
+        // another harness named alone: its own default model, not Opus; the thinking level carries (v1 handoff)
         let mut s = on_opus();
         super::apply_opts(&mut s, &item(&json!({ "run": { "agent": "codex" } })));
-        assert_eq!((s.agent.as_str(), s.model.as_str(), s.effort.as_str()), ("codex", "", ""));
+        assert_eq!((s.agent.as_str(), s.model.as_str(), s.effort.as_str()), ("codex", "", "high"));
         assert!(s.resume_id.is_none());
     }
 }
