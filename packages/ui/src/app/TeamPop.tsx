@@ -12,6 +12,7 @@ import { Input } from '../controls/Input.tsx';
 import type { IconName } from '../content/icons.ts';
 import { flag, type KitProps, type PartName } from '../core/props.ts';
 import { WithAct, type Act } from './act.tsx';
+import { repeatsSurfaceTitle } from '../controls/surface-title.ts';
 import '../css/app-team.css';
 
 export interface TeamVote {
@@ -56,11 +57,15 @@ export interface TeamPopProps extends KitProps {
 
 export function TeamPop(props: TeamPopProps): JSX.Element {
   const part = (): PartName => props.part ?? 'ui.teamPop';
+  // in a sheet of its own name (the phone's Delegate, QA r7 #6) the sheet's head says it: the panel only introduces it
+  const repeats = repeatsSurfaceTitle(() => props.title);
   return (
     <div data-kit="team-pop" data-part={part()} data-wide={flag(props.wide)} role="group" aria-label={props.title}>
       <header data-kit="tp-head">
         <div data-kit="tp-title">
-          <b>{props.title}</b>
+          <Show when={!repeats()}>
+            <b>{props.title}</b>
+          </Show>
           <small>{props.intro}</small>
         </div>
         {props.head}

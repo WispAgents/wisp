@@ -183,9 +183,11 @@ impl Harness for ClaudeHarness {
             if let Ok(mut b) = self.bin.lock() {
                 *b = Some(bin.clone());
             }
-            // Default with the model it runs: Claude Code's own config, else its plan's (UX 2026-11-18 #9, QA r6 #4)
+            // Default with the model its own config names (UX 2026-11-18 #9). The plan's model needs `claude auth status`,
+            // a process: never at detect (every start, and a fake CLI recorded it as a run), only when the chip asks
+            // (`default_model`, cached)
             self.plan.forget();
-            let resolves = self.plan.or_config(sys, &bin, None).await;
+            let resolves = default_model::resolved(sys, None).await;
             let models = resolves.map(|r| {
                 let mut all = self.info().models.clone();
                 if let Some(d) = all.iter_mut().find(|m| m.id.is_empty()) {

@@ -2,7 +2,7 @@
 // mounted (hidden when not selected), so switching back keeps scroll and input.
 import * as tabs from '@zag-js/tabs';
 import { normalizeProps, useMachine } from '@zag-js/solid';
-import { createMemo, createUniqueId, For, Show, type JSX } from 'solid-js';
+import { createEffect, createMemo, createUniqueId, For, on, onCleanup, onMount, Show, type JSX } from 'solid-js';
 import { flag, sub, type KitProps, type PartName } from '../core/props.ts';
 import { Icon } from '../content/Icon.tsx';
 import type { IconName } from '../content/icons.ts';
@@ -61,8 +61,10 @@ export function Tabs(props: TabsProps): JSX.Element {
   }));
   const api = createMemo(() => tabs.connect(service, normalizeProps));
   const part = (): PartName => props.part ?? 'ui.tabs';
+  let root: HTMLElement | undefined;
+  useScrollEnds(() => root, () => look() !== 'web', () => api().value);
   return (
-    <div {...api().getRootProps()} data-kit="tabs" data-part={part()} data-variant={props.variant ?? 'line'}>
+    <div {...api().getRootProps()} ref={(el) => (root = el)} data-kit="tabs" data-part={part()} data-variant={props.variant ?? 'line'}>
       <div {...api().getListProps()} aria-label={props['aria-label']} data-kit="tab-list" data-part={sub(part(), 'list')} data-fill={flag(props.fill)} data-fieldset={flag(props.fieldset)}>
         <For each={props.items}>
           {(item) => (
@@ -95,4 +97,46 @@ export function Tabs(props: TabsProps): JSX.Element {
       </For>
     </div>
   );
+}
+
+/** A phone's tab row that runs out of room scrolls (QA r7 #5): the ends it can still scroll to are marked for the look
+ * to fade, so a name is never cut hard at the edge, and the open tab is kept in view (as it opens, as the row is laid
+ * out or resized). The browser's rows are left alone. */
+function useScrollEnds(row: () => HTMLElement | undefined, phone: () => boolean, value: () => unknown): void {
+  onMount(() => {
+    const el = row();
+    if (!el || !phone()) return;
+    const mark = (): void => markEnds(el);
+    el.addEventListener('scroll', mark, { passive: true });
+    const seen = typeof ResizeObserver === 'undefined' ? undefined : new ResizeObserver(() => reveal(el));
+    seen?.observe(el);
+    const list = el.querySelector<HTMLElement>("[data-kit='tab-list']");
+    if (list) seen?.observe(list);
+    reveal(el);
+    onCleanup(() => {
+      el.removeEventListener('scroll', mark);
+      seen?.disconnect();
+    });
+  });
+  createEffect(on(value, () => phone() && ((el) => el && reveal(el))(row()), { defer: true }));
+}
+
+/** the ends of a scrolling tab row it can still scroll to: `data-scroll-start`, `data-scroll-end` */
+function markEnds(el: HTMLElement): void {
+  const max = el.scrollWidth - el.clientWidth;
+  const at = el.scrollLeft;
+  el.toggleAttribute('data-scroll-start', max > 1 && at > 1);
+  el.toggleAttribute('data-scroll-end', max > 1 && at < max - 1);
+}
+
+/** the open tab scrolled into the row's view (only the row moves, never the page), then its ends marked */
+function reveal(el: HTMLElement): void {
+  const tab = el.querySelector<HTMLElement>("[data-kit='tab'][data-selected]");
+  if (tab) {
+    const box = el.getBoundingClientRect();
+    const r = tab.getBoundingClientRect();
+    if (r.right > box.right) el.scrollLeft += r.right - box.right;
+    else if (r.left < box.left) el.scrollLeft -= box.left - r.left;
+  }
+  markEnds(el);
 }

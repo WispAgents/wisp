@@ -21,6 +21,7 @@ import { TriggerButton } from './trigger.tsx';
 import { usePlatform } from '../platform/PlatformLook.tsx';
 import { useGestureHost } from '../gestures/host.tsx';
 import { phoneOverlays } from './phone-part.ts';
+import { SurfaceTitle } from './surface-title.ts';
 import type { Detent } from './phone-math.ts';
 
 /** v1: v1's .modal (640 wide, 18px 20px 20px, its 600 18px title): the crew editor */
@@ -130,7 +131,11 @@ function Surface(props: DialogProps & { readonly kind: Kind; readonly parts: Par
           style={styleOf({}, props.vars)}
         >
           <Show when={props.kind === 'sheet'}>
-            <span data-kit="sheet-handle" aria-hidden="true" />
+            {/* the phone apps' grabber is a button named Close (QA r7 #1): a screen reader's way out, as the sheet hides
+                everything behind it; what a tap on it does is the phone chunk's (phone.tsx bindGrabber) */}
+            <Show when={look() !== 'web'} fallback={<span data-kit="sheet-handle" aria-hidden="true" />}>
+              <button type="button" data-kit="sheet-handle" aria-label={t('close')} />
+            </Show>
           </Show>
           <header data-kit="dialog-head" data-part={sub(props.part, 'head')}>
             <h2 {...props.parts.title()} data-kit="dialog-title" data-part={sub(props.part, 'title')}>
@@ -156,7 +161,7 @@ function Surface(props: DialogProps & { readonly kind: Kind; readonly parts: Par
             )}
           </Show>
           <div data-kit="dialog-body" data-part={sub(props.part, 'body')}>
-            {props.children}
+            <SurfaceTitle.Provider value={() => props.title}>{props.children}</SurfaceTitle.Provider>
           </div>
           <Show when={props.footer}>
             <footer data-kit="dialog-foot" data-part={sub(props.part, 'foot')}>

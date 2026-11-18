@@ -393,21 +393,12 @@ export function TurnView(props: TurnViewProps): JSX.Element {
   // every answer's actions are a menu on a phone: its ⋯ and a long-press on it (QA r6 #15); an older one's icons fold
   const folds = (): boolean => look() !== 'web' && props.tools.length > 0;
   const toolItems = (): MenuEntry[] => props.tools.map((x) => ({ value: x.id, label: x.label, icon: x.icon, ...(x.on !== undefined && { checked: x.on }), ...(x.act?.pending && { disabled: true }) }));
-  const openOnLift = (): void => {
-    const lift = (): void => {
-      removeEventListener('pointerup', lift, true);
-      removeEventListener('pointercancel', lift, true);
-      requestAnimationFrame(() => setMenuOpen(true));
-    };
-    addEventListener('pointerup', lift, true);
-    addEventListener('pointercancel', lift, true);
-  };
   const pickTool = (id: string): void => props.tools.find((x) => x.id === id)?.act?.onClick?.();
   const pressMenu = useGesture(
     'turn.long-press',
     // the hold ticks (the haptic); the menu opens as the finger lifts: opened under it, that lift is a press outside
     // the menu and closed it at once (QA r6 #15)
-    (el, host) => bindLongPress(el, { host, onLongPress: () => folds() && openOnLift() }),
+    (el, host) => bindLongPress(el, { host, onLift: true, onLongPress: () => folds() && setMenuOpen(true) }),
     () => (folds() ? [{ label: kitT('gesture.actions'), run: () => setMenuOpen(true) }] : []),
   );
   return (

@@ -112,6 +112,48 @@ export interface LongPressOptions {
   readonly onLongPress: () => void;
   /** the timer (tests pass a fake one) */
   readonly schedule?: Schedule;
+  /** run `onLongPress` once the finger is up (a menu opened under the finger would take its lift for a press outside
+   *  and close): at once if it already is, else on its touchend (or pointerup, a stream with no touch events).
+   *  Additive (QA r7, an answer's menu on Android). */
+  readonly onLift?: boolean;
+}
+
+/** the lift events of a finger on the screen, read on the window (it may lift anywhere) */
+const LIFTS = ['touchend', 'touchcancel', 'pointerup'] as const;
+
+/** A finger's press, for a long-press: whether it is still down and whether it moved; `whenUp` runs a function on the
+ *  frame after it lifts (at once if it already has). Android Chrome ends its pointer stream (pointercancel) as it takes
+ *  a long touch for itself, the finger still down until touchend. */
+function fingerPress() {
+  let held: { moved: boolean; down: boolean } | undefined;
+  let waiting: (() => void) | undefined;
+  const lifted = (): void => {
+    for (const k of LIFTS) removeEventListener(k, lifted, true);
+    if (held) held.down = false;
+    const run = waiting;
+    waiting = undefined;
+    if (run) requestAnimationFrame(run);
+  };
+  return {
+    start: (): void => {
+      held = { moved: false, down: true };
+      for (const k of LIFTS) addEventListener(k, lifted, true);
+    },
+    reset: (): void => {
+      held = undefined;
+      waiting = undefined;
+    },
+    moved: (): void => void (held && (held.moved = true)),
+    /** held down and still: Android's contextmenu after it took the touch is this press's */
+    still: (): boolean => held?.down === true && !held.moved,
+    whenUp: (run: () => void): void => {
+      if (held?.down) waiting = run;
+      else requestAnimationFrame(run);
+    },
+    dispose: (): void => {
+      for (const k of LIFTS) removeEventListener(k, lifted, true);
+    },
+  };
 }
 
 export function bindLongPress(el: HTMLElement, o: LongPressOptions): () => void {
@@ -120,6 +162,7 @@ export function bindLongPress(el: HTMLElement, o: LongPressOptions): () => void 
   let st: { x: number; y: number; cancel: () => void } | undefined;
   /** the press opened the menu: the click (and Android's own contextmenu) that follow belong to it */
   let fired = false;
+  const finger = fingerPress();
   const stop = (): void => {
     st?.cancel();
     st = undefined;
@@ -128,27 +171,35 @@ export function bindLongPress(el: HTMLElement, o: LongPressOptions): () => void 
     stop();
     fired = true;
     o.host.haptic('tap');
-    o.onLongPress();
+    if (o.onLift) finger.whenUp(o.onLongPress);
+    else o.onLongPress();
   };
   return all([
     timers.dispose,
+    finger.dispose,
     listen(el, 'pointerdown', (e) => {
       stop();
       fired = false;
+      finger.reset();
       if (e.pointerType !== 'touch' || !e.isPrimary || owns(e.target)) return;
       if (ownerOf(e.clientX, e.target, el) === 'system') return;
       st = { x: e.clientX, y: e.clientY, cancel: schedule(fire, LONG_PRESS_MS) };
+      finger.start();
     }),
     listen(el, 'pointermove', (e) => {
-      if (st && Math.hypot(e.clientX - st.x, e.clientY - st.y) > GESTURE_SLOP) stop();
+      if (st && Math.hypot(e.clientX - st.x, e.clientY - st.y) > GESTURE_SLOP) {
+        stop();
+        finger.moved();
+      }
     }),
     listen(el, 'pointerup', stop),
+    // the browser took the touch (a scroll, or its own long-press): the timer stops, the finger may still be down
     listen(el, 'pointercancel', stop),
     // a click from a key (Enter, a screen reader) is never the press's
     listen(el, 'keydown', () => void (fired = false), { capture: true }),
-    // Android's WebView sends its own contextmenu on a long touch: it is this gesture, run once
+    // Android's own contextmenu on a long touch is this gesture, run once (also after it ended the pointer stream)
     listen(el, 'contextmenu', (e) => {
-      if (!st && !fired) return;
+      if (!st && !fired && !finger.still()) return;
       e.preventDefault();
       if (!fired) fire();
     }),

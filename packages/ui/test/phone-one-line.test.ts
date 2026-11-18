@@ -118,3 +118,16 @@ test('a_tight_phone_bar_folds_the_pills_plus_and_model_before_anything_reaches_s
   expect(noComments(home)).toContain("[data-kit='runners']:where(:not([data-cmp]):not([data-trial])) > [data-kit='runner-btn'][data-def] > [data-kit='rb-h']");
   expect(noComments(home)).not.toMatch(/\[data-kit='runners'\]:not\(\[data-cmp\]\)[^{]*> \[data-kit='rb-h'\] \{\s*display: block/);
 });
+
+// QA r7 phone #3: the browser at a phone's width (no app) has the phone apps' unmeasured bar (first run): when its words
+// don't fit (bar-labels.ts sets data-tight), the mode and More options go to their icons, so More never runs under
+// Send or past the screen's edge; the tooltips name them
+test('a_tight_unmeasured_bar_in_the_browser_folds_the_mode_and_more_to_their_icons_qa_r7_3', () => {
+  const css = noComments(home);
+  const rule = /\[data-kit='launcher'\] \[data-kit='l-bar'\]\[data-tight\] > \[data-kit='mode-btn'\] > \[data-text='control'\],\s*\[data-kit='launcher'\] \[data-kit='l-bar'\]\[data-tight\] > \[data-a='more'\] > \[data-text='control'\] \{\s*display: none;/;
+  expect(css).toMatch(rule);
+  // after the first run's "Full auto beside its icon", so the tight form wins
+  const first = css.search(/\[data-kit='launcher'\]\[data-first-run\][^{]*\[data-kit='mode-btn'\] > \[data-text='control'\] \{/);
+  expect(first).toBeGreaterThan(-1);
+  expect(css.search(rule)).toBeGreaterThan(first);
+});

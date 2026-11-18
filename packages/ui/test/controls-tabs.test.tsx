@@ -1,6 +1,7 @@
 import { describe, expect, test, vi } from 'vitest';
 import { mount, part, tick } from './helpers.tsx';
 import { Tabs } from '../src/controls/Tabs.tsx';
+import { PlatformLookProvider } from '../src/platform/PlatformLook.tsx';
 import { Split, Splitter } from '../src/controls/Splitter.tsx';
 
 const key = (el: Element | null, k: string): void => {
@@ -75,5 +76,54 @@ describe('Splitter and Split', () => {
     expect(part('shell.split')?.getAttribute('data-kit')).toBe('split-stacked');
     expect(part('shell.split.start')?.textContent).toBe('list');
     expect(part('shell.split.grip')).toBeNull();
+  });
+});
+
+// QA r7 #5: a phone's tab row that runs out of room scrolls, marked at the ends it can still scroll to (the look's
+// stylesheet fades them, so no name is ever cut hard), and the open tab is scrolled into view. The browser's tabs are
+// left as they were (no marks).
+describe('a phone tab row that overflows (QA r7 #5)', () => {
+  const sized = (el: HTMLElement, scrollWidth: number, clientWidth: number): void => {
+    Object.defineProperty(el, 'scrollWidth', { configurable: true, get: () => scrollWidth });
+    Object.defineProperty(el, 'clientWidth', { configurable: true, get: () => clientWidth });
+  };
+  for (const look of ['android', 'ios', 'web'] as const) {
+    test(`on_${look}_the_rows_scroll_ends_are_${look === 'web' ? 'not_marked' : 'marked'}`, async () => {
+      mount(() => (
+        <PlatformLookProvider look={() => look}>
+          <Tabs items={items} aria-label="Side panel" part="side.tabs" />
+        </PlatformLookProvider>
+      ));
+      const root = part('side.tabs') as HTMLElement;
+      sized(root, 300, 200);
+      root.scrollLeft = 0;
+      root.dispatchEvent(new Event('scroll'));
+      await tick(5);
+      expect(root.hasAttribute('data-scroll-end')).toBe(look !== 'web');
+      expect(root.hasAttribute('data-scroll-start')).toBe(false);
+      root.scrollLeft = 100;
+      root.dispatchEvent(new Event('scroll'));
+      await tick(5);
+      expect(root.hasAttribute('data-scroll-start')).toBe(look !== 'web');
+      expect(root.hasAttribute('data-scroll-end')).toBe(false);
+    });
+  }
+
+  test('on_a_phone_the_open_tab_is_scrolled_into_view', async () => {
+    mount(() => (
+      <PlatformLookProvider look={() => 'android'}>
+        <Tabs items={items} aria-label="Side panel" part="side.tabs" />
+      </PlatformLookProvider>
+    ));
+    const root = part('side.tabs') as HTMLElement;
+    sized(root, 300, 200);
+    const shell = document.querySelector<HTMLElement>('[data-part="side.tabs.tab"][data-value="shell"]') as HTMLElement;
+    root.getBoundingClientRect = () => ({ left: 0, right: 200, width: 200, top: 0, bottom: 48, height: 48, x: 0, y: 0, toJSON: () => ({}) }) as DOMRect;
+    shell.getBoundingClientRect = () => ({ left: 240, right: 300, width: 60, top: 0, bottom: 48, height: 48, x: 240, y: 0, toJSON: () => ({}) }) as DOMRect;
+    root.scrollLeft = 0;
+    // the tab picked (a press, or the panel opened on it) is brought into the row’s view
+    shell.click();
+    await tick(20);
+    expect(root.scrollLeft).toBe(100);
   });
 });

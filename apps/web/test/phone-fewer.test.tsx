@@ -207,6 +207,15 @@ for (const kind of ['android', 'ios'] as const) {
     for (const l of ['Changes', 'PR', 'Shell', 'Preview', 'Thread']) expect(labels(), l).toContain(l);
     expect(labels().every((l) => l !== ''), 'no unlabelled icon tab').toBe(true);
     expect(q('[data-part~="phone.side.sheet"] [data-part~="panel.tabs.more"]'), 'nothing behind +').toBeNull();
+    // QA r7 #1: a screen reader's way out: the grabber is a button named Close, and pressing it closes the sheet
+    const grabber = q('[data-part~="phone.side.sheet"] > [data-kit="sheet-handle"]') as HTMLElement;
+    expect(grabber.tagName).toBe('BUTTON');
+    expect(grabber.getAttribute('aria-label')).toBe('Close');
+    // the phone chunk has bound the sheet (its drag, the grabber's press)
+    await until(() => (q('[data-part~="phone.side.sheet"]')?.getAttribute('data-gesture') ?? '').includes('sheet.drag-down'));
+    grabber.click();
+    await until(() => q('[data-part~="phone.side.sheet"]') === null && client.nav.nav().side.kind !== 'changes');
+    expect(client.nav.nav().side.kind).not.toBe('changes');
   });
 }
 

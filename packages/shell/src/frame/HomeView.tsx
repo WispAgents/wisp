@@ -45,6 +45,7 @@ import { openPlaces, releasePlaces, type PlaceTarget } from './project-switch.ts
 import { promptKeys, remember, sentStore } from './prompt-keys.ts';
 import { displayCombo } from '../keys.ts';
 import { draftValue, launcherDraft, withShareLink } from './drafts.ts';
+import { homePlaceholderKey } from './reply-hint.ts';
 import { MODE_ICON, agentName, modeMenu, whenAt, whenMenu, type Mode, type When } from './pickers.ts';
 import { newRecipeIntent } from './recipe-new.ts';
 import { foldTail } from './phone-bar.ts';
@@ -341,8 +342,7 @@ export function HomeView(props: { readonly onBack?: () => void }): JSX.Element {
   const [promptFocused, setPromptFocused] = createSignal(false);
   // a phone or a touch-only screen has no shortcut to advertise (v1: MOBILE || (hover: none))
   const touchOnly = phone || (typeof matchMedia === 'function' && matchMedia('(hover: none)').matches);
-  const promptHint = (): string =>
-    phone ? t('shell.home.placeholderPhone') : promptFocused() || touchOnly ? t('shell.home.placeholder') : t('shell.home.placeholderKey', { key: displayCombo('mod+l', shell.platform.apple).join('') });
+  const promptHint = (): string => t(homePlaceholderKey({ touch: touchOnly, focused: promptFocused() }), { key: displayCombo('mod+l', shell.platform.apple).join('') });
   // the goal plugin's Judges at the end of Done when (v1 #judgesBtn): made once, shown while the line is
   const goalEnd = <Slot input="shell.home:goalLine" layout="contents" />;
   // ↑ brings back what you sent, Shift+Tab cycles the mode (v1 prompt-history.js, F-task-31, F-comp-4)
@@ -929,7 +929,7 @@ export function HomeView(props: { readonly onBack?: () => void }): JSX.Element {
           // the pill's tooltip: Auto's (what it will run, as pickTitle says) or the harness's
           title: agent() === 'auto' ? t('shell.home.autoTitle') : t('shell.runner.title'),
           auto: agent() === 'auto',
-          pick: runnerPick({ agent: agent(), shown: shown()?.label, name: pick().name, model: modelWord({ model: model(), modelLabel: modelLabel() }), effort: effort(), account: account()?.label ?? '', fallback: t('shell.runner.default') }),
+          pick: runnerPick({ agent: agent(), shown: shown()?.label, name: pick().name, model: modelWord({ model: model(), modelLabel: modelLabel() }), effort: effort(), account: account()?.label ?? '', fallback: defaultName(agent(), t('shell.runner.default')) }),
           // a picked harness's model, thinking and account as v1's parts: the narrow bar folds them one by one (launcher.css)
           ...(agent() !== 'auto' && { pickParts: runnerParts({ model: modelWord({ model: model(), modelLabel: modelLabel() }), effort: effort(), account: account()?.label ?? '', fallback: defaultName(agent(), t('shell.runner.default')) }) }),
           pickTitle:
@@ -961,7 +961,8 @@ export function HomeView(props: { readonly onBack?: () => void }): JSX.Element {
               logo: h.logo,
               removeLabel: t('shell.home.compareRemove', { name: h.name }),
               onRemove: () => (setCmpPicker(undefined), setRuns(runs().filter((_, k) => k !== i)), setVary(undefined)),
-              ...runWords(r, words, t('shell.runner.default')),
+              // its Default by the model it runs, as the lead's (QA r7 desktop #1)
+              ...runWords(r, words, defaultName(r.agent, t('shell.runner.default'))),
               // the same two-pane harness picker as the lead's (v1 runnerPicker on .runner-btn.cmp-x), What's different in it
               act: { onClick: () => (setPicker(false), setAutoPop(false), setCmpPicker(cmpPicker() === i ? undefined : i)) },
               open: cmpPicker() === i,

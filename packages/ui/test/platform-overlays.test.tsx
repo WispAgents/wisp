@@ -402,10 +402,17 @@ describe('Dialog and Sheet', () => {
     dragDown(sheet, 300, 500, 1000);
     expect(sheet.getAttribute('data-detent')).toBe('medium');
     expect(onOpenChange).not.toHaveBeenCalled();
-    // the grabber steps them too
-    q("[data-kit='sheet-handle']")?.click();
+    // a finger's tap on the grabber steps them too (UIKit)
+    const tapGrabber = (): void => {
+      const h = q("[data-kit='sheet-handle']") as HTMLElement;
+      pe(h, 'pointerdown', 196, 432);
+      pe(h, 'pointerup', 196, 432);
+      h.click();
+    };
+    tapGrabber();
     expect(sheet.getAttribute('data-detent')).toBe('large');
-    q("[data-kit='sheet-handle']")?.click();
+    tapGrabber();
+    expect(onOpenChange).not.toHaveBeenCalled();
     dragDown(sheet, 450, 650, 3000);
     await tick(10);
     expect(onOpenChange).toHaveBeenCalledWith(false);
@@ -608,5 +615,132 @@ describe('Toasts sit above the navigation bar and the FAB', () => {
     expect(css('android')).toMatch(/\[data-kit='toast'\] \{[^}]*background: var\(--inverse-surface\)/);
     expect(css('ios')).toMatch(/body\[data-nav-bar\] \{ --toast-bottom: calc\(var\(--nav-h\) \+ var\(--capsule-gap\)\); \}/);
     expect(css('ios')).toMatch(/\[data-kit='toast'\] \{[^}]*border-radius: var\(--radius-pill\)/);
+  });
+});
+
+// QA r7 #1: a screen reader can close a phone sheet. Its grabber is a button named Close (focusable, VoiceOver's and
+// TalkBack's activation: a click with no finger on it, as the Enter key's); a finger's tap still steps an iOS sheet's
+// detents; Escape closes it; the browser keeps its plain handle (the golden)
+describe('the grabber closes the sheet for a screen reader (QA r7 #1)', () => {
+  for (const look of ['ios', 'android'] as const) {
+    it(`on_${look}_the_grabber_is_a_focusable_button_named_close_and_its_activation_closes_the_sheet`, async () => {
+      const onOpenChange = vi.fn();
+      on(look, () => (
+        <Sheet open onOpenChange={onOpenChange} title="Changes" detents={['medium', 'large']}>
+          <Text>body</Text>
+        </Sheet>
+      ));
+      await landed();
+      const h = q("[data-kit='sheet'] > [data-kit='sheet-handle']") as HTMLElement;
+      expect(h.tagName).toBe('BUTTON');
+      expect(h.getAttribute('aria-label')).toBe('Close');
+      expect(h.getAttribute('aria-hidden')).toBeNull();
+      expect(h.tabIndex).toBe(0);
+      // VoiceOver / TalkBack / Enter: a click no finger made
+      h.click();
+      await tick(10);
+      expect(onOpenChange).toHaveBeenCalledWith(false);
+    });
+  }
+
+  it('on_android_a_finger_tap_on_the_handle_closes_the_sheet_and_the_end_of_a_drag_does_not', async () => {
+    const onOpenChange = vi.fn();
+    on('android', () => (
+      <Sheet open onOpenChange={onOpenChange} title="Changes">
+        <Text>body</Text>
+      </Sheet>
+    ));
+    await landed();
+    const h = q("[data-kit='sheet-handle']") as HTMLElement;
+    // a drag that starts on the handle and lets go elsewhere: its click is not a tap
+    pe(h, 'pointerdown', 180, 300);
+    pe(h, 'pointerup', 180, 360);
+    h.click();
+    await tick(10);
+    expect(onOpenChange).not.toHaveBeenCalled();
+    pe(h, 'pointerdown', 180, 300);
+    pe(h, 'pointerup', 180, 302);
+    h.click();
+    await tick(10);
+    expect(onOpenChange).toHaveBeenCalledWith(false);
+  });
+
+  it('on_ios_escape_closes_a_sheet', async () => {
+    const onOpenChange = vi.fn();
+    on('ios', () => (
+      <Sheet open onOpenChange={onOpenChange} title="Changes" detents={['medium', 'large']}>
+        <Text>body</Text>
+      </Sheet>
+    ));
+    await landed();
+    q("[data-kit='sheet']")?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    await tick(10);
+    expect(onOpenChange).toHaveBeenCalledWith(false);
+  });
+
+  it('an_ios_dialog_drawn_as_a_sheet_gets_the_same_close_grabber', async () => {
+    const onOpenChange = vi.fn();
+    on('ios', () => (
+      <Dialog open onOpenChange={onOpenChange} title="Rename">
+        <Text>body</Text>
+      </Dialog>
+    ));
+    await landed();
+    const h = q("[data-kit='sheet'] > [data-kit='sheet-handle']") as HTMLElement;
+    expect(h.tagName).toBe('BUTTON');
+    expect(h.getAttribute('aria-label')).toBe('Close');
+    h.click();
+    await tick(10);
+    expect(onOpenChange).toHaveBeenCalledWith(false);
+  });
+});
+
+// QA r7 #7: in a phone menu whose rows have icons, a row without one keeps the icon column (an empty slot), and a
+// choice's ✓ sits in that leading column (M3's selected item, UIKit's checked action), not at the screen's edge
+describe('a phone menu keeps its icon column (QA r7 #7)', () => {
+  const items = [
+    { value: 'details', label: 'Details', icon: 'info' as const },
+    { value: 'lean:follow', label: 'Lean runs · As in Settings', checked: true },
+    { value: 'lean:on', label: 'Lean runs · On for this task', checked: false },
+    { value: 'plain', label: 'No icon' },
+  ];
+  for (const look of ['android', 'ios'] as const) {
+    it(`on_${look}_rows_without_an_icon_keep_the_column_and_a_choice_is_checked_at_its_start`, async () => {
+      on(look, () => (
+        <ContextMenu items={items} onSelect={noop} part="list.menu">
+          <div data-kit="list-row" id="row-1">
+            <span data-kit="list-row-title">Fix the flaky test</span>
+          </div>
+        </ContextMenu>
+      ));
+      contextAt(q('#row-1 span'));
+      await landed();
+      const kit = look === 'android' ? 'sheet' : 'context';
+      const row = (v: string): HTMLElement => q(`[data-kit='${kit}-item'][data-value='${v}']`) as HTMLElement;
+      const lead = (v: string): Element | null => row(v).firstElementChild;
+      // Android's icons lead; iOS's trail (UIKit), its leading column only the choices'
+      if (look === 'android') expect(lead('details')?.getAttribute('data-kit')).toBe('icon');
+      else expect([lead('details')?.getAttribute('data-kit'), row('details').querySelector('[data-icon="info"]') !== null]).toEqual(['context-icon-gap', true]);
+      // the checked choice: its ✓ first, none at the end
+      expect(lead('lean:follow')?.getAttribute('data-icon')).toBe('check');
+      expect(row('lean:follow').lastElementChild?.getAttribute('data-icon')).not.toBe('check');
+      expect(row('lean:follow').querySelectorAll('[data-icon="check"]').length).toBe(1);
+      // the unchecked one and the plain one: an empty slot where the icon goes
+      expect(lead('lean:on')?.getAttribute('data-kit')).toBe(`${kit}-icon-gap`);
+      expect(lead('plain')?.getAttribute('data-kit')).toBe(`${kit}-icon-gap`);
+    });
+  }
+
+  it('a_menu_with_no_icons_at_all_draws_no_empty_column', async () => {
+    on('android', () => (
+      <ContextMenu items={[{ value: 'a', label: 'A' }, { value: 'b', label: 'B' }]} onSelect={noop} part="list.menu">
+        <div data-kit="list-row" id="row-1">
+          <span data-kit="list-row-title">Row</span>
+        </div>
+      </ContextMenu>
+    ));
+    contextAt(q('#row-1 span'));
+    await landed();
+    expect(qa("[data-kit='sheet-icon-gap']")).toEqual([]);
   });
 });

@@ -1,7 +1,7 @@
 // F-page-3 (v1 composer.js): one box answers. While the task asks, the reply box says so; on a live approval, typed
 // words deny the call (runtime approval_decision), and the box says that before you type.
 import { expect, test } from 'vitest';
-import { replyPlaceholderKey } from '../src/frame/reply-hint.ts';
+import { homePlaceholderKey, replyPlaceholderKey } from '../src/frame/reply-hint.ts';
 
 const row = (ask: unknown) => ({ state: 'waiting', body: { ext: { 'wisp.runtime': { ask } } } });
 
@@ -20,4 +20,13 @@ test('the_reply_box_offers_own_words_while_the_latest_answer_asks_with_options',
   expect(replyPlaceholderKey({ state: 'review', body: {} }, true)).toBe('shell.task.replyOwn');
   expect(replyPlaceholderKey({ state: 'review', body: {} }, false)).toBe('shell.task.reply');
   expect(replyPlaceholderKey(row({ id: 'a2', question: 'Run npm publish?', permission: { tool: 'Bash' } }), true)).toBe('shell.task.replyDenies');
+});
+
+// QA r6 phone #11, r7 phone #3: New task in a phone's words on a touch screen (the apps and a phone's browser: nothing to
+// drop, no shortcut); a pointer's screen keeps v1's words, the shortcut while focus is elsewhere
+test('new_task_speaks_a_phones_words_on_a_touch_screen', () => {
+  expect(homePlaceholderKey({ touch: true, focused: false })).toBe('shell.home.placeholderPhone');
+  expect(homePlaceholderKey({ touch: true, focused: true })).toBe('shell.home.placeholderPhone');
+  expect(homePlaceholderKey({ touch: false, focused: true })).toBe('shell.home.placeholder');
+  expect(homePlaceholderKey({ touch: false, focused: false })).toBe('shell.home.placeholderKey');
 });

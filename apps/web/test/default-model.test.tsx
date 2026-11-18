@@ -60,3 +60,33 @@ test('in_a_project_that_pins_a_model_the_chip_names_the_projects_model', async (
   expect(pill()).toContain('Sonnet');
   expect(pill()).not.toContain('Opus');
 });
+
+// QA r7 desktop #1: with Compare on, the compared agent's chip names its Default's model the same way as the lead's
+test('a_compared_agents_chip_names_its_default_model_too', async () => {
+  const mock = createMockPeer({ epoch: 'e1', harnesses: true });
+  const home = peerId('local');
+  const client = createClient({ clientId: 'c1', build: 't', home, width: 1440 });
+  const shell = createShell({ client, toaster: createToaster(), platform: nullPlatform({ kind: 'browser' }), home, window: window as unknown as ShellWindow });
+  for (const { def } of pluginUis()) if (def?.id === 'wisp.claude') shell.register(def);
+  await client.start([{ peer: home, name: 'mock', transport: memTransport(mock) }]);
+  const root = document.createElement('div');
+  document.body.append(root);
+  const stop = shell.render(root);
+  stops.push(() => {
+    stop();
+    shell.dispose();
+  });
+  await until(() => (root.querySelector('[data-part~="launcher.harness"]')?.textContent ?? '').includes('Opus'));
+  // + › Compare with another agent…: the next installed harness (here the mock's one, Claude Code again, from its
+  // Default like the lead)
+  root.querySelector<HTMLElement>('[data-part~="launcher.plus"]')?.click();
+  const item = (): HTMLElement | undefined => [...document.querySelectorAll<HTMLElement>('[role="menuitem"]')].find((e) => /Compare/.test(e.textContent ?? ''));
+  await until(() => item() !== undefined);
+  item()?.click();
+  const run = (): string => root.querySelector('[data-part="launcher.compare.runner"]')?.textContent ?? '';
+  await until(() => run() !== '');
+  await until(() => run().includes('Opus'));
+  expect(run()).toContain('Claude Code');
+  expect(run()).toContain('Opus');
+  expect(run()).not.toContain('Default');
+});

@@ -122,7 +122,31 @@ function useRows(props: PhoneMenuProps, select: () => string | undefined) {
   return { pane, setPane, rows, choose };
 }
 
+/** A phone menu's row ends: one leading column (QA r7 #7), a choice's ✓ in it rather than at the screen's edge. Android
+ * (M3 menu items): the icons lead, a row without one keeps the slot. iOS (UIKit's menu): the icons trail, and the
+ * column holds only the ✓, every row indented by it once any row is a choice. */
+function rowMarks(kit: 'sheet' | 'context', rows: () => readonly PhoneRow[]): { lead: (i: MenuItem) => JSX.Element; trail: (i: MenuItem) => JSX.Element } {
+  const ios = kit === 'context';
+  const choices = (): boolean => rows().some((r) => r.kind === 'item' && r.item.checked !== undefined);
+  const icons = (): boolean => rows().some((r) => (r.kind === 'item' && r.item.icon !== undefined) || (r.kind === 'sub' && r.entry.icon !== undefined));
+  const gap = (): JSX.Element => <span data-kit={`${kit}-icon-gap`} aria-hidden="true" />;
+  return {
+    lead: (item) => {
+      if (item.checked && (ios || item.icon === undefined)) return <Icon name="check" size="md" />;
+      if (ios) return choices() ? gap() : null;
+      if (item.icon !== undefined) return <Icon name={item.icon} size="md" />;
+      return icons() || choices() ? gap() : null;
+    },
+    // the icon after the text: iOS's own, Android's ✓ beside its icon (a choice that has both)
+    trail: (item) => {
+      if (ios) return item.icon ? <Icon name={item.icon} size="md" /> : null;
+      return item.checked && item.icon !== undefined ? <Icon name="check" size="sm" tone="accent-ink" /> : null;
+    },
+  };
+}
+
 function Rows(props: { readonly rows: readonly PhoneRow[]; readonly part: PartName; readonly kit: 'sheet' | 'context'; readonly choose: (i: MenuItem) => void; readonly drill: (s: MenuSubmenu) => void }): JSX.Element {
+  const { lead, trail } = rowMarks(props.kit, () => props.rows);
   return (
     <For each={props.rows}>
       {(row) => (
@@ -155,16 +179,14 @@ function Rows(props: { readonly rows: readonly PhoneRow[]; readonly part: PartNa
                 data-danger={flag(r().item.danger)}
                 onClick={() => props.choose(r().item)}
               >
-                <Show when={r().item.icon}>{(name) => <Icon name={name()} size="md" />}</Show>
+                {lead(r().item)}
                 <span data-kit={`${props.kit}-item-text`}>
                   <span data-kit={`${props.kit}-item-label`} data-text="control">
                     {r().item.label}
                   </span>
                   <Show when={r().item.hint}>{(hint) => <span data-kit={`${props.kit}-item-hint`}>{hint()}</span>}</Show>
                 </span>
-                <Show when={r().item.checked}>
-                  <Icon name="check" size="sm" tone="accent-ink" />
-                </Show>
+                {trail(r().item)}
               </button>
             )}
           </Match>
@@ -359,9 +381,10 @@ export function phoneSurface(el: HTMLElement, o: PhoneSurface): () => void {
     el.setAttribute('data-kit', 'sheet');
     el.parentElement?.setAttribute('data-sheet', '');
     el.parentElement?.previousElementSibling?.setAttribute('data-sheet', '');
-    const grabber = document.createElement('span');
+    const grabber = document.createElement('button');
+    grabber.type = 'button';
     grabber.setAttribute('data-kit', 'sheet-handle');
-    grabber.setAttribute('aria-hidden', 'true');
+    grabber.setAttribute('aria-label', o.closeLabel);
     el.prepend(grabber);
   }
   const close = el.querySelector("[data-kit='dialog-head'] > [data-kit='icon-button']");
@@ -375,13 +398,48 @@ export function phoneSurface(el: HTMLElement, o: PhoneSurface): () => void {
   };
   setDetent(at);
   const grabber = el.querySelector<HTMLElement>("[data-kit='sheet-handle']");
-  const tap = (): void => setDetent(at === 'large' ? 'medium' : 'large');
+  // a finger's tap on an iOS grabber steps the detents (UIKit); any other press closes the sheet
   const steps = o.look === 'ios' && detents.length > 1;
-  if (steps) grabber?.addEventListener('click', tap);
+  const tap = steps ? (): void => setDetent(at === 'large' ? 'medium' : 'large') : o.onClose;
+  const unbind = grabber ? bindGrabber(grabber, { tap, activate: o.onClose }) : undefined;
   const stop = bindSheet(el, { host: o.host, look: o.look, detents, detent: () => at, setDetent, onClose: o.onClose, closeLabel: o.closeLabel });
   return () => {
     stop();
-    if (steps) grabber?.removeEventListener('click', tap);
+    unbind?.();
+  };
+}
+
+/** how far a finger may move on the grabber and still have tapped it (px; past it the press was a drag) */
+const GRABBER_SLOP = 10;
+/** a click this long after the finger went down is not that finger's (ms: a press let go elsewhere is forgotten) */
+const GRABBER_TAP_MS = 1000;
+
+/** A sheet's grabber, a button named Close (QA r7 #1): a finger's tap runs `tap`; a click no finger made (VoiceOver's
+ * or TalkBack's activation, the Enter key) runs `activate`, a screen reader's way out of the sheet; the click that
+ * ends a drag begun on it does nothing. Returns the stop. */
+export function bindGrabber(el: HTMLElement, o: { readonly tap: () => void; readonly activate: () => void }): () => void {
+  let down: { x: number; y: number; t: number; moved: boolean } | undefined;
+  // the finger may let go anywhere (a drag of the sheet): its lift is read on the window
+  const lift = (e: PointerEvent): void => {
+    removeEventListener('pointerup', lift, true);
+    if (down) down.moved = Math.hypot(e.clientX - down.x, e.clientY - down.y) > GRABBER_SLOP;
+  };
+  const press = (e: PointerEvent): void => {
+    down = { x: e.clientX, y: e.clientY, t: e.timeStamp, moved: false };
+    addEventListener('pointerup', lift, true);
+  };
+  const click = (e: MouseEvent): void => {
+    const was = down && e.timeStamp - down.t < GRABBER_TAP_MS ? down : undefined;
+    down = undefined;
+    if (!was) o.activate();
+    else if (!was.moved) o.tap();
+  };
+  el.addEventListener('pointerdown', press);
+  el.addEventListener('click', click);
+  return () => {
+    removeEventListener('pointerup', lift, true);
+    el.removeEventListener('pointerdown', press);
+    el.removeEventListener('click', click);
   };
 }
 

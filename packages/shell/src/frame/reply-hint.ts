@@ -10,3 +10,9 @@ export function replyPlaceholderKey(row: { readonly state?: string; readonly bod
   if (!ask || typeof ask !== 'object') return question ? 'shell.task.replyOwn' : 'shell.task.reply';
   return (ask as { permission?: unknown }).permission ? 'shell.task.replyDenies' : 'shell.task.replyAnswer';
 }
+
+/** New task's placeholder (v1 launcher.js hint, QA r6 phone #11, r7 phone #3): a touch screen (the phone apps, a phone's
+ *  browser) in a phone's words, nothing to drop and no shortcut; a pointer's v1's words while the caret is in it, else
+ *  the shortcut that brings it back */
+export const homePlaceholderKey = (o: { readonly touch: boolean; readonly focused: boolean }): string =>
+  o.touch ? 'shell.home.placeholderPhone' : o.focused ? 'shell.home.placeholder' : 'shell.home.placeholderKey';

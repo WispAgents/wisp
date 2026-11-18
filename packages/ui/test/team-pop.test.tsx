@@ -5,6 +5,7 @@ import { createSignal } from 'solid-js';
 import { mount, part, until } from './helpers.tsx';
 import { TeamCopies, TeamFields, TeamLead, TeamPop, TeamRow, TeamSave, TeamWhere } from '../src/app/TeamPop.tsx';
 import { WithAct } from '../src/app/act.tsx';
+import { Sheet } from '../src/controls/Dialog.tsx';
 
 afterEach(() => {
   document.body.innerHTML = '';
@@ -250,4 +251,38 @@ test('a panel opened from outside (open) draws on its button and reports its clo
   document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
   await until(() => changes.includes(false));
   expect(changes).toContain(false);
+});
+
+// QA r7 #6: a panel never repeats the title of the sheet or dialog it is drawn in (the phone's Delegate sheet said
+// "Delegate" twice); in a surface named otherwise, or on its own (a popover), it keeps its title
+describe('a panel in a sheet of its own name (QA r7 #6)', () => {
+  const pop = (title: string) => (
+    <TeamPop part="d.pop" title={title} intro="Agents the lead can hand parts of the task to" count={0} empty={{ icon: 'agent', text: 'No delegates yet.' }} add={<button type="button">Add</button>} tally="0 agents" />
+  );
+  test('in_a_sheet_titled_delegate_the_delegate_panel_drops_its_own_title_and_keeps_its_intro', async () => {
+    mount(() => (
+      <Sheet open onOpenChange={() => undefined} title="Delegate">
+        {pop('Delegate')}
+      </Sheet>
+    ));
+    await until(() => part('d.pop') !== null);
+    const head = part('d.pop')?.querySelector('[data-kit="tp-title"]');
+    expect(head?.querySelector('b')).toBeNull();
+    expect(head?.textContent).toBe('Agents the lead can hand parts of the task to');
+    expect(part('d.pop')?.getAttribute('aria-label'), 'still named').toBe('Delegate');
+  });
+
+  test('in_a_sheet_named_otherwise_or_alone_the_panel_keeps_its_title', async () => {
+    mount(() => (
+      <>
+        <Sheet open onOpenChange={() => undefined} title="Reply options">
+          {pop('Delegate')}
+        </Sheet>
+        {pop('Judges')}
+      </>
+    ));
+    await until(() => document.querySelectorAll('[data-part="d.pop"]').length === 2);
+    const titles = [...document.querySelectorAll('[data-part="d.pop"] [data-kit="tp-title"] b')].map((b) => b.textContent);
+    expect(titles.sort()).toEqual(['Delegate', 'Judges']);
+  });
 });

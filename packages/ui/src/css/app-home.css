@@ -931,6 +931,13 @@
         -20px 0 12px var(--surface);
     }
   }
+  /* an unmeasured bar too narrow for its words (bar-labels.ts: the first run's, the phone apps' and a phone's browser,
+     QA r7 phone #3): the mode and More options go to their icons, as the phone apps' do, so More never runs under Send
+     or past the edge; their tooltips name them */
+  [data-kit='launcher'] [data-kit='l-bar'][data-tight] > [data-kit='mode-btn'] > [data-text='control'],
+  [data-kit='launcher'] [data-kit='l-bar'][data-tight] > [data-a='more'] > [data-text='control'] {
+    display: none;
+  }
   /* A measured bar (the desktop and browser launcher, launcher-fold-measure.ts): the same compact form, taken when its
      labels don't fit with every tool shown, one step at a time (QA desktop r3 #3: by width alone, WebKit's 10 px
      narrower box lost every label with 97 px to spare); the pick keeps its words until the last step (#4) */

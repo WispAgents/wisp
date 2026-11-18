@@ -110,16 +110,23 @@ fn blocks_of(body: &str) -> Vec<Value> {
     serde_json::from_str::<Value>(body).ok().and_then(|v| v.get("blocks").and_then(Value::as_array).cloned()).unwrap_or_default()
 }
 
-/// One answer (`report.answers[]`: `text`, and/or `blocks`), as the page shows it.
+/// One answer (`report.answers[]`: `text`, and/or `blocks`), as the page shows it: in one box, its words first, then
+/// what its blocks say. An answer carries its blocks parsed (`blocks`) and also as the fenced text they came from: the
+/// parsed ones win, the fenced copy is only for an answer without them, and the same block is never shown twice (QA
+/// round 7 #2).
 pub(super) fn answer_html(a: &Value) -> String {
     let (prose, bodies) = split(s(a, "text"));
-    let mut blocks: Vec<Value> = a.get("blocks").and_then(Value::as_array).cloned().unwrap_or_default();
-    for b in &bodies {
-        blocks.extend(blocks_of(b));
+    let parsed: Vec<Value> = a.get("blocks").and_then(Value::as_array).cloned().unwrap_or_default();
+    let all = if parsed.is_empty() { bodies.iter().flat_map(|b| blocks_of(b)).collect() } else { parsed };
+    let mut seen: Vec<&Value> = Vec::new();
+    for b in &all {
+        if !seen.contains(&b) {
+            seen.push(b);
+        }
     }
-    let shown: String = blocks.iter().map(block).collect();
+    let shown: String = seen.into_iter().map(block).collect();
     let words = if prose.is_empty() { String::new() } else { format!(r#"<div class="hub-prose">{}</div>"#, esc(&prose)) };
-    format!("{words}{shown}")
+    if words.is_empty() && shown.is_empty() { String::new() } else { format!(r#"<div class="hub-answer">{words}{shown}</div>"#) }
 }
 
 #[cfg(test)]
@@ -131,5 +138,28 @@ mod tests {
         assert_eq!(split("All done.\n```wisp\n{\"blocks\":[]}\n```\nBye"), ("All done.\n\nBye".into(), vec!["{\"blocks\":[]}".into()]));
         assert_eq!(split("Half.\n```wisp\n{\"blo"), ("Half.".into(), vec![]));
         assert_eq!(split("No block."), ("No block.".into(), vec![]));
+    }
+
+    #[test]
+    fn an_answer_with_its_blocks_twice_shows_them_once_inside_its_box() {
+        // QA round 7 #2: an answer carries the blocks both parsed (`blocks`) and as the fenced text they came from
+        let hero = serde_json::json!({ "type": "hero", "title": "Fake claude finished", "summary": "No question asked." });
+        let text = format!("All done.\n```wisp\n{}\n```\n", serde_json::json!({ "blocks": [hero.clone()] }));
+        let h = answer_html(&serde_json::json!({ "text": text, "blocks": [hero] }));
+        assert_eq!(h.matches("Fake claude finished").count(), 1, "{h}");
+        assert_eq!(h.matches("No question asked.").count(), 1, "{h}");
+        // one box: the words and what the blocks say, all inside it
+        assert!(
+            h.starts_with(r#"<div class="hub-answer">"#) && h.ends_with("</div>") && h.matches(r#"class="hub-answer""#).count() == 1,
+            "{h}"
+        );
+        let inside = &h[h.find("All done.").unwrap_or(usize::MAX)..];
+        assert!(inside.contains("Fake claude finished"), "the title follows the words, in the box: {h}");
+        // only the fenced copy (an answer from before `blocks`): still once, still inside
+        let fenced = answer_html(
+            &serde_json::json!({ "text": "Done.\n```wisp\n{\"blocks\":[{\"type\":\"hero\",\"title\":\"T1\"},{\"type\":\"hero\",\"title\":\"T1\"}]}\n```" }),
+        );
+        assert_eq!(fenced.matches("T1").count(), 1, "identical blocks once: {fenced}");
+        assert!(answer_html(&serde_json::json!({})).is_empty(), "nothing: no empty box");
     }
 }

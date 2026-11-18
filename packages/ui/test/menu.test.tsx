@@ -3,6 +3,7 @@ import { createSignal } from 'solid-js';
 import { mount, part, tick } from './helpers.tsx';
 import { ContextMenu, Menu, menuSections, type MenuEntry } from '../src/controls/Menu.tsx';
 import { preloadControls } from '../src/controls/lazy-part.ts';
+import { PlatformLookProvider } from '../src/platform/PlatformLook.tsx';
 
 // the app fetches the overlays' machines once its first screen is up (ADR-0011); a press before that: lazy-controls.test.tsx
 beforeAll(() => preloadControls());
@@ -275,4 +276,23 @@ test('a_menu_with_no_icons_has_no_empty_icon_column', async () => {
   key(part('plain.menu.trigger'), 'ArrowDown');
   await tick(20);
   expect(document.querySelector('[data-part="plain.menu.item"] [data-kit="menu-icon-gap"]')).toBeNull();
+});
+
+// QA r7 #4: a phone's menu is drawn over the screen (fixed): growing as it drills into a submenu, it never widens the
+// page (WebKit kept the frame where the wider menu stood before it moved: the page scrolled sideways by 11 px). The
+// browser's stays where Floating UI's default puts it.
+describe('a phone menu never widens the page (QA r7 #4)', () => {
+  for (const look of ['ios', 'android', 'web'] as const) {
+    test(`on_${look}_the_menus_positioner_is_${look === 'web' ? 'absolute' : 'fixed'}`, async () => {
+      mount(() => (
+        <PlatformLookProvider look={() => look}>
+          <Menu items={items} onSelect={vi.fn()} trigger={{ icon: 'dots', 'aria-label': 'More' }} part="task.more" />
+        </PlatformLookProvider>
+      ));
+      key(part('task.more.trigger'), 'ArrowDown');
+      await tick(30);
+      const positioner = part('task.more')?.parentElement as HTMLElement;
+      expect(positioner.style.position).toBe(look === 'web' ? 'absolute' : 'fixed');
+    });
+  }
 });

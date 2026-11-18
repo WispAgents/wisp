@@ -194,6 +194,20 @@ for (const look of ['android', 'ios'] as const) {
   });
 }
 
+// QA r7 phone #8: New task's harness row reads like the rows around it (This computer, Full auto, Delegate): the
+// list's type and colour, the same indent and the same gap after its mark, none of the pill's own padding or chip
+for (const look of ['android', 'ios'] as const) {
+  test(`on_${look}_the_new_task_harness_row_is_a_row_like_its_siblings`, () => {
+    const css = sheet(look);
+    const row = css.match(/\[data-kit='frame'\]\[data-behind\] \[data-kit='l-bar'\] > \[data-kit='runners'\] \[data-kit='runner-btn'\] \{([^}]*)\}/)?.[1] ?? '';
+    for (const d of ['padding: var(--space-0);', 'gap: var(--space-5);', 'font: var(--type-body);', 'color: var(--on-surface);', 'min-height: var(--tap-min);']) expect(row, d).toContain(d);
+    // its mark the rows' icon size, so its name lines up with theirs
+    expect(css).toMatch(/\[data-kit='runner-btn'\] > \[data-kit='rb-logo'\] \{ width: var\(--size-icon\); height: var\(--size-icon\);/);
+    // its name at the list's size, not the pill's
+    expect(css).toMatch(/\[data-kit='frame'\]\[data-behind\] \[data-kit='l-bar'\] > \[data-kit='runners'\] \[data-kit='runner-btn'\] \[data-text='control'\] \{ font: inherit; \}/);
+  });
+}
+
 // QA r6 phone #11 (UX #5): Android's New task confirm (Start) is a filled M3 button; the bar's other confirms (Done in
 // selection) stay text buttons
 test('on_android_the_compose_bars_start_is_a_filled_button', () => {
@@ -349,4 +363,3 @@ test('a_touch_long_press_on_an_answer_opens_its_menu', async () => {
   await until(() => hits.includes('fork'));
   expect(hits).toEqual(['fork']);
 });
-

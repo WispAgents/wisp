@@ -652,6 +652,11 @@
   :root[data-platform='ios'] [data-kit='dialog-positioner'][data-sheet][data-size='xl'] { padding: var(--space-0); }
   :root[data-platform='ios'] [data-kit='sheet'][data-size='xl'] { height: 100dvh; border-radius: var(--space-0); }
   :root[data-platform='ios'] [data-kit='sheet'][data-size='xl'] > [data-kit='sheet-handle'] { display: none; }
+  /* the grabber is a button named Close (QA r7 #1): the same pill, its press area the margin around it, a ring when
+     focused from a keyboard */
+  :root[data-platform='ios'] [data-kit='sheet'] > button[data-kit='sheet-handle'] { position: relative; padding: var(--space-0); border: 0; appearance: none; cursor: grab; -webkit-tap-highlight-color: transparent; }
+  :root[data-platform='ios'] [data-kit='sheet'] > button[data-kit='sheet-handle']::after { content: ''; position: absolute; inset: calc(var(--grabber-h) * -1) calc(var(--space-8) * -1); }
+  :root[data-platform='ios'] [data-kit='sheet'] > button[data-kit='sheet-handle']:focus-visible { outline: var(--size-ring) solid var(--primary); outline-offset: var(--space-2); }
   @keyframes k-ios-sheet { from { transform: translateY(100%); } }
 
   /* A long-press's menu (phone.tsx): the context menu. The page blurs, the pressed row lifts in place as the preview,
@@ -719,6 +724,9 @@
   :root[data-platform='ios'] [data-kit='context-separator'] + [data-kit='context-item'],
   :root[data-platform='ios'] [data-kit='context-label'] + [data-kit='context-item'] { border-top: 0; }
   :root[data-platform='ios'] [data-kit='context-item'] > [data-kit='icon'] { order: 2; flex: none; }
+  /* a choice's ✓ leads, UIKit's checked action, every row indented by its column once any row is a choice (QA r7 #7) */
+  :root[data-platform='ios'] [data-kit='context-item'] > [data-kit='icon'][data-icon='check']:first-child { order: 0; }
+  :root[data-platform='ios'] [data-kit='context-item'] > [data-kit='context-icon-gap'] { flex: none; width: var(--size-icon-md); height: var(--size-icon-md); }
   :root[data-platform='ios'] [data-kit='context-item']:active { background: var(--fill); }
   :root[data-platform='ios'] [data-kit='context-item'][data-danger] { color: var(--error); }
   :root[data-platform='ios'] [data-kit='context-item']:disabled { color: var(--on-surface-ter); }
@@ -1551,7 +1559,13 @@
   :root[data-platform='ios'] [data-kit='frame'][data-behind] [data-kit='l-bar'] > [data-kit='mode-btn'] > [data-text='control'],
   :root[data-platform='ios'] [data-kit='frame'][data-behind] [data-kit='l-bar'] > [data-kit='runners'] [data-kit='runner-btn'] > [data-kit='rb-h'] { display: inline; }
   /* the harness row is a whole row to tap, as tall as the rows above and below it (QA r6 phone #8) */
-  :root[data-platform='ios'] [data-kit='frame'][data-behind] [data-kit='l-bar'] > [data-kit='runners'] [data-kit='runner-btn'] { flex: 1; justify-content: flex-start; min-height: var(--tap-min); background: transparent; }
+  :root[data-platform='ios'] [data-kit='frame'][data-behind] [data-kit='l-bar'] > [data-kit='runners'] [data-kit='runner-btn'] {
+    flex: 1; justify-content: flex-start; gap: var(--space-5); min-height: var(--tap-min); padding: var(--space-0); border: 0; border-radius: 0;
+    background: transparent; font: var(--type-body); color: var(--on-surface);
+  }
+  /* its words at the list's size, its mark like the rows' icons (no chip behind it): it reads as a row like its siblings (QA r7 phone #8) */
+  :root[data-platform='ios'] [data-kit='frame'][data-behind] [data-kit='l-bar'] > [data-kit='runners'] [data-kit='runner-btn'] [data-text='control'] { font: inherit; }
+  :root[data-platform='ios'] [data-kit='frame'][data-behind] [data-kit='l-bar'] > [data-kit='runners'] [data-kit='runner-btn'] > [data-kit='rb-logo'] { width: var(--size-icon); height: var(--size-icon); margin-right: var(--space-0); background: transparent; }
   /* a control's panel as a sheet (Delegate, QA r6 phone #7): the sheet's width, not the popover card's */
   :root[data-platform='ios'] [data-kit='sheet'] [data-kit='team-pop'] { width: auto; max-height: none; }
   :root[data-platform='ios'] [data-kit='frame'][data-behind] [data-kit='l-bar'] > [data-a='attach'] { grid-column: 1; order: 1; }
@@ -1562,14 +1576,22 @@
      of text segments (its 32 pt track, the hit area grown to 44 pt by the kit's ::after), each as wide as its name with
      the room left shared out, the browser's pill frame gone. The sheet closes by its grabber and the dimmed task above
      it, so no ✕ (nor the spacer before it) takes the five segments' room on a 360 pt phone. */
-  :root[data-platform='ios'] [data-part~='phone.side.sheet'] [data-kit='tabs'][data-part='panel.tabs'] { flex: 1 1 auto; min-width: 0; margin-left: var(--space-0); padding: var(--space-0); border-width: 0; background: none; }
-  :root[data-platform='ios'] [data-part~='phone.side.sheet'] [data-kit='tabs'][data-part='panel.tabs'] > [data-kit='tab-list'] { flex: 1 1 auto; }
-  :root[data-platform='ios'] [data-part~='phone.side.sheet'] [data-kit='tabs'][data-part='panel.tabs'] [data-kit='tab'] { flex: 1 0 auto; width: auto; min-width: var(--tap-min); padding: var(--space-0) var(--space-3); }
+  :root[data-platform='ios'] [data-part~='phone.side.sheet'] [data-kit='tabs'][data-part='panel.tabs'] { flex: 1 1 auto; min-width: 0; margin-left: var(--space-0); padding: calc((var(--tap-min) - var(--seg-h)) / 2) var(--space-0); border-width: 0; background: none; overflow-x: auto; scrollbar-width: none; }
+  :root[data-platform='ios'] [data-part~='phone.side.sheet'] [data-kit='tabs'][data-part='panel.tabs'] > [data-kit='tab-list'] { flex: none; width: max-content; min-width: 100%; }
+  :root[data-platform='ios'] [data-part~='phone.side.sheet'] [data-kit='tabs'][data-part='panel.tabs'] [data-kit='tab'] { flex: 1 0 auto; width: auto; min-width: var(--tap-min); padding: var(--space-0) var(--space-2); }
   :root[data-platform='ios'] [data-part~='phone.side.sheet'] [data-part~='side.head'] { padding-left: var(--space-0); padding-right: var(--space-0); }
   :root[data-platform='ios'] [data-part~='phone.side.sheet'] [data-kit='tabs'][data-part='panel.tabs'] [data-kit='tab'] > [data-kit='icon'] { display: none; }
   :root[data-platform='ios'] [data-part~='phone.side.sheet'] [data-kit='tabs'][data-part='panel.tabs'] [data-kit='tab-label'] { display: inline; }
   :root[data-platform='ios'] [data-part~='phone.side.sheet'] [data-part~='side.head'] > [data-kit='icon-button']:last-child,
   :root[data-platform='ios'] [data-part~='phone.side.sheet'] [data-part~='side.head'] > [data-kit='box'] { display: none; }
+  /* QA r7 #5: when the five don't fit (a count beside Changes, a larger text size) the row scrolls, its open tab kept in
+     view, and the end it can still scroll to fades out (the kit marks it: Tabs.tsx markEnds): no name is cut hard */
+  :root[data-platform='ios'] [data-part~='phone.side.sheet'] [data-kit='tabs'][data-part='panel.tabs'][data-scroll-end] { -webkit-mask-image: linear-gradient(90deg, var(--on-surface) calc(100% - var(--space-8)), transparent); mask-image: linear-gradient(90deg, var(--on-surface) calc(100% - var(--space-8)), transparent); }
+  :root[data-platform='ios'] [data-part~='phone.side.sheet'] [data-kit='tabs'][data-part='panel.tabs'][data-scroll-start] { -webkit-mask-image: linear-gradient(270deg, var(--on-surface) calc(100% - var(--space-8)), transparent); mask-image: linear-gradient(270deg, var(--on-surface) calc(100% - var(--space-8)), transparent); }
+  :root[data-platform='ios'] [data-part~='phone.side.sheet'] [data-kit='tabs'][data-part='panel.tabs'][data-scroll-start][data-scroll-end] {
+    -webkit-mask-image: linear-gradient(90deg, transparent, var(--on-surface) var(--space-8), var(--on-surface) calc(100% - var(--space-8)), transparent);
+    mask-image: linear-gradient(90deg, transparent, var(--on-surface) var(--space-8), var(--on-surface) calc(100% - var(--space-8)), transparent);
+  }
   :root[data-platform='ios'] [data-part~='phone.side.sheet'] [data-part~='side.head'] [data-kit='icon-button'],
   :root[data-platform='ios'] [data-part~='phone.side.sheet'] [data-part~='side.head'] button[aria-haspopup] { min-width: var(--tap-min); min-height: var(--tap-min); }
 }

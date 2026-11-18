@@ -56,6 +56,15 @@ function flyContext(parent: menu.Service, onSelect: (value: string) => void, kid
   };
 }
 
+/** where the menu goes: at the pointer (a right-click: v1 clampToViewport, opened beside it and slid up or in to fit,
+ * never flipped), else under its trigger; a phone's is drawn over the screen (fixed): as it grows drilling into a
+ * submenu it never widens the page (QA r7 #4: WebKit kept the frame where the wider menu stood before it moved, and the
+ * page scrolled sideways 11 px) */
+function positioningOf(at: 'pointer' | undefined, props: { readonly placement?: Placement; readonly below?: string }, look: string) {
+  const base = at === 'pointer' ? { placement: 'bottom-start' as const, gutter: 0, flip: false, overlap: true, overflowPadding: 8 } : { placement: props.placement ?? 'bottom-start', gutter: 4, overlap: true, overflowPadding: 8, ...(props.below !== undefined && { getAnchorRect: underBox(props.below) }) };
+  return { ...base, ...(look !== 'web' && { strategy: 'fixed' as const }) };
+}
+
 function useMenu(props: MenuBaseProps & { readonly placement?: Placement; readonly below?: string }, at?: 'pointer'): MenuState {
   const id = createUniqueId();
   const [chosen, setPane] = createSignal<string | undefined>();
@@ -107,8 +116,7 @@ function useMenu(props: MenuBaseProps & { readonly placement?: Placement; readon
       else setFlying(flyoutPointer(look()));
       props.onOpenChange?.(d.open);
     },
-    // at the pointer (a right-click): v1 clampToViewport, opened beside it and slid up or in to fit, never flipped
-    positioning: at === 'pointer' ? { placement: 'bottom-start' as const, gutter: 0, flip: false, overlap: true, overflowPadding: 8 } : { placement: props.placement ?? 'bottom-start', gutter: 4, overlap: true, overflowPadding: 8, ...(props.below !== undefined && { getAnchorRect: underBox(props.below) }) },
+    positioning: positioningOf(at, props, look()),
   }));
   api = createMemo(() => menu.connect(service, normalizeProps));
   const ctx = flyContext(service, (v) => props.onSelect(v), kids);

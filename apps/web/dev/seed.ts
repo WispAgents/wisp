@@ -70,9 +70,9 @@ const DETECT_ROWS: Row[] = (
       available: state === 'installed',
       ...(version && { version }),
       ...(state === 'missing' && { setup: { tip: `Install the ${name} CLI and sign in, then re-check` } }),
-      // Claude Code's Default names the model it runs, as the claude plugin reads it from ~/.claude/settings.json (UX
-      // 2026-11-18 #9); the others can't tell, so they say Default
-      models: state === 'installed' ? [{ id: '', label: 'Default', ...(id === 'claude' && { resolves: 'Opus' }) }, { id: `${id}-m0`, label: 'Model 1' }, { id: `${id}-m1`, label: 'Model 2' }] : [],
+      // Default names the model it runs, as each plugin reads its harness's config (UX 2026-11-18 #9): Claude Code's
+      // settings, Codex's config.toml; the others can't tell, so they say Default
+      models: state === 'installed' ? [{ id: '', label: 'Default', ...(id === 'claude' && { resolves: 'Opus' }), ...(id === 'codex' && { resolves: 'GPT-6.1-Sol' }) }, { id: `${id}-m0`, label: 'Model 1' }, { id: `${id}-m1`, label: 'Model 2' }] : [],
       efforts: [],
       delegates: false,
     },
