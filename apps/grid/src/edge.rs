@@ -45,6 +45,14 @@ use crate::teams::Teams;
 use crate::trust::{Credential, Reach, Verdict, may};
 use crate::tunnels::{TUNNEL_PROTOCOL, Tunnels};
 
+#[path = "edge_answer.rs"]
+mod answer;
+#[path = "edge_common.rs"]
+mod common;
+#[path = "edge_events.rs"]
+mod events;
+#[path = "edge_handoff.rs"]
+mod handoff;
 #[path = "edge_inbox.rs"]
 mod inbox;
 #[path = "edge_keys.rs"]
@@ -101,6 +109,8 @@ pub struct Grid {
     pub mail: Option<Arc<crate::mail::service::MailService>>,
     /// the phone relay: a handle → FCM/APNs token, ciphertext through (`push.rs`, ADR-0065 §3)
     pub push: crate::push::Relay,
+    /// whose pages changed, for their open `/events` streams (`edge_events.rs`)
+    notes: tokio::sync::broadcast::Sender<String>,
 }
 
 impl std::fmt::Debug for Grid {
@@ -291,6 +301,7 @@ impl Grid {
             routes,
             mail,
             push,
+            notes: tokio::sync::broadcast::channel(64).0,
         })
     }
 
@@ -329,6 +340,10 @@ impl Grid {
     pub async fn handle(self: &Arc<Self>, req: http::Request<Incoming>) -> Resp {
         let host = req.headers().get("host").and_then(|h| h.to_str().ok()).unwrap_or_default().to_owned();
         let kind = host_kind(&host, self.as_ref());
+        let asker = answer::Asker::of(req.method(), req.headers());
+        if let Some(r) = self.common(&req, &kind) {
+            return r;
+        }
         let out = match kind {
             HostKind::Root => self.root(req).await,
             HostKind::Edge { handle } => match req.uri().path().strip_prefix("/_in/").map(str::to_owned) {
@@ -345,7 +360,7 @@ impl Grid {
             HostKind::Site(site) => Ok(self.site_reach(&req, site.as_ref())),
             HostKind::Unknown => Ok(json(421, &json!({ "error": "This grid doesn't serve that address." }))),
         };
-        out.unwrap_or_else(|e| err(&e))
+        out.unwrap_or_else(|e| self.failed(asker, &e))
     }
 
     // --- <domain> -------------------------------------------------------------------------------------
@@ -384,6 +399,10 @@ impl Grid {
             ("POST", ["api", "device", "revoke"]) => self.device_revoke(&head.headers),
             ("GET" | "POST", ["activate"]) => self.activate(&method, &head.headers, &bytes, q),
             ("GET", ["auth", "dev"]) => self.dev_sign_in(q),
+            ("GET", ["events"]) => Ok(self.events(match &who {
+                Who::Session(u) => Some(u),
+                _ => None,
+            })),
             ("GET", ["signin"]) => Ok(self.signin_route(&head.headers, q)),
             ("GET", ["auth", id, "start"]) => self.auth_start(&head.headers, id, q).await,
             ("GET", ["auth", id, "callback"]) => Ok(self.auth_callback(&head.headers, id, q).await),
@@ -427,7 +446,14 @@ impl Grid {
                 let b = parse_body(&head.headers, &bytes)?;
                 self.mail_reply(&Value::Object(b), &who).await
             }
-            _ => Ok(json(404, &json!({ "error": "not found" }))),
+            _ => {
+                let asker = answer::Asker::of(&method, &head.headers);
+                Ok(if asker.page {
+                    self.not_found_for(asker, "Nothing here", "This page doesn’t exist, or its link has a typo.")
+                } else {
+                    json(404, &json!({ "error": "not found" }))
+                })
+            }
         }
     }
 
@@ -648,7 +674,19 @@ impl Grid {
                     None
                 };
                 let tried = password.is_some();
-                match self.read_share(id, q, h, who, password, true)? {
+                let read = match self.read_share(id, q, h, who, password, true) {
+                    Err(e) if e.status() == 404 => {
+                        let m = MessagePage {
+                            title: "Nothing here".into(),
+                            text: "This isn’t shared any more, or its link has a typo.".into(),
+                            link: Some((self.cfg.public_url.clone(), "Home".into())),
+                            tone: Tone::Plain,
+                        };
+                        return Ok(html(404, pages::message_page(&self.page, &m), &[]));
+                    }
+                    other => other?,
+                };
+                match read {
                     Ok((s, c)) => {
                         let content: Value = serde_json::from_slice(&c.body).unwrap_or(Value::Null);
                         let card = ShareCard {
@@ -664,7 +702,9 @@ impl Grid {
                     }
                     Err(Refused::Gone(why)) => Ok(html(410, pages::gone_page(&self.page, why), &[])),
                     Err(Refused::Locked(how)) => Ok(html(403, pages::locked_page(&self.page, id, &how, tried), &[])),
-                    Err(Refused::NoVersion) => Ok(json(404, &json!({ "error": "There's no such version." }))),
+                    Err(Refused::NoVersion) => {
+                        Ok(self.not_found_for(answer::Asker { page: true }, "Nothing here", "There’s no such version of this."))
+                    }
                 }
             }
             _ => Ok(json(404, &json!({ "error": "not found" }))),
@@ -716,11 +756,23 @@ impl Grid {
         let me = self.clone();
         let cid = comp.id.clone();
         let now = self.clock.now_ms();
+        let owner = u.id.clone();
         tokio::spawn(async move {
             match hyper::upgrade::on(req).await {
                 Ok(up) => {
                     let _ = me.accounts.seen_computer(&cid);
+                    // its owner's open pages say Online once the tunnel is up, and Offline once it's gone
+                    let (watch, id, who) = (me.clone(), cid.clone(), owner.clone());
+                    tokio::spawn(async move {
+                        for _ in 0..50 {
+                            tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+                            if watch.tunnels.online(&id) {
+                                return watch.notify(&who);
+                            }
+                        }
+                    });
                     let _ = me.tunnels.accept(&cid, up, now).await;
+                    me.notify(&owner);
                 }
                 Err(e) => tracing::warn!("grid: tunnel {cid}: {e}"),
             }
@@ -737,15 +789,42 @@ impl Grid {
 
     /// A computer (or a page on it, `preview`) through its tunnel: only its own user's device reaches it.
     async fn computer_reach(&self, req: http::Request<Incoming>, c: &ComputerRow, preview: Option<u16>) -> Result<Resp> {
+        let Some(owner) = self.accounts.user_by_id(&c.user_id)?.filter(|u| u.disabled == 0) else {
+            return Ok(self.not_found(&req, "No such computer", "Nothing answers at this address."));
+        };
+        let go = format!("/go?computer={}", c.id);
+        let req = if preview.is_some() {
+            req
+        } else {
+            match self.address_own(req, &c.label, &owner, &go) {
+                handoff::Own::Done(r) => return Ok(r),
+                handoff::Own::Next(r) => r,
+            }
+        };
         let who = self.who(req.headers());
-        let cred = who.credential().ok_or_else(|| bad("Sign in first.", 401))?;
+        let here = match (&who, preview) {
+            (Who::Nobody, None) => self.address_user(req.headers(), &c.label, &owner),
+            _ => None,
+        };
+        let cred = match (who.credential(), &here) {
+            (Some(c), _) => c,
+            (None, Some(_)) => Credential::Cookie,
+            (None, None) if preview.is_none() => {
+                let pq = req.uri().path_and_query().map_or("/", |p| p.as_str()).to_owned();
+                return Ok(self.sign_in_at(req.method(), req.headers(), &pq, &go));
+            }
+            (None, None) => return Err(bad("Sign in first.", 401)),
+        };
         if let Some(r) = no(&may(cred, if preview.is_some() { Reach::Preview } else { Reach::Computer }))
             .filter(|_| !(preview.is_some() && cred == Credential::Device))
         {
             return Ok(r);
         }
-        if who.user().is_none_or(|u| u.id != c.user_id) {
+        if here.is_none() && who.user().is_none_or(|u| u.id != c.user_id) {
             return Err(bad("That computer isn't yours.", 403));
+        }
+        if cred == Credential::Cookie && self.foreign_origin(req.method(), req.headers(), &c.label) {
+            return Err(bad("forbidden origin", 403));
         }
         let (mut head, body) = req.into_parts();
         let path = head.uri.path_and_query().map_or("/", |p| p.as_str()).to_owned();
@@ -761,19 +840,20 @@ impl Grid {
         {
             head.headers.insert("x-wisp-preview", v);
         }
+        let asker = answer::Asker::of(&head.method, &head.headers);
         let req = http::Request::from_parts(head, incoming(body));
-        Ok(self
-            .tunnels
-            .forward(&c.id, req, preview.is_some())
-            .await
-            .unwrap_or_else(|| json(503, &json!({ "error": "This computer isn’t online.", "offline": true }))))
+        Ok(self.tunnels.forward(&c.id, req, preview.is_some()).await.unwrap_or_else(|| self.offline(asker, c)))
     }
 
     // --- <handle>.<domain>: a user's box -----------------------------------------------------------
 
     async fn edge(&self, req: http::Request<Incoming>, handle: &str) -> Result<Resp> {
-        let Some(user) = self.accounts.user_by_handle(handle)? else {
-            return Ok(json(404, &json!({ "error": "There's nobody with that handle here." })));
+        let Some(user) = self.accounts.user_by_handle(handle)?.filter(|u| u.disabled == 0) else {
+            return Ok(self.not_found(&req, "Nobody here", "There's nobody with that handle here."));
+        };
+        let req = match self.address_own(req, handle, &user, "/go") {
+            handoff::Own::Done(r) => return Ok(r),
+            handoff::Own::Next(r) => r,
         };
         let who = self.who(req.headers());
         // an API key opens this address only (never a computer's, a sandbox's or the grid's own API: `trust`)
@@ -781,13 +861,25 @@ impl Grid {
             Who::Nobody => self.keys.check(header_str(req.headers(), "authorization"))?,
             _ => None,
         };
-        let (cred, owner) = match (&key, who.credential()) {
-            (Some((u, _)), _) => (Credential::Key, Some(u.id.clone())),
-            (None, Some(c)) => (c, who.user().map(|u| u.id.clone())),
-            (None, None) => return Err(bad("Sign in first.", 401)),
+        // a browser signed in here from the grid's pages (`/go`, `handoff.rs`)
+        let here = match (&key, &who) {
+            (None, Who::Nobody) => self.address_user(req.headers(), handle, &user),
+            _ => None,
+        };
+        let (cred, owner) = match (&key, who.credential(), here) {
+            (Some((u, _)), _, _) => (Credential::Key, Some(u.id.clone())),
+            (None, Some(c), _) => (c, who.user().map(|u| u.id.clone())),
+            (None, None, Some(u)) => (Credential::Cookie, Some(u.id)),
+            (None, None, None) => {
+                let pq = req.uri().path_and_query().map_or("/", |p| p.as_str()).to_owned();
+                return Ok(self.sign_in_at(req.method(), req.headers(), &pq, "/go"));
+            }
         };
         if let Some(r) = no(&may(cred, Reach::Box)).filter(|_| cred != Credential::Session) {
             return Ok(r);
+        }
+        if cred == Credential::Cookie && self.foreign_origin(req.method(), req.headers(), handle) {
+            return Err(bad("forbidden origin", 403));
         }
         // another user's key is refused outright, like their device token
         if owner.is_none_or(|id| id != user.id) {
@@ -961,15 +1053,19 @@ fn inbox_loop(grid: &Arc<Grid>, stop: CancellationToken) {
 /// Serves `grid` on `listener` until `stop`.
 pub async fn serve(grid: Arc<Grid>, listener: TcpListener, stop: CancellationToken) {
     inbox_loop(&grid, stop.clone());
+    tokio::spawn(grid.follow_boxes(stop.clone()));
+    grid.restore_boxes();
     loop {
-        let (sock, _addr): (tokio::net::TcpStream, SocketAddr) = tokio::select! {
+        let (sock, addr): (tokio::net::TcpStream, SocketAddr) = tokio::select! {
             () = stop.cancelled() => return,
             a = listener.accept() => match a { Ok(a) => a, Err(_) => continue },
         };
         let g = grid.clone();
         tokio::spawn(async move {
-            let svc = hyper::service::service_fn(move |req| {
+            let peer = common::Peer(addr.ip());
+            let svc = hyper::service::service_fn(move |mut req: http::Request<Incoming>| {
                 let g = g.clone();
+                req.extensions_mut().insert(peer);
                 async move { Ok::<_, std::convert::Infallible>(g.handle(req).await) }
             });
             let _ = hyper_util::server::conn::auto::Builder::new(TokioExecutor::new())

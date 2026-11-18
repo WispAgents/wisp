@@ -12,6 +12,8 @@
   [data-kit='settings-group']:not([data-head]) > [data-kit='settings-group-body'] { border: 0; border-radius: 0; background: none; }
   [data-kit='settings-group-body'] > [data-kit='settings-note'][data-boxed] + [data-kit='settings-row'] { border-top: var(--size-hairline) solid var(--line); }
   [data-kit='settings-group-body'] > [data-kit='settings-row'] + [data-kit='slot'] [data-kit='settings-row'], [data-kit='settings-group-body'] > [data-kit='slot'] [data-kit='extension'] + [data-kit='extension'] [data-kit='settings-row'] { border-top: var(--size-hairline) solid var(--line); }
+  /* a slot inside a group (Settings → General's tasks: Check compactions) hands the line on to the row after it */
+  [data-kit='settings-group-body'] > [data-kit='slot'] + [data-kit='settings-row'] { border-top: var(--size-hairline) solid var(--line); }
   [data-kit='settings-pane'] > [data-kit='settings-group'][data-head], [data-kit='settings-pane'] > [data-kit='slot'] > [data-kit='extension'] > [data-kit='settings-group'][data-head] { gap: 0; }
   [data-kit='settings-row'][data-big] [data-kit='settings-row-title'] { font-size: 15px; font-variant-numeric: tabular-nums; }
 }

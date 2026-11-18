@@ -1,8 +1,11 @@
 // The Thread tab's pure half (ADR-0079; v1 web/js/threads.js SECTIONS, features/thread.js): the seven sections in
 // order with who wrote each, the text a rewrite keeps, the one health line, a section's revisions, and which tasks
 // have a thread. No DOM, no signals: test/model.test.ts.
-import type { By, Health, Level, MetaRow, NoteRow, Revision, RevisionRow } from './types.ts';
+import type { Audit, AuditRow, By, Health, Level, MetaRow, NoteRow, Revision, RevisionRow } from './types.ts';
 import './i18n/lazy.ts';
+
+/** "2m ago" moves on while the Thread shows: its clock ticks this often */
+export const TICK_MS = 30_000;
 
 /** v1's order; `one`: one text (goal, state), else a list, one item a line (wisp-threads-core notes::META). */
 export const SECTIONS = [
@@ -165,4 +168,33 @@ export function freshable(t: TaskLike | undefined): boolean {
 /** You changed the Notes since the agent last read them (notes.rs yours_unseen: per section, v1's bug fixed). */
 export function yoursUnseen(meta: MetaRow | undefined, sections: readonly SectionView[]): boolean {
   return !!meta && meta.rev > meta.seen && sections.some((s) => s.by === 'you' && s.rev > 0);
+}
+
+/** An audit still asking this long after it started was cut off (a restart): it reads as skipped (audit.rs STALE_MS). */
+export const AUDIT_STALE_MS = 10 * 60_000;
+/** The server's words for one cut off (audit.rs list). */
+export const CUT_OFF = 'It didn’t finish.';
+
+function settled(a: Audit, now: number): Audit {
+  return a.status === 'running' && now - a.at > AUDIT_STALE_MS ? { ...a, status: 'skipped', why: CUT_OFF } : a;
+}
+
+/** A task's compaction audits, newest first, as `threads.audits` answers them. */
+export function auditsOf(rows: readonly AuditRow[], task: string, now: number): Audit[] {
+  return rows
+    .filter((r) => r.task_id === task && r.body)
+    .map((r) => settled(r.body, now))
+    .sort((a, b) => b.at - a.at);
+}
+
+/** The audit of one compaction's turn. */
+export function auditFor(rows: readonly AuditRow[], turn: string, now = 0): Audit | undefined {
+  const r = rows.find((x) => x.body?.turn === turn);
+  return r ? settled(r.body, now) : undefined;
+}
+
+/** A lost item as the Notes say it ("Constraints: No Redis"): its section's label and the item. */
+export function lostItem(s: string): { section: string; text: string } {
+  const i = s.indexOf(': ');
+  return i > 0 && i < 40 ? { section: s.slice(0, i), text: s.slice(i + 2) } : { section: '', text: s };
 }

@@ -2,7 +2,7 @@
 // its conversation is, in a tab beside the task and from the task's menu (a sheet on a phone). Nothing of it is on
 // the first page: the tab and the menu entry come with `later`, the Thread itself with import() on first show.
 import { lazy } from 'solid-js';
-import { definePluginUi, defineView } from '@wisp/shell';
+import { defineExtension, definePluginUi, defineView } from '@wisp/shell';
 import { catalogue, t } from './i18n.ts';
 import { THREAD_VIEW } from './types.ts';
 
@@ -10,6 +10,8 @@ export default definePluginUi({
   id: 'wisp.threads',
   catalogue,
   later: () => import('./later.ts'),
+  // Settings → General's Check compactions: here, not in `later`, so a Settings page opened first has it at once
+  extensions: [defineExtension({ id: 'threads.compactAudit', attachTo: { id: 'shell.settings:tasks' }, component: lazy(() => import('./CompactAuditRow.tsx')) })],
   views: [
     defineView<{ task: string }>({
       kind: THREAD_VIEW,

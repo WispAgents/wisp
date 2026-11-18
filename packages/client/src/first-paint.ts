@@ -36,7 +36,7 @@ export async function loadFirstPaint(persist: Persist): Promise<Map<PeerId, Save
 
 /** Puts saved rows into the store's base, at the cursor they were saved with. */
 export function restoreFirstPaint(writer: EntityWriter, saved: ReadonlyMap<PeerId, SavedPeer>): void {
-  for (const [peer, s] of saved) writer.restore(peer, s.link?.cursor ?? 0, s.rows);
+  for (const [peer, s] of saved) writer.restore(peer, s.link?.cursor ?? 0, s.rows, s.link?.synced ?? []);
 }
 
 export interface PersistEntitiesOptions {

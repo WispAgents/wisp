@@ -231,8 +231,15 @@ turn. When a screen or feature contradicts one, that's a bug: fix it toward the 
       **Fresh thread and the compaction audit done (2026-11-18, ADR-0096):** `threads.freshBrief`/`threads.fresh`
       through `runtime.followUp { fresh }` (resumes nothing, no hand-off, the old conversation linked), `wisp fresh`;
       `stats.compactions` (Claude Code), `runtime.probe`, the audit (setting `threads.compactAudit`, off; word-match
-      scorer, no model), `threads.audits`, the lost items in the next note. **To do:** compaction counts and offload
-      hooks for the other harnesses (none reports a compaction yet), formulas seeding Notes, the TUI health line
+      scorer, no model), `threads.audits`, the lost items in the next note. Its UI (2026-11-18): *Compactions* in the Thread tab and
+      the line under the compaction's turn ("Kept 6 of 8", what was lost, each under its section; asking; skipped and
+      why), *Check compactions* in Settings → General's tasks group where v1 had it (`shell.settings:tasks`, additive)
+      and in All settings as a plain label and its help; a task's first look now carries its `threads_*` rows
+      (`crates/wisp/src/serve.rs` `threads_sources`: without them the Thread tab stayed empty while `wisp notes --set`
+      wrote; `crates/wisp/tests/serve_threads_topic.rs`). **The rest done (2026-11-18, ADR-0097):** Codex's offload and
+      compaction counter (Full auto; the other five harnesses checked and skipped with why), formulas seeding Notes
+      (`notes:` on a task, validated), the TUI's health line and Thread pane (`t`), `serve_threads.rs` e2e. **To do:**
+      recheck opencode (a JS plugin via `OPENCODE_CONFIG_CONTENT`) with a recorded run
 
 ### 4.2 GUI (browser and desktop), v1 parity
 

@@ -14,7 +14,8 @@ export interface RecipeRow {
   readonly project?: string;
 }
 
-const list = defineCommand<{ peer: string }, RecipeRow[]>({ id: 'automations.tasks', owner: (a) => a.peer, wire: () => ({}), optimistic: 'none', pending: 'the recipes' });
+// quiet: read on every Home load; a peer without it (an older wisp) has no recipes, never an error toast (QA r2 phone #1)
+export const list = defineCommand<{ peer: string }, RecipeRow[]>({ id: 'automations.tasks', owner: (a) => a.peer, wire: () => ({}), optimistic: 'none', pending: 'the recipes', quiet: true });
 
 const asksFields = (r: RecipeRow): boolean => [r.prompt, ...(r.steps ?? [])].some((x) => /\{[A-Za-z_][\w-]*\}/.test(x));
 

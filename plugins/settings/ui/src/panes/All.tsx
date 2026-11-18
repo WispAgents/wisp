@@ -8,7 +8,7 @@ import { list, type SettingInfo } from '../commands.ts';
 import { t } from '../i18n.ts';
 import { fromRow } from '../source.ts';
 import '../i18n/lazy.ts';
-import { ownerTitle } from '../words.ts';
+import { ownerTitle, titleParts } from '../words.ts';
 import { AUTO_SETTING } from '@wisp/shell';
 
 const words = (v: unknown): string => (v === null || v === undefined ? '' : typeof v === 'string' ? v : JSON.stringify(v));
@@ -18,7 +18,7 @@ function Control(props: { readonly c: PluginClient; readonly s: SettingInfo }): 
   const value = useSignal(src.value);
   const lockedBy = src.lockedBy ? useSignal(src.lockedBy) : (): string | undefined => undefined;
   const locked = (): boolean => !!props.s.lockedBy || !!lockedBy();
-  const label = props.s.decl.title ?? props.s.key;
+  const label = titleParts(props.s.decl.title ?? props.s.key).label;
   const [draft, setDraft] = createSignal<string | undefined>();
   const commit = (raw: string): void => {
     setDraft(undefined);
@@ -74,11 +74,16 @@ export default function All(props: { readonly client: PluginClient }): JSX.Eleme
                 {(s) => (
                   <SettingsRow
                     part="settings.all.row"
-                    title={s.decl.title ?? s.key}
+                    title={titleParts(s.decl.title ?? s.key).label}
                     description={
-                      <Text mono tone="muted">
-                        {s.lockedBy ? t('settings.all.locked', { key: s.key, by: s.lockedBy }) : s.key}
-                      </Text>
+                      <>
+                        <Show when={titleParts(s.decl.title ?? '').help}>
+                          {(help) => <Text as="div" tone="muted">{help()}</Text>}
+                        </Show>
+                        <Text as="div" mono tone="muted">
+                          {s.lockedBy ? t('settings.all.locked', { key: s.key, by: s.lockedBy }) : s.key}
+                        </Text>
+                      </>
                     }
                     wideControl={s.decl.type !== 'boolean' && s.decl.type !== 'bool'}
                     control={<Control c={c} s={s} />}

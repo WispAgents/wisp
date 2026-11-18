@@ -448,7 +448,7 @@ fn asked(r: &Rig, cmd: &str) -> Vec<Value> {
 #[tokio::test(flavor = "multi_thread")]
 async fn a_delegate_on_another_machine_holds_its_lead_and_comes_back_once_with_its_changes() {
     let r = common::rig_with(far_host(None)).await;
-    let id = far_lead(&r, "far-l", "m1").await;
+    let id = Box::pin(far_lead(&r, "far-l", "m1")).await;
     open("far-l");
     ended(&r, id.as_str()).await;
     until("it waits on far", || async { r.rt.get(id.as_str()).await.is_ok_and(|s| waits_on(&s) == json!(["far"])) }).await;
@@ -477,7 +477,7 @@ async fn a_delegate_on_another_machine_holds_its_lead_and_comes_back_once_with_i
 #[tokio::test(flavor = "multi_thread")]
 async fn a_sandbox_delegate_holds_its_lead_and_its_changes_come_back_once() {
     let r = common::rig_with(far_host(None)).await;
-    let id = far_lead(&r, "box-l", "sandbox").await;
+    let id = Box::pin(far_lead(&r, "box-l", "sandbox")).await;
     open("box-l");
     until("it waits on far", || async { r.rt.get(id.as_str()).await.is_ok_and(|s| waits_on(&s) == json!(["far"])) }).await;
     set_live(&r.host, far_answers("review"));
@@ -498,7 +498,7 @@ async fn a_sandbox_delegate_holds_its_lead_and_its_changes_come_back_once() {
 #[tokio::test(flavor = "multi_thread")]
 async fn stopping_a_lead_stops_its_delegate_elsewhere_there() {
     let r = common::rig_with(far_host(None)).await;
-    let id = far_lead(&r, "farstop-l", "m1").await;
+    let id = Box::pin(far_lead(&r, "farstop-l", "m1")).await;
     open("farstop-l");
     until("it waits on far", || async { r.rt.get(id.as_str()).await.is_ok_and(|s| !waits_on(&s).is_null()) }).await;
     r.rt.stop(id.as_str(), false).await.unwrap();
@@ -519,7 +519,7 @@ async fn stopping_a_lead_stops_its_delegate_elsewhere_there() {
 async fn a_lead_waiting_on_a_delegate_elsewhere_watches_it_again_after_a_restart() {
     let scope = wisp_proc::Scope::new();
     let r = common::rig_with(far_host(Some(scope.clone()))).await;
-    let id = far_lead(&r, "farboot-l", "m1").await;
+    let id = Box::pin(far_lead(&r, "farboot-l", "m1")).await;
     open("farboot-l");
     until("it waits on far", || async { r.rt.get(id.as_str()).await.is_ok_and(|s| !waits_on(&s).is_null()) }).await;
     // the first wisp goes (its scope, and the watch on it, with it); a second one on the same store
@@ -546,7 +546,7 @@ async fn a_lead_waiting_on_a_delegate_elsewhere_watches_it_again_after_a_restart
 #[tokio::test(flavor = "multi_thread")]
 async fn a_later_turn_on_the_task_there_doesnt_hold_the_lead_on_its_job() {
     let r = common::rig_with(far_host(None)).await;
-    let id = far_lead(&r, "later-l", "m1").await;
+    let id = Box::pin(far_lead(&r, "later-l", "m1")).await;
     open("later-l");
     until("it waits on far", || async { r.rt.get(id.as_str()).await.is_ok_and(|s| waits_on(&s) == json!(["far"])) }).await;
     set_live(

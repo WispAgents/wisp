@@ -98,7 +98,7 @@
   [data-kit='stage'][data-layout='stack'] [data-kit='b-hero'] > h2 { font-size: 22px; }
   /* the trail on three rows: what it did, the files, the tools (a grid: its rows are fixed, it never wraps) */
   @media (max-width: 520px) {
-    [data-kit='trail-bar'] { display: grid; grid-template-columns: auto auto auto minmax(auto, 1fr); justify-items: start; } /* the last count's column takes the rest: no empty column and gap beyond the bar, so the full-width rows end where v1's do */
+    [data-kit='trail-bar'] { display: grid; grid-template-columns: auto auto auto minmax(0, 1fr); justify-items: start; } /* the last count's column takes the rest: no empty column and gap beyond the bar, so the full-width rows end where v1's do; it may shrink below its words (the receipt gives way with "…", QA r2 #8) */
     [data-kit='trail-bar'] > [data-kit='grow'] { display: none; }
     [data-kit='link-xs'] { grid-column: 1 / -1; }
     [data-kit='tb-tools'] { grid-column: 1 / -1; justify-self: end; margin: 0; }

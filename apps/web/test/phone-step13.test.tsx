@@ -22,7 +22,9 @@ afterEach(() => {
 
 const PLUGINS = new Set(['wisp.shell-list', 'wisp.shell-task']);
 
-async function start(platform: Platform, o: { computers?: boolean; history?: ReturnType<typeof memoryHistory> } = {}): Promise<{ root: HTMLElement; mock: MockPeer; client: Client; shell: ShellContext }> {
+/** `studio`: a second saved computer (a peer of its own), so the Tasks title is the computer filter (one computer has
+ *  none, QA round 2 #10) */
+async function start(platform: Platform, o: { computers?: boolean; studio?: boolean; history?: ReturnType<typeof memoryHistory> } = {}): Promise<{ root: HTMLElement; mock: MockPeer; client: Client; shell: ShellContext }> {
   const mock = createMockPeer({ epoch: 'e1', ...(o.computers && { computers: true }) });
   const home = peerId('local');
   const toaster = createToaster();
@@ -30,7 +32,10 @@ async function start(platform: Platform, o: { computers?: boolean; history?: Ret
   const client = createClient({ clientId: 'c1', build: 't', home, width: 390, onError: commandErrorToast(toaster), ...(o.history && { history: o.history }) });
   const shell = createShell({ client, toaster, platform, home, window: window as unknown as ShellWindow });
   for (const { def } of pluginUis()) if (def && PLUGINS.has(def.id)) shell.register(def);
-  await client.start([{ peer: home, name: 'mock', transport: memTransport(mock) }]);
+  await client.start([
+    { peer: home, name: 'mock', transport: memTransport(mock) },
+    ...(o.studio ? [{ peer: peerId('studio'), name: 'studio', transport: memTransport(createMockPeer({ epoch: 'e2', name: 'Studio' })) }] : []),
+  ]);
   const root = document.createElement('div');
   document.body.append(root);
   const stop = shell.render(root);
@@ -185,23 +190,23 @@ test('a_bulk_delete_asks_first_with_the_count', async () => {
 });
 
 test('on_ios_the_computer_filter_is_a_pull_down_from_the_title_with_the_shown_one_checked_not_a_sheet', async () => {
-  const ios = await start(phone('ios'));
+  const ios = await start(phone('ios'), { studio: true });
   const trigger = ios.root.querySelector<HTMLElement>('[data-part="phone.tasks.bar.title"] [data-kit="app-bar-title-button"]');
   expect(trigger?.getAttribute('aria-haspopup'), 'a menu button').toBe('menu');
   trigger?.click();
-  await until(() => [...document.querySelectorAll('[data-kit="menu-item"]')].some((e) => e.textContent?.includes('mock')));
+  await until(() => [...document.querySelectorAll('[data-kit="menu-item"]')].some((e) => e.textContent?.includes('Studio')));
   const choices = [...document.querySelectorAll<HTMLElement>('[data-kit="menu-item"]')].filter((e) => e.closest('[data-part~="phone.tasks.bar.title.menu"]'));
-  expect(choices.map((e) => e.textContent?.trim())).toEqual(['All', 'mock']);
-  expect(choices.find((e) => e.textContent?.includes('All'))?.querySelector('[data-kit="icon"]:last-child'), 'the one shown, checked').not.toBeNull();
-  expect(choices.find((e) => e.textContent?.includes('mock'))?.querySelectorAll('[data-kit="icon"]').length, 'the other not').toBe(0);
+  expect(choices.map((e) => e.textContent?.trim())).toEqual(['All computers', 'Mock', 'Studio']);
+  expect(choices.find((e) => e.textContent?.includes('All computers'))?.querySelector('[data-kit="icon"]:last-child'), 'the one shown, checked').not.toBeNull();
+  for (const other of ['Mock', 'Studio']) expect(choices.find((e) => e.textContent?.includes(other))?.querySelectorAll('[data-kit="icon"]').length, `${other} not`).toBe(0);
   expect(q('[data-part~="phone.tasks.computers"] [data-kit="radio"]'), 'no sheet').toBeNull();
-  choices.find((e) => e.textContent?.includes('mock'))?.click();
-  await until(() => ios.root.querySelector('[data-part="phone.tasks.bar.title"]')?.textContent?.includes('mock') === true);
-  expect(ios.root.querySelector('[data-part="phone.tasks.bar.title"]')?.textContent, 'the pick is the title').toContain('mock');
+  choices.find((e) => e.textContent?.includes('Studio'))?.click();
+  await until(() => ios.root.querySelector('[data-part="phone.tasks.bar.title"]')?.textContent?.includes('Studio') === true);
+  expect(ios.root.querySelector('[data-part="phone.tasks.bar.title"]')?.textContent, 'the pick is the title').toContain('Studio');
 });
 
 test('on_android_the_computer_filter_keeps_its_sheet', async () => {
-  const android = await start(phone('android'));
+  const android = await start(phone('android'), { studio: true });
   const t = android.root.querySelector<HTMLElement>('[data-part="phone.tasks.bar.title"] [data-kit="app-bar-title-button"]');
   expect(t?.hasAttribute('aria-haspopup'), 'Android: a plain button').toBe(false);
   t?.click();
@@ -213,6 +218,10 @@ test('on_android_the_computer_filter_keeps_its_sheet', async () => {
 async function openMenu(): Promise<HTMLElement[]> {
   await until(() => q('[data-part="phone.task.bar"] [data-kit="app-bar-actions"] > [aria-label="More"]') !== null);
   (q('[data-part="phone.task.bar"] [data-kit="app-bar-actions"] > [aria-label="More"]') as HTMLButtonElement).click();
+  // on a phone the menu's longer sections are submenus (QA r2 #5): Next / Previous task are under Show
+  const show = (): HTMLElement | undefined => [...document.querySelectorAll<HTMLElement>('[data-kit="menu-item"][data-sub]')].find((e) => e.textContent?.trim().startsWith('Show'));
+  await until(() => show() !== undefined);
+  show()?.click();
   await until(() => [...document.querySelectorAll('[data-kit="menu-item"]')].some((e) => e.textContent?.includes('Next task')));
   return [...document.querySelectorAll<HTMLElement>('[data-kit="menu-item"]')].filter((e) => /Next task|Previous task/.test(e.textContent ?? ''));
 }

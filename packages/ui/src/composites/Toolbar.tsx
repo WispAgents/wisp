@@ -95,16 +95,34 @@ function ItemView(props: { readonly item: ToolbarItem; readonly form: 'full' | '
 function useMeasure(onChange: (sizes: ReadonlyMap<string, number>) => void): (el: HTMLElement) => void {
   const sizes = new Map<string, number>();
   if (typeof ResizeObserver === 'undefined') return () => {};
+  let bar: HTMLElement | undefined;
+  let gone = false;
   const ro = new ResizeObserver((entries) => {
     for (const entry of entries) {
       const key = (entry.target as HTMLElement).dataset['measure'] ?? '';
       const box = entry.borderBoxSize[0];
       sizes.set(key, key === 'bar' ? entry.contentRect.width : (box?.inlineSize ?? entry.contentRect.width));
     }
+    const wide = bar?.clientWidth;
     onChange(sizes);
+    // a bar as wide as its items (an app bar's actions) changes width with the fold just made: in this same pass the
+    // browser skips that change (Chrome's "ResizeObserver loop completed with undelivered notifications", QA round 2
+    // #15). The fold has landed; the bar steps out of the observer and is measured again on the next frame.
+    const el = bar;
+    if (!el || wide === undefined || el.clientWidth === wide) return;
+    ro.unobserve(el);
+    requestAnimationFrame(() => {
+      if (!gone && el.isConnected) ro.observe(el);
+    });
   });
-  onCleanup(() => ro.disconnect());
-  return (el) => ro.observe(el);
+  onCleanup(() => {
+    gone = true;
+    ro.disconnect();
+  });
+  return (el) => {
+    if (el.dataset['measure'] === 'bar') bar = el;
+    ro.observe(el);
+  };
 }
 
 export function Toolbar(props: ToolbarProps): JSX.Element {

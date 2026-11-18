@@ -7,6 +7,7 @@ import { t } from '../src/i18n.ts';
 import type { State } from '../src/model.ts';
 import { askJob, lastReport, nextLine, nowJob, replyTarget, ringLabel, ringOf, stepStory, storyOrder } from '../src/stories.ts';
 import type { SessionRow } from '../src/types.ts';
+import { orgOpen, orgParams } from '../src/org-params.ts';
 
 const say = t as never;
 const job = (id: string, crew: string, extra: Partial<SessionRow> = {}): SessionRow =>
@@ -83,4 +84,11 @@ test('the_next_card_says_when_it_looks_again_else_its_schedule_and_paused_says_s
   expect(nextLine({ cron: '', on: [], paused: false, wakeAt: 200 }, c)).toBe('Check-in at 18:00');
   expect(nextLine({ cron: '0 * * * *', on: [], paused: false, wakeAt: null }, c)).toBe(t('wisp.crew.cadence.hourly'));
   expect(nextLine({ cron: '0 * * * *', on: [], paused: true, wakeAt: 200 }, c)).toBe('Paused');
+});
+
+// QA round 2 #3: the Org bubble opened the Crew view bare, which on a phone is the members list; the chart is the Org
+// view with `{ chart: true }` (the Crew tab's own Org button). The browser draws the chart either way.
+test('the_org_bubble_opens_the_org_chart', () => {
+  expect(orgOpen()).toEqual({ t: 'openView', id: 'crew.org', params: { chart: true } });
+  expect(orgParams(orgOpen().params)).toEqual({ chart: true });
 });

@@ -18,16 +18,22 @@ export function knownComputer(filter: string | undefined, peers: readonly string
   return filter && filter !== ALL_COMPUTERS && peers.includes(filter) ? filter : ALL_COMPUTERS;
 }
 
+/** A computer's name as a label: sentence case (the local one is named "this computer" in running text). */
+const label = (s: string): string => (s ? s.charAt(0).toUpperCase() + s.slice(1) : s);
+
+/** Whether there's anything to narrow: one computer (or none yet) has no filter, the bar says Tasks (QA round 2 #10). */
+export const hasComputerFilter = (peers: readonly string[]): boolean => peers.length > 1;
+
 /** The bar's title: *All*, or the picked computer's name. */
 export function computerTitle(filter: string | undefined, peers: readonly string[], name: (peer: string) => string, allLabel: string): string {
   const on = knownComputer(filter, peers);
-  return on === ALL_COMPUTERS ? allLabel : name(on) || on;
+  return on === ALL_COMPUTERS ? allLabel : label(name(on) || on);
 }
 
 /** What the title's sheet offers: All first, then each computer in the client's order, the pick marked. */
 export function computerOptions(filter: string | undefined, peers: readonly string[], name: (peer: string) => string, allLabel: string): ComputerOption[] {
   const on = knownComputer(filter, peers);
-  return [{ id: ALL_COMPUTERS, label: allLabel, on: on === ALL_COMPUTERS }, ...peers.map((p) => ({ id: p, label: name(p) || p, on: on === p }))];
+  return [{ id: ALL_COMPUTERS, label: allLabel, on: on === ALL_COMPUTERS }, ...peers.map((p) => ({ id: p, label: label(name(p) || p), on: on === p }))];
 }
 
 /** Whether a row (by its entity key) shows under the pick. */

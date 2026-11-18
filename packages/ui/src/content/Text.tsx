@@ -110,6 +110,8 @@ export interface LinkProps extends KitProps, WithChildren {
   readonly onClick?: (e: MouseEvent) => void;
   readonly tone?: 'accent' | 'ink' | 'muted';
   readonly title?: string;
+  /** one line, cut with … where it doesn't fit (an address in running text: a phone broke it over 3 lines). Additive. */
+  readonly truncate?: boolean;
 }
 
 export function Link(props: LinkProps): JSX.Element {
@@ -124,6 +126,7 @@ export function Link(props: LinkProps): JSX.Element {
       data-kit="link"
       data-part={props.part ?? 'ui.link'}
       data-tone={props.tone ?? 'accent'}
+      data-truncate={props.truncate ? '' : undefined}
     >
       {props.children}
     </a>

@@ -4,6 +4,9 @@
 import { describe, expect, test } from 'vitest';
 import {
   SECTIONS,
+  auditFor,
+  auditsOf,
+  lostItem,
   cleanText,
   freshable,
   healthFacts,
@@ -18,7 +21,7 @@ import {
   toneOf,
   yoursUnseen,
 } from '../src/model.ts';
-import type { Health, NoteRow } from '../src/types.ts';
+import type { Audit, AuditRow, Health, NoteRow } from '../src/types.ts';
 
 const row = (section: string, text: string, more: Partial<NoteRow> = {}): NoteRow => ({ id: `s1|${section}`, task_id: 's1', section, text, rev: 1, by: 'agent', at: 1000, ...more });
 const health = (more: Partial<Health> = {}): Health => ({ task: 's1', level: 'ok', reasons: [], turns: 4, compactions: 0, reverted: 0, ...more });
@@ -149,5 +152,30 @@ describe('which tasks', () => {
     expect(yoursUnseen({ id: 's1', rev: 4, seen: 4 }, s)).toBe(false);
     expect(yoursUnseen({ id: 's1', rev: 4, seen: 3 }, sectionsOf([row('goal', 'G')], 's1'))).toBe(false);
     expect(yoursUnseen(undefined, s)).toBe(false);
+  });
+});
+
+describe('compaction audits (ADR-0096)', () => {
+  const audit = (turn: string, more: Partial<Audit> = {}): AuditRow => {
+    const body: Audit = { task: 's1', turn, status: 'done', kept: 6, total: 8, lost: ['Constraints: No Redis', 'Decisions: Sliding window'], told: false, at: 1000, ...more };
+    return { id: `s1|${turn}`, task_id: 's1', at: body.at, body };
+  };
+  test('a task’s audits, newest first; other tasks’ are not its', () => {
+    const rows = [audit('t1', { at: 10 }), audit('t3', { at: 30 }), audit('t2', { at: 20 }), { ...audit('x'), task_id: 's2', body: { ...audit('x').body, task: 's2' } }];
+    expect(auditsOf(rows, 's1', 100).map((a) => a.turn)).toEqual(['t3', 't2', 't1']);
+  });
+  test('one still asking ten minutes on was cut off (a restart): it reads as skipped, as the server reads it', () => {
+    const rows = [audit('t1', { status: 'running', at: 0 })];
+    expect(auditsOf(rows, 's1', 60_000)[0]?.status).toBe('running');
+    expect(auditsOf(rows, 's1', 10 * 60_000 + 1)[0]).toMatchObject({ status: 'skipped', why: 'It didn’t finish.' });
+  });
+  test('a turn’s audit is the one for its turn', () => {
+    const rows = [audit('t1'), audit('t2', { kept: 8, lost: [] })];
+    expect(auditFor(rows, 't2')?.kept).toBe(8);
+    expect(auditFor(rows, 't9')).toBeUndefined();
+  });
+  test('what a lost item says: its section, then the item', () => {
+    expect(lostItem('Constraints: No Redis')).toEqual({ section: 'Constraints', text: 'No Redis' });
+    expect(lostItem('just words')).toEqual({ section: '', text: 'just words' });
   });
 });

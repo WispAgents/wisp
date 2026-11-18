@@ -1,8 +1,7 @@
 //! The signed-in app's frame: the header (brand, Home/Account tabs, who's signed in) and the page.
 
 use super::app_css::APP_CSS;
-use super::icons::CLOUD;
-use super::scripts::PENDING;
+use super::scripts::{CONFIRM, PENDING};
 use super::site::tag;
 use super::{ASSETS, PageCfg, PageUser, esc};
 
@@ -12,6 +11,8 @@ pub(super) enum Tab {
     None,
     Home,
     Account,
+    /// Home and Account in the header, neither of them this page (Activate)
+    Neither,
 }
 
 pub(super) struct AppPage<'a> {
@@ -74,17 +75,18 @@ pub(super) fn app_page(p: &AppPage<'_>) -> String {
         String::new()
     };
     let wide = if tabbed { " wide" } else { "" };
+    // a narrow page (Activate) keeps its narrow column under the wide header
+    let main_wide = if tabbed && !p.narrow { " wide" } else { "" };
     let narrow = if p.narrow { " narrow" } else { "" };
-    let cloud = CLOUD.replacen("<svg", r#"<svg width="13" height="13""#, 1);
+    // "wisp Grid · wisp Grid" says it twice: a page named after the grid is just the grid's name
+    let title = if p.title == cfg.name { esc(&cfg.name) } else { format!("{} · {}", esc(p.title), esc(&cfg.name)) };
     format!(
         r#"<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>{title} · {name}</title><meta name="referrer" content="same-origin"><link rel="icon" href="{ASSETS}/icon.svg"><style>{APP_CSS}</style>{head}</head><body>
-<header class="top{wide}"><a class="brand" href="{url}/"><span class="mark"></span>wisp</a><span class="chipx">{cloud}{tag}</span>
+<title>{title}</title><meta name="referrer" content="same-origin"><link rel="icon" href="{ASSETS}/icon.svg"><style>{APP_CSS}</style>{head}</head><body>
+<header class="top{wide}"><a class="brand" href="{url}/"><span class="mark"></span>wisp</a><span class="chipx">{tag}</span>
 {nav}
 {me}</header>
-<main class="main{narrow}{wide}">{body}</main>{PENDING}</body></html>"#,
-        title = esc(p.title),
-        name = esc(&cfg.name),
+<main class="main{narrow}{main_wide}">{body}</main>{CONFIRM}{PENDING}</body></html>"#,
         head = p.head,
         url = esc(&cfg.public_url),
         tag = esc(&tag(cfg)),

@@ -30,6 +30,8 @@ pub enum Side {
     Files,
     Terminal,
     Setup,
+    /// the task's Notes and how worn its thread is (the GUI's Thread tab, ADR-0097)
+    Thread,
 }
 
 impl Side {
@@ -39,6 +41,7 @@ impl Side {
             Self::Files => "Files",
             Self::Terminal => "Terminal",
             Self::Setup => "Setup",
+            Self::Thread => "Thread",
         }
     }
     fn next(self) -> Self {
@@ -46,7 +49,8 @@ impl Side {
             Self::Changes => Self::Files,
             Self::Files => Self::Terminal,
             Self::Terminal => Self::Setup,
-            Self::Setup => Self::Changes,
+            Self::Setup => Self::Thread,
+            Self::Thread => Self::Changes,
         }
     }
 }
@@ -663,6 +667,14 @@ impl App {
                 self.side = match self.side {
                     Some(Side::Changes) => None,
                     _ => Some(Side::Changes),
+                };
+                Vec::new()
+            }
+            // t: the Thread pane (its Notes and health), as the GUI's Thread tab; again: close it
+            KeyCode::Char('t') => {
+                self.side = match self.side {
+                    Some(Side::Thread) => None,
+                    _ => Some(Side::Thread),
                 };
                 Vec::new()
             }

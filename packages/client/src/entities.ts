@@ -26,6 +26,9 @@ export interface EntityReader {
   keys(kind: string): Readable<readonly EntityKey[]>;
   list<T = unknown>(kind: string): Readable<readonly DeepReadonly<T>[]>;
   pending(): Readable<readonly PendingInfo[]>;
+  /** whether `peer`'s `topic` is here as the peer has it: its snapshot landed this run, or first paint restored it as
+   *  synced. An empty list is then really empty, not still coming (the first run's bar, ADR-0017). Additive. */
+  loaded(peer: PeerId, topic: Topic): Readable<boolean>;
 }
 
 export interface ChangedRow {
@@ -58,7 +61,8 @@ export interface EntityWriter {
   mergeOlder(peer: PeerId, kind: string, id: string, topic: Topic, items: readonly unknown[], seqOf: (item: unknown) => number): void;
   /** the peer's cache is no longer trusted (a new epoch, or the cursor is too old) */
   resetPeer(peer: PeerId): void;
-  restore(peer: PeerId, cursor: number, rows: readonly StoredRow[]): void;
+  /** `synced`: the topics the saved link had whole (they count as loaded, LinkSaved.synced) */
+  restore(peer: PeerId, cursor: number, rows: readonly StoredRow[], synced?: readonly Topic[]): void;
   addPending(mid: string, peer: PeerId, ops: EntityOps): void;
   /** the ack: drop the overlay once the peer's cursor reaches `seq` */
   settle(mid: string, seq: number): void;
@@ -98,6 +102,14 @@ export function createEntityStore(warn: Warn = () => {}): { reader: EntityReader
   const cursors = new Map<PeerId, number>();
   const pending = signal<readonly PendingInfo[]>([]);
   const listeners = new Set<(rows: readonly ChangedRow[]) => void>();
+  // `<peer>\u0000<topic>` of every topic held whole (EntityReader.loaded)
+  const whole = signal<ReadonlySet<string>>(new Set());
+  const wholeKey = (peer: PeerId, topic: Topic): string => `${peer}\u0000${topic}`;
+  const markWhole = (peer: PeerId, topics: readonly Topic[]): void => {
+    const was = untracked(whole);
+    const add = topics.map((t) => wholeKey(peer, t)).filter((k) => !was.has(k));
+    if (add.length > 0) whole(new Set([...was, ...add]));
+  };
 
   const coll = (kind: string): Collection => {
     let c = collections.get(kind);
@@ -258,6 +270,7 @@ export function createEntityStore(warn: Warn = () => {}): { reader: EntityReader
         }
       }
       recomputeAll(touched);
+      markWhole(peer, [topic]);
     },
     mergeOlder(peer, kind, id, topic, items, seqOf) {
       if (items.length === 0) return;
@@ -289,9 +302,13 @@ export function createEntityStore(warn: Warn = () => {}): { reader: EntityReader
         }
       }
       recomputeAll(touched);
+      const was = untracked(whole);
+      const left = [...was].filter((k) => !k.startsWith(`${peer}\u0000`));
+      if (left.length !== was.size) whole(new Set(left));
     },
-    restore(peer, cursor, rows) {
+    restore(peer, cursor, rows, synced = []) {
       cursors.set(peer, cursor);
+      markWhole(peer, synced);
       for (const row of rows) {
         const r = cell(row.e, row.key);
         r.base = row.v;
@@ -348,6 +365,10 @@ export function createEntityStore(warn: Warn = () => {}): { reader: EntityReader
       return (() => l.sig()) as Readable<readonly DeepReadonly<T>[]>;
     },
     pending: () => () => pending(),
+    loaded(peer, topic) {
+      const k = wholeKey(peer, topic);
+      return computed(() => whole().has(k));
+    },
   };
 
   return { reader, writer };

@@ -6,8 +6,9 @@ import { Show, createMemo, createSignal, type JSX } from 'solid-js';
 import { Button, Dot, EmptyState, ForKeyed, Inline, Stack, Text, Wrap } from '@wisp/ui';
 import type { Key, Vars } from './i18n.ts';
 import { healthFacts, splitSections, toneOf, type SectionId, type SectionView } from './model.ts';
+import { Compactions } from './Audit.tsx';
 import { SectionItem } from './Section.tsx';
-import type { Health, Revision } from './types.ts';
+import type { Audit, Health, Revision } from './types.ts';
 import './i18n/lazy.ts';
 
 type T = (key: Key, vars?: Vars) => string;
@@ -16,6 +17,8 @@ export interface ThreadViewProps {
   readonly sections: readonly SectionView[];
   readonly revisions: (section: SectionId, current: number) => readonly Revision[];
   readonly health?: Health | undefined;
+  /** what each compaction kept of the Notes, newest first (none while the setting is off) */
+  readonly audits?: readonly Audit[];
   /** a subagent's: its lead's Notes, which it can't change */
   readonly readOnly: boolean;
   /** you changed them since the agent last read them */
@@ -118,6 +121,7 @@ export function ThreadView(props: ThreadViewProps): JSX.Element {
       <Show when={!props.readOnly && empty().length > 0}>
         <AddRow empty={empty()} onAdd={setEditing} t={props.t} />
       </Show>
+      <Compactions audits={props.audits ?? []} now={props.now} t={props.t} />
     </Stack>
   );
 }

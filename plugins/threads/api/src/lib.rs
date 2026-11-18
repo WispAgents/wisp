@@ -237,6 +237,69 @@ pub enum AuditStatus {
     Skipped,
 }
 
+/// The Notes a formula's task starts with (ADR-0097, `notes:` on a task, ADR-0026/0027): a section's text, a list
+/// section's items. Unknown sections are refused when the formula is checked.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, TS, schemars::JsonSchema)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[ts(export, export_to = "threads/")]
+pub struct SeedNotes {
+    /// what done looks like
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub goal: Option<String>,
+    /// must and must-not, one each
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    #[ts(as = "Option<Vec<String>>", optional)]
+    pub constraints: Vec<String>,
+    /// what was chosen, and why
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    #[ts(as = "Option<Vec<String>>", optional)]
+    pub decisions: Vec<String>,
+    /// what didn't work, and why
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    #[ts(as = "Option<Vec<String>>", optional)]
+    pub failed: Vec<String>,
+    /// where it stands
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub state: Option<String>,
+    /// open questions
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    #[ts(as = "Option<Vec<String>>", optional)]
+    pub open: Vec<String>,
+    /// key files
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    #[ts(as = "Option<Vec<String>>", optional)]
+    pub files: Vec<String>,
+}
+
+impl SeedNotes {
+    /// Nothing declared.
+    pub fn is_empty(&self) -> bool {
+        self.sections().is_empty()
+    }
+
+    /// Each section with something in it, as `(section, text)`: one text, or the items one a line.
+    pub fn sections(&self) -> Vec<(&'static str, String)> {
+        let one = |v: &Option<String>| v.as_deref().map(str::trim).filter(|t| !t.is_empty()).map(str::to_owned);
+        let list = |v: &[String]| {
+            Some(v.iter().map(|x| x.trim()).filter(|x| !x.is_empty()).collect::<Vec<_>>().join("\n")).filter(|t| !t.is_empty())
+        };
+        [
+            ("goal", one(&self.goal)),
+            ("constraints", list(&self.constraints)),
+            ("decisions", list(&self.decisions)),
+            ("failed", list(&self.failed)),
+            ("state", one(&self.state)),
+            ("open", list(&self.open)),
+            ("files", list(&self.files)),
+        ]
+        .into_iter()
+        .filter_map(|(k, v)| v.map(|v| (k, v)))
+        .collect()
+    }
+}
+
 /// The setting that turns the compaction audit on (default off: each audit is one more short run).
 pub const SETTING_COMPACT_AUDIT: &str = "threads.compactAudit";
 

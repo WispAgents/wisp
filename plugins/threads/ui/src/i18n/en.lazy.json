@@ -53,5 +53,19 @@
   "threads.fresh.start": "Start fresh thread",
   "threads.fresh.started": "Fresh thread started",
   "threads.fresh.queued": "Fresh thread queued: it starts after the running turn",
-  "threads.saved.failed": "Couldn't save {section}"
+  "threads.saved.failed": "Couldn't save {section}",
+  "threads.compactions": "Compactions",
+  "threads.audit.label": "What a compaction kept of the Notes",
+  "threads.audit.running": "Checking what the compaction kept…",
+  "threads.audit.skipped": "Compaction check skipped",
+  "threads.audit.skippedWhy": "Compaction check skipped: {why}",
+  "threads.audit.kept": "Kept {kept} of {total}",
+  "threads.audit.keptTip": "Of the Notes' goal, constraints, decisions and what failed, what the conversation still remembered after the compaction",
+  "threads.audit.after": "after the compaction",
+  "threads.audit.all": "after the compaction: nothing lost",
+  "threads.audit.lostNext": "Lost (the next follow-up reminds the agent):",
+  "threads.audit.lostTold": "Lost (the agent was reminded):",
+  "threads.settings.compactAudit": "Check compactions",
+  "threads.settings.compactAudit.hint": "After a compaction, wisp asks a copy of the conversation what it still remembers of the task's Notes, shows what it kept beside the task, and reminds the agent of what it lost. One short extra run each",
+  "threads.settings.locked": "Set by the plugin {by}"
 }

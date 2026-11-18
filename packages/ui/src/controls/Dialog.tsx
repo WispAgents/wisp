@@ -9,7 +9,7 @@
 // dialog as a sheet with detents (medium, large), a grabber and 10 pt corners. A phone sheet drags down to close (a
 // draft stays; its × is the twin: step 7's `sheet.drag-down`); the drag lives in the phone chunk (./phone-part.ts).
 // The browser's HTML is what it was.
-import { createEffect, createSignal, onCleanup, Show, untrack, type Accessor, type JSX } from 'solid-js';
+import { createEffect, createSignal, mergeProps, onCleanup, Show, untrack, type Accessor, type JSX } from 'solid-js';
 import { Portal } from 'solid-js/web';
 import { lazyPart, warm } from './lazy-part.ts';
 import type { DialogApi } from './dialog-machine.ts';
@@ -93,7 +93,7 @@ function partsOf(api: () => DialogApi | undefined, props: DialogProps, close: ()
   };
 }
 
-function Surface(props: DialogProps & { readonly kind: Kind; readonly parts: Parts; readonly part: PartName; readonly dismiss: () => void }): JSX.Element {
+function Surface(props: DialogProps & { readonly kind: Kind; readonly parts: Parts; readonly part: PartName; readonly dismiss: () => void; readonly onContent?: (el: HTMLElement) => void }): JSX.Element {
   const t = useT(() => props.t);
   const look = usePlatform();
   const host = useGestureHost();
@@ -102,10 +102,13 @@ function Surface(props: DialogProps & { readonly kind: Kind; readonly parts: Par
   // the phone apps: the platform's shape (an alert, a sheet's drag and detents: the phone chunk, ./phone.tsx)
   const bind = (el: HTMLElement): void => {
     const l = look();
-    if (l !== 'web')
-      void phoneOverlays.load().then((m) => {
-        if (el.isConnected) stop = m.phoneSurface(el, { host, look: l, kind: props.kind, role: props.role, size: props.size, bare: props.bare, place: props.place, detents: props.detents, part: props.part, onClose: props.dismiss, closeLabel: t('close') });
-      }, () => undefined);
+    if (l === 'web') return;
+    // read now, under the surface's owner: read in the load's callback, a caller's computed prop (`size={a ? b : c}`)
+    // made an unowned memo each time a sheet opened ("computations created outside a createRoot", QA round 2 #15)
+    const opts = { host, look: l, kind: props.kind, role: props.role, size: props.size, bare: props.bare, place: props.place, detents: props.detents, part: props.part, onClose: props.dismiss, closeLabel: t('close') };
+    void phoneOverlays.load().then((m) => {
+      if (el.isConnected) stop = m.phoneSurface(el, opts);
+    }, () => undefined);
   };
   return (
     <Portal>
@@ -115,6 +118,7 @@ function Surface(props: DialogProps & { readonly kind: Kind; readonly parts: Par
           {...props.parts.content()}
           // shown before its machine: focus goes in (the machine traps it once it lands), so Escape and typing reach it
           ref={(el) => {
+            props.onContent?.(el);
             if (props.parts.plain()) queueMicrotask(() => (props.initialFocus?.() ?? el).focus());
             bind(el);
           }}
@@ -210,6 +214,8 @@ function Shell(props: DialogProps & { readonly kind: Kind }): JSX.Element {
     else close();
   };
   const part = (): PartName => props.part ?? (props.kind === 'sheet' ? 'ui.sheet' : 'ui.dialog');
+  const phone = usePlatform()() !== 'web';
+  let content: HTMLElement | undefined;
   const trigger = (): Bind =>
     bound()?.getTriggerProps() ?? {
       'aria-haspopup': 'dialog',
@@ -225,7 +231,10 @@ function Shell(props: DialogProps & { readonly kind: Kind }): JSX.Element {
     <>
       <Show when={machine.ready()}>
         {(m) => {
-          setApi(() => m().useDialog(props, untrack(selfOpen), focus.to));
+          // the phone apps: with nothing of the caller's to focus, focus lands on the sheet itself, not its first button (no ring on × as it
+          // opens; VoiceOver and TalkBack read the sheet from its title: QA round 2 #14)
+          const own = phone ? mergeProps(props, { initialFocus: () => props.initialFocus?.() ?? content ?? null }) : props;
+          setApi(() => m().useDialog(own, untrack(selfOpen), focus.to));
           return null;
         }}
       </Show>
@@ -233,7 +242,7 @@ function Shell(props: DialogProps & { readonly kind: Kind }): JSX.Element {
         {(look) => <TriggerButton look={look()} bind={trigger()} part={sub(part(), 'trigger')} ref={focus.trigger} />}
       </Show>
       <Show when={open()}>
-        <Surface {...props} parts={parts} part={part()} dismiss={dismiss} />
+        <Surface {...props} parts={parts} part={part()} dismiss={dismiss} onContent={(el) => (content = el)} />
       </Show>
     </>
   );

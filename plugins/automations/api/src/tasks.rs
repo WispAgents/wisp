@@ -37,6 +37,9 @@ pub struct TaskDecl {
     /// `{ text: tests pass }`: the goal judged after each turn
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub goal: Option<Value>,
+    /// the Notes it starts with (ADR-0097): `{ goal: …, constraints: [...] }`, kept by wisp.threads
+    #[serde(default, skip_serializing_if = "wisp_threads_api::SeedNotes::is_empty")]
+    pub notes: wisp_threads_api::SeedNotes,
     /// the crew member it runs for
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub crew: String,

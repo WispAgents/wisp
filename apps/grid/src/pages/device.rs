@@ -1,7 +1,7 @@
 //! Connecting a device (`/activate`: type the code, then Allow), and the plain pages: a message
 //! (`Nothing here`, `Device connected`, errors) and the one shown while a sleeping wisp wakes.
 
-use super::layout::{AppPage, app_page};
+use super::layout::{AppPage, Tab, app_page};
 use super::{PageCfg, PageUser, Tone, esc};
 use crate::http::encode_component;
 
@@ -34,7 +34,7 @@ pub fn activate_page(cfg: &PageCfg, user: &PageUser, p: &ActivatePage) -> String
             let error = if p.error.is_empty() { String::new() } else { format!(r#"<div class="flash bad">{}</div>"#, esc(&p.error)) };
             format!(
                 r#"<h1 class="h1">Connect a device</h1><p class="sub">Type the code wisp shows on your computer or phone.</p>{error}
-        <form method="get" action="/activate" style="margin-top:20px;display:flex;flex-direction:column;gap:10px"><input class="input" name="code" value="{}" placeholder="ABCD-EFGH" autocomplete="off" autocapitalize="characters" autofocus required>{app}
+        <form method="get" action="/activate" style="margin-top:20px;display:flex;flex-direction:column;gap:10px"><input class="input code" name="code" value="{}" placeholder="ABCD-EFGH" autocomplete="off" autocapitalize="characters" autofocus required>{app}
         <button class="primary tall">Continue</button></form>"#,
                 esc(&p.code)
             )
@@ -60,7 +60,7 @@ pub fn activate_page(cfg: &PageCfg, user: &PageUser, p: &ActivatePage) -> String
             )
         }
     };
-    app_page(&AppPage { user: Some(user), csrf: &p.csrf, narrow: true, ..AppPage::new(cfg, "Connect a device", &body) })
+    app_page(&AppPage { user: Some(user), csrf: &p.csrf, narrow: true, tab: Tab::Neither, ..AppPage::new(cfg, "Connect a device", &body) })
 }
 
 /// A page that says one thing, with a link onwards.

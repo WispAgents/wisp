@@ -15,6 +15,7 @@ pub mod draw;
 pub mod keys;
 pub mod model;
 pub mod palette;
+pub mod thread;
 pub mod views;
 
 use std::sync::Arc;

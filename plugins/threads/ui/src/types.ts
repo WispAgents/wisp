@@ -63,6 +63,25 @@ export interface Fresh {
   readonly queued?: string;
 }
 
+/** AuditStatus.ts: asking, done, or skipped (with why) */
+export type AuditStatus = 'running' | 'done' | 'skipped';
+/** Audit.ts: what a compaction kept of the goal, constraints, decisions and what failed ("Kept 6 of 8") */
+export interface Audit {
+  readonly task: string;
+  /** the compaction's turn */
+  readonly turn: string;
+  readonly status: AuditStatus;
+  /** why it was skipped */
+  readonly why?: string;
+  readonly kept: number;
+  readonly total: number;
+  /** the items it lost, as the Notes say them ("Constraints: No Redis") */
+  readonly lost: readonly string[];
+  /** told to the agent in a follow-up's note already */
+  readonly told: boolean;
+  readonly at: number;
+}
+
 /** `threads_notes`: one section of a task's Notes (id `<task>|<section>`). */
 export interface NoteRow {
   readonly id: string;
@@ -87,7 +106,16 @@ export interface HealthRow {
   readonly body: Health;
 }
 
+/** `threads_audit`: one compaction's audit (id `<task>|<turn>`), the Audit under `body`. */
+export interface AuditRow {
+  readonly id: string;
+  readonly task_id: string;
+  readonly at: number;
+  readonly body: Audit;
+}
+
 export const KIND = {
+  audits: 'threads_audit',
   notes: 'threads_notes',
   revisions: 'threads_revisions',
   meta: 'threads_meta',

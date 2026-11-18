@@ -142,7 +142,7 @@ fn computer_card(c: &ComputerView, hidden: &str, now: i64) -> String {
         r#"<div class="c">
       <div class="c-head"><span class="w-ic">{LAPTOP}</span><div class="c-name"><b title="{name}">{name}</b>{state}</div></div>
       {copy}
-      <div class="c-acts">{open}<form class="inline" method="post" action="/computers/{id}/remove">{hidden}<button class="ghost quiet" title="Take it off the grid. wisp on it keeps running.">Remove</button></form></div>
+      <div class="c-acts">{open}<form class="inline" method="post" action="/computers/{id}/remove" data-confirm="Remove it?">{hidden}<button class="ghost quiet" title="Take it off the grid. wisp on it keeps running.">Remove</button></form></div>
     </div>"#,
         name = esc(&c.name),
         copy = copy_btn(&c.url, Some(bare(&c.url))),
@@ -271,7 +271,7 @@ fn tiles(p: &HomePage, host: &str) -> String {
     list.push(tile(&Tile {
         icon: CODE,
         title: "API keys for scripts",
-        text: "Settings → Connect makes a key, so a script can start tasks in your cloud wisp.".into(),
+        text: "Settings → Cloud → API keys makes a key, so a script can start tasks in your cloud wisp.".into(),
         on: String::new(),
         go: "Make a key",
         href: "/go",

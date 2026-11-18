@@ -11,6 +11,15 @@ import type { Item } from './types.ts';
 export const fileUrl = (id: string, rev?: number, download = false): string => `/api/stuff/${encodeURIComponent(id)}/file?r=${rev ?? 1}${download ? '&download=1' : ''}`;
 export const coverUrl = (id: string, rev?: number): string => `/api/stuff/${encodeURIComponent(id)}/cover?r=${rev ?? 1}`;
 
+/** What a phone tile or row shows in its thumbnail: a picture's file or an app's cover, as the page's cards do;
+ *  undefined keeps the kind's glyph (QA r2 phone #13: every tile was a glyph, even a picture). */
+export function phoneImage(it: Item): string | undefined {
+  const th = thumbOf(it);
+  if (th.kind === 'image') return th.src;
+  if (th.kind === 'app') return th.cover;
+  return undefined;
+}
+
 /** The preview (v1 thumbBody): an app's window, the picture, a doc's opening, a snippet's first lines, a link's site. */
 export function thumbOf(it: Item): StuffThumb {
   const k = kindOf(it.kind);

@@ -9,6 +9,7 @@ import { ownerOf, type PluginClient } from '@wisp/client';
 import { useShell } from '@wisp/shell';
 import { StuffPhone, StuffPhoneApp, type MenuEntry, type StuffPhoneGroup } from '@wisp/ui';
 import { itemActions, type ActionId } from './actions.ts';
+import { phoneImage } from './card.ts';
 import { publishTargets } from './commands.ts';
 import { useEntries, useTaskTitle, type Entry } from './items.ts';
 import { kindOf } from './kinds.ts';
@@ -93,7 +94,8 @@ export default function StuffPhonePage(props: { readonly client: PluginClient })
       label: g.label,
       items: g.items.flatMap((it) => {
         const e = byItem().get(it);
-        return e ? [{ id: e.key, title: it.title || it.name, sub: withComputer(cardMeta(it, t), computer(ownerOf(e.key))), when: when(it.at, now), icon: kindOf(it.kind).icon, menu: actionsOf(e, items) }] : [];
+        const image = phoneImage(it);
+        return e ? [{ id: e.key, title: it.title || it.name, sub: withComputer(cardMeta(it, t), computer(ownerOf(e.key))), when: when(it.at, now), icon: kindOf(it.kind).icon, ...(image && { image }), menu: actionsOf(e, items) }] : [];
       }),
     }));
   });

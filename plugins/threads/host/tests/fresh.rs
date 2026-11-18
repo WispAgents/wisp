@@ -27,6 +27,8 @@ struct Runtime {
     probes: Arc<Mutex<Vec<String>>>,
     /// what the copy answers (Err: it can't)
     answer: Arc<Mutex<Option<std::result::Result<String, String>>>>,
+    /// the task's spec (`runtime.spec`)
+    spec: Arc<Mutex<wisp_runtime_api::spec::TaskSpec>>,
 }
 
 impl Runtime {
@@ -52,6 +54,11 @@ impl Plugin for Runtime {
             async move { Ok(t) }
         });
         s.command::<r::ActivityOf, _, _>(|_, _, _| async move { Ok(r::ActivityPage { seq: 0, items: Vec::new() }) });
+        let me = self.clone();
+        s.command::<r::SpecOf, _, _>(move |_, _, _a: r::IdArgs| {
+            let spec = me.spec.lock().unwrap().clone();
+            async move { Ok(spec) }
+        });
         let me = self.clone();
         s.command::<r::FollowUp, _, _>(move |_, _, a: r::FollowUpArgs| {
             me.follow_ups.lock().unwrap().push(a);
@@ -241,5 +248,60 @@ async fn the_audit_is_off_by_default_and_on_says_what_the_compaction_lost_once()
     let skipped = a.as_array().unwrap().iter().find(|x| x["turn"] == "u5").unwrap();
     assert_eq!(skipped["status"], "skipped");
     assert!(skipped["why"].as_str().unwrap().contains("copy"));
+    let _ = std::fs::remove_dir_all(&f.home);
+}
+
+/// ADR-0097: a harness whose stream doesn't say it compacted (Codex) counts it through its hook (`wisp hook compacted`
+/// lines in the run's folder): the turn keeps the count beside its slot, the file goes, and the audit runs on it.
+#[tokio::test]
+async fn compactions_a_hook_counted_are_kept_on_the_turn_and_audited() {
+    let f = kernel("marked").await;
+    set(&f.k, "goal", "Import CSV files").await;
+    f.k.set_setting("threads.compactAudit", Some(json!(true))).unwrap();
+    let mut t = turn(1, "go on", "ok");
+    t.ext.insert("wisp.threads".into(), json!({ "fresh": true }));
+    *f.rt.turns.lock().unwrap() = vec![turn(0, "a", "b"), t];
+    let dir = f.home.join("threads").join("out").join("t1");
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(dir.join("compactions"), "compacted\ncompacted\n").unwrap();
+    end(&f, "u1").await;
+    let marks = f.rt.marks.lock().unwrap().clone();
+    let m = marks.iter().find(|m| m.turn_id.as_str() == "u1").expect("the turn is marked");
+    assert_eq!(m.value, json!({ "fresh": true, "compactions": 2 }), "the count beside what the slot had");
+    assert!(!dir.join("compactions").exists(), "counted once");
+    assert_eq!(f.rt.probes.lock().unwrap().len(), 1, "a counted compaction is audited");
+    let _ = std::fs::remove_dir_all(&f.home);
+}
+
+/// ADR-0097: a formula's task starts with the Notes its spec declares, written as yours; a task that has Notes keeps
+/// them; a spec without notes writes nothing.
+#[tokio::test]
+async fn a_task_made_with_notes_in_its_spec_starts_with_them() {
+    let f = kernel("seed").await;
+    let created = |f: &Fixture| {
+        let e = wisp_runtime_api::events::SessionCreated {
+            session: wisp_runtime_api::model::Summary { id: "t1".into(), ..Default::default() },
+        };
+        let ctx = f.k.ctx("wisp.runtime").unwrap();
+        ctx.emit(&ctx.root_call(), &e);
+    };
+    created(&f);
+    f.k.idle().await;
+    let n = call(&f.k, "threads.notes", json!({ "id": "t1" })).await.unwrap();
+    assert_eq!(n["rev"], 0, "no notes in the spec: nothing");
+    f.rt.spec.lock().unwrap().notes = Some(json!({ "goal": "Ship the importer", "constraints": ["No Redis", " ", "Keep the API"] }));
+    created(&f);
+    f.k.idle().await;
+    let n = call(&f.k, "threads.notes", json!({ "id": "t1" })).await.unwrap();
+    let text = |id: &str| n["sections"].as_array().unwrap().iter().find(|s| s["id"] == id).unwrap().clone();
+    assert_eq!((text("goal")["text"].as_str(), text("goal")["by"].as_str()), (Some("Ship the importer"), Some("you")));
+    assert_eq!(text("constraints")["text"], "No Redis\nKeep the API");
+    assert_eq!(n["rev"], 2);
+    // made again (an event delivered twice): the Notes it has stay
+    f.rt.spec.lock().unwrap().notes = Some(json!({ "goal": "Something else" }));
+    created(&f);
+    f.k.idle().await;
+    let n = call(&f.k, "threads.notes", json!({ "id": "t1" })).await.unwrap();
+    assert_eq!(n["rev"], 2);
     let _ = std::fs::remove_dir_all(&f.home);
 }

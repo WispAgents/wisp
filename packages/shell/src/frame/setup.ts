@@ -11,7 +11,8 @@ import type { AgentOffer } from './runner.ts';
 /** what wisp installs itself (accounts.install) */
 export const INSTALLABLE = 'opencode';
 
-const agentsOf = defineCommand<{ peer: string }, AgentOffer[]>({ id: 'runtime.agents', owner: (a) => a.peer, wire: () => ({}), optimistic: 'none', pending: 'the harness list' });
+// quiet: read on every Home load; a refusal is an empty list, never an error toast (QA r2 phone #1)
+export const agentsOf = defineCommand<{ peer: string }, AgentOffer[]>({ id: 'runtime.agents', owner: (a) => a.peer, wire: () => ({}), optimistic: 'none', pending: 'the harness list', quiet: true });
 const install = defineCommand<{ peer: string; agent: string }, unknown>({
   id: 'accounts.install',
   owner: (a) => a.peer,

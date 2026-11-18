@@ -27,6 +27,9 @@ export const INPUTS = {
   'shell.list:needs': 'section.needs',
   // added 2026-11-12 (additive): rows other plugins add at the end of Settings → General (v1 kept Updates there)
   'shell.settings:general': 'settings.general',
+  // added 2026-11-18 (additive, ADR-0096): switches other plugins add to Settings → General's tasks group, after Watch
+  // agents work and before Interactive answers (where v1 had Task ledger and Check compactions)
+  'shell.settings:tasks': 'settings.tasks',
   // added 2026-11-12 (additive): what other plugins put in Settings → Machines under its first group (wisp.grid-client's
   // Reach this computer from anywhere, v1 .mc-grid)
   'shell.settings:machines': 'machines.reach',

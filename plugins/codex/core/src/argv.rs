@@ -32,6 +32,16 @@ pub struct CodexArgs<'a> {
     pub images: &'a [String],
     /// the folders of the other attachments (`--add-dir`, new threads only)
     pub attachment_dirs: &'a [String],
+    /// the wisp binary for the long-thread hooks (ADR-0097): `PreToolUse` on Bash sends long output to a file
+    /// (`wisp hook offload --codex`), `PostCompact` counts a compaction (`wisp hook compacted`). Only in Full auto: a
+    /// hook given on the command line runs only with `--dangerously-bypass-hook-trust`, which would also run a repo's
+    /// own untrusted hooks outside the sandbox that plan and edits keep.
+    pub hooks: Option<&'a str>,
+}
+
+/// A path as a POSIX shell word.
+fn sh_word(p: &str) -> String {
+    format!("'{}'", p.replace('\'', r"'\''"))
 }
 
 /// v1's `toml`: arrays and inline tables, scalars as JSON.
@@ -66,6 +76,12 @@ pub fn args(a: &CodexArgs<'_>) -> Vec<String> {
         out.push("--dangerously-bypass-approvals-and-sandbox".into());
     } else {
         c(&mut out, format!("sandbox_mode={}", s(if a.mode == "plan" { "read-only" } else { "workspace-write" })));
+    }
+    if let Some(wisp) = a.hooks.filter(|w| !w.is_empty() && a.mode == "auto" && a.lean_base.is_none()) {
+        let hook = |cmd: &str| format!("{{type={},command={},timeout=10}}", s("command"), s(&format!("{} {cmd}", sh_word(wisp))));
+        c(&mut out, format!("hooks.PreToolUse=[{{matcher={},hooks=[{}]}}]", s("Bash"), hook("hook offload --codex")));
+        c(&mut out, format!("hooks.PostCompact=[{{hooks=[{}]}}]", hook("hook compacted")));
+        out.push("--dangerously-bypass-hook-trust".into());
     }
     if a.capped && a.mode != "auto" {
         c(&mut out, "sandbox_workspace_write.network_access=false".into());
@@ -142,5 +158,28 @@ mod tests {
             args(&CodexArgs { mode: "plan", developer: Some(" # You are running inside wisp\n"), images: &imgs, ..CodexArgs::default() });
         assert!(a.iter().any(|x| x == r##"developer_instructions="# You are running inside wisp""##));
         assert!(a.windows(2).any(|w| w == ["-i", "/up/a.png"]));
+    }
+
+    /// ADR-0097: in Full auto a run with the wisp binary gets the offload hook on Bash and the compaction counter, with
+    /// the trust bypass they need; plan, edits and a lean run get none (the bypass would run a repo's untrusted hooks).
+    #[test]
+    fn full_auto_gets_the_long_thread_hooks_and_nothing_else_does() {
+        let a = args(&CodexArgs { mode: "auto", hooks: Some("/opt/wisp it/wisp"), ..CodexArgs::default() });
+        assert!(
+            a.iter().any(|x| x == r#"hooks.PreToolUse=[{matcher="Bash",hooks=[{type="command",command="'/opt/wisp it/wisp' hook offload --codex",timeout=10}]}]"#),
+            "{a:?}"
+        );
+        assert!(
+            a.iter()
+                .any(|x| x == r#"hooks.PostCompact=[{hooks=[{type="command",command="'/opt/wisp it/wisp' hook compacted",timeout=10}]}]"#)
+        );
+        assert!(a.iter().any(|x| x == "--dangerously-bypass-hook-trust"));
+        for mode in ["plan", "edits"] {
+            let a = args(&CodexArgs { mode, hooks: Some("/opt/wisp"), ..CodexArgs::default() });
+            assert!(!a.iter().any(|x| x.starts_with("hooks.") || x.contains("hook-trust")), "{mode}: {a:?}");
+        }
+        let lean = args(&CodexArgs { mode: "auto", hooks: Some("/opt/wisp"), lean_base: Some("BASE"), ..CodexArgs::default() });
+        assert!(!lean.iter().any(|x| x.contains("hook-trust")), "a lean run only answers");
+        assert!(!args(&CodexArgs { mode: "auto", ..CodexArgs::default() }).iter().any(|x| x.contains("hook-trust")));
     }
 }

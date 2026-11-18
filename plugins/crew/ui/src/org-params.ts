@@ -7,3 +7,6 @@ export interface OrgParams {
 }
 
 export const orgParams = (p: unknown): OrgParams | null => (p && typeof p === 'object' && (p as { chart?: unknown }).chart === true ? { chart: true } : null);
+
+/** Opening the Org chart (the stories' Org bubble, the Crew tab's Org): the phone apps' chart, the browser's page. */
+export const orgOpen = (): { t: 'openView'; id: 'crew.org'; params: OrgParams } => ({ t: 'openView', id: 'crew.org', params: { chart: true } });

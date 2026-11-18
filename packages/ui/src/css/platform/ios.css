@@ -391,6 +391,17 @@
     overflow: hidden;
   }
   :root[data-platform='ios'] [data-kit='settings-group']:not([data-head]) > [data-kit='settings-group-body'] { border-radius: 0; background: transparent; }
+  /* a sheet's body already keeps the screen's inset: a group in it sits on that edge (a pushed page, Settings, keeps
+     the grouped inset), as the cards beside it do (QA
+     round 2 #14: This computer, in Machines, sat 16 pt in from the Cloud card under it) */
+  :root[data-platform='ios'] [data-kit='sheet'] > [data-kit='dialog-body'] [data-kit='settings-group'] { margin-left: var(--space-0); margin-right: var(--space-0); }
+  /* a pane's note between groups reads as a group footer: on the footer's inset, not wider than the boxes (#14) */
+  :root[data-platform='ios'] [data-kit='settings-note']:not([data-boxed]) {
+    margin: var(--group-head-pad) var(--space-0) var(--space-0);
+    padding: var(--space-0) calc(var(--inset) * 2);
+    font: var(--type-footnote);
+    color: var(--on-surface-var);
+  }
   :root[data-platform='ios'] [data-kit='section-footer'],
   :root[data-platform='ios'] [data-kit='settings-group-footer'] {
     margin: var(--space-0);
@@ -1316,4 +1327,52 @@
   :root[data-platform='ios'] [data-kit='phone-page'][data-page='settings'] { background: var(--surface-grouped-0); }
   :root[data-platform='ios'] [data-kit='settings-group-body'] > [data-kit='list-row'] { background: transparent; }
   :root[data-platform='ios'] [data-kit='stuff-phone-group-head'] { font: var(--type-headline); color: var(--on-surface); }
+
+  /* tap targets at least 44 pt (HIG: hit targets) (QA r2 #6): a turn's tools and 👍/👎, the story viewer's Pause, More and Close, My
+     Stuff's row More; the icon keeps its size, its box takes the room */
+  :root[data-platform='ios'] [data-kit='trail-bar'] [data-kit='tb-btn'],
+  :root[data-platform='ios'] [data-kit='trail-bar'] [data-kit='rate-btn'],
+  :root[data-platform='ios'] [data-kit='story-head'] [data-kit='icon-button'],
+  :root[data-platform='ios'] [data-part~='stuff.phone.row.menu.trigger'] { min-width: var(--tap-min); min-height: var(--tap-min); }
+
+  /* The task's side page (Changes, PR, Shell, Preview; QA round 2 #9): a navigation bar, not the browser's pill strip
+     squeezed to icons. The panes as a segmented control of names across the bar, Close at its trailing edge; the bar
+     is the nav bar's height, under the status bar (the frame body's inset), its hairline under it. */
+  :root[data-platform='ios'] [data-pane='side'] [data-part~='side.head'] {
+    height: auto;
+    min-height: var(--bar-h);
+    gap: var(--space-4);
+    padding: var(--space-0) var(--space-2) var(--space-0) var(--space-6);
+    border-bottom: var(--hairline) solid var(--outline);
+  }
+  :root[data-platform='ios'] [data-pane='side'] [data-part~='side.head'] > [data-kit='box'] { display: none; }
+  :root[data-platform='ios'] [data-pane='side'] [data-part~='side.head'] > [data-kit='icon-button'] { min-width: var(--tap-min); min-height: var(--tap-min); }
+  :root[data-platform='ios'] [data-pane='side'] [data-kit='tabs'][data-part='panel.tabs'] {
+    flex: 1 1 auto;
+    min-width: 0;
+    margin: var(--space-0);
+    padding: var(--space-0);
+    border: 0;
+    background: transparent;
+  }
+  :root[data-platform='ios'] [data-pane='side'] [data-kit='tabs'][data-part='panel.tabs'] > [data-kit='tab-list'] { flex: 1 1 auto; }
+  :root[data-platform='ios'] [data-pane='side'] [data-kit='tabs'][data-part='panel.tabs'] [data-kit='tab'] {
+    /* by its name's width, the room left shared out: a short name (PR) never takes a long one's room */
+    flex: 1 1 auto;
+    width: auto;
+    min-width: 0;
+    padding: var(--space-0) var(--space-1);
+  }
+  :root[data-platform='ios'] [data-pane='side'] [data-kit='tabs'][data-part='panel.tabs'] [data-kit='tab'] > [data-kit='icon'] { display: none; }
+  :root[data-platform='ios'] [data-pane='side'] [data-kit='tabs'][data-part='panel.tabs'] [data-kit='tab-label'] { display: inline; overflow: hidden; text-overflow: ellipsis; }
+
+  /* a toast sits under an open menu or sheet, never over it (QA r2 #5: the error toast was drawn over the task's ⋯),
+     still over the page */
+  :root[data-platform='ios'] [data-kit='toasts'] { z-index: calc(var(--z-menu) - 1); }
+
+  /* New task's bar fits a phone (QA r2 #2; ADR-0012 label → icon): its tail folds into More (HomeView), and the harness
+     pill folds to its logo and chevron in the compact size class (v1 hid the name at 520 px; the tooltip names it) */
+  @media (not (min-width: 600px)) {
+    :root[data-platform='ios'] [data-kit='launcher'] [data-kit='runner-btn'] > [data-kit='rb-h'] { display: none; }
+  }
 }

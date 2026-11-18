@@ -19,18 +19,16 @@ use serde_json::Value;
 use super::{COOKIE, Grid, Who, query};
 use crate::boxhost::BoxHost;
 use crate::error::{Result, bad};
-use crate::http::{CookieOptions, Resp, add_cookie, cookie, cookies, encode_component, html, parse_body, redirect};
+use crate::http::{CookieOptions, Resp, add_cookie, cookie, cookies, encode_component, html, parse_body, redirect, safe_path};
 use crate::pages::{
-    self, AccountPage, ComputerView, DeviceView, HomePage, IdentityView, InstanceView, MachineView, MessagePage, Offers, PageUser,
-    RouteView, SiteView, Tone,
+    self, AccountPage, ComputerView, DeviceView, HomePage, IdentityView, InstanceView, MachineView, Offers, PageUser, RouteView, SiteView,
+    Tone, Wish,
 };
 use crate::rows::{BoxUser, UserRow};
 
-/// Where a form goes back to, with what happened.
-fn back(to: &str, msg: &str, bad_tone: bool) -> Resp {
-    let tone = if bad_tone { "&tone=bad" } else { "" };
-    redirect(&format!("{to}?m={}{tone}", encode_component(msg)), &[])
-}
+/// What a form did, said once on the next page: a cookie the page reads and drops, so a reload doesn't say it again
+/// (v1 kept it in the URL, `?m=`, and every reload repeated it).
+const FLASH: &str = "wisp_flash";
 
 fn page_user(u: &UserRow) -> PageUser {
     PageUser { handle: u.handle.clone(), name: u.name.clone(), email: u.email.clone(), avatar: u.avatar.clone() }
@@ -54,19 +52,8 @@ impl Grid {
         let r = match (method, parts) {
             ("GET", []) => match &user {
                 Some(u) => self.home(u, h, q),
-                None => Ok(html(
-                    200,
-                    pages::message_page(
-                        &self.page,
-                        &MessagePage {
-                            title: self.cfg.name.clone(),
-                            text: "Share and reach your wisps from anywhere.".into(),
-                            link: Some(("/gallery".into(), "See what people are building".into())),
-                            tone: Tone::Plain,
-                        },
-                    ),
-                    &[],
-                )),
+                // signed out (or just signed out): the landing with its way in, as v1's `/`
+                None => Ok(self.sign_in_page(h, safe_path(&query(q, "return").unwrap_or_default(), ""), "", false, 200)),
             },
             ("GET", ["account"]) => match &user {
                 Some(u) => self.account(u, h, q),
@@ -74,7 +61,8 @@ impl Grid {
             },
             ("GET", ["go"]) => match &user {
                 Some(u) => self.go(u, q),
-                None => Ok(redirect("/signin", &[])),
+                // signed out at the grid too: sign in, then on to the same `/go`
+                None => Ok(redirect(&format!("/signin?return={}", encode_component(&format!("/go?{q}"))), &[])),
             },
             (
                 "POST",
@@ -83,6 +71,7 @@ impl Grid {
                 | ["devices", _, "revoke"]
                 | ["identities", "unlink"]
                 | ["channels", "route", ..]
+                | ["machines", "waitlist"]
                 | ["signout"]
                 | ["account", "delete"],
             ) => match &user {
@@ -98,8 +87,31 @@ impl Grid {
         Self::csrf(&cookies(h).get(COOKIE).cloned().unwrap_or_default())
     }
 
-    fn flash_of(q: &str) -> (String, Tone) {
+    /// Back to `to`, with what happened.
+    fn back(&self, to: &str, msg: &str, bad_tone: bool) -> Resp {
+        let mut r = redirect(to, &[]);
+        let v = format!("{}{msg}", if bad_tone { "!" } else { "" });
+        add_cookie(&mut r, &cookie(FLASH, &v, CookieOptions { secure: self.cfg.secure, max_age: Some(60), path: None, framed: false }));
+        r
+    }
+
+    /// The flash a form left for this page (or an old `?m=` link's).
+    fn flash_of(h: &HeaderMap, q: &str) -> (String, Tone) {
+        if let Some(v) = cookies(h).get(FLASH).filter(|v| !v.is_empty()) {
+            return match v.strip_prefix('!') {
+                Some(m) => (m.to_owned(), Tone::Bad),
+                None => (v.clone(), Tone::Plain),
+            };
+        }
         (query(q, "m").unwrap_or_default(), if query(q, "tone").as_deref() == Some("bad") { Tone::Bad } else { Tone::Plain })
+    }
+
+    /// A page that showed the flash drops it.
+    fn shown(&self, h: &HeaderMap, mut r: Resp) -> Resp {
+        if cookies(h).contains_key(FLASH) {
+            add_cookie(&mut r, &cookie(FLASH, "", CookieOptions { secure: self.cfg.secure, max_age: Some(0), path: None, framed: false }));
+        }
+        r
     }
 
     fn devices_of(&self, uid: &str) -> Result<Vec<DeviceView>> {
@@ -150,7 +162,7 @@ impl Grid {
     }
 
     fn home(&self, u: &UserRow, h: &HeaderMap, q: &str) -> Result<Resp> {
-        let (flash, tone) = Self::flash_of(q);
+        let (flash, tone) = Self::flash_of(h, q);
         let sites = self
             .sites
             .list(&u.id)?
@@ -167,7 +179,7 @@ impl Grid {
             user: page_user(u),
             url: self.cfg.instance_url(&u.handle),
             instance: self.instance_of(&u.id)?,
-            machine: MachineView::default(),
+            machine: self.machine_of(&u.id)?,
             devices: self.devices_of(&u.id)?,
             computers: self.computers_of(&u.id)?,
             sites,
@@ -177,11 +189,11 @@ impl Grid {
             tone,
             now_ms: self.clock.now_ms(),
         };
-        Ok(html(200, pages::home_page(&self.page, &p), &[]))
+        Ok(self.shown(h, html(200, pages::home_page(&self.page, &p), &[])))
     }
 
     fn account(&self, u: &UserRow, h: &HeaderMap, q: &str) -> Result<Resp> {
-        let (flash, tone) = Self::flash_of(q);
+        let (flash, tone) = Self::flash_of(h, q);
         let route = if self.routes.on {
             let v = self.routes.view(&u.id).unwrap_or(Value::Null);
             Some(RouteView {
@@ -209,16 +221,7 @@ impl Grid {
             tone,
             now_ms: self.clock.now_ms(),
         };
-        Ok(html(200, pages::account_page(&self.page, &p), &[]))
-    }
-
-    /// `/go`: your cloud wisp, or `?computer=<id>` one of your computers (online or not: its own page says).
-    fn go(&self, u: &UserRow, q: &str) -> Result<Resp> {
-        if let Some(id) = query(q, "computer") {
-            let c = self.accounts.computer(&id)?.filter(|c| c.user_id == u.id).ok_or_else(|| bad("No such computer.", 404))?;
-            return Ok(redirect(&self.cfg.instance_url(&c.label), &[]));
-        }
-        Ok(redirect(&self.cfg.instance_url(&u.handle), &[]))
+        Ok(self.shown(h, html(200, pages::account_page(&self.page, &p), &[])))
     }
 
     #[allow(clippy::many_single_char_names)] // u the user, q the query, h the headers, b the body
@@ -232,23 +235,21 @@ impl Grid {
         match parts {
             ["instance", "stop"] => {
                 let was = self.boxes.stop(&u.id, "user").await?;
-                Ok(back(
+                Ok(self.back(
                     "/",
                     if was { "Your cloud wisp went to sleep. Opening it wakes it." } else { "Your cloud wisp was already asleep." },
                     false,
                 ))
             }
-            ["computers", id, "remove"] => {
-                let n = self.accounts.db.with(|c| c.execute("DELETE FROM computers WHERE id = ?1 AND user_id = ?2", params![id, u.id]))?;
-                Ok(back(
-                    "/",
-                    if n > 0 { "Taken off the grid. wisp on it keeps running." } else { "That computer was already off the grid." },
-                    n == 0,
-                ))
-            }
+            ["computers", id, "remove"] => self.remove_computer(u, id),
+            ["machines", "waitlist"] => self.machines_waitlist(u, &b, h),
             ["sites", key, "remove"] => {
                 let gone = self.sites.remove(&u.id, key)?;
-                Ok(back("/", if gone { "Unpublished: that link no longer works." } else { "That app was already unpublished." }, !gone))
+                Ok(self.back(
+                    "/",
+                    if gone { "Unpublished: that link no longer works." } else { "That app was already unpublished." },
+                    !gone,
+                ))
             }
             ["devices", id, "revoke"] => {
                 let r = self.accounts.revoke_device(&u.id, id)?;
@@ -256,13 +257,17 @@ impl Grid {
                     self.tunnels.close(c);
                 }
                 let gone = r.gone;
-                Ok(back("/account", if gone { "Removed. That device is signed out." } else { "That device was already removed." }, !gone))
+                Ok(self.back(
+                    "/account",
+                    if gone { "Removed. That device is signed out." } else { "That device was already removed." },
+                    !gone,
+                ))
             }
             ["identities", "unlink"] => {
                 let provider = field("provider");
                 let ways = self.identities_of(&u.id)?.len();
                 if ways < 2 {
-                    return Ok(back("/account", "That's your only way in: link another before you disconnect it.", true));
+                    return Ok(self.back("/account", "That's your only way in: link another before you disconnect it.", true));
                 }
                 self.accounts
                     .db
@@ -270,20 +275,20 @@ impl Grid {
                 Ok(redirect("/account", &[]))
             }
             ["channels", "route"] => match self.routes.set(u, &field("token"), &field("senders")).await {
-                Ok(name) => Ok(back(
+                Ok(name) => Ok(self.back(
                     "/account",
                     &if name.is_empty() { "Your bot is connected.".to_owned() } else { format!("@{name} is connected.") },
                     false,
                 )),
-                Err(e) if e.status() == 400 || e.status() == 404 => Ok(back("/account", &e.to_string(), true)),
+                Err(e) if e.status() == 400 || e.status() == 404 => Ok(self.back("/account", &e.to_string(), true)),
                 Err(e) => {
                     tracing::warn!("grid: route for {}: {e}", u.handle);
-                    Ok(back("/account", "That didn’t work: Telegram couldn’t be reached. Try again.", true))
+                    Ok(self.back("/account", "That didn’t work: Telegram couldn’t be reached. Try again.", true))
                 }
             },
             ["channels", "route", "remove"] => {
                 self.routes.remove(u).await?;
-                Ok(back("/account", "Removed. That bot no longer reaches your computers.", false))
+                Ok(self.back("/account", "Removed. That bot no longer reaches your computers.", false))
             }
             ["signout"] => {
                 let all = query(q, "all").as_deref() == Some("1");
@@ -301,7 +306,7 @@ impl Grid {
             }
             ["account", "delete"] => {
                 if field("confirm").trim().to_lowercase() != u.handle {
-                    return Ok(back("/account", &format!("Type {} to delete your account.", u.handle), true));
+                    return Ok(self.back("/account", &format!("Type {} to delete your account.", u.handle), true));
                 }
                 let bu = BoxUser { id: u.id.clone(), handle: u.handle.clone(), sandbox: None, owner: None };
                 if let Err(e) = self.boxes.remove(&bu).await {
@@ -313,6 +318,46 @@ impl Grid {
             }
             _ => Err(bad("not found", 404)),
         }
+    }
+
+    /// What the cloud wisp is (the container's limits: v1 showed boxd's defaults when grid.json set none; a process
+    /// box has no limits of its own, so it says none), and what more this account waits for.
+    fn machine_of(&self, uid: &str) -> Result<MachineView> {
+        let c = self.cfg.hostd.container.clone().unwrap_or_default();
+        let (cpus, memory) = if self.cfg.containers() {
+            (Some(c.cpus.unwrap_or(1.5)), Some(c.memory.unwrap_or_else(|| "1536m".into())))
+        } else {
+            (None, None)
+        };
+        let wish = self.accounts.machine_wish(uid)?.map(|w| Wish { wants: w.wants, note: (!w.note.is_empty()).then_some(w.note) });
+        Ok(MachineView { cpus, memory, wish })
+    }
+
+    /// `POST /machines/waitlist` (the Add a cloud machine dialog, v1): on the list for what's picked, off it with
+    /// nothing picked. The dialog asks for JSON; a form without script gets Home back with a note.
+    fn machines_waitlist(&self, u: &UserRow, b: &serde_json::Map<String, Value>, h: &HeaderMap) -> Result<Resp> {
+        let wants = match b.get("wants") {
+            Some(v) => crate::wishes::wants_of(v),
+            None => crate::wishes::MACHINE_WANTS.iter().filter(|w| b.contains_key(&format!("want_{w}"))).map(|w| (*w).to_owned()).collect(),
+        };
+        let note = b.get("note").and_then(Value::as_str).unwrap_or_default();
+        let wish = self.accounts.wish_machines(&u.id, &wants, note)?;
+        self.notify(&u.id);
+        if crate::http::header_str(h, "accept").contains("application/json") {
+            return Ok(crate::http::json(200, &serde_json::json!({ "ok": true, "wish": wish })));
+        }
+        let msg = if wish.is_some() { "You’re on the list. We’ll write when it’s ready." } else { "You’re off the list." };
+        Ok(self.back("/", msg, false))
+    }
+
+    /// Home's Remove: the computer off the grid, its tunnel closed now (not when it next drops).
+    fn remove_computer(&self, u: &UserRow, id: &str) -> Result<Resp> {
+        let n = self.accounts.db.with(|c| c.execute("DELETE FROM computers WHERE id = ?1 AND user_id = ?2", params![id, u.id]))?;
+        if n > 0 {
+            self.tunnels.close(id);
+        }
+        let msg = if n > 0 { "Taken off the grid. wisp on it keeps running." } else { "That computer was already off the grid." };
+        Ok(self.back("/", msg, n == 0))
     }
 
     /// The response with this browser's session cookie dropped.

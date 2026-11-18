@@ -13,7 +13,7 @@ import { useShell } from '../context.tsx';
 import { Slot } from '../slot.tsx';
 import '../i18n/lazy.ts';
 import { displayCombo } from '../keys.ts';
-import { computerOptions, computerTitle, knownComputer } from './computer-filter.ts';
+import { computerOptions, computerTitle, hasComputerFilter, knownComputer } from './computer-filter.ts';
 import { openSwitcher } from './project-switch.ts';
 import { useAccount, useHeadChips } from './Sidebar.tsx';
 import { computed } from '@wisp/client';
@@ -37,6 +37,8 @@ function useComputers() {
       return computerOptions(pick(), peers(), name, all()).map((o) => ({ value: o.id, label: o.label, checked: o.id === on }));
     },
     on: (): string => knownComputer(pick(), peers()),
+    /** more than one computer: the title is the filter */
+    filters: (): boolean => hasComputerFilter(peers()),
     set: (id: string): void => shell.computerFilter?.set(id),
   };
 }
@@ -94,10 +96,13 @@ export function PhoneHead(props: { readonly filter: () => string }): JSX.Element
       <TopAppBar
         kind="root"
         part="phone.tasks.bar"
-        title={computers.title()}
-        onTitle={() => setPicking(true)}
+        // one computer: nothing to narrow, the screen's name (QA round 2 #10: "All ▾" beside "All projects ▾")
+        title={computers.filters() ? computers.title() : shell.t('shell.dest.tasks')}
         // iOS: the computer filter is a pull-down from the title (UIMenu), its choices checked; Android keeps its sheet
-        titleMenu={{ label: shell.t('shell.phone.pickComputer'), items: computers.menu(), onSelect: (id: string) => computers.set(id) }}
+        {...(computers.filters() && {
+          onTitle: () => setPicking(true),
+          titleMenu: { label: shell.t('shell.phone.pickComputer'), items: computers.menu(), onSelect: (id: string) => computers.set(id) },
+        })}
         search={{ label: shell.t('shell.phone.search'), onOpen: () => shell.palette.open() }}
         actions={actions()}
         actionsLabel={shell.t('shell.phone.tasksActions')}

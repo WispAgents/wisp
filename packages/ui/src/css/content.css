@@ -69,6 +69,7 @@
   [data-kit='link'][data-tone='ink'] { color: var(--ink); }
   [data-kit='link'][data-tone='muted'] { color: var(--muted); }
   [data-kit='link']:hover { text-decoration: underline; text-underline-offset: var(--space-1); }
+  [data-kit='link'][data-truncate] { display: inline-block; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; vertical-align: bottom; }
 
   /* Pills (v1's .pill): the tone at 85% into ink on a 9% fill. */
   [data-kit='pill'] {
@@ -96,7 +97,8 @@
   [data-kit='pill-dot'][data-live] { animation: kit-pulse 1.6s ease-in-out infinite; }
 
   /* Times: faint, tabular, and in lists a fixed right-aligned column so rows line up. */
-  [data-kit='time'] { font-size: var(--fs-xs); color: var(--faint); font-variant-numeric: tabular-nums; white-space: nowrap; }
+  /* a time is never cut (design/layout.md §1): the words beside it give way first, inline as in its column */
+  [data-kit='time'] { flex: none; font-size: var(--fs-xs); color: var(--faint); font-variant-numeric: tabular-nums; white-space: nowrap; }
   [data-kit='time'][data-column] { display: inline-block; flex: none; min-width: var(--size-time-col); text-align: end; }
 
   [data-kit='avatar'] {

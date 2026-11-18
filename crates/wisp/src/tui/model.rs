@@ -207,6 +207,20 @@ impl Transcript {
         }
     }
 
+    /// The task's Notes, `(section, text)` (wisp.threads' `threads_notes` rows on the task's topic, ADR-0079).
+    pub fn thread_notes(&self) -> Vec<(String, String)> {
+        self.rows
+            .iter()
+            .filter(|((e, _), v)| e == "threads_notes" && s(v, "task_id") == self.task)
+            .map(|(_, v)| (s(v, "section").to_owned(), s(v, "text").to_owned()))
+            .collect()
+    }
+
+    /// The thread's health as last worked out (`threads_health`'s body), Null before it was.
+    pub fn thread_health(&self) -> Value {
+        self.rows.get(&("threads_health".to_owned(), self.task.clone())).and_then(|v| v.get("body")).cloned().unwrap_or(Value::Null)
+    }
+
     pub fn session(&self) -> Value {
         self.rows.get(&("session".to_owned(), self.task.clone())).map_or(Value::Null, merged)
     }

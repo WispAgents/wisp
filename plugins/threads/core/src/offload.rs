@@ -58,8 +58,26 @@ pub fn wrap(command: &str, dir: &str, wisp: &str, min: usize) -> Option<String> 
     )
 }
 
+/// The file a harness's compaction hook adds a line to, in the run's offload folder (`wisp hook compacted`): wisp.threads
+/// counts and removes it at the turn's end, for a harness whose stream doesn't say it compacted (Codex, ADR-0097).
+pub const COMPACTIONS_FILE: &str = "compactions";
+
+/// Which CLI asks: Claude Code takes `updatedInput` alone (a `permissionDecision` would skip its own ask); Codex needs
+/// `permissionDecision: "allow"` beside it (its docs: the rewrite is an allow).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum Flavor {
+    #[default]
+    Claude,
+    Codex,
+}
+
 /// Claude Code's `PreToolUse` hook: its input (stdin) → the `updatedInput` to answer with, or None (run as it is).
 pub fn hook_answer(input: &Value, dir: Option<&str>, wisp: &str, min: usize) -> Option<Value> {
+    hook_answer_as(Flavor::Claude, input, dir, wisp, min)
+}
+
+/// [`hook_answer`] in `flavor`'s shape (both send `tool_name: "Bash"` and `tool_input.command`).
+pub fn hook_answer_as(flavor: Flavor, input: &Value, dir: Option<&str>, wisp: &str, min: usize) -> Option<Value> {
     if input["tool_name"] != "Bash" || input["tool_input"]["run_in_background"] == true {
         return None;
     }
@@ -67,7 +85,12 @@ pub fn hook_answer(input: &Value, dir: Option<&str>, wisp: &str, min: usize) -> 
     let command = wrap(ti.get("command")?.as_str()?, dir?, wisp, min)?;
     let mut updated = ti.clone();
     updated.insert("command".into(), Value::String(command));
-    Some(json!({ "hookSpecificOutput": { "hookEventName": "PreToolUse", "updatedInput": updated } }))
+    Some(match flavor {
+        Flavor::Claude => json!({ "hookSpecificOutput": { "hookEventName": "PreToolUse", "updatedInput": updated } }),
+        Flavor::Codex => {
+            json!({ "hookSpecificOutput": { "hookEventName": "PreToolUse", "permissionDecision": "allow", "updatedInput": updated } })
+        }
+    })
 }
 
 /// The longest start of `b` of at most `n` bytes that ends between characters.

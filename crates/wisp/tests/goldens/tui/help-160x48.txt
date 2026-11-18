@@ -24,6 +24,7 @@
                               │   y  a  n                 allow · always allow · deny a tool                                     │
                               │   Esc                     interrupt the running turn                                             │
                               │   d                       the changes pane (diffs) · again: close it                             │
+                              │   t                       the Thread pane: the task's Notes and how worn it is · again: close it │
                               │   s                       stop                                                                   │
                               │   PgUp PgDn  G            scroll · to the end (and follow)                                       │
                               │                                                                                                  │
@@ -41,8 +42,7 @@
                               │   j k                     move                                                                   │
                               │   a letter                the row's action (shown in the view's footer)                          │
                               │   r                       reload                                                                 │
-                              ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
-                                  │ ╭ Follow-up · queued while it runs ───────────────────────────────────────────────────────────────────────────────────────╮
+                              ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯────────────────────────────╮
                                   │ │ i write  ? keys                                                                                                         │
                                   │ ╰─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
   auto   codex · gpt-5                                                                                                           ● live   ? keys  ^K go  q quit

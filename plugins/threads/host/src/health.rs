@@ -40,7 +40,7 @@ pub fn turn_in(t: &Turn, errors: Vec<String>) -> TurnIn {
         failed: failed(t),
         fresh: crate::audit::fresh_mark(t),
         // a `/compact` turn is counted as one already
-        compacted: if t.by.as_deref() == Some("compact") { 0 } else { stats.and_then(|s| s.compactions).unwrap_or(0) },
+        compacted: if t.by.as_deref() == Some("compact") { 0 } else { crate::audit::compactions(t) },
         context: stats.and_then(|s| Some((s.context_tokens?, s.context_window?))),
         errors,
         edits: edits(t),

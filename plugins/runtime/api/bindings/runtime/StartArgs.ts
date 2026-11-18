@@ -66,6 +66,11 @@ profile?: AgentSpec,
  */
 base?: Base, worktree?: boolean, goal?: unknown, 
 /**
+ * the Notes it starts with (`{ goal, constraints: [...] }`, ADR-0097): kept in its spec, read by the plugin that
+ * keeps Notes (wisp.threads) when the task is made. Additive (2026-11-18).
+ */
+notes?: unknown, 
+/**
  * the crew member it works for
  */
 crew?: string, team?: unknown, connectors?: Array<string>, schedule?: string, 

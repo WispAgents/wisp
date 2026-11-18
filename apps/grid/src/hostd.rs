@@ -24,6 +24,9 @@ use crate::clock::SharedClock;
 use crate::error::{Result, bad};
 use crate::rows::BoxUser;
 
+#[path = "hostd_wake.rs"]
+mod wake;
+
 #[derive(Clone)]
 pub struct ProcessOptions {
     /// the wisp binary
@@ -91,6 +94,8 @@ impl std::fmt::Debug for ProcessOptions {
 
 #[derive(Debug, Default)]
 struct Inst {
+    /// who it runs for (set on a start or a restore): what a scheduled wake starts, and what change events name
+    user: Option<BoxUser>,
     state: BoxState,
     port: Option<u16>,
     secret: String,
@@ -99,6 +104,12 @@ struct Inst {
     inflight: usize,
     started_at: Option<i64>,
     stopped_at: Option<i64>,
+    /// its next scheduled task, as its `/api/status` last said (v1 hostd.js `nextWakeAt`)
+    next_wake_at: Option<i64>,
+    /// its own last activity, from `/api/status`, or the last use the edge saw
+    last_active_at: Option<i64>,
+    /// the timer that wakes it for `next_wake_at` while it sleeps
+    wake: Option<tokio::task::AbortHandle>,
 }
 
 #[derive(Debug)]
@@ -111,6 +122,10 @@ pub struct ProcessHost {
     peak: Mutex<(usize, usize)>,
     http: reqwest::Client,
     env_for: EnvSlot,
+    /// itself, for the wake timers it starts
+    me: std::sync::Weak<Self>,
+    /// the grid is stopping: nothing starts, and a start under way gives up
+    closed: std::sync::atomic::AtomicBool,
 }
 
 /// More environment for one box (a sandbox's owner's env and sign-ins).
@@ -139,7 +154,7 @@ impl ProcessHost {
     pub fn new(o: ProcessOptions, clock: SharedClock) -> Arc<Self> {
         let (tx, _) = broadcast::channel(64);
         let http = reqwest::Client::builder().no_proxy().connect_timeout(Duration::from_secs(2)).build().unwrap_or_default();
-        let h = Arc::new(Self {
+        let h = Arc::new_cyclic(|me| Self {
             o,
             clock,
             inst: Arc::new(Mutex::new(HashMap::new())),
@@ -148,6 +163,8 @@ impl ProcessHost {
             peak: Mutex::new((0, 0)),
             http,
             env_for: EnvSlot::default(),
+            me: me.clone(),
+            closed: std::sync::atomic::AtomicBool::new(false),
         });
         let me = Arc::downgrade(&h);
         let every = Duration::from_millis(u64::try_from(h.o.check_ms.max(200)).unwrap_or(5000));
@@ -155,7 +172,7 @@ impl ProcessHost {
             loop {
                 tokio::time::sleep(every).await;
                 let Some(h) = me.upgrade() else { return };
-                h.check_idle().await;
+                h.tick().await;
             }
         });
         h
@@ -177,40 +194,23 @@ impl ProcessHost {
     }
 
     fn change(&self, user: &BoxUser, state: BoxState, event: &str) {
-        let (started_at, stopped_at, last) =
-            lock(&self.inst).get(&user.id).map_or((None, None, None), |i| (i.started_at, i.stopped_at, Some(i.last_touch)));
+        let (who, started_at, stopped_at, next, last) = lock(&self.inst).get(&user.id).map_or_else(
+            || (user.clone(), None, None, None, None),
+            |i| {
+                let last = i.last_active_at.max(Some(i.last_touch)).filter(|t| *t > 0);
+                (i.user.clone().unwrap_or_else(|| user.clone()), i.started_at, i.stopped_at, i.next_wake_at, last)
+            },
+        );
         let _ = self.tx.send(BoxChange {
-            user: BoxUserWire::from(user),
+            user: BoxUserWire::from(&who),
             state,
             event: event.into(),
             started_at,
             stopped_at,
-            next_wake_at: None,
+            next_wake_at: next,
             last_active_at: last,
             error: String::new(),
         });
-    }
-
-    async fn check_idle(&self) {
-        let now = self.clock.now_ms();
-        let quiet: Vec<(String, u16, i64)> = lock(&self.inst)
-            .iter()
-            .filter(|(_, i)| i.state == BoxState::Running && i.inflight == 0 && now - i.last_touch > self.o.idle_ms)
-            .filter_map(|(id, i)| i.port.map(|p| (id.clone(), p, i.last_touch)))
-            .collect();
-        for (id, port, touched) in quiet {
-            let s: serde_json::Value = match self.http.get(format!("http://127.0.0.1:{port}/api/status")).send().await {
-                Ok(r) => r.json().await.unwrap_or_default(),
-                Err(_) => serde_json::Value::Null,
-            };
-            let n = |k: &str| s.get(k).and_then(serde_json::Value::as_u64).unwrap_or(0);
-            let busy = n("live") + n("sides") + n("terms") + n("channels") > 0;
-            let last = s.get("lastActivityAt").and_then(serde_json::Value::as_i64).unwrap_or(0).max(touched);
-            if !busy && now - last > self.o.idle_ms {
-                tracing::info!("hostd: {id} idle, stopping");
-                let _ = self.stop(&id, "idle").await;
-            }
-        }
     }
 
     /// The environment every box gets (its secret goes in boxd's 0600 env file, never on a command line).
@@ -276,6 +276,9 @@ impl ProcessHost {
     }
 
     async fn start(&self, user: &BoxUser) -> Result<Running> {
+        if self.is_closed() {
+            return Err(bad("The grid is shutting down.", 503));
+        }
         let running = lock(&self.inst).values().filter(|i| i.state == BoxState::Running).count();
         if running >= self.o.max_running {
             let mut p = lock(&self.peak);
@@ -288,6 +291,12 @@ impl ProcessHost {
             let mut m = lock(&self.inst);
             let i = m.entry(user.id.clone()).or_default();
             i.state = BoxState::Starting;
+            i.user = Some(user.clone());
+            // awake now: its schedule is its own again until it next sleeps (v1)
+            i.next_wake_at = None;
+            if let Some(w) = i.wake.take() {
+                w.abort();
+            }
         }
         self.change(user, BoxState::Starting, "starting");
         let child = match self.spawn(user, port, &secret).await {
@@ -301,6 +310,15 @@ impl ProcessHost {
         let deadline = self.clock.now_ms() + self.o.start_ms;
         let mut child = Some(child);
         loop {
+            if self.is_closed() {
+                // the grid is stopping: this box doesn't outlive it
+                if let Some(c) = child.take() {
+                    c.stop().await;
+                }
+                lock(&self.inst).entry(user.id.clone()).or_default().state = BoxState::Stopped;
+                self.change(user, BoxState::Stopped, "grid stopped");
+                return Err(bad("The grid is shutting down.", 503));
+            }
             if self.http.get(format!("http://127.0.0.1:{port}/api/health")).send().await.is_ok_and(|r| r.status().is_success()) {
                 break;
             }
@@ -394,6 +412,8 @@ impl BoxHost for ProcessHost {
         }
         let user = BoxUser { id: user_id.to_owned(), handle: String::new(), sandbox: None, owner: None };
         self.change(&user, BoxState::Stopped, reason);
+        // asleep with a task scheduled: it wakes for it (v1 hostd.js `#scheduleWake`)
+        self.schedule_wake(user_id);
         Ok(true)
     }
     async fn remove(&self, user: &BoxUser) -> Result<()> {
@@ -410,7 +430,9 @@ impl BoxHost for ProcessHost {
         lock(&self.inst).remove(&user.id);
         Ok(())
     }
-    fn restore(&self, _user: &BoxUser, _next_wake_at: Option<i64>) {}
+    fn restore(&self, user: &BoxUser, next_wake_at: Option<i64>) {
+        self.restore_wake(user, next_wake_at);
+    }
     fn capacity(&self) -> usize {
         self.o.max_running
     }
@@ -424,10 +446,7 @@ impl BoxHost for ProcessHost {
         self.o.previews
     }
     async fn close(&self) {
-        let ids: Vec<String> = lock(&self.inst).keys().cloned().collect();
-        for id in ids {
-            let _ = self.stop(&id, "grid stopped").await;
-        }
+        self.close_boxes().await;
     }
 }
 

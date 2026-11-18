@@ -231,6 +231,11 @@ pub struct StartArgs {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(type = "unknown", optional)]
     pub goal: Option<Value>,
+    /// the Notes it starts with (`{ goal, constraints: [...] }`, ADR-0097): kept in its spec, read by the plugin that
+    /// keeps Notes (wisp.threads) when the task is made. Additive (2026-11-18).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(type = "unknown", optional)]
+    pub notes: Option<Value>,
     /// the crew member it works for
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]

@@ -18,10 +18,12 @@
   [data-kit='check-row-dur'] { grid-column: 4; text-align: end; white-space: nowrap; font-size: var(--fs-xs); color: var(--faint); font-variant-numeric: tabular-nums; }
   [data-kit='check-row-actions'] { grid-column: 5; display: flex; align-items: center; gap: var(--space-1); }
   @container checks (max-width: 520px) {
-    [data-kit='check-row'] { grid-template-columns: auto minmax(0, 1fr) var(--size-time-col); min-height: var(--size-touch); }
+    /* actions keep the check's line (a ↗ logs icon on a row of its own doubled every row: QA r2 phone #7); the name
+       gives way */
+    [data-kit='check-row'] { grid-template-columns: auto minmax(0, 1fr) var(--size-time-col) auto; min-height: var(--size-touch); }
     [data-kit='check-row-note'] { display: none; }
     [data-kit='check-row-dur'] { grid-column: 3; }
-    [data-kit='check-row-actions'] { grid-column: 2 / -1; grid-row: 2; padding-block-end: var(--space-2); }
+    [data-kit='check-row-actions'] { grid-column: 4; }
   }
 
   /* The tone chip: v1's PR pill, as a button. */

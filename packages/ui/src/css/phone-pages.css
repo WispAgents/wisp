@@ -26,9 +26,12 @@
   [data-kit='phone-settings-pane'] > [data-kit='settings-lede'] { margin: 0; padding: 0 var(--space-7); color: var(--muted); }
 
   /* My Stuff: the kinds (Android's filter chips, iOS's segmented control) on one line that scrolls sideways */
+  /* the end fades (over its own end padding when the chips fit): a row cut at the edge reads as one that scrolls
+     (QA r2 phone #13) */
   [data-kit='stuff-phone-kinds'] {
     display: flex; gap: var(--space-3); padding: var(--space-3) var(--space-7);
     overflow-x: auto; overflow-y: hidden; overscroll-behavior-x: contain; scrollbar-width: none;
+    mask-image: linear-gradient(to right, var(--ink) calc(100% - var(--space-7)), transparent);
   }
   [data-kit='stuff-phone-kinds'] > [data-kit='button'] { flex: none; }
   [data-kit='stuff-phone-kinds'] > [data-kit='tabs'] { flex: 1 1 auto; min-width: 0; }

@@ -6,7 +6,13 @@ import { entityKey } from '@wisp/client';
 import type { ExtensionProps } from '@wisp/shell/contract';
 import { useShell } from '@wisp/shell';
 import { englishT, HomeUsage as HomeUsageRow, timeLabel, useSignal, type HomeUsageGroup } from '@wisp/ui';
-import { accountNames, agents, META, plans, TOPIC, type AccountPlan } from './commands.ts';
+import { accountNames as accountNamesCmd, agents as agentsCmd, META, plans as plansCmd, TOPIC, type AccountPlan } from './commands.ts';
+
+// Home's reads run on every load: a peer without them (an older wisp) leaves the card out, never an error toast
+// (QA r2 phone #1); Settings → Usage, opened by hand, still says when they're refused
+export const agents = { ...agentsCmd, quiet: true };
+export const plans = { ...plansCmd, quiet: true };
+export const accountNames = { ...accountNamesCmd, quiet: true };
 import { pct } from './drain.ts';
 import { holdLine, homeTone, homeUsage, type HomeHarness } from './home-usage.ts';
 import { stopLine, windowLine } from './plan.ts';

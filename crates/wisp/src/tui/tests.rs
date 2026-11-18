@@ -801,3 +801,34 @@ fn new_task_is_a_page_and_ctrl_a_picks_its_agent() {
     let fx = a.key(key(KeyCode::Enter));
     assert!(fx.iter().any(|e| matches!(e, Effect::Send { task: None, agent: Some(x), .. } if x == "claude")), "{fx:?}");
 }
+
+/// ADR-0097: the task's header says how worn its thread is (nothing when Fine), and `t` opens the Thread pane with that
+/// line and the Notes, as the GUI's Thread tab; `t` again closes it.
+#[test]
+fn the_thread_pane_shows_the_notes_and_the_header_how_worn_it_is() {
+    use wisp_protocol::{Change, EntityOp, Topic};
+    let mut a = opened();
+    let fine = screen(&a, 160, 48);
+    assert!(!fine.contains("Worn") && !fine.contains("Getting long"), "{fine}");
+    let up = |e: &str, id: &str, v: Value| EntityOp {
+        topic: Topic::parse("session:t2").unwrap(),
+        e: e.into(),
+        id: id.into(),
+        change: Change::Upsert { v },
+    };
+    a.open.as_mut().unwrap().ops(vec![
+        up("threads_notes", "t2|goal", json!({ "id": "t2|goal", "task_id": "t2", "section": "goal", "text": "Dark mode everywhere", "rev": 1, "by": "you" })),
+        up("threads_notes", "t2|constraints", json!({ "id": "t2|constraints", "task_id": "t2", "section": "constraints", "text": "No new deps\nKeep tokens", "rev": 1, "by": "agent" })),
+        up("threads_health", "t2", json!({ "id": "t2", "body": { "task": "t2", "level": "worn", "share": 0.85, "compactions": 3, "turns": 12, "reverted": 0, "reasons": [] } })),
+    ]);
+    a.focus = Zone::Task;
+    let head = screen(&a, 160, 48);
+    assert!(head.contains("Worn · context 85% full · 3 compactions"), "the header says it:\n{head}");
+    a.key(ch('t'));
+    assert_eq!(a.side, Some(super::app::Side::Thread));
+    let s = screen(&a, 160, 48);
+    assert!(s.contains("Thread") && s.contains("Goal") && s.contains("Dark mode everywhere"), "{s}");
+    assert!(s.contains("- No new deps") && s.contains("- Keep tokens"), "{s}");
+    a.key(ch('t'));
+    assert_eq!(a.side, None);
+}

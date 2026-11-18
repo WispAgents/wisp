@@ -125,7 +125,9 @@ from the kit on a dev page, once a variant is picked.
       `runtime.followUp { fresh }`, `wisp fresh`; the `fresh` mark health counts from).
    3. **Done (2026-11-18, ADR-0096):** the compaction audit (setting `threads.compactAudit`, off by default;
       `stats.compactions` from Claude Code, `runtime.probe` on a fork, a word-match scorer, `threads.audits`).
-   4. Offload hooks and compaction counts for the other harnesses; formulas seeding Notes; the TUI health line.
+   4. **Done (2026-11-18, ADR-0097):** Codex's offload and compaction counter (Full auto), the other harnesses checked
+      and skipped with why; formulas seeding Notes; the TUI's health line and Thread pane. Left: opencode's plugin,
+      with a recorded run.
 4. **Later (research P7, P8):** the merge check for subagents, and the long-thread eval harness in `spikes/`.
 
 One coder at a time (§3), each round one of the steps above.

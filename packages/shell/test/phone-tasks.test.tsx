@@ -7,7 +7,7 @@ import { createToaster } from '@wisp/ui';
 import { createShell, type ShellWindow } from '../src/shell.tsx';
 import { nullPlatform } from '../src/platform/index.ts';
 import type { Platform } from '../src/platform/types.ts';
-import { ALL_COMPUTERS, computerOptions, computerTitle, inComputer, knownComputer } from '../src/frame/computer-filter.ts';
+import { ALL_COMPUTERS, computerOptions, computerTitle, hasComputerFilter, inComputer, knownComputer } from '../src/frame/computer-filter.ts';
 
 const tick = (ms = 0): Promise<void> => new Promise((r) => setTimeout(r, ms));
 
@@ -42,8 +42,9 @@ for (const kind of ['android', 'ios'] as const) {
     expect(bar, 'the root TopAppBar is the frame’s top').not.toBeNull();
     expect(bar?.getAttribute('data-kind')).toBe('root');
     expect(bar?.getAttribute('data-part')).toBe('phone.tasks.bar');
-    // the computer filter is the title button: All until one is picked
-    expect(bar?.querySelector('[data-kit="app-bar-title-button"]')?.textContent).toContain('All');
+    // one computer: nothing for the computer filter to narrow, the bar says the screen's name (QA round 2 #10)
+    expect(bar?.querySelector('[data-kit="app-bar-title-button"]'), 'no computer filter with one computer').toBeNull();
+    expect(bar?.textContent).toContain('Tasks');
     expect(bar?.querySelector('[aria-label="Search"]'), 'Search in the bar, no keyboard hint').not.toBeNull();
     expect(root.querySelector('[data-part="phone.tasks.me-trigger"], [data-part="phone.tasks.me.trigger"]'), 'the me menu').not.toBeNull();
     // v1's desktop head and New task row are gone on the phone
@@ -83,4 +84,15 @@ test('the_computer_filter_is_all_or_a_saved_computer_and_one_gone_reads_as_all',
   expect(inComputer('mac', 'mac:t1')).toBe(true);
   expect(inComputer('mac', 'mac-2:t1'), 'a peer id that prefixes another is not it').toBe(false);
   expect(inComputer('studio', 'mac:t1')).toBe(false);
+});
+
+// QA round 2 #10, #11: the bar's title was the computer filter's "All ▾" beside the project selector's "All projects ▾",
+// two Alls, even with one computer, where the filter has nothing to narrow; and its sheet said "this computer".
+test('one_computer_has_no_computer_filter_and_names_read_in_sentence_case', () => {
+  expect(hasComputerFilter(['local'])).toBe(false);
+  expect(hasComputerFilter([])).toBe(false);
+  expect(hasComputerFilter(['local', 'studio'])).toBe(true);
+  const name = (p: string): string => ({ local: 'this computer', studio: 'studio' })[p] ?? '';
+  expect(computerOptions('all', ['local', 'studio'], name, 'All computers').map((o) => o.label)).toEqual(['All computers', 'This computer', 'Studio']);
+  expect(computerTitle('local', ['local', 'studio'], name, 'All computers')).toBe('This computer');
 });

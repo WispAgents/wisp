@@ -30,6 +30,24 @@ export interface TaskMenuInput {
   readonly after?: readonly MenuItem[];
   /** a submenu's name ('shell.menu.view' …) */
   readonly t: (key: string) => string;
+  /** the phone apps (QA r2 #5: 27 rows deep): past the first section, one of more than two rows is one submenu, its
+   *  own submenus headed groups inside (iOS HIG / M3: a short menu, sections and submenus) */
+  readonly compact?: boolean;
+}
+
+const SECTION_ICON: Record<TaskMenuSection, IconName> = { open: 'external', task: 'pen', waiting: 'clock', look: 'panel', keep: 'bookmark', place: 'archive' };
+
+/** a section's rows as one submenu (`compact`): a row that was a submenu becomes a group headed with its name */
+function folded(section: TaskMenuSection, rows: readonly MenuEntry[], t: (key: string) => string): MenuEntry {
+  const items = rows.flatMap((e): (MenuItem | MenuGroup)[] => {
+    if (e.kind === 'separator') return [];
+    if (e.kind === 'submenu') {
+      const inner = e.items.flatMap((x): MenuItem[] => (x.kind === 'separator' ? [] : x.kind === 'group' ? [...x.items] : [x]));
+      return [{ kind: 'group', id: e.value, label: e.label, items: inner }];
+    }
+    return [e];
+  });
+  return { kind: 'submenu', value: `section:${section}`, label: t(`shell.menu.section.${section}`), icon: SECTION_ICON[section], items };
 }
 
 const sectionOf = (e: TaskMenuEntry): TaskMenuSection => (e.sub ? SUB_SECTION[e.sub] : (e.section ?? 'place'));
@@ -44,7 +62,8 @@ export function taskMenu(m: TaskMenuInput): MenuEntry[] {
       const items: (MenuItem | MenuSeparator | MenuGroup)[] = byOrder(mine.filter((e) => e.sub === sub)).map((e) => e.entry);
       if (items.length) rows.push({ order: SUB_ORDER[sub], entry: { kind: 'submenu', value: `sub:${sub}`, label: m.t(`shell.menu.${sub}`), icon: SUB_ICON[sub], items } });
     }
-    return byOrder(rows).map((r) => r.entry);
+    const out = byOrder(rows).map((r) => r.entry);
+    return m.compact && section !== 'open' && out.length > 2 ? [folded(section, out, m.t)] : out;
   });
   return menuSections([...groups, m.danger, m.after ?? []]);
 }

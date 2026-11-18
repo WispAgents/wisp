@@ -19,4 +19,14 @@ export const AREAS = {
     { name: 'shortcuts', path: '/?o=dialog:shell.shortcuts', ready: '[data-part="shell.shortcuts"]' },
     { name: 'diagnostics', path: '/?o=viewer:shell.devtools', ready: '[data-part="shell.devtools"]' },
   ],
+  // long threads (ADR-0079): the first task's Thread, as the task's menu opens it (a dialog in the browser, a sheet on a
+  // phone); v1's seed has no Notes, so this is the empty Thread with every section's Add (the side panel's Thread tab
+  // with written sections is checked on the mock's own seed: plugins/threads/ui, its report)
+  threads: [
+    {
+      name: 'thread',
+      path: `${TASK}?o=${encodeURIComponent(`sheet:threads.thread:${JSON.stringify({ task: `local:${SEED.seeded.tasks[0]}` })}`)}`,
+      ready: '[data-part="threads.thread"]',
+    },
+  ],
 };

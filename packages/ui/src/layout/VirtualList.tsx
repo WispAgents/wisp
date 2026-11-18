@@ -75,6 +75,10 @@ function useMeasured(beforeChange: () => void): Measured {
     heights.set(key, h);
     return true;
   };
+  // the rows observed now (to set aside while a re-plan's scrollbar change goes by, below)
+  const rows = new Set<Element>();
+  let back: Element[] = [];
+  let gone = false;
   const ro =
     typeof ResizeObserver === 'undefined'
       ? undefined
@@ -88,20 +92,48 @@ function useMeasured(beforeChange: () => void): Measured {
           beforeChange();
           let changed = false;
           for (const e of entries) if (e.target !== box.el) changed = record(e.target, e.borderBoxSize[0]?.blockSize ?? e.contentRect.height) || changed;
-          if (changed) setVersion((v) => v + 1);
+          if (!changed) return;
+          // the re-plan is made here, before paint (a frame later, the rows above the reader and a streaming tail jumped)
+          const wide = box.el?.clientWidth;
+          setVersion((v) => v + 1);
+          // ...but the heights it set can take the list's scrollbar away (or bring it): with a scrollbar that takes room
+          // (a desktop's classic one; a phone's overlays never do) every row is then a little wider, in this same pass,
+          // and the browser skips those changes at the rows' depth: WebKit's "ResizeObserver loop completed with
+          // undelivered notifications" (QA round 1 #16, round 2 #15). The rows step out of the observer until the next
+          // frame, which measures them again; what shows is right meanwhile (they're in the flow), only the spacers
+          // wait that frame for a width-only change.
+          if (wide === undefined || box.el?.clientWidth === wide) return;
+          if (!back.length) requestAnimationFrame(() => {
+            const now = back;
+            back = [];
+            if (!gone) for (const el of now) if (el.isConnected && rows.has(el)) ro?.observe(el);
+          });
+          for (const el of rows) {
+            ro?.unobserve(el);
+            back.push(el);
+          }
         });
-  onCleanup(() => ro?.disconnect());
+  onCleanup(() => {
+    gone = true;
+    ro?.disconnect();
+  });
   return {
     version,
     get: (key) => heights.get(key),
     observe: (el, key) => {
       keys.set(el, key);
+      rows.add(el);
       ro?.observe(el);
     },
-    unobserve: (el) => ro?.unobserve(el),
+    unobserve: (el) => {
+      rows.delete(el);
+      ro?.unobserve(el);
+    },
     observeBox: (el) => {
       box.el = el;
-      ro?.observe(el);
+      // its border box: a scrollbar coming or going changes its content box only, which (shallower than the rows) the
+      // same pass would skip too (#15)
+      ro?.observe(el, { box: 'border-box' });
     },
   };
 }

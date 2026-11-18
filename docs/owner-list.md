@@ -66,6 +66,7 @@ in the real app (or the owner drops it). Statuses: `done` (committed and checked
 | Initial JS over budget (120.0 > 120 KB) | done (1ab36eb9) (117.1 KB: machine and crew registrations load less) |
 | PR pane footer says "Checked time.now" (untranslated key) | done (1ab36eb9) (PrPane reads the kit words under `kit.`) |
 | Machines: the Mac's installed v1 app shows as a second machine | needs a machine id at registration; goes away once v2 replaces v1 |
+| Home's "Sign in to GitHub" tip shows even when gh is signed in | todo (next fixer round) |
 | WebKit "ResizeObserver loop" message from VirtualList | todo: a fix without the one-frame jump |
 
 ## Then

@@ -114,6 +114,7 @@ fn snapshot_sources() -> Vec<wisp_api::v2_store::TopicSource> {
             query: |_| wisp_store::Query::new(),
         }))
         .chain(goal_sources())
+        .chain(threads_sources())
         .collect()
 }
 
@@ -160,6 +161,59 @@ fn goal_sources() -> Vec<wisp_api::v2_store::TopicSource> {
         }]
     }
     #[cfg(not(feature = "goal"))]
+    {
+        Vec::new()
+    }
+}
+
+/// The newest versions of a task's Notes a first look carries (each section's own versions are a handful: this is
+/// every one for any task but the longest); `threads.revisions` answers the rest.
+const THREAD_REVISIONS: u64 = 200;
+
+/// wisp.threads' rows on their task's topic (`session:<id>`, ADR-0079, ADR-0096): its Notes, their versions, the
+/// Notes' rev, the thread's health and the compaction audits, read beside runtime's task window. Without them a first
+/// look had none, and the next change's patch of `threads_meta` found no row: the topic drifted and its resync came
+/// back without them again (the Thread tab stayed empty while `wisp notes --set` wrote).
+fn threads_sources() -> Vec<wisp_api::v2_store::TopicSource> {
+    #[cfg(feature = "threads")]
+    {
+        use wisp_api::v2_store::TopicSource;
+        use wisp_threads::kinds;
+        let session = |t: &str| t.starts_with("session:");
+        vec![
+            TopicSource {
+                kind: kinds::NOTES,
+                key: "id",
+                matches: session,
+                query: |t| wisp_store::Query::new().eq("task_id", t.trim_start_matches("session:")),
+            },
+            TopicSource {
+                kind: kinds::REVISIONS,
+                key: "id",
+                matches: session,
+                query: |t| wisp_store::Query::new().eq("task_id", t.trim_start_matches("session:")).desc("at").limit(THREAD_REVISIONS),
+            },
+            TopicSource {
+                kind: kinds::META,
+                key: "id",
+                matches: session,
+                query: |t| wisp_store::Query::new().eq("id", t.trim_start_matches("session:")),
+            },
+            TopicSource {
+                kind: kinds::HEALTH,
+                key: "id",
+                matches: session,
+                query: |t| wisp_store::Query::new().eq("id", t.trim_start_matches("session:")),
+            },
+            TopicSource {
+                kind: kinds::AUDITS,
+                key: "id",
+                matches: session,
+                query: |t| wisp_store::Query::new().eq("task_id", t.trim_start_matches("session:")).desc("at"),
+            },
+        ]
+    }
+    #[cfg(not(feature = "threads"))]
     {
         Vec::new()
     }
@@ -389,6 +443,21 @@ pub fn open_url(url: &str) {
 #[cfg(test)]
 mod tests {
     use super::FromShell;
+
+    #[cfg(feature = "threads")]
+    #[test]
+    fn a_tasks_first_look_carries_its_notes_versions_health_and_audits() {
+        let kinds: Vec<&str> = super::snapshot_sources().iter().filter(|s| (s.matches)("session:t1")).map(|s| s.kind).collect();
+        for k in ["threads_notes", "threads_revisions", "threads_meta", "threads_health", "threads_audit"] {
+            assert!(kinds.contains(&k), "{k} on session:<id>: {kinds:?}");
+        }
+        assert!(
+            super::snapshot_sources()
+                .iter()
+                .filter(|s| s.kind.starts_with("threads_"))
+                .all(|s| !(s.matches)("list") && !(s.matches)("config"))
+        );
+    }
 
     #[test]
     fn the_desktop_app_may_hand_over_a_path_and_nothing_else() {

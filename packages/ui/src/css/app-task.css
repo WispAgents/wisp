@@ -579,8 +579,14 @@
     align-items: center;
     gap: 5px;
   }
+  /* the token count and what plugins add to it (ADR-0095): one line that gives way with "…" when the trail is narrow
+     (QA r2 #8: on a phone it ran past the card), its title says it all */
   [data-kit='tb'][data-part='turn.receipt'] {
-    gap: var(--space-3);
+    display: block;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
   [data-kit='tb'] > [data-kit='icon'] {
     width: 13px;

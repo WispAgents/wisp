@@ -46,6 +46,26 @@ async function openTask(client: Awaited<ReturnType<typeof start>>['client'], roo
   client.nav.navigate({ t: 'openTask', id: first?.id as EntityKey as never });
   await until(() => ready.every((sel) => root.querySelector(sel) !== null));
 }
+const labelOf = (e: Element): string => (e.querySelector('[data-kit="menu-item-label"]')?.textContent ?? '').replace(/^Open in .*/, 'Open in');
+/** what the open menu reaches (QA r2 #5: on a phone its longer sections are submenus): its own rows, and each
+ *  submenu's rows, drilled into and back out of */
+async function reach(menu: Element): Promise<{ top: string[]; inside: Record<string, string[]> }> {
+  const rows = (): Element[] => [...menu.querySelectorAll('[data-kit="menu-item"]:not([data-back])')];
+  const top = rows().map(labelOf);
+  const inside: Record<string, string[]> = {};
+  for (const name of rows()
+    .filter((e) => e.hasAttribute('data-sub'))
+    .map(labelOf)) {
+    rows()
+      .find((e) => e.hasAttribute('data-sub') && labelOf(e) === name)
+      ?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    await until(() => menu.hasAttribute('data-drilled'));
+    inside[name] = rows().map(labelOf);
+    menu.querySelector<HTMLElement>('[data-kit="menu-item"][data-back]')?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    await until(() => !menu.hasAttribute('data-drilled'));
+  }
+  return { top, inside };
+}
 /** the phone's task page bar, its menu drawn */
 const PHONE_TASK = '[data-part="phone.task.bar"] [data-kit="app-bar-actions"] > [aria-label="More"]';
 
@@ -72,18 +92,24 @@ test('the_task_menu_on_a_phone_holds_v1s_task_actions_and_details_opens_the_side
   await openTask(client, root, PHONE_TASK);
   (root.querySelector('[data-part="phone.task.bar"] [data-kit="app-bar-actions"] > [aria-label="More"]') as HTMLButtonElement).click();
   await until(() => document.querySelectorAll('[data-kit="menu-item"]').length > 0);
-  // the open menu's rows (the list's row menus and the me menu are mounted elsewhere)
+  // the open menu (the list's row menus and the me menu are mounted elsewhere)
   const open = [...document.querySelectorAll('[data-kit="menu"]')].find((m) => m.textContent?.includes('Mark done'));
-  const labels = [...(open?.querySelectorAll('[data-kit="menu-item"] [data-kit="menu-item-label"]') ?? [])].map((e) => (e.textContent ?? '').replace(/^Open in .*/, 'Open in'));
-  // v1's task actions (the browser's details bar) then its More, from the one menu model; Details first
-  const want = ['Details', 'Transcript', 'Rerun…', 'Open in', 'Changes', 'Shell', 'Ship it…', 'Mark done', 'Rename', 'Archive', 'Delete task'];
-  for (const w of want) expect(labels, w).toContain(w);
-  expect(labels.indexOf('Details')).toBe(0);
-  const order = want.slice(0, 8).map((w) => labels.indexOf(w));
+  expect(open, 'the task’s menu').toBeDefined();
+  const { top, inside } = await reach(open as Element);
+  // short (QA r2 #5): v1's task actions (the browser's details bar) on top, Details first, in v1's order; the rest of
+  // its More one submenu away; Archive and Delete on top
+  const first = ['Details', 'Transcript', 'Rerun…', 'Open in', 'Ship it…', 'Mark done'];
+  for (const w of [...first, 'Archive', 'Delete task']) expect(top, w).toContain(w);
+  expect(top.indexOf('Details')).toBe(0);
+  const order = first.map((w) => top.indexOf(w));
   expect(order, 'in v1’s order').toEqual([...order].sort((a, b) => a - b));
-  // one control per choice: no second Changes / Shell from the row's menu entries
-  expect(labels.filter((l) => l === 'Changes')).toHaveLength(1);
-  expect(labels.filter((l) => l === 'Shell')).toHaveLength(1);
+  expect(top.length, 'a menu that fits a phone').toBeLessThanOrEqual(16);
+  // every v1 action still reachable: Rename in This task; Changes and Shell in Show (one control per choice)
+  expect(inside['This task'], 'This task').toContain('Rename');
+  const all = [...top, ...Object.values(inside).flat()];
+  expect(all.filter((l) => l === 'Changes')).toHaveLength(1);
+  expect(all.filter((l) => l === 'Shell')).toHaveLength(1);
+  expect(inside['Show'], 'Show').toEqual(expect.arrayContaining(['Changes', 'Shell']));
   const details = [...(open?.querySelectorAll<HTMLElement>('[data-kit="menu-item"]') ?? [])].find((e) => e.textContent?.includes('Details'));
   details?.click();
   await until(() => q('[data-part~="phone.task.details"] [data-part="split.details"]') !== null);
@@ -97,6 +123,9 @@ test('rename_on_a_phone_is_a_dialog_from_the_menu_not_an_inline_edit', async () 
   await openTask(client, root, PHONE_TASK);
   (root.querySelector('[data-part="phone.task.bar"] [data-kit="app-bar-actions"] > [aria-label="More"]') as HTMLButtonElement).click();
   await until(() => document.querySelectorAll('[data-kit="menu-item"]').length > 0);
+  // Rename is in This task (QA r2 #5: the phone's menu folds its longer sections)
+  [...document.querySelectorAll<HTMLElement>('[data-kit="menu-item"][data-sub]')].find((e) => e.textContent?.includes('This task'))?.click();
+  await until(() => [...document.querySelectorAll('[data-kit="menu-item"]')].some((e) => e.textContent?.includes('Rename')));
   [...document.querySelectorAll<HTMLElement>('[data-kit="menu-item"]')].find((e) => e.textContent?.includes('Rename'))?.click();
   await until(() => q('[data-part~="phone.task.rename"] input') !== null);
   expect((q('[data-part~="phone.task.rename"] input') as HTMLInputElement).value).toContain('Add rate limiting');
@@ -114,10 +143,13 @@ test('a_phones_browser_task_page_keeps_v1s_head_with_back_and_its_details_bar', 
 
 for (const kind of ['android', 'ios'] as const) {
   test(`new_task_on_${kind}_is_the_platform_compose_page_with_its_way_out_and_send_and_every_v1_composer_feature`, async () => {
-    const { root } = await start(phone(kind));
+    const { client, root } = await start(phone(kind));
+    // the mock's tasks in first: with one of yours the bar is full, its tail folded into More (first-run.ts)
+    await until(() => client.entities.list('session')().length > 0);
     await until(() => root.querySelector('[data-part~="phone.tasks.new"]') !== null);
     (root.querySelector('[data-part~="phone.tasks.new"]') as HTMLElement).click();
-    const PARTS = ['launcher.input', 'launcher.harness', 'launcher.projects', 'launcher.attach', 'launcher.team', 'launcher.goal', 'launcher.where', 'launcher.send'];
+    // Goal, Worktree, Start later, Start from an issue and Recipes are in the bar's More on a phone (QA r2 #2)
+    const PARTS = ['launcher.input', 'launcher.harness', 'launcher.projects', 'launcher.attach', 'launcher.team', 'launcher.more', 'launcher.where', 'launcher.send'];
     // the bar and the whole prompt box under it
     await until(() => root.querySelector('[data-part="phone.new.bar"] [data-part="phone.new.bar.confirm"]') !== null && PARTS.every((part) => root.querySelector(`[data-part~="${part}"]`) !== null));
     const bar = root.querySelector('[data-part="phone.new.bar"]');
@@ -136,6 +168,23 @@ for (const kind of ['android', 'ios'] as const) {
     // the prompt box keeps every v1 feature: harness pill and picker, folder, attachments, delegate, goal, the place
     for (const part of PARTS)
       expect(root.querySelector(`[data-part~="${part}"]`), part).not.toBeNull();
+    // … and the rest one tap away in More: the goal, the start time, an issue, the recipes
+    // the open menu More drew (portaled: the one holding Start from an issue)
+    const moreRows = (): string[] => {
+      const menu = [...document.querySelectorAll('[data-kit="menu"]')].find((m) => m.textContent?.includes('Start from an issue'));
+      return [...(menu?.querySelectorAll('[role^="menuitem"]') ?? [])].map((e) => (e.textContent ?? '').trim());
+    };
+    const more = (): HTMLElement | null => root.querySelector('[data-part~="launcher.more"]');
+    expect(more()?.getAttribute('aria-haspopup'), 'More is a menu, not the first run’s More options').toBe('menu');
+    more()?.click();
+    await until(() => moreRows().some((l) => l.startsWith('Start later')));
+    for (const w of ['Goal', 'Start later', 'Start from an issue', 'Recipes']) expect(moreRows().some((l) => l.startsWith(w)), w).toBe(true);
+    // no folder picked (the mock's New task): no git repo, so no Worktree (v1 paintScratch); with one it folds in too
+    // (packages/shell/test/phone-bar.test.ts)
+    expect(root.querySelector('[data-part~="launcher.projects"]')?.textContent).toContain('No folder');
+    expect(moreRows().some((l) => l.startsWith('Worktree') || l.startsWith('In place')), 'no Worktree without a folder').toBe(false);
+    // one state for both Sends (QA r2 #12): the round one is off while the header's is
+    expect(root.querySelector<HTMLButtonElement>('[data-part="launcher.send"]')?.disabled, 'the round Send, nothing typed').toBe(true);
     const input = root.querySelector<HTMLTextAreaElement>('[data-part~="launcher.input"]');
     if (input) {
       input.value = 'Add a rate limit';
@@ -143,6 +192,7 @@ for (const kind of ['android', 'ios'] as const) {
     }
     await until(() => bar?.querySelector<HTMLButtonElement>('[data-part="phone.new.bar.confirm"]')?.disabled === false);
     expect(bar?.querySelector<HTMLButtonElement>('[data-part="phone.new.bar.confirm"]')?.disabled, 'typed: Send is on').toBe(false);
+    expect(root.querySelector<HTMLButtonElement>('[data-part="launcher.send"]')?.disabled, 'typed: the round Send is on too').toBe(false);
     // Close / Cancel goes back to the list and keeps the draft
     (out as HTMLElement).click();
     await until(() => root.querySelector('[data-kit="frame"]')?.getAttribute('data-page') === 'list');

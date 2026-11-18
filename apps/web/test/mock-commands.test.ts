@@ -254,7 +254,7 @@ test('long threads (ADR-0079): the seeded Thread and threads.* answer the api bi
   const at = (file: string): string => `plugins/threads/api/bindings/threads/${file}.ts`;
   const id = 'local:s0002';
   // the seeded task's topic carries its Notes, versions, meta and health, as plugins/threads/host/src/store.rs publishes them
-  expect([...new Set(rows('session:s0002').map((r) => r.e))].filter((e) => e.startsWith('threads_')).sort()).toEqual(['threads_health', 'threads_meta', 'threads_notes', 'threads_revisions']);
+  expect([...new Set(rows('session:s0002').map((r) => r.e))].filter((e) => e.startsWith('threads_')).sort()).toEqual(['threads_audit', 'threads_health', 'threads_meta', 'threads_notes', 'threads_revisions']);
   const notes = run('threads.notes', { id });
   expect(keys(notes)).toEqual(bindingFields(at('Notes')).filter((k) => k !== 'lead'));
   const sections = notes['sections'] as Record<string, unknown>[];
@@ -264,6 +264,11 @@ test('long threads (ADR-0079): the seeded Thread and threads.* answer the api bi
   for (const r of run('threads.revisions', { id, section: 'state' }) as unknown as unknown[]) expect(keys(r)).toEqual(bindingFields(at('Revision')));
   expect(keys(run('threads.freshBrief', { id }))).toEqual(bindingFields(at('Brief')));
   expect(bindingFields(at('Fresh'))).toEqual(expect.arrayContaining(keys(run('threads.fresh', { id }))));
+  // the compaction audits (ADR-0096): Audit's fields, newest first; the rows on the topic carry them under `body`
+  const audits = run('threads.audits', { id }) as unknown as Record<string, unknown>[];
+  expect(audits.map((x) => [x['kept'], x['total']])).toEqual([[6, 8], [7, 7]]);
+  for (const x of audits) expect(bindingFields(at('Audit'))).toEqual(expect.arrayContaining(keys(x)));
+  expect(keys(audits[0])).toEqual(bindingFields(at('Audit')).filter((k) => k !== 'why'));
   // a rewrite: the section's row, a version, the Notes' rev; the same text again writes nothing; a bad section is refused
   const wrote = COMMANDS['threads.notesUpdate']?.({ id, section: 'open', text: '- Redis later?\n- redis later' }, ctx);
   expect(wrote?.ops.map((o) => [o.e, o.id])).toEqual([['threads_notes', 's0002|open'], ['threads_revisions', 's0002|open|1'], ['threads_meta', 's0002']]);

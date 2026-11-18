@@ -24,6 +24,8 @@ const later: PluginUiLater = {
     },
   ],
   extensions: [
+    // under a compaction's turn: what it kept of the Notes (ADR-0096; only a turn that has an audit shows anything)
+    defineExtension({ id: 'threads.audit', attachTo: { id: 'shell.turn:foot' }, component: lazy(() => import('./AuditFoot.tsx')), order: 30 }),
     defineExtension({
       id: 'wisp.threads.menu',
       attachTo: { id: 'shell.row:menu' },

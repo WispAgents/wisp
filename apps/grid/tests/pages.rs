@@ -64,6 +64,14 @@ async fn rig(name: &str, extra: serde_json::Value) -> Rig {
     Rig { c, root: format!("http://wisp.localhost:{port}"), stop, dir }
 }
 
+/// What a form said it did: the one-time flash cookie (`!` first when it went wrong).
+fn flash(r: &reqwest::Response) -> String {
+    let v = r.headers().get_all("set-cookie").iter().map(|v| v.to_str().unwrap().to_owned()).find(|c| c.starts_with("wisp_flash="));
+    let v = v.unwrap_or_default();
+    let raw = v.split(';').next().unwrap_or_default().trim_start_matches("wisp_flash=");
+    url::form_urlencoded::parse(format!("x={}", raw.replace('+', "%2B")).as_bytes()).next().map(|(_, v)| v.into_owned()).unwrap_or_default()
+}
+
 /// Signs in by handle (dev): the session cookie.
 async fn sign_in(r: &Rig, handle: &str) -> String {
     let res = r.c.get(format!("{}/auth/dev?handle={handle}&next=/", r.root)).send().await.unwrap();
@@ -77,10 +85,10 @@ async fn sign_in(r: &Rig, handle: &str) -> String {
 async fn a_signed_in_person_sees_home_and_account_and_their_forms_work() {
     let rig = rig("pages", json!({})).await;
     let (c, root) = (&rig.c, &rig.root);
-    // signed out: the public page, and account sends you to sign in
+    // signed out: the landing with its way in (QA round 2 B4), and account sends you to sign in
     let r = c.get(format!("{root}/")).send().await.unwrap();
     assert_eq!(r.status(), 200);
-    assert!(r.text().await.unwrap().contains("Share and reach your wisps"));
+    assert!(r.text().await.unwrap().contains(r#"href="/auth/dev/start"#));
     let r = c.get(format!("{root}/account")).send().await.unwrap();
     assert_eq!(r.status(), 302);
     assert!(r.headers()["location"].to_str().unwrap().starts_with("/signin"));
@@ -109,8 +117,8 @@ async fn a_signed_in_person_sees_home_and_account_and_their_forms_work() {
         .send()
         .await
         .unwrap();
-    assert_eq!(r.status(), 302);
-    assert!(r.headers()["location"].to_str().unwrap().starts_with("/account?m=Type%20ada"), "{:?}", r.headers()["location"]);
+    assert_eq!((r.status().as_u16(), r.headers()["location"].to_str().unwrap()), (302, "/account"));
+    assert_eq!(flash(&r), "!Type ada to delete your account.");
     // the cloud wisp asleep already: Sleep says so
     let r = c
         .post(format!("{root}/instance/stop"))
@@ -121,7 +129,7 @@ async fn a_signed_in_person_sees_home_and_account_and_their_forms_work() {
         .await
         .unwrap();
     assert_eq!(r.status(), 302);
-    assert!(r.headers()["location"].to_str().unwrap().contains("already%20asleep"));
+    assert!(flash(&r).contains("already asleep"), "{}", flash(&r));
 
     // sign out: the session goes and its cookie is cleared; the pages send you to sign in again
     let r = c
@@ -167,9 +175,9 @@ async fn the_account_page_offers_the_telegram_routing_form_and_says_what_was_wro
         .send()
         .await
         .unwrap();
-    assert_eq!(r.status(), 302);
-    let to = r.headers()["location"].to_str().unwrap().to_owned();
-    assert!(to.starts_with("/account?m=") && to.contains("BotFather") && to.ends_with("&tone=bad"), "{to}");
+    assert_eq!((r.status().as_u16(), r.headers()["location"].to_str().unwrap()), (302, "/account"));
+    let f = flash(&r);
+    assert!(f.starts_with('!') && f.contains("BotFather"), "{f}");
     rig.stop.cancel();
     let _ = std::fs::remove_dir_all(&rig.dir);
 }

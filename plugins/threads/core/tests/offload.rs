@@ -62,8 +62,20 @@ fn long_output_shows_its_start_its_errors_and_its_end() {
 /// The rewrite really runs: output to a file, a `cd` still carries, the command's own status, `exit` inside it.
 #[test]
 fn the_rewrite_runs_in_bash_with_the_commands_own_status() {
-    let Ok(bash) = which("bash") else { return };
-    let dir = std::env::temp_dir().join(format!("wisp-offload-test-{}", std::process::id()));
+    shell_runs_it("bash");
+}
+
+/// ADR-0097: Codex runs a command in the user's shell (zsh on macOS), and `sh` is the plainest: the same rewrite works.
+#[test]
+fn the_rewrite_runs_in_zsh_and_sh_too() {
+    shell_runs_it("zsh");
+    shell_runs_it("sh");
+}
+
+#[allow(clippy::unwrap_used)] // a test helper
+fn shell_runs_it(shell: &str) {
+    let Ok(bash) = which(shell) else { return };
+    let dir = std::env::temp_dir().join(format!("wisp-offload-test-{shell}-{}", std::process::id()));
     // a stand-in for `wisp hook offload-show`: prints the file whole
     let shim = dir.with_extension("sh");
     std::fs::write(&shim, "#!/bin/sh\ncat \"$3\"\n").unwrap();
@@ -77,9 +89,9 @@ fn the_rewrite_runs_in_bash_with_the_commands_own_status() {
         std::process::Command::new(&bash).arg("-c").arg(w).output().unwrap()
     };
     let r = run("echo hello; echo oops >&2");
-    assert_eq!(String::from_utf8_lossy(&r.stdout), "hello\noops\n");
+    assert_eq!(String::from_utf8_lossy(&r.stdout), "hello\noops\n", "{shell}");
     assert_eq!(r.status.code(), Some(0));
-    assert_eq!(run("echo x; exit 3").status.code(), Some(3), "an exit inside keeps its status");
+    assert_eq!(run("echo x; exit 3").status.code(), Some(3), "{shell}: an exit inside keeps its status");
     assert_eq!(run("false").status.code(), Some(1));
     assert!(std::fs::read_dir(&dir).unwrap().count() >= 1, "the output went to a file in the task's folder");
     let _ = std::fs::remove_dir_all(&dir);

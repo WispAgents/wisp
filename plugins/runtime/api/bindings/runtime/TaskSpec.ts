@@ -17,7 +17,11 @@ agent?: string, model?: string, effort?: string, mode?: string,
 /**
  * the project folder
  */
-cwd?: string, dirs?: Array<string>, base?: Base, worktree?: boolean, goal?: unknown, crew?: string, team?: unknown, connectors?: Array<string>, schedule?: string, 
+cwd?: string, dirs?: Array<string>, base?: Base, worktree?: boolean, goal?: unknown, 
+/**
+ * the Notes it started with (`StartArgs::notes`, ADR-0097): a rerun starts with them too. Additive (2026-11-18).
+ */
+notes?: unknown, crew?: string, team?: unknown, connectors?: Array<string>, schedule?: string, 
 /**
  * the effective formula it ran with, by content hash (`runtime.snapshot`)
  */

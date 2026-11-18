@@ -37,6 +37,17 @@ fn js_round(x: f64) -> f64 {
     (x + 0.5).floor()
 }
 
+/// `2026-10-25`: the UTC day, as v1's CLI printed it (`toISOString().slice(0, 10)`); "" for none.
+pub fn iso_day(t: Option<i64>) -> String {
+    match t.filter(|t| *t != 0) {
+        Some(t) => {
+            let (y, m, d, ..) = civil(t);
+            format!("{y:04}-{m:02}-{d:02}")
+        }
+        None => String::new(),
+    }
+}
+
 /// Epoch ms to (year, month, day, hour, minute, second) in UTC (Howard Hinnant's `days_from_civil`,
 /// inverted).
 #[allow(clippy::many_single_char_names)] // the algorithm's own names

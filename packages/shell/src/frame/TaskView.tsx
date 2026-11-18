@@ -761,13 +761,15 @@ export default function TaskView(props: { readonly id: string; readonly onBack?:
     if (phoneBar())
       own.push(
         { section: 'open', order: -40, entry: { value: 'details', label: t('shell.phone.details'), icon: 'info' } },
-        { section: 'open', order: 10, entry: { value: 'changes', label: t('shell.task.changes'), icon: 'file', checked: nav().side.kind === 'changes' } },
-        { section: 'open', order: 20, entry: { value: 'shell', label: t('shell.task.shell'), icon: 'shell', checked: nav().side.kind === 'shell' } },
+        // the side panes are views (Show › View) and the head's swipe twins go with them, so the first section stays
+        // short (QA r2 #5)
+        { sub: 'view', order: 10, entry: { value: 'changes', label: t('shell.task.changes'), icon: 'file', checked: nav().side.kind === 'changes' } },
+        { sub: 'view', order: 20, entry: { value: 'shell', label: t('shell.task.shell'), icon: 'shell', checked: nav().side.kind === 'shell' } },
         { section: 'open', order: 30, entry: { value: 'ship', label: t('shell.task.ship'), icon: 'send' } },
         { section: 'open', order: 40, entry: { value: 'done', label: t('shell.task.done'), icon: 'done' } },
         // the head's swipe's twins: at the list's first / last task (or none) they are there, disabled
-        { section: 'open', order: -39, entry: { value: 'next-task', label: t('shell.phone.nextTask'), icon: 'chevron', ...(steps().next === undefined && { disabled: true }) } },
-        { section: 'open', order: -38, entry: { value: 'previous-task', label: t('shell.phone.previousTask'), icon: 'back', ...(steps().previous === undefined && { disabled: true }) } },
+        { section: 'look', order: 200, entry: { value: 'next-task', label: t('shell.phone.nextTask'), icon: 'chevron', ...(steps().next === undefined && { disabled: true }) } },
+        { section: 'look', order: 201, entry: { value: 'previous-task', label: t('shell.phone.previousTask'), icon: 'back', ...(steps().previous === undefined && { disabled: true }) } },
       );
     own.push({ section: 'task', order: -10, entry: { value: 'rename', label: t('shell.more.rename'), icon: 'pen', keys: 'M' } });
     if (compactOffer()) own.push({ section: 'task', order: 45, entry: { value: 'compact', label: t('shell.cold.compact'), icon: 'minus', hint: compactOffer()?.note ?? '' } });
@@ -798,6 +800,8 @@ export default function TaskView(props: { readonly id: string; readonly onBack?:
       entries: [...own, ...moreExts().map((x) => menuEntryOf(x, extProps(x) as never, t))],
       danger: [{ value: 'delete', label: t('shell.more.delete'), icon: 'trash', danger: true, keys: '⌫' }],
       t,
+      // the phone apps' ⋯: short, its longer sections behind one row each (QA r2 #5)
+      ...(phoneBar() && { compact: true }),
     });
   };
   // the browser edits the head's title in place; the phone apps' bar asks in a dialog

@@ -443,6 +443,7 @@ pub async fn prepare(
         base,
         worktree: a.worktree,
         goal: a.goal.clone(),
+        notes: a.notes.clone(),
         crew: a.crew.clone(),
         team: a.team.clone(),
         connectors: a.connectors.clone(),

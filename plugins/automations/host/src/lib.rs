@@ -129,6 +129,7 @@ pub fn start_args(t: &NamedTask, run: &RunTask, by: &str) -> Result<StartArgs> {
         connectors: d.connectors.clone(),
         worktree: d.worktree,
         goal: d.goal.clone(),
+        notes: (!d.notes.is_empty()).then(|| serde_json::to_value(&d.notes).ok()).flatten(),
         lineage: Lineage { triggered_by: Some(by.to_owned()), ..Lineage::default() },
         ext: [(wisp_automations_api::PLUGIN_ID.to_owned(), json!({ "task": t.name }))].into_iter().collect(),
         ..StartArgs::default()

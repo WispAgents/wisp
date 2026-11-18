@@ -30,3 +30,10 @@ pub(super) const COPY_JS: &str = r"<script>document.addEventListener('click',asy
 
 /// Add a computer from anywhere on the page. An old link to the account's Delete lands on its new page.
 pub(super) const HOME_JS: &str = r"<script>(()=>{if(location.hash==='#delete')location.replace('/account#delete');document.addEventListener('click',(e)=>{if(!e.target.closest('[data-add]'))return;const d=document.getElementById('add');d.open=true;d.scrollIntoView({block:'start',behavior:matchMedia('(prefers-reduced-motion:reduce)').matches?'auto':'smooth'});d.querySelector('summary').focus({preventScroll:true})})})()</script>";
+
+/// A form with `data-confirm` asks once before it goes: the first press turns its button into the question (in the
+/// danger colour), the second sends it; it turns back after a few seconds, or on Escape or a click elsewhere. Capture
+/// phase, so it runs before [`PENDING`] marks the button busy. Without script the form just sends.
+pub(super) const CONFIRM: &str = r"<script>(()=>{let armed=null,t=0;const reset=()=>{if(!armed)return;const b=armed.querySelector('button');b.textContent=b.dataset.was;b.classList.remove('armed');armed=null;clearTimeout(t)};
+document.addEventListener('submit',(e)=>{const f=e.target;if(!f.dataset||!f.dataset.confirm)return;if(armed===f)return reset();e.preventDefault();e.stopImmediatePropagation();reset();const b=f.querySelector('button');b.dataset.was=b.textContent;b.textContent=f.dataset.confirm;b.classList.add('armed');armed=f;t=setTimeout(reset,4000)},true);
+document.addEventListener('click',(e)=>{if(armed&&!armed.contains(e.target))reset()});document.addEventListener('keydown',(e)=>{if(e.key==='Escape')reset()})})()</script>";

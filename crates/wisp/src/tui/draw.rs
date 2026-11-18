@@ -475,6 +475,10 @@ fn header(app: &App, session: &Value, w: usize) -> Vec<Line<'static>> {
         }
     }
     let mut second = vec![Span::styled(cut(&meta.join(" · "), w), th.dim())];
+    // how worn the thread is, when it isn't Fine (the GUI's Thread tab tip; `t` opens the pane)
+    if let Some((line, level)) = app.open.as_ref().and_then(|t| super::thread::health_line(&t.thread_health())) {
+        second.push(Span::styled(format!("  {line}"), Style::default().fg(if level == "worn" { th.bad } else { th.warn })));
+    }
     second.extend(inputs(app, Slot::TaskHeader, &cx(app)));
     vec![Line::from(first), Line::from(second), Line::from(Span::styled(g(app).rule().repeat(w), Style::default().fg(th.line)))]
 }
@@ -933,6 +937,23 @@ fn side(f: &mut Frame<'_>, app: &App, r: Rect) {
                 }
             }
             Side::Setup => body.extend(t.session().get("setup").map(|v| wisp_tui_api::detail_of(v, th)).unwrap_or_default()),
+            Side::Thread => {
+                if let Some((line, level)) = super::thread::health_line(&t.thread_health()) {
+                    body.push(Line::from(Span::styled(line, Style::default().fg(if level == "worn" { th.bad } else { th.warn }))));
+                    body.push(Line::from(""));
+                }
+                let notes = super::thread::notes_lines(&t.thread_notes());
+                if notes.is_empty() {
+                    body.push(Line::from(Span::styled(
+                        "No notes yet: the agent keeps them with wisp_notes, you with wisp notes.",
+                        th.dim(),
+                    )));
+                }
+                body.extend(notes.into_iter().map(|l| match l.strip_prefix("## ") {
+                    Some(h) => Line::from(Span::styled(h.to_owned(), th.strong())),
+                    None => Line::from(Span::styled(l, th.text())),
+                }));
+            }
         }
     }
     if body.is_empty() {

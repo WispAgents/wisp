@@ -40,6 +40,13 @@ pub fn launch(run: &HarnessRun, bin: &str, developer: bool) -> Launch {
     let images: Vec<String> = with_path.iter().filter(|a| is_image(&a.mime)).filter_map(|a| a.path.clone()).collect();
     let attachment_dirs: Vec<String> = with_path.iter().filter_map(|a| a.path.as_deref().map(dir_of)).collect();
     let lean_base = format!("{{tmp}}/{LEAN_FILE}");
+    // the long-thread hooks when the run names its offload folder (wisp.threads, ADR-0097)
+    let wisp = run
+        .env
+        .get(wisp_runtime_api::points::OFFLOAD_DIR_ENV)
+        .filter(|d| !d.is_empty())
+        .and_then(|_| std::env::current_exe().ok())
+        .map(|p| p.display().to_string());
     let a = CodexArgs {
         mode: mode(run.mode),
         model: &run.model,
@@ -53,6 +60,7 @@ pub fn launch(run: &HarnessRun, bin: &str, developer: bool) -> Launch {
         mcp_servers: Some(&run.mcp_servers),
         images: &images,
         attachment_dirs: &attachment_dirs,
+        hooks: wisp.as_deref(),
     };
     let mut input = if developer.is_some() || run.system_prompt.trim().is_empty() {
         run.prompt.clone()
@@ -99,6 +107,19 @@ mod tests {
             Stdin::Bytes(b) => String::from_utf8_lossy(b).into_owned(),
             _ => String::new(),
         }
+    }
+
+    /// ADR-0097: a Full auto run that names its offload folder gets the long-thread hooks; without the folder, none.
+    #[test]
+    fn a_full_auto_run_with_an_offload_folder_gets_the_hooks() {
+        let mut r = HarnessRun { mode: Mode::Auto, ..run() };
+        assert!(!launch(&r, "codex", true).args.iter().any(|a| a.starts_with("hooks.")));
+        r.env.insert(wisp_runtime_api::points::OFFLOAD_DIR_ENV.into(), "/h/threads/out/t1".into());
+        let args = launch(&r, "codex", true).args;
+        assert!(args.iter().any(|a| a.starts_with("hooks.PreToolUse=") && a.contains("hook offload --codex")), "{args:?}");
+        assert!(args.iter().any(|a| a.starts_with("hooks.PostCompact=") && a.contains("hook compacted")));
+        r.mode = Mode::Edits;
+        assert!(!launch(&r, "codex", true).args.iter().any(|a| a.contains("hook-trust")), "not outside Full auto");
     }
 
     #[test]

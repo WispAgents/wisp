@@ -42,6 +42,7 @@ pub const KEYS: &[(Where, &str, &str)] = &[
     (Where::Task, "y  a  n", "allow · always allow · deny a tool"),
     (Where::Task, "Esc", "interrupt the running turn"),
     (Where::Task, "d", "the changes pane (diffs) · again: close it"),
+    (Where::Task, "t", "the Thread pane: the task's Notes and how worn it is · again: close it"),
     (Where::Task, "s", "stop"),
     (Where::Task, "PgUp PgDn  G", "scroll · to the end (and follow)"),
     (Where::Composer, "Enter", "send (queued while a turn runs)"),

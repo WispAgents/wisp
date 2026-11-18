@@ -234,8 +234,10 @@ class FakeObserver {
     this.cb = cb;
     FakeObserver.last = this;
   }
-  observe(el: Element): void {
+  readonly boxes = new Map<Element, string | undefined>();
+  observe(el: Element, opts?: ResizeObserverOptions): void {
     this.watched.add(el);
+    this.boxes.set(el, opts?.box);
   }
   unobserve(el: Element): void {
     this.watched.delete(el);
@@ -286,5 +288,54 @@ describe('VirtualList measured by a ResizeObserver', () => {
     // while on screen a row that really grew is still recorded: the spacers move
     ro.report((el) => (el === box ? { width: 390, height: 300 } : { width: 390, height: 60 }));
     expect(shown()).not.toEqual(before);
+  });
+
+  // QA round 1 #16, round 2 #15: measured rows shortened the list, its (classic, room-taking) scrollbar went away, and
+  // every row grew a scrollbar wider in the same pass, which the browser skips at the rows' depth: WebKit's "loop
+  // completed with undelivered notifications". The re-plan still lands in that pass (deferring it a frame made the
+  // rows above the reader and a streaming tail jump); only the width-only change waits: the rows step out of the
+  // observer until the next frame, and the box is watched by its border box, which a scrollbar never changes.
+  test('a_scrollbar_change_from_a_replan_never_delays_the_replan_and_leaves_nothing_undelivered', async () => {
+    vi.stubGlobal('ResizeObserver', FakeObserver);
+    const host = mount(() => (
+      <VirtualList items={rows(200)} key={(r) => r.id} estimate={30} viewport={300} overscan={2}>
+        {(r) => <span data-id={r().id}>{r().text}</span>}
+      </VirtualList>
+    ));
+    const ro = FakeObserver.last;
+    if (!ro) throw new Error('no observer');
+    const box = host.querySelector<HTMLElement>('[data-kit="virtual-list"]');
+    if (!box) throw new Error('no box');
+    expect(ro.boxes.get(box), 'the box by its border box').toBe('border-box');
+    const bottom = (): string | undefined => host.querySelectorAll<HTMLElement>('[data-kit="virtual-spacer"]')[1]?.style.height;
+    const before = bottom();
+    // the scrollbar goes as the re-plan lands: the box's inner width grows by its 10px once the spacers moved
+    Object.defineProperty(box, 'clientWidth', { configurable: true, get: () => (bottom() === before ? 380 : 390) });
+    const rowsWatched = (): number => [...ro.watched].filter((el) => el !== box).length;
+    const watchedBefore = rowsWatched();
+    expect(watchedBefore).toBeGreaterThan(0);
+    // the rows are really 20px: the window re-plans at once, and the scrollbar goes with it
+    ro.report((el) => (el === box ? { width: 390, height: 300 } : { width: 380, height: 20 }));
+    expect(bottom(), 're-planned in the same pass, not a frame later').not.toBe(before);
+    expect(rowsWatched(), 'the rows step out while the width change goes by').toBe(0);
+    await new Promise<void>((r) => requestAnimationFrame(() => r()));
+    expect(rowsWatched(), 'and are measured again on the next frame').toBeGreaterThan(0);
+  });
+
+  test('a_replan_that_leaves_the_scrollbar_as_it_was_keeps_every_row_observed', () => {
+    vi.stubGlobal('ResizeObserver', FakeObserver);
+    const host = mount(() => (
+      <VirtualList items={rows(200)} key={(r) => r.id} estimate={30} viewport={300} overscan={2}>
+        {(r) => <span data-id={r().id}>{r().text}</span>}
+      </VirtualList>
+    ));
+    const ro = FakeObserver.last;
+    const box = host.querySelector<HTMLElement>('[data-kit="virtual-list"]');
+    if (!ro || !box) throw new Error('no list');
+    Object.defineProperty(box, 'clientWidth', { configurable: true, get: () => 390 });
+    const watched = ro.watched.size;
+    ro.report((el) => (el === box ? { width: 390, height: 300 } : { width: 390, height: 20 }));
+    expect(ro.watched.size).toBeGreaterThanOrEqual(watched);
+    expect([...ro.watched].some((el) => el !== box)).toBe(true);
   });
 });

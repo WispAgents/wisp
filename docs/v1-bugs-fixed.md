@@ -73,6 +73,9 @@ Each line: area · what v1 did · what v2 does · the test. Visible changes are 
 | Long threads (audit) | an audit marked `running` was set to skipped only in memory (`finally`), so a restart mid-audit left it `running` on the turn for good | a `running` audit older than 10 minutes reads as skipped, "It didn’t finish." (ADR-0096) | `plugins/threads/host/src/audit.rs` `an_audit_a_restart_cut_off_reads_as_skipped` |
 | Long threads (audit) | scoring the recall took a second model run (`askJson`), so with no model free the audit was skipped and each one cost two runs | a word match in core (`audit::score`), no model call: the same answer every time | `plugins/threads/core/tests/audit.rs` |
 | Long threads (fresh) | after a fresh thread, a follow-up on another harness could carry a hand-off note of the old conversation's turns | the hand-off reads only the turns from the last fresh one on | `plugins/runtime/host/tests/fresh.rs` `a_fresh_follow_up_starts_a_new_conversation_linked_to_the_old_one` |
+| Grid (notes) | a form's note lived in the URL (`/?m=…`), so every reload said it again | it rides a one-minute cookie the next page shows once and drops | `apps/grid/tests/pages_qa.rs` `remove_asks_first_and_says_what_it_did_once` |
+| Grid (Remove) | Remove took a computer (or a device) off the grid in one click | the button turns into the question; a second press sends | `pages_qa.rs` `remove_asks_first_and_says_what_it_did_once` |
+| Grid (errors) | a browser on a typo'd path or a dead share link got raw JSON | a page in the grid's look; API clients keep the JSON | `pages_qa.rs` `a_browser_gets_a_page_for_what_isn_t_there_and_an_api_client_json` |
 
 ## Decided by the lead (2026-11-08; the owner asked not to be stopped for these)
 

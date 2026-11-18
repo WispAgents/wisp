@@ -25,14 +25,34 @@ impl Grid {
         let auth = header_str(req.headers(), "authorization").to_owned();
         let own = self.sandboxes.by_bearer(&auth).is_some_and(|r| r.id == sb.id);
         if !own {
+            let Some(owner) = self.accounts.user_by_id(&sb.user_id)?.filter(|u| u.disabled == 0) else {
+                return Ok(self.not_found(&req, "No such sandbox", "Nothing answers at this address."));
+            };
+            let go = format!("/go?sandbox={}", sb.id);
+            let req = match self.address_own(req, &sb.label, &owner, &go) {
+                super::handoff::Own::Done(r) => return Ok(r),
+                super::handoff::Own::Next(r) => r,
+            };
             let who = self.who(req.headers());
-            let cred = who.credential().ok_or_else(|| bad("Sign in first.", 401))?;
+            let here = matches!(who, Who::Nobody).then(|| self.address_user(req.headers(), &sb.label, &owner)).flatten();
+            let cred = match (who.credential(), &here) {
+                (Some(c), _) => c,
+                (None, Some(_)) => Credential::Cookie,
+                (None, None) => {
+                    let pq = req.uri().path_and_query().map_or("/", |p| p.as_str()).to_owned();
+                    return Ok(self.sign_in_at(req.method(), req.headers(), &pq, &go));
+                }
+            };
             if let Some(r) = no(&may(cred, Reach::Sandbox)).filter(|_| cred != Credential::Session) {
                 return Ok(r);
             }
-            if who.user().is_none_or(|u| u.id != sb.user_id) {
+            if here.is_none() && who.user().is_none_or(|u| u.id != sb.user_id) {
                 return Err(bad("That sandbox isn't yours.", 403));
             }
+            if cred == Credential::Cookie && self.foreign_origin(req.method(), req.headers(), &sb.label) {
+                return Err(bad("forbidden origin", 403));
+            }
+            return self.proxy(req, &Sandboxes::box_user(sb), &sb.label).await;
         }
         self.proxy(req, &Sandboxes::box_user(sb), &sb.label).await
     }

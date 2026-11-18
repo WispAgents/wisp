@@ -6,6 +6,7 @@
 // job when it's idle. Every v1 crew feature stays a tap away: Org and Add are the row's first and last bubbles; the
 // member's page, Edit, Check in, Pause, Share, Track record and Remove are the story's ⋯. Every write is a command
 // that shows at once and rolls back with the shell's toast when refused. Its own chunk: the browser never loads it.
+import { orgOpen } from './org-params.ts';
 import { createMemo, createSignal, Show, type JSX } from 'solid-js';
 import { uuidv7, type EntityKey } from '@wisp/client';
 import { ExtView, useExtensions, useShell, type ExtensionProps } from '@wisp/shell';
@@ -128,7 +129,7 @@ export default function CrewStoriesView(props: ExtensionProps): JSX.Element {
         label={t('wisp.crew.list.name')}
         members={bubbles()}
         onOpen={show}
-        org={order().length > 0 ? { label: t('wisp.crew.org.title'), title: t('wisp.crew.list.orgTitle'), onClick: () => c.navigate({ t: 'openView', id: VIEW.org as never, params: null }) } : undefined}
+        org={order().length > 0 ? { label: t('wisp.crew.org.title'), title: t('wisp.crew.list.orgTitle'), onClick: () => c.navigate(orgOpen() as never) } : undefined}
         add={{ label: t('wisp.crew.stories.add'), title: t('wisp.crew.org.addTitle'), onClick: () => overlay(VIEW.editor, {}) }}
       />
       <Show when={member()}>

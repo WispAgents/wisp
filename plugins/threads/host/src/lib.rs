@@ -21,17 +21,30 @@ mod fresh;
 mod health;
 mod notes;
 mod parts;
+mod seed;
 mod store;
 
 use std::path::PathBuf;
 use std::sync::{Arc, OnceLock};
 
 use wisp_kernel::{Call, Ctx, Manifest, Plugin, Result, Setup, WireError};
-use wisp_runtime_api::events::{SessionDeleted, TurnEnded};
+use wisp_runtime_api::events::{SessionCreated, SessionDeleted, TurnEnded};
 use wisp_store::Store;
 use wisp_threads_api::{self as api, By};
 
 pub const PLUGIN_ID: &str = api::PLUGIN;
+
+/// The kinds wisp.threads publishes on a task's own topic (`session:<id>`), and the column naming the task in each:
+/// what a first look at the task reads beside runtime's task window (`crates/wisp/src/serve.rs`), so the Thread tab
+/// has its Notes, versions, health and audits at once, and a later patch of one of them has its row to land on.
+pub mod kinds {
+    use crate::store;
+    pub const NOTES: &str = store::NOTES.kind;
+    pub const REVISIONS: &str = store::REVISIONS.kind;
+    pub const META: &str = store::META.kind;
+    pub const HEALTH: &str = store::HEALTH.kind;
+    pub const AUDITS: &str = store::AUDITS.kind;
+}
 
 pub(crate) struct State {
     pub store: Store,
@@ -87,6 +100,47 @@ async fn update(ctx: &Ctx, call: &Call, st: &State, a: api::UpdateArgs) -> Resul
 
 #[derive(Debug, Default)]
 pub struct ThreadsPlugin;
+
+/// What wisp.threads does when runtime says something happened: a turn ended (the compactions a hook counted, health,
+/// the audit), a task was made (its spec's Notes), a task went (all it had here).
+fn events(s: &mut Setup, slot: &Slot) {
+    let sl = slot.clone();
+    s.on::<TurnEnded, _, _>(move |ctx, e| {
+        let sl = sl.clone();
+        async move {
+            if let Ok(st) = state(&sl) {
+                let call = ctx.root_call();
+                // first what a harness's compaction hook counted (Codex), so health and the audit see it
+                let marked = audit::take_marked(&ctx, &call, &st, e.session_id.as_str(), e.turn_id.as_str()).await;
+                if let Err(err) = health::work_out(&ctx, &call, &st, e.session_id.as_str()).await {
+                    tracing::debug!(error = %err.message, task = %e.session_id.0, "threads: no health");
+                }
+                audit::after_turn(&ctx, &call, &st, e.session_id.as_str(), e.turn_id.as_str(), marked).await;
+            }
+        }
+    });
+    let sl = slot.clone();
+    s.on::<SessionCreated, _, _>(move |ctx, e| {
+        let sl = sl.clone();
+        async move {
+            if let Ok(st) = state(&sl) {
+                let task = e.session.id.0.clone();
+                if let Err(err) = seed::seed(&ctx, &ctx.root_call(), &st, &task).await {
+                    tracing::warn!(error = %err.message, task = %task, "threads: the task's notes weren't seeded");
+                }
+            }
+        }
+    });
+    let sl = slot.clone();
+    s.on::<SessionDeleted, _, _>(move |_ctx, e| {
+        let sl = sl.clone();
+        async move {
+            if let Ok(st) = state(&sl) {
+                files::forget(&st, e.id.as_str()).await;
+            }
+        }
+    });
+}
 
 impl Plugin for ThreadsPlugin {
     fn manifest(&self) -> Manifest {
@@ -154,28 +208,7 @@ impl Plugin for ThreadsPlugin {
             }
         });
         parts::register(s, &slot);
-        let sl = slot.clone();
-        s.on::<TurnEnded, _, _>(move |ctx, e| {
-            let sl = sl.clone();
-            async move {
-                if let Ok(st) = state(&sl) {
-                    let call = ctx.root_call();
-                    if let Err(err) = health::work_out(&ctx, &call, &st, e.session_id.as_str()).await {
-                        tracing::debug!(error = %err.message, task = %e.session_id.0, "threads: no health");
-                    }
-                    audit::after_turn(&ctx, &call, &st, e.session_id.as_str(), e.turn_id.as_str()).await;
-                }
-            }
-        });
-        let sl = slot.clone();
-        s.on::<SessionDeleted, _, _>(move |_ctx, e| {
-            let sl = sl.clone();
-            async move {
-                if let Ok(st) = state(&sl) {
-                    files::forget(&st, e.id.as_str()).await;
-                }
-            }
-        });
+        events(s, &slot);
         s.on_start(move |ctx| async move {
             let store = ctx.service::<Store>()?.as_ref().clone();
             store::install(&store).map_err(|e| db(&e))?;

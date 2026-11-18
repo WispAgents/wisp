@@ -33,10 +33,46 @@ impl Busy {
     }
 }
 
-/// The turn compacted: a `/compact` that did, or a turn of the work the harness compacted inside (its harness counts
-/// them in `stats.compactions`: Claude Code's `compact_boundary`).
+/// How many times the turn's conversation compacted: its harness's count (`stats.compactions`: Claude Code's
+/// `compact_boundary`), else the count its compaction hook left (`ext["wisp.threads"].compactions`: Codex, ADR-0097).
+pub fn compactions(t: &Turn) -> u32 {
+    t.stats.as_ref().and_then(|s| s.compactions).filter(|n| *n > 0).unwrap_or_else(|| {
+        t.ext
+            .get(crate::PLUGIN_ID)
+            .and_then(|x| x.get("compactions"))
+            .and_then(Value::as_u64)
+            .and_then(|n| u32::try_from(n).ok())
+            .unwrap_or(0)
+    })
+}
+
+/// The turn compacted: a `/compact` that did, or a turn of the work the harness compacted inside.
 pub fn compacted(t: &Turn) -> bool {
-    t.status == TurnStatus::Done && t.stats.as_ref().and_then(|s| s.compactions).unwrap_or(0) > 0
+    t.status == TurnStatus::Done && compactions(t) > 0
+}
+
+/// The compactions a harness's hook counted during the turn (`wisp hook compacted` lines in the run's folder), kept
+/// on the turn (`ext["wisp.threads"].compactions`, beside what the slot had) and the file removed. How many.
+pub async fn take_marked(ctx: &Ctx, call: &Call, st: &State, task: &str, turn: &str) -> u32 {
+    let file = st.out.join(crate::parts::folder_name(task)).join(wisp_threads_core::offload::COMPACTIONS_FILE);
+    let Ok(text) = tokio::fs::read_to_string(&file).await else { return 0 };
+    let _ = tokio::fs::remove_file(&file).await;
+    let n = u32::try_from(text.lines().filter(|l| !l.trim().is_empty()).count()).unwrap_or(u32::MAX);
+    if n == 0 {
+        return 0;
+    }
+    let turns = ctx.run::<Turns>(call, TurnsArgs { id: task.into(), before: None, limit: Some(3), masked: None }).await.unwrap_or_default();
+    let mut slot =
+        turns.iter().find(|t| t.id.as_str() == turn).and_then(|t| t.ext.get(crate::PLUGIN_ID)).cloned().unwrap_or_else(|| json!({}));
+    if let Some(o) = slot.as_object_mut() {
+        o.insert("compactions".into(), json!(n));
+    }
+    let mark =
+        wisp_runtime_api::commands::TurnExtArgs { id: task.into(), turn_id: turn.into(), plugin: crate::PLUGIN_ID.into(), value: slot };
+    if let Err(e) = ctx.run::<wisp_runtime_api::commands::TurnSetExt>(call, mark).await {
+        tracing::warn!(error = %e.message, "threads: the turn's compactions aren't kept");
+    }
+    n
 }
 
 pub fn on(ctx: &Ctx) -> bool {
@@ -79,12 +115,14 @@ pub async fn take_lost(st: &State, task: &str, now: i64) -> Vec<String> {
 }
 
 /// At a turn's end: when it compacted and the audit is on, audit it (in the background, one at a time per task).
-pub async fn after_turn(ctx: &Ctx, call: &Call, st: &std::sync::Arc<State>, task: &str, turn: &str) {
+/// `marked`: compactions the harness's hook counted this turn ([`take_marked`]).
+pub async fn after_turn(ctx: &Ctx, call: &Call, st: &std::sync::Arc<State>, task: &str, turn: &str, marked: u32) {
     if !on(ctx) {
         return;
     }
     let Ok(turns) = ctx.run::<Turns>(call, TurnsArgs { id: task.into(), before: None, limit: Some(3), masked: None }).await else { return };
-    if !turns.iter().find(|t| t.id.as_str() == turn).is_some_and(compacted) {
+    let Some(t) = turns.iter().find(|t| t.id.as_str() == turn) else { return };
+    if !(compacted(t) || (marked > 0 && t.status == TurnStatus::Done)) {
         return;
     }
     let (st, ctx2, task, turn) = (st.clone(), ctx.clone(), task.to_owned(), turn.to_owned());

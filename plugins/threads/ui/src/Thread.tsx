@@ -11,12 +11,10 @@ import { notesUpdate, readHealth, readNotes } from './commands.ts';
 import { FreshDialog } from './Fresh.tsx';
 import { t } from './i18n.ts';
 import './i18n/lazy.ts';
-import { freshable, revisionsOf, sectionsOf, yoursUnseen, type SectionId, type TaskLike } from './model.ts';
-import { KIND, PLUGIN, type HealthRow, type MetaRow, type NoteRow, type RevisionRow } from './types.ts';
+import { TICK_MS, auditsOf, freshable, revisionsOf, sectionsOf, yoursUnseen, type SectionId, type TaskLike } from './model.ts';
+import { KIND, PLUGIN, type AuditRow, type HealthRow, type MetaRow, type NoteRow, type RevisionRow } from './types.ts';
 import { ThreadView } from './ThreadView.tsx';
 
-/** "2m ago" moves on while the tab shows */
-export const TICK_MS = 30_000;
 
 export function Thread(props: { readonly client: PluginClient; readonly task: string }): JSX.Element {
   const shell = useShell();
@@ -35,6 +33,7 @@ export function Thread(props: { readonly client: PluginClient; readonly task: st
   const notes = useSignal(props.client.entities.list<NoteRow>(KIND.notes));
   const revs = useSignal(props.client.entities.list<RevisionRow>(KIND.revisions));
   const meta = useSignal(props.client.entities.row<MetaRow>(KIND.meta, entityKey(peer, id)));
+  const auditRows = useSignal(props.client.entities.list<AuditRow>(KIND.audits));
   const healthRow = useSignal(props.client.entities.row<HealthRow>(KIND.health, entityKey(peer, id)));
   const lead = (): boolean => !!row()?.parent_id;
   const [leads] = createResource(
@@ -60,6 +59,7 @@ export function Thread(props: { readonly client: PluginClient; readonly task: st
         sections={sections()}
         revisions={(s, current) => revisionsOf(revs() as readonly RevisionRow[], id, s, current)}
         health={health()}
+        audits={auditsOf(auditRows() as readonly AuditRow[], id, now())}
         readOnly={lead()}
         unseen={yoursUnseen(meta() as MetaRow | undefined, sections())}
         canFresh={canFresh()}

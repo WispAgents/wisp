@@ -12,7 +12,8 @@ export function HereLine(props: { readonly here: Here }): JSX.Element {
         {(u) => (
           <>
             {' · '}
-            <Link href={u()} external part="grid-client.here.url">
+            {/* one line, cut where it doesn't fit, the whole address on hover (QA round 2 #14: 3 lines on a phone) */}
+            <Link href={u()} external truncate title={host(u())} part="grid-client.here.url">
               {host(u())}
             </Link>
           </>

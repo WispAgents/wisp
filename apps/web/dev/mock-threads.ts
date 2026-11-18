@@ -3,7 +3,7 @@
 // `threads_revisions` `<task>|<section>|<rev>`, `threads_meta` and `threads_health` by task, its Health under
 // `body`), and the commands the Thread tab sends, answered with the api's shapes (plugins/threads/api/bindings/threads:
 // Notes, Section, Revision, Health, Brief, Fresh; test/mock-commands.test.ts checks the fields). The seeded thread is
-// "Add rate limiting to /login" (s0002): Worn, three sections written, two by you.
+// "Add rate limiting to /login" (s0002): Worn, five sections written, two by you, two compactions audited.
 
 import type { EntityOp, Topic } from '@wisp/protocol';
 
@@ -63,6 +63,12 @@ export function threadRows(now: number, task = THREAD_TASK): Row[] {
     ...revs.map((v) => ({ e: 'threads_revisions', id: v.id, v })),
     { e: 'threads_meta', id: task, v: { id: task, rev: 11, seen: 10, turn: 40, count: 41, at: now - 2 * MIN } },
     { e: 'threads_health', id: task, v: { id: task, body: health } },
+    // two compactions audited (ADR-0096 `threads_audit`, `<task>|<turn>`, the Audit under `body`): the latest lost two
+    // items and hasn't told the agent yet; the one before kept everything
+    ...[
+      { turn: `${task}:t3`, kept: 6, total: 8, lost: ['Constraints: Read the IP from X-Forwarded-For behind the proxy', 'Tried and failed: express-rate-limit: a new dependency (constraint)'], told: false, at: now - 3 * MIN },
+      { turn: `${task}:t2`, kept: 7, total: 7, lost: [], told: false, at: now - 40 * MIN },
+    ].map((a) => ({ e: 'threads_audit', id: `${task}|${a.turn}`, v: { id: `${task}|${a.turn}`, task_id: task, at: a.at, body: { task, status: 'done', ...a } } })),
   ];
 }
 
@@ -134,6 +140,13 @@ export const THREAD_COMMANDS: Record<string, Fn> = {
     const section = args(a)['section'];
     const all = of<Note>(ctx, task, 'threads_revisions').filter((r) => r.task_id === task && (section === undefined || r.section === section));
     return { ops: [], result: all.sort((p, q) => q.at - p.at).map(({ section: s, rev, text, by, at }) => ({ section: s, rev, text, by, at })) };
+  },
+  // Audit.ts, newest first (one still asking ten minutes on reads as skipped, as audit.rs list says)
+  'threads.audits': (a, ctx) => {
+    const task = taskOf(a);
+    const all = of<{ body: { status: string; at: number; why?: string } }>(ctx, task, 'threads_audit').map((r) => r.body);
+    const now = ctx.now();
+    return { ops: [], result: all.map((x) => (x.status === 'running' && now - x.at > 10 * MIN ? { ...x, status: 'skipped', why: 'It didn’t finish.' } : x)).sort((p, q) => q.at - p.at) };
   },
   'threads.health': (a, ctx) => {
     const task = taskOf(a);

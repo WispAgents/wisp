@@ -159,7 +159,7 @@ fn profiles_in(files: &[String], cwd: &Path) -> Result<Map<String, Value>> {
 /// `runtime.create`'s args from a spec, the flags over it, and the profile it names.
 fn start_args(spec: &Value, o: &Opts, profile: Option<Value>, formula: Option<Value>) -> Value {
     let mut a = Map::new();
-    for k in ["prompt", "agent", "model", "effort", "mode", "cwd", "dirs", "worktree", "goal", "crew", "team", "connectors"] {
+    for k in ["prompt", "agent", "model", "effort", "mode", "cwd", "dirs", "worktree", "goal", "notes", "crew", "team", "connectors"] {
         if let Some(v) = spec.get(k).filter(|v| !v.is_null() && **v != json!("") && **v != json!([])) {
             a.insert(k.to_owned(), v.clone());
         }

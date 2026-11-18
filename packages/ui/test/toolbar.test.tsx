@@ -63,6 +63,7 @@ describe('planToolbar', () => {
 describe('Toolbar collapses as measured', () => {
   type Cb = (entries: ResizeObserverEntry[]) => void;
   const observers: Array<{ cb: Cb; els: Element[] }> = [];
+  const watching = (key: string): boolean => observers.some((o) => o.els.some((el) => (el as HTMLElement).dataset['measure'] === key));
   beforeEach(() => {
     class FakeRO {
       private readonly rec: { cb: Cb; els: Element[] };
@@ -71,10 +72,12 @@ describe('Toolbar collapses as measured', () => {
         observers.push(this.rec);
       }
       observe(el: Element): void {
-        this.rec.els.push(el);
+        if (!this.rec.els.includes(el)) this.rec.els.push(el);
       }
       disconnect(): void {}
-      unobserve(): void {}
+      unobserve(el: Element): void {
+        this.rec.els = this.rec.els.filter((x) => x !== el);
+      }
     }
     vi.stubGlobal('ResizeObserver', FakeRO);
   });
@@ -102,6 +105,26 @@ describe('Toolbar collapses as measured', () => {
     { id: 'send', label: 'Send', icon: 'send', priority: 'pin', onSelect: noop },
   ];
   const form = (id: string): string | null | undefined => document.querySelector(`[data-kit="toolbar-item"][data-item="${id}"]`)?.getAttribute('data-form');
+
+  // QA round 2 #15: in an app bar the toolbar is as wide as its items, so folding one made the bar it measures
+  // narrower in the same pass, which the browser skips: Chrome's "ResizeObserver loop completed with undelivered
+  // notifications" on every load of Tasks. The fold lands at once; the bar steps out of the observer until the next
+  // frame, which measures its new width.
+  test('a_fold_that_resizes_the_bar_measures_it_again_next_frame_not_in_the_same_pass', async () => {
+    mount(() => <Toolbar aria-label="Reply bar" items={items} part="reply.bar" />);
+    await tick();
+    const bar = document.querySelector<HTMLElement>('[data-kit="toolbar"]');
+    if (!bar) throw new Error('no bar');
+    Object.defineProperty(bar, 'clientWidth', { configurable: true, get: () => (form('mode') === 'full' ? 241 : 235) });
+    resize(400);
+    expect(form('mode')).toBe('full');
+    expect(watching('bar'), 'no width change, still watched').toBe(true);
+    resize(200);
+    expect(form('mode'), 'the fold lands in the same pass').toBe('icon');
+    expect(watching('bar'), 'the bar it resized steps out').toBe(false);
+    await new Promise<void>((r) => requestAnimationFrame(() => r()));
+    expect(watching('bar'), 'measured again next frame').toBe(true);
+  });
 
   test('wide: labels; narrower: icons; narrowest: More; the pin stays whole and nodes stay put', async () => {
     mount(() => <Toolbar aria-label="Reply bar" items={items} part="reply.bar" />);

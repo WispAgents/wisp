@@ -117,6 +117,8 @@ export default function General(props: { readonly client: PluginClient }): JSX.E
         <OnOffRow client={props.client} k={KEYS.fixConflicts} dflt={false} title="shell-settings.fix-conflicts" hint="shell-settings.fix-conflicts.hint" />
         <OnOffRow client={props.client} k={KEYS.readTimes} dflt title="shell-settings.read-times" hint="shell-settings.read-times.hint" />
         <OnOffRow client={props.client} k={KEYS.watch} dflt title="shell-settings.watch" hint="shell-settings.watch.hint" />
+        {/* other plugins' switches for how tasks run (wisp.threads' Check compactions), where v1 had them */}
+        <Slot input="shell.settings:tasks" layout="contents" />
         <OnOffRow client={props.client} k={KEYS.apps} dflt title="shell-settings.apps" hint="shell-settings.apps.hint" />
       </SettingsGroup>
       <SettingsGroup part="settings.general.crew">

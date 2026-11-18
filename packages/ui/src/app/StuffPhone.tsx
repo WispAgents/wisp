@@ -34,6 +34,8 @@ export interface StuffPhoneItem {
   /** when it was kept, in words */
   readonly when: string;
   readonly icon: IconName;
+  /** a picture's own image, or an app's cover: shown in its thumbnail in place of the glyph (QA r2 phone #13) */
+  readonly image?: string;
   /** its ⋯ menu: every action it takes (open, share, star, the task it came from, delete, …) */
   readonly menu: readonly MenuEntry[];
 }
@@ -147,7 +149,9 @@ export function StuffPhone(props: StuffPhoneProps): JSX.Element {
         <li data-kit="stuff-tile" data-part={sub(part(), 'tile')} data-id={p.id}>
           <button type="button" data-kit="stuff-tile-open" data-part={sub(part(), 'tile.open')} onClick={() => props.onOpen(p.id)}>
             <span data-kit="stuff-tile-thumb" aria-hidden="true">
-              <Icon name={it().icon} size="lg" />
+              <Show when={it().image} fallback={<Icon name={it().icon} size="lg" />}>
+                {(src) => <img src={src()} alt="" loading="lazy" decoding="async" />}
+              </Show>
             </span>
             <span data-kit="stuff-tile-name">
               <span data-text="control">{it().title}</span>
@@ -169,7 +173,9 @@ export function StuffPhone(props: StuffPhoneProps): JSX.Element {
             sub={it().sub}
             lead={
               <span data-kit="stuff-thumb" aria-hidden="true">
-                <Icon name={it().icon} size="md" />
+                <Show when={it().image} fallback={<Icon name={it().icon} size="md" />}>
+                  {(src) => <img src={src()} alt="" loading="lazy" decoding="async" />}
+                </Show>
               </span>
             }
             time={it().when}

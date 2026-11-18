@@ -7,6 +7,7 @@
 //! then the edge that wires them, then the CLI.
 
 // foundation
+pub mod assets;
 pub mod boxhost;
 pub mod clock;
 pub mod config;
@@ -26,10 +27,12 @@ pub mod handoff;
 pub mod keys;
 pub mod previews;
 pub mod seats;
+pub mod wishes;
 
 // boxes
 pub mod boxd;
 pub mod hostd;
+pub mod instances;
 
 // channels: the inbox, `on laptop`, mail
 pub mod dkim;

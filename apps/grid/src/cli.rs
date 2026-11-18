@@ -2,11 +2,15 @@
 //!
 //! - `wisp-grid dev [--port N] [--data DIR] [--wisp PATH] [--idle-ms N]`: a grid on this machine for
 //!   development, with `auth.dev` on (sign in by handle at `/auth/dev`) and boxes as `wisp serve`
-//!   processes. Prints its URL, runs until Ctrl-C.
+//!   processes. Prints its URL, runs until Ctrl-C or SIGTERM.
 //!
 //! - `wisp-grid serve [--data DIR]`: a real grid from `<data>/grid.json` (or `GRID_DATA`), behind Caddy: sign-in
 //!   with its providers (GitHub, Google, OIDC), boxes as containers through boxd (`hostd.driver: "container"`,
 //!   `hostd.container.boxd`: boxd's socket) or as processes here (`"process"`). Runs until SIGTERM or Ctrl-C.
+//!
+//! - `wisp-grid waitlist [--data DIR]`: who's waiting for a seat, and who wants more machines (Add a cloud machine).
+//!
+//! `dev` and `serve` stop every box before they exit, on Ctrl-C or SIGTERM: no box outlives the grid.
 use std::path::PathBuf;
 
 /// The flag's value: `--port 8080` or `--port=8080`.
@@ -46,9 +50,12 @@ pub async fn main(args: Vec<String>) -> i32 {
                     eprintln!(
                         "\n  ◌ wisp Grid (dev) at http://wisp.localhost:{port}  ·  sign in at /auth/dev\n    sign in from wisp: wisp cloud signin http://wisp.localhost:{port}\n"
                     );
-                    let _ = tokio::signal::ctrl_c().await;
-                    stop.cancel();
+                    stopped().await;
+                    eprintln!("  ◌ stopping every box…");
+                    // the boxes first, while the grid still records their stops
                     grid.boxes.close_all().await;
+                    grid.boxes_stopped();
+                    stop.cancel();
                     0
                 }
                 Err(e) => {
@@ -64,11 +71,38 @@ pub async fn main(args: Vec<String>) -> i32 {
                 1
             }
         },
+        Some("waitlist") => match waitlist(flag(&args, "--data").map(PathBuf::from)) {
+            Ok(text) => {
+                use std::io::Write as _;
+                let _ = std::io::stdout().write_all(text.as_bytes());
+                0
+            }
+            Err(e) => {
+                eprintln!("  ✗ wisp-grid waitlist: {e}");
+                1
+            }
+        },
         _ => {
-            eprintln!("wisp-grid dev [--port N] [--data DIR] [--wisp PATH] [--idle-ms N]\nwisp-grid serve [--data DIR]");
+            eprintln!(
+                "wisp-grid dev [--port N] [--data DIR] [--wisp PATH] [--idle-ms N]\nwisp-grid serve [--data DIR]\nwisp-grid waitlist [--data DIR]"
+            );
             2
         }
     }
+}
+
+/// Until the grid is told to stop: Ctrl-C, or SIGTERM (systemd, `kill`, a supervisor). Either way the grid stops its
+/// boxes before it goes (v1 grid/cli.js), so none outlives it. If the signal can't be watched, Ctrl-C alone.
+pub async fn stopped() {
+    #[cfg(unix)]
+    if let Ok(mut term) = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate()) {
+        tokio::select! {
+            _ = tokio::signal::ctrl_c() => {}
+            _ = term.recv() => {}
+        }
+        return;
+    }
+    let _ = tokio::signal::ctrl_c().await;
 }
 
 /// The hostd options from the config: the container driver when it says so.
@@ -99,6 +133,14 @@ pub fn box_options(cfg: &crate::config::GridConfig) -> crate::Result<crate::host
     })
 }
 
+/// `wisp-grid waitlist [--data DIR]`: the operator's list (`wishes::report`), read from grid.db.
+fn waitlist(data: Option<PathBuf>) -> crate::Result<String> {
+    let cfg = crate::config::load(crate::config::LoadOptions { data_dir: data, ..crate::config::LoadOptions::default() })?;
+    let clock = crate::clock::system();
+    let db = std::sync::Arc::new(crate::db::Db::open(&cfg.data_dir, clock.now_ms())?);
+    crate::wishes::report(&crate::accounts::Accounts { db, clock })
+}
+
 async fn serve(data: Option<PathBuf>) -> crate::Result<()> {
     let cfg = crate::config::load(crate::config::LoadOptions { data_dir: data, ..crate::config::LoadOptions::default() })?;
     let clock = crate::clock::system();
@@ -116,21 +158,11 @@ async fn serve(data: Option<PathBuf>) -> crate::Result<()> {
     let grid = crate::edge::Grid::new(cfg, db, clock, boxes);
     let stop = tokio_util::sync::CancellationToken::new();
     let server = tokio::spawn(crate::edge::serve(grid.clone(), listener, stop.clone()));
-    #[cfg(unix)]
-    {
-        let mut term =
-            tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate()).map_err(|e| crate::bad(e.to_string(), 500))?;
-        tokio::select! {
-            _ = tokio::signal::ctrl_c() => {}
-            _ = term.recv() => {}
-        }
-    }
-    // no SIGTERM off Unix: Ctrl-C only
-    #[cfg(not(unix))]
-    let _ = tokio::signal::ctrl_c().await;
+    stopped().await;
     eprintln!("  ◌ stopping every box…");
-    stop.cancel();
     grid.boxes.close_all().await;
+    grid.boxes_stopped();
+    stop.cancel();
     let _ = server.await;
     Ok(())
 }

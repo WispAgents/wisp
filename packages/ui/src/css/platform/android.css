@@ -615,6 +615,9 @@
   :root[data-platform='android'] [data-kit='sheet'] [data-kit='dialog-title'] { font: var(--type-title-l); letter-spacing: normal; color: var(--on-surface); }
   :root[data-platform='android'] [data-kit='sheet'] > [data-kit='dialog-description'] { margin: var(--space-0); padding: var(--space-0) var(--inset) var(--space-4); font: var(--type-body-m); color: var(--on-surface-var); }
   :root[data-platform='android'] [data-kit='sheet'] > [data-kit='dialog-body'] { padding: var(--space-0) var(--inset); font: var(--type-body-m); color: var(--on-surface); }
+  /* a sheet with no actions under its body ends with the body's own inset, not flush on the screen's edge (QA round 2
+     #11: Show tasks from stopped right under its last choice) */
+  :root[data-platform='android'] [data-kit='sheet'] > [data-kit='dialog-body']:last-child { padding-bottom: var(--inset); }
   :root[data-platform='android'] [data-kit='sheet'] > [data-kit='dialog-foot'] { margin: var(--space-0); padding: var(--inset); gap: var(--dialog-actions-gap); }
   :root[data-platform='android'] [data-kit='dialog-positioner'][data-sheet][data-size='xl'] { padding: var(--space-0); }
   :root[data-platform='android'] [data-kit='sheet'][data-size='xl'] { width: 100%; height: 100dvh; max-height: 100dvh; border-radius: var(--space-0); }
@@ -1314,4 +1317,53 @@
 
   /* Step 14 (design/mobile.md §A.2): My Stuff's group headers as M3 list subheaders (title small, on-surface-variant) */
   :root[data-platform='android'] [data-kit='stuff-phone-group-head'] { font: var(--type-title-s); letter-spacing: var(--track-title-s); color: var(--on-surface-var); }
+
+  /* tap targets at least 48 dp (M3: touch targets) (QA r2 #6): a turn's tools and 👍/👎, the story viewer's Pause, More and Close, My
+     Stuff's row More; the icon keeps its size, its box takes the room */
+  :root[data-platform='android'] [data-kit='trail-bar'] [data-kit='tb-btn'],
+  :root[data-platform='android'] [data-kit='trail-bar'] [data-kit='rate-btn'],
+  :root[data-platform='android'] [data-kit='story-head'] [data-kit='icon-button'],
+  :root[data-platform='android'] [data-part~='stuff.phone.row.menu.trigger'] { min-width: var(--tap-min); min-height: var(--tap-min); }
+
+  /* The task's side page (Changes, PR, Shell, Preview; QA round 2 #9): an M3 page head, not the browser's pill strip
+     squeezed to icons. Close leads (a full-screen page), then the panel's primary tabs, each named, across the row;
+     the row is the touch height, under the status bar (the frame body's inset), its divider under it. */
+  :root[data-platform='android'] [data-pane='side'] [data-part~='side.head'] {
+    height: auto;
+    min-height: var(--tab-h);
+    gap: var(--space-0);
+    padding: var(--space-0) var(--space-2) var(--space-0) var(--space-0);
+    border-bottom: var(--hairline) solid var(--outline-var);
+  }
+  :root[data-platform='android'] [data-pane='side'] [data-part~='side.head'] > [data-kit='box'] { display: none; }
+  :root[data-platform='android'] [data-pane='side'] [data-part~='side.head'] > [data-kit='icon-button'] { order: -1; min-width: var(--tap-min); min-height: var(--tap-min); }
+  :root[data-platform='android'] [data-pane='side'] [data-kit='tabs'][data-part='panel.tabs'] {
+    flex: 1 1 auto;
+    min-width: 0;
+    margin: var(--space-0);
+    padding: var(--space-0);
+    border: 0;
+    border-radius: var(--space-0);
+    background: transparent;
+  }
+  :root[data-platform='android'] [data-pane='side'] [data-kit='tabs'][data-part='panel.tabs'] > [data-kit='tab-list'] { flex: 1 1 auto; border-bottom: 0; }
+  :root[data-platform='android'] [data-pane='side'] [data-kit='tabs'][data-part='panel.tabs'] [data-kit='tab'] {
+    /* by its name's width, the room left shared out: a short name (PR) never takes a long one's room */
+    flex: 1 1 auto;
+    width: auto;
+    min-width: 0;
+    padding: var(--space-0) var(--space-1);
+  }
+  :root[data-platform='android'] [data-pane='side'] [data-kit='tabs'][data-part='panel.tabs'] [data-kit='tab'] > [data-kit='icon'] { display: none; }
+  :root[data-platform='android'] [data-pane='side'] [data-kit='tabs'][data-part='panel.tabs'] [data-kit='tab-label'] { display: inline; }
+
+  /* a toast sits under an open menu or sheet, never over it (QA r2 #5: the error toast was drawn over the task's ⋯),
+     still over the page */
+  :root[data-platform='android'] [data-kit='toasts'] { z-index: calc(var(--z-menu) - 1); }
+
+  /* New task's bar fits a phone (QA r2 #2; ADR-0012 label → icon): its tail folds into More (HomeView), and the harness
+     pill folds to its logo and chevron in the compact size class (v1 hid the name at 520 px; the tooltip names it) */
+  @media (not (min-width: 600px)) {
+    :root[data-platform='android'] [data-kit='launcher'] [data-kit='runner-btn'] > [data-kit='rb-h'] { display: none; }
+  }
 }

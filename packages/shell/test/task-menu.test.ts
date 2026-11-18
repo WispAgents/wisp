@@ -85,3 +85,50 @@ test('menuEntryOf: section and sub from bar; legacy place end sits after Save fo
   expect(menuEntryOf(ext({ place: 'end' }, 120), {} as never, t)).toMatchObject({ section: 'place', order: -15 });
   expect(menuEntryOf(ext({}), {} as never, t)).not.toHaveProperty('section');
 });
+
+test('on_a_phone_the_menu_is_short_a_section_of_more_than_two_rows_folds_into_its_submenu_qa_r2_5', () => {
+  // the phone's ⋯ ran 27 rows deep (iOS HIG / M3: sections and submenus keep a menu short)
+  const entries = [
+    it('open', { section: 'open', order: -10 }),
+    it('rerun', { section: 'open', order: 10 }),
+    it('rename', { section: 'task', order: -10 }),
+    it('fork', { section: 'task', order: 20 }),
+    it('side', { section: 'task', order: 30 }),
+    { entry: { kind: 'group' as const, id: 'lean', label: 'Lean runs', items: [{ value: 'lean:on', label: 'On' }, { value: 'lean:off', label: 'Off' }] }, section: 'task' as const, order: 46 },
+    it('ship', { section: 'waiting', order: 50 }),
+    it('changes', { sub: 'view', order: 60 }),
+    it('shell', { sub: 'view', order: 70 }),
+    it('crew', { section: 'look', order: 100 }),
+    it('copy-id', { sub: 'copy', order: -20 }),
+    it('recipe', { section: 'keep', order: 90 }),
+    it('editor', { sub: 'files', order: 110 }),
+    it('later', { section: 'place', order: -20 }),
+    it('archive', { section: 'place', order: -10 }),
+  ];
+  const m = taskMenu({ entries, danger: [{ value: 'delete', label: 'delete', danger: true }], t, compact: true });
+  expect(shape(m)).toEqual([
+    'open',
+    'rerun',
+    '|',
+    // the task's own: four rows (the Lean runs group with its heading) behind one
+    'shell.menu.section.task[rename,fork,side,group]',
+    '|',
+    'ship',
+    '|',
+    // two rows stay as they are
+    'shell.menu.view[changes,shell]',
+    'crew',
+    '|',
+    // a section that held submenus: their rows as headed groups inside (no submenu in a submenu)
+    'shell.menu.section.keep[group,recipe,group]',
+    '|',
+    'later',
+    'archive',
+    '|',
+    'delete',
+  ]);
+  const keep = m.find((e) => e.kind === 'submenu' && e.value === 'section:keep');
+  expect(keep?.kind === 'submenu' && keep.items[0]).toMatchObject({ kind: 'group', label: 'shell.menu.copy', items: [{ value: 'copy-id' }] });
+  const task = m.find((e) => e.kind === 'submenu' && e.value === 'section:task');
+  expect(task?.kind === 'submenu' && task.items[3]).toMatchObject({ kind: 'group', label: 'Lean runs' });
+});

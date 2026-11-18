@@ -115,7 +115,7 @@ fn devices(p: &AccountPage, hidden: &str) -> String {
             let icon = if d.name.to_lowercase().contains("phone") { PHONE } else { LAPTOP };
             format!(
                 r#"<div class="r"><span class="ic">{icon}</span><div class="tx"><b>{name}</b><small>{on}added {added} · last used {used}</small></div>
-            <form class="inline" method="post" action="/devices/{id}/revoke">{hidden}<button class="ghost quiet">Remove</button></form></div>"#,
+            <form class="inline" method="post" action="/devices/{id}/revoke" data-confirm="Sign it out?">{hidden}<button class="ghost quiet">Remove</button></form></div>"#,
                 name = esc(&d.name),
                 added = ago(d.created_at, p.now_ms),
                 used = ago(d.last_seen_at, p.now_ms),
@@ -147,6 +147,19 @@ fn ways(p: &AccountPage, hidden: &str) -> String {
             )
         })
         .collect();
+    // a development grid's sign-in by handle keeps no identity row: say how this account gets in all the same
+    if p.identities.is_empty() {
+        let (title, how) = if p.providers.iter().any(|x| x.id == "dev") {
+            ("Development sign-in", format!("By handle ({}), on this development grid", p.user.handle))
+        } else {
+            ("No sign-in connected", "Connect one below so you can get back in".to_owned())
+        };
+        out.push_str(&format!(
+            r#"<div class="r"><span class="ic">{}</span><div class="tx"><b>{title}</b><small>{}</small></div></div>"#,
+            logo("dev"),
+            esc(&how)
+        ));
+    }
     out.push_str("\n        ");
     for prov in p.providers.iter().filter(|x| x.id != "dev" && !p.identities.iter().any(|i| i.provider == x.id)) {
         out.push_str(&format!(
@@ -163,7 +176,8 @@ pub fn account_page(cfg: &PageCfg, p: &AccountPage) -> String {
     let hidden = hidden(&p.csrf);
     let u = &p.user;
     let shown = u.name.as_deref().filter(|n| !n.is_empty()).unwrap_or(&u.handle);
-    let sub = u.email.as_deref().filter(|e| !e.is_empty()).unwrap_or(&u.handle);
+    // the second line says something the first doesn't: the email, else the handle if the name isn't it
+    let sub = u.email.as_deref().filter(|e| !e.is_empty()).unwrap_or(if shown == u.handle { "" } else { &u.handle });
     let route_link = if p.route.is_some() { r##"<a href="#route">Telegram to your computers</a>"## } else { "" };
     let route = p.route.as_ref().map_or_else(String::new, |r| route_section(r, &p.computers, &hidden));
     let handle = esc(&u.handle);

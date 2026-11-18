@@ -353,7 +353,7 @@
   "shell.dest.crew": "Crew",
   "shell.dest.stuff": "Stuff",
   "shell.dest.computers": "Computers",
-  "shell.phone.allComputers": "All",
+  "shell.phone.allComputers": "All computers",
   "shell.phone.pickComputer": "Show tasks from",
   "shell.phone.search": "Search",
   "shell.phone.tasksActions": "Tasks",
@@ -426,5 +426,10 @@
   "shell.team.cancel": "Cancel",
   "shell.team.saved": "Saved preset {name}",
   "shell.team.updated": "Updated preset {name}",
-  "shell.team.deleted": "Deleted preset {name}"
+  "shell.team.deleted": "Deleted preset {name}",
+  "shell.menu.section.task": "This task",
+  "shell.menu.section.waiting": "Waiting",
+  "shell.menu.section.look": "Show",
+  "shell.menu.section.keep": "Keep and copy",
+  "shell.menu.section.place": "Move"
 }

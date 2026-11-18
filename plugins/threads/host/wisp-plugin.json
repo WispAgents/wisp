@@ -8,7 +8,7 @@
   "kind": "plugin",
   "server": { "builtin": "wisp_threads" },
   "requires": { "wisp.runtime": "^2" },
-  "permissions": ["runtime:get", "runtime:turns", "runtime:activity", "runtime:followUp", "runtime:turn.setExt", "runtime:probe", "store:write{owner:threads}"],
+  "permissions": ["runtime:get", "runtime:turns", "runtime:activity", "runtime:followUp", "runtime:turn.setExt", "runtime:probe", "runtime:spec", "store:write{owner:threads}"],
   "activation": ["onStartup"],
   "contributes": {
     "commands": [
@@ -21,7 +21,7 @@
       { "id": "threads.audits", "title": "What each compaction kept of a task's goal, constraints, decisions and what failed", "readOnly": true }
     ],
     "settings": [
-      { "key": "threads.compactAudit", "type": "bool", "default": false, "title": "Compaction audit: after a compaction, ask a copy of the conversation what it still remembers of the task's Notes, and remind the agent of what it lost (one short extra run each)" }
+      { "key": "threads.compactAudit", "type": "bool", "default": false, "title": "Check compactions: after a compaction, wisp asks a copy of the conversation what it still remembers of the task's Notes and reminds the agent of what it lost (one short extra run each)" }
     ]
   }
 }

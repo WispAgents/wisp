@@ -13,7 +13,8 @@ import { warm, warmer } from './warm.ts';
 import { INSTALLABLE, useSetup } from './setup.ts';
 import { useRecipes } from './recipes.ts';
 import type { PickOptions } from '../platform/types.ts';
-import { Show, createEffect, createMemo, createSignal, lazy, on, onCleanup, untrack, type JSX } from 'solid-js';
+import { Show, createEffect, createMemo, createResource, createSignal, lazy, on, onCleanup, untrack, type JSX } from 'solid-js';
+import { githubTip, tools as githubTools } from './github-tip.ts';
 import { entityKey, newRowId, type EntityKey, type Json, type PeerId } from '@wisp/client';
 import { AutoPop, KeysHint, Launcher, NextList, Reserved, SplitHome, Tips, lazyPart, lazyView, useSignal, warm as warmPart, type Act, type LauncherProps, type LauncherTool, type PlainTip } from '@wisp/ui';
 import { useShell } from '../context.tsx';
@@ -80,6 +81,8 @@ export function HomeView(props: { readonly onBack?: () => void }): JSX.Element {
   const sheet = (): boolean => phone && props.onBack !== undefined;
   const t = shell.t;
   const home = usePluginClient('shell').home;
+  // gh signed in or not, as Settings → Agents' GitHub row says it: the Sign in to GitHub tip waits for the answer
+  const [ghTools] = createResource(() => shell.client.commands.run(githubTools, { peer: home }).catch(() => null));
   // Run on (v1 launch.where): this computer, or another one you added (machines); only one at a time (F-comp-10)
   const peerIds = useSignal(shell.client.peers.list());
   const [runOn, setRunOn] = createSignal<string>(home);
@@ -1016,7 +1019,9 @@ export function HomeView(props: { readonly onBack?: () => void }): JSX.Element {
           onMore={() => setTipAt((tipAt() + 3) % offeredTips().length)}
           onOpen={(href) => shell.platform.openExternal(href)}
           setup={[
-            { kind: 'tool', icon: 'github', title: t('shell.tips.github'), body: t('shell.tips.githubBody'), cta: t('shell.tips.signIn'), onClick: () => settingsSheet('accounts') },
+            ...(githubTip(ghTools())
+              ? [{ kind: 'tool' as const, icon: 'github' as const, title: t('shell.tips.github'), body: t('shell.tips.githubBody'), cta: t('shell.tips.signIn'), onClick: () => settingsSheet('accounts') }]
+              : []),
             { kind: 'grid', icon: 'cloud', title: t('shell.tips.grid'), body: t('shell.tips.gridBody'), cta: t('shell.tips.setUp'), onClick: () => settingsSheet('cloud') },
           ]}
           tips={tips()}
