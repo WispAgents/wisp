@@ -225,8 +225,10 @@ for (const kind of ['android', 'ios'] as const) {
     const more = root.querySelector<HTMLElement>('[data-part~="launcher.more"]');
     expect(more?.getAttribute('aria-haspopup')).toBe('menu');
     more?.click();
+    // in the open menu only: a closed menu stays in the page, so "the row is gone" on every menu never came true and
+    // the wait below ran out its whole 4 s each time (CI 44273734971 timed out on that; the menu closes in a frame)
     const row = (): HTMLElement | undefined =>
-      [...document.querySelectorAll<HTMLElement>('[data-kit="menu"] [role^="menuitem"]')].find((e) => /^(Worktree|In place)/.test((e.textContent ?? '').trim()));
+      [...document.querySelectorAll<HTMLElement>('[data-kit="menu"][data-state="open"] [role^="menuitem"]')].find((e) => /^(Worktree|In place)/.test((e.textContent ?? '').trim()));
     await until(() => row() !== undefined);
     const before = row();
     expect(before, 'Worktree in More').toBeDefined();
