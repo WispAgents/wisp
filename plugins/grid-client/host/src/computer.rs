@@ -121,6 +121,9 @@ pub fn stop(st: &St) {
 /// Starts (or restarts) the dialer.
 pub fn start(st: &Arc<St>, grid: &str, id: &str, token: &str) {
     stop(st);
+    // connecting from now, before `set` answers: never the last dial's state (a removed computer's "gone", QA
+    // round 10 #3)
+    set_state(st, "connecting", "", None);
     let cancel = CancellationToken::new();
     *lock(&st.dialer) = Some(cancel.clone());
     let (st2, grid, id, token) = (st.clone(), grid.to_owned(), id.to_owned(), token.to_owned());

@@ -208,12 +208,22 @@ async fn open_on_a_computer_hands_the_sign_in_to_that_computer_only() {
     let r = web.get(&to).send().await.unwrap();
     let cookie = set_cookie(&r);
     assert!(cookie.starts_with("wisp_box="), "{cookie}");
+    // offline: on to its waiting page (under /_grid/, never the phone's cached app: QA round 10 Grid #2)
+    assert_eq!(location(&r), "/_grid/offline?r=%2F");
     // let in (offline here: 503 from the tunnel, not 401)
     let r = web.get(format!("{}/", g.at("studio--ada"))).header("cookie", &cookie).send().await.unwrap();
     assert_eq!(r.status(), 503);
-    // a browser hears it in a page, as v1 did
+    // a browser hears it in a page, as v1 did: its waiting page (QA round 10 Grid #2)
     let r = web.get(format!("{}/", g.at("studio--ada"))).header("cookie", &cookie).header("accept", PAGE).send().await.unwrap();
-    assert_eq!(r.status(), 503);
+    assert_eq!(location(&r), "/_grid/offline?r=%2F");
+    let r = web
+        .get(format!("{}/_grid/offline?r=%2F", g.at("studio--ada")))
+        .header("cookie", &cookie)
+        .header("accept", PAGE)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(r.status(), 200);
     let page = r.text().await.unwrap();
     assert!(page.contains("Studio is offline"));
     // not a dead end (docs/ux/2026-11-18-grid.md #7): it waits and opens it once it connects, and offers the cloud wisp

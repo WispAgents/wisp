@@ -11,6 +11,12 @@ export function registerWorker(platform: Platform, toaster: Toaster, t: (key: st
   if (!sw || platform.kind !== 'browser' || !(platform.mobile || platform.standalone)) return;
   sw.register('/sw.js').catch(() => {});
   sw.addEventListener('message', (e: MessageEvent<{ t?: string }>) => {
+    // the computer this tab shows isn't connected (QA round 10 Grid #2): reloaded, the grid answers with its waiting
+    // page, which opens it again (the worker lets this navigation through to the network)
+    if (e.data?.t === 'offline') {
+      platform.reload();
+      return;
+    }
     if (e.data?.t === 'update') toaster.show(t('shell.toast.update'), { duration: 60_000, action: { label: t('shell.toast.reload'), onClick: () => platform.reload() } });
   });
 }

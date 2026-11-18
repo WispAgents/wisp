@@ -74,7 +74,7 @@ impl Grid {
         let req = if preview.is_some() {
             req
         } else {
-            match self.address_own(req, &c.label, &owner, &go) {
+            match self.address_own(req, &c.label, &owner, &go, !self.tunnels.online(&c.id)) {
                 handoff::Own::Done(r) => return Ok(r),
                 handoff::Own::Next(r) => r,
             }
@@ -104,6 +104,22 @@ impl Grid {
         if cred == Credential::Cookie && self.foreign_origin(req.method(), req.headers(), &c.label) {
             return Err(bad("forbidden origin", 403));
         }
+        // its waiting page (QA round 10 Grid #2): while it's offline, the page; once it's back, what was asked for
+        // (a preview's too, on its own address: its page waits the same way)
+        if req.uri().path() == answer::WAITING {
+            let online = self.tunnels.online(&c.id);
+            let store = [("cache-control", "no-store".to_owned())];
+            // its poll: 200 {online}, never a 503 in the console every few seconds
+            if !answer::Asker::of(req.method(), req.headers()).page {
+                return Ok(crate::http::json_with(200, &serde_json::json!({ "online": online }), &store));
+            }
+            let next = super::query(req.uri().query().unwrap_or_default(), "r").unwrap_or_default();
+            if online {
+                return Ok(crate::http::redirect(crate::http::safe_path(&next, "/"), &store));
+            }
+            let here = req.uri().path_and_query().map_or(answer::WAITING, |p| p.as_str()).to_owned();
+            return Ok(self.offline(&answer::Asker { page: true, viewer: None }, c, &here));
+        }
         let (mut head, body) = req.into_parts();
         let path = head.uri.path_and_query().map_or("/", |p| p.as_str()).to_owned();
         head.uri = format!("http://{}{path}", c.label).parse().map_err(|_| bad("Bad path.", 400))?;
@@ -120,14 +136,14 @@ impl Grid {
         }
         let asker = answer::Asker::of(&head.method, &head.headers);
         let req = http::Request::from_parts(head, incoming(body));
-        Ok(self.tunnels.forward(&c.id, req, preview.is_some()).await.unwrap_or_else(|| self.offline(&asker, c)))
+        Ok(self.tunnels.forward(&c.id, req, preview.is_some()).await.unwrap_or_else(|| self.offline(&asker, c, &path)))
     }
 
     pub(super) async fn edge(&self, req: http::Request<Incoming>, handle: &str) -> Result<Resp> {
         let Some(user) = self.accounts.user_by_handle(handle)?.filter(|u| u.disabled == 0) else {
             return Ok(self.not_found(&req, "Nobody here", "There's nobody with that handle here."));
         };
-        let req = match self.address_own(req, handle, &user, "/go") {
+        let req = match self.address_own(req, handle, &user, "/go", false) {
             handoff::Own::Done(r) => return Ok(r),
             handoff::Own::Next(r) => r,
         };

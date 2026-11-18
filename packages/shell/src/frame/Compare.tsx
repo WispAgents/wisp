@@ -15,6 +15,7 @@ import { archive, stopRun, trialKeep } from './commands.ts';
 import { differsWords, runOrder, trialOf, variantOf, variantWords } from './trial.ts';
 import { compareRows, compareSentence, letter, planShares, type CompareRun, type CompareTurn, type PlanShare } from './compare.ts';
 import { useNow } from '../clock.ts';
+import { defaultModelName, runModelWord } from './default-models.ts';
 import { harnessOf } from './harness.ts';
 import { statusOf } from './rows-view.ts';
 import '../i18n/lazy.ts';
@@ -147,7 +148,8 @@ export default function Compare(props: { readonly params: { readonly id: string 
       const h = harnessOf(harnesses(), s.agent);
       const st = statusOf(s, t);
       const effort = String(s.body?.['effort'] ?? '');
-      const model = String(s.summary.model || '') || t('shell.compare.defaultModel');
+      // on its Default: the model that runs, the same answer as the chip (one name everywhere), else "Default model"
+      const model = runModelWord(String(s.summary.model || ''), defaultModelName(shell.client, ownerOf(s.id as EntityKey), s.agent, String(s.summary.cwd ?? '') || undefined), t('shell.compare.defaultModel'));
       return {
         id: s.id,
         letter: letter(i),

@@ -116,8 +116,8 @@ pub struct OfflinePage {
     pub user: Option<PageUser>,
 }
 
-/// Not a dead end: when it was last seen, a wait that opens it by itself once it connects (the address answers
-/// something other than its 503), the cloud wisp to keep working meanwhile, and what to do on that computer.
+/// Not a dead end: when it was last seen, a wait that opens it by itself once it connects (its address, `/_grid/offline`,
+/// polled, says `{online: true}`; then a reload goes on to what was asked for), the cloud wisp to keep working meanwhile, and what to do on that computer.
 pub fn offline_page(cfg: &PageCfg, p: &OfflinePage) -> String {
     let seen = match p.last_seen_at.filter(|t| *t != 0) {
         Some(_) => format!("Last seen {}. ", super::time::ago(p.last_seen_at, p.now_ms)),
@@ -128,7 +128,7 @@ pub fn offline_page(cfg: &PageCfg, p: &OfflinePage) -> String {
       <div class="wait-row" role="status"><span class="dot starting"></span><span id="msg">Waiting for it… this page opens it as soon as it connects.</span></div>
       <p class="acts"><a class="primary tall" href="{cloud}">Open your cloud wisp instead</a><a class="ghost line tall" href="{home}">Home</a></p>
       <details class="fold"><summary>On that computer?</summary><p class="sub">Start wisp there, or run <code>wisp computer on</code> in a terminal.</p></details>
-      <script>(async function poll(n){{try{{const r=await fetch(location.href,{{cache:'no-store',headers:{{accept:'application/json'}}}});if(r.status!==503)return location.reload()}}catch{{}}setTimeout(()=>poll(n+1),n<40?3000:10000)}})(0)</script>"#,
+      <script>(async function poll(n){{try{{const r=await fetch(location.href,{{cache:'no-store',headers:{{accept:'application/json'}}}});const j=await r.json();if(j.online)return location.reload()}}catch{{}}setTimeout(()=>poll(n+1),n<40?3000:10000)}})(0)</script>"#,
         name = esc(&p.name),
         cloud = esc(&p.cloud),
         home = esc(&p.home),
@@ -187,7 +187,7 @@ mod tests {
         };
         let h = offline_page(&cfg(), &p);
         assert!(h.contains("Studio is offline") && h.contains("Last seen 2 h ago."));
-        assert!(h.contains("this page opens it as soon as it connects") && h.contains("r.status!==503"));
+        assert!(h.contains("this page opens it as soon as it connects") && h.contains("if(j.online)return location.reload()"));
         assert!(h.contains(r#"href="https://grid.test/go">Open your cloud wisp instead"#));
         let never = offline_page(&cfg(), &OfflinePage { name: "New".into(), ..OfflinePage::default() });
         assert!(never.contains("It hasn’t connected yet."));

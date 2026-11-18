@@ -219,9 +219,12 @@ pub fn safe_path<'a>(p: &'a str, default: &'a str) -> &'a str {
     if ok { p } else { default }
 }
 
-/// A page a browser opened (not a fetch).
+/// A page a browser opened (not a fetch): a navigation by its mode whatever its Accept says, else a GET for HTML that
+/// isn't a script's fetch.
 pub fn wants_html(method: &http::Method, h: &HeaderMap) -> bool {
-    method == http::Method::GET && header_str(h, "accept").contains("text/html") && header_str(h, "sec-fetch-dest") != "empty"
+    method == http::Method::GET
+        && (header_str(h, "sec-fetch-mode") == "navigate"
+            || (header_str(h, "accept").contains("text/html") && header_str(h, "sec-fetch-dest") != "empty"))
 }
 
 pub fn is_loopback(ip: &str) -> bool {

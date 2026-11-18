@@ -2,6 +2,7 @@
 // UX 2026-11-18 #9: New task's harness chip names the model its Default runs ("Claude Code · Opus") when the harness can
 // tell from its own config (the claude plugin reads ~/.claude/settings.json; the mock seeds it), else it says Default.
 import { afterEach, expect, test } from 'vitest';
+import { createEffect, createRoot } from 'solid-js';
 import { createClient, peerId } from '@wisp/client';
 import { createShell, nullPlatform, type ShellWindow } from '@wisp/shell';
 import { createToaster } from '@wisp/ui';
@@ -116,4 +117,28 @@ test('the_pickers_default_row_names_what_the_chip_names', async () => {
   await until(() => row().includes('Sonnet'));
   expect(row()).toContain('Sonnet');
   expect(row()).not.toContain('Opus');
+});
+
+// ShellContext.defaultModel (Compare, the cards, the list's tip): the folder's answer, else the computer's harnesses
+// topic, which a Solid reader follows as its rows land (the store mirrors the client's rows)
+test('the_shells_default_model_follows_the_harnesses_topic_as_it_lands', async () => {
+  const mock = createMockPeer({ epoch: 'e1', harnesses: true });
+  const home = peerId('local');
+  const client = createClient({ clientId: 'c1', build: 't', home, width: 1440 });
+  const shell = createShell({ client, toaster: createToaster(), platform: nullPlatform({ kind: 'browser' }), home, window: window as unknown as ShellWindow });
+  const words: (string | undefined)[] = [];
+  // read before anything has landed, in a Solid effect: it must run again when the topic's rows come
+  const dispose = createRoot((d) => {
+    createEffect(() => words.push(shell.context.defaultModel?.('claude', { peer: home })));
+    return d;
+  });
+  stops.push(() => {
+    dispose();
+    shell.dispose();
+  });
+  await client.start([{ peer: home, name: 'mock', transport: memTransport(mock) }]);
+  client.peers.watch(home, 'plugin:wisp.runtime:harnesses', client.scope.child('t'), { passive: true });
+  await until(() => words.at(-1) === 'Opus');
+  expect(words[0]).toBeUndefined();
+  expect(words.at(-1)).toBe('Opus');
 });

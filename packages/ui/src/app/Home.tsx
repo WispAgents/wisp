@@ -13,7 +13,7 @@ import { PromptSuggestList, dropHandlers } from '../composer/PromptSuggest.tsx';
 import { suggestKeyDown, type PromptSuggest } from '../composer/suggest-keys.ts';
 import type { IconName } from '../content/icons.ts';
 import { ActIcon, WithAct, actAttrs, type Act } from './act.tsx';
-import { foldTail, type LauncherTool } from './launcher-fold.ts';
+import { foldOrder, foldTail, type LauncherTool } from './launcher-fold.ts';
 import { useTailFold } from './launcher-fold-measure.ts';
 import { useBarLabels } from './bar-labels.ts';
 import { Tool } from './launcher-tool.tsx';
@@ -203,15 +203,20 @@ export function Launcher(props: LauncherProps): JSX.Element {
   };
   const empty = (): boolean => props.value.trim() === '';
   // the tail as it fits: its last tools in More when the bar is too narrow for them (launcher-fold.ts)
-  const fold = useTailFold({ tail: () => props.tail, on: () => props.tailMore !== undefined });
+  // which tools fold follows foldOrder (a tool whose panel is open folds last, QA r10 desktop #1); the bar keeps its order
+  const fold = useTailFold({ tail: () => foldOrder(props.tail), on: () => props.tailMore !== undefined });
   // an unmeasured bar (the phone apps'): its pill's + and words fold when it doesn't fit, so More never goes under Send
   // (QA phone r4 #1; Try another agent is in More)
   const barLabels = useBarLabels();
   const tail = createMemo((): readonly LauncherTool[] => {
     const more = props.tailMore;
-    const n = props.tail.length;
+    // read once: the host's getter may build its tools anew on each read, and the folded set is by identity
+    const all = props.tail;
+    const n = all.length;
     const k = more ? Math.min(fold.folded(), n) : 0;
-    return more && k > 0 ? [...props.tail.slice(0, n - k), foldTail(props.tail.slice(n - k), more)] : props.tail;
+    if (!more || k === 0) return all;
+    const out = new Set(foldOrder(all).slice(n - k));
+    return [...all.filter((t) => !out.has(t)), foldTail(all.filter((t) => out.has(t)), more)];
   });
   const phone = ((look) => (): boolean => look() !== 'web')(usePlatform());
   // the phone apps with no recipes: no Recipes row, and Start from an issue is one of the bar's tools (v1 launcher.js:

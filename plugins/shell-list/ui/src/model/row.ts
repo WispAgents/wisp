@@ -90,6 +90,9 @@ export interface RowContext {
   /** a command for this task is on screen but its computer is away (ADR-0065 §4): the status column says
    *  *Waiting to send* until it goes. @wisp/client's waitingToSend. Additive. */
   readonly waiting?: boolean;
+  /** what a task on its harness's Default runs, by name (ShellContext.defaultModel): the tip names it as the chip does.
+   *  Additive (2026-11-18). */
+  readonly defaultModel?: (s: SessionRow) => string | undefined;
 }
 
 export const busy = (s: SessionRow): boolean => s.state === 'running' || s.state === 'waiting';
@@ -143,6 +146,8 @@ export function runOf(s: SessionRow, c: RowContext): RunView | undefined {
   const sandbox = s.machine?.kind === 'sandbox';
   const where = sandbox ? (c.sandbox ?? 'Sandbox') : (s.machine?.name ?? c.here);
   const name = agentName(s.agent, c.agents);
+  // on its Default: the tip names the model that runs, as the chip does (one name everywhere); the line stays v1's
+  const runs = model ? model : c.defaultModel?.(s);
   return {
     agent: s.agent,
     agentName: name,
@@ -152,7 +157,7 @@ export function runOf(s: SessionRow, c: RowContext): RunView | undefined {
     ...(sandbox && { sandbox: true }),
     // v1 runLine's tip: "Default model" when none was picked, "<effort> thinking", "on <place>"
     ...((v) => (v.length ? { variant: v } : {}))(variantOf(s)),
-    title: tx(`shell-list.run.tip${model ? '' : '-default'}${s.effort ? '-effort' : ''}`, { agent: name, model: model ?? '', effort: s.effort === 'xhigh' ? 'X-High' : s.effort ? s.effort.charAt(0).toUpperCase() + s.effort.slice(1) : '', where }),
+    title: tx(`shell-list.run.tip${runs ? '' : '-default'}${s.effort ? '-effort' : ''}`, { agent: name, model: runs ?? '', effort: s.effort === 'xhigh' ? 'X-High' : s.effort ? s.effort.charAt(0).toUpperCase() + s.effort.slice(1) : '', where }),
   };
 }
 

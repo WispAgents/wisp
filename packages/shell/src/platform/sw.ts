@@ -6,17 +6,30 @@
 //   - navigations: the cached page, then a check behind it: a page naming another build (x-wisp-build)
 //     brings that build's modules (one /_pack, minus what's here), replaces the page and tells the
 //     tabs, which offer Reload. Two builds' files never mix: their names carry their hashes;
-//   - never cached: /api/ (the sync stream, commands), /_grid/ (the grid's sign-in and waking page),
+//   - a computer that isn't connected (its grid's 503 names its waiting page, `x-wisp-offline`): the tabs are sent
+//     to that page, never kept on the cached app (QA round 10 Grid #2);
+//   - never cached: /api/ (the sync stream, commands), /_grid/ (the grid's sign-in, waking and waiting pages),
 //     /__mock/, /sw.js itself.
+
+import { offlineWaiting, waitingFor } from './sw-offline.ts';
 
 interface FetchEventLike extends Event {
   readonly request: Request;
+  readonly resultingClientId?: string;
   respondWith(r: Promise<Response> | Response): void;
   waitUntil(p: Promise<unknown>): void;
 }
+interface ClientLike {
+  postMessage(m: unknown): void;
+  navigate?(url: string): Promise<unknown>;
+}
 interface WorkerScope {
   readonly location: { readonly origin: string };
-  readonly clients: { claim(): Promise<void>; matchAll(o?: { type?: string }): Promise<readonly { postMessage(m: unknown): void }[]> };
+  readonly clients: {
+    claim(): Promise<void>;
+    matchAll(o?: { type?: string }): Promise<readonly ClientLike[]>;
+    get(id: string): Promise<ClientLike | undefined>;
+  };
   skipWaiting(): Promise<void>;
   addEventListener(type: 'install' | 'activate' | 'fetch', fn: (e: FetchEventLike) => void): void;
 }
@@ -38,11 +51,15 @@ async function put(cache: Cache, files: Record<string, string>): Promise<void> {
   );
 }
 
-/** Brings the page (and, when its build is new, its modules) into the cache. */
-async function refresh(cache: Cache): Promise<'same' | 'new' | 'failed'> {
+/** Brings the page (and, when its build is new, its modules) into the cache; `{ offline }`: the computer isn't
+ *  connected, and that is its waiting page. */
+async function refresh(cache: Cache): Promise<'same' | 'new' | 'failed' | { readonly offline: string }> {
   const old = await cache.match('/');
   const page = await fetch('/', { headers: { 'x-wisp-sw': '1' }, cache: 'no-store' }).catch(() => undefined);
-  if (!page?.ok) return 'failed';
+  if (!page?.ok) {
+    const offline = offlineWaiting(page);
+    return offline === null ? 'failed' : { offline };
+  }
   const build = page.headers.get(BUILD);
   if (old && build !== null && old.headers.get(BUILD) === build) return 'same';
   const have = (await cache.keys()).map((r) => new URL(r.url).pathname).filter((p) => p.startsWith('/assets/'));
@@ -56,15 +73,42 @@ async function tell(message: unknown): Promise<void> {
   for (const c of await sw.clients.matchAll({ type: 'window' })) c.postMessage(message);
 }
 
-async function navigate(): Promise<Response> {
+/** Until when navigations go to the network, not the cache: a computer found offline, so the grid sends them on to its
+ *  waiting page (a tab told so reloads). */
+const offline = { until: 0 };
+
+/** The tab this navigation opens, sent to `to` once it exists (it doesn't yet while its page is answered), else every
+ *  tab is told to reload (worker.ts), which the network answers for the next few seconds. */
+async function sendTo(id: string | undefined, to: string): Promise<void> {
+  const url = new URL(to, sw.location.origin).href;
+  for (let n = 0; id && n < 20; n++) {
+    const c = await sw.clients.get(id);
+    if (c?.navigate) {
+      await c.navigate(url).catch(() => {});
+      return;
+    }
+    await new Promise((r) => setTimeout(r, 150));
+  }
+  offline.until = Date.now() + 10_000;
+  await tell({ t: 'offline' });
+}
+
+async function navigate(e: FetchEventLike): Promise<Response> {
+  if (Date.now() < offline.until) return fetch(e.request);
   const cache = await caches.open(CACHE);
   const cached = await cache.match('/');
-  const check = refresh(cache).then((r) => (r === 'new' ? tell({ t: 'update' }) : undefined));
+  const check = refresh(cache);
   if (cached) {
-    void check.catch(() => {});
+    e.waitUntil(
+      check
+        .then((r) => (r === 'new' ? tell({ t: 'update' }) : typeof r === 'object' ? sendTo(e.resultingClientId, waitingFor(e.request.url)) : undefined))
+        .catch(() => {}),
+    );
     return cached;
   }
-  await check.catch(() => {});
+  const r = await check.catch(() => 'failed' as const);
+  // offline: the page itself asked for, which the grid sends on to its waiting page (for this very page)
+  if (typeof r === 'object') return fetch(e.request);
   return (await cache.match('/')) ?? fetch('/', { headers: { 'x-wisp-sw': '1' } });
 }
 
@@ -95,5 +139,5 @@ sw.addEventListener('fetch', (e) => {
   const req = e.request;
   const url = new URL(req.url);
   if (req.method !== 'GET' || skip(url)) return;
-  e.respondWith(req.mode === 'navigate' ? navigate() : file(req));
+  e.respondWith(req.mode === 'navigate' ? navigate(e) : file(req));
 });

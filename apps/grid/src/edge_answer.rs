@@ -25,6 +25,22 @@ impl Asker {
     }
 }
 
+/// A computer address's waiting page: under `/_grid/`, which the wisp app's service worker never answers.
+pub(super) const WAITING: &str = "/_grid/offline";
+
+/// Whether `path` (with its query) is the waiting page itself; `/_grid/offline/x` is the computer's.
+pub(super) fn is_waiting(path: &str) -> bool {
+    path == WAITING || path.strip_prefix(WAITING).is_some_and(|r| r.starts_with('?'))
+}
+
+/// The waiting page for `path` (itself when it's already that page).
+pub(super) fn waiting_path(path: &str) -> String {
+    if is_waiting(path) {
+        return path.to_owned();
+    }
+    format!("{WAITING}?r={}", crate::http::encode_component(path))
+}
+
 impl Grid {
     /// Who's signed in to the grid on this request, as a page shows them: the grid's own cookie, so only on its address.
     pub(super) fn viewer(&self, h: &HeaderMap) -> Option<PageUser> {
@@ -82,11 +98,18 @@ impl Grid {
         html(status, pages::message_page(&self.page, &m), &[])
     }
 
-    /// A computer that isn't connected (v1 grid/server.js `computerEdge`): a page saying so for a browser.
-    pub(super) fn offline(&self, who: &Asker, c: &ComputerRow) -> Resp {
-        let retry = [("retry-after", "10".to_owned())];
+    /// A computer that isn't connected (v1 grid/server.js `computerEdge`). `path`: what was asked for. A browser
+    /// navigating goes to its waiting page (under `/_grid/`, which the phone's service worker never answers), which
+    /// opens `path` once it's back; anything else hears 503 naming that page (`x-wisp-offline`, for the worker).
+    /// Never cached: a cached answer is what kept a phone on the stale app (QA round 10 Grid #2).
+    pub(super) fn offline(&self, who: &Asker, c: &ComputerRow, path: &str) -> Resp {
+        let wait = waiting_path(path);
+        let retry = [("retry-after", "10".to_owned()), ("cache-control", "no-store".to_owned()), ("x-wisp-offline", wait.clone())];
         if !who.page {
             return json_with(503, &json!({ "error": "This computer isn’t online.", "offline": true }), &retry);
+        }
+        if !is_waiting(path) {
+            return crate::http::redirect(&wait, &retry[1..]);
         }
         let p = pages::OfflinePage {
             name: c.name.clone(),
@@ -102,6 +125,7 @@ impl Grid {
                 avatar: u.avatar,
             }),
         };
-        html(503, pages::offline_page(&self.page, &p), &retry)
+        // the page that's there: 200, so a phone's console has no failed load every few seconds
+        html(200, pages::offline_page(&self.page, &p), &retry[1..2])
     }
 }

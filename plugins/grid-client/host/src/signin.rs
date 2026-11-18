@@ -45,7 +45,10 @@ fn now(st: &St) -> i64 {
 }
 
 pub async fn start(st: &Arc<St>, a: &SignInArgs) -> Result<SignIn> {
-    let grid = grid_url(a.grid.as_deref().unwrap_or(DEFAULT_GRID)).ok_or_else(|| WireError::invalid("that isn't a grid's address"))?;
+    // no grid named: where this wisp was last signed in to, wisp Cloud only before the first sign-in (QA round 10 #4)
+    let last = st.accounts().default_grid().map(str::to_owned);
+    let grid = grid_url(a.grid.as_deref().or(last.as_deref()).unwrap_or(DEFAULT_GRID))
+        .ok_or_else(|| WireError::invalid("that isn't a grid's address"))?;
     let (status, b) =
         net::call(&st.http, "POST", &format!("{grid}/api/device/code"), None, Some(&json!({ "name": device_name(st).await })), &[])
             .await

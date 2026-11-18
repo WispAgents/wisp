@@ -48,3 +48,31 @@ test('a_task_on_opus_says_opus_in_its_details_and_on_its_reply_harness_not_defau
   expect(harness()?.getAttribute('title') ?? '').toContain(`Claude Code · ${model}`);
   expect(harness()?.getAttribute('title') ?? '').not.toContain('Default');
 });
+
+// QA r10 desktop #2: a task on Claude Code's default said "Claude Code · Default model" in its facts while its reply
+// chip said "Opus": one name everywhere, the same answer (runtime.defaultModel, else the harnesses topic)
+test('a_task_on_the_default_model_names_it_in_its_facts_as_its_chip_does', async () => {
+  const mock = createMockPeer({ epoch: 'e1', harnesses: true });
+  const home = peerId('local');
+  const client = createClient({ clientId: 'c1', build: 't', home, width: 1440 });
+  const shell = createShell({ client, toaster: createToaster(), platform: nullPlatform({ kind: 'browser' }), home, window: window as unknown as ShellWindow });
+  for (const { def } of pluginUis()) if (def?.id === 'wisp.claude') shell.register(def);
+  await client.start([{ peer: home, name: 'mock', transport: memTransport(mock) }]);
+  const root = document.createElement('div');
+  document.body.append(root);
+  const stop = shell.render(root);
+  stops.push(() => {
+    stop();
+    shell.dispose();
+  });
+  const task = (): { id: string } | undefined =>
+    client.entities.list<{ id: string; agent: string; summary: { model?: string } }>('session')().find((r) => r.agent === 'claude' && !r.summary.model);
+  await until(() => task() !== undefined);
+  expect(task(), 'a mock task on Claude Code’s default').toBeDefined();
+  client.nav.navigate({ t: 'openTask', id: task()?.id as EntityKey as never });
+  const details = (): string => root.querySelector('[data-part="split.details"] [data-kit="ml-name"]')?.textContent ?? '';
+  await until(() => details().includes('Opus'));
+  // the harness topic's answer for Claude Code's Default (the seed: Opus), as the reply chip names it
+  expect(details()).toBe('Claude Code · Opus');
+});
+

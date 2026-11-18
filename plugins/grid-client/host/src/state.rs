@@ -23,6 +23,8 @@ pub const TOPIC: &str = "plugin:wisp.grid-client:account";
 /// The one-account shape's token (before ADR-0061): moved to `token_key` at start.
 pub const OLD_TOKEN: &str = "grid-client/token";
 pub const CURRENT: &str = "current";
+/// The grid this wisp was last signed in to (`{grid}`), kept after signing out: a sign-in naming no grid goes there.
+pub const LAST_GRID: &str = "lastGrid";
 
 pub const MIGRATIONS: &[Migration] = &[
     Migration::sql(1, "CREATE TABLE grid_client_doc (id TEXT PRIMARY KEY, body TEXT NOT NULL) STRICT;"),
@@ -102,6 +104,8 @@ pub struct Accounts {
     pub list: Vec<Account>,
     /// the current one's key ("" when there's none)
     pub current: String,
+    /// the grid signed in to last ("" before the first sign-in), kept when every account is signed out of
+    pub last_grid: String,
 }
 
 impl Accounts {
@@ -111,7 +115,24 @@ impl Accounts {
         list.dedup_by_key(|a| a.key());
         let current =
             if list.iter().any(|a| a.key() == current) { current.to_owned() } else { list.first().map(Account::key).unwrap_or_default() };
-        Self { list, current }
+        Self { list, current, last_grid: String::new() }
+    }
+
+    /// With the last grid the store held (none kept: the newest account's).
+    #[must_use]
+    pub fn with_last_grid(mut self, grid: &str) -> Self {
+        self.last_grid = if grid.is_empty() {
+            self.list.iter().max_by_key(|a| a.added).map(|a| a.grid.clone()).unwrap_or_default()
+        } else {
+            grid.to_owned()
+        };
+        self
+    }
+
+    /// Where a sign-in that names no grid goes (QA round 10 #4): the current account's grid, else the one signed in
+    /// to last. None: never signed in here (the caller's wisp Cloud).
+    pub fn default_grid(&self) -> Option<&str> {
+        self.current().map(|a| a.grid.as_str()).or_else(|| Some(self.last_grid.as_str()).filter(|g| !g.is_empty()))
     }
 
     pub fn current(&self) -> Option<&Account> {
@@ -130,6 +151,7 @@ impl Accounts {
     /// Added (or, the same grid and handle again, replaced in its place) and made current.
     pub fn add(&mut self, a: Account) {
         self.current = a.key();
+        a.grid.clone_into(&mut self.last_grid);
         self.put(a);
     }
 
@@ -250,7 +272,12 @@ impl St {
             .find(|d| id(d) == CURRENT)
             .and_then(|d| d.get("body").and_then(|b| b.get("key")).and_then(Value::as_str).map(str::to_owned))
             .unwrap_or_default();
-        let accounts = Accounts::new(list, &current);
+        let last = docs
+            .iter()
+            .find(|d| id(d) == LAST_GRID)
+            .and_then(|d| d.get("body").and_then(|b| b.get("grid")).and_then(Value::as_str).map(str::to_owned))
+            .unwrap_or_default();
+        let accounts = Accounts::new(list, &current).with_last_grid(&last);
         move_old_token(&ctx, &accounts).await;
         Ok(Arc::new(Self {
             ctx,
@@ -283,7 +310,8 @@ impl St {
             before.list.iter().map(Account::key).filter(|k| now.get(k).is_none()).collect(),
         );
         let current = (now.current != before.current).then(|| now.current.clone());
-        if put.is_empty() && gone.is_empty() && current.is_none() {
+        let last = (now.last_grid != before.last_grid).then(|| now.last_grid.clone());
+        if put.is_empty() && gone.is_empty() && current.is_none() && last.is_none() {
             return Ok(());
         }
         self.store
@@ -298,6 +326,9 @@ impl St {
                     Some("") => w.del(DOC.kind, CURRENT).map(|_| ())?,
                     Some(k) => w.upsert(DOC.kind, doc(CURRENT, &json!({ "key": k }))?).map(|_| ())?,
                     None => {}
+                }
+                if let Some(g) = &last {
+                    w.upsert(DOC.kind, doc(LAST_GRID, &json!({ "grid": g }))?)?;
                 }
                 Ok(())
             })

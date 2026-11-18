@@ -4,7 +4,7 @@
 
 import { createEffect, createMemo, createSignal, onCleanup } from 'solid-js';
 import { useSignal } from '@wisp/ui';
-import { waitingToSend, type EntityKey, type PluginClient } from '@wisp/client';
+import { ownerOf, waitingToSend, type EntityKey, type PluginClient } from '@wisp/client';
 import type { ShellContext } from '@wisp/shell/contract';
 import { readOnOpen, type ActionCtx } from '../actions.ts';
 import { flatten, taskKeys } from '../model/flat.ts';
@@ -72,7 +72,7 @@ export function buildEnv(shell: ShellContext, client: PluginClient): ListEnv {
     swipes,
     keys: !shell.platform.mobile,
     agents,
-    rowCtx: (key) => ({ split: split(), open: open() === key, swipes, here: here(), sandbox: shell.t('shell-list.run.sandbox'), agents: agents(), waiting: waiting().has(key) }),
+    rowCtx: (key) => ({ split: split(), open: open() === key, swipes, here: here(), sandbox: shell.t('shell-list.run.sandbox'), agents: agents(), waiting: waiting().has(key), defaultModel: (s) => shell.defaultModel?.(s.agent, { peer: ownerOf(key), cwd: s.cwd }) }),
     openTask: (key) => {
       shell.selection.set(key);
       client.navigate({ t: 'openTask', id: key as never });

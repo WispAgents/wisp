@@ -136,3 +136,101 @@ async fn no_verb_path_with_a_bad_flag_ever_becomes_a_task() {
     assert!(err.contains("--definitely-not-a-flag") && err.contains("wisp computer on|off|status"), "{err}");
     drop(serve);
 }
+
+/// Every command group's word, built in (`words::VERB_PATHS` and `words::GROUPS`, read from their source lines).
+fn built_in_groups() -> Vec<String> {
+    let src = include_str!("../src/words.rs");
+    let groups = src.split("const GROUPS").nth(1).unwrap().split("];").next().unwrap();
+    let mut out: Vec<String> = built_in_paths().into_iter().map(|p| p[0].clone()).collect();
+    for line in groups.lines().map(str::trim).filter(|l| l.starts_with("(\"")) {
+        out.push(line.trim_start_matches("(\"").split('"').next().unwrap().to_owned());
+    }
+    out.sort();
+    out.dedup();
+    out
+}
+
+/// QA round 10 #1: `wisp computer start|stop|enable`, `wisp recipes list` and `wisp grid start` launched agent tasks
+/// (each a paid run on a real setup). Under every built-in command group, a word that's none of its verbs: exit 2, its
+/// verbs named, the way to make it a task said, and no task. A prompt that starts with such a word is still a task as
+/// one quoted argument, or after `--`. Another plugin's name followed by none of its verbs is a prompt (owner's
+/// delegate: `wisp <prompt>` is how tasks start), and one of its verbs with a bad flag is still refused.
+#[tokio::test(flavor = "multi_thread")]
+async fn an_unknown_verb_under_any_group_is_an_error_and_a_quoted_prompt_is_still_a_task() {
+    let dir = temp("serve-cli-groups");
+    let (serve, port) = start(&dir);
+    let api = Api { http: reqwest::Client::new(), port, n: 0.into() };
+    let groups = built_in_groups();
+    assert!(
+        ["computer", "cloud", "recipes", "grid", "crew", "plugin", "plugins", "skill", "completions", "sdk", "mcp", "machines", "trigger"]
+            .iter()
+            .all(|g| groups.contains(&(*g).to_owned())),
+        "{groups:?}"
+    );
+    let mut lines: Vec<Vec<String>> = groups.iter().map(|g| vec![g.clone(), "definitely-not-a-verb".into()]).collect();
+    // what QA typed
+    for l in [&["computer", "start"][..], &["computer", "stop"], &["computer", "enable"], &["recipes", "list"], &["grid", "start"]] {
+        lines.push(l.iter().map(|w| (*w).to_owned()).collect());
+    }
+    let mut wrong = Vec::new();
+    for l in &lines {
+        let (code, out, err) = wisp(&dir, port, l);
+        let said = format!("To start a task with these words: wisp -- \"{}\"", l.join(" "));
+        if code != 2 || out.contains("launched") || !err.contains(&said) || !err.contains(&format!("wisp {} has no {}", l[0], l[1])) {
+            wrong.push(format!("wisp {} → {code}: {}{}", l.join(" "), out.trim(), err.trim()));
+        }
+    }
+    assert!(wrong.is_empty(), "{} of {} lines weren't refused: \n{}", wrong.len(), lines.len(), wrong.join("\n"));
+    assert_eq!(api.cmd("runtime.list", json!({})).await.as_array().unwrap().len(), 0, "no task was made");
+    // the verbs are named
+    let (_, _, err) = wisp(&dir, port, &["computer", "start"].map(str::to_owned));
+    assert!(err.contains("wisp computer has no start: on, off, status"), "{err}");
+
+    // a built-in group's verb with words it doesn't take (its own arm refused them): its usage, never a task
+    for l in
+        [&["sdk", "types"][..], &["sdk", "types", "rust"], &["completions", "zsh", "extra"], &["crew", "ls", "extra"], &["grid", "deploy"]]
+    {
+        let (code, out, err) = wisp(&dir, port, &l.iter().map(|w| (*w).to_owned()).collect::<Vec<_>>());
+        assert!(code == 2 && !out.contains("launched") && err.contains(&format!("wisp {}", l[0])), "{l:?} → {code}: {out}{err}");
+    }
+    assert_eq!(api.cmd("runtime.list", json!({})).await.as_array().unwrap().len(), 0, "no task was made");
+    // a plugin's verb with a flag it doesn't take: still refused (a plugin's name isn't a prompt when its verb follows)
+    let (code, out, err) = wisp(&dir, port, &["channels", "refresh", "--bad"].map(str::to_owned));
+    assert!(code != 0 && !out.contains("launched"), "wisp channels refresh --bad → {code}: {out}{err}");
+
+    // prompts (the fake harness: nothing paid): a group's word quoted as one argument, or after `--`; and a plugin's
+    // name followed by none of its verbs, plain (review, ship, update, git and learn are all plugins here)
+    let catalogue = api.cmd("cli.catalogue", json!({})).await.to_string();
+    let prompts: [&[&str]; 8] = [
+        &["computer start fails on boot, fix it"],
+        &["--", "grid", "start", "is", "slow"],
+        &["review", "the", "auth", "module"],
+        &["ship", "the", "docs"],
+        &["update", "the", "readme"],
+        &["git", "rebase", "onto", "main"],
+        &["learn", "rust"],
+        &["review", "the", "auth", "module", "--strict"],
+    ];
+    for words in prompts {
+        if let Some(ns) = words.first().filter(|w| **w != "--" && !w.contains(' ')) {
+            assert!(catalogue.contains(&format!("\"{ns}.")), "{ns} is a plugin here, as the test means");
+        }
+        let args: Vec<String> = std::iter::once("--no-open").chain(words.iter().copied()).map(str::to_owned).collect();
+        let (code, out, err) = wisp(&dir, port, &args);
+        assert!(code == 0 && format!("{out}{err}").contains("launched"), "{words:?} → {code}: {out}{err}");
+    }
+    let tasks = api.cmd("runtime.list", json!({})).await;
+    let made = tasks.to_string();
+    for p in [
+        "computer start fails on boot, fix it",
+        "grid start is slow",
+        "review the auth module",
+        "ship the docs",
+        "update the readme",
+        "git rebase onto main",
+        "learn rust",
+    ] {
+        assert!(made.contains(p), "{p}: {tasks}");
+    }
+    drop(serve);
+}

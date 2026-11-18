@@ -52,11 +52,15 @@ impl Grid {
         format!("{}{go}{sep}path={}", self.cfg.public_url, enc(path))
     }
 
-    /// `/_grid/auth` and `/_grid/signout` at `label`'s address, owned by `owner`; `go`: its `/go` link.
-    pub(super) fn address_own(&self, req: http::Request<Incoming>, label: &str, owner: &UserRow, go: &str) -> Own {
+    /// `/_grid/auth` and `/_grid/signout` at `label`'s address, owned by `owner`; `go`: its `/go` link. `offline`: a
+    /// computer that isn't connected, so the sign-in lands on its waiting page (`/_grid/offline`), never on what a
+    /// phone's service worker would answer from its cache (QA round 10 Grid #2).
+    pub(super) fn address_own(&self, req: http::Request<Incoming>, label: &str, owner: &UserRow, go: &str, offline: bool) -> Own {
         let back = format!("{}{go}", self.cfg.public_url);
         match req.uri().path() {
-            "/_grid/auth" => Own::Done(self.address_auth(req.uri().query().unwrap_or_default(), req.headers(), label, owner, &back)),
+            "/_grid/auth" => {
+                Own::Done(self.address_auth(req.uri().query().unwrap_or_default(), req.headers(), label, owner, &back, offline))
+            }
             "/_grid/signout" => {
                 let c = cookies(req.headers()).get(COOKIE).cloned().unwrap_or_default();
                 if let Err(e) = self.accounts.end_address_session(&c) {
@@ -75,7 +79,7 @@ impl Grid {
     }
 
     /// `/_grid/auth?t=&r=`: the ticket becomes this address's cookie.
-    fn address_auth(&self, q: &str, h: &HeaderMap, label: &str, owner: &UserRow, back: &str) -> Resp {
+    fn address_auth(&self, q: &str, h: &HeaderMap, label: &str, owner: &UserRow, back: &str, offline: bool) -> Resp {
         let t = query(q, "t").unwrap_or_default();
         let spent = self.accounts.use_address_ticket(&t, label);
         if !matches!(&spent, Ok(Some(uid)) if *uid == owner.id) {
@@ -87,7 +91,9 @@ impl Grid {
             Err(e) => return super::err(&e),
         };
         let next = query(q, "r").unwrap_or_default();
-        let mut r = redirect(safe_path(&next, "/"), &[("cache-control", "no-store".into())]);
+        let next = safe_path(&next, "/");
+        let to = if offline { super::answer::waiting_path(next) } else { next.to_owned() };
+        let mut r = redirect(&to, &[("cache-control", "no-store".into())]);
         add_cookie(&mut r, &cookie(COOKIE, &session, self.address_cookie(Some(crate::handoff::SESSION_MS / 1000))));
         r
     }

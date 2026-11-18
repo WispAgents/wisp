@@ -40,18 +40,36 @@ export interface FoldExtras {
 }
 
 const TOOL = 'tool:';
+const CLEAR = 'clear:';
+/** a menu-less chip's own item inside its submenu (a value apart from the submenu's) */
+const OPEN = 'open:';
 const RECIPE = 'recipe:';
 
 const press = (act: Act | undefined): void => {
-  if (!act?.pending) act?.onClick?.();
+  if (act?.pending) return;
+  // a panel's tool (Delegate) opens its panel: open, it never folds (foldOrder), so it opens on its own chip
+  if (act?.panel) act.panel.onOpenChange?.(true);
+  else act?.onClick?.();
 };
+
+/** The tail in the order it folds from the end (QA r10 desktop #1): a tool with its panel open last, so the thing a
+ *  press just opened stays on the bar and the others go into More; otherwise the bar's own order. The bar still draws
+ *  the tail in its own order (Home.tsx keeps it), only which ones fold follows this. */
+export function foldOrder(tools: readonly LauncherTool[]): LauncherTool[] {
+  const open = (t: LauncherTool): boolean => t.act?.panel?.open === true;
+  return [...tools.filter(open), ...tools.filter((t) => !open(t))];
+}
 
 /** `tools` as one More tool: a toggle with its state, a tool with a menu as a submenu, then the extras (Start from an
  *  issue, Recipes with each recipe and New recipe). */
 export function foldTail(tools: readonly LauncherTool[], x: FoldExtras): LauncherTool {
   const entries: MenuEntry[] = tools.map((t): MenuEntry => {
     const menu = t.act?.menu;
-    if (menu) return { kind: 'submenu', value: `${TOOL}${t.id}`, label: t.label, icon: t.icon, items: menu.items.filter((e): e is MenuItem => e.kind === undefined || e.kind === 'item') };
+    // a chip that's on keeps its ✕ in More (QA r10 desktop #1: Start later folded had only its times): its own choices
+    // (or itself), then its clear
+    const clear: MenuItem[] = t.clear ? [{ value: `${CLEAR}${t.id}`, label: t.clear.label }] : [];
+    const own: MenuItem[] | undefined = menu ? menu.items.filter((e): e is MenuItem => e.kind === undefined || e.kind === 'item') : t.clear ? [{ value: `${OPEN}${t.id}`, label: t.label }] : undefined;
+    if (own) return { kind: 'submenu', value: `${TOOL}${t.id}`, label: t.label, icon: t.icon, items: [...own, ...clear] };
     return { value: `${TOOL}${t.id}`, label: t.label, icon: t.icon, ...(t.on !== undefined && { checked: t.on }), ...(t.disabled && { disabled: true }) };
   });
   const extras: MenuEntry[] = [
@@ -70,6 +88,8 @@ export function foldTail(tools: readonly LauncherTool[], x: FoldExtras): Launche
       : []),
   ];
   const onSelect = (v: string): void => {
+    if (v.startsWith(CLEAR)) return press(tools.find((t) => `${CLEAR}${t.id}` === v)?.clear?.act);
+    if (v.startsWith(OPEN)) return press(tools.find((t) => `${OPEN}${t.id}` === v)?.act);
     if (v.startsWith(TOOL)) return press(tools.find((t) => `${TOOL}${t.id}` === v)?.act);
     if (v === 'compare') return press(x.compare?.act);
     if (v === 'issue') return press(x.issue?.act);

@@ -55,3 +55,20 @@ test('a_trial_runs_line_says_its_one_change_after_the_model_v1_try_two_ways', as
   expect(variantOf(row({ variant: { subagentModel: '' } } as Partial<SessionRow>))).toEqual([{ key: 'shell-list.run.subagents-task' }]);
   expect(runOf(row({}), c)?.variant).toBeUndefined();
 });
+
+// One name everywhere (owner, after QA r10 #2): a task on its harness's Default names the model that runs in the tip, as
+// its chip does (ShellContext.defaultModel through the row context); the line itself stays as v1 drew it (no model)
+test('a_row_on_the_default_model_names_it_in_the_tip_as_the_chip_does', () => {
+  const asked: string[] = [];
+  const withDefault: RowContext = { ...c, defaultModel: (s) => (asked.push(`${s.agent} ${s.cwd ?? '-'}`), s.agent === 'claude' ? 'Opus' : undefined) };
+  const r = runOf(row({ cwd: '/code/app' } as Partial<SessionRow>), withDefault);
+  expect(r?.model).toBeUndefined();
+  expect(r?.title).toEqual({ key: 'shell-list.run.tip', vars: { agent: 'Claude Code', model: 'Opus', effort: '', where: 'This computer' } });
+  expect(asked).toEqual(['claude /code/app']);
+  const e = runOf(row({ effort: 'high' } as Partial<SessionRow>), withDefault);
+  expect(e?.title.key).toBe('shell-list.run.tip-effort');
+  // a picked model is never asked about; one the store can't tell keeps "Default model"
+  runOf(row({ model: 'opus' } as Partial<SessionRow>), withDefault);
+  expect(asked).toHaveLength(2);
+  expect(runOf(row({ agent: 'codex' }), withDefault)?.title.key).toBe('shell-list.run.tip-default');
+});

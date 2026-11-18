@@ -2,7 +2,7 @@
 // half behind Send or past the bar's edge with no More holding it. The tail's last tools fold into More, as many as the
 // measured widths need, never clipped, and at the edge it never flaps.
 import { describe, expect, test } from 'vitest';
-import { barPlan, tailFold } from '../src/app/launcher-fold.ts';
+import { barPlan, foldOrder, foldTail, tailFold, type LauncherTool } from '../src/app/launcher-fold.ts';
 import { sumBar } from '../src/app/launcher-fold-measure.ts';
 
 // Goal 60, Worktree 90, Start later 40, gaps of 4, More 30: all three need 300 + 64 + 94 + 44 = 502
@@ -115,4 +115,47 @@ test('a bar with no tail still steps its labels to icons until it fits', () => {
   expect(barPlan({ available: 500, ids: [], forms, more: 30 })).toEqual({ level: 2, fold: 0 });
   // not measured yet at a level: that level is tried next
   expect(barPlan({ available: 406, ids: [], forms: [f(533)], more: 30 })).toEqual({ level: 1, fold: 0 });
+});
+
+// QA r10 desktop #1: at 900 with Goal on, + → Delegate… opened its chip and the fold took it straight into More (the
+// last tool folds first), so its panel had nothing to open on; and Start later folded showed only its times, its ✕
+// gone. A tool whose panel is open never folds (the others go first); a folded chip keeps its clear; a folded panel's
+// item opens it (and so it comes back to the bar)
+describe('what folds keeps what it does_qa_r10_1', () => {
+  const tool = (id: string, extra: Partial<LauncherTool> = {}): LauncherTool => ({ id, part: `launcher.${id}`, icon: 'target', label: id, title: id, ...extra });
+  test('a tool with its panel open is folded last: the fold order puts it first', () => {
+    const delegate = tool('team', { act: { panel: { label: 'Delegate', part: 'composer.team.panel', content: () => null, open: true } } });
+    expect(foldOrder([tool('goal'), delegate, tool('later')]).map((t) => t.id)).toEqual(['team', 'goal', 'later']);
+    // nothing open: the bar's order
+    expect(foldOrder([tool('goal'), tool('team'), tool('later')]).map((t) => t.id)).toEqual(['goal', 'team', 'later']);
+  });
+  test('a folded chip keeps its clear beside its own choices', () => {
+    const cleared: string[] = [];
+    const picked: string[] = [];
+    const later = tool('later', {
+      label: 'Starts at 13:08',
+      act: { menu: { items: [{ value: '10m', label: 'In 10 min' }], onSelect: (v) => picked.push(v) } },
+      clear: { label: 'Start now instead', act: { onClick: () => cleared.push('later') } },
+    });
+    const goal = tool('goal', { label: 'Goal: tests pass', act: { onClick: () => picked.push('goal') }, clear: { label: 'Remove the goal', act: { onClick: () => cleared.push('goal') } } });
+    const more = foldTail([goal, later], { label: 'More', title: 'More' });
+    const entries = more.act?.menu?.items ?? [];
+    const sub = (id: string) => entries.find((e) => e.kind === 'submenu' && e.value === `tool:${id}`) as { items: { value: string; label: string }[] } | undefined;
+    expect(sub('later')?.items.map((i) => i.label)).toEqual(['In 10 min', 'Start now instead']);
+    expect(sub('goal')?.items.map((i) => i.label)).toEqual(['Goal: tests pass', 'Remove the goal']);
+    const pick = (v: string): void => more.act?.menu?.onSelect(v);
+    pick(sub('later')?.items[1]?.value ?? '');
+    pick(sub('goal')?.items[1]?.value ?? '');
+    pick(sub('later')?.items[0]?.value ?? '');
+    pick(sub('goal')?.items[0]?.value ?? '');
+    expect(cleared).toEqual(['later', 'goal']);
+    expect(picked).toEqual(['10m', 'goal']);
+  });
+  test('a folded panel tool opens its panel when picked', () => {
+    const opened: boolean[] = [];
+    const delegate = tool('team', { act: { panel: { label: 'Delegate', part: 'composer.team.panel', content: () => null, open: false, onOpenChange: (o) => opened.push(o) } } });
+    const more = foldTail([delegate], { label: 'More', title: 'More' });
+    more.act?.menu?.onSelect('tool:team');
+    expect(opened).toEqual([true]);
+  });
 });

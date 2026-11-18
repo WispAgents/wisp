@@ -1486,8 +1486,14 @@
 
   /* UX 2026-11-18 phone #8: an older answer's icons wait behind its ⋯ (the latest answer's stay out); the ⋯ has the
      platform's touch target, as the icons it opens */
-  :root[data-platform='ios'] [data-kit='turn']:not([data-latest]) [data-kit='trail-bar'] > [data-kit='tb-tools'] { display: none; }
-  :root[data-platform='ios'] [data-kit='tb-more'] { display: inline-flex; margin-inline-start: auto; }
+  /* the answer's menu is the one overlay: the selection's Comment bubble and a block's Comment button wait under it
+     (QA r10 #5; turn-menu.ts marks the page while it is open) */
+  :root[data-platform='ios'] [data-answer-menu] [data-kit='cmt-bubble'],
+  :root[data-platform='ios'] [data-answer-menu] [data-kit='cmt-add']:not([data-on]) { visibility: hidden; }
+  /* an older answer's icons fold into its ⋯, which ends the row (QA r10 #6) */
+  :root[data-platform='ios'] [data-kit='turn']:not([data-latest]) [data-kit='trail-bar'] > [data-kit='tb-tools'] > [data-kit='tb-btn'],
+  :root[data-platform='ios'] [data-kit='turn']:not([data-latest]) [data-kit='trail-bar'] > [data-kit='tb-tools'] > [data-kit='rate'] { display: none; }
+  :root[data-platform='ios'] [data-kit='tb-more'] { display: inline-flex; }
   :root[data-platform='ios'] [data-kit='tb-more'] button { min-width: var(--tap-min); min-height: var(--tap-min); color: var(--on-surface-var); }
 
   /* UX 2026-11-18 phone #9: the thinking levels named under the track (each a tap target the width of its stop) */

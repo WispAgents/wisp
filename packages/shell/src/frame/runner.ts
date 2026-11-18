@@ -4,6 +4,7 @@
 import { defineCommand, ownerOf, type Client, type EntityKey, type EntityReader, type PeerId } from '@wisp/client';
 import { useDerived } from '@wisp/ui/pure';
 import { createEffect, createSignal, onCleanup, type Accessor } from 'solid-js';
+import { defaultModels } from './default-models.ts';
 
 export interface AgentModel {
   readonly id: string;
@@ -46,25 +47,9 @@ export function useDefaultWords(
     onCleanup(() => scope.dispose());
   });
   const rows = useHarnessRows(client.entities, peer);
-  // answers by computer, harness and folder: undefined asked and waiting, null can't tell
-  const [answers, setAnswers] = createSignal<ReadonlyMap<string, string | null>>(new Map());
-  const asked = new Set<string>();
-  const there = (agent: string): string | undefined => {
-    const dir = cwd();
-    if (!dir || !agent || agent === 'auto') return undefined;
-    const on = peer();
-    const key = `${on}\u0000${agent}\u0000${dir}`;
-    if (!asked.has(key)) {
-      asked.add(key);
-      const put = (v: string | null): void => void setAnswers((m) => new Map([...m, [key, v]]));
-      // the asking is its own chunk (default-model-ask.ts): the answer comes after a request anyway. A failure (the
-      // chunk, the peer asleep) isn't an answer: it's asked again on the next look, the topic's word meanwhile
-      void import('./default-model-ask.ts')
-        .then((m) => m.askDefault(client, { peer: on, agent, cwd: dir }))
-        .then((v) => put(v ?? null), () => void asked.delete(key));
-    }
-    return answers().get(key) ?? undefined;
-  };
+  // the client's one store (default-models.ts): asked once per computer, harness and folder, shared with every reader
+  const store = defaultModels(client);
+  const there = (agent: string): string | undefined => store.word(peer(), agent, cwd());
   return (agent, fallback) => there(agent) ?? defaultWord(rows(), agent, fallback);
 }
 

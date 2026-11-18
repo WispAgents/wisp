@@ -39,6 +39,8 @@ function cli() {
     1,
     `\`wisp --help\` prints this. \`wisp help <plugin> [verb]\` lists a plugin's verbs and a verb's flags: every plugin command below is also \`wisp <plugin> <verb>\` (see [Commands](../commands/)).
 
+**Commands and tasks.** Words that aren't a command are a task: \`wisp fix the flaky test\` starts one. A line whose first word is one of wisp's command groups (\`computer\`, \`cloud\`, \`grid\`, \`crew\`, \`trigger\`, \`plugin\`, \`recipes\`, \`machines\`, \`skill\`, \`mcp\`, …) is always that command, never a task. A verb the group doesn't have (\`wisp computer start\`), a flag its command doesn't take, or words it doesn't take print the group's verbs or the command's usage and exit 2. To start a task that begins with such a word, quote it as one argument (\`wisp "computer start fails on boot, fix it"\`) or put \`--\` first (\`wisp -- computer start fails on boot\`). A plugin's name is its command only when one of its verbs follows (\`wisp channels refresh\`, where a bad flag is an error too); otherwise the line is a task, so \`wisp review the auth module\` and \`wisp update the readme\` start tasks.
+
 \`\`\`text
 ${help.trim()}
 \`\`\``,

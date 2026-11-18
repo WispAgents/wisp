@@ -741,6 +741,8 @@ async fn the_grid_s_add_command_adds_this_computer_and_a_removed_one_comes_back(
     // the CLI: on again is a new registration, the same name
     let (code, out, err) = wisp(&da, &da.join("proj"), &["computer", "on"]);
     assert_eq!(code, 0, "{out}{err}");
+    // QA round 10 #3: it says how the new registration answered, never the old one's "gone"
+    assert!(out.contains("this computer: on, online") && !out.contains("gone"), "{out}");
     until_state(&a, "online").await;
     let second = g.edge.accounts.computers(&uid).unwrap();
     assert_eq!(second.len(), 1);

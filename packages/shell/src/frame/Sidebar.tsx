@@ -4,7 +4,7 @@
 // Opening a row navigates at once (design/feedback.md); Mark done is optimistic through the command.
 
 import { For, Show, createMemo, createSignal, onCleanup, untrack, type JSX } from 'solid-js';
-import { computed, type EntityKey, type Json } from '@wisp/client';
+import { computed, ownerOf, type EntityKey, type Json } from '@wisp/client';
 import { forLater, isSaved, markRead, setState } from './commands.ts';
 import { listShown } from './pane-widths.ts';
 import { openSwitcher } from './project-switch.ts';
@@ -19,6 +19,7 @@ import { rowSlots, useHeadSlots } from './slots.tsx';
 import { harnessOf } from './harness.ts';
 import { SECTIONS, crewOf, flatRow, goalOf, longTime, needsYou, overlapOf, projectOfRow, sectionOf, shortAgo, statusOf, sessionKey, type SectionId } from './rows-view.ts';
 import { useProjects } from './projects.ts';
+import { defaultModelName, runModelWord } from './default-models.ts';
 import { meOf, type PeerDoc, type StatusDoc } from './me.ts';
 import { Slot, useExtensions, usePluginClient } from '../slot.tsx';
 
@@ -324,7 +325,14 @@ export function SidebarList(props: { readonly onNew: () => void; readonly homeOn
                         run: {
                           harness: h.name,
                           where,
-                          title: route ? routeTip(route, shell.t) : shell.t('shell.card.runTitle', { harness: h.name, where }),
+                          // the model it ran on, else what its Default runs (one name everywhere), else "Default model"
+                          title: route
+                            ? routeTip(route, shell.t)
+                            : shell.t('shell.card.runTitle', {
+                                harness: h.name,
+                                model: runModelWord(String(s.summary.model || ''), defaultModelName(shell.client, ownerOf(sessionKey(untrack(shell.client.entities.keys(SESSION)), s.id) as EntityKey), s.agent, String(s.summary.cwd ?? '') || undefined), shell.t('shell.task.defaultModel')),
+                                where,
+                              }),
                           routed: !!route,
                           ...(h.logo && { logo: h.logo }),
                         },

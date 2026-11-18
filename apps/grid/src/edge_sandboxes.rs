@@ -29,7 +29,7 @@ impl Grid {
                 return Ok(self.not_found(&req, "No such sandbox", "Nothing answers at this address."));
             };
             let go = format!("/go?sandbox={}", sb.id);
-            let req = match self.address_own(req, &sb.label, &owner, &go) {
+            let req = match self.address_own(req, &sb.label, &owner, &go, false) {
                 super::handoff::Own::Done(r) => return Ok(r),
                 super::handoff::Own::Next(r) => r,
             };

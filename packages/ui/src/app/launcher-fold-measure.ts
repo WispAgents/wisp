@@ -72,9 +72,12 @@ export function useTailFold(given: { readonly tail: () => readonly LauncherTool[
     const shown = new Set(ids.slice(0, ids.length - k));
     const widths = new Map(forms[form]?.tail ?? []);
     const { others, count, more } = sumBar(bar, shown, widths, k > 0);
-    const gap = Number.parseFloat(getComputedStyle(bar).columnGap) || 0;
+    const cs = getComputedStyle(bar);
+    const gap = Number.parseFloat(cs.columnGap) || 0;
     forms[form] = { others: others + gap * Math.max(0, count - 1), gap, tail: widths };
-    const plan = barPlan({ available: bar.clientWidth, ids, forms, more });
+    // its content box: the bar's own padding is no room for its items (bar-labels.ts measures the same)
+    const available = bar.clientWidth - (Number.parseFloat(cs.paddingLeft) || 0) - (Number.parseFloat(cs.paddingRight) || 0);
+    const plan = barPlan({ available, ids, forms, more });
     setScroll(bar.scrollWidth > bar.clientWidth + 1);
     if (plan.level === squeeze() && plan.fold === folded()) return;
     if (plan.level !== squeeze()) setSqueeze(plan.level);

@@ -396,3 +396,33 @@ async fn this_computers_grid_address_comes_from_the_grids_answer_on_a_v1_grid_to
     drop(a);
     let _ = std::fs::remove_dir_all(&d);
 }
+
+/// QA round 10 #4: signed out of its own grid, `wisp cloud login` (or signin) went to grid.trywisp.dev. Signing in
+/// without naming a grid goes to the one this wisp was last signed in to (the current account's, else the last one
+/// signed out of, after a restart too), and to wisp Cloud only when it never was.
+#[allow(clippy::similar_names)]
+#[tokio::test(flavor = "multi_thread")]
+async fn signing_in_without_a_grid_goes_to_the_one_this_wisp_was_last_signed_in_to() {
+    let (g1, g2) = (fake_grid(1).await, fake_grid(2).await);
+    let d = dir("last-grid");
+    let secrets: Arc<Secrets> = Arc::default();
+    let a = app(d.clone(), secrets.clone()).await;
+    let start = |a: &App| {
+        let a = a.k.clone();
+        async move {
+            let f = a.call(Caller::user(), "grid-client.signin", json!({})).await.unwrap();
+            f["verifyUrl"].as_str().unwrap().to_owned()
+        }
+    };
+    a.sign_in(&g1, "ada").await;
+    a.sign_in(&g2, "ada").await;
+    assert!(start(&a).await.starts_with(&g2.url), "signed in: the current account's grid");
+    a.call("grid-client.signout", json!({})).await;
+    a.call("grid-client.signout", json!({})).await;
+    assert_eq!(a.call("grid-client.accounts", json!({})).await, json!([]));
+    assert!(start(&a).await.starts_with(&g2.url), "signed out of all: the grid signed in to last");
+    drop(a);
+    let a = app(d, secrets).await;
+    assert!(start(&a).await.starts_with(&g2.url), "after a restart too");
+    // never signed in: wisp Cloud (src/accounts.rs's unit test: never asked here, it's the real grid)
+}

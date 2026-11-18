@@ -78,10 +78,11 @@ fn id_shaped(w: &str) -> bool {
     (12..=32).contains(&id.len()) && id.bytes().all(|b| b.is_ascii_hexdigit())
 }
 
-/// One word alone, or a first word followed by something flag-shaped or by task ids only, with no `--` before them.
+/// One word alone, or a first word followed at once by something flag-shaped, or by task ids only, with no `--` before
+/// them. Only the next word counts: `wisp review the auth module --strict` is a prompt (owner's delegate, QA round 10).
 pub fn command_shaped(words: &[String], literal: Literal) -> bool {
     let Some((_, rest)) = words.split_first() else { return false };
-    literal == Literal::No && (rest.is_empty() || rest.iter().any(|w| flag_shaped(w)) || rest.iter().all(|w| id_shaped(w)))
+    literal == Literal::No && (rest.first().is_none_or(|w| flag_shaped(w)) || rest.iter().all(|w| id_shaped(w)))
 }
 
 /// `-x` or `--word`; a bare `-` or `--` is punctuation in a prompt (`plan it - postgres first`).
@@ -303,6 +304,90 @@ pub fn stray_flag(cmd: &str, own: &[&str], argv: &[String]) -> Option<String> {
         }
     }
     None
+}
+
+/// `wisp plugin …` (`plugin_cmd::run`, and main.rs's `new`).
+const PLUGIN_VERBS: &[&str] =
+    &["ls", "list", "enable", "disable", "on", "off", "install", "add", "trust", "untrust", "remove", "uninstall", "rm", "new"];
+
+/// Built-in command groups besides [`VERB_PATHS`]: COMMANDS whose next word is a verb (`wisp grid dev`, `wisp skill
+/// install`), and plugins wisp's own words lead to (`machines`). `recipes` takes none. A group's plugin verbs from the
+/// catalogue are its verbs too (`crew create`). Any other plugin's name isn't a group: `wisp review the auth module` is
+/// a task (owner's delegate, QA round 10 #1).
+const GROUPS: &[(&str, &[&str])] = &[
+    ("grid", &["dev", "init", "serve", "doctor", "rotate-key", "backup", "users", "waitlist", "help", "deploy"]),
+    ("plugin", PLUGIN_VERBS),
+    ("plugins", PLUGIN_VERBS),
+    ("skill", &["install"]),
+    // the stdio MCP server: no verb (its catalogue commands are MCP's, not the CLI's)
+    ("mcp", &[]),
+    ("completions", &["zsh", "bash", "fish"]),
+    ("sdk", &["types"]),
+    ("recipes", &[]),
+    ("crew", &["ls"]),
+    ("machines", &[]),
+];
+
+/// Whether `word` is a built-in command group (strict: a verb it doesn't have is an error, never a task).
+pub fn is_group(word: &str) -> bool {
+    VERB_PATHS.iter().any(|p| p.cmd == word) || GROUPS.iter().any(|(g, _)| *g == word)
+}
+
+/// A command group's word followed by none of its verbs (`wisp computer start`): the group and its verbs.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct UnknownVerb {
+    pub group: String,
+    pub verbs: Vec<String>,
+}
+
+impl UnknownVerb {
+    /// What the CLI says (exit 2): the verbs there are, and how to make the words a task anyway.
+    pub fn said(&self, words: &[String]) -> String {
+        let typed = words.get(1).map_or("", String::as_str);
+        let have = if self.verbs.is_empty() {
+            format!("  ✗ wisp {g} has no {typed}: it takes no verb (wisp {g})", g = self.group)
+        } else {
+            format!("  ✗ wisp {} has no {typed}: {}", self.group, self.verbs.join(", "))
+        };
+        let all = words.join(" ").replace('"', "\\\"");
+        format!("{have}\n  To start a task with these words: wisp -- \"{all}\"   (or quote them as one: wisp \"{all}\")")
+    }
+}
+
+/// QA round 10 #1: the words start with a built-in command group (a [`VERB_PATHS`] or [`GROUPS`] word; `catalogue`,
+/// each command's path such as `["crew", "create"]`, adds its plugin verbs) and the next word is none of its verbs: a
+/// command line typed wrong, never a task. None: no group (another plugin's name included: a prompt), one of its
+/// verbs, a flag (its own checks), one word alone, or `--` first. A prompt that starts with a group's word is one
+/// quoted argument (`wisp "computer start fails"`) or follows `--`.
+pub fn unknown_verb(words: &[String], literal: Literal, catalogue: &[Vec<String>]) -> Option<UnknownVerb> {
+    if literal == Literal::Task {
+        return None;
+    }
+    let (first, rest) = words.split_first()?;
+    if rest.first().is_none_or(|w| flag_shaped(w)) || !is_group(first) {
+        return None;
+    }
+    let mut paths: Vec<Vec<&str>> = Vec::new();
+    for vp in VERB_PATHS.iter().filter(|p| p.cmd == first) {
+        paths.extend(vp.verbs.iter().map(|v| vec![*v]));
+    }
+    for (_, verbs) in GROUPS.iter().filter(|(g, _)| g == first) {
+        paths.extend(verbs.iter().map(|v| vec![*v]));
+    }
+    for c in catalogue.iter().filter(|c| c.first() == Some(first) && c.len() > 1) {
+        paths.push(c[1..].iter().map(String::as_str).collect());
+    }
+    if paths.iter().any(|p| rest.len() >= p.len() && rest.iter().zip(p).all(|(a, b)| a == b)) {
+        return None;
+    }
+    let mut verbs: Vec<String> = Vec::new();
+    for p in paths {
+        let v = p.join(" ");
+        if !verbs.contains(&v) {
+            verbs.push(v);
+        }
+    }
+    Some(UnknownVerb { group: first.clone(), verbs })
 }
 
 /// Whether `typed` reads as a slip of `cmd`, `d` apart. Under six letters only a dropped, added or

@@ -290,12 +290,24 @@ pub async fn computer(c: &Client, o: &Opts) -> Result<i32> {
         Some("off") => c.cmd("grid-client.computer", json!({ "on": false })).await?,
         _ => c.cmd("grid-client.status", json!({})).await?["computer"].clone(),
     };
+    // on: how the grid answered the dial (online, or why not), not that it's still connecting (QA round 10 #3)
+    let v = if verb == Some("on") { dialed(c, v).await? } else { v };
     if o.json {
         say(&v.to_string());
     } else {
         say(&format!("  {} this computer: {}", paint(&st, GREEN, "◌"), computer_line(&v)));
     }
     Ok(0)
+}
+
+/// This computer's state once its dial has answered: polled while it's connecting, up to 10 s (then as it is).
+async fn dialed(c: &Client, mut v: Value) -> Result<Value> {
+    let until = std::time::Instant::now() + std::time::Duration::from_secs(10);
+    while s(&v, "state") == "connecting" && std::time::Instant::now() < until {
+        tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+        v = c.cmd("grid-client.status", json!({})).await?["computer"].clone();
+    }
+    Ok(v)
 }
 
 /// `wisp shares`.

@@ -149,6 +149,24 @@ mod tests {
         assert!(x.remove("https://g2#ada").is_none());
     }
 
+    /// QA round 10 #4: a sign-in without a grid goes where this wisp was last signed in to, wisp Cloud only at first.
+    #[test]
+    fn the_default_grid_is_the_current_one_else_the_last_signed_in_to() {
+        let mut x = Accounts::default();
+        assert_eq!(x.default_grid(), None, "never signed in: the caller's wisp Cloud");
+        x.add(acct("https://g1", "ada", 1));
+        x.add(acct("https://g2", "ada", 2));
+        assert_eq!(x.default_grid(), Some("https://g2"));
+        assert!(x.switch("https://g1#ada"));
+        assert_eq!(x.default_grid(), Some("https://g1"), "the current account's");
+        x.remove("https://g1#ada");
+        x.remove("https://g2#ada");
+        assert_eq!(x.default_grid(), Some("https://g2"), "signed out of all: the last signed in to");
+        // read back as stored: the list and current, and the last grid beside them
+        let y = Accounts::new(vec![], "").with_last_grid(&x.last_grid);
+        assert_eq!(y.default_grid(), Some("https://g2"));
+    }
+
     #[test]
     fn a_stale_current_falls_back_to_the_first_and_the_list_keeps_its_order() {
         let x = Accounts::new(vec![acct("https://g2", "bo", 5), acct("https://g1", "ada", 1)], "https://gone#x");

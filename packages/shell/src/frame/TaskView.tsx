@@ -998,7 +998,8 @@ export default function TaskView(props: { readonly id: string; readonly onBack?:
         const ring = usePlanRing(shell, { peer: () => peer, agent: () => shownRun().agent, account: ringAccount });
         // the task's own, for its details (not the reply box's pick)
         const own = (): { name: string; logo?: string } => harnessView(s().agent);
-        const ownWords = (): string => t('shell.task.harness', { name: own().name, model: String(s().summary.model || '') || t('shell.task.defaultModel') });
+        // on its harness's Default: the model that runs, by the same answer as the reply chip (QA r10 #2), else "Default model"
+        const ownWords = (): string => t('shell.task.harness', { name: own().name, model: String(s().summary.model || '') || defaultName(s().agent, t('shell.task.defaultModel')) });
         // the reply box's Delegate panel: on its button in the old footer, on its chip in the desktop's one footer
         const replyTeamAct = (): Act => ({
           // v1 composer.js: the same Delegate panel as New task's, the lead this task's harness where it runs
@@ -1540,7 +1541,7 @@ export default function TaskView(props: { readonly id: string; readonly onBack?:
                       ...(!phone && { model: shownRun().model || defaultName(shownRun().agent, t('shell.runner.default')) }),
                       ...(ring() && { usage: ring() }),
                     }}
-                    {...(!phone && { plus: ((p: LauncherTool) => ({ label: p.label, title: p.title, act: p.act ?? {} }))(replyPlus()), chips: replyChips() })}
+                    {...(!phone && { plus: ((p: LauncherTool) => ({ label: p.label, title: p.title, act: p.act ?? {} }))(replyPlus()), chips: replyChips(), chipsMore: { label: t('shell.home.moreOptions'), title: t('shell.reply.moreChips') } })}
                     team={t('shell.home.delegateTitle')}
                     teamAct={replyTeamAct()}
                     goal={t('shell.task.goal')}

@@ -125,7 +125,9 @@ async fn dispatch(p: &Parsed, user_home: &Path, cwd: &Path) -> Result<i32> {
     if let Some(code) = as_code(p, port, f.cwd.as_deref().unwrap_or(cwd), &home).await? {
         return Ok(code);
     }
-    if let Some(code) = live(p, &home, port).await? {
+    // the catalogue `live` read for words it didn't take, for `not_a_task` (read once)
+    let mut cat = None;
+    if let Some(code) = live(p, &home, port, &mut cat).await? {
         return Ok(code);
     }
     if f.help {
@@ -133,9 +135,16 @@ async fn dispatch(p: &Parsed, user_home: &Path, cwd: &Path) -> Result<i32> {
         return Ok(0);
     }
     if p.command.is_none()
-        && let Some(code) = not_a_task(p, home.as_path(), port).await
+        && let Some(code) = not_a_task(p, home.as_path(), port, cat).await
     {
         return Ok(code);
+    }
+    // a group command with a verb it doesn't have (`wisp plugin frob`, `wisp mcp start`): its verbs, exit 2
+    if p.command.is_some()
+        && let Some(u) = words::unknown_verb(&p.words, p.literal, &[])
+    {
+        eprintln!("{}", u.said(&p.words));
+        return Ok(cli::USAGE_EXIT);
     }
     // a built-in verb path its arm didn't take (`computer on --try x`) is that command misused, never a task
     if let Some(code) = misused_verb_path(p, false) {
@@ -188,7 +197,13 @@ fn misused_verb_path(p: &Parsed, flags: bool) -> Option<i32> {
     if p.literal == args::Literal::Task || p.command.is_some() {
         return None;
     }
-    let (cmd, verb) = words::verb_path(&p.words)?;
+    let Some((cmd, verb)) = words::verb_path(&p.words) else {
+        // past every arm, a built-in group's line its own command refused (`wisp sdk types`, `wisp crew ls extra`)
+        let first = p.words.first().filter(|w| !flags && words::is_group(w))?;
+        eprintln!("  ✗ wisp {} isn't a {first} command", p.words.join(" "));
+        eprintln!("{}", words::usage(first));
+        return Some(cli::USAGE_EXIT);
+    };
     if flags && p.flags.help {
         // `wisp computer on --help` is its usage, never the command
         say(&words::usage(cmd));
@@ -209,14 +224,24 @@ fn misused_verb_path(p: &Parsed, flags: bool) -> Option<i32> {
 /// Words on the launch path that aren't a task (`wisp tasks`, `wisp tsks`, `wisp runtime`): what they
 /// say instead and the exit code; None: launch them. The catalogue is read only when the word isn't one
 /// of the CLI's own (a plugin's name, or a typo of one).
-async fn not_a_task(p: &Parsed, home: &Path, port: u16) -> Option<i32> {
+async fn not_a_task(p: &Parsed, home: &Path, port: u16, mut cat: Option<wisp_cli_core::verbs::Catalogue>) -> Option<i32> {
     let first = p.words.first()?;
-    let mut cat = None;
-    if words::command_shaped(&p.words, p.literal)
-        && !words::known(first)
+    // a built-in group and another word (`wisp crew start`): its plugin verbs too, to name them
+    let maybe_group = p.words.len() >= 2 && p.literal != args::Literal::Task && words::is_group(first);
+    if cat.is_none()
+        && ((words::command_shaped(&p.words, p.literal) && !words::known(first)) || maybe_group)
         && let Ok(c) = Client::connect(port, true).await
     {
         cat = cli::catalogue(&c, home).await.ok();
+    }
+    let paths: Vec<Vec<String>> = cat
+        .as_ref()
+        .map(|c| c.verbs.iter().map(|v| std::iter::once(v.plugin.clone()).chain(v.words.iter().cloned()).collect()).collect())
+        .unwrap_or_default();
+    // QA round 10 #1: `wisp computer start` is a command typed wrong, never a task
+    if let Some(u) = words::unknown_verb(&p.words, p.literal, &paths) {
+        eprintln!("{}", u.said(&p.words));
+        return Some(cli::USAGE_EXIT);
     }
     let plugins: Vec<String> = cat.as_ref().map(|c| c.plugins().iter().map(|(p, _)| (*p).to_owned()).collect()).unwrap_or_default();
     match words::not_a_task(&p.words, p.literal, &plugins)? {
@@ -496,7 +521,7 @@ async fn grid_deploy(port: u16, named: bool, o: code::Opts, cwd: &Path) -> Resul
     code::apply(&Client::connect(port, true).await?, "apply", &o, cwd).await
 }
 
-async fn live(p: &Parsed, home: &Path, port: u16) -> Result<Option<i32>> {
+async fn live(p: &Parsed, home: &Path, port: u16, read: &mut Option<wisp_cli_core::verbs::Catalogue>) -> Result<Option<i32>> {
     let f = &p.flags;
     let words = &p.words;
     let tty = std::io::stdin().is_terminal() && std::io::stdout().is_terminal();
@@ -528,10 +553,11 @@ async fn live(p: &Parsed, home: &Path, port: u16) -> Result<Option<i32>> {
         None if p.literal != args::Literal::Task && words.first().is_some_and(|w| plugin_word(w)) && words.len() >= 2 => {
             let c = Client::connect(port, true).await?;
             let cat = cli::catalogue(&c, home).await?;
-            match cli::generated(&c, &cat, words, &p.argv).await? {
-                Some(code) => code,
-                None => return Ok(None),
-            }
+            let Some(code) = cli::generated(&c, &cat, words, &p.argv).await? else {
+                *read = Some(cat);
+                return Ok(None);
+            };
+            code
         }
         _ => return Ok(None),
     };

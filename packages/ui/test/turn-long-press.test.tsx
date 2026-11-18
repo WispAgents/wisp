@@ -217,3 +217,54 @@ describe('the answer menu holds the answer’s actions (QA r9 #2)', () => {
     expect(words()).toEqual(['Copy', 'Agent notes', `Fork ${n}`, 'Good result', 'Bad result']);
   });
 });
+
+// QA r10 #6: the answer's ⋯ ends its action row (Agent notes, Restore, Fork, 👍, 👎, ⋯), never a line of its own; an
+// older answer, its icons folded into the ⋯, keeps the ⋯ in that row
+describe('the ⋯ ends the action row (QA r10 #6)', () => {
+  for (const latest of [true, false]) {
+    test(`on_a_phone_the_dots_are_the_last_of_the_${latest ? 'latest' : 'older'}_answers_action_row`, () => {
+      n += 1;
+      const host = { haptic: () => undefined, actions: () => () => undefined } as unknown as GestureHost;
+      const box = mount(() => (
+        <GestureHostProvider host={host}>
+          <PlatformLookProvider look={() => 'ios'}>
+            <TurnView id={`t${n}`} prompt="Hey" harness="Codex" time="22:31" timeTitle="22:31" acts={[]} actsTitle="" stats={[]} latest={latest} rate={<span data-kit="rate" />} tools={[{ id: 'fork', icon: 'fork', label: 'Fork', act: { onClick: () => undefined } }]} />
+          </PlatformLookProvider>
+        </GestureHostProvider>
+      ));
+      const row = box.querySelector('[data-kit="trail-bar"] > [data-kit="tb-tools"]') as HTMLElement;
+      expect(row.lastElementChild?.getAttribute('data-kit')).toBe('tb-more');
+      expect(box.querySelectorAll('[data-kit="trail-bar"] > [data-kit="tb-more"]').length, 'not a cell of its own').toBe(0);
+    });
+  }
+  test('in_the_browser_there_is_no_dots_and_the_row_is_as_before', () => {
+    const box = mount(() => <TurnView id="tw" prompt="Hey" harness="Codex" time="22:31" timeTitle="22:31" acts={[]} actsTitle="" stats={[]} latest tools={[{ id: 'fork', icon: 'fork', label: 'Fork', act: { onClick: () => undefined } }]} />);
+    expect(box.querySelector('[data-kit="tb-more"]')).toBeNull();
+    expect(box.querySelector('[data-kit="tb-tools"]')?.lastElementChild?.getAttribute('data-kit')).toBe('tb-btn');
+  });
+});
+
+// QA r10 #5: the answer's menu is the one overlay: while it is open the page is marked, and the phone looks hide the
+// selection's Comment bubble and a block's Comment button under it (two overlays at once on Android)
+describe('the answer menu is the one overlay (QA r10 #5)', () => {
+  test('while_the_answer_menu_is_open_the_page_is_marked_and_the_mark_goes_with_it', async () => {
+    const { ask, open } = mountTurn();
+    pe(ask, 'pointerdown');
+    await wait(900);
+    pe(ask, 'pointerup');
+    await until(open, 2000);
+    expect(open()).toBe(true);
+    expect(document.body.hasAttribute('data-answer-menu')).toBe(true);
+    document.querySelector('[data-kit="menu"][data-state="open"]')?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    await until(() => !open(), 2000);
+    expect(open()).toBe(false);
+    expect(document.body.hasAttribute('data-answer-menu')).toBe(false);
+  });
+
+  for (const look of ['android', 'ios'] as const) {
+    test(`the_${look}_look_hides_the_comment_bubble_and_buttons_under_the_answer_menu`, () => {
+      const css = Object.entries(import.meta.glob<string>('../src/css/platform/*.css', { query: '?raw', import: 'default', eager: true })).find(([p]) => p.endsWith(`/${look}.css`))?.[1] ?? '';
+      expect(css).toMatch(new RegExp(`:root\\[data-platform='${look}'\\] \\[data-answer-menu\\] \\[data-kit='cmt-bubble'\\],\\s*:root\\[data-platform='${look}'\\] \\[data-answer-menu\\] \\[data-kit='cmt-add'\\]:not\\(\\[data-on\\]\\) \\{ visibility: hidden; \\}`));
+    });
+  }
+});

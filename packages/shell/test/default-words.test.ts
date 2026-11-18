@@ -17,7 +17,7 @@ test('default_names_the_projects_pinned_model_then_this_computers_and_asks_again
   const asked: string[] = [];
   const client = {
     scope: real.scope,
-    peers: { ...real.peers, watch: () => undefined },
+    peers: { ...real.peers, watch: () => undefined, status: () => () => ({ kind: 'online' }) },
     entities: real.entities,
     commands: {
       run: async (cmd: { id: string }, a: { agent: string; cwd?: string }) => {
@@ -46,28 +46,4 @@ test('default_names_the_projects_pinned_model_then_this_computers_and_asks_again
   expect(asked).toContain('runtime.defaultModel claude /code/other');
   expect(words('claude', 'Default')).toBe('Default');
 });
-
-test('a_failed_ask_is_not_an_answer_the_next_look_asks_again', async () => {
-  const real = createClient({ clientId: 'c2', build: 't', home: peerId('local'), width: 1280 });
-  let calls = 0;
-  const client = {
-    scope: real.scope,
-    peers: { ...real.peers, watch: () => undefined },
-    entities: real.entities,
-    commands: {
-      run: async () => {
-        calls += 1;
-        if (calls === 1) throw new Error('asleep');
-        return 'Opus';
-      },
-    },
-  } as unknown as Client;
-  const words = createRoot(() => useDefaultWords(client, () => 'local', () => '/code/app'));
-  expect(words('claude', 'Default')).toBe('Default');
-  await until(() => calls === 1);
-  // the failure settles, then the next look asks again and names it
-  await until(() => (words('claude', 'Default'), calls === 2));
-  await until(() => words('claude', 'Default') === 'Opus');
-  expect(words('claude', 'Default')).toBe('Opus');
-  expect(calls).toBe(2);
-});
+// a failed ask's retry waits a minute: default-models.test.ts

@@ -27,6 +27,7 @@ import { installKeys } from './keyboard.ts';
 import { watchCoreTopics } from './watch.ts';
 import { pluginStyles } from './theme-styles/mount.ts';
 import { answeredInPlace, errorWords, wireNotices } from './toasts.ts';
+import { defaultModelName } from './frame/default-models.ts';
 
 /** The part of `window` the shell uses; tests pass happy-dom's. */
 export interface ShellWindow {
@@ -249,6 +250,7 @@ export function createShell(o: ShellOptions): Shell {
       },
     },
     palette: { open: () => client.nav.navigate({ t: 'openOverlay', overlay: { kind: 'dialog', id: 'shell.palette' as never, params: null } }) },
+    defaultModel: (agent, at) => defaultModelName(client, at.peer, agent, at.cwd),
     extensions: (input) => registry.input(input),
     settingsPanes: () => registry.settingsPanes,
     harnesses: () => registry.harnesses,

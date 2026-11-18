@@ -70,7 +70,11 @@ pub const HELP: &str = "usage:
   wisp completions zsh|bash|fish  shell completions from the same catalogue
   wisp tasks --touching <path>|--tracked   the tracked tasks (.wisp/tasks) behind a path, or all of them   (--json)
   wisp sdk types ts|py [FILE]   typed commands for the SDKs (a .d.ts or a .pyi), from the same catalogue
-  wisp -- \"ls the repo\"         a task that starts with a command name
+  wisp -- ls the repo           a task that starts with a command's word; or quote it as one: wisp \"computer start fails\"
+                                (a line that starts with a command group, computer, cloud, grid, crew, plugin, recipes,
+                                machines…, is that command: a verb it doesn't have is an error naming its verbs, never a
+                                task; a plugin's name is its command only with one of its verbs: wisp review the auth module
+                                is a task)
 
 launch options: --mode plan|edits|auto  --agent claude|codex|opencode|cursor|antigravity|grok|copilot  --model ID  --effort LEVEL
                 --cwd DIR  --also DIR (repeatable)  --wait  --json  --no-worktree  --compare agent[:model],…: one task per harness

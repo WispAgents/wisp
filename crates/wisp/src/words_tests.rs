@@ -213,3 +213,99 @@ fn a_command_that_reads_its_own_flags_names_the_first_it_doesnt_take() {
     assert_eq!(stray_flag("plugins", &[], &a("plugins list --all")).as_deref(), Some("--all"));
     assert_eq!(stray_flag("plugins", &[], &a("plugins list -- --all")), None);
 }
+
+/// QA round 10 #1: `wisp computer start|stop|enable`, `wisp recipes list` and `wisp grid start` launched agent tasks.
+/// A line whose first word is a command group (built in, or a plugin of the catalogue) is a command line: a next word
+/// that's none of its verbs is an error naming them, never a task. One quoted argument, or `--` first, is the task.
+#[test]
+fn an_unknown_verb_under_a_command_group_is_an_error_naming_its_verbs_and_never_a_task() {
+    // a catalogue as the server lists it: built-in groups' plugin verbs (crew, machines, mcp) and plugins of their own
+    let cat: Vec<Vec<String>> = [
+        &["crew", "create"][..],
+        &["crew", "list"],
+        &["mcp", "session", "set"],
+        &["mcp", "tools"],
+        &["machines", "list"],
+        &["ship", "status"],
+        &["review", "start"],
+        &["update", "check"],
+        &["git", "github-repos"],
+        &["learn", "view"],
+    ]
+    .map(w)
+    .to_vec();
+    for (args, group) in [
+        (&["computer", "start"][..], "computer"),
+        (&["computer", "stop"], "computer"),
+        (&["computer", "enable"], "computer"),
+        (&["recipes", "list"], "recipes"),
+        (&["grid", "start"], "grid"),
+        (&["crew", "frobnicate", "now"], "crew"),
+        (&["mcp", "session", "bogus"], "mcp"),
+        (&["trigger", "make", "one"], "trigger"),
+        (&["completions", "powershell"], "completions"),
+        (&["machines", "frob"], "machines"),
+    ] {
+        let x = p(args);
+        let u = unknown_verb(&x.words, x.literal, &cat).unwrap_or_else(|| panic!("{args:?}"));
+        assert_eq!(u.group, group, "{args:?}");
+        let said = u.said(&x.words);
+        assert!(said.contains(&format!("wisp {group} has no ")), "{said}");
+        assert!(said.contains(&format!("To start a task with these words: wisp -- \"{}\"", args.join(" "))), "{said}");
+    }
+    let verbs = |args: &[&str]| unknown_verb(&p(args).words, Literal::No, &cat).map(|u| u.verbs).unwrap_or_default();
+    assert_eq!(verbs(&["computer", "start"]), w(&["on", "off", "status"]));
+    let grid = verbs(&["grid", "start"]);
+    assert!(crate::args::GRID_SUB.iter().chain(["deploy"].iter()).all(|v| grid.contains(&(*v).to_owned())), "{grid:?}");
+    let crew = verbs(&["crew", "start"]);
+    assert!(["ls", "wake", "graph", "create", "list"].iter().all(|v| crew.contains(&(*v).to_owned())), "{crew:?}");
+    assert!(verbs(&["mcp", "x"]).contains(&"session set".to_owned()));
+    assert!(
+        unknown_verb(&p(&["recipes", "list"]).words, Literal::No, &cat).unwrap().said(&w(&["recipes", "list"])).contains("takes no verb")
+    );
+    // its verbs aren't unknown (their own arms decide), nor a flag, nor one word alone
+    for args in [
+        &["computer", "on"][..],
+        &["crew", "create", "--name", "Ada"],
+        &["mcp", "session", "set"],
+        &["computer", "--bogus"],
+        &["computer"],
+        &["grid", "deploy", "-f", "x.yml"],
+    ] {
+        assert!(unknown_verb(&p(args).words, p(args).literal, &cat).is_none(), "{args:?}");
+    }
+    // a prompt: one quoted argument, `--` first, a first word that's no group, or a plugin's name followed by none of
+    // its verbs (owner's delegate: `wisp <prompt>` is how tasks start, so only built-in groups are strict)
+    for args in [
+        &["computer start fails on boot, fix it"][..],
+        &["--", "computer", "start"],
+        &["fix", "the", "computer"],
+        &["tasks", "are", "slow", "to", "list"],
+        &["ship", "the", "docs"],
+        &["review", "the", "auth", "module"],
+        &["update", "the", "readme"],
+        &["git", "rebase", "onto", "main"],
+        &["learn", "rust"],
+    ] {
+        let x = p(args);
+        assert!(unknown_verb(&x.words, x.literal, &cat).is_none(), "{args:?}");
+    }
+}
+
+/// Owner's delegate (QA round 10 #1): the word after the first decides. A prompt whose later words look like a flag
+/// is still a prompt (`wisp review the auth module --strict`); a command word followed at once by a flag it doesn't
+/// take is still that command (`wisp tasks --touchng x`, round 255).
+#[test]
+fn only_the_next_word_makes_a_line_command_shaped() {
+    let plugins = w(&["review", "runtime"]);
+    for args in
+        [&["review", "the", "auth", "module", "--strict"][..], &["ship", "the", "docs", "--fast"], &["tasks", "are", "slow", "--fix"]]
+    {
+        let x = p(args);
+        assert_eq!(not_a_task(&x.words, x.literal, &plugins), None, "{args:?}");
+    }
+    let x = p(&["tasks", "--touchng", "src/a.rs"]);
+    assert_eq!(not_a_task(&x.words, x.literal, &plugins), Some(NotATask::Usage("tasks".to_owned())));
+    let x = p(&["review", "--strict"]);
+    assert_eq!(not_a_task(&x.words, x.literal, &plugins), Some(NotATask::Plugin("review".to_owned())));
+}

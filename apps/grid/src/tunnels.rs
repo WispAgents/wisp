@@ -119,19 +119,25 @@ impl Tunnels {
         self.live.lock().unwrap_or_else(PoisonError::into_inner).remove(id);
     }
 
-    fn sender(&self, id: &str) -> Option<SendRequest<Body>> {
-        self.live.lock().unwrap_or_else(PoisonError::into_inner).get(id).filter(|t| !t.send.is_closed()).map(|t| t.send.clone())
+    fn sender(&self, id: &str) -> Option<(SendRequest<Body>, i64)> {
+        self.live.lock().unwrap_or_else(PoisonError::into_inner).get(id).filter(|t| !t.send.is_closed()).map(|t| (t.send.clone(), t.since))
     }
 
     /// A request for the computer, through its tunnel, its answer streamed back. None: it isn't online.
     /// `cookies`: let it set its own (a preview's page, on its own address), host-only.
     pub async fn forward(&self, id: &str, mut req: http::Request<Body>, cookies: bool) -> Option<Resp> {
-        let mut send = self.sender(id)?;
+        let (mut send, since) = self.sender(id)?;
         for h in HOP {
             req.headers_mut().remove(*h);
         }
         *req.version_mut() = http::Version::HTTP_2;
         if send.ready().await.is_err() {
+            // dead, though not seen closed yet: gone now (unless it was replaced meanwhile), so it's offline everywhere
+            // at once and the waiting page never sends a browser back here in a loop (QA round 10 Grid #2)
+            let mut live = self.live.lock().unwrap_or_else(PoisonError::into_inner);
+            if live.get(id).is_some_and(|t| t.since == since) {
+                live.remove(id);
+            }
             return None;
         }
         let answer = match send.send_request(req).await {
@@ -160,7 +166,7 @@ impl Tunnels {
 
     /// One request to a computer through its tunnel, its answer whole; 502 when it isn't online.
     pub async fn ask(&self, id: &str, opts: AskOptions) -> Result<Asked> {
-        let Some(mut send) = self.sender(id) else { return Err(bad("This computer isn’t online.", 502)) };
+        let Some((mut send, _)) = self.sender(id) else { return Err(bad("This computer isn’t online.", 502)) };
         let mut b = http::Request::builder()
             .method(if opts.method.is_empty() { "POST" } else { opts.method.as_str() })
             .uri(format!("http://computer{}", opts.path))

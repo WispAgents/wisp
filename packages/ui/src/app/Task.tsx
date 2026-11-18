@@ -14,7 +14,8 @@ import { useTurnMenu, type TurnPhoneMenu, type TurnTool } from './turn-menu.ts';
 import { holdMedia } from './hold-view.ts';
 import { useBarLabels } from './bar-labels.ts';
 import { Tool } from './launcher-tool.tsx';
-import type { LauncherTool } from './launcher-fold.ts';
+import { foldOrder, foldTail, type LauncherTool } from './launcher-fold.ts';
+import { useTailFold } from './launcher-fold-measure.ts';
 import { Icon } from '../content/Icon.tsx';
 import { PromptSuggestList, dropHandlers } from '../composer/PromptSuggest.tsx';
 import { suggestKeyDown, type PromptSuggest } from '../composer/suggest-keys.ts';
@@ -533,11 +534,6 @@ export function TurnView(props: TurnViewProps): JSX.Element {
               />
             )}
           </Show>
-          <Show when={menu.folds()}>
-            <span data-kit="tb-more">
-              <Menu trigger={{ icon: 'dots', 'aria-label': kitT('more'), variant: 'ghost', size: 'sm' }} items={menu.items()} onSelect={menu.pick} open={menu.open()} onOpenChange={menu.onOpenChange} from={menu.from} placement="top-end" part="turn.more" />
-            </span>
-          </Show>
           <span data-kit="tb-tools">
             <For each={props.tools}>
               {(t) => (
@@ -554,6 +550,12 @@ export function TurnView(props: TurnViewProps): JSX.Element {
               )}
             </For>
             {props.rate}
+            {/* a phone's ⋯ ends the action row, never a line of its own (QA r10 #6) */}
+            <Show when={menu.folds()}>
+              <span data-kit="tb-more">
+                <Menu trigger={{ icon: 'dots', 'aria-label': kitT('more'), variant: 'ghost', size: 'sm' }} items={menu.items()} onSelect={menu.pick} open={menu.open()} onOpenChange={menu.onOpenChange} from={menu.from} placement="top-end" part="turn.more" />
+              </span>
+            </Show>
           </span>
         </div>
         <Show when={props.trailBody}>
@@ -675,6 +677,9 @@ export interface ReplyBoxProps {
    *  those buttons leave the bar; what's on shows as `chips` after the harness. Additive (2026-11-18). */
   readonly plus?: { readonly label: string; readonly title: string; readonly act: Act } | undefined;
   readonly chips?: readonly LauncherTool[] | undefined;
+  /** the chips fold into one More when the bar is too narrow for them, as New task's tail does (launcher-fold.ts): the
+   *  one whose panel is open last, a folded chip's clear kept. Without it they never fold. Additive (2026-11-18). */
+  readonly chipsMore?: { readonly label: string; readonly title: string } | undefined;
   /** v1 .c-queue: while the task works, follow-ups queue (on) or interrupt it (off); its own switch look */
   readonly queue?: { readonly label: string; readonly title: string; readonly on: boolean; readonly act: Act } | undefined;
   readonly send: string;
@@ -774,6 +779,19 @@ export function ReplyBox(given: ReplyBoxProps | CompactReplyBoxProps): JSX.Eleme
   // the phone looks fold the bar's options into one chip and its sheet (UX 2026-11-18 phone #1); the browser's bar stays
   const look = usePlatform();
   const phoneOpts = (): (ReplyOptionLabels & { readonly goal?: string }) | undefined => (look() !== 'web' && !props.compact ? props.phoneOptions : undefined);
+  // the chips as they fit (QA r10 #1 follow-up): New task's measured fold on the reply bar, the open panel's chip last
+  const chipsFold = (): boolean => props.chipsMore !== undefined && !phoneOpts();
+  const chipFold = useTailFold({ tail: () => foldOrder(props.chips ?? []), on: chipsFold });
+  const chips = createMemo((): readonly LauncherTool[] => {
+    const more = props.chipsMore;
+    // read once: the host builds its chips anew on each read, and the folded set is by identity
+    const all = props.chips ?? [];
+    const n = all.length;
+    const k = more ? Math.min(chipFold.folded(), n) : 0;
+    if (!more || k === 0) return all;
+    const out = new Set(foldOrder(all).slice(n - k));
+    return [...all.filter((t) => !out.has(t)), foldTail(all.filter((t) => out.has(t)), more)];
+  });
   const send = (): void => {
     if (props.sendAct?.pending) return;
     if (props.value.trim()) return props.onSend();
@@ -851,7 +869,13 @@ export function ReplyBox(given: ReplyBoxProps | CompactReplyBoxProps): JSX.Eleme
           </For>
         </div>
       </Show>
-      <div data-kit="c-bar" ref={barLabels.ref} data-tight={flag(barLabels.tight())}>
+      <div
+        data-kit="c-bar"
+        // one measurer per bar (two undo each other near a width): the chips' fold where it folds, its squeeze the bar's
+        // tight form (the mode to its icon); else the labels' own
+        ref={(el) => (chipsFold() ? chipFold.ref(el) : barLabels.ref(el))}
+        data-tight={flag(chipsFold() ? chipFold.squeeze() > 0 : barLabels.tight())}
+      >
         <Show when={!props.compact} fallback={<span data-kit="grow" />}>
           <Show
             when={props.plus}
@@ -995,7 +1019,7 @@ export function ReplyBox(given: ReplyBoxProps | CompactReplyBoxProps): JSX.Eleme
           />
           </Show>
           {/* by chip, not by slot: an open Delegate panel keeps its node as Goal comes and goes */}
-          <ForKeyed each={props.chips ?? []}>{(t) => <Tool t={t()} />}</ForKeyed>
+          <ForKeyed each={chips()}>{(t) => <Tool t={t()} />}</ForKeyed>
           </Show>
           <Show when={props.hint} fallback={<span data-kit="grow" />}>
             {(h) => (

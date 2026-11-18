@@ -138,6 +138,8 @@ interface Task {
   crew?: { id: string; job: string; from?: { id: string; title: string } };
   /** a channel's mode cap (runtime's `capped` list field, F-chan-10) */
   capped?: 'plan' | 'edits';
+  /** '': ran on the harness's Default (runtime's `model: ""`); else the agent's model */
+  model?: string;
 }
 
 const TASKS: Task[] = [
@@ -407,7 +409,7 @@ function sessionRow(peer: string, i: number, t: Task, now: number): { id: string
         // runtime's row: when the last run started and ended (a running one since `ago`, one that's back took 2 minutes)
         ...(t.state === 'running' ? { startedAt: at } : { startedAt: at - 2 * MIN, endedAt: at }),
         cwd: t.cwd,
-        model: MODEL[t.agent],
+        model: t.model ?? MODEL[t.agent],
         mode: t.capped ?? 'auto',
         ...(t.capped && { capped: t.capped }),
         forLater: false,
@@ -728,6 +730,13 @@ export function seed(o: { peer: string; now: number; extra: number; harnesses?: 
     const s = sessionTopic(o.peer, TASKS.length + i, t, o.now);
     list.push(s.list);
     topics.set(`session:${s.list.id.slice(s.list.id.indexOf(':') + 1)}`, s.own); // the bare id, as the client subscribes
+  }
+  // with the harnesses topic: a task that ran on Claude Code's Default (`model: ""`), named as its Default runs (QA r10 #2)
+  if (o.harnesses && !o.firstRun) {
+    const t: Task = { title: 'Greeting', agent: 'claude', state: 'done', ago: 50 * MIN, cwd: '~/code/wisp', prompt: 'Say hi.', answer: 'Hi.', model: '' };
+    const s = sessionTopic(o.peer, TASKS.length + o.extra + 40, t, o.now);
+    list.push(s.list);
+    topics.set(`session:${s.list.id.slice(s.list.id.indexOf(':') + 1)}`, s.own);
   }
   // long threads (ADR-0079): one task's Notes, revisions and a Worn health, for its Thread tab
   topics.get(`session:${THREAD_TASK}`)?.push(...threadRows(o.now));

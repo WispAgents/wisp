@@ -3,7 +3,7 @@
 // the trail's tools (Agent notes, Restore, Fork) and what has its own control on the trail (Good / Bad result). The
 // hold's menu opens where the finger was, kept on screen; it opens once the finger is up (opened under it, the lift was
 // a press outside it). The browser draws none of it: its trail shows every tool.
-import { createSignal, type Accessor } from 'solid-js';
+import { createEffect, createSignal, onCleanup, type Accessor } from 'solid-js';
 import type { MenuPoint } from '../controls/Menu.tsx';
 import type { MenuEntry } from '../controls/menu-entries.ts';
 import type { IconName } from '../content/icons.ts';
@@ -44,6 +44,7 @@ export function useTurnMenu(props: { readonly tools: readonly TurnTool[]; readon
   const [from, setFrom] = createSignal<MenuPoint | undefined>();
   const [block, setBlock] = createSignal<HTMLElement | undefined>();
   let turnEl: HTMLElement | undefined;
+  markOpen(open);
   const folds = (): boolean => look() !== 'web' && props.tools.length > 0;
   const items = (): MenuEntry[] => {
     const m = props.phoneMenu;
@@ -92,6 +93,18 @@ export function useTurnMenu(props: { readonly tools: readonly TurnTool[]; readon
     () => (folds() ? [{ label: kitT('gesture.actions'), run: () => (turnEl ? openAt(visibleTop(turnEl)) : onOpenChange(true)) }] : []),
   );
   return { bind, folds, items, pick, open: open as Accessor<boolean>, from, onOpenChange };
+}
+
+/** While an answer's menu is open the page is marked (`data-answer-menu` on <body>): the menu is the one overlay,
+ * the phone looks hiding the selection's Comment bubble (drawn at the page's end) and a block's Comment button under
+ * it (QA r10 #5: two overlays at once on Android). */
+function markOpen(open: Accessor<boolean>): void {
+  const root = document.body;
+  createEffect(() => {
+    if (!open()) return;
+    root.setAttribute('data-answer-menu', '');
+    onCleanup(() => root.removeAttribute('data-answer-menu'));
+  });
 }
 
 /** The hold on an answer: the menu opens once the finger is up, where it was, on the block it held (when that block

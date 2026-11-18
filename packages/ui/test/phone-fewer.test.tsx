@@ -125,7 +125,8 @@ for (const look of ['android', 'ios'] as const) {
     // #5: New task's setup is a list (a row each) with attach and More on its last line
     expect(css).toMatch(/\[data-kit='frame'\]\[data-behind\] \[data-kit='launcher'\] \[data-kit='l-bar'\] \{\s*display: grid;/);
     expect(css).toMatch(/\[data-kit='l-bar'\] > \[data-a='where'\]::after/);
-    expect(css).toMatch(/\[data-kit='turn'\]:not\(\[data-latest\]\) \[data-kit='trail-bar'\] > \[data-kit='tb-tools'\] \{ display: none; \}/);
+    // an older answer's icons fold into its ⋯, which stays at the end of the row (QA r10 #6)
+    expect(css).toMatch(/\[data-kit='turn'\]:not\(\[data-latest\]\) \[data-kit='trail-bar'\] > \[data-kit='tb-tools'\] > \[data-kit='tb-btn'\],[^{]*> \[data-kit='rate'\] \{ display: none; \}/);
   });
 }
 
