@@ -45,13 +45,13 @@ in the real app (or the owner drops it). Statuses: `done` (committed and checked
 | # | Point | Status |
 |---|---|---|
 | 31 | QA round 1: 32 findings (/tmp/qa-keep/qa-round1.md) | fixed except #16 ResizeObserver (benign browser message) and #31 (v1 layout); committed 1ab36eb9 |
-| 32 | QA rounds until a round finds nothing, for desktop, phone and web (Grid) | in progress: rounds 1-3 fixed (latest f81f1dac; round 3: desktop 11+1, phone/Grid 7+4, all fixed); round 4 on all three next |
+| 32 | QA rounds until a round finds nothing, for desktop, phone and web (Grid) | done for desktop, phone and Grid: QA round 5 (aaee18de) found 0 new on all three, every finding of rounds 1-4 fixed and re-checked; left: the Grid landing's old launcher screenshots (rs-grid) |
 | 33 | Phone New task: composer uses the full width; no scrollbar in the prompt | done (1ab36eb9) (prompt grows to 340 px as v1; scrollbars hidden on phones) |
 | 34 | My Stuff matches v1 (opening a saved item, every flow) | done (1ab36eb9, 77c0966e): v1 cards, viewer, doc reader, apps inside wisp, full menu, keys, Undo, anchored Allow/Edit cards |
 | 35 | Apps made in wisp match v1; parity reviewed by other agents | done (0f43f949: the last difference, code-card colour, fixed); independent review by QA r2 |
 | 36 | Composer forgets the picked harness (back to Auto) | done (1ab36eb9) (server setting runtime.launch, as v1 config.defaults; needs the dev server rebuilt) |
 | 37 | Disable Auto everywhere (keep the code, one switch) | done (1ab36eb9) (setting runtime.auto, default off; picker, Settings, ⌘K, crew editor, server defaults) |
-| 38 | **Last**, when UI reviewers find nothing more: UI consultants for desktop, phone and web; research similar tools; fewer options on screen (submenus); focus on composer, task list, task page, right panel; I pick what to build | todo (last) |
+| 38 | **Last**, when UI reviewers find nothing more: UI consultants for desktop, phone and web; research similar tools; fewer options on screen (submenus); focus on composer, task list, task page, right panel; I pick what to build | in progress (2026-11-18, the reviewers found nothing more): consultants gucci (desktop), ui-home (phone), port-grid (web Grid), research first, proposals in /tmp/qa-keep/ux-*.md; I pick what to build |
 | 39 | Opening a task from search shows a blank page | done (1ab36eb9) (navigation resolves bare ids for every caller) |
 | 40 | Desktop submenus open on hover | done (1ab36eb9: flyout with a safe triangle; touch drills in) |
 | 41 | Transcript view does nothing on a running task | done (1ab36eb9) (v1 renderLiveTranscript: timeline so far above the working panel, no end row; seen on the mock peer) |
