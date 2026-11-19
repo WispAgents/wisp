@@ -155,11 +155,12 @@ impl State {
     /// (audit B #18: Bring in showed up 4–9 s after the page opened, with nothing said before it).
     pub async fn look_for_offers(&self, ctx: &Ctx) {
         let Ok((e, _, p)) = self.parts(ctx).await else { return };
-        self.offering.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        // counted while it runs, and let go however it ends: a look cut short (the plugin switched off mid-await)
+        // left the count up, and the pane said it was looking for good (audit F setup F6)
+        let _looking = Looking::start(&self.offering);
         self.refresh(ctx).await;
         let found = pane::offers(&e, p.as_ref(), &ctx.root_call()).await;
         *self.offers.lock().await = found;
-        self.offering.fetch_sub(1, std::sync::atomic::Ordering::SeqCst);
     }
 
     /// Republishes the pane's rows (`pane::publish`) from the last look and the offers.
@@ -345,9 +346,46 @@ async fn trust_hook(st: &State, ctx: &Ctx, hctx: serde_json::Value) -> wisp_kern
 
 mod commands;
 
+/// One look for Bring in offers under way: counted in `offering` from its start until it's dropped, cut short or not.
+pub(crate) struct Looking<'a>(&'a std::sync::atomic::AtomicU32);
+
+impl<'a> Looking<'a> {
+    pub(crate) fn start(n: &'a std::sync::atomic::AtomicU32) -> Self {
+        n.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        Self(n)
+    }
+}
+
+impl Drop for Looking<'_> {
+    fn drop(&mut self) {
+        self.0.fetch_sub(1, std::sync::atomic::Ordering::SeqCst);
+    }
+}
+
 #[cfg(test)]
 #[allow(clippy::unwrap_used)]
 mod tests {
+    /// Audit F setup F6: a look for Bring in offers cut short (the plugin switched off mid-await) left `offering` up,
+    /// and the pane said "looking" for good. The count lets go however the look ends.
+    #[tokio::test]
+    async fn a_look_cut_short_never_leaves_the_pane_looking_audit_f_setup_f6() {
+        use std::sync::atomic::{AtomicU32, Ordering};
+        let n = AtomicU32::new(0);
+        {
+            let look = async {
+                let _l = super::Looking::start(&n);
+                std::future::pending::<()>().await;
+            };
+            let cut = tokio::time::timeout(std::time::Duration::from_millis(5), look).await;
+            assert!(cut.is_err(), "it never finished: cut short");
+        }
+        assert_eq!(n.load(Ordering::SeqCst), 0);
+        let done = super::Looking::start(&n);
+        assert_eq!(n.load(Ordering::SeqCst), 1);
+        drop(done);
+        assert_eq!(n.load(Ordering::SeqCst), 0);
+    }
+
     #[test]
     fn the_manifest_is_valid() {
         let p = super::WorktreesPlugin::new("/tmp/h", "/tmp/u");

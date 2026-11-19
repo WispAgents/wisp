@@ -38,9 +38,9 @@ export interface Mounted {
  * Mounts `view` inside the open task `sessionId` (its rows come from `o.rows`, keyed by topic).
  * Resolves once the task's topics are live; what the view then draws, the test waits for (`until`).
  */
-export async function mountTask(o: Omit<HarnessOptions, 'plugin'> & { sessionId: string }, view: () => JSX.Element): Promise<Mounted> {
+export async function mountTask(o: Omit<HarnessOptions, 'plugin'> & { sessionId: string; plugin?: string }, view: () => JSX.Element): Promise<Mounted> {
   const topics = o.watch ?? (Object.keys(o.rows) as Topic[]);
-  const h = harness({ ...o, plugin: 'wisp.shell-task', watch: topics });
+  const h = harness({ ...o, plugin: o.plugin ?? 'wisp.shell-task', watch: topics });
   await h.ready();
   const key = entityKey(peerId(o.peer ?? 'laptop'), o.sessionId);
   const toaster = createToaster();

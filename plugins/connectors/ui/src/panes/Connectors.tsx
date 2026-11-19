@@ -9,7 +9,7 @@ import { Button, Inline, Menu, Pill, SettingsGroup, SettingsNote, SettingsRow, S
 import { addConnector, importFound, removeConnector, signIn, signOut, testConnector, updateConnector } from '../commands.ts';
 import { homeRow, homeRows } from '../data.ts';
 import { t } from '../i18n.ts';
-import { bodyOf, commandLine, draftOf, emptyDraft, EXAMPLES, exampleFor, isFor, harnessName, hostOf, listOf, sourcesOf, statusOf, stillSigning, type Draft } from '../lib.ts';
+import { bodyOf, commandLine, draftOf, emptyDraft, EXAMPLES, exampleFor, isFor, harnessName, hostOf, listOf, sourcesOf, statusCuts, statusOf, stillSigning, type Draft } from '../lib.ts';
 import { KIND, REACH_ID, TOPIC, type ConnectorView, type FoundServer, type Reach } from '../types.ts';
 import { Confirm } from './Confirm.tsx';
 import { Editor } from './Editor.tsx';
@@ -184,8 +184,9 @@ export default function Connectors(props: { readonly client: PluginClient }): JS
                       <Text tone="muted" truncate>
                         {where(x)}
                       </Text>
-                      {/* an error is cut in its row, its words in the title (v1 .cn-status; audit E3) */}
-                      <Pill tone={toneOf(x, isSigning(x))} dot live={x.testing || isSigning(x)} truncate title={statusLine(x, isSigning(x))}>
+                      {/* an error is cut in its row, its words in the title (v1 .cn-status; audit E3); a short state keeps
+                          its words (audit F setup F9) */}
+                      <Pill tone={toneOf(x, isSigning(x))} dot live={x.testing || isSigning(x)} truncate={statusCuts(x, isSigning(x))} title={statusLine(x, isSigning(x))}>
                         {statusLine(x, isSigning(x))}
                       </Pill>
                     </Inline>

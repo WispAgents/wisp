@@ -159,6 +159,11 @@ export function statusOf(c: ConnectorView, signing: boolean): Status {
   return { kind: 'failed', error: c.test.error ?? '' };
 }
 
+/** Whether the row's status pill gives way (cut, its words in its title): only a failure's sentence does. A short state
+ *  ("1 tool", "Checking…") keeps its words and the command beside it is cut (audit F setup F9: "1 tool" read "1 …" on a
+ *  phone since E3 cut every pill). */
+export const statusCuts = (c: ConnectorView, signing: boolean): boolean => statusOf(c, signing).kind === 'failed';
+
 /** A sign-in started at `since` is over once the row says it signed in after it (5 s of clock skew), or after 10 min. */
 export const SIGNING_MS = 10 * 60_000;
 export function stillSigning(c: ConnectorView, since: number, now: number): boolean {

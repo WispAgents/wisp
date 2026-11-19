@@ -278,14 +278,23 @@ pub async fn setup(ctx: &Ctx, call: &Call, live: &Arc<Live>, a: SetupArgs) -> Re
     let mut body = serde_json::to_value(&spec).map_err(|e| WireError::internal(e.to_string()))?;
     body["token"] = Value::String(spec.token.clone());
     let mut resources = vec![Resource::new("channel", name.clone(), body)];
-    if let Some(on) = send_me(live, t, &name, a.notify.as_deref(), !was_on && spec.enabled == Some(true)) {
+    let mut destroy = Vec::new();
+    if crate::kinds::left_unset(&spec) {
+        // off with nothing set: no channel and no Send me left behind (audit F setup F8)
+        resources.clear();
+        destroy.push(format!("channel.{name}"));
+        let own = rules::notification_name(t);
+        if lock(&live.notes).iter().any(|(n, _)| *n == own) {
+            destroy.push(format!("notification.{own}"));
+        }
+    } else if let Some(on) = send_me(live, t, &name, a.notify.as_deref(), !was_on && spec.enabled == Some(true)) {
         resources.push(Resource::new("notification", rules::notification_name(t), json!({ "on": on, "to": name })));
     }
     // what it said was about the old setup; cleared before the apply restarts it, so its first word isn't lost
     let said = lock(&live.st.status).remove(t);
     let starts = || lock(&live.starts).get(t).copied().unwrap_or(0);
     let before = starts();
-    let applied = match ctx.run::<Apply>(call, PlanArgs { resources, ..PlanArgs::default() }).await {
+    let applied = match ctx.run::<Apply>(call, PlanArgs { resources, destroy, ..PlanArgs::default() }).await {
         Ok(x) => x,
         Err(e) => {
             put_back(&sec, written).await;

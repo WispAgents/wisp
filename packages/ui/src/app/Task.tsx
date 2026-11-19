@@ -2,7 +2,7 @@
 // .it-bar, .it-actions, transcript.css .turn/.ask/.trail, ship.css .overlap-strip, composer.css):
 // its head, then its turns with the details column beside them, and the reply box docked at the foot.
 import { HoldRow, type HoldRowProps } from '../composer/HoldRow.tsx';
-import { For, Index, Show, createMemo, createSignal, onCleanup, onMount, type JSX } from 'solid-js';
+import { For, Index, Show, createEffect, createMemo, createSignal, on, onCleanup, onMount, type JSX } from 'solid-js';
 import { ForKeyed } from '../core/keyed.tsx';
 import { flag } from '../core/props.ts';
 import { ActIcon, WithAct, type Act } from './act.tsx';
@@ -17,6 +17,7 @@ import { Tool } from './launcher-tool.tsx';
 import { foldOrder, foldTail, type LauncherTool } from './launcher-fold.ts';
 import { useTailFold } from './launcher-fold-measure.ts';
 import { Icon } from '../content/Icon.tsx';
+import { growTextarea } from '../core/autosize.ts';
 import { PromptSuggestList, dropHandlers } from '../composer/PromptSuggest.tsx';
 import { suggestKeyDown, type PromptSuggest } from '../composer/suggest-keys.ts';
 import type { IconName } from '../content/icons.ts';
@@ -24,6 +25,9 @@ import { TaskUsage, type TaskUsageProps } from './TaskUsage.tsx';
 import '../css/transcript.css';
 import '../css/app-usage.css';
 import '../css/rate.css';
+
+/** v1 composer.js autosize(ta, 260): the reply's tallest before it scrolls. */
+export const REPLY_MAX = 260;
 
 export interface TaskHeadProps {
   readonly title: string;
@@ -775,6 +779,9 @@ export function ReplyBox(given: ReplyBoxProps | CompactReplyBoxProps): JSX.Eleme
   const [nudge, setNudge] = createSignal(false);
   const [over, setOver] = createSignal(false);
   let input: HTMLTextAreaElement | undefined;
+  // v1 composer.js autosize(ta, 260): the reply grows with what's typed (a draft, Ask to fix's sentence) up to 260 px,
+  // then scrolls; it was one fixed line, the text running off sideways (audit F orchestration F3)
+  createEffect(on(() => props.value, () => input && growTextarea(input, REPLY_MAX)));
   // the bar's words go to their icons when they don't fit (bar-labels.ts; Android 360 ran 3 px over)
   const barLabels = useBarLabels();
   // the phone looks fold the bar's options into one chip and its sheet (UX 2026-11-18 phone #1); the browser's bar stays

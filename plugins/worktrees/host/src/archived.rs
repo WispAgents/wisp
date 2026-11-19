@@ -176,11 +176,23 @@ pub async fn bring_back(e: &Engine, call: &Call, who: Claimant<'_>, wt: &Worktre
     match e.ensure(call, wt).await {
         Ok(()) if fsx::exists(&wt.cwd).await || wt.cwd.is_empty() => Ok(()),
         Ok(()) => Err(format!("This task's worktree came back without its folder {}. Nothing was started.", wt.cwd)),
+        // its branch is gone (merged, then deleted): that, in plain words (audit F orchestration F2)
+        Err(crate::error::WtError::NotFound(m)) if m == branch_gone(wt) => Err(m),
         Err(err) => Err(format!(
             "This task's worktree couldn't come back on its branch {} ({err}). It runs only there, so nothing was started.",
             wt.branch
         )),
     }
+}
+
+/// Why a task whose branch is gone can't run in its worktree: its PR was merged (ship deletes the branch then), or
+/// the branch was deleted. Its work is on the base now.
+pub fn branch_gone(wt: &Worktree) -> String {
+    let base = [wt.base.as_str(), wt.base_ref.as_str()].into_iter().find(|b| !b.is_empty()).unwrap_or("its base branch");
+    format!(
+        "This task's branch {} is gone: it was merged (or deleted), so its work is on {base} now. Start a new task (or fork this one) to go on from there; nothing was started.",
+        wt.branch
+    )
 }
 
 /// The worktree (of any task) that holds `dir`, an extra folder of another task: the folder itself or one of

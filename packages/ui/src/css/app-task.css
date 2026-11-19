@@ -835,13 +835,18 @@
   [data-kit='c-top'] > [data-kit='slot'] > [data-kit='extension']:not(:empty) ~ [data-kit='extension']:not(:empty) {
     margin-top: calc(-1 * var(--space-1));
   }
+  /* v1 composer.css: one line while empty; what's typed wraps and the box grows with it up to 260 px, then scrolls
+     (Task.tsx growTextarea). Only the empty box's placeholder stays one line (audit F orchestration F3: the reply ran
+     off to the side, its start out of view) */
   [data-kit='reply'],
   [data-kit='reply-ghost'] {
     min-height: 26px;
     height: 34px;
     padding: var(--space-3) var(--space-1);
-    white-space: nowrap;
     overflow: hidden;
+  }
+  [data-kit='reply-ghost'] {
+    white-space: nowrap;
   }
   /* TRY-22: a suggested follow-up, faded behind the box's own text (same metrics), with its key */
   [data-kit='reply-ghost'] {
@@ -861,6 +866,7 @@
     margin-left: var(--space-3);
   }
   [data-kit='reply']:placeholder-shown {
+    white-space: nowrap;
     -webkit-mask-image: linear-gradient(90deg, var(--ink) calc(100% - 32px), transparent);
     mask-image: linear-gradient(90deg, var(--ink) calc(100% - 32px), transparent);
   }

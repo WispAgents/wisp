@@ -168,7 +168,9 @@ async fn own_folder(ctx: &wisp_kernel::Ctx, r: &Arc<crate::runtime::Runtime>, pa
         cwd: project,
         title: made.title.clone(),
         mode: serde_json::to_value(made.mode).ok().and_then(|m| m.as_str().map(str::to_owned)).unwrap_or_default(),
-        from: Some(src.cwd.clone()),
+        // the parent's folder gone (its worktree went with its merge, audit F orchestration F2): a fresh branch from the
+        // project's base, which holds the merged work, rather than a fork in a folder that isn't there
+        from: wisp_proc::canonical(&src.cwd).await.is_ok().then(|| src.cwd.clone()),
         ..wisp_worktrees_api::CreateArgs::default()
     };
     // on runtime's own grant, as a new task's (create.rs `in_worktree`): an agent's set has no worktrees:create

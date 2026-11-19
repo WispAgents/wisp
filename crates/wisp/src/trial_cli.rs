@@ -58,12 +58,19 @@ pub fn trial_args(f: &Flags, prompt: &str, cwd: &str) -> std::result::Result<Tri
     Ok(TrialArgs { task, vary, ids: Vec::new() })
 }
 
+/// One setting the runs differ on: its key, then each run's value; one the run leaves as it is reads "default" (audit F
+/// orchestration F6: "subagentModel  → haiku", two spaces where the empty value went).
+fn differs_words(key: &str, values: &[String]) -> String {
+    let shown: Vec<&str> = values.iter().map(|v| if v.is_empty() { "default" } else { v.as_str() }).collect();
+    format!("{key} {}", shown.join(" → "))
+}
+
 /// Starts the pair and says each run's id (`--wait`: waits for both, A first).
 pub async fn launch(c: &Client, f: &Flags, prompt: &str, cwd: &str) -> Result<()> {
     let call = trial_args(f, prompt, cwd).map_err(CliError::said)?;
     let r = c.cmd(Trial::ID, serde_json::to_value(&call).map_err(|e| CliError::said(e.to_string()))?).await?;
     let started: TrialStarted = serde_json::from_value(r.clone()).map_err(|e| CliError::said(e.to_string()))?;
-    let differs: Vec<String> = started.differs.iter().map(|d| format!("{} {}", d.key, d.values.join(" → "))).collect();
+    let differs: Vec<String> = started.differs.iter().map(|d| differs_words(&d.key, &d.values)).collect();
     if !f.wait {
         let lines: Vec<String> = started
             .runs
@@ -137,5 +144,12 @@ mod tests {
         assert!(a.task.confirm_limit, "--yes reaches both runs");
         assert_eq!(a.vary, Variant { subagent_model: Some("sonnet".into()), skills: None });
         assert_eq!(serde_json::to_value(&a).unwrap()["vary"], json!({ "subagentModel": "sonnet" }));
+    }
+
+    /// Audit F orchestration F6: "differs: subagentModel  → haiku" had two spaces where the empty value went.
+    #[test]
+    fn a_value_the_run_leaves_as_is_reads_default_audit_f_orchestration_f6() {
+        assert_eq!(super::differs_words("subagentModel", &[String::new(), "haiku".into()]), "subagentModel default → haiku");
+        assert_eq!(super::differs_words("model", &["opus".into(), "sonnet".into()]), "model opus → sonnet");
     }
 }

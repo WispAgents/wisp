@@ -6,9 +6,9 @@
 // exit, gone), read through the client's `http(peer).events`, so a machine's or the grid's task works the same.
 // `kind="takeover"`: a terminal task's CLI (v1 services/tui.js), opened by `runtime.terminal` (on its prompt the
 // first time, resumed after) and streamed from `/sessions/:id/term`; ending it leaves the task for review.
-import { Show, createSignal, onCleanup, onMount, type JSX } from 'solid-js';
+import { Show, createEffect, createRoot, createSignal, on, onCleanup, onMount, type JSX } from 'solid-js';
 import { defineCommand, ownerOf, type EntityKey } from '@wisp/client';
-import { Button, Dialog, EmptyState, Inline, Screen, Stack, Terminal, Text } from '@wisp/ui';
+import { Button, Dialog, EmptyState, Inline, Screen, Stack, Terminal, Text, afterNextPaint, type TerminalHandle } from '@wisp/ui';
 import { resizeOnHello } from './shell-size.ts';
 import { useShell } from '../shell.ts';
 import { useTask } from '../task-context.tsx';
@@ -52,6 +52,10 @@ const close = defineCommand<{ key: EntityKey; kind: Kind; id: string }, { ok: bo
   optimistic: 'none',
   pending: 'End shell',
 });
+
+/** Asks the open Shell for the keys (SidePanel: its tab pressed while it shows). */
+const [shellAsked, setShellAsked] = createRoot(() => createSignal(0));
+export const askShellFocus = (): void => void setShellAsked((n) => n + 1);
 
 export function ShellPane(props: { readonly kind: Kind }): JSX.Element {
   const shell = useShell();
@@ -122,12 +126,48 @@ export function ShellPane(props: { readonly kind: Kind }): JSX.Element {
     });
     onCleanup(() => cancelAnimationFrame(frame));
   }
+  // the keys go to the shell (v1 panel.js: opening the Shell focuses it, and so does a shell that (re)starts); the tab
+  // kept them, and what was typed ran the list's shortcuts: `e` marked the task done (audit F tasks #1)
+  let term: TerminalHandle | undefined;
+  const inTerm = (): boolean => !!document.activeElement?.closest("[data-part~='side.shell'] [data-kit='term']");
+  // never taken from a field the user moved to meanwhile (the reply box, a dialog's input)
+  const elsewhere = (): boolean => {
+    const at = document.activeElement;
+    return at instanceof HTMLElement && at !== document.body && !at.closest("[data-part~='side.panel']") && (at.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(at.tagName));
+  };
+  let tries = 0;
+  let retry: (() => void) | undefined;
+  onCleanup(() => retry?.());
+  const focusTerm = (opened = false): void => {
+    if (typeof document === 'undefined' || !term || (!opened && elsewhere())) return;
+    retry?.();
+    tries = 0;
+    const go = (): void => {
+      if (!term || inTerm() || elsewhere()) return;
+      term.focus();
+      // the panel still sliding in (or hidden a frame longer) refuses the focus: again next frame, for half a second
+      if (!inTerm() && (tries += 1) < 30) retry = afterNextPaint(go);
+    };
+    go();
+  };
+  // the Shell tab pressed while the Shell shows (the panel opened on it; the tabs report no change then): the keys go
+  // to it too
+  createEffect(on(shellAsked, () => focusTerm(true), { defer: true }));
+  onMount(() => {
+    if (typeof document === 'undefined') return;
+    const pressed = (e: Event): void => {
+      const tab = (e.target as Element | null)?.closest?.("[data-part~='panel.tabs'] [data-kit='tab'][data-selected]");
+      if (tab && document.querySelector("[data-part~='side.shell'] [data-kit='term']")) focusTerm(true);
+    };
+    document.addEventListener('click', pressed);
+    onCleanup(() => document.removeEventListener('click', pressed));
+  });
   const begin = (restart = false): void => {
     setError('');
     setDrawn(false);
     setEnded(undefined);
     const go = tui ? c.run(phone ? tuiStartHere : tuiStart, { key: task.key, id, ...size() }) : c.run(phone ? startHere : start, { key: task.key, id, ...size(), ...(restart && { restart: true }) });
-    go.then(connect, (e: unknown) => setError(say(e)));
+    go.then(() => (connect(), focusTerm()), (e: unknown) => setError(say(e)));
   };
   onMount(() => {
     c.run(phone ? infoHere : info, { key: task.key, id }).then(
@@ -186,6 +226,11 @@ export function ShellPane(props: { readonly kind: Kind }): JSX.Element {
             onResize={resize}
             ended={ended() !== undefined}
             onEndedKey={() => begin(true)}
+            ref={(h) => {
+              term = h;
+              // after the panel's own focus move (its selected tab, SidePanel's refocus): the terminal has it last
+              afterNextPaint(() => focusTerm(true));
+            }}
             {...(!drawn() && { waiting: where() ? t('shell-task.shell.starting', { name: name() || 'a shell', where: peerName() }) : t('shell-task.shell.finding', { where: peerName() }) })}
             labels={{ input: t('shell-task.shell.input'), keys: t('shell-task.shell.keys'), paste: t('shell-task.shell.paste') }}
           />

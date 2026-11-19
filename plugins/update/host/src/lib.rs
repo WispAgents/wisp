@@ -57,8 +57,10 @@ const STATE: EntityDef = EntityDef {
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize, ts_rs::TS)]
 pub struct PeerArgs {
-    /// a machine's id: check, install or view the update there
-    #[serde(default)]
+    /// a machine's id: check, install or view the update there (none: this wisp). Optional in its type, so the CLI
+    /// doesn't ask for it (audit F setup F10: `wisp update view` said it "needs --peer")
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
     pub peer: Option<String>,
 }
 

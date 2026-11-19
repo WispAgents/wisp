@@ -10,6 +10,9 @@ import { confirmOf, type Confirm } from '../confirm.ts';
 import { t } from '../i18n.ts';
 import '../i18n/lazy.ts';
 
+/** the plugins that can't be switched off (wisp-plugins host's STAYS_ON) */
+const STAYS_ON: readonly string[] = ['wisp.plugins', 'wisp.settings'];
+
 const IS_URL = /^(https?:\/\/|git@|ssh:\/\/)/;
 const TONE: Record<string, 'good' | 'neutral' | 'bad'> = { active: 'good', resolved: 'good', off: 'neutral', refused: 'bad' };
 
@@ -138,7 +141,8 @@ export default function Plugins(props: { readonly client: PluginClient }): JSX.E
           <Pill tone={TONE[p.state] ?? 'neutral'} dot variant="outline">
             {t(`plugins.state.${(TONE[p.state] ? p.state : 'off') as 'active'}`)}
           </Pill>
-          <Switch aria-label={t('plugins.on', { name: p.id })} checked={p.enabled} disabled={busy() === p.id} onChange={(on) => flip(p, on)} />
+          {/* wisp.plugins and wisp.settings stay on (the host refuses them off: audit F setup F7) */}
+          <Switch aria-label={t('plugins.on', { name: p.id })} checked={p.enabled} disabled={busy() === p.id || (p.enabled && STAYS_ON.includes(p.id))} onChange={(on) => flip(p, on)} />
           <Show when={p.id.startsWith('user.')}>
             <IconButton icon="trash" size="sm" variant="ghost" label={t('plugins.remove', { name: p.id })} onClick={() => askFirst('remove', p)} />
           </Show>

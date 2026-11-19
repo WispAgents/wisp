@@ -128,8 +128,9 @@ async fn poll(st: Arc<St>, id: String, code: String, mut interval: u64, add_comp
     }
 }
 
-/// Signed in: the token kept under its account, the account added (or renewed) and made current, its cloud
-/// box added as a machine (or its token renewed).
+/// Signed in: the token kept under its account, the account added (or renewed), its cloud box added as a machine
+/// (or its token renewed). It becomes current when there's none yet or this computer was to go on it; a second one
+/// is added beside the current one (ADR-0109, which supersedes ADR-0061's "makes it current").
 async fn done(st: &Arc<St>, f: &SignIn, b: &Value, add_computer: bool) -> Result<(String, String)> {
     let token = b.get("token").and_then(Value::as_str).unwrap_or_default();
     let handle = b.pointer("/user/handle").and_then(Value::as_str).unwrap_or_default().to_owned();

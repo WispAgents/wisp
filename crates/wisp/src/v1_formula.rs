@@ -3,9 +3,9 @@
 //! `{ projects, defaults, recipes, triggers, teams, crew, remote, machines, connectors }`. Tasks are
 //! history, not configuration: their sessions are imported apart (`runtime.import`).
 //!
-//! Secrets are never copied into a formula: a connector's environment and a channel's token become
-//! `${secret:…}` references only when the secret is already here; otherwise they're left out and named
-//! in the notes.
+//! Secrets are never copied into a formula: a connector's environment and headers become `${secret:…}`
+//! references (`wisp import` sets those secrets here from v1's `secrets.json`, and leaves out a name v1 has no
+//! value for, saying so); a channel's token is named in the notes.
 
 use serde_json::{Map, Value, json};
 use wisp_resources_api::Resource;
@@ -23,6 +23,73 @@ fn pick(v: &Value, fields: &[(&str, &str)]) -> Map<String, Value> {
         }
     }
     o
+}
+
+/// A v1 connector's env var (or header) names: v1 keeps them as a list in its config (their values in its secrets), an
+/// older one as a map.
+fn v1_keys(c: &Value, field: &str) -> Vec<String> {
+    match c.get(field) {
+        Some(Value::Array(a)) => a.iter().filter_map(Value::as_str).filter(|k| !k.is_empty()).map(str::to_owned).collect(),
+        Some(Value::Object(o)) => o.keys().cloned().collect(),
+        _ => Vec::new(),
+    }
+}
+
+/// The secret an imported connector's env var or header is kept in here: a name `wisp secret set` takes (letters,
+/// digits, `_` and `-`, at most 64), so one v1 didn't have can be set by hand.
+pub fn connector_secret(connector: &str, key: &str) -> String {
+    let clean = |x: &str| x.chars().map(|c| if c.is_ascii_alphanumeric() || c == '_' || c == '-' { c } else { '-' }).collect::<String>();
+    let mut out = format!("connector-{}-{}", clean(connector), clean(key));
+    out.truncate(64);
+    out
+}
+
+/// Where each imported connector's secrets are in v1's `secrets.json`: (the secret here, v1's namespace, v1's key).
+/// v1 (server/connectors.js) keeps an env var at `connector:<id>` / `env:<KEY>`, a header at `header:<KEY>`.
+pub fn connector_secrets(cfg: &Value) -> Vec<(String, String, String)> {
+    let list = cfg.get("connectors").and_then(Value::as_array).cloned().unwrap_or_default();
+    let mut out = Vec::new();
+    for c in &list {
+        let (name, ns) = (name_of(c, "connector"), format!("connector:{}", s(c, "id")));
+        for (field, prefix) in [("env", "env"), ("headers", "header")] {
+            for k in v1_keys(c, field) {
+                out.push((connector_secret(&name, &k), ns.clone(), format!("{prefix}:{k}")));
+            }
+        }
+    }
+    out
+}
+
+/// v1's connector secrets for the import: what to set here (the secret, its value from v1's `secrets.json`), and a note
+/// for each. A name v1 has no value for comes out of its connector's spec (a reference to a secret that isn't here
+/// would refuse the whole apply), and the note says how to set it.
+pub fn bring_connector_secrets(resources: &mut [Resource], cfg: &Value, v1_secrets: &Value) -> (Vec<(String, String)>, Vec<String>) {
+    let (mut bring, mut notes) = (Vec::new(), Vec::new());
+    for (here, ns, key) in connector_secrets(cfg) {
+        let value = v1_secrets.get(&ns).and_then(|n| n.get(&key)).and_then(Value::as_str).filter(|v| !v.is_empty());
+        let shown = key.split_once(':').map_or(key.as_str(), |(_, k)| k);
+        let owner = resources.iter_mut().find(|r| r.kind == "connector" && r.spec.to_string().contains(&format!("${{secret:{here}}}")));
+        let cname = owner.as_ref().map_or_else(String::new, |r| r.name.clone());
+        if let Some(v) = value {
+            notes.push(format!("connector {cname}: {shown} comes over from v1's secrets (as {here})"));
+            bring.push((here, v.to_owned()));
+            continue;
+        }
+        if let Some(r) = owner {
+            for field in ["env", "headers"] {
+                if let Some(Value::Object(m)) = r.spec.get_mut(field) {
+                    m.retain(|_, x| x.as_str() != Some(&format!("${{secret:{here}}}")));
+                    if m.is_empty()
+                        && let Some(o) = r.spec.as_object_mut()
+                    {
+                        o.remove(field);
+                    }
+                }
+            }
+        }
+        notes.push(format!("connector {cname}: v1 had no value for {shown}; set it in Settings → Connectors"));
+    }
+    (bring, notes)
 }
 
 /// A name a formula can use (lowercase, dashes): v1 names are free text.
@@ -129,11 +196,18 @@ pub fn formula_of(cfg: &Value) -> (Vec<Resource>, Vec<String>) {
         out.push(Resource::new("machine", name_of(&m, "machine"), json!({ "transport": "ssh", "address": addr })));
     }
     for c in list("connectors") {
-        let spec = pick(&c, &[("command", "command"), ("args", "args"), ("url", "url"), ("enabled", "enabled")]);
-        if c.get("env").is_some_and(|e| e.as_array().is_some_and(|a| !a.is_empty()) || e.as_object().is_some_and(|o| !o.is_empty())) {
-            notes.push(format!("connector {}: its environment stays in secrets; set it with wisp secret set", s(&c, "name")));
+        let mut spec = pick(&c, &[("command", "command"), ("args", "args"), ("url", "url"), ("enabled", "enabled")]);
+        // audit F setup F4: the env var names (and headers) were dropped, so it started with QA_VAR unset and a
+        // `wisp secret set` reached nothing. Each is a `${secret:…}` reference; `wisp import` brings v1's values over
+        let name = name_of(&c, "connector");
+        for (field, keys) in [("env", v1_keys(&c, "env")), ("headers", v1_keys(&c, "headers"))] {
+            if !keys.is_empty() {
+                let refs: Map<String, Value> =
+                    keys.iter().map(|k| (k.clone(), json!(format!("${{secret:{}}}", connector_secret(&name, k))))).collect();
+                spec.insert(field.into(), Value::Object(refs));
+            }
         }
-        out.push(Resource::new("connector", name_of(&c, "connector"), Value::Object(spec)));
+        out.push(Resource::new("connector", name, Value::Object(spec)));
     }
     if let Some(r) = cfg.get("remote").and_then(Value::as_object) {
         for (k, v) in r.iter().filter(|(k, v)| *k != "secret" && v.is_object()) {
@@ -386,7 +460,42 @@ mod tests {
         );
         let nightly = rs.iter().find(|r| r.name == "nightly").unwrap();
         assert_eq!(nightly.spec["schedule"], "0 2 * * *");
-        assert!(notes.iter().any(|n| n.contains("linear")), "{notes:?}");
+        let linear = rs.iter().find(|r| r.kind == "connector" && r.name == "linear").unwrap();
+        assert_eq!(linear.spec["env"], json!({ "LINEAR_KEY": "${secret:connector-linear-LINEAR_KEY}" }), "{notes:?}");
+    }
+
+    /// Audit F setup F4: v1's `Old Echo` had `QA_VAR`; after the import `old-echo` had `env: []` and started with
+    /// `QA_VAR=undefined`. Its env names (and headers) are `${secret:…}` references, and v1's values come over.
+    #[test]
+    fn a_v1_connectors_env_and_headers_come_over_with_their_values_audit_f_setup_f4() {
+        let cfg = json!({ "connectors": [
+            { "id": "c1", "name": "Old Echo", "transport": "local", "command": "node", "args": ["echo.js"], "env": ["QA_VAR", "GONE"] },
+            { "id": "c2", "name": "remote1", "transport": "remote", "url": "https://x.example/mcp", "headers": ["Authorization"] },
+        ] });
+        let (mut rs, _) = formula_of(&cfg);
+        let echo = rs.iter().find(|r| r.kind == "connector" && r.name == "old-echo").unwrap();
+        assert_eq!(
+            echo.spec["env"],
+            json!({ "QA_VAR": "${secret:connector-old-echo-QA_VAR}", "GONE": "${secret:connector-old-echo-GONE}" })
+        );
+        let v1 = json!({ "connector:c1": { "env:QA_VAR": "hello" }, "connector:c2": { "header:Authorization": "Bearer t" } });
+        let (bring, notes) = bring_connector_secrets(&mut rs, &cfg, &v1);
+        assert_eq!(
+            bring,
+            [
+                ("connector-old-echo-QA_VAR".to_owned(), "hello".to_owned()),
+                ("connector-remote1-Authorization".to_owned(), "Bearer t".to_owned())
+            ]
+        );
+        // a name v1 had no value for: out of the spec (the apply would refuse a missing secret), and said
+        let echo = rs.iter().find(|r| r.name == "old-echo").unwrap();
+        assert_eq!(echo.spec["env"], json!({ "QA_VAR": "${secret:connector-old-echo-QA_VAR}" }));
+        assert!(notes.iter().any(|n| n.contains("old-echo") && n.contains("GONE") && n.contains("Settings → Connectors")), "{notes:?}");
+        let remote = rs.iter().find(|r| r.name == "remote1").unwrap();
+        assert_eq!(remote.spec["headers"], json!({ "Authorization": "${secret:connector-remote1-Authorization}" }));
+        // every name is one `wisp secret set` takes
+        assert!(bring.iter().all(|(n, _)| wisp_resources_api::secret_name_ok(n)));
+        assert!(wisp_resources_api::secret_name_ok(&connector_secret(&"x".repeat(80), "K")));
     }
 
     /// Setup audit B11: v1's default harness went on the `default` profile, so the CLI ran Codex while New task offered

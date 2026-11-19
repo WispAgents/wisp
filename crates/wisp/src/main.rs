@@ -675,6 +675,14 @@ async fn live(p: &Parsed, home: &Path, port: u16, read: &mut Option<wisp_cli_cor
                     p.argv.iter().enumerate().map(|(i, a)| if Some(i) == at { "machines".to_owned() } else { a.clone() }).collect();
                 done = cli::generated(&c, &cat, &alias, &argv).await?;
             }
+            // a plugin that's off has no verbs here: its words are refused with its state, never a task (audit F F1)
+            if done.is_none()
+                && !cat.verbs.iter().any(|v| words.first().is_some_and(|w| v.plugin == *w))
+                && let Some(said) = words::plugin_off(words, p.literal, &off_plugins(&c).await)
+            {
+                eprintln!("{said}");
+                return Ok(Some(cli::USAGE_EXIT));
+            }
             let Some(code) = done else {
                 *read = Some(cat);
                 return Ok(None);
@@ -684,6 +692,18 @@ async fn live(p: &Parsed, home: &Path, port: u16, read: &mut Option<wisp_cli_cor
         _ => return Ok(None),
     };
     Ok(Some(code))
+}
+
+/// The plugins that aren't on (`plugins.list`: off, refused or switched off), each with why. Empty when the list
+/// can't be read: the words then go on as they would.
+async fn off_plugins(c: &Client) -> Vec<(String, Option<String>)> {
+    let rows = c.cmd("plugins.list", json!({})).await.unwrap_or_default();
+    rows.as_array()
+        .into_iter()
+        .flatten()
+        .filter(|r| r["enabled"] == Value::Bool(false) || matches!(r["state"].as_str(), Some("off" | "refused")))
+        .filter_map(|r| Some((r["id"].as_str()?.to_owned(), r["reason"].as_str().map(str::to_owned))))
+        .collect()
 }
 
 /// Runs wisp here until a signal; `open`: then show it in the browser at `path`.

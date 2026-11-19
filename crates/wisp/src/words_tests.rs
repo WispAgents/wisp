@@ -547,6 +547,26 @@ fn with_auto_off_router_and_any_words_is_refused_never_a_prompt() {
     assert!(router_away(&p(&["review", "the", "router"]).words, Literal::No, true).is_none(), "router later on is a prompt");
 }
 
+/// Audit F setup F1: with `wisp.settings` (or `wisp.learn`) off, `wisp settings get crew.tint` launched a Full-auto
+/// task. An off plugin's words are refused with its state and the way to switch it on; `--` or one quoted argument is
+/// still the task, and a word that names no off plugin is what it'd be anyway.
+#[test]
+fn an_off_plugins_words_are_refused_never_a_task_audit_f_setup_f1() {
+    let off = vec![("wisp.settings".to_owned(), Some("wisp.settings was switched off".to_owned())), ("user.qa-theme".to_owned(), None)];
+    for args in [&["settings", "get", "crew.tint"][..], &["settings", "please", "fix", "the", "login"], &["qa-theme", "view"]] {
+        let x = p(args);
+        let said = plugin_off(&x.words, x.literal, &off).unwrap_or_else(|| panic!("{args:?} was read as a prompt"));
+        assert!(said.contains("is switched off") && said.contains("wisp plugin enable"), "{said}");
+        assert!(said.contains(&format!("wisp -- \"{}\"", x.words.join(" "))), "{said}");
+    }
+    let said = plugin_off(&p(&["settings", "get", "x"]).words, Literal::No, &off).unwrap();
+    assert!(said.contains("(wisp.settings was switched off)") && said.contains("wisp plugin enable wisp.settings"), "{said}");
+    let lit = p(&["--", "settings", "get", "x"]);
+    assert!(plugin_off(&lit.words, lit.literal, &off).is_none(), "`wisp -- …` is the task");
+    assert!(plugin_off(&p(&["learn", "view"]).words, Literal::No, &off).is_none(), "wisp.learn is on");
+    assert!(plugin_off(&p(&["fix", "the", "settings"]).words, Literal::No, &off).is_none(), "settings later on is a prompt");
+}
+
 /// Audit D9: `wisp validate -f nope.yml`, `apply -f` and `wisp import <folder>` printed "No such file or directory (os
 /// error 2)". A file that can't be read is said in words, as a missing project folder is.
 #[test]

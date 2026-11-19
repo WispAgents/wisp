@@ -5,13 +5,14 @@
 // comes back. A refusal puts it back as it was, with the error. Without git, the edits wisp saw, per file.
 import { Show, createEffect, createMemo, createResource, createSignal, on, onCleanup, type JSX } from 'solid-js';
 import { defineCommand, entityKey, ownerOf, type EntityKey, type SettingRow } from '@wisp/client';
-import { Button, ChangesList, CommentCard, EmptyState, isEnvFile, rowKey, useSignal, type ChangeFile, type ChangeRow, type StageState } from '@wisp/ui';
+import { Button, ChangesList, CommentCard, Dialog, EmptyState, Inline, isEnvFile, rowKey, useSignal, type ChangeFile, type ChangeRow, type StageState } from '@wisp/ui';
 import { openFinder } from './open-file.ts';
 import { added, commentStore, isLine, lineKey, lineLabel, placeOf, waiting } from '../comments.ts';
 import { isStub, keepTurnsWhole } from '@wisp/shell';
 import { useShell } from '../shell.ts';
 import { useTask } from '../task-context.tsx';
 import { setChangeStat } from './changes-stat.ts';
+import { baseName, revertAsk, undoSteps, type UndoStep } from './revert.ts';
 import { changesOf, envState, filesOf, outsideFolder, relative, revealedOf, seenMasked, setRevealed, worktreeDir, ofTask, type ChangeTurn } from './changes.ts';
 import '../i18n/lazy.ts';
 
@@ -59,12 +60,31 @@ const stage = defineCommand<{ key: EntityKey; dir: string; base: string; path: s
   optimistic: 'none',
   pending: 'the Stage toggle (flipped at once)',
 });
-const revert = defineCommand<{ key: EntityKey; dir: string; base: string; path: string; hunk?: number; hunkKey?: string }, { ok: boolean }>({
+const revert = defineCommand<
+  { key: EntityKey; dir: string; base: string; path: string; hunk?: number; hunkKey?: string; restore?: string | null; hash?: string | null },
+  { ok: boolean; hash?: string | null }
+>({
   id: 'git.revert',
   owner: (a) => a.key,
-  wire: (a) => ({ dir: a.dir, base: a.base, path: a.path, ...(a.hunk !== undefined && { hunk: a.hunk, key: a.hunkKey }) }),
+  wire: (a) => ({
+    dir: a.dir,
+    base: a.base,
+    path: a.path,
+    ...(a.hunk !== undefined && { hunk: a.hunk, key: a.hunkKey }),
+    // Undo: the text from before (null: the file wasn't there), if the file is still as the revert left it
+    ...(a.restore !== undefined && { restore: a.restore, ...(a.hash != null && { hash: a.hash }) }),
+  }),
   optimistic: 'none',
   pending: 'the hunk or file (hidden at once)',
+});
+/** The file's text now, for Undo (read before a revert, so Undo is exact). */
+const source = defineCommand<{ key: EntityKey; id: string; path: string }, { text: string; hash: string }>({
+  id: 'worktrees.source',
+  owner: (a) => a.key,
+  wire: (a) => ({ id: a.id, path: a.path }),
+  optimistic: 'none',
+  pending: 'none: read before a revert, which hides the hunk or file at once',
+  quiet: true,
 });
 const commit = defineCommand<{ key: EntityKey; dir: string; message: string; all: boolean }, { ok: boolean; sha: string }>({
   id: 'git.commit',
@@ -246,35 +266,65 @@ export function ChangesPane(): JSX.Element {
       s.delete(k);
       setGoingHunks(s);
     };
-    task.client.run(revert, { key: task.key, dir: dir(), base: base(), path, hunk, hunkKey }).then(
-      () => void Promise.resolve(refetch()).then(back),
-      (e: unknown) => (back(), failed(e)),
+    void textNow(path).then((before) =>
+      task.client.run(revert, { key: task.key, dir: dir(), base: base(), path, hunk, hunkKey }).then(
+        (r) => (reverted(undoSteps(path, undefined, before, r.hash)), void Promise.resolve(refetch()).then(back)),
+        (e: unknown) => (back(), failed(e)),
+      ),
     );
   };
-  const revertFile = (path: string): void => {
+  // the file's text now, for Undo; undefined when it can't be read as text (binary, too big, no folder): then no Undo
+  // (a deleted file's "nothing there" is its status, never a failed read: Undo would delete what came back)
+  const textNow = (path: string): Promise<string | undefined> =>
+    task.client.run(source, { key: task.key, id: task.id, path }).then(
+      (r) => r.text,
+      () => undefined,
+    );
+  // Reverted, with Undo putting each file back as it was (no steps: no Undo); then git's read again (v1 reverted)
+  const undo = (steps: readonly UndoStep[]): void =>
+    void steps
+      .reduce<Promise<unknown>>((p, u) => p.then(() => task.client.run(revert, { key: task.key, dir: dir(), base: base(), path: u.path, restore: u.text, hash: u.hash ?? null })), Promise.resolve())
+      .catch(failed)
+      .finally(() => void refetch());
+  const reverted = (steps: readonly UndoStep[] | null): void => {
+    shell.toast.show(t('shell-task.changes.reverted'), steps ? { action: { label: t('shell-task.changes.undo'), onClick: () => undo(steps) } } : {});
+  };
+  // a whole file asks first, saying what goes (v1 revertFile's danger ask)
+  const [asking, setAsking] = createSignal<{ path: string; status: string; from?: string } | undefined>();
+  const askRevert = (path: string): void => {
+    const f = files().find((x) => x.path === path);
+    setAsking({ path, status: f?.status ?? 'M', ...(f?.from && { from: f.from }) });
+  };
+  const revertFile = (path: string, status: string, from?: string): void => {
     const was = going();
     setGoing(new Set(was).add(path));
-    task.client.run(revert, { key: task.key, dir: dir(), base: base(), path }).then(
-      () => (shell.toast.show(t('shell-task.changes.reverted', { path })), void refetch()),
-      (e: unknown) => (setGoing(was), failed(e)),
+    // listed again once git's read is in (a rename's other half, a file still differing)
+    const shownAgain = (): void => {
+      const s = new Set(going());
+      s.delete(path);
+      setGoing(s);
+    };
+    void (status === 'D' ? Promise.resolve(null) : textNow(path)).then((before) =>
+      task.client.run(revert, { key: task.key, dir: dir(), base: base(), path }).then(
+        (r) => (reverted(undoSteps(path, from, before, r.hash)), void Promise.resolve(refetch()).then(shownAgain)),
+        (e: unknown) => (setGoing(was), failed(e)),
+      ),
     );
   };
   const changed = (): number => files().filter((f) => f.stage && f.stage !== 'none').length;
   const staged = (): number => files().filter((f) => f.stage === 'staged' || f.stage === 'part').length;
   const onCommit = (message: string): void => {
-    const was = going();
+    const was = flipped();
     const all = staged() === 0;
-    setGoing(
-      new Set([
-        ...was,
-        ...files()
-          .filter((f) => f.stage === 'staged' || (all && f.stage === 'stage'))
-          .map((f) => f.path),
-      ]),
-    );
+    // committed files still differ from the base ("vs origin/main"), so they stay listed, as a reload lists them: at
+    // once they read committed (nothing left to stage, the Commit bar goes), then git's read says the rest (audit F
+    // tasks #3: they were hidden, "No changes yet", until a reload)
+    const done = new Map(was);
+    for (const f of files().filter((x) => x.stage === 'staged' || x.stage === 'part' || (all && x.stage === 'stage'))) done.set(f.path, 'none');
+    setFlipped(done);
     task.client.run(commit, { key: task.key, dir: dir(), message, all }).then(
-      (r) => (shell.toast.show(t('shell-task.changes.committed', { sha: r.sha })), void refetch()),
-      (e: unknown) => (setGoing(was), failed(e)),
+      (r) => (shell.toast.show(t('shell-task.changes.committed', { sha: r.sha })), void Promise.resolve(refetch()).then(() => setFlipped(new Map()))),
+      (e: unknown) => (setFlipped(was), failed(e)),
     );
   };
   const viewedOf = (): string | undefined => {
@@ -282,6 +332,7 @@ export function ChangesPane(): JSX.Element {
     return n ? t('shell-task.changes.viewedOf', { n, total: files().length }) : undefined;
   };
   return (
+    <>
     <Show when={files().length > 0} fallback={<ChangesEmpty loading={git.loading} {...(refused() && { refused: refused() as { code: string; message: string }, onRetry: () => void refetch() })} />}>
       <ChangesList
         part={'side.changes panel.changes' as `${string}.${string}`}
@@ -368,7 +419,7 @@ export function ChangesPane(): JSX.Element {
               { value: 'revert', label: t('shell-task.changes.revertFile'), icon: 'replay', danger: true },
               { value: 'copy', label: t('shell-task.changes.copyPath'), icon: 'copy' },
             ],
-            onSelect: (v: string) => (v === 'revert' ? revertFile(path) : void shell.platform.copy(path)),
+            onSelect: (v: string) => (v === 'revert' ? askRevert(path) : void shell.platform.copy(path)),
           },
         })}
         {...(staging() && changed() > 0
@@ -412,6 +463,38 @@ export function ChangesPane(): JSX.Element {
         }}
       />
     </Show>
+    {/* v1 revertFile: "Revert math.js to origin/main? Every change this task made to math.js goes. Undo puts it back." */}
+    <Show when={asking()}>
+      {(a) => {
+        const words = revertAsk(a().path, a().status, baseName(git()?.base, wt()?.baseRef, wt()?.base), t);
+        return (
+          <Dialog
+            open
+            role="alertdialog"
+            size="sm"
+            title={words.title}
+            description={words.body}
+            onOpenChange={(o) => !o && setAsking(undefined)}
+            part="side.changes.revertAsk"
+            footer={
+              <Inline gap="4" justify="end">
+                <Button variant="ghost" onClick={() => setAsking(undefined)}>
+                  {t('shell-task.changes.revertAsk.cancel')}
+                </Button>
+                <Button variant="danger" part="side.changes.revertAsk.ok" onClick={() => {
+                    const { path, status, from } = a();
+                    setAsking(undefined);
+                    revertFile(path, status, from);
+                  }}>
+                  {t('shell-task.changes.revertFile')}
+                </Button>
+              </Inline>
+            }
+          />
+        );
+      }}
+    </Show>
+    </>
   );
 }
 

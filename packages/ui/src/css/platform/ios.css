@@ -482,6 +482,20 @@
     font: var(--type-subhead);
     font-weight: var(--fw-semibold);
   }
+  /* a banner's own row of buttons under its text (the held run's Trust and start · Skip this run): thumb-sized as its
+     side action's are, 44 pt (HIG); sm made them 28 (audit F tasks #4) */
+  :root[data-platform='ios'] [data-kit='banner'] [data-kit='wrap'] > [data-kit='button'] {
+    min-height: var(--tap-min);
+  }
+  /* a compare task's card sits inside the list's margins like its rows, never against the screen's edges; its vs
+     Compare ends in the rows' time column (no ghost padding after its words) (audit F tasks #5) */
+  :root[data-platform='ios'] [data-kit='virtual-group'][data-part~='list.compare'] {
+    left: var(--space-4);
+    right: var(--space-4);
+  }
+  :root[data-platform='ios'] [data-kit='list-row-pills'] > [data-kit='button'][data-variant='ghost'] {
+    padding-inline-end: 0;
+  }
   :root[data-platform='ios'] [data-kit='banner'] > [data-kit='icon-button'] { width: var(--tap-min); height: var(--tap-min); color: var(--on-surface-var); }
 
   /* Pill (step 4): capsule tags in footnote; a state is its tone's tinted capsule, a tag the gray fill */

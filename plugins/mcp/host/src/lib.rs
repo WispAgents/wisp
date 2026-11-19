@@ -110,7 +110,11 @@ pub(crate) fn extras_for(ctx: &Ctx, call: &Call) -> (Vec<Extra>, Vec<Arc<wisp_mc
                     None => ctx.run_json(&call, &id, args).await,
                 };
                 Ok(match out {
-                    Ok(v) => wisp_mcp_api::ToolText { text: Some(wisp_mcp_core::generated::answer_text(&v)), error: None },
+                    // a refusal in the command's own answer (`{"error": …}`) is the tool's error (audit F orchestration F7)
+                    Ok(v) => match wisp_mcp_core::generated::refusal(&v) {
+                        Some(e) => wisp_mcp_api::ToolText { text: None, error: Some(e) },
+                        None => wisp_mcp_api::ToolText { text: Some(wisp_mcp_core::generated::answer_text(&v)), error: None },
+                    },
                     // in words, not serde's (audit D6)
                     Err(e) => wisp_mcp_api::ToolText { text: None, error: Some(wisp_mcp_core::generated::said(&id, &spec, &e.message)) },
                 })

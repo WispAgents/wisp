@@ -161,11 +161,42 @@ pub fn keep_over(kept: Value, declared: Value, before: &[String]) -> Value {
     Value::Object(out)
 }
 
+/// A channel that is off with nothing set (no token, no one allowed, no cap, no setting but a default's `false` or
+/// empty): no resource at all, as a setting put back to its default leaves none. Switching Telegram on and then off
+/// without a token left `enabled: false, token: ""` (and its Send me notification) in the formula (audit F setup F8).
+pub fn left_unset(spec: &ChannelSpec) -> bool {
+    let empty = |v: &Value| match v {
+        Value::Null | Value::Bool(false) => true,
+        Value::String(s) => s.is_empty(),
+        Value::Array(a) => a.is_empty(),
+        Value::Object(o) => o.is_empty(),
+        Value::Bool(true) | Value::Number(_) => false,
+    };
+    spec.enabled != Some(true)
+        && spec.token.is_empty()
+        && spec.allow.is_empty()
+        && spec.cap.is_empty()
+        && spec.routing.as_ref().and_then(Value::as_object).is_none_or(|r| r.values().all(empty))
+}
+
 #[cfg(test)]
 mod tests {
     use serde_json::{Value, json};
 
-    use super::keep_over;
+    use super::{ChannelSpec, keep_over, left_unset};
+
+    /// Audit F setup F8: a channel switched on and back off with nothing set stayed in the formula.
+    #[test]
+    fn a_channel_off_with_nothing_set_is_no_resource_audit_f_setup_f8() {
+        let off =
+            |routing: Option<Value>| ChannelSpec { transport: "telegram".into(), enabled: Some(false), routing, ..ChannelSpec::default() };
+        assert!(left_unset(&off(None)));
+        assert!(left_unset(&off(Some(json!({ "publicReports": false })))), "GitHub's default");
+        assert!(!left_unset(&off(Some(json!({ "topic": "wisp-a1b2" })))), "ntfy's topic: kept");
+        assert!(!left_unset(&ChannelSpec { token: "${secret:tg}".into(), ..off(None) }), "a token: kept");
+        assert!(!left_unset(&ChannelSpec { allow: vec!["42".into()], ..off(None) }));
+        assert!(!left_unset(&ChannelSpec { enabled: Some(true), ..off(None) }), "on: kept");
+    }
 
     #[test]
     fn applying_a_channel_again_keeps_what_its_transport_kept_unless_its_token_changed() {

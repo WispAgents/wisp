@@ -451,6 +451,21 @@
     color: var(--primary);
     font: var(--type-label-l);
   }
+  /* a banner's own row of buttons under its text (the held run's Trust and start · Skip this run): M3's common button,
+     40 dp with its 48 dp target, as the side action's; sm made them the 32 dp extra small one (audit F tasks #4) */
+  :root[data-platform='android'] [data-kit='banner'] [data-kit='wrap'] > [data-kit='button'] {
+    height: var(--button-h);
+    padding: var(--space-0) var(--button-pad);
+  }
+  /* a compare task's card sits inside the list's margins like its rows, never against the screen's edges; its vs
+     Compare ends in the rows' time column (no ghost padding after its words) (audit F tasks #5) */
+  :root[data-platform='android'] [data-kit='virtual-group'][data-part~='list.compare'] {
+    left: var(--space-4);
+    right: var(--space-4);
+  }
+  :root[data-platform='android'] [data-kit='list-row-pills'] > [data-kit='button'][data-variant='ghost'] {
+    padding-inline-end: 0;
+  }
   :root[data-platform='android'] [data-kit='banner'] > [data-kit='icon-button'] { width: var(--tap-min); height: var(--tap-min); border-radius: var(--radius-pill); }
 
   /* Pill (step 4): M3 chips. 32 dp, 8 dp corners, label large; a state (soft) is a tonal chip, a tag

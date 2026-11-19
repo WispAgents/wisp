@@ -81,6 +81,24 @@ pub async fn shown_for(c: &Client, cat: Catalogue, first: Option<&String>) -> Ca
     if first.is_some_and(|w| cat.verbs.iter().any(|v| v.plugin == *w && v.plugin == "router")) { shown(c, cat).await } else { cat }
 }
 
+/// The command line from `first` on, as typed, each word that needs it in quotes: a refusal's `wisp -- …` way out
+/// (audit F orchestration F6: it kept only the words, dropping `--agent codex --on done`, and `--cron "every minute"`
+/// lost its quotes).
+pub fn as_typed(argv: &[String], first: &str) -> String {
+    let start = argv.iter().position(|a| a == first).unwrap_or(0);
+    argv[start..]
+        .iter()
+        .map(|a| {
+            if !a.is_empty() && a.chars().all(|c| c.is_ascii_alphanumeric() || "-_./:=@,+%".contains(c)) {
+                a.clone()
+            } else {
+                format!("\"{}\"", a.replace('\\', "\\\\").replace('"', "\\\"").replace('$', "\\$").replace('`', "\\`"))
+            }
+        })
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
 /// The words after the verb, as typed: from the raw argv (the global parser has eaten flags such as
 /// `--mode` that a command may declare too).
 fn rest_after(argv: &[String], first: &str, taken: usize) -> Vec<String> {
@@ -112,7 +130,7 @@ pub async fn generated(c: &Client, cat: &Catalogue, words: &[String], argv: &[St
         Ok(a) => a,
         Err(u) => {
             // every refusal says the way out (QA round 14)
-            eprintln!("  ✗ {u}\n  a task that says this: wisp -- {}", words.join(" "));
+            eprintln!("  ✗ {u}\n  a task that says this: wisp -- {}", as_typed(argv, &words[0]));
             return Ok(Some(USAGE_EXIT));
         }
     };
@@ -346,6 +364,34 @@ mod tests {
         assert_eq!(help(&cat, &w(&["help", "runtime", "queue order"])), 0);
         assert_eq!(help(&cat, &w(&["help", "runtime", "queue", "send-now"])), 0);
         assert_eq!(help(&cat, &w(&["help", "runtime", "no such verb"])), USAGE_EXIT);
+    }
+
+    /// Audit F orchestration F6: the hint kept the words only (`wisp -- crew create --name Bob proj`) and lost the
+    /// quotes of `--cron "every minute"`.
+    #[test]
+    fn a_refusals_way_out_keeps_every_flag_and_its_quotes_audit_f_orchestration_f6() {
+        let argv: Vec<String> = [
+            "--port",
+            "9",
+            "crew",
+            "create",
+            "--name",
+            "Bob",
+            "--agent",
+            "codex",
+            "--on",
+            "done",
+            "--cron",
+            "every minute",
+            "--x",
+            "it's \"q\" $HOME",
+        ]
+        .map(str::to_owned)
+        .to_vec();
+        assert_eq!(
+            as_typed(&argv, "crew"),
+            r#"crew create --name Bob --agent codex --on done --cron "every minute" --x "it's \"q\" \$HOME""#
+        );
     }
 
     #[test]

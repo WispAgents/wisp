@@ -442,6 +442,11 @@
     z-index: var(--z-raised);
     pointer-events: auto;
   }
+  /* its words end in the time and status column, as a pill's do: a ghost button's own padding hangs past it (audit F
+     tasks #5: "vs Compare" ended 6 px short of the column); no padding after them, so nothing is cut */
+  [data-kit='list-row-pills'] > [data-kit='button'][data-variant='ghost'] {
+    padding-inline-end: 0;
+  }
   [data-kit='list-row-lead']:empty,
   [data-kit='list-row-pills']:empty,
   [data-kit='list-row-time']:empty,

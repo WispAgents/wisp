@@ -301,7 +301,9 @@ export const SHELL_STRINGS = {
   'shell.task.ran': '{n} ran',
   'shell.task.tokens': '{n} tokens',
   'shell.task.tokensTitle': '{n} tokens read and written',
-  'shell.task.files': '{n} file',
+  // a turn's foot: "1 file" / "2 files" (audit F orchestration F4 read "2 file")
+  'shell.task.files.one': '{count} file',
+  'shell.task.files.other': '{count} files',
   'shell.task.openTurn': 'Show this turn',
   'shell.task.openTurnFailed': "This turn didn't load. Try again.",
   'shell.task.notes': 'Agent notes',

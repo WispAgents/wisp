@@ -207,8 +207,10 @@ pub fn merged_words(r: &Value, had_tree: bool) -> String {
     }
     let kept: Vec<&str> = r.get("kept").and_then(Value::as_array).into_iter().flatten().filter_map(Value::as_str).collect();
     if kept.is_empty() {
+        // ship's tidy after a merge deletes the branch, here and on the remote (audit F orchestration F1: this said the
+        // branch stays, which is the archive tidy's rule)
         if had_tree {
-            lines.push("  · The worktree was removed; its branch stays.".to_owned());
+            lines.push("  · The worktree and its branch were removed, here and on the remote.".to_owned());
         }
     } else {
         lines.extend(kept.iter().map(|k| format!("  · {k}")));
@@ -221,13 +223,14 @@ mod merged_tests {
     use super::merged_words;
     use serde_json::json;
 
-    /// Audit D9: the CLI said only "✓ merged"; it says what the toast says.
+    /// Audit D9: the CLI said only "✓ merged"; it says what the toast says. Audit F orchestration F1: the branch is
+    /// deleted with the worktree (ship's tidy), so it never says the branch stays.
     #[test]
     fn merge_says_the_pr_your_base_branch_and_the_worktree_audit_d9() {
         let r = json!({ "pr": { "number": 3 }, "sync": { "ok": true, "text": "Local main is up to date with origin/main." } });
         assert_eq!(
             merged_words(&r, true),
-            "  ✓ merged PR #3\n  · Local main is up to date with origin/main.\n  · The worktree was removed; its branch stays."
+            "  ✓ merged PR #3\n  · Local main is up to date with origin/main.\n  · The worktree and its branch were removed, here and on the remote."
         );
         let kept = json!({ "pr": { "number": 1 }, "sync": { "ok": false, "text": "Local main has commits of its own." }, "kept": ["The worktree /w was kept: it has 1 uncommitted change."] });
         assert_eq!(

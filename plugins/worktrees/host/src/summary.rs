@@ -38,7 +38,30 @@ impl wisp_runtime_api::points::SummaryField for Summary {
     }
     fn fields(&self, session: &Session, _last: Option<&Turn>, out: &mut BTreeMap<String, Value>) {
         fields_of(session.ext.get(EXT), out);
+        // the task it's a side discussion of (runtime's `sideOf`), or its parent
+        let side = session.ext.get("wisp.runtime").and_then(|r| r.get("sideOf"));
+        let of = side
+            .and_then(|o| o.get("id").or(Some(o)))
+            .and_then(Value::as_str)
+            .or_else(|| session.parent_id.as_ref().map(wisp_runtime_api::SessionId::as_str));
+        if !out.contains_key("project")
+            && let Some(p) = of.and_then(|parent| borrowed_project(&session.cwd, parent))
+        {
+            out.insert("project".into(), json!(p));
+        }
     }
+}
+
+/// A side discussion (`/side`, `/btw`) runs in its parent's worktree with no slot of its own: its project is the one
+/// that worktree was made from, read from the folder wisp named `<home>/worktrees/<project>-<parent id>` (audit F
+/// orchestration F5: `wisp ls` said "proj-01a1f532312", the folder's own name).
+pub fn borrowed_project(cwd: &str, parent: &str) -> Option<String> {
+    let parts: Vec<&str> = cwd.split(['/', '\\']).collect();
+    let suffix = format!("-{parent}");
+    parts.windows(2).find_map(|w| {
+        let p = w[1].strip_suffix(&suffix).filter(|_| w[0] == "worktrees")?;
+        (!p.is_empty() && !parent.is_empty()).then(|| p.to_owned())
+    })
 }
 
 #[cfg(test)]
@@ -67,5 +90,17 @@ mod tests {
         let mut none = BTreeMap::new();
         fields_of(None, &mut none);
         assert!(none.is_empty());
+    }
+
+    /// Audit F orchestration F5: a side discussion in its parent's worktree read its project as that folder's name.
+    #[test]
+    fn a_side_discussion_in_its_parents_worktree_is_in_that_project_audit_f_orchestration_f5() {
+        let p = "01a1f5323120aa00bb11cc22dd33ee44";
+        assert_eq!(borrowed_project(&format!("/h/.wisp/worktrees/proj-{p}"), p).as_deref(), Some("proj"));
+        assert_eq!(borrowed_project(&format!("/h/.wisp/worktrees/my-app-{p}/web/src"), p).as_deref(), Some("my-app"), "a subfolder");
+        assert_eq!(borrowed_project(&format!(r"C:\h\worktrees\proj-{p}"), p).as_deref(), Some("proj"), "Windows");
+        assert_eq!(borrowed_project("/src/proj", p), None, "in place: its folder says it");
+        assert_eq!(borrowed_project(&format!("/h/worktrees/proj-{p}"), "other"), None, "another task's worktree");
+        assert_eq!(borrowed_project(&format!("/h/elsewhere/proj-{p}"), p), None, "not wisp's worktrees folder");
     }
 }

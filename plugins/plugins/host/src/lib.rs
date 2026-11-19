@@ -14,6 +14,16 @@ pub use install::{UserPlugin, at_start as user_plugins, read as read_plugin};
 use wisp_kernel::{Ctx, Manifest, Plugin, PluginStatus, Result, Setup, WireError};
 use wisp_plugins_api::{List, PluginRow, SetEnabled};
 
+/// The plugins that stay on: this one (the switches themselves) and `wisp.settings`, where every setting lives. Off,
+/// All settings read "No setting matches." and every switch failed with a toast, saying nothing of why (audit F setup
+/// F7); so it can't be switched off, as this one can't.
+pub const STAYS_ON: [&str; 2] = ["wisp.plugins", "wisp.settings"];
+
+/// Why `id` can't be switched off (None: it can, or it's being switched on).
+pub fn stays_on(id: &str, enabled: bool) -> Option<String> {
+    (!enabled && STAYS_ON.contains(&id)).then(|| format!("{id} can't be switched off: wisp needs it to keep its settings and plugins"))
+}
+
 /// `plugins.install` (ADR-0046): a folder or a git URL into `~/.wisp/plugins`, added off.
 #[derive(Debug)]
 pub struct Install;
@@ -143,6 +153,9 @@ impl Plugin for PluginsPlugin {
         s.command::<SetEnabled, _, _>(move |ctx, call, a| {
             let kind = kind.clone();
             async move {
+                if let Some(why) = stays_on(&a.id, a.enabled) {
+                    return Err(WireError::invalid(why));
+                }
                 // a user's plugin known by its folder only (`wisp plugin new`): loaded, so it's listed, on or off (setup
                 // audit F18: one you were writing showed nowhere until you switched it on)
                 install::load_from_its_folder(&ctx, &a.id).await?;
@@ -182,6 +195,16 @@ impl Plugin for PluginsPlugin {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Audit F setup F7: with wisp.settings off, All settings said "No setting matches." and switches failed with a
+    /// toast. It stays on, as wisp.plugins does; every other built-in still switches off and on.
+    #[test]
+    fn the_settings_plugin_stays_on_audit_f_setup_f7() {
+        assert!(stays_on("wisp.settings", false).is_some_and(|w| w.contains("can't be switched off")));
+        assert!(stays_on("wisp.plugins", false).is_some());
+        assert_eq!(stays_on("wisp.settings", true), None, "switching it on is fine");
+        assert_eq!(stays_on("wisp.learn", false), None);
+    }
 
     #[test]
     fn manifest_is_valid() {

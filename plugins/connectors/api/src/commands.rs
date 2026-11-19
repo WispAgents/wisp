@@ -222,7 +222,8 @@ command!(
     ConnectorsView
 );
 command!(Update, "connectors.update", "connectors:update", false, UpdateArgs, ConnectorsView);
-command!(Remove, "connectors.remove", "connectors:remove", false, IdArgs, ConnectorsView);
+// `; typed`: `wisp connectors remove <id>` takes the id as its word (audit F setup F11: only `--id` worked)
+command!(Remove, "connectors.remove", "connectors:remove", false, IdArgs, ConnectorsView; typed);
 command!(
     /// Starts it through the proxy, the way an agent would, and keeps the outcome on the row.
     Test,
@@ -231,7 +232,7 @@ command!(
     false,
     IdArgs,
     ConnectorsView
-);
+; typed);
 command!(Import, "connectors.import", "connectors:import", false, ImportArgs, ImportView; typed);
 command!(
     /// OAuth sign-in (discovery, dynamic registration, PKCE): the URL the page opens.
@@ -242,7 +243,7 @@ command!(
     SigninArgs,
     SigninUrl
 );
-command!(Signout, "connectors.signout", "connectors:signout", false, IdArgs, ConnectorsView);
+command!(Signout, "connectors.signout", "connectors:signout", false, IdArgs, ConnectorsView; typed);
 command!(
     /// The browser came back from the sign-in page: trade the code for tokens.
     OauthFinish,

@@ -349,6 +349,11 @@ pub async fn import(c: &Client, o: &Opts, home: &Path) -> Result<i32> {
     let text = std::fs::read_to_string(&file).map_err(|e| CliError::said(crate::words::no_v1_home(&v1, &file, &e)))?;
     let cfg: Value = serde_json::from_str(&text).map_err(|e| CliError::said(format!("{}: {e}", file.display())))?;
     let (mut resources, mut notes) = crate::v1_formula::formula_of(&cfg);
+    // audit F setup F4: a connector's env vars and headers come with their values from v1's secrets.json
+    let v1_secrets: Value =
+        std::fs::read(v1.join("secrets.json")).ok().and_then(|b| serde_json::from_slice(&b).ok()).unwrap_or(Value::Null);
+    let (bring, said) = crate::v1_formula::bring_connector_secrets(&mut resources, &cfg, &v1_secrets);
+    notes.extend(said);
     let existing = c.cmd("resources.export", json!({ "kinds": ["project"] })).await.unwrap_or(Value::Null);
     notes.extend(same_folder_projects(&mut resources, &existing));
     // New task's pick keeps what it has: v1's harness, and that harness's model and level, go in (setup audit B11)
@@ -366,6 +371,8 @@ pub async fn import(c: &Client, o: &Opts, home: &Path) -> Result<i32> {
         notes.extend(gone.iter().map(|(n, why)| format!("project {n} not imported: {why}")));
         plan = plan_of(c, &resources).await?;
     }
+    // the secrets the import brings aren't missing: they're set just before the apply
+    plan.missing_secrets.retain(|m| !bring.iter().any(|(n, _)| n == m));
     let args = json!({ "resources": resources, "prune": false });
     say(&format!("{} {}", paint(&st, BOLD, "Import plan"), paint(&st, DIM, &format!("(v1 home {})", v1.display()))));
     crate::code::show_plan(&plan, &st);
@@ -396,6 +403,9 @@ pub async fn import(c: &Client, o: &Opts, home: &Path) -> Result<i32> {
             say("  nothing imported");
             return Ok(1);
         }
+    }
+    for (name, value) in &bring {
+        c.cmd("resources.secretSet", json!({ "name": name, "value": value })).await?;
     }
     let done = c.cmd("resources.apply", args).await?;
     say(&format!("  {} applied {} change{}", paint(&st, GREEN, "✓"), done["applied"], if done["applied"] == 1 { "" } else { "s" }));

@@ -146,6 +146,14 @@ pub fn answer_text(v: &Value) -> String {
     if v.is_null() { "null: nothing found for those arguments".to_owned() } else { v.to_string() }
 }
 
+/// A command's answer that is a refusal in its own shape (`{"error": "…"}` with no `text`, as `later.agent.schedule`
+/// answers `{}`): its words, so the tool result says isError as the other refusals do (audit F orchestration F7).
+pub fn refusal(v: &Value) -> Option<String> {
+    let o = v.as_object()?;
+    let error = o.get("error")?.as_str().filter(|e| !e.trim().is_empty())?;
+    o.get("text").is_none_or(Value::is_null).then(|| error.to_owned())
+}
+
 /// The machine a call names (`peer`), and the arguments without it. `own_peer`: the command has a `peer`
 /// field of its own, so it's left alone.
 pub fn split_peer(input: &Value, own_peer: bool) -> (Option<String>, Value) {
@@ -264,5 +272,21 @@ mod tests {
         assert_eq!(args_of(false, &Value::Null), json!({}));
         assert_eq!(args_of(false, &json!({ "id": "x" })), json!({ "id": "x" }));
         assert_eq!(args_of(false, &json!({ "args": { "id": "y" } })), json!({ "id": "y" }));
+    }
+
+    /// Audit F orchestration F7: as a run, `later_agent_schedule {}` answered `{"error":"Say when: …"}` as ordinary
+    /// content; a command's own refusal is the tool's error.
+    #[test]
+    fn a_commands_own_refusal_is_the_tools_error_audit_f_orchestration_f7() {
+        use serde_json::json;
+        assert_eq!(
+            super::refusal(&json!({ "error": "Say when: at (a time) or in (minutes)." })).as_deref(),
+            Some("Say when: at (a time) or in (minutes).")
+        );
+        assert_eq!(super::refusal(&json!({ "text": "Scheduled.", "error": null })), None);
+        assert_eq!(super::refusal(&json!({ "text": "x", "error": "also" })), None, "an answer with its text isn't refused");
+        assert_eq!(super::refusal(&json!({ "error": "" })), None);
+        assert_eq!(super::refusal(&json!([{ "error": "a row's field" }])), None);
+        assert_eq!(super::refusal(&json!(null)), None);
     }
 }

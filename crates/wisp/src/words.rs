@@ -486,6 +486,20 @@ pub fn router_away(words: &[String], literal: Literal, away: bool) -> Option<Str
     ))
 }
 
+/// A plugin that's switched off (audit F setup F1): `wisp settings get crew.tint` with `wisp.settings` off fell through to
+/// a prompt and launched a Full-auto task. The words name the plugin (`settings` is `wisp.settings`, a user plugin's
+/// last id part) and it isn't on: refused with its state, like a slip (exit 2, the `wisp -- "…"` way out), never a
+/// task. `off`: the plugins that aren't on, each with why (`plugins.list` rows: id, reason). None: no such plugin.
+pub fn plugin_off(words: &[String], literal: Literal, off: &[(String, Option<String>)]) -> Option<String> {
+    let first = words.first().filter(|_| literal == Literal::No)?;
+    let (id, why) = off.iter().find(|(id, _)| id.rsplit('.').next() == Some(first.as_str()))?;
+    let all = words.join(" ").replace('"', "\\\"");
+    let why = why.as_deref().filter(|w| !w.is_empty()).map_or_else(String::new, |w| format!(" ({w})"));
+    Some(format!(
+        "  ✗ wisp {first} is off: {id} is switched off{why}. Switch it on: wisp plugin enable {id}\n  To start a task with these words: wisp -- \"{all}\"   (or quote them as one: wisp \"{all}\")"
+    ))
+}
+
 /// Whether `word` is a built-in command group (strict: a verb it doesn't have is an error, never a task).
 pub fn is_group(word: &str) -> bool {
     VERB_PATHS.iter().any(|p| p.cmd == word) || GROUPS.iter().any(|(g, _)| *g == word)

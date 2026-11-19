@@ -301,6 +301,10 @@ impl Engine {
             removal::EnsurePlan::Restore => {
                 let root = self.repo(call, &wt.root).await?;
                 let _ = root.worktree_prune(call).await;
+                // its branch gone too (deleted after its PR merged): said plainly, never git's "invalid reference"
+                if !wt.branch.is_empty() && matches!(root.rev_parse(call, &format!("refs/heads/{}", wt.branch)).await, Ok(None)) {
+                    return Err(WtError::NotFound(crate::archived::branch_gone(wt)));
+                }
                 root.worktree_add(call, WorktreeAdd { path: wt.path.clone(), branch: wt.branch.clone(), start: None }).await?;
                 let _ = crate::prepare::copy_included(self, &wt.root, &wt.path).await;
                 Ok(())

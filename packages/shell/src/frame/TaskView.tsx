@@ -7,6 +7,7 @@
 
 import { Show, createEffect, createMemo, createResource, createSignal, getOwner, lazy, on, onCleanup, runWithOwner, untrack, type JSX } from 'solid-js';
 import { defineCommand, entityKey, newRowId, ownerOf, uuidv7, type EntityKey, type Json } from '@wisp/client';
+import { changeWhere as changeWhereOf, whereOf } from './change-where.ts';
 import {
   Answer,
   BtwList,
@@ -1016,22 +1017,10 @@ export default function TaskView(props: { readonly id: string; readonly onBack?:
   // every turn's edits added up (audit A #9: +6 −6 for a one-line fix after two follow-ups, still there after Revert
   // or after the merged PR's worktree went). Read again when a turn ends or what the worktree holds changes; none when
   // git can't read the folder (it's gone) or shows nothing, or the task has no worktree.
-  const changeWhere = createMemo((): string => {
-    const r = row();
-    if (!r) return '';
-    const body = (r.body ?? {}) as { ext?: Record<string, { path?: string; cwd?: string; baseRef?: string; base?: string } | undefined>; cwd?: string };
-    const sum = r.summary as Record<string, unknown>;
-    const wt = body.ext?.['wisp.worktrees'] ?? (sum['worktree'] as { path?: string; cwd?: string; baseRef?: string; base?: string } | undefined);
-    // the worktree only, as the side panel's Changes (v1 GET /sessions/:id/changes): a task in place diffed the project
-    // folder, so its head said +1962 for every session's and the user's own work (side-panel audit, 2026-11-19)
-    const dir = String(wt?.path ?? wt?.cwd ?? '');
-    if (!dir) return '';
-    const last = turns().at(-1);
-    return JSON.stringify([dir, wt?.baseRef || wt?.base || 'HEAD', last?.id ?? '', last?.status ?? '', sum['toShip'] ?? null]);
-  });
+  const changeWhere = createMemo(() => changeWhereOf(row(), turns().at(-1)));
   const [changedNow, { refetch: refetchChanges }] = createResource(changeWhere, (w) => {
-    const [path, base] = JSON.parse(w) as [string, string];
-    return run(changesNow, { key, path, base }).catch(() => null);
+    const at = whereOf(w);
+    return at ? run(changesNow, { key, ...at }).catch(() => null) : null;
   });
   const diff = createMemo(() => {
     const stats = changeWhere() ? (changedNow.latest?.stats ?? []) : [];
@@ -1497,7 +1486,7 @@ export default function TaskView(props: { readonly id: string; readonly onBack?:
                 // after the tokens, on their line: the receipt's cache and plan share (shell-task, ADR-0095; QA r1 #19)
                 receiptMore={<Slot input="shell.turn:trail" layout="contents" id={entityKey(peer, turn.id)} session={() => s() as never} />}
                 {...(changes().length > 0 && {
-                  files: { label: t('shell.task.files', { n: figures().files }), plus: `+${figures().plus}`, minus: `−${figures().minus}`, act: { onClick: () => side('changes') } },
+                  files: { label: t(figures().files === 1 ? 'shell.task.files.one' : 'shell.task.files.other', { count: figures().files }), plus: `+${figures().plus}`, minus: `−${figures().minus}`, act: { onClick: () => side('changes') } },
                 })}
                 activity={{
                   open: false,

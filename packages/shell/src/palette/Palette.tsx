@@ -15,6 +15,7 @@ import { useShell } from '../context.tsx';
 import { useClients } from '../slot.tsx';
 import { afterNextPaint } from '../frame/task-paint.ts';
 import { createRanker, marks, type Ranked } from './match.ts';
+import { PROJECT_SOURCE } from '../frame/project-switch.ts';
 import '../i18n/lazy.ts';
 
 const DEEP_PAUSE_MS = 160;
@@ -67,7 +68,8 @@ export default function Palette(_p: { readonly client: PluginClient; readonly pa
     }),
   );
   // one per open: each item's fields lowercased once, and a query that extends the last ranks only its hits (r2 #2)
-  const ranker = createRanker();
+  // the project switcher (narrowed to its projects) lists every one with an empty query, its tail under them
+  const ranker = createRanker({ whole: params.only?.includes(PROJECT_SOURCE) === true });
   const shown = createMemo<Ranked[]>(() => {
     const q = query();
     const d = deep();

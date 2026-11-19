@@ -12,7 +12,7 @@ import { showsPlace } from './place.ts';
 import { useShell } from '../shell.ts';
 import { useTask } from '../task-context.tsx';
 import { PrPane } from './PrPane.tsx';
-import { ShellPane } from './ShellPane.tsx';
+import { ShellPane, askShellFocus } from './ShellPane.tsx';
 import { ChangesPane, read as readChanges, readHere as readChangesQuiet } from './ChangesPane.tsx';
 import { changeStat, setChangeStat } from './changes-stat.ts';
 import { changesOf, outsideFolder, relative, type ChangeTurn } from './changes.ts';
@@ -112,7 +112,10 @@ export function SidePanel(props: { readonly pane: SidePane; readonly file?: stri
     if (v === 'app') void task.client.run(openApp, { key: task.key as EntityKey, cwd: pl.dir }).catch(() => undefined);
   };
   const open = (pane: string): void => {
-    if (typeof document !== 'undefined' && document.activeElement?.closest("[data-part~='panel.tabs']")) setRefocusUntil(Date.now() + REFOCUS_MS);
+    // the Shell's tab pressed while it shows: the keys go to the terminal (audit F tasks #1); another pane keeps them on
+    // its tab, so the arrow keys go on along the strip
+    if ((pane === 'shell' || pane === 'term') && props.pane === pane) return askShellFocus();
+    if (typeof document !== 'undefined' && document.activeElement?.closest("[data-part~='panel.tabs']") && pane !== 'shell' && pane !== 'term') setRefocusUntil(Date.now() + REFOCUS_MS);
     if (pane === 'changes' || pane === 'pr' || pane === 'shell' || pane === 'preview') shell.navigate({ t: 'openSide', side: { kind: pane, id: task.key as never } });
     if (pane === 'term') shell.navigate({ t: 'openSide', side: { kind: 'view', id: TERM_VIEW as never } });
     if (pane === 'watch') shell.navigate({ t: 'openSide', side: { kind: 'view', id: WATCH_VIEW as never } });

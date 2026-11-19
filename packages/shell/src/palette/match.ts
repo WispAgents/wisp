@@ -5,7 +5,8 @@
 //   - "#auth" keeps only items tagged auth; a plain word that is a tag counts more than one in a title;
 //   - recency: +20 just now, +10 a day old, never 0, so newer wins between equal matches;
 //   - best first, groups kept together in the order of their best hit, 12 per group;
-//   - an empty query shows each group's first `limit` (6) items, in the order given.
+//   - an empty query shows each group's first `limit` (6) items, in the order given; a list that must show whole (the
+//     project switcher: every project, then Add project…, Manage projects…, Repo history) shows all of them.
 // Per key it does the least (perf-ui-r2 #2): each item's fields are lowercased once per list (`createRanker`), the
 // query is parsed once, and a query that extends the last one only ranks the last one's hits.
 
@@ -197,7 +198,7 @@ export interface Ranker {
  * lowercased once, and the last query's hits, so a query that extends it ("au" → "aut", "fix" → "fix au") only ranks
  * those: every word or `#tag` it adds can only narrow them. A new `items` list starts again.
  */
-export function createRanker(): Ranker {
+export function createRanker(o: { readonly whole?: boolean } = {}): Ranker {
   // by item id: its fields as last seen (lowercased once), and whether the last query matched it. Kept across a new
   // list (the store changed while the palette is open: a task streaming rebuilds the task items each patch), so a
   // rebuild costs neither the lowercasing nor the narrowing; an item whose fields changed is ranked again.
@@ -221,7 +222,8 @@ export function createRanker(): Ranker {
         .filter((it) => {
           const n = per.get(it.group) ?? 0;
           per.set(it.group, n + 1);
-          return n < GROUP_LIMIT;
+          // the switcher with four projects hid Manage projects… (and from six, Add project…): audit F setup F3
+          return o.whole === true || n < GROUP_LIMIT;
         })
         .map((item) => ({ item, idx: [] }));
     }

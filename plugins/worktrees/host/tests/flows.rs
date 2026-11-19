@@ -248,7 +248,9 @@ async fn bring_back_restores_a_removed_worktree_on_its_branch_and_refuses_what_c
     assert!(archived::tidy(&e, &user(), &gone, e.mark()).await.unwrap().removed);
     git(&root, &["branch", "-D", "wisp/gone"]);
     let why = archived::bring_back(&e, &user(), Claimant::turn("t2", "turn-1"), &gone).await.unwrap_err();
-    assert!(why.contains("couldn't come back") && why.contains("wisp/gone"), "{why}");
+    // audit F orchestration F2: a merged task's branch is gone; said in plain words, never git's "invalid reference"
+    assert!(why.contains("branch wisp/gone is gone") && why.contains("merged") && why.contains("on main now"), "{why}");
+    assert!(!why.contains("invalid reference") && !why.contains("fatal"), "{why}");
     assert!(!Path::new(&gone.path).exists());
 
     let theirs = add_tree(&root, &t.0.join("u/conductor/workspaces/app/oslo"), "oslo");

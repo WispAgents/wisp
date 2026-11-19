@@ -144,7 +144,8 @@ async fn a_task_whose_worktree_cant_come_back_is_refused_with_why_and_runs_nowhe
     let hero = &turns[1]["presentation"]["blocks"][0];
     assert_eq!(hero["title"], "Not started", "{:?}", turns[1]);
     let why = hero["summary"].as_str().unwrap();
-    assert!(why.contains("couldn't come back") && why.contains(branch), "{why}");
+    // its branch gone: said in plain words, never git's "invalid reference" (audit F orchestration F2)
+    assert!(why.contains(&format!("branch {branch} is gone")) && !why.contains("invalid reference"), "{why}");
     assert!(!Path::new(path).exists(), "no folder made at its path");
     assert_eq!(run_folders(&rec).len(), 1, "nothing ran for the refused turn, here or anywhere else");
     let task = api.cmd("runtime.get", json!({ "id": id })).await;
