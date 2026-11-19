@@ -201,35 +201,50 @@ function BackRow(props: { readonly api: menu.Api; readonly label: string; readon
 function Entries(props: { readonly api: menu.Api; readonly items: readonly MenuEntry[]; readonly part: PartName; readonly fly?: FlyContext | undefined }): JSX.Element {
   // any icon in this pane: then every row keeps the icon column (QA r1 #29: Lean runs' choices sat left of the rest)
   const iconCol = createMemo(() => props.items.some((e) => (e.kind === 'group' ? e.items.some((i) => i.icon) : e.kind !== 'separator' && !!e.icon)));
+  // rows keyed by what they are, not by object: new entries (a plugin's later part landing, a task's patch) update the
+  // rows in place, so an open flyout stays open and its new items can be chosen (they went to a fresh, closed flyout)
+  const tidy = createMemo(() => tidySeparators(props.items));
+  const keys = createMemo(() => tidy().map(entryKey), [], { equals: (a, b) => a.length === b.length && a.every((k, i) => k === b[i]) });
   return (
-    <For each={tidySeparators(props.items)}>
-      {(entry) => (
-        <Switch fallback={<Item api={props.api} item={entry as MenuItem} part={props.part} iconCol={iconCol()} />}>
-          <Match when={entry.kind === 'separator'}>
-            <div {...props.api.getSeparatorProps()} data-kit="menu-separator" data-part={sub(props.part, 'separator')} />
-          </Match>
-          <Match when={entry.kind === 'submenu' && entry}>
-            {(e) => (
-              <Show when={props.fly} fallback={<SubRow api={props.api} entry={e()} part={props.part} />}>
-                {(fly) => <Flyout api={props.api} entry={e()} part={props.part} fly={fly()} />}
-              </Show>
+    <For each={keys()}>
+      {(k) => {
+        const found = createMemo(() => tidy().find((e, i) => entryKey(e, i) === k));
+        return (
+          <Show when={found()}>
+            {(entry) => (
+            <Switch fallback={<Item api={props.api} item={entry() as MenuItem} part={props.part} iconCol={iconCol()} />}>
+              <Match when={entry().kind === 'separator'}>
+                <div {...props.api.getSeparatorProps()} data-kit="menu-separator" data-part={sub(props.part, 'separator')} />
+              </Match>
+              <Match when={entry().kind === 'submenu' && (entry() as MenuSubmenu)}>
+                {(e) => (
+                  <Show when={props.fly} fallback={<SubRow api={props.api} entry={e()} part={props.part} />}>
+                    {(fly) => <Flyout api={props.api} entry={e()} part={props.part} fly={fly()} />}
+                  </Show>
+                )}
+              </Match>
+              <Match when={entry().kind === 'group' && (entry() as MenuGroup)}>
+                {(group) => (
+                  <div {...props.api.getItemGroupProps({ id: group().id })} data-kit="menu-group" data-part={sub(props.part, 'group')}>
+                    <div {...props.api.getItemGroupLabelProps({ htmlFor: group().id })} data-kit="menu-group-label">
+                      {group().label}
+                    </div>
+                    <For each={group().items}>{(item) => <Item api={props.api} item={item} part={props.part} iconCol={iconCol()} />}</For>
+                  </div>
+                )}
+              </Match>
+            </Switch>
             )}
-          </Match>
-          <Match when={entry.kind === 'group' && entry}>
-            {(group) => (
-              <div {...props.api.getItemGroupProps({ id: group().id })} data-kit="menu-group" data-part={sub(props.part, 'group')}>
-                <div {...props.api.getItemGroupLabelProps({ htmlFor: group().id })} data-kit="menu-group-label">
-                  {group().label}
-                </div>
-                <For each={group().items}>{(item) => <Item api={props.api} item={item} part={props.part} iconCol={iconCol()} />}</For>
-              </div>
-            )}
-          </Match>
-        </Switch>
-      )}
+          </Show>
+        );
+      }}
     </For>
   );
 }
+
+/** A row's identity in its pane: its value, its group's id, a separator by its place. */
+const entryKey = (e: MenuEntry, i: number): string =>
+  e.kind === 'separator' ? `-${i}` : e.kind === 'group' ? `g:${e.id}` : e.kind === 'submenu' ? `m:${e.value}` : `i:${e.value}`;
 
 /** The floating list both menus share. */
 function MenuContent(props: { readonly state: MenuState; readonly items: readonly MenuEntry[]; readonly part: PartName; readonly at?: 'pointer' }): JSX.Element {

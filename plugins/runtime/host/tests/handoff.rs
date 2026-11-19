@@ -86,11 +86,12 @@ async fn a_hand_off_note_never_quotes_a_env_value_the_task_read_adr_0050() {
     assert!(!last.prompt.contains("sk-live-handoff"), "the stored turn: {}", last.prompt);
 }
 
-/// ADR-0050: a /btw on a harness that can't fork has no copy of the conversation, so it builds no context from the
-/// task's steps: its prompt is the question alone (never `btw_prompt`'s digest or raw step text), and what it stores
-/// on the task (`ext.wisp.runtime.btw`) holds the question and its own answer, nothing an earlier turn read.
+/// ADR-0050: a /btw on a harness that can't fork has no copy of the conversation. As v1's btwPrompt, it sends the
+/// rules, the task's turns (each prompt and report) and the question, but never a step's text (what a tool printed,
+/// a .env it read) nor a value a turn read, and no `--resume`. What it stores on the task (`ext.wisp.runtime.btw`)
+/// holds the question and its own answer, nothing an earlier turn read.
 #[tokio::test(flavor = "multi_thread")]
-async fn a_btw_without_a_fork_sends_only_its_question_and_stores_no_earlier_step_text_adr_0050() {
+async fn a_btw_without_a_fork_sends_its_turns_and_question_and_stores_no_earlier_step_text_adr_0050() {
     use wisp_runtime_api::commands::BtwArgs;
     let r = rig_on(Recorder::default(), vec![Fake::named("fake", "Fake CLI", &["low"])]).await;
     let start = StartArgs { prompt: "envread it".into(), agent: Some("fake".into()), cwd: Some(common::tmp()), ..StartArgs::default() };
@@ -106,7 +107,10 @@ async fn a_btw_without_a_fork_sends_only_its_question_and_stores_no_earlier_step
     r.rt.btw(BtwArgs { id: id.clone(), question: "why?".into(), attachments: Vec::new() }).await.unwrap();
     until("the /btw to spawn", || async { r.sim.spawned().len() == 2 }).await;
     let args = &r.sim.spawned()[1].args;
-    assert_eq!(args[0], "why?", "the question alone: {args:?}");
+    let sent = &args[0];
+    assert!(sent.starts_with("# wisp btw") && sent.trim_end().ends_with("why?"), "the rules first, the question last: {sent}");
+    assert!(sent.contains("envread it"), "the task's turns go with it (v1 btwPrompt): {sent}");
+    assert!(!sent.contains("API_KEY=") && !sent.contains("PORT=3000"), "no step text (what `cat .env` printed): {sent}");
     assert!(!args.iter().any(|a| a.starts_with("--resume")), "no fork, no conversation: {args:?}");
     assert!(args.iter().all(|a| !a.contains("sk-live") && !a.contains("What it has done so far")), "{args:?}");
 
@@ -117,7 +121,8 @@ async fn a_btw_without_a_fork_sends_only_its_question_and_stores_no_earlier_step
     until("the /btw answer", || async { btw().await.get("pending").is_none() }).await;
     let entry = btw().await;
     assert_eq!(entry["question"], "why?");
-    assert!(entry["answer"].as_str().unwrap().contains("done: why?"), "{entry}");
+    // the fake answers `done: <its prompt>`: the side run's own answer, to the /btw prompt
+    assert!(entry["answer"].as_str().unwrap().contains("done: # wisp btw"), "{entry}");
     let stored = serde_json::to_string(&r.rt.get(id.as_str()).await.unwrap()).unwrap();
     assert!(!stored.contains("sk-live-handoff"), "the stored task quoted a .env value: {stored}");
 }

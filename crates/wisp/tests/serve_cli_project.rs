@@ -73,7 +73,8 @@ async fn a_task_started_from_a_project_folder_is_that_project_s_as_new_task_s_is
     let here = place(&api, "cli task here").await;
     assert_eq!(here["cwd"], json!(path), "{here}");
     let web = place(&api, "cli task in web").await;
-    assert_eq!(web["cwd"], json!(format!("{path}/web")), "{web}");
+    // the folder inside it, in this OS's spelling (`…\repo2\web` on Windows)
+    assert_eq!(web["cwd"], json!(Path::new(&path).join("web").to_string_lossy()), "{web}");
     // Worktree per task (on by default): its own worktree, as New task's; --no-worktree keeps it in place
     assert_eq!(here["worktree"], json!(true), "{here}");
     let in_place = place(&api, "cli task in place").await;

@@ -151,6 +151,9 @@ for (const [label, part] of [
     const { root, client, sent } = await openTask();
     await pick(root, /^Task options/, label);
     await until(() => client.nav.nav().overlays.some((o) => o.id === part));
+    // the dialog opened: Add to crew… did nothing when the crew plugin's later part landed while Task options was open
+    // (a 4 s wait that passed anyway, then a timeout on Windows CI; the kit's menu now keys rows in place)
+    expect(client.nav.nav().overlays.map((o) => o.id)).toContain(part);
     expect(writes(sent)).toEqual([]);
   });
 }

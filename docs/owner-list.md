@@ -75,6 +75,8 @@ in the real app (or the owner drops it). Statuses: `done` (committed and checked
 | Home's "Sign in to GitHub" tip shows even when gh is signed in | done (dd1215c0) |
 | WebKit "ResizeObserver loop" message | done (dd1215c0, 0f43f949: VirtualList, Toolbar, Diagnostics) |
 | Server budget: write amplification 44.5× > 44× | done (7f2416b3: 39.8×, ADR-0100) |
+| A submenu's items that arrive while it's open (a plugin's later part landing) did nothing when clicked: Task options › Add to crew… in the first second; the test passed after a 4 s wait and timed out on Windows CI | done: the kit's menu keys rows by value, so an open flyout keeps its machine (packages/ui/test/menu.test.tsx an_item_added_to_an_open_submenu_can_be_chosen_*) |
+| CI on c0d655ad: Rust targets red (serve_history MCP list, serve_worktree_safety git identity and CRLF, delete_race's fake missed the /btw hang cue, handoff /btw prompt, serve_cli_project path) and a real Windows bug: Bring in skipped stray worktrees (git's C:/ vs wisp's C:\ compared as strings) | done (fixer): tests updated for deliberate changes; Bring in compares folders (plugins/worktrees/core/src/offer.rs) |
 
 ## Then
 

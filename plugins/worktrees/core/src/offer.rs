@@ -77,10 +77,12 @@ pub fn offer<S: std::hash::BuildHasher>(
 
 /// The paths a Bring in may take: the offer's own, in its order (a path that isn't one, or no longer is, is
 /// skipped, never made a task).
+/// Paths are compared by `folder_key`, as `offer` does: on Windows git lists `C:/x/stray` for the `C:\x\stray` a client
+/// sends back (audit A, Windows CI: the stray worktree was skipped).
 pub fn takes<'a>(offer: &'a Offer, paths: &[String]) -> (Vec<&'a OfferItem>, Vec<String>) {
-    let want: HashSet<&str> = paths.iter().map(|p| norm(p)).collect();
-    let take: Vec<&OfferItem> = offer.items.iter().filter(|i| want.contains(i.path.as_str())).collect();
-    let skipped = paths.iter().filter(|p| !take.iter().any(|i| i.path == norm(p))).cloned().collect();
+    let want: HashSet<String> = paths.iter().map(|p| folder_key(p)).collect();
+    let take: Vec<&OfferItem> = offer.items.iter().filter(|i| want.contains(&folder_key(&i.path))).collect();
+    let skipped = paths.iter().filter(|p| !take.iter().any(|i| same_folder(&i.path, p))).cloned().collect();
     (take, skipped)
 }
 
@@ -139,5 +141,22 @@ mod tests {
         let (take, skipped) = takes(&o, &["/b/".into(), "/elsewhere".into()]);
         assert_eq!(take.iter().map(|i| i.path.as_str()).collect::<Vec<_>>(), ["/b"]);
         assert_eq!(skipped, ["/elsewhere"]);
+    }
+
+    /// Windows: git lists the worktree as `C:/…/stray`; the client sends wisp's `C:\…\stray` (any case, a trailing
+    /// `\`). It's the same folder: taken, not skipped. A sibling with a longer name is still another folder.
+    #[test]
+    fn bring_in_takes_a_windows_path_in_either_spelling() {
+        let git = "C:/Users/runneradmin/AppData/Local/Temp/t/stray";
+        let o =
+            offer("app", "C:/Users/runneradmin/AppData/Local/Temp/t/proj", &[l(git, "stray-branch")], &HashSet::new(), "C:/w", "C:/u", &[])
+                .unwrap();
+        for sent in [r"C:\Users\runneradmin\AppData\Local\Temp\t\stray", r"c:\users\RUNNERADMIN\appdata\local\temp\t\stray\", git] {
+            let (take, skipped) = takes(&o, &[sent.into()]);
+            assert_eq!(take.iter().map(|i| i.path.as_str()).collect::<Vec<_>>(), [git], "{sent}");
+            assert!(skipped.is_empty(), "{sent}: {skipped:?}");
+        }
+        let (take, skipped) = takes(&o, &[r"C:\Users\runneradmin\AppData\Local\Temp\t\stray2".into()]);
+        assert!(take.is_empty() && skipped.len() == 1);
     }
 }

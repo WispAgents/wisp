@@ -296,3 +296,33 @@ describe('a phone menu never widens the page (QA r7 #4)', () => {
     });
   }
 });
+
+// The task head's Task options › Add to crew… did nothing when the crew plugin's later part landed while the submenu
+// was open (apps/web task-menu-dialogs, Windows CI run 44379234674): an item that arrives in an open submenu is chosen
+// like the others
+for (const pointer of ['touch', 'mouse'] as const) {
+  test(`an_item_added_to_an_open_submenu_can_be_chosen_${pointer}`, async () => {
+    if (pointer === 'touch') touchPointer();
+    onTestFinished(() => {
+      vi.unstubAllGlobals();
+    });
+    const onSelect = vi.fn();
+    const [items, setItems] = createSignal<MenuEntry[]>(nested);
+    mount(() => <Menu items={items()} onSelect={onSelect} trigger={{ icon: 'dots', 'aria-label': 'More' }} part="task.more" />);
+    const trigger = part('task.more.trigger');
+    trigger?.focus();
+    key(trigger, 'ArrowDown');
+    await tick(20);
+    part('task.more.sub')?.click();
+    await tick(20);
+    const copy = nested[1] as Extract<MenuEntry, { kind: 'submenu' }>;
+    const grown: MenuEntry = { ...copy, items: [...copy.items, { value: 'copy-path', label: 'Copy path' }] };
+    setItems([nested[0] as MenuEntry, grown, nested[2] as MenuEntry]);
+    await tick(20);
+    const added = [...document.querySelectorAll<HTMLElement>('[data-value="copy-path"]')].at(-1);
+    expect(added, 'the new item shows').toBeDefined();
+    added?.click();
+    await tick(20);
+    expect(onSelect).toHaveBeenCalledWith('copy-path');
+  });
+}

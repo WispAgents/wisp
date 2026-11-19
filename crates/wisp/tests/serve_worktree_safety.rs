@@ -39,6 +39,9 @@ fn git(dir: &Path, args: &[&str]) -> String {
 fn repo(dir: &Path) -> PathBuf {
     let repo = wisp_proc::canonical_blocking(dir.join("proj")).unwrap();
     git(&repo, &["init", "-q", "-b", "main"]);
+    // a Windows runner's git has core.autocrlf=true: checkouts (a worktree, a fork's copy, a restore) would write the
+    // files back with CRLF, as git is told to, and v1's fork did too. The repo's own setting keeps the bytes as written.
+    git(&repo, &["config", "core.autocrlf", "false"]);
     git(&repo, &["add", "."]);
     git(&repo, &["commit", "-qm", "init"]);
     let origin = dir.join("origin.git");
@@ -66,7 +69,19 @@ fn fixture(name: &str) -> Fixture {
     common::install_fakes(&bin, &["gh"]);
     let state = dir.join("gh-state.json");
     std::fs::write(&state, json!({ "prs": {} }).to_string()).unwrap();
-    let (serve, port) = start_with(&dir, &[("WISP_GH_BIN", bin.join("gh").to_str().unwrap()), ("FAKE_GH_STATE", state.to_str().unwrap())]);
+    // ship.ship commits in the task's worktree: a CI runner has no git identity (no ~/.gitconfig), and v1 never
+    // invented one for a user's commit, so the test gives the server one, as `git()` does for the test's own commits
+    let (serve, port) = start_with(
+        &dir,
+        &[
+            ("WISP_GH_BIN", bin.join("gh").to_str().unwrap()),
+            ("FAKE_GH_STATE", state.to_str().unwrap()),
+            ("GIT_AUTHOR_NAME", "t"),
+            ("GIT_AUTHOR_EMAIL", "t@t"),
+            ("GIT_COMMITTER_NAME", "t"),
+            ("GIT_COMMITTER_EMAIL", "t@t"),
+        ],
+    );
     let api = Api { http: reqwest::Client::new(), port, n: 0.into() };
     Fixture { _serve: serve, api, repo, state }
 }

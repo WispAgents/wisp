@@ -300,7 +300,9 @@ async fn fake_cli(mut io: SimIo) -> Exit {
         }
         return Exit { code: Some(0), signal: None };
     }
-    if prompt.starts_with("hang") {
+    // a /btw's prompt is its rules and the task so far, then its question (v1 btwPrompt): the question is what it asks
+    let asked = prompt.rsplit_once("## Side question\n\n").map_or(prompt.as_str(), |(_, q)| q);
+    if prompt.starts_with("hang") || asked.starts_with("hang") {
         // set as it goes, however: the sim's kill may end it by dropping it (its own `killed` branch wins the
         // select) before a store after this await ran, and a delete that waited for it read it as still running
         struct Gone;
