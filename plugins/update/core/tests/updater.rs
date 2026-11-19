@@ -177,11 +177,11 @@ fn relaunch_keeps_the_port_wisp_is_serving_on() {
         u.install.method = m;
         assert!(u.relaunch_command(false).ends_with(" --browser --no-open --port 5123"));
         let d = u.relaunch_command(true);
-        assert!(d.ends_with("wisp-agents@latest --port 5123") || d.ends_with("wisp.js\" --port 5123"), "{d}");
+        assert!(d.ends_with("wisp-agents@latest --port 5123") || d.ends_with("wisp.js' --port 5123"), "{d}");
     }
     u.install.method = Method::Global;
     u.env.node = Some("/usr/local/bin/node".into());
-    assert_eq!(u.relaunch_command(true), "\"/usr/local/bin/node\" \"/usr/local/lib/node_modules/wisp-agents/bin/wisp.js\" --port 5123");
+    assert_eq!(u.relaunch_command(true), "'/usr/local/bin/node' '/usr/local/lib/node_modules/wisp-agents/bin/wisp.js' --port 5123");
     u.env.desktop = Some("tauri".into());
     u.env.ppid = 77;
     assert!(u.relaunch_command(true).starts_with("for i in $(seq 100); do kill -0 77 2>/dev/null || break; sleep 0.1; done; "));
@@ -190,11 +190,10 @@ fn relaunch_keeps_the_port_wisp_is_serving_on() {
 #[test]
 fn homebrew_upgrades_through_brew_and_relaunches_from_opt() {
     let u = Updater::new(detect(KEG_BIN, &mac(), None, false, None), mac(), CURRENT, 5123, Env::default());
-    assert_eq!(u.command().as_deref(), Some("\"/opt/homebrew/bin/brew\" upgrade wisp-agents"));
+    assert_eq!(u.command().as_deref(), Some("'/opt/homebrew/bin/brew' upgrade wisp-agents"));
     assert!(
-        u.relaunch_command(false).ends_with(
-            "\"/opt/homebrew/opt/wisp-agents/libexec/lib/node_modules/wisp-agents/bin/wisp.js\" --browser --no-open --port 5123"
-        )
+        u.relaunch_command(false)
+            .ends_with("'/opt/homebrew/opt/wisp-agents/libexec/lib/node_modules/wisp-agents/bin/wisp.js' --browser --no-open --port 5123")
     );
 }
 
@@ -206,7 +205,7 @@ fn install_runs_the_command_and_refuses_to_relaunch_the_same_version() {
     assert_eq!(
         step,
         Ok(InstallStep::Run {
-            cmd: "\"/opt/homebrew/bin/brew\" upgrade wisp-agents".into(),
+            cmd: "'/opt/homebrew/bin/brew' upgrade wisp-agents".into(),
             env: vec![("HOMEBREW_NO_INSTALL_CLEANUP".into(), "1".into())]
         })
     );
@@ -303,7 +302,15 @@ fn app_downloads_are_checked_against_the_release_sha256() {
     assert!(u.verify_download(&good, body).is_ok());
     let bad = wisp_update_core::Asset { digest: Some(format!("sha256:{}", "0".repeat(64))), ..good.clone() };
     assert!(u.verify_download(&bad, body).unwrap_err().contains("didn't match the release's checksum"));
-    assert!(u.verify_download(&wisp_update_core::Asset { digest: None, ..good }, body).is_ok(), "no digest: nothing to check");
+    for digest in [None, Some(String::new()), Some("sha256:".into()), Some("sha256:abc".into())] {
+        let e = u.verify_download(&wisp_update_core::Asset { digest: digest.clone(), ..good.clone() }, body).unwrap_err();
+        assert!(
+            e.starts_with("The release has no checksum for wisp-linux-x64.AppImage, so wisp won't install it. Download it from"),
+            "{digest:?}: {e}"
+        );
+    }
+    let upper = wisp_update_core::Asset { digest: Some(sha256_hex(body).to_uppercase()), ..good };
+    assert!(u.verify_download(&upper, body).is_ok(), "a bare hex digest, any case");
     assert_eq!(sha256_hex(b""), "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855");
 }
 
@@ -314,10 +321,10 @@ fn the_app_relaunches_through_the_installer_on_windows_and_open_on_macos() {
     assert_eq!(win.relaunch_command(true), "\"C:\\Temp\\wisp-update-1\\wisp-windows-x64-setup.exe\" /S /R");
     let mut mac = app("darwin", "arm64", "/Applications/wisp.app/Contents/MacOS/wisp", None);
     mac.swap = Some(Swap::Mac { open: "/Applications/wisp.app".into(), remove: "/tmp/wisp-update-1/old.app".into() });
-    assert_eq!(mac.relaunch_command(true), "rm -rf \"/tmp/wisp-update-1/old.app\"; open \"/Applications/wisp.app\"");
+    assert_eq!(mac.relaunch_command(true), "rm -rf '/tmp/wisp-update-1/old.app'; open '/Applications/wisp.app'");
     let mut linux = app("linux", "x64", "/tmp/.mount_x/usr/bin/wisp", Some("/home/u/wisp.AppImage"));
     linux.swap = Some(Swap::Linux { open: "/home/u/wisp.AppImage".into() });
-    assert_eq!(linux.relaunch_command(true), "\"/home/u/wisp.AppImage\" >/dev/null 2>&1");
+    assert_eq!(linux.relaunch_command(true), "'/home/u/wisp.AppImage' >/dev/null 2>&1");
 }
 
 #[test]
@@ -383,4 +390,161 @@ fn an_installed_update_relaunches_wisp_on_windows_through_powershell() {
 fn powershell_encoded_command_is_utf16le_base64() {
     // what `[Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes('dir'))` prints
     assert_eq!(wisp_update_core::encode_ps("dir"), "ZABpAHIA");
+}
+
+/// The packaged app's own server (desktop/scripts/package.mjs `overlay`: `Contents/Resources/app` on macOS,
+/// `resources/app` elsewhere) is the app however it was started; v2 only knew it with `WISP_DESKTOP` set on
+/// Windows and Linux, so the same binary run from a terminal offered `npm install -g`.
+#[test]
+fn the_packaged_apps_server_is_the_app_in_tauris_layout() {
+    let mac = detect("/Applications/wisp.app/Contents/Resources/app/wisp", &mac(), None, false, None);
+    assert_eq!((mac.method, mac.root.as_str()), (Method::App, "/Applications/wisp.app"));
+    let win = Platform::new("win32", "x64");
+    for desktop in [true, false] {
+        let w = detect("C:\\Users\\u\\AppData\\Local\\wisp\\resources\\app\\wisp.exe", &win, None, desktop, None);
+        assert_eq!((w.method, w.root.as_str()), (Method::App, "C:\\Users\\u\\AppData\\Local\\wisp\\resources\\app"), "desktop {desktop}");
+    }
+    let linux = Platform::new("linux", "x64");
+    let deb = detect("/usr/lib/wisp/resources/app/wisp", &linux, None, false, None);
+    assert_eq!((deb.method, deb.root.as_str()), (Method::App, "/usr/lib/wisp/resources/app"));
+    let image = detect("/tmp/.mount_wispAb12/usr/lib/wisp/resources/app/wisp", &linux, Some("/home/u/Apps/wisp.AppImage"), false, None);
+    assert_eq!((image.method, image.root.as_str()), (Method::App, "/home/u/Apps/wisp.AppImage"), "the AppImage is what updates");
+    // not the layout: a folder merely named app, or the repo's own stage
+    assert_eq!(
+        detect("/usr/local/lib/node_modules/wisp-agents/node_modules/wisp-agents-linux-x64/bin/wisp", &linux, None, false, None).method,
+        Method::Global
+    );
+    assert_eq!(detect("/home/u/app/wisp", &linux, None, false, None).method, Method::Global);
+    assert_eq!(detect("/home/u/wisp/desktop/src-tauri/stage/app/wisp", &linux, None, false, Some("/home/u/wisp")).method, Method::Git);
+}
+
+#[test]
+fn a_bundles_version_is_its_info_plists_short_version() {
+    use wisp_update_core::app::bundle_version;
+    let plist = "<?xml version=\"1.0\"?>\n<plist version=\"1.0\">\n<dict>\n  <key>CFBundleName</key>\n  <string>wisp</string>\n  \
+                 <key>CFBundleShortVersionString</key>\n  <string>2.3.0</string>\n  <key>CFBundleVersion</key>\n  <string>2.3.0.7</string>\n</dict>\n</plist>\n";
+    assert_eq!(bundle_version(plist).as_deref(), Some("2.3.0"));
+    assert_eq!(bundle_version("<key>CFBundleShortVersionString</key><string>2.4.0-beta.1</string>").as_deref(), Some("2.4.0-beta.1"));
+    assert_eq!(bundle_version("<key>CFBundleShortVersionString</key>\n<string></string>"), None, "empty");
+    assert_eq!(bundle_version("<key>CFBundleShortVersionString</key>\n<integer>2</integer>"), None, "not a string");
+    assert_eq!(bundle_version("<key>CFBundleVersion</key><string>2.3.0</string>"), None, "only the short version counts");
+    let u = app("darwin", "arm64", "/Applications/wisp.app/Contents/Resources/app/wisp", None);
+    assert!(u.check_bundle(bundle_version(plist).as_deref()).is_ok());
+    assert!(u.check_bundle(Some(CURRENT)).unwrap_err().starts_with("The download isn't newer than wisp 2.0.0. Download it from"));
+}
+
+#[test]
+fn every_app_update_failure_says_where_to_download_it() {
+    let u = app("darwin", "arm64", "/Applications/wisp.app/Contents/Resources/app/wisp", None);
+    let a = wisp_update_core::Asset { name: "wisp-mac-arm64.zip".into(), url: "https://dl/x".into(), digest: None };
+    let tail = "Download it from https://github.com/WispAgents/wisp/releases/latest";
+    for (m, head) in [
+        (u.download_failed(&a, 404), "Couldn't download wisp-mac-arm64.zip (HTTP 404). "),
+        (u.cant_download(&a, "offline"), "Couldn't download wisp-mac-arm64.zip: offline. "),
+        (u.cant_save(&a, "disk full"), "Couldn't save wisp-mac-arm64.zip: disk full. "),
+        (u.cant_unpack(&a, "bad zip"), "Couldn't unpack wisp-mac-arm64.zip: bad zip. "),
+        (u.cant_replace_bundle("/Applications"), "wisp can't replace itself in /Applications (no permission). "),
+        (u.cant_place_bundle("busy"), "Couldn't put the new wisp in place: busy. "),
+        (u.cant_replace_image("/home/u/wisp.AppImage"), "wisp can't replace /home/u/wisp.AppImage (no permission). "),
+        (
+            u.cant_update_read_only("/Volumes/wisp"),
+            "wisp is running from a read-only disk (/Volumes/wisp), such as the disk image it came in. Drag wisp.app to \
+             Applications, open it from there, then update. ",
+        ),
+        (
+            u.cant_update_translocated(),
+            "macOS is running this wisp from a temporary copy because it was opened where it was downloaded. Move wisp.app \
+             to Applications, open it from there, then update. ",
+        ),
+    ] {
+        assert_eq!(m, format!("{head}{tail}"));
+    }
+}
+
+/// The Linux relaunch waits for the old desktop shell to go, as macOS does: it holds the single-instance lock, and a
+/// new `AppImage` started meanwhile hands over to it and quits, so nothing came back.
+#[test]
+fn the_appimage_relaunch_waits_for_the_old_shell() {
+    let mut linux = app("linux", "x64", "/tmp/.mount_x/usr/lib/wisp/resources/app/wisp", Some("/home/u/wisp.AppImage"));
+    linux.swap = Some(Swap::Linux { open: "/home/u/wisp.AppImage".into() });
+    linux.env.desktop = Some("tauri".into());
+    linux.env.ppid = 4242;
+    assert_eq!(
+        linux.relaunch_command(true),
+        "for i in $(seq 100); do kill -0 4242 2>/dev/null || break; sleep 0.1; done; '/home/u/wisp.AppImage' >/dev/null 2>&1"
+    );
+    let mut mac = app("darwin", "arm64", "/Applications/wisp.app/Contents/Resources/app/wisp", None);
+    mac.swap = Some(Swap::Mac { open: "/Applications/wisp.app".into(), remove: "/Applications/wisp.app.old-1".into() });
+    mac.env.desktop = Some("tauri".into());
+    mac.env.ppid = 4242;
+    assert_eq!(
+        mac.relaunch_command(true),
+        "rm -rf '/Applications/wisp.app.old-1'; for i in $(seq 100); do kill -0 4242 2>/dev/null || break; sleep 0.1; done; \
+         open '/Applications/wisp.app'"
+    );
+}
+
+/// Every path the relaunch hands to `sh` is one single-quoted word: a `$(…)`, backtick, `"` or `'` in a folder name is
+/// never run or split (v1's JSON quotes let sh expand `$(…)` and backticks inside them).
+#[test]
+fn relaunch_paths_are_never_run_by_sh() {
+    use wisp_update_core::updater::sh_quote;
+    assert_eq!(sh_quote("/a b/c"), "'/a b/c'");
+    assert_eq!(sh_quote("/Ann's $(rm -rf ~) `id` \"x\""), "'/Ann'\\''s $(rm -rf ~) `id` \"x\"'");
+    let evil = "/Users/a$(touch /tmp/pwned)`id`\"'b/Apps";
+    let mut linux = app("linux", "x64", "/tmp/.mount_x/usr/bin/wisp", Some("/x/wisp.AppImage"));
+    linux.swap = Some(Swap::Linux { open: format!("{evil}/wisp.AppImage") });
+    let cmd = linux.relaunch_command(true);
+    assert_eq!(cmd, format!("{} >/dev/null 2>&1", sh_quote(&format!("{evil}/wisp.AppImage"))));
+    // run it for real with an echo in place of the AppImage: sh sees exactly one word, the path as written
+    let out = std::process::Command::new("sh").arg("-c").arg(format!("printf %s {}", sh_quote(evil))).output();
+    if let Ok(out) = out {
+        assert_eq!(String::from_utf8_lossy(&out.stdout), evil);
+    }
+    let mut bundle = app("darwin", "arm64", "/Applications/wisp.app/Contents/Resources/app/wisp", None);
+    bundle.swap = Some(Swap::Mac { open: format!("{evil}/wisp.app"), remove: format!("{evil}/wisp.app.old-1") });
+    assert_eq!(
+        bundle.relaunch_command(true),
+        format!("rm -rf {}; open {}", sh_quote(&format!("{evil}/wisp.app.old-1")), sh_quote(&format!("{evil}/wisp.app")))
+    );
+    let mut g = Updater::new(global(), mac(), CURRENT, 1, Env { node: Some(format!("{evil}/node")), ..Env::default() });
+    g.install.method = Method::Global;
+    assert!(g.relaunch_command(true).starts_with(&sh_quote(&format!("{evil}/node"))));
+}
+
+/// `WISP_UPDATE_FEED` points the app's check at a feed on this computer (a test, a packaged build tried end to end
+/// against a fake release), and at nothing else.
+#[test]
+fn the_release_feed_can_be_a_local_one_only() {
+    use wisp_update_core::updater::feed_override;
+    for ok in ["http://127.0.0.1:8123/releases", "http://localhost:9/r/", "http://[::1]:8123/releases", "http://127.0.0.1/r"] {
+        assert_eq!(feed_override(Some(ok)).as_deref(), Some(ok.trim_end_matches('/')), "{ok}");
+    }
+    for no in [
+        "https://example.com/releases",
+        "http://example.com/releases",
+        "http://127.0.0.1.evil.com/r",
+        "http://localhost.evil.com:80/r",
+        "https://127.0.0.1:8123/r",
+        "file:///tmp/r",
+        "",
+        "http://localhost:80@evil.com/r",
+        "http://127.0.0.1@evil.com/r",
+        "http://user@127.0.0.1:8123/r",
+        "http://localhost:80\\@evil.com/r",
+        "http://127.0.0.1:80x/r",
+        "http://127.0.0.1:/r",
+        "http://localhost?.evil.com/r",
+        "http://[::1/r",
+    ] {
+        assert_eq!(feed_override(Some(no)), None, "{no}");
+    }
+    assert_eq!(feed_override(None), None);
+    let p = Platform::new("darwin", "arm64");
+    let env = Env { feed: feed_override(Some("http://127.0.0.1:8123/releases")), ..Env::default() };
+    let mut u = Updater::new(detect("/Applications/wisp.app/Contents/Resources/app/wisp", &p, None, true, None), p, CURRENT, 1, env);
+    assert_eq!(u.begin_check(0, "stable").url, "http://127.0.0.1:8123/releases/latest");
+    assert_eq!(u.begin_check(0, "beta").url, "http://127.0.0.1:8123/releases?per_page=30");
+    let mut npm = updater(global(), Env { feed: Some("http://127.0.0.1:1/r".into()), ..Env::default() });
+    assert_eq!(npm.begin_check(0, "stable").url, "https://registry.npmjs.org/-/package/wisp-agents/dist-tags", "the app's feed only");
 }

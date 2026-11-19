@@ -18,7 +18,7 @@ Rust for everything but the UI, Solid/TS for the UI, everything a plugin (ADR-00
 
 | | Now |
 |---|---|
-| v1 features | **315 built · 7 partial · 5 missing · 4 dropped** of 331 (§6) |
+| v1 features | **314 built · 8 partial · 5 missing · 4 dropped** of 331 (§6) |
 | Regressed | none (F-comp-1 picker restored to v1 in round 233) |
 | CI, last full run (ca7e2525) | **all 8 suite jobs green** (Linux 4/4, macOS 2/2, Windows 2/2), server budgets green on Linux |
 | Budgets | initial JS 107.2 KB br (≤ 120) · CSS 27.1 KB (≤ 30) |
@@ -116,6 +116,12 @@ turn. When a screen or feature contradicts one, that's a bug: fix it toward the 
 - **No v1 back-compat** (11-08 21:20).
 - **Port the intent, not the bugs**: check v1 bugs whenever porting and fix them in v2 (11-08 18:19). Check v1's
   changes often and port them (11-10 01:39).
+- **The desktop app updates itself, as v1's `fetchApp` did** (owner, 2026-11-19: "The desktop app can't update
+  itself in v2"): Update in the desktop app downloads the release's file for this OS (`DOWNLOAD_TIMEOUT_MS`), checks
+  it with `verify_download`, stages it (macOS: unzip, `check_bundle`, rename over the bundle; Windows: the installer;
+  Linux: copy over the `AppImage`), sets the `Swap` and relaunches through `hand_off`; every failure uses core's
+  message. `install::detect` knows the packaged server by Tauri's layout (`Contents/Resources/app`, `resources/app`)
+  as v1 did. F-upd-1 stays **partial** until it's seen working end to end in the packaged app.
 - **Keep every v1 feature and UI detail**: "v1 ui and features are amazing, make sure we don't lose any" (11-10
   01:01); docs/v1-features.md is the inventory.
 
@@ -858,7 +864,7 @@ Source: `docs/v1-features.md` (each row's evidence and test). `[x]` built, `[ ]`
 
 ### Updates, install, telemetry (`UPD`)
 
-- [x] F-upd-1: a newer wisp, when I open wisp, then an Update button shows and Update now updates however I installed it, on the same port
+- [ ] F-upd-1: a newer wisp, when I open wisp, then an Update button shows and Update now updates however I installed it, on the same port — **partial**: the desktop app's self-update is wired (download, sha256, stage, relaunch; 2026-11-19) but not yet seen working end to end in the packaged app
 - [x] F-upd-2: the update channel, when I pick beta or nightly, then I follow it (semver prerelease order)
 - [ ] F-upd-3: Homebrew or the curl line, when I install, then wisp installs — **partial**: install.sh and the brew formula need a published v2 release to verify
 - [x] F-upd-4: telemetry on, when I use wisp, then anonymous stats and errors go to PostHog (off switch)

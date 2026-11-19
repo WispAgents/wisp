@@ -333,18 +333,29 @@ pub fn spawn_outliving(cmd: &mut std::process::Command, flags: u32) -> std::io::
     #[cfg(windows)]
     {
         use std::os::windows::process::CommandExt as _;
-        if sys::in_nursery() {
-            cmd.creation_flags(flags | sys::CREATE_BREAKAWAY_FROM_JOB);
-            match cmd.spawn() {
-                Err(e) if e.raw_os_error() == Some(ERROR_ACCESS_DENIED) => {}
-                r => return r,
-            }
+        let [first, then] = outliving_flags(flags, sys::in_nursery() || sys::in_job());
+        cmd.creation_flags(first);
+        match cmd.spawn() {
+            Err(e) if first != then && e.raw_os_error() == Some(ERROR_ACCESS_DENIED) => {}
+            r => return r,
         }
-        cmd.creation_flags(flags);
+        cmd.creation_flags(then);
     }
     #[cfg(not(windows))]
     let _ = flags;
     cmd.spawn()
+}
+
+/// `CreateProcess`'s `CREATE_BREAKAWAY_FROM_JOB`: the child is in none of this process's jobs.
+pub const CREATE_BREAKAWAY_FROM_JOB: u32 = 0x0100_0000;
+
+/// The creation flags a start meant to outlive this process tries on Windows, in order: `flags` with
+/// [`CREATE_BREAKAWAY_FROM_JOB`] while this process is in any job (its nursery, or the desktop shell's job it was
+/// started in, which ends everything in it when the shell quits), then `flags` alone for a job that allows no
+/// breakaway (the start fails with access denied). Outside every job the two are the same and it's tried once.
+#[must_use]
+pub fn outliving_flags(flags: u32, in_job: bool) -> [u32; 2] {
+    [if in_job { flags | CREATE_BREAKAWAY_FROM_JOB } else { flags }, flags]
 }
 
 /// What `CreateProcess` says when a job around this process allows no breakaway.
@@ -369,5 +380,21 @@ mod signal_tests {
         assert!(!super::no_such_process(Some(5), true), "access denied stays an error");
         assert!(!super::no_such_process(Some(1), false), "EPERM stays an error");
         assert!(!super::no_such_process(None, true));
+    }
+}
+
+#[cfg(test)]
+mod outliving_tests {
+    use super::{CREATE_BREAKAWAY_FROM_JOB, outliving_flags};
+
+    /// The update's relaunch helper started inside the desktop shell's job (wisp's nursery missing, or nested in it):
+    /// it must ask to leave every job, or the shell's quit ends it before the installer runs; a job that refuses gets
+    /// a second try as it is. Outside every job: one try, unchanged.
+    #[test]
+    fn a_start_inside_any_job_asks_to_break_away_first() {
+        const DETACHED: u32 = 0x8 | 0x200; // DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP
+        assert_eq!(outliving_flags(DETACHED, true), [DETACHED | CREATE_BREAKAWAY_FROM_JOB, DETACHED]);
+        assert_eq!(outliving_flags(DETACHED, false), [DETACHED, DETACHED]);
+        assert_eq!(CREATE_BREAKAWAY_FROM_JOB, 0x0100_0000, "CreateProcess's value");
     }
 }

@@ -462,7 +462,7 @@ in the sense of *looks like v1*: F-look-1 tracks that once.
 
 | ID | v1 | Scenario | v2 | Evidence or gap |
 |---|---|---|---|---|
-| F-upd-1 | 0.7.0 | Given a newer wisp, when I open wisp, then an Update button shows and Update now updates however I installed it, on the same port | built | round 137 |
+| F-upd-1 | 0.7.0 | Given a newer wisp, when I open wisp, then an Update button shows and Update now updates however I installed it, on the same port | partial | npm, npx and Homebrew: round 137. The desktop app's self-update is wired (plugins/update/host/src/app.rs: download, sha256, stage per OS, relaunch; tests/app.rs) but not yet seen working end to end in the packaged app (owner, 2026-11-19); try it with `WISP_UPDATE_FEED=http://127.0.0.1:<port>/releases` (a local fake feed only) |
 | F-upd-2 | 0.38.0 | Given the update channel, when I pick beta or nightly, then I follow it (semver prerelease order) | built | `plugins/update/core` |
 | F-upd-3 | 0.16.0 | Given Homebrew or the curl line, when I install, then wisp installs | partial | install.sh and the brew formula need a published v2 release to verify |
 | F-upd-4 | 0.5.0 | Given telemetry on, when I use wisp, then anonymous stats and errors go to PostHog (off switch) | built | 47 of v1's 52 events sent from their owning plugins (the other 5 have no v2 feature); `$exception` for internal errors, panics (kept for the next start) and agent errors via kernel.failures (ADR-0062); off switch saved; goldens `plugins/telemetry/api/tests/goldens/emitters.json` (round 199) |

@@ -15,7 +15,7 @@ use windows_sys::Win32::System::Diagnostics::ToolHelp::{
     Thread32First, Thread32Next,
 };
 use windows_sys::Win32::System::JobObjects::{
-    AssignProcessToJobObject, CreateJobObjectW, JOB_OBJECT_LIMIT_BREAKAWAY_OK, JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE,
+    AssignProcessToJobObject, CreateJobObjectW, IsProcessInJob, JOB_OBJECT_LIMIT_BREAKAWAY_OK, JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE,
     JOBOBJECT_BASIC_ACCOUNTING_INFORMATION, JOBOBJECT_EXTENDED_LIMIT_INFORMATION, JobObjectBasicAccountingInformation,
     JobObjectExtendedLimitInformation, QueryInformationJobObject, SetInformationJobObject, TerminateJobObject,
 };
@@ -210,8 +210,18 @@ pub fn keep_std_handles() {
     }
 }
 
-/// `CreateProcess`'s `CREATE_BREAKAWAY_FROM_JOB`: the child is in none of this process's jobs (the nursery).
-pub const CREATE_BREAKAWAY_FROM_JOB: u32 = 0x0100_0000;
+/// Whether this process is in any job: its nursery, or one it was started in (the desktop shell's, a CI runner's).
+/// A start meant to outlive wisp has to break away from it, or it ends with that job.
+pub fn in_job() -> bool {
+    // SAFETY: no arguments; it returns a pseudo-handle to this process that needs no close.
+    #[allow(unsafe_code)]
+    let me = unsafe { GetCurrentProcess() };
+    let mut inside = FALSE;
+    // SAFETY: `me` is valid for this process's lifetime, a null job asks about any job, and `inside` outlives the call.
+    #[allow(unsafe_code)]
+    let ok = unsafe { IsProcessInJob(me, ptr::null_mut(), &raw mut inside) };
+    ok != 0 && inside != 0
+}
 
 /// The nursery (ADR-0070): this process's own `KILL_ON_JOB_CLOSE` job, held in a static so the handle closes only
 /// when the process ends. `None` inside: it couldn't be made (the error was returned once, to the first caller).

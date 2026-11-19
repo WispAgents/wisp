@@ -79,6 +79,28 @@ pub struct Env {
     pub node: Option<String>,
     /// this process's parent (the desktop shell, which holds the single-instance lock)
     pub ppid: u32,
+    /// `WISP_UPDATE_FEED`, through [`feed_override`]: the app's release feed instead of GitHub's, for tests and a
+    /// local fake feed only
+    pub feed: Option<String>,
+}
+
+/// `WISP_UPDATE_FEED`, when it names a feed on this computer (`http://127.0.0.1:<port>/…`, `http://localhost:…`,
+/// `http://[::1]:…`): what the app checks instead of GitHub Releases. Anything else is ignored, so the variable can
+/// only ever point an update at a feed someone runs here (a test, a packaged build tried end to end).
+pub fn feed_override(v: Option<&str>) -> Option<String> {
+    let v = v?.trim().trim_end_matches('/');
+    let rest = v.strip_prefix("http://")?;
+    // the authority, read strictly: no `user@` (`http://localhost:80@evil.com` goes to evil.com), no `\`, no `?`/`#`
+    let host = rest.split('/').next().unwrap_or("");
+    if host.contains(['@', '\\', '?', '#']) || rest.contains('\\') {
+        return None;
+    }
+    let (name, port) = match host.rsplit_once(':') {
+        Some((h, p)) if !h.is_empty() && h != "[" && !p.contains(']') => (h, Some(p)),
+        _ => (host, None),
+    };
+    let port_ok = port.is_none_or(|p| !p.is_empty() && p.len() <= 5 && p.bytes().all(|b| b.is_ascii_digit()));
+    (port_ok && matches!(name, "127.0.0.1" | "localhost" | "[::1]")).then(|| v.to_owned())
 }
 
 /// The fetch a check makes.
@@ -138,7 +160,13 @@ fn falsy(v: Option<&str>) -> bool {
     v.is_some_and(|v| matches!(v.to_ascii_lowercase().as_str(), "0" | "false" | "no" | "off"))
 }
 
-/// `JSON.stringify` of a string: how v1 quoted paths in shell commands.
+/// `s` as one `sh` word: in single quotes, each `'` as `'\''`, so nothing in it (`$`, a backtick, `"`, a space) is
+/// ever expanded or run. v1 used JSON quotes, inside which sh still expands `$(…)` and backticks.
+pub fn sh_quote(s: &str) -> String {
+    format!("'{}'", s.replace('\'', "'\\''"))
+}
+
+/// `JSON.stringify` of a string: how v1 quoted paths in shell commands (Windows still: cmd has no single quotes).
 pub fn json_quote(s: &str) -> String {
     serde_json::to_string(s).unwrap_or_else(|_| format!("\"{s}\""))
 }
@@ -198,7 +226,7 @@ impl Updater {
     /// What installs the latest version; shown to copy if it fails. A clone has none.
     pub fn command(&self) -> Option<String> {
         match self.method() {
-            Method::Brew => Some(format!("{} upgrade {FORMULA}", json_quote(&self.platform.join(self.brew(), &["bin", "brew"])))),
+            Method::Brew => Some(format!("{} upgrade {FORMULA}", self.quote(&self.platform.join(self.brew(), &["bin", "brew"])))),
             Method::App => Some(self.release.clone().unwrap_or_else(|| DOWNLOADS.to_owned())),
             Method::Global => Some(format!("npm install -g {PKG}@{}", self.tag)),
             Method::Npx => Some(format!("npx -y {PKG}@{}", self.tag)),
@@ -219,6 +247,11 @@ impl Updater {
         self.install.root.clone()
     }
 
+    /// The app's release feed: GitHub's, or a local one ([`feed_override`]).
+    fn releases(&self) -> &str {
+        self.env.feed.as_deref().unwrap_or(RELEASES)
+    }
+
     /// Starts a check: records the time and says what to fetch. The app follows GitHub Releases (a release
     /// is published once all its downloads are up): stable asks for the latest one, the other channels look
     /// through the newest few.
@@ -228,8 +261,8 @@ impl Updater {
         let app = self.method() == Method::App;
         let url = match (app, channel) {
             (false, _) => REGISTRY.to_owned(),
-            (true, Channel::Stable) => format!("{RELEASES}/latest"),
-            (true, _) => format!("{RELEASES}?per_page=30"),
+            (true, Channel::Stable) => format!("{}/latest", self.releases()),
+            (true, _) => format!("{}?per_page=30", self.releases()),
         };
         CheckRequest { url, accept: if app { "application/vnd.github+json" } else { "application/json" }, channel }
     }
@@ -398,14 +431,14 @@ impl Updater {
     pub fn relaunch_command(&self, desktop: bool) -> String {
         let tauri = self.env.desktop.as_deref() == Some("tauri");
         if self.method() == Method::App {
-            let q = |p: &str| format!("\"{p}\""); // cmd.exe takes no JSON escapes
-            // NSIS: /S installs silently over this copy, then /R starts the new one.
+            // macOS and Linux: Tauri's shell holds the single-instance lock until it's gone, so the new app waits it out
+            let gone = if tauri { self.shell_gone() } else { String::new() };
+            // NSIS: /S installs silently over this copy, then /R starts the new one. cmd.exe takes no JSON escapes,
+            // and a Windows path has no `"`; sh gets every path in single quotes.
             return match &self.swap {
-                Some(Swap::Windows { installer }) => format!("{} /S /R", q(installer)),
-                Some(Swap::Mac { open, remove }) => {
-                    format!("rm -rf {}; {}open {}", q(remove), if tauri { self.shell_gone() } else { String::new() }, q(open))
-                }
-                Some(Swap::Linux { open }) => format!("{} >/dev/null 2>&1", q(open)),
+                Some(Swap::Windows { installer }) => format!("\"{installer}\" /S /R"),
+                Some(Swap::Mac { open, remove }) => format!("rm -rf {}; {gone}open {}", sh_quote(remove), sh_quote(open)),
+                Some(Swap::Linux { open }) => format!("{gone}{} >/dev/null 2>&1", sh_quote(open)),
                 None => String::new(),
             };
         }
@@ -415,9 +448,14 @@ impl Updater {
         if self.method() == Method::Npx {
             return format!("{wait}npx -y {PKG}@{}{args}", self.tag);
         }
-        let node = json_quote(self.env.node.as_deref().unwrap_or("node"));
-        let launcher = json_quote(&self.platform.join(&self.home(), &["bin", "wisp.js"]));
+        let node = self.quote(self.env.node.as_deref().unwrap_or("node"));
+        let launcher = self.quote(&self.platform.join(&self.home(), &["bin", "wisp.js"]));
         format!("{wait}{node} {launcher}{args}")
+    }
+
+    /// A path for this platform's shell: `cmd` (Windows, as v1 quoted it) or `sh` ([`sh_quote`]).
+    fn quote(&self, p: &str) -> String {
+        if self.platform.windows() { json_quote(p) } else { sh_quote(p) }
     }
 
     /// The new wisp's arguments (leading space): the same port; desktop: reopen the app, otherwise keep the tab.

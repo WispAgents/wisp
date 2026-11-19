@@ -172,9 +172,11 @@ fn app_bundle(exe: &str, appimage: Option<&str>, desktop: bool) -> Option<String
     if let Some(image) = appimage.filter(|s| !s.is_empty()) {
         return Some(image.to_owned());
     }
-    if desktop {
+    // the app's own server, wherever it was started from (v1's PACKAGED): Tauri puts it in `resources/app` on
+    // Windows (`%LOCALAPPDATA%\wisp\resources\app\wisp.exe`) and Linux (`/usr/lib/wisp/resources/app/wisp`)
+    let n = segs.len().saturating_sub(1);
+    if desktop || (n >= 2 && segs[n - 2] == "resources" && segs[n - 1] == "app") {
         // Windows (NSIS) or a .deb: the folder the binary is in
-        let n = segs.len().saturating_sub(1);
         return Some(prefix_before(exe, n));
     }
     None

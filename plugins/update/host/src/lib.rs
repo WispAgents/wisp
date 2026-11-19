@@ -9,6 +9,7 @@
 //!   nothing to install. On Windows npm runs in the hand-off, once wisp.exe has exited (Windows locks a running exe
 //!   and npm swaps the folder it runs from): the next start reads what it did from this plugin's folder
 //!   (`wisp_update_core::deferred`) and the row says why it failed.
+//! - **the desktop app** (`app`): the release's file is downloaded, checked and staged; the relaunch swaps it in.
 //! - **state:** one row (`update.state`, id `update`) on topic `plugin:wisp.update:state`: `Updater::view` plus
 //!   `checked_at`, `checking` and `running` (tasks an install stops), which Settings → Updates reads.
 //!
@@ -32,6 +33,7 @@ pub const OWNER: &str = "update";
 pub const CHANNEL: &str = "update.updateChannel";
 const ROW: &str = "update";
 
+pub mod app;
 mod hand_off;
 pub use hand_off::read_hand_off;
 use hand_off::{files, pending_of, relaunch, write_pending};
@@ -103,7 +105,8 @@ impl St {
             desktop: std::env::var("WISP_DESKTOP").ok(),
             appimage: std::env::var("APPIMAGE").ok(),
             node: std::env::var("WISP_NODE").ok(),
-            ppid: 0,
+            ppid: app::parent_pid(),
+            feed: up::feed_override(std::env::var("WISP_UPDATE_FEED").ok().as_deref()),
         };
         // a build in a clone: its target/ in the clone, or (a shared CARGO_TARGET_DIR) a debug build of one
         let clone = install::cargo_clone(&exe).or_else(|| {
@@ -257,8 +260,8 @@ async fn install(ctx: &Ctx, st: &St) -> Result<Value> {
             }
             Err(e) => Err(e),
         },
-        // the desktop app's download and swap need the app's own relaunch (apps/desktop)
-        InstallStep::DownloadApp { .. } => Err(format!("The desktop app updates itself when it restarts. {}", lock(&st.up).later())),
+        // the relaunch (the hand-off) finishes the swap once wisp has quit
+        InstallStep::DownloadApp { asset } => app::download(ctx, st, &asset).await,
     };
     let ok = done.is_ok();
     match done {

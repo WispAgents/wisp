@@ -270,8 +270,9 @@ fn spawn_detached_cmd(cmd: &mut tokio::process::Command) -> std::io::Result<toki
     cmd.spawn()
 }
 
-/// Its own console window and process group, outside every job of ours: it breaks away from the nursery
-/// (`crate::nursery`); a job around wisp that refuses breakaway leaves it in the nursery (as `crate::spawn_outliving`).
+/// Its own console window and process group, outside every job around wisp: it breaks away from the nursery
+/// (`crate::nursery`) and the job wisp was started in (the desktop shell's); a job that refuses breakaway leaves it
+/// inside (as `crate::spawn_outliving`, [`crate::outliving_flags`]).
 #[cfg(windows)]
 fn spawn_detached_cmd(cmd: &mut tokio::process::Command) -> std::io::Result<tokio::process::Child> {
     const DETACHED_PROCESS: u32 = 0x0000_0008;
@@ -279,14 +280,14 @@ fn spawn_detached_cmd(cmd: &mut tokio::process::Command) -> std::io::Result<toki
     let flags = DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP;
     // it outlives wisp: never hand it the pipes wisp's own caller reads (crate::keep_std_handles)
     crate::sys::keep_std_handles();
-    if crate::sys::in_nursery() {
-        cmd.creation_flags(flags | crate::sys::CREATE_BREAKAWAY_FROM_JOB);
-        match cmd.spawn() {
-            Err(e) if e.raw_os_error() == Some(crate::ERROR_ACCESS_DENIED) => {}
-            r => return r,
-        }
+    // the desktop shell's job too, not only the nursery: the update's relaunch helper must outlive the shell
+    let [first, then] = crate::outliving_flags(flags, crate::sys::in_nursery() || crate::sys::in_job());
+    cmd.creation_flags(first);
+    match cmd.spawn() {
+        Err(e) if first != then && e.raw_os_error() == Some(crate::ERROR_ACCESS_DENIED) => {}
+        r => return r,
     }
-    cmd.creation_flags(flags);
+    cmd.creation_flags(then);
     cmd.spawn()
 }
 

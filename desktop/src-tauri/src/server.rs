@@ -167,7 +167,7 @@ mod tests {
     }
 }
 
-/// A Job Object with KILL_ON_JOB_CLOSE: its processes end when its last handle closes, which is when this process
+/// A Job Object with KILL_ON_JOB_CLOSE (and BREAKAWAY_OK, [`job::LIMITS`]): its processes end when its last handle closes, which is when this process
 /// ends, however it ends (a quit, a crash, Task Manager). Best effort: without it the stdin pipe still stops the server.
 #[cfg(windows)]
 mod job {
@@ -176,8 +176,13 @@ mod job {
     use windows::Win32::Foundation::{CloseHandle, HANDLE};
     use windows::Win32::System::JobObjects::{
         AssignProcessToJobObject, CreateJobObjectW, JobObjectExtendedLimitInformation, SetInformationJobObject,
-        JOBOBJECT_EXTENDED_LIMIT_INFORMATION, JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE,
+        JOBOBJECT_EXTENDED_LIMIT_INFORMATION, JOB_OBJECT_LIMIT, JOB_OBJECT_LIMIT_BREAKAWAY_OK, JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE,
     };
+
+    /// KILL_ON_JOB_CLOSE ends the server with this process. BREAKAWAY_OK lets what the server starts to outlive it
+    /// leave (`CREATE_BREAKAWAY_FROM_JOB`, wisp-proc's `spawn_detached`): the update's relaunch helper stops the server,
+    /// this process quits with it, and the helper must still be there to run the installer and start the new wisp.
+    pub const LIMITS: JOB_OBJECT_LIMIT = JOB_OBJECT_LIMIT(JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE.0 | JOB_OBJECT_LIMIT_BREAKAWAY_OK.0);
 
     pub struct Job(HANDLE);
 
@@ -190,7 +195,7 @@ mod job {
             unsafe {
                 let job = CreateJobObjectW(None, None).ok()?;
                 let mut info = JOBOBJECT_EXTENDED_LIMIT_INFORMATION::default();
-                info.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
+                info.BasicLimitInformation.LimitFlags = LIMITS;
                 let set = SetInformationJobObject(
                     job,
                     JobObjectExtendedLimitInformation,
@@ -212,6 +217,37 @@ mod job {
             unsafe {
                 let _ = CloseHandle(self.0);
             }
+        }
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use super::*;
+        use windows::Win32::System::JobObjects::QueryInformationJobObject;
+
+        /// The job the server runs in lets its outliving children leave: without BREAKAWAY_OK the update's relaunch
+        /// helper ended with this process, before `setup.exe /S /R`, and wisp never came back.
+        #[test]
+        fn the_servers_job_lets_the_relaunch_helper_leave() {
+            let mut child = std::process::Command::new("cmd").args(["/d", "/c", "ping -n 5 127.0.0.1 >nul"]).spawn().unwrap();
+            let job = Job::kill_on_close(&child).expect("a job");
+            let mut info = JOBOBJECT_EXTENDED_LIMIT_INFORMATION::default();
+            // SAFETY: our open job handle, and a buffer of the size we say
+            let read = unsafe {
+                QueryInformationJobObject(
+                    Some(job.0),
+                    JobObjectExtendedLimitInformation,
+                    std::ptr::from_mut(&mut info).cast(),
+                    u32::try_from(std::mem::size_of_val(&info)).unwrap(),
+                    None,
+                )
+            };
+            let _ = child.kill();
+            let _ = child.wait();
+            read.unwrap();
+            let flags = info.BasicLimitInformation.LimitFlags.0;
+            assert_ne!(flags & JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE.0, 0, "the server still ends with the shell");
+            assert_ne!(flags & JOB_OBJECT_LIMIT_BREAKAWAY_OK.0, 0, "what it starts to outlive it may leave");
         }
     }
 }
