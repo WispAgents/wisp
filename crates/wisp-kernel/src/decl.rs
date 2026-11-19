@@ -93,7 +93,39 @@ fn leading_doc(s: &str) -> (String, &str) {
         docs.push(doc_text(&rest[..end + 2]));
         rest = rest[end + 2..].trim_start();
     }
-    (docs.join(" "), rest)
+    (public(&docs.join(" ")), rest)
+}
+
+/// A doc as a person reads it in `--help` and an agent in a tool's description: without the notes written for wisp's
+/// own developers (audit E11: "`POST /crew`", "Additive (2026-11-16)", "(v1 `bg`)", "checked by `normalize_kit`", "v1
+/// takes any number and floors it", "[`crate::MAX_CREW`]").
+pub fn public(doc: &str) -> String {
+    let mut s = doc.to_owned();
+    // asides: "(v1 …)", "(at most [`crate::…`])"
+    for open in ["(v1 ", "(at most [`"] {
+        while let Some(i) = s.find(open) {
+            let Some(len) = s[i..].find(')') else { break };
+            let before = s[..i].trim_end().to_owned();
+            s = format!("{before}{}", &s[i + len + 1..]);
+        }
+    }
+    // ", checked by `normalize_kit`": the function that checks it
+    while let Some(i) = s.find(", checked by `") {
+        let from = i + ", checked by `".len();
+        let Some(len) = s[from..].find('`') else { break };
+        s = format!("{}{}", &s[..i], &s[from + len + 1..]);
+    }
+    let route = |t: &str| ["`GET /", "`POST /", "`PUT /", "`PATCH /", "`DELETE /"].iter().any(|p| t.starts_with(p));
+    let dev = |t: &str| t.starts_with("Additive") || t.starts_with("v1 ") || route(t);
+    let kept: Vec<String> =
+        s.split_inclusive(". ").flat_map(|x| x.split_inclusive(": ")).map(str::to_owned).filter(|x| !dev(x.trim())).collect();
+    let mut out = kept.concat().trim().to_owned();
+    // a doc left ending on a separator ("…colour.", "a: ")
+    while out.ends_with(':') || out.ends_with(',') {
+        out.pop();
+        out = out.trim_end().to_owned();
+    }
+    out
 }
 
 /// The top-level pieces of `s` split at `sep`, outside brackets, strings and comments.
@@ -225,6 +257,23 @@ mod tests {
         assert_eq!(f("kit").kind, Kind::Json);
         assert_eq!(f("parent-id").kind, Kind::Str);
         assert_eq!(a.positionals().iter().map(|f| f.name.as_str()).collect::<Vec<_>>(), ["id", "prompt"]);
+    }
+
+    /// Audit E11: `wisp crew create --help` showed wisp's developer notes.
+    #[test]
+    fn developer_notes_are_left_out_of_a_doc_audit_e11() {
+        assert_eq!(
+            public("`POST /crew`. `checkin: true` starts a first check-in at once."),
+            "`checkin: true` starts a first check-in at once."
+        );
+        assert_eq!(
+            public("the list's tint while they're picked (v1 `bg`): '' their glow, 'none', or a crew colour. Additive (2026-11-12)."),
+            "the list's tint while they're picked: '' their glow, 'none', or a crew colour."
+        );
+        assert_eq!(public("v1 takes any number and floors it"), "");
+        assert_eq!(public("`[{ name, description?, body }]`, checked by `normalize_kit`"), "`[{ name, description?, body }]`");
+        assert_eq!(public("the members (at most [`crate::MAX_CREW`])"), "the members");
+        assert_eq!(public("a cron, or words (\"every 30 minutes\")"), "a cron, or words (\"every 30 minutes\")");
     }
 
     #[test]

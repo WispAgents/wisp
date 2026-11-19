@@ -1,0 +1,98 @@
+---
+title: The terminal UI
+description: wisp full screen in your terminal with `wisp tui`. Its zones, every key, the palette, `/` commands and the views.
+sidebar:
+  order: 3
+---
+
+`wisp tui` is wisp full screen in your terminal. It shows the same tasks as the app, live, and does what the app
+does: start tasks, follow them, answer questions, review changes. Nothing is polled; every key answers at once.
+
+```sh
+wisp tui
+```
+
+It talks to the wisp server like the app and the CLI do, and starts it if it isn't running.
+
+## The screen
+
+- **Tasks**, on the left, in the same sections as the app.
+- **The open task:** its live transcript, step by step, with its state in the header.
+- **A side pane:** the changes (**d**) or the Thread pane with the task's Notes (**t**).
+- **The composer** at the bottom, and a status bar under it.
+
+**Tab** moves between zones. **[** and **]** narrow or widen the focused one (or drag its border). The mouse works
+too. Press **?** for the keys at any time.
+
+## Keys
+
+| Where | Keys | What it does |
+| --- | --- | --- |
+| Everywhere | **Ctrl-K** or **:** | Command palette: tasks, views, commands, settings |
+| Everywhere | **?** | This help (**j** **k** scroll it on a small screen) |
+| Everywhere | **Tab**, **Shift-Tab** | Next zone. In the composer: cycle the mode, Plan → Edits → Full auto |
+| Everywhere | **g** then **c a m s , h t** | Go to crew, automations, machines, My Stuff, settings, history, tasks |
+| Everywhere | **[** **]** | Narrow or widen the focused zone |
+| Everywhere | **Ctrl-C**, **q** | Quit (**q** outside the composer) |
+| Tasks | **j** **k**, **↑** **↓** | Move |
+| Tasks | **Enter**, **l** | Open the task |
+| Tasks | **n** | New task |
+| Tasks | **i** | Reply to the selected task |
+| Tasks | **/** | Search |
+| The task | **i**, **Enter** | Write (the composer) |
+| The task | **j** **k** | Move between steps |
+| The task | **Space** | Open or close the step (a tool call, a diff) |
+| The task | **o** | Open in its harness (Claude Code, Codex…), back here after |
+| The task | **1**–**9** | Answer the question with that choice |
+| The task | **y**, **a**, **n** | Allow, always allow, or deny a tool |
+| The task | **Esc** | Interrupt the running turn |
+| The task | **d** | The changes pane (diffs). Again: close it |
+| The task | **t** | The Thread pane: the task's Notes and how worn it is. Again: close it |
+| The task | **s** | Stop |
+| The task | **PgUp** **PgDn**, **G** | Scroll; to the end (and follow) |
+| Composer | **Enter** | Send (queued while a turn runs) |
+| Composer | **Alt-Enter**, **Ctrl-J** | New line |
+| Composer | **@** | Mention a task, crew member, machine, My Stuff item or file |
+| Composer | **/** | A command: `/btw`, `/fork`, `/stop`, or any wisp command as `/<plugin> <verb>` (`/ship ship`, `/goal set --text "…"`) |
+| Composer | **↑** | History, in an empty box |
+| Composer | **Ctrl-E** | Edit in `$EDITOR` |
+| Composer | **Alt-↑** **Alt-↓**, **Ctrl-S** | Reorder the queued follow-up; send it now |
+| Composer | **Esc** | Leave the composer (interrupts when it's empty and a turn runs) |
+| Views | **j** **k** | Move |
+| Views | a letter | The row's action (shown in the view's footer) |
+| Views | **r** | Reload |
+
+## The palette
+
+**Ctrl-K** (or **:**) finds anything by name: a task, a view, a setting, or any wisp command. Commands show by
+their title with the words you'd type in the CLI at the right, for example *Add a computer · machines add*.
+
+## Commands with `/`
+
+In the composer, any CLI command runs as `/<plugin> <verb> …`, with the same words and flags as `wisp <plugin>
+<verb> …`. As you type, the line under the box shows how to use it.
+
+```text
+/machines add --name studio --address me@studio
+/goal set --text "all tests pass"
+/runtime set-mode --mode plan
+```
+
+When the command acts on a task, the open task is the one it acts on, unless you give an id. With no task open
+it asks you for one.
+
+## Views
+
+**g** and a letter opens a view: a table over the same data as the app's screens. The footer lists the letters
+for the selected row.
+
+| View | Go | Row actions |
+| --- | --- | --- |
+| Crew | **g c** | **n** new member, **a** give a job, **c** check in, **w** wake, **p** pause, **u** resume, **x** remove |
+| Automations | **g a** | **f** fire, **t** test |
+| Machines | **g m** | **c** connect, **x** disconnect |
+| My Stuff | **g s** | **l** launch, **d** remove |
+| Settings | **g ,** | |
+| Repo history | **g h** | |
+
+**g t** goes back to your tasks. Plugins can add views of their own the same way.

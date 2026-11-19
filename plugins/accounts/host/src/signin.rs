@@ -357,7 +357,7 @@ pub async fn logout(ctx: &Ctx, st: &State, h: &dyn Harness, acc: &str) -> Result
         out.await?;
         // gone from where we know to look; if the CLI still says signed in, it kept it elsewhere
         if status(ctx, st, h, acc).await.ok().and_then(|s| s.signed_in) == Some(true) {
-            return Err(WireError::invalid(format!("{} is still signed in: run {} in a terminal and type /logout.", l.bin, l.bin)));
+            return Err(WireError::invalid(format!("{} is still signed in: run {} in a terminal and type /logout.", h.info().name, l.bin)));
         }
         return Ok(LoginStatus {
             agent: h.info().id.clone(),
@@ -391,7 +391,7 @@ pub async fn logout(ctx: &Ctx, st: &State, h: &dyn Harness, acc: &str) -> Result
     if account_key(acc).is_empty() && !l.status.is_empty() && status(ctx, st, h, acc).await.ok().and_then(|s| s.signed_in) == Some(true) {
         return Err(WireError::invalid(format!(
             "{} is still signed in after `{} {}`: run it in a terminal to sign out there.",
-            l.bin,
+            h.info().name,
             l.bin,
             l.logout.join(" ")
         )));

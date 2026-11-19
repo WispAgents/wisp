@@ -11,7 +11,32 @@ const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../.
 const out = path.join(repo, 'docs/site/reference');
 const read = (p) => fs.readFileSync(path.join(repo, p), 'utf8');
 const esc = (s) => String(s ?? '').replace(/\|/g, '\\|').replace(/\n+/g, ' ').trim();
+/** The code's descriptions carry notes for its developers: where a feature came from in an earlier wisp, the date a
+ * field was added, an audit's id. Readers of the docs need none of them, and the product has no version in its name. */
+export function forReaders(text) {
+  // code is left as written (a `--format v2` or `/api/v1` in an example stays)
+  const keep = [];
+  return text
+    .replace(/`[^`\n]*`/g, (c) => `\u0001${keep.push(c) - 1}\u0001`)
+    .replace(/a wisp v1 home \(~\/\.wisp\)/g, "an earlier wisp's home (~/.wisp)")
+    .replace(/\[v1 home\]/g, '[old home]')
+    .replace(/Import v1's tasks/g, 'Import tasks from an earlier wisp')
+    .replace(/v1's spells are plugins now/g, 'spells are plugins now')
+    .replace(/v1's "also starts when"/g, 'The older "also starts when"')
+    .replace(/ over the v2 sync protocol/g, " over wisp's sync protocol")
+    .replace(/\s*\((?:[^()]|\([^()]*\))*\bv[12]\b(?!=)(?:[^()]|\([^()]*\))*\)/g, '')
+    .replace(/\s*Additive \((?:[^()]|\([^()]*\))*\)\.?/g, '')
+    .replace(/,? and v1's ([^\s|]+)/g, ', and $1')
+    .replace(/\bv1's\s+/g, '')
+    .replace(/\(([^()]*?),?\s*audit [A-Z]\d+\)/g, '($1)')
+    .replace(/\bv[12]\b(?!=)\s*/g, '')
+    // an example address on the reader's own machine is text, not a link
+    .replace(/(^|[\s(])(https?:\/\/(?:localhost|127\.0\.0\.1)[^\s)|,;]*)/g, '$1`$2`')
+    .replace(/\u0001(\d+)\u0001/g, (_, i) => keep[i]);
+}
+
 const page = (file, title, description, order, body) => {
+  [title, description, body] = [title, description, body].map(forReaders);
   const front = ['---', `title: ${JSON.stringify(title)}`, `description: ${JSON.stringify(description)}`, `sidebar:`, `  order: ${order}`, '---', ''];
   fs.writeFileSync(path.join(out, file), [...front, '> Generated from the code by `apps/docs/scripts/reference.mjs`: edit the source, not this page.', '', body.trim(), ''].join('\n'));
 };

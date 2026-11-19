@@ -142,3 +142,32 @@ async fn a_seat_cap_left_in_grid_json_caps_nothing_and_signing_up_joins() {
     assert!(report.starts_with("ada@example.com") && report.contains("joined "), "{report}");
     g.done();
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn get_the_app_puts_an_address_on_the_phone_app_list_apart_from_the_seats() {
+    let g = rig("phone-app", json!({ "dev": true })).await;
+    // trywisp.dev's Get the app: the same endpoint, with the app it's for; readable from the site
+    let r = g.wait(&json!({ "email": " Ada@Example.com ", "kind": "phone-app", "platform": "android" }), "1.1.1.1").await;
+    assert_eq!((r.status().as_u16(), r.headers()["access-control-allow-origin"].to_str().unwrap()), (200, "*"));
+    assert_eq!(r.json::<Value>().await.unwrap(), json!({ "ok": true, "kind": "phone-app", "platform": "android" }));
+    // again: the same answer, so nobody can find out whether an address is on the list
+    let r = g.wait(&json!({ "email": "ada@example.com", "kind": "phone-app", "platform": "both" }), "1.1.1.1").await;
+    assert_eq!(r.json::<Value>().await.unwrap(), json!({ "ok": true, "kind": "phone-app", "platform": "both" }));
+    // an app that doesn't exist, or no address: refused, readable by the site
+    let r = g.wait(&json!({ "email": "bob@example.com", "kind": "toaster" }), "1.1.1.2").await;
+    assert_eq!((r.status().as_u16(), r.headers()["access-control-allow-origin"].to_str().unwrap()), (400, "*"));
+    assert_eq!(r.json::<Value>().await.unwrap(), json!({ "error": "There is no app by that name to wait for." }));
+    let r = g.wait(&json!({ "email": "nope", "kind": "phone-app" }), "1.1.1.3").await;
+    assert_eq!(r.json::<Value>().await.unwrap(), json!({ "error": "An email address, please." }));
+    // the seat list is untouched: the operator's report shows the app list under its own heading
+    let report = wisp_grid::wishes::report(&g.grid.accounts).unwrap();
+    assert!(report.starts_with("Nobody is waiting."), "{report}");
+    assert!(
+        report.contains("waiting for an app:")
+            && report.contains("ada@example.com")
+            && report.contains("phone-app")
+            && report.contains("both"),
+        "{report}"
+    );
+    g.done();
+}

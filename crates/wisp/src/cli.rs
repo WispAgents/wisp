@@ -218,11 +218,16 @@ pub async fn completions(c: &Client, cat: &Catalogue, shell: Option<&String>) ->
             Some((x.get("key")?.as_str()?.to_owned(), vs)).filter(|(_, vs)| !vs.is_empty())
         })
         .collect();
+    // `wisp export <TAB>`: the kinds this wisp has (by section, as a formula names them), then export's flags
+    let kinds = c.cmd("resources.kinds", json!({})).await.ok();
+    let mut export = strings(kinds.as_ref(), "section");
+    export.extend(["--format", "--out", "--include", "--with-deps", "--single-file"].map(str::to_owned));
     let extra = completions::Extra {
         groups: crate::words::group_verbs(),
         agents: strings(agents.as_ref(), "id"),
         settings: strings(settings.as_ref(), "key"),
         values,
+        after: vec![("export".to_owned(), export)],
     };
     let Some(s) = shell.and_then(|sh| completions::script_with(sh, cat, &crate::args::COMMANDS, &extra)) else {
         eprintln!("  ✗ wisp completions zsh|bash|fish");

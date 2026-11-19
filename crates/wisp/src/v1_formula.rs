@@ -153,7 +153,12 @@ pub fn formula_of(cfg: &Value) -> (Vec<Resource>, Vec<String>) {
                 }
             }
             out.push(Resource::new("channel", k.clone(), spec));
-            notes.push(format!("channel {k}: its token stays in secrets (${{secret:…}} when you declare it)"));
+            // only a channel v1 kept a secret for (server/remote.js's masked fields): v1's ntfy has none, unless it
+            // was given an access token (audit E7)
+            let secret = |f: &str| v.pointer(f).and_then(Value::as_str).is_some_and(|x| !x.is_empty());
+            if ["/token", "/appToken", "/botToken", "/signingSecret", "/publicKey", "/hook/secret"].iter().any(|f| secret(f)) {
+                notes.push(format!("channel {k}: its token stays in secrets (${{secret:…}} when you declare it)"));
+            }
         }
     }
     (out, notes)
@@ -335,6 +340,22 @@ mod tests {
         let tasks: Vec<&Resource> = rs.iter().filter(|r| r.kind == "task").collect();
         assert_eq!((tasks[0].name.as_str(), &tasks[0].spec["title"]), ("run-tests", &json!("Run tests")));
         assert_eq!(tasks[1].spec.get("title"), None, "a name that is its key needs no title");
+    }
+
+    /// Audit E7: the import noted "channel ntfy: its token stays in secrets" for a v1 ntfy of `{enabled, topic,
+    /// server}`, which has no token. The note is for a channel v1 kept a secret for.
+    #[test]
+    fn only_a_channel_with_a_secret_gets_the_token_note_audit_e7() {
+        let cfg = json!({ "remote": {
+            "ntfy": { "enabled": true, "topic": "wisp-old-topic", "server": "http://x" },
+            "telegram": { "enabled": true, "token": "123:abc", "chatId": 5 },
+            "slack": { "enabled": false, "botToken": "", "appToken": "" },
+        } });
+        let (rs, notes) = formula_of(&cfg);
+        assert_eq!(rs.iter().filter(|r| r.kind == "channel").count(), 3);
+        let token: Vec<&String> = notes.iter().filter(|n| n.contains("token stays in secrets")).collect();
+        assert_eq!(token.len(), 1, "{notes:?}");
+        assert!(token[0].starts_with("channel telegram"), "{notes:?}");
     }
 
     #[test]

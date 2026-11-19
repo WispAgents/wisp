@@ -122,7 +122,7 @@ export function hunkRuns(rows: readonly ChangeRow[]): { from: number; rows: Chan
   let h: { from: number; rows: ChangeRow[]; gap: ChangeRow | null } | null = null;
   let gap: ChangeRow | null = null;
   rows.forEach((o, i) => {
-    if (o.op === '…') {
+    if (o.op === '…' || o.op === 'sep') {
       h = null;
       gap = o;
       return;
@@ -188,7 +188,8 @@ function Line(props: { readonly o: ChangeRow; readonly c?: LineCtx | undefined }
   return (
     <>
       <tr data-kit="cx-line" data-op={kind()} data-lit={flag(mark() !== undefined || open() !== undefined)} onPointerEnter={() => props.c?.hover(props.o)}>
-        <td data-kit="cx-no">
+        {/* the number is the target on touch (v1 comments.css): there's no pointer to bring the + over the line */}
+        <td data-kit="cx-no" data-cmt={flag(!!cm() && key() !== undefined)} onClick={() => cm() && key() !== undefined && cm()?.onAdd(props.c?.path ?? '', props.o)}>
           <Show when={mark()}>{(n) => <span data-kit="cx-mark">{n()}</span>}</Show>
           {(props.o.op === '-' ? props.o.a : props.o.b) ?? ''}
         </td>
@@ -220,19 +221,34 @@ function Line(props: { readonly o: ChangeRow; readonly c?: LineCtx | undefined }
   );
 }
 
+/** The labels as they are now, each read where it's used: a caller's labels change (the edits wisp saw, then git's
+ *  diff: audit E #4 kept "edits wisp saw" over git's rows, read once at mount). */
+function live(labels: () => ChangesLabels): ChangesLabels {
+  return new Proxy({} as ChangesLabels, { get: (_t, k) => Reflect.get(labels(), k) });
+}
+
+/** A row between two edits wisp saw (v1 changes.js `{op: 'sep'}`, blocks.css tr.sep): each is a snippet, so nothing in
+ *  between is counted; a gap whose count is 0 says nothing either (audit E #10: "⋯ 0 unchanged lines"). */
+const isSep = (o: ChangeRow): boolean => o.op === 'sep' || (o.op === '…' && !o.count);
+
 function FileDiff(props: { readonly f: ChangeFile; readonly p: ChangesListProps }): JSX.Element {
-  const L = props.p.labels;
+  const L = live(() => props.p.labels);
   // one + per diff, on the line under the pointer; before any, on the last numbered line (as v1's sat where it was left)
   const [hovered, setHovered] = createSignal<ChangeRow | undefined>();
   const last = (): ChangeRow | undefined => [...props.f.rows].reverse().find((o) => rowKey(o) !== undefined);
   const ctx: LineCtx = { path: props.f.path, p: props.p, at: () => hovered() ?? last(), hover: (o) => rowKey(o) && setHovered(o) };
-  const gap = (o: ChangeRow): JSX.Element => (
+  const gap = (o: ChangeRow): JSX.Element =>
+    isSep(o) ? (
+      <tr data-kit="cx-sep">
+        <td colSpan={3} />
+      </tr>
+    ) : (
     <tr data-kit="cx-gap">
       <td colSpan={3}>
         <Icon name="dots" size="sm" /> {L.unchanged(o.count ?? 0)}
       </td>
     </tr>
-  );
+    );
   const name = (): string => props.f.path.split(/[\\/]/).pop() ?? props.f.path;
   return (
     <div data-kit="cx-diff">
@@ -262,7 +278,7 @@ function FileDiff(props: { readonly f: ChangeFile; readonly p: ChangesListProps 
             when={props.f.revertable}
             fallback={
               <tbody>
-                <For each={props.f.rows}>{(o) => (o.op === '…' ? gap(o) : <Line o={o} c={ctx} />)}</For>
+                <For each={props.f.rows}>{(o) => (o.op === '…' || o.op === 'sep' ? gap(o) : <Line o={o} c={ctx} />)}</For>
               </tbody>
             }
           >
@@ -311,7 +327,7 @@ function FileDiff(props: { readonly f: ChangeFile; readonly p: ChangesListProps 
 }
 
 function FileRow(props: { readonly f: ChangeFile; readonly p: ChangesListProps }): JSX.Element {
-  const L = props.p.labels;
+  const L = live(() => props.p.labels);
   const opens = (): boolean => !props.f.binary && props.f.rows.length > 0;
   const isOpen = (): boolean => opens() && props.p.open(props.f.path);
   const seen = (): boolean => props.p.viewed(props.f.path);
@@ -431,7 +447,7 @@ function CommitRow(props: { readonly c: NonNullable<ChangesListProps['commit']>;
 }
 
 export function ChangesList(props: ChangesListProps): JSX.Element {
-  const L = props.labels;
+  const L = live(() => props.labels);
   const add = (): number => props.files.reduce((n, f) => n + f.add, 0);
   const del = (): number => props.files.reduce((n, f) => n + f.del, 0);
   return (

@@ -1,0 +1,148 @@
+---
+title: Machines, the Grid and wisp Cloud
+description: Run tasks on your other computers over SSH or a wisp Grid, get a cloud computer on wisp Cloud, run your own Grid, and give a task a sandbox of its own.
+sidebar:
+  order: 10
+---
+
+import { Tabs, TabItem } from '@astrojs/starlight/components';
+
+Every computer that runs wisp is a **machine**. Your wisp can start tasks on the others, and all their tasks show in
+one list. A desktop at home keeps working while your laptop sleeps.
+
+| How | When |
+| --- | --- |
+| **SSH** | A computer you can already `ssh` to. wisp installs itself there. |
+| **A wisp Grid** | Each computer signs in to the same grid, which connects them. No SSH, no open ports. |
+| **wisp Cloud** | The grid at [grid.trywisp.dev](https://grid.trywisp.dev): sign in and you also get a cloud computer. |
+
+## Add a computer over SSH
+
+Turn on SSH on the other computer (on a Mac: System Settings → General → Sharing → Remote Login; on Linux:
+`openssh-server`).
+
+<Tabs syncKey="way">
+<TabItem label="App">
+Your avatar → **Machines**. Type its **SSH address** (`you@studio.local`, or a Host from `~/.ssh/config`), give it a
+**Name**, then **Add and connect**. The first time, type your password for that computer once; wisp sets up a key so
+it won't ask again.
+</TabItem>
+<TabItem label="TUI">
+Press **g** then **m** for the machines view: **c** connects the selected one, **x** disconnects it. To add one:
+
+```text
+/machines add --name studio --transport ssh --address you@studio.local
+```
+</TabItem>
+<TabItem label="CLI">
+```sh
+wisp machines hosts                                         # the hosts in ~/.ssh/config
+wisp machines add --name studio --transport ssh --address you@studio.local
+wisp machines list                                          # your machines and how each is doing
+```
+</TabItem>
+</Tabs>
+
+Or declare it:
+
+```yaml
+machines:
+  studio: { transport: ssh, address: you@studio.local }
+```
+
+Not on the same network? Install Tailscale on both computers and use the name it gives.
+
+## Add a computer through the Grid
+
+Sign in to the same grid on each computer. They find each other through it.
+
+<Tabs syncKey="way">
+<TabItem label="App">
+Settings → Computers → **Cloud** → **Sign in to a wisp Grid**, with GitHub or Google. Then **This computer on the
+grid** turns this computer on, so your other wisps and your phone reach it.
+</TabItem>
+<TabItem label="TUI">
+```text
+/grid-client signin --add-computer
+/grid-client status
+```
+</TabItem>
+<TabItem label="CLI">
+```sh
+wisp cloud signin             # wisp Cloud; or: wisp cloud signin https://grid.example.com
+wisp computer on              # this computer on the grid
+wisp computer status
+```
+</TabItem>
+</Tabs>
+
+## Run there
+
+<Tabs syncKey="way">
+<TabItem label="App">
+In New task, click **This computer** and pick the machine. On a running task, **Runs on** by the reply box moves the
+task, its branch and its history to another computer.
+</TabItem>
+<TabItem label="TUI">
+Start the TUI on that machine: `wisp tui --on studio`. Its list is that machine's tasks.
+</TabItem>
+<TabItem label="CLI">
+```sh
+wisp "run the full test suite" --on studio
+wisp ls --on studio           # any command takes --on <machine>
+```
+</TabItem>
+</Tabs>
+
+To keep work on one machine: `machine: studio` on a crew member, `on: studio` on a workflow step. A delegate can run
+on another computer than its lead, on a copy of the lead's work; its changes come back when it finishes.
+
+## wisp Cloud
+
+Sign in at [grid.trywisp.dev](https://grid.trywisp.dev) and you get your own wisp on a server, with Claude Code,
+Codex and Cursor installed. It works while your computers sleep. Use it in the browser, from the phone app, or as one
+more machine in your app. It sleeps when nothing is going on and wakes when you open it.
+
+```sh
+wisp cloud status
+wisp cloud accounts           # each grid account signed in to here
+wisp cloud switch <account>
+```
+
+## Sandboxes
+
+A **sandbox** is a box of its own on your grid, for one piece of work. The agent can install, run and break
+anything there, never on your computer. It's deleted with its task.
+
+<Tabs syncKey="way">
+<TabItem label="App">
+In New task, click **This computer** and pick **Sandbox**, or start the prompt with `/sandbox`. Settings →
+Computers → **Sandboxes** signs Claude in once for every sandbox, sets the **Env vars** they all get, and lists
+**Your sandboxes**.
+</TabItem>
+<TabItem label="TUI">
+```text
+/sandbox launch --prompt "try the migration on a copy of the database" --cwd /path/to/project
+```
+</TabItem>
+<TabItem label="CLI">
+```sh
+wisp sandbox launch --prompt "try the migration" --cwd .   # a task in a sandbox of its own
+wisp sandbox info             # your sandboxes, their owners, what they start with
+```
+</TabItem>
+</Tabs>
+
+Sandboxes run on your own subscriptions. A delegate, a crew member's jobs and a goal's judges can work in one too.
+
+## Run your own Grid
+
+A Grid is wisp for many people on your server. Try one on your computer, then run it for real:
+
+```sh
+wisp grid dev                       # a grid here, for trying it out
+wisp grid serve --data /srv/grid    # a real grid, from /srv/grid/grid.json, behind a reverse proxy
+```
+
+A real grid signs people in with GitHub, Google or OIDC, and runs each person's box as a container. People then sign
+in with `wisp cloud signin https://grid.example.com`.

@@ -93,11 +93,34 @@ describe('Splitter and Split', () => {
     // Thread, then Preview, then PR, then Changes; Shell (open) keeps its label
     expect(fitPlan({ ...panel, room: 260 })).toEqual({ iconic: 2, tight: true });
     expect(fitPlan({ ...panel, room: 230 })).toEqual({ iconic: 3, tight: true });
-    expect(fitPlan({ ...panel, room: 200 })).toEqual({ iconic: 4, tight: true });
+    // every other tab an icon leaves 21.6 px: PR's label (+15.4) comes back, Changes' (+51.6) doesn't (audit E #6)
+    expect(fitPlan({ ...panel, room: 200 })).toEqual({ iconic: 3, tight: true, labelled: [1] });
     expect(fitPlan({ ...panel, room: 50 }), 'nothing more to give').toEqual({ iconic: 4, tight: true });
     // no minor tab: the row tightens before any tab goes
     expect(fitPlan({ ...panel, minor: [false, false, false, false, false], room: 305 })).toEqual({ iconic: 1, tight: true });
     expect(fitPlan({ ...panel, minor: [false, false, false, false, false], room: 360 })).toEqual({ iconic: 0, tight: true });
+  });
+
+  // audit E #6: a pinned tab open at 1280 (297 px) turned Changes, PR, Shell and Preview into icons with 45 px to spare:
+  // "the last n from the end" can't label Shell while Changes (the widest, with its count) is an icon. Past that point
+  // the tabs that still fit get their label back, front first.
+  test('fit_gives_the_room_left_back_to_the_tabs_that_fit_when_the_open_one_is_a_pinned_tab', () => {
+    // Changes 1, PR, Shell, Preview, Counter app (open, minor), Thread (minor); tight widths as Chrome drew them
+    const pinned = {
+      normal: { widths: [96, 52.4, 65.4, 83.2, 99, 78.3], icon: 32, gap: 2 },
+      tight: { widths: [87, 43.4, 56.4, 74.2, 90, 69.3], icon: 28, gap: 1 },
+      chrome: 6,
+      open: 4,
+      minor: [false, false, false, false, true, true],
+    };
+    // all icons but the open tab: 6 + 5 + 5 × 28 + 90 = 241; Shell's label is +28.4, PR's +15.4: both fit in 297
+    const plan = fitPlan({ ...pinned, room: 297 });
+    expect(plan.tight).toBe(true);
+    expect(plan.labelled).toEqual([1, 2]);
+    // with room for one more label only (PR's, the front-most that fits)
+    expect(fitPlan({ ...pinned, room: 260 }).labelled).toEqual([1]);
+    // no room at all: icons, and nothing labelled
+    expect(fitPlan({ ...pinned, room: 200 }).labelled).toBeUndefined();
   });
 
   test('a splitter renders a panel per entry and a keyboard grip between each pair', () => {

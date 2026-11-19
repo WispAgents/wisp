@@ -93,3 +93,31 @@ test('merge_asks_first_and_says_when_the_worktree_was_kept', async () => {
   expect(asked).toContain('ship.merge');
   expect(shown).toEqual(['The worktree /w/t was kept: it has 1 uncommitted change.']);
 });
+
+// audit E4: v1's Ask to fix (panel.js askToFix): on a failing check, the check's name, the PR, its link and the end of its
+// log go in the reply box (not sent: you look first). It reads the log with ship.check_log.
+test('ask_to_fix_puts_the_failing_check_and_its_log_tail_in_the_reply_box_audit_e4', async () => {
+  const asked: string[] = [];
+  let typed = '';
+  let focused = false;
+  await mountTask({ sessionId: 's1', rows: {} }, () => {
+    const task = useTask();
+    const shell = useShell();
+    const box = { text: () => typed, set: (v: string) => void (typed = v), focus: () => void (focused = true) };
+    (shell as { prompts: unknown }).prompts = { provide: () => () => {}, get: (n: string) => (n === 'reply' ? box : undefined) };
+    (task as { task: unknown }).task = () => ({ id: 's1', pr: { number: 42 }, status: 'review' });
+    (task.client as { run: unknown }).run = (cmd: CommandDef<unknown, unknown>, args: unknown) => {
+      asked.push(`${cmd.id} ${JSON.stringify(args)}`);
+      if (cmd.id === 'ship.details') return Promise.resolve([PR]);
+      return Promise.resolve(cmd.id === 'ship.check_log' ? 'FAIL math.test.js\n  expected 3, got -1' : null);
+    };
+    return <PrPane />;
+  });
+  await until(() => part('side.pr.askFix') !== null);
+  expect(document.querySelectorAll('[data-part="side.pr.askFix"]').length).toBe(1);
+  (part('side.pr.askFix') as HTMLButtonElement).click();
+  await until(() => typed !== '');
+  expect(asked.find((a) => a.startsWith('ship.check_log'))).toContain('"url":"https://ci/1"');
+  expect(typed).toBe('The `test (node 22)` check failed on PR #42 (https://ci/1). Find out why, fix it and push.\n\n```\nFAIL math.test.js\n  expected 3, got -1\n```');
+  expect(focused).toBe(true);
+});

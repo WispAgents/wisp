@@ -281,14 +281,11 @@ pub async fn notices(c: &Client, home: &Path) {
         match state.as_deref() {
             Some("running") => keep.push(x),
             Some(s) => {
-                let what = match s {
-                    "error" => "failed",
-                    "waiting" => "asks you something",
-                    _ => "finished",
-                };
+                let last = c.cmd("runtime.turns", json!({ "id": id, "limit": 1 })).await.ok();
+                let (mark, what) = notice_words(s, last.as_ref().and_then(Value::as_array).and_then(|t| t.last()));
                 eprintln!(
                     "  {} \"{}\" {what} · wisp attach {id}",
-                    state_line(&st, s).split(' ').next().unwrap_or("◌"),
+                    state_line(&st, mark).split(' ').next().unwrap_or("◌"),
                     x["title"].as_str().unwrap_or("")
                 );
             }
@@ -297,6 +294,25 @@ pub async fn notices(c: &Client, home: &Path) {
     }
     if let Ok(b) = serde_json::to_vec(&keep) {
         let _ = std::fs::write(f, b);
+    }
+}
+
+/// A left task's notice, from its state and its last turn: (the state its mark is drawn for, what it says). A turn held
+/// before it started (trust, a limit, a changed harness) or one that ended at the usage limit said "✓ … finished"
+/// (audit E8); `wisp show` says why.
+fn notice_words(state: &str, last: Option<&Value>) -> (&'static str, &'static str) {
+    let turn = |k: &str| last.and_then(|t| t.get(k));
+    if turn("status").and_then(Value::as_str) == Some("held") {
+        return ("waiting", "is held before it started");
+    }
+    if turn("limit").is_some_and(|l| !l.is_null()) {
+        return ("error", "stopped at its usage limit");
+    }
+    match state {
+        "error" => ("error", "failed"),
+        "waiting" => ("waiting", "asks you something"),
+        _ if turn("status").and_then(Value::as_str) == Some("error") => ("error", "failed"),
+        _ => ("done", "finished"),
     }
 }
 
@@ -577,6 +593,18 @@ pub async fn events_follow(c: &Client, topic: &str, subject: Option<&str>, json:
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Audit E8: a turn held for trust and one at the usage limit were both "✓ … finished".
+    #[test]
+    fn a_held_or_limited_turn_isnt_said_finished_audit_e8() {
+        let held = json!({ "status": "held", "held": { "kind": "trust" } });
+        assert_eq!(notice_words("review", Some(&held)), ("waiting", "is held before it started"));
+        let limit = json!({ "status": "error", "limit": { "until": 1 } });
+        assert_eq!(notice_words("review", Some(&limit)), ("error", "stopped at its usage limit"));
+        assert_eq!(notice_words("review", Some(&json!({ "status": "error" }))), ("error", "failed"));
+        assert_eq!(notice_words("review", Some(&json!({ "status": "done", "limit": null }))), ("done", "finished"));
+        assert_eq!(notice_words("waiting", None), ("waiting", "asks you something"));
+    }
 
     #[test]
     fn base64() {

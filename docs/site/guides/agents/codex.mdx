@@ -1,0 +1,87 @@
+---
+title: Start with Codex
+description: Run OpenAI's Codex in wisp on your own ChatGPT plan or API key. Pick its model and effort, add more accounts, and open a task back in Codex.
+sidebar:
+  order: 2
+---
+
+import { Tabs, TabItem } from '@astrojs/starlight/components';
+
+wisp runs Codex in the background, one worktree per task, on your own ChatGPT plan or OpenAI key.
+
+## What you need
+
+The `codex` command. wisp also finds the standalone installer's copy, and the Codex inside the ChatGPT desktop app
+on macOS (on Windows that copy can't be run from outside the app).
+
+```sh
+npm i -g @openai/codex
+```
+
+## Sign in
+
+<Tabs syncKey="way">
+<TabItem label="App">
+Avatar → **Settings** → **Agents** → **Sign in** next to Codex. Open the sign-in page, enter the code wisp shows,
+and wait: wisp sees when you're done. A key instead? Press **Keys** and paste it.
+</TabItem>
+<TabItem label="TUI">
+Send `/accounts login start codex default` in the reply box, and follow the link it gives.
+</TabItem>
+<TabItem label="CLI">
+```sh
+wisp accounts login start codex default     # a link and a code
+wisp accounts login status codex default
+```
+Or run `codex login` yourself. A key in `OPENAI_API_KEY` or `CODEX_API_KEY` works too.
+</TabItem>
+</Tabs>
+
+## Pick it, its model and its effort
+
+wisp reads Codex's own model list. Effort: `minimal`, `low`, `medium`, `high`, `xhigh`.
+
+<Tabs syncKey="way">
+<TabItem label="App">
+Click the harness chip in the New task footer, pick **Codex**, then a model and a thinking level.
+</TabItem>
+<TabItem label="TUI">
+Send `/runtime set-agent --agent codex` to move the open task to Codex.
+</TabItem>
+<TabItem label="CLI">
+```sh
+wisp "add a dark mode toggle" --agent codex --effort high
+wisp runtime agents --json        # the models each harness has
+```
+</TabItem>
+</Tabs>
+
+Modes work as everywhere: **Plan** changes nothing, **Edits** asks before commands, **Full auto** never asks
+(`--mode plan|edits|auto`).
+
+## What wisp adds for Codex
+
+- **Several accounts:** Settings → Agents → **Add another Codex account**. Each keeps its own limits.
+- **Usage windows:** wisp reads Codex's 5-hour and weekly windows, and any banked resets. Settings → Usage →
+  **Check Codex while work waits** asks Codex every 10 minutes how they stand, so held work goes as soon as a
+  window resets. Nothing is spent.
+- **Automations stop at:** Codex can have its own line, so your ChatGPT chats keep room on a shared plan.
+- **Questions** from Codex reach you in wisp and the run waits.
+
+## Open in Codex
+
+<Tabs syncKey="way">
+<TabItem label="App">
+The task's **⋯** menu → **Open in Codex** (key **T**).
+</TabItem>
+<TabItem label="TUI">
+Press **o** in the open task. Quit Codex to come back.
+</TabItem>
+<TabItem label="CLI">
+```sh
+wisp runtime resume-command <id>
+```
+</TabItem>
+</Tabs>
+
+Next: [Budgets and usage](../../run/budgets-and-usage/), [MCP from your harness](../../run/mcp-from-your-harness/).

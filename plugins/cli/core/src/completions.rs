@@ -33,6 +33,9 @@ pub struct Extra {
     /// each enum setting's values, after its key (`wisp settings set worktrees.max <TAB>`: off 20 40 80). Additive
     /// (2026-11-19, setup audit B10).
     pub values: Vec<(String, Vec<String>)>,
+    /// the words a top-level verb takes (`wisp export <TAB>`: the kinds, then its flags). Additive (2026-11-19,
+    /// setup audit E).
+    pub after: Vec<(String, Vec<String>)>,
 }
 
 /// The script for `shell`, or None for a shell it doesn't know.
@@ -43,9 +46,9 @@ pub fn script(shell: &str, c: &Catalogue, curated: &[&str]) -> Option<String> {
 /// [`script`], with what the catalogue doesn't say ([`Extra`]). Additive (2026-11-19).
 pub fn script_with(shell: &str, c: &Catalogue, curated: &[&str], extra: &Extra) -> Option<String> {
     match shell {
-        "zsh" => Some(zsh(c, curated)),
+        "zsh" => Some(zsh(c, curated, extra)),
         "bash" => Some(bash(c, curated, extra)),
-        "fish" => Some(fish(c, curated)),
+        "fish" => Some(fish(c, curated, extra)),
         _ => None,
     }
 }
@@ -118,11 +121,14 @@ fn bash(c: &Catalogue, curated: &[&str], extra: &Extra) -> String {
         }
         s.push_str("      esac ;;\n");
     }
+    for (verb, words) in extra.after.iter().filter(|(v, _)| !names.contains(v)) {
+        let _ = writeln!(s, "    {verb}) COMPREPLY=($(compgen -W '{} --help' -- \"$cur\")) ;;", q(&words.join(" ")));
+    }
     s.push_str("    completions) COMPREPLY=($(compgen -W 'zsh bash fish' -- \"$cur\")) ;;\n  esac\n}\ncomplete -F _wisp wisp\n");
     s
 }
 
-fn zsh(c: &Catalogue, curated: &[&str]) -> String {
+fn zsh(c: &Catalogue, curated: &[&str], extra: &Extra) -> String {
     let t = tree(c);
     let mut s = String::from(
         "#compdef wisp\n# wisp completions for zsh: wisp completions zsh > \"${fpath[1]}/_wisp\"\n_wisp() {\n  local -a firsts verbs flags\n",
@@ -150,11 +156,14 @@ fn zsh(c: &Catalogue, curated: &[&str]) -> String {
         }
         s.push_str("      esac\n      _describe 'flag' flags ;;\n");
     }
+    for (verb, words) in extra.after.iter().filter(|(v, _)| !t.iter().any(|(p, _)| p == v)) {
+        let _ = writeln!(s, "    {verb}) compadd -- {} ;;", words.iter().map(|w| q(w)).collect::<Vec<_>>().join(" "));
+    }
     s.push_str("    completions) _values 'shell' zsh bash fish ;;\n  esac\n}\ncompdef _wisp wisp\n");
     s
 }
 
-fn fish(c: &Catalogue, curated: &[&str]) -> String {
+fn fish(c: &Catalogue, curated: &[&str], extra: &Extra) -> String {
     let t = tree(c);
     let mut s =
         String::from("# wisp completions for fish: wisp completions fish > ~/.config/fish/completions/wisp.fish\ncomplete -c wisp -f\n");
@@ -168,6 +177,14 @@ fn fish(c: &Catalogue, curated: &[&str]) -> String {
             for f in flags {
                 let _ = writeln!(s, "complete -c wisp -n '__fish_seen_subcommand_from {v}' -l '{}'", f.trim_start_matches("--"));
             }
+        }
+    }
+    for (verb, words) in &extra.after {
+        let (flags, plain): (Vec<&String>, Vec<&String>) = words.iter().partition(|w| w.starts_with("--"));
+        let plain: Vec<String> = plain.iter().map(|w| q(w)).collect();
+        let _ = writeln!(s, "complete -c wisp -n '__fish_seen_subcommand_from {verb}' -a '{}'", plain.join(" "));
+        for f in flags {
+            let _ = writeln!(s, "complete -c wisp -n '__fish_seen_subcommand_from {verb}' -l '{}'", q(f.trim_start_matches("--")));
         }
     }
     let _ = writeln!(s, "complete -c wisp -n '__fish_seen_subcommand_from completions' -a 'zsh bash fish'");
@@ -219,6 +236,7 @@ mod tests {
             agents: vec!["claude".into(), "codex".into()],
             settings: vec!["worktrees.max".into(), "budget.limitHold".into()],
             values: Vec::new(),
+            after: Vec::new(),
         };
         let s = script_with("bash", &c, &["plugin", "plugins", "attach"], &extra).unwrap();
         let firsts =
@@ -257,5 +275,24 @@ mod tests {
         assert!(s.contains("-eq 4 ]; then case \"${COMP_WORDS[3]}\" in worktrees.max) COMPREPLY=($(compgen -W 'off 20 40 80'"), "{s}");
         let get = s.lines().find(|l| l.trim_start().starts_with("get)")).unwrap();
         assert!(!get.contains("off 20 40 80"), "only set takes a value: {get}");
+    }
+
+    /// Audit E (as in D): `wisp export <TAB>` offered nothing, though it takes the kinds (`wisp export crew agents`). A
+    /// word list after a top-level verb (`Extra::after`) is offered there, in every shell.
+    #[test]
+    fn export_offers_the_kinds_in_every_shell() {
+        let c = Catalogue::new(Vec::new());
+        let words = ["projects", "crew", "settings", "--format", "--out"].map(str::to_owned).to_vec();
+        let extra = Extra { after: vec![("export".into(), words)], ..Extra::default() };
+        let bash = script_with("bash", &c, &["export"], &extra).unwrap();
+        assert!(
+            bash.contains("    export) COMPREPLY=($(compgen -W 'projects crew settings --format --out --help' -- \"$cur\")) ;;"),
+            "{bash}"
+        );
+        let zsh = script_with("zsh", &c, &["export"], &extra).unwrap();
+        assert!(zsh.contains("    export) compadd -- projects crew settings --format --out ;;"), "{zsh}");
+        let fish = script_with("fish", &c, &["export"], &extra).unwrap();
+        assert!(fish.contains("complete -c wisp -n '__fish_seen_subcommand_from export' -a 'projects crew settings'"), "{fish}");
+        assert!(fish.contains("complete -c wisp -n '__fish_seen_subcommand_from export' -l 'format'"), "{fish}");
     }
 }

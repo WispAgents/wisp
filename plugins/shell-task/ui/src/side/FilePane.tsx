@@ -195,6 +195,8 @@ export function FilePane(props: { readonly path: string }): JSX.Element {
               )
             }
             aria-label={t('shell-task.file.label', { path: path() })}
+            // the next key goes into the file (v1 editor.js; not on a phone, where it would raise the keyboard)
+            autofocus={!shell.platform.phone}
             part="side.file.view"
           />
         </Box>

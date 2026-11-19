@@ -73,7 +73,7 @@ pub fn launch_args(f: &Flags, prompt: &str, cwd: &str) -> Value {
 /// Setup audit F4: a task started from a project's folder is that project's, as New task's is. Its cwd is spelled as
 /// the project's path (the shell's `/private/var/…` is the project's `/var/…`, so the app files it under the project),
 /// and it gets its own worktree ([`own_worktree`]) unless `--worktree` or `--no-worktree` said. Outside every project the
-/// arguments stay as they are.
+/// arguments stay as they are, except in a git repo, which gets its own worktree all the same (audit E1).
 pub async fn in_project(c: &Client, a: &mut Value) {
     let Some(cwd) = a.get("cwd").and_then(Value::as_str).map(str::to_owned) else { return };
     let Ok(projects) = c.cmd("resources.export", json!({ "kinds": ["project"] })).await else { return };
@@ -92,11 +92,21 @@ pub async fn in_project(c: &Client, a: &mut Value) {
             }
         }
     }
-    let Some((_, spelled)) = best else { return };
-    a["cwd"] = json!(spelled);
+    match best {
+        Some((_, spelled)) => a["cwd"] = json!(spelled),
+        // audit E1: a git repo wisp doesn't know as a project still isn't edited in place (v1 launch.js:167 gave any git
+        // repo a worktree); a plain folder stays as it is
+        None if in_git_repo(std::path::Path::new(&cwd)) => {}
+        None => return,
+    }
     if a.get("worktree").is_none() {
         a["worktree"] = json!(own_worktree(a));
     }
+}
+
+/// Whether `dir` is inside a git checkout (a `.git` folder, or a worktree's `.git` file, here or above).
+pub fn in_git_repo(dir: &std::path::Path) -> bool {
+    dir.ancestors().any(|d| d.join(".git").exists())
 }
 
 /// The CLI's (and `wisp mcp`'s) own default (audit C4): a worktree of its own in a project, except in Plan mode (nothing
@@ -175,7 +185,8 @@ pub async fn show(c: &Client, f: &Flags, id: &str, summary: Option<Value>) -> Re
     let held =
         last.as_ref().and_then(Value::as_array).and_then(|t| t.last()).map_or_else(String::new, |t| crate::show_words::holding(id, t));
     let goal = crate::show_words::goal_line(&task);
-    say(&format!("◌ {}  [{}{still}]  {id}{family}{goal}\n\n{body}{asks}{held}", s(&task, "title"), s(&task, "state")));
+    let head = format!("◌ {}  [{}{still}]  {id}{family}{goal}", s(&task, "title"), s(&task, "state"));
+    say(&show_text(&head, &[&body, &asks, &held]));
     Ok(())
 }
 
@@ -253,14 +264,24 @@ pub async fn ls(c: &Client, f: &Flags) -> Result<()> {
     } else {
         String::new()
     };
-    let lines: Vec<String> = rows
-        .iter()
+    let lines = ls_lines(&rows);
+    // the same words as `wisp ls --crew` (audit D11: "No sessions." here, "No tasks." there)
+    out(f, &json!(rows), &if lines.is_empty() { "No tasks.".to_owned() } else { format!("{}{more}", lines.join("\n")) });
+    Ok(())
+}
+
+/// `wisp ls`'s rows, each column as wide as its longest value (audit E15: "antigravity" pushed its row's project two
+/// characters right of every other row's, past the agent column's fixed 8).
+fn ls_lines(rows: &[&Value]) -> Vec<String> {
+    let width = |k: &str, min: usize| rows.iter().map(|x| s(x, k).chars().count()).max().unwrap_or(0).max(min);
+    let (sw, aw) = (width("state", 7), width("agent", 8));
+    rows.iter()
         .map(|x| {
             let ask =
                 x.get("question").and_then(Value::as_str).filter(|q| !q.is_empty()).map_or(String::new(), |q| format!("  — asks: {q}"));
             let proj = project_of(x);
             format!(
-                "{}  {:<7}  {:<8}  {:<16}  {}{ask}",
+                "{}  {:<sw$}  {:<aw$}  {:<16}  {}{ask}",
                 s(x, "id"),
                 s(x, "state"),
                 s(x, "agent"),
@@ -268,10 +289,18 @@ pub async fn ls(c: &Client, f: &Flags) -> Result<()> {
                 s(x, "title")
             )
         })
-        .collect();
-    // the same words as `wisp ls --crew` (audit D11: "No sessions." here, "No tasks." there)
-    out(f, &json!(rows), &if lines.is_empty() { "No tasks.".to_owned() } else { format!("{}{more}", lines.join("\n")) });
-    Ok(())
+        .collect()
+}
+
+/// `wisp show`'s text: its head, then its answer, question and hold, one blank line between those there are (audit
+/// E15: three empty lines came before a hold, a usage limit or a question when the answer was empty).
+fn show_text(head: &str, parts: &[&str]) -> String {
+    let mut out = head.to_owned();
+    for p in parts.iter().map(|p| p.trim_matches('\n')).filter(|p| !p.trim().is_empty()) {
+        out.push_str("\n\n");
+        out.push_str(p);
+    }
+    out
 }
 
 /// The project a list row is in: its worktree's project (`summary.project`, the repo it was made from; the worktree's
@@ -351,6 +380,35 @@ mod tests {
         assert!(own_worktree(&json!({ "prompt": "x", "cwd": "/p" })));
         assert!(own_worktree(&json!({ "prompt": "x", "mode": "edits" })));
         assert!(!own_worktree(&json!({ "prompt": "x", "mode": "plan" })));
+    }
+
+    /// Audit E1: a git repo that isn't a project is still a git repo (a worktree's `.git` is a file); a plain folder isn't.
+    #[test]
+    fn a_git_checkout_is_found_from_any_folder_inside_it_audit_e1() {
+        let root = std::env::temp_dir().join(format!("wisp-in-git-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(root.join("repo/.git")).unwrap_or_default();
+        std::fs::create_dir_all(root.join("repo/src/deep")).unwrap_or_default();
+        std::fs::create_dir_all(root.join("tree/src")).unwrap_or_default();
+        std::fs::write(root.join("tree/.git"), "gitdir: /x/.git/worktrees/tree\n").unwrap_or_default();
+        std::fs::create_dir_all(root.join("plain")).unwrap_or_default();
+        assert!(in_git_repo(&root.join("repo/src/deep")));
+        assert!(in_git_repo(&root.join("tree/src")));
+        assert!(!in_git_repo(&root.join("plain")));
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// Audit E15: an 11-character agent kept every row's columns lined up; `wisp show` had one blank line before a hold.
+    #[test]
+    fn ls_columns_line_up_and_show_has_one_blank_line_between_parts_audit_e15() {
+        let a = json!({ "id": "01a", "state": "review", "agent": "antigravity", "cwd": "/w/proj", "title": "A" });
+        let b = json!({ "id": "01b", "state": "running", "agent": "codex", "cwd": "/w/proj", "title": "B" });
+        let lines = ls_lines(&[&a, &b]);
+        let col = |l: &str| l.find("proj").unwrap();
+        assert_eq!(col(&lines[0]), col(&lines[1]), "{lines:?}");
+        let text = show_text("◌ T  [review]  01a", &["", "", "\n\n◷ Held before it started"]);
+        assert_eq!(text, "◌ T  [review]  01a\n\n◷ Held before it started");
+        assert_eq!(show_text("◌ T", &["body", "\n\n? Asks: x", ""]), "◌ T\n\nbody\n\n? Asks: x");
     }
 
     #[test]

@@ -41,6 +41,11 @@ type Running = (Arc<dyn Transport>, CancellationToken);
 struct Live {
     st: Arc<State>,
     running: Mutex<HashMap<String, Running>>,
+    /// what each running transport was started with (a hash of its declared config): one whose channel didn't change
+    /// isn't restarted by another channel's setup
+    started: Mutex<HashMap<String, u64>>,
+    /// how many times each transport was started, so a setup can tell whether its apply started it again
+    starts: Mutex<HashMap<String, u64>>,
     channels: Channels,
     notes: Notifications,
     kinds: OnceLock<Arc<Kinds>>,
@@ -72,17 +77,37 @@ async fn config_of(ctx: &Ctx, c: &kinds::ChannelSpec) -> Value {
     cfg
 }
 
-/// Re-reads the declared channels; stops every transport, then starts the ones that are on.
-async fn act(ctx: &Ctx, live: &Arc<Live>) {
+/// A declared config's fingerprint, kept in memory only (it holds the revealed token).
+fn print_of(cfg: &Value) -> u64 {
+    use std::hash::{Hash, Hasher};
+    let mut h = std::collections::hash_map::DefaultHasher::new();
+    cfg.to_string().hash(&mut h);
+    h.finish()
+}
+
+/// Which transports an act starts again even when their channel didn't change.
+#[derive(Clone, Copy)]
+enum Again<'a> {
+    /// only the changed ones (an apply)
+    Changed,
+    /// every one (Refresh, the first act)
+    All,
+    /// the changed ones and this one (its setup saved again: the person may have fixed its token at the service)
+    And(&'a str),
+}
+
+/// Re-reads the declared channels: starts the ones that are on and changed (and those `again` names), and stops the
+/// rest. A transport whose channel didn't change keeps running, or stays stopped with its error (a refused token is
+/// never asked again because another channel was set up: audit E).
+async fn act(ctx: &Ctx, live: &Arc<Live>, again: Again<'_>) {
     let Some(k) = live.kinds.get() else { return };
     // before the start read what was kept, an act would start a transport over it
     if !live.st.loaded.load(std::sync::atomic::Ordering::Acquire) {
         return;
     }
     let read = kinds::read(k, &live.channels, &live.notes).await;
-    for (_, (_, stop)) in lock(&live.running).drain() {
-        stop.cancel();
-    }
+    // what ran before: each one kept goes back, the rest are stopped
+    let mut was: HashMap<String, Running> = std::mem::take(&mut *lock(&live.running));
     let declared = lock(&live.channels).clone();
     let hub: Arc<dyn wisp_channels_api::ChannelHub> = Arc::new(Hub { ctx: ctx.clone(), st: live.st.clone() });
     for def in ctx.contributions(&TRANSPORTS) {
@@ -94,6 +119,7 @@ async fn act(ctx: &Ctx, live: &Arc<Live>) {
             continue;
         };
         let cfg = config_of(ctx, c).await;
+        let print = print_of(&cfg);
         {
             let keys: Vec<String> = cfg.as_object().map(|o| o.keys().cloned().collect()).unwrap_or_default();
             let before = lock(&live.st.declared).insert(def.name().to_owned(), keys).unwrap_or_default();
@@ -107,10 +133,30 @@ async fn act(ctx: &Ctx, live: &Arc<Live>) {
         if c.enabled != Some(true) {
             continue;
         }
+        let forced = match again {
+            Again::Changed => false,
+            Again::All => true,
+            Again::And(t) => t == def.name(),
+        };
+        let same = !forced && lock(&live.started).get(def.name()) == Some(&print);
+        if let Some(r) = was.remove(def.name()) {
+            if same {
+                lock(&live.running).insert(def.name().to_owned(), r);
+                continue;
+            }
+            // the old one stops before the new one starts (two Telegram polls would answer each other's 409)
+            r.1.cancel();
+        }
         let t = def.create(hub.clone());
         let stop = ctx.scope().child_token();
         lock(&live.running).insert(def.name().to_owned(), (t.clone(), stop.clone()));
+        lock(&live.started).insert(def.name().to_owned(), print);
+        *lock(&live.starts).entry(def.name().to_owned()).or_default() += 1;
         ctx.spawn(async move { t.start(stop).await });
+    }
+    for (name, (_, stop)) in was {
+        stop.cancel();
+        lock(&live.started).remove(&name);
     }
     rows::poke(ctx, live);
 }
@@ -299,7 +345,7 @@ fn commands(s: &mut Setup, live: &Arc<Live>) {
     s.command::<Refresh, _, _>(move |ctx, _call, _a| {
         let live = l.clone();
         async move {
-            act(&ctx, &live).await;
+            act(&ctx, &live, Again::All).await;
             Ok(wisp_channels_api::Empty {})
         }
     });
@@ -372,7 +418,7 @@ impl Plugin for ChannelsPlugin {
         let (l, ctx) = (live.clone(), s.ctx());
         let after: OnChange = Arc::new(move || {
             let (l, ctx) = (l.clone(), ctx.clone());
-            Box::pin(async move { act(&ctx, &l).await })
+            Box::pin(async move { act(&ctx, &l, Again::Changed).await })
         });
         let k = kinds::register(s, &after);
         let _ = live.kinds.set(k);
@@ -414,7 +460,7 @@ impl Plugin for ChannelsPlugin {
                 tracing::warn!("channels: no store, so what a channel keeps lasts until a restart");
             }
             l.st.loaded.store(true, std::sync::atomic::Ordering::Release);
-            act(&ctx, &l).await;
+            act(&ctx, &l, Again::All).await;
             Ok(())
         });
         Ok(())

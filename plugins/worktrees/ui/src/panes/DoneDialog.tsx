@@ -2,13 +2,13 @@
 // task marked done and what ran under it hold, clean ones ticked, one holding work unticked and saying what
 // it would lose. Remove closes at once and the removal runs behind (a toast says what went, or what was kept
 // and why); Keep pins every row. Esc, × or a click outside answers nothing: the hourly cleanup still looks.
-import { createSignal, For, onCleanup, onMount, Show, type JSX } from 'solid-js';
-import { setSetting, type ExtensionId, type PluginClient, type SettingRow } from '@wisp/client';
+import { createEffect, createSignal, For, onCleanup, onMount, Show, type JSX } from 'solid-js';
+import { setSetting, type EntityKey, type ExtensionId, type PluginClient, type SettingRow } from '@wisp/client';
 import { useShell } from '@wisp/shell';
 import { Button, Checkbox, Divider, Inline, Skeleton, Stack, Text, useSignal } from '@wisp/ui';
 import { bare, forget, peerOf, rowsFor, settingKey, VIEW } from '../ask.ts';
 import { doneApply, doneList } from '../commands.ts';
-import { heading, initiallyTicked, outcome, removal, removeButton, rowStatus, withSizes, type Said } from '../done.ts';
+import { heading, initiallyTicked, outcome, removal, removeButton, rowStatus, SESSION, undone, withSizes, type Said } from '../done.ts';
 import { fmtSize } from '../format.ts';
 import { t } from '../i18n.ts';
 import { SETTING, type DoneFolder } from '../types.ts';
@@ -86,6 +86,11 @@ export default function DoneDialog(props: { readonly client: PluginClient; reado
   // Remove already says what to do, and a formula or plugin's lock isn't the dialog's to change
   const lock = (): boolean => only() || !!setting()?.locked_by;
   const close = (): void => c.navigate({ t: 'closeOverlay', id: VIEW as ExtensionId });
+  // Undo (or anything that reopens the task) takes the question with it: nothing of a live task's folder is removed
+  const task = useSignal(c.entities.row<{ state?: string }>(SESSION, key as EntityKey));
+  createEffect(() => {
+    if (undone(task())) close();
+  });
   let open = true;
   onCleanup(() => {
     open = false;

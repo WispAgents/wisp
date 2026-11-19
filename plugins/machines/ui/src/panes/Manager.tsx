@@ -54,6 +54,9 @@ function MachineFormView(props: {
   const [auto, setAuto] = createSignal(props.m?.autoConnect !== false);
   const [adv, setAdv] = createSignal(!!props.m && (props.m.port !== DEFAULT_PORT || !!props.m.command));
   const [busy, setBusy] = createSignal(false);
+  // Escape in a field of a form that can be cancelled cancels it, not the whole Manage dialog (v1 projects.js: "Escape
+  // cancels the edit, not the dialog")
+  const esc = (): { onEscape?: () => void } => (props.cancel ? { onEscape: props.onCancel } : {});
   const save = (): void => {
     if (!target().trim() || busy()) return;
     setBusy(true);
@@ -64,10 +67,10 @@ function MachineFormView(props: {
     <Stack gap="3" part="machines.form">
       <Wrap gap="3" align="start">
         <Field label={t('machines.add.address')} hint={t('machines.add.address.hint')}>
-          <Input mono value={target()} onInput={setTarget} placeholder={t('machines.add.address.placeholder')} spellcheck={false} autocomplete="off" autofocus />
+          <Input {...esc()} mono value={target()} onInput={setTarget} placeholder={t('machines.add.address.placeholder')} spellcheck={false} autocomplete="off" autofocus />
         </Field>
         <Field label={t('machines.add.name')}>
-          <Input value={name()} onInput={setName} placeholder={nameFor(target(), props.hosts)} spellcheck={false} />
+          <Input {...esc()} value={name()} onInput={setName} placeholder={nameFor(target(), props.hosts)} spellcheck={false} />
         </Field>
       </Wrap>
       <Show
@@ -82,10 +85,10 @@ function MachineFormView(props: {
       >
         <Wrap gap="3" align="start">
           <Field label={t('machines.port')}>
-            <Input mono type="number" inputMode="numeric" value={port()} onInput={setPort} />
+            <Input {...esc()} mono type="number" inputMode="numeric" value={port()} onInput={setPort} />
           </Field>
           <Field label={t('machines.command')}>
-            <Input mono value={command()} onInput={setCommand} placeholder={props.defaultCommand} spellcheck={false} />
+            <Input {...esc()} mono value={command()} onInput={setCommand} placeholder={props.defaultCommand} spellcheck={false} />
           </Field>
         </Wrap>
         <Checkbox checked={auto()} onChange={setAuto} label={t('machines.autoConnect')} />

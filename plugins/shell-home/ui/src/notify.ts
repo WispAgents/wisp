@@ -6,6 +6,7 @@
 import { effect, entityKey, untracked, type EntityKey, type Nav, type PluginClient, type SessionId, type SettingRow, type Target } from '@wisp/client';
 import type { Platform } from '@wisp/shell/platform';
 import type { Toaster } from '@wisp/ui';
+import { asking } from './needs.ts';
 import { SESSION, type TaskRow } from './types.ts';
 import './i18n/lazy.ts';
 
@@ -20,7 +21,7 @@ export interface Notice {
   readonly asks: boolean;
 }
 
-const asking = (r: TaskRow): boolean => !!(r.question || r.approval);
+
 const GOAL_END = new Set(['met', 'impossible', 'out', 'paused']);
 
 /** What a goal's end says, or undefined when the goal hasn't ended. */

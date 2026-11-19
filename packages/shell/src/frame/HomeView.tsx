@@ -25,7 +25,7 @@ import { aheadLabel, startsAt, waitable, whenTip } from './hold.ts';
 import { Slot, useExtensions, usePluginClient } from '../slot.tsx';
 import { useNow } from '../clock.ts';
 import { SESSION, type SessionRow } from '../rows.ts';
-import { longTime, needsYou, shortAgo, statusOf, sessionKey } from './rows-view.ts';
+import { homeNeeds, longTime, shortAgo, statusOf, sessionKey } from './rows-view.ts';
 import { autoBlocked, autoPreview, autoRules, create, setSetting, trial, type Attachment } from './commands.ts';
 import { newRun, runWords, sameSetup, settingModel, trialVary, variantWords, type Variant } from './trial.ts';
 import { modelWord, useHarnessRows, type Runner, useDefaultWords } from './runner.ts';
@@ -347,12 +347,8 @@ export function HomeView(props: { readonly onBack?: () => void }): JSX.Element {
   const cardsExt = useExtensions('shell.home:cards');
   const cardsSaved = useSignal(() => Number(shell.client.settings.get('shell.home.cardsHeight')() ?? 0));
   const cardsH = (): number => (cardsExt().length ? cardsSaved() : 0);
-  const needs = createMemo(() =>
-    sessions()
-      // the list's own rules (saved for later, Scheduled, a subagent's run: not here), so Home agrees with it
-      .filter(needsYou)
-      .sort((a, b) => b.updated_at - a.updated_at),
-  );
+  // the list's own rules (saved for later, Scheduled, a subagent's run: not here), asking first, so Home agrees with it
+  const needs = createMemo(() => homeNeeds(sessions()));
   // the @ and / menus (plugins' prompt sources), New task's own
   const menu = usePromptMenu({ shell, where: 'home', text, setText, input: () => input, id: 'launcher-suggest', project: () => project()?.path });
   let goalInput: HTMLInputElement | undefined;

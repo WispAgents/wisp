@@ -98,6 +98,8 @@ export function useDialog(props: DialogProps, open0: boolean, returnTo: () => HT
     onEscapeKeyDown: (e: KeyboardEvent) => {
       const t = e.target;
       if (t instanceof HTMLInputElement && t.type === 'search' && t.value !== '') e.preventDefault();
+      // a field that answers Escape itself (an inline edit's Cancel, Input's `onEscape`): the field's, not the dialog's
+      if (t instanceof HTMLElement && t.hasAttribute('data-escape')) e.preventDefault();
     },
     ...(props.initialFocus ? { initialFocusEl: props.initialFocus } : {}),
     finalFocusEl: returnTo,

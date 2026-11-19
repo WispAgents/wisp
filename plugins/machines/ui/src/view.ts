@@ -128,6 +128,17 @@ export function troubleTitle(s: StatusLike, say: Say): string {
   return s.hint?.title || s.error;
 }
 
+/** The trouble box's log (v1 machines.js): the error when the title is the hint's (else the title already says it), then
+ *  ssh's lines, each once, leaving out what the steps shown above it already say (audit C–E: the SSH error twice). */
+export function troubleLog(s: StatusLike, log: readonly string[]): string {
+  const said = new Set([troubleTitle(s, (k) => k), ...(s.steps ?? []).map((x) => x.detail)].map((x) => x.trim()).filter(Boolean));
+  const out: string[] = [];
+  for (const l of [s.hint?.title ? s.error : '', ...log].map((x) => x.trim())) {
+    if (l && !said.has(l) && !out.includes(l)) out.push(l);
+  }
+  return out.join('\n');
+}
+
 /** The password box shows for a refused key, not while it's only retrying (v1 `h.letIn && !lost`). */
 export const offersLetIn = (s: StatusLike): boolean => !!s.hint?.letIn && s.state !== 'reconnecting';
 

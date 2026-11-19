@@ -41,7 +41,7 @@ wisp cloud signin           # sign this computer in to wisp Cloud
 wisp computer on            # put this computer on the grid, so your other wisps and your phone reach it
 ```
 
-You can run your own grid on your server: `wisp grid init`, then `wisp grid serve`.
+You can run your own grid on your server with `wisp grid serve` (see [Machines, the Grid and wisp Cloud](../../guides/run/machines/)).
 
 ## Pinning work to a machine
 

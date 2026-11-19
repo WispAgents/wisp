@@ -31,6 +31,19 @@ export function needsYou(s: SessionRow): boolean {
   return !scheduled;
 }
 
+/** Asking you something: v1's `waiting` state (a `runtime.ask` arrives as `waiting` with an empty `question`), or a
+ *  question or an approval the summary carries. */
+export function asking(s: SessionRow): boolean {
+  const sum = s.summary as Record<string, unknown>;
+  return s.state === 'waiting' || !!sum['question'] || sum['approval'] === true;
+}
+
+/** Home's Needs you, as the sidebar sorts it (v1 split.js paintHome reads feed.js `groups().needs`): asking first,
+ *  then newest. */
+export function homeNeeds(rows: readonly SessionRow[]): SessionRow[] {
+  return rows.filter(needsYou).sort((a, b) => Number(asking(b)) - Number(asking(a)) || b.updated_at - a.updated_at);
+}
+
 export function sectionOf(s: SessionRow): SectionId {
   if (s.state === 'running') return 'working';
   if (s.state === 'done') return 'done';
@@ -66,8 +79,9 @@ export type Tone = 'done' | 'info' | 'warn' | 'bad' | 'live';
 export function statusOf(s: SessionRow, t: ShellContext['t']): { label: string; tone: Tone } {
   const st = String(s.summary.status ?? '');
   if (s.state === 'running') return { label: t('shell.status.working'), tone: 'live' };
-  // a question waits for you (an ask, a stalled goal): that's what the task's state says, whatever the last turn said
-  if (s.state === 'waiting') return { label: t('shell.status.waiting'), tone: 'warn' };
+  // a question waits for you (an ask, a stalled goal): that's what the task's state says, whatever the last turn said;
+  // v1's word for it is Asking (turns.js STATE_WORD, split.js paintHome), Needs approval for an approval (the list's pill)
+  if (asking(s)) return { label: t(s.summary['approval'] === true ? 'shell.status.approval' : 'shell.status.asking'), tone: 'warn' };
   if (isHeld(s.state, s.summary)) return { label: t('shell.status.held'), tone: 'warn' };
   if (st === 'info') return { label: t('shell.status.report'), tone: 'info' };
   // v1 format.js statusKey: a blocked run says why it stopped (a limit, a refusal, a crash), else Blocked, as the

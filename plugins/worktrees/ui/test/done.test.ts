@@ -2,7 +2,7 @@
 // folders, and what the dialog says (src/done.ts, src/view.ts).
 import { describe, expect, it } from 'vitest';
 import type { EntityKey, PendingInfo, PeerId } from '@wisp/client';
-import { heading, holdsWork, initiallyTicked, losesOf, newlyDone, outcome, planDone, removal, removeButton, rowStatus, stateOf, withSizes } from '../src/done.ts';
+import { undone, heading, holdsWork, initiallyTicked, losesOf, newlyDone, outcome, planDone, removal, removeButton, rowStatus, stateOf, withSizes } from '../src/done.ts';
 import { t } from '../src/i18n.ts';
 import type { DoneFolder } from '../src/types.ts';
 import { doneTitle, parseDone } from '../src/view.ts';
@@ -116,5 +116,16 @@ describe('the dialog', () => {
     const bad = outcome({ removed: [], kept: [], failed: [{ path: '/b', error: 'It’s in use.' }] }, sized);
     expect(bad && t(bad.said.key, bad.said.vars)).toBe('Kept “Job”: It’s in use.');
     expect(outcome({ removed: [], kept: ['/a'], failed: [] }, sized)).toBeUndefined();
+  });
+});
+
+// audit E #9: Mark done opened "Remove its worktree?" beside the toast's Undo; Undo put the task back, and the dialog
+// stayed, its Remove ready to take the reopened task's folder. The question goes once the task isn't done.
+describe('the question follows the task', () => {
+  it('a_task_undone_takes_its_worktree_question_with_it', () => {
+    expect(undone({ state: 'done' })).toBe(false);
+    expect(undone({ state: 'review' }), 'Undo put it back').toBe(true);
+    expect(undone({ state: 'running' })).toBe(true);
+    expect(undone(undefined), 'not loaded yet (a dialog restored from the URL): no answer, keep asking').toBe(false);
   });
 });

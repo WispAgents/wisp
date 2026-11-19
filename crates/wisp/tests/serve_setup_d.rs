@@ -81,6 +81,12 @@ async fn a_formula_is_read_as_the_ui_reads_it_audit_d() {
     std::fs::write(dir.join("proj/router.wisp.yml"), "wisp: 1\nrouter:\n  best2: true\n").unwrap();
     let (code, out, err) = wisp(&dir, port, &["validate", "-f", "router.wisp.yml"]);
     assert!(code != 0, "{out}{err}");
+    // audit E6: it says why (Auto is off), never that no plugin owns `router:`; Setup → Import's read says the same
+    for said in [format!("{out}{err}"), wisp(&dir, port, &["apply", "-f", "router.wisp.yml", "--yes"]).2] {
+        assert!(said.contains("`router:`: Auto is off (runtime.auto)") && !said.contains("no plugin"), "{said}");
+    }
+    let read = api.try_cmd("resources.read", json!({ "text": "wisp: 1\nrouter:\n  best2: true\n", "format": "yaml" })).await;
+    assert!(read.to_string().contains("Auto is off") && !read.to_string().contains("no plugin"), "{read}");
     let plan =
         api.try_cmd("resources.plan", json!({ "resources": [{ "kind": "router", "name": "default", "spec": { "best2": true } }] })).await;
     assert!(plan.to_string().contains("Auto is off"), "a plan naming it says why: {plan}");
@@ -89,6 +95,28 @@ async fn a_formula_is_read_as_the_ui_reads_it_audit_d() {
     let (code, out, err) = wisp(&dir, port, &["export", "router"]);
     assert!(code == 0 && out.contains("router"), "{code}: {out}{err}");
     api.cmd("settings.set", json!({ "key": "runtime.auto", "value": false })).await;
+
+    // audit E2: a setting not set yet plans from its default: `crew.tint: false` says `true → false`, its default again
+    // changes nothing, and `wisp diff` says the value
+    let plan = api
+        .cmd(
+            "resources.plan",
+            json!({ "resources": [
+            { "kind": "setting", "name": "crew.tint", "spec": false },
+            { "kind": "setting", "name": "budget.drainWatch", "spec": false },
+        ] }),
+        )
+        .await;
+    let ops = plan["ops"].as_array().unwrap();
+    assert_eq!(ops.len(), 1, "drainWatch: false is its default: {plan}");
+    assert_eq!(
+        (ops[0]["name"].clone(), ops[0]["changes"][0]["from"].clone(), ops[0]["changes"][0]["to"].clone()),
+        (json!("crew.tint"), json!(true), json!(false)),
+        "{plan}"
+    );
+    std::fs::write(dir.join("proj/tint.wisp.yml"), "wisp: 1\nsettings:\n  crew.tint: false\n").unwrap();
+    let (code, out, err) = wisp(&dir, port, &["diff", "-f", "tint.wisp.yml"]);
+    assert!(code == 0 && out.contains("setting/crew.tint") && out.contains("true → false"), "{code}: {out}{err}");
 
     // D5: a key no plugin declares
     let (code, out, err) = wisp(&dir, port, &["settings", "get", "nope.key"]);

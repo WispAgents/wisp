@@ -103,7 +103,9 @@
   [data-kit='cx-cmt'] > [data-kit='icon'] { width: 12px; height: 12px; }
   [data-kit='cx-cmt']:hover { background: var(--accent-ink); }
   [data-kit='cx-line']:hover > td > [data-kit='cx-cmt'], [data-kit='cx-cmt']:focus-visible { opacity: 1; transform: none; pointer-events: auto; }
-  @media (hover: none) { [data-kit='cx-cmt'] { opacity: 1; transform: none; pointer-events: auto; } }
+  /* v1 comments.css: on touch the line's number is the target (no + drawn over the code: audit E #3 "+new file") */
+  [data-kit='cx-line'] > [data-kit='cx-no'][data-cmt] { cursor: pointer; }
+  [data-kit='cx-line'] > [data-kit='cx-no'][data-cmt]:hover { color: var(--accent-ink); }
   @media (prefers-reduced-motion: reduce) { [data-kit='cx-cmt'] { transition: none; } }
   /* a commented line: its number and sign lit, its number in the tray at the gutter's left */
   [data-kit='cx-line'][data-lit] > [data-kit='cx-no'], [data-kit='cx-line'][data-lit] > [data-kit='cx-sign'] { background-image: linear-gradient(color-mix(in srgb, var(--accent) 16%, transparent), color-mix(in srgb, var(--accent) 16%, transparent)); }
@@ -115,6 +117,8 @@
   [data-kit='cx-line'][data-op='del'] { background: var(--del-bg); }
   [data-kit='cx-line'][data-op='del'] > [data-kit='cx-no'], [data-kit='cx-line'][data-op='del'] > [data-kit='cx-sign'] { color: var(--del); }
   [data-kit='cx-gap'] > td { padding: 3px 12px; font: 11.5px var(--sans); color: var(--faint); background: var(--surface-2); }
+  /* between two edits wisp saw (v1 blocks.css .b-diff tr.sep): a plain dashed band, nothing counted */
+  [data-kit='cx-sep'] > td { height: 10px; padding: 0; background: var(--surface-2); border-top: 1px dashed var(--line); border-bottom: 1px dashed var(--line); }
   [data-kit='cx-hk-head'] > td { padding: 2px 0; background: var(--surface-2); font: 11.5px var(--sans); color: var(--faint); }
   [data-kit='cx-hk-bar'] { position: sticky; left: 0; display: inline-flex; align-items: center; gap: 10px; padding: 0 12px; }
   [data-kit='cx-hk-rev'], [data-kit='cx-hk-stage'] {

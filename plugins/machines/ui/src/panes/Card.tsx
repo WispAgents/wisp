@@ -6,7 +6,7 @@ import { createSignal, Show, type JSX } from 'solid-js';
 import { Button, Callout, CopyCommand, Inline, Input, Link, Menu, Pill, SettingsRow, Stack, Steps, Text } from '@wisp/ui';
 import type { PeerBody, PeerView, StatusBody } from '../commands.ts';
 import { t } from '../i18n.ts';
-import { agentsOf, kindOf, menuOf, offersLetIn, primaryOf, removeLabel, stepsOf, troubleTitle, updateLine, versionLine, whereOf } from '../view.ts';
+import { agentsOf, kindOf, menuOf, offersLetIn, primaryOf, removeLabel, stepsOf, troubleLog, troubleTitle, updateLine, versionLine, whereOf } from '../view.ts';
 import '../i18n/lazy.ts';
 
 const say = t as (k: string, v?: Readonly<Record<string, string | number>>) => string;
@@ -77,7 +77,7 @@ function LetIn(props: { readonly host: string; readonly command?: string; readon
 
 function Trouble(props: { readonly m: PeerBody; readonly s: StatusBody; readonly view: PeerView | undefined; readonly onAct: (a: CardAct) => void; readonly onLetIn: (p: string) => Promise<void>; readonly onCopy: (c: string) => void }): JSX.Element {
   const h = () => props.s.hint ?? undefined;
-  const log = (): string => [...new Set([h()?.title ? props.s.error : '', ...(props.view?.log ?? [])].filter(Boolean))].join('\n');
+  const log = (): string => troubleLog(props.s, props.view?.log ?? []);
   return (
     <Callout tone={props.s.state === 'reconnecting' ? 'warn' : 'bad'} title={troubleTitle(props.s, say)} part="machines.trouble">
       <Stack gap="2">

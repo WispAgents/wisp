@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { needsList } from '../src/needs.ts';
+import { asking, needsList, needsYou, stateKey } from '../src/needs.ts';
 import type { TaskRow } from '../src/types.ts';
 
 const row = (id: string, updatedAt: number, more: Partial<TaskRow> = {}): TaskRow => ({ id, title: id, state: 'review', updatedAt, ...more });
@@ -12,5 +12,13 @@ describe('needs you on Home', () => {
     const ids = needsList([...fillers, approving, asking]).map((r) => r.id);
     expect(ids.slice(0, 2)).toEqual(['ask', 'approve']);
     expect(ids.slice(2, 5)).toEqual(['filler-6', 'filler-5', 'filler-4']);
+  });
+});
+
+describe('a runtime.ask', () => {
+  it('a_task_waiting_with_an_empty_question_counts_as_asking_audit_d_1', () => {
+    const ask = row('ask1', 1, { state: 'waiting', question: '' });
+    expect([asking(ask), needsYou(ask), stateKey(ask)]).toEqual([true, true, 'shell-home.state.asking']);
+    expect(needsList([row('f', 9), ask]).map((r) => r.id)).toEqual(['ask1', 'f']);
   });
 });

@@ -5,7 +5,7 @@
 // sends here, with the args the plugin's api crate has.
 
 import type { EntityOp, PatchOp, Topic } from '@wisp/protocol';
-import { gitChanges, gitCommit, gitRevert, gitStage, type GitCtx } from './mock-git.ts';
+import { filesOf, gitChanges, gitCommit, gitRevert, gitStage, type GitCtx } from './mock-git.ts';
 import { CLOUD_COMMANDS } from './mock-cloud.ts';
 import { KEY_COMMANDS } from './mock-keys.ts';
 import { READS } from './mock-reads.ts';
@@ -76,6 +76,19 @@ const RECIPES = [
 ];
 
 /** The task whose worktree (or folder) is `dir`, and its turns' bodies (their `changes`). */
+/** A task's files as its turns left them (mock-git filesOf). */
+function taskFiles(ctx: CommandCtx, id: string): Map<string, string> {
+  const bare = id.slice(id.indexOf(':') + 1);
+  const turns = ctx
+    .rows(`session:${bare}` as never)
+    .filter((r) => r.e === 'turn')
+    .map((r) => {
+      const body = (((r.v ?? {}) as Record<string, unknown>)['body'] ?? {}) as { changes?: never[]; ext?: { 'wisp.runtime'?: { changes?: never[] } } };
+      return { changes: body.ext?.['wisp.runtime']?.changes ?? body.changes ?? [] };
+    });
+  return filesOf(turns);
+}
+
 function gitCtx(ctx: CommandCtx): GitCtx {
   const task = (dir: string): { id: string; v: Record<string, unknown> } | undefined =>
     ctx
@@ -645,6 +658,13 @@ export const COMMANDS: Record<string, CommandFn> = {
   'runtime.rerun': (a, ctx) => copyTask(obj(a), ctx, 'rerun'),
   // wisp-git, from the tasks' own changes (mock-git.ts)
   'git.changes': (a, ctx) => ({ ops: [], result: gitChanges(obj(a), gitCtx(ctx)) }),
+  // Open file… and the file view (worktrees.files, worktrees.source): the files the task's turns changed, as they read
+  'worktrees.files': (a, ctx) => ({ ops: [], result: { files: [...taskFiles(ctx, String(obj(a)['id'] ?? '')).keys()], more: 0, git: true } }),
+  'worktrees.source': (a, ctx) => {
+    const text = taskFiles(ctx, String(obj(a)['id'] ?? '')).get(String(obj(a)['path'] ?? ''));
+    if (text === undefined) throw new Error('no such file in the task’s folder');
+    return { ops: [], result: { path: String(obj(a)['path']), text, hash: 'mock', root: '/mock' } };
+  },
   'git.stage': (a) => ({ ops: [], result: gitStage(obj(a)) }),
   'git.revert': (a) => ({ ops: [], result: gitRevert(obj(a)) }),
   'git.commit': (a) => ({ ops: [], result: gitCommit(obj(a)) }),

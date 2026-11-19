@@ -84,5 +84,37 @@ async fn a_task_started_from_a_project_folder_is_that_project_s_as_new_task_s_is
     assert_eq!(code, 0, "{out}{err}");
     let outside = place(&api, "cli task outside").await;
     assert!(outside["worktree"].is_null(), "{outside}");
+    // audit E1: a git repo wisp doesn't know as a project still gets its own worktree, as in v1 (launch.js:167), so a
+    // CLI task never edits the checkout; Plan mode and --no-worktree stay in place
+    let loose = dir.join("loose");
+    std::fs::create_dir_all(loose.join("src")).unwrap();
+    std::fs::write(loose.join("src/a.txt"), "a\n").unwrap();
+    git(&loose, &["init", "-q", "-b", "main"]);
+    git(&loose, &["add", "."]);
+    git(&loose, &["commit", "-qm", "init"]);
+    for (args, title) in [
+        (vec!["--no-open", "loose repo task"], "loose repo task"),
+        (vec!["--no-open", "--mode", "plan", "loose repo plan"], "loose repo plan"),
+        (vec!["--no-open", "--no-worktree", "loose repo in place"], "loose repo in place"),
+    ] {
+        let (code, out, err) = wisp(&dir, &loose.join("src"), port, &args);
+        assert_eq!(code, 0, "{title}: {out}{err}");
+    }
+    assert_eq!(place(&api, "loose repo task").await["worktree"], json!(true));
+    // and it runs in one: a folder of its own, not the checkout
+    let list = api.cmd("runtime.list", json!({})).await;
+    let t = list.as_array().unwrap().iter().find(|t| t["title"] == "loose repo task").unwrap().clone();
+    let mut cwd = String::new();
+    for _ in 0..100 {
+        let got = api.cmd("runtime.get", json!({ "id": t["id"] })).await;
+        cwd = got["cwd"].as_str().unwrap_or_default().to_owned();
+        if !cwd.is_empty() && !cwd.contains("/loose/") && !cwd.ends_with("/loose") {
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+    }
+    assert!(!cwd.contains("/loose/") && !cwd.ends_with("/loose"), "ran in the checkout: {cwd}");
+    assert_eq!(place(&api, "loose repo plan").await["worktree"], json!(false));
+    assert_eq!(place(&api, "loose repo in place").await["worktree"], json!(false));
     drop(serve);
 }

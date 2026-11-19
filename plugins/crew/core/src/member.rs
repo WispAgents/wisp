@@ -105,6 +105,10 @@ pub fn crew_refs(list: &Value, crew: &[Member]) -> Result<Value> {
                     row[k] = Value::String(who.name.clone());
                 }
             }
+            // their job runs on their own harness: the row says which (audit E13: Bob on codex read "auto")
+            if (str_of(row.get("agent")).is_empty() || str_of(row.get("agent")) == "auto") && !who.agent.is_empty() {
+                row["agent"] = Value::String(who.agent.clone());
+            }
             if str_of(row.get("use")).is_empty()
                 && let Some(why) = r.get("why").and_then(Value::as_str)
             {

@@ -19,10 +19,17 @@ pub struct Track;
 impl Command for Track {
     const ID: &'static str = "ship.track";
     type Args = ShipTask;
+    fn args_ts() -> Option<String> {
+        Some(format!(
+            "{}{}",
+            <ShipTask as ::ts_rs::TS>::docs().unwrap_or_default(),
+            <ShipTask as ::ts_rs::TS>::inline(&::ts_rs::Config::default())
+        ))
+    }
     type Out = ();
 }
 
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, ::ts_rs::TS)]
 pub struct SessionArgs {
     pub session: String,
 }
@@ -34,10 +41,17 @@ impl Command for View {
     const ID: &'static str = "ship.view";
     const READ_ONLY: bool = true;
     type Args = ViewArgs;
+    fn args_ts() -> Option<String> {
+        Some(format!(
+            "{}{}",
+            <ViewArgs as ::ts_rs::TS>::docs().unwrap_or_default(),
+            <ViewArgs as ::ts_rs::TS>::inline(&::ts_rs::Config::default())
+        ))
+    }
     type Out = serde_json::Value;
 }
 
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, ::ts_rs::TS)]
 pub struct ViewArgs {
     pub session: String,
     /// from the task's latest presentation (runtime renders it): the default title and body
@@ -51,10 +65,17 @@ pub struct ShipIt;
 impl Command for ShipIt {
     const ID: &'static str = "ship.ship";
     type Args = ShipArgs;
+    fn args_ts() -> Option<String> {
+        Some(format!(
+            "{}{}",
+            <ShipArgs as ::ts_rs::TS>::docs().unwrap_or_default(),
+            <ShipArgs as ::ts_rs::TS>::inline(&::ts_rs::Config::default())
+        ))
+    }
     type Out = Shipped;
 }
 
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, ::ts_rs::TS)]
 pub struct ShipArgs {
     pub session: String,
     pub title: String,
@@ -70,6 +91,13 @@ pub struct Refresh;
 impl Command for Refresh {
     const ID: &'static str = "ship.refresh";
     type Args = SessionArgs;
+    fn args_ts() -> Option<String> {
+        Some(format!(
+            "{}{}",
+            <SessionArgs as ::ts_rs::TS>::docs().unwrap_or_default(),
+            <SessionArgs as ::ts_rs::TS>::inline(&::ts_rs::Config::default())
+        ))
+    }
     type Out = Option<PrSummary>;
 }
 
@@ -80,6 +108,13 @@ pub struct Write;
 impl Command for Write {
     const ID: &'static str = "ship.write";
     type Args = SessionArgs;
+    fn args_ts() -> Option<String> {
+        Some(format!(
+            "{}{}",
+            <SessionArgs as ::ts_rs::TS>::docs().unwrap_or_default(),
+            <SessionArgs as ::ts_rs::TS>::inline(&::ts_rs::Config::default())
+        ))
+    }
     type Out = Draft;
 }
 
@@ -90,6 +125,13 @@ impl Command for Details {
     const ID: &'static str = "ship.details";
     const READ_ONLY: bool = true;
     type Args = SessionArgs;
+    fn args_ts() -> Option<String> {
+        Some(format!(
+            "{}{}",
+            <SessionArgs as ::ts_rs::TS>::docs().unwrap_or_default(),
+            <SessionArgs as ::ts_rs::TS>::inline(&::ts_rs::Config::default())
+        ))
+    }
     type Out = Vec<PrPanel>;
 }
 
@@ -99,6 +141,13 @@ pub struct Merge;
 impl Command for Merge {
     const ID: &'static str = "ship.merge";
     type Args = SessionArgs;
+    fn args_ts() -> Option<String> {
+        Some(format!(
+            "{}{}",
+            <SessionArgs as ::ts_rs::TS>::docs().unwrap_or_default(),
+            <SessionArgs as ::ts_rs::TS>::inline(&::ts_rs::Config::default())
+        ))
+    }
     type Out = Merged;
 }
 
@@ -108,10 +157,17 @@ pub struct Attach;
 impl Command for Attach {
     const ID: &'static str = "ship.attach";
     type Args = AttachArgs;
+    fn args_ts() -> Option<String> {
+        Some(format!(
+            "{}{}",
+            <AttachArgs as ::ts_rs::TS>::docs().unwrap_or_default(),
+            <AttachArgs as ::ts_rs::TS>::inline(&::ts_rs::Config::default())
+        ))
+    }
     type Out = Attached;
 }
 
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, ::ts_rs::TS)]
 pub struct AttachArgs {
     pub session: String,
     pub pr: String,
@@ -137,10 +193,17 @@ pub struct AgentPr;
 impl Command for AgentPr {
     const ID: &'static str = "ship.agent.pr";
     type Args = AgentPrArgs;
+    fn args_ts() -> Option<String> {
+        Some(format!(
+            "{}{}",
+            <AgentPrArgs as ::ts_rs::TS>::docs().unwrap_or_default(),
+            <AgentPrArgs as ::ts_rs::TS>::inline(&::ts_rs::Config::default())
+        ))
+    }
     type Out = AgentText;
 }
 
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, ::ts_rs::TS)]
 pub struct AgentPrArgs {
     pub session: String,
     /// a string, or the number an agent gave as one
@@ -165,6 +228,13 @@ pub struct FixConflicts;
 impl Command for FixConflicts {
     const ID: &'static str = "ship.fix_conflicts";
     type Args = SessionArgs;
+    fn args_ts() -> Option<String> {
+        Some(format!(
+            "{}{}",
+            <SessionArgs as ::ts_rs::TS>::docs().unwrap_or_default(),
+            <SessionArgs as ::ts_rs::TS>::inline(&::ts_rs::Config::default())
+        ))
+    }
     type Out = ConflictFix;
 }
 
@@ -174,10 +244,17 @@ pub struct Recheck;
 impl Command for Recheck {
     const ID: &'static str = "ship.recheck";
     type Args = RecheckArgs;
+    fn args_ts() -> Option<String> {
+        Some(format!(
+            "{}{}",
+            <RecheckArgs as ::ts_rs::TS>::docs().unwrap_or_default(),
+            <RecheckArgs as ::ts_rs::TS>::inline(&::ts_rs::Config::default())
+        ))
+    }
     type Out = Option<ToShip>;
 }
 
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, ::ts_rs::TS)]
 pub struct RecheckArgs {
     pub session: String,
     /// a card fetching its session: skipped while it runs, at most every 5 s
@@ -192,10 +269,17 @@ impl Command for CheckLog {
     const ID: &'static str = "ship.check_log";
     const READ_ONLY: bool = true;
     type Args = CheckLogArgs;
+    fn args_ts() -> Option<String> {
+        Some(format!(
+            "{}{}",
+            <CheckLogArgs as ::ts_rs::TS>::docs().unwrap_or_default(),
+            <CheckLogArgs as ::ts_rs::TS>::inline(&::ts_rs::Config::default())
+        ))
+    }
     type Out = String;
 }
 
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, ::ts_rs::TS)]
 pub struct CheckLogArgs {
     pub session: String,
     pub url: String,

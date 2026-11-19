@@ -53,7 +53,7 @@ pub fn ui_event(name: &str, props: &Map<String, Value>) -> Option<Map<String, Va
     )
 }
 
-#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, ::ts_rs::TS)]
 pub struct TrackArgs {
     pub event: String,
     #[serde(default)]
@@ -72,11 +72,18 @@ impl Command for Track {
     const ID: &'static str = "telemetry.track";
     const PERMISSION: Option<&'static str> = Some(PERM_TRACK);
     type Args = TrackArgs;
+    fn args_ts() -> Option<String> {
+        Some(format!(
+            "{}{}",
+            <TrackArgs as ::ts_rs::TS>::docs().unwrap_or_default(),
+            <TrackArgs as ::ts_rs::TS>::inline(&::ts_rs::Config::default())
+        ))
+    }
     type Out = Tracked;
 }
 
 /// Settings → Privacy → Usage stats (v1 `defaults.telemetry`: 'off' turns them off).
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, ::ts_rs::TS)]
 pub struct SetArgs {
     pub on: bool,
 }
@@ -87,6 +94,13 @@ impl Command for Set {
     const ID: &'static str = "telemetry.set";
     const PERMISSION: Option<&'static str> = Some("telemetry:set");
     type Args = SetArgs;
+    fn args_ts() -> Option<String> {
+        Some(format!(
+            "{}{}",
+            <SetArgs as ::ts_rs::TS>::docs().unwrap_or_default(),
+            <SetArgs as ::ts_rs::TS>::inline(&::ts_rs::Config::default())
+        ))
+    }
     type Out = SetArgs;
 }
 

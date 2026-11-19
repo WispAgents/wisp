@@ -9,6 +9,16 @@ import { useField, useFieldText } from './Field.tsx';
 
 export type FieldSize = 'sm' | 'md' | 'lg';
 
+/** A field's keys: its own Escape first (`onEscape`, marked `data-escape` so the dialog leaves it to the field), then
+ *  the caller's. */
+function keyDown(props: { readonly onKeyDown?: ((e: KeyboardEvent) => void) | undefined; readonly onEscape?: (() => void) | undefined }, e: KeyboardEvent): void {
+  if (e.key === 'Escape' && props.onEscape) {
+    e.stopPropagation();
+    props.onEscape();
+  }
+  props.onKeyDown?.(e);
+}
+
 interface TextControlProps extends KitProps, Labelled {
   readonly value?: string;
   /** Every keystroke, with the new text. */
@@ -16,6 +26,8 @@ interface TextControlProps extends KitProps, Labelled {
   /** On commit (blur after a change). */
   readonly onChange?: (value: string) => void;
   readonly onKeyDown?: (e: KeyboardEvent) => void;
+  /** Escape here is the field's own (an inline edit's Cancel): it runs this, and a dialog it's in stays open. */
+  readonly onEscape?: () => void;
   readonly onFocus?: (e: FocusEvent) => void;
   readonly onBlur?: (e: FocusEvent) => void;
   readonly placeholder?: string;
@@ -86,9 +98,10 @@ export function Input(props: InputProps): JSX.Element {
       aria-invalid={aria.invalid() ? 'true' : undefined}
       onInput={(e) => props.onInput?.(e.currentTarget.value)}
       onChange={(e) => props.onChange?.(e.currentTarget.value)}
-      onKeyDown={(e) => props.onKeyDown?.(e)}
+      onKeyDown={(e) => keyDown(props, e)}
       onFocus={(e) => props.onFocus?.(e)}
       onBlur={(e) => props.onBlur?.(e)}
+      data-escape={flag(props.onEscape !== undefined)}
       data-kit={bare ? 'field-input' : 'input'}
       data-part={bare ? undefined : (props.part ?? 'ui.input')}
       data-size={bare ? undefined : (props.size ?? 'md')}
@@ -155,9 +168,10 @@ export function TextArea(props: TextAreaProps): JSX.Element {
         props.onInput?.(e.currentTarget.value);
       }}
       onChange={(e) => props.onChange?.(e.currentTarget.value)}
-      onKeyDown={(e) => props.onKeyDown?.(e)}
+      onKeyDown={(e) => keyDown(props, e)}
       onFocus={(e) => props.onFocus?.(e)}
       onBlur={(e) => props.onBlur?.(e)}
+      data-escape={flag(props.onEscape !== undefined)}
       data-kit="textarea"
       data-part={props.part ?? 'ui.textarea'}
       data-autosize={flag(props.autosize !== false)}

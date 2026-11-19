@@ -1,0 +1,119 @@
+---
+title: Budgets and usage
+description: See how much of your plans' usage windows your tasks take, have wisp ask before a task goes past your line, and keep automations from using up a window.
+sidebar:
+  order: 11
+---
+
+import { Tabs, TabItem } from '@astrojs/starlight/components';
+
+wisp runs your agents on your own plans. This page shows how to see what each task takes from them, and how to
+keep work that runs on its own from using up a window you need.
+
+## Usage windows
+
+Claude Code and Codex report your plan's **usage windows** on every run: the 5-hour window and the weekly one
+(and, on some Claude plans, separate Opus and Sonnet weeks). wisp keeps the latest reading for each account and
+knows which tasks took which part.
+
+Cursor, Antigravity and Copilot report tokens but not cost (Copilot bills in premium requests). Their turns count
+in turns and outcomes, not in spend.
+
+## See your usage
+
+<Tabs syncKey="way">
+<TabItem label="App">
+- Home shows each window's use beside your tasks. Click it for avatar → **Settings** → **Usage**.
+- **Usage** has **Plan budget** (each account's windows, when they reset, and **Where the window went**, task by
+  task), then **Spend**, **Turns**, **Worked** and **Questions** over the last 7 days, with charts **By project**
+  and **By harness · model**.
+- The harness picker in New task shows how much of each account's window is used.
+</TabItem>
+<TabItem label="TUI">
+Send `/budget view claude --named` for an account's windows, or `/budget plan-windows` for each window this
+period and the tasks' parts of it.
+</TabItem>
+<TabItem label="CLI">
+```sh
+wisp usage                    # your limits this period
+wisp usage --agent claude     # that harness's, by task
+wisp budget view codex        # an account's usage windows
+wisp budget compare claude    # tokens per turn by account, per model
+```
+</TabItem>
+</Tabs>
+
+## Ask near the limit
+
+Before a task would take a 5-hour or weekly window past your line, wisp asks first. The default line is 90%.
+A task you start waits for your yes. Scheduled runs and crew jobs wait in **Needs you** until the window resets.
+Each yes moves that window's line up a step until it resets.
+
+<Tabs syncKey="way">
+<TabItem label="App">
+Settings → **Usage** → **Ask near the limit**: Off, 80%, 90% or 95%. When it asks, the New task box says how far
+the task may take the window, with **Start anyway**, **Wait until …** the reset, and **Keep editing**.
+</TabItem>
+<TabItem label="TUI">
+Send `/settings set budget.limitHold 80` (or `off`, `90`, `95`).
+</TabItem>
+<TabItem label="CLI">
+```sh
+wisp settings set budget.limitHold 80
+wisp "refactor the parser" --yes      # go ahead past the line this once
+```
+</TabItem>
+</Tabs>
+
+## Keep automations off your limit
+
+**Automations stop at** sets where check-ins, triggers, goal rounds and agents' own follow-ups stop on a window.
+They go on by themselves after it resets. What you start yourself always runs. Claude Code and Codex can each have
+their own line; Codex's leaves room for your ChatGPT chats on a shared plan.
+
+<Tabs syncKey="way">
+<TabItem label="App">
+Settings → **Usage** → **Automations stop at**: Off, 50%, 75% or 90%. Under it, each harness's line is **Same**
+or its own.
+</TabItem>
+<TabItem label="TUI">
+Send `/budget set-stop autoStop 75`, or `/budget set-stop autoStopCodex 50` for Codex's own line.
+</TabItem>
+<TabItem label="CLI">
+```sh
+wisp budget set-stop autoStop 75         # off | 50 | 75 | 90
+wisp budget set-stop autoStopClaude same # same | off | 50 | 75 | 90
+wisp budget hold claude default          # what holds this account's unattended work
+wisp budget reset-at claude default      # when it can run again
+```
+</TabItem>
+</Tabs>
+
+In a formula:
+
+```yaml
+budget:
+  stopAt: "75"
+  codex: "50"
+  taskUsd: 5          # at most this many dollars per task
+```
+
+## At the limit
+
+When a run hits its limit, **Wait for the reset** decides what happens. On, the task waits under **Scheduled** and
+carries on in the same conversation when the window resets. Off (the default), it stops and asks you.
+`wisp settings set runtime.limitWait true` turns it on.
+
+With [several accounts](../../agents/claude-code/), a task you start skips an account at its limit. wisp never
+switches accounts to get around a limit on its own.
+
+## More in Settings → Usage
+
+- **Check Codex while work waits:** while work waits on a Codex plan, wisp asks Codex every 10 minutes how its
+  windows stand. A reset that comes early lets the work go at once. Nothing is spent.
+- **Drain watch:** warns, here and on your phone, when an account's last two hours took twice its usual share for
+  the same work. **Copy report** puts the numbers in words for a support ticket.
+- **Spare allowance:** when a weekly window resets within a day with a fifth or more left, home says so.
+- **Stop a run silent for:** a run with no output for 30 minutes while its plan still moves is told to your phone.
+  Pick a time to stop such a run by itself.
+- **Subagents run on:** the model Claude Code's own subagents use.

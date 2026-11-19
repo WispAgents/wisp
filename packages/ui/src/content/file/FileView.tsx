@@ -2,7 +2,7 @@
 // highlighted text with an editable layer over it (a textarea whose text is transparent, so the colours show and
 // the caret, selection and typing are the browser's own), and an optional why-gutter: each line's task, a click
 // opens it. The gutter and the numbers scroll with the text; nothing reflows on a keystroke but the text itself.
-import { For, Show, createEffect, createMemo, createSignal, onCleanup, type JSX } from 'solid-js';
+import { For, Show, createEffect, createMemo, createSignal, onCleanup, onMount, type JSX } from 'solid-js';
 import { flag, sub, type KitProps, type PartName } from '../../core/props.ts';
 import { highlight } from '../highlight.ts';
 import { hoverWords, lineAt, nameAt, nameCellAt } from './file-text.ts';
@@ -38,6 +38,10 @@ export interface FileViewProps extends KitProps {
   /** the why-gutter, one mark per line (1-based: index 0 is line 1); none: no gutter */
   readonly gutter?: readonly (GutterMark | undefined)[] | undefined;
   readonly 'aria-label': string;
+  /** takes the keyboard focus as it opens (v1 editor.js: the text, not on a phone), so what's typed next goes into the
+   *  file and never runs a list shortcut (audit E #1: after Open file… the focus was left on the page and E marked the
+   *  task done). Additive (2026-11-19). */
+  readonly autofocus?: boolean;
 }
 
 export function FileView(props: FileViewProps): JSX.Element {
@@ -66,6 +70,12 @@ export function FileView(props: FileViewProps): JSX.Element {
     area.setSelectionRange(at, at);
     const row = box.querySelector<HTMLElement>(`[data-kit="fv-nums"] > span:nth-child(${n})`);
     if (row) box.scrollTop = Math.max(0, row.offsetTop - box.clientHeight / 3);
+  });
+  onMount(() => {
+    if (!props.autofocus || !area) return;
+    // the caret at the top (a new value leaves it after the last line, v1 editor.js), unless a line is asked for
+    if (!props.line) area.setSelectionRange(0, 0);
+    area.focus({ preventScroll: true });
   });
   const hover = useHover(props, () => area);
   const key = (e: KeyboardEvent): void => {

@@ -81,7 +81,7 @@ type Raw = { cwd?: string; title?: string; summary?: { worktree?: Wt | null }; b
 
 const stageOf = (f: GitFileRow): StageState => (!f.staged && !f.unstaged ? 'none' : f.staged && !f.unstaged ? 'staged' : f.staged ? 'part' : 'stage');
 
-/** The edits wisp saw (no git), as the list's rows: each hunk's lines, a gap between hunks. A .env file's values read
+/** The edits wisp saw (no git), as the list's rows: each hunk's lines, a plain separator between hunks. A .env file's values read
  *  KEY=•••• under the Reveal line until it's revealed (v1 maskChange; git masks its own rows). */
 function seenFiles(turns: readonly ChangeTurn[], id: string, cwd: string, maskOn: boolean, revealed: ReadonlySet<string>, shown: ReadonlyMap<string, Edits>): ChangeFile[] {
   return filesOf(turns, id, cwd, (p) => seenMasked(p, maskOn, revealed), (turn, file) => shown.get(shownKey(turn, file))).map((f) => ({
@@ -92,7 +92,8 @@ function seenFiles(turns: readonly ChangeTurn[], id: string, cwd: string, maskOn
     binary: f.binary,
     revertable: false,
     ...(maskOn && isEnvFile(f.path) ? { env: revealed.has(f.path) ? ('shown' as const) : ('hidden' as const) } : {}),
-    rows: f.hunks.flatMap((h, i) => [...(i ? [{ op: '…', count: 0 }] : []), ...h.lines.map((l) => ({ op: l.kind === 'add' ? '+' : l.kind === 'del' ? '-' : ' ', text: l.text }))]),
+    // between two edits, v1's plain separator (changes.js `{op: 'sep'}`): a snippet's surroundings aren't counted
+    rows: f.hunks.flatMap((h, i) => [...(i ? [{ op: 'sep' }] : []), ...h.lines.map((l) => ({ op: l.kind === 'add' ? '+' : l.kind === 'del' ? '-' : ' ', text: l.text }))]),
   }));
 }
 

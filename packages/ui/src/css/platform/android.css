@@ -329,6 +329,7 @@
     color: var(--on-surface-var);
   }
   :root[data-platform='android'] [data-kit='list-row-time'],
+  :root[data-platform='android'] [data-kit='list-row'][data-layout='feed'] > [data-part~='list.row.time'],
   :root[data-platform='android'] [data-kit='list-row'][data-layout='feed'] > [data-kit='time'] { font: var(--type-label-s); letter-spacing: var(--track-label-s); color: var(--on-surface-var); }
   /* trailing supporting text: the time on the first line's end, the pills under it */
   :root[data-platform='android'] [data-kit='list-row'][data-time] > [data-kit='list-row-time'] { grid-column: 3 / 5; grid-row: 1; align-self: start; }
@@ -345,6 +346,9 @@
   :root[data-platform='android'] [data-kit='list-row'][data-layout='feed'] > [data-kit='dot'],
   :root[data-platform='android'] [data-kit='list-row'][data-layout='feed'] > [data-kit='face'],
   :root[data-platform='android'] [data-kit='list-row'][data-layout='feed'] > [data-kit='icon'][data-part~='list.row.mark'] { grid-column: 1; grid-row: 1; justify-self: center; }
+  /* audit E #11: a task's time ahead (Scheduled: "18:37") is a Text with the time's part, not a Time: the same column,
+     right-aligned with every other time (it sat 25 px left, drawn at its box's start) */
+  :root[data-platform='android'] [data-kit='list-row'][data-layout='feed'] > [data-part~='list.row.time'],
   :root[data-platform='android'] [data-kit='list-row'][data-layout='feed'] > [data-kit='time'] { grid-column: 3; grid-row: 1; justify-self: end; align-self: center; text-align: end; white-space: nowrap; font-variant-numeric: tabular-nums; }
   :root[data-platform='android'] [data-kit='list-row'][data-layout='feed'] > [data-kit='list-row-pills'],
   :root[data-platform='android'] [data-kit='list-row'][data-layout='feed'][data-time] > [data-kit='list-row-pills'],
@@ -1607,4 +1611,12 @@
   :root[data-platform='android'] [data-part~='phone.side.sheet'] [data-part~='side.head'] > [data-part='panel.place.more.trigger'] { position: absolute; top: var(--space-0); right: var(--space-2); }
   :root[data-platform='android'] [data-part~='phone.side.sheet'] [data-part~='side.head'] [data-kit='icon-button'],
   :root[data-platform='android'] [data-part~='phone.side.sheet'] [data-part~='side.head'] button[aria-haspopup] { min-width: var(--tap-min); min-height: var(--tap-min); }
+  /* audit E #3: a phone's changed file (v1 panel.css .side-panel.stacked): the name alone on its line, whole, and
+     (two rows of one column, nothing wrapping) Stage · Viewed · ⋯ with the counts last on the line under it, from under the name. On one line the actions took 285
+     of 328 px and the name read "ex." under the +1. */
+  :root[data-platform='android'] [data-part~='phone.side.sheet'] [data-kit='cx-head'] { display: grid; grid-template-columns: minmax(0, 1fr); }
+  :root[data-platform='android'] [data-part~='phone.side.sheet'] [data-kit='cx-acts'] { min-height: var(--space-0); padding-left: calc(var(--space-8) + var(--space-2)); margin-left: var(--space-0); }
+  :root[data-platform='android'] [data-part~='phone.side.sheet'] [data-kit='cx-acts'] > [data-kit='cx-stage'][data-none] { width: var(--space-0); }
+  :root[data-platform='android'] [data-part~='phone.side.sheet'] [data-kit='cx-acts'] > [data-kit='cx-n'] { order: 1; }
+  :root[data-platform='android'] [data-part~='phone.side.sheet'] [data-kit='cx-acts'] > [data-kit='cx-n']:first-child { margin-left: auto; }
 }

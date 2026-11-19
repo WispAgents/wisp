@@ -9,7 +9,7 @@ import { recipes, triggers, type Recipe, type Trigger } from '../commands.ts';
 import AutomationsPage from '../AutomationsPage.tsx';
 import { t } from '../i18n.ts';
 import { fromRow } from '../source.ts';
-import { summary } from './summary.ts';
+import { recipeNames, summary } from './summary.ts';
 import '../i18n/lazy.ts';
 
 /** `automations.webhookTriggers`, a bool setting (off by default): a boolean source, 'off' read as off. */
@@ -46,7 +46,7 @@ export default function Automations(props: { readonly client: PluginClient; read
             part="automations.recipes.line"
             title={t('automations.recipes')}
             description={summary(
-              (rs() ?? []).map((r) => r.name),
+              recipeNames(rs() ?? []),
               t('automations.recipes.none').toLowerCase(),
             )}
             control={

@@ -30,11 +30,11 @@ pub const DEFAULT: [&str; 51] = [
     "runtime",
     "claude",
     "codex",
-    "cursor",
     "opencode",
-    "copilot",
-    "grok",
+    "cursor",
     "antigravity",
+    "grok",
+    "copilot",
     "accounts",
     "git",
     "worktrees",
@@ -82,11 +82,11 @@ pub const HEADLESS: [&str; 16] = [
     "runtime",
     "claude",
     "codex",
-    "cursor",
     "opencode",
-    "copilot",
-    "grok",
+    "cursor",
     "antigravity",
+    "grok",
+    "copilot",
     "git",
     "worktrees",
     "mcp",
@@ -313,7 +313,17 @@ pub fn in_build(name: &str) -> bool {
 mod tests {
     use super::*;
 
-    const HARNESSES: [&str; 7] = ["claude", "codex", "cursor", "opencode", "copilot", "grok", "antigravity"];
+    /// v1's order (mcp-wisp.js `AGENTS`), as each harness's UI says it (`order` 10…70): the runtime lists harnesses in
+    /// the order their plugins start, so the launcher's picker and the crew editor read the same (audit E, as in D)
+    const HARNESSES: [&str; 7] = ["claude", "codex", "opencode", "cursor", "antigravity", "grok", "copilot"];
+
+    #[test]
+    fn harnesses_start_in_v1s_order_so_every_picker_lists_them_alike() {
+        for g in [Group::Default, Group::Headless] {
+            let got: Vec<&str> = g.names().into_iter().filter(|n| HARNESSES.contains(n)).collect();
+            assert_eq!(got, HARNESSES, "{g:?}");
+        }
+    }
 
     #[test]
     fn groups_are_what_the_plan_says() {

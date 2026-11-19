@@ -202,3 +202,10 @@ export function receiptOf(d: TurnDoc, t: T): ReceiptLine | null {
   ].filter(Boolean);
   return { parts, tip: tip.join('. ') };
 }
+
+/** The task's folder from its row: a synced row keeps it under `summary` (audit E3: the held card's Open file read a
+ * top-level `cwd` that isn't there, so it never showed). */
+export function cwdOf(row: { readonly cwd?: unknown; readonly summary?: { readonly cwd?: unknown } } | undefined): string {
+  const v = row?.summary?.cwd ?? row?.cwd;
+  return typeof v === 'string' ? v : '';
+}

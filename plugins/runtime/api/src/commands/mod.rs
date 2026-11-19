@@ -216,6 +216,13 @@ impl Command for AgentWatch {
     const ID: &'static str = "runtime.agent.watch";
     const TASK_ARGS: &'static [&'static str] = &["session"];
     type Args = AgentWatchArgs;
+    fn args_ts() -> Option<String> {
+        Some(format!(
+            "{}{}",
+            <AgentWatchArgs as ::ts_rs::TS>::docs().unwrap_or_default(),
+            <AgentWatchArgs as ::ts_rs::TS>::inline(&::ts_rs::Config::default())
+        ))
+    }
     type Out = AgentText;
 }
 
@@ -226,6 +233,13 @@ impl Command for AgentTag {
     const ID: &'static str = "runtime.agent.tag";
     const TASK_ARGS: &'static [&'static str] = &["session"];
     type Args = AgentTagArgs;
+    fn args_ts() -> Option<String> {
+        Some(format!(
+            "{}{}",
+            <AgentTagArgs as ::ts_rs::TS>::docs().unwrap_or_default(),
+            <AgentTagArgs as ::ts_rs::TS>::inline(&::ts_rs::Config::default())
+        ))
+    }
     type Out = AgentText;
 }
 
@@ -237,6 +251,13 @@ impl Command for AgentBlocks {
     const READ_ONLY: bool = true;
     const TASK_ARGS: &'static [&'static str] = &["session"];
     type Args = AgentBlocksArgs;
+    fn args_ts() -> Option<String> {
+        Some(format!(
+            "{}{}",
+            <AgentBlocksArgs as ::ts_rs::TS>::docs().unwrap_or_default(),
+            <AgentBlocksArgs as ::ts_rs::TS>::inline(&::ts_rs::Config::default())
+        ))
+    }
     type Out = AgentText;
 }
 
@@ -249,6 +270,13 @@ impl Command for AgentStats {
     const READ_ONLY: bool = true;
     const TASK_ARGS: &'static [&'static str] = &["session"];
     type Args = AgentStatsArgs;
+    fn args_ts() -> Option<String> {
+        Some(format!(
+            "{}{}",
+            <AgentStatsArgs as ::ts_rs::TS>::docs().unwrap_or_default(),
+            <AgentStatsArgs as ::ts_rs::TS>::inline(&::ts_rs::Config::default())
+        ))
+    }
     type Out = AgentText;
 }
 
@@ -260,6 +288,13 @@ impl Command for AgentAvailable {
     const READ_ONLY: bool = true;
     const TASK_ARGS: &'static [&'static str] = &["session"];
     type Args = AgentAvailableArgs;
+    fn args_ts() -> Option<String> {
+        Some(format!(
+            "{}{}",
+            <AgentAvailableArgs as ::ts_rs::TS>::docs().unwrap_or_default(),
+            <AgentAvailableArgs as ::ts_rs::TS>::inline(&::ts_rs::Config::default())
+        ))
+    }
     type Out = AgentText;
 }
 
@@ -271,6 +306,13 @@ impl Command for AgentTask {
     const ID: &'static str = "runtime.agent.task";
     const TASK_ARGS: &'static [&'static str] = &["session"];
     type Args = AgentTaskArgs;
+    fn args_ts() -> Option<String> {
+        Some(format!(
+            "{}{}",
+            <AgentTaskArgs as ::ts_rs::TS>::docs().unwrap_or_default(),
+            <AgentTaskArgs as ::ts_rs::TS>::inline(&::ts_rs::Config::default())
+        ))
+    }
     type Out = AgentText;
 }
 

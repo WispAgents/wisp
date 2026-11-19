@@ -5,6 +5,7 @@ import { Dialog, Sheet } from '../src/controls/Dialog.tsx';
 import { Popover } from '../src/controls/Popover.tsx';
 import { Tooltip } from '../src/controls/Tooltip.tsx';
 import { Button } from '../src/controls/Button.tsx';
+import { Input } from '../src/controls/Input.tsx';
 import { KitProvider } from '../src/core/i18n.tsx';
 import { preloadControls } from '../src/controls/lazy-part.ts';
 
@@ -41,6 +42,33 @@ describe('Dialog', () => {
     expect(part('recipe.delete')).toBeNull();
     expect(onOpenChange).toHaveBeenLastCalledWith(false);
     expect(document.activeElement).toBe(trigger);
+  });
+
+  // Audit E (as in D): Escape in Machines → Manage's Edit form closed the whole dialog. A field that answers Escape
+  // itself (`onEscape`: an inline edit's Cancel) gets it, and the dialog stays; the next Escape, outside it, closes it
+  test('escape_in_a_field_that_answers_it_stays_in_the_dialog', async () => {
+    const onOpenChange = vi.fn();
+    const onEscape = vi.fn();
+    mount(() => (
+      <Dialog title="Machines" open onOpenChange={onOpenChange} part="machines.manage">
+        <Input aria-label="SSH address" part="edit.address" value="qa@192.0.2.1" onEscape={onEscape} />
+        <Input aria-label="Other" part="other.field" value="" />
+      </Dialog>
+    ));
+    await tick(30);
+    await frame();
+    const field = part('edit.address')?.querySelector('input') ?? part('edit.address');
+    (field as HTMLElement | null)?.focus();
+    key(field ?? document.body, 'Escape');
+    await Promise.resolve();
+    expect(onEscape).toHaveBeenCalledTimes(1);
+    expect(onOpenChange).not.toHaveBeenCalledWith(false);
+    expect(part('machines.manage')).not.toBeNull();
+    const other = part('other.field')?.querySelector('input') ?? part('other.field');
+    (other as HTMLElement | null)?.focus();
+    key(other ?? document.body, 'Escape');
+    await Promise.resolve();
+    expect(onOpenChange).toHaveBeenLastCalledWith(false);
   });
 
   test('controlled: open prop shows it, the close button asks to close with a translated name', async () => {

@@ -1,5 +1,6 @@
 //! `POST /api/waitlist {email, source}` on the grid's own address (v1 grid/server.js): public, for trywisp.dev's
-//! "get the next seat" form and an in-app browser's "email me the link" (`source: "in-app"`). Other origins post it,
+//! "get the next seat" form and an in-app browser's "email me the link" (`source: "in-app"`). With
+//! `kind: "phone-app"` (and `platform: ios|android|both`) it's trywisp.dev's *Get the app* instead: the phone apps' list. Other origins post it,
 //! so it answers with v1's CORS headers (and its preflight); at most 10 a minute from one address.
 use http::HeaderMap;
 use serde_json::{Value, json};
@@ -36,6 +37,12 @@ impl Grid {
         self.limits.hit(&format!("wait|{}", client_ip(peer, h)), 10, self.clock.now_ms())?;
         let b = parse_body(h, bytes)?;
         let field = |k: &str| b.get(k).and_then(Value::as_str).unwrap_or_default();
+        // an app's list (the phone apps), apart from the seats; no kind, or `seat`, is the seat list as before
+        if !matches!(field("kind"), "" | "seat") {
+            let w = self.accounts.wait_for_app(field("email"), field("kind"), field("platform"), field("source"))?;
+            // the same answer whether or not the address was already there: the list can't be probed for an address
+            return Ok(json!({ "ok": true, "kind": w.kind, "platform": w.platform }));
+        }
         let w = self.accounts.wait_for(field("email"), field("source"))?;
         Ok(json!({ "ok": true, "joined": w.joined, "invited": w.invited, "position": w.position }))
     }

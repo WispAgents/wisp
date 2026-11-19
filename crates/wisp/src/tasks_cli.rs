@@ -255,7 +255,7 @@ pub fn overlay_of(resources: &[wisp_resources_api::Resource]) -> (Value, Vec<Str
 /// snapshot records what it ran with). No `--agent` and one agent declared: that one.
 pub async fn run_overlay(c: &Client, o: &Opts, cwd: &Path) -> Result<i32> {
     let st = crate::cli::style();
-    let kinds = crate::code::kinds(c).await?;
+    let kinds = crate::code::formula_kinds(c).await?;
     let loaded = crate::code::load(&o.formulas, &o.profiles, &kinds, cwd)?;
     let (overlay, left) = overlay_of(&loaded.resources);
     let prompt = o.words.join(" ");

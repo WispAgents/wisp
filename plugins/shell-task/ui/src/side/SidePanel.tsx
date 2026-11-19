@@ -2,7 +2,7 @@
 // the pane. Changes: every file the work changed since it left its base, committed or not, from git
 // (`git.changes`, the worktree's base, else HEAD); a folder that isn't a repo shows the turns' own edits. PR
 // (PrPane.tsx, `ship.details`) and Shell (ShellPane.tsx, wisp.terminal).
-import { Match, Show, Switch, createEffect, createMemo, createResource, createSignal, onCleanup, untrack, type JSX } from 'solid-js';
+import { Match, Show, Switch, createEffect, createMemo, createResource, createRoot, createSignal, onCleanup, onMount, untrack, type JSX } from 'solid-js';
 import { Dynamic } from 'solid-js/web';
 import { computed, defineCommand, readonly, entityKey, type EntityKey } from '@wisp/client';
 import { IconButton, type IconName, Icon, Inline, Menu, Stack, Tabs, Text, afterNextPaint, useAfterPaint, useSignal } from '@wisp/ui';
@@ -23,6 +23,8 @@ import { PreviewPane } from './PreviewPane.tsx';
 import { WatchPane } from './WatchPane.tsx';
 
 const bare = (k: string): string => k.slice(k.indexOf(':') + 1);
+/** How long the ⋯ shows its check after a copy (as the sign-in Copy, SettingsSignIn's COPIED_MS). */
+const COPIED_MS = 1500;
 /** whether a terminal app can open here for this page (wisp.terminal) */
 const shellInfo = defineCommand<{ key: EntityKey; id: string }, { app: boolean }>({
   id: 'terminal.shell.info',
@@ -40,6 +42,12 @@ const openApp = defineCommand<{ key: EntityKey; cwd: string }, { ok: boolean }>(
   pending: 'Open in terminal app',
 });
 
+
+/** Until when a panel that mounts takes the keyboard focus onto its open tab: an arrow key (or Enter) on the strip opened
+ * a pane whose panel is drawn afresh (Thread, a pinned app: a `view:` side), and the focus went with the old strip (audit
+ * E #5: → reached Thread, then the focus fell to the page and the next → did nothing). */
+const [refocusUntil, setRefocusUntil] = createRoot(() => createSignal(0));
+const REFOCUS_MS = 1000;
 
 export function SidePanel(props: { readonly pane: SidePane; readonly file?: string }): JSX.Element {
   const shell = useShell();
@@ -84,9 +92,19 @@ export function SidePanel(props: { readonly pane: SidePane; readonly file?: stri
     ...(pl.dir && !pl.remote && editorUrl(String(editor()?.value ?? ''), pl.dir) ? [{ value: 'editor', label: t('shell-task.side.openEditor'), icon: 'folder' as const }] : []),
     ...(pl.dir && !pl.remote && app() ? [{ value: 'app', label: t('shell-task.side.openApp'), icon: 'terminal' as const }] : []),
   ];
+  // a copy says so on the ⋯ itself: a check for a moment, no toast (owner: toasts are for errors; the sign-in Copy's way)
+  const [copied, setCopied] = createSignal(false);
+  let uncheck = (): void => {};
+  onCleanup(() => uncheck());
+  const copy = (text: string): void => {
+    setCopied(true);
+    uncheck();
+    uncheck = task.client.scope.timeout(COPIED_MS, () => setCopied(false));
+    void Promise.resolve(shell.platform.copy(text)).catch(() => (uncheck(), setCopied(false)));
+  };
   const onPlace = (pl: { branch: string; dir: string }, v: string): void => {
-    if (v === 'path') void shell.platform.copy(pl.dir);
-    if (v === 'branch') void shell.platform.copy(pl.branch);
+    if (v === 'path') copy(pl.dir);
+    if (v === 'branch') copy(pl.branch);
     if (v === 'editor') {
       const url = editorUrl(String(editor()?.value ?? ''), pl.dir);
       if (url) shell.platform.openExternal(url);
@@ -94,6 +112,7 @@ export function SidePanel(props: { readonly pane: SidePane; readonly file?: stri
     if (v === 'app') void task.client.run(openApp, { key: task.key as EntityKey, cwd: pl.dir }).catch(() => undefined);
   };
   const open = (pane: string): void => {
+    if (typeof document !== 'undefined' && document.activeElement?.closest("[data-part~='panel.tabs']")) setRefocusUntil(Date.now() + REFOCUS_MS);
     if (pane === 'changes' || pane === 'pr' || pane === 'shell' || pane === 'preview') shell.navigate({ t: 'openSide', side: { kind: pane, id: task.key as never } });
     if (pane === 'term') shell.navigate({ t: 'openSide', side: { kind: 'view', id: TERM_VIEW as never } });
     if (pane === 'watch') shell.navigate({ t: 'openSide', side: { kind: 'view', id: WATCH_VIEW as never } });
@@ -156,13 +175,12 @@ export function SidePanel(props: { readonly pane: SidePane; readonly file?: stri
     // their labels (audit 2026-11-19: "Cha…", "#…", "S…" beside a whole "Token budget dash…")
     if (x) return { value: x.key, label: x.label, icon: (x.icon ?? 'app') as IconName, minor: true, ...(x.title !== undefined && { title: x.title }) };
     const n = p === 'changes' ? files() : 0;
-    const prWords = p === 'pr' ? tabCount.pr(pr()) : undefined;
+    const prWords = p === 'pr' ? tabCount.pr(pr(), t('shell-task.side.pr')) : undefined;
     return {
       value: p,
       label: prWords ?? t(`shell-task.side.${p}`),
       // Watch gives way with the pinned tabs, before the row tightens and Preview goes (owner follow-up, 2026-11-19)
       ...(p === 'watch' && { minor: true }),
-      ...(prWords && { title: t('shell-task.side.pr') }),
       ...(n > 0 && { count: n }),
       icon: (p === 'changes' ? 'file' : p === 'pr' ? 'merge' : p === 'preview' ? 'web' : p === 'watch' ? 'eye' : 'terminal') as IconName,
     };
@@ -171,8 +189,14 @@ export function SidePanel(props: { readonly pane: SidePane; readonly file?: stri
   createEffect(() => {
     if (props.pane === 'tab' && !shown()) shell.navigate({ t: 'openSide', side: { kind: 'changes', id: task.key as never } });
   });
+  let head: HTMLElement | undefined;
+  onMount(() => {
+    if (Date.now() > untrack(refocusUntil)) return;
+    setRefocusUntil(0);
+    afterNextPaint(() => head?.querySelector<HTMLElement>("[data-part~='panel.tabs'] [data-kit='tab'][data-selected]")?.focus({ preventScroll: true }));
+  });
   return (
-    <Stack gap="0" part={'side.panel panel' as `${string}.${string}`} grow>
+    <Stack gap="0" part={'side.panel panel' as `${string}.${string}`} grow ref={(el) => (head = el)}>
       <Inline gap="2" align="center" part="side.head">
         <Tabs part="panel.tabs" variant="pill" fit aria-label={t('shell-task.side.label')} value={shown()?.key ?? props.pane} onChange={open} items={order().map(tabOf)} />
         {/* where the work is: copy it, open it elsewhere (v1's place row ⋯, in the head over every pane) */}
@@ -181,7 +205,7 @@ export function SidePanel(props: { readonly pane: SidePane; readonly file?: stri
             <Show when={placeItems(pl()).length > 0}>
               <Menu
                 part="panel.place.more"
-                trigger={{ icon: 'dots', 'aria-label': t('shell-task.side.more'), variant: 'ghost', size: 'sm' }}
+                trigger={{ icon: copied() ? 'check' : 'dots', 'aria-label': copied() ? t('shell-task.side.copied') : t('shell-task.side.more'), variant: 'ghost', size: 'sm' }}
                 items={placeItems(pl())}
                 onSelect={(v) => onPlace(pl(), v)}
               />

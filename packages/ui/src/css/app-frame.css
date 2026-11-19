@@ -52,6 +52,9 @@
   [data-kit='tabs'][data-part='panel.tabs'][data-fit] { flex: 1 1 0; min-width: 0; margin-left: 0; padding: 0; border: 0; border-radius: 0; background: none; }
   [data-kit='tabs'][data-part='panel.tabs'][data-fit] > [data-kit='tab-list'] { flex: none; width: fit-content; max-width: calc(100% + 8px); overflow: hidden; margin-left: -8px; padding: 2px; border: 1px solid var(--line); border-radius: 9px; background: var(--bg-2); }
   [data-kit='tabs'][data-part='panel.tabs'][data-fit] [data-kit='tab'] { flex: none; }
+  /* every other tab an icon and the open one's own name still too long (a pinned app's title): it ends in an ellipsis
+     rather than running the row past the panel (not while fit measures: data-measuring) */
+  [data-kit='tabs'][data-part='panel.tabs'][data-fit]:not([data-measuring]) [data-kit='tab'][data-selected] { flex: 0 1 auto; min-width: 0; }
   [data-kit='tabs'][data-part='panel.tabs'][data-fit] [data-kit='tab'][data-iconic] { width: 2rem; padding: 0; justify-content: center; }
   [data-kit='tabs'][data-part='panel.tabs'][data-fit][data-tight] > [data-kit='tab-list'] { gap: 1px; }
   [data-kit='tabs'][data-part='panel.tabs'][data-fit][data-tight] [data-kit='tab'] { gap: 4px; padding: 0 5px; }

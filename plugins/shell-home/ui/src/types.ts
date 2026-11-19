@@ -19,7 +19,7 @@ export interface TaskRow {
   readonly id: string;
   readonly title: string;
   readonly project?: string;
-  readonly state: 'running' | 'review' | 'done' | 'error' | 'idle';
+  readonly state: 'running' | 'waiting' | 'review' | 'done' | 'error' | 'idle';
   readonly status?: string;
   readonly updatedAt: number;
   readonly archived?: boolean;

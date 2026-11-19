@@ -22,10 +22,11 @@ test('a_terminal_task_leads_with_its_cli_watch_comes_after_the_panels_own_and_pi
   ]);
 });
 
-test('the_pr_tab_names_its_number_and_checks', () => {
-  expect(tabCount.pr({ number: 812, checks: { pass: 3, fail: 0, pending: 0 } })).toBe('#812 ✓');
-  expect(tabCount.pr({ number: 812, checks: { pass: 3, fail: 1, pending: 2 } })).toBe('#812 ✕');
-  expect(tabCount.pr({ number: 812, checks: { pass: 3, fail: 0, pending: 2 } })).toBe('#812 ●');
-  expect(tabCount.pr({ number: 812 })).toBe('#812');
-  expect(tabCount.pr(undefined)).toBeUndefined();
+test('the_pr_tab_reads_pr_and_its_number_as_v1_then_its_checks', () => {
+  // v1 panel.js paintName: `PR #${number}` (audit E #8: v2 dropped the word and showed "#1")
+  expect(tabCount.pr({ number: 812, checks: { pass: 3, fail: 0, pending: 0 } }, 'PR')).toBe('PR #812 ✓');
+  expect(tabCount.pr({ number: 812, checks: { pass: 3, fail: 1, pending: 2 } }, 'PR')).toBe('PR #812 ✕');
+  expect(tabCount.pr({ number: 812, checks: { pass: 3, fail: 0, pending: 2 } }, 'PR')).toBe('PR #812 ●');
+  expect(tabCount.pr({ number: 812 }, 'PR')).toBe('PR #812');
+  expect(tabCount.pr(undefined, 'PR')).toBeUndefined();
 });

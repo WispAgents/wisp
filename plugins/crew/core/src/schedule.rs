@@ -29,11 +29,13 @@ pub fn next_checkin(m: &Member, now: i64, zone: &dyn Zone) -> Option<i64> {
             at = c.next_run(t, zone);
         }
     }
-    match (m.wake_at, at) {
+    let next = match (m.wake_at, at) {
         (Some(w), Some(a)) if w < a => Some(w),
         (Some(w), None) => Some(w),
         _ => at,
-    }
+    };
+    // this minute's check-in, due but not run yet, is now: never a time already past (audit E12: "next 1m ago")
+    next.map(|t| t.max(now))
 }
 
 /// Whether a check-in is due now: a wake-up that has come, or a cron minute that hasn't run yet.

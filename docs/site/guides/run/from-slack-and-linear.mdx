@@ -1,0 +1,156 @@
+---
+title: Call wisp and your crew from Slack, Linear and more
+description: Start tasks, talk to crew members and answer questions from Slack, Discord, Telegram, email, GitHub, Linear, ntfy and your phone.
+sidebar:
+  order: 8
+---
+
+import { Tabs, TabItem } from '@astrojs/starlight/components';
+
+You don't have to open wisp to use it. Message it from where your team talks, hand it issues from your tracker,
+and answer its questions from your phone. Each message starts or follows up a real task you can open in wisp later.
+
+| Where | What you can do |
+| --- | --- |
+| Slack, Discord, Telegram | Start a task, give a crew member a job, follow up, answer, stop. |
+| Email | The same, by mail to a secret address (on a cloud wisp). |
+| GitHub | `/wisp …` in a comment on an issue or PR; the answer comes back as a comment. |
+| Linear, Jira, GitHub issues | Start a task from an issue, or let a label or a new issue start one. |
+| ntfy, the phone app | Questions and finished tasks, with buttons to answer, reply, mark done or stop. |
+| Your own harness | wisp's MCP tools: see [MCP from your harness](../mcp-from-your-harness/). |
+
+## Set up a channel
+
+Each channel is off until you switch it on, and wisp reaches out to the service, so nothing has to reach your
+computer. Tokens go to `~/.wisp/secrets.json`, never to a formula.
+
+<Tabs syncKey="way">
+<TabItem label="App">
+Settings → General → **Phone**. Pick the channel and follow its steps:
+
+- **Slack:** **Copy manifest**, then at api.slack.com/apps **Create New App → From a manifest**. Paste the app
+  token and the bot token. Then **Link yourself**: send the link code to the bot in a DM.
+- **Discord:** in the Developer Portal, **New Application**, then **Bot → Reset Token**. Paste the bot token, then
+  **Add to a server** and send the bot the link code.
+- **Telegram:** create a bot with @BotFather, paste its token, send the bot the link code.
+- **ntfy:** switch it on (wisp picks a long, random topic), subscribe to it in the ntfy app, **Send a test**.
+- **GitHub:** sign in to the GitHub CLI (`gh auth login`) on this computer.
+- **Email:** on a cloud wisp, add the address you send from, then mail the **Secret address** it shows.
+
+**Send me** picks what a channel tells you about: questions, finished tasks or both.
+</TabItem>
+<TabItem label="TUI">
+```text
+/channels status
+/channels setup --transport ntfy --enabled
+/channels test --channel ntfy
+```
+</TabItem>
+<TabItem label="CLI">
+```sh
+wisp channels status                                   # each channel: on, connected, what it still needs
+wisp channels setup telegram --enabled --secrets '{"token":"123456:ABC…"}'
+wisp channels setup ntfy --enabled --notify asks,finished
+wisp channels test                                     # a test to every channel that's on
+```
+</TabItem>
+</Tabs>
+
+Or declare a channel for the whole team; each person sets the secret on their own computer:
+
+```yaml
+channels:
+  team-slack:
+    transport: slack
+    enabled: true
+    token: "${secret:SLACK_BOT_TOKEN}"
+    allow: [U01ANA, U02BEN]    # who may talk to it
+    cap: edits                 # the most a message may start: plan or edits, never Full auto
+notifications:
+  slack-news: { to: team-slack, on: [finished, asks, failed] }
+```
+
+```sh
+wisp secret set SLACK_BOT_TOKEN      # typed hidden, never an argument
+```
+
+## Talk to it
+
+Write what you'd type in New task. Options go first and end at a colon:
+
+```text
+fix the flaky login test
+@ada review PR 42
+in api on studio with opus high plan: why is the cache slow?
+```
+
+- `@ada` gives the job to the crew member Ada. Her answer comes back in the thread.
+- `in api` picks the project, `on studio` the machine, `with opus high` the model and thinking, `plan` the mode.
+- Reply in the thread to follow up. Buttons under a question answer it.
+
+Commands: `/help`, `/projects`, `/models`, `/crew`, `/machines`, `/status`, `/new`, `/stop`, `/done`, and `/btw`
+(ask on the side without interrupting).
+
+A message sent to wisp Cloud can start a task on one of your computers: Settings → General →
+**Accept tasks from channels**, then write `on laptop fix the login`. It runs in Plan unless you ask, Edits at most.
+
+## From GitHub
+
+With GitHub on, comment on an issue or a pull request in a repo you have as a project:
+
+```text
+/wisp fix this
+/wisp @ada review this PR
+/wisp in api with opus plan: why does this test fail?
+```
+
+Only your own comments count, and Full auto can't be asked for from there. On a public repo, the reply is a short
+fixed line unless you switch on **Full reports on public repos**.
+
+## From Linear, Jira or GitHub issues
+
+<Tabs syncKey="way">
+<TabItem label="App">
+In New task, **+** → **Start from an issue…** lists your project's open GitHub issues and the Linear and Jira
+issues assigned to you. **Connect Linear…** or **Connect Jira…** signs you in the first time. Picking an issue fills
+the prompt.
+</TabItem>
+<TabItem label="TUI">
+Write the issue's link or number in the task, or use a trigger (below).
+</TabItem>
+<TabItem label="CLI">
+```sh
+wisp "fix https://linear.app/acme/issue/ENG-42"
+wisp connectors list            # Linear and Jira come in through connectors
+```
+</TabItem>
+</Tabs>
+
+**By itself:** a trigger starts a task, or gives a crew member a job, when an issue gets a label or a new Linear
+issue arrives. In the app: Automations → **New trigger** → **Issue labelled** or **Linear issue created**.
+
+```yaml
+triggers:
+  agent-label:
+    on: issue.labeled          # GitHub issues, polled with gh
+    label: agent
+    crew: bob
+    prompt: "Build {event.summary}"
+
+  from-linear:
+    on: webhook                # in Linear: Settings → API → Webhooks, this trigger's URL
+    header: Linear-Signature
+    secret: "${secret:LINEAR_WEBHOOK_SECRET}"
+    match: { type: Issue, action: create }
+    mode: plan
+    prompt: "Triage this Linear issue: {event.summary}"
+```
+
+A **Slack mention** trigger works the same way: `on: chat.message`, `match: { channel: slack }`, and `users:`, the
+Slack member IDs who may start it. See [Automations, schedules and triggers](../schedules-and-triggers/).
+
+## On your phone
+
+The phone app, or ntfy, tells you when a task finishes, asks you something, or goes silent while it spends your
+plan, with buttons to answer, reply, mark it done or stop it. Set it up in Settings → General → **Phone**, and see
+[Phone app](../../apps/phone-app/).

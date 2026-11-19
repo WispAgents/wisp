@@ -8,7 +8,7 @@ import { Banner, Button, CheckList, CheckRow, Dialog, EmptyState, Heading, IconB
 import type { Tone as KitTone } from '@wisp/tokens';
 import { useShell } from '../shell.ts';
 import { useTask } from '../task-context.tsx';
-import { checkGroups, dur, gist, hasPr, prFiles, talk, verdict, type PrNote, type PrPanel, type Tone } from './pr.ts';
+import { checkGroups, dur, fixText, gist, hasPr, prFiles, talk, verdict, type CheckItem, type PrNote, type PrPanel, type Tone } from './pr.ts';
 import '../i18n/lazy.ts';
 
 const bare = (k: string): string => k.slice(k.indexOf(':') + 1);
@@ -18,6 +18,14 @@ const details = defineCommand<S, PrPanel[]>({ id: 'ship.details', owner: (a) => 
 const refresh = defineCommand<S, unknown>({ id: 'ship.refresh', owner: (a) => a.key, wire, optimistic: 'none', pending: 'Check now' });
 const merge = defineCommand<S, { kept?: readonly string[] }>({ id: 'ship.merge', owner: (a) => a.key, wire, optimistic: 'none', pending: 'Merge' });
 const fixConflicts = defineCommand<S, unknown>({ id: 'ship.fix_conflicts', owner: (a) => a.key, wire, optimistic: 'none', pending: 'Fix conflicts' });
+// Ask to fix (audit E4): the end of a failing Actions job's log ("" for any other link)
+const checkLog = defineCommand<S & { readonly url: string }, unknown>({
+  id: 'ship.check_log',
+  owner: (a) => a.key,
+  wire: (a) => ({ session: a.session, url: a.url }),
+  optimistic: 'none',
+  pending: 'the Ask to fix button',
+});
 
 const TONE: Readonly<Record<Tone, KitTone>> = { merged: 'accent', closed: 'neutral', fail: 'bad', pending: 'warn', draft: 'neutral', pass: 'good' };
 const STATE: Readonly<Record<string, string>> = { OPEN: 'shell-task.pr.open', MERGED: 'shell-task.pr.stateMerged', CLOSED: 'shell-task.pr.stateClosed' };
@@ -51,6 +59,25 @@ export function PrPane(): JSX.Element {
     const l = list() ?? [];
     return l[Math.min(picked(), l.length - 1)];
   });
+  // Ask to fix (v1 panel.js askToFix): the check and its log's end in the reply box, not sent (you look first)
+  const [asking, setAsking] = createSignal('');
+  const askFix = (k: CheckItem, n: number): void => {
+    setAsking(k.name);
+    void c
+      .run(checkLog, { ...args(), url: k.url ?? '' })
+      .then(
+        (l) => (typeof l === 'string' ? l : ''),
+        () => '',
+      )
+      .then((log) => {
+        setAsking('');
+        // a phone's panel covers the reply box: it closes, so the text is in view (v1 toReply: `if (isStacked()) close()`)
+        if (shell.nav().layout === 'stack') shell.navigate({ t: 'closeSide' });
+        const box = shell.prompts?.get('reply');
+        box?.set(fixText(k.name, n, k.url, log));
+        box?.focus();
+      });
+  };
   const quiet = (p: Promise<unknown>): void =>
     void p.then(
       () => refetch(),
@@ -175,8 +202,19 @@ export function PrPane(): JSX.Element {
                               name={k.name}
                               state={k.state === 'skip' ? 'skipped' : (k.state as 'pass' | 'fail' | 'pending')}
                               duration={k.state === 'pending' ? t('shell-task.pr.running') : k.state === 'skip' ? t('shell-task.pr.skipped') : dur(k.ms)}
-                              {...(k.url && {
-                                actions: <IconButton icon="external" size="xs" label={t('shell-task.pr.logs', { name: k.name })} onClick={() => window.open(k.url, '_blank', 'noopener')} />,
+                              {...((k.url || (k.state === 'fail' && canAsk() && p().state === 'OPEN')) && {
+                                actions: (
+                                  <Inline gap="1">
+                                    <Show when={k.state === 'fail' && canAsk() && p().state === 'OPEN'}>
+                                      <Button size="xs" variant="ghost" icon="wizard" part="side.pr.askFix" loading={asking() === k.name} title={t('shell-task.pr.askFixTitle')} onClick={() => askFix(k, p().number)}>
+                                        {t('shell-task.pr.askFix')}
+                                      </Button>
+                                    </Show>
+                                    <Show when={k.url}>
+                                      <IconButton icon="external" size="xs" label={t('shell-task.pr.logs', { name: k.name })} onClick={() => window.open(k.url, '_blank', 'noopener')} />
+                                    </Show>
+                                  </Inline>
+                                ),
                               })}
                             />
                           )}

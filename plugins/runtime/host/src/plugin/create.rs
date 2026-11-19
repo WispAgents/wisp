@@ -99,8 +99,10 @@ async fn create(ctx: &Ctx, call: &Call, slot: &Slot, kinds: &Kinds, a: StartArgs
     let (reuse, tidy) = (args.worktree_key.clone(), args.worktree_tidy);
     let made = rt.create(args).await.map_err(WireError::from)?;
     let made = if wants_tree {
-        let mode =
-            mode.map(|m| serde_json::to_value(m).ok().and_then(|v| v.as_str().map(str::to_owned)).unwrap_or_default()).unwrap_or_default();
+        // the mode the run has (none asked is Full auto, a cap applied), not the argument: `wisp "…" --mode auto` sends
+        // none, so the worktree was made for mode "" and its setup waited for trust that the auto run never asks (audit E D5)
+        let mode = rt.get(made.id.as_str()).await.map_or_else(|_| mode.unwrap_or_default(), |s| s.mode);
+        let mode = serde_json::to_value(mode).ok().and_then(|v| v.as_str().map(str::to_owned)).unwrap_or_default();
         // a rerun at an older commit: its worktree's branch starts at that commit (the detached folder made for it)
         let from = p.detached.as_ref().map(|(_, path)| path.clone());
         let wa = wisp_worktrees_api::CreateArgs { session_id: made.id.0.clone(), cwd, title, mode, from, reuse, tidy };

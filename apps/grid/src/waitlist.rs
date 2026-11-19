@@ -2,6 +2,9 @@
 //! browser's "email me the link" put an address on the list (`POST /api/waitlist`); whoever then signs up with that
 //! verified email is marked joined. The operator reads it with `wisp-grid waitlist` (and writes to the people on it).
 //!
+//! The same form also takes `kind: "phone-app"` (trywisp.dev's *Get the app*): an address waiting for the phone apps,
+//! kept in `app_waitlist`, apart from the seats, and used only to say the app is out.
+//!
 //! No seat cap, so no seats handed out or held: the owner removed `maxUsers` on 2026-10-27 and every grid takes
 //! everyone its sign-up rules let in. `invited` stays in the answer for rows a v1 grid invited.
 use rusqlite::params;
@@ -31,7 +34,59 @@ pub fn is_email(s: &str) -> bool {
     s.chars().count() <= 254 && (1..=64).contains(&n) && local.chars().all(ok) && chars.iter().all(|c| ok(*c)) && dotted
 }
 
+/// The apps one can wait for (`kind`), and the phones each one is for.
+pub const APP_KINDS: [&str; 1] = ["phone-app"];
+pub const PLATFORMS: [&str; 3] = ["ios", "android", "both"];
+
+/// An address waiting for an app.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct AppWait {
+    pub kind: String,
+    pub platform: String,
+    /// it was already on this list (the platform is updated to the latest answer)
+    pub again: bool,
+}
+
+/// One line of the operator's app list: email, kind, platform, source, when.
+pub type AppRow = (String, String, String, String, i64);
+
 impl Accounts {
+    /// `email` on the list for the app `kind` (`phone-app`), for `platform` (`ios`, `android`, `both`; anything else is
+    /// `both`). Once is enough: a second post keeps the first date and takes the new platform.
+    pub fn wait_for_app(&self, email: &str, kind: &str, platform: &str, source: &str) -> Result<AppWait> {
+        let email = email.trim().to_lowercase();
+        if !is_email(&email) {
+            return Err(bad("An email address, please.", 400));
+        }
+        if !APP_KINDS.contains(&kind) {
+            return Err(bad("There is no app by that name to wait for.", 400));
+        }
+        let platform = if PLATFORMS.contains(&platform) { platform } else { "both" };
+        let source = if source == "in-app" { "in-app" } else { "site" };
+        let now = self.clock.now_ms();
+        self.db.with(|c| {
+            let again: bool =
+                c.query_row("SELECT COUNT(*) FROM app_waitlist WHERE email = ?1 AND kind = ?2", params![email, kind], |r| {
+                    r.get::<_, i64>(0)
+                })? > 0;
+            c.execute(
+                "INSERT INTO app_waitlist (email, kind, platform, source, created_at) VALUES (?1, ?2, ?3, ?4, ?5)
+                 ON CONFLICT (email, kind) DO UPDATE SET platform = excluded.platform",
+                params![email, kind, platform, source, now],
+            )?;
+            Ok(AppWait { kind: kind.to_owned(), platform: platform.to_owned(), again })
+        })
+    }
+
+    /// Everyone waiting for an app, oldest first.
+    pub fn app_waitlist(&self) -> Result<Vec<AppRow>> {
+        self.db.with(|c| {
+            let mut st = c.prepare("SELECT email, kind, platform, source, created_at FROM app_waitlist ORDER BY created_at, email")?;
+            let rows = st.query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?)))?;
+            rows.collect()
+        })
+    }
+
     /// `email` on the list (once is enough); where it stands.
     pub fn wait_for(&self, email: &str, source: &str) -> Result<Waiting> {
         let email = email.trim().to_lowercase();
@@ -101,6 +156,36 @@ mod tests {
         let source: String = a.db.with(|c| c.query_row("SELECT source FROM waitlist WHERE email = 'cyd@x.dev'", [], |r| r.get(0))).unwrap();
         assert_eq!(source, "site");
         assert_eq!(a.wait_for("nope", "site").unwrap_err().to_string(), "An email address, please.");
+    }
+
+    #[test]
+    fn the_phone_app_list_is_its_own_once_per_address_and_takes_the_latest_platform() {
+        let clock = ManualClock::new(1_000);
+        let a = Accounts { db: Arc::new(Db::memory().unwrap()), clock: clock.clone() };
+        let w = a.wait_for_app(" Ada@X.dev ", "phone-app", "ios", "site").unwrap();
+        assert_eq!(w, AppWait { kind: "phone-app".into(), platform: "ios".into(), again: false });
+        clock.advance(10);
+        // again, for both phones: one row, first date kept, platform updated
+        let w = a.wait_for_app("ada@x.dev", "phone-app", "both", "site").unwrap();
+        assert_eq!((w.platform.as_str(), w.again), ("both", true));
+        // an unknown platform is both; a source other than in-app is the site
+        a.wait_for_app("bob@x.dev", "phone-app", "blackberry", "evil").unwrap();
+        assert_eq!(
+            a.app_waitlist().unwrap(),
+            [
+                ("ada@x.dev".to_owned(), "phone-app".to_owned(), "both".to_owned(), "site".to_owned(), 1_000),
+                ("bob@x.dev".to_owned(), "phone-app".to_owned(), "both".to_owned(), "site".to_owned(), 1_010),
+            ]
+        );
+        // the seat list is untouched, and the same address can be on both
+        let seats: i64 = a.db.with(|c| c.query_row("SELECT COUNT(*) FROM waitlist", [], |r| r.get(0))).unwrap();
+        assert_eq!(seats, 0);
+        assert_eq!(a.wait_for("ada@x.dev", "site").unwrap().position, 1);
+        // refused: not an address, not an app
+        assert_eq!(a.wait_for_app("nope", "phone-app", "ios", "site").unwrap_err().to_string(), "An email address, please.");
+        let e = a.wait_for_app("cyd@x.dev", "desk-lamp", "ios", "site").unwrap_err();
+        assert_eq!((e.status(), e.to_string()), (400, "There is no app by that name to wait for.".to_owned()));
+        assert_eq!(a.app_waitlist().unwrap().len(), 2);
     }
 
     #[test]

@@ -97,6 +97,55 @@ pub fn args_of(spec_object: bool, input: &Value) -> Value {
     }
 }
 
+/// A generated tool call's arguments as the command takes them (audit E10, D6): `args`, the documented form (`ARGS_DOC`),
+/// works for every tool, not only those with no declared fields (`crew_agent_list {"args":{"session":"x"}}` answered
+/// "missing field `session`"); the fields given beside it win. A run's own task (`session`): the field a task's agent
+/// command names its caller's task by is filled from the call when left out (the agent's token speaks for that task only,
+/// so asking for it was a field nobody could fill but with that one value).
+pub fn call_args(spec: &wisp_kernel::decl::ArgSpec, input: &Value, session: Option<&str>) -> Value {
+    if !spec.object || spec.none {
+        return args_of(spec.object, input);
+    }
+    let has = |n: &str| spec.fields.iter().any(|f| f.name == n);
+    let mut v = match input {
+        Value::Object(o) => o.clone(),
+        _ => Map::new(),
+    };
+    if !has("args")
+        && let Some(Value::Object(inner)) = v.remove("args")
+    {
+        for (k, x) in inner {
+            v.entry(k).or_insert(x);
+        }
+    }
+    if let Some(sid) = session.filter(|s| !s.is_empty()) {
+        for name in ["session", "sessionId"] {
+            if has(name) && !v.contains_key(name) {
+                v.insert(name.into(), json!(sid));
+            }
+        }
+    }
+    Value::Object(v)
+}
+
+/// A command's refusal as a tool's words: serde's "missing field `id`" says which field and what it is (audit D6:
+/// "crew.get: missing field `id`").
+pub fn said(id: &str, spec: &wisp_kernel::decl::ArgSpec, message: &str) -> String {
+    let Some(name) = message.split("missing field `").nth(1).and_then(|r| r.split('`').next()) else {
+        return message.to_owned();
+    };
+    let doc = spec.fields.iter().find(|f| f.name == name).map(|f| f.doc.trim()).filter(|d| !d.is_empty());
+    let all: Vec<&str> = spec.fields.iter().filter(|f| !f.optional).map(|f| f.name.as_str()).collect();
+    let what = doc.map_or_else(String::new, |d| format!(" ({d})"));
+    let needs = if all.len() > 1 { format!(" It takes {}.", all.join(", ")) } else { String::new() };
+    format!("{} needs `{name}`{what}.{needs}", tool_name(id))
+}
+
+/// A tool's answer: a `null` answer says it found nothing (audit D6: `stuff_get {"id":"x"}` answered `null`).
+pub fn answer_text(v: &Value) -> String {
+    if v.is_null() { "null: nothing found for those arguments".to_owned() } else { v.to_string() }
+}
+
 /// The machine a call names (`peer`), and the arguments without it. `own_peer`: the command has a `peer`
 /// field of its own, so it's left alone.
 pub fn split_peer(input: &Value, own_peer: bool) -> (Option<String>, Value) {
@@ -119,6 +168,40 @@ pub fn find_peer(list: &Value, on: &str) -> Option<String> {
 #[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
+
+    /// Audit E10: the documented `args` form for a tool with declared fields, and a run's own task filled in.
+    #[test]
+    fn args_given_as_args_and_a_runs_own_task_are_taken_audit_e10() {
+        let spec = parse(Some("{ session: string, limit?: number, }"));
+        assert_eq!(call_args(&spec, &json!({ "args": { "session": "x" } }), None), json!({ "session": "x" }));
+        assert_eq!(
+            call_args(&spec, &json!({ "args": { "session": "x", "limit": 2 }, "limit": 5 }), None),
+            json!({ "session": "x", "limit": 5 })
+        );
+        assert_eq!(call_args(&spec, &json!({}), Some("run1")), json!({ "session": "run1" }));
+        assert_eq!(
+            call_args(&spec, &json!({ "session": "other" }), Some("run1")),
+            json!({ "session": "other" }),
+            "the kernel's scope refuses it"
+        );
+        // a command with a field named args keeps it
+        let own = parse(Some("{ args: string, }"));
+        assert_eq!(call_args(&own, &json!({ "args": { "a": 1 } }), None), json!({ "args": { "a": 1 } }));
+        // no declared fields: as before
+        assert_eq!(call_args(&parse(None), &json!({ "args": { "id": "y" } }), Some("run1")), json!({ "id": "y" }));
+    }
+
+    /// Audit D6: serde's words become the tool's: which field, what it is, what the tool takes.
+    #[test]
+    fn a_missing_field_is_said_in_words_audit_d6() {
+        let spec = parse(Some("{ \n/** the member's id or name */ id: string, }"));
+        assert_eq!(said("crew.get", &spec, "crew.get: missing field `id`"), "crew_get needs `id` (the member's id or name).");
+        let two = parse(Some("{ id: string, prompt: string, cron?: string, }"));
+        assert_eq!(said("crew.assign", &two, "missing field `prompt` at line 1"), "crew_assign needs `prompt`. It takes id, prompt.");
+        assert_eq!(said("x.y", &two, "That task is gone."), "That task is gone.");
+        assert_eq!(answer_text(&Value::Null), "null: nothing found for those arguments");
+        assert_eq!(answer_text(&json!({ "a": 1 })), "{\"a\":1}");
+    }
 
     #[test]
     fn mcp_tools_take_a_peer() {

@@ -67,7 +67,8 @@ export function reviewState(t: T, s: ShipSession | undefined, ctx: ReviewContext
   const by = ctx.agentName(r?.by?.agent) ?? r?.by?.agent ?? t('wisp.ship.rv.another');
   if (r?.status === 'running' && r.current) return { kind: 'running', label: t('wisp.ship.rv.reviewing'), title: t('wisp.ship.rv.runningTitle', { by }) };
   if (!r || !r.current) return { kind: 'none', label: t('wisp.ship.rv.notReviewed'), title: r ? t('wisp.ship.rv.sincePush') : t('wisp.ship.rv.notYet') };
-  if (r.status === 'failed' || r.status === 'held') return { kind: r.status, label: t('wisp.ship.rv.notReviewed'), title: t('wisp.ship.rv.retry', { why: r.why || t('wisp.ship.rv.didntFinish') }) };
+  // the why's own full stop goes: "…once more.. Click to try again" (audit E5)
+  if (r.status === 'failed' || r.status === 'held') return { kind: r.status, label: t('wisp.ship.rv.notReviewed'), title: t('wisp.ship.rv.retry', { why: (r.why || t('wisp.ship.rv.didntFinish')).replace(/[.\s]+$/, '') }) };
   return finished(t, s, by);
 }
 

@@ -39,6 +39,14 @@ fn kinds(ctx: &Ctx) -> Vec<Arc<dyn ResourceKind>> {
     ks
 }
 
+/// What a formula is read against: the kinds there are and those put away, so a section naming one is refused with its
+/// reason (the formula reader refuses it, audit E6).
+fn formula_kinds(ctx: &Ctx) -> Vec<KindInfo> {
+    let mut ks: Vec<KindInfo> = ctx.contributions(&RESOURCE_KIND).iter().map(|k| k.info()).collect();
+    ks.sort_by_key(|i| (i.order, i.kind.clone()));
+    ks
+}
+
 /// Why `name` is no kind here: put away for now (its reason), else no plugin owns it.
 fn no_kind(ctx: &Ctx, name: &str) -> String {
     ctx.contributions(&RESOURCE_KIND)
@@ -323,8 +331,14 @@ impl Plugin for ResourcesPlugin {
 
     fn setup(&self, s: &mut Setup) -> Result<()> {
         crate::capability::register(s);
-        s.command::<Kinds, _, _>(|ctx, _, _| {
-            let list: Vec<KindInfo> = kinds(&ctx).iter().map(|k| k.info()).collect();
+        // `{ "away": true }`: the put-away kinds too, each with its `away` reason, for a formula reader to refuse their
+        // section with it (audit E6); no list a person sees asks for them
+        s.command::<Kinds, _, _>(|ctx, _, a| {
+            let list: Vec<KindInfo> = if a.get("away") == Some(&serde_json::Value::Bool(true)) {
+                formula_kinds(&ctx)
+            } else {
+                kinds(&ctx).iter().map(|k| k.info()).collect()
+            };
             async move { Ok(list) }
         });
         s.command::<PlanCmd, _, _>(|ctx, call, a| async move { make_plan(&ctx, &call, &a).await });
@@ -334,7 +348,7 @@ impl Plugin for ResourcesPlugin {
         s.command::<Export, _, _>(|ctx, call, a| async move { export(&ctx, &call, &a).await });
         // the app's Import and Share setup (ADR-0034): pasted text in, the setup out as text
         s.command::<Read, _, _>(|ctx, _call, a| {
-            let ks: Vec<KindInfo> = kinds(&ctx).iter().map(|k| k.info()).collect();
+            let ks = formula_kinds(&ctx);
             async move {
                 let loaded = wisp_resources_core::formula::read_text(&a.text, format_named(&a.format), &ks).map_err(WireError::invalid)?;
                 Ok(ReadOut { resources: loaded.resources, secrets: loaded.secrets })

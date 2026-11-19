@@ -43,6 +43,59 @@ impl SettingKind {
     }
 }
 
+/// The settings' plan (audit E2): a setting is one value, so a declared one is the value it will have. One not set yet is
+/// at its default: the same value again is unchanged (no op), and another one says what it changes from, the default
+/// (`crew.tint: true → false`), never a bare "(new)". A set one changes as any spec does; `prune` unsets the rest.
+fn plan_settings(current: &[Resource], desired: &[Resource], default_of: impl Fn(&str) -> Option<Value>, prune: bool) -> Vec<Op> {
+    use wisp_resources_api::FieldChange;
+    let mut ops = Vec::new();
+    for d in desired {
+        let default = default_of(&d.name);
+        let had = current.iter().find(|c| c.name == d.name);
+        // `null` is "back to its default"
+        let want = if d.spec.is_null() { default.clone().unwrap_or(Value::Null) } else { d.spec.clone() };
+        let now = had.map(|c| c.spec.clone()).or_else(|| default.clone()).unwrap_or(Value::Null);
+        if want == now {
+            continue;
+        }
+        let change = vec![FieldChange { path: String::new(), from: (!now.is_null()).then(|| now.clone()), to: Some(want.clone()) }];
+        ops.push(match had {
+            Some(c) => Op {
+                op: OpKind::Update,
+                kind: d.kind.clone(),
+                name: d.name.clone(),
+                spec: d.spec.clone(),
+                id: c.id.clone(),
+                changes: change,
+                before: Some(c.spec.clone()),
+            },
+            None => Op {
+                op: OpKind::Create,
+                kind: d.kind.clone(),
+                name: d.name.clone(),
+                spec: d.spec.clone(),
+                id: None,
+                changes: change,
+                before: None,
+            },
+        });
+    }
+    if prune {
+        for c in current.iter().filter(|c| !desired.iter().any(|d| d.name == c.name)) {
+            ops.push(Op {
+                op: OpKind::Delete,
+                kind: c.kind.clone(),
+                name: c.name.clone(),
+                spec: c.spec.clone(),
+                id: c.id.clone(),
+                changes: Vec::new(),
+                before: None,
+            });
+        }
+    }
+    ops
+}
+
 impl ResourceKind for SettingKind {
     fn info(&self) -> KindInfo {
         let props: Map<String, Value> = self.mine().iter().map(|s| (s.key.clone(), schema_of(s))).collect();
@@ -62,6 +115,15 @@ impl ResourceKind for SettingKind {
                 })
                 .collect())
         })
+    }
+
+    fn plan(&self, current: &[Resource], desired: &[Resource], prune: bool) -> Option<Vec<Op>> {
+        let list = self.ctx.settings_list().unwrap_or_default();
+        let default_of = |name: &str| {
+            let key = wisp_settings_api::key_of(name);
+            list.iter().find(|s| s.key == key).and_then(|s| s.decl.default.clone())
+        };
+        Some(plan_settings(current, desired, default_of, prune))
     }
 
     /// The value as the setting takes it (`off` read by YAML as false is the enum's `"off"`, D3), so the plan shows it
@@ -113,5 +175,42 @@ impl ResourceKind for SettingKind {
             crate::durable(&self.ctx).await;
             Ok(())
         })
+    }
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod tests {
+    use super::*;
+
+    /// Audit E2: `crew.tint: false` (on by default) planned as `+ setting/crew.tint  (new)`, and Setup said "Adds …
+    /// setting crew.tint", neither saying it turns a switch off; `crew.tint: true` was "new" too, changing nothing.
+    #[test]
+    fn a_setting_not_set_yet_plans_from_its_default_audit_e2() {
+        let r = |k: &str, v: Value| Resource::new("setting", k, v);
+        let defaults = |k: &str| match k {
+            "crew.tint" => Some(json!(true)),
+            "worktrees.max" => Some(json!("40")),
+            _ => None,
+        };
+        let current = [r("worktrees.max", json!("80"))];
+        let desired = [r("crew.tint", json!(false)), r("budget.drainWatch", json!(true)), r("worktrees.max", json!("off"))];
+        let ops = plan_settings(&current, &desired, defaults, false);
+        let said: Vec<(OpKind, &str, Option<Value>, Option<Value>)> =
+            ops.iter().map(|o| (o.op, o.name.as_str(), o.changes[0].from.clone(), o.changes[0].to.clone())).collect();
+        assert_eq!(
+            said,
+            [
+                (OpKind::Create, "crew.tint", Some(json!(true)), Some(json!(false))),
+                (OpKind::Create, "budget.drainWatch", None, Some(json!(true))),
+                (OpKind::Update, "worktrees.max", Some(json!("80")), Some(json!("off"))),
+            ]
+        );
+        assert_eq!(ops[2].before, Some(json!("80")));
+        // its default again, or null while unset: nothing changes, so no op
+        assert_eq!(plan_settings(&[], &[r("crew.tint", json!(true)), r("crew.tint", Value::Null)], defaults, false), Vec::<Op>::new());
+        // pruned: one set and not declared goes back to its default
+        let gone = plan_settings(&current, &[], defaults, true);
+        assert_eq!((gone.len(), gone[0].op), (1, OpKind::Delete));
     }
 }

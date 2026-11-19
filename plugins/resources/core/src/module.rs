@@ -281,6 +281,9 @@ fn read(input: &Input, kinds: &[KindInfo]) -> Result<Read, String> {
                 let Some(kind) = kinds.iter().find(|k| k.named(section)) else {
                     return Err(format!("{file}: no plugin in this wisp owns `{section}:`"));
                 };
+                if let Some(why) = &kind.away {
+                    return Err(format!("{file}: `{section}:`: {why}"));
+                }
                 for (name, spec) in items(kind, v, &format!("{file} {section}"))? {
                     let at = format!("{file}:{}", line_of(text, &name));
                     if let Some(had) = r.decls.iter().find(|d| d.kind == kind.kind && d.name == name) {

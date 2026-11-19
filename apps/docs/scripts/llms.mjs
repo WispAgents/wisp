@@ -9,6 +9,22 @@ const src = path.resolve(here, '../../../docs/site');
 const dist = path.resolve(here, '../dist');
 const SITE = 'https://trywisp.dev/docs';
 
+/** An MDX page as plain markdown: no imports, and each App · TUI · CLI tab as a bold label over its text. */
+function plain(body) {
+  return body
+    .replace(/^import .+ from '[^']+';\n+/gm, '')
+    .replace(/^<Tabs[^>]*>\n?/gm, '')
+    .replace(/^<\/Tabs>\n?/gm, '')
+    .replace(/^<TabItem label="([^"]+)">\n?/gm, '**$1:**\n\n')
+    .replace(/^<\/TabItem>\n?/gm, '\n')
+    // cards as a plain list of links
+    .replace(/<LinkCard\s+title="([^"]*)"(?:\s+description="([^"]*)")?\s+href="([^"]*)"\s*\/>/g, (_, t, d, h) => `- [${t}](https://trywisp.dev${h})${d ? `: ${d}` : ''}`)
+    .replace(/^\s*<\/?CardGrid>\n?/gm, '')
+    .replace(/^\s*<Card title="([^"]*)"[^>]*>\n?/gm, '**$1**\n')
+    .replace(/^\s*<\/Card>\n?/gm, '\n')
+    .replace(/\n{3,}/g, '\n\n');
+}
+
 /** The page's front matter (title, description, sidebar order) and its body. */
 function parse(text) {
   const m = text.match(/^---\n([\s\S]*?)\n---\n?([\s\S]*)$/);
@@ -18,7 +34,7 @@ function parse(text) {
     return v.startsWith('"') ? JSON.parse(v) : v;
   };
   const order = Number(front.match(/^\s+order:\s*(\d+)/m)?.[1] ?? 999);
-  return { title: field('title'), description: field('description'), order, body: (m?.[2] ?? text).trim() };
+  return { title: field('title'), description: field('description'), order, body: plain((m?.[2] ?? text).trim()) };
 }
 
 function walk(dir) {
@@ -55,7 +71,7 @@ for (const p of pages) {
   if (!bySection.has(s)) bySection.set(s, []);
   bySection.get(s).push(p);
 }
-const names = { start: 'Get started', concepts: 'Concepts', guides: 'Guides', integrations: 'Integrations', plugins: 'Build plugins', reference: 'Reference', migrate: 'Migrate from v1' };
+const names = { start: 'Get started', concepts: 'Concepts', guides: 'Guides', integrations: 'Integrations', plugins: 'Build plugins', reference: 'Reference', migrate: 'Import from an earlier wisp' };
 const index = [
   '# wisp',
   '',

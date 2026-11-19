@@ -36,7 +36,7 @@ pub struct PluginRow {
     pub name: Option<String>,
 }
 
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, ::ts_rs::TS)]
 pub struct SetEnabledArgs {
     pub id: String,
     pub enabled: bool,
@@ -66,6 +66,13 @@ impl Command for SetEnabled {
     const ID: &'static str = "plugins.setEnabled";
     const PERMISSION: Option<&'static str> = Some(perm::WRITE);
     type Args = SetEnabledArgs;
+    fn args_ts() -> Option<String> {
+        Some(format!(
+            "{}{}",
+            <SetEnabledArgs as ::ts_rs::TS>::docs().unwrap_or_default(),
+            <SetEnabledArgs as ::ts_rs::TS>::inline(&::ts_rs::Config::default())
+        ))
+    }
     type Out = PluginRow;
 }
 

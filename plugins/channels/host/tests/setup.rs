@@ -156,6 +156,49 @@ impl TransportDef for LinkedDef {
         &["token", "publicKey", "linkCode"] // as wisp.discord's
     }
 }
+/// Counts its starts; its start ends at once, as a transport's does when its service refuses the token.
+static COUNTED_STARTS: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
+struct Counted;
+#[async_trait]
+impl Transport for Counted {
+    fn name(&self) -> &'static str {
+        "counted"
+    }
+    fn ready(&self) -> bool {
+        true
+    }
+    fn kind(&self) -> TransportKind {
+        TransportKind::Thread
+    }
+    async fn start(&self, _stop: CancellationToken) {
+        COUNTED_STARTS.fetch_add(1, Ordering::SeqCst);
+    }
+    async fn publish(&self, _msg: &Msg, _s: Option<&SessionView>) -> Result<()> {
+        Ok(())
+    }
+}
+struct CountedDef;
+impl TransportDef for CountedDef {
+    fn name(&self) -> &'static str {
+        "counted"
+    }
+    fn create(&self, _hub: Arc<dyn ChannelHub>) -> Arc<dyn Transport> {
+        Arc::new(Counted)
+    }
+}
+/// The phone app's own transport, as wisp.push's: paired from the phone, nothing to set up in Settings → Phone.
+struct PairedDef;
+impl TransportDef for PairedDef {
+    fn name(&self) -> &'static str {
+        "paired"
+    }
+    fn create(&self, _hub: Arc<dyn ChannelHub>) -> Arc<dyn Transport> {
+        Arc::new(Threaded)
+    }
+    fn listed(&self) -> bool {
+        false
+    }
+}
 struct Extra;
 impl Plugin for Extra {
     fn manifest(&self) -> Manifest {
@@ -164,6 +207,8 @@ impl Plugin for Extra {
     fn setup(&self, s: &mut Setup) -> Result<()> {
         s.contribute(&TRANSPORTS, Arc::new(ThreadedDef) as Arc<dyn TransportDef>);
         s.contribute(&TRANSPORTS, Arc::new(LinkedDef) as Arc<dyn TransportDef>);
+        s.contribute(&TRANSPORTS, Arc::new(PairedDef) as Arc<dyn TransportDef>);
+        s.contribute(&TRANSPORTS, Arc::new(CountedDef) as Arc<dyn TransportDef>);
         Ok(())
     }
 }
@@ -289,6 +334,58 @@ async fn a_telegram_token_set_up_from_settings_is_kept_in_secrets_only_never_in_
         assert!(!holds(hay, &token), "{what} holds the token");
     }
     assert!(!holds(&disk, &code), "nor does the store hold the link code");
+}
+
+/// Audit E (as in D): `wisp channels status` listed `push`, the phone app's own transport, which Settings → Phone
+/// doesn't show and `channels.setup` refuses. A transport that isn't `listed` (paired by its own app) is in neither the
+/// status nor Phone's rows; another plugin's transport still is.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_transport_paired_by_its_own_app_isnt_listed_as_a_phone_channel() {
+    let a = app("unlisted").await;
+    let all = a.call("channels.status", json!({})).await;
+    let names: Vec<&str> = all["channels"].as_array().unwrap().iter().filter_map(|c| c["transport"].as_str()).collect();
+    assert!(!names.contains(&"paired"), "{names:?}");
+    assert!(names.contains(&"threaded") && names.starts_with(&["ntfy", "telegram", "slack", "discord", "github", "email"]), "{names:?}");
+    eventually("Phone's rows are in", async || a.phone_row("ntfy").await.is_some()).await;
+    assert!(a.phone_row("paired").await.is_none());
+}
+
+/// Audit E (as in D): Telegram, Slack and Discord each stop on a refused token, yet the catcher saw all three asked
+/// again every ~5 s while channels were set up: every channel's setup restarted every transport, so each was asked
+/// again with the token it had already been refused. A transport whose channel didn't change keeps running, or stays
+/// stopped with its error; one whose channel changed starts again, and `channels.refresh` restarts them all.
+#[tokio::test(flavor = "multi_thread")]
+async fn setting_up_one_channel_doesnt_restart_the_others() {
+    let a = app("restart").await;
+    let starts = || COUNTED_STARTS.load(Ordering::SeqCst);
+    let on = |v: bool| json!({ "resources": [{ "kind": "channel", "name": "c", "spec": { "transport": "counted", "enabled": v } }] });
+    a.call("resources.apply", on(true)).await;
+    eventually("it started", async || starts() == 1).await;
+    // another channel set up, switched on, then off: two applies, neither about it
+    a.call("channels.setup", json!({ "transport": "ntfy", "enabled": true })).await;
+    a.call("channels.setup", json!({ "transport": "ntfy", "enabled": false })).await;
+    tokio::time::sleep(Duration::from_millis(300)).await;
+    assert_eq!(starts(), 1, "an unrelated setup asked its service again");
+    // its own channel changed: off, then on again, starts it again
+    a.call("resources.apply", on(false)).await;
+    a.call("resources.apply", on(true)).await;
+    eventually("it started again", async || starts() == 2).await;
+    a.call("channels.refresh", json!({})).await;
+    eventually("Refresh restarts it", async || starts() == 3).await;
+
+    // a setup that changes only what a channel sends (its notification) doesn't restart it, and what it last said holds
+    a.call("channels.setup", json!({ "transport": "ntfy", "enabled": true })).await;
+    a.net.ntfy_status.store(500, Ordering::SeqCst);
+    a.call("channels.test", json!({ "channel": "ntfy" })).await;
+    let failing = a.status("ntfy").await;
+    assert_eq!(failing["state"], "failing", "{failing}");
+    a.call("channels.setup", json!({ "transport": "ntfy", "notify": ["finished"] })).await;
+    let after = a.status("ntfy").await;
+    assert_eq!(
+        (after["state"].clone(), after["error"].clone(), after["notify"].clone()),
+        (failing["state"].clone(), failing["error"].clone(), json!(["finished"])),
+        "{after}"
+    );
 }
 
 #[tokio::test(flavor = "multi_thread")]

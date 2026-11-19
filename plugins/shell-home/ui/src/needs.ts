@@ -10,12 +10,13 @@ export const NEEDS_SHOWN = 5;
 export function needsYou(r: TaskRow): boolean {
   if (r.archived || r.forLater) return false;
   if (r.needs === true) return true;
-  if (r.question || r.approval || r.reminder) return true;
+  if (asking(r) || r.reminder) return true;
   return r.state === 'review' || r.state === 'error';
 }
 
-/** Asking you something (a question or an approval): v1's `waiting` state, first in Needs you. */
-const asks = (r: TaskRow): number => Number(!!(r.question || r.approval));
+/** Asking you something: v1's `waiting` state (a `runtime.ask` comes with an empty `question`), a question or an approval. */
+export const asking = (r: TaskRow): boolean => r.state === 'waiting' || !!(r.question || r.approval);
+const asks = (r: TaskRow): number => Number(asking(r));
 
 /** v1 feed.js `groups().needs`, as the sidebar sorts it: the ones asking you first, then newest. */
 export function needsList(rows: readonly TaskRow[]): TaskRow[] {
@@ -24,8 +25,8 @@ export function needsList(rows: readonly TaskRow[]): TaskRow[] {
 
 /** The word in the row's state column, as a catalogue key. */
 export function stateKey(r: TaskRow): string {
-  if (r.question) return 'shell-home.state.asking';
   if (r.approval) return 'shell-home.state.approval';
+  if (asking(r)) return 'shell-home.state.asking';
   if (r.reminder) return 'shell-home.state.reminder';
   if (r.state === 'error') return 'shell-home.state.error';
   if (r.status === 'blocked') return 'shell-home.state.blocked';
@@ -34,7 +35,7 @@ export function stateKey(r: TaskRow): string {
 
 /** The pill's tone for that word. */
 export function stateTone(r: TaskRow): 'accent' | 'warn' | 'bad' | 'good' | 'neutral' {
-  if (r.question || r.approval) return 'accent';
+  if (asking(r)) return 'accent';
   if (r.reminder) return 'warn';
   if (r.state === 'error' || r.status === 'blocked') return 'bad';
   return 'good';

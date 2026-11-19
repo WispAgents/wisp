@@ -1,22 +1,24 @@
 ---
-title: wisp docs
-description: Your coding agents, as code. Declare them, run them anywhere, track every line they write.
+title: Documentation
+description: Manage the code your agents write. Run Claude Code, Codex and every coding agent from the app, the TUI or the CLI, declare them as code, and track every line they write.
 template: splash
 hero:
-  tagline: Your coding agents, as code. Declare them. Run them anywhere. Track every line they write.
+  title: wisp docs
+  tagline: Manage the code your agents write. Declare them. Run them anywhere. Track every line they write.
   actions:
     - text: Install wisp
       link: /docs/start/install/
       icon: right-arrow
-    - text: Your first task
-      link: /docs/start/first-task/
+    - text: Browse the guides
+      link: /docs/guides/
       variant: minimal
 ---
 
 import { Card, CardGrid, LinkCard } from '@astrojs/starlight/components';
 
 wisp runs Claude Code, Codex, Cursor, opencode, Antigravity, Grok and Copilot from one place: the desktop app, the
-browser, the terminal, your phone, or your own code. It keeps every task they did next to the code they wrote.
+browser, the terminal UI, the command line, your phone, or your own agent. It keeps every task they did next to the
+code they wrote. Every guide shows each step three ways: **App**, **TUI** and **CLI**.
 
 <CardGrid>
   <Card title="Declare" icon="document">
@@ -45,5 +47,10 @@ browser, the terminal, your phone, or your own code. It keeps every task they di
 
 Every page is also plain markdown: add `.md` to its address. [`llms.txt`](/docs/llms.txt) lists them all and
 [`llms-full.txt`](/docs/llms-full.txt) holds them in one file.
+
+<CardGrid>
+  <LinkCard title="Start with your agent" description="Claude Code, Codex, Cursor, opencode, Copilot, Grok or Antigravity." href="/docs/guides/agents/claude-code/" />
+  <LinkCard title="The desktop and phone apps" description="Install the desktop app; join the phone app waitlist." href="/docs/guides/apps/desktop-app/" />
+</CardGrid>
 
 <LinkCard title="Reference" description="The CLI, every command, setting, MCP tool, answer block and resource kind, generated from the code." href="/docs/reference/cli/" />

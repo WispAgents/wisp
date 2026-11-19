@@ -1,0 +1,109 @@
+---
+title: Goals and judges
+description: Give a task a goal and judges. wisp sends the agent back after each turn until the judges agree the goal is met.
+sidebar:
+  order: 4
+---
+
+import { Tabs, TabItem } from '@astrojs/starlight/components';
+
+Agents often stop before the work is done. A **goal** fixes that. After each turn, one or more **judges** read the
+code and the answer, and vote. If the goal isn't met, the task gets another turn with what is missing.
+
+## Set a goal
+
+Write what *done* means, in one line you could check yourself: "all tests pass and the build is green".
+
+<Tabs syncKey="way">
+<TabItem label="App">
+- **New task:** type `/goal all tests pass` in the box and send. A *Done when* line holds the goal; the task keeps
+  going until it holds.
+- **A task that is already running:** type `/goal all tests pass` in its reply box, or open the task's **⋯** menu
+  and choose **Set goal…**.
+- The **Goal** band at the top of the task shows the round, each judge's vote and why.
+</TabItem>
+<TabItem label="TUI">
+Run `wisp tui`, open the task (**Enter**), press **i** to write, and send `/goal set --text "all tests pass"`.
+The goal shows in the task's header, in its colour: working, checking, met or stopped.
+</TabItem>
+<TabItem label="CLI">
+```sh
+wisp goal set <id> "all tests pass"
+wisp goal set <id> "all tests pass" --kick     # judge it now if the task isn't running
+```
+`<id>` is the task's id (`wisp ls` lists them). An empty goal clears it.
+</TabItem>
+</Tabs>
+
+## Pick the judges
+
+By default the task's own agent checks its work. For a second opinion, add judges: other harnesses, other models,
+or crew members. A judge on a different harness doesn't share the agent's blind spots.
+
+How their votes count:
+
+- **Majority:** most judges agree.
+- **All:** every judge agrees.
+- **Any:** one is enough.
+
+<Tabs syncKey="way">
+<TabItem label="App">
+On **New task**, **Judges** sits at the end of the *Done when* line. On a running task, open its **⋯** menu,
+**Goal checks…**, then **Judges** → **Add judge**, and pick how they vote. Your choice is kept for your next goals.
+</TabItem>
+<TabItem label="TUI">
+With the task open, press **i** and send:
+
+```text
+/goal set --text "all tests pass" --judges codex,claude/opus/high --vote all
+```
+Any `wisp` command works this way in the TUI's reply box; the open task is the one it acts on.
+</TabItem>
+<TabItem label="CLI">
+```sh
+wisp goal set <id> "all tests pass" --judges codex,claude/opus/high --vote all
+```
+A judge is a harness (`codex`), a harness with its model and effort (`claude/opus/high`), or a crew member by name.
+`--judges ""` means no judges: wisp's own quick check decides.
+</TabItem>
+</Tabs>
+
+In a formula, the goal lives with the task or the workflow:
+
+```yaml
+goal: { judges: [reviewer, codex], vote: all, maxRounds: 8 }
+```
+
+## While it runs
+
+<Tabs syncKey="way">
+<TabItem label="App">
+The task's **Goal** band has **Pause goal**, **Resume goal**, **Edit goal…** and **Drop goal**. **Why** shows
+what each judge said.
+</TabItem>
+<TabItem label="TUI">
+With the task open, send `/goal pause`, `/goal resume`, `/goal check` or `/goal drop`. **Ctrl-K** finds any of
+them by name.
+</TabItem>
+<TabItem label="CLI">
+```sh
+wisp goal check <id>     # judge now, on the last answer
+wisp goal pause <id>
+wisp goal resume <id>
+wisp goal drop <id>
+```
+</TabItem>
+</Tabs>
+
+When the goal runs out of rounds without being met, the task stops and asks you what to do. A judge can also say
+the goal **can't be done**, with why, so you don't burn rounds on it.
+
+## Act on the result
+
+`goal.met` and `goal.failed` are events. A [trigger](../schedules-and-triggers/) can act on them: ship the pull
+request when the goal is met, or tell a crew member when it isn't.
+
+## From your own agent
+
+Your harness can set goals too, through wisp's MCP tools (see [MCP from your harness](../mcp-from-your-harness/)).
+Ask it: "start a wisp task to fix the flaky test, with the goal *the test passes 50 times in a row*".

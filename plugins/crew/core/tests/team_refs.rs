@@ -29,3 +29,15 @@ fn a_team_row_naming_no_member_says_who_it_named() {
     let e = crew_refs(&json!([{ "crew": "zed", "why": "x" }]), &crew()).unwrap_err();
     assert!(e.to_string().contains("No one on your crew is called zed"), "{e}");
 }
+
+/// Audit E13: `crew update ada --team '[{"crew":"bob"}]'` showed `bob  Bob  auto` though Bob runs on codex: a row naming a
+/// member takes that member's harness (their job runs on it), unless the row names one.
+#[test]
+fn a_team_row_naming_a_member_shows_their_harness_audit_e13() {
+    let mut c = crew();
+    c[1].agent = "codex".into();
+    let rows = crew_refs(&json!([{ "crew": "bob lee" }, { "crew": "ada", "agent": "claude" }]), &c).unwrap();
+    let team = normalize_team(&rows).unwrap();
+    assert_eq!(team[0].agent, "codex");
+    assert_eq!(team[1].agent, "claude", "said on the row: kept");
+}

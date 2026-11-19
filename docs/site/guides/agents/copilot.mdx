@@ -1,0 +1,79 @@
+---
+title: Start with GitHub Copilot
+description: Run the GitHub Copilot CLI in wisp on your own Copilot plan. Pick its model and effort, and open a task back in Copilot.
+sidebar:
+  order: 5
+---
+
+import { Tabs, TabItem } from '@astrojs/starlight/components';
+
+wisp runs the GitHub Copilot CLI, `copilot`, in the background, one worktree per task. It needs a GitHub Copilot
+plan.
+
+## What you need
+
+```sh
+npm i -g @github/copilot
+```
+
+## Sign in
+
+Copilot signs in with its own login. Run `copilot login` once in a terminal, then tell wisp to look again.
+
+<Tabs syncKey="way">
+<TabItem label="App">
+Avatar → **Settings** → **Agents** → **Re-check**. Copilot shows **Ready** once it's signed in.
+</TabItem>
+<TabItem label="TUI">
+Send `/accounts recheck`.
+</TabItem>
+<TabItem label="CLI">
+```sh
+wisp accounts recheck
+```
+</TabItem>
+</Tabs>
+
+## Pick it, its model and its effort
+
+wisp reads Copilot's models from its own config help. Effort: `low`, `medium`, `high`, `xhigh`.
+
+<Tabs syncKey="way">
+<TabItem label="App">
+Click the harness chip in the New task footer, pick **Copilot**, then a model and a thinking level.
+</TabItem>
+<TabItem label="TUI">
+Send `/runtime set-agent --agent copilot` to move the open task to Copilot.
+</TabItem>
+<TabItem label="CLI">
+```sh
+wisp "update the README badges" --agent copilot --effort medium
+```
+</TabItem>
+</Tabs>
+
+Modes: **Plan**, **Edits**, **Full auto** (`--mode plan|edits|auto`). In Edits, a tool Copilot wasn't allowed to
+use shows on the task as a card with the exact rule to allow it.
+
+## What's different with Copilot
+
+- Copilot bills in premium requests, not dollars. Its turns count in Settings → Usage as turns and outcomes, not
+  spend.
+- wisp gives each new conversation its id up front, so a task and its Copilot session always match.
+- wisp trusts the task's folder for Copilot, so it doesn't stop to ask.
+
+## Open in Copilot
+
+<Tabs syncKey="way">
+<TabItem label="App">
+The task's **⋯** menu → **Open in Copilot** (key **T**).
+</TabItem>
+<TabItem label="TUI">
+Press **o** in the open task.
+</TabItem>
+<TabItem label="CLI">
+```sh
+wisp runtime resume-command <id>
+```
+</TabItem>
+</Tabs>

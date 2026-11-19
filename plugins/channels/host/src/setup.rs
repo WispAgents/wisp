@@ -19,11 +19,12 @@ use crate::{Live, lock};
 
 const SECRET: &str = "${secret:";
 
-/// The transports Settings → Phone lists: its six first, then any other a plugin serves.
+/// The transports Settings → Phone lists: its six first, then any other a plugin serves and lists (not one its own app
+/// pairs, as wisp.push's).
 fn names(ctx: &Ctx) -> Vec<String> {
     let mut out: Vec<String> = PHONE_ORDER.iter().map(|s| (*s).to_owned()).collect();
     for d in ctx.contributions(&TRANSPORTS) {
-        if !out.iter().any(|n| n == d.name()) {
+        if d.listed() && !out.iter().any(|n| n == d.name()) {
             out.push(d.name().to_owned());
         }
     }
@@ -282,6 +283,8 @@ pub async fn setup(ctx: &Ctx, call: &Call, live: &Arc<Live>, a: SetupArgs) -> Re
     }
     // what it said was about the old setup; cleared before the apply restarts it, so its first word isn't lost
     let said = lock(&live.st.status).remove(t);
+    let starts = || lock(&live.starts).get(t).copied().unwrap_or(0);
+    let before = starts();
     let applied = match ctx.run::<Apply>(call, PlanArgs { resources, ..PlanArgs::default() }).await {
         Ok(x) => x,
         Err(e) => {
@@ -294,11 +297,12 @@ pub async fn setup(ctx: &Ctx, call: &Call, live: &Arc<Live>, a: SetupArgs) -> Re
     };
     // a new value under the same `${secret:}` leaves the spec as it was, so nothing was applied: the transport reads it now
     if applied.applied == 0 && !written.is_empty() {
-        crate::act(ctx, live).await;
-    } else if applied.applied == 0
+        crate::act(ctx, live, crate::Again::And(t)).await;
+    } else if starts() == before
         && let Some(said) = said
     {
-        // nothing restarted it (an Unlink, the same settings again): what it last said still holds
+        // nothing restarted it (an Unlink, the same settings again, only its Send me changed): what it last said
+        // still holds
         lock(&live.st.status).entry(t.to_owned()).or_insert(said);
     }
     if a.unlink {

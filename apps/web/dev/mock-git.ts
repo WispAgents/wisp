@@ -62,6 +62,19 @@ export interface GitCtx {
   base(dir: string): string;
 }
 
+/** Each file the turns changed, as it reads after their edits (Open file…'s list, the file view's text). */
+export function filesOf(turns: readonly { changes?: Change[] }[]): Map<string, string> {
+  const out = new Map<string, string>();
+  for (const t of turns)
+    for (const c of t.changes ?? []) {
+      if (!c.file) continue;
+      let text = out.get(c.file) ?? c.beforeFile ?? '';
+      for (const e of c.edits ?? []) if (e.before !== undefined && e.after !== undefined) text = text.replace(e.before, e.after);
+      out.set(c.file, text);
+    }
+  return out;
+}
+
 export function gitChanges(a: Args, g: GitCtx): unknown {
   const dir = str(a, 'path');
   const turns = g.turnsOf(dir);

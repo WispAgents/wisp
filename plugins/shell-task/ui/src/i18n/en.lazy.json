@@ -217,5 +217,7 @@
   "shell-task.shell.endAsk.title": "End the shell?",
   "shell-task.term.endAsk.title": "End the terminal?",
   "shell-task.shell.endAsk.body": "Whatever runs in it stops with it.",
-  "shell-task.shell.endAsk.cancel": "Cancel"
+  "shell-task.shell.endAsk.cancel": "Cancel",
+  "shell-task.pr.askFix": "Ask to fix",
+  "shell-task.pr.askFixTitle": "Put the failing log in the reply box for the agent"
 }

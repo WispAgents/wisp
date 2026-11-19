@@ -1,0 +1,77 @@
+---
+title: Start with opencode
+description: Run opencode in wisp, with free models and no account, or on any provider you sign in to. Pick its model and variant, and open a task back in opencode.
+sidebar:
+  order: 4
+---
+
+import { Tabs, TabItem } from '@astrojs/starlight/components';
+
+opencode is the quickest way to start: it has free models and needs no account. wisp can install it for you.
+
+## Install it
+
+<Tabs syncKey="way">
+<TabItem label="App">
+With no agent installed, home offers **Install opencode**. Otherwise go to avatar → **Settings** → **Agents** and
+press **Install** next to opencode. It goes into `~/.wisp/tools`, usually in under a minute.
+</TabItem>
+<TabItem label="TUI">
+Send `/accounts install opencode`.
+</TabItem>
+<TabItem label="CLI">
+```sh
+wisp accounts install opencode
+```
+Or install it yourself: `npm i -g opencode-ai`.
+</TabItem>
+</Tabs>
+
+## Sign in (optional)
+
+Free models need nothing. For other providers, sign in with opencode's own login in a terminal, then press
+**Re-check** in Settings → Agents (`wisp accounts recheck`). The row says **Free models only** until a provider is
+signed in.
+
+## Pick it and its model
+
+wisp reads opencode's models and their variants. The effort you pick becomes the model's variant.
+
+<Tabs syncKey="way">
+<TabItem label="App">
+Click the harness chip in the New task footer, pick **opencode**, then a model. Type to search a long list.
+</TabItem>
+<TabItem label="TUI">
+Send `/runtime set-agent --agent opencode` to move the open task to opencode.
+</TabItem>
+<TabItem label="CLI">
+```sh
+wisp "write the missing docstrings" --agent opencode --model <provider/model>
+```
+</TabItem>
+</Tabs>
+
+Modes: **Plan**, **Edits**, **Full auto** (`--mode plan|edits|auto`). In Edits, a command opencode wasn't allowed
+to run shows as blocked on the task.
+
+## What wisp adds for opencode
+
+- wisp's MCP server and your grants go in with each run, merged over your own `OPENCODE_CONFIG_CONTENT`.
+- When a provider rate-limits it, opencode retries in silence. wisp notices and stops the run, so it doesn't hang.
+- **Update to …** in Settings → Agents runs opencode's own upgrade.
+
+## Open in opencode
+
+<Tabs syncKey="way">
+<TabItem label="App">
+The task's **⋯** menu → **Open in opencode** (key **T**).
+</TabItem>
+<TabItem label="TUI">
+Press **o** in the open task.
+</TabItem>
+<TabItem label="CLI">
+```sh
+wisp runtime resume-command <id>
+```
+</TabItem>
+</Tabs>

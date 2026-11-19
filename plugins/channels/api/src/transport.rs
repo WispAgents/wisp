@@ -25,6 +25,11 @@ pub trait TransportDef: Send + Sync + 'static {
     fn setting(&self) -> String {
         enabled_key(self.name())
     }
+    /// Listed as a channel in Settings → Phone and `channels.status`. A transport its own app pairs (wisp.push: the
+    /// phone pairs itself) has nothing to set up there: false.
+    fn listed(&self) -> bool {
+        true
+    }
 }
 
 pub const TRANSPORTS: Point<dyn TransportDef> = Point::new("channels.transport", 1);

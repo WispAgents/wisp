@@ -1,9 +1,9 @@
 # Privacy policy
 
-Last updated: 2026-10-23
+Last updated: 2026-11-19
 
-This policy covers wisp: the `wisp-agents` app you run on your own computers, the wisp app for
-Android (`dev.trywisp.mobile`), wisp Cloud (`grid.trywisp.dev`) and this site (`trywisp.dev`).
+This policy covers wisp: the `wisp-agents` app you run on your own computers, the wisp phone apps
+(Android `dev.trywisp.mobile`, and iPhone), wisp Cloud (`grid.trywisp.dev`) and this site (`trywisp.dev`).
 wisp is open source ([github.com/WispAgents/wisp](https://github.com/WispAgents/wisp)), so everything
 below can be checked in the code. Questions or requests: **[hello@trywisp.dev](mailto:hello@trywisp.dev)**.
 
@@ -100,9 +100,15 @@ Uninstalling the Android app deletes everything it stored on your phone.
 ## This site
 
 trywisp.dev uses PostHog to count page views and clicks, such as copying the install command or
-opening wisp Cloud. To show how many wisp Cloud seats are left, its pages ask grid.trywisp.dev for
-the count; that request carries nothing about you. If you join the wisp Cloud waitlist, your email
-is stored in PostHog so we can write to you when a seat is free; ask us to remove it at any time.
+opening wisp Cloud. It sets no advertising cookies and loads no tracking pixels.
+
+### The phone app waitlist
+
+When you ask for the phone app with **Get the app**, your email address (and the phone you picked:
+iPhone, Android or both) goes to wisp Cloud (`grid.trywisp.dev`, in Germany) and nowhere else: not
+to PostHog, not to a mailing service. We use it for one thing: to email you when the app is out
+for your phone. Then, or earlier if you ask, we delete it. We never sell or share it. To be taken
+off the list, email **[hello@trywisp.dev](mailto:hello@trywisp.dev)** from that address.
 
 ## Services wisp works with
 

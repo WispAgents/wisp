@@ -180,7 +180,8 @@ async fn a_cli_still_signed_in_after_its_logout_is_said_audit_d10() {
     let out = api.try_cmd("accounts.logout", json!({ "agent": "grok" })).await;
     assert_eq!(out["ok"], false, "{out}");
     let said = out.pointer("/error/message").and_then(Value::as_str).unwrap_or_default();
-    assert!(said.contains("grok is still signed in after `grok logout`") && said.contains("terminal"), "{out}");
+    // named as everywhere else (audit E9): "Grok", the command kept as typed
+    assert!(said.starts_with("Grok is still signed in after `grok logout`") && said.contains("terminal"), "{out}");
     drop(serve);
 }
 

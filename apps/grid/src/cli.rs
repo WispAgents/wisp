@@ -9,7 +9,7 @@
 //!   with its providers (GitHub, Google, OIDC), boxes as containers through boxd (`hostd.driver: "container"`,
 //!   `hostd.container.boxd`: boxd's socket) or as processes here (`"process"`). Runs until SIGTERM or Ctrl-C.
 //!
-//! - `wisp-grid waitlist [--data DIR]`: who's waiting for a seat, and who wants more machines (Add a cloud machine).
+//! - `wisp-grid waitlist [--data DIR]`: who's waiting for a seat or for the phone apps, and who wants more machines (Add a cloud machine).
 //!
 //! `dev` and `serve` stop every box before they exit, on Ctrl-C or SIGTERM: no box outlives the grid.
 use std::path::PathBuf;

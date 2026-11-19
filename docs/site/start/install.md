@@ -24,7 +24,7 @@ No agent yet? Settings → Agents installs the ones wisp can install for you, an
 Pick one.
 
 ```sh
-npm install -g wisp-agents                        # any OS with Node.js 20 or later
+npm install -g wisp-agents                        # macOS, Windows or Linux, with Node.js 18 or later
 curl -fsSL https://trywisp.dev/install.sh | bash  # macOS or Linux: checks Node, then installs with npm
 brew install wispagents/tap/wisp-agents           # Homebrew: the command line and the browser app
 brew install --cask wispagents/tap/wisp           # Homebrew: the desktop app (macOS 13.3 or later)

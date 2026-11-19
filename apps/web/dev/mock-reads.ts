@@ -145,6 +145,15 @@ const KINDS = [
   kind('task', 'tasks', 'wisp.automations', 80, { sensitive: true }),
 ];
 
+/** The worktree a task has of its own, as `worktrees.done.list` lists it (clean: nothing only it holds). */
+function doneFolders(ctx: Parameters<Fn>[1], id: string): unknown[] {
+  const row = ctx.rows('list').find((r) => r.id.endsWith(`:${id}`));
+  const v = (row?.v ?? {}) as { title?: string; summary?: { worktree?: { path?: string; branch?: string } | null } };
+  const wt = v.summary?.worktree;
+  if (!wt?.path) return [];
+  return [{ path: wt.path, task: id, title: v.title ?? '', own: true, branch: wt.branch ?? '', size: null, only: 0, uncommitted: 0, unpushed: 0, pr: null, kept: false }];
+}
+
 export const READS: Record<string, Fn> = {
   'accounts.list': (a, ctx) => ({ ops: [], result: accountsList(a, ctx) }),
   'learn.view': () => ({ ops: [], result: LEARN }),
@@ -159,10 +168,10 @@ export const READS: Record<string, Fn> = {
   'terminal.input': () => ({ ops: [], result: { ok: true } }),
   // Settings → Plugins' foot (plugins.folder: FolderOut { path })
   'plugins.folder': () => ({ ops: [], result: { path: '~/.wisp/plugins' } }),
-  // Mark done and archive ask which folders the task leaves on disk (plugins/worktrees/api/bindings DoneList): the
-  // mock's tasks run in no worktree of their own, so none, and Settings' "ask" (it was unanswered: a red toast on every
-  // archive in the dev app, found by qa/flicker.mjs)
-  'worktrees.done.list': () => ({ ops: [], result: { folders: [], onDone: 'ask' } }),
+  // Mark done and archive ask which folders the task leaves on disk (plugins/worktrees/api/bindings DoneList): a task
+  // with a worktree of its own (Add rate limiting) has its clean folder, the rest none; Settings' "ask" (it was
+  // unanswered: a red toast on every archive in the dev app, found by qa/flicker.mjs)
+  'worktrees.done.list': (a, ctx) => ({ ops: [], result: { folders: doneFolders(ctx, String((a as { sessionId?: unknown })?.sessionId ?? '')), onDone: 'ask' } }),
   // the Machines dialog reads its cards and the computers wisp found when it opens (wisp.machines' PeerView[] and
   // Found[]): the mock has no other computer and finds none (they were unanswered: a red toast over the dialog)
   'machines.list': () => ({ ops: [], result: [] }),
@@ -190,7 +199,7 @@ export const NOT_MOCKED: Readonly<Record<string, string>> = Object.fromEntries([
   ]),
   ...reason('GitHub: needs gh and a real PR', ['ship.check_log', 'ship.fix_conflicts', 'ship.merge', 'ship.refresh', 'ship.ship', 'ship.view', 'review.maybe', 'git.clone']),
   ...reason('a real repo, language server or pty on disk: the mock git (mock-git.ts) has no files to read', [
-    'history.blame', 'history.list', 'history.report', 'lsp.ask', 'worktrees.files', 'worktrees.grep', 'worktrees.save', 'worktrees.source',
+    'history.blame', 'history.list', 'history.report', 'lsp.ask', 'worktrees.grep', 'worktrees.save',
     'runtime.terminal', 'runtime.exec', 'git.restoreTurn',
   ]),
   ...reason('updates: needs the release feed', ['update.check', 'update.install']),

@@ -289,3 +289,29 @@ async fn fix_conflicts_spends_no_turn_when_git_sees_no_conflict() {
     tokio::time::sleep(Duration::from_millis(500)).await;
     assert_eq!(f.api.turns(&id).await.len(), turns, "no turn was spent");
 }
+
+/// Audit E6: with about 50 wisp worktrees, a new stray worktree wasn't offered in 40 s (well over a minute), though with
+/// few it was in under a second: Bring in's look must not wait on anything that grows with wisp's own worktrees.
+#[tokio::test(flavor = "multi_thread")]
+async fn bring_in_offers_a_new_stray_worktree_in_seconds_with_fifty_worktrees_audit_e6() {
+    let f = fixture("wt-safe-many");
+    let project = f.api.cmd("runtime.projectAdd", json!({ "path": f.repo })).await["name"].as_str().unwrap().to_owned();
+    for i in 0..50 {
+        task_in_a_worktree(&f, &format!("many {i}")).await;
+    }
+    f.api.cmd("worktrees.view", json!({})).await; // the cleanup's look over the 50 starts
+    let stray = f.repo.parent().unwrap().join("stray-many");
+    git(&f.repo, &["worktree", "add", "-q", stray.to_str().unwrap(), "-b", "stray-many"]);
+    let stray = wisp_proc::canonical_blocking(&stray).unwrap().display().to_string();
+    let at = Instant::now();
+    f.api.cmd("worktrees.view", json!({})).await; // the pane opened again
+    loop {
+        let out = f.api.cmd("worktrees.bringIn", json!({ "project": project, "paths": [stray] })).await;
+        if out["created"].as_array().is_some_and(|c| !c.is_empty()) {
+            break;
+        }
+        assert!(at.elapsed() < Duration::from_secs(8), "offered in seconds: {out}");
+        tokio::time::sleep(Duration::from_millis(300)).await;
+    }
+    eprintln!("offered after {} ms", at.elapsed().as_millis());
+}

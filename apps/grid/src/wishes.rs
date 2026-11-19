@@ -126,6 +126,13 @@ pub fn report(a: &Accounts) -> Result<String> {
     if seats.is_empty() {
         out.push_str("Nobody is waiting.\n");
     }
+    let apps = a.app_waitlist()?;
+    if !apps.is_empty() {
+        out.push_str("\n  waiting for an app:\n");
+        for (email, kind, platform, source, at) in &apps {
+            let _ = writeln!(out, "{email:<36} {kind:<10} {platform:<8} {source:<7} {}", day(Some(*at)));
+        }
+    }
     let more = a.machine_wishes()?;
     if !more.is_empty() {
         out.push_str("\n  wanting more machines:\n");

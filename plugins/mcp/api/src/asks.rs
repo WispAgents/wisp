@@ -29,7 +29,7 @@ pub struct Ask {
     pub connector: Option<Value>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ::ts_rs::TS)]
 #[serde(rename_all = "lowercase")]
 pub enum Decision {
     Allow,
@@ -37,7 +37,7 @@ pub enum Decision {
 }
 
 /// An answer: text for a question or card, a decision for a permission prompt.
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, ::ts_rs::TS)]
 pub struct AskReply {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub answer: Option<String>,
@@ -52,7 +52,7 @@ pub struct AskReply {
 /// `mcp:ask.open` is for plugins only: an agent asks through `ask_user`, whose session is its caller's.
 #[derive(Debug)]
 pub struct AskOpen;
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, ::ts_rs::TS)]
 #[serde(rename_all = "camelCase")]
 pub struct AskOpenArgs {
     pub session: String,
@@ -77,13 +77,20 @@ pub struct AskOpened {
 impl Command for AskOpen {
     const ID: &'static str = "mcp.ask.open";
     type Args = AskOpenArgs;
+    fn args_ts() -> Option<String> {
+        Some(format!(
+            "{}{}",
+            <AskOpenArgs as ::ts_rs::TS>::docs().unwrap_or_default(),
+            <AskOpenArgs as ::ts_rs::TS>::inline(&::ts_rs::Config::default())
+        ))
+    }
     type Out = AskOpened;
 }
 
 /// Answers an ask by id, or the session's front one (a channel knows the task, not the ask).
 #[derive(Debug)]
 pub struct AskAnswer;
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, ::ts_rs::TS)]
 pub struct AskAnswerArgs {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub id: Option<String>,
@@ -100,13 +107,20 @@ pub struct Answered {
 impl Command for AskAnswer {
     const ID: &'static str = "mcp.ask.answer";
     type Args = AskAnswerArgs;
+    fn args_ts() -> Option<String> {
+        Some(format!(
+            "{}{}",
+            <AskAnswerArgs as ::ts_rs::TS>::docs().unwrap_or_default(),
+            <AskAnswerArgs as ::ts_rs::TS>::inline(&::ts_rs::Config::default())
+        ))
+    }
     type Out = Answered;
 }
 
 /// Cancels one ask, or every ask of a session (its turn ended, it was stopped).
 #[derive(Debug)]
 pub struct AskCancel;
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, ::ts_rs::TS)]
 pub struct AskCancelArgs {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub id: Option<String>,
@@ -120,13 +134,20 @@ pub struct Cancelled {
 impl Command for AskCancel {
     const ID: &'static str = "mcp.ask.cancel";
     type Args = AskCancelArgs;
+    fn args_ts() -> Option<String> {
+        Some(format!(
+            "{}{}",
+            <AskCancelArgs as ::ts_rs::TS>::docs().unwrap_or_default(),
+            <AskCancelArgs as ::ts_rs::TS>::inline(&::ts_rs::Config::default())
+        ))
+    }
     type Out = Cancelled;
 }
 
 /// The asks shown now (each session's front one), for a client that (re)connects.
 #[derive(Debug)]
 pub struct AskPending;
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, ::ts_rs::TS)]
 pub struct AskPendingArgs {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub session: Option<String>,
@@ -135,6 +156,13 @@ impl Command for AskPending {
     const ID: &'static str = "mcp.ask.pending";
     const READ_ONLY: bool = true;
     type Args = AskPendingArgs;
+    fn args_ts() -> Option<String> {
+        Some(format!(
+            "{}{}",
+            <AskPendingArgs as ::ts_rs::TS>::docs().unwrap_or_default(),
+            <AskPendingArgs as ::ts_rs::TS>::inline(&::ts_rs::Config::default())
+        ))
+    }
     type Out = Vec<Ask>;
 }
 

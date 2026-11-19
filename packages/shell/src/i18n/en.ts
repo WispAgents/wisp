@@ -116,6 +116,8 @@ export const SHELL_STRINGS = {
   'shell.status.refused': 'Refused',
   'shell.status.signedOut': 'Signed out',
   'shell.status.waiting': 'Waiting',
+  'shell.status.asking': 'Asking',
+  'shell.status.approval': 'Needs approval',
   'shell.status.held': 'Held',
   'shell.status.finished': 'Finished',
   'shell.goal.doneWhen': 'Done when: {text}',

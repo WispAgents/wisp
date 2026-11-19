@@ -1,104 +1,36 @@
 # wisp
 
-> Open-source launcher that runs AI coding agents (Claude Code, OpenAI Codex, opencode, Cursor CLI, Antigravity CLI, Grok Build, GitHub Copilot CLI) in parallel and in the background, each in its own git worktree, on this computer or other machines over SSH, and hands back a 30-second animated presentation instead of a 4,000-line transcript.
+> wisp manages the code your agents write: an open-source app, terminal UI and CLI that runs Claude Code, Codex, Cursor CLI, opencode, GitHub Copilot CLI, Grok Build and Antigravity in parallel (each task in its own git worktree, on your own plans), lets you declare agents, crew, machines, skills and MCP servers as code in a repo's .wisp/ folder, and keeps every task next to the code it wrote (wisp blame, wisp resume). Desktop app for macOS, Windows and Linux; phone apps for iPhone and Android on a waitlist; wisp Cloud and self-hosted Grids for always-on agents.
 
-- Website: https://trywisp.dev/
-- GitHub: https://github.com/WispAgents/wisp
-- npm: https://www.npmjs.com/package/wisp-agents
-- License: MIT
-- Requirements: Node.js >= 20 and at least one supported coding agent CLI installed and signed in.
+Install: `npm install -g wisp-agents` (Node.js 20+), `brew install --cask wispagents/tap/wisp` (desktop app), or `npx wisp-agents` to try it. Every feature works from the app, `wisp tui` and the CLI, and from your own agent through `wisp mcp`.
 
-## Quick start
+## Docs
 
-```sh
-npx wisp-agents
-npx wisp-agents "fix the flaky auth test"
-npx wisp-agents --browser
-```
+- [Docs index for agents](https://trywisp.dev/docs/llms.txt): every docs page as markdown, with a one-line summary
+- [All docs in one file](https://trywisp.dev/docs/llms-full.txt)
+- [Install](https://trywisp.dev/docs/start/install.md)
+- [Your first task](https://trywisp.dev/docs/start/first-task.md)
+- [CLI reference](https://trywisp.dev/docs/reference/cli.md)
+- [MCP tools](https://trywisp.dev/docs/reference/mcp-tools.md)
 
-Global install:
+## Pages
 
-```sh
-npm install -g wisp-agents
-wisp "fix the flaky auth test"
-wisp --mode plan "audit dependencies"
-```
-
-## Supported agent harnesses
-
-- **Claude Code** (`claude`)
-- **OpenAI Codex** (`codex`)
-- **opencode** (`opencode`)
-- **Cursor CLI** (`cursor-agent`)
-- **Antigravity CLI** (`agy`)
-- **Grok Build** (`grok`)
-- **GitHub Copilot CLI** (`copilot`)
-
-## Key features
-
-- **Queue, not a chat log**: Sessions are grouped into `Needs you`, `Working` (live one-line status), and `Done`.
-- **21 presentation blocks**: Agents finish with structured JSON blocks (`hero`, `diff`, `tests`, `stats`, `steps`, `files`, `commits`, `graph`, `tree`, `code`, `compare`, `flow`, `chart`, `terminal`, `checklist`, `callout`, `image`, `question`, `actions`, `markdown`, `next`).
-- **Real diffs**: Captured directly from the agent's own file-edit tool calls.
-- **Mid-run questions (`ask_user`)**: Every agent gets an `ask_user` MCP tool so it can ask clarifying questions mid-run; user answers resume the running session.
-- **Terminal takeover**: Press `T` to open the session in Terminal, iTerm, Ghostty, Warp, cmux, kitty, WezTerm, or Windows Terminal with the agent's native `--resume` command.
-- **Permission modes**: `Plan` (read-only), `Edits` (auto-accept file edits), `Full auto` (unattended commands, edits, and tests).
-- **Learns as you go**: After a session goes quiet, a background retro records your preferences and the agent's lessons, globally and per project; later runs get them in their prompt. Review and edit them in the Memory view.
-- **Rerun & updates**: Rerun any task with another harness/model (`⇧R`); an in-app Update button installs new `wisp-agents` releases.
-- **Worktree per task & Ship it**: Each task runs in its own git worktree and branch; one click (`S`) commits, pushes and opens the PR, then follows CI and reviews; **Merge** squash-merges.
-- **Subagents**: Give the lead agent a team on other harnesses (e.g. Claude Code delegating to Codex ×3) through a `delegate` tool.
-- **Crew and Org**: Named long-lived agents with a brief, a schedule, a notebook and their own skills, reached with `@Name`. The Org page charts who hands work to whom; `+` on a card or a drag makes one member another's delegate.
-- **My Stuff**: A shelf for what agents make (pictures, videos, docs, code, links, static web apps), kept when the worktree goes. Agents save with `wisp_save` and read with `wisp_stuff`; `@` a thing in any prompt. Apps launch inside wisp, can keep a SQLite database, and **Publish** puts one at `<app>--app--<you>.<grid>` for anyone with the link.
-- **Checkpoints & rollback**: Every turn is snapshotted; restore to before any turn or revert a single file.
-- **Machines**: Run agents on your other computers over SSH (hosts found in `~/.ssh/config`, Tailscale and `known_hosts`); **Run on** sends one prompt to this computer and several machines in parallel, as one task with a row per machine.
-- **Compare, recipes, triggers**: Run one task on two harnesses side by side; saved prompts with `{params}`; triggers on a schedule, failed CI or labelled issues.
-- **Usage & phone**: Spend and success rate per project and model; questions and finished tasks on ntfy or Telegram.
-- **Zero runtime dependencies**: The server uses Node.js built-ins only and stores plain JSON state in `~/.wisp`.
-
-## wisp Cloud and wisp Grid
-
-- wisp Cloud (free early preview, https://grid.trywisp.dev, a few accounts at a time): your own wisp on a server. Sign in with GitHub; it runs in its own gVisor sandbox, sleeps when idle and wakes for you or a schedule. Use it from the browser, wisp on your computer (Machines → Reach this computer from anywhere, or Settings → Cloud) or the Android app (first screen).
-- Your own computers on the grid: in wisp on a computer, Machines → Reach this computer from anywhere adds it to the grid. It dials out and holds a tunnel open, so your phone and other computers open it at <name>--<handle>.grid.trywisp.dev with no SSH, Tailscale or open port. The Android app and each computer's Machines list them, marked Cloud · on grid, Your computer · via grid or Over SSH.
-- Sign in to Claude Code, Codex and GitHub from Settings → Agents (a link and a code, no terminal); the model picker only offers signed-in agents.
-- wisp Grid is the same server, MIT, in the repo: `npx wisp-agents grid init --domain wisp.example.com`, then `wisp grid serve` (GitHub, Google or OpenID Connect sign-in; one container per person).
-
-## Integrations & programmatic surfaces
-
-- **MCP server**: `wisp mcp` (stdio MCP server exposing `wisp_launch`, `wisp_wait`, `wisp_get`, `wisp_reply`, `wisp_list`, `wisp_stop`, `wisp_agents`).
-- **Agent skill**: `wisp skill install --agent all`
-- **Scripting CLI**: `wisp "…" --json`, `wisp ls`, `wisp show <id>`, `wisp wait <id>`, `wisp reply <id> "…"`, `wisp stop <id>`
-- **JavaScript SDK**: `import { WispClient } from 'wisp-agents'`
-- **HTTP + SSE API**: `GET /api/openapi.json` (OpenAPI 3.1), `POST /api/sessions`, `GET /api/events`
-- **Webhooks**: `PATCH /api/config` with `session.waiting` and `session.finished` events.
-
-## Documentation
-
-- [Landing Page](https://trywisp.dev/)
-- [Integrations Guide (MCP, CLI, SDK, HTTP API, Webhooks)](https://trywisp.dev/integrations.html)
-- [Supported agents: how wisp runs each CLI](https://trywisp.dev/agents/)
-- [Claude Code](https://trywisp.dev/agents/claude-code.html) · [Codex](https://trywisp.dev/agents/codex.html) · [Cursor CLI](https://trywisp.dev/agents/cursor.html) · [opencode](https://trywisp.dev/agents/opencode.html) · [Antigravity CLI](https://trywisp.dev/agents/antigravity.html) · [Grok Build](https://trywisp.dev/agents/grok.html) · [Copilot CLI](https://trywisp.dev/agents/copilot.html)
-- [Guides](https://trywisp.dev/guides/)
-  - [Run Claude Code and Codex in parallel](https://trywisp.dev/guides/run-claude-code-and-codex-in-parallel.html)
-  - [Run multiple Claude Code agents in parallel](https://trywisp.dev/guides/run-multiple-claude-code-agents-in-parallel.html)
-  - [Run coding agents on multiple machines (SSH)](https://trywisp.dev/guides/run-coding-agents-on-multiple-machines.html)
-  - [Connect your machines with Tailscale (SSH from anywhere, and the phone app)](https://trywisp.dev/guides/connect-machines-with-tailscale.html)
-  - [Move a task to another machine or agent mid-way](https://trywisp.dev/guides/move-a-task-to-another-machine-or-agent.html)
-  - [Multi-agent coding: a lead delegating to other harnesses](https://trywisp.dev/guides/multi-agent-coding.html)
-  - [Claude Code vs Codex, on your own repo](https://trywisp.dev/guides/claude-code-vs-codex.html)
-  - [Run coding agents in the background](https://trywisp.dev/guides/run-coding-agents-in-the-background.html)
-  - [Run Claude Code 24/7 without a VPS: your own server vs wisp Cloud](https://trywisp.dev/guides/run-claude-code-24-7-without-a-vps.html)
-  - [Use wisp Cloud: your own wisp on a server, from desktop, phone or browser](https://trywisp.dev/guides/use-wisp-cloud.html)
-  - [Reach your own computer from your phone or another computer through wisp Cloud, no SSH](https://trywisp.dev/guides/reach-your-computer-from-your-phone.html)
-  - [Beyond Claude Code Remote Control: every agent, every computer, laptop closed](https://trywisp.dev/guides/claude-code-remote-control-alternative.html)
-  - [Use Codex from your phone, Android or iPhone](https://trywisp.dev/guides/use-codex-from-your-phone.html)
-  - [Remote coding agent apps compared: Happy, Grass, CloudCLI and wisp](https://trywisp.dev/guides/remote-coding-agent-apps-compared.html)
-  - [Run your own wisp Grid (self-hosted, a sandbox per person)](https://trywisp.dev/guides/self-host-wisp-grid.html)
-  - [Spells: change wisp itself by asking](https://trywisp.dev/guides/customize-wisp-with-spells.html)
-  - [Conductor alternatives: Orca, Paradev, Paseo, T3 Code, cmux, Multica and wisp](https://trywisp.dev/guides/conductor-alternatives.html)
-  - [wisp vs Orca](https://trywisp.dev/guides/wisp-vs-orca.html)
-  - [wisp vs T3 Code](https://trywisp.dev/guides/wisp-vs-t3-code.html)
-  - [wisp vs Paseo](https://trywisp.dev/guides/wisp-vs-paseo.html)
-  - [wisp vs cmux](https://trywisp.dev/guides/wisp-vs-cmux.html)
-  - [wisp vs Multica](https://trywisp.dev/guides/wisp-vs-multica.html)
-  - [wisp vs Paradev](https://trywisp.dev/guides/wisp-vs-paradev.html)
+- [Home](https://trywisp.dev/): what wisp is, Declare · Run · Track
+- [Get the app](https://trywisp.dev/app.html): desktop downloads, phone app waitlist
+- [wisp Cloud](https://trywisp.dev/cloud.html): your own wisp on a server; self-hosted Grids
+- [Agents](https://trywisp.dev/agents/): how wisp runs each coding agent
+- [Claude Code](https://trywisp.dev/agents/claude-code.html): flags, modes, models
+- [Codex](https://trywisp.dev/agents/codex.html): flags, modes, models
+- [Cursor CLI](https://trywisp.dev/agents/cursor.html): flags, modes, models
+- [opencode](https://trywisp.dev/agents/opencode.html): flags, modes, models
+- [Antigravity CLI](https://trywisp.dev/agents/antigravity.html): flags, modes, models
+- [Grok Build](https://trywisp.dev/agents/grok.html): flags, modes, models
+- [Copilot CLI](https://trywisp.dev/agents/copilot.html): flags, modes, models
+- [Use wisp from your agent](https://trywisp.dev/docs/integrations/your-agent.md): MCP server and skill
 - [Changelog](https://trywisp.dev/changelog.html)
-- [README](https://github.com/WispAgents/wisp/blob/main/README.md)
+- [Privacy](https://trywisp.dev/privacy.html)
+
+## Source
+
+- [GitHub](https://github.com/WispAgents/wisp): MIT
+- [npm: wisp-agents](https://www.npmjs.com/package/wisp-agents)

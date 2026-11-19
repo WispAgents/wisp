@@ -492,7 +492,7 @@ pub struct AgentSessionArgs {
 }
 
 /// `wisp_watch`'s call (the MCP tool's input) on the agent's task: `action` and what it needs.
-#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, ::ts_rs::TS)]
 pub struct AgentWatchArgs {
     pub session: String,
     #[serde(flatten)]
@@ -501,7 +501,7 @@ pub struct AgentWatchArgs {
 
 /// `wisp_tag` (v1 POST /internal/tags): the topics of the agent's own task, the whole list (it replaces them).
 /// `tags` as the agent sent it: a list, or a comma-separated string. Additive (2026-11-13).
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, ::ts_rs::TS)]
 pub struct AgentTagArgs {
     pub session: String,
     #[serde(default)]
@@ -510,7 +510,7 @@ pub struct AgentTagArgs {
 
 /// `wisp_blocks` (v1 protocol.js `blockDocs`): the full docs of the answer blocks the prompt only names.
 /// Additive (2026-11-13).
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, ::ts_rs::TS)]
 pub struct AgentBlocksArgs {
     pub session: String,
     /// a list of block types, or one
@@ -521,7 +521,7 @@ pub struct AgentBlocksArgs {
 /// `wisp_stats` (v1 GET /internal/stats/:id): tool calls, turns, cost and success over the user's tasks.
 /// `days` as the agent sent it (a number, or a numeric string); `project` "current" = the asking task's.
 /// Additive (2026-11-13).
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, ::ts_rs::TS)]
 pub struct AgentStatsArgs {
     pub session: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -533,13 +533,13 @@ pub struct AgentStatsArgs {
 }
 
 /// `wisp_available` (v1 GET /internal/available/:id): `session` is the asking agent's task. Additive (2026-11-13).
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, ::ts_rs::TS)]
 pub struct AgentAvailableArgs {
     pub session: String,
 }
 
 /// `wisp_task` (v1 POST /internal/task/:id): the tool's input as the agent sent it, plus `session`. Additive (2026-11-13).
-#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, ::ts_rs::TS)]
 pub struct AgentTaskArgs {
     pub session: String,
     #[serde(default)]

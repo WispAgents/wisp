@@ -148,7 +148,18 @@ pub fn why(stderr: &str, fallback: &str, strip: bool) -> String {
         let low = l.to_ascii_lowercase();
         ["fatal", "error"].iter().any(|p| low.starts_with(p) && low[p.len()..].chars().next().is_none_or(|c| !c.is_alphanumeric()))
     };
-    let pick = lines.iter().find(|l| lead(l)).map_or_else(|| lines[lines.len().saturating_sub(3)..].join(" "), |l| (*l).to_owned());
+    let at = lines.iter().position(|l| lead(l));
+    let pick = at.map_or_else(|| lines[lines.len().saturating_sub(3)..].join(" "), |i| lines[i].to_owned());
+    // a line that ends at its colon introduces a list (the files a merge would overwrite, tab-indented under it): the
+    // list comes along on the line, or the sentence stops at "…by merge:" (audit E9)
+    let pick = match at.filter(|_| pick.trim_end().ends_with(':')) {
+        Some(i) => {
+            let items: Vec<&str> =
+                lines[i + 1..].iter().take_while(|l| l.starts_with('\t') || l.starts_with("  ")).map(|l| l.trim()).collect();
+            if items.is_empty() { pick } else { format!("{} {}", pick.trim_end(), items.join(", ")) }
+        }
+        None => pick,
+    };
     let pick = if pick.is_empty() { fallback.to_owned() } else { pick };
     if strip {
         for p in ["fatal:", "error:", "Fatal:", "Error:", "FATAL:", "ERROR:"] {
@@ -163,6 +174,18 @@ pub fn why(stderr: &str, fallback: &str, strip: bool) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Audit E9: "Local main was not updated: Your local changes to the following files would be overwritten by merge",
+    /// cut at git's colon; the files it lists come along.
+    #[test]
+    fn an_error_that_introduces_a_list_keeps_the_list_audit_e9() {
+        let err = "error: Your local changes to the following files would be overwritten by merge:\n\tdocs/dev.md\n\tmath.js\nPlease commit your changes or stash them before you merge.\nAborting\n";
+        assert_eq!(
+            why(err, "x", false),
+            "error: Your local changes to the following files would be overwritten by merge: docs/dev.md, math.js"
+        );
+        assert_eq!(why("fatal: not a git repository\n", "x", true), "not a git repository");
+    }
 
     #[test]
     fn status_v2_branch_entries_renames_conflicts_untracked() {

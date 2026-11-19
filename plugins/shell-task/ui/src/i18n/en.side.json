@@ -17,6 +17,7 @@
   "shell-task.side.preview": "Preview",
   "shell-task.side.copyPath": "Copy path",
   "shell-task.side.copyBranch": "Copy branch name",
+  "shell-task.side.copied": "Copied",
   "shell-task.side.more": "Copy the path, open it elsewhere",
   "shell-task.side.openEditor": "Open in editor",
   "shell-task.side.openApp": "Open in terminal app",

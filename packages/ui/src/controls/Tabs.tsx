@@ -70,7 +70,7 @@ export function fitPlan(m: {
   readonly chrome: number;
   readonly open: number;
   readonly minor: readonly boolean[];
-}): { iconic: number; tight: boolean } {
+}): FitResult {
   const others = m.normal.widths.map((_, i) => i).filter((i) => i !== m.open);
   const minors = others.filter((i) => m.minor[i] === true).length;
   const total = (look: FitLook, n: number): number => {
@@ -78,8 +78,30 @@ export function fitPlan(m: {
     return m.chrome + look.gap * Math.max(0, look.widths.length - 1) + look.widths.reduce((sum, w, i) => sum + (icons.has(i) ? Math.min(look.icon, w) : w), 0);
   };
   for (let n = 0; n <= minors; n += 1) if (total(m.normal, n) <= m.room + 0.5) return { iconic: n, tight: false };
-  for (let n = minors; n <= others.length; n += 1) if (total(m.tight, n) <= m.room + 0.5) return { iconic: n, tight: true };
-  return { iconic: others.length, tight: true };
+  for (let n = minors; n < others.length; n += 1) if (total(m.tight, n) <= m.room + 0.5) return { iconic: n, tight: true };
+  // every other tab an icon: the room that's left goes back to the tabs whose label still fits, front first (audit E
+  // #6: a pinned tab open at 1280 left Changes, PR, Shell and Preview as icons with Shell's label's room to spare, since
+  // the widest, Changes, was always the last to keep its label)
+  let used = total(m.tight, others.length);
+  const labelled: number[] = [];
+  if (used <= m.room + 0.5) {
+    for (const i of others) {
+      const more = (m.tight.widths[i] ?? 0) - Math.min(m.tight.icon, m.tight.widths[i] ?? 0);
+      if (used + more <= m.room + 0.5) {
+        used += more;
+        labelled.push(i);
+      }
+    }
+  }
+  return { iconic: others.length - labelled.length, tight: true, ...(labelled.length > 0 && { labelled }) };
+}
+
+/** `fitPlan`'s answer: the last `iconic` tabs (the open one aside) show their icon alone, or, when `labelled` is given,
+ * every tab but the open one and those (indices in the row) does; `tight` the row's tighter padding. */
+export interface FitResult {
+  readonly iconic: number;
+  readonly tight: boolean;
+  readonly labelled?: readonly number[];
 }
 
 /** The phone apps (ADR-0065 step 6, design/mobile.md §A.7): every variant draws as M3 tabs on Android (`line` the primary
@@ -112,8 +134,10 @@ export function Tabs(props: TabsProps): JSX.Element {
   // rebuilt button dropped the focus to the page)
   // `fit`: the last `iconic` tabs show their icon alone, the open one aside (you always read where you are)
   const iconicOf = (value: string): boolean => {
-    const n = fit().iconic;
+    const plan = fit();
+    const n = plan.iconic;
     if (n === 0 || value === api().value) return false;
+    if (plan.labelled) return !plan.labelled.includes(values().indexOf(value));
     const others = values().filter((v) => v !== api().value);
     return others.indexOf(value) >= others.length - n;
   };
@@ -161,8 +185,8 @@ export function Tabs(props: TabsProps): JSX.Element {
  * tight, read by setting the row's own attributes for a moment and putting them back, all before the browser paints
  * (no flash, no Solid update in between). Run when the tabs' box changes size (a ResizeObserver, never per frame), the
  * frame after the tabs change (a tab added, a label or count changed), and once the fonts are in. */
-function useFit(root: () => HTMLElement | undefined, enabled: () => boolean, items: () => readonly TabItem[], open: () => string): () => { iconic: number; tight: boolean } {
-  const [plan, setPlan] = createSignal({ iconic: 0, tight: false }, { equals: (a, b) => a.iconic === b.iconic && a.tight === b.tight });
+function useFit(root: () => HTMLElement | undefined, enabled: () => boolean, items: () => readonly TabItem[], open: () => string): () => FitResult {
+  const [plan, setPlan] = createSignal<FitResult>({ iconic: 0, tight: false }, { equals: (a, b) => a.iconic === b.iconic && a.tight === b.tight && String(a.labelled ?? '') === String(b.labelled ?? '') });
   let check = (): void => {};
   onMount(() => {
     const el = root();
@@ -173,6 +197,8 @@ function useFit(root: () => HTMLElement | undefined, enabled: () => boolean, ite
       if (tabs.length === 0) return;
       const iconicWas = tabs.map((t) => t.hasAttribute('data-iconic'));
       const tightWas = el.hasAttribute('data-tight');
+      // each tab at its own width while measured: the open tab doesn't give way to the row then (it does once drawn)
+      el.setAttribute('data-measuring', '');
       const look = (tight: boolean): FitLook => {
         el.toggleAttribute('data-tight', tight);
         for (const t of tabs) t.removeAttribute('data-iconic');
@@ -188,6 +214,7 @@ function useFit(root: () => HTMLElement | undefined, enabled: () => boolean, ite
       const tight = look(true);
       el.toggleAttribute('data-tight', tightWas);
       tabs.forEach((t, i) => t.toggleAttribute('data-iconic', iconicWas[i] === true));
+      el.removeAttribute('data-measuring');
       const cs = getComputedStyle(list);
       const px = (v: string): number => parseFloat(v) || 0;
       const chrome = px(cs.paddingLeft) + px(cs.paddingRight) + px(cs.borderLeftWidth) + px(cs.borderRightWidth);

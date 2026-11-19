@@ -1,0 +1,78 @@
+---
+title: Start with Antigravity
+description: Run the Antigravity CLI (agy) in wisp on your own Google account or Gemini key. Pick its model and effort, and open a task back in Antigravity.
+sidebar:
+  order: 7
+---
+
+import { Tabs, TabItem } from '@astrojs/starlight/components';
+
+wisp runs the Antigravity CLI, `agy`, in the background, one worktree per task, on your own Google account.
+
+## What you need
+
+The `agy` command. The Antigravity app doesn't include it: install the CLI from
+[antigravity.google](https://antigravity.google/docs/cli/headless/).
+
+## Sign in
+
+`agy` signs in the first time you run it.
+
+<Tabs syncKey="way">
+<TabItem label="App">
+Avatar → **Settings** → **Agents** → **Sign in** next to Antigravity, and finish the sign-in it opens. Or press
+**Keys** and paste a Gemini key.
+</TabItem>
+<TabItem label="TUI">
+Send `/accounts login start antigravity default`.
+</TabItem>
+<TabItem label="CLI">
+```sh
+wisp accounts login start antigravity default
+wisp accounts login status antigravity default
+```
+Or run `agy` once yourself, or set `GEMINI_API_KEY`.
+</TabItem>
+</Tabs>
+
+## Pick it, its model and its effort
+
+wisp reads `agy models`. Effort: `low`, `medium`, `high`.
+
+<Tabs syncKey="way">
+<TabItem label="App">
+Click the harness chip in the New task footer, pick **Antigravity**, then a model and a thinking level.
+</TabItem>
+<TabItem label="TUI">
+Send `/runtime set-agent --agent antigravity` to move the open task to Antigravity.
+</TabItem>
+<TabItem label="CLI">
+```sh
+wisp "split the big component" --agent antigravity --effort medium
+```
+</TabItem>
+</Tabs>
+
+Modes: **Plan**, **Edits**, **Full auto** (`--mode plan|edits|auto`).
+
+## What's different with Antigravity
+
+`agy` reads MCP servers only from its own config, and takes no instructions by flag. So wisp puts its
+instructions ahead of your first message, and the agent has no wisp tools in a task: when it needs you, it ends its
+answer with a question block, and you answer in the reply box.
+
+## Open in Antigravity
+
+<Tabs syncKey="way">
+<TabItem label="App">
+The task's **⋯** menu → **Open in Antigravity** (key **T**).
+</TabItem>
+<TabItem label="TUI">
+Press **o** in the open task. wisp types your prompt in for you and trusts the folder for that session.
+</TabItem>
+<TabItem label="CLI">
+```sh
+wisp runtime resume-command <id>
+```
+</TabItem>
+</Tabs>

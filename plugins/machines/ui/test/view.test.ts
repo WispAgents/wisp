@@ -2,7 +2,7 @@
 import { expect, test } from 'vitest';
 import en from '../src/i18n/en.json' with { type: 'json' };
 import '../src/i18n/lazy.ts'; // the lazily loaded strings too (they load with the code that shows them)
-import { agentsOf, updateLine, versionLine, barOf, cloudOf, foundOf, kindOf, menuOf, nameFor, offersLetIn, portOf, primaryOf, removeAsk, stepsOf, stopAsk, troubleTitle, whereOf, type PeerLike } from '../src/view.ts';
+import { agentsOf, updateLine, versionLine, barOf, cloudOf, foundOf, kindOf, menuOf, nameFor, offersLetIn, portOf, primaryOf, removeAsk, stepsOf, stopAsk, troubleLog, troubleTitle, whereOf, type PeerLike } from '../src/view.ts';
 
 const cat = en as Record<string, string>;
 const t = (k: string, v?: Readonly<Record<string, string | number>>): string => {
@@ -134,4 +134,22 @@ test('a_v1_wisp_says_v1_and_its_update_says_v2', () => {
   expect(versionLine('2.0.0', t)).toBe('wisp 2.0.0');
   expect(updateLine('0.58.0', '2.0.0', t)).toBe('Update to v2');
   expect(updateLine('2.0.0', '2.1.0', t)).toBe('Update to 2.1.0');
+});
+
+// Audit C/D/E (still as in D): a card that couldn't connect said "ssh: connect to host 192.0.2.1 port 22: Operation
+// timed out" twice: as the failed Connect step's detail and again in the log under it (each try's stderr line too). The
+// log says what the steps and the title don't
+test('the_trouble_log_never_repeats_what_a_step_or_the_title_says', () => {
+  const err = 'ssh: connect to host 192.0.2.1 port 22: Operation timed out';
+  const s = {
+    state: 'error',
+    error: err,
+    hint: { title: 'No answer', text: "192.0.2.1 doesn't answer." },
+    steps: [{ id: 'connect', label: 'Connect', status: 'fail', detail: err }],
+  };
+  expect(troubleLog(s, [err, `${err} `, 'debug1: Connecting to 192.0.2.1 port 22.', err])).toBe('debug1: Connecting to 192.0.2.1 port 22.');
+  // no step says it: the error once, then the rest
+  expect(troubleLog({ ...s, steps: [] }, [err, 'x'])).toBe(`${err}\nx`);
+  // no hint title: the title is the error, so the log doesn't say it again
+  expect(troubleLog({ state: 'error', error: err, steps: [] }, [err])).toBe('');
 });

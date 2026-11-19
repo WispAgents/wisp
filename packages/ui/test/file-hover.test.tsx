@@ -36,3 +36,21 @@ test('resting_on_a_name_shows_the_language_servers_words_and_a_move_or_key_hides
   await vi.advanceTimersByTimeAsync(700);
   expect(asked).toHaveLength(1);
 });
+
+// audit E #1: Open file… picked a file and left the focus on the page, so typing "e" marked the task done. The file view
+// takes the focus as it opens (v1 editor.js), its caret at the top; without `autofocus` (a phone) it leaves it be.
+test('a_file_view_that_autofocuses_takes_the_keys_with_its_caret_at_the_top', () => {
+  vi.stubGlobal('matchMedia', () => ({ matches: false }));
+  const host = document.createElement('div');
+  document.body.append(host);
+  dispose = render(() => <FileView text={'one\ntwo\n'} aria-label="a.ts" onInput={() => undefined} autofocus />, host);
+  const area = host.querySelector('textarea') as HTMLTextAreaElement;
+  expect(document.activeElement).toBe(area);
+  expect(area.selectionStart).toBe(0);
+  dispose();
+  document.body.innerHTML = '';
+  const again = document.createElement('div');
+  document.body.append(again);
+  dispose = render(() => <FileView text={'one'} aria-label="a.ts" />, again);
+  expect(document.activeElement).toBe(document.body);
+});

@@ -11,12 +11,13 @@ export function sideStrip(i: { readonly term: boolean; readonly watch: boolean; 
 
 type Checks = { readonly pass?: number; readonly fail?: number; readonly pending?: number };
 
-/** What a tab says beside its name: the PR's number and its checks (✕ one failed, ● some running, ✓ all passed). */
+/** What a tab says: the PR tab its name and number as v1 (`PR #12`, panel.js paintName; `word` is the tab's name) and
+ *  its checks (✕ one failed, ● some running, ✓ all passed). */
 export const tabCount = {
-  pr(pr: { readonly number: number; readonly checks?: Checks } | undefined): string | undefined {
+  pr(pr: { readonly number: number; readonly checks?: Checks } | undefined, word: string): string | undefined {
     if (!pr) return undefined;
     const c = pr.checks;
     const mark = !c ? '' : (c.fail ?? 0) > 0 ? ' ✕' : (c.pending ?? 0) > 0 ? ' ●' : (c.pass ?? 0) > 0 ? ' ✓' : '';
-    return `#${pr.number}${mark}`;
+    return `${word} #${pr.number}${mark}`;
   },
 };

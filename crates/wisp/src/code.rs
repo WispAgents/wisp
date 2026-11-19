@@ -200,6 +200,13 @@ pub async fn kinds(c: &Client) -> Result<Vec<KindInfo>> {
     serde_json::from_value(v).map_err(|e| CliError::said(format!("resources.kinds: {e}")))
 }
 
+/// The kinds a formula is read against: those there are and those put away (each with its reason), so a section that
+/// names one is refused saying why (audit E6: "no plugin owns `router:`" while Auto was off).
+pub async fn formula_kinds(c: &Client) -> Result<Vec<KindInfo>> {
+    let v = c.cmd("resources.kinds", json!({ "away": true })).await?;
+    serde_json::from_value(v).map_err(|e| CliError::said(format!("resources.kinds: {e}")))
+}
+
 /// Every `-f` file read, in order (a later file patches an earlier one's resources).
 pub fn load(files: &[String], profiles: &[String], kinds: &[KindInfo], cwd: &Path) -> Result<Loaded> {
     let mut all = Loaded::default();
@@ -321,7 +328,7 @@ pub fn anchor_paths(resources: &mut [wisp_resources_api::Resource], base: &Path)
 /// `wisp apply -f`, `wisp diff -f`, `wisp validate -f`.
 pub async fn apply(c: &Client, verb: &str, o: &Opts, cwd: &Path) -> Result<i32> {
     let st = crate::cli::style();
-    let ks = kinds(c).await?;
+    let ks = formula_kinds(c).await?;
     let dir = crate::folder::folder(o, cwd);
     let loaded = if let Some(d) = &dir {
         let cfg = crate::folder::config(o, &ks, d)?;

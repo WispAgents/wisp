@@ -19,6 +19,9 @@ export interface PillProps extends KitProps, WithChildren {
   /** sm: v1's list size (split.css #feed .it-side .pill: 19px tall, 11.5px, a 5px dot) */
   readonly size?: 'sm';
   readonly title?: string;
+  /** Long words (an error): give way in the row and end in an ellipsis rather than run past it; put the words in
+   *  `title` too (v1 connectors.css .cn-status) */
+  readonly truncate?: boolean;
 }
 
 export function Pill(props: PillProps): JSX.Element {
@@ -32,6 +35,7 @@ export function Pill(props: PillProps): JSX.Element {
       data-variant={props.variant ?? 'soft'}
       data-size={props.size}
       data-icon={props.icon ? '' : undefined}
+      data-truncate={flag(props.truncate)}
     >
       <Show when={props.dot}>
         <span data-kit="pill-dot" data-live={flag(props.live)} />

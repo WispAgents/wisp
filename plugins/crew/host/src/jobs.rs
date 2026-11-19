@@ -247,6 +247,10 @@ async fn delegated(ctx: &Ctx, call: &Call, st: &State, m: &Member, w: WaitingJob
 /// `crew.checkin`: one check-in at a time per member (v1 `checkin`).
 pub(crate) async fn checkin(ctx: &Ctx, call: &Call, st: &State, id: &str, wake: bool) -> Result<c::Started, WireError> {
     let mut m = st.member(id)?;
+    // paused members skip check-ins (v1): Check in now said nothing, queued one, then "already checking in" (audit E7)
+    if m.paused {
+        return Err(WireError::conflict(format!("{} is paused. Resume them to check in.", m.name)));
+    }
     let live = jobs_of(ctx, call, st, &m).await.iter().any(|j| j.job == JobKind::Checkin && j.live());
     if checkin_already(&m, live) {
         return Err(WireError::conflict(format!("{} is already checking in.", m.name)));
@@ -465,28 +469,33 @@ async fn run_tick(ctx: &Ctx, st: &State) {
                 tracing::warn!(member = %m.name, error = %e.message, "crew check-in");
             }
         }
-        let Ok(mut m) = st.member(&m.id) else { continue };
-        let busy = u32::try_from(jobs_of(ctx, &call, st, &m).await.iter().filter(|j| j.live()).count()).unwrap_or(u32::MAX);
-        let n = drain_count(&m, busy);
-        if n == 0 {
-            continue;
-        }
-        let due: Vec<WaitingJob> = m.queue.drain(..n).collect();
-        st.put(m.clone());
-        for w in due {
-            if let Err(e) = start(ctx, &call, st, &m, &w, None).await {
-                tracing::warn!(member = %m.name, error = %e.message, "crew job");
-                // a full grid (its sandboxes): the job waits its turn again instead of being lost (ADR-0047)
-                if grid_full(&e.message)
-                    && let Ok(mut again) = st.member(&m.id)
-                {
-                    again.queue.insert(0, w);
-                    st.put(again);
-                }
+        drain(ctx, &call, st, &m.id).await;
+    }
+    st.save().await;
+}
+
+/// The member's waiting jobs that may start now (room, and not paused) start (v1 `drain`); the caller saves.
+async fn drain(ctx: &Ctx, call: &Call, st: &State, id: &str) {
+    let Ok(mut m) = st.member(id) else { return };
+    let busy = u32::try_from(jobs_of(ctx, call, st, &m).await.iter().filter(|j| j.live()).count()).unwrap_or(u32::MAX);
+    let n = drain_count(&m, busy);
+    if n == 0 {
+        return;
+    }
+    let due: Vec<WaitingJob> = m.queue.drain(..n).collect();
+    st.put(m.clone());
+    for w in due {
+        if let Err(e) = start(ctx, call, st, &m, &w, None).await {
+            tracing::warn!(member = %m.name, error = %e.message, "crew job");
+            // a full grid (its sandboxes): the job waits its turn again instead of being lost (ADR-0047)
+            if grid_full(&e.message)
+                && let Ok(mut again) = st.member(&m.id)
+            {
+                again.queue.insert(0, w);
+                st.put(again);
             }
         }
     }
-    st.save().await;
 }
 
 /// The agent profiles a member may name (wisp.runtime's `runtime.profiles`).

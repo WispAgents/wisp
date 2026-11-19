@@ -16,7 +16,7 @@ pub const EXT: &str = "wisp.worktrees";
 
 // ---------- commands ----------
 
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, ::ts_rs::TS)]
 #[serde(rename_all = "camelCase")]
 pub struct CreateArgs {
     pub session_id: String,
@@ -47,10 +47,17 @@ pub struct Create;
 impl Command for Create {
     const ID: &'static str = "worktrees.create";
     type Args = CreateArgs;
+    fn args_ts() -> Option<String> {
+        Some(format!(
+            "{}{}",
+            <CreateArgs as ::ts_rs::TS>::docs().unwrap_or_default(),
+            <CreateArgs as ::ts_rs::TS>::inline(&::ts_rs::Config::default())
+        ))
+    }
     type Out = Option<Worktree>;
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ::ts_rs::TS)]
 pub struct WorktreeArgs {
     pub worktree: Worktree,
 }
@@ -61,10 +68,17 @@ pub struct Ensure;
 impl Command for Ensure {
     const ID: &'static str = "worktrees.ensure";
     type Args = WorktreeArgs;
+    fn args_ts() -> Option<String> {
+        Some(format!(
+            "{}{}",
+            <WorktreeArgs as ::ts_rs::TS>::docs().unwrap_or_default(),
+            <WorktreeArgs as ::ts_rs::TS>::inline(&::ts_rs::Config::default())
+        ))
+    }
     type Out = ();
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ::ts_rs::TS)]
 pub struct RemoveArgs {
     pub worktree: Worktree,
     #[serde(default)]
@@ -76,10 +90,17 @@ pub struct Remove;
 impl Command for Remove {
     const ID: &'static str = "worktrees.remove";
     type Args = RemoveArgs;
+    fn args_ts() -> Option<String> {
+        Some(format!(
+            "{}{}",
+            <RemoveArgs as ::ts_rs::TS>::docs().unwrap_or_default(),
+            <RemoveArgs as ::ts_rs::TS>::inline(&::ts_rs::Config::default())
+        ))
+    }
     type Out = Removed;
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ::ts_rs::TS)]
 pub struct StatusArgs {
     pub worktree: Worktree,
     /// the head commit of the branch's merged PR: only commits after it are unpushed (edge case Git 6)
@@ -93,6 +114,13 @@ impl Command for Status {
     const ID: &'static str = "worktrees.status";
     const READ_ONLY: bool = true;
     type Args = StatusArgs;
+    fn args_ts() -> Option<String> {
+        Some(format!(
+            "{}{}",
+            <StatusArgs as ::ts_rs::TS>::docs().unwrap_or_default(),
+            <StatusArgs as ::ts_rs::TS>::inline(&::ts_rs::Config::default())
+        ))
+    }
     type Out = WorktreeStatus;
 }
 
@@ -195,7 +223,7 @@ impl Command for Sweep {
     type Out = SweepOut;
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ::ts_rs::TS)]
 #[serde(rename_all = "camelCase")]
 pub struct DoneArgs {
     pub session_id: String,
@@ -213,10 +241,17 @@ impl Command for DoneFolders {
     const ID: &'static str = "worktrees.done.list";
     const READ_ONLY: bool = true;
     type Args = DoneArgs;
+    fn args_ts() -> Option<String> {
+        Some(format!(
+            "{}{}",
+            <DoneArgs as ::ts_rs::TS>::docs().unwrap_or_default(),
+            <DoneArgs as ::ts_rs::TS>::inline(&::ts_rs::Config::default())
+        ))
+    }
     type Out = DoneList;
 }
 
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, ::ts_rs::TS)]
 #[serde(rename_all = "camelCase")]
 pub struct DoneApplyArgs {
     pub session_id: String,
@@ -233,10 +268,17 @@ pub struct DoneApply;
 impl Command for DoneApply {
     const ID: &'static str = "worktrees.done.apply";
     type Args = DoneApplyArgs;
+    fn args_ts() -> Option<String> {
+        Some(format!(
+            "{}{}",
+            <DoneApplyArgs as ::ts_rs::TS>::docs().unwrap_or_default(),
+            <DoneApplyArgs as ::ts_rs::TS>::inline(&::ts_rs::Config::default())
+        ))
+    }
     type Out = DoneApplyOut;
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ::ts_rs::TS)]
 #[serde(rename_all = "camelCase")]
 pub struct TidyArgs {
     pub session_id: String,
@@ -249,10 +291,17 @@ pub struct DoneTidy;
 impl Command for DoneTidy {
     const ID: &'static str = "worktrees.done.tidy";
     type Args = TidyArgs;
+    fn args_ts() -> Option<String> {
+        Some(format!(
+            "{}{}",
+            <TidyArgs as ::ts_rs::TS>::docs().unwrap_or_default(),
+            <TidyArgs as ::ts_rs::TS>::inline(&::ts_rs::Config::default())
+        ))
+    }
     type Out = Vec<String>;
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ::ts_rs::TS)]
 #[serde(rename_all = "camelCase")]
 pub struct TrustArgs {
     pub key: String,
@@ -268,10 +317,17 @@ pub struct Trust;
 impl Command for Trust {
     const ID: &'static str = "worktrees.trust";
     type Args = TrustArgs;
+    fn args_ts() -> Option<String> {
+        Some(format!(
+            "{}{}",
+            <TrustArgs as ::ts_rs::TS>::docs().unwrap_or_default(),
+            <TrustArgs as ::ts_rs::TS>::inline(&::ts_rs::Config::default())
+        ))
+    }
     type Out = Option<Prepared>;
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ::ts_rs::TS)]
 #[serde(rename_all = "camelCase")]
 pub struct PendingArgs {
     pub dir: String,
@@ -287,13 +343,20 @@ impl Command for TrustPending {
     const ID: &'static str = "worktrees.trust.pending";
     const READ_ONLY: bool = true;
     type Args = PendingArgs;
+    fn args_ts() -> Option<String> {
+        Some(format!(
+            "{}{}",
+            <PendingArgs as ::ts_rs::TS>::docs().unwrap_or_default(),
+            <PendingArgs as ::ts_rs::TS>::inline(&::ts_rs::Config::default())
+        ))
+    }
     type Out = Option<Pending>;
 }
 
 // ---------- the Settings → Worktrees pane's own writes ----------
 
 /// Keep (pin) a task's worktree, or stop keeping it (v1 PATCH /sessions/:id { keepWorktree }).
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, ::ts_rs::TS)]
 pub struct KeepArgs {
     pub id: String,
     pub keep: bool,
@@ -304,12 +367,19 @@ pub struct Keep;
 impl Command for Keep {
     const ID: &'static str = "worktrees.keep";
     type Args = KeepArgs;
+    fn args_ts() -> Option<String> {
+        Some(format!(
+            "{}{}",
+            <KeepArgs as ::ts_rs::TS>::docs().unwrap_or_default(),
+            <KeepArgs as ::ts_rs::TS>::inline(&::ts_rs::Config::default())
+        ))
+    }
     type Out = ();
 }
 
 /// Bring in worktrees another tool left in a project (v1 POST /projects/:id/foreign-worktrees): each path
 /// becomes a task in that folder, marked foreign so wisp's cleanup never touches it.
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, ::ts_rs::TS)]
 pub struct BringInArgs {
     /// the project's name
     pub project: String,
@@ -329,11 +399,18 @@ pub struct BringIn;
 impl Command for BringIn {
     const ID: &'static str = "worktrees.bringIn";
     type Args = BringInArgs;
+    fn args_ts() -> Option<String> {
+        Some(format!(
+            "{}{}",
+            <BringInArgs as ::ts_rs::TS>::docs().unwrap_or_default(),
+            <BringInArgs as ::ts_rs::TS>::inline(&::ts_rs::Config::default())
+        ))
+    }
     type Out = BringInOut;
 }
 
 /// Not now: the project's offer goes and isn't made again (v1 POST …/foreign-worktrees/dismiss).
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, ::ts_rs::TS)]
 pub struct DismissArgs {
     pub project: String,
 }
@@ -343,6 +420,13 @@ pub struct Dismiss;
 impl Command for Dismiss {
     const ID: &'static str = "worktrees.dismiss";
     type Args = DismissArgs;
+    fn args_ts() -> Option<String> {
+        Some(format!(
+            "{}{}",
+            <DismissArgs as ::ts_rs::TS>::docs().unwrap_or_default(),
+            <DismissArgs as ::ts_rs::TS>::inline(&::ts_rs::Config::default())
+        ))
+    }
     type Out = ();
 }
 
@@ -415,7 +499,7 @@ pub const SETUP_SOURCES: Point<dyn SetupSource> = Point::new("worktrees.setup", 
 
 /// The task's file view (v1 `GET /sessions/:id/source`): one file of the task's folder (its worktree, else its
 /// folder) to read and edit. Additive (2026-11-11).
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, ::ts_rs::TS)]
 pub struct SourceArgs {
     /// the task
     pub id: String,
@@ -433,7 +517,7 @@ pub struct Source {
     pub root: String,
 }
 
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, ::ts_rs::TS)]
 pub struct SaveArgs {
     pub id: String,
     pub path: String,
@@ -448,7 +532,7 @@ pub struct Saved {
     pub hash: String,
 }
 
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, ::ts_rs::TS)]
 pub struct FilesArgs {
     /// a task: its folder's files
     #[serde(default)]
@@ -460,7 +544,7 @@ pub struct FilesArgs {
 
 /// Go to definition (v1 `/sessions/:id/grep?def=`): where a name is declared in the task's folder; or, with `q`,
 /// Open file…'s text search (v1 `?q=`): where the words are, in any case (at most 60 hits).
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, ::ts_rs::TS)]
 pub struct GrepArgs {
     pub id: String,
     #[serde(default)]
@@ -476,6 +560,13 @@ impl Command for Grep {
     const ID: &'static str = "worktrees.grep";
     const READ_ONLY: bool = true;
     type Args = GrepArgs;
+    fn args_ts() -> Option<String> {
+        Some(format!(
+            "{}{}",
+            <GrepArgs as ::ts_rs::TS>::docs().unwrap_or_default(),
+            <GrepArgs as ::ts_rs::TS>::inline(&::ts_rs::Config::default())
+        ))
+    }
     type Out = Vec<Hit>;
 }
 
@@ -502,6 +593,13 @@ impl Command for SourceCmd {
     const ID: &'static str = "worktrees.source";
     const READ_ONLY: bool = true;
     type Args = SourceArgs;
+    fn args_ts() -> Option<String> {
+        Some(format!(
+            "{}{}",
+            <SourceArgs as ::ts_rs::TS>::docs().unwrap_or_default(),
+            <SourceArgs as ::ts_rs::TS>::inline(&::ts_rs::Config::default())
+        ))
+    }
     type Out = Source;
 }
 
@@ -510,13 +608,20 @@ pub struct Save;
 impl Command for Save {
     const ID: &'static str = "worktrees.save";
     type Args = SaveArgs;
+    fn args_ts() -> Option<String> {
+        Some(format!(
+            "{}{}",
+            <SaveArgs as ::ts_rs::TS>::docs().unwrap_or_default(),
+            <SaveArgs as ::ts_rs::TS>::inline(&::ts_rs::Config::default())
+        ))
+    }
     type Out = Saved;
 }
 
 /// Fetches a project's remote now, while you type its task in New task (v1 POST /launch/warm), so Send doesn't wait
 /// on the network for the worktree's base. Answers at once; the fetch is shared while fresh (60 s). Additive
 /// (2026-11-13).
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, ::ts_rs::TS)]
 pub struct WarmArgs {
     /// a project of yours, by its folder
     pub path: String,
@@ -528,6 +633,13 @@ impl Command for Warm {
     const ID: &'static str = "worktrees.warm";
     const READ_ONLY: bool = true;
     type Args = WarmArgs;
+    fn args_ts() -> Option<String> {
+        Some(format!(
+            "{}{}",
+            <WarmArgs as ::ts_rs::TS>::docs().unwrap_or_default(),
+            <WarmArgs as ::ts_rs::TS>::inline(&::ts_rs::Config::default())
+        ))
+    }
     type Out = ();
 }
 
@@ -537,5 +649,12 @@ impl Command for Files {
     const ID: &'static str = "worktrees.files";
     const READ_ONLY: bool = true;
     type Args = FilesArgs;
+    fn args_ts() -> Option<String> {
+        Some(format!(
+            "{}{}",
+            <FilesArgs as ::ts_rs::TS>::docs().unwrap_or_default(),
+            <FilesArgs as ::ts_rs::TS>::inline(&::ts_rs::Config::default())
+        ))
+    }
     type Out = FileList;
 }

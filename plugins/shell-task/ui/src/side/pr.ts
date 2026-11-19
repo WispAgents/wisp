@@ -130,3 +130,10 @@ export function prFiles(p: PrPanel, all: boolean): { shown: { path: string; addi
   const shown = all ? files : files.slice(0, 8);
   return { shown, more: Math.max(0, (p.changedFiles || files.length) - shown.length) };
 }
+
+/** Ask to fix (v1 panel.js askToFix, audit E4): what goes in the reply box for a failing check, its log's end under it. */
+export function fixText(name: string, pr: number, url: string | undefined, log: string): string {
+  const head = `The \`${name}\` check failed on PR #${pr}${url ? ` (${url})` : ''}. Find out why, fix it and push.`;
+  const tail = log.trim() ? `\n\n\`\`\`\n${log.replace(/\s+$/, '')}\n\`\`\`` : '';
+  return `${head}${tail}`;
+}

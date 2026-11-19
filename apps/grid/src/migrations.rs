@@ -150,6 +150,11 @@ pub const MIGRATIONS: &[&str] = &[
      device_id TEXT NOT NULL REFERENCES devices(id) ON DELETE CASCADE, platform TEXT NOT NULL, token TEXT NOT NULL,
      created_at INTEGER NOT NULL, last_sent_at INTEGER);
    CREATE INDEX push_handles_device ON push_handles(device_id);",
+    // People waiting for one of wisp's apps (trywisp.dev's "Get the app": the phone apps for now), one row per address
+    // and app: kept apart from the seat waitlist, whose rows a sign-up marks joined. platform: ios, android or both.
+    r"CREATE TABLE app_waitlist (
+     email TEXT NOT NULL, kind TEXT NOT NULL, platform TEXT NOT NULL, source TEXT NOT NULL, created_at INTEGER NOT NULL,
+     PRIMARY KEY (email, kind));",
 ];
 
 /// Every table the migrations make (and `meta`), for tests and `wisp grid backup` checks.

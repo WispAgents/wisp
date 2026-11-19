@@ -49,6 +49,15 @@ mod tests {
         }
     }
 
+    /// Audit E12: a new every-minute member printed "next 1m ago": this minute's check-in (due, not run yet) is now.
+    #[test]
+    fn the_next_check_in_is_never_in_the_past_audit_e12() {
+        let m = member("* * * * *");
+        let now = 1_700_000_030_000; // 30 s into a minute
+        assert_eq!(crate::schedule::next_checkin(&m, now, &Utc), Some(now));
+        assert_eq!(next_wake(std::slice::from_ref(&m), now, &Utc), Some(now));
+    }
+
     #[test]
     fn fires_once_per_cron_minute() {
         let mut m = member("* * * * *");

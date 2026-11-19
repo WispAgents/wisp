@@ -1,4 +1,6 @@
+/// <reference types="vite/client" />
 import { describe, expect, test } from 'vitest';
+import contentCss from '../src/css/content.css?raw';
 import { mount, part } from './helpers.tsx';
 import {
   Avatar, Box, Button, Divider, Grid, Heading, Icon, IconButton, Inline, Kbd, KitProvider, Link, Pill, Scroll,
@@ -35,6 +37,22 @@ describe('each component renders its default data-part', () => {
     mount(() => <Button part="composer.send">Send</Button>);
     expect(part('composer.send')?.getAttribute('data-kit')).toBe('button');
     expect(part('ui.button')).toBeNull();
+  });
+});
+
+// Audit E3: a failing connector's "It wouldn't start: …" pill (flex: none) ran past its card on a phone. A truncate pill
+// gives way in its row and ends in an ellipsis, its full words in the title (v1 connectors.css .cn-status)
+describe('Pill', () => {
+  test('a_truncate_pill_shrinks_in_its_row_and_keeps_its_words_in_the_title_audit_e3', () => {
+    mount(() => <Pill truncate title="It wouldn't start: nope: not found">It wouldn't start: nope: not found</Pill>);
+    const el = part('ui.pill');
+    expect(el?.hasAttribute('data-truncate')).toBe(true);
+    expect(el?.getAttribute('title')).toBe("It wouldn't start: nope: not found");
+    mount(() => <Pill part="plain.pill">Done</Pill>);
+    expect(part('plain.pill')?.hasAttribute('data-truncate')).toBe(false);
+  });
+  test('the_kit_sheet_lets_a_truncate_pill_shrink', () => {
+    expect(contentCss).toMatch(/\[data-kit='pill'\]\[data-truncate\]\s*\{[^}]*flex:\s*0 1 auto;[^}]*min-width:\s*0/);
   });
 });
 

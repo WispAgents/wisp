@@ -112,6 +112,10 @@ impl TransportDef for Def {
         *lock(&self.0.hub) = Some(hub.clone());
         Arc::new(PushTransport { hub, sh: self.0.clone() })
     }
+    /// the phone pairs itself (`push.pair`): nothing to set up in Settings → Phone or `channels status`
+    fn listed(&self) -> bool {
+        false
+    }
 }
 
 struct PushTransport {

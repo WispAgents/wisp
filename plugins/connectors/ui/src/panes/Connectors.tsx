@@ -184,7 +184,8 @@ export default function Connectors(props: { readonly client: PluginClient }): JS
                       <Text tone="muted" truncate>
                         {where(x)}
                       </Text>
-                      <Pill tone={toneOf(x, isSigning(x))} dot live={x.testing || isSigning(x)}>
+                      {/* an error is cut in its row, its words in the title (v1 .cn-status; audit E3) */}
+                      <Pill tone={toneOf(x, isSigning(x))} dot live={x.testing || isSigning(x)} truncate title={statusLine(x, isSigning(x))}>
                         {statusLine(x, isSigning(x))}
                       </Pill>
                     </Inline>

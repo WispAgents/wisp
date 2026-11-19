@@ -10,7 +10,7 @@ import { fileUrl } from '../editor.ts';
 import { HaltCard } from './HaltCard.tsx';
 import { HeldCard } from './HeldCard.tsx';
 import { agentsOf, type AgentStats } from './agents.ts';
-import { docOf, haltOf, heldOf, whatChanged, type TurnDoc } from './model.ts';
+import { cwdOf, docOf, haltOf, heldOf, whatChanged, type TurnDoc } from './model.ts';
 import { Receipt } from './Receipt.tsx';
 import { handoffTargets, limitTarget, type AgentLike, type Target } from './vendors.ts';
 import { WhatChanged } from './WhatChanged.tsx';
@@ -89,7 +89,7 @@ export default function TurnFoot(props: ExtensionProps): JSX.Element {
   const nameOf = (agent: string): string => harnesses().find((x) => x.id === agent)?.name ?? (set() ?? []).find((a) => a.id === agent)?.name ?? agent;
   // a held item's file, in the editor Settings → General names (v1 openInEditor): relative to the task's folder
   const editor = useSignal(c.entities.row<{ value?: unknown }>('setting', entityKey(c.home, 'settings.editor')));
-  const openUrl = (file: string): string | undefined => (file ? fileUrl(String(editor()?.value ?? ''), String(task()?.cwd ?? ''), file) : undefined);
+  const openUrl = (file: string): string | undefined => (file ? fileUrl(String(editor()?.value ?? ''), cwdOf(task() as never), file) : undefined);
   const openFile = (file: string): void => {
     const url = openUrl(file);
     if (url) shell.platform.openExternal(url);

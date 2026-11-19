@@ -150,7 +150,14 @@ pub fn lines(ops: &[Op]) -> Vec<(char, String)> {
     for o in ops {
         let what = format!("{}/{}", o.kind, o.name);
         match o.op {
-            OpKind::Create => out.push(('+', format!("{what}  (new)"))),
+            OpKind::Create => {
+                out.push(('+', format!("{what}  (new)")));
+                // a kind that knows what a new one changes says it (a setting from its default: `true → false`, audit E2)
+                for c in &o.changes {
+                    let field = if c.path.is_empty() { String::new() } else { format!("{}: ", c.path) };
+                    out.push((' ', format!("    {field}{} → {}", short(c.from.as_ref()), short(c.to.as_ref()))));
+                }
+            }
             OpKind::Delete => out.push(('-', format!("{what}  (goes)"))),
             OpKind::Update => {
                 out.push(('~', what));
@@ -174,6 +181,27 @@ mod tests {
 
     fn r(name: &str, spec: Value) -> Resource {
         Resource::new("agent", name, spec)
+    }
+
+    /// Audit E2: a new setting's plan line said `(new)` and nothing of its value; a create that says what it changes
+    /// (the setting kind's, from its default) shows it under its line, as an update does.
+    #[test]
+    fn a_create_with_changes_shows_them_audit_e2() {
+        let op = Op {
+            op: OpKind::Create,
+            kind: "setting".into(),
+            name: "crew.tint".into(),
+            spec: json!(false),
+            id: None,
+            changes: vec![FieldChange { path: String::new(), from: Some(json!(true)), to: Some(json!(false)) }],
+            before: None,
+        };
+        assert_eq!(lines(&[op]), [('+', "setting/crew.tint  (new)".to_owned()), (' ', "    true → false".to_owned())]);
+        assert_eq!(lines(&[Op { changes: Vec::new(), ..r_op() }]), [('+', "agent/a  (new)".to_owned())]);
+    }
+
+    fn r_op() -> Op {
+        Op { op: OpKind::Create, kind: "agent".into(), name: "a".into(), spec: json!({}), id: None, changes: Vec::new(), before: None }
     }
 
     #[test]

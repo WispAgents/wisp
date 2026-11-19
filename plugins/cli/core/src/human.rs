@@ -9,6 +9,8 @@ use wisp_cli_api::Style;
 use crate::term::{self, BOLD, DIM, paint};
 
 /// The fields a row shows first when an object has them.
+/// The lead fields that say which row it is.
+const NAMING: &[&str] = &["id", "key", "name", "title", "label"];
 const LEAD: &[&str] = &["id", "key", "name", "title", "label", "state", "status", "value", "agent", "path", "url"];
 
 fn scalar(v: &Value) -> Option<String> {
@@ -43,7 +45,8 @@ pub fn ago(ms: i64, now: i64) -> String {
     let d = now - ms;
     let (n, later) = (d.unsigned_abs() / 1000, d < 0);
     let span = match n {
-        0..=44 => return (if later { "in a moment" } else { "just now" }).to_owned(),
+        // now itself is a moment away (a check-in due this minute), never "just now" (audit E12)
+        0..=44 => return (if later || d == 0 { "in a moment" } else { "just now" }).to_owned(),
         45..=3599 => format!("{}m", n.div_ceil(60).max(1)),
         3600..=86_399 => format!("{}h", n / 3600),
         _ => format!("{}d", n / 86_400),
@@ -108,6 +111,20 @@ fn named(o: &serde_json::Map<String, Value>) -> Option<String> {
 fn columns(list: &[Value], max: usize) -> Vec<String> {
     let mut cols: Vec<String> = Vec::new();
     let has = |k: &str| list.iter().any(|x| x.get(k).is_some_and(|v| scalar(v).is_some_and(|s| !s.is_empty())));
+    // rows with nothing naming them (`channels status`' `transport`) lead with the first text field that differs on
+    // every row, or no row says which it is (audit E5)
+    if !NAMING.iter().any(|k| has(k))
+        && let Some(Value::Object(first)) = list.first()
+        && let Some(k) = first.keys().find(|k| {
+            let vals: Vec<&str> = list.iter().filter_map(|x| x.get(k.as_str()).and_then(Value::as_str)).collect();
+            !LEAD.contains(&k.as_str())
+                && vals.len() == list.len()
+                && vals.iter().all(|v| !v.is_empty())
+                && vals.iter().collect::<std::collections::BTreeSet<_>>().len() == vals.len()
+        })
+    {
+        cols.push(k.clone());
+    }
     // a lead field holding a list or a map (`settings list`'s `value`) is a column too: its cells say what's in it (D4)
     let held = |k: &str| list.iter().any(|x| x.get(k).is_some_and(|v| v.is_array() || v.is_object()));
     for k in LEAD {
@@ -290,6 +307,8 @@ mod tests {
             (ago(now - 90_000, now), ago(now + 120_000, now), ago(now - 2 * 86_400_000, now)),
             ("2m ago".into(), "in 2m".into(), "2d ago".into())
         );
+        // audit E12: a check-in due now is "in a moment", never "just now" or "1m ago"
+        assert_eq!((ago(now, now), ago(now - 20_000, now)), ("in a moment".into(), "just now".into()));
     }
 
     /// Audit C4: `wisp machines reachable` printed `ssh  {3 fields}` (its banner, port and the tailnet name hidden),
@@ -331,6 +350,27 @@ mod tests {
         let got = render(&peers, &s, Some(now));
         assert!(got[1].contains("2h ago") && !got[1].contains("17950"), "{got:?}");
         assert_eq!((short(&json!({ "a": 1 })), short(&json!([1]))), ("a 1".to_owned(), "1".to_owned()));
+    }
+
+    /// Audit E5 (D4's last part): `wisp channels status` printed `state  enabled  installed` and seven rows of `off
+    /// false  true`, none saying which channel. Rows with no naming field (id, key, name, title, label) lead with
+    /// the first text field that differs on every row (`transport`), at any width.
+    #[test]
+    fn rows_with_no_name_lead_with_their_first_field_audit_e5() {
+        let rows = json!({ "cloud": false, "channels": [
+            { "transport": "ntfy", "installed": true, "enabled": false, "state": "off", "saved": [], "linked": 0 },
+            { "transport": "telegram", "installed": true, "enabled": true, "state": "failing", "saved": ["token"], "linked": 0 },
+        ] });
+        for width in [60, 100] {
+            let got = render(&rows, &Style::plain(width), None);
+            let ch = got.iter().position(|l| l == "channels").unwrap_or(usize::MAX);
+            assert!(got.get(ch + 1).is_some_and(|l| l.trim_start().starts_with("transport")), "{width}: {got:?}");
+            assert!(got.get(ch + 2).is_some_and(|l| l.trim_start().starts_with("ntfy")), "{width}: {got:?}");
+            assert!(got.get(ch + 3).is_some_and(|l| l.trim_start().starts_with("telegram") && l.contains("failing")), "{width}: {got:?}");
+        }
+        // a row that names itself keeps its columns as they were
+        let named = render(&json!([{ "kind": "x", "name": "a", "state": "on" }]), &Style::plain(100), None);
+        assert!(named[0].starts_with("name") && named[0].contains("state"), "{named:?}");
     }
 
     /// Audit D4 (C4 partly fixed): `wisp connectors list` printed `connectors  3 items`, `channels status` `channels  7

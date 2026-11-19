@@ -219,9 +219,13 @@ impl Reader<'_> {
     fn sections(&mut self, m: &Map<String, Value>, at: &str) -> Result<(), String> {
         for (section, v) in m.iter().filter(|(k, _)| !META.contains(&k.as_str())) {
             let Some(kind) = self.kinds.iter().find(|k| k.named(section)) else {
-                let known: Vec<&str> = self.kinds.iter().map(|k| k.section.as_str()).collect();
+                let known: Vec<&str> = self.kinds.iter().filter(|k| k.away.is_none()).map(|k| k.section.as_str()).collect();
                 return Err(format!("{at}: no plugin in this wisp owns `{section}:` (sections: {})", known.join(", ")));
             };
+            // put away for now (the router while Auto is off): its own reason, never "no plugin owns it" (audit E6)
+            if let Some(why) = &kind.away {
+                return Err(format!("{at}: `{section}:`: {why}"));
+            }
             if !self.out.kinds.contains(&kind.kind) {
                 self.out.kinds.push(kind.kind.clone());
             }
@@ -366,6 +370,23 @@ mod tests {
         assert_eq!(a, read("a.json", json_));
         assert_eq!(a, read("a.toml", toml_));
         assert_eq!(a.len(), 2);
+    }
+
+    /// Audit E6: with Auto off, a formula's `router:` was refused as "no plugin in this wisp owns `router:`", while the
+    /// router plugin is there, put away. A put-away kind's section is refused with its own reason, and isn't offered
+    /// among the sections.
+    #[test]
+    fn a_put_away_kinds_section_says_why_audit_e6() {
+        let mut ks = kinds();
+        let mut router = KindInfo::new("router", "router", "wisp.router", json!({}));
+        router.away = Some("Auto is off (runtime.auto), so the router is put away".into());
+        ks.push(router);
+        let err = load("x.yml", &mut files(&[("x.yml", "wisp: 1\nrouter: {best2: true}\n")]), &ks, &[]).unwrap_err();
+        assert!(err.contains("`router:`: Auto is off (runtime.auto)") && !err.contains("no plugin"), "{err}");
+        let err = load("x.yml", &mut files(&[("x.yml", "wisp: 1\nspells: []\n")]), &ks, &[]).unwrap_err();
+        assert!(err.contains("no plugin in this wisp owns `spells:`") && !err.contains("router"), "{err}");
+        // a formula without it reads as before
+        assert_eq!(load("x.yml", &mut files(&[("x.yml", "wisp: 1\ncrew: [{name: Ada}]\n")]), &ks, &[]).unwrap().resources.len(), 1);
     }
 
     #[test]

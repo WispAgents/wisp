@@ -113,15 +113,37 @@ function PrRow(props: { readonly client: PluginClient; readonly k: EntityKey; re
       out.push({ id: 'fix', icon: 'merge', label: t('wisp.ship.action.fix'), priority: 'pin', onSelect: () => quiet(props.client.run(fixConflicts, { key: props.k })) });
     }
     const v = rv();
-    if (v)
+    if (v) {
+      // a rerun the server didn't start says why (audit E5: the chip said "Not reviewed" before and after)
+      const go = (): void =>
+        reviewActs(v.kind)
+          ? void props.client.run(review, { key: props.k }).then(
+              (r) => {
+                const why = (r as { why?: unknown } | null)?.why;
+                if (typeof why === 'string' && why) ship.shell.toast.show(why);
+              },
+              () => {}, // the shell's onError toasts it
+            )
+          : ship.openPane();
+      const bad = v.kind === 'tests' || v.kind === 'issues';
       out.push({
         id: 'review',
         icon: REVIEW_ICON[v.kind],
         label: v.label,
         priority: 3,
-        ...(v.kind === 'tests' || v.kind === 'issues' ? { tone: 'bad' as const } : {}),
-        onSelect: () => (reviewActs(v.kind) ? quiet(props.client.run(review, { key: props.k })) : ship.openPane()),
+        ...(bad ? { tone: 'bad' as const } : {}),
+        onSelect: go,
+        // its title says why it isn't reviewed and that a click tries again (v1 reviewState's title, audit E5)
+        render: (form) =>
+          form === 'icon' ? (
+            <IconButton icon={REVIEW_ICON[v.kind]} size="sm" variant="ghost" label={`${v.label}: ${v.title}`} onClick={go} part="pr.strip.review" />
+          ) : (
+            <Button size="sm" variant="ghost" icon={REVIEW_ICON[v.kind]} {...(bad ? { tone: 'bad' as const } : {})} title={v.title} onClick={go} part="pr.strip.review">
+              {v.label}
+            </Button>
+          ),
       });
+    }
     if (open().length && !open().some((o) => o.pr.conflict)) {
       const label = open().length > 1 ? t('wisp.ship.strip.mergeAll') : t('wisp.ship.strip.merge');
       out.push({ id: 'merge', icon: 'merge', label, priority: 'pin', render: (form) => <MergeButton label={label} form={form} busy={merge.merging()} onClick={merge.ask} /> });

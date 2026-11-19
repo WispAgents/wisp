@@ -14,6 +14,10 @@ export { SESSION, newlyDone } from './done-watch.ts';
 /** What only the folder holds goes with it; null (git can't tell) counts as holding work. */
 export const holdsWork = (f: DoneFolder): boolean => f.only !== 0;
 
+/** The task isn't done any more (Undo, a follow-up, reopened elsewhere): its "Remove its worktree?" goes with it
+ *  (audit E #9: it stayed, offering to remove a reopened task's folder). A row not loaded yet says nothing. */
+export const undone = (row: { readonly state?: string } | undefined): boolean => row?.state !== undefined && row.state !== 'done';
+
 export interface Plan {
   /** pinned with no question */
   readonly keep: readonly string[];
