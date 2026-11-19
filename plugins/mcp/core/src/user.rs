@@ -122,6 +122,11 @@ pub fn stopped(id: &str) -> String {
     format!("Stopped `{id}`.")
 }
 
+/// `wisp_stop` when its run hadn't let go yet in the wait (audit C16: "stopped" was said while it still ran).
+pub fn stopping(id: &str) -> String {
+    format!("Stopping `{id}`: its run hasn't let go yet. wisp_get or wisp_wait reads it once it has.")
+}
+
 /// `wisp_agents`: the harnesses here, then the machines.
 pub fn agents(here: &[Value], machines: &[Value]) -> String {
     let here = here.iter().map(harness_line).collect::<Vec<_>>().join("\n");

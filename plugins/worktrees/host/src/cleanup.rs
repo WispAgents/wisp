@@ -35,6 +35,8 @@ struct Seen {
     sized: i64,
     leftovers: Vec<String>,
     disk: Option<Disk>,
+    /// when `disk` was read (ms; 0: never)
+    disk_at: i64,
     /// a folder came or went since the last du
     changed: bool,
 }
@@ -53,6 +55,8 @@ pub struct Cleanup {
     queue: Mutex<VecDeque<Job>>,
     cleaning: std::sync::Mutex<Option<Progress>>,
     scanning: Mutex<()>,
+    /// the longest a look runs (`sweep::LOOK_MAX_MS`; a test's shorter)
+    look_max: std::sync::atomic::AtomicU64,
     /// a look started or ended, or a clean-up moved: the pane's rows are republished (`pane::publish`)
     pub changed: tokio::sync::Notify,
 }
@@ -83,8 +87,14 @@ impl Cleanup {
             queue: Mutex::new(VecDeque::new()),
             cleaning: std::sync::Mutex::new(None),
             scanning: Mutex::new(()),
+            look_max: sweep::LOOK_MAX_MS.into(),
             changed: tokio::sync::Notify::new(),
         })
+    }
+
+    /// The longest a look may run from now on (a test's).
+    pub fn set_look_max(&self, ms: u64) {
+        self.look_max.store(ms, std::sync::atomic::Ordering::Relaxed);
     }
 
     fn cleaning(&self) -> Option<Progress> {
@@ -117,25 +127,51 @@ impl Cleanup {
         Some(sweep::parse_du(&r.stdout_text(), dir).into_iter().collect())
     }
 
+    /// The free and total of the disk `dir` is on: read on the nearest folder that's there (a fresh home has no
+    /// worktrees folder yet, and `df` of a missing path answers nothing: audit C3).
     async fn disk(&self, dir: &str) -> Option<Disk> {
+        let mut at = std::path::PathBuf::from(dir);
+        while !fsx::exists(&at).await {
+            if !at.pop() {
+                return None;
+            }
+        }
         let r = self
             .engine
             .proc
-            .exec("df", &["-Pk".into(), dir.into()], ExecOpts { timeout: Some(std::time::Duration::from_secs(10)), ..ExecOpts::default() })
+            .exec(
+                "df",
+                &["-Pk".into(), at.to_string_lossy().into_owned()],
+                ExecOpts { timeout: Some(std::time::Duration::from_secs(10)), ..ExecOpts::default() },
+            )
             .await
             .ok()?;
         sweep::parse_df(&r.stdout_text())
     }
 
-    /// One look; a look already under way is joined, not repeated.
+    /// One look; a look already under way is joined, not repeated. It ends within `look_max` (audit B #18: a look that
+    /// never ended kept the pane on "still looking…" 40+ minutes): one that runs past it keeps what the last look had.
     pub async fn scan(&self) {
-        let Ok(_one) = self.scanning.try_lock() else {
+        let Ok(one) = self.scanning.try_lock() else {
             let _wait = self.scanning.lock().await;
             return;
         };
         // the pane says it's looking, with the worktrees known now, from the start of the look (audit B #18: it showed
         // the last look's 13 of 41 for minutes, and no sign of looking, until the look ended)
         self.changed.notify_one();
+        let max = std::time::Duration::from_millis(self.look_max.load(std::sync::atomic::Ordering::Relaxed));
+        if tokio::time::timeout(max, self.look()).await.is_err() {
+            tracing::warn!(after_ms = max.as_millis(), "worktrees: a look ran too long; it ends with what the last one had");
+            let mut s = self.seen.lock().await;
+            s.at = self.engine.clock.now_ms().max(1);
+        }
+        // the look is over before the pane is told: the rows republished now say it isn't looking (told while the look
+        // still held its turn, they said it was, and nothing told the pane again)
+        drop(one);
+        self.changed.notify_one();
+    }
+
+    async fn look(&self) {
         let now = self.engine.clock.now_ms();
         let dir = dir_of(&self.engine);
         let (prev_trees, sized, changed) = {
@@ -163,9 +199,11 @@ impl Cleanup {
         }
         s.trees = found;
         s.leftovers = leftovers;
+        if disk.is_some() {
+            s.disk_at = self.engine.clock.now_ms().max(1);
+        }
         s.disk = disk.or(s.disk);
         s.at = self.engine.clock.now_ms().max(1);
-        self.changed.notify_one();
     }
 
     async fn look_all(&self, all: Vec<(Worktree, i64)>, prev: &HashMap<String, Look>) -> HashMap<String, Look> {
@@ -246,11 +284,33 @@ impl Cleanup {
         (Policy::from_settings(st.cleanup.as_deref(), st.max.as_deref(), st.cleanup_from), st)
     }
 
-    /// Settings → Worktrees. `look`: start a look when the last is stale (false: read the last only).
+    /// The disk's free and total, read now (one df). They need no look: a reader of the last view (This computer's
+    /// sample) reads them when there are none or they're a minute old, never "— free" until a look has run (audit C3).
+    async fn read_disk(&self, now: i64) {
+        let disk = self.disk(&dir_of(&self.engine)).await;
+        let mut s = self.seen.lock().await;
+        if disk.is_some() {
+            s.disk_at = now.max(1);
+        }
+        s.disk = disk.or(s.disk);
+    }
+
+    /// Settings → Worktrees. `look`: start a look when the last is stale (false: read the last only; the first look
+    /// ever starts either way, and the disk is read when it's unknown or a minute old).
     pub async fn view(self: &Arc<Self>, look: bool) -> WorktreesView {
         let now = self.engine.clock.now_ms();
-        let stale = now - self.seen.lock().await.at > sweep::FRESH_MS;
-        if look && stale {
+        let (at, disk_at) = {
+            let s = self.seen.lock().await;
+            (s.at, s.disk_at)
+        };
+        let stale = now - at > sweep::FRESH_MS;
+        let scanning = self.scanning.try_lock().is_err();
+        if !scanning && (disk_at == 0 || now - disk_at > sweep::FRESH_MS) {
+            self.read_disk(now).await;
+        }
+        // a look when asked for one and the last is stale, and the first one ever even when not (the last view's
+        // reader would otherwise wait for a Worktrees pane to open before wisp's folders get a size)
+        if !scanning && ((look && stale) || at == 0) {
             let me = self.clone();
             let owner = self.engine.owner.clone();
             tokio::spawn(async move {
@@ -359,6 +419,9 @@ impl Cleanup {
         let dir = dir_of(&self.engine);
         let disk = self.disk(&dir).await;
         let mut seen = self.seen.lock().await;
+        if disk.is_some() {
+            seen.disk_at = self.engine.clock.now_ms().max(1);
+        }
         seen.disk = disk.or(seen.disk);
         if count == 0 {
             return None;

@@ -80,3 +80,43 @@ async fn the_pane_says_its_looking_from_the_start_of_a_look() {
     assert!(!c.view(false).await.looking);
     std::fs::remove_dir_all(&dir).ok();
 }
+
+/// Audit B #18 (round C): `worktrees.view` still said `looking: true` 40+ minutes after start. A look that never ends
+/// (here: its read of the tasks never comes back) ends at `look_max` with what the last look had, and the pane is told
+/// once it's over, so its rows stop saying it's looking.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_look_that_hangs_ends_and_the_pane_stops_saying_its_looking() {
+    let dir = std::env::temp_dir().join(format!("wisp-wt-hang-{}", std::process::id()));
+    std::fs::create_dir_all(dir.join("h/worktrees")).unwrap();
+    let git = wisp_git::service(wisp_proc::local(), None, Arc::new(|| 1_000_000), None);
+    let engine = Engine::new(
+        Arc::new(wisp_git::Service(git)),
+        wisp_proc::local(),
+        wisp_testkit::FakeClock::at(1_000_000).service(),
+        dir.join("h").to_string_lossy().into_owned(),
+        dir.join("u").to_string_lossy().into_owned(),
+        "macos",
+        Vec::new(),
+        CancellationToken::new(),
+    );
+    // armed and never let go: the look's own read of the tasks hangs
+    let port = Arc::new(Slow {
+        mem: MemPort::new(Vec::new(), WtSettings::default()),
+        armed: AtomicBool::new(true),
+        held: Arc::new(Semaphore::new(0)),
+        go: Arc::new(Semaphore::new(0)),
+    });
+    let c = Cleanup::new(Arc::new(engine), port.clone(), Call::new_root(Caller::user()));
+    c.set_look_max(300);
+    let wait = Duration::from_secs(10);
+    tokio::time::timeout(wait, c.scan()).await.expect("the look ends though its read never came back");
+    assert!(!c.view(false).await.looking, "nor does the pane say it's still looking");
+    // a later look starts and ends as usual
+    tokio::time::timeout(wait, c.scan()).await.expect("the next look ends");
+    assert!(!c.view(false).await.looking);
+    // Bring in showed up 4–9 s after the page opened, with nothing said before it: while its look runs the pane's
+    // status says it's looking ("· still looking…"), and not once it's done
+    assert!(wisp_worktrees::pane::looking_for_offers(c.view(false).await, true).looking);
+    assert!(!wisp_worktrees::pane::looking_for_offers(c.view(false).await, false).looking);
+    std::fs::remove_dir_all(&dir).ok();
+}

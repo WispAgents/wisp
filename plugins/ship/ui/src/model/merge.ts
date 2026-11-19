@@ -50,7 +50,9 @@ export function mergePlan(t: T, s: ShipSession | undefined, ctx: ReviewContext):
   // GitHub alone. A worktree brought in from another tool stays, whatever the merge does.
   const shipped = shippedPrs(s).filter((x) => x.pr.state === 'OPEN');
   const removed = shipped.filter((x) => !(s.foreign && x.pr === s.pr)).length;
-  // a worktree holding uncommitted work is kept (the server's merge says so after): the confirm says it first (audit B #19)
+  // a worktree holding uncommitted work is kept (the server's merge says so after): the confirm says it first (audit B #19).
+  // `dirty` is as of the last check (a turn's end, a ship step): work written since is unseen, so a removal is never
+  // promised, only what the merge does when it runs (audit C, B #19)
   const dirty = s.toShip?.dirty ?? 0;
   const tail = !removed ? '' : dirty === 0 ? t('wisp.ship.merge.andRemove', { count: removed }) : removed === 1 ? t('wisp.ship.merge.andKeep', { count: dirty }) : t('wisp.ship.merge.andRemoveClean');
   const after = shipped.length ? `${t('wisp.ship.merge.after', { count: shipped.length })}${tail}` : '';

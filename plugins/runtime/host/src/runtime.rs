@@ -36,7 +36,7 @@ pub struct Runtime {
     pub(crate) live: Mutex<HashMap<String, Live>>,
     /// tasks whose turn is saved as running but whose CLI isn't spawned yet (`Starting`): the queue reads them as
     /// running, so a follow-up sent then waits instead of starting a second turn beside it (B37)
-    pub(crate) starting: Mutex<HashMap<String, u32>>,
+    pub(crate) starting: Arc<Mutex<HashMap<String, u32>>>,
     locks: Mutex<HashMap<String, Arc<tokio::sync::Mutex<()>>>>,
     /// open questions: ask id → its task (rebuilt at start from the tasks that wait on one)
     asks: Mutex<HashMap<String, String>>,
@@ -86,7 +86,7 @@ impl Runtime {
             proc,
             list: Mutex::default(),
             live: Mutex::default(),
-            starting: Mutex::default(),
+            starting: Arc::default(),
             locks: Mutex::default(),
             asks: Mutex::default(),
             answers: Mutex::default(),
@@ -264,9 +264,11 @@ impl Runtime {
     }
 
     /// `id`'s turn is starting until the returned guard drops (its CLI spawned and in `live`, or the start gave up).
-    pub(crate) fn mark_starting(&self, id: &str) -> Starting<'_> {
+    /// Taken under the task's lock where a start is decided (audit C2), so a follow-up deciding next finds it running
+    /// and queues behind it, never starting a second turn on the same index.
+    pub(crate) fn mark_starting(&self, id: &str) -> Starting {
         *lock(&self.starting).entry(id.to_owned()).or_insert(0) += 1;
-        Starting { rt: self, id: id.to_owned() }
+        Starting { starting: self.starting.clone(), id: id.to_owned() }
     }
 
     /// Writes the task (and the turns given), rebuilds its list row, emits `session.changed`.
@@ -607,6 +609,7 @@ impl Runtime {
         }
         let item = s.queue.remove(0);
         self.persist(&mut s, Vec::new()).await?;
+        let _starting = self.mark_starting(id);
         drop(guard);
         Ok(Some(self.start_turn(s, item).await?))
     }
@@ -683,8 +686,13 @@ impl Runtime {
         }
         let out = match d.plan {
             Plan::Start(item) => {
+                // decided under the task's lock, and marked starting before it is let go (audit C2): the next
+                // follow-up queues behind this turn, and the queue as decided is the one stored
+                self.persist(&mut s, Vec::new()).await?;
+                let _starting = self.mark_starting(a.id.as_str());
                 drop(guard);
-                return Ok(FollowedUp { turn_id: Some(self.start_turn(s, item).await?), queued: None });
+                // boxed: a follow-up's future stays small for its callers
+                return Ok(FollowedUp { turn_id: Some(Box::pin(self.start_turn(s, item)).await?), queued: None });
             }
             Plan::Queued { .. } => FollowedUp { turn_id: None, queued: s.queue.last().map(|q| q.id.clone()) },
             Plan::Interrupt => {
@@ -700,7 +708,7 @@ impl Runtime {
         };
         self.persist(&mut s, Vec::new()).await?;
         drop(guard);
-        self.kick(s).await?;
+        Box::pin(self.kick(s)).await?;
         Ok(out)
     }
 
@@ -734,16 +742,30 @@ impl Runtime {
         Ok(())
     }
 
-    /// Nothing runs and the queue isn't held: its first item goes (a released held turn, a release).
-    pub(crate) async fn kick(self: &Arc<Self>, mut s: Session) -> Result<Option<wisp_runtime_api::TurnId>> {
-        if self.run_state(s.id.as_str()) != Run::Idle {
+    /// Nothing runs and the queue isn't held: its first item goes (a released held turn, a release). Decided under the
+    /// task's lock on the task as stored (audit C2): `s` was read before the lock, so a follow-up queued since is kept,
+    /// and a start already under way (`starting`) is waited for in the queue. A held turn `s` released in memory (Start
+    /// now: `opts.turn`, never written to the queue) goes first.
+    pub(crate) async fn kick(self: &Arc<Self>, s: Session) -> Result<Option<wisp_runtime_api::TurnId>> {
+        let id = s.id.0.clone();
+        let guard = self.task_lock(&id).await;
+        let mut now = self.repo.session(&id).await?;
+        if let Some(front) =
+            s.queue.first().filter(|q| q.opts.as_ref().is_some_and(|o| o.get("turn").is_some()) && !now.queue.iter().any(|x| x.id == q.id))
+        {
+            now.queue.insert(0, front.clone());
+        }
+        if self.run_state(&id) != Run::Idle {
             return Ok(None);
         }
-        let mut held = s.queue_held;
-        let Some(next) = queue::next_after_release(&mut Queue { items: &mut s.queue, held: &mut held }) else {
+        let mut held = now.queue_held;
+        let Some(next) = queue::next_after_release(&mut Queue { items: &mut now.queue, held: &mut held }) else {
             return Ok(None);
         };
-        Ok(Some(self.start_turn(s, next).await?))
+        self.persist(&mut now, Vec::new()).await?;
+        let _starting = self.mark_starting(&id);
+        drop(guard);
+        Ok(Some(self.start_turn(now, next).await?))
     }
 
     /// `runtime.stop`: a Stop never discards queued follow-ups, it holds them.
@@ -829,14 +851,14 @@ pub(crate) fn is_task_id(id: &str) -> bool {
 }
 
 /// A turn starting (`Runtime::mark_starting`); dropped once its CLI is in `live` or the start ended.
-pub(crate) struct Starting<'a> {
-    rt: &'a Runtime,
+pub(crate) struct Starting {
+    starting: Arc<Mutex<HashMap<String, u32>>>,
     id: String,
 }
 
-impl Drop for Starting<'_> {
+impl Drop for Starting {
     fn drop(&mut self) {
-        let mut m = lock(&self.rt.starting);
+        let mut m = lock(&self.starting);
         if let Some(n) = m.get_mut(&self.id) {
             *n = n.saturating_sub(1);
             if *n == 0 {

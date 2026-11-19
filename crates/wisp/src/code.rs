@@ -426,17 +426,41 @@ fn prune_hint(o: &Opts, plan: &Plan, loaded: &Loaded, verb: &str, st: &wisp_cli_
 }
 
 /// `wisp export [kinds…] [--include ui,account] [--format yaml|json|toml]`.
+/// The format `--format` names (audit C5: `xml` wrote YAML and exited 0): yaml when unset, else one wisp writes.
+pub fn export_format(asked: Option<&str>) -> std::result::Result<Format, String> {
+    match asked.map(str::to_ascii_lowercase).as_deref() {
+        None | Some("yaml" | "yml") => Ok(Format::Yaml),
+        Some("json") => Ok(Format::Json),
+        Some("toml") => Ok(Format::Toml),
+        Some(other) => Err(format!("no format {other}: yaml, json or toml")),
+    }
+}
+
+/// The words after `export` that name no kind, said with the kinds there are (audit C5); None: every one is a kind.
+pub fn unknown_kinds(words: &[String], ks: &[KindInfo]) -> Option<String> {
+    let bad: Vec<&str> = words.iter().map(String::as_str).filter(|w| !w.contains('.') && !ks.iter().any(|k| k.named(w))).collect();
+    if bad.is_empty() {
+        return None;
+    }
+    let mut known: Vec<&str> = ks.iter().map(|k| k.section.as_str()).collect();
+    known.sort_unstable();
+    known.dedup();
+    Some(format!("no kind {}: {}", bad.join(", "), known.join(", ")))
+}
+
 pub async fn export_cmd(c: &Client, o: &Opts) -> Result<i32> {
+    let format = match export_format(o.format.as_deref()) {
+        Ok(f) => f,
+        Err(e) => {
+            eprintln!("  ✗ {e}");
+            return Ok(crate::cli::USAGE_EXIT);
+        }
+    };
     let ks = kinds(c).await?;
     let kinds_asked: Vec<&String> = o.words.iter().filter(|w| !w.contains('.')).collect();
     let list: Vec<Resource> =
         serde_json::from_value(c.cmd("resources.export", json!({ "kinds": kinds_asked, "include": o.include })).await?)
             .map_err(|e| CliError::said(e.to_string()))?;
-    let format = match o.format.as_deref() {
-        Some("json") => Format::Json,
-        Some("toml") => Format::Toml,
-        _ => Format::Yaml,
-    };
     let list = if o.with_deps || o.words.iter().any(|w| w.contains('.')) {
         let all: Vec<Resource> = serde_json::from_value(c.cmd("resources.export", json!({ "include": o.include })).await?)
             .map_err(|e| CliError::said(e.to_string()))?;
@@ -484,5 +508,31 @@ mod anchor_tests {
         assert_eq!(rs[1].spec["path"], "/abs/SKILL.md");
         assert!(rs[2].spec.get("path").is_none());
         assert_eq!(rs[3].spec["path"], "x", "only a skill's path");
+    }
+}
+
+#[cfg(test)]
+mod export_ask_tests {
+    use super::*;
+
+    /// Audit C5: `wisp export --format xml` wrote YAML and exited 0. A format wisp can't write is named, with the ones
+    /// it can.
+    #[test]
+    fn an_unknown_export_format_is_named_with_the_ones_there_are() {
+        assert!(matches!(export_format(None), Ok(Format::Yaml)));
+        assert!(matches!(export_format(Some("json")), Ok(Format::Json)));
+        assert!(matches!(export_format(Some("YAML")), Ok(Format::Yaml)));
+        assert!(matches!(export_format(Some("yml")), Ok(Format::Yaml)));
+        assert_eq!(export_format(Some("xml")).err().as_deref(), Some("no format xml: yaml, json or toml"));
+    }
+
+    /// Audit C5: `wisp export nosuchkind` printed only the usage line. A word that's no kind is named, with the kinds.
+    #[test]
+    fn an_unknown_kind_is_named_with_the_kinds_there_are() {
+        let ks = vec![KindInfo::new("crew", "crew", "wisp.crew", json!({})), KindInfo::new("agent", "agents", "wisp.runtime", json!({}))];
+        let w = |v: &[&str]| v.iter().map(|s| (*s).to_owned()).collect::<Vec<_>>();
+        assert_eq!(unknown_kinds(&w(&["crew", "agents"]), &ks), None);
+        assert_eq!(unknown_kinds(&w(&["nosuchkind"]), &ks).as_deref(), Some("no kind nosuchkind: agents, crew"));
+        assert_eq!(unknown_kinds(&w(&["crew", "nope", "zap"]), &ks).as_deref(), Some("no kind nope, zap: agents, crew"));
     }
 }

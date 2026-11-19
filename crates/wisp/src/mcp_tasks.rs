@@ -33,6 +33,7 @@ pub fn tools() -> Vec<Value> {
                 "mode": { "type": "string", "enum": ["plan", "edits", "auto"], "description": "plan = no file edits, edits = auto-accept edits, auto = no permission prompts. Default: the user's pick." },
                 "model": { "type": "string", "description": "Model id for that harness. Default: the user's pick." },
                 "effort": { "type": "string", "description": "Thinking level, e.g. low | medium | high." },
+                "worktree": { "type": "boolean", "description": "Its own git worktree. Default: on in a project's folder, as `wisp` from the command line (Settings → Worktree per task)." },
                 "wait": { "type": "boolean", "description": "Block until the agent finishes or asks (up to timeout_seconds)." },
                 "timeout_seconds": { "type": "number", "description": format!("Max wait when wait=true. Default {WAIT_S}.") }
             }, "required": ["prompt"] }
@@ -90,6 +91,16 @@ async fn read(c: &Client, id: &str) -> Result<String> {
     Ok(format!("{} [{}] {id}\n\n{answer}{question}", s(&task, "title"), s(&task, "state")).trim_end().to_owned())
 }
 
+/// `dir` with its links resolved, as the folder the CLI runs in is spelled (`/tmp/x` → `/private/tmp/x` on macOS);
+/// as given when it isn't there (runtime.create says so).
+async fn spelled(dir: String) -> String {
+    #[cfg(feature = "proc")]
+    if let Ok(p) = wisp_proc::canonical(&dir).await {
+        return p.display().to_string();
+    }
+    dir
+}
+
 /// One tool call; `cwd` is where `wisp mcp` runs (`wisp_launch`'s default folder).
 pub async fn call(c: &Client, name: &str, args: &Value, cwd: &Path) -> Value {
     match run(c, name, args, cwd).await {
@@ -115,7 +126,13 @@ async fn run(c: &Client, name: &str, a: &Value, cwd: &Path) -> Result<Value> {
                 return Err(CliError::said("wisp_launch needs a prompt: what the agent should do"));
             }
             let dir = Some(s(a, "cwd")).filter(|d| !d.is_empty()).map_or_else(|| cwd.display().to_string(), str::to_owned);
+            // spelled as the folder really is (macOS' `/tmp` is `/private/tmp`), so a project's folder is found as the
+            // CLI finds it from its own folder and gets its worktree (audit C5: it ran in the user's checkout)
+            let dir = spelled(dir).await;
             let mut args = json!({ "prompt": s(a, "prompt"), "cwd": dir });
+            if let Some(w) = a.get("worktree").and_then(Value::as_bool) {
+                args["worktree"] = json!(w);
+            }
             for k in ["agent", "mode", "model", "effort"] {
                 if let Some(v) = Some(s(a, k)).filter(|v| !v.is_empty() && *v != "auto") {
                     args[k] = json!(v);
@@ -180,8 +197,15 @@ async fn run(c: &Client, name: &str, a: &Value, cwd: &Path) -> Result<Value> {
             text(if r.get("queued").is_some_and(|q| !q.is_null() && *q != json!(false)) { "queued" } else { "sent" })
         }
         "wisp_stop" => {
-            c.cmd("runtime.stop", json!({ "id": id() })).await?;
-            text("stopped")
+            let tid = id();
+            c.cmd("runtime.stop", json!({ "id": tid })).await?;
+            // said once it has stopped (audit C16: "stopped" while `runtime.get` still said running)
+            let w = crate::scripted::wait(c, &tid, Duration::from_secs(10)).await?;
+            text(if w.get("timedOut") == Some(&json!(true)) {
+                "stopping: its run hasn't let go yet (wisp_get reads it once it has)"
+            } else {
+                "stopped"
+            })
         }
         "wisp_agents" => {
             let harnesses = c.cmd("accounts.harnesses", Value::Null).await.unwrap_or(Value::Null);

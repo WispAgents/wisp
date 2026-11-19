@@ -3,6 +3,9 @@
 // store. runtime.defaultModel is asked once per computer, harness and folder (the harness reads its config there, and
 // its plan: never a paid call), and only while that computer is online: an asleep or away one isn't woken, and no
 // command waits to send for it. A failed ask waits a minute before the next, so a list's re-renders don't repeat it.
+// Only the folder in focus asks (Home's chip for its project, the open task's: `word`); the list's rows, the sidebar's
+// cards and Compare read what's known (`known`), else the harnesses topic. Each worktree task has a folder of its own,
+// and a fresh Home asked about 20 times before the first launch (audit C #17).
 import { createSignal } from 'solid-js';
 import { effect, ownerOf, untracked, type Client, type EntityKey, type PeerId } from '@wisp/client';
 
@@ -11,6 +14,8 @@ const RETRY_MS = 60_000;
 export interface DefaultModels {
   /** the model's name, or undefined while it's asked, can't be told, or there's nothing to ask (no folder, Auto) */
   word(peer: string, agent: string, dir: string | undefined): string | undefined;
+  /** the folder's answer when it was asked already (a Solid read); never asks */
+  known(peer: string, agent: string, dir: string | undefined): string | undefined;
   /** the name a computer's harnesses topic gives its Default (its config there), when it's watched. A Solid read: the
    *  store mirrors the client's rows (an alien effect), so a memo or JSX that reads it follows a late row */
   topic(peer: string, agent: string): string | undefined;
@@ -58,6 +63,7 @@ export function defaultModels(client: Pick<Client, 'commands' | 'peers'> & Parti
   const store: DefaultModels = {
     topic: (peer, agent) => topics().get(`${peer}\u0000${agent}`),
     label: (agent, model) => labels().get(`${agent}\u0000${model}`),
+    known: (peer, agent, dir) => (dir && agent ? (answers().get(`${peer}\u0000${agent}\u0000${dir}`) ?? undefined) : undefined),
     word(peer, agent, dir) {
       if (!dir || !agent || agent === 'auto') return undefined;
       const key = `${peer}\u0000${agent}\u0000${dir}`;
@@ -83,11 +89,12 @@ export function defaultModels(client: Pick<Client, 'commands' | 'peers'> & Parti
   return store;
 }
 
-/** What Default runs for `agent` on `peer` in `dir`, as the chip says it: the folder's answer, else the computer's
- *  harnesses topic. Undefined when neither can tell. ShellContext.defaultModel; the list, Compare and the cards read it. */
+/** What Default runs for `agent` on `peer` in `dir`, as the chip says it: the folder's answer when the folder in focus
+ *  asked it, else the computer's harnesses topic. Undefined when neither can tell. Never asks (audit C #17).
+ *  ShellContext.defaultModel; the list, Compare and the cards read it. */
 export function defaultModelName(client: Pick<Client, 'commands' | 'peers' | 'entities'>, peer: string, agent: string, dir: string | undefined): string | undefined {
   const m = defaultModels(client);
-  return m.word(peer, agent, dir) ?? m.topic(peer, agent);
+  return m.known(peer, agent, dir) ?? m.topic(peer, agent);
 }
 
 /** A run's model by name: the one it was given, else what its Default runs (`runs`: defaultModelName), else `words`

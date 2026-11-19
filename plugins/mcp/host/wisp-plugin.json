@@ -16,6 +16,7 @@
     "later:*",
     "machines:*",
     "plugins:*",
+    "resources:read",
     "runtime:*",
     "ship:*",
     "stuff:*",

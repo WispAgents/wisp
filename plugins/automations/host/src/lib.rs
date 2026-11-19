@@ -167,8 +167,18 @@ async fn run(ctx: &Ctx, call: &Call, store: &Store, r: RunTask, by: &str) -> Res
         let set = ctx.setting(wisp_runtime_api::commands::WORKTREE_SETTING);
         args.worktree = Some(wisp_runtime_api::commands::worktree_by_default(set.as_ref(), args.mode == Some(Mode::Plan)));
     }
+    recurring_tree(&mut args, by);
     let made = ctx.run::<Create>(call, args).await?;
     serde_json::to_value(made).map_err(|e| WireError::internal(e.to_string()))
+}
+
+/// A trigger's or a schedule's runs (`by`: `trigger:<name>`, `schedule:<name>`) never pile up worktrees (ADR-0108, audit
+/// C3): they reuse one per trigger and project (`wisp/trigger-<name>`), and a run that changed nothing leaves none. A run
+/// you started (`wisp run`) keeps a worktree of its own.
+pub(crate) fn recurring_tree(args: &mut StartArgs, by: &str) {
+    let Some((kind, name)) = by.split_once(':').filter(|(k, n)| matches!(*k, "trigger" | "schedule") && !n.is_empty()) else { return };
+    args.worktree_key = Some(format!("{kind}-{name}"));
+    args.worktree_tidy = true;
 }
 
 /// Runs declared task `name` in `cwd` for `by` (a trigger).
@@ -324,6 +334,20 @@ impl Plugin for AutomationsPlugin {
 #[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
+
+    /// Audit C3 (ADR-0108): a trigger's and a schedule's runs reuse one worktree per trigger (and project) and leave none
+    /// when they changed nothing; `wisp run` keeps a worktree of its own.
+    #[test]
+    fn a_triggers_and_a_schedules_runs_reuse_one_worktree_and_yours_has_its_own() {
+        for (by, key) in
+            [("trigger:uitrig", Some("trigger-uitrig")), ("schedule:nightly", Some("schedule-nightly")), ("user", None), ("trigger:", None)]
+        {
+            let mut a = StartArgs::default();
+            recurring_tree(&mut a, by);
+            assert_eq!(a.worktree_key.as_deref(), key, "{by}");
+            assert_eq!(a.worktree_tidy, key.is_some(), "{by}");
+        }
+    }
 
     #[test]
     fn manifest_is_valid() {

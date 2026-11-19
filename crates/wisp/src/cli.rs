@@ -60,13 +60,25 @@ pub async fn catalogue(c: &Client, home: &Path) -> Result<Catalogue> {
     Ok(Catalogue::new(list))
 }
 
-/// What `wisp help` and completion list (setup audit B6): Auto's verbs (`wisp router …`) only while its one switch is on
-/// (`runtime.auto`, off until the owner reworks it: 2026-11-17). They still run when typed; they're just not offered.
-pub async fn shown(c: &Client, mut cat: Catalogue) -> Catalogue {
-    if c.cmd("settings.get", json!({ "key": "runtime.auto" })).await.ok() != Some(Value::Bool(true)) {
+/// The catalogue as this wisp offers it, for help, completion and running alike (setup audit B6, C6): Auto's verbs
+/// (`wisp router …`) only while its one switch is on (`runtime.auto`, off until the owner reworks it: 2026-11-17).
+/// Off, `wisp router …` is a word that's no command, as `wisp help router` says; the code stays.
+pub fn offered(mut cat: Catalogue, auto: bool) -> Catalogue {
+    if !auto {
         cat.verbs.retain(|v| v.plugin != "router");
     }
     cat
+}
+
+/// [`offered`] with the switch read from the running wisp.
+pub async fn shown(c: &Client, cat: Catalogue) -> Catalogue {
+    let auto = c.cmd("settings.get", json!({ "key": "runtime.auto" })).await.ok() == Some(Value::Bool(true));
+    offered(cat, auto)
+}
+
+/// [`shown`] only when the words could reach what it puts away (`router`): every other call skips the switch's read.
+pub async fn shown_for(c: &Client, cat: Catalogue, first: Option<&String>) -> Catalogue {
+    if first.is_some_and(|w| cat.verbs.iter().any(|v| v.plugin == *w && v.plugin == "router")) { shown(c, cat).await } else { cat }
 }
 
 /// The words after the verb, as typed: from the raw argv (the global parser has eaten flags such as
@@ -114,7 +126,8 @@ pub fn print_result(v: &Value, json: bool) {
         say(&serde_json::to_string_pretty(v).unwrap_or_default());
         return;
     }
-    say(&human::render(v, &style()).join("\n"));
+    let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).ok().and_then(|d| i64::try_from(d.as_millis()).ok());
+    say(&human::render(v, &style(), now).join("\n"));
 }
 
 /// `wisp help` and `wisp help <plugin>` (`wisp help <plugin> <verb>` is that verb's `--help`).
@@ -334,5 +347,24 @@ mod tests {
     fn rest_after_reads_the_raw_words() {
         let argv: Vec<String> = ["--port", "9", "crew", "create", "--mode", "auto"].map(str::to_owned).to_vec();
         assert_eq!(rest_after(&argv, "crew", 2), ["--mode", "auto"]);
+    }
+
+    /// Audit C6: `wisp help router` said there's no such command while `wisp router` ran and talked about Auto. While
+    /// `runtime.auto` is off the router plugin is put away: its verbs neither resolve nor list, so `wisp router …`
+    /// answers like any word that's no command, as help does. On, it's back.
+    #[test]
+    fn auto_off_puts_the_router_away_for_running_too_audit_c6() {
+        let w = |v: &[&str]| v.iter().map(|s| (*s).to_owned()).collect::<Vec<_>>();
+        let off = offered(Catalogue::new(declared()), false);
+        assert!(off.resolve(&w(&["router", "preview"])).is_none());
+        assert!(!off.plugins().iter().any(|(p, _)| *p == "router"));
+        assert!(off.resolve(&w(&["settings", "get"])).is_some(), "the rest stays");
+        let on = offered(Catalogue::new(declared()), true);
+        assert!(on.resolve(&w(&["router", "preview"])).is_some());
+        assert_eq!(
+            crate::words::not_a_task(&w(&["router"]), crate::args::Literal::No, &[]),
+            Some(crate::words::NotATask::Unknown("router".into())),
+            "with the plugin away, `wisp router` is a word that's no command"
+        );
     }
 }

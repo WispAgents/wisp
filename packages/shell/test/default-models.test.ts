@@ -1,11 +1,12 @@
 // One name for what Default runs, everywhere (owner 2026-11-18, QA r10 #2 follow-up): Home's chip and picker, the task's
-// facts and reply chip, Compare, the sidebar card and the list row ask one store per client. Each computer, harness and
+// facts and reply chip, Compare, the sidebar card and the list row read one store per client; the folder in focus asks
+// (Home's, the open task's), the rest read its answer (audit C #17). Each computer, harness and
 // folder is asked once and shared; a computer that isn't online is never asked (no waking it, no queued command); a
 // failed ask waits a minute before the next.
 import { expect, test } from 'vitest';
 import { createRoot, createSignal } from 'solid-js';
 import type { Client } from '@wisp/client';
-import { defaultModels, runModelWord } from '../src/frame/default-models.ts';
+import { defaultModelName, defaultModels, runModelWord } from '../src/frame/default-models.ts';
 
 async function until(ok: () => boolean, ms = 4000): Promise<void> {
   const end = performance.now() + ms;
@@ -92,4 +93,29 @@ test('a_runs_model_is_its_own_else_what_default_runs_else_the_words', () => {
   expect(runModelWord('gpt-6.1-sol', undefined, 'Default model')).toBe('gpt-6.1-sol');
   expect(runModelWord('', 'Opus', 'Default model')).toBe('Opus');
   expect(runModelWord(undefined, undefined, 'Default model')).toBe('Default model');
+});
+
+// Audit C #17: a fresh Home sent runtime.defaultModel about 20 times before the first launch: every list row and sidebar
+// card asked for its own folder, and each worktree task has one of its own (home/worktrees/proj-<id>). Only the folder in
+// focus asks (Home's chip for its project, the open task's): once per harness picked. The rows read that answer when
+// it's their folder, else the computer's harnesses topic.
+test('the_lists_rows_never_ask_only_the_folder_in_focus_does_audit_c_17', async () => {
+  const { client, asked } = stub();
+  const rows = Array.from({ length: 20 }, (_, i) => `/home/.wisp/worktrees/proj-${i}`);
+  createRoot(() => {
+    for (const dir of rows) expect(defaultModelName(client as never, 'local', 'claude', dir)).toBeUndefined();
+  });
+  await new Promise((r) => setTimeout(r, 0));
+  expect(asked, 'no row asked').toEqual([]);
+  // Home's chip asks for its project, once per harness
+  const m = defaultModels(client);
+  m.word('local', 'claude', '/code/app');
+  m.word('local', 'claude', '/code/app');
+  await until(() => m.word('local', 'claude', '/code/app') === 'Opus');
+  m.word('local', 'codex', '/code/app');
+  await until(() => asked.length === 2);
+  expect(asked).toEqual(['local claude /code/app', 'local codex /code/app']);
+  // a row in that folder reads its answer, without asking again
+  expect(defaultModelName(client as never, 'local', 'claude', '/code/app')).toBe('Opus');
+  expect(asked).toHaveLength(2);
 });

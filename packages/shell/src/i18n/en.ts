@@ -213,7 +213,7 @@ export const SHELL_STRINGS = {
   'shell.home.goal': 'Goal',
   'shell.home.goalTitle': 'Goal: keep going until a condition holds (wisp checks after every round)',
   'shell.home.worktree': 'Worktree',
-  'shell.home.worktreeTitle': 'Worktree: runs on its own branch in a separate checkout, so parallel agents never collide. Click to work in the project folder instead.',
+  'shell.home.worktreeTitle': 'Worktree: runs on its own branch in a separate checkout, so parallel agents never collide. Click to work in the project folder instead (kept for every New task; the CLI keeps its own default).',
   'shell.home.later': 'Start later',
   'shell.home.send': 'Launch (Enter · Shift+Enter for newline)',
   // Ask near the limit's row (v1 hold.js showHold)
@@ -329,6 +329,8 @@ export const SHELL_STRINGS = {
   'shell.reply.send': 'Send (Enter · Shift+Enter for newline)',
   'shell.reply.sendAt': 'Send at {at}',
   'shell.home.inPlace': 'In place',
+  'shell.home.inPlaceHint': 'Your project folder, from now on. The CLI keeps worktrees.',
+  'shell.home.worktreeHint': 'Its own branch and folder, from now on.',
   'shell.home.compareMore': 'Add another harness (up to {n} side by side)',
   'shell.home.compareRemove': 'Remove {name} from the comparison',
   'shell.home.addMachine': 'Add a computer…',

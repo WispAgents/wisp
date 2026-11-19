@@ -136,6 +136,7 @@ pub struct RunPick {
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
 #[ts(export, export_to = "runtime/")]
+#[allow(clippy::struct_excessive_bools)] // a wire shape: each flag is its own optional field callers send
 pub struct StartArgs {
     /// the id the client already shows the new task under (its optimistic row and page, ADR-0017): 32 lowercase hex
     /// (a `UUIDv7` without dashes, as wisp makes its own), never one a task has. None: wisp makes one. Additive (2026-11-14).
@@ -260,6 +261,16 @@ pub struct StartArgs {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub auto_override: Option<AutoOverride>,
+    /// a recurring run's worktree key (a crew member's check-ins, a trigger's runs, ADR-0108): its runs reuse one
+    /// worktree per project (`wisp/<key>`) instead of one each. Additive (2026-11-19).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub worktree_key: Option<String>,
+    /// a run started for you (a crew job, a check-in, a trigger's run, ADR-0108): its worktree goes when a turn ends with
+    /// nothing changed. Additive (2026-11-19).
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    #[ts(as = "Option<bool>", optional)]
+    pub worktree_tidy: bool,
 }
 
 /// The pick Auto's preview showed before you chose your own (`key`: its arm, `type`: the kind of task).
@@ -383,8 +394,9 @@ pub struct StopArgs {
 #[ts(export, export_to = "runtime/")]
 pub struct QueueEditArgs {
     pub id: SessionId,
-    /// the queue in this order, with your edited texts. Items left out keep their place at the end (one
-    /// queued meanwhile is never lost); unknown ids are skipped; wisp's own items keep their text.
+    /// the queue in this order, with your edited texts: `[{"id": "<item id>", "text": "<its text>"}, …]` (only `id` and
+    /// `text` are read). Items left out keep their place at the end (one queued meanwhile is never lost); unknown ids
+    /// are skipped; wisp's own items keep their text.
     pub items: Vec<QueueItem>,
     /// items to take out of the queue
     #[serde(default, skip_serializing_if = "Vec::is_empty")]

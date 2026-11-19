@@ -149,3 +149,58 @@ async fn a_task_an_agent_launches_in_a_worktree_runs_in_its_own_worktree() {
     assert_eq!(s["cwd"].as_str(), Some(path), "it runs in its worktree, not the main checkout: {s}");
     a.serve.stop();
 }
+
+/// Audit C1: `wisp_launch` from a run passes every field its schema documents, as `runtime_create` does: a folder gets
+/// its own worktree by default (a git repo, not plan mode), a project by name runs in that project's folder (never an
+/// empty scratch one), `also` and `effort` reach the task, `scratch` gets a folder of its own.
+#[tokio::test(flavor = "multi_thread")]
+async fn wisp_launch_from_a_run_passes_project_worktree_scratch_also_and_effort_audit_c1() {
+    let a = Agent::start("mcp-launch-c1").await;
+    let applied = a
+        .api
+        .try_cmd(
+            "resources.apply",
+            json!({ "resources": [{ "kind": "project", "name": "proj", "spec": { "path": a.repo } }], "trust": true }),
+        )
+        .await;
+    assert_eq!(applied["ok"], true, "{applied}");
+    let launched = |text: &str| {
+        let i = text.find('`').unwrap_or_else(|| panic!("no task id in: {text}"));
+        text[i + 1..].split('`').next().unwrap().to_owned()
+    };
+    let repo = a.repo.display().to_string();
+    // a folder, worktree not said: its own worktree (the default in a git repo)
+    let (t, failed) = a.call("wisp_launch", json!({ "prompt": "child in a folder", "cwd": a.repo, "agent": "claude" })).await;
+    assert!(!failed, "{t}");
+    let s = a.api.cmd("runtime.get", json!({ "id": launched(&t) })).await;
+    let tree = s["ext"]["wisp.worktrees"]["path"].as_str().unwrap_or_else(|| panic!("no worktree: {s}"));
+    assert_eq!(s["cwd"].as_str(), Some(tree), "it runs in its worktree, not the user's checkout: {s}");
+    assert_ne!(tree, repo);
+    // a project by name: that project's folder (in its own worktree), with effort and the folders `also` names
+    let other = temp("mcp-launch-c1-also");
+    let (t, failed) = a
+        .call(
+            "wisp_launch",
+            json!({ "prompt": "child in the project", "project": "proj", "agent": "claude", "effort": "high", "also": [other] }),
+        )
+        .await;
+    assert!(!failed, "{t}");
+    let s = a.api.cmd("runtime.get", json!({ "id": launched(&t) })).await;
+    assert!(s["ext"]["wisp.worktrees"]["path"].is_string(), "the project's folder, in a worktree, not an empty scratch one: {s}");
+    assert_eq!(s["effort"], "high", "{s}");
+    assert!(s["dirs"].to_string().contains(&other.display().to_string().replace('\\', "\\\\")), "also: {s}");
+    // plan mode: in place; worktree:false: in place
+    for args in [
+        json!({ "prompt": "plan it", "cwd": a.repo, "agent": "claude", "mode": "plan" }),
+        json!({ "prompt": "here", "cwd": a.repo, "agent": "claude", "worktree": false }),
+    ] {
+        let (t, failed) = a.call("wisp_launch", args).await;
+        assert!(!failed, "{t}");
+        let s = a.api.cmd("runtime.get", json!({ "id": launched(&t) })).await;
+        assert_eq!(s["cwd"].as_str(), Some(repo.as_str()), "{s}");
+    }
+    // a project that isn't there is said
+    let (t, failed) = a.call("wisp_launch", json!({ "prompt": "x", "project": "nope" })).await;
+    assert!(failed && t.contains("No project"), "{t}");
+    a.serve.stop();
+}

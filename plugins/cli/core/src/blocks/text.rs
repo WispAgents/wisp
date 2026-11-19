@@ -142,7 +142,13 @@ pub fn code(b: &Value, st: &Style) -> Vec<String> {
 }
 
 pub fn terminal(b: &Value, st: &Style) -> Vec<String> {
-    let mut out = vec![term::truncate(&format!("{} {}", paint(st, DIM, "$"), paint(st, BOLD, s(b, "command"))), st.width)];
+    // no command (a run's own output): no bare `$ ` line over it
+    let cmd = s(b, "command");
+    let mut out = if cmd.is_empty() {
+        Vec::new()
+    } else {
+        vec![term::truncate(&format!("{} {}", paint(st, DIM, "$"), paint(st, BOLD, cmd)), st.width)]
+    };
     let output = s(b, "output");
     for l in output.lines() {
         out.push(format!("{} {}", paint(st, DIM, "│"), term::truncate(l, st.width.saturating_sub(2))));

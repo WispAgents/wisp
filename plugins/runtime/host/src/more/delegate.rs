@@ -277,15 +277,15 @@ impl Runtime {
                     });
                     self.persist(&mut c, Vec::new()).await?;
                 }
-                let f = self
-                    .follow_up(FollowUpArgs {
-                        id: SessionId(cid.clone()),
-                        text: prompt.clone(),
-                        queue: Some(false),
-                        by: Some("lead".into()),
-                        ..FollowUpArgs::default()
-                    })
-                    .await?;
+                // boxed: a delegation's future stays small for its callers
+                let f = Box::pin(self.follow_up(FollowUpArgs {
+                    id: SessionId(cid.clone()),
+                    text: prompt.clone(),
+                    queue: Some(false),
+                    by: Some("lead".into()),
+                    ..FollowUpArgs::default()
+                }))
+                .await?;
                 (cid, f.turn_id)
             }
             _ => {
@@ -296,21 +296,20 @@ impl Runtime {
                     own.insert("capped".into(), cap.clone());
                 }
                 ext.insert(SLOT.to_owned(), Value::Object(own));
-                let c = self
-                    .create(StartArgs {
-                        prompt: prompt.clone(),
-                        agent: Some(str_at(m, "agent")).filter(|x| !x.is_empty() && x != "auto"),
-                        model: Some(str_at(m, "model")).filter(|x| !x.is_empty()),
-                        effort: Some(str_at(m, "effort")).filter(|x| !x.is_empty()),
-                        mode: Some(lead.mode),
-                        cwd: Some(lead.cwd.clone()),
-                        dirs: lead.dirs.clone(),
-                        parent_id: Some(lead.id.clone()),
-                        by: Some("lead".into()),
-                        ext,
-                        ..StartArgs::default()
-                    })
-                    .await?;
+                let c = Box::pin(self.create(StartArgs {
+                    prompt: prompt.clone(),
+                    agent: Some(str_at(m, "agent")).filter(|x| !x.is_empty() && x != "auto"),
+                    model: Some(str_at(m, "model")).filter(|x| !x.is_empty()),
+                    effort: Some(str_at(m, "effort")).filter(|x| !x.is_empty()),
+                    mode: Some(lead.mode),
+                    cwd: Some(lead.cwd.clone()),
+                    dirs: lead.dirs.clone(),
+                    parent_id: Some(lead.id.clone()),
+                    by: Some("lead".into()),
+                    ext,
+                    ..StartArgs::default()
+                }))
+                .await?;
                 made.insert(slot_name.clone(), json!(c.id));
                 (c.id.0, c.turn_id)
             }

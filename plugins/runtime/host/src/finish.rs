@@ -264,9 +264,11 @@ impl Runtime {
 
     /// The run let go: the live entry goes, and the next queued follow-up starts (unless a Stop held them).
     pub(crate) async fn release_run(self: &Arc<Self>, sid: &str) {
-        self.live.lock().unwrap_or_else(std::sync::PoisonError::into_inner).remove(sid);
         let next = {
             let _guard = self.task_lock(sid).await;
+            // let go under the task's lock (audit C2): a follow-up deciding in between found the task idle and started
+            // a turn of its own beside the queue's next, on the same turn index
+            self.live.lock().unwrap_or_else(std::sync::PoisonError::into_inner).remove(sid);
             let Ok(mut s) = self.repo.session(sid).await else {
                 return;
             };
@@ -280,7 +282,7 @@ impl Runtime {
             // delete in between waited on nothing and the start's `folder_ready` could bring a worktree back for it
             let waits =
                 next.is_none() && s.parent_id.is_none() && s.ext_of("wisp.runtime").get(wisp_runtime_core::owed::WAITS_ON).is_some();
-            (next.map(|n| (self.claims.claim(sid), s, n)), waits)
+            (next.map(|n| ((self.claims.claim(sid), self.mark_starting(sid)), s, n)), waits)
         };
         match next {
             (Some((claim, s, n)), _) => self.spawn_start(s, n, claim),
@@ -292,10 +294,17 @@ impl Runtime {
 
     /// Starts a queued turn on its own task, on the plugin's scope. A sync step on purpose: a run's end starting the
     /// next run would otherwise make the run's future contain itself, and its `Send` couldn't be proven.
-    pub(crate) fn spawn_start(self: &Arc<Self>, s: Session, n: wisp_runtime_api::model::QueueItem, claim: crate::claims::Claim) {
+    /// `claim`: the start's claim and its starting mark, both taken under the task's lock where it was decided.
+    pub(crate) fn spawn_start(
+        self: &Arc<Self>,
+        s: Session,
+        n: wisp_runtime_api::model::QueueItem,
+        claim: (crate::claims::Claim, crate::runtime::Starting),
+    ) {
         let rt = self.clone();
         let sid = s.id.0.clone();
         self.host.spawn(Box::pin(async move {
+            let (claim, _starting) = claim;
             if let Err(err) = rt.start_claimed(s, n, claim).await {
                 tracing::warn!(task = %sid, %err, "the next queued follow-up did not start");
             }

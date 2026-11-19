@@ -567,7 +567,8 @@ async fn one_stray_word_is_a_slip_more_is_a_prompt_for_every_command_word() {
     let (serve, port) = start(&dir);
     let api = Api { http: reqwest::Client::new(), port, n: 0.into() };
     for (words, said) in [
-        (&["export", "foo"][..], "wisp -- export"),
+        // the kinds there are (audit C5), then the way out
+        (&["export", "foo"][..], "no kind foo"),
         (&["run", "foo"], "no recipe or workflow named foo"),
         // a plugin's group line (B1): its verbs, then `wisp -- "ship foo"`
         (&["ship", "foo"], "wisp ship has no foo"),
@@ -689,4 +690,25 @@ fn wisp_words_known(w: &str) -> bool {
     let (words, args) = (include_str!("../src/words.rs"), include_str!("../src/args.rs"));
     listed(words, "pub const ROUTED").iter().chain(listed(args, "pub const COMMANDS").iter()).any(|x| x == w)
         || built_in_groups().iter().any(|x| x == w)
+}
+
+/// Auto off (the default, `runtime.auto`, audit C6): `wisp router` and any words after it is refused like a slip
+/// (exit 2, the `wisp -- "…"` way out), never a prompt: the router's former command words must not launch a paid run.
+#[tokio::test(flavor = "multi_thread")]
+async fn with_auto_off_router_and_any_words_is_refused_and_makes_no_task() {
+    let dir = temp("serve-cli-router-away");
+    let (serve, port) = start(&dir);
+    let api = Api { http: reqwest::Client::new(), port, n: 0.into() };
+    for words in
+        [&["router", "preview"][..], &["router", "pick", "the", "best", "harness"], &["--no-open", "router", "explain", "this", "task"]]
+    {
+        let (code, out, err) = probe(&dir, port, words);
+        let typed: Vec<&str> = words.iter().copied().filter(|w| !w.starts_with("--")).collect();
+        assert!(
+            code == 2 && !out.contains("launched") && err.contains(&format!("wisp -- \"{}\"", typed.join(" "))),
+            "{words:?} → {code}: {out}{err}"
+        );
+    }
+    assert_eq!(api.cmd("runtime.list", json!({})).await.as_array().unwrap().len(), 0, "no task was made");
+    drop(serve);
 }

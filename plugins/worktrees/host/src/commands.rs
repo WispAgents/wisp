@@ -34,7 +34,13 @@ pub async fn create(st: &Arc<State>, ctx: &Ctx, call: &Call, args: api::CreateAr
     };
     let set = port.settings().await;
     let hold = trust::setup_hold(&engine, &set.trust, &here.info().root, set.project_ask.as_deref(), &args.mode).await;
-    let wt = engine.create(call, &args, hold).await?;
+    // a recurring run's kept folder another task is working in: that run gets a fresh one (ADR-0108)
+    let in_use: Vec<String> = if args.reuse.is_some() {
+        port.tasks().await.into_iter().filter(|t| t.busy).flat_map(|t| t.trees.into_iter().map(|x| x.worktree.path)).collect()
+    } else {
+        Vec::new()
+    };
+    let wt = engine.create(call, &args, hold, &in_use).await?;
     if let Some(w) = &wt {
         after_add(st, ctx, call, w, &args.session_id).await?;
     }
@@ -156,8 +162,9 @@ pub fn register(s: &mut Setup, st: &Arc<State>) {
     });
     handle!(s, st, api::View, |st, ctx, _call, _args| {
         let (_, c, _) = st.parts(&ctx).await?;
-        let v = c.view(true).await;
-        // the pane opened: look for Bring in offers again, and republish
+        // the pane opened: Bring in's look starts now, so the answer says it's looking (audit B #18)
+        let v = crate::pane::looking_for_offers(c.view(true).await, true);
+        // look for Bring in offers again, and republish
         let (me, cx) = (st.clone(), ctx.clone());
         ctx.spawn(async move {
             me.look_for_offers(&cx).await;

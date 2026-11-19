@@ -53,6 +53,16 @@ pub fn keeps_branch(name: &str) -> bool {
     !name.is_empty() && name.len() <= 120 && name.chars().all(|c| c.is_ascii_alphanumeric() || matches!(c, '_' | '.' | '/' | '-'))
 }
 
+/// A recurring run's key (`CreateArgs::reuse`) as a folder and branch name part: its slug, None when nothing is left.
+pub fn reuse_key(key: &str) -> Option<String> {
+    Some(slug(key)).filter(|s| !s.is_empty())
+}
+
+/// A recurring run's branch: `wisp/<key>` (a member's check-ins: `wisp/ada-check-in`).
+pub fn reuse_branch(key: &str) -> String {
+    format!("wisp/{key}")
+}
+
 /// The last path segment, by `/` or `\` (a Windows root `C:\src\app` named the worktree `…/C:\src\app-<id>`).
 pub fn basename(p: &str) -> &str {
     p.trim_end_matches(['/', '\\']).rsplit(['/', '\\']).next().unwrap_or(p)

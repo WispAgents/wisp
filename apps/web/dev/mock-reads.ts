@@ -157,6 +157,8 @@ export const READS: Record<string, Fn> = {
   // the task's shell starts (no pty behind it: nothing it types comes back)
   'terminal.shell.start': () => ({ ops: [], result: { ok: true, started: true, dir: '~/code/wisp-repo' } }),
   'terminal.input': () => ({ ops: [], result: { ok: true } }),
+  // Settings → Plugins' foot (plugins.folder: FolderOut { path })
+  'plugins.folder': () => ({ ops: [], result: { path: '~/.wisp/plugins' } }),
   // Mark done and archive ask which folders the task leaves on disk (plugins/worktrees/api/bindings DoneList): the
   // mock's tasks run in no worktree of their own, so none, and Settings' "ask" (it was unanswered: a red toast on every
   // archive in the dev app, found by qa/flicker.mjs)

@@ -372,16 +372,21 @@ impl Runtime {
 
     /// Send now (v1 `sendQueued`).
     pub async fn queue_send_now(self: &Arc<Self>, id: &str, item: &str) -> Result<FollowedUp> {
-        let run = self.run_state(id);
         let mut start = None;
+        let mut starting = None;
         let s = self
             .edit(id, |s| {
+                // read and marked under the task's lock (audit C2): a follow-up deciding next queues behind it
+                let run = self.run_state(id);
                 let mut held = s.queue_held;
                 let (plan, _) = queue::send_now(&mut Queue { items: &mut s.queue, held: &mut held }, run, item)
                     .ok_or_else(|| RuntimeError::Invalid("no such queued follow-up".into()))?;
                 s.queue_held = held;
                 match plan {
-                    SendNow::Start(i) => start = Some(i),
+                    SendNow::Start(i) => {
+                        start = Some(i);
+                        starting = Some(self.mark_starting(id));
+                    }
                     SendNow::Interrupt => self.interrupt(id),
                     SendNow::ReleaseLinger => self.release_linger(id),
                     SendNow::Next => {}
@@ -389,6 +394,7 @@ impl Runtime {
                 Ok(())
             })
             .await?;
+        let _starting = starting;
         match start {
             Some(i) => Ok(FollowedUp { turn_id: Some(self.start_turn(s, i).await?), queued: None }),
             None => Ok(FollowedUp { turn_id: None, queued: Some(item.to_owned()) }),

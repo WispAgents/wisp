@@ -100,6 +100,13 @@ pub(crate) const NOT_STARTED: &str = wisp_runtime_core::summary::NOT_STARTED;
 /// The turn's `ext["wisp.runtime"]` flag for a CLI that couldn't be spawned: it ended at once, nothing ran.
 pub(crate) const SPAWN_FAILED: &str = "spawnFailed";
 
+/// The queue as it is now, over the one `s` was read with before the start's awaits (audit C2): the start took its
+/// item out under the task's lock already, and a follow-up queued meanwhile (or a Stop that held them) stays.
+fn keep_queue(s: &mut Session, now: &Session) {
+    s.queue.clone_from(&now.queue);
+    s.queue_held = now.queue_held;
+}
+
 fn shown(title: &str, summary: &str, status: &str) -> Presentation {
     let hero = serde_json::json!({ "type": "hero", "title": title, "summary": summary, "status": status });
     Presentation { blocks: vec![hero], v: wisp_runtime_core::blocks::PARSER_VERSION, ..Presentation::default() }
@@ -397,6 +404,7 @@ impl Runtime {
             return Err(RuntimeError::NoTask(s.id.0.clone()));
         }
         let now = self.repo.session(s.id.as_str()).await?;
+        keep_queue(s, &now);
         carry_others_ext(s, now.ext);
         let (prev, taken) = self.take_over_owed(s, turn).await?;
         self.persist(s, prev.into_iter().chain(std::iter::once(turn.clone())).collect()).await?;
@@ -409,6 +417,7 @@ impl Runtime {
             return Err(RuntimeError::NoTask(s.id.0.clone()));
         }
         let now = self.repo.session(s.id.as_str()).await?;
+        keep_queue(s, &now);
         carry_others_ext(s, now.ext);
         self.persist(s, turns).await.map(drop)
     }

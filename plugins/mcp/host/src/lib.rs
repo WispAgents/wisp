@@ -8,6 +8,7 @@
 
 mod crew;
 mod kinds;
+mod launch;
 mod run;
 
 use std::collections::HashMap;

@@ -30,6 +30,15 @@ pub struct CreateArgs {
     /// uncommitted and untracked ones too (audit A orch #4: a fork used to run in its parent's folder)
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub from: Option<String>,
+    /// a recurring run's key (a crew member's check-ins, a trigger's runs: ADR-0108): the one worktree kept for it in
+    /// this project (`<home>/worktrees/<project>-<key>`, branch `wisp/<key>`) is reused, made when it isn't there; a
+    /// fresh one of the task's own when another working task is in it. Additive (2026-11-19).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reuse: Option<String>,
+    /// a run started for you (a crew job, a check-in, a trigger's run): its worktree goes when its turn ends with
+    /// nothing changed (`Worktree::tidy`). Additive (2026-11-19).
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub tidy: bool,
 }
 
 /// A fresh worktree and branch for a session; None outside a repo with commits.

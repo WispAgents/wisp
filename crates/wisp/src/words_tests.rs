@@ -529,3 +529,20 @@ fn a_plugin_name_and_any_one_other_word_is_a_slip() {
     // a word that's no plugin's name: a prompt, as ever
     assert!(unknown_verb(&p(&["refactor", "it"]).words, Literal::No, &cat).is_none());
 }
+
+/// Auto off (`runtime.auto`, audit C6): `wisp router` followed by any words is refused with the `wisp -- "…"` way out,
+/// never a prompt that launches a paid run; on, or after `--`, the words are what they'd be anyway.
+#[test]
+fn with_auto_off_router_and_any_words_is_refused_never_a_prompt() {
+    for args in [&["router", "preview"][..], &["router", "pick", "the", "best", "harness", "for", "this"], &["router", "--json"]] {
+        let x = p(args);
+        let said = router_away(&x.words, x.literal, true).unwrap_or_else(|| panic!("{args:?} was read as a prompt"));
+        assert!(said.contains(&format!("wisp -- \"{}\"", x.words.join(" "))), "{said}");
+    }
+    assert!(router_away(&p(&["router", "preview"]).words, p(&["router", "preview"]).literal, false).is_none(), "Auto on");
+    let lit = p(&["--", "router", "preview"]);
+    assert!(router_away(&lit.words, lit.literal, true).is_none(), "`wisp -- …` is the task");
+    let quoted = p(&["router preview"]);
+    assert!(router_away(&quoted.words, quoted.literal, true).is_none(), "one quoted argument is the task");
+    assert!(router_away(&p(&["review", "the", "router"]).words, Literal::No, true).is_none(), "router later on is a prompt");
+}

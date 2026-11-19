@@ -5,7 +5,7 @@ import { createResource, createSignal, For, onCleanup, Show, type JSX } from 'so
 import type { PluginClient } from '@wisp/client';
 import { Button, Callout, Code, Dialog, IconButton, Inline, PathField, Pill, SettingsCast, SettingsEmpty, SettingsFieldRow, SettingsGroup, SettingsNote, SettingsRow, Stack, Switch, Text } from '@wisp/ui';
 import { useShell } from '@wisp/shell';
-import { cast, castPrompt, folders, install, list, permissionWords, rowAbout, setEnabled, trust, uninstall, type Installed, type PluginRow } from '../commands.ts';
+import { cast, castPrompt, folder, folders, install, list, permissionWords, rowAbout, setEnabled, trust, uninstall, type Installed, type PluginRow } from '../commands.ts';
 import { confirmOf, type Confirm } from '../confirm.ts';
 import { t } from '../i18n.ts';
 import '../i18n/lazy.ts';
@@ -18,6 +18,8 @@ export default function Plugins(props: { readonly client: PluginClient }): JSX.E
   const peer = c.home;
   const [rows, { refetch, mutate }] = createResource(() => c.run(list, { peer }).catch((): PluginRow[] => []));
   const [busy, setBusy] = createSignal<string | undefined>();
+  // the foot names this wisp's own plugins folder (audit C9: it said ~/.wisp/plugins whatever WISP_HOME was)
+  const [where] = createResource(() => c.run(folder, { peer }).then((f) => f.path).catch(() => undefined));
   // a change made elsewhere (`wisp plugin enable`, an agent, another window) shows here too: the server's
   // plugins.changed notice reads the list again (audit A F21: the pane kept its first list)
   const shell = useShell();
@@ -239,7 +241,7 @@ export default function Plugins(props: { readonly client: PluginClient }): JSX.E
       </SettingsGroup>
       <SettingsNote part="plugins.foot">
         {t('plugins.foot.pre')}
-        <Code>{t('plugins.foot.path')}</Code>
+        <Code>{where() ?? t('plugins.foot.path')}</Code>
         {t('plugins.foot.post')}{' '}
         <Button variant="link" size="xs" part="plugins.allOff" onClick={allOff}>
           {t('plugins.allOff')}

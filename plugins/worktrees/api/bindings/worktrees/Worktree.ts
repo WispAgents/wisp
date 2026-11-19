@@ -29,4 +29,9 @@ root: string, createdAt: bigint, foreign?: boolean, prepared?: Prepared,
 /**
  * a moved task's snapshot commit (where its work stood)
  */
-snap?: string, };
+snap?: string, 
+/**
+ * a run started for you (`CreateArgs::tidy`, ADR-0108): when its turn ends with nothing only the folder holds,
+ * the folder goes (and its branch when nothing is on it). Additive (2026-11-19).
+ */
+tidy?: boolean, };

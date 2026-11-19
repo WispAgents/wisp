@@ -111,3 +111,62 @@ async fn wisp_mcp_hands_tasks_to_wisp_with_v1_s_tools() {
     assert!(turns.to_string().contains("also cover zero"), "the reply reached the task: {turns}");
     drop(serve);
 }
+
+fn git(dir: &std::path::Path, args: &[&str]) {
+    let o = Command::new("git")
+        .args(args)
+        .current_dir(dir)
+        .env("GIT_AUTHOR_NAME", "t")
+        .env("GIT_AUTHOR_EMAIL", "t@t")
+        .env("GIT_COMMITTER_NAME", "t")
+        .env("GIT_COMMITTER_EMAIL", "t@t")
+        .output()
+        .unwrap();
+    assert!(o.status.success(), "git {args:?}: {}", String::from_utf8_lossy(&o.stderr));
+}
+
+/// Audit C5: `wisp_launch {prompt, cwd}` in a project's folder ran in the user's checkout (a `cwd` spelled `/tmp/…`
+/// never matched the project's `/private/tmp/…`, and the tool had no `worktree`): it gets its own worktree as `wisp`
+/// from the command line does, and `worktree: false` keeps it in place. Audit C16: `wisp_stop` said "stopped" while the
+/// task still ran: it answers once its run has let go.
+#[tokio::test(flavor = "multi_thread")]
+async fn wisp_launch_in_a_projects_folder_gets_a_worktree_and_wisp_stop_answers_once_stopped_audit_c5_c16() {
+    let dir = temp("serve-mcp-stdio-c5");
+    let proj = dir.join("proj");
+    git(&proj, &["init", "-q", "-b", "main"]);
+    git(&proj, &["add", "."]);
+    git(&proj, &["commit", "-qm", "init", "--allow-empty"]);
+    let real = wisp_proc::canonical_blocking(&proj).unwrap();
+    let (serve, port) = common::start_with(&dir, &[("FAKE_DELAY", "20000")]);
+    let api = Api { http: reqwest::Client::new(), port, n: 0.into() };
+    let applied = api
+        .try_cmd(
+            "resources.apply",
+            json!({ "resources": [{ "kind": "project", "name": "proj", "spec": { "path": real } }], "trust": true }),
+        )
+        .await;
+    assert_eq!(applied["ok"], true, "{applied}");
+    let answers = session(
+        &dir,
+        port,
+        &[
+            call(1, "wisp_launch", &json!({ "prompt": "in a worktree", "cwd": proj, "agent": "claude" })),
+            call(2, "wisp_launch", &json!({ "prompt": "in place", "cwd": proj, "agent": "claude", "worktree": false })),
+        ],
+    );
+    let id_of = |n: u64| text(&answers, n).split_whitespace().nth(1).unwrap().trim_end_matches(':').to_owned();
+    let (tree, here) = (id_of(1), id_of(2));
+    let s = api.cmd("runtime.get", json!({ "id": tree })).await;
+    let path = s["ext"]["wisp.worktrees"]["path"].as_str().unwrap_or_else(|| panic!("no worktree: {s}"));
+    assert_eq!(s["cwd"].as_str(), Some(path), "it runs in its worktree, not the user's checkout: {s}");
+    let s = api.cmd("runtime.get", json!({ "id": here })).await;
+    assert_eq!(s["cwd"].as_str(), Some(real.display().to_string().as_str()), "worktree: false runs in place: {s}");
+
+    // C16: the task runs (its fake takes 20 s); once wisp_stop answers "stopped", it isn't running any more
+    api.until(&tree, "its turn running", |t| t.last().is_some_and(|t| t["status"] == "running")).await;
+    let answers = session(&dir, port, &[call(1, "wisp_stop", &json!({ "id": tree }))]);
+    assert_eq!(text(&answers, 1), "stopped");
+    let s = api.cmd("runtime.get", json!({ "id": tree })).await;
+    assert_ne!(s["state"], "running", "said stopped while still running: {s}");
+    drop(serve);
+}

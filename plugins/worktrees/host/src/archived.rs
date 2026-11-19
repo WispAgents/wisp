@@ -64,6 +64,70 @@ pub fn to_remove(s: &Session, now: i64) -> Option<Worktree> {
     tree_of(s.ext.get(EXT))
 }
 
+/// A run started for you whose turn ended (ADR-0108, v1 done-folders `tidy`: a crew job ending asks nobody): the folder
+/// to remove when its worktree is `tidy`, nothing runs, asks or waits in the task, and it isn't kept, shipping or
+/// answering a /btw. None: it stays.
+pub fn to_tidy(s: &Session, now: i64) -> Option<Worktree> {
+    let wt = tree_of(s.ext.get(EXT)).filter(|w| w.tidy)?;
+    if !due(true, s.state, s.queue.len())
+        || shipping(s.ext.get("wisp.ship"))
+        || side_pending(s.ext.get("wisp.runtime"), now)
+        || kept(s.ext.get(EXT))
+    {
+        return None;
+    }
+    Some(wt)
+}
+
+/// [`to_tidy`]'s folder removed when nothing only it holds (strict), its branch too when nothing is on it; never while
+/// another working task is in it (a recurring run's kept folder: `in_use`, the working tasks' folders) or one of its
+/// extra folders (`used`). None: nothing to remove, or it stayed.
+pub async fn tidy_ended(e: &Engine, call: &Call, s: &Session, mark: u64, in_use: &[String], used: bool) -> Option<(Worktree, Removed)> {
+    let wt = to_tidy(s, e.clock.now_ms())?;
+    let real = fsx::norm(&wt.path).await;
+    for p in in_use {
+        if fsx::norm(p).await == real {
+            return None;
+        }
+    }
+    if used || e.foreign(&wt) || !fsx::exists(&wt.path).await {
+        return None;
+    }
+    let still = || !e.claimed_since(&real, mark);
+    let opts = RemoveOpts { strict: true, branch: wisp_worktrees_api::BranchMode::IfMerged, ..RemoveOpts::default() };
+    match e.remove(call, &wt, opts, Some(&still)).await {
+        Ok(r) => Some((wt, r)),
+        Err(err) => {
+            tracing::warn!(error = %err, path = %wt.path, "worktrees: removing a finished run's folder");
+            None
+        }
+    }
+}
+
+/// A task's turn ended: a run started for you leaves no folder when it changed nothing ([`tidy_ended`]). True when one
+/// went.
+pub async fn on_ended(ctx: &Ctx, e: &Engine, port: &dyn Port, id: &str) -> bool {
+    let call = ctx.root_call();
+    let mark = e.mark();
+    let Ok(s) = ctx.run::<Get>(&call, IdArgs { id: id.to_owned().into() }).await else { return false };
+    let Some(wt) = to_tidy(&s, e.clock.now_ms()) else { return false };
+    let in_use: Vec<String> = port
+        .tasks()
+        .await
+        .into_iter()
+        .filter(|t| t.busy && t.id != id)
+        .flat_map(|t| t.trees.into_iter().map(|x| x.worktree.path))
+        .collect();
+    let used = fsx::exists(&wt.path).await && port.extra_in_use(wt.path.clone()).await;
+    match tidy_ended(e, &call, &s, mark, &in_use, used).await {
+        Some((wt, r)) if r.removed => {
+            ctx.emit(&call, &WorktreeRemoved { root: wt.root.clone(), path: wt.path.clone(), branch_deleted: r.branch_deleted });
+            true
+        }
+        _ => false,
+    }
+}
+
 /// Removes an archived task's folder when it's clean; None when there was nothing on disk to look at.
 /// `mark`: `Engine::mark` from before the task was read; a turn claiming the folder since stops it.
 pub async fn tidy(e: &Engine, call: &Call, wt: &Worktree, mark: u64) -> Option<Removed> {

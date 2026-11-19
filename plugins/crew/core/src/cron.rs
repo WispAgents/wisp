@@ -36,7 +36,7 @@ pub trait Words: Send + Sync {
     fn to_cron(&self, said: &str) -> Option<String>;
 }
 
-/// No words: only a cron or one of its aliases reads (the default until automations exposes `toCron`).
+/// No words of its own: a cron or one of its aliases (`read_schedule` reads words with automations' `to_cron`).
 #[derive(Debug, Clone, Copy, Default)]
 pub struct CronOnly;
 impl Words for CronOnly {
@@ -225,10 +225,29 @@ pub fn read_schedule(text: &str, words: &dyn Words) -> Result<String> {
     if said.is_empty() {
         return Ok(String::new());
     }
-    let Some(cron) = words.to_cron(said).or_else(|| CronOnly.to_cron(said)) else {
+    // words read as automations reads them ("every 30 min", as the refusal's hint says), whatever `words` is
+    let Some(cron) = words.to_cron(said).or_else(|| CronOnly.to_cron(said)).or_else(|| wisp_automations_api::to_cron(said)) else {
         let shown = crate::text::clip(said, 60);
         return Err(bad(format!("Couldn’t read “{shown}” as a schedule. Try “every monday”, “8am every weekday” or “every 30 min”.")));
     };
     parse(&cron)?;
     Ok(cron)
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod tests {
+    use super::*;
+
+    /// Audit C #11: the hint says "every 30 min", yet the crew read only a cron (its `Words` was `CronOnly`), so
+    /// "every minute" and "every 30 min" were refused. Words read as automations reads them; nonsense still refused.
+    #[test]
+    fn a_crew_schedule_in_words_reads_as_its_hint_says_audit_c_11() {
+        assert_eq!(read_schedule("every minute", &CronOnly).unwrap(), "* * * * *");
+        assert_eq!(read_schedule("every 5 minutes", &CronOnly).unwrap(), "*/5 * * * *");
+        assert_eq!(read_schedule("every 30 min", &CronOnly).unwrap(), "*/30 * * * *");
+        assert_eq!(read_schedule("* * * * *", &CronOnly).unwrap(), "* * * * *");
+        assert_eq!(read_schedule("@hourly", &CronOnly).unwrap(), "0 * * * *");
+        assert!(read_schedule("whenever you like", &CronOnly).is_err());
+    }
 }

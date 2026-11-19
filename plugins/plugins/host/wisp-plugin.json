@@ -62,6 +62,7 @@
         "title": "Remove a plugin you installed"
       },
       { "id": "plugins.trust", "title": "Trust a plugin you installed (or take the trust back): it reloads" },
+      { "id": "plugins.folder", "title": "Where this wisp keeps your plugins (its home's plugins folder)", "readOnly": true },
       { "id": "plugins.ui", "title": "What your untrusted plugins show in the app (their UI modules)", "readOnly": true },
       { "id": "plugins.styles", "title": "The part styles of the plugins that are on and trusted (themes), for the app's @layer plugins", "readOnly": true },
       { "id": "plugins.agent.list", "title": "The plugins you have, in plain words, for an agent writing one (wisp_plugins)", "readOnly": true },

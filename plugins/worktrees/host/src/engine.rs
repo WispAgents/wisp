@@ -160,11 +160,13 @@ impl Engine {
 
     /// A fresh worktree and branch under `<home>/worktrees`; None outside a repo with commits.
     /// `hold`: the setup steps to keep back until the repo is trusted (decided by the caller).
+    /// `in_use`: the folders working tasks are in (a recurring run's kept folder among them gets a fresh one instead).
     pub async fn create(
         &self,
         call: &Call,
         args: &CreateArgs,
         hold: Option<Vec<wisp_worktrees_api::TrustItem>>,
+        in_use: &[String],
     ) -> Result<Option<Worktree>> {
         let Ok(here) = self.repo(call, &args.cwd).await else {
             return Ok(None);
@@ -174,6 +176,12 @@ impl Engine {
         };
         let info = here.info().clone();
         let root = self.repo(call, &info.root).await?;
+        // a recurring run (ADR-0108): its one folder in this project, reused while no working task is in it
+        if let Some(key) = args.reuse.as_deref().and_then(naming::reuse_key)
+            && let Some(wt) = self.kept_for(call, args, &key, (&info, &base), hold.clone(), in_use).await?
+        {
+            return Ok(Some(wt));
+        }
         let short = naming::short_branch(&args.title, &args.session_id);
         let taken = root.rev_parse(call, &format!("refs/heads/{short}")).await?.is_some();
         let branch = naming::branch_for(&args.title, &args.session_id, taken);
@@ -210,8 +218,77 @@ impl Engine {
             root: info.root,
             created_at: self.clock.now_ms(),
             prepared: prepared_or_none(prepared),
+            tidy: args.tidy,
             ..Worktree::default()
         }))
+    }
+
+    /// A recurring run's kept folder (`<home>/worktrees/<project>-<key>`, branch `wisp/<key>`, ADR-0108): the one there,
+    /// when it is this repo's and no working task is in it (`in_use`); made again on its branch (or a new one from the
+    /// base) when it isn't there. None: a fresh one of the task's own instead.
+    async fn kept_for(
+        &self,
+        call: &Call,
+        args: &CreateArgs,
+        key: &str,
+        (info, base): (&wisp_git_api::RepoInfo, &wisp_git_api::BaseRef),
+        hold: Option<Vec<wisp_worktrees_api::TrustItem>>,
+        in_use: &[String],
+    ) -> Result<Option<Worktree>> {
+        let root = self.repo(call, &info.root).await?;
+        let cwd_in = |dir: &str| naming::worktree_cwd(dir, &info.root, &args.cwd);
+        let dir = naming::worktree_dir(&self.home, &info.root, key);
+        let real = fsx::norm(&dir).await;
+        let mut busy = false;
+        for p in in_use {
+            busy |= fsx::norm(p).await == real;
+        }
+        if !busy && fsx::exists(&dir).await {
+            // ours only when it is this repo's worktree (another project named the same has its own root)
+            if let Ok(there) = self.repo(call, &dir).await
+                && fsx::norm(&there.info().root).await == fsx::norm(&info.root).await
+            {
+                let branch =
+                    there.status(call).await.ok().map(|s| s.branch).filter(|b| !b.is_empty()).unwrap_or_else(|| naming::reuse_branch(key));
+                return Ok(Some(Worktree {
+                    cwd: cwd_in(&dir),
+                    path: dir,
+                    branch,
+                    base: base.branch.clone(),
+                    base_ref: base.reference.clone(),
+                    head: Some(base.sha.clone()).filter(|s| !s.is_empty()),
+                    remote: base.remote.clone(),
+                    root: info.root.clone(),
+                    created_at: self.clock.now_ms(),
+                    tidy: args.tidy,
+                    ..Worktree::default()
+                }));
+            }
+        } else if !busy {
+            let branch = naming::reuse_branch(key);
+            let kept = root.rev_parse(call, &format!("refs/heads/{branch}")).await?.is_some();
+            fsx::mkdirp(fsx::parent(&dir)).await?;
+            let _ = root.worktree_prune(call).await;
+            // its branch kept from an earlier run: checked out again; else made from the base
+            let start = (!kept).then(|| base.reference.clone());
+            root.worktree_add(call, WorktreeAdd { path: dir.clone(), branch: branch.clone(), start }).await?;
+            let prepared = crate::prepare::prepare(self, &info.root, &dir, hold, &base.branch).await;
+            return Ok(Some(Worktree {
+                cwd: cwd_in(&dir),
+                path: dir,
+                branch,
+                base: base.branch.clone(),
+                base_ref: base.reference.clone(),
+                head: Some(base.sha.clone()).filter(|s| !s.is_empty()),
+                remote: base.remote.clone(),
+                root: info.root.clone(),
+                created_at: self.clock.now_ms(),
+                prepared: prepared_or_none(prepared),
+                tidy: args.tidy,
+                ..Worktree::default()
+            }));
+        }
+        Ok(None)
     }
 
     /// Brings a cleaned-up worktree back from its branch (its ignored files again, not its setup).

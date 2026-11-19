@@ -248,6 +248,17 @@ export function projectOfRow(s: { readonly summary?: unknown; readonly body?: un
   return typeof named === 'string' && named ? projects.find((p) => p.id === named || p.name === named) : undefined;
 }
 
+/** How many tasks each project has (Manage projects' "N tasks"): each task counted for the project it belongs to
+ *  (projectOfRow: a worktree task's folder is outside its project, audit C1). */
+export function projectCounts(sessions: readonly { readonly summary?: unknown; readonly body?: unknown }[], projects: readonly ProjectView[]): Map<string, number> {
+  const out = new Map<string, number>();
+  for (const s of sessions) {
+    const p = projectOfRow(s, projects);
+    if (p) out.set(p.id, (out.get(p.id) ?? 0) + 1);
+  }
+  return out;
+}
+
 /** The order after dragging `id` to where `to` is (before it; at the end when `to` is undefined). */
 export function movedOrder(current: readonly ProjectView[], id: string, to: string | undefined): string[] {
   const ids = current.map((p) => p.id).filter((x) => x !== id);

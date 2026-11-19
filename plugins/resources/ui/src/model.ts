@@ -81,3 +81,9 @@ export const sectionTitle = (section: string): string => {
   const w = section.replace(/[-_]+/g, ' ').trim();
   return w.charAt(0).toUpperCase() + w.slice(1);
 };
+
+/** The plan to show: the one made from the text now in the box, else none (audit C8: an earlier text's plan stayed
+ *  under a later text's error; a look that ends after the text changed shows nothing either). */
+export function planShown(made: { readonly text: string; readonly plan: Plan } | undefined, pasted: string): Plan | undefined {
+  return made && made.text === pasted ? made.plan : undefined;
+}

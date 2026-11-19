@@ -259,7 +259,10 @@ async fn not_a_task(p: &Parsed, home: &Path, port: u16, mut cat: Option<wisp_cli
         && ((words::command_shaped(&p.words, p.literal) && (!words::known(first) || words::is_group(first))) || maybe_group)
         && let Ok(c) = Client::connect(port, true).await
     {
-        cat = cli::catalogue(&c, home).await.ok();
+        cat = match cli::catalogue(&c, home).await {
+            Ok(full) => Some(cli::shown_for(&c, full, Some(first)).await),
+            Err(_) => None,
+        };
     }
     let paths: Vec<Vec<String>> = cat
         .as_ref()
@@ -385,7 +388,21 @@ async fn as_code(p: &Parsed, port: u16, cwd: &Path, home: &Path) -> Result<Optio
         }
         "export" if o.words.iter().all(|w| w.bytes().all(|b| b.is_ascii_lowercase() || b == b'-')) => {
             let c = connect().await?;
-            if !code::kind_words(&o.words, &code::kinds(&c).await?) {
+            let ks = code::kinds(&c).await?;
+            if !code::kind_words(&o.words, &ks) {
+                // one word that's no kind, or a kind among them: a slip, named (audit C5); more words are a task
+                if (o.words.len() == 1 || o.words.iter().any(|w| ks.iter().any(|k| k.named(w))))
+                    && let Some(e) = code::unknown_kinds(&o.words, &ks)
+                {
+                    // the kinds there are, then the way out every slip has (QA round 15 #2)
+                    let all = std::iter::once("export")
+                        .chain(o.words.iter().map(String::as_str))
+                        .collect::<Vec<_>>()
+                        .join(" ")
+                        .replace('"', "\\\"");
+                    eprintln!("  ✗ {e}\n  To start a task with these words: wisp -- \"{all}\"   (or quote them as one: wisp \"{all}\")");
+                    return Ok(Some(cli::USAGE_EXIT));
+                }
                 return Ok(None);
             }
             code::export_cmd(&c, &o).await?
@@ -393,8 +410,14 @@ async fn as_code(p: &Parsed, port: u16, cwd: &Path, home: &Path) -> Result<Optio
         "ls" | "list" if history_cli::wants_history(&o) && !p.flags.watch => history_cli::ls(&connect().await?, &o, cwd).await?,
         "history" if o.words.first().map(String::as_str) == Some("export") => history_cli::export(&connect().await?, &o, cwd).await?,
         "import" if o.words.len() <= 1 => history_cli::import(&connect().await?, &o, home).await?,
-        "rerun" if (o.words.len() == 1 && args::session_id(&o.words[0])) || o.last.is_some() => {
-            let o = code::Opts { words: std::iter::once("rerun".to_owned()).chain(o.words.clone()).collect(), ..o };
+        // `-d`/`--detach` as launches take it (audit C #12): a rerun returns with its id already, so it changes nothing
+        "rerun"
+            if {
+                let w = undetached(&o.words);
+                (w.len() == 1 && args::session_id(&w[0])) || o.last.is_some()
+            } =>
+        {
+            let o = code::Opts { words: std::iter::once("rerun".to_owned()).chain(undetached(&o.words)).collect(), ..o };
             tasks_cli::rerun(&connect().await?, &o, cwd).await?
         }
         "run" if !o.files.is_empty() => tasks_cli::run_file(&connect().await?, &o, cwd).await?,
@@ -409,6 +432,11 @@ async fn as_code(p: &Parsed, port: u16, cwd: &Path, home: &Path) -> Result<Optio
 }
 
 /// `wisp output`, `wisp graph` and `wisp mv` over the declared folder.
+/// The words without `-d`/`--detach` (what returning with the new id is, for verbs that already do).
+fn undetached(words: &[String]) -> Vec<String> {
+    words.iter().filter(|w| !matches!(w.as_str(), "-d" | "--detach")).cloned().collect()
+}
+
 async fn folder_view(first: &str, o: &code::Opts, port: u16, cwd: &Path) -> Result<i32> {
     let c = Client::connect(port, true).await?;
     let ks = code::kinds(&c).await?;
@@ -624,7 +652,13 @@ async fn live(p: &Parsed, home: &Path, port: u16, read: &mut Option<wisp_cli_cor
         // `wisp <plugin> <verb> …`: a command of the catalogue, else (it names none) a task
         None if p.literal != args::Literal::Task && words.first().is_some_and(|w| plugin_word(w)) && words.len() >= 2 => {
             let c = Client::connect(port, true).await?;
-            let cat = cli::catalogue(&c, home).await?;
+            // Auto put away (runtime.auto off): `wisp router …` is no command (audit C6)
+            let cat = cli::shown_for(&c, cli::catalogue(&c, home).await?, words.first()).await;
+            // …and however many words follow, never a task: a former command word mustn't launch a paid run
+            if let Some(said) = words::router_away(words, p.literal, !cat.verbs.iter().any(|v| v.plugin == "router")) {
+                eprintln!("{said}");
+                return Ok(Some(cli::USAGE_EXIT));
+            }
             let mut done = cli::generated(&c, &cat, words, &p.argv).await?;
             // `wisp machine add`: this machine's plugin has no `add`, `machines` does (QA round 11 #1)
             if done.is_none()

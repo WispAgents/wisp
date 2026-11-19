@@ -50,6 +50,8 @@ export function rowAbout(p: PluginRow, say: (k: string, v?: Readonly<Record<stri
 export const folders = defineCommand<{ peer: PeerId; q: string }, string[]>({ id: 'runtime.folders', owner: (a) => a.peer, wire: (a) => ({ q: a.q }), optimistic: 'none', pending: 'the folder suggestions' });
 
 export const list = defineCommand<{ peer: PeerId }, PluginRow[]>({ id: 'plugins.list', owner: (a) => a.peer, wire: () => ({}), optimistic: 'none', pending: 'the plugins list' });
+/** Where this wisp keeps your plugins (`<WISP_HOME>/plugins`), for the pane's foot (audit C9). */
+export const folder = defineCommand<{ peer: PeerId }, { path: string }>({ id: 'plugins.folder', owner: (a) => a.peer, wire: () => ({}), optimistic: 'none', pending: 'the plugins folder' });
 export const setEnabled = defineCommand<{ peer: PeerId; id: string; enabled: boolean }>({
   id: 'plugins.setEnabled',
   owner: (a) => a.peer,

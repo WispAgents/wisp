@@ -19,6 +19,9 @@ pub const FIRST_SWEEP_MS: u64 = 120_000;
 pub const FRESH_MS: i64 = 60_000;
 /// gits side by side
 pub const LOOKS: usize = 6;
+/// the longest a look runs (audit B #18: Settings › Worktrees said "still looking…" 40+ minutes on): one past it ends
+/// with what it had, and the pane stops saying it's looking
+pub const LOOK_MAX_MS: u64 = 90_000;
 pub const LOW_DISK: u64 = 10 * GB;
 /// a low-disk sweep stops here, so it doesn't run again next hour
 pub const ENOUGH_DISK: u64 = 15 * GB;

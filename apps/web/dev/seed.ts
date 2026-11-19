@@ -409,6 +409,8 @@ function sessionRow(peer: string, i: number, t: Task, now: number): { id: string
         // runtime's row: when the last run started and ended (a running one since `ago`, one that's back took 2 minutes)
         ...(t.state === 'running' ? { startedAt: at } : { startedAt: at - 2 * MIN, endedAt: at }),
         cwd: t.cwd,
+        // the runtime's row names its repo's folder (Manage projects counts by it, audit C1)
+        project: t.cwd.split('/').pop() ?? '',
         model: t.model ?? MODEL[t.agent],
         mode: t.capped ?? 'auto',
         ...(t.capped && { capped: t.capped }),

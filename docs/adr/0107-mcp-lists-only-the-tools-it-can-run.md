@@ -27,5 +27,10 @@
 
 - `/api/mcp` no longer offers goal, automations, git, history, settings, review, worktrees and the other ungranted
   groups' commands. Giving one to the user's harness (ADR-0040) is now a manifest grant plus its test, not automatic.
+- The stdio `wisp mcp` (what `wisp skill install` writes into a harness's `.mcp.json`) offers the user the same tools:
+  its own history tools and v1's seven task tools, then everything `/api/mcp` lists for the user, each call of the
+  latter run through `/api/mcp` (audit C, B #4: it offered 11 against 240). v1's stdio list was its 7 task tools and 4
+  crew tools; the crew ones come back this way. With no wisp running when the harness lists its tools, the list is the
+  11 local ones (a list never starts a wisp; a call does). Test: `crates/wisp/tests/serve_mcp_stdio_catalogue.rs`.
 - Tests: `crates/wisp/tests/serve_mcp_callable.rs` `every_listed_tool_is_one_wisp_mcp_may_run`, and
   `crates/wisp/tests/serve_setup.rs` `the_catalogue_is_wisps_mcp_tools` (every command both sets allow is a tool).

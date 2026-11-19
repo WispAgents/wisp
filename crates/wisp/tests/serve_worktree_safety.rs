@@ -196,6 +196,36 @@ async fn a_rerun_of_a_worktree_task_runs_in_a_worktree_of_its_own() {
     assert_eq!(git(&f.repo, &["status", "--porcelain"]), "", "the main checkout untouched");
 }
 
+/// audit C8: a rerun at an older commit (`wisp rerun`, its spec's base) was checked out in a detached
+/// `<home>/worktrees/rerun-<sha>-<x>` folder that stayed after the rerun moved into a worktree of its own (Settings ›
+/// Worktrees listed it as "No task"). Once the rerun runs in its own worktree, that folder is gone, and the rerun's
+/// branch starts at the commit it reran.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_rerun_at_an_older_commit_leaves_no_detached_folder_and_runs_at_that_commit() {
+    let f = fixture("wt-safe-rerun-sha");
+    let old = git(&f.repo, &["rev-parse", "HEAD"]);
+    std::fs::write(f.repo.join("later.txt"), "a later commit\n").unwrap();
+    git(&f.repo, &["add", "."]);
+    git(&f.repo, &["commit", "-qm", "later"]);
+    let made = f
+        .api
+        .cmd("runtime.create", json!({ "prompt": "fix it", "cwd": f.repo, "agent": "claude", "worktree": true, "base": { "sha": old } }))
+        .await;
+    let id = made["id"].as_str().unwrap().to_owned();
+    f.api.until(&id, "the rerun ends", |t| t.last().is_some_and(ended)).await;
+    let s = f.api.cmd("runtime.get", json!({ "id": id })).await;
+    let path = PathBuf::from(s["ext"]["wisp.worktrees"]["path"].as_str().unwrap_or_else(|| panic!("a worktree of its own: {s}")));
+    let list = git(&f.repo, &["worktree", "list", "--porcelain"]);
+    assert!(!list.contains("/worktrees/rerun-") && !list.lines().any(|l| l == "detached"), "no detached rerun folder left: {list}");
+    let home = path.parent().unwrap();
+    let left: Vec<String> =
+        std::fs::read_dir(home).unwrap().filter_map(Result::ok).map(|e| e.file_name().to_string_lossy().into_owned()).collect();
+    assert!(!left.iter().any(|n| n.starts_with("rerun-")), "the folder went too: {left:?}");
+    assert!(!path.join("later.txt").exists(), "it runs on the commit it reran, not today's");
+    let branch = s["ext"]["wisp.worktrees"]["branch"].as_str().unwrap().to_owned();
+    assert_eq!(git(&f.repo, &["merge-base", &old, &branch]), old, "its branch starts at the commit it reran");
+}
+
 /// orch #7: Compare's runs (one group) each get a worktree and branch of their own, whatever Worktree per task says.
 #[tokio::test(flavor = "multi_thread")]
 async fn compare_runs_each_get_a_worktree_of_their_own() {

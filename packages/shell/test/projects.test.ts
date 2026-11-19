@@ -1,6 +1,7 @@
 // v1 #772: one stored project order used wherever projects show; a task belongs to the project that holds its folder.
 import { expect, test } from 'vitest';
-import { movedOrder, projectList, projectOf } from '../src/frame/rows-view.ts';
+import { movedOrder, projectCounts, projectList, projectOf } from '../src/frame/rows-view.ts';
+import { projectRemoveAsk } from '../src/frame/project-remove.ts';
 import { addedName, folderOf, nameFor, whereIs } from '../src/frame/project-names.ts';
 
 test('projects_read_from_their_rows_in_your_order_and_a_task_is_in_the_project_holding_its_folder', () => {
@@ -49,4 +50,32 @@ test('the optimistic row of an added folder guesses runtime.projectAdd s name, n
   expect(addedName('/w/repo/.', [])).toBe('repo');
   expect(folderOf('/w/repo/./')).toBe('/w/repo');
   expect(folderOf('C:\\w\\repo\\')).toBe('C:\\w\\repo');
+});
+
+// audit C1: Manage projects read "0 tasks" for projects with tasks: it matched each task's cwd, and a worktree task's
+// cwd is outside the project (home/worktrees/<project>-<id>). A task counts for the project it belongs to.
+test('manage_projects_counts_worktree_tasks_by_the_project_they_belong_to', () => {
+  const list = projectList([{ id: 'repo', body: { path: '/w/repo' } }, { id: 'repo2', body: { path: '/w/repo2' } }], undefined);
+  const sessions = [
+    { summary: { cwd: '/h/worktrees/repo-a1', project: 'repo' }, body: { ext: { 'wisp.worktrees': { root: '/w/repo' } } } },
+    { summary: { cwd: '/h/worktrees/repo2-b2', project: 'repo2' }, body: {} },
+    { summary: { cwd: '/w/repo/src' }, body: {} },
+    { summary: { cwd: '/elsewhere' }, body: {} },
+  ];
+  const n = projectCounts(sessions, list);
+  expect(n.get('repo')).toBe(2);
+  expect(n.get('repo2')).toBe(1);
+  expect([...n.keys()].sort()).toEqual(['repo', 'repo2']);
+});
+
+// audit C2: Remove took one click. v1 asked first (projects.js: "Remove “x” from wisp? Its tasks and files are kept.").
+test('removing_a_project_asks_first_and_says_its_tasks_and_files_are_kept', () => {
+  const say = (k: string, v?: Readonly<Record<string, string | number>>): string => `${k}${v ? JSON.stringify(v) : ''}`;
+  expect(projectRemoveAsk('repo2', 3, say)).toEqual({
+    title: 'shell.projects.removeAsk.title{"name":"repo2"}',
+    body: 'shell.projects.removeAsk.body{"count":3}',
+    ok: 'shell.projects.removeAsk.ok',
+  });
+  expect(projectRemoveAsk('one', 1, say).body).toBe('shell.projects.removeAsk.bodyOne');
+  expect(projectRemoveAsk('empty', 0, say).body).toBe('shell.projects.removeAsk.bodyNone');
 });

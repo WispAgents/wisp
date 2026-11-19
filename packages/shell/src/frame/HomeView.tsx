@@ -862,8 +862,10 @@ export function HomeView(props: { readonly onBack?: () => void }): JSX.Element {
                     id: 'how',
                     label: t('shell.home.folderHow'),
                     items: [
-                      { value: 'how:worktree', label: t('shell.home.worktree'), icon: 'branch' as const, checked: worktree(), part: 'launcher.worktree' as const },
-                      { value: 'how:inPlace', label: t('shell.home.inPlace'), icon: 'folder' as const, checked: !worktree(), part: 'launcher.worktree' as const },
+                      // the pick is kept for every New task, as v1's toggle was (`defaults.worktree`); the CLI and
+                      // `wisp mcp` keep their own default (audit C4), so the menu says both
+                      { value: 'how:worktree', label: t('shell.home.worktree'), hint: t('shell.home.worktreeHint'), icon: 'branch' as const, checked: worktree(), part: 'launcher.worktree' as const },
+                      { value: 'how:inPlace', label: t('shell.home.inPlace'), hint: t('shell.home.inPlaceHint'), icon: 'folder' as const, checked: !worktree(), part: 'launcher.worktree' as const },
                     ],
                   },
                 ]

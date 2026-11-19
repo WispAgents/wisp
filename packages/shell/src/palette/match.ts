@@ -12,6 +12,8 @@
 import type { PaletteItem } from '../contract.ts';
 
 const BOUNDARY = /[\s\-_./:#@()[\]]/;
+/** what a substring on a word start adds over the same letters scattered */
+const WORD = 10;
 
 function isStart(text: string, i: number): boolean {
   if (i === 0) return true;
@@ -59,14 +61,18 @@ function matchLow(n: string, text: string, h: string): Hit | null {
   const sub = h.indexOf(n);
   if (sub >= 0) {
     let at = sub;
+    let word = false;
     for (let k = sub; k >= 0; k = h.indexOf(n, k + 1)) {
       if (isStart(text, k)) {
         at = k;
+        word = true;
         break;
       }
     }
     const idx = Array.from(n, (_, k) => at + k);
-    return { score: score(text, idx), idx };
+    // the needle as a word (or a word's start) beats letters scattered anywhere: deep in a long lede ("next to the
+    // model in the launcher") its position cost more than the scattered "mode … colors" did (audit C7)
+    return { score: score(text, idx) + (word ? WORD : 0), idx };
   }
   let start = end;
   for (let j = n.length - 1; j >= 0; start--) if (h[start] === n[j]) j--;

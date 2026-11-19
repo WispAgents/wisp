@@ -3,16 +3,16 @@
 // end. Clicking the row opens the side panel on PR. While a ship is in flight it shows the stages
 // instead; while the PR pane is open beside the task it hides, so the verdict never shows twice.
 
-import { Match, Show, Switch, createEffect, type JSX } from 'solid-js';
+import { Match, Show, Switch, createEffect, type Accessor, type JSX } from 'solid-js';
 import { CommandError, readonly, type EntityKey, type PluginClient } from '@wisp/client';
 import { mergeRequest } from './merge-request.ts';
 import type { ExtensionProps } from '@wisp/shell/contract';
 import { Button, Card, Icon, IconButton, ListRow, Stack, Toolbar, ToneChip, useSignal, type ToolbarItem } from '@wisp/ui';
 import { fixConflicts, refresh, review } from './commands.ts';
 import { t } from './i18n.ts';
-import { useMerge } from './MergeConfirm.tsx';
+import { useMerge, type MergeAsk } from './MergeConfirm.tsx';
 import { fixing, openPrs, prLine, prsOf, prTone, worstTone, type PrTone } from './model/pr.ts';
-import { REVIEW_ICON, reviewActs, reviewState } from './model/review.ts';
+import { REVIEW_ICON, reviewActs, reviewState, type ReviewContext } from './model/review.ts';
 import { stepsOfLive, track } from './model/ship.ts';
 import { ShipRun } from './ShipRun.tsx';
 import { TONE, TONE_ICON } from './tones.ts';
@@ -51,28 +51,35 @@ function Strip(props: { readonly client: PluginClient; readonly k: EntityKey }):
     if (r) return track(t, r.steps, r.error === undefined ? sh : undefined, r.error);
     return sh ? track(t, stepsOfLive(sh), sh, undefined) : undefined;
   };
-  return (
-    <Show when={!paneOpen()}>
-      <Switch>
-        <Match when={live()}>{(tr) => <ShipRun track={tr()} onRetry={() => openShip(props.client, ship.shell, props.k, s())} onDismiss={() => ship.flows.dismiss()} />}</Match>
-        <Match when={prsOf(s()).length > 0 && s()}>{(row) => <PrRow client={props.client} k={props.k} s={row()} />}</Match>
-      </Switch>
-    </Show>
-  );
-}
-
-// size-ok: the row's bar is one list of items, each with its own condition from v1
-function PrRow(props: { readonly client: PluginClient; readonly k: EntityKey; readonly s: ShipSession }): JSX.Element {
-  const ship = useShip(props.client, props.k);
-  const ctx = useReviewCtx(props.client, () => props.s);
-  const merge = useMerge(ship.flows, () => props.s, ctx, ship.shell);
-  // Merge PR #n… from a task's menu: asked here, with this strip's confirm
+  // Merge PR #n… from a task's menu (Ship ▾, the row's menu): asked here, whatever the strip shows, with the confirm the
+  // PR row's Merge opens. Only the PR row took it, and it isn't there while a ship's stages show or the PR pane is open:
+  // the ask was dropped (audit C #7).
+  const ctx = useReviewCtx(props.client, s);
+  const merge = useMerge(ship.flows, s, ctx, ship.shell);
   const asked = useSignal(readonly(mergeRequest));
   createEffect(() => {
     if (asked() !== props.k) return;
     mergeRequest(undefined);
     merge.ask();
   });
+  return (
+    <>
+      <Show when={!paneOpen()}>
+        <Switch>
+          <Match when={live()}>{(tr) => <ShipRun track={tr()} onRetry={() => openShip(props.client, ship.shell, props.k, s())} onDismiss={() => ship.flows.dismiss()} />}</Match>
+          <Match when={prsOf(s()).length > 0 && s()}>{(row) => <PrRow client={props.client} k={props.k} s={row()} merge={merge} ctx={ctx} />}</Match>
+        </Switch>
+      </Show>
+      <merge.Confirm />
+    </>
+  );
+}
+
+// size-ok: the row's bar is one list of items, each with its own condition from v1
+function PrRow(props: { readonly client: PluginClient; readonly k: EntityKey; readonly s: ShipSession; readonly merge: MergeAsk; readonly ctx: Accessor<ReviewContext> }): JSX.Element {
+  const ship = useShip(props.client, props.k);
+  const merge = props.merge;
+  const ctx = props.ctx;
   const checking = useBusy();
   const prs = () => prsOf(props.s);
   const lead = () => prs()[0];
@@ -148,7 +155,6 @@ function PrRow(props: { readonly client: PluginClient; readonly k: EntityKey; re
         />
         <Toolbar aria-label={t('wisp.ship.strip.actions')} items={items()} compact part="pr.strip.bar" />
       </Stack>
-      <merge.Confirm />
     </Card>
   );
 }

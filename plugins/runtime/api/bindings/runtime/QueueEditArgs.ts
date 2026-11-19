@@ -4,8 +4,9 @@ import type { QueueItem } from "./QueueItem";
 
 export type QueueEditArgs = { id: SessionId, 
 /**
- * the queue in this order, with your edited texts. Items left out keep their place at the end (one
- * queued meanwhile is never lost); unknown ids are skipped; wisp's own items keep their text.
+ * the queue in this order, with your edited texts: `[{"id": "<item id>", "text": "<its text>"}, …]` (only `id` and
+ * `text` are read). Items left out keep their place at the end (one queued meanwhile is never lost); unknown ids
+ * are skipped; wisp's own items keep their text.
  */
 items: Array<QueueItem>, 
 /**

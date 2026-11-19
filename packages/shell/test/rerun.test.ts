@@ -1,6 +1,6 @@
 // Rerun… (src/frame/rerun.ts, v1 actions.js rerunDialog): a new task from the old one's spec, as edited, where picked.
 import { expect, test } from 'vitest';
-import { rerunArgs, startEdits } from '../src/frame/rerun.ts';
+import { rerunArgs, rerunPlace, startEdits } from '../src/frame/rerun.ts';
 
 const spec = { prompt: 'Fix the login bug', steps: ['then run the tests'], agent: 'claude', model: 'opus', effort: 'high', mode: 'edits', cwd: '/code/web', dirs: ['/code/api'] };
 
@@ -56,4 +56,16 @@ test('a_rerun_of_a_worktree_task_runs_in_a_worktree_of_its_own_audit_b_2', () =>
   // in place stays in place; a spec that doesn't say leaves it to the peer
   expect(rerunArgs({ ...spec, worktree: false }, e, { of: 'laptop:s1', id: 'laptop:s2', at: 1 })).toMatchObject({ worktree: false });
   expect('worktree' in rerunArgs(spec, e, { of: 'laptop:s1', id: 'laptop:s2', at: 1 })).toBe(false);
+});
+
+// Audit C #6: the dialog said "Starts a new task in /tmp/proj" (the main checkout) while the rerun of a worktree task
+// gets a new worktree of its own: it says where the rerun really runs.
+test('the hint says a worktree task reruns in a new worktree of its project, not in the main checkout_audit_c_6', () => {
+  expect(rerunPlace({ prompt: 'x', cwd: '/private/tmp/qaC1/proj', worktree: true })).toEqual({ key: 'shell.rerun.hintWorktree', vars: { project: 'proj' } });
+  expect(rerunPlace({ prompt: 'x', cwd: 'C:\\code\\web\\', worktree: true })).toEqual({ key: 'shell.rerun.hintWorktree', vars: { project: 'web' } });
+  expect(rerunPlace({ prompt: 'x', cwd: '/code/web', worktree: false })).toEqual({ key: 'shell.rerun.hint', vars: { cwd: '/code/web' } });
+  expect(rerunPlace({ prompt: 'x', cwd: '/code/web' })).toEqual({ key: 'shell.rerun.hint', vars: { cwd: '/code/web' } });
+  // a task with no folder: no empty "in  on" (seen in the dev app's Rerun on a plugin task)
+  expect(rerunPlace({ prompt: 'x' })).toEqual({ key: 'shell.rerun.hintNoFolder', vars: {} });
+  expect(rerunPlace({ prompt: 'x', cwd: '', worktree: true })).toEqual({ key: 'shell.rerun.hintNoFolder', vars: {} });
 });

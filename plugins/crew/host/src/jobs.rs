@@ -97,6 +97,16 @@ pub(crate) async fn view(ctx: &Ctx, call: &Call, st: &State, m: &Member) -> Memb
     st.view(m, u32::try_from(live).unwrap_or(u32::MAX), now(ctx))
 }
 
+/// A job's worktree never piles up (ADR-0108, audit C3: 25 → 65 worktrees in 40 min): every job's goes when its turn
+/// ends with nothing changed (v1 done-folders `tidy` on a crew job ending), and a member's check-ins reuse one folder
+/// per project, on `wisp/<member>-check-in`.
+pub(crate) fn tree_reuse(args: &mut Value, m: &Member, job: JobKind) {
+    args["worktreeTidy"] = json!(true);
+    if job == JobKind::Checkin {
+        args["worktreeKey"] = json!(format!("{}-check-in", if m.name.trim().is_empty() { m.id.as_str() } else { m.name.as_str() }));
+    }
+}
+
 /// Starts one job as a task.
 /// `w.run`: this job's own pick (`wisp_crew_core::run`), already checked. `capped`: a capped lead's cap
 /// (`{ mode }`), which a job it delegated runs under (v1 `atCap`, and the job keeps it as a child would).
@@ -127,6 +137,7 @@ async fn start(ctx: &Ctx, call: &Call, st: &State, m: &Member, w: &WaitingJob, c
     if place.is_none() && !m.cwd.is_empty() {
         let set = ctx.setting(wisp_runtime_api::commands::WORKTREE_SETTING);
         args["worktree"] = json!(wisp_runtime_api::commands::worktree_by_default(set.as_ref(), mode == "plan"));
+        tree_reuse(&mut args, m, job);
     }
     // the job's delegates (v1 crew.js): the member's own (Org chart links, "Make Bob Ada's delegate") and the
     // members tagged in what it was asked; the runtime makes them the lead's roster (orch #2)
@@ -486,6 +497,22 @@ async fn profile_names(ctx: &wisp_kernel::Ctx, call: &wisp_kernel::Call) -> Vec<
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Audit C3 (ADR-0108): a member's check-ins reuse one worktree (`worktreeKey`, branch `wisp/<member>-check-in`)
+    /// and every job's worktree goes when it changed nothing (`worktreeTidy`); a job you gave it has a folder of its own.
+    #[test]
+    fn a_check_in_reuses_the_members_worktree_and_every_job_tidies_its_own() {
+        let m = Member { id: "c1".into(), name: "Ada".into(), ..Member::default() };
+        let mut checkin = json!({});
+        tree_reuse(&mut checkin, &m, JobKind::Checkin);
+        assert_eq!(checkin, json!({ "worktreeTidy": true, "worktreeKey": "Ada-check-in" }));
+        let mut job = json!({});
+        tree_reuse(&mut job, &m, JobKind::Task);
+        assert_eq!(job, json!({ "worktreeTidy": true }));
+        let a: wisp_runtime_api::commands::StartArgs =
+            serde_json::from_value(json!({ "prompt": "x", "worktreeKey": "Ada-check-in", "worktreeTidy": true })).unwrap();
+        assert_eq!((a.worktree_key.as_deref(), a.worktree_tidy), (Some("Ada-check-in"), true), "runtime.create reads them");
+    }
 
     /// v1 #794: a crew job a trigger or a pushed mention woke carries the waker as its lineage, so its Plan stays
     /// read-only; one you gave it (no source) has none.

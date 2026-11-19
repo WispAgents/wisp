@@ -133,6 +133,13 @@ fn row(def: &EntityDef, id: &str, v: &impl serde::Serialize) -> Row {
     r
 }
 
+/// The view the pane is told, `offering` while Bring in's look runs: it says it's looking then too (audit B #18).
+#[must_use]
+pub fn looking_for_offers(mut view: WorktreesView, offering: bool) -> WorktreesView {
+    view.looking |= offering;
+    view
+}
+
 /// The rows the pane shows for this view and these offers, by kind.
 pub fn rows(view: &WorktreesView, offers: &[Offer]) -> Vec<(&'static EntityDef, Vec<Row>)> {
     let status = json!({ "size": view.size, "disk": view.disk, "looking": view.looking, "cleaning": view.cleaning, "last": view.last });

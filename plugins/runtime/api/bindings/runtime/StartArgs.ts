@@ -81,4 +81,14 @@ formula?: unknown, lineage?: Lineage,
 /**
  * a harness you picked after Auto's preview showed another (v1 `autoOverride`): Auto learns from it
  */
-autoOverride?: AutoOverride, };
+autoOverride?: AutoOverride, 
+/**
+ * a recurring run's worktree key (a crew member's check-ins, a trigger's runs, ADR-0108): its runs reuse one
+ * worktree per project (`wisp/<key>`) instead of one each. Additive (2026-11-19).
+ */
+worktreeKey?: string, 
+/**
+ * a run started for you (a crew job, a check-in, a trigger's run, ADR-0108): its worktree goes when a turn ends with
+ * nothing changed. Additive (2026-11-19).
+ */
+worktreeTidy?: boolean, };

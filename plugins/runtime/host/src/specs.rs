@@ -153,6 +153,17 @@ async fn resolve(store: &Store, a: &mut StartArgs, asked: &str) -> Result<Option
 pub struct Prepared {
     pub args: StartArgs,
     pub steps: Vec<String>,
+    /// a rerun at an older commit: the detached folder made for it (`<home>/worktrees/rerun-<sha>-<x>`) and the
+    /// project it was made from. A rerun that gets a worktree of its own leaves it (audit C8: it was left behind).
+    pub detached: Option<(String, String)>,
+}
+
+/// The detached folder of a rerun (`Prepared::detached`) removed, once the rerun runs in a worktree of its own (audit
+/// C8): from the project's checkout, so git forgets it too. Best effort: one left is a leftover the cleanup lists.
+pub async fn drop_detached(proc: &Proc, project: &str, path: &str) {
+    if git(proc, project, &["worktree", "remove", "--force", path]).await.is_none() && std::path::Path::new(path).exists() {
+        tracing::warn!(path, "runtime: a rerun's detached folder stayed");
+    }
 }
 
 /// Resolves the profile, records the base (a worktree for an older commit), stores the snapshot and puts
@@ -409,6 +420,7 @@ pub async fn prepare(
     // the code it starts from
     let cwd = a.cwd.clone().unwrap_or_default();
     let mut base = if cwd.is_empty() { None } else { base_at(proc, &cwd).await };
+    let mut detached = None;
     if let (Some(want), Some(have)) = (a.base.clone().filter(|b| !b.sha.is_empty()), base.clone())
         && !have.sha.starts_with(&want.sha)
     {
@@ -426,6 +438,7 @@ pub async fn prepare(
             )));
         }
         base = Some(Base { sha: git(proc, &path, &["rev-parse", "HEAD"]).await.unwrap_or(want.sha), worktree: path.clone(), ..have });
+        detached = Some((cwd.clone(), path.clone()));
         a.cwd = Some(path);
     }
     let h = save_formula(store, resolved.as_ref(), &a).await?;
@@ -468,7 +481,7 @@ pub async fn prepare(
     }
     a.ext.insert("wisp.runtime".into(), Value::Object(own));
     let steps = std::mem::take(&mut a.steps);
-    Ok(Prepared { args: a, steps })
+    Ok(Prepared { args: a, steps, detached })
 }
 
 /// A task's spec: what was stored at start, its steps read back from the turns the user (or a step)

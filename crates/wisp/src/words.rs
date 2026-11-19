@@ -471,6 +471,21 @@ pub fn group_line(words: &[String]) -> bool {
     said.len() <= 1 || said.first().is_some_and(|v| own_verb(first, v))
 }
 
+/// Auto put away (`runtime.auto` off, audit C6): `wisp router <any words>` is refused like a slip (exit 2, the
+/// `wisp -- "…"` way out), never read as a prompt: a former command word must not launch a paid run. `away`: the
+/// router's verbs aren't offered. None when the words don't start with `router`, or Auto is on.
+pub fn router_away(words: &[String], literal: Literal, away: bool) -> Option<String> {
+    if !away || literal != Literal::No || words.first().map(String::as_str) != Some("router") {
+        return None;
+    }
+    let all = words.join(" ").replace('"', "\\\"");
+    // the slip's own words (`wisp router has no …`), then why it has none
+    let typed = words.get(1).map_or("", String::as_str);
+    Some(format!(
+        "  ✗ wisp router has no {typed}: Auto is off (runtime.auto), so the router is put away\n  To start a task with these words: wisp -- \"{all}\"   (or quote them as one: wisp \"{all}\")"
+    ))
+}
+
 /// Whether `word` is a built-in command group (strict: a verb it doesn't have is an error, never a task).
 pub fn is_group(word: &str) -> bool {
     VERB_PATHS.iter().any(|p| p.cmd == word) || GROUPS.iter().any(|(g, _)| *g == word)

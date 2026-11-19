@@ -72,8 +72,8 @@ pub fn launch_args(f: &Flags, prompt: &str, cwd: &str) -> Value {
 
 /// Setup audit F4: a task started from a project's folder is that project's, as New task's is. Its cwd is spelled as
 /// the project's path (the shell's `/private/var/…` is the project's `/var/…`, so the app files it under the project),
-/// and it gets its own worktree when Worktree per task (`worktrees.worktree`) is on, unless `--worktree` or
-/// `--no-worktree` said. Outside every project the arguments stay as they are.
+/// and it gets its own worktree ([`own_worktree`]) unless `--worktree` or `--no-worktree` said. Outside every project the
+/// arguments stay as they are.
 pub async fn in_project(c: &Client, a: &mut Value) {
     let Some(cwd) = a.get("cwd").and_then(Value::as_str).map(str::to_owned) else { return };
     let Ok(projects) = c.cmd("resources.export", json!({ "kinds": ["project"] })).await else { return };
@@ -95,12 +95,15 @@ pub async fn in_project(c: &Client, a: &mut Value) {
     let Some((_, spelled)) = best else { return };
     a["cwd"] = json!(spelled);
     if a.get("worktree").is_none() {
-        let on = c.cmd("settings.get", json!({ "key": "worktrees.worktree" })).await.ok().is_none_or(|v| {
-            let v = v.get("value").unwrap_or(&v);
-            !(v == "off" || *v == json!(false))
-        });
-        a["worktree"] = json!(on);
+        a["worktree"] = json!(own_worktree(a));
     }
+}
+
+/// The CLI's (and `wisp mcp`'s) own default (audit C4): a worktree of its own in a project, except in Plan mode (nothing
+/// is written), whatever New task's Where last picked. The launcher's In place is sticky for New task, as v1's toggle
+/// was (`defaults.worktree`), and five CLI launches after it edited the user's checkout; `--no-worktree` runs in place.
+pub fn own_worktree(a: &Value) -> bool {
+    a.get("mode").and_then(Value::as_str) != Some("plan")
 }
 
 /// Until the task needs you (it isn't running), from its topic: no polling.
@@ -160,7 +163,13 @@ pub async fn show(c: &Client, f: &Flags, id: &str, summary: Option<Value>) -> Re
     }
     let st = crate::cli::style();
     let family = crate::history_cli::lineage_line(c, id).await.map_or_else(String::new, |l| format!("\n{l}"));
-    let blocks = p.get("blocks").and_then(Value::as_array).cloned().unwrap_or_default();
+    let mut blocks = p.get("blocks").and_then(Value::as_array).cloned().unwrap_or_default();
+    // a run at its usage limit: the hero says so in words; the CLI's raw stderr under it (`…limit reached|1767225600`,
+    // an epoch) is for the page's card, never the terminal (audit C #13)
+    let last = c.cmd("runtime.turns", json!({ "id": id, "limit": 1 })).await.ok();
+    if last.as_ref().and_then(Value::as_array).and_then(|t| t.last()).is_some_and(|t| t.get("limit").is_some_and(|l| !l.is_null())) {
+        blocks.retain(|b| b.get("type").and_then(Value::as_str) != Some("terminal"));
+    }
     let body = if blocks.is_empty() { String::new() } else { wisp_cli_core::Renderers::builtin().answer(&blocks, &st).join("\n") };
     let asks = asking(&task);
     say(&format!("◌ {}  [{}{still}]  {id}{family}\n\n{body}{asks}", s(&task, "title"), s(&task, "state")));
@@ -246,7 +255,7 @@ pub async fn ls(c: &Client, f: &Flags) -> Result<()> {
         .map(|x| {
             let ask =
                 x.get("question").and_then(Value::as_str).filter(|q| !q.is_empty()).map_or(String::new(), |q| format!("  — asks: {q}"));
-            let proj = std::path::Path::new(s(x, "cwd")).file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+            let proj = project_of(x);
             format!(
                 "{}  {:<7}  {:<8}  {:<16}  {}{ask}",
                 s(x, "id"),
@@ -259,6 +268,15 @@ pub async fn ls(c: &Client, f: &Flags) -> Result<()> {
         .collect();
     out(f, &json!(rows), &if lines.is_empty() { "No sessions.".to_owned() } else { format!("{}{more}", lines.join("\n")) });
     Ok(())
+}
+
+/// The project a list row is in: its worktree's project (`summary.project`, the repo it was made from; the worktree's
+/// own folder is `proj-01a1f…`, audit C #15), else its folder's name.
+fn project_of(row: &Value) -> String {
+    let named = |v: Option<&Value>| v.and_then(Value::as_str).filter(|p| !p.is_empty()).map(str::to_owned);
+    named(row.pointer("/summary/project"))
+        .or_else(|| named(row.get("project")))
+        .unwrap_or_else(|| std::path::Path::new(s(row, "cwd")).file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default())
 }
 
 #[allow(clippy::many_single_char_names)]
@@ -317,6 +335,15 @@ pub async fn btw_answer(c: &Client, id: &str, btw: &str) -> Result<Value> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Audit C4: New task's In place (`worktrees.worktree = off`) is sticky for New task, as in v1; a CLI or `wisp mcp`
+    /// launch in a project keeps its own default, a worktree, except in Plan mode.
+    #[test]
+    fn a_cli_launch_in_a_project_gets_its_own_worktree_whatever_new_task_picked_audit_c4() {
+        assert!(own_worktree(&json!({ "prompt": "x", "cwd": "/p" })));
+        assert!(own_worktree(&json!({ "prompt": "x", "mode": "edits" })));
+        assert!(!own_worktree(&json!({ "prompt": "x", "mode": "plan" })));
+    }
 
     #[test]
     fn launch_args_leave_the_rest_to_the_default_profile() {

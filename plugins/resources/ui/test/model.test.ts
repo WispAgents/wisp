@@ -1,5 +1,5 @@
 import { expect, test } from 'vitest';
-import { changeLines, formatOf, groups, kindCounts, picked, sectionTitle, type Plan } from '../src/model.ts';
+import { changeLines, formatOf, groups, kindCounts, picked, planShown, sectionTitle, type Plan } from '../src/model.ts';
 
 test('setup_import_reads_the_plan_as_cards_and_applies_only_whats_ticked', () => {
   expect([formatOf('wisp: 1\n'), formatOf(' {"wisp":1}'), formatOf('wisp = 1\n')]).toEqual(['yaml', 'json', 'toml']);
@@ -41,4 +41,15 @@ test('setup_names_each_kind_in_words_not_its_raw_id_qa_r1_28', () => {
     'Crew',
     'Mcp servers',
   ]);
+});
+
+// audit C8: after a plan for one text, pasting another that fails left the first plan under the error ("It can't be
+// applied · settings.worktrees.max … not 33"). A plan shows only while the box holds the text it was made from.
+test('a_plan_shows_only_for_the_text_it_was_made_from', () => {
+  const p = { ops: [], unchanged: 0 } as unknown as Plan;
+  const made = { text: 'wisp: 1\nsettings:\n  worktrees.max: 33', plan: p };
+  expect(planShown(made, made.text)).toBe(p);
+  expect(planShown(made, 'hello')).toBeUndefined(); // edited (or a later look failed: nothing made for it)
+  expect(planShown(made, `${made.text}\n`)).toBeUndefined();
+  expect(planShown(undefined, made.text)).toBeUndefined();
 });

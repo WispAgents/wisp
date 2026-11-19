@@ -44,6 +44,26 @@ impl wisp_kernel::Command for Trust {
     type Out = serde_json::Value;
 }
 
+/// `plugins.folder`: where this wisp keeps your plugins (`<WISP_HOME>/plugins`), for Settings → Plugins' foot (audit
+/// C9: it said `~/.wisp/plugins` whatever `WISP_HOME` was).
+#[derive(Debug)]
+pub struct Folder;
+impl wisp_kernel::Command for Folder {
+    const ID: &'static str = "plugins.folder";
+    const PERMISSION: Option<&'static str> = Some(wisp_plugins_api::perm::READ);
+    const READ_ONLY: bool = true;
+    type Args = serde_json::Value;
+    fn args_ts() -> Option<String> {
+        wisp_plugins_api::any_args_ts()
+    }
+    type Out = FolderOut;
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct FolderOut {
+    pub path: String,
+}
+
 /// `plugins.ui` (ADR-0048): untrusted plugins' UI modules, for the shell's remote view host.
 #[derive(Debug)]
 pub struct Ui;
@@ -115,6 +135,9 @@ impl Plugin for PluginsPlugin {
 
     fn setup(&self, s: &mut Setup) -> Result<()> {
         s.command::<List, _, _>(|ctx, _call, _args| async move { rows(&ctx).await });
+        s.command::<Folder, _, _>(|ctx, _call, _args| async move {
+            Ok(FolderOut { path: ctx.service::<wisp_kernel::services::Paths>()?.join("plugins").display().to_string() })
+        });
         let kind = crate::kinds::register(s);
         let kept = kind.clone();
         s.command::<SetEnabled, _, _>(move |ctx, call, a| {

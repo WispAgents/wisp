@@ -162,6 +162,31 @@ pub fn local_path(source: &str, home: Option<&Path>) -> PathBuf {
     }
 }
 
+/// What a failed `git clone` of `url` says, in one plain sentence (audit C9: the toast was git's whole output, with
+/// wisp's staging folder in it): an unknown host, no repository there, a sign-in git doesn't have, else git's own
+/// `fatal:` line without any path of wisp's.
+pub fn clone_error(stderr: &str, url: &str) -> String {
+    let fatal = stderr
+        .lines()
+        .rev()
+        .find_map(|l| l.trim().strip_prefix("fatal: "))
+        .unwrap_or_else(|| stderr.trim().lines().last().unwrap_or_default());
+    if let Some(host) = fatal.split("Could not resolve host: ").nth(1) {
+        return format!("Couldn't reach {} to clone {url}", host.trim());
+    }
+    if let Some(host) = fatal.split("Failed to connect to ").nth(1).and_then(|r| r.split_whitespace().next()) {
+        return format!("Couldn't reach {host} to clone {url}");
+    }
+    if fatal.contains("not found") || stderr.contains("Repository not found") || fatal.contains("does not appear to be a git repository") {
+        return format!("No git repository at {url}");
+    }
+    if fatal.contains("could not read Username") || fatal.contains("Authentication failed") || fatal.contains("Permission denied") {
+        return format!("{url} needs a sign-in git doesn't have");
+    }
+    let plain: Vec<&str> = fatal.split_whitespace().filter(|w| !w.contains(".incoming-")).collect();
+    format!("Couldn't clone {url}: {}", plain.join(" ").trim_end_matches([':', '.']))
+}
+
 /// `plugins.install`: the source fetched into a staging folder, checked, then moved into place and added (off).
 pub async fn install(ctx: &Ctx, a: &InstallArgs) -> Result<Installed> {
     let home = ctx.service::<wisp_kernel::services::Paths>()?;
@@ -184,13 +209,18 @@ pub async fn install(ctx: &Ctx, a: &InstallArgs) -> Result<Installed> {
             .collect();
         match proc.exec("git", &args, opts).await {
             Ok(r) if r.exit.success() => Ok(()),
-            Ok(r) => Err(format!("git couldn't clone it: {}", r.stderr_text().trim())),
+            Ok(r) => Err(clone_error(&r.stderr_text(), source)),
             Err(e) => Err(format!("git couldn't run: {e}")),
         }
     } else {
         let user = std::env::var_os("HOME").or_else(|| std::env::var_os("USERPROFILE")).map(PathBuf::from);
         let from = local_path(source, user.as_deref());
-        if tokio::fs::metadata(from.join(MANIFEST)).await.is_ok_and(|m| m.is_file()) {
+        // as Projects says it (audit C9): a word that's no path, a folder that isn't there, then one with no manifest
+        if !from.is_absolute() {
+            Err(format!("{source} isn't a full path: type the plugin folder's full path, like ~/code/my-plugin, or a git URL"))
+        } else if !tokio::fs::metadata(&from).await.is_ok_and(|m| m.is_dir()) {
+            Err(format!("No folder at {source}"))
+        } else if tokio::fs::metadata(from.join(MANIFEST)).await.is_ok_and(|m| m.is_file()) {
             copy_dir(&from, &staging).await.map_err(|e| format!("couldn't copy it: {e}"))
         } else {
             Err(format!("{source} has no {MANIFEST}"))
@@ -348,6 +378,24 @@ pub async fn trust(ctx: &Ctx, a: &TrustArgs) -> Result<serde_json::Value> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Audit C9: a bad git URL's toast was git's whole output, with the staging folder in it ("Cloning into
+    /// '…/plugins/.incoming-01a1…'… fatal: …"). It's one plain sentence naming the URL.
+    #[test]
+    fn a_failed_clone_says_one_plain_sentence() {
+        let url = "https://example.invalid/me/p.git";
+        let raw = "Cloning into '/h/plugins/.incoming-01a1f3'...\nfatal: unable to access 'https://example.invalid/me/p.git/': Could not resolve host: example.invalid\n";
+        assert_eq!(clone_error(raw, url), "Couldn't reach example.invalid to clone https://example.invalid/me/p.git");
+        let raw = "Cloning into '/h/plugins/.incoming-9'...\nfatal: unable to access 'https://127.0.0.1:9/none.git/': Failed to connect to 127.0.0.1 port 9 after 0 ms: Couldn't connect to server\n";
+        assert_eq!(clone_error(raw, "https://127.0.0.1:9/none.git"), "Couldn't reach 127.0.0.1 to clone https://127.0.0.1:9/none.git");
+        let raw = "Cloning into '/h/plugins/.incoming-9'...\nremote: Repository not found.\nfatal: repository 'https://github.com/me/nope/' not found\n";
+        assert_eq!(clone_error(raw, "https://github.com/me/nope"), "No git repository at https://github.com/me/nope");
+        let raw = "Cloning into '/h/plugins/.incoming-9'...\nfatal: could not read Username for 'https://github.com': terminal prompts disabled\n";
+        assert_eq!(clone_error(raw, "https://github.com/me/private"), "https://github.com/me/private needs a sign-in git doesn't have");
+        let raw = "Cloning into '/h/plugins/.incoming-9'...\nfatal: something odd at /h/plugins/.incoming-9\n";
+        let e = clone_error(raw, "https://x/y");
+        assert!(!e.contains(".incoming") && !e.contains('\n') && e.starts_with("Couldn't clone https://x/y: "), "{e}");
+    }
 
     /// v1's `spell_installed`, for a plugin: where from and what kind, as fixed values (an install is always off).
     #[test]

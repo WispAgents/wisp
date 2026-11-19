@@ -3,14 +3,15 @@
 // remove; and the git repos found on this computer, one click to add. Every write is a resource op on wisp.runtime's
 // `project` kind, shown at once and rolled back with a toast if refused.
 
-import { createMemo, createResource, createSignal, onMount, type JSX } from 'solid-js';
+import { createMemo, createResource, createSignal, onMount, Show, type JSX } from 'solid-js';
 import { defineCommand, entityKey, type PeerId, type PluginClient } from '@wisp/client';
-import { PathField, ProjectsSheet, reorderable, useSignal } from '@wisp/ui';
+import { Button, Dialog, Inline, PathField, ProjectsSheet, reorderable, useSignal } from '@wisp/ui';
 import { useShell } from '../context.tsx';
 import { usePluginClient } from '../slot.tsx';
 import { SESSION, type SessionRow } from '../rows.ts';
 import { useProjects } from './projects.ts';
-import { projectOf, type ProjectView } from './rows-view.ts';
+import { projectCounts, type ProjectView } from './rows-view.ts';
+import { projectRemoveAsk } from './project-remove.ts';
 import { addedName, folderOf, nameFor, whereIs } from './project-names.ts';
 import '../i18n/lazy.ts';
 
@@ -85,14 +86,7 @@ export default function Projects(_p: { readonly client: PluginClient; readonly p
     const r = rows().find((x) => (x as { id?: string }).id === id) as { body?: Record<string, unknown> } | undefined;
     return { ...(r?.body ?? {}) };
   };
-  const counts = createMemo(() => {
-    const out = new Map<string, number>();
-    for (const s of sessions()) {
-      const p = projectOf(String(s.summary['cwd'] ?? ''), list());
-      if (p) out.set(p.id, (out.get(p.id) ?? 0) + 1);
-    }
-    return out;
-  });
+  const counts = createMemo(() => projectCounts(sessions(), list()));
   const add = (path: string): void => {
     // a folder that's a project already stays one project (v1 addProject returned the one it had)
     const had = list().find((p) => folderOf(p.path) === folderOf(path));
@@ -178,68 +172,104 @@ export default function Projects(_p: { readonly client: PluginClient; readonly p
   onMount(() => requestAnimationFrame(() => pathEl?.focus()));
   // the empty state points only at what's there: "pick one below" with nothing below read as a broken page (F26)
   const below = (): boolean => (found() ?? []).length > 0 || ghRepos().length > 0;
+  // Remove asks first (v1 projects.js, audit C2): what happens to its tasks and files, then the red button
+  const [removing, setRemoving] = createSignal<ProjectView | undefined>();
+  const removeAsk = createMemo(() => {
+    const p = removing();
+    return p && projectRemoveAsk(p.name, counts().get(p.id) ?? 0, t);
+  });
+  const doRemove = (): void => {
+    const p = removing();
+    setRemoving(undefined);
+    if (p) void shell.client.commands.run(dropProject, { peer: home, name: p.id }).catch(() => undefined);
+  };
   const openMachines = (): void => shell.navigate({ t: 'openOverlay', overlay: { kind: 'viewer', id: 'shell-settings.sheet' as never, params: { pane: 'machines' } } });
   return (
-    <ProjectsSheet
-      places={[{ id: '', label: t('shell.card.thisComputer'), icon: 'folder', on: true }]}
-      onPlace={() => undefined}
-      addMachine={{ label: t('shell.projects.machine'), title: t('shell.projects.machineTitle'), onClick: openMachines }}
-      field={
-        <PathField
-          ref={(el) => (pathEl = el)}
-          size="lg"
-          value={source()}
-          onInput={setSource}
-          suggest={(q) => shell.client.commands.run(folders, { peer: home, q })}
-          skip={(q) => IS_URL.test(q)}
-          onPick={(p) => {
-            setSource('');
-            add(p);
-          }}
-          onEnter={submit}
-          placeholder={t('shell.projects.placeholder')}
-          aria-label={t('shell.projects.add')}
-        />
-      }
-      browse={shell.platform.pickFolder ? { label: t('shell.projects.browse'), onClick: () => void shell.platform.pickFolder?.().then((dir) => dir && add(dir)) } : undefined}
-      add={{ label: IS_URL.test(source().trim()) ? t('shell.projects.clone') : t('shell.projects.add'), onClick: submit, busy: adding() }}
-      hint={hint()}
-      rows={list().map((p) => ({
-        id: p.id,
-        name: p.name,
-        path: tilde(p.path),
-        count: t((counts().get(p.id) ?? 0) === 1 ? 'shell.projects.task' : 'shell.projects.tasks', { count: counts().get(p.id) ?? 0 }),
-        color: COLORS.includes(p.color as never) ? (p.color as string) : 'slate',
-        reorder: reorderable('projects', p.id, ids, reorder),
-      }))}
-      empty={t(below() ? 'shell.projects.none' : 'shell.projects.noneAbove')}
-      nameLabel={t('shell.projects.name')}
-      colourLabel={t('shell.projects.colour')}
-      colours={COLORS.map((c) => ({ value: c, label: t(`shell.projects.color.${c}`) }))}
-      onColour={(id, c) => {
-        const p = list().find((x) => x.id === id);
-        if (p) recolor(p, c);
-      }}
-      onRename={renameTo}
-      removeLabel={(name) => t('shell.projects.remove', { name })}
-      onRemove={(id) => void shell.client.commands.run(dropProject, { peer: home, name: id }).catch(() => undefined)}
-      github={{
-        heading: t('shell.projects.github'),
-        sub: t('shell.projects.githubHint'),
-        items: (ghAll() ? ghRepos() : ghRepos().slice(0, 6)).map((r) => {
-          const [owner = '', name = r.repo] = r.repo.split('/');
-          const marks = [r.private && t('shell.projects.private'), r.fork && t('shell.projects.fork')].filter(Boolean).join(' · ');
-          return { url: r.url, name, owner: marks ? `${owner} · ${marks}` : owner, title: r.description || r.repo };
-        }),
-        onClone: cloneRepo,
-        more: ghRepos().length > 6 ? { label: ghAll() ? t('shell.projects.showFewer') : t('shell.projects.showAll', { count: ghRepos().length }), onClick: () => setGhAll(!ghAll()) } : undefined,
-      }}
-      found={{
-        heading: t('shell.projects.found'),
-        sub: t('shell.projects.foundHint'),
-        items: (found() ?? []).map((f) => ({ path: f.path, name: f.name, where: whereIs(f.path), label: t('shell.projects.addFound', { name: f.name }) })),
-        onAdd: (path) => add(path),
-      }}
-    />
+    <>
+      <ProjectsSheet
+        places={[{ id: '', label: t('shell.card.thisComputer'), icon: 'folder', on: true }]}
+        onPlace={() => undefined}
+        addMachine={{ label: t('shell.projects.machine'), title: t('shell.projects.machineTitle'), onClick: openMachines }}
+        field={
+          <PathField
+            ref={(el) => (pathEl = el)}
+            size="lg"
+            value={source()}
+            onInput={setSource}
+            suggest={(q) => shell.client.commands.run(folders, { peer: home, q })}
+            skip={(q) => IS_URL.test(q)}
+            onPick={(p) => {
+              setSource('');
+              add(p);
+            }}
+            onEnter={submit}
+            placeholder={t('shell.projects.placeholder')}
+            aria-label={t('shell.projects.add')}
+          />
+        }
+        browse={shell.platform.pickFolder ? { label: t('shell.projects.browse'), onClick: () => void shell.platform.pickFolder?.().then((dir) => dir && add(dir)) } : undefined}
+        add={{ label: IS_URL.test(source().trim()) ? t('shell.projects.clone') : t('shell.projects.add'), onClick: submit, busy: adding() }}
+        hint={hint()}
+        rows={list().map((p) => ({
+          id: p.id,
+          name: p.name,
+          path: tilde(p.path),
+          count: t((counts().get(p.id) ?? 0) === 1 ? 'shell.projects.task' : 'shell.projects.tasks', { count: counts().get(p.id) ?? 0 }),
+          color: COLORS.includes(p.color as never) ? (p.color as string) : 'slate',
+          reorder: reorderable('projects', p.id, ids, reorder),
+        }))}
+        empty={t(below() ? 'shell.projects.none' : 'shell.projects.noneAbove')}
+        nameLabel={t('shell.projects.name')}
+        colourLabel={t('shell.projects.colour')}
+        colours={COLORS.map((c) => ({ value: c, label: t(`shell.projects.color.${c}`) }))}
+        onColour={(id, c) => {
+          const p = list().find((x) => x.id === id);
+          if (p) recolor(p, c);
+        }}
+        onRename={renameTo}
+        removeLabel={(name) => t('shell.projects.remove', { name })}
+        onRemove={(id) => setRemoving(list().find((p) => p.id === id))}
+        github={{
+          heading: t('shell.projects.github'),
+          sub: t('shell.projects.githubHint'),
+          items: (ghAll() ? ghRepos() : ghRepos().slice(0, 6)).map((r) => {
+            const [owner = '', name = r.repo] = r.repo.split('/');
+            const marks = [r.private && t('shell.projects.private'), r.fork && t('shell.projects.fork')].filter(Boolean).join(' · ');
+            return { url: r.url, name, owner: marks ? `${owner} · ${marks}` : owner, title: r.description || r.repo };
+          }),
+          onClone: cloneRepo,
+          more: ghRepos().length > 6 ? { label: ghAll() ? t('shell.projects.showFewer') : t('shell.projects.showAll', { count: ghRepos().length }), onClick: () => setGhAll(!ghAll()) } : undefined,
+        }}
+        found={{
+          heading: t('shell.projects.found'),
+          sub: t('shell.projects.foundHint'),
+          items: (found() ?? []).map((f) => ({ path: f.path, name: f.name, where: whereIs(f.path), label: t('shell.projects.addFound', { name: f.name }) })),
+          onAdd: (path) => add(path),
+        }}
+      />
+      <Show when={removeAsk()}>
+        {(q) => (
+          <Dialog
+            open
+            role="alertdialog"
+            size="sm"
+            title={q().title}
+            description={q().body}
+            onOpenChange={(open) => !open && setRemoving(undefined)}
+            part="projects.removeAsk"
+            footer={
+              <Inline gap="4" justify="end">
+                <Button variant="ghost" onClick={() => setRemoving(undefined)}>
+                  {t('shell.stop.cancel')}
+                </Button>
+                <Button variant="danger" part="projects.removeAsk.ok" onClick={doRemove}>
+                  {q().ok}
+                </Button>
+              </Inline>
+            }
+          />
+        )}
+      </Show>
+    </>
   );
 }

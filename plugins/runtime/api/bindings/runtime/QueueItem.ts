@@ -2,7 +2,11 @@
 import type { JsonValue } from "../serde_json/JsonValue";
 import type { Attachment } from "./Attachment";
 
-export type QueueItem = { id: string, text: string, attachments: Array<Attachment>, at: bigint, by?: string, 
+export type QueueItem = { id: string, text: string, attachments: Array<Attachment>, 
+/**
+ * when it was queued; an item written back (`runtime.queue.edit`'s `items`) may leave it out (audit C #10)
+ */
+at: bigint, by?: string, 
 /**
  * how it runs when it is sent (mode, run overrides), as the follow-up carried them
  */

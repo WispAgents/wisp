@@ -75,6 +75,15 @@ impl Runtime {
         timeout: Duration,
         stop: Option<watch::Receiver<bool>>,
     ) -> Result<SideOut> {
+        // an id of its own (audit C18): a harness that names a new session up front by the turn's id (copilot's
+        // `--session-id`) put every side run of a task in one session named by the task's id
+        let own;
+        let run = if run.turn_id.is_empty() {
+            own = HarnessRun { turn_id: wisp_kernel::ids::uuid7(), ..run.clone() };
+            &own
+        } else {
+            run
+        };
         let launch = h.launch(run)?;
         // the files it asked for (codex's base instructions, grok's prompt file, copilot's usage file) in a folder of
         // its own, and `{tmp}` in its argv and env pointing there, as a turn's launch has them

@@ -1,6 +1,8 @@
 // Rerun… (v1 actions.js rerunDialog, F-task-43/44; ADR-0027: a rerun is the task's spec run again): a new task from
 // this one's spec (`runtime.spec`: its first prompt, harness, model, thinking, mode, folder, extra folders, the steps
 // after), with what you changed in the dialog, on the computer you pick. The old task is kept as it is. DOM-free.
+// Its hints are lazy strings (only the Rerun dialog, a lazy part, imports this file).
+import '../i18n/lazy.ts';
 
 export interface RerunSpec {
   readonly prompt: string;
@@ -63,4 +65,15 @@ export function rerunArgs(s: RerunSpec, e: RerunEdits, o: { readonly of: string;
     ...(s.ext && Object.keys(s.ext).length > 0 && { ext: { ...s.ext } }),
     lineage: { rerunOf: o.of.startsWith(`${e.peer}:`) ? o.of.slice(e.peer.length + 1) : o.of },
   };
+}
+
+/** The hint's words for where the rerun runs (audit C #6): a task that ran in a worktree of its own reruns in a new one
+ *  of its project (its spec's `cwd` is the main checkout, which the hint named); otherwise in its folder. */
+export function rerunPlace(
+  s: RerunSpec,
+): { readonly key: 'shell.rerun.hint'; readonly vars: { readonly cwd: string } } | { readonly key: 'shell.rerun.hintWorktree'; readonly vars: { readonly project: string } } | { readonly key: 'shell.rerun.hintNoFolder'; readonly vars: Record<string, never> } {
+  const cwd = s.cwd ?? '';
+  if (!cwd) return { key: 'shell.rerun.hintNoFolder', vars: {} };
+  if (s.worktree === true) return { key: 'shell.rerun.hintWorktree', vars: { project: cwd.split(/[\\/]/).filter(Boolean).pop() ?? cwd } };
+  return { key: 'shell.rerun.hint', vars: { cwd } };
 }

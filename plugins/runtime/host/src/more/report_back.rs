@@ -233,7 +233,10 @@ impl Runtime {
 
     /// The next queued item of an idle lead, claimed under its lock (as `release_run` does, without touching a live
     /// run's entry): what `spawn_start` starts once the lock is let go.
-    async fn claim_next(self: &Arc<Self>, s: &mut Session) -> Result<Option<(crate::claims::Claim, Session, QueueItem)>> {
+    async fn claim_next(
+        self: &Arc<Self>,
+        s: &mut Session,
+    ) -> Result<Option<((crate::claims::Claim, crate::runtime::Starting), Session, QueueItem)>> {
         let id = s.id.0.clone();
         if s.queue_held || self.run_state(&id) != Run::Idle || self.claims.count(&id) > 0 {
             return Ok(None);
@@ -241,7 +244,7 @@ impl Runtime {
         let mut held = s.queue_held;
         let Some(next) = queue::next_after_release(&mut Queue { items: &mut s.queue, held: &mut held }) else { return Ok(None) };
         self.persist(s, Vec::new()).await?;
-        Ok(Some((self.claims.claim(&id), s.clone(), next)))
+        Ok(Some(((self.claims.claim(&id), self.mark_starting(&id)), s.clone(), next)))
     }
 
     /// Who a lead that stays in Working on its delegates waits on, on its slot (wisp.later reads it: v1 #795).

@@ -206,6 +206,16 @@ impl Client {
         self.request("GET", path, None).await
     }
 
+    /// One JSON-RPC message to `/api/mcp` as the user's editor working in `cwd` (ADR-0040): its answer, as it came.
+    pub async fn mcp(&self, msg: &Value, cwd: &Path) -> Result<Value> {
+        let mut b = self.http.post(format!("{}/api/mcp", self.url)).header("x-wisp-cwd", cwd.display().to_string()).json(msg);
+        if let Some(t) = &self.token {
+            b = b.header("x-wisp-token", t);
+        }
+        let r = b.send().await.map_err(|e| CliError::said(format!("wisp at {}: {e}", self.url)))?;
+        r.json().await.map_err(|e| CliError::said(format!("wisp at {}: /api/mcp: {e}", self.url)))
+    }
+
     /// Whether a wisp answers here, bounded: something that takes the connection and never answers isn't a wisp.
     pub async fn ping(&self) -> bool {
         let health = tokio::time::timeout(Duration::from_secs(2), self.get("/health")).await;

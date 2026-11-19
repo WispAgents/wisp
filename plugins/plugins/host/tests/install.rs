@@ -299,3 +299,27 @@ async fn the_list_says_a_plugins_trust_what_it_asks_for_and_its_name() {
     assert!(list.as_array().unwrap().iter().find(|p| p["id"] == "wisp.plugins").unwrap().get("trusted").is_none());
     let _ = std::fs::remove_dir_all(&home);
 }
+
+/// Audit C9: a folder that isn't there said "<path> has no wisp-plugin.json", a bare word too ("not a path has no
+/// wisp-plugin.json"). They say what Projects says: "No folder at …" and "… isn't a full path". A folder without a
+/// manifest still says that. And the pane's foot names where this wisp keeps plugins (`plugins.folder`), not
+/// `~/.wisp/plugins` whatever `WISP_HOME` is.
+#[tokio::test]
+async fn install_names_a_missing_folder_and_a_bare_word_and_the_folder_is_this_wisps_audit_c9() {
+    let home = dir("words");
+    let k = TestApp::new().with(wisp_plugins::PluginsPlugin).service(Paths::new(&home)).start().await;
+    let install = |src: String| {
+        let k = &k;
+        async move { k.call(Caller::user(), "plugins.install", json!({ "source": src })).await.unwrap_err().message }
+    };
+    let gone = home.join("nope-dir");
+    assert_eq!(install(gone.display().to_string()).await, format!("No folder at {}", gone.display()));
+    let e = install("not a path".into()).await;
+    assert!(e.starts_with("not a path isn't a full path"), "{e}");
+    let empty = home.join("empty");
+    std::fs::create_dir_all(&empty).unwrap();
+    assert_eq!(install(empty.display().to_string()).await, format!("{} has no wisp-plugin.json", empty.display()));
+    let f = k.call(Caller::user(), "plugins.folder", json!({})).await.unwrap();
+    assert_eq!(f["path"], home.join("plugins").display().to_string());
+    let _ = std::fs::remove_dir_all(&home);
+}

@@ -745,6 +745,35 @@ pub fn mcp_reply(root: &Path, msg: &Value) -> Option<Value> {
     Some(json!({ "jsonrpc": "2.0", "id": id, "result": result }))
 }
 
+/// A tool this server answers itself: the history tools and v1's task tools.
+fn is_own_tool(name: &str) -> bool {
+    crate::mcp_tasks::is_task_tool(name)
+        || mcp_tools().as_array().into_iter().flatten().any(|t| t.get("name").and_then(Value::as_str) == Some(name))
+}
+
+/// A catalogue tool's call, run through `/api/mcp`; its error as the tool's when wisp doesn't answer.
+async fn through(client: Option<&Client>, msg: &Value, at: &Path) -> Value {
+    let failed = |why: String| json!({ "jsonrpc": "2.0", "id": msg.get("id").cloned().unwrap_or(Value::Null), "result": { "content": [{ "type": "text", "text": why }], "isError": true } });
+    match client {
+        Some(c) => c.mcp(msg, at).await.unwrap_or_else(|e| failed(e.to_string())),
+        None => failed("wisp isn't running and didn't start: run wisp serve".to_owned()),
+    }
+}
+
+/// `reply` (this server's `tools/list` answer) with `/api/mcp`'s tools after its own, each name once.
+fn merge_catalogue(reply: &mut Value, catalogue: Option<&Value>) {
+    let Some(theirs) = catalogue.and_then(|c| c.pointer("/result/tools")).and_then(Value::as_array) else { return };
+    let Some(ours) = reply.pointer_mut("/result/tools").and_then(Value::as_array_mut) else { return };
+    let mut have: Vec<String> = ours.iter().filter_map(|t| t.get("name").and_then(Value::as_str).map(str::to_owned)).collect();
+    for t in theirs {
+        let Some(name) = t.get("name").and_then(Value::as_str) else { continue };
+        if !have.iter().any(|h| h == name) {
+            have.push(name.to_owned());
+            ours.push(t.clone());
+        }
+    }
+}
+
 /// `wisp_resume` with a wisp running: a request the user approves (nothing starts until then).
 async fn resume_request(c: &Client, root: &Path, args: &Value) -> Value {
     let id = args.get("id").and_then(Value::as_str).unwrap_or_default();
@@ -773,6 +802,26 @@ pub async fn mcp(argv: &[String], cwd: &Path, port: u16) -> Result<i32> {
     for line in stdin.lock().lines().map_while(std::result::Result::ok) {
         let Ok(msg) = serde_json::from_str::<Value>(&line) else { continue };
         let tool = msg.pointer("/params/name").and_then(Value::as_str).unwrap_or_default().to_owned();
+        let method = msg.get("method").and_then(Value::as_str).unwrap_or_default().to_owned();
+        // the catalogue, as `/api/mcp` offers it to the user (audit B #4: 11 tools here, 240 there): listed with a wisp
+        // running, after this server's own; any other tool runs through it (a wisp started headless if none answers)
+        if method == "tools/list"
+            && let (Some(c), Some(mut reply)) = (&client, mcp_reply(&root, &msg))
+        {
+            merge_catalogue(&mut reply, c.mcp(&msg, &at).await.ok().as_ref());
+            let _ = writeln!(out, "{reply}");
+            let _ = out.flush();
+            continue;
+        }
+        if method == "tools/call" && !is_own_tool(&tool) {
+            if client.is_none() {
+                client = Client::connect(port, true).await.ok();
+            }
+            let reply = through(client.as_ref(), &msg, &at).await;
+            let _ = writeln!(out, "{reply}");
+            let _ = out.flush();
+            continue;
+        }
         if msg.get("method").and_then(Value::as_str) == Some("tools/call") && crate::mcp_tasks::is_task_tool(&tool) {
             // a task tool: the running wisp, started headless when none answers (as v1's server did)
             if client.is_none() {

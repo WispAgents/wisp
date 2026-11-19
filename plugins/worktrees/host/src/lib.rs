@@ -103,6 +103,8 @@ pub struct State {
     pub cap_pending: std::sync::atomic::AtomicBool,
     /// Bring in's offers as last looked for (git worktree list per project is not run per refresh)
     pub offers: tokio::sync::Mutex<Vec<api::Offer>>,
+    /// Bring in's looks under way (the pane says it's looking meanwhile)
+    pub offering: std::sync::atomic::AtomicU32,
 }
 
 impl std::fmt::Debug for State {
@@ -121,7 +123,13 @@ pub fn platform() -> &'static str {
 
 impl State {
     pub fn new(plugin: WorktreesPlugin) -> Arc<Self> {
-        Arc::new(Self { plugin, built: OnceCell::new(), cap_pending: false.into(), offers: tokio::sync::Mutex::new(Vec::new()) })
+        Arc::new(Self {
+            plugin,
+            built: OnceCell::new(),
+            cap_pending: false.into(),
+            offers: tokio::sync::Mutex::new(Vec::new()),
+            offering: 0.into(),
+        })
     }
 
     /// For tests and installs that wire the parts themselves.
@@ -131,6 +139,7 @@ impl State {
             built: OnceCell::new_with(Some((engine, cleanup, port))),
             cap_pending: false.into(),
             offers: tokio::sync::Mutex::new(Vec::new()),
+            offering: 0.into(),
         })
     }
 
@@ -141,17 +150,21 @@ impl State {
         }
     }
 
-    /// Looks for Bring in offers again (every declared project's worktrees).
+    /// Looks for Bring in offers again (every declared project's worktrees). While it looks the pane says it's looking
+    /// (audit B #18: Bring in showed up 4–9 s after the page opened, with nothing said before it).
     pub async fn look_for_offers(&self, ctx: &Ctx) {
         let Ok((e, _, p)) = self.parts(ctx).await else { return };
+        self.offering.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        self.refresh(ctx).await;
         let found = pane::offers(&e, p.as_ref(), &ctx.root_call()).await;
         *self.offers.lock().await = found;
+        self.offering.fetch_sub(1, std::sync::atomic::Ordering::SeqCst);
     }
 
     /// Republishes the pane's rows (`pane::publish`) from the last look and the offers.
     pub async fn refresh(&self, ctx: &Ctx) {
         let (Ok((_, c, _)), Ok(store)) = (self.parts(ctx).await, ctx.service::<wisp_store::Store>()) else { return };
-        let view = c.view(false).await;
+        let view = pane::looking_for_offers(c.view(false).await, self.offering.load(std::sync::atomic::Ordering::SeqCst) > 0);
         let offers = self.offers.lock().await.clone();
         if let Err(e) = pane::publish(&store, &view, &offers).await {
             tracing::warn!(error = %e, "worktrees: publishing the pane's rows");
@@ -188,6 +201,22 @@ impl State {
     }
 }
 
+/// A run started for you (a crew job, a check-in, a trigger's run) whose turn ended with nothing changed: its worktree
+/// goes (ADR-0108).
+fn on_turn_ended(s: &mut Setup, st: &Arc<State>) {
+    let end_st = st.clone();
+    s.on::<wisp_runtime_api::events::TurnEnded, _, _>(move |ctx, e| {
+        let st = end_st.clone();
+        async move {
+            if let Ok((engine, _, port)) = st.parts(&ctx).await
+                && archived::on_ended(&ctx, &engine, port.as_ref(), e.session_id.as_str()).await
+            {
+                st.refresh(&ctx).await;
+            }
+        }
+    });
+}
+
 impl Plugin for WorktreesPlugin {
     fn manifest(&self) -> Manifest {
         Manifest::embedded(include_str!("../wisp-plugin.json"))
@@ -214,6 +243,7 @@ impl Plugin for WorktreesPlugin {
             let st = rel.clone();
             async move { st.release(&ctx, e.session_id.as_str(), e.turn_id.as_str()).await }
         });
+        on_turn_ended(s, &st);
         // archived and idle: a clean worktree goes (its branch stays). Changes come in bursts while a task
         // streams, so they're coalesced: one look per session per burst.
         let (tx, rx) = tokio::sync::mpsc::unbounded_channel::<String>();

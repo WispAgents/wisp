@@ -227,8 +227,8 @@ async fn agent_tool(ctx: &Ctx, call: &Call, session: &str, a: AgentAction) -> Ou
             text_of(r.map(|v| json!({ "text": v.to_string() })))
         }
         AgentAction::Launch { args, wait, wait_ms } => {
-            let start = json!({ "prompt": args.get("prompt"), "cwd": args.get("cwd"), "agent": args.get("agent"), "model": args.get("model"), "mode": args.get("mode"), "by": "agent" });
-            match typed_json::<rt::Create>(ctx, call, start).await {
+            let a = args.as_object().cloned().unwrap_or_default();
+            match crate::launch::launch(ctx, call, session, &a).await {
                 Ok(c) if wait => {
                     let id = c.get("id").and_then(Value::as_str).unwrap_or_default().to_owned();
                     Outcome::Text(task_wait(ctx, call, &id, wait_ms).await)
@@ -255,6 +255,25 @@ async fn agent_tool(ctx: &Ctx, call: &Call, session: &str, a: AgentAction) -> Ou
             text_of(owner(ctx, call, wisp_mcp_api::owners::CONNECTORS_ADD, args).await)
         }
         AgentAction::ConnectorSignin { args } => text_of(owner(ctx, call, wisp_mcp_api::owners::CONNECTORS_SIGNIN, args).await),
+    }
+}
+
+/// How long `wisp_stop` waits for the run to let go before it says it's still stopping.
+const STOP_WAIT_MS: i64 = 10_000;
+
+/// Whether task `id` is no longer running within `wait_ms`.
+async fn until_settled(ctx: &Ctx, call: &Call, id: &str, wait_ms: i64) -> bool {
+    let Ok(clock) = ctx.clock() else { return false };
+    let until = clock.now_ms() + wait_ms;
+    loop {
+        let s = typed::<rt::Get>(ctx, call, get(id)).await.unwrap_or(Value::Null);
+        if s.get("state").and_then(Value::as_str).is_some_and(|st| st != "running") {
+            return true;
+        }
+        if clock.now_ms() >= until {
+            return false;
+        }
+        clock.sleep(POLL_MS).await;
     }
 }
 
@@ -345,8 +364,10 @@ async fn user_tool(ctx: &Ctx, call: &Call, name: &str, a: Map<String, Value>, cw
                 Err(e) => Outcome::Failed(e),
             }
         }
+        // said once it has stopped (audit C16), or that it's still stopping after the wait
         "wisp_stop" => match typed::<rt::Stop>(ctx, call, rt::StopArgs { id: id.as_str().into(), clear_queue: false }).await {
-            Ok(_) => Outcome::Text(user::stopped(&id)),
+            Ok(_) if until_settled(ctx, call, &id, STOP_WAIT_MS).await => Outcome::Text(user::stopped(&id)),
+            Ok(_) => Outcome::Text(user::stopping(&id)),
             Err(e) => Outcome::Failed(e),
         },
         "wisp_agents" => {

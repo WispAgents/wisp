@@ -152,23 +152,26 @@ async fn track_blame_log_resume_mcp_and_auto_track() {
     let replies: Vec<Value> = out.lines().filter_map(|l| serde_json::from_str(l).ok()).collect();
     assert_eq!(replies.len(), 4, "{out}");
     let names: Vec<&str> = replies[1]["result"]["tools"].as_array().unwrap().iter().filter_map(|t| t["name"].as_str()).collect();
-    // the history tools, then v1's task tools (audit A: `wisp mcp` has v1's task tools)
-    assert_eq!(
-        names,
-        [
-            "wisp_history",
-            "wisp_blame",
-            "wisp_task",
-            "wisp_resume",
-            "wisp_launch",
-            "wisp_list",
-            "wisp_get",
-            "wisp_wait",
-            "wisp_reply",
-            "wisp_stop",
-            "wisp_agents"
-        ]
-    );
+    // its own tools first, in order: the history tools, then v1's task tools (audit A); with a wisp running, the
+    // catalogue `/api/mcp` offers follows them, each name once (audit B #4)
+    let own = [
+        "wisp_history",
+        "wisp_blame",
+        "wisp_task",
+        "wisp_resume",
+        "wisp_launch",
+        "wisp_list",
+        "wisp_get",
+        "wisp_wait",
+        "wisp_reply",
+        "wisp_stop",
+        "wisp_agents",
+    ];
+    assert_eq!(names.get(..own.len()), Some(&own[..]), "{names:?}");
+    let mut once = names.clone();
+    once.sort_unstable();
+    once.dedup();
+    assert_eq!(once.len(), names.len(), "a tool listed twice: {names:?}");
     assert!(replies[2].to_string().contains(&id) && replies[3].to_string().contains("Fix add"), "{out}");
 
     // resume: a new task carrying on from it

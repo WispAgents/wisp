@@ -485,6 +485,8 @@ pub struct QueueItem {
     pub text: String,
     #[serde(default)]
     pub attachments: Vec<Attachment>,
+    /// when it was queued; an item written back (`runtime.queue.edit`'s `items`) may leave it out (audit C #10)
+    #[serde(default)]
     pub at: i64,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]

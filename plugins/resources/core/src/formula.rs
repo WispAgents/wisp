@@ -53,13 +53,36 @@ pub struct Loaded {
 /// The documents in `text`.
 pub fn documents(text: &str, format: Format) -> Result<Vec<Value>, String> {
     match format {
-        Format::Json => serde_json::from_str::<Value>(text).map(|v| vec![v]).map_err(|e| format!("JSON: {e}")),
-        Format::Toml => toml::from_str::<Value>(text).map(|v| vec![v]).map_err(|e| format!("TOML: {e}")),
+        Format::Json => serde_json::from_str::<Value>(text).map(|v| vec![v]).map_err(|e| format!("JSON: {}", one_line(&e.to_string()))),
+        Format::Toml => toml::from_str::<Value>(text).map(|v| vec![v]).map_err(|e| {
+            let at = e.span().map(|r| line_col(text, r.start));
+            let what = one_line(e.message()).trim_end_matches('.').to_owned();
+            at.map_or_else(|| format!("TOML: {what}"), |(l, c)| format!("TOML: line {l}, column {c}: {what}"))
+        }),
         Format::Yaml => {
-            let docs: Vec<Value> = serde_saphyr::from_multiple(text).map_err(|e| format!("YAML: {e}"))?;
+            let docs: Vec<Value> = serde_saphyr::from_multiple(text).map_err(|e| format!("YAML: {}", one_line(&e.to_string())))?;
             Ok(docs.into_iter().filter(|d| !d.is_null()).collect())
         }
     }
+}
+
+/// A parser's report as one sentence (audit C8: YAML's came with its source excerpt and a caret): its first line,
+/// without the `error: ` it starts with, `line 2 column 13` as `line 2, column 13`.
+fn one_line(report: &str) -> String {
+    let first = report.lines().map(str::trim).find(|l| !l.is_empty()).unwrap_or_default();
+    let first = first.strip_prefix("error: ").unwrap_or(first);
+    match first.split_once(" column ") {
+        Some((head, tail)) if head.starts_with("line ") && !head.contains(',') => format!("{head}, column {tail}"),
+        _ => first.to_owned(),
+    }
+}
+
+/// The 1-based line and column of byte `at` in `text`.
+fn line_col(text: &str, at: usize) -> (usize, usize) {
+    let before = text.get(..at.min(text.len())).unwrap_or_default();
+    let line = before.matches('\n').count() + 1;
+    let col = before.rsplit('\n').next().map_or(0, |l| l.chars().count()) + 1;
+    (line, col)
 }
 
 /// `${env:NAME}` filled in every string; the names that weren't set are added to `missing`.
@@ -270,6 +293,19 @@ pub fn foreign(sources: &[String]) -> bool {
 #[cfg(test)]
 #[allow(clippy::unwrap_used)]
 mod tests {
+    /// Audit C8: a YAML syntax error came back as the parser's whole report ("YAML: error: line 2 column 13: unclosed
+    /// bracket '{' --> <input>:2:13 | 1 | wisp: 1 2 | projects: [ …"). It's one sentence: the line, the column, what.
+    #[test]
+    fn a_syntax_error_is_one_sentence_with_its_line_and_column_audit_c8() {
+        let e = documents("wisp: 1\nprojects: [ {name: x\n", Format::Yaml).unwrap_err();
+        assert!(!e.contains('\n') && !e.contains("-->") && !e.contains(" | "), "{e}");
+        assert!(e.starts_with("YAML: line 2, column ") && e.contains("bracket"), "{e}");
+        let e = documents("wisp = 1\nsettings = {\n", Format::Toml).unwrap_err();
+        assert!(!e.contains('\n') && e.starts_with("TOML: line 2, column "), "{e}");
+        let e = documents("{\"wisp\": 1,", Format::Json).unwrap_err();
+        assert!(!e.contains('\n') && e.starts_with("JSON: "), "{e}");
+    }
+
     use std::collections::BTreeMap;
 
     use serde_json::json;

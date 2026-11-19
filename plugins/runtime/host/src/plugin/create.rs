@@ -96,12 +96,22 @@ async fn create(ctx: &Ctx, call: &Call, slot: &Slot, kinds: &Kinds, a: StartArgs
     let setup = if wants_tree { crate::specs::project_setup(Some(kinds), &args).await } else { Vec::new() };
     args.hold |= wants_tree;
     let (cwd, title, mode) = (args.cwd.clone().unwrap_or_default(), args.title.clone().unwrap_or_default(), args.mode);
+    let (reuse, tidy) = (args.worktree_key.clone(), args.worktree_tidy);
     let made = rt.create(args).await.map_err(WireError::from)?;
     let made = if wants_tree {
         let mode =
             mode.map(|m| serde_json::to_value(m).ok().and_then(|v| v.as_str().map(str::to_owned)).unwrap_or_default()).unwrap_or_default();
-        let wa = wisp_worktrees_api::CreateArgs { session_id: made.id.0.clone(), cwd, title, mode, from: None };
-        in_worktree(ctx, &rt, &proc, made, wa, &setup).await?
+        // a rerun at an older commit: its worktree's branch starts at that commit (the detached folder made for it)
+        let from = p.detached.as_ref().map(|(_, path)| path.clone());
+        let wa = wisp_worktrees_api::CreateArgs { session_id: made.id.0.clone(), cwd, title, mode, from, reuse, tidy };
+        let made = in_worktree(ctx, &rt, &proc, made, wa, &setup).await?;
+        // it runs in its own worktree now: the detached folder goes (audit C8); one it still runs in stays
+        if let Some((project, path)) = &p.detached
+            && rt.get(made.id.as_str()).await.is_ok_and(|s| !std::path::Path::new(&s.cwd).starts_with(path))
+        {
+            crate::specs::drop_detached(&proc, project, path).await;
+        }
+        made
     } else {
         made
     };

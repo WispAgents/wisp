@@ -677,7 +677,7 @@ async fn start(ctx: &Ctx, call: &Call, store: &Store, t: &Live, job: &Job) -> Re
             // a worktree of its own, as v1 started every task (audit B #7: a trigger's runs edited your checkout)
             let set = ctx.setting(rt::WORKTREE_SETTING);
             let worktree = Some(rt::worktree_by_default(set.as_ref(), mode == Some(wisp_runtime_api::model::Mode::Plan)));
-            let a = rt::StartArgs {
+            let mut a = rt::StartArgs {
                 prompt: text("{event.summary}"),
                 title: Some(t.name.clone()),
                 cwd: Some(cwd.clone()),
@@ -689,6 +689,7 @@ async fn start(ctx: &Ctx, call: &Call, store: &Store, t: &Live, job: &Job) -> Re
                 ext: [(wisp_automations_api::PLUGIN_ID.to_owned(), json!({ "trigger": t.name, "event": first.key }))].into_iter().collect(),
                 ..rt::StartArgs::default()
             };
+            crate::recurring_tree(&mut a, &by);
             let made = ctx.run::<rt::Create>(call, a).await?;
             serde_json::to_value(made).map_err(|e| WireError::internal(e.to_string()))?
         }

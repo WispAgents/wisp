@@ -8,7 +8,7 @@ import { defineCommand, type PeerId, type PluginClient } from '@wisp/client';
 import { useShell } from '@wisp/shell';
 import { Button, Callout, Checkbox, Code, Inline, SettingsGroup, SettingsRow, Stack, Text, TextArea } from '@wisp/ui';
 import { t } from './i18n.ts';
-import { changeLines, formatOf, groups, keyOf, kindCounts, opTitle, picked, sectionTitle, type KindInfo, type Plan, type Resource } from './model.ts';
+import { changeLines, formatOf, groups, keyOf, kindCounts, opTitle, picked, planShown, sectionTitle, type KindInfo, type Plan, type Resource } from './model.ts';
 import './i18n/lazy.ts';
 
 const kinds = defineCommand<{ peer: PeerId }, KindInfo[]>({ id: 'resources.kinds', owner: (a) => a.peer, wire: () => ({}), optimistic: 'none', pending: 'the kinds' });
@@ -70,18 +70,22 @@ export default function Setup(props: { readonly client: PluginClient }): JSX.Ele
   // Import
   const [pasted, setPasted] = createSignal('');
   const [read_, setRead] = createSignal<{ resources: Resource[]; secrets: string[] } | undefined>(undefined);
-  const [thePlan, setPlan] = createSignal<Plan | undefined>(undefined);
+  // the plan with the text it was made from: shown only while the box holds that text (audit C8)
+  const [made, setMade] = createSignal<{ text: string; plan: Plan } | undefined>(undefined);
+  const thePlan = (): Plan | undefined => planShown(made(), pasted());
   const [off, setOff] = createSignal<ReadonlySet<string>>(new Set());
   const [busy, setBusy] = createSignal(false);
   const look = (): void => {
+    const text = pasted();
     setBusy(true);
-    c.run(read, { peer, text: pasted() })
+    setMade(undefined);
+    c.run(read, { peer, text })
       .then(async (r) => {
         setRead(r);
         setOff(new Set<string>());
-        setPlan(await c.run(plan, { peer, resources: r.resources }));
+        setMade({ text, plan: await c.run(plan, { peer, resources: r.resources }) });
       })
-      .catch(() => undefined)
+      .catch(() => setRead(undefined))
       .finally(() => setBusy(false));
   };
   const go = (): void => {
@@ -94,7 +98,7 @@ export default function Setup(props: { readonly client: PluginClient }): JSX.Ele
         shell.toast.success(t('resources.import.done'));
         setPasted('');
         setRead(undefined);
-        setPlan(undefined);
+        setMade(undefined);
         void refetch();
       })
       .catch(() => undefined)

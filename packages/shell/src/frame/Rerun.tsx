@@ -8,7 +8,7 @@ import { SESSION, type SessionRow } from '../rows.ts';
 import { create, specOf } from './commands.ts';
 import { harnessOf } from './harness.ts';
 import { RunnerPicker } from './RunnerPicker.tsx';
-import { rerunArgs, startEdits, type RerunEdits } from './rerun.ts';
+import { rerunArgs, rerunPlace, startEdits, type RerunEdits } from './rerun.ts';
 import { placeOn } from './run-on.ts';
 import '../i18n/lazy.ts';
 
@@ -85,7 +85,7 @@ export default function Rerun(props: { readonly params: { readonly id: string; r
             </Button>
           </Wrap>
           <Text size="sm" tone="muted">
-            {t('shell.rerun.hint', { cwd: (spec() as { cwd?: string } | undefined)?.cwd ?? '', where: shell.client.peers.name(x().peer as PeerId), title: row()?.title ?? '' })}
+            {((p) => t(p.key, { ...p.vars, where: shell.client.peers.name(x().peer as PeerId), title: row()?.title ?? '' }))(rerunPlace((spec() ?? { prompt: '' }) as never))}
           </Text>
           <RunnerPicker
             open={picking()}

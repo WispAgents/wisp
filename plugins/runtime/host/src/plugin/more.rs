@@ -169,6 +169,7 @@ async fn own_folder(ctx: &wisp_kernel::Ctx, r: &Arc<crate::runtime::Runtime>, pa
         title: made.title.clone(),
         mode: serde_json::to_value(made.mode).ok().and_then(|m| m.as_str().map(str::to_owned)).unwrap_or_default(),
         from: Some(src.cwd.clone()),
+        ..wisp_worktrees_api::CreateArgs::default()
     };
     // on runtime's own grant, as a new task's (create.rs `in_worktree`): an agent's set has no worktrees:create
     let wt = match ctx.run::<wisp_worktrees_api::Create>(&ctx.root_call(), wa).await {

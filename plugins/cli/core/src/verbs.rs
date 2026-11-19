@@ -285,6 +285,11 @@ pub fn build(v: &Verb, rest: &[String]) -> Result<Value, Usage> {
         let raw = if last && f.kind == Kind::Str {
             let all: Vec<String> = wi.by_ref().collect();
             if all.is_empty() { None } else { Some(all.join(" ")) }
+        } else if last && f.kind == Kind::List {
+            // `queue order <id> b a` (or `b,a`, or "b a" quoted): every word left is an item (audit C #9: "b a" was one
+            // id the queue didn't have, so it said ✓ done and changed nothing)
+            let all: Vec<String> = wi.by_ref().flat_map(|w| w.split_whitespace().map(str::to_owned).collect::<Vec<_>>()).collect();
+            if all.is_empty() { None } else { Some(all.join(",")) }
         } else {
             wi.next()
         };
