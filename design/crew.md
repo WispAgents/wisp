@@ -77,7 +77,12 @@ is a row in the list; the rail's pick (below) turns the list into that member's 
   task list, the one you need first: asking you, then working for you, then an unread report, then the ones you send the
   most work (jobs you handed them or @-tagged them in, last 30 days; ties: the latest, then when they
   joined), paused ones last. The @ picker uses the same order. The order holds while the pointer or
-  focus is in the section, so a row never moves under the cursor. Besides its place, what changes is its status line (*Asking you:
+  focus is in the section, so a row never moves under the cursor. **Your order:** drag a face on the
+  rail or a row in the section (its jobs go with it; a finger holds first, Alt+↑/↓ moves the focused
+  one) and from then on both list the crew in that order, whoever needs you; the dots still say who
+  does. It's saved on the server (`PUT /api/crew-order`, `crewSorted` in the config), the same on
+  every device; a newcomer goes last. A member's menu then has **Sort by need** to go back. The @
+  picker keeps need first. Spells turn dragging off with `section.crew` `movable: false`. Besides its place, what changes is its status line (*Asking you:
   …*, *Running tests · 2 jobs*, *Reported: …*, *Looks again 14:30*, *Every 30 min*, *Paused*), the
   dot on its face (amber: asking you; blue: a report you haven't read) and its spirit's mood. Under a
   member (in the section) sit its recent jobs as ordinary cards: live first (asking you, working, an unread report),

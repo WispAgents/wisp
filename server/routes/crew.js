@@ -63,6 +63,14 @@ export function register(r, app) {
     store.saveConfig();
     c.send(200, out);
   });
+  // The order you dragged them into (crew.reorder): { ids } in your order, or { sorted: false } for
+  // need first again.
+  r.route('PUT', '/crew-order', async (c) => {
+    const body = (await c.body()) || {};
+    if (body.sorted !== undefined && typeof body.sorted !== 'boolean') throw bad('sorted must be true or false.');
+    crew.reorder(body.ids, { sorted: body.sorted !== false });
+    c.send(200, { ids: crew.list.map((m) => m.id), sorted: !!store.config.crewSorted });
+  });
   // checkin: true starts a first check-in right away (so a new member shows what it does).
   r.route('POST', '/crew', async (c) => {
     const body = await c.body();

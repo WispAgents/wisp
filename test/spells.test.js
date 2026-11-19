@@ -404,6 +404,8 @@ test('later: Scheduled, Coming up, the follow-up rows, Send later and the time c
   assert.deepEqual(problems({ ...base0, parts: { 'section.crew': { props: { rows: 4 } }, 'crew.strip': { style: { opacity: '0.8' } } } }), []);
   assert.ok(problems({ ...base0, parts: { 'section.crew': { props: { rows: 0 } } } }).some((x) => /rows: int from 1 to 40/.test(x)));
   assert.ok(problems({ ...base0, parts: { 'section.crew': { props: { rows: '3' } } } }).some((x) => /rows: int from 1 to 40/.test(x)));
+  assert.deepEqual(problems({ ...base0, parts: { 'section.crew': { props: { movable: false } } } }), []);
+  assert.ok(problems({ ...base0, parts: { 'section.crew': { props: { movable: 'no' } } } }).some((x) => /movable: bool/.test(x)));
   assert.deepEqual(problems({ ...base0, parts: { 'delegate.more': { props: { rows: 5 }, style: { color: 'red' } } } }), []);
   assert.ok(problems({ ...base0, parts: { 'delegate.more': { props: { rows: 0 } } } }).some((x) => /rows: int from 1 to 40/.test(x)));
   // The crew rail: its parts, an icon button in its slot, and a switch that gives the section back.

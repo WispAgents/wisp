@@ -573,6 +573,19 @@ export class Crew {
     return m;
   }
 
+  // Your order, dragged on the rail or the Crew section: the page lists them so (not by need) from
+  // now on. ids must name every member once. sorted: false goes back to need first, the order kept.
+  reorder(ids, { sorted = true } = {}) {
+    if (ids !== undefined) {
+      if (!Array.isArray(ids) || ids.length !== this.list.length || new Set(ids).size !== ids.length || !ids.every((id) => this.get(id))) throw bad('ids must name every crew member once, in the order you want them.');
+      const at = new Map(ids.map((id, i) => [id, i]));
+      this.store.config.crew = [...this.list].sort((a, b) => at.get(a.id) - at.get(b.id));
+    }
+    if (sorted) this.store.config.crewSorted = true;
+    else delete this.store.config.crewSorted;
+    this.#changed();
+  }
+
   // Leaves the crew. Its jobs stay as ordinary tasks; triggers that sent it work stop.
   remove(m) {
     this.store.config.crew = this.list.filter((x) => x !== m);
