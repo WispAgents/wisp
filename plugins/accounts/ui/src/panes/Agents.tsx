@@ -303,7 +303,11 @@ export default function Agents(props: { readonly client: PluginClient }): JSX.El
                     />
                   )}
                 </Show>
-                <Steps c={c} agent={h().id} account="" login={login(h().id)} />
+                {/* the harness's own sign-in, unless its accounts are listed: then it's under its account's row (the CLI's own
+                    login is the first account's, and showed twice) */}
+                <Show when={!(h().brand && present(h()) && accs(h().id).length > 1)}>
+                  <Steps c={c} agent={h().id} account="" login={login(h().id)} />
+                </Show>
                 <Show when={h().brand && present(h())}>
                   <SettingsInset part="settings.accounts">
                     <For each={accs(h().id).length > 1 ? accs(h().id) : []}>
@@ -329,7 +333,7 @@ export default function Agents(props: { readonly client: PluginClient }): JSX.El
                             }
                           />
                           {/* its sign-in under its row (v1 loginPanel): the page to open, the code, the paste box */}
-                          <Steps c={c} agent={h().id} account={accOf(a)} login={login(h().id, accOf(a))} />
+                          <Steps c={c} agent={h().id} account={accOf(a)} login={login(h().id, accOf(a))} inset />
                         </>
                       )}
                     </For>

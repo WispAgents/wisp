@@ -210,6 +210,10 @@ export type LoginStep =
   | { kind: 'none' }
   | { kind: 'failed'; error: string }
   | { kind: 'steps'; url: string; code: string; paste: boolean; checking: boolean };
+/** whose account a CLI's sign-in page asks for (v1 agent-login.js NAMES); none: step 1 names no one */
+const SIGN_IN_WITH: Readonly<Record<string, string>> = { claude: 'Claude', codex: 'ChatGPT', grok: 'xAI', antigravity: 'Google', gh: 'GitHub' };
+export const signInWith = (agent: string): string | undefined => SIGN_IN_WITH[agent];
+
 export function loginStep(agent: string, l: LoginRow | undefined): LoginStep {
   if (!l || (!busy(l) && l.state !== 'failed')) return { kind: 'none' };
   if (l.state === 'failed') return { kind: 'failed', error: l.error || t('accounts.login.failed') };

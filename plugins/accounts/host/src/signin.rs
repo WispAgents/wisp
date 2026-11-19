@@ -153,15 +153,22 @@ fn argv_of(l: &HarnessLogin) -> (String, Vec<String>) {
     argv_for(l, std::env::consts::OS)
 }
 
-/// The login's command line on `os`: under util-linux script(1) on Linux when the CLI only asks on a
-/// terminal (v1 `loginArgv`): `script -q -f -e -c '<bin> <args…>' /dev/null` (options and the one
-/// quoted command first, the typescript file last; BSD script's `script -q file cmd…` order is not
-/// used, macOS runs the CLI as it is, like v1). Elsewhere as it is.
+/// The login's command line on `os`: under script(1) when the CLI only asks on a terminal. util-linux on Linux (v1
+/// `loginArgv`): `script -q -f -e -c '<bin> <args…>' /dev/null` (options and the one quoted command first, the typescript
+/// file last). BSD's on macOS: `script -q /dev/null <bin> <args…>` (the file, then the command as it is). v1 ran the CLI
+/// as it is on macOS, but agy 1.5 refuses a sign-in with no terminal there ("authentication required. Run 'agy' to log
+/// in"); on one it prints Google's link and reads the code back. Elsewhere as it is.
 fn argv_for(l: &HarnessLogin, os: &str) -> (String, Vec<String>) {
     if l.tty && os == "linux" {
         let q = |s: &str| format!("'{}'", s.replace('\'', "'\\''"));
         let line = std::iter::once(bin(l)).chain(l.args.iter().cloned()).map(|a| q(&a)).collect::<Vec<_>>().join(" ");
         return ("script".into(), ["-q", "-f", "-e", "-c"].iter().map(|s| (*s).to_owned()).chain([line, "/dev/null".into()]).collect());
+    }
+    if l.tty && os == "macos" {
+        return (
+            "script".into(),
+            ["-q", "/dev/null"].iter().map(|s| (*s).to_owned()).chain(std::iter::once(bin(l))).chain(l.args.iter().cloned()).collect(),
+        );
     }
     (bin(l), l.args.clone())
 }
@@ -275,6 +282,9 @@ async fn finish(ctx: &Ctx, st: &State, id: &str, agent: &str, acc: &str, state: 
         lock(&st.statuses).insert(id.to_owned(), Some(true));
     }
     put_or_warn(st, id.to_owned(), v).await;
+    if state != LoginState::Done {
+        never_signed_in(st, agent, acc).await;
+    }
     let step = match state {
         LoginState::Done => "done",
         LoginState::Cancelled => "cancelled",
@@ -374,6 +384,28 @@ pub async fn logout(ctx: &Ctx, st: &State, h: &dyn Harness, acc: &str) -> Result
     signed_out(st, &agent, acc).await?;
     let _ = ctx;
     Ok(LoginStatus { agent, account: account_key(acc).to_owned(), signed_in: Some(false), email: None, plan: None })
+}
+
+/// An added account whose first sign-in didn't finish (timed out, failed, cancelled) has never been signed in: it's
+/// signed out, so its row offers Sign in (v1: the list said `signedOut`). Before, it stayed unknown and its row had no
+/// control at all. An account known either way is left as it is.
+async fn never_signed_in(st: &State, agent: &str, acc: &str) {
+    let key = account_key(acc);
+    if key.is_empty() {
+        return;
+    }
+    let list = {
+        let mut map = lock(&st.accounts);
+        map.get_mut(agent).filter(|l| accounts::multi(l) && l.iter().any(|a| a.id == key && a.signed_in.is_none())).map(|list| {
+            accounts::identify(list, key, None, None, Some(false));
+            list.clone()
+        })
+    };
+    if let Some(l2) = list
+        && let Err(e) = put_accounts(st, agent, l2).await
+    {
+        tracing::warn!(%agent, account = key, "couldn't save an account that never signed in as signed out: {}", e.message);
+    }
 }
 
 /// wisp's side of a sign-out the CLI made: the ended login's row goes idle and the account is marked signed out.
@@ -482,8 +514,10 @@ mod tests {
     }
 
     #[test]
-    fn signin_argv_on_macos_or_without_tty_runs_the_cli_as_it_is() {
-        assert_eq!(argv_for(&agy(), "macos"), ("agy".to_owned(), v(&["-p", "Reply with OK."])));
+    fn signin_argv_without_tty_runs_the_cli_as_it_is() {
+        // a CLI that signs in only on a terminal runs under BSD script(1) on macOS (agy 1.5 refused it without one)
+        assert_eq!(argv_for(&agy(), "macos"), ("script".to_owned(), v(&["-q", "/dev/null", "agy", "-p", "Reply with OK."])));
+        assert_eq!(argv_for(&agy(), "windows"), ("agy".to_owned(), v(&["-p", "Reply with OK."])));
         let mut l = agy();
         l.tty = false;
         assert_eq!(argv_for(&l, "linux"), ("agy".to_owned(), v(&["-p", "Reply with OK."])));

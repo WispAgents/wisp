@@ -110,6 +110,20 @@
 
   /* a box inside a group, under its row (v1 .sx-accts: a harness's accounts and "Add another … account") */
   [data-kit='settings-inset'] { margin: 0 14px 12px 3.125rem; border: var(--size-hairline) solid var(--line); border-radius: 10px; background: var(--surface); overflow: hidden; }
+  /* a CLI sign-in under way (v1 .sx-login): a box under its row, numbered steps; under an account, the inset's band */
+  [data-kit='settings-signin'] { margin: 4px 0 0; padding: 12px 14px; border: var(--size-hairline) solid var(--line); border-radius: 10px; background: var(--surface); display: flex; flex-direction: column; gap: 8px; font-size: 13px; color: var(--ink); }
+  [data-kit='settings-group'] [data-kit='settings-signin']:not([data-inset]) { margin: 0 14px 12px 3.125rem; }
+  [data-kit='settings-signin'] > p { margin: 0; }
+  [data-kit='settings-signin'][data-bad] > p { color: var(--bad); }
+  [data-kit='settings-signin'][data-inset] { margin: 0; border: 0; border-radius: 0; background: var(--surface-2); padding-left: 44px; }
+  [data-kit='settings-signin-row'] { --k-gap: 8px; display: flex; gap: 8px; align-items: center; }
+  [data-kit='settings-signin-row'] > [data-kit='input'], [data-kit='settings-signin-row'] > [data-kit='field'] { flex: 1; min-width: 220px; }
+  [data-kit='settings-signin-row'] > a[data-kit='button'] { text-decoration: none; }
+  [data-kit='settings-signin-code'] { display: inline-flex; align-items: center; gap: 10px; padding: 4px 6px 4px 14px; border: var(--size-hairline) dashed var(--line-2); border-radius: 8px; align-self: flex-start; }
+  [data-kit='settings-signin-code-text'] { font: 600 18px var(--mono); letter-spacing: 0.12em; }
+  [data-kit='settings-signin-wait'] { display: inline-flex; align-items: center; gap: 8px; color: var(--muted); }
+  /* v1 .sx-login-wait .spin: in the line, before its words (the kit's ring is centred over a button otherwise) */
+  [data-kit='settings-signin-wait'] > [data-kit='spinner'] { position: static; flex: none; margin: 0; width: 11px; height: 11px; border-width: 2px; border-color: var(--line-2); border-top-color: var(--accent); }
   [data-kit='settings-inset'] + [data-kit='settings-row'] { border-top: var(--size-hairline) solid var(--line); }
   [data-kit='settings-inset-row'] { display: flex; align-items: center; gap: 10px; width: 100%; min-height: 44px; padding: 6px 8px 6px 12px; font-size: 13px; text-align: left; }
   [data-kit='settings-inset-text'] { flex: 1; display: flex; align-items: baseline; gap: 0 8px; min-width: 0; }

@@ -126,6 +126,26 @@ async fn start_now_on_a_harness_changed_hold_trusts_the_program_and_runs() {
     drop(serve);
 }
 
+/// The owner's Settings → Agents: an account added whose first sign-in didn't finish (cancelled here; timed out or
+/// failed the same) had no state, so its row showed no Sign in at all, only its ⋯. It's signed out now (v1's
+/// `signedOut`), and its row offers Sign in.
+#[tokio::test(flavor = "multi_thread")]
+async fn an_added_account_whose_first_sign_in_did_not_finish_is_signed_out() {
+    let dir = temp("serve-accounts-never");
+    let (serve, port) = start(&dir);
+    let api = Arc::new(Api { http: reqwest::Client::new(), port, n: 0.into() });
+    let added = api.cmd("accounts.add", json!({ "agent": "claude", "id": "t1", "label": "Te1", "kind": "work" })).await;
+    assert_eq!(added["account"]["label"], "Te1", "{added}");
+    api.cmd("accounts.login.cancel", json!({ "agent": "claude", "account": "t1" })).await;
+    let acc = until("the account reads signed out", async || {
+        let v = api.cmd("accounts.list", json!({ "agent": "claude" })).await;
+        v["accounts"].as_array().and_then(|l| l.iter().find(|a| a["id"] == "t1").cloned()).filter(|a| a["state"] == "signedOut")
+    })
+    .await;
+    assert_eq!(acc["label"], "Te1", "{acc}");
+    drop(serve);
+}
+
 /// Audit C tasks #3: Trust and start on one card trusted the changed program, but the other turns it held stayed held,
 /// each card still saying the harness changed (a change wisp now trusts). A yes on one card is a yes to the program:
 /// every turn the watch held for it starts, as Trust does.
@@ -534,5 +554,10 @@ async fn a_sign_in_cut_by_a_restart_is_not_left_waiting() {
     let frames = stream(port, "c-restart", "plugin:wisp.accounts:harnesses", |f| f.contains("accounts.harness")).await;
     let w1 = logins_in(&frames).remove("codex@w1");
     assert!(w1.as_ref().is_none_or(|(row, _)| !["running", "waiting"].contains(&row["state"].as_str().unwrap_or(""))), "{w1:?}");
+    // its first sign-in never finished: the account reads signed out, so its row offers Sign in (the owner's "Te1")
+    let api = Arc::new(Api { http: reqwest::Client::new(), port, n: 0.into() });
+    let list = api.cmd("accounts.list", json!({ "agent": "codex" })).await;
+    let acc = list["accounts"].as_array().and_then(|l| l.iter().find(|a| a["id"] == "w1").cloned());
+    assert_eq!(acc.as_ref().map(|a| a["state"].clone()), Some(json!("signedOut")), "{list}");
     drop(serve);
 }

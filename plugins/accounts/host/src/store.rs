@@ -118,6 +118,18 @@ pub async fn load_held(store: &Store) -> wisp_store::Result<HeldTurns> {
         .await
 }
 
+/// A non-default account `acc` of `agent` whose sign-in was cut by a restart, never known signed in or out: signed out.
+fn cut_first_sign_in(accounts: &mut [(String, Vec<Stored>)], agent: &str, acc: &str) {
+    if acc.is_empty() || acc == wisp_accounts_core::accounts::DEFAULT {
+        return;
+    }
+    if let Some((_, list)) = accounts.iter_mut().find(|(g, _)| g == agent)
+        && let Some(a) = list.iter_mut().find(|a| a.id == acc && a.signed_in.is_none())
+    {
+        a.signed_in = Some(false);
+    }
+}
+
 /// Everything stored: (agent → accounts in order, agent → watch, the settings).
 pub type Loaded = (Vec<(String, Vec<Stored>)>, Vec<(String, Watched)>, Value);
 
@@ -131,6 +143,19 @@ pub async fn load(store: &Store) -> wisp_store::Result<Loaded> {
                 match accounts.iter_mut().find(|(g, _)| *g == agent) {
                     Some((_, l)) => l.push(a),
                     None => accounts.push((agent, vec![a])),
+                }
+            }
+            // a sign-in still running or waiting when wisp stopped has no CLI behind it now: an account whose first
+            // sign-in it was (never known signed in or out) is signed out, so its row offers Sign in (v1 `signedOut`)
+            for row in r.query(LOGIN.kind, &Query::new())? {
+                let body = row.get("body").cloned().unwrap_or(Value::Null);
+                let live = matches!(body.get("state").and_then(Value::as_str), Some("running" | "waiting"));
+                let (Some(agent), Some(acc)) = (body.get("agent").and_then(Value::as_str), body.get("account").and_then(Value::as_str))
+                else {
+                    continue;
+                };
+                if live {
+                    cut_first_sign_in(&mut accounts, agent, acc);
                 }
             }
             let mut watch = Vec::new();
