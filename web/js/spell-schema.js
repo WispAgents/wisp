@@ -645,7 +645,9 @@ export const PART_PROPS = {
   'crew.page': { swipe: 'bool' }, // false stops swiping a thread left bringing in its About page (the phone app)
   'crew.record': { tips: 'bool' }, // the suggestion line under a member's numbers (on)
   'delegate.more': { rows: 'int' }, // a task's delegates shown before Show N more folds the rest (3)
-  'section.crew': { rows: 'int' }, // full rows shown when nobody's busy (2); the rest fold. Not with the crew rail: every member has its face
+  // rows: full rows shown when nobody's busy (2); the rest fold. Not with the crew rail: every member has its face.
+  // movable: members can be dragged into your own order, on the rail and in the section (on); Sort by need (a member's menu) undoes it.
+  'section.crew': { rows: 'int', movable: 'bool' },
   'org.chart': { movable: 'bool' }, // cards can be moved by hand (on); off keeps the automatic tiers
   // movable: projects can be dragged into your own order there (on); off keeps them where they are.
   // The order is one, wherever it was dragged; Sort by recent use (a project's menu) undoes it.

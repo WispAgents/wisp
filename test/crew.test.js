@@ -545,6 +545,28 @@ test('the Org page layout: where each member sits, for members that exist, refus
   assert.deepEqual(await api('/crew-layout', { layout: {} }, 'PUT'), {}, 'back to the automatic layout');
 });
 
+test('the crew in your order: dragged on the rail, kept until you go back to need first', async () => {
+  const bo = await api('/crew', { name: 'Bo', agent: 'claude', cwd: repo });
+  const cy = await api('/crew', { name: 'Cy', agent: 'claude', cwd: repo });
+  const ids = () => api('/config').then((c) => c.crew.map((m) => m.id));
+  const was = await ids();
+  const want = [cy.id, ...was.filter((id) => id !== cy.id)];
+  assert.deepEqual(await api('/crew-order', { ids: want }, 'PUT'), { ids: want, sorted: true });
+  const config = await api('/config');
+  assert.deepEqual(config.crew.map((m) => m.id), want, 'the config lists them in your order');
+  assert.equal(config.crewSorted, true);
+  await assert.rejects(api('/crew-order', { ids: want.slice(1) }, 'PUT'), (e) => e.status === 400 && /every crew member/.test(e.message), 'one missing');
+  await assert.rejects(api('/crew-order', { ids: [...want.slice(1), want[1]] }, 'PUT'), (e) => e.status === 400, 'one twice');
+  await assert.rejects(api('/crew-order', { ids: [...want.slice(1), 'gone'] }, 'PUT'), (e) => e.status === 400, 'one not on the crew');
+  await assert.rejects(api('/crew-order', { sorted: 'no' }, 'PUT'), (e) => e.status === 400);
+  // A newcomer goes last.
+  const di = await api('/crew', { name: 'Di', agent: 'claude', cwd: repo });
+  assert.deepEqual(await ids(), [...want, di.id]);
+  assert.deepEqual(await api('/crew-order', { sorted: false }, 'PUT'), { ids: [...want, di.id], sorted: false }, 'need first again, the order kept');
+  assert.equal((await api('/config')).crewSorted, undefined);
+  for (const m of [bo, cy, di]) await api(`/crew/${m.id}`, null, 'DELETE');
+});
+
 test('a trigger sends its work to a crew member', async () => {
   const t = await api('/triggers', { kind: 'schedule', cron: '0 0 1 1 *', crew: ada.id, prompt: 'Weekly dependency check' });
   assert.equal(t.cwd, repo, 'the member’s folder');

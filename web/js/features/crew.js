@@ -42,6 +42,9 @@ import { stuffCount, stuffMatches, stuffSub, stuffThumbHtml } from './stuff.js';
 import { TEMPLATES } from '../crew-templates.js';
 import { byUrgency, cardJobs, CARD_ROWS, headingForCard, holdRows, jobMark, standing, stepRow } from '../crew-jobs.js';
 import { cronWords, toCron } from '../schedule.js';
+import { moved } from '../project-order.js';
+import { reorderable } from '../ui/reorder.js';
+import { loadConfig } from './live.js';
 
 // The spirits' glows, defined once for the whole page.
 document.body.insertAdjacentHTML('beforeend', spiritDefs());
@@ -325,9 +328,16 @@ export function rankCrew(list, states = new Map()) {
   });
 }
 function sortCrew(list, states) {
+  // Dragged into your order (moveMember): that order, whoever needs you. Their dots still say so.
+  if (S.config.crewSorted) {
+    order = list.map((m) => m.id);
+    return [...list];
+  }
   if (holding && order.length) {
     const i = new Map(order.map((id, k) => [id, k]));
-    return [...list].sort((a, b) => (i.get(a.id) ?? 1e9) - (i.get(b.id) ?? 1e9));
+    const out = [...list].sort((a, b) => (i.get(a.id) ?? 1e9) - (i.get(b.id) ?? 1e9));
+    order = out.map((m) => m.id); // what's on screen, for a drag (moveMember): who left gone, newcomers last
+    return out;
   }
   const out = rankCrew(list, states);
   order = out.map((m) => m.id);
@@ -402,7 +412,7 @@ export function paintCrew() {
             : key === 'fewer'
               ? `<button class="cr-fewer link xs" type="button" data-crew="fewer">Show fewer</button>`
               : m
-                ? `<div class="cr-member" data-crew="${key}"><div class="cr-row" role="button" tabindex="0"></div><div class="cr-jobs f-list"></div><button class="cr-more link xs" hidden></button></div>`
+                ? `<div class="cr-member" data-crew="${key}" data-id="${key}"><div class="cr-row" role="button" tabindex="0"></div><div class="cr-jobs f-list"></div><button class="cr-more link xs" hidden></button></div>`
                 : `<button class="cr-row cr-empty" data-crew="empty">${icon('plus')}<span class="cr-main"><b>Add someone to your crew</b><span class="cr-sub">A named agent that checks in, reports, and answers to @name</span></span></button>`,
         );
       box.insertBefore(block, box.children[i] || null);
@@ -466,7 +476,7 @@ let railOrder = [];
 const railTiles = () => [railAll, ...railOrder.map((id) => railNodes.get(id))].filter((b) => b && !b.hidden);
 
 const faceTile = (id) =>
-  el(`<button class="cl-face" type="button" data-crew="${id}" tabindex="-1"><i class="cl-pip"></i><span class="cl-av"></span><i class="cl-dot" hidden></i><span class="cl-live" hidden><span class="orb live"></span><b hidden></b></span></button>`);
+  el(`<button class="cl-face" type="button" data-crew="${id}" data-id="${id}" tabindex="-1"><i class="cl-pip"></i><span class="cl-av"></span><i class="cl-dot" hidden></i><span class="cl-live" hidden><span class="orb live"></span><b hidden></b></span></button>`);
 
 function paintRail(list, states) {
   for (const n of $$('.cl-sk', railFaces)) n.remove();
@@ -863,6 +873,7 @@ const tipTarget = (e) => e.target.closest?.('.cl-btn');
 const faceTarget = (e) => e.target.closest?.('.cl-face');
 rail.addEventListener('pointerover', (e) => {
   if (e.pointerType !== 'mouse') return;
+  if (railFaces.classList.contains('reordering')) return; // a face being dragged shows no card
   const face = faceTarget(e);
   if (face) return hoverFace(face);
   const t = tipTarget(e);
@@ -899,7 +910,7 @@ rail.addEventListener('click', (e) => {
 });
 rail.addEventListener('contextmenu', (e) => {
   const face = e.target.closest('.cl-face');
-  if (!face) return;
+  if (!face || e.defaultPrevented) return; // a finger's drag took the long press
   e.preventDefault();
   hideTip();
   hideCard();
@@ -909,6 +920,7 @@ rail.addEventListener('keydown', (e) => {
   if (e.key === 'Escape') hideTip();
   const tile = e.target.closest('.cl-face, .cl-all');
   if (!tile) return;
+  if (tile.matches('.cl-face') && stepMember(e, tile.dataset.crew)) return;
   // Into a face's card. All has none: this key does nothing there.
   if (tile.matches('.cl-face') && e.key === (document.body.classList.contains('side-right') ? 'ArrowLeft' : 'ArrowRight')) {
     e.preventDefault();
@@ -923,6 +935,82 @@ rail.addEventListener('keydown', (e) => {
   e.stopPropagation();
   tiles[Math.max(0, Math.min(to, tiles.length - 1))]?.focus();
 });
+
+// --- your order ------------------------------------------------------------------------------------
+//
+// Drag a face on the rail, or a row in the section, to put the crew in your order: from then on
+// both list them so, not by who needs you (PUT /crew-order; Sort by need in a member's menu goes
+// back). A finger holds first (ui/reorder.js); Alt+↑/↓ moves the focused one. section.crew's
+// movable: false (a spell) turns it off.
+const movable = () => spellProp('section.crew', 'movable') !== false;
+let moves = 0;
+function repaintCrew() {
+  if (S.sessions.size) renderFeed();
+  else paintCrew();
+}
+async function putOrder(body, apply) {
+  const was = { crew: S.config.crew, sorted: S.config.crewSorted };
+  const mine = ++moves;
+  apply();
+  repaintCrew();
+  try {
+    await api('/crew-order', { method: 'PUT', body });
+  } catch (err) {
+    // A later move went on top: the server's order is the truth, not this one's snapshot.
+    if (mine === moves) Object.assign(S.config, { crew: was.crew, crewSorted: was.sorted });
+    else await loadConfig().catch(() => {});
+    repaintCrew();
+    toastError(err);
+  }
+}
+// The order on screen: need first until you've dragged, then yours.
+const shownIds = () => {
+  const ids = new Set(crewList().map((m) => m.id));
+  const shown = order.filter((id) => ids.has(id));
+  return [...shown, ...[...ids].filter((id) => !shown.includes(id))];
+};
+export function moveMember(id, to, after) {
+  const was = shownIds();
+  const next = moved(was, id, to, after);
+  if (next === was) return;
+  const at = new Map(next.map((x, i) => [x, i]));
+  return putOrder({ ids: next }, () => {
+    S.config.crew = [...crewList()].sort((a, b) => at.get(a.id) - at.get(b.id));
+    S.config.crewSorted = true;
+  });
+}
+function sortByNeed() {
+  holding = false; // re-rank now, under the pointer too: that's what was asked
+  return putOrder({ sorted: false }, () => {
+    S.config.crewSorted = false;
+  });
+}
+// Alt+↑/↓ on a face or a row: one place up or down, focus kept on it. True when it moved.
+function stepMember(e, id) {
+  if (!e.altKey || e.metaKey || e.ctrlKey || !id || !movable() || (e.key !== 'ArrowUp' && e.key !== 'ArrowDown')) return false;
+  e.preventDefault();
+  e.stopPropagation();
+  const ids = shownIds();
+  const i = ids.indexOf(id);
+  const j = i + (e.key === 'ArrowUp' ? -1 : 1);
+  if (i < 0 || j < 0 || j >= ids.length) return true;
+  moveMember(id, ids[j], e.key === 'ArrowDown');
+  requestAnimationFrame(() => (railNodes.get(id)?.isConnected && crewRailOn() ? railNodes.get(id) : $(`.cr-member[data-crew="${id}"] .cr-row`, box))?.focus({ preventScroll: true }));
+  return true;
+}
+reorderable(railFaces, {
+  item: '.cl-face',
+  axis: 'y',
+  ok: movable,
+  onDrop: moveMember,
+  onStart: () => {
+    hideCard();
+    hideTip();
+  },
+});
+// A row and the jobs under it go together; you pick it up by the row. Not while one of its jobs is
+// open: that task's body is fixed over the pane, and a moving block would carry it along.
+reorderable(box, { item: '.cr-member', axis: 'y', ok: (e) => movable() && !!e.target.closest('.cr-row') && !e.target.closest('.cr-member')?.querySelector('.item.open'), onDrop: moveMember });
 
 // Leaving the section lets a row that went quiet fold again. An open card counts as being there:
 // the rail holds while the pointer crosses to it, and until it closes.
@@ -977,6 +1065,7 @@ sec.addEventListener('click', (e) => {
 });
 sec.addEventListener('keydown', (e) => {
   const row = e.target.closest('.cr-row');
+  if (row && stepMember(e, row.closest('.cr-member')?.dataset.crew)) return;
   if (row && (e.key === 'Enter' || e.key === ' ')) {
     e.preventDefault();
     row.click();
@@ -984,7 +1073,7 @@ sec.addEventListener('keydown', (e) => {
 });
 sec.addEventListener('contextmenu', (e) => {
   const block = e.target.closest('.cr-member');
-  if (!block || !e.target.closest('.cr-row')) return;
+  if (!block || !e.target.closest('.cr-row') || e.defaultPrevented) return; // a finger's drag took the long press
   e.preventDefault();
   memberMenu(block.dataset.crew, { x: e.clientX, y: e.clientY });
 });
@@ -1243,6 +1332,7 @@ export function memberMenu(id, { x, y, anchor } = {}) {
       <button data-a="share">${icon('arrow')}Share…</button>
       <button data-a="record">${icon('stats')}Track record…</button>
       ${m.spell ? `<button data-a="mine">${icon('wizard')}Make it mine</button>` : ''}
+      ${S.config.crewSorted ? `<button data-a="need">${icon('clock')}Sort by need</button>` : ''}
       <button data-a="remove" class="danger">${icon('trash')}Remove from crew</button>
     </div>`);
   menu.onclick = (e) => {
@@ -1256,6 +1346,7 @@ export function memberMenu(id, { x, y, anchor } = {}) {
     if (a === 'share') shareMember(id);
     if (a === 'record') trackRecord({ id });
     if (a === 'mine') makeMine(id);
+    if (a === 'need') sortByNeed();
     if (a === 'remove') removeMember(id, anchor);
   };
   const close = popover(menu, { anchor });
