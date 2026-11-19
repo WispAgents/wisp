@@ -18,6 +18,8 @@ pub const HELP: &str = "usage:
                                 --agent ID  --model ID  --effort LEVEL: switch harness / model from here on)
   wisp btw <id> \"question\"      ask on the side without interrupting the run; prints the answer
   wisp stop <id>                stop a run
+  wisp held <id> start|without|skip   a turn held before it started: start it (Trust and start), run it without the
+                                repo's own programs, or skip this run
   wisp ship <id>                commit, push and open a PR for a worktree session   (--draft)
   wisp merge <id>               squash-merge its PR and sync your local base branch
   wisp run <recipe> [values…]   run a saved recipe; values fill its {params} in order, or key=value
@@ -89,7 +91,7 @@ launch options: --mode plan|edits|auto  --agent claude|codex|opencode|cursor|ant
                 --yes  go ahead although it takes a usage window past your Ask near the limit line
 options:        --port N  --browser  --no-open  --json  --version";
 
-pub const COMMANDS: [&str; 25] = [
+pub const COMMANDS: [&str; 26] = [
     "attach",
     "help",
     "completions",
@@ -101,6 +103,7 @@ pub const COMMANDS: [&str; 25] = [
     "wait",
     "reply",
     "btw",
+    "held",
     "stop",
     "mcp",
     "skill",
@@ -116,6 +119,8 @@ pub const COMMANDS: [&str; 25] = [
     "import",
     "desktop",
 ];
+/// What `wisp held <id> <action>` takes: runtime.held's actions.
+pub const HELD_ACTIONS: [&str; 3] = ["start", "without", "skip"];
 pub const LS_STATES: [&str; 4] = ["running", "waiting", "review", "done"];
 /// wisp-grid's commands (apps/grid's CLI). A test keeps `wisp grid <word>` routing in step.
 pub const GRID_SUB: [&str; 9] = ["dev", "init", "serve", "doctor", "rotate-key", "backup", "users", "waitlist", "help"];
@@ -321,6 +326,8 @@ fn fits(cmd: &str, w: &[String], home: &Path, cwd: &Path) -> bool {
         "ship" | "merge" => session_id(w1),
         "attach" => n == 2 && task_ref(w1),
         "show" | "stop" | "wait" | "reply" | "btw" => task_ref(w1),
+        // `wisp held <id> start` (audit D4): only with a task and one of its three words; `wisp held up the release` is a task
+        "held" => n == 3 && task_ref(w1) && HELD_ACTIONS.contains(&w.get(2).map_or("", String::as_str)),
         // groups that route as commands (QA round 15 #1): bare, a flag, one word (a slip, said in main.rs) or their own
         // verb; two or more other words are a prompt (`wisp plugin for prettier`)
         "plugin" | "plugins" | "mcp" | "skill" => n <= 2 || w1.starts_with('-') || crate::words::own_verb(cmd, w1),

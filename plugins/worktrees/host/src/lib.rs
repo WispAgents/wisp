@@ -14,6 +14,7 @@ pub mod engine;
 pub mod error;
 mod files;
 pub mod fsx;
+mod held_setup;
 pub mod pane;
 pub mod ports;
 pub mod prepare;
@@ -257,14 +258,7 @@ impl Plugin for WorktreesPlugin {
             InterceptOpts { priority: 50, failure: Failure::Closed, timeout_ms: 1000 },
             move |ctx, _call, hctx| {
                 let st = hook_st.clone();
-                async move {
-                    let Ok((engine, _, port)) = st.parts(&ctx).await else {
-                        return wisp_kernel::Verdict::Continue;
-                    };
-                    let set = port.settings().await;
-                    let hooks = trust::hooks_of(&ctx, hctx.get("agent").and_then(serde_json::Value::as_str).unwrap_or_default());
-                    trust::before_run(&set.trust, set.project_ask.as_deref(), &engine.user_home, hooks.as_ref(), hctx).await
-                }
+                async move { trust_hook(&st, &ctx, hctx).await }
             },
         );
         let start_st = st;
@@ -320,6 +314,33 @@ impl Plugin for WorktreesPlugin {
         });
         Ok(())
     }
+}
+
+/// Project trust's `before:run`: a yes to its card trusts what it listed (audit D1), a new worktree's setup that waits
+/// for trust is on the card (audit D5) and runs on that yes, then the run; else the card, or nothing.
+async fn trust_hook(st: &State, ctx: &Ctx, hctx: serde_json::Value) -> wisp_kernel::Verdict<serde_json::Value> {
+    let Ok((engine, _, port)) = st.parts(ctx).await else {
+        return wisp_kernel::Verdict::Continue;
+    };
+    let mut set = port.settings().await;
+    // Trust and start on this hook's card: what it listed is trusted now, so the run goes (audit D1)
+    let yes = trust::released_yes(&hctx);
+    if let Some((key, ids)) = &yes {
+        set.trust.trust(key, ids, engine.clock.now_ms());
+        port.save_settings(set.clone()).await;
+    }
+    let field = |k: &str| hctx.get(k).and_then(serde_json::Value::as_str).unwrap_or_default().to_owned();
+    // a new worktree's setup that waits for trust is on the card too (audit D5); asked only when trust asks
+    let wt = if trust::checks(set.project_ask.as_deref(), &hctx) { held_setup::waiting(ctx, &field("sessionId")).await } else { None };
+    if let (Some((key, _)), Some(wt)) = (&yes, &wt) {
+        // trusted just now: the setup runs, then the run (the card says so meanwhile)
+        let items = held_setup::items(wt);
+        held_setup::run_then_start(ctx, engine.clone(), wt.clone(), field("sessionId"), field("turnId"));
+        return wisp_kernel::Verdict::Modify { ctx: held_setup::running(hctx, key, &items) };
+    }
+    let extra = wt.as_ref().map(held_setup::items).unwrap_or_default();
+    let hooks = trust::hooks_of(ctx, &field("agent"));
+    trust::before_run(&set.trust, set.project_ask.as_deref(), &engine.user_home, hooks.as_ref(), extra, hctx).await
 }
 
 mod commands;

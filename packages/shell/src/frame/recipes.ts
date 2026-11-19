@@ -9,6 +9,8 @@ import type { ShellContext } from '../contract.ts';
 
 export interface RecipeRow {
   readonly name: string;
+  /** its name as written ("Run tests", a v1 recipe's), when the name (a key) can't hold it (audit D11) */
+  readonly title?: string;
   readonly prompt: string;
   readonly steps?: readonly string[];
   readonly project?: string;
@@ -16,6 +18,9 @@ export interface RecipeRow {
 
 // quiet: read on every Home load; a peer without it (an older wisp) has no recipes, never an error toast (QA r2 phone #1)
 export const list = defineCommand<{ peer: string }, RecipeRow[]>({ id: 'automations.tasks', owner: (a) => a.peer, wire: () => ({}), optimistic: 'none', pending: 'the recipes', quiet: true });
+
+/** A recipe's chip: its title, else its name (audit D11: a v1 recipe "Run tests" read `run-tests`). */
+export const recipeLabel = (r: RecipeRow): string => r.title?.trim() || r.name;
 
 const asksFields = (r: RecipeRow): boolean => [r.prompt, ...(r.steps ?? [])].some((x) => /\{[A-Za-z_][\w-]*\}/.test(x));
 
@@ -35,7 +40,7 @@ export function useRecipes(shell: ShellContext, peer: () => string, path: () => 
     items: () =>
       at().list.map((r) => ({
         id: r.name,
-        label: r.name,
+        label: recipeLabel(r),
         title: r.prompt.replace(/\s+/g, ' ').slice(0, 200),
         fields: asksFields(r),
         act: { onClick: () => open(r.name) },

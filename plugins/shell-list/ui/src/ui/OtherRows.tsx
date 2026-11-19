@@ -2,7 +2,7 @@
 // run under it), a plan that hasn't started (Scheduled), a draft (Drafts), and a section's heading.
 
 import { Show, type JSX } from 'solid-js';
-import { Button, Dot, FoldHead, Gap, Icon, IconButton, ListRow, Stack, Text, Time, futureLabel } from '@wisp/ui';
+import { Button, Dot, FoldHead, Gap, Icon, IconButton, ListRow, Text, Time, futureLabel } from '@wisp/ui';
 import { computed, type EntityKey, type ExtensionId, type Json } from '@wisp/client';
 import { toggleDone } from '../actions.ts';
 import type { Entry, SectionId } from '../model/sections.ts';
@@ -88,24 +88,16 @@ export function PlanRow(props: { readonly plan: Row<Plan> }): JSX.Element {
   const t = env.shell.t;
   const open = (): void => env.client.navigate({ t: 'openView', id: 'later.plan' as ExtensionId, params: { id: props.plan.id } as Json });
   return (
+    // v1 later.js planRows: a feed row like a task's (its icon in the dot column, so the title lines up with every
+    // row's), one line under the title: what it is, then its project (audit D #4: two lines, out of line on phones)
     <ListRow
+      layout="feed"
       part={props.plan.kind === 'draft' ? 'list.draft' : 'list.plan'}
       title={props.plan.title}
-      lead={<Icon name={PLAN_ICON[props.plan.kind]} size="md" tone="muted" />}
-      sub={
-        <Stack gap="0">
-          <Text size="sm" tone="muted" truncate>
-            {props.plan.after !== undefined ? t('shell-list.plan.after', { title: props.plan.after }) : t(`shell-list.plan.${props.plan.kind}`)}
-          </Text>
-          <Show when={props.plan.project}>
-            {(p) => (
-              <Text size="xs" tone="muted" truncate>
-                {p()}
-              </Text>
-            )}
-          </Show>
-        </Stack>
-      }
+      lead={<Icon name={PLAN_ICON[props.plan.kind]} size="sm" tone="muted" />}
+      sub={[props.plan.after !== undefined ? t('shell-list.plan.after', { title: props.plan.after }) : t(`shell-list.plan.${props.plan.kind}`), props.plan.project]
+        .filter(Boolean)
+        .join(' · ')}
       time={
         <Show
           when={props.plan.kind === 'draft'}

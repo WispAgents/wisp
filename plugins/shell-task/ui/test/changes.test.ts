@@ -1,6 +1,6 @@
 // The Changes pane's model (side/changes.ts).
 import { expect, test } from 'vitest';
-import { envState, filesOf, gitFiles, hunkOf, outsideFolder, revealedOf, seenMasked, setRevealed, type ChangeTurn } from '../src/side/changes.ts';
+import { envState, filesOf, gitFiles, hunkOf, outsideFolder, revealedOf, seenMasked, setRevealed, worktreeDir, ofTask, type ChangeTurn } from '../src/side/changes.ts';
 
 test('a task\'s turns become one diff per file, edits in turn order, kept lines as context', () => {
   const h = hunkOf('a\nb\nc\n', 'a\nB\nc\n');
@@ -87,4 +87,20 @@ test('edits_outside_the_tasks_folder_show_beside_gits_files', () => {
   expect(seen.map((f) => f.path)).toEqual(['/Users/me/wisp-v2-dev-md/docs/dev.md', 'src/x.ts']);
   expect(outsideFolder(seen).map((f) => f.path)).toEqual(['/Users/me/wisp-v2-dev-md/docs/dev.md']);
   expect(outsideFolder([{ path: 'C:\\w\\a.ts' }, { path: 'docs/a.md' }]).map((f) => f.path)).toEqual(['C:\\w\\a.ts']);
+});
+
+// audit 2026-11-19 (v1 GET /sessions/:id/changes): git diffs the task's worktree only. A task in place in the shared
+// checkout counted 198 files, every session's and the user's own; v1 showed the edits wisp saw instead
+test('git_reads_a_worktree_only_a_task_in_place_shows_the_edits_wisp_saw', () => {
+  expect(worktreeDir({ path: '/w/wisp-1', cwd: '/w/wisp-1' })).toBe('/w/wisp-1');
+  expect(worktreeDir({ cwd: '/w/wisp-2' })).toBe('/w/wisp-2');
+  expect(worktreeDir(undefined), 'in place: no worktree, no git read').toBe('');
+  expect(worktreeDir(null)).toBe('');
+});
+
+test('a_turn_belongs_to_its_task_by_the_bare_id_or_the_peers_key', () => {
+  expect(ofTask('s1', 's1')).toBe(true);
+  expect(ofTask('local:s1', 's1'), 'a synced row keyed by its peer').toBe(true);
+  expect(ofTask('local:s11', 's1')).toBe(false);
+  expect(ofTask(undefined, 's1')).toBe(false);
 });

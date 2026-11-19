@@ -172,7 +172,10 @@ pub async fn show(c: &Client, f: &Flags, id: &str, summary: Option<Value>) -> Re
     }
     let body = if blocks.is_empty() { String::new() } else { wisp_cli_core::Renderers::builtin().answer(&blocks, &st).join("\n") };
     let asks = asking(&task);
-    say(&format!("◌ {}  [{}{still}]  {id}{family}\n\n{body}{asks}", s(&task, "title"), s(&task, "state")));
+    let held =
+        last.as_ref().and_then(Value::as_array).and_then(|t| t.last()).map_or_else(String::new, |t| crate::show_words::holding(id, t));
+    let goal = crate::show_words::goal_line(&task);
+    say(&format!("◌ {}  [{}{still}]  {id}{family}{goal}\n\n{body}{asks}{held}", s(&task, "title"), s(&task, "state")));
     Ok(())
 }
 
@@ -266,7 +269,8 @@ pub async fn ls(c: &Client, f: &Flags) -> Result<()> {
             )
         })
         .collect();
-    out(f, &json!(rows), &if lines.is_empty() { "No sessions.".to_owned() } else { format!("{}{more}", lines.join("\n")) });
+    // the same words as `wisp ls --crew` (audit D11: "No sessions." here, "No tasks." there)
+    out(f, &json!(rows), &if lines.is_empty() { "No tasks.".to_owned() } else { format!("{}{more}", lines.join("\n")) });
     Ok(())
 }
 
@@ -274,9 +278,13 @@ pub async fn ls(c: &Client, f: &Flags) -> Result<()> {
 /// own folder is `proj-01a1f…`, audit C #15), else its folder's name.
 fn project_of(row: &Value) -> String {
     let named = |v: Option<&Value>| v.and_then(Value::as_str).filter(|p| !p.is_empty()).map(str::to_owned);
-    named(row.pointer("/summary/project"))
-        .or_else(|| named(row.get("project")))
-        .unwrap_or_else(|| std::path::Path::new(s(row, "cwd")).file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default())
+    named(row.pointer("/summary/project")).or_else(|| named(row.get("project"))).unwrap_or_else(|| {
+        // a task made in wisp's scratch folder (`<home>/scratch/<id>`, Cast a plugin) is in no project (audit D7)
+        let at = std::path::Path::new(s(row, "cwd"));
+        let scratch = at.parent().and_then(std::path::Path::file_name).is_some_and(|n| n == "scratch");
+        let name = at.file_name().map(|n| n.to_string_lossy().into_owned()).filter(|n| !n.is_empty() && !scratch);
+        name.unwrap_or_else(|| "no project".to_owned())
+    })
 }
 
 #[allow(clippy::many_single_char_names)]
@@ -377,5 +385,16 @@ mod tests {
         let ok = json!({ "id": "t2", "ext": { "wisp.runtime": { "ask": { "id": "b", "question": "Allow npm publish?", "permission": { "tool": "Bash" } } } } });
         assert!(asking(&ok).contains("? Needs your OK: Allow npm publish?"));
         assert_eq!(asking(&json!({ "id": "t3", "ext": {} })), "", "nothing asked: nothing said");
+    }
+
+    /// Audit D7: a task with no project (Cast a plugin, run in `<home>/scratch/<id>`) read `01a1f42ce94d72ba` in `wisp
+    /// ls`'s project column. A scratch folder is no project; a plain folder still shows its name.
+    #[test]
+    fn a_scratch_task_shows_no_project_and_a_plain_folder_its_name_audit_d7() {
+        let row = |cwd: &str| serde_json::json!({ "id": "a", "cwd": cwd, "project": null });
+        assert_eq!(super::project_of(&row("/h/.wisp/scratch/01a1f42ce94d72ba")), "no project");
+        assert_eq!(super::project_of(&row("")), "no project");
+        assert_eq!(super::project_of(&row("/w/app")), "app");
+        assert_eq!(super::project_of(&serde_json::json!({ "cwd": "/w/app-01a1", "summary": { "project": "app" } })), "app");
     }
 }

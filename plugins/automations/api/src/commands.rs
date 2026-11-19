@@ -7,7 +7,7 @@ use serde_json::{Map, Value};
 use ts_rs::TS;
 use wisp_kernel::Command;
 
-use crate::model::{MemberRef, RecipeView, TriggerView};
+use crate::model::{MemberRef, TriggerView};
 
 pub const PERM_READ: &str = "automations:read";
 pub const PERM_WRITE: &str = "automations:write";
@@ -169,41 +169,13 @@ pub struct CrewArgs {
     pub name: String,
 }
 
-command!(Triggers = "automations.triggers", PERM_READ, true, ListArgs => Vec<TriggerView>);
-command!(TriggerCreate = "automations.trigger.create", PERM_WRITE, false, Map<String, Value> => TriggerView);
-command!(TriggerUpdate = "automations.trigger.update", PERM_WRITE, false, UpdateArgs => TriggerView);
-command!(TriggerRemove = "automations.trigger.remove", PERM_WRITE, false, IdArgs => Done);
-command!(
-    /// A schedule fires now; a watcher polls and acts on what it finds. Never held by the plan.
-    RunNow = "automations.runNow", PERM_RUN, false, IdArgs => RunNowOut
-);
-command!(Recipes = "automations.recipes", PERM_READ, true, Empty => Vec<RecipeView>);
-command!(RecipeGet = "automations.recipe", PERM_READ, true, KeyArgs => RecipeView);
-command!(RecipeCreate = "automations.recipe.create", PERM_WRITE, false, Map<String, Value> => RecipeView);
-command!(RecipeUpdate = "automations.recipe.update", PERM_WRITE, false, RecipeUpdateArgs => RecipeView);
-command!(RecipeRemove = "automations.recipe.remove", PERM_WRITE, false, KeyArgs => Done);
-command!(RecipeRun = "automations.recipe.run", PERM_RUN, false, RecipeRunArgs => Value);
+// Declared and never handled (audit D12: `automations.triggers` answered "unknown command" and logged a warning):
+// triggers are `automations.trigger.*` below, recipes `automations.task.*` (tasks.rs). Only commands a handler serves are
+// declared here; `declared_commands_are_listed` (wisp-automations' tests) keeps it so.
 command!(
     /// A window of this harness reset early (`budget.plan_free` does the same by itself): rows held for its plan stop
     /// saying so. → how many did.
     Release = "automations.release", PERM_WRITE, false, AgentArgs => Count
-);
-command!(
-    /// The next scheduled wake (`GET /api/status` nextWakeAt; the grid wakes the box then).
-    NextWakeOf = "automations.nextWake", PERM_READ, true, Empty => NextWake
-);
-command!(SyncMember = "automations.syncMember", PERM_CREW, false, SyncMemberArgs => Empty);
-command!(
-    /// The member's `on`: the kinds of its triggers that are on.
-    MemberKinds = "automations.memberKinds", PERM_CREW, true, CrewArgs => Vec<String>
-);
-command!(
-    /// A member left the crew: its triggers go off, unassigned, and say why.
-    MemberLeft = "automations.memberLeft", PERM_CREW, false, CrewArgs => Count
-);
-command!(
-    /// Gone for good (an import undone): the member's triggers go, as if never made.
-    ForgetMember = "automations.forgetMember", PERM_CREW, false, CrewArgs => Count
 );
 
 // ---- the one trigger engine (ADR-0043): `wisp trigger …`, the MCP tools, the Automations pane ----

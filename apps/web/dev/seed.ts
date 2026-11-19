@@ -133,6 +133,8 @@ interface Task {
   archived?: boolean;
   turns?: number;
   branch?: string;
+  /** it works in its own worktree (wisp.worktrees): Changes is git's diff of it; without, the edits wisp saw */
+  worktree?: true;
   cost?: number;
   /** a crew member's job (body.ext["wisp.crew"]): a delegated one sits under its member in the phone's Crew section */
   crew?: { id: string; job: string; from?: { id: string; title: string } };
@@ -179,6 +181,7 @@ const TASKS: Task[] = [
     unread: true,
     turns: 3,
     branch: 'feat/login-limit',
+    worktree: true,
     cost: 1.18,
   },
   {
@@ -417,6 +420,7 @@ function sessionRow(peer: string, i: number, t: Task, now: number): { id: string
         forLater: false,
         ...(t.cost !== undefined && { costUsd: t.cost }),
         ...(t.branch && { branch: t.branch }),
+        ...(t.worktree && { worktree: { path: `${t.cwd}-${t.branch?.replace(/\W+/g, '-') ?? 'task'}`, branch: t.branch ?? '', base: 'main' } }),
       },
       body: { cwd: t.cwd, dirs: [], queue_held: false, tags: [], ext: t.crew ? { 'wisp.crew': t.crew } : {} },
     },
@@ -600,15 +604,18 @@ export const MEDIA_BLOCKS = [
   { type: 'video', path: 'shots/run.mp4', caption: 'The run' },
 ];
 
-/** `env`: the first task's first turn changed `.env.local` and `src/config.ts` (F-page-41: Changes masks the .env). The
- *  mock's git reads a folder's first task, so every task in ~/code/wisp shows them. */
+/** `env`: the worktree task's first turn changed `.env.local` and `src/config.ts` (F-page-41: Changes masks the .env).
+ *  Changes is git's diff in a worktree only (side-panel audit 2026-11-19), so the edits go to the task that has one. */
 export const ENV_CHANGES = [
   { file: '.env.local', op: 'modify', beforeFile: 'API_URL=https://api.dev.example\nSTRIPE_KEY=sk_test_51Hb0rk\n# local only\nDEBUG=\n', edits: [{ before: 'sk_test_51Hb0rk', after: 'sk_test_77Qx2m' }] },
   { file: 'src/config.ts', op: 'modify', beforeFile: "export const retries = 2;\nexport const timeout = 5000;\n", edits: [{ before: 'retries = 2', after: 'retries = 3' }] },
 ];
 
 function withEnv(topics: Map<Topic, Row[]>): void {
-  for (const rows of topics.values()) {
+  // the task with a worktree (Add rate limiting): Changes is git's diff there, and the head's Changes +n −n says it
+  const all = [...topics.values()];
+  const inWorktree = all.filter((rows) => rows.some((r) => r.e === 'session' && (r.v as { summary?: { worktree?: unknown } }).summary?.worktree));
+  for (const rows of [...inWorktree, ...all]) {
     const turn = rows.find((r) => r.e === 'turn');
     if (!turn) continue;
     const v = turn.v as { body: Record<string, unknown> };

@@ -1,7 +1,7 @@
 {
   "lines": [
     "~ setting/worktrees.max",
-    "      : 4 → 6"
+    "      4 → 6"
   ],
   "ops": [
     {

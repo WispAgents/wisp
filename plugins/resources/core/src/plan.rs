@@ -155,7 +155,9 @@ pub fn lines(ops: &[Op]) -> Vec<(char, String)> {
             OpKind::Update => {
                 out.push(('~', what));
                 for c in &o.changes {
-                    out.push((' ', format!("    {}: {} → {}", c.path, short(c.from.as_ref()), short(c.to.as_ref()))));
+                    // a whole value (a setting's) has no field name: the values alone, no bare `:` (audit D6)
+                    let field = if c.path.is_empty() { String::new() } else { format!("{}: ", c.path) };
+                    out.push((' ', format!("    {field}{} → {}", short(c.from.as_ref()), short(c.to.as_ref()))));
                 }
             }
         }
@@ -197,6 +199,17 @@ mod tests {
         assert_eq!(ops[0].changes, [FieldChange { path: "model".into(), from: Some(json!("gpt-5")), to: Some(json!("gpt-5-pro")) }]);
         let (ops, _) = plan(&cur, &want[..1], true);
         assert!(ops.iter().any(|o| o.op == OpKind::Delete && o.name == "fixer"), "prune deletes what isn't declared");
+    }
+
+    /// Audit D6: a setting's value has no field name, so its change printed `    : "zed" → "cursor"`. A change of the
+    /// whole value is the values alone; a field's keeps its name.
+    #[test]
+    fn a_whole_value_change_prints_without_a_bare_colon_audit_d6() {
+        let cur = [Resource::new("setting", "settings.editor", json!("zed"))];
+        let (ops, _) = plan(&cur, &[Resource::new("setting", "settings.editor", json!("cursor"))], false);
+        assert_eq!(lines(&ops), [('~', "setting/settings.editor".to_owned()), (' ', "    \"zed\" → \"cursor\"".to_owned())]);
+        let (ops, _) = plan(&[r("a", json!({ "agent": "claude" }))], &[r("a", json!({ "agent": "codex" }))], false);
+        assert_eq!(lines(&ops)[1].1, "    agent: \"claude\" → \"codex\"");
     }
 
     #[test]

@@ -16,6 +16,34 @@ describe('turn cards', () => {
     expect(heldOf(turn(1, { status: 'held', held: { by: 'x', kind: 'some-kind' } }), t, 'Codex')?.title).toBe('shell-task.held.other');
   });
 
+  // audit D2: a project-trust hold said only "Held before it started"; it lists what the repo would run (each with its
+  // file), says why in v1's words, and offers Trust and start and Run without them
+  it('a_project_trust_hold_lists_what_the_repo_would_run_and_offers_run_without_them', () => {
+    const items = [
+      { kind: 'hook', file: '.claude/settings.json', name: 'PreToolUse', command: 'echo hi', id: 'a' },
+      { kind: 'mcp', file: '.mcp.json', name: 'local', command: 'node server.js', id: 'b' },
+      { kind: 'odd', name: 'x', command: 'y' },
+    ];
+    const h = heldOf(turn(1, { status: 'held', held: { by: 'wisp.worktrees', kind: 'trust', data: { items } } }), t, 'Claude Code');
+    expect(h).toEqual({
+      title: 'shell-task.held.trustAsks',
+      why: 'shell-task.held.trustWhy',
+      start: 'shell-task.held.trust',
+      without: 'shell-task.held.without',
+      items: [
+        { kind: 'shell-task.held.kind.hook', name: 'PreToolUse', command: 'echo hi', file: '.claude/settings.json' },
+        { kind: 'shell-task.held.kind.mcp', name: 'local', command: 'node server.js', file: '.mcp.json' },
+        { kind: 'shell-task.held.kind.command', name: 'x', command: 'y' },
+      ],
+    });
+    expect(heldOf(turn(1, { status: 'held', held: { by: 'wisp.worktrees', kind: 'trust', data: { changed: true, items: [] } } }), t, 'C')?.title).toBe('shell-task.held.trustChanged');
+    // trusted, its setup running: it says so and nothing is pressed meanwhile
+    const run = heldOf(turn(1, { status: 'held', held: { by: 'wisp.worktrees', kind: 'trust', data: { setup: 'running', items: [] } } }), t, 'C');
+    expect([run?.why, run?.running]).toEqual(['shell-task.held.setupRunning', true]);
+    // other holds offer no Run without them
+    expect(heldOf(turn(1, { status: 'held', held: { by: 'wisp.budget', kind: 'plan', data: { label: 'L' } } }), t, 'C')?.without).toBeUndefined();
+  });
+
   it('each_card_says_why_a_turn_stopped_was_held_what_changed_and_what_it_cost', () => {
     // the store's row: the Turn in `body`
     expect(docOf({ id: 'r', status: 'held', idx: 2, body: { held: { by: 'wisp.budget', kind: 'limit', data: { label: 'Near the limit', why: '91% of the 5-hour window' } } } })?.status).toBe('held');

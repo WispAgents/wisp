@@ -1,25 +1,25 @@
-// UX 2026-11-18 desktop #5: the side panel showed all five tabs (Changes, PR, Shell, Preview, Thread) whether or not
-// they had anything. The strip holds the tabs with something in them (and the one open); the rest wait behind +. A tab
-// that joined the strip stays there (it never jumps out when its content goes), in the panel's own order.
+// The side panel's strip (owner, 2026-11-19, replacing UX 2026-11-18 desktop #5): v1's tabs show by default, labelled,
+// whether or not they have something in them yet: Changes, PR, Shell and Preview, then Watch while the task has one and
+// the tabs other plugins pin (My Stuff apps, Thread), in v1 panel.js paintName's fixed order, so none ever moves. The
+// owner's screenshot had the panel on Shell with one unlabelled tab and the rest hidden behind +.
 import { expect, test } from 'vitest';
 import { sideStrip, tabCount } from '../src/side/strip.ts';
 
-const order = ['changes', 'pr', 'shell', 'preview'];
-
-test('only_tabs_with_something_show_the_rest_wait_behind_plus', () => {
-  const r = sideStrip({ order, has: new Set(['shell']), current: 'shell', joined: [] });
-  expect(r.strip).toEqual(['shell']);
-  expect(r.more).toEqual(['changes', 'pr', 'preview']);
-  // a diff and a PR came: they join in the panel's order
-  expect(sideStrip({ order, has: new Set(['changes', 'pr', 'shell']), current: 'shell', joined: r.strip }).strip).toEqual(['changes', 'pr', 'shell']);
+test('the_strip_shows_changes_pr_shell_and_preview_even_when_they_have_nothing_yet', () => {
+  expect(sideStrip({ term: false, watch: false, extras: [] })).toEqual(['changes', 'pr', 'shell', 'preview']);
 });
 
-test('the_open_tab_is_always_in_the_strip_and_a_tab_once_shown_stays', () => {
-  expect(sideStrip({ order, has: new Set(['shell']), current: 'preview', joined: [] }).strip).toEqual(['shell', 'preview']);
-  // the diff was committed away: Changes keeps its place
-  expect(sideStrip({ order, has: new Set(['shell']), current: 'shell', joined: ['changes', 'shell'] })).toEqual({ strip: ['changes', 'shell'], more: ['pr', 'preview'] });
-  // a tab gone from the panel (a pin removed) leaves
-  expect(sideStrip({ order: ['shell'], has: new Set(['shell']), current: 'shell', joined: ['changes', 'shell', 'pin'] }).strip).toEqual(['shell']);
+test('a_terminal_task_leads_with_its_cli_watch_comes_after_the_panels_own_and_pinned_tabs_last', () => {
+  expect(sideStrip({ term: true, watch: true, extras: ['wisp.stuff|panes|st2', 'wisp.threads|tab|thread'] })).toEqual([
+    'term',
+    'changes',
+    'pr',
+    'shell',
+    'preview',
+    'watch',
+    'wisp.stuff|panes|st2',
+    'wisp.threads|tab|thread',
+  ]);
 });
 
 test('the_pr_tab_names_its_number_and_checks', () => {

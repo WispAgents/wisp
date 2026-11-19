@@ -64,6 +64,15 @@ impl ResourceKind for SettingKind {
         })
     }
 
+    /// The value as the setting takes it (`off` read by YAML as false is the enum's `"off"`, D3), so the plan shows it
+    /// and an unchanged one plans as unchanged.
+    fn normalize_named(&self, name: &str, spec: &mut Value) {
+        let key = wisp_settings_api::key_of(name);
+        if let Some(s) = self.ctx.settings_list().unwrap_or_default().into_iter().find(|s| s.key == key) {
+            *spec = s.decl.coerce(std::mem::take(spec));
+        }
+    }
+
     fn check(&self, r: &Resource) -> Vec<String> {
         let key = wisp_settings_api::key_of(&r.name);
         let Some(s) = self.ctx.settings_list().unwrap_or_default().into_iter().find(|s| s.key == key) else {

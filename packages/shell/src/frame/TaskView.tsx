@@ -1015,14 +1015,16 @@ export default function TaskView(props: { readonly id: string; readonly onBack?:
   // what's changed now in the task's folder, as git says it (the head's Changes +n −n, as the Changes pane shows): not
   // every turn's edits added up (audit A #9: +6 −6 for a one-line fix after two follow-ups, still there after Revert
   // or after the merged PR's worktree went). Read again when a turn ends or what the worktree holds changes; none when
-  // git can't read the folder (it's gone) or shows nothing.
+  // git can't read the folder (it's gone) or shows nothing, or the task has no worktree.
   const changeWhere = createMemo((): string => {
     const r = row();
     if (!r) return '';
     const body = (r.body ?? {}) as { ext?: Record<string, { path?: string; cwd?: string; baseRef?: string; base?: string } | undefined>; cwd?: string };
     const sum = r.summary as Record<string, unknown>;
     const wt = body.ext?.['wisp.worktrees'] ?? (sum['worktree'] as { path?: string; cwd?: string; baseRef?: string; base?: string } | undefined);
-    const dir = String(wt?.path ?? wt?.cwd ?? body.cwd ?? sum['cwd'] ?? '');
+    // the worktree only, as the side panel's Changes (v1 GET /sessions/:id/changes): a task in place diffed the project
+    // folder, so its head said +1962 for every session's and the user's own work (side-panel audit, 2026-11-19)
+    const dir = String(wt?.path ?? wt?.cwd ?? '');
     if (!dir) return '';
     const last = turns().at(-1);
     return JSON.stringify([dir, wt?.baseRef || wt?.base || 'HEAD', last?.id ?? '', last?.status ?? '', sum['toShip'] ?? null]);

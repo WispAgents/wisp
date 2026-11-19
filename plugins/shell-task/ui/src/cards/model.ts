@@ -11,7 +11,12 @@ export interface TurnDoc {
   readonly account?: string;
   readonly isError?: boolean;
   readonly text?: string;
-  readonly held?: { readonly by: string; readonly kind: string; readonly until?: number | null; readonly data?: { readonly label?: string; readonly why?: string; readonly line?: string; readonly what?: string } };
+  readonly held?: {
+    readonly by: string;
+    readonly kind: string;
+    readonly until?: number | null;
+    readonly data?: { readonly label?: string; readonly why?: string; readonly line?: string; readonly what?: string; readonly changed?: boolean; readonly setup?: string; readonly items?: readonly TrustItemDoc[] };
+  };
   readonly stats?: { readonly costUsd?: number; readonly inputTokens?: number; readonly outputTokens?: number; readonly cacheTokens?: number; readonly models?: Readonly<Record<string, { readonly input?: number; readonly output?: number; readonly cacheRead?: number; readonly cacheWrite?: number }>> } | null;
   readonly presentation?: { readonly blocks?: readonly { readonly type: string; readonly title?: string; readonly summary?: string; readonly status?: string }[] } | null;
   /** the harness turned it down (runtime's TurnRefusal, v1 `turn.refusal`) */
@@ -37,15 +42,48 @@ export type T = (key: string, vars?: Readonly<Record<string, string | number>>) 
 
 /** wisp.accounts' hold (`wisp_accounts_api::HOLD_KIND`): the harness's program changed since wisp last ran it. */
 const HARNESS_CHANGED = 'harness-changed';
+/** wisp.worktrees' hold: the repo's hooks, MCP servers or worktree setup aren't trusted yet. */
+const PROJECT_TRUST = 'trust';
+const TRUST_KINDS: readonly string[] = ['hook', 'mcp', 'command', 'plugin', 'setup'];
+
+/** One program a repo asks to run (wisp_worktrees_api::TrustItem): its kind, name, command and the file it's in. */
+export interface TrustItemDoc {
+  readonly kind: string;
+  readonly name: string;
+  readonly command: string;
+  readonly file?: string | null;
+  readonly id?: string;
+}
+
+/** What a held turn's card says: its title and why, Start now's words, and for project trust what it would run and
+ *  Run without them's words. */
+export interface Held {
+  readonly title: string;
+  readonly why: string;
+  readonly start: string;
+  readonly until?: number;
+  readonly without?: string;
+  /** its setup runs now: nothing to press */
+  readonly running?: boolean;
+  readonly items?: readonly { readonly kind: string; readonly name: string; readonly command: string; readonly file?: string }[];
+}
 
 /** Held before it starts (v1 hold.js): what holds it, why, and what Start now says. A changed harness says so in plain
  * words and Start now trusts the new program (wisp.accounts re-pins it on that yes); an unknown hold never shows its
  * raw kind. `name`: the harness's name. */
-export function heldOf(d: TurnDoc, t: T, name: string): { title: string; why: string; start: string; until?: number } | null {
+export function heldOf(d: TurnDoc, t: T, name: string): Held | null {
   if (d.status !== 'held' || !d.held) return null;
   const data = d.held.data;
   const until = d.held.until ? { until: d.held.until } : {};
   if (d.held.kind === HARNESS_CHANGED) return { title: t('shell-task.held.harness', { name }), why: data?.what ?? data?.line ?? '', start: t('shell-task.held.trust'), ...until };
+  // project trust (wisp.worktrees): what the repo would run, each with its file, and Run without them (v1 projectCard;
+  // audit D2: the card said only "Held before it started" and offered no way to run without them)
+  if (d.held.kind === PROJECT_TRUST) {
+    const items = (data?.items ?? []).map((i) => ({ kind: t(`shell-task.held.kind.${TRUST_KINDS.includes(i.kind) ? i.kind : 'command'}`), name: i.name, command: i.command, ...(i.file && { file: i.file }) }));
+    // trusted, its new worktree's setup running: the run starts when it's done, and the buttons wait (v1)
+    if (data?.setup === 'running') return { title: t('shell-task.held.trustAsks'), why: t('shell-task.held.setupRunning'), start: t('shell-task.held.trust'), without: t('shell-task.held.without'), items, running: true };
+    return { title: t(data?.changed ? 'shell-task.held.trustChanged' : 'shell-task.held.trustAsks'), why: t('shell-task.held.trustWhy'), start: t('shell-task.held.trust'), without: t('shell-task.held.without'), items };
+  }
   return { title: data?.label ? t('shell-task.held.title', { label: data.label }) : t('shell-task.held.other'), why: data?.why ?? '', start: t('shell-task.held.start'), ...until };
 }
 

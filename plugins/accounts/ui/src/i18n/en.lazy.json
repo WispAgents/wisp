@@ -43,6 +43,7 @@
   "accounts.login.openPage": "Open the sign-in page",
   "accounts.login.codeStep": "Enter this code there:",
   "accounts.login.copy": "Copy the code",
+  "accounts.login.copied": "Copied",
   "accounts.login.waiting": "Waiting for you to finish there…",
   "accounts.login.pasteStep": "Paste the code it shows you:",
   "accounts.login.continue": "Continue",

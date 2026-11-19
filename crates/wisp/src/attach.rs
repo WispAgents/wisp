@@ -520,7 +520,7 @@ pub async fn ls_watch(c: &Client, all: bool) -> Result<i32> {
                     text.push('\n');
                 }
                 if list.is_empty() {
-                    text.push_str("No sessions.\n");
+                    text.push_str("No tasks.\n");
                 }
                 prompt(&text);
             } else {

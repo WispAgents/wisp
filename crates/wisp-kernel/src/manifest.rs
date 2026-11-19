@@ -112,13 +112,26 @@ pub struct SettingDecl {
 
 impl SettingDecl {
     /// `value` as this declaration takes it: a number or true/false that spells one of an enum's values is that value
-    /// (`wisp settings set worktrees.max 80`, a formula's `worktrees.max: 20`; setup audit F22). Anything else as it is.
+    /// (`wisp settings set worktrees.max 80`, a formula's `worktrees.max: 20`; setup audit F22), and a true or false
+    /// YAML read from `on`/`yes`/`off`/`no` is the enum's word for it (D3). Anything else as it is.
     pub fn coerce(&self, value: Value) -> Value {
         if self.ty != "enum" || !(value.is_number() || value.is_boolean()) {
             return value;
         }
+        let values = self.values.as_deref().unwrap_or_default();
         let text = value.to_string();
-        if self.values.as_deref().unwrap_or_default().contains(&text) { Value::String(text) } else { value }
+        // YAML 1.1 reads `off`, `no`, `on` and `yes` as booleans (setup audit D3): the enum's own word for it
+        let words: &[&str] = match value.as_bool() {
+            Some(true) => &["true", "on", "yes"],
+            Some(false) => &["false", "off", "no"],
+            None => &[],
+        };
+        let word = words.iter().find(|w| values.iter().any(|v| v == *w)).map(|w| (*w).to_owned());
+        match word {
+            Some(w) => Value::String(w),
+            None if values.contains(&text) => Value::String(text),
+            None => value,
+        }
     }
 
     /// Why `value` doesn't fit this declaration, or `None`.

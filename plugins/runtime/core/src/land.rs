@@ -266,9 +266,11 @@ pub fn settle(still_running: bool, quiet: bool, sub: bool, after: impl FnOnce() 
 
 /// Skip this run (a held turn): it stays, stopped, saying what was skipped.
 pub fn skipped(held_kind: &str, label: &str, harness: &str) -> Presentation {
+    // each hold says its own reason: project trust's (`trust`, wisp.worktrees) read as a usage window (audit D3)
     let why = match held_kind {
-        "project" => "This repo’s hooks, servers or setup weren’t trusted.".to_owned(),
-        "harness" => format!("{harness} had changed and wasn’t trusted."),
+        "project" | "trust" => "This repo’s hooks, servers or setup weren’t trusted.".to_owned(),
+        "harness" | "harness-changed" => format!("{harness} had changed and wasn’t trusted."),
+        "setup" => "Its worktree setup had failed.".to_owned(),
         _ => format!("{label} window was near its limit."),
     };
     shown(vec![hero("Skipped before it started", &why, "info")])

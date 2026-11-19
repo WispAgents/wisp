@@ -74,7 +74,7 @@ pub fn workspace(dir: &Path) -> String {
 }
 
 fn yaml_map(path: &Path) -> Result<Map<String, Value>> {
-    let text = std::fs::read_to_string(path).map_err(|e| CliError::said(format!("{}: {e}", path.display())))?;
+    let text = std::fs::read_to_string(path).map_err(|e| CliError::said(crate::words::unreadable(path, &e)))?;
     let v = formula::documents(&text, formula::format_of(&path.display().to_string()))
         .map_err(CliError::said)?
         .into_iter()

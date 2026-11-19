@@ -546,3 +546,23 @@ fn with_auto_off_router_and_any_words_is_refused_never_a_prompt() {
     assert!(router_away(&quoted.words, quoted.literal, true).is_none(), "one quoted argument is the task");
     assert!(router_away(&p(&["review", "the", "router"]).words, Literal::No, true).is_none(), "router later on is a prompt");
 }
+
+/// Audit D9: `wisp validate -f nope.yml`, `apply -f` and `wisp import <folder>` printed "No such file or directory (os
+/// error 2)". A file that can't be read is said in words, as a missing project folder is.
+#[test]
+fn a_file_that_cant_be_read_is_said_in_words_audit_d9() {
+    use std::io::{Error, ErrorKind};
+    let f = Path::new("/tmp/qa/nope.yml");
+    assert_eq!(unreadable(f, &Error::from(ErrorKind::NotFound)), "No file at /tmp/qa/nope.yml");
+    assert_eq!(unreadable(f, &Error::from(ErrorKind::IsADirectory)), "/tmp/qa/nope.yml is a folder, not a file");
+    assert_eq!(unreadable(f, &Error::from(ErrorKind::PermissionDenied)), "Can't read /tmp/qa/nope.yml: permission denied");
+    assert!(!unreadable(f, &Error::from(ErrorKind::NotFound)).contains("os error"));
+    let gone = Path::new("/wisp-no-such-v1-home");
+    assert_eq!(
+        no_v1_home(gone, &gone.join("config.json"), &Error::from(ErrorKind::NotFound)),
+        "No folder at /wisp-no-such-v1-home (wisp import [v1 home folder])"
+    );
+    let here = std::env::temp_dir();
+    let said = no_v1_home(&here, &here.join("config.json"), &Error::from(ErrorKind::NotFound));
+    assert!(said.contains("has no config.json") && !said.contains("os error"), "{said}");
+}

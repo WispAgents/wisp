@@ -104,7 +104,11 @@ pub(crate) async fn start(app: App) -> Result<Kernel> {
             });
         }
         for d in app.group.disabled {
-            ps.off.insert(d.clone(), format!("{d} is off (disabled in the plugin group)"));
+            // a user's plugin kept off at start (the plugin manager switches back on the ones you switched on) is just
+            // off; a built-in disabled in the build says so (audit D8)
+            let user = ps.slots.iter().any(|s| s.manifest.id == d && !s.builtin);
+            let why = if user { format!("{d} is off") } else { format!("{d} is off (disabled in the plugin group)") };
+            ps.off.insert(d, why);
         }
     }
     reconcile(&k).await;
@@ -321,7 +325,8 @@ pub(crate) fn set_enabled(k: Arc<KernelState>, id: String, on: bool) -> BoxFutur
                 if let Some(s) = ps.slot(&id) {
                     s.crashes = 0;
                 }
-            } else {
+            } else if !ps.off.contains_key(&id) {
+                // one that's off already keeps what it said ("installed, not switched on yet": audit D8)
                 ps.off.insert(id.clone(), format!("{id} was switched off"));
             }
         }

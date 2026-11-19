@@ -44,6 +44,7 @@ export function Steps(props: {
           open: t('accounts.login.openPage'),
           codeStep: t('accounts.login.codeStep'),
           copy: t('accounts.login.copy'),
+          copied: t('accounts.login.copied'),
           waiting: t('accounts.login.waiting'),
           pasteStep: t('accounts.login.pasteStep'),
           paste: t('accounts.login.paste'),
@@ -51,7 +52,7 @@ export function Steps(props: {
           checking: t('accounts.login.checking'),
         }}
         onOpen={(url) => shell.platform.openExternal(url)}
-        onCopy={(code) => void navigator.clipboard?.writeText(code).catch(() => {})}
+        onCopy={(code) => navigator.clipboard?.writeText(code) ?? Promise.reject(new Error('no clipboard'))}
         onSend={(code) => quiet(props.c.run(loginInput, { peer, agent: props.agent, account: props.account, code }))}
       />
     </Show>

@@ -12,7 +12,7 @@ import { isStub, keepTurnsWhole } from '@wisp/shell';
 import { useShell } from '../shell.ts';
 import { useTask } from '../task-context.tsx';
 import { setChangeStat } from './changes-stat.ts';
-import { changesOf, envState, filesOf, outsideFolder, relative, revealedOf, seenMasked, setRevealed, type ChangeTurn } from './changes.ts';
+import { changesOf, envState, filesOf, outsideFolder, relative, revealedOf, seenMasked, setRevealed, worktreeDir, ofTask, type ChangeTurn } from './changes.ts';
 import '../i18n/lazy.ts';
 
 interface GitFileRow {
@@ -110,17 +110,21 @@ export function ChangesPane(): JSX.Element {
   const raw = (): Raw | undefined => task.task() as Raw | undefined;
   // the task's worktree: wisp.worktrees' own ext, or the list row's summary (a task from v1's data has it there)
   const wt = (): Wt | undefined => raw()?.body?.ext?.['wisp.worktrees'] ?? raw()?.summary?.worktree ?? undefined;
-  const dir = (): string => String(wt()?.path ?? wt()?.cwd ?? raw()?.body?.cwd ?? raw()?.cwd ?? '');
+  // git reads the worktree only (v1 GET /sessions/:id/changes; audit 2026-11-19: in place it diffed the shared checkout,
+  // 198 files of every session's); the folder the edits wisp saw are relative to is the task's own either way
+  const dir = (): string => worktreeDir(wt());
+  const folder = (): string => String(wt()?.path ?? wt()?.cwd ?? raw()?.body?.cwd ?? raw()?.cwd ?? '');
   const base = (): string => wt()?.baseRef || wt()?.base || 'HEAD';
   // .env files shown as they are (v1 Reveal): the button flips at once, git's unmasked read follows
   const [revealed, setRevealedHere] = createSignal(revealedOf(task.id));
-  // why the last read was refused (a phone says it where the files go; the browser keeps its toast)
+  // why the last read was refused: said where the files go, in words (a phone since UX 2026-11-18 phone #14, the browser
+  // since the audit of 2026-11-19: a worktree cleaned up after the task toasted "no such folder: /Users/…")
   const [refused, setRefused] = createSignal<{ readonly code: string; readonly message: string } | undefined>();
   const [git, { refetch }] = createResource(
     () => (dir() ? { path: dir(), base: base(), reveal: [...revealed()] } : undefined),
     (a) =>
       task.client
-        .run(shell.platform.phone ? readHere : read, { key: task.key, ...a })
+        .run(readHere, { key: task.key, ...a })
         .then((r) => (setRefused(undefined), r))
         .catch((e: unknown) => {
           setRefused(e instanceof Error ? { code: String((e as { code?: unknown }).code ?? ''), message: e.message } : { code: '', message: String(e) });
@@ -135,7 +139,7 @@ export function ChangesPane(): JSX.Element {
     scope: whole,
     bare: task.id,
     watch: (topic, sc) => task.client.watch(ownerOf(task.key), topic, sc),
-    stubbed: () => turns().some((x) => x.session_id === task.id && isStub(x.body)),
+    stubbed: () => turns().some((x) => ofTask(x.session_id, task.id) && isStub(x.body)),
   });
   // Settings → Privacy's Hide .env values (git masks its own rows by it; the edits wisp saw follow it here)
   const maskSetting = useSignal(task.client.entities.row<SettingRow>('setting', entityKey(ownerOf(task.key), 'git.maskEnvFiles')));
@@ -154,7 +158,7 @@ export function ChangesPane(): JSX.Element {
   const [seenShown, setSeenShown] = createSignal<ReadonlyMap<string, Edits>>(new Map());
   const files = createMemo((): ChangeFile[] => {
     const g = git();
-    const seen = seenFiles(turns() as readonly ChangeTurn[], task.id, dir(), maskOn(), revealed(), seenShown());
+    const seen = seenFiles(turns() as readonly ChangeTurn[], task.id, folder(), maskOn(), revealed(), seenShown());
     if (!g || g.body.kind !== 'inline') return seen;
     const fromGit = g.body.files
       .filter((f) => !going().has(f.path))
@@ -210,9 +214,9 @@ export function ChangesPane(): JSX.Element {
   const revealSeen = (path: string, show: boolean): void => {
     const g = git();
     if (g && g.body.kind === 'inline') return;
-    const mine = (turns() as readonly ChangeTurn[]).filter((x) => x.session_id === task.id && x.id !== undefined);
+    const mine = (turns() as readonly ChangeTurn[]).filter((x) => ofTask(x.session_id, task.id) && x.id !== undefined);
     for (const turn of mine) {
-      for (const c of changesOf(turn).filter((x) => relative(x.file, dir()) === path)) {
+      for (const c of changesOf(turn).filter((x) => relative(x.file, folder()) === path)) {
         const k = shownKey(turn.id ?? '', c.file);
         if (!show) {
           const m = new Map(seenShown());
@@ -277,7 +281,7 @@ export function ChangesPane(): JSX.Element {
     return n ? t('shell-task.changes.viewedOf', { n, total: files().length }) : undefined;
   };
   return (
-    <Show when={files().length > 0} fallback={<ChangesEmpty loading={git.loading} {...(shell.platform.phone && refused() && { refused: refused() as { code: string; message: string }, onRetry: () => void refetch() })} />}>
+    <Show when={files().length > 0} fallback={<ChangesEmpty loading={git.loading} {...(refused() && { refused: refused() as { code: string; message: string }, onRetry: () => void refetch() })} />}>
       <ChangesList
         part={'side.changes panel.changes' as `${string}.${string}`}
         files={files()}
@@ -296,7 +300,10 @@ export function ChangesPane(): JSX.Element {
         }}
         allOpen={allOpen()}
         onAll={() => setOpen(allOpen() ? new Set<string>() : new Set(files().map((f) => f.path)))}
-        onFind={() =>
+        // Open file… lists the worktree's files: only on git's diff, as v1 (audit 2026-11-19: on a folder git can't list
+        // the palette closed at once, and the next keys ran as shortcuts: E marked the task done)
+        {...(git() && {
+          onFind: () =>
           openFinder(
             task.client,
             task.key,
@@ -308,8 +315,8 @@ export function ChangesPane(): JSX.Element {
               noGit: t('shell-task.files.noGit'),
               toast: (text) => shell.toast.show(text),
             },
-          )
-        }
+          ),
+        })}
         onEdit={(file) => shell.navigate({ t: 'openSide', side: { kind: 'changes', id: task.key as never, file } })}
         onStage={onStage}
         onHunkStage={onHunkStage}

@@ -667,7 +667,9 @@ export const COMMANDS: Record<string, CommandFn> = {
   'ship.details': (a, ctx) => {
     const id = str(obj(a), 'session');
     const sum = (r: unknown): Args => obj(obj(r)['summary']);
-    const pr = obj((sum(ctx.row('list', 'session', id))['pr'] ?? sum(ctx.row(own(id), 'session', id))['pr']) as unknown);
+    // the pane names the task by its bare id (the server's own); the mock's rows are keyed `<peer>:<id>`
+    const key = id.includes(':') ? id : `${ctx.peer}:${id}`;
+    const pr = obj((sum(ctx.row('list', 'session', key))['pr'] ?? sum(ctx.row(own(key), 'session', key))['pr']) as unknown);
     if (!pr['number']) return { ops: [], result: [] };
     const checkList = [
       { name: 'suite (node 22)', workflow: 'suite', state: 'pass', ms: 412_000 },

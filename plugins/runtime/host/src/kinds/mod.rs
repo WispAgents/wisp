@@ -50,7 +50,11 @@ pub fn register(s: &mut Setup) -> std::sync::Arc<Kinds> {
 fn project_kind(s: &mut Setup, owner: &'static str) -> std::sync::Arc<StoredKind> {
     let info = KindInfo::new("project", "projects", owner, wisp_resources_api::schema_of::<ProjectSpec>()).order(10);
     let k = std::sync::Arc::new(
-        StoredKind::new(info, s.ctx()).published("project").tidied(project::tidy_project).unique("path").checked(project::check_project),
+        StoredKind::new(info, s.ctx())
+            .published("project")
+            .tidied(project::tidy_project)
+            .unique_by("path", project::folder_identity)
+            .checked(project::check_project),
     );
     let as_kind: std::sync::Arc<dyn ResourceKind> = k.clone();
     s.contribute(&wisp_resources_api::RESOURCE_KIND, as_kind);

@@ -251,6 +251,11 @@ pub struct HistoryRow {
     /// the harness it ran on
     pub harness: String,
     pub cwd: String,
+    /// the project it's in: its worktree's repo, else its folder's name (`wisp ls --crew` showed none, audit D7).
+    /// Additive (2026-11-19).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub project: Option<String>,
     #[ts(type = "number")]
     pub created_at: i64,
     #[serde(default, skip_serializing_if = "Option::is_none")]

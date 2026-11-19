@@ -102,3 +102,24 @@ async fn uninstall_waits_for_its_process_to_exit() {
     std::fs::rename(&dir, root.join("moved")).expect("its folder moves: the program in it isn't running any more");
     let _ = std::fs::remove_dir_all(&root);
 }
+
+/// Audit D8: `wisp plugin new` then Settings → Plugins read "user.qa-theme was switched off" (it never was on), and
+/// after a restart "is off (disabled in the plugin group)". Switching off a plugin that's off keeps what it said, and a
+/// user's plugin kept off at start just reads off; a built-in disabled in the group still says so.
+#[tokio::test]
+async fn a_plugin_never_switched_on_never_reads_switched_off_audit_d8() {
+    let (k, ctx) = kernel().await;
+    ctx.install_plugin(hello()).await.unwrap();
+    k.set_enabled("user.hello", false).await.unwrap();
+    let st = k.status().into_iter().find(|s| s.id == "user.hello").unwrap();
+    assert_eq!(st.reason.as_deref(), Some("user.hello is installed, not switched on yet"), "{st:?}");
+    k.set_enabled("user.hello", true).await.unwrap();
+    k.set_enabled("user.hello", false).await.unwrap();
+    let st = k.status().into_iter().find(|s| s.id == "user.hello").unwrap();
+    assert_eq!(st.reason.as_deref(), Some("user.hello was switched off"), "once on, off is switched off");
+
+    // a restart: the user's plugins join the group off
+    let user = common::plugin("user.hello", json!({}), |_| {});
+    let k = common::start(PluginGroup::new().add(user).disable("user.hello")).await;
+    assert_eq!(common::state(&k, "user.hello"), ("off".into(), Some("user.hello is off".into())));
+}

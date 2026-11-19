@@ -4,6 +4,7 @@
 // to paste the code the page shows back, then "Checking the code…". Before the page is known: "Starting the
 // sign-in…". Under an account in a SettingsInset it takes the inset's look (v1 .sx-accts .sx-login).
 import { createSignal, Show, type JSX } from 'solid-js';
+import { createTimer } from '../blocks/content-scope.ts';
 import { flag, sub, type KitProps, type PartName } from '../core/props.ts';
 import { Icon } from '../content/Icon.tsx';
 import { Button, IconButton } from '../controls/Button.tsx';
@@ -22,6 +23,8 @@ export interface SettingsSignInLabels {
   readonly codeStep: string;
   /** "Copy the code" */
   readonly copy: string;
+  /** "Copied": the copy button's name while it shows its check (audit D1); without it, `copy` */
+  readonly copied?: string;
   /** "Waiting for you to finish there…" */
   readonly waiting: string;
   /** "Paste the code it shows you:" */
@@ -49,14 +52,31 @@ export interface SettingsSignInProps extends KitProps {
   readonly inset?: boolean;
   readonly labels: SettingsSignInLabels;
   readonly onSend: (code: string) => void;
-  readonly onCopy: (code: string) => void;
+  /** copies the code; a promise that rejects (no clipboard) turns the check back at once */
+  readonly onCopy: (code: string) => void | Promise<unknown>;
   /** opens the page where the platform does it (the desktop app's browser); without it, the link's own new tab */
   readonly onOpen?: (url: string) => void;
 }
 
+/** How long Copy shows its check (audit D1: the feedback, as a toast is for errors only). */
+const COPIED_MS = 1500;
+
 export function SettingsSignIn(props: SettingsSignInProps): JSX.Element {
   const part = (): PartName => props.part ?? 'settings.signin';
   const [draft, setDraft] = createSignal('');
+  const [copied, setCopied] = createSignal(false);
+  const timer = createTimer();
+  const copy = (code: string): void => {
+    setCopied(true);
+    timer.after(COPIED_MS, () => setCopied(false));
+    const done = props.onCopy(code);
+    if (done) {
+      done.catch(() => {
+        timer.clear();
+        setCopied(false);
+      });
+    }
+  };
   const send = (e: SubmitEvent): void => {
     e.preventDefault();
     const c = draft().trim();
@@ -108,7 +128,15 @@ export function SettingsSignIn(props: SettingsSignInProps): JSX.Element {
                 </p>
                 <div data-kit="settings-signin-code" data-part={sub(part(), 'code')}>
                   <span data-kit="settings-signin-code-text">{c()}</span>
-                  <IconButton icon="copy" size="sm" variant="ghost" label={props.labels.copy} part={sub(part(), 'copy')} onClick={() => props.onCopy(c())} />
+                  <IconButton
+                    icon={copied() ? 'check' : 'copy'}
+                    size="sm"
+                    variant="ghost"
+                    tone={copied() ? 'good' : undefined}
+                    label={copied() ? (props.labels.copied ?? props.labels.copy) : props.labels.copy}
+                    part={sub(part(), 'copy')}
+                    onClick={() => copy(c())}
+                  />
                 </div>
                 {wait(props.labels.waiting, 'waiting')}
               </>

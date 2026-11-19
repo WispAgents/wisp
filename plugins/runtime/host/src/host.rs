@@ -125,6 +125,8 @@ pub struct Recorder {
     pub hold: Option<String>,
     /// `runtime.run@1` contributions (a test's checkpoint keeper)
     pub parts: Vec<Arc<dyn RunPart>>,
+    /// `runtime.prompt@1` contributions (a test's turn note, or a gate between a turn saved running and its spawn)
+    pub prompts: Vec<Arc<dyn PromptPart>>,
     /// a stand-in for `router.service@1` (Auto)
     pub router: Option<Arc<dyn wisp_router_api::service::RouterApi>>,
     /// the settings it answers
@@ -180,6 +182,9 @@ impl Host for Recorder {
     }
     fn run_parts(&self) -> Vec<Arc<dyn RunPart>> {
         self.parts.clone()
+    }
+    fn prompt_parts(&self) -> Vec<Arc<dyn PromptPart>> {
+        self.prompts.clone()
     }
     fn shots(&self) -> Option<std::path::PathBuf> {
         self.shots.clone()

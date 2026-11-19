@@ -24,6 +24,16 @@ export const changesOf = (t: ChangeTurn): readonly FileChange[] => t.body?.ext?.
 /** macOS resolves /tmp, /var and /etc to /private/…: a recorded path may carry it when the task's cwd doesn't */
 const canonical = (p: string): string => p.replace(/^\/private(?=\/(tmp|var|etc)\/)/, '').replace(/\/$/, '');
 
+/** A turn of the task `id` (bare): the server names its task bare, a synced row may carry its peer (`local:id`). */
+export const ofTask = (sessionId: string | undefined, id: string): boolean => sessionId === id || (sessionId?.endsWith(`:${id}`) ?? false);
+
+/** The folder git diffs for Changes: the task's worktree, else none ('': show the edits wisp saw). v1's
+ * GET /sessions/:id/changes answered `files: null` for a task without a worktree, since a diff of the project folder
+ * holds the user's own work and other sessions' too. */
+export function worktreeDir(wt: { readonly path?: string | undefined; readonly cwd?: string | undefined } | null | undefined): string {
+  return String(wt?.path ?? wt?.cwd ?? '');
+}
+
 /** A path as the task's folder sees it (`/w/api/src/a.ts` → `src/a.ts`). */
 export function relative(file: string, cwd: string): string {
   const [f, c] = [canonical(file), canonical(cwd)];
@@ -71,7 +81,7 @@ export function filesOf(
   shown: (turn: string, file: string) => Edits | undefined = () => undefined,
 ): DiffFile[] {
   const byFile = new Map<string, { status: DiffStatus; hunks: DiffHunk[] }>();
-  for (const turn of [...turns].filter((t) => t.session_id === session).sort((x, y) => x.idx - y.idx)) {
+  for (const turn of [...turns].filter((t) => ofTask(t.session_id, session)).sort((x, y) => x.idx - y.idx)) {
     for (const raw of changesOf(turn)) {
       const c = { ...raw, file: relative(raw.file, cwd) };
       const f = byFile.get(c.file) ?? { status: STATUS[c.op ?? ''] ?? 'modified', hunks: [] };

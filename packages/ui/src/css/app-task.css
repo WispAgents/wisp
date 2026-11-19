@@ -142,7 +142,9 @@
     z-index: 2;
     flex: none;
     display: grid;
-    grid-template-columns: auto minmax(min(100%, 260px), 1fr);
+    /* each part grows from its floor to its own width and only then takes spare room: a short branch never holds a
+       260px box while the harness and model are cut (audit D #3, design/layout.md: no cut text while there is room) */
+    grid-template-columns: minmax(0, auto) minmax(min(100%, 16ch), auto);
     align-items: center;
     gap: var(--space-3) var(--space-6);
     padding: var(--space-4);

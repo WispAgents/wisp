@@ -609,6 +609,7 @@ pub fn history(
             agent: if sp.agent.is_empty() { s.agent.clone() } else { sp.agent.clone() },
             harness: s.agent.clone(),
             cwd: s.cwd.clone(),
+            project: project_of(s),
             created_at: s.created_at,
             cost_usd: costs.get(s.id.as_str()).copied(),
             formula: sp.formula.clone(),
@@ -620,6 +621,13 @@ pub fn history(
         }
     }
     out
+}
+
+/// The project a task is in: the repo its worktree was made from (its folder is `proj-01a1f…`), else its folder's name.
+fn project_of(s: &Session) -> Option<String> {
+    let base = |p: &str| std::path::Path::new(p.trim_end_matches(['/', '\\'])).file_name().map(|n| n.to_string_lossy().into_owned());
+    let root = s.ext.get("wisp.worktrees").and_then(|w| w.get("root")).and_then(Value::as_str).filter(|r| !r.is_empty());
+    root.map_or_else(|| base(&s.cwd), base).filter(|p| !p.is_empty())
 }
 
 /// A session run outside wisp as `runtime.adopt`'s args (ADR-0035): its prompts are the spec's steps,
@@ -746,6 +754,17 @@ mod tests {
         assert_eq!(ids(HistoryArgs { profiles: p, ..HistoryArgs::default() }), ["a"]);
         let changed = vec![json!({ "name": "reviewer", "harness": "codex", "effort": "low" })];
         assert_eq!(ids(HistoryArgs { profiles: changed, ..HistoryArgs::default() }), Vec::<String>::new(), "another setup");
+    }
+
+    /// Audit D7: `wisp ls --crew` rows named no project; a worktree task's is its repo, not `proj-01a1f…`.
+    #[test]
+    fn a_history_row_names_its_project_from_its_worktree_or_its_folder() {
+        let mut wt = Session { id: "a".into(), cwd: "/h/worktrees/proj-01a1f4".into(), ..Session::default() };
+        wt.ext.insert("wisp.worktrees".into(), json!({ "path": "/h/worktrees/proj-01a1f4", "root": "/code/proj" }));
+        let plain = Session { id: "b".into(), cwd: "/code/site/".into(), ..Session::default() };
+        let rows = history(&[wt, plain], &std::collections::HashMap::new(), &HistoryArgs::default(), &mut |_: &str| None);
+        let projects: Vec<Option<&str>> = rows.iter().map(|r| r.project.as_deref()).collect();
+        assert_eq!(projects, [Some("proj"), Some("site")]);
     }
 
     #[test]

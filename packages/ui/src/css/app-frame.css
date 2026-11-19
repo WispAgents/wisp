@@ -43,14 +43,29 @@
   [data-kit='tabs'][data-part='panel.tabs'] > [data-kit='tab-list'] { flex: 0 1 auto; align-self: stretch; min-width: 0; }
   [data-kit='tabs'][data-part='panel.tabs'] [data-kit='tab'] { flex: 0 1 auto; min-width: 0; }
   [data-kit='tabs'][data-part='panel.tabs'] [data-kit='tab-label'] { overflow: hidden; text-overflow: ellipsis; }
-  /* a narrow panel: icons only (v1 @container pnl (max-width: 420px)) */
-  [data-part~='side.panel'] { container: pnl / inline-size; }
-  @container pnl (max-width: 26.25rem) {
-    [data-kit='tabs'][data-part='panel.tabs'] [data-kit='tab'] { width: 2rem; padding: 0; }
-    [data-kit='tabs'][data-part='panel.tabs'] [data-kit='tab-label'] { display: none; }
-  }
+  /* the strip that fits (owner, 2026-11-19: v1's tabs by default, labelled; icons only when the panel has no room, not
+     below v1's fixed 420px): the tabs' box takes the head's room and the bordered row sits in it at its own width. When
+     the row doesn't fit, its tabs go to their icon one at a time from the end (pinned tabs first, then Preview, Shell…;
+     the kit's Tabs `fit`, data-iconic). The phone looks keep their own rows (no data-fit there). */
+  [data-kit='tabs'][data-part='panel.tabs'][data-fit] { flex: 1 1 0; min-width: 0; margin-left: 0; padding: 0; border: 0; border-radius: 0; background: none; }
+  [data-kit='tabs'][data-part='panel.tabs'][data-fit] > [data-kit='tab-list'] { flex: none; width: fit-content; max-width: 100%; overflow: hidden; margin-left: -8px; padding: 2px; border: 1px solid var(--line); border-radius: 9px; background: var(--bg-2); }
+  [data-kit='tabs'][data-part='panel.tabs'][data-fit] [data-kit='tab'] { flex: none; }
+  [data-kit='tabs'][data-part='panel.tabs'][data-fit] [data-kit='tab'][data-iconic] { width: 2rem; padding: 0; justify-content: center; }
+  [data-kit='tabs'][data-part='panel.tabs'][data-fit] [data-kit='tab'][data-iconic] > [data-kit='tab-label'],
+  [data-kit='tabs'][data-part='panel.tabs'][data-fit] [data-kit='tab'][data-iconic] > [data-kit='tab-count'] { display: none; }
   [data-part~='panel'] > [data-part~='side.body'] { flex: 1; min-height: 0; display: flex; flex-direction: column; padding: var(--space-5) var(--space-6); }
   [data-part~='panel'] > [data-part~='side.flush'] { padding: 0; }
+  /* v1 .pn-shell: the browser's side-panel Shell is the terminal to the panel's edges (screen 8px 10px), its foot v1's
+     .pn-ended row on the terminal's colours (owner's audit, 2026-11-19); a phone's Shell isn't flush, its look places it */
+  [data-part~='side.flush'] > [data-part~='side.shell'] { gap: 0; }
+  [data-part~='side.flush'] > [data-part~='side.shell'] [data-kit='term-screen'] { padding: 8px 10px; }
+  [data-part~='side.flush'] > [data-part~='side.shell'] > [data-part~='side.shell.foot'] {
+    flex: none; padding: 6px 6px 6px 10px; border-top: 1px solid var(--term-line); background: var(--term-bg);
+    color: color-mix(in srgb, var(--term-ink) 65%, transparent);
+  }
+  [data-part~='side.flush'] > [data-part~='side.shell'] > [data-part~='side.shell.foot'] [data-kit='text'] { color: inherit; font: 12.5px var(--mono); }
+  [data-part~='side.flush'] > [data-part~='side.shell'] > [data-part~='side.shell.foot'] [data-kit='button'] { color: var(--term-ink); }
+  [data-part~='side.flush'] > [data-part~='side.shell'] > [data-part~='side.shell.foot'] [data-kit='button']:hover { background: var(--term-soft); color: var(--term-ink); }
   /* v1's controls keep the browser's letter-spacing (base.css sets only font on them) */
   [data-kit='stage'] button, [data-kit='stage'] textarea, [data-kit='stage'] input { letter-spacing: normal; }
   [data-color='violet'] { --pc: var(--pc-violet); }

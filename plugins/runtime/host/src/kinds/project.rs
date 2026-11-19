@@ -93,6 +93,20 @@ pub fn check_project(spec: &Value) -> Vec<String> {
     }
 }
 
+/// A folder as two projects' paths are compared (setup audit D12): by its real path when it's there (links followed:
+/// macOS's `/tmp` is `/private/tmp`, a symlinked checkout is its target), else by its spelling (`folder_key`). A URL is
+/// itself. One `realpath` per project a plan holds, never per task (the apply check is sync, as [`check_project`]).
+pub fn folder_identity(path: &str) -> String {
+    use wisp_runtime_api::paths::folder_key;
+    if path.contains("://") || path.starts_with("git@") || wisp_runtime_api::paths::Folder::of(path).is_err() {
+        return path.to_owned();
+    }
+    let real = wisp_proc::canonical_blocking(std::path::Path::new(path))
+        .ok()
+        .map(|p| wisp_runtime_api::paths::canonical_project_path(&p.to_string_lossy(), None));
+    folder_key(real.as_deref().unwrap_or(path))
+}
+
 /// A project spec as it's stored: its path canonical (`wisp_runtime_api::paths`), `~` your home's.
 pub fn tidy_project(spec: &mut Value) {
     let home = std::env::var_os("HOME").or_else(|| std::env::var_os("USERPROFILE")).map(std::path::PathBuf::from);
@@ -190,6 +204,34 @@ mod tests {
         let mut url = json!({ "path": "https://github.com/acme/api.git" });
         tidy_project(&mut url);
         assert_eq!(url["path"], "https://github.com/acme/api.git");
+    }
+
+    /// Setup audit D12: a formula's `/private/tmp/x` (or a link to the folder) is the project at `/tmp/x`, not a
+    /// second one: the apply check compares real paths.
+    #[test]
+    fn two_spellings_or_a_link_of_one_folder_are_one_folder_identity() {
+        let dir = std::env::temp_dir().join(format!("wisp-identity-{}", std::process::id()));
+        let real = dir.join("repo");
+        std::fs::create_dir_all(&real).unwrap();
+        let real_s = real.to_string_lossy().into_owned();
+        assert_eq!(folder_identity(&format!("{real_s}/")), folder_identity(&real_s));
+        #[cfg(unix)]
+        {
+            let link = dir.join("link");
+            let _ = std::fs::remove_file(&link);
+            std::os::unix::fs::symlink(&real, &link).unwrap();
+            assert_eq!(folder_identity(&link.to_string_lossy()), folder_identity(&real_s), "a link is its target");
+        }
+        if cfg!(target_os = "macos") && real_s.starts_with("/var/") {
+            assert_eq!(folder_identity(&format!("/private{real_s}")), folder_identity(&real_s));
+        }
+        assert_eq!(
+            folder_identity("/private/tmp/wisp-no-such-folder"),
+            folder_identity("/tmp/wisp-no-such-folder"),
+            "not there: by spelling"
+        );
+        assert_ne!(folder_identity(&real_s), folder_identity(&dir.join("other").to_string_lossy()));
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     /// Projects' box takes "~/code/app" (its folder suggestions answer in that form): stored under your home, as v1's

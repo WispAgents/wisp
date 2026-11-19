@@ -454,7 +454,7 @@ async fn add_a_readme_is_a_task_ls_all_lists_every_task_and_slips_point_the_righ
     api.cmd("runtime.archive", json!({ "id": ids[0], "archived": true })).await;
     let (_, open, _) = probe(&dir, port, &["ls"]);
     let (code, all, err) = probe(&dir, port, &["ls", "--all"]);
-    assert!(code == 0 && !all.contains("No sessions."), "{code}: {all}{err}");
+    assert!(code == 0 && !all.contains("No tasks."), "{code}: {all}{err}");
     assert!(!open.contains(&ids[0]) && ids.iter().all(|id| all.contains(id.as_str())), "ls:\n{open}\nls --all:\n{all}");
 
     // #3: each slip points the right way
@@ -614,7 +614,7 @@ async fn one_stray_word_is_a_slip_more_is_a_prompt_for_every_command_word() {
     assert!(code == 0 && ids.iter().all(|id| out.contains(id.as_str())), "{code}: {out}{err}");
     // with a filter too (`-a` was read as --agent and swallowed `--state`)
     let (code, out, err) = probe(&dir, port, &["ls", "-a", "--state", "running"]);
-    let applied = out.trim() == "No sessions." || out.lines().filter(|l| !l.trim().is_empty()).all(|l| l.contains(" running "));
+    let applied = out.trim() == "No tasks." || out.lines().filter(|l| !l.trim().is_empty()).all(|l| l.contains(" running "));
     assert!(code == 0 && applied, "only running tasks, or none: {code}: {out}{err}");
     drop(serve);
 }

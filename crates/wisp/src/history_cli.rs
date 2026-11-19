@@ -129,6 +129,7 @@ pub async fn ls(c: &Client, o: &Opts, cwd: &Path) -> Result<i32> {
         return Ok(0);
     }
     let st = crate::cli::style();
+    let fit = std::io::IsTerminal::is_terminal(&std::io::stdout());
     if rows.is_empty() {
         say("No tasks.");
     }
@@ -136,14 +137,24 @@ pub async fn ls(c: &Client, o: &Opts, cwd: &Path) -> Result<i32> {
         let agent =
             if s(r, "agent") == s(r, "harness") { s(r, "agent").to_owned() } else { format!("{} ({})", s(r, "agent"), s(r, "harness")) };
         let fam = lineage_words(&r["lineage"]);
-        let line = format!(
-            "{}  {:<7}  {:<18}  {}{}",
+        // its project, as plain `wisp ls` shows it (audit D7: the column was empty)
+        let project = Some(s(r, "project")).filter(|p| !p.is_empty()).unwrap_or("no project");
+        let head = format!(
+            "{}  {:<7}  {:<18}  {:<16}  ",
             s(r, "id"),
             s(r, "state"),
             term::truncate(&agent, 18),
-            s(r, "title"),
-            if fam.is_empty() { String::new() } else { paint(&st, DIM, &format!("  {fam}")) }
+            project.chars().take(16).collect::<String>()
         );
+        let fam = if fam.is_empty() { String::new() } else { format!("  {fam}") };
+        if !fit {
+            // piped (a script, `grep`): the whole row, as plain `wisp ls` prints it
+            say(&format!("{head}{}{}", s(r, "title"), paint(&st, DIM, &fam)));
+            continue;
+        }
+        // on a terminal the title gives way, not what made the task (`step of …`, `rerun of …`: what this listing is for)
+        let room = st.width.max(60).saturating_sub(term::width(&head) + term::width(&fam)).max(12);
+        let line = format!("{head}{}{}", term::truncate(s(r, "title"), room), paint(&st, DIM, &fam));
         say(&term::truncate(&line, st.width.max(60)));
     }
     Ok(0)
@@ -335,8 +346,7 @@ fn missing_folder_projects(plan: &Plan, resources: &[Resource]) -> Vec<(String, 
 pub async fn import(c: &Client, o: &Opts, home: &Path) -> Result<i32> {
     let v1 = o.words.first().map_or_else(|| home.to_owned(), |p| Path::new(p).to_owned());
     let file = v1.join("config.json");
-    let text =
-        std::fs::read_to_string(&file).map_err(|e| CliError::said(format!("{}: {e} (wisp import [v1 home folder])", file.display())))?;
+    let text = std::fs::read_to_string(&file).map_err(|e| CliError::said(crate::words::no_v1_home(&v1, &file, &e)))?;
     let cfg: Value = serde_json::from_str(&text).map_err(|e| CliError::said(format!("{}: {e}", file.display())))?;
     let (mut resources, mut notes) = crate::v1_formula::formula_of(&cfg);
     let existing = c.cmd("resources.export", json!({ "kinds": ["project"] })).await.unwrap_or(Value::Null);

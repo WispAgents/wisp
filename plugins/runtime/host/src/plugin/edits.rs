@@ -22,7 +22,7 @@ pub(super) fn edits(s: &mut Setup, slot: &Slot) {
     cmd!(s, slot, c::QueueCancel, |r, call, a| r.queue_cancel(a.id.as_str(), &a.item_id).await.map(|()| c::Ack {}));
     // a person's Start now is a yes to what held it (Ask near the limit); wisp releasing it at the reset isn't
     cmd!(s, slot, c::Held, |r, call, a| r
-        .held(a.id.as_str(), a.action == c::ReleaseAction::Start, call.caller().set.starts_with("user"))
+        .held_as(a.id.as_str(), a.action, call.caller().set.starts_with("user"))
         .await
         .map(|()| c::Ack {}));
     cmd!(s, slot, c::MarkRead, |r, call, a| r.mark_read(a.id.as_str(), a.unread).await.map(|()| c::Ack {}));
@@ -33,7 +33,7 @@ pub(super) fn edits(s: &mut Setup, slot: &Slot) {
     cmd!(s, slot, c::QueueMerge, |r, call, a| r.queue_merge(a.id.as_str(), &a.ids).await.map(|()| c::Ack {}));
     cmd!(s, slot, c::QueueText, |r, call, a| r.queue_text(a.id.as_str(), &a.item_id, &a.text).await.map(|()| c::Ack {}));
     cmd!(s, slot, c::Release, |r, call, a| r
-        .release(a.id.as_str(), a.turn_id.as_str(), a.action == c::ReleaseAction::Start, call.caller().set.starts_with("user"))
+        .release_as(a.id.as_str(), a.turn_id.as_str(), a.action, call.caller().set.starts_with("user"))
         .await
         .map(|()| c::Ack {}));
 }

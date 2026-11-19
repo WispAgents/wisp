@@ -1,6 +1,7 @@
 import { describe, expect, test, vi } from 'vitest';
 import { mount, part, tick } from './helpers.tsx';
-import { Tabs } from '../src/controls/Tabs.tsx';
+import { createSignal } from 'solid-js';
+import { Tabs, fitLevel } from '../src/controls/Tabs.tsx';
 import { PlatformLookProvider } from '../src/platform/PlatformLook.tsx';
 import { Split, Splitter } from '../src/controls/Splitter.tsx';
 
@@ -49,6 +50,40 @@ describe('Tabs', () => {
 });
 
 describe('Splitter and Split', () => {
+  // the side panel (audit 2026-11-19): its items are made afresh on every change (a count, the open tab), and the kit
+  // rebuilt every button, so → moved one tab and the focus fell to the page: the next → did nothing
+  test('arrow_keys_keep_walking_when_the_items_are_made_afresh_on_each_change', async () => {
+    const [value, setValue] = createSignal('changes');
+    mount(() => <Tabs items={items.map((i) => ({ value: i.value, label: i.label, ...(i.value === value() && { title: 'open' }) }))} value={value()} onChange={setValue} aria-label="Side panel" />);
+    const tab = (v: string) => document.querySelector<HTMLElement>(`[data-part="ui.tabs.tab"][data-value="${v}"]`);
+    tab('changes')?.focus();
+    await tick(10);
+    const before = tab('pr');
+    key(document.activeElement, 'ArrowRight');
+    await tick(10);
+    expect(value()).toBe('pr');
+    expect(tab('pr'), 'the same button: not rebuilt').toBe(before);
+    expect(document.activeElement?.getAttribute('data-value')).toBe('pr');
+    key(document.activeElement, 'ArrowRight');
+    await tick(10);
+    expect(value()).toBe('shell');
+  });
+
+  // owner 2026-11-19: labels give way to icons only when there's no room for them (design/layout.md: by priority, the
+  // last tab first, so a pinned tab goes to its icon before the panel's own), and come back once the room holds them
+  test('fit_turns_the_last_tabs_to_icons_one_at_a_time_while_the_row_overflows_and_back_as_room_comes', () => {
+    const max = 6;
+    expect(fitLevel({ level: 0, max, room: 400, list: 380, content: 380, needs: [] })).toEqual({ level: 0, needs: [] });
+    // overflows: the last tab goes to its icon, and what the row needed is kept to come back by
+    expect(fitLevel({ level: 0, max, room: 372, list: 372, content: 408, needs: [] })).toEqual({ level: 1, needs: [408] });
+    expect(fitLevel({ level: 1, max, room: 372, list: 372, content: 380, needs: [408] })).toEqual({ level: 2, needs: [408, 380] });
+    // fits: stays; a wider room that holds the row as it was one step back takes that step back
+    expect(fitLevel({ level: 2, max, room: 372, list: 340, content: 340, needs: [408, 380] })).toEqual({ level: 2, needs: [408, 380] });
+    expect(fitLevel({ level: 2, max, room: 384, list: 340, content: 340, needs: [408, 380] })).toEqual({ level: 1, needs: [408] });
+    // every tab an icon and still too wide: nothing more to give
+    expect(fitLevel({ level: max, max, room: 100, list: 100, content: 200, needs: [1, 2, 3, 4, 5, 6] }).level).toBe(max);
+  });
+
   test('a splitter renders a panel per entry and a keyboard grip between each pair', () => {
     mount(() => (
       <Splitter

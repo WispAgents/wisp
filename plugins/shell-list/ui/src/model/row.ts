@@ -88,6 +88,9 @@ export interface RowContext {
   /** what a sandbox is called in the machine's slot ("Sandbox") */
   readonly sandbox?: string;
   readonly agents: ReadonlyMap<string, Row<Agent>>;
+  /** a harness's name as its plugin registered it (`shell.harnesses()`: "Codex"), when it has one: every line names it
+   *  so, never by its raw id (audit D #2). Additive (2026-11-19). */
+  readonly named?: (id: string) => string | undefined;
   /** a command for this task is on screen but its computer is away (ADR-0065 §4): the status column says
    *  *Waiting to send* until it goes. @wisp/client's waitingToSend. Additive. */
   readonly waiting?: boolean;
@@ -105,14 +108,14 @@ export function statusKey(s: SessionRow): string {
 }
 const STATUS_TONE: Readonly<Record<string, Tone>> = { done: 'good', partial: 'warn', blocked: 'warn', failed: 'bad', limit: 'warn', refused: 'warn', signedOut: 'warn', info: 'info', held: 'warn' };
 
-export const agentName = (id: string, agents: ReadonlyMap<string, Row<Agent>>): string =>
-  agents.get(id)?.name ?? (id === 'auto' ? 'Auto' : id === 'wisp' ? 'wisp' : id);
+export const agentName = (id: string, agents: ReadonlyMap<string, Row<Agent>>, named?: (id: string) => string | undefined): string =>
+  named?.(id) ?? agents.get(id)?.name ?? (id === 'auto' ? 'Auto' : id === 'wisp' ? 'wisp' : id);
 
-function heldSub(s: SessionRow, agents: ReadonlyMap<string, Row<Agent>>): Txt {
+function heldSub(s: SessionRow, c: RowContext): Txt {
   const h = s.held;
   if (!h) return raw('');
   if (h.project) return tx(h.project.setup ? 'shell-list.held.setup' : 'shell-list.held.project');
-  if (h.harness) return tx('shell-list.held.harness', { agent: agentName(s.agent, agents) });
+  if (h.harness) return tx('shell-list.held.harness', { agent: agentName(s.agent, c.agents, c.named) });
   if (h.waiting) return tx('shell-list.held.reset', { label: (h.label ?? '').toLowerCase() });
   if (h.label && h.used !== undefined) return tx('shell-list.held.window', { label: h.label, pct: Math.floor(h.used * 100) });
   return raw(h.why ?? h.label ?? '');
@@ -132,7 +135,7 @@ export function subOf(s: SessionRow, c: RowContext): SubView | undefined {
   if (busy(s)) return s.live ? { text: raw(s.live), live: s.state === 'running' ? 'running' : 'waiting' } : undefined;
   if (c.open && !c.split) return undefined;
   // a done task never says it waits (QA r1 #10), but one waiting for its plan's reset does (Scheduled)
-  if (s.held && (isHeld(s.state, s) || s.held.waiting)) return { icon: 'pause', held: true, text: heldSub(s, c.agents) };
+  if (s.held && (isHeld(s.state, s) || s.held.waiting)) return { icon: 'pause', held: true, text: heldSub(s, c) };
   if (isScheduled(s)) return laterLine(s);
   if (s.preview) return { text: raw(s.preview) };
   if (s.foreign) return { text: tx('shell-list.sub.brought-in', { tool: s.foreign.charAt(0).toUpperCase() + s.foreign.slice(1) }) };
@@ -147,7 +150,7 @@ export function runOf(s: SessionRow, c: RowContext): RunView | undefined {
   const model = (s.model && a?.models?.find((m) => m.id === s.model)?.label) || (s.model ? modelWords(s.model) : undefined);
   const sandbox = s.machine?.kind === 'sandbox';
   const where = sandbox ? (c.sandbox ?? 'Sandbox') : (s.machine?.name ?? c.here);
-  const name = agentName(s.agent, c.agents);
+  const name = agentName(s.agent, c.agents, c.named);
   // on its Default: the tip names the model that runs, as the chip does (one name everywhere); the line stays v1's
   const runs = model ? model : c.defaultModel?.(s);
   return {

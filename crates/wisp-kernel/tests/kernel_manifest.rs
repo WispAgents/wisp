@@ -151,3 +151,26 @@ fn an_enum_takes_a_number_that_spells_one_of_its_values() {
     let int: wisp_kernel::SettingDecl = serde_json::from_value(json!({ "key": "n", "type": "int" })).unwrap();
     assert_eq!(int.coerce(json!(80)), json!(80));
 }
+
+/// Setup audit D3: YAML 1.1 reads a hand-written `worktrees.max: off` as false, so a formula using the very word the
+/// error listed was refused ("is enum (off, 20, 40, 80), not false"). A true or false is the enum's own word for it:
+/// `on`/`yes` for true, `off`/`no` for false, when the values have one (`true`/`false` first, as written).
+#[test]
+fn an_enum_takes_yaml_on_off_yes_no_read_as_true_or_false() {
+    let decl = |values: &[&str]| -> wisp_kernel::SettingDecl {
+        serde_json::from_value(json!({ "key": "k", "type": "enum", "values": values })).unwrap()
+    };
+    let max = decl(&["off", "20", "40", "80"]);
+    assert_eq!(max.coerce(json!(false)), json!("off"));
+    assert_eq!(max.problem(&max.coerce(json!(false))), None);
+    assert_eq!(max.coerce(json!(true)), json!(true), "no word for true: refused as before");
+    assert!(max.problem(&max.coerce(json!(true))).is_some());
+    let on = decl(&["on", "off", "auto"]);
+    assert_eq!((on.coerce(json!(true)), on.coerce(json!(false))), (json!("on"), json!("off")));
+    let yes = decl(&["yes", "no", "ask"]);
+    assert_eq!((yes.coerce(json!(true)), yes.coerce(json!(false))), (json!("yes"), json!("no")));
+    let bools = decl(&["true", "false", "off"]);
+    assert_eq!(bools.coerce(json!(false)), json!("false"), "the value as written comes first");
+    let b: wisp_kernel::SettingDecl = serde_json::from_value(json!({ "key": "b", "type": "bool" })).unwrap();
+    assert_eq!(b.coerce(json!(false)), json!(false), "a bool setting keeps its bool");
+}

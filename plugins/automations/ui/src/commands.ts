@@ -4,6 +4,8 @@ import { defineCommand, type PeerId } from '@wisp/client';
 
 export interface Recipe {
   readonly name: string;
+  /** its name as written ("Run tests"), when the name (a key) can't hold it (audit D11) */
+  readonly title?: string;
   readonly prompt: string;
   readonly steps?: readonly string[];
   readonly project?: string;

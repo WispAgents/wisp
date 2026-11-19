@@ -27,13 +27,26 @@ use wisp_resources_core::{formula, plan, schema};
 
 pub use wisp_resources_api::PLUGIN_ID;
 
+/// The kinds there are: each contributed one but those put away for now ([`KindInfo::away`]: the router while Auto is
+/// off, setup audit D2), in apply order.
 fn kinds(ctx: &Ctx) -> Vec<Arc<dyn ResourceKind>> {
     let mut ks = ctx.contributions(&RESOURCE_KIND);
+    ks.retain(|k| k.info().away.is_none());
     ks.sort_by_key(|k| {
         let i = k.info();
         (i.order, i.kind)
     });
     ks
+}
+
+/// Why `name` is no kind here: put away for now (its reason), else no plugin owns it.
+fn no_kind(ctx: &Ctx, name: &str) -> String {
+    ctx.contributions(&RESOURCE_KIND)
+        .iter()
+        .map(|k| k.info())
+        .find(|i| i.named(name))
+        .and_then(|i| i.away)
+        .map_or_else(|| format!("no plugin in this wisp owns the kind `{name}`"), |why| format!("`{name}`: {why}"))
 }
 
 /// The kind a resource names (by kind or by section).
@@ -93,7 +106,7 @@ async fn make_plan(ctx: &Ctx, call: &Call, a: &PlanArgs) -> Result<Plan> {
     let mut seen: Vec<String> = Vec::new();
     for r in &a.resources {
         if find(&ks, &r.kind).is_none() && !seen.contains(&r.kind) {
-            out.problems.push(format!("no plugin in this wisp owns the kind `{}`", r.kind));
+            out.problems.push(no_kind(ctx, &r.kind));
             seen.push(r.kind.clone());
         }
     }
@@ -105,7 +118,7 @@ async fn make_plan(ctx: &Ctx, call: &Call, a: &PlanArgs) -> Result<Plan> {
             .filter(|r| info.named(&r.kind))
             .map(|r| {
                 let mut spec = r.spec.clone();
-                k.normalize(&mut spec);
+                k.normalize_named(&r.name, &mut spec);
                 Resource { kind: info.kind.clone(), spec, ..r.clone() }
             })
             .collect();

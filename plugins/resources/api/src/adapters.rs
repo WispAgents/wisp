@@ -310,6 +310,9 @@ pub struct StoredKind {
     /// a spec field no two resources of the kind may share (a project's `path`: one project per folder). Additive
     /// (2026-11-19, setup audit F23).
     unique: Option<&'static str>,
+    /// how two values of the unique field are compared: the owner's key (a folder by its real path, so `/tmp/x` and
+    /// `/private/tmp/x` are one, setup audit D12); none, as written. Additive (2026-11-19).
+    unique_key: Option<fn(&str) -> String>,
     /// the owner's problems with one spec (tidied first) beyond the schema: a project at a folder that isn't there.
     /// Additive (2026-11-19, setup audit B2).
     checked: Option<fn(&Value) -> Vec<String>>,
@@ -363,6 +366,7 @@ impl StoredKind {
             ready: std::sync::OnceLock::new(),
             tidy: None,
             unique: None,
+            unique_key: None,
             checked: None,
         }
     }
@@ -381,6 +385,14 @@ impl StoredKind {
     #[must_use]
     pub fn unique(mut self, field: &'static str) -> Self {
         self.unique = Some(field);
+        self
+    }
+
+    /// [`StoredKind::unique`], two values compared by `key` (a project's folder by its real path). Additive (2026-11-19).
+    #[must_use]
+    pub fn unique_by(mut self, field: &'static str, key: fn(&str) -> String) -> Self {
+        self.unique = Some(field);
+        self.unique_key = Some(key);
         self
     }
 
@@ -479,23 +491,7 @@ impl ResourceKind for StoredKind {
     /// another name, setup audit F23): refused, naming both.
     fn check_all(&self, after: &[Resource]) -> Vec<String> {
         let Some(field) = self.unique else { return Vec::new() };
-        let mut seen: Vec<(String, &str)> = Vec::new();
-        let mut out = Vec::new();
-        for r in after.iter().filter(|r| r.kind == self.info.kind) {
-            let mut spec = r.spec.clone();
-            if let Some(f) = self.tidy {
-                f(&mut spec);
-            }
-            let Some(v) = spec.get(field).and_then(Value::as_str).map(str::to_owned) else { continue };
-            match seen.iter().find(|(x, _)| *x == v) {
-                Some((_, other)) => out.push(format!(
-                    "{} {} and {} have the same {field} ({v}): one {} per {field}; name it {other} in the formula",
-                    self.info.kind, other, r.name, self.info.kind
-                )),
-                None => seen.push((v, r.name.as_str())),
-            }
-        }
-        out
+        clashes(&self.info.kind, field, self.tidy, self.unique_key, after)
     }
 
     /// In place: one write moves the row to its new name.
@@ -557,6 +553,29 @@ pub fn stored_published<S: schemars::JsonSchema>(
     k
 }
 
+/// The resources of `kind` in `after` that share `field` with an earlier one (tidied first, compared by `key`): each
+/// named with the one it clashes with. Pure but for what `key` reads.
+fn clashes(kind: &str, field: &str, tidy: Option<fn(&mut Value)>, key: Option<fn(&str) -> String>, after: &[Resource]) -> Vec<String> {
+    let mut seen: Vec<(String, &str)> = Vec::new();
+    let mut out = Vec::new();
+    for r in after.iter().filter(|r| r.kind == kind) {
+        let mut spec = r.spec.clone();
+        if let Some(f) = tidy {
+            f(&mut spec);
+        }
+        let Some(v) = spec.get(field).and_then(Value::as_str) else { continue };
+        let k = key.map_or_else(|| v.to_owned(), |f| f(v));
+        match seen.iter().find(|(x, _)| *x == k) {
+            Some((_, other)) => out.push(format!(
+                "{kind} {other} and {} have the same {field} ({v}): one {kind} per {field}; name it {other} in the formula",
+                r.name
+            )),
+            None => seen.push((k, r.name.as_str())),
+        }
+    }
+    out
+}
+
 /// [`stored_published_tidied`], no two sharing `field` ([`StoredKind::unique`]: a project's path). Additive (2026-11-19).
 pub fn stored_published_unique<S: schemars::JsonSchema>(
     s: &mut wisp_kernel::Setup,
@@ -593,4 +612,31 @@ pub fn stored<S: schemars::JsonSchema>(s: &mut wisp_kernel::Setup, info: impl Fn
     let as_kind: std::sync::Arc<dyn ResourceKind> = k.clone();
     s.contribute(&crate::RESOURCE_KIND, as_kind);
     k
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod tests {
+    use serde_json::json;
+
+    use super::*;
+
+    fn project(name: &str, path: &str) -> Resource {
+        Resource { kind: "project".into(), name: name.into(), spec: json!({ "path": path }), id: None }
+    }
+
+    /// Setup audit D12: two spellings of one folder (`/tmp/x`, `/private/tmp/x`) clash once the owner's key compares
+    /// them; as written they're two values, so the key is what refuses the second project.
+    fn bare(p: &str) -> String {
+        p.strip_prefix("/private").unwrap_or(p).to_owned()
+    }
+
+    #[test]
+    fn two_spellings_of_one_value_clash_under_the_owners_key() {
+        let after = [project("repo", "/tmp/qa/repo"), project("repo-again", "/private/tmp/qa/repo"), project("other", "/w/other")];
+        assert!(clashes("project", "path", None, None, &after).is_empty(), "as written: two values");
+        let got = clashes("project", "path", None, Some(bare), &after);
+        assert_eq!(got.len(), 1, "{got:?}");
+        assert!(got[0].contains("project repo and repo-again have the same path (/private/tmp/qa/repo)"), "{}", got[0]);
+    }
 }

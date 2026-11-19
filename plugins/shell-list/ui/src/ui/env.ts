@@ -28,6 +28,8 @@ export interface ListEnv {
   readonly rowCtx: (key: EntityKey) => RowContext;
   openTask(key: EntityKey): void;
   readonly agents: Accessor<ReadonlyMap<string, Row<Agent>>>;
+  /** a harness's name as its plugin registered it, if it has one (RowContext.named) */
+  readonly named: (id: string) => string | undefined;
   /** the row whose menu is open (or about to: a right-click sets it before the menu reads it) */
   readonly menuFor: Accessor<EntityKey | undefined>;
   setMenuFor(key: EntityKey): void;

@@ -96,6 +96,9 @@ pub fn goal_with(spec: &Value, st: Option<&GoalState>, d: &kinds::GoalSpec) -> O
     }
 }
 
+/// What `goal.set` says of a goal set on a task that isn't running (and wasn't checked now).
+pub const NEXT_WORDS: &str = "Checked when the task's next turn ends; --kick checks its last turn now.";
+
 /// `goal.set`: the task's goal set, changed (its count starts again) or cleared. `kick`: a task whose last turn
 /// is done is judged on it now (v1 Goals#set: it may already hold); a running one when its turn ends.
 async fn set(ctx: &Ctx, defaults: &kinds::Defaults, live: &Inflight, a: &wisp_goal_api::SetArgs) -> Result<Value> {
@@ -118,14 +121,23 @@ async fn set(ctx: &Ctx, defaults: &kinds::Defaults, live: &Inflight, a: &wisp_go
     // the user's new goal (or none) replaces the slot whole: a round that read the old one loses at its `put_if`
     put(ctx, &call, &a.id, &st).await?;
     live.stop(ctx, &a.id, Some(&old)).await;
+    let mut kicked = false;
     if a.kick && !text.is_empty() {
         let turns = turns_of(ctx, &call, &a.id).await.unwrap_or_default();
         if let Some(last) = turns.last().filter(|t| t.status == TurnStatus::Done) {
             let (c, d, l, id, turn) = (ctx.clone(), defaults.clone(), live.clone(), a.id.clone(), last.id.as_str().to_owned());
             ctx.spawn(async move { judge_turn(&c, &d, &l, &id, &turn).await });
+            kicked = true;
         }
     }
-    Ok(view_of(&spec_of(&task), Some(&st), task.created_at, task.updated_at, &kinds::GoalSpec::default()).unwrap_or(Value::Null))
+    let mut view =
+        view_of(&spec_of(&task), Some(&st), task.created_at, task.updated_at, &kinds::GoalSpec::default()).unwrap_or(Value::Null);
+    // set on a task that isn't running, without kick: nothing judges it until its next turn ends, said so (audit D10:
+    // `wisp goal set` answered `status working`, as if it were being worked on)
+    if !kicked && !text.is_empty() && task.state != wisp_runtime_api::model::SessionState::Running {
+        view["next"] = json!(NEXT_WORDS);
+    }
+    Ok(view)
 }
 
 /// v1 Goals#set and replyTo: a goal is for a task of your own, never a side discussion's or a subagent's.

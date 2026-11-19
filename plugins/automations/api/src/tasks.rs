@@ -15,6 +15,10 @@ use wisp_kernel::Command;
 pub struct TaskDecl {
     /// what to do; `{param}` is filled from the run's values
     pub prompt: String,
+    /// its name as you wrote it ("Run tests"), shown on its chip, when the name (a key: `wisp recipes run run-tests`)
+    /// can't hold it (a v1 recipe, audit D11). Additive (2026-11-19).
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub title: String,
     /// prompts sent after the first, each when the turn before ends
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub steps: Vec<String>,

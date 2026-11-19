@@ -51,6 +51,9 @@ export function buildEnv(shell: ShellContext, client: PluginClient): ListEnv {
   // the rows a command waits to send for: one set for the list, it changes only when a command or a computer does
   const waiting = useSignal(() => waitingToSend(client.entities.pending()(), (peer) => client.peers.status(peer)().kind === 'online'));
   const here = (): string => shell.t(machineLabelKey(load()?.platform));
+  // a harness by the name its plugin registered ("Codex"), on every line of a row, as the run line names it (audit D #2)
+  const harnesses = useSignal(shell.harnesses());
+  const named = (id: string): string | undefined => harnesses().find((h) => h.id === id)?.name;
   /** the keyboard moves to the row's neighbour when the row it is on leaves the list */
   const handOff = (key: EntityKey): void => {
     if (selected() !== key) return;
@@ -71,7 +74,8 @@ export function buildEnv(shell: ShellContext, client: PluginClient): ListEnv {
     swipes,
     keys: !shell.platform.mobile,
     agents,
-    rowCtx: (key) => ({ split: split(), open: open() === key, swipes, here: here(), sandbox: shell.t('shell-list.run.sandbox'), agents: agents(), waiting: waiting().has(key), defaultModel: (s) => shell.defaultModel?.(s.agent, { peer: ownerOf(key), cwd: s.cwd }) }),
+    named,
+    rowCtx: (key) => ({ split: split(), open: open() === key, swipes, here: here(), sandbox: shell.t('shell-list.run.sandbox'), agents: agents(), named, waiting: waiting().has(key), defaultModel: (s) => shell.defaultModel?.(s.agent, { peer: ownerOf(key), cwd: s.cwd }) }),
     openTask: (key) => {
       shell.selection.set(key);
       client.navigate({ t: 'openTask', id: key as never });

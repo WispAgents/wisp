@@ -12,4 +12,9 @@ agent: string,
 /**
  * the harness it ran on
  */
-harness: string, cwd: string, createdAt: number, costUsd?: number, formula?: string, lineage?: Lineage, parentId?: string, };
+harness: string, cwd: string, 
+/**
+ * the project it's in: its worktree's repo, else its folder's name (`wisp ls --crew` showed none, audit D7).
+ * Additive (2026-11-19).
+ */
+project?: string, createdAt: number, costUsd?: number, formula?: string, lineage?: Lineage, parentId?: string, };

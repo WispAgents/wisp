@@ -137,6 +137,13 @@ turn. When a screen or feature contradicts one, that's a bug: fix it toward the 
   Only/All strip). **This applies everywhere a project is chosen, phones included: no chip rows of projects.**
 - **Badges** ("Done" etc.) as small as v1's (11-11 23:34). "This computer", never "This Mac" (11-08 19:16).
 - **Task history: direction A, the ledger**, inline expand on phones too (11-15 00:24).
+- **The side panel shows its tabs by default, labelled, as v1** (owner, 2026-11-19, with a screenshot of the panel on
+  Shell with one unlabelled tab: "run audit on this panel, too many bugs, and also make it by default show the tabs for
+  PR, changes etc"): the strip shows **Changes, PR, Shell and Preview** (and Watch and pinned tabs when they apply)
+  whether or not they have something in them yet, as v1's panel.js did, with labels; labels collapse to icons only when
+  the panel is too narrow (design/layout.md priorities). Counts stay (Changes' file count, PR's number and checks).
+  **Replaces UX 2026-11-18 desktop #5's "tabs only when they have something, the rest behind +".** Audit:
+  docs/qa/audit-side-panel.md.
 - **Submenus open on hover on desktop; drill-in stays on touch** (owner, 2026-11-17: "in desktop, I don't like that I need
   to click to go to a submenu, they should show up on hover"). With a hovering fine pointer in the browser, a submenu (the
   task row's View ›, Copy ›, Files ›) is a flyout beside its row, the standard cascading menu: it opens on hover after a

@@ -41,6 +41,23 @@ fn name_of(v: &Value, fallback: &str) -> String {
     if t.is_empty() { fallback.to_owned() } else { t.to_owned() }
 }
 
+/// v1's recipes as declared tasks: the name a key (`run-tests`), v1's own words ("Run tests") its title, which New
+/// task's chip shows (audit D11).
+fn recipes_of(recipes: Vec<Value>, out: &mut Vec<Resource>) {
+    for r in recipes {
+        let mut spec = pick(
+            &r,
+            &[("prompt", "prompt"), ("cwd", "project"), ("agent", "agent"), ("model", "model"), ("effort", "effort"), ("mode", "mode")],
+        );
+        let name = name_of(&r, "recipe");
+        let words = s(&r, "name").trim();
+        if !words.is_empty() && words != name {
+            spec.insert("title".into(), json!(words));
+        }
+        out.push(Resource::new("task", name, Value::Object(spec)));
+    }
+}
+
 /// The resources v1's config declares, and notes on what didn't carry over.
 pub fn formula_of(cfg: &Value) -> (Vec<Resource>, Vec<String>) {
     let mut out = Vec::new();
@@ -63,13 +80,7 @@ pub fn formula_of(cfg: &Value) -> (Vec<Resource>, Vec<String>) {
     }
     default_harness_of(&d, &mut out, &mut notes);
     defaults_of(&d, &mut out, &mut notes);
-    for r in list("recipes") {
-        let spec = pick(
-            &r,
-            &[("prompt", "prompt"), ("cwd", "project"), ("agent", "agent"), ("model", "model"), ("effort", "effort"), ("mode", "mode")],
-        );
-        out.push(Resource::new("task", name_of(&r, "recipe"), Value::Object(spec)));
-    }
+    recipes_of(list("recipes"), &mut out);
     triggers_of(list("triggers"), &mut out, &mut notes);
     for t in list("teams") {
         let mut members = Map::new();
@@ -314,6 +325,17 @@ fn wisp_settings_api_aliases() -> [(&'static str, &'static str); 6] {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Audit D11: v1's recipe "Run tests" became the task `run-tests` and New task's Recipes chip read `run-tests`. Its
+    /// name stays the key (`wisp recipes run run-tests`); v1's own words come along as its title, which the chip shows.
+    #[test]
+    fn a_v1_recipe_keeps_its_name_as_its_title_audit_d11() {
+        let cfg = json!({ "recipes": [{ "name": "Run tests", "prompt": "run the tests" }, { "name": "lint", "prompt": "lint" }] });
+        let (rs, _) = formula_of(&cfg);
+        let tasks: Vec<&Resource> = rs.iter().filter(|r| r.kind == "task").collect();
+        assert_eq!((tasks[0].name.as_str(), &tasks[0].spec["title"]), ("run-tests", &json!("Run tests")));
+        assert_eq!(tasks[1].spec.get("title"), None, "a name that is its key needs no title");
+    }
 
     #[test]
     fn the_fixture_home_becomes_resources() {

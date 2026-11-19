@@ -37,6 +37,9 @@ pub struct Runtime {
     /// tasks whose turn is saved as running but whose CLI isn't spawned yet (`Starting`): the queue reads them as
     /// running, so a follow-up sent then waits instead of starting a second turn beside it (B37)
     pub(crate) starting: Arc<Mutex<HashMap<String, u32>>>,
+    /// tasks a Stop reached while their turn was starting (no `Live` yet): the spawn stops its run at once (Windows CI:
+    /// a slow spawn came after the Stop and ran on); cleared when the start ends without a spawn
+    pub(crate) stops: Arc<Mutex<std::collections::HashSet<String>>>,
     locks: Mutex<HashMap<String, Arc<tokio::sync::Mutex<()>>>>,
     /// open questions: ask id → its task (rebuilt at start from the tasks that wait on one)
     asks: Mutex<HashMap<String, String>>,
@@ -87,6 +90,7 @@ impl Runtime {
             list: Mutex::default(),
             live: Mutex::default(),
             starting: Arc::default(),
+            stops: Arc::default(),
             locks: Mutex::default(),
             asks: Mutex::default(),
             answers: Mutex::default(),
@@ -268,7 +272,7 @@ impl Runtime {
     /// and queues behind it, never starting a second turn on the same index.
     pub(crate) fn mark_starting(&self, id: &str) -> Starting {
         *lock(&self.starting).entry(id.to_owned()).or_insert(0) += 1;
-        Starting { starting: self.starting.clone(), id: id.to_owned() }
+        Starting { counts: self.starting.clone(), stops: self.stops.clone(), id: id.to_owned() }
     }
 
     /// Writes the task (and the turns given), rebuilds its list row, emits `session.changed`.
@@ -597,10 +601,15 @@ impl Runtime {
             }
             s.ext.insert("wisp.worktrees".into(), w);
         }
-        if let Some(why) = setup_failed
-            && let Some(own) = s.ext.get_mut("wisp.runtime").and_then(serde_json::Value::as_object_mut)
-        {
-            own.insert("setupFailed".into(), serde_json::json!(why));
+        // kept in runtime's slot, made when the task has none yet (a plain task has none: the failure was lost)
+        if let Some(why) = setup_failed {
+            let own = s.ext.entry("wisp.runtime".to_owned()).or_insert_with(|| serde_json::json!({}));
+            if !own.is_object() {
+                *own = serde_json::json!({});
+            }
+            if let Some(o) = own.as_object_mut() {
+                o.insert("setupFailed".into(), serde_json::json!(why));
+            }
         }
         s.queue_held = false;
         if s.queue.is_empty() {
@@ -679,7 +688,7 @@ impl Runtime {
             }
         }
         if d.release_held {
-            self.release_held(&mut s, false).await?;
+            self.release_held(&mut s, false, false).await?;
         }
         if d.release_linger {
             self.release_linger(a.id.as_str());
@@ -819,16 +828,22 @@ impl Runtime {
     /// The task's held turn goes back to the front of its queue, to start next. It starts as that same turn (its id and
     /// place: `opts.turn`), so the page updates the held card in place rather than dropping it and drawing a new one.
     /// `yes`: you pressed Start now: a yes to what held it (Ask near the limit's `confirmLimit`, as Send anyway).
-    pub(crate) async fn release_held(self: &Arc<Self>, s: &mut Session, yes: bool) -> Result<()> {
+    /// `without`: Run without them: the run goes without the repo's own programs (`untrusted`), trusting nothing.
+    pub(crate) async fn release_held(self: &Arc<Self>, s: &mut Session, yes: bool, without: bool) -> Result<()> {
         let Some(t) = self.repo.turns(s.id.as_str(), None, Some(1)).await?.pop().filter(|t| t.status == TurnStatus::Held) else {
             return Ok(());
         };
         let mut opts = serde_json::json!({ "turn": { "id": t.id.as_str(), "idx": t.idx } });
-        if yes {
+        if without {
+            opts["untrusted"] = serde_json::Value::Bool(true);
+        } else if yes {
             opts["confirmLimit"] = serde_json::Value::Bool(true);
         }
         // what the yes was to: the hold it released (a hook trusts only a yes to its own hold)
-        if yes && let Some(h) = &t.held {
+        if yes
+            && !without
+            && let Some(h) = &t.held
+        {
             opts["released"] = serde_json::to_value(h).unwrap_or_default();
         }
         let item = QueueItem {
@@ -852,18 +867,25 @@ pub(crate) fn is_task_id(id: &str) -> bool {
 
 /// A turn starting (`Runtime::mark_starting`); dropped once its CLI is in `live` or the start ended.
 pub(crate) struct Starting {
-    starting: Arc<Mutex<HashMap<String, u32>>>,
+    counts: Arc<Mutex<HashMap<String, u32>>>,
+    stops: Arc<Mutex<std::collections::HashSet<String>>>,
     id: String,
 }
 
 impl Drop for Starting {
     fn drop(&mut self) {
-        let mut m = lock(&self.starting);
+        let mut m = lock(&self.counts);
         if let Some(n) = m.get_mut(&self.id) {
             *n = n.saturating_sub(1);
             if *n == 0 {
                 m.remove(&self.id);
             }
+        }
+        // no start under way any more (held, refused, or spawned and its stop taken): a Stop asked for it is spent
+        let gone = !m.contains_key(&self.id);
+        drop(m);
+        if gone {
+            lock(&self.stops).remove(&self.id);
         }
     }
 }

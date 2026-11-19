@@ -181,6 +181,10 @@ fn where_a_task_lands_after_housekeeping_quiet_outcomes_and_settle() {
 fn a_skipped_held_turn_says_why() {
     assert_eq!(land::skipped("limit", "Claude 5-hour", "").blocks[0]["summary"], "Claude 5-hour window was near its limit.");
     assert_eq!(land::skipped("harness", "", "Codex").blocks[0]["summary"], "Codex had changed and wasn’t trusted.");
+    // audit D3: a trust hold (wisp.worktrees' `trust`) said "Its usage window was near its limit."
+    assert_eq!(land::skipped("trust", "Its usage", "").blocks[0]["summary"], "This repo’s hooks, servers or setup weren’t trusted.");
+    assert_eq!(land::skipped("harness-changed", "Its usage", "Codex").blocks[0]["summary"], "Codex had changed and wasn’t trusted.");
+    assert_eq!(land::skipped("setup", "Its setup", "").blocks[0]["summary"], "Its worktree setup had failed.");
 }
 
 fn session() -> Session {

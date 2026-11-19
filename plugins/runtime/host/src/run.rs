@@ -581,17 +581,24 @@ impl Runtime {
             let (handle, rx) = child.split();
             let (ctl, ctl_rx) = mpsc::unbounded_channel();
             let (ended_tx, ended) = tokio::sync::watch::channel(());
+            let mut all = self.live.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+            // a Stop that came while it started: it stops now
+            let stopping = self.stops.lock().unwrap_or_else(std::sync::PoisonError::into_inner).remove(s.id.as_str());
+            if stopping {
+                let _ = ctl.send(Ctl::Stop);
+            }
             let live = Live {
                 resumable: s.resume_id.is_some(),
                 finished: false,
-                stopping: false,
+                stopping,
                 interrupting: false,
                 label: None,
                 account: t.account.clone(),
                 ctl,
                 ended,
             };
-            self.live.lock().unwrap_or_else(std::sync::PoisonError::into_inner).insert(s.id.0.clone(), live);
+            all.insert(s.id.0.clone(), live);
+            drop(all);
             // `live` has it now: no longer starting (cleared here, not when the start returns, so a run that ends at
             // once never reads as starting after its end: B37)
             self.starting.lock().unwrap_or_else(std::sync::PoisonError::into_inner).remove(s.id.as_str());
@@ -638,7 +645,19 @@ impl Runtime {
     }
 
     pub(crate) fn stop_run(&self, id: &str) {
-        self.send(id, Ctl::Stop);
+        let mut live = self.live.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+        if let Some(l) = live.get_mut(id) {
+            l.stopping = true;
+            let _ = l.ctl.send(Ctl::Stop);
+            return;
+        }
+        // its turn is saved as running and its CLI on its way: the spawn stops it (decided under `live`'s lock, as the
+        // spawn's entry goes in, so a Stop lands either here or on `Live`)
+        let starting = self.starting.lock().unwrap_or_else(std::sync::PoisonError::into_inner).get(id).is_some_and(|n| *n > 0);
+        if starting {
+            self.stops.lock().unwrap_or_else(std::sync::PoisonError::into_inner).insert(id.to_owned());
+        }
+        drop(live);
     }
     /// The task's run, stopped, and once it let go (at most `STOP_WAIT`): nothing of it is still at work in the
     /// task's folder after this. A delete waits on it: a deleted delegate's copy is removed right after (ADR-0060),
@@ -784,13 +803,14 @@ fn run_ctx(s: &Session, turn: &Turn, item: &QueueItem) -> BeforeRunCtx {
         hold: None,
         account_env: BTreeMap::new(),
         once: None,
-        // a project declared without trusting its hooks or MCP servers (crate::kinds)
+        // a project declared without trusting its hooks or MCP servers (crate::kinds), or Run without them on a hold
         untrusted: s
             .ext
             .get("wisp.runtime")
             .and_then(|o| o.pointer("/brief/untrusted"))
             .and_then(serde_json::Value::as_bool)
-            .unwrap_or(false),
+            .unwrap_or(false)
+            || item.opts.as_ref().and_then(|o| o.get("untrusted")).and_then(serde_json::Value::as_bool).unwrap_or(false),
         kind: if turn.idx == 0 { RunKind::First } else { RunKind::FollowUp },
         parent_id: s.parent_id.clone(),
         confirm_limit: item.opts.as_ref().and_then(|o| o.get("confirmLimit")).and_then(serde_json::Value::as_bool).unwrap_or(false),

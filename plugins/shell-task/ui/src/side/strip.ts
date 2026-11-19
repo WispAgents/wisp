@@ -1,15 +1,12 @@
-// UX 2026-11-18 desktop #5: the side panel's tab strip holds the tabs with something in them (a diff, a PR, a running
-// preview, a pinned pane), and the one open; the rest wait behind + at its end. A tab that joined stays (it never
-// jumps out when its content goes, say a diff committed away), in the panel's own order. DOM-free.
+// The side panel's strip (owner, 2026-11-19, replacing UX 2026-11-18 desktop #5's "tabs only when they have something,
+// the rest behind +"): v1 panel.js paintName's tabs, shown by default and labelled whether or not they have anything yet,
+// in a fixed order so none ever moves: a terminal task's CLI first, Changes, PR, Shell, Preview, Watch while the task has
+// one, then the tabs other plugins pin (My Stuff apps, Thread). Labels give way to icons only when the panel has no room
+// for them (the kit's Tabs `fit`). DOM-free.
 
-/** The strip and what's behind +: `order` the panel's tabs in order, `has` those with something in them, `joined` the
- *  strip as it stood (what joined never leaves while the panel still has it). */
-export function sideStrip(i: { readonly order: readonly string[]; readonly has: ReadonlySet<string>; readonly current: string; readonly joined: readonly string[] }): {
-  strip: string[];
-  more: string[];
-} {
-  const strip = i.order.filter((p) => i.has.has(p) || p === i.current || i.joined.includes(p));
-  return { strip, more: i.order.filter((p) => !strip.includes(p)) };
+/** The panel's tabs, in order: `term` a terminal task's CLI, `watch` the task has a Watch page, `extras` pinned tabs. */
+export function sideStrip(i: { readonly term: boolean; readonly watch: boolean; readonly extras: readonly string[] }): string[] {
+  return [...(i.term ? ['term'] : []), 'changes', 'pr', 'shell', 'preview', ...(i.watch ? ['watch'] : []), ...i.extras];
 }
 
 type Checks = { readonly pass?: number; readonly fail?: number; readonly pending?: number };

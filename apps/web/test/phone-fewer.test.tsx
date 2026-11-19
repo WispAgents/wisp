@@ -20,7 +20,7 @@ afterEach(() => {
   document.body.innerHTML = '';
 });
 
-/** `env`: the seed's first task changed files (seed.ts withEnv), so its page has Changes +n −n */
+/** `env`: the seed's worktree task changed files (seed.ts withEnv), so its page has Changes +n −n */
 /** `plugins`: the plugin UIs to register (the side panes are shell-task's) */
 async function start(platform: Platform, o: { env?: boolean; plugins?: readonly string[] } = {}) {
   const mock = createMockPeer({ epoch: 'e1', ...(o.env && { env: true }) });

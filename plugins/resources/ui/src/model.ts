@@ -61,9 +61,13 @@ const short = (v: unknown): string => {
   return s.length > 40 ? `${s.slice(0, 39)}…` : s;
 };
 
-/** A change's fields in words: `model: sonnet → opus`. */
+/** A change's fields in words: `model: sonnet → opus`; a whole value (a setting's, no field name) `zed → cursor`. */
 export function changeLines(o: Op): string[] {
-  return (o.changes ?? []).map((c) => `${c.path.replace(/^\//, '').replace(/\//g, '.')}: ${short(c.from)} → ${short(c.to)}`);
+  return (o.changes ?? []).map((c) => {
+    const field = c.path.replace(/^\//, '').replace(/\//g, '.');
+    const values = `${short(c.from)} → ${short(c.to)}`;
+    return field ? `${field}: ${values}` : values;
+  });
 }
 
 /** The card's title: "crew ada". */

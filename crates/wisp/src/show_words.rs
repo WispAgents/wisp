@@ -1,0 +1,117 @@
+//! What `wisp show` says besides the answer: a task's goal and where its judging stands (audit D10), and a turn held
+//! before it started with how to go on from here (audit D4). Pure: the task and its turn as the server answered them.
+use std::fmt::Write as _;
+
+use serde_json::Value;
+
+fn s<'a>(v: &'a Value, k: &str) -> &'a str {
+    v.get(k).and_then(Value::as_str).unwrap_or("")
+}
+
+/// The task's goal and where its judging stands, on one line (audit D10: only `runtime.get`'s `ext.wisp.goal` had it):
+/// `wisp.goal`'s state over the goal its spec set. '' with no goal.
+pub fn goal_line(task: &Value) -> String {
+    let st = task.pointer("/ext/wisp.goal").cloned().unwrap_or(Value::Null);
+    let state = st.get("state").and_then(Value::as_str).unwrap_or_default();
+    if state == "cleared" {
+        return String::new();
+    }
+    let spec = task.pointer("/ext/wisp.runtime/spec/goal").cloned().unwrap_or(Value::Null);
+    let text = st
+        .get("text")
+        .and_then(Value::as_str)
+        .filter(|t| !t.trim().is_empty())
+        .or_else(|| spec.as_str().or_else(|| spec.get("text").and_then(Value::as_str)))
+        .map(str::trim)
+        .filter(|t| !t.is_empty());
+    let Some(text) = text else { return String::new() };
+    let n = st.get("rounds").and_then(Value::as_u64).unwrap_or(0);
+    let rounds = if n == 1 { "1 round".to_owned() } else { format!("{n} rounds") };
+    let why = st.get("why").and_then(Value::as_str).filter(|w| !w.is_empty()).map_or_else(String::new, |w| format!(": {w}"));
+    let at = match state {
+        "met" => format!("met after {rounds}"),
+        "stalled" => format!("not met after {rounds}{why}"),
+        "paused" => "paused".to_owned(),
+        "judging" => "being checked".to_owned(),
+        _ if n == 0 => "checked when a turn ends".to_owned(),
+        _ => format!("not met yet after {rounds}"),
+    };
+    format!("\n◎ Goal: {text}  · {at}")
+}
+
+/// A turn held before it started (project trust, a changed harness, a failed setup, the plan's line): what holds it,
+/// what it would run, and how to go on from here, as the page's card says (audit D4: `wisp show` said nothing). ''
+/// when the turn isn't held.
+pub fn holding(id: &str, turn: &Value) -> String {
+    if turn.get("status").and_then(Value::as_str) != Some("held") {
+        return String::new();
+    }
+    let h = turn.get("held").cloned().unwrap_or(Value::Null);
+    let d = h.get("data").cloned().unwrap_or(Value::Null);
+    let text = |k: &str| d.get(k).and_then(Value::as_str).map(str::trim).filter(|x| !x.is_empty());
+    let kind = h.get("kind").and_then(Value::as_str).unwrap_or_default();
+    let trust = kind == "trust";
+    let why = if trust {
+        "This repo asks to run its own programs: these would run on this computer, as you, whatever the mode."
+    } else {
+        text("why").or_else(|| text("what")).or_else(|| text("line")).unwrap_or_default()
+    };
+    let mut out = format!("\n\n◷ Held before it started{}", if why.is_empty() { String::new() } else { format!(": {why}") });
+    for i in d.get("items").and_then(Value::as_array).into_iter().flatten() {
+        let k = match i.get("kind").and_then(Value::as_str).unwrap_or_default() {
+            "hook" => "Hook",
+            "mcp" => "MCP server",
+            "setup" => "Setup",
+            "plugin" => "Plugin",
+            _ => "Command",
+        };
+        let at = i.get("file").and_then(Value::as_str).map_or_else(String::new, |f| format!("  ({f})"));
+        let _ = write!(out, "\n  {k} {}: {}{at}", s(i, "name"), s(i, "command"));
+    }
+    let start = if trust || kind == "harness-changed" { "Trust and start" } else { "Start now" };
+    let _ = write!(out, "\n  {start}: wisp held {id} start");
+    if trust {
+        let _ = write!(out, "\n  Run without them: wisp held {id} without");
+    }
+    let _ = write!(out, "\n  Skip this run: wisp held {id} skip");
+    out
+}
+
+#[cfg(test)]
+mod tests {
+    /// Audit D10: `wisp show` said nothing of the goal; it says the goal and where its judging stands.
+    #[test]
+    fn show_says_the_goal_and_where_it_stands_audit_d10() {
+        let t = |goal: serde_json::Value, spec: serde_json::Value| serde_json::json!({ "ext": { "wisp.goal": goal, "wisp.runtime": { "spec": spec } } });
+        let met = t(serde_json::json!({ "state": "met", "rounds": 2 }), serde_json::json!({ "goal": "tests pass" }));
+        assert_eq!(super::goal_line(&met), "\n◎ Goal: tests pass  · met after 2 rounds");
+        let set = t(serde_json::json!({ "state": "", "rounds": 0, "text": "ship it" }), serde_json::Value::Null);
+        assert_eq!(super::goal_line(&set), "\n◎ Goal: ship it  · checked when a turn ends");
+        let out = t(
+            serde_json::json!({ "state": "stalled", "rounds": 3, "why": "still failing" }),
+            serde_json::json!({ "goal": { "text": "green" } }),
+        );
+        assert_eq!(super::goal_line(&out), "\n◎ Goal: green  · not met after 3 rounds: still failing");
+        assert_eq!(super::goal_line(&t(serde_json::json!({ "state": "cleared" }), serde_json::json!({ "goal": "x" }))), "");
+        assert_eq!(super::goal_line(&serde_json::json!({ "ext": {} })), "", "no goal: nothing");
+    }
+
+    /// Audit D4: a held turn says why, what it would run and the three ways on; a running one says nothing.
+    #[test]
+    fn a_held_turn_says_why_what_it_would_run_and_how_to_go_on_audit_d4() {
+        let t = serde_json::json!({ "status": "held", "held": { "by": "wisp.worktrees", "kind": "trust", "data": { "key": "/r",
+            "items": [{ "kind": "mcp", "file": ".mcp.json", "name": "local", "command": "node server.js", "id": "x" }] } } });
+        let said = super::holding("t1", &t);
+        assert!(said.contains("Held before it started: This repo asks to run its own programs"), "{said}");
+        assert!(said.contains("MCP server local: node server.js  (.mcp.json)"), "{said}");
+        assert!(
+            said.contains("Trust and start: wisp held t1 start")
+                && said.contains("wisp held t1 without")
+                && said.contains("wisp held t1 skip")
+        );
+        let limit = serde_json::json!({ "status": "held", "held": { "kind": "plan", "data": { "why": "past 75%" } } });
+        let said = super::holding("t2", &limit);
+        assert!(said.contains(": past 75%") && said.contains("Start now: wisp held t2 start") && !said.contains("without"), "{said}");
+        assert_eq!(super::holding("t3", &serde_json::json!({ "status": "running" })), "");
+    }
+}

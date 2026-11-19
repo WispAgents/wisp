@@ -553,9 +553,10 @@
   :root[data-platform='android'] [data-gesture~='list.pull'] { overscroll-behavior-y: contain; }
 
   /* Overlays (step 5, design/mobile.md §A.7). Dialog: the M3 basic dialog, 280–560 dp, 28 dp corners, surface
-     container high, its actions end-aligned text buttons; a confirm (data-alert) has no ×. */
-  :root[data-platform='android'] [data-kit='dialog-positioner'] { padding: var(--dialog-pad); }
-  :root[data-platform='android'] [data-kit='dialog'] {
+     container high, its actions end-aligned text buttons; a confirm (data-alert) has no ×. Not a window (`size:
+     'window'`: My Stuff's reader, an app): the whole screen, one surface, as on iOS (audit D #5). */
+  :root[data-platform='android'] [data-kit='dialog-positioner']:not([data-size='window']) { padding: var(--dialog-pad); }
+  :root[data-platform='android'] [data-kit='dialog']:not([data-size='window']) {
     width: min(var(--dialog-max-w), 100%);
     min-width: min(var(--dialog-min-w), 100%);
     max-height: calc(100dvh - var(--dialog-pad) * 2);

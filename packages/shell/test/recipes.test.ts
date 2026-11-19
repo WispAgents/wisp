@@ -1,7 +1,7 @@
 // New task's Recipes row (v1 renderLaunchRecipes, F-comp-37): the picked project's recipes and the ones tied to none;
 // the rest counted as elsewhere.
 import { expect, test } from 'vitest';
-import { recipesAt } from '../src/frame/recipes.ts';
+import { recipeLabel, recipesAt } from '../src/frame/recipes.ts';
 
 test('the recipes row lists the picked projects recipes and counts the rest_v1_launch_recipes', () => {
   const all = [
@@ -13,4 +13,11 @@ test('the recipes row lists the picked projects recipes and counts the rest_v1_l
   expect(recipesAt(all, '/code/app').elsewhere).toBe(1);
   expect(recipesAt(all, undefined)).toEqual({ list: [all[0]], elsewhere: 2 });
   expect(recipesAt([], '/x')).toEqual({ list: [], elsewhere: 0 });
+});
+
+// audit D11: a v1 recipe "Run tests" is the task `run-tests`; its chip reads its title, v1's own words
+test('a_recipes_chip_reads_its_title_else_its_name_audit_d11', () => {
+  expect(recipeLabel({ name: 'run-tests', title: 'Run tests', prompt: 'x' })).toBe('Run tests');
+  expect(recipeLabel({ name: 'Fix-lint', prompt: 'x' })).toBe('Fix-lint');
+  expect(recipeLabel({ name: 'a', title: '  ', prompt: 'x' })).toBe('a');
 });

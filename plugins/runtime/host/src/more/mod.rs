@@ -84,12 +84,18 @@ fn with_slot<R>(ext: &mut BTreeMap<String, Value>, f: impl FnOnce(&mut serde_jso
 impl Runtime {
     /// `runtime.held`: the task's held turn (its last) started or skipped; `yes`: you pressed Start now.
     pub async fn held(self: &Arc<Self>, id: &str, start: bool, yes: bool) -> Result<()> {
+        let action = if start { wisp_runtime_api::commands::ReleaseAction::Start } else { wisp_runtime_api::commands::ReleaseAction::Skip };
+        self.held_as(id, action, yes).await
+    }
+
+    /// `runtime.held` with any of its actions (Run without them too).
+    pub async fn held_as(self: &Arc<Self>, id: &str, action: wisp_runtime_api::commands::ReleaseAction, yes: bool) -> Result<()> {
         let turn = self
             .last_turn(id)
             .await?
             .filter(|t| t.status == TurnStatus::Held)
             .ok_or_else(|| RuntimeError::Conflict("nothing is held on this task".into()))?;
-        self.release(id, turn.id.as_str(), start, yes).await
+        self.release_as(id, turn.id.as_str(), action, yes).await
     }
 
     async fn last_turn(&self, id: &str) -> Result<Option<Turn>> {

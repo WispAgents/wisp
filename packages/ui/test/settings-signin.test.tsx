@@ -48,3 +48,30 @@ test('a_sign_in_never_spells_out_its_address_and_its_steps_copy_open_and_send', 
   const failed = mount(() => <SettingsSignIn url={URL} error="error: authentication failed or timed out" labels={L} onCopy={onCopy} onSend={onSend} />);
   expect(failed.querySelector('[role="alert"]')?.textContent).toContain('authentication failed');
 });
+
+// Audit D1: Copy the code changed nothing on screen (v1 toasted "Code copied"; the owner's rule now: toasts only for
+// errors). The button turns into a check, labelled Copied, for about 1.5 s, then back; a copy that fails turns back
+// at once.
+test('copy_the_code_turns_into_a_check_for_a_moment_and_back', async () => {
+  vi.useFakeTimers();
+  try {
+    let ok = true;
+    const onCopy = vi.fn(() => (ok ? Promise.resolve() : Promise.reject(new Error('denied'))));
+    const box = mount(() => <SettingsSignIn url={URL} code="QZ5Y-ELHLW" labels={{ ...L, copied: 'Copied' }} onCopy={onCopy} onSend={() => {}} />);
+    const copy = (): HTMLElement => box.querySelector('[data-part~="settings.signin.copy"]') as HTMLElement;
+    expect(copy().getAttribute('aria-label')).toBe('Copy the code');
+    copy().click();
+    expect(onCopy).toHaveBeenCalledWith('QZ5Y-ELHLW');
+    expect(copy().getAttribute('aria-label')).toBe('Copied');
+    expect(copy().querySelector('[data-icon="check"]')).not.toBeNull();
+    await vi.advanceTimersByTimeAsync(1600);
+    expect(copy().getAttribute('aria-label')).toBe('Copy the code');
+    ok = false;
+    copy().click();
+    expect(copy().getAttribute('aria-label')).toBe('Copied');
+    await vi.advanceTimersByTimeAsync(0);
+    expect(copy().getAttribute('aria-label')).toBe('Copy the code');
+  } finally {
+    vi.useRealTimers();
+  }
+});

@@ -404,15 +404,28 @@ impl Runtime {
     /// A held turn: Start now, or Skip (it stays, stopped, saying what was skipped).
     /// `yes`: you pressed Start now (not wisp releasing it at the reset): a yes to what held it.
     pub async fn release(self: &Arc<Self>, id: &str, turn: &str, start: bool, yes: bool) -> Result<()> {
+        let action = if start { wisp_runtime_api::commands::ReleaseAction::Start } else { wisp_runtime_api::commands::ReleaseAction::Skip };
+        self.release_as(id, turn, action, yes).await
+    }
+
+    /// A held turn: Start now, Run without them (it runs without the repo's own programs: `untrusted`), or Skip.
+    pub async fn release_as(
+        self: &Arc<Self>,
+        id: &str,
+        turn: &str,
+        action: wisp_runtime_api::commands::ReleaseAction,
+        yes: bool,
+    ) -> Result<()> {
+        use wisp_runtime_api::commands::ReleaseAction as A;
         let mut s = self.repo.session(id).await?;
         let mut t = self.repo.turn(turn).await?;
         if t.status != TurnStatus::Held {
             return Err(RuntimeError::Conflict("that turn isn't waiting".into()));
         }
-        if start {
+        if action != A::Skip {
             // straight into its start: never written to the queue first, where the page would show it as a queued
             // follow-up until the start (its folder, `before:run`) is done
-            self.release_held(&mut s, yes).await?;
+            self.release_held(&mut s, yes, action == A::Without).await?;
             return self.kick(s).await.map(drop);
         }
         let held = t.held.clone();

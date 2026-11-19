@@ -8,7 +8,8 @@
 // first time, resumed after) and streamed from `/sessions/:id/term`; ending it leaves the task for review.
 import { Show, createSignal, onCleanup, onMount, type JSX } from 'solid-js';
 import { defineCommand, ownerOf, type EntityKey } from '@wisp/client';
-import { Button, EmptyState, Inline, Screen, Stack, Terminal, Text } from '@wisp/ui';
+import { Button, Dialog, EmptyState, Inline, Screen, Stack, Terminal, Text } from '@wisp/ui';
+import { resizeOnHello } from './shell-size.ts';
 import { useShell } from '../shell.ts';
 import { useTask } from '../task-context.tsx';
 import '../i18n/lazy.ts';
@@ -72,6 +73,8 @@ export function ShellPane(props: { readonly kind: Kind }): JSX.Element {
   const [drawn, setDrawn] = createSignal(false);
   const [ended, setEnded] = createSignal<number | null | undefined>(undefined);
   const [size, setSize] = createSignal({ cols: 100, rows: 30 });
+  let sized = false; // the terminal has said its size (onResize): until then `size` is only the default
+  const [asking, setAsking] = createSignal(false);
 
   const connect = (): void => {
     es?.abort();
@@ -84,7 +87,11 @@ export function ShellPane(props: { readonly kind: Kind }): JSX.Element {
           if (ev.event === 'hello') {
             const h = JSON.parse(ev.data) as { cols: number; rows: number };
             screen.reset();
-            screen.resize(h.cols, h.rows);
+            // a shell started at another width (another window, the panel dragged since) is told the pane's own, so
+            // its prompt isn't cut at the pane's edge (audit 2026-11-19)
+            const want = resizeOnHello(h, sized ? size() : undefined);
+            screen.resize(want?.cols ?? h.cols, want?.rows ?? h.rows);
+            if (want) void c.run(phone ? inputHere : input, { key: task.key, kind: props.kind, id, ...want }).catch(() => undefined);
             setEnded(undefined);
           } else if (ev.event === 'data') {
             screen.write(JSON.parse(ev.data) as string);
@@ -142,6 +149,7 @@ export function ShellPane(props: { readonly kind: Kind }): JSX.Element {
     void c.run(phone ? inputHere : input, { key: task.key, kind: props.kind, id, data, seq: n, from }).catch(() => undefined);
   };
   const resize = (cols: number, rows: number): void => {
+    sized = true;
     setSize({ cols, rows });
     if (ended() === undefined) void c.run(phone ? inputHere : input, { key: task.key, kind: props.kind, id, cols, rows }).catch(() => undefined);
   };
@@ -194,7 +202,7 @@ export function ShellPane(props: { readonly kind: Kind }): JSX.Element {
           <Show
             when={ended() !== undefined}
             fallback={
-              <Button size="xs" variant="ghost" icon="x" onClick={end}>
+              <Button size="xs" variant="ghost" icon="x" part="side.shell.end" onClick={() => setAsking(true)}>
                 {t(tui ? 'shell-task.term.end' : 'shell-task.shell.end')}
               </Button>
             }
@@ -204,6 +212,28 @@ export function ShellPane(props: { readonly kind: Kind }): JSX.Element {
             </Button>
           </Show>
         </Inline>
+      </Show>
+      {/* v1 endShell: "End the shell? Whatever runs in it stops with it." (audit 2026-11-19: it ended at once) */}
+      <Show when={asking()}>
+        <Dialog
+          open
+          role="alertdialog"
+          size="sm"
+          title={t(tui ? 'shell-task.term.endAsk.title' : 'shell-task.shell.endAsk.title')}
+          description={t('shell-task.shell.endAsk.body')}
+          onOpenChange={(o) => !o && setAsking(false)}
+          part="side.shell.endAsk"
+          footer={
+            <Inline gap="4" justify="end">
+              <Button variant="ghost" onClick={() => setAsking(false)}>
+                {t('shell-task.shell.endAsk.cancel')}
+              </Button>
+              <Button variant="danger" part="side.shell.endAsk.ok" onClick={() => (setAsking(false), end())}>
+                {t(tui ? 'shell-task.term.end' : 'shell-task.shell.end')}
+              </Button>
+            </Inline>
+          }
+        />
       </Show>
     </Stack>
   );

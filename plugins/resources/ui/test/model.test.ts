@@ -26,6 +26,8 @@ test('setup_import_reads_the_plan_as_cards_and_applies_only_whats_ticked', () =>
     ['update', 1],
   ]);
   expect(changeLines(plan.ops[1]!)).toEqual(['model: sonnet → opus']);
+  // audit D6: a setting's whole value has no field name: the values alone, no bare colon
+  expect(changeLines({ op: 'update', kind: 'setting', name: 'settings.editor', spec: 'cursor', changes: [{ path: '', from: 'zed', to: 'cursor' }] })).toEqual(['zed → cursor']);
   const pasted = [{ kind: 'crew', name: 'bob', spec: {} }, { kind: 'agent', name: 'fast', spec: {} }, { kind: 'trigger', name: 'ci', spec: {} }, { kind: 'agent', name: 'same', spec: {} }];
   expect(picked(pasted, plan, new Set(['trigger/ci'])).map((r) => r.name)).toEqual(['bob', 'fast']);
 });

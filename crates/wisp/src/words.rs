@@ -133,7 +133,7 @@ const INSTEAD: &[(&str, &str)] = &[
 ];
 
 /// The commands that take a task (`wisp show <id>`; args.rs `fits` routes them only for a task's id or `last`).
-const TASK_COMMANDS: [&str; 6] = ["show", "stop", "wait", "reply", "attach", "btw"];
+const TASK_COMMANDS: [&str; 7] = ["show", "stop", "wait", "reply", "attach", "btw", "held"];
 
 /// QA round 14 (decided rule): a word that means a command (another tool's, `wisp status`, or one that takes a task,
 /// `wisp stop`) and exactly one word it doesn't take (`wisp status all`, `wisp stop it`): a slip, its hint or its usage.
@@ -650,6 +650,32 @@ pub fn usage(word: &str) -> String {
         out = format!("  wisp {word} needs more: wisp --help\n");
     }
     format!("{out}  a task that starts with {word}: wisp -- {word} …")
+}
+
+/// Why a file couldn't be read, in words (audit D9: "No such file or directory (os error 2)"), as Projects and Plugins
+/// say a missing folder ("No folder at …").
+pub fn unreadable(path: &std::path::Path, e: &std::io::Error) -> String {
+    use std::io::ErrorKind;
+    let p = path.display();
+    match e.kind() {
+        ErrorKind::NotFound => format!("No file at {p}"),
+        ErrorKind::IsADirectory => format!("{p} is a folder, not a file"),
+        ErrorKind::PermissionDenied => format!("Can't read {p}: permission denied"),
+        ErrorKind::InvalidData => format!("{p} isn't text (UTF-8)"),
+        _ => format!("Can't read {p}: {}", e.kind()),
+    }
+}
+
+/// `wisp import`'s v1 home without a `config.json` it can read (audit D9), in words.
+pub fn no_v1_home(v1: &std::path::Path, file: &std::path::Path, e: &std::io::Error) -> String {
+    let how = "(wisp import [v1 home folder])";
+    if !v1.is_dir() {
+        format!("No folder at {} {how}", v1.display())
+    } else if e.kind() == std::io::ErrorKind::NotFound {
+        format!("{} has no config.json: is it wisp v1's home (~/.wisp)? {how}", v1.display())
+    } else {
+        format!("{} {how}", unreadable(file, e))
+    }
 }
 
 #[cfg(test)]

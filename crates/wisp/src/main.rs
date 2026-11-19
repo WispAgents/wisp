@@ -31,6 +31,7 @@ mod serve;
 mod services;
 mod settings_store;
 mod share_cli;
+mod show_words;
 mod tasks_cli;
 mod termctx_cli;
 mod trial_cli;

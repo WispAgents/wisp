@@ -17,7 +17,7 @@ pub fn schema_of(spec: &ArgSpec) -> Value {
         return json!({ "type": "object", "properties": {} });
     }
     if !spec.object {
-        return json!({ "type": "object", "properties": { "args": { "description": "the command's arguments, as JSON" } } });
+        return json!({ "type": "object", "properties": { "args": { "description": ARGS_DOC } } });
     }
     let mut props = Map::new();
     let mut required = Vec::new();
@@ -77,10 +77,24 @@ pub fn tools(catalogue: &[CommandInfo], taken: &[&str]) -> Vec<(String, String, 
 /// The argument every generated tool takes to run on another machine.
 pub const PEER: &str = "peer";
 
+/// What a tool whose command declares no argument type says of `args`.
+pub const ARGS_DOC: &str = "the command's arguments, as JSON: an object of its fields, or left out when it takes none (its fields may also be given beside `args`, at the top level)";
+
 /// A tool call's arguments as the command's: the object as it is (without `peer`, unless the command has
-/// its own), or `args` for a non-object type.
+/// its own), or `args` for a non-object type. Without `args`, the call's own fields are the arguments (`{}` when there
+/// are none): a tool called as its schema allows, with nothing, got `null` and the command's type error back
+/// (`crew.list: invalid type: null, expected struct NoArgs`, audit D6).
 pub fn args_of(spec_object: bool, input: &Value) -> Value {
-    if spec_object { input.clone() } else { input.get("args").cloned().unwrap_or(Value::Null) }
+    if spec_object {
+        return input.clone();
+    }
+    match input.get("args") {
+        Some(a) => a.clone(),
+        None => match input {
+            Value::Object(_) => input.clone(),
+            _ => json!({}),
+        },
+    }
 }
 
 /// The machine a call names (`peer`), and the arguments without it. `own_peer`: the command has a `peer`
@@ -161,5 +175,11 @@ mod tests {
         let names: Vec<String> = tools(&all, &["ask_user"]).into_iter().map(|t| t.0).collect();
         assert_eq!(names, ["a_b"], "ui-only out; ask_user stays the hand-made one");
         assert_eq!(args_of(false, &json!({ "args": [1] })), json!([1]));
+        // audit D6: called with nothing (as the schema allows), a command that takes no fields gets `{}`, not `null`; its
+        // fields given at the top level are its arguments
+        assert_eq!(args_of(false, &json!({})), json!({}));
+        assert_eq!(args_of(false, &Value::Null), json!({}));
+        assert_eq!(args_of(false, &json!({ "id": "x" })), json!({ "id": "x" }));
+        assert_eq!(args_of(false, &json!({ "args": { "id": "y" } })), json!({ "id": "y" }));
     }
 }

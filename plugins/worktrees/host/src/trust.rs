@@ -101,21 +101,42 @@ pub async fn setup_hold(e: &Engine, st: &TrustState, root: &str, project_ask: Op
     st.untrusted(&key, setup_items(e, root).await).map(|p| p.items)
 }
 
+/// Trust and start on a turn this hook held (`released` is its own `trust` hold, and `confirmLimit` says a person
+/// said yes): what the card listed, to trust now, as (the repo's key, the items' ids). Without it the release ran
+/// `before:run` again, found the same programs untrusted and held the turn again: Start now never started it, and
+/// the yes was never kept (audit D1).
+pub fn released_yes(ctx: &Value) -> Option<(String, Vec<String>)> {
+    let yes = ctx.get("confirmLimit").and_then(Value::as_bool).unwrap_or(false);
+    let r = ctx.get("released").filter(|_| yes)?;
+    if r.get("by").and_then(Value::as_str) != Some("wisp.worktrees") || r.get("kind").and_then(Value::as_str) != Some("trust") {
+        return None;
+    }
+    let p: Pending = serde_json::from_value(r.get("data")?.clone()).ok()?;
+    Some((p.key, p.items.into_iter().map(|i| i.id).collect()))
+}
+
 /// `before:run`, on runtime's context (read by field name: `cwd`, `agent`, `mode`, `hold`, `untrusted`).
 /// Holds the turn with the card's items; a turn already held, run without them, or in Full auto passes.
+/// Whether this run is one trust asks about: not held already, not run without them, not in a mode it trusts.
+pub fn checks(project_ask: Option<&str>, ctx: &Value) -> bool {
+    let already = ctx.get("hold").is_some_and(|h| !h.is_null()) || ctx.get("untrusted").and_then(Value::as_bool).unwrap_or(false);
+    !already && trust::asks(project_ask, ctx.get("mode").and_then(Value::as_str).unwrap_or(""))
+}
+
+/// `extra`: the task's new worktree's setup that waits for trust (audit D5).
 pub async fn before_run(
     st: &TrustState,
     project_ask: Option<&str>,
     user_home: &str,
     hooks: Option<&ProjectHooks>,
+    extra: Vec<TrustItem>,
     ctx: Value,
 ) -> Verdict<Value> {
     let s = |k: &str| ctx.get(k).and_then(Value::as_str).unwrap_or("").to_owned();
-    let already = ctx.get("hold").is_some_and(|h| !h.is_null()) || ctx.get("untrusted").and_then(Value::as_bool).unwrap_or(false);
-    if already || !trust::asks(project_ask, &s("mode")) {
+    if !checks(project_ask, &ctx) {
         return Verdict::Continue;
     }
-    let Some(p) = pending(st, &s("cwd"), hooks, Vec::new(), user_home).await else {
+    let Some(p) = pending(st, &s("cwd"), hooks, extra, user_home).await else {
         return Verdict::Continue;
     };
     let mut held = ctx;
@@ -129,6 +150,19 @@ pub async fn before_run(
 #[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
+
+    /// Audit D1: only a person's yes to this hook's own trust hold trusts what it listed; another hook's hold (budget's
+    /// Ask), a release with no yes (an automation's) or a hold with no items trusts nothing.
+    #[test]
+    fn a_yes_to_its_own_trust_hold_names_what_to_trust_and_nothing_else_does() {
+        let item = trust::item(wisp_worktrees_api::TrustKind::Mcp, Some(".mcp.json"), "db", "npx db-mcp", None);
+        let data = json!({ "key": "/r", "items": [item.clone()] });
+        let ctx = |by: &str, kind: &str, yes: bool| json!({ "confirmLimit": yes, "released": { "by": by, "kind": kind, "data": data } });
+        assert_eq!(released_yes(&ctx("wisp.worktrees", "trust", true)), Some(("/r".to_owned(), vec![item.id])));
+        assert_eq!(released_yes(&ctx("wisp.worktrees", "trust", false)), None, "no yes: an automation's release");
+        assert_eq!(released_yes(&ctx("wisp.budget", "ask", true)), None, "another hook's hold");
+        assert_eq!(released_yes(&json!({ "confirmLimit": true })), None, "nothing released");
+    }
 
     /// No harness is named here: what a run would load from the project comes from its harness's hooks.
     #[tokio::test]

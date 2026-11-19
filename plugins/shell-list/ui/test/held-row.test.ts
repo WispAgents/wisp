@@ -46,3 +46,11 @@ test('a_done_task_never_says_it_waits_even_with_a_held_turn_left', () => {
   expect(subOf(done, ctx)?.held).toBeFalsy();
   expect(subOf(done, ctx)?.text.key).not.toBe('shell-list.held.harness');
 });
+
+// QA audit D #2: a held row said "Waiting for codex" (the raw id) where its run line said "Codex": the agents rows
+// didn't hold it, so the held line names the harness as its plugin registered it, as the run line does
+test('a_held_row_names_the_harness_as_its_plugin_registered_it_never_its_raw_id', () => {
+  const s = flatSession({ id: 'c', title: 'Codex task', state: 'review', agent: 'codex', created_at: 1, updated_at: 2, body: { cwd: '/w' }, summary: { status: 'held', preview: '', held: { kind: 'harness-changed', by: 'wisp.accounts', data: { agent: 'codex', line: 'Codex changed' } } } } as unknown as SessionRow);
+  const named = { ...ctx, named: (id: string) => (id === 'codex' ? 'Codex' : undefined) } as RowContext;
+  expect(subOf(s, named)?.text).toEqual({ key: 'shell-list.held.harness', vars: { agent: 'Codex' } });
+});

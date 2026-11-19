@@ -167,6 +167,23 @@ async fn sign_out_during_a_sign_in_ends_that_sign_in() {
     drop(serve);
 }
 
+/// Audit D10: Grok's Sign out (its own `grok logout`, then `grok models` as the check) left the row reading Signed in
+/// with nothing said: the stand-in CLI answers `models` as signed in after its logout (a real grok doesn't). A CLI that
+/// still answers signed in after its logout is said, as agy's sign-out says it, and isn't marked signed out.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_cli_still_signed_in_after_its_logout_is_said_audit_d10() {
+    let dir = temp("serve-accounts-grok-out");
+    let (serve, port) = start(&dir);
+    let api = Arc::new(Api { http: reqwest::Client::new(), port, n: 0.into() });
+    let before = api.cmd("accounts.login.status", json!({ "agent": "grok" })).await;
+    assert_eq!(before["signedIn"], true, "the stand-in answers `grok models`: {before}");
+    let out = api.try_cmd("accounts.logout", json!({ "agent": "grok" })).await;
+    assert_eq!(out["ok"], false, "{out}");
+    let said = out.pointer("/error/message").and_then(Value::as_str).unwrap_or_default();
+    assert!(said.contains("grok is still signed in after `grok logout`") && said.contains("terminal"), "{out}");
+    drop(serve);
+}
+
 /// Audit C tasks #3: Trust and start on one card trusted the changed program, but the other turns it held stayed held,
 /// each card still saying the harness changed (a change wisp now trusts). A yes on one card is a yes to the program:
 /// every turn the watch held for it starts, as Trust does.

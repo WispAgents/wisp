@@ -187,7 +187,7 @@ impl Source for Files {
         }
         let dir = from.map_or_else(|| self.cwd.clone(), |f| Path::new(f).parent().map_or_else(|| self.cwd.clone(), Path::to_path_buf));
         let p = if Path::new(reference).is_absolute() { PathBuf::from(reference) } else { dir.join(reference) };
-        let text = std::fs::read_to_string(&p).map_err(|e| format!("{}: {e}", p.display()))?;
+        let text = std::fs::read_to_string(&p).map_err(|e| crate::words::unreadable(&p, &e))?;
         Ok((text, p.display().to_string()))
     }
     fn env(&self, name: &str) -> Option<String> {

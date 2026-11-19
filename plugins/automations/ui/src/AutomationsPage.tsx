@@ -205,7 +205,7 @@ export default function AutomationsPage(props: { readonly client: PluginClient; 
             items={(rs() ?? []).map((r) => ({
               id: r.name,
               icon: 'bolt',
-              name: r.name,
+              name: r.title?.trim() || r.name,
               line: [r.prompt.replace(/\s+/g, ' ').slice(0, 140)],
               tags: recipeTags(r),
               actions: (

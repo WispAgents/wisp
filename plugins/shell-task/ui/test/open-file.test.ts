@@ -1,5 +1,6 @@
 import { expect, test } from 'vitest';
 import { fileItems, hitItems } from '../src/side/file-items.ts';
+import { openFinder } from '../src/side/open-file.ts';
 
 test('F-page-26: open_file_lists_every_file_by_name_the_tasks_changed_ones_first_and_opens_the_pick_v1_open_file_finder', () => {
   const opened: [string, number | undefined][] = [];
@@ -26,4 +27,19 @@ test('F-page-26: a_text_hit_opens_its_file_at_the_line_v1_grep_in', () => {
   expect(rows[0]).toMatchObject({ group: 'shell-task.files.inFiles', label: 'auth.js:40', sub: 'const ttl = 60', icon: 'search' });
   rows[0]?.run?.();
   expect(opened).toEqual([['src/auth.js', 40]]);
+});
+
+// audit 2026-11-19: a refused list closed the palette under the typing, and the next keys ran as shortcuts (E marked the
+// task done). It stays open (what's typed stays in its field) and the reason is said once.
+test('a_refused_file_list_keeps_the_palette_open_and_says_why', async () => {
+  const navs: string[] = [];
+  const toasts: string[] = [];
+  const client = {
+    navigate: (i: { t: string }) => void navs.push(i.t),
+    run: () => Promise.reject(new Error('no such folder')),
+  } as unknown as Parameters<typeof openFinder>[0];
+  openFinder(client, 'local:s1', [], { placeholder: '', title: '', empty: 'empty', noGit: 'not git', toast: (t) => void toasts.push(t) });
+  await new Promise((r) => setTimeout(r, 0));
+  expect(navs).toEqual(['openOverlay']);
+  expect(toasts).toEqual(['no such folder']);
 });

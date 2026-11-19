@@ -5,7 +5,7 @@
 import { Match, Show, Switch, createEffect, createMemo, createResource, createSignal, onCleanup, untrack, type JSX } from 'solid-js';
 import { Dynamic } from 'solid-js/web';
 import { computed, defineCommand, readonly, entityKey, type EntityKey } from '@wisp/client';
-import { Box, IconButton, type IconName, Icon, Inline, Menu, Stack, Tabs, Text, afterNextPaint, useAfterPaint, useSignal } from '@wisp/ui';
+import { IconButton, type IconName, Icon, Inline, Menu, Stack, Tabs, Text, afterNextPaint, useAfterPaint, useSignal } from '@wisp/ui';
 import { editorUrl } from '../editor.ts';
 import { TAB_VIEW, TERM_VIEW, WATCH_VIEW, isTui, pickedTab, tabKey, type SidePane } from '../open-task.ts';
 import { showsPlace } from './place.ts';
@@ -15,9 +15,9 @@ import { PrPane } from './PrPane.tsx';
 import { ShellPane } from './ShellPane.tsx';
 import { ChangesPane, read as readChanges, readHere as readChangesQuiet } from './ChangesPane.tsx';
 import { changeStat, setChangeStat } from './changes-stat.ts';
-import { hasPr } from './pr.ts';
 import { changesOf, outsideFolder, relative, type ChangeTurn } from './changes.ts';
 import { sideStrip, tabCount } from './strip.ts';
+import { ofTask, worktreeDir } from './changes.ts';
 import { FilePane } from './FilePane.tsx';
 import { PreviewPane } from './PreviewPane.tsx';
 import { WatchPane } from './WatchPane.tsx';
@@ -40,15 +40,6 @@ const openApp = defineCommand<{ key: EntityKey; cwd: string }, { ok: boolean }>(
   pending: 'Open in terminal app',
 });
 
-const PANES: readonly SidePane[] = ['changes', 'pr', 'shell', 'preview'];
-/** whether the task's app is running for Preview (wisp.terminal) */
-const runInfo = defineCommand<{ key: EntityKey; id: string }, { open: boolean }>({
-  id: 'terminal.run.info',
-  owner: (a) => a.key,
-  wire: (a) => ({ id: a.id }),
-  optimistic: 'none',
-  pending: 'the side panel\'s Preview tab',
-});
 
 export function SidePanel(props: { readonly pane: SidePane; readonly file?: string }): JSX.Element {
   const shell = useShell();
@@ -113,22 +104,25 @@ export function SidePanel(props: { readonly pane: SidePane; readonly file?: stri
   };
   // a terminal task's CLI comes first; Watch after the panel's own while the task has one (v1 panel.js tabs)
   const watched = (): boolean => !!(task.task() as { summary?: { watch?: unknown } } | undefined)?.summary?.watch || props.pane === 'watch';
-  const panes = (): readonly SidePane[] => [...(isTui(task.task()) || props.pane === 'term' ? (['term'] as const) : []), ...PANES, ...(watched() ? (['watch'] as const) : [])];
   // other plugins' tabs, after the panel's own (v1 panel.js: an app from My Stuff pinned to tasks, "pane:<id>")
   // (a client computed: what the tabs read are the client's signals, the pins setting and the items)
   const defs = shell.sideTabs?.();
   const extra = useSignal(computed(() => (defs?.() ?? []).flatMap((d) => d.tabs({ client: d.client, task: task.key }).map((x) => ({ ...x, key: tabKey(d.plugin, d.id, x.value), def: d })))));
   const picked = useSignal(readonly(pickedTab));
   const shown = createMemo(() => (props.pane === 'tab' ? extra().find((x) => x.key === picked()) : undefined));
-  // UX 2026-11-18 #5: the strip holds the tabs with something in them; Changes counts its files (the Changes pane's
-  // read, else one of the panel's own while another pane is open), PR names its number and checks
+  // Changes counts its files (the Changes pane's read, else one of the panel's own while another pane is open), PR names
+  // its number and checks (UX 2026-11-18 #5's counts, kept by the owner's 2026-11-19 decision)
   type Raw = { cwd?: string; summary?: { pr?: { number: number; checks?: { pass?: number; fail?: number; pending?: number } } | null; worktree?: { baseRef?: string; base?: string; path?: string; cwd?: string } | null }; body?: { cwd?: string; ext?: Record<string, { baseRef?: string; base?: string; path?: string; cwd?: string } | undefined> } };
   const raw = (): Raw | undefined => task.task() as Raw | undefined;
   const wt = () => raw()?.body?.ext?.['wisp.worktrees'] ?? raw()?.summary?.worktree ?? undefined;
-  const gitDir = (): string => String(wt()?.path ?? wt()?.cwd ?? raw()?.body?.cwd ?? raw()?.cwd ?? '');
+  // the folder git diffs: the task's worktree only. A task in place (or a scratch folder) shows the edits wisp saw, as
+  // v1's GET /sessions/:id/changes did: a diff of the project folder holds the user's own work too (audit 2026-11-19:
+  // an in-place task in the shared checkout counted 198 files, every session's)
+  const gitDir = (): string => worktreeDir(wt());
+  const folder = (): string => String(wt()?.path ?? wt()?.cwd ?? raw()?.body?.cwd ?? raw()?.cwd ?? '');
   // a folder git can't read (no repo, too big a diff): the files the task's turns edited, as Changes then lists them
   const turns = useSignal(task.client.entities.list<ChangeTurn>('turn'));
-  const edited = createMemo(() => [...new Set(turns().filter((x) => x.session_id === task.id).flatMap((x) => changesOf(x).map((c) => relative(c.file, gitDir()))))]);
+  const edited = createMemo(() => [...new Set(turns().filter((x) => ofTask(x.session_id, task.id)).flatMap((x) => changesOf(x).map((c) => relative(c.file, folder()))))]);
   const touched = (): number => edited().length;
   // what wisp saw edited outside the folder git reads: the Changes pane lists those beside git's, so the count does too
   const outside = (): number => outsideFolder(edited().map((path) => ({ path }))).length;
@@ -143,35 +137,23 @@ export function SidePanel(props: { readonly pane: SidePane; readonly file?: stri
     (k) => {
       const [path = '', base = 'HEAD'] = k.split('\n');
       return task.client
-        // a phone (UX 2026-11-18 phone #14): the tab's count is a look in the background; its refusal is no toast
-        .run(shell.platform.phone ? readChangesQuiet : readChanges, { key: task.key as EntityKey, path, base, reveal: [] })
+        // the tab's count is a look in the background: its refusal is no toast (a phone since UX 2026-11-18 phone #14;
+        // the browser too since the audit of 2026-11-19: a worktree cleaned up after the task toasted "no such folder:
+        // /Users/…" on every open); the Changes pane says it in words
+        .run(readChangesQuiet, { key: task.key as EntityKey, path, base, reveal: [] })
         .then((g) => g?.body.kind === 'inline' && untrack(() => props.pane) !== 'changes' && setChangeStat(task.key, { files: g.body.files.length + untrack(outside) }))
         .catch(() => undefined);
     },
   );
-  const [running] = createResource(() =>
-    task.client.run(runInfo, { key: task.key as EntityKey, id: bare(task.key) }).then(
-      (i) => i.open,
-      () => false,
-    ),
-  );
-  const files = (): number => changeStat(task.key)?.files ?? Math.max(touched(), place()?.dirty ?? 0);
+  // what isn't committed counts only in a worktree (in place it's the project folder's, the user's own work too)
+  const files = (): number => changeStat(task.key)?.files ?? Math.max(touched(), gitDir() ? (place()?.dirty ?? 0) : 0);
   const pr = () => raw()?.summary?.pr ?? undefined;
-  const has = (p: string): boolean =>
-    p === 'changes' ? files() > 0 : p === 'pr' ? hasPr(task.task()) : p === 'preview' ? !!running() : !extra().some((x) => x.key === p && x.quiet);
-  const order = (): string[] => [...panes(), ...extra().map((x) => x.key)];
-  // what had something in it stays in the strip while the panel is open on this task (it never jumps out); a tab only
-  // opened from + leaves again when you move on
-  const strip = createMemo<{ task: string; joined: readonly string[]; strip: string[]; more: string[] }>((was) => {
-    const now = order().filter(has);
-    const before = was?.task === task.key ? was.joined.filter((p) => order().includes(p)) : [];
-    const joined = [...before, ...now.filter((p) => !before.includes(p))];
-    // a phone's sheet (QA r6 #5): every pane a labelled tab, none behind +, as the round-3 sheet had them
-    if (shell.platform.phone) return { task: task.key, joined, strip: order(), more: [] };
-    return { task: task.key, joined, ...sideStrip({ order: order(), has: new Set(now), current: shown()?.key ?? props.pane, joined }) };
-  });
+  // owner, 2026-11-19: every tab in the strip by default, labelled, in v1's fixed order (strip.ts)
+  const order = (): string[] => sideStrip({ term: isTui(task.task()) || props.pane === 'term', watch: watched(), extras: extra().map((x) => x.key) });
   const tabOf = (p: string) => {
     const x = extra().find((e) => e.key === p);
+    // last in the strip, a pinned tab goes to its icon first when the panel runs short (Tabs `fit`), so the panel's own keep
+    // their labels (audit 2026-11-19: "Cha…", "#…", "S…" beside a whole "Token budget dash…")
     if (x) return { value: x.key, label: x.label, icon: (x.icon ?? 'app') as IconName, ...(x.title !== undefined && { title: x.title }) };
     const n = p === 'changes' ? files() : 0;
     const prWords = p === 'pr' ? tabCount.pr(pr()) : undefined;
@@ -190,24 +172,7 @@ export function SidePanel(props: { readonly pane: SidePane; readonly file?: stri
   return (
     <Stack gap="0" part={'side.panel panel' as `${string}.${string}`} grow>
       <Inline gap="2" align="center" part="side.head">
-        <Tabs
-          part="panel.tabs"
-          variant="pill"
-          aria-label={t('shell-task.side.label')}
-          value={shown()?.key ?? props.pane}
-          onChange={open}
-          items={strip().strip.map(tabOf)}
-        />
-        <Box grow />
-        {/* the tabs with nothing in them yet, one press away (UX 2026-11-18 #5) */}
-        <Show when={strip().more.length > 0}>
-          <Menu
-            part="panel.tabs.more"
-            trigger={{ icon: 'plus', 'aria-label': t('shell-task.side.moreTabs'), variant: 'ghost', size: 'sm' }}
-            items={strip().more.map((p) => ((x) => ({ value: x.value, label: x.label, icon: x.icon }))(tabOf(p)))}
-            onSelect={open}
-          />
-        </Show>
+        <Tabs part="panel.tabs" variant="pill" fit aria-label={t('shell-task.side.label')} value={shown()?.key ?? props.pane} onChange={open} items={order().map(tabOf)} />
         {/* where the work is: copy it, open it elsewhere (v1's place row ⋯, in the head over every pane) */}
         <Show when={place()}>
           {(pl) => (
@@ -247,8 +212,10 @@ export function SidePanel(props: { readonly pane: SidePane; readonly file?: stri
           </Inline>
         )}
       </Show>
-      {/* Changes runs edge to edge (v1 #sidePanel .cx); PR and Shell keep the body's padding */}
-      <Stack gap="0" grow part={(body().pane === 'changes' && !body().file) || body().pane === 'preview' || body().pane === 'watch' || body().pane === 'tab' ? 'side.body side.flush' : 'side.body'}>
+      {/* Changes runs edge to edge (v1 #sidePanel .cx), and so does Shell in the browser (v1 .pn-shell: the terminal's
+          colour to the panel's edges, audit 2026-11-19: a dark box in a white margin read as an empty area); PR keeps the
+          body's padding, and so does a phone's Shell (its look sets its own) */}
+      <Stack gap="0" grow part={(body().pane === 'changes' && !body().file) || body().pane === 'preview' || body().pane === 'watch' || body().pane === 'tab' || (!shell.platform.phone && (body().pane === 'shell' || body().pane === 'term')) ? 'side.body side.flush' : 'side.body'}>
         <Show when={opened()}>
         <Switch>
           <Match when={body().pane === 'changes' && body().file}>{(f) => <FilePane path={f()} />}</Match>

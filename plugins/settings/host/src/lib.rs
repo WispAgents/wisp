@@ -33,7 +33,16 @@ impl Plugin for SettingsPlugin {
         let k: Arc<dyn wisp_resources_api::ResourceKind> = Arc::new(kind::SettingKind { ctx: s.ctx() });
         s.contribute(&wisp_resources_api::RESOURCE_KIND, k);
         s.command::<api::List, _, _>(|ctx, _call, _a| async move { ctx.settings_list() });
-        s.command::<api::Get, _, _>(|ctx, _call, a| async move { Ok(ctx.setting(&a.key).unwrap_or(Value::Null)) });
+        // a key no plugin declares and nothing holds is said, as Set says it (audit D5: `wisp settings get nope.key`
+        // printed an empty line); a switched-off plugin's key (undeclared while it's off) still reads its value
+        s.command::<api::Get, _, _>(|ctx, _call, a| async move {
+            let key = key_of(&a.key).to_owned();
+            match ctx.setting(&key) {
+                Some(v) => Ok(v),
+                None if ctx.settings_list()?.iter().any(|s| s.key == key) => Ok(Value::Null),
+                None => Err(WireError::not_found(format!("no plugin declares the setting {key}"))),
+            }
+        });
         s.command::<api::Set, _, _>(|ctx, _call, a| async move {
             let key = key_of(&a.key).to_owned();
             ctx.set_setting(&key, (!a.value.is_null()).then_some(a.value))?;

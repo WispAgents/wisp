@@ -19,7 +19,7 @@ pub async fn run(p: &Parsed, cmd: &str, args: &[String], cwd: &str, port: u16) -
     let c = Client::connect(port, true).await?;
     // `wisp show last`, `stop last`, …: the newest task (QA round 14 #7)
     let resolved: Vec<String>;
-    let args = if matches!(cmd, "show" | "stop" | "wait" | "reply" | "btw") && args.first().is_some_and(|a| a == "last") {
+    let args = if matches!(cmd, "show" | "stop" | "wait" | "reply" | "btw" | "held") && args.first().is_some_and(|a| a == "last") {
         resolved = std::iter::once(sc::task_id(&c, "last").await?).chain(args[1..].iter().cloned()).collect();
         &resolved[..]
     } else {
@@ -49,6 +49,7 @@ pub async fn run(p: &Parsed, cmd: &str, args: &[String], cwd: &str, port: u16) -
             out(f, &r, "  ✓ stopped");
             Ok(())
         }
+        "held" => held(&c, f, args).await,
         "ship" => {
             let id = need(args.first(), "session id")?;
             let task = c.cmd("runtime.get", json!({ "id": id })).await?;
@@ -62,8 +63,13 @@ pub async fn run(p: &Parsed, cmd: &str, args: &[String], cwd: &str, port: u16) -
             Ok(())
         }
         "merge" => {
-            let r = c.cmd("ship.merge", json!({ "session": need(args.first(), "session id")? })).await?;
-            out(f, &r, "  ✓ merged");
+            let id = need(args.first(), "session id")?;
+            let had_tree = c
+                .cmd("runtime.get", json!({ "id": id }))
+                .await
+                .is_ok_and(|t| t.pointer("/ext/wisp.worktrees/path").is_some_and(Value::is_string));
+            let r = c.cmd("ship.merge", json!({ "session": id })).await?;
+            out(f, &r, &merged_words(&r, had_tree));
             Ok(())
         }
         "recipes" => recipes(&c, f).await,
@@ -173,4 +179,61 @@ async fn recipe_run(c: &Client, p: &Parsed, args: &[String], cwd: &str) -> Resul
     let m = c.cmd("runtime.create", a).await?;
     out(&p.flags, &m, &format!("  ◌ launched: {prompt}  ({})\n    wisp attach {}", s(&m, "id"), s(&m, "id")));
     Ok(())
+}
+
+/// `wisp held <id> start|without|skip`: a turn held before it started (audit D4: the only way was `wisp runtime
+/// release <id> <turn-id> <action>`, its turn dug out of `runtime.turns`).
+async fn held(c: &Client, f: &crate::args::Flags, args: &[String]) -> Result<()> {
+    let id = need(args.first(), "session id")?;
+    let action = need(args.get(1), "start, without or skip")?;
+    let r = c.cmd("runtime.held", json!({ "id": id, "action": action })).await?;
+    let said = match action {
+        "start" => "  ✓ started",
+        "without" => "  ✓ started without the repo's own programs",
+        _ => "  ✓ skipped",
+    };
+    out(f, &r, said);
+    Ok(())
+}
+
+/// What `wisp merge` did, as the page's toast says it (audit D9: only "✓ merged"): the PR, your local base branch, and
+/// what became of the worktree (kept, and why, or removed).
+pub fn merged_words(r: &Value, had_tree: bool) -> String {
+    let n = r.pointer("/pr/number").and_then(Value::as_u64).map_or_else(String::new, |n| format!(" PR #{n}"));
+    let mut lines = vec![format!("  ✓ merged{n}")];
+    if let Some(t) = r.pointer("/sync/text").and_then(Value::as_str).filter(|t| !t.is_empty()) {
+        let mark = if r.pointer("/sync/ok").and_then(Value::as_bool) == Some(false) { "!" } else { "·" };
+        lines.push(format!("  {mark} {t}"));
+    }
+    let kept: Vec<&str> = r.get("kept").and_then(Value::as_array).into_iter().flatten().filter_map(Value::as_str).collect();
+    if kept.is_empty() {
+        if had_tree {
+            lines.push("  · The worktree was removed; its branch stays.".to_owned());
+        }
+    } else {
+        lines.extend(kept.iter().map(|k| format!("  · {k}")));
+    }
+    lines.join("\n")
+}
+
+#[cfg(test)]
+mod merged_tests {
+    use super::merged_words;
+    use serde_json::json;
+
+    /// Audit D9: the CLI said only "✓ merged"; it says what the toast says.
+    #[test]
+    fn merge_says_the_pr_your_base_branch_and_the_worktree_audit_d9() {
+        let r = json!({ "pr": { "number": 3 }, "sync": { "ok": true, "text": "Local main is up to date with origin/main." } });
+        assert_eq!(
+            merged_words(&r, true),
+            "  ✓ merged PR #3\n  · Local main is up to date with origin/main.\n  · The worktree was removed; its branch stays."
+        );
+        let kept = json!({ "pr": { "number": 1 }, "sync": { "ok": false, "text": "Local main has commits of its own." }, "kept": ["The worktree /w was kept: it has 1 uncommitted change."] });
+        assert_eq!(
+            merged_words(&kept, true),
+            "  ✓ merged PR #1\n  ! Local main has commits of its own.\n  · The worktree /w was kept: it has 1 uncommitted change."
+        );
+        assert_eq!(merged_words(&json!({ "pr": { "number": 2 } }), false), "  ✓ merged PR #2", "in place: nothing about a worktree");
+    }
 }

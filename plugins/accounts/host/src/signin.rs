@@ -385,9 +385,19 @@ pub async fn logout(ctx: &Ctx, st: &State, h: &dyn Harness, acc: &str) -> Result
         let out = format!("{}{}", r.stdout_text(), String::from_utf8_lossy(&r.stderr));
         return Err(WireError::invalid(last_line(&out).unwrap_or_else(|| format!("{} exited ({:?}).", l.bin, r.exit.code))));
     }
+    // the harness's own sign-in (no added account: its folder or key isn't wisp's to drop): its logout ran, but the
+    // CLI may still answer signed in (it keeps the sign-in elsewhere, or a test's stand-in does). Said, as agy's
+    // sign-out says it, never a row that reads Signed in with nothing said (audit D10)
+    if account_key(acc).is_empty() && !l.status.is_empty() && status(ctx, st, h, acc).await.ok().and_then(|s| s.signed_in) == Some(true) {
+        return Err(WireError::invalid(format!(
+            "{} is still signed in after `{} {}`: run it in a terminal to sign out there.",
+            l.bin,
+            l.bin,
+            l.logout.join(" ")
+        )));
+    }
     let agent = h.info().id.clone();
     signed_out(st, &agent, acc).await?;
-    let _ = ctx;
     Ok(LoginStatus { agent, account: account_key(acc).to_owned(), signed_in: Some(false), email: None, plan: None })
 }
 

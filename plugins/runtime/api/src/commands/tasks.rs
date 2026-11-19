@@ -436,8 +436,13 @@ pub struct QueueMergeArgs {
 #[serde(rename_all = "lowercase")]
 #[ts(export, export_to = "runtime/")]
 pub enum ReleaseAction {
+    /// Start now (Trust and start on a hold that asks for trust: a yes to what it listed)
     Start,
+    /// Skip this run: the turn stops before it started, saying what held it
     Skip,
+    /// Run without them (a hold for a repo's own programs): it runs without the repo's hooks, MCP servers and setup,
+    /// and trusts nothing (v1 hold.js `without`). Additive (2026-11-19).
+    Without,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]

@@ -63,13 +63,37 @@ fn count(n: usize, one: &str, many: &str) -> String {
     format!("{n} {}", if n == 1 { one } else { many })
 }
 
+/// A nested value in one line (a table's cell, a deep field) saying what's in it (audit D4: `4 fields`, `0 items`):
+/// nothing is `none`, words joined, rows by what names them, a map as `key value` pairs; only a list of lists counted.
 fn short(v: &Value) -> String {
     match v {
-        Value::Array(a) => count(a.len(), "item", "items"),
-        Value::Object(o) => count(o.len(), "field", "fields"),
+        Value::Array(a) if a.is_empty() => "none".to_owned(),
+        Value::Array(a) if a.iter().all(|x| scalar(x).is_some()) => a.iter().filter_map(scalar).collect::<Vec<_>>().join(", "),
+        Value::Array(a) => {
+            let names: Option<Vec<String>> = a.iter().map(|x| x.as_object().and_then(|o| named(o).or_else(|| lead(o)))).collect();
+            names.map_or_else(|| count(a.len(), "item", "items"), |n| n.join(", "))
+        }
+        Value::Object(o) if o.is_empty() => "none".to_owned(),
+        Value::Object(o) => named(o).unwrap_or_else(|| {
+            o.iter()
+                .map(|(k, x)| match x {
+                    Value::Object(_) => format!("{} ({})", words(k), short(x)),
+                    _ => format!("{} {}", words(k), short(x)),
+                })
+                .collect::<Vec<_>>()
+                .join(", ")
+        }),
         other => scalar(other).unwrap_or_default(),
     }
 }
+
+/// A row's first lead field that's set (`name`, `key`, …): what names a row with no `id`.
+fn lead(o: &serde_json::Map<String, Value>) -> Option<String> {
+    LEAD.iter().find_map(|k| o.get(*k).and_then(scalar).filter(|v| !v.is_empty()))
+}
+
+/// The rows of a list under a field shown at most (audit D4: `history` had 27): the rest are counted.
+const NESTED_ROWS: usize = 10;
 
 /// What names a nested row in one line (one with an `id`: a task, a member): its lead fields that are set
 /// (`0190… · Ada · Job · running`). Anything else shows its fields (audit C4).
@@ -84,8 +108,10 @@ fn named(o: &serde_json::Map<String, Value>) -> Option<String> {
 fn columns(list: &[Value], max: usize) -> Vec<String> {
     let mut cols: Vec<String> = Vec::new();
     let has = |k: &str| list.iter().any(|x| x.get(k).is_some_and(|v| scalar(v).is_some_and(|s| !s.is_empty())));
+    // a lead field holding a list or a map (`settings list`'s `value`) is a column too: its cells say what's in it (D4)
+    let held = |k: &str| list.iter().any(|x| x.get(k).is_some_and(|v| v.is_array() || v.is_object()));
     for k in LEAD {
-        if has(k) {
+        if has(k) || held(k) {
             cols.push((*k).to_owned());
         }
     }
@@ -148,7 +174,18 @@ fn fields(o: &serde_json::Map<String, Value>, s: &Style, now: Option<i64>, depth
     let indent = "  ".repeat(depth);
     let kw = o.keys().map(|k| term::width(&words(k))).max().unwrap_or(0).min(24);
     let width = s.width.saturating_sub(indent.len());
+    // a field with nothing in it says nothing (audit D8: `wisp crew get` listed `avatar`, `brief`, `machine`, `away
+    // none`, `offers none`…); a lead field (`value`, `name`…) stays, so an unset setting still reads as one
+    let empty = |x: &Value| match x {
+        Value::Null => true,
+        Value::String(t) => t.is_empty(),
+        Value::Array(a) => a.is_empty(),
+        Value::Object(m) => m.is_empty(),
+        _ => false,
+    };
+    let kw = o.iter().filter(|(k, x)| LEAD.contains(&k.as_str()) || !empty(x)).map(|(k, _)| term::width(&words(k))).max().unwrap_or(kw);
     o.iter()
+        .filter(|(k, x)| LEAD.contains(&k.as_str()) || !empty(x))
         .flat_map(|(k, x)| {
             let val = match x {
                 Value::Number(_) if now.is_some() && is_time(k, x) => cell(k, x, now),
@@ -168,6 +205,18 @@ fn fields(o: &serde_json::Map<String, Value>, s: &Style, now: Option<i64>, depth
                 Value::Array(a) if a.iter().all(|v| !v.is_object() && !v.is_array()) => {
                     a.iter().filter_map(scalar).collect::<Vec<_>>().join(", ")
                 }
+                // a list of rows (`wisp connectors list`'s `connectors`): its rows under its name (audit D4)
+                Value::Array(a) if a.iter().all(Value::is_object) && depth < 2 => {
+                    let inner = Style { width: width.saturating_sub(2), ..*s };
+                    let rows = render(&Value::Array(a.iter().take(NESTED_ROWS).cloned().collect()), &inner, now);
+                    let pad = format!("{indent}  ");
+                    let mut out = vec![format!("{indent}{}", paint(s, BOLD, &words(k)))];
+                    out.extend(rows.into_iter().map(|l| format!("{pad}{l}")));
+                    if a.len() > NESTED_ROWS {
+                        out.push(format!("{pad}… {} more", a.len() - NESTED_ROWS));
+                    }
+                    return out;
+                }
                 other => scalar(other).unwrap_or_else(|| short(other)),
             };
             term::hang(&format!("{indent}{}  ", paint(s, BOLD, &term::pad(&words(k), kw))), &val, width + indent.len())
@@ -183,6 +232,22 @@ mod tests {
     use serde_json::json;
 
     use super::*;
+
+    /// Audit D8: `wisp crew create|get|update` printed every field, the empty ones too; they're left out, a lead field
+    /// that's empty stays, and a member's team shows its rows.
+    #[test]
+    fn an_objects_empty_fields_are_left_out_audit_d8() {
+        let s = Style::plain(100);
+        let m = json!({ "id": "ada", "name": "Ada", "avatar": "", "brief": "", "machine": null, "away": {}, "offers": [], "paused": false,
+            "team": [{ "crew": "bob", "why": "reviews" }] });
+        let got = render(&m, &s, None).join("\n");
+        for gone in ["avatar", "brief", "machine", "away", "offers"] {
+            assert!(!got.contains(gone), "{gone}: {got}");
+        }
+        assert!(got.contains("paused") && got.contains("bob") && !got.contains("1 item"), "{got}");
+        let unset = render(&json!({ "key": "theme", "value": "" }), &s, None);
+        assert_eq!(unset.iter().map(|l| l.trim_end()).collect::<Vec<_>>(), ["key    theme", "value"], "an unset value still says so");
+    }
 
     #[test]
     fn lists_objects_and_scalars() {
@@ -260,11 +325,41 @@ mod tests {
         let launch = json!({ "efforts": { "claude": "high" }, "models": { "codex": "gpt-5.5" }, "tags": ["a", "b"], "rows": [{ "x": 1 }] });
         let got = render(&launch, &s, Some(now));
         assert!(!got.iter().any(|l| l.contains("fields")), "{got:?}");
-        assert_eq!(got, ["efforts", "  claude  high", "models", "  codex  gpt-5.5", "rows     1 item", "tags     a, b"]);
+        assert_eq!(got, ["efforts", "  claude  high", "models", "  codex  gpt-5.5", "rows", "  x", "  1", "tags     a, b"]);
         // a list's time columns, whatever their name says (`since`, `until`, `addedAt`)
         let peers = json!([{ "id": "a030bd", "name": "qabox", "state": "error", "since": now - 2 * 3_600_000, "address": "qa@192.0.2.1" }]);
         let got = render(&peers, &s, Some(now));
         assert!(got[1].contains("2h ago") && !got[1].contains("17950"), "{got:?}");
-        assert_eq!((short(&json!({ "a": 1 })), short(&json!([1]))), ("1 field".to_owned(), "1 item".to_owned()));
+        assert_eq!((short(&json!({ "a": 1 })), short(&json!([1]))), ("a 1".to_owned(), "1".to_owned()));
+    }
+
+    /// Audit D4 (C4 partly fixed): `wisp connectors list` printed `connectors  3 items`, `channels status` `channels  7
+    /// items`, `worktrees view` `items  6 items`, `machine read` `history  27 items`, and `settings list` `runtime.launch
+    /// 4 fields`, `events.sinks  0 items`. A list of rows prints as rows under its name (the first 10, then how many
+    /// more); a cell holding a list or a map says what's in it.
+    #[test]
+    fn a_list_of_rows_prints_its_rows_and_a_cell_says_whats_in_it_audit_d4() {
+        let s = Style::plain(100);
+        let conns = json!({ "connectors": [{ "name": "qa_echo", "state": "ready", "tools": 1 }, { "name": "pasted", "state": "off", "tools": 0 }] });
+        let got = render(&conns, &s, None);
+        assert!(!got.iter().any(|l| l.contains("items")), "{got:?}");
+        assert_eq!(got[0], "connectors");
+        assert!(got[1].starts_with("  name") && got[1].contains("state"), "a header: {got:?}");
+        assert!(got[2].starts_with("  qa_echo") && got[3].starts_with("  pasted"), "{got:?}");
+        let history: Vec<Value> = (0..27).map(|i| json!({ "at": i, "cpu": i })).collect();
+        let got = render(&json!({ "history": history }), &s, None);
+        assert_eq!(got.len(), 1 + 1 + 10 + 1, "name, header, 10 rows, the rest counted: {got:?}");
+        assert_eq!(got.last().map(String::as_str), Some("  … 17 more"));
+        let settings = json!([
+            { "key": "runtime.launch", "value": { "harness": "claude", "models": { "claude": "opus" } } },
+            { "key": "events.sinks", "value": [] },
+            { "key": "learn.harnesses", "value": ["claude", "codex"] },
+        ]);
+        let got = render(&settings, &s, None);
+        assert!(!got.iter().any(|l| l.contains("fields") || l.contains("items")), "{got:?}");
+        assert!(got[1].contains("harness claude, models (claude opus)"), "{got:?}");
+        assert!(got[2].contains("none") && got[3].contains("claude, codex"), "{got:?}");
+        assert_eq!(short(&json!([{ "name": "a" }, { "name": "b" }])), "a, b", "rows named by their lead field");
+        assert_eq!(short(&json!([[1], [2]])), "2 items", "anything else counted");
     }
 }

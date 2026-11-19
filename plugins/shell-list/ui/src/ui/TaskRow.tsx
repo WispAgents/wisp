@@ -61,7 +61,7 @@ function Body(props: { readonly k: EntityKey; readonly s: SessionRow; readonly n
   const line = createMemo(() => secondLine(view()));
   /** the run line is in the second line already: with the answer's words (two lines), or alone on a phone */
   const runInSub = (): boolean => (two() && line().line === 'sub') || (env.swipes === true && line().line === 'run');
-  const name = (): string => agentName(props.s.agent, env.agents());
+  const name = (): string => agentName(props.s.agent, env.agents(), env.named);
   const session = (): { id: string; agent: string } => ({ ...props.s, id: props.k, agent: props.s.agent });
   const side = (kind: SwipeKind): SwipeSide | undefined => {
     const a = actionFor(kind, props.s);

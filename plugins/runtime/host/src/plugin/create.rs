@@ -185,15 +185,41 @@ async fn in_worktree(
     let failed = match wt.as_ref().and_then(|w| w.get("path")).and_then(serde_json::Value::as_str) {
         Some(dir) if !setup.is_empty() => crate::specs::run_setup(proc, dir, setup).await,
         _ => None,
-    };
+    }
+    // the repo's own setup (`.wisp/worktree.json`, Cursor's, a source's) failed in the new worktree: the turn waits with
+    // why, as a declared project's does (audit D5: it ran straight to the harness)
+    .or_else(|| wt.as_ref().and_then(setup_problem));
     let turn_id = rt.worktree_ready(made.id.as_str(), wt, failed).await.map_err(WireError::from)?;
     Ok(c::Created { id: made.id, turn_id })
+}
+
+/// The first setup step that failed in a new worktree (`prepared.problems`, wisp.worktrees' `setup … failed: …`); a
+/// file that couldn't be copied isn't one.
+fn setup_problem(wt: &serde_json::Value) -> Option<String> {
+    wt.pointer("/prepared/problems")?
+        .as_array()?
+        .iter()
+        .filter_map(serde_json::Value::as_str)
+        .find(|p| p.starts_with("setup `"))
+        .map(str::to_owned)
 }
 
 #[cfg(test)]
 #[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
+
+    /// Audit D5: a failed step of the repo's own setup holds the turn; a copy problem doesn't.
+    #[test]
+    fn a_failed_setup_step_is_what_holds_a_copy_problem_is_not() {
+        let wt = |p: serde_json::Value| serde_json::json!({ "path": "/w", "prepared": { "copied": [], "ran": [], "problems": p } });
+        assert_eq!(
+            setup_problem(&wt(serde_json::json!(["couldn't copy .env: denied", "setup `npm ci` failed: exit 3"]))).as_deref(),
+            Some("setup `npm ci` failed: exit 3")
+        );
+        assert_eq!(setup_problem(&wt(serde_json::json!(["couldn't copy .env: denied"]))), None);
+        assert_eq!(setup_problem(&serde_json::json!({ "path": "/w" })), None);
+    }
 
     /// v1 #794: a side discussion's action buttons run in the main task's folder, so only the user's create may say
     /// which task that is; a `sideOf` another caller wrote is dropped, the rest of its slot kept.

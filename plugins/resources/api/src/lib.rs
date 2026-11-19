@@ -123,6 +123,11 @@ pub struct KindInfo {
     /// one line for `wisp schema` and Settings → Import
     #[serde(default)]
     pub doc: String,
+    /// why the kind is put away for now (Auto off: "Auto is off (runtime.auto), so the router is put away"): no
+    /// export, kinds list, formula, plan or apply takes it, and a plan naming it says this. Additive (2026-11-19,
+    /// setup audit D2).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub away: Option<String>,
 }
 
 impl KindInfo {
@@ -141,7 +146,14 @@ impl KindInfo {
             aliases: Vec::new(),
             schema,
             doc,
+            away: None,
         }
+    }
+    /// Put away for now, saying why ([`KindInfo::away`]).
+    #[must_use]
+    pub fn away(mut self, why: impl Into<String>) -> Self {
+        self.away = Some(why.into());
+        self
     }
     #[must_use]
     pub fn order(mut self, n: i32) -> Self {
@@ -201,6 +213,12 @@ pub trait ResourceKind: Send + Sync {
     /// A desired spec in the form `read` gives (`every day at 2` → `0 2 * * *`), so an unchanged thing
     /// plans as unchanged.
     fn normalize(&self, _spec: &mut Value) {}
+    /// [`ResourceKind::normalize`] knowing the resource's name, for a kind whose form depends on it (a setting's value
+    /// as its declaration takes it: `worktrees.max: off`, read by YAML as false, is `"off"`, setup audit D3). The
+    /// default is `normalize`. Additive (2026-11-19).
+    fn normalize_named(&self, _name: &str, spec: &mut Value) {
+        self.normalize(spec);
+    }
     /// Problems beyond the schema (a project's path that isn't absolute, a cron that doesn't parse).
     fn check(&self, _r: &Resource) -> Vec<String> {
         Vec::new()

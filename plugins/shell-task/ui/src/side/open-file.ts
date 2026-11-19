@@ -17,6 +17,7 @@ interface FileList {
 
 const listFiles = defineCommand<{ key: EntityKey; id: string }, FileList>({
   id: 'worktrees.files',
+  quiet: true, // its refusal is said once, by openFinder
   owner: (a) => a.key,
   wire: (a) => ({ id: a.id }),
   optimistic: 'none',
@@ -65,7 +66,11 @@ export function openFinder(
       }
       setFinder({ task, changed: new Set(changed), files: r.files });
     },
-    () => client.navigate({ t: 'closeOverlay', id: 'shell.palette' as never }),
+    // refused (the folder can't be listed now): the palette stays, empty, so what's being typed stays in its field and
+    // never runs as a shortcut (audit 2026-11-19: it closed under the typing and E marked the task done); the reason toasts
+    (e: unknown) => {
+      if (finder()?.task === task) say.toast(e instanceof Error ? e.message : String(e));
+    },
   );
 }
 

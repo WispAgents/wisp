@@ -6,6 +6,7 @@ import { defineCommand, entityKey, ownerOf, type EntityKey } from '@wisp/client'
 import type { ExtensionProps } from '@wisp/shell/contract';
 import { Stack, useSignal } from '@wisp/ui';
 import { useShell } from '../shell.ts';
+import { fileUrl } from '../editor.ts';
 import { HaltCard } from './HaltCard.tsx';
 import { HeldCard } from './HeldCard.tsx';
 import { agentsOf, type AgentStats } from './agents.ts';
@@ -18,23 +19,24 @@ const bare = (k: string): string => k.slice(k.indexOf(':') + 1);
 
 /** Start now / Skip on a held turn (v1 hold.js): the card goes at once, the turn starting (the same turn: runtime's
  *  `release_held`) or stopped, and the task with it; a refusal puts them back. */
-const release = defineCommand<{ key: EntityKey; turnId: string; action: 'start' | 'skip' }>({
+const release = defineCommand<{ key: EntityKey; turnId: string; action: 'start' | 'skip' | 'without' }>({
   id: 'runtime.release',
   owner: (a) => a.key,
   wire: (a) => ({ id: bare(a.key), turnId: a.turnId, action: a.action }),
   optimistic: (base, a) => {
     const key = entityKey(ownerOf(a.key), a.turnId);
     const turn = base.peek<{ body?: { status?: unknown } }>('turn', key);
-    const status = a.action === 'start' ? 'running' : 'stopped';
+    const going = a.action !== 'skip';
+    const status = going ? 'running' : 'stopped';
     // a start counts its time from now (the held turn's own start is when it was held)
     const now = Date.now();
     const at = (root: string): { op: 'add'; path: string; value: unknown }[] => [
       { op: 'add', path: `${root}/status`, value: status },
-      ...(a.action === 'start' ? [{ op: 'add' as const, path: `${root}/started_at`, value: now }] : []),
+      ...(going ? [{ op: 'add' as const, path: `${root}/started_at`, value: now }] : []),
     ];
     return [
       ...(turn ? [{ e: 'turn', id: key, op: 'patch' as const, ops: [...at(''), ...(turn.body?.status !== undefined ? at('/body') : [])] }] : []),
-      { e: 'session', id: a.key, op: 'patch' as const, ops: [{ op: 'add' as const, path: '/state', value: a.action === 'start' ? 'running' : 'done' }] },
+      { e: 'session', id: a.key, op: 'patch' as const, ops: [{ op: 'add' as const, path: '/state', value: going ? 'running' : 'done' }] },
     ];
   },
 });
@@ -85,6 +87,13 @@ export default function TurnFoot(props: ExtensionProps): JSX.Element {
   // the harnesses the shell knows, followed (a harness plugin that registers later names its runs)
   const harnesses = useSignal(shell.harnesses());
   const nameOf = (agent: string): string => harnesses().find((x) => x.id === agent)?.name ?? (set() ?? []).find((a) => a.id === agent)?.name ?? agent;
+  // a held item's file, in the editor Settings → General names (v1 openInEditor): relative to the task's folder
+  const editor = useSignal(c.entities.row<{ value?: unknown }>('setting', entityKey(c.home, 'settings.editor')));
+  const openUrl = (file: string): string | undefined => (file ? fileUrl(String(editor()?.value ?? ''), String(task()?.cwd ?? ''), file) : undefined);
+  const openFile = (file: string): void => {
+    const url = openUrl(file);
+    if (url) shell.platform.openExternal(url);
+  };
   const quiet = (p: Promise<unknown>): void => {
     p.catch(() => {}); // the shell's onError toasts it
   };
@@ -92,7 +101,18 @@ export default function TurnFoot(props: ExtensionProps): JSX.Element {
     <Show when={doc()}>
       {(d) => (
         <Stack gap="2" part="turn.foot">
-          <Show when={heldOf(d(), t, nameOf(d().agent ?? ''))}>{(h) => <HeldCard title={h().title} why={h().why} start={h().start} t={t} onStart={() => quiet(c.run(release, { key: taskKey(), turnId: d().id, action: 'start' }))} onSkip={() => quiet(c.run(release, { key: taskKey(), turnId: d().id, action: 'skip' }))} />}</Show>
+          <Show when={heldOf(d(), t, nameOf(d().agent ?? ''))}>
+            {(h) => (
+              <HeldCard
+                held={h()}
+                t={t}
+                onStart={() => quiet(c.run(release, { key: taskKey(), turnId: d().id, action: 'start' }))}
+                onSkip={() => quiet(c.run(release, { key: taskKey(), turnId: d().id, action: 'skip' }))}
+                onWithout={() => quiet(c.run(release, { key: taskKey(), turnId: d().id, action: 'without' }))}
+                {...(!!openUrl(h().items?.[0]?.file ?? '') && { onOpen: openFile })}
+              />
+            )}
+          </Show>
           <Show when={halt()}>
             {(h) => (
               <HaltCard

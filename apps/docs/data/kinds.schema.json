@@ -995,80 +995,6 @@
       },
       "type": "object"
     },
-    "router": {
-      "additionalProperties": false,
-      "description": "How Auto picks a harness and model for a task.",
-      "properties": {
-        "allowed": {
-          "description": "the harnesses it may pick (null: every one)",
-          "items": {
-            "type": "string"
-          },
-          "type": [
-            "array",
-            "null"
-          ]
-        },
-        "best2": {
-          "description": "hard tasks run twice and the better answer is kept",
-          "type": [
-            "boolean",
-            "null"
-          ]
-        },
-        "blocked": {
-          "description": "harnesses or models it never picks",
-          "items": {
-            "type": "string"
-          },
-          "type": [
-            "array",
-            "null"
-          ]
-        },
-        "escalate": {
-          "description": "a failed run goes again on a stronger model",
-          "type": [
-            "boolean",
-            "null"
-          ]
-        },
-        "explore": {
-          "description": "try models it knows less about now and then",
-          "type": [
-            "boolean",
-            "null"
-          ]
-        },
-        "goal": {
-          "description": "what it optimises for (`balanced`, `cheap`, `best`, …)",
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "habits": {
-          "description": "learn from what you pick by hand",
-          "type": [
-            "boolean",
-            "null"
-          ]
-        },
-        "prefer": {
-          "description": "ones it picks first when they fit",
-          "items": {
-            "type": "string"
-          },
-          "type": [
-            "array",
-            "null"
-          ]
-        },
-        "scout": true
-      },
-      "title": "RouterSpec",
-      "type": "object"
-    },
     "setting": {
       "additionalProperties": false,
       "description": "Settings by key (wisp settings list)",
@@ -1472,6 +1398,10 @@
             "type": "string"
           },
           "type": "array"
+        },
+        "title": {
+          "description": "its name as you wrote it (\"Run tests\"), shown on its chip, when the name (a key: `wisp recipes run run-tests`)\ncan't hold it (a v1 recipe, audit D11). Additive (2026-11-19).",
+          "type": "string"
         },
         "worktree": {
           "description": "run in a worktree of its own",
@@ -3000,38 +2930,6 @@
             ],
             "description": "A project: a folder wisp works in, and how."
           },
-          "router": {
-            "anyOf": [
-              {
-                "items": {
-                  "allOf": [
-                    {
-                      "$ref": "#/$defs/router"
-                    },
-                    {
-                      "properties": {
-                        "name": {
-                          "type": "string"
-                        }
-                      },
-                      "required": [
-                        "name"
-                      ],
-                      "type": "object"
-                    }
-                  ]
-                },
-                "type": "array"
-              },
-              {
-                "additionalProperties": {
-                  "$ref": "#/$defs/router"
-                },
-                "type": "object"
-              }
-            ],
-            "description": "How Auto picks a harness and model for a task."
-          },
           "settings": {
             "additionalProperties": {
               "$ref": "#/$defs/setting"
@@ -3300,38 +3198,6 @@
         }
       ],
       "description": "A project: a folder wisp works in, and how."
-    },
-    "router": {
-      "anyOf": [
-        {
-          "items": {
-            "allOf": [
-              {
-                "$ref": "#/$defs/router"
-              },
-              {
-                "properties": {
-                  "name": {
-                    "type": "string"
-                  }
-                },
-                "required": [
-                  "name"
-                ],
-                "type": "object"
-              }
-            ]
-          },
-          "type": "array"
-        },
-        {
-          "additionalProperties": {
-            "$ref": "#/$defs/router"
-          },
-          "type": "object"
-        }
-      ],
-      "description": "How Auto picks a harness and model for a task."
     },
     "settings": {
       "additionalProperties": {
