@@ -1,8 +1,9 @@
 // The Tauri desktop app (desktop/src-tauri). Its init.js already backs window.Notification with
 // tauri-plugin-notification and opens the task on a click, so notifications take the browser's
-// road. What differs: links open in the system browser (tauri-plugin-opener), the dock badge is the
-// window's, and the app's own focus event is the resume signal. A command the native side hasn't
-// wired answers like the browser would.
+// road. What differs: the dock badge is the window's, and the app's own focus event is the resume
+// signal. A command the native side hasn't wired answers like the browser would. Links out take the
+// browser's road too: window.open, which the shell sends to the system browser (main.rs on_new_window);
+// the page may not call the opener plugin (capability.json grants it nothing).
 
 import { browserPlatform } from './browser.ts';
 import type { Platform, PlatformWindow } from './types.ts';
@@ -76,12 +77,15 @@ export function desktopPlatform(w: PlatformWindow): Platform {
       const dir = await invoke('pick_folder').catch(() => null);
       return typeof dir === 'string' && dir ? dir : null;
     },
+    // In the click itself, as v1 did. It used to ask the opener plugin first and open only once that was refused: a
+    // round trip that always failed, and a window.open that came after the click, which a webview that holds popups
+    // without a user's gesture (WebKitGTK's default) drops.
     openExternal(url) {
-      invoke('plugin:opener|open_url', { url }).catch(() => base.openExternal(url));
+      base.openExternal(url);
     },
     // no in-app browser on a computer: the system browser, as openExternal
     openInApp(url) {
-      invoke('plugin:opener|open_url', { url }).catch(() => base.openExternal(url));
+      base.openExternal(url);
     },
   };
 }

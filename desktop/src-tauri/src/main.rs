@@ -71,8 +71,12 @@ fn stays(url: &Url, base: &Url) -> bool {
 
 // Editor links (vscode://…), docs links etc. open outside the app. Never a local file or a page-made
 // URL: the page is agents' output as much as ours.
+fn may_leave(url: &Url) -> bool {
+    !matches!(url.scheme(), "about" | "blob" | "data" | "file" | "javascript")
+}
+
 fn open_outside(app: &AppHandle, url: &Url) {
-    if matches!(url.scheme(), "about" | "blob" | "data" | "file" | "javascript") {
+    if !may_leave(url) {
         return;
     }
     #[cfg(all(feature = "qa", any(target_os = "macos", target_os = "linux")))]
@@ -377,4 +381,46 @@ fn main() {
         }
         _ => {}
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{is_wisp, may_leave, stays, Url};
+
+    fn url(s: &str) -> Url {
+        Url::parse(s).unwrap()
+    }
+
+    // Where a link the page opens goes, in the packaged app (the server's own port) and in `npm run dev:desktop` (the
+    // page on Vite's port, the server on another): wisp's own pages stay, everything else goes to the system browser.
+    #[test]
+    fn links_out_leave_and_wisps_own_pages_stay_in_both_builds() {
+        for (base, own) in
+            [(url("http://localhost:4477"), "http://localhost:4477/t/abc"), (url("http://localhost:5180"), "http://localhost:5180/t/abc")]
+        {
+            assert!(stays(&url(own), &base) && is_wisp(&url(own), &base), "{own} on {base}");
+            assert!(stays(&url("about:blank"), &base));
+            for out in [
+                "https://github.com/WispAgents/wisp/pull/1",
+                "https://accounts.google.com/o/oauth2",
+                "vscode://file/tmp/a.ts",
+                "http://localhost:3000/",
+                "http://127.0.0.1:4477/",
+            ] {
+                let u = url(out);
+                assert!(!stays(&u, &base) && !is_wisp(&u, &base) && may_leave(&u), "{out} on {base}");
+            }
+        }
+        // dev: the server's own port is another origin than the page's (a share link opens outside, not in the window)
+        assert!(!stays(&url("http://localhost:4800/s/x"), &url("http://localhost:5180")));
+        for never in [
+            "file:///Applications/Calculator.app",
+            "javascript:alert(1)",
+            "data:text/html,hi",
+            "blob:http://localhost:4477/1",
+            "about:blank",
+        ] {
+            assert!(!may_leave(&url(never)), "{never}");
+        }
+    }
 }

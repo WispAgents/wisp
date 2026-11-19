@@ -131,6 +131,21 @@ describe('the new platform calls', () => {
     expect(old.opened).toEqual(['https://example.com/c']);
   });
 
+  // the owner (2026-11-19): links from the desktop app didn't reach the browser. The shell sends a window.open out
+  // (desktop/src-tauri main.rs on_new_window); the page's opener IPC is refused (capability.json), and a window.open
+  // made only after that refusal comes after the click, where a webview may hold it as an unasked popup.
+  it('the desktop app opens a link out in the click itself, never over the opener IPC', () => {
+    const w = fakeWindow({ ua: 'MacIntel' });
+    const asked: string[] = [];
+    const tauri = { invoke: (cmd: string) => (asked.push(cmd), Promise.reject(new Error(`${cmd} not allowed`))) };
+    const p = detectPlatform({ ...w, __TAURI_INTERNALS__: tauri });
+    expect(p.kind).toBe('desktop');
+    p.openExternal('https://github.com/WispAgents/wisp/pull/1');
+    p.openInApp('https://example.com/preview');
+    expect(w.opened).toEqual(['https://github.com/WispAgents/wisp/pull/1', 'https://example.com/preview']);
+    expect(asked.filter((c) => c.startsWith('plugin:opener'))).toEqual([]);
+  });
+
   it('onBack passes the native gesture through in the apps and never fires in a browser', () => {
     const w = fakeWindow({ cap: native('android') });
     const seen: BackEvent[] = [];

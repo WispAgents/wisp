@@ -301,6 +301,9 @@ fn handle(app: &AppHandle, q: &Value) -> Value {
             let (x, y, clicks, ptr) =
                 (q["x"].as_f64().unwrap_or(0.0), q["y"].as_f64().unwrap_or(0.0), q["clicks"].as_i64().unwrap_or(1) as isize, ns_window(&w));
             let (dx, dy) = (q["dx"].as_f64().unwrap_or(0.0), q["dy"].as_f64().unwrap_or(0.0));
+            // `mods`: NSEventModifierFlags bits (⌘ is 1 << 20); `button: "middle"` for a middle click (no drag)
+            let mods = q["mods"].as_u64().unwrap_or(0) as usize;
+            let middle = q["button"].as_str() == Some("middle");
             // A pause while it's down, as a hand has: the drag starts from the page, over IPC.
             let post = move |app: &AppHandle, kind: NSEventType, to: (f64, f64)| {
                 main_thread(app, move |mtm| unsafe {
@@ -310,7 +313,7 @@ fn handle(app: &AppHandle, q: &Value) -> Value {
                         NSEvent::mouseEventWithType_location_modifierFlags_timestamp_windowNumber_context_eventNumber_clickCount_pressure(
                             kind,
                             at,
-                            NSEventModifierFlags(0),
+                            NSEventModifierFlags(mods),
                             0.0,
                             n.windowNumber(),
                             None,
@@ -323,12 +326,17 @@ fn handle(app: &AppHandle, q: &Value) -> Value {
                     }
                 })
             };
-            post(app, NSEventType::LeftMouseDown, (x, y));
+            let (down, up) = if middle {
+                (NSEventType::OtherMouseDown, NSEventType::OtherMouseUp)
+            } else {
+                (NSEventType::LeftMouseDown, NSEventType::LeftMouseUp)
+            };
+            post(app, down, (x, y));
             std::thread::sleep(std::time::Duration::from_millis(250));
-            if dx != 0.0 || dy != 0.0 {
+            if !middle && (dx != 0.0 || dy != 0.0) {
                 post(app, NSEventType::LeftMouseDragged, (x + dx, y + dy));
             }
-            post(app, NSEventType::LeftMouseUp, (x + dx, y + dy));
+            post(app, up, (x + dx, y + dy));
             json!({ "ok": true })
         }
         // What macOS holds for this app, and what a click on a banner would do: AppKit calls the
