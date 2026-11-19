@@ -60,7 +60,12 @@ impl Server {
             cmd.stderr(log);
         }
         #[cfg(windows)]
-        std::os::windows::process::CommandExt::creation_flags(&mut cmd, 0x0800_0000); // CREATE_NO_WINDOW
+        {
+            std::os::windows::process::CommandExt::creation_flags(&mut cmd, 0x0800_0000); // CREATE_NO_WINDOW
+            // it joins our job only once it's started (job::Job::kill_on_close): told so, everything it starts stays in
+            // it however early, and only its update helper leaves (wisp-proc's PARENT_JOB_ENV, DESK2-05)
+            cmd.env(job::PARENT_JOB_ENV, "1");
+        }
         let mut child = cmd.spawn()?;
         #[cfg(windows)]
         {
@@ -179,9 +184,13 @@ mod job {
         JOBOBJECT_EXTENDED_LIMIT_INFORMATION, JOB_OBJECT_LIMIT, JOB_OBJECT_LIMIT_BREAKAWAY_OK, JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE,
     };
 
-    /// KILL_ON_JOB_CLOSE ends the server with this process. BREAKAWAY_OK lets what the server starts to outlive it
-    /// leave (`CREATE_BREAKAWAY_FROM_JOB`, wisp-proc's `spawn_detached`): the update's relaunch helper stops the server,
-    /// this process quits with it, and the helper must still be there to run the installer and start the new wisp.
+    /// KILL_ON_JOB_CLOSE ends the server with this process, and everything it started. BREAKAWAY_OK lets the one start
+    /// that must outlive it leave (`CREATE_BREAKAWAY_FROM_JOB`, wisp-proc's `spawn_detached` with `leave_every_job`):
+    /// the update's relaunch helper stops the server, this process quits with it, and the helper must still be there
+    /// to run the installer and start the new wisp. wisp-proc asks for breakaway inside this job for that start only.
+    /// wisp-proc's `PARENT_JOB_ENV`: the server is in a job of ours (this crate doesn't depend on wisp-proc).
+    pub const PARENT_JOB_ENV: &str = "WISP_IN_PARENT_JOB";
+
     pub const LIMITS: JOB_OBJECT_LIMIT = JOB_OBJECT_LIMIT(JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE.0 | JOB_OBJECT_LIMIT_BREAKAWAY_OK.0);
 
     pub struct Job(HANDLE);

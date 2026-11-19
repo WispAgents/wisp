@@ -13,8 +13,10 @@ pub(crate) fn relaunch(ctx: &Ctx, st: &St) -> bool {
     let files = files(ctx, st).unwrap_or_else(|| Files { dir: String::new(), exe: st.exe.clone() });
     let Some(h) = lock(&st.up).hand_off(std::process::id(), &files) else { return false };
     let Ok(proc) = ctx.service::<wisp_proc::Proc>() else { return false };
-    // Err: the user restarts it by hand, as `next` says
-    proc.spawn_detached(h.bin, &h.args, wisp_proc::SpawnOpts { no_stdin: true, ..wisp_proc::SpawnOpts::default() }).is_ok()
+    // it stops wisp and the desktop app quits with it, so it leaves the app's job too (the one start that does:
+    // everything else wisp starts ends when the window closes, DESK2-05). Err: the user restarts it by hand.
+    let opts = wisp_proc::SpawnOpts { no_stdin: true, leave_every_job: true, ..wisp_proc::SpawnOpts::default() };
+    proc.spawn_detached(h.bin, &h.args, opts).is_ok()
 }
 
 /// Where the Windows hand-off and the next start meet: `<home>/plugins/wisp.update`.

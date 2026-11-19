@@ -223,6 +223,16 @@ pub fn in_job() -> bool {
     ok != 0 && inside != 0
 }
 
+/// Whether this process was started inside a job that isn't its nursery (the desktop shell's, a CI runner's):
+/// read once, before the nursery is joined (`nursery` asks first), so the nursery itself never counts. A parent that
+/// joins this process to its job only after `CreateProcess` returns (the desktop shell does) says so with
+/// [`crate::PARENT_JOB_ENV`], in case the nursery came first.
+static OUTER: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+
+pub fn in_outer_job() -> bool {
+    *OUTER.get_or_init(|| in_job() || std::env::var_os(crate::PARENT_JOB_ENV).is_some_and(|v| v == "1"))
+}
+
 /// The nursery (ADR-0070): this process's own `KILL_ON_JOB_CLOSE` job, held in a static so the handle closes only
 /// when the process ends. `None` inside: it couldn't be made (the error was returned once, to the first caller).
 static NURSERY: std::sync::OnceLock<Option<Job>> = std::sync::OnceLock::new();
@@ -233,6 +243,8 @@ static NURSERY: std::sync::OnceLock<Option<Job>> = std::sync::OnceLock::new();
 /// a job (CI, a service manager): the nursery nests in it (Windows 8+). Idempotent.
 pub fn nursery() -> io::Result<()> {
     let mut first = Ok(());
+    // the job it was started in, if any, before the nursery makes it "in a job" for good
+    let _ = in_outer_job();
     NURSERY.get_or_init(|| {
         let made = Job::with_limits(JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE | JOB_OBJECT_LIMIT_BREAKAWAY_OK).and_then(|job| {
             // SAFETY: no arguments; it returns a pseudo-handle to this process that needs no close.

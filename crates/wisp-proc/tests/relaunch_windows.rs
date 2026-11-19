@@ -17,16 +17,20 @@ use std::sync::mpsc;
 use std::time::{Duration, Instant};
 
 const ROLE: &str = "WISP_RELAUNCH_TEST_ROLE";
-const NAME: &str = "the_relaunch_helper_outlives_the_shells_job";
+/// `1`: the server's detached start asks to leave every job (the update's relaunch helper); else an ordinary one
+const LEAVE: &str = "WISP_RELAUNCH_TEST_LEAVE";
+/// the test each role runs as (the roles are this binary again, filtered to one test)
+const NAME_VAR: &str = "WISP_RELAUNCH_TEST_NAME";
 /// Looked for anywhere in a line (libtest prints `test <name> ... ` before the test runs).
 const MARK: &str = "WISP_RELAUNCH_HELPER_PID=";
 const START: Duration = Duration::from_secs(30);
 const EXIT: Duration = Duration::from_secs(10);
 
-/// This binary again, running only [`NAME`], as `role`, its stdout piped.
+/// This binary again, running only the test named in [`NAME_VAR`], as `role`, its stdout piped.
 fn me(role: &str) -> Child {
+    let name = std::env::var(NAME_VAR).unwrap();
     Command::new(std::env::current_exe().unwrap())
-        .args(["--exact", NAME, "--nocapture", "--test-threads=1"])
+        .args(["--exact", &name, "--nocapture", "--test-threads=1"])
         .env(ROLE, role)
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
@@ -105,21 +109,33 @@ fn server() -> ! {
     let rt = tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap();
     let pid = rt.block_on(async {
         let args: Vec<String> = ["/d", "/c", "ping -n 30 127.0.0.1 >nul"].iter().map(|s| (*s).to_owned()).collect();
-        wisp_proc::local().spawn_detached("cmd", &args, wisp_proc::SpawnOpts { no_stdin: true, ..wisp_proc::SpawnOpts::default() }).unwrap()
+        let leave = std::env::var(LEAVE).is_ok_and(|v| v == "1");
+        let opts = wisp_proc::SpawnOpts { no_stdin: true, leave_every_job: leave, ..wisp_proc::SpawnOpts::default() };
+        wisp_proc::local().spawn_detached("cmd", &args, opts).unwrap()
     });
     say(pid);
     std::process::exit(0);
 }
 
-#[test]
-fn the_relaunch_helper_outlives_the_shells_job() {
+/// Runs the shell (which runs the server, which starts a detached `ping`), and says whether that `ping` was still
+/// running once the shell and its job were gone. The `ping` is killed either way.
+fn helper_outlives_the_shell(name: &str, leave: bool) -> bool {
     match std::env::var(ROLE).as_deref() {
         Ok("shell") => shell(),
         Ok("server") => server(),
         _ => {}
     }
     wisp_proc::keep_std_handles();
-    let mut shell = me("shell");
+    let mut shell = Command::new(std::env::current_exe().unwrap())
+        .args(["--exact", name, "--nocapture", "--test-threads=1"])
+        .env(ROLE, "shell")
+        .env(NAME_VAR, name)
+        .env(LEAVE, if leave { "1" } else { "0" })
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::inherit())
+        .spawn()
+        .unwrap();
     let pid = pid_from(&mut shell);
     let shell_gone = exited(&mut shell);
     // the job's processes end as its last handle closes; give it a moment either way
@@ -129,5 +145,23 @@ fn the_relaunch_helper_outlives_the_shells_job() {
         let _ = Command::new("taskkill").args(["/F", "/PID", &pid.to_string()]).stdout(Stdio::null()).stderr(Stdio::null()).status();
     }
     assert!(shell_gone, "the shell didn't exit");
-    assert!(alive, "the helper (pid {pid}) ended with the shell's job: it was never let out");
+    alive
+}
+
+#[test]
+fn the_relaunch_helper_outlives_the_shells_job() {
+    assert!(
+        helper_outlives_the_shell("the_relaunch_helper_outlives_the_shells_job", true),
+        "the helper ended with the shell's job: it was never let out"
+    );
+}
+
+/// DESK2-05: anything else the server starts detached (a terminal, a browser) stays in the shell's job and ends when
+/// the window closes; since d4c98dac every detached start left the job, and the app's quit stopped none of them.
+#[test]
+fn an_ordinary_detached_start_ends_with_the_shells_job() {
+    assert!(
+        !helper_outlives_the_shell("an_ordinary_detached_start_ends_with_the_shells_job", false),
+        "a detached start that didn't ask to leave every job outlived the shell's job"
+    );
 }

@@ -144,9 +144,26 @@ const hardKill = (pid) => signal(pid, () => (win ? execFileSync('taskkill', ['/F
 // Windows: what the title bar's close does (WM_CLOSE to the app's own window, once it's shown); v1 quits there.
 // `taskkill /PID` without /F posts WM_CLOSE to every top-level window the process has, tao's hidden one included,
 // and the app's window may never hear it: the QA's quit never reached the shell (#756 CI, DESK2-05).
+// The script waits WINDOW_WAIT for the window itself; PowerShell gets CLOSE_LIMIT in all (a cold start on a runner is
+// slow), and every way it can fail says which: no process, no window, a refused close, or PowerShell never returning.
+const WINDOW_WAIT_MS = 20_000;
+const CLOSE_LIMIT_MS = 90_000;
 const CLOSE_WINDOW = (pid) =>
-  `$p = Get-Process -Id ${pid}; for ($i = 0; $i -lt 150 -and $p.MainWindowHandle -eq 0; $i++) { Start-Sleep -Milliseconds 200; $p.Refresh() }; if ($p.MainWindowHandle -eq 0) { Write-Error 'no window to close'; exit 2 }; if (-not $p.CloseMainWindow()) { exit 3 }`;
-const closeWindow = (pid) => execFileSync('powershell', ['-NoProfile', '-NonInteractive', '-Command', CLOSE_WINDOW(pid)], { stdio: 'inherit', timeout: 60_000 });
+  `$p = Get-Process -Id ${pid} -ErrorAction SilentlyContinue; if (-not $p) { [Console]::Error.WriteLine('the shell (pid ${pid}) is gone'); exit 4 }; ` +
+  `$end = (Get-Date).AddMilliseconds(${WINDOW_WAIT_MS}); while ($p.MainWindowHandle -eq 0 -and (Get-Date) -lt $end) { Start-Sleep -Milliseconds 200; $p.Refresh() }; ` +
+  `if ($p.MainWindowHandle -eq 0) { [Console]::Error.WriteLine('the shell showed no window in ${WINDOW_WAIT_MS / 1000} s'); exit 2 }; ` +
+  `if (-not $p.CloseMainWindow()) { [Console]::Error.WriteLine('the window refused WM_CLOSE (disabled?)'); exit 3 }`;
+const closeWindow = (pid) => {
+  const at = Date.now();
+  try {
+    execFileSync('powershell', ['-NoProfile', '-NonInteractive', '-Command', CLOSE_WINDOW(pid)], { stdio: ['ignore', 'inherit', 'pipe'], timeout: CLOSE_LIMIT_MS, killSignal: 'SIGKILL' });
+  } catch (e) {
+    const took = `${((Date.now() - at) / 1000).toFixed(1)} s`;
+    if (e?.code === 'ETIMEDOUT') throw new Error(`closing the window: PowerShell didn't return in ${took} (its own wait for the window is ${WINDOW_WAIT_MS / 1000} s), so the close never ran; the shell is ${alive(pid) ? 'still running' : 'gone'}`);
+    const why = String(e?.stderr ?? '').trim() || e?.message;
+    throw new Error(`closing the window (after ${took}, exit ${e?.status ?? '?'}): ${why}`);
+  }
+};
 // asks the shell to quit as a user does: its window's close on Windows, a TERM (the menu's Quit path) elsewhere
 const askQuit = (pid) => signal(pid, () => (win ? closeWindow(pid) : process.kill(pid, 'SIGTERM')));
 

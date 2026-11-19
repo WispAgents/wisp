@@ -190,7 +190,7 @@ impl ProcService for LocalProc {
         }
         cmd.envs(opts.env.set.iter().map(|(k, v)| (k, v)));
         cmd.stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null()).kill_on_drop(false);
-        let mut child = spawn_detached_cmd(&mut cmd).map_err(|e| ProcError::from_spawn(bin, &e))?;
+        let mut child = spawn_detached_cmd(&mut cmd, opts.leave_every_job).map_err(|e| ProcError::from_spawn(bin, &e))?;
         let pid = child.id().unwrap_or(0);
         // Reaped when it ends, never killed with wisp.
         tokio::spawn(async move {
@@ -265,23 +265,23 @@ fn detached_args(cmd: &mut tokio::process::Command, r: &Resolved) {
 
 /// Its own session: closing wisp (or its terminal) doesn't reach it.
 #[cfg(unix)]
-fn spawn_detached_cmd(cmd: &mut tokio::process::Command) -> std::io::Result<tokio::process::Child> {
+fn spawn_detached_cmd(cmd: &mut tokio::process::Command, _leave_every_job: bool) -> std::io::Result<tokio::process::Child> {
     cmd.process_group(0);
     cmd.spawn()
 }
 
-/// Its own console window and process group, outside every job around wisp: it breaks away from the nursery
-/// (`crate::nursery`) and the job wisp was started in (the desktop shell's); a job that refuses breakaway leaves it
-/// inside (as `crate::spawn_outliving`, [`crate::outliving_flags`]).
+/// Its own console window and process group. It leaves wisp's nursery (`crate::nursery`) when that's the only job
+/// around wisp; inside a job wisp was started in (the desktop shell's) it stays, so closing the app ends it, unless it
+/// asks to leave every job (`leave_every_job`: the update's relaunch helper). A job that refuses breakaway leaves it
+/// inside ([`crate::outliving_flags`]).
 #[cfg(windows)]
-fn spawn_detached_cmd(cmd: &mut tokio::process::Command) -> std::io::Result<tokio::process::Child> {
+fn spawn_detached_cmd(cmd: &mut tokio::process::Command, leave_every_job: bool) -> std::io::Result<tokio::process::Child> {
     const DETACHED_PROCESS: u32 = 0x0000_0008;
     const CREATE_NEW_PROCESS_GROUP: u32 = 0x0000_0200;
     let flags = DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP;
     // it outlives wisp: never hand it the pipes wisp's own caller reads (crate::keep_std_handles)
     crate::sys::keep_std_handles();
-    // the desktop shell's job too, not only the nursery: the update's relaunch helper must outlive the shell
-    let [first, then] = crate::outliving_flags(flags, crate::sys::in_nursery() || crate::sys::in_job());
+    let [first, then] = crate::outliving_flags(flags, crate::jobs(), leave_every_job);
     cmd.creation_flags(first);
     match cmd.spawn() {
         Err(e) if first != then && e.raw_os_error() == Some(crate::ERROR_ACCESS_DENIED) => {}
