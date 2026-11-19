@@ -349,8 +349,11 @@
   :root[data-platform='android'] [data-kit='list-row'][data-layout='feed'] > [data-kit='list-row-pills'],
   :root[data-platform='android'] [data-kit='list-row'][data-layout='feed'][data-time] > [data-kit='list-row-pills'],
   :root[data-platform='android'] [data-kit='list-row'][data-layout='feed'][data-time][data-row-lines] > [data-kit='list-row-pills'] { grid-column: 3; grid-row: 2; align-self: center; justify-content: flex-end; }
-  :root[data-platform='android'] [data-kit='list-row'][data-interactive]:hover,
-  :root[data-platform='android'] [data-kit='list-row'][data-interactive]:active { background: color-mix(in srgb, var(--on-surface) calc(var(--state-pressed) * 100%), transparent); }
+  /* pressed while the finger is down; a tap leaves :hover behind, which beat a picked row's tint (audit C #4) */
+  :root[data-platform='android'] [data-kit='list-row'][data-interactive]:not([data-selected]):not([data-picked]):active { background: color-mix(in srgb, var(--on-surface) calc(var(--state-pressed) * 100%), transparent); }
+  @media (hover: hover) {
+    :root[data-platform='android'] [data-kit='list-row'][data-interactive]:not([data-selected]):not([data-picked]):hover { background: color-mix(in srgb, var(--on-surface) calc(var(--state-pressed) * 100%), transparent); }
+  }
   :root[data-platform='android'] [data-kit='list-row'][data-current] { background: var(--surface-c2); }
   :root[data-platform='android'] [data-kit='list-row'][data-selected] { background: var(--primary-container); }
   :root[data-platform='android'] [data-kit='list-row-actions'] { opacity: 1; pointer-events: auto; }

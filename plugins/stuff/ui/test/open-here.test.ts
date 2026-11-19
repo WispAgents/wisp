@@ -1,6 +1,6 @@
 // Closing the parity audit's leftovers (/tmp/qa-keep/stuff-parity.md "Still different" 3 and 6).
 import { expect, test } from 'vitest';
-import { appAddress, openedByPress } from '../src/opened.ts';
+import { appAddress, openedByPress, opensHere } from '../src/opened.ts';
 
 // what wisp.grid-client's previewAddresses entry answers inside a box (ADR-0064: its boxPreviewUrl with the grid's template)
 const grid = (url: string): string | undefined => {
@@ -21,4 +21,18 @@ test('my_stuff_puts_the_caret_in_its_search_only_when_a_press_opened_it_not_afte
   expect(openedByPress({ userActivation: { isActive: true } })).toBe(true);
   expect(openedByPress({ userActivation: { isActive: false } })).toBe(false);
   expect(openedByPress({})).toBe(true);
+});
+
+// audit C tasks #1: on the phone apps, a doc, a table or code opened the raw file in a new window (a native shell may
+// show nothing at all). The phone screen hands in `show` now: everything but an app opens in wisp's reader and viewer;
+// its apps still go over the whole screen (`launched`)
+test('the_phone_screen_opens_docs_and_tables_in_wisp_and_its_apps_over_the_whole_screen_audit_c_1', () => {
+  const show = (): void => {};
+  const launched = (): void => {};
+  for (const kind of ['doc', 'table', 'code', 'image', 'file', 'link']) expect(opensHere(kind, { show, launched }), kind).toBe(true);
+  expect(opensHere('app', { show, launched })).toBe(false);
+  // the desktop page: its apps in wisp's own window
+  expect(opensHere('app', { show })).toBe(true);
+  // no reader on the screen: a new window, as before
+  expect(opensHere('doc', {})).toBe(false);
 });

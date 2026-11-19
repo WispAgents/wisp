@@ -50,6 +50,9 @@ export function GroupRow(props: { readonly entry: Group }): JSX.Element {
     <Show when={first()}>
       {(s) => (
         <ListRow
+          // a task row's layout: the title has the first line, vs Compare and the time sit under it (audit C #5: on one
+          // line with them the title was cut to a few letters, 55 px of a 360 px phone)
+          layout="feed"
           part="list.group"
           title={s().title}
           lead={<Dot color={colorToken(s().color)} size="md" {...(state() === 'running' ? { live: true } : {})} />}

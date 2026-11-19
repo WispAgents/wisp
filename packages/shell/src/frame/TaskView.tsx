@@ -1187,6 +1187,7 @@ export default function TaskView(props: { readonly id: string; readonly onBack?:
             part: 'composer.plus',
             label: t('shell.home.plus'),
             title: t('shell.reply.plusTitle'),
+            refocus: replyBox.focus,
             sections: [
               [{ id: 'attach', part: 'composer.attach', icon: 'clip', label: t('shell.home.attach'), act: attachAct(shell, attach, picking()) }],
               [

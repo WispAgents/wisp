@@ -21,3 +21,9 @@ export function appAddress(url: string, page: string, maps: readonly ((url: stri
   }
   return undefined;
 }
+
+/** Open shows it inside wisp (the reader, the viewer) where the screen can; the phone screen's apps go over the whole
+ *  screen instead (`launched`), and a screen with no `show` opens a new window (audit C #1). */
+export function opensHere(kind: string, d: { readonly show?: unknown; readonly launched?: unknown }): boolean {
+  return !!d.show && !(kind === 'app' && d.launched);
+}

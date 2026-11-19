@@ -202,6 +202,14 @@ pub(crate) async fn before_run(ctx: &Ctx, _call: &Call, st: &std::sync::Arc<Stat
                     if let Err(e) = trust(ctx, st, &c.agent).await {
                         tracing::warn!(agent = c.agent, "couldn't save the trusted harness: {e}");
                     }
+                    // a yes to the program, not to one card: every other turn the same change held starts too, as
+                    // Trust does (audit C #3: they stayed held, each saying the harness changed). Off the run's way:
+                    // their releases go through the runtime this turn is starting in
+                    let this = (c.session_id.0.clone(), c.turn_id.0.clone());
+                    let others: Vec<(String, String)> =
+                        lock(&st.held).remove(&c.agent).unwrap_or_default().into_iter().filter(|k| *k != this).collect();
+                    let (ctx2, st2, agent) = (ctx.clone(), st.clone(), c.agent.clone());
+                    ctx.spawn(async move { start_trusted(&ctx2, &st2, &agent, others).await });
                 } else {
                     let line = watch::change_line(&h.info().name, &change, "wisp last ran it");
                     c.hold = Some(Held {

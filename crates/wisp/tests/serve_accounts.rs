@@ -126,6 +126,34 @@ async fn start_now_on_a_harness_changed_hold_trusts_the_program_and_runs() {
     drop(serve);
 }
 
+/// Audit C tasks #3: Trust and start on one card trusted the changed program, but the other turns it held stayed held,
+/// each card still saying the harness changed (a change wisp now trusts). A yes on one card is a yes to the program:
+/// every turn the watch held for it starts, as Trust does.
+#[tokio::test(flavor = "multi_thread")]
+async fn trust_and_start_on_one_card_starts_every_turn_the_same_change_held_audit_c_3() {
+    let dir = temp("serve-watch-start-all");
+    let (serve, port) = start(&dir);
+    let api = Arc::new(Api { http: reqwest::Client::new(), port, n: 0.into() });
+    api.cmd("accounts.watch.ask", json!({ "on": true })).await;
+    let (turn, _) = run_task(&api, &dir, "codex").await;
+    assert_eq!(turn["status"], "done", "{turn}");
+    change_codex(&dir);
+    let mut held = Vec::new();
+    for p in ["a", "b"] {
+        let id = api.cmd("runtime.create", json!({ "prompt": p, "cwd": dir.join("proj"), "agent": "codex" })).await["id"]
+            .as_str()
+            .unwrap()
+            .to_owned();
+        let t = api.until(&id, "held", |t| t.len() == 1 && t[0]["status"] == "held").await;
+        held.push((id, t[0]["id"].as_str().unwrap().to_owned()));
+    }
+    let ((a, a_turn), (b, _)) = (held[0].clone(), held[1].clone());
+    api.cmd("runtime.release", json!({ "id": a, "turnId": a_turn, "action": "start" })).await;
+    api.until(&a, "Trust and start runs its own turn", |t| t.len() == 1 && t[0]["status"] == "done").await;
+    api.until(&b, "and the other turn the same change held", |t| t.len() == 1 && t[0]["status"] == "done").await;
+    drop(serve);
+}
+
 /// opencode signs in with a key pasted into wisp: it goes where opencode keeps it, and only whether one
 /// is saved comes back. Codex's usage windows are read from its app-server (nothing spent). The v1
 /// routes answer as the commands do.

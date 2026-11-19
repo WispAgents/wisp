@@ -20,6 +20,9 @@ export interface PlusInput {
   readonly label: string;
   readonly title: string;
   readonly sections: readonly (readonly (PlusRow | false | undefined)[])[];
+  /** the box's text gets the caret back after a choice inside a row's own menu (a Start later time, a recipe), so
+   *  Enter sends (audit C #2: it stayed on `+`, and Enter opened the menu again) */
+  readonly refocus?: () => void;
 }
 
 const press = (act: Act | undefined): void => {
@@ -41,6 +44,8 @@ export function plusTool(x: PlusInput): LauncherTool {
     // a choice inside a row's own menu (Start later's times, a recipe)
     const owner = rows.find((r) => r.act?.menu?.items.some((e: MenuEntry) => (e.kind === undefined || e.kind === 'item') && e.value === v));
     owner?.act?.menu?.onSelect(v);
+    // after the menu has closed and handed focus back to `+`
+    if (owner && x.refocus) setTimeout(x.refocus, 0);
   };
   return { id: 'plus', part: x.part, icon: 'plus', label: x.label, title: x.title, act: { menu: { items, onSelect } } };
 }

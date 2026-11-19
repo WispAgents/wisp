@@ -349,9 +349,15 @@
     border: 1px solid transparent;
     border-radius: var(--radius);
   }
-  [data-kit='feed-item']:hover,
   [data-kit='feed-item'][data-current] {
     background: var(--bg-2);
+  }
+  /* a pointer's hover only: a phone keeps :hover on the row it last tapped, which shaded one picked row unlike the
+     others in Select (audit C #4) */
+  @media (hover: hover) {
+    [data-kit='feed-item']:hover {
+      background: var(--bg-2);
+    }
   }
   [data-kit='feed-item'][data-selected] {
     border-color: var(--line);
@@ -369,8 +375,10 @@
   [data-kit='virtual-row'][data-gap='section'] {
     padding-top: 14px;
   }
-  [data-kit='list-row'][data-interactive]:hover {
-    background: var(--bg-2);
+  @media (hover: hover) {
+    [data-kit='list-row'][data-interactive]:hover {
+      background: var(--bg-2);
+    }
   }
   [data-kit='list-row'][data-current] {
     background: var(--bg-2);

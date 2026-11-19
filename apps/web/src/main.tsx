@@ -12,8 +12,10 @@ import { shellSettingsUi } from '@wisp-plugin/shell-settings-ui';
 import { startNotifier } from '@wisp-plugin/shell-home-ui';
 import { pluginUis } from './plugins.ts';
 import { registerWorker } from './worker.ts';
+import { quietObserverLoop } from './observer-loop.ts';
 
 performance.mark('wisp:boot');
+quietObserverLoop(window);
 
 function clientId(): string {
   try {

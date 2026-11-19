@@ -12,6 +12,7 @@ import { openers, win, type Shown } from './open-here.ts';
 import type { Entry } from './items.ts';
 import type { Pins } from './pins.tsx';
 import './i18n/lazy.ts';
+import { opensHere } from './opened.ts';
 
 export type { Shown } from './open-here.ts';
 
@@ -26,8 +27,8 @@ export interface PageRunDeps {
   readonly launched?: (e: Entry, url: string) => void;
   /** what opening anything else does (default: a new window) */
   readonly opened?: (url: string) => void;
-  /** the browser page: opens things inside wisp as v1 did (the viewer, the reader, an app's window); without it, a new
-   *  window (the phone screen hands in `launched` and `opened`) */
+  /** opens things inside wisp as v1 did (the viewer, the reader, an app's window); without it, a new window. The
+   *  phone screen hands it in too, with `launched` for its apps */
   readonly show?: (s: Shown | undefined) => void;
   /** the browser page's Edit details…, by the card */
   readonly edit?: (e: Entry) => void;
@@ -78,7 +79,8 @@ export function pageRun(d: PageRunDeps): { run: (e: Entry, id: ActionId) => void
     const args = { key: e.key, id: e.it.id };
     switch (id) {
       case 'open':
-        return d.show ? here.open(e) : openThere(e);
+        // the phone screen shows its apps over the whole screen (`launched`); everything else opens here when it can
+        return opensHere(e.it.kind, d) ? here.open(e) : openThere(e);
       case 'mention':
         return here.mention(e);
       case 'edit':

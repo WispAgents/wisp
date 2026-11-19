@@ -14,10 +14,11 @@ import { publishTargets } from './commands.ts';
 import { useEntries, useTaskTitle, type Entry } from './items.ts';
 import { kindOf } from './kinds.ts';
 import { cardMeta, computerOf, groupItems, withComputer, kindChips, shownItems, when, type KindFilter } from './model.ts';
-import { pageRun } from './page-run.ts';
+import { pageRun, type Shown } from './page-run.ts';
 import { PaneCards, pinsOf } from './pins.tsx';
 import { stuffState } from './state.ts';
 import { TOPIC, type Item } from './types.ts';
+import { Windows } from './Windows.tsx';
 import './i18n/lazy.ts';
 
 /** What the phone screen carries out: the browser page's, less Show in folder (no Finder on a phone), plus Share. */
@@ -65,7 +66,10 @@ export default function StuffPhonePage(props: { readonly client: PluginClient })
   const [list, setList] = createSignal(false);
   // an app launched: over the whole screen, in its frame (Close / Done brings My Stuff back)
   const [app, setApp] = createSignal<{ readonly title: string; readonly url: string }>();
-  const { run, upload } = pageRun({ c, shell, pins, entries, launched: (e, url) => setApp({ title: e.it.title || e.it.name, url }) });
+  // a doc, a table, code or a picture: wisp's own reader and viewer, as on a desktop and in a phone's browser (audit C
+  // #1: the phone apps opened the raw file in a new window, which a native shell may not even show)
+  const [opened, setOpened] = createSignal<Shown | undefined>();
+  const { run, upload } = pageRun({ c, shell, pins, entries, show: setOpened, launched: (e, url) => setApp({ title: e.it.title || e.it.name, url }) });
   const taskTitle = useTaskTitle(c);
   // rows are keyed by entity key, never the bare item id: two computers can each hold an `st1` (r298), and keyed by id
   // one copy stood for both (its name, its menu, its Remove)
@@ -184,6 +188,7 @@ export default function StuffPhonePage(props: { readonly client: PluginClient })
         t={(k, v) => shell.t(`kit.${k}`, v)}
       />
       <PaneCards client={c} />
+      <Windows client={c} shown={opened()} close={() => setOpened(undefined)} live={(k) => entries().find((x) => x.key === k)} run={run} publishTo={() => st.publishTo()[0]} />
       <Show when={app()}>
         {(a) => <StuffPhoneApp title={a().title} src={a().url} sandbox={APP_SANDBOX} closeLabel={t('stuff.phone.close')} doneLabel={t('stuff.phone.done')} onClose={() => setApp(undefined)} />}
       </Show>

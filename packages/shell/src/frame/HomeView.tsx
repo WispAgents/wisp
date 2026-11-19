@@ -26,7 +26,6 @@ import { Slot, useExtensions, usePluginClient } from '../slot.tsx';
 import { useNow } from '../clock.ts';
 import { SESSION, type SessionRow } from '../rows.ts';
 import { longTime, needsYou, shortAgo, statusOf, sessionKey } from './rows-view.ts';
-import { pickerDataOf } from './picker-data.ts';
 import { autoBlocked, autoPreview, autoRules, create, setSetting, trial, type Attachment } from './commands.ts';
 import { newRun, runWords, sameSetup, settingModel, trialVary, variantWords, type Variant } from './trial.ts';
 import { modelWord, useHarnessRows, type Runner, useDefaultWords } from './runner.ts';
@@ -818,6 +817,7 @@ export function HomeView(props: { readonly onBack?: () => void }): JSX.Element {
       part: 'launcher.plus',
       label: t('shell.home.plus'),
       title: t('shell.home.plusTitle'),
+      refocus: () => input?.focus(),
       sections: [
         [
           { id: 'attach', part: 'launcher.attach', icon: 'clip', label: t('shell.home.attach'), act: attachAct(shell, attach, picking()) },
@@ -967,7 +967,8 @@ export function HomeView(props: { readonly onBack?: () => void }): JSX.Element {
           act: { onClick: () => (setAutoPop(false), setCmpPicker(undefined), setPicker(!picker())) },
           open: picker(),
           // the hover fetches the picker's code and its answers, so the press reuses them (perf-ui-r2 #3)
-          onWarm: () => (warmPicker(), pickerDataOf(shell.client, target()).warm(agent())),
+          // the picker's data module with the picker (off the first screen): a hover warms both
+          onWarm: () => (warmPicker(), void import('./picker-data.ts').then((m) => m.pickerDataOf(shell.client, target()).warm(agent()))),
           // what will Auto run: Auto's pick, the pill's own segment (v1 #autoPv), opens the AutoPop
           pickAct: { onClick: () => (setPicker(false), setCmpPicker(undefined), setAutoPop(!autoPop())) },
           pickOpen: autoPop(),

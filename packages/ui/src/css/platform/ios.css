@@ -321,8 +321,8 @@
   :root[data-platform='ios'] [data-kit='list-row'][data-layout='feed'] > [data-kit='list-row-pills'],
   :root[data-platform='ios'] [data-kit='list-row'][data-layout='feed'][data-time] > [data-kit='list-row-pills'],
   :root[data-platform='ios'] [data-kit='list-row'][data-layout='feed'][data-time][data-row-lines] > [data-kit='list-row-pills'] { grid-column: 3; grid-row: 2; align-self: center; justify-content: flex-end; }
-  :root[data-platform='ios'] [data-kit='list-row'][data-interactive]:hover { background: transparent; }
-  :root[data-platform='ios'] [data-kit='list-row'][data-interactive]:active { background: var(--surface-c3); }
+  :root[data-platform='ios'] [data-kit='list-row'][data-interactive]:not([data-selected]):not([data-picked]):hover { background: transparent; }
+  :root[data-platform='ios'] [data-kit='list-row'][data-interactive]:not([data-selected]):not([data-picked]):active { background: var(--surface-c3); }
   :root[data-platform='ios'] [data-kit='list-row'][data-current] { background: var(--surface-c3); }
   :root[data-platform='ios'] [data-kit='list-row'][data-selected] { background: color-mix(in srgb, var(--primary) 15%, var(--surface-c0)); }
   :root[data-platform='ios'] [data-kit='list-row-actions'] { opacity: 1; pointer-events: auto; }
