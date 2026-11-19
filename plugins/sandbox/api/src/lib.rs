@@ -239,7 +239,8 @@ command!(Own = "sandbox.own" : OwnArgs => Empty);
 command!(PatchCmd = "sandbox.patch" : PatchArgs => Patch, ro);
 command!(Bring = "sandbox.bring" : BringArgs => Brought);
 command!(InfoCmd = "sandbox.info" : Empty => Info, ro; typed);
-command!(ClaudeBegin = "sandbox.claude.begin" : Empty => ClaudeSignIn);
+// typed: it takes nothing, so `wisp sandbox claude begin --x` is a usage error, not a 30 s sign-in run with --x as a field
+command!(ClaudeBegin = "sandbox.claude.begin" : Empty => ClaudeSignIn; typed);
 command!(ClaudeCode = "sandbox.claude.code" : CodeArgs => ClaudeSignIn);
 command!(ClaudeState = "sandbox.claude.state" : Empty => ClaudeSignIn, ro; typed);
 command!(Logout = "sandbox.logout" : AgentArgs => Info);

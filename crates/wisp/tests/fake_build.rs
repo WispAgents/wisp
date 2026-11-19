@@ -11,11 +11,13 @@ use std::time::{Duration, SystemTime};
 const CHILD: &str = "WISP_FAKE_BUILD_OUT";
 const HOLD: &str = "WISP_FAKE_BUILD_HOLD";
 
-/// One of the racing processes: builds into the shared `out`, then runs the agent fake.
+/// One of the racing processes: places the fakes its parent built into the shared `out`, then runs the agent fake.
+/// The build itself runs under the placement's lock, one process at a time, so only the placement races: the parent
+/// builds once (18 cargo runs cost a minute on Windows).
 #[test]
 fn fake_build_child() {
     let Some(out) = std::env::var_os(CHILD) else { return };
-    let (agent, gh) = common::fake_bins_into(Path::new(&out));
+    let (agent, gh) = common::place_built_fakes(Path::new(&out));
     assert!(gh.is_file(), "{}", gh.display());
     let o = Command::new(&agent).arg("--version").stdin(Stdio::null()).output().unwrap();
     assert!(o.status.success() && String::from_utf8_lossy(&o.stdout).contains("9.9.9"), "{} --version: {o:?}", agent.display());
@@ -83,6 +85,14 @@ fn names(out: &Path) -> Vec<String> {
     names
 }
 
+/// Sets `p`'s mtime without writing to it. On macOS a write handle on the executable the race runs next got that run
+/// killed (SIGKILL: the kernel no longer trusts its code signature), so off Windows a read handle, which `futimens`
+/// takes from the file's owner; Windows sets file times only through a handle opened with write access.
+fn stamp_mtime(p: &Path, at: SystemTime) {
+    let f = if cfg!(windows) { std::fs::File::options().write(true).open(p) } else { std::fs::File::open(p) };
+    f.unwrap().set_modified(at).unwrap();
+}
+
 fn modified(p: &Path) -> SystemTime {
     std::fs::metadata(p).unwrap().modified().unwrap()
 }
@@ -95,6 +105,7 @@ fn several_processes_build_the_fakes_at_once() {
     let (agent, gh) = (out.join(format!("wisp-fake-agent{x}")), out.join(format!("wisp-fake-gh{x}")));
     let placed = [".lock".to_owned(), format!("wisp-fake-agent{x}"), format!("wisp-fake-gh{x}")];
     let built = common::bin_dir().join(format!("wisp-fake-agent{x}"));
+    common::build_fakes();
 
     // 1. an empty folder: one process places the fakes, the others find them
     race(&out);
@@ -104,7 +115,7 @@ fn several_processes_build_the_fakes_at_once() {
     // race passes on Windows too; a stamped mtime that survives shows no process renamed over it, on every OS
     let stamp = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000_000);
     for f in [&agent, &gh] {
-        std::fs::File::options().write(true).open(f).unwrap().set_modified(stamp).unwrap();
+        stamp_mtime(f, stamp);
     }
     let running = hold(&agent);
     race(&out);
@@ -120,7 +131,7 @@ fn several_processes_build_the_fakes_at_once() {
     assert!(wisp_testkit::same_bytes(&built, &agent), "{} holds the build's bytes after the race", agent.display());
     release(stale);
     // the copy moved aside goes at the next placement once nothing runs it
-    common::fake_bins_into(&out);
+    common::place_built_fakes(&out);
     assert_eq!(names(&out), placed);
     std::fs::remove_dir_all(&out).unwrap();
 }

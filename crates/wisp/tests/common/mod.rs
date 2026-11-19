@@ -73,6 +73,43 @@ pub fn bin_dir() -> &'static Path {
 /// another build that is running is moved aside first (Windows lets a running executable be renamed,
 /// not replaced) and removed once nothing runs it, by this placement or a later one.
 pub fn fake_bins_into(out: &Path) -> (PathBuf, PathBuf) {
+    place_fakes(out, true)
+}
+
+/// The lock every process takes to build the fakes into `<target>/<profile>/` or copy them out of there: a no-op
+/// `cargo build` still puts `wisp-fake-agent` back in that folder (remove, then link), so a copy another process
+/// made meanwhile found no file (os error 2, 5 of 50 runs of `fake_build.rs`, 8 at once). `out/.lock` alone guards one
+/// folder's placement, and test processes place into different folders.
+fn built_lock() -> std::fs::File {
+    let lock = std::fs::OpenOptions::new().create(true).truncate(false).write(true).open(bin_dir().join(".wisp-fakes.lock")).unwrap();
+    lock.lock().unwrap();
+    lock
+}
+
+/// `cargo build` of the fakes into the target dir, no placement (a race's parent builds once, its children place).
+pub fn build_fakes() {
+    let _built = built_lock();
+    build_unlocked();
+}
+
+fn build_unlocked() {
+    let dir = bin_dir();
+    let target = dir.parent().unwrap();
+    let mut cmd = Command::new(std::env::var("CARGO").unwrap_or_else(|_| "cargo".into()));
+    cmd.args(["build", "--quiet", "-p", "wisp-testkit", "--bin", "wisp-fake-agent", "--bin", "wisp-fake-gh", "--target-dir"]).arg(target);
+    if dir.ends_with("release") {
+        cmd.arg("--release");
+    }
+    assert!(cmd.status().unwrap().success(), "building wisp-testkit's fakes into {}", target.display());
+}
+
+/// [`fake_bins_into`] without the build, for a process whose parent built them: the placement alone, the part that
+/// races (`fake_build.rs`). A cargo no-op build is seconds on Windows, and the build runs under the lock anyway.
+pub fn place_built_fakes(out: &Path) -> (PathBuf, PathBuf) {
+    place_fakes(out, false)
+}
+
+fn place_fakes(out: &Path, build: bool) -> (PathBuf, PathBuf) {
     let dir = bin_dir();
     let exe = |d: &Path, n: &str| d.join(format!("{n}{}", std::env::consts::EXE_SUFFIX));
     std::fs::create_dir_all(out).unwrap();
@@ -87,13 +124,11 @@ pub fn fake_bins_into(out: &Path) -> (PathBuf, PathBuf) {
             let _ = std::fs::remove_file(e.path());
         }
     }
-    let target = dir.parent().unwrap();
-    let mut cmd = Command::new(std::env::var("CARGO").unwrap_or_else(|_| "cargo".into()));
-    cmd.args(["build", "--quiet", "-p", "wisp-testkit", "--bin", "wisp-fake-agent", "--bin", "wisp-fake-gh", "--target-dir"]).arg(target);
-    if dir.ends_with("release") {
-        cmd.arg("--release");
+    // out's lock, then the target dir's (always in this order)
+    let built = built_lock();
+    if build {
+        build_unlocked();
     }
-    assert!(cmd.status().unwrap().success(), "building wisp-testkit's fakes into {}", target.display());
     let place = |n: &str| {
         let (src, dst) = (exe(dir, n), exe(out, n));
         if wisp_testkit::same_bytes(&src, &dst) {
@@ -111,6 +146,7 @@ pub fn fake_bins_into(out: &Path) -> (PathBuf, PathBuf) {
         dst
     };
     let (agent, gh) = (place("wisp-fake-agent"), place("wisp-fake-gh"));
+    drop(built);
     lock.unlock().unwrap();
     assert!(agent.is_file() && gh.is_file(), "{} and {} after the build", agent.display(), gh.display());
     (agent, gh)

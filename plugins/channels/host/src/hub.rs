@@ -615,7 +615,10 @@ impl ChannelHub for Hub {
     fn sleep(&self, ms: u64) -> BoxFuture<'static, ()> {
         match self.ctx.clock() {
             Ok(c) => c.sleep(ms),
-            Err(_) => Box::pin(async {}),
+            // no clock service: real time, as wisp.machines does. A sleep that is over at once made every transport's
+            // loop a spin that never yields (ntfy offline polled 200k times in 2 s), and a task it spawned (the Phone
+            // rows' writer) sat in that worker's LIFO slot, which no other worker steals: the row stayed Checking… (B60)
+            Err(_) => Box::pin(tokio::time::sleep(std::time::Duration::from_millis(ms))),
         }
     }
     fn spawn(&self, fut: BoxFuture<'static, ()>) {

@@ -599,22 +599,13 @@ async fn an_ntfy_error_that_quotes_its_url_never_puts_the_topic_on_the_phone_row
     a.net.ntfy_down.store(true, Ordering::SeqCst);
     let out = a.call("channels.setup", json!({ "transport": "ntfy", "enabled": true })).await;
     let topic = out["settings"]["topic"].as_str().unwrap().to_owned();
-    // B60 (macOS CI only, not reproduced locally): on a miss, say what the row and the status were, and what was fetched
-    let failing = async || a.phone_row("ntfy").await.is_some_and(|r| r["state"] == "failing");
-    for _ in 0..400 {
-        if failing().await {
-            break;
-        }
-        tokio::time::sleep(Duration::from_millis(5)).await;
-    }
-    if !failing().await {
-        let fetched: Vec<String> = a.net.posts.lock().unwrap().iter().map(|(u, _)| u.replace(&topic, "<topic>")).collect();
-        panic!(
-            "never: Not working, on the row. row: {:?}; status: {}; fetched: {fetched:?}",
-            a.phone_row("ntfy").await,
-            a.status("ntfy").await
-        );
-    }
+    // the transport's own verdict first, then the row follows it (rows::poke): two waits, each for what it names
+    eventually("ntfy says Not working", async || a.status("ntfy").await["state"] == "failing").await;
+    eventually("Not working, on the row", async || a.phone_row("ntfy").await.is_some_and(|r| r["state"] == "failing")).await;
+    // B60: with no clock service the hub's sleep was over at once, so the offline poll spun without yielding (200k fetches
+    // in 2 s) and the row's writer, spawned from that worker, never ran. A poll every few seconds is a handful here.
+    let polls = a.net.posts.lock().unwrap().iter().filter(|(u, _)| u.contains("-reply/json")).count();
+    assert!((1..=3).contains(&polls), "polled {polls} times");
     let row = a.phone_row("ntfy").await.unwrap();
     let e = row["error"].as_str().unwrap();
     assert!(e.contains("error sending request") && !e.contains(&topic), "{e}");

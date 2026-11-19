@@ -296,8 +296,19 @@ async fn fix_conflicts_spends_no_turn_when_git_sees_no_conflict() {
 async fn bring_in_offers_a_new_stray_worktree_in_seconds_with_fifty_worktrees_audit_e6() {
     let f = fixture("wt-safe-many");
     let project = f.api.cmd("runtime.projectAdd", json!({ "path": f.repo })).await["name"].as_str().unwrap().to_owned();
+    // 50 wisp worktrees, the audit's: each made by its task's create (one at a time, so no two `git worktree add`s race
+    // on the repo), their first turns running meanwhile, all ended before the look. One by one, each create waited for
+    // its turn: ~60 s on Windows
+    let mut ids = Vec::new();
     for i in 0..50 {
-        task_in_a_worktree(&f, &format!("many {i}")).await;
+        let made =
+            f.api.cmd("runtime.create", json!({ "prompt": format!("many {i}"), "cwd": f.repo, "agent": "claude", "worktree": true })).await;
+        ids.push(made["id"].as_str().unwrap().to_owned());
+    }
+    for id in &ids {
+        f.api.until(id, "the first turn ends", |t| t.last().is_some_and(ended)).await;
+        let wt = f.api.cmd("runtime.get", json!({ "id": id })).await["ext"]["wisp.worktrees"].clone();
+        assert!(wt["path"].is_string(), "it ran in a worktree: {wt}");
     }
     f.api.cmd("worktrees.view", json!({})).await; // the cleanup's look over the 50 starts
     let stray = f.repo.parent().unwrap().join("stray-many");

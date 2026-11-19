@@ -26,6 +26,19 @@ fn wisp(dir: &Path, port: u16, args: &[String]) -> (i32, String, String) {
     (o.status.code().unwrap_or(-1), String::from_utf8_lossy(&o.stdout).into_owned(), String::from_utf8_lossy(&o.stderr).into_owned())
 }
 
+/// [`wisp`] for every line, 8 processes at a time, answers in the lines' order: each is a separate CLI reading its own
+/// arguments, and one after another they were ~200 spawns, over a minute on Windows (spawns cost ~10× there).
+fn wisp_all(dir: &Path, port: u16, lines: &[Vec<String>]) -> Vec<(i32, String, String)> {
+    let mut out = Vec::with_capacity(lines.len());
+    for batch in lines.chunks(8) {
+        std::thread::scope(|s| {
+            let running: Vec<_> = batch.iter().map(|l| s.spawn(move || wisp(dir, port, l))).collect();
+            out.extend(running.into_iter().map(|h| h.join().unwrap()));
+        });
+    }
+    out
+}
+
 /// `words::VERB_PATHS`, read from its source (one `vp("cmd", &[verbs…], …)` per line), so this test follows the table.
 fn built_in_paths() -> Vec<Vec<String>> {
     let src = include_str!("../src/words.rs");
@@ -65,11 +78,13 @@ async fn no_verb_path_with_a_bad_flag_ever_becomes_a_task() {
     // every verb refuses a flag it doesn't take (exit non-zero): a typed one by its argument type, an untyped one by
     // what its command needs (`--args JSON`); an untyped verb that needs nothing took the flag as a field and exited 0,
     // so those declare their (empty or optional) argument types
-    for (path, strict) in built_in.iter().map(|p| (p, true)).chain(plugin.iter().map(|(p, _)| (p, true))) {
-        let mut args = path.clone();
-        args.push("--definitely-not-a-flag".into());
-        let (code, out, err) = wisp(&dir, port, &args);
-        if (strict && code == 0) || out.contains("launched") || err.contains("launched") {
+    let flagged: Vec<Vec<String>> = built_in
+        .iter()
+        .chain(plugin.iter().map(|(p, _)| p))
+        .map(|path| path.iter().cloned().chain(["--definitely-not-a-flag".to_owned()]).collect())
+        .collect();
+    for (args, (code, out, err)) in flagged.iter().zip(wisp_all(&dir, port, &flagged)) {
+        if code == 0 || out.contains("launched") || err.contains("launched") {
             wrong.push(format!("wisp {} → {code}: {}{}", args.join(" "), out.trim(), err.trim()));
         }
     }
@@ -173,8 +188,7 @@ async fn an_unknown_verb_under_any_group_is_an_error_and_a_quoted_prompt_is_stil
         lines.push(l.iter().map(|w| (*w).to_owned()).collect());
     }
     let mut wrong = Vec::new();
-    for l in &lines {
-        let (code, out, err) = wisp(&dir, port, l);
+    for (l, (code, out, err)) in lines.iter().zip(wisp_all(&dir, port, &lines)) {
         let said = format!("To start a task with these words: wisp -- \"{}\"", l.join(" "));
         if code != 2 || out.contains("launched") || !err.contains(&said) || !err.contains(&format!("wisp {} has no {}", l[0], l[1])) {
             wrong.push(format!("wisp {} → {code}: {}{}", l.join(" "), out.trim(), err.trim()));
