@@ -74,7 +74,8 @@ async fn an_import_takes_only_folders_that_are_there_files_its_tasks_and_sets_on
     assert_eq!(code, 0, "{out}{err}");
     let ps = projects(&api).await;
     assert!(!ps.iter().any(|(n, _)| n == "gone"), "{ps:?}");
-    let (name, _) = ps.iter().find(|(_, p)| p.ends_with("/repo")).cloned().unwrap_or_else(|| panic!("{ps:?}"));
+    // by its last component: a backslash before it on Windows
+    let (name, _) = ps.iter().find(|(_, p)| Path::new(p).ends_with("repo")).cloned().unwrap_or_else(|| panic!("{ps:?}"));
 
     // B3: the imported task in that folder is that project's
     let list = api.cmd("runtime.list", json!({})).await;
