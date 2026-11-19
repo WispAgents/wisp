@@ -12,9 +12,12 @@ mod common;
 
 use std::path::Path;
 use std::process::{Command, Stdio};
+#[cfg(unix)]
 use std::time::{Duration, Instant};
 
-use common::{Api, start, start_with, temp};
+#[cfg(unix)]
+use common::start_with;
+use common::{Api, start, temp};
 use serde_json::{Value, json};
 
 fn wisp(dir: &Path, port: u16, args: &[&str]) -> (i32, String, String) {
