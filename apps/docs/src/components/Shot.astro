@@ -1,0 +1,28 @@
+---
+// A screenshot of the desktop app (apps/docs/src/assets/shots/<name>-light|dark.webp, taken from the app's web
+// bundle with the desktop shell's stub at 1440 × 900): the light one or the dark one, as Starlight's theme is, AVIF
+// with WebP, sized for the column, loaded lazily. In a guide: <Shot name="task" alt="What the picture shows" />
+import { Picture } from 'astro:assets';
+import type { ImageMetadata } from 'astro';
+
+interface Props {
+  name: string;
+  alt: string;
+  caption?: string;
+}
+const { name, alt, caption } = Astro.props;
+const all = import.meta.glob<{ default: ImageMetadata }>('../assets/shots/*.webp', { eager: true });
+const pick = (theme: string) => {
+  const m = all[`../assets/shots/${name}-${theme}.webp`];
+  if (!m) throw new Error(`Shot: no ${name}-${theme}.webp in apps/docs/src/assets/shots`);
+  return m.default;
+};
+const sizes = '(max-width: 50rem) 100vw, 46rem';
+const widths = [480, 800, 1200, 1600];
+---
+
+<figure class="wisp-shot">
+  <Picture class="wisp-shot-light" src={pick('light')} alt={alt} formats={['avif', 'webp']} widths={widths} sizes={sizes} loading="lazy" decoding="async" />
+  <Picture class="wisp-shot-dark" src={pick('dark')} alt={alt} formats={['avif', 'webp']} widths={widths} sizes={sizes} loading="lazy" decoding="async" />
+  {caption && <figcaption>{caption}</figcaption>}
+</figure>

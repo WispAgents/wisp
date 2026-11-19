@@ -25,8 +25,8 @@ Each channel is off until you switch it on, and wisp reaches out to the service,
 computer. Tokens go to `~/.wisp/secrets.json`, never to a formula.
 
 <Tabs syncKey="way">
-<TabItem label="App">
-Settings → General → **Phone**. Pick the channel and follow its steps:
+<TabItem label="Desktop app">
+**⌘K** → **Settings** → General → **Phone**. Pick the channel and follow its steps:
 
 - **Slack:** **Copy manifest**, then at api.slack.com/apps **Create New App → From a manifest**. Paste the app
   token and the bot token. Then **Link yourself**: send the link code to the bot in a DM.
@@ -38,6 +38,13 @@ Settings → General → **Phone**. Pick the channel and follow its steps:
 - **Email:** on a cloud wisp, add the address you send from, then mail the **Secret address** it shows.
 
 **Send me** picks what a channel tells you about: questions, finished tasks or both.
+
+In the browser (`wisp --browser`, or your cloud wisp) it's the same window, menus and keys.
+</TabItem>
+<TabItem label="Phone app">
+Tap the person button at the top of **Tasks** → **Settings** → General → **Phone**, pick the channel and follow the
+same steps. Telegram and ntfy are quick from the phone. Slack and Discord mean copying tokens between sites, which is
+easier in the Desktop app tab.
 </TabItem>
 <TabItem label="TUI">
 ```text
@@ -110,10 +117,13 @@ fixed line unless you switch on **Full reports on public repos**.
 ## From Linear, Jira or GitHub issues
 
 <Tabs syncKey="way">
-<TabItem label="App">
-In New task, **+** → **Start from an issue…** lists your project's open GitHub issues and the Linear and Jira
+<TabItem label="Desktop app">
+In New task's footer, **+** → **Start from an issue…** lists your project's open GitHub issues and the Linear and Jira
 issues assigned to you. **Connect Linear…** or **Connect Jira…** signs you in the first time. Picking an issue fills
 the prompt.
+</TabItem>
+<TabItem label="Phone app">
+In New task, tap **⋯** (More options) → **Start from an issue**. Pick an issue and it fills the prompt.
 </TabItem>
 <TabItem label="TUI">
 Write the issue's link or number in the task, or use a trigger (below).

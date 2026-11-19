@@ -6,6 +6,7 @@ sidebar:
 ---
 
 import { Tabs, TabItem } from '@astrojs/starlight/components';
+import Shot from '@wisp-docs/Shot.astro';
 
 The wisp apps for iPhone and Android are not out yet. Until they are, wisp works in your phone's browser, and your
 agents can reach your phone with notifications you answer from the lock screen.
@@ -39,9 +40,17 @@ Your phone needs a wisp it can reach. Pick one:
   open ports.
 
 <Tabs syncKey="way">
-<TabItem label="App">
-On home, the tip **Reach this wisp from anywhere** has **Set up**. Or open **Machines** → **Reach this computer from
-anywhere**.
+<TabItem label="Desktop app">
+On home, the tip **Reach this wisp from anywhere** has **Set up**. Or open **⌘K** → **Settings** → **Machines** →
+**Reach this computer from anywhere**.
+
+In the browser (`wisp --browser`, or your cloud wisp) it's the same window, menus and keys.
+
+<Shot name="settings-machines" alt="Settings → Machines: computers over SSH, Tailscale, and Reach this computer from anywhere" />
+</TabItem>
+<TabItem label="Phone app">
+This is switched on at the computer itself (see the Desktop app tab). Then, in the phone app, open **Computers**
+and sign in to wisp Cloud with GitHub or Google: the computer shows in the list.
 </TabItem>
 <TabItem label="TUI">
 Send `/grid-client computer --on`.
@@ -69,8 +78,12 @@ wisp can tell your phone when a task finishes or needs you, with buttons to answ
   in your own words.
 
 <Tabs syncKey="way">
-<TabItem label="App">
-Settings → **Phone**: pick ntfy or Telegram, follow **Set it up**, then **Send a test**.
+<TabItem label="Desktop app">
+Open the person button in the top bar → **Settings** → **Phone**: pick ntfy or Telegram, follow **Set it up**, then
+**Send a test**.
+</TabItem>
+<TabItem label="Phone app">
+Tap the person button at the top of **Tasks** → **Settings** → **Phone**, and set it up the same way.
 </TabItem>
 <TabItem label="TUI">
 Send `/channels setup ntfy --enabled --notify asks,finished`, then `/channels test`.

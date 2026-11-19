@@ -73,9 +73,15 @@ connectors:
 **Secrets never go in the file.** `${secret:NAME}` names one; each person sets the value on their own computer:
 
 <Tabs syncKey="way">
-<TabItem label="App">
-Settings → Agents → **Connectors**. A connector that needs a key or a sign-in says so; **Sign in** opens the
-server's page for an `oauth: true` server. The token stays in your secrets file.
+<TabItem label="Desktop app">
+**⌘K** → **Settings** → Agents → **Connectors**. A connector that needs a key or a sign-in says so; **Sign in**
+opens the server's page for an `oauth: true` server. The token stays in your secrets file.
+
+In the browser (`wisp --browser`, or your cloud wisp) it's the same window, menus and keys.
+</TabItem>
+<TabItem label="Phone app">
+Tap the person button at the top of **Tasks** → **Settings** → Agents → **Connectors**. A connector that needs a
+sign-in says so; **Sign in** opens the server's page. A key is easier to paste from the Desktop app tab.
 </TabItem>
 <TabItem label="TUI">
 Secrets are typed hidden, so set them from a terminal (CLI tab). Then check the server:
@@ -98,8 +104,12 @@ wisp validate                              # says which secrets aren't set here 
 The MCP servers in Claude Code's or Codex's own config can come in as connectors, so every harness gets them.
 
 <Tabs syncKey="way">
-<TabItem label="App">
-Settings → Agents → **Connectors** → **Found in your harnesses** → **Review**, tick them, and **Add**.
+<TabItem label="Desktop app">
+**⌘K** → **Settings** → Agents → **Connectors** → **Found in your harnesses** → **Review**, tick them, and **Add**.
+</TabItem>
+<TabItem label="Phone app">
+Person button → **Settings** → Agents → **Connectors** → **Found in your harnesses** → **Review**, tick them, and
+**Add**.
 </TabItem>
 <TabItem label="TUI">
 ```text

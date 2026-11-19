@@ -138,11 +138,10 @@ section { padding: clamp(56px, 9vw, 104px) 0 0; }
 .pillar li { margin: 0.3em 0; }
 .tag { display: inline-block; font-size: 0.72rem; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--accent); border: 1px solid var(--accent); border-radius: 999px; padding: 1px 8px; vertical-align: middle; margin-left: 6px; }
 
-/* ways in: App · TUI · CLI. The choice is one for the page (html[data-way]), kept in localStorage. */
+/* ways in: Desktop app · Phone app · TUI · CLI. The choice is one for the page (html[data-way]), kept in localStorage. */
 .ways { background: var(--card); border: 1px solid var(--line); border-radius: var(--r); overflow: hidden; min-width: 0; }
 .ways-tabs { display: flex; gap: 2px; padding: 6px; border-bottom: 1px solid var(--line); background: var(--bg2); overflow-x: auto; }
 .ways-tabs button { font: inherit; font-size: 0.9rem; font-weight: 600; color: var(--muted); background: none; border: 0; border-radius: 8px; padding: 6px 12px; cursor: pointer; white-space: nowrap; }
-.ways-tabs button[aria-selected='true'] { color: var(--fg); background: var(--card); box-shadow: 0 1px 2px rgb(0 0 0 / 0.08); }
 .ways-tabs .label { margin-left: auto; align-self: center; font-size: 0.78rem; color: var(--muted); padding-right: 6px; white-space: nowrap; }
 @media (max-width: 560px) { .ways-tabs .label { display: none; } }
 .way { padding: 16px; }
@@ -154,9 +153,16 @@ section { padding: clamp(56px, 9vw, 104px) 0 0; }
 .way-shot.is-phone { display: flex; justify-content: center; }
 .way-shot .phone { width: min(60%, 200px); }
 .way-shot .window { box-shadow: none; }
-html:not([data-way='tui']):not([data-way='cli']) .way:not([data-k='app']),
+/* which panel and which tab look picked: from html[data-way], set in the head before paint (desktop when unset) */
+html:not([data-way='phone']):not([data-way='tui']):not([data-way='cli']) .way:not([data-k='desktop']),
+html[data-way='phone'] .way:not([data-k='phone']),
 html[data-way='tui'] .way:not([data-k='tui']),
 html[data-way='cli'] .way:not([data-k='cli']) { display: none; }
+.ways-tabs button[data-way-pick] { color: var(--muted); background: none; box-shadow: none; }
+html:not([data-way='phone']):not([data-way='tui']):not([data-way='cli']) [data-way-pick='desktop'],
+html[data-way='phone'] [data-way-pick='phone'],
+html[data-way='tui'] [data-way-pick='tui'],
+html[data-way='cli'] [data-way-pick='cli'] { color: var(--fg); background: var(--card); box-shadow: 0 1px 2px rgb(0 0 0 / 0.08); }
 
 /* code look */
 .term { background: #0f0f12; color: #e6e6ea; border-color: #26262b; }

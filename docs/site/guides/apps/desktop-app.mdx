@@ -6,6 +6,7 @@ sidebar:
 ---
 
 import { Tabs, TabItem } from '@astrojs/starlight/components';
+import Shot from '@wisp-docs/Shot.astro';
 
 The desktop app is wisp in its own window. It is the same wisp as in the browser and on your phone: one small
 local server, `wisp serve`, and one UI. The window adds what a browser tab can't do well.
@@ -29,9 +30,18 @@ window once, checks it against the release, and opens it. On Linux it opens a br
 ## Open it
 
 <Tabs syncKey="way">
-<TabItem label="App">
+<TabItem label="Desktop app">
 Open **wisp** from your Applications folder, Start menu or app launcher. It starts its server and shows your tasks.
-Open it again and you get the same window: there is only ever one.
+Open it again and you get the same window: there is only ever one. **⌘K** (Ctrl-K on Windows and Linux) finds any
+task, command or setting.
+
+In the browser (`wisp --browser`, or your cloud wisp) it's the same window, menus and keys.
+
+<Shot name="palette" alt="The ⌘K search and commands box open over the desktop app, listing tasks and commands" />
+</TabItem>
+<TabItem label="Phone app">
+The phone app doesn't start wisp on a computer. Open the **Computers** tab and tap a computer that is on: you see
+its tasks, live.
 </TabItem>
 <TabItem label="TUI">
 The TUI talks to the same server. With the app open, `wisp tui` in any terminal shows the same tasks, live.
@@ -60,10 +70,13 @@ wisp --browser    # a browser tab instead: http://localhost:4477
 The app updates itself. When a new version is out, its top bar shows **Update to …**.
 
 <Tabs syncKey="way">
-<TabItem label="App">
-Press **Update to …** in the top bar, or open avatar → **Settings** → **Updates**: pick a channel (**Stable**,
-**Beta** or **Nightly**), **Check now**, then **Update now**. wisp restarts; running tasks are stopped, and it says
-how many first.
+<TabItem label="Desktop app">
+Press **Update to …** in the top bar, or open the person button → **Settings** → **Updates**: pick a channel
+(**Stable**, **Beta** or **Nightly**), **Check now**, then **Update now**. wisp restarts; running tasks are stopped,
+and it says how many first.
+</TabItem>
+<TabItem label="Phone app">
+Updating wisp on a computer is done on that computer: see the Desktop app tab.
 </TabItem>
 <TabItem label="TUI">
 Send `/update check`, then `/update install`.

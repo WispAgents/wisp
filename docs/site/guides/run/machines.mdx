@@ -6,6 +6,7 @@ sidebar:
 ---
 
 import { Tabs, TabItem } from '@astrojs/starlight/components';
+import Shot from '@wisp-docs/Shot.astro';
 
 Every computer that runs wisp is a **machine**. Your wisp can start tasks on the others, and all their tasks show in
 one list. A desktop at home keeps working while your laptop sleeps.
@@ -22,10 +23,18 @@ Turn on SSH on the other computer (on a Mac: System Settings → General → Sha
 `openssh-server`).
 
 <Tabs syncKey="way">
-<TabItem label="App">
-Your avatar → **Machines**. Type its **SSH address** (`you@studio.local`, or a Host from `~/.ssh/config`), give it a
-**Name**, then **Add and connect**. The first time, type your password for that computer once; wisp sets up a key so
-it won't ask again.
+<TabItem label="Desktop app">
+Click the person button in the top bar → **Machines** (or **⌘K** → **Settings** → Computers → **Machines**). Type
+its **SSH address** (`you@studio.local`, or a Host from `~/.ssh/config`), give it a **Name**, then **Add and
+connect**. The first time, type your password for that computer once; wisp sets up a key so it won't ask again.
+
+In the browser (`wisp --browser`, or your cloud wisp) it's the same window, menus and keys.
+
+<Shot name="settings-machines" alt="Settings → Machines: add a computer over SSH, Tailscale, and Reach this computer from anywhere" />
+</TabItem>
+<TabItem label="Phone app">
+Open the **Computers** tab and add a computer over SSH: its **SSH address**, a **Name**, then **Add and connect**.
+The first time, type your password for that computer once.
 </TabItem>
 <TabItem label="TUI">
 Press **g** then **m** for the machines view: **c** connects the selected one, **x** disconnects it. To add one:
@@ -57,9 +66,13 @@ Not on the same network? Install Tailscale on both computers and use the name it
 Sign in to the same grid on each computer. They find each other through it.
 
 <Tabs syncKey="way">
-<TabItem label="App">
-Settings → Computers → **Cloud** → **Sign in to a wisp Grid**, with GitHub or Google. Then **This computer on the
-grid** turns this computer on, so your other wisps and your phone reach it.
+<TabItem label="Desktop app">
+**⌘K** → **Settings** → Computers → **Cloud** → **Sign in to a wisp Grid**, with GitHub or Google. Then **This
+computer on the grid** turns this computer on, so your other wisps and your phone reach it.
+</TabItem>
+<TabItem label="Phone app">
+Open the **Computers** tab and sign in to wisp Cloud (or your own grid) with GitHub or Google. Every computer on that
+grid shows there. To put a computer on the grid, sign in from that computer (Desktop app tab).
 </TabItem>
 <TabItem label="TUI">
 ```text
@@ -79,9 +92,12 @@ wisp computer status
 ## Run there
 
 <Tabs syncKey="way">
-<TabItem label="App">
-In New task, click **This computer** and pick the machine. On a running task, **Runs on** by the reply box moves the
-task, its branch and its history to another computer.
+<TabItem label="Desktop app">
+In New task's footer, click **This computer** and pick the machine. On a running task, **Runs on** by the reply box
+moves the task, its branch and its history to another computer.
+</TabItem>
+<TabItem label="Phone app">
+In New task, tap **This computer** and pick the machine.
 </TabItem>
 <TabItem label="TUI">
 Start the TUI on that machine: `wisp tui --on studio`. Its list is that machine's tasks.
@@ -115,10 +131,14 @@ A **sandbox** is a box of its own on your grid, for one piece of work. The agent
 anything there, never on your computer. It's deleted with its task.
 
 <Tabs syncKey="way">
-<TabItem label="App">
-In New task, click **This computer** and pick **Sandbox**, or start the prompt with `/sandbox`. Settings →
-Computers → **Sandboxes** signs Claude in once for every sandbox, sets the **Env vars** they all get, and lists
-**Your sandboxes**.
+<TabItem label="Desktop app">
+In New task's footer, click **This computer** and pick **Sandbox**, or start the prompt with `/sandbox`. **⌘K** →
+**Settings** → Computers → **Sandboxes** signs Claude in once for every sandbox, sets the **Env vars** they all get,
+and lists **Your sandboxes**.
+</TabItem>
+<TabItem label="Phone app">
+In New task, tap **This computer** and pick **Sandbox**, or start the prompt with `/sandbox`. Person button at the
+top of **Tasks** → **Settings** → Computers → **Sandboxes** lists **Your sandboxes**.
 </TabItem>
 <TabItem label="TUI">
 ```text

@@ -6,6 +6,7 @@ sidebar:
 ---
 
 import { Tabs, TabItem } from '@astrojs/starlight/components';
+import Shot from '@wisp-docs/Shot.astro';
 
 Everything in wisp is a plugin: the task list, Ship it, the crew, the channels. Yours plug in the same way, with the
 same API, so whatever a built-in can do, your plugin can do too. Pick the smallest step that does what you want.
@@ -15,8 +16,17 @@ same API, so whatever a built-in can do, your plugin can do too. Pick the smalle
 Most changes are a setting. Every one is in [the settings reference](../../reference/settings/).
 
 <Tabs syncKey="way">
-<TabItem label="App">
-Your avatar → **Settings**. **Search settings** at the top finds one by name; **⌘K** lists every pane.
+<TabItem label="Desktop app">
+**⌘K** (Ctrl-K on Windows and Linux) → **Settings**, or the person button in the top bar → **Settings**. **Search
+settings** at the top finds a setting by name.
+
+In the browser (`wisp --browser`, or your cloud wisp) it's the same window, menus and keys.
+
+<Shot name="palette" alt="The ⌘K box open: one search field for tasks, commands and Settings" />
+</TabItem>
+<TabItem label="Phone app">
+Tap the person button at the top of **Tasks**, then **Settings**. The search field at the top of **Tasks** also finds
+a setting by name.
 </TabItem>
 <TabItem label="TUI">
 Press **g** then **,** for the settings view, or **Ctrl-K** and type the setting's key.
@@ -49,8 +59,11 @@ Don't use a part of wisp? Switch it off. Everything it made goes with it: its ti
 it back on any time.
 
 <Tabs syncKey="way">
-<TabItem label="App">
+<TabItem label="Desktop app">
 Settings → Advanced → **Plugins**. Each built-in has its switch; one that others need says why.
+</TabItem>
+<TabItem label="Phone app">
+Person button at the top of **Tasks** → **Settings** → Advanced → **Plugins**. Each built-in has its switch.
 </TabItem>
 <TabItem label="TUI">
 ```text
@@ -77,9 +90,13 @@ a plugin, never your code. The agent gets four extra tools:
 - `wisp_plugin_check`: wisp's own checker, run on the plugin before it's installed.
 
 <Tabs syncKey="way">
-<TabItem label="App">
+<TabItem label="Desktop app">
 Settings → Advanced → **Plugins** → **Cast a plugin**. Describe the change and press **Enter**. When the task
 ends, the plugin is installed **off**: read what it asks for, then **Switch it on**.
+</TabItem>
+<TabItem label="Phone app">
+Person button → **Settings** → Advanced → **Plugins** → **Cast a plugin**. Describe the change and send. When the
+task ends, the plugin is installed **off**: read what it asks for, then **Switch it on**.
 </TabItem>
 <TabItem label="TUI">
 Start a task (**n**) that asks for it: "write a wisp plugin in ~/.wisp/plugins/hello that adds a button opening my
@@ -113,10 +130,14 @@ What you install starts off, and runs only with the permissions its manifest ask
 newer version replaces the old one, and it stays off until you switch it on again.
 
 <Tabs syncKey="way">
-<TabItem label="App">
+<TabItem label="Desktop app">
 Settings → Advanced → **Plugins** → **Install a plugin**: a folder a colleague sent, or its git URL. You see what it
 asks for, then **Switch it on**. **Trust** lets it run as its own process with your environment, and its styles
 apply; only trust code you've read.
+</TabItem>
+<TabItem label="Phone app">
+Person button → **Settings** → Advanced → **Plugins** → **Install a plugin**, with its git URL. You see what it asks
+for, then **Switch it on**. A folder on your computer is easier from the Desktop app tab.
 </TabItem>
 <TabItem label="TUI">
 ```text

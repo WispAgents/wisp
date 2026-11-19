@@ -6,6 +6,7 @@ sidebar:
 ---
 
 import { Tabs, TabItem } from '@astrojs/starlight/components';
+import Shot from '@wisp-docs/Shot.astro';
 
 Agents often stop before the work is done. A **goal** fixes that. After each turn, one or more **judges** read the
 code and the answer, and vote. If the goal isn't met, the task gets another turn with what is missing.
@@ -15,12 +16,22 @@ code and the answer, and vote. If the goal isn't met, the task gets another turn
 Write what *done* means, in one line you could check yourself: "all tests pass and the build is green".
 
 <Tabs syncKey="way">
-<TabItem label="App">
-- **New task:** type `/goal all tests pass` in the box and send. A *Done when* line holds the goal; the task keeps
-  going until it holds.
-- **A task that is already running:** type `/goal all tests pass` in its reply box, or open the task's **⋯** menu
-  and choose **Set goal…**.
+<TabItem label="Desktop app">
+- **New task** (**N**): type `/goal all tests pass` in the box and press **Enter**. A *Done when* line holds the
+  goal; the task keeps going until it holds.
+- **A task that is already running:** type `/goal all tests pass` in its reply box, or open **⋯** at the top right of
+  the task, then **Task options › Set goal…**.
 - The **Goal** band at the top of the task shows the round, each judge's vote and why.
+
+In the browser (`wisp --browser`, or your cloud wisp) it's the same window, menus and keys.
+
+<Shot name="task-options" alt="The task's ⋯ menu open on Task options, with Set goal… at the top of the submenu" />
+</TabItem>
+<TabItem label="Phone app">
+- **A new task:** tap **New task**, write `/goal all tests pass`, and send.
+- **A running task:** open it, type `/goal all tests pass` in the reply bar, or tap the options chip in the reply bar
+  and choose **Goal**.
+- **⋯** (iPhone) or **⋮** (Android) in the task's top bar → **This task › Set goal…** works too.
 </TabItem>
 <TabItem label="TUI">
 Run `wisp tui`, open the task (**Enter**), press **i** to write, and send `/goal set --text "all tests pass"`.
@@ -47,9 +58,12 @@ How their votes count:
 - **Any:** one is enough.
 
 <Tabs syncKey="way">
-<TabItem label="App">
-On **New task**, **Judges** sits at the end of the *Done when* line. On a running task, open its **⋯** menu,
-**Goal checks…**, then **Judges** → **Add judge**, and pick how they vote. Your choice is kept for your next goals.
+<TabItem label="Desktop app">
+On **New task**, **Judges** sits at the end of the *Done when* line. On a running task, open **⋯ → Task options ›
+Goal checks…**, then **Judges** → **Add judge**, and pick how they vote. Your choice is kept for your next goals.
+</TabItem>
+<TabItem label="Phone app">
+Open the task, then **⋯** / **⋮** → **This task › Goal checks…** → **Judges** → **Add judge**, and pick how they vote.
 </TabItem>
 <TabItem label="TUI">
 With the task open, press **i** and send:
@@ -77,9 +91,12 @@ goal: { judges: [reviewer, codex], vote: all, maxRounds: 8 }
 ## While it runs
 
 <Tabs syncKey="way">
-<TabItem label="App">
+<TabItem label="Desktop app">
 The task's **Goal** band has **Pause goal**, **Resume goal**, **Edit goal…** and **Drop goal**. **Why** shows
 what each judge said.
+</TabItem>
+<TabItem label="Phone app">
+Tap the **Goal** band at the top of the task for **Pause goal**, **Resume goal**, **Edit goal…** and **Drop goal**.
 </TabItem>
 <TabItem label="TUI">
 With the task open, send `/goal pause`, `/goal resume`, `/goal check` or `/goal drop`. **Ctrl-K** finds any of

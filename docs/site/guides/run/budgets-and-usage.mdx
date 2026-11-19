@@ -6,6 +6,7 @@ sidebar:
 ---
 
 import { Tabs, TabItem } from '@astrojs/starlight/components';
+import Shot from '@wisp-docs/Shot.astro';
 
 wisp runs your agents on your own plans. This page shows how to see what each task takes from them, and how to
 keep work that runs on its own from using up a window you need.
@@ -22,12 +23,22 @@ in turns and outcomes, not in spend.
 ## See your usage
 
 <Tabs syncKey="way">
-<TabItem label="App">
-- Home shows each window's use beside your tasks. Click it for avatar → **Settings** → **Usage**.
+<TabItem label="Desktop app">
+- Home shows each window's use beside your tasks. Click it to open **Settings** → **Usage** (or **⌘K** →
+  **Settings** → Agents → **Usage**).
 - **Usage** has **Plan budget** (each account's windows, when they reset, and **Where the window went**, task by
   task), then **Spend**, **Turns**, **Worked** and **Questions** over the last 7 days, with charts **By project**
   and **By harness · model**.
-- The harness picker in New task shows how much of each account's window is used.
+- The harness picker in New task's footer shows how much of each account's window is used.
+
+In the browser (`wisp --browser`, or your cloud wisp) it's the same window, menus and keys.
+
+<Shot name="settings-usage" alt="Settings → Usage: spend over the last 7 days, each account's plan budget, and Automations stop at" />
+</TabItem>
+<TabItem label="Phone app">
+- Tap the person button at the top of **Tasks** → **Settings** → Agents → **Usage**. It holds the same **Plan
+  budget**, **Spend**, **Turns** and charts.
+- In New task, tap the harness row: the picker shows how much of each account's window is used.
 </TabItem>
 <TabItem label="TUI">
 Send `/budget view claude --named` for an account's windows, or `/budget plan-windows` for each window this
@@ -50,9 +61,13 @@ A task you start waits for your yes. Scheduled runs and crew jobs wait in **Need
 Each yes moves that window's line up a step until it resets.
 
 <Tabs syncKey="way">
-<TabItem label="App">
-Settings → **Usage** → **Ask near the limit**: Off, 80%, 90% or 95%. When it asks, the New task box says how far
-the task may take the window, with **Start anyway**, **Wait until …** the reset, and **Keep editing**.
+<TabItem label="Desktop app">
+**⌘K** → **Settings** → **Usage** → **Ask near the limit**: Off, 80%, 90% or 95%. When it asks, the New task box
+says how far the task may take the window, with **Start anyway**, **Wait until …** the reset, and **Keep editing**.
+</TabItem>
+<TabItem label="Phone app">
+Person button → **Settings** → **Usage** → **Ask near the limit**. When it asks, New task shows **Start anyway**,
+**Wait until …** the reset, and **Keep editing**.
 </TabItem>
 <TabItem label="TUI">
 Send `/settings set budget.limitHold 80` (or `off`, `90`, `95`).
@@ -72,9 +87,12 @@ They go on by themselves after it resets. What you start yourself always runs. C
 their own line; Codex's leaves room for your ChatGPT chats on a shared plan.
 
 <Tabs syncKey="way">
-<TabItem label="App">
-Settings → **Usage** → **Automations stop at**: Off, 50%, 75% or 90%. Under it, each harness's line is **Same**
-or its own.
+<TabItem label="Desktop app">
+**⌘K** → **Settings** → **Usage** → **Automations stop at**: Off, 50%, 75% or 90%. Under it, each harness's line is
+**Same** or its own.
+</TabItem>
+<TabItem label="Phone app">
+Person button → **Settings** → **Usage** → **Automations stop at**, with each harness's own line under it.
 </TabItem>
 <TabItem label="TUI">
 Send `/budget set-stop autoStop 75`, or `/budget set-stop autoStopCodex 50` for Codex's own line.

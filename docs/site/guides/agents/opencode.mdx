@@ -6,15 +6,25 @@ sidebar:
 ---
 
 import { Tabs, TabItem } from '@astrojs/starlight/components';
+import Shot from '@wisp-docs/Shot.astro';
 
 opencode is the quickest way to start: it has free models and needs no account. wisp can install it for you.
 
 ## Install it
 
 <Tabs syncKey="way">
-<TabItem label="App">
-With no agent installed, home offers **Install opencode**. Otherwise go to avatar → **Settings** → **Agents** and
-press **Install** next to opencode. It goes into `~/.wisp/tools`, usually in under a minute.
+<TabItem label="Desktop app">
+With no agent installed, home offers **Install opencode**. Otherwise open **Settings** (the person button in the
+top bar, or **⌘K** → Settings) → **Agents** and press **Install** next to opencode. It goes into
+`~/.wisp/tools`, usually in under a minute.
+
+In the browser (`wisp --browser`, or your cloud wisp) it's the same window, menus and keys.
+
+<Shot name="settings-agents" alt="Settings → Agents: each harness with its accounts and sign-in state, and an Add key button" />
+</TabItem>
+<TabItem label="Phone app">
+Tap the person button at the top of **Tasks** → **Settings** → **Agents** and tap **Install** next to opencode. It installs on
+the computer the phone is working on, usually in under a minute.
 </TabItem>
 <TabItem label="TUI">
 Send `/accounts install opencode`.
@@ -38,8 +48,11 @@ signed in.
 wisp reads opencode's models and their variants. The effort you pick becomes the model's variant.
 
 <Tabs syncKey="way">
-<TabItem label="App">
-Click the harness chip in the New task footer, pick **opencode**, then a model. Type to search a long list.
+<TabItem label="Desktop app">
+Click the harness chip in the New task footer (**N**), pick **opencode**, then a model. Type to search a long list. On a running task, the same chip in the reply box changes it for the next follow-up.
+</TabItem>
+<TabItem label="Phone app">
+Tap **New task** (on iPhone, the compose button at the top right), then the harness chip under the box. Pick **opencode**, then a model. Type to search a long list. On a running task, tap the options chip in the reply bar, then the agent.
 </TabItem>
 <TabItem label="TUI">
 Send `/runtime set-agent --agent opencode` to move the open task to opencode.
@@ -63,8 +76,11 @@ to run shows as blocked on the task.
 ## Open in opencode
 
 <Tabs syncKey="way">
-<TabItem label="App">
-The task's **⋯** menu → **Open in opencode** (key **T**).
+<TabItem label="Desktop app">
+Open the task's **⋯** at its top right → **Open in › Open in opencode** (key **T**). opencode opens in a terminal in the side panel.
+</TabItem>
+<TabItem label="Phone app">
+Open the task, then **⋯** (iPhone) or **⋮** (Android) → **This task › Open in opencode**. opencode's own screen opens in a terminal on the phone.
 </TabItem>
 <TabItem label="TUI">
 Press **o** in the open task.

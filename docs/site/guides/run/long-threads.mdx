@@ -6,6 +6,7 @@ sidebar:
 ---
 
 import { Tabs, TabItem } from '@astrojs/starlight/components';
+import Shot from '@wisp-docs/Shot.astro';
 
 A long conversation wears out. The agent forgets a rule you gave early on, repeats a fix that already failed, or
 loses the why after a compaction. wisp keeps the task's state apart from the conversation, in its **Notes**, so the
@@ -30,9 +31,18 @@ Notes as they are now in front of your message, and says so when your message ch
 Subagents read their lead's Notes, so they share its decisions.
 
 <Tabs syncKey="way">
-<TabItem label="App">
-Open the side panel (**]**) and its **Thread** tab. Each section shows who wrote it and when; **Edit** rewrites it,
-and its history shows earlier versions. On a phone: the task's menu → **Thread**.
+<TabItem label="Desktop app">
+Open **⋯** at the task's top right → **Task options › Thread**. The **Thread** tab opens in the side panel (**]**
+shows or hides the panel). Each section shows who wrote it and when; **Edit** rewrites it, and its history shows
+earlier versions.
+
+In the browser (`wisp --browser`, or your cloud wisp) it's the same window, menus and keys.
+
+<Shot name="task-options" alt="The task's ⋯ menu open on Task options, with Thread among its entries" />
+</TabItem>
+<TabItem label="Phone app">
+Tap **⋯** (iPhone) or **⋮** (Android) in the task's top bar → **Show › Thread**. The Notes open as a sheet; tap a
+section to edit it.
 </TabItem>
 <TabItem label="TUI">
 With the task open, press **t** for the Thread pane. To rewrite a section:
@@ -72,9 +82,12 @@ decisions and failures. The answer shows as a line in the task ("Kept 6 of 8"), 
 your next follow-up, so the agent gets it back.
 
 <Tabs syncKey="way">
-<TabItem label="App">
+<TabItem label="Desktop app">
 The top of the **Thread** tab: *Fresh*, *Worn* and the facts behind it ("context 85% full · 3 compactions · same
 error 4×"). **Compactions** lists what each one kept and lost.
+</TabItem>
+<TabItem label="Phone app">
+The top of the **Thread** sheet (**⋯** / **⋮** → **Show › Thread**) shows the same health line and **Compactions**.
 </TabItem>
 <TabItem label="TUI">
 The Thread pane (**t**) shows the same health line.
@@ -93,8 +106,11 @@ A fresh thread is a new conversation on the **same task**. It starts from a brie
 the last turns. You can read and edit the brief first. The old conversation stays linked.
 
 <Tabs syncKey="way">
-<TabItem label="App">
+<TabItem label="Desktop app">
 **Thread** tab → **Fresh thread**. Read the brief, change it if you like, then **Start fresh thread**.
+</TabItem>
+<TabItem label="Phone app">
+**Thread** sheet → **Fresh thread**. Read the brief, change it if you like, then **Start fresh thread**.
 </TabItem>
 <TabItem label="TUI">
 With the task open:

@@ -33,3 +33,17 @@
   --sl-color-gray-7: #f9f9f8;
   --sl-color-black: #ffffff;
 }
+
+/* Shot.astro: the desktop app as the reader's theme is (the other picture never loads: it's lazy and hidden) */
+.wisp-shot { margin: 1rem 0 0; }
+.wisp-shot picture, .wisp-shot img { display: block; width: 100%; height: auto; }
+.wisp-shot img { border: 1px solid var(--sl-color-gray-5); border-radius: 0.6rem; box-shadow: 0 8px 28px -14px rgb(0 0 0 / 0.35); }
+:root[data-theme='light'] .wisp-shot-dark, :root:not([data-theme='light']) .wisp-shot-light { display: none; }
+/* only while Desktop app is the tab shown (the head's script keeps html[data-way]): a phone never fetches them */
+:root[data-way]:not([data-way='desktop']) .wisp-shot { display: none; }
+.wisp-shot figcaption { font-size: var(--sl-text-sm); color: var(--sl-color-gray-3); margin-top: 0.4rem; }
+
+/* how-to tabs: a tab's name stays on one line; on a narrow screen the row scrolls rather than wrap (design/layout.md) */
+starlight-tabs [role='tab'] { white-space: nowrap; }
+starlight-tabs .tablist-wrapper { overflow-x: auto; scrollbar-width: none; }
+@media (max-width: 30rem) { starlight-tabs [role='tab'] { padding-inline: 0.7rem; } }

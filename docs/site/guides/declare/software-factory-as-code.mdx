@@ -6,6 +6,7 @@ sidebar:
 ---
 
 import { Tabs, TabItem } from '@astrojs/starlight/components';
+import Shot from '@wisp-docs/Shot.astro';
 
 A **software factory** is a set of agents that turn work into pull requests without you starting each one: a
 builder picks up issues, a reviewer reviews what the builder opens, a fixer jumps on red CI, and a nightly job keeps
@@ -122,9 +123,16 @@ Settings → Agents → Usage also has *Stop a run silent for*, which stops a ru
 ## 7. Check it, then turn it on
 
 <Tabs syncKey="way">
-<TabItem label="App">
-Settings → Advanced → **Setup** → **Import**. Paste a formula and press **See what it changes**: what it adds,
-changes and removes, and the secrets it needs. Then **Apply**. A repo's `.wisp/` folder is read by the CLI (next tab).
+<TabItem label="Desktop app">
+**⌘K** → **Settings** → Advanced → **Setup** → **Import**. Paste a formula and press **See what it changes**: what
+it adds, changes and removes, and the secrets it needs. Then **Apply**. A repo's `.wisp/` folder is read by the CLI
+(CLI tab).
+
+In the browser (`wisp --browser`, or your cloud wisp) it's the same window, menus and keys.
+</TabItem>
+<TabItem label="Phone app">
+Writing and reading a whole formula is a job for a computer: use the Desktop app tab. The phone's Settings →
+Advanced → **Setup** → **Import** works the same if you have a formula to paste.
 </TabItem>
 <TabItem label="TUI">
 Run the CLI commands (next tab) in a terminal. Then **g c** shows the crew and **g a** the triggers that came in.
@@ -145,9 +153,17 @@ change code: a branch, a pull request, a review.
 ## Watch it run
 
 <Tabs syncKey="way">
-<TabItem label="App">
-Each job is a task in the list, with the member's face on it. Click a member in the crew rail for their jobs, or
-**Org** for who hands work to whom. Settings → Agents → **Automations** lists the triggers and when they last ran.
+<TabItem label="Desktop app">
+Each job is a task in the list, with the member's face on it. Click a member in the crew rail on the far left for
+their jobs, or **Org** at the bottom of the rail for who hands work to whom. **⌘K** → **Settings** → Agents →
+**Automations** lists the triggers and when they last ran.
+
+<Shot name="crew-org" alt="The Org page: crew members as cards, with arrows to the members and agents they hand work to" />
+</TabItem>
+<TabItem label="Phone app">
+Each job is a task in **Tasks**, with the member's face on it. The **Crew** tab lists the members: tap one for their
+jobs, or **Org** for who hands work to whom. The person button at the top of **Tasks** → **Automations** lists the
+triggers.
 </TabItem>
 <TabItem label="TUI">
 **g c** for the crew, **g a** for the triggers (**t** tests one without starting anything), **g t** for the tasks.

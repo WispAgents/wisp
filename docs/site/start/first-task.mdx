@@ -1,11 +1,12 @@
 ---
 title: Your first task
-description: Start a task from the app, the terminal UI or the command line, watch it work, follow up, and ship what it wrote as a pull request.
+description: Start a task from the desktop or phone app, the terminal UI or the command line, watch it work, follow up, and ship what it wrote as a pull request.
 sidebar:
   order: 2
 ---
 
 import { Tabs, TabItem } from '@astrojs/starlight/components';
+import Shot from '@wisp-docs/Shot.astro';
 
 A **task** is one piece of work you hand to an agent: "fix the flaky login test", "add a dark mode toggle". wisp
 gives it its own copy of your repo (a git worktree), runs the agent there, and shows you what it did.
@@ -13,15 +14,25 @@ gives it its own copy of your repo (a git worktree), runs the agent there, and s
 ## Start it
 
 <Tabs syncKey="way">
-<TabItem label="App">
-Press **New task** (**N**), pick the project, type what you want, and press **Enter**. The bar under the box picks:
+<TabItem label="Desktop app">
+Press **New task** (**N** or **⌘L**), pick the project, type what you want, and press **Enter**. The footer under the
+box picks:
 
-- **The agent and model:** Claude Code, Codex, Cursor and the rest, each with its own models and thinking level.
-  New task keeps your last pick.
 - **The mode:** *Plan* only reads and proposes. *Edits* changes files and asks before anything else. *Full auto*
   does the whole job without stopping.
+- **The agent and model:** Claude Code, Codex, Cursor and the rest, each with its own models and thinking level.
+  New task keeps your last pick.
 - **Where:** *This computer · Worktree* by default: the task works in its own folder and branch, so your checkout
   stays as it was and several tasks can run at once.
+
+In the browser (`wisp --browser`, or your cloud wisp) it's the same window, menus and keys.
+
+<Shot name="new-task" alt="The New task box with a prompt typed, and its footer: +, the mode, the harness and model, This computer · Worktree, and Send" />
+</TabItem>
+<TabItem label="Phone app">
+Tap **New task** (on iPhone, the compose button at the top right). Pick the project, type what you want, and tap
+**Send**. The chips under the box pick the mode, the agent and model, and where it runs, the same as on the desktop.
+New task keeps your last pick.
 </TabItem>
 <TabItem label="TUI">
 Run `wisp tui` in your repo. Press **n** for a new task, type, and press **Enter**. **Shift-Tab** cycles the mode
@@ -44,8 +55,15 @@ While it works you see what it's doing right now. When it's done you get its ans
 diff, the tests it ran, screenshots, what you might do next. The full transcript is always one click away.
 
 <Tabs syncKey="way">
-<TabItem label="App">
-The task opens beside the list. Its state shows on its row: working, needs you, finished.
+<TabItem label="Desktop app">
+The task opens beside the list. Its state shows on its row: working, needs you, finished. **J** and **K** move to
+the next and previous task. **V** opens the full transcript.
+
+<Shot name="task" alt="A finished task: the agent's report as cards, with what changed, the diff and the tests it ran" />
+</TabItem>
+<TabItem label="Phone app">
+Tap the task in **Tasks** to open it. The list groups tasks by state: *Needs you*, *Working*, and the rest.
+**⋯** (iPhone) or **⋮** (Android) in the task's top bar → **Show ›** has the full transcript.
 </TabItem>
 <TabItem label="TUI">
 **Enter** opens the task. **j** and **k** move between its steps, **Space** opens one, **d** shows the diff.
@@ -64,9 +82,14 @@ wisp show last          # its latest answer as markdown
 A follow-up sent while the task works interrupts it, or waits its turn if you queue it.
 
 <Tabs syncKey="way">
-<TabItem label="App">
-Type in the reply box under the answer. If the answer suggested follow-ups, the first shows faded in the box: press
-**Tab** to use it. Switch **Queue** on to send it after the current turn.
+<TabItem label="Desktop app">
+Press **/** to jump to the reply box under the answer, type, and press **Enter**. If the answer suggested
+follow-ups, the first shows faded in the box: press **Tab** to use it. Switch **Queue** on to send it after the
+current turn.
+</TabItem>
+<TabItem label="Phone app">
+Type in the reply bar at the bottom of the task and tap **Send**. To send it after the current turn, tap the
+options chip in the reply bar and switch on **Queue**.
 </TabItem>
 <TabItem label="TUI">
 Press **i**, type, **Enter**. While a turn runs, **Enter** queues it; **Ctrl-S** sends a queued one now.
@@ -85,9 +108,13 @@ Shipping commits the task's changes, pushes its branch and opens a pull request.
 and reviews on the task.
 
 <Tabs syncKey="way">
-<TabItem label="App">
-**Ship** in the task's top bar. *Write it with …* has the task's agent write the PR title and description
-from the diff, following your repo's pull request template. When you're happy, **Done**.
+<TabItem label="Desktop app">
+**Ship** at the top of the task (**S**). *Write it with …* has the task's agent write the PR title and description
+from the diff, following your repo's pull request template. When you're happy, **Done** (**E**).
+</TabItem>
+<TabItem label="Phone app">
+Open **⋯** (iPhone) or **⋮** (Android) in the task's top bar → **Ship it…**. When you're happy, **Mark done** in the same
+menu, or swipe the task right in the **Tasks** list.
 </TabItem>
 <TabItem label="TUI">
 With the task open, send `/ship ship`. `/ship merge` squash-merges it.

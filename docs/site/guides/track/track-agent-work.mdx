@@ -6,6 +6,7 @@ sidebar:
 ---
 
 import { Tabs, TabItem } from '@astrojs/starlight/components';
+import Shot from '@wisp-docs/Shot.astro';
 
 When agents write most of a codebase, `git log` tells you *what* changed, but not *what was asked*, *what the agent
 was thinking* or *what it tried first*. wisp keeps that next to the code: each task that built the repo is a file in
@@ -36,8 +37,16 @@ commit with the code, or in the same PR. Everything is scrubbed first: keys, tok
 never reach the repo.
 
 <Tabs syncKey="way">
-<TabItem label="App">
-On a task wisp offers to save, press **Save to repo**. Any other task: its **⋯** menu.
+<TabItem label="Desktop app">
+On a task wisp offers to save, press **Save to repo**. Any other task: **⋯** at its top right.
+
+In the browser (`wisp --browser`, or your cloud wisp) it's the same window, menus and keys.
+
+<Shot name="task-menu" alt="The task's ⋯ menu open at its top right: Transcript, Shell, Rerun, Fork, Open in, Task options and more" />
+</TabItem>
+<TabItem label="Phone app">
+On a task wisp offers to save, tap **Save to repo**. Any other task: **⋯** (iPhone) or **⋮** (Android) in its top
+bar.
 </TabItem>
 <TabItem label="TUI">
 With the task open, send:
@@ -79,10 +88,14 @@ wisp skill install --agent claude       # from now on, Claude Code hands each se
 ## 5. Use the history
 
 <Tabs syncKey="way">
-<TabItem label="App">
-Above the task list, switch **Tasks** to **Repo** (or **⌘K** → *Repo*). **Repo history** lists the tracked tasks of
-the project, newest first. Filter by words, a path (`src/auth/`) or an agent. Open one to read what was asked and
-what happened; **Resume** starts a new task that carries on from there, on today's code.
+<TabItem label="Desktop app">
+**⌘K** → **Repo**. **Repo history** lists the tracked tasks of the project, newest first. Filter by words, a path
+(`src/auth/`) or an agent. Open one to read what was asked and what happened; **Resume** starts a new task that
+carries on from there, on today's code.
+</TabItem>
+<TabItem label="Phone app">
+Type `Repo` in the search field at the top of **Tasks** and tap **Repo**. **Repo history** lists the tracked tasks,
+newest first. Open one to read what was asked and what happened; **Resume** starts a new task from there.
 </TabItem>
 <TabItem label="TUI">
 Press **g** then **h** for Repo history. To find the task behind a line:

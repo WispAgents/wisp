@@ -6,6 +6,7 @@ sidebar:
 ---
 
 import { Tabs, TabItem } from '@astrojs/starlight/components';
+import Shot from '@wisp-docs/Shot.astro';
 
 Not sure which agent does a job best? Give the same ask to several of them and see. **Compare** runs one task on
 several harnesses at once. **Try it two ways** runs it twice on one harness with one thing changed, so you learn
@@ -16,11 +17,18 @@ Every run gets its own task and its own worktree, so the runs never touch each o
 ## Compare harnesses
 
 <Tabs syncKey="way">
-<TabItem label="App">
-1. In **New task**, type the task.
+<TabItem label="Desktop app">
+1. Press **N** for **New task**, and type the task.
 2. Press **+**, then **Compare with another agent…**. A second harness joins the one you picked. Add more the same
    way, or remove one with its **×**.
 3. Press **Enter**. One task per harness starts, grouped in the list under **Compare**.
+
+In the browser (`wisp --browser`, or your cloud wisp) it's the same window, menus and keys.
+</TabItem>
+<TabItem label="Phone app">
+1. Tap the compose button at the top right (iPhone) or **New task** (Android), and write the task.
+2. Tap **⋯** (More options), then **Compare with another agent…**. A second harness joins the one you picked.
+3. Start it. One task per harness starts, grouped in the list under **Compare**.
 </TabItem>
 <TabItem label="TUI">
 Start the runs from the CLI (next tab). Each run is a task in the TUI's list, and opens like any other task.
@@ -42,10 +50,17 @@ Same harness, same model, same ask. Run B changes one thing:
 - **Skills:** off. No skills or slash commands; plugins, agents and `CLAUDE.md` stay.
 
 <Tabs syncKey="way">
-<TabItem label="App">
+<TabItem label="Desktop app">
 1. In **New task**, press **+**, then **Compare with another agent…**.
 2. Pick the **same** harness for the second run. Its picker then shows **What's different**.
 3. Pick what run B changes (**Subagents** or **Skills**) and press **Enter**.
+
+<Shot name="harness-picker" alt="The harness picker open from New task's footer: harness, model, thinking and account" />
+</TabItem>
+<TabItem label="Phone app">
+1. In New task, tap **⋯** (More options), then **Compare with another agent…**.
+2. Pick the **same** harness for the second run. Its picker then shows **What's different**.
+3. Pick what run B changes (**Subagents** or **Skills**) and start it.
 </TabItem>
 <TabItem label="TUI">
 Start the pair from the CLI (next tab). Both runs show in the TUI's list.
@@ -62,11 +77,15 @@ wisp "add pagination to /users" --agent claude --try subagents=haiku
 ## Read the comparison
 
 <Tabs syncKey="way">
-<TabItem label="App">
-Open any run, then the task's **⋯** menu and **Compare runs**, or open the **Compare** group in the list. Each run
-is a column: time, cost, tokens, agent steps, files, tests, and how much of your plan it took. A line on top says
+<TabItem label="Desktop app">
+Open any run, then **⋯** at the task's top right → **Compare runs**, or open the **Compare** group in the list. Each
+run is a column: time, cost, tokens, agent steps, files, tests, and how much of your plan it took. A line on top says
 what differed ("used 30% fewer tokens and took 2 min less than A"). One run each is noisy, so it tells you that
 too.
+</TabItem>
+<TabItem label="Phone app">
+Open any run, then **⋯** (iPhone) or **⋮** (Android) in its top bar → **Show › Compare runs**. You get the same
+numbers per run, and the line that says what differed.
 </TabItem>
 <TabItem label="TUI">
 Open each run with **Enter** and press **d** for its changes.
@@ -85,9 +104,12 @@ wisp usage           # what each task took
 Keeping a run archives the others. Their worktrees are deleted with their changes, so ship nothing from them first.
 
 <Tabs syncKey="way">
-<TabItem label="App">
+<TabItem label="Desktop app">
 In Compare, press **Keep this** under the run you want, then **Keep this one**. wisp opens the kept run; ship it
 when you're ready.
+</TabItem>
+<TabItem label="Phone app">
+In Compare, tap **Keep this** under the run you want, then **Keep this one**. wisp opens the kept run.
 </TabItem>
 <TabItem label="TUI">
 Open the run you want. For a *Try it two ways* pair, send:

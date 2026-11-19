@@ -35,8 +35,8 @@ code:
 - **Track.** Every task is kept next to the code it wrote. `wisp blame` tells you which task wrote a line and what it
   was asked; `wisp resume` picks last month's task up on today's code.
 
-Everything works three ways, the **app**, the **TUI** and the **CLI**, and from your own agent through wisp's MCP
-tools.
+Everything works four ways, the **desktop app**, the **phone app**, the **TUI** and the **CLI**, and from your own
+agent through wisp's MCP tools.
 
 ## Quick start
 
@@ -82,18 +82,21 @@ and add it to your Home Screen.
 **Release channels:** stable (`wisp-agents`), beta (`wisp-agents@next`) and nightly (`wisp-agents@nightly`, a build of
 `main` every night its full suite passes). Pick one in Settings → General → Updates.
 
-## The three ways in
+## Four ways in
 
-| | App | TUI (`wisp tui`) | CLI |
-|---|---|---|---|
-| Start a task | **New task** (<kbd>N</kbd>) | <kbd>n</kbd> | `wisp "…" --agent codex` |
-| Follow up | the reply box | <kbd>i</kbd> | `wisp reply <id> "…"` |
-| Answer a question | its buttons | <kbd>1</kbd>–<kbd>9</kbd>, <kbd>y</kbd> <kbd>a</kbd> <kbd>n</kbd> | `wisp reply <id> "…"` |
-| Set a goal | `/goal …` | `/goal set --text "…"` | `wisp goal set <id> "…"` |
-| Ship the PR | **Ship** | `/ship ship` | `wisp ship <id>` |
-| Your crew | **Crew** | <kbd>g</kbd> <kbd>c</kbd> | `wisp crew` |
-| Why is this line here? | **Repo history** | <kbd>g</kbd> <kbd>h</kbd> | `wisp blame file:line` |
-| Every command | <kbd>⌘K</kbd> | <kbd>Ctrl-K</kbd> | `wisp help` |
+| | Desktop app | Phone app | TUI (`wisp tui`) | CLI |
+|---|---|---|---|---|
+| Start a task | **New task** (<kbd>N</kbd>) | **New task** | <kbd>n</kbd> | `wisp "…" --agent codex` |
+| Follow up | the reply box (<kbd>/</kbd>) | the reply bar | <kbd>i</kbd> | `wisp reply <id> "…"` |
+| Answer a question | its buttons | its buttons | <kbd>1</kbd>–<kbd>9</kbd>, <kbd>y</kbd> <kbd>a</kbd> <kbd>n</kbd> | `wisp reply <id> "…"` |
+| Set a goal | `/goal …`, or ⋯ → Task options › Set goal… | `/goal …`, or the reply bar's options → Goal | `/goal set --text "…"` | `wisp goal set <id> "…"` |
+| Ship the PR | **Ship** (<kbd>S</kbd>) | ⋯ → **Ship it…** | `/ship ship` | `wisp ship <id>` |
+| The changes | side panel → **Changes** (<kbd>D</kbd>) | the **Changes** pill | <kbd>d</kbd> | `wisp show <id>` |
+| Your crew | the rail, and **Org** | the **Crew** tab | <kbd>g</kbd> <kbd>c</kbd> | `wisp crew` |
+| Why is this line here? | <kbd>⌘K</kbd> → **Repo history** | | <kbd>g</kbd> <kbd>h</kbd> | `wisp blame file:line` |
+| Every command | <kbd>⌘K</kbd> | | <kbd>Ctrl-K</kbd> | `wisp help` |
+
+The browser (`wisp --browser`, or your cloud wisp) is the desktop app's window, menus and keys.
 
 Your own agent drives wisp too: `wisp skill install --agent claude` gives Claude Code wisp's MCP server and skill in
 this repo (`--agent codex`, `--agent all`). See [MCP from your harness](https://trywisp.dev/docs/guides/run/mcp-from-your-harness/).

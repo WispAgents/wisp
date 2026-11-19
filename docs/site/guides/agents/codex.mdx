@@ -6,6 +6,7 @@ sidebar:
 ---
 
 import { Tabs, TabItem } from '@astrojs/starlight/components';
+import Shot from '@wisp-docs/Shot.astro';
 
 wisp runs Codex in the background, one worktree per task, on your own ChatGPT plan or OpenAI key.
 
@@ -21,9 +22,17 @@ npm i -g @openai/codex
 ## Sign in
 
 <Tabs syncKey="way">
-<TabItem label="App">
-Avatar → **Settings** → **Agents** → **Sign in** next to Codex. Open the sign-in page, enter the code wisp shows,
+<TabItem label="Desktop app">
+Open **Settings** (the person button in the top bar, or **⌘K** → Settings) → **Agents** → **Sign in** next to Codex. Open the sign-in page, enter the code wisp shows,
 and wait: wisp sees when you're done. A key instead? Press **Keys** and paste it.
+
+In the browser (`wisp --browser`, or your cloud wisp) it's the same window, menus and keys.
+
+<Shot name="settings-agents" alt="Settings → Agents: each harness with its accounts and sign-in state, and an Add key button" />
+</TabItem>
+<TabItem label="Phone app">
+Tap the person button at the top of **Tasks** → **Settings** → **Agents** → **Sign in** next to Codex. Open the sign-in page,
+enter the code wisp shows, and come back: wisp sees when you're done. A key instead? Tap **Keys** and paste it.
 </TabItem>
 <TabItem label="TUI">
 Send `/accounts login start codex default` in the reply box, and follow the link it gives.
@@ -42,8 +51,11 @@ Or run `codex login` yourself. A key in `OPENAI_API_KEY` or `CODEX_API_KEY` work
 wisp reads Codex's own model list. Effort: `minimal`, `low`, `medium`, `high`, `xhigh`.
 
 <Tabs syncKey="way">
-<TabItem label="App">
-Click the harness chip in the New task footer, pick **Codex**, then a model and a thinking level.
+<TabItem label="Desktop app">
+Click the harness chip in the New task footer (**N**), pick **Codex**, then a model and a thinking level. On a running task, the same chip in the reply box changes it for the next follow-up.
+</TabItem>
+<TabItem label="Phone app">
+Tap **New task** (on iPhone, the compose button at the top right), then the harness chip under the box. Pick **Codex**, then a model and a thinking level. On a running task, tap the options chip in the reply bar, then the agent.
 </TabItem>
 <TabItem label="TUI">
 Send `/runtime set-agent --agent codex` to move the open task to Codex.
@@ -71,8 +83,11 @@ Modes work as everywhere: **Plan** changes nothing, **Edits** asks before comman
 ## Open in Codex
 
 <Tabs syncKey="way">
-<TabItem label="App">
-The task's **⋯** menu → **Open in Codex** (key **T**).
+<TabItem label="Desktop app">
+Open the task's **⋯** at its top right → **Open in › Open in Codex** (key **T**). Codex opens in a terminal in the side panel.
+</TabItem>
+<TabItem label="Phone app">
+Open the task, then **⋯** (iPhone) or **⋮** (Android) → **This task › Open in Codex**. Codex's own screen opens in a terminal on the phone.
 </TabItem>
 <TabItem label="TUI">
 Press **o** in the open task. Quit Codex to come back.

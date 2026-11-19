@@ -6,6 +6,7 @@ sidebar:
 ---
 
 import { Tabs, TabItem } from '@astrojs/starlight/components';
+import Shot from '@wisp-docs/Shot.astro';
 
 Automations start work without you. A **recipe** is a prompt you run again and again. A **trigger** starts a task
 when something happens: a time, a red CI run, a labelled issue, a task that finished, a webhook. It can start a new
@@ -16,9 +17,17 @@ task, run a recipe or a workflow, wake a crew member, or follow up the task the 
 A recipe is a saved prompt. A `{word}` in it becomes a field you fill in when you run it.
 
 <Tabs syncKey="way">
-<TabItem label="App">
-On a task, **⋯** → **Task options** → **Save as recipe…**. Or Settings → Agents → **Automations** → Recipes →
-**Manage** → **New recipe**. Run one from **+** → **Recipes** in New task.
+<TabItem label="Desktop app">
+On a task, **⋯** at its top right → **Task options › Save as recipe…**. Or **⌘K** → **Settings** → Agents →
+**Automations** → Recipes → **Manage** → **New recipe**. Run one from **+** → **Recipes** in New task's footer.
+
+In the browser (`wisp --browser`, or your cloud wisp) it's the same window, menus and keys.
+
+<Shot name="settings-automations" alt="Settings → Automations: Recipes, Triggers and Webhook triggers" />
+</TabItem>
+<TabItem label="Phone app">
+On a task, **⋯** (iPhone) or **⋮** (Android) in its top bar → **Keep and copy › Save as recipe…**. Run one from New
+task: **⋯** (More options) → **Recipes**.
 </TabItem>
 <TabItem label="TUI">
 **Ctrl-K** and type the recipe's name, or send `/automations task run --name release`.
@@ -34,11 +43,15 @@ wisp run release 2.1.0        # values fill its {params} in order, or key=value
 ## Make a trigger
 
 <Tabs syncKey="way">
-<TabItem label="App">
-Settings → Agents → **Automations** → Triggers → **Manage** → **New trigger**. Pick what starts it: **Schedule**,
-**CI failed**, **Issue labelled**, **Task finished**, **Task marked done**, **Webhook called**, **Slack mention**,
-**Linear issue created** or **Sentry alert**. Say what to **Run** (a prompt or a recipe), where, and with which
-harness, then **Create trigger**. Under **Send to**, pick a crew member to make it their job.
+<TabItem label="Desktop app">
+**⌘K** → **Settings** → Agents → **Automations** → Triggers → **Manage** → **New trigger**. Pick what starts it:
+**Schedule**, **CI failed**, **Issue labelled**, **Task finished**, **Task marked done**, **Webhook called**,
+**Slack mention**, **Linear issue created** or **Sentry alert**. Say what to **Run** (a prompt or a recipe), where,
+and with which harness, then **Create trigger**. Under **Send to**, pick a crew member to make it their job.
+</TabItem>
+<TabItem label="Phone app">
+Tap the person button at the top of **Tasks** → **Automations** → Triggers → **Manage** → **New trigger**. The
+choices are the same as on the desktop; finish with **Create trigger**.
 </TabItem>
 <TabItem label="TUI">
 Press **g** then **a** for the automations view: **f** fires the selected trigger, **t** tests it (a dry run that

@@ -6,6 +6,7 @@ sidebar:
 ---
 
 import { Tabs, TabItem } from '@astrojs/starlight/components';
+import Shot from '@wisp-docs/Shot.astro';
 
 Each task works in a **worktree**: its own branch in its own folder, made from your repo. Ten agents can work at once
 and never collide, and your own checkout stays as you left it. When the work is good, wisp commits it, pushes it and
@@ -16,9 +17,16 @@ opens the pull request.
 New tasks get a worktree by default. To work in the project folder itself:
 
 <Tabs syncKey="way">
-<TabItem label="App">
-In **New task**, click the chip that says **This computer · Worktree** and switch it to work in place. The choice is
-kept for your next tasks. Settings → General → **Worktree per task** sets the default.
+<TabItem label="Desktop app">
+In **New task** (**N**), click **This computer · Worktree** in the footer and switch it to work in place. The
+choice is kept for your next tasks. Settings → General → **Worktree per task** sets the default.
+
+In the browser (`wisp --browser`, or your cloud wisp) it's the same window, menus and keys.
+</TabItem>
+<TabItem label="Phone app">
+Tap **New task** (on iPhone, the compose button at the top right), then the **This computer · Worktree** chip,
+and switch it to work in place. The person button at the top of **Tasks** → **Settings** → **General** →
+**Worktree per task** sets the default.
 </TabItem>
 <TabItem label="TUI">
 Press **g** then **,** for settings and find `worktrees.worktree`, or send `/settings set --key worktrees.worktree --value off`.
@@ -52,9 +60,14 @@ The first time a repo asks to run its own setup, wisp holds the turn and asks yo
 ## Read the changes
 
 <Tabs syncKey="way">
-<TabItem label="App">
-Open the side panel (**]**) and its **Changes** tab: every file the task changed, with `+` and `−` counts against
-the base branch. Comments you leave on lines go to the agent when you send them.
+<TabItem label="Desktop app">
+Open the side panel (**]**) on its **Changes** tab, or press **D**: every file the task changed, with `+` and `−`
+counts against the base branch. Comments you leave on lines go to the agent when you send them.
+
+<Shot name="side-panel" alt="The side panel open beside a task on its Changes tab, with the PR, Shell and Preview tabs next to it" />
+</TabItem>
+<TabItem label="Phone app">
+Tap the **Changes** pill under the task's title (*Changes +n −n*). The changes open as a sheet, file by file.
 </TabItem>
 <TabItem label="TUI">
 With the task open, press **d** for the changes pane. Press **d** again to close it.
@@ -72,9 +85,13 @@ wisp ship view --session <id>           # each repo's branch, its changes and wh
 Shipping commits what's uncommitted, pushes the branch and opens a pull request (or pushes to the one it has).
 
 <Tabs syncKey="way">
-<TabItem label="App">
+<TabItem label="Desktop app">
 Press **Ship** at the top of the task (**S**). Check the title and description (**Write it with …** has the agent
 write them), tick **Open as a draft** if you want, then **Commit & open PR**.
+</TabItem>
+<TabItem label="Phone app">
+Open **⋯** (iPhone) or **⋮** (Android) in the task's top bar → **Ship it…**. Check the title and description, tick
+**Open as a draft** if you want, then **Commit & open PR**.
 </TabItem>
 <TabItem label="TUI">
 With the task open, press **i** and send:
@@ -103,8 +120,11 @@ checks GitHub every minute.
   With Settings → General → **Auto-fix PR conflicts** on, it does that by itself.
 
 <Tabs syncKey="way">
-<TabItem label="App">
-Side panel → **PR**. The same buttons show on the PR strip at the top of the task.
+<TabItem label="Desktop app">
+Side panel → **PR** (or press **P**). The same buttons show on the PR strip at the top of the task.
+</TabItem>
+<TabItem label="Phone app">
+Tap the PR pill under the task's title. The sheet's **PR** tab has the same buttons.
 </TabItem>
 <TabItem label="TUI">
 ```text
@@ -126,9 +146,13 @@ Merging squash-merges the PR on GitHub, fast-forwards your local base branch, an
 holds uncommitted work.
 
 <Tabs syncKey="way">
-<TabItem label="App">
+<TabItem label="Desktop app">
 **PR** tab → **Merge**, then **Merge PR**. If checks fail or no other harness reviewed it, wisp says so first;
 **Merge anyway** goes ahead.
+</TabItem>
+<TabItem label="Phone app">
+On the PR sheet: **Merge**, then **Merge PR**. If checks fail or no other harness reviewed it, wisp says so
+first; **Merge anyway** goes ahead.
 </TabItem>
 <TabItem label="TUI">
 ```text
@@ -147,9 +171,13 @@ wisp merge <id>
 Finished worktrees are cleaned up after a while. A worktree that holds work is never removed without your yes.
 
 <Tabs syncKey="way">
-<TabItem label="App">
-Settings → Computers → **Worktrees** lists them, with how much room they take. On a task, **⋯** → **Task options**
-→ **Keep worktree** keeps it out of the cleanup.
+<TabItem label="Desktop app">
+Settings → Computers → **Worktrees** lists them, with how much room they take. On a task, **⋯** at its top right →
+**Task options › Keep worktree** keeps it out of the cleanup.
+</TabItem>
+<TabItem label="Phone app">
+On a task, **⋯** (iPhone) or **⋮** (Android) → **Keep and copy › Keep worktree** keeps it out of the cleanup. The person
+button at the top of **Tasks** → **Settings** → **Worktrees** lists them all.
 </TabItem>
 <TabItem label="TUI">
 Send `/worktrees keep --id <id> --keep true`.

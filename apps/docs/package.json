@@ -11,7 +11,7 @@
   "scripts": {
     "reference": "node scripts/reference.mjs",
     "dev": "node scripts/reference.mjs && astro dev",
-    "build": "node scripts/reference.mjs && astro build && node scripts/llms.mjs",
+    "build": "node scripts/reference.mjs && astro build && node scripts/check-sidebar.mjs && node scripts/llms.mjs",
     "preview": "astro preview"
   }
 }

@@ -6,6 +6,7 @@ sidebar:
 ---
 
 import { Tabs, TabItem } from '@astrojs/starlight/components';
+import Shot from '@wisp-docs/Shot.astro';
 
 wisp runs Claude Code for you: in the background, in its own worktree, many tasks at once. It uses your own Claude
 plan or API key. wisp never adds a bill of its own.
@@ -25,10 +26,18 @@ irm https://claude.ai/install.ps1 | iex               # Windows (PowerShell)
 wisp uses Claude Code's own sign-in: a Pro or Max plan, or a key (`ANTHROPIC_API_KEY`, Bedrock, Vertex).
 
 <Tabs syncKey="way">
-<TabItem label="App">
-Open your avatar → **Settings** → **Agents**. Next to Claude Code, press **Sign in**, then **Open the sign-in page**
+<TabItem label="Desktop app">
+Open **Settings** (the person button in the top bar, or **⌘K** → Settings) → **Agents**. Next to Claude Code, press **Sign in**, then **Open the sign-in page**
 and sign in with your Claude account. Paste the code it shows you and press **Continue**. Installed it just now?
 Press **Re-check**.
+
+In the browser (`wisp --browser`, or your cloud wisp) it's the same window, menus and keys.
+
+<Shot name="settings-agents" alt="Settings → Agents: each harness with its accounts and sign-in state, and an Add key button" />
+</TabItem>
+<TabItem label="Phone app">
+Tap the person button at the top of **Tasks** → **Settings** → **Agents**. Next to Claude Code, tap **Sign in**, then
+**Open the sign-in page**. Sign in, copy the code it shows, come back, paste it and tap **Continue**.
 </TabItem>
 <TabItem label="TUI">
 In the reply box, send:
@@ -54,10 +63,15 @@ Models: **Default** (what Claude Code is set to), **Fable**, **Opus**, **Sonnet*
 `medium`, `high`, `xhigh`, `max`.
 
 <Tabs syncKey="way">
-<TabItem label="App">
-In the New task box, click the harness chip in the footer (it reads *Claude Code · Opus*, for example). Pick
+<TabItem label="Desktop app">
+In the New task box (**N**), click the harness chip in the footer (it reads *Claude Code · Opus*, for example). Pick
 **Claude Code**, a model, and a thinking level. On a running task, the same chip in the reply box changes it for
 the next follow-up.
+
+<Shot name="harness-picker" alt="The harness picker open from New task's footer: the harnesses, Claude Code's models, the thinking level and the account" />
+</TabItem>
+<TabItem label="Phone app">
+Tap **New task** (on iPhone, the compose button at the top right), then the harness chip under the box. Pick **Claude Code**, then a model and a thinking level. On a running task, tap the options chip in the reply bar, then the agent.
 </TabItem>
 <TabItem label="TUI">
 Press **n** for a new task; in the composer, **Tab** cycles the mode. To move the open task to Claude Code, send
@@ -98,8 +112,11 @@ Pick the mode with the chip left of the harness, **Tab** in the TUI, or `--mode 
 Carry on with the agent yourself, in the same conversation.
 
 <Tabs syncKey="way">
-<TabItem label="App">
-Open the task's **⋯** menu and choose **Open in Claude Code** (key **T**).
+<TabItem label="Desktop app">
+Open the task's **⋯** at its top right → **Open in › Open in Claude Code** (key **T**). Claude Code opens in a terminal in the side panel.
+</TabItem>
+<TabItem label="Phone app">
+Open the task, then **⋯** (iPhone) or **⋮** (Android) → **This task › Open in Claude Code**. Claude Code's own screen opens in a terminal on the phone.
 </TabItem>
 <TabItem label="TUI">
 With the task open, press **o**. You come back to the TUI when you quit Claude Code.

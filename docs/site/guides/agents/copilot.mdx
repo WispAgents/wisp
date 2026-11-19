@@ -6,6 +6,7 @@ sidebar:
 ---
 
 import { Tabs, TabItem } from '@astrojs/starlight/components';
+import Shot from '@wisp-docs/Shot.astro';
 
 wisp runs the GitHub Copilot CLI, `copilot`, in the background, one worktree per task. It needs a GitHub Copilot
 plan.
@@ -21,8 +22,16 @@ npm i -g @github/copilot
 Copilot signs in with its own login. Run `copilot login` once in a terminal, then tell wisp to look again.
 
 <Tabs syncKey="way">
-<TabItem label="App">
-Avatar → **Settings** → **Agents** → **Re-check**. Copilot shows **Ready** once it's signed in.
+<TabItem label="Desktop app">
+Open **Settings** (the person button in the top bar, or **⌘K** → Settings) → **Agents** → **Re-check**. Copilot shows **Ready** once it's signed in.
+
+In the browser (`wisp --browser`, or your cloud wisp) it's the same window, menus and keys.
+
+<Shot name="settings-agents" alt="Settings → Agents: each harness with its accounts and sign-in state, and an Add key button" />
+</TabItem>
+<TabItem label="Phone app">
+Tap the person button at the top of **Tasks** → **Settings** → **Agents** → **Re-check**. Copilot shows **Ready** once it's
+signed in.
 </TabItem>
 <TabItem label="TUI">
 Send `/accounts recheck`.
@@ -39,8 +48,11 @@ wisp accounts recheck
 wisp reads Copilot's models from its own config help. Effort: `low`, `medium`, `high`, `xhigh`.
 
 <Tabs syncKey="way">
-<TabItem label="App">
-Click the harness chip in the New task footer, pick **Copilot**, then a model and a thinking level.
+<TabItem label="Desktop app">
+Click the harness chip in the New task footer (**N**), pick **Copilot**, then a model and a thinking level. On a running task, the same chip in the reply box changes it for the next follow-up.
+</TabItem>
+<TabItem label="Phone app">
+Tap **New task** (on iPhone, the compose button at the top right), then the harness chip under the box. Pick **Copilot**, then a model and a thinking level. On a running task, tap the options chip in the reply bar, then the agent.
 </TabItem>
 <TabItem label="TUI">
 Send `/runtime set-agent --agent copilot` to move the open task to Copilot.
@@ -65,8 +77,11 @@ use shows on the task as a card with the exact rule to allow it.
 ## Open in Copilot
 
 <Tabs syncKey="way">
-<TabItem label="App">
-The task's **⋯** menu → **Open in Copilot** (key **T**).
+<TabItem label="Desktop app">
+Open the task's **⋯** at its top right → **Open in › Open in Copilot** (key **T**). Copilot opens in a terminal in the side panel.
+</TabItem>
+<TabItem label="Phone app">
+Open the task, then **⋯** (iPhone) or **⋮** (Android) → **This task › Open in Copilot**. Copilot's own screen opens in a terminal on the phone.
 </TabItem>
 <TabItem label="TUI">
 Press **o** in the open task.

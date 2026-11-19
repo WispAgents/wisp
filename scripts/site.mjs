@@ -266,17 +266,18 @@ evs.forEach(function (e) { addEventListener(e, go, { once: true, passive: true }
 addEventListener('load', function () { setTimeout(go, 4000); }); })();
 </script>`;
 
-// The page's few behaviours, in one small script at the end: copy buttons, the App · TUI · CLI switch (one choice for
+// The page's few behaviours, in one small script at the end: copy buttons, the Desktop app · Phone app · TUI · CLI switch (one choice for
 // the whole site, kept), and the phone app waitlist.
 const PAGE_JS = `<script>
 (function () {
-  var d = document, root = d.documentElement;
+  var d = document, root = d.documentElement, WAY_KEY = 'starlight-synced-tabs__way';
+  var LABEL = { desktop: 'Desktop app', phone: 'Phone app', tui: 'TUI', cli: 'CLI' };
   function track(e, p) { try { window.posthog && posthog.capture && posthog.capture(e, p); } catch (x) {} }
   d.addEventListener('click', function (ev) {
     var c = ev.target.closest('[data-copy]');
     if (c) { navigator.clipboard && navigator.clipboard.writeText(c.getAttribute('data-copy')).then(function () { c.setAttribute('data-done', ''); c.setAttribute('aria-label', 'Copied'); setTimeout(function () { c.removeAttribute('data-done'); c.setAttribute('aria-label', 'Copy command'); }, 1600); }); track('site copy', { what: c.getAttribute('data-copy') }); return; }
     var w = ev.target.closest('[data-way-pick]');
-    if (w) { setWay(w.getAttribute('data-way-pick')); try { localStorage.setItem('wisp-way', root.dataset.way); } catch (x) {} return; }
+    if (w) { setWay(w.getAttribute('data-way-pick')); try { localStorage.setItem(WAY_KEY, LABEL[root.dataset.way]); } catch (x) {} return; }
     var a = ev.target.closest('a[data-dl]');
     if (a) track('site download', { what: a.getAttribute('data-dl') });
   });
@@ -290,8 +291,8 @@ const PAGE_JS = `<script>
     var all = [].slice.call(b.parentNode.querySelectorAll('[data-way-pick]')), i = all.indexOf(b);
     var n = all[(i + (ev.key === 'ArrowRight' ? 1 : all.length - 1)) % all.length]; n.click(); n.focus(); ev.preventDefault();
   });
-  var saved = null; try { saved = localStorage.getItem('wisp-way'); } catch (x) {}
-  setWay(saved === 'tui' || saved === 'cli' ? saved : 'app');
+  // the head's script already chose (the reader's pick, else Desktop app, Phone app on a phone): the tabs' state follows
+  setWay(root.dataset.way || 'desktop');
 
   // the phone app waitlist: the email goes to wisp Cloud's list only (docs/privacy.md)
   var EMAIL = /^[^@\\s<>"']{1,64}@[^@\\s<>"']+\\.[^@\\s<>"']{2,}$/;
@@ -324,6 +325,11 @@ const PAGE_JS = `<script>
 })();
 </script>`;
 
+// Before paint (no flash, no shift): which how-to tab every block shows. The reader's last pick, shared with the docs'
+// synced tabs (same key, same labels); else Phone app on a phone (touch and narrow, or a mobile browser), else Desktop
+// app, which is also what the HTML says for a reader without JavaScript.
+const WAY_HEAD = `<script>try{var r=document.documentElement,l=localStorage.getItem('starlight-synced-tabs__way'),k={'Desktop app':'desktop','Phone app':'phone','TUI':'tui','CLI':'cli'}[l];if(!k){var n=navigator,m=n.userAgentData&&n.userAgentData.mobile;k=m||matchMedia('(max-width: 700px) and (pointer: coarse)').matches||/iPhone|iPod|Android.+Mobile/.test(n.userAgent)?'phone':'desktop'}r.dataset.way=k}catch(e){}</script>`;
+
 const NAV = [
   ['Docs', DOCS_URL, ''],
   ['Guides', '/docs/guides/', 'opt'],
@@ -341,10 +347,11 @@ function page({ path: p, title, description, crumbs = [], body, schema = [], noi
   };
   const graph = noindex ? [] : [...(crumbs.length ? [breadcrumb] : []), ...schema];
   return `<!doctype html>
-<html lang="en" data-way="app">
+<html lang="en" data-way="desktop">
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
+${WAY_HEAD}
 <title>${esc(title)}</title>
 <meta name="description" content="${esc(description)}" />
 ${noindex ? '<meta name="robots" content="noindex" />' : `<link rel="canonical" href="${url}" />
@@ -436,24 +443,28 @@ function shot(name, widths, ratio, alt, { sizes = '100vw', eager = false } = {})
 }
 const DESK = [640, 960, 1440, 2160];
 const PHONE = [240, 390, 780];
-const deskShot = (name, alt, o) => `<div class="window"><div class="bar" aria-hidden="true"><i></i><i></i><i></i></div>${shot(name, name === 'desktop-org' ? [640, 960, 1440] : DESK, [1440, 900], alt, o)}</div>`;
+const DESK_3 = new Set(['desktop-org', 'desktop-new-task', 'desktop-machines']);
+const deskShot = (name, alt, o) => `<div class="window"><div class="bar" aria-hidden="true"><i></i><i></i><i></i></div>${shot(name, DESK_3.has(name) ? [640, 960, 1440] : DESK, [1440, 900], alt, o)}</div>`;
 const phoneShot = (name, alt, o) => `<div class="phone">${shot(name, PHONE, [390, 844], alt, o)}</div>`;
 
 const wayShot = (html, phone = false) => `<div class="way-shot${phone ? ' is-phone' : ''}">${html}</div>`;
 const install = (cmd = 'npx wisp-agents') =>
   `<div class="install"><span class="dollar" aria-hidden="true">$</span><code>${esc(cmd)}</code><button class="copy" type="button" data-copy="${esc(cmd)}" aria-label="Copy command">${COPY_ICON}</button></div>`;
 
-/** One task three ways: the app, the terminal UI and the command line. `app`, `tui`, `cli`: HTML (cli: a shell snippet). */
+/** One task four ways: the desktop app, the phone app, the terminal UI and the command line. `desktop`, `phone`,
+ * `tui`: HTML; `cli`: a shell snippet. The pick is one for the whole site and the docs: WAYS' labels are what
+ * trywisp.dev/docs's synced tabs keep in localStorage (`starlight-synced-tabs__way`), and the head's script draws the
+ * right one before paint (Desktop app with no pick, Phone app on a phone). */
+const WAYS = [['desktop', 'Desktop app'], ['phone', 'Phone app'], ['tui', 'TUI'], ['cli', 'CLI']];
 let waysN = 0;
-function ways({ app, tui, cli, label = '' }) {
+function ways({ desktop, phone, tui, cli, label = '' }) {
   const n = ++waysN;
-  const tab = (k, t) => `<button type="button" role="tab" id="w${n}-${k}" aria-controls="w${n}-${k}p" data-way-pick="${k}" aria-selected="${k === 'app'}"${k === 'app' ? '' : ' tabindex="-1"'}>${t}</button>`;
-  const panel = (k, html) => `<div class="way" data-k="${k}" role="tabpanel" id="w${n}-${k}p" aria-labelledby="w${n}-${k}">${html}</div>`;
+  const html = { desktop, phone, tui, cli: `<pre><code>${cli}</code></pre>` };
+  const tab = ([k, t]) => `<button type="button" role="tab" id="w${n}-${k}" aria-controls="w${n}-${k}p" data-way-pick="${k}" aria-selected="${k === 'desktop'}"${k === 'desktop' ? '' : ' tabindex="-1"'}>${t}</button>`;
+  const panel = ([k]) => `<div class="way" data-k="${k}" role="tabpanel" id="w${n}-${k}p" aria-labelledby="w${n}-${k}">${html[k]}</div>`;
   return `<div class="ways">
-  <div class="ways-tabs" role="tablist" aria-label="Do it from">${tab('app', 'App')}${tab('tui', 'TUI')}${tab('cli', 'CLI')}${label ? `<span class="label">${esc(label)}</span>` : ''}</div>
-  ${panel('app', app)}
-  ${panel('tui', tui)}
-  ${panel('cli', `<pre><code>${cli}</code></pre>`)}
+  <div class="ways-tabs" role="tablist" aria-label="Do it from">${WAYS.map(tab).join('')}${label ? `<span class="label">${esc(label)}</span>` : ''}</div>
+  ${WAYS.map(panel).join('\n  ')}
 </div>`;
 }
 // a shell line: the command, then a dim comment
@@ -482,7 +493,7 @@ function landing() {
   <section class="hero" aria-labelledby="hero-h">
     <p class="kicker"><b>Open source</b> · MIT · runs on your machines</p>
     <h1 id="hero-h">Manage the code your agents write.</h1>
-    <p class="lede"><b>Declare</b> your coding agents as code. <b>Run</b> them anywhere, many at once. <b>Track</b> every line they write, right next to your code. From the app, the terminal or your phone.</p>
+    <p class="lede"><b>Declare</b> your coding agents as code. <b>Run</b> them anywhere, many at once. <b>Track</b> every line they write, right next to your code. From the desktop app, your phone or the terminal.</p>
     <div class="cta" id="install">
       ${install()}
       <a class="btn primary" href="/app.html" data-dl="hero">${DL_ICON}Get the app</a>
@@ -529,7 +540,8 @@ function landing() {
       </div>
       ${ways({
         label: 'Set up a team',
-        app: `<ol><li>Open <b>Crew</b> and choose <b>+</b> to add a reviewer, a fixer, a nightly bot.</li><li>Settings → <b>Setup</b> → <b>Make the formula</b> writes your whole setup as a file to commit.</li><li>Paste a formula in the same pane to import one: you see what it would change first.</li></ol>${wayShot(deskShot('desktop-org', 'The Org page in the wisp app: crew members and who hands work to whom', { sizes: '(max-width: 880px) 90vw, 540px' }))}`,
+        desktop: `<ol><li>Open the <b>Org</b> page (its button is at the bottom of the rail on the left) and choose <b>Add member</b>: a reviewer, a fixer, a nightly bot.</li><li>Settings (<kbd>⌘K</kbd> → Settings) → <b>Setup</b> → <b>Make the formula</b> writes your whole setup as a file to commit.</li><li>Paste a formula in the same pane to import one: you see what it would change first.</li></ol>${wayShot(deskShot('desktop-org', 'The Org page in the wisp desktop app: the crew, and who hands work to whom', { sizes: '(max-width: 880px) 90vw, 540px' }))}`,
+        phone: `<ol><li>Open the <b>Crew</b> tab to see your members and add one.</li><li>Tap a member’s story under the Tasks bar to see what they’re doing, and reply.</li><li>Writing the formula itself is easier on a computer: the Desktop app or the CLI.</li></ol>`,
         tui: `<ol><li><code>wisp tui</code>, then <kbd>g</kbd> <kbd>c</kbd> for the crew view.</li><li><kbd>n</kbd> adds a member, <kbd>a</kbd> gives one a job, <kbd>c</kbd> checks in.</li><li>Any CLI command runs from the reply box: <code>/crew create --name Ada</code>.</li></ol>`,
         cli: `<span class="c"># .wisp/wisp.yml</span>
 <span class="k">wisp</span>: 1
@@ -557,7 +569,8 @@ ${sh('wisp apply -f .wisp/wisp.yml')}`,
       </div>
       ${ways({
         label: 'Start and ship a task',
-        app: `<ol><li>Press <kbd>N</kbd> for <b>New task</b>, pick the agent and model, type, <kbd>Enter</kbd>.</li><li>Answer its questions on the task page; reply to follow up.</li><li><b>Ship</b> commits, pushes and opens the pull request.</li></ol>${wayShot(phoneShot('ios-list', 'The task list in the wisp iPhone app: tasks that need you, and tasks still working', { sizes: '200px' }), true)}`,
+        desktop: `<ol><li>Press <kbd>N</kbd> for <b>New task</b>, pick the agent and model in its footer, type, <kbd>Enter</kbd>.</li><li>Answer its questions on the task page; reply below to follow up. <kbd>]</kbd> opens the side panel: Changes, PR, Shell, Preview.</li><li><b>Ship</b> (<kbd>S</kbd>) commits, pushes and opens the pull request.</li></ol><p class="small muted">In the browser it’s the same window, menus and keys.</p>${wayShot(deskShot('desktop-new-task', 'New task in the wisp desktop app: a prompt typed, with the mode, Claude Code and where it runs under it', { sizes: '(max-width: 880px) 90vw, 540px' }))}`,
+        phone: `<ol><li>In <b>Tasks</b>, tap <b>New task</b>, write what you want, send.</li><li>Answer its questions in the task; the reply bar follows up. Swipe a row right to mark it done.</li><li><b>⋯</b> (iPhone) or <b>⋮</b> (Android) → <b>Ship it…</b> opens the pull request.</li></ol>${wayShot(phoneShot('ios-list', 'The task list in the wisp iPhone app: tasks that need you, and tasks still working', { sizes: '200px' }), true)}`,
         tui: `<ol><li><code>wisp tui</code>, <kbd>n</kbd> for a new task, <kbd>Enter</kbd> to send.</li><li><kbd>1</kbd>–<kbd>9</kbd> answers a question; <kbd>y</kbd> <kbd>a</kbd> <kbd>n</kbd> allow a tool.</li><li><code>/ship ship</code> opens the pull request; <kbd>d</kbd> shows the diff.</li></ol>`,
         cli: `${sh('wisp "fix the flaky reconnect test"', 'runs in its own worktree')}
 ${sh('wisp "add rate limiting to /login" --agent codex --effort high')}
@@ -581,7 +594,8 @@ ${sh('wisp ship <id>', 'commit, push, open the PR')}`,
       </div>
       ${ways({
         label: 'Find out why',
-        app: `<ol><li>Open <b>Repo history</b>: what agents did in this repo, from everyone who worked on it.</li><li>Open a task to read what was asked and its report; <b>Resume</b> carries it on, on today’s code.</li><li>Keep a task in the repo with <b>Track</b> in its <b>⋯</b> menu.</li></ol>${wayShot(phoneShot('ios-task', 'A task in the wisp iPhone app: its turns, what was asked, and the report', { sizes: '200px' }), true)}`,
+        desktop: `<ol><li><kbd>⌘K</kbd> → <b>Repo history</b>: what agents did in this repo, from everyone who worked on it.</li><li>Open a task to read what was asked and its report; <b>Resume</b> carries it on, on today’s code.</li><li>Keep a task in the repo with <b>Track</b> in its <b>⋯</b> menu.</li></ol>${wayShot(deskShot('desktop-task', 'A task in the wisp desktop app: its turns, what was asked, and the report with the diff and the tests', { sizes: '(max-width: 880px) 90vw, 540px' }))}`,
+        phone: `<ol><li>Open a task to read what was asked, its turns and its report.</li><li><b>⋯</b> / <b>⋮</b> → <b>Rerun…</b> asks the same again; <b>Keep and copy ›</b> forks or shares it.</li><li>The repo’s full history is in the Desktop app, the TUI and the CLI.</li></ol>${wayShot(phoneShot('ios-task', 'A task in the wisp iPhone app: its turns, what was asked, and the report', { sizes: '200px' }), true)}`,
         tui: `<ol><li><code>wisp tui</code>, then <kbd>g</kbd> <kbd>h</kbd> for the repo history view.</li><li><kbd>Enter</kbd> opens a task; <kbd>/</kbd> searches.</li><li>A task’s page says what it was asked and from which commit.</li></ol>`,
         cli: `${sh('wisp blame src/sync/peers.ts:118', 'the task that wrote it, and what it was asked')}
 ${sh("wisp blame '#812'", 'the tasks behind a pull request')}
@@ -596,7 +610,7 @@ ${sh('wisp adopt --all --since 7d', 'sessions you ran outside wisp')}`,
     <div class="sec-head">
       <p class="eyebrow">Everything else</p>
       <h2 id="more-h">One tool for the whole loop</h2>
-      <p>Every feature works from the app, the TUI and the CLI, and from your own agent through wisp’s MCP tools.</p>
+      <p>Every feature works from the desktop app, the phone app, the TUI and the CLI, and from your own agent through wisp’s MCP tools.</p>
     </div>
     <div class="grid">
       ${[
@@ -671,7 +685,8 @@ ${sh('wisp adopt --all --since 7d', 'sessions you ran outside wisp')}`,
       </div>
       ${ways({
         label: 'Reach this computer from anywhere',
-        app: `<ol><li>Home’s tip <b>Reach this wisp from anywhere</b> → <b>Set up</b>.</li><li>Sign in with GitHub or Google.</li><li>Open your grid address from any browser or phone.</li></ol>`,
+        desktop: `<ol><li>Settings → <b>Machines</b> → <b>Reach this computer from anywhere</b> → <b>Sign in and add it</b> (or Home’s tip → <b>Set up</b>).</li><li>Sign in with GitHub or Google.</li><li>Open your grid address from any browser or phone.</li></ol>${wayShot(deskShot('desktop-machines', 'Settings → Machines in the wisp desktop app: SSH, Tailscale, and Reach this computer from anywhere', { sizes: '(max-width: 880px) 90vw, 540px' }))}`,
+        phone: `<ol><li>Open the <b>Computers</b> tab.</li><li><b>Continue with GitHub</b> or <b>Continue with Google</b>.</li><li>Your cloud wisp and the computers on it show there; tap one to open its tasks.</li></ol>`,
         tui: `<ol><li><kbd>g</kbd> <kbd>m</kbd> for machines; <kbd>c</kbd> connects one.</li><li>From the reply box: <code>/grid-client signin --add-computer</code>.</li></ol>`,
         cli: `${sh('wisp cloud signin', 'wisp Cloud, or: wisp cloud signin <your grid>')}
 ${sh('wisp computer on', 'this computer on the grid')}
@@ -823,7 +838,8 @@ function cloudPage() {
     <h2 id="how-h">Get started</h2>
     ${ways({
       label: 'wisp Cloud',
-      app: `<ol><li>On Home, the tip <b>Reach this wisp from anywhere</b> → <b>Set up</b>.</li><li>Continue with GitHub or Google.</li><li>Your cloud wisp and your computers show under <b>Machines</b>.</li></ol>`,
+      desktop: `<ol><li>Settings → <b>Machines</b> → <b>Reach this computer from anywhere</b> → <b>Sign in and add it</b>, or Home’s tip → <b>Set up</b>.</li><li>Continue with GitHub or Google.</li><li>Your cloud wisp and your computers show under <b>Machines</b>.</li></ol>${wayShot(deskShot('desktop-machines', 'Settings → Machines in the wisp desktop app', { sizes: '(max-width: 880px) 90vw, 760px' }))}`,
+      phone: `<ol><li>Open the <b>Computers</b> tab.</li><li><b>Continue with GitHub</b> or <b>Continue with Google</b>.</li><li>Your cloud wisp and the computers on it show there.</li></ol>`,
       tui: `<ol><li><kbd>g</kbd> <kbd>m</kbd> opens the machines view.</li><li>Send <code>/grid-client signin --add-computer</code> from the reply box.</li></ol>`,
       cli: `${sh('wisp cloud signin')}
 ${sh('wisp cloud status')}
@@ -1055,7 +1071,7 @@ function llmsTxt() {
 
 > wisp manages the code your agents write: an open-source app, terminal UI and CLI that runs Claude Code, Codex, Cursor CLI, opencode, GitHub Copilot CLI, Grok Build and Antigravity in parallel (each task in its own git worktree, on your own plans), lets you declare agents, crew, machines, skills and MCP servers as code in a repo's .wisp/ folder, and keeps every task next to the code it wrote (wisp blame, wisp resume). Desktop app for macOS, Windows and Linux; phone apps for iPhone and Android on a waitlist; wisp Cloud and self-hosted Grids for always-on agents.
 
-Install: \`npm install -g wisp-agents\` (Node.js 18+), \`brew install --cask wispagents/tap/wisp\` (desktop app), or \`npx wisp-agents\` to try it. Every feature works from the app, \`wisp tui\` and the CLI, and from your own agent through \`wisp mcp\`.
+Install: \`npm install -g wisp-agents\` (Node.js 18+), \`brew install --cask wispagents/tap/wisp\` (desktop app), or \`npx wisp-agents\` to try it. Every feature works from the desktop app, the phone app, \`wisp tui\` and the CLI, and from your own agent through \`wisp mcp\`.
 
 ## Docs
 

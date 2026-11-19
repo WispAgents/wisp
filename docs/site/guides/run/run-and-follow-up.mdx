@@ -6,6 +6,7 @@ sidebar:
 ---
 
 import { Tabs, TabItem } from '@astrojs/starlight/components';
+import Shot from '@wisp-docs/Shot.astro';
 
 A task is one ask to one agent, in your project. This guide covers the loop you use every day: start it, follow it,
 send follow-ups, and stop it when it goes the wrong way.
@@ -13,10 +14,16 @@ send follow-ups, and stop it when it goes the wrong way.
 ## Start a task
 
 <Tabs syncKey="way">
-<TabItem label="App">
-Press **New task** (**N**), type what you want and press **Enter**. Above the box, pick the project. Below it, pick
-the mode (Plan, Edits or Full auto), the harness and model, and where it runs (**This computer** or another
-machine). The **+** button adds files, a goal, delegates, a second agent to compare, or a later start.
+<TabItem label="Desktop app">
+Press **New task** (**N** or **⌘L**), type what you want and press **Enter**. Above the box, pick the project. In the
+footer, pick the mode (Plan, Edits or Full auto), the harness and model, and where it runs (**This computer** or
+another machine). The **+** button adds files, a goal, delegates, a second agent to compare, or a later start.
+
+In the browser (`wisp --browser`, or your cloud wisp) it's the same window, menus and keys.
+</TabItem>
+<TabItem label="Phone app">
+Tap **New task** (on iPhone, the compose button at the top right), type the task and tap **Send**. The chips under
+the box pick the project, the mode, the harness and model, and where it runs. **+** adds files.
 </TabItem>
 <TabItem label="TUI">
 Run `wisp tui` and press **n**. Type the task and press **Enter**. **Tab** cycles the mode: plan, edits, auto.
@@ -40,9 +47,16 @@ Each task runs in its own git worktree by default, so tasks never step on each o
 ## Watch it
 
 <Tabs syncKey="way">
-<TabItem label="App">
+<TabItem label="Desktop app">
 The task page shows what the agent does, step by step, then its answer as cards: a summary, the diff, the tests.
-The list on the left says which tasks work, which need you and which are done.
+The list on the left says which tasks work, which need you and which are done. **J** and **K** move to the next and
+previous task; **V** opens the full transcript.
+
+<Shot name="task" alt="A finished task: the agent's report as cards, with a summary, the diff and the tests" />
+</TabItem>
+<TabItem label="Phone app">
+Tap a task in **Tasks**. It shows the steps live, then the answer. The pills under the title (*Changes +n −n*,
+the PR) open the changes and the PR as a sheet. **⋯** (iPhone) or **⋮** (Android) → **Show ›** has the full transcript.
 </TabItem>
 <TabItem label="TUI">
 Press **Enter** on a task to open it. **j** and **k** move between steps, **Space** opens one, **G** follows the
@@ -63,13 +77,20 @@ task.
 ## Follow up
 
 <Tabs syncKey="way">
-<TabItem label="App">
-Type in the reply box under the answer and press **Enter**. While the agent works, the **Queue** button decides
-what a follow-up does: it waits for the turn to end, or it interrupts now. Queued follow-ups show above the box.
-Drag them to change the order, edit them, **Combine with the next one**, or **Send now**.
+<TabItem label="Desktop app">
+Press **/** to jump to the reply box under the answer, type, and press **Enter**. While the agent works, the
+**Queue** button decides what a follow-up does: it waits for the turn to end, or it interrupts now. Queued
+follow-ups show above the box. Drag them to change the order, edit them, **Combine with the next one**, or
+**Send now**.
 
-To ask something without stopping the run, open the task's **⋯** menu, **Task options**, **Side discussion…**, or
-type `/btw is this safe?`. The answer shows beside the run, and the run carries on.
+To ask something without stopping the run, open the task's **⋯** at its top right → **Task options ›
+Side discussion…**, or type `/btw is this safe?`. The answer shows beside the run, and the run carries on.
+
+<Shot name="task-options" alt="The task's ⋯ menu open on Task options, with Set goal…, Side discussion… and the other task options" />
+</TabItem>
+<TabItem label="Phone app">
+Type in the reply bar and tap **Send**. The options chip in the reply bar has **Queue** (send it after this
+turn) and **Send later**. To ask on the side without stopping the run, type `/btw is this safe?`.
 </TabItem>
 <TabItem label="TUI">
 Press **i**, type and press **Enter**. While a turn runs, the follow-up is queued. **Alt-↑** and **Alt-↓**
@@ -95,8 +116,11 @@ You can also schedule a follow-up for later: **Start later** in the **+** menu, 
 ## Stop it
 
 <Tabs syncKey="way">
-<TabItem label="App">
+<TabItem label="Desktop app">
 Press **Stop** in the reply box while it works, and confirm. Queued follow-ups stay, held until you send one.
+</TabItem>
+<TabItem label="Phone app">
+Tap **Stop** in the reply bar while it works, and confirm. Queued follow-ups stay, held until you send one.
 </TabItem>
 <TabItem label="TUI">
 **Esc** interrupts the running turn. **s** stops the task. Or send `/stop`.
@@ -115,9 +139,13 @@ MCP servers, a worktree setup script), the harness changed since wisp last ran i
 window past your line (see [Budgets and usage](../budgets-and-usage/)). The task shows **Held** and says why.
 
 <Tabs syncKey="way">
-<TabItem label="App">
+<TabItem label="Desktop app">
 The held card has **Trust and start**, **Run without them** (without the repo's own programs) and
 **Skip this run**. A turn held for a usage window offers **Start now** or **Wait**.
+</TabItem>
+<TabItem label="Phone app">
+The held card shows in the task with the same buttons: **Trust and start**, **Run without them** and
+**Skip this run**, or **Start now** and **Wait** for a usage window.
 </TabItem>
 <TabItem label="TUI">
 With the task open, send `/runtime held --action start` (or `without`, or `skip`).
