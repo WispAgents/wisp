@@ -146,6 +146,27 @@ async fn an_added_account_whose_first_sign_in_did_not_finish_is_signed_out() {
     drop(serve);
 }
 
+/// Sign out on an account whose sign-in was still under way: the row read "Signed out" beside the sign-in's own
+/// Cancel, and the CLI's login kept running (it could still sign the account in after the user signed it out). Sign
+/// out ends the sign-in first.
+#[tokio::test(flavor = "multi_thread")]
+async fn sign_out_during_a_sign_in_ends_that_sign_in() {
+    let dir = temp("serve-accounts-out-during");
+    std::fs::create_dir_all(dir.join("codex-home")).unwrap();
+    let (serve, port) = start_with(&dir, &[("FAKE_LOGIN_MS", "60000")]);
+    let api = Arc::new(Api { http: reqwest::Client::new(), port, n: 0.into() });
+    api.cmd("accounts.add", json!({ "agent": "codex", "id": "w1", "label": "Work", "kind": "work" })).await;
+    until("the sign-in waits", async || {
+        let v = api.cmd("accounts.login", json!({ "agent": "codex", "account": "w1" })).await;
+        (v["state"] == "waiting").then_some(v)
+    })
+    .await;
+    api.cmd("accounts.logout", json!({ "agent": "codex", "account": "w1" })).await;
+    let v = api.cmd("accounts.login", json!({ "agent": "codex", "account": "w1" })).await;
+    assert!(!["running", "waiting"].contains(&v["state"].as_str().unwrap_or("")), "the sign-in still runs after Sign out: {v}");
+    drop(serve);
+}
+
 /// Audit C tasks #3: Trust and start on one card trusted the changed program, but the other turns it held stayed held,
 /// each card still saying the harness changed (a change wisp now trusts). A yes on one card is a yes to the program:
 /// every turn the watch held for it starts, as Trust does.

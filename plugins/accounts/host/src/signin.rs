@@ -341,6 +341,11 @@ pub async fn cancel(ctx: &Ctx, st: &State, agent: &str, acc: &str) -> LoginView 
 /// The CLI's own sign-out. Refused while a key in wisp's environment signs it in.
 pub async fn logout(ctx: &Ctx, st: &State, h: &dyn Harness, acc: &str) -> Result<LoginStatus, WireError> {
     let l = spec(h)?;
+    // a sign-in still under way ends first: left running, its CLI could sign the account in after this sign-out
+    let id = login_id(&h.info().id, acc);
+    if lock(&st.flows.0).get(&id).is_some_and(|f| f.view.state.live()) {
+        cancel(ctx, st, &h.info().id, acc).await;
+    }
     if let Some(k) = l.keys.iter().find(|k| std::env::var(k).is_ok_and(|v| !v.is_empty())) {
         return Err(WireError::invalid(format!("{} is signed in with {k}: remove it from wisp's environment to sign out.", l.bin)));
     }
