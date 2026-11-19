@@ -6,6 +6,8 @@
 //   - recency: +20 just now, +10 a day old, never 0, so newer wins between equal matches;
 //   - best first, groups kept together in the order of their best hit, 12 per group;
 //   - an empty query shows each group's first `limit` (6) items, in the order given.
+// Per key it does the least (perf-ui-r2 #2): each item's fields are lowercased once per list (`createRanker`), the
+// query is parsed once, and a query that extends the last one only ranks the last one's hits.
 
 import type { PaletteItem } from '../contract.ts';
 
@@ -40,9 +42,12 @@ export interface Hit {
 
 /** One needle against one text, or null. */
 export function matchOne(needle: string, text: string): Hit | null {
-  if (!needle) return { score: 0, idx: [] };
-  const n = needle.toLowerCase();
-  const h = text.toLowerCase();
+  return matchLow(needle.toLowerCase(), text, text.toLowerCase());
+}
+
+/** `matchOne` with the needle (`n`) and the text (`h`) already lower case; `text` as written, for word starts. */
+function matchLow(n: string, text: string, h: string): Hit | null {
+  if (!n) return { score: 0, idx: [] };
   let end = -1;
   for (let i = 0, j = 0; i < h.length; i++) {
     if (h[i] === n[j] && ++j === n.length) {
@@ -78,16 +83,26 @@ export function matchOne(needle: string, text: string): Hit | null {
 
 /** A whole query against [label, ...rest]; idx are the label's matched positions. */
 export function fuzzy(query: string, fields: readonly string[]): Hit | null {
-  const words = query.trim().split(/\s+/).filter(Boolean);
-  if (words.length === 0) return { score: 0, idx: [] };
-  const [label = '', ...rest] = fields;
+  return fuzzyLow(words(query), fields, fields.map((f) => f.toLowerCase()));
+}
+
+const words = (q: string): string[] =>
+  q
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean)
+    .map((w) => w.toLowerCase());
+
+/** `fuzzy` with the query's words lower case and each field's lower case beside it (`low`). */
+function fuzzyLow(ws: readonly string[], fields: readonly string[], low: readonly string[]): Hit | null {
+  if (ws.length === 0) return { score: 0, idx: [] };
   let total = 0;
   const idx = new Set<number>();
-  for (const w of words) {
-    const t = matchOne(w, label);
+  for (const w of ws) {
+    const t = matchLow(w, fields[0] ?? '', low[0] ?? '');
     let best = t ? t.score * 1.5 : -Infinity;
-    for (const f of rest) {
-      const m = f ? matchOne(w, f) : null;
+    for (let i = 1; i < fields.length; i++) {
+      const m = fields[i] ? matchLow(w, fields[i] ?? '', low[i] ?? '') : null;
       if (m && m.score > best) best = m.score;
     }
     if (best === -Infinity) return null;
@@ -119,6 +134,10 @@ export function splitQuery(q: string): Query {
 }
 
 export function tagScore(q: Query, tags: readonly string[] = []): { score: number; hit: string[] } | null {
+  return tagScoreOf(q, words(q.text), tags);
+}
+
+function tagScoreOf(q: Query, textWords: readonly string[], tags: readonly string[] = []): { score: number; hit: string[] } | null {
   const hit = new Set<string>();
   let s = 0;
   for (const w of q.tags) {
@@ -127,7 +146,7 @@ export function tagScore(q: Query, tags: readonly string[] = []): { score: numbe
     hit.add(t);
     s += t === w ? 14 : 8;
   }
-  for (const w of q.text.toLowerCase().split(/\s+/).filter(Boolean)) {
+  for (const w of textWords) {
     const t = tags.find((x) => x === w) ?? (w.length > 2 ? tags.find((x) => x.startsWith(w)) : undefined);
     if (t !== undefined) {
       hit.add(t);
@@ -147,25 +166,99 @@ const GROUP_LIMIT = 6;
 const PER_GROUP = 12;
 
 export function rank(items: readonly PaletteItem[], query: string, now: number, deep: readonly PaletteItem[] = []): Ranked[] {
-  if (!query.trim()) {
-    const per = new Map<string, number>();
-    return items
-      .filter((it) => {
-        const n = per.get(it.group) ?? 0;
-        per.set(it.group, n + 1);
-        return n < GROUP_LIMIT;
-      })
-      .map((item) => ({ item, idx: [] }));
-  }
-  const q = splitQuery(query);
-  const hits: { item: PaletteItem; idx: number[]; score: number }[] = [];
-  for (const it of items) {
-    const t = tagScore(q, it.tags);
-    if (!t) continue;
-    if (it.fill !== undefined && it.tags?.[0] !== undefined && q.tags.includes(it.tags[0])) continue; // that topic is already in the query
-    const m = q.text ? fuzzy(q.text, [it.label, it.sub ?? '', it.tags?.join(' ') ?? '', it.keywords ?? '', it.group]) : { score: 0, idx: [] };
-    if (m) hits.push({ item: it, idx: m.idx, score: m.score + t.score + (it.rank ?? 0) + recency(it.at, now) });
-  }
+  return createRanker()(items, query, now, deep);
+}
+
+/** An item's searched fields (label, sub, tags, keywords, group) as written and lower case, made once per list. */
+interface Fields {
+  readonly raw: readonly string[];
+  readonly low: readonly string[];
+}
+
+const fieldsOf = (it: PaletteItem): Fields => {
+  const raw = [it.label, it.sub ?? '', it.tags?.join(' ') ?? '', it.keywords ?? '', it.group];
+  return { raw, low: raw.map((f) => f.toLowerCase()) };
+};
+
+export interface Ranker {
+  (items: readonly PaletteItem[], query: string, now: number, deep?: readonly PaletteItem[]): Ranked[];
+  /** how many items the last call scored (a test's measure of the work per key) */
+  readonly scored: number;
+}
+
+/**
+ * `rank` that keeps what it can between calls on the same `items` (the palette's, one per open): each item's fields
+ * lowercased once, and the last query's hits, so a query that extends it ("au" → "aut", "fix" → "fix au") only ranks
+ * those: every word or `#tag` it adds can only narrow them. A new `items` list starts again.
+ */
+export function createRanker(): Ranker {
+  // by item id: its fields as last seen (lowercased once), and whether the last query matched it. Kept across a new
+  // list (the store changed while the palette is open: a task streaming rebuilds the task items each patch), so a
+  // rebuild costs neither the lowercasing nor the narrowing; an item whose fields changed is ranked again.
+  let seen = new Map<string, Fields>();
+  let last: { q: string; hits: ReadonlySet<string> } | undefined;
+  let scored = 0;
+  const fieldsAt = (it: PaletteItem): Fields => {
+    const was = seen.get(it.id);
+    if (was && sameFields(was, it)) return was;
+    const f = fieldsOf(it);
+    seen.set(it.id, f);
+    return f;
+  };
+  const run = (items: readonly PaletteItem[], query: string, now: number, deep: readonly PaletteItem[] = []): Ranked[] => {
+    const qt = query.trim();
+    if (!qt) {
+      last = undefined;
+      scored = 0;
+      const per = new Map<string, number>();
+      return items
+        .filter((it) => {
+          const n = per.get(it.group) ?? 0;
+          per.set(it.group, n + 1);
+          return n < GROUP_LIMIT;
+        })
+        .map((item) => ({ item, idx: [] }));
+    }
+    if (seen.size > items.length * 2 + 64) seen = new Map(); // items gone for good: don't keep them
+    const q = splitQuery(query);
+    const textWords = words(q.text);
+    const narrow = last && qt.startsWith(last.q) ? last.hits : undefined;
+    const kept = new Set<string>();
+    const hits: { item: PaletteItem; idx: number[]; score: number }[] = [];
+    let n = 0;
+    for (const it of items) {
+      // the last query's hits, and any item new or changed since it ran
+      if (narrow && !narrow.has(it.id)) {
+        const was = seen.get(it.id);
+        if (was && sameFields(was, it)) continue;
+      }
+      n++;
+      const t = tagScoreOf(q, textWords, it.tags);
+      if (!t) continue;
+      if (it.fill !== undefined && it.tags?.[0] !== undefined && q.tags.includes(it.tags[0])) {
+        kept.add(it.id); // that topic is already in the query; "#tag" → "#tags" can bring it back, so it stays a candidate
+        continue;
+      }
+      const f = fieldsAt(it);
+      const m: Hit | null = textWords.length > 0 ? fuzzyLow(textWords, f.raw, f.low) : { score: 0, idx: [] };
+      if (!m) continue;
+      kept.add(it.id);
+      hits.push({ item: it, idx: m.idx, score: m.score + t.score + (it.rank ?? 0) + recency(it.at, now) });
+    }
+    scored = n;
+    last = { q: qt, hits: kept };
+    return grouped(hits, deep);
+  };
+  return Object.defineProperty(run, 'scored', { get: () => scored }) as Ranker;
+}
+
+/** Whether `it` still has the fields `f` was made from (a renamed task, its new state in `sub`, a tag added: no). */
+function sameFields(f: Fields, it: PaletteItem): boolean {
+  const r = f.raw;
+  return r[0] === it.label && r[1] === (it.sub ?? '') && r[3] === (it.keywords ?? '') && r[4] === it.group && r[2] === (it.tags?.join(' ') ?? '');
+}
+
+function grouped(hits: { item: PaletteItem; idx: number[]; score: number }[], deep: readonly PaletteItem[]): Ranked[] {
   hits.sort((a, b) => b.score - a.score || (b.item.at ?? 0) - (a.item.at ?? 0));
   const groups = [...new Set(hits.map((h) => h.item.group))];
   const listed = new Set(hits.map((h) => h.item.id));

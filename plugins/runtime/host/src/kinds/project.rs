@@ -75,6 +75,24 @@ pub struct ProjectSpec {
     pub instructions: String,
 }
 
+/// Setup audit B2: a project is a folder that's there, however it arrives (`wisp apply`, `wisp import`, a formula), as
+/// `runtime.projectAdd` says for Projects' Add and `wisp add` (audit A F1). The spec is tidied first (its path
+/// canonical); a repo URL is left to the clone. Read when a plan creates or changes a project, never per task.
+pub fn check_project(spec: &Value) -> Vec<String> {
+    let Some(path) = spec.get("path").and_then(Value::as_str).filter(|p| !p.trim().is_empty()) else { return Vec::new() };
+    if path.contains("://") || path.starts_with("git@") || wisp_runtime_api::paths::Folder::of(path).is_err() {
+        return Vec::new();
+    }
+    // one stat per project a plan creates or changes (`check` is sync, as `tidy_project`'s `plain_str_blocking` is):
+    // never per task, per event or per row read
+    match std::fs::metadata(path) {
+        Ok(m) if m.is_dir() => Vec::new(),
+        Ok(_) => vec![format!("{path} is a file, not a folder: pick the folder it's in")],
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => vec![format!("No folder at {path}")],
+        Err(e) => vec![format!("Can't open {path}: {e}")],
+    }
+}
+
 /// A project spec as it's stored: its path canonical (`wisp_runtime_api::paths`), `~` your home's.
 pub fn tidy_project(spec: &mut Value) {
     let home = std::env::var_os("HOME").or_else(|| std::env::var_os("USERPROFILE")).map(std::path::PathBuf::from);

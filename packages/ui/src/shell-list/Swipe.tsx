@@ -19,7 +19,8 @@ import { Icon } from '../content/Icon.tsx';
 import type { IconName } from '../content/icons.ts';
 import { usePlatform } from '../platform/PlatformLook.tsx';
 import { useT } from '../core/i18n.tsx';
-import { bindLongPress, inScroller } from '../gestures/bind.ts';
+import { inScroller } from '../gestures/scroller.ts';
+import { bindLater } from '../gestures/binders-part.ts';
 import { useGestureHost } from '../gestures/host.tsx';
 import { useGesture } from '../gestures/use.ts';
 import { SWIPE_ACTION_W, swipeArmedFor, swipeOffset, swipePhase, swipeProgress, swipeRelease, swipeSpeed, swipeStarts, type SwipeStyle } from './swipe-math.ts';
@@ -88,14 +89,16 @@ export function Swipe(props: SwipeProps): JSX.Element {
   const pressMenu = useGesture(
     'row.long-press',
     (el, h) =>
-      bindLongPress(el, {
-        host: h,
-        onLongPress: () => {
-          // the press is the menu's, not the start of a swipe
-          st.track = undefined;
-          props.onLongPress?.(el);
-        },
-      }),
+      bindLater((b) =>
+        b.bindLongPress(el, {
+          host: h,
+          onLongPress: () => {
+            // the press is the menu's, not the start of a swipe
+            st.track = undefined;
+            props.onLongPress?.(el);
+          },
+        }),
+      ),
     () => (props.onLongPress ? [{ label: t('gesture.actions'), run: () => st.el && props.onLongPress?.(st.el) }] : []),
   );
 

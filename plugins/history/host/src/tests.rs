@@ -476,3 +476,11 @@ async fn a_save_between_the_offers_read_and_write_wins() {
     assert!(s.before_offer.is_none(), "the save landed mid-offer");
     assert_eq!(s.value, saved, "the save wins");
 }
+
+/// perf audit r2 #2: blame reads every commit's message from one `git log`; its records split into each one's.
+#[test]
+fn one_logs_records_are_each_commits_message() {
+    let text = "abc\0first\n\nWisp-Task: t1\n\u{1e}\ndef\0second\n\u{1e}\n";
+    let got = crate::git::messages_of(text);
+    assert_eq!(got, vec![("abc".to_owned(), "first\n\nWisp-Task: t1\n".to_owned()), ("def".to_owned(), "second\n".to_owned())]);
+}

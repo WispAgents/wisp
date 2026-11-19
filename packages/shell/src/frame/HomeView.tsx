@@ -26,6 +26,7 @@ import { Slot, useExtensions, usePluginClient } from '../slot.tsx';
 import { useNow } from '../clock.ts';
 import { SESSION, type SessionRow } from '../rows.ts';
 import { longTime, needsYou, shortAgo, statusOf, sessionKey } from './rows-view.ts';
+import { pickerDataOf } from './picker-data.ts';
 import { autoBlocked, autoPreview, autoRules, create, setSetting, trial, type Attachment } from './commands.ts';
 import { newRun, runWords, sameSetup, settingModel, trialVary, variantWords, type Variant } from './trial.ts';
 import { modelWord, useHarnessRows, type Runner, useDefaultWords } from './runner.ts';
@@ -72,6 +73,10 @@ interface SettingRow {
 }
 
 const TIPS = ['goal1', 'goal2', 'vs', 'compare', 'auto', 'limit'] as const;
+
+/** A compare run's button on New task (the `i`th), for its picker to anchor on; undefined when there's none. */
+export const compareButton = (i: number | undefined): Element | undefined =>
+  i === undefined ? undefined : document.querySelectorAll('[data-part="launcher.compare.runner"]')[i];
 /** the tips about Auto: shown only while its switch is on (owner #37) */
 const AUTO_TIPS: ReadonlySet<string> = new Set(['auto', 'limit']);
 const GUIDE = 'https://trywisp.dev/guides';
@@ -317,6 +322,11 @@ export function HomeView(props: { readonly onBack?: () => void }): JSX.Element {
   // the phone sheet focuses in the tap itself: a keyboard comes up only for a focus inside the tap's gesture
   if (typeof requestAnimationFrame === 'function' && !sheet()) onCleanup(afterNextPaint(caret));
   else queueMicrotask(caret);
+  // what's under the prompt box (usage, Needs you, the cards, tips, keys) is built in the frame after Home's first, as the
+  // task page's body is (task-paint.ts): New task pressed on an open task built all of Home in the press (perf r2 #7,
+  // 149 ms at 4×). Their rooms are held (Reserved), so nothing under them moves as they come in
+  const [rest, setRest] = createSignal(typeof requestAnimationFrame !== 'function');
+  if (!rest()) onCleanup(afterNextPaint(() => setRest(true)));
   // several projects picked over the list (project-pick.ts): New task starts in the first, and also works in the others
   // (runtime.create `dirs`, F-comp-47) until you leave one out with its ×; + on any other chip (or ⌘-click) adds it
   const listFilter = useSignal(shell.projectFilter?.value ?? (() => 'all'));
@@ -477,7 +487,7 @@ export function HomeView(props: { readonly onBack?: () => void }): JSX.Element {
       files().length === 0 &&
       shell
         .promptSources()()
-        .some((s) => (s.where ?? ['home']).includes('home') && s.send?.(prompt, { client: pc, task: '', launch }) === true)
+        .some((s) => (s.where ?? ['home']).includes('home') && s.send?.(prompt, { client: pc, task: '', launch, say: (m) => shell.toast.show(m) }) === true)
     ) {
       setText('');
       setWhen(undefined);
@@ -956,7 +966,8 @@ export function HomeView(props: { readonly onBack?: () => void }): JSX.Element {
           // ONE pill, ONE press: the two-pane harness picker (v1 runner-picker.js); model, thinking and account are its right pane
           act: { onClick: () => (setAutoPop(false), setCmpPicker(undefined), setPicker(!picker())) },
           open: picker(),
-          onWarm: warmPicker,
+          // the hover fetches the picker's code and its answers, so the press reuses them (perf-ui-r2 #3)
+          onWarm: () => (warmPicker(), pickerDataOf(shell.client, target()).warm(agent())),
           // what will Auto run: Auto's pick, the pill's own segment (v1 #autoPv), opens the AutoPop
           pickAct: { onClick: () => (setPicker(false), setCmpPicker(undefined), setAutoPop(!autoPop())) },
           pickOpen: autoPop(),
@@ -1068,7 +1079,9 @@ export function HomeView(props: { readonly onBack?: () => void }): JSX.Element {
       {/* usage at a glance under the prompt box (wisp.budget's plan windows), v1 #790 .sh-usage; not in the phone sheet */}
       <Show when={!sheet()}>
         <Reserved part="home.usage" height={usageH()} onHeight={(px) => void shell.client.settings.set('shell.home.usageHeight', Math.min(400, px)).catch(() => undefined)}>
-          <Slot input="shell.home:usage" layout="contents" />
+          <Show when={rest()}>
+            <Slot input="shell.home:usage" layout="contents" />
+          </Show>
         </Reserved>
       </Show>
       {/* opened from the Auto pick; its own chunk (Auto is off unless its switch is on, owner #37) */}
@@ -1129,7 +1142,9 @@ export function HomeView(props: { readonly onBack?: () => void }): JSX.Element {
           <RunnerPicker
             open
             onOpenChange={(o) => !o && setCmpPicker(undefined)}
-            anchor={() => document.querySelectorAll('[data-part="launcher.compare.runner"]')[c().i]}
+            // read when it closes too, after a launch cleared the runs: never through c() then (audit B #13: "Stale
+            // read from <Show>"); the run's button by the picker's own index, none once it's gone
+            anchor={() => compareButton(cmpPicker())}
             back={() => input}
             peer={target()}
             defaultWord={(a) => defaultName(a, '')}
@@ -1152,7 +1167,7 @@ export function HomeView(props: { readonly onBack?: () => void }): JSX.Element {
           />
         )}
       </Show>
-      <Show when={!sheet()}>
+      <Show when={!sheet() && rest()}>
         <NextList
           heading={t('shell.section.needs')}
           count={needs().length}

@@ -240,13 +240,23 @@ impl<C: Clone> SyncServer<C> {
         }
         match since.filter(|_| !a.full) {
             None => {
-                let msg = Snapshot { t: tag::Snapshot, topic: a.topic.clone(), seq: a.seq, rows: a.rows, more: a.more.then_some(true) };
+                let frame = match &a.rows_json {
+                    Some(rows) => snapshot_frame(&a.topic, a.seq, rows, a.more),
+                    None => {
+                        json(&Snapshot { t: tag::Snapshot, topic: a.topic.clone(), seq: a.seq, rows: a.rows, more: a.more.then_some(true) })
+                    }
+                };
                 // replacing rows the client holds as of `since`: the cursor stays there until this is sent
-                c.out.push_front(&a.topic, Front { json: json(&msg), kind: FrontKind::Snapshot, first_seq: since.map(|s| s + 1) });
+                c.out.push_front(&a.topic, Front { json: frame, kind: FrontKind::Snapshot, first_seq: since.map(|s| s + 1) });
             }
             Some(since) => {
                 let first = since + 1;
-                let ops = a.rows.into_iter().map(|r| (r.e, r.id, Change::Upsert { v: r.v }));
+                // rows the host sent as text for a full answer, taken as a delta after all: read back (never expected)
+                let rows = match &a.rows_json {
+                    Some(text) => serde_json::from_str(text).unwrap_or_default(),
+                    None => a.rows,
+                };
+                let ops = rows.into_iter().map(|r: wisp_protocol::Row| (r.e, r.id, Change::Upsert { v: r.v }));
                 for (e, id, change) in ops.chain(a.deleted.into_iter().map(|d| (d.e, d.id, Change::Del))) {
                     let op = Arc::new(SharedOp::new(EntityOp { topic: a.topic.clone(), e, id, change }));
                     let bytes = op.json().len();
@@ -402,4 +412,21 @@ impl<C> Core<C> {
             self.out.push(Output::Activity { conn: c.id, active });
         }
     }
+}
+
+/// A `snapshot` frame around rows already encoded, as `json(&Snapshot { .. })` writes it (same fields, same order).
+pub fn snapshot_frame(topic: &Topic, seq: u64, rows: &str, more: bool) -> String {
+    let topic = json(topic);
+    let mut f = String::with_capacity(rows.len() + topic.len() + 64);
+    f.push_str("{\"t\":\"snapshot\",\"topic\":");
+    f.push_str(&topic);
+    f.push_str(",\"seq\":");
+    f.push_str(&seq.to_string());
+    f.push_str(",\"rows\":");
+    f.push_str(rows);
+    if more {
+        f.push_str(",\"more\":true");
+    }
+    f.push('}');
+    f
 }

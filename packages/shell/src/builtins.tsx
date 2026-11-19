@@ -4,7 +4,7 @@
 // palette's app commands and task list, and the keys the shell answers itself (v1 keys.js: ⌘K, ⌘L,
 // N, Esc, ?, [, ⌃Tab). Any plugin can override one by id or switch it off through `tree`.
 
-import { lazy } from 'solid-js';
+import { batch, lazy } from 'solid-js';
 import type { ExtensionId, Json } from '@wisp/client';
 import type { PaletteItem, PluginUiDef, ShellContext, ShortcutDef } from './contract.ts';
 import { defineExtension, defineView } from './define.ts';
@@ -12,6 +12,7 @@ import { SESSION, type SessionRow } from './rows.ts';
 import { archive, forLater, markRead, setState } from './frame/commands.ts';
 import { pastWork, taskItems } from './palette/tasks.ts';
 import { PENDING_KEY, TASK_KEY, type TaskKey } from './frame/task-keys.ts';
+import { afterNextPaint } from './frame/task-paint.ts';
 import { parseCompare } from './frame/runs-small.ts';
 import { openFeedback, parseFeedback } from './frame/feedback.ts';
 import { rowMenuItems } from './frame/row-menu.ts';
@@ -198,13 +199,19 @@ function step(ctx: ShellContext, by: 1 | -1): boolean {
   const i = cur === undefined ? -1 : ids.indexOf(cur);
   const next = ids[Math.min(ids.length - 1, Math.max(0, i < 0 ? (by > 0 ? 0 : ids.length - 1) : i + by))];
   if (!next) return false;
-  ctx.selection.set(next);
-  document.querySelector<HTMLElement>(`[data-part="card"][data-id="${CSS.escape(next)}"]`)?.scrollIntoView({ block: 'nearest' });
-  // j/k step in place (v1 replaced the address, web/js/features/feed.js syncUrl): Back leaves the task, not each step
-  if (ctx.nav().main.kind === 'task') {
-    markStepped();
-    ctx.navigate({ t: 'openTask', id: next as never, replace: true });
-  }
+  // the row lights and the task's head is drawn in one pass, in the key's frame; the row is scrolled into view once that
+  // frame is painted: read in the key, its layout forced the half-changed list and page (perf r2 #5, J/K 137 ms at 4×)
+  batch(() => {
+    ctx.selection.set(next);
+    // j/k step in place (v1 replaced the address, web/js/features/feed.js syncUrl): Back leaves the task, not each step
+    if (ctx.nav().main.kind === 'task') {
+      markStepped();
+      ctx.navigate({ t: 'openTask', id: next as never, replace: true });
+    }
+  });
+  const show = (): void => document.querySelector<HTMLElement>(`[data-part="card"][data-id="${CSS.escape(next)}"]`)?.scrollIntoView({ block: 'nearest' });
+  if (typeof requestAnimationFrame === 'function') afterNextPaint(show);
+  else show();
   return true;
 }
 

@@ -10,7 +10,8 @@
 // vertical drag stays the browser's scroll. The vertical ones (bind-vertical.ts: pull, sheet, queue drag) use touch
 // events: a pointer stream is cancelled the moment the browser pans, and these must keep the finger.
 import { swipePhase, swipeSpeed } from '../shell-list/swipe-math.ts';
-import { GESTURE_SLOP, LONG_PRESS_MS, PAGE_SWIPE_LINE, pageSwipeRelease, scrollsX, touchOwner, type TouchOwner } from './gesture-math.ts';
+import { GESTURE_SLOP, LONG_PRESS_MS, PAGE_SWIPE_LINE, pageSwipeRelease, touchOwner, type TouchOwner } from './gesture-math.ts';
+import { inScroller } from './scroller.ts';
 import type { GestureHost } from './host.tsx';
 import { pressTimers, type Schedule } from './press-scope.ts';
 
@@ -18,18 +19,7 @@ export type Dir = 'left' | 'right';
 
 /** Controls inside a gesture's element keep their own touches. */
 export const OWN_TOUCH = "button, a[href], input, textarea, select, [contenteditable='true'], [contenteditable='plaintext-only'], [data-swipe='none']";
-/** The kit's horizontal scrollers, marked so (a box overflowing with overflow-x auto/scroll counts too). */
-const SCROLLER = "[data-kit='code-block'], [data-kit='diff'], [data-scroll-x]";
-
-/** Whether `target`, or a box between it and `root`, scrolls sideways (one style read per box, on touch start only). */
-export function inScroller(target: EventTarget | null, root: Element): boolean {
-  for (let el = target instanceof Element ? target : null; el && el !== root; el = el.parentElement) {
-    if (el.matches(SCROLLER)) return true;
-    const cs = getComputedStyle(el);
-    if (scrollsX({ overflowX: cs.overflowX, scrollWidth: el.scrollWidth, clientWidth: el.clientWidth, marked: false })) return true;
-  }
-  return false;
-}
+export { inScroller } from './scroller.ts';
 
 /** Who a touch at `x` on `target` under `root` belongs to. */
 export function ownerOf(x: number, target: EventTarget | null, root: Element): TouchOwner {

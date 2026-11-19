@@ -93,6 +93,8 @@
   "wisp.later.toast.reminderDeleted": "Reminder deleted",
   "wisp.later.toast.starts": "Starts {time}",
   "wisp.later.toast.reminds": "Reminds you {time}",
+  "wisp.later.toast.drafted": "Saved to Drafts",
+  "wisp.later.toast.after": "Starts once {title} is done",
   "wisp.later.time.take": "Set {time}",
   "wisp.later.chip.sendsAt": "Sends at {time}",
   "wisp.later.chip.startsAt": "Starts {time}",

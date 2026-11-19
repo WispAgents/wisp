@@ -94,5 +94,5 @@ label.f{display:flex;flex-direction:column;gap:6px;font-size:13px;color:var(--mu
 .input:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft)}
 @media (max-width:920px){.hero .wrap,.split{grid-template-columns:1fr}.hero{padding-top:40px}.float{position:relative;left:auto;bottom:auto;width:auto;margin:-24px 16px 0}.steps,.grid4{grid-template-columns:1fr 1fr}.links{display:none}}
 @media (max-width:600px){.steps,.grid4{grid-template-columns:1fr}.wrap{padding:0 20px}.nav .right .pill:not(.dark){display:none}}
-.wait{pointer-events:none;opacity:.75}.wait::after{content:'';width:12px;height:12px;flex:none;border-radius:50%;border:2px solid currentColor;border-right-color:transparent;animation:wait-spin .7s linear infinite}@keyframes wait-spin{to{transform:rotate(360deg)}}
+.going{pointer-events:none;opacity:.55;cursor:progress}.primary.wait>svg,.ghost.wait>svg{display:none}.wait{pointer-events:none;opacity:.75}.wait::after{content:'';width:12px;height:12px;flex:none;border-radius:50%;border:2px solid currentColor;border-right-color:transparent;animation:wait-spin .7s linear infinite}@keyframes wait-spin{to{transform:rotate(360deg)}}
 "#;

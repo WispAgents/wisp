@@ -462,7 +462,10 @@ ui: {{ theme: dark, editor: zed }}
     let (code, out, err) = wisp(&dir, port, &["import", v1.to_str().unwrap(), "--yes"]);
     assert_eq!(code, 0, "{out}{err}");
     let def = api.cmd("runtime.profiles", json!({})).await.as_array().unwrap().iter().find(|p| p["name"] == "default").cloned().unwrap();
-    assert_eq!((def["harness"].as_str(), def["effort"].as_str()), (Some("codex"), Some("high")));
+    assert_eq!(def["mode"].as_str(), Some("edits"));
+    // v1's default harness is New task's pick, which a task naming none runs on too, with its level (setup audit B11)
+    let pick = api.cmd("settings.get", json!({ "key": "runtime.launch" })).await;
+    assert_eq!((pick["agent"].as_str(), pick["efforts"]["codex"].as_str()), (Some("codex"), Some("high")), "{pick}");
 
     // sharing: the preview's redactions, a signed file, opened, run, run with their setup, imported
     let (code, out, err) = wisp(&dir, port, &["share", &secret_task, "--level", "full", "--out", "shared.wisp-task"]);

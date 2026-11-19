@@ -52,6 +52,9 @@ function flyContext(parent: menu.Service, onSelect: (value: string) => void, kid
       kids.add(close);
       return () => kids.delete(close);
     },
+    only: (mine) => {
+      for (const close of kids) if (close !== mine) close();
+    },
     Entries,
   };
 }

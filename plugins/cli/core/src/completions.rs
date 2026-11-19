@@ -30,6 +30,9 @@ pub struct Extra {
     pub groups: Vec<(String, Vec<String>)>,
     pub agents: Vec<String>,
     pub settings: Vec<String>,
+    /// each enum setting's values, after its key (`wisp settings set worktrees.max <TAB>`: off 20 40 80). Additive
+    /// (2026-11-19, setup audit B10).
+    pub values: Vec<(String, Vec<String>)>,
 }
 
 /// The script for `shell`, or None for a shell it doesn't know.
@@ -95,9 +98,18 @@ fn bash(c: &Catalogue, curated: &[&str], extra: &Extra) -> String {
             // `wisp settings set <key>` and `--key <key>`: the setting keys
             if p == "settings" && matches!(v.as_str(), "set" | "get") && !extra.settings.is_empty() {
                 let keys = q(&extra.settings.join(" "));
+                // `wisp settings set <key> <TAB>`: that setting's values, when it has a list
+                let mut vals = String::new();
+                if v == "set" && !extra.values.is_empty() {
+                    vals.push_str("; elif [ \"$COMP_CWORD\" -eq 4 ]; then case \"${COMP_WORDS[3]}\" in");
+                    for (k, vs) in &extra.values {
+                        let _ = write!(vals, " {}) COMPREPLY=($(compgen -W '{}' -- \"$cur\")); return ;;", q(k), q(&vs.join(" ")));
+                    }
+                    vals.push_str(" esac; COMPREPLY=($(compgen -W '--json --help' -- \"$cur\"))");
+                }
                 let _ = writeln!(
                     s,
-                    "        {v}) if [ \"$COMP_CWORD\" -eq 3 ] || [ \"$prev\" = --key ]; then COMPREPLY=($(compgen -W '{keys}' -- \"$cur\")); else COMPREPLY=($(compgen -W '{} --json --help' -- \"$cur\")); fi ;;",
+                    "        {v}) if [ \"$COMP_CWORD\" -eq 3 ] || [ \"$prev\" = --key ]; then COMPREPLY=($(compgen -W '{keys}' -- \"$cur\")){vals}; else COMPREPLY=($(compgen -W '{} --json --help' -- \"$cur\")); fi ;;",
                     q(&flags.join(" "))
                 );
             } else {
@@ -206,6 +218,7 @@ mod tests {
             ],
             agents: vec!["claude".into(), "codex".into()],
             settings: vec!["worktrees.max".into(), "budget.limitHold".into()],
+            values: Vec::new(),
         };
         let s = script_with("bash", &c, &["plugin", "plugins", "attach"], &extra).unwrap();
         let firsts =
@@ -220,5 +233,29 @@ mod tests {
         assert!(s.contains("    cloud) ") && s.contains("signin status"), "{s}");
         assert!(s.contains("--agent|-a) COMPREPLY=($(compgen -W 'claude codex'"), "{s}");
         assert!(s.contains("worktrees.max budget.limitHold"), "{s}");
+    }
+
+    /// Setup audit B10: `wisp settings set worktrees.max <TAB>` offered `--key --value --json --help`, not off 20 40 80.
+    #[test]
+    fn bash_offers_an_enum_settings_values_after_its_key() {
+        let info = |id: &str| CommandInfo {
+            id: id.into(),
+            plugin: "wisp.settings".into(),
+            title: None,
+            read_only: false,
+            permission: "x".into(),
+            args: Some("{ key?: string, value?: string, }".into()),
+            ui_only: None,
+        };
+        let c = Catalogue::new(vec![info("settings.set"), info("settings.get")]);
+        let extra = Extra {
+            settings: vec!["worktrees.max".into(), "settings.editor".into()],
+            values: vec![("worktrees.max".into(), vec!["off".into(), "20".into(), "40".into(), "80".into()])],
+            ..Extra::default()
+        };
+        let s = script_with("bash", &c, &[], &extra).unwrap();
+        assert!(s.contains("-eq 4 ]; then case \"${COMP_WORDS[3]}\" in worktrees.max) COMPREPLY=($(compgen -W 'off 20 40 80'"), "{s}");
+        let get = s.lines().find(|l| l.trim_start().starts_with("get)")).unwrap();
+        assert!(!get.contains("off 20 40 80"), "only set takes a value: {get}");
     }
 }

@@ -551,7 +551,7 @@ impl Runtime {
     /// `Ok(false)`: its claim was cancelled (the task deleted) before the spawn: nothing spawned.
     async fn spawn_run(self: &Arc<Self>, s: &Session, t: &Turn, h: &Arc<dyn Harness>, run: &HarnessRun, claim: &Claim) -> Result<bool> {
         let launch = h.launch(run)?;
-        let tmp = self.write_files(t, &launch).await?;
+        let tmp = write_files(&format!("wisp-run-{}", t.id), &launch).await?;
         let fill = |x: &str| x.replace("{tmp}", &tmp);
         let mut set: Vec<(String, String)> = run.env.iter().chain(&run.account_env).map(|(k, v)| (k.clone(), v.clone())).collect();
         set.extend(launch.env.iter().map(|(k, v)| (k.clone(), fill(v))));
@@ -613,22 +613,6 @@ impl Runtime {
             drop(ended_tx);
         }));
         Ok(true)
-    }
-
-    /// Files the launch asked for (an MCP config), in the turn's own temp folder. Returns the folder.
-    async fn write_files(&self, t: &Turn, launch: &Launch) -> Result<String> {
-        let dir = std::env::temp_dir().join(format!("wisp-run-{}", t.id));
-        if launch.files.is_empty() {
-            return Ok(dir.to_string_lossy().into_owned());
-        }
-        tokio::fs::create_dir_all(&dir).await.map_err(|e| RuntimeError::Invalid(e.to_string()))?;
-        for f in &launch.files {
-            if f.path.contains("..") {
-                return Err(RuntimeError::Invalid(format!("launch file {} leaves its folder", f.path)));
-            }
-            tokio::fs::write(dir.join(&f.path), &f.contents).await.map_err(|e| RuntimeError::Invalid(e.to_string()))?;
-        }
-        Ok(dir.to_string_lossy().into_owned())
     }
 
     pub(crate) fn send(&self, id: &str, c: Ctl) -> bool {
@@ -714,6 +698,29 @@ pub(crate) fn is_side(s: &Session) -> bool {
 /// The main task a side discussion is about.
 pub(crate) fn side_main(s: &Session) -> Option<&str> {
     s.ext.get("wisp.runtime").and_then(|o| o.pointer("/sideOf/id")).and_then(Value::as_str).filter(|id| !id.is_empty())
+}
+
+/// Files the launch asked for (an MCP config, a prompt file), in a temp folder of the run's own (`name`, under the
+/// OS temp folder). Returns the folder, which the launch's `{tmp}` stands for.
+pub(crate) async fn write_files(name: &str, launch: &Launch) -> Result<String> {
+    let dir = std::env::temp_dir().join(name);
+    if launch.files.is_empty() {
+        return Ok(dir.to_string_lossy().into_owned());
+    }
+    tokio::fs::create_dir_all(&dir).await.map_err(|e| RuntimeError::Invalid(e.to_string()))?;
+    for f in &launch.files {
+        let wrote = if f.path.contains("..") {
+            Err(RuntimeError::Invalid(format!("launch file {} leaves its folder", f.path)))
+        } else {
+            tokio::fs::write(dir.join(&f.path), &f.contents).await.map_err(|e| RuntimeError::Invalid(e.to_string()))
+        };
+        // nothing it wrote (a prompt, instructions) is left behind when it can't spawn
+        if let Err(e) = wrote {
+            let _ = tokio::fs::remove_dir_all(&dir).await;
+            return Err(e);
+        }
+    }
+    Ok(dir.to_string_lossy().into_owned())
 }
 
 pub(crate) async fn run_folder(launch: &str, task: &str, scratch: &str) -> Result<std::path::PathBuf> {

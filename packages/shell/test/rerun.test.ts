@@ -19,7 +19,7 @@ test('the dialog starts as the task ran; the prompt, mode and harness can change
     cwd: '/code/web',
     dirs: ['/code/api'],
     steps: ['then run the tests'],
-    lineage: { rerunOf: 'laptop:s1' },
+    lineage: { rerunOf: 's1' },
   });
   // a harness picked from the toolbar's menu starts on its own default model
   expect(startEdits(spec, 'laptop', 'codex')).toMatchObject({ agent: 'codex', model: '', effort: '' });
@@ -45,4 +45,15 @@ test('a_rerun_of_an_auto_task_starts_on_the_harness_it_ran_on_qa_r15_phone_4', (
   // a spec naming its harness keeps it; a pick from the toolbar's menu still wins
   expect(startEdits({ prompt: 'p', agent: 'codex', model: 'gpt-5' }, 'laptop', undefined, ran)).toMatchObject({ agent: 'codex', model: 'gpt-5' });
   expect(startEdits({ prompt: 'p', agent: 'auto' }, 'laptop', 'cursor', ran)).toMatchObject({ agent: 'cursor', model: '', effort: '' });
+});
+
+// audit B #2: Rerun… of a task that ran in a worktree ran its copy in the main checkout: the args had no `worktree`, and
+// `rerunOf` was the entity key (`laptop:s1`), which the peer's create (its own-worktree rule for reruns) matched to no task
+test('a_rerun_of_a_worktree_task_runs_in_a_worktree_of_its_own_audit_b_2', () => {
+  const e = startEdits(spec, 'laptop');
+  const args = rerunArgs({ ...spec, worktree: true }, e, { of: 'laptop:s1', id: 'laptop:s2', at: 1 });
+  expect(args).toMatchObject({ cwd: '/code/web', worktree: true, lineage: { rerunOf: 's1' } });
+  // in place stays in place; a spec that doesn't say leaves it to the peer
+  expect(rerunArgs({ ...spec, worktree: false }, e, { of: 'laptop:s1', id: 'laptop:s2', at: 1 })).toMatchObject({ worktree: false });
+  expect('worktree' in rerunArgs(spec, e, { of: 'laptop:s1', id: 'laptop:s2', at: 1 })).toBe(false);
 });

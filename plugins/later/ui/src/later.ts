@@ -2,6 +2,7 @@
 import { uuidv7, type EntityKey } from '@wisp/client';
 import type { PluginUiLater } from '@wisp/shell';
 import { addFollowUp, addPlan } from './commands.ts';
+import { plannedSaid } from './format.ts';
 import { launchPlan } from './launch.ts';
 import { replyPlan, type ReplyTask } from './reply.ts';
 
@@ -47,6 +48,8 @@ const later: PluginUiLater = {
                 ? { ...base, kind: 'reminder' as const, at: p.at, text: p.rest }
                 : { ...base, kind: 'task' as const, at: p.at, body };
         void ctx.client.run(addPlan, args).catch(() => undefined);
+        // where it went, as v1 said it: the Scheduled row may be out of sight (audit B #6)
+        ctx.say?.(plannedSaid(p, Date.now()));
         return true;
       },
     },

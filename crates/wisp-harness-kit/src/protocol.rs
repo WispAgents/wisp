@@ -28,21 +28,24 @@ pub struct FileNote {
     pub size: u64,
 }
 
+/// An attachment's size as the agent reads it: under 1 KB in bytes (audit B #19: v1's `Math.max(1, …)` told the
+/// agent a 13-byte file was "1 KB"), else KB rounded half up, as JavaScript's `Math.round` does.
+pub fn size_words(size: u64) -> String {
+    if size < 1024 {
+        return format!("{size} B");
+    }
+    #[allow(clippy::cast_precision_loss, clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+    let kb = (size as f64 / 1024.0 + 0.5).floor() as u64;
+    format!("{kb} KB")
+}
+
 /// The note appended to a prompt that names its attachments ('' for none).
 pub fn attachment_note(files: &[FileNote], how: Option<&str>) -> String {
     if files.is_empty() {
         return String::new();
     }
     let how = how.unwrap_or("Read images and PDFs with your file-reading tool");
-    let lines: Vec<String> = files
-        .iter()
-        .map(|f| {
-            // Math.max(1, Math.round(size / 1024)): round half up, as JavaScript's Math.round does.
-            #[allow(clippy::cast_precision_loss, clippy::cast_possible_truncation, clippy::cast_sign_loss)]
-            let kb = ((f.size as f64 / 1024.0 + 0.5).floor() as u64).max(1);
-            format!("- {}  ({}, {kb} KB)", f.path, f.mime)
-        })
-        .collect();
+    let lines: Vec<String> = files.iter().map(|f| format!("- {}  ({}, {})", f.path, f.mime, size_words(f.size))).collect();
     format!(
         "\n\n<attachments>\nThe user attached these files. {how}; for video/audio/other formats use the shell (e.g. ffmpeg, ffprobe) if needed.\n{}\n</attachments>",
         lines.join("\n")
@@ -148,7 +151,9 @@ mod tests {
     fn attachments() {
         assert_eq!(attachment_note(&[], None), "");
         let n = attachment_note(&[FileNote { path: "/a.png".into(), mime: "image/png".into(), size: 100 }], None);
-        assert!(n.contains("- /a.png  (image/png, 1 KB)"), "{n}");
+        assert!(n.contains("- /a.png  (image/png, 100 B)"), "under 1 KB in bytes, never \"1 KB\" (audit B #19): {n}");
+        let n = attachment_note(&[FileNote { path: "/c".into(), mime: "x".into(), size: 1024 }], None);
+        assert!(n.contains("(x, 1 KB)"), "{n}");
         let n = attachment_note(&[FileNote { path: "/b".into(), mime: "x".into(), size: 1536 }], Some("Look"));
         assert!(n.contains("(x, 2 KB)") && n.contains("files. Look;"), "{n}");
     }

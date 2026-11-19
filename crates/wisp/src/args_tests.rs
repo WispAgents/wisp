@@ -22,6 +22,10 @@ fn tasks_and_commands() {
     assert_eq!(p(&["crew", "export", "ada"]).command, None, "a crew is shared as a formula now");
     assert_eq!(p(&["crew"]).command, Some("crew"));
     assert_eq!(p(&["plugin", "new", "x"]).command, Some("plugin"));
+    // help never starts a task (audit B #15: a quoted verb as `wisp help runtime` lists it launched one)
+    assert_eq!(p(&["help", "runtime", "queue order"]).command, Some("help"));
+    assert_eq!(p(&["help", "me", "fix", "the", "login", "page"]).command, Some("help"));
+    assert_eq!(p(&["--", "help", "me"]).command, None);
     // `--` first: always a task
     assert_eq!(p(&["--", "ls", "the", "repo"]).command, None);
     assert_eq!(p(&["--", "ls", "the", "repo"]).words, ["ls", "the", "repo"]);
@@ -173,4 +177,37 @@ fn a_group_that_routes_as_a_command_takes_its_verb_or_one_word_and_ls_dash_a_is_
     assert!(x.command == Some("ls") && x.flags.all && x.flags.agent.is_none(), "{x:?}");
     let x = p(&["fix", "it", "-a", "codex"]);
     assert_eq!(x.flags.agent.as_deref(), Some("codex"), "-a is --agent elsewhere");
+}
+
+/// Audit B #14: `--agent claude --compare codex` launched only codex; v1 ran the agent and each compare run.
+#[test]
+fn agent_and_compare_both_run() {
+    let names = |a: &[&str]| compare_runs(&p(a).flags).into_iter().map(|r| (r.agent, r.model)).collect::<Vec<_>>();
+    let run = |a: &str, m: Option<&str>| (a.to_owned(), m.map(str::to_owned));
+    assert_eq!(names(&["x", "--agent", "claude", "--compare", "codex"]), [run("claude", None), run("codex", None)]);
+    assert_eq!(
+        names(&["x", "--agent", "claude", "--model", "opus", "--compare", "codex:gpt-5"]),
+        [run("claude", Some("opus")), run("codex", Some("gpt-5"))]
+    );
+    assert_eq!(
+        names(&["x", "--compare", "claude,codex:gpt-5"]),
+        [run("claude", None), run("codex", Some("gpt-5"))],
+        "the list alone is the runs"
+    );
+    assert_eq!(names(&["x", "--agent", "claude", "--compare", "claude,codex"]), [run("claude", None), run("codex", None)], "not twice");
+}
+
+/// Audit B #9: `wisp crew create --on done` was read as the machine to run on ("there's no machine done").
+#[test]
+fn a_crew_verbs_own_on_is_not_the_machine() {
+    let x = p(&["crew", "create", "--name", "Bob", "--on", "done"]);
+    assert_eq!(x.flags.on, None);
+    assert_eq!(x.argv[x.argv.len() - 2..], ["--on", "done"], "left for the verb to read");
+    assert_eq!(
+        p(&["--on", "laptop", "crew", "create", "--name", "Bob"]).flags.on.as_deref(),
+        Some("laptop"),
+        "before the words: the machine"
+    );
+    assert_eq!(p(&["ls", "--on", "laptop"]).flags.on.as_deref(), Some("laptop"));
+    assert_eq!(p(&["runtime", "list", "--on", "laptop"]).flags.on.as_deref(), Some("laptop"));
 }

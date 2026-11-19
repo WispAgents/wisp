@@ -27,6 +27,13 @@ fn short(v: &Value) -> String {
     }
 }
 
+/// What names a nested object in one line: its lead fields that are set (`0190… · Ada · Job · running`).
+fn named(o: &serde_json::Map<String, Value>) -> Option<String> {
+    let parts: Vec<String> =
+        ["id", "name", "title", "state", "status"].iter().filter_map(|k| o.get(*k).and_then(scalar).filter(|v| !v.is_empty())).collect();
+    (!parts.is_empty()).then(|| parts.join(" · "))
+}
+
 /// The columns of a list of objects: the lead fields they have, then other scalars, up to `max`.
 fn columns(list: &[Value], max: usize) -> Vec<String> {
     let mut cols: Vec<String> = Vec::new();
@@ -85,6 +92,8 @@ pub fn render(v: &Value, s: &Style) -> Vec<String> {
                 .flat_map(|(k, x)| {
                     let val = match x {
                         Value::String(t) => t.clone(),
+                        // a nested row (`wisp crew assign`'s `session`): what names it, never its raw JSON (audit B #17)
+                        Value::Object(inner) => named(inner).unwrap_or_else(|| short(x)),
                         other => scalar(other).unwrap_or_else(|| serde_json::to_string(other).unwrap_or_default()),
                     };
                     term::hang(&format!("{}  ", paint(s, BOLD, &term::pad(k, kw))), &val, s.width).into_iter().take(6)
@@ -109,5 +118,15 @@ mod tests {
         assert_eq!(render(&json!({ "key": "theme", "value": "dark" }), &s), ["key    theme", "value  dark"]);
         assert_eq!(render(&json!("ok"), &s), ["ok"]);
         assert_eq!(render(&json!([]), &s), ["(none)"]);
+    }
+
+    /// Audit B #17: `wisp crew assign` printed `session  {"agent":"claude",…}`; a nested row is named, not dumped.
+    #[test]
+    fn a_nested_object_is_named_by_its_lead_fields() {
+        let s = Style::plain(80);
+        let started =
+            json!({ "session": { "id": "0190aa", "agent": "claude", "title": "Ada · Job", "state": "running", "ext": { "x": 1 } } });
+        assert_eq!(render(&started, &s), ["session  0190aa · Ada · Job · running"]);
+        assert_eq!(render(&json!({ "deep": { "x": 1, "y": 2 } }), &s), ["deep  {2 fields}"]);
     }
 }

@@ -208,8 +208,10 @@ impl Reviewer {
         if !self.live(call, &t.id, &t.pr_head).await {
             return None;
         }
-        Some(Ok(match answer.as_ref().and_then(|j| core::read_review(j, &got.rules)) {
-            Some((summary, findings)) => Outcome::Answered { summary, findings },
+        Some(Ok(match answer.as_ref().map(|j| core::read_review(j, &got.rules)) {
+            Some(Some((summary, findings))) => Outcome::Answered { summary, findings },
+            // it answered, not with a review wisp can read: never "didn't answer" (audit B #12)
+            Some(None) => Outcome::Unreadable { reviewer: reviewer.to_owned() },
             None => Outcome::Silent { reviewer: reviewer.to_owned() },
         }))
     }

@@ -310,6 +310,9 @@ pub struct StoredKind {
     /// a spec field no two resources of the kind may share (a project's `path`: one project per folder). Additive
     /// (2026-11-19, setup audit F23).
     unique: Option<&'static str>,
+    /// the owner's problems with one spec (tidied first) beyond the schema: a project at a folder that isn't there.
+    /// Additive (2026-11-19, setup audit B2).
+    checked: Option<fn(&Value) -> Vec<String>>,
 }
 
 impl std::fmt::Debug for StoredKind {
@@ -360,6 +363,7 @@ impl StoredKind {
             ready: std::sync::OnceLock::new(),
             tidy: None,
             unique: None,
+            checked: None,
         }
     }
 
@@ -384,6 +388,14 @@ impl StoredKind {
     #[must_use]
     pub fn tidied(mut self, f: fn(&mut Value)) -> Self {
         self.tidy = Some(f);
+        self
+    }
+
+    /// A spec a plan would create or change is refused with `f`'s problems (tidied first): `wisp validate`, `apply` and
+    /// `import` say them, as the UI's own check does. Additive (2026-11-19, setup audit B2).
+    #[must_use]
+    pub fn checked(mut self, f: fn(&Value) -> Vec<String>) -> Self {
+        self.checked = Some(f);
         self
     }
 
@@ -451,6 +463,16 @@ impl ResourceKind for StoredKind {
 
     fn read<'a>(&'a self, _call: &'a Call) -> BoxFuture<'a, Result<Vec<Resource>>> {
         Box::pin(async move { Ok(self.specs().await?.into_iter().map(|(n, s)| Resource::new(self.info.kind.clone(), n, s)).collect()) })
+    }
+
+    /// The owner's check of one spec as it would be stored (tidied).
+    fn check(&self, r: &Resource) -> Vec<String> {
+        let Some(f) = self.checked else { return Vec::new() };
+        let mut spec = r.spec.clone();
+        if let Some(t) = self.tidy {
+            t(&mut spec);
+        }
+        f(&spec)
     }
 
     /// Two that would share the unique field (`path`: a formula naming a folder that's already a project under

@@ -1,6 +1,7 @@
 // How a session row reads in v1's list (web/js/features/feed.js): its section, the state pill, the
 // harness line, the goal and overlap pills, the short time. Pure, so it's tested without a page.
 
+import { keyOfId } from '@wisp/client';
 import type { SessionRow } from '../rows.ts';
 import type { ShellContext } from '../contract.ts';
 import { isHeld } from '../task-held.ts';
@@ -283,5 +284,5 @@ export function trailActs(steps: number, n: { readonly read: number; readonly ed
  *  the keys; navigation and commands need the key (a bare id opened a blank task page from Home's Needs you). */
 export function sessionKey(keys: readonly string[], id: string): string {
   if (id.includes(':')) return id;
-  return keys.find((k) => k.slice(k.indexOf(':') + 1) === id) ?? id;
+  return keyOfId(keys, id) ?? id; // one index per keys list, shared: a scan per id made ⌘K O(n²) (perf-ui-r2 #1)
 }

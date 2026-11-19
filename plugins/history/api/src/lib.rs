@@ -48,6 +48,19 @@ pub trait BlameSource: Send + Sync + 'static {
     fn lines(&self, _root: PathBuf, _file: String) -> BoxFuture<'static, Vec<(String, String)>> {
         Box::pin(async { Vec::new() })
     }
+    /// Each of `shas` with its whole message, in one go where the source can (git: one `git log --no-walk`). Additive
+    /// (2026-11-19, perf audit r2 #2: blame read each commit's message with its own `git show`, 1.2 s for a file): a
+    /// source without it reads them one by one with [`BlameSource::message`].
+    fn messages(&self, root: PathBuf, shas: Vec<String>) -> BoxFuture<'static, Vec<(String, String)>> {
+        let each: Vec<_> = shas.iter().map(|s| self.message(root.clone(), s.clone())).collect();
+        Box::pin(async move {
+            let mut out = Vec::with_capacity(shas.len());
+            for (sha, msg) in shas.into_iter().zip(each) {
+                out.push((sha, msg.await));
+            }
+            out
+        })
+    }
 }
 
 pub const BLAME: Point<dyn BlameSource> = Point::new("history.blame", 1);

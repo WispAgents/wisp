@@ -6,6 +6,7 @@ export default defineConfig({
   test: {
     environment: 'node',
     include: ['test/**/*.test.{ts,tsx}'],
+    setupFiles: ['test/home-chunk.ts'],
     // as @wisp/shell's: Zag's `solid-js/web` import resolves to the browser build in happy-dom tests
     server: { deps: { inline: [/@zag-js\//, /@solid-primitives\//] } },
   },

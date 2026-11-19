@@ -90,6 +90,8 @@ Each line: area · what v1 did · what v2 does · the test. Visible changes are 
 | Recipes CLI | (found in v2's audit A, orch #16) `wisp run nosuchrecipe` (with a field or `--wait`) launched an agent on those words; `--wait` returned at once | an unknown recipe is said; `--wait` waits for the task and shows what it did | `crates/wisp/tests/serve_automations_audit.rs` (`audit_a_16`) |
 | Goal | (found in v2's audit A, tasks #15) Drop goal left the stalled goal's "Keep going?" open: the task stayed Asking and the file pane refused to save | dropping, pausing or resuming a stalled goal takes its own question back (`runtime.unask`, never a question asked since) | `crates/wisp/tests/serve_automations_audit.rs` (`audit_a_tasks_15`) |
 | Crew | (found in v2's audit A, orch #22) a member with no harness read "Auto" while Auto is off; check-ins under one a day read "0 a day"; v1's CI watcher template didn't start on a CI failure | it reads "As New task"; under one a day the runs are counted (v1 crew-record.js); the CI watcher also starts when CI fails | `plugins/crew/ui/test/harness-label.test.ts`, `record.test.ts`, `editor.test.ts` |
+| Triggers | a run a moment ago read "last run now ago" (`ago()` says "now") | "last run just now" | `plugins/automations/ui/test/summary.test.ts` `a_trigger_run_a_moment_ago_reads_last_run_just_now` |
+| Attachments | `Math.max(1, round(size/1024))`: a 13-byte file was listed to the agent as "1 KB" | under 1 KB in bytes (`size_words`) | `wisp-harness-kit` `protocol::tests::attachments`, `wisp-claude` `flags_follow_the_run` |
 
 ## Decided by the lead (2026-11-08; the owner asked not to be stopped for these)
 
@@ -104,4 +106,7 @@ Each line: area · what v1 did · what v2 does · the test. Visible changes are 
 
 ## Questions for the owner
 
-(none open)
+- **Home's Needs you counts every finished task (audit B #19, audit A #24).** v1's Home and sidebar Needs you list every
+  task in review, read or not (`groups().needs`); only the dots and the tab title use the unread-only `needsYou`. v2 does
+  the same, so "5 of 22" and "Needs you 20" with 1 waiting are v1's behaviour, kept. Should Needs you count only what
+  asks you or is unread?

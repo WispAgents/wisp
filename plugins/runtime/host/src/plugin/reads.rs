@@ -20,8 +20,9 @@ pub(super) fn reads(s: &mut Setup, slot: &Slot) {
         let from = r.now() - i64::from(a.days.unwrap_or(7).clamp(1, 366)) * 86_400_000;
         let turns = r.repo.turns_since(from).await?;
         // where each task ran, for the per-project breakdown (v1 usage.js By project)
+        // from the list in memory (perf audit 2026-11-19 #4: every task was decoded for this)
         let cwd: std::collections::HashMap<String, String> =
-            r.repo.sessions().await?.into_iter().map(|x| (x.id.as_str().to_owned(), x.cwd)).collect();
+            r.lock_list().values().map(|x| (x.id.as_str().to_owned(), x.cwd.clone())).collect();
         Ok(wisp_runtime_core::usage::breakdown(&turns, from, r.now(), &|id| cwd.get(id).cloned()))
     });
     exec(s, slot);

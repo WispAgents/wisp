@@ -18,8 +18,10 @@ use crate::repo;
 use crate::rows;
 use crate::runtime::Runtime;
 
-/// Writes one v1 file's rows (upserts: a file v1 rewrote since imports again over its old rows).
-fn write_imported(w: &mut Writer<'_>, i: &Imported) -> std::result::Result<(), StoreError> {
+/// Writes one v1 file's rows (upserts: a file v1 rewrote since imports again over its old rows). `projects`: the
+/// projects here (name, spec), so a task whose folder is in one is that project's, as a new task there is (setup audit
+/// B3: an imported task had none).
+fn write_imported(w: &mut Writer<'_>, i: &Imported, projects: &[(String, Value)]) -> std::result::Result<(), StoreError> {
     let internal = |e: crate::error::RuntimeError| StoreError::Internal(e.to_string());
     let last = i.turns.last().map(|t| &t.turn);
     let report = i.turns.iter().rev().map(|t| &t.turn).find(|t| t.by.as_deref() != Some("compact"));
@@ -35,6 +37,9 @@ fn write_imported(w: &mut Writer<'_>, i: &Imported) -> std::result::Result<(), S
     let mut fields = std::collections::BTreeMap::new();
     let parts: Vec<_> = i.turns.iter().map(|t| wisp_runtime_core::task_usage::turn_usage(&t.turn)).collect();
     crate::usage_row::put(&mut fields, &wisp_runtime_core::task_usage::own_of(&parts), &[]);
+    if let Some((name, _)) = crate::kinds::project_for(projects, &i.session.cwd) {
+        fields.insert("project".into(), Value::String(name));
+    }
     let mut summary = summarize(&i.session, &facts, fields);
     let mut seq = 1u64;
     let events: Vec<Vec<_>> = i
@@ -70,12 +75,23 @@ impl Runtime {
     /// `runtime.import`: every v1 session file new or changed since its last import.
     pub async fn import_v1(self: &Arc<Self>, dir: Option<PathBuf>) -> Result<ImportReport> {
         let dir = dir.unwrap_or_else(|| PathBuf::from(std::env::var("HOME").unwrap_or_default()).join(".wisp/sessions"));
-        let handler: wisp_store::ImportHandler = Arc::new(|f, w| {
+        // the project rows as stored (`project` on `config`): none yet, or the kind off, is no project
+        let projects: Arc<Vec<(String, Value)>> = Arc::new(
+            self.repo
+                .store
+                .read_async(|r| r.query("project", &wisp_store::Query::new()))
+                .await
+                .unwrap_or_default()
+                .into_iter()
+                .filter_map(|r| Some((r.get("id")?.as_str()?.to_owned(), r.get("body")?.clone())))
+                .collect(),
+        );
+        let handler: wisp_store::ImportHandler = Arc::new(move |f, w| {
             let v: Value = f.json()?;
             let i = import::from_v1(&v).map_err(|e| StoreError::Internal(format!("{}: {e}", f.name)))?;
             // a session imported earlier keeps its later events: its old log is replaced as a whole
             w.del("session", i.session.id.as_str())?;
-            write_imported(w, &i)
+            write_imported(w, &i, &projects)
         });
         let r = wisp_store::import_files(&self.repo.store, ImportOptions::new("runtime.sessions", dir), handler).await?;
         // the list cache learns the new rows; a re-imported task's turns were rewritten behind `persist`

@@ -79,23 +79,39 @@ fn proc(ctx: &Ctx) -> Result<Arc<Proc>> {
 
 /// Every task file under `root/.wisp/tasks`, read.
 pub async fn docs(root: &Path) -> Vec<Doc> {
-    let mut out = Vec::new();
+    // on the blocking pool, parsed on every core (perf audit r2 #2/#6: 2,000 task files one by one on a worker took
+    // ~300 ms of every blame)
+    let root = root.to_owned();
+    tokio::task::spawn_blocking(move || docs_now(&root)).await.unwrap_or_default()
+}
+
+fn docs_now(root: &Path) -> Vec<Doc> {
+    let mut files = Vec::new();
     let mut stack = vec![root.join(".wisp/tasks")];
     while let Some(d) = stack.pop() {
-        let Ok(mut rd) = tokio::fs::read_dir(&d).await else { continue };
-        while let Ok(Some(e)) = rd.next_entry().await {
+        for e in std::fs::read_dir(&d).into_iter().flatten().flatten() {
             let p = e.path();
             if p.is_dir() {
                 stack.push(p);
-            } else if p.to_string_lossy().ends_with(".task.yml")
-                && let Ok(text) = tokio::fs::read_to_string(&p).await
-                && let Ok(doc) = serde_saphyr::from_str::<Value>(&text)
-            {
-                out.push(Doc { path: p.strip_prefix(root).map_or_else(|_| p.display().to_string(), rel), doc });
+            } else if p.to_string_lossy().ends_with(".task.yml") {
+                files.push(p);
             }
         }
     }
-    out
+    let one = |p: &std::path::PathBuf| -> Option<Doc> {
+        let text = std::fs::read_to_string(p).ok()?;
+        let doc = serde_saphyr::from_str::<Value>(&text).ok()?;
+        Some(Doc { path: p.strip_prefix(root).map_or_else(|_| p.display().to_string(), rel), doc })
+    };
+    let cores = std::thread::available_parallelism().map_or(1, std::num::NonZero::get).min(8);
+    if files.len() < 64 || cores == 1 {
+        return files.iter().filter_map(one).collect();
+    }
+    let per = files.len().div_ceil(cores);
+    std::thread::scope(|sc| {
+        let parts: Vec<_> = files.chunks(per).map(|c| sc.spawn(move || c.iter().filter_map(one).collect::<Vec<_>>())).collect();
+        parts.into_iter().flat_map(|h| h.join().unwrap_or_default()).collect()
+    })
 }
 
 /// A repo-relative path as wisp reports and matches it: `/`-separated on every OS (`tasks/2026/11/…`,

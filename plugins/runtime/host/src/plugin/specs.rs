@@ -76,14 +76,9 @@ pub(super) fn specs(s: &mut Setup, slot: &Slot) {
 /// `runtime.history`: every task's spec, with its cost, filtered by the profiles asked for.
 async fn history(rt: &Runtime, store: &Store, a: &HistoryArgs) -> WireResult<Vec<HistoryRow>> {
     let sessions = rt.repo.sessions().await.map_err(WireError::from)?;
-    let costs: std::collections::HashMap<String, f64> = rt
-        .repo
-        .summaries()
-        .await
-        .map_err(WireError::from)?
-        .into_iter()
-        .filter_map(|s| s.cost_usd.map(|c| (s.id.as_str().to_owned(), c)))
-        .collect();
+    // each task's cost from the list in memory (perf audit 2026-11-19 #4: every list row was read and parsed again)
+    let costs: std::collections::HashMap<String, f64> =
+        rt.lock_list().values().filter_map(|s| s.cost_usd.map(|c| (s.id.as_str().to_owned(), c))).collect();
     // the snapshots the profile filter needs, read once each
     let mut snaps: std::collections::HashMap<String, Option<serde_json::Value>> = std::collections::HashMap::new();
     if !a.profiles.is_empty() {

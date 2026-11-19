@@ -1,6 +1,8 @@
 // New task's Send, later (src/launch.ts, v1 launcher.js go → planAsk, when.js): the clock, a time in the prompt, /draft, /after.
 import { expect, test } from 'vitest';
+import { plannedSaid } from '../src/format.ts';
 import { launchPlan } from '../src/launch.ts';
+import later from '../src/later.ts';
 
 const now = new Date(2026, 10, 12, 10, 0, 0);
 const o = { now, title: (id: string) => (id === '0192f3a4-aaaa-7bbb-8ccc-1234567890ab' || id === 'local:s0001' ? 'Fix login' : undefined) };
@@ -35,4 +37,25 @@ test('with read times off a typed time is not read, a picked one still is', () =
   expect(launchPlan('in 5 min run the e2e suite', { ...base, readTimes: false })).toBeNull();
   expect(launchPlan('in 5 min run the e2e suite', { ...base, readTimes: true })).toMatchObject({ kind: 'task' });
   expect(launchPlan('run it', { ...base, readTimes: false, at: now.getTime() + 60_000 })).toMatchObject({ kind: 'task', at: now.getTime() + 60_000 });
+});
+
+// Audit B #6: Start later made the plan, in Scheduled below a long Needs you, and nothing on screen said so. New task
+// says where it went, as v1 did ("Starts 03:56"; planSaid for /draft and /after).
+test('send_says_where_a_planned_task_went_as_v1_did', () => {
+  const source = later.prompt?.find((s) => s.id === 'later.launch');
+  const said: string[] = [];
+  const ran: unknown[] = [];
+  const client = {
+    home: 'local',
+    entities: { peek: () => undefined },
+    run: (_c: unknown, a: unknown) => (ran.push(a), Promise.resolve({})),
+  };
+  const at = Date.now() + 10 * 60_000;
+  const took = source?.send?.('bump the deps', { client: client as never, task: '', launch: { at } as never, say: (m) => said.push(m) });
+  expect(took).toBe(true);
+  expect(ran).toHaveLength(1);
+  expect(said).toHaveLength(1);
+  expect(said[0]).toMatch(/^Starts (\w{3} )?\d\d:\d\d$/);
+  expect(plannedSaid({ kind: 'task', draft: true }, 0)).toBe('Saved to Drafts');
+  expect(plannedSaid({ kind: 'task', after: { title: 'Fix login' } }, 0)).toBe('Starts once Fix login is done');
 });

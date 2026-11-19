@@ -53,7 +53,7 @@ pub struct Cleanup {
     queue: Mutex<VecDeque<Job>>,
     cleaning: std::sync::Mutex<Option<Progress>>,
     scanning: Mutex<()>,
-    /// a look ended or a clean-up moved: the pane's rows are republished (`pane::publish`)
+    /// a look started or ended, or a clean-up moved: the pane's rows are republished (`pane::publish`)
     pub changed: tokio::sync::Notify,
 }
 
@@ -133,6 +133,9 @@ impl Cleanup {
             let _wait = self.scanning.lock().await;
             return;
         };
+        // the pane says it's looking, with the worktrees known now, from the start of the look (audit B #18: it showed
+        // the last look's 13 of 41 for minutes, and no sign of looking, until the look ended)
+        self.changed.notify_one();
         let now = self.engine.clock.now_ms();
         let dir = dir_of(&self.engine);
         let (prev_trees, sized, changed) = {

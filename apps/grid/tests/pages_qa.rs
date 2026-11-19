@@ -238,3 +238,31 @@ async fn the_pages_keep_what_people_type_and_say_the_right_things() {
     assert!(home.contains(r#"<span class="chipx">Grid</span>"#) && home.contains("background:var(--accent-soft)"), "{home}");
     g.done();
 }
+
+/// Audit B #10: Open on a sleeping cloud wisp showed nothing for ~1.3 s (the box wakes before the next page starts), and
+/// Home's other links had no pending state. Every page link now changes the screen at once (PENDING), and the asleep
+/// Open carries what its row says while it wakes.
+#[tokio::test(flavor = "multi_thread")]
+async fn every_page_link_shows_it_is_going_and_open_says_it_is_waking() {
+    let g = rig("pending").await;
+    let cookie = g.session("ada");
+    let home = g.page("/", &cookie).await;
+    // asleep: Open says it's waking, with the words its row shows once it is
+    assert!(
+        home.contains(r#"<a class="primary" href="/go" data-wake="Waking up · a few seconds: it opens as soon as it’s up">Open"#),
+        "{home}"
+    );
+    // the pending script covers any link that loads a page, not only sign-in links, and Back undoes it
+    for want in
+        ["closest('a[href]')", "a.dataset.wake", "classList.add('going')", "addEventListener('pageshow'", "a.target!=='_self'", "e.metaKey"]
+    {
+        assert!(home.contains(want), "PENDING lacks {want}");
+    }
+    assert!(!home.contains(r#"closest('a[href^="/auth/"]')"#));
+    // a dimmed link and a spinning button-like one are styled
+    assert!(home.contains(".going{pointer-events:none;opacity:.55;cursor:progress}") && home.contains(".primary.wait>svg"));
+    // the account page has it too (its tabs and links)
+    let account = g.page("/account", &cookie).await;
+    assert!(account.contains("closest('a[href]')"));
+    g.done();
+}

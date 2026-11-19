@@ -53,11 +53,7 @@ fn attachment_note(files: &[Attachment]) -> String {
     }
     let lines: Vec<String> = with_path
         .iter()
-        .map(|f| {
-            #[allow(clippy::cast_precision_loss, clippy::cast_possible_truncation, clippy::cast_sign_loss)] // sizes in KB, rounded
-            let kb = ((f.size as f64 / 1024.0).round() as u64).max(1);
-            format!("- {}  ({}, {kb} KB)", f.path.as_deref().unwrap_or_default(), f.mime)
-        })
+        .map(|f| format!("- {}  ({}, {})", f.path.as_deref().unwrap_or_default(), f.mime, wisp_harness_kit::protocol::size_words(f.size)))
         .collect();
     format!(
         "\n\n<attachments>\nThe user attached these files. Read images and PDFs with the Read tool; for video/audio/other formats use the shell (e.g. ffmpeg, ffprobe) if needed.\n{}\n</attachments>",
@@ -251,6 +247,10 @@ mod tests {
         assert!(a.contains("--permission-prompt-tool mcp__wisp__approve --allowedTools mcp__wisp --disallowedTools Task Agent Workflow --add-dir /a /up --verbose"));
         let Stdin::Bytes(b) = launch(&r, "claude").stdin else { panic!("stdin") };
         assert!(String::from_utf8_lossy(&b).contains("- /up/pic.png  (image/png, 3 KB)"));
+        // a 13-byte file is 13 B, not "1 KB" (audit B #19)
+        r.attachments = vec![Attachment { path: Some("/up/a.txt".into()), mime: "text/plain".into(), size: 13, ..Attachment::default() }];
+        let Stdin::Bytes(b) = launch(&r, "claude").stdin else { panic!("stdin") };
+        assert!(String::from_utf8_lossy(&b).contains("- /up/a.txt  (text/plain, 13 B)"));
     }
 
     /// ADR-0079: a run that names an offload folder gets the `PreToolUse` hook on Bash, beside the gate's rules in the

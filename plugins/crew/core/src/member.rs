@@ -84,6 +84,38 @@ fn text(v: &Value, k: &str, n: usize) -> String {
     clip(&squash(&str_of(v.get(k))), n)
 }
 
+/// A team row that names a crew member (`{ crew, why? }`, the shape `--team` documents): `crew` is their id or name
+/// (`bob`, `Bob`), read as their id; `why` is what they're for (`use`); their name labels the row. A row naming no
+/// member is refused with who it named, never read as a harness.
+pub fn crew_refs(list: &Value, crew: &[Member]) -> Result<Value> {
+    let Some(rows) = list.as_array() else { return Ok(list.clone()) };
+    rows.iter()
+        .map(|r| {
+            let Some(asked) = r.get("crew").and_then(Value::as_str).filter(|c| !c.trim().is_empty()) else { return Ok(r.clone()) };
+            let asked = asked.trim();
+            let who = crew
+                .iter()
+                .find(|m| m.id == asked)
+                .or_else(|| crew.iter().find(|m| m.name.eq_ignore_ascii_case(asked) || handle_of(&m.name) == handle_of(asked)))
+                .ok_or_else(|| bad(format!("No one on your crew is called {asked}.")))?;
+            let mut row = r.clone();
+            row["crew"] = Value::String(who.id.clone());
+            for k in ["name", "label"] {
+                if str_of(row.get(k)).is_empty() {
+                    row[k] = Value::String(who.name.clone());
+                }
+            }
+            if str_of(row.get("use")).is_empty()
+                && let Some(why) = r.get("why").and_then(Value::as_str)
+            {
+                row["use"] = Value::String(why.to_owned());
+            }
+            Ok(row)
+        })
+        .collect::<Result<Vec<_>>>()
+        .map(Value::Array)
+}
+
 /// A member's delegates, with unique names (codex, codex-2, …). A crew member runs as its own job.
 pub fn normalize_team(list: &Value) -> Result<Vec<TeamRow>> {
     let Some(list) = list.as_array() else { return Ok(Vec::new()) };
@@ -204,8 +236,11 @@ pub fn normalize_member(body: &MemberBody, prev: Option<&Member>, c: &Checks, id
         Some(k) => normalize_kit(k, c.exists, ids)?,
         None => prev.map(|p| p.kit.clone()).unwrap_or_default(),
     };
-    let team_src =
-        body.team.clone().unwrap_or_else(|| serde_json::to_value(prev.map(|p| p.team.clone()).unwrap_or_default()).unwrap_or(Value::Null));
+    let team_src = match &body.team {
+        // as its help says (`[{ crew, why? }]`): a member named by id or name, why it delegates to them (audit B #8)
+        Some(t) => crew_refs(t, c.taken)?,
+        None => serde_json::to_value(prev.map(|p| p.team.clone()).unwrap_or_default()).unwrap_or(Value::Null),
+    };
     // Not itself: a member never delegates to itself.
     let team_src = match (team_src, prev_id) {
         (Value::Array(a), Some(id)) => Value::Array(a.into_iter().filter(|x| x.get("crew").and_then(Value::as_str) != Some(id)).collect()),

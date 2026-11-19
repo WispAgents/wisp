@@ -3,7 +3,7 @@
 // (fixed columns, gaps for the actions it lacks). On the phone app it swipes (design/mobile.md).
 
 import { createMemo, Show, type JSX } from 'solid-js';
-import { FeedItem, ListRow, Swipe, useSignal, type SwipeDir, type SwipeSide } from '@wisp/ui';
+import { FeedItem, LazySwipe, ListRow, useSignal, type SwipeDir, type SwipeSide } from '@wisp/ui';
 import type { EntityKey } from '@wisp/client';
 import { agentName, rowView, secondLine } from '../model/row.ts';
 import { actionFor, type SwipeKind } from '../model/swipe.ts';
@@ -143,7 +143,7 @@ function Body(props: { readonly k: EntityKey; readonly s: SessionRow; readonly n
         )
       }
     >
-      <Swipe
+      <LazySwipe
         left={side(props.swipe.left)}
         right={side(props.swipe.right)}
         onSwipe={swiped}
@@ -157,7 +157,7 @@ function Body(props: { readonly k: EntityKey; readonly s: SessionRow; readonly n
         <FeedItem part={'card' as `${string}.${string}`} id={props.k} current={open()} selected={env.selected() === props.k && !open()}>
           {list()}
         </FeedItem>
-      </Swipe>
+      </LazySwipe>
     </Show>
   );
 }

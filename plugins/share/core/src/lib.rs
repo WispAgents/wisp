@@ -166,7 +166,49 @@ pub fn scrub_text(text: &str, s: &Scrub, at: &str, out: &mut Vec<Redaction>) -> 
     scrub_with(text, s, &prepared::Prepared::of(s), at, out)
 }
 
+/// Every secret pattern as one set: a string none of them matches (most of a bundle) skips them in one pass.
+fn any_secret() -> Option<&'static regex::RegexSet> {
+    static S: OnceLock<Option<regex::RegexSet>> = OnceLock::new();
+    S.get_or_init(|| regex::RegexSet::new(patterns().iter().map(Regex::as_str)).ok()).as_ref()
+}
+
+/// Perf audit 2026-11-19 #8: a string is copied only when something in it is taken out, and the secret patterns are
+/// run one by one only on a string the set says one of them matches (then exactly as before, each on what the last
+/// left). A 2 MB task's full preview spent 64–82 ms here, almost all of it on strings with nothing to take out.
 fn scrub_with(text: &str, s: &Scrub, p: &prepared::Prepared, at: &str, out: &mut Vec<Redaction>) -> String {
+    use std::borrow::Cow;
+    let mut t: Cow<'_, str> = Cow::Borrowed(text);
+    if any_secret().is_none_or(|set| set.is_match(text)) {
+        t = Cow::Owned(secrets(text, at, out));
+    }
+    for (name, v) in &s.env {
+        if t.contains(v.as_str()) {
+            let now = format!("<env:{name}>");
+            t = Cow::Owned(t.replace(v.as_str(), &now));
+            out.push(Redaction { kind: "env".into(), at: at.into(), was: hint(v), now });
+        }
+    }
+    for (from, to) in &p.forms {
+        if t.contains(from.as_str())
+            && let Some(next) = replace_path(&t, from, to)
+        {
+            t = Cow::Owned(next);
+            out.push(Redaction { kind: "path".into(), at: at.into(), was: from.clone(), now: (*to).into() });
+        }
+    }
+    for ids in &p.ids {
+        if !ids.touches(&t) {
+            continue;
+        }
+        let mut went = Vec::new();
+        t = Cow::Owned(ids.replace(&t, &mut went));
+        out.extend(went.into_iter().map(|was| Redaction { kind: "name".into(), at: at.into(), was, now: ids.to.into() }));
+    }
+    t.into_owned()
+}
+
+/// The secret patterns, each on what the one before left.
+fn secrets(text: &str, at: &str, out: &mut Vec<Redaction>) -> String {
     let mut t = text.to_owned();
     for re in patterns() {
         if re.is_match(&t) {
@@ -184,24 +226,6 @@ fn scrub_with(text: &str, s: &Scrub, p: &prepared::Prepared, at: &str, out: &mut
                 now: "<secret>".into(),
             }));
         }
-    }
-    for (name, v) in &s.env {
-        if t.contains(v.as_str()) {
-            let now = format!("<env:{name}>");
-            t = t.replace(v.as_str(), &now);
-            out.push(Redaction { kind: "env".into(), at: at.into(), was: hint(v), now });
-        }
-    }
-    for (from, to) in &p.forms {
-        if let Some(next) = replace_path(&t, from, to) {
-            t = next;
-            out.push(Redaction { kind: "path".into(), at: at.into(), was: from.clone(), now: (*to).into() });
-        }
-    }
-    for ids in &p.ids {
-        let mut went = Vec::new();
-        t = ids.replace(&t, &mut went);
-        out.extend(went.into_iter().map(|was| Redaction { kind: "name".into(), at: at.into(), was, now: ids.to.into() }));
     }
     t
 }

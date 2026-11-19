@@ -12,10 +12,8 @@ const MB = KB ** 2;
 const GB = KB ** 3;
 export const MINUTE = 60_000;
 export const HOUR = 60 * MINUTE;
-/** the chip shows once free memory is under the floor plus this */
-export const TIGHT = 10;
-/** wisp's default memory floor (v1 server/load.js LOAD_DEFAULTS) */
-export const FLOOR_DEFAULT = 15;
+import { FLOOR_DEFAULT, TIGHT, chipWhen, loadOf } from './chip-when.ts';
+export { FLOOR_DEFAULT, TIGHT, loadOf };
 
 export { STATIC_NAME_KEY };
 
@@ -65,15 +63,10 @@ export interface Chip {
  */
 export function chipOf(o: { load: MachineLoad | undefined; pausedUntil: number; left: number; now: number; t: T }): Chip | null {
   const { load, now, t } = o;
-  const free = load?.mem_free_pct ?? null;
+  const w = chipWhen(o);
+  if (!w) return null;
+  const { free, floor, tight, held, until, paused, left } = w;
   const runs = load?.runs ?? 0;
-  const floor = load?.limits.floor ?? FLOOR_DEFAULT;
-  const held = load?.held && load.held.kind !== 'paused' ? load.held : null;
-  const until = Math.max(o.pausedUntil, load?.paused_until ?? 0);
-  const tight = free !== null && free < floor + TIGHT;
-  const paused = until > now;
-  const left = o.left || load?.left_behind || 0;
-  if (!tight && !held && !paused && !left) return null;
   const [lead, rest] =
     tight || held
       ? [pctText(free), runs ? t('machine.chip.memoryRuns', { runs }) : t('machine.chip.memory')]
@@ -85,20 +78,6 @@ export function chipOf(o: { load: MachineLoad | undefined; pausedUntil: number; 
   return { lead, rest, tone, why };
 }
 
-/** The load the chip reads, from the snapshot when that's all there is. */
-export function loadOf(m: MachineSnapshot): MachineLoad {
-  const g = m.guard;
-  return {
-    at: m.at,
-    ...(m.platform !== undefined && { platform: m.platform }),
-    mem_free_pct: m.mem.freePct,
-    runs: g.runs,
-    held: g.held && g.held !== 'paused' ? { kind: g.held, why: g.why ?? '' } : null,
-    limits: { floor: g.floor },
-    paused_until: g.pausedUntil,
-    left_behind: m.leftovers.length,
-  };
-}
 
 /** The task row's RAM column: only a running task the peer marked heavy. */
 export const resText = (s: { state?: string; res?: { rss: number } } | undefined): string => (s?.state === 'running' && s.res && s.res.rss > 0 ? size(s.res.rss) : '');

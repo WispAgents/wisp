@@ -60,6 +60,15 @@ pub async fn catalogue(c: &Client, home: &Path) -> Result<Catalogue> {
     Ok(Catalogue::new(list))
 }
 
+/// What `wisp help` and completion list (setup audit B6): Auto's verbs (`wisp router …`) only while its one switch is on
+/// (`runtime.auto`, off until the owner reworks it: 2026-11-17). They still run when typed; they're just not offered.
+pub async fn shown(c: &Client, mut cat: Catalogue) -> Catalogue {
+    if c.cmd("settings.get", json!({ "key": "runtime.auto" })).await.ok() != Some(Value::Bool(true)) {
+        cat.verbs.retain(|v| v.plugin != "router");
+    }
+    cat
+}
+
 /// The words after the verb, as typed: from the raw argv (the global parser has eaten flags such as
 /// `--mode` that a command may declare too).
 fn rest_after(argv: &[String], first: &str, taken: usize) -> Vec<String> {
@@ -110,6 +119,8 @@ pub fn print_result(v: &Value, json: bool) {
 
 /// `wisp help` and `wisp help <plugin>` (`wisp help <plugin> <verb>` is that verb's `--help`).
 pub fn help(cat: &Catalogue, words: &[String]) -> i32 {
+    // `wisp help runtime "queue order"`: a quoted verb as its list prints it is its words (audit B #15)
+    let words: Vec<String> = words.iter().flat_map(|w| w.split_whitespace()).map(str::to_owned).collect();
     match words.get(1..).unwrap_or_default() {
         [] => say(&verbs::help_all(cat, crate::args::HELP)),
         // a built-in group (`wisp help computer`, QA round 11 #2): its usage, and its plugin's verbs when it has one
@@ -131,7 +142,17 @@ pub fn help(cat: &Catalogue, words: &[String]) -> i32 {
         }
         more => {
             let Some((v, _)) = cat.resolve(more) else {
-                eprintln!("  ✗ no command wisp {}: wisp help {} lists its verbs", more.join(" "), more[0]);
+                if cat.has_plugin(&more[0]) || crate::words::is_group(&more[0]) {
+                    eprintln!("  ✗ no command wisp {}: wisp help {} lists its verbs", more.join(" "), more[0]);
+                } else {
+                    // `wisp help me fix the login page`: never a task (audit B #15), the way to one is said
+                    eprintln!(
+                        "  ✗ wisp help {}: no command or plugin named {}\n  wisp help lists every command and plugin\n  a task that says this: wisp -- help {}",
+                        more.join(" "),
+                        more[0],
+                        more.join(" ")
+                    );
+                }
                 return USAGE_EXIT;
             };
             say(&verbs::help_verb(v));
@@ -167,17 +188,29 @@ pub fn sdk_types(cat: &Catalogue, lang: Option<&String>, out: Option<&String>) -
 
 pub async fn completions(c: &Client, cat: &Catalogue, shell: Option<&String>) -> i32 {
     // what the catalogue doesn't say (setup audit F27): wisp's own groups' verbs, the harnesses, the setting keys
-    let agents = c.cmd("accounts.harnesses", Value::Null).await.ok();
+    // every harness here, as `--agent` takes it (setup audit B10: accounts' rows named only claude and codex)
+    let agents = c.cmd("runtime.agents", json!({})).await.ok();
     let settings = c.cmd("settings.list", json!({})).await.ok();
-    let strings = |v: Option<Value>, k: &str| -> Vec<String> {
-        v.and_then(|v| v.as_array().cloned())
-            .into_iter()
-            .flatten()
-            .filter_map(|x| x.get(k).and_then(Value::as_str).map(str::to_owned))
-            .collect()
+    let strings = |v: Option<&Value>, k: &str| -> Vec<String> {
+        v.and_then(Value::as_array).into_iter().flatten().filter_map(|x| x.get(k).and_then(Value::as_str).map(str::to_owned)).collect()
     };
-    let extra =
-        completions::Extra { groups: crate::words::group_verbs(), agents: strings(agents, "agent"), settings: strings(settings, "key") };
+    // an enum setting's values, after its key (B10: `wisp settings set worktrees.max <TAB>` offered flags)
+    let values = settings
+        .as_ref()
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(|x| {
+            let vs: Vec<String> = x.pointer("/decl/values")?.as_array()?.iter().filter_map(|v| v.as_str().map(str::to_owned)).collect();
+            Some((x.get("key")?.as_str()?.to_owned(), vs)).filter(|(_, vs)| !vs.is_empty())
+        })
+        .collect();
+    let extra = completions::Extra {
+        groups: crate::words::group_verbs(),
+        agents: strings(agents.as_ref(), "id"),
+        settings: strings(settings.as_ref(), "key"),
+        values,
+    };
     let Some(s) = shell.and_then(|sh| completions::script_with(sh, cat, &crate::args::COMMANDS, &extra)) else {
         eprintln!("  ✗ wisp completions zsh|bash|fish");
         return USAGE_EXIT;
@@ -285,6 +318,16 @@ mod tests {
         assert!(new.is_empty(), "the UI calls commands no manifest declares, so the CLI can't reach them: {new:?}");
         let closed: Vec<&String> = known.difference(&missing).collect();
         assert!(closed.is_empty(), "these have a host command now: take them off plugins/cli/parity-gaps.txt: {closed:?}");
+    }
+
+    /// Audit B #15: `wisp help runtime` lists "queue order"; asking help for that spelling shows the verb's help.
+    #[test]
+    fn help_for_a_verb_spelled_as_its_list_prints_it_shows_its_help() {
+        let cat = Catalogue::new(declared());
+        let w = |x: &[&str]| x.iter().map(|s| (*s).to_owned()).collect::<Vec<_>>();
+        assert_eq!(help(&cat, &w(&["help", "runtime", "queue order"])), 0);
+        assert_eq!(help(&cat, &w(&["help", "runtime", "queue", "send-now"])), 0);
+        assert_eq!(help(&cat, &w(&["help", "runtime", "no such verb"])), USAGE_EXIT);
     }
 
     #[test]

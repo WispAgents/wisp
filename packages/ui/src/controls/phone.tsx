@@ -95,7 +95,32 @@ export function MenuMachine(props: MenuMachineProps): JSX.Element {
   );
 }
 
+/** audit-B #1: a long-press opens the menu under the finger, so that finger's lift (its pointerup, then the click the
+ * browser makes of it) lands on an item, the backdrop or the sheet's scrim. Until a new press starts after the menu
+ * opened, a pointer's click is swallowed (iOS context menu, M3 sheet, v1: the menu stays; an item runs on a new tap).
+ * A click no pointer made (`detail` 0: a key, VoiceOver, TalkBack) is never the lift's. Returns the stop. */
+export function swallowOpeningLift(): () => void {
+  let pressed = false;
+  const down = (): void => {
+    pressed = true;
+    stop();
+  };
+  const click = (e: MouseEvent): void => {
+    if (pressed || e.detail === 0) return;
+    e.preventDefault();
+    e.stopImmediatePropagation();
+  };
+  const stop = (): void => {
+    removeEventListener('pointerdown', down, true);
+    removeEventListener('click', click, true);
+  };
+  addEventListener('pointerdown', down, true);
+  addEventListener('click', click, true);
+  return stop;
+}
+
 export function PhoneMenu(props: PhoneMenuProps): JSX.Element {
+  onCleanup(swallowOpeningLift());
   return (
     <Show when={props.look === 'ios'} fallback={<ActionSheet {...props} />}>
       <ContextPreview {...props} />

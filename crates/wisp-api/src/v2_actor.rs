@@ -167,16 +167,15 @@ impl Actor {
                 // each page reaches the machine as it is read (ADR-0081), one answer per page
                 let at = topic.clone();
                 let page = Box::new(move |r: Read, more: bool| {
-                    let a = SnapshotAnswer {
-                        conn,
-                        topic: at.clone(),
-                        req,
-                        seq: r.seq,
-                        rows: r.rows,
-                        full: r.full || since.is_none(),
-                        deleted: r.deleted,
-                        more,
+                    let full = r.full || since.is_none();
+                    // a full page's rows are encoded here, where the page was read, never in this actor (perf audit
+                    // 2026-11-19 #1: ten fresh clients' lists encoded in it held every other client's patches)
+                    let text = (full && since.is_none()).then(|| serde_json::to_string(&r.rows).ok()).flatten();
+                    let (rows, rows_json) = match text {
+                        Some(t) => (Vec::new(), Some(std::sync::Arc::<str>::from(t))),
+                        None => (r.rows, None),
                     };
+                    let a = SnapshotAnswer { conn, topic: at.clone(), req, seq: r.seq, rows, full, deleted: r.deleted, more, rows_json };
                     let _ = tx.send(Msg::In(Input::SnapshotRows(a)));
                 });
                 tokio::spawn(async move { snaps.snapshot_pages(&topic, since, page).await });

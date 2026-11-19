@@ -19,6 +19,21 @@ async fn of_commit(b: &dyn BlameSource, root: &Path, all: &[Doc], sha: &str) -> 
     tasks_of_commit(all, sha, &msg)
 }
 
+/// The tasks of each of `shas`, every message read in one go (perf audit r2 #2: a `git show` per commit took 1.2 s for
+/// a file's blame, 2.7 s for a folder's): commit → its tasks.
+async fn of_commits(b: &dyn BlameSource, root: &Path, all: &[Doc], shas: &[String]) -> std::collections::HashMap<String, Vec<String>> {
+    let mut want: Vec<String> = shas.to_vec();
+    want.sort_unstable();
+    want.dedup();
+    let msgs: std::collections::HashMap<String, String> = b.messages(root.to_owned(), want.clone()).await.into_iter().collect();
+    want.into_iter()
+        .map(|sha| {
+            let ids = tasks_of_commit(all, &sha, msgs.get(&sha).map_or("", String::as_str));
+            (sha, ids)
+        })
+        .collect()
+}
+
 /// A task's commits (its trailer's, and the ones its file lists), and how much of what they added the
 /// current tree still has from them.
 async fn task_answer(b: &dyn BlameSource, root: &Path, all: &[Doc], d: &Doc) -> Value {
@@ -119,10 +134,7 @@ pub async fn answer(ctx: &Ctx, a: &BlameArgs) -> Result<Value> {
     let full = root.join(&path);
     if tokio::fs::metadata(&full).await.is_ok_and(|m| m.is_file()) {
         let lines = b.blame(root.clone(), path.clone(), range).await;
-        let mut of = std::collections::HashMap::new();
-        for (sha, _) in &lines {
-            of.insert(sha.clone(), of_commit(b.as_ref(), &root, &all, sha).await);
-        }
+        let mut of = of_commits(b.as_ref(), &root, &all, &lines.iter().map(|(sha, _)| sha.clone()).collect::<Vec<_>>()).await;
         let (total, hand, by) = shares(&lines, &|s| of.get(s).cloned().unwrap_or_default());
         let tasks: Vec<Value> = by
             .iter()
@@ -141,8 +153,9 @@ pub async fn answer(ctx: &Ctx, a: &BlameArgs) -> Result<Value> {
         b.commits(root.clone(), target.to_owned(), String::new()).await
     };
     let (mut tasks, mut seen, mut hand) = (Vec::new(), Vec::<String>::new(), 0);
+    let mut of = of_commits(b.as_ref(), &root, &all, &shas).await;
     for sha in &shas {
-        let ids = of_commit(b.as_ref(), &root, &all, sha).await;
+        let ids = of.remove(sha).unwrap_or_default();
         if ids.is_empty() {
             hand += 1;
         }

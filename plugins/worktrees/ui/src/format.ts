@@ -66,9 +66,10 @@ export function statusText(x: Entry, now: number): string {
 /** The summary's title: "12 worktrees · 4.2 GB". */
 export function totalLine(list: readonly Entry[], status: WorktreesStatus | undefined): string {
   const n = t('worktrees.count', { count: list.length });
-  if (status?.size === null || status?.size === undefined) return n;
   const size = list.reduce((a, x) => a + (x.size ?? 0), 0);
-  return t('worktrees.total', { n, size: fmtSize(size) });
+  const line = status?.size === null || status?.size === undefined ? n : t('worktrees.total', { n, size: fmtSize(size) });
+  // a look under way: the count may still grow (audit B #18: "13 worktrees" for minutes, with 41 on the way)
+  return status?.looking ? t('worktrees.total.looking', { line }) : line;
 }
 
 /** The summary's line: the clean-up running, else free disk and the last clean-up. */

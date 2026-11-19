@@ -1,6 +1,7 @@
 // wisp.budget's UI: Settings → Usage (the week's spend and outcomes, each plan's windows, where unattended work stops),
 // the Usage view (charts and breakdowns), and on Home Spare allowance and usage at a glance.
 import { lazy } from 'solid-js';
+import { drawnLater } from '@wisp/ui';
 import { defineExtension, defineView, type PluginUiDef } from '@wisp/shell';
 import { VIEW_USAGE } from './views.ts';
 import { catalogue, t } from './i18n.ts';
@@ -13,7 +14,7 @@ const ui: PluginUiDef = {
   // (UX 2026-11-18 desktop #8: no usage bar under Home's prompt box any more: the harness chip's ring and menu and
   // Settings → Usage show it; HomeUsage stays for a later home input)
   extensions: [
-    defineExtension({ id: 'budget.spare', attachTo: { id: 'shell.home:cards' }, component: lazy(() => import('./Spare.tsx')) }),
+    defineExtension({ id: 'budget.spare', attachTo: { id: 'shell.home:cards' }, component: drawnLater(lazy(() => import('./Spare.tsx'))) }),
   ],
   // Ask near the limit in the prompt boxes (v1 hold.js): asked before New task and a follow-up go
   // (its code and words load on the first send: ADR-0067); `budget_hold` is the server-side guard's refusal reason

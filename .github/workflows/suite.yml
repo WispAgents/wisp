@@ -164,8 +164,10 @@ jobs:
           cargo build --locked --profile budgets -p wisp -p wisp-testkit
           cargo run --locked --profile budgets --manifest-path spikes/server-budgets/Cargo.toml
 
-      # ADR-0011: the web bundle's budgets (initial JS ≤ 120 KB br, initial CSS ≤ 30 KB br), measured on the
-      # production build; a miss fails the job, and the numbers go to the job summary. Runs even after an earlier
+      # ADR-0011, ADR-0105: the web bundle's budgets on the production build: each look's first screen (desktop and
+      # phone, measured in the runner's Chrome: tools/first-screen.ts) at its ratchet toward 120 / 30 KB br
+      # (tools/budgets.ts FIRST_SCREEN_BUDGETS), index.html's own files at 120 / 30. A miss fails the job, and the
+      # numbers go to the job summary. Runs even after an earlier
       # step failed, so every PR shows where the bundle stands. Once per run: Linux, the first Node of the matrix (the
       # bundle doesn't vary by OS or Node).
       - name: web build

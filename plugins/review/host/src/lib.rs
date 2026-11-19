@@ -209,7 +209,8 @@ impl Env for KernelEnv {
             run_id: None,
         };
         let f = self.0.run::<rt::Quick>(call, args);
-        Box::pin(async move { f.await.ok().and_then(|r| r.json) })
+        // its JSON, else what it said (an answer that isn't a review is told apart from none: audit B #12)
+        Box::pin(async move { f.await.ok().and_then(|r| r.json.or_else(|| (!r.text.trim().is_empty()).then_some(Value::String(r.text)))) })
     }
     fn save(&self, call: &Call, id: &str, review: Option<&Review>, unread: bool, over: Option<&Review>) -> Fut<Result<()>> {
         let (value, over) = match (review.map(serde_json::to_value).transpose(), over.map(serde_json::to_value).transpose()) {
@@ -279,5 +280,29 @@ mod row_tests {
         assert!(!review_on(Some(&json!("off"))));
         assert!(review_on(Some(&json!("other"))));
         assert!(review_on(Some(&json!("codex"))));
+    }
+}
+
+#[cfg(test)]
+mod manifest_tests {
+    use wisp_kernel::{Command, Plugin};
+    use wisp_runtime_api::commands as rt;
+
+    /// Audit B #12: keeping a review's result ran `runtime.markRead`, which the manifest didn't name ("plugin:wisp.review
+    /// may not runtime:markRead"), so the result was never marked for you. Every runtime command the host runs is named.
+    #[test]
+    fn the_manifest_names_every_runtime_command_the_review_runs() {
+        let have = super::ReviewPlugin.manifest().permissions;
+        let ids = [
+            <rt::Get as Command>::ID,
+            <rt::Turns as Command>::ID,
+            <rt::Agents as Command>::ID,
+            <rt::Quick as Command>::ID,
+            <rt::SetExt as Command>::ID,
+            <rt::MarkRead as Command>::ID,
+            <rt::List as Command>::ID,
+        ];
+        let missing: Vec<String> = ids.iter().map(|id| id.replacen('.', ":", 1)).filter(|p| !have.contains(p)).collect();
+        assert!(missing.is_empty(), "wisp.review runs these without the permission: {missing:?}");
     }
 }

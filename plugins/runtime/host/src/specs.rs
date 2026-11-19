@@ -566,7 +566,9 @@ pub fn history(
         }
         if let Some(c) = &a.crew {
             let ext = s.ext.get("wisp.crew");
-            if sp.crew.as_deref() != Some(c.as_str()) && field(ext, "id") != Some(c.as_str()) && field(ext, "name") != Some(c.as_str()) {
+            // a name in any case (`--crew ada` for Ada), an id as it is
+            let named = |n: Option<&str>| n.is_some_and(|n| n.eq_ignore_ascii_case(c));
+            if !named(sp.crew.as_deref()) && field(ext, "id") != Some(c.as_str()) && !named(field(ext, "name")) {
                 continue;
             }
         }
@@ -723,6 +725,7 @@ mod tests {
         };
         assert_eq!(ids(HistoryArgs { agent: Some("reviewer".into()), ..HistoryArgs::default() }), ["a"]);
         assert_eq!(ids(HistoryArgs { crew: Some("Ada".into()), ..HistoryArgs::default() }), ["b"]);
+        assert_eq!(ids(HistoryArgs { crew: Some("ada".into()), ..HistoryArgs::default() }), ["b"], "a name in any case (audit B #10)");
         assert_eq!(ids(HistoryArgs { workflow: Some("release".into()), ..HistoryArgs::default() }), ["run", "a"]);
         assert_eq!(ids(HistoryArgs { project: Some("api".into()), since: Some(50), ..HistoryArgs::default() }).len(), 3);
         assert_eq!(ids(HistoryArgs { since: Some(200), ..HistoryArgs::default() }), Vec::<String>::new());

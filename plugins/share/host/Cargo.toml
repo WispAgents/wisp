@@ -13,6 +13,8 @@ ed25519-dalek.workspace = true
 rand.workspace = true
 serde.workspace = true
 serde_json.workspace = true
+# the scrub and the signing run on the blocking pool (perf audit 2026-11-19 #8)
+tokio.workspace = true
 tracing.workspace = true
 wisp-kernel.workspace = true
 wisp-share-api.workspace = true
@@ -23,7 +25,6 @@ wisp-telemetry-api.workspace = true
 wisp-grid-client-api.workspace = true
 
 [dev-dependencies]
-tokio.workspace = true
 wisp-runtime-api = { workspace = true, features = ["testing"] }
 wisp-testkit.workspace = true
 

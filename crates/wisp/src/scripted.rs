@@ -31,6 +31,23 @@ fn s<'a>(v: &'a Value, k: &str) -> &'a str {
     v.get(k).and_then(Value::as_str).unwrap_or("")
 }
 
+/// Setup audit B10: `wisp "x" --agent frob` made a task that ended Blocked "no harness frob". What the CLI says instead,
+/// before anything starts: None when `--agent` is a harness here, an agent profile, `auto`, or not given (or the lists
+/// can't be read: the server's own check stands).
+pub async fn unknown_agent(c: &Client, agent: Option<&str>) -> Option<String> {
+    let name = agent.map(str::trim).filter(|a| !a.is_empty() && *a != "auto")?;
+    let ids = |v: Value, k: &str| -> Vec<String> {
+        v.as_array().into_iter().flatten().filter_map(|x| x.get(k).and_then(Value::as_str).map(str::to_owned)).collect()
+    };
+    let harnesses = ids(c.cmd("runtime.agents", json!({})).await.ok()?, "id");
+    let profiles = ids(c.cmd("runtime.profiles", json!({})).await.unwrap_or(Value::Null), "name");
+    if harnesses.iter().chain(&profiles).any(|h| h == name) {
+        return None;
+    }
+    let also = if profiles.is_empty() { String::new() } else { format!(", or an agent: {}", profiles.join(", ")) };
+    Some(format!("  ✗ no harness {name}: --agent takes {}{also}", harnesses.join(", ")))
+}
+
 /// `runtime.create`'s args for a launch from the command line (the `default` profile fills what's left).
 pub fn launch_args(f: &Flags, prompt: &str, cwd: &str) -> Value {
     let also: Vec<String> = f.also.iter().map(|p| p.display().to_string()).collect();
@@ -171,6 +188,15 @@ pub fn asking(task: &Value) -> String {
     out
 }
 
+/// `wisp ls` shows this many of the newest tasks unless `--limit` or `--all` says otherwise (v1's default; perf audit
+/// 2026-11-19 #5: every one of 5,000 was read and printed).
+pub const LS_DEFAULT: u32 = 50;
+
+/// How many tasks `wisp ls` shows: `--limit n`, everything with `--all`, else the newest [`LS_DEFAULT`].
+pub fn ls_limit(f: &Flags) -> Option<u32> {
+    if f.all { f.limit } else { Some(f.limit.unwrap_or(LS_DEFAULT)) }
+}
+
 pub async fn ls(c: &Client, f: &Flags) -> Result<()> {
     let mut states: Vec<String> = Vec::new();
     for x in f.state.iter().flat_map(|st| st.split(',')).map(str::trim).filter(|x| !x.is_empty()) {
@@ -194,7 +220,8 @@ pub async fn ls(c: &Client, f: &Flags) -> Result<()> {
     if !f.all {
         ask.insert("archived".into(), json!(false));
     }
-    if let Some(l) = f.limit.filter(|_| states.is_empty() && f.cwd.is_none()) {
+    let limit = ls_limit(f);
+    if let Some(l) = limit.filter(|_| states.is_empty() && f.cwd.is_none()) {
         ask.insert("limit".into(), json!(l));
     }
     let list = c.cmd("runtime.list", Value::Object(ask)).await?;
@@ -206,8 +233,14 @@ pub async fn ls(c: &Client, f: &Flags) -> Result<()> {
         .filter(|x| states.is_empty() || states.iter().any(|st| st == s(x, "state")))
         .filter(|x| cwd.as_ref().is_none_or(|c| s(x, "cwd") == c.as_str()))
         .filter(|x| f.all || x.get("archived") != Some(&json!(true)))
-        .take(f.limit.map_or(usize::MAX, |l| l as usize))
+        .take(limit.map_or(usize::MAX, |l| l as usize))
         .collect();
+    // the default cut said so, with how to see the rest
+    let more = if f.limit.is_none() && !f.all && limit.is_some_and(|l| rows.len() == l as usize) {
+        format!("\n… the newest {} shown: --limit N or --all for more", rows.len())
+    } else {
+        String::new()
+    };
     let lines: Vec<String> = rows
         .iter()
         .map(|x| {
@@ -224,7 +257,7 @@ pub async fn ls(c: &Client, f: &Flags) -> Result<()> {
             )
         })
         .collect();
-    out(f, &json!(rows), &if lines.is_empty() { "No sessions.".to_owned() } else { lines.join("\n") });
+    out(f, &json!(rows), &if lines.is_empty() { "No sessions.".to_owned() } else { format!("{}{more}", lines.join("\n")) });
     Ok(())
 }
 
@@ -292,6 +325,19 @@ mod tests {
         f.agent = Some("reviewer".into());
         f.worktree = Some(false);
         assert_eq!(launch_args(&f, "x", "/w"), json!({ "prompt": "x", "cwd": "/w", "agent": "reviewer", "worktree": false }));
+    }
+
+    /// perf audit 2026-11-19 #5: `wisp ls` shows the newest 50 (v1's default), `--limit n` that many, `--all` all.
+    #[test]
+    fn ls_shows_the_newest_fifty_unless_told() {
+        let mut f = Flags::defaults(None);
+        assert_eq!(ls_limit(&f), Some(LS_DEFAULT));
+        f.limit = Some(7);
+        assert_eq!(ls_limit(&f), Some(7));
+        f.all = true;
+        assert_eq!(ls_limit(&f), Some(7), "--all with --limit: that many, archived too");
+        f.limit = None;
+        assert_eq!(ls_limit(&f), None, "--all: every task");
     }
 
     /// orch #11: `wisp show` / `wisp wait` say what a waiting task asks, with its options and how to answer.

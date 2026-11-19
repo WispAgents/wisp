@@ -4,6 +4,7 @@
 import { expect, test, vi } from 'vitest';
 import { signal, type EntityKey, type PendingInfo, type PeerId, type PluginClient } from '@wisp/client';
 import { watchDone } from '../src/ask.ts';
+import { watchForDone } from '../src/watch.ts';
 
 const peer = 'home' as PeerId;
 const done = (mid: string, id: string): PendingInfo => ({ mid, peer, ops: [{ e: 'session', id: `home:${id}` as EntityKey, op: 'patch', ops: [{ op: 'replace', path: '/state', value: 'done' }] }] });
@@ -25,4 +26,25 @@ test('a_done_made_before_the_watcher_lands_is_asked_about_and_one_restored_at_st
   pending([]);
   await new Promise((r) => setTimeout(r, 0));
   expect(run.mock.calls.map((x) => (x as unknown[])[1])).toEqual([{ peer, sessionId: 'fresh', sizes: false }]);
+});
+
+// ADR-0105: the plugin's setup (index.ts: watch.ts) watches for a Done itself and loads what asks (ask.ts, its strings) only when one comes,
+// so the first screen never loads it; the same Done is asked about once, and one in flight at start never.
+test('setup_watches_for_a_done_and_asks_once_without_loading_the_asker_first', async () => {
+  const pending = signal<readonly PendingInfo[]>([done('m-restored', 'old')]);
+  const run = vi.fn(async () => ({ onDone: 'ask', folders: [] }));
+  const stops: (() => void)[] = [];
+  const c = {
+    entities: { pending: () => pending, peek: () => ({ state: 'done' }) },
+    run,
+    navigate: vi.fn(),
+    scope: { add: (f: () => void) => void stops.push(f), timeout: () => () => undefined },
+  } as unknown as PluginClient;
+  watchForDone(c);
+  pending([...pending(), done('m-new', 'fresh')]);
+  pending([...pending()]);
+  pending([]);
+  await vi.waitFor(() => expect(run).toHaveBeenCalled());
+  expect(run.mock.calls.map((x) => (x as unknown[])[1])).toEqual([{ peer, sessionId: 'fresh', sizes: false }]);
+  expect(stops).toHaveLength(1);
 });

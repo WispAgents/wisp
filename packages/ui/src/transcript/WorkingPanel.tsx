@@ -30,7 +30,8 @@ export function WorkingPanel(props: WorkingPanelProps): JSX.Element {
         <Orb live waiting={props.waiting ?? false} />
       </span>
       <div data-kit="working-body">
-        <div data-kit="working-status" data-part={sub(part(), 'status')}>
+        {/* a Wrap in a one-line box: what doesn't fit after the status drops out of sight whole (audit-B #9) */}
+        <div data-kit="working-status" data-layout="wrap" data-part={sub(part(), 'status')}>
           <b data-kit="working-title" data-text="control" title={props.status}>
             {props.status}
           </b>

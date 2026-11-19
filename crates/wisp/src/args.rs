@@ -10,7 +10,7 @@ pub const HELP: &str = "usage:
   wisp \"task\" -d                launch it and return with its id (the default outside a terminal; --wait blocks)
   wisp attach <id>              follow a task live: its steps, its answer, its questions; a reply box after
                                 (Ctrl-C detaches, a second Ctrl-C stops it)
-  wisp ls                       list sessions        (--state running,waiting,review,done|needs  --limit N  --all, -a: archived too
+  wisp ls                       list sessions        (the newest 50; --state running,waiting,review,done|needs  --limit N  --all, -a: all, archived too
                                 --watch: follow the list)
   wisp show <id>                state + latest presentation as markdown   (--watch: follow its turn live)
   wisp wait <id>                block until it finishes or asks you something
@@ -268,6 +268,27 @@ fn compare_list(v: &str) -> Vec<CompareRun> {
         .collect()
 }
 
+/// Generated verbs with an `on` field of their own (crew members' wakes: v1's trigger kinds `done`, `ci`…): after
+/// their words, `--on` is theirs, not the machine to run on.
+const VERBS_WITH_ON: [[&str; 2]; 2] = [["crew", "create"], ["crew", "update"]];
+
+fn verb_owns_on(words: &[String]) -> bool {
+    VERBS_WITH_ON.iter().any(|v| words.len() >= 2 && words[0] == v[0] && words[1] == v[1])
+}
+
+/// The runs a `--compare` launch makes: `--agent` (with `--model`) first, then each `--compare` run (v1 launch.js
+/// `[body, ...compare]`; audit B #14: `--agent claude --compare codex` launched only codex). Without `--agent` the
+/// list is the runs; one already in the list isn't made twice.
+pub fn compare_runs(f: &Flags) -> Vec<CompareRun> {
+    let list = f.compare.clone().unwrap_or_default();
+    let Some(agent) = f.agent.as_deref().filter(|a| !a.is_empty()) else { return list };
+    let lead = CompareRun { agent: agent.to_owned(), model: f.model.clone() };
+    if list.iter().any(|r| r.agent == lead.agent && (r.model == lead.model || lead.model.is_none())) {
+        return list;
+    }
+    std::iter::once(lead).chain(list).collect()
+}
+
 /// v1 session ids are 12 hex characters; v2 ones are UUIDs (with or without dashes).
 pub fn session_id(s: &str) -> bool {
     let hex = |s: &str| s.bytes().all(|b| b.is_ascii_hexdigit() && !b.is_ascii_uppercase());
@@ -304,8 +325,11 @@ fn fits(cmd: &str, w: &[String], home: &Path, cwd: &Path) -> bool {
         // verb; two or more other words are a prompt (`wisp plugin for prettier`)
         "plugin" | "plugins" | "mcp" | "skill" => n <= 2 || w1.starts_with('-') || crate::words::own_verb(cmd, w1),
         "add" => n == 1 || (n == 2 && addable(w1, home, cwd)),
-        // `wisp help`, `wisp help crew`, `wisp help crew create`: a task never starts with "help" and two words
-        "help" => n <= 4 && w.iter().skip(1).all(|x| x.bytes().all(|b| b.is_ascii_lowercase() || b == b'-' || b == b'_' || b == b'.')),
+        // `wisp help`, `wisp help crew create`, `wisp help runtime "queue order"` (the spelling its list prints): help
+        // never starts a task, whatever follows (audit B #15 launched one); a task saying it is `wisp -- help …`. Its own
+        // arm though the default is the same: a change to the default must not make help a prompt
+        #[allow(clippy::match_same_arms)]
+        "help" => true,
         "completions" => n == 2 && ["zsh", "bash", "fish"].contains(&w1),
         "sdk" => (n == 3 || n == 4) && w1 == "types" && ["ts", "py", "typescript", "python"].contains(&w.get(2).map_or("", String::as_str)),
         "recipes" | "serve" | "desktop" | "import" => n == 1,
@@ -426,6 +450,10 @@ pub fn parse(input: &[String], env_port: Option<&str>, home: &Path, cwd: &Path) 
             // `wisp ls -a` is --all (QA round 15 #6 said "-a needs a value"); `-a` is --agent everywhere else
             if a == "-a" && matches!(words.first().map(String::as_str), Some("ls" | "list")) {
                 flags.all = true;
+            } else if a == "--on" && verb_owns_on(&words) {
+                // `wisp crew create --on done`: the verb's own `--on` (its wakes), read from argv by the verb; the
+                // machine to run on goes first (`wisp --on laptop crew create …`) (audit B #9)
+                next()?;
             } else if !set(&mut flags, &a, &mut next, home, cwd)? {
                 words.push(a);
             }

@@ -4,6 +4,7 @@
 // Widths are measured by one ResizeObserver from a hidden copy of every item in both forms, so the
 // plan needs no layout reads after a write. Left/Right/Home/End move focus, as in any toolbar.
 import { reorderable, type OnReorder } from '../core/reorder.ts';
+import { markObserverPass, observeSoon } from '../core/observer-scope.ts';
 import { createMemo, createSignal, For, onCleanup, onMount, Show, type JSX } from 'solid-js';
 import { Key } from '@zag-js/solid';
 import type { Space } from '@wisp/tokens';
@@ -96,21 +97,27 @@ function useMeasure(onChange: (sizes: ReadonlyMap<string, number>) => void): (el
   const sizes = new Map<string, number>();
   if (typeof ResizeObserver === 'undefined') return () => {};
   let bar: HTMLElement | undefined;
+  // the bar's border-box width as the observer last reported it
+  let seen: number | undefined;
   let gone = false;
   const ro = new ResizeObserver((entries) => {
+    markObserverPass();
     for (const entry of entries) {
       const key = (entry.target as HTMLElement).dataset['measure'] ?? '';
       const box = entry.borderBoxSize[0];
       sizes.set(key, key === 'bar' ? entry.contentRect.width : (box?.inlineSize ?? entry.contentRect.width));
+      if (key === 'bar') seen = box?.inlineSize ?? entry.contentRect.width;
     }
-    const wide = bar?.clientWidth;
     onChange(sizes);
-    // a bar as wide as its items (an app bar's actions) changes width with the fold just made: in this same pass the
-    // browser skips that change (Chrome's "ResizeObserver loop completed with undelivered notifications", QA round 2
-    // #15). The fold has landed; the bar steps out of the observer and is measured again on the next frame.
+    // a bar as wide as its items (an app bar's actions) changes width with the fold just made, or with what ran before
+    // it in this pass (another observer's re-plan): the browser skips that change in this same pass (Chrome's and
+    // WebKit's "ResizeObserver loop completed with undelivered notifications", QA round 2 #15, audit B #4). Compared
+    // with what the observer reported, not with the width when this callback began, which may already be the new one.
+    // The fold has landed; the bar steps out of the observer and is measured again on the next frame.
     const el = bar;
-    if (!el || wide === undefined || el.clientWidth === wide) return;
+    if (!el || seen === undefined || Math.abs(el.offsetWidth - seen) < 1) return;
     ro.unobserve(el);
+    seen = undefined;
     requestAnimationFrame(() => {
       if (!gone && el.isConnected) ro.observe(el);
     });
@@ -121,7 +128,8 @@ function useMeasure(onChange: (sizes: ReadonlyMap<string, number>) => void): (el
   });
   return (el) => {
     if (el.dataset['measure'] === 'bar') bar = el;
-    ro.observe(el);
+    // a bar mounted while another observer's pass runs is measured from the next frame (core/observer-scope.ts)
+    observeSoon(() => ro.observe(el), () => !gone && el.isConnected);
   };
 }
 

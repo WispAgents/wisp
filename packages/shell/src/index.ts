@@ -33,3 +33,5 @@ export { AUTO_SETTING, autoEnabled, autoOn } from './frame/launch-pick.ts';
 export { titleParts } from './setting-title.ts';
 export { partStylesCss, partOk, propertyOk, valueProblem, type PluginStyles } from './theme-styles/part-styles.ts';
 export { mountPluginStyles, pluginStyles, STYLE_ID as PLUGIN_STYLE_ID } from './theme-styles/mount.ts';
+// Home's chunk (ADR-0105: lazy, the desktop's frame waits for it): a host or a test that starts the app loads it first
+export { loadHome } from './frame/Panes.tsx';

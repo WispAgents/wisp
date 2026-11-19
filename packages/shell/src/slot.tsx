@@ -77,11 +77,31 @@ export function useExtensions(input: string): () => readonly ResolvedExtension[]
   return useSignal(useShell().extensions(input));
 }
 
+/** The same extension, drawn the same way: its code, its plugin and its config. Its `order` is left out: a plugin's later
+ *  part (registry.extend) renumbers every later plugin's default order, and a new object for an unchanged extension
+ *  remounted what it drew (the task list rebuilt twice after load, and WebKit's "ResizeObserver loop" on every page:
+ *  audit B #4). */
+export function sameExtension(a: ResolvedExtension | undefined, b: ResolvedExtension | undefined): boolean {
+  if (a === b) return true;
+  if (!a || !b) return false;
+  return a.id === b.id && a.def === b.def && a.plugin === b.plugin && JSON.stringify(a.config) === JSON.stringify(b.config);
+}
+
 /** Every extension on one input, in order, each isolated by an error boundary. */
 export function Slot(props: { readonly input: `${string}.${string}`; readonly layout?: 'inline' | 'wrap' | 'stack' | 'contents' } & Scoped): JSX.Element {
   const list = useExtensions(props.input);
   const shell = useShell();
-  const outputs = createMemo(() => list().map((ext) => ({ id: ext.id, render: () => <ExtView ext={ext} {...props} /> })));
+  // one output per extension for as long as it's the same one (sameExtension), so the slot's keyed rows keep their DOM
+  let drawn = new Map<string, { readonly ext: ResolvedExtension; readonly out: { readonly id: string; readonly render: () => JSX.Element } }>();
+  const outputs = createMemo(() => {
+    const next = new Map<string, { readonly ext: ResolvedExtension; readonly out: { readonly id: string; readonly render: () => JSX.Element } }>();
+    for (const ext of list()) {
+      const was = drawn.get(ext.id);
+      next.set(ext.id, was && sameExtension(was.ext, ext) ? was : { ext, out: { id: ext.id, render: () => <ExtView ext={ext} {...props} /> } });
+    }
+    drawn = next;
+    return [...next.values()].map((d) => d.out);
+  });
   return (
     <ExtensionSlot
       input={props.input}
@@ -97,7 +117,8 @@ export function Slot(props: { readonly input: `${string}.${string}`; readonly la
  *  QA round 1 #12: the task list was empty for ~0.2–1 s after Home already showed its rows). */
 export function Area(props: { readonly input: string; readonly fallback: JSX.Element; readonly loading?: JSX.Element } & Scoped): JSX.Element {
   const list = useExtensions(props.input);
-  const last = createMemo(() => list().at(-1));
+  // the same extension stays mounted when the registry hands out a new object for it (sameExtension)
+  const last = createMemo(() => list().at(-1), undefined, { equals: sameExtension });
   return (
     <Show when={last()} keyed fallback={props.fallback}>
       {(ext) => {

@@ -278,7 +278,8 @@ fn an_unknown_verb_under_a_command_group_is_an_error_naming_its_verbs_and_never_
         &["review", "the", "auth", "module"],
         &["update", "the", "readme"],
         &["git", "rebase", "onto", "main"],
-        &["learn", "rust"],
+        // (`learn rust`, one word under a plugin, is a slip since B1: the test below)
+        &["learn", "rust", "properly"],
     ] {
         let x = p(args);
         assert!(unknown_verb(&x.words, x.literal, &cat).is_none(), "{args:?}");
@@ -500,18 +501,31 @@ fn one_stray_word_after_a_prompt_word_is_a_slip_and_fork_points_to_runtime_fork(
     }
 }
 
-/// Setup audit F30: `wisp budget stop-at` launched a Full-auto task (from a script, with no terminal, as in one). A
-/// plugin's name and one word shaped like a verb (kebab or camel case, or a letter or two off one of its verbs) is a
-/// slip; a plain word stays a prompt (`wisp learn rust`, round 10).
+/// Setup audit F30 and B1: `wisp budget stop-at`, then `wisp budget frobnicate`, launched a Full-auto task (from a
+/// script, with no terminal, as in one). A plugin's name and one word that's none of its verbs is a slip, whatever the
+/// word looks like, as under a built-in group (`group_line`): a slip never launches. Two or more words are a prompt.
 #[test]
-fn a_plugin_name_and_one_verb_shaped_word_is_a_slip() {
+fn a_plugin_name_and_any_one_other_word_is_a_slip() {
     let cat: Vec<Vec<String>> = [&["budget", "view"][..], &["budget", "set-stop"], &["learn", "view"], &["learn", "run"]].map(w).to_vec();
-    for args in [&["budget", "stop-at"][..], &["budget", "setStop"], &["budget", "veiw"], &["learn", "viewed"]] {
+    for args in [
+        &["budget", "stop-at"][..],
+        &["budget", "setStop"],
+        &["budget", "veiw"],
+        &["learn", "viewed"],
+        &["budget", "frobnicate"],
+        &["learn", "rust"],
+        &["budget", "frobnicate", "--json"],
+    ] {
         let u = unknown_verb(&p(args).words, Literal::No, &cat).unwrap_or_else(|| panic!("{args:?}"));
         assert!(u.verbs.contains(&"set-stop".to_owned()) || u.verbs.contains(&"view".to_owned()), "{u:?}");
     }
-    // `rust` is two edits from `run`: on a short verb that's a word, not a typo
-    for args in [&["learn", "rust"][..], &["budget", "dashboard", "for", "the", "team"], &["budget", "view"]] {
+    for args in [&["learn", "rust", "properly"][..], &["budget", "dashboard", "for", "the", "team"], &["budget", "view"]] {
         assert!(unknown_verb(&p(args).words, Literal::No, &cat).is_none(), "{args:?}");
     }
+    // `--` or one quoted argument: the words are a task
+    assert!(unknown_verb(&p(&["--", "learn", "rust"]).words, p(&["--", "learn", "rust"]).literal, &cat).is_none());
+    // one quoted argument after a plugin's name is the task too (`wisp learn "rust properly"`)
+    assert!(unknown_verb(&p(&["learn", "rust properly"]).words, p(&["learn", "rust properly"]).literal, &cat).is_none());
+    // a word that's no plugin's name: a prompt, as ever
+    assert!(unknown_verb(&p(&["refactor", "it"]).words, Literal::No, &cat).is_none());
 }

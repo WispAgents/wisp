@@ -235,7 +235,12 @@
     font: inherit;
   }
   :root[data-platform='ios'] [data-kit='app-bar-title-button'] > [data-kit='icon'] { flex: none; color: var(--primary); transform: rotate(90deg); }
-  :root[data-platform='ios'] [data-kit='app-bar-title-button'] > [data-text='control'] { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+  :root[data-platform='ios'] [data-kit='app-bar-title-button'] > [data-text='control'] { min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+  /* audit-B #8: a root bar's folded title (Tasks' "All projects ▾") beside its actions (search, ⋯, new): the actions keep
+     their width, so the title gives way, ending in its ellipsis and keeping ▾ a gap before the search button */
+  :root[data-platform='ios'] [data-kit='app-bar'][data-large][data-collapsed] [data-kit='app-bar-row'] {
+    grid-template-columns: minmax(0, 1fr) minmax(0, max-content) minmax(max-content, 1fr);
+  }
 
   /* the project selector in the Tasks bar (owner, 2026-11-15): a pull-down button, tinted text and its chevron, no box */
   :root[data-platform='ios'] [data-kit='p-select'][data-where='bar'] {

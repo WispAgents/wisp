@@ -498,19 +498,16 @@ impl UnknownVerb {
     }
 }
 
-/// Setup audit F30: a plugin's name and one word shaped like a verb (kebab or camel case, or a letter or two off one
-/// of its verbs: `wisp budget stop-at`) is a slip, never a task; a plain word stays a prompt (`wisp learn rust`).
+/// Setup audit F30 and B1: a plugin's name and one word that's none of its verbs is a slip, never a task, whatever the
+/// word looks like (`wisp budget stop-at`, `wisp budget frobnicate`, `wisp learn rust`): the rule [`group_line`] holds
+/// for the built-in groups, so a slip under any group never launches a Full-auto task. Two or more words are a prompt
+/// (`wisp learn rust properly`); `wisp -- …` or one quoted argument is always the task.
 fn plugin_slip(first: &str, rest: &[String], catalogue: &[Vec<String>]) -> bool {
     let verbs: Vec<&str> = catalogue.iter().filter(|c| c.len() > 1 && c[0] == first).map(|c| c[1].as_str()).collect();
     let said: Vec<&String> = rest.iter().filter(|w| !flag_shaped(w)).collect();
     let [word] = said.as_slice() else { return false };
-    if verbs.is_empty() || verbs.contains(&word.as_str()) {
-        return false;
-    }
-    let lower = word.to_lowercase();
-    // two edits only on a long verb: `rust` is a word, not `run` mistyped
-    let near = |v: &&str| distance(&lower, v) <= if v.len() <= 3 { 1 } else { 2 };
-    word.contains('-') || word.chars().skip(1).any(char::is_uppercase) || verbs.iter().any(near)
+    // one quoted argument (`wisp ship "the docs"`) is the task, as after every command word
+    !verbs.is_empty() && !verbs.contains(&word.as_str()) && !word.contains(char::is_whitespace)
 }
 
 /// QA round 10 #1: the words start with a built-in command group (a [`VERB_PATHS`] or [`GROUPS`] word; `catalogue`,

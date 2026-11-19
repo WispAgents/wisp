@@ -4,23 +4,49 @@
 // by what they show, so opening another task builds its screen afresh (its scopes, its
 // subscriptions) and the old one's end with it.
 
-import { Match, Show, Switch, createMemo, lazy, untrack, type JSX } from 'solid-js';
+import { Match, Show, Switch, createMemo, createSignal, getOwner, lazy, runWithOwner, untrack, type JSX } from 'solid-js';
 import { Dynamic } from 'solid-js/web';
 import type { EntityKey, Nav } from '@wisp/client';
-import { EmptyState, Stack, useSignal } from '@wisp/ui';
+import { EmptyState, Skeleton, Stack, useSignal } from '@wisp/ui';
 import { useShell } from '../context.tsx';
-import type { ExtensionProps } from '../contract.ts';
-import { Area, Slot, useViewClient } from '../slot.tsx';
+import type { ExtensionProps, ResolvedExtension } from '../contract.ts';
+import { Area, Slot, useExtensions, useViewClient } from '../slot.tsx';
+import { componentIds, sideKey, type DrawnBy } from './side-key.ts';
 import { SESSION, type SessionRow } from '../rows.ts';
 import { FallbackList } from './FallbackList.tsx';
 import { backOf } from './rows-view.ts';
 import { PeerBanner } from './PeerBanner.tsx';
-import { HomeView } from './HomeView.tsx';
 import { stackView } from './stack-page.ts';
 import { PaneBoundary } from './PaneBoundary.tsx';
 
 /** lazy: the task page's own code; App warms it while the list sits idle (warm-task.ts) */
 export const TaskView = lazy(() => import('./TaskView.tsx'));
+/** Home (the prompt box, Needs you, the panes): its own chunk (ADR-0105), so a phone's first screen (the list) never
+ *  loads it; the desktop asks for it as the app starts (App.tsx), so it comes in alongside the entry. */
+const home: { m?: typeof import('./HomeView.tsx'); loading?: Promise<typeof import('./HomeView.tsx')> | undefined } = {};
+export const loadHome = (): Promise<typeof import('./HomeView.tsx')> =>
+  (home.loading ??= import('./HomeView.tsx').then(
+    (m) => (home.m = m),
+    (err: unknown) => {
+      home.loading = undefined;
+      throw err;
+    },
+  ));
+
+/** whether Home's chunk is in (the frame then draws at once) */
+export const homeLoaded = (): boolean => home.m !== undefined;
+
+/** Home once its chunk is in (the desktop's frame waits for it: App.tsx), its skeleton until then (a phone's New task
+ *  pressed before the chunk landed) */
+function HomeView(props: { readonly onBack?: () => void }): JSX.Element {
+  const [m, setM] = createSignal(home.m);
+  if (!m()) void loadHome().then(setM, () => undefined);
+  return (
+    <Show when={m()} keyed fallback={<Stack gap="3" part="shell.home.loading"><Skeleton shape="block" height="bar" /><Skeleton shape="line" width="2/3" /></Stack>}>
+      {(mod) => <mod.HomeView {...props} />}
+    </Show>
+  );
+}
 
 type SessionProp = NonNullable<ExtensionProps['session']>;
 
@@ -112,10 +138,17 @@ export function SidePane(): JSX.Element {
   const shell = useShell();
   const nav = useSignal(shell.nav);
   const side = createMemo(() => nav().side);
-  const key = createMemo(() => {
-    const s = side();
-    return s.kind === 'none' ? '' : `${s.kind}:${s.id}`;
-  });
+  // one panel for a task's tabs drawn by the same code: a tab switch swaps its body, not the whole panel (side-key.ts)
+  const owner = getOwner();
+  const areas = new Map<string, () => readonly ResolvedExtension[]>();
+  const drawnBy = (kind: string): DrawnBy | undefined => {
+    let list = areas.get(kind);
+    if (!list) areas.set(kind, (list = runWithOwner(owner, () => useExtensions(`shell.side:${kind}`)) ?? (() => [])));
+    const ext = list().at(-1);
+    return ext && { plugin: ext.plugin, component: ext.def.component as object, config: ext.config };
+  };
+  const idOf = componentIds();
+  const key = createMemo(() => sideKey(side(), drawnBy, idOf));
   return (
     <Show when={key()} keyed>
       {(_k) => {

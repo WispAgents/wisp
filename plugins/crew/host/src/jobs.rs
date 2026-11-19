@@ -122,6 +122,12 @@ async fn start(ctx: &Ctx, call: &Call, st: &State, m: &Member, w: &WaitingJob, c
     if let Some(l) = outside_lineage(w.origin.as_ref()) {
         args["lineage"] = l;
     }
+    // here, in its project: a worktree of its own, as every launch was in v1 (jobs and check-ins side by side edited
+    // your checkout and each other: audit B #7); a sandbox's or another machine's folder is theirs
+    if place.is_none() && !m.cwd.is_empty() {
+        let set = ctx.setting(wisp_runtime_api::commands::WORKTREE_SETTING);
+        args["worktree"] = json!(wisp_runtime_api::commands::worktree_by_default(set.as_ref(), mode == "plan"));
+    }
     // the job's delegates (v1 crew.js): the member's own (Org chart links, "Make Bob Ada's delegate") and the
     // members tagged in what it was asked; the runtime makes them the lead's roster (orch #2)
     // a linked row names only the member (`{ crew }`): the lead hears who it is, as v1's roster said (its name, role,

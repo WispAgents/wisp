@@ -19,3 +19,12 @@ test('a_pr_ship_it_opened_says_what_follows_as_its_own_sentence', () => {
   expect(q).toBe('Squash-merge PR #806? Then wisp fast-forwards your local base branch and removes the worktree.');
   expect(q).not.toMatch(/\?\./);
 });
+
+// Audit B #19: the confirm said it "removes the worktree" when the merge would keep it (uncommitted work), and only the
+// toast after told the truth.
+test('a_worktree_with_uncommitted_work_is_said_to_stay_before_the_merge', () => {
+  const s: ShipSession = { id: 's1', agent: 'claude', project: 'o/r', pr, toShip: { dirty: 1, ahead: 0, unpushed: 0 } };
+  expect(mergePlan(t, s, ctx)?.question).toBe('Squash-merge PR #806? Then wisp fast-forwards your local base branch, and keeps the worktree: it has 1 uncommitted change.');
+  const clean: ShipSession = { ...s, toShip: { dirty: 0, ahead: 0, unpushed: 0 } };
+  expect(mergePlan(t, clean, ctx)?.question).toContain('and removes the worktree.');
+});

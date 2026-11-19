@@ -22,8 +22,36 @@ fn git(root: &Path, args: &[&str]) -> Option<String> {
     o.status.success().then(|| String::from_utf8_lossy(&o.stdout).into_owned())
 }
 
-/// The repo `cwd` is in (its top), or `cwd`.
+/// `git args` with `input` on its stdin.
+fn git_in(root: &Path, args: &[&str], input: &str) -> Option<String> {
+    use std::process::{Command, Stdio};
+    let mut child = Command::new("git")
+        .args(args)
+        .current_dir(root)
+        .env("GIT_OPTIONAL_LOCKS", "0")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .spawn()
+        .ok()?;
+    let mut stdin = child.stdin.take()?;
+    let text = input.to_owned();
+    // written from its own thread: a long list would fill the pipe while git fills stdout
+    let feed = std::thread::spawn(move || stdin.write_all(text.as_bytes()));
+    let o = child.wait_with_output().ok()?;
+    let _ = feed.join();
+    o.status.success().then(|| String::from_utf8_lossy(&o.stdout).into_owned())
+}
+
+/// The repo `cwd` is in (its top), or `cwd`. Unix: the nearest folder up with a `.git` (a folder, or a worktree's
+/// file), resolved as git resolves it, with no git spawned (perf audit 2026-11-19 #6: ~20 ms of every `wisp blame`,
+/// `log` and `tasks` call). Windows asks git, whose spelling of the path the rest expects.
 pub fn root(cwd: &Path) -> PathBuf {
+    #[cfg(unix)]
+    if let Some(top) = cwd.ancestors().find(|d| d.join(".git").exists()) {
+        // canonicalize: Unix only (no verbatim prefix there), so the path is spelled as git's toplevel spells it
+        return std::fs::canonicalize(top).unwrap_or_else(|_| top.to_owned());
+    }
     git(cwd, &["rev-parse", "--show-toplevel"]).map_or_else(|| cwd.to_owned(), |r| PathBuf::from(r.trim()))
 }
 
@@ -59,23 +87,43 @@ impl Tracked {
 
 /// Every task file in the repo's `.wisp/tasks`, newest first.
 pub fn tracked(root: &Path) -> Vec<Tracked> {
-    let mut out = Vec::new();
+    tracked_where(root, None)
+}
+
+/// [`tracked`], only the files whose text holds `needle` parsed (a path they touched: a file that doesn't name it
+/// can't list it). The files are read and parsed on every core (perf audit 2026-11-19 #6: ~75 µs a file, one by one,
+/// was 183 ms for `wisp tasks --touching` at 2,000 tasks).
+fn tracked_where(root: &Path, needle: Option<&str>) -> Vec<Tracked> {
+    let mut files = Vec::new();
     let mut stack = vec![root.join(".wisp/tasks")];
     while let Some(d) = stack.pop() {
         for e in std::fs::read_dir(&d).into_iter().flatten().flatten() {
             let p = e.path();
             if p.is_dir() {
                 stack.push(p);
-            } else if p.to_string_lossy().ends_with(".task.yml")
-                && let Ok(text) = std::fs::read_to_string(&p)
-                && let Some(doc) = wisp_resources_core::formula::documents(&text, wisp_resources_core::formula::Format::Yaml)
-                    .ok()
-                    .and_then(|d| d.into_iter().next())
-            {
-                out.push(Tracked { path: p.strip_prefix(root).map_or_else(|_| p.display().to_string(), |r| r.display().to_string()), doc });
+            } else if p.to_string_lossy().ends_with(".task.yml") {
+                files.push(p);
             }
         }
     }
+    let one = |p: &PathBuf| -> Option<Tracked> {
+        let text = std::fs::read_to_string(p).ok()?;
+        if needle.is_some_and(|n| !text.contains(n)) {
+            return None;
+        }
+        let doc = wisp_resources_core::formula::documents(&text, wisp_resources_core::formula::Format::Yaml).ok()?.into_iter().next()?;
+        Some(Tracked { path: p.strip_prefix(root).map_or_else(|_| p.display().to_string(), |r| r.display().to_string()), doc })
+    };
+    let cores = std::thread::available_parallelism().map_or(1, std::num::NonZero::get).min(8);
+    let mut out: Vec<Tracked> = if files.len() < 64 || cores == 1 {
+        files.iter().filter_map(one).collect()
+    } else {
+        let per = files.len().div_ceil(cores);
+        std::thread::scope(|sc| {
+            let parts: Vec<_> = files.chunks(per).map(|c| sc.spawn(move || c.iter().filter_map(one).collect::<Vec<_>>())).collect();
+            parts.into_iter().flat_map(|h| h.join().unwrap_or_default()).collect()
+        })
+    };
     out.sort_by_key(|t| std::cmp::Reverse(t.doc.get("createdAt").and_then(Value::as_i64).unwrap_or(0)));
     out
 }
@@ -202,17 +250,67 @@ fn blame_lines(root: &Path, file: &str, range: Option<(u32, u32)>) -> Vec<(Strin
     per.into_iter().collect()
 }
 
-/// The tasks a commit is for: its trailers, else the task files that list it (a backfilled task).
-fn tasks_of_commit(root: &Path, sha: &str) -> Vec<String> {
-    let ids = repo::trailers(&git(root, &["show", "-s", "--format=%B", sha]).unwrap_or_default());
-    if !ids.is_empty() {
-        return ids;
-    }
-    tracked(root)
-        .into_iter()
-        .filter(|t| t.doc.get("commits").and_then(Value::as_array).is_some_and(|c| c.iter().any(|x| x.as_str() == Some(sha))))
-        .map(|t| t.id().to_owned())
+/// Which tasks each commit is for (perf audit 2026-11-19 #2: one `git show` per commit and every task file parsed
+/// again per commit took 1.2 s for a file, 2.7 s for a folder): every commit's message from one `git log`, and the
+/// task files that list a commit (a backfilled task) indexed once from what `blame` already read.
+struct Commits {
+    bodies: std::collections::HashMap<String, String>,
+    listed: std::collections::HashMap<String, Vec<String>>,
+}
+
+/// `%H NUL %B RS` records, as `git log --format=%H%x00%B%x1e` writes them.
+fn parse_bodies(text: &str) -> std::collections::HashMap<String, String> {
+    text.split('\u{1e}')
+        .filter_map(|r| r.trim_start_matches('\n').split_once('\0'))
+        .map(|(sha, body)| (sha.trim().to_owned(), body.to_owned()))
+        .filter(|(sha, _)| !sha.is_empty())
         .collect()
+}
+
+impl Commits {
+    fn index(all: &[Tracked]) -> std::collections::HashMap<String, Vec<String>> {
+        let mut listed: std::collections::HashMap<String, Vec<String>> = std::collections::HashMap::new();
+        for t in all {
+            for c in t.doc.get("commits").and_then(Value::as_array).into_iter().flatten().filter_map(Value::as_str) {
+                let ids = listed.entry(c.to_owned()).or_default();
+                if !ids.iter().any(|x| x == t.id()) {
+                    ids.push(t.id().to_owned());
+                }
+            }
+        }
+        listed
+    }
+
+    /// The messages of `shas`, from one `git log --no-walk` fed the list on its stdin.
+    fn of(root: &Path, all: &[Tracked], shas: &[String]) -> Self {
+        let mut want: Vec<&str> = shas.iter().map(String::as_str).collect();
+        want.sort_unstable();
+        want.dedup();
+        let bodies = if want.is_empty() {
+            std::collections::HashMap::new()
+        } else {
+            let list = want.join("\n") + "\n";
+            parse_bodies(&git_in(root, &["log", "--no-walk=unsorted", "--stdin", "--format=%H%x00%B%x1e"], &list).unwrap_or_default())
+        };
+        Self { bodies, listed: Self::index(all) }
+    }
+
+    /// The messages of every commit that touched `path`, newest first, from one `git log` (a folder's blame).
+    fn touching(root: &Path, all: &[Tracked], path: &str) -> (Vec<String>, Self) {
+        let text = git(root, &["log", "--format=%H%x00%B%x1e", "--", path]).unwrap_or_default();
+        let order: Vec<String> =
+            text.split('\u{1e}').filter_map(|r| r.trim_start_matches('\n').split_once('\0')).map(|(s, _)| s.trim().to_owned()).collect();
+        (order, Self { bodies: parse_bodies(&text), listed: Self::index(all) })
+    }
+
+    /// The tasks a commit is for: its trailers, else the task files that list it (a backfilled task).
+    fn tasks(&self, sha: &str) -> Vec<String> {
+        let ids = repo::trailers(self.bodies.get(sha).map_or("", String::as_str));
+        if !ids.is_empty() {
+            return ids;
+        }
+        self.listed.get(sha).cloned().unwrap_or_default()
+    }
 }
 
 /// The answer to `wisp blame <target>`: tasks (with lines or commits) and what no task wrote.
@@ -254,9 +352,10 @@ pub fn blame(root: &Path, target: &str) -> Value {
     if full.is_file() {
         let lines = blame_lines(root, &path, range);
         let total: u32 = lines.iter().map(|(_, n)| n).sum();
+        let commits = Commits::of(root, &all, &lines.iter().map(|(sha, _)| sha.clone()).collect::<Vec<_>>());
         let mut by: BTreeMap<String, u32> = BTreeMap::new();
         for (sha, n) in &lines {
-            let ids = tasks_of_commit(root, sha);
+            let ids = commits.tasks(sha);
             *by.entry(ids.first().cloned().unwrap_or_default()).or_default() += n;
         }
         let hand = by.remove("").unwrap_or(0);
@@ -265,10 +364,10 @@ pub fn blame(root: &Path, target: &str) -> Value {
         return json!({ "target": target, "kind": if range.is_some() { "lines" } else { "file" }, "lines": total, "byHand": hand, "tasks": tasks.iter().map(|(id, n)| card(id, json!({ "lines": n, "share": if total > 0 { f64::from(*n) / f64::from(total) } else { 0.0 } }))).collect::<Vec<_>>() });
     }
     if full.is_dir() {
-        let log = git(root, &["log", "--format=%H", "--", &path]).unwrap_or_default();
+        let (log, commits) = Commits::touching(root, &all, &path);
         let mut seen: Vec<String> = Vec::new();
-        for sha in log.lines() {
-            for id in tasks_of_commit(root, sha) {
+        for sha in &log {
+            for id in commits.tasks(sha) {
                 if !seen.contains(&id) {
                     seen.push(id);
                 }
@@ -288,10 +387,11 @@ pub fn blame(root: &Path, target: &str) -> Value {
         git(root, &["rev-parse", "--verify", &format!("{target}^{{commit}}")])
     };
     let shas: Vec<String> = list.unwrap_or_default().lines().map(str::to_owned).collect();
+    let commits = Commits::of(root, &all, &shas);
     let mut tasks: Vec<Value> = Vec::new();
     let mut hand = 0;
     for sha in &shas {
-        let ids = tasks_of_commit(root, sha);
+        let ids = commits.tasks(sha);
         if ids.is_empty() {
             hand += 1;
         }
@@ -343,7 +443,7 @@ pub fn blame_cmd(o: &Opts, cwd: &Path) -> Result<i32> {
 
 /// The tracked tasks, filtered: a path they touched, an agent, words, `--since`.
 pub fn filtered(root: &Path, path: Option<&str>, agent: Option<&str>, grep: Option<&str>) -> Vec<Tracked> {
-    tracked(root)
+    tracked_where(root, path.map(|p| p.trim_end_matches('/')).filter(|p| !p.is_empty()))
         .into_iter()
         .filter(|t| path.is_none_or(|p| t.files().iter().any(|f| f.starts_with(p.trim_end_matches('/')))))
         .filter(|t| agent.is_none_or(|a| s(&t.doc["spec"], "agent") == a))
@@ -895,3 +995,7 @@ pub async fn open_task(c: &Client, argv: &[String], o: &Opts, cwd: &Path) -> Res
     }
     Ok(status.code().unwrap_or(0))
 }
+
+#[cfg(test)]
+#[path = "repo_cli_tests.rs"]
+mod tests;

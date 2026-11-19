@@ -87,8 +87,17 @@ describe('Toolbar collapses as measured', () => {
   });
 
   /** Report widths for every observed element: the bar's width, 100 per label form, 32 per icon. */
+  // the bar's laid-out width (`offsetWidth`, its border box, which the toolbar compares with what its observer reported):
+  // what the last `resize` reported, unless a test says how a fold changes it
+  let laid = 0;
   const resize = (bar: number): void => {
+    laid = bar;
     for (const o of observers) {
+      for (const el of o.els) {
+        if ((el as HTMLElement).dataset['measure'] === 'bar' && !Object.getOwnPropertyDescriptor(el, 'offsetWidth')) {
+          Object.defineProperty(el, 'offsetWidth', { configurable: true, get: () => laid });
+        }
+      }
       const entries = o.els.map((el) => {
         const key = (el as HTMLElement).dataset['measure'] ?? '';
         const width = key === 'bar' ? bar : key.endsWith(':full') ? 100 : 32;
@@ -115,7 +124,8 @@ describe('Toolbar collapses as measured', () => {
     await tick();
     const bar = document.querySelector<HTMLElement>('[data-kit="toolbar"]');
     if (!bar) throw new Error('no bar');
-    Object.defineProperty(bar, 'clientWidth', { configurable: true, get: () => (form('mode') === 'full' ? 241 : 235) });
+    // folding the mode button makes the bar (as wide as its items) 6 px narrower than the width just reported
+    Object.defineProperty(bar, 'offsetWidth', { configurable: true, get: () => laid - (form('mode') === 'full' ? 0 : 6) });
     resize(400);
     expect(form('mode')).toBe('full');
     expect(watching('bar'), 'no width change, still watched').toBe(true);

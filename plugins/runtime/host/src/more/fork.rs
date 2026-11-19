@@ -113,7 +113,7 @@ impl Runtime {
         a: &wisp_runtime_api::spec::AdoptArgs,
     ) -> Result<Option<wisp_runtime_api::commands::Created>> {
         // adopted from it before, or wisp's own task that ran as it (`wisp open` comes back to it)
-        let found = self.repo.sessions().await?.into_iter().find(|s| {
+        let found = self.repo.sessions_naming(session).await?.into_iter().find(|s| {
             s.ext.get("wisp.adopted").and_then(|v| v.get("session")).and_then(Value::as_str) == Some(session)
                 || s.resume_id.as_deref() == Some(session)
         });

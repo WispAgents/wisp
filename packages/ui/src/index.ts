@@ -5,6 +5,7 @@ export { KitProvider, KIT_STRINGS, englishT, type KitString, type Translate } fr
 export { useDerived, useSignal, type Readable, type Subscribable } from './core/signal.ts';
 export { reorderable, reordered, type OnReorder, type ReorderAttrs } from './core/reorder.ts';
 export { ForKeyed } from './core/keyed.tsx';
+export { afterNextPaint, useAfterPaint, useProgressive } from './core/paint.ts';
 export * from './layout/index.ts';
 export * from './content/index.ts';
 export * from './content/rich.ts';

@@ -2,7 +2,7 @@
 // Two kinds were named wrong (the client keeps machines as `machines_peer`, My Stuff as `stuff.item`), and the build
 // was shown even when it's the version.
 import { expect, test } from 'vitest';
-import { STORE_KINDS, peerLine, rowsLine } from '../src/devtools/summary.ts';
+import { STORE_KINDS, peerLine, peerTitle, rowsLine } from '../src/devtools/summary.ts';
 
 test('diagnostics_counts_the_kinds_the_client_keeps_and_says_the_version_once', () => {
   expect(STORE_KINDS).toContain('machines_peer');
@@ -21,4 +21,15 @@ test('per_task_rows_say_they_load_with_an_open_task_instead_of_zero', () => {
   expect(rowsLine('event', 0, t)).toBe('shell.diag.perTask');
   expect(rowsLine('turn', 12, t)).toBe('shell.diag.rows:{"count":12}');
   expect(rowsLine('session', 0, t)).toBe('shell.diag.rows:{"count":0}');
+});
+
+// Setup audit B9: signed in with the cloud computer awake, Computers listed "this computer" twice: every wisp calls
+// itself that, and the second is the cloud computer. Another computer is named as this wisp knows it (its machine row).
+test('another_computer_is_named_by_its_machine_row_never_this_computer_setup_audit_b9', () => {
+  const machines = [{ id: 'local:qa-alice', body: { name: 'qa-alice (cloud)' } }, { id: 'local:studio', body: {} }];
+  expect(peerTitle('local', 'local', 'this computer', machines)).toBe('this computer');
+  expect(peerTitle('qa-alice', 'local', 'this computer', machines)).toBe('qa-alice (cloud)');
+  expect(peerTitle('studio', 'local', 'this computer', machines)).toBe('studio');
+  expect(peerTitle('laptop', 'local', 'Ada’s laptop', [])).toBe('Ada’s laptop');
+  expect(peerTitle('laptop', 'local', 'this computer', [])).toBe('laptop');
 });

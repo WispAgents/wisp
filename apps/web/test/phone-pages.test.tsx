@@ -285,7 +285,8 @@ test('new_task_in_a_phones_browser_keeps_v1s_back_and_greeting_and_no_compose_ba
   expect(root.querySelector('[data-part="split.home"] [data-part="split.back"]'), 'v1’s Back').not.toBeNull();
   expect(root.querySelector('[data-part="phone.new.bar"]')).toBeNull();
   // r291: the browser keeps v1's whole Home under the box (the greeting, the tips; Needs you only when a task needs
-  // you, as v1: QA r2 #2 hid an empty "Needs you 0")
+  // you, as v1: QA r2 #2 hid an empty "Needs you 0"). What's under the box comes the frame after the box (perf r2 #7)
+  await until(() => root.querySelector('[data-part="split.home"] [data-part~="tips"]') !== null);
   for (const part of ['split.greeting', 'tips']) expect(root.querySelector(`[data-part="split.home"] [data-part~="${part}"]`), part).not.toBeNull();
 });
 

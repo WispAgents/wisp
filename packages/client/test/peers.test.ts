@@ -4,7 +4,7 @@ import type { Notice, Topic } from '@wisp/protocol';
 import { createEntityStore } from '../src/entities.ts';
 import { compareVersions, hasFeature } from '../src/features.ts';
 import { entityKey, peerId } from '../src/ids.ts';
-import { createPeers } from '../src/peers.ts';
+import { KEEP_UNWATCHED_MS, createPeers } from '../src/peers.ts';
 import { createScope } from '../src/scope.ts';
 import { PeerDown } from '../src/transport.ts';
 import { fakeTimers, type FakeTimers, fakeTransport, peerInfo, tick, welcome } from './helpers.ts';
@@ -223,6 +223,55 @@ test('two views of one task share one subscription; the last to go ends it', asy
   assert.equal(unsubs(), 0);
   v2.dispose();
   assert.equal(unsubs(), 1);
+});
+
+test('a_closed_tasks_rows_leave_memory_a_while_after_its_last_watch_and_a_reopen_by_then_keeps_them (perf r2 #14)', async () => {
+  const { peers, t, conn, scope, reader, clock } = await setup();
+  peers.add({ peer: A, name: 'laptop', transport: t });
+  peers.watch(A, 'list', scope);
+  await settle();
+  conn()?.push(welcome());
+  await settle();
+  conn()?.frame(3, { t: 'snapshot', topic: 'list', seq: 3, rows: [{ e: 'session', id: 's1', v: { title: 'one' } }] });
+  await settle();
+  const topic: Topic = 'session:s1';
+  const open = (): ReturnType<typeof scope.child> => {
+    const v = scope.child('task');
+    peers.watch(A, topic, v);
+    return v;
+  };
+  let view = open();
+  await settle();
+  conn()?.frame(4, {
+    t: 'snapshot',
+    topic,
+    seq: 4,
+    rows: [
+      { e: 'session', id: 's1', v: { title: 'one' } },
+      { e: 'event', id: 'e1', v: { seq: 1, turn_id: 't1', session_id: 's1' } },
+    ],
+  });
+  await settle();
+  // and what streams in after the snapshot: an append under the task's turn (its events as one list row)
+  conn()?.frame(5, { t: 'patch', seq: 5, ops: [{ topic, e: 'event', id: 't1', op: 'append', v: [{ seq: 2, turn_id: 't1', session_id: 's1' }] }] });
+  await settle();
+  const event = (): unknown => reader.peek('event', entityKey(A, 'e1'));
+  const streamed = (): unknown => reader.peek('event', entityKey(A, 't1'));
+  assert.ok(event(), 'the open task holds its events');
+  assert.ok(streamed(), 'and what streamed in');
+  // closed, and opened again before the linger ends: still there, nothing to fetch again
+  view.dispose();
+  clock.advance(KEEP_UNWATCHED_MS - 1);
+  view = open();
+  clock.advance(KEEP_UNWATCHED_MS * 2);
+  assert.ok(event(), 'a reopen within the linger keeps the rows');
+  // closed for good: its events go, its row stays (the list holds it too), and the topic no longer counts as loaded
+  view.dispose();
+  clock.advance(KEEP_UNWATCHED_MS);
+  assert.equal(event(), undefined, 'nothing watches it: out of memory');
+  assert.equal(streamed(), undefined, 'what streamed in too');
+  assert.deepEqual(reader.peek('session', entityKey(A, 's1')), { title: 'one' }, 'the list still holds the row');
+  assert.equal(reader.loaded(A, topic)(), false);
 });
 
 test('frames reach the store, rows from every peer side by side, notices reach their listeners', async () => {

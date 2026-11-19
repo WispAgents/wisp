@@ -89,6 +89,13 @@ fn sink(ctx: &Ctx) -> ship::Sink {
     })
 }
 
+/// A ship error for task `id`, with v1's reason when runtime has the task but ship doesn't follow it: it runs in its
+/// project's own folder, with no worktree to ship from (`ShipError::untracked`, audit B #2).
+async fn why(ctx: &wisp_kernel::Ctx, call: &wisp_kernel::Call, id: &str, e: error::ShipError) -> wisp_kernel::WireError {
+    let exists = matches!(e, error::ShipError::NotFound(_)) && wire::session(ctx, call, id).await.is_some();
+    e.untracked(exists).into()
+}
+
 fn get(slot: &Slot) -> Result<Arc<Ship>> {
     slot.get().ok_or_else(|| wisp_kernel::WireError::unavailable("wisp.ship is starting"))
 }
@@ -108,14 +115,20 @@ fn commands(s: &mut Setup, slot: &Slot) {
         async move {
             let ship = get(&sl)?;
             let d = if a.draft.title.is_empty() { draft::draft_for(&ctx, &call, &a.session).await } else { a.draft };
-            Ok(ship.view(&call, &a.session, &d).await?)
+            match ship.view(&call, &a.session, &d).await {
+                Ok(v) => Ok(v),
+                Err(e) => Err(why(&ctx, &call, &a.session, e).await),
+            }
         }
     });
     let sl = slot.clone();
     s.command::<api::ShipIt, _, _>(move |ctx, call, a| {
         let sl = sl.clone();
         async move {
-            let out = get(&sl)?.ship_all(&call, &a.session, &a.title, &a.body, a.draft).await?;
+            let out = match get(&sl)?.ship_all(&call, &a.session, &a.title, &a.body, a.draft).await {
+                Ok(o) => o,
+                Err(e) => return Err(why(&ctx, &call, &a.session, e).await),
+            };
             track(&ctx, "ship", serde_json::json!({ "draft": a.draft }));
             Ok(out)
         }
@@ -126,7 +139,10 @@ fn commands(s: &mut Setup, slot: &Slot) {
         async move {
             let ship = get(&sl)?;
             // where the agent reads the diff: the task's worktree, else its folder
-            let task = ship.task(&a.session)?;
+            let task = match ship.task(&a.session) {
+                Ok(t) => t,
+                Err(e) => return Err(why(&ctx, &call, &a.session, e).await),
+            };
             let folder = Ship::gh_dir(&task).await;
             let base = task.repos.first().map(|r| r.worktree.base_ref.clone()).unwrap_or_default();
             let diff = draft::diff_of(&ship, &call, &folder, &base).await;
@@ -149,7 +165,10 @@ fn commands(s: &mut Setup, slot: &Slot) {
     s.command::<api::Merge, _, _>(move |ctx, call, a| {
         let sl = sl.clone();
         async move {
-            let out = get(&sl)?.merge_all(&call, &a.session).await?;
+            let out = match get(&sl)?.merge_all(&call, &a.session).await {
+                Ok(o) => o,
+                Err(e) => return Err(why(&ctx, &call, &a.session, e).await),
+            };
             track(&ctx, "merge", serde_json::json!({}));
             Ok(out)
         }

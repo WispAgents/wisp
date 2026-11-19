@@ -208,7 +208,7 @@ async fn an_unknown_verb_under_any_group_is_an_error_and_a_quoted_prompt_is_stil
         &["ship", "the", "docs"],
         &["update", "the", "readme"],
         &["git", "rebase", "onto", "main"],
-        &["learn", "rust"],
+        &["learn", "rust", "properly"],
         &["review", "the", "auth", "module", "--strict"],
     ];
     for words in prompts {
@@ -228,7 +228,7 @@ async fn an_unknown_verb_under_any_group_is_an_error_and_a_quoted_prompt_is_stil
         "ship the docs",
         "update the readme",
         "git rebase onto main",
-        "learn rust",
+        "learn rust properly",
     ] {
         assert!(made.contains(p), "{p}: {tasks}");
     }
@@ -569,12 +569,15 @@ async fn one_stray_word_is_a_slip_more_is_a_prompt_for_every_command_word() {
     for (words, said) in [
         (&["export", "foo"][..], "wisp -- export"),
         (&["run", "foo"], "no recipe or workflow named foo"),
-        (&["ship", "foo"], "wisp -- ship"),
+        // a plugin's group line (B1): its verbs, then `wisp -- "ship foo"`
+        (&["ship", "foo"], "wisp ship has no foo"),
         (&["plugin", "foo"], "wisp plugin has no foo"),
         (&["mcp", "foo"], "wisp mcp has no foo"),
         (&["init", "foo"], "auto, ask or manual"),
         (&["fork"], "wisp runtime fork --id <id>"),
         (&["help", "me"], "wisp help lists every command and plugin"),
+        // audit B #15: help never starts a task, however many words follow; the task is `wisp -- help …`
+        (&["help", "me", "write", "a", "test", "for", "add()"], "wisp -- help me write a test for add()"),
     ] {
         let (code, out, err) = probe(&dir, port, words);
         assert!(code == 2 && !out.contains("launched") && err.contains(said) && err.contains("wisp -- "), "{words:?} → {code}: {out}{err}");
@@ -589,7 +592,6 @@ async fn one_stray_word_is_a_slip_more_is_a_prompt_for_every_command_word() {
         "mcp server for the docs",
         "fork the repo and set up CI",
         "export the results as CSV",
-        "help me write a test for add()",
         "run the failing tests twice",
     ];
     // one quoted argument, or `--`, after a prompt word: the prompt
@@ -642,4 +644,49 @@ async fn with_no_terminal_a_mistyped_verb_is_refused_never_launched() {
     assert!(wrong.is_empty(), "{} launched or weren't refused:\n{}", wrong.len(), wrong.join("\n"));
     assert_eq!(api.cmd("runtime.list", json!({})).await.as_array().unwrap().len(), 0, "no task was made");
     drop(serve);
+}
+
+/// Setup audit B1 (F30's rest): `wisp budget frobnicate`, `wisp git frobnicate`, … under 21 plugin groups launched a
+/// Full-auto task in the current folder. Every plugin the catalogue names, followed by one word that's none of its
+/// verbs: refused (exit 2, its verbs, the `wisp -- …` way out), with no terminal, and no task made.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_plugin_name_and_a_word_that_is_none_of_its_verbs_never_launches() {
+    let dir = temp("serve-cli-plugin-slip");
+    let (serve, port) = start(&dir);
+    let api = Api { http: reqwest::Client::new(), port, n: 0.into() };
+    let catalogue = api.cmd("cli.catalogue", json!({})).await;
+    let mut plugins: Vec<String> = catalogue
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter_map(|v| v["id"].as_str().and_then(|id| id.split_once('.')).map(|(p, _)| kebab(p)))
+        .filter(|p| !wisp_words_known(p))
+        .collect();
+    plugins.sort();
+    plugins.dedup();
+    for g in ["budget", "git", "connectors", "channels", "runtime"] {
+        assert!(plugins.contains(&g.to_owned()), "{g} is a plugin group here: {plugins:?}");
+    }
+    let mut wrong = Vec::new();
+    for g in &plugins {
+        let (code, out, err) = probe(&dir, port, &[g.as_str(), "frobnicate"]);
+        if code != 2 || out.contains("launched") || !err.contains(&format!("wisp {g} has no frobnicate")) || !err.contains("wisp -- ") {
+            wrong.push(format!("wisp {g} frobnicate → {code}: {}{}", out.trim(), err.trim()));
+        }
+    }
+    assert!(wrong.is_empty(), "{} of {} plugin groups launched or weren't refused:\n{}", wrong.len(), plugins.len(), wrong.join("\n"));
+    assert_eq!(api.cmd("runtime.list", json!({})).await.as_array().unwrap().len(), 0, "no task was made");
+    drop(serve);
+}
+
+/// `gridClient` → `grid-client`, as the CLI names a plugin.
+fn kebab(w: &str) -> String {
+    w.chars().flat_map(|c| if c.is_uppercase() { vec!['-', c.to_ascii_lowercase()] } else { vec![c] }).collect()
+}
+
+/// A built-in word (a command, a routed word or a group): its own rules, not a plugin's.
+fn wisp_words_known(w: &str) -> bool {
+    let (words, args) = (include_str!("../src/words.rs"), include_str!("../src/args.rs"));
+    listed(words, "pub const ROUTED").iter().chain(listed(args, "pub const COMMANDS").iter()).any(|x| x == w)
+        || built_in_groups().iter().any(|x| x == w)
 }

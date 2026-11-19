@@ -219,6 +219,16 @@ pub fn command_key(command: &str) -> String {
 }
 
 /// `/proc/<pid>/environ`: NUL-separated.
+/// `ps -E -ww -o pid=,command= -p <pids>` (macOS): each pid with the task tag its environment carries.
+pub fn parse_env_ps(text: &str) -> Vec<(u32, Option<String>)> {
+    text.lines()
+        .filter_map(|l| {
+            let (pid, rest) = word(l)?;
+            Some((u32::try_from(digits(pid)?).ok()?, tag_in(rest).map(str::to_owned)))
+        })
+        .collect()
+}
+
 pub fn tag_in_environ(text: &str) -> Option<String> {
     text.split('\0').find_map(|x| x.strip_prefix("WISP_TASK=")).filter(|v| !v.is_empty()).map(str::to_owned)
 }
@@ -296,4 +306,20 @@ pub fn until_text(at: i64, now: i64, tz: i64) -> String {
     }
     let wd = usize::try_from(day(at).rem_euclid(7)).unwrap_or(0);
     format!("{} {hm}", DAYS[wd % 7])
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod env_tests {
+    use super::*;
+
+    /// perf audit 2026-11-19 #3: macOS reads the processes without their environments, then the environments of only
+    /// the pids it hasn't seen: the tag comes from that second `ps`, the command from the first.
+    #[test]
+    fn the_env_ps_names_each_pids_tag() {
+        let text = "  101 /usr/bin/node a.js TERM=x WISP_TASK=t-abc HOME=/u\n  102 /bin/zsh HOME=/u\n";
+        assert_eq!(parse_env_ps(text), vec![(101, Some("t-abc".to_owned())), (102, None)]);
+        let plain = parse_ps("  101     1  2048   0.5   01:02 /usr/bin/node a.js\n", 1_000_000, false);
+        assert_eq!((plain[0].pid, plain[0].command.as_str(), plain[0].task.as_deref()), (101, "/usr/bin/node a.js", None));
+    }
 }

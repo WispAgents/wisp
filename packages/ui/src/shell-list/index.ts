@@ -6,4 +6,5 @@ export { ProjectHead, type ProjectHeadProps } from './ProjectHead.tsx';
 export { Gap, type GapProps } from './Gap.tsx';
 export { RowLogo, type RowLogoProps } from './RowLogo.tsx';
 export { Swipe, type SwipeDir, type SwipeProps, type SwipeSide } from './Swipe.tsx';
+export { LazySwipe } from './swipe-part.ts';
 export { SWIPE_ACTION_W, SWIPE_COMMIT, SWIPE_EDGE, SWIPE_FLICK, SWIPE_FULL, SWIPE_GIVE, SWIPE_SLOP, swipeArmed, swipeArmedFor, swipeCommits, swipeLine, swipeOffset, swipePhase, swipeProgress, swipeRelease, swipeSpeed, swipeStarts, type SwipePhase, type SwipeRelease, type SwipeStyle } from './swipe-math.ts';

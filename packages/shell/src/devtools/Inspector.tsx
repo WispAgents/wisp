@@ -8,16 +8,18 @@ import { For, Show, createSignal, onCleanup, type JSX } from 'solid-js';
 import type { DevEntry, PeerId, PluginClient } from '@wisp/client';
 import { Button, Inline, Pill, Section, SettingsRow, Stack, Text, Time, VirtualList, useSignal } from '@wisp/ui';
 import { useShell } from '../context.tsx';
-import { STORE_KINDS, describe, newestFirst, peerLine, rowsLine } from './summary.ts';
+import { STORE_KINDS, describe, newestFirst, peerLine, peerTitle, rowsLine } from './summary.ts';
 import '../i18n/lazy.ts';
 
 function Peer(props: { readonly peer: PeerId }): JSX.Element {
   const shell = useShell();
   const status = useSignal(shell.client.peers.status(props.peer));
   const info = useSignal(shell.client.peers.info(props.peer));
+  const home = useSignal(shell.client.home);
+  const machines = useSignal(shell.client.entities.list<{ id: string; body?: { name?: string | null } }>('machines_peer'));
   return (
     <SettingsRow
-      title={shell.client.peers.name(props.peer)}
+      title={peerTitle(props.peer, home(), info()?.name ?? shell.client.peers.name(props.peer), machines())}
       description={info() ? peerLine(info() ?? {}, (count) => shell.t('shell.diag.plugins', { count })) : props.peer}
       control={<Pill tone={status().kind === 'online' ? 'good' : status().kind === 'incompatible' ? 'bad' : 'warn'} dot>{status().kind}</Pill>}
     />

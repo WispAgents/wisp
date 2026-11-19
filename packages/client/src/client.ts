@@ -9,6 +9,7 @@ import { createStoreHost, type PluginStore, type StoreDecl } from './define-stor
 import { createDevtools, type Devtools } from './devtools.ts';
 import { createDrafts, type Drafts } from './drafts.ts';
 import { createEntityStore, type EntityReader } from './entities.ts';
+import { keyOfId } from './ids.ts';
 import { loadFirstPaint, persistEntities, restoreFirstPaint } from './first-paint.ts';
 import { createI18n, type Catalogue, type I18n } from './i18n.ts';
 import { interpret, type Machine, type MachineDef } from './machine.ts';
@@ -119,11 +120,21 @@ export function createClient(o: ClientOptions): Client {
   const stores = createStoreHost({ persist, warn });
   /** one client per plugin while its scope lives (pluginClient) */
   const plugins = new Map<string, PluginClient>();
+  // the last place, saved after the press that moved there: an IndexedDB transaction started inside every open and J/K
+  // step was part of its frame (perf r2 #5); steps in a row save once, the last
+  let navToSave: string | undefined;
+  const writeNav = (): Promise<void> => {
+    const value = navToSave;
+    navToSave = undefined;
+    return value === undefined ? Promise.resolve() : persist.write([{ ns: 'nav', key: 'last', value }]).catch(() => {});
+  };
   const saveNav = (url: string): void => {
-    persist.write([{ ns: 'nav', key: 'last', value: url }]).catch(() => {});
+    const first = navToSave === undefined;
+    navToSave = url;
+    if (first) scope.timeout(0, () => void writeNav());
   };
   // a task opened by the bare id its list row carries resolves to its entity key (whichever peer has it)
-  const taskKey = (id: string): string | undefined => untracked(reader.keys('session')).find((k) => k.slice(k.indexOf(':') + 1) === id);
+  const taskKey = (id: string): string | undefined => keyOfId(untracked(reader.keys('session')), id);
   const nav = createNavigation({ scope, width: o.width, views, warn, onChange: saveNav, home: homeNow, taskKey, ...(o.history && { history: o.history }) });
   const readPeers: PluginClient['peers'] = { list: peers.list, status: peers.status, info: peers.info, name: peers.name, hasFeature: peers.hasFeature, reconnect: peers.reconnect };
   const rows = persistEntities({ writer, persist, scope, warn, linkOf: (p) => peers.save(p) });
@@ -163,7 +174,7 @@ export function createClient(o: ClientOptions): Client {
     removePeer: (peer) => peers.remove(peer),
     plugin: (id) => pluginClient(id),
     async flush() {
-      await Promise.all([rows.flush(), drafts.flush()]);
+      await Promise.all([rows.flush(), drafts.flush(), writeNav()]);
     },
     home: () => home(),
     setHome: (peer) => {

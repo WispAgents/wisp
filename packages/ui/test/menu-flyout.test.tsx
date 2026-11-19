@@ -1,5 +1,6 @@
 // Owner 2026-11-17: on a desktop pointer (hovering, fine; the browser, not the phone apps) a submenu is a flyout beside
-// its row, the standard cascading menu (Zag's nested menus): hover opens it after a short intent delay, leaving closes
+// its row, the standard cascading menu (Zag's nested menus): hover opens it at once (v1's opened at the press; perf r2
+// #10: Zag's 200 ms intent read as slow), leaving closes
 // it, → / Enter / click open it, ← and Escape close only it and light its row again, choosing an item closes the whole
 // menu. Touch and the phone apps keep v1 #786's drill-in (menu.test.tsx 'Menu submenus').
 import { afterEach, beforeAll, describe, expect, test, vi } from 'vitest';
@@ -59,6 +60,14 @@ const row = (): HTMLElement | null => part('task.more.sub');
 const litTop = (): string | null | undefined => part('task.more')?.querySelector(':scope [data-highlighted]')?.getAttribute('data-value');
 const litFly = (): string | null | undefined => part('task.more.flyout')?.querySelector('[data-highlighted]')?.getAttribute('data-value');
 
+/** `ok` within a few tasks, however slow the clock: what opens "at once" never waits on a timer. */
+async function soon(ok: () => boolean): Promise<void> {
+  // the count is the point: "at once" can't wait on the clock, and 5 hops (78 ms on Windows' 15.6 ms ticks) are still
+  // under the 200 ms hover intent this replaced
+  // check:allow timer-loop-in-test a fixed count proves the open never waits on a timer
+  for (let i = 0; i < 5 && !ok(); i++) await tick();
+}
+
 async function openMenu(onSelect = vi.fn()): Promise<{ content: HTMLElement | null; onSelect: typeof onSelect; trigger: HTMLElement | null }> {
   mount(() => <Menu items={items} onSelect={onSelect} trigger={{ icon: 'dots', 'aria-label': 'More' }} part="task.more" />);
   const trigger = part('task.more.trigger');
@@ -82,13 +91,12 @@ describe('desktop: a submenu is a flyout beside its row', () => {
     expect(part('task.more.flyout')?.getAttribute('data-flyout')).toBe('');
   });
 
-  test('hovering the row opens the flyout after a short delay; leaving closes it_flyout_hover', async () => {
+  test('hovering the row opens the flyout at once; leaving closes it_flyout_hover', async () => {
     pointer('mouse');
     await openMenu();
     mouse(row(), 'pointermove');
-    // hover intent: not at once
-    expect(state('task.more.flyout')).toBe('closed');
-    await until(() => state('task.more.flyout') === 'open', 1000);
+    // at once: a few tasks, where Zag's own hover intent waits a 200 ms timer
+    await soon(() => state('task.more.flyout') === 'open');
     expect(state('task.more.flyout')).toBe('open');
     expect(row()?.getAttribute('aria-expanded')).toBe('true');
     expect([...(part('task.more.flyout')?.querySelectorAll('[data-kit="menu-item"]') ?? [])].map((e) => e.getAttribute('data-value'))).toEqual(['copy-id', 'copy-resume']);
@@ -99,6 +107,30 @@ describe('desktop: a submenu is a flyout beside its row', () => {
     mouse(document.body, 'pointermove', 900, 900);
     await until(() => state('task.more.flyout') === 'closed', 1000);
     expect(state('task.more.flyout')).toBe('closed');
+    expect(state('task.more')).toBe('open');
+  });
+
+  test('hovering another submenu row with one flyout open swaps them at once_flyout_sibling', async () => {
+    pointer('mouse');
+    const two: MenuEntry[] = [
+      ...items,
+      { kind: 'submenu', value: 'sub:open', label: 'Open in', part: 'task.more.open', items: [{ value: 'finder', label: 'Finder' }, { value: 'editor', label: 'Editor' }] },
+    ];
+    mount(() => <Menu items={two} onSelect={() => {}} trigger={{ icon: 'dots', 'aria-label': 'More' }} part="task.more" />);
+    const trigger = part('task.more.trigger');
+    trigger?.focus();
+    key(trigger, 'ArrowDown');
+    await until(() => state('task.more') === 'open');
+    await frame();
+    const flies = (): (string | null)[] => [...document.querySelectorAll('[data-flyout]')].map((f) => f.getAttribute('data-state'));
+    mouse(row(), 'pointermove');
+    await soon(() => flies().join() === 'open,closed');
+    expect(flies()).toEqual(['open', 'closed']);
+    // straight down onto the other row (not toward the open flyout): it opens and the first closes, both at once
+    mouse(row(), 'pointerleave', 10, 132);
+    mouse(part('task.more.open'), 'pointermove', 10, 200);
+    await soon(() => flies().join() === 'closed,open');
+    expect(flies()).toEqual(['closed', 'open']);
     expect(state('task.more')).toBe('open');
   });
 

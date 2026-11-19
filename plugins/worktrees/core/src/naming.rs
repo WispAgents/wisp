@@ -1,4 +1,4 @@
-//! Names and places (edge case Git 5): the branch `wisp/<slug≤32>-<id[0..6]>`, the full id when that's
+//! Names and places (edge case Git 5): the branch `wisp/<slug≤32>-<6 of the id>`, the full id when that's
 //! taken; the folder `<home>/worktrees/<repo>-<id>`; a launch from a subfolder keeps that subfolder.
 //! Paths are plain `/`-separated strings here: the host canonicalises them first.
 
@@ -21,15 +21,19 @@ pub fn slug(s: &str) -> String {
     cut.trim_end_matches('-').to_owned()
 }
 
-fn first_chars(id: &str, n: usize) -> &str {
-    id.char_indices().nth(n).map_or(id, |(i, _)| &id[..i])
+/// Six characters of the id that tell tasks apart: its last six. A v2 id is a `UUIDv7`, whose first six are the time
+/// (every task made within hours shared them, so every short name but the first was taken and they all got the full
+/// id: audit B #19); v1's ids were random throughout.
+fn six_of(id: &str) -> &str {
+    let n = id.chars().count();
+    id.char_indices().nth(n.saturating_sub(6)).map_or(id, |(i, _)| &id[i..])
 }
 
-/// The short branch name for a session (`wisp/fix-login-0192ab`).
+/// The short branch name for a session (`wisp/fix-login-89abcd`).
 pub fn short_branch(title: &str, id: &str) -> String {
     let s = slug(title);
     let s = if s.is_empty() { "task".to_owned() } else { s };
-    format!("wisp/{s}-{}", first_chars(id, 6))
+    format!("wisp/{s}-{}", six_of(id))
 }
 
 /// The long one, when the short name is taken (a leftover branch, a prefix clash).
@@ -94,9 +98,20 @@ mod tests {
     #[test]
     fn branch_is_short_then_full_id_when_taken() {
         let id = "0192abcdef0123456789";
-        assert_eq!(branch_for("Fix login", id, false), "wisp/fix-login-0192ab");
+        assert_eq!(branch_for("Fix login", id, false), "wisp/fix-login-456789");
         assert_eq!(branch_for("Fix login", id, true), "wisp/fix-login-0192abcdef0123456789");
-        assert_eq!(branch_for("!!!", id, false), "wisp/task-0192ab");
+        assert_eq!(branch_for("!!!", id, false), "wisp/task-456789");
+        assert_eq!(short_branch("x", "abc"), "wisp/x-abc");
+    }
+
+    /// Audit B #19: tasks made the same hour (UUIDv7 ids, the time first) all had the same short name, so only the
+    /// first got it; their short names differ now.
+    #[test]
+    fn tasks_made_together_get_short_names_of_their_own() {
+        let a = short_branch("t", "019a7c2e5b1e7c4a9d2e0123456789ab");
+        let b = short_branch("t", "019a7c2e5b1f7d1b8e3fa1b2c3d4e5f6");
+        assert_ne!(a, b);
+        assert_eq!(a, "wisp/t-6789ab");
     }
 
     #[test]

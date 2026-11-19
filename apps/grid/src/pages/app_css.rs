@@ -151,7 +151,7 @@ form.inline{display:inline}
 @media (max-width:370px){.top .chipx{display:none}}
 @media (pointer:coarse){.navt a,.t-go,.top .me a{min-height:44px}.m-acts .primary,.m-acts .ghost,.more,.add-pop>summary,.s-head .ghost,.a-main .ghost{height:44px}.more{width:44px}.copy{height:44px}}
 @media (prefers-reduced-motion:reduce){.t-go svg{transition:none}.dot{animation:none!important}.state i{animation:none!important}}
-.wait{pointer-events:none;opacity:.75}.wait::after{content:'';width:12px;height:12px;flex:none;border-radius:50%;border:2px solid currentColor;border-right-color:transparent;animation:wait-spin .7s linear infinite}@keyframes wait-spin{to{transform:rotate(360deg)}}
+.going{pointer-events:none;opacity:.55;cursor:progress}.primary.wait>svg,.ghost.wait>svg{display:none}.wait{pointer-events:none;opacity:.75}.wait::after{content:'';width:12px;height:12px;flex:none;border-radius:50%;border:2px solid currentColor;border-right-color:transparent;animation:wait-spin .7s linear infinite}@keyframes wait-spin{to{transform:rotate(360deg)}}
 "#;
 
 /// What a locked share adds to it.

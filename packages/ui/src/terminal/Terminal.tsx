@@ -216,6 +216,8 @@ export function Terminal(props: TerminalProps): JSX.Element {
     wireKeys(host);
     wireMouse(host);
     wireScroll(host);
+    // the observer's first callback (after the layout that placed the box) fits it: measured here, right after the
+    // panel's own writes, it forced that layout inside the press that opened it (perf r2 #8)
     if (typeof ResizeObserver !== 'undefined') {
       const ro = new ResizeObserver(() => {
         fit();
@@ -223,8 +225,7 @@ export function Terminal(props: TerminalProps): JSX.Element {
       });
       ro.observe(box);
       ctl.signal.addEventListener('abort', () => ro.disconnect());
-    }
-    fit();
+    } else fit();
     props.ref?.({ focus: host.focus, blur: () => input.blur(), size });
   });
 
@@ -232,14 +233,15 @@ export function Terminal(props: TerminalProps): JSX.Element {
   createEffect(
     on(
       () => props.screen,
-      (sc) => {
+      (sc, was) => {
         painter?.forget();
         stick = true;
         lastTop = 0;
         setDrawn(false);
         const stop = sc.watch(schedule);
         onCleanup(stop);
-        if (painter) fit();
+        // the first screen is fitted by the observer's first callback; another one shown here is fitted now
+        if (painter && (was !== undefined || typeof ResizeObserver === 'undefined')) fit();
         schedule();
       },
     ),

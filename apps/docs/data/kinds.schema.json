@@ -1073,6 +1073,10 @@
       "additionalProperties": false,
       "description": "Settings by key (wisp settings list)",
       "properties": {
+        "accounts.updateCheck": {
+          "description": "Check for newer harness versions: once a day, wisp asks npm for the latest Claude Code, Codex and opencode (npm then knows which of them you have)",
+          "type": "boolean"
+        },
         "automations.webhookTriggers": {
           "description": "Webhook triggers: other services may start this computer's webhook triggers (POST /api/triggers/<name> with its secret)",
           "type": "boolean"

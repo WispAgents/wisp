@@ -131,13 +131,13 @@ pub(crate) fn delegate_props(agent: &str, out: &[c::Delegation]) -> serde_json::
 /// `runtime.fork`, counted as `fork_task`.
 fn fork(s: &mut Setup, slot: &Slot) {
     let sl = slot.clone();
-    s.command::<c::Fork, _, _>(move |ctx, call, a| {
+    s.command::<c::Fork, _, _>(move |ctx, _call, a| {
         let slot = sl.clone();
         async move {
             let r = rt(&slot)?;
             let (id, latest) = (a.id.clone(), a.turn_id.is_none());
             let out = r.fork(a).await.map_err(WireError::from)?;
-            own_folder(&ctx, &call, &r, id.as_str(), out.id.as_str()).await;
+            own_folder(&ctx, &r, id.as_str(), out.id.as_str()).await;
             let agent = r.get(id.as_str()).await.map(|x| x.agent).unwrap_or_default();
             track(&ctx, "fork_task", serde_json::json!({ "agent": agent, "switched": false, "latest": latest })).await;
             Ok(out)
@@ -148,7 +148,7 @@ fn fork(s: &mut Setup, slot: &Slot) {
 /// A fork works in a worktree and branch of its own, holding a copy of its parent's folder as it is (audit A orch #4,
 /// tasks #2: it ran in its parent's worktree, so both edited one folder). Its harness conversation is copied there too,
 /// so the fork's first turn resumes it. Outside a repo (or if git fails) it keeps its parent's folder, as before.
-async fn own_folder(ctx: &wisp_kernel::Ctx, call: &wisp_kernel::Call, r: &Arc<crate::runtime::Runtime>, parent: &str, fork: &str) {
+async fn own_folder(ctx: &wisp_kernel::Ctx, r: &Arc<crate::runtime::Runtime>, parent: &str, fork: &str) {
     let (Ok(src), Ok(made)) = (r.get(parent).await, r.get(fork).await) else { return };
     if src.cwd.is_empty() {
         return;
@@ -170,7 +170,8 @@ async fn own_folder(ctx: &wisp_kernel::Ctx, call: &wisp_kernel::Call, r: &Arc<cr
         mode: serde_json::to_value(made.mode).ok().and_then(|m| m.as_str().map(str::to_owned)).unwrap_or_default(),
         from: Some(src.cwd.clone()),
     };
-    let wt = match ctx.run::<wisp_worktrees_api::Create>(call, wa).await {
+    // on runtime's own grant, as a new task's (create.rs `in_worktree`): an agent's set has no worktrees:create
+    let wt = match ctx.run::<wisp_worktrees_api::Create>(&ctx.root_call(), wa).await {
         Ok(Some(w)) => w,
         Ok(None) => return,
         Err(err) => {

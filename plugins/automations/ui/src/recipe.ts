@@ -76,3 +76,12 @@ export function recipeBody(d: RecipeDraft, base: Readonly<Record<string, unknown
   }
   return out;
 }
+
+/** Where a recipe tied to no project runs when its dialog opens (audit B #11: Run from Settings said No folder): the
+ *  project it was opened in, else the launcher's (the first project picked over the list, else the first project),
+ *  else No folder (''). */
+export function runProject(given: string, pick: string | undefined, projects: readonly { readonly id: string; readonly path: string }[]): string {
+  if (given) return given;
+  const ids = !pick || pick === 'all' ? [] : pick.split(',').map((x) => x.trim());
+  return (ids.map((id) => projects.find((p) => p.id === id)).find((p) => p !== undefined) ?? projects[0])?.path ?? '';
+}

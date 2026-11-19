@@ -10,7 +10,8 @@ import { sizeVar } from '@wisp/tokens';
 import { flag, styleOf, sub, type KitProps, type Labelled, type PartName, type WithVars } from '../core/props.ts';
 import { anchorAt, anchors, atTail, computeRange, offsets, restoreAnchor, type Anchor } from './virtual-math.ts';
 import { PullRefresh } from './PullRefresh.tsx';
-import { bindPull } from '../gestures/bind-vertical.ts';
+import { inObserverPass, markObserverPass, observeSoon } from '../core/observer-scope.ts';
+import { bindLater } from '../gestures/binders-part.ts';
 import { useGesture } from '../gestures/use.ts';
 import { useT } from '../core/i18n.tsx';
 
@@ -88,6 +89,7 @@ function useMeasured(beforeChange: () => void, onBox: (el: HTMLElement) => void 
     typeof ResizeObserver === 'undefined'
       ? undefined
       : new ResizeObserver((entries) => {
+          markObserverPass();
           inPass = true;
           try {
             measure(entries);
@@ -145,7 +147,8 @@ function useMeasured(beforeChange: () => void, onBox: (el: HTMLElement) => void 
     observe: (el, key) => {
       keys.set(el, key);
       rows.add(el);
-      if (!inPass) return void ro?.observe(el);
+      // (or another kit observer's: a list mounted by what that one started, audit B #4)
+      if (!inPass && !inObserverPass()) return void ro?.observe(el);
       if (!fresh.length)
         requestAnimationFrame(() => {
           const now = fresh;
@@ -161,8 +164,9 @@ function useMeasured(beforeChange: () => void, onBox: (el: HTMLElement) => void 
     observeBox: (el) => {
       box.el = el;
       // its border box: a scrollbar coming or going changes its content box only, which (shallower than the rows) the
-      // same pass would skip too (#15)
-      ro?.observe(el, { box: 'border-box' });
+      // same pass would skip too (#15). A list mounted during another observer's pass is measured from the next frame,
+      // where its box and rows are delivered together (core/observer-scope.ts, audit B #4)
+      observeSoon(() => ro?.observe(el, { box: 'border-box' }), () => !gone && el.isConnected);
     },
   };
 }
@@ -279,7 +283,7 @@ export function VirtualList<T>(props: VirtualListProps<T>): JSX.Element {
   const t = useT();
   const pullGesture = useGesture(
     'list.pull',
-    (el, host) => bindPull(el, { host, onRefresh: () => props.refresh?.onRefresh(), onProgress: setPulled, refreshing: () => props.refresh?.refreshing === true }),
+    (el, host) => bindLater((b) => b.bindPull(el, { host, onRefresh: () => props.refresh?.onRefresh(), onProgress: setPulled, refreshing: () => props.refresh?.refreshing === true })),
     () => [{ label: t('gesture.reconnect'), run: () => props.refresh?.onRefresh() }],
   );
   const pullView = (): { readonly progress: number; readonly refreshing: boolean; readonly label: string } | undefined =>

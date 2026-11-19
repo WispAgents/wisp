@@ -9,7 +9,7 @@
 //! The runs: `machine.runs@1` contributors, else each running task's harness CLI is the process wisp
 //! started whose tag names it.
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -21,13 +21,13 @@ use wisp_machine_core::this_mac::attribute::{Attributor, Placed};
 use wisp_machine_core::this_mac::history::History;
 use wisp_machine_core::this_mac::load::Load;
 use wisp_machine_core::this_mac::view::{self, ViewInput};
-use wisp_machine_core::this_mac::{AFTER_MS, KILL_MS, POINT_MS, Platform, READ_MS, Refusal, RefusalKind, holds, parse};
+use wisp_machine_core::this_mac::{AFTER_MS, KILL_MS, POINT_MS, Platform, READ_MS, Refusal, RefusalKind, TICK_MS, holds, parse};
 use wisp_runtime_api::events::{SessionChanged, SessionCreated, SessionDeleted};
 use wisp_store::Store;
 
 use crate::calls;
 use crate::rows::{LOAD, SNAPSHOT, platform_name, rows};
-use crate::this_mac::{Guard, lock, run};
+use crate::this_mac::{Guard, lock, run, run_any};
 
 /// Sampling when nothing runs and nobody reads the page: once a minute (the history's pace).
 const IDLE_MS: i64 = 60_000;
@@ -43,6 +43,8 @@ pub struct Procs {
     last: Mutex<Option<Last>>,
     read_at: Mutex<i64>,
     sampled_at: Mutex<i64>,
+    /// when `last` was made: a `machine.read` within `TICK_MS` of it answers it (perf audit 2026-11-19 #3)
+    last_at: Mutex<i64>,
     point_at: Mutex<i64>,
     ran_at: Mutex<i64>,
     /// the tasks a sample names, kept current from runtime's events (never every task each sample)
@@ -99,6 +101,7 @@ impl Procs {
             last: Mutex::new(None),
             read_at: Mutex::new(0),
             sampled_at: Mutex::new(0),
+            last_at: Mutex::new(i64::MIN),
             point_at: Mutex::new(0),
             ran_at: Mutex::new(0),
             index: crate::index::TaskIndex::default(),
@@ -122,9 +125,10 @@ impl Procs {
 
     async fn ps(proc: &wisp_proc::Proc, platform: Platform, now: i64) -> Vec<parse::Proc> {
         match platform {
-            Platform::Mac => run(proc, "ps", &["-E", "-axww", "-o", "pid=,ppid=,rss=,%cpu=,etime=,command="])
+            // without -E: the environments of only the pids not seen before come after (`environs`)
+            Platform::Mac => run(proc, "ps", &["-axww", "-o", "pid=,ppid=,rss=,%cpu=,etime=,command="])
                 .await
-                .map(|t| parse::parse_ps(&t, now, true))
+                .map(|t| parse::parse_ps(&t, now, false))
                 .unwrap_or_default(),
             Platform::Linux => run(proc, "ps", &["-axww", "-o", "pid=,ppid=,rss=,%cpu=,etime=,command="])
                 .await
@@ -135,15 +139,36 @@ impl Procs {
         }
     }
 
+    /// macOS: the task tags in the environments of `wanted` (perf audit 2026-11-19 #3: `ps -E` of every process at every
+    /// sample printed 1.2 MB for 600 processes; a process's environment is read once).
+    async fn environs(&self, proc: &wisp_proc::Proc, procs: &[parse::Proc], wanted: &[u32]) {
+        for chunk in wanted.chunks(512) {
+            let list = chunk.iter().map(u32::to_string).collect::<Vec<_>>().join(",");
+            // a pid gone meanwhile makes ps exit 1 with the others printed: read what it printed either way
+            let text = run_any(proc, "ps", &["-E", "-ww", "-o", "pid=,command=", "-p", &list]).await.unwrap_or_default();
+            let tags: HashMap<u32, Option<String>> = parse::parse_env_ps(&text).into_iter().collect();
+            let since: HashMap<u32, i64> = procs.iter().map(|p| (p.pid, p.since)).collect();
+            let mut a = lock(&self.attr);
+            for pid in chunk {
+                if let Some(s) = since.get(pid) {
+                    a.set_environ(*pid, *s, tags.get(pid).cloned().flatten());
+                }
+            }
+        }
+    }
+
     #[allow(clippy::too_many_lines)] // one pass: ps, attribution, the tables, the view
     async fn sample(&self, ctx: &Ctx, g: &Guard, proc: &wisp_proc::Proc, now: i64) -> MachineView {
         let call = ctx.root_call();
         let platform = this_platform();
         let me = std::process::id();
         let mut procs = Self::ps(proc, platform, now).await;
-        // Linux: each new process's environ, once
+        // each new process's environment, once: macOS in one `ps -E` for just those pids
         let wanted = lock(&self.attr).environ_wanted(&procs);
-        for pid in wanted.into_iter().take(256) {
+        if platform == Platform::Mac {
+            self.environs(proc, &procs, &wanted).await;
+        }
+        for pid in wanted.into_iter().take(256).filter(|_| platform == Platform::Linux) {
             let text =
                 tokio::fs::read(format!("/proc/{pid}/environ")).await.map(|b| String::from_utf8_lossy(&b).into_owned()).unwrap_or_default();
             if let Some(p) = procs.iter().find(|p| p.pid == pid) {
@@ -245,6 +270,24 @@ impl Procs {
             reclaim,
         );
         *lock(&self.last) = Some((v.clone(), stoppable, placed.ancestors));
+        *lock(&self.last_at) = now;
+        v
+    }
+
+    /// `machine.read`: the last sample when it's under a tick old (the ticks run while someone reads the page), with
+    /// the guard as it is now; else a new one (perf audit 2026-11-19 #3: each read waited ~0.1 s on `ps`).
+    pub async fn read(&self, ctx: &Ctx, g: &Guard, proc: &wisp_proc::Proc, now: i64) -> MachineView {
+        *lock(&self.read_at) = now;
+        let fresh = now.saturating_sub(*lock(&self.last_at)) < TICK_MS;
+        if let Some(mut v) = lock(&self.last).as_ref().filter(|_| fresh).map(|(v, _, _)| v.clone()) {
+            v.guard.paused_until = holds::paused_until(&lock(&g.knobs), now);
+            let hold = g.with(Load::hold);
+            v.guard.held = hold.as_ref().map(|h| h.kind);
+            v.guard.why = hold.map(|h| h.why);
+            return v;
+        }
+        let v = self.sample(ctx, g, proc, now).await;
+        self.publish(ctx, g, &v, now).await;
         v
     }
 
@@ -359,11 +402,8 @@ pub(crate) fn setup(s: &mut Setup, g: &Arc<Guard>) -> Arc<Procs> {
         let (p, g) = (rp.clone(), rg.clone());
         async move {
             let now = ctx.clock()?.now_ms();
-            *lock(&p.read_at) = now;
             let proc = ctx.service::<wisp_proc::Proc>()?;
-            let v = p.sample(&ctx, &g, &proc, now).await;
-            p.publish(&ctx, &g, &v, now).await;
-            Ok(v)
+            Ok(p.read(&ctx, &g, &proc, now).await)
         }
     });
     let sp = p.clone();

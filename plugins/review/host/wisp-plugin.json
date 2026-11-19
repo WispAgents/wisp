@@ -23,6 +23,7 @@
     "runtime:agents",
     "runtime:quick",
     "runtime:setExt",
+    "runtime:markRead",
     "runtime:list"
   ],
   "activation": [

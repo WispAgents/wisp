@@ -71,6 +71,7 @@ pub trait Env: Send + Sync + 'static {
     fn changes(&self, call: &Call, dir: &str, base: &str) -> Fut<Option<(Vec<FileDiff>, Vec<String>)>>;
     fn tests(&self, call: &Call, dir: &str, cwd: &str) -> Fut<Option<TestsRun>>;
     /// the reviewer's JSON answer, None when it gave none
+    /// the reviewer's JSON, else its text as a string; None when it didn't answer (a timeout, a failed run)
     fn ask(&self, call: &Call, prompt: String, cwd: &str, pick: &Pick, timeout_ms: u64) -> Fut<Option<Value>>;
     /// writes the task's review slot (None clears it); marks it unread when `unread`. `over: Some(r)`: only while the
     /// slot still holds `r` (compared in the write's own transaction; refused with `conflict` otherwise)

@@ -147,21 +147,31 @@ async fn the_catalogue_is_wisps_mcp_tools() {
         list["result"]["tools"].as_array().unwrap().iter().filter_map(|t| t["name"].as_str().map(str::to_owned)).collect::<Vec<_>>()
     };
 
-    // every_command_is_an_mcp_tool: you (no token) get one per catalogue command, ui-only ones aside
+    // every_command_is_an_mcp_tool (ADR-0107: that wisp.mcp may run too): you (no token) get one per catalogue command
+    // wisp.mcp's manifest grants, ui-only ones aside, and none it doesn't (listed ⇒ callable, audit B #4)
     let catalogue = api.cmd("cli.catalogue", json!({})).await;
     let mine = names(&mcp(&api.http, port, &[], json!({ "jsonrpc": "2.0", "id": 1, "method": "tools/list" })).await);
     let cmds: Vec<&Value> = catalogue.as_array().or_else(|| catalogue["commands"].as_array()).unwrap().iter().collect();
     assert!(cmds.len() > 50, "{}", cmds.len());
+    let manifest: Value = serde_json::from_str(include_str!("../../../plugins/mcp/host/wisp-plugin.json")).unwrap();
+    let mut grants: Vec<&str> = manifest["permissions"].as_array().unwrap().iter().filter_map(Value::as_str).collect();
+    grants.push("mcp:*");
+    let granted = |perm: &str| {
+        let perm = perm.split('{').next().unwrap_or(perm);
+        grants.iter().any(|g| *g == perm || g.strip_suffix(":*").is_some_and(|ns| perm.split(':').next() == Some(ns)))
+    };
     for c in &cmds {
-        if c["uiOnly"].is_null() {
-            let n = c["id"].as_str().unwrap().replace('.', "_");
+        let n = c["id"].as_str().unwrap().replace('.', "_");
+        if c["uiOnly"].is_null() && granted(c["permission"].as_str().unwrap_or_default()) {
             assert!(mine.contains(&n), "{n} isn't a tool");
+        } else if !granted(c["permission"].as_str().unwrap_or_default()) {
+            assert!(!mine.contains(&n), "{n} is listed, and wisp.mcp may not run it");
         }
     }
     // the_input_schema_follows_the_args_type, for a real command
     let list = mcp(&api.http, port, &[], json!({ "jsonrpc": "2.0", "id": 2, "method": "tools/list" })).await;
-    let track = list["result"]["tools"].as_array().unwrap().iter().find(|t| t["name"] == "history_track").unwrap();
-    assert_eq!(track["inputSchema"]["required"], json!(["id"]), "{track}");
+    let get = list["result"]["tools"].as_array().unwrap().iter().find(|t| t["name"] == "runtime_get").unwrap();
+    assert_eq!(get["inputSchema"]["required"], json!(["id"]), "{get}");
 
     // a_caller_sees_only_what_its_set_allows: an agent's token
     let made = api.cmd("runtime.create", json!({ "prompt": "hi", "cwd": dir.join("proj"), "agent": "claude" })).await;
@@ -173,11 +183,13 @@ async fn the_catalogue_is_wisps_mcp_tools() {
     let token = cfg["mcpServers"]["wisp"]["headers"]["x-wisp-token"].as_str().unwrap().to_owned();
     let agent = [("x-wisp-token", token.as_str()), ("x-wisp-session", id.as_str())];
     let theirs = names(&mcp(&api.http, port, &agent, json!({ "jsonrpc": "2.0", "id": 3, "method": "tools/list" })).await);
-    assert!(theirs.contains(&"history_resumeRequest".to_owned()) && theirs.contains(&"runtime_get".to_owned()), "{theirs:?}");
+    assert!(theirs.contains(&"crew_list".to_owned()) && theirs.contains(&"runtime_get".to_owned()), "{theirs:?}");
     assert!(
         !theirs.contains(&"history_resumeAnswer".to_owned()) && !theirs.contains(&"resources_apply".to_owned()),
         "only what agent:session allows"
     );
+    // and narrower than yours where wisp.mcp's grant is wider than agent:session (plugins:* against plugins:read)
+    assert!(mine.iter().any(|n| n.starts_with("plugins_") && !theirs.contains(n)), "{mine:?} / {theirs:?}");
     // a_hand_made_tool_keeps_its_name: ask_user is wisp's own, once
     assert_eq!(theirs.iter().filter(|n| *n == "ask_user").count(), 1);
     // a_tool_call_runs_the_command_as_the_caller

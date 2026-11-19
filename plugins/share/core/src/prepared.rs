@@ -41,6 +41,11 @@ impl Ids {
         Self { kind, to, set, bare }
     }
 
+    /// Whether [`Ids::replace`] could change `t`: a mention chip, or one of the ids in it (else `t` is left as it is).
+    pub fn touches(&self, t: &str) -> bool {
+        !self.set.is_empty() && ((t.contains("@[") && mention().is_some()) || self.bare.as_ref().is_some_and(|b| b.is_match(t)))
+    }
+
     /// `t` with each mention chip of one of these ids and each whole occurrence of one (not inside a longer word) as
     /// `to`; what went, by its title or the id, in `went`.
     pub fn replace(&self, t: &str, went: &mut Vec<String>) -> String {

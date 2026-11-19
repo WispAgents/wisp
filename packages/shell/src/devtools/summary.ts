@@ -25,6 +25,27 @@ export function peerLine(info: { readonly version?: string; readonly build?: str
   return [v, b, plugins((info.plugins ?? []).length)].filter(Boolean).join(' · ');
 }
 
+/** A computer's name in Diagnostics (setup audit B9: the cloud computer read "this computer", as every wisp calls
+ *  itself). This wisp is its own name; another is the name its machine row gives it (`machines_peer`, keyed
+ *  `<home>:<machine>`, the machine being its peer id), else its own unless that's the generic "this computer", else
+ *  its id. */
+export function peerTitle(
+  peer: string,
+  home: string,
+  own: string,
+  machines: readonly { readonly id: string | number; readonly body?: { readonly name?: string | null } | undefined }[],
+): string {
+  if (peer === home) return own;
+  const row = machines.find((m) => {
+    const id = String(m.id);
+    return id.slice(id.indexOf(':') + 1) === peer;
+  });
+  const named = row?.body?.name;
+  if (named) return named;
+  if (row) return peer;
+  return own && own !== 'this computer' ? own : peer;
+}
+
 export function describe(e: DevEntry): string {
   switch (e.kind) {
     case 'frame':

@@ -106,3 +106,12 @@ export function timeChoices(now: number): [string, number][] {
     [t('wisp.later.time.morning'), morning],
   ];
 }
+
+/** What New task says once Send made a plan instead of a task (v1 launcher.js: "Starts 14:32", planSaid): the plan sits in
+ *  Scheduled or Drafts, which may be out of sight (audit B #6: "the scheduled task shows nowhere"). */
+export function plannedSaid(p: { readonly kind: 'task' | 'reminder'; readonly at?: number; readonly draft?: true; readonly after?: { readonly title: string } }, now: number): string {
+  if ('draft' in p && p.draft) return t('wisp.later.toast.drafted');
+  if (p.after) return t('wisp.later.toast.after', { title: p.after.title });
+  const time = aheadLabel(p.at ?? now, now);
+  return p.kind === 'reminder' ? t('wisp.later.toast.reminds', { time }) : t('wisp.later.toast.starts', { time });
+}

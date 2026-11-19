@@ -77,7 +77,7 @@ mod tests {
 
     #[test]
     fn only_tasks_with_a_slot_asked_for_and_only_those_slots() {
-        let a = SlotsArgs { plugins: vec!["wisp.worktrees".into(), "wisp.ship".into()], all: false };
+        let a = SlotsArgs { plugins: vec!["wisp.worktrees".into(), "wisp.ship".into()], all: false, having: Vec::new() };
         let got = of(&rows(), &a).unwrap();
         assert_eq!(got.len(), 1);
         assert_eq!(got[0].id.as_str(), "a");
@@ -88,7 +88,7 @@ mod tests {
 
     #[test]
     fn runtimes_own_slot_goes_out_without_its_text() {
-        let got = of(&rows(), &SlotsArgs { plugins: vec![RUNTIME.into()], all: false }).unwrap();
+        let got = of(&rows(), &SlotsArgs { plugins: vec![RUNTIME.into()], all: false, having: Vec::new() }).unwrap();
         assert_eq!(got[0].ext[RUNTIME], json!({ "group": "g1", "btw": [{ "pending": true, "at": 5 }] }));
         assert!(!serde_json::to_string(&got).unwrap().contains("sk-live"));
     }

@@ -5,10 +5,10 @@
 
 import { createMemo, createSignal, createEffect, lazy, on, onCleanup, onMount, Show, type JSX } from 'solid-js';
 import type { Readable } from '@wisp/client';
-import { Sheet, Stage, Toasts, useSignal, type StagePage } from '@wisp/ui';
+import { Sheet, Stage, Toasts, afterFirstScreen, useSignal, type StagePage } from '@wisp/ui';
 import { useShell } from '../context.tsx';
 import { Area, ClientsProvider, type Clients } from '../slot.tsx';
-import { MainPane, SidePane, TaskView } from './Panes.tsx';
+import { MainPane, SidePane, TaskView, homeLoaded, loadHome } from './Panes.tsx';
 import { TASK_PAGE_INPUTS, taskPagePreloads } from './warm-task.ts';
 import { Overlays } from './Overlays.tsx';
 import { Head, ListLoading, PickStripView, Rail, SidebarList, SidebarTop } from './Sidebar.tsx';
@@ -54,6 +54,18 @@ export function App(props: { readonly clients: Clients; readonly recent: Readabl
   const switcher = shell.platform.kind === 'desktop';
   // the phone apps (Android, iPhone): their own head, New task and destinations; a phone's browser keeps v1's
   const phone = shell.platform.phone;
+  // Home's chunk (Panes.tsx): the desktop draws Home first, so the frame waits for it and comes up whole, never a blank
+  // main pane that fills a moment later; a phone draws the list first and fetches Home once that's up, or at the first
+  // touch, whichever is sooner, so New task almost always finds it there (else its skeleton, Panes.tsx HomePage)
+  const [homeIn, setHomeIn] = createSignal(phone || homeLoaded());
+  if (phone) {
+    const warm = (): void => void loadHome().catch(() => undefined);
+    afterFirstScreen(warm);
+    onMount(() => {
+      document.addEventListener('pointerdown', warm, { once: true, capture: true, passive: true });
+      onCleanup(() => document.removeEventListener('pointerdown', warm, { capture: true }));
+    });
+  } else if (!homeIn()) void loadHome().then(() => setHomeIn(true), () => setHomeIn(true));
   // the desktop app on a Mac: the page is the title bar (Stage's titlebar, the platform's drag regions)
   const titlebar = shell.platform.titlebar === 'mac' ? 'mac' : undefined;
   onMount(() => onCleanup(shell.platform.dragRegions(document.body)));
@@ -144,6 +156,7 @@ export function App(props: { readonly clients: Clients; readonly recent: Readabl
   };
   return (
     <ClientsProvider value={props.clients}>
+      <Show when={homeIn()}>
       <Stage
         layout={nav().layout}
         page={page()}
@@ -194,6 +207,7 @@ export function App(props: { readonly clients: Clients; readonly recent: Readabl
         </Sheet>
       </Show>
       <Overlays />
+      </Show>
       <Toasts toaster={shell.toast} />
       {switcher ? <Switcher recent={props.recent} /> : null}
     </ClientsProvider>

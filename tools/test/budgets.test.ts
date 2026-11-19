@@ -5,7 +5,8 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'nod
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test, { after } from 'node:test';
-import { BUDGETS, SERVER_BUDGETS, initialFiles, measure, overBudget, summary } from '../budgets.ts';
+import { BUDGETS, FIRST_SCREEN_BUDGETS, SERVER_BUDGETS, initialFiles, measure, overBudget, summary } from '../budgets.ts';
+import { beforeMark } from '../first-screen.ts';
 
 const roots: string[] = [];
 after(() => {
@@ -74,7 +75,7 @@ test('budgets: the CLI exits 1 on a miss, 0 within budget, and appends the summa
   const run = (dir: string): { code: number; out: string } => {
     const file = join(dir, 'summary.md');
     try {
-      execFileSync(process.execPath, [join(import.meta.dirname, '..', 'budgets.ts'), `--dist=${dir}`, `--summary=${file}`], { stdio: 'pipe', env: { ...process.env, GITHUB_ACTIONS: '', GITHUB_STEP_SUMMARY: '' } });
+      execFileSync(process.execPath, [join(import.meta.dirname, '..', 'budgets.ts'), `--dist=${dir}`, `--summary=${file}`, '--entry-only'], { stdio: 'pipe', env: { ...process.env, GITHUB_ACTIONS: '', GITHUB_STEP_SUMMARY: '' } });
       return { code: 0, out: readFileSync(file, 'utf8') };
     } catch (err) {
       return { code: (err as { status: number }).status, out: readFileSync(file, 'utf8') };
@@ -86,6 +87,39 @@ test('budgets: the CLI exits 1 on a miss, 0 within budget, and appends the summa
   const big = run(dist({ entry: BUDGETS.initialJsBr + 4096 }));
   assert.equal(big.code, 1);
   assert.match(big.out, /initial JS .*❌ over by/);
+});
+
+// ADR-0105: the first screen is what each look loaded (tools/first-screen.ts), not index.html's tags; the worse look is
+// gated, each look's numbers are listed, and what either loaded first isn't counted as lazy
+test('budgets: with the first screen measured, the worse look is the initial load and each look has its row', () => {
+  const root = dist({ entry: 1000, css: 500 });
+  writeFileSync(join(root, 'assets/home-f.js'), randomBytes(3000));
+  writeFileSync(join(root, 'assets/phone-g.css'), randomBytes(800));
+  const m = measure(root, {
+    desktop: { js: ['/assets/index-a.js', '/assets/home-f.js'], css: ['/assets/index-c.css'] },
+    phone: { js: ['/assets/index-a.js'], css: ['/assets/index-c.css', '/assets/phone-g.css'] },
+  });
+  assert.deepEqual(m.initialJs.files, ['/assets/index-a.js', '/assets/home-f.js']);
+  assert.deepEqual(m.initialCss.files, ['/assets/index-c.css', '/assets/phone-g.css']);
+  assert.ok(m.looks?.desktop && m.looks.phone);
+  assert.equal(m.lazy.some((l) => l.file === 'assets/home-f.js'), false, 'loaded first: not lazy');
+  const sum = summary(m);
+  assert.match(sum, /\| first screen JS \(desktop\) \|/);
+  assert.match(sum, /\| first screen CSS \(phone\) \|/);
+});
+
+test('budgets: the first screen is the JS and CSS fetched before the mark, each once', () => {
+  const got = beforeMark(
+    [
+      { path: '/assets/index-a.js', start: 1 },
+      { path: '/assets/index-c.css', start: 2 },
+      { path: '/api/events', start: 3 },
+      { path: '/assets/index-a.js', start: 4 },
+      { path: '/assets/later-z.js', start: 50 },
+    ],
+    10,
+  );
+  assert.deepEqual(got, { js: ['/assets/index-a.js'], css: ['/assets/index-c.css'] });
 });
 
 test('budgets: no build is a failure that says how to make one', () => {
@@ -108,4 +142,37 @@ test('budgets: spikes/server-budgets gates on SERVER_BUDGETS, the one list of th
     },
     { ...SERVER_BUDGETS },
   );
+});
+
+// ADR-0105 §4: the first screen is gated per look at a ratchet (today's numbers plus 2 KB, 2026-11-19), which only goes
+// down toward ADR-0011's 120 / 30; index.html's own files stay gated at 120 / 30 as before
+test('budgets: the ratchet is pinned here (lowering it is a deliberate edit, raising it needs an ADR) and never under the target', () => {
+  const KB = 1024;
+  assert.deepEqual(FIRST_SCREEN_BUDGETS, { desktop: { jsBr: 173 * KB, cssBr: 30 * KB }, phone: { jsBr: 167 * KB, cssBr: 40.5 * KB } });
+  for (const b of Object.values(FIRST_SCREEN_BUDGETS)) {
+    assert.ok(b.jsBr >= BUDGETS.initialJsBr && b.cssBr >= BUDGETS.initialCssBr, 'a ratchet below the target is the target: lower BUDGETS instead');
+  }
+});
+
+test('budgets: each look is gated at its own ratchet and the entry at the target; a miss names the look', () => {
+  const root = dist({ entry: 1000, css: 500 });
+  writeFileSync(join(root, 'assets/home-f.js'), randomBytes(3000));
+  writeFileSync(join(root, 'assets/phone-g.css'), randomBytes(800));
+  const m = measure(root, {
+    desktop: { js: ['/assets/index-a.js', '/assets/home-f.js'], css: ['/assets/index-c.css'] },
+    phone: { js: ['/assets/index-a.js'], css: ['/assets/index-c.css', '/assets/phone-g.css'] },
+  });
+  assert.deepEqual(overBudget(m), []);
+  // the desktop's JS over its ratchet: only that is named
+  const tight = { desktop: { jsBr: 3500, cssBr: 64 * 1024 }, phone: { jsBr: 64 * 1024, cssBr: 64 * 1024 } };
+  const over = overBudget(m, BUDGETS, tight);
+  assert.equal(over.length, 1);
+  assert.match(over[0] ?? '', /^first screen JS \(desktop\) [\d.]+ KB br > 3\.4 KB$/);
+  // the entry (index.html's tags) over the target fails even when every look is within its ratchet
+  assert.match(overBudget(m, { initialJsBr: 10, initialCssBr: BUDGETS.initialCssBr }).join('\n'), /^initial JS [\d.]+ KB br > 0\.0 KB$/m);
+  // the summary: each look's row against its ratchet, the entry's against the target
+  const sum = summary(m, BUDGETS, tight);
+  assert.match(sum, /\| first screen JS \(desktop\) \|.*\| 3\.4 KB \|.*❌ over by/);
+  assert.match(sum, /\| first screen CSS \(phone\) \|.*\| 64\.0 KB \|.*✅ \|/);
+  assert.match(sum, /\| initial JS \| [\d.]+ KB \| 120\.0 KB \|.*✅ \|/);
 });

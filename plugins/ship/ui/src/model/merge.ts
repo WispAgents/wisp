@@ -50,7 +50,10 @@ export function mergePlan(t: T, s: ShipSession | undefined, ctx: ReviewContext):
   // GitHub alone. A worktree brought in from another tool stays, whatever the merge does.
   const shipped = shippedPrs(s).filter((x) => x.pr.state === 'OPEN');
   const removed = shipped.filter((x) => !(s.foreign && x.pr === s.pr)).length;
-  const after = shipped.length ? `${t('wisp.ship.merge.after', { count: shipped.length })}${removed ? t('wisp.ship.merge.andRemove', { count: removed }) : ''}` : '';
+  // a worktree holding uncommitted work is kept (the server's merge says so after): the confirm says it first (audit B #19)
+  const dirty = s.toShip?.dirty ?? 0;
+  const tail = !removed ? '' : dirty === 0 ? t('wisp.ship.merge.andRemove', { count: removed }) : removed === 1 ? t('wisp.ship.merge.andKeep', { count: dirty }) : t('wisp.ship.merge.andRemoveClean');
+  const after = shipped.length ? `${t('wisp.ship.merge.after', { count: shipped.length })}${tail}` : '';
   return {
     // what follows is its own sentence, its full stop with it: none after the question mark when nothing follows (QA r14 #5)
     question: t('wisp.ship.merge.question', { what, after: after ? `${after}.` : '' }),

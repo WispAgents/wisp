@@ -5,6 +5,7 @@
 import { createSignal, lazy } from 'solid-js';
 import { uuidv7, type Json, type PeerId, type PluginClient } from '@wisp/client';
 import { defineView, definePluginUi } from '@wisp/shell';
+import { afterFirstScreen } from '@wisp/ui';
 import { catalogue, t } from './i18n.ts';
 import { sandboxPrompt } from './model.ts';
 import { LAUNCHING, parseLaunching } from './views.ts';
@@ -18,9 +19,12 @@ function offered(c: PluginClient): boolean {
   const now = Date.now();
   if (now - asked.at > 60_000) {
     asked.at = now;
-    void import('./commands.ts')
-      .then(({ info }) => c.run(info, { peer: c.home as PeerId }))
-      .then((i) => setCanMake(i.enabled), () => setCanMake(false));
+    // once the first screen is up (ADR-0105): Sandbox joins Run on when the answer comes, as it always did
+    afterFirstScreen(() =>
+      void import('./commands.ts')
+        .then(({ info }) => c.run(info, { peer: c.home as PeerId }))
+        .then((i) => setCanMake(i.enabled), () => setCanMake(false)),
+    );
   }
   return canMake();
 }

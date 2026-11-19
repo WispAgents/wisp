@@ -30,7 +30,7 @@ pub use error::SyncError;
 pub use fold::{compose, fold};
 pub use parse::{ParsedHello, Passive, parse_client_message, parse_hello};
 pub use rows::window_page;
-pub use server::SyncServer;
+pub use server::{SyncServer, snapshot_frame};
 pub use types::{
     CanRead, ChangeRow, CloseReason, CommandOutcome, ConnId, ConnectQuery, Gone, Input, Output, SnapshotAnswer, Stats, SyncOptions,
 };

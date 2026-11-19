@@ -8,8 +8,8 @@ import { usePlatform } from '../platform/PlatformLook.tsx';
 import { GESTURES, type GestureName } from './registry.ts';
 import { useGestureHost, type GestureAction, type GestureHost } from './host.tsx';
 import { useT } from '../core/i18n.tsx';
-import { bindPageSwipe } from './bind.ts';
-import { bindReorderDrag, bindSheetDrag, type ReorderDragOptions, type SheetDragOptions } from './bind-vertical.ts';
+import type { ReorderDragOptions, SheetDragOptions } from './bind-vertical.ts';
+import { bindLater } from './binders-part.ts';
 
 /** Adds `word` to a space-separated attribute (an element may answer several gestures). */
 function addWord(el: Element, attr: string, word: string): void {
@@ -61,7 +61,7 @@ export function useTaskSwipe(o: () => TaskSwipe): (el: HTMLElement) => void {
   const t = useT();
   return useGesture(
     'task.head-swipe',
-    (el, host) => bindPageSwipe(el, { host, can: (d) => (d === 'left' ? o().onNext : o().onPrevious) !== undefined, onSwipe: (d) => (d === 'left' ? o().onNext : o().onPrevious)?.() }),
+    (el, host) => bindLater((b) => b.bindPageSwipe(el, { host, can: (d) => (d === 'left' ? o().onNext : o().onPrevious) !== undefined, onSwipe: (d) => (d === 'left' ? o().onNext : o().onPrevious)?.() })),
     () => [
       ...(o().onNext ? [{ label: t('gesture.next-task'), run: () => o().onNext?.() }] : []),
       ...(o().onPrevious ? [{ label: t('gesture.previous-task'), run: () => o().onPrevious?.() }] : []),
@@ -74,7 +74,7 @@ export function useSidePanelSwipe(onPanel: () => void, onDrag?: (dx: number) => 
   const t = useT();
   return useGesture(
     'task.body-swipe',
-    (el, host) => bindPageSwipe(el, { host, can: (d) => d === 'left', onSwipe: () => onPanel(), ...(onDrag && { onDrag }) }),
+    (el, host) => bindLater((b) => b.bindPageSwipe(el, { host, can: (d) => d === 'left', onSwipe: () => onPanel(), ...(onDrag && { onDrag }) })),
     () => [{ label: t('gesture.side-panel'), run: onPanel }],
   );
 }
@@ -82,10 +82,10 @@ export function useSidePanelSwipe(onPanel: () => void, onDrag?: (dx: number) => 
 /** A sheet: drag it down to close (a draft stays; twins: Cancel / Close / Done). Step 5's Sheet carries it. */
 export function useSheetDrag(o: Omit<SheetDragOptions, 'host'>): (el: HTMLElement) => void {
   const t = useT();
-  return useGesture('sheet.drag-down', (el, host) => bindSheetDrag(el, { ...o, host }), () => [{ label: t('close'), run: o.onClose }]);
+  return useGesture('sheet.drag-down', (el, host) => bindLater((b) => b.bindSheetDrag(el, { ...o, host })), () => [{ label: t('close'), run: o.onClose }]);
 }
 
 /** A list of follow-ups: long-press an item, then drag it (twins: the grip and Move up / Move down in its menu). */
 export function useQueueDrag(o: Omit<ReorderDragOptions, 'host'>): (el: HTMLElement) => void {
-  return useGesture('queue.drag', (el, host) => bindReorderDrag(el, { ...o, host }));
+  return useGesture('queue.drag', (el, host) => bindLater((b) => b.bindReorderDrag(el, { ...o, host })));
 }

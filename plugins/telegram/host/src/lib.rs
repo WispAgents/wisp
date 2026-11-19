@@ -59,6 +59,9 @@ fn s<'a>(v: &'a Value, k: &str) -> &'a str {
     v.get(k).and_then(Value::as_str).unwrap_or_default()
 }
 
+/// Where a refused token is fixed (Slack's and Discord's errors say theirs).
+const FIX: &str = "Check the token in wisp → Settings → Phone → Telegram.";
+
 /// A chat id as Telegram sends it (a number) or wisp keeps it (a string).
 fn id_text(v: &Value) -> String {
     v.as_str().map_or_else(|| v.as_i64().map(|n| n.to_string()).unwrap_or_default(), str::to_owned)
@@ -90,6 +93,16 @@ impl Telegram {
                 WireError::unavailable(format!("Telegram: {}", if token.is_empty() { e } else { e.replace(token, "…") }))
             })?;
         let j = r.json();
+        // setup audit B12: a refused token says where to fix it, as Slack and Discord do (Telegram answers 401
+        // Unauthorized, or 404 for a token that isn't one)
+        if j.get("ok") != Some(&Value::Bool(true))
+            && matches!(j.get("error_code").and_then(Value::as_u64).unwrap_or(u64::from(r.status)), 401 | 404)
+        {
+            return Err(WireError::conflict(format!(
+                "Telegram: {}. {FIX}",
+                j.get("description").and_then(Value::as_str).unwrap_or("Unauthorized")
+            )));
+        }
         if j.get("ok") != Some(&Value::Bool(true)) {
             return Err(WireError::unavailable(format!(
                 "Telegram: {}",
@@ -406,6 +419,11 @@ impl Transport for Telegram {
                     for u in fresh {
                         self.on_update(u).await;
                     }
+                }
+                // a refused token won't come back by asking again every 5 s: said, and the poll stops until it's set
+                Err(e) if e.message.contains(FIX) => {
+                    self.mark(Some(e.message));
+                    return;
                 }
                 Err(e) => {
                     self.mark(Some(e.message));

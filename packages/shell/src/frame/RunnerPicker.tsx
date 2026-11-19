@@ -8,6 +8,7 @@
 // each row updated in place; `runtime.agents` is still asked once the box shows.
 import { Show, createEffect, createMemo, createResource, createSignal, onCleanup, type JSX } from 'solid-js';
 import { defineCommand, entityKey, type PeerId, type SettingRow } from '@wisp/client';
+import { holdHarnesses, pickerDataOf } from './picker-data.ts';
 import { HarnessPicker, Text, useSignal, type HarnessPickerPane, type HarnessPickerRow } from '@wisp/ui';
 import { useShell } from '../context.tsx';
 import { Slot } from '../slot.tsx';
@@ -15,7 +16,6 @@ import {
   HARNESSES_TOPIC,
   accountFor,
   effortsFor,
-  fullest,
   keepOrder,
   harnessesFor,
   offerState,
@@ -35,24 +35,6 @@ import '../i18n/lazy.ts';
 /** v1 effortLabel: "X-High", else the level capitalised */
 const levelLabel = (e: string): string => (e === 'xhigh' ? 'X-High' : e.charAt(0).toUpperCase() + e.slice(1));
 
-const agentsOf = defineCommand<{ peer: string }, AgentOffer[]>({ id: 'runtime.agents', owner: (a) => a.peer, wire: () => ({}), optimistic: 'none', pending: 'the harness list' });
-
-const plansOf = defineCommand<{ peer: string; agent: string }, { windows: PlanWindow[] }[]>({
-  id: 'budget.view',
-  owner: (a) => a.peer,
-  wire: (a) => ({ agent: a.agent }),
-  optimistic: 'none',
-  pending: 'the plan windows',
-});
-
-/** A harness's accounts (wisp.accounts); refused or absent: none, and the picker shows no account choice. */
-const accountsOf = defineCommand<{ peer: string; agent: string }, { accounts: AccountOffer[] }>({
-  id: 'accounts.list',
-  owner: (a) => a.peer,
-  wire: (a) => ({ agent: a.agent }),
-  optimistic: 'none',
-  pending: 'the account list',
-});
 
 /** Auto's goal is the router's (Settings → Auto shows the same): the pick shows at once, a refusal puts it back. */
 const autoGoal = defineCommand<{ peer: string; goal: string }, unknown>({
@@ -109,30 +91,31 @@ function PickerOpen(props: RunnerPickerProps): JSX.Element {
   const t = shell.t;
   const harnesses = useSignal(shell.harnesses());
   const logoOf = (id: string): string | undefined => harnesses().find((h) => h.id === id)?.logo;
-  // each harness as its detect settles (ADR-0066), watched while the picker shows
-  createEffect(() => {
-    const scope = shell.client.scope.child('runner-harnesses');
-    shell.client.peers.watch(props.peer as PeerId, HARNESSES_TOPIC, scope);
-    onCleanup(() => scope.dispose());
-  });
+  // each harness as its detect settles (ADR-0066), watched while the picker shows and a while after (perf-ui-r2 #3:
+  // an open soon after finds it there); the answers are kept per peer the same way (picker-data.ts)
+  createEffect(() => onCleanup(holdHarnesses(shell.client, props.peer, HARNESSES_TOPIC)));
+  const data = createMemo(() => pickerDataOf(shell.client, props.peer));
   const topicRows = useHarnessRows(shell.client.entities, () => props.peer);
-  const [answered] = createResource(
-    () => props.peer,
-    (peer) => shell.client.commands.run(agentsOf, { peer }).catch(() => [] as AgentOffer[]),
-  );
-  const agents = createMemo(() => offersFrom(topicRows(), answered()));
-  // how much of each plan is gone (v1 usageNote): once per harness as each turns ready
-  const [usage, setUsage] = createSignal<ReadonlyMap<string, PlanWindow | undefined>>(new Map());
-  const asked = new Set<string>();
+  // what's kept draws with the picker; an answer still to come (or a stale one asked again) fills it in
+  const [answered, setAnswered] = createSignal<AgentOffer[] | undefined>(data().agentsNow());
   createEffect(() => {
-    for (const a of agents()) {
-      if (!a.available || a.checking || asked.has(a.id)) continue;
-      asked.add(a.id);
-      void shell.client.commands
-        .run(plansOf, { peer: props.peer, agent: a.id })
-        .catch(() => [])
-        .then((w) => setUsage((m) => new Map(m).set(a.id, fullest(w))));
-    }
+    const d = data();
+    void d.agents().then((v) => {
+      if (d === data() && v !== answered()) setAnswered(() => v);
+    });
+  });
+  const agents = createMemo(() => offersFrom(topicRows(), answered()));
+  // how much of each plan is gone (v1 usageNote): what's kept draws with the rows; the rest asked together, one update
+  const ready = (): string[] => agents().flatMap((a) => (a.available && !a.checking ? [a.id] : []));
+  const [usage, setUsage] = createSignal<ReadonlyMap<string, PlanWindow | undefined>>(data().usageNow(ready()));
+  const asked = new Set<string>(usage().keys());
+  createEffect(() => {
+    const ids = ready().filter((id) => !asked.has(id));
+    if (ids.length === 0) return;
+    for (const id of ids) asked.add(id);
+    void data()
+      .usage(ids)
+      .then((got) => setUsage((m) => new Map([...m, ...got])));
   });
   // a row keeps its place as its harness settles (nothing jumps); set-up ones first on open
   let shown: string[] = [];
@@ -216,10 +199,7 @@ function PickerOpen(props: RunnerPickerProps): JSX.Element {
   // the focused harness's accounts (v1 accountsAt): two or more show
   // a string, not an object: a harness elsewhere settling (a new agents() array) doesn't ask the accounts again
   const wantsAccounts = (): false | string => (props.accounts === true && focused() !== AUTO && offer()?.available === true && !signedOut() ? focused() : false);
-  const [fetched] = createResource(wantsAccounts, async (agent) => ({
-    agent,
-    list: (await shell.client.commands.run(accountsOf, { peer: props.peer, agent }).catch(() => ({ accounts: [] as AccountOffer[] }))).accounts,
-  }));
+  const [fetched] = createResource(wantsAccounts, async (agent) => ({ agent, list: await data().accounts(agent) }));
   const accounts = (): readonly AccountOffer[] => {
     const f = fetched.latest;
     return wantsAccounts() && f?.agent === focused() ? f.list : [];

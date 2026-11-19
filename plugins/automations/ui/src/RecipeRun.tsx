@@ -4,10 +4,10 @@
 // (`automations.task.run`) and the dialog closes; a refusal keeps it open with why.
 import { createMemo, createResource, createSignal, For, Show, type JSX } from 'solid-js';
 import { defineCommand, type PeerId, type PluginClient } from '@wisp/client';
-import { projectList, useRunWords, useShell } from '@wisp/shell';
+import { PROJECT_ORDER, projectList, useRunWords, useShell } from '@wisp/shell';
 import { Button, Dialog, Field, Inline, Input, Select, Stack, Text, useSignal } from '@wisp/ui';
 import { t } from './i18n.ts';
-import { fieldsOf } from './recipe.ts';
+import { fieldsOf, runProject } from './recipe.ts';
 import './i18n/lazy.ts';
 
 export const RUN_VIEW = 'automations.run';
@@ -33,7 +33,8 @@ const start = defineCommand<{ peer: PeerId; name: string; params: Record<string,
 
 export default function RecipeRun(props: { readonly client: PluginClient; readonly params: { name: string; project: string } }): JSX.Element {
   // the run in the picker's words, never its ids (QA r15 #3)
-  const runWords = useRunWords(useShell());
+  const shell = useShell();
+  const runWords = useRunWords(shell);
   const c = props.client;
   const say = t as (k: string, v?: Readonly<Record<string, string | number>>) => string;
   const [list] = createResource(() => c.run(tasks, { peer: c.home }).catch(() => [] as Declared[]));
@@ -41,8 +42,13 @@ export default function RecipeRun(props: { readonly client: PluginClient; readon
   const fields = createMemo(() => (recipe() ? fieldsOf(recipe() as Declared) : []));
   const [values, setValues] = createSignal<Record<string, string>>({});
   const rows = useSignal(c.entities.list<unknown>('project'));
-  const projects = createMemo(() => projectList(rows(), undefined));
-  const [project, setProject] = createSignal(props.params.project);
+  const settings = useSignal(c.entities.list<{ key: string; value: unknown }>('setting'));
+  // in the launcher's order (Settings › Projects), as Home lists them
+  const projects = createMemo(() => projectList(rows(), settings().find((r) => r.key === PROJECT_ORDER)?.value));
+  const pick = useSignal(shell.projectFilter?.value ?? (() => 'all'));
+  // the launcher's project until one is picked here ('' is No folder, picked)
+  const [chosen, setProject] = createSignal<string | undefined>(props.params.project || undefined);
+  const project = (): string => chosen() ?? runProject('', pick(), projects());
   const [busy, setBusy] = createSignal(false);
   const [error, setError] = createSignal('');
   const close = (): void => c.navigate({ t: 'closeOverlay', id: RUN_VIEW as never });
@@ -66,7 +72,7 @@ export default function RecipeRun(props: { readonly client: PluginClient; readon
       footer={
         <Inline gap="2" justify="between">
           <Text size="xs" tone="muted">
-            {((r) => (r?.agent ? runWords({ agent: r.agent, model: r.model, cwd: r.project || props.params.project || undefined }) : say('automations.run.launcher')))(recipe())}
+            {((r) => (r?.agent ? runWords({ agent: r.agent, model: r.model, cwd: r.project || project() || undefined }) : say('automations.run.launcher')))(recipe())}
           </Text>
           <Button variant="primary" size="sm" icon="enter" loading={busy()} disabled={missing() || !recipe()} onClick={run}>
             {say('automations.run.run')}

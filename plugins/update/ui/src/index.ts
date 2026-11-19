@@ -1,5 +1,6 @@
 // wisp.update's UI: Settings → Updates, its row at the end of General, and the top bar's Update pill.
 import { lazy } from 'solid-js';
+import { drawnLater } from '@wisp/ui';
 import { defineExtension, type PluginUiDef } from '@wisp/shell';
 import type { ExtensionId } from '@wisp/client';
 import { catalogue } from './i18n.ts';
@@ -14,7 +15,8 @@ const ui: PluginUiDef = {
     defineExtension({
       id: 'update.pill',
       attachTo: { id: 'shell.topbar:machines' },
-      component: lazy(() => import('./Pill.tsx')),
+      // shown only when there's an update, after asking: once the first screen is up (ADR-0105)
+      component: drawnLater(lazy(() => import('./Pill.tsx'))),
       order: -2,
       bar: {
         icon: 'update',

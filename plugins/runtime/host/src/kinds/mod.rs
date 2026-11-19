@@ -15,7 +15,7 @@ mod project;
 mod team;
 
 use wisp_kernel::Setup;
-use wisp_resources_api::{KindInfo, stored, stored_published_unique};
+use wisp_resources_api::{KindInfo, ResourceKind, StoredKind, stored};
 
 pub use brief::Brief;
 pub use harness::{HarnessSpec, declared};
@@ -38,15 +38,23 @@ pub fn register(s: &mut Setup) -> std::sync::Arc<Kinds> {
         // every screen shows projects (chips, New task's "in", Home): published as `project` on `config`
         // its path canonical whoever applies it (`wisp add .` sent "/repo/.", a pasted "C:\\x\\" or "\\\\?\\C:\\x")
         // one project per folder (setup audit F23: a formula's second name for a folder was a second project)
-        project: stored_published_unique::<ProjectSpec>(
-            s,
-            "project",
-            |sc| KindInfo::new("project", "projects", owner, sc).order(10),
-            project::tidy_project,
-            "path",
-        ),
+        // a folder that's there (setup audit B2: `wisp import` and `wisp apply` let a missing one in)
+        project: project_kind(s, owner),
         harness: harness::harness_kind(s),
         skill: stored::<SkillSpec>(s, |sc| KindInfo::new("skill", "skills", owner, sc).order(15)),
         team: stored::<TeamSpec>(s, |sc| KindInfo::new("team", "teams", owner, sc).order(25)),
     })
+}
+
+/// The project kind: published on `config`, its path canonical, one per folder, and only at a folder that's there.
+fn project_kind(s: &mut Setup, owner: &'static str) -> std::sync::Arc<StoredKind> {
+    let info = KindInfo::new("project", "projects", owner, wisp_resources_api::schema_of::<ProjectSpec>()).order(10);
+    let k = std::sync::Arc::new(
+        StoredKind::new(info, s.ctx()).published("project").tidied(project::tidy_project).unique("path").checked(project::check_project),
+    );
+    let as_kind: std::sync::Arc<dyn ResourceKind> = k.clone();
+    s.contribute(&wisp_resources_api::RESOURCE_KIND, as_kind);
+    let start = k.clone();
+    s.on_start(move |_| async move { start.ensure() });
+    k
 }

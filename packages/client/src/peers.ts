@@ -4,6 +4,7 @@
 // returns. Subscriptions belong to the asking scope: two components showing one task share one
 // subscription (the link refcounts), and the last to go ends it. A sleeping box stays asleep
 // until something wakes it: opening its task or sending it a command (plan §7.2.3).
+// size-ok: one factory whose closures share each peer's runtime; the watch refcount (perf r2 #14) sits with watch()
 
 import type { Ack, Notice, PeerInfo, Reject, Topic } from '@wisp/protocol';
 import type { Devtools } from './devtools.ts';
@@ -77,6 +78,8 @@ export interface PeersOptions {
 
 /** how often an open stream's silence is checked: its link drops one quiet for two keepalives */
 const WATCH_MS = 5_000;
+/** how long a topic nothing watches keeps its rows: opened again by then (Back, J/K and back) it draws at once */
+export const KEEP_UNWATCHED_MS = 30_000;
 
 interface PeerRuntime {
   readonly cfg: PeerConfig;
@@ -105,6 +108,23 @@ export function createPeers(o: PeersOptions): Peers {
   /** watches on a peer not added yet, started when it is */
   const waiting = new Map<PeerId, { topic: Topic; scope: Scope; opts: { passive?: boolean } }[]>();
   const ids = signal<readonly PeerId[]>([]);
+  // only what's open stays in memory (AGENTS.md): a topic's rows go a while after its last watch ends (perf r2 #14: a
+  // task's turns and events stayed for good once it had been opened, every streamed event of a task looked at once)
+  const watching = new Map<string, { n: number; stop?: () => void }>();
+  const held = (peer: PeerId, topic: Topic, by: 1 | -1): void => {
+    const k = `${peer}\u0000${topic}`;
+    const w = watching.get(k) ?? { n: 0 };
+    w.n += by;
+    w.stop?.();
+    delete w.stop;
+    watching.set(k, w);
+    if (w.n > 0) return;
+    w.stop = o.scope.timeout(KEEP_UNWATCHED_MS, () => {
+      if ((watching.get(k)?.n ?? 0) > 0) return;
+      watching.delete(k);
+      o.writer.dropTopic(peer, topic);
+    });
+  };
   const statusOf = new Map<PeerId, WritableSignal<PeerStatus>>();
   const infoOf = new Map<PeerId, WritableSignal<PeerInfo | undefined>>();
   const on = {
@@ -303,7 +323,11 @@ export function createPeers(o: PeersOptions): Peers {
       }
       const passive = opts.passive === true;
       feed(p, { kind: 'subscribe', topic, passive });
-      scope.add(() => feed(p, { kind: 'unsubscribe', topic, passive }));
+      held(peer, topic, +1);
+      scope.add(() => {
+        feed(p, { kind: 'unsubscribe', topic, passive });
+        held(peer, topic, -1);
+      });
       if (!passive && p.asleep) void manager.wake(peer); // opening one of its tasks wakes a box
     },
     async wake(peer) {

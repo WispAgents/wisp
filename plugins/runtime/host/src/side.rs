@@ -7,7 +7,7 @@ use std::time::Duration;
 use tokio::sync::watch;
 
 use wisp_proc::{Env, SpawnOpts, Stream};
-use wisp_runtime_api::harness::{Exit, HarnessRun, ParserInput, ParserOutput, Stdin};
+use wisp_runtime_api::harness::{Exit, HarnessRun, Launch, ParserInput, ParserOutput, Stdin};
 use wisp_runtime_api::model::Activity;
 use wisp_runtime_api::{Harness, HarnessEvent};
 use wisp_runtime_core::activity::{self, Effect, EnvValues, Head};
@@ -76,6 +76,26 @@ impl Runtime {
         stop: Option<watch::Receiver<bool>>,
     ) -> Result<SideOut> {
         let launch = h.launch(run)?;
+        // the files it asked for (codex's base instructions, grok's prompt file, copilot's usage file) in a folder of
+        // its own, and `{tmp}` in its argv and env pointing there, as a turn's launch has them
+        let tmp = crate::run::write_files(&format!("wisp-side-{}", wisp_kernel::ids::uuid7()), &launch).await?;
+        let out = self.side_spawned(h, run, &launch, &tmp, timeout, stop).await;
+        if !launch.files.is_empty() {
+            let _ = tokio::fs::remove_dir_all(&tmp).await;
+        }
+        out
+    }
+
+    async fn side_spawned(
+        &self,
+        h: &dyn Harness,
+        run: &HarnessRun,
+        launch: &Launch,
+        tmp: &str,
+        timeout: Duration,
+        stop: Option<watch::Receiver<bool>>,
+    ) -> Result<SideOut> {
+        let fill = |x: &str| x.replace("{tmp}", tmp);
         let opts = SpawnOpts {
             // a /btw runs where its task does; a quick answer with no folder in one empty folder of its own
             cwd: Some(
@@ -83,7 +103,13 @@ impl Runtime {
             ),
             env: Env {
                 clear: false,
-                set: run.env.iter().chain(&run.account_env).chain(&launch.env).map(|(k, v)| (k.clone(), v.clone())).collect(),
+                set: run
+                    .env
+                    .iter()
+                    .chain(&run.account_env)
+                    .map(|(k, v)| (k.clone(), v.clone()))
+                    .chain(launch.env.iter().map(|(k, v)| (k.clone(), fill(v))))
+                    .collect(),
                 remove: launch.env_remove.clone(),
             },
             no_stdin: launch.stdin == Stdin::Null,
@@ -96,7 +122,7 @@ impl Runtime {
             if held.as_ref().is_some_and(|v| **v) {
                 return Err(RuntimeError::Cancelled(wisp_runtime_api::commands::QUICK_CANCELLED.into()));
             }
-            self.proc.spawn(&launch.program, &launch.args, opts)?
+            self.proc.spawn(&launch.program, &launch.args.iter().map(|a| fill(a)).collect::<Vec<_>>(), opts)?
         };
 
         let (handle, mut rx) = child.split();

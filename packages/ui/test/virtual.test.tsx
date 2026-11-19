@@ -255,7 +255,12 @@ class FakeObserver {
 }
 
 describe('VirtualList measured by a ResizeObserver', () => {
-  afterEach(() => vi.unstubAllGlobals());
+  afterEach(async () => {
+    vi.unstubAllGlobals();
+    // a test that delivers observer callbacks itself opens a kit observer pass (core/observer-scope.ts), which ends at
+    // the next task as in a browser: wait for it, so the next test starts outside one
+    await new Promise<void>((r) => setTimeout(r, 0));
+  });
 
   // F-phone-8: a phone's task page hides the list (display: none / content-visibility: hidden); the observer then
   // reports the list's box and every row at 0 px. Recording that re-planned the window and swapped its rows on every

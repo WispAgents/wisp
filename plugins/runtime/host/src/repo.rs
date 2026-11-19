@@ -123,15 +123,42 @@ impl Repo {
     /// Plugins' `ext` slots of every task, newest first, from one query (`runtime.slots`, `slots.rs`).
     pub async fn slots(&self, a: wisp_runtime_api::commands::SlotsArgs) -> Result<Vec<wisp_runtime_api::commands::TaskSlots>> {
         let q = Query::new().select(&["id", "body"]).desc("updated_at");
-        let text = self.store.read_async(move |r| r.query_json("session", &q)).await?;
-        Ok(crate::slots::of(&text, &a)?)
+        if a.having.is_empty() {
+            let text = self.store.read_async(move |r| r.query_json("session", &q)).await?;
+            return Ok(crate::slots::of(&text, &a)?);
+        }
+        // only the bodies that name one of `having` leave SQLite: one LIKE read each (one read view), each task once
+        let words = a.having.clone();
+        let texts = self
+            .store
+            .read_async(move |r| {
+                words
+                    .iter()
+                    .map(|w| r.query_json("session", &q.clone().cond("body", Cond::Like(format!("%\"{}\"%", like_escape(w))))))
+                    .collect::<wisp_store::Result<Vec<String>>>()
+            })
+            .await?;
+        let mut out: Vec<wisp_runtime_api::commands::TaskSlots> = Vec::new();
+        let mut seen = std::collections::HashSet::new();
+        for text in &texts {
+            out.extend(crate::slots::of(text, &a)?.into_iter().filter(|t| seen.insert(t.id.clone())));
+        }
+        Ok(out)
     }
 
     /// Every task (no queue), newest first: for history queries, which read each task's spec.
     pub async fn sessions(&self) -> Result<Vec<Session>> {
-        let q = Query::new().desc("created_at");
-        let rows = self.store.read_async(move |r| r.query("session", &q)).await?;
-        Ok(rows.into_iter().filter_map(|r| rows::session_of(r, Vec::new()).ok()).collect())
+        let q = Query::new().select(rows::SESSION_READ).desc("created_at");
+        let text = self.store.read_async(move |r| r.query_json("session", &q)).await?;
+        rows::sessions_of(&text)
+    }
+
+    /// The tasks whose stored body names `needle` (an outside session's id): only those bodies are parsed (perf audit
+    /// 2026-11-19 #4, `readopt`: every task was decoded to find one).
+    pub async fn sessions_naming(&self, needle: &str) -> Result<Vec<Session>> {
+        let q = Query::new().select(rows::SESSION_READ).cond("body", Cond::Like(format!("%{}%", like_escape(needle))));
+        let text = self.store.read_async(move |r| r.query_json("session", &q)).await?;
+        rows::sessions_of(&text)
     }
 
     /// Ids of tasks whose last turn was running when wisp stopped (crash or restart).
@@ -144,4 +171,10 @@ impl Repo {
     pub async fn queue_of(&self, id: &str) -> Result<Vec<QueueItem>> {
         Ok(self.session(id).await?.queue)
     }
+}
+
+/// `s` as a LIKE pattern's literal text (`%`, `_` and the escape matched as themselves are rare in ids; they are
+/// dropped to `_`, one character, so the pattern only ever widens and the caller's exact check decides).
+fn like_escape(s: &str) -> String {
+    s.chars().map(|c| if matches!(c, '%' | '_' | '\\') { '_' } else { c }).collect()
 }

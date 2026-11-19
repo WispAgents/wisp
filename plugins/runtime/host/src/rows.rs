@@ -62,6 +62,51 @@ pub fn summary_of(row: &Row) -> Option<Summary> {
     row.get("summary").and_then(|v| serde_json::from_value(v.clone()).ok())
 }
 
+/// The columns [`sessions_of`] reads beside `body` (no `summary`: a whole task never needs its list row).
+pub const SESSION_READ: &[&str] =
+    &["id", "parent_id", "title", "state", "agent", "archived", "unread", "created_at", "updated_at", "rev", "body"];
+
+/// Every task in `query_json`'s text of [`SESSION_READ`], each parsed once straight from the text into a `Session`
+/// (perf audit 2026-11-19 #4: each body was decoded into a `Value` tree, then into a `Session`, with its list row too:
+/// 75–85 % of `runtime.history`'s 66 ms at 5,000 tasks). The columns go in front of the body's own fields, as
+/// [`session_of`] puts them in; a row that doesn't read that way takes [`session_of`]'s path.
+pub fn sessions_of(text: &str) -> Result<Vec<Session>> {
+    use serde_json::value::RawValue;
+    let rows: Vec<std::collections::HashMap<&str, &RawValue>> = serde_json::from_str(text)?;
+    let mut out = Vec::with_capacity(rows.len());
+    for r in rows {
+        let body = r.get("body").map_or("{}", |b| b.get()).trim();
+        let mut json = String::with_capacity(body.len() + 256);
+        json.push_str("{\"queue\":[]");
+        for (col, key) in SESSION_COLS {
+            if let Some(v) = r.get(col).map(|v| v.get()).filter(|v| *v != "null") {
+                json.push_str(",\"");
+                json.push_str(key);
+                json.push_str("\":");
+                json.push_str(v);
+            }
+        }
+        match body.strip_prefix('{').map(str::trim_start) {
+            Some(rest) if rest.starts_with('}') => json.push('}'),
+            Some(rest) => {
+                json.push(',');
+                json.push_str(rest);
+            }
+            None => json.push('}'),
+        }
+        if let Ok(s) = serde_json::from_str::<Session>(&json) {
+            out.push(s);
+        } else {
+            // an older row (a column's field still in its body): read it field by field
+            let row: Row = r.iter().map(|(k, v)| ((*k).to_owned(), serde_json::from_str(v.get()).unwrap_or(Value::Null))).collect();
+            if let Ok(s) = session_of(row, Vec::new()) {
+                out.push(s);
+            }
+        }
+    }
+    Ok(out)
+}
+
 /// The list rows in `query_json`'s text of `id, summary`, each summary parsed once straight from the text (ADR-0084:
 /// no row maps and no copy of each, the startup's list fill ~3× faster on 5k tasks). A row whose summary is missing or
 /// doesn't parse is skipped, as [`summary_of`] skips it.
@@ -163,5 +208,41 @@ mod summaries_tests {
         assert_eq!(by_row.len(), 2, "the null, broken and missing summaries are skipped");
         assert_eq!(summaries_of("[]").unwrap(), Vec::<Summary>::new());
         assert!(summaries_of("not json").is_err());
+    }
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod sessions_tests {
+    use super::*;
+    use wisp_runtime_api::model::SessionState;
+
+    /// perf audit 2026-11-19 #4: a task read straight from the store's text is the task [`session_of`] reads, whatever
+    /// its columns hold (an empty body, a null parent, an older row whose body still has a column's field).
+    #[test]
+    fn a_task_read_from_text_is_the_task_session_of_reads() {
+        let mut s = Session { id: "t1".into(), title: "Fix login".into(), agent: "claude".into(), cwd: "/w".into(), ..Session::default() };
+        s.state = SessionState::Review;
+        s.archived = true;
+        s.created_at = 5;
+        s.updated_at = 9;
+        s.rev = 3;
+        s.resume_id = Some("conv-1".into());
+        s.ext.insert("wisp.runtime".into(), json!({ "spec": { "prompt": "fix it" } }));
+        let row = session_row(&s, &Summary::default(), None).unwrap();
+        let pick =
+            |r: &Row| Value::Object(SESSION_READ.iter().map(|c| ((*c).to_owned(), r.get(*c).cloned().unwrap_or(Value::Null))).collect());
+        let mut older = row.clone();
+        older.get_mut("body").unwrap().as_object_mut().unwrap().insert("title".into(), json!("Fix login"));
+        let mut bare = Row::new();
+        bare.insert("id".into(), json!("t2"));
+        bare.insert("title".into(), json!("Bare"));
+        bare.insert("body".into(), json!({ "agent": "codex", "model": "", "effort": "", "mode": "auto", "cwd": "", "state": "done", "createdAt": 1, "updatedAt": 1 }));
+        let text = Value::Array(vec![pick(&row), pick(&older), pick(&bare)]).to_string();
+        let got = sessions_of(&text).unwrap();
+        assert_eq!(got.len(), 3, "{got:?}");
+        assert_eq!(got[0], session_of(row, Vec::new()).unwrap());
+        assert_eq!(got[1], got[0], "an older row reads the same");
+        assert_eq!(got[2], session_of(bare, Vec::new()).unwrap());
     }
 }

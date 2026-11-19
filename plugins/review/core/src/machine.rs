@@ -100,8 +100,10 @@ pub fn tests_summary(t: Option<&TestsRun>) -> Option<TestsSummary> {
 pub enum Outcome {
     /// the reviewer answered: its summary and findings
     Answered { summary: String, findings: Vec<Finding> },
-    /// it didn't (a timeout, junk): named for the page
+    /// it didn't (a timeout, a run that failed): named for the page
     Silent { reviewer: String },
+    /// it answered, but not with the review asked for (no findings JSON)
+    Unreadable { reviewer: String },
     /// it couldn't run (the head moved, no diff)
     Error { why: String },
 }
@@ -138,6 +140,13 @@ pub fn finish(f: Finish<'_>, outcome: Outcome) -> Review {
         Outcome::Silent { reviewer } => Review {
             status: Status::Failed,
             why: Some(format!("{reviewer} didn’t answer.")),
+            tests: tests_summary(f.tests),
+            coverage: f.coverage,
+            ..base
+        },
+        Outcome::Unreadable { reviewer } => Review {
+            status: Status::Failed,
+            why: Some(format!("{reviewer} answered, but not with a review wisp could read. Review again to ask once more.")),
             tests: tests_summary(f.tests),
             coverage: f.coverage,
             ..base

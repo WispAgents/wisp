@@ -59,7 +59,8 @@ pub(crate) fn extras(ctx: &Ctx) -> (Vec<Extra>, Vec<Arc<wisp_mcp_api::ToolContri
 }
 
 /// The contributed tools and, after them, one per catalogue command `call`'s caller may run (ADR-0040),
-/// never under a name wisp's own tools or a contribution already have.
+/// never under a name wisp's own tools or a contribution already have. A tool call runs through wisp.mcp, so only a
+/// command its own manifest grants is listed (audit B #4: ~250 tools were listed and then refused when called).
 pub(crate) fn extras_for(ctx: &Ctx, call: &Call) -> (Vec<Extra>, Vec<Arc<wisp_mcp_api::ToolContribution>>) {
     let (mut ex, mut list) = extras(ctx);
     let mut taken: Vec<String> = ex.iter().map(|e| e.name.clone()).collect();
@@ -68,7 +69,7 @@ pub(crate) fn extras_for(ctx: &Ctx, call: &Call) -> (Vec<Extra>, Vec<Arc<wisp_mc
     }
     taken.push("delegate".into());
     let refs: Vec<&str> = taken.iter().map(String::as_str).collect();
-    let catalogue = ctx.catalogue(call.caller());
+    let catalogue: Vec<_> = ctx.catalogue(call.caller()).into_iter().filter(|c| ctx.may(&c.permission)).collect();
     for (name, id, read_only, tool) in wisp_mcp_core::generated::tools(&catalogue, &refs) {
         let spec = wisp_kernel::decl::parse(catalogue.iter().find(|c| c.id == id).and_then(|c| c.args.as_deref()));
         let (object, own_peer) = (spec.object, spec.fields.iter().any(|f| f.name == wisp_mcp_core::generated::PEER));

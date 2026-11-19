@@ -97,6 +97,16 @@ pub(crate) async fn run(proc: &wisp_proc::Proc, bin: &str, args: &[&str]) -> Opt
     r.exit.success().then(|| r.stdout_text())
 }
 
+/// [`run`], what it printed whatever it exited with (`ps -p` exits 1 when one of its pids is gone).
+pub(crate) async fn run_any(proc: &wisp_proc::Proc, bin: &str, args: &[&str]) -> Option<String> {
+    let args: Vec<String> = args.iter().map(|a| (*a).to_owned()).collect();
+    let r = proc
+        .exec(bin, &args, wisp_proc::ExecOpts { timeout: Some(Duration::from_secs(5)), ..wisp_proc::ExecOpts::default() })
+        .await
+        .ok()?;
+    Some(r.stdout_text())
+}
+
 pub(crate) fn cores() -> f64 {
     f64::from(u32::try_from(std::thread::available_parallelism().map_or(1, std::num::NonZero::get)).unwrap_or(1))
 }

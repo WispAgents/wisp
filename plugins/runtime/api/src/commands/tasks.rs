@@ -601,3 +601,32 @@ pub enum PollAnswer {
     Pending,
     Cancelled,
 }
+
+/// Worktree per task, wisp.worktrees' switch (`on` unless `off`): New task reads it, and so do the launches that
+/// leave `worktree` unset for the user (a crew job, a trigger, a recipe run).
+pub const WORKTREE_SETTING: &str = "worktrees.worktree";
+
+/// v1 launch.js `wantTree`, every launch's rule: a task in a project folder runs in a worktree of its own unless it
+/// plans, or Worktree per task (`setting`, [`WORKTREE_SETTING`]) is off. Additive (2026-11-19, audit B #7: crew jobs,
+/// check-ins and triggers ran in the user's checkout, side by side).
+#[must_use]
+pub fn worktree_by_default(setting: Option<&Value>, plans: bool) -> bool {
+    !plans && !matches!(setting, Some(Value::Bool(false))) && setting.and_then(Value::as_str) != Some("off")
+}
+
+#[cfg(test)]
+mod worktree_default_tests {
+    use serde_json::json;
+
+    use super::worktree_by_default;
+
+    /// Audit B #7 (v1 launch.js `wantTree`): crew jobs and triggers left `worktree` unset and ran in the user's checkout.
+    #[test]
+    fn a_launch_that_doesnt_say_gets_a_worktree_unless_it_plans_or_the_switch_is_off() {
+        assert!(worktree_by_default(None, false));
+        assert!(worktree_by_default(Some(&json!("on")), false));
+        assert!(!worktree_by_default(Some(&json!("off")), false));
+        assert!(!worktree_by_default(Some(&json!(false)), false));
+        assert!(!worktree_by_default(Some(&json!("on")), true), "Plan reads, it never needs its own folder");
+    }
+}

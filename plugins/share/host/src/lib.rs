@@ -141,12 +141,19 @@ async fn preview(ctx: &Ctx, call: &Call, a: &ShareArgs) -> Result<Preview> {
         tasks,
         crew,
     };
-    let mut red = Vec::new();
-    let title = wisp_share_core::scrub_text(&task.title, &scrub_with, "title", &mut red);
-    let spec = scrub(&spec, &scrub_with, "spec", &mut red);
-    let formula = scrub(&formula, &scrub_with, "formula", &mut red);
-    let report = report.map(|r| scrub(&r, &scrub_with, "report", &mut red));
-    let history = history.map(|h| scrub(&h, &scrub_with, "history", &mut red));
+    // every string of a 2 MB task: on the blocking pool, never a request's worker (perf audit 2026-11-19 #8)
+    let title = task.title.clone();
+    let (title, spec, formula, report, history, red) = tokio::task::spawn_blocking(move || {
+        let mut red = Vec::new();
+        let title = wisp_share_core::scrub_text(&title, &scrub_with, "title", &mut red);
+        let spec = scrub(&spec, &scrub_with, "spec", &mut red);
+        let formula = scrub(&formula, &scrub_with, "formula", &mut red);
+        let report = report.map(|r| scrub(&r, &scrub_with, "report", &mut red));
+        let history = history.map(|h| scrub(&h, &scrub_with, "history", &mut red));
+        (title, spec, formula, report, history, red)
+    })
+    .await
+    .map_err(|e| WireError::internal(format!("the scrub stopped: {e}")))?;
     let mut needs = Vec::new();
     let harness = &task.agent;
     if !harness.is_empty() {
@@ -178,8 +185,13 @@ async fn make(ctx: &Ctx, call: &Call, a: &ShareArgs) -> Result<Bundle> {
     let mut b = preview(ctx, call, a).await?.bundle;
     let key = signing_key(ctx).await?;
     b.from = Signer { name: me(), key: B64.encode(key.verifying_key().to_bytes()) };
-    b.sig = B64.encode(key.sign(&canonical(&b)).to_bytes());
-    Ok(b)
+    // the canonical text of a 2 MB bundle and its signature: off the request's worker too
+    tokio::task::spawn_blocking(move || {
+        b.sig = B64.encode(key.sign(&canonical(&b)).to_bytes());
+        b
+    })
+    .await
+    .map_err(|e| WireError::internal(format!("signing stopped: {e}")))
 }
 
 /// Whether `b`'s signature is its signer's over exactly these contents.

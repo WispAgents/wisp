@@ -161,7 +161,13 @@ async fn run(ctx: &Ctx, call: &Call, store: &Store, r: RunTask, by: &str) -> Res
     let Some(t) = tasks.iter().find(|t| t.name == r.name) else {
         return Err(WireError::not_found(format!("no task named {} (wisp export tasks lists them)", r.name)));
     };
-    let made = ctx.run::<Create>(call, start_args(t, &r, by)?).await?;
+    let mut args = start_args(t, &r, by)?;
+    // a recipe that doesn't say: a worktree of its own, as v1 started every task (audit B #7)
+    if args.worktree.is_none() && args.cwd.as_deref().is_some_and(|c| !c.is_empty()) {
+        let set = ctx.setting(wisp_runtime_api::commands::WORKTREE_SETTING);
+        args.worktree = Some(wisp_runtime_api::commands::worktree_by_default(set.as_ref(), args.mode == Some(Mode::Plan)));
+    }
+    let made = ctx.run::<Create>(call, args).await?;
     serde_json::to_value(made).map_err(|e| WireError::internal(e.to_string()))
 }
 

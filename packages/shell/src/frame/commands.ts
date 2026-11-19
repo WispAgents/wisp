@@ -272,11 +272,12 @@ export { isSaved } from './rows-view.ts';
 
 /** Save for later: the bookmark fills at once, and the list moves the row to For later with the time it reads
  *  (`{at, by}`, as the server's summary has it: runtime host ops.rs for_later). */
-export const forLater = defineCommand<{ id: string; forLater: boolean }>({
+// `at`: when it was saved (Undo of Unsave puts the old time back; runtime's ForLaterArgs.at), now when unset
+export const forLater = defineCommand<{ id: string; forLater: boolean; at?: number }>({
   id: 'runtime.forLater',
   owner: (a) => a.id,
   wire: (a) => ({ ...a, id: bare(a.id) }),
-  optimistic: (_b, a) => patch(a.id, '/summary/forLater', a.forLater ? { at: Date.now(), by: 'you' } : null),
+  optimistic: (_b, a) => patch(a.id, '/summary/forLater', a.forLater ? { at: a.at ?? Date.now(), by: 'you' } : null),
 });
 
 /** Pin (or unpin) in the list, from the task's More (docs/ux/2026-11-18-desktop.md #6: one menu everywhere): the

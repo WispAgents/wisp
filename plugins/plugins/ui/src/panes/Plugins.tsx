@@ -3,9 +3,10 @@
 // the list is read again after it; switching off frees everything the plugin made (its scope).
 import { createResource, createSignal, For, onCleanup, Show, type JSX } from 'solid-js';
 import type { PluginClient } from '@wisp/client';
-import { Button, Callout, Code, IconButton, Inline, PathField, Pill, SettingsCast, SettingsEmpty, SettingsFieldRow, SettingsGroup, SettingsNote, SettingsRow, Stack, Switch, Text } from '@wisp/ui';
+import { Button, Callout, Code, Dialog, IconButton, Inline, PathField, Pill, SettingsCast, SettingsEmpty, SettingsFieldRow, SettingsGroup, SettingsNote, SettingsRow, Stack, Switch, Text } from '@wisp/ui';
 import { useShell } from '@wisp/shell';
 import { cast, castPrompt, folders, install, list, permissionWords, rowAbout, setEnabled, trust, uninstall, type Installed, type PluginRow } from '../commands.ts';
+import { confirmOf, type Confirm } from '../confirm.ts';
 import { t } from '../i18n.ts';
 import '../i18n/lazy.ts';
 
@@ -88,6 +89,20 @@ export default function Plugins(props: { readonly client: PluginClient }): JSX.E
       .catch(() => {})
       .finally(() => void refetch());
   };
+  // Trust and Remove ask first (setup audit B13); Untrust only takes away, so it goes at once
+  const [asking, setAsking] = createSignal<Confirm | undefined>();
+  const askFirst = (kind: 'trust' | 'untrust' | 'remove', p: PluginRow): void => {
+    const c = confirmOf(kind, p, say);
+    if (c) return void setAsking(c);
+    if (kind === 'untrust') setTrust(p, false);
+  };
+  const agreed = (c: Confirm): void => {
+    setAsking(undefined);
+    const p = (rows() ?? []).find((x) => x.id === c.id);
+    if (!p) return;
+    if (c.kind === 'trust') setTrust(p, true);
+    else remove(p);
+  };
   const yours = (): PluginRow[] => (rows() ?? []).filter((p) => !p.builtin);
   // v1's Turn every spell off: each of yours that's on goes off (each switch shows at once, as one flip does)
   const allOff = (): void => {
@@ -113,7 +128,7 @@ export default function Plugins(props: { readonly client: PluginClient }): JSX.E
         <>
           <Show when={about().trust}>
             {(tr) => (
-              <Button size="sm" variant="ghost" part="plugins.trust" disabled={busy() === p.id} title={say(tr().next ? 'plugins.trustOf' : 'plugins.untrustOf', { name: about().title })} onClick={() => setTrust(p, tr().next)}>
+              <Button size="sm" variant="ghost" part="plugins.trust" disabled={busy() === p.id} title={say(tr().next ? 'plugins.trustOf' : 'plugins.untrustOf', { name: about().title })} onClick={() => askFirst(tr().next ? 'trust' : 'untrust', p)}>
                 {tr().label}
               </Button>
             )}
@@ -123,7 +138,7 @@ export default function Plugins(props: { readonly client: PluginClient }): JSX.E
           </Pill>
           <Switch aria-label={t('plugins.on', { name: p.id })} checked={p.enabled} disabled={busy() === p.id} onChange={(on) => flip(p, on)} />
           <Show when={p.id.startsWith('user.')}>
-            <IconButton icon="trash" size="sm" variant="ghost" label={t('plugins.remove', { name: p.id })} onClick={() => remove(p)} />
+            <IconButton icon="trash" size="sm" variant="ghost" label={t('plugins.remove', { name: p.id })} onClick={() => askFirst('remove', p)} />
           </Show>
         </>
       }
@@ -233,6 +248,32 @@ export default function Plugins(props: { readonly client: PluginClient }): JSX.E
       <SettingsGroup part="plugins.builtin" title={t('plugins.builtin')} description={t('plugins.builtin.description')}>
         <For each={builtins()}>{row}</For>
       </SettingsGroup>
+      <Show when={asking()}>
+        {(a) => (
+          <Dialog
+            open
+            size="sm"
+            role="alertdialog"
+            onOpenChange={(o) => !o && setAsking(undefined)}
+            title={a().title}
+            part="plugins.confirm"
+            footer={
+              <Inline gap="3" justify="end">
+                <Button variant="ghost" size="sm" onClick={() => setAsking(undefined)}>
+                  {t('plugins.cancel')}
+                </Button>
+                <Button variant={a().kind === 'remove' ? 'danger' : 'primary'} size="sm" onClick={() => agreed(a())}>
+                  {a().ok}
+                </Button>
+              </Inline>
+            }
+          >
+            <Text as="p" tone="muted">
+              {a().detail}
+            </Text>
+          </Dialog>
+        )}
+      </Show>
     </>
   );
 }

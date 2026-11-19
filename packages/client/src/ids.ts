@@ -43,6 +43,26 @@ export function entityKey(peer: PeerId, id: string): EntityKey {
   return (id.startsWith(`${peer}:`) ? id : `${peer}:${id}`) as EntityKey;
 }
 
+// one bare id → key index per keys list: `EntityReader.keys` gives a new array on each change, so every caller holding
+// the same list (⌘K's 4,500 tasks, each list row, the nav) shares one Map instead of scanning it per id (perf-ui-r2 #1)
+const byBareId = new WeakMap<readonly string[], ReadonlyMap<string, string>>();
+
+/** The key in `keys` whose id (what follows its `<peer>:`) is `id`, the first in order when two peers have it; O(1)
+ *  after the list's first lookup. */
+export function keyOfId<K extends string>(keys: readonly K[], id: string): K | undefined {
+  let m = byBareId.get(keys);
+  if (!m) {
+    const built = new Map<string, string>();
+    for (const k of keys) {
+      const bare = k.slice(k.indexOf(':') + 1);
+      if (!built.has(bare)) built.set(bare, k);
+    }
+    byBareId.set(keys, built);
+    m = built;
+  }
+  return m.get(id) as K | undefined;
+}
+
 /** The peer that owns a key, or the peer itself when given a bare peer id. */
 export function ownerOf(keyOrPeer: string): PeerId {
   const i = keyOrPeer.indexOf(':');

@@ -611,11 +611,11 @@ async fn live(p: &Parsed, home: &Path, port: u16, read: &mut Option<wisp_cli_cor
         Some("ls" | "list") if f.watch => attach::ls_watch(&Client::connect(port, true).await?, f.all).await?,
         Some("help") => {
             let c = Client::connect(port, true).await?;
-            cli::help(&cli::catalogue(&c, home).await?, words)
+            cli::help(&cli::shown(&c, cli::catalogue(&c, home).await?).await, words)
         }
         Some("completions") => {
             let c = Client::connect(port, true).await?;
-            cli::completions(&c, &cli::catalogue(&c, home).await?, words.get(1)).await
+            cli::completions(&c, &cli::shown(&c, cli::catalogue(&c, home).await?).await, words.get(1)).await
         }
         Some("sdk") => {
             let c = Client::connect(port, true).await?;
@@ -703,6 +703,10 @@ async fn add(user_home: &Path, port: u16, what: Option<&String>, cwd: &Path) -> 
 /// attached (the run live, then a reply box); `-d`, or no terminal, returns with its id.
 async fn launch_and_open(p: &Parsed, home: &Path, port: u16, cwd: &str) -> Result<i32> {
     let c = Client::connect(port, true).await?;
+    if let Some(no) = scripted::unknown_agent(&c, p.flags.agent.as_deref()).await {
+        eprintln!("{no}");
+        return Ok(cli::USAGE_EXIT);
+    }
     let prompt = p.words.join(" ");
     let mut args = scripted::launch_args(&p.flags, &prompt, cwd);
     scripted::in_project(&c, &mut args).await;

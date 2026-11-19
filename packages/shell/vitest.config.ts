@@ -6,6 +6,7 @@ export default defineConfig({
   test: {
     environment: 'happy-dom',
     include: ['test/**/*.test.{ts,tsx}'],
+    setupFiles: ['test/home-chunk.ts'],
     // Inline Zag and solid-primitives so their `solid-js/web` import resolves to the browser build,
     // not the server one (where `isServer` is true and keyed lists never move).
     server: { deps: { inline: [/@zag-js\//, /@solid-primitives\//] } },

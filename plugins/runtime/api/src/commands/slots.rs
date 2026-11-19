@@ -17,6 +17,14 @@ pub struct SlotsArgs {
     pub plugins: Vec<String>,
     #[serde(default)]
     pub all: bool,
+    /// only the tasks whose stored body names one of these JSON keys (a plugin's slot, a key in one), as a quoted
+    /// string: the store reads no other task's body (perf audit 2026-11-19 #7: worktrees' view read all 5,000 to find
+    /// the few with a worktree). A prefilter only: what comes is what `plugins`/`all` say of those, newest first within
+    /// each word's tasks. Empty: every task.
+    /// Additive (2026-11-19).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    #[ts(as = "Option<Vec<String>>", optional)]
+    pub having: Vec<String>,
 }
 
 /// One task's slots of the plugins asked for (only those it has).

@@ -268,6 +268,40 @@ async fn a_paged_topic_sends_a_small_first_page_then_the_rest_every_row_once_at_
     assert!(all.full);
 }
 
+/// ADR-0106 (perf audit 2026-11-19 #1): each page is its own short read, so a write can land between two pages. It is
+/// never lost: the later pages read the rows as they are now (a row it moved may come twice: the client keys by id),
+/// every page still goes at the first read's seq, and the patches after that seq (here, a resume from it) carry it.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_write_between_two_pages_is_in_a_later_page_or_the_patches_after_the_snapshots_seq() {
+    let s = store();
+    seven(&s).await;
+    let snaps = StoreSnapshots::new(s.clone(), Vec::new(), Vec::new()).with_pages(vec![paged(2, 3)]);
+    let head = snaps.head_seq();
+    let got = Arc::new(std::sync::Mutex::new(Vec::new()));
+    let (into, w) = (got.clone(), s.clone());
+    let sink: PageSink = Box::new(move |r, more| {
+        let first = into.lock().unwrap().is_empty();
+        into.lock().unwrap().push((r.seq, r.rows.iter().map(|x| x.id.clone()).collect::<Vec<_>>(), more));
+        if first {
+            // the next page is read once this one is handed over: these land between the two
+            w.write_blocking(|w| {
+                w.upsert("setting", row!({"key": "k8", "value": "a", "locked_by": null}))?;
+                w.upsert("setting", row!({"key": "k3", "value": "b", "locked_by": null}))?;
+                Ok(())
+            })
+            .unwrap();
+        }
+    });
+    snaps.snapshot_pages(&Topic::parse("config").unwrap(), None, sink).await;
+    let pages = got.lock().unwrap().clone();
+    let ids: Vec<&str> = pages.iter().flat_map(|p| p.1.iter().map(String::as_str)).collect();
+    assert_eq!(ids, ["k1", "k3", "k5", "k7", "k8", "k2", "k3", "k4", "k6"], "k8 in a later page; k3 again where it moved to");
+    assert!(pages.iter().all(|p| p.0 == head), "every page at the first read's seq: {pages:?}");
+    assert_eq!(pages.iter().map(|p| p.2).collect::<Vec<_>>(), [true, true, true, false]);
+    let after: Vec<String> = pages_of(&snaps, "config", Some(head)).await.into_iter().flat_map(|p| p.1).collect();
+    assert!(after.contains(&"k8".to_owned()) && after.contains(&"k3".to_owned()), "the patches after its seq: {after:?}");
+}
+
 #[tokio::test]
 async fn rows_that_end_on_a_page_close_the_snapshot_with_an_empty_last_page_and_a_small_topic_is_one_page() {
     let s = store();

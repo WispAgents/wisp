@@ -101,7 +101,7 @@ async fn create(ctx: &Ctx, call: &Call, slot: &Slot, kinds: &Kinds, a: StartArgs
         let mode =
             mode.map(|m| serde_json::to_value(m).ok().and_then(|v| v.as_str().map(str::to_owned)).unwrap_or_default()).unwrap_or_default();
         let wa = wisp_worktrees_api::CreateArgs { session_id: made.id.0.clone(), cwd, title, mode, from: None };
-        in_worktree(ctx, call, &rt, &proc, made, wa, &setup).await?
+        in_worktree(ctx, &rt, &proc, made, wa, &setup).await?
     } else {
         made
     };
@@ -156,14 +156,16 @@ pub(crate) fn mark_side(a: &mut StartArgs, main: Option<(&wisp_runtime_api::Sess
 /// The held task's worktree, made and set up; then its first turn starts (in its folder if that failed).
 async fn in_worktree(
     ctx: &Ctx,
-    call: &Call,
     rt: &Arc<Runtime>,
     proc: &Proc,
     made: c::Created,
     wa: wisp_worktrees_api::CreateArgs,
     setup: &[String],
 ) -> WireResult<c::Created> {
-    let wt = match ctx.run::<wisp_worktrees_api::Create>(call, wa).await {
+    // runtime makes the folder of a task it was allowed to create, on its own grant (`worktrees:create` in its
+    // manifest): under an agent's call the agent's set refused it, and a task an agent launched with `worktree: true`
+    // ran in the user's main checkout (audit B #5)
+    let wt = match ctx.run::<wisp_worktrees_api::Create>(&ctx.root_call(), wa).await {
         Ok(w) => w.and_then(|w| serde_json::to_value(w).ok()),
         Err(err) => {
             tracing::warn!(error = %err.message, task = made.id.as_str(), "runtime: worktrees.create (it runs in its folder)");

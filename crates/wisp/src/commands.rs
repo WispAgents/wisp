@@ -75,24 +75,31 @@ pub async fn run(p: &Parsed, cmd: &str, args: &[String], cwd: &str, port: u16) -
 }
 
 /// `--compare a[:model],b`: one task per harness, the same ask (ADR-0027: compare is reruns side by side).
+#[allow(clippy::many_single_char_names)] // c, p, f as in the rest of the CLI
 async fn launch(c: &Client, p: &Parsed, args: &[String], cwd: &str) -> Result<()> {
     let f = &p.flags;
+    if let Some(no) = sc::unknown_agent(c, f.agent.as_deref()).await {
+        return Err(CliError::said(no.trim().trim_start_matches("✗ ")));
+    }
     let prompt = args.join(" ");
     if !f.tries.is_empty() {
         // Try it two ways: one harness, run B with what --try names changed (ADR-0056)
         return crate::trial_cli::launch(c, f, &prompt, cwd).await;
     }
     let mut made = Vec::new();
-    if let Some(runs) = &f.compare {
+    if f.compare.is_some() {
         // one group for the runs: the task's More then offers Compare runs (v1 compare.js, F-comp-30)
         let group = format!("g-{}", crate::services::hex(&rand::random::<[u8; 8]>()));
-        for r in runs {
+        for r in &crate::args::compare_runs(f) {
             let mut a = sc::launch_args(f, &prompt, cwd);
             sc::in_project(c, &mut a).await;
             a["ext"] = json!({ "wisp.runtime": { "group": group } });
             a["agent"] = json!(r.agent);
-            if let Some(m) = &r.model {
-                a["model"] = json!(m);
+            // each run's own model: `--model` is the `--agent` run's, never another harness's
+            match (&r.model, a.as_object_mut()) {
+                (Some(m), _) => a["model"] = json!(m),
+                (None, Some(o)) => drop(o.remove("model")),
+                (None, None) => {}
             }
             made.push(c.cmd("runtime.create", a).await?);
         }

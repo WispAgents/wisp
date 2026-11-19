@@ -29,7 +29,7 @@ pub struct Attributor {
     /// `<home>/worktrees/`, as the platform compares paths
     wt_dir: String,
     pub tags: HashMap<u32, Tag>,
-    /// Linux: pid → (its start, the tag its environ had)
+    /// Linux and macOS: pid → (its start, the tag its environment had)
     pub environ: HashMap<u32, (i64, Option<String>)>,
 }
 
@@ -120,9 +120,11 @@ impl Attributor {
         Self { platform, me, wt_dir, tags: HashMap::new(), environ: HashMap::new() }
     }
 
-    /// Linux: the pids whose `/proc/<pid>/environ` to read before `place` (once per process).
+    /// Linux and macOS: the pids whose environment to read before `place`, once per process (Linux
+    /// `/proc/<pid>/environ`; macOS one `ps -E -p` for just these, perf audit 2026-11-19 #3: `ps -E` of every process,
+    /// 1.2 MB, at every sample).
     pub fn environ_wanted(&self, procs: &[Proc]) -> Vec<u32> {
-        if self.platform != Platform::Linux {
+        if self.platform == Platform::Windows {
             return Vec::new();
         }
         let fresh = |p: &Proc| self.environ.get(&p.pid).is_some_and(|(since, _)| (since - p.since).abs() < SAME_SINCE_MS);

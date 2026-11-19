@@ -3,13 +3,16 @@
 // takes (a switch, a choice, a number or text), shows its default when unset, and says what locks it (a formula).
 import { createEffect, createMemo, createResource, createSignal, For, on, Show, type JSX } from 'solid-js';
 import type { Json, PluginClient } from '@wisp/client';
-import { Input, Select, SettingsGroup, SettingsRow, Switch, Text, useSignal } from '@wisp/ui';
+import { Input, Select, SettingsGroup, SettingsRow, Switch, Text, useProgressive, useSignal } from '@wisp/ui';
 import { list, type SettingInfo } from '../commands.ts';
 import { t } from '../i18n.ts';
 import { fromRow } from '../source.ts';
 import '../i18n/lazy.ts';
 import { ownerTitle, titleParts } from '../words.ts';
 import { AUTO_SETTING } from '@wisp/shell';
+
+/** rows built in the frame the pane opens; as many again each frame after */
+const FIRST_ROWS = 16;
 
 const words = (v: unknown): string => (v === null || v === undefined ? '' : typeof v === 'string' ? v : JSON.stringify(v));
 
@@ -62,6 +65,15 @@ export default function All(props: { readonly client: PluginClient; /** Settings
     }
     return [...by.entries()].sort(([a], [b]) => a.localeCompare(b));
   });
+  // every row's control at once was the press's whole frame (perf r2 #9: 160 ms at 4×): a screenful first, the rest
+  // over the frames after
+  const total = createMemo(() => groups().reduce((n, [, items]) => n + items.length, 0));
+  const upTo = useProgressive(total, FIRST_ROWS);
+  // where each group's rows start in the whole list: a group draws its rows up to `upTo`, the ones it has kept
+  const starts = createMemo(() => {
+    let n = 0;
+    return groups().map(([, items]) => ((n += items.length), n - items.length));
+  });
   return (
     <>
       <Text as="p" tone="muted" part="settings.lede">
@@ -70,9 +82,10 @@ export default function All(props: { readonly client: PluginClient; /** Settings
       <Input icon="search" aria-label={t('settings.all.search')} placeholder={t('settings.all.search')} value={q()} onInput={setQ} />
       <Show when={groups().length > 0} fallback={<Text tone="muted">{rows.loading ? t('settings.all.loading') : t('settings.all.none')}</Text>}>
         <For each={groups()}>
-          {([owner, items]) => (
+          {([owner, items], i) => (
+            <Show when={upTo() > (starts()[i()] ?? 0)}>
             <SettingsGroup part="settings.all.group" title={ownerTitle(owner)}>
-              <For each={items}>
+              <For each={items.slice(0, upTo() - (starts()[i()] ?? 0))}>
                 {(s) => (
                   <SettingsRow
                     part="settings.all.row"
@@ -93,6 +106,7 @@ export default function All(props: { readonly client: PluginClient; /** Settings
                 )}
               </For>
             </SettingsGroup>
+            </Show>
           )}
         </For>
       </Show>

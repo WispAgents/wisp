@@ -2,10 +2,10 @@
 // the pane. Changes: every file the work changed since it left its base, committed or not, from git
 // (`git.changes`, the worktree's base, else HEAD); a folder that isn't a repo shows the turns' own edits. PR
 // (PrPane.tsx, `ship.details`) and Shell (ShellPane.tsx, wisp.terminal).
-import { Match, Show, Switch, createEffect, createMemo, createResource, untrack, type JSX } from 'solid-js';
+import { Match, Show, Switch, createEffect, createMemo, createResource, createSignal, onCleanup, untrack, type JSX } from 'solid-js';
 import { Dynamic } from 'solid-js/web';
 import { computed, defineCommand, readonly, entityKey, type EntityKey } from '@wisp/client';
-import { Box, IconButton, type IconName, Icon, Inline, Menu, Stack, Tabs, Text, useSignal } from '@wisp/ui';
+import { Box, IconButton, type IconName, Icon, Inline, Menu, Stack, Tabs, Text, afterNextPaint, useAfterPaint, useSignal } from '@wisp/ui';
 import { editorUrl } from '../editor.ts';
 import { TAB_VIEW, TERM_VIEW, WATCH_VIEW, isTui, pickedTab, tabKey, type SidePane } from '../open-task.ts';
 import { showsPlace } from './place.ts';
@@ -54,6 +54,14 @@ export function SidePanel(props: { readonly pane: SidePane; readonly file?: stri
   const shell = useShell();
   const task = useTask();
   const t = shell.t;
+  // the panel's head and tabs paint in the press's frame; its body (a pane's rows, a terminal) is built in the frame
+  // after, and so is the next tab's body on a tab switch, the tab already lit (perf r2 #8: ] and a tab ~100 ms at 4×)
+  const [opened, setOpened] = createSignal(typeof requestAnimationFrame !== 'function');
+  if (!opened()) onCleanup(afterNextPaint(() => setOpened(true)));
+  const body = useAfterPaint(
+    () => ({ pane: props.pane, file: props.file }),
+    (a, b) => a.pane === b.pane && a.file === b.file,
+  );
   const place = (): { where: string; remote: boolean; branch: string; dirty: number; dir: string } | undefined => {
     const r = task.task() as
       | {
@@ -240,29 +248,31 @@ export function SidePanel(props: { readonly pane: SidePane; readonly file?: stri
         )}
       </Show>
       {/* Changes runs edge to edge (v1 #sidePanel .cx); PR and Shell keep the body's padding */}
-      <Stack gap="0" grow part={(props.pane === 'changes' && !props.file) || props.pane === 'preview' || props.pane === 'watch' || props.pane === 'tab' ? 'side.body side.flush' : 'side.body'}>
+      <Stack gap="0" grow part={(body().pane === 'changes' && !body().file) || body().pane === 'preview' || body().pane === 'watch' || body().pane === 'tab' ? 'side.body side.flush' : 'side.body'}>
+        <Show when={opened()}>
         <Switch>
-          <Match when={props.pane === 'changes' && props.file}>{(f) => <FilePane path={f()} />}</Match>
-          <Match when={props.pane === 'changes'}>
+          <Match when={body().pane === 'changes' && body().file}>{(f) => <FilePane path={f()} />}</Match>
+          <Match when={body().pane === 'changes'}>
             <ChangesPane />
           </Match>
-          <Match when={props.pane === 'pr'}>
+          <Match when={body().pane === 'pr'}>
             <PrPane />
           </Match>
-          <Match when={props.pane === 'shell'}>
+          <Match when={body().pane === 'shell'}>
             <ShellPane kind="shell" />
           </Match>
-          <Match when={props.pane === 'preview'}>
+          <Match when={body().pane === 'preview'}>
             <PreviewPane />
           </Match>
-          <Match when={props.pane === 'watch'}>
+          <Match when={body().pane === 'watch'}>
             <WatchPane />
           </Match>
-          <Match when={props.pane === 'term'}>
+          <Match when={body().pane === 'term'}>
             <ShellPane kind="takeover" />
           </Match>
-          <Match when={shown()}>{(x) => <Dynamic component={x().def.component} client={x().def.client} task={task.key} value={x().value} />}</Match>
+          <Match when={body().pane === 'tab' && shown()}>{(x) => <Dynamic component={x().def.component} client={x().def.client} task={task.key} value={x().value} />}</Match>
         </Switch>
+        </Show>
       </Stack>
     </Stack>
   );

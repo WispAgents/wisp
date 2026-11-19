@@ -72,7 +72,7 @@ pub fn follow_session(ship: &Ship, known: &Known, s: &Session) {
     ship.tasks.set_asking(id, s.state == SessionState::Waiting);
 }
 
-async fn session(ctx: &Ctx, call: &Call, id: &str) -> Option<Session> {
+pub(crate) async fn session(ctx: &Ctx, call: &Call, id: &str) -> Option<Session> {
     ctx.run::<rt::Get>(call, rt::IdArgs { id: id.into() }).await.ok()
 }
 
@@ -179,7 +179,7 @@ pub(crate) async fn boot(ctx: &Ctx, ship: &Arc<Ship>, known: &Known) {
     let call = ctx.root_call();
     let list = ctx.run::<rt::List>(&call, rt::ListArgs { archived: None, limit: None }).await.unwrap_or_default();
     let plugins = vec![PLUGIN.to_owned(), WORKTREES.to_owned(), "wisp.crew".to_owned()];
-    let Ok(slots) = ctx.run::<rt::Slots>(&call, rt::SlotsArgs { plugins, all: false }).await else { return };
+    let Ok(slots) = ctx.run::<rt::Slots>(&call, rt::SlotsArgs { plugins, all: false, having: Vec::new() }).await else { return };
     let mut ext: HashMap<String, BTreeMap<String, Value>> = slots.into_iter().map(|t| (t.id.0, t.ext)).collect();
     for row in &list {
         let Some(e) = ext.remove(row.id.as_str()) else { continue };

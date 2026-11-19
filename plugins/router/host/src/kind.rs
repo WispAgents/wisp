@@ -39,14 +39,25 @@ pub struct RouterSpec {
     pub scout: Option<Value>,
 }
 
+/// Auto's one switch (wisp.runtime's setting).
+const AUTO_SETTING: &str = "runtime.auto";
+
 #[derive(Debug)]
 pub struct RouterKind {
     pub ctx: Ctx,
 }
 
 impl ResourceKind for RouterKind {
+    /// While Auto's one switch is off (`runtime.auto`, off until the owner reworks it: 2026-11-17) the kind isn't a
+    /// shared one: Setup's list, Make the formula and `wisp export` carry no `router:` (setup audit B6), and
+    /// `wisp export --include router` still does. Plans read it as ever, so a formula that has one applies, plans as
+    /// unchanged and rolls back as before (the code is kept).
     fn info(&self) -> KindInfo {
-        KindInfo::new("router", "router", wisp_router_api::PLUGIN_ID, schema_of::<RouterSpec>()).singleton().order(30)
+        let mut i = KindInfo::new("router", "router", wisp_router_api::PLUGIN_ID, schema_of::<RouterSpec>()).singleton().order(30);
+        if self.ctx.setting(AUTO_SETTING) != Some(Value::Bool(true)) {
+            i.scope = wisp_resources_api::Scope::Personal;
+        }
+        i
     }
 
     fn read<'a>(&'a self, call: &'a Call) -> BoxFuture<'a, Result<Vec<Resource>>> {

@@ -1,9 +1,11 @@
 // A submenu as a flyout beside its row, for a desktop pointer (owner 2026-11-17): the standard cascading menu, on Zag's
-// nested menus. The row is Zag's trigger item for a child menu machine, so hover intent (Zag's 200 ms), → / Enter / a
-// click to open, ← to close, right-start placement flipped left at the screen's edge and slid to stay on it, and a choice
+// nested menus. The row is Zag's trigger item for a child menu machine, so → / Enter / a click to open, ← to close, right-start placement flipped left at the screen's edge and slid to stay on it, and a choice
 // closing the whole menu are all Zag's. Two things are the kit's: the flyout's open state is controlled, so Zag's close
 // 100 ms after the pointer leaves the row becomes a request held while the pointer is still heading for the flyout (the
-// safe triangle, ./menu-aim.ts); and Escape closes only the flyout, where Zag's would close the whole menu.
+// safe triangle, ./menu-aim.ts); and Escape closes only the flyout, where Zag's would close the whole menu. And the
+// pointer opens it at once: v1's submenus opened at the press (web/js/ui/submenu.js), and Zag's fixed 200 ms hover
+// intent read as slow beside them (perf r2 #10). A row crossed on the way to an open flyout doesn't open its own (the
+// triangle stops its moves), and the one open beside it closes as the next opens.
 // Loaded with ./menu-machine.tsx, apart from the first page.
 import * as menu from '@zag-js/menu';
 import { normalizeProps, useMachine } from '@zag-js/solid';
@@ -28,6 +30,8 @@ export interface FlyContext {
   readonly onSelect: (value: string) => void;
   /** keeps the flyout's close, called when its menu closes or re-anchors; returns its unregister */
   readonly adopt: (close: () => void) => () => void;
+  /** closes every other flyout of the menu at once (the pointer opened the one whose close this is) */
+  readonly only: (close: () => void) => void;
   /** draws a list of entries (the machine's own Entries, handed in so the two files don't import each other) */
   readonly Entries: (p: { readonly api: menu.Api; readonly items: readonly MenuEntry[]; readonly part: PartName }) => JSX.Element;
 }
@@ -191,6 +195,15 @@ export function Flyout(props: { readonly api: menu.Api; readonly entry: MenuSubm
     capi().setParent(props.fly.parent);
   });
   onCleanup(props.fly.adopt(state.close));
+  // the pointer on the row opens its flyout at once (Zag's own open waits 200 ms); a move stopped on the way to another
+  // row's flyout never gets here (usePointerAndKeys)
+  const hovered = (e: PointerEvent): void => {
+    if (e.pointerType !== 'mouse' || state.open()) return;
+    props.fly.only(state.close);
+    state.request(true);
+  };
+  onMount(() => row?.addEventListener('pointermove', hovered));
+  onCleanup(() => row?.removeEventListener('pointermove', hovered));
   const Entries = props.fly.Entries;
   return (
     <>

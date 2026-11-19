@@ -125,7 +125,7 @@ impl S {
                         (r, d, false)
                     }
                 };
-                let a = SnapshotAnswer { conn, topic, req, seq: self.store.seq, rows, full, deleted, more: false };
+                let a = SnapshotAnswer { conn, topic, req, seq: self.store.seq, rows, full, deleted, more: false, rows_json: None };
                 let more = self.server.handle(Input::SnapshotRows(a), self.now);
                 all.extend(self.run(more));
             }
@@ -209,7 +209,17 @@ fn the_welcome_goes_before_the_snapshot_requests_of_the_same_connect() {
     assert_eq!(kinds(&outs), vec!["send", "snapshotRequest", "snapshotRequest", "activity"]);
     assert_eq!(ts(&msgs(&outs)), vec!["welcome"]);
     // answered at once, the snapshot goes in the next frame, not held back by the welcome's flush
-    let a = SnapshotAnswer { conn: C1, topic: topic("list"), req: 1, seq: 1, rows: vec![], full: true, deleted: vec![], more: false };
+    let a = SnapshotAnswer {
+        conn: C1,
+        topic: topic("list"),
+        req: 1,
+        seq: 1,
+        rows: vec![],
+        full: true,
+        deleted: vec![],
+        more: false,
+        rows_json: None,
+    };
     assert_eq!(ts(&msgs(&server.handle(Input::SnapshotRows(a), 0))), vec!["snapshot"]);
 }
 
@@ -387,10 +397,29 @@ fn changes_during_a_snapshot_are_held_and_sent_after_it_without_the_ones_it_alre
     let r2 = store.commit(&[title("b")], 0);
     server.handle(Input::Committed { rows: r2 }, 100); // after the snapshot's read
     // an answer to an older request is ignored
-    let stale =
-        SnapshotAnswer { conn: C1, topic: topic("list"), req: req + 7, seq: 0, rows: vec![], full: true, deleted: vec![], more: false };
+    let stale = SnapshotAnswer {
+        conn: C1,
+        topic: topic("list"),
+        req: req + 7,
+        seq: 0,
+        rows: vec![],
+        full: true,
+        deleted: vec![],
+        more: false,
+        rows_json: None,
+    };
     assert!(server.handle(Input::SnapshotRows(stale), 100).is_empty());
-    let a = SnapshotAnswer { conn: C1, topic: topic("list"), req, seq: snap_at, rows: snap_rows, full: true, deleted: vec![], more: false };
+    let a = SnapshotAnswer {
+        conn: C1,
+        topic: topic("list"),
+        req,
+        seq: snap_at,
+        rows: snap_rows,
+        full: true,
+        deleted: vec![],
+        more: false,
+        rows_json: None,
+    };
     let sent = msgs(&server.handle(Input::SnapshotRows(a), 200));
     assert_eq!(ts(&sent), vec!["snapshot", "patch"]);
     assert_eq!(sent[1]["ops"][0]["ops"], json!([{"op": "replace", "path": "/title", "value": "b"}]));
@@ -412,6 +441,7 @@ fn snapshot_pages_go_in_order_and_the_cursor_holds_for_a_resumed_topic_until_the
         full: true,
         deleted: vec![],
         more,
+        rows_json: None,
     };
     let p1 = server.handle(Input::SnapshotRows(page(1, true)), 100);
     assert_eq!(sends(&p1)[0].2, Some(3), "not past the since until the whole topic is there");
@@ -439,6 +469,7 @@ fn snapshot_pages_past_the_high_water_mark_wait_for_the_socket_instead_of_a_resy
         full: true,
         deleted: vec![],
         more,
+        rows_json: None,
     };
     let p1 = server.handle(Input::SnapshotRows(page(1, true)), 100);
     assert_eq!(ts(&msgs(&p1)), vec!["snapshot"]);
@@ -477,6 +508,7 @@ fn a_snapshot_started_over_for_its_load_buffer_drops_its_old_pages_still_queued(
         full: true,
         deleted: vec![],
         more: true,
+        rows_json: None,
     };
     server.handle(Input::SnapshotRows(page(1)), 100);
     server.handle(Input::Drained { conn: C1, buffered_bytes: 500 }, 101);
@@ -608,4 +640,23 @@ fn notices_go_to_every_stream_or_only_to_those_on_the_topic() {
     s.tick(50); // c2 just flushed: its next frame waits out the interval
     let all = s.handle(Input::Notice { notice, topic: None });
     assert_eq!(sends(&all).iter().map(|f| f.0).collect::<Vec<_>>(), vec![C1, C2]);
+}
+
+/// perf audit 2026-11-19 #1: a full page's rows the host encoded where it read them go out in the frame the machine
+/// would have written from the rows themselves, byte for byte.
+#[test]
+fn a_snapshot_page_encoded_by_the_host_is_the_frame_its_rows_make() {
+    let rows = vec![wisp_protocol::Row { e: "session".into(), id: "t1".into(), v: json!({ "id": "t1", "title": "Fix \"login\"" }) }];
+    for more in [false, true] {
+        let own = serde_json::to_string(&wisp_protocol::Snapshot {
+            t: wisp_protocol::tag::Snapshot,
+            topic: topic("list"),
+            seq: 42,
+            rows: rows.clone(),
+            more: more.then_some(true),
+        })
+        .unwrap();
+        let text = serde_json::to_string(&rows).unwrap();
+        assert_eq!(wisp_sync::snapshot_frame(&topic("list"), 42, &text, more), own);
+    }
 }

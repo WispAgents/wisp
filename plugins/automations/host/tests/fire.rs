@@ -105,6 +105,8 @@ async fn a_cron_schedule_starts_its_task_on_its_minute_once_in_its_project() {
     let a = &made[0];
     assert_eq!((a.prompt.as_str(), a.cwd.as_deref(), a.title.as_deref()), ("Tidy the docs", Some("/repo"), Some("nightly")));
     assert_eq!(a.lineage.triggered_by.as_deref(), Some("trigger:nightly"));
+    // Plan reads, it never needs a folder of its own (v1 launch.js wantTree; audit B #7)
+    assert_eq!(a.worktree, Some(false));
     // the rest of the day: nothing more
     run_for(&clock, 5 * 60_000).await;
     assert_eq!(rt.made().len(), 1, "a daily schedule fired twice");
@@ -138,4 +140,6 @@ async fn a_chat_trigger_with_users_starts_nothing_for_someone_not_listed() {
     let log = k.call(Caller::user(), "automations.trigger.log", json!({ "name": "deploys" })).await.unwrap();
     assert_eq!(made.len(), 1, "{log}");
     assert_eq!(made[0].prompt, "Deploy what U1 asked for");
+    // its own worktree, not your checkout, as v1 started every task (audit B #7)
+    assert_eq!(made[0].worktree, Some(true));
 }

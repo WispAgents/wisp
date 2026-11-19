@@ -3,10 +3,11 @@
 // each marks its element (data-gesture, data-twin: qa/platform.mjs's twin rule), runs the gesture, ticks through the
 // GestureHost, and gives a screen reader the same thing as custom actions. The browser at any width gets none of it:
 // its HTML is byte for byte what it was (the step 3–4 goldens), the gesture props passed or not.
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { createSignal, type JSX } from 'solid-js';
 import rowsGoldenRaw from './goldens/platform-browser-rows.json?raw';
 import { mount } from './helpers.tsx';
+import { binders } from '../src/gestures/binders-part.ts';
 import { rowScenes } from './platform-scenes-rows.tsx';
 import {
   GestureHostProvider,
@@ -70,6 +71,9 @@ afterEach(() => {
   vi.unstubAllGlobals();
   vi.useRealTimers();
 });
+
+// the phone apps load the touch binders with their look (platform/styles.ts) before the first screen draws
+beforeAll(() => binders.load().then(() => undefined));
 
 describe('the browser gets no gestures', () => {
   it('a_browser_render_with_every_gesture_prop_is_byte_identical_to_before', () => {

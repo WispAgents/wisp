@@ -8,27 +8,8 @@ import type { Key, Vars } from './i18n.ts';
 import type { DoneApplyOut, DoneFolder, OnDone } from './types.ts';
 import './i18n/lazy.ts';
 
-/** runtime's list row kind: Mark done patches its `/state` */
-export const SESSION = 'session';
-
-/**
- * The tasks a command of this client just marked done: a pending op (the optimistic patch of
- * `runtime.setState`, from the task page, its row, the list or a shortcut) that sets a session's state to
- * `done`, from a command not seen before. Done from a channel, the phone's notification or an agent is
- * another client's (or none): it never shows here, so it never asks (v1: no dialog from anywhere else).
- */
-export function newlyDone(pending: readonly PendingInfo[], seen: Set<string>): EntityKey[] {
-  const out: EntityKey[] = [];
-  for (const p of pending) {
-    if (seen.has(p.mid)) continue;
-    seen.add(p.mid);
-    for (const op of p.ops) {
-      if (op.e !== SESSION || op.op !== 'patch') continue;
-      if (op.ops.some((x) => x.op === 'replace' && x.path === '/state' && x.value === 'done') && !out.includes(op.id)) out.push(op.id);
-    }
-  }
-  return out;
-}
+// runtime's list row kind (Mark done patches its `/state`), and which commands mark a task done
+export { SESSION, newlyDone } from './done-watch.ts';
 
 /** What only the folder holds goes with it; null (git can't tell) counts as holding work. */
 export const holdsWork = (f: DoneFolder): boolean => f.only !== 0;

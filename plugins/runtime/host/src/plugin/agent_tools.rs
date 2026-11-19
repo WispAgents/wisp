@@ -109,9 +109,10 @@ impl Runtime {
         let days = tool_stats::days(a.days.as_ref());
         let now = self.now();
         let turns = self.repo.turns_since(tool_stats::since(days, now)).await?;
-        let sessions = self.repo.sessions().await?;
+        // each task's agent and folder from the list in memory (perf audit 2026-11-19 #4: every task was decoded)
+        let listed: Vec<Arc<wisp_runtime_api::model::Summary>> = self.lock_list().values().cloned().collect();
         let tasks: HashMap<&str, Task<'_>> =
-            sessions.iter().map(|s| (s.id.as_str(), Task { agent: s.agent.as_str(), cwd: s.cwd.as_str() })).collect();
+            listed.iter().map(|s| (s.id.as_str(), Task { agent: s.agent.as_str(), cwd: s.cwd.as_str() })).collect();
         let ended: Vec<String> = turns.iter().filter(|t| !t.status.is_live()).map(|t| t.id.as_str().to_owned()).collect();
         let calls = self.tool_calls(ended).await?;
         let st =

@@ -22,3 +22,5 @@ export * from './gestures/gesture-math.ts';
 // the task history as a ledger (ADR-0068): days, notice folds, search and filters, the scrubber's ticks, the keys
 export * from './app/ledger-model.ts';
 export { foldTail, tailFold, type FoldExtras, type FoldInput, type LauncherTool } from './app/launcher-fold.ts';
+// work that waits for the first screen (ADR-0105): plain plugin modules (a watcher started at setup) queue on it
+export { afterFirstScreen } from './controls/lazy-part.ts';

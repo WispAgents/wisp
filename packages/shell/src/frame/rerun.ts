@@ -11,6 +11,8 @@ export interface RerunSpec {
   readonly mode?: string;
   readonly cwd?: string;
   readonly dirs?: readonly string[];
+  /** it ran in a worktree of its own (New task's Worktree / In place): its rerun does too, as `wisp rerun` (audit B #2) */
+  readonly worktree?: boolean;
   /** the kind of task (My Stuff's pane, a Cast plugin): a rerun is the same kind */
   readonly ext?: Readonly<Record<string, unknown>>;
 }
@@ -41,7 +43,9 @@ export const startEdits = (s: RerunSpec, peer: string, agent?: string, ran?: { r
   };
 };
 
-/** `runtime.create`'s args (the shell's create command): a new task, its lineage pointing at the one rerun. */
+/** `runtime.create`'s args (the shell's create command): a new task, its lineage pointing at the one rerun: by its bare
+ *  id when it runs on the same computer, as `wisp rerun` writes it (the peer reads `rerunOf` as one of its own tasks;
+ *  the entity key `laptop:s1` matched none, audit B #2), by its key on another computer. */
 export function rerunArgs(s: RerunSpec, e: RerunEdits, o: { readonly of: string; readonly id: string; readonly at: number }) {
   return {
     peer: e.peer,
@@ -55,7 +59,8 @@ export function rerunArgs(s: RerunSpec, e: RerunEdits, o: { readonly of: string;
     ...(s.cwd && { cwd: s.cwd }),
     ...(s.dirs?.length && { dirs: [...s.dirs] }),
     ...(s.steps?.length && { steps: [...s.steps] }),
+    ...(s.worktree !== undefined && { worktree: s.worktree }),
     ...(s.ext && Object.keys(s.ext).length > 0 && { ext: { ...s.ext } }),
-    lineage: { rerunOf: o.of },
+    lineage: { rerunOf: o.of.startsWith(`${e.peer}:`) ? o.of.slice(e.peer.length + 1) : o.of },
   };
 }

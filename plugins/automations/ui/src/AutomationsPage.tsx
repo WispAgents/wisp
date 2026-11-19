@@ -29,6 +29,7 @@ import {
   TriggerKinds,
   useSignal,
 } from '@wisp/ui';
+import { lastRunWords } from './panes/summary.ts';
 import { fireTrigger, recipes, removeRecipe, removeTrigger, saveTrigger, triggers, type Recipe, type Trigger } from './commands.ts';
 import { fieldsOf } from './recipe.ts';
 import { t } from './i18n.ts';
@@ -125,7 +126,8 @@ export default function AutomationsPage(props: { readonly client: PluginClient; 
     const spec = x.spec ?? {};
     const mode = typeof spec['mode'] === 'string' ? spec['mode'] : '';
     const agent = typeof spec['agent'] === 'string' ? spec['agent'] : '';
-    const ago = x.lastRunAt ? say('automations.page.lastRun', { ago: timeLabel(x.lastRunAt, Date.now(), englishT) }) : say('automations.page.notRun');
+    const now = Date.now();
+    const ago = lastRunWords(x.lastRunAt, now, (at) => timeLabel(at, now, englishT), say);
     return [mode ? say(`automations.recipe.mode.${mode}`) : '', agent ? (harnesses().find((h) => h.id === agent)?.name ?? agent) : '', ago].filter(Boolean);
   };
   return (

@@ -8,7 +8,7 @@ import { ErrorBoundary, Show, createMemo, createResource, createSignal, type JSX
 import { Dynamic } from 'solid-js/web';
 import { defineCommand, type PeerId, type PluginClient, type Vars } from '@wisp/client';
 import { titleParts, usePluginClient, useShell, type SettingsPaneDef } from '@wisp/shell';
-import { Callout, EmptyState, Input, SettingsFrame, useDerived, useSignal } from '@wisp/ui';
+import { Callout, EmptyState, Input, SettingsFrame, Skeleton, Stack, useAfterPaint, useDerived, useSignal } from '@wisp/ui';
 import { t as own } from './i18n.ts';
 import { VIEW_ID, type SettingsParams } from './types.ts';
 import { pickPane, samePane, settingsIntent, type PaneEntry } from './nav.ts';
@@ -123,6 +123,10 @@ export function SettingsView(props: { readonly client: PluginClient; readonly pa
   );
   // the same pane keeps its entry: a pane list made again (a setting changed) doesn't remake the open pane
   const current = createMemo(() => pickPane(panes(), order(), props.params.pane), undefined, { equals: samePane });
+  // the pane picked: its row lights and its title shows in the click's frame, its body is built in the frame after
+  // (perf r2 #9: a pane opened again built in the click, All settings 160 ms and Usage 120 ms at 4×)
+  const body = useAfterPaint(current, samePane);
+  const building = (): boolean => !samePane(body(), current());
   // the phone apps' list: Back is titled with the screen under Settings (iOS), Tasks, whose me menu opens it
   const backLabel = (): string | undefined => {
     if (!deps.phone) return undefined;
@@ -161,7 +165,8 @@ export function SettingsView(props: { readonly client: PluginClient; readonly pa
       onKeyDown={onKey}
     >
       <Show when={!nothing()} fallback={<EmptyState compact icon="search" title={own('shell-settings.search.none', { q: query().trim() })} part="shell-settings.search.empty" />}>
-      <Show when={current()} keyed fallback={<EmptyState compact icon="settings" title={own('shell-settings.empty')} />}>
+      <Show when={!building()} fallback={<PaneSkeleton />}>
+      <Show when={body()} keyed fallback={<EmptyState compact icon="settings" title={own('shell-settings.empty')} />}>
         {(entry) => (
           <ErrorBoundary
             fallback={() => (
@@ -175,6 +180,18 @@ export function SettingsView(props: { readonly client: PluginClient; readonly pa
         )}
       </Show>
       </Show>
+      </Show>
     </SettingsFrame>
+  );
+}
+
+/** Where a pane's rows will be, the frame before they're built. */
+function PaneSkeleton(): JSX.Element {
+  return (
+    <Stack gap="4" part="shell-settings.pane.loading" aria-hidden="true">
+      <Skeleton shape="block" width="2/3" height="bar" />
+      <Skeleton width="full" />
+      <Skeleton width="3/4" />
+    </Stack>
   );
 }

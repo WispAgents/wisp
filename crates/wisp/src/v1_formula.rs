@@ -53,13 +53,15 @@ pub fn formula_of(cfg: &Value) -> (Vec<Resource>, Vec<String>) {
         }
     }
     let d = cfg.get("defaults").cloned().unwrap_or_default();
-    let mut def = pick(&d, &[("model", "model"), ("effort", "effort"), ("mode", "mode"), ("subagentModel", "subagentModel")]);
-    if !s(&d, "agent").is_empty() {
-        def.insert("harness".into(), json!(s(&d, "agent")));
-    }
+    // with a default harness, its model and effort are that harness's in New task's pick (`default_harness_of`); on the
+    // profile they'd follow a task onto any harness (Claude Code run with `--model gpt-5-codex`)
+    let fields: &[(&str, &str)] =
+        if s(&d, "agent").is_empty() { &[("model", "model"), ("effort", "effort"), ("mode", "mode")] } else { &[("mode", "mode")] };
+    let def = pick(&d, fields);
     if !def.is_empty() {
         out.push(Resource::new("agent", "default", Value::Object(def)));
     }
+    default_harness_of(&d, &mut out, &mut notes);
     defaults_of(&d, &mut out, &mut notes);
     for r in list("recipes") {
         let spec = pick(
@@ -264,6 +266,30 @@ fn defaults_of(d: &Value, out: &mut Vec<Resource>, notes: &mut Vec<String>) {
     }
 }
 
+/// Setup audit B11: one default harness and one subagent model, where the user sets them. v1's `defaults.agent` is New
+/// task's pick (`runtime.launch`), which a task that names no harness runs on too (CLI, MCP, crew); it went on the
+/// `default` profile, so the CLI ran Codex while New task offered Claude Code. `subagentModel` is Usage's setting.
+fn default_harness_of(d: &Value, out: &mut Vec<Resource>, notes: &mut Vec<String>) {
+    let agent = s(d, "agent");
+    if !agent.is_empty() {
+        let mut pick = json!({ "agent": agent });
+        for (v1, key) in [("model", "models"), ("effort", "efforts")] {
+            if !s(d, v1).is_empty() {
+                pick[key] = json!({ agent: s(d, v1) });
+            }
+        }
+        out.push(Resource::new("setting", "runtime.launch", pick));
+    }
+    match s(d, "subagentModel") {
+        "" => {}
+        m if SUBAGENT_MODELS.contains(&m) => out.push(Resource::new("setting", "runtime.subagentModel", json!(m))),
+        m => notes.push(format!("v1 subagentModel {m}: v2's are {}, not carried", SUBAGENT_MODELS.join(", "))),
+    }
+}
+
+/// `runtime.subagentModel`'s values (wisp.runtime's manifest).
+const SUBAGENT_MODELS: [&str; 3] = ["task", "haiku", "sonnet"];
+
 const V1_DEFAULTS: &[(&str, &str, As)] = &[
     ("maskEnvFiles", "git.maskEnvFiles", As::Bool),
     ("leanRuns", "runtime.leanRuns", As::OnOff),
@@ -318,6 +344,32 @@ mod tests {
         let nightly = rs.iter().find(|r| r.name == "nightly").unwrap();
         assert_eq!(nightly.spec["schedule"], "0 2 * * *");
         assert!(notes.iter().any(|n| n.contains("linear")), "{notes:?}");
+    }
+
+    /// Setup audit B11: v1's default harness went on the `default` profile, so the CLI ran Codex while New task offered
+    /// Claude Code, and its subagent model sat where Usage never shows it. Both are the settings the app sets.
+    #[test]
+    fn v1s_default_harness_is_new_tasks_pick_and_its_subagent_model_is_usages() {
+        let v1 = json!({ "defaults": { "agent": "codex", "model": "gpt-5-codex", "effort": "high", "mode": "edits", "subagentModel": "haiku" } });
+        let (rs, notes) = formula_of(&v1);
+        let get = |rs: &[Resource], k: &str, n: &str| rs.iter().find(|r| r.kind == k && r.name == n).map(|r| r.spec.clone());
+        assert_eq!(
+            get(&rs, "setting", "runtime.launch"),
+            Some(json!({ "agent": "codex", "models": { "codex": "gpt-5-codex" }, "efforts": { "codex": "high" } })),
+            "the model and effort are the harness's, never another's"
+        );
+        assert_eq!(get(&rs, "setting", "runtime.subagentModel"), Some(json!("haiku")));
+        assert_eq!(get(&rs, "agent", "default"), Some(json!({ "mode": "edits" })), "no harness, model or subagent model on the profile");
+        assert!(notes.is_empty(), "{notes:?}");
+        // no default harness: the model stays the profile's, as before
+        let (rs, _) = formula_of(&json!({ "defaults": { "model": "opus", "effort": "high" } }));
+        assert_eq!(get(&rs, "agent", "default"), Some(json!({ "model": "opus", "effort": "high" })));
+        assert!(get(&rs, "setting", "runtime.launch").is_none());
+        let (rs, notes) = formula_of(&json!({ "defaults": { "subagentModel": "opus" } }));
+        assert!(
+            rs.iter().all(|r| r.name != "runtime.subagentModel") && notes.iter().any(|n| n.contains("subagentModel opus")),
+            "{notes:?}"
+        );
     }
 
     /// Setup audit F24, F25: the v1 ntfy topic became an `allow` entry (its server dropped), so the phone that listened

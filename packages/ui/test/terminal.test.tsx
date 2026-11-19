@@ -16,6 +16,34 @@ const input = (): HTMLTextAreaElement => {
 };
 
 describe('<Terminal>', () => {
+  it('reads no layout as it mounts: the resize observer\'s first callback fits it (perf r2 #8)', () => {
+    const was = { ro: globalThis.ResizeObserver, gcs: globalThis.getComputedStyle };
+    const seen: (() => void)[] = [];
+    globalThis.ResizeObserver = class {
+      readonly cb: ResizeObserverCallback;
+      constructor(cb: ResizeObserverCallback) {
+        this.cb = cb;
+      }
+      observe(): void {
+        seen.push(() => this.cb([], this as unknown as ResizeObserver));
+      }
+      unobserve(): void {}
+      disconnect(): void {}
+    } as unknown as typeof ResizeObserver;
+    let reads = 0;
+    globalThis.getComputedStyle = ((el: Element) => (reads++, was.gcs(el))) as typeof getComputedStyle;
+    try {
+      mount(() => <Terminal screen={new Screen(20, 4)} onData={() => {}} labels={LABELS} />);
+      expect(reads).toBe(0);
+      expect(seen).toHaveLength(1);
+      seen[0]?.(); // after the layout: now it measures
+      expect(reads).toBeGreaterThan(0);
+    } finally {
+      globalThis.ResizeObserver = was.ro;
+      globalThis.getComputedStyle = was.gcs;
+    }
+  });
+
   it('paints the screen, then only the rows a write changed', async () => {
     const s = new Screen(20, 4);
     mount(() => <Terminal screen={s} onData={() => {}} labels={LABELS} />);

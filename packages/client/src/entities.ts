@@ -61,6 +61,9 @@ export interface EntityWriter {
   mergeOlder(peer: PeerId, kind: string, id: string, topic: Topic, items: readonly unknown[], seqOf: (item: unknown) => number): void;
   /** the peer's cache is no longer trusted (a new epoch, or the cursor is too old) */
   resetPeer(peer: PeerId): void;
+  /** nothing watches `topic` any more: the rows only it held leave memory (a closed task's turns and events), and it no
+   *  longer counts as loaded; a row another topic holds too (a task's row on `list`) stays */
+  dropTopic(peer: PeerId, topic: Topic): void;
   /** `synced`: the topics the saved link had whole (they count as loaded, LinkSaved.synced) */
   restore(peer: PeerId, cursor: number, rows: readonly StoredRow[], synced?: readonly Topic[]): void;
   addPending(mid: string, peer: PeerId, ops: EntityOps): void;
@@ -305,6 +308,20 @@ export function createEntityStore(warn: Warn = () => {}): { reader: EntityReader
       const was = untracked(whole);
       const left = [...was].filter((k) => !k.startsWith(`${peer}\u0000`));
       if (left.length !== was.size) whole(new Set(left));
+    },
+    dropTopic(peer, topic) {
+      const touched: ChangedRow[] = [];
+      for (const [kind, c] of collections) {
+        for (const [key, r] of c.rows) {
+          if (r.peer !== peer || !r.topics.has(topic)) continue;
+          const gone = dropTopicRow(kind, key, topic);
+          if (gone) touched.push(gone);
+        }
+      }
+      recomputeAll(touched);
+      const k = wholeKey(peer, topic);
+      const was = untracked(whole);
+      if (was.has(k)) whole(new Set([...was].filter((x) => x !== k)));
     },
     restore(peer, cursor, rows, synced = []) {
       cursors.set(peer, cursor);

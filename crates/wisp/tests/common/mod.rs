@@ -179,6 +179,8 @@ fn spawn(dir: &Path, env: &[(&str, &str)]) -> (Serve, u16) {
         .env("CODEX_HOME", dir.join("codex-home"))
         .env("WISP_WEB_DIR", dir.join("no-web"))
         .env("RUST_LOG", "warn")
+        // no update check reaches a registry (wisp's own, the harnesses' `npm view`: setup audit B5)
+        .env("WISP_UPDATE_CHECK", "0")
         .envs(env.iter().copied())
         .stdin(Stdio::null())
         .stdout(Stdio::null())

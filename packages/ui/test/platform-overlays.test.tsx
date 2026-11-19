@@ -32,6 +32,7 @@ import {
 import { phoneOverlays } from '../src/controls/phone-part.ts';
 import { CONTEXT_MARGIN, contextPlace, detentAfter, detentsOf, phoneRows, rowsHeight, SELECT_VALUE, tipPlace, TIP_MS } from '../src/controls/phone-math.ts';
 import { markRoot } from '../src/platform/root-mark.ts';
+import { binders } from '../src/gestures/binders-part.ts';
 
 const GOLDEN = JSON.parse(goldenRaw) as Record<string, string>;
 
@@ -67,7 +68,8 @@ const on = (look: Look, view: () => JSX.Element, h: GestureHost = fakeHost()): H
   ));
 /** the phone chunk and the dialog machine have landed, and what they bind has run */
 const landed = async (): Promise<void> => {
-  await Promise.all([phoneOverlays.load(), preloadControls()]);
+  // the touch binders load apart (gestures/binders-part.ts, ADR-0105): a long-press binds once they land
+  await Promise.all([phoneOverlays.load(), preloadControls(), binders.load()]);
   await tick(20);
 };
 const contextAt = (el: Element | null, x = 20): void => {

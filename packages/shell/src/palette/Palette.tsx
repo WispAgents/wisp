@@ -13,7 +13,8 @@ import type { ProjectColor } from '@wisp/tokens';
 import type { PaletteContext, PaletteItem } from '../contract.ts';
 import { useShell } from '../context.tsx';
 import { useClients } from '../slot.tsx';
-import { marks, rank, type Ranked } from './match.ts';
+import { afterNextPaint } from '../frame/task-paint.ts';
+import { createRanker, marks, type Ranked } from './match.ts';
 import '../i18n/lazy.ts';
 
 const DEEP_PAUSE_MS = 160;
@@ -39,6 +40,13 @@ export default function Palette(_p: { readonly client: PluginClient; readonly pa
   const [changed, setChanged] = createSignal(0);
   const scope = shell.client.scope.child('palette');
   onCleanup(() => scope.dispose());
+  // the dialog draws in the key's frame, its list the frame after (perf-ui-r2 #1: building 4,500 tasks' items made ⌘K
+  // one 800 ms task at 4×); a key before then fills it at once, so nothing typed or pressed meets an empty list
+  const [filled, setFilled] = createSignal(false);
+  const fill = (): void => {
+    if (!filled()) setFilled(true);
+  };
+  onCleanup(afterNextPaint(fill));
 
   const ctxFor = (plugin: string): PaletteContext => {
     const n = nav();
@@ -48,7 +56,9 @@ export default function Palette(_p: { readonly client: PluginClient; readonly pa
   // round 323: useDerived, not createMemo: a source's items() reads the entity store (alien signals), which a Solid memo
   // doesn't follow, so the list was the tasks there when it opened (search before the list's snapshot never showed them)
   const items = useDerived(() =>
-    (changed(), sources()).filter((s) => !params.only || params.only.includes(s.id)).flatMap((s) => {
+    !filled()
+      ? []
+      : (changed(), sources()).filter((s) => !params.only || params.only.includes(s.id)).flatMap((s) => {
       try {
         return s.items(ctxFor(s.plugin));
       } catch {
@@ -56,10 +66,12 @@ export default function Palette(_p: { readonly client: PluginClient; readonly pa
       }
     }),
   );
+  // one per open: each item's fields lowercased once, and a query that extends the last ranks only its hits (r2 #2)
+  const ranker = createRanker();
   const shown = createMemo<Ranked[]>(() => {
     const q = query();
     const d = deep();
-    return rank(items(), q, scope.timers.now(), d.q === q.trim() ? d.items : []);
+    return ranker(items(), q, scope.timers.now(), d.q === q.trim() ? d.items : []);
   });
 
   let cancelAsk: (() => void) | undefined;
@@ -102,6 +114,7 @@ export default function Palette(_p: { readonly client: PluginClient; readonly pa
     return true;
   };
   const onKey = (e: KeyboardEvent): void => {
+    fill();
     const n = shown().length;
     if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
       e.preventDefault();
@@ -149,6 +162,7 @@ export default function Palette(_p: { readonly client: PluginClient; readonly pa
       // the phone apps' search view: Back (Android) / Cancel (iOS); the browser closes it with Esc or outside
       close={{ back: shell.t('shell.phone.back'), cancel: shell.t('shell.phone.cancel'), onClose: () => shell.navigate({ t: 'closeOverlay', id: 'shell.palette' as never }) }}
       onInput={(v) => {
+        fill();
         setQuery(v);
         setSel(0);
         ask(v);

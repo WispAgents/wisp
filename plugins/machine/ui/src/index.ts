@@ -7,9 +7,11 @@ import { lazy } from 'solid-js';
 import catalogue from './i18n/en.json' with { type: 'json' };
 import { openSettings } from './open-settings.ts';
 import { STATIC_NAME_KEY } from './names.ts';
+// the chip's gate is small and here; the chip loads only when it has something to show (ChipGate.tsx)
+import Chip from './ChipGate.tsx';
 
 const Pane = lazy(() => import('./MachinePane.tsx'));
-const Chip = lazy(() => import('./Chip.tsx'));
+
 const Ram = lazy(() => import('./RamCell.tsx'));
 const Page = lazy(() => import('./MachinePage.tsx'));
 const Load = lazy(() => import('./LoadGroup.tsx'));

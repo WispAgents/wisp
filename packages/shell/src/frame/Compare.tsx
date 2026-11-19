@@ -12,7 +12,8 @@ import { SESSION, type SessionRow } from '../rows.ts';
 import { answerContext } from './answer-ctx.ts';
 import { isStub, keepTurnsWhole } from './turn-window.ts';
 import { archive, stopRun, trialKeep } from './commands.ts';
-import { differsWords, runOrder, trialOf, variantOf, variantWords } from './trial.ts';
+import { differsWords, trialOf, variantOf, variantWords } from './trial.ts';
+import { compareGroup } from './compare-group.ts';
 import { compareRows, compareSentence, letter, planShares, type CompareRun, type CompareTurn, type PlanShare } from './compare.ts';
 import { useNow } from '../clock.ts';
 import { defaultModelName, runModelWord } from './default-models.ts';
@@ -62,12 +63,10 @@ export default function Compare(props: { readonly params: { readonly id: string 
   const harnesses = useSignal(shell.harnesses());
   const scope = shell.client.scope.child(`compare:${props.params.id}`);
   onCleanup(() => scope.dispose());
-  const group = createMemo(() => {
-    const g = sessions().find((s) => s.id === props.params.id)?.summary['groupId'];
-    if (typeof g !== 'string' || !g) return [];
-    // a trial's runs in run order (A as given, B changed), whatever order they were created in
-    return runOrder(sessions().filter((s) => s.summary['groupId'] === g && !s.archived));
-  });
+  const keys = useSignal(shell.client.entities.keys(SESSION));
+  // a trial's runs in run order (A as given, B changed), whatever order they were created in; keyed whether the
+  // dialog was opened with a key or a bare id (audit B #3: a keyed id missed a real peer's bare rows)
+  const group = createMemo(() => compareGroup(sessions(), keys(), props.params.id));
   // each run's turns and steps come with its topic: watched while the dialog is open (the scope ends with it)
   const watched = new Set<string>();
   const owner = getOwner();

@@ -104,6 +104,39 @@ impl BlameSource for Git {
         let p = self.0.clone();
         Box::pin(async move { run(&p, "git", &root, &["rev-parse", "--git-dir"]).await.is_some() })
     }
+    fn messages(&self, root: PathBuf, shas: Vec<String>) -> BoxFuture<'static, Vec<(String, String)>> {
+        let p = self.0.clone();
+        Box::pin(async move {
+            if shas.is_empty() {
+                return Vec::new();
+            }
+            // every message from one git, the list on its stdin (a range can name thousands of commits)
+            let input = format!("{}\n", shas.join("\n")).into_bytes();
+            let opts = ExecOpts {
+                cwd: Some(root),
+                input: Some(input),
+                timeout: Some(Duration::from_secs(60)),
+                max_output: 64 << 20,
+                ..ExecOpts::default()
+            };
+            let args: Vec<String> =
+                ["log", "--no-walk=unsorted", "--stdin", "--format=%H%x00%B%x1e"].iter().map(|a| (*a).to_owned()).collect();
+            let text = match p.exec("git", &args, opts).await {
+                Ok(r) if r.exit.success() => r.stdout_text(),
+                _ => String::new(),
+            };
+            messages_of(&text)
+        })
+    }
+}
+
+/// `%H NUL %B RS` records, as `git log --format=%H%x00%B%x1e` writes them: (commit, message).
+pub fn messages_of(text: &str) -> Vec<(String, String)> {
+    text.split('\u{1e}')
+        .filter_map(|r| r.trim_start_matches('\n').split_once('\0'))
+        .map(|(sha, body)| (sha.trim().to_owned(), body.to_owned()))
+        .filter(|(sha, _)| !sha.is_empty())
+        .collect()
 }
 
 /// The PR a task's commits (or its branch) went into, from GitHub through `gh` (`WISP_GH_BIN`, else
@@ -194,5 +227,8 @@ impl BlameSource for LazyGit {
     }
     fn knows(&self, root: PathBuf) -> BoxFuture<'static, bool> {
         lazy!(self, false, |g| g.knows(root))
+    }
+    fn messages(&self, root: PathBuf, shas: Vec<String>) -> BoxFuture<'static, Vec<(String, String)>> {
+        lazy!(self, Vec::new(), |g| g.messages(root, shas))
     }
 }

@@ -20,6 +20,8 @@
     "ship:*",
     "stuff:*",
     "telemetry:track",
+    "threads:read",
+    "threads:write",
     "watch:*"
   ],
   "activation": [

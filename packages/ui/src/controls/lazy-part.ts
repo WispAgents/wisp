@@ -77,6 +77,17 @@ export function firstScreenDrawn(): void {
   for (const run of afterFirst.splice(0)) run();
 }
 
+/** `comp`, drawn once the first screen is up (ADR-0105), nothing in its place until then: for what Home shows only
+ *  sometimes and only after a fetch anyway (a note about a plan's window, an update pill, a feedback ask), so neither
+ *  its code nor its fetch holds up the first screen. */
+export function drawnLater<P extends object>(comp: Component<P>): Component<P> {
+  return (props) => {
+    const [on, setOn] = createSignal(first.drawn);
+    if (!first.drawn) afterFirstScreen(() => setOn(true));
+    return createMemo(() => (on() ? untrack(() => createComponent(comp, props)) : undefined)) as unknown as JSX.Element;
+  };
+}
+
 /** Fetches every control's machine (the app calls it once its first screen is up and the page is idle). */
 export function preloadControls(): Promise<void> {
   return Promise.all(parts.map((p) => p.load())).then(() => undefined);

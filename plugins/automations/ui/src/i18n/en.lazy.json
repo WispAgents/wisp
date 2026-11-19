@@ -79,6 +79,7 @@
   "automations.page.runNow": "Run now",
   "automations.page.checkNow": "Check now",
   "automations.page.lastRun": "last run {ago} ago",
+  "automations.page.lastRunNow": "last run just now",
   "automations.page.notRun": "not run yet",
   "automations.page.deleteRecipe": "Delete the recipe “{name}”?",
   "automations.page.deleteRecipe.ok": "Delete recipe",

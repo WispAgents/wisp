@@ -68,24 +68,26 @@ export class SseParser {
     }
     const out: SseEvent[] = [];
     let start = 0;
-    for (let i = 0; i < text.length; i++) {
-      const c = text.charCodeAt(i);
-      if (c !== 10 && c !== 13) continue;
-      if (c === 10 && this.#pendingCR && i === start && this.#line === '') {
-        // the LF of a CRLF whose CR ended the previous chunk
-        this.#pendingCR = false;
-        start = i + 1;
-        continue;
-      }
+    // the LF of a CRLF whose CR ended the previous chunk
+    if (this.#pendingCR && text.length > 0) {
       this.#pendingCR = false;
+      if (text.charCodeAt(0) === 10) start = 1;
+    }
+    // line ends found by the engine's own search, not a loop over every character: a task's snapshot is one data line
+    // of a few MB, and walking it in script was the open's largest cost (perf r2 #5: 57 ms of a 4× open)
+    let lf = text.indexOf('\n', start);
+    let cr = text.indexOf('\r', start);
+    while (lf >= 0 || cr >= 0) {
+      const i = cr < 0 ? lf : lf < 0 ? cr : Math.min(lf, cr);
       this.#onLine(this.#line + text.slice(start, i), out);
       this.#line = '';
-      if (c === 13) {
-        if (i + 1 < text.length) {
-          if (text.charCodeAt(i + 1) === 10) i++;
-        } else this.#pendingCR = true;
-      }
       start = i + 1;
+      if (i === cr) {
+        if (i + 1 >= text.length) this.#pendingCR = true;
+        else if (text.charCodeAt(i + 1) === 10) start = i + 2;
+      }
+      if (lf >= 0 && lf < start) lf = text.indexOf('\n', start);
+      if (cr >= 0 && cr < start) cr = text.indexOf('\r', start);
     }
     if (start < text.length) {
       this.#pendingCR = false;

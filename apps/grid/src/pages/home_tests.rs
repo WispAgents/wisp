@@ -21,7 +21,8 @@ fn a_fresh_account_gets_one_machines_list_and_the_checklist() {
     assert!(h.contains("Hi Ada</h1>"));
     // the cloud wisp first, as a row with Open; no computer yet says so with the way to add one
     assert!(h.contains(r"<b>Cloud wisp</b>") && h.contains("Asleep · starts the first time you open it"), "{h}");
-    assert!(h.contains(r#"<a class="primary" href="/go">Open"#));
+    // asleep, Open says it's waking at once (audit B #10)
+    assert!(h.contains(r#"<a class="primary" href="/go" data-wake="Waking up · a few seconds: it opens as soon as it’s up">Open"#), "{h}");
     assert!(h.contains("No computers of yours yet") && h.contains("0 of 1 up"));
     assert!(h.contains(r#"data-copy="npx wisp-agents computer on""#));
     // asleep: no Sleep in the ⋯
@@ -49,6 +50,8 @@ fn running_with_computers_and_links() {
     assert!(h.contains("Running · started 2 min ago"));
     assert!(h.contains("2 of 4 up"));
     assert!(h.contains("Sleep now"));
+    // running: Open goes straight there, nothing to wake
+    assert!(h.contains(r#"<a class="primary" href="/go">Open"#) && !h.contains("data-wake"));
     // online: Open is the primary; offline, Open still goes, to the page that waits for it (#7)
     assert!(h.contains(r#"<a class="primary" href="/go?computer=c1">Open"#));
     assert!(h.contains(r#"<a class="ghost line" href="/go?computer=c2" title="It opens as soon as that computer connects">Open"#));

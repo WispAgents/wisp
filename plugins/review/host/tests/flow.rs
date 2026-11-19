@@ -265,12 +265,25 @@ async fn no_diff_or_no_answer_fail_it() {
     assert_eq!(f.st().task.review.as_ref().unwrap().why.as_deref(), Some("Couldn’t read the PR’s diff"));
     let f = fake();
     let r = Reviewer::new(Arc::new(f.clone()));
-    f.st().answer = Some(json!("junk"));
+    f.st().answer = None;
     maybe(&f, &r, false).await;
     let st = f.st();
     let review = st.task.review.as_ref().unwrap();
     assert_eq!((review.status, review.why.as_deref()), (Status::Failed, Some("Codex didn’t answer.")));
     assert!(review.tests.is_some() && review.coverage.is_some());
+}
+
+/// Audit B #12: a reviewer that answered, not with a review's JSON, read "Codex didn't answer".
+#[tokio::test]
+async fn an_answer_that_isnt_a_review_says_so_not_that_it_didnt_answer() {
+    let f = fake();
+    let r = Reviewer::new(Arc::new(f.clone()));
+    f.st().answer = Some(json!("Looks fine to me, ship it."));
+    maybe(&f, &r, false).await;
+    let st = f.st();
+    let review = st.task.review.as_ref().unwrap();
+    assert_eq!(review.status, Status::Failed);
+    assert_eq!(review.why.as_deref(), Some("Codex answered, but not with a review wisp could read. Review again to ask once more."));
 }
 
 #[tokio::test]

@@ -47,6 +47,7 @@ import { SESSION, type SessionRow } from '../rows.ts';
 import { Slot, useClients, usePluginClient } from '../slot.tsx';
 import { TaskHeadSlot } from './slots.tsx';
 import { afterNextPaint, buildsAtOnce } from './task-paint.ts';
+import { NO_EVENTS, eventsByTurn } from './turn-events.ts';
 import { sameEntries } from './same-entries.ts';
 import { useProjects } from './projects.ts';
 import { taskPlaces } from './project-pick.ts';
@@ -122,6 +123,10 @@ import { plusTool } from './composer-plus.ts';
 // Delegate's panel: its own chunk, loaded when it first opens (ADR-0011)
 const DelegatePanel = lazy(() => import('./DelegatePanel.tsx'));
 import { capOf } from './cap.ts';
+import { shipsFromWorktree } from './ship-gate.ts';
+import { unreadLeave } from './unread-leave.ts';
+import { laterToggle } from './later-toggle.ts';
+import { promptHarness } from './prompt-harness.ts';
 import '../i18n/lazy.ts';
 import { openedByStep } from './stepped.ts';
 
@@ -270,11 +275,10 @@ export default function TaskView(props: { readonly id: string; readonly onBack?:
   const row = useSignal(shell.client.entities.row<SessionRow>(SESSION, key));
   const allTurns = useSignal(shell.client.entities.list<TurnRow>('turn'));
   const allEvents = useSignal(shell.client.entities.list<EventRow>('event'));
-  /** a turn's steps, oldest first: its tool calls and its messages */
-  const stepsOf = (turnId: string): EventRow[] =>
-    allEvents()
-      .filter((e) => e.turn_id === turnId)
-      .sort((a, b) => a.seq - b.seq);
+  // a turn's steps, oldest first: its tool calls and its messages. Grouped once per change of the events, a turn whose
+  // events didn't change keeps its array, so only that turn recomputes (turn-events.ts, perf r2 #5)
+  const byTurn = createMemo<Map<string, readonly EventRow[]>>((prev) => eventsByTurn(allEvents(), prev));
+  const stepsOf = (turnId: string): readonly EventRow[] => byTurn().get(turnId) ?? NO_EVENTS;
   const sessions = useSignal(shell.client.entities.list<SessionRow>(SESSION));
   // a turn names its session by the bare id the server gave it, or by the key (an optimistic one)
   const realTurns = createMemo(() =>
@@ -865,6 +869,7 @@ export default function TaskView(props: { readonly id: string; readonly onBack?:
   const canSaveForLater = (): boolean => !row()?.archived && (row()?.state === 'review' || row()?.state === 'done');
   // the shell's Rerun is More's own (above); Changes is on the head's bar (docs/ux/2026-11-18-desktop.md #4), and on a
   // desktop Merge is under its Ship ▾; Shell is the row's entry here, but More's own on a phone
+  const canShip = (): boolean => shipsFromWorktree(row()?.summary);
   const moreExts = (): ReturnType<typeof rowMenu> =>
     rowMenu().filter(
       (x) =>
@@ -891,7 +896,7 @@ export default function TaskView(props: { readonly id: string; readonly onBack?:
         // short (QA r2 #5)
         { sub: 'view', order: 10, entry: { value: 'changes', label: t('shell.task.changes'), icon: 'file', checked: nav().side.kind === 'changes' } },
         { sub: 'view', order: 20, entry: { value: 'shell', label: t('shell.task.shell'), icon: 'shell', checked: nav().side.kind === 'shell' } },
-        { section: 'open', order: 30, entry: { value: 'ship', label: t('shell.task.ship'), icon: 'send' } },
+        ...(canShip() ? [{ section: 'open' as const, order: 30, entry: { value: 'ship', label: t('shell.task.ship'), icon: 'send' as const } }] : []),
         { section: 'open', order: 40, entry: { value: 'done', label: t('shell.task.done'), icon: 'done' } },
         // the head's swipe's twins: at the list's first / last task (or none) they are there, disabled
         { section: 'look', order: 200, entry: { value: 'next-task', label: t('shell.phone.nextTask'), icon: 'chevron', ...(steps().next === undefined && { disabled: true }) } },
@@ -969,15 +974,28 @@ export default function TaskView(props: { readonly id: string; readonly onBack?:
       // asked first, as the row's Delete (audit A #4): the shell's one Delete task dialog
       shell.navigate({ t: 'openOverlay', overlay: { kind: 'dialog', id: 'shell.delete' as never, params: { id: key } } }); else if (v === 'rename') startRename();
     else if (v === 'copy-id') void shell.platform.copy(bare).then((ok) => ok && shell.toast.show(t('shell.more.copiedId')));
-    else if (v === 'later') void run(forLater, { id: key, forLater: !forLaterNow() }).catch(() => undefined);
+    else if (v === 'later') {
+      // with Undo, as the row menu and the hover button say it (audit B #7)
+      const l = laterToggle(row()?.summary['forLater']);
+      void run(forLater, { id: key, ...l.next }).catch(() => undefined);
+      shell.toast.show(t(l.toast), { action: { label: t('shell.toast.undo'), onClick: () => void run(forLater, { id: key, ...l.undo }).catch(() => undefined) } });
+    }
     else if (v === 'pin') void run(pin, { id: key, pinned: row()?.summary['pinned'] !== true }).catch(() => undefined);
     else if (v === 'read') {
       // Mark unread: it stays bold in the list, so the page leaves it (staying would read it again): the next task that
-      // needs you, else home
+      // needs you, else home, saying so with Undo (audit B #5: a silent jump read as the task changing under you)
       void run(markRead, { id: key, unread: true }).catch(() => undefined);
-      const to = nextNeedsYou(untrack(sessions), key);
-      if (to) shell.navigate({ t: 'openTask', id: (to.includes(':') ? to : entityKey(peer, to)) as never });
-      else shell.navigate({ t: 'home' });
+      const out = unreadLeave(untrack(sessions), key, row()?.title ?? '', peer);
+      shell.navigate(out.to.t === 'openTask' ? { t: 'openTask', id: out.to.id as never } : { t: 'home' });
+      shell.toast.success(t(out.toast.key, out.toast.vars), {
+        action: {
+          label: t('shell.toast.undo'),
+          onClick: () => {
+            void run(markRead, { id: key, unread: false }).catch(() => undefined);
+            shell.navigate({ t: 'openTask', id: key as never });
+          },
+        },
+      });
     }
     else if (v === 'unarchive') void run(archive, { id: key, archived: false }).catch(() => undefined);
     else if (v === 'rollback') {
@@ -1042,15 +1060,20 @@ export default function TaskView(props: { readonly id: string; readonly onBack?:
       ...(d.files > 0 || toShip()
         ? [{ id: 'changes', key: 'D', icon: 'file' as const, label: t('shell.task.changes'), title: t('shell.task.changesTitle'), part: 'split.changes', ...(d.files > 0 && { figures: { plus: `+${d.plus}`, minus: `−${d.minus}` } }), act: { onClick: () => side('changes') } }]
         : []),
-      {
-        id: 'ship',
-        key: 'S',
-        icon: 'send',
-        label: t('shell.task.shipShort'),
-        title: t('shell.task.shipTitle'),
-        part: 'split.ship',
-        act: ship.length > 1 ? { menu: { items: ship, onSelect: onShip } } : { onClick: () => onMore('ship') },
-      },
+      // only a worktree task ships (v1 shippable; audit B #2: one in its project's folder failed "no such session")
+      ...(canShip()
+        ? [
+            {
+              id: 'ship',
+              key: 'S',
+              icon: 'send' as const,
+              label: t('shell.task.shipShort'),
+              title: t('shell.task.shipTitle'),
+              part: 'split.ship',
+              act: ship.length > 1 ? { menu: { items: ship, onSelect: onShip } } : { onClick: () => onMore('ship') },
+            },
+          ]
+        : []),
       done
         ? { id: 'done', key: 'E', icon: 'replay', label: t('shell.task.reopen'), title: t('shell.task.reopenTitle'), part: 'split.done', act: { onClick: reopen } }
         : { id: 'done', key: 'E', icon: 'done', label: t('shell.task.doneShort'), title: t('shell.card.done'), tone: 'good', part: 'split.done', act: { onClick: markDone } },
@@ -1070,7 +1093,10 @@ export default function TaskView(props: { readonly id: string; readonly onBack?:
         else if (act === 'panel') sideNewest();
         else side('changes');
       } else if (act === 'pr') shell.navigate({ t: 'toggleSide', side: { kind: 'pr', id: key as never } });
-      else if (act === 'ship') ship();
+      else if (act === 'ship') {
+        if (!canShip()) return false;
+        ship();
+      }
       else if (act === 'done') {
         if (row()?.state === 'done') reopen();
         else markDone();
@@ -1257,6 +1283,8 @@ export default function TaskView(props: { readonly id: string; readonly onBack?:
         const renderTurn = (tr: () => TurnRow): JSX.Element => {
           const turn = through(tr);
           const b = through(() => tr().body);
+          // the harness this turn ran on, not the reply box's pick (audit B #6)
+          const turnHarness = (): { name: string; logo?: string } => harnessView(promptHarness(b as { agent?: unknown }, replyRun()?.agent, row()?.agent ?? ''));
           const hero = (): { title?: string; summary?: string } | undefined => b.presentation?.blocks?.find((x) => x.type === 'hero');
           // the steps come as the turn's events (the task's topic); a turn row that carries its own still reads
           // the turn's events, once per change of them: its steps, the working panel's count, ticker and quiet note all read
@@ -1434,8 +1462,8 @@ export default function TaskView(props: { readonly id: string; readonly onBack?:
                   removedLabel: t('shell.task.commentRemoved'),
                   say: c.note,
                 }))}
-                harness={h().name}
-                {...(h().logo && { logo: h().logo })}
+                harness={turnHarness().name}
+                {...(turnHarness().logo && { logo: turnHarness().logo })}
                 time={clock(turn.started_at)}
                 timeTitle={longTime(turn.started_at)}
                 {...(b.checkpoint?.commit && {

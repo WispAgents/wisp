@@ -160,7 +160,17 @@ impl Sim {
             Some(since) => self.store.delta(&r.topic, since),
             None => (self.store.snapshot(&r.topic), vec![]),
         };
-        let a = SnapshotAnswer { conn: r.conn, topic: r.topic.clone(), req: r.req, seq: self.store.seq, rows, full, deleted, more: false };
+        let a = SnapshotAnswer {
+            conn: r.conn,
+            topic: r.topic.clone(),
+            req: r.req,
+            seq: self.store.seq,
+            rows,
+            full,
+            deleted,
+            more: false,
+            rows_json: None,
+        };
         self.server_in(Input::SnapshotRows(a));
     }
 

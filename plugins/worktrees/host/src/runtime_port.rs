@@ -113,7 +113,11 @@ impl Port for RuntimePort {
             };
             // the slots it reads, every task's in one store read (perf audit 2026-11-18 #3: was `runtime.get` per task)
             let plugins = vec![EXT.to_owned(), "wisp.ship".to_owned(), "wisp.runtime".to_owned()];
-            let Ok(slots) = ctx.run::<Slots>(&call, SlotsArgs { plugins, all: false }).await else {
+            // only the tasks with a worktree slot or in a compare group (perf audit 2026-11-19 #7: all 5,000 bodies were
+            // read): a task with neither has nothing to clean and joins nobody's Done but through its parent (the list);
+            // its side questions only count for a task with folders
+            let having = vec![EXT.to_owned(), "group".to_owned()];
+            let Ok(slots) = ctx.run::<Slots>(&call, SlotsArgs { plugins, all: false, having }).await else {
                 return Vec::new();
             };
             let mut ext: HashMap<String, BTreeMap<String, Value>> = slots.into_iter().map(|t| (t.id.0, t.ext)).collect();
@@ -304,6 +308,7 @@ mod reads_tests {
             });
             s.command::<Slots, _, _>(|_, _, a| async move {
                 assert!(a.plugins.iter().any(|p| p == "wisp.worktrees"));
+                assert_eq!(a.having, ["wisp.worktrees", "group"], "only the bodies with a worktree or a compare group are read");
                 let tree =
                     json!({ "path": "/w/a", "cwd": "/w/a", "branch": "wisp/a", "base": "main", "baseRef": "origin/main", "root": "/code/app", "createdAt": 1, "kept": true });
                 Ok(vec![

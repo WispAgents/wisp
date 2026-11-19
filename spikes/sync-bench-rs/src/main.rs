@@ -310,6 +310,7 @@ fn v2(evs: &[Ev], seconds: f64, open: impl Fn(u64) -> String) -> Run {
                                 full: true,
                                 deleted: vec![],
                                 more: false,
+                                rows_json: None,
                             }),
                             now,
                         ));

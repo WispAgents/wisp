@@ -34,3 +34,14 @@ test('declared_settings_are_found_by_label_description_or_key_and_open_their_pan
   expect(settingTarget({ key: 'channels.project', owner: 'wisp.channels' }, panes)).toEqual({ pane: 'phone' });
   expect(settingTarget({ key: 'git.cloneDir', owner: 'wisp.git' }, panes)).toEqual({ pane: 'all', filter: 'git.cloneDir' });
 });
+
+// Setup audit B6: with Auto put away (runtime.auto off), typing "auto" or "model" listed Auto's switch, and opening it
+// showed All settings with "No setting matches." (All settings hides that row). The search never offers it either.
+test('autos_switch_is_never_a_search_hit_setup_audit_b6', () => {
+  const all: FoundSetting[] = [
+    { key: 'runtime.auto', owner: 'wisp.runtime', label: 'Auto', help: 'Auto picks the harness and model' },
+    { key: 'runtime.subagentModel', owner: 'wisp.runtime', label: 'Subagent model', help: 'The model Claude Code subagents run on' },
+  ];
+  expect(foundSettings(all, 'auto').map((s) => s.key)).toEqual([]);
+  expect(foundSettings(all, 'model').map((s) => s.key)).toEqual(['runtime.subagentModel']);
+});

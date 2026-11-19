@@ -98,13 +98,21 @@
   /* ---- live: the orb (3×3 dots, a ripple from the centre) and the working panel ---- */
   [data-kit='orb'] { display: inline-grid; grid-template-columns: repeat(3, var(--space-3)); gap: var(--space-1); flex: none; }
   [data-kit='orb-dot'] { width: var(--space-3); height: var(--space-3); border-radius: var(--radius-pill); background: color-mix(in srgb, var(--ink) 22%, transparent); }
-  [data-kit='orb'][data-live] [data-kit='orb-dot'] { animation: kit-orb 1.4s cubic-bezier(0.4, 0, 0.6, 1) infinite; }
-  [data-kit='orb'][data-live] [data-ring='1'] { animation-delay: 0.18s; }
-  [data-kit='orb'][data-live] [data-ring='2'] { animation-delay: 0.36s; }
+  /* the ripple fades an accent layer over each grey dot: opacity runs on the compositor, where animating the dot's
+     background restyled and repainted the dots every frame for as long as a task was live (perf-ui-r2 #4). The same
+     look: an opacity crossfade over the grey is the premultiplied mix the background's own interpolation made. */
+  [data-kit='orb'][data-live] [data-kit='orb-dot'] { position: relative; }
+  [data-kit='orb'][data-live] [data-kit='orb-dot']::after {
+    content: ''; position: absolute; inset: 0; border-radius: inherit; background: var(--accent); opacity: 0;
+    animation: kit-orb 1.4s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+  }
+  [data-kit='orb'][data-live] [data-ring='1']::after { animation-delay: 0.18s; }
+  [data-kit='orb'][data-live] [data-ring='2']::after { animation-delay: 0.36s; }
   [data-kit='orb'][data-waiting] { grid-template-columns: var(--size-dot-lg); }
   [data-kit='orb'][data-waiting] [data-kit='orb-dot'] { display: none; }
+  [data-kit='orb'][data-waiting] [data-kit='orb-dot']::after { content: none; }
   [data-kit='orb'][data-waiting] [data-kit='orb-dot']:first-child { display: block; width: var(--size-dot-lg); height: var(--size-dot-lg); background: var(--warn); animation: kit-pulse 1.6s ease-in-out infinite; }
-  @keyframes kit-orb { 0%, 100% { background: color-mix(in srgb, var(--ink) 22%, transparent); } 30% { background: var(--accent); } }
+  @keyframes kit-orb { 0%, 100% { opacity: 0; } 30% { opacity: 1; } }
 
   [data-kit='working'] {
     position: relative; display: flex; gap: var(--space-7); min-width: 0; padding: var(--space-7) var(--space-7); overflow: clip;
@@ -115,8 +123,13 @@
   /* the orb sits on the status line (v1 .tx-panel .w-orb): both are one line box tall, the orb centred in it */
   [data-kit='working-orb'] { display: flex; align-items: center; flex: none; height: var(--size-control-xs); }
   [data-kit='working-body'] { display: flex; flex-direction: column; gap: var(--space-5); flex: 1; min-width: 0; }
-  [data-kit='working-status'] { display: flex; align-items: baseline; gap: var(--space-6); min-width: 0; flex-wrap: nowrap; overflow: hidden; white-space: nowrap; line-height: var(--size-control-xs); }
-  [data-kit='working-title'] { min-width: 0; overflow: hidden; text-overflow: ellipsis; font-weight: var(--fw-semibold); color: var(--ink); }
+  /* one line that never wraps into view (design/layout.md §1): the status says the one thing, so it stays whole and
+     what follows it drops out whole when there's no room, last first (the count, then the time; audit-B #9). It is a
+     Wrap group (data-layout="wrap", WorkingPanel.tsx) in a box one line tall, so a dropped item goes to a line out of
+     sight, never cut; only a status wider than the whole line truncates. Scoped under the panel to beat Wrap's own
+     alignment and row gap. */
+  [data-kit='working'] [data-kit='working-status'] { display: flex; align-items: baseline; column-gap: var(--space-6); row-gap: 0; min-width: 0; height: var(--size-control-xs); overflow: hidden; white-space: nowrap; line-height: var(--size-control-xs); }
+  [data-kit='working-title'] { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; font-weight: var(--fw-semibold); color: var(--ink); }
   [data-kit='working']:not([data-waiting]) [data-kit='working-title'] {
     color: transparent; -webkit-background-clip: text; background-clip: text;
     background-image: linear-gradient(100deg, var(--ink) 40%, color-mix(in srgb, var(--ink) 30%, transparent) 50%, var(--ink) 60%);
@@ -124,7 +137,8 @@
   }
   @keyframes kit-shine { from { background-position: 100% 0; } to { background-position: 0% 0; } }
   [data-kit='working-elapsed'], [data-kit='working-count'] { flex: none; font-size: var(--fs-sm); color: var(--muted); font-variant-numeric: tabular-nums; }
-  [data-kit='working-note'] { min-width: 0; margin-left: auto; overflow: hidden; text-overflow: ellipsis; font-size: var(--fs-sm); color: var(--warn); }
+  /* the note takes what room is left at the end (no room needed to stay on the line) and truncates in it */
+  [data-kit='working-note'] { flex: 1 1 0; min-width: 0; text-align: end; overflow: hidden; text-overflow: ellipsis; font-size: var(--fs-sm); color: var(--warn); }
   /* v1 .ticker .act: the newest step in ink, its glyph accent; the four before it fading */
   [data-kit='working-ticker'] { list-style: none; margin: 0; padding: 0; }
   [data-kit='working-act'] { display: flex; align-items: center; gap: 9px; padding: 3px 0; font-size: 13px; color: var(--ink-2); min-width: 0; }

@@ -34,6 +34,7 @@
   "worktrees.count.one": "{count} worktree",
   "worktrees.count.other": "{count} worktrees",
   "worktrees.total": "{n} · {size}",
+  "worktrees.total.looking": "{line} · still looking…",
   "worktrees.free": "{size} free on this disk",
   "worktrees.last": "Last cleanup {when}: {n}",
   "worktrees.last-freed": "Last cleanup {when}: {n}, {size}",

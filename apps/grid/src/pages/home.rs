@@ -145,6 +145,17 @@ fn cloud_line(i: &InstanceView, now: i64) -> String {
     }
 }
 
+/// Open on a cloud wisp that isn't running waits for it to wake before the next page starts (about 1.3 s, audit B #10):
+/// the press says so on the row at once (`data-wake`, read by the pages' PENDING script).
+fn wake_attr(st: &str) -> String {
+    if st == "running" {
+        return String::new();
+    }
+    let label = state_label("starting").unwrap_or("Waking up");
+    let line = cloud_line(&InstanceView { state: "starting".into(), ..InstanceView::default() }, 0);
+    format!(r#" data-wake="{}""#, esc(&format!("{label} · {line}")))
+}
+
 fn cloud_row(p: &HomePage, hidden: &str) -> String {
     let st = p.instance.state.as_str();
     let label = state_label(st).map_or_else(|| esc(st), str::to_owned);
@@ -166,8 +177,9 @@ fn cloud_row(p: &HomePage, hidden: &str) -> String {
         when = next.map_or_else(|| "nothing scheduled".to_owned(), |t| esc(&locale_string(t))),
     );
     format!(
-        r#"<div class="mrow" data-row="cloud"><span class="w-ic cloud">{CLOUD}</span><div class="m-tx"><b>Cloud wisp</b><small class="st"><span class="dot {cls}"></span>{label} · {line}{sched}</small></div><div class="m-acts"><a class="primary" href="/go">Open{ARROW}</a>{more}</div></div>"#,
+        r#"<div class="mrow" data-row="cloud"><span class="w-ic cloud">{CLOUD}</span><div class="m-tx"><b>Cloud wisp</b><small class="st"><span class="dot {cls}"></span>{label} · {line}{sched}</small></div><div class="m-acts"><a class="primary" href="/go"{wake}>Open{ARROW}</a>{more}</div></div>"#,
         cls = esc(st),
+        wake = wake_attr(st),
         line = esc(&cloud_line(&p.instance, p.now_ms)),
         more = more_menu("your cloud wisp", &items),
     )

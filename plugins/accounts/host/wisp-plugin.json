@@ -124,6 +124,9 @@
         "title": "Read an account's usage windows",
         "readOnly": true
       }
+    ],
+    "settings": [
+      { "key": "accounts.updateCheck", "type": "bool", "default": true, "title": "Check for newer harness versions: once a day, wisp asks npm for the latest Claude Code, Codex and opencode (npm then knows which of them you have)" }
     ]
   }
 }

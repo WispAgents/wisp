@@ -8,3 +8,9 @@ export function summary(names: readonly string[], none: string): string {
   const shown = names.slice(0, 3).join(', ');
   return names.length > 3 ? t('automations.summary.more', { names: shown, n: names.length - 3 }) : shown;
 }
+
+/** A trigger's last run in words (v1 agoLong): "last run just now", never "last run now ago" (audit B #16). */
+export function lastRunWords(at: number | null | undefined, now: number, ago: (at: number) => string, say: (k: string, v?: Readonly<Record<string, string>>) => string): string {
+  if (!at) return say('automations.page.notRun');
+  return now - at < 45_000 ? say('automations.page.lastRunNow') : say('automations.page.lastRun', { ago: ago(at) });
+}

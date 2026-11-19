@@ -13,7 +13,7 @@ use std::path::Path;
 
 use serde_json::{Value, json};
 use wisp_cli_core::term::{self, BOLD, DIM, GREEN, paint};
-use wisp_resources_api::Plan;
+use wisp_resources_api::{Plan, Resource};
 
 use crate::client::{CliError, Client, Result};
 use crate::code::Opts;
@@ -66,9 +66,42 @@ async fn query(c: &Client, o: &Opts, cwd: &Path) -> Result<Vec<Value>> {
         }
     }
     let since = o.since.as_deref().map(|t| since_ms(t, now_ms())).transpose()?;
-    let args = json!({ "agent": o.over.get("agent"), "crew": o.crew, "workflow": o.workflow, "project": o.project, "since": since, "profiles": profiles });
-    let v = c.cmd("runtime.history", args).await?;
-    Ok(v.as_array().cloned().unwrap_or_default())
+    // `--crew ada`: the member's jobs carry its id, a formula's tasks its name; both are asked (audit B #10: "No tasks.")
+    let crews = match &o.crew {
+        Some(asked) => crew_words(&c.cmd("crew.list", json!({})).await.unwrap_or(Value::Null), asked),
+        None => vec![String::new()],
+    };
+    let mut rows: Vec<Value> = Vec::new();
+    for crew in crews {
+        let crew = (!crew.is_empty()).then_some(crew);
+        let args = json!({ "agent": o.over.get("agent"), "crew": crew, "workflow": o.workflow, "project": o.project, "since": since, "profiles": profiles });
+        let v = c.cmd("runtime.history", args).await?;
+        rows.extend(v.as_array().cloned().unwrap_or_default());
+    }
+    Ok(merged(rows))
+}
+
+/// The words `runtime.history` is asked for `--crew <asked>`: the member it names (by id, name or handle, any case)
+/// as its id and its name; the word itself when no member has it.
+pub fn crew_words(list: &Value, asked: &str) -> Vec<String> {
+    let handle = |s: &str| s.to_lowercase().split(|c: char| !c.is_alphanumeric()).filter(|w| !w.is_empty()).collect::<Vec<_>>().join("-");
+    let found = list.as_array().into_iter().flatten().find(|m| {
+        s(m, "id") == asked
+            || s(m, "name").eq_ignore_ascii_case(asked)
+            || (!s(m, "name").is_empty() && handle(s(m, "name")) == handle(asked))
+    });
+    match found {
+        Some(m) => [s(m, "id"), s(m, "name")].into_iter().filter(|w| !w.is_empty()).map(str::to_owned).collect(),
+        None => vec![asked.to_owned()],
+    }
+}
+
+/// Rows of several asks as one list: each task once, newest first.
+fn merged(rows: Vec<Value>) -> Vec<Value> {
+    let mut seen = std::collections::HashSet::new();
+    let mut out: Vec<Value> = rows.into_iter().filter(|r| seen.insert(s(r, "id").to_owned())).collect();
+    out.sort_by_key(|r| std::cmp::Reverse(r.get("createdAt").and_then(Value::as_i64).unwrap_or(0)));
+    out
 }
 
 fn lineage_words(l: &Value) -> String {
@@ -263,6 +296,41 @@ fn same_folder_projects(resources: &mut Vec<wisp_resources_api::Resource>, exist
         .collect()
 }
 
+/// `runtime.launch` as it is with v1's pick over it: its `agent`, and its harness's entry in `models` and `efforts`
+/// (each map kept, never replaced).
+fn merged_pick(mut now: serde_json::Map<String, Value>, v1: &Value) -> Value {
+    for (k, v) in v1.as_object().into_iter().flatten() {
+        match (now.get_mut(k), v) {
+            (Some(Value::Object(have)), Value::Object(add)) => have.extend(add.clone()),
+            _ => drop(now.insert(k.clone(), v.clone())),
+        }
+    }
+    Value::Object(now)
+}
+
+/// The plan of applying `resources` (nothing pruned).
+async fn plan_of(c: &Client, resources: &[Resource]) -> Result<Plan> {
+    serde_json::from_value(c.cmd("resources.plan", json!({ "resources": resources, "prune": false })).await?)
+        .map_err(|e| CliError::said(e.to_string()))
+}
+
+/// The imported projects the plan refuses for their folder (`projects.<name>: No folder at …`, "… is a file"), each
+/// with what it said.
+fn missing_folder_projects(plan: &Plan, resources: &[Resource]) -> Vec<(String, String)> {
+    resources
+        .iter()
+        .filter(|r| r.kind == "project")
+        .filter_map(|r| {
+            let at = format!("projects.{}: ", r.name);
+            plan.problems
+                .iter()
+                .find_map(|p| p.strip_prefix(&at))
+                .filter(|why| why.starts_with("No folder at") || why.contains("is a file, not a folder"))
+                .map(|why| (r.name.clone(), why.to_owned()))
+        })
+        .collect()
+}
+
 /// `wisp import [v1 home] [--dry-run] [--yes]`.
 pub async fn import(c: &Client, o: &Opts, home: &Path) -> Result<i32> {
     let v1 = o.words.first().map_or_else(|| home.to_owned(), |p| Path::new(p).to_owned());
@@ -273,9 +341,22 @@ pub async fn import(c: &Client, o: &Opts, home: &Path) -> Result<i32> {
     let (mut resources, mut notes) = crate::v1_formula::formula_of(&cfg);
     let existing = c.cmd("resources.export", json!({ "kinds": ["project"] })).await.unwrap_or(Value::Null);
     notes.extend(same_folder_projects(&mut resources, &existing));
+    // New task's pick keeps what it has: v1's harness, and that harness's model and level, go in (setup audit B11)
+    if let Some(r) = resources.iter_mut().find(|r| r.kind == "setting" && r.name == "runtime.launch")
+        && let Ok(Value::Object(now)) = c.cmd("settings.get", json!({ "key": "runtime.launch" })).await
+    {
+        r.spec = merged_pick(now, &r.spec);
+    }
     let st = crate::cli::style();
+    let mut plan = plan_of(c, &resources).await?;
+    // setup audit B2: a v1 project whose folder isn't here is left out, said, never imported (the plan refuses it)
+    let gone = missing_folder_projects(&plan, &resources);
+    if !gone.is_empty() {
+        resources.retain(|r| !(r.kind == "project" && gone.iter().any(|(n, _)| *n == r.name)));
+        notes.extend(gone.iter().map(|(n, why)| format!("project {n} not imported: {why}")));
+        plan = plan_of(c, &resources).await?;
+    }
     let args = json!({ "resources": resources, "prune": false });
-    let plan: Plan = serde_json::from_value(c.cmd("resources.plan", args.clone()).await?).map_err(|e| CliError::said(e.to_string()))?;
     say(&format!("{} {}", paint(&st, BOLD, "Import plan"), paint(&st, DIM, &format!("(v1 home {})", v1.display()))));
     crate::code::show_plan(&plan, &st);
     for n in &notes {
@@ -322,8 +403,40 @@ pub async fn import(c: &Client, o: &Opts, home: &Path) -> Result<i32> {
 }
 
 #[cfg(test)]
+mod crew_tests {
+    use serde_json::json;
+
+    use super::{crew_words, merged};
+
+    /// Audit B #10: `wisp ls --crew ada` said "No tasks." with Ada's jobs there: they carry her id, not "ada".
+    #[test]
+    fn crew_asked_by_name_asks_for_the_members_id_and_name() {
+        let list = json!([{ "id": "a1b2c3d4e5f6a7b8", "name": "Ada" }, { "id": "0f1e2d3c4b5a6978", "name": "Bob Lee" }]);
+        assert_eq!(crew_words(&list, "ada"), ["a1b2c3d4e5f6a7b8", "Ada"]);
+        assert_eq!(crew_words(&list, "bob-lee"), ["0f1e2d3c4b5a6978", "Bob Lee"]);
+        assert_eq!(crew_words(&list, "0f1e2d3c4b5a6978"), ["0f1e2d3c4b5a6978", "Bob Lee"]);
+        assert_eq!(crew_words(&list, "zed"), ["zed"], "no such member: the word as asked");
+        let rows =
+            merged(vec![json!({ "id": "a", "createdAt": 1 }), json!({ "id": "b", "createdAt": 3 }), json!({ "id": "a", "createdAt": 1 })]);
+        assert_eq!(rows.iter().map(|r| r["id"].as_str().unwrap()).collect::<Vec<_>>(), ["b", "a"], "each task once, newest first");
+    }
+}
+
+#[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Setup audit B11: v1's pick goes over New task's own, keeping the other harnesses' models and levels.
+    #[test]
+    fn v1s_pick_merges_into_new_tasks_keeping_the_rest() {
+        let now =
+            json!({ "agent": "claude", "models": { "claude": "opus" }, "efforts": { "claude": "xhigh" }, "labels": { "claude": "Work" } });
+        let v1 = json!({ "agent": "codex", "models": { "codex": "gpt-5-codex" } });
+        assert_eq!(
+            merged_pick(now.as_object().cloned().unwrap(), &v1),
+            json!({ "agent": "codex", "models": { "claude": "opus", "codex": "gpt-5-codex" }, "efforts": { "claude": "xhigh" }, "labels": { "claude": "Work" } })
+        );
+    }
 
     /// Setup audit F23: importing a v1 project whose folder is a project here made a second project for it.
     #[test]

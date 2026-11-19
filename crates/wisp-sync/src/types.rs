@@ -72,6 +72,10 @@ pub struct SnapshotAnswer {
     pub deleted: Vec<Gone>,
     /// more pages of the same snapshot follow, at the same seq
     pub more: bool,
+    /// a full answer's rows already as JSON text (the host encoded them where it read them, so the one task that owns
+    /// the machine only copies them into the frame: perf audit 2026-11-19 #1, ten fresh clients' 4.9 MB lists encoded
+    /// there held every other client's patches); `rows` is empty then
+    pub rows_json: Option<std::sync::Arc<str>>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
