@@ -18,6 +18,9 @@ export interface TabItem {
   readonly disabled?: boolean;
   /** its tooltip */
   readonly title?: string;
+  /** `fit`: gives way to its icon before the row tightens (a tab another plugin pinned, a Watch page). Additive
+   * (2026-11-19). */
+  readonly minor?: boolean;
   /** The panel. Omit it to use the tabs as a segmented switch above content you render yourself. */
   readonly content?: JSX.Element;
 }
@@ -40,24 +43,43 @@ export interface TabsProps extends KitProps {
    * which keeps the browser's 2px side margin; its `<span class="pk-seg">` ones (Auto's Goal, Scout first) have none. */
   readonly fieldset?: boolean;
   /** Labels give way to icons only when the row has no room for them, by priority (design/layout.md: control text
-   * collapses to its icon): the last tab first, then the one before, and come back as room comes; for icon tabs in a bar
-   * that can narrow (the task's side panel). The browser's look only: a phone's row scrolls instead. Additive
-   * (2026-11-19). */
+   * collapses to its icon): the `minor` tabs at the end first, then the row tightens (`data-tight`), then the rest from
+   * the end, one at a time; the open tab keeps its label. They come back as room comes. For icon tabs in a bar that can
+   * narrow (the task's side panel). The browser's look only: a phone's row scrolls instead. Additive (2026-11-19). */
   readonly fit?: boolean;
 }
 
-/** `fit`'s decision, DOM-free: `level` how many tabs from the end show their icon alone (`max` all of them), `room` the
- * width the tabs may take, `list` the row's box, `content` what its tabs need (scrollWidth), `needs[i]` what the row
- * needed at level i when it last gave way. One more tab goes to its icon while the row overflows; one comes back when
- * the room holds the row as it was a step back (no flapping between the two). */
-export function fitLevel(m: { readonly level: number; readonly max: number; readonly room: number; readonly list: number; readonly content: number; readonly needs: readonly number[] }): {
-  level: number;
-  needs: number[];
-} {
-  if (m.content > m.list + 1) return m.level < m.max ? { level: m.level + 1, needs: [...m.needs.slice(0, m.level), m.content] } : { level: m.level, needs: [...m.needs] };
-  const back = m.needs[m.level - 1];
-  if (m.level > 0 && back !== undefined && m.room >= back) return { level: m.level - 1, needs: m.needs.slice(0, m.level - 1) };
-  return { level: m.level, needs: [...m.needs] };
+/** One look of the row, measured: each tab's width labelled (`widths`, in order), a tab's width as its icon alone, the
+ * gap between tabs. */
+export interface FitLook {
+  readonly widths: readonly number[];
+  readonly icon: number;
+  readonly gap: number;
+}
+
+/** `fit`'s decision, DOM-free: how many tabs from the end (the open one aside) show their icon alone, and whether the
+ * row is `tight`. The states in order, the first that fits `room` wins: v1's own padding with the `minor` tabs going to
+ * their icon one at a time from the end; then the tight row; then the rest from the end, one at a time (owner
+ * 2026-11-19: at 1280 the side panel keeps Changes, PR, Shell and Preview labelled, Thread and pinned tabs give way
+ * first). `chrome` the row's own padding and border. Measured once in one pass, so nothing steps on a stale layout
+ * (the first fit stepped while Solid was still mounting, saw the same overflow each time and turned every tab to an icon). */
+export function fitPlan(m: {
+  readonly room: number;
+  readonly normal: FitLook;
+  readonly tight: FitLook;
+  readonly chrome: number;
+  readonly open: number;
+  readonly minor: readonly boolean[];
+}): { iconic: number; tight: boolean } {
+  const others = m.normal.widths.map((_, i) => i).filter((i) => i !== m.open);
+  const minors = others.filter((i) => m.minor[i] === true).length;
+  const total = (look: FitLook, n: number): number => {
+    const icons = new Set(others.slice(others.length - n));
+    return m.chrome + look.gap * Math.max(0, look.widths.length - 1) + look.widths.reduce((sum, w, i) => sum + (icons.has(i) ? Math.min(look.icon, w) : w), 0);
+  };
+  for (let n = 0; n <= minors; n += 1) if (total(m.normal, n) <= m.room + 0.5) return { iconic: n, tight: false };
+  for (let n = minors; n <= others.length; n += 1) if (total(m.tight, n) <= m.room + 0.5) return { iconic: n, tight: true };
+  return { iconic: others.length, tight: true };
 }
 
 /** The phone apps (ADR-0065 step 6, design/mobile.md §A.7): every variant draws as M3 tabs on Android (`line` the primary
@@ -83,21 +105,21 @@ export function Tabs(props: TabsProps): JSX.Element {
   let root: HTMLElement | undefined;
   useScrollEnds(() => root, () => look() !== 'web', () => api().value);
   const fits = (): boolean => props.fit === true && look() === 'web';
-  const iconic = useFit(() => root, fits, () => props.items, () => String(api().value ?? ''));
+  const values = createMemo(() => props.items.map((i) => i.value), undefined, { equals: (a, b) => a.length === b.length && a.every((v, i) => v === b[i]) });
+  const fit = useFit(() => root, fits, () => props.items, () => String(api().value ?? ''));
   // keyed by value, not by the item object: a caller that makes its items afresh on each change (a count, the open tab)
   // keeps its buttons, so the focus an arrow key moved stays on its tab (audit 2026-11-19: → worked once, then the
   // rebuilt button dropped the focus to the page)
-  const values = createMemo(() => props.items.map((i) => i.value), undefined, { equals: (a, b) => a.length === b.length && a.every((v, i) => v === b[i]) });
-  // `fit`: the last `iconic()` tabs show their icon alone, the open one aside (you always read where you are)
+  // `fit`: the last `iconic` tabs show their icon alone, the open one aside (you always read where you are)
   const iconicOf = (value: string): boolean => {
-    const n = iconic();
+    const n = fit().iconic;
     if (n === 0 || value === api().value) return false;
     const others = values().filter((v) => v !== api().value);
     return others.indexOf(value) >= others.length - n;
   };
   const byValue = createMemo(() => new Map(props.items.map((i) => [i.value, i])));
   return (
-    <div {...api().getRootProps()} ref={(el) => (root = el)} data-kit="tabs" data-part={part()} data-variant={props.variant ?? 'line'} data-fit={flag(fits())}>
+    <div {...api().getRootProps()} ref={(el) => (root = el)} data-kit="tabs" data-part={part()} data-variant={props.variant ?? 'line'} data-fit={flag(fits())} data-tight={flag(fit().tight)}>
       <div {...api().getListProps()} aria-label={props['aria-label']} data-kit="tab-list" data-part={sub(part(), 'list')} data-fill={flag(props.fill)} data-fieldset={flag(props.fieldset)}>
         <For each={values()}>
           {(value) => {
@@ -135,52 +157,65 @@ export function Tabs(props: TabsProps): JSX.Element {
   );
 }
 
-/** `fit`: how many tabs from the end show their icon alone. Measured when the tabs' box or the row changes size (a
- * ResizeObserver, never per frame), and the frame after the tabs change (a tab added, a label or count changed: the row's
- * box can stay the same width while what's in it grows, audit 2026-11-19 at 1280: Preview cut, pinned tabs clipped);
- * each step changes the row, so the next check follows until it fits. */
-function useFit(root: () => HTMLElement | undefined, enabled: () => boolean, items: () => readonly TabItem[], open: () => string): () => number {
-  const [level, setLevel] = createSignal(0);
-  let needs: number[] = [];
+/** `fit`: the row's plan (fitPlan), from one measuring pass: every tab labelled and as its icon, at v1's padding and
+ * tight, read by setting the row's own attributes for a moment and putting them back, all before the browser paints
+ * (no flash, no Solid update in between). Run when the tabs' box changes size (a ResizeObserver, never per frame), the
+ * frame after the tabs change (a tab added, a label or count changed), and once the fonts are in. */
+function useFit(root: () => HTMLElement | undefined, enabled: () => boolean, items: () => readonly TabItem[], open: () => string): () => { iconic: number; tight: boolean } {
+  const [plan, setPlan] = createSignal({ iconic: 0, tight: false }, { equals: (a, b) => a.iconic === b.iconic && a.tight === b.tight });
   let check = (): void => {};
   onMount(() => {
     const el = root();
     const list = el?.querySelector<HTMLElement>("[data-kit='tab-list']");
     if (!el || !list || !enabled() || typeof ResizeObserver === 'undefined') return;
-    // steps until the row settles: a step re-renders at once (a signal), so the next measure sees it; the row's box can
-    // stay at its full width while what's in it shrinks, so no resize would come to take the next step
     check = (): void => {
-      const max = Math.max(0, items().length - 1); // the open tab keeps its label
-      for (let i = 0; i <= max + 1; i += 1) {
-        const next = fitLevel({ level: Math.min(level(), max), max, room: el.clientWidth, list: list.clientWidth, content: list.scrollWidth, needs });
-        needs = next.needs;
-        if (next.level === level()) return;
-        setLevel(next.level);
-      }
+      const tabs = [...list.querySelectorAll<HTMLElement>(":scope > [data-kit='tab']")];
+      if (tabs.length === 0) return;
+      const iconicWas = tabs.map((t) => t.hasAttribute('data-iconic'));
+      const tightWas = el.hasAttribute('data-tight');
+      const look = (tight: boolean): FitLook => {
+        el.toggleAttribute('data-tight', tight);
+        for (const t of tabs) t.removeAttribute('data-iconic');
+        const widths = tabs.map((t) => t.getBoundingClientRect().width);
+        const gap = parseFloat(getComputedStyle(list).columnGap) || 0;
+        const first = tabs[0] as HTMLElement;
+        first.setAttribute('data-iconic', '');
+        const icon = first.getBoundingClientRect().width;
+        first.removeAttribute('data-iconic');
+        return { widths, icon, gap };
+      };
+      const normal = look(false);
+      const tight = look(true);
+      el.toggleAttribute('data-tight', tightWas);
+      tabs.forEach((t, i) => t.toggleAttribute('data-iconic', iconicWas[i] === true));
+      const cs = getComputedStyle(list);
+      const px = (v: string): number => parseFloat(v) || 0;
+      const chrome = px(cs.paddingLeft) + px(cs.paddingRight) + px(cs.borderLeftWidth) + px(cs.borderRightWidth);
+      // a row pulled left by a negative margin (v1's -8px) has that much more room
+      const room = el.clientWidth - Math.min(0, px(cs.marginLeft));
+      const order = tabs.map((t) => t.getAttribute('data-value') ?? '');
+      const byValue = new Map(items().map((i) => [i.value, i]));
+      setPlan(fitPlan({ room, normal, tight, chrome, open: order.indexOf(open()), minor: order.map((v) => byValue.get(v)?.minor === true) }));
     };
     const seen = new ResizeObserver(() => check());
     seen.observe(el);
-    seen.observe(list);
     check();
+    void document.fonts?.ready.then(() => check());
     onCleanup(() => seen.disconnect());
   });
-  // what the tabs say changed: the labelled row may need more (or less) than it had, so measure it again from labels
+  // what the tabs say changed (a tab added, a label or a count, the open one): plan again once it's drawn
   createEffect(
     on(
-      () => `${open()}\u0002${items().map((i) => `${i.value}\u0000${i.label}\u0000${i.count ?? ''}`).join('\u0001')}`,
+      () => `${open()}\u0002${items().map((i) => `${i.value}\u0000${i.label}\u0000${i.count ?? ''}\u0000${i.minor ? 1 : 0}`).join('\u0001')}`,
       () => {
         if (typeof requestAnimationFrame !== 'function') return;
-        const frame = requestAnimationFrame(() => {
-          needs = [];
-          setLevel(0); // measured afresh from the labelled row
-          check();
-        });
+        const frame = requestAnimationFrame(() => check());
         onCleanup(() => cancelAnimationFrame(frame));
       },
       { defer: true },
     ),
   );
-  return level;
+  return plan;
 }
 
 /** A phone's tab row that runs out of room scrolls (QA r7 #5): the ends it can still scroll to are marked for the look

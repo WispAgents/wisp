@@ -154,12 +154,14 @@ export function SidePanel(props: { readonly pane: SidePane; readonly file?: stri
     const x = extra().find((e) => e.key === p);
     // last in the strip, a pinned tab goes to its icon first when the panel runs short (Tabs `fit`), so the panel's own keep
     // their labels (audit 2026-11-19: "Cha…", "#…", "S…" beside a whole "Token budget dash…")
-    if (x) return { value: x.key, label: x.label, icon: (x.icon ?? 'app') as IconName, ...(x.title !== undefined && { title: x.title }) };
+    if (x) return { value: x.key, label: x.label, icon: (x.icon ?? 'app') as IconName, minor: true, ...(x.title !== undefined && { title: x.title }) };
     const n = p === 'changes' ? files() : 0;
     const prWords = p === 'pr' ? tabCount.pr(pr()) : undefined;
     return {
       value: p,
       label: prWords ?? t(`shell-task.side.${p}`),
+      // Watch gives way with the pinned tabs, before the row tightens and Preview goes (owner follow-up, 2026-11-19)
+      ...(p === 'watch' && { minor: true }),
       ...(prWords && { title: t('shell-task.side.pr') }),
       ...(n > 0 && { count: n }),
       icon: (p === 'changes' ? 'file' : p === 'pr' ? 'merge' : p === 'preview' ? 'web' : p === 'watch' ? 'eye' : 'terminal') as IconName,

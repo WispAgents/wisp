@@ -1,7 +1,7 @@
 import { describe, expect, test, vi } from 'vitest';
 import { mount, part, tick } from './helpers.tsx';
 import { createSignal } from 'solid-js';
-import { Tabs, fitLevel } from '../src/controls/Tabs.tsx';
+import { Tabs, fitPlan } from '../src/controls/Tabs.tsx';
 import { PlatformLookProvider } from '../src/platform/PlatformLook.tsx';
 import { Split, Splitter } from '../src/controls/Splitter.tsx';
 
@@ -69,19 +69,35 @@ describe('Splitter and Split', () => {
     expect(value()).toBe('shell');
   });
 
-  // owner 2026-11-19: labels give way to icons only when there's no room for them (design/layout.md: by priority, the
-  // last tab first, so a pinned tab goes to its icon before the panel's own), and come back once the room holds them
-  test('fit_turns_the_last_tabs_to_icons_one_at_a_time_while_the_row_overflows_and_back_as_room_comes', () => {
-    const max = 6;
-    expect(fitLevel({ level: 0, max, room: 400, list: 380, content: 380, needs: [] })).toEqual({ level: 0, needs: [] });
-    // overflows: the last tab goes to its icon, and what the row needed is kept to come back by
-    expect(fitLevel({ level: 0, max, room: 372, list: 372, content: 408, needs: [] })).toEqual({ level: 1, needs: [408] });
-    expect(fitLevel({ level: 1, max, room: 372, list: 372, content: 380, needs: [408] })).toEqual({ level: 2, needs: [408, 380] });
-    // fits: stays; a wider room that holds the row as it was one step back takes that step back
-    expect(fitLevel({ level: 2, max, room: 372, list: 340, content: 340, needs: [408, 380] })).toEqual({ level: 2, needs: [408, 380] });
-    expect(fitLevel({ level: 2, max, room: 384, list: 340, content: 340, needs: [408, 380] })).toEqual({ level: 1, needs: [408] });
-    // every tab an icon and still too wide: nothing more to give
-    expect(fitLevel({ level: max, max, room: 100, list: 100, content: 200, needs: [1, 2, 3, 4, 5, 6] }).level).toBe(max);
+  // owner 2026-11-19, follow-up: at 1280 (the side panel 396 px, 297 px for its tabs plus the row's -8px) Changes, PR,
+  // Shell and Preview stay labelled: Thread, Watch and pinned tabs go to their icon first, then the row tightens, then
+  // Preview goes, then the rest, one at a time and only as far as needed. Widths as Chrome measured them in the dev app.
+  const panel = {
+    // Changes, PR, Shell (open), Preview, Thread (minor)
+    normal: { widths: [88.6, 52.4, 65.4, 83.2, 78.3], icon: 32, gap: 2 },
+    tight: { widths: [79.6, 43.4, 56.4, 74.2, 69.3], icon: 28, gap: 1 },
+    chrome: 6,
+    open: 2,
+    minor: [false, false, false, false, true],
+  };
+  test('fit_at_396px_keeps_changes_pr_shell_and_preview_labelled_thread_gives_way_first', () => {
+    // the labelled row needs 6 + 8 + 367.9 = 381.9: the dev app at 1280 has 297 + 8
+    expect(fitPlan({ ...panel, room: 305 })).toEqual({ iconic: 1, tight: true });
+    // 1440 (the panel 480 px): everything labelled, at v1's own padding
+    expect(fitPlan({ ...panel, room: 389 })).toEqual({ iconic: 0, tight: false });
+    // a little less: Thread to its icon first, still at v1's padding
+    expect(fitPlan({ ...panel, room: 340 })).toEqual({ iconic: 1, tight: false });
+  });
+
+  test('fit_gives_way_from_the_end_one_tab_at_a_time_preview_before_the_rest_the_open_tab_last_of_all', () => {
+    // Thread, then Preview, then PR, then Changes; Shell (open) keeps its label
+    expect(fitPlan({ ...panel, room: 260 })).toEqual({ iconic: 2, tight: true });
+    expect(fitPlan({ ...panel, room: 230 })).toEqual({ iconic: 3, tight: true });
+    expect(fitPlan({ ...panel, room: 200 })).toEqual({ iconic: 4, tight: true });
+    expect(fitPlan({ ...panel, room: 50 }), 'nothing more to give').toEqual({ iconic: 4, tight: true });
+    // no minor tab: the row tightens before any tab goes
+    expect(fitPlan({ ...panel, minor: [false, false, false, false, false], room: 305 })).toEqual({ iconic: 1, tight: true });
+    expect(fitPlan({ ...panel, minor: [false, false, false, false, false], room: 360 })).toEqual({ iconic: 0, tight: true });
   });
 
   test('a splitter renders a panel per entry and a keyboard grip between each pair', () => {

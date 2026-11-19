@@ -100,3 +100,22 @@ the kit's `Tabs` (`packages/ui/src/controls/Tabs.tsx`) and `app-frame.css`. v1: 
 Not bugs: WebKit's clipboard can't be read by the script (Copy branch shows its toast); at 1280 the panel can't be
 widened past 396 px with the list open because the task column keeps its minimum (pane-widths.ts, as designed); a deep
 link `?side=` on a task outside the loaded list showed no panel once and could not be reproduced.
+
+## Follow-up (2026-11-19, after bb030486): the strip at 1280
+
+In the dev app at 1280×860 (panel 396 px, 297 px for the tabs) the strip showed only Shell labelled. Two causes:
+
+- **The fit over-stepped.** It stepped one tab at a time and measured again, but its first check ran while Solid was
+  mounting, so no step reached the DOM before the next measure: every measure saw the same overflowing row and it ran
+  to the last level, keeping widths from that stale row, so it never came back. Fixed in the kit's Tabs: one measuring
+  pass (each tab labelled and as its icon, at v1's padding and tight, read by setting the row's own attributes for a
+  moment before the browser paints) and a pure plan, `fitPlan`.
+- **v1's padding can't hold four labels in 297 px** (v1 itself went icons-only under 420 px). The plan's order: minor
+  tabs (pinned, Thread, Watch) to their icon first at v1's padding; then the row tightens (5px tab padding, 4px icon gap,
+  1px between tabs, 28px icon tabs); then Preview, then the rest; the open tab keeps its label. The row also counts its
+  -8px pull as room.
+
+Measured after, Chrome and WebKit, light and dark: at 1280 Changes 79.6, PR 43.4, Shell 56.4, Preview 74.2 labelled,
+Thread its 28px icon (290 of 305 px); at 1440 all five labelled at v1's padding (380 of 389 px). Tests:
+`packages/ui/test/controls-tabs.test.tsx` `fit_at_396px_keeps_changes_pr_shell_and_preview_labelled_thread_gives_way_first`,
+`fit_gives_way_from_the_end_one_tab_at_a_time_preview_before_the_rest_the_open_tab_last_of_all`.
