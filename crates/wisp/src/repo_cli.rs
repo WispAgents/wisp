@@ -648,8 +648,7 @@ pub fn skill_install(argv: &[String], cwd: &Path) -> Result<i32> {
                 let had = std::fs::read_to_string(&cfg).unwrap_or_default();
                 if !had.contains("[mcp_servers.wisp]") {
                     std::fs::create_dir_all(&home).map_err(|e| CliError::said(e.to_string()))?;
-                    std::fs::write(&cfg, format!("{had}\n[mcp_servers.wisp]\ncommand = \"{exe}\"\nargs = [\"mcp\"]\n"))
-                        .map_err(|e| CliError::said(e.to_string()))?;
+                    std::fs::write(&cfg, format!("{had}{}", codex_mcp_table(&exe))).map_err(|e| CliError::said(e.to_string()))?;
                 }
                 say(&format!("  ✓ {} ([mcp_servers.wisp]); Codex has no session-end hook: wisp adopt --all --since 1d", cfg.display()));
             }
@@ -658,6 +657,13 @@ pub fn skill_install(argv: &[String], cwd: &Path) -> Result<i32> {
         }
     }
     Ok(0)
+}
+
+/// Codex's `[mcp_servers.wisp]` table for wisp at `exe`. The path is a TOML string quoted as JSON quotes it (`\\` for
+/// a backslash, valid TOML escapes): written raw between quotes, Windows' `C:\Users\…` had `\U` read as an escape and
+/// Codex refused its whole config.
+fn codex_mcp_table(exe: &str) -> String {
+    format!("\n[mcp_servers.wisp]\ncommand = {}\nargs = [\"mcp\"]\n", Value::String(exe.to_owned()))
 }
 
 fn tool_text(text: &str) -> Value {

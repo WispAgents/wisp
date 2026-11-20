@@ -15,9 +15,9 @@ use std::process::{Command, Stdio};
 #[cfg(unix)]
 use std::time::{Duration, Instant};
 
-#[cfg(unix)]
-use common::start_with;
 use common::{Api, start, temp};
+#[cfg(unix)]
+use common::{start_with, yaml_str};
 use serde_json::{Value, json};
 
 fn wisp(dir: &Path, port: u16, args: &[&str]) -> (i32, String, String) {
@@ -91,7 +91,11 @@ async fn an_import_takes_only_folders_that_are_there_files_its_tasks_and_sets_on
 
     // B2: a formula's project at a missing folder is refused by validate and apply, as Projects' Add refuses it
     let ghost = dir.join("ghost-folder");
-    std::fs::write(dir.join("proj/ghost.wisp.yml"), format!("wisp: 1\nprojects:\n  ghost: {{ path: {} }}\n", ghost.display())).unwrap();
+    std::fs::write(
+        dir.join("proj/ghost.wisp.yml"),
+        format!("wisp: 1\nprojects:\n  ghost: {{ path: {} }}\n", yaml_str(ghost.display().to_string())),
+    )
+    .unwrap();
     for args in [
         &["validate", "-f", "ghost.wisp.yml"][..],
         &["apply", "-f", "ghost.wisp.yml", "--dry-run"],
@@ -104,7 +108,7 @@ async fn an_import_takes_only_folders_that_are_there_files_its_tasks_and_sets_on
     // a file isn't a folder either; a folder that's there is a project
     std::fs::write(
         dir.join("proj/file.wisp.yml"),
-        format!("wisp: 1\nprojects:\n  afile: {{ path: {} }}\n", dir.join("proj/math.js").display()),
+        format!("wisp: 1\nprojects:\n  afile: {{ path: {} }}\n", yaml_str(dir.join("proj/math.js").display().to_string())),
     )
     .unwrap();
     let (code, out, err) = wisp(&dir, port, &["validate", "-f", "file.wisp.yml"]);

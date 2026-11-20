@@ -11,7 +11,7 @@ use std::io::{Read, Write};
 use std::path::Path;
 use std::process::{Command, Stdio};
 
-use common::{Api, start, temp};
+use common::{Api, start, temp, yaml_str};
 use serde_json::{Value, json};
 
 fn wisp(dir: &Path, port: u16, args: &[&str]) -> (i32, String, String) {
@@ -43,7 +43,7 @@ fn git(dir: &Path, args: &[&str]) -> String {
 }
 
 fn formula(proj: &Path) -> String {
-    let p = proj.display();
+    let p = yaml_str(proj.display().to_string());
     format!(
         "wisp: 1
 agents:
@@ -302,7 +302,7 @@ async fn atomic_apply_every_kind_history_import_and_sharing() {
     assert!(!profiles.as_array().unwrap().iter().any(|p| p["name"] == "temp"), "the agent was undone: {profiles}");
 
     // every other kind, declared, exported back as no change; the device's ui only when asked
-    let p = proj.display();
+    let p = yaml_str(proj.display().to_string());
     let more = format!(
         "wisp: 1
 projects:

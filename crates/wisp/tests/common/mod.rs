@@ -8,6 +8,13 @@ use std::time::{Duration, Instant};
 
 use serde_json::{Value, json};
 
+/// `s` as a single-quoted YAML scalar (`'` doubled): a path goes into a formula's text as itself on every OS. In a
+/// double-quoted one a Windows path's `\U`, `\x`, `\t` are escapes (`C:\Users\…` failed to parse), and a plain one
+/// breaks on `: ` or ` #`.
+pub fn yaml_str(s: impl AsRef<str>) -> String {
+    format!("'{}'", s.as_ref().replace('\'', "''"))
+}
+
 /// The server, killed and its home removed when the test ends (passing or not).
 pub struct Serve {
     pub child: Child,

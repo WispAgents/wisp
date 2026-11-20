@@ -8,7 +8,7 @@ use std::process::Command;
 
 use serde_json::Value;
 
-use super::{blame, filtered, parse_bodies, root, tracked};
+use super::{blame, codex_mcp_table, filtered, parse_bodies, root, tracked};
 
 fn git(dir: &Path, args: &[&str]) {
     let ok = Command::new("git")
@@ -94,4 +94,18 @@ fn a_logs_records_split_into_each_commits_message() {
     assert_eq!(b.len(), 2);
     assert!(b["abc"].contains("Wisp-Task: t1"));
     assert_eq!(b["def"], "second\n");
+}
+
+/// `wisp skill install --agent codex` on Windows: the exe's path reads back from Codex's config.toml as itself.
+#[test]
+fn the_codex_mcp_table_keeps_a_windows_path() {
+    use wisp_resources_core::formula::{Format, documents};
+    for exe in
+        [r"C:\Users\x\AppData\Local\wisp\wisp.exe", r"C:\Program Files\wisp\wisp.exe", "/usr/local/bin/wisp", r#"C:\it's "here"\wisp.exe"#]
+    {
+        let text = format!("model = \"o3\"\n{}", codex_mcp_table(exe));
+        let doc = documents(&text, Format::Toml).unwrap_or_else(|e| panic!("{exe}: {e}\n{text}"));
+        assert_eq!(doc[0]["mcp_servers"]["wisp"]["command"], exe, "{text}");
+        assert_eq!(doc[0]["mcp_servers"]["wisp"]["args"], serde_json::json!(["mcp"]));
+    }
 }

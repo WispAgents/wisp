@@ -15,7 +15,7 @@ use std::io::Write as _;
 use std::path::Path;
 use std::process::{Command, Stdio};
 
-use common::{Api, start, temp};
+use common::{Api, start, temp, yaml_str};
 use serde_json::{Value, json};
 
 fn wisp(dir: &Path, port: u16, args: &[&str]) -> (i32, String, String) {
@@ -33,6 +33,7 @@ fn wisp(dir: &Path, port: u16, args: &[&str]) -> (i32, String, String) {
 }
 
 fn formula(proj: &str) -> String {
+    let proj = yaml_str(proj);
     format!(
         "wisp: 1
 variables:
@@ -40,7 +41,7 @@ variables:
 agents:
   critic: {{ harness: claude, model: \"${{var.model}}\", instructions: be strict }}
 projects:
-  app: {{ path: \"{proj}\" }}
+  app: {{ path: {proj} }}
 goals:
   green: {{ text: the build is green, maxRounds: 2 }}
 tasks:
@@ -193,4 +194,15 @@ async fn a_formula_runs_everywhere_and_every_name_in_it_is_referenced() {
     assert_eq!((t["ext"]["wisp.runtime"]["spec"]["agent"].as_str(), t["model"].as_str()), (Some("critic"), Some("opus")), "{t}");
     assert_eq!(t["ext"]["wisp.runtime"]["spec"]["goal"]["text"], "the build is green", "{t}");
     drop(serve);
+}
+
+/// Windows CI (3411fbc0): the formula's project path was written in a double-quoted scalar, where `C:\Users`'s `\U`
+/// is an escape. Single-quoted, any path reads back as itself.
+#[test]
+fn a_windows_path_in_the_formula_reads_back_as_itself() {
+    use wisp_resources_core::formula::{Format, documents};
+    for p in [r"C:\Users\x\AppData\Local\Temp\wisp-serve-formula-refs-1\proj", r"C:\it's: here #1\proj", "/tmp/x/proj", r"\\srv\share\p"] {
+        let doc = documents(&formula(p), Format::Yaml).unwrap_or_else(|e| panic!("{p}: {e}\n{}", formula(p)));
+        assert_eq!(doc[0]["projects"]["app"]["path"], p);
+    }
 }

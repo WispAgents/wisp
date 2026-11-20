@@ -708,7 +708,8 @@ async fn an_agents_formula_reads_only_inside_its_own_folder() {
     }
     let (s, e) = a.call("wisp_launch", launch(json!("secrets.json"))).await;
     refused(&s, e, "a secrets file isn't read for an agent's formula");
-    let file = format!("${{file(\"{}\")}}", a.dir.join("secret.txt").display());
+    // `\` escapes in an expression's string: a Windows path's backslashes doubled, so it names this very file
+    let file = format!("${{file(\"{}\")}}", a.dir.join("secret.txt").display().to_string().replace('\\', "\\\\"));
     let (s, e) = a.call("wisp_launch", launch(json!({ "agents": { "x": { "harness": "claude", "instructions": file } } }))).await;
     refused(&s, e, "an agent's formula can't read files");
     let (s, e) = a.call("wisp_launch", launch(json!({ "agents": { "x": { "harness": "claude", "instructions": "${env:HOME}" } } }))).await;

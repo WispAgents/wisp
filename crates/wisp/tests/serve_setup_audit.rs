@@ -14,7 +14,7 @@ mod common;
 use std::path::Path;
 use std::process::{Command, Stdio};
 
-use common::{Api, start, temp};
+use common::{Api, start, temp, yaml_str};
 use serde_json::json;
 
 fn wisp(dir: &Path, port: u16, args: &[&str]) -> (i32, String, String) {
@@ -52,8 +52,11 @@ async fn the_setup_audit_s_cli_findings_hold() {
     std::fs::create_dir_all(&repo).unwrap();
     let (code, out, err) = wisp(&dir, port, &["add", repo.to_str().unwrap()]);
     assert_eq!(code, 0, "{out}{err}");
-    std::fs::write(dir.join("proj/dup.wisp.yml"), format!("wisp: 1\nprojects:\n  repo2-formula: {{ path: {} }}\n", repo.display()))
-        .unwrap();
+    std::fs::write(
+        dir.join("proj/dup.wisp.yml"),
+        format!("wisp: 1\nprojects:\n  repo2-formula: {{ path: {} }}\n", yaml_str(repo.display().to_string())),
+    )
+    .unwrap();
     let (code, out, err) = wisp(&dir, port, &["apply", "-f", "dup.wisp.yml", "--yes"]);
     assert!(code != 0 && format!("{out}{err}").contains("same path"), "{code}: {out}{err}");
     let projects = api.cmd("resources.export", json!({ "kinds": ["project"] })).await;

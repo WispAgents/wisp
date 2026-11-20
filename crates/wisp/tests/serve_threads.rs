@@ -9,7 +9,7 @@ mod common;
 use std::path::Path;
 use std::process::{Command, Stdio};
 
-use common::{Api, argv, records, start_with, temp};
+use common::{Api, argv, records, start_with, temp, yaml_str};
 use serde_json::{Value, json};
 
 fn wisp(dir: &Path, port: u16, args: &[&str]) -> (i32, String, String) {
@@ -30,7 +30,7 @@ fn wisp(dir: &Path, port: u16, args: &[&str]) -> (i32, String, String) {
 fn formula(proj: &Path, notes: &str) -> String {
     format!(
         "wisp: 1\ntasks:\n  - name: import-csv\n    prompt: build the CSV importer\n    project: {}\n    agent: claude\n    notes:\n{notes}",
-        proj.display()
+        yaml_str(proj.display().to_string())
     )
 }
 

@@ -15,7 +15,7 @@ use std::path::Path;
 use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
 
-use common::{Api, ended, start_with, temp};
+use common::{Api, ended, start_with, temp, yaml_str};
 use serde_json::{Value, json};
 
 fn wisp(dir: &Path, cwd: &Path, port: u16, args: &[&str]) -> (i32, String, String) {
@@ -111,7 +111,7 @@ async fn trigger_test_tries_a_schedules_next_run_and_prune_empties_a_section_lef
     let formula = |body: &str| std::fs::write(&f, format!("wisp: 1\n{body}")).unwrap();
     formula(&format!(
         "triggers:\n  - name: minutely\n    on: schedule\n    cron: \"* * * * *\"\n    prompt: Tidy MINUTELY15\n    project: {}\n    enabled: false\n",
-        proj.display()
+        yaml_str(proj.display().to_string())
     ));
     let (code, out, err) = wisp(&dir, &dir, port, &["apply", "-f", f.to_str().unwrap(), "--yes"]);
     assert_eq!(code, 0, "{out}{err}");

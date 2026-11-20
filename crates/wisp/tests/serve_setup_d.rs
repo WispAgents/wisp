@@ -12,7 +12,7 @@ mod common;
 use std::path::Path;
 use std::process::{Command, Stdio};
 
-use common::{Api, start, temp};
+use common::{Api, start, temp, yaml_str};
 use serde_json::json;
 
 fn wisp(dir: &Path, port: u16, args: &[&str]) -> (i32, String, String) {
@@ -57,7 +57,8 @@ async fn a_formula_is_read_as_the_ui_reads_it_audit_d() {
         others.push(format!("/private{shown}"));
     }
     for other in &others {
-        std::fs::write(dir.join("proj/again.wisp.yml"), format!("wisp: 1\nprojects:\n  repo-again: {{ path: {other} }}\n")).unwrap();
+        std::fs::write(dir.join("proj/again.wisp.yml"), format!("wisp: 1\nprojects:\n  repo-again: {{ path: {} }}\n", yaml_str(other)))
+            .unwrap();
         let (code, out, err) = wisp(&dir, port, &["apply", "-f", "again.wisp.yml", "--yes"]);
         assert!(code != 0 && format!("{out}{err}").contains("same path"), "{other}: {code}: {out}{err}");
         assert_eq!(project_names(&api).await, ["repo"], "{other}: no second project");
