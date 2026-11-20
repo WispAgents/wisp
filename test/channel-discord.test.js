@@ -904,11 +904,17 @@ test('a button that starts a turn: yes on a task in Edits, no on one in Full aut
   assert.equal(await next(chat), 'Say that in words here, so it runs in Edits at most.');
   assert.equal((await session(s.id)).turns.length, 1);
   srv.store.get(s.id).mode = 'edits';
-  pressInDm();
-  assert.match(await next(chat), /^✓ Sent/);
-  await until(async () => (await session(s.id)).turns.length === 2);
-  await settled(s.id);
-  await next(chat);
+  // The button's own message is slow to lose its buttons: a quick task's report still waits for the ack.
+  const fast = fake.lag('/messages/@original', 400);
+  try {
+    pressInDm();
+    assert.match(await next(chat), /^✓ Sent/);
+    await until(async () => (await session(s.id)).turns.length === 2);
+    await settled(s.id);
+    assert.match(await next(chat), /^✅ /);
+  } finally {
+    fast();
+  }
 });
 
 test('reports: only tasks started here, whatever the Phone events say; a task from wisp posts nothing', async () => {
