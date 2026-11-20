@@ -66,3 +66,13 @@ it('a bare unknown name (a profile) stays; a gone crew member or harness/model g
   expect(wire({ session: 'p:t1', goal: { text: 'x', judges: [] }, now: 1 })['judges']).toEqual([]);
   expect('judges' in wire({ session: 'p:t1', goal: { text: 'x' }, now: 1 })).toBe(false);
 });
+
+// ADR-0110: `goals:` holds named goals beside `default`; the judges are the default's, never a named goal's
+it('the defaults are goals.default, whatever other goals are declared', () => {
+  const have = [
+    { kind: 'goal', name: 'green-build', spec: { text: 'npm test passes', judges: ['claude'], vote: 'any' } },
+    { kind: 'goal', name: 'default', spec: { judges: ['reviewer'], vote: 'all' } },
+  ];
+  expect(defaultsOf(have)).toEqual({ judges: ['reviewer'], vote: 'all' });
+  expect(goalDefaults(have, [], 'majority')).toEqual({ kind: 'goal', name: 'default', spec: { vote: 'majority' } });
+});

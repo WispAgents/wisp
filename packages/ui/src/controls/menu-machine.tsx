@@ -6,13 +6,15 @@
 // take the menu's place under a Back row, at the same spot and width; → opens it, ← or Escape steps back.
 import * as menu from '@zag-js/menu';
 import { normalizeProps, useMachine } from '@zag-js/solid';
-import { createMemo, createSignal, createUniqueId, For, Match, onMount, Show, Switch, type Accessor, type JSX } from 'solid-js';
+import { createEffect, createMemo, createSignal, createUniqueId, For, Match, on, onMount, Show, Switch, type Accessor, type JSX } from 'solid-js';
 import { Portal } from 'solid-js/web';
 import { flag, sub, type PartName } from '../core/props.ts';
 import { Icon } from '../content/Icon.tsx';
 import type { MenuBaseProps, MenuPlace } from './Menu.tsx';
 import { bound, type Replay } from './lazy-part.ts';
 import { tidySeparators, type MenuEntry, type MenuGroup, type MenuItem, type MenuSeparator, type MenuSubmenu } from './menu-entries.ts';
+import { MenuFilterBox } from './menu-filter.tsx';
+import { filteredItems, firstMatch } from './menu-filtering.ts';
 import { usePlatform } from '../platform/PlatformLook.tsx';
 import { fromPoint, underBox } from './menu-anchor.ts';
 import { Flyout, flyoutPointer, type FlyContext } from './menu-flyout.tsx';
@@ -31,6 +33,8 @@ interface MenuState {
   readonly reset: () => void;
   /** submenus fly out (desktop pointer) rather than drill in; read again each time the menu opens */
   readonly fly: Accessor<FlyContext | undefined>;
+  /** a row chosen from outside Zag (Enter in a submenu's filter): the menu closes, as a click on it would */
+  readonly choose: (value: string) => void;
 }
 
 const firstItem = (items: readonly MenuEntry[]): string | undefined => {
@@ -104,6 +108,8 @@ function useMenu(props: MenuBaseProps & MenuPlace, at?: 'pointer'): MenuState {
     if (value !== undefined && was === undefined && box) setWidth(`${box.offsetWidth}px`);
     setPane(value);
     const sub = props.items.find((e): e is MenuSubmenu => e.kind === 'submenu' && e.value === value);
+    // a submenu with a filter: its box has the focus (MenuContent), nothing lit until ↓
+    if (sub?.filter) return;
     const lit = sub ? firstItem(sub.items) : was;
     if (lit) queueMicrotask(() => api().setHighlightedValue(lit));
   };
@@ -130,7 +136,11 @@ function useMenu(props: MenuBaseProps & MenuPlace, at?: 'pointer'): MenuState {
   }));
   api = createMemo(() => menu.connect(service, normalizeProps));
   const ctx = flyContext(service, (v) => props.onSelect(v), kids);
-  return { api, pane, drill, width, setBox: (el) => (box = el), reset, fly: () => (flying() ? ctx : undefined) };
+  const choose = (value: string): void => {
+    api().setOpen(false);
+    props.onSelect(value);
+  };
+  return { api, pane, drill, width, setBox: (el) => (box = el), reset, fly: () => (flying() ? ctx : undefined), choose };
 }
 
 function Item(props: { readonly api: menu.Api; readonly item: MenuItem; readonly part: PartName; readonly iconCol?: boolean }): JSX.Element {
@@ -257,9 +267,37 @@ function MenuContent(props: { readonly state: MenuState; readonly items: readonl
     return v === undefined ? undefined : props.items.find((e): e is MenuSubmenu => e.kind === 'submenu' && e.value === v);
   });
   const drill = (v: string | undefined): void => props.state.drill(v);
+  // the open submenu's filter (Goal…, Recipes): emptied as it opens or closes; its box takes the focus as it opens
+  const [query, setQuery] = createSignal('');
+  const shown = createMemo(() => {
+    const s = open();
+    return s ? filteredItems(s, query()) : [];
+  });
+  let content: HTMLElement | undefined;
+  let box: HTMLInputElement | undefined;
+  createEffect(
+    // by its value: the rows rebuilt (a patch to the task) are the same submenu, and what's typed stays
+    on(
+      () => open()?.value,
+      () => {
+        setQuery('');
+        if (open()?.filter) requestAnimationFrame(() => box?.focus({ preventScroll: true }));
+      },
+    ),
+  );
+  const toRows = (): void => {
+    const first = firstMatch(shown());
+    if (first) api().setHighlightedValue(first);
+    content?.focus({ preventScroll: true });
+  };
+  const pickFirst = (): void => {
+    const v = firstMatch(shown());
+    if (v !== undefined) props.state.choose(v);
+  };
   // → on a submenu's row opens it, ← in one steps back (before Zag's own keys)
   const keys = (e: KeyboardEvent): void => {
-    if (props.state.fly()) return;
+    // ← and → in a submenu's filter box move its caret
+    if (props.state.fly() || e.target instanceof HTMLInputElement) return;
     const lit = api().highlightedValue;
     if (e.key === 'ArrowRight' && !open() && lit && props.items.some((x) => x.kind === 'submenu' && x.value === lit)) drill(lit);
     else if (e.key === 'ArrowLeft' && open()) drill(undefined);
@@ -272,7 +310,10 @@ function MenuContent(props: { readonly state: MenuState; readonly items: readonl
       <div {...api().getPositionerProps()} data-kit="positioner" ref={(el) => el.addEventListener('keydown', keys, true)}>
         <div
           {...api().getContentProps()}
-          ref={(el) => props.state.setBox(el)}
+          ref={(el) => {
+            content = el;
+            props.state.setBox(el);
+          }}
           data-kit="menu"
           data-part={props.part}
           data-at={props.at}
@@ -286,7 +327,10 @@ function MenuContent(props: { readonly state: MenuState; readonly items: readonl
               {(s) => (
                 <div role="group" aria-label={s().label} data-kit="menu-pane" data-part={sub(props.part, 'pane')}>
                   <BackRow api={api()} label={s().label} part={props.part} />
-                  <Entries api={api()} items={s().items} part={props.part} />
+                  <Show when={s().filter}>
+                    {(f) => <MenuFilterBox filter={f()} value={query()} onInput={setQuery} onDown={toRows} onEnter={pickFirst} part={props.part} ref={(el) => (box = el)} />}
+                  </Show>
+                  <Entries api={api()} items={shown()} part={props.part} />
                 </div>
               )}
             </Show>

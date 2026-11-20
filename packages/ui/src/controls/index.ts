@@ -11,10 +11,12 @@ export {
   type MenuGroup,
   type MenuSeparator,
   type MenuSubmenu,
+  type MenuFilter,
   menuSections,
   type MenuTrigger,
   type Placement,
 } from './Menu.tsx';
+export { matchesQuery } from './menu-filtering.ts';
 export { Field, useField, type FieldProps, type FieldState } from './Field.tsx';
 export { Input, TextArea, type InputProps, type TextAreaProps, type FieldSize } from './Input.tsx';
 export { Select, SHEET_AFTER, selectSheet, type SelectProps, type SelectOption } from './Select.tsx';

@@ -19,7 +19,7 @@ const slot = (client: PluginClient, peer: string): WritableSignal<GoalDefaults> 
 
 /** What the server's `goal` resource says, as defaults. */
 export function defaultsOf(have: readonly GoalResource[]): GoalDefaults {
-  const spec = have.find((r) => r.kind === 'goal')?.spec;
+  const spec = have.find((r) => r.kind === 'goal' && r.name === 'default')?.spec;
   const judges = Array.isArray(spec?.['judges']) ? (spec['judges'] as unknown[]).filter((x): x is string => typeof x === 'string') : [];
   return { judges, vote: VOTES.includes(spec?.['vote'] as Vote) ? (spec?.['vote'] as Vote) : 'majority' };
 }

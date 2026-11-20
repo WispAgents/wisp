@@ -15,7 +15,9 @@ use std::collections::BTreeMap;
 use std::sync::Arc;
 
 use serde_json::{Value, json};
-use wisp_automations_api::tasks::{NamedTask, RunTask, TaskDecl, TaskRemove, TaskRun, TaskSet, Tasks, fill};
+use wisp_automations_api::tasks::{
+    DEFAULT, NamedTask, RunTask, TaskDecl, TaskRemove, TaskRun, TaskSet, Tasks, default_problems, fill, goal_arg, goal_ref, with_defaults,
+};
 use wisp_automations_api::{Utc, matches, parse_cron, read_schedule};
 use wisp_kernel::{BoxFuture, Call, Command, Ctx, Manifest, Plugin, Result, Setup, WireError};
 use wisp_resources_api::{CrudKind, KindInfo, Op, RESOURCE_KIND, Resource, ResourceKind, schema_of};
@@ -65,16 +67,38 @@ fn store_err(e: wisp_store::StoreError) -> WireError {
     WireError::internal(format!("store: {e}"))
 }
 
-async fn list(store: &Store) -> Result<Vec<NamedTask>> {
+/// The declared tasks; `tasks.default` only `with_default` (the resource kind's read: it's a resource, never a task to
+/// list or run, ADR-0110).
+async fn list_all(store: &Store, with_default: bool) -> Result<Vec<NamedTask>> {
     let rows = store.read_async(|r| r.query(TASK.kind, &Query::new())).await.map_err(store_err)?;
-    let mut out: Vec<NamedTask> = rows.into_iter().filter_map(|r| serde_json::from_value(r.get("body")?.clone()).ok()).collect();
+    let mut out: Vec<NamedTask> = rows
+        .into_iter()
+        .filter_map(|r| serde_json::from_value::<NamedTask>(r.get("body")?.clone()).ok())
+        .filter(|t| with_default || t.name != DEFAULT)
+        .collect();
     out.sort_by(|a, b| a.name.cmp(&b.name));
     Ok(out)
+}
+
+async fn list(store: &Store) -> Result<Vec<NamedTask>> {
+    list_all(store, false).await
+}
+
+/// `tasks.default`'s spec, or an empty one.
+async fn defaults_of(store: &Store) -> Result<TaskDecl> {
+    Ok(list_all(store, true).await?.into_iter().find(|t| t.name == DEFAULT).map(|t| t.spec).unwrap_or_default())
 }
 
 fn checked(mut t: NamedTask) -> Result<NamedTask> {
     if t.name.trim().is_empty() || !t.name.chars().all(|c| c.is_alphanumeric() || "-_.".contains(c)) {
         return Err(WireError::invalid(format!("a task's name is letters, digits, - _ . (not {:?})", t.name)));
+    }
+    if t.name == DEFAULT {
+        let problems = default_problems(&serde_json::to_value(&t.spec).unwrap_or_default());
+        if let Some(p) = problems.first() {
+            return Err(WireError::invalid(p.clone()));
+        }
+        return Ok(t);
     }
     if t.spec.prompt.trim().is_empty() {
         return Err(WireError::invalid(format!("{} needs a prompt", t.name)));
@@ -128,7 +152,7 @@ pub fn start_args(t: &NamedTask, run: &RunTask, by: &str) -> Result<StartArgs> {
         steps,
         connectors: d.connectors.clone(),
         worktree: d.worktree,
-        goal: d.goal.clone(),
+        goal: goal_arg(d.goal.as_ref()),
         notes: (!d.notes.is_empty()).then(|| serde_json::to_value(&d.notes).ok()).flatten(),
         lineage: Lineage { triggered_by: Some(by.to_owned()), ..Lineage::default() },
         ext: [(wisp_automations_api::PLUGIN_ID.to_owned(), json!({ "task": t.name }))].into_iter().collect(),
@@ -157,10 +181,15 @@ pub(crate) fn mode_of(s: &str) -> Result<Option<Mode>> {
 }
 
 async fn run(ctx: &Ctx, call: &Call, store: &Store, r: RunTask, by: &str) -> Result<Value> {
+    if r.name == DEFAULT {
+        return Err(WireError::invalid("tasks.default gives every task its defaults: it isn't a task to run (wisp recipes lists them)"));
+    }
     let tasks = list(store).await?;
     let Some(t) = tasks.iter().find(|t| t.name == r.name) else {
         return Err(WireError::not_found(format!("no task named {} (wisp export tasks lists them)", r.name)));
     };
+    // every run of a declared task, by hand, schedule or trigger, takes `tasks.default` under its own fields (ADR-0110)
+    let t = &NamedTask { name: t.name.clone(), spec: with_defaults(&t.spec, &defaults_of(store).await?) };
     let mut args = start_args(t, &r, by)?;
     // a recipe that doesn't say: a worktree of its own, as v1 started every task (audit B #7)
     if args.worktree.is_none() && args.cwd.as_deref().is_some_and(|c| !c.is_empty()) {
@@ -245,9 +274,30 @@ impl ResourceKind for TaskKind {
         }
     }
     fn check(&self, r: &Resource) -> Vec<String> {
-        r.spec.get("schedule").and_then(Value::as_str).and_then(|s| read_schedule(s).err()).map(|e| vec![e.0]).unwrap_or_default()
+        if r.name == DEFAULT {
+            return default_problems(&r.spec);
+        }
+        let mut out: Vec<String> =
+            r.spec.get("schedule").and_then(Value::as_str).and_then(|s| read_schedule(s).err()).map(|e| vec![e.0]).unwrap_or_default();
+        if r.spec.get("prompt").and_then(Value::as_str).is_none_or(|p| p.trim().is_empty()) {
+            out.push("a task says what to do: prompt: …".to_owned());
+        }
+        out
+    }
+    /// The declared goal a task names (`goal: green-build`): `wisp validate` and `apply` refuse one no goal has.
+    fn refers_to(&self) -> Vec<String> {
+        vec!["goal".to_owned()]
+    }
+    fn refs(&self, r: &Resource) -> Vec<wisp_resources_api::Ref> {
+        goal_ref(r.spec.get("goal"))
+            .map(|name| vec![wisp_resources_api::Ref { kind: "goal".into(), name, field: "goal".into() }])
+            .unwrap_or_default()
     }
     fn describe(&self, op: &Op) -> Option<String> {
+        if op.name == DEFAULT {
+            let verb = if op.op == wisp_resources_api::OpKind::Delete { "removes" } else { "sets" };
+            return Some(format!("{verb} every task's defaults (tasks.default: its agent, mode, …)"));
+        }
         let when = op
             .spec
             .get("schedule")
@@ -291,10 +341,15 @@ impl Plugin for AutomationsPlugin {
                 "automations.task.set",
                 "automations.task.remove",
             )
-            .keyed("name", "name", "name"),
+            .keyed("name", "name", "name")
+            // the kind reads `tasks.default` too: it's a resource like any other, kept apart from the tasks
+            .list_args(json!({ "withDefault": true })),
         ));
         s.contribute(&RESOURCE_KIND, kind);
-        s.command::<Tasks, _, _>(|ctx, _, _| async move { list(&*ctx.service::<Store>()?).await });
+        s.command::<Tasks, _, _>(|ctx, _, a| async move {
+            let with_default = a.get("withDefault").and_then(Value::as_bool).unwrap_or(false);
+            list_all(&*ctx.service::<Store>()?, with_default).await
+        });
         s.command::<TaskSet, _, _>(|ctx, _, t| async move { put(&*ctx.service::<Store>()?, t).await });
         s.command::<TaskRemove, _, _>(|ctx, _, a| async move {
             let store = ctx.service::<Store>()?;

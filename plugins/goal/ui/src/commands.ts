@@ -114,7 +114,7 @@ export const goalDefaultsNow = defineCommand<{ peer: PeerId }, GoalResource[]>({
 
 /** The `goal` resource with these judges and vote; its other fields (the round limit) as they were. */
 export function goalDefaults(have: readonly GoalResource[], judges: readonly Judge[], vote: Vote): GoalResource {
-  const spec = { ...(have.find((r) => r.kind === 'goal')?.spec ?? {}) };
+  const spec = { ...(have.find((r) => r.kind === 'goal' && r.name === 'default')?.spec ?? {}) };
   delete spec['judges'];
   delete spec['vote'];
   return { kind: 'goal', name: 'default', spec: { ...spec, ...(judges.length && { judges: judges.map(judgeWire) }), vote } };
@@ -143,3 +143,6 @@ export const saveGoalDefaults = defineCommand<{ peer: PeerId; judges: readonly J
   optimistic: 'none',
   pending: 'Judges',
 });
+
+/** The goals declared by name on peer `peer` (`goals:` in a formula, ADR-0110): `/goal ` suggests them. A read. */
+export const goalsDeclared = defineCommand<{ peer: PeerId }, unknown>({ id: 'goal.declared', owner: (a) => a.peer, wire: () => ({}), optimistic: 'none', pending: 'the goals', quiet: true });

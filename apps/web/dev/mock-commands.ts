@@ -268,6 +268,41 @@ function setupPhone(x: Args): MockChannel {
 }
 
 /** The Phone topic's row for a channel (`chan_phone`): what channels.status says less the link code, email's address and ntfy's topic. */
+/** The declared goals past the first two, for `WISP_MOCK_GOALS` (a formula with many). */
+const MANY_GOALS: readonly { readonly name: string; readonly text: string }[] = [
+  ['a11y', 'axe finds no violation on any screen'],
+  ['api-stable', 'the OpenAPI document has no breaking change'],
+  ['bench-flat', 'no bench in spikes/ is slower than on main'],
+  ['build-fast', 'a cold build finishes in under two minutes'],
+  ['changelog', 'the changelog names every user-facing change'],
+  ['clippy-clean', 'cargo clippy reports nothing with -D warnings'],
+  ['coverage-80', 'line coverage stays at 80 % or more'],
+  ['deploy-ok', 'the preview deploy answers 200 on every route'],
+  ['deps-pinned', 'every new dependency is pinned and has its ADR'],
+  ['e2e-green', 'the end-to-end suite passes on Linux, macOS and Windows'],
+  ['first-screen', 'the first screen stays under its ratchet'],
+  ['fmt-clean', 'cargo fmt and prettier change nothing'],
+  ['i18n-done', 'every new string goes through t() and has its English'],
+  ['layout-ok', 'qa/layout.mjs passes from 320 to 1440 px'],
+  ['lint-zero', 'eslint reports nothing'],
+  ['migrations', 'each migration runs forward on a copy of a real store'],
+  ['mobile-fit', 'nothing wraps at 320 px'],
+  ['no-flakes', 'the suite passes ten times in a row'],
+  ['parity', 'qa/parity.mjs finds no difference from v1'],
+  ['perf-budget', 'every budget in tools/budgets.ts holds'],
+  ['pr-ready', 'the branch merges cleanly into main and CI is green'],
+  ['release-notes', 'the release notes say what changed and how to upgrade'],
+  ['security', 'cargo deny and the audit find nothing'],
+  ['types-strict', 'tsc --strict passes across every package'],
+  ['ux-feedback', 'every click changes the screen within 100 ms'],
+  ['windows-ok', 'the Windows suite passes'],
+  ['zero-todo', 'no TODO is left in the changed files'],
+  ['dark-mode', 'every screen reads well in dark mode'],
+].map(([name, text]) => ({ name: name ?? '', text: text ?? '' }));
+
+/** A declared goal's text by its name (the first two, then MANY_GOALS). */
+const goalText = (name: string): string => [{ name: 'tests-green', text: 'Every test passes' }, { name: 'docs-clean', text: 'the docs build' }, ...MANY_GOALS].find((g) => g.name === name)?.text ?? name;
+
 export const PHONE_TOPIC = 'plugin:wisp.channels:phone' as Topic;
 function phoneOp(peer: string, c: MockChannel): EntityOp {
   const { linkCode: _c, who, settings, ...body } = c;
@@ -557,6 +592,8 @@ export const COMMANDS: Record<string, CommandFn> = {
         ...(typeof x['projectId'] === 'string' && { projectId: x['projectId'] }),
         ...(typeof x['color'] === 'string' && { color: x['color'] }),
         ...(typeof x['goal'] === 'string' && x['goal'] !== '' && { goal: { text: x['goal'], status: 'running', round: 0, checks: [] } }),
+        // a goal declared by name (ADR-0110): its row names it, as wisp.goal's does (Goal…'s recent first, owner-list #63)
+        ...(typeof (x['goal'] as { name?: unknown } | undefined)?.name === 'string' && { goal: { text: goalText((x['goal'] as { name: string }).name), name: (x['goal'] as { name: string }).name, setAt: ctx.now(), status: 'running', round: 0, checks: [] } }),
         ...(typeof x['at'] === 'number' && { startsAt: x['at'] }),
       },
       // runtime's Session.dirs: the other folders it works in, on the row's body as the peer keeps them
@@ -1083,8 +1120,20 @@ export const COMMANDS: Record<string, CommandFn> = {
   'goal.set': (a, ctx) => {
     const x = obj(a);
     const text = str(x, 'text');
-    return { ops: sessionPatch(ctx, str(x, 'id'), [{ op: 'replace', path: '/summary/goal', value: { text, status: 'running', round: 0, checks: [] } }]) };
+    const name = str(x, 'name');
+    return { ops: sessionPatch(ctx, str(x, 'id'), [{ op: 'replace', path: '/summary/goal', value: { text, ...(name && { name, setAt: ctx.now() }), status: 'running', round: 0, checks: [] } }]) };
   },
+  // the goals a formula declares by name (`goals:`, ADR-0110), as wisp.goal's `goal.declared` answers: each as
+  // stored, with its name (a long one shows how Goal…'s menu fits it)
+  // `WISP_MOCK_GOALS=30 npx vite`: a formula with many (owner-list #63: Goal…'s filter, its cap and All goals…)
+  'goal.declared': () => ({
+    ops: [],
+    result: [
+      { name: 'tests-green', text: 'Every test passes in the Rust and web suites, with no unhandled errors left in the run', maxRounds: 3 },
+      { name: 'docs-clean', text: 'the docs build without a warning, every link resolves and each new page is in the sidebar' },
+      ...MANY_GOALS.slice(0, Math.max(0, Number((globalThis as { process?: { env: Record<string, string | undefined> } }).process?.env['WISP_MOCK_GOALS'] ?? 0) - 2)),
+    ],
+  }),
   // Ship it: a pull request, after the push (the pending state shows meanwhile)
   'ship.open': (a, ctx) => {
     const id = str(obj(a), 'id');

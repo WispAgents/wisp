@@ -301,14 +301,17 @@ describe('desktop: the flyout from the keyboard, and choosing in it', () => {
 });
 
 describe('touch and the phone apps keep the drill-in', () => {
+  // the browser's touch screen opens the menu as a sheet that drills in (owner 2026-11-19, menu-sheet.test.tsx)
   test('a touch pointer drills in under a Back row, no flyout_flyout_touch_drills', async () => {
     pointer('touch');
-    await openMenu();
+    mount(() => <Menu items={items} onSelect={vi.fn()} trigger={{ icon: 'dots', 'aria-label': 'More' }} part="task.more" />);
+    part('task.more.trigger')?.click();
+    await until(() => row() !== null);
     expect(part('task.more.flyout')).toBeNull();
     row()?.click();
     await tick(20);
     expect(part('task.more.back')?.textContent).toBe('Copy');
-    expect(part('task.more')?.hasAttribute('data-drilled')).toBe(true);
+    expect(part('task.more.sheet')).not.toBeNull();
   });
 
   test('the phone apps drill in even with a mouse attached_flyout_phone_drills', async () => {

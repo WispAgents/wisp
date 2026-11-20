@@ -107,8 +107,68 @@ async fn drift_and_secrets(ctx: &Ctx, out: &mut Plan) -> Result<()> {
     Ok(())
 }
 
+/// The references ([`ResourceKind::refs`]) that name nothing as the apply would leave it (ADR-0110): `at` (the naming
+/// resource, `tasks.fix-build`) and what it names. A kind this plan doesn't touch is read as it is; `default` is no
+/// resource to name.
+async fn dangling(
+    ks: &[Arc<dyn ResourceKind>],
+    call: &Call,
+    refs: Vec<(String, wisp_resources_api::Ref)>,
+    mut names_after: std::collections::BTreeMap<String, Vec<String>>,
+) -> Vec<String> {
+    let mut out = Vec::new();
+    for (at, r) in refs {
+        if !names_after.contains_key(&r.kind) {
+            let Some(k) = find(ks, &r.kind) else {
+                out.push(format!("{at}: {}: no {} kind here", r.field, r.kind));
+                continue;
+            };
+            let now = k.read(call).await.map(|rs| rs.into_iter().map(|x| x.name).collect()).unwrap_or_default();
+            names_after.insert(r.kind.clone(), now);
+        }
+        let names: Vec<&String> = names_after.get(&r.kind).into_iter().flatten().filter(|n| n.as_str() != "default").collect();
+        if r.name != "default" && names.iter().any(|n| **n == r.name) {
+            continue;
+        }
+        let section = find(ks, &r.kind).map_or_else(|| r.kind.clone(), |k| k.info().section);
+        let has = if names.is_empty() {
+            format!("no {section} are declared")
+        } else {
+            format!("{section} has {}", names.iter().map(|n| n.as_str()).collect::<Vec<_>>().join(", "))
+        };
+        out.push(format!("{at}: no {} named {}: {has}", r.kind, r.name));
+    }
+    out
+}
+
+/// The references of resources this plan leaves as they are, to a kind it removes something of (a task naming a goal
+/// that `--prune` or `destroy` takes away): the ones it makes or changes are checked where they're planned.
+async fn kept_refs(ks: &[Arc<dyn ResourceKind>], call: &Call, ops: &[Op]) -> Vec<(String, wisp_resources_api::Ref)> {
+    let removed: BTreeSet<&str> = ops.iter().filter(|o| o.op == OpKind::Delete).map(|o| o.kind.as_str()).collect();
+    let mut out = Vec::new();
+    if removed.is_empty() {
+        return out;
+    }
+    for k in ks {
+        let to = k.refers_to();
+        if !to.iter().any(|t| removed.contains(t.as_str())) {
+            continue;
+        }
+        let info = k.info();
+        let Ok(current) = k.read(call).await else { continue };
+        for r in current.iter().filter(|r| !ops.iter().any(|o| o.kind == info.kind && o.name == r.name)) {
+            for x in k.refs(r).into_iter().filter(|x| removed.contains(x.kind.as_str())) {
+                out.push((format!("{}.{}", info.section, r.name), x));
+            }
+        }
+    }
+    out
+}
+
 async fn make_plan(ctx: &Ctx, call: &Call, a: &PlanArgs) -> Result<Plan> {
     let ks = kinds(ctx);
+    let mut refs: Vec<(String, wisp_resources_api::Ref)> = Vec::new();
+    let mut names_after: std::collections::BTreeMap<String, Vec<String>> = std::collections::BTreeMap::new();
     let mut out = Plan::default();
     let mut infos: Vec<KindInfo> = Vec::new();
     let mut seen: Vec<String> = Vec::new();
@@ -157,6 +217,8 @@ async fn make_plan(ctx: &Ctx, call: &Call, a: &PlanArgs) -> Result<Plan> {
                     out.sensitive.push(k.describe(o).unwrap_or_else(|| format!("{} the {} {}", verb(o.op), info.kind, o.name)));
                 }
             }
+            names_after
+                .insert(info.kind.clone(), current.iter().filter(|c| !gone.contains(&c.name.as_str())).map(|c| c.name.clone()).collect());
             out.ops.extend(ops);
             infos.push(info);
             continue;
@@ -176,6 +238,7 @@ async fn make_plan(ctx: &Ctx, call: &Call, a: &PlanArgs) -> Result<Plan> {
                 out.problems.extend(schema::validate(&info.schema, &o.spec, &format!("{}.{}", info.section, o.name)));
             }
             out.problems.extend(k.check(&r).into_iter().map(|p| format!("{}.{}: {p}", info.section, o.name)));
+            refs.extend(k.refs(&r).into_iter().map(|x| (format!("{}.{}", info.section, o.name), x)));
         }
         if info.sensitive {
             for o in &ops {
@@ -191,9 +254,12 @@ async fn make_plan(ctx: &Ctx, call: &Call, a: &PlanArgs) -> Result<Plan> {
         // projects were one per folder) never blocks an apply that doesn't touch it
         let had = k.check_all(&current);
         out.problems.extend(k.check_all(&after).into_iter().filter(|p| !had.contains(p)).map(|p| format!("{}: {p}", info.section)));
+        names_after.insert(info.kind.clone(), after.iter().map(|r| r.name.clone()).collect());
         out.ops.extend(ops);
         infos.push(info);
     }
+    refs.extend(kept_refs(&ks, call, &out.ops).await);
+    out.problems.extend(dangling(&ks, call, refs, names_after).await);
     plan::order(&mut out.ops, &infos);
     drift_and_secrets(ctx, &mut out).await?;
     Ok(out)

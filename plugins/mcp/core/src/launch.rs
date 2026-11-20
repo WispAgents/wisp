@@ -28,7 +28,8 @@ pub fn folder(a: &Map<String, Value>, project: Option<&str>, asking: Option<&str
 pub fn start_body(a: &Map<String, Value>, cwd: Option<&str>, tree_on: bool) -> Value {
     let s = |k: &str| a.get(k).and_then(Value::as_str).filter(|v| !v.is_empty());
     let mut b = json!({ "prompt": a.get("prompt").cloned().unwrap_or(Value::Null), "by": "agent" });
-    for k in ["agent", "model", "effort", "mode"] {
+    // `goal`: a declared goal's name is that goal (wisp.goal reads it, ADR-0110), other words what done means
+    for k in ["agent", "model", "effort", "mode", "goal"] {
         if let Some(v) = s(k) {
             b[k] = json!(v);
         }
@@ -86,6 +87,8 @@ mod tests {
         assert_eq!(tree(json!({ "prompt": "x" }), false), json!(false));
         assert_eq!(tree(json!({ "prompt": "x", "worktree": false }), true), json!(false));
         assert_eq!(tree(json!({ "prompt": "x", "worktree": true, "mode": "plan" }), false), json!(true));
+        // a goal: a declared one's name or words, as given (wisp.goal tells them apart)
+        assert_eq!(start_body(&args(&json!({ "prompt": "x", "goal": "green-build" })), None, false)["goal"], json!("green-build"));
         // a preset when no team is given
         assert_eq!(start_body(&args(&json!({ "prompt": "x", "preset": "p1" })), None, false)["team"], json!("p1"));
     }

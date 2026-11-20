@@ -4,6 +4,7 @@
 import { Show, createEffect, createMemo, createSignal, splitProps, type JSX } from 'solid-js';
 import { Dynamic } from 'solid-js/web';
 import { MenuOn, type MenuEntry, type Placement } from '../controls/Menu.tsx';
+import type { MenuFilter } from '../controls/menu-entries.ts';
 import { Spinner } from '../controls/Spinner.tsx';
 import { lazyPart, warm } from '../controls/lazy-part.ts';
 import type { PartName } from '../core/props.ts';
@@ -13,7 +14,15 @@ const panelPart = lazyPart(() => import('./act-panel.tsx'));
 
 export interface Act {
   readonly onClick?: () => void;
-  readonly menu?: { readonly items: readonly MenuEntry[]; readonly onSelect: (value: string) => void };
+  readonly menu?: {
+    readonly items: readonly MenuEntry[];
+    readonly onSelect: (value: string) => void;
+    /** the pointer or the focus reached its control: fetch what its rows need (a lazy module, its answers) before the
+     *  press. Additive (2026-11-20). */
+    readonly onWarm?: () => void;
+    /** as a submenu (the composer's `+`), the box that narrows its rows (MenuSubmenu.filter). Additive (2026-11-20). */
+    readonly filter?: MenuFilter;
+  };
   /** its command is in flight */
   readonly pending?: boolean;
   /** A panel it opens beside it (v1's Delegate .team-pop): what's in it, drawn while open. Additive (2026-11-17). */
@@ -111,7 +120,7 @@ function WithMenu(props: { readonly act?: Act | undefined; readonly render: (tri
   return (
     <Show when={props.act?.menu} fallback={props.render(press)}>
       {(m) => (
-        <MenuOn items={m().items} onSelect={(v) => m().onSelect(v)} part="ui.menu">
+        <MenuOn items={m().items} onSelect={(v) => m().onSelect(v)} onWarm={() => m().onWarm?.()} onOpenChange={(o) => o && m().onWarm?.()} part="ui.menu">
           {(trigger) => props.render(() => ({ ...trigger(), ...actAttrs(props.act) }))}
         </MenuOn>
       )}

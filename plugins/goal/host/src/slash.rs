@@ -35,27 +35,49 @@ pub fn typed(prompt: &str) -> Option<Typed> {
     })
 }
 
+/// `/goal <words>`'s goal: a declared goal when the words are exactly its name (ADR-0110, as `goal.set` reads them),
+/// else the words as what done means.
+pub fn typed_goal(text: &str, named: &std::collections::BTreeMap<String, crate::kinds::GoalSpec>) -> Value {
+    let words = Value::String(text.to_owned());
+    crate::resolve(&words, named).ok().flatten().unwrap_or(words)
+}
+
 pub const DROP_FIRST: &str = "No goal to drop yet: /goal drop works in a task’s reply box.";
 pub const SAY_WHAT: &str = "Say what has to be true after /goal, like “/goal all tests pass”.";
 
-pub(crate) fn register(s: &mut Setup) {
+pub(crate) fn register(s: &mut Setup, named: crate::kinds::Named) {
     s.intercept::<BeforeCreate, _, _>(
         InterceptOpts { priority: 10, failure: Failure::Open, timeout_ms: 200 },
-        |_ctx, _call, mut a| async move {
-            // a goal sent with it already says what done means, and a subagent can't have one (refuse_goal_on):
-            // the prompt is the agent's, as typed
-            if a.goal.as_ref().is_some_and(|g| !g.is_null()) || a.parent_id.is_some() {
-                return Verdict::Continue;
-            }
-            match typed(&a.prompt) {
-                None => Verdict::Continue,
-                Some(Typed::Set(text)) => {
-                    a.goal = Some(Value::String(text.clone()));
-                    a.prompt = text;
-                    Verdict::Modify { ctx: a }
+        move |_ctx, _call, mut a| {
+            let named = named.lock().unwrap_or_else(std::sync::PoisonError::into_inner).clone();
+            async move {
+                // a declared goal by name (`--goal green-build`, a task's `goal: green-build`, ADR-0110): the task keeps
+                // that goal's text, judges, vote and limit as they are now; a name no goal has is refused, saying which
+                if let Some(g) = a.goal.as_ref().filter(|g| !g.is_null()) {
+                    return match crate::resolve(g, &named) {
+                        Ok(Some(v)) => {
+                            a.goal = Some(v);
+                            Verdict::Modify { ctx: a }
+                        }
+                        Ok(None) => Verdict::Continue,
+                        Err(why) => Verdict::Veto { code: "invalid".into(), message: why, then: Vec::new() },
+                    };
                 }
-                Some(Typed::Drop) => Verdict::Veto { code: "invalid".into(), message: DROP_FIRST.into(), then: Vec::new() },
-                Some(Typed::Bare) => Verdict::Veto { code: "invalid".into(), message: SAY_WHAT.into(), then: Vec::new() },
+                // a goal sent with it already says what done means, and a subagent can't have one (refuse_goal_on):
+                // the prompt is the agent's, as typed
+                if a.parent_id.is_some() {
+                    return Verdict::Continue;
+                }
+                match typed(&a.prompt) {
+                    None => Verdict::Continue,
+                    Some(Typed::Set(text)) => {
+                        a.goal = Some(typed_goal(&text, &named));
+                        a.prompt = text;
+                        Verdict::Modify { ctx: a }
+                    }
+                    Some(Typed::Drop) => Verdict::Veto { code: "invalid".into(), message: DROP_FIRST.into(), then: Vec::new() },
+                    Some(Typed::Bare) => Verdict::Veto { code: "invalid".into(), message: SAY_WHAT.into(), then: Vec::new() },
+                }
             }
         },
     );
@@ -78,5 +100,13 @@ mod tests {
         assert_eq!(typed("/goals"), None);
         assert_eq!(typed("fix it /goal tests pass"), None);
         assert_eq!(typed(""), None);
+    }
+
+    /// Review of ADR-0110: `wisp "/goal green-build"` is the declared goal, as `/goal green-build` in a reply box is.
+    #[test]
+    fn a_typed_goal_that_names_a_declared_one_is_that_goal() {
+        let (_, named) = crate::kinds::split(vec![("green-build".into(), serde_json::json!({ "text": "the build is green" }))]);
+        assert_eq!(typed_goal("green-build", &named)["text"], "the build is green");
+        assert_eq!(typed_goal("all tests pass", &named), Value::String("all tests pass".into()));
     }
 }

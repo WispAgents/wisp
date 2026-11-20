@@ -83,17 +83,45 @@ wait for your yes before it starts.
 
 ## 4. Goals: done means done
 
-A task with a goal is sent back after each turn until its judges agree the goal is met.
+A task with a goal is sent back after each turn until its judges agree the goal is met. Declare goals once, by
+name, and point tasks at them; `default` under `goals:` and under `tasks:` gives every goal and every task its
+defaults, and their own fields win.
 
 ```yaml
-# .wisp/goal.wisp.yml
-goal: { judges: [reviewer], vote: majority, maxRounds: 6 }   # every goal's judges, unless a task says otherwise
+# .wisp/goals.wisp.yml
+goals:
+  default: { judges: [reviewer], vote: majority, maxRounds: 6 }   # every goal's defaults
+  green-build: { text: "npm test passes and the build is green", judges: [reviewer] }
 tasks:
-  green-build:
-    prompt: Make the build pass
-    agent: builder
-    goal: { text: "npm test passes and the build is green" }
+  default: { agent: builder, mode: auto, worktree: true }          # every task's defaults
+  fix-build: { prompt: Make the build pass, goal: green-build }    # a goal by name, or inline { text: … }
 ```
+
+`wisp validate` names a goal no one declared. `tasks.default` never runs on its own and holds no prompt, steps or
+schedule; every run of a task (by hand, by its schedule, from a trigger's `task:`) takes it. Tasks you start another
+way (`wisp "…"`, New task, a crew member's job) don't.
+
+Attach a declared goal when you start any task:
+
+<Tabs syncKey="way">
+<TabItem label="Desktop app">
+**New task** → **+** → **Goal…** lists the declared goals by name; pick one, or **New goal…** to write your own.
+</TabItem>
+<TabItem label="Phone app">
+**New task** → **+** → **Goal…**, then a goal by name or **New goal…**.
+</TabItem>
+<TabItem label="TUI">
+From any reply box (**i**): `wisp "Make the build pass" --goal green-build`; on an open task, `/goal set green-build`.
+</TabItem>
+<TabItem label="CLI">
+```sh
+wisp "Make the build pass" --goal green-build
+wisp goal set <id> green-build
+```
+</TabItem>
+</Tabs>
+
+Your own agent does the same with `wisp_launch`'s `goal`. More in [Goals and judges](../../run/goals/).
 
 ## 5. A nightly workflow
 

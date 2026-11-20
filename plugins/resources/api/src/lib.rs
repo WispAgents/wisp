@@ -191,6 +191,14 @@ impl KindInfo {
     }
 }
 
+/// A resource another one names ([`ResourceKind::refs`]): kind `kind`'s `name`, in the naming spec's field `field`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Ref {
+    pub kind: String,
+    pub name: String,
+    pub field: String,
+}
+
 /// The JSON Schema of `T`, from its Rust type and doc comments.
 pub fn schema_of<T: schemars::JsonSchema>() -> Value {
     serde_json::to_value(schemars::schema_for!(T)).unwrap_or(Value::Null)
@@ -226,6 +234,18 @@ pub trait ResourceKind: Send + Sync {
     /// Problems across the kind's resources as the apply would leave them (a cycle of crew wakes). Additive
     /// (2026-11-09, ADR-0043).
     fn check_all(&self, _after: &[Resource]) -> Vec<String> {
+        Vec::new()
+    }
+    /// What a spec names of another kind's (a task's `goal: green-build` is goal `green-build`): the plan refuses one
+    /// that names nothing there as the apply would leave it, so `wisp validate` says it before anything runs. A kind's
+    /// `default` (`goals.default`) is never one to name. Additive (2026-11-19, ADR-0110).
+    fn refs(&self, _r: &Resource) -> Vec<Ref> {
+        Vec::new()
+    }
+    /// The kinds [`ResourceKind::refs`] may name (`["goal"]` for tasks): a plan that removes one of those reads this
+    /// kind's resources it leaves as they are, so a goal removed from under a task that names it is refused too.
+    /// Additive (2026-11-19, ADR-0110).
+    fn refers_to(&self) -> Vec<String> {
         Vec::new()
     }
     /// The op in plain words, for the trust prompt ("lets Telegram chat 123 start tasks").

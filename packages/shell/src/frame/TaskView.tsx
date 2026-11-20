@@ -53,10 +53,11 @@ import { sameEntries } from './same-entries.ts';
 import { useProjects } from './projects.ts';
 import { taskPlaces } from './project-pick.ts';
 import { phoneTaskMenu } from './phone-menu.ts';
-import { changeFigures, duration, foldedFrom, longTime, nextNeedsYou, overlapLine, overlapsOf, statusOf, trailActs } from './rows-view.ts';
+import { changeFigures, duration, foldedFrom, longTime, nextNeedsYou, overlapLine, overlapsOf, projectOfRow, statusOf, trailActs } from './rows-view.ts';
 import { coldHint, compactItem } from './cold.ts';
 import { replyPlaceholderKey } from './reply-hint.ts';
-import { goalGate } from './goal-gate.ts';
+import { goalGate, goalWire, type DeclaredGoal } from './goal-gate.ts';
+import { useGoalKit } from './goal-kit.ts';
 import { isFeedback } from './feedback.ts';
 import { readComments } from './comment-text.ts';
 import { useNow } from '../clock.ts';
@@ -561,6 +562,11 @@ export default function TaskView(props: { readonly id: string; readonly onBack?:
   // Delegate… in the reply's `+` opens the Delegate panel on its chip (UX 2026-11-18 #3)
   const [replyDelegateOpen, setReplyDelegateOpen] = createSignal(false);
   const [goal, setGoalText] = createSignal<string | undefined>(undefined);
+  // a goal declared by name (`goals:`, ADR-0110), picked from Goal…: set by name while Done when still reads its text
+  const [pickedReplyGoal, setPickedReplyGoal] = createSignal<DeclaredGoal>();
+  // the task's peer's declared goals and Goal…'s code: fetched as the reply's `+` is warmed (./goal-kit.ts)
+  const goals = useGoalKit(shell, () => ownerOf(key));
+  const declared = (): readonly DeclaredGoal[] => goals.declared();
   const [when, setWhen] = createSignal<When | undefined>(undefined);
   const nav = useSignal(shell.nav);
   const harnesses = useSignal(shell.harnesses());
@@ -732,8 +738,10 @@ export default function TaskView(props: { readonly id: string; readonly onBack?:
     }
     setText('');
     const g = goal();
-    if (g) void run(setGoal, { id: key, text: g }).catch(() => undefined);
+    const named = goalWire(g, pickedReplyGoal());
+    if (g) void run(setGoal, { id: key, text: g, ...(typeof named === 'object' && { name: named.name }) }).catch(() => undefined);
     setGoalText(undefined);
+    setPickedReplyGoal(undefined);
     const turnId = entityKey(peer, newRowId());
     const at = Date.now();
     const idx = turns().length;
@@ -1173,16 +1181,37 @@ export default function TaskView(props: { readonly id: string; readonly onBack?:
         // the reply box's menus keep their entries while they say the same: their props are made again on every patch to
         // the task (the cap reads the row), and new entries rebuilt the closed mode and + menus on each streamed token
         // (perf r1 #15). The mode's memo is made after `mode` below
+        // Goal…: the declared goals by name, then a new one to write; with none declared, straight to Done when
+        const newReplyGoal = (): void => (setPickedReplyGoal(undefined), setGoalText(''), queueMicrotask(() => goalInput?.focus()));
+        const takeReplyGoal = (g: DeclaredGoal): void => {
+          setPickedReplyGoal(g);
+          setGoalText(g.text);
+          queueMicrotask(() => replyBox.focus());
+        };
+        // recent in this task's project first (the goals its tasks were given), then A–Z
+        const replyGoalAct = (): Act =>
+          goals.kit()?.goalAct({
+            shell,
+            declared: declared(),
+            recent: () => {
+              const own = row();
+              return goals.kit()?.recentGoals(sessions(), projects(), own ? projectOfRow(own, projects())?.id : undefined) ?? [];
+            },
+            t,
+            take: takeReplyGoal,
+            fresh: newReplyGoal,
+          }) ?? { onClick: newReplyGoal };
         const replyPlus = (): LauncherTool =>
           plusTool({
             part: 'composer.plus',
             label: t('shell.home.plus'),
             title: t('shell.reply.plusTitle'),
             refocus: replyBox.focus,
+            onWarm: goals.warm,
             sections: [
               [{ id: 'attach', part: 'composer.attach', icon: 'clip', label: t('shell.home.attach'), act: attachAct(shell, attach, picking()) }],
               [
-                !replyGoalOn() && { id: 'goal', part: 'composer.goal', icon: 'target', label: t('shell.home.goalRow'), act: { onClick: () => (setGoalText(''), queueMicrotask(() => goalInput?.focus())) } },
+                !replyGoalOn() && { id: 'goal', part: 'composer.goal', icon: 'target', label: t('shell.home.goalRow'), act: replyGoalAct() },
                 team().length === 0 && !replyDelegateOpen() && { id: 'team', part: 'composer.team', icon: 'agent', label: t('shell.home.delegateRow'), act: { onClick: () => setReplyDelegateOpen(true) } },
               ],
               [!when() && { id: 'later', part: 'composer.sendLater', icon: 'clock', label: t('shell.home.later'), act: { menu: { items: whenMenu(t, now()), onSelect: (w) => setWhen(w as When) } } }],
@@ -1193,6 +1222,7 @@ export default function TaskView(props: { readonly id: string; readonly onBack?:
         const replyChips = (): LauncherTool[] => {
           const panel = replyTeamAct().panel;
           const text = (goal() ?? '').trim();
+          const named = goalWire(goal(), pickedReplyGoal());
           return [
             ...(replyGoalOn()
               ? [
@@ -1200,7 +1230,7 @@ export default function TaskView(props: { readonly id: string; readonly onBack?:
                     id: 'goal',
                     part: 'composer.goal',
                     icon: 'target' as const,
-                    label: text ? t('shell.home.goalChip', { text }) : t('shell.home.goal'),
+                    label: typeof named === 'object' ? t('shell.home.goalChip', { text: named.name }) : text ? t('shell.home.goalChip', { text }) : t('shell.home.goal'),
                     title: t('shell.task.goal'),
                     text: true,
                     on: true,

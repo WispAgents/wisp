@@ -9,19 +9,23 @@
 // Loaded with ./menu-machine.tsx, apart from the first page.
 import * as menu from '@zag-js/menu';
 import { normalizeProps, useMachine } from '@zag-js/solid';
-import { createMemo, createSignal, createUniqueId, onCleanup, onMount, Show, type Accessor, type JSX } from 'solid-js';
+import { createEffect, createMemo, createSignal, createUniqueId, on, onCleanup, onMount, Show, type Accessor, type JSX } from 'solid-js';
 import { Portal } from 'solid-js/web';
 import { sub, type PartName } from '../core/props.ts';
 import { Icon } from '../content/Icon.tsx';
 import type { Look } from '../platform/look.ts';
+import { SHEET_SCREEN } from './Menu.tsx';
 import type { MenuEntry, MenuSubmenu } from './menu-entries.ts';
+import { filteredItems, firstMatch } from './menu-filtering.ts';
+import { MenuFilterBox } from './menu-filter.tsx';
 import { aimTriangle, emptyBox, inBox, inTriangle, type Box, type Point } from './menu-aim.ts';
 import { nextTask, useTimeout } from '../blocks/rich-scope.ts';
 
-/** Submenus fly out for a hovering fine pointer in the browser; touch screens and the phone apps drill in. */
+/** Submenus fly out for a hovering fine pointer in the browser on a wide screen; the phone apps drill in, and the
+ *  browser on a touch-first or narrow screen opens its menus as a sheet instead (Menu.tsx SHEET_SCREEN). */
 export function flyoutPointer(look: Look): boolean {
   const mq = globalThis.matchMedia;
-  return look === 'web' && typeof mq === 'function' && mq('(hover: hover) and (pointer: fine)').matches;
+  return look === 'web' && typeof mq === 'function' && mq('(hover: hover) and (pointer: fine)').matches && !mq(SHEET_SCREEN).matches;
 }
 
 /** What a flyout needs from the menu it hangs off. */
@@ -171,6 +175,7 @@ export function Flyout(props: { readonly api: menu.Api; readonly entry: MenuSubm
     back: () => send({ type: 'ARROW_LEFT' }),
     // Zag lights the first item only when it opens the child itself; controlled, the kit does (→ / Enter)
     keyedOpen: () => {
+      if (props.entry.filter) return;
       const first = firstValue(props.entry.items);
       if (first) queueMicrotask(() => capi().setHighlightedValue(first));
     },
@@ -205,6 +210,34 @@ export function Flyout(props: { readonly api: menu.Api; readonly entry: MenuSubm
   onMount(() => row?.addEventListener('pointermove', hovered));
   onCleanup(() => row?.removeEventListener('pointermove', hovered));
   const Entries = props.fly.Entries;
+  // a submenu that grows with the formula (Goal…, Recipes): its filter box takes the focus as it opens, so typing
+  // narrows it at once; closed, what was typed goes
+  const [query, setQuery] = createSignal('');
+  const shown = createMemo(() => filteredItems(props.entry, query()));
+  let box: HTMLInputElement | undefined;
+  createEffect(
+    on(state.open, (open) => {
+      if (!open) return (setQuery(''), content?.style.removeProperty('--menu-w'));
+      if (props.entry.filter) requestAnimationFrame(() => box?.focus({ preventScroll: true }));
+    }),
+  );
+  // narrowed, it keeps the width it opened at: the box and its rows never jump left as the matches get shorter
+  const narrow = (v: string): void => {
+    if (content && !content.style.getPropertyValue('--menu-w')) content.style.setProperty('--menu-w', `${content.offsetWidth}px`);
+    setQuery(v);
+  };
+  const toRows = (): void => {
+    const first = firstMatch(shown());
+    if (first) capi().setHighlightedValue(first);
+    content?.focus({ preventScroll: true });
+  };
+  const pickFirst = (): void => {
+    const v = firstMatch(shown());
+    if (v === undefined) return;
+    // the whole menu closes, as a click on the row would
+    props.api.setOpen(false);
+    nextTask(() => props.fly.onSelect(v));
+  };
   return (
     <>
       <div
@@ -226,7 +259,12 @@ export function Flyout(props: { readonly api: menu.Api; readonly entry: MenuSubm
       <Portal>
         <div {...capi().getPositionerProps()} data-kit="positioner">
           <div {...capi().getContentProps()} ref={(el) => (content = el)} data-kit="menu" data-part={sub(props.part, 'flyout')} data-flyout="">
-            <Entries api={capi()} items={props.entry.items} part={props.part} />
+            <Show when={props.entry.filter}>
+              {(f) => (
+                <MenuFilterBox filter={f()} value={query()} onInput={narrow} onDown={toRows} onEnter={pickFirst} part={props.part} ref={(el) => (box = el)} />
+              )}
+            </Show>
+            <Entries api={capi()} items={shown()} part={props.part} />
           </div>
         </div>
       </Portal>

@@ -7,6 +7,7 @@ import { ACTION_ICON, actionLabel, runGoalAction } from './actions.ts';
 import { goalActions, type GoalAction } from './rules.ts';
 import type { SessionRow } from './types.ts';
 import { sendGoal } from './slash.ts';
+import { goalItems } from './suggest.ts';
 
 // the goal's entries in a task's row menu (v1 goal.js goalMenuHtml): Set goal… (Edit goal… once there is one),
 // Goal checks…, Pause or Resume goal, Drop goal, each only where it applies
@@ -40,6 +41,10 @@ const later: PluginUiLater = {
     rowItem('drop', 113, 'wisp.goal.rowDrop'),
   ],
   // `/goal …` in a task's reply box: the task's goal, never a message for its agent (New task's is the server's)
-  prompt: [{ id: 'wisp.goal.slash', trigger: '/', where: ['reply'], order: 80, items: () => [], send: (text, ctx) => sendGoal(text, ctx, Date.now()) }],
+  prompt: [
+    { id: 'wisp.goal.slash', trigger: '/', where: ['reply'], order: 80, items: () => [], send: (text, ctx) => sendGoal(text, ctx, Date.now()) },
+    // `/goal ` suggests the goals declared by name, in both boxes (owner-list #63)
+    { id: 'wisp.goal.names', trigger: '/', order: 10, items: goalItems },
+  ],
 };
 export default later;

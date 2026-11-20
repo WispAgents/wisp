@@ -88,9 +88,12 @@ describe('ContextMenu', () => {
 });
 
 // v1 #786 (web/js/ui/submenu.js): a submenu drills in, its items under a Back row; → opens it, ← and Escape step back.
-// That is touch's (and the phone apps') behaviour now: a desktop pointer gets a flyout (owner 2026-11-17,
-// menu-flyout.test.tsx), so these run with a touch pointer.
+// That is the phone apps' behaviour now (their button menus, on Zag's machine): a desktop pointer gets a flyout (owner
+// 2026-11-17, menu-flyout.test.tsx) and the browser on a touch or narrow screen a sheet (owner 2026-11-19,
+// menu-sheet.test.tsx), so these run with a touch pointer in the Android look.
 function touchPointer(): void {
+  document.documentElement.setAttribute('data-platform', 'android');
+  onTestFinished(() => document.documentElement.removeAttribute('data-platform'));
   vi.stubGlobal('matchMedia', (q: string) => ({
     media: q,
     matches: q.includes('coarse') || q.includes('hover: none'),
@@ -205,8 +208,10 @@ describe('Menu submenus', () => {
   });
 });
 
-test('a right-click on another row while drilled in opens the menu at its top level_v1_786_submenu_reanchor', async () => {
-  touchPointer();
+// a right-click menu on Zag's machine is the desktop's (a phone's long-press and a sheet screen's open the sheet): its
+// submenu flies out, and a right-click on another row closes it with the menu re-anchored at its top level
+test('a right-click on another row while a submenu is open opens the menu at its top level_v1_786_submenu_reanchor', async () => {
+  vi.stubGlobal('matchMedia', (q: string) => ({ media: q, matches: q.includes('fine') || q.includes('hover: hover'), addEventListener: () => {}, removeEventListener: () => {} }));
   onTestFinished(() => {
     vi.unstubAllGlobals();
   });
@@ -221,12 +226,11 @@ test('a right-click on another row while drilled in opens the menu at its top le
   await tick(20);
   part('row.menu.sub')?.click();
   await tick(20);
-  expect(part('row.menu.back')).not.toBeNull();
+  expect(part('row.menu.flyout')?.getAttribute('data-state')).toBe('open');
   right(part('row.b'));
   await tick(20);
   expect(part('row.menu')?.getAttribute('data-state')).toBe('open');
-  expect(part('row.menu.back')).toBeNull();
-  expect(part('row.menu')?.hasAttribute('data-drilled')).toBe(false);
+  expect(part('row.menu.flyout')?.getAttribute('data-state') ?? 'closed').toBe('closed');
 });
 
 test('a submenu that folds away while open leaves the top level, and one Escape closes_v1_786_submenu_gone', async () => {

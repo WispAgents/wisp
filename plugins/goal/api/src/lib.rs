@@ -32,6 +32,24 @@ pub struct SetArgs {
     #[serde(default, skip_serializing_if = "String::is_empty")]
     #[ts(optional, as = "Option<String>")]
     pub vote: String,
+    /// a declared goal by name (`goals:` in a formula, ADR-0110): its text, judges, vote and round limit, under the
+    /// judges and vote given here. A `text` that is exactly a declared goal's name is that goal too (`wisp goal set
+    /// <task> green-build`). Additive (2026-11-19).
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    #[ts(optional, as = "Option<String>")]
+    pub name: String,
+}
+
+/// `goal.declared`: the goals declared by name (`goals:` in a formula), without `goals.default`, each as stored (its
+/// own fields; the defaults fill the rest when it's judged). Read-only; for the composer's Goal… menu, `wisp goal
+/// declared` and agents. Additive (2026-11-19, ADR-0110).
+#[derive(Debug)]
+pub struct Declared;
+impl Command for Declared {
+    const ID: &'static str = "goal.declared";
+    const READ_ONLY: bool = true;
+    type Args = serde_json::Value;
+    type Out = serde_json::Value;
 }
 
 /// `goal.pause` / `goal.resume` / `goal.drop` / `goal.check`: a task's goal held, going again, gone, or judged now.
@@ -103,6 +121,16 @@ pub struct GoalState {
     pub judges: Option<Vec<String>>,
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub vote: String,
+    /// the round limit of the declared goal `goal.set` named, over the spec's (ADR-0110). Additive (2026-11-19).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_rounds: Option<u32>,
+    /// whether that declared goal's judges run in a sandbox (ADR-0047, ADR-0110). Additive (2026-11-19).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sandbox: Option<bool>,
+    /// the declared goal `goal.set` named (ADR-0110), '' for a goal in words: the task's list row names it, and New
+    /// task's Goal… puts the ones this project used most recently first (owner-list #63). Additive (2026-11-20).
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub name: String,
     /// the agent's own wake-up (a `wisp.later` entry) the goal waits for before it's checked (v1 #775). Additive.
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub wake: String,

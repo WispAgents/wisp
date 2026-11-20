@@ -150,6 +150,16 @@ turn. When a screen or feature contradicts one, that's a bug: fix it toward the 
   the panel is too narrow (design/layout.md priorities). Counts stay (Changes' file count, PR's number and checks).
   **Replaces UX 2026-11-18 desktop #5's "tabs only when they have something, the rest behind +".** Audit:
   docs/qa/audit-side-panel.md.
+- **Goals are declared by name, and `default:` gives every goal and every task its defaults** (owner, 2026-11-19: "In
+  goals I expect the user to declare goals and reference them later on; also we have a `default:` in tasks which will
+  have defaults for all tasks", and "when running a task the user should be able to attach the goal there: --goal
+  <goal_id>"; owner-list row 60). `goals: { default: { judges, vote, maxRounds }, <name>: { text, … } }` replaces the
+  singleton `goal:` (unreleased, no compat); `tasks: { default: { … }, <name>: { goal: <name> | { text: … } } }`, a
+  task's own fields win, `tasks.default` never runs and every run of a `tasks:` entry takes it (by hand, schedule,
+  trigger `task:`; not `wisp "…"`, New task or a crew job); `wisp validate` names an unknown goal ("no goal named X:
+  goals has a, b"); attach one by name with `wisp "…" --goal <name>` (`--goal-text` for words), `wisp goal set <task>
+  <name>`, `wisp_launch`'s `goal`, and Goal… in New task and the reply box (the declared goals by name, then New
+  goal…). ADR-0110.
 - **Submenus open on hover on desktop; drill-in stays on touch** (owner, 2026-11-17: "in desktop, I don't like that I need
   to click to go to a submenu, they should show up on hover"). With a hovering fine pointer in the browser, a submenu (the
   task row's View ›, Copy ›, Files ›) is a flyout beside its row, the standard cascading menu: it opens on hover after a

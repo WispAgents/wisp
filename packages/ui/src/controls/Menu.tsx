@@ -6,7 +6,10 @@
 // platform's shape (M3 menu, iOS pull-down: the look's stylesheet); a ContextMenu opens on a long-press (the caller's
 // gesture dispatches its contextmenu: Swipe's onLongPress) as Android's bottom sheet of the actions with *Select*
 // first, or iOS's context menu with the pressed row as its preview (./phone.tsx, loaded apart: ./phone-part.ts).
-import { createEffect, createSignal, Show, untrack, type Accessor, type JSX } from 'solid-js';
+// The browser on a touch-first or narrow screen (a coarse pointer, or under the phone breakpoint; owner 2026-11-19): every
+// menu opens as a bottom sheet instead, a submenu drilling in place under a back row (./phone.tsx's PhoneMenu in the web
+// look, the same chunk, so a desktop's first page never loads it). Side flyouts stay for a fine pointer on a wide screen.
+import { createEffect, createSignal, on, Show, untrack, type Accessor, type JSX } from 'solid-js';
 import { sub, type KitProps, type PartName, type WithChildren } from '../core/props.ts';
 import { Icon } from '../content/Icon.tsx';
 import type { IconName } from '../content/icons.ts';
@@ -15,10 +18,29 @@ import { lazyPart, warm, type Replay } from './lazy-part.ts';
 import { usePlatform } from '../platform/PlatformLook.tsx';
 import { phoneOverlays } from './phone-part.ts';
 
-export { menuSections, type MenuEntry, type MenuGroup, type MenuItem, type MenuSeparator, type MenuSubmenu } from './menu-entries.ts';
+export { menuSections, type MenuEntry, type MenuFilter, type MenuGroup, type MenuItem, type MenuSeparator, type MenuSubmenu } from './menu-entries.ts';
 import type { MenuEntry } from './menu-entries.ts';
 
 const machine = lazyPart(() => import('./menu-machine.tsx'));
+
+import { SHEET_SCREEN } from './menu-entries.ts';
+export { SHEET_SCREEN };
+
+/** one listener for every menu on the page (a list's rows each have one), made at the first menu's first read (again
+ *  only if the page's matchMedia is another: a test's stand-in) */
+const sheetScreen: { current?: { readonly from: unknown; readonly on: Accessor<boolean> } } = {};
+/** Whether this screen opens the browser's menus as a sheet, following the window as it's resized or turned. */
+export function onSheetScreen(): boolean {
+  const mm = globalThis.matchMedia as typeof globalThis.matchMedia | undefined;
+  let screen = sheetScreen.current;
+  if (!screen || screen.from !== mm) {
+    const mq = typeof mm === 'function' ? mm(SHEET_SCREEN) : undefined;
+    const [on, set] = createSignal(mq?.matches ?? false);
+    mq?.addEventListener?.('change', () => set(mq.matches));
+    screen = sheetScreen.current = { from: mm, on };
+  }
+  return screen.on();
+}
 
 export type Placement = 'bottom-start' | 'bottom-end' | 'bottom' | 'top-start' | 'top-end' | 'top' | 'right-start' | 'left-start';
 
@@ -37,6 +59,9 @@ export interface MenuBaseProps extends KitProps {
   readonly onSelect: (value: string) => void;
   readonly open?: boolean;
   readonly onOpenChange?: (open: boolean) => void;
+  /** the pointer or the focus reached its trigger before its machine was there, and each time it opens: what its rows
+   *  need, fetched then (Goal…'s code and goals). Additive (2026-11-20). */
+  readonly onWarm?: () => void;
 }
 
 export interface MenuProps extends MenuBaseProps {
@@ -63,15 +88,19 @@ export type MenuPlace = Pick<MenuProps, 'placement' | 'below' | 'from'>;
 /** The trigger's props until the machine binds, then the machine's; and the machine itself, once it's loaded. `phone`:
  * a ContextMenu in the phone apps binds the phone chunk's stand-in (the same props) instead of Zag's. */
 function useLazyMenu(props: MenuBaseProps & MenuPlace, part: () => PartName, at?: 'pointer', phone?: boolean) {
-  const lazy = phone ? phoneOverlays : machine;
+  const look = usePlatform();
+  // the phone chunk's machine: a phone's long-press menu, or any menu of the browser's on a sheet screen
+  const lazy = (): typeof machine | typeof phoneOverlays => (phone || (look() === 'web' && onSheetScreen()) ? phoneOverlays : machine);
   const [bound, setBound] = createSignal<Accessor<Record<string, unknown>>>();
   const [pending, setPending] = createSignal<Replay>();
+  // a window resized across the line: the trigger is the other machine's from now on (unbound until it's there)
+  createEffect(on(lazy, () => setBound(undefined), { defer: true }));
   let area: HTMLElement | undefined;
   const press = (p: Replay): void => {
     setPending(p);
-    lazy.load().catch(() => setPending(undefined));
+    lazy().load().catch(() => setPending(undefined));
   };
-  const early = warm(lazy);
+  const early = (): void => (props.onWarm?.(), warm(lazy())());
   // controlled open: the machine follows `open` as soon as it's there
   createEffect(() => {
     if (props.open) early();
@@ -102,15 +131,20 @@ function useLazyMenu(props: MenuBaseProps & MenuPlace, part: () => PartName, at?
           },
         };
   const trigger = (): Record<string, unknown> => bound()?.() ?? plain();
+  const bind = (b: Accessor<Record<string, unknown>>): void => {
+    setBound(() => b);
+    setPending(undefined);
+  };
   const content = (): JSX.Element => (
-    <Show when={lazy.ready()}>
+    <Show when={lazy().ready()} keyed>
       {(m) => {
-        const M = m().MenuMachine;
+        // read now: `bind` clears it as the machine binds, before the machine reads its props
         const p = untrack(pending);
-        return <M base={props} part={part()} bind={(b) => setBound(() => b)} pending={p} {...(at ? { at, area: () => area } : {})} />;
+        return <m.MenuMachine base={props} part={part()} bind={bind} pending={p} {...(at ? { at, area: () => area } : {})} />;
       }}
     </Show>
   );
+
   return { trigger, content, setArea: (el: HTMLElement) => (area = el) };
 }
 

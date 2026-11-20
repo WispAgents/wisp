@@ -351,7 +351,7 @@ triggers:
 recipes:
   - name: fix-issue
     prompt: Fix issue {{n}}
-goal: {{ judges: [reviewer], vote: majority }}
+goals: {{ default: {{ judges: [reviewer], vote: majority }} }}
 budget: {{ stopAt: \"75\" }}
 pipelines:
   - name: careful

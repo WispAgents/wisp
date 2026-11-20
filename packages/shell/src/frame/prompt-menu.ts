@@ -13,10 +13,11 @@ export interface MenuAt {
   readonly query: string;
 }
 
-/** The menu the caret is in: `/word` at the very start (a command, v1), `@words` after a space or the start. */
+/** The menu the caret is in: `/word` at the very start (a command, v1), its one word after it (`/goal gre`: query
+ *  `goal gre`, what a source suggests for the command's argument: owner-list #63), `@words` after a space or the start. */
 export function menuAt(text: string, caret: number): MenuAt | null {
   const before = text.slice(0, caret);
-  const slash = /^\/(\S*)$/.exec(before);
+  const slash = /^\/(\S*)$/.exec(before) ?? /^\/([a-z][\w-]* \S*)$/i.exec(before);
   if (slash) return { trigger: '/', start: 0, query: slash[1] ?? '' };
   const at = /(^|\s)@([^\s@]*)$/.exec(before);
   if (at) return { trigger: '@', start: caret - (at[2] ?? '').length - 1, query: at[2] ?? '' };

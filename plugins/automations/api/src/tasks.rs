@@ -13,7 +13,8 @@ use wisp_kernel::Command;
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct TaskDecl {
-    /// what to do; `{param}` is filled from the run's values
+    /// what to do; `{param}` is filled from the run's values (every task but `tasks.default` has one)
+    #[serde(default)]
     pub prompt: String,
     /// its name as you wrote it ("Run tests"), shown on its chip, when the name (a key: `wisp recipes run run-tests`)
     /// can't hold it (a v1 recipe, audit D11). Additive (2026-11-19).
@@ -38,7 +39,9 @@ pub struct TaskDecl {
     /// run in a worktree of its own
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub worktree: Option<bool>,
-    /// `{ text: tests pass }`: the goal judged after each turn
+    /// the goal judged after each turn: a declared goal's name (`green-build`, from `goals:`), or inline
+    /// (`{ text: tests pass, judges: [reviewer] }`); `{ name: green-build, maxRounds: 3 }` is the declared one with
+    /// its own limit
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub goal: Option<Value>,
     /// the Notes it starts with (ADR-0097): `{ goal: …, constraints: [...] }`, kept by wisp.threads
@@ -55,6 +58,57 @@ pub struct TaskDecl {
     /// paused: its schedule doesn't fire (it still runs by hand)
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub paused: bool,
+}
+
+/// The name that holds every task's defaults (ADR-0110): never a task of its own, never run.
+pub const DEFAULT: &str = "default";
+
+/// The fields `tasks.default` can't give: they're each task's own (what it does, when it runs by itself).
+pub const OWN_FIELDS: [&str; 5] = ["prompt", "title", "steps", "schedule", "paused"];
+
+/// The problems of `tasks.default`'s spec: a field that is each task's own.
+pub fn default_problems(spec: &Value) -> Vec<String> {
+    OWN_FIELDS
+        .iter()
+        .filter(|k| {
+            spec.get(**k).is_some_and(|v| {
+                !v.is_null() && v != &Value::Bool(false) && v.as_str() != Some("") && v.as_array().is_none_or(|a| !a.is_empty())
+            })
+        })
+        .map(|k| format!("tasks.default gives every task its defaults: {k} is each task's own"))
+        .collect()
+}
+
+/// `t` with `tasks.default`'s fields under its own: a field the task gives wins, one it leaves out is the default's
+/// (`d`'s own fields, [`OWN_FIELDS`], never come from it).
+pub fn with_defaults(t: &TaskDecl, d: &TaskDecl) -> TaskDecl {
+    let (Ok(Value::Object(mut base)), Ok(Value::Object(own))) = (serde_json::to_value(d), serde_json::to_value(t)) else {
+        return t.clone();
+    };
+    for k in OWN_FIELDS {
+        base.remove(k);
+    }
+    base.extend(own);
+    serde_json::from_value(Value::Object(base)).unwrap_or_else(|_| t.clone())
+}
+
+/// The goal a task names, as `runtime.create` takes it: a string in a task is a declared goal's name (`{ name }`,
+/// checked by wisp.goal when the task is made); an object is as written.
+pub fn goal_arg(goal: Option<&Value>) -> Option<Value> {
+    match goal? {
+        Value::String(s) if !s.trim().is_empty() => Some(serde_json::json!({ "name": s.trim() })),
+        Value::String(_) | Value::Null => None,
+        v => Some(v.clone()),
+    }
+}
+
+/// The declared goal a task names (`goal: green-build` or `{ name: green-build, … }`), for `wisp validate` to check.
+pub fn goal_ref(goal: Option<&Value>) -> Option<String> {
+    match goal? {
+        Value::String(s) => Some(s.trim().to_owned()).filter(|s| !s.is_empty()),
+        Value::Object(o) => o.get("name").and_then(Value::as_str).map(str::trim).filter(|s| !s.is_empty()).map(str::to_owned),
+        _ => None,
+    }
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
@@ -137,6 +191,36 @@ command!(TaskRun = "automations.task.run" ["automations:run"] : RunTask => Value
 #[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
+
+    /// ADR-0110: `tasks.default`'s fields under every task's own; what's each task's own never comes from it.
+    #[test]
+    fn a_tasks_own_fields_win_over_tasks_default() {
+        let d: TaskDecl = serde_json::from_value(
+            serde_json::json!({ "agent": "builder", "mode": "auto", "worktree": true, "goal": "green-build", "connectors": ["linear"] }),
+        )
+        .unwrap();
+        let t: TaskDecl = serde_json::from_value(serde_json::json!({ "prompt": "fix it", "mode": "plan", "worktree": false })).unwrap();
+        let m = with_defaults(&t, &d);
+        assert_eq!((m.prompt.as_str(), m.agent.as_str(), m.mode.as_str(), m.worktree), ("fix it", "builder", "plan", Some(false)));
+        assert_eq!((m.goal.clone(), m.connectors.clone()), (Some(serde_json::json!("green-build")), vec!["linear".to_owned()]));
+        let d2 = TaskDecl { schedule: "0 2 * * *".into(), steps: vec!["more".into()], ..d.clone() };
+        let m = with_defaults(&t, &d2);
+        assert!(m.schedule.is_empty() && m.steps.is_empty(), "a default never schedules every task or adds steps");
+        assert_eq!(
+            default_problems(&serde_json::json!({ "agent": "a", "schedule": "0 2 * * *", "prompt": "" })),
+            ["tasks.default gives every task its defaults: schedule is each task's own"]
+        );
+        assert_eq!(default_problems(&serde_json::to_value(&d).unwrap()), Vec::<String>::new());
+    }
+
+    #[test]
+    fn a_tasks_goal_by_name_or_inline() {
+        assert_eq!(goal_arg(Some(&serde_json::json!("green-build"))), Some(serde_json::json!({ "name": "green-build" })));
+        assert_eq!(goal_arg(Some(&serde_json::json!({ "text": "tests pass" }))), Some(serde_json::json!({ "text": "tests pass" })));
+        assert_eq!(goal_arg(Some(&serde_json::json!(" "))), None);
+        assert_eq!(goal_ref(Some(&serde_json::json!({ "name": "g", "maxRounds": 2 }))).as_deref(), Some("g"));
+        assert_eq!(goal_ref(Some(&serde_json::json!({ "text": "inline" }))), None);
+    }
 
     #[test]
     fn params_fill_in_order() {

@@ -88,6 +88,8 @@ launch options: --mode plan|edits|auto  --agent claude|codex|opencode|cursor|ant
                 --cwd DIR  --also DIR (repeatable)  --wait  --json  --no-worktree  --compare agent[:model],…: one task per harness
                 --try subagents=haiku|sonnet|task  --try skills=off  run it twice on --agent, the second with
                 that changed (repeatable or comma separated); Compare says what differed
+                --goal NAME  keep going until a goal declared by name (goals: in a formula) is met
+                --goal-text \"…\"  the same with what done means in words
                 --yes  go ahead although it takes a usage window past your Ask near the limit line
 options:        --port N  --browser  --no-open  --json  --version";
 
@@ -156,6 +158,10 @@ pub struct Flags {
     pub worktree: Option<bool>,
     pub compare: Option<Vec<CompareRun>>,
     pub tries: Vec<String>,
+    /// `--goal <name>`: a goal declared by name (`goals:` in a formula, ADR-0110)
+    pub goal: Option<String>,
+    /// `--goal-text "…"`: what done means, in words (as `/goal …` in the prompt)
+    pub goal_text: Option<String>,
     pub draft: bool,
     pub days: Option<u32>,
     /// `--on <machine>`: the command runs on that peer (ADR-0041)
@@ -204,6 +210,8 @@ impl Flags {
             worktree: None,
             compare: None,
             tries: Vec::new(),
+            goal: None,
+            goal_text: None,
             draft: false,
             days: None,
             on: None,
@@ -388,6 +396,8 @@ fn set(f: &mut Flags, a: &str, value: &mut dyn FnMut() -> Result<String, UsageEr
         "--worktree" => f.worktree = Some(true),
         "--compare" => f.compare = Some(compare_list(&value()?)),
         "--try" => f.tries.push(value()?),
+        "--goal" => f.goal = Some(value()?),
+        "--goal-text" => f.goal_text = Some(value()?),
         "--draft" => f.draft = true,
         "--on" => f.on = Some(value()?),
         "--all" => f.all = true,

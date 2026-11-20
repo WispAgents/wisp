@@ -408,6 +408,18 @@ export function shellUi(ctx: ShellContext): PluginUiDef {
         component: lazy(() => import('./frame/Compare.tsx')),
         title: () => ctx.t('shell.compare.title'),
       }),
+      // All goals… / All recipes…: every row of a menu that grows with the formula, searched (owner-list #63)
+      defineView({
+        kind: 'shell.pick',
+        slot: 'overlay',
+        overlay: 'dialog',
+        bare: true,
+        part: 'shell.pick',
+        // its rows stay in ./frame/pick-list.ts (lazy) under this key
+        parse: (p) => ({ key: String((p as { key?: unknown } | null)?.key ?? '') }),
+        component: lazy(() => import('./frame/PickList.tsx')),
+        title: () => ctx.t('shell.home.goalRow'),
+      }),
       defineView({ kind: 'shell.devtools', slot: 'overlay', overlay: 'viewer', parse: none, component: Inspector, title: () => ctx.t('shell.diag.title') }),
     ],
     settings: [

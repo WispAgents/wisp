@@ -240,12 +240,15 @@ pub async fn completions(c: &Client, cat: &Catalogue, shell: Option<&String>) ->
     let kinds = c.cmd("resources.kinds", json!({})).await.ok();
     let mut export = strings(kinds.as_ref(), "section");
     export.extend(["--format", "--out", "--include", "--with-deps", "--single-file"].map(str::to_owned));
+    // `--goal <TAB>`: the goals declared by name (`goals:` in a formula, ADR-0110; none from a wisp without wisp.goal)
+    let goals = c.cmd("goal.declared", json!({})).await.ok();
     let extra = completions::Extra {
         groups: crate::words::group_verbs(),
         agents: strings(agents.as_ref(), "id"),
         settings: strings(settings.as_ref(), "key"),
         values,
         after: vec![("export".to_owned(), export)],
+        goals: strings(goals.as_ref(), "name"),
     };
     let Some(s) = shell.and_then(|sh| completions::script_with(sh, cat, &crate::args::COMMANDS, &extra)) else {
         eprintln!("  ✗ wisp completions zsh|bash|fish");

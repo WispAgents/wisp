@@ -82,11 +82,56 @@ A judge is a harness (`codex`), a harness with its model and effort (`claude/opu
 </TabItem>
 </Tabs>
 
-In a formula, the goal lives with the task or the workflow:
+In a formula, `goals.default` holds every goal's judges, vote and round limit (see below).
+
+## Declare goals by name
+
+Write a goal once and use it by name: from a task in a formula, from the command line, from your agent, or from the
+app. `goals.default` is what every goal takes when it doesn't say (its judges, how they vote, its round limit); a
+goal's own fields win.
 
 ```yaml
-goal: { judges: [reviewer, codex], vote: all, maxRounds: 8 }
+# .wisp/goals.wisp.yml
+goals:
+  default: { judges: [reviewer], vote: majority, maxRounds: 6 }   # every goal's defaults
+  green-build: { text: "npm test passes and the build is green", judges: [reviewer, codex] }
+  docs-clean: { text: "the docs build with no broken links" }
+tasks:
+  fix-build: { prompt: Make the build pass, goal: green-build }   # a goal by name
+  tidy: { prompt: Tidy up the code, goal: { text: "the linter is quiet" } }   # or inline
 ```
+
+`wisp validate` names a goal that isn't declared (`tasks.fix-build: no goal named green-buld: goals has docs-clean,
+green-build`), before anything runs. `default` is never a goal of its own, and has no text. A task gets the goal as
+it is declared when the task starts.
+
+<Tabs syncKey="way">
+<TabItem label="Desktop app">
+On **New task**, open **+** → **Goal…**: the declared goals are listed by name, each with what done means, then
+**New goal…** to write your own. A declared goal fills the *Done when* line and the chip says its name
+(**Goal: green-build**); change the words and it's your own goal instead. In a task's reply box, **+** → **Goal…**
+sets one on the task the same way.
+
+In the browser (`wisp --browser`, or your cloud wisp) it's the same window, menus and keys.
+</TabItem>
+<TabItem label="Phone app">
+Tap **New task**, then **+** → **Goal…** and pick a declared goal by name, or **New goal…**. In a task, the reply
+bar's **+** → **Goal…** does the same.
+</TabItem>
+<TabItem label="TUI">
+Start a task with a declared goal by sending `wisp "Make the build pass" --goal green-build` from any reply box
+(**i**). On the open task, send `/goal set green-build`: a declared goal's name is that goal.
+</TabItem>
+<TabItem label="CLI">
+```sh
+wisp "Make the build pass" --goal green-build       # a declared goal, by name
+wisp "Fix the flaky test" --goal-text "the test passes 50 times in a row"   # or in words
+wisp goal set <id> green-build                      # on a task already started
+wisp goal declared                                  # the goals declared here
+```
+`--goal` with a name no goal has is refused, and says which goals there are.
+</TabItem>
+</Tabs>
 
 ## While it runs
 
@@ -123,4 +168,5 @@ request when the goal is met, or tell a crew member when it isn't.
 ## From your own agent
 
 Your harness can set goals too, through wisp's MCP tools (see [MCP from your harness](../mcp-from-your-harness/)).
-Ask it: "start a wisp task to fix the flaky test, with the goal *the test passes 50 times in a row*".
+Ask it: "start a wisp task to fix the flaky test, with the goal *the test passes 50 times in a row*", or "… with the
+goal green-build": `wisp_launch`'s `goal` takes a declared goal's name or words.

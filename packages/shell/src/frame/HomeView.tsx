@@ -31,7 +31,8 @@ import { newRun, runWords, sameSetup, settingModel, trialVary, variantWords, typ
 import { modelWord, useHarnessRows, type Runner, useDefaultWords } from './runner.ts';
 import { usePlanRing } from './plan-ring.ts';
 import { AUTO_SETTING, LAUNCH_SETTING, autoEnabled, readLaunch, startRunner, withPick, type LaunchPick } from './launch-pick.ts';
-import { goalGate, goalOf, goalSent, isBareGoal, typedInFull, type HomeGoal } from './goal-gate.ts';
+import { goalGate, goalOf, goalSent, goalWire, isBareGoal, typedInFull, type DeclaredGoal, type HomeGoal } from './goal-gate.ts';
+import { useGoalKit } from './goal-kit.ts';
 import { isFeedback } from './feedback.ts';
 import { autoPick, neverRule, runnerParts, runnerPick, overrideOf, PREVIEW_DEBOUNCE, type AutoPreview } from './auto.ts';
 // what will Auto run (v1 openPop): its own chunk, drawn only when Auto's pick is pressed
@@ -263,6 +264,11 @@ export function HomeView(props: { readonly onBack?: () => void }): JSX.Element {
     shell.client.drafts.set(draftKey, 'goal', draftValue(g.text));
   };
   const goal = (): string | undefined => goalOf(homeGoal());
+  // a goal declared by name (`goals:`, ADR-0110), picked from Goal…: sent by name while Done when still reads its text
+  const [picked, setPicked] = createSignal<DeclaredGoal>();
+  const sentGoal = (g: string): string | { readonly name: string } => goalWire(g, picked()) ?? g;
+  // a goal another peer declared is no goal here: a new place forgets the pick (Done when keeps its words)
+  createEffect(on(target, () => (setPicked(undefined), goals.reset(), goals.warm()), { defer: true }));
   const setGoal = (v: string | undefined): void => {
     if (v === undefined) setGoalOn(false);
     else putGoal({ on: true, text: v });
@@ -462,7 +468,7 @@ export function HomeView(props: { readonly onBack?: () => void }): JSX.Element {
       // Auto's 'model' is its goal, the router's own: never sent as a model
       ...(agent() !== 'auto' && model() && { model: model() }),
       ...(effort() && { effort: effort() }),
-      ...(g && { goal: g }),
+      ...(g && { goal: sentGoal(g) }),
       ...(w ? { at: whenAt(w, now()) } : through?.kind === 'wait' ? { at: through.at } : {}),
     };
     const pc = shell.client.plugin('shell');
@@ -526,7 +532,7 @@ export function HomeView(props: { readonly onBack?: () => void }): JSX.Element {
             projectId: p.id,
             ...(p.color && { color: p.color }),
             ...(dirs.length > 0 && { dirs }),
-            ...(g && { goal: g }),
+            ...(g && { goal: sentGoal(g) }),
             ...(attachments.length > 0 && { attachments }),
             ...(model() && { model: model() }),
             ...(effort() && { effort: effort() }),
@@ -563,7 +569,7 @@ export function HomeView(props: { readonly onBack?: () => void }): JSX.Element {
           at: Date.now(),
           ...(p && { cwd, projectId: p.id, color: p.color, worktree: worktree() }),
           ...(dirs.length > 0 && { dirs }),
-          ...(g && { goal: g }),
+          ...(g && { goal: sentGoal(g) }),
           ...(attachments.length > 0 && { attachments }),
           ...(agent() !== 'auto' && model() && { model: model() }),
           ...(agent() !== 'auto' && effort() && { effort: effort() }),
@@ -808,12 +814,36 @@ export function HomeView(props: { readonly onBack?: () => void }): JSX.Element {
       harnesses().map((h) => h.id),
     ) !== undefined;
   const setWorktree = (on: boolean): void => void shell.client.commands.run(setSetting, { peer: home, key: WORKTREE_KEY, value: on ? 'on' : 'off' }).catch(() => undefined);
+  // Goal…: the peer's declared goals (recent in this project first, then A–Z; past seven a filter and All goals…), then a
+  // new one to write; with none declared, straight to Done when. Its code and the goals are fetched as `+` is warmed or
+  // pressed, never with the first screen (ADR-0105)
+  const goals = useGoalKit(shell, target);
+  const declared = (): readonly DeclaredGoal[] => goals.declared();
+  const newGoal = (): void => (setPicked(undefined), setGoalOn(true), queueMicrotask(() => goalInput?.focus()));
+  const takeGoal = (g: DeclaredGoal): void => {
+    setPicked(g);
+    putGoal({ on: true, text: g.text });
+    queueMicrotask(() => input?.focus());
+  };
+  const goalRowAct = (): Act =>
+    goals.kit()?.goalAct({ shell, declared: declared(), recent: () => goals.kit()?.recentGoals(sessions(), projects(), project()?.id) ?? [], t, take: takeGoal, fresh: newGoal }) ?? { onClick: newGoal };
+  // Recipes: the project's recipes, capped and filtered as Goal… is once the menu's code is here
+  const recipeRowAct = (): Act => {
+    const rows = recipes.items().map((r) => ({ value: `recipe:${r.id}`, label: r.label }));
+    const run = (v: string): void => recipes.items().find((r) => `recipe:${r.id}` === v)?.act.onClick?.();
+    return (
+      goals.kit()?.recipeAct({ shell, rows, newLabel: t('shell.home.recipesNew'), t, run, fresh: newRecipeAct.onClick }) ?? {
+        menu: { items: [...rows, { value: 'recipe:new', label: t('shell.home.recipesNew'), icon: 'plus' as const }], onSelect: (v) => (v === 'recipe:new' ? newRecipeAct.onClick() : run(v)) },
+      }
+    );
+  };
   const plus = (): LauncherTool =>
     plusTool({
       part: 'launcher.plus',
       label: t('shell.home.plus'),
       title: t('shell.home.plusTitle'),
       refocus: () => input?.focus(),
+      onWarm: goals.warm,
       sections: [
         [
           { id: 'attach', part: 'launcher.attach', icon: 'clip', label: t('shell.home.attach'), act: attachAct(shell, attach, picking()) },
@@ -823,16 +853,11 @@ export function HomeView(props: { readonly onBack?: () => void }): JSX.Element {
             part: 'launcher.recipes',
             icon: 'bolt',
             label: t('shell.home.recipes'),
-            act: {
-              menu: {
-                items: [...recipes.items().map((r) => ({ value: `recipe:${r.id}`, label: r.label })), { value: 'recipe:new', label: t('shell.home.recipesNew'), icon: 'plus' as const }],
-                onSelect: (v) => (v === 'recipe:new' ? newRecipeAct.onClick() : recipes.items().find((r) => `recipe:${r.id}` === v)?.act.onClick?.()),
-              },
-            },
+            act: recipeRowAct(),
           },
         ],
         [
-          !goalOn() && { id: 'goal', part: 'launcher.goal', icon: 'target', label: t('shell.home.goalRow'), act: { onClick: () => (setGoalOn(true), queueMicrotask(() => goalInput?.focus())) } },
+          !goalOn() && { id: 'goal', part: 'launcher.goal', icon: 'target', label: t('shell.home.goalRow'), act: goalRowAct() },
           team().length === 0 && !delegateOpen() && { id: 'team', part: 'launcher.team', icon: 'agent', label: t('shell.home.delegateRow'), act: { onClick: () => setDelegateOpen(true) } },
           canCompare() && { id: 'compare', part: 'launcher.compare', icon: 'split', label: t('shell.home.compareRow'), act: compareAct },
         ],
@@ -872,6 +897,13 @@ export function HomeView(props: { readonly onBack?: () => void }): JSX.Element {
       },
     });
   };
+  // the chip names a declared goal it sends by name, else what Done when says
+  const goalChipLabel = (): string => {
+    const text = (goalDraft() ?? '').trim();
+    const named = goalWire(goalDraft() ?? '', picked());
+    if (typeof named === 'object') return t('shell.home.goalChip', { text: named.name });
+    return text ? t('shell.home.goalChip', { text }) : t('shell.home.goal');
+  };
   // what's on, after Where: a chip each, cleared in one press (Compare's runs stay in the harness pill with their ×)
   const onChips = (): LauncherTool[] => {
     const team0 = teamTool();
@@ -879,11 +911,11 @@ export function HomeView(props: { readonly onBack?: () => void }): JSX.Element {
     return [
       ...(goalOn()
         ? [
-            tool('goal', 'launcher.goal', 'target', (goalDraft() ?? '').trim() ? t('shell.home.goalChip', { text: (goalDraft() ?? '').trim() }) : t('shell.home.goal'), t('shell.home.goalTitle'), {
+            tool('goal', 'launcher.goal', 'target', goalChipLabel(), t('shell.home.goalTitle'), {
               text: true,
               on: true,
               act: { onClick: () => goalInput?.focus() },
-              clear: { label: t('shell.home.goalOff'), act: { onClick: () => setGoalOn(false) } },
+              clear: { label: t('shell.home.goalOff'), act: { onClick: () => (setPicked(undefined), setGoalOn(false)) } },
             }),
           ]
         : []),

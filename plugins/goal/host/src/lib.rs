@@ -40,6 +40,8 @@ pub struct Goal {
     pub max_rounds: u32,
     /// its judges run in a sandbox of their own, seeded with the task's folder (ADR-0047: `goal.sandbox`)
     pub sandbox: bool,
+    /// the declared goal it is (ADR-0110), '' for a goal in words
+    pub name: String,
 }
 
 pub fn goal_of(spec: &Value, d: &kinds::GoalSpec) -> Option<Goal> {
@@ -61,7 +63,7 @@ pub fn goal_of(spec: &Value, d: &kinds::GoalSpec) -> Option<Goal> {
     let judges = if none_on_purpose {
         own()
     } else {
-        list(g.get("judges")).or_else(|| Some(d.judges.clone()).filter(|j| !j.is_empty())).unwrap_or_else(own)
+        list(g.get("judges")).or_else(|| d.judges.clone().filter(|j| !j.is_empty())).unwrap_or_else(own)
     };
     let vote = g
         .get("vote")
@@ -70,8 +72,40 @@ pub fn goal_of(spec: &Value, d: &kinds::GoalSpec) -> Option<Goal> {
         .or_else(|| Some(d.vote.clone()).filter(|v| !v.is_empty()))
         .unwrap_or_else(|| "majority".into());
     let max_rounds = g.get("maxRounds").and_then(Value::as_u64).and_then(|n| u32::try_from(n).ok()).or(d.max_rounds).unwrap_or(MAX_ROUNDS);
-    let sandbox = g.get("sandbox").and_then(Value::as_bool).unwrap_or(false);
-    Some(Goal { text, judges, vote, max_rounds, sandbox })
+    let sandbox = g.get("sandbox").and_then(Value::as_bool).or(d.sandbox).unwrap_or(false);
+    let name = g.get("name").and_then(Value::as_str).unwrap_or_default().to_owned();
+    Some(Goal { text, judges, vote, max_rounds, sandbox, name })
+}
+
+/// A goal as a task's args give it, with a declared goal it names filled in (ADR-0110): `{ name: green-build, …}` is
+/// that goal, its fields under the ones given beside the name; a string that is a declared goal's name is that goal
+/// too (`goal: green-build` from `wisp_launch`), any other string is what done means. Ok(None): nothing to change.
+///
+/// # Errors
+/// A name no goal has ("no goal named X: goals has a, b").
+pub fn resolve(goal: &Value, named: &std::collections::BTreeMap<String, kinds::GoalSpec>) -> std::result::Result<Option<Value>, String> {
+    let (name, over) = match goal {
+        Value::Object(o) => match o.get("name").and_then(Value::as_str).map(str::trim).filter(|n| !n.is_empty()) {
+            Some(n) => (n.to_owned(), o.clone()),
+            None => return Ok(None),
+        },
+        Value::String(s) if named.contains_key(s.trim()) => (s.trim().to_owned(), serde_json::Map::new()),
+        _ => return Ok(None),
+    };
+    let Some(spec) = named.get(&name) else {
+        return Err(kinds::unknown(&name, &named.keys().cloned().collect::<Vec<_>>()));
+    };
+    let mut out = match serde_json::to_value(spec) {
+        Ok(Value::Object(o)) => o,
+        _ => serde_json::Map::new(),
+    };
+    for (k, v) in over {
+        if k != "name" && !v.is_null() {
+            out.insert(k, v);
+        }
+    }
+    out.insert("name".into(), Value::String(name));
+    Ok(Some(Value::Object(out)))
 }
 
 /// The goal as it stands: `goal.set`'s text over the spec's; none once it was cleared.
@@ -89,6 +123,21 @@ pub fn goal_with(spec: &Value, st: Option<&GoalState>, d: &kinds::GoalSpec) -> O
             if !s.vote.is_empty() {
                 goal["vote"] = Value::String(s.vote.clone());
             }
+            // a declared goal set by name: its round limit too (ADR-0110)
+            if let Some(n) = s.max_rounds {
+                goal["maxRounds"] = json!(n);
+            }
+            if let Some(b) = s.sandbox {
+                goal["sandbox"] = json!(b);
+            }
+            // the goal set after the start is its own: a goal in words set over a declared one names none
+            if let Some(o) = goal.as_object_mut() {
+                if s.name.is_empty() {
+                    o.remove("name");
+                } else {
+                    o.insert("name".into(), Value::String(s.name.clone()));
+                }
+            }
             spec["goal"] = goal;
             goal_of(&spec, d)
         }
@@ -101,9 +150,10 @@ pub const NEXT_WORDS: &str = "Checked when the task's next turn ends; --kick che
 
 /// `goal.set`: the task's goal set, changed (its count starts again) or cleared. `kick`: a task whose last turn
 /// is done is judged on it now (v1 Goals#set: it may already hold); a running one when its turn ends.
-async fn set(ctx: &Ctx, defaults: &kinds::Defaults, live: &Inflight, a: &wisp_goal_api::SetArgs) -> Result<Value> {
+async fn set(ctx: &Ctx, defaults: &kinds::Defaults, named: &kinds::Named, live: &Inflight, a: &wisp_goal_api::SetArgs) -> Result<Value> {
     let call = ctx.root_call();
     let task = task_of(ctx, &call, &a.id).await?;
+    let a = &by_name(a, &named.lock().unwrap_or_else(std::sync::PoisonError::into_inner))?;
     let text = a.text.trim();
     if !text.is_empty() {
         refuse_goal_on(&task)?;
@@ -111,7 +161,16 @@ async fn set(ctx: &Ctx, defaults: &kinds::Defaults, live: &Inflight, a: &wisp_go
     let st = if text.is_empty() {
         GoalState { state: "cleared".into(), ..GoalState::default() }
     } else {
-        GoalState { text: text.to_owned(), judges: a.judges.clone(), vote: a.vote.clone(), ..GoalState::default() }
+        let (max_rounds, sandbox) = if a.name.is_empty() { (None, None) } else { named_limits(named, &a.name) };
+        GoalState {
+            text: text.to_owned(),
+            judges: a.judges.clone(),
+            vote: a.vote.clone(),
+            max_rounds,
+            sandbox,
+            name: a.name.clone(),
+            ..GoalState::default()
+        }
     };
     // the goal it replaced (or cleared) is no longer judged: its judges still running stop (only theirs: a round of
     // the new goal that starts meanwhile goes on)
@@ -138,6 +197,52 @@ async fn set(ctx: &Ctx, defaults: &kinds::Defaults, live: &Inflight, a: &wisp_go
         view["next"] = json!(NEXT_WORDS);
     }
     Ok(view)
+}
+
+/// `goal.set`'s args with a declared goal it names (`name`, or a `text` that is exactly one's name) filled in: that
+/// goal's text, and its judges and vote unless these args give their own; `name` says which it was. ADR-0110.
+///
+/// # Errors
+/// A `name` no goal has.
+pub fn by_name(a: &wisp_goal_api::SetArgs, named: &std::collections::BTreeMap<String, kinds::GoalSpec>) -> Result<wisp_goal_api::SetArgs> {
+    let asked = if a.name.trim().is_empty() { a.text.trim() } else { a.name.trim() };
+    let Some(spec) = named.get(asked) else {
+        if a.name.trim().is_empty() {
+            return Ok(a.clone());
+        }
+        return Err(WireError::not_found(kinds::unknown(asked, &named.keys().cloned().collect::<Vec<_>>())));
+    };
+    let mut out = a.clone();
+    asked.clone_into(&mut out.name);
+    out.text.clone_from(&spec.text);
+    // `judges: []` declared on purpose is no judges (B49), kept as such
+    if out.judges.is_none() {
+        out.judges.clone_from(&spec.judges);
+    }
+    if out.vote.is_empty() {
+        out.vote.clone_from(&spec.vote);
+    }
+    Ok(out)
+}
+
+/// A declared goal's round limit and sandbox, which `goal.set` by name carries beside its text, judges and vote.
+fn named_limits(named: &kinds::Named, name: &str) -> (Option<u32>, Option<bool>) {
+    named.lock().unwrap_or_else(std::sync::PoisonError::into_inner).get(name).map_or((None, None), |g| (g.max_rounds, g.sandbox))
+}
+
+/// `goal.declared`: each declared goal as stored, with its name.
+fn declared(named: &kinds::Named) -> Value {
+    let named = named.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+    Value::Array(
+        named
+            .iter()
+            .map(|(name, g)| {
+                let mut v = serde_json::to_value(g).unwrap_or_else(|_| json!({}));
+                v["name"] = json!(name);
+                v
+            })
+            .collect(),
+    )
 }
 
 /// v1 Goals#set and replyTo: a goal is for a task of your own, never a side discussion's or a subagent's.
@@ -282,6 +387,10 @@ pub fn view_of(spec: &Value, st: Option<&GoalState>, set_at: i64, at: i64, d: &k
     if !st.why.is_empty() {
         view["why"] = Value::String(st.why.clone());
     }
+    // a declared goal by name (ADR-0110): the list row says which, for Goal…'s recent first (owner-list #63)
+    if !g.name.is_empty() {
+        view["name"] = Value::String(g.name.clone());
+    }
     if !st.verdicts.is_empty() {
         view["last"] = json!({ "verdict": if all_met { "met" } else { "not_yet" }, "why": joined, "tally": tally, "votes": votes });
     }
@@ -318,18 +427,23 @@ impl Plugin for GoalPlugin {
     }
 
     fn setup(&self, s: &mut Setup) -> Result<()> {
-        let defaults = crate::kinds::register(s);
+        let (defaults, named) = crate::kinds::register(s);
         let summary: Arc<dyn wisp_runtime_api::points::SummaryField> = Arc::new(Summary { defaults: Arc::clone(&defaults) });
         s.contribute(&wisp_runtime_api::points::SUMMARY, summary);
         // its check records leave masked (ADR-0054)
         s.contribute(&wisp_kernel::egress::VIEWS, Arc::new(crate::egress::RunView(s.ctx())) as Arc<dyn wisp_kernel::egress::RowView>);
         let live = Inflight::default();
-        let (ds, ls) = (Arc::clone(&defaults), live.clone());
+        let (ds, ns, ls) = (Arc::clone(&defaults), Arc::clone(&named), live.clone());
         s.command::<wisp_goal_api::Set, _, _>(move |ctx, _call, a| {
-            let (d, l) = (ds.clone(), ls.clone());
-            async move { set(&ctx, &d, &l, &a).await }
+            let (d, n, l) = (ds.clone(), ns.clone(), ls.clone());
+            async move { set(&ctx, &d, &n, &l, &a).await }
         });
-        crate::slash::register(s);
+        let nd = Arc::clone(&named);
+        s.command::<wisp_goal_api::Declared, _, _>(move |_ctx, _call, _a| {
+            let n = nd.clone();
+            async move { Ok(declared(&n)) }
+        });
+        crate::slash::register(s, named);
         let (dr, lr) = (Arc::clone(&defaults), live.clone());
         s.on_start(|ctx| async move {
             if let Ok(store) = ctx.service::<wisp_store::Store>() {
@@ -385,6 +499,70 @@ impl Plugin for GoalPlugin {
 mod tests {
     use super::*;
 
+    fn declared_goals() -> std::collections::BTreeMap<String, kinds::GoalSpec> {
+        [(
+            "green-build".to_owned(),
+            kinds::GoalSpec {
+                text: "npm test passes".into(),
+                judges: Some(vec!["claude".into()]),
+                max_rounds: Some(3),
+                ..kinds::GoalSpec::default()
+            },
+        )]
+        .into()
+    }
+
+    /// ADR-0110: a goal named is the declared one, its fields under the ones given beside the name; the defaults
+    /// still fill what neither says; a name no goal has is refused, naming what there is.
+    #[test]
+    fn a_named_goal_is_the_declared_one_and_an_unknown_name_is_refused() {
+        let named = declared_goals();
+        let g = resolve(&json!({ "name": "green-build", "vote": "all" }), &named).unwrap().unwrap();
+        assert_eq!(g, json!({ "name": "green-build", "text": "npm test passes", "judges": ["claude"], "maxRounds": 3, "vote": "all" }));
+        let d = kinds::GoalSpec { vote: "majority".into(), max_rounds: Some(6), sandbox: Some(true), ..kinds::GoalSpec::default() };
+        let spec = json!({ "goal": resolve(&json!({ "name": "green-build" }), &named).unwrap().unwrap() });
+        let goal = goal_of(&spec, &d).unwrap();
+        assert_eq!((goal.text.as_str(), goal.vote.as_str(), goal.max_rounds, goal.sandbox), ("npm test passes", "majority", 3, true));
+        // a string that is a declared name is that goal; any other string is what done means
+        assert_eq!(resolve(&json!("green-build"), &named).unwrap().unwrap()["text"], "npm test passes");
+        assert_eq!(resolve(&json!("tests pass"), &named).unwrap(), None);
+        assert_eq!(resolve(&json!({ "text": "inline" }), &named).unwrap(), None);
+        assert_eq!(resolve(&json!({ "name": "nope" }), &named).unwrap_err(), "no goal named nope: goals has green-build");
+    }
+
+    /// Review of ADR-0110: a declared goal's `judges: []` is no judges on purpose (B49), never the defaults'; and a
+    /// goal set by name keeps the declared sandbox and round limit.
+    #[test]
+    fn a_declared_goals_empty_judges_and_sandbox_are_kept() {
+        let (_, named) = kinds::split(vec![("quick".into(), json!({ "text": "x", "judges": [] }))]);
+        let d = kinds::GoalSpec { judges: Some(vec!["reviewer".into()]), ..kinds::GoalSpec::default() };
+        let spec = json!({ "agent": "codex", "goal": resolve(&json!("quick"), &named).unwrap().unwrap() });
+        assert_eq!(goal_of(&spec, &d).unwrap().judges, ["codex"], "its own quick check, not goals.default's judges");
+        let by = by_name(&wisp_goal_api::SetArgs { id: "t".into(), name: "quick".into(), ..Default::default() }, &named).unwrap();
+        assert_eq!(by.judges, Some(vec![]));
+        let st = GoalState { text: "x".into(), sandbox: Some(true), max_rounds: Some(2), ..GoalState::default() };
+        let g = goal_with(&json!({ "agent": "codex" }), Some(&st), &kinds::GoalSpec::default()).unwrap();
+        assert_eq!((g.sandbox, g.max_rounds), (true, 2));
+    }
+
+    #[test]
+    fn goal_set_takes_a_declared_goal_by_name_or_by_its_name_as_text() {
+        let named = declared_goals();
+        let a =
+            |text: &str, name: &str| wisp_goal_api::SetArgs { id: "t".into(), text: text.into(), name: name.into(), ..Default::default() };
+        let by = by_name(&a("", "green-build"), &named).unwrap();
+        assert_eq!(
+            (by.text.as_str(), by.judges.clone(), by.name.as_str()),
+            ("npm test passes", Some(vec!["claude".to_owned()]), "green-build")
+        );
+        assert_eq!(by_name(&a("green-build", ""), &named).unwrap().text, "npm test passes", "`wisp goal set <task> green-build`");
+        assert_eq!(by_name(&a("the tests pass", ""), &named).unwrap().text, "the tests pass", "words stay words");
+        assert!(by_name(&a("", "nope"), &named).unwrap_err().message.contains("no goal named nope"));
+        let own = wisp_goal_api::SetArgs { judges: Some(vec![]), vote: "any".into(), ..a("", "green-build") };
+        let by = by_name(&own, &named).unwrap();
+        assert_eq!((by.judges, by.vote.as_str()), (Some(vec![]), "any"), "the judges and vote given win");
+    }
+
     #[test]
     fn manifest_is_valid() {
         assert_eq!(GoalPlugin.manifest().id, "wisp.goal");
@@ -410,7 +588,7 @@ mod tests {
         let g = goal_with(&spec, Some(&plain), &d).unwrap();
         assert_eq!((g.judges.clone(), g.vote.as_str()), (vec!["claude".to_owned()], "majority"), "the spec's when none were chosen");
         // B49: cleared on purpose, the task's own quick check, not the spec's or the defaults
-        let d = kinds::GoalSpec { judges: vec!["reviewer".into()], ..kinds::GoalSpec::default() };
+        let d = kinds::GoalSpec { judges: Some(vec!["reviewer".into()]), ..kinds::GoalSpec::default() };
         let none = GoalState { text: "it works".into(), judges: Some(Vec::new()), ..GoalState::default() };
         assert_eq!(goal_with(&spec, Some(&none), &d).unwrap().judges, vec!["codex".to_owned()], "no judges: the agent's own check");
     }
@@ -422,6 +600,22 @@ mod tests {
         let boxed = goal_of(&json!({ "goal": { "text": "tests pass", "judges": ["claude"], "sandbox": true } }), &d).unwrap();
         assert!(boxed.sandbox);
         assert!(!goal_of(&json!({ "goal": "tests pass" }), &d).unwrap().sandbox);
+    }
+
+    /// Owner-list #63: a task's list row names the declared goal it was given (by name at its start, or by `goal.set`),
+    /// so New task's Goal… can put the ones its project used most recently first; a goal in words set over it names
+    /// none.
+    #[test]
+    fn goal_summary_names_the_declared_goal_it_was_given() {
+        let d = kinds::GoalSpec::default();
+        let started = json!({ "goal": { "name": "green-build", "text": "npm test passes" }, "agent": "claude" });
+        assert_eq!(view_of(&started, None, 10, 20, &d).unwrap_or_default()["name"], "green-build", "started by name");
+        let set = GoalState { text: "the docs build".into(), name: "docs-clean".into(), ..GoalState::default() };
+        assert_eq!(view_of(&started, Some(&set), 10, 20, &d).unwrap_or_default()["name"], "docs-clean", "set by name after");
+        let words = GoalState { text: "it works on a phone".into(), ..GoalState::default() };
+        let v = view_of(&started, Some(&words), 10, 20, &d).unwrap_or_default();
+        assert_eq!((v["text"].clone(), v.get("name")), (json!("it works on a phone"), None), "a goal in words names none");
+        assert_eq!(view_of(&json!({ "goal": "tests pass" }), None, 1, 2, &d).unwrap_or_default().get("name"), None);
     }
 
     /// The GUI's goal band reads `summary.goal`: a task with a goal says where it stands, judged or not.
@@ -530,7 +724,12 @@ mod tests {
 
     #[test]
     fn the_goal_takes_the_defaults_under_its_own() {
-        let d = kinds::GoalSpec { judges: vec!["reviewer".into()], vote: "all".into(), max_rounds: Some(2) };
+        let d = kinds::GoalSpec {
+            judges: Some(vec!["reviewer".into()]),
+            vote: "all".into(),
+            max_rounds: Some(2),
+            ..kinds::GoalSpec::default()
+        };
         assert_eq!(goal_of(&json!({ "agent": "fixer" }), &d), None);
         let g = goal_of(&json!({ "goal": { "text": "tests pass" } }), &d).unwrap_or_else(|| unreachable!());
         assert_eq!((g.judges, g.vote.as_str(), g.max_rounds), (vec!["reviewer".to_owned()], "all", 2));

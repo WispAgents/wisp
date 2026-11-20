@@ -1,0 +1,23 @@
+/* A submenu's filter box (./controls/menu-filter.tsx, owner-list #63): one line over the rows, the search glyph at its
+   start, as wide as the menu; it stays put while the rows under it narrow. Loaded with the menus' machines. */
+@layer kit {
+  [data-kit='menu-filter'] {
+    display: flex; align-items: center; gap: var(--space-3); margin: 0 0 var(--space-2); padding: 0 var(--space-5);
+    min-height: var(--size-control-md); border-bottom: var(--size-hairline) solid var(--line);
+  }
+  [data-kit='menu-filter'] > [data-kit='icon'] { flex: none; color: var(--faint); }
+  [data-kit='menu-filter'] > input {
+    flex: 1; min-width: 0; padding: 0; border: 0; outline: 0; background: transparent;
+    font: inherit; font-size: var(--fs-md); color: var(--ink);
+  }
+  [data-kit='menu-filter'] > input::placeholder { color: var(--faint); }
+  [data-kit='menu-filter'] > input::-webkit-search-cancel-button { display: none; }
+  /* a flyout keeps the width it opened at while its rows narrow (menu-flyout.tsx sets --menu-w as typing starts) */
+  [data-kit='menu'][data-flyout] { min-width: var(--menu-w, min(var(--size-menu-min), calc(100vw - var(--space-7)))); }
+  [data-kit='menu-filter']:focus-within { border-bottom-color: var(--accent); }
+  @media (pointer: coarse) {
+    [data-kit='menu-filter'] { min-height: var(--size-touch); }
+    /* 16 px at least: iOS zooms the page into a smaller box as it takes the focus */
+    [data-kit='menu-filter'] > input { font-size: max(var(--fs-md), 16px); }
+  }
+}

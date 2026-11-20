@@ -21,7 +21,8 @@ afterEach(() => {
   document.body.innerHTML = '';
 });
 
-const WRITES = /^runtime\.(fork|followUp|create|rename|rerun)$|^goal\.|^crew\.|^automations\.(save|create)/;
+// goal.declared is a read (the reply box's Goal… menu loads it on open, ADR-0110): every other goal.* writes
+const WRITES = /^runtime\.(fork|followUp|create|rename|rerun)$|^goal\.(?!declared$)|^crew\.|^automations\.(save|create)/;
 
 async function openTask(o: { readonly page?: boolean } = {}) {
   const mock = createMockPeer({ epoch: 'e1' });

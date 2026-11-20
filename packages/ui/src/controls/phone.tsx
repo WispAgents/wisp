@@ -10,13 +10,18 @@
 //     choices as a checkmark list (HIG's pushed list for a long set). A choice closes it.
 // Words come from props and the kit's strings (t()); every number from the platform tokens, mirrored here only where
 // the layout must be decided before the menu draws (the iOS row height, separator and width).
-import { createEffect, createMemo, createSignal, For, Match, onCleanup, onMount, Show, Switch, type JSX } from 'solid-js';
+//   - The browser's menus on a touch-first or narrow screen (owner 2026-11-19, Menu.tsx SHEET_SCREEN): PhoneMenu's sheet in
+//     the web look (./menu-sheet.css, loaded with this chunk), opened from a button or a right-click / long-press alike;
+//     a submenu drills in place under its back row, the sheet's height following, focus moving in and back out.
+import { createEffect, createMemo, createSignal, createUniqueId, For, Match, onCleanup, onMount, Show, Switch, untrack, type JSX } from 'solid-js';
 import { Portal } from 'solid-js/web';
 import { flag, sub, type PartName } from '../core/props.ts';
 import { useT } from '../core/i18n.tsx';
 import { Icon } from '../content/Icon.tsx';
 import { Sheet } from './Dialog.tsx';
 import type { MenuEntry, MenuItem, MenuSubmenu } from './menu-entries.ts';
+import { filteredItems, firstMatch } from './menu-filtering.ts';
+import { MenuFilterBox } from './menu-filter.tsx';
 import type { MenuMachineProps } from './menu-machine.tsx';
 import type { ContextMenuProps } from './Menu.tsx';
 import type { SelectOption } from './Select.tsx';
@@ -29,6 +34,7 @@ import { GESTURE_SLOP, LONG_PRESS_MS } from '../gestures/gesture-math.ts';
 import type { GestureHost } from '../gestures/host.tsx';
 import { markGesture } from '../gestures/use.ts';
 import { pressTimers, type Schedule } from '../gestures/press-scope.ts';
+import '../css/menu-sheet.css';
 
 // the iOS tokens the context menu's place needs before it draws (ios.json: ctx-row-h, ctx-w, ctx-gap)
 const IOS_ROW = 44;
@@ -37,7 +43,8 @@ const IOS_W = 250;
 const IOS_GAP = 8;
 
 export interface PhoneMenuProps {
-  readonly look: 'android' | 'ios';
+  /** web: the browser's sheet on a touch-first or narrow screen (Menu.tsx SHEET_SCREEN). Additive (2026-11-19). */
+  readonly look: 'android' | 'ios' | 'web';
   readonly items: readonly MenuEntry[];
   readonly onSelect: (value: string) => void;
   readonly onClose: () => void;
@@ -55,33 +62,64 @@ export interface PhoneMenuProps {
 /** what a long-press lifts as the iOS preview: the pressed row */
 const ROW = "[data-kit='swipe'], [data-kit='list-row'], [data-kit='card']";
 
-/** A ContextMenu's machine in the phone apps (Menu.tsx binds it in place of menu-machine's, with the same props): a
- * contextmenu on the area (a long-press dispatches one: Swipe's onLongPress) opens PhoneMenu on the pressed row. */
+/** A menu button's props while the sheet is its menu: a press, ↓ or ↑ opens it from the button. */
+function buttonProps(id: string, expanded: boolean, open: (target: HTMLElement, x: number) => void): Record<string, unknown> {
+  return {
+    type: 'button',
+    id,
+    'aria-haspopup': 'menu',
+    'aria-expanded': expanded,
+    'data-state': expanded ? 'open' : 'closed',
+    onClick: (e: MouseEvent) => open(e.currentTarget as HTMLElement, e.clientX),
+    onKeyDown: (e: KeyboardEvent) => {
+      if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return;
+      e.preventDefault();
+      open(e.currentTarget as HTMLElement, 0);
+    },
+  };
+}
+
+/** A ContextMenu's machine in the phone apps, and every menu's in the browser on a sheet screen (Menu.tsx binds it in
+ * place of menu-machine's, with the same props): a contextmenu on the area (a long-press dispatches one: Swipe's
+ * onLongPress) opens PhoneMenu on the pressed row; a menu's button (the browser's) opens it from the button. */
 export function MenuMachine(props: MenuMachineProps): JSX.Element {
   const look = usePlatform();
+  const id = createUniqueId();
   const [press, setPress] = createSignal<{ readonly target: HTMLElement; readonly x: number }>();
+  const open = (target: HTMLElement, x: number): void => {
+    setPress({ target, x });
+    props.base.onOpenChange?.(true);
+  };
   const close = (): void => {
     setPress(undefined);
     props.base.onOpenChange?.(false);
   };
   createEffect(() => {
     if (props.base.open === false) setPress(undefined);
+    // opened by its caller (a shortcut): from its button
+    else if (props.base.open === true && props.at !== 'pointer' && untrack(press) === undefined) {
+      const el = document.getElementById(id);
+      if (el) setPress({ target: el, x: 0 });
+    }
   });
-  props.bind(() => ({
-    onContextMenu: (e: MouseEvent) => {
-      e.preventDefault();
-      const at = e.target instanceof Element ? e.target : null;
-      setPress({ target: (at?.closest<HTMLElement>(ROW) ?? at ?? e.currentTarget) as HTMLElement, x: e.clientX });
-      props.base.onOpenChange?.(true);
-    },
-  }));
+  props.bind(() =>
+    props.at === 'pointer'
+      ? {
+          onContextMenu: (e: MouseEvent) => {
+            e.preventDefault();
+            const at = e.target instanceof Element ? e.target : null;
+            open((at?.closest<HTMLElement>(ROW) ?? at ?? e.currentTarget) as HTMLElement, e.clientX);
+          },
+        }
+      : buttonProps(id, press() !== undefined, open),
+  );
   // a long-press before this chunk was there: that press again, now
   onMount(() => bound(undefined, props.pending));
   return (
     <Show when={press()}>
       {(p) => (
         <PhoneMenu
-          look={look() === 'ios' ? 'ios' : 'android'}
+          look={look() === 'web' ? 'web' : look() === 'ios' ? 'ios' : 'android'}
           items={props.base.items}
           onSelect={props.base.onSelect}
           onClose={close}
@@ -133,10 +171,16 @@ const titleOf = (el: HTMLElement): string => (el.querySelector("[data-kit='list-
 
 /** Rows with submenus drilled into one level (v1 #786): a submenu's rows under a Back row. */
 function useRows(props: PhoneMenuProps, select: () => string | undefined) {
-  const [pane, setPane] = createSignal<MenuSubmenu>();
+  const [pane, setOpenPane] = createSignal<MenuSubmenu>();
+  // what's typed in the open submenu's filter (Goal…, Recipes); emptied as one opens or closes
+  const [query, setQuery] = createSignal('');
+  const setPane = (p: MenuSubmenu | undefined): void => {
+    setQuery('');
+    setOpenPane(p);
+  };
   const rows = createMemo<PhoneRow[]>(() => {
     const p = pane();
-    return p ? phoneRows(p.items) : phoneRows(props.items, select());
+    return p ? phoneRows(filteredItems(p, query())) : phoneRows(props.items, select());
   });
   const choose = (item: MenuItem): void => {
     if (item.disabled) return;
@@ -144,7 +188,14 @@ function useRows(props: PhoneMenuProps, select: () => string | undefined) {
     if (item.value === SELECT_VALUE) props.onSelectMode?.();
     else props.onSelect(item.value);
   };
-  return { pane, setPane, rows, choose };
+  /** Enter in the filter: its first match */
+  const chooseFirst = (): void => {
+    const p = pane();
+    const v = p ? firstMatch(filteredItems(p, query())) : undefined;
+    const item = v === undefined ? undefined : rows().find((r): r is Extract<PhoneRow, { kind: 'item' }> => r.kind === 'item' && r.item.value === v)?.item;
+    if (item) choose(item);
+  };
+  return { pane, setPane, rows, choose, query, setQuery, chooseFirst };
 }
 
 /** A phone menu's row ends: one leading column (QA r7 #7), a choice's ✓ in it rather than at the screen's edge. Android
@@ -170,7 +221,8 @@ function rowMarks(kit: 'sheet' | 'context', rows: () => readonly PhoneRow[]): { 
   };
 }
 
-function Rows(props: { readonly rows: readonly PhoneRow[]; readonly part: PartName; readonly kit: 'sheet' | 'context'; readonly choose: (i: MenuItem) => void; readonly drill: (s: MenuSubmenu) => void }): JSX.Element {
+/** `escape`: a submenu is open, so Escape on a row steps back (the sheet's dialog leaves it to the row: `data-escape`) */
+function Rows(props: { readonly rows: readonly PhoneRow[]; readonly part: PartName; readonly kit: 'sheet' | 'context'; readonly choose: (i: MenuItem) => void; readonly drill: (s: MenuSubmenu) => void; readonly escape?: boolean }): JSX.Element {
   const { lead, trail } = rowMarks(props.kit, () => props.rows);
   return (
     <For each={props.rows}>
@@ -182,7 +234,7 @@ function Rows(props: { readonly rows: readonly PhoneRow[]; readonly part: PartNa
           <Match when={row.kind === 'label' && row}>{(r) => <div role="presentation" data-kit={`${props.kit}-label`}>{r().label}</div>}</Match>
           <Match when={row.kind === 'sub' && row}>
             {(r) => (
-              <button type="button" role="menuitem" aria-haspopup="menu" data-kit={`${props.kit}-item`} data-part={r().entry.part ?? sub(props.part, 'sub')} data-value={r().entry.value} onClick={() => props.drill(r().entry)}>
+              <button type="button" role="menuitem" aria-haspopup="menu" data-kit={`${props.kit}-item`} data-part={r().entry.part ?? sub(props.part, 'sub')} data-value={r().entry.value} data-sub="" onClick={() => props.drill(r().entry)}>
                 <Show when={r().entry.icon}>{(name) => <Icon name={name()} size="md" />}</Show>
                 <span data-kit={`${props.kit}-item-label`} data-text="control">
                   {r().entry.label}
@@ -202,6 +254,7 @@ function Rows(props: { readonly rows: readonly PhoneRow[]; readonly part: PartNa
                 data-part={r().item.part ?? sub(props.part, 'item')}
                 data-value={r().item.value}
                 data-danger={flag(r().item.danger)}
+                data-escape={flag(props.escape)}
                 onClick={() => props.choose(r().item)}
               >
                 {lead(r().item)}
@@ -221,29 +274,107 @@ function Rows(props: { readonly rows: readonly PhoneRow[]; readonly part: PartNa
   );
 }
 
-/** Android: the row's actions in an M3 modal bottom sheet, *Select* first, the row's title as its headline. */
+/** A sheet's duration token in ms (`0.2s` or `200ms`). */
+const tokenMs = (s: CSSStyleDeclaration, name: string): number => {
+  const v = s.getPropertyValue(name).trim();
+  const n = Number.parseFloat(v);
+  return Number.isFinite(n) ? (v.endsWith('ms') ? n : n * 1000) : 0;
+};
+
+/** The sheet grows or shrinks to its new rows (a submenu in or out) from the height it had, unless motion is reduced. */
+function fitHeight(el: HTMLElement, from: number): void {
+  if (typeof el.animate !== 'function' || matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  const to = el.getBoundingClientRect().height;
+  if (Math.abs(to - from) < 1) return;
+  const s = getComputedStyle(el);
+  el.animate([{ height: `${from}px`, overflow: 'hidden' }, { height: `${to}px`, overflow: 'hidden' }], { duration: tokenMs(s, '--dur-slow'), easing: s.getPropertyValue('--ease').trim() || 'ease' });
+}
+
+const ITEMS = "[role^='menuitem']:not(:disabled)";
+
+/** Android: the row's actions in an M3 modal bottom sheet, *Select* first, the row's title as its headline. The browser
+ * on a sheet screen (`look` web): the same sheet in the web's look, titled by the button that opened it. Either way a
+ * submenu drills in under its back row (focus on its first item; back, on the row that opened it); ↑ ↓ Home End move,
+ * → opens a submenu, ← or Escape steps back out of one (Escape at the top closes the sheet). */
 function ActionSheet(props: PhoneMenuProps): JSX.Element {
   const t = useT();
-  const title = props.title ?? (titleOf(props.target) || t('gesture.actions'));
+  const web = props.look === 'web';
+  const named = web ? props.target.getAttribute('aria-label') || props.target.getAttribute('title') || undefined : undefined;
+  const title = props.title ?? (named || titleOf(props.target) || t('gesture.actions'));
   const m = useRows(props, () => (props.onSelectMode ? t('select') : undefined));
+  let list: HTMLDivElement | undefined;
+  let filterBox: HTMLInputElement | undefined;
+  const items = (): HTMLElement[] => [...(list?.querySelectorAll<HTMLElement>(ITEMS) ?? [])];
+  const drill = (s: MenuSubmenu | undefined): void => {
+    const was = m.pane();
+    const sheet = web ? list?.closest<HTMLElement>("[data-kit='sheet']") : undefined;
+    const from = sheet?.getBoundingClientRect().height;
+    m.setPane(s);
+    if (sheet && from !== undefined) fitHeight(sheet, from);
+    // a submenu with a filter, on a keyboard's screen: its box (a touch screen keeps the keyboard down: its first row)
+    const typing = s?.filter && !matchMedia('(pointer: coarse)').matches;
+    const to = typing ? filterBox : s ? items().find((el) => !el.hasAttribute('data-back')) : items().find((el) => el.dataset['value'] === was?.value);
+    to?.focus({ preventScroll: true });
+  };
+  const keys = (e: KeyboardEvent): void => {
+    const at = items();
+    const i = at.indexOf(document.activeElement as HTMLElement);
+    let next: HTMLElement | undefined;
+    if ((e.key === 'Escape' || e.key === 'ArrowLeft') && m.pane()) drill(undefined);
+    else if (e.key === 'ArrowRight' && at[i]?.hasAttribute('data-sub')) at[i]?.click();
+    else if (e.key === 'ArrowDown') next = at[(i + 1) % at.length];
+    else if (e.key === 'ArrowUp') next = at[(i - 1 + at.length) % at.length];
+    else if (e.key === 'Home') next = at[0];
+    else if (e.key === 'End') next = at[at.length - 1];
+    else return;
+    e.preventDefault();
+    e.stopPropagation();
+    next?.focus({ preventScroll: true });
+  };
+  onMount(() => list?.addEventListener('keydown', keys));
+  // the dialog's trap takes focus a moment after it opens: a row already focused in the list (a submenu drilled into
+  // before that) keeps it rather than going back to the first row
+  const firstFocus = (): HTMLElement | null => {
+    const at = document.activeElement;
+    return at instanceof HTMLElement && list?.contains(at) ? at : (items()[0] ?? null);
+  };
   return (
-    <Sheet open title={title} onOpenChange={(open) => !open && props.onClose()} part={sub(props.part, 'sheet')}>
-      <div role="menu" aria-label={title} data-kit="sheet-menu" data-part={sub(props.part, 'list')}>
+    <Sheet open title={title} onOpenChange={(open) => !open && props.onClose()} part={sub(props.part, 'sheet')} {...(web && { size: 'menu' as const, initialFocus: firstFocus })}>
+      <div ref={list} role="menu" aria-label={title} data-kit="sheet-menu" data-part={sub(props.part, 'list')} data-look={web ? 'web' : undefined}>
         <Show when={m.pane()}>
           {(p) => (
-            <button type="button" role="menuitem" data-kit="sheet-item" data-part={sub(props.part, 'back')} data-back="" onClick={() => m.setPane(undefined)}>
+            <button type="button" role="menuitem" data-kit="sheet-item" data-part={sub(props.part, 'back')} data-back="" data-escape="" onClick={() => drill(undefined)}>
               <Icon name="back" size="md" />
               <span data-kit="sheet-item-label" data-text="control">
-                {p().label}
+                {/* names the menu it goes back from: ‹ Goal, not ‹ Goal… (the row's … says a choice follows) */}
+                {p().label.replace(/…$/, '')}
               </span>
             </button>
           )}
         </Show>
-        <Rows rows={m.rows()} part={props.part} kit="sheet" choose={m.choose} drill={m.setPane} />
+        <Show when={m.pane()?.filter}>
+          {(f) => (
+            <MenuFilterBox
+              filter={f()}
+              value={m.query()}
+              onInput={m.setQuery}
+              onDown={() => items().find((el) => !el.hasAttribute('data-back'))?.focus({ preventScroll: true })}
+              onEnter={m.chooseFirst}
+              part={props.part}
+              ref={(el) => {
+                filterBox = el;
+                // Escape in it steps back out of the submenu: the sheet's dialog leaves it to the list
+                el.dataset['escape'] = '';
+              }}
+            />
+          )}
+        </Show>
+        <Rows rows={m.rows()} part={props.part} kit="sheet" choose={m.choose} drill={drill} escape={m.pane() !== undefined} />
       </div>
     </Sheet>
   );
 }
+
 
 /** iOS: the context menu. The row lifts in place over a blurred page; the menu opens under it (or over it, or the
  * preview slides up to make room); a tap outside, Escape or a choice closes it. */

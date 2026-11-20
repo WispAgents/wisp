@@ -36,6 +36,9 @@ pub struct Extra {
     /// the words a top-level verb takes (`wisp export <TAB>`: the kinds, then its flags). Additive (2026-11-19,
     /// setup audit E).
     pub after: Vec<(String, Vec<String>)>,
+    /// the goals declared by name (`goals:` in a formula, ADR-0110), after `--goal` in every shell (owner-list #63).
+    /// Additive (2026-11-20).
+    pub goals: Vec<String>,
 }
 
 /// The script for `shell`, or None for a shell it doesn't know.
@@ -69,12 +72,16 @@ fn bash(c: &Catalogue, curated: &[&str], extra: &Extra) -> String {
     let mut s = String::from(
         "# wisp completions for bash: eval \"$(wisp completions bash)\"\n_wisp() {\n  local cur=${COMP_WORDS[COMP_CWORD]} prev=${COMP_WORDS[COMP_CWORD-1]} p=${COMP_WORDS[1]} v=${COMP_WORDS[2]}\n",
     );
+    // what a flag takes, after it: the harnesses after `--agent`, the declared goals after `--goal`
+    let mut takes = String::new();
     if !extra.agents.is_empty() {
-        let _ = writeln!(
-            s,
-            "  case \"$prev\" in\n    --agent|-a) COMPREPLY=($(compgen -W '{}' -- \"$cur\")); return ;;\n  esac",
-            q(&extra.agents.join(" "))
-        );
+        let _ = write!(takes, "\n    --agent|-a) COMPREPLY=($(compgen -W '{}' -- \"$cur\")); return ;;", q(&extra.agents.join(" ")));
+    }
+    if !extra.goals.is_empty() {
+        let _ = write!(takes, "\n    --goal) COMPREPLY=($(compgen -W '{}' -- \"$cur\")); return ;;", q(&extra.goals.join(" ")));
+    }
+    if !takes.is_empty() {
+        let _ = writeln!(s, "  case \"$prev\" in{takes}\n  esac");
     }
     s.push_str("  if [ \"$COMP_CWORD\" -eq 1 ]; then\n");
     let firsts = once(
@@ -139,11 +146,13 @@ fn zsh(c: &Catalogue, curated: &[&str], extra: &Extra) -> String {
         .chain(t.iter().map(|(p, v)| format!("'{p}:{} commands'", v.len())))
         .chain(["'help:every command'".into(), "'completions:shell completions'".into(), "'attach:follow a task live'".into()])
         .collect();
-    let _ = writeln!(
-        s,
-        "  firsts=({})\n  if (( CURRENT == 2 )); then _describe 'command' firsts; return; fi\n  case $words[2] in",
-        firsts.join(" ")
-    );
+    let _ = writeln!(s, "  firsts=({})\n  if (( CURRENT == 2 )); then _describe 'command' firsts; return; fi", firsts.join(" "));
+    // after `--goal`: the declared goals, whatever the verb
+    if !extra.goals.is_empty() {
+        let names: Vec<String> = extra.goals.iter().map(|g| format!("'{}'", q(g))).collect();
+        let _ = writeln!(s, "  if [[ $words[CURRENT-1] == --goal ]]; then compadd -- {}; return; fi", names.join(" "));
+    }
+    s.push_str("  case $words[2] in\n");
     for (p, verbs) in &t {
         let names: Vec<String> = verbs.iter().map(|(v, _)| format!("'{}'", q(v))).collect();
         let _ = writeln!(
@@ -188,6 +197,11 @@ fn fish(c: &Catalogue, curated: &[&str], extra: &Extra) -> String {
         }
     }
     let _ = writeln!(s, "complete -c wisp -n '__fish_seen_subcommand_from completions' -a 'zsh bash fish'");
+    // after `--goal`: the declared goals (-r: it takes one, -f: no files)
+    if !extra.goals.is_empty() {
+        let names: Vec<String> = extra.goals.iter().map(|g| q(g)).collect();
+        let _ = writeln!(s, "complete -c wisp -l goal -r -f -a '{}' -d 'a declared goal'", names.join(" "));
+    }
     s
 }
 
@@ -237,6 +251,7 @@ mod tests {
             settings: vec!["worktrees.max".into(), "budget.limitHold".into()],
             values: Vec::new(),
             after: Vec::new(),
+            goals: Vec::new(),
         };
         let s = script_with("bash", &c, &["plugin", "plugins", "attach"], &extra).unwrap();
         let firsts =
@@ -294,5 +309,24 @@ mod tests {
         let fish = script_with("fish", &c, &["export"], &extra).unwrap();
         assert!(fish.contains("complete -c wisp -n '__fish_seen_subcommand_from export' -a 'projects crew settings'"), "{fish}");
         assert!(fish.contains("complete -c wisp -n '__fish_seen_subcommand_from export' -l 'format'"), "{fish}");
+    }
+
+    /// Owner-list #63: `wisp new … --goal <TAB>` completes the goals declared by name, in bash, zsh and fish; with none
+    /// declared nothing is added, and `--agent` still completes the harnesses beside it.
+    #[test]
+    fn goal_completes_the_declared_goal_names_in_every_shell() {
+        let c = Catalogue::new(Vec::new());
+        let extra = Extra { agents: vec!["claude".into()], goals: vec!["green-build".into(), "docs-clean".into()], ..Extra::default() };
+        let bash = script_with("bash", &c, &["new"], &extra).unwrap();
+        assert!(bash.contains("    --goal) COMPREPLY=($(compgen -W 'green-build docs-clean' -- \"$cur\")); return ;;"), "{bash}");
+        assert!(bash.contains("    --agent|-a) COMPREPLY=($(compgen -W 'claude'"), "{bash}");
+        let zsh = script_with("zsh", &c, &["new"], &extra).unwrap();
+        assert!(zsh.contains("  if [[ $words[CURRENT-1] == --goal ]]; then compadd -- 'green-build' 'docs-clean'; return; fi"), "{zsh}");
+        let fish = script_with("fish", &c, &["new"], &extra).unwrap();
+        assert!(fish.contains("complete -c wisp -l goal -r -f -a 'green-build docs-clean' -d 'a declared goal'"), "{fish}");
+        for sh in ["bash", "zsh", "fish"] {
+            let none = script_with(sh, &c, &["new"], &Extra::default()).unwrap();
+            assert!(!none.contains("--goal") && !none.contains("-l goal"), "{sh}: {none}");
+        }
     }
 }

@@ -31,11 +31,24 @@ fn empty(v: &Value) -> bool {
 }
 
 /// `row`'s spec fields, those at their default (or empty) left out.
-fn spec_of(row: &Value, fields: &[String], defaults: &Value) -> Value {
+/// The fields whose `false` is said on purpose: an optional bool (`worktree: Option<bool>`, `["boolean", "null"]`),
+/// where false isn't the default (none is). ADR-0110's `tasks.default: { worktree: false }` read back as nothing, so
+/// every diff planned a change.
+fn kept_false(schema: &Value) -> Vec<String> {
+    let Some(p) = schema.get("properties").and_then(Value::as_object) else { return Vec::new() };
+    p.iter()
+        .filter(|(_, v)| {
+            v.get("type").and_then(Value::as_array).is_some_and(|t| t.iter().any(|x| x == "boolean") && t.iter().any(|x| x == "null"))
+        })
+        .map(|(k, _)| k.clone())
+        .collect()
+}
+
+fn spec_of(row: &Value, fields: &[String], defaults: &Value, keep: &[String]) -> Value {
     let mut o = Map::new();
     for f in fields {
         if let Some(v) = row.get(f)
-            && !empty(v)
+            && (!empty(v) || (v == &Value::Bool(false) && keep.contains(f)))
             && defaults.get(f) != Some(v)
         {
             o.insert(f.clone(), v.clone());
@@ -61,6 +74,8 @@ pub struct CrudKind {
     /// the spec type's default, as JSON
     pub defaults: Value,
     fields: Vec<String>,
+    /// [`kept_false`]'s fields
+    keep_false: Vec<String>,
     /// the command that renames in place (`{from, to}`); None: the trait's make-then-remove
     pub rename_cmd: Option<&'static str>,
 }
@@ -76,7 +91,9 @@ impl CrudKind {
         remove: &'static str,
     ) -> Self {
         let fields = props(&info.schema);
+        let keep_false = kept_false(&info.schema);
         Self {
+            keep_false,
             info,
             ctx,
             list: (list, json!({})),
@@ -169,7 +186,12 @@ impl ResourceKind for CrudKind {
                 .filter_map(|r| {
                     let name = r.get(self.name_field)?.as_str()?.to_owned();
                     let id = r.get(self.id_field).and_then(|i| i.as_str().map(str::to_owned).or_else(|| Some(i.to_string())));
-                    Some(Resource { kind: self.info.kind.clone(), name, spec: spec_of(r, &self.fields, &self.defaults), id })
+                    Some(Resource {
+                        kind: self.info.kind.clone(),
+                        name,
+                        spec: spec_of(r, &self.fields, &self.defaults, &self.keep_false),
+                        id,
+                    })
                 })
                 .collect())
         })
@@ -629,6 +651,25 @@ mod tests {
     /// them; as written they're two values, so the key is what refuses the second project.
     fn bare(p: &str) -> String {
         p.strip_prefix("/private").unwrap_or(p).to_owned()
+    }
+
+    /// ADR-0110: an optional bool's `false` is said on purpose (`worktree: false`) and reads back; a plain bool's false
+    /// is its default and stays out, as before.
+    #[test]
+    fn an_optional_bools_false_reads_back() {
+        #[derive(Default, serde::Serialize, schemars::JsonSchema)]
+        struct S {
+            worktree: Option<bool>,
+            #[serde(skip_serializing_if = "std::ops::Not::not")]
+            paused: bool,
+        }
+        let schema = crate::schema_of::<S>();
+        let keep = kept_false(&schema);
+        assert_eq!(keep, ["worktree"]);
+        let defaults = serde_json::to_value(S::default()).unwrap();
+        let fields = props(&schema);
+        assert_eq!(spec_of(&json!({ "worktree": false, "paused": false }), &fields, &defaults, &keep), json!({ "worktree": false }));
+        assert_eq!(spec_of(&json!({ "worktree": null }), &fields, &defaults, &keep), json!({}));
     }
 
     #[test]

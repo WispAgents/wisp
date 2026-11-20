@@ -4,7 +4,8 @@
 // the bridge from @wisp/client's signals into Solid (no component): plain modules that derive over the store use it
 export { useDerived, useSignal } from './core/signal.ts';
 export { reorderable, reordered, type OnReorder, type ReorderAttrs } from './core/reorder.ts';
-export { menuSections, type MenuEntry, type MenuGroup, type MenuItem, type MenuSeparator, type MenuSubmenu } from './controls/menu-entries.ts';
+export { matchesQuery } from './controls/menu-filtering.ts';
+export { menuSections, SHEET_SCREEN, type MenuEntry, type MenuFilter, type MenuGroup, type MenuItem, type MenuSeparator, type MenuSubmenu } from './controls/menu-entries.ts';
 export type { IconName } from './content/icons.ts';
 // the composer's `+` (the shell's composer-plus.ts) builds a tool from acts: types only, nothing of act.tsx loads
 export type { Act } from './app/act.tsx';

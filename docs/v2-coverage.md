@@ -396,8 +396,8 @@ kept). `npm run check` (rule `v1-coverage`) reads this table: every v1 item has 
 | setting | `effort` | `kind:agents` |
 | setting | `fixConflicts` | `setting:ship.fixConflicts` |
 | setting | `followUp` | `setting:runtime.followUp` |
-| setting | `goalJudges` | `kind:goal` |
-| setting | `goalVote` | `kind:goal` |
+| setting | `goalJudges` | `kind:goals` |
+| setting | `goalVote` | `kind:goals` |
 | setting | `harnessAsk` | `cmd:accounts.watch.ask` |
 | setting | `leanRuns` | `setting:runtime.leanRuns` |
 | setting | `learn` | `setting:learn.enabled` |

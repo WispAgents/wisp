@@ -29,3 +29,14 @@ export const isBareGoal = (text: string): boolean => /^\/goal$/i.test(text.trim(
 /** The `/` menu's pick is the command already typed in full (`/goal`, `/feedback`): Enter sends it as it is, as v1
  *  did, instead of putting back the same text and waiting for a second Enter. */
 export const typedInFull = (picked: string, text: string): boolean => picked.startsWith('/') && picked.toLowerCase() === text.trim().toLowerCase();
+
+/** A goal declared by name on the peer (`goals:` in a formula, wisp.goal's `goal.declared`, ADR-0110). */
+export interface DeclaredGoal {
+  readonly name: string;
+  readonly text: string;
+}
+
+/** What a launch sends as its goal: the declared goal by name while Done when still reads its text (picked from Goal…;
+ *  the peer judges it as declared), else what Done when says; undefined while Goal is off. */
+export const goalWire = (text: string | undefined, picked: DeclaredGoal | undefined): string | { readonly name: string } | undefined =>
+  text === undefined ? undefined : picked !== undefined && picked.text === text ? { name: picked.name } : text;

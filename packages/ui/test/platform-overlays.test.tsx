@@ -125,7 +125,11 @@ describe('the browser look is unchanged', () => {
 
   it('the_browser_stylesheet_carries_none_of_the_overlay_variants', () => {
     const sheets = import.meta.glob<string>('../src/css/*.css', { query: '?raw', import: 'default', eager: true });
+    // menu-sheet.css is the browser's menu sheet on a touch-first or narrow screen (owner 2026-11-19): it loads with the
+    // phone chunk, never with the first page (index.css doesn't import it)
+    expect(sheets['../src/css/index.css']).not.toMatch(/menu-sheet/);
     for (const [path, raw] of Object.entries(sheets)) {
+      if (path.endsWith('/menu-sheet.css')) continue;
       const css = raw.replace(/\/\*[^]*?\*\//g, '');
       expect(css, path).not.toMatch(/data-platform|'sheet-menu'|'sheet-item'|'context-menu'|'context-preview'|'context-item'|'plain-tip'|data-alert|data-detent|--k-sheet-dy/);
     }

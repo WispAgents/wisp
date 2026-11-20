@@ -23,6 +23,8 @@ export interface PlusInput {
   /** the box's text gets the caret back after a choice inside a row's own menu (a Start later time, a recipe), so
    *  Enter sends (audit C #2: it stayed on `+`, and Enter opened the menu again) */
   readonly refocus?: () => void;
+  /** the pointer or the focus reached `+`: what its rows need, fetched before the press (Goal…'s code and goals) */
+  readonly onWarm?: () => void;
 }
 
 const press = (act: Act | undefined): void => {
@@ -34,7 +36,16 @@ export function plusTool(x: PlusInput): LauncherTool {
   const rows = sections.flat();
   const entry = (r: PlusRow): MenuEntry => {
     const menu = r.act?.menu;
-    if (menu) return { kind: 'submenu', value: r.id, label: r.label, icon: r.icon, part: r.part, items: menu.items.filter((e: MenuEntry): e is MenuItem => e.kind === undefined || e.kind === 'item') };
+    if (menu)
+      return {
+        kind: 'submenu',
+        value: r.id,
+        label: r.label,
+        icon: r.icon,
+        part: r.part,
+        items: menu.items.filter((e: MenuEntry): e is MenuItem => e.kind === undefined || e.kind === 'item'),
+        ...(menu.filter && { filter: menu.filter }),
+      };
     return { value: r.id, label: r.label, icon: r.icon, part: r.part, ...(r.keys && { keys: r.keys }), ...(r.act?.pending && { disabled: true }) };
   };
   const items: MenuEntry[] = sections.flatMap((s, i) => [...(i > 0 ? [{ kind: 'separator' as const }] : []), ...s.map(entry)]);
@@ -42,10 +53,13 @@ export function plusTool(x: PlusInput): LauncherTool {
     const row = rows.find((r) => r.id === v);
     if (row) return press(row.act);
     // a choice inside a row's own menu (Start later's times, a recipe)
-    const owner = rows.find((r) => r.act?.menu?.items.some((e: MenuEntry) => (e.kind === undefined || e.kind === 'item') && e.value === v));
+    // (or one its filter found among all of them: a goal past the first few)
+    const owns = (m: NonNullable<Act['menu']>): boolean =>
+      m.items.some((e: MenuEntry) => (e.kind === undefined || e.kind === 'item') && e.value === v) || (m.filter?.all ?? []).some((i) => i.value === v);
+    const owner = rows.find((r) => r.act?.menu !== undefined && owns(r.act.menu));
     owner?.act?.menu?.onSelect(v);
     // after the menu has closed and handed focus back to `+`
     if (owner && x.refocus) setTimeout(x.refocus, 0);
   };
-  return { id: 'plus', part: x.part, icon: 'plus', label: x.label, title: x.title, act: { menu: { items, onSelect } } };
+  return { id: 'plus', part: x.part, icon: 'plus', label: x.label, title: x.title, act: { menu: { items, onSelect, ...(x.onWarm && { onWarm: x.onWarm }) } } };
 }

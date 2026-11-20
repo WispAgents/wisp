@@ -63,6 +63,12 @@ pub fn launch_args(f: &Flags, prompt: &str, cwd: &str) -> Value {
     if let Some(w) = f.worktree {
         a["worktree"] = json!(w);
     }
+    // a goal declared by name (wisp.goal refuses one no goal has, naming them), or what done means in words
+    if let Some(g) = f.goal.as_deref().map(str::trim).filter(|g| !g.is_empty()) {
+        a["goal"] = json!({ "name": g });
+    } else if let Some(g) = f.goal_text.as_deref().map(str::trim).filter(|g| !g.is_empty()) {
+        a["goal"] = json!(g);
+    }
     // --yes: go past Ask near the limit's line (the user agreed)
     if f.yes {
         a["confirmLimit"] = json!(true);
@@ -418,6 +424,25 @@ mod tests {
         f.agent = Some("reviewer".into());
         f.worktree = Some(false);
         assert_eq!(launch_args(&f, "x", "/w"), json!({ "prompt": "x", "cwd": "/w", "agent": "reviewer", "worktree": false }));
+    }
+
+    /// ADR-0110: `--goal NAME` names a declared goal (wisp.goal checks it), `--goal-text` says it in words.
+    #[test]
+    fn a_launch_takes_a_declared_goal_by_name_or_a_goal_in_words() {
+        let mut f = Flags::defaults(None);
+        f.goal = Some("green-build".into());
+        assert_eq!(launch_args(&f, "x", "/w")["goal"], json!({ "name": "green-build" }));
+        f.goal = None;
+        f.goal_text = Some("tests pass".into());
+        assert_eq!(launch_args(&f, "x", "/w")["goal"], json!("tests pass"));
+        let p = crate::args::parse(
+            &["fix it".into(), "--goal".into(), "green-build".into()],
+            None,
+            std::path::Path::new("/h"),
+            std::path::Path::new("/w"),
+        )
+        .unwrap();
+        assert_eq!(p.flags.goal.as_deref(), Some("green-build"));
     }
 
     /// perf audit 2026-11-19 #5: `wisp ls` shows the newest 50 (v1's default), `--limit n` that many, `--all` all.

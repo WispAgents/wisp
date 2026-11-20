@@ -34,6 +34,7 @@ pub fn tools() -> Vec<Value> {
                 "model": { "type": "string", "description": "Model id for that harness. Default: the user's pick." },
                 "effort": { "type": "string", "description": "Thinking level, e.g. low | medium | high." },
                 "worktree": { "type": "boolean", "description": "Its own git worktree. Default: on in a project's folder, as `wisp` from the command line (Settings → Worktree per task)." },
+                "goal": { "type": "string", "description": "Keep going until this holds: a goal declared by name (goals: in the user's formula), or what done means in words. wisp judges it after every round." },
                 "wait": { "type": "boolean", "description": "Block until the agent finishes or asks (up to timeout_seconds)." },
                 "timeout_seconds": { "type": "number", "description": format!("Max wait when wait=true. Default {WAIT_S}.") }
             }, "required": ["prompt"] }
@@ -101,6 +102,14 @@ async fn spelled(dir: String) -> String {
     dir
 }
 
+/// `wisp_launch`'s `goal` on `runtime.create`'s args: a declared goal's name is that goal (wisp.goal reads it,
+/// ADR-0110); other words are what done means.
+fn with_goal(args: &mut Value, a: &Value) {
+    if let Some(g) = Some(s(a, "goal").trim()).filter(|g| !g.is_empty()) {
+        args["goal"] = json!(g);
+    }
+}
+
 /// One tool call; `cwd` is where `wisp mcp` runs (`wisp_launch`'s default folder).
 pub async fn call(c: &Client, name: &str, args: &Value, cwd: &Path) -> Value {
     match run(c, name, args, cwd).await {
@@ -138,6 +147,7 @@ async fn run(c: &Client, name: &str, a: &Value, cwd: &Path) -> Result<Value> {
                     args[k] = json!(v);
                 }
             }
+            with_goal(&mut args, a);
             crate::scripted::in_project(c, &mut args).await;
             let made = c.cmd("runtime.create", args).await?;
             let tid = s(&made, "id").to_owned();

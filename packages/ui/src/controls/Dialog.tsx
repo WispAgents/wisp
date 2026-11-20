@@ -26,7 +26,9 @@ import type { Detent } from './phone-math.ts';
 
 /** v1: v1's .modal (640 wide, 18px 20px 20px, its 600 18px title): the crew editor */
 /** window: v1's reader and app window (.dr, .ap), 18px in from the window's edges, the whole screen on a phone */
-export type DialogSize = 'sm' | 'md' | 'lg' | 'xl' | 'v1' | 'full' | 'window';
+/** menu: a menu's bottom sheet in the browser on a touch-first or narrow screen (./phone.tsx, ../css/menu-sheet.css).
+ *  Additive (2026-11-19). */
+export type DialogSize = 'sm' | 'md' | 'lg' | 'xl' | 'v1' | 'full' | 'window' | 'menu';
 
 export interface DialogProps extends KitProps, WithChildren, WithVars {
   readonly title: string;

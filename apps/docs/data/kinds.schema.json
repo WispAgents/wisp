@@ -565,14 +565,17 @@
     },
     "goal": {
       "additionalProperties": false,
-      "description": "How a goal is judged after each turn.",
+      "description": "A goal: what done means and how it's judged after each turn. `goals.default` has no text: it's every goal's\njudges, vote, round limit and sandbox.",
       "properties": {
         "judges": {
-          "description": "the agent profiles that judge",
+          "description": "the agent profiles that judge; `[]` on purpose: no judges, the task's own quick check",
           "items": {
             "type": "string"
           },
-          "type": "array"
+          "type": [
+            "array",
+            "null"
+          ]
         },
         "maxRounds": {
           "description": "turns a goal may take before it stops and asks",
@@ -582,6 +585,17 @@
             "integer",
             "null"
           ]
+        },
+        "sandbox": {
+          "description": "its judges run in a sandbox of their own, seeded with the task's folder (ADR-0047)",
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "text": {
+          "description": "what has to be true for it to be met (\"npm test passes and the build is green\")",
+          "type": "string"
         },
         "vote": {
           "description": "majority | all | any",
@@ -1363,7 +1377,7 @@
           "type": "string"
         },
         "goal": {
-          "description": "`{ text: tests pass }`: the goal judged after each turn"
+          "description": "the goal judged after each turn: a declared goal's name (`green-build`, from `goals:`), or inline\n(`{ text: tests pass, judges: [reviewer] }`); `{ name: green-build, maxRounds: 3 }` is the declared one with\nits own limit"
         },
         "mode": {
           "description": "plan | edits | auto",
@@ -1385,7 +1399,8 @@
           "type": "string"
         },
         "prompt": {
-          "description": "what to do; `{param}` is filled from the run's values",
+          "default": "",
+          "description": "what to do; `{param}` is filled from the run's values (every task but `tasks.default` has one)",
           "type": "string"
         },
         "schedule": {
@@ -1411,9 +1426,6 @@
           ]
         }
       },
-      "required": [
-        "prompt"
-      ],
       "title": "TaskDecl",
       "type": "object"
     },
@@ -2177,7 +2189,7 @@
       ],
       "description": "A crew member: who they are, what runs their jobs, when they check in."
     },
-    "goal": {
+    "goals": {
       "anyOf": [
         {
           "items": {
@@ -2207,7 +2219,7 @@
           "type": "object"
         }
       ],
-      "description": "How a goal is judged after each turn."
+      "description": "A goal: what done means and how it's judged after each turn. `goals.default` has no text: it's every goal's\njudges, vote, round limit and sandbox."
     },
     "harnesses": {
       "anyOf": [
@@ -2674,7 +2686,7 @@
             ],
             "description": "A crew member: who they are, what runs their jobs, when they check in."
           },
-          "goal": {
+          "goals": {
             "anyOf": [
               {
                 "items": {
@@ -2704,7 +2716,7 @@
                 "type": "object"
               }
             ],
-            "description": "How a goal is judged after each turn."
+            "description": "A goal: what done means and how it's judged after each turn. `goals.default` has no text: it's every goal's\njudges, vote, round limit and sandbox."
           },
           "harnesses": {
             "anyOf": [
