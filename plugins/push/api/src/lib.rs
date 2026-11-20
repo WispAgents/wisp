@@ -86,7 +86,7 @@ pub struct DeviceView {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct PairArgs {
-    /// the handle the relay gave the phone (`POST /api/push/register`)
+    /// the handle the relay gave the phone when it registered
     pub handle: String,
     /// the phone's X25519 public key, base64url
     pub public_key: String,

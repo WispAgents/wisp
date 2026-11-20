@@ -163,6 +163,7 @@ pub struct ReviewView {
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[ts(export, export_to = "review/")]
 pub struct MaybeArgs {
+    /// the task whose PR gets reviewed (its id)
     pub id: String,
     /// Review again (or the first, by hand): runs whatever the setting says
     #[serde(default)]

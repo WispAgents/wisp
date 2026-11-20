@@ -103,6 +103,7 @@
   "shell-list.status.done": "Finished",
   "shell-list.status.partial": "Partial",
   "shell-list.status.blocked": "Blocked",
+  "shell-list.status.stopped": "Stopped",
   "shell-list.status.failed": "Failed",
   "shell-list.status.limit": "At limit",
   "shell-list.status.refused": "Refused",

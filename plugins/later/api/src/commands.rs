@@ -30,9 +30,11 @@ macro_rules! command {
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, TS)]
 #[ts(export, export_to = "later/")]
 pub struct When {
+    /// when: a date and time (2026-12-01T09:00:00Z), or ms since the epoch
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional, type = "number | string")]
     pub at: Option<Value>,
+    /// or in this many minutes from now
     #[serde(rename = "in", default, skip_serializing_if = "Option::is_none")]
     #[ts(rename = "in", optional, type = "number | string")]
     pub in_min: Option<Value>,
@@ -55,6 +57,7 @@ pub struct SessionArgs {
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[ts(export, export_to = "later/")]
 pub struct IdArgs {
+    /// the plan's id, as wisp later plans prints it
     pub id: String,
 }
 
@@ -153,8 +156,8 @@ pub struct Cancelled {
     pub entry: Option<LaterEntry>,
 }
 
-/// `later.park` (For later, v1 PATCH /sessions/:id): `forLater` true or the time it was saved (Undo)
-/// parks it, false unparks it; a `state` (Mark done, Reopen) or Archive takes it out.
+/// A task saved For later, or taken out: `forLater` true (or the time it was saved, for Undo) parks it, false
+/// unparks it; a `state` (Mark done, Reopen) or Archive takes it out.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
 #[ts(export, export_to = "later/")]
@@ -180,27 +183,34 @@ pub struct Parked {
     pub for_later: Option<ForLater>,
 }
 
-/// `later.plan`: `{kind: task, body}` or `{kind: reminder, text, from?}`; a task may have `draft` or
-/// `after` (a task id, or `{id}`) instead of a time.
+/// Plan a new task, or a reminder, for later: a task starts at `--at` (or `--in` minutes), when the task `--after`
+/// names ends, or waits in Drafts (`--draft`); a reminder says `--text` then. `wisp "…"` itself always starts now:
+/// in the app, Start later plans it; here, `wisp later plan --kind task --body '{"prompt":"…","cwd":"…"}' --in 30`.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
 #[ts(export, export_to = "later/")]
 pub struct PlanArgs {
+    /// task (a new task starts then) or reminder (you're reminded then)
     pub kind: PlanKind,
     #[serde(flatten)]
     #[ts(flatten)]
     pub when: When,
+    /// no time: the task waits in Drafts until you start it
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     #[ts(as = "Option<bool>", optional)]
     pub draft: bool,
+    /// start when this task (its id) ends, instead of at a time
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional, type = "string | { id: string }")]
     pub after: Option<Value>,
+    /// the task to start, as New task sends it: its prompt, folder, agent, model and mode
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional, type = "Record<string, unknown>")]
     pub body: Option<Value>,
+    /// a reminder's words
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub text: Option<String>,
+    /// the task a reminder is about (its id, and title)
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional, type = "{ id: string, title?: string }")]
     pub from: Option<Value>,

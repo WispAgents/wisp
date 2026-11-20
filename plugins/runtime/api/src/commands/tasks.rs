@@ -138,7 +138,7 @@ pub struct RunPick {
 #[ts(export, export_to = "runtime/")]
 #[allow(clippy::struct_excessive_bools)] // a wire shape: each flag is its own optional field callers send
 pub struct StartArgs {
-    /// the id the client already shows the new task under (its optimistic row and page, ADR-0017): 32 lowercase hex
+    /// the id the client already shows the new task under (its row and page appear at once): 32 lowercase hex
     /// (a `UUIDv7` without dashes, as wisp makes its own), never one a task has. None: wisp makes one. Additive (2026-11-14).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
@@ -156,7 +156,7 @@ pub struct StartArgs {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub mode: Option<Mode>,
-    /// the most this task's turns may ever run at (a channel starts its tasks at Edits; v1 `session.capped`): kept
+    /// the most this task's turns may ever run at (a channel starts its tasks at Edits): kept
     /// on the task as `ext["wisp.runtime"].capped = { mode }`, the shape a crew job's cap has; a follow-up or a
     /// mode switch above it is refused unless the user asks in wisp, which lifts it. Full auto is no cap.
     /// Additive (2026-11-14).
@@ -237,7 +237,7 @@ pub struct StartArgs {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub factory: Option<String>,
-    /// the Notes it starts with (`{ goal, constraints: [...] }`, ADR-0097): kept in its spec, read by the plugin that
+    /// the Notes it starts with (`{ goal, constraints: [...] }`): kept in its spec, read by the plugin that
     /// keeps Notes (wisp.threads) when the task is made. Additive (2026-11-18).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(type = "unknown", optional)]
@@ -266,12 +266,12 @@ pub struct StartArgs {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub auto_override: Option<AutoOverride>,
-    /// a recurring run's worktree key (a crew member's check-ins, a trigger's runs, ADR-0108): its runs reuse one
+    /// a recurring run's worktree key (a crew member's check-ins, a trigger's runs): its runs reuse one
     /// worktree per project (`wisp/<key>`) instead of one each. Additive (2026-11-19).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub worktree_key: Option<String>,
-    /// a run started for you (a crew job, a check-in, a trigger's run, ADR-0108): its worktree goes when a turn ends with
+    /// a run started for you (a crew job, a check-in, a trigger's run): its worktree goes when a turn ends with
     /// nothing changed. Additive (2026-11-19).
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     #[ts(as = "Option<bool>", optional)]
@@ -306,7 +306,7 @@ pub struct FollowUpArgs {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     #[ts(as = "Option<Vec<Attachment>>", optional)]
     pub attachments: Vec<Attachment>,
-    /// true: wait in the queue if a turn is running; false (the default, v1 `reply`): interrupt the
+    /// true: wait in the queue if a turn is running; false (the default): interrupt the
     /// running turn once its harness session is known, and send now
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
@@ -335,7 +335,7 @@ pub struct FollowUpArgs {
     #[serde(default, alias = "subagents", skip_serializing_if = "Option::is_none")]
     #[ts(type = "unknown", optional)]
     pub team: Option<serde_json::Value>,
-    /// a new conversation on the same task (a long thread's Fresh thread, ADR-0096): its turn resumes nothing, hears
+    /// a new conversation on the same task (a long thread's Fresh thread): its turn resumes nothing, hears
     /// nothing of the turns before it, and is marked `ext["wisp.runtime"] = { fresh: true, after: <the conversation
     /// it left> }`, so the old conversation stays linked. Additive (2026-11-18).
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
@@ -559,7 +559,7 @@ pub struct ExecOut {
     pub output: String,
 }
 
-/// `runtime.appState`: an `app` block's state, kept on its turn (`ext["wisp.apps"][block]`, v1 /app-state).
+/// An app block's state, kept on its turn: what the app saved, read back when it opens again.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
 #[ts(export, export_to = "runtime/")]

@@ -109,8 +109,31 @@ async fn fresh_takes_detach_as_launches_do_audit_g17() {
 }
 
 /// The notes a doc must not carry in `--help` or a tool's description (audit E11, G17): written for wisp's developers.
-const DEV_NOTES: [&str; 12] =
-    ["for a frame", "Additive (", "(v1 ", "v1's", "(ADR-", "(audit ", "(review ", "(owner-list", "(B2", "(B4", "QA round", "round 2"];
+/// Audit H (E11 left over): ADR numbers anywhere, v1's files and routes (`v1 crew.js`, `v1 /app-state`, `PATCH
+/// /sessions/:id`, `POST /connectors`), a wire shape for words (`{kind: task, body}`), and "unknown fields are ignored"
+/// (they are refused).
+const DEV_NOTES: [&str; 20] = [
+    "for a frame",
+    "Additive (",
+    "(v1 ",
+    "v1's",
+    "ADR-",
+    "(audit ",
+    "(review ",
+    "(owner-list",
+    "(B2",
+    "(B4",
+    "QA round",
+    "round 2",
+    "v1 ",
+    "POST /",
+    "PATCH /",
+    "GET /",
+    "/app-state",
+    "unknown fields are ignored",
+    "`{kind:",
+    "{kind: ",
+];
 
 #[tokio::test(flavor = "multi_thread")]
 async fn no_commands_help_carries_a_developers_note_audit_e11() {

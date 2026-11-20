@@ -4,6 +4,16 @@
 import { defineCommand, entityKey, type EntityReader, type LocalOp, type PeerId } from '@wisp/client';
 import { KIND, type BringInArgs, type CleanArgs, type DismissArgs, type DoneApplyArgs, type DoneApplyOut, type DoneList, type KeepArgs, type WorktreeItem } from './types.ts';
 
+/** The pane opened (audit E6): wisp looks again for what's on disk and for Bring in's offers, and republishes the
+ * pane's rows. Without it a stray made after wisp started never showed: the pane only watched the rows of the last look. */
+export const look = defineCommand<{ peer: PeerId }>({
+  id: 'worktrees.view',
+  owner: (a) => a.peer,
+  wire: () => ({}),
+  optimistic: 'none',
+  pending: 'the worktrees pane (its rows come on the topic)',
+});
+
 /** Remove task folders and leftovers: their rows go now; the scan's next answer agrees or brings them back. */
 export const clean = defineCommand<CleanArgs>({
   id: 'worktrees.clean',

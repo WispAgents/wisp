@@ -311,4 +311,23 @@ command!(
     /// a paused trigger (three failures) runs again
     TriggerResume = "automations.trigger.resume", PERM_WRITE, false, NameArgs => Done
 );
+/// `wisp trigger off <name>` / `on <name>`: a declared trigger switched off or on. Only `enabled` changes: the rest of
+/// its spec stays as written (audit H4: the app's switch wrote `project: proj` back as its folder).
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[ts(export, export_to = "automations/")]
+pub struct SwitchArgs {
+    /// the trigger's name (wisp trigger ls)
+    pub name: String,
+    /// true: on; false: off
+    pub on: bool,
+}
+
+command!(
+    /// a declared trigger switched off or on, nothing else in its spec changed
+    TriggerSwitch = "automations.trigger.switch", PERM_WRITE, false, SwitchArgs => Done
+);
+command!(
+    /// a declared trigger removed (`wisp trigger rm`, the app's Delete)
+    TriggerRemove = "automations.trigger.remove", PERM_WRITE, false, NameArgs => Done
+);
 command!(Sources = "automations.sources", PERM_READ, true, Empty => Vec<SourceRow>);

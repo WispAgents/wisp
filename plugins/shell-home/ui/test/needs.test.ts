@@ -22,3 +22,10 @@ describe('a runtime.ask', () => {
     expect(needsList([row('f', 9), ask]).map((r) => r.id)).toEqual(['ask1', 'f']);
   });
 });
+
+describe('a run you stopped', () => {
+  it('says_stopped_not_blocked_audit_G15', () => {
+    expect(stateKey(row('run', 1, { status: 'stopped' }))).toBe('shell-home.state.stopped');
+    expect(stateKey(row('run', 1, { status: 'blocked' }))).toBe('shell-home.state.blocked');
+  });
+});

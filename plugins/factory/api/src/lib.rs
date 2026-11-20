@@ -307,7 +307,8 @@ pub struct NameArgs {
     pub name: String,
 }
 
-/// `factory.stop`: a run's parent task.
+/// Stop a factory run: every station still working stops (a running check is killed) and the run ends Stopped. Its
+/// stations' tasks and worktrees are kept.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(deny_unknown_fields)]
 #[ts(export, export_to = "factory/")]
@@ -438,7 +439,23 @@ macro_rules! command {
 
 command!(List = "factory.list" ["factory:read"] read yes : Value; none yes => Vec<NamedFactory>);
 command!(Names = "factory.names" ["factory:read"] read yes : Value; none yes => Vec<FactoryRow>);
-command!(Set = "factory.set" ["factory:write"] : NamedFactory => NamedFactory);
+/// `factory.set`: a factory added or changed. Its argument is a factory as a formula declares it; the stations' own
+/// fields are checked by the kind's schema (`wisp schema`), so the tool says the shape and refuses a field it doesn't
+/// know (audit D6: `factory_set` took only `{args, peer}`).
+#[derive(Debug)]
+pub struct Set;
+impl Command for Set {
+    const ID: &'static str = "factory.set";
+    const PERMISSION: Option<&'static str> = Some("factory:write");
+    type Args = NamedFactory;
+    type Out = NamedFactory;
+    fn args_ts() -> Option<String> {
+        Some(SET_TS.to_owned())
+    }
+}
+
+/// [`Set`]'s argument for the generated CLI and the MCP tools.
+pub const SET_TS: &str = "/** Add or change a software factory: its stations, the loop back when a check fails or a review asks for changes, and its budget. */ { /** the factory's name */ name: string, /** what it is for, in a line */ description?: string, /** its stations by name, in order: spec, build, checks, review, ship (each an object; wisp schema lists their fields) */ stations: Record<string, unknown>, /** where a failed check or a review that asks for changes goes back to: { backTo: build, max: 3, then: ask } */ loop?: Record<string, unknown>, /** { usd: 20 }: no new station starts once the run's stations have cost this much */ budget?: Record<string, unknown> }";
 command!(Remove = "factory.remove" ["factory:write"] : NameArgs; typed yes => Value);
 command!(Stop = "factory.stop" ["factory:run"] : StopArgs; typed yes => Value);
 

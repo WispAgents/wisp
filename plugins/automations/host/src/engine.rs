@@ -63,6 +63,9 @@ pub struct Engine {
     pub(crate) loading: tokio::sync::Mutex<()>,
     /// a trigger's `project:` named a project that wasn't there at the last load: the tick loads again
     pub(crate) unread: std::sync::atomic::AtomicBool,
+    /// a declared trigger's `project:` as written (a project's name), where the engine reads its folder: what
+    /// `trigger.ls` says, so the app's Edit and switch send it back as written (audit H4)
+    pub(crate) written: Mutex<std::collections::BTreeMap<String, String>>,
 }
 
 fn lock<T>(m: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
@@ -97,6 +100,7 @@ impl Engine {
         Self {
             store: std::sync::OnceLock::new(),
             declared: Mutex::default(),
+            written: Mutex::default(),
             gate: tokio::sync::Mutex::new(()),
             plan_runs: Mutex::default(),
             loading: tokio::sync::Mutex::new(()),
@@ -366,9 +370,15 @@ impl Engine {
             } else {
                 ("on", String::new())
             };
+            let mut spec = serde_json::to_value(&t.spec).unwrap_or_default();
+            if t.from == "trigger"
+                && let Some(p) = lock(&self.written).get(&t.name)
+            {
+                spec["project"] = json!(p);
+            }
             out.push(TriggerRow {
                 name: t.name.clone(),
-                spec: serde_json::to_value(&t.spec).unwrap_or_default(),
+                spec,
                 from: t.from.clone(),
                 state: state.into(),
                 why,

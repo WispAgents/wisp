@@ -146,11 +146,36 @@ pub struct UnmaskedArgs {
     pub file: Option<String>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[ts(export, export_to = "runtime/")]
 pub struct DelegateTask {
+    /// A member of the lead's team; empty: a new subagent made from `agent` (and `machine`, `name`) on the fly.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    #[ts(as = "Option<String>", optional)]
     pub subagent: String,
     pub prompt: String,
+    /// A new subagent on this harness (`auto`: wisp picks harness and model).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub agent: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub model: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub effort: Option<String>,
+    /// Run the new subagent on this machine (its id).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub machine: Option<String>,
+    /// The new subagent's name; one the team has already continues that one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub name: Option<String>,
+    /// What the new subagent is for, shown to the user.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub r#use: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
@@ -451,7 +476,7 @@ pub struct ForkArgs {
     pub title: Option<String>,
 }
 
-/// `runtime.import`: bring the tasks of wisp 1 (`~/.wisp/sessions/*.json`) in, each resumable (by file, mtime and size).
+/// Bring the tasks of wisp 1 (`~/.wisp/sessions/`) in, each resumable; one brought in before is skipped.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[ts(export, export_to = "runtime/")]
 pub struct ImportArgs {

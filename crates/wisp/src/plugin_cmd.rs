@@ -93,10 +93,15 @@ pub async fn crew(c: &Client, p: &Parsed, args: &[String]) -> Result<()> {
         )));
     }
     let list = c.cmd("crew.list", json!({})).await?;
-    let rows: Vec<String> =
-        list.as_array().into_iter().flatten().map(|m| format!("{:<16} {:<20} {}", s(m, "name"), s(m, "role"), s(m, "agent"))).collect();
+    let rows: Vec<String> = list.as_array().into_iter().flatten().map(crew_row).collect();
     out(&p.flags, &list, &if rows.is_empty() { "No crew yet.".to_owned() } else { rows.join("\n") });
     Ok(())
+}
+
+/// One member's line: name, role, harness, and `paused` when they are (audit H12: a paused member read as before).
+pub fn crew_row(m: &Value) -> String {
+    let paused = if m.get("paused").and_then(Value::as_bool) == Some(true) { "  paused (wisp crew resume to bring them back)" } else { "" };
+    format!("{:<16} {:<20} {}{paused}", s(m, "name"), s(m, "role"), s(m, "agent"))
 }
 
 /// `wisp plugin new <name>`: a declarative plugin of your own, off until you switch it on.
@@ -141,6 +146,15 @@ async fn trust(c: &Client, f: &crate::args::Flags, id: Option<&String>, trusted:
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Audit H12: after `wisp crew pause Zed`, `wisp crew ls` read "Zed  QA watcher  auto", the same as before.
+    #[test]
+    fn crew_ls_marks_a_paused_member_audit_h12() {
+        let on = crew_row(&json!({ "name": "Zed", "role": "QA watcher", "agent": "auto", "paused": false }));
+        let off = crew_row(&json!({ "name": "Zed", "role": "QA watcher", "agent": "auto", "paused": true }));
+        assert!(!on.contains("paused"), "{on}");
+        assert!(off.starts_with(on.trim_end()) && off.contains("paused (wisp crew resume"), "{off}");
+    }
 
     #[test]
     fn new_plugin_writes_a_valid_manifest() {

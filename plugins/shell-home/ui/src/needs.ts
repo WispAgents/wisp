@@ -30,6 +30,8 @@ export function stateKey(r: TaskRow): string {
   if (r.reminder) return 'shell-home.state.reminder';
   if (r.state === 'error') return 'shell-home.state.error';
   if (r.status === 'blocked') return 'shell-home.state.blocked';
+  // a run you stopped (a factory's): Stopped, as its band says (audit G15)
+  if (r.status === 'stopped') return 'shell-home.state.stopped';
   return r.state === 'done' ? 'shell-home.state.done' : 'shell-home.state.ready';
 }
 

@@ -53,6 +53,7 @@ import { newRecipeIntent } from './recipe-new.ts';
 import { foldTail } from './phone-bar.ts';
 import { plusTool } from './composer-plus.ts';
 import type { FormulaPick } from './formula-pick.ts';
+import { fileRunner } from './file-runner.ts';
 import { TEAMS_SETTING, presetsOf, teamFromSetting, teamSize, teamToSend, type Delegate } from './team.ts';
 import type { DelegatePlace } from './DelegatePanel.tsx';
 
@@ -991,20 +992,33 @@ export function HomeView(props: { readonly onBack?: () => void }): JSX.Element {
         }}
         mode={{ label: t(`shell.mode.${mode()}`), title: t('shell.home.fullAutoTitle'), icon: MODE_ICON[mode()], act: { menu: { items: modeMenu(t, mode()), onSelect: (v) => setMode(v as Mode) } } }}
         runner={{
-          label: agentName(t, harnesses(), agent()),
-          // the pill's tooltip: Auto's (what it will run, as pickTitle says) or the harness's
-          title: agent() === 'auto' ? t('shell.home.autoTitle') : t('shell.runner.title'),
-          auto: agent() === 'auto',
-          pick: runnerPick({ agent: agent(), shown: shown()?.label, name: pick().name, model: modelWord({ model: model(), modelLabel: modelLabel() }), effort: effort(), account: account()?.label ?? '', fallback: defaultName(agent(), t('shell.runner.default')) }),
-          // a picked harness's model, thinking and account as v1's parts: the narrow bar folds them one by one (launcher.css)
-          ...(agent() !== 'auto' && { pickParts: runnerParts({ model: modelWord({ model: model(), modelLabel: modelLabel() }), effort: effort(), account: account()?.label ?? '', fallback: defaultName(agent(), t('shell.runner.default')) }) }),
-          pickTitle:
-            agent() !== 'auto'
-              ? t('shell.runner.title')
-              : shown()
-                ? t('shell.home.autoWhy', { label: preview()?.pick?.label ?? '', why: preview()?.why ?? '' })
-                : t('shell.home.pickTitle', { name: pick().name }),
-          ...(pick().logo && { logo: pick().logo }),
+          // a picked file's agent and model are what runs (audit H5): the pill says them, never the bar's own pick
+          ...((f) =>
+            f
+              ? {
+                  label: f.name && f.name !== f.harness ? t('shell.home.fileRunner', { name: f.name, harness: agentName(t, harnesses(), f.harness) }) : agentName(t, harnesses(), f.harness || agent()),
+                  title: t('shell.home.fileRunnerTitle'),
+                  auto: false,
+                  pick: [f.model || t('shell.home.fromFile'), f.effort].filter(Boolean).join(' · '),
+                  pickTitle: t('shell.home.fileRunnerTitle'),
+                }
+              : {
+                  label: agentName(t, harnesses(), agent()),
+                  // the pill's tooltip: Auto's (what it will run, as pickTitle says) or the harness's
+                  title: agent() === 'auto' ? t('shell.home.autoTitle') : t('shell.runner.title'),
+                  auto: agent() === 'auto',
+                  pick: runnerPick({ agent: agent(), shown: shown()?.label, name: pick().name, model: modelWord({ model: model(), modelLabel: modelLabel() }), effort: effort(), account: account()?.label ?? '', fallback: defaultName(agent(), t('shell.runner.default')) }),
+                  // a picked harness's model, thinking and account as v1's parts: the narrow bar folds them one by one (launcher.css)
+                  ...(agent() !== 'auto' && { pickParts: runnerParts({ model: modelWord({ model: model(), modelLabel: modelLabel() }), effort: effort(), account: account()?.label ?? '', fallback: defaultName(agent(), t('shell.runner.default')) }) }),
+                  pickTitle:
+                    agent() !== 'auto'
+                      ? t('shell.runner.title')
+                      : shown()
+                        ? t('shell.home.autoWhy', { label: preview()?.pick?.label ?? '', why: preview()?.why ?? '' })
+                        : t('shell.home.pickTitle', { name: pick().name }),
+                })(fileRunner(formula())),
+          // the bar's own harness's logo, never beside a picked file's agent
+          ...(pick().logo && !fileRunner(formula()) && { logo: pick().logo }),
           compare: runs().length > 0 ? t('shell.home.compareMore', { n: MAX_RUNNERS }) : t('shell.home.compare'),
           ...(ring() && { usage: ring() }),
           // ONE pill, ONE press: the two-pane harness picker (v1 runner-picker.js); model, thinking and account are its right pane

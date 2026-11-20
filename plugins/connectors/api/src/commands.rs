@@ -32,8 +32,8 @@ pub enum SecretInput {
     Map(BTreeMap<String, Value>),
 }
 
-/// A connector as a body (`POST /connectors`, `PATCH /connectors/:id`). A field left out keeps what
-/// the connector had; `command` alone is a whole command line, `command` + `args` is already split.
+/// A connector: what it runs or where it is, and how it signs in. On a change, a field left out keeps what the
+/// connector had; `command` alone is a whole command line, `command` + `args` is already split.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS, Default)]
 pub struct ConnectorBody {
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -76,7 +76,7 @@ impl ConnectorBody {
     }
 }
 
-/// `{}`: a command that takes nothing (unknown fields are ignored, as v1 did).
+/// Takes nothing: a field given is refused.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS, Default)]
 pub struct NoArgs {}
 

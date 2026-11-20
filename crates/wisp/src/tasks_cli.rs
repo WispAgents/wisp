@@ -456,10 +456,20 @@ pub async fn rerun(c: &Client, o: &Opts, cwd: &Path) -> Result<i32> {
             let t = crate::attach::until(c, id, |s| !matches!(s.get("state").and_then(Value::as_str), Some("running") | None)).await?;
             say(&format!("  {of}  {}  {}  {}", paint(&st, DIM, label), s(&t, "state"), id));
         }
-    } else if !made.is_empty() {
-        say(&format!("  {}", paint(&st, DIM, "wisp attach <id> to follow one; --wait waits for all and compares")));
+    } else if let Some(hint) = rerun_hint(&made.iter().map(|(_, _, id)| id.as_str()).collect::<Vec<_>>()) {
+        say(&format!("  {}", paint(&st, DIM, &hint)));
     }
     Ok(i32::from(failed > 0))
+}
+
+/// What to do next after reruns: one is followed by its id (audit H10: a single rerun got the several-runs hint),
+/// several are compared with `--wait`.
+pub fn rerun_hint(made: &[&str]) -> Option<String> {
+    match made {
+        [] => None,
+        [one] => Some(format!("wisp attach {one} follows it")),
+        _ => Some("wisp attach <id> to follow one; --wait waits for all and compares".to_owned()),
+    }
 }
 
 /// `wisp run <name> [k=v…] [words…]`: a workflow, else a declared task. None: neither has that name.
@@ -541,10 +551,24 @@ async fn run_recipe(
         }
         // a slip, as main.rs says it: the usage with the `wisp -- …` escape, exit 2 (QA round 15 #2, audit A #16)
         Err(e) if e.status() == 404 && named => {
-            eprintln!("  ✗ no recipe or workflow named {name}: wisp recipes lists them\n{}", crate::words::usage("run"));
+            eprintln!("  ✗ {}\n{}", crate::words::run_miss(name), crate::words::usage("run"));
             Ok(Some(crate::cli::USAGE_EXIT))
         }
         Err(e) if e.status() == 404 => Ok(None),
         Err(e) => Err(e),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::rerun_hint;
+
+    /// Audit H10: `wisp rerun <id> -d` printed "wisp attach <id> to follow one; --wait waits for all and compares" after
+    /// one rerun. One names its id; only several get the compare hint.
+    #[test]
+    fn a_single_rerun_names_its_id_not_the_compare_hint_audit_h10() {
+        assert_eq!(rerun_hint(&["01a2"]).as_deref(), Some("wisp attach 01a2 follows it"));
+        assert!(rerun_hint(&["a", "b"]).is_some_and(|h| h.contains("--wait waits for all")));
+        assert_eq!(rerun_hint(&[]), None);
     }
 }

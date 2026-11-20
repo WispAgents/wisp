@@ -189,7 +189,8 @@ pub struct RouterView {
     pub report: RouterReport,
 }
 
-/// PATCH /router (v1 shape). Lists are checked by the router, which says what's wrong with one.
+/// Auto's rules changed: a field left out stays as it was. Lists are checked by the router, which says what's wrong
+/// with one.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, TS)]
 #[serde(default)]
 #[ts(export, export_to = "router/")]
@@ -215,7 +216,7 @@ pub struct RouterPatch {
     pub scout: Option<Value>,
 }
 
-/// POST /router/preview: `{prompt, attachments (a count), goal, team, machine}`.
+/// What Auto would run for a prompt (and how many attachments, its goal, team and machine), and why.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, TS)]
 #[serde(default)]
 #[ts(export, export_to = "router/")]

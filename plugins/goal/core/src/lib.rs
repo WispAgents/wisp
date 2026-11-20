@@ -26,8 +26,8 @@ impl Verdict {
     }
 }
 
-/// A judge's answer read: `NOT MET: why` (or `not met — why`) is no, `MET` is yes; anything else is no,
-/// with the judge's silence as why (an unclear verdict never ends a goal).
+/// A judge's answer read: `NOT MET: why` (or `not met — why`) is no, `MET` is yes. Anything else hasn't judged
+/// (audit H3): no vote on the work, so it never ends the goal and never sends the work back with "didn't say".
 pub fn verdict(judge: &str, answer: &str) -> Verdict {
     let up = answer.to_ascii_uppercase();
     if let Some(at) = up.find("NOT MET") {
@@ -40,10 +40,11 @@ pub fn verdict(judge: &str, answer: &str) -> Verdict {
             failed: false,
         };
     }
-    if up.contains("MET") {
+    // MET as a word: "METHOD looks fine" or "METRICS pass" is no verdict (review of audit H3)
+    if up.split(|c: char| !c.is_ascii_alphanumeric()).any(|w| w == "MET") {
         return Verdict { judge: judge.to_owned(), met: true, why: String::new(), failed: false };
     }
-    Verdict { judge: judge.to_owned(), met: false, why: format!("{judge} didn't say whether it's met"), failed: false }
+    Verdict::failed(judge, format!("{judge} answered without a verdict (MET or NOT MET)"))
 }
 
 /// The votes counted: `all`, `any`, else a majority (a tie isn't met).
@@ -137,6 +138,28 @@ mod tests {
         let said = verdict("reviewer", "NOT MET: tests fail");
         assert!(matches!(next("all", &[broke, said], 1, 4), Next::Again(_)), "a real NOT MET still sends it back");
         assert!(matches!(next("all", &[verdict("r", "NOT MET: x")], 1, 1), Next::Stall(s) if s.contains("after 1 round.")));
+    }
+
+    /// Audit H3 (G2's second half): a judge that answers without MET or NOT MET hasn't judged. The builder was sent
+    /// "critic didn't say whether it's met" every round to the limit; now the goal asks once, and a judge that did say
+    /// NOT MET beside it still sends the work back.
+    #[test]
+    fn a_judge_that_answers_without_a_verdict_asks_once_audit_h3() {
+        let silent = verdict("critic", "I looked at the diff and ran the build.");
+        assert!(silent.failed && !silent.met, "{silent:?}");
+        match next("majority", std::slice::from_ref(&silent), 1, 4) {
+            Next::Stall(q) => {
+                assert!(q.starts_with("The goal can't be judged: critic answered without a verdict"), "{q}");
+                assert!(!q.contains("Keep going until"), "{q}");
+            }
+            other => panic!("sent back: {other:?}"),
+        }
+        assert!(matches!(next("all", &[silent, verdict("r", "NOT MET: tests fail")], 1, 4), Next::Again(_)));
+        // MET inside another word is no verdict either; MET as a word is
+        for unclear in ["The METHOD looks fine", "METRICS pass", "metadata updated"] {
+            assert!(verdict("critic", unclear).failed, "{unclear}");
+        }
+        assert!(verdict("critic", "Met.").met && verdict("critic", "**MET** — all green").met);
     }
 }
 

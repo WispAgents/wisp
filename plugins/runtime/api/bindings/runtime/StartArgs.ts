@@ -13,12 +13,12 @@ import type { Mode } from "./Mode";
  */
 export type StartArgs = { 
 /**
- * the id the client already shows the new task under (its optimistic row and page, ADR-0017): 32 lowercase hex
+ * the id the client already shows the new task under (its row and page appear at once): 32 lowercase hex
  * (a `UUIDv7` without dashes, as wisp makes its own), never one a task has. None: wisp makes one. Additive (2026-11-14).
  */
 id?: SessionId, prompt: string, agent?: string, model?: string, effort?: string, mode?: Mode, 
 /**
- * the most this task's turns may ever run at (a channel starts its tasks at Edits; v1 `session.capped`): kept
+ * the most this task's turns may ever run at (a channel starts its tasks at Edits): kept
  * on the task as `ext["wisp.runtime"].capped = { mode }`, the shape a crew job's cap has; a follow-up or a
  * mode switch above it is refused unless the user asks in wisp, which lifts it. Full auto is no cap.
  * Additive (2026-11-14).
@@ -88,12 +88,12 @@ formula?: unknown, lineage?: Lineage,
  */
 autoOverride?: AutoOverride, 
 /**
- * a recurring run's worktree key (a crew member's check-ins, a trigger's runs, ADR-0108): its runs reuse one
+ * a recurring run's worktree key (a crew member's check-ins, a trigger's runs): its runs reuse one
  * worktree per project (`wisp/<key>`) instead of one each. Additive (2026-11-19).
  */
 worktreeKey?: string, 
 /**
- * a run started for you (a crew job, a check-in, a trigger's run, ADR-0108): its worktree goes when a turn ends with
+ * a run started for you (a crew job, a check-in, a trigger's run): its worktree goes when a turn ends with
  * nothing changed. Additive (2026-11-19).
  */
 worktreeTidy?: boolean, };

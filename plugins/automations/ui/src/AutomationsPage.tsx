@@ -30,7 +30,7 @@ import {
   useSignal,
 } from '@wisp/ui';
 import { lastRunWords } from './panes/summary.ts';
-import { fireTrigger, recipes, removeRecipe, removeTrigger, saveTrigger, triggers, type Recipe, type Trigger } from './commands.ts';
+import { fireTrigger, recipes, removeRecipe, removeTrigger, saveTrigger, switchTrigger, triggers, type Recipe, type Trigger } from './commands.ts';
 import { fieldsOf } from './recipe.ts';
 import { t } from './i18n.ts';
 import {
@@ -111,7 +111,9 @@ export default function AutomationsPage(props: { readonly client: PluginClient; 
       setFlipped(({ [x.name]: _, ...rest }) => rest);
     };
     setFlipped((f) => ({ ...f, [x.name]: on }));
-    void c.run(saveTrigger, { peer, name: x.name, spec: switchedSpec(x.spec ?? {}, on) }).then(
+    // a declared trigger changes `enabled` alone (audit H4); a plugin's own is saved whole, as before
+    const sent = x.from === 'trigger' ? c.run(switchTrigger, { peer, name: x.name, on }) : c.run(saveTrigger, { peer, name: x.name, spec: switchedSpec(x.spec ?? {}, on) });
+    void sent.then(
       () => void Promise.resolve(refetch()).then(settle, settle),
       settle,
     );

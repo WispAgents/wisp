@@ -88,9 +88,10 @@ async fn a_trigger_named_by_its_project_runs_in_that_folder_and_an_unknown_name_
     let kept = api.cmd("resources.export", json!({ "kinds": ["trigger"] })).await;
     let spec = kept.as_array().unwrap().iter().find(|t| t["name"] == "named").map(|t| t["spec"].clone()).unwrap();
     assert_eq!(spec["project"], "proj", "{spec}");
+    // what the app reads says it as written too (audit H4: its switch sent the folder back, and the formula drifted)
     let ls = api.cmd("automations.trigger.ls", json!({})).await;
     let live = ls.as_array().unwrap().iter().find(|t| t["name"] == "named").map(|t| t["spec"].clone()).unwrap();
-    assert_eq!(canonical(Path::new(live["project"].as_str().unwrap())), canonical(&proj), "the engine's: {live}");
+    assert_eq!(live["project"], "proj", "as written: {live}");
     let f = dir.join("named.yml");
     std::fs::write(
         &f,

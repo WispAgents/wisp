@@ -233,7 +233,7 @@ pub struct AgentKitArgs {
     pub files: Vec<Value>,
 }
 
-/// `crew.agent.add`: the `wisp_crew_add` tool (v1 POST /internal/crew/:id). `session` is the caller's task (its
+/// An agent adds a crew member (the `wisp_crew_add` tool). `session` is the caller's task (its
 /// project is the default folder). With `from` (a share link, `gist:<id>`, an https `.crew.json`, or its JSON) the
 /// members someone shared join through `crew.import`, paused; without it, a member is made from the fields.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, TS)]
@@ -418,7 +418,8 @@ pub struct TopJob {
     pub tokens: u64,
 }
 
-/// `POST /crew/:id/jobs`. `kit: true` with no prompt: "Build your kit".
+/// Give a crew member a job: a task they run now, in their folder, as them. With `--kit` and no prompt they build
+/// their kit (the skills and tools for their role).
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
 #[ts(export, export_to = "crew/")]
@@ -435,7 +436,7 @@ pub struct AssignArgs {
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     #[ts(as = "Option<bool>", optional)]
     pub confirm_limit: bool,
-    /// this job's own harness, model, level or mode, instead of the member's (v1 `crewRun`, #764)
+    /// this job's own harness, model, level or mode, instead of the member's
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub run: Option<crate::RunPick>,
@@ -443,7 +444,7 @@ pub struct AssignArgs {
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     #[ts(as = "Option<bool>", optional)]
     pub picked: bool,
-    /// the lead task whose agent hands this job out (`runtime.delegate`, v1 crew.js `#delegate`): the job is
+    /// the lead task whose agent hands this job out (it delegated to this member): the job is
     /// `delegated` from it, its report goes back to that agent, and it starts now or is refused (never queued). Set by the
     /// caller (`crew:assign`): the runtime passes the lead it runs
     #[serde(default, skip_serializing_if = "Option::is_none")]

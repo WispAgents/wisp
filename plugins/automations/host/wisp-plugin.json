@@ -12,6 +12,7 @@
   "permissions": [
     "crew:assign",
     "events:tail",
+    "resources:apply",
     "resources:read",
     "runtime:create",
     "runtime:followUp",
@@ -76,6 +77,14 @@
       {
         "id": "automations.trigger.resume",
         "title": "Resume a paused trigger"
+      },
+      {
+        "id": "automations.trigger.switch",
+        "title": "Switch a trigger off or on"
+      },
+      {
+        "id": "automations.trigger.remove",
+        "title": "Remove a trigger"
       },
       {
         "id": "automations.release",

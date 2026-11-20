@@ -6,8 +6,9 @@
 //!   [--approval] [--tz ZONE] [-C dir] [--agent A] [--model M] [--mode M]`: writes the `trigger` resource (what
 //!   `wisp apply` would), so the formula, the app and the CLI share one spec. (`--on` is the machine flag: the
 //!   source is the second word.)
-//! - `wisp trigger ls | rm <name> | fire <name> [--payload @file|JSON] | test <name> [--event @file] [--last N]
-//!   | log <name> | resume <name> | approve <name> <job> [--no] | sources`
+//! - `wisp trigger ls | rm <name> | off <name> | on <name> | fire <name> [--payload @file|JSON] | test <name>
+//!   [--event @file] [--last N] | log <name> | resume <name> | approve <name> <job> [--no] | sources` (`off`/`on`
+//!   change only `enabled`, audit H13)
 //! - `wisp crew wake <member> [--why TEXT]`, `wisp crew graph`, `wisp crew pause <member>`, `wisp crew resume <member>`
 //!   (by name or id; audit G12: only `crew update <member> --paused false` resumed one)
 use std::collections::BTreeMap;
@@ -215,8 +216,18 @@ async fn trigger(c: &Client, p: &Parsed, verb: &str, s: &Said, cwd: &str) -> Res
         }
         "rm" | "remove" => {
             let name = name()?;
-            c.cmd("resources.apply", json!({ "resources": [], "destroy": [format!("trigger.{name}")], "trust": true })).await?;
+            c.cmd("automations.trigger.remove", json!({ "name": name })).await?;
             say(&format!("  ✓ removed trigger {name}"));
+        }
+        "off" => {
+            let name = name()?;
+            c.cmd("automations.trigger.switch", json!({ "name": name, "on": false })).await?;
+            say(&format!("  ✓ trigger {name} is off: it fires no more (wisp trigger on {name} switches it back on)"));
+        }
+        "on" => {
+            let name = name()?;
+            c.cmd("automations.trigger.switch", json!({ "name": name, "on": true })).await?;
+            say(&format!("  ✓ trigger {name} is on"));
         }
         "ls" | "list" => {
             let v = c.cmd("automations.trigger.ls", json!({})).await?;
@@ -276,7 +287,9 @@ async fn trigger(c: &Client, p: &Parsed, verb: &str, s: &Said, cwd: &str) -> Res
                 say(&format!("{:<22} {:<6} {:<18} {}{off}", line(r, "on"), line(r, "mode"), line(r, "plugin"), line(r, "title")));
             }
         }
-        other => return Err(CliError::said(format!("wisp trigger {other}: add, ls, rm, fire, test, log, resume, approve or sources"))),
+        other => {
+            return Err(CliError::said(format!("wisp trigger {other}: add, ls, off, on, rm, fire, test, log, resume, approve or sources")));
+        }
     }
     Ok(0)
 }

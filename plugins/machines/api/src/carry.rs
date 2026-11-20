@@ -44,8 +44,8 @@ pub struct Sent {
     pub author_email: String,
 }
 
-/// `machines.uncarry` (here, ADR-0060): lead `lead`'s delegate on machine `id` goes: its task there and every copy of
-/// that lead's there. A machine that can't be reached keeps it for the sweep.
+/// A delegate's work on another machine, taken back from here: lead `lead`'s delegate on machine `id` goes, its task
+/// there and every copy of that lead's there. A machine that can't be reached keeps it for the sweep.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
 pub struct UncarryArgs {
     pub id: String,

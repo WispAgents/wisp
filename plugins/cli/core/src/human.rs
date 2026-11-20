@@ -54,7 +54,15 @@ pub fn ago(ms: i64, now: i64) -> String {
     if later { format!("in {span}") } else { format!("{span} ago") }
 }
 
+/// A time field left at 0: never set (audit H8: `connectors list` read "added 0"), so it says nothing.
+fn unset_time(key: &str, v: &Value) -> bool {
+    (matches!(key, "at" | "since" | "until") || key.ends_with("At") || key.ends_with("_at")) && v.as_i64() == Some(0)
+}
+
 fn cell(key: &str, v: &Value, now: Option<i64>) -> String {
+    if unset_time(key, v) {
+        return String::new();
+    }
     match (now, v.as_i64()) {
         (Some(now), Some(ms)) if is_time(key, v) => ago(ms, now),
         _ => short(v),
@@ -110,7 +118,7 @@ fn named(o: &serde_json::Map<String, Value>) -> Option<String> {
 /// The columns of a list of objects: the lead fields they have, then other scalars, up to `max`.
 fn columns(list: &[Value], max: usize) -> Vec<String> {
     let mut cols: Vec<String> = Vec::new();
-    let has = |k: &str| list.iter().any(|x| x.get(k).is_some_and(|v| scalar(v).is_some_and(|s| !s.is_empty())));
+    let has = |k: &str| list.iter().any(|x| x.get(k).is_some_and(|v| !unset_time(k, v) && scalar(v).is_some_and(|s| !s.is_empty())));
     // rows with nothing naming them (`channels status`' `transport`) lead with the first text field that differs on
     // every row, or no row says which it is (audit E5)
     if !NAMING.iter().any(|k| has(k))
@@ -156,10 +164,12 @@ pub fn render(v: &Value, s: &Style, now: Option<i64>) -> Vec<String> {
             let n = cols.len().max(1);
             let room = s.width.saturating_sub(2 * (n - 1));
             let mut widths: Vec<usize> = (0..cols.len()).map(|i| cells.iter().map(|r| term::width(&r[i])).max().unwrap_or(0)).collect();
-            // the last column takes what is left
-            let used: usize = widths.iter().take(n.saturating_sub(1)).map(|w| (*w).min(room / n + 8)).sum();
+            // the last column takes what is left; an id is never cut: it's what the next command takes, as printed
+            // (audit H7: `later plans` cut a plan's id to 21 characters, and `later cancel` of that did nothing)
+            let cap = |i: usize, w: usize| if cols[i] == "id" { w } else { w.min(room / n + 8) };
+            let used: usize = widths.iter().take(n.saturating_sub(1)).enumerate().map(|(i, w)| cap(i, *w)).sum();
             for (i, w) in widths.iter_mut().enumerate() {
-                *w = if i + 1 == n { room.saturating_sub(used).max(4) } else { (*w).min(room / n + 8) };
+                *w = if i + 1 == n { room.saturating_sub(used).max(4) } else { cap(i, *w) };
             }
             cells
                 .iter()
@@ -200,9 +210,10 @@ fn fields(o: &serde_json::Map<String, Value>, s: &Style, now: Option<i64>, depth
         Value::Object(m) => m.is_empty(),
         _ => false,
     };
-    let kw = o.iter().filter(|(k, x)| LEAD.contains(&k.as_str()) || !empty(x)).map(|(k, _)| term::width(&words(k))).max().unwrap_or(kw);
+    let shown = |k: &str, x: &Value| LEAD.contains(&k) || (!empty(x) && !unset_time(k, x));
+    let kw = o.iter().filter(|(k, x)| shown(k, x)).map(|(k, _)| term::width(&words(k))).max().unwrap_or(kw);
     o.iter()
-        .filter(|(k, x)| LEAD.contains(&k.as_str()) || !empty(x))
+        .filter(|(k, x)| shown(k, x))
         .flat_map(|(k, x)| {
             let val = match x {
                 Value::Number(_) if now.is_some() && is_time(k, x) => cell(k, x, now),
@@ -264,6 +275,27 @@ mod tests {
         assert!(got.contains("paused") && got.contains("bob") && !got.contains("1 item"), "{got}");
         let unset = render(&json!({ "key": "theme", "value": "" }), &s, None);
         assert_eq!(unset.iter().map(|l| l.trim_end()).collect::<Vec<_>>(), ["key    theme", "value"], "an unset value still says so");
+    }
+
+    /// Audit H7: `wisp later plans` cut a plan's id to 21 characters ("01a1f95a22ac7768acff4…"), and the id as
+    /// printed named nothing. An id column is printed whole, however narrow the screen.
+    #[test]
+    fn an_id_is_printed_whole_audit_h7() {
+        let s = Style::plain(60);
+        let id = "01a1f95a22ac7768acff4f2c9e8d7b6a";
+        let rows = json!([{ "id": id, "kind": "task", "title": "a long title that takes the rest of the line and more", "state": "set", "at": "18:00" }]);
+        let got = render(&rows, &s, None);
+        assert!(got[1].starts_with(id), "{got:?}");
+    }
+
+    /// Audit H8: `wisp connectors list` read "added 0" for a connector added that minute: a time never set says nothing.
+    #[test]
+    fn a_time_never_set_says_nothing_audit_h8() {
+        let s = Style::plain(80);
+        let rows = render(&json!([{ "id": "docs", "name": "docs", "addedAt": 0 }]), &s, Some(1_795_090_000_000));
+        assert!(rows.iter().all(|l| !l.contains("added") && !l.ends_with(" 0")), "{rows:?}");
+        let one = render(&json!({ "name": "docs", "addedAt": 0 }), &s, Some(1_795_090_000_000));
+        assert_eq!(one, ["name  docs"]);
     }
 
     #[test]

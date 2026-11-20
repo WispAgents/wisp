@@ -135,13 +135,18 @@ pub async fn generated(c: &Client, cat: &Catalogue, words: &[String], argv: &[St
         }
     };
     let named = goal_by_name(&v.info.id, &rest, &mut args);
+    let sent = args.clone();
     let out = match c.cmd(&v.info.id, args).await {
         Err(CliError::Http { status, message, body }) if named && message.contains("no goal named") => {
             return Err(CliError::Http { status, message: format!("{message}; use --text \"…\" for words"), body });
         }
         r => r?,
     };
-    print_result(&out, own.json || argv.iter().any(|a| a == "--json"));
+    let json = own.json || argv.iter().any(|a| a == "--json");
+    match crate::said::said(&v.info.id, &sent, &out).filter(|_| !json) {
+        Some(line) => say(&line),
+        None => print_result(&out, json),
+    }
     Ok(Some(0))
 }
 

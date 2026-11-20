@@ -4,7 +4,7 @@
 import { createMemo, createSignal, onCleanup, type JSX } from 'solid-js';
 import { entityKey, type PluginClient, type SessionId } from '@wisp/client';
 import { Button, englishT, SelectSetting, SettingsGroup, SettingsRow, Stack, timeLabel, useSignal } from '@wisp/ui';
-import { bringIn, clean, dismiss, keep } from '../commands.ts';
+import { bringIn, clean, dismiss, keep, look } from '../commands.ts';
 import { diskLine, entries, ready, totalLine } from '../format.ts';
 import { t } from '../i18n.ts';
 import { fromRow, text } from '../source.ts';
@@ -90,6 +90,8 @@ export default function Worktrees(props: { readonly client: PluginClient; readon
   const scope = c.scope.child('worktrees-pane');
   onCleanup(() => scope.dispose());
   c.watch(peer, TOPIC, scope);
+  // a look starts now: a stray made since the last one shows, with Bring in's offers (audit E6); the rows come on the topic
+  quiet(c.run(look, { peer }));
   const [now, setNow] = createSignal(Date.now());
   scope.interval(MINUTE, () => setNow(Date.now())); // "Goes in 3 days" and "2h ago" stay true while it's open
 

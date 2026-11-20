@@ -4,4 +4,12 @@
  * `later.edit`: another time or text; `now: true` sends it now (Send now); item `reminder` snoozes
  * the reminder that came due.
  */
-export type EditArgs = { sessionId: string, item: string, text?: string, now?: boolean, at?: number | string, in?: number | string, };
+export type EditArgs = { sessionId: string, item: string, text?: string, now?: boolean, 
+/**
+ * when: a time today or a date and time (18:00, 2026-12-01T09:00), or ms since the epoch
+ */
+at?: number | string, 
+/**
+ * or in this many minutes from now
+ */
+in?: number | string, };

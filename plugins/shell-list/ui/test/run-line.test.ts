@@ -35,6 +35,13 @@ test('a_crashed_limited_or_refused_rows_pill_says_which_v1_halt', async () => {
   expect(label({ status: 'done', halt: 'failed' })).toEqual({ key: 'shell-list.status.done' });
 });
 
+test('a_run_you_stopped_says_stopped_not_blocked_audit_G15', () => {
+  // a factory run you stopped: its band says stopped, and its row said Blocked
+  const pill = pillsOf(flatSession({ id: 's1', state: 'review', summary: { status: 'stopped' } } as never)).find((p) => p.id === 'status');
+  expect(pill?.label).toEqual({ key: 'shell-list.status.stopped' });
+  expect(pill?.tone).toBe('neutral');
+});
+
 test('a_capped_rows_pill_names_its_cap_and_an_uncapped_row_has_none', async () => {
   // F-chan-10: runtime's list field `capped`, flattened from the summary like every other
   const cap = (o: Record<string, unknown>): unknown => pillsOf(flatSession({ id: 's1', state: 'review', summary: { status: 'done', ...o } } as never)).find((p) => p.id === 'capped');

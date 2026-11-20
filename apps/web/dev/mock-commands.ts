@@ -1043,6 +1043,9 @@ export const COMMANDS: Record<string, CommandFn> = {
   'automations.tasks': () => ({ ops: [], result: COMPOSER ? RECIPES : [] }),
   'automations.task.run': () => ({ ops: [], result: {} }),
   'automations.trigger.ls': () => ({ ops: [], result: [] }),
+  // the switch and Delete (audit H4): the mock has no triggers, so nothing to change
+  'automations.trigger.switch': () => ({ ops: [], result: { ok: true } }),
+  'automations.trigger.remove': () => ({ ops: [], result: { ok: true } }),
   // Compare runs' Keep this: the other runs' folders (none on the mock)
   'worktrees.clean': () => ({ ops: [], result: { queued: 0 } }),
   'channels.status': () => ({ ops: [], result: { cloud: false, channels: mockPhone.value } }),

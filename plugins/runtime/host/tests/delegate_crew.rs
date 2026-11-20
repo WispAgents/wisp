@@ -20,7 +20,7 @@ fn lead(team: &serde_json::Value) -> StartArgs {
 }
 
 fn task(subagent: &str, prompt: &str) -> DelegateTask {
-    DelegateTask { subagent: subagent.into(), prompt: prompt.into() }
+    DelegateTask { subagent: subagent.into(), prompt: prompt.into(), ..Default::default() }
 }
 
 #[tokio::test(flavor = "multi_thread")]

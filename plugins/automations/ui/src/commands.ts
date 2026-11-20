@@ -77,6 +77,15 @@ export const saveTrigger = defineCommand<{ peer: PeerId; name: string; spec: Rea
   optimistic: 'none',
   pending: 'the trigger',
 });
+/** The switch on a declared trigger (audit H4): only `enabled` changes, the rest of its spec stays as written (the
+ * whole spec sent back wrote `project: proj` as its folder, and the formula drifted). */
+export const switchTrigger = defineCommand<{ peer: PeerId; name: string; on: boolean }>({
+  id: 'automations.trigger.switch',
+  owner: (a) => a.peer,
+  wire: (a) => ({ name: a.name, on: a.on }),
+  optimistic: 'none',
+  pending: 'the trigger’s switch',
+});
 /** Delete a trigger (v1's trash button, after its confirm): `wisp destroy trigger.<name>`. */
 export const removeTrigger = defineCommand<{ peer: PeerId; name: string }>({
   id: 'resources.apply',

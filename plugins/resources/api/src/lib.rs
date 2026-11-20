@@ -486,7 +486,22 @@ macro_rules! command {
 }
 
 command!(Kinds = "resources.kinds" ["resources:read"] read yes : Value => Vec<KindInfo>; typed);
-command!(PlanCmd = "resources.plan" ["resources:read"] read yes : PlanArgs => Plan);
+/// `resources.plan`: what applying these resources would change; nothing changes (audit D6: its tool took only `{args}`).
+#[derive(Debug)]
+pub struct PlanCmd;
+impl Command for PlanCmd {
+    const ID: &'static str = "resources.plan";
+    const PERMISSION: Option<&'static str> = Some("resources:read");
+    const READ_ONLY: bool = true;
+    type Args = PlanArgs;
+    type Out = Plan;
+    fn args_ts() -> Option<String> {
+        Some(PLAN_TS.to_owned())
+    }
+}
+
+/// [`PlanCmd`]'s argument for the generated CLI and the MCP tools.
+pub const PLAN_TS: &str = "/** What applying these resources would change (wisp diff): each one to add, change or remove, and the problems apply would refuse; nothing changes. */ { /** the resources, as a formula declares them: { kind, name, spec } each (wisp resources kinds lists the kinds) */ resources: Array<Record<string, unknown>>, /** also remove what they don't declare, in the kinds they name */ prune?: boolean, /** they came from somewhere else (a link, a gist, a teammate): what changes who may act needs trust */ foreign?: boolean, /** yes to what changes who may act */ trust?: boolean, /** kind.name addresses to remove (wisp destroy) */ destroy?: Array<string>, /** the sections they name, an empty one too: with prune, a kind named here with nothing in it is emptied */ kinds?: Array<string> }";
 command!(Apply = "resources.apply" ["resources:apply"] : PlanArgs => Applied);
 command!(Export = "resources.export" ["resources:read"] read yes : ExportArgs => Vec<Resource>; typed);
 command!(Rename = "resources.rename" ["resources:apply"] : RenameArgs => Value);
@@ -553,7 +568,22 @@ pub fn secret_name_ok(name: &str) -> bool {
 command!(SecretSet = "resources.secretSet" ["resources:secrets"] : SecretArgs => SecretOut);
 command!(SecretRemove = "resources.secretRemove" ["resources:secrets"] : SecretArgs => SecretOut);
 
-command!(Read = "resources.read" ["resources:read"] read yes : ReadArgs => ReadOut);
+/// `resources.read` (audit D6: its tool took only `{args}`).
+#[derive(Debug)]
+pub struct Read;
+impl Command for Read {
+    const ID: &'static str = "resources.read";
+    const PERMISSION: Option<&'static str> = Some("resources:read");
+    const READ_ONLY: bool = true;
+    type Args = ReadArgs;
+    type Out = ReadOut;
+    fn args_ts() -> Option<String> {
+        Some(READ_TS.to_owned())
+    }
+}
+
+/// [`Read`]'s argument for the generated CLI and the MCP tools.
+pub const READ_TS: &str = "/** A formula's text read as the resources it declares and the secrets it references; nothing changes. */ { /** the formula's text */ text: string, /** yaml (the default), json or toml */ format?: string }";
 command!(Write = "resources.write" ["resources:read"] read yes : WriteArgs => WriteOut; typed);
 
 #[cfg(test)]

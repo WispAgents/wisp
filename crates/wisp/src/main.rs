@@ -25,6 +25,7 @@ mod notes_cli;
 mod offload_cli;
 mod plugin_cmd;
 mod repo_cli;
+mod said;
 mod scripted;
 mod secret_cli;
 mod serve;
@@ -142,6 +143,13 @@ async fn dispatch(p: &Parsed, user_home: &Path, cwd: &Path) -> Result<i32> {
     {
         return Ok(code);
     }
+    // a prompt with a flag no launch takes (`wisp "fix it" --mdoe plan`): refused, nothing launched (audit H2)
+    if p.command.is_none()
+        && let Some(stray) = p.strays.first()
+    {
+        eprintln!("  ✗ {}", words::launch_stray(&p.words, stray));
+        return Ok(1);
+    }
     // a group command with a verb it doesn't have (`wisp plugin frob`, `wisp mcp start`): its verbs, exit 2
     // a group that routed as a command (`mcp`, `skill`, `plugin`): its next word decides, however many follow (`wisp
     // mcp foo bar` would serve on stdin)
@@ -193,7 +201,7 @@ async fn dispatch(p: &Parsed, user_home: &Path, cwd: &Path) -> Result<i32> {
         // a terminal; QA round 12 #2 printed the id where the title goes)
         // `wisp run foo`, no recipe or workflow of that name: one stray word is a slip (QA round 15 #2); more is a prompt
         Some("run") if p.words.len() == 2 && p.literal == args::Literal::No && !p.words[1].contains(char::is_whitespace) => {
-            eprintln!("  ✗ no recipe or workflow named {}: wisp recipes lists them\n{}", p.words[1], words::usage("run"));
+            eprintln!("  ✗ {}\n{}", words::run_miss(&p.words[1]), words::usage("run"));
             return Ok(cli::USAGE_EXIT);
         }
         Some("run") if !(f.json || f.wait || !f.tries.is_empty() || f.compare.is_some()) => {
@@ -581,12 +589,8 @@ async fn areas(first: &str, p: &Parsed, o: &code::Opts, port: u16, cwd: &Path) -
                 Err(e) => return Err(CliError::said(e)),
             }
         }
-        "trigger" | "triggers"
-            if matches!(
-                o.words.first().map(String::as_str),
-                None | Some("add" | "ls" | "list" | "rm" | "remove" | "fire" | "test" | "log" | "resume" | "approve" | "sources")
-            ) =>
-        {
+        // its verbs are words::VERB_PATHS' (`off`, `on` beside `rm`: audit H13), one list for routing and refusals
+        "trigger" | "triggers" if o.words.first().is_none_or(|w| words::own_verb("trigger", w)) => {
             trigger_cli::run(&connect().await?, p, first, &cwd.display().to_string()).await?
         }
         "crew" if matches!(o.words.first().map(String::as_str), Some("wake" | "graph" | "pause" | "resume")) => {

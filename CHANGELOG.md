@@ -22,6 +22,17 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Fixed
 
+- v2 an agent can make a subagent on the fly: `delegate` with a harness (`agent`, and a `name`, model, effort or machine) and no `subagent` joins the task's team and runs, with or without a team (it was refused with "missing field `subagent`"); the same name again continues it.
+- v2 `wisp "…" --mdoe plan` (a flag no launch takes) is refused before anything starts, naming the close flag ("did you mean --mode?"); it used to launch in Full auto with the typo in its prompt. Words after `--`, and inside the quoted prompt, stay the prompt's.
+- v2 a goal judge that answers without MET or NOT MET hasn't judged: the goal asks you once instead of sending the work back with "didn't say whether it's met" every round.
+- v2 Settings › Automations' switch changes only whether a trigger is on, so `project: proj` stays a name and `wisp diff` stays unchanged; `wisp trigger off <name>` and `wisp trigger on <name>` switch one from the terminal (`automations trigger switch` / `trigger remove` over MCP).
+- v2 New task with a task file: the runner pill shows the file's agent and model (critic · Codex · gpt-5, or "from the file"), not the bar's own pick.
+- v2 a goal name that isn't declared is refused with 8 names, how many more, and the close one ("did you mean never?"), as `wisp validate` does.
+- v2 `wisp later cancel` with nothing scheduled says so and exits 1 (it said "ok true"), a plan's id takes that plan back, and `wisp later plans` prints ids whole.
+- v2 CLI words: `factory stop`, `crew checkin|assign`, `crew update`, `review maybe` and `later cancel` say what happened in a sentence; `crew ls` marks a paused member; `connectors list` no longer says "added 0"; one `wisp rerun` names its new task instead of the several-runs hint; `wisp run <nothing>` names declared tasks, recipes and workflows and what lists each; `wisp show` names a factory's PR as "PR #1", not its link.
+- v2 a factory run you stopped reads Stopped in the task list, as its band does (it read Blocked).
+- v2 Settings › Worktrees looks again when it opens, so a stray folder or a worktree to bring in made since wisp started shows (it only showed what wisp saw at start).
+- v2 every command's `--help` (and MCP tool description) reads as words: no ADR numbers, v1 files or routes, or wire shapes; `later plan`, `review maybe` and `later cancel-plan` say what each flag is; `connectors list --help` no longer claims unknown fields are ignored. The MCP tools `factory_set`, `resources_plan` and `resources_read` list their real fields.
 - v2 the arrow keys walk a task's side panel tabs past Shell: selecting Shell with → starts it but leaves the keys on the tab strip, so the next → goes on to Preview; a click, Enter or Space on Shell (or Start again) gives the terminal the keys. A link that opens a task on its Shell (`?side=shell:…`) now puts what you type in the terminal, not the reply box.
 - v2 in a phone-width browser, the first ⋯ sheet after a page load is titled with the task you tapped, not the list's top task.
 - v2 the phone apps' New task offers what the desktop's does: More → **Goal…** lists your declared goals (a filter past seven, All goals…, New goal…) and **Formula or task file…** picks one, with its chip and ✕.

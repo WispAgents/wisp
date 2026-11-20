@@ -3,4 +3,12 @@
 /**
  * When: `at` (ms since the epoch, or an ISO time) or `in` (minutes from now).
  */
-export type When = { at?: number | string, in?: number | string, };
+export type When = { 
+/**
+ * when: a time today or a date and time (18:00, 2026-12-01T09:00), or ms since the epoch
+ */
+at?: number | string, 
+/**
+ * or in this many minutes from now
+ */
+in?: number | string, };

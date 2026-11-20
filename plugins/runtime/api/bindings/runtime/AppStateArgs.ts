@@ -4,6 +4,6 @@ import type { TurnId } from "../TurnId";
 import type { JsonValue } from "../serde_json/JsonValue";
 
 /**
- * `runtime.appState`: an `app` block's state, kept on its turn (`ext["wisp.apps"][block]`, v1 /app-state).
+ * An app block's state, kept on its turn: what the app saved, read back when it opens again.
  */
 export type AppStateArgs = { id: SessionId, turnId: TurnId, block: string, state: JsonValue, };

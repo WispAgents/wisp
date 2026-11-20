@@ -43,7 +43,8 @@ async fn turns(r: &Rig, id: &str) -> Vec<Turn> {
 
 /// Hands each `(member, gate)` a task held at that gate; the delegations' task ids.
 async fn delegate(r: &Rig, id: &SessionId, tasks: &[(&str, &str)]) -> Vec<String> {
-    let tasks = tasks.iter().map(|(m, g)| DelegateTask { subagent: (*m).into(), prompt: format!("gate {g} work") }).collect();
+    let tasks =
+        tasks.iter().map(|(m, g)| DelegateTask { subagent: (*m).into(), prompt: format!("gate {g} work"), ..Default::default() }).collect();
     let out = r.rt.delegate(DelegateArgs { id: id.clone(), tasks }).await.unwrap();
     assert!(out.iter().all(|d| d.error.is_none()), "{out:?}");
     for d in &out {
@@ -358,7 +359,7 @@ async fn a_crew_job_here_holds_its_lead_and_its_report_comes_back_when_it_ends()
     let job = r.rt.create(job_start).await.unwrap().id;
     until("the job runs", || async { last(&r, job.as_str()).await.is_some_and(|t| t.status == TurnStatus::Running) }).await;
     r.host.live.lock().unwrap().insert("crew.assign".into(), json!({ "session": { "id": job.as_str(), "agent": "fake", "model": "m1" } }));
-    let task = DelegateTask { subagent: "ada".into(), prompt: "fix it".into() };
+    let task = DelegateTask { subagent: "ada".into(), prompt: "fix it".into(), ..Default::default() };
     let out = r.rt.delegate(DelegateArgs { id: id.clone(), tasks: vec![task] }).await.unwrap();
     assert_eq!(out[0].id, job, "{out:?}");
     open("crewh-l");
@@ -423,7 +424,7 @@ async fn far_lead(r: &Rig, gate: &str, machine: &str) -> SessionId {
     let start = StartArgs { prompt: format!("gate {gate} lead"), cwd: Some(common::tmp()), ext, ..StartArgs::default() };
     let id = r.rt.create(start).await.unwrap().id;
     until("the lead runs", || async { last(r, id.as_str()).await.is_some_and(|t| t.status == TurnStatus::Running) }).await;
-    let task = DelegateTask { subagent: "far".into(), prompt: "fix it".into() };
+    let task = DelegateTask { subagent: "far".into(), prompt: "fix it".into(), ..Default::default() };
     let out = r.rt.delegate(DelegateArgs { id: id.clone(), tasks: vec![task] }).await.unwrap();
     assert!(out[0].error.is_none() && out[0].id.0.ends_with("|r1"), "{out:?}");
     assert_eq!(out[0].turn_id.0, "rt1", "the turn it started there");

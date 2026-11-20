@@ -2,7 +2,40 @@
 import type { PlanKind } from "./PlanKind";
 
 /**
- * `later.plan`: `{kind: task, body}` or `{kind: reminder, text, from?}`; a task may have `draft` or
- * `after` (a task id, or `{id}`) instead of a time.
+ * Plan a new task, or a reminder, for later: a task starts at `--at` (or `--in` minutes), when the task `--after`
+ * names ends, or waits in Drafts (`--draft`); a reminder says `--text` then. `wisp "…"` itself always starts now:
+ * in the app, Start later plans it; here, `wisp later plan --kind task --body '{"prompt":"…","cwd":"…"}' --at 18:00`.
  */
-export type PlanArgs = { kind: PlanKind, draft?: boolean, after?: string | { id: string }, body?: Record<string, unknown>, text?: string, from?: { id: string, title?: string }, at?: number | string, in?: number | string, };
+export type PlanArgs = { 
+/**
+ * task (a new task starts then) or reminder (you're reminded then)
+ */
+kind: PlanKind, 
+/**
+ * no time: the task waits in Drafts until you start it
+ */
+draft?: boolean, 
+/**
+ * start when this task (its id) ends, instead of at a time
+ */
+after?: string | { id: string }, 
+/**
+ * the task to start, as New task sends it: its prompt, folder, agent, model and mode
+ */
+body?: Record<string, unknown>, 
+/**
+ * a reminder's words
+ */
+text?: string, 
+/**
+ * the task a reminder is about (its id, and title)
+ */
+from?: { id: string, title?: string }, 
+/**
+ * when: a time today or a date and time (18:00, 2026-12-01T09:00), or ms since the epoch
+ */
+at?: number | string, 
+/**
+ * or in this many minutes from now
+ */
+in?: number | string, };

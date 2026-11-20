@@ -4,7 +4,7 @@ use std::collections::BTreeMap;
 use std::sync::Arc;
 
 use serde_json::{Value, json};
-use wisp_runtime_api::commands::{DelegateArgs, Delegation, FollowUpArgs, Report, Reports, ResultsArgs, StartArgs};
+use wisp_runtime_api::commands::{DelegateArgs, DelegateTask, Delegation, FollowUpArgs, Report, Reports, ResultsArgs, StartArgs};
 use wisp_runtime_api::model::{Session, SessionState, ToolKind, TurnStatus};
 use wisp_runtime_api::{SessionId, TurnId};
 
@@ -103,6 +103,11 @@ impl Runtime {
     /// `codex#2`) is one child task, made on first use and resumed after; it follows the lead's folder,
     /// mode and cap. One record (or an error) per task; the delegations go on the lead's turn.
     pub async fn delegate(self: &Arc<Self>, a: DelegateArgs) -> Result<Vec<Delegation>> {
+        let (tasks, mut out) = self.adhoc_team(&a.id, a.tasks).await?;
+        let a = DelegateArgs { tasks, ..a };
+        if a.tasks.is_empty() && !out.is_empty() {
+            return Ok(out);
+        }
         let lead = self.repo.session(a.id.as_str()).await?;
         let Some(turn) = self.last_turn(a.id.as_str()).await?.filter(|t| t.status == TurnStatus::Running) else {
             return Err(RuntimeError::Conflict("The lead agent is not running.".into()));
@@ -120,7 +125,6 @@ impl Runtime {
         let names: Vec<String> = team.iter().map(|m| str_at(m, "name")).collect();
         let mut claimed: Vec<String> = Vec::new();
         let mut made = serde_json::Map::new();
-        let mut out = Vec::new();
         for task in a.tasks {
             let want = task.subagent.trim().to_owned();
             let prompt = task.prompt.trim().to_owned();
@@ -186,6 +190,69 @@ impl Runtime {
         }
         self.note_delegations(&a.id, &turn.id, made, &out).await?;
         Ok(out)
+    }
+
+    /// Tasks that name a harness (or a machine, or a new name) instead of a member: new subagents made on the fly (v1
+    /// control.js `adhocTeam`). They join the lead's team first, so they run, show and resume like the ones the user
+    /// picked; a name the team has continues that one. Back: the tasks by member, and one error per task that can't.
+    async fn adhoc_team(self: &Arc<Self>, id: &SessionId, tasks: Vec<DelegateTask>) -> Result<(Vec<DelegateTask>, Vec<Delegation>)> {
+        let fresh = |t: &DelegateTask| t.subagent.trim().is_empty() && (t.agent.is_some() || t.machine.is_some() || t.name.is_some());
+        // not running: delegate refuses as it would, and the team stays as it was
+        if !tasks.iter().any(fresh) || self.last_turn(id.as_str()).await?.is_none_or(|t| t.status != TurnStatus::Running) {
+            return Ok((tasks, Vec::new()));
+        }
+        let _g = self.task_lock(id.as_str()).await;
+        let mut lead = self.repo.session(id.as_str()).await?;
+        let mut team: Vec<Value> = slot(&lead).and_then(|m| m.get("subagents")).and_then(Value::as_array).cloned().unwrap_or_default();
+        let before = team.clone();
+        let (mut out, mut errors) = (Vec::new(), Vec::new());
+        for t in tasks {
+            if !fresh(&t) {
+                out.push(t);
+                continue;
+            }
+            let opt = |o: &Option<String>| o.as_deref().map(str::trim).filter(|x| !x.is_empty()).map(str::to_owned);
+            let (agent, machine, name) = (opt(&t.agent).unwrap_or_else(|| "auto".into()), opt(&t.machine), opt(&t.name));
+            let label = name.clone().unwrap_or_else(|| agent.clone());
+            if lead.parent_id.is_some() {
+                errors.push(failed(&label, "A subagent can’t have subagents of its own.".into()));
+                continue;
+            }
+            // the name it goes by: its own, else its harness's (on a machine, `codex-devbox`), as the team names it
+            let slug = name.as_deref().map(wisp_runtime_core::team::slug).unwrap_or_default();
+            let named = !slug.is_empty();
+            let base = if named {
+                slug
+            } else if let Some(m) = &machine {
+                wisp_runtime_core::team::slug(&format!("{agent}-{m}"))
+            } else {
+                agent.clone()
+            };
+            // a name the team has continues that one: unnamed, the same harness again is the same subagent (a lead
+            // delegating `agent: codex` three times has one codex, not codex-2 and codex-3)
+            if let Some(known) = team.iter().find(|m| str_at(m, "name") == base && (named || str_at(m, "crew").is_empty())) {
+                out.push(DelegateTask { subagent: str_at(known, "name"), prompt: t.prompt, ..DelegateTask::default() });
+                continue;
+            }
+            let mut row = json!({ "name": base, "agent": agent, "model": opt(&t.model), "effort": opt(&t.effort), "use": opt(&t.r#use) });
+            if let (Some(m), Some(o)) = (&machine, row.as_object_mut()) {
+                o.insert("machine".into(), json!(m));
+            }
+            let next: Vec<Value> = team.iter().cloned().chain(std::iter::once(row)).collect();
+            match self.roster(&next) {
+                Ok(next) => {
+                    let named = next.last().map(|m| str_at(m, "name")).unwrap_or_default();
+                    team = next;
+                    out.push(DelegateTask { subagent: named, prompt: t.prompt, ..DelegateTask::default() });
+                }
+                Err(e) => errors.push(failed(&label, e.to_string())),
+            }
+        }
+        if team != before {
+            with_slot(&mut lead.ext, |x| x.insert("subagents".into(), Value::Array(team)));
+            self.persist(&mut lead, Vec::new()).await?;
+        }
+        Ok((out, errors))
     }
 
     /// The delegations that went, on the lead: its children by slot, a record each on its turn, a "Delegated to …" row.

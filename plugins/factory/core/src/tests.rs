@@ -647,7 +647,7 @@ fn an_ended_runs_task_says_how_it_ended_audit_g15() {
     r.start();
     assert_eq!(status_of(r.view()), None, "running");
     let mut v = r.view().clone();
-    for (state, said) in [(RunState::Done, "done"), (RunState::Failed, "failed"), (RunState::Stopped, "blocked")] {
+    for (state, said) in [(RunState::Done, "done"), (RunState::Failed, "failed"), (RunState::Stopped, "stopped")] {
         v.state = state;
         assert_eq!(status_of(&v), Some(said), "{state:?}");
     }

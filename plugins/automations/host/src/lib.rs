@@ -183,7 +183,9 @@ pub(crate) fn mode_of(s: &str) -> Result<Option<Mode>> {
 
 async fn run(ctx: &Ctx, call: &Call, store: &Store, r: RunTask, by: &str) -> Result<Value> {
     if r.name == DEFAULT {
-        return Err(WireError::invalid("tasks.default gives every task its defaults: it isn't a task to run (wisp recipes lists them)"));
+        return Err(WireError::invalid(
+            "tasks.default gives every task its defaults: it isn't a task to run (wisp recipes lists the declared tasks, wisp workflows list the workflows)",
+        ));
     }
     let tasks = list(store).await?;
     let Some(t) = tasks.iter().find(|t| t.name == r.name) else {

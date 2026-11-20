@@ -1132,7 +1132,8 @@ pub fn status_of(v: &RunView) -> Option<&'static str> {
     match v.state {
         RunState::Done => Some("done"),
         RunState::Failed => Some("failed"),
-        RunState::Stopped => Some("blocked"),
+        // you stopped it: the row says Stopped, as its band does (audit G15: it read Blocked)
+        RunState::Stopped => Some("stopped"),
         RunState::Running | RunState::Waiting => None,
     }
 }

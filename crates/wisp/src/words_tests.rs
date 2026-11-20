@@ -182,7 +182,9 @@ fn every_verb_main_routes_for_a_built_in_is_in_the_table() {
             .collect();
         assert!(!arms.is_empty(), "main.rs routes {}", vp.cmd);
         for at in arms {
-            let arm = lines[at..(at + 6).min(lines.len())].join(" ");
+            // the arm's pattern and guard, up to its `=>` (six lines read on into the next arm's verbs)
+            let end = (at..lines.len()).find(|&j| lines[j].contains("=>")).unwrap_or(at).min(at + 6);
+            let arm = lines[at..=end.min(lines.len() - 1)].join(" ");
             for verb in arm.split("Some(").nth(1).unwrap_or("").split(')').next().unwrap_or("").split('|') {
                 let verb = verb.trim().trim_matches('"');
                 if verb.is_empty() || verb.contains(' ') {
@@ -585,4 +587,34 @@ fn a_file_that_cant_be_read_is_said_in_words_audit_d9() {
     let here = std::env::temp_dir();
     let said = no_v1_home(&here, &here.join("config.json"), &Error::from(ErrorKind::NotFound));
     assert!(said.contains("has no config.json") && !said.contains("os error"), "{said}");
+}
+
+/// Audit H2: `wisp "H typo2" --mdoe plan` launched in Full auto with `--mdoe plan` in its prompt. A flag-shaped word
+/// before `--` is a stray (refused with the close flag); after `--`, or inside the quoted prompt, it's the prompt's.
+#[test]
+fn a_misspelled_launch_flag_is_a_stray_named_with_its_close_flag_audit_h2() {
+    assert_eq!(p(&["H typo2", "--mdoe", "plan"]).strays, ["--mdoe"]);
+    assert_eq!(p(&["H", "--agnet=codex"]).strays, ["--agnet"]);
+    let none: [String; 0] = [];
+    assert_eq!(p(&["H", "--", "--mdoe", "plan"]).strays, none, "after -- it's the prompt");
+    assert_eq!(p(&["fix the --mdoe flag parsing"]).strays, none, "inside the prompt's quotes");
+    assert_eq!(p(&["H", "--mode", "plan", "-d"]).strays, none);
+    let said = launch_stray(&w(&["H typo2", "--mdoe", "plan"]), "--mdoe");
+    assert!(said.starts_with("wisp takes no --mdoe: did you mean --mode?") && said.contains("Nothing was launched"), "{said}");
+    assert!(said.contains("wisp \"H typo2\" -- --mdoe plan"), "{said}");
+    assert!(launch_stray(&w(&["x", "--agnet"]), "--agnet").contains("did you mean --agent?"));
+    let bogus = launch_stray(&w(&["x", "--bogus"]), "--bogus");
+    assert!(!bogus.contains("did you mean"), "{bogus}");
+    assert!(launch_stray(&w(&["x", "--at"]), "--at").contains("can't start later from here"));
+    // nothing before the flag: no empty quotes in the way out
+    assert!(launch_stray(&w(&["--mdoe", "plan"]), "--mdoe").ends_with("A task that says it: wisp -- --mdoe plan"));
+}
+
+/// Audit H11: `wisp run nosuch` said "no recipe or workflow named nosuch: wisp recipes lists them"; it runs declared
+/// tasks too, and the line names each kind with what lists it.
+#[test]
+fn a_run_that_names_nothing_names_each_kind_and_its_list_audit_h11() {
+    let said = run_miss("nosuch");
+    assert!(said.starts_with("no declared task, recipe or workflow named nosuch"), "{said}");
+    assert!(said.contains("wisp recipes lists the declared tasks") && said.contains("wisp workflows list"), "{said}");
 }

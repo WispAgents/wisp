@@ -388,6 +388,20 @@ fn commands(s: &mut Setup, slot: &Slot) {
             .filter(|l| a.item.as_deref().is_none_or(|i| i == l.id) && (!a.goal_round || l.goal.is_some()))
             .map(|l| l.id)
             .collect();
+        // `wisp later cancel <x>` for nothing said "ok true" (audit H7): a plan's id takes that plan back, anything
+        // else is refused. A stale item from the app (already fired) still answers ok: its row is gone either way.
+        if ids.is_empty() && a.item.is_none() && !a.goal_round {
+            let plan = lock(&st.plans).iter().find(|p| p.id == a.session_id).map(|p| p.id.clone());
+            let Some(plan) = plan else {
+                return Err(WireError::not_found(format!(
+                    "Nothing is scheduled on {}: wisp later plans lists the plans (wisp later cancel-plan <id> takes one back)",
+                    a.session_id
+                )));
+            };
+            lock(&st.plans).retain(|p| p.id != plan);
+            st.write(store::Ops { drop_plans: vec![plan], ..store::Ops::default() }).await?;
+            return Ok(c::Cancelled { ok: true, entry: None });
+        }
         let gone = st.take(&ids);
         st.write(store::Ops { drop_entries: ids, ..store::Ops::default() }).await?;
         st.mirror(&ctx, &call, &a.session_id).await;
@@ -450,6 +464,9 @@ fn commands(s: &mut Setup, slot: &Slot) {
         Ok(c::PlanEdited::Plan(Box::new(next)))
     });
     on!(s, slot, c::CancelPlan, |st, _ctx, _call, a| {
+        if !lock(&st.plans).iter().any(|p| p.id == a.id) {
+            return Err(WireError::not_found(format!("No plan has the id {}: wisp later plans lists them", a.id)));
+        }
         lock(&st.plans).retain(|p| p.id != a.id);
         st.write(store::Ops { drop_plans: vec![a.id], ..store::Ops::default() }).await?;
         Ok(c::Okay { ok: true })

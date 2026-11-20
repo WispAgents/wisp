@@ -777,7 +777,7 @@ impl Runtime {
     }
 
     /// A team's rows made the roster `wisp_delegate` reads (v1 normalizeTeam): an unknown harness refuses it.
-    fn roster(&self, list: &[serde_json::Value]) -> Result<Vec<serde_json::Value>> {
+    pub(crate) fn roster(&self, list: &[serde_json::Value]) -> Result<Vec<serde_json::Value>> {
         wisp_runtime_core::team::normalize_team(list, |agent| self.harness(agent).is_ok()).map_err(RuntimeError::Invalid)
     }
 

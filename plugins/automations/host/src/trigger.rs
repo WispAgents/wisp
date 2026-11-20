@@ -8,7 +8,7 @@ use std::sync::Arc;
 use serde_json::{Value, json};
 use wisp_automations_api::commands as c;
 use wisp_automations_api::{Target, TriggerEvent, TriggerSpec};
-use wisp_kernel::{BoxFuture, Call, Ctx, Result, Setup};
+use wisp_kernel::{BoxFuture, Call, Ctx, Result, Setup, WireError};
 use wisp_resources_api::{KindInfo, Op, RESOURCE_KIND, Resource, ResourceKind, StoredKind, schema_of};
 
 use crate::engine::{Engine, Shared, from_envelope, outcome_of};
@@ -30,16 +30,21 @@ async fn refresh(ctx: &Ctx, inner: &StoredKind, engine: &Engine) {
     let _one = engine.loading.lock().await;
     let mut specs = inner.specs().await.unwrap_or_default();
     let mut read = true;
+    let mut written = std::collections::BTreeMap::new();
     if specs.iter().any(|(_, v)| project_name(v).is_some()) {
         let folders = project_folders(ctx, &ctx.root_call()).await.unwrap_or_default();
-        for (_, v) in &mut specs {
+        for (n, v) in &mut specs {
             let Some(name) = project_name(v) else { continue };
-            match folders.iter().find(|(n, _)| n == name) {
-                Some((_, folder)) => v["project"] = json!(folder),
+            match folders.iter().find(|(p, _)| p == name) {
+                Some((_, folder)) => {
+                    written.insert(n.clone(), name.to_owned());
+                    v["project"] = json!(folder);
+                }
                 None => read = false,
             }
         }
     }
+    *engine.written.lock().unwrap_or_else(std::sync::PoisonError::into_inner) = written;
     let list = specs.into_iter().filter_map(|(n, v)| Some((n, serde_json::from_value::<TriggerSpec>(v).ok()?))).collect();
     *engine.declared.lock().unwrap_or_else(std::sync::PoisonError::into_inner) = list;
     engine.unread.store(!read, std::sync::atomic::Ordering::Relaxed);
@@ -365,6 +370,22 @@ fn commands(s: &mut Setup, engine: &Shared) {
             Ok(c::Done { ok: true })
         }
     });
+    let e = engine.clone();
+    s.command::<c::TriggerSwitch, _, _>(move |ctx, call, a| {
+        let e = e.clone();
+        async move {
+            declared(&ctx, &e, &a.name)?;
+            apply(&ctx, &call, vec![Resource::new("trigger", a.name.clone(), json!({ "enabled": a.on }))], Vec::new()).await
+        }
+    });
+    let e = engine.clone();
+    s.command::<c::TriggerRemove, _, _>(move |ctx, call, a| {
+        let e = e.clone();
+        async move {
+            declared(&ctx, &e, &a.name)?;
+            apply(&ctx, &call, Vec::new(), vec![format!("trigger.{}", a.name)]).await
+        }
+    });
     s.command::<c::Sources, _, _>(|ctx, _, _| async move { Ok(crate::engine::sources(&ctx)) });
     let e = engine.clone();
     s.command::<c::Release, _, _>(move |_, _, a| {
@@ -379,6 +400,19 @@ fn commands(s: &mut Setup, engine: &Shared) {
             e.release(&p.agent, &p.account).await;
         }
     });
+}
+
+/// A trigger declared as a `trigger` resource (a plugin's own, a crew member's wake, is switched where it's made).
+fn declared(ctx: &Ctx, e: &Engine, name: &str) -> Result<()> {
+    let t = e.find(ctx, name)?;
+    if t.from == "trigger" { Ok(()) } else { Err(WireError::invalid(format!("trigger {name} comes from {}: switch it there", t.from))) }
+}
+
+/// One change through `resources.apply` (the one write path): its problems are the refusal, in its words.
+async fn apply(ctx: &Ctx, call: &Call, resources: Vec<Resource>, destroy: Vec<String>) -> Result<c::Done> {
+    let args = wisp_resources_api::PlanArgs { resources, destroy, trust: true, ..wisp_resources_api::PlanArgs::default() };
+    let out = ctx.run::<wisp_resources_api::Apply>(call, args).await?;
+    if out.plan.problems.is_empty() { Ok(c::Done { ok: true }) } else { Err(WireError::invalid(out.plan.problems.join("; "))) }
 }
 
 /// `@member` in a pushed message wakes that member (ADR-0043 §5). A chat message only from someone the channel

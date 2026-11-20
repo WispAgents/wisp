@@ -14,8 +14,17 @@ pub fn factory_line(task: &Value) -> String {
     let Some(run) = task.pointer("/ext/wisp.factory").filter(|r| r.get("stations").is_some()) else { return String::new() };
     let Some(line) = wisp_factory_tui::line(run) else { return String::new() };
     let why = run.get("why").and_then(Value::as_str).filter(|w| !w.is_empty()).map_or_else(String::new, |w| format!("  · {w}"));
-    let pr = run.get("pr").and_then(Value::as_str).map_or_else(String::new, |p| format!("  · {p}"));
+    // its PR by number, never the raw link at the end of the line (audit G15)
+    let pr = run.get("pr").and_then(Value::as_str).filter(|p| !p.is_empty()).map_or_else(String::new, |p| format!("  · {}", pr_words(p)));
     format!("\n▦ {line}{pr}{why}")
+}
+
+/// A PR link as words: `https://github.com/acme/repo/pull/1` is "PR #1"; anything else stays as it is.
+fn pr_words(url: &str) -> String {
+    url.trim_end_matches('/')
+        .rsplit_once("/pull/")
+        .filter(|(_, n)| !n.is_empty() && n.bytes().all(|b| b.is_ascii_digit()))
+        .map_or_else(|| url.to_owned(), |(_, n)| format!("PR #{n}"))
 }
 
 /// The task's goal and where its judging stands, on one line (audit D10: only `runtime.get`'s `ext.wisp.goal` had it):
@@ -131,6 +140,11 @@ mod tests {
             "why": "Checks still fail after 3 round(s)", "stations": [{ "id": "build", "state": "done" }, { "id": "checks", "state": "failed" }] } } });
         assert_eq!(super::factory_line(&run), "\n▦ default: ✓ build · ✗ checks  · Checks still fail after 3 round(s)");
         assert_eq!(super::factory_line(&serde_json::json!({ "ext": {} })), "", "no factory: nothing");
+        // audit G15: the band line ended with the raw link
+        let shipped = serde_json::json!({ "ext": { "wisp.factory": { "factory": "shipit", "state": "done", "station": "", "round": 1, "max": 3,
+            "pr": "https://github.com/acme/repo/pull/1", "stations": [{ "id": "build", "state": "done" }] } } });
+        let line = super::factory_line(&shipped);
+        assert!(line.contains("· PR #1") && !line.contains("https://"), "{line}");
     }
 
     /// Audit D4: a held turn says why, what it would run and the three ways on; a running one says nothing.

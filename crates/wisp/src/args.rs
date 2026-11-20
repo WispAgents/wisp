@@ -274,6 +274,8 @@ pub struct Parsed {
     pub command: Option<&'static str>,
     /// the arguments with every `--flag=value` split in two (the grid parses its own from these)
     pub argv: Vec<String>,
+    /// `--words` no flag took, before any `--`: a verb reads its own from argv, a prompt refuses them (audit H2)
+    pub strays: Vec<String>,
 }
 
 pub fn expand(p: &str, home: &Path, cwd: &Path) -> PathBuf {
@@ -384,6 +386,47 @@ pub fn factory_name(v: &str) -> bool {
     !v.is_empty() && v.len() <= 64 && !v.starts_with('-') && v.chars().all(|c| c.is_alphanumeric() || "-_.".contains(c))
 }
 
+/// A word typed as a flag (`--mdoe`, `--at`): two dashes, then a letter, letters, digits and dashes.
+pub fn flag_shaped(a: &str) -> bool {
+    a.strip_prefix("--").is_some_and(|w| {
+        w.bytes().next().is_some_and(|b| b.is_ascii_alphabetic()) && w.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-')
+    })
+}
+
+/// The flags a launch (`wisp "…"`) takes, for "did you mean" (`set` below, and `--factory`).
+pub const LAUNCH_FLAGS: [&str; 30] = [
+    "--mode",
+    "--agent",
+    "--model",
+    "--effort",
+    "--cwd",
+    "--also",
+    "--json",
+    "--wait",
+    "--yes",
+    "--queue",
+    "--project",
+    "--worktree",
+    "--no-worktree",
+    "--compare",
+    "--try",
+    "--goal",
+    "--goal-text",
+    "--formula",
+    "--factory",
+    "--detach",
+    "--context",
+    "--no-context",
+    "--show-context",
+    "--lines",
+    "--port",
+    "--no-open",
+    "--browser",
+    "--on",
+    "--help",
+    "--draft",
+];
+
 /// A flag that needs a value and got none.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 #[error("{0} needs a value — see wisp --help")]
@@ -451,6 +494,7 @@ pub fn parse(input: &[String], env_port: Option<&str>, home: &Path, cwd: &Path) 
     let mut argv: Vec<String> = Vec::with_capacity(input.len());
     let mut flags = Flags::defaults(env_port);
     let mut words = Vec::new();
+    let mut strays = Vec::new();
     let mut literal = Literal::No;
     // --state=review is --state review (it used to become a word, and the filter was dropped)
     for a in input {
@@ -475,9 +519,9 @@ pub fn parse(input: &[String], env_port: Option<&str>, home: &Path, cwd: &Path) 
         } else if a == "--" {
             literal = if words.is_empty() { Literal::Task } else { Literal::Yes };
         } else if a == "--version" || a == "-v" {
-            return Ok(Parsed { action: Action::Version, flags, words, literal, command: None, argv });
+            return Ok(Parsed { action: Action::Version, flags, words, literal, command: None, argv, strays: Vec::new() });
         } else if (a == "--help" || a == "-h") && words.is_empty() {
-            return Ok(Parsed { action: Action::Help, flags, words, literal, command: None, argv });
+            return Ok(Parsed { action: Action::Help, flags, words, literal, command: None, argv, strays: Vec::new() });
         } else if a == "--help" || a == "-h" {
             // after words: a generated verb's own help (`wisp crew create --help`), else the usage
             flags.help = true;
@@ -501,6 +545,9 @@ pub fn parse(input: &[String], env_port: Option<&str>, home: &Path, cwd: &Path) 
                 // machine to run on goes first (`wisp --on laptop crew create …`) (audit B #9)
                 next()?;
             } else if !set(&mut flags, &a, &mut next, home, cwd)? {
+                if flag_shaped(&a) {
+                    strays.push(a.clone());
+                }
                 words.push(a);
             }
         }
@@ -509,7 +556,7 @@ pub fn parse(input: &[String], env_port: Option<&str>, home: &Path, cwd: &Path) 
     // `-C dir` is where `wisp add <folder>` looks
     let at = flags.cwd.clone().unwrap_or_else(|| cwd.to_owned());
     let command = command_of(&words, literal, home, &at);
-    Ok(Parsed { action: Action::Run, flags, words, literal, command, argv })
+    Ok(Parsed { action: Action::Run, flags, words, literal, command, argv, strays })
 }
 
 #[cfg(test)]

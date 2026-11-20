@@ -54,7 +54,7 @@ async fn a_delegate_on_another_machine_runs_on_a_copy_there_and_says_where() {
     let id = r.rt.create(lead(false)).await.unwrap().id;
     running(&r, id.as_str()).await;
     // the lead's folder as the prompt names it, `/` after it even on Windows (`C:\…\Temp/src/a.ts`)
-    let task = DelegateTask { subagent: "far".into(), prompt: format!("fix {}/src/a.ts", common::tmp()) };
+    let task = DelegateTask { subagent: "far".into(), prompt: format!("fix {}/src/a.ts", common::tmp()), ..Default::default() };
     let out = r.rt.delegate(DelegateArgs { id: id.clone(), tasks: vec![task] }).await.unwrap();
     assert!(out[0].error.is_none(), "{out:?}");
     assert_eq!(out[0].id.0, "m1|r1", "kept as <machine>|<task there>");
@@ -100,7 +100,7 @@ async fn a_delegate_on_another_machine_runs_on_a_copy_there_and_says_where() {
     assert_eq!(asked(&r, "machines.bring").len(), 1, "brought once");
 
     // the next job: the copy is made afresh from the lead's folder, and the same task there is followed up
-    let task = DelegateTask { subagent: "far".into(), prompt: "and the tests".into() };
+    let task = DelegateTask { subagent: "far".into(), prompt: "and the tests".into(), ..Default::default() };
     let next = r.rt.delegate(DelegateArgs { id: id.clone(), tasks: vec![task] }).await.unwrap();
     assert_eq!((next[0].id.0.as_str(), next[0].place.as_deref()), ("m1|r1", Some("studio")), "{next:?}");
     assert_eq!(asked(&r, "machines.carry").len(), 2);
@@ -112,7 +112,7 @@ async fn a_capped_leads_work_never_leaves_this_computer() {
     let r = rig_with(answers()).await;
     let id = r.rt.create(lead(true)).await.unwrap().id;
     running(&r, id.as_str()).await;
-    let task = DelegateTask { subagent: "far".into(), prompt: "go".into() };
+    let task = DelegateTask { subagent: "far".into(), prompt: "go".into(), ..Default::default() };
     let out = r.rt.delegate(DelegateArgs { id, tasks: vec![task] }).await.unwrap();
     assert!(out[0].error.as_deref().is_some_and(|e| e.contains("send work to another machine")), "{out:?}");
     assert!(asked(&r, "machines.carry").is_empty(), "nothing carried");
@@ -126,7 +126,7 @@ async fn a_machine_that_refuses_the_copy_is_that_tasks_error() {
     let r = rig_with(rec).await;
     let id = r.rt.create(lead(false)).await.unwrap().id;
     running(&r, id.as_str()).await;
-    let task = DelegateTask { subagent: "far".into(), prompt: "go".into() };
+    let task = DelegateTask { subagent: "far".into(), prompt: "go".into(), ..Default::default() };
     let out = r.rt.delegate(DelegateArgs { id: id.clone(), tasks: vec![task] }).await.unwrap();
     assert!(out[0].error.as_deref().is_some_and(|e| e.contains("machines.carry")), "{out:?}");
     assert!(asked(&r, "machines.route").is_empty(), "nothing runs there without its copy");
@@ -141,7 +141,7 @@ async fn deleting_the_lead_lets_its_delegates_elsewhere_go() {
     let r = rig_with(answers()).await;
     let id = r.rt.create(lead(false)).await.unwrap().id;
     running(&r, id.as_str()).await;
-    let task = DelegateTask { subagent: "far".into(), prompt: "go".into() };
+    let task = DelegateTask { subagent: "far".into(), prompt: "go".into(), ..Default::default() };
     let out = r.rt.delegate(DelegateArgs { id: id.clone(), tasks: vec![task] }).await.unwrap();
     assert_eq!(out[0].id.0, "m1|r1", "{out:?}");
     assert!(asked(&r, "machines.uncarry").is_empty(), "nothing goes while the lead is here");

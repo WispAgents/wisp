@@ -7,7 +7,7 @@ import type { RunPick } from "./RunPick";
 
 export type FollowUpArgs = { id: SessionId, text: string, attachments?: Array<Attachment>, 
 /**
- * true: wait in the queue if a turn is running; false (the default, v1 `reply`): interrupt the
+ * true: wait in the queue if a turn is running; false (the default): interrupt the
  * running turn once its harness session is known, and send now
  */
 queue?: boolean, mode?: Mode, run?: RunPick, by?: string, 
@@ -27,7 +27,7 @@ turn_id?: TurnId,
  */
 team?: unknown, 
 /**
- * a new conversation on the same task (a long thread's Fresh thread, ADR-0096): its turn resumes nothing, hears
+ * a new conversation on the same task (a long thread's Fresh thread): its turn resumes nothing, hears
  * nothing of the turns before it, and is marked `ext["wisp.runtime"] = { fresh: true, after: <the conversation
  * it left> }`, so the old conversation stays linked. Additive (2026-11-18).
  */

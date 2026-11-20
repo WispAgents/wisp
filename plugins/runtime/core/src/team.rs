@@ -11,7 +11,8 @@ pub const MAX_COPIES: u64 = 5;
 /// v1 `MAX_USE`: the "use it for" note.
 pub const MAX_USE: usize = 300;
 
-fn slug(s: &str) -> String {
+/// A name as a team keeps it: lowercase words joined by `-`, at most 24 characters.
+pub fn slug(s: &str) -> String {
     let mut out = String::new();
     for c in s.to_lowercase().chars() {
         if c.is_ascii_lowercase() || c.is_ascii_digit() {

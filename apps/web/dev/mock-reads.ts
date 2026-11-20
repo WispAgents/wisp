@@ -175,6 +175,11 @@ export const READS: Record<string, Fn> = {
   // the Machines dialog reads its cards and the computers wisp found when it opens (wisp.machines' PeerView[] and
   // Found[]): the mock has no other computer and finds none (they were unanswered: a red toast over the dialog)
   'machines.list': () => ({ ops: [], result: [] }),
+  // Settings → Worktrees asks for a look when it opens (audit E6); the mock's rows are what it seeded, none found anew
+  'worktrees.view': () => ({
+    ops: [],
+    result: { cleanup: '7', max: '40', items: [], leftovers: [], disk: null, ready: 0, looking: false, cleaning: null, last: null },
+  }),
   'machines.discover': () => ({ ops: [], result: [] }),
 };
 

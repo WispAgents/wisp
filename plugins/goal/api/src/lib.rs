@@ -33,7 +33,7 @@ pub struct SetArgs {
     #[serde(default, skip_serializing_if = "String::is_empty")]
     #[ts(optional, as = "Option<String>")]
     pub vote: String,
-    /// a declared goal by name (`goals:` in a formula, ADR-0110): its text, judges, vote and round limit, under the
+    /// a declared goal by name (`goals:` in a formula): its text, judges, vote and round limit, under the
     /// judges and vote given here. A `text` that is exactly a declared goal's name is that goal too (`wisp goal set
     /// <task> green-build`). Additive (2026-11-19).
     #[serde(default, skip_serializing_if = "String::is_empty")]

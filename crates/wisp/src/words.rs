@@ -366,7 +366,7 @@ pub const VERB_PATHS: &[VerbPath] = &[
     vp("sandboxes", &["new", "add", "ls", "list", "rm", "remove", "delete"], &[]),
     vp("team", &["ls", "list", "new", "create", "show", "add", "rm", "remove"], &[]),
     vp("teams", &["ls", "list", "new", "create", "show", "add", "rm", "remove"], &[]),
-    vp("trigger", &["add", "ls", "list", "rm", "remove", "fire", "test", "log", "resume", "approve", "sources"], TRIGGER),
+    vp("trigger", &["add", "ls", "list", "rm", "remove", "off", "on", "fire", "test", "log", "resume", "approve", "sources"], TRIGGER),
     vp("triggers", &["add", "ls", "list", "rm", "remove", "fire", "test", "log", "resume", "approve", "sources"], TRIGGER),
     vp("crew", &["wake", "graph", "pause", "resume"], TRIGGER),
     vp("hook", &["install", "uninstall", "remove", "status"], &[]),
@@ -605,6 +605,37 @@ fn near(typed: &str, cmd: &str, d: usize) -> bool {
         2 => short >= 6,
         _ => false,
     }
+}
+
+/// `wisp run <name>` that names nothing (audit H11: it named only recipes, though `wisp run` runs declared tasks and
+/// workflows too): each kind it looked for, and the command that lists it.
+pub fn run_miss(name: &str) -> String {
+    format!("no declared task, recipe or workflow named {name}: wisp recipes lists the declared tasks, wisp workflows list the workflows")
+}
+
+/// A prompt with a `--word` no launch flag takes (audit H2: `wisp "fix it" --mdoe plan` launched in Full auto with the
+/// typo in its prompt): the refusal, naming the close flag. Nothing launches; a prompt that says it puts it after `--`.
+pub fn launch_stray(prompt: &[String], stray: &str) -> String {
+    let typed = stray.trim_start_matches('-');
+    let close = crate::args::LAUNCH_FLAGS
+        .iter()
+        .map(|f| (distance(typed, f.trim_start_matches('-')), *f))
+        .filter(|(d, f)| *d <= 2 && near(typed, f.trim_start_matches('-'), *d))
+        .min_by_key(|(d, _)| *d)
+        .map_or_else(String::new, |(_, f)| format!(": did you mean {f}?"));
+    let later = if close.is_empty() && matches!(typed, "at" | "later" | "when" | "start-at") {
+        ". A task can't start later from here: Start later in the app, or wisp later plan --help"
+    } else {
+        ""
+    };
+    // the way to say it as words: what came before the flag, then `--` and the rest as typed
+    let at = prompt.iter().position(|w| w == stray).unwrap_or(prompt.len());
+    let (before, after) = prompt.split_at(at);
+    let before = if before.is_empty() { String::new() } else { format!("\"{}\" ", before.join(" ")) };
+    format!(
+        "wisp takes no {stray}{close}{later}\n    Nothing was launched (wisp --help lists the flags). A task that says it: wisp {before}-- {}",
+        after.join(" ")
+    )
 }
 
 /// Edit distance with adjacent swaps (`shwo` is one from `show`).

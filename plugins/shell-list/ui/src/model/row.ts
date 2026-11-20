@@ -106,7 +106,7 @@ export function statusKey(s: SessionRow): string {
   if (s.status === 'blocked' && s.halt) return s.halt;
   return s.status && s.status !== 'running' ? s.status : 'done';
 }
-const STATUS_TONE: Readonly<Record<string, Tone>> = { done: 'good', partial: 'warn', blocked: 'warn', failed: 'bad', limit: 'warn', refused: 'warn', signedOut: 'warn', info: 'info', held: 'warn' };
+const STATUS_TONE: Readonly<Record<string, Tone>> = { done: 'good', partial: 'warn', blocked: 'warn', failed: 'bad', limit: 'warn', refused: 'warn', signedOut: 'warn', info: 'info', held: 'warn', stopped: 'neutral' };
 
 export const agentName = (id: string, agents: ReadonlyMap<string, Row<Agent>>, named?: (id: string) => string | undefined): string =>
   named?.(id) ?? agents.get(id)?.name ?? (id === 'auto' ? 'Auto' : id === 'wisp' ? 'wisp' : id);
