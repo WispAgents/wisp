@@ -15,9 +15,10 @@ use std::process::{Command, Stdio};
 #[cfg(unix)]
 use std::time::{Duration, Instant};
 
-use common::{Api, start, temp};
 #[cfg(unix)]
-use common::{start_with, yaml_str};
+use common::start_with;
+use common::yaml_str;
+use common::{Api, start, temp};
 use serde_json::{Value, json};
 
 fn wisp(dir: &Path, port: u16, args: &[&str]) -> (i32, String, String) {
