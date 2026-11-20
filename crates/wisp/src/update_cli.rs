@@ -44,8 +44,22 @@ pub async fn check(c: &Client, json: bool) -> Result<i32> {
 
 /// `wisp update apply`: install it (npm or Homebrew, as wisp was installed).
 pub async fn apply(c: &Client, json: bool) -> Result<i32> {
-    print_result(&c.cmd("update.install", json!({})).await?, json);
-    Ok(0)
+    let v = c.cmd("update.install", json!({})).await?;
+    let (line, code) = installed(&v);
+    match line {
+        Some(l) if !json => say(&l),
+        _ => print_result(&v, json),
+    }
+    Ok(code)
+}
+
+/// What an install's view says went wrong, as a line, and the exit code: a refused install (a checksum that didn't
+/// match) is `✗ <why>` and 1, as a clone's refusal is (audit G GS9: it printed the whole view and exited 0).
+fn installed(v: &Value) -> (Option<String>, i32) {
+    match v.get("error").and_then(Value::as_str).filter(|e| !e.trim().is_empty()) {
+        Some(e) => (Some(format!("  ✗ {e}")), 1),
+        None => (None, 0),
+    }
 }
 
 #[cfg(test)]
@@ -63,6 +77,14 @@ mod tests {
             ("  ◌ wisp 2.1.0 is out (this is 2.0.0): wisp update apply".into(), 0)
         );
         assert_eq!(said(&json!({ "current": "2.0.0", "error": "offline" })), ("  ✗ couldn't check for an update: offline".into(), 1));
+    }
+
+    /// Audit G GS9: a desktop update whose checksum didn't match printed the view and exited 0.
+    #[test]
+    fn a_failed_install_says_why_and_exits_1_audit_gs9() {
+        let bad = json!({ "current": "2.0.0", "method": "app", "error": "wisp-mac-arm64.zip didn't match the release's checksum. Nothing was changed." });
+        assert_eq!(installed(&bad), (Some("  ✗ wisp-mac-arm64.zip didn't match the release's checksum. Nothing was changed.".into()), 1));
+        assert_eq!(installed(&json!({ "current": "2.0.0", "installing": true, "error": null })), (None, 0));
     }
 
     /// Audit F setup F5: on a git clone (or with checks off) `wisp update` said "✓ wisp 2.0.0 is the latest" while

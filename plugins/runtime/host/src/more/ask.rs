@@ -20,6 +20,8 @@ pub(crate) const APPROVAL_ALWAYS: &str = "Always allow in this task";
 pub(crate) const APPROVAL_DENY: &str = "Deny";
 /// A question asked while a setup card is open (ADR-0113).
 pub(crate) const SETUP_OPEN: &str = "A change to the user's setup is waiting on their answer: ask again once they've answered it.";
+/// What a setup card's agent reads when the card goes without the user's answer (its turn ended, the task stopped).
+pub(crate) const TAKEN_BACK: &str = "The card was taken back before the user answered it (the task stopped or its turn ended): nothing changed. Ask again if it's still needed.";
 /// An answer to a question that's no longer the open one.
 pub(crate) const NOT_OPEN: &str = "That question was already answered, or a newer one replaced it: nothing was sent.";
 const SIDE_DENIED: &str = "Refused: a side discussion only reads. Ask the main task to do it.";
@@ -196,13 +198,39 @@ impl Runtime {
         if self.asks().contains_key(ask_id) { PollAnswer::Pending } else { PollAnswer::Cancelled }
     }
 
-    /// The task stopped: what its agent asked goes unanswered, and the task stops waiting.
+    /// The task stopped: what its agent asked goes unanswered, and the task stops waiting. A setup card's agent reads
+    /// that it was taken back and nothing changed (audit G GS5: a card is never taken back without an answer).
     pub(crate) fn cancel_asks(&self, s: &mut Session) {
         if let Some(ask) = with_slot(&mut s.ext, |m| m.remove("ask")) {
-            self.asks().remove(ask.get("id").and_then(Value::as_str).unwrap_or_default());
+            let id = ask.get("id").and_then(Value::as_str).unwrap_or_default();
+            self.asks().remove(id);
+            if ask.get("setup").is_some() {
+                self.answers().insert(id.to_owned(), TAKEN_BACK.to_owned());
+            }
             if s.state == SessionState::Waiting {
                 s.state = SessionState::Review;
             }
+        }
+    }
+
+    /// A write of task `s` made from a copy read before its question went up (no task lock held) would drop the open
+    /// question, its card gone while its agent's `pollAnswer` reads pending for good (audit G GS5). Every path that
+    /// takes a question back takes it out of `asks` first, so a question `asks` still holds for this task that the
+    /// write leaves out is put back from the stored row, with the task still waiting.
+    pub(crate) async fn keep_open_ask(&self, s: &mut Session) {
+        if slot(s).is_some_and(|m| m.get("ask").is_some()) {
+            return;
+        }
+        let open = self.asks().iter().find(|(_, sid)| **sid == s.id.0).map(|(a, _)| a.clone());
+        let Some(open) = open else { return };
+        let Ok(stored) = self.repo.session(s.id.as_str()).await else { return };
+        if ask_id(&stored).as_deref() != Some(open.as_str()) {
+            return;
+        }
+        if let Some(ask) = slot(&stored).and_then(|m| m.get("ask")).cloned() {
+            tracing::warn!(task = %s.id, "a write from an older copy of the task would have dropped its open question: kept");
+            with_slot(&mut s.ext, |m| m.insert("ask".into(), ask));
+            s.state = SessionState::Waiting;
         }
     }
 

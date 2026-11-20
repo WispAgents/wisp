@@ -209,10 +209,16 @@ fn setup_cards(s: &mut Setup, slot: &Slot) {
                 return Err(WireError::forbidden(wisp_kernel::caps::capped_refusal("change the user's setup")));
             }
             let task = r.get(a.id.as_str()).await.map_err(WireError::from)?;
-            let t = su::Task { session: a.id.as_str(), cwd: &task.cwd };
+            // the project's folder is what a member keeps; the task's worktree goes with it (audit G GS3)
+            let project =
+                task.ext.get("wisp.worktrees").and_then(|w| w.get("root")).and_then(serde_json::Value::as_str).unwrap_or_default();
+            let worktrees =
+                wisp_kernel::services::paths(&ctx).map(|p| p.home().join("worktrees").display().to_string()).unwrap_or_default();
+            let t = su::Task { session: a.id.as_str(), cwd: &task.cwd, project, worktrees: &worktrees };
+            let folder = t.member_folder().unwrap_or_default().to_owned();
             let writes = match su::normalize(&a.command, &a.args, t).map_err(WireError::invalid)? {
                 Normalized::Writes(w) => w,
-                Normalized::Import { from } => vec![read_crew(&ctx, &from, &task.cwd).await?],
+                Normalized::Import { from } => vec![read_crew(&ctx, &from, &folder).await?],
             };
             let who = asker(&ctx, &r, &a.id).await;
             r.setup_ask(&a.id, &who, writes).await.map_err(WireError::from)

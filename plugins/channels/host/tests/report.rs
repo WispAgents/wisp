@@ -68,6 +68,10 @@ impl Plugin for Runtime {
             ),
             ("s3", json!({ "title": "Elsewhere", "cwd": "/w/api" })),
             (
+                "s5",
+                json!({ "title": "Ship it", "cwd": "/w/api", "ext": { "wisp.runtime": { "ask": { "id": "a5", "question": "Ship to staging or prod?", "options": ["Staging", "Prod"] } } } }),
+            ),
+            (
                 "s4",
                 json!({ "title": "Deploy", "cwd": "/w/api", "mode": "edits", "ext": { "wisp.runtime": { "capped": { "mode": "edits" }, "ask": { "id": "a4", "question": "Allow Bash?", "permission": { "action": "Run npm publish" } } } } }),
             ),
@@ -226,4 +230,36 @@ async fn a_capped_channel_task_that_stalls_on_a_permission_says_in_its_thread_it
     assert_eq!(got.len(), 1, "{got:?}");
     assert_eq!((got[0].0.as_str(), got[0].1.title.as_str()), ("s4", "Waiting for your OK in wisp: Run npm publish"));
     assert!(got[0].1.actions.is_empty(), "no button: the cap's OK is only given in wisp");
+}
+
+/// Audit G GS2: a question sent to the phone or a channel by a notification (the task came from elsewhere) carried no
+/// answer buttons; v1 and the channel's own report (`message`) make its options signed answer buttons, named by the ask.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_question_notification_carries_its_options_as_answer_buttons() {
+    let out = Published::default();
+    let k = kernel(&out).await;
+    k.call(
+        Caller::user(),
+        "resources.apply",
+        json!({ "resources": [{ "kind": "notification", "name": "asks", "spec": { "on": ["asks"], "to": "fake" } }] }),
+    )
+    .await
+    .unwrap();
+    let ctx = k.ctx("wisp.runtime").unwrap();
+    let asked = TaskAsked(TaskFact {
+        session_id: SessionId::from("s5"),
+        title: "Ship it".into(),
+        cwd: "/w/api".into(),
+        status: "asked".into(),
+        text: "Ship to staging or prod?".into(),
+        ..TaskFact::default()
+    });
+    ctx.emit(&ctx.root_call(), &asked);
+    let got = settle(&out, 1).await;
+    assert_eq!(got.len(), 1, "{got:?}");
+    let (id, msg) = &got[0];
+    assert_eq!((id.as_str(), msg.text.as_str()), ("s5", "Ship to staging or prod?"));
+    let buttons: Vec<(&str, &str, u32)> = msg.actions.iter().map(|a| (a.label.as_str(), a.reference.as_str(), a.index)).collect();
+    assert_eq!(buttons, [("Staging", "a5", 0), ("Prod", "a5", 1)]);
+    assert!(msg.actions.iter().all(|a| a.kind == wisp_channels_api::views::ActionKind::Answer));
 }

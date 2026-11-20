@@ -208,6 +208,25 @@ fn untyped(raw: &str) -> Value {
     }
 }
 
+/// `--args <raw>`: the JSON object escape (every field at once), else the command's own `args` field when it has one (a
+/// connector's: `--args A,B`, as its help says; audit G GS8: "--args takes a JSON object" refused it). `Some`: a
+/// non-object command's whole argument.
+fn args_flag(spec: &ArgSpec, raw: &str, obj: &mut Map<String, Value>) -> Result<Option<Value>, Usage> {
+    let parsed = serde_json::from_str::<Value>(raw);
+    if let Ok(Value::Object(m)) = parsed {
+        obj.extend(m);
+        return Ok(None);
+    }
+    if let Some(f) = spec.field("args") {
+        put(obj, f, value_of(f, raw)?);
+        return Ok(None);
+    }
+    match parsed {
+        Ok(other) if !spec.object => Ok(Some(other)),
+        _ => Err(Usage(format!("--args takes a JSON object, not {raw:?}"))),
+    }
+}
+
 /// The words a switch takes after it as its value.
 const BOOL_WORDS: [&str; 8] = ["true", "false", "yes", "no", "on", "off", "1", "0"];
 
@@ -239,14 +258,8 @@ pub fn build(v: &Verb, rest: &[String]) -> Result<Value, Usage> {
                 Some(x) => x,
                 None => rest.get(i).cloned().inspect(|_| i += 1).ok_or_else(|| Usage("--args needs a JSON object".into()))?,
             };
-            match serde_json::from_str::<Value>(&raw) {
-                Ok(Value::Object(m)) => {
-                    for (k, x) in m {
-                        obj.insert(k, x);
-                    }
-                }
-                Ok(other) if !spec.object => return Ok(other),
-                _ => return Err(Usage(format!("--args takes a JSON object, not {raw:?}"))),
+            if let Some(whole) = args_flag(spec, &raw, &mut obj)? {
+                return Ok(whole);
             }
             continue;
         }
@@ -464,6 +477,21 @@ mod tests {
         ] {
             assert_eq!(build(v, &w(said)).unwrap(), want, "{said}");
         }
+    }
+
+    /// Audit G GS8: `wisp connectors add --args A,B` (as its help says) was taken for the `--args JSON` escape.
+    #[test]
+    fn a_commands_own_args_field_takes_its_flag_audit_gs8() {
+        let c = Catalogue::new(vec![info("connectors.add", Some("{ name: string, command?: string, args?: Array<string>, }"))]);
+        let (v, _) = c.resolve(&w("connectors add")).unwrap();
+        assert_eq!(
+            build(v, &w("--name qa_tmp --command node --args /tmp/qa/mcp-echo.mjs,--agent")).unwrap(),
+            json!({ "name": "qa_tmp", "command": "node", "args": ["/tmp/qa/mcp-echo.mjs", "--agent"] })
+        );
+        assert_eq!(build(v, &w("--name x --args=a,b")).unwrap(), json!({ "name": "x", "args": ["a", "b"] }));
+        // the escape still works there: a JSON object is every field at once
+        assert_eq!(build(v, &w("--args {\"name\":\"y\",\"args\":[\"z\"]}")).unwrap(), json!({ "name": "y", "args": ["z"] }));
+        assert!(help_verb(v).contains("--args A,B"), "{}", help_verb(v));
     }
 
     #[test]

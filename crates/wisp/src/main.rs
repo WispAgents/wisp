@@ -216,14 +216,10 @@ fn misused_verb_path(p: &Parsed, flags: bool) -> Option<i32> {
     if p.literal == args::Literal::Task || p.command.is_some() {
         return None;
     }
-    // `wisp update --help`: a group alone with --help is its usage, never the command (it ran a check)
-    if flags
-        && p.flags.help
-        && let [g] = p.words.as_slice()
-        && words::is_group(g)
-    {
-        say(&words::usage(g));
-        return Some(0);
+    // `wisp update --help`: a group alone with --help is `wisp help update`, never the command (it ran a check); `live`
+    // answers it with the catalogue, as `wisp help` does (audit G GS10)
+    if flags && p.flags.help && p.words.len() == 1 {
+        return None;
     }
     let Some((cmd, verb)) = words::verb_path(&p.words) else {
         // past every arm, a built-in group's line its own command refused (`wisp sdk types`, `wisp crew ls extra`)
@@ -632,6 +628,17 @@ async fn live(p: &Parsed, home: &Path, port: u16, read: &mut Option<wisp_cli_cor
     let f = &p.flags;
     let words = &p.words;
     let tty = std::io::stdin().is_terminal() && std::io::stdout().is_terminal();
+    // `wisp <group> --help` is `wisp help <group>`: its usage and its verbs, whether the group routes as a command
+    // (`plugin`, `mcp`) or not (audit G GS10: some printed the whole usage, `settings` "needs more", others one line);
+    // a word that's no group or plugin goes on to the usage
+    if f.help && p.literal != args::Literal::Task && words.len() == 1 && plugin_word(&words[0]) {
+        let c = Client::connect(port, true).await?;
+        let cat = cli::shown(&c, cli::catalogue(&c, home).await?).await;
+        if words::is_group(&words[0]) || cat.has_plugin(&words[0]) {
+            return Ok(Some(cli::help(&cat, &["help".to_owned(), words[0].clone()])));
+        }
+        return Ok(None);
+    }
     let code = match p.command {
         // `last` is the newest task; a task that isn't there is said at once (QA round 14 #7: `attach last` hung)
         Some("attach") => {
@@ -649,6 +656,7 @@ async fn live(p: &Parsed, home: &Path, port: u16, read: &mut Option<wisp_cli_cor
             let c = Client::connect(port, true).await?;
             cli::help(&cli::shown(&c, cli::catalogue(&c, home).await?).await, words)
         }
+
         Some("completions") => {
             let c = Client::connect(port, true).await?;
             cli::completions(&c, &cli::shown(&c, cli::catalogue(&c, home).await?).await, words.get(1)).await

@@ -193,16 +193,21 @@ pub async fn gather(c: Option<&Client>, cwd: &str, lines: usize, wisp_home: &Pat
     ctx
 }
 
-/// The context with secrets taken out: secret shapes, and the values of secret-looking env vars.
+/// The context with secrets taken out: secrets typed inline in a command or printed as `NAME=value`, secret shapes,
+/// and the values of secret-looking env vars.
 pub fn scrub(mut ctx: TermContext, env: Vec<(String, String)>) -> (TermContext, usize) {
     let s = wisp_share_core::Scrub { env: wisp_share_core::secret_env(env), ..wisp_share_core::Scrub::default() };
     let mut found = Vec::new();
-    ctx.output = wisp_share_core::scrub_text(&ctx.output, &s, "output", &mut found);
+    // a secret typed inline (`DB_PASSWORD=… npm run migrate`, `--password …`) first: the shapes don't know it (GS4)
+    let (output, mut inline) = wisp_share_core::mask_inline(&ctx.output, false);
+    ctx.output = wisp_share_core::scrub_text(&output, &s, "output", &mut found);
     ctx.git_status = wisp_share_core::scrub_text(&ctx.git_status, &s, "git", &mut found);
     for c in &mut ctx.commands {
-        c.cmd = wisp_share_core::scrub_text(&c.cmd, &s, "command", &mut found);
+        let (cmd, n) = wisp_share_core::mask_inline(&c.cmd, true);
+        inline += n;
+        c.cmd = wisp_share_core::scrub_text(&cmd, &s, "command", &mut found);
     }
-    (ctx, found.len())
+    (ctx, found.len() + inline)
 }
 
 /// Adds the context to a task's `runtime.create` args, when it's wanted; says what it attached.
@@ -255,6 +260,27 @@ mod tests {
         assert!(!out.commands[0].cmd.contains("ghp_"), "{}", out.commands[0].cmd);
         assert!(n >= 3, "{n}");
         assert!(out.block().contains("<secret>") || out.block().contains("<env:DB_PASSWORD>"));
+    }
+
+    /// Audit G GS4: `DB_PASSWORD=hunter2qa npm run migrate` went into the prompt as typed.
+    #[test]
+    fn a_secret_typed_inline_in_a_command_is_masked() {
+        let ctx = TermContext {
+            cwd: "/w".into(),
+            output: "$ env\nDB_PASSWORD=hunter2qa\nerror: migrate failed".into(),
+            commands: vec![
+                Cmd { cmd: "DB_PASSWORD=hunter2qa npm run migrate".into(), exit: Some(3), ..Cmd::default() },
+                Cmd { cmd: "mysql -u root -phunter2qa shop".into(), exit: Some(1), ..Cmd::default() },
+                Cmd { cmd: "psql --password hunter2qa".into(), exit: Some(2), ..Cmd::default() },
+            ],
+            source: "hook".into(),
+            ..TermContext::default()
+        };
+        let (out, n) = scrub(ctx, Vec::new());
+        assert!(!out.block().contains("hunter2qa"), "{}", out.block());
+        assert_eq!(out.commands[0].cmd, "DB_PASSWORD=<secret> npm run migrate");
+        assert!(out.output.contains("DB_PASSWORD=<secret>") && out.output.contains("error: migrate failed"), "{}", out.output);
+        assert_eq!(n, 4);
     }
 
     /// The hook's log keeps a week, and a line the shell appends while it's pruned is never lost (review of row 64).

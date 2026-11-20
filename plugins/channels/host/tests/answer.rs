@@ -56,7 +56,7 @@ impl Plugin for Runtime {
     fn setup(&self, s: &mut Setup) -> Result<()> {
         s.command::<r::Get, _, _>(move |_, _, a: r::IdArgs| {
             let ask = if a.id.0 == "s2" {
-                json!({ "id": "c2", "question": "Ada wants to add the connector `x`", "options": ["Allow", "Deny"], "setup": { "headline": "…" } })
+                json!({ "id": "c2", "question": "Ada wants to add the connector “x”", "options": ["Allow", "Deny"], "setup": { "headline": "…" } })
             } else {
                 json!({ "id": "q1", "question": "Which?", "options": ["Yes", "No"] })
             };

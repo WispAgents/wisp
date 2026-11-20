@@ -212,6 +212,69 @@ mod tests {
         }
     }
 
+    async fn rt_with_task() -> Arc<Runtime> {
+        let store = wisp_store::Store::open(wisp_store::Location::Memory, Arc::new(wisp_store::SystemClock)).unwrap();
+        crate::schema::install(&store).unwrap();
+        let proc: wisp_proc::Proc = Arc::new(wisp_proc::sim::SimProc::new());
+        let rt = Runtime::new(crate::repo::Repo::new(store), Arc::new(crate::Recorder::default()), proc, Arc::new(wisp_store::SystemClock));
+        let mut s = wisp_runtime_api::model::Session {
+            id: "t1".into(),
+            agent: "fake".into(),
+            cwd: std::env::temp_dir().display().to_string(),
+            ..wisp_runtime_api::model::Session::default()
+        };
+        rt.persist(&mut s, Vec::new()).await.unwrap();
+        rt
+    }
+
+    fn project_write() -> Vec<Write> {
+        vec![Write { command: setup::PROJECT_ADD.into(), args: json!({ "path": "/tmp/qa-proj", "name": "qa-proj", "sid": "t1" }) }]
+    }
+
+    /// Audit G GS5: a write from a copy of the task read before the card went up (no lock held) dropped the card, and its
+    /// agent's `pollAnswer` read pending for good. The card stays, and the task still waits.
+    #[tokio::test(flavor = "current_thread")]
+    async fn a_stale_write_never_takes_a_setup_card_off_its_task() {
+        let rt = rt_with_task().await;
+        let mut stale = rt.repo.session("t1").await.unwrap();
+        let asked = rt.setup_ask(&"t1".into(), "Claude Code", project_write()).await.unwrap();
+        stale.title = "renamed from an old copy".into();
+        rt.persist(&mut stale, Vec::new()).await.unwrap();
+        let now = rt.repo.session("t1").await.unwrap();
+        assert!(open_setup(&now).is_some(), "the card is still up: {:?}", now.ext);
+        assert_eq!(now.state, SessionState::Waiting);
+        assert_eq!(rt.poll_answer(&asked.ask_id), wisp_runtime_api::commands::PollAnswer::Pending);
+    }
+
+    /// Audit G GS12: an asking task's row read its last answer ("No question asked.") beside Asking: it says the card.
+    #[tokio::test(flavor = "current_thread")]
+    async fn an_asking_tasks_row_says_its_question() {
+        let rt = rt_with_task().await;
+        rt.setup_ask(&"t1".into(), "Claude Code", project_write()).await.unwrap();
+        let row = rt.lock_list().get("t1").cloned().unwrap();
+        assert_eq!(row.live, "Asks: Claude Code wants to add the project /tmp/qa-proj");
+        assert_eq!(row.fields["asks"], json!(true));
+        assert_eq!(row.fields["options"], json!(["Allow", "Deny"]));
+        rt.ask_in(&"t1".into(), "x", "", &[], None).await.unwrap_err(); // the card stays: nothing replaces it
+        rt.stop("t1", false).await.unwrap();
+        let row = rt.lock_list().get("t1").cloned().unwrap();
+        assert_eq!((row.live.as_str(), row.fields["asks"].clone()), ("", json!(false)), "answered or gone: no question");
+    }
+
+    /// Audit G GS5: a card taken back without the user's answer (its turn ended, the task stopped) tells its agent so:
+    /// its poll reads an answer, never pending.
+    #[tokio::test(flavor = "current_thread")]
+    async fn a_setup_card_taken_back_answers_its_agent() {
+        let rt = rt_with_task().await;
+        let asked = rt.setup_ask(&"t1".into(), "Claude Code", project_write()).await.unwrap();
+        rt.stop("t1", false).await.unwrap();
+        assert!(open_setup(&rt.repo.session("t1").await.unwrap()).is_none(), "the stop took it back");
+        match rt.poll_answer(&asked.ask_id) {
+            wisp_runtime_api::commands::PollAnswer::Answered { answer } => assert!(answer.contains("nothing changed"), "{answer}"),
+            other => panic!("{other:?}"),
+        }
+    }
+
     /// Review r194 row 66 #1: Allow runs only writes that still give the card the user saw.
     #[test]
     fn a_stored_card_whose_writes_changed_runs_nothing_setup_card_digest() {

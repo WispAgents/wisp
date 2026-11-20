@@ -6,7 +6,7 @@
 use serde_json::Value;
 use wisp_channels_api::policy::{Seen, approvals_here};
 use wisp_channels_api::scrub::{truncate, waiting_line};
-use wisp_channels_api::views::{Action, ActionKind, Msg, SessionView};
+use wisp_channels_api::views::{Action, ActionKind, AskView, Msg, SessionView};
 
 /// How far up a subagent, a side discussion or a delegated crew job looks for the thread it came from.
 pub const MAX_HOPS: usize = 8;
@@ -15,6 +15,16 @@ const PLAIN_MAX: usize = 1000;
 
 fn str_of<'a>(v: &'a Value, k: &str) -> Option<&'a str> {
     v.get(k).and_then(Value::as_str).filter(|s| !s.is_empty())
+}
+
+/// An ask's options as answer buttons, each named by the ask (v1 `message`): what a channel's or the phone's tap sends
+/// back signed. Also what a notification of the ask carries (audit G GS2).
+pub fn answer_buttons(ask: &AskView) -> Vec<Action> {
+    ask.options
+        .iter()
+        .zip(0u32..)
+        .map(|(label, index)| Action { label: label.clone(), kind: ActionKind::Answer, reference: ask.id.clone(), index })
+        .collect()
 }
 
 /// v1 `message(s, summary)`: the title names the project and the task; an ask's options are answer buttons;
@@ -28,12 +38,7 @@ pub fn message(s: &SessionView, project: Option<&str>, preview: Option<&str>) ->
             .filter(|t| !t.is_empty())
             .collect::<Vec<_>>()
             .join("\n\n");
-        let actions = ask
-            .options
-            .iter()
-            .zip(0u32..)
-            .map(|(label, index)| Action { label: label.clone(), kind: ActionKind::Answer, reference: ask.id.clone(), index })
-            .collect();
+        let actions = answer_buttons(ask);
         return Msg { title: format!("❓ {place}"), text, actions };
     }
     let turn = s.turns.last();

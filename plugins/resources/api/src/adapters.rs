@@ -81,6 +81,9 @@ pub struct CrudKind {
     /// [`ResourceKind::also_named`]: the command listing them and each row's field, then fixed words
     also: Option<(&'static str, &'static str)>,
     also_words: Vec<String>,
+    /// [`CrudKind::words_while`]: the setting the words need on, why they're refused while it's off, and the spec
+    /// field that may name one
+    words_while: Option<(&'static str, &'static str, &'static str)>,
 }
 
 impl CrudKind {
@@ -111,6 +114,7 @@ impl CrudKind {
             rename_cmd: None,
             also: None,
             also_words: Vec::new(),
+            words_while: None,
         }
     }
     /// What a reference to this kind may name besides its resources ([`ResourceKind::also_named`]): each row's `key` of
@@ -120,6 +124,18 @@ impl CrudKind {
         self.also = Some((cmd, key));
         self.also_words = words.iter().map(|w| (*w).to_owned()).collect();
         self
+    }
+    /// [`CrudKind::also_named`]'s words count only while the boolean `setting` is on: off, a reference naming one is an
+    /// unknown name, and a spec whose `field` names one is refused with `why` (`auto` while Auto is off, audit G GS6:
+    /// a formula's `agent: auto` validated and quietly ran on another harness). Additive (2026-11-20).
+    #[must_use]
+    pub fn words_while(mut self, setting: &'static str, why: &'static str, field: &'static str) -> Self {
+        self.words_while = Some((setting, why, field));
+        self
+    }
+    /// Whether the fixed words count now.
+    fn words_on(&self) -> bool {
+        self.words_while.is_none_or(|(k, _, _)| self.ctx.setting(k) == Some(Value::Bool(true)))
     }
     /// Renames go through `cmd` (`{from, to}`, one write in the owner), not make-then-remove.
     #[must_use]
@@ -159,9 +175,18 @@ impl ResourceKind for CrudKind {
                 let rows = self.ctx.run_json(&self.ctx.root_call(), cmd, json!({})).await.unwrap_or_default();
                 out.extend(rows.as_array().into_iter().flatten().filter_map(|r| r.get(key)?.as_str().map(str::to_owned)));
             }
-            out.extend(self.also_words.iter().cloned());
+            if self.words_on() {
+                out.extend(self.also_words.iter().cloned());
+            }
             out
         })
+    }
+    fn check(&self, r: &Resource) -> Vec<String> {
+        let Some((_, why, field)) = self.words_while.filter(|_| !self.words_on()) else { return Vec::new() };
+        match r.spec.get(field).and_then(Value::as_str) {
+            Some(w) if self.also_words.iter().any(|x| x == w) => vec![format!("{}.{}: {field}: {w}: {why}", self.info.section, r.name)],
+            _ => Vec::new(),
+        }
     }
     fn rename<'a>(&'a self, call: &'a Call, from: &'a str, to: &'a str) -> BoxFuture<'a, Result<()>> {
         Box::pin(async move {

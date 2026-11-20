@@ -1,7 +1,8 @@
 //! Signing in to a grid (v1 server/services/cloud.js): the device flow, RFC 8628. wisp asks the grid for a
 //! code, you approve it in your browser (signed in to the grid), and the grid hands this computer a
 //! device token. The token goes to secrets (keyed by grid and account); the cloud box shows up as a machine
-//! (transport `grid`). Signing in again adds an account next to the others and makes it current (ADR-0061).
+//! (transport `grid`). Signing in again adds the account beside the current one, which stays current; only the first
+//! account, or a sign-in made to put this computer on that grid, becomes current (ADR-0109, superseding ADR-0061 §2).
 //!
 //! Polling follows the grid's interval, plus 5 s for each `slow_down`; a network blip keeps it going until
 //! the code expires; `access_denied` and `expired_token` end it in words.

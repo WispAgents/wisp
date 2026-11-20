@@ -17,11 +17,11 @@ const row = {
       'wisp.runtime': {
         ask: {
           id: 'a1',
-          question: 'Ada wants to add the connector `linear`: runs `npx -y @linear/mcp`\nEvery task will start it, on this computer.',
+          question: 'Ada wants to add the connector “linear”: runs npx -y @linear/mcp\nEvery task will start it, on this computer.',
           options: ['Allow', 'Deny'],
           setup: {
             command: 'connectors.agent.add',
-            headline: 'Ada wants to add the connector `linear`: runs `npx -y @linear/mcp`',
+            headline: 'Ada wants to add the connector “linear”: runs npx -y @linear/mcp',
             lines: ['Every task will start it, on this computer.', 'needs LINEAR_KEY from you'],
             commands: ['npx -y @linear/mcp'],
             full: '{\n  "name": "linear",\n  "command": "npx"\n}',
@@ -58,7 +58,7 @@ test('the setup card shows what changes and each command verbatim, with Allow an
   );
   const card = host.querySelector('[data-part="task.ask"]') as HTMLElement;
   expect(card.textContent).toContain('Wants to change your setup');
-  expect(host.querySelector('[data-part="task.ask.setup.headline"]')?.textContent).toBe('Ada wants to add the connector `linear`: runs `npx -y @linear/mcp`');
+  expect(host.querySelector('[data-part="task.ask.setup.headline"]')?.textContent).toBe('Ada wants to add the connector “linear”: runs npx -y @linear/mcp');
   const cmd = host.querySelector('[data-part="task.ask.setup.command"]') as HTMLElement;
   expect(cmd.textContent).toBe('npx -y @linear/mcp');
   expect(cmd.getAttribute('data-mono')).not.toBeNull();

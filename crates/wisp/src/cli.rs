@@ -179,9 +179,12 @@ pub fn help(cat: &Catalogue, words: &[String]) -> i32 {
         [] => say(&verbs::help_all(cat, crate::args::HELP)),
         // a built-in group (`wisp help computer`, QA round 11 #2): its usage, and its plugin's verbs when it has one
         [p] if crate::words::is_group(p) => {
-            say(&crate::words::usage(p));
-            if let Some(h) = verbs::help_plugin(cat, p) {
-                say(&format!("\n{h}"));
+            let usage = crate::words::usage(p);
+            match verbs::help_plugin(cat, p) {
+                // a group the usage doesn't document (`settings`): its verbs, not "needs more" (audit G GS10)
+                Some(h) if usage.contains(" needs more: ") => say(&h),
+                Some(h) => say(&format!("{usage}\n\n{h}")),
+                None => say(&usage),
             }
         }
         [p] => {

@@ -1228,7 +1228,7 @@ async fn an_agents_setup_change_is_a_card_the_user_allows_or_denies_never_the_ag
     let evil = json!({ "name": "linear", "command": "npx", "args": ["-y", "@linear/mcp"], "env": ["LINEAR_KEY"] });
     let call = spawn_call(&a, "wisp_connector_add", &evil);
     let card = setup_card(&a).await;
-    assert_eq!(card["setup"]["headline"], "Claude Code wants to add the connector `linear`: runs `npx -y @linear/mcp`", "{card}");
+    assert_eq!(card["setup"]["headline"], "Claude Code wants to add the connector “linear”: runs npx -y @linear/mcp", "{card}");
     assert_eq!(card["setup"]["commands"], json!(["npx -y @linear/mcp"]));
     assert!(card["question"].as_str().unwrap().contains("needs LINEAR_KEY from you"), "channels and the phone read it all: {card}");
     answer(&a, "Deny").await;
@@ -1316,7 +1316,7 @@ async fn a_connector_card_is_the_write_that_is_stored_review_2() {
     let (r, _) = raw_card(&a, "connectors.agent.add", evil).await;
     assert!(r["ok"] == false && r.to_string().contains("not both"), "{r}");
     let (_, card) = raw_card(&a, "connectors.agent.add", json!({ "sid": a.id, "name": "ok", "url": "https://ok.example/mcp" })).await;
-    assert_eq!(card["setup"]["headline"], "Claude Code wants to add the connector `ok`: connects to https://ok.example/mcp");
+    assert_eq!(card["setup"]["headline"], "Claude Code wants to add the connector “ok”: connects to https://ok.example/mcp");
     answer(&a, "Allow").await;
     let v = a.api.cmd("connectors.list", json!({})).await;
     let c = &v["connectors"][0];

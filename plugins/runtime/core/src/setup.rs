@@ -30,9 +30,9 @@ pub struct Write {
 /// What the card says.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Card {
-    /// what would change, after "wants to": "add the connector \`linear\`"
+    /// what would change, after "wants to": "add the connector “linear”"
     pub action: String,
-    /// "Ada wants to add the connector \`linear\`: runs \`npx -y @linear/mcp\`"
+    /// "Ada wants to add the connector “linear”: runs npx -y @linear/mcp"
     pub headline: String,
     /// every other field that will be stored, one a line (`role: Docs writer`, `needs GITHUB_TOKEN from you`)
     pub lines: Vec<String>,
@@ -50,11 +50,40 @@ impl Card {
     }
 }
 
-/// What normalizing needs from the task: its id (each write names it) and its folder (a member's default).
+/// What normalizing needs from the task: its id (each write names it) and where it works (a member's default).
 #[derive(Debug, Clone, Copy)]
 pub struct Task<'a> {
     pub session: &'a str,
+    /// the folder it runs in: its own worktree when it has one
     pub cwd: &'a str,
+    /// its project's folder: the repo its worktree was made from (`ext["wisp.worktrees"].root`), else empty
+    pub project: &'a str,
+    /// wisp's own worktrees (`<home>/worktrees`): a task's throwaway copies, which go when it's done or idle
+    pub worktrees: &'a str,
+}
+
+impl Task<'_> {
+    /// The folder a crew member the task adds works in by default: the project's, never the task's throwaway worktree
+    /// (audit G GS3: the member kept a folder that went with the task). None when the task has only a worktree.
+    #[must_use]
+    pub fn member_folder(&self) -> Option<&str> {
+        [self.project, self.cwd].into_iter().find(|f| !f.trim().is_empty() && !self.in_worktrees(f))
+    }
+
+    fn in_worktrees(&self, folder: &str) -> bool {
+        !self.worktrees.is_empty() && wisp_runtime_api::paths::is_within(folder, self.worktrees)
+    }
+}
+
+/// A member's folder under wisp's worktrees, refused: it goes with the task that made it.
+fn member_cwd_ok(o: &Map<String, Value>, t: Task<'_>) -> Result<(), String> {
+    match o.get("cwd").and_then(Value::as_str) {
+        Some(c) if t.in_worktrees(c) => Err(format!(
+            "cwd: {c} is a task's worktree, which wisp removes when the task is done: give the project's folder{}",
+            t.member_folder().map(|f| format!(" ({f})")).unwrap_or_default()
+        )),
+        _ => Ok(()),
+    }
 }
 
 /// An agent's ask, made the writes that would run: only fields the card shows, defaults filled in. `Import`: a crew
@@ -146,10 +175,13 @@ pub fn normalize(command: &str, args: &Value, t: Task<'_>) -> Result<Normalized,
             let keys: Vec<&str> = MEMBER.iter().copied().chain(["checkin"]).collect();
             let mut o = only(args, &keys, "crew")?;
             s(args, "name").ok_or("Give the crew member a name.")?;
-            // where they work: the task's own folder unless given, said on the card as stored
-            if !o.contains_key("cwd") && !t.cwd.is_empty() {
-                o.insert("cwd".into(), Value::String(t.cwd.to_owned()));
+            // where they work: the task's project folder unless given (never its worktree), said on the card as stored
+            if !o.contains_key("cwd")
+                && let Some(f) = t.member_folder()
+            {
+                o.insert("cwd".into(), Value::String(f.to_owned()));
             }
+            member_cwd_ok(&o, t)?;
             Ok(w(CREW_ADD, o, "session"))
         }
         CREW_EDIT => {
@@ -159,6 +191,7 @@ pub fn normalize(command: &str, args: &Value, t: Task<'_>) -> Result<Normalized,
             if o.len() < 2 {
                 return Err("Say what to change.".into());
             }
+            member_cwd_ok(&o, t)?;
             Ok(w(CREW_EDIT, o, "session"))
         }
         CREW_REMOVE => {
@@ -239,14 +272,16 @@ pub fn card(who: &str, writes: &[Write]) -> Result<Card, String> {
                     .collect::<Vec<_>>()
             };
             if let Some(url) = s(&one.args, "url") {
-                (format!("add the connector `{name}`"), format!(": connects to {url}"), names("headers"), Vec::new())
+                // plain words, no Markdown: the headline goes as text to the page, the phone and chats (audit G GS13);
+                // the card shows the command in mono on its own line
+                (format!("add the connector “{name}”"), format!(": connects to {url}"), names("headers"), Vec::new())
             } else {
                 let cmd = s(&one.args, "command").unwrap_or_default();
                 let extra = a.get("args").and_then(Value::as_array).into_iter().flatten().filter_map(Value::as_str).map(word);
                 let full = std::iter::once(cmd.to_owned()).chain(extra).collect::<Vec<_>>().join(" ");
                 let mut lines = vec!["Every task will start it, on this computer.".to_owned()];
                 lines.extend(names("env"));
-                (format!("add the connector `{name}`"), format!(": runs `{full}`"), lines, vec![full])
+                (format!("add the connector “{name}”"), format!(": runs {full}"), lines, vec![full])
             }
         }
         CREW_ADD => {
@@ -373,7 +408,7 @@ mod tests {
     use super::*;
     use serde_json::json;
 
-    const T: Task<'static> = Task { session: "s1", cwd: "/code/web" };
+    const T: Task<'static> = Task { session: "s1", cwd: "/code/web", project: "", worktrees: "/h/worktrees" };
 
     fn writes(command: &str, args: &Value) -> Vec<Write> {
         match normalize(command, args, T).unwrap() {
@@ -392,7 +427,8 @@ mod tests {
     fn a_local_connector_shows_the_command_it_runs_verbatim_setup_card_connector() {
         let (c, _) =
             card_of(CONNECTOR_ADD, json!({ "name": "Linear", "command": "npx", "args": ["-y", "@linear/mcp"], "env": ["LINEAR_KEY"] }));
-        assert_eq!(c.headline, "Ada wants to add the connector `linear`: runs `npx -y @linear/mcp`");
+        // audit G GS13: no Markdown backticks shown as typed
+        assert_eq!(c.headline, "Ada wants to add the connector “linear”: runs npx -y @linear/mcp");
         assert_eq!(c.commands, vec!["npx -y @linear/mcp".to_owned()]);
         assert!(c.lines.contains(&"needs LINEAR_KEY from you".to_owned()), "{:?}", c.lines);
         // a word with a space is quoted as the shell would need it: what runs is what's read
@@ -400,7 +436,7 @@ mod tests {
         assert_eq!(q.commands, vec![r"npx server '/my notes' 'it'\''s'".to_owned()]);
         let (r, w) =
             card_of(CONNECTOR_ADD, json!({ "name": "posthog", "url": "https://mcp.posthog.com/mcp", "headers": ["Authorization"] }));
-        assert_eq!(r.headline, "Ada wants to add the connector `posthog`: connects to https://mcp.posthog.com/mcp");
+        assert_eq!(r.headline, "Ada wants to add the connector “posthog”: connects to https://mcp.posthog.com/mcp");
         assert_eq!(r.commands, Vec::<String>::new());
         assert_eq!(w[0].args["transport"], "remote");
         assert_eq!(w[0].args["sid"], "s1");
@@ -477,9 +513,33 @@ mod tests {
         );
         assert_eq!(card_of(CREW_REMOVE, json!({ "member": "Bob" })).0.action, "remove Bob from your crew");
         // audit G18: a wrong field names the one it takes
-        let t = Task { session: "s1", cwd: "/w" };
+        let t = Task { session: "s1", cwd: "/w", project: "", worktrees: "" };
         let e = normalize(CREW_REMOVE, &json!({ "name": "Eve" }), t).unwrap_err();
         assert_eq!(e, "name isn't something a crew card can carry: it takes member");
+    }
+
+    /// Audit G GS3: a member added from a task in a worktree got the worktree as its folder, which went with the task.
+    #[test]
+    fn a_member_works_in_the_tasks_project_never_its_worktree_setup_card_member_folder() {
+        let wt = Task { session: "s1", cwd: "/h/worktrees/repo2-01a1f8", project: "/code/repo2", worktrees: "/h/worktrees" };
+        let w = match normalize(CREW_ADD, &json!({ "name": "Qa Reviewer" }), wt).unwrap() {
+            Normalized::Writes(w) => w,
+            Normalized::Import { .. } => panic!("an import"),
+        };
+        assert_eq!(w[0].args["cwd"], "/code/repo2", "the project's folder, said on the card as stored");
+        assert!(card("Ada", &w).unwrap().lines.contains(&"cwd: /code/repo2".to_owned()));
+        // a task with only its worktree (no project known): no folder rather than one that goes
+        let bare = Task { project: "", ..wt };
+        let w = match normalize(CREW_ADD, &json!({ "name": "Qa" }), bare).unwrap() {
+            Normalized::Writes(w) => w,
+            Normalized::Import { .. } => panic!("an import"),
+        };
+        assert!(w[0].args.get("cwd").is_none(), "{}", w[0].args);
+        // a worktree given by the agent is refused, on add and on edit
+        let e = normalize(CREW_ADD, &json!({ "name": "Qa", "cwd": "/h/worktrees/repo2-01a1f8/sub" }), wt).unwrap_err();
+        assert!(e.contains("is a task's worktree") && e.contains("/code/repo2"), "{e}");
+        assert!(normalize(CREW_EDIT, &json!({ "member": "Qa", "cwd": "/h/worktrees/x" }), wt).is_err());
+        assert!(normalize(CREW_EDIT, &json!({ "member": "Qa", "cwd": "/code/other" }), wt).is_ok());
     }
 
     #[test]

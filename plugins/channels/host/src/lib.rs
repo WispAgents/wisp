@@ -182,6 +182,16 @@ async fn notify(ctx: &Ctx, live: &Arc<Live>, event: &str, session: &str, text: &
         "failed" => format!("✗ {}", view.title),
         _ => format!("? {}", view.title),
     };
+    // a question's options are signed answer buttons, named by its ask, as the channel's own report makes them (v1
+    // `message`; audit G GS2). One only wisp can answer (an approval, a clash, a connector's keys) gets none.
+    let actions = match (event, task.pointer("/ext/wisp.runtime/ask")) {
+        ("asks", Some(a)) if actions.is_empty() => serde_json::from_value::<wisp_channels_api::AskView>(a.clone())
+            .ok()
+            .filter(|a| !a.needs_wisp())
+            .map(|a| wisp_channels_core::report::answer_buttons(&a))
+            .unwrap_or_default(),
+        _ => actions,
+    };
     let msg = Msg { title, text: text.to_owned(), actions };
     for n in due.into_iter().filter(|n| in_projects(&n.projects, &cwd)) {
         if let Err(e) = deliver(ctx, live, &n.to, event, &msg, &view, fanned).await {

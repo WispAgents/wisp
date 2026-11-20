@@ -22,6 +22,19 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Fixed
 
+- v2 terminal context no longer sends a secret you typed inline: `DB_PASSWORD=… npm run migrate`, `export API_TOKEN=…`, `--password …`, `mysql -p…`, `sshpass -p …` and `redis-cli -a …` go as `<secret>` (the name stays), in the commands and in output that prints `NAME=value`. Names that look secret: anything with KEY, TOKEN, SECRET, PASSWORD, PASSWD, PASSPHRASE or CREDENTIAL, ending in PASS, or AUTH.
+- v2 a setup card an agent puts up is never taken off without an answer: a write from an older copy of the task can no longer drop it (its agent waited for good), and when the task stops or its turn ends first, the agent reads that the card was taken back and nothing changed, and the turn says so.
+- v2 a question sent to your phone or a channel by a notification carries its options as answer buttons (ntfy actions, Telegram buttons, Slack and Discord), as a task started from a channel already did.
+- v2 a crew member an agent adds from a task works in the task's project folder, not the task's own worktree (which goes when the task is done); a worktree folder is refused on the card.
+- v2 an asking task's row says "Asks: …" with the question or the setup card's headline, not its last answer.
+- v2 a setup card's headline is plain text, without Markdown backticks, on the page, the phone and in chats.
+- v2 Settings → Worktrees' Bring in no longer offers a folder that is itself a project (the main checkout was offered to its linked worktree's project).
+- v2 with Auto off, a formula naming `auto` as an agent or harness is refused (as `router:` is), and no list offers `auto`.
+- v2 Settings → Connectors keeps each connector's last check across a restart instead of reading "Not checked yet" for all of them.
+- v2 `wisp connectors add --args A,B` sets the connector's arguments, as its help says (a JSON object still sets every field at once).
+- v2 `wisp update apply` says "✗ <why>" and exits 1 when the install fails (a checksum that didn't match), as a git clone's refusal does.
+- v2 `wisp <group> --help` prints the same as `wisp help <group>` (its usage and its verbs) for every group.
+- v2 zsh and fish completions offer what bash does: the setting keys and their values after `wisp settings set|get`, the harnesses after `--agent`, and the built-in groups' verbs; zsh no longer labels every first word "a wisp command".
 - v2 `wisp diff` right after `wisp apply` no longer says "1 to change" for a trigger whose `project:` names a project: it's kept as written and read as that project's folder when it runs (a task's and a workflow's `project:` plan unchanged too).
 - v2 `wisp crew pause <member>` and `wisp crew resume <member>`, by name or id, stop a member's check-ins and jobs and start them again.
 - v2 `wisp goal set <task> <name>` sets a declared goal and refuses a name no goal has, with the goals there are, as `--goal` does at launch (a typo became the goal in words); `--text "…"` sets words.

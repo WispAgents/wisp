@@ -82,6 +82,16 @@ pub(crate) fn take_setup_card(s: &mut wisp_runtime_api::model::Session) -> Optio
     Some(action)
 }
 
+/// The open setup card's action ("add the connector x"), if the open question is one.
+pub(crate) fn open_card_action(s: &wisp_runtime_api::model::Session) -> Option<String> {
+    ask::open_setup(s).map(|c| c.get("action").and_then(Value::as_str).unwrap_or("change your setup").to_owned())
+}
+
+/// A "You answered"-kind row on a turn (what became of its question).
+pub(crate) fn answer_row(label: String) -> Activity {
+    tool_row(ToolKind::Answer, label)
+}
+
 /// Runs `f` on runtime's own ext slot (made an object if it wasn't one), then puts it back.
 fn with_slot<R>(ext: &mut BTreeMap<String, Value>, f: impl FnOnce(&mut serde_json::Map<String, Value>) -> R) -> R {
     let mut m = match ext.remove(SLOT) {

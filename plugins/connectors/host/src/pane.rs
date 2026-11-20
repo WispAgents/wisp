@@ -807,10 +807,28 @@ pub(crate) fn register(s: &mut Setup, kind: Arc<StoredKind>, connectors: Arc<dyn
         }
         let (p, c) = (pane.clone(), ctx.clone());
         ctx.spawn(async move {
+            // each connector's last check outlives a restart (audit G GS7: every one read "Not checked yet" after it,
+            // a failing one looking fine): its row kept it, so the pane starts from there
+            if let Ok(store) = c.service::<Store>() {
+                let kept = last_tests(&store).await;
+                lock(&p.tests).extend(kept);
+            }
             p.publish(&c).await;
         });
         Ok(())
     });
+}
+
+/// Each connector's last check, as its row on the pane's topic kept it.
+async fn last_tests(store: &Store) -> HashMap<String, ProbeResult> {
+    let rows = store.read_async(|r| r.query(CONNECTOR.kind, &wisp_store::Query::default())).await.unwrap_or_default();
+    rows.iter()
+        .filter_map(|r| {
+            let id = r.get("id").and_then(Value::as_str)?.to_owned();
+            let t: ProbeResult = serde_json::from_value(r.get("test")?.clone()).ok()?;
+            Some((id, t))
+        })
+        .collect()
 }
 
 #[cfg(test)]
@@ -818,6 +836,44 @@ pub(crate) fn register(s: &mut Setup, kind: Arc<StoredKind>, connectors: Arc<dyn
 mod tests {
     use super::*;
     use wisp_connectors_api::SecretField;
+
+    /// Audit G GS7: after a restart every connector read "Not checked yet"; the row's last check is read back.
+    #[tokio::test]
+    async fn a_connectors_last_check_is_read_back_after_a_restart() {
+        let store = Store::open(wisp_store::Location::Memory, Arc::new(wisp_store::SystemClock)).unwrap();
+        install(&store).unwrap();
+        let bad = ProbeResult { at: 5, ok: false, error: Some("It wouldn't start: qa-bad: not found".into()), ..ProbeResult::default() };
+        let good = ProbeResult { at: 6, ok: true, count: Some(1), ..ProbeResult::default() };
+        let row = |id: &str, t: Option<&ProbeResult>| {
+            let mut r = Row::new();
+            for (k, v) in [
+                ("id", json!(id)),
+                ("name", json!(id)),
+                ("transport", json!("local")),
+                ("command", json!("x")),
+                ("url", json!("")),
+                ("enabled", json!(true)),
+                ("added_at", json!(0)),
+                ("testing", json!(false)),
+                ("test", t.map_or(Value::Null, |t| serde_json::to_value(t).unwrap())),
+            ] {
+                r.insert(k.into(), v);
+            }
+            r
+        };
+        let rows = vec![row("qa_bad", Some(&bad)), row("qa_echo", Some(&good)), row("fresh", None)];
+        store
+            .write(move |w| {
+                for r in rows {
+                    w.upsert(CONNECTOR.kind, r)?;
+                }
+                Ok(())
+            })
+            .await
+            .unwrap();
+        let kept = last_tests(&store).await;
+        assert_eq!((kept.get("qa_bad"), kept.get("qa_echo"), kept.len()), (Some(&bad), Some(&good), 2));
+    }
 
     fn field(k: &str, v: &str) -> SecretField {
         SecretField { key: k.into(), value: json!(v) }

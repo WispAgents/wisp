@@ -309,6 +309,7 @@ impl Runtime {
         extra: impl FnOnce(&mut wisp_store::Writer<'_>) -> wisp_store::Result<()> + Send + 'static,
         also: impl FnOnce(&Summary) -> Vec<Emitted> + Send,
     ) -> Result<Arc<Summary>> {
+        self.keep_open_ask(s).await;
         s.rev += 1;
         // what the task read, in memory from here on: its row keeps where its text quotes it (ADR-0050)
         let known = self.env_known(s.id.as_str()).await.ok().map(|v| v.0);
@@ -365,12 +366,28 @@ impl Runtime {
         let followups =
             self.lock_list().get(s.id.as_str()).and_then(|r| r.fields.get("followups").and_then(serde_json::Value::as_u64)).unwrap_or(0);
         let live_step = self.live_label(s.id.as_str());
+        // the open question: the row reads "Asks: …" and carries it (v1 `live`, `question`, `options`, `approval`); never
+        // given, an asking task's row read its last answer ("No question asked.", audit G GS12)
+        let open = s.ext.get("wisp.runtime").and_then(|r| r.get("ask"));
+        let question = open.map(|a| {
+            let setup = a.get("setup");
+            // a setup card says its headline (the question is the headline and every line)
+            let q = setup.and_then(|c| c.get("headline")).or_else(|| a.get("question")).and_then(serde_json::Value::as_str);
+            q.unwrap_or_default().to_owned()
+        });
+        let options: Vec<String> = open
+            .filter(|a| a.get("clash").is_none())
+            .and_then(|a| a.get("options"))
+            .and_then(|o| serde_json::from_value(o.clone()).ok())
+            .unwrap_or_default();
+        let approval = open.is_some_and(|a| a.get("permission").is_some());
         let facts = RowFacts {
             last,
             report,
             turn_count: last.map_or(0, |t| t.idx + 1),
             followups: u32::try_from(followups).unwrap_or(0),
             live_step: live_step.as_deref(),
+            ask: question.as_deref().map(|q| (q, options.as_slice(), approval)),
             ..RowFacts::default()
         };
         let mut fields = BTreeMap::new();

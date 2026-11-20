@@ -89,7 +89,9 @@ impl Runtime {
         if head.resume_id.is_some() {
             s.resume_id.clone_from(&head.resume_id);
         }
-        // v1 runner.js:1812: a question the turn left open goes with it (no stale ask in review)
+        // v1 runner.js:1812: a question the turn left open goes with it (no stale ask in review); a setup card's agent
+        // reads that it was taken back, and the turn says so (audit G GS5: never silently)
+        let card = crate::more::open_card_action(&s);
         self.cancel_asks(&mut s);
         // a lead: its delegates still at work hold it in Working; all of them done, their reports are queued now
         let waits_on = self.lead_turn_ends(&mut s, &mut turn, stopped || stopping, &far).await;
@@ -123,6 +125,10 @@ impl Runtime {
                     tracing::warn!(%err, "an after-turn step failed");
                 }
             });
+        }
+        if let Some(action) = card {
+            let label = format!("The card asking to {action} was taken back: the turn ended before you answered. Nothing changed.");
+            self.add_row(sid, tid, crate::more::answer_row(label)).await?;
         }
         if landing.handing {
             self.release_linger(sid);
@@ -244,6 +250,9 @@ impl Runtime {
     /// A turn a crash or restart left running never finished: it shows stopped (v1 `restartReason`).
     pub(crate) async fn end_unfinished(self: &Arc<Self>, mut s: Session, mut t: Turn) -> Result<()> {
         // its setup card goes with the run that asked (ADR-0113): nobody is left to read the answer
+        if let Some(ask) = crate::more::ask_id(&s) {
+            self.asks().remove(&ask);
+        }
         let taken = crate::more::take_setup_card(&mut s).map(|action| {
             format!("wisp restarted while this was running, so its card asking to {action} was taken back: nothing changed. Follow up to pick it back up.")
         });

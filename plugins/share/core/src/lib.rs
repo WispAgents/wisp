@@ -4,7 +4,9 @@
 //!   `github_pat_…`, Slack `xox…`, AWS `AKIA…`, Google `AIza…`, bearer tokens, private key blocks, and
 //!   `password=…`-style assignments) → `<secret>`.
 //! - **Env**: the values of the sharer's secret-looking environment variables (`*KEY*`, `*TOKEN*`,
-//!   `*SECRET*`, `*PASSWORD*`) → `<env:NAME>`.
+//!   `*SECRET*`, `*PASSWORD*`, `*PASS`, `AUTH`, …: [`secret_name`]) → `<env:NAME>`.
+//! - **Inline** ([`mask_inline`], terminal context): a secret typed in a command (`DB_PASSWORD=… npm run`,
+//!   `--password …`, `mysql -p…`) → `<secret>`.
 //! - **Paths**: the project folder → `<project>`, the home folder → `~`.
 //! - **Others**: where the text refers to another task or a crew member the sharer didn't choose (a mention chip,
 //!   `@[Title](wisp:<id>)` / `@[Name](crew:<id>)`, or the bare id) → `<task>` / `<crew>`. Their titles and names as
@@ -16,7 +18,9 @@ use std::sync::OnceLock;
 
 use regex::Regex;
 
+mod assign;
 mod prepared;
+pub use assign::{mask_inline, secret_name};
 use serde_json::{Map, Value};
 use wisp_share_api::{Bundle, Redaction};
 
@@ -40,13 +44,7 @@ fn mention() -> Option<&'static Regex> {
 
 /// Environment variables whose values a share masks.
 pub fn secret_env(vars: impl IntoIterator<Item = (String, String)>) -> Vec<(String, String)> {
-    let mut out: Vec<(String, String)> = vars
-        .into_iter()
-        .filter(|(k, v)| {
-            let k = k.to_ascii_uppercase();
-            v.len() >= 8 && ["KEY", "TOKEN", "SECRET", "PASSWORD", "PASSWD", "CREDENTIAL"].iter().any(|w| k.contains(w))
-        })
-        .collect();
+    let mut out: Vec<(String, String)> = vars.into_iter().filter(|(k, v)| v.len() >= 8 && secret_name(k)).collect();
     // longest first, so a value inside another is masked by the longer
     out.sort_by_key(|(_, v)| std::cmp::Reverse(v.len()));
     out

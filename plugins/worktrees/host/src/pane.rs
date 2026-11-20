@@ -181,13 +181,20 @@ pub async fn publish(store: &Store, view: &WorktreesView, offers: &[Offer]) -> w
 /// Bring in's offers: every declared project's worktrees no task knows (git.service lists them).
 pub async fn offers(engine: &Engine, port: &dyn Port, call: &Call) -> Vec<Offer> {
     let tasks = port.tasks().await;
-    let known: HashSet<String> = tasks.iter().flat_map(|t| t.trees.iter().map(|x| folder_key(&x.worktree.path))).collect();
+    let projects = port.projects().await;
+    // a task's folders, and every project's own: a linked worktree that is a project is that project, never a stray
+    // to bring in as a task (audit G, beside GS1: the main checkout was offered to the linked one's project)
+    let known: HashSet<String> = tasks
+        .iter()
+        .flat_map(|t| t.trees.iter().map(|x| folder_key(&x.worktree.path)))
+        .chain(projects.iter().map(|(_, root)| folder_key(root)))
+        .collect();
     let dismissed = port.settings().await.dismissed;
     // compared by `folder_key`: on Windows git lists `C:/x/…` and wisp keeps `C:\x\…`
     let wisp_dir = format!("{}/worktrees", engine.home.trim_end_matches(['/', '\\']));
     // each project's worktrees first, then which of them had a chat: every harness's store read once, not per folder
     let mut found = Vec::new();
-    for (name, root) in port.projects().await {
+    for (name, root) in projects {
         if dismissed.contains(&name) || !fsx::exists(&root).await {
             continue;
         }

@@ -140,32 +140,56 @@ fn zsh(c: &Catalogue, curated: &[&str], extra: &Extra) -> String {
     let mut s = String::from(
         "#compdef wisp\n# wisp completions for zsh: wisp completions zsh > \"${fpath[1]}/_wisp\"\n_wisp() {\n  local -a firsts verbs flags\n",
     );
-    let firsts: Vec<String> = curated
-        .iter()
-        .map(|x| format!("'{x}:a wisp command'"))
-        .chain(t.iter().map(|(p, v)| format!("'{p}:{} commands'", v.len())))
-        .chain(["'help:every command'".into(), "'completions:shell completions'".into(), "'attach:follow a task live'".into()])
-        .collect();
+    // a word with no description of its own says nothing rather than "a wisp command" for each (audit G GS11)
+    let plugins: Vec<&String> = t.iter().map(|(p, _)| p).collect();
+    let firsts: Vec<String> =
+        once(curated.iter().map(|x| (*x).to_owned()).chain(extra.groups.iter().map(|(g, _)| g.clone())).filter(|x| !plugins.contains(&x)))
+            .into_iter()
+            .map(|x| format!("'{}'", q(&x)))
+            .chain(t.iter().map(|(p, v)| format!("'{p}:{} commands'", v.len())))
+            .chain(["'help:every command'".into(), "'completions:shell completions'".into(), "'attach:follow a task live'".into()])
+            .collect();
     let _ = writeln!(s, "  firsts=({})\n  if (( CURRENT == 2 )); then _describe 'command' firsts; return; fi", firsts.join(" "));
-    // after `--goal`: the declared goals, whatever the verb
+    // after `--agent`: the harnesses; after `--goal`: the declared goals, whatever the verb
+    if !extra.agents.is_empty() {
+        let names: Vec<String> = extra.agents.iter().map(|g| format!("'{}'", q(g))).collect();
+        let _ = writeln!(s, "  if [[ $words[CURRENT-1] == (--agent|-a) ]]; then compadd -- {}; return; fi", names.join(" "));
+    }
     if !extra.goals.is_empty() {
         let names: Vec<String> = extra.goals.iter().map(|g| format!("'{}'", q(g))).collect();
         let _ = writeln!(s, "  if [[ $words[CURRENT-1] == --goal ]]; then compadd -- {}; return; fi", names.join(" "));
     }
     s.push_str("  case $words[2] in\n");
-    for (p, verbs) in &t {
-        let names: Vec<String> = verbs.iter().map(|(v, _)| format!("'{}'", q(v))).collect();
+    // every group: its built-in verbs, then its plugin's, each once (as bash)
+    let names = once(extra.groups.iter().map(|(g, _)| g.clone()).chain(t.iter().map(|(p, _)| p.clone())));
+    for p in &names {
+        let built: Vec<String> = extra.groups.iter().filter(|(g, _)| g == p).flat_map(|(_, vs)| vs.clone()).collect();
+        let plugin: &[(String, Vec<String>)] = t.iter().find(|(x, _)| x == p).map_or(&[], |(_, vs)| vs.as_slice());
+        let verbs = once(built.into_iter().chain(plugin.iter().map(|(v, _)| v.clone())));
+        let quoted: Vec<String> = verbs.iter().map(|v| format!("'{}'", q(v))).collect();
         let _ = writeln!(
             s,
-            "    {p})\n      verbs=({})\n      if (( CURRENT == 3 )); then _describe 'verb' verbs; return; fi\n      case $words[3] in",
-            names.join(" ")
+            "    {p})\n      verbs=({})\n      if (( CURRENT == 3 )); then _describe 'verb' verbs; return; fi\n      flags=(--json --help)\n      case $words[3] in",
+            quoted.join(" ")
         );
-        for (v, flags) in verbs {
-            let _ = writeln!(s, "        {v}) flags=({} --json --help) ;;", flags.join(" "));
+        for (v, flags) in plugin {
+            let mut keys = String::new();
+            // `wisp settings set <key> <value>`: the setting keys, then an enum setting's values (as bash)
+            if p == "settings" && matches!(v.as_str(), "set" | "get") && !extra.settings.is_empty() {
+                let _ = write!(keys, "if (( CURRENT == 4 )); then compadd -- {}; return; fi; ", q(&extra.settings.join(" ")));
+                if v == "set" && !extra.values.is_empty() {
+                    keys.push_str("if (( CURRENT == 5 )); then case $words[4] in");
+                    for (k, vs) in &extra.values {
+                        let _ = write!(keys, " {}) compadd -- {}; return ;;", q(k), q(&vs.join(" ")));
+                    }
+                    keys.push_str(" esac; fi; ");
+                }
+            }
+            let _ = writeln!(s, "        {v}) {keys}flags=({} --json --help) ;;", flags.join(" "));
         }
         s.push_str("      esac\n      _describe 'flag' flags ;;\n");
     }
-    for (verb, words) in extra.after.iter().filter(|(v, _)| !t.iter().any(|(p, _)| p == v)) {
+    for (verb, words) in extra.after.iter().filter(|(v, _)| !names.contains(v)) {
         let _ = writeln!(s, "    {verb}) compadd -- {} ;;", words.iter().map(|w| q(w)).collect::<Vec<_>>().join(" "));
     }
     s.push_str("    completions) _values 'shell' zsh bash fish ;;\n  esac\n}\ncompdef _wisp wisp\n");
@@ -176,8 +200,25 @@ fn fish(c: &Catalogue, curated: &[&str], extra: &Extra) -> String {
     let t = tree(c);
     let mut s =
         String::from("# wisp completions for fish: wisp completions fish > ~/.config/fish/completions/wisp.fish\ncomplete -c wisp -f\n");
-    for x in curated.iter().chain(["help", "completions", "attach"].iter()) {
-        let _ = writeln!(s, "complete -c wisp -n '__fish_use_subcommand' -a '{x}'");
+    let plugins: Vec<&String> = t.iter().map(|(p, _)| p).collect();
+    let words = once(
+        curated
+            .iter()
+            .map(|x| (*x).to_owned())
+            .chain(extra.groups.iter().map(|(g, _)| g.clone()))
+            .chain(["help", "completions", "attach"].map(str::to_owned))
+            .filter(|x| !plugins.contains(&x)),
+    );
+    for x in &words {
+        let _ = writeln!(s, "complete -c wisp -n '__fish_use_subcommand' -a '{}'", q(x));
+    }
+    // a built-in group's own verbs (`wisp plugin enable`), as bash offers them (audit G GS11)
+    for (g, verbs) in &extra.groups {
+        let mine: Vec<&(String, Vec<String>)> = t.iter().find(|(p, _)| p == g).map(|(_, vs)| vs.iter().collect()).unwrap_or_default();
+        let built: Vec<String> = verbs.iter().filter(|v| !mine.iter().any(|(m, _)| m == *v)).map(|v| q(v)).collect();
+        if !built.is_empty() {
+            let _ = writeln!(s, "complete -c wisp -n '__fish_seen_subcommand_from {g}' -a '{}'", built.join(" "));
+        }
     }
     for (p, verbs) in &t {
         let _ = writeln!(s, "complete -c wisp -n '__fish_use_subcommand' -a '{p}' -d '{} commands'", verbs.len());
@@ -186,6 +227,21 @@ fn fish(c: &Catalogue, curated: &[&str], extra: &Extra) -> String {
             for f in flags {
                 let _ = writeln!(s, "complete -c wisp -n '__fish_seen_subcommand_from {v}' -l '{}'", f.trim_start_matches("--"));
             }
+        }
+    }
+    // `wisp settings set|get <key>`, then `set <key> <value>`: the keys, then an enum setting's values (as bash)
+    if !extra.settings.is_empty() {
+        let at = |n: usize| format!("__fish_seen_subcommand_from settings; and test (count (commandline -opc)) -eq {n}");
+        let _ =
+            writeln!(s, "complete -c wisp -n '{}; and __fish_seen_subcommand_from set get' -a '{}'", at(3), q(&extra.settings.join(" ")));
+        for (k, vs) in &extra.values {
+            let _ = writeln!(
+                s,
+                "complete -c wisp -n '{}; and __fish_seen_subcommand_from set; and contains -- {} (commandline -opc)' -a '{}'",
+                at(4),
+                q(k),
+                q(&vs.join(" "))
+            );
         }
     }
     for (verb, words) in &extra.after {
@@ -197,7 +253,11 @@ fn fish(c: &Catalogue, curated: &[&str], extra: &Extra) -> String {
         }
     }
     let _ = writeln!(s, "complete -c wisp -n '__fish_seen_subcommand_from completions' -a 'zsh bash fish'");
-    // after `--goal`: the declared goals (-r: it takes one, -f: no files)
+    // after `--agent`: the harnesses; after `--goal`: the declared goals (-r: it takes one, -f: no files)
+    if !extra.agents.is_empty() {
+        let names: Vec<String> = extra.agents.iter().map(|g| q(g)).collect();
+        let _ = writeln!(s, "complete -c wisp -l agent -s a -r -f -a '{}' -d 'a harness'", names.join(" "));
+    }
     if !extra.goals.is_empty() {
         let names: Vec<String> = extra.goals.iter().map(|g| q(g)).collect();
         let _ = writeln!(s, "complete -c wisp -l goal -r -f -a '{}' -d 'a declared goal'", names.join(" "));
@@ -290,6 +350,40 @@ mod tests {
         assert!(s.contains("-eq 4 ]; then case \"${COMP_WORDS[3]}\" in worktrees.max) COMPREPLY=($(compgen -W 'off 20 40 80'"), "{s}");
         let get = s.lines().find(|l| l.trim_start().starts_with("get)")).unwrap();
         assert!(!get.contains("off 20 40 80"), "only set takes a value: {get}");
+    }
+
+    /// Audit G GS11: zsh and fish offered no setting key or value, nor the harnesses or the built-in groups' verbs, and
+    /// zsh described every first word as "a wisp command"; the three shells complete the same now.
+    #[test]
+    fn zsh_and_fish_complete_what_bash_does_audit_gs11() {
+        let info = |id: &str| CommandInfo {
+            id: id.into(),
+            plugin: "wisp.settings".into(),
+            title: None,
+            read_only: false,
+            permission: "x".into(),
+            args: Some("{ key?: string, value?: string, }".into()),
+            ui_only: None,
+        };
+        let c = Catalogue::new(vec![info("settings.set"), info("settings.get")]);
+        let extra = Extra {
+            groups: vec![("plugin".into(), vec!["enable".into(), "disable".into()])],
+            agents: vec!["claude".into(), "codex".into()],
+            settings: vec!["worktrees.max".into(), "settings.editor".into()],
+            values: vec![("worktrees.max".into(), vec!["off".into(), "20".into(), "40".into(), "80".into()])],
+            ..Extra::default()
+        };
+        let zsh = script_with("zsh", &c, &["ls", "init"], &extra).unwrap();
+        assert!(!zsh.contains("a wisp command"), "{zsh}");
+        assert!(zsh.contains("set) if (( CURRENT == 4 )); then compadd -- worktrees.max settings.editor; return; fi;"), "{zsh}");
+        assert!(zsh.contains("case $words[4] in worktrees.max) compadd -- off 20 40 80; return ;;"), "{zsh}");
+        assert!(zsh.contains("== (--agent|-a) ]]; then compadd -- 'claude' 'codex'"), "{zsh}");
+        assert!(zsh.contains("    plugin)\n      verbs=('enable' 'disable')"), "{zsh}");
+        let fish = script_with("fish", &c, &["ls"], &extra).unwrap();
+        assert!(fish.contains("-eq 3; and __fish_seen_subcommand_from set get' -a 'worktrees.max settings.editor'"), "{fish}");
+        assert!(fish.contains("contains -- worktrees.max (commandline -opc)' -a 'off 20 40 80'"), "{fish}");
+        assert!(fish.contains("complete -c wisp -l agent -s a -r -f -a 'claude codex'"), "{fish}");
+        assert!(fish.contains("complete -c wisp -n '__fish_seen_subcommand_from plugin' -a 'enable disable'"), "{fish}");
     }
 
     /// Audit E (as in D): `wisp export <TAB>` offered nothing, though it takes the kinds (`wisp export crew agents`). A

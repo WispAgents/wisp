@@ -91,10 +91,20 @@ async fn a_formula_is_read_as_the_ui_reads_it_audit_d() {
     let plan =
         api.try_cmd("resources.plan", json!({ "resources": [{ "kind": "router", "name": "default", "spec": { "best2": true } }] })).await;
     assert!(plan.to_string().contains("Auto is off"), "a plan naming it says why: {plan}");
+    // audit G GS6: `auto` as an agent or a harness is put away with the router: refused, and no list offers it
+    let autos = "wisp: 1\nagents:\n  a1: { harness: auto }\ntasks:\n  default: { agent: auto }\n  t1: { prompt: fix it, agent: auto }\n";
+    std::fs::write(dir.join("proj/auto3.wisp.yml"), autos).unwrap();
+    let (code, out, err) = wisp(&dir, port, &["validate", "-f", "auto3.wisp.yml"]);
+    let said = format!("{out}{err}");
+    assert!(code != 0, "{said}");
+    assert!(said.contains("agents.a1: harness: auto: Auto is off (runtime.auto)"), "{said}");
+    assert!(said.contains("no agent named auto") && !said.contains(", auto)"), "{said}");
     // on, it's a kind as before
     api.cmd("settings.set", json!({ "key": "runtime.auto", "value": true })).await;
     let (code, out, err) = wisp(&dir, port, &["export", "router"]);
     assert!(code == 0 && out.contains("router"), "{code}: {out}{err}");
+    let (code, out, err) = wisp(&dir, port, &["validate", "-f", "auto3.wisp.yml"]);
+    assert_eq!(code, 0, "Auto on, `auto` names the router's pick again: {out}{err}");
     api.cmd("settings.set", json!({ "key": "runtime.auto", "value": false })).await;
 
     // audit E2: a setting not set yet plans from its default: `crew.tint: false` says `true → false`, its default again

@@ -105,6 +105,29 @@ fn task(id: &str, wt: Option<&Worktree>) -> TaskInfo {
     }
 }
 
+/// Audit G GS1 (found beside it): a linked worktree that is a project of its own is that project, not a stray: neither
+/// project offers the other's folder (the main checkout was offered to Bring in as a task of the linked one).
+#[tokio::test]
+async fn a_folder_that_is_a_project_is_never_offered_to_bring_in() {
+    let t = tmp("bring-proj");
+    let root = repo(&t);
+    let e = engine(&t);
+    let wt = t.0.join("app-wt");
+    add_tree(&root, &wt, "side");
+    let stray = t.0.join("app-wt2");
+    add_tree(&root, &stray, "stray");
+    let port = MemPort::new(Vec::new(), WtSettings::default());
+    *port.projects.lock().unwrap() =
+        vec![("app".into(), root.to_string_lossy().into_owned()), ("app-wt".into(), wt.to_string_lossy().into_owned())];
+    let offers = pane::offers(&e, port.as_ref(), &user()).await;
+    let key = |p: &std::path::Path| wisp_runtime_api::paths::folder_key(p.to_str().unwrap());
+    let got: Vec<(String, Vec<String>)> = offers
+        .iter()
+        .map(|o| (o.project.clone(), o.items.iter().map(|i| wisp_runtime_api::paths::folder_key(&i.path)).collect()))
+        .collect();
+    assert_eq!(got, vec![("app".to_owned(), vec![key(&stray)]), ("app-wt".to_owned(), vec![key(&stray)])], "{offers:?}");
+}
+
 /// F-wt-3: a project with a worktree Conductor left under ~/conductor/workspaces: the offer lists it (from
 /// "Conductor"), wisp's own worktree and the main checkout are left out, and the pane's topic carries the row.
 #[tokio::test]

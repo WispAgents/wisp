@@ -11,7 +11,7 @@ export interface Ask {
   readonly setup?: SetupAsk;
 }
 export interface SetupAsk {
-  /** `Ada wants to add the connector `linear`: runs `npx -y @linear/mcp`` */
+  /** “Ada wants to add the connector “linear”: runs npx -y @linear/mcp” */
   readonly headline: string;
   /** the other facts, one a line (`role: Reviewer`, `needs LINEAR_KEY from you`) */
   readonly lines: readonly string[];

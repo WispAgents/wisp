@@ -668,13 +668,13 @@ function withCrew(peer: string, now: number, list: Row[], topics: Map<Topic, Row
   job(2, { title: 'Competitor matrix', agent: 'claude', state: 'review', ago: 20 * MIN, cwd: '~/code/wisp', prompt: 'Compare the six tools we track.', answer: 'Report ready: 6 tools compared. Paseo added a queue; nobody has a ledger.', unread: true, crew: { id: 'crew:hopper', job: 'checkin' } });
   // `setup`: Ada's job asks to add a connector, as runtime puts a setup card on its task (ADR-0113)
   if (setup) {
-    const headline = 'Ada wants to add the connector `linear`: runs `npx -y @linear/mcp`';
+    const headline = 'Ada wants to add the connector “linear”: runs npx -y @linear/mcp';
     const lines = ['Every task will start it, on this computer.', 'needs LINEAR_API_KEY from you'];
     job(4, { title: 'Triage the Linear backlog', agent: 'claude', state: 'running', ago: 3 * MIN, cwd: '~/code/wisp', prompt: 'Triage the Linear backlog: label and size each issue.', answer: 'I need the Linear connector to read the issues.', crew: { id: 'crew:ada', job: 'task' } }, (v) => {
       asks([headline, ...lines].join('\n'), ['Allow', 'Deny'])(v);
       const ext = (v['body'] as { ext: Record<string, Record<string, Record<string, unknown>>> }).ext;
       const ask = ext['wisp.runtime']?.['ask'];
-      if (ask) ask['setup'] = { command: 'connectors.agent.add', headline, lines, commands: ['npx -y @linear/mcp'], action: 'add the connector `linear`', full: JSON.stringify({ name: 'linear', command: 'npx', args: ['-y', '@linear/mcp'], env: ['LINEAR_API_KEY'], transport: 'local' }, null, 2) };
+      if (ask) ask['setup'] = { command: 'connectors.agent.add', headline, lines, commands: ['npx -y @linear/mcp'], action: 'add the connector “linear”', full: JSON.stringify({ name: 'linear', command: 'npx', args: ['-y', '@linear/mcp'], env: ['LINEAR_API_KEY'], transport: 'local' }, null, 2) };
     });
   }
   job(3, { title: 'Review PR #806', agent: 'claude', state: 'done', ago: 26 * HOUR, cwd: '~/code/wisp', prompt: 'Review PR #806.', answer: 'PR #806: 2 layout reads after writes; fixed.', crew: { id: 'crew:ada', job: 'task' } });

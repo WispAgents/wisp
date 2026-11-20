@@ -32,7 +32,9 @@ pub(super) fn specs(s: &mut Setup, slot: &Slot) {
         .keyed("name", "name", "name")
         .renames("runtime.profile.rename")
         // an agent field names a declared agent, a harness (`codex`) or `auto` (the router picks)
-        .also_named("runtime.agents", "id", &["auto"]),
+        .also_named("runtime.agents", "id", &["auto"])
+        // …while Auto is on: off, it's put away as the router is (audit G GS6)
+        .words_while("runtime.auto", "Auto is off (runtime.auto): name a harness, or turn Auto on", "harness"),
     );
     s.contribute(&RESOURCE_KIND, kind);
     s.command::<c::Profiles, _, _>(|ctx, _, _| async move { crate::specs::profiles(&*ctx.service::<Store>()?).await });

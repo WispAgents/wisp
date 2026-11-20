@@ -343,6 +343,13 @@ async fn every_command_word_is_a_command_a_strict_group_or_a_prompt_and_says_so(
     assert!(code == 2 && err.contains("wisp spell has no cast"), "{code}: {err}");
     let (code, _, err) = probe(&dir, port, &["spell"]);
     assert!(code == 2 && err.contains("plugin new"), "{code}: {err}");
+    // audit G GS10: `wisp <group> --help` is `wisp help <group>`, for every kind of group
+    for g in ["connectors", "plugin", "channels", "crew", "worktrees", "settings", "machines", "cloud", "update"] {
+        let (code, out, err) = probe(&dir, port, &[g, "--help"]);
+        let (hcode, hout, _) = probe(&dir, port, &["help", g]);
+        assert!(code == 0 && hcode == 0 && out == hout, "{g} --help → {code}: {out}{err}\n  help {g} → {hout}");
+        assert!(!out.contains("needs more"), "{g}: {out}");
+    }
     // QA round 11 #2: help for a built-in group is its usage
     for (group, line) in
         [("computer", "wisp computer on|off|status"), ("update", "wisp update [apply]"), ("machines", "wisp machines|machine")]
