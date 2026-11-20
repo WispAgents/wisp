@@ -726,6 +726,8 @@ export function HomeView(props: { readonly onBack?: () => void }): JSX.Element {
     ...(when()
       ? [{ id: 'when', icon: 'clock' as const, label: t('shell.when.chip', { when: startsAt(whenAt(when() ?? 'hour', now()), now()) }), removeLabel: t('shell.when.clear'), onRemove: () => setWhen(undefined) }]
       : []),
+    // a formula or task file picked from the phone's More: its chip and ✕ (the desktop's is in its footer's chips)
+    ...((f) => (f ? [{ id: 'formula', icon: 'file' as const, label: t('shell.home.formulaChip', { name: f.name }), removeLabel: t('shell.home.formulaOff'), onRemove: () => setFormula(undefined) }] : []))(formula()),
   ];
   const pluginTips = useSignal(computed(() => (shell.homeTips?.()() ?? []).filter((d) => d.offered?.(d.client) ?? true)));
   const offeredTips = (): readonly string[] => (autoOn() ? TIPS : TIPS.filter((x) => !AUTO_TIPS.has(x)));
@@ -841,6 +843,9 @@ export function HomeView(props: { readonly onBack?: () => void }): JSX.Element {
       }
     );
   };
+  // Formula or task file…: a file picked from this device (the desktop's dialog, a phone's file picker)
+  const formulaAct: Act = { onClick: () => void import('./formula-pick.ts').then((m) => m.pickFormula(shell, target(), project()?.path, setFormula, (v) => text().trim() === '' && setText(v))) };
+  const formulaTool = (): LauncherTool => tool('formula', 'launcher.formula', 'file', t('shell.home.formulaRow'), t('shell.home.formulaRow'), { text: true, act: formulaAct });
   const plus = (): LauncherTool =>
     plusTool({
       part: 'launcher.plus',
@@ -864,13 +869,7 @@ export function HomeView(props: { readonly onBack?: () => void }): JSX.Element {
           !goalOn() && { id: 'goal', part: 'launcher.goal', icon: 'target', label: t('shell.home.goalRow'), act: goalRowAct() },
           team().length === 0 && !delegateOpen() && { id: 'team', part: 'launcher.team', icon: 'agent', label: t('shell.home.delegateRow'), act: { onClick: () => setDelegateOpen(true) } },
           canCompare() && { id: 'compare', part: 'launcher.compare', icon: 'split', label: t('shell.home.compareRow'), act: compareAct },
-          {
-            id: 'formula',
-            part: 'launcher.formula',
-            icon: 'file',
-            label: t('shell.home.formulaRow'),
-            act: { onClick: () => void import('./formula-pick.ts').then((m) => m.pickFormula(shell, target(), project()?.path, setFormula, (v) => text().trim() === '' && setText(v))) },
-          },
+          { id: 'formula', part: 'launcher.formula', icon: 'file', label: t('shell.home.formulaRow'), act: formulaAct },
         ],
         [!when() && { id: 'later', part: 'launcher.later', icon: 'clock', label: t('shell.home.later'), act: laterTool().act }],
       ],
@@ -1054,6 +1053,7 @@ export function HomeView(props: { readonly onBack?: () => void }): JSX.Element {
                 foldTail(tools, {
                   label: t('shell.home.moreOptions'),
                   title: t('shell.home.moreOptionsTitle'),
+                  onWarm: goals.warm,
                   // only while there's another harness to add: a press that did nothing would answer nothing (ADR-0017)
                   ...(runs().length < MAX_RUNNERS - 1 &&
                     nextRun(
@@ -1069,7 +1069,10 @@ export function HomeView(props: { readonly onBack?: () => void }): JSX.Element {
           firstRun(),
           'tail',
           [
-            goalTool(),
+            // the phone apps' More offers what desktop's `+` does (audit G tasks #2, owner-list #61, #63): Goal… with the
+            // declared goals, its filter, All goals… and New goal… (on: the toggle that turns Done when off), and
+            // Formula or task file…; the first run keeps its plain Goal toggle
+            foldPhone() && !goalOn() ? { ...goalTool(), label: t('shell.home.goalRow'), act: goalRowAct() } : goalTool(),
             // No folder: no git repo, so no worktree either; the toggle would only mislead (v1 paintScratch)
             ...(project() === undefined
               ? []
@@ -1077,6 +1080,7 @@ export function HomeView(props: { readonly onBack?: () => void }): JSX.Element {
                   worktreeTool(),
                 ]),
             laterTool(),
+            ...(foldPhone() && !formula() ? [formulaTool()] : []),
           ],
           tool('more', 'launcher.more', 'dots', t('shell.home.moreOptions'), t('shell.home.moreOptionsTitle'), { text: true, act: { onClick: openFull } }),
         ))}
@@ -1108,7 +1112,7 @@ export function HomeView(props: { readonly onBack?: () => void }): JSX.Element {
             end: goalEnd(),
           },
         })}
-        extras={desk() ? extras().filter((x) => x.id !== 'when') : extras()}
+        extras={desk() ? extras().filter((x) => x.id !== 'when' && x.id !== 'formula') : extras()}
         recipes={{
           label: t('shell.home.recipes'),
           empty: recipes.empty(),

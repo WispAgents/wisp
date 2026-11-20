@@ -463,8 +463,10 @@
     background: var(--bg-2);
     border-radius: var(--radius);
   }
+  /* a long word (a path, JSON) breaks inside the bubble, never runs out of it cut (audit G tasks #5) */
   [data-kit='ask-text'] {
     white-space: pre-wrap;
+    overflow-wrap: anywhere;
   }
   [data-kit='ask-foot'] {
     display: flex;
@@ -1065,6 +1067,15 @@
     min-width: 0;
     font-size: 11.5px;
     color: var(--faint);
+  }
+  /* a hint that is only its link (a phone's factory run: Stop the run) takes the link's width and no container: the
+     link stays whole (audit G tasks #6: "Stop the ru") */
+  [data-kit='c-hint'][data-bare] {
+    flex: none;
+  }
+  [data-kit='c-hint'][data-bare] > [data-kit='c-cold-row'] {
+    container-type: normal;
+    overflow: visible;
   }
   [data-kit='c-cold-row'] {
     container: cold / inline-size;

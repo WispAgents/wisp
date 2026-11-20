@@ -7,7 +7,10 @@ import { factoryPane, factoryPick, factoryRow, useFactory, type FactoryRow } fro
 import { FACTORY, factoryOf } from '../src/frame/launch-pick.ts';
 import { create } from '../src/frame/commands.ts';
 import { agentName } from '../src/frame/pickers.ts';
-import { factoryReply, runFactory } from '../src/frame/run-factory.ts';
+import { modelWord } from '../src/frame/runner.ts';
+import { runnerPick } from '../src/frame/auto.ts';
+import { factoryReply, factoryFoot, runFactory } from '../src/frame/run-factory.ts';
+import en from '../src/i18n/en.lazy.json' with { type: 'json' };
 
 const t = (k: string): string => ({ 'shell.runner.factories': 'Factories', 'shell.runner.factoryBuiltin': 'Built in', 'shell.runner.factory': 'Factory', 'wisp.factory.name': 'Factory' })[k] ?? k;
 const rows: FactoryRow[] = [
@@ -32,7 +35,7 @@ describe('the_picker_offers_a_factory_and_the_launch_sends_it', () => {
   });
 
   it('pressing the row uses the factory in use, else default', () => {
-    expect(useFactory({ agent: 'claude', model: 'opus', effort: 'high', account: 'a' })).toEqual({ agent: FACTORY, model: 'default', effort: '', account: '' });
+    expect(useFactory({ agent: 'claude', model: 'opus', effort: 'high', account: 'a' })).toEqual({ agent: FACTORY, model: 'default', modelLabel: 'default', effort: '', account: '' });
     expect(useFactory(factoryPick('careful')).model).toBe('careful');
   });
 
@@ -68,5 +71,31 @@ describe('a_factory_runs_reply_box_shows_no_harness_and_offers_stop_while_it_goe
     expect(factoryReply({ factory: { name: 'x', state: 'stopped' } })?.live).toBe(false);
     expect(factoryReply({ factory: { name: 'x' } })?.live).toBe(true);
     expect(factoryReply({})).toBeUndefined();
+  });
+});
+
+// Audit G tasks #7: picking strict left the pill on "Factory · Default" (the harnesses' word for no model)
+describe('the_pill_names_the_picked_factory_audit_g_tasks_7', () => {
+  it('says Factory · strict, and Factory · default for the built-in', () => {
+    const pill = (r: ReturnType<typeof factoryPick>): string =>
+      [agentName(t as never, [], r.agent), runnerPick({ agent: r.agent, name: '', model: modelWord(r), effort: r.effort, account: '', fallback: 'Default' })].join(' · ');
+    expect(pill(factoryPick('strict'))).toBe('Factory · strict');
+    expect(pill(useFactory({ agent: 'claude', model: '', effort: '', account: '' }))).toBe('Factory · default');
+  });
+});
+
+// Audit G tasks #6: a phone's factory run cut its reply box's foot ("Its …", "Stop the ru") and placeholder ("To add t…")
+describe('a_phones_factory_reply_box_keeps_stop_whole_and_a_short_placeholder_audit_g_tasks_6', () => {
+  const words = (k: string, v?: Record<string, string>): string => ((en as Record<string, string>)[k] ?? k).replace('{name}', v?.name ?? '');
+  it('drops the hint words beside Stop and shortens the placeholder on a phone; the desktop keeps both', () => {
+    const phone = factoryFoot({ name: 'default', live: true }, true, words);
+    expect(phone).toEqual({ placeholder: "Reply on a station's task to add to it", hint: '', stop: true });
+    // short enough for a 360 px phone's box (about 40 characters at its font)
+    expect(phone.placeholder.length).toBeLessThanOrEqual(40);
+    const desk = factoryFoot({ name: 'default', live: true }, false, words);
+    expect(desk.placeholder).toBe('Factory · default: its stations do the work. To add to one, reply on its task.');
+    expect(desk.hint).toBe('Its stations do the work');
+    // an ended run: no Stop, the words come back on a phone
+    expect(factoryFoot({ name: 'x', live: false }, true, words)).toMatchObject({ hint: 'Its stations do the work', stop: false });
   });
 });

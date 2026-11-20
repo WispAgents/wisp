@@ -27,6 +27,8 @@ export interface LauncherTool {
 export interface FoldExtras {
   readonly label: string;
   readonly title: string;
+  /** More is warmed or pressed: what its rows need, fetched first (Goal…'s declared goals). Additive (2026-11-20). */
+  readonly onWarm?: () => void;
   /** Try another agent (the pill's +): in More too, so a narrow bar folds the + and loses nothing (QA phone r4 #1) */
   readonly compare?: { readonly label: string; readonly act?: Act | undefined } | undefined;
   readonly issue?: { readonly label: string; readonly act?: Act | undefined } | undefined;
@@ -69,7 +71,8 @@ export function foldTail(tools: readonly LauncherTool[], x: FoldExtras): Launche
     // (or itself), then its clear
     const clear: MenuItem[] = t.clear ? [{ value: `${CLEAR}${t.id}`, label: t.clear.label }] : [];
     const own: MenuItem[] | undefined = menu ? menu.items.filter((e): e is MenuItem => e.kind === undefined || e.kind === 'item') : t.clear ? [{ value: `${OPEN}${t.id}`, label: t.label }] : undefined;
-    if (own) return { kind: 'submenu', value: `${TOOL}${t.id}`, label: t.label, icon: t.icon, items: [...own, ...clear] };
+    // its filter too (Goal…'s past seven goals, audit G tasks #2: the phone's More dropped it)
+    if (own) return { kind: 'submenu', value: `${TOOL}${t.id}`, label: t.label, icon: t.icon, items: [...own, ...clear], ...(menu?.filter && { filter: menu.filter }) };
     return { value: `${TOOL}${t.id}`, label: t.label, icon: t.icon, ...(t.on !== undefined && { checked: t.on }), ...(t.disabled && { disabled: true }) };
   });
   const extras: MenuEntry[] = [
@@ -95,8 +98,9 @@ export function foldTail(tools: readonly LauncherTool[], x: FoldExtras): Launche
     if (v === 'issue') return press(x.issue?.act);
     if (v === `${RECIPE}new`) return press(x.recipes?.add.act);
     if (v.startsWith(RECIPE)) return press(x.recipes?.items.find((r) => `${RECIPE}${r.id}` === v)?.act);
-    // a choice inside a tool's own menu (Start later's times)
-    const owner = tools.find((t) => t.act?.menu?.items.some((e) => (e.kind === undefined || e.kind === 'item') && e.value === v));
+    // a choice inside a tool's own menu (Start later's times), or one its filter found among all of them (a goal past
+    // the first seven)
+    const owner = tools.find((t) => t.act?.menu?.items.some((e) => (e.kind === undefined || e.kind === 'item') && e.value === v) || (t.act?.menu?.filter?.all ?? []).some((i) => i.value === v));
     owner?.act?.menu?.onSelect(v);
   };
   const on = tools.some((t) => t.on === true);
@@ -107,7 +111,7 @@ export function foldTail(tools: readonly LauncherTool[], x: FoldExtras): Launche
     label: x.label,
     title: x.title,
     ...(on && { on: true }),
-    act: { menu: { items: [...entries, ...(entries.length && extras.length ? [{ kind: 'separator' as const }] : []), ...extras], onSelect } },
+    act: { menu: { items: [...entries, ...(entries.length && extras.length ? [{ kind: 'separator' as const }] : []), ...extras], onSelect, ...(x.onWarm && { onWarm: x.onWarm }) } },
   };
 }
 

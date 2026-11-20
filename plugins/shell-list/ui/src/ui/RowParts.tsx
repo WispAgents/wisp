@@ -8,7 +8,7 @@ import { For, Match, Show, Switch, type JSX } from 'solid-js';
 import { Dot, Face, ForKeyed, Gap, GoalPill, Icon, OverlapPill, Pill, RowButton, RowLogo, RowPill, RowRun, Text, Time, futureLabel, timeTitle, useSignal } from '@wisp/ui';
 import type { EntityKey } from '@wisp/client';
 import { colorToken, type SessionRow } from '../types.ts';
-import type { PillView, RowView, RunView, SubView } from '../model/row.ts';
+import { rowMark, type PillView, type RowView, type RunView, type SubView } from '../model/row.ts';
 import { crewFaceOf, type CrewFace, type MemberRow } from '../model/crew-face.ts';
 import { toggleDone, toggleForLater } from '../actions.ts';
 import { kitT, say } from './say.ts';
@@ -97,18 +97,20 @@ export function HarnessMark(props: { readonly s: SessionRow }): JSX.Element {
   const env = useEnv();
   const route = (): RouteSeen | undefined => routeOf({ ext: (props.s as { ext?: unknown }).ext });
   const harnesses = useSignal(env.shell.harnesses());
-  const harness = (): HarnessUiDef | undefined => harnesses().find((h) => h.id === props.s.agent);
+  const mark = () => rowMark(props.s, (a) => harnesses().find((h) => h.id === a)?.logo);
   return (
-    <Show
-      when={harness()?.logo}
+    <Switch
       fallback={
         <Show when={route()}>
           <Dot tone="accent" />
         </Show>
       }
     >
-      {(src) => <RowLogo src={src()} routed={!!route()} />}
-    </Show>
+      <Match when={((m) => (m && 'factory' in m ? m : undefined))(mark())}>
+        <Icon name="queue" size="xs" tone="muted" part="list.row.factory" />
+      </Match>
+      <Match when={((m) => (m && 'logo' in m ? m.logo : undefined))(mark())}>{(src) => <RowLogo src={src()} routed={!!route()} />}</Match>
+    </Switch>
   );
 }
 

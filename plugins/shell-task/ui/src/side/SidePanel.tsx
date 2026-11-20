@@ -12,7 +12,7 @@ import { showsPlace } from './place.ts';
 import { useShell } from '../shell.ts';
 import { useTask } from '../task-context.tsx';
 import { PrPane } from './PrPane.tsx';
-import { ShellPane, askShellFocus } from './ShellPane.tsx';
+import { ShellPane, askShellFocus, shellWalkedTo, walksTabs } from './ShellPane.tsx';
 import { ChangesPane, read as readChanges, readHere as readChangesQuiet } from './ChangesPane.tsx';
 import { changeStat, setChangeStat } from './changes-stat.ts';
 import { changesOf, outsideFolder, relative, type ChangeTurn } from './changes.ts';
@@ -111,10 +111,14 @@ export function SidePanel(props: { readonly pane: SidePane; readonly file?: stri
     }
     if (v === 'app') void task.client.run(openApp, { key: task.key as EntityKey, cwd: pl.dir }).catch(() => undefined);
   };
+  // the last key pressed in the panel (a press of the pointer clears it): an arrow on the strip walks it
+  let lastKey = '';
   const open = (pane: string): void => {
     // the Shell's tab pressed while it shows: the keys go to the terminal (audit F tasks #1); another pane keeps them on
     // its tab, so the arrow keys go on along the strip
     if ((pane === 'shell' || pane === 'term') && props.pane === pane) return askShellFocus();
+    // walked onto by an arrow key: the shell starts, the keys stay on the strip (audit G tasks #3)
+    if ((pane === 'shell' || pane === 'term') && walksTabs(lastKey) && typeof document !== 'undefined' && document.activeElement?.closest("[data-part~='panel.tabs']")) shellWalkedTo();
     if (typeof document !== 'undefined' && document.activeElement?.closest("[data-part~='panel.tabs']") && pane !== 'shell' && pane !== 'term') setRefocusUntil(Date.now() + REFOCUS_MS);
     if (pane === 'changes' || pane === 'pr' || pane === 'shell' || pane === 'preview') shell.navigate({ t: 'openSide', side: { kind: pane, id: task.key as never } });
     if (pane === 'term') shell.navigate({ t: 'openSide', side: { kind: 'view', id: TERM_VIEW as never } });
@@ -193,6 +197,15 @@ export function SidePanel(props: { readonly pane: SidePane; readonly file?: stri
     if (props.pane === 'tab' && !shown()) shell.navigate({ t: 'openSide', side: { kind: 'changes', id: task.key as never } });
   });
   let head: HTMLElement | undefined;
+  onMount(() => {
+    const el = head;
+    if (!el) return;
+    const key = (e: KeyboardEvent): void => void (lastKey = e.key);
+    const press = (): void => void (lastKey = '');
+    el.addEventListener('keydown', key, true);
+    el.addEventListener('pointerdown', press, true);
+    onCleanup(() => (el.removeEventListener('keydown', key, true), el.removeEventListener('pointerdown', press, true)));
+  });
   onMount(() => {
     if (Date.now() > untrack(refocusUntil)) return;
     setRefocusUntil(0);

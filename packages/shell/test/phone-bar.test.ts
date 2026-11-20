@@ -4,6 +4,7 @@
 import { describe, expect, test, vi } from 'vitest';
 import type { LauncherTool } from '@wisp/ui';
 import { foldTail } from '../src/frame/phone-bar.ts';
+import { goalAct } from '../src/frame/goal-menu.ts';
 
 const goal = vi.fn();
 const worktree = vi.fn();
@@ -64,5 +65,36 @@ describe('the phone bar folds the pill before More_qa_r4_1', () => {
     expect(items.map((e) => ('value' in e ? e.value : e.kind))).toEqual(['tool:goal', 'tool:worktree', 'tool:later', 'separator', 'compare', 'issue']);
     m.act?.menu?.onSelect('compare');
     expect(compare).toHaveBeenCalledOnce();
+  });
+});
+
+// Audit G tasks #2 (owner-list #61, #63): the phone apps' More had a plain Goal toggle and no Formula or task file…; it
+// offers desktop's Goal… (the declared goals, a filter past seven, All goals…, New goal…). Folded, its filter and the
+// goals past the first seven must survive
+describe('the_phone_more_offers_goal_with_the_declared_goals_and_its_filter_audit_g_tasks_2', () => {
+  test('Goal… folds as a submenu that keeps its filter, and a goal the filter finds is taken', () => {
+    const declared = Array.from({ length: 32 }, (_, i) => ({ name: `goal-${String(i + 1).padStart(2, '0')}`, text: `done when ${i + 1}` }));
+    const taken: string[] = [];
+    const t = (k: string, v?: Readonly<Record<string, string | number>>): string => (k === 'shell.home.goalAll' ? `All goals (${v?.n})…` : k === 'shell.home.goalNew' ? 'New goal…' : k);
+    const act = goalAct({ shell: { navigate: () => undefined } as never, declared, recent: () => [], t, take: (g) => taken.push(g.name), fresh: () => taken.push('fresh') });
+    const formula = vi.fn();
+    const folded = foldTail(
+      [
+        { id: 'goal', part: 'launcher.goal', icon: 'target', label: 'Goal…', title: 'Goal', act },
+        { id: 'formula', part: 'launcher.formula', icon: 'file', label: 'Formula or task file…', title: 'Formula or task file…', act: { onClick: formula } },
+      ],
+      { label: 'More', title: 'More options' },
+    );
+    const items = folded.act?.menu?.items ?? [];
+    const goal = items[0] as { kind: string; items: { value: string; label: string }[]; filter?: { all: unknown[] } };
+    expect(goal.kind).toBe('submenu');
+    expect(goal.items.map((i) => i.label).slice(-2)).toEqual(['All goals (32)…', 'New goal…']);
+    expect(goal.filter?.all.length, 'the filter over all 32').toBe(32);
+    folded.act?.menu?.onSelect('goal:goal-17');
+    folded.act?.menu?.onSelect('goal:new');
+    expect(taken).toEqual(['goal-17', 'fresh']);
+    expect(items[1]).toMatchObject({ value: 'tool:formula', label: 'Formula or task file…' });
+    folded.act?.menu?.onSelect('tool:formula');
+    expect(formula).toHaveBeenCalled();
   });
 });

@@ -249,6 +249,26 @@ function quickDone(s: SessionRow, c: RowContext): RowView['quickDone'] {
 /** The row's second line on a desktop (docs/ux/2026-11-18-desktop.md #2): the answer's last line (live words, the
  *  question, the report) with the harness's logo; with none, harness · model. The machine only when it isn't this
  *  computer (a sandbox says so too): "This computer" on every row said nothing. */
+/** What a row's second line holds, and whether its run line comes third: a two-line row (every list but a run's own
+ * nested row) puts the answer there (with the harness's mark), else the run itself, so a row with no answer is two lines
+ * like the rest, its status beside the harness (audit G tasks #10: a desktop row put an empty line between them); a
+ * nested row keeps its words, then the run line under them, except on a phone, where a run's line is its second. */
+export function rowLines(two: boolean, v: Pick<RowView, 'sub' | 'run'>, phone = false): { readonly sub: 'answer' | 'run' | 'words'; readonly runFoot: boolean } {
+  const line = secondLine(v).line;
+  if (two && line === 'sub') return { sub: 'answer', runFoot: false };
+  // a phone's nested run row too: nothing said yet, harness · model is its second line (as it was)
+  if ((two || phone) && line === 'run') return { sub: 'run', runFoot: false };
+  return { sub: 'words', runFoot: !!v.run };
+}
+
+/** The mark before a row's answer: a factory run's own (it runs no agent: ADR-0114 rule 14, never a harness's, audit G
+ * tasks #8), else its harness's logo when the harness has one. */
+export function rowMark(s: Pick<SessionRow, 'agent' | 'factory'>, logoOf: (agent: string) => string | undefined): { readonly factory: true } | { readonly logo: string } | undefined {
+  if (s.factory) return { factory: true };
+  const logo = logoOf(s.agent);
+  return logo ? { logo } : undefined;
+}
+
 export function secondLine(v: Pick<RowView, 'sub' | 'run'>): { readonly line: 'sub' | 'run' | 'none'; readonly where: boolean } {
   const where = !!v.run && (v.run.remote || !!v.run.sandbox);
   return { line: v.sub ? 'sub' : v.run ? 'run' : 'none', where };

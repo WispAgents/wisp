@@ -1036,12 +1036,16 @@ export function ReplyBox(given: ReplyBoxProps | CompactReplyBoxProps): JSX.Eleme
           </Show>
           <Show when={props.hint} fallback={<span data-kit="grow" />}>
             {(h) => (
-              <span data-kit="c-hint" data-part="composer.hint">
+              // no words, only a link (a phone's factory run: Stop the run): the link alone, whole, never cut by the
+              // words' container (audit G tasks #6)
+              <span data-kit="c-hint" data-part="composer.hint" data-bare={flag(!h().long && !!h().link)}>
                 <span data-kit="c-cold-row">
-                  <span data-kit="c-cold" title={h().title ?? h().long}>
-                    <span data-kit="cc-long">{h().long}</span>
-                    <span data-kit="cc-short">{h().short}</span>
-                  </span>
+                  <Show when={h().long}>
+                    <span data-kit="c-cold" title={h().title ?? h().long}>
+                      <span data-kit="cc-long">{h().long}</span>
+                      <span data-kit="cc-short">{h().short}</span>
+                    </span>
+                  </Show>
                   <Show when={h().link}>
                     {(l) => (
                       <WithAct

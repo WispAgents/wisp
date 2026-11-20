@@ -38,7 +38,8 @@ pub struct Card {
     pub lines: Vec<String>,
     /// every command the change would run, verbatim
     pub commands: Vec<String>,
-    /// everything that will be written, in full (Show all)
+    /// the lines again, each whole, and every kit file's body, when a line was cut or a kit has bodies (Show all);
+    /// empty when the card already shows everything (audit G tasks #9: it was the JSON, offered for every card)
     pub full: String,
 }
 
@@ -219,19 +220,23 @@ pub fn import_write(bundle: Value, keys: &[String], cwd: &str) -> Write {
     Write { command: CREW_IMPORT.into(), args: Value::Object(args) }
 }
 
-/// A value as one line: text as it is, a list of words joined, anything else as compact JSON; at most `max` chars.
-fn shown(v: &Value, max: usize) -> String {
+/// A value as one line: text as it is, a list of words joined, anything else as compact JSON; at most `max` chars, cut
+/// with "…" (Show all has it whole).
+fn shown(v: &Value, max: Option<usize>) -> String {
     let full = match v {
         Value::String(t) => t.clone(),
         Value::Array(a) if a.iter().all(Value::is_string) => a.iter().filter_map(Value::as_str).collect::<Vec<_>>().join(", "),
         other => other.to_string(),
     };
     let one = full.split_whitespace().collect::<Vec<_>>().join(" ");
-    if one.chars().count() > max { format!("{}… (Show all)", one.chars().take(max).collect::<String>()) } else { one }
+    match max {
+        Some(max) if one.chars().count() > max => format!("{}…", one.chars().take(max).collect::<String>()),
+        _ => one,
+    }
 }
 
 /// Every field of `o` but `skip`, one a line (`kit` by its files' names, with their bodies in Show all).
-fn field_lines(o: &Map<String, Value>, skip: &[&str]) -> Vec<String> {
+fn field_lines(o: &Map<String, Value>, skip: &[&str], max: Option<usize>) -> Vec<String> {
     o.iter()
         .filter(|(k, _)| !skip.contains(&k.as_str()) && !matches!(k.as_str(), "session" | "sid"))
         .map(|(k, v)| match (k.as_str(), v) {
@@ -240,7 +245,7 @@ fn field_lines(o: &Map<String, Value>, skip: &[&str]) -> Vec<String> {
                 format!("kit: {} file{} ({}; bodies in Show all)", files.len(), if files.len() == 1 { "" } else { "s" }, names.join(", "))
             }
             ("checkin", Value::Bool(true)) => "checks in once added".to_owned(),
-            _ => format!("{k}: {}", shown(v, 160)),
+            _ => format!("{k}: {}", shown(v, max)),
         })
         .collect()
 }
@@ -258,8 +263,39 @@ fn word(w: &str) -> String {
 pub fn card(who: &str, writes: &[Write]) -> Result<Card, String> {
     let who = if who.trim().is_empty() { "The agent" } else { who.trim() };
     let [one] = writes else { return Err("a setup card runs one write".into()) };
+    let (action, detail, lines, commands) = parts(one, Some(LINE_MAX))?;
+    let (_, _, whole, _) = parts(one, None)?;
+    let bodies = kit_bodies(&one.args);
+    // Show all: the same lines, none cut, then each kit file as written; nothing when the card shows it all already
+    let full =
+        if whole == lines && bodies.is_empty() { String::new() } else { whole.into_iter().chain(bodies).collect::<Vec<_>>().join("\n") };
+    Ok(Card { headline: format!("{who} wants to {action}{detail}"), action, lines, commands, full })
+}
+
+/// The most a field's line shows on the card (Show all has the rest).
+const LINE_MAX: usize = 160;
+
+/// Every kit file's name and body, a member's or each imported member's: `SKILL.md:` then its text.
+fn kit_bodies(args: &Value) -> Vec<String> {
+    let kit = |m: &Value| -> Vec<String> {
+        m.get("kit")
+            .and_then(Value::as_array)
+            .into_iter()
+            .flatten()
+            .filter_map(|f| Some(format!("{}:\n{}", f.get("name")?.as_str()?, f.get("body").and_then(Value::as_str).unwrap_or_default())))
+            .collect()
+    };
+    let members = args.get("bundle").and_then(|b| b.get("members")).and_then(Value::as_array);
+    match members {
+        Some(ms) => ms.iter().flat_map(kit).collect(),
+        None => kit(args),
+    }
+}
+
+/// What the card says of `one`: its action, the headline's detail, its lines (each at most `max` chars), its commands.
+fn parts(one: &Write, max: Option<usize>) -> Result<(String, String, Vec<String>, Vec<String>), String> {
     let a = one.args.as_object().cloned().unwrap_or_default();
-    let (action, detail, lines, commands) = match one.command.as_str() {
+    Ok(match one.command.as_str() {
         CONNECTOR_ADD => {
             let name = s(&one.args, "name").unwrap_or_default().to_lowercase();
             let names = |k: &str| {
@@ -288,11 +324,11 @@ pub fn card(who: &str, writes: &[Write]) -> Result<Card, String> {
             let name = s(&one.args, "name").unwrap_or_default();
             let how: Vec<&str> = [s(&one.args, "agent"), s(&one.args, "mode")].into_iter().flatten().collect();
             let detail = if how.is_empty() { String::new() } else { format!(" ({})", how.join(", ")) };
-            (format!("add crew member {name}"), detail, field_lines(&a, &["name", "agent", "mode"]), Vec::new())
+            (format!("add crew member {name}"), detail, field_lines(&a, &["name", "agent", "mode"], max), Vec::new())
         }
         CREW_EDIT => {
             let m = s(&one.args, "member").unwrap_or_default();
-            let mut lines = field_lines(&a, &["member", "remember"]);
+            let mut lines = field_lines(&a, &["member", "remember"], max);
             lines.extend(
                 a.get("remember")
                     .and_then(Value::as_array)
@@ -326,7 +362,7 @@ pub fn card(who: &str, writes: &[Write]) -> Result<Card, String> {
                 .iter()
                 .map(|m| {
                     let name = m.get("name").and_then(Value::as_str).unwrap_or("?");
-                    format!("{name}: {}", field_lines(m, &["name", "key"]).join(" · "))
+                    format!("{name}: {}", field_lines(m, &["name", "key"], max).join(" · "))
                 })
                 .collect();
             if let Some(c) = cwd {
@@ -345,12 +381,7 @@ pub fn card(who: &str, writes: &[Write]) -> Result<Card, String> {
             )
         }
         other => return Err(format!("{other} isn't a change to the user's setup an agent can ask for")),
-    };
-    let mut shown_args = a;
-    shown_args.remove("session");
-    shown_args.remove("sid");
-    let full = serde_json::to_string_pretty(&Value::Object(shown_args)).unwrap_or_default();
-    Ok(Card { headline: format!("{who} wants to {action}{detail}"), action, lines, commands, full })
+    })
 }
 
 /// The user's answer: Allow (a button, or yes typed), else no, with the user's words when they typed some.
@@ -487,6 +518,26 @@ mod tests {
             normalize(CREW_ADD, &json!({ "from": "https://share/x" }), T).unwrap(),
             Normalized::Import { from: "https://share/x".into() }
         );
+    }
+
+    /// Audit G tasks #9: a cut field ended "… (Show all)" (plain text that did nothing), Show all opened the JSON, and
+    /// it was offered on cards with nothing cut.
+    #[test]
+    fn show_all_is_the_whole_lines_in_words_and_only_when_something_is_cut_audit_g_tasks_9() {
+        let brief = "You review every pull request the team opens. ".repeat(8);
+        let (c, _) = card_of(CREW_ADD, json!({ "name": "revbot", "agent": "codex", "mode": "plan", "brief": brief }));
+        let cut = c.lines.iter().find(|l| l.starts_with("brief: ")).unwrap();
+        assert!(cut.ends_with('…') && !cut.contains("Show all"), "{cut}");
+        assert!(c.full.contains(&format!("brief: {}", brief.trim())), "the brief whole: {}", c.full);
+        assert!(!c.full.contains('{') && !c.full.contains("\"agent\""), "no JSON: {}", c.full);
+        assert!(c.full.contains("cwd: /code/web"), "every line again: {}", c.full);
+        // nothing cut: no Show all
+        let (short, _) = card_of(CREW_ADD, json!({ "name": "helper", "role": "Docs writer" }));
+        assert_eq!(short.full, "", "{:?}", short.lines);
+        let (project, _) = card_of(PROJECT_ADD, json!({ "path": "/code/plain" }));
+        assert_eq!(project.full, "");
+        let (conn, _) = card_of(CONNECTOR_ADD, json!({ "name": "linear", "command": "npx", "args": ["-y", "@linear/mcp"] }));
+        assert_eq!(conn.full, "");
     }
 
     #[test]

@@ -521,6 +521,7 @@
   "shell.task.factory": "Factory · {name}",
   "shell.task.factoryReply": "Factory · {name}: its stations do the work. To add to one, reply on its task.",
   "shell.task.factoryHint": "Its stations do the work",
+  "shell.task.factoryReplyShort": "Reply on a station's task to add to it",
   "shell.task.factoryStop": "Stop the run",
   "shell.stop.factoryTitle": "Stop the factory run?",
   "shell.stop.factoryBody": "Every station still working stops, and the run ends Stopped. Its stations’ tasks and worktrees are kept.",

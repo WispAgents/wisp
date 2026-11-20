@@ -23,8 +23,9 @@ export const factoryNames = defineCommand<{ peer: string }, FactoryRow[]>({ id: 
 /** The left list's Factory row. */
 export const factoryRow = (name: string, sub: string): HarnessPickerRow => ({ id: FACTORY, name, sub, icon: 'queue' });
 
-/** The pick a factory makes. */
-export const factoryPick = (name: string): Runner => ({ agent: FACTORY, model: name, effort: '', account: '' });
+/** The pick a factory makes, named by the factory (the pill reads "Factory · strict", never the harnesses' "Default":
+ * audit G tasks #7). */
+export const factoryPick = (name: string): Runner => ({ agent: FACTORY, model: name, modelLabel: name, effort: '', account: '' });
 
 /** The Factory row pressed: the factory in use, else `default`. */
 export const useFactory = (was: Runner): Runner => factoryPick(was.agent === FACTORY && was.model ? was.model : 'default');

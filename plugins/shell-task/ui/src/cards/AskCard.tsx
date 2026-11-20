@@ -1,7 +1,7 @@
 // The agent's live question or a tool's approval over the reply box (v1 turns.js renderAskCard): Needs you,
 // answered here with a choice, Allow / Always / Deny, or typed text below. The card goes at once on an answer.
 import { createSignal, For, Show, type JSX } from 'solid-js';
-import { Box, Button, Code, Stack, Text, Wrap } from '@wisp/ui';
+import { Box, Button, Stack, Text, Wrap } from '@wisp/ui';
 import type { Ask, SetupAsk } from '../foot/model.ts';
 import '../i18n/lazy.ts';
 
@@ -13,7 +13,8 @@ export function AskCard(props: { readonly ask: Ask; readonly t: (k: string) => s
         <Text size="sm" tone="muted">
           {t(props.ask.setup ? 'shell-task.ask.setup' : props.ask.approval ? 'shell-task.ask.approval' : 'shell-task.ask.needs')}
         </Text>
-        <Show when={props.ask.setup} fallback={<Text weight="medium">{props.ask.question}</Text>}>
+        {/* a path or a stack trace in the question breaks inside the card (audit G tasks #5) */}
+        <Show when={props.ask.setup} fallback={<Text weight="medium" breakAnywhere part="task.ask.question">{props.ask.question}</Text>}>
           {(s) => <SetupBody setup={s()} t={t} />}
         </Show>
         <Wrap gap="2">
@@ -60,9 +61,10 @@ function SetupBody(props: { readonly setup: SetupAsk; readonly t: (k: string) =>
       <Text weight="medium" breakAnywhere part="task.ask.setup.headline">
         {props.setup.headline}
       </Text>
-      <For each={props.setup.lines}>
+      {/* Show all: the same lines, none cut, then each kit file's body (audit G tasks #9: it was the JSON) */}
+      <For each={all() && props.setup.full ? props.setup.full.split('\n') : props.setup.lines}>
         {(l) => (
-          <Text size="sm" tone="muted" breakAnywhere part="task.ask.setup.line">
+          <Text size="sm" tone="muted" breakAnywhere part={all() ? 'task.ask.setup.full' : 'task.ask.setup.line'}>
             {l}
           </Text>
         )}
@@ -79,18 +81,13 @@ function SetupBody(props: { readonly setup: SetupAsk; readonly t: (k: string) =>
           )}
         </For>
       </Show>
-      {/* everything that will be written, word for word (a kit's bodies, a brief, a shared crew's members) */}
+      {/* offered only when a line was cut or a kit has bodies: the server sends no `full` otherwise */}
       <Show when={props.setup.full}>
         <Wrap gap="2">
           <Button size="sm" variant="ghost" part="task.ask.setup.showAll" onClick={() => setAll(!all())}>
             {props.t(all() ? 'shell-task.ask.showLess' : 'shell-task.ask.showAll')}
           </Button>
         </Wrap>
-        <Show when={all()}>
-          <Code block wrap plain part="task.ask.setup.full">
-            {props.setup.full}
-          </Code>
-        </Show>
       </Show>
     </Stack>
   );

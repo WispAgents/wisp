@@ -5,7 +5,7 @@
 import { createMemo, Show, type JSX } from 'solid-js';
 import { FeedItem, LazySwipe, ListRow, useSignal, type SwipeDir, type SwipeSide } from '@wisp/ui';
 import type { EntityKey } from '@wisp/client';
-import { agentName, rowView, secondLine } from '../model/row.ts';
+import { agentName, rowLines, rowView, secondLine } from '../model/row.ts';
 import { actionFor, type SwipeKind } from '../model/swipe.ts';
 import type { SessionRow } from '../types.ts';
 import { useEnv } from './env.ts';
@@ -60,7 +60,8 @@ function Body(props: { readonly k: EntityKey; readonly s: SessionRow; readonly n
   const two = (): boolean => props.nested !== 'run';
   const line = createMemo(() => secondLine(view()));
   /** the run line is in the second line already: with the answer's words (two lines), or alone on a phone */
-  const runInSub = (): boolean => (two() && line().line === 'sub') || (env.swipes === true && line().line === 'run');
+  const lines = createMemo(() => rowLines(two(), view(), env.swipes === true));
+  const runInSub = (): boolean => !lines().runFoot;
   const name = (): string => agentName(props.s.agent, env.agents(), env.named);
   const session = (): { id: string; agent: string } => ({ ...props.s, id: props.k, agent: props.s.agent });
   const side = (kind: SwipeKind): SwipeSide | undefined => {
@@ -81,14 +82,15 @@ function Body(props: { readonly k: EntityKey; readonly s: SessionRow; readonly n
       // a row is two lines (docs/ux/2026-11-18-desktop.md #2, phone #10): the harness's logo and the answer's last line
       // (the machine first when it isn't this computer); with no answer, harness · model as that line.
       sub={
-        two() && line().line === 'sub' ? (
+        lines().sub === 'answer' ? (
           <>
             <HarnessMark s={props.s} />
             <Show when={line().where && view().run}>{(r) => `${r().where} · `}</Show>
             <SubLine sub={view().sub} />
           </>
-        ) : env.swipes && line().line === 'run' && view().run ? (
-          // a phone, nothing said yet: harness · model is the second line itself, not a third under an empty one
+        ) : lines().sub === 'run' && view().run ? (
+          // nothing said yet: harness · model is the second line itself, not a third under an empty one (phones, and
+          // desktop too: audit G tasks #10)
           <RunLine run={view().run as NonNullable<ReturnType<typeof view>['run']>} s={props.s} noWhere />
         ) : (
           <SubLine sub={view().sub} />

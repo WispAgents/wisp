@@ -56,7 +56,7 @@ import { phoneTaskMenu } from './phone-menu.ts';
 import { changeFigures, duration, foldedFrom, longTime, nextNeedsYou, overlapLine, overlapsOf, projectOfRow, statusOf, trailActs } from './rows-view.ts';
 import { coldHint, compactItem } from './cold.ts';
 import { replyPlaceholderKey } from './reply-hint.ts';
-import { factoryReply, runFactory } from './run-factory.ts';
+import { factoryFoot, factoryReply, runFactory } from './run-factory.ts';
 import { goalGate, goalWire, type DeclaredGoal } from './goal-gate.ts';
 import { useGoalKit } from './goal-kit.ts';
 import { isFeedback } from './feedback.ts';
@@ -1156,11 +1156,11 @@ export default function TaskView(props: { readonly id: string; readonly onBack?:
         const factoryHint = (): { long: string; short: string; link?: { label: string; title: string; act: Act } } | undefined => {
           const f = factoryRun();
           if (!f) return undefined;
-          const said = t('shell.task.factoryHint');
-          if (!f.live) return { long: said, short: said };
+          const w = factoryFoot(f, phone, t);
+          if (!w.stop) return { long: w.hint, short: w.hint };
           // asked first, as a task's Stop is (audit G13)
           const stop: Act = { onClick: () => setStopAsk(factoryStopQuestion(t)) };
-          return { long: said, short: said, link: { label: t('shell.task.factoryStop'), title: t('shell.task.factoryStopTitle'), act: stop } };
+          return { long: w.hint, short: w.hint, link: { label: t('shell.task.factoryStop'), title: t('shell.task.factoryStopTitle'), act: stop } };
         };
         const h = (): { name: string; logo?: string } => (factory() ? { name: factoryWords() } : harnessView(replyRun()?.agent ?? s().agent));
         // the run a follow-up takes: the reply box's pick, else the task's own harness, model and thinking (QA desktop r3 #1)
@@ -1714,7 +1714,7 @@ export default function TaskView(props: { readonly id: string; readonly onBack?:
                       })(hold())}
                     placeholder={
                       factoryRun()
-                        ? t('shell.task.factoryReply', { name: factoryRun()?.name ?? '' })
+                        ? factoryFoot(factoryRun() ?? { name: '', live: false }, phone, t).placeholder
                         : t(replyPlaceholderKey(row(), row()?.state !== 'running' && !!lastTurn()?.presentation?.blocks?.some((x) => x.type === 'question')), { name: h().name })
                     }
                     value={text()}

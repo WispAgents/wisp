@@ -2,7 +2,7 @@
 // line, else harness · model), the machine only when the task isn't on this computer, and the time's slot swaps to
 // Later, Done (Reopen when done) and ⋯ on hover and keyboard focus.
 import { expect, test } from 'vitest';
-import { rowView, secondLine, type RowContext } from '../src/model/row.ts';
+import { rowLines, rowMark, rowView, secondLine, type RowContext } from '../src/model/row.ts';
 import type { SessionRow } from '../src/types.ts';
 
 const row = (o: Partial<SessionRow>): SessionRow => ({ id: 's1', title: 'Fix login', agent: 'claude', state: 'review', createdAt: 0, updatedAt: 0, ...o }) as SessionRow;
@@ -43,4 +43,26 @@ test('a_factory_runs_row_says_factory_and_its_name_not_a_harness', () => {
   expect(run.run?.title).toEqual({ key: 'shell-list.run.factory', vars: { name: 'careful' } });
   expect(run.run?.model).toBeUndefined();
   expect(rowView(row({ agent: 'claude' }), c()).run?.agentName).not.toContain('Factory');
+});
+
+// Audit G tasks #10: a desktop row with no answer took three lines (title; an empty line with only its status pill; the
+// harness). It is two, the run as its second line, as on a phone and as its neighbours
+test('a_row_with_no_answer_is_two_lines_the_run_second_audit_g_tasks_10', () => {
+  const bare = rowView(row({ state: 'review' }), c());
+  expect(bare.sub).toBeUndefined();
+  expect(rowLines(true, bare)).toEqual({ sub: 'run', runFoot: false });
+  // with an answer: the answer second, no run line under it
+  expect(rowLines(true, rowView(row({ preview: 'Added a limiter' } as Partial<SessionRow>), c()))).toEqual({ sub: 'answer', runFoot: false });
+  // a run's own nested row keeps its words, then the run line
+  expect(rowLines(false, bare)).toEqual({ sub: 'words', runFoot: true });
+  // on a phone a nested run row with nothing said yet keeps the run as its second line, as before
+  expect(rowLines(false, bare, true)).toEqual({ sub: 'run', runFoot: false });
+});
+
+// Audit G tasks #8: a factory run's row showed Claude Code's logo before its answer (its task's `agent` is claude)
+test('a_factory_runs_row_shows_the_factory_mark_never_a_harness_logo_audit_g_tasks_8', () => {
+  const logo = (a: string): string | undefined => (a === 'claude' ? 'data:claude' : undefined);
+  expect(rowMark({ agent: 'claude', factory: { name: 'default' } }, logo)).toEqual({ factory: true });
+  expect(rowMark({ agent: 'claude' }, logo)).toEqual({ logo: 'data:claude' });
+  expect(rowMark({ agent: 'other' }, logo)).toBeUndefined();
 });

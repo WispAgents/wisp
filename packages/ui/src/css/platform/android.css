@@ -457,6 +457,11 @@
     height: var(--button-h);
     padding: var(--space-0) var(--button-pad);
   }
+  /* a question's, a setup card's and a factory's answers (Allow · Deny · Show all, Approve · Stop, an option) are thumb
+     targets like the held card's, 48 dp (M3); sm made them 28 / 32 (audit G tasks #4) */
+  :root[data-platform='android'] [data-part~='task.ask'] [data-kit='wrap'] > [data-kit='button'] {
+    min-height: var(--tap-min);
+  }
   /* a compare task's card sits inside the list's margins like its rows, never against the screen's edges; its vs
      Compare ends in the rows' time column (no ghost padding after its words) (audit F tasks #5) */
   :root[data-platform='android'] [data-kit='virtual-group'][data-part~='list.compare'] {

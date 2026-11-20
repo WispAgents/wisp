@@ -111,8 +111,10 @@ function useLazyMenu(props: MenuBaseProps & MenuPlace, part: () => PartName, at?
           onPointerDown: early,
           onContextMenu: (e: MouseEvent) => {
             e.preventDefault();
-            // the browser replays on the area, as before; a phone on what was pressed (its menu reads the row)
-            press({ el: (phone && e.target instanceof HTMLElement ? e.target : e.currentTarget) as HTMLElement, type: 'contextmenu', x: e.clientX, y: e.clientY });
+            // the browser's floating menu replays on the area, as before; a sheet (the phone apps, the browser on a sheet
+            // screen) on what was pressed: its title reads the row (audit G tasks #1: the area gave the list's top row)
+            const sheet = phone || lazy() === phoneOverlays;
+            press({ el: (sheet && e.target instanceof HTMLElement ? e.target : e.currentTarget) as HTMLElement, type: 'contextmenu', x: e.clientX, y: e.clientY });
           },
         }
       : {

@@ -17,3 +17,14 @@ export function factoryReply(summary: { readonly factory?: unknown } | undefined
   const state = (summary?.factory as { state?: unknown }).state;
   return { name, live: state === undefined || state === 'running' || state === 'waiting' };
 }
+
+/** The reply box's words for a factory run: its placeholder, and the foot's hint (its words, and whether Stop shows).
+ *  A phone's bar has room for neither the sentence nor the words beside Stop the run (audit G tasks #6: "Its …",
+ *  "Stop the ru", "To add t…"), so it gets the short placeholder and Stop alone, whole. */
+export function factoryFoot(f: { readonly name: string; readonly live: boolean }, phone: boolean, t: (k: string, v?: Record<string, string>) => string): { readonly placeholder: string; readonly hint: string; readonly stop: boolean } {
+  return {
+    placeholder: phone ? t('shell.task.factoryReplyShort', { name: f.name }) : t('shell.task.factoryReply', { name: f.name }),
+    hint: phone && f.live ? '' : t('shell.task.factoryHint'),
+    stop: f.live,
+  };
+}

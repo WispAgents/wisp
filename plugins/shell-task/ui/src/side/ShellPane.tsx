@@ -6,7 +6,7 @@
 // exit, gone), read through the client's `http(peer).events`, so a machine's or the grid's task works the same.
 // `kind="takeover"`: a terminal task's CLI (v1 services/tui.js), opened by `runtime.terminal` (on its prompt the
 // first time, resumed after) and streamed from `/sessions/:id/term`; ending it leaves the task for review.
-import { Show, createEffect, createRoot, createSignal, on, onCleanup, onMount, type JSX } from 'solid-js';
+import { Show, createEffect, createRoot, createSignal, on, onCleanup, onMount, untrack, type JSX } from 'solid-js';
 import { defineCommand, ownerOf, type EntityKey } from '@wisp/client';
 import { Button, Dialog, EmptyState, Inline, Screen, Stack, Terminal, Text, afterNextPaint, type TerminalHandle } from '@wisp/ui';
 import { resizeOnHello } from './shell-size.ts';
@@ -53,6 +53,18 @@ const close = defineCommand<{ key: EntityKey; kind: Kind; id: string }, { ok: bo
   pending: 'End shell',
 });
 
+/** The Shell was selected by an arrow key (Home, End) walking the strip (audit G tasks #3): the shell starts, but the keys
+ * stay on its tab, so the next arrow goes on along the strip; a click, Enter or Space on the tab (or Start again) gives
+ * them to the terminal. Read once, by the pane that mounts next. */
+const [walked, setWalked] = createRoot(() => createSignal(false));
+export const shellWalkedTo = (): void => void setWalked(true);
+/** a key that walks a strip of tabs (moves the selection, not the keys' owner) */
+export const walksTabs = (key: string): boolean => /^(Arrow(Left|Right|Up|Down)|Home|End)$/.test(key);
+/** The page was opened on the Shell (a deep link `?side=shell:…`, a reload) and the user hasn't pressed or typed
+ * anything yet (audit G tasks, F #1): the reply box focused itself on load, not by the user, so the shell takes the keys
+ * from it. */
+const untouched = (): boolean => typeof navigator !== 'undefined' && (navigator as { userActivation?: { hasBeenActive?: boolean } }).userActivation?.hasBeenActive === false;
+
 /** Asks the open Shell for the keys (SidePanel: its tab pressed while it shows). */
 const [shellAsked, setShellAsked] = createRoot(() => createSignal(0));
 export const askShellFocus = (): void => void setShellAsked((n) => n + 1);
@@ -79,6 +91,10 @@ export function ShellPane(props: { readonly kind: Kind }): JSX.Element {
   const [size, setSize] = createSignal({ cols: 100, rows: 30 });
   let sized = false; // the terminal has said its size (onResize): until then `size` is only the default
   const [asking, setAsking] = createSignal(false);
+  // reached by an arrow key: this pane's first start leaves the keys on the tab
+  const walkedHere = untrack(walked);
+  let onTab = walkedHere;
+  setWalked(false);
 
   const connect = (): void => {
     es?.abort();
@@ -143,7 +159,7 @@ export function ShellPane(props: { readonly kind: Kind }): JSX.Element {
     retry?.();
     tries = 0;
     const go = (): void => {
-      if (!term || inTerm() || elsewhere()) return;
+      if (!term || inTerm() || (!opened && elsewhere())) return;
       term.focus();
       // the panel still sliding in (or hidden a frame longer) refuses the focus: again next frame, for half a second
       if (!inTerm() && (tries += 1) < 30) retry = afterNextPaint(go);
@@ -167,7 +183,15 @@ export function ShellPane(props: { readonly kind: Kind }): JSX.Element {
     setDrawn(false);
     setEnded(undefined);
     const go = tui ? c.run(phone ? tuiStartHere : tuiStart, { key: task.key, id, ...size() }) : c.run(phone ? startHere : start, { key: task.key, id, ...size(), ...(restart && { restart: true }) });
-    go.then(() => (connect(), focusTerm()), (e: unknown) => setError(say(e)));
+    const keys = !onTab || restart;
+    onTab = false;
+    go.then(
+      () => {
+        connect();
+        if (keys) focusTerm(untouched());
+      },
+      (e: unknown) => setError(say(e)),
+    );
   };
   onMount(() => {
     c.run(phone ? infoHere : info, { key: task.key, id }).then(
@@ -228,8 +252,9 @@ export function ShellPane(props: { readonly kind: Kind }): JSX.Element {
             onEndedKey={() => begin(true)}
             ref={(h) => {
               term = h;
-              // after the panel's own focus move (its selected tab, SidePanel's refocus): the terminal has it last
-              afterNextPaint(() => focusTerm(true));
+              // after the panel's own focus move (its selected tab, SidePanel's refocus): the terminal has it last; not
+              // when an arrow walked onto the tab (it keeps them), nor from a field the user moved to since
+              if (!walkedHere) afterNextPaint(() => focusTerm(untouched()));
             }}
             {...(!drawn() && { waiting: where() ? t('shell-task.shell.starting', { name: name() || 'a shell', where: peerName() }) : t('shell-task.shell.finding', { where: peerName() }) })}
             labels={{ input: t('shell-task.shell.input'), keys: t('shell-task.shell.keys'), paste: t('shell-task.shell.paste') }}

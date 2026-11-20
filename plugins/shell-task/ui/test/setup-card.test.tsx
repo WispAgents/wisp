@@ -24,7 +24,7 @@ const row = {
             headline: 'Ada wants to add the connector “linear”: runs npx -y @linear/mcp',
             lines: ['Every task will start it, on this computer.', 'needs LINEAR_KEY from you'],
             commands: ['npx -y @linear/mcp'],
-            full: '{\n  "name": "linear",\n  "command": "npx"\n}',
+            full: 'Every task will start it, on this computer.\nneeds LINEAR_KEY from you',
           },
         },
       },
@@ -69,7 +69,7 @@ test('the setup card shows what changes and each command verbatim, with Allow an
   // everything that will be written, word for word, behind Show all (review r194 row 66 #4)
   expect(host.querySelector('[data-part="task.ask.setup.full"]')).toBeNull();
   (host.querySelector('[data-part="task.ask.setup.showAll"]') as HTMLButtonElement).click();
-  expect(host.querySelector('[data-part="task.ask.setup.full"]')?.textContent).toContain('"command": "npx"');
+  expect([...host.querySelectorAll('[data-part="task.ask.setup.full"]')].map((l) => l.textContent)).toEqual(['Every task will start it, on this computer.', 'needs LINEAR_KEY from you']);
   const buttons = [...card.querySelectorAll('button')].map((b) => b.textContent).filter((b) => b === 'Allow' || b === 'Deny');
   expect(buttons).toEqual(['Allow', 'Deny']);
   for (const b of card.querySelectorAll('button')) if (b.textContent === 'Allow' || b.textContent === 'Deny') (b as HTMLButtonElement).click();
@@ -85,3 +85,59 @@ test('the answer names the card it answers_setup_card_answer_names_its_card', ()
   expect(wire({ key: 'local:s1' as never, id: 's1', text: 'Allow', askId: 'a1' })).toEqual({ id: 's1', text: 'Allow', askId: 'a1' });
 });
 
+
+// Audit G tasks #9: Show all showed the JSON and was offered when nothing was cut; it now swaps the cut lines for the
+// whole ones, in the card's words, and only when the server sent them
+test('show_all_swaps_the_cut_lines_for_the_whole_ones_and_is_offered_only_when_something_is_cut_audit_g_tasks_9', () => {
+  const card = (full: string) => ({
+    body: { ext: { 'wisp.runtime': { ask: { id: 'a2', question: 'q', options: ['Allow', 'Deny'], setup: { command: 'crew.agent.add', headline: 'Ada wants to add crew member revbot', lines: ['brief: You review…', 'cwd: /code'], commands: [], full } } } } },
+  });
+  const host = document.createElement('div');
+  document.body.append(host);
+  const draw = (full: string) => {
+    const a = askOf(card(full));
+    if (!a) throw new Error('no ask');
+    return render(
+      () => (
+        <KitProvider t={(k) => k}>
+          <AskCard ask={a} t={t} onAnswer={() => undefined} />
+        </KitProvider>
+      ),
+      host,
+    );
+  };
+  let dispose = draw('');
+  expect(host.querySelector('[data-part="task.ask.setup.showAll"]')).toBeNull();
+  dispose();
+  dispose = draw('brief: You review every pull request.\ncwd: /code');
+  (host.querySelector('[data-part="task.ask.setup.showAll"]') as HTMLButtonElement).click();
+  const lines = [...host.querySelectorAll('[data-part="task.ask.setup.full"], [data-part="task.ask.setup.line"]')].map((l) => l.textContent);
+  expect(lines).toEqual(['brief: You review every pull request.', 'cwd: /code']);
+  expect(host.textContent).not.toContain('{');
+  expect(host.querySelector('[data-part="task.ask.setup.showAll"]')?.textContent).toBe('Show less');
+  dispose();
+  host.remove();
+});
+
+// Audit G tasks #5: a factory question quoting a worktree path ran out of its card on a 360 px phone, cut; the question
+// breaks anywhere, like a setup card's lines
+test('a_question_quoting_a_long_path_breaks_inside_its_card_audit_g_tasks_5', () => {
+  const host = document.createElement('div');
+  document.body.append(host);
+  const q = "Checks still fail after 3 rounds: Cannot find module '/private/tmp/qa/wisphome/worktrees/app-01a1f8f3ef0372d7aad81a95b648685f/math.test.js'. Keep going?";
+  const a = askOf({ body: { ext: { 'wisp.runtime': { ask: { id: 'f2', question: q, options: ['One more round', 'Stop'] } } } } });
+  if (!a) throw new Error('no ask');
+  const dispose = render(
+    () => (
+      <KitProvider t={(k) => k}>
+        <AskCard ask={a} t={t} onAnswer={() => undefined} />
+      </KitProvider>
+    ),
+    host,
+  );
+  const text = host.querySelector('[data-part="task.ask.question"]');
+  expect(text?.textContent).toBe(q);
+  expect(text?.getAttribute('data-break')).not.toBeNull();
+  dispose();
+  host.remove();
+});
