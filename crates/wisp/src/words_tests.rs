@@ -288,14 +288,18 @@ fn an_unknown_verb_under_a_command_group_is_an_error_naming_its_verbs_and_never_
         let x = p(args);
         assert!(unknown_verb(&x.words, x.literal, &cat).is_none(), "{args:?}");
     }
-    // audit I2 (owner's delegate, 2026-11-20): a group's or a plugin's name and a word that's none of its verbs is a
-    // slip however many words follow (it was a prompt from two words on)
+    // audit I2 refined (owner, 2026-11-20): under a word a prompt may start with, a far word and more after it is a
+    // prompt; under a strict group it is a slip however many words follow
     for args in [
         &["review", "the", "auth", "module"][..],
         &["update", "the", "readme"],
         &["git", "rebase", "onto", "main"],
         &["learn", "rust", "properly"],
     ] {
+        let x = p(args);
+        assert!(unknown_verb(&x.words, x.literal, &cat).is_none(), "{args:?}");
+    }
+    for args in [&["computer", "start", "it", "now"][..], &["machines", "frob", "the", "studio"], &["recipes", "list", "them", "all"]] {
         let x = p(args);
         assert!(unknown_verb(&x.words, x.literal, &cat).is_some(), "{args:?}");
     }
@@ -364,8 +368,9 @@ fn every_command_word_is_strict_takes_an_argument_or_starts_a_prompt() {
     let share = unknown_verb(&p(&["share", "list"]).words, Literal::No, &cat).unwrap();
     assert!(share.verbs.contains(&"<task id>".to_owned()) && share.verbs.contains(&"send".to_owned()), "{share:?}");
     assert!(share.said(&w(&["share", "list"])).contains("wisp shares"), "{}", share.said(&w(&["share", "list"])));
-    // `update` and words after it: a slip however many (audit I2); `wisp -- update the readme` is the task
-    assert!(unknown_verb(&p(&["update", "the", "readme"]).words, Literal::No, &cat).is_some());
+    // `update` and a far word, more after it: a prompt (owner, audit I2 refined); a slip of its verb: still a slip
+    assert!(unknown_verb(&p(&["update", "the", "readme"]).words, Literal::No, &cat).is_none());
+    assert!(unknown_verb(&p(&["update", "aply", "it", "now"]).words, Literal::No, &cat).is_some());
     assert!(unknown_verb(&p(&["--", "update", "the", "readme"]).words, p(&["--", "update", "the", "readme"]).literal, &cat).is_none());
     // update's own `apply`, and its plugin's verbs
     assert!(["apply", "check", "install"].iter().all(|v| verbs(&["update", "now"]).contains(&(*v).to_owned())));
@@ -453,10 +458,11 @@ fn one_word_or_a_word_and_ids_is_never_a_task_and_says_what_to_type() {
     }
 }
 
-/// QA round 14 (decided rule), changed by audit I2 (owner's delegate, 2026-11-20): after a group's word, a word it doesn't
-/// take is a slip (its verbs and the `wisp -- …` way out, exit 2) however many words follow. For every strict group
-/// (`settings` too); the words other tools use (`status`) and the commands that take a task (`show foo` isn't an id) keep
-/// QA round 14's rule: one word is a slip, two or more a prompt.
+/// QA round 14 (decided rule), changed by audit I2 (owner's delegate, 2026-11-20) and refined by the owner the same day:
+/// after a strict group's word, a word it doesn't take is a slip (its verbs and the `wisp -- …` way out, exit 2) however
+/// many words follow; after a word a prompt may start with (`share`, `settings`, `update`), one word is a slip and more
+/// are a prompt unless the first is a slip of a verb. The words other tools use (`status`) and the commands that take a
+/// task (`show foo` isn't an id) keep QA round 14's rule: one word is a slip, two or more a prompt.
 #[test]
 fn a_word_after_a_group_that_isnt_its_verb_is_a_slip_however_many_follow() {
     let cat: Vec<Vec<String>> = [&["settings", "list"][..], &["settings", "get"], &["settings", "set"], &["share", "send"]].map(w).to_vec();
@@ -464,13 +470,17 @@ fn a_word_after_a_group_that_isnt_its_verb_is_a_slip_however_many_follow() {
     for args in [&["update", "deps"][..], &["settings", "open"], &["computer", "start"], &["share", "list"]] {
         assert!(unknown_verb(&p(args).words, Literal::No, &cat).is_some(), "{args:?}");
     }
-    // two or more: still a slip (audit I2); quoted as one, or after `--`, the task
+    // a word a prompt may start with, more words: a prompt; a slip of a verb first: still a slip
     for args in [
         &["share", "the", "results", "with", "the", "team"][..],
         &["settings", "page", "needs", "a", "dark", "mode"],
-        &["computer", "start", "it", "now"],
         &["update", "the", "readme"],
     ] {
+        assert!(unknown_verb(&p(args).words, Literal::No, &cat).is_none(), "{args:?}");
+    }
+    assert!(unknown_verb(&p(&["settings", "sett", "theme", "dark"]).words, Literal::No, &cat).is_some());
+    // a strict group, two or more: still a slip (audit I2); quoted as one, or after `--`, the task
+    for args in [&["computer", "start", "it", "now"][..], &["cloud", "sign", "me", "in"], &["sandbox", "make", "one", "now"]] {
         let x = p(args);
         assert!(unknown_verb(&x.words, x.literal, &cat).is_some(), "{args:?}");
         let quoted = p(&[&args.join(" ")]);
@@ -539,10 +549,14 @@ fn a_plugin_name_and_any_one_other_word_is_a_slip() {
         let u = unknown_verb(&p(args).words, Literal::No, &cat).unwrap_or_else(|| panic!("{args:?}"));
         assert!(u.verbs.contains(&"set-stop".to_owned()) || u.verbs.contains(&"view".to_owned()), "{u:?}");
     }
-    // however many words follow (audit I2)
+    // a plugin whose name a prompt may start with: more words are a prompt (audit I2 refined), unless the next is a
+    // slip of a verb; any other plugin: a slip however many words follow (audit I2)
     for args in [&["learn", "rust", "properly"][..], &["budget", "dashboard", "for", "the", "team"]] {
-        assert!(unknown_verb(&p(args).words, Literal::No, &cat).is_some(), "{args:?}");
+        assert!(unknown_verb(&p(args).words, Literal::No, &cat).is_none(), "{args:?}");
     }
+    assert!(unknown_verb(&p(&["budget", "veiw", "this", "month"]).words, Literal::No, &cat).is_some());
+    let ntfy: Vec<Vec<String>> = [&["ntfy", "test"][..], &["ntfy", "topic"]].map(w).to_vec();
+    assert!(unknown_verb(&p(&["ntfy", "send", "a", "ping"]).words, Literal::No, &ntfy).is_some());
     assert!(unknown_verb(&p(&["budget", "view"]).words, Literal::No, &cat).is_none());
     // `--` or one quoted argument: the words are a task
     assert!(unknown_verb(&p(&["--", "learn", "rust"]).words, p(&["--", "learn", "rust"]).literal, &cat).is_none());
@@ -694,11 +708,47 @@ fn a_misspelled_verb_after_a_command_word_is_refused_with_the_close_verb() {
         let after = p(&[&["--"][..], args].concat());
         assert!(unknown_verb(&after.words, after.literal, &cat).is_none(), "-- {args:?} is a task");
     }
-    // a verb that's no slip of any: the verbs, no guess
-    let x = p(&["crew", "frobnicate", "Zed"]);
+    // a verb that's no slip of any, alone: the verbs, no guess; with more words after it: a prompt (owner, audit I2 refined)
+    let x = p(&["crew", "frobnicate"]);
     assert!(!unknown_verb(&x.words, x.literal, &cat).unwrap().said(&x.words).contains("did you mean"));
+    assert!(unknown_verb(&p(&["crew", "frobnicate", "Zed"]).words, Literal::No, &cat).is_none());
     // its own verbs still run
     for args in [&["held", "01a1fa925a7d732493adf46a31a0b1e5", "start"][..], &["crew", "pause", "Zed"], &["goal", "set", "abc", "never"]] {
         assert!(unknown_verb(&p(args).words, Literal::No, &cat).is_none(), "{args:?}");
+    }
+}
+
+/// Audit I2 refined (owner, 2026-11-20): after a word a prompt may naturally start with, a far word and more words are a
+/// prompt (`wisp review the auth module`, `wisp plugin for prettier`); the slips audit I2 found stay refused, and the
+/// word with one more is a slip as ever.
+#[test]
+fn under_a_prompt_word_only_a_close_word_or_a_two_word_line_is_a_slip() {
+    let cat: Vec<Vec<String>> =
+        [&["review", "start"][..], &["crew", "create"], &["goal", "set"], &["later", "cancel"], &["factory", "stop"]].map(w).to_vec();
+    for args in [
+        &["review", "the", "auth", "module"][..],
+        &["plugin", "for", "prettier"],
+        &["plugin", "to", "lint", "markdown"],
+        &["crew", "a", "reviewer", "for", "the", "PR"],
+        &["goal", "is", "to", "ship", "friday"],
+        &["later", "in", "the", "day", "rerun", "it"],
+        &["trigger", "fix", "the", "cron"],
+        &["held", "back", "changes"],
+    ] {
+        assert!(unknown_verb(&p(args).words, Literal::No, &cat).is_none(), "{args:?} is a prompt");
+    }
+    for args in [
+        &["crew", "pasue", "Zed"][..],
+        &["trigger", "of", "tick"],
+        &["goal", "sett", "abc", "never"],
+        &["later", "cancle", "x"],
+        &["factory", "stp", "x"],
+        &["held", "x", "strat"],
+        &["review", "strat", "the", "PR"],
+        &["plugin", "instal", "prettier", "now"],
+        &["plugin", "foo"],
+        &["review", "it"],
+    ] {
+        assert!(unknown_verb(&p(args).words, Literal::No, &cat).is_some(), "{args:?} is a slip");
     }
 }

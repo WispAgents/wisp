@@ -213,15 +213,10 @@ async fn an_unknown_verb_under_any_group_is_an_error_and_a_quoted_prompt_is_stil
     let (code, out, err) = wisp(&dir, port, &["channels", "refresh", "--bad"].map(str::to_owned));
     assert!(code != 0 && !out.contains("launched"), "wisp channels refresh --bad → {code}: {out}{err}");
 
-    // a plugin's name and words that are none of its verbs: a slip, however many (audit I2; review, update, git and
-    // learn are all plugins here)
+    // a plugin's name and words that are none of its verbs: a slip, however many, for a strict one (audit I2); after a
+    // word a prompt may start with (review, update), only a slip of one of its verbs (owner, audit I2 refined)
     let catalogue = api.cmd("cli.catalogue", json!({})).await.to_string();
-    for words in [
-        &["review", "the", "auth", "module"][..],
-        &["update", "the", "readme"],
-        &["git", "rebase", "onto", "main"],
-        &["learn", "rust", "properly"],
-    ] {
+    for words in [&["channels", "for", "the", "team"][..], &["review", "veiw", "the", "PR"], &["update", "aply", "it", "now"]] {
         assert!(catalogue.contains(&format!("\"{}.", words[0])), "{} is a plugin here, as the test means", words[0]);
         let args: Vec<String> = std::iter::once("--no-open").chain(words.iter().copied()).map(str::to_owned).collect();
         let (code, out, err) = wisp(&dir, port, &args);
@@ -231,14 +226,15 @@ async fn an_unknown_verb_under_any_group_is_an_error_and_a_quoted_prompt_is_stil
     assert_eq!(api.cmd("runtime.list", json!({})).await.as_array().unwrap().len(), 0, "no task was made");
     // prompts (the fake harness: nothing paid): a group's word quoted as one argument, or after `--`; a word a prompt
     // may start with (`ship`)
+    // and a word a prompt may start with (review, update, git, learn: plugins here) with far words after it
     let prompts: [&[&str]; 7] = [
         &["computer start fails on boot, fix it"],
         &["--", "grid", "start", "is", "slow"],
-        &["review the auth module"],
+        &["review", "the", "auth", "module"],
         &["ship", "the", "docs"],
-        &["--", "update", "the", "readme"],
-        &["git rebase onto main"],
-        &["--", "learn", "rust", "properly"],
+        &["update", "the", "readme"],
+        &["git", "rebase", "onto", "main"],
+        &["learn", "rust", "properly"],
     ];
     for words in prompts {
         if let Some(ns) = words.first().filter(|w| **w != "--" && !w.contains(' ')) {
@@ -547,7 +543,9 @@ fn probe_within(dir: &Path, port: u16, args: &[&str], secs: u64) -> (i32, String
 
 /// QA round 14 (the owner's delegate's rule): after a command word, one word it doesn't take is a slip (exit 2, with
 /// the `wisp -- …` way out), and two or more are a prompt; a command that takes a task is one only for an id or
-/// `last`. Audit I2 changed it for a group's word: a word that's none of its verbs is a slip however many follow. #1: four prompts were refused; #2: `wisp settings open` and `wisp status all` launched tasks; #7: `wisp
+/// `last`. Audit I2 changed it for a group's word: a word that's none of its verbs is a slip however many follow; the
+/// owner's refinement keeps that for strict groups (`computer`) and, after a word a prompt may start with (`share`,
+/// `settings`), only for a slip of a verb. #1: four prompts were refused; #2: `wisp settings open` and `wisp status all` launched tasks; #7: `wisp
 /// attach last` hung.
 #[tokio::test(flavor = "multi_thread")]
 async fn after_a_command_word_one_word_is_a_slip_and_more_are_a_prompt() {
@@ -572,9 +570,10 @@ async fn after_a_command_word_one_word_is_a_slip_and_more_are_a_prompt() {
         // a group that routes as a command, one word: a slip
         &["mcp", "foo"],
         &["skill", "foo"],
-        // audit I2: a group's word and words that are none of its verbs, however many
-        &["share", "the", "results", "with", "the", "team"],
-        &["settings", "page", "needs", "a", "dark", "mode"],
+        // audit I2: a strict group's word and words that are none of its verbs, however many; after a word a prompt may
+        // start with, a slip of one of its verbs
+        &["computer", "start", "it", "now"],
+        &["settings", "sett", "theme", "dark"],
     ] {
         let (code, out, err) = probe(&dir, port, words);
         assert!(code == 2 && !out.contains("launched") && err.contains("wisp -- "), "{words:?} → {code}: {out}{err}");
@@ -583,6 +582,9 @@ async fn after_a_command_word_one_word_is_a_slip_and_more_are_a_prompt() {
 
     // #1 and QA's six that ran: prompts, launched with their titles (the fake harness: nothing paid)
     let prompts = [
+        // the owner's refinement of audit I2: after `share` or `settings`, far words are a prompt
+        "share the results with the team",
+        "settings page needs a dark mode",
         "show me where the bug is",
         "stop using var in math.js",
         "add logging to math.js",
@@ -606,7 +608,8 @@ async fn after_a_command_word_one_word_is_a_slip_and_more_are_a_prompt() {
     drop(serve);
 }
 
-/// QA round 15: `wisp plugin for prettier` was refused (#1, two or more words after a command word are a prompt);
+/// QA round 15: `wisp plugin for prettier` was refused (#1, two or more words after a command word are a prompt; audit I2
+/// made it a slip, the owner's refinement a prompt again);
 /// `wisp export foo` launched a task (#2, one stray word is a slip); `wisp ls -a` said "-a needs a value", `wisp fork`
 /// pointed nowhere, and `wisp help me` said "no plugin named me" (#6).
 #[tokio::test(flavor = "multi_thread")]
@@ -627,9 +630,9 @@ async fn one_stray_word_is_a_slip_more_is_a_prompt_for_every_command_word() {
         (&["help", "me"], "wisp help lists every command and plugin"),
         // audit B #15: help never starts a task, however many words follow; the task is `wisp -- help …`
         (&["help", "me", "write", "a", "test", "for", "add()"], "wisp -- help me write a test for add()"),
-        // audit I2: a group's word and words that are none of its verbs, however many (QA round 15 made them prompts)
-        (&["plugin", "for", "prettier"], "wisp -- \"plugin for prettier\""),
-        (&["plugin", "to", "format", "the", "code"], "wisp -- \"plugin to format the code\""),
+        // audit I2: a strict group's word and words that are none of its verbs, however many; under `plugin` (a word a
+        // prompt may start with) only a slip of a verb (owner, audit I2 refined)
+        (&["plugin", "instal", "prettier", "now"], "wisp -- \"plugin instal prettier now\""),
         (&["mcp", "server", "for", "the", "docs"], "wisp -- \"mcp server for the docs\""),
     ] {
         let (code, out, err) = probe(&dir, port, words);
@@ -646,6 +649,8 @@ async fn one_stray_word_is_a_slip_more_is_a_prompt_for_every_command_word() {
         &["--no-open", "run", "the tests"],
         &["--no-open", "run", "--", "deploy"],
         &["--no-open", "plugin for prettier"],
+        &["--no-open", "plugin", "for", "prettier"],
+        &["--no-open", "plugin", "to", "format", "the", "code"],
         &["--no-open", "--", "mcp", "server", "for", "the", "docs"],
     ] {
         let (code, out, err) = probe(&dir, port, words);
@@ -659,7 +664,7 @@ async fn one_stray_word_is_a_slip_more_is_a_prompt_for_every_command_word() {
     // #6: `ls -a` is --all
     let ids: Vec<String> =
         api.cmd("runtime.list", json!({})).await.as_array().unwrap().iter().map(|t| t["id"].as_str().unwrap().to_owned()).collect();
-    assert_eq!(ids.len(), prompts.len() + 5);
+    assert_eq!(ids.len(), prompts.len() + 7);
     api.cmd("runtime.archive", json!({ "id": ids[0], "archived": true })).await;
     let (code, out, err) = probe(&dir, port, &["ls", "-a"]);
     assert!(code == 0 && ids.iter().all(|id| out.contains(id.as_str())), "{code}: {out}{err}");

@@ -73,6 +73,12 @@ async fn a_misspelled_verb_after_a_command_word_launches_nothing_audit_i2() {
     let (code, out, err) = wisp(&dir, port, &["-d", "--", "trigger", "of", "tick"]);
     assert_eq!(code, 0, "{out}{err}");
     assert_eq!(tasks(&api).await, before + 2);
+    // the owner's refinement: after a word a prompt may start with, far words are a prompt, unquoted
+    for args in [&["-d", "review", "the", "auth", "module"][..], &["-d", "plugin", "for", "prettier"]] {
+        let (code, out, err) = wisp(&dir, port, args);
+        assert_eq!(code, 0, "{args:?}: {out}{err}");
+    }
+    assert_eq!(tasks(&api).await, before + 4);
 }
 
 #[tokio::test(flavor = "multi_thread")]

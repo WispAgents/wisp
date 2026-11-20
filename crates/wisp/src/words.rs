@@ -564,18 +564,56 @@ fn prompt_line(first: &str, rest: &[String]) -> bool {
     PROMPT_WORDS.contains(&first) && rest.iter().filter(|w| !flag_shaped(w)).count() > 1
 }
 
-/// `wisp held <id> <action>` with an action that's none of its three (`wisp held x strat`, audit I2): a slip.
+/// Command words a prompt may naturally start with (owner's decision on audit I2, 2026-11-20): `wisp review the auth
+/// module`, `wisp plugin for prettier`, `wisp crew a reviewer for the PR`, `wisp update the readme`. Under one of these an
+/// unknown next word is a slip only when it reads as a slip of one of its verbs ([`slip_of`]) or the line is the word and
+/// one more; otherwise the words are a prompt, as before audit I2. The other groups (`computer`, `cloud`, `sandbox`,
+/// `team`, `task`, `grid`, `hook`, `events`, `mcp`, `completions`, `sdk`, `recipes`, `machines`, `skill`) and every other
+/// plugin's name stay strict: their words rarely start a sentence, and a slip there must never launch a Full-auto task.
+const PROMPT_GROUPS: &[&str] = &[
+    "review", "plugin", "plugins", "crew", "goal", "factory", "later", "trigger", "triggers", "held", "update", "share", "settings", "git",
+    "learn", "budget",
+];
+
+/// Whether `typed` reads as a slip of `verb`: within 2 edits (an adjacent swap is one) that leave most of it standing,
+/// one edit from 3 letters and two from 5 (`pasue`, `sett`, `stp`, `cancle`; never `the` for `set`, `fix` for `fire` or
+/// `rust` for `run`), or the start of it (`of` for `off`, `paus` for `pause`), two letters at least.
+fn slip_of(typed: &str, verb: &str) -> bool {
+    let typed = typed.to_lowercase();
+    let n = typed.chars().count();
+    let d = distance(&typed, verb);
+    (d <= 2 && 2 * d < n) || (n >= 2 && verb.starts_with(typed.as_str()))
+}
+
+/// Under a [`PROMPT_GROUPS`] word, whether the words are a slip rather than a prompt: the word and one more, or a next
+/// word that's a slip of one of `verbs` (each a path such as `set` or `session set`: its first word counts). Under any
+/// other group: always.
+fn slip_line(first: &str, said: &[&String], at: usize, verbs: &[String]) -> bool {
+    if !PROMPT_GROUPS.contains(&first) || said.len() <= 2 {
+        return true;
+    }
+    let Some(typed) = said.get(at) else { return true };
+    verbs.iter().filter_map(|v| v.split(' ').next()).filter(|v| !v.starts_with('<')).any(|v| slip_of(typed, v))
+}
+
+/// `wisp held <id> <action>` with an action that's a slip of one of its three (`wisp held x strat`, audit I2): a slip;
+/// one that's none (`wisp held back changes`) leaves the words a prompt ([`PROMPT_GROUPS`]).
 fn held_slip(words: &[String]) -> Option<UnknownVerb> {
     let said: Vec<&String> = words.iter().filter(|w| !flag_shaped(w)).collect();
     let [first, _, action] = said.as_slice() else { return None };
-    (first.as_str() == "held" && !crate::args::HELD_ACTIONS.contains(&action.as_str()) && !action.contains(char::is_whitespace))
-        .then(|| UnknownVerb { group: "held".into(), verbs: crate::args::HELD_ACTIONS.iter().map(|v| (*v).to_owned()).collect(), at: 2 })
+    let verbs: Vec<String> = crate::args::HELD_ACTIONS.iter().map(|v| (*v).to_owned()).collect();
+    (first.as_str() == "held"
+        && !crate::args::HELD_ACTIONS.contains(&action.as_str())
+        && !action.contains(char::is_whitespace)
+        && slip_line("held", &said, 2, &verbs))
+    .then(|| UnknownVerb { group: "held".into(), verbs, at: 2 })
 }
 
-/// QA round 10 #1, then audit I2 (owner's delegate, 2026-11-20): the words start with a built-in command group (a
-/// [`VERB_PATHS`] or [`GROUPS`] word; `catalogue`, each command's path such as `["crew", "create"]`, adds its plugin
-/// verbs) or a plugin's name, and the next word is none of its verbs: a command line typed wrong, never a task,
-/// however many words follow (`wisp crew pasue Zed` launched one). None: no group, one of its verbs, a flag (its own
+/// QA round 10 #1, then audit I2 (owner's delegate, 2026-11-20, refined by the owner the same day): the words start with
+/// a built-in command group (a [`VERB_PATHS`] or [`GROUPS`] word; `catalogue`, each command's path such as
+/// `["crew", "create"]`, adds its plugin verbs) or a plugin's name, and the next word is none of its verbs: a command
+/// line typed wrong, never a task, however many words follow (`wisp crew pasue Zed` launched one); under a
+/// [`PROMPT_GROUPS`] word only when the line is two words or the word is a slip of a verb ([`slip_line`]). None: no group, one of its verbs, a flag (its own
 /// checks), one word alone, a word a prompt may start with ([`PROMPT_WORDS`]), or `--` first. A prompt that starts
 /// with a group's word is one quoted argument (`wisp "computer start fails"`) or follows `--`.
 pub fn unknown_verb(words: &[String], literal: Literal, catalogue: &[Vec<String>]) -> Option<UnknownVerb> {
@@ -615,6 +653,11 @@ pub fn unknown_verb(words: &[String], literal: Literal, catalogue: &[Vec<String>
         if !verbs.contains(&v) {
             verbs.push(v);
         }
+    }
+    // a word a prompt may start with, a far word and more after it: a prompt (owner, audit I2 refined)
+    let said: Vec<&String> = words.iter().filter(|w| !flag_shaped(w)).collect();
+    if !slip_line(first, &said, 1, &verbs) {
+        return None;
     }
     Some(UnknownVerb { group: first.clone(), verbs, at: 1 })
 }
