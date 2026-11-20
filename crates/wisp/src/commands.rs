@@ -84,7 +84,10 @@ pub async fn run(p: &Parsed, cmd: &str, args: &[String], cwd: &str, port: u16) -
 #[allow(clippy::many_single_char_names)] // c, p, f as in the rest of the CLI
 async fn launch(c: &Client, p: &Parsed, args: &[String], cwd: &str) -> Result<()> {
     let f = &p.flags;
-    if let Some(no) = sc::unknown_agent(c, f.agent.as_deref()).await {
+    // under a formula, `--agent` may name one of its agents: resources.overlay checks it with the formula's (ADR-0111)
+    if f.formula.is_empty()
+        && let Some(no) = sc::unknown_agent(c, f.agent.as_deref()).await
+    {
         return Err(CliError::said(no.trim().trim_start_matches("✗ ")));
     }
     let prompt = args.join(" ");
@@ -93,6 +96,10 @@ async fn launch(c: &Client, p: &Parsed, args: &[String], cwd: &str) -> Result<()
         return crate::trial_cli::launch(c, f, &prompt, cwd).await;
     }
     let mut made = Vec::new();
+    // `--formula f.yml` is the shell's own path (where you typed it), whatever `--cwd` names for the task
+    let shell_dir = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from(cwd));
+    let here = shell_dir.as_path();
+    let o = crate::code::Opts::default();
     if f.compare.is_some() {
         // one group for the runs: the task's More then offers Compare runs (v1 compare.js, F-comp-30)
         let group = format!("g-{}", crate::services::hex(&rand::random::<[u8; 8]>()));
@@ -101,6 +108,8 @@ async fn launch(c: &Client, p: &Parsed, args: &[String], cwd: &str) -> Result<()
             sc::in_project(c, &mut a).await;
             a["ext"] = json!({ "wisp.runtime": { "group": group } });
             a["agent"] = json!(r.agent);
+            // `--formula`: each run under it, nothing applied (ADR-0111)
+            crate::tasks_cli::with_formula(c, &mut a, &f.formula, &o, here).await?;
             // each run's own model: `--model` is the `--agent` run's, never another harness's
             match (&r.model, a.as_object_mut()) {
                 (Some(m), _) => a["model"] = json!(m),
@@ -115,6 +124,8 @@ async fn launch(c: &Client, p: &Parsed, args: &[String], cwd: &str) -> Result<()
         let home =
             crate::services::home(std::env::var("WISP_HOME").ok().as_deref(), std::env::var_os("HOME").map(std::path::PathBuf::from));
         crate::termctx_cli::attach(c, p, &mut a, &prompt, cwd, &home).await;
+        // `--formula f.yml[,g.yml]`: the same overlay `wisp run --formula` gives, nothing applied (ADR-0111)
+        crate::tasks_cli::with_formula(c, &mut a, &f.formula, &o, here).await?;
         made.push(c.cmd("runtime.create", a).await?);
     }
     if !f.wait {

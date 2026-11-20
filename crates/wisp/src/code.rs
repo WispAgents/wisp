@@ -207,6 +207,37 @@ pub async fn formula_kinds(c: &Client) -> Result<Vec<KindInfo>> {
     serde_json::from_value(v).map_err(|e| CliError::said(format!("resources.kinds: {e}")))
 }
 
+/// Every `-f` (or `--formula`) file read and evaluated as `.wisp/` is (ADR-0111): `${kind.name}` references,
+/// `variables` (`-var`, `--var-file`, and `WISP_VAR_<name>` for the ones it declares), `locals`, `count`, `modules`.
+pub fn load_evaluated(files: &[String], o: &Opts, kinds: &[KindInfo], cwd: &Path) -> Result<Loaded> {
+    let mut loaded = load(files, &o.profiles, kinds, cwd)?;
+    let declared: Vec<String> = loaded
+        .meta
+        .iter()
+        .flat_map(|(_, m)| m.get("variables").and_then(Value::as_object).into_iter().flat_map(|v| v.keys().cloned()))
+        .collect();
+    let mut vars = serde_json::Map::new();
+    for (k, v) in std::env::vars() {
+        if let Some(name) = k.strip_prefix("WISP_VAR_").filter(|n| declared.iter().any(|d| d == n)) {
+            vars.insert(name.to_owned(), json!(v));
+        }
+    }
+    for f in &o.var_files {
+        let text = std::fs::read_to_string(cwd.join(f)).map_err(|e| CliError::said(crate::words::unreadable(&cwd.join(f), &e)))?;
+        for doc in formula::documents(&text, formula::format_of(f)).map_err(CliError::said)? {
+            vars.extend(doc.as_object().cloned().unwrap_or_default());
+        }
+    }
+    for (k, v) in &o.vars {
+        vars.insert(k.clone(), json!(v));
+    }
+    let root = files.first().map_or_else(|| cwd.to_owned(), |f| cwd.join(f).parent().map_or_else(|| cwd.to_owned(), Path::to_path_buf));
+    let c = wisp_resources_core::module::evaluate(&loaded, kinds, vars, "default", &mut crate::folder::env_at(&root))
+        .map_err(CliError::said)?;
+    loaded.resources = c.resources;
+    Ok(loaded)
+}
+
 /// Every `-f` file read, in order (a later file patches an earlier one's resources).
 pub fn load(files: &[String], profiles: &[String], kinds: &[KindInfo], cwd: &Path) -> Result<Loaded> {
     let mut all = Loaded::default();
@@ -221,6 +252,7 @@ pub fn load(files: &[String], profiles: &[String], kinds: &[KindInfo], cwd: &Pat
         }
         all.sources.extend(got.sources);
         all.secrets.extend(got.secrets);
+        all.meta.extend(got.meta);
         for k in got.kinds {
             if !all.kinds.contains(&k) {
                 all.kinds.push(k);
@@ -340,7 +372,7 @@ pub async fn apply(c: &Client, verb: &str, o: &Opts, cwd: &Path) -> Result<i32> 
         }
     } else {
         need_files(o, verb)?;
-        load(&o.files, &o.profiles, &ks, cwd)?
+        load_evaluated(&o.files, o, &ks, cwd)?
     };
     let mut loaded = loaded;
     // a skill's `path: docs/testing.md` is the repo's (the folder's parent), or next to the -f file: never wherever

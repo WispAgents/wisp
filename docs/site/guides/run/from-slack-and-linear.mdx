@@ -140,6 +140,8 @@ wisp connectors list            # Linear and Jira come in through connectors
 issue arrives. In the app: Automations → **New trigger** → **Issue labelled** or **Linear issue created**.
 
 ```yaml
+crew:
+  bob: { role: builder, agent: claude }
 triggers:
   agent-label:
     on: issue.labeled          # GitHub issues, polled with gh

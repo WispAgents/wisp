@@ -54,6 +54,22 @@ pub struct Input {
     pub prefix: String,
     /// `module.reviewers.` inside it
     pub at: String,
+    /// the modules this one is inside, by their files' content (a module that uses itself, however its source is
+    /// spelled, is refused rather than read forever). Additive (2026-11-20, ADR-0111).
+    pub chain: Vec<(String, u64)>,
+}
+
+/// A module's files as one number (FNV-1a over names and texts): the same module, whatever path reached it.
+fn files_hash(files: &[(String, String)]) -> u64 {
+    let mut h: u64 = 0xcbf2_9ce4_8422_2325;
+    for (n, t) in files {
+        let name = n.rsplit(['/', '\\']).next().unwrap_or(n);
+        for b in name.bytes().chain([0]).chain(t.bytes()).chain([0]) {
+            h ^= u64::from(b);
+            h = h.wrapping_mul(0x0100_0000_01b3);
+        }
+    }
+    h
 }
 
 const META: [&str; 9] = ["wisp", "include", "profiles", "variables", "locals", "outputs", "modules", "workspace", "history"];
@@ -149,6 +165,10 @@ struct View<'a> {
     known: &'a Map<String, Value>,
     extra: Map<String, Value>,
     env: &'a dyn Env,
+    /// every kind's declared names (kind → its section and names), to say what a reference could have named
+    declared: &'a BTreeMap<String, (String, Vec<String>)>,
+    /// the resource being evaluated (`agent.x`): a reference to it is to itself
+    me: Option<&'a str>,
 }
 
 impl Scope for View<'_> {
@@ -163,29 +183,51 @@ impl Scope for View<'_> {
                 .collect::<Vec<_>>()
                 .join(".")
         };
-        let mut v = self
-            .extra
-            .get(head)
-            .or_else(|| self.known.get(head))
-            .ok_or_else(|| format!("`{}` isn't declared", shown(&path[..path.len().min(2)])))?;
+        // a resource that isn't there: said with the ones of that kind that are (ADR-0111)
+        let missing = |p: &[Seg], n: usize| {
+            if n <= 1 && p.len() >= 2 && self.me.is_some_and(|me| me == shown(&p[..2])) {
+                return format!("{} refers to itself: a field can't read its own resource", shown(&p[..2]));
+            }
+            let what = format!("`{}` isn't declared", shown(p));
+            match self.declared.get(head.as_str()) {
+                Some((section, names)) if n <= 1 && names.is_empty() => format!("{what}: no {section} are declared"),
+                Some((section, names)) if n <= 1 => format!("{what}: {section} has {}", names.join(", ")),
+                _ => what,
+            }
+        };
+        let mut v = self.extra.get(head).or_else(|| self.known.get(head)).ok_or_else(|| missing(&path[..path.len().min(2)], 0))?;
         for (n, seg) in path.iter().enumerate().skip(1) {
             v = match seg {
                 Seg::Key(k) => v.get(k),
                 Seg::Index(i) => v.get(*i).or_else(|| v.get(i.to_string())),
             }
-            .ok_or_else(|| format!("`{}` isn't declared", shown(&path[..=n])))?;
+            .ok_or_else(|| missing(&path[..=n], n))?;
         }
         // a resource as a whole is its name (`agent: ${agent.reviewer}`)
-        if path.len() >= 2
-            && !["var", "local", "module", "each", "count"].contains(&head.as_str())
-            && let Some(name) = v.get("$name")
-        {
+        // and a module's resource is its stored name too (`${module.team.agent.reviewer}` is `team-reviewer`)
+        let whole = (path.len() >= 2 && !["var", "local", "module", "each", "count"].contains(&head.as_str()))
+            || (head == "module" && path.len() == 4);
+        if whole && let Some(name) = v.get("$name") {
             return Ok(name.clone());
         }
         Ok(v.clone())
     }
     fn outside(&self, f: &str, arg: &str) -> Result<Value, String> {
         self.env.outside(f, arg)
+    }
+    /// Only the formula's own namespaces, as it uses them (review r194 round 2 #6): `workspace`; `var.x`, `local.x`,
+    /// `module.m…`; `count.index` and `each.key` inside a resource that counts; `<kind>.<name>`; a function called. A bare
+    /// `${project}` or `${task}` in a prompt stays as written.
+    fn is_expr(&self, inner: &str) -> bool {
+        let (head, rest) = crate::expr::head_of(inner);
+        let dotted = rest.starts_with('.') || rest.starts_with('[');
+        match head {
+            "workspace" => true,
+            "var" | "local" | "module" => dotted,
+            "count" | "each" => dotted && self.extra.contains_key(head),
+            h if crate::expr::FUNCTIONS.contains(&h) => rest.trim_start().starts_with('('),
+            h => dotted && (self.declared.contains_key(h) || self.extra.contains_key(h)),
+        }
     }
 }
 
@@ -349,6 +391,13 @@ fn instances(d: &Decl, prefix: &str, view: &View<'_>) -> Result<Vec<Instance>, S
 #[allow(clippy::many_single_char_names, clippy::too_many_lines)] // one pass over the graph's nodes
 pub fn configure(input: &Input, kinds: &[KindInfo], env: &mut dyn Env) -> Result<Config, String> {
     let r = read(input, kinds)?;
+    let mut declared: BTreeMap<String, (String, Vec<String>)> =
+        kinds.iter().map(|k| (k.kind.clone(), (k.section.clone(), Vec::new()))).collect();
+    for d in &r.decls {
+        if let Some((_, names)) = declared.get_mut(&d.kind) {
+            names.push(d.name.clone());
+        }
+    }
     let mut known = Map::new();
     known.insert("var".into(), Value::Object(variables(input, &r.vars)?));
     known.insert("workspace".into(), json!(input.workspace));
@@ -380,36 +429,76 @@ pub fn configure(input: &Input, kinds: &[KindInfo], env: &mut dyn Env) -> Result
         let (head, name) = node.split_once('.').unwrap_or((node.as_str(), ""));
         match head {
             "local" => {
-                let v = eval_value(&r.locals[name], &View { known: &known, extra: Map::new(), env })?;
+                let v = eval_value(&r.locals[name], &View { known: &known, extra: Map::new(), env, declared: &declared, me: None })?;
                 locals.insert(name.to_owned(), v);
                 known.insert("local".into(), Value::Object(locals.clone()));
             }
             "module" => {
                 let Some((m, d, from)) = r.modules.iter().find(|(m, _, _)| m == name) else { continue };
                 let source = d.get("source").and_then(Value::as_str).ok_or_else(|| format!("module.{m}: it needs a source"))?.to_owned();
-                let inputs = eval_value(d.get("inputs").unwrap_or(&json!({})), &View { known: &known, extra: Map::new(), env })?;
+                let inputs = eval_value(
+                    d.get("inputs").unwrap_or(&json!({})),
+                    &View { known: &known, extra: Map::new(), env, declared: &declared, me: None },
+                )?;
                 let files = env.module(m, &source, from)?;
+                // a module that is (or contains) itself: refused, naming the way round
+                let me = files_hash(&files);
+                if let Some(i) = input.chain.iter().position(|(_, h)| *h == me) {
+                    let mut round: Vec<String> = input.chain[i..].iter().map(|(a, _)| a.clone()).collect();
+                    round.push(format!("{}module.{m}", input.at));
+                    return Err(format!("module.{m} ({source}) uses itself: {}", round.join(" → ")));
+                }
+                let mut chain = input.chain.clone();
+                chain.push((format!("{}module.{m}", input.at), me));
                 let sub = Input {
                     files,
                     vars: inputs.as_object().cloned().unwrap_or_default(),
                     workspace: input.workspace.clone(),
                     prefix: format!("{}{m}-", input.prefix),
                     at: format!("{}module.{m}.", input.at),
+                    chain,
                 };
                 let c = configure(&sub, kinds, env).map_err(|e| format!("module.{m} ({source}): {e}"))?;
                 cfg.modules.push((format!("{}{m}", input.at), source));
                 cfg.modules.extend(c.modules);
+                // its resources as `${module.<m>.<kind>.<name>}` (the stored name `<m>-<name>`), beside its outputs
+                let mut seen = Value::Object(c.outputs.clone());
+                let inner = format!("{}module.{m}.", input.at);
+                for (addr, kind, stored, _) in &c.addresses {
+                    let Some(rest) = addr.strip_prefix(&inner) else { continue };
+                    let Some((k, name)) = rest.split_once('.').filter(|(k, n)| *k == kind && !n.contains('.') && !n.contains('[')) else {
+                        continue;
+                    };
+                    if c.outputs.contains_key(k) {
+                        continue;
+                    }
+                    let spec =
+                        c.resources.iter().find(|r| r.kind == *kind && r.name == *stored).map(|r| r.spec.clone()).unwrap_or_default();
+                    let mut attrs = spec.as_object().cloned().unwrap_or_default();
+                    attrs.insert("name".into(), json!(stored));
+                    attrs.insert("$name".into(), json!(stored));
+                    if let Some(o) = seen.as_object_mut() {
+                        let slot = o.entry(k.to_owned()).or_insert_with(|| json!({}));
+                        if let Some(by) = slot.as_object_mut() {
+                            by.insert(name.to_owned(), Value::Object(attrs));
+                        }
+                    }
+                }
                 cfg.resources.extend(c.resources);
                 cfg.addresses.extend(c.addresses);
                 cfg.edges.extend(c.edges);
-                mods.insert(m.clone(), Value::Object(c.outputs));
+                mods.insert(m.clone(), seen);
                 known.insert("module".into(), Value::Object(mods.clone()));
             }
             _ => {
                 let Some(d) = r.decls.iter().find(|d| d.kind == head && d.name == name) else { continue };
                 let mut made = Vec::new();
-                for (stored, key, extra) in instances(d, &input.prefix, &View { known: &known, extra: Map::new(), env })? {
-                    let spec = eval_value(&d.spec, &View { known: &known, extra, env })?;
+                let me = format!("{}.{}", d.kind, d.name);
+                let me = Some(me.as_str());
+                for (stored, key, extra) in
+                    instances(d, &input.prefix, &View { known: &known, extra: Map::new(), env, declared: &declared, me })?
+                {
+                    let spec = eval_value(&d.spec, &View { known: &known, extra, env, declared: &declared, me })?;
                     let mut attrs = spec.as_object().cloned().unwrap_or_default();
                     attrs.insert("name".into(), json!(stored));
                     attrs.insert("$name".into(), json!(stored));
@@ -444,9 +533,58 @@ pub fn configure(input: &Input, kinds: &[KindInfo], env: &mut dyn Env) -> Result
         }
     }
     for (k, v) in &r.outputs {
-        cfg.outputs.insert(k.clone(), eval_value(v, &View { known: &known, extra: Map::new(), env })?);
+        cfg.outputs.insert(k.clone(), eval_value(v, &View { known: &known, extra: Map::new(), env, declared: &declared, me: None })?);
     }
     Ok(cfg)
+}
+
+/// A formula read from files (`formula::load`: its includes and profiles, `${env:…}` filled) evaluated as a folder is
+/// (2026-11-20, ADR-0111): `${kind.name}` references, `variables` (`vars`), `locals`, `count`, `for_each`, `outputs` and
+/// `modules` (each resolved from the file that declares it). `wisp apply -f`, `wisp run --formula` and a task file's
+/// formula answer the same as `.wisp/`. One with nothing to evaluate comes back as it was read.
+///
+/// # Errors
+/// What a folder's evaluation refuses: a reference that names nothing (saying what there is), a cycle, a variable with
+/// no value, a module that uses itself.
+pub fn evaluate(
+    loaded: &crate::formula::Loaded,
+    kinds: &[KindInfo],
+    vars: Map<String, Value>,
+    workspace: &str,
+    env: &mut dyn Env,
+) -> Result<Config, String> {
+    // always evaluated, so `$${x}` is `${x}` whether or not anything else is (review r194 #3)
+    // a TOML root is written back as JSON (which YAML reads too): the name keeps its folder, so modules resolve from it
+    let named = |f: &str| if format_of(f) == crate::formula::Format::Toml { format!("{f}.json") } else { f.to_owned() };
+    let root = loaded.sources.first().cloned().unwrap_or_else(|| "formula.yml".to_owned());
+    let mut doc = Map::new();
+    doc.insert("wisp".into(), json!(1));
+    for r in &loaded.resources {
+        let Some(k) = kinds.iter().find(|k| k.kind == r.kind) else { continue };
+        if k.singleton {
+            doc.insert(k.section.clone(), r.spec.clone());
+            continue;
+        }
+        let slot = doc.entry(k.section.clone()).or_insert_with(|| json!({}));
+        if let Some(o) = slot.as_object_mut() {
+            o.insert(r.name.clone(), r.spec.clone());
+        }
+    }
+    let mut files: Vec<(String, String)> = Vec::new();
+    let mut others: Vec<(String, Map<String, Value>)> = Vec::new();
+    for (file, meta) in &loaded.meta {
+        if *file == root {
+            doc.extend(meta.clone());
+        } else {
+            others.push((file.clone(), meta.clone()));
+        }
+    }
+    files.push((named(&root), Value::Object(doc).to_string()));
+    for (file, mut meta) in others {
+        meta.insert("wisp".into(), json!(1));
+        files.push((named(&file), Value::Object(meta).to_string()));
+    }
+    configure(&Input { files, vars, workspace: workspace.to_owned(), ..Input::default() }, kinds, env)
 }
 
 #[cfg(test)]
@@ -548,5 +686,131 @@ mod tests {
         assert_eq!(c.resources[2].spec, json!({ "agent": "rev-reviewer" }));
         assert!(c.addresses.iter().any(|(a, ..)| a == "module.rev.agent.reviewer"));
         assert_eq!(c.modules, [("rev".to_owned(), "./mods/team".to_owned())]);
+    }
+
+    /// ADR-0111: a reference that names nothing says what there is of that kind; a module's resources are referenced
+    /// by their address (`${module.rev.agent.reviewer}`, its stored name); a module that uses itself is refused.
+    #[test]
+    fn a_reference_names_what_exists_a_modules_resource_by_address_and_a_module_never_uses_itself() {
+        let e = run(
+            &[(
+                "a.wisp.yml",
+                "agents: { x: {}, y: {} }
+crew: { ada: { agent: \"${agent.nope}\" } }",
+            )],
+            json!({}),
+            &[],
+        )
+        .unwrap_err();
+        assert!(e.contains("`agent.nope` isn't declared: agents has x, y"), "{e}");
+        let e = run(&[("a.wisp.yml", "crew: { ada: { agent: \"${agent.nope}\" } }")], json!({}), &[]).unwrap_err();
+        assert!(e.contains("`agent.nope` isn't declared: no agents are declared"), "{e}");
+
+        let module: &[(&str, &str)] = &[("team.wisp.yml", "agents:\n  reviewer: { model: haiku }\n")];
+        let c = run(
+            &[("main.wisp.yml", "modules:\n  rev: { source: ./mods/team }\ncrew:\n  ada: { agent: \"${module.rev.agent.reviewer}\", model: \"${module.rev.agent.reviewer.model}\" }\n")],
+            json!({}),
+            &[("./mods/team", module)],
+        )
+        .unwrap();
+        assert_eq!(c.resources.iter().find(|r| r.name == "ada").unwrap().spec, json!({ "agent": "rev-reviewer", "model": "haiku" }));
+        assert!(c.edges.contains(&("crew.ada".into(), "module.rev".into())), "{:?}", c.edges);
+
+        let me: &[(&str, &str)] = &[("loop.wisp.yml", "modules:\n  again: { source: ./again }\n")];
+        let e = run(&[("main.wisp.yml", "modules:\n  first: { source: ./again }\n")], json!({}), &[("./again", me)]).unwrap_err();
+        assert!(e.contains("uses itself: module.first → module.first.module.again"), "{e}");
+    }
+
+    /// ADR-0111: a formula read from a file (`-f`, `--formula`, a task file's) evaluates as a folder does: references,
+    /// variables, count, a module from the file that declares it. Nothing to evaluate: as read.
+    #[test]
+    fn a_single_files_formula_evaluates_as_a_folder_does() {
+        let ks = kinds();
+        let loaded = |res: Vec<Resource>, meta: Vec<(String, Map<String, Value>)>| crate::formula::Loaded {
+            resources: res,
+            sources: vec!["/w/f.yml".into(), "/w/base.yml".into()],
+            meta,
+            ..crate::formula::Loaded::default()
+        };
+        let plain = loaded(vec![Resource::new("agent", "x", json!({ "model": "opus" }))], Vec::new());
+        assert_eq!(evaluate(&plain, &ks, Map::new(), "default", &mut NoIo(BTreeMap::new())).unwrap().resources, plain.resources);
+
+        let vars: Map<String, Value> = json!({ "variables": { "model": { "default": "haiku" } } }).as_object().cloned().unwrap();
+        let mods: Map<String, Value> = json!({ "modules": { "team": { "source": "./team" } } }).as_object().cloned().unwrap();
+        let l = loaded(
+            vec![
+                Resource::new("agent", "critic", json!({ "model": "${var.model}" })),
+                Resource::new("crew", "ada", json!({ "agent": "${agent.critic}", "helper": "${module.team.agent.helper}" })),
+                Resource::new("agent", "h", json!({ "count": 2, "model": "m${count.index}" })),
+            ],
+            vec![("/w/f.yml".into(), vars), ("/w/base.yml".into(), mods)],
+        );
+        let team: Vec<(String, String)> = vec![("team.wisp.yml".into(), "agents: { helper: {} }".into())];
+        let c = evaluate(&l, &ks, Map::new(), "default", &mut NoIo([("./team".to_owned(), team)].into())).unwrap();
+        let spec = |n: &str| c.resources.iter().find(|r| r.name == n).map(|r| r.spec.clone()).unwrap_or_default();
+        assert_eq!(spec("critic"), json!({ "model": "haiku" }));
+        assert_eq!(spec("ada"), json!({ "agent": "critic", "helper": "team-helper" }));
+        assert_eq!((spec("h-0"), spec("h-1")), (json!({ "model": "m0" }), json!({ "model": "m1" })));
+        let bad = loaded(vec![Resource::new("crew", "ada", json!({ "agent": "${agent.nope}" }))], Vec::new());
+        assert!(
+            evaluate(&bad, &ks, Map::new(), "default", &mut NoIo(BTreeMap::new())).unwrap_err().contains("`agent.nope` isn't declared")
+        );
+    }
+
+    /// Review r194 #2: only a formula's own names are expressions. A shell's `${HOME}`, GitHub's `${{ github.sha }}` and
+    /// `${1}` are kept as written, in a folder and in a single file alike.
+    #[test]
+    fn only_a_formulas_own_names_are_expressions_the_rest_is_kept_as_written() {
+        let f = "agents:\n  x: { instructions: \"echo ${HOME} at ${{ github.sha }}, arg ${1}, model ${var.m}\" }\nvariables: { m: { default: opus } }\n";
+        let c = run(&[("a.wisp.yml", f)], json!({}), &[]).unwrap();
+        assert_eq!(c.resources[0].spec["instructions"], "echo ${HOME} at ${{ github.sha }}, arg ${1}, model opus");
+        let whole = run(&[("a.wisp.yml", "agents:\n  x: { instructions: \"${HOME}\" }\n")], json!({}), &[]).unwrap();
+        assert_eq!(whole.resources[0].spec["instructions"], "${HOME}");
+        let one = crate::formula::Loaded {
+            resources: vec![Resource::new("agent", "x", json!({ "instructions": "echo ${HOME} ${PATH}" }))],
+            sources: vec!["/w/f.yml".into()],
+            ..crate::formula::Loaded::default()
+        };
+        let c = evaluate(&one, &kinds(), Map::new(), "default", &mut NoIo(BTreeMap::new())).unwrap();
+        assert_eq!(c.resources[0].spec["instructions"], "echo ${HOME} ${PATH}");
+    }
+
+    /// Review r194 #3: `$${x}` is always `${x}`, whether or not anything else in the formula is evaluated.
+    #[test]
+    fn the_escape_always_comes_out_as_a_literal() {
+        let plain = crate::formula::Loaded {
+            resources: vec![Resource::new("agent", "x", json!({ "instructions": "literal $${x}" }))],
+            sources: vec!["/w/f.yml".into()],
+            ..crate::formula::Loaded::default()
+        };
+        let c = evaluate(&plain, &kinds(), Map::new(), "default", &mut NoIo(BTreeMap::new())).unwrap();
+        assert_eq!(c.resources[0].spec["instructions"], "literal ${x}");
+        let c = run(&[("a.wisp.yml", "agents:\n  x: { instructions: \"literal $${x}\" }\n")], json!({}), &[]).unwrap();
+        assert_eq!(c.resources[0].spec["instructions"], "literal ${x}");
+    }
+
+    /// Review r194 #7: a resource that names itself says so, not "isn't declared: agents has x".
+    #[test]
+    fn a_self_reference_says_it_refers_to_itself() {
+        let e = run(&[("a.wisp.yml", "agents:\n  x: { model: \"${agent.x.model}\" }\n  y: {}\n")], json!({}), &[]).unwrap_err();
+        assert!(e.contains("agent.x refers to itself"), "{e}");
+        assert!(!e.contains("isn't declared"), "{e}");
+    }
+
+    /// Review r194 round 2 #6: a kind's name (`project`, `task`) is an expression only as `kind.name`, `count`/`each` only
+    /// inside a resource that counts, functions only as calls: `${project}`, `${task}`, `${count}` in a prompt stay.
+    #[test]
+    fn a_namespace_is_an_expression_only_as_the_formula_uses_it() {
+        let f = "agents:\n  x: { instructions: \"deploy ${project} for ${task} at ${count} ${each} ${upper} ${var} and ${agent} ${workspace}\" }\n";
+        let ks: Vec<KindInfo> = [("agent", "agents"), ("project", "projects"), ("task", "tasks")]
+            .iter()
+            .map(|(k, s)| KindInfo::new(k, s, "t", json!({})))
+            .collect();
+        let input = Input { files: files(&[("a.wisp.yml", f)]), workspace: "dev".into(), ..Input::default() };
+        let c = configure(&input, &ks, &mut NoIo(BTreeMap::new())).unwrap();
+        assert_eq!(
+            c.resources[0].spec["instructions"],
+            "deploy ${project} for ${task} at ${count} ${each} ${upper} ${var} and ${agent} dev"
+        );
     }
 }

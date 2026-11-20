@@ -891,6 +891,18 @@ export const COMMANDS: Record<string, CommandFn> = {
         .map((r) => ({ kind: 'project', name: String(obj(r.v)['name'] ?? ''), spec: { path: String(obj(r.v)['path'] ?? '') } })),
     };
   },
+  // New task's Formula or task file… (`resources.overlay`, ADR-0111): the mock reads no YAML, so a picked file is one
+  // agent `critic`; a task file (`task:` in it) also gives its prompt and names that agent; a name it can't know is refused
+  // as the server says it
+  'resources.overlay': (a) => {
+    const text = String(obj(a)['text'] ?? '');
+    const name = String(obj(a)['name'] ?? 'formula.yml');
+    const overlay = { agents: [{ name: 'critic', harness: 'claude', model: 'opus' }] };
+    const asked = /\bagent:\s*([\w-]+)/.exec(text)?.[1];
+    if (asked && asked !== 'critic') return { ops: [], result: { overlay, problems: [`${name}: no agent named ${asked}: agents has critic (or claude, codex, auto)`] } };
+    const prompt = /\bprompt:\s*([^,}\n]+)/.exec(text)?.[1]?.trim();
+    return { ops: [], result: { overlay, agents: ['critic'], ...(/\btask:/.test(text) && { task: { prompt: prompt ?? '', agent: 'critic' } }) } };
+  },
   // your GitHub repos (git.githubRepos, wisp-git-api GithubRepo): two to clone, newest pushed first
   'git.githubRepos': () => ({
     ops: [],

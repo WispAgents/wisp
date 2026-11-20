@@ -35,6 +35,7 @@ pub fn tools() -> Vec<Value> {
                 "effort": { "type": "string", "description": "Thinking level, e.g. low | medium | high." },
                 "worktree": { "type": "boolean", "description": "Its own git worktree. Default: on in a project's folder, as `wisp` from the command line (Settings → Worktree per task)." },
                 "goal": { "type": "string", "description": "Keep going until this holds: a goal declared by name (goals: in the user's formula), or what done means in words. wisp judges it after every round." },
+                "formula": { "description": "Run it under a formula, nothing applied: a formula file (relative to cwd), a list of them, or a formula inline ({ agents: { … } }). Its agents, skills, connectors, teams and goals are this task's; agent and goal may name them.", "anyOf": [{ "type": "string" }, { "type": "array", "items": { "type": "string" } }, { "type": "object" }] },
                 "wait": { "type": "boolean", "description": "Block until the agent finishes or asks (up to timeout_seconds)." },
                 "timeout_seconds": { "type": "number", "description": format!("Max wait when wait=true. Default {WAIT_S}.") }
             }, "required": ["prompt"] }
@@ -110,6 +111,29 @@ fn with_goal(args: &mut Value, a: &Value) {
     }
 }
 
+/// `wisp_launch`'s `formula` (ADR-0111): files relative to the task's folder (one, a comma list or a list), or a formula
+/// inline; resolved as `wisp "…" --formula` resolves it, nothing applied.
+async fn with_formula(c: &Client, args: &mut Value, a: &Value, dir: &Path) -> Result<()> {
+    match a.get("formula") {
+        Some(Value::Object(inline)) => {
+            let mut doc = inline.clone();
+            doc.insert("wisp".into(), json!(1));
+            let out = crate::tasks_cli::resolve(c, json!({ "text": Value::Object(doc).to_string(), "name": "formula.json", "cwd": dir.display().to_string(), "task": args.clone() })).await?;
+            *args = crate::tasks_cli::create_args(&out["task"], &out["overlay"], &crate::code::Opts::default(), dir);
+            Ok(())
+        }
+        Some(Value::String(list)) => {
+            let files: Vec<String> = list.split(',').map(str::trim).filter(|f| !f.is_empty()).map(str::to_owned).collect();
+            crate::tasks_cli::with_formula(c, args, &files, &crate::code::Opts::default(), dir).await
+        }
+        Some(Value::Array(list)) => {
+            let files: Vec<String> = list.iter().filter_map(Value::as_str).map(str::to_owned).collect();
+            crate::tasks_cli::with_formula(c, args, &files, &crate::code::Opts::default(), dir).await
+        }
+        _ => Ok(()),
+    }
+}
+
 /// One tool call; `cwd` is where `wisp mcp` runs (`wisp_launch`'s default folder).
 pub async fn call(c: &Client, name: &str, args: &Value, cwd: &Path) -> Value {
     match run(c, name, args, cwd).await {
@@ -149,6 +173,7 @@ async fn run(c: &Client, name: &str, a: &Value, cwd: &Path) -> Result<Value> {
             }
             with_goal(&mut args, a);
             crate::scripted::in_project(c, &mut args).await;
+            with_formula(c, &mut args, a, Path::new(&dir)).await?;
             let made = c.cmd("runtime.create", args).await?;
             let tid = s(&made, "id").to_owned();
             if a.get("wait") == Some(&json!(true)) {

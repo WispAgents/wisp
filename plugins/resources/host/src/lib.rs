@@ -15,6 +15,8 @@ mod applied;
 
 mod capability;
 
+mod overlay;
+
 use std::collections::BTreeSet;
 use std::sync::Arc;
 
@@ -116,7 +118,9 @@ async fn dangling(
     refs: Vec<(String, wisp_resources_api::Ref)>,
     mut names_after: std::collections::BTreeMap<String, Vec<String>>,
 ) -> Vec<String> {
-    let mut out = Vec::new();
+    let mut out: Vec<String> = Vec::new();
+    // what a reference may name besides the kind's resources (a harness for an agent field), asked once per kind
+    let mut also: std::collections::BTreeMap<String, Vec<String>> = std::collections::BTreeMap::new();
     for (at, r) in refs {
         if !names_after.contains_key(&r.kind) {
             let Some(k) = find(ks, &r.kind) else {
@@ -126,17 +130,107 @@ async fn dangling(
             let now = k.read(call).await.map(|rs| rs.into_iter().map(|x| x.name).collect()).unwrap_or_default();
             names_after.insert(r.kind.clone(), now);
         }
+        if !also.contains_key(&r.kind) {
+            let more = match find(ks, &r.kind) {
+                Some(k) => k.also_named(call).await,
+                None => Vec::new(),
+            };
+            also.insert(r.kind.clone(), more);
+        }
         let names: Vec<&String> = names_after.get(&r.kind).into_iter().flatten().filter(|n| n.as_str() != "default").collect();
-        if r.name != "default" && names.iter().any(|n| **n == r.name) {
+        let more: &[String] = also.get(&r.kind).map_or(&[], Vec::as_slice);
+        if (r.name != "default" && names.iter().any(|n| **n == r.name)) || more.contains(&r.name) {
             continue;
         }
         let section = find(ks, &r.kind).map_or_else(|| r.kind.clone(), |k| k.info().section);
-        let has = if names.is_empty() {
+        let mut has = if names.is_empty() {
             format!("no {section} are declared")
         } else {
             format!("{section} has {}", names.iter().map(|n| n.as_str()).collect::<Vec<_>>().join(", "))
         };
-        out.push(format!("{at}: no {} named {}: {has}", r.kind, r.name));
+        if !more.is_empty() {
+            has = format!("{has} (or {})", more.join(", "));
+        }
+        let line = format!("{at}: no {} named {}: {has}", r.kind, r.name);
+        if !out.contains(&line) {
+            out.push(line);
+        }
+    }
+    out
+}
+
+/// What `info.names` finds in `r`'s spec, as references ([`wisp_resources_api::Names`], ADR-0111).
+fn named_refs(info: &KindInfo, r: &Resource) -> Vec<wisp_resources_api::Ref> {
+    let mut out = Vec::new();
+    for n in &info.names {
+        for name in wisp_resources_api::names_in(&r.spec, n) {
+            out.push(wisp_resources_api::Ref { kind: n.kind.clone(), name, field: n.field.clone() });
+        }
+    }
+    out
+}
+
+/// A loop through a field that may not loop ([`wisp_resources_api::Names::acyclic`]): `crew.Ada → crew.Bo → crew.Ada`
+/// over the kind's resources as the apply leaves them. One the home already had is left alone (it isn't this plan's).
+/// Linear in members and edges (a depth-first walk with colours, no recursion): review r194 #4 found the old walk over
+/// every path factorial in a dense crew.
+fn loops(info: &KindInfo, after: &[Resource], current: &[Resource]) -> Vec<String> {
+    let mut out = Vec::new();
+    for n in info.names.iter().filter(|n| n.acyclic && n.kind == info.kind) {
+        let found = |rs: &[Resource]| -> Vec<String> {
+            let edges: std::collections::BTreeMap<&str, Vec<String>> =
+                rs.iter().map(|r| (r.name.as_str(), wisp_resources_api::names_in(&r.spec, n))).collect();
+            // 0 unseen, 1 on the walk's path, 2 done
+            let mut colour: std::collections::BTreeMap<&str, u8> = edges.keys().map(|k| (*k, 0)).collect();
+            let mut seen: Vec<String> = Vec::new();
+            for start in edges.keys() {
+                if colour[start] != 0 {
+                    continue;
+                }
+                let mut path: Vec<&str> = vec![start];
+                let mut next: Vec<usize> = vec![0];
+                colour.insert(start, 1);
+                while let (Some(&at), Some(i)) = (path.last(), next.last_mut()) {
+                    let Some(to) = edges[at].get(*i) else {
+                        colour.insert(at, 2);
+                        path.pop();
+                        next.pop();
+                        continue;
+                    };
+                    *i += 1;
+                    let Some((&to, &c)) = colour.get_key_value(to.as_str()) else { continue };
+                    match c {
+                        0 => {
+                            colour.insert(to, 1);
+                            path.push(to);
+                            next.push(0);
+                        }
+                        1 => {
+                            // back to a member on the path: the loop is that part of it, said from its smallest name
+                            let from = path.iter().position(|p| *p == to).unwrap_or(0);
+                            let mut cyc: Vec<&str> = path[from..].to_vec();
+                            let low = cyc.iter().enumerate().min_by_key(|(_, m)| **m).map_or(0, |(k, _)| k);
+                            cyc.rotate_left(low);
+                            cyc.push(cyc[0]);
+                            let line = format!(
+                                "{}.{}: {}: a loop: {}",
+                                info.section,
+                                cyc[0],
+                                n.field,
+                                cyc.iter().map(|c| format!("{}.{c}", info.kind)).collect::<Vec<_>>().join(" → ")
+                            );
+                            if !seen.contains(&line) {
+                                seen.push(line);
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+            }
+            seen
+        };
+        let had = found(current);
+        out.extend(found(after).into_iter().filter(|l| !had.contains(l)));
     }
     out
 }
@@ -150,14 +244,15 @@ async fn kept_refs(ks: &[Arc<dyn ResourceKind>], call: &Call, ops: &[Op]) -> Vec
         return out;
     }
     for k in ks {
-        let to = k.refers_to();
+        let info = k.info();
+        let mut to = k.refers_to();
+        to.extend(info.names.iter().map(|n| n.kind.clone()));
         if !to.iter().any(|t| removed.contains(t.as_str())) {
             continue;
         }
-        let info = k.info();
         let Ok(current) = k.read(call).await else { continue };
         for r in current.iter().filter(|r| !ops.iter().any(|o| o.kind == info.kind && o.name == r.name)) {
-            for x in k.refs(r).into_iter().filter(|x| removed.contains(x.kind.as_str())) {
+            for x in k.refs(r).into_iter().chain(named_refs(&info, r)).filter(|x| removed.contains(x.kind.as_str())) {
                 out.push((format!("{}.{}", info.section, r.name), x));
             }
         }
@@ -238,7 +333,7 @@ async fn make_plan(ctx: &Ctx, call: &Call, a: &PlanArgs) -> Result<Plan> {
                 out.problems.extend(schema::validate(&info.schema, &o.spec, &format!("{}.{}", info.section, o.name)));
             }
             out.problems.extend(k.check(&r).into_iter().map(|p| format!("{}.{}: {p}", info.section, o.name)));
-            refs.extend(k.refs(&r).into_iter().map(|x| (format!("{}.{}", info.section, o.name), x)));
+            refs.extend(k.refs(&r).into_iter().chain(named_refs(&info, &r)).map(|x| (format!("{}.{}", info.section, o.name), x)));
         }
         if info.sensitive {
             for o in &ops {
@@ -254,6 +349,11 @@ async fn make_plan(ctx: &Ctx, call: &Call, a: &PlanArgs) -> Result<Plan> {
         // projects were one per folder) never blocks an apply that doesn't touch it
         let had = k.check_all(&current);
         out.problems.extend(k.check_all(&after).into_iter().filter(|p| !had.contains(p)).map(|p| format!("{}: {p}", info.section)));
+        // the loop check walks the whole kind: off the async worker
+        if info.names.iter().any(|n| n.acyclic) {
+            let (i, a, c) = (info.clone(), after.clone(), current.clone());
+            out.problems.extend(tokio::task::spawn_blocking(move || loops(&i, &a, &c)).await.unwrap_or_default());
+        }
         names_after.insert(info.kind.clone(), after.iter().map(|r| r.name.clone()).collect());
         out.ops.extend(ops);
         infos.push(info);
@@ -413,6 +513,7 @@ impl Plugin for ResourcesPlugin {
         s.command::<Refresh, _, _>(|ctx, call, a| async move { refresh(&ctx, &call, &a).await });
         s.command::<Export, _, _>(|ctx, call, a| async move { export(&ctx, &call, &a).await });
         // the app's Import and Share setup (ADR-0034): pasted text in, the setup out as text
+        s.command::<wisp_resources_api::Overlay, _, _>(|ctx, call, a| async move { overlay::overlay(&ctx, &call, kinds(&ctx), a).await });
         s.command::<Read, _, _>(|ctx, _call, a| {
             let ks = formula_kinds(&ctx);
             async move {
@@ -443,5 +544,43 @@ impl Plugin for ResourcesPlugin {
             })
         });
         Ok(())
+    }
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod loop_tests {
+    use super::*;
+    use serde_json::json;
+
+    /// Review r194 #4: the loop check walked every path (factorial in a dense crew); it's linear now. 300 members, each
+    /// delegating to every later one (44 850 edges, no loop), then one edge back: answered in well under a second.
+    #[test]
+    fn a_large_crew_graph_is_checked_for_loops_in_linear_time() {
+        let info = KindInfo::new("crew", "crew", "x", json!({})).names(wisp_resources_api::Names::new("team[].crew", "crew").acyclic());
+        let n = 300;
+        let mk = move |back: bool| -> Vec<Resource> {
+            (0..n)
+                .map(|i| {
+                    let mut team: Vec<serde_json::Value> = ((i + 1)..n).map(|j| json!({ "crew": format!("m{j:03}") })).collect();
+                    if back && i == n - 1 {
+                        team.push(json!({ "crew": "m000" }));
+                    }
+                    Resource::new("crew", format!("m{i:03}"), json!({ "team": team }))
+                })
+                .collect()
+        };
+        let (tx, rx) = std::sync::mpsc::channel();
+        let info2 = info.clone();
+        std::thread::spawn(move || {
+            let none = loops(&info2, &mk(false), &[]);
+            let one = loops(&info2, &mk(true), &[]);
+            let _ = tx.send((none, one));
+        });
+        let (none, one) = rx.recv_timeout(std::time::Duration::from_secs(3)).expect("the loop check took over 3 s");
+        assert!(none.is_empty(), "{none:?}");
+        assert_eq!(one.len(), 1, "one loop, said once: {one:?}");
+        assert!(one[0].starts_with("crew.m000: team[].crew: a loop: crew.m000 → crew.m001 → "), "{}", one[0]);
+        assert!(one[0].ends_with("crew.m299 → crew.m000"), "{}", one[0]);
     }
 }

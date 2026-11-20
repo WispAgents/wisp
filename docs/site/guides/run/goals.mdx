@@ -92,6 +92,8 @@ goal's own fields win.
 
 ```yaml
 # .wisp/goals.wisp.yml
+agents:
+  reviewer: { harness: codex, effort: high, mode: plan }   # judges are agents by name, or harnesses
 goals:
   default: { judges: [reviewer], vote: majority, maxRounds: 6 }   # every goal's defaults
   green-build: { text: "npm test passes and the build is green", judges: [reviewer, codex] }

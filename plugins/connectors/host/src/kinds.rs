@@ -196,7 +196,9 @@ async fn reveal_overlay(ctx: &Ctx, call: &Call, revealed: &Revealed, session: &s
 
 pub fn register(s: &mut Setup) -> (Arc<StoredKind>, Arc<dyn ResourceKind>) {
     let inner = Arc::new(StoredKind::new(
-        KindInfo::new("connector", "connectors", "wisp.connectors", schema_of::<ConnectorSpec>()).order(18),
+        KindInfo::new("connector", "connectors", "wisp.connectors", schema_of::<ConnectorSpec>())
+            .order(18)
+            .names(wisp_resources_api::Names::new("agents[]", "agent")),
         s.ctx(),
     ));
     let cache: Cache = Arc::default();

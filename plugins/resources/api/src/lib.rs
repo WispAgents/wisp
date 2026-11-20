@@ -128,6 +128,85 @@ pub struct KindInfo {
     /// setup audit D2).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub away: Option<String>,
+    /// The fields of its specs that name another kind's resource (a task's `agent`, a trigger's `task`), checked by the
+    /// plan wherever a formula is read: one that names nothing is refused, naming what there is. Additive (2026-11-20,
+    /// ADR-0111).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub names: Vec<Names>,
+}
+
+/// A field that names another kind's resource ([`KindInfo::names`]). `field` is a path into the spec: `agent`,
+/// `connectors[]` (each item), `members.*.agent` (each value's `agent`), `team[].crew`. Only strings are names: an inline
+/// object (`judges: [{ harness: codex }]`), a URL, a path, a `${…}` left unevaluated or one of `skip` (an event word
+/// beside trigger names) is never checked. `acyclic`: these names may not loop back to where they start (a crew member
+/// who delegates to one who delegates back). Additive (2026-11-20, ADR-0111).
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Names {
+    pub field: String,
+    pub kind: String,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub skip: Vec<String>,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub acyclic: bool,
+}
+
+impl Names {
+    #[must_use]
+    pub fn new(field: &str, kind: &str) -> Self {
+        Self { field: field.into(), kind: kind.into(), skip: Vec::new(), acyclic: false }
+    }
+    /// Words in this field that aren't names (`finished` among a notification's trigger names).
+    #[must_use]
+    pub fn skip(mut self, words: &[&str]) -> Self {
+        self.skip = words.iter().map(|w| (*w).to_owned()).collect();
+        self
+    }
+    #[must_use]
+    pub fn acyclic(mut self) -> Self {
+        self.acyclic = true;
+        self
+    }
+}
+
+/// Whether `s` could be a resource's name rather than something else in a name field: a URL, a path, an expression or
+/// `~/…` never is.
+#[must_use]
+pub fn is_name(s: &str) -> bool {
+    let s = s.trim();
+    !s.is_empty() && !s.contains("://") && !s.contains('/') && !s.contains('\\') && !s.contains("${") && !s.starts_with('~')
+}
+
+/// Every name `n` finds in `spec` ([`Names`]'s path rules), in order.
+#[must_use]
+pub fn names_in(spec: &Value, n: &Names) -> Vec<String> {
+    fn walk(v: &Value, path: &[&str], out: &mut Vec<String>) {
+        let Some((head, rest)) = path.split_first() else {
+            if let Some(s) = v.as_str() {
+                out.push(s.trim().to_owned());
+            }
+            return;
+        };
+        if *head == "*" {
+            for x in v.as_object().into_iter().flat_map(|m| m.values()) {
+                walk(x, rest, out);
+            }
+            return;
+        }
+        let (key, each) = head.strip_suffix("[]").map_or((*head, false), |k| (k, true));
+        let Some(x) = (if key.is_empty() { Some(v) } else { v.get(key) }) else { return };
+        if each {
+            for item in x.as_array().into_iter().flatten() {
+                walk(item, rest, out);
+            }
+        } else {
+            walk(x, rest, out);
+        }
+    }
+    let parts: Vec<&str> = n.field.split('.').collect();
+    let mut out = Vec::new();
+    walk(spec, &parts, &mut out);
+    out.retain(|s| is_name(s) && !n.skip.iter().any(|w| w == s));
+    out
 }
 
 impl KindInfo {
@@ -147,7 +226,14 @@ impl KindInfo {
             schema,
             doc,
             away: None,
+            names: Vec::new(),
         }
+    }
+    /// A field of its specs that names `kind`'s resources ([`KindInfo::names`]).
+    #[must_use]
+    pub fn names(mut self, n: Names) -> Self {
+        self.names.push(n);
+        self
     }
     /// Put away for now, saying why ([`KindInfo::away`]).
     #[must_use]
@@ -247,6 +333,12 @@ pub trait ResourceKind: Send + Sync {
     /// Additive (2026-11-19, ADR-0110).
     fn refers_to(&self) -> Vec<String> {
         Vec::new()
+    }
+    /// Names a reference to this kind may use that aren't its resources: an agent field names a harness (`codex`) or
+    /// `auto` as well as a declared agent, a machine field `this`. The plan takes them as declared. Additive
+    /// (2026-11-20, ADR-0111).
+    fn also_named<'a>(&'a self, _call: &'a Call) -> BoxFuture<'a, Vec<String>> {
+        Box::pin(async { Vec::new() })
     }
     /// The op in plain words, for the trust prompt ("lets Telegram chat 123 start tasks").
     fn describe(&self, _op: &Op) -> Option<String> {
@@ -463,3 +555,213 @@ command!(SecretRemove = "resources.secretRemove" ["resources:secrets"] : SecretA
 
 command!(Read = "resources.read" ["resources:read"] read yes : ReadArgs => ReadOut);
 command!(Write = "resources.write" ["resources:read"] read yes : WriteArgs => WriteOut; typed);
+
+#[cfg(test)]
+mod names_tests {
+    use super::*;
+    use serde_json::json;
+
+    /// ADR-0111: every field that names another kind's resource is found by its path, and only names are: an inline
+    /// object, a URL, a path, an expression and a skipped word aren't.
+    #[test]
+    fn a_name_field_finds_its_names_by_path_and_only_names() {
+        let spec = json!({
+            "agent": "reviewer",
+            "connectors": ["linear", "https://mcp.example.com/sse", "${connector.x}"],
+            "members": { "a": { "agent": "codex" }, "b": { "agent": { "harness": "claude" } } },
+            "team": [{ "crew": "Ada" }, { "crew": "Bo" }],
+            "judges": ["critic", { "harness": "codex" }],
+            "on": ["finished", "nightly"],
+            "project": "/work/app",
+        });
+        let n = |f: &str| names_in(&spec, &Names::new(f, "x"));
+        assert_eq!(n("agent"), ["reviewer"]);
+        assert_eq!(n("connectors[]"), ["linear"], "a URL and an expression aren't names");
+        assert_eq!(n("members.*.agent"), ["codex"], "an inline agent isn't a name");
+        assert_eq!(n("team[].crew"), ["Ada", "Bo"]);
+        assert_eq!(n("judges[]"), ["critic"]);
+        assert_eq!(n("project"), Vec::<String>::new(), "a path isn't a name");
+        assert_eq!(names_in(&spec, &Names::new("on[]", "trigger").skip(&["finished"])), ["nightly"]);
+        assert_eq!(n("nothing.here[]"), Vec::<String>::new());
+    }
+}
+
+/// `resources.overlay` (ADR-0111): a formula as one task's overlay, nothing applied, and a task resolved under it with
+/// every name it gives checked: the same answer for `wisp run --formula`, `wisp "…" --formula`, a task file
+/// (`formula: ./wisp.yml`, `module.team`), `wisp_launch`'s `formula` and New task's Formula…. Give the formula as
+/// `resources` already read (the CLI reads files, URLs and gists itself), `text` (a formula or a task file: New task's
+/// picked file), or `files` on this computer (relative to `cwd`). Additive (2026-11-20).
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, ts_rs::TS)]
+#[serde(rename_all = "camelCase")]
+pub struct OverlayArgs {
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    #[ts(optional, as = "Option<Vec<Value>>")]
+    pub resources: Vec<Resource>,
+    /// a formula's or a task file's text (`task:` and its `formula:`)
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    #[ts(optional, as = "Option<String>")]
+    pub text: String,
+    /// what `text` is called (`release.task.yml`): its format, and what problems name
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    #[ts(optional, as = "Option<String>")]
+    pub name: String,
+    /// formula files on this computer, in order (a later one patches an earlier one)
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    #[ts(optional, as = "Option<Vec<String>>")]
+    pub files: Vec<String>,
+    /// where relative files and a task file's `module.x` (this folder's `.wisp/`) are read from
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    #[ts(optional, as = "Option<String>")]
+    pub cwd: String,
+    /// the task file's own folder, when its path is known: its `formula: ./x` and `module.x` are read from there (else
+    /// from `cwd`, said in `notes`). Additive (2026-11-20, review r194 #5)
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    #[ts(optional, as = "Option<String>")]
+    pub dir: String,
+    /// a task to resolve under the formula (`runtime.create`'s args: prompt, agent, goal, …)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub task: Option<Value>,
+    /// a task the formula declares (`tasks: { release: … }`), run by its name: its spec, `tasks.default` under it
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    #[ts(optional, as = "Option<String>")]
+    pub run: String,
+    /// that task's `{params}`, by name and then by position
+    #[serde(default, skip_serializing_if = "std::collections::BTreeMap::is_empty")]
+    #[ts(optional, as = "Option<std::collections::BTreeMap<String, String>>")]
+    pub params: std::collections::BTreeMap<String, String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    #[ts(optional, as = "Option<Vec<String>>")]
+    pub words: Vec<String>,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OverlayOut {
+    /// `runtime.create`'s `formula`
+    pub overlay: Value,
+    /// what one task doesn't take (`crew/ada`): `wisp apply` keeps those
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub left: Vec<String>,
+    /// the task resolved (`runtime.create`'s args but `formula`): its declared goal inlined, one declared agent its own
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub task: Option<Value>,
+    /// the tasks the formula declares (but `tasks.default`), and its agents: what New task's Formula… lists
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub tasks: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub agents: Vec<String>,
+    /// every file the formula was read from
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub sources: Vec<String>,
+    /// names that name nothing, a file that loops, what didn't read: the task isn't started while there are any
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub problems: Vec<String>,
+    /// what to know about how it was read (a picked task file's `./x` read from the project folder)
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub notes: Vec<String>,
+}
+
+command!(Overlay = "resources.overlay" ["resources:overlay"] read yes : OverlayArgs => OverlayOut; typed);
+
+/// The kinds an agent's formula may declare (review r194 round 2 #1): agents, skills (as text), teams and goals. Anything
+/// else (a connector or harness runs a command on the host, a project runs its setup, a crew member, a trigger, a task, a
+/// channel…) is the user's to declare.
+pub const AGENT_FORMULA_KINDS: [&str; 4] = ["agent", "skill", "team", "goal"];
+
+fn section_of(kind: &str) -> String {
+    match kind {
+        "crew" | "budget" | "ui" | "router" => kind.to_owned(),
+        "harness" => "harnesses".into(),
+        "capability" => "capabilities".into(),
+        k => format!("{k}s"),
+    }
+}
+
+/// Why an agent's formula (a task's `wisp_launch`, an agent's `runtime.create`) can't be run as written: one plain line
+/// each. Empty: it may. The user's own formulas aren't held to this.
+#[must_use]
+pub fn agent_formula_problems(resources: &[Resource]) -> Vec<String> {
+    fn secret(v: &Value) -> Option<String> {
+        match v {
+            Value::String(s) => s.find("${secret:").map(|i| s[i..].split('}').next().map_or_else(String::new, |x| format!("{x}}}"))),
+            Value::Array(a) => a.iter().find_map(secret),
+            Value::Object(o) => o.values().find_map(secret),
+            _ => None,
+        }
+    }
+    let mut out = Vec::new();
+    for r in resources {
+        let at = format!("{}.{}", section_of(&r.kind), r.name);
+        if !AGENT_FORMULA_KINDS.contains(&r.kind.as_str()) {
+            let line =
+                format!("an agent's formula can't declare {} ({at}): the user declares those; name ones they set up", section_of(&r.kind));
+            if !out.contains(&line) {
+                out.push(line);
+            }
+            continue;
+        }
+        if let Some(s) = secret(&r.spec) {
+            out.push(format!("an agent's formula can't use secrets ({at}: {s})"));
+        }
+        if r.kind == "skill" && r.spec.get("path").and_then(Value::as_str).is_some_and(|p| !p.is_empty()) {
+            out.push(format!("an agent's formula gives a skill its text, not a path ({at})"));
+        }
+        if r.kind == "agent" && r.spec.get("account").and_then(Value::as_str).is_some_and(|p| !p.is_empty()) {
+            out.push(format!("an agent's formula can't name an account ({at}): its task uses its own"));
+        }
+    }
+    out
+}
+
+/// [`agent_formula_problems`] for an overlay as `runtime.create` takes it (`{ agents: [{ name, … }], connectors: … }`).
+#[must_use]
+pub fn agent_overlay_problems(overlay: &Value) -> Vec<String> {
+    let mut rs = Vec::new();
+    for (section, v) in overlay.as_object().into_iter().flatten() {
+        let kind = match section.as_str() {
+            "agents" => "agent",
+            "skills" => "skill",
+            "teams" => "team",
+            "goals" => "goal",
+            "harnesses" => "harness",
+            "projects" => "project",
+            "connectors" => "connector",
+            other => other.trim_end_matches('s'),
+        };
+        let items: Vec<(String, Value)> = match v {
+            Value::Array(a) => a.iter().map(|x| (x.get("name").and_then(Value::as_str).unwrap_or("?").to_owned(), x.clone())).collect(),
+            Value::Object(m) => m.iter().map(|(k, x)| (k.clone(), x.clone())).collect(),
+            other => vec![("?".to_owned(), other.clone())],
+        };
+        for (n, spec) in items {
+            rs.push(Resource::new(kind, n, spec));
+        }
+    }
+    agent_formula_problems(&rs)
+}
+
+#[cfg(test)]
+mod agent_formula_tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn an_agents_formula_declares_only_agents_skills_teams_and_goals_without_secrets() {
+        let ok = [Resource::new("agent", "x", json!({ "harness": "claude" })), Resource::new("skill", "s", json!({ "body": "b" }))];
+        assert_eq!(agent_formula_problems(&ok), Vec::<String>::new());
+        let bad = [
+            Resource::new("connector", "evil", json!({ "command": "touch" })),
+            Resource::new("agent", "x", json!({ "instructions": "use ${secret:TOKEN} now", "account": "work" })),
+            Resource::new("skill", "s", json!({ "path": "/etc/hosts" })),
+            Resource::new("harness", "claude", json!({ "path": "/bin/sh" })),
+        ];
+        let p = agent_formula_problems(&bad);
+        assert!(p[0].starts_with("an agent's formula can't declare connectors (connectors.evil)"), "{p:?}");
+        assert!(p.contains(&"an agent's formula can't use secrets (agents.x: ${secret:TOKEN})".to_owned()), "{p:?}");
+        assert!(p.iter().any(|l| l.starts_with("an agent's formula can't name an account")), "{p:?}");
+        assert!(p.iter().any(|l| l.starts_with("an agent's formula gives a skill its text")), "{p:?}");
+        assert!(p.iter().any(|l| l.starts_with("an agent's formula can't declare harnesses")), "{p:?}");
+        assert_eq!(agent_overlay_problems(&json!({ "connectors": [{ "name": "evil", "command": "x" }] })).len(), 1);
+    }
+}

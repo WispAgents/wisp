@@ -37,6 +37,21 @@ tasks:
 References set the order things are created in, and a cycle is refused. `wisp graph` prints them, and
 `wisp mv agent.reviewer agent.critic` renames one and rewrites every reference to it.
 
+A field that names another thing takes its bare name too (`agent: reviewer`, `goal: green-build`, `task: nightly`,
+`connectors: [linear]`), or the thing inline where the field allows it (`goal: { text: … }`). Either way the name is
+checked wherever a formula is read: `wisp validate`, `wisp apply`, a run with `--formula` and the app's Import all refuse
+one that names nothing, and say what there is:
+
+```text
+✗ tasks.nightly: no agent named reviwer: agents has reviewer (or claude, codex, auto)
+✗ crew.ada: team[].crew: a loop: crew.ada → crew.bo → crew.ada
+```
+
+An agent field also takes a harness (`codex`) or `auto`; a machine field a computer you added in the app, or `this`; a
+task's `project:` a project's name as well as a folder. A module's resources are referenced by their address:
+`${module.team.agent.reviewer}`. Every file reads the same way, a `.wisp/` folder, `wisp apply -f one.yml`, a
+`--formula` and a task file's formula alike: references, variables, locals, `count` and modules all work in each.
+
 ## Variables, locals, outputs, count
 
 ```yaml
@@ -90,5 +105,29 @@ app into the files.
 
 ## One-off overlays
 
-`wisp run --formula f.yml "task"` runs one task under a formula and leaves nothing behind: handy for trying a setup
-before you apply it.
+A formula can run one task without being applied: its agents, skills, connectors, teams, projects and goals are that
+task's alone, and nothing is left behind. Handy for trying a setup before you apply it.
+
+```sh
+wisp "review the diff" --formula f.yml        # a task under it (several: --formula f.yml,g.yml)
+wisp run --formula f.yml "review the diff"    # the same
+wisp run release --formula f.yml version=2.1  # the task f.yml declares as `release`, by its name
+```
+
+With no `--agent` and one agent declared, that agent runs it; `--agent` may name any agent the formula declares, and a
+goal it names by name is the formula's. `wisp run <name> --formula` runs a task the formula declares (with
+`tasks.default` under it and its `{params}` filled); any other words are the prompt.
+
+A **task file** (`wisp task export <id> > fix.task.yml`, run with `wisp run -f fix.task.yml`) can name its formula
+instead of carrying a copy of it: a file beside it, a module of its folder's `.wisp/`, or a list of them.
+
+<!-- example: unchecked -->
+```yaml
+wisp: 1
+task: { prompt: Fix the flaky test, agent: critic, goal: green-build }
+formula: [./wisp.yml, module.team]
+```
+
+The names in its task (agent, goal, connectors, crew, team, project) are read against those and against what this wisp
+has; one that names nothing is refused before anything runs. The same works from your harness (`wisp_launch`'s
+`formula`) and in the app (`+` → Formula or task file… in New task).

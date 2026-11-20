@@ -36,7 +36,15 @@ pub(super) fn reads(s: &mut Setup, slot: &Slot) {
         .await
         .map(|()| c::Ack {}));
     cmd!(s, slot, c::Settle, |r, call, a| r.settle(a.id.as_str(), a.quiet).await.map(|()| c::Ack {}));
-    cmd!(s, slot, c::Card, |r, call, a| r.card(a).await);
+    // an agent's card carries no plugin's fields (review r194 round 3 #4): the plugins write those
+    cmd!(s, slot, c::Card, |r, call, a| {
+        if call.caller().set.starts_with("agent:") && !a.ext.is_empty() {
+            return Err(wisp_kernel::WireError::forbidden(
+                "Refused: a task an agent starts can't set a task's ext. Say so in your report; the user can start it in wisp.",
+            ));
+        }
+        r.card(a).await
+    });
     cmd!(s, slot, c::Import, |r, call, a| r.import_v1(a.dir.map(Into::into)).await);
 }
 

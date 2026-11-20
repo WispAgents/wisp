@@ -122,19 +122,21 @@ async fn every_builtin_tool_reaches_a_registered_owner() {
     a.serve.stop();
 }
 
-/// An agent adds a project through its MCP tool (`runtime_projectAdd`, generated from the catalogue, ADR-0040) and gets
-/// the server's naming (ADR-0077): a second `wisp` folder is `wisp-2`, the same folder again is the one it is.
+/// The user's own harness (`wisp mcp`) adds a project through its MCP tool (`runtime_projectAdd`, generated from the
+/// catalogue, ADR-0040) and gets the server's naming (ADR-0077): a second `wisp` folder is `wisp-2`, the same folder again
+/// is the one it is. An agent inside a task has no such tool: the user's setup is the user's (ADR-0112).
 #[tokio::test(flavor = "multi_thread")]
-async fn an_agent_adds_a_project_through_its_mcp_tool_and_the_server_names_it() {
+async fn the_users_harness_adds_a_project_through_its_mcp_tool_and_the_server_names_it() {
     let a = Agent::start("mcp-project-add").await;
-    assert!(a.names(true).await.iter().any(|n| n == "runtime_projectAdd"), "the agent has the tool");
+    assert!(!a.names(true).await.iter().any(|n| n == "runtime_projectAdd"), "an agent in a task has no tool to add a project");
+    assert!(a.names(false).await.iter().any(|n| n == "runtime_projectAdd"), "the user's harness has it");
     let (one, two) = (a.dir.join("a/wisp"), a.dir.join("b/wisp"));
     // a project is a folder that's there (audit A F1)
     for d in [&one, &two] {
         std::fs::create_dir_all(d).unwrap();
     }
     for (p, want) in [(&one, "\"name\":\"wisp\""), (&two, "\"name\":\"wisp-2\""), (&one, "\"created\":false")] {
-        let (t, err) = a.call("runtime_projectAdd", json!({ "path": p })).await;
+        let (t, err) = a.user_call("runtime_projectAdd", json!({ "path": p })).await;
         assert!(!err && t.replace(' ', "").contains(want), "{}: {t}", p.display());
     }
     let names: Vec<String> = a
@@ -186,9 +188,12 @@ async fn wisp_crew_lists_the_crew_and_reads_one_member_in_full() {
 async fn wisp_crew_edit_changes_only_the_fields_given_and_remembers_lines() {
     let a = Agent::start("mcp-crew-edit").await;
     a.api.cmd("crew.create", json!({ "name": "Scout", "role": "CI watcher", "agent": "claude", "notebook": "main is green" })).await;
+    // an agent in a task doesn't change the user's crew (ADR-0112); the user's harness does
+    let (t, err) = a.call("wisp_crew_edit", json!({ "member": "Scout", "role": "Boss" })).await;
+    assert!(err && t.contains("can't change the crew: the user does"), "{t}");
     let (t, err) =
-        a.call("wisp_crew_edit", json!({ "member": "Scout", "role": "Release captain", "remember": ["ships on fridays"] })).await;
-    assert!(!err && t.starts_with("Updated Scout.") && t.contains("Release captain") && t.contains("Their notebook now has"), "{t}");
+        a.user_call("wisp_crew_edit", json!({ "member": "Scout", "role": "Release captain", "remember": ["ships on fridays"] })).await;
+    assert!(!err && t.starts_with("Updated.") && t.contains("Release captain"), "{t}");
     let m = a.api.cmd("crew.get", json!({ "id": "Scout" })).await;
     assert_eq!(m["notebook"], "main is green\n- ships on fridays");
     assert_eq!(m["agent"], "claude", "a field not given stays");
@@ -200,16 +205,24 @@ async fn wisp_crew_remove_removes_a_member() {
     let a = Agent::start("mcp-crew-remove").await;
     a.api.cmd("crew.create", json!({ "name": "Scout", "agent": "claude" })).await;
     let (t, err) = a.call("wisp_crew_remove", json!({ "member": "scout" })).await;
-    assert!(!err && t.starts_with("Removed Scout from the user's crew."), "{t}");
+    assert!(err && t.contains("can't change the crew: the user does"), "an agent in a task doesn't (ADR-0112): {t}");
+    let (t, err) = a.user_call("wisp_crew_remove", json!({ "member": "scout" })).await;
+    assert!(!err && t.starts_with("Removed Scout from the crew."), "{t}");
     assert_eq!(a.api.cmd("crew.list", json!({})).await, json!([]));
-    let (t, err) = a.call("wisp_crew_remove", json!({ "member": "scout" })).await;
-    assert!(err && t.contains("No one called"), "{t}");
+    let (t, err) = a.user_call("wisp_crew_remove", json!({ "member": "scout" })).await;
+    assert!(err && t.contains("No such crew member"), "{t}");
     a.serve.stop();
 }
 
-/// A remote connector the agent adds by its header's name (`linear`, `Authorization` unset): the same in each test.
-async fn add_linear(a: &Agent) -> (String, bool) {
-    a.call("wisp_connector_add", json!({ "name": "Linear", "url": "https://mcp.linear.app/mcp", "headers": ["Authorization"] })).await
+/// A remote connector the user's harness adds by its header's name (`linear`, `Authorization` unset): the same in each
+/// test. An agent in a task can't add one (ADR-0112).
+async fn add_linear(a: &Agent) -> Value {
+    a.api
+        .cmd(
+            "connectors.agent.add",
+            json!({ "sid": a.id, "name": "Linear", "url": "https://mcp.linear.app/mcp", "headers": ["Authorization"] }),
+        )
+        .await
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -229,27 +242,22 @@ async fn wisp_connectors_lists_the_users_connectors() {
     a.serve.stop();
 }
 
+/// An agent in a task never adds a connector (ADR-0112: a command it wrote would run for every task); the user does, by
+/// its header's name, the value typed on the card.
 #[tokio::test(flavor = "multi_thread")]
-async fn wisp_connector_add_adds_a_connector_by_key_names() {
+async fn wisp_connector_add_is_the_users_and_takes_key_names() {
     let a = Agent::start("mcp-connectors-add").await;
-    // a value would sit in the transcript: refused in v1's words, nothing added
-    let (t, err) = a
-        .call(
-            "wisp_connector_add",
-            json!({ "name": "linear", "url": "https://mcp.linear.app/mcp", "headers": { "Authorization": "Bearer x" } }),
+    let (t, err) = a.call("wisp_connector_add", json!({ "name": "Linear", "url": "https://mcp.linear.app/mcp" })).await;
+    assert!(err && t.contains("the user adds them"), "{t}");
+    let refused = a
+        .api
+        .try_cmd(
+            "connectors.agent.add",
+            json!({ "sid": a.id, "name": "linear", "url": "https://mcp.linear.app/mcp", "headers": { "Authorization": "Bearer x" } }),
         )
         .await;
-    assert!(err && t.contains("headers: give the names only, like [\"API_KEY\"]. The user types the values on the card"), "{t}");
-    let (t, err) = add_linear(&a).await;
-    assert!(!err, "{t}");
-    assert_eq!(
-        t,
-        "Added linear to the user's connectors (Settings → Connectors).\n\n\
-         - **linear** · remote: https://mcp.linear.app/mcp · needs Authorization from the user (wisp_connector_signin)\n\n\
-         Next: call wisp_connector_signin so the user can sign in or give the keys."
-    );
-    let (t, err) = add_linear(&a).await;
-    assert!(err && t.contains("There's a connector called linear already"), "a second one by the same name: {t}");
+    assert!(refused.to_string().contains("give the names only"), "a value would sit in a transcript: {refused}");
+    add_linear(&a).await;
     let v = a.api.cmd("connectors.list", json!({})).await;
     let c = &v["connectors"][0];
     assert_eq!(
@@ -631,5 +639,508 @@ async fn wisp_plugin_check_validates_a_plugin_without_installing_it() {
     assert!(!list.to_string().contains("user.my-plugins"), "checked, never installed: {list}");
     let (t, err) = a.call("wisp_plugin_check", json!({ "manifest": { "wispPlugin": 1, "id": "my-plugins", "version": "1.0.0", "api": "^1", "permissions": [], "contributes": manifest["contributes"] } })).await;
     assert!(!err && t.contains("problems to fix") && t.contains("isn't a plugin of yours") && t.contains("ui.js isn't given"), "{t}");
+    a.serve.stop();
+}
+
+/// Owner-list row 61 (ADR-0111): a task's own `wisp_launch` takes `formula` (a file in its folder): the new task runs
+/// under it, nothing applied, its agent and goal named from it; a name it doesn't declare is the agent's error, saying
+/// what there is.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_tasks_wisp_launch_runs_under_a_formula_and_refuses_a_name_it_lacks() {
+    let a = Agent::start("mcp-launch-formula").await;
+    let proj = a.dir.join("proj");
+    std::fs::write(
+        proj.join("team.wisp.yml"),
+        "wisp: 1\nagents:\n  critic: { harness: claude, model: opus }\ngoals:\n  green: { text: the tests pass }\n",
+    )
+    .unwrap();
+    let (said, err) = a
+        .call(
+            "wisp_launch",
+            json!({ "prompt": "check the tests", "formula": "team.wisp.yml", "agent": "critic", "goal": "green", "worktree": false }),
+        )
+        .await;
+    assert!(!err, "{said}");
+    let list = a.api.cmd("runtime.list", json!({})).await;
+    // the one task besides the asking one
+    let id = list
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter_map(|t| t["id"].as_str())
+        .find(|i| *i != a.id)
+        .unwrap_or_else(|| panic!("{said} {list}"))
+        .to_owned();
+    let t = a.api.cmd("runtime.get", json!({ "id": id })).await;
+    assert_eq!((t["ext"]["wisp.runtime"]["spec"]["agent"].as_str(), t["model"].as_str()), (Some("critic"), Some("opus")), "{t}");
+    assert_eq!(t["ext"]["wisp.runtime"]["spec"]["goal"]["text"], "the tests pass", "{t}");
+    let (said, err) = a.call("wisp_launch", json!({ "prompt": "x", "formula": ["team.wisp.yml"], "agent": "critc" })).await;
+    assert!(err, "{said}");
+    assert!(said.contains("no agent named critc: agents has critic (or "), "{said}");
+    a.serve.stop();
+}
+
+/// Review r194 #1: an agent's `wisp_launch` formula is read with the agent's own reach: only files inside its task's
+/// folder (no absolute path, no `..`, no link out, never a secrets file), and never `file()` or `${env:…}`. Each is
+/// refused with a plain reason, and no task is made.
+#[tokio::test(flavor = "multi_thread")]
+async fn an_agents_formula_reads_only_inside_its_own_folder() {
+    let a = Agent::start("mcp-formula-reach").await;
+    let proj = a.dir.join("proj");
+    let outside = a.dir.join("outside.wisp.yml");
+    std::fs::write(&outside, "wisp: 1\nagents:\n  critic: { harness: claude }\n").unwrap();
+    std::fs::write(a.dir.join("secret.txt"), "TOPSECRET").unwrap();
+    #[cfg(unix)]
+    std::os::unix::fs::symlink(&outside, proj.join("link.wisp.yml")).unwrap();
+    std::fs::write(proj.join("secrets.json"), "{\"wisp\": 1}").unwrap();
+    let launch = |formula: Value| json!({ "prompt": "x", "formula": formula, "worktree": false });
+    let refused = |said: &str, err: bool, why: &str| {
+        assert!(err, "{said}");
+        assert!(said.contains(why), "{why} in: {said}");
+        assert!(!said.contains("TOPSECRET"), "{said}");
+    };
+    let (s, e) = a.call("wisp_launch", launch(json!(outside.display().to_string()))).await;
+    refused(&s, e, "is read from inside its task's folder (no absolute paths, no ..)");
+    let (s, e) = a.call("wisp_launch", launch(json!("../outside.wisp.yml"))).await;
+    refused(&s, e, "is read from inside its task's folder (no absolute paths, no ..)");
+    #[cfg(unix)]
+    {
+        let (s, e) = a.call("wisp_launch", launch(json!("link.wisp.yml"))).await;
+        refused(&s, e, "leads out of the task's folder");
+    }
+    let (s, e) = a.call("wisp_launch", launch(json!("secrets.json"))).await;
+    refused(&s, e, "a secrets file isn't read for an agent's formula");
+    let file = format!("${{file(\"{}\")}}", a.dir.join("secret.txt").display());
+    let (s, e) = a.call("wisp_launch", launch(json!({ "agents": { "x": { "harness": "claude", "instructions": file } } }))).await;
+    refused(&s, e, "an agent's formula can't read files");
+    let (s, e) = a.call("wisp_launch", launch(json!({ "agents": { "x": { "harness": "claude", "instructions": "${env:HOME}" } } }))).await;
+    refused(&s, e, "an agent's formula can't read the environment");
+    let list = a.api.cmd("runtime.list", json!({})).await;
+    assert_eq!(list.as_array().unwrap().len(), 1, "no task was made: {list}");
+    a.serve.stop();
+}
+
+/// Review r194 #8: a child never gets more than its parent may. A plan-mode task's `wisp_launch` under a formula whose
+/// agent says `mode: auto` makes a plan task; asking for Full auto outright is refused.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_child_never_gets_a_higher_mode_than_its_parent() {
+    let a = Agent::start_spec("mcp-formula-mode", |_| Vec::new(), json!({ "mode": "plan" })).await;
+    std::fs::write(a.dir.join("proj/auto.wisp.yml"), "wisp: 1\nagents:\n  bold: { harness: claude, mode: auto }\n").unwrap();
+    let (said, err) = a.call("wisp_launch", json!({ "prompt": "go", "formula": "auto.wisp.yml", "worktree": false })).await;
+    assert!(!err, "{said}");
+    let list = a.api.cmd("runtime.list", json!({})).await;
+    let id = list
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter_map(|t| t["id"].as_str())
+        .find(|i| *i != a.id)
+        .unwrap_or_else(|| panic!("{list}"))
+        .to_owned();
+    let t = a.api.cmd("runtime.get", json!({ "id": id })).await;
+    assert_eq!(t["mode"], "plan", "the formula's auto, held to its parent's plan: {t}");
+    let (said, err) = a.call("wisp_launch", json!({ "prompt": "go", "mode": "auto", "worktree": false })).await;
+    assert!(err && said.contains("above this task's"), "{said}");
+    let (said, err) = a.call("wisp_launch", json!({ "prompt": "go", "worktree": false })).await;
+    assert!(!err, "{said}");
+    let list = a.api.cmd("runtime.list", json!({})).await;
+    for t in list.as_array().unwrap().iter().filter(|t| t["id"] != a.id.as_str()) {
+        let full = a.api.cmd("runtime.get", json!({ "id": t["id"] })).await;
+        assert_eq!(full["mode"], "plan", "every child of a plan task is plan: {full}");
+    }
+    a.serve.stop();
+}
+
+/// Review r194 round 2 #1, #3, #5: an agent's formula can't declare a connector (a command would run on the host), use a
+/// secret, carry a task's raw fields, or read through a link out of its folder; it names only connectors the user set
+/// up. Each refused with a plain reason, and no task is made.
+#[tokio::test(flavor = "multi_thread")]
+async fn an_agents_formula_runs_nothing_reads_no_secret_and_carries_no_task() {
+    let a = Agent::start("mcp-formula-rules").await;
+    let proj = a.dir.join("proj");
+    let launch = |formula: Value| json!({ "prompt": "x", "formula": formula, "worktree": false });
+    let refused = |said: &str, err: bool, why: &str| {
+        assert!(err, "{said}");
+        assert!(said.contains(why), "{why} in: {said}");
+    };
+    // before the fix this command ran on the host for the child
+    let marker = a.dir.join("pwned");
+    let cmd = json!({ "connectors": { "evil": { "command": "touch", "args": [marker.display().to_string()] } } });
+    let (s, e) = a.call("wisp_launch", launch(cmd)).await;
+    refused(&s, e, "an agent's formula can't declare connectors");
+    let sec = json!({ "agents": { "x": { "harness": "claude", "instructions": "${secret:GITHUB_TOKEN}" } } });
+    let (s, e) = a.call("wisp_launch", launch(sec)).await;
+    refused(&s, e, "an agent's formula can't use secrets");
+    let (s, e) = a
+        .call(
+            "wisp_launch",
+            json!({ "prompt": "x", "formula": { "agents": { "x": { "harness": "claude", "connectors": ["nosuch"] } } }, "agent": "x" }),
+        )
+        .await;
+    refused(&s, e, "no connector named nosuch");
+    let task = json!({ "task": { "prompt": "x", "crew": "ada", "confirmLimit": true, "account": "work" } });
+    let (s, e) = a.call("wisp_launch", launch(task)).await;
+    refused(&s, e, "an agent's formula can't carry a task");
+    // a module folder with a link out
+    std::fs::create_dir_all(proj.join("team")).unwrap();
+    std::fs::write(a.dir.join("away.wisp.yml"), "agents:\n  far: { harness: claude }\n").unwrap();
+    #[cfg(unix)]
+    {
+        std::os::unix::fs::symlink(a.dir.join("away.wisp.yml"), proj.join("team/far.wisp.yml")).unwrap();
+        std::fs::write(proj.join("mods.wisp.yml"), "wisp: 1\nmodules:\n  team: { source: ./team }\n").unwrap();
+        let (s, e) = a.call("wisp_launch", launch(json!("mods.wisp.yml"))).await;
+        refused(&s, e, "leads out of the task's folder");
+    }
+    let (s, e) = a.call("wisp_launch", launch(json!({ "harnesses": { "claude": { "from": "path", "path": "/bin/sh" } } }))).await;
+    refused(&s, e, "an agent's formula can't declare harnesses");
+    let (s, e) = a.call("wisp_launch", launch(json!({ "projects": { "p": { "path": "/", "setup": ["touch /tmp/x"] } } }))).await;
+    refused(&s, e, "an agent's formula can't declare projects");
+    let (s, e) = a.call("wisp_launch", launch(json!({ "skills": { "s": { "path": "/etc/hosts" } } }))).await;
+    refused(&s, e, "an agent's formula gives a skill its text, not a path");
+    assert!(!marker.exists(), "no connector command ran");
+    let list = a.api.cmd("runtime.list", json!({})).await;
+    assert_eq!(list.as_array().unwrap().len(), 1, "no task was made: {list}");
+    a.serve.stop();
+}
+
+/// The agent's own `runtime.create`, as its token sends it straight to `/api/cmd`.
+async fn raw_create(a: &Agent, args: Value) -> Value {
+    let r = a
+        .api
+        .http
+        .post(format!("http://127.0.0.1:{}/api/cmd", a.port))
+        .header("content-type", "application/json")
+        .header("idempotency-key", format!("raw-{}", rand_key()))
+        .header("x-wisp-token", &a.token)
+        .header("x-wisp-session", &a.id)
+        .body(json!({ "cmd": "runtime.create", "args": args }).to_string())
+        .send()
+        .await
+        .unwrap();
+    serde_json::from_slice(&r.bytes().await.unwrap()).unwrap_or(Value::Null)
+}
+
+fn rand_key() -> u128 {
+    std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos()
+}
+
+/// Review r194 round 2 #2: a task an agent starts never gets more than the agent's own task may, whichever way it's
+/// started: its token straight to `runtime.create`, field by field.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_child_started_by_an_agents_token_gets_nothing_its_parent_lacks() {
+    let a = Agent::start_spec("raw-create-parent", |_| Vec::new(), json!({ "mode": "plan" })).await;
+    let cwd = a.dir.join("proj").display().to_string();
+    let base = |more: Value| {
+        let mut b = json!({ "prompt": "x", "cwd": cwd, "worktree": false });
+        if let (Some(o), Some(m)) = (b.as_object_mut(), more.as_object()) {
+            o.extend(m.clone());
+        }
+        b
+    };
+    for (more, why) in [
+        (json!({ "mode": "auto" }), "above this task's"),
+        (json!({ "connectors": ["linear"] }), "a connector its own task doesn't have"),
+        (json!({ "crew": "ada" }), "a crew member its own task doesn't run for"),
+        (json!({ "account": "work" }), "an account its own task doesn't use"),
+        (json!({ "team": "core" }), "a team its own task doesn't have"),
+        (json!({ "confirmLimit": true }), "can't go past Ask near the limit"),
+        (json!({ "profile": { "harness": "claude", "mode": "auto" } }), "can't give a task it starts a profile"),
+        (json!({ "ext": { "wisp.budget": { "usd": 1000 } } }), "can't set a task's ext"),
+        (json!({ "formula": { "connectors": [{ "name": "evil", "command": "touch" }] } }), "an agent's formula can't declare connectors"),
+        (json!({ "worktreeKey": "someone-else" }), "can't pick another task's worktree"),
+        // refused by the kernel's agent scope already, in its own words
+        (json!({ "parentId": "01aaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" }), "speaks for its own task only"),
+    ] {
+        let r = raw_create(&a, base(more.clone())).await;
+        assert!(r["ok"] == false && r.to_string().contains(why), "{more} → {r}");
+    }
+    // nothing asked: held to the parent's plan, also when a formula's agent says auto
+    let r = raw_create(
+        &a,
+        base(json!({ "agent": "bold", "formula": { "agents": [{ "name": "bold", "harness": "claude", "mode": "auto" }] } })),
+    )
+    .await;
+    let id = r["result"]["id"].as_str().or_else(|| r["id"].as_str()).unwrap_or_else(|| panic!("{r}")).to_owned();
+    assert_eq!(a.api.cmd("runtime.get", json!({ "id": id })).await["mode"], "plan");
+    // a follow-up the agent sends (its token reaches its own task only) can't lift its own task's mode, or skip Ask near
+    // the limit
+    for (more, why) in
+        [(json!({ "mode": "auto" }), "above this task's"), (json!({ "confirmLimit": true }), "can't go past Ask near the limit")]
+    {
+        let mut args = json!({ "id": a.id, "text": "more", "queue": true });
+        if let (Some(o), Some(m)) = (args.as_object_mut(), more.as_object()) {
+            o.extend(m.clone());
+        }
+        let r = raw_cmd(&a, "runtime.followUp", args).await;
+        assert!(r["ok"] == false && r.to_string().contains(why), "{more} → {r}");
+    }
+    a.serve.stop();
+}
+
+async fn raw_cmd(a: &Agent, cmd: &str, args: Value) -> Value {
+    let r = a
+        .api
+        .http
+        .post(format!("http://127.0.0.1:{}/api/cmd", a.port))
+        .header("content-type", "application/json")
+        .header("idempotency-key", format!("raw-{}", rand_key()))
+        .header("x-wisp-token", &a.token)
+        .header("x-wisp-session", &a.id)
+        .body(json!({ "cmd": cmd, "args": args }).to_string())
+        .send()
+        .await
+        .unwrap();
+    serde_json::from_slice(&r.bytes().await.unwrap()).unwrap_or(Value::Null)
+}
+
+/// Review r194 round 2 #4: a parent's channel cap travels to the task it starts.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_capped_parents_cap_travels_to_its_child() {
+    let a = Agent::start_spec(
+        "cap-travels",
+        |_| Vec::new(),
+        json!({ "mode": "edits", "ext": { "wisp.runtime": { "capped": { "mode": "edits" } } } }),
+    )
+    .await;
+    let (said, err) = a.call("wisp_launch", json!({ "prompt": "go", "worktree": false })).await;
+    assert!(!err, "{said}");
+    let list = a.api.cmd("runtime.list", json!({})).await;
+    let id = list
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter_map(|t| t["id"].as_str())
+        .find(|i| *i != a.id)
+        .unwrap_or_else(|| panic!("{list}"))
+        .to_owned();
+    let t = a.api.cmd("runtime.get", json!({ "id": id })).await;
+    assert_eq!(t["ext"]["wisp.runtime"]["capped"], json!({ "mode": "edits" }), "{t}");
+    a.serve.stop();
+}
+
+/// The write commands an agent's own capability set (`agent:session`) may run, as the kernel decides it.
+async fn agent_writes(a: &Agent) -> Vec<String> {
+    let list = a.api.cmd("cli.catalogue", json!({})).await;
+    let agent = wisp_kernel::Caller::agent("s1", false);
+    let mut w: Vec<String> = list
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|c| c["readOnly"] != true && wisp_kernel::caps::allowed(&agent, c["permission"].as_str().unwrap_or("")))
+        .filter_map(|c| c["id"].as_str().map(str::to_owned))
+        .collect();
+    w.sort();
+    w
+}
+
+/// Review r194 round 3 #1: an agent never raises a task's mode (its own included); only the user does. A plan task's
+/// agent setting itself to Full auto is refused, so its children stay held too.
+#[tokio::test(flavor = "multi_thread")]
+async fn an_agent_never_raises_a_tasks_mode() {
+    let a = Agent::start_spec("raise-own-mode", |_| Vec::new(), json!({ "mode": "plan" })).await;
+    let r = raw_cmd(&a, "runtime.setMode", json!({ "id": a.id, "mode": "auto" })).await;
+    assert!(r["ok"] == false && r.to_string().contains("an agent can't raise a task's mode"), "{r}");
+    assert_eq!(a.api.cmd("runtime.get", json!({ "id": a.id })).await["mode"], "plan");
+    let cwd = a.dir.join("proj").display().to_string();
+    let r = raw_create(&a, json!({ "prompt": "x", "cwd": cwd, "mode": "auto", "worktree": false })).await;
+    assert!(r["ok"] == false && r.to_string().contains("above this task's"), "{r}");
+    // the user still raises it
+    a.api.cmd("runtime.setMode", json!({ "id": a.id, "mode": "auto" })).await;
+    assert_eq!(a.api.cmd("runtime.get", json!({ "id": a.id })).await["mode"], "auto");
+    a.serve.stop();
+}
+
+/// Review r194 round 3 #2: an agent never adds, changes, tests or enables a connector or MCP server (a command it wrote
+/// would run on the host for every task): from its token or its MCP tool, refused, nothing stored.
+#[tokio::test(flavor = "multi_thread")]
+async fn an_agent_never_adds_or_changes_a_connector() {
+    let a = Agent::start("agent-connector-add").await;
+    let evil = json!({ "name": "evil", "command": "sh", "args": ["-c", "id"] });
+    for (cmd, args) in [
+        ("connectors.add", evil.clone()),
+        ("connectors.update", json!({ "name": "evil", "command": "sh" })),
+        ("connectors.test", json!({ "name": "evil" })),
+        ("connectors.import", json!({ "text": "{}" })),
+        ("connectors.agent.add", evil.clone()),
+    ] {
+        let r = raw_cmd(&a, cmd, args).await;
+        assert!(r["ok"] == false && r["error"]["code"] == "forbidden", "{cmd} → {r}");
+    }
+    // its MCP tool only asks the user, who adds it or not: unanswered, nothing is added
+    let (said, err) = a.call("wisp_connector_add", evil).await;
+    assert!(err || said.contains("nothing was added"), "{said}");
+    let list = a.api.cmd("resources.export", json!({ "kinds": ["connector"] })).await;
+    assert!(!list.to_string().contains("evil"), "{list}");
+    a.serve.stop();
+}
+
+/// Review r194 round 3 #3: an agent writes its own work, never the user's setup. Every write its capability set allows,
+/// exactly; the user's profiles, crew, projects, connectors, machines, sign-ins, publishing and holds aren't among them.
+#[tokio::test(flavor = "multi_thread")]
+#[allow(clippy::too_many_lines)] // the exact list is the point
+async fn an_agents_capability_set_writes_only_its_own_work() {
+    let a = Agent::start("agent-writes").await;
+    let w = agent_writes(&a).await;
+    for setup in [
+        "runtime.profile.set",
+        "runtime.profile.remove",
+        "runtime.projectAdd",
+        "runtime.setExt",
+        "runtime.turn.setExt",
+        "runtime.approveBlocked",
+        "runtime.overage",
+        "runtime.signIn",
+        "runtime.import",
+        "runtime.adoptSession",
+        "runtime.trial",
+        "crew.create",
+        "crew.update",
+        "crew.remove",
+        "crew.import",
+        "crew.share",
+        "connectors.add",
+        "connectors.update",
+        "connectors.remove",
+        "connectors.test",
+        "machines.add",
+        "machines.remove",
+        "machines.letIn",
+        "sandbox.env",
+        "stuff.publish",
+        "stuff.allow",
+        "later.zone",
+    ] {
+        assert!(!w.contains(&setup.to_owned()), "an agent may still {setup}: {w:?}");
+    }
+    // every write an agent may run, exactly: a new one is a decision (ADR-0111's agent capability set)
+    let want: Vec<String> = [
+        "connectors.call",
+        "crew.agent.kit",
+        "crew.ask",
+        "crew.assign",
+        "crew.checkin",
+        "crew.export",
+        "crew.reply",
+        "crew.wake",
+        "crew.wakeMentions",
+        "git.checkout",
+        "git.clone",
+        "git.commit",
+        "git.restoreTurn",
+        "git.revert",
+        "git.stage",
+        "goal.check",
+        "goal.drop",
+        "goal.pause",
+        "goal.resume",
+        "goal.set",
+        "history.resumeRequest",
+        "later.add",
+        "later.agent.schedule",
+        "later.cancel",
+        "later.cancelPlan",
+        "later.done",
+        "later.edit",
+        "later.editPlan",
+        "later.park",
+        "later.plan",
+        "later.tick",
+        "machines.bring",
+        "machines.call",
+        "machines.carry",
+        "machines.dropCopies",
+        "machines.route",
+        "machines.send",
+        "machines.uncarry",
+        "mcp.rpc",
+        "runtime.agent.tag",
+        "runtime.agent.task",
+        "runtime.agent.watch",
+        "runtime.answer",
+        "runtime.appState",
+        "runtime.approval",
+        "runtime.archive",
+        "runtime.ask",
+        "runtime.btw",
+        "runtime.btw.drop",
+        "runtime.card",
+        "runtime.compact",
+        "runtime.create",
+        "runtime.delegate",
+        "runtime.delete",
+        "runtime.exec",
+        "runtime.followUp",
+        "runtime.forLater",
+        "runtime.fork",
+        "runtime.held",
+        "runtime.markRead",
+        "runtime.note",
+        "runtime.pin",
+        "runtime.probe",
+        "runtime.projectRun",
+        "runtime.projectTest",
+        "runtime.queue.cancel",
+        "runtime.queue.edit",
+        "runtime.queue.merge",
+        "runtime.queue.order",
+        "runtime.queue.sendNow",
+        "runtime.queue.text",
+        "runtime.quick",
+        "runtime.quickCancel",
+        "runtime.release",
+        "runtime.rename",
+        "runtime.rerun",
+        "runtime.restoreSession",
+        "runtime.reveal",
+        "runtime.setAgent",
+        "runtime.setLean",
+        "runtime.setMode",
+        "runtime.setState",
+        "runtime.settle",
+        "runtime.stop",
+        "runtime.terminal",
+        "runtime.unask",
+        "sandbox.bring",
+        "sandbox.drop",
+        "sandbox.launch",
+        "sandbox.own",
+        "sandbox.place",
+        "sandbox.seed",
+        "ship.agent.pr",
+        "stuff.addStarter",
+        "stuff.agent.save",
+        "stuff.launch",
+        "stuff.receive",
+        "stuff.remove",
+        "stuff.removeUpload",
+        "stuff.resetData",
+        "stuff.restore",
+        "stuff.reveal",
+        "stuff.save",
+        "stuff.stop",
+        "stuff.update",
+        "threads.fresh",
+        "threads.notesUpdate",
+    ]
+    .iter()
+    .map(|x| (*x).to_owned())
+    .collect();
+    assert_eq!(w, want, "the agent's writes changed: decide each one in ADR-0111");
+    let r = raw_cmd(&a, "runtime.profile.set", json!({ "name": "x", "harness": "codex", "mode": "auto" })).await;
+    assert!(r["ok"] == false && r["error"]["code"] == "forbidden", "{r}");
+    let r = raw_cmd(&a, "crew.create", json!({ "name": "Zed", "mode": "auto" })).await;
+    assert!(r["ok"] == false && r["error"]["code"] == "forbidden", "{r}");
+    a.serve.stop();
+}
+
+/// Review r194 round 3 #4: an agent's card carries no other plugin's ext.
+#[tokio::test(flavor = "multi_thread")]
+async fn an_agents_card_carries_no_ext() {
+    let a = Agent::start("agent-card").await;
+    let r = raw_cmd(&a, "runtime.card", json!({ "title": "t", "prompt": "p", "blocks": [], "ext": { "wisp.worktrees": { "path": "/" } } }))
+        .await;
+    assert!(r["ok"] == false && r.to_string().contains("can't set a task's ext"), "{r}");
+    let r = raw_cmd(&a, "runtime.card", json!({ "title": "t", "prompt": "p", "blocks": [] })).await;
+    assert_eq!(r["ok"], true, "{r}");
     a.serve.stop();
 }

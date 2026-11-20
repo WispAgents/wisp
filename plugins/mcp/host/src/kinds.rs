@@ -80,6 +80,16 @@ impl ResourceKind for ToolsKind {
     fn read<'a>(&'a self, call: &'a Call) -> BoxFuture<'a, Result<Vec<Resource>>> {
         self.inner.read(call)
     }
+    /// A `tools:` entry is named by the agent (or harness) it's for, or a mode: one naming no agent is refused (ADR-0111).
+    fn refers_to(&self) -> Vec<String> {
+        vec!["agent".to_owned()]
+    }
+    fn refs(&self, r: &Resource) -> Vec<wisp_resources_api::Ref> {
+        if ["plan", "edits", "auto"].contains(&r.name.as_str()) {
+            return Vec::new();
+        }
+        vec![wisp_resources_api::Ref { kind: "agent".into(), name: r.name.clone(), field: "its name".into() }]
+    }
     fn apply<'a>(&'a self, call: &'a Call, op: &'a Op) -> BoxFuture<'a, Result<()>> {
         Box::pin(async move {
             self.inner.apply(call, op).await?;

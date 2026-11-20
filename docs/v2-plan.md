@@ -160,6 +160,15 @@ turn. When a screen or feature contradicts one, that's a bug: fix it toward the 
   goals has a, b"); attach one by name with `wisp "…" --goal <name>` (`--goal-text` for words), `wisp goal set <task>
   <name>`, `wisp_launch`'s `goal`, and Goal… in New task and the reply box (the declared goals by name, then New
   goal…). ADR-0110.
+- **Run with a formula from anywhere; every field that names a thing is a reference** (owner, 2026-11-19: "Cover these
+  cases: I want `wisp "prompt" --formula`, and do the yml declare files use references?" and "Make sure everything can be
+  atomic and referenced"; owner-list row 61). Every kind is declared on its own with an address; every field that names
+  another (a task's agent, goal, connectors, crew, project; a trigger's task; a crew member's agent, machine and team; a
+  notification's channel; …) takes a bare name, `${kind.name}`, or inline where it allows, and `wisp validate`, apply and
+  every run under a formula refuse one that names nothing, saying what exists (delegation loops and self-using modules
+  too). A `-f`/`--formula` file reads like `.wisp/`. One task under a formula, nothing applied: `wisp "…" --formula`,
+  `wisp run <task> --formula`, a task file's `formula: ./wisp.yml` / `module.x`, `wisp_launch`'s `formula`, New task's
+  + → Formula or task file…, all through `resources.overlay`. Audit: docs/qa/refs-audit.md. ADR-0111.
 - **Submenus open on hover on desktop; drill-in stays on touch** (owner, 2026-11-17: "in desktop, I don't like that I need
   to click to go to a submenu, they should show up on hover"). With a hovering fine pointer in the browser, a submenu (the
   task row's View ›, Copy ›, Files ›) is a flyout beside its row, the standard cascading menu: it opens on hover after a

@@ -321,6 +321,28 @@ async fn defaults(a: &mut StartArgs, kinds: Option<&crate::kinds::Kinds>) {
     }
 }
 
+/// A task's folder given as a project's name (`project: web` in a declared task, `cwd: web`): that project's path, from
+/// the task's formula overlay or the stored projects (exact name, else any case). A path is left as it is; a bare name
+/// no project has is refused, naming the projects there are (ADR-0111: a field that names a thing takes its name).
+///
+/// # Errors
+/// A name no project has.
+pub async fn project_by_name(a: &mut StartArgs, kinds: Option<&crate::kinds::Kinds>) -> Result<()> {
+    let Some(name) = a.cwd.clone().filter(|c| wisp_resources_api::is_name(c) && wisp_runtime_api::paths::Folder::of(c).is_err()) else {
+        return Ok(());
+    };
+    let projects = specs_of(a, "projects", kinds.map(|k| &k.project)).await;
+    let hit = projects.iter().find(|(n, _)| *n == name).or_else(|| projects.iter().find(|(n, _)| n.eq_ignore_ascii_case(&name)));
+    if let Some(path) = hit.and_then(|(_, p)| p.get("path").and_then(Value::as_str)).filter(|p| !p.is_empty()) {
+        a.cwd = Some(path.to_owned());
+        return Ok(());
+    }
+    let mut have: Vec<&str> = projects.iter().map(|(n, _)| n.as_str()).collect();
+    have.sort_unstable();
+    let has = if have.is_empty() { "no projects are declared".to_owned() } else { format!("projects has {}", have.join(", ")) };
+    Err(WireError::invalid(format!("no project named {name}: {has}")))
+}
+
 /// Where a task runs, never the server's own folder (v1 `launch.js`): a folder that isn't there is refused,
 /// and a task with none gets an empty one of its own under `~/.wisp/scratch` (v1 `store.scratchDir`), named by its
 /// canonical path as every other task folder is: the home can be reached through a symlink (macOS' `/var` is
@@ -670,6 +692,28 @@ pub fn adopted(
 #[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
+
+    /// ADR-0111: a task's folder may be a project's name (a declared task's `project: web`): the formula's own or a
+    /// stored one, any case; a path stays; a name no project has is refused naming the ones there are.
+    #[tokio::test]
+    async fn a_projects_name_is_its_folder_and_an_unknown_one_says_which_there_are() {
+        let with = |cwd: &str| StartArgs {
+            cwd: Some(cwd.to_owned()),
+            formula: Some(json!({ "projects": [{ "name": "web", "path": "/work/web" }, { "name": "Api", "path": "/work/api" }] })),
+            ..StartArgs::default()
+        };
+        let mut a = with("web");
+        project_by_name(&mut a, None).await.unwrap();
+        assert_eq!(a.cwd.as_deref(), Some("/work/web"));
+        let mut a = with("api");
+        project_by_name(&mut a, None).await.unwrap();
+        assert_eq!(a.cwd.as_deref(), Some("/work/api"), "any case");
+        let mut a = with("/elsewhere");
+        project_by_name(&mut a, None).await.unwrap();
+        assert_eq!(a.cwd.as_deref(), Some("/elsewhere"), "a path stays");
+        let e = project_by_name(&mut with("nosuch"), None).await.unwrap_err();
+        assert_eq!(e.message, "no project named nosuch: projects has Api, web");
+    }
 
     /// A relative folder (`src`, `tests`: both in the crate's folder the test runs in) passed `metadata` against
     /// the server's own folder: refused like a missing one. An empty one still gets its own scratch folder.

@@ -3,7 +3,10 @@
 //! - `wisp task spec <id>`: what was asked (YAML; `--json`); `wisp task export <id> > x.task.yml`: the
 //!   spec to share (with the formula it ran under, nothing of its output); `wisp task formula <id>`: the
 //!   effective formula it ran with, as a formula you can diff or apply.
-//! - `wisp run -f x.task.yml`: a task from a spec file, on your code and accounts.
+//! - `wisp run -f x.task.yml`: a task from a spec file, on your code and accounts; its `formula:` inline, or files and
+//!   modules it names (`formula: ./wisp.yml`, `module.team`), its names resolved against them (ADR-0111).
+//! - `wisp run --formula f.yml "task"`, `wisp run <task> --formula f.yml`, `wisp "task" --formula f.yml`: one task under
+//!   a formula, nothing applied (`resources.overlay` resolves it the same for the CLI, MCP and New task).
 //! - `wisp rerun <id>`: the same ask from the same commit (`--from latest` for today's code), flags over
 //!   the spec (`--agent`, `--model`, `--effort`, `--mode`, `--steps N`); `--formula f.yml` resolves its
 //!   names in that formula instead (`--fill-from-snapshot` for the ones it doesn't have); several formulas
@@ -192,7 +195,95 @@ fn start_args(spec: &Value, o: &Opts, profile: Option<Value>, formula: Option<Va
     Value::Object(a)
 }
 
-/// `wisp run -f x.task.yml`.
+/// A task file's `formula:` read here (ADR-0111): files beside it (`./wisp.yml`, a list), a module of its folder's
+/// `.wisp/` (`module.team`, under the names it has inside it), or a formula inline (as `wisp task export` writes it).
+/// Each file is evaluated as `.wisp/` is. A file named twice, or the task file itself, is refused.
+fn task_formula(doc: &Value, file: &Path, o: &Opts, kinds: &[wisp_resources_api::KindInfo]) -> Result<Vec<wisp_resources_api::Resource>> {
+    use wisp_resources_core::overlay::{self as ov, FormulaRef};
+    let dir = file.parent().map_or_else(|| Path::new(".").to_path_buf(), Path::to_path_buf);
+    let mut out: Vec<wisp_resources_api::Resource> = Vec::new();
+    let mut add = |more: Vec<wisp_resources_api::Resource>| {
+        for r in more {
+            if let Some(had) = out.iter_mut().find(|x| x.kind == r.kind && x.name == r.name) {
+                had.spec = wisp_resources_core::plan::merge(&had.spec, &r.spec);
+            } else {
+                out.push(r);
+            }
+        }
+    };
+    let refs = ov::formula_refs(doc.get("formula")).map_err(|e| CliError::said(format!("{}: {e}", file.display())))?;
+    let files: Vec<String> =
+        refs.iter().filter_map(|r| if let FormulaRef::File(f) = r { Some(dir.join(f).display().to_string()) } else { None }).collect();
+    let lexical = |p: &str| -> String {
+        let mut out = std::path::PathBuf::new();
+        for c in Path::new(p).components() {
+            match c {
+                std::path::Component::CurDir => {}
+                std::path::Component::ParentDir => {
+                    out.pop();
+                }
+                other => out.push(other),
+            }
+        }
+        out.display().to_string()
+    };
+    let spelled: Vec<String> = files.iter().map(|f| lexical(f)).collect();
+    if let Some(e) = ov::looping_files(&lexical(&file.display().to_string()), &spelled) {
+        return Err(CliError::said(format!("{}: {e}", file.display())));
+    }
+    for r in refs {
+        match r {
+            FormulaRef::Inline(v) => add(ov::inline_resources(&v)),
+            FormulaRef::File(f) => add(crate::code::load_evaluated(&[dir.join(&f).display().to_string()], o, kinds, &dir)?.resources),
+            FormulaRef::Module(m) => {
+                let folder = dir.join(".wisp");
+                if !folder.is_dir() {
+                    return Err(CliError::said(format!("{}: formula: module.{m}: no .wisp/ folder in {}", file.display(), dir.display())));
+                }
+                let cfg = crate::folder::config(o, kinds, &folder)?;
+                let Some(rs) = ov::module_resources(&cfg, &m) else {
+                    let has: Vec<&str> = cfg.modules.iter().map(|(n, _)| n.as_str()).filter(|n| !n.contains('.')).collect();
+                    let has = if has.is_empty() { "it declares none".to_owned() } else { format!("it has {}", has.join(", ")) };
+                    return Err(CliError::said(format!("{}: formula: no module named {m} in {}: {has}", file.display(), folder.display())));
+                };
+                add(rs);
+            }
+        }
+    }
+    Ok(out)
+}
+
+/// `resources.overlay`'s answer for a task under `resources` (ADR-0111): the overlay, the task resolved (a declared
+/// goal inlined, one declared agent its own); a name that names nothing is said, with what there is, and nothing starts.
+pub async fn resolve(c: &Client, args: Value) -> Result<Value> {
+    let out = c.cmd("resources.overlay", args).await?;
+    let problems: Vec<&str> = out.get("problems").and_then(Value::as_array).into_iter().flatten().filter_map(Value::as_str).collect();
+    if !problems.is_empty() {
+        return Err(CliError::said(problems.join("\n  ✗ ")));
+    }
+    Ok(out)
+}
+
+/// `runtime.create`'s args from a resolved task: its formula overlay on it, the flags over it, `--steps N` cutting it.
+pub fn create_args(task: &Value, overlay: &Value, o: &Opts, cwd: &Path) -> Value {
+    let mut a = task.as_object().cloned().unwrap_or_default();
+    if a.get("cwd").and_then(Value::as_str).is_none_or(str::is_empty) {
+        a.insert("cwd".into(), json!(cwd.display().to_string()));
+    }
+    if overlay.as_object().is_some_and(|m| !m.is_empty()) {
+        a.insert("formula".into(), overlay.clone());
+    }
+    if let (Some(n), Some(Value::Array(steps))) = (o.steps, a.get_mut("steps")) {
+        steps.truncate(n.saturating_sub(1));
+    }
+    for (k, v) in &o.over {
+        a.insert(k.clone(), v.clone());
+    }
+    Value::Object(a)
+}
+
+/// `wisp run -f x.task.yml`. Its `formula:` may be inline (as `wisp task export` writes it) or name formula files and
+/// modules (ADR-0111); the names in its task are resolved against them and this wisp, an unknown one refused.
 pub async fn run_file(c: &Client, o: &Opts, cwd: &Path) -> Result<i32> {
     let f = o.files.first().ok_or_else(|| CliError::said("wisp run -f x.task.yml"))?;
     let (text, name) = formula::Source::load(&mut Files { cwd: cwd.to_owned() }, f, None).map_err(CliError::said)?;
@@ -208,78 +299,71 @@ pub async fn run_file(c: &Client, o: &Opts, cwd: &Path) -> Result<i32> {
             o.remove("base");
         }
     }
-    let agent = s(&spec, "agent").to_owned();
-    let profile =
-        doc.pointer("/formula/agents").and_then(Value::as_array).and_then(|a| a.iter().find(|x| s(x, "name") == agent)).map(|p| {
-            let mut p = p.clone();
-            if let Some(o) = p.as_object_mut() {
-                o.remove("name");
-            }
-            p
-        });
-    let made = c.cmd("runtime.create", start_args(&spec, o, profile, doc.get("formula").cloned())).await?;
+    let kinds = crate::code::formula_kinds(c).await?;
+    let resources = task_formula(&doc, Path::new(&name), o, &kinds)?;
+    let task = start_args(&spec, o, None, None);
+    let at = Path::new(&name).file_name().map_or_else(|| name.clone(), |n| n.to_string_lossy().into_owned());
+    let out = resolve(c, json!({ "resources": resources, "task": task, "name": at })).await?;
+    let made = c.cmd("runtime.create", create_args(&out["task"], &out["overlay"], o, cwd)).await?;
     say(&format!("  ◌ started {}  wisp attach {}", s(&made, "id"), s(&made, "id")));
     Ok(0)
 }
 
-/// The sections a task reads from its overlay (the rest is only meaningful applied).
-const OVERLAY: [(&str, &str); 6] = [
-    ("agent", "agents"),
-    ("project", "projects"),
-    ("harness", "harnesses"),
-    ("skill", "skills"),
-    ("team", "teams"),
-    ("connector", "connectors"),
-];
-
-/// `runtime.create`'s overlay from loaded resources: `{agents: [{name, …}], …}`, and what it leaves out.
-pub fn overlay_of(resources: &[wisp_resources_api::Resource]) -> (Value, Vec<String>) {
-    let mut out = Map::new();
-    let mut left = Vec::new();
-    for r in resources {
-        let Some((_, section)) = OVERLAY.iter().find(|(k, _)| *k == r.kind) else {
-            left.push(format!("{}/{}", r.kind, r.name));
-            continue;
-        };
-        let mut spec = r.spec.as_object().cloned().unwrap_or_default();
-        spec.insert("name".into(), json!(r.name));
-        if let Value::Array(list) = out.entry((*section).to_owned()).or_insert_with(|| json!([])) {
-            list.push(Value::Object(spec));
-        }
-    }
-    (Value::Object(out), left)
-}
-
-/// `wisp run --formula f.yml "task"`: one task under the formula as an overlay. Its agents, projects,
-/// harnesses, skills, teams and connectors are that task's alone: nothing is applied or kept (the task's
-/// snapshot records what it ran with). No `--agent` and one agent declared: that one.
+/// `wisp run --formula f.yml "task"` (a prompt), or `wisp run <task> --formula f.yml [k=v…] [words…]` (a task the formula
+/// declares, by its name: its spec with `tasks.default` under it, nothing applied, ADR-0111). Its agents, projects,
+/// harnesses, skills, teams and connectors are that task's alone (the task's snapshot records what it ran with); a goal
+/// it names from the formula is inlined. No `--agent` and one agent declared: that one.
 pub async fn run_overlay(c: &Client, o: &Opts, cwd: &Path) -> Result<i32> {
     let st = crate::cli::style();
     let kinds = crate::code::formula_kinds(c).await?;
-    let loaded = crate::code::load(&o.formulas, &o.profiles, &kinds, cwd)?;
-    let (overlay, left) = overlay_of(&loaded.resources);
-    let prompt = o.words.join(" ");
-    if prompt.trim().is_empty() {
-        return Err(CliError::said("wisp run --formula f.yml \"what to do\""));
-    }
-    let mut spec = json!({ "prompt": prompt, "cwd": cwd.display().to_string() });
-    let agents = overlay.get("agents").and_then(Value::as_array).cloned().unwrap_or_default();
-    if !o.over.contains_key("agent")
-        && let [one] = agents.as_slice()
-    {
-        spec["agent"] = one["name"].clone();
-    }
-    let made = c.cmd("runtime.create", start_args(&spec, o, None, Some(overlay))).await?;
+    let loaded = crate::code::load_evaluated(&o.formulas, o, &kinds, cwd)?;
+    let first = o.words.first().map_or("", String::as_str);
+    let declared = loaded.resources.iter().any(|r| r.kind == "task" && r.name == first && r.name != "default");
+    let args = if declared {
+        let (mut params, mut words) = (Map::new(), Vec::new());
+        for w in &o.words[1..] {
+            match w.split_once('=') {
+                Some((k, v)) if !k.is_empty() && k.chars().all(|c| c.is_alphanumeric() || c == '_' || c == '-') => {
+                    params.insert(k.to_owned(), json!(v));
+                }
+                _ => words.push(w.clone()),
+            }
+        }
+        json!({ "resources": loaded.resources, "run": first, "params": params, "words": words, "name": o.formulas.join(",") })
+    } else {
+        let prompt = o.words.join(" ");
+        if prompt.trim().is_empty() {
+            return Err(CliError::said("wisp run --formula f.yml \"what to do\" (or the name of a task it declares)"));
+        }
+        json!({ "resources": loaded.resources, "task": { "prompt": prompt }, "name": o.formulas.join(",") })
+    };
+    let out = resolve(c, args).await?;
+    let made = c.cmd("runtime.create", create_args(&out["task"], &out["overlay"], o, cwd)).await?;
+    let left: Vec<&str> = out.get("left").and_then(Value::as_array).into_iter().flatten().filter_map(Value::as_str).collect();
     if !left.is_empty() {
         say(&format!("  {}", paint(&st, DIM, &format!("not for one task (wisp apply -f to keep them): {}", left.join(", ")))));
     }
     let id = s(&made, "id").to_owned();
-    say(&format!("  {} started {id} under {}  wisp attach {id}", paint(&st, GREEN, "◌"), o.formulas.join(", ")));
+    let what = if declared { format!("{first} ") } else { String::new() };
+    say(&format!("  {} started {what}{id} under {}  wisp attach {id}", paint(&st, GREEN, "◌"), o.formulas.join(", ")));
     if o.wait {
         let t = crate::attach::until(c, &id, |s| !matches!(s.get("state").and_then(Value::as_str), Some("running") | None)).await?;
         say(&format!("  {}  {id}", s(&t, "state")));
     }
     Ok(0)
+}
+
+/// `--formula f.yml[,g.yml]` on a plain launch (`wisp "…" --formula f.yml`, `wisp mcp`'s `wisp_launch`): the same
+/// overlay `wisp run --formula` gives, nothing applied; `a` (its `runtime.create` args) resolved under it.
+pub async fn with_formula(c: &Client, a: &mut Value, formulas: &[String], o: &Opts, cwd: &Path) -> Result<()> {
+    if formulas.is_empty() {
+        return Ok(());
+    }
+    let kinds = crate::code::formula_kinds(c).await?;
+    let loaded = crate::code::load_evaluated(formulas, o, &kinds, cwd)?;
+    let out = resolve(c, json!({ "resources": loaded.resources, "task": a.clone(), "name": formulas.join(",") })).await?;
+    *a = create_args(&out["task"], &out["overlay"], &Opts::default(), cwd);
+    Ok(())
 }
 
 /// One rerun of `id`'s spec, under `formula` (a file) or as it ran (its snapshot).

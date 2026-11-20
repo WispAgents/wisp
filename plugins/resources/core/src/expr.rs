@@ -19,6 +19,26 @@ pub trait Scope {
     fn get(&self, path: &[Seg]) -> Result<Value, String>;
     /// `file(path)` and `env(name)`: the functions that read outside the expression.
     fn outside(&self, f: &str, arg: &str) -> Result<Value, String>;
+    /// Whether a `${…}` (its inside, `inner`) is one of the formula's expressions (review r194 #2, round 2 #6): one that
+    /// isn't (a shell's `${HOME}`, `${1}`, a prompt's `${project}`) is kept as written. Every one, by default.
+    fn is_expr(&self, _inner: &str) -> bool {
+        true
+    }
+}
+
+/// The functions an expression may call.
+pub const FUNCTIONS: [&str; 15] = [
+    "lower", "upper", "join", "split", "replace", "length", "contains", "keys", "values", "concat", "coalesce", "tostring", "file", "env",
+    "secret",
+];
+
+/// The first name in a `${…}`'s inside (`var` in `${!var.x}`) and what follows it (`.x`): what decides whether it's an
+/// expression.
+#[must_use]
+pub fn head_of(inner: &str) -> (&str, &str) {
+    let t = inner.trim_start_matches(|c: char| c.is_whitespace() || c == '!' || c == '(');
+    let end = t.find(|c: char| !(c.is_ascii_alphanumeric() || c == '_' || c == '-')).unwrap_or(t.len());
+    (&t[..end], &t[end..])
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -385,7 +405,8 @@ fn pieces(s: &str) -> Vec<(usize, usize, String)> {
 
 /// A string evaluated: exactly `${x}` is x's value (any type); otherwise each piece is put in as text.
 pub fn eval_str(s: &str, scope: &dyn Scope) -> Result<Value, String> {
-    let ps = pieces(s);
+    // only the formula's own: a `${HOME}` stays as written (and a `$${` in it as written too)
+    let ps: Vec<(usize, usize, String)> = pieces(s).into_iter().filter(|(_, _, inner)| scope.is_expr(inner)).collect();
     if ps.is_empty() {
         return Ok(Value::String(s.replace("$${", "${")));
     }

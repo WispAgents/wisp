@@ -27,6 +27,10 @@ pub(super) fn create_and_follow_up(s: &mut Setup, slot: &Slot, made_kinds: Arc<K
     s.command::<c::FollowUp, _, _>(move |_ctx, call, a| {
         let (slot, ctx) = (follow.clone(), c2.clone());
         async move {
+            // an agent's own follow-up never lifts its task's mode or skips Ask near the limit (review r194 round 2 #2)
+            if let Some(p) = agent_parent(&slot, &call).await? {
+                wisp_runtime_core::child::follow_up(a.mode, a.confirm_limit, &p).map_err(WireError::forbidden)?;
+            }
             let a = ctx.run_hook::<BeforeFollowUp>(&call, a).await?;
             let rt = rt(&slot)?;
             // a follow-up asking a capped task for more than its cap: refused, or lifted when it's the user
@@ -41,7 +45,43 @@ pub(super) fn create_and_follow_up(s: &mut Setup, slot: &Slot, made_kinds: Arc<K
     });
 }
 
-async fn create(ctx: &Ctx, call: &Call, slot: &Slot, kinds: &Kinds, a: StartArgs) -> WireResult<c::Created> {
+/// The asking agent's own task, when an agent's token starts this one (review r194 round 2 #2): what its child is held
+/// to. None: the user, a plugin, a channel (each has its own rules).
+async fn agent_parent(slot: &Slot, call: &Call) -> WireResult<Option<wisp_runtime_core::child::Parent>> {
+    let c = call.caller();
+    let Some(id) = c.session.as_deref().filter(|_| c.set.starts_with("agent:")) else { return Ok(None) };
+    let s = rt(slot)?.repo.session(id).await.map_err(WireError::from)?;
+    let spec = s.ext.get("wisp.runtime").and_then(|r| r.get("spec")).cloned().unwrap_or_default();
+    let text = |k: &str| spec.get(k).and_then(serde_json::Value::as_str).unwrap_or_default().to_owned();
+    Ok(Some(wisp_runtime_core::child::Parent {
+        id: s.id.0.clone(),
+        mode: s.mode,
+        cap: crate::capped::cap_of(&s),
+        crew: text("crew"),
+        account: s.account.clone().unwrap_or_default(),
+        connectors: spec
+            .get("connectors")
+            .and_then(serde_json::Value::as_array)
+            .map(|l| l.iter().filter_map(|x| x.as_str().map(str::to_owned)).collect())
+            .unwrap_or_default(),
+        team: text("team"),
+    }))
+}
+
+async fn create(ctx: &Ctx, call: &Call, slot: &Slot, kinds: &Kinds, mut a: StartArgs) -> WireResult<c::Created> {
+    // a task an agent starts gets nothing its own task may not have: held here, whichever way it was asked for
+    let parent = agent_parent(slot, call).await?;
+    if let Some(p) = &parent {
+        wisp_runtime_core::child::hold(&mut a, p).map_err(WireError::forbidden)?;
+        if let Some(f) = &a.formula {
+            let why = wisp_resources_api::agent_overlay_problems(f);
+            if !why.is_empty() {
+                return Err(WireError::forbidden(why.join("; ")));
+            }
+        }
+    }
+    // a project by name (a declared task's `project: web`) is its folder before anything reads the folder
+    crate::specs::project_by_name(&mut a, Some(kinds)).await?;
     let mut a = ctx.run_hook::<BeforeCreate>(call, a).await?;
     if let Some(rest) = crate::term::slash(&a.prompt) {
         a.prompt = rest;
@@ -83,6 +123,10 @@ async fn create(ctx: &Ctx, call: &Call, slot: &Slot, kinds: &Kinds, a: StartArgs
     let p = crate::specs::prepare(&store, &proc, home.as_deref(), Some(kinds), a).await?;
     let rt = rt(slot)?;
     let mut args = p.args;
+    // the mode its profile or the user's default gave it, held to the parent's
+    if let Some(parent) = &parent {
+        args.mode = Some(wisp_runtime_core::child::held_mode(args.mode, parent));
+    }
     if own_tree(&rt, &args, asked_tree).await {
         args.worktree = Some(true);
     }

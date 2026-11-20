@@ -12,9 +12,14 @@ use crate::runtime::Runtime;
 
 /// Profiles, specs and snapshots (ADR-0027, ADR-0029), and the `agent` resource kind.
 pub(super) fn specs(s: &mut Setup, slot: &Slot) {
-    use wisp_resources_api::{CrudKind, KindInfo, RESOURCE_KIND, ResourceKind, schema_of};
+    use wisp_resources_api::{CrudKind, KindInfo, Names, RESOURCE_KIND, ResourceKind, schema_of};
     use wisp_runtime_api::spec::AgentSpec;
-    let info = KindInfo::new("agent", "agents", "wisp.runtime", schema_of::<AgentSpec>()).order(20);
+    // what an agent names, checked wherever a formula is read (ADR-0111)
+    let info = KindInfo::new("agent", "agents", "wisp.runtime", schema_of::<AgentSpec>())
+        .order(20)
+        .names(Names::new("connectors[]", "connector"))
+        .names(Names::new("skills[]", "skill"))
+        .names(Names::new("account", "account"));
     let kind: Arc<dyn ResourceKind> = Arc::new(
         CrudKind::new::<AgentSpec>(
             info,
@@ -25,7 +30,9 @@ pub(super) fn specs(s: &mut Setup, slot: &Slot) {
             "runtime.profile.remove",
         )
         .keyed("name", "name", "name")
-        .renames("runtime.profile.rename"),
+        .renames("runtime.profile.rename")
+        // an agent field names a declared agent, a harness (`codex`) or `auto` (the router picks)
+        .also_named("runtime.agents", "id", &["auto"]),
     );
     s.contribute(&RESOURCE_KIND, kind);
     s.command::<c::Profiles, _, _>(|ctx, _, _| async move { crate::specs::profiles(&*ctx.service::<Store>()?).await });

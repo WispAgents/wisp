@@ -77,7 +77,10 @@ impl ResourceKind for CapabilityKind {
 
 pub fn register(s: &mut Setup) {
     let inner = Arc::new(StoredKind::new(
-        KindInfo::new("capability", "capabilities", "wisp.resources", schema_of::<CapabilitySpec>()).order(4).sensitive(),
+        KindInfo::new("capability", "capabilities", "wisp.resources", schema_of::<CapabilitySpec>())
+            .order(4)
+            .sensitive()
+            .names(wisp_resources_api::Names::new("channels[]", "channel")),
         s.ctx(),
     ));
     let k: Arc<dyn ResourceKind> = Arc::new(CapabilityKind(inner.clone()));

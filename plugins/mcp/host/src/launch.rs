@@ -49,6 +49,43 @@ fn trees_on(ctx: &Ctx) -> bool {
     !ctx.setting("worktrees.worktree").is_some_and(|v| v == "off" || v == false)
 }
 
+/// `formula` (ADR-0111): files in the asking task's own folder (one, a comma list or a list), or a formula inline; the
+/// body resolved under it by `resources.overlay`, as `wisp "…" --formula` is, with the agent's own reach (review r194
+/// #1: inside its task's folder only, no `file()`, no environment). A name that names nothing is the agent's error,
+/// saying what there is.
+async fn under_formula(ctx: &Ctx, call: &Call, body: Value, f: &Value, cwd: Option<&str>) -> Result<Value, String> {
+    let mut args =
+        wisp_resources_api::OverlayArgs { cwd: cwd.unwrap_or_default().to_owned(), task: Some(body.clone()), ..Default::default() };
+    match f {
+        Value::Object(inline) => {
+            let mut doc = inline.clone();
+            doc.insert("wisp".into(), json!(1));
+            args.text = Value::Object(doc).to_string();
+            args.name = "formula.json".into();
+        }
+        Value::String(list) => args.files = list.split(',').map(str::trim).filter(|x| !x.is_empty()).map(str::to_owned).collect(),
+        Value::Array(list) => args.files = list.iter().filter_map(Value::as_str).map(str::to_owned).collect(),
+        other => return Err(format!("formula: {other} isn't a formula: a file, a list of files, or one inline")),
+    }
+    let out = ctx.run::<wisp_resources_api::Overlay>(call, args).await.map_err(|e| e.message)?;
+    if !out.problems.is_empty() {
+        return Err(out.problems.join("; "));
+    }
+    // only what the formula names for it (its agent, its goal written in): never the overlay's raw task fields (review r194
+    // round 2 #3)
+    let mut b = body;
+    let task = out.task.unwrap_or_default();
+    for k in ["agent", "goal"] {
+        if let Some(v) = task.get(k).filter(|v| !v.is_null()) {
+            b[k] = v.clone();
+        }
+    }
+    if out.overlay.as_object().is_some_and(|m| !m.is_empty()) {
+        b["formula"] = out.overlay;
+    }
+    Ok(b)
+}
+
 /// The new task, made: here, or on the machine `a` names. Its `runtime.create` answer.
 ///
 /// # Errors
@@ -61,12 +98,23 @@ pub(crate) async fn launch(ctx: &Ctx, call: &Call, session: &str, a: &Map<String
         Some(c) => trees_on(ctx) && in_git(c).await,
         None => false,
     };
-    let body = launch::start_body(a, cwd.as_deref(), tree_on);
+    let mut body = launch::start_body(a, cwd.as_deref(), tree_on);
+    if let Some(f) = a.get("formula").filter(|f| !f.is_null()) {
+        body = under_formula(ctx, call, body, f, cwd.as_deref()).await?;
+    }
+    // the parent check is runtime.create's own (one place, review r194 round 2 #2)
     let Some(m) = a.get("machine").and_then(Value::as_str).map(str::trim).filter(|m| !m.is_empty() && *m != "here") else {
         let args = serde_json::from_value::<rt::StartArgs>(body).map_err(|e| format!("runtime.create: {e}"))?;
         let made = ctx.run::<rt::Create>(call, args).await.map_err(|e| e.message)?;
         return serde_json::to_value(made).map_err(|e| e.to_string());
     };
+    // another machine: its runtime.create doesn't see this agent, so a task held below Full auto (its own mode, or a
+    // channel's cap) starts none there (review r194 round 2 #2)
+    let parent = ctx.run::<rt::Get>(&ctx.root_call(), rt::IdArgs { id: session.into() }).await.ok();
+    let held = call.caller().set.starts_with("agent:capped") || parent.is_some_and(|p| p.mode != wisp_runtime_api::model::Mode::Auto);
+    if held {
+        return Err("Refused: a task an agent starts can't run on another machine while its own task is held below Full auto. Say so in your report; the user can start it there in wisp.".into());
+    }
     let list = ctx.run::<wisp_machines_api::List>(call, wisp_machines_api::NoArgs {}).await.map_err(|e| e.message)?;
     let list = serde_json::to_value(list).unwrap_or_default();
     let pid = wisp_mcp_core::generated::find_peer(&list, m).ok_or_else(|| format!("No machine “{m}”. wisp_available lists them."))?;

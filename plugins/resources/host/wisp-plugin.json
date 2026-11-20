@@ -15,7 +15,8 @@
     }
   },
   "permissions": [
-    "kernel:caps"
+    "kernel:caps",
+    "runtime:get"
   ],
   "requires": {},
   "contributes": {
@@ -42,6 +43,11 @@
       {
         "id": "resources.read",
         "title": "Read a pasted formula: the resources it declares and the secrets it needs",
+        "readOnly": true
+      },
+      {
+        "id": "resources.overlay",
+        "title": "A formula as one task's overlay (nothing applied), and a task resolved under it with every name it gives checked",
         "readOnly": true
       },
       {

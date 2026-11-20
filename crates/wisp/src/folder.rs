@@ -131,6 +131,12 @@ struct DirEnv {
     dir: PathBuf,
 }
 
+/// What a formula's evaluation reads from outside (`file()`, `env()`, a module's files) for a formula in `dir`: a
+/// `-f` file's or `--formula`'s folder evaluates as `.wisp/` does (ADR-0111).
+pub fn env_at(dir: &Path) -> impl Env {
+    DirEnv { dir: dir.to_owned() }
+}
+
 impl Env for DirEnv {
     fn outside(&self, f: &str, arg: &str) -> std::result::Result<Value, String> {
         match f {

@@ -135,6 +135,23 @@ impl ResourceKind for SettingKind {
         }
     }
 
+    /// The settings whose value names another kind's (ADR-0111): a channel's default project, the team new tasks start
+    /// with. One naming nothing is refused, saying what there is.
+    fn refers_to(&self) -> Vec<String> {
+        vec!["project".to_owned(), "agent".to_owned()]
+    }
+    fn refs(&self, r: &Resource) -> Vec<wisp_resources_api::Ref> {
+        let n = match wisp_settings_api::key_of(&r.name) {
+            "channels.project" => wisp_resources_api::Names::new("", "project"),
+            "runtime.subagents" => wisp_resources_api::Names::new("[].agent", "agent"),
+            _ => return Vec::new(),
+        };
+        wisp_resources_api::names_in(&r.spec, &n)
+            .into_iter()
+            .map(|name| wisp_resources_api::Ref { kind: n.kind.clone(), name, field: r.name.clone() })
+            .collect()
+    }
+
     fn check(&self, r: &Resource) -> Vec<String> {
         let key = wisp_settings_api::key_of(&r.name);
         let Some(s) = self.ctx.settings_list().unwrap_or_default().into_iter().find(|s| s.key == key) else {

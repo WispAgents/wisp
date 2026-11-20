@@ -330,8 +330,15 @@ impl Plugin for AutomationsPlugin {
         crate::plan::on_started(s, &engine);
         let started = engine.clone();
         // a scheduled task acts without you: a foreign formula's needs --trust (ADR-0028)
-        let info =
-            KindInfo::new("task", "tasks", wisp_automations_api::PLUGIN_ID, schema_of::<TaskDecl>()).order(80).sensitive().alias("recipes");
+        // what a task names (ADR-0111; its goal is `refs`, which reads the goal's name or object)
+        let info = KindInfo::new("task", "tasks", wisp_automations_api::PLUGIN_ID, schema_of::<TaskDecl>())
+            .order(80)
+            .sensitive()
+            .alias("recipes")
+            .names(wisp_resources_api::Names::new("agent", "agent"))
+            .names(wisp_resources_api::Names::new("connectors[]", "connector"))
+            .names(wisp_resources_api::Names::new("crew", "crew"))
+            .names(wisp_resources_api::Names::new("project", "project"));
         let kind: Arc<dyn ResourceKind> = Arc::new(TaskKind(
             CrudKind::new::<TaskDecl>(
                 info,

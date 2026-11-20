@@ -107,15 +107,17 @@ async fn a_relative_path_is_refused_and_so_is_a_caller_without_the_permission() 
 }
 
 /// A task a channel started below Full auto (`agent:capped`) doesn't change the user's projects, and is told so in
-/// the capped wording; a task's agent at Full auto (`agent:session`) adds one (its MCP tool, ADR-0040).
+/// the capped wording; no task's agent does (ADR-0112: the user's setup is the user's), only the user.
 #[tokio::test(flavor = "multi_thread")]
-async fn a_capped_task_is_refused_and_an_uncapped_agent_adds() {
+async fn no_tasks_agent_adds_a_project_and_a_capped_one_hears_the_capped_words() {
     let k = kernel().await;
     let e = k.k.call(Caller::agent("t1", true), "runtime.projectAdd", json!({ "path": made("/tmp/cap/web") })).await.unwrap_err();
     assert_eq!(e.code, Code::Forbidden, "{}", e.message);
     assert!(e.message.contains("add a folder to the user’s projects"), "{}", e.message);
     assert_eq!(projects(&k).await, Vec::<(String, String)>::new());
-    let ok = k.k.call(Caller::agent("t1", false), "runtime.projectAdd", json!({ "path": "/tmp/cap/web" })).await.unwrap();
+    let e = k.k.call(Caller::agent("t1", false), "runtime.projectAdd", json!({ "path": "/tmp/cap/web" })).await.unwrap_err();
+    assert!(e.code == Code::Forbidden && e.message.contains("it can't add a project: the user does"), "{}", e.message);
+    let ok = k.k.call(Caller::user(), "runtime.projectAdd", json!({ "path": "/tmp/cap/web" })).await.unwrap();
     assert_eq!(ok["name"], "web");
 }
 

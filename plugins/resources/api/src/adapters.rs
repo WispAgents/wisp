@@ -78,6 +78,9 @@ pub struct CrudKind {
     keep_false: Vec<String>,
     /// the command that renames in place (`{from, to}`); None: the trait's make-then-remove
     pub rename_cmd: Option<&'static str>,
+    /// [`ResourceKind::also_named`]: the command listing them and each row's field, then fixed words
+    also: Option<(&'static str, &'static str)>,
+    also_words: Vec<String>,
 }
 
 impl CrudKind {
@@ -106,7 +109,17 @@ impl CrudKind {
             defaults: serde_json::to_value(S::default()).unwrap_or(Value::Null),
             fields,
             rename_cmd: None,
+            also: None,
+            also_words: Vec::new(),
         }
+    }
+    /// What a reference to this kind may name besides its resources ([`ResourceKind::also_named`]): each row's `key` of
+    /// what `cmd` lists (`runtime.agents`' `id`: the harnesses), then `words` (`auto`). Additive (2026-11-20, ADR-0111).
+    #[must_use]
+    pub fn also_named(mut self, cmd: &'static str, key: &'static str, words: &[&str]) -> Self {
+        self.also = Some((cmd, key));
+        self.also_words = words.iter().map(|w| (*w).to_owned()).collect();
+        self
     }
     /// Renames go through `cmd` (`{from, to}`, one write in the owner), not make-then-remove.
     #[must_use]
@@ -137,6 +150,18 @@ impl std::fmt::Debug for CrudKind {
 impl ResourceKind for CrudKind {
     fn info(&self) -> KindInfo {
         self.info.clone()
+    }
+    fn also_named<'a>(&'a self, _call: &'a Call) -> BoxFuture<'a, Vec<String>> {
+        Box::pin(async move {
+            let mut out = Vec::new();
+            if let Some((cmd, key)) = self.also {
+                // the owner's own list (the harnesses), whoever plans: a caller who can't list them still names one
+                let rows = self.ctx.run_json(&self.ctx.root_call(), cmd, json!({})).await.unwrap_or_default();
+                out.extend(rows.as_array().into_iter().flatten().filter_map(|r| r.get(key)?.as_str().map(str::to_owned)));
+            }
+            out.extend(self.also_words.iter().cloned());
+            out
+        })
     }
     fn rename<'a>(&'a self, call: &'a Call, from: &'a str, to: &'a str) -> BoxFuture<'a, Result<()>> {
         Box::pin(async move {

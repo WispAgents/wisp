@@ -12,7 +12,18 @@ pub struct CrewKind(CrudKind);
 
 impl CrewKind {
     pub fn new(ctx: Ctx) -> Self {
-        let info = KindInfo::new("crew", "crew", wisp_crew_api::PLUGIN_ID, schema_of::<CrewSpec>()).order(60);
+        use wisp_resources_api::Names;
+        // what a member names (ADR-0111); a delegation that comes back round is refused
+        let info = KindInfo::new("crew", "crew", wisp_crew_api::PLUGIN_ID, schema_of::<CrewSpec>())
+            .order(60)
+            .names(Names::new("agent", "agent"))
+            .names(Names::new("machine", "machine"))
+            .names(Names::new("team[].crew", "crew").acyclic())
+            .names(Names::new("wakes[].task", "task"))
+            .names(Names::new("wakes[].workflow", "workflow"))
+            .names(Names::new("wakes[].crew", "crew"))
+            .names(Names::new("wakes[].agent", "agent"))
+            .names(Names::new("wakes[].project", "project"));
         Self(CrudKind::new::<CrewSpec>(info, ctx, "crew.list", "crew.create", "crew.update", "crew.remove"))
     }
 }

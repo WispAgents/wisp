@@ -139,8 +139,11 @@ fn data() -> Option<&'static Data> {
 
 fn with(mut s: CapabilitySet, deny: impl IntoIterator<Item = (String, String)>) -> CapabilitySet {
     for (p, why) in deny {
-        s.deny.push(p.clone());
-        s.why.insert(p, why);
+        // the first reason for a permission stands (a capped task's v1 words over agent:session's own)
+        if !s.deny.contains(&p) {
+            s.deny.push(p.clone());
+        }
+        s.why.entry(p).or_insert(why);
     }
     s
 }

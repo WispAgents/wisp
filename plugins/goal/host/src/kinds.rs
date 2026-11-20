@@ -117,7 +117,10 @@ impl ResourceKind for GoalKind {
 }
 
 pub fn register(s: &mut Setup) -> (Defaults, Named) {
-    let inner = Arc::new(StoredKind::new(KindInfo::new("goal", "goals", "wisp.goal", schema_of::<GoalSpec>()).order(35), s.ctx()));
+    let info = KindInfo::new("goal", "goals", "wisp.goal", schema_of::<GoalSpec>())
+        .order(35)
+        .names(wisp_resources_api::Names::new("judges[]", "agent"));
+    let inner = Arc::new(StoredKind::new(info, s.ctx()));
     let d: Defaults = Arc::default();
     let named: Named = Arc::default();
     let k: Arc<dyn ResourceKind> = Arc::new(GoalKind { inner: inner.clone(), d: d.clone(), named: named.clone() });

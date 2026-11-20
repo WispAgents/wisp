@@ -362,7 +362,14 @@ async fn mentions(ctx: &Ctx, call: &Call, ev: &TriggerEvent) {
 
 pub fn register(s: &mut Setup, engine: &Shared) {
     let inner = Arc::new(StoredKind::new(
-        KindInfo::new("trigger", "triggers", "wisp.automations", schema_of::<TriggerSpec>()).order(85).sensitive(),
+        KindInfo::new("trigger", "triggers", "wisp.automations", schema_of::<TriggerSpec>())
+            .order(85)
+            .sensitive()
+            .names(wisp_resources_api::Names::new("task", "task"))
+            .names(wisp_resources_api::Names::new("workflow", "workflow"))
+            .names(wisp_resources_api::Names::new("crew", "crew"))
+            // its `project` is checked by the trigger's own apply, in its own words (audit A #14)
+            .names(wisp_resources_api::Names::new("agent", "agent")),
         s.ctx(),
     ));
     let k: Arc<dyn ResourceKind> = Arc::new(TriggerKind { inner: inner.clone(), engine: engine.clone(), ctx: s.ctx() });

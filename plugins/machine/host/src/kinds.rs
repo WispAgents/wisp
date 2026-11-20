@@ -92,6 +92,16 @@ impl ResourceKind for MachineKind {
     fn read<'a>(&'a self, call: &'a Call) -> BoxFuture<'a, Result<Vec<Resource>>> {
         self.0.read(call)
     }
+    /// A machine field (a crew member's `machine`, a workflow step's `on`) names a declared machine, a peer added in
+    /// the app, or this computer (ADR-0111).
+    fn also_named<'a>(&'a self, _call: &'a Call) -> BoxFuture<'a, Vec<String>> {
+        Box::pin(async move {
+            let ctx = &self.0.ctx;
+            let mut out: Vec<String> = calls::peers(ctx, &ctx.root_call()).await.unwrap_or_default().into_iter().map(|p| p.name).collect();
+            out.extend(["this".to_owned(), "here".to_owned()]);
+            out
+        })
+    }
     fn describe(&self, op: &Op) -> Option<String> {
         let t = op.spec.get("transport").and_then(Value::as_str).unwrap_or_default();
         (op.op != OpKind::Delete && !matches!(t, "" | "this" | "local"))

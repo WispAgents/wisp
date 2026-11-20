@@ -308,8 +308,13 @@ impl ResourceKind for PipelineKind {
 }
 
 pub fn register_pipeline(s: &mut Setup, auto: AutoSettings) {
-    let inner =
-        Arc::new(StoredKind::new(KindInfo::new("pipeline", "pipelines", "wisp.router", schema_of::<PipelineSpec>()).order(32), s.ctx()));
+    let inner = Arc::new(StoredKind::new(
+        KindInfo::new("pipeline", "pipelines", "wisp.router", schema_of::<PipelineSpec>())
+            .order(32)
+            .names(wisp_resources_api::Names::new("judge", "agent"))
+            .names(wisp_resources_api::Names::new("review", "agent")),
+        s.ctx(),
+    ));
     let cache: Cache = Arc::default();
     let k: Arc<dyn ResourceKind> = Arc::new(PipelineKind { inner: inner.clone(), cache: cache.clone() });
     s.contribute(&RESOURCE_KIND, k);

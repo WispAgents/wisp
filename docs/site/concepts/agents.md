@@ -28,6 +28,10 @@ skills and MCP servers, and standing instructions.
 agents:
   reviewer: { harness: codex, effort: high, mode: plan, instructions: "Review for correctness first." }
   builder: { harness: claude, model: opus, skills: [testing], connectors: [linear] }
+skills:
+  testing: { description: How this repo tests, body: "Run the tests before you say it's done." }
+connectors:
+  linear: { url: "https://mcp.linear.app/sse", oauth: true }
 ```
 
 A task, a crew member, a team seat or a goal judge names a profile (`agent: reviewer`) or a harness directly.

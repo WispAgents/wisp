@@ -17,6 +17,7 @@
     "machines:*",
     "plugins:*",
     "resources:read",
+    "resources:overlay",
     "runtime:*",
     "ship:*",
     "stuff:*",

@@ -52,6 +52,7 @@ import { MODE_ICON, agentName, modeMenu, whenAt, whenMenu, type Mode, type When 
 import { newRecipeIntent } from './recipe-new.ts';
 import { foldTail } from './phone-bar.ts';
 import { plusTool } from './composer-plus.ts';
+import type { FormulaPick } from './formula-pick.ts';
 import { TEAMS_SETTING, presetsOf, teamFromSetting, teamSize, teamToSend, type Delegate } from './team.ts';
 import type { DelegatePlace } from './DelegatePanel.tsx';
 
@@ -278,6 +279,8 @@ export function HomeView(props: { readonly onBack?: () => void }): JSX.Element {
   const att = useAttachments(shell, () => home);
   const files = att.files;
   const [picking, setPicking] = createSignal(false);
+  // `+` → Formula or task file…: what the picked file adds to the task, until its chip's ✕ (./formula-pick.ts)
+  const [formula, setFormula] = createSignal<FormulaPick>();
   const [where, setWhere] = createSignal<string | undefined>(undefined); // a project id, 'none', or the first project
   const [tipAt, setTipAt] = createSignal(0);
   // what Auto would run for the prompt (v1 auto-preview.js): asked after a pause in typing, the newest answer wins;
@@ -576,6 +579,7 @@ export function HomeView(props: { readonly onBack?: () => void }): JSX.Element {
           ...((a) => (agent() !== 'auto' && a ? { account: a.id } : {}))(account()),
           ...(team().length > 0 && { team: teamToSend(team()) }),
           ...(yes && { confirmLimit: true }),
+          ...formula()?.args,
         })
         .catch((err: unknown) => (setText(prompt), goalBack(), heldBack(err)));
       // the other runs after the lead, so the lead is run A (Compare orders runs by when they started)
@@ -860,6 +864,13 @@ export function HomeView(props: { readonly onBack?: () => void }): JSX.Element {
           !goalOn() && { id: 'goal', part: 'launcher.goal', icon: 'target', label: t('shell.home.goalRow'), act: goalRowAct() },
           team().length === 0 && !delegateOpen() && { id: 'team', part: 'launcher.team', icon: 'agent', label: t('shell.home.delegateRow'), act: { onClick: () => setDelegateOpen(true) } },
           canCompare() && { id: 'compare', part: 'launcher.compare', icon: 'split', label: t('shell.home.compareRow'), act: compareAct },
+          {
+            id: 'formula',
+            part: 'launcher.formula',
+            icon: 'file',
+            label: t('shell.home.formulaRow'),
+            act: { onClick: () => void import('./formula-pick.ts').then((m) => m.pickFormula(shell, target(), project()?.path, setFormula, (v) => text().trim() === '' && setText(v))) },
+          },
         ],
         [!when() && { id: 'later', part: 'launcher.later', icon: 'clock', label: t('shell.home.later'), act: laterTool().act }],
       ],
@@ -930,6 +941,10 @@ export function HomeView(props: { readonly onBack?: () => void }): JSX.Element {
             },
           ]
         : []),
+      ...((f) =>
+        f
+          ? [tool('formula', 'launcher.formula', 'file', t('shell.home.formulaChip', { name: f.name }), f.name, { text: true, on: true, clear: { label: t('shell.home.formulaOff'), act: { onClick: () => setFormula(undefined) } } })]
+          : [])(formula()),
       ...(when()
         ? [
             tool('later', 'launcher.later', 'clock', t('shell.when.chip', { when: startsAt(whenAt(when() ?? 'hour', now()), now()) }), whenTip(whenAt(when() ?? 'hour', now()), now()), {

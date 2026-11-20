@@ -61,8 +61,16 @@ export interface CreateArgs {
   readonly cwd?: string;
   readonly projectId?: string;
   readonly color?: string;
-  /** what done means, or a goal declared by name (`{ name }`, ADR-0110: wisp.goal fills it in or refuses it) */
-  readonly goal?: string | { readonly name: string };
+  /** what done means, or a goal declared by name (`{ name }`, ADR-0110: wisp.goal fills it in or refuses it), or one a
+   *  picked formula declared, written in (`{ text, judges? … }`, ADR-0111) */
+  readonly goal?: string | { readonly name: string } | { readonly text: string; readonly [k: string]: unknown };
+  /** a formula it runs under, nothing applied (`resources.overlay`'s overlay: New task's Formula or task file…, ADR-0111) */
+  readonly formula?: unknown;
+  /** a task file's own fields (ADR-0111): the connectors and crew member it names, its Notes, its title */
+  readonly connectors?: readonly string[];
+  readonly crew?: string;
+  readonly notes?: unknown;
+  readonly title?: string;
   /** files that go with the prompt (uploaded first: stuff's /uploads) */
   readonly attachments?: readonly Attachment[];
   /** the delegates it starts with (runtime's StartArgs.team) */

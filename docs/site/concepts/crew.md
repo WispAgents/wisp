@@ -24,6 +24,8 @@ own; `sandbox: own` gives the member one of its own. `parallel` says how many of
 `paused` stops check-ins and jobs until you resume it.
 
 ```yaml
+agents:
+  reviewer: { harness: codex, effort: high, mode: plan }
 crew:
   ada:
     role: reviewer

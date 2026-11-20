@@ -42,13 +42,20 @@ pub fn register(s: &mut Setup) -> std::sync::Arc<Kinds> {
         project: project_kind(s, owner),
         harness: harness::harness_kind(s),
         skill: stored::<SkillSpec>(s, |sc| KindInfo::new("skill", "skills", owner, sc).order(15)),
-        team: stored::<TeamSpec>(s, |sc| KindInfo::new("team", "teams", owner, sc).order(25)),
+        team: stored::<TeamSpec>(s, |sc| {
+            KindInfo::new("team", "teams", owner, sc)
+                .order(25)
+                .names(wisp_resources_api::Names::new("lead", "agent"))
+                .names(wisp_resources_api::Names::new("members.*.agent", "agent"))
+        }),
     })
 }
 
 /// The project kind: published on `config`, its path canonical, one per folder, and only at a folder that's there.
 fn project_kind(s: &mut Setup, owner: &'static str) -> std::sync::Arc<StoredKind> {
-    let info = KindInfo::new("project", "projects", owner, wisp_resources_api::schema_of::<ProjectSpec>()).order(10);
+    let info = KindInfo::new("project", "projects", owner, wisp_resources_api::schema_of::<ProjectSpec>())
+        .order(10)
+        .names(wisp_resources_api::Names::new("agent", "agent"));
     let k = std::sync::Arc::new(
         StoredKind::new(info, s.ctx())
             .published("project")

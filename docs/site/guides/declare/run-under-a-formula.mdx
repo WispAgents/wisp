@@ -1,0 +1,86 @@
+---
+title: Run a task under a formula, and reference everything by name
+description: Try a setup on one task without applying it, run a task a formula declares by its name, and keep task files that point at your formula instead of copying it.
+sidebar:
+  order: 3
+---
+
+import { Tabs, TabItem } from '@astrojs/starlight/components';
+
+A formula declares things once, each with a name: agents, skills, connectors, goals, tasks. Everything else names
+them. You can run one task under a formula without applying it (nothing is left behind), and every name a task gives
+is checked first, with what there is when it names nothing.
+
+```yaml
+# review.wisp.yml
+wisp: 1
+variables:
+  model: { type: string, default: opus }
+agents:
+  critic: { harness: claude, model: "${var.model}", instructions: Be strict about tests }
+goals:
+  green: { text: npm test passes }
+tasks:
+  release: { prompt: "Release {version}: changelog, bump, tag", agent: "${agent.critic}", goal: green }
+```
+
+`agent: "${agent.critic}"` and `agent: critic` are the same: a field that names a thing takes its name or a reference,
+and an agent field also takes a harness (`codex`) or `auto`.
+
+## Try a setup on one task
+
+<Tabs syncKey="way">
+<TabItem label="Desktop app">
+In **New task**, press **+** → **Formula or task file…** and pick `review.wisp.yml`. It shows as a **Formula:** chip
+by the prompt; the task you send runs under it (its agents, skills, connectors and goals are that task's), and **✕**
+on the chip takes it off. Pick a task file instead and its prompt, agent and goal fill New task. A name the file gives
+that names nothing is said in a toast, with what there is, and nothing is attached.
+</TabItem>
+<TabItem label="Phone app">
+The phone's New task doesn't pick files. Apply the formula from a computer (CLI tab), then pick its agent and goal by
+name on the phone: **Goal…** lists the declared goals.
+</TabItem>
+<TabItem label="TUI">
+The TUI's New task doesn't pick a formula yet: start it from a terminal (CLI tab) and it shows in the TUI's list like
+any task.
+</TabItem>
+<TabItem label="CLI">
+```sh
+wisp "review the diff" --formula review.wisp.yml          # its one agent runs it
+wisp "review the diff" --formula review.wisp.yml,team.yml --agent critic
+wisp run release --formula review.wisp.yml version=2.1    # the task it declares, by its name
+```
+From your harness, `wisp_launch` takes the same: `{ "prompt": "…", "formula": "review.wisp.yml" }`.
+</TabItem>
+</Tabs>
+
+## Task files that point at your formula
+
+`wisp task export <id> > fix.task.yml` writes what a task was asked. Instead of the copy of the setup it carries,
+point it at your formula: a file beside it, a module of the folder's `.wisp/`, or a list of them.
+
+```yml
+wisp: 1
+task: { prompt: Fix the flaky login test, agent: critic, goal: green }
+formula: [./review.wisp.yml, module.team]
+```
+
+```sh
+wisp run -f fix.task.yml
+```
+
+Its agent, goal, connectors, crew member, team and project are read against those files and what this wisp has. One
+that names nothing stops it before anything runs:
+
+```text
+✗ fix.task.yml: no agent named critc: agents has critic (or claude, codex, auto)
+```
+
+A file named twice, or the task file itself, is refused too.
+
+## Checked before anything runs
+
+`wisp validate` (and `wisp apply`, Setup → Import, a grid deploy) checks every name in every kind: a trigger's
+`task:`, a crew member's `agent:` and who they delegate to, a notification's channel, a connector's agents, a setting
+such as `channels.project`. A loop of delegations (`ada` → `bo` → `ada`) is refused, and so is taking away something
+another thing still names. The [formulas page](../../../concepts/formulas/) has the details.

@@ -48,7 +48,13 @@ pub struct Loaded {
     pub secrets: Vec<String>,
     /// every section it names, an empty one too (`triggers: []`), as kinds: what `--prune` may empty
     pub kinds: Vec<String>,
+    /// each file's `variables`, `locals`, `outputs` and `modules` (file, those sections), for
+    /// [`crate::module::evaluate`]: a single formula file evaluates `${…}` as a folder does. Additive (2026-11-20).
+    pub meta: Vec<(String, Map<String, Value>)>,
 }
+
+/// The sections a folder's evaluation reads, not a kind's ([`Loaded::meta`]).
+pub const EVALUATED: [&str; 4] = ["variables", "locals", "outputs", "modules"];
 
 /// The documents in `text`.
 pub fn documents(text: &str, format: Format) -> Result<Vec<Value>, String> {
@@ -136,7 +142,7 @@ pub fn secrets_in(v: &Value, out: &mut BTreeSet<String>) {
 }
 
 /// The keys of a formula document that aren't sections.
-const META: [&str; 3] = ["wisp", "include", "profiles"];
+const META: [&str; 9] = ["wisp", "include", "profiles", "variables", "locals", "outputs", "modules", "workspace", "history"];
 
 /// A section's items as (name, spec).
 fn items(kind: &KindInfo, v: &Value, at: &str) -> Result<Vec<(String, Value)>, String> {
@@ -205,6 +211,10 @@ impl Reader<'_> {
             self.file(&inc, Some(file))?;
         }
         let profiles = m.remove("profiles");
+        let meta: Map<String, Value> = EVALUATED.iter().filter_map(|k| m.get(*k).map(|v| ((*k).to_owned(), v.clone()))).collect();
+        if !meta.is_empty() {
+            self.out.meta.push((file.to_owned(), meta));
+        }
         self.sections(&m, at)?;
         if let Some(Value::Object(p)) = profiles {
             for want in self.profiles {

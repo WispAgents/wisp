@@ -50,7 +50,9 @@ pub const HELP: &str = "usage:
   wisp diff|validate -f F       what apply would change; schema and checks   (wisp schema: the editor schema)
   wisp export [kinds…]          what's set up here, as a formula   (--include ui,account  --format yaml|json|toml)
   wisp task spec|export|formula|history <id>   what was asked, to share, the setup it ran with, its family
-  wisp run -f x.task.yml        a shared task spec, on your code   (wisp run <workflow|task> [k=v]: by name, --wait)
+  wisp run -f x.task.yml        a shared task spec, on your code; its formula: ./wisp.yml, module.x or inline
+                                (wisp run <workflow|task> [k=v]: by name, --wait)
+  wisp run <task> --formula F   a task a formula declares, by its name, nothing applied (--formula F \"…\": a prompt)
   wisp rerun <id>               the same ask from the same commit   (--from latest  --formula f.yml[,g.yml]
                                 --fill-from-snapshot  --steps N  --agent …  --last N --project P  --wait)
   wisp ls --agent|--crew|--workflow|--formula f.yml|--since 7d   tasks by what made them
@@ -90,6 +92,7 @@ launch options: --mode plan|edits|auto  --agent claude|codex|opencode|cursor|ant
                 that changed (repeatable or comma separated); Compare says what differed
                 --goal NAME  keep going until a goal declared by name (goals: in a formula) is met
                 --goal-text \"…\"  the same with what done means in words
+                --formula f.yml[,g.yml]  run under these formulas, nothing applied (its agents, skills, connectors…)
                 --yes  go ahead although it takes a usage window past your Ask near the limit line
 options:        --port N  --browser  --no-open  --json  --version";
 
@@ -162,6 +165,8 @@ pub struct Flags {
     pub goal: Option<String>,
     /// `--goal-text "…"`: what done means, in words (as `/goal …` in the prompt)
     pub goal_text: Option<String>,
+    /// `--formula f.yml[,g.yml]`: the launch runs under these formulas, nothing applied (ADR-0111)
+    pub formula: Vec<String>,
     pub draft: bool,
     pub days: Option<u32>,
     /// `--on <machine>`: the command runs on that peer (ADR-0041)
@@ -212,6 +217,7 @@ impl Flags {
             tries: Vec::new(),
             goal: None,
             goal_text: None,
+            formula: Vec::new(),
             draft: false,
             days: None,
             on: None,
@@ -398,6 +404,7 @@ fn set(f: &mut Flags, a: &str, value: &mut dyn FnMut() -> Result<String, UsageEr
         "--try" => f.tries.push(value()?),
         "--goal" => f.goal = Some(value()?),
         "--goal-text" => f.goal_text = Some(value()?),
+        "--formula" => f.formula.extend(value()?.split(',').map(str::trim).filter(|s| !s.is_empty()).map(str::to_owned)),
         "--draft" => f.draft = true,
         "--on" => f.on = Some(value()?),
         "--all" => f.all = true,

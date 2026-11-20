@@ -137,7 +137,12 @@ pub fn register(s: &mut Setup, after: &OnChange) -> Arc<Kinds> {
         ctx.clone(),
     ));
     let notifications = Arc::new(StoredKind::new(
-        KindInfo::new("notification", "notifications", "wisp.channels", schema_of::<NotificationSpec>()).order(45),
+        KindInfo::new("notification", "notifications", "wisp.channels", schema_of::<NotificationSpec>())
+            .order(45)
+            // `to` is a channel (a webhook URL isn't a name); `on` holds events and triggers' names
+            .names(wisp_resources_api::Names::new("to", "channel"))
+            .names(wisp_resources_api::Names::new("projects[]", "project"))
+            .names(wisp_resources_api::Names::new("on[]", "trigger").skip(&["finished", "asks", "failed", "limit", "drain"])),
         ctx,
     ));
     for inner in [channels.clone(), notifications.clone()] {

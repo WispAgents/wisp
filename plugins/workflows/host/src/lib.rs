@@ -304,7 +304,15 @@ impl Plugin for WorkflowsPlugin {
     }
 
     fn setup(&self, s: &mut Setup) -> Result<()> {
-        let info = KindInfo::new("workflow", "workflows", PLUGIN_ID, schema_of::<WorkflowSpec>()).order(90);
+        use wisp_resources_api::Names;
+        // what a workflow and its steps name (ADR-0111)
+        let info = KindInfo::new("workflow", "workflows", PLUGIN_ID, schema_of::<WorkflowSpec>())
+            .order(90)
+            .names(Names::new("project", "project"))
+            .names(Names::new("on.trigger", "trigger"))
+            .names(Names::new("tasks.*.agent", "agent"))
+            .names(Names::new("tasks.*.on", "machine"))
+            .names(Names::new("tasks.*.project", "project"));
         let kind: Arc<dyn ResourceKind> = Arc::new(WorkflowKind(
             CrudKind::new::<WorkflowSpec>(info, s.ctx(), "workflows.list", "workflows.set", "workflows.set", "workflows.remove")
                 .keyed("name", "name", "name"),
