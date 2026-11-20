@@ -53,7 +53,9 @@ async fn run(argv: &[String], cwd: &str) -> Option<String> {
     out.status.success().then(|| String::from_utf8_lossy(&out.stdout).into_owned()).filter(|s| !s.trim().is_empty())
 }
 
-/// This process's ancestors' pids, nearest first (the shell, past the npm launcher's node): at most 4.
+/// This process's ancestors' pids, nearest first (the shell, past the npm launcher's node): at most 4. Off Unix there
+/// are none to read, so nothing is awaited there.
+#[cfg_attr(not(unix), allow(clippy::unused_async))]
 async fn ancestors() -> Vec<u32> {
     #[cfg(unix)]
     {
