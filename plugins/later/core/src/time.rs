@@ -98,7 +98,8 @@ fn round(f: f64) -> i64 {
 #[allow(clippy::cast_precision_loss)] // ms since the epoch are exact in an f64 until the year 287396
 pub fn when_of(w: &When, now: i64, max: i64, tz: i32) -> Result<i64> {
     let at = match w.at.as_ref() {
-        Some(Value::String(s)) if !s.trim().is_empty() => parse_iso(s, tz).map(|t| t as f64),
+        // ms since the epoch typed as text (`--at 1795206364108`) is that time too
+        Some(Value::String(s)) if !s.trim().is_empty() => parse_iso(s, tz).map(|t| t as f64).or_else(|| s.trim().parse::<f64>().ok()),
         None | Some(Value::Null | Value::String(_)) => {
             w.in_min.as_ref().filter(|v| !v.is_null()).and_then(number).map(|m| now as f64 + m * 60_000.0)
         }

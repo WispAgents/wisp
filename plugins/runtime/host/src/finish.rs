@@ -292,6 +292,15 @@ impl Runtime {
             if next.is_some() && self.persist(&mut s, Vec::new()).await.is_err() {
                 return;
             }
+            // the next run is a queued follow-up's own: a later follow-up waits behind it (audit I3)
+            {
+                let mut fq = self.from_queue.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+                if next.is_some() {
+                    fq.insert(sid.to_owned());
+                } else {
+                    fq.remove(sid);
+                }
+            }
             // claimed under the task's lock, before its start is spawned: a delete (it takes the lock) either came
             // first (no row: nothing starts) or finds this claim and waits for it; claimed in the spawned task, a
             // delete in between waited on nothing and the start's `folder_ready` could bring a worktree back for it
@@ -321,6 +330,7 @@ impl Runtime {
         self.host.spawn(Box::pin(async move {
             let (claim, _starting) = claim;
             if let Err(err) = rt.start_claimed(s, n, claim).await {
+                rt.from_queue.lock().unwrap_or_else(std::sync::PoisonError::into_inner).remove(&sid);
                 tracing::warn!(task = %sid, %err, "the next queued follow-up did not start");
             }
         }));

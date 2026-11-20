@@ -618,7 +618,7 @@ mod names_tests {
 
 /// `resources.overlay` (ADR-0111): a formula as one task's overlay, nothing applied, and a task resolved under it with
 /// every name it gives checked: the same answer for `wisp run --formula`, `wisp "…" --formula`, a task file
-/// (`formula: ./wisp.yml`, `module.team`), `wisp_launch`'s `formula` and New task's Formula…. Give the formula as
+/// (`formula: ./wisp.yml`, `module.team`), your harness's launch tool and New task's Formula…. Give the formula as
 /// `resources` already read (the CLI reads files, URLs and gists itself), `text` (a formula or a task file: New task's
 /// picked file), or `files` on this computer (relative to `cwd`). Additive (2026-11-20).
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, ts_rs::TS)]

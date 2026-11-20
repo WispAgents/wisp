@@ -83,6 +83,20 @@ fn front(items: &[QueueItem]) -> usize {
     items.iter().position(|q| !q.now).unwrap_or(items.len())
 }
 
+/// The run as a follow-up sees it. `from_queue`: the running turn is a queued follow-up's own (the queue started it when
+/// the turn before ended). Audit I3: 25 quick `wisp reply`s each answered "queued", yet each one that came once a
+/// queued follow-up's turn had its conversation interrupted that turn (stopped after ~50 ms) and jumped ahead of the
+/// ones still waiting (I, 1, 9, 15, 21, 2, 3 …). A queued follow-up's turn is never cut short by a later one: the later
+/// one waits behind it, in the order sent. A turn you started (the task's first, or a follow-up sent while it was idle)
+/// still takes an interrupting follow-up (v1); Send now still interrupts whatever runs.
+#[must_use]
+pub fn run_for_follow_up(run: Run, from_queue: bool) -> Run {
+    match run {
+        Run::Running { resumable: true } if from_queue => Run::Running { resumable: false },
+        other => other,
+    }
+}
+
 /// A follow-up arrives (v1 `reply`). `asking`: the task has an open ask; `last_held`: its last turn is
 /// held. Edits the queue and says what to do.
 pub fn follow_up(q: &mut Queue<'_>, run: Run, asking: bool, last_held: bool, inc: Incoming) -> Decision {
@@ -118,13 +132,26 @@ pub fn follow_up(q: &mut Queue<'_>, run: Run, asking: bool, last_held: bool, inc
             q.items.push(item);
             mk(Plan::Queued { ahead: q.items.len() - 1 }, true, release_linger)
         }
+        // its CLI is on its way out: it goes next, as an interrupting one would (in the order sent, audit I3)
+        Run::Lingering if !queue => {
+            let at = front(q.items);
+            q.items.insert(at, QueueItem { now: true, ..item });
+            mk(Plan::Queued { ahead: at }, release_held, true)
+        }
         Run::Lingering => {
             q.items.push(item);
             mk(Plan::Queued { ahead: q.items.len() - 1 }, release_held, true)
         }
-        Run::Running { resumable } if queue || !resumable => {
+        Run::Running { .. } if queue => {
             q.items.push(item);
             mk(Plan::Queued { ahead: q.items.len() - 1 }, release_held, false)
+        }
+        // it would interrupt, but can't yet (no conversation to resume, or a follow-up's own turn runs): it waits as an
+        // interrupting one, so one sent after it never goes ahead of it (audit I3: I, 1, 9, 15 … ran out of order)
+        Run::Running { resumable: false } => {
+            let at = front(q.items);
+            q.items.insert(at, QueueItem { now: true, ..item });
+            mk(Plan::Queued { ahead: at }, release_held, false)
         }
         Run::Running { .. } => {
             let at = front(q.items);

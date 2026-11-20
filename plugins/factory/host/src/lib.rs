@@ -21,7 +21,7 @@ use wisp_kernel::{BoxFuture, Call, Failure, InterceptOpts, Manifest, Plugin, Res
 use wisp_resources_api::{CrudKind, KindInfo, RESOURCE_KIND, Resource, ResourceKind, schema_of};
 use wisp_runtime_api::commands::StartArgs;
 use wisp_runtime_api::events::{SessionCreated, SessionDeleted, TurnEnded};
-use wisp_runtime_api::hooks::{BeforeCreate, BeforeRun};
+use wisp_runtime_api::hooks::{BeforeCreate, BeforeFollowUp, BeforeRun};
 use wisp_store::{Col, EntityDef, Migration, Query, Row, Store};
 
 pub use wisp_factory_api::PLUGIN_ID;
@@ -364,6 +364,41 @@ fn guard_turns(s: &mut Setup, st: &Arc<State>) {
     });
 }
 
+/// What a follow-up to a run's own task reads when nothing there asks (audit I5: `wisp reply <run> Approve` after `wisp
+/// factory stop` said "✓ sent", then the run showed a turn "Not started"). Nothing is sent; the words say why.
+#[must_use]
+pub fn follow_up_refusal(state: &str) -> String {
+    match state {
+        "stopped" | "failed" | "done" | "shipped" => format!("This factory run is {}: nothing was sent.", if state == "shipped" { "done" } else { state }),
+        _ => "This factory run's stations do the work: nothing was sent. Answer its question when it asks, or open a station's task (the band's ⋯) to follow it up.".to_owned(),
+    }
+}
+
+/// `before:followUp` on a run's own task with nothing asked on it: refused before anything is queued (audit I5). An
+/// answer to the run's open question goes on as an answer.
+fn guard_follow_ups(s: &mut Setup, st: &Arc<State>) {
+    let guard = st.clone();
+    s.intercept::<BeforeFollowUp, _, _>(InterceptOpts { priority: 5, failure: Failure::Open, timeout_ms: 1_000 }, move |ctx, call, a| {
+        let known = lock(&guard.runs).contains(a.id.as_str());
+        let id = a.id.clone();
+        async move {
+            let Ok(t) = ctx.run::<wisp_runtime_api::commands::Get>(&call, wisp_runtime_api::commands::IdArgs { id }).await else {
+                return Verdict::Continue;
+            };
+            let own = t.ext.get(EXT);
+            if !known && own.and_then(|v| v.get("factory")).is_none() {
+                return Verdict::Continue;
+            }
+            let asking = t.ext.get("wisp.runtime").and_then(|v| v.get("ask")).is_some_and(|q| q.get("id").is_some());
+            if asking {
+                return Verdict::Continue;
+            }
+            let state = own.and_then(|v| v.get("state")).and_then(Value::as_str).unwrap_or_default();
+            Verdict::Veto { code: "conflict".into(), message: follow_up_refusal(state), then: Vec::new() }
+        }
+    });
+}
+
 #[derive(Debug, Default)]
 pub struct FactoryPlugin;
 
@@ -432,6 +467,7 @@ impl Plugin for FactoryPlugin {
 
         // a follow-up typed on a run's own task (or Start now on its held prompt) would run an agent there: refused
         guard_turns(s, &st);
+        guard_follow_ups(s, &st);
         let made = st.clone();
         s.on::<SessionCreated, _, _>(move |ctx, e| {
             let st = made.clone();

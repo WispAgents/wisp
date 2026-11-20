@@ -253,11 +253,7 @@ pub fn unknown_names(
                 continue;
             }
             let section = sections.get(&n.kind).cloned().unwrap_or_else(|| n.kind.clone());
-            let mut has = if have.is_empty() { format!("no {section} are declared") } else { format!("{section} has {}", some_of(have)) };
-            if !more.is_empty() {
-                has = format!("{has} (or {})", some_of(more));
-            }
-            let line = format!("{at}: no {} named {name}: {has}", n.kind);
+            let line = format!("{at}: {}", named_nothing(&n.kind, &name, &section, have, more));
             if !out.contains(&line) {
                 out.push(line);
             }
@@ -279,9 +275,67 @@ pub fn some_of<S: AsRef<str>>(names: &[S]) -> String {
 /// How many names a refusal lists.
 pub const NAMES_SHOWN: usize = 8;
 
+/// Edit distance, an adjacent swap counting one (`green-bild` is one from `green-build`).
+fn distance(a: &str, b: &str) -> usize {
+    let (a, b): (Vec<char>, Vec<char>) = (a.chars().collect(), b.chars().collect());
+    let mut d = vec![vec![0usize; b.len() + 1]; a.len() + 1];
+    for (i, row) in d.iter_mut().enumerate() {
+        row[0] = i;
+    }
+    for (j, cell) in d[0].iter_mut().enumerate() {
+        *cell = j;
+    }
+    for i in 1..=a.len() {
+        for j in 1..=b.len() {
+            let cost = usize::from(a[i - 1] != b[j - 1]);
+            let mut v = (d[i - 1][j] + 1).min(d[i][j - 1] + 1).min(d[i - 1][j - 1] + cost);
+            if i > 1 && j > 1 && a[i - 1] == b[j - 2] && a[i - 2] == b[j - 1] {
+                v = v.min(d[i - 2][j - 2] + 1);
+            }
+            d[i][j] = v;
+        }
+    }
+    d[a.len()][b.len()]
+}
+
+/// "no goal named green-bild: did you mean green-build? goals has …" (audit I14: `wisp validate` named what there is but
+/// not the close one, which the CLI's refusal does since audit H6). `have`: the section's names; `also`: other names it
+/// takes (harnesses for an agent). The close one is two edits away at most, and never most of the word.
+pub fn named_nothing<S: AsRef<str>>(kind: &str, name: &str, section: &str, have: &[S], also: &[S]) -> String {
+    let close = have
+        .iter()
+        .chain(also)
+        .map(AsRef::as_ref)
+        .map(|n| (distance(name, n), n))
+        .filter(|(d, n)| *d <= 2 && *d < n.chars().count().max(name.chars().count()) / 2 + 1)
+        .min_by_key(|(d, _)| *d);
+    let mean = close.map_or_else(String::new, |(_, n)| format!(" did you mean {n}?"));
+    let mut has = if have.is_empty() { format!("no {section} are declared") } else { format!("{section} has {}", some_of(have)) };
+    if !also.is_empty() {
+        has = format!("{has} (or {})", some_of(also));
+    }
+    format!("no {kind} named {name}:{mean} {has}")
+}
+
 #[cfg(test)]
 #[allow(clippy::unwrap_used)]
 mod tests {
+    use super::named_nothing;
+
+    /// Audit I14: `wisp validate`'s "no goal named green-bild: goals has goal-01 … and 24 more" had no "did you mean".
+    #[test]
+    fn a_name_that_names_nothing_says_the_close_one_audit_i14() {
+        let goals: Vec<String> = (1..=8).map(|n| format!("goal-0{n}")).chain(["green-build".to_owned()]).collect();
+        let said = named_nothing::<String>("goal", "green-bild", "goals", &goals, &[]);
+        assert!(said.starts_with("no goal named green-bild: did you mean green-build? goals has goal-01,"), "{said}");
+        assert_eq!(
+            named_nothing::<&str>("agent", "zzz", "agents", &["critic"], &["claude"]),
+            "no agent named zzz: agents has critic (or claude)"
+        );
+        assert_eq!(named_nothing::<&str>("agent", "x", "agents", &[], &[]), "no agent named x: no agents are declared");
+        assert!(named_nothing::<&str>("agent", "codx", "agents", &[], &["codex"]).contains("did you mean codex?"));
+    }
+
     use super::*;
 
     /// Audit G10: "no goal named tiny: goals has goal-01, goal-02, … goal-30, green-build, never" in a toast 13 lines tall.

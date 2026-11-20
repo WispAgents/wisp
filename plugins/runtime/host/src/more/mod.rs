@@ -18,7 +18,7 @@ mod report_back;
 mod sandbox;
 mod setup;
 mod sign_in;
-pub(crate) use ask::open_setup;
+pub(crate) use ask::{GUARD_ASKS_YOU, no_follow_up_on_guard, open_guard, open_setup};
 pub use setup::{KEYS_SETTING, RELAY, may_answer};
 
 use std::collections::BTreeMap;

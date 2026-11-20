@@ -491,12 +491,24 @@ async fn checks(ctx: &Ctx, call: &Call, st: &State, run: &str, task: &str, comma
     Event::Checked(out)
 }
 
+/// What `factory.stop` says when there's nothing to stop (audit I12: a task that isn't a run read "This factory run isn't
+/// running").
+pub(crate) fn stop_refusal(is_run: bool, state: &str) -> String {
+    if !is_run {
+        return "That task isn't a factory run: wisp factory stop takes a run's id (wisp ls shows runs as Factory · <name>).".into();
+    }
+    match state {
+        "" => "This factory run hasn't started: nothing to stop.".into(),
+        s => format!("This factory run is {s} already: nothing to stop."),
+    }
+}
+
 /// `factory.stop`: the run's running check is killed and its stations stop; it ends stopped.
 pub(crate) async fn stop(ctx: &Ctx, call: &Call, st: &State, id: &str, why: &str) -> Result<Value> {
     let s = get(ctx, call, id).await?;
     let state = s.ext.get(EXT).and_then(|v| v.get("state")).and_then(Value::as_str).unwrap_or_default();
     if !matches!(state, "starting" | "running" | "waiting") {
-        return Err(WireError::conflict("This factory run isn't running."));
+        return Err(WireError::conflict(stop_refusal(s.ext.get(EXT).is_some_and(|v| v.get("factory").is_some()), state)));
     }
     halt(st, id, why);
     take_back_question(ctx, call, &s).await;

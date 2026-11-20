@@ -64,7 +64,10 @@ async fn goals_declared_by_name_and_tasks_default_from_formula_to_run() {
     std::fs::write(dir.join("bad.yml"), format!("{FORMULA}  typo: {{ prompt: x, goal: green-buld }}\n")).unwrap();
     let (code, out, err) = wisp(&dir, port, &["validate", "-f", "bad.yml"]);
     assert_eq!(code, 1, "{out}{err}");
-    assert!(format!("{out}{err}").contains("tasks.typo: no goal named green-buld: goals has green-build"), "{out}{err}");
+    assert!(
+        format!("{out}{err}").contains("tasks.typo: no goal named green-buld: did you mean green-build? goals has green-build"),
+        "{out}{err}"
+    );
     // the defaults hold no goal text, and no task's own fields
     std::fs::write(
         dir.join("worse.yml"),

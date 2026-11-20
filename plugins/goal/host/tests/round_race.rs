@@ -101,7 +101,7 @@ impl Plugin for Runtime {
                 if went { Ok(r::Ack {}) } else { Err(WireError::conflict("changed meanwhile")) }
             }
         });
-        s.command::<r::FollowUp, _, _>(|_, _, _a| async move { Ok(r::FollowedUp { turn_id: None, queued: None }) });
+        s.command::<r::FollowUp, _, _>(|_, _, _a| async move { Ok(r::FollowedUp { turn_id: None, queued: None, interrupts: false }) });
         s.command::<r::Ask, _, _>(|_, _, _a| async move { Ok(r::Asked { ask_id: "q1".into() }) });
         Ok(())
     }

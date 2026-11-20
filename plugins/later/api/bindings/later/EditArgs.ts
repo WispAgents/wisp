@@ -6,7 +6,7 @@
  */
 export type EditArgs = { sessionId: string, item: string, text?: string, now?: boolean, 
 /**
- * when: a time today or a date and time (18:00, 2026-12-01T09:00), or ms since the epoch
+ * when: a date and time (2026-12-01T09:00:00Z), or ms since the epoch
  */
 at?: number | string, 
 /**

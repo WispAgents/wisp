@@ -42,15 +42,19 @@ fn some_null<'de, D: Deserializer<'de>>(d: D) -> Result<Option<Option<i64>>, D::
 #[serde(rename_all = "camelCase")]
 #[ts(export, export_to = "crew/")]
 pub struct MemberBody {
+    /// their name, as the crew and @mentions say it
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub name: Option<String>,
+    /// what they do, in a line ("Reviews every PR")
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub role: Option<String>,
+    /// their face: an emoji or a picture's URL
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub avatar: Option<String>,
+    /// their colour on the rail and in the org chart
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub color: Option<String>,
@@ -58,27 +62,35 @@ pub struct MemberBody {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub bg: Option<String>,
+    /// what they should know and how they work: the instructions every job of theirs starts with
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub brief: Option<String>,
+    /// the folder their jobs run in (a project's)
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub cwd: Option<String>,
+    /// the computer their jobs run on (one of your machines; this one when left out)
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub machine: Option<String>,
+    /// the sandbox their jobs run in, by name
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub sandbox: Option<String>,
+    /// the harness their jobs run on (claude, codex …), or an agent profile's name
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub agent: Option<String>,
+    /// the model their harness runs
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub model: Option<String>,
+    /// how hard they think: low, medium, high …
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub effort: Option<String>,
+    /// how far their jobs may go: plan, edits or auto
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub mode: Option<String>,
@@ -86,7 +98,7 @@ pub struct MemberBody {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub cron: Option<String>,
-    /// v1 takes any number and floors it
+    /// how many of their jobs may run at once (1 when left out)
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub parallel: Option<f64>,
@@ -98,9 +110,11 @@ pub struct MemberBody {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional, type = "Array<unknown>")]
     pub team: Option<Value>,
+    /// paused: no check-in, wake or job starts until they're resumed
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub paused: Option<bool>,
+    /// their notebook: what they keep between jobs
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub notebook: Option<String>,
@@ -180,7 +194,7 @@ pub struct LayoutArgs {
     pub layout: Value,
 }
 
-/// `POST /crew`. `checkin: true` starts a first check-in at once.
+/// Adds a crew member. `checkin: true` starts their first check-in at once.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
 #[ts(export, export_to = "crew/")]
@@ -192,6 +206,7 @@ pub struct CreateArgs {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub id: Option<String>,
+    /// start their first check-in at once
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub checkin: Option<bool>,
@@ -220,8 +235,8 @@ pub struct OfferSettle {
     pub names: Vec<String>,
 }
 
-/// `crew.agent.kit`: the `wisp_crew_kit` tool (v1 POST /internal/crew/:id/kit). `session` is the caller's task: the
-/// offer shows under its latest turn.
+/// An agent offers a crew member kit files to pick from. `session` is the caller's task: the offer shows under its latest
+/// turn.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, TS)]
 #[ts(export, export_to = "crew/")]
 pub struct AgentKitArgs {
@@ -233,9 +248,9 @@ pub struct AgentKitArgs {
     pub files: Vec<Value>,
 }
 
-/// An agent adds a crew member (the `wisp_crew_add` tool). `session` is the caller's task (its
-/// project is the default folder). With `from` (a share link, `gist:<id>`, an https `.crew.json`, or its JSON) the
-/// members someone shared join through `crew.import`, paused; without it, a member is made from the fields.
+/// An agent adds a crew member. `session` is the caller's task (its project is the default folder). With `from` (a
+/// share link, `gist:<id>`, an https `.crew.json`, or its JSON) the members someone shared join, paused; without it, a
+/// member is made from the fields.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
 #[ts(export, export_to = "crew/")]
@@ -251,7 +266,7 @@ pub struct AgentAddArgs {
     pub member: MemberBody,
 }
 
-/// `crew.agent.list`: the `wisp_crew` tool (v1 GET /internal/crew/:id?member). With `member`, that one in full
+/// An agent reads the crew. With `member`, that one in full
 /// (brief, notebook, kit); without, the crew in one line each. A capped task sees its own project's members.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[ts(export, export_to = "crew/")]
@@ -263,8 +278,8 @@ pub struct AgentListArgs {
     pub member: Option<String>,
 }
 
-/// `crew.agent.edit`: the `wisp_crew_edit` tool (v1 PATCH /internal/crew/:id). Only the fields given change (the
-/// tool's: no kit, team, machine or colours); `remember` adds lines to the end of their notebook.
+/// An agent changes a crew member. Only the fields given change (no kit, team, machine or colours); `remember` adds lines
+/// to the end of their notebook.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, TS)]
 #[ts(export, export_to = "crew/")]
 pub struct AgentEditArgs {
@@ -278,8 +293,7 @@ pub struct AgentEditArgs {
     pub fields: MemberBody,
 }
 
-/// `crew.agent.remove`: the `wisp_crew_remove` tool (v1 DELETE /internal/crew/:id). A member's own job can't
-/// remove that member.
+/// An agent removes a crew member. A member's own job can't remove that member.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[ts(export, export_to = "crew/")]
 pub struct AgentMemberArgs {
@@ -424,15 +438,20 @@ pub struct TopJob {
 #[serde(rename_all = "camelCase")]
 #[ts(export, export_to = "crew/")]
 pub struct AssignArgs {
+    /// the crew member, by name or id
     pub id: String,
+    /// the job: what they should do
     #[serde(default)]
     pub prompt: String,
+    /// files to hand them with it (`[{ name, path }]`)
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     #[ts(optional, type = "Array<unknown>")]
     pub attachments: Vec<Value>,
+    /// a job about their own kit: the files they're given to work from
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     #[ts(as = "Option<bool>", optional)]
     pub kit: bool,
+    /// start it even near a usage limit (you said yes to Ask near the limit)
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     #[ts(as = "Option<bool>", optional)]
     pub confirm_limit: bool,
@@ -445,8 +464,8 @@ pub struct AssignArgs {
     #[ts(as = "Option<bool>", optional)]
     pub picked: bool,
     /// the lead task whose agent hands this job out (it delegated to this member): the job is
-    /// `delegated` from it, its report goes back to that agent, and it starts now or is refused (never queued). Set by the
-    /// caller (`crew:assign`): the runtime passes the lead it runs
+    /// `delegated` from it, its report goes back to that agent, and it starts now or is refused (never queued). wisp
+    /// fills it in for a lead's own delegation: leave it out
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub from: Option<crate::TaskRef>,

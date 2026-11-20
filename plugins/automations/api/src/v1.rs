@@ -101,8 +101,22 @@ pub fn linear(s: &mut TriggerSpec, label: &str) {
 
 /// A v1 member's `on` (`finished`, `done`, `ci`) as its wakes.
 pub fn member_wakes(member: &str, on: &[String]) -> Vec<TriggerSpec> {
-    on.iter().filter_map(|k| on_of(k)).map(|on| TriggerSpec { on: on.into(), crew: member.to_owned(), ..TriggerSpec::default() }).collect()
+    on.iter()
+        .filter_map(|k| wake_on(k))
+        .map(|on| TriggerSpec { on: on.into(), crew: member.to_owned(), ..TriggerSpec::default() })
+        .collect()
 }
+
+/// What a member's `on` word wakes them on: v1's kind (`done`) or the trigger's own name (`task.done`). Audit I7: `wisp
+/// crew create --on task.done` was dropped (only v1's `done` was read), and the member never woke.
+#[must_use]
+pub fn wake_on(kind: &str) -> Option<&'static str> {
+    const V2: [&str; 7] = ["schedule", "ci.failed", "issue.labeled", "task.finished", "task.done", "webhook", "chat.message"];
+    on_of(kind).or_else(|| V2.iter().find(|v| **v == kind).copied())
+}
+
+/// The `on` words a member takes, for a refusal: v1's kinds and the triggers' own names.
+pub const WAKE_WORDS: &str = "done, finished, ci (or task.done, task.finished, ci.failed)";
 
 #[cfg(test)]
 #[allow(clippy::assert_is_empty, clippy::unwrap_used)]
@@ -123,6 +137,13 @@ mod tests {
             every: 5,
             ..TriggerBase::default()
         }
+    }
+
+    #[test]
+    fn a_members_on_takes_v1_kinds_and_trigger_names_audit_i7() {
+        let w = member_wakes("Bob", &["task.done".into(), "done".into(), "ci".into(), "nosuch".into()]);
+        assert_eq!(w.iter().map(|t| t.on.as_str()).collect::<Vec<_>>(), ["task.done", "task.done", "ci.failed"]);
+        assert_eq!(wake_on("nosuch"), None);
     }
 
     #[test]

@@ -155,7 +155,10 @@ async fn a_formula_runs_everywhere_and_every_name_in_it_is_referenced() {
     std::fs::write(dir.join("typo.task.yml"), "wisp: 1\ntask: { prompt: x, agent: critc }\nformula: [./f.yml]\n").unwrap();
     let (code, out, err) = wisp(&dir, port, &["run", "-f", "typo.task.yml"]);
     assert_ne!(code, 0, "{out}{err}");
-    assert!(format!("{out}{err}").contains("typo.task.yml: no agent named critc: agents has critic (or "), "{out}{err}");
+    assert!(
+        format!("{out}{err}").contains("typo.task.yml: no agent named critc: did you mean critic? agents has critic (or "),
+        "{out}{err}"
+    );
     std::fs::write(dir.join("loop.task.yml"), "wisp: 1\ntask: { prompt: x }\nformula: [./f.yml, f.yml]\n").unwrap();
     let (code, out, err) = wisp(&dir, port, &["run", "-f", "loop.task.yml"]);
     assert_ne!(code, 0, "{out}{err}");
@@ -256,4 +259,72 @@ async fn a_declared_task_under_a_formula_runs_in_its_own_worktree_audit_g9() {
         let cwd = wisp_proc::canonical_blocking(std::path::Path::new(t["cwd"].as_str().unwrap_or_default())).unwrap_or_default();
         assert_eq!(cwd != real, own, "{task}: {cwd:?} (the checkout is {real:?}): {t}");
     }
+}
+
+/// Audit I4: New task with a task file picked (`agent: critic`; critic is codex, gpt-5, high in its formula) sent the
+/// bar's `"model":"opus"` beside the file's agent, and codex ran `-m opus`. New task now sends what the file says
+/// (packages/shell `barArgs`, `a_picked_task_files_agent_runs_its_own_model_never_the_bars_audit_I4`): this is that body,
+/// as `resources.overlay` reads the file, and the harness runs the file's model and thinking.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_picked_task_file_runs_its_agents_model_not_the_bars_audit_i4() {
+    let dir = temp("formula-pick-model");
+    let rec = dir.join("rec");
+    std::fs::create_dir_all(&rec).unwrap();
+    let proj = wisp_proc::canonical_blocking(dir.join("proj")).unwrap();
+    let (serve, port) = common::start_with(&dir, &[("FAKE_RECORD", rec.to_str().unwrap())]);
+    let api = Api { http: reqwest::Client::new(), port, n: 0.into() };
+    std::fs::write(proj.join("team.yml"), "wisp: 1\nagents:\n  critic: { harness: codex, model: gpt-5, effort: high }\n").unwrap();
+    let text = "wisp: 1\ntask: { prompt: check it, agent: critic }\nformula: ./team.yml\n";
+    let out = api.cmd("resources.overlay", json!({ "text": text, "name": "a.task.yml", "cwd": proj })).await;
+    assert!(out["problems"].as_array().is_none_or(Vec::is_empty), "{out}");
+    // New task's body: the bar's agent (claude), none of its model, then the file's own args over it
+    let mut body = json!({ "prompt": "check it", "cwd": proj, "worktree": false, "agent": "claude", "formula": out["overlay"] });
+    if let (Some(b), Some(task)) = (body.as_object_mut(), out["task"].as_object()) {
+        for k in ["agent", "model", "effort"] {
+            if let Some(v) = task.get(k) {
+                b.insert(k.into(), v.clone());
+            }
+        }
+    }
+    assert!(body.get("model").is_none(), "{body}");
+    let made = api.cmd("runtime.create", body).await;
+    let id = made["id"].as_str().unwrap_or_else(|| panic!("{made}")).to_owned();
+    let runs = common::until_records(&rec.join("codex.jsonl"), "codex's run", |r| !r.is_empty()).await;
+    let argv = common::argv(&runs[0]).join(" ");
+    assert!(argv.contains("-m gpt-5") && argv.contains("model_reasoning_effort=\"high\""), "{argv}");
+    assert!(!argv.contains("opus"), "{argv}");
+    assert_eq!(made_task(&api, &id).await["model"], "gpt-5");
+    drop(serve);
+}
+
+async fn made_task(api: &Api, id: &str) -> Value {
+    api.cmd("runtime.get", json!({ "id": id })).await
+}
+
+/// Audit I8 and I11: `wisp run <task> --formula F -d` was refused ("release takes no values: \"-d\" is left over"), and
+/// `--wait` returned at `review` before the task's goal was judged. `-d` works as on every run form, and `--wait` returns
+/// only once the task asks, is done, or its goal is judged.
+#[tokio::test(flavor = "multi_thread")]
+async fn run_task_under_a_formula_takes_detach_and_waits_through_judging_audit_i8_i11() {
+    let dir = temp("formula-run-flags");
+    let proj = wisp_proc::canonical_blocking(dir.join("proj")).unwrap();
+    let (serve, port) = start(&dir);
+    let api = Api { http: reqwest::Client::new(), port, n: 0.into() };
+    std::fs::write(dir.join("f.yml"), formula(&proj.display().to_string())).unwrap();
+    let (code, out, err) = wisp(&dir, port, &["run", "fix-build", "area=api", "--formula", "f.yml", "-d"]);
+    assert_eq!(code, 0, "-d: {out}{err}");
+    assert!(!format!("{out}{err}").contains("left over"), "{out}{err}");
+    let (code, out, err) = wisp(&dir, port, &["run", "fix-build", "area=ui", "--formula", "f.yml", "--wait"]);
+    assert_eq!(code, 0, "--wait: {out}{err}");
+    let list = api.cmd("runtime.list", json!({})).await;
+    let id = list.as_array().unwrap().iter().find(|t| t["title"] == "fix-build" && t["id"].as_str().is_some_and(|i| out.contains(i)));
+    let id = id.and_then(|t| t["id"].as_str()).unwrap_or_else(|| panic!("{out}\n{list}")).to_owned();
+    let t = made(&api, &id).await;
+    let goal = t["ext"]["wisp.goal"]["state"].as_str().unwrap_or_default().to_owned();
+    let state = t["state"].as_str().unwrap_or_default();
+    assert!(
+        matches!(state, "waiting" | "done") || matches!(goal.as_str(), "met" | "paused" | "stalled"),
+        "--wait returned at {state}, goal {goal}: {t}"
+    );
+    drop(serve);
 }

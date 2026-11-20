@@ -103,6 +103,11 @@ impl Runtime {
         self.repo.session(id.as_str()).await.is_ok_and(|s| open_setup(&s).is_some())
     }
 
+    /// Whether task `id` asks about a safety guard its user's harness wants lowered (ADR-0115).
+    pub async fn asks_guard(&self, id: &SessionId) -> bool {
+        self.repo.session(id.as_str()).await.is_ok_and(|s| crate::more::open_guard(&s))
+    }
+
     /// `runtime.answer` on a setup card. `ask`: the card the answer names, required and the open one. Allow runs the
     /// stored writes (`run`: by command id with their arguments, from wisp.runtime's side) once they're checked against
     /// the card; anything else changes nothing and the agent reads that the user said no. Under the task's lock, so a

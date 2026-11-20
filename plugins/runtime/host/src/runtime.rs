@@ -40,6 +40,10 @@ pub struct Runtime {
     /// tasks a Stop reached while their turn was starting (no `Live` yet): the spawn stops its run at once (Windows CI:
     /// a slow spawn came after the Stop and ran on); cleared when the start ends without a spawn
     pub(crate) stops: Arc<Mutex<std::collections::HashSet<String>>>,
+    /// The tasks whose running turn the queue started (a queued follow-up's own): a later follow-up waits behind it,
+    /// never interrupts it (audit I3, `queue::run_for_follow_up`). Cleared when a turn starts otherwise, when the start
+    /// fails, and when the task is deleted.
+    pub(crate) from_queue: Arc<Mutex<std::collections::HashSet<String>>>,
     locks: Mutex<HashMap<String, Arc<tokio::sync::Mutex<()>>>>,
     /// open questions: ask id → its task (rebuilt at start from the tasks that wait on one)
     asks: Arc<Mutex<HashMap<String, String>>>,
@@ -95,6 +99,7 @@ impl Runtime {
             live: Mutex::default(),
             starting: Arc::default(),
             stops: Arc::default(),
+            from_queue: Arc::default(),
             locks: Mutex::default(),
             asks: Arc::default(),
             closed: Arc::default(),
@@ -282,6 +287,12 @@ impl Runtime {
     pub(crate) fn mark_starting(&self, id: &str) -> Starting {
         *lock(&self.starting).entry(id.to_owned()).or_insert(0) += 1;
         Starting { counts: self.starting.clone(), stops: self.stops.clone(), id: id.to_owned() }
+    }
+
+    /// `mark_starting` for a turn the user started (not the queue): a later follow-up may interrupt it (audit I3).
+    pub(crate) fn mark_starting_by_hand(&self, id: &str) -> Starting {
+        lock(&self.from_queue).remove(id);
+        self.mark_starting(id)
     }
 
     /// Writes the task (and the turns given), rebuilds its list row, emits `session.changed`.
@@ -725,6 +736,9 @@ impl Runtime {
             opts,
             ..QueueItem::default()
         };
+        // a guard question (ADR-0115) is answered by the user's own hands only: never by a follow-up, from anyone (review:
+        // `later.add` fired one that answered "Allow")
+        crate::more::no_follow_up_on_guard(&s)?;
         // a setup card waits on the user's own answer (ADR-0113): a follow-up queues behind it, the card stays; but a
         // card's answer (Allow, Deny, yes, no) is never queued as a prompt, from any client (audit G4: "Allow" ran as the
         // agent's next turn)
@@ -738,10 +752,10 @@ impl Runtime {
             let id = item.id.clone();
             s.queue.push(item);
             self.persist(&mut s, Vec::new()).await?;
-            return Ok(FollowedUp { turn_id: None, queued: Some(id) });
+            return Ok(FollowedUp { turn_id: None, queued: Some(id), interrupts: false });
         }
         let last_held = self.repo.turns(a.id.as_str(), None, Some(1)).await?.last().is_some_and(|t| t.status == TurnStatus::Held);
-        let run = self.run_state(a.id.as_str());
+        let run = queue::run_for_follow_up(self.run_state(a.id.as_str()), lock(&self.from_queue).contains(a.id.as_str()));
         let mut held = s.queue_held;
         let mut items = std::mem::take(&mut s.queue);
         let d = queue::follow_up(
@@ -775,22 +789,23 @@ impl Runtime {
                 // decided under the task's lock, and marked starting before it is let go (audit C2): the next
                 // follow-up queues behind this turn, and the queue as decided is the one stored
                 self.persist(&mut s, Vec::new()).await?;
-                let _starting = self.mark_starting(a.id.as_str());
+                // a turn started now is yours to steer: a later follow-up may interrupt it (v1's interrupt setting)
+                let _starting = self.mark_starting_by_hand(a.id.as_str());
                 drop(guard);
                 // boxed: a follow-up's future stays small for its callers
-                return Ok(FollowedUp { turn_id: Some(Box::pin(self.start_turn(s, item)).await?), queued: None });
+                return Ok(FollowedUp { turn_id: Some(Box::pin(self.start_turn(s, item)).await?), queued: None, interrupts: false });
             }
-            Plan::Queued { .. } => FollowedUp { turn_id: None, queued: s.queue.last().map(|q| q.id.clone()) },
+            Plan::Queued { .. } => FollowedUp { turn_id: None, queued: s.queue.last().map(|q| q.id.clone()), interrupts: false },
             Plan::Interrupt => {
                 self.interrupt(a.id.as_str());
-                FollowedUp { turn_id: None, queued: s.queue.first().map(|q| q.id.clone()) }
+                FollowedUp { turn_id: None, queued: s.queue.first().map(|q| q.id.clone()), interrupts: true }
             }
             Plan::Answer(item) => {
                 self.persist(&mut s, Vec::new()).await?;
                 self.answer_locked(&a.id, &item.text).await?;
-                return Ok(FollowedUp { turn_id: None, queued: None });
+                return Ok(FollowedUp { turn_id: None, queued: None, interrupts: false });
             }
-            Plan::Hold(_) => FollowedUp { turn_id: None, queued: None },
+            Plan::Hold(_) => FollowedUp { turn_id: None, queued: None, interrupts: false },
         };
         self.persist(&mut s, Vec::new()).await?;
         drop(guard);

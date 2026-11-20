@@ -44,11 +44,6 @@ async fn in_git(dir: &str) -> bool {
     false
 }
 
-/// Worktree per task (`worktrees.worktree`): on unless switched off.
-fn trees_on(ctx: &Ctx) -> bool {
-    !ctx.setting("worktrees.worktree").is_some_and(|v| v == "off" || v == false)
-}
-
 /// `formula` (ADR-0111): files in the asking task's own folder (one, a comma list or a list), or a formula inline; the
 /// body resolved under it by `resources.overlay`, as `wisp "…" --formula` is, with the agent's own reach (review r194
 /// #1: inside its task's folder only, no `file()`, no environment). A name that names nothing is the agent's error,
@@ -100,8 +95,10 @@ pub(crate) async fn launch(ctx: &Ctx, call: &Call, session: Option<&str>, a: &Ma
         _ => None,
     };
     let cwd = launch::folder(a, named.as_deref(), mine.as_deref())?;
+    // a git checkout's task gets a worktree of its own, as `wisp "…"` gives it (audit I10): New task's In place
+    // (`worktrees.worktree`) is New task's own default, never a switch for every launch from a harness
     let tree_on = match &cwd {
-        Some(c) => trees_on(ctx) && in_git(c).await,
+        Some(c) => in_git(c).await,
         None => false,
     };
     let mut body = launch::start_body(a, cwd.as_deref(), tree_on);

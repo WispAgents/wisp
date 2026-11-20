@@ -126,8 +126,8 @@ pub struct CallArgs {
     pub timeout_ms: Option<u64>,
 }
 
-/// A v2 command for a row another peer owns: sent there with the **same** idempotency key, so a
-/// flaky tunnel never runs a follow-up twice, even across wakes (plan §7.2.1).
+/// Runs a command on the computer that owns the row: sent there with the **same** idempotency key, so a flaky tunnel
+/// never runs a follow-up twice, even across wakes.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
 pub struct RouteArgs {
     /// the local handle; omitted: the peer named by the origin of `args.id`

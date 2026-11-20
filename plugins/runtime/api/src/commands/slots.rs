@@ -9,7 +9,7 @@ use ts_rs::TS;
 
 use crate::SessionId;
 
-/// Which plugins' slots (`ext["wisp.worktrees"]`, `ext["wisp.ship"]`, …); a task none of them has a slot in is left out
+/// Which plugins' fields on each task (`wisp.worktrees`, `wisp.ship`, …); a task none of them has fields on is left out
 /// unless `all` (then every task comes, with what it has).
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
@@ -18,8 +18,7 @@ pub struct SlotsArgs {
     #[serde(default)]
     pub all: bool,
     /// only the tasks whose stored body names one of these JSON keys (a plugin's slot, a key in one), as a quoted
-    /// string: the store reads no other task's body (perf audit 2026-11-19 #7: worktrees' view read all 5,000 to find
-    /// the few with a worktree). A prefilter only: what comes is what `plugins`/`all` say of those, newest first within
+    /// string: the store reads no other task's body. A prefilter only: what comes is what `plugins`/`all` say of those, newest first within
     /// each word's tasks. Empty: every task.
     /// Additive (2026-11-19).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]

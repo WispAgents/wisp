@@ -36,7 +36,7 @@ impl Variant {
 pub struct TrialArgs {
     pub task: StartArgs,
     pub vary: Variant,
-    /// the runs' ids (A, B), made by the client that shows both rows at once (as `StartArgs::id`). Additive (2026-11-14).
+    /// the runs' ids (A, B), made by the client that shows both rows at once (as a new task's own id is). Additive (2026-11-14).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     #[ts(as = "Option<Vec<SessionId>>", optional)]
     pub ids: Vec<SessionId>,

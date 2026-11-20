@@ -60,7 +60,10 @@ fn a_follow_up_while_running_interrupts_once_the_agent_has_a_conversation() {
 fn before_the_agent_reports_a_conversation_it_queues() {
     let mut t = Task::new(&[]);
     assert_eq!(t.follow(Run::Running { resumable: false }, false, false, inc(item("a"))).plan, Plan::Queued { ahead: 0 });
-    assert!(!t.items[0].now);
+    // it waits as an interrupting one: one sent after it, once the agent has a conversation, goes behind it (audit I3)
+    assert!(t.items[0].now);
+    assert_eq!(t.follow(RUNNING, false, false, inc(item("b"))).plan, Plan::Interrupt);
+    assert_eq!(t.ids(), ["a", "b"]);
 }
 
 #[test]
@@ -257,5 +260,82 @@ fn random_operations_keep_the_queue_sound() {
             ids.dedup();
             assert_eq!(ids.len(), t.items.len(), "duplicate id");
         }
+    }
+}
+
+/// Audit I3, model-based: a task's first turn runs and 25 follow-ups come in at random moments of each turn (before the
+/// agent has a conversation, after it, while its CLI lingers), with the default follow-up setting (interrupt). The host
+/// as runtime.rs and finish.rs drive the decider: a run's end starts the queue's next (`next_after_release`) and marks
+/// it the queue's (`run_for_follow_up`); an interrupt stops the running turn. Every follow-up's own turn runs once, in
+/// the order sent, and none the queue started is cut short (a turn you started yourself may take an interrupting one).
+#[test]
+fn quick_follow_ups_each_run_once_in_order_and_no_queued_one_is_stopped() {
+    let mut seed: u64 = 0xD1B5_4A32_D192_ED03;
+    let mut rnd = |n: u64| {
+        seed ^= seed << 13;
+        seed ^= seed >> 7;
+        seed ^= seed << 17;
+        seed % n
+    };
+    for _ in 0..300 {
+        let mut t = Task::new(&[]);
+        // the running turn: its item's id, whether the queue started it, how far it is (0 starting, 1 resumable, 2 lingering)
+        let mut running: Option<(String, bool, u8)> = Some(("first".into(), false, 0));
+        let (mut ran, mut stopped): (Vec<String>, Vec<String>) = (Vec::new(), Vec::new());
+        // every turn's id as it starts, and the ones the queue started
+        let (mut starts, mut queued): (Vec<String>, Vec<String>) = (vec!["first".to_owned()], Vec::new());
+        let mut sent = 0;
+        while sent < 25 || running.is_some() || !t.items.is_empty() {
+            match (rnd(3), sent < 25) {
+                // a follow-up comes in now
+                (0 | 1, true) => {
+                    let id = format!("g{sent}");
+                    sent += 1;
+                    let run = match &running {
+                        None => Run::Idle,
+                        Some((_, q, 0)) => queue::run_for_follow_up(Run::Running { resumable: false }, *q),
+                        Some((_, q, 1)) => queue::run_for_follow_up(Run::Running { resumable: true }, *q),
+                        Some(_) => Run::Lingering,
+                    };
+                    match t.follow(run, false, false, inc(item(&id))).plan {
+                        Plan::Start(i) => {
+                            starts.push(i.id.clone());
+                            running = Some((i.id, false, 0));
+                        }
+                        Plan::Interrupt => {
+                            let (was, _, _) = running.take().unwrap();
+                            stopped.push(was);
+                            running = queue::next_after_release(&mut t.q()).map(|n| {
+                                starts.push(n.id.clone());
+                                queued.push(n.id.clone());
+                                (n.id, true, 0)
+                            });
+                        }
+                        Plan::Queued { .. } => {}
+                        other => panic!("{other:?}"),
+                    }
+                }
+                // the running turn moves on: conversation reported, result in, CLI gone (the queue's next starts)
+                _ => match running.take() {
+                    Some((id, q, step)) if step < 2 => running = Some((id, q, step + 1)),
+                    Some((id, _, _)) => {
+                        ran.push(id);
+                        running = queue::next_after_release(&mut t.q()).map(|n| {
+                            starts.push(n.id.clone());
+                            queued.push(n.id.clone());
+                            (n.id, true, 0)
+                        });
+                    }
+                    None => running = queue::next_after_release(&mut t.q()).map(|n| (n.id, true, 0)),
+                },
+            }
+        }
+        // each follow-up's turn started once, in the order sent; none the queue started was cut short (a turn you
+        // started yourself may take an interrupting one, as v1's setting says)
+        let want: Vec<String> = (0..25).map(|n| format!("g{n}")).collect();
+        let started: Vec<&String> = starts.iter().filter(|r| r.starts_with('g')).collect();
+        assert_eq!(started, want.iter().collect::<Vec<_>>(), "each started once, in order (stopped: {stopped:?})");
+        assert!(stopped.iter().all(|s| !queued.contains(s)), "a queued follow-up's turn was cut short: {stopped:?}");
+        assert_eq!(ran.len() + stopped.len(), 26, "every turn ended once");
     }
 }

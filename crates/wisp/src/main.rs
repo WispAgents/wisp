@@ -151,7 +151,7 @@ async fn dispatch(p: &Parsed, user_home: &Path, cwd: &Path) -> Result<i32> {
         return Ok(1);
     }
     if p.command.is_none()
-        && let Some(said) = f.mode.as_deref().and_then(words::bad_mode)
+        && let Some(said) = words::bad_launch_words(f.mode.as_deref(), f.effort.as_deref(), f.model.as_deref())
     {
         eprintln!("  ✗ {said}");
         return Ok(1);
@@ -431,8 +431,8 @@ async fn as_code(p: &Parsed, port: u16, cwd: &Path, home: &Path) -> Result<Optio
             let o = code::Opts { words: std::iter::once("rerun".to_owned()).chain(undetached(&o.words)).collect(), ..o };
             tasks_cli::rerun(&connect().await?, &o, cwd).await?
         }
-        "run" if !o.files.is_empty() => tasks_cli::run_file(&connect().await?, &o, cwd).await?,
-        "run" if !o.formulas.is_empty() && !o.words.is_empty() => tasks_cli::run_overlay(&connect().await?, &o, cwd).await?,
+        "run" if !o.files.is_empty() => tasks_cli::run_file(&connect().await?, &o, &p.flags, cwd).await?,
+        "run" if !o.formulas.is_empty() && !o.words.is_empty() => tasks_cli::run_overlay(&connect().await?, &o, &p.flags, cwd).await?,
         "run" if !o.words.is_empty() => match tasks_cli::run_named(&connect().await?, &o.words, &o, &p.flags).await? {
             Some(code) => code,
             None => return Ok(None),

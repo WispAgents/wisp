@@ -101,6 +101,20 @@ pub(crate) fn extras_for(ctx: &Ctx, call: &Call) -> (Vec<Extra>, Vec<Arc<wisp_mc
                 if let Some(e) = wisp_mcp_core::generated::unknown_field(&wisp_mcp_core::generated::tool_name(&id), &spec, &args) {
                     return Ok(wisp_mcp_api::ToolText { text: None, error: Some(e) });
                 }
+                // the user's harness lowering a safety guard: the user's Allow in wisp first (ADR-0115); on a grid box the
+                // user's set is `box`. A guarded write isn't sent to another computer: its value there isn't known here
+                let harness = session.is_none() && (call.caller().set.starts_with("user:") || call.caller().set == "box");
+                if harness && peer.is_some() && wisp_mcp_core::guard::guarded(&id, &args) {
+                    return Ok(wisp_mcp_api::ToolText { text: None, error: Some(wisp_mcp_core::guard::NOT_ON_A_PEER.into()) });
+                }
+                if harness && let Some(l) = wisp_mcp_core::guard::lowers(&id, &args, &|k| ctx.setting(k)) {
+                    return Ok(match crate::run::guard_card(&ctx, &call, &id, args, &l).await {
+                        wisp_mcp_core::Outcome::Failed(e) | wisp_mcp_core::Outcome::Rpc(_, e) => {
+                            wisp_mcp_api::ToolText { text: None, error: Some(e) }
+                        }
+                        wisp_mcp_core::Outcome::Text(t) => wisp_mcp_api::ToolText { text: Some(t), error: None },
+                    });
+                }
                 if let (true, Some(sid)) = (asks && SETUP_COMMANDS.contains(&id.as_str()), session.as_deref()) {
                     return Ok(match crate::run::setup(&ctx, &call, sid, &id, args).await {
                         wisp_mcp_core::Outcome::Failed(e) | wisp_mcp_core::Outcome::Rpc(_, e) => {
@@ -162,6 +176,16 @@ pub(crate) fn extras_for(ctx: &Ctx, call: &Call) -> (Vec<Extra>, Vec<Arc<wisp_mc
         }));
     }
     (ex, list)
+}
+
+/// The tasks that ask the user to allow a guard their harness wants lowered (ADR-0115), while the harness's call waits:
+/// the harness may read them, never answer or act on them.
+pub(crate) static GUARD_TASKS: std::sync::LazyLock<std::sync::Mutex<std::collections::BTreeSet<String>>> =
+    std::sync::LazyLock::new(|| std::sync::Mutex::new(std::collections::BTreeSet::new()));
+
+/// Whether `id` is a task asking the user about their harness's guard change.
+pub(crate) fn guard_task(id: &str) -> bool {
+    GUARD_TASKS.lock().is_ok_and(|g| g.contains(id))
 }
 
 /// The catalogue commands that change the user's setup and that an agent reaches as a card (ADR-0113); the crew and

@@ -35,6 +35,13 @@ fn s<'a>(v: &'a Value, k: &str) -> &'a str {
 /// before anything starts: None when `--agent` is a harness here, an agent profile, `auto`, or not given (or the lists
 /// can't be read: the server's own check stands).
 pub async fn unknown_agent(c: &Client, agent: Option<&str>) -> Option<String> {
+    // `--agent auto` with Auto off ran the default harness silently (audit I9): said, as a crew member's is (HS7)
+    if agent.map(str::trim) == Some("auto") {
+        let on = c.cmd("settings.get", json!({ "key": "runtime.auto" })).await.is_ok_and(|v| v == json!(true) || v["value"] == json!(true));
+        return (!on).then(|| {
+            "  ✗ Auto is off: name a harness with --agent, or leave it out for your default (Settings → Agents turns Auto on). Nothing was launched".to_owned()
+        });
+    }
     let name = agent.map(str::trim).filter(|a| !a.is_empty() && *a != "auto")?;
     let ids = |v: Value, k: &str| -> Vec<String> {
         v.as_array().into_iter().flatten().filter_map(|x| x.get(k).and_then(Value::as_str).map(str::to_owned)).collect()
@@ -126,9 +133,24 @@ pub fn own_worktree(a: &Value) -> bool {
     a.get("mode").and_then(Value::as_str) != Some("plan")
 }
 
-/// Until the task needs you (it isn't running), from its topic: no polling.
+/// Whether a task is where `--wait` and `wisp wait` stop: it asks you something, it's done, or its turn ended and, when
+/// it has a goal, the goal is judged (met, paused, or out of rounds). Audit I11: `wisp run <task> --formula F --wait`
+/// printed `review` and exited while its goal was still being judged; seconds later it asked "The goal can't be judged…".
+pub fn settled(t: &Value) -> bool {
+    match t.get("state").and_then(Value::as_str) {
+        None | Some("running") => false,
+        Some("waiting" | "done" | "failed" | "blocked") => true,
+        Some(_) => {
+            let goal = t.pointer("/ext/wisp.goal");
+            let has_goal = goal.is_some() || t.pointer("/ext/wisp.runtime/spec/goal").is_some_and(|g| !g.is_null());
+            !has_goal || matches!(goal.and_then(|g| g.get("state")).and_then(Value::as_str), Some("met" | "paused" | "stalled"))
+        }
+    }
+}
+
+/// Until the task needs you ([`settled`]), from its topic: no polling.
 pub async fn wait(c: &Client, id: &str, timeout: Duration) -> Result<Value> {
-    let done = crate::attach::until(c, id, |s| !matches!(s.get("state").and_then(Value::as_str), Some("running") | None));
+    let done = crate::attach::until(c, id, settled);
     match tokio::time::timeout(timeout, done).await {
         Ok(v) => v,
         Err(_) => Ok(json!({ "id": id, "timedOut": true })),
@@ -301,12 +323,20 @@ pub fn agent_of(x: &Value) -> String {
     }
 }
 
+/// A row's state as `wisp ls` prints it: a factory run's own (audit G15: a run you stopped printed `review`, the state
+/// its task is left in, while the app and `wisp show` said Stopped), else the task's.
+pub fn state_of(x: &Value) -> String {
+    ["/factory/state", "/summary/factory/state"]
+        .iter()
+        .find_map(|p| x.pointer(p).and_then(Value::as_str).filter(|v| !v.is_empty()))
+        .map_or_else(|| s(x, "state").to_owned(), str::to_owned)
+}
+
 /// `wisp ls`'s rows, each column as wide as its longest value (audit E15: "antigravity" pushed its row's project two
 /// characters right of every other row's, past the agent column's fixed 8).
 fn ls_lines(rows: &[&Value]) -> Vec<String> {
-    let width = |k: &str, min: usize| rows.iter().map(|x| s(x, k).chars().count()).max().unwrap_or(0).max(min);
     let aw = rows.iter().map(|x| agent_of(x).chars().count()).max().unwrap_or(0).max(8);
-    let sw = width("state", 7);
+    let sw = rows.iter().map(|x| state_of(x).chars().count()).max().unwrap_or(0).max(7);
     rows.iter()
         .map(|x| {
             let ask =
@@ -315,7 +345,7 @@ fn ls_lines(rows: &[&Value]) -> Vec<String> {
             format!(
                 "{}  {:<sw$}  {:<aw$}  {:<16}  {}{ask}",
                 s(x, "id"),
-                s(x, "state"),
+                state_of(x),
                 agent_of(x),
                 proj.chars().take(16).collect::<String>(),
                 s(x, "title")
@@ -353,10 +383,13 @@ pub async fn reply(c: &Client, f: &Flags, args: &[String]) -> Result<()> {
     let id = need(args.first(), "session id")?;
     let text = args[1..].join(" ");
     let text = need(Some(&text), "text")?;
-    // a setup card open on the task (ADR-0113): your reply answers it, naming it (audit G4: it was queued behind the card
-    // as a follow-up, and "Allow" later ran as the agent's prompt)
+    // a setup card open on the task (ADR-0113), or a question about a safety guard your harness asked for (ADR-0115):
+    // your reply answers it, naming it (audit G4: it was queued behind the card as a follow-up, and "Allow" later ran as
+    // the agent's prompt; a guard's question takes no follow-up at all)
     if let Ok(task) = c.cmd("runtime.get", json!({ "id": id })).await
-        && let Some(ask) = task.pointer("/ext/wisp.runtime/ask").filter(|a| a.get("setup").is_some_and(Value::is_object))
+        && let Some(ask) = task
+            .pointer("/ext/wisp.runtime/ask")
+            .filter(|a| a.get("setup").is_some_and(Value::is_object) || a.get("guard") == Some(&json!(true)))
     {
         let r = c.cmd("runtime.answer", json!({ "id": id, "text": text, "askId": s(ask, "id") })).await?;
         out(f, &r, &format!("  ✓ {}", Some(s(&r, "said")).filter(|t| !t.is_empty()).unwrap_or("answered")));
@@ -381,7 +414,14 @@ pub async fn reply(c: &Client, f: &Flags, args: &[String]) -> Result<()> {
     }
     let r = c.cmd("runtime.followUp", a).await?;
     if !f.wait {
-        let said = if r.get("queued").is_some_and(|v| !v.is_null() && *v != json!(false)) { "  ✓ queued" } else { "  ✓ sent" };
+        // an interrupting follow-up says so (audit I3: "✓ queued" was printed for one that stopped the running turn)
+        let said = if r.get("interrupts") == Some(&json!(true)) {
+            "  ✓ sent: it interrupts the running turn and goes next (--queue waits behind it instead)"
+        } else if r.get("queued").is_some_and(|v| !v.is_null() && *v != json!(false)) {
+            "  ✓ queued"
+        } else {
+            "  ✓ sent"
+        };
         out(f, &r, said);
         return Ok(());
     }
@@ -440,6 +480,39 @@ mod tests {
     }
 
     /// Audit E15: an 11-character agent kept every row's columns lined up; `wisp show` had one blank line before a hold.
+    /// Audit I11: `--wait` stopped at `review` while the task's goal was still being judged.
+    #[test]
+    fn wait_goes_through_a_goals_judging_audit_i11() {
+        use serde_json::json;
+        let goal = |state: &str, g: &str| json!({ "state": state, "ext": { "wisp.goal": { "state": g }, "wisp.runtime": { "spec": { "goal": { "text": "green" } } } } });
+        assert!(!super::settled(&json!({ "state": "running" })));
+        assert!(super::settled(&json!({ "state": "review" })), "no goal: its turn's end");
+        assert!(!super::settled(&goal("review", "")), "the turn ended, judging not begun");
+        assert!(!super::settled(&goal("review", "judging")));
+        assert!(
+            !super::settled(&json!({ "state": "review", "ext": { "wisp.runtime": { "spec": { "goal": "green" } } } })),
+            "a goal not yet written"
+        );
+        for g in ["met", "paused", "stalled"] {
+            assert!(super::settled(&goal("review", g)), "{g}");
+        }
+        assert!(super::settled(&goal("waiting", "judging")), "it asks you: stop");
+        assert!(super::settled(&goal("done", "")));
+    }
+
+    /// Audit G15: `wisp ls` printed `review` for a factory run you stopped (`01a1faa27cca…  review  Factory · gated`),
+    /// the state its task is left in, while the app and `wisp show` said Stopped. It prints the run's own state.
+    #[test]
+    fn ls_says_a_stopped_factory_run_is_stopped_audit_g15() {
+        let run = serde_json::json!({ "id": "01a1faa27cca", "state": "review", "title": "gated", "factory": { "name": "gated", "state": "stopped" } });
+        let task = serde_json::json!({ "id": "01a1faa27ccb", "state": "review", "agent": "claude", "title": "fix" });
+        assert_eq!(super::state_of(&run), "stopped");
+        assert_eq!(super::state_of(&task), "review");
+        let lines = super::ls_lines(&[&run, &task]);
+        assert!(lines[0].contains("stopped") && lines[0].contains("Factory · gated") && !lines[0].contains("review"), "{lines:?}");
+        assert!(lines[1].contains("review"), "{lines:?}");
+    }
+
     #[test]
     fn ls_columns_line_up_and_show_has_one_blank_line_between_parts_audit_e15() {
         let a = json!({ "id": "01a", "state": "review", "agent": "antigravity", "cwd": "/w/proj", "title": "A" });

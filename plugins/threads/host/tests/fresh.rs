@@ -62,7 +62,7 @@ impl Plugin for Runtime {
         let me = self.clone();
         s.command::<r::FollowUp, _, _>(move |_, _, a: r::FollowUpArgs| {
             me.follow_ups.lock().unwrap().push(a);
-            async move { Ok(r::FollowedUp { turn_id: Some("u9".into()), queued: None }) }
+            async move { Ok(r::FollowedUp { turn_id: Some("u9".into()), queued: None, interrupts: false }) }
         });
         let me = self.clone();
         s.command::<r::TurnSetExt, _, _>(move |_, _, a: r::TurnExtArgs| {

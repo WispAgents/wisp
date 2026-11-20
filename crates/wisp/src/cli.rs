@@ -136,6 +136,8 @@ pub async fn generated(c: &Client, cat: &Catalogue, words: &[String], argv: &[St
     };
     let named = goal_by_name(&v.info.id, &rest, &mut args);
     let sent = args.clone();
+    // what `crew update` changes, said against the member as it was (audit I7)
+    let before = if v.info.id == "crew.update" { c.cmd("crew.get", json!({ "id": args.get("id") })).await.ok() } else { None };
     let out = match c.cmd(&v.info.id, args).await {
         Err(CliError::Http { status, message, body }) if named && message.contains("no goal named") => {
             return Err(CliError::Http { status, message: format!("{message}; use --text \"…\" for words"), body });
@@ -143,7 +145,7 @@ pub async fn generated(c: &Client, cat: &Catalogue, words: &[String], argv: &[St
         r => r?,
     };
     let json = own.json || argv.iter().any(|a| a == "--json");
-    match crate::said::said(&v.info.id, &sent, &out).filter(|_| !json) {
+    match crate::said::said(&v.info.id, &sent, &out, before.as_ref()).filter(|_| !json) {
         Some(line) => say(&line),
         None => print_result(&out, json),
     }

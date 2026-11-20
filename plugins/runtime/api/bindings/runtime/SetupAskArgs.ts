@@ -3,7 +3,8 @@ import type { SessionId } from "../SessionId";
 
 /**
  * `runtime.setup.ask` (ADR-0113): a change to the user's setup an agent asks for. `command` is one of
- * `wisp_runtime_core::setup::WRITES` (a connector, a crew member, a project) and `args` its arguments; the card says
- * what it would change in the server's words, and the write runs only when the user answers Allow, never before.
+ * `connectors.agent.add`, `crew.agent.add`, `crew.agent.edit`, `crew.agent.remove` or `runtime.projectAdd`, and
+ * `args` its arguments; the card says what it would change in the server's words, and the write runs only when the
+ * user answers Allow, never before.
  */
 export type SetupAskArgs = { id: SessionId, command: string, args: unknown, };

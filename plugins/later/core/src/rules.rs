@@ -277,8 +277,17 @@ pub fn new_plan(id: String, a: &PlanArgs, after: Option<(&Task, bool)>, now: i64
     }
     match a.kind {
         PlanKind::Task => {
-            let Some(Value::Object(body)) = &a.body else {
-                return Err(bad("body required: the task to start."));
+            // `--prompt` (and `--folder`) say the task without a JSON body (audit H9)
+            let words = a.prompt.as_deref().map(str::trim).filter(|p| !p.is_empty()).map(|p| {
+                let mut b = serde_json::Map::new();
+                b.insert("prompt".into(), Value::String(p.to_owned()));
+                if let Some(f) = a.folder.as_deref().map(str::trim).filter(|f| !f.is_empty()) {
+                    b.insert("cwd".into(), Value::String(f.to_owned()));
+                }
+                Value::Object(b)
+            });
+            let Some(Value::Object(body)) = a.body.as_ref().or(words.as_ref()) else {
+                return Err(bad("the task to start: --prompt \"…\" (or --body with its fields)."));
             };
             let prompt = text_of(body.get("prompt").and_then(Value::as_str), "prompt")?;
             p.title = Some(title_of(&prompt));

@@ -166,6 +166,18 @@ pub fn normalize(command: &str, args: &Value, t: Task<'_>) -> Result<Normalized,
                 return Err("args: a list of words".into());
             }
             o.insert("transport".into(), Value::String(transport.into()));
+            // the name as wisp.connectors stores it (its `text::slug`: a–z, 0–9 and _), so the card shows what will be
+            // stored; the name asked for is kept to say it was changed (audit I16: `qa-phone` was saved as `qa_phone`
+            // and no one was told)
+            let asked = s(args, "name").unwrap_or_default().to_owned();
+            let stored = connector_name(&asked);
+            if stored.is_empty() {
+                return Err("Give the connector a name: letters, digits or _".into());
+            }
+            if stored != asked {
+                o.insert("asked".into(), Value::String(asked));
+            }
+            o.insert("name".into(), Value::String(stored));
             Ok(w(CONNECTOR_ADD, o, "sid"))
         }
         CREW_ADD => {
@@ -293,18 +305,46 @@ fn kit_bodies(args: &Value) -> Vec<String> {
 }
 
 /// What the card says of `one`: its action, the headline's detail, its lines (each at most `max` chars), its commands.
+/// A connector's name as wisp.connectors keeps it (its `text::slug`): lowercase letters, digits and `_`, every other run
+/// of characters one `_`, at most 40.
+#[must_use]
+pub fn connector_name(asked: &str) -> String {
+    let mut out = String::new();
+    let mut gap = false;
+    for ch in asked.to_lowercase().chars() {
+        if ch.is_ascii_lowercase() || ch.is_ascii_digit() || ch == '_' {
+            if gap {
+                out.push('_');
+            }
+            gap = false;
+            out.push(ch);
+        } else {
+            gap = true;
+        }
+    }
+    // as `slug` ends: the `_` at either end go, then at most 40 (review: `_qa-` showed `_qa_`, stored `qa`)
+    out.trim_matches('_').chars().take(40).collect()
+}
+
 fn parts(one: &Write, max: Option<usize>) -> Result<(String, String, Vec<String>, Vec<String>), String> {
     let a = one.args.as_object().cloned().unwrap_or_default();
     Ok(match one.command.as_str() {
         CONNECTOR_ADD => {
             let name = s(&one.args, "name").unwrap_or_default().to_lowercase();
+            // the name it asked for, when the stored one differs (audit I16)
+            let renamed = s(&one.args, "asked").map(|asked| format!("saved as {name} (it asked for {asked}: a name takes a–z, 0–9 and _)"));
             let names = |k: &str| {
-                a.get(k)
-                    .and_then(Value::as_array)
-                    .into_iter()
-                    .flatten()
-                    .filter_map(Value::as_str)
-                    .map(|n| format!("needs {n} from you"))
+                renamed
+                    .iter()
+                    .cloned()
+                    .chain(
+                        a.get(k)
+                            .and_then(Value::as_array)
+                            .into_iter()
+                            .flatten()
+                            .filter_map(Value::as_str)
+                            .map(|n| format!("needs {n} from you")),
+                    )
                     .collect::<Vec<_>>()
             };
             if let Some(url) = s(&one.args, "url") {
@@ -452,6 +492,24 @@ mod tests {
     fn card_of(command: &str, args: Value) -> (Card, Vec<Write>) {
         let w = writes(command, &args);
         (card("Ada", &w).unwrap(), w)
+    }
+
+    /// Audit I16: an agent's `qa-phone` was saved as `qa_phone` and no one was told. The card shows the name as it will
+    /// be stored, and that it was changed.
+    #[test]
+    fn a_connectors_name_is_shown_as_it_will_be_stored_audit_i16() {
+        let (c, w) = card_of(CONNECTOR_ADD, json!({ "name": "qa-phone", "url": "http://127.0.0.1:9/mcp" }));
+        assert_eq!(w[0].args["name"], "qa_phone");
+        assert!(c.headline.contains("“qa_phone”"), "{}", c.headline);
+        assert!(c.lines.iter().any(|l| l.contains("saved as qa_phone (it asked for qa-phone")), "{:?}", c.lines);
+        let (c, w) = card_of(CONNECTOR_ADD, json!({ "name": "linear", "url": "https://x.dev/mcp" }));
+        assert!(w[0].args.get("asked").is_none() && !c.lines.iter().any(|l| l.contains("saved as")), "{:?}", c.lines);
+        assert_eq!(connector_name("GitHub MCP"), "github_mcp");
+        // the same as wisp.connectors' `text::slug`, ends included
+        for (asked, stored) in [("_qa-", "qa"), ("--x--y--", "x_y"), ("a__b", "a__b"), ("Linear", "linear")] {
+            assert_eq!(connector_name(asked), stored, "{asked}");
+        }
+        assert!(normalize(CONNECTOR_ADD, &json!({ "name": "--", "url": "https://x" }), T).is_err());
     }
 
     #[test]

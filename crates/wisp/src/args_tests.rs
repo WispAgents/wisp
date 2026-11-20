@@ -171,7 +171,8 @@ fn a_group_that_routes_as_a_command_takes_its_verb_or_one_word_and_ls_dash_a_is_
         &["mcp", "server", "for", "the", "docs"],
         &["skill", "for", "writing", "tests"],
     ] {
-        assert_eq!(p(args).command, None, "{args:?} is a prompt");
+        // not the command: the launch path takes it, and refuses it as a slip (audit I2; `words::unknown_verb`)
+        assert_eq!(p(args).command, None, "{args:?} isn't the command");
     }
     let x = p(&["ls", "-a"]);
     assert!(x.command == Some("ls") && x.flags.all && x.flags.agent.is_none(), "{x:?}");

@@ -585,12 +585,7 @@ async fn names_in_formula(ks: &[Arc<dyn ResourceKind>], call: &Call, rs: &[Resou
                 if have.contains(&name) || also.contains(&name) {
                     continue;
                 }
-                let mut has =
-                    if have.is_empty() { format!("no {section} are declared") } else { format!("{section} has {}", ov::some_of(have)) };
-                if !also.is_empty() {
-                    has = format!("{has} (or {})", ov::some_of(also));
-                }
-                let line = format!("{}.{}: no {} named {name}: {has}", info.section, r.name, n.kind);
+                let line = format!("{}.{}: {}", info.section, r.name, ov::named_nothing(&n.kind, &name, section, have, also));
                 if !out.contains(&line) {
                     out.push(line);
                 }
@@ -610,6 +605,9 @@ pub async fn overlay(ctx: &Ctx, call: &Call, ks: Vec<Arc<dyn ResourceKind>>, a: 
     let read =
         tokio::task::spawn_blocking(move || read_all(&args, &infos, &access)).await.map_err(|e| WireError::internal(e.to_string()))?;
     let (overlay, left) = ov::overlay_of(&read.resources);
+    // a formula that couldn't be read is the one error: the task's names checked against nothing would only repeat it
+    // (audit I14: "…(no absolute paths, no ..); the task: no agent named a: no agents are declared")
+    let unread = !read.problems.is_empty();
     let mut problems = read.problems;
     // the schema, as `wisp validate` checks it: a formula a task runs under is refused for what validate names (audit
     // G8: `agents.critic.brief`, an unknown field, was dropped, and the task launched with "no harness critic")
@@ -657,7 +655,9 @@ pub async fn overlay(ctx: &Ctx, call: &Call, ks: Vec<Arc<dyn ResourceKind>>, a: 
                 );
             }
         }
-        problems.extend(unknown);
+        if !unread {
+            problems.extend(unknown);
+        }
     }
     let mut tasks: Vec<String> = read.resources.iter().filter(|r| r.kind == "task" && r.name != DEFAULT).map(|r| r.name.clone()).collect();
     tasks.sort();

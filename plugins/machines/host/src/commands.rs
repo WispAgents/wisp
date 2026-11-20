@@ -233,6 +233,21 @@ macro_rules! on {
     }};
 }
 
+/// A routed command's own permission, checked against the caller's set: an agent (or a crew member's set) runs on
+/// another computer only what it may run here. The user's own hands and plugins' own calls go as before.
+fn held_to_caller(ctx: &wisp_kernel::Ctx, call: &wisp_kernel::Call, cmd: &str) -> std::result::Result<(), wisp_kernel::WireError> {
+    let who = call.caller();
+    if !(who.set.starts_with("agent:") || who.set.starts_with("crew:")) {
+        return Ok(());
+    }
+    let perm = ctx.catalogue(&wisp_kernel::Caller::user()).into_iter().find(|c| c.id == cmd).map(|c| c.permission);
+    match perm {
+        Some(p) if wisp_kernel::caps::allowed(who, &p) => Ok(()),
+        Some(_) => Err(wisp_kernel::WireError::forbidden(format!("{cmd} isn't something this task may run, here or on another computer"))),
+        None => Err(wisp_kernel::WireError::forbidden(format!("{cmd} isn't a command this wisp knows, so it isn't sent on"))),
+    }
+}
+
 pub(crate) fn register(s: &mut Setup, slot: &Slot) {
     on!(s, slot, c::Add, |st, a| add(&st, a).await);
     on!(s, slot, c::Update, |st, a| update(&st, a).await);
@@ -258,5 +273,16 @@ pub(crate) fn register(s: &mut Setup, slot: &Slot) {
     on!(s, slot, c::Discover, |st, _a| Ok(sys::discover(&st.ctx).await));
     on!(s, slot, c::Reachable, |st, _a| Ok(sys::reachable(&st.ctx).await));
     on!(s, slot, c::CallPeer, |st, a| service::json(st.clone(), a.id, a.method, a.path, a.body, a.timeout_ms).await);
-    on!(s, slot, c::Route, |st, a| route(&st, a).await);
+    // a command an agent sends to another computer runs there as this computer's link: it's held to what the agent
+    // may run here (review of audit I1: `machines_route {cmd: "runtime.exec"}` ran a shell on a paired computer)
+    let sl = slot.clone();
+    s.command::<c::Route, _, _>(move |ctx, call, a| {
+        let slot = sl.clone();
+        async move {
+            held_to_caller(&ctx, &call, &a.cmd)?;
+            let st = state(&slot)?;
+            let out: Res<_> = route(&st, a).await;
+            out.map_err(wisp_kernel::WireError::from)
+        }
+    });
 }

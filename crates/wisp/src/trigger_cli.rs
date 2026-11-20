@@ -264,7 +264,9 @@ async fn trigger(c: &Client, p: &Parsed, verb: &str, s: &Said, cwd: &str) -> Res
                     continue;
                 }
                 let session = d.get("session").and_then(Value::as_str).map(|s| format!("  → {s}")).unwrap_or_default();
-                say(&format!("{:<14} {:<18} {}{session}", d["at"], line(d, "result"), line(d, "why")));
+                // when, in words (audit I12: raw epoch ms, "1795206364108 done → …")
+                let at = d["at"].as_i64().map_or_else(|| d["at"].to_string(), |ms| wisp_cli_core::human::ago(ms, now_ms()));
+                say(&format!("{at:<14} {:<18} {}{session}", line(d, "result"), line(d, "why")));
             }
         }
         "resume" => {
@@ -364,6 +366,11 @@ pub async fn run(c: &Client, p: &Parsed, area: &str, cwd: &str) -> Result<i32> {
     let verb = rest.first().map_or("ls", String::as_str);
     let s = read(rest.get(1..).unwrap_or_default()).map_err(CliError::said)?;
     if area == "crew" { crew(c, p, verb, &s).await } else { trigger(c, p, verb, &s, cwd).await }
+}
+
+/// Now, in ms since the epoch (the CLI reads the clock; the server's cores don't).
+fn now_ms() -> i64 {
+    std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| i64::try_from(d.as_millis()).unwrap_or(i64::MAX))
 }
 
 #[cfg(test)]

@@ -279,7 +279,16 @@ pub fn normalize_member(body: &MemberBody, prev: Option<&Member>, c: &Checks, id
     // wakes (ADR-0043): given, or v1's `on` read as wakes, or what it had
     let wakes = match (&body.wakes, &body.on) {
         (Some(w), _) => w.clone(),
-        (None, Some(on)) => wisp_automations_api::v1::member_wakes(&m.name, on),
+        (None, Some(on)) => {
+            // a word that wakes nothing is said, never dropped (audit I7: `--on task.done` was, and Bob never woke)
+            if let Some(k) = on.iter().find(|k| wisp_automations_api::v1::wake_on(k).is_none()) {
+                return Err(bad(format!(
+                    "on: {k} wakes nothing: give {} or --wakes '[{{\"on\":\"…\"}}]' for any trigger",
+                    wisp_automations_api::v1::WAKE_WORDS
+                )));
+            }
+            wisp_automations_api::v1::member_wakes(&m.name, on)
+        }
         (None, None) => prev.map(|p| p.wakes.clone()).unwrap_or_default(),
     };
     for w in &wakes {

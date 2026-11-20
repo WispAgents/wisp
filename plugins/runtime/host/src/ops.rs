@@ -271,6 +271,7 @@ impl Runtime {
     }
 
     pub async fn delete(self: &Arc<Self>, id: &str) -> Result<()> {
+        self.from_queue.lock().unwrap_or_else(std::sync::PoisonError::into_inner).remove(id);
         self.stop_run(id);
         let guard = self.task_lock(id).await;
         // a run still starting (the next queued follow-up, claimed under this lock when its run let go) is told
@@ -396,8 +397,8 @@ impl Runtime {
             .await?;
         let _starting = starting;
         match start {
-            Some(i) => Ok(FollowedUp { turn_id: Some(self.start_turn(s, i).await?), queued: None }),
-            None => Ok(FollowedUp { turn_id: None, queued: Some(item.to_owned()) }),
+            Some(i) => Ok(FollowedUp { turn_id: Some(self.start_turn(s, i).await?), queued: None, interrupts: false }),
+            None => Ok(FollowedUp { turn_id: None, queued: Some(item.to_owned()), interrupts: false }),
         }
     }
 

@@ -243,7 +243,7 @@ command!(
 
 // ---------- a task's agent (v1 POST /internal/stuff, GET /internal/stuff/:id) ----------
 
-/// `stuff.agent.save`: the `wisp_save` tool's arguments and the caller's task. Exactly one of `path`, `text`, `url`
+/// An agent saves to My Stuff: what to save, and the caller's task. Exactly one of `path`, `text`, `url`
 /// or `app` (paths relative to the task's folder), or `id` alone to change an item's title, note or tags.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, ts_rs::TS)]
 pub struct AgentSaveArgs {
@@ -290,7 +290,7 @@ pub struct AgentSaveArgs {
     pub publish: Option<bool>,
 }
 
-/// `stuff.agent.list`: the `wisp_stuff` tool. With `id`, that item in full; else the items matching `query` and
+/// An agent reads My Stuff. With `id`, that item in full; else the items matching `query` and
 /// `kind`, newest first (`limit` 30, at most 100). A capped task sees its own project's items.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, ts_rs::TS)]
 pub struct AgentListArgs {

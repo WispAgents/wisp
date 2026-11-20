@@ -20,7 +20,7 @@ ext: Record<string, unknown>,
  */
 resumeId?: string, 
 /**
- * a task with nothing run yet, to go on in `cwd` (Settings › Worktrees: Bring in, audit A orch #6): no turns
+ * a task with nothing run yet, to go on in `cwd` (Settings › Worktrees: Bring in): no turns
  * needed, and it isn't read-only. Additive (2026-11-18).
  */
 fresh?: boolean, };

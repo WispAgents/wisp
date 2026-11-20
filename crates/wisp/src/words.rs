@@ -512,16 +512,34 @@ pub fn is_group(word: &str) -> bool {
 pub struct UnknownVerb {
     pub group: String,
     pub verbs: Vec<String>,
+    /// where the verb that isn't one sits in the words: 1 (`crew pasue Zed`), 2 for `held <id> <action>`
+    pub at: usize,
 }
 
 impl UnknownVerb {
-    /// What the CLI says (exit 2): the verbs there are, and how to make the words a task anyway.
+    /// The verb it's closest to, when it reads as a slip of one (`pasue` → `pause`): the closest wins, the list's order
+    /// breaks ties.
+    #[must_use]
+    pub fn close(&self, words: &[String]) -> Option<String> {
+        let typed = words.get(self.at)?.to_lowercase();
+        self.verbs
+            .iter()
+            .filter(|v| !v.contains(' ') && !v.starts_with('<'))
+            .map(|v| (distance(&typed, v), v))
+            // a short verb's last letter dropped counts too (`of` is `off`, never `on`)
+            .filter(|(d, v)| *d <= 2 && (near(&typed, v, *d) || (*d == 1 && typed.len() >= 2 && v.starts_with(typed.as_str()))))
+            .min_by_key(|(d, _)| *d)
+            .map(|(_, v)| v.clone())
+    }
+
+    /// What the CLI says (exit 2): the verb it's closest to, the verbs there are, and how to make the words a task anyway.
     pub fn said(&self, words: &[String]) -> String {
-        let typed = words.get(1).map_or("", String::as_str);
+        let typed = words.get(self.at).map_or("", String::as_str);
+        let close = self.close(words).map(|v| format!(" (did you mean {v}?)")).unwrap_or_default();
         let have = if self.verbs.is_empty() {
-            format!("  ✗ wisp {g} has no {typed}: it takes no verb (wisp {g})", g = self.group)
+            format!("  ✗ wisp {g} has no {typed}{close}: it takes no verb (wisp {g})", g = self.group)
         } else {
-            format!("  ✗ wisp {} has no {typed}: {}", self.group, self.verbs.join(", "))
+            format!("  ✗ wisp {} has no {typed}{close}: {}", self.group, self.verbs.join(", "))
         };
         let all = words.join(" ").replace('"', "\\\"");
         let hint = HINTS.iter().find(|(g, _)| *g == self.group).map(|(_, h)| format!("\n  {h}")).unwrap_or_default();
@@ -529,38 +547,51 @@ impl UnknownVerb {
     }
 }
 
-/// Setup audit F30 and B1: a plugin's name and one word that's none of its verbs is a slip, never a task, whatever the
-/// word looks like (`wisp budget stop-at`, `wisp budget frobnicate`, `wisp learn rust`): the rule [`group_line`] holds
-/// for the built-in groups, so a slip under any group never launches a Full-auto task. Two or more words are a prompt
-/// (`wisp learn rust properly`); `wisp -- …` or one quoted argument is always the task.
+/// Setup audit F30 and B1, then audit I2: a plugin's name and a next word that's none of its verbs is a slip, never a
+/// task, whatever follows (`wisp goal sett abc never`, `wisp later cancle x`): a slip never launches a Full-auto task.
+/// The words a prompt may start with ([`PROMPT_WORDS`]: `wisp ship the docs`) stay a prompt; `wisp -- …` or one quoted
+/// argument is always the task.
 fn plugin_slip(first: &str, rest: &[String], catalogue: &[Vec<String>]) -> bool {
     let verbs: Vec<&str> = catalogue.iter().filter(|c| c.len() > 1 && c[0] == first).map(|c| c[1].as_str()).collect();
-    let said: Vec<&String> = rest.iter().filter(|w| !flag_shaped(w)).collect();
-    let [word] = said.as_slice() else { return false };
+    let Some(word) = rest.first() else { return false };
     // one quoted argument (`wisp ship "the docs"`) is the task, as after every command word
-    !verbs.is_empty() && !verbs.contains(&word.as_str()) && !word.contains(char::is_whitespace)
+    !prompt_line(first, rest) && !verbs.is_empty() && !verbs.contains(&word.as_str()) && !word.contains(char::is_whitespace)
 }
 
-/// QA round 10 #1: the words start with a built-in command group (a [`VERB_PATHS`] or [`GROUPS`] word; `catalogue`,
-/// each command's path such as `["crew", "create"]`, adds its plugin verbs) and the next word is none of its verbs: a
-/// command line typed wrong, never a task. None: no group (another plugin's name included: a prompt), one of its
-/// verbs, a flag (its own checks), one word alone, or `--` first. A prompt that starts with a group's word is one
-/// quoted argument (`wisp "computer start fails"`) or follows `--`.
+/// A word a prompt may start with, followed by more than one word (`wisp ship the docs`): a prompt. One word after it is
+/// still a slip (`wisp ship foo`).
+fn prompt_line(first: &str, rest: &[String]) -> bool {
+    PROMPT_WORDS.contains(&first) && rest.iter().filter(|w| !flag_shaped(w)).count() > 1
+}
+
+/// `wisp held <id> <action>` with an action that's none of its three (`wisp held x strat`, audit I2): a slip.
+fn held_slip(words: &[String]) -> Option<UnknownVerb> {
+    let said: Vec<&String> = words.iter().filter(|w| !flag_shaped(w)).collect();
+    let [first, _, action] = said.as_slice() else { return None };
+    (first.as_str() == "held" && !crate::args::HELD_ACTIONS.contains(&action.as_str()) && !action.contains(char::is_whitespace))
+        .then(|| UnknownVerb { group: "held".into(), verbs: crate::args::HELD_ACTIONS.iter().map(|v| (*v).to_owned()).collect(), at: 2 })
+}
+
+/// QA round 10 #1, then audit I2 (owner's delegate, 2026-11-20): the words start with a built-in command group (a
+/// [`VERB_PATHS`] or [`GROUPS`] word; `catalogue`, each command's path such as `["crew", "create"]`, adds its plugin
+/// verbs) or a plugin's name, and the next word is none of its verbs: a command line typed wrong, never a task,
+/// however many words follow (`wisp crew pasue Zed` launched one). None: no group, one of its verbs, a flag (its own
+/// checks), one word alone, a word a prompt may start with ([`PROMPT_WORDS`]), or `--` first. A prompt that starts
+/// with a group's word is one quoted argument (`wisp "computer start fails"`) or follows `--`.
 pub fn unknown_verb(words: &[String], literal: Literal, catalogue: &[Vec<String>]) -> Option<UnknownVerb> {
     if literal == Literal::Task {
         return None;
     }
+    if let Some(h) = held_slip(words) {
+        return Some(h);
+    }
     let (first, rest) = words.split_first()?;
-    if rest.first().is_none_or(|w| flag_shaped(w)) {
+    if rest.first().is_none_or(|w| flag_shaped(w) || w.contains(char::is_whitespace)) {
         return None;
     }
+    let group = is_group(first) && !prompt_line(first, rest);
     let slip = !is_group(first) && plugin_slip(first, rest, catalogue);
-    if !is_group(first) && !slip {
-        return None;
-    }
-    // a catalogue verb's first word counts as the group's own too (`wisp mcp session bogus`)
-    let catalogue_own = catalogue.iter().any(|c| c.len() > 1 && c[0] == *first && rest.first().is_some_and(|w| *w == c[1]));
-    if !slip && !group_line(words) && !catalogue_own {
+    if !group && !slip {
         return None;
     }
     let mut paths: Vec<Vec<&str>> = Vec::new();
@@ -585,7 +616,7 @@ pub fn unknown_verb(words: &[String], literal: Literal, catalogue: &[Vec<String>
             verbs.push(v);
         }
     }
-    Some(UnknownVerb { group: first.clone(), verbs })
+    Some(UnknownVerb { group: first.clone(), verbs, at: 1 })
 }
 
 /// Whether `typed` reads as a slip of `cmd`, `d` apart. Under six letters only a dropped, added or
@@ -655,6 +686,33 @@ pub fn launch_stray(prompt: &[String], stray: &str) -> String {
 pub fn bad_mode(m: &str) -> Option<String> {
     (!matches!(m, "plan" | "edits" | "auto"))
         .then(|| format!("--mode takes plan, edits or auto, not {m} (a model goes after --model: --model {m}). Nothing was launched"))
+}
+
+/// The thinking levels any harness takes (each harness takes some of them; the server checks its own).
+pub const EFFORTS: [&str; 6] = ["minimal", "low", "medium", "high", "xhigh", "max"];
+
+/// `--effort banana` (audit I9): launched in Full auto, and the harness got `--effort banana`, which a real one refuses
+/// at run time. Refused before launching, in words.
+pub fn bad_effort(e: &str) -> Option<String> {
+    let e = e.trim();
+    (!e.is_empty() && !EFFORTS.contains(&e)).then(|| {
+        let mode = if matches!(e, "plan" | "edits" | "auto") { format!(" ({e} is a mode: --mode {e})") } else { String::new() };
+        format!("--effort takes minimal, low, medium, high, xhigh or max, not {e}{mode}. Nothing was launched")
+    })
+}
+
+/// `--model plan` (audit I9): a mode or a thinking level given as a model. Refused before launching, in words.
+pub fn bad_model(m: &str) -> Option<String> {
+    let m = m.trim();
+    if matches!(m, "plan" | "edits" | "auto") {
+        return Some(format!("{m} is a mode, not a model: --mode {m}. Nothing was launched"));
+    }
+    EFFORTS.contains(&m).then(|| format!("{m} is a thinking level, not a model: --effort {m}. Nothing was launched"))
+}
+
+/// The first of `--mode`, `--effort` and `--model` given a word it doesn't take, in words (audit I9).
+pub fn bad_launch_words(mode: Option<&str>, effort: Option<&str>, model: Option<&str>) -> Option<String> {
+    mode.and_then(bad_mode).or_else(|| effort.and_then(bad_effort)).or_else(|| model.and_then(bad_model))
 }
 
 /// Edit distance with adjacent swaps (`shwo` is one from `show`).

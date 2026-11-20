@@ -53,7 +53,7 @@ import { newRecipeIntent } from './recipe-new.ts';
 import { foldTail } from './phone-bar.ts';
 import { plusTool } from './composer-plus.ts';
 import type { FormulaPick } from './formula-pick.ts';
-import { fileRunner } from './file-runner.ts';
+import { barArgs, fileRunner } from './file-runner.ts';
 import { TEAMS_SETTING, presetsOf, teamFromSetting, teamSize, teamToSend, type Delegate } from './team.ts';
 import type { DelegatePlace } from './DelegatePanel.tsx';
 
@@ -585,9 +585,8 @@ export function HomeView(props: { readonly onBack?: () => void }): JSX.Element {
           ...(dirs.length > 0 && { dirs }),
           ...(g && { goal: sentGoal(g) }),
           ...(attachments.length > 0 && { attachments }),
-          ...(agent() !== 'auto' && model() && { model: model() }),
-          ...(agent() !== 'auto' && effort() && { effort: effort() }),
-          ...((a) => (agent() !== 'auto' && a ? { account: a.id } : {}))(account()),
+          // a picked task file's own agent brings its model: never the bar's (audit I4)
+          ...barArgs(fileRunner(formula()), { agent: agent(), model: model(), effort: effort(), ...((a) => (a ? { account: a.id } : {}))(account()) }),
           ...(team().length > 0 && { team: teamToSend(team()) }),
           ...(yes && { confirmLimit: true }),
           ...formula()?.args,

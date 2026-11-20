@@ -124,6 +124,20 @@ turn. When a screen or feature contradicts one, that's a bug: fix it toward the 
   as v1 did. F-upd-1 stays **partial** until it's seen working end to end in the packaged app.
 - **Keep every v1 feature and UI detail**: "v1 ui and features are amazing, make sure we don't lose any" (11-10
   01:01); docs/v1-features.md is the inventory.
+- **An agent never runs a command on the user's computer nor deletes a task; the user's harness asks before lowering a
+  guard** (owner's delegate, 2026-11-20, audit I1 and its Note; ADR-0115): `runtime.exec` is the user's click on an
+  `actions` block only (no agent capability set reaches it, nor does any run's MCP list it); an agent's token deletes
+  no task (its own included), sets no project's test command, calls no other computer directly, and what it routes
+  to another computer is held to its own set. Every write an agent's set reaches is ADR-0115's list, which a test reads from
+  the ADR. A write from the user's harness (`wisp mcp`, the HTTP MCP as the user) that lowers a wisp safety guard
+  (project setup asks, worktrees, `.env` masking, holds, webhooks, channels, setup answerers, `worktrees.trust`; and
+  what runs code: `runtime.exec`, plugin installs, raw calls to another computer) waits on the user's Allow on a task that asks, which the harness can't answer; raising a guard
+  applies at once.
+- **Under a command word, an unknown verb is a slip** (owner's delegate, 2026-11-20, audit I2): `wisp crew pasue Zed`,
+  `wisp review the auth module` and every group's or plugin's line whose next word is none of its verbs is refused
+  (exit 2, the close verb, `wisp -- "…"`), however many words follow; a word a prompt may start with (`wisp ship the
+  docs`, `wisp run the tests`) and one quoted argument stay prompts. (Changes QA round 14/15's "two or more words are a
+  prompt" for group words.)
 
 ### UI (browser and desktop)
 

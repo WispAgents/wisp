@@ -18,16 +18,16 @@ export type StartArgs = {
  */
 id?: SessionId, prompt: string, agent?: string, model?: string, effort?: string, mode?: Mode, 
 /**
- * the most this task's turns may ever run at (a channel starts its tasks at Edits): kept
- * on the task as `ext["wisp.runtime"].capped = { mode }`, the shape a crew job's cap has; a follow-up or a
- * mode switch above it is refused unless the user asks in wisp, which lifts it. Full auto is no cap.
+ * the most this task's turns may ever run at (a channel starts its tasks at Edits), kept on the task as a crew
+ * job's cap is; a follow-up or a mode switch above it is refused unless the user asks in wisp, which lifts it.
+ * Full auto is no cap.
  * Additive (2026-11-14).
  */
 cap?: Mode, 
 /**
  * the model its subagents run on, over `runtime.subagentModel` (v1 `session.subagentModel`, Try it two ways):
- * '' is the task's own model, `haiku` or `sonnet`. Kept on the task (`ext["wisp.runtime"].variant`) for every
- * turn; a harness that can't (`HarnessInfo::variants`) is refused. Additive (2026-11-14).
+ * '' is the task's own model, `haiku` or `sonnet`. Kept on the task for every turn; a harness that can't run
+ * its subagents on another model is refused. Additive (2026-11-14).
  */
 subagentModel?: string, 
 /**
@@ -71,7 +71,7 @@ base?: Base, worktree?: boolean, goal?: unknown,
  */
 factory?: string, 
 /**
- * the Notes it starts with (`{ goal, constraints: [...] }`, ADR-0097): kept in its spec, read by the plugin that
+ * the Notes it starts with (`{ goal, constraints: [...] }`): kept in its spec, read by the plugin that
  * keeps Notes (wisp.threads) when the task is made. Additive (2026-11-18).
  */
 notes?: unknown, 

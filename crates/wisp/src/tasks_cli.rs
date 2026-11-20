@@ -138,7 +138,10 @@ pub async fn task(c: &Client, o: &Opts) -> Result<i32> {
 fn profiles_in(files: &[String], cwd: &Path) -> Result<Map<String, Value>> {
     let mut out = Map::new();
     for f in files {
-        let (text, name) = formula::Source::load(&mut Files { cwd: cwd.to_owned() }, f, None).map_err(CliError::said)?;
+        let (text, name) =
+            formula::Source::load(&mut Files { cwd: cwd.to_owned() }, f, None).map_err(|e| CliError::said(tidy_paths(&e)))?;
+        // said as a person would write it (audit I14: "/private/tmp/q/proj/../f/e.task.yml")
+        let name = tidy_path(&name);
         for doc in documents(&text, format_of(&name)).map_err(CliError::said)? {
             for a in doc.get("agents").and_then(Value::as_array).into_iter().flatten() {
                 if let Some(n) = a.get("name").and_then(Value::as_str) {
@@ -286,7 +289,7 @@ pub fn create_args(task: &Value, overlay: &Value, o: &Opts, cwd: &Path) -> Value
 
 /// `wisp run -f x.task.yml`. Its `formula:` may be inline (as `wisp task export` writes it) or name formula files and
 /// modules (ADR-0111); the names in its task are resolved against them and this wisp, an unknown one refused.
-pub async fn run_file(c: &Client, o: &Opts, cwd: &Path) -> Result<i32> {
+pub async fn run_file(c: &Client, o: &Opts, flags: &crate::args::Flags, cwd: &Path) -> Result<i32> {
     let f = o.files.first().ok_or_else(|| CliError::said("wisp run -f x.task.yml"))?;
     let (text, name) = formula::Source::load(&mut Files { cwd: cwd.to_owned() }, f, None).map_err(CliError::said)?;
     let doc = documents(&text, format_of(&name)).map_err(CliError::said)?.into_iter().next().unwrap_or_default();
@@ -302,28 +305,62 @@ pub async fn run_file(c: &Client, o: &Opts, cwd: &Path) -> Result<i32> {
         }
     }
     let kinds = crate::code::formula_kinds(c).await?;
-    let resources = task_formula(&doc, Path::new(&name), o, &kinds)?;
+    let resources = task_formula(&doc, Path::new(&name), o, &kinds).map_err(|e| CliError::said(tidy_paths(&e.to_string())))?;
     let task = start_args(&spec, o, None, None);
     let at = Path::new(&name).file_name().map_or_else(|| name.clone(), |n| n.to_string_lossy().into_owned());
     let out = resolve(c, json!({ "resources": resources, "task": task, "name": at })).await?;
     let made = c.cmd("runtime.create", create_args(&out["task"], &out["overlay"], o, cwd)).await?;
     say(&format!("  ◌ started {}  wisp attach {}", s(&made, "id"), s(&made, "id")));
+    // `--wait`, as every run form takes it (audit I8): through its goal's judging, then what it did
+    if o.wait || flags.wait {
+        let t = crate::scripted::wait(c, s(&made, "id"), std::time::Duration::from_secs(30 * 60)).await?;
+        crate::scripted::show(c, flags, s(&made, "id"), Some(t)).await?;
+    }
     Ok(0)
+}
+
+/// A path with its `.` and `..` steps walked (`/a/proj/../f/e.yml` is `/a/f/e.yml`); a URL or a name stays as it is.
+pub fn tidy_path(p: &str) -> String {
+    if p.contains("://") || !(p.contains("/./") || p.contains("/../") || p.starts_with("./")) {
+        return p.to_owned();
+    }
+    let abs = p.starts_with('/');
+    let mut out: Vec<&str> = Vec::new();
+    for part in p.split('/') {
+        match part {
+            "" | "." => {}
+            ".." if out.last().is_some_and(|l| *l != "..") => {
+                out.pop();
+            }
+            ".." if abs => {}
+            other => out.push(other),
+        }
+    }
+    let joined = out.join("/");
+    if abs { format!("/{joined}") } else { joined }
+}
+
+/// Every path in a refusal tidied (`tidy_path`), word by word.
+pub fn tidy_paths(said: &str) -> String {
+    said.split(' ').map(|w| if w.contains("/../") || w.contains("/./") { tidy_path(w) } else { w.to_owned() }).collect::<Vec<_>>().join(" ")
 }
 
 /// `wisp run --formula f.yml "task"` (a prompt), or `wisp run <task> --formula f.yml [k=v…] [words…]` (a task the formula
 /// declares, by its name: its spec with `tasks.default` under it, nothing applied, ADR-0111). Its agents, projects,
 /// harnesses, skills, teams and connectors are that task's alone (the task's snapshot records what it ran with); a goal
 /// it names from the formula is inlined. No `--agent` and one agent declared: that one.
-pub async fn run_overlay(c: &Client, o: &Opts, cwd: &Path) -> Result<i32> {
+pub async fn run_overlay(c: &Client, o: &Opts, flags: &crate::args::Flags, cwd: &Path) -> Result<i32> {
     let st = crate::cli::style();
     let kinds = crate::code::formula_kinds(c).await?;
     let loaded = crate::code::load_evaluated(&o.formulas, o, &kinds, cwd)?;
-    let first = o.words.first().map_or("", String::as_str);
+    // `-d`/`--detach` is the launch flag it is everywhere (audit I8: "release takes no values: \"-d\" is left over");
+    // this command returns with the id anyway
+    let all: Vec<String> = o.words.iter().filter(|w| !matches!(w.as_str(), "-d" | "--detach")).cloned().collect();
+    let first = all.first().map_or("", String::as_str);
     let declared = loaded.resources.iter().any(|r| r.kind == "task" && r.name == first && r.name != "default");
     let args = if declared {
         let (mut params, mut words) = (Map::new(), Vec::new());
-        for w in &o.words[1..] {
+        for w in &all[1..] {
             match w.split_once('=') {
                 Some((k, v)) if !k.is_empty() && k.chars().all(|c| c.is_alphanumeric() || c == '_' || c == '-') => {
                     params.insert(k.to_owned(), json!(v));
@@ -333,7 +370,7 @@ pub async fn run_overlay(c: &Client, o: &Opts, cwd: &Path) -> Result<i32> {
         }
         json!({ "resources": loaded.resources, "run": first, "params": params, "words": words, "name": o.formulas.join(",") })
     } else {
-        let prompt = o.words.join(" ");
+        let prompt = all.join(" ");
         if prompt.trim().is_empty() {
             return Err(CliError::said("wisp run --formula f.yml \"what to do\" (or the name of a task it declares)"));
         }
@@ -352,9 +389,10 @@ pub async fn run_overlay(c: &Client, o: &Opts, cwd: &Path) -> Result<i32> {
     let id = s(&made, "id").to_owned();
     let what = if declared { format!("{first} ") } else { String::new() };
     say(&format!("  {} started {what}{id} under {}  wisp attach {id}", paint(&st, GREEN, "◌"), o.formulas.join(", ")));
-    if o.wait {
-        let t = crate::attach::until(c, &id, |s| !matches!(s.get("state").and_then(Value::as_str), Some("running") | None)).await?;
-        say(&format!("  {}  {id}", s(&t, "state")));
+    if o.wait || flags.wait {
+        // through its goal's judging, until it's done or asks you (audit I11), then what it did, as `wisp wait` says it
+        let t = crate::scripted::wait(c, &id, std::time::Duration::from_secs(30 * 60)).await?;
+        crate::scripted::show(c, flags, &id, Some(t)).await?;
     }
     Ok(0)
 }
@@ -561,6 +599,16 @@ async fn run_recipe(
 
 #[cfg(test)]
 mod tests {
+    /// Audit I14: task-file refusals printed "/private/tmp/qaI-orch/proj/../f/e.task.yml".
+    #[test]
+    fn a_refusal_says_a_path_as_a_person_writes_it_audit_i14() {
+        assert_eq!(super::tidy_path("/private/tmp/q/proj/../f/e.task.yml"), "/private/tmp/q/f/e.task.yml");
+        assert_eq!(super::tidy_path("/a/./b/../c.yml"), "/a/c.yml");
+        assert_eq!(super::tidy_path("../f/e.yml"), "../f/e.yml");
+        assert_eq!(super::tidy_path("https://x.dev/a/../b.yml"), "https://x.dev/a/../b.yml");
+        assert_eq!(super::tidy_paths("no task in /p/proj/../f/e.task.yml (a formula?)"), "no task in /p/f/e.task.yml (a formula?)");
+    }
+
     use super::rerun_hint;
 
     /// Audit H10: `wisp rerun <id> -d` printed "wisp attach <id> to follow one; --wait waits for all and compares" after

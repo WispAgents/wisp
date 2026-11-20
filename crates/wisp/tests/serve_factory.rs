@@ -178,12 +178,12 @@ async fn a_task_goes_through_the_default_factory_end_to_end() {
     let rows = api.cmd("runtime.list", json!({})).await;
     let row = rows.as_array().unwrap().iter().find(|r| r["id"] == id.as_str()).unwrap();
     assert_eq!((row["factory"]["name"].as_str(), row["factory"]["state"].as_str()), (Some("default"), Some("done")), "{row:#}");
-    // the run's own task never runs an agent: a follow-up typed there is refused, saying where the work goes
+    // the run's own task never runs an agent: a follow-up typed there is refused before anything is sent, saying why
+    // (audit I5: it was taken, then its turn showed "Not started")
+    let before = api.cmd("runtime.turns", json!({ "id": id })).await.as_array().map_or(0, Vec::len);
     let r = api.try_cmd("runtime.followUp", json!({ "id": id, "text": "one more thing" })).await;
-    let turns = api.until(&id, "the follow-up's turn ends", |t| t.last().is_some_and(common::ended)).await;
-    let last = turns.last().unwrap();
-    assert_ne!(last["status"], "done", "no agent ran: {r} {last:#}");
-    assert!(last.to_string().contains("factory run"), "it says why: {last:#}");
+    assert!(r["ok"] == false && r.to_string().contains("This factory run is done: nothing was sent."), "it says why: {r}");
+    assert_eq!(api.cmd("runtime.turns", json!({ "id": id })).await.as_array().map_or(0, Vec::len), before, "no turn: {r}");
     // `wisp show` prints the stations
     let (code, out, err) = wisp(&dir, port, &["show", &id]);
     assert_eq!(code, 0, "{out}{err}");
@@ -296,6 +296,37 @@ async fn wisp_launch_runs_a_task_through_a_factory() {
     api.cmd("factory.stop", json!({ "id": id })).await;
     let run = until_run(&api, &id, "stopped", |v| v["state"] == "stopped").await;
     assert_eq!(run["why"], "you stopped it");
+    drop(serve);
+}
+
+/// Audit I5 and G15: `wisp reply <run> Approve` after `wisp factory stop` said "✓ sent", then the run showed "✗ Not
+/// started" asking a question that wasn't there; `wisp ls` printed `review` for the run you stopped. The reply is refused
+/// (exit 1, nothing sent, no turn), and `wisp ls` says stopped.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_reply_to_a_stopped_run_is_refused_and_ls_says_stopped_audit_i5_g15() {
+    let (dir, repo, serve, api) = with_factories(
+        "serve-factory-reply-stopped",
+        &[],
+        json!({ "gate": { "stations": { "build": {}, "checks": { "run": ["true"] } } } }),
+    )
+    .await;
+    let made =
+        api.cmd("runtime.create", json!({ "prompt": "Fix it", "cwd": repo, "agent": "claude", "mode": "edits", "factory": "gate" })).await;
+    let id = made["id"].as_str().unwrap().to_owned();
+    until_run(&api, &id, "the checks ask first", |v| waits_at(v, "checks")).await;
+    let turns = api.cmd("runtime.turns", json!({ "id": id })).await.as_array().map_or(0, Vec::len);
+    let (code, out, err) = wisp(&dir, api.port, &["factory", "stop", &id]);
+    assert_eq!(code, 0, "{out}{err}");
+    until_run(&api, &id, "stopped", |v| v["state"] == "stopped").await;
+    let (code, out, err) = wisp(&dir, api.port, &["reply", &id, "Run"]);
+    assert_eq!(code, 1, "{out}{err}");
+    assert!(format!("{out}{err}").contains("This factory run is stopped: nothing was sent."), "{out}{err}");
+    assert!(!out.contains("sent") || out.contains("nothing was sent"), "{out}");
+    assert_eq!(api.cmd("runtime.turns", json!({ "id": id })).await.as_array().map_or(0, Vec::len), turns, "no turn was made");
+    let (code, out, err) = wisp(&dir, api.port, &["ls"]);
+    assert_eq!(code, 0, "{out}{err}");
+    let line = out.lines().find(|l| l.starts_with(&id[..12])).unwrap_or_else(|| panic!("{out}"));
+    assert!(line.contains("stopped") && !line.contains("review"), "{line}");
     drop(serve);
 }
 

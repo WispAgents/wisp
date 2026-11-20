@@ -28,7 +28,7 @@ turn_id?: TurnId,
 team?: unknown, 
 /**
  * a new conversation on the same task (a long thread's Fresh thread): its turn resumes nothing, hears
- * nothing of the turns before it, and is marked `ext["wisp.runtime"] = { fresh: true, after: <the conversation
- * it left> }`, so the old conversation stays linked. Additive (2026-11-18).
+ * nothing of the turns before it, and is marked as fresh with the conversation it left, so the old
+ * conversation stays linked. Additive (2026-11-18).
  */
 fresh?: boolean, };

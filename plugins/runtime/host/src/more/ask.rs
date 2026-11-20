@@ -68,6 +68,19 @@ pub(crate) fn open_setup(s: &Session) -> Option<Value> {
     slot(s)?.get("ask")?.get("setup").cloned()
 }
 
+/// Whether the open question is one about a safety guard the user's harness asked for (ADR-0115).
+pub(crate) fn open_guard(s: &Session) -> bool {
+    slot(s).and_then(|v| v.get("ask")).and_then(|a| a.get("guard")) == Some(&Value::Bool(true))
+}
+
+/// What a follow-up or an answer from elsewhere reads on such a task.
+pub(crate) const GUARD_ASKS_YOU: &str = "This task asks you whether your harness may change one of wisp's safety guards: answer it with its buttons or wisp reply <id> Allow|Deny, not a follow-up. Nothing was sent.";
+
+/// A follow-up to a task whose question is a guard's: refused (ADR-0115).
+pub(crate) fn no_follow_up_on_guard(s: &Session) -> crate::error::Result<()> {
+    if open_guard(s) { Err(crate::error::RuntimeError::Conflict(GUARD_ASKS_YOU.into())) } else { Ok(()) }
+}
+
 /// The open question's id, from the task itself (the truth across a restart).
 pub(crate) fn ask_id(s: &Session) -> Option<String> {
     slot(s)?.get("ask")?.get("id")?.as_str().map(str::to_owned)
@@ -102,7 +115,10 @@ impl Runtime {
     /// `runtime.ask`: the agent's question goes on its task, which waits on the user (v1 `ask`).
     pub async fn ask(self: &Arc<Self>, a: AskArgs) -> Result<String> {
         let context = a.details.as_ref().and_then(|d| d.get("context")).and_then(Value::as_str).unwrap_or_default().to_owned();
-        self.ask_in(&a.id, &a.question, &context, &a.options, None).await
+        // `guard`: the user's harness asks about one of wisp's safety guards (ADR-0115): only the user's own hands answer
+        // it (`runtime.answer` from the page, the CLI, the phone or a channel's tap), never a follow-up
+        let guard = a.details.as_ref().and_then(|d| d.get("guard")) == Some(&Value::Bool(true));
+        self.ask_in(&a.id, &a.question, &context, &a.options, guard.then_some(("guard", Value::Bool(true)))).await
     }
 
     /// Puts a question on task `id`: `state: waiting`, unread, back from the archive, and an

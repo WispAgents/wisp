@@ -23,3 +23,19 @@ export function fileRunner(p: FormulaPick | undefined): FileRunner | undefined {
   const decl = Array.isArray(list) ? (list as readonly Record<string, unknown>[]).find((a) => a['name'] === agent) : undefined;
   return { name: agent, harness: word(decl?.['harness']) || agent, model: model || word(decl?.['model']), effort: word(p.args.effort) || word(decl?.['effort']) };
 }
+
+/** The bar's own picks (its model, thinking and account), as New task sends them with the prompt. */
+export interface BarPicks {
+  readonly agent: string;
+  readonly model?: string;
+  readonly effort?: string;
+  readonly account?: string;
+}
+
+/** What of the bar's picks goes with a task (audit I4: with a task file picked, `runtime.create` carried the file's
+ *  `critic` and the bar's `"model":"opus"`, and codex ran `-m opus`). A picked file that names what runs (its agent, or a
+ *  model) brings its own model and thinking: none of the bar's go, so what the pill says is what runs. Auto sends none. */
+export function barArgs(file: FileRunner | undefined, bar: BarPicks): { model?: string; effort?: string; account?: string } {
+  if (file || bar.agent === 'auto') return {};
+  return { ...(bar.model && { model: bar.model }), ...(bar.effort && { effort: bar.effort }), ...(bar.account && { account: bar.account }) };
+}

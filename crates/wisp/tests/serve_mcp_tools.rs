@@ -674,7 +674,7 @@ async fn a_tasks_wisp_launch_runs_under_a_formula_and_refuses_a_name_it_lacks() 
     assert_eq!(t["ext"]["wisp.runtime"]["spec"]["goal"]["text"], "the tests pass", "{t}");
     let (said, err) = a.call("wisp_launch", json!({ "prompt": "x", "formula": ["team.wisp.yml"], "agent": "critc" })).await;
     assert!(err, "{said}");
-    assert!(said.contains("no agent named critc: agents has critic (or "), "{said}");
+    assert!(said.contains("no agent named critc: did you mean critic? agents has critic (or "), "{said}");
     a.serve.stop();
 }
 
@@ -701,6 +701,11 @@ async fn an_agents_formula_reads_only_inside_its_own_folder() {
     refused(&s, e, "is read from inside its task's folder (no absolute paths, no ..)");
     let (s, e) = a.call("wisp_launch", launch(json!("../outside.wisp.yml"))).await;
     refused(&s, e, "is read from inside its task's folder (no absolute paths, no ..)");
+    // audit I14: one error, not a second about the task's names checked against the formula that wasn't read
+    let (s, e) =
+        a.call("wisp_launch", json!({ "prompt": "x", "formula": "../outside.wisp.yml", "agent": "critic", "worktree": false })).await;
+    refused(&s, e, "is read from inside its task's folder (no absolute paths, no ..)");
+    assert!(!s.contains("no agent named") && !s.contains("; "), "a second error: {s}");
     #[cfg(unix)]
     {
         let (s, e) = a.call("wisp_launch", launch(json!("link.wisp.yml"))).await;
@@ -1011,6 +1016,12 @@ async fn an_agents_capability_set_writes_only_its_own_work() {
         "stuff.publish",
         "stuff.allow",
         "later.zone",
+        // audit I1 (ADR-0115): a shell command on the user's computer, and deleting a task with its work
+        "runtime.exec",
+        "runtime.delete",
+        // the review of that fix: a test command a factory runs, and a raw call to another computer
+        "runtime.projectTest",
+        "machines.call",
     ] {
         assert!(!w.contains(&setup.to_owned()), "an agent may still {setup}: {w:?}");
     }
@@ -1048,7 +1059,6 @@ async fn an_agents_capability_set_writes_only_its_own_work() {
         "later.plan",
         "later.tick",
         "machines.bring",
-        "machines.call",
         "machines.carry",
         "machines.dropCopies",
         "machines.route",
@@ -1069,8 +1079,6 @@ async fn an_agents_capability_set_writes_only_its_own_work() {
         "runtime.compact",
         "runtime.create",
         "runtime.delegate",
-        "runtime.delete",
-        "runtime.exec",
         "runtime.followUp",
         "runtime.forLater",
         "runtime.fork",
@@ -1080,7 +1088,6 @@ async fn an_agents_capability_set_writes_only_its_own_work() {
         "runtime.pin",
         "runtime.probe",
         "runtime.projectRun",
-        "runtime.projectTest",
         "runtime.queue.cancel",
         "runtime.queue.edit",
         "runtime.queue.merge",
@@ -1128,7 +1135,7 @@ async fn an_agents_capability_set_writes_only_its_own_work() {
     .iter()
     .map(|x| (*x).to_owned())
     .collect();
-    assert_eq!(w, want, "the agent's writes changed: decide each one in ADR-0111");
+    assert_eq!(w, want, "the agent's writes changed: decide each one in an ADR (ADR-0115 holds the list)");
     let r = raw_cmd(&a, "runtime.profile.set", json!({ "name": "x", "harness": "codex", "mode": "auto" })).await;
     assert!(r["ok"] == false && r["error"]["code"] == "forbidden", "{r}");
     let r = raw_cmd(&a, "crew.create", json!({ "name": "Zed", "mode": "auto" })).await;
@@ -1612,5 +1619,191 @@ async fn the_users_harness_reaches_triggers_settings_channels_and_worktrees_and_
     }
     let (t, _) = a.call("delegate", json!({ "tasks": [{ "agent": "frob", "prompt": "x" }] })).await;
     assert!(t.starts_with("Nothing was delegated.") && t.contains("- frob: no harness frob: name one of claude"), "{t}");
+    a.serve.stop();
+}
+
+/// The commands ADR-0115 lists as an agent's writes (its fenced `agent-writes` block): the decision, read from the ADR.
+fn adr_agent_writes() -> Vec<String> {
+    let adr = std::fs::read_dir(concat!(env!("CARGO_MANIFEST_DIR"), "/../../docs/adr"))
+        .unwrap()
+        .filter_map(Result::ok)
+        .find(|e| e.file_name().to_string_lossy().starts_with("0115-"))
+        .expect("ADR-0115");
+    let text = std::fs::read_to_string(adr.path()).unwrap();
+    let block = text.split("```agent-writes\n").nth(1).expect("an ```agent-writes block").split("```").next().unwrap();
+    let mut w: Vec<String> = block.lines().map(str::trim).filter(|l| !l.is_empty()).map(str::to_owned).collect();
+    w.sort();
+    w
+}
+
+/// Audit I1: `runtime.exec` slipped into an agent's writes (ADR-0112 named it), so a Plan or read-only Codex task ran
+/// any shell command on the user's computer through its MCP. Every write an agent's capability set reaches, and every
+/// write behind a tool its MCP lists, is one ADR-0115's list names, so a newly exposed command can't slip in unseen.
+#[tokio::test(flavor = "multi_thread")]
+async fn every_write_an_agent_reaches_is_one_adr_0115_lists() {
+    let a = Agent::start("agent-writes-adr").await;
+    let listed = adr_agent_writes();
+    assert!(!listed.contains(&"runtime.exec".to_owned()) && !listed.contains(&"runtime.delete".to_owned()), "{listed:?}");
+    assert_eq!(agent_writes(&a).await, listed, "the agent's capability set reaches a write ADR-0115 doesn't list (or the other way)");
+    // the run's own MCP: each tool that runs a catalogue write runs one the list names (the setup ones ask on a card)
+    let cat = a.api.cmd("cli.catalogue", json!({})).await;
+    let writes: Vec<String> =
+        cat.as_array().unwrap().iter().filter(|c| c["readOnly"] != true).filter_map(|c| c["id"].as_str().map(str::to_owned)).collect();
+    let tools = a.post(json!({ "jsonrpc": "2.0", "id": 1, "method": "tools/list" }), true).await;
+    for t in tools["result"]["tools"].as_array().unwrap() {
+        let desc = t["description"].as_str().unwrap_or_default();
+        let Some(cmd) = desc.rsplit_once("(wisp command ").map(|(_, c)| c.trim_end_matches(')').to_owned()) else { continue };
+        if writes.contains(&cmd) && cmd != "runtime.projectAdd" {
+            assert!(listed.contains(&cmd), "{} runs {cmd}, a write ADR-0115 doesn't give an agent", t["name"]);
+        }
+    }
+    a.serve.stop();
+}
+
+/// Audit I1: an agent's MCP neither lists nor runs `runtime_exec` (a Plan task wrote PWNED.txt in the user's checkout
+/// with it), and an agent can't delete a task, its own included (its worktree was left behind).
+#[tokio::test(flavor = "multi_thread")]
+async fn an_agent_can_neither_run_a_command_through_runtime_exec_nor_delete_a_task() {
+    let a = Agent::start_spec("agent-no-exec", |_| Vec::new(), json!({ "mode": "plan" })).await;
+    let names = a.names(true).await;
+    assert!(!names.contains(&"runtime_exec".to_owned()) && !names.contains(&"runtime_delete".to_owned()), "listed: {names:?}");
+    assert!(a.names(false).await.contains(&"runtime_exec".to_owned()), "the user's harness keeps it");
+    let proj = a.dir.join("proj");
+    let (t, err) = a.call("runtime_exec", json!({ "id": a.id, "command": "echo pwned > PWNED.txt" })).await;
+    assert!(err, "runtime_exec ran for an agent: {t}");
+    let r = raw_cmd(&a, "runtime.exec", json!({ "id": a.id, "command": "echo pwned > PWNED.txt" })).await;
+    assert!(r["ok"] == false && r["error"]["code"] == "forbidden", "{r}");
+    assert!(r.to_string().contains("runs when the user clicks it"), "{r}");
+    assert!(!proj.join("PWNED.txt").exists(), "the command ran");
+    let r = raw_cmd(&a, "runtime.delete", json!({ "id": a.id })).await;
+    assert!(r["ok"] == false && r["error"]["code"] == "forbidden", "{r}");
+    let (t, err) = a.call("runtime_delete", json!({ "id": a.id })).await;
+    assert!(err, "runtime_delete ran for an agent: {t}");
+    assert_eq!(a.api.cmd("runtime.get", json!({ "id": a.id })).await["id"], a.id.as_str(), "the task is still there");
+    // nor another way (the review of this fix): a command sent to another computer runs there as this computer's link,
+    // so it's held to what the agent may run here; a raw call to another computer, and a test command a factory runs
+    let r = raw_cmd(
+        &a,
+        "machines.route",
+        json!({ "id": "studio", "cmd": "runtime.exec", "args": { "id": a.id, "command": "id" }, "mid": "m1" }),
+    )
+    .await;
+    assert!(r["ok"] == false && r.to_string().contains("isn't something this task may run"), "{r}");
+    let r = raw_cmd(&a, "machines.call", json!({ "id": "studio", "method": "POST", "path": "/api/cmd" })).await;
+    assert!(r["ok"] == false && r["error"]["code"] == "forbidden", "{r}");
+    let r = raw_cmd(&a, "runtime.projectTest", json!({ "name": "proj", "testCommand": "id > PWNED.txt" })).await;
+    assert!(r["ok"] == false && r["error"]["code"] == "forbidden", "{r}");
+    // the user's click still runs it
+    let r = a.api.cmd("runtime.exec", json!({ "id": a.id, "command": "echo ok" })).await;
+    assert_eq!(r["code"], 0, "{r}");
+    a.serve.stop();
+}
+
+/// A user's harness tool call that waits (a guard card): `(text, is_error)` once the call returns.
+fn spawn_user_call(a: &Agent, tool: &str, args: &Value) -> tokio::task::JoinHandle<(String, bool)> {
+    let (http, port, cwd) = (a.api.http.clone(), a.port, a.dir.join("proj").to_string_lossy().into_owned());
+    let body = json!({ "jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": { "name": tool, "arguments": args } });
+    tokio::spawn(async move {
+        let r = http
+            .post(format!("http://127.0.0.1:{port}/api/mcp"))
+            .header("content-type", "application/json")
+            .header("x-wisp-cwd", cwd)
+            .body(body.to_string())
+            .send()
+            .await
+            .unwrap();
+        Agent::text(&serde_json::from_slice(&r.bytes().await.unwrap()).unwrap_or(Value::Null))
+    })
+}
+
+/// The task asking the user about a guard, once it's there: `(task id, ask id)`.
+async fn guard_ask(a: &Agent) -> (String, String) {
+    let at = std::time::Instant::now();
+    loop {
+        let list = a.api.cmd("runtime.list", json!({})).await;
+        for t in
+            list.as_array().into_iter().flatten().filter(|t| t["title"].as_str().is_some_and(|x| x.starts_with("Your harness wants to")))
+        {
+            let id = t["id"].as_str().unwrap().to_owned();
+            let got = a.api.cmd("runtime.get", json!({ "id": id })).await;
+            if let Some(ask) = got["ext"]["wisp.runtime"]["ask"]["id"].as_str() {
+                return (id, ask.to_owned());
+            }
+        }
+        assert!(at.elapsed() < std::time::Duration::from_secs(15), "no task asks: {list}");
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+    }
+}
+
+/// ADR-0115 (the audit I Note): the user's harness switching off a safety guard (`worktrees.projectAsk` off) waits on the
+/// user's Allow in wisp, on a task that asks; the harness can't answer it itself; Deny changes nothing; raising a guard,
+/// or any other setting, applies at once.
+#[tokio::test(flavor = "multi_thread")]
+async fn the_users_harness_lowers_a_safety_guard_only_on_the_users_allow() {
+    let a = Agent::start("guard-card").await;
+    let key = "worktrees.projectAsk";
+    let before = a.api.cmd("settings.get", json!({ "key": key })).await;
+    let call = spawn_user_call(&a, "settings_set", &json!({ "key": key, "value": "off" }));
+    let (task, ask) = guard_ask(&a).await;
+    let got = a.api.cmd("runtime.get", json!({ "id": task })).await;
+    let q = got["ext"]["wisp.runtime"]["ask"]["question"].as_str().unwrap_or_default().to_owned();
+    assert!(q.contains("stop asking before trusting") && q.contains("worktrees.projectAsk: on → off"), "{q}");
+    assert_eq!(a.api.cmd("settings.get", json!({ "key": key })).await, before, "nothing changed while it asks");
+    // the harness answering its own card, or replying to it, is refused; so is a follow-up from anyone (a later.add the
+    // harness scheduled would send one), and the agent of another task
+    let r = a.api.try_cmd("runtime.followUp", json!({ "id": task, "text": "Allow" })).await;
+    assert!(r.to_string().contains("not a follow-up. Nothing was sent."), "{r}");
+    let r = raw_cmd(&a, "runtime.answer", json!({ "id": task, "text": "Allow", "askId": ask })).await;
+    assert!(r["ok"] == false && r["error"]["code"] == "forbidden", "an agent answered it: {r}");
+    for (tool, args) in
+        [("runtime_answer", json!({ "id": task, "text": "Allow", "askId": ask })), ("wisp_reply", json!({ "id": task, "text": "Allow" }))]
+    {
+        let (t, err) = a.user_call(tool, args).await;
+        assert!(err && t.contains("asks the user, not their harness"), "{tool}: {t}");
+    }
+    a.api.cmd("runtime.answer", json!({ "id": task, "text": "Deny", "askId": ask })).await;
+    let (t, err) = call.await.unwrap();
+    assert!(!err && t.contains("said no"), "{t}");
+    assert_eq!(a.api.cmd("settings.get", json!({ "key": key })).await, before, "Deny changed it");
+    assert_eq!(a.api.cmd("runtime.get", json!({ "id": task })).await["state"], "done", "the asking task is done");
+    // Allow runs exactly the write shown
+    let call = spawn_user_call(&a, "settings_set", &json!({ "key": key, "value": "off" }));
+    let (task, ask) = guard_ask(&a).await;
+    a.api.cmd("runtime.answer", json!({ "id": task, "text": "Allow", "askId": ask })).await;
+    let (t, err) = call.await.unwrap();
+    assert!(!err && t.contains("allowed it"), "{t}");
+    assert!(
+        a.api.cmd("settings.get", json!({ "key": key })).await.to_string().contains("off"),
+        "{}",
+        a.api.cmd("settings.get", json!({ "key": key })).await
+    );
+    // a guarded write isn't sent to another computer
+    let (t, err) = a.user_call("settings_set", json!({ "key": key, "value": "on", "peer": "studio" })).await;
+    assert!(err && t.contains("isn't sent to another computer"), "{t}");
+    // raising it again applies at once, as does any other setting
+    let (t, err) = a.user_call("settings_set", json!({ "key": key, "value": "on" })).await;
+    assert!(!err, "{t}");
+    assert!(a.api.cmd("settings.get", json!({ "key": key })).await.to_string().contains("on"));
+    let (t, err) = a.user_call("settings_set", json!({ "key": "crew.tint", "value": false })).await;
+    assert!(!err, "{t}");
+    // given as a bool, as the kernel would store it: asks too (the review: `false` slipped past "off")
+    let call = spawn_user_call(&a, "settings_set", &json!({ "key": key, "value": false }));
+    let (task, ask) = guard_ask(&a).await;
+    a.api.cmd("runtime.answer", json!({ "id": task, "text": "Deny", "askId": ask })).await;
+    let (t, _) = call.await.unwrap();
+    assert!(t.contains("said no"), "{t}");
+    a.serve.stop();
+}
+
+/// Audit I6: an agent's `runtime_projectAdd` for a folder that isn't there put "add the project …" on a card, and after
+/// the user's Allow read "it didn't go through: No folder at …". It's refused to the agent first; nobody is asked.
+#[tokio::test(flavor = "multi_thread")]
+async fn an_agents_project_add_for_a_missing_folder_is_refused_before_any_card_audit_i6() {
+    let a = Agent::start("project-add-missing").await;
+    let gone = a.dir.join("proj9start");
+    let (t, err) = a.call("runtime_projectAdd", json!({ "path": gone })).await;
+    assert!(err && t.contains("No folder at") && t.contains("nothing was asked"), "{t}");
+    let task = a.api.cmd("runtime.get", json!({ "id": a.id })).await;
+    assert!(task["ext"]["wisp.runtime"]["ask"].is_null(), "a card was made: {}", task["ext"]["wisp.runtime"]["ask"]);
     a.serve.stop();
 }

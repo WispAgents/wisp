@@ -103,7 +103,8 @@ async fn a_cron_schedule_starts_its_task_on_its_minute_once_in_its_project() {
     let made = rt.made();
     assert_eq!(made.len(), 1, "once on its minute, though four ticks fall in it");
     let a = &made[0];
-    assert_eq!((a.prompt.as_str(), a.cwd.as_deref(), a.title.as_deref()), ("Tidy the docs", Some("/repo"), Some("nightly")));
+    // titled by what it does, as any task is (audit I15: every run was titled "nightly"); the trigger is its lineage
+    assert_eq!((a.prompt.as_str(), a.cwd.as_deref(), a.title.as_deref()), ("Tidy the docs", Some("/repo"), None));
     assert_eq!(a.lineage.triggered_by.as_deref(), Some("trigger:nightly"));
     // Plan reads, it never needs a folder of its own (v1 launch.js wantTree; audit B #7)
     assert_eq!(a.worktree, Some(false));

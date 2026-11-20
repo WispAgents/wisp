@@ -8,6 +8,7 @@ pub mod dispatch;
 pub mod error;
 pub mod frame;
 pub mod generated;
+pub mod guard;
 pub mod launch;
 pub mod plan;
 pub mod rpc;

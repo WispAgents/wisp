@@ -4,4 +4,9 @@ import type { TurnId } from "../TurnId";
 /**
  * Where a follow-up went: a new turn, or a place in the queue.
  */
-export type FollowedUp = { turnId?: TurnId, queued?: string, };
+export type FollowedUp = { turnId?: TurnId, queued?: string, 
+/**
+ * it interrupts the running turn (the follow-up setting's interrupt), rather than waiting behind it: the CLI says
+ * so (audit I3: "✓ queued" was printed either way). Additive (2026-11-20).
+ */
+interrupts?: boolean, };

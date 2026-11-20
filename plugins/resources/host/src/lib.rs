@@ -143,15 +143,9 @@ async fn dangling(
             continue;
         }
         let section = find(ks, &r.kind).map_or_else(|| r.kind.clone(), |k| k.info().section);
-        let mut has = if names.is_empty() {
-            format!("no {section} are declared")
-        } else {
-            format!("{section} has {}", wisp_resources_core::overlay::some_of(&names))
-        };
-        if !more.is_empty() {
-            has = format!("{has} (or {})", wisp_resources_core::overlay::some_of(more));
-        }
-        let line = format!("{at}: no {} named {}: {has}", r.kind, r.name);
+        let names: Vec<&str> = names.iter().map(|n| n.as_str()).collect();
+        let more: Vec<&str> = more.iter().map(String::as_str).collect();
+        let line = format!("{at}: {}", wisp_resources_core::overlay::named_nothing(&r.kind, &r.name, &section, &names, &more));
         if !out.contains(&line) {
             out.push(line);
         }

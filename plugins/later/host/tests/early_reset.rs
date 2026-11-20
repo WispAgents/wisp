@@ -44,7 +44,7 @@ impl Plugin for Runtime {
         let seen = self.0.clone();
         s.command::<r::FollowUp, _, _>(move |_, _, a: r::FollowUpArgs| {
             seen.sent.lock().unwrap().push(a.text);
-            async move { Ok(r::FollowedUp { turn_id: None, queued: None }) }
+            async move { Ok(r::FollowedUp { turn_id: None, queued: None, interrupts: false }) }
         });
         s.command::<r::SetExt, _, _>(|_, _, _| async move { Ok(r::Ack::default()) });
         Ok(())

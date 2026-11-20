@@ -185,11 +185,12 @@ pub struct Parked {
 
 /// Plan a new task, or a reminder, for later: a task starts at `--at` (or `--in` minutes), when the task `--after`
 /// names ends, or waits in Drafts (`--draft`); a reminder says `--text` then. `wisp "…"` itself always starts now:
-/// in the app, Start later plans it; here, `wisp later plan --kind task --body '{"prompt":"…","cwd":"…"}' --in 30`.
+/// in the app, Start later plans it; here, `wisp later plan --kind task --prompt "fix the flaky test" --in 30`.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
 #[ts(export, export_to = "later/")]
 pub struct PlanArgs {
     /// task (a new task starts then) or reminder (you're reminded then)
+    #[ts(type = "\"task\" | \"reminder\"")]
     pub kind: PlanKind,
     #[serde(flatten)]
     #[ts(flatten)]
@@ -206,6 +207,14 @@ pub struct PlanArgs {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional, type = "Record<string, unknown>")]
     pub body: Option<Value>,
+    /// the task's prompt, when no `body` is given (audit H9: the only way was a JSON body). Additive (2026-11-20).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub prompt: Option<String>,
+    /// the folder that task runs in, with `prompt`. Additive (2026-11-20).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub folder: Option<String>,
     /// a reminder's words
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]

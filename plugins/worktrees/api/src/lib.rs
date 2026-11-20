@@ -36,7 +36,7 @@ pub struct CreateArgs {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub reuse: Option<String>,
     /// a run started for you (a crew job, a check-in, a trigger's run): its worktree goes when its turn ends with
-    /// nothing changed (`Worktree::tidy`). Additive (2026-11-19).
+    /// nothing changed. Additive (2026-11-19).
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub tidy: bool,
 }

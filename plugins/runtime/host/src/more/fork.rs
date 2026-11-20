@@ -27,7 +27,7 @@ impl Runtime {
     /// `runtime.rerun` (v1 `rerunSignedOut`): a signed-out turn's request again, once, in the same
     /// conversation, on another account if one is given.
     pub async fn rerun(self: &Arc<Self>, a: RerunArgs) -> Result<FollowedUp> {
-        let none = FollowedUp { turn_id: None, queued: None };
+        let none = FollowedUp { turn_id: None, queued: None, interrupts: false };
         let t = {
             let _g = self.task_lock(a.id.as_str()).await;
             let mut s = self.repo.session(a.id.as_str()).await?;

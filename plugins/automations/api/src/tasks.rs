@@ -187,9 +187,34 @@ macro_rules! command {
 }
 
 command!(Tasks = "automations.tasks" ["automations:read"] read yes : Value => Vec<NamedTask>; typed);
-command!(TaskSet = "automations.task.set" ["automations:write"] : NamedTask => NamedTask);
-command!(TaskRemove = "automations.task.remove" ["automations:write"] : TaskName => Value);
-command!(TaskRun = "automations.task.run" ["automations:run"] : RunTask => Value);
+/// A command whose arguments are written out for the generated CLI and MCP tools (audit I, D6: these three took only
+/// `{args}`, their types having no ts-rs shape: `TaskDecl` flattens into `NamedTask`).
+macro_rules! described_command {
+    ($name:ident = $id:literal [$perm:literal] : $args:ty => $out:ty, $ts:expr) => {
+        #[derive(Debug)]
+        pub struct $name;
+        impl Command for $name {
+            const ID: &'static str = $id;
+            const PERMISSION: Option<&'static str> = Some($perm);
+            type Args = $args;
+            type Out = $out;
+            fn args_ts() -> Option<String> {
+                Some($ts.to_owned())
+            }
+        }
+    };
+}
+
+/// [`TaskSet`]'s argument, as `TaskDecl`'s fields say it.
+pub const TASK_SET_TS: &str = "/** Add or change a declared task (a recipe when its prompt has {params}). */ { /** its name: `wisp run <name>` runs it */ name: string, /** what to do; {param} is filled from the run's values */ prompt: string, /** its name as you wrote it, when the name can't hold it */ title?: string, /** prompts sent after the first, each when the turn before ends */ steps?: Array<string>, /** the folder it runs in, or a project's name */ project?: string, /** an agent profile's name or a harness */ agent?: string, /** the model its harness runs */ model?: string, /** how hard it thinks: low, medium, high … */ effort?: string, /** plan, edits or auto */ mode?: string, /** run in a worktree of its own */ worktree?: boolean, /** the goal judged after each turn: a declared goal's name, or { text, judges } */ goal?: unknown, /** the software factory it runs through */ factory?: string, /** the Notes it starts with: { goal, constraints } */ notes?: Record<string, unknown>, /** the crew member it runs for */ crew?: string, /** the connectors it may use, by name */ connectors?: Array<string>, /** when it runs by itself: a cron or words (every day at 2), in UTC */ schedule?: string, /** its schedule doesn't fire (it still runs by hand) */ paused?: boolean }";
+/// [`TaskRemove`]'s argument.
+pub const TASK_REMOVE_TS: &str = "/** Remove a declared task. */ { /** the declared task's name */ name: string }";
+/// [`TaskRun`]'s argument, as `RunTask`'s fields say it.
+pub const TASK_RUN_TS: &str = "/** Run a declared task (a recipe with its values). */ { /** the declared task's name */ name: string, /** {param} values by name */ params?: Record<string, string>, /** values by position, for the params not named */ words?: Array<string>, /** any field of the task, over it (agent, project, …) */ over?: Record<string, unknown> }";
+
+described_command!(TaskSet = "automations.task.set" ["automations:write"] : NamedTask => NamedTask, TASK_SET_TS);
+described_command!(TaskRemove = "automations.task.remove" ["automations:write"] : TaskName => Value, TASK_REMOVE_TS);
+described_command!(TaskRun = "automations.task.run" ["automations:run"] : RunTask => Value, TASK_RUN_TS);
 
 #[cfg(test)]
 #[allow(clippy::unwrap_used)]

@@ -39,6 +39,16 @@ pub async fn rpc(ctx: &Ctx, call: &Call, sessions: &Sessions, text: &str, cwd: O
                 &w,
                 Outcome::Failed(format!("{} isn't one of this agent's tools (tools: in its formula)", c.name)),
             )),
+            // the task asking the user about a guard their harness wants lowered: the harness reads it, never answers
+            // or acts on it (ADR-0115)
+            Step::Call(c)
+                if matches!(w, Who::User { .. })
+                    && c.args.get("id").and_then(Value::as_str).is_some_and(crate::guard_task)
+                    && !(matches!(c.name.as_str(), "wisp_get" | "wisp_list" | "wisp_wait")
+                        || c.extra.and_then(|i| contributed.get(i)).is_some_and(|t| t.read_only)) =>
+            {
+                Some(wisp_mcp_core::finish(&c.id, &c.name, &w, Outcome::Failed(wisp_mcp_core::guard::NOT_YOURS.into())))
+            }
             Step::Call(c) => {
                 let outcome = if let Some(t) = c.extra.and_then(|i| contributed.get(i)) {
                     let tc = wisp_mcp_api::ToolCall { args: Value::Object(c.args), session: call.caller().session.clone() };
@@ -247,6 +257,70 @@ async fn agent_tool(ctx: &Ctx, call: &Call, session: &str, a: AgentAction) -> Ou
         AgentAction::TaskWait { task, wait_ms } => Outcome::Text(task_wait(ctx, call, &task, wait_ms).await),
         AgentAction::Setup { command, args } => setup(ctx, call, session, command, args).await,
         AgentAction::ConnectorSignin { args } => text_of(owner(ctx, call, wisp_mcp_api::owners::CONNECTORS_SIGNIN, args).await),
+    }
+}
+
+/// A write from the user's harness that lowers a safety guard (ADR-0115): a task that asks the user in wisp (Allow or
+/// Deny, on the task's card, the phone and channels as any question), the harness's call waiting as `ask_user` does.
+/// Allow runs exactly the write it showed, as the user; anything else changes nothing. The task is done after.
+pub(crate) async fn guard_card(ctx: &Ctx, call: &Call, command: &str, args: Value, l: &wisp_mcp_core::guard::Lowered) -> Outcome {
+    use wisp_mcp_core::guard;
+    let made = typed_json::<rt::Create>(
+        ctx,
+        call,
+        json!({ "prompt": guard::question(l), "title": format!("Your harness wants to {}", l.what), "hold": true, "worktree": false, "by": "mcp" }),
+    )
+    .await;
+    let id = match made {
+        Ok(v) => v.get("id").and_then(Value::as_str).unwrap_or_default().to_owned(),
+        Err(e) => return Outcome::Failed(e),
+    };
+    if let Ok(mut g) = crate::GUARD_TASKS.lock() {
+        g.insert(id.clone());
+    }
+    let asked = typed::<rt::Ask>(
+        ctx,
+        call,
+        rt::AskArgs {
+            id: id.as_str().into(),
+            question: guard::question(l),
+            options: vec![guard::ALLOW.into(), guard::DENY.into()],
+            // the runtime answers it only from the user's own hands, never a follow-up (ADR-0115)
+            details: Some(json!({ "guard": true })),
+        },
+    )
+    .await;
+    let answer = match asked {
+        Ok(v) => {
+            let ask = v.get("askId").and_then(Value::as_str).unwrap_or_default().to_owned();
+            wait_answer(ctx, call, &ask, ASK_WAIT_MS).await
+        }
+        Err(e) => {
+            settle_guard(ctx, call, &id).await;
+            return Outcome::Failed(e);
+        }
+    };
+    let allowed = answer.as_deref().is_some_and(guard::allowed);
+    let out = if allowed {
+        match ctx.run_json(call, command, args).await {
+            Ok(v) => Outcome::Text(format!("The user allowed it in wisp: {}. {}", l.change, wisp_mcp_core::generated::answer_text(&v))),
+            Err(e) => Outcome::Failed(format!("The user allowed it, but it didn't go through: {}", e.message)),
+        }
+    } else if answer.is_some() {
+        Outcome::Text(guard::DENIED.into())
+    } else {
+        Outcome::Text(guard::UNANSWERED.into())
+    };
+    settle_guard(ctx, call, &id).await;
+    out
+}
+
+/// The asking task, done once it's answered: its held prompt never runs, and the harness may act on it again.
+async fn settle_guard(ctx: &Ctx, call: &Call, id: &str) {
+    let _ = typed::<rt::Stop>(ctx, call, rt::StopArgs { id: id.into(), clear_queue: true }).await;
+    let _ = typed_json::<rt::SetState>(ctx, call, json!({ "id": id, "state": "done" })).await;
+    if let Ok(mut g) = crate::GUARD_TASKS.lock() {
+        g.remove(id);
     }
 }
 

@@ -6,7 +6,27 @@ import type { TaskRef } from "./TaskRef";
  * Give a crew member a job: a task they run now, in their folder, as them. With `--kit` and no prompt they build
  * their kit (the skills and tools for their role).
  */
-export type AssignArgs = { id: string, prompt: string, attachments?: Array<unknown>, kit?: boolean, confirmLimit?: boolean, 
+export type AssignArgs = { 
+/**
+ * the crew member, by name or id
+ */
+id: string, 
+/**
+ * the job: what they should do
+ */
+prompt: string, 
+/**
+ * files to hand them with it (`[{ name, path }]`)
+ */
+attachments?: Array<unknown>, 
+/**
+ * a job about their own kit: the files they're given to work from
+ */
+kit?: boolean, 
+/**
+ * start it even near a usage limit (you said yes to Ask near the limit)
+ */
+confirmLimit?: boolean, 
 /**
  * this job's own harness, model, level or mode, instead of the member's
  */
@@ -17,8 +37,8 @@ run?: RunPick,
 picked?: boolean, 
 /**
  * the lead task whose agent hands this job out (it delegated to this member): the job is
- * `delegated` from it, its report goes back to that agent, and it starts now or is refused (never queued). Set by the
- * caller (`crew:assign`): the runtime passes the lead it runs
+ * `delegated` from it, its report goes back to that agent, and it starts now or is refused (never queued). wisp
+ * fills it in for a lead's own delegation: leave it out
  */
 from?: TaskRef, 
 /**

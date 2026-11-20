@@ -420,7 +420,19 @@ fn commands(s: &mut Setup, engine: &Shared) {
 /// A trigger declared as a `trigger` resource (a plugin's own, a crew member's wake, is switched where it's made).
 fn declared(ctx: &Ctx, e: &Engine, name: &str) -> Result<()> {
     let t = e.find(ctx, name)?;
-    if t.from == "trigger" { Ok(()) } else { Err(WireError::invalid(format!("trigger {name} comes from {}: switch it there", t.from))) }
+    if t.from == "trigger" { Ok(()) } else { Err(WireError::invalid(not_declared_words(name, &t.from))) }
+}
+
+/// Where a trigger that isn't a `trigger` resource is switched, and how (audit I15: "comes from wisp.crew: switch it
+/// there" didn't say how). A crew member's wake (`crew.<member>.<n>`) is one of their wakes.
+pub(crate) fn not_declared_words(name: &str, from: &str) -> String {
+    let member = name.strip_prefix("crew.").and_then(|r| r.rsplit_once('.')).map(|(m, _)| m).filter(|m| !m.is_empty());
+    match (from, member) {
+        ("wisp.crew", Some(m)) => format!(
+            "trigger {name} is one of {m}'s wakes: change them with wisp crew update {m} --wakes '[…]' (--wakes '[]' takes them all away), or pause {m}: wisp crew pause {m}"
+        ),
+        _ => format!("trigger {name} comes from {from}: switch it there (wisp plugin ls shows {from})"),
+    }
 }
 
 /// One change through `resources.apply` (the one write path): its problems are the refusal, in its words.

@@ -197,6 +197,34 @@ async fn own_folder(ctx: &wisp_kernel::Ctx, r: &Arc<crate::runtime::Runtime>, pa
 /// `runtime.setup.ask` and `runtime.answer` (ADR-0113): a setup card is answered by the user, never an agent, and its
 /// Allow runs the stored writes with wisp.runtime's own call (its manifest grants just those writes), so a channel's or
 /// the phone's tap allows it as the app's does.
+/// Why a project at `path` can't be added, before anyone is asked: no folder there, or a file. None: a folder (or a repo
+/// URL, which is cloned), or a path the add itself refuses in its own words.
+async fn missing_folder(path: &str) -> Option<String> {
+    let path = path.trim();
+    if path.is_empty() || path.contains("://") || path.starts_with("git@") || !std::path::Path::new(path).is_absolute() {
+        return None;
+    }
+    match tokio::fs::metadata(path).await {
+        Ok(m) if m.is_dir() => None,
+        Ok(_) => Some(format!("{path} is a file, not a folder: pick the folder it's in. Nothing was asked.")),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Some(format!("No folder at {path}: nothing was asked.")),
+        Err(_) => None,
+    }
+}
+
+/// Who answers a guard question: the user's own hands (`user:*`, a grid box's `box`), or a plugin that relays the user's
+/// own tap and declared it (`runtime:setup.answer`, as for setup cards).
+fn may_answer_guard(ctx: &wisp_kernel::Ctx, call: &wisp_kernel::Call) -> bool {
+    let who = call.caller();
+    if who.set.starts_with("user:") || who.set == "box" {
+        return true;
+    }
+    who.set
+        .strip_prefix("plugin:")
+        .or(who.plugin.as_deref())
+        .is_some_and(|p| ctx.manifests().iter().any(|m| m.id == p && m.permissions.iter().any(|x| x == crate::more::RELAY)))
+}
+
 fn setup_cards(s: &mut Setup, slot: &Slot) {
     use wisp_runtime_core::setup::{self as su, Normalized};
     let sl = slot.clone();
@@ -220,6 +248,13 @@ fn setup_cards(s: &mut Setup, slot: &Slot) {
                 Normalized::Writes(w) => w,
                 Normalized::Import { from } => vec![read_crew(&ctx, &from, &folder).await?],
             };
+            // a project that can't be added is refused to the agent before any card (audit I6: the user was asked,
+            // allowed it, and read "it didn't go through: No folder at …")
+            for w in writes.iter().filter(|w| w.command == su::PROJECT_ADD) {
+                if let Some(why) = missing_folder(w.args.get("path").and_then(serde_json::Value::as_str).unwrap_or_default()).await {
+                    return Err(WireError::invalid(why));
+                }
+            }
             let who = asker(&ctx, &r, &a.id).await;
             r.setup_ask(&a.id, &who, writes).await.map_err(WireError::from)
         }
@@ -229,6 +264,11 @@ fn setup_cards(s: &mut Setup, slot: &Slot) {
         let slot = sl.clone();
         async move {
             let r = rt(&slot)?;
+            // a guard question (ADR-0115): the user's own page, CLI or phone (`user:*`, a box's `box`) or a channel relaying
+            // their tap; never an agent, an API key or another plugin's own call
+            if r.asks_guard(&a.id).await && !may_answer_guard(&ctx, &call) {
+                return Err(WireError::forbidden(crate::more::GUARD_ASKS_YOU));
+            }
             if !r.asks_setup(&a.id).await {
                 return r.answer(&a.id, &a.text, a.ask_id.as_deref()).await.map_err(WireError::from);
             }

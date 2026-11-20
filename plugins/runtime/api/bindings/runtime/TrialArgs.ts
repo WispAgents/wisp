@@ -9,6 +9,6 @@ import type { Variant } from "./Variant";
  */
 export type TrialArgs = { task: StartArgs, vary: Variant, 
 /**
- * the runs' ids (A, B), made by the client that shows both rows at once (as `StartArgs::id`). Additive (2026-11-14).
+ * the runs' ids (A, B), made by the client that shows both rows at once (as a new task's own id is). Additive (2026-11-14).
  */
 ids?: Array<SessionId>, };

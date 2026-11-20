@@ -46,7 +46,26 @@ macro_rules! command {
             type Out = $out;
         }
     };
+    // with its arguments written out for the generated CLI and MCP tools (audit I, D6: they took only `{args}`)
+    ($ty:ident, $id:literal, $args:ty, $out:ty, ts = $ts:expr $(, read_only = $ro:literal)?) => {
+        #[derive(Debug)]
+        pub struct $ty;
+        impl Command for $ty {
+            const ID: &'static str = $id;
+            $(const READ_ONLY: bool = $ro;)?
+            type Args = $args;
+            type Out = $out;
+            fn args_ts() -> Option<String> {
+                Some($ts.to_owned())
+            }
+        }
+    };
 }
+
+/// [`Update`]'s argument for the generated CLI and the MCP tools.
+pub const UPDATE_TS: &str = "/** Change a channel's own settings (email: its sender address, and whether it's on). */ { /** the channel: telegram, slack, discord, email or ntfy */ channel: string, /** email: the address it sends from */ sender?: string, /** switch it on or off */ enabled?: boolean }";
+/// [`Extra`]'s argument for the generated CLI and the MCP tools.
+pub const EXTRA_TS: &str = "/** What a channel offers beside its setup (Slack: the app manifest to paste). */ { /** the channel: telegram, slack, discord, email or ntfy */ channel: string, /** what to read (Slack: manifest) */ what: string }";
 
 /// A command whose args are typed for the generated CLI and MCP tools (ts-rs `decl`, ADR-0022, ADR-0040).
 macro_rules! typed_command {
@@ -131,7 +150,7 @@ pub struct ExtraArgs {
 }
 
 typed_command!(View, "channels.view", Empty, Value, read_only = true);
-command!(Update, "channels.update", Value, Value);
+command!(Update, "channels.update", Value, Value, ts = UPDATE_TS);
 typed_command!(Test, "channels.test", TestArgs, Vec<Tested>);
 command!(SendNotice, "channels.send", SendArgs, Sent);
 command!(Notify, "channels.notify", NotifyArgs, Empty);
@@ -139,7 +158,7 @@ command!(Act, "channels.act", ActArgs, Line);
 command!(Inbound, "channels.inbound", InboundArgs, HttpOut);
 typed_command!(Routed, "channels.routed", Value, HttpOut);
 command!(Rotate, "channels.rotate", ChannelArg, HttpOut);
-command!(Extra, "channels.extra", ExtraArgs, Value, read_only = true);
+command!(Extra, "channels.extra", ExtraArgs, Value, ts = EXTRA_TS, read_only = true);
 typed_command!(Refresh, "channels.refresh", Empty, Empty);
 typed_command!(PhoneView, "channels.status", Empty, PhoneStatus, read_only = true);
 typed_command!(SetupChannel, "channels.setup", SetupArgs, ChannelSetup);

@@ -110,3 +110,14 @@ fn the_factory_create_guard_fails_closed_with_a_plain_reason() {
         _ => panic!("refused"),
     }
 }
+
+/// Audit I5: a follow-up to a run's own task with nothing asked was taken ("✓ sent") and then not started; it's refused
+/// in words. I12: `wisp factory stop` on a task that isn't a run said "This factory run isn't running".
+#[test]
+fn a_follow_up_or_a_stop_with_nothing_there_says_why_audit_i5_i12() {
+    assert_eq!(follow_up_refusal("stopped"), "This factory run is stopped: nothing was sent.");
+    assert_eq!(follow_up_refusal("done"), "This factory run is done: nothing was sent.");
+    assert!(follow_up_refusal("running").starts_with("This factory run's stations do the work: nothing was sent."));
+    assert!(drive::stop_refusal(false, "").starts_with("That task isn't a factory run"));
+    assert_eq!(drive::stop_refusal(true, "stopped"), "This factory run is stopped already: nothing to stop.");
+}

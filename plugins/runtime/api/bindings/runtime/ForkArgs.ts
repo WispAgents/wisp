@@ -2,12 +2,20 @@
 import type { SessionId } from "../SessionId";
 import type { TurnId } from "../TurnId";
 
-export type ForkArgs = { id: SessionId, 
+export type ForkArgs = { 
 /**
- * the new task's id, made by the client that shows its row and page at once (as `StartArgs::id`). Additive (2026-11-14).
+ * the task to fork: a new task goes on from its conversation
+ */
+id: SessionId, 
+/**
+ * the new task's id, made by the client that shows its row and page at once (as a new task's own id is). Additive (2026-11-14).
  */
 newId?: SessionId, 
 /**
  * fork after this turn (default: the last)
  */
-turnId?: TurnId, title?: string, };
+turnId?: TurnId, 
+/**
+ * the new task's title (default: the task's, as a fork)
+ */
+title?: string, };

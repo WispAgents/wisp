@@ -156,16 +156,16 @@ pub struct StartArgs {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub mode: Option<Mode>,
-    /// the most this task's turns may ever run at (a channel starts its tasks at Edits): kept
-    /// on the task as `ext["wisp.runtime"].capped = { mode }`, the shape a crew job's cap has; a follow-up or a
-    /// mode switch above it is refused unless the user asks in wisp, which lifts it. Full auto is no cap.
+    /// the most this task's turns may ever run at (a channel starts its tasks at Edits), kept on the task as a crew
+    /// job's cap is; a follow-up or a mode switch above it is refused unless the user asks in wisp, which lifts it.
+    /// Full auto is no cap.
     /// Additive (2026-11-14).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub cap: Option<Mode>,
     /// the model its subagents run on, over `runtime.subagentModel` (v1 `session.subagentModel`, Try it two ways):
-    /// '' is the task's own model, `haiku` or `sonnet`. Kept on the task (`ext["wisp.runtime"].variant`) for every
-    /// turn; a harness that can't (`HarnessInfo::variants`) is refused. Additive (2026-11-14).
+    /// '' is the task's own model, `haiku` or `sonnet`. Kept on the task for every turn; a harness that can't run
+    /// its subagents on another model is refused. Additive (2026-11-14).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub subagent_model: Option<String>,
@@ -336,8 +336,8 @@ pub struct FollowUpArgs {
     #[ts(type = "unknown", optional)]
     pub team: Option<serde_json::Value>,
     /// a new conversation on the same task (a long thread's Fresh thread): its turn resumes nothing, hears
-    /// nothing of the turns before it, and is marked `ext["wisp.runtime"] = { fresh: true, after: <the conversation
-    /// it left> }`, so the old conversation stays linked. Additive (2026-11-18).
+    /// nothing of the turns before it, and is marked as fresh with the conversation it left, so the old
+    /// conversation stays linked. Additive (2026-11-18).
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     #[ts(as = "Option<bool>", optional)]
     pub fresh: bool,
@@ -354,6 +354,11 @@ pub struct FollowedUp {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub queued: Option<String>,
+    /// it interrupts the running turn (the follow-up setting's interrupt), rather than waiting behind it: the CLI says
+    /// so (audit I3: "✓ queued" was printed either way). Additive (2026-11-20).
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    #[ts(as = "Option<bool>", optional)]
+    pub interrupts: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
@@ -542,8 +547,8 @@ pub struct TurnExtArgs {
     pub value: Value,
 }
 
-/// `runtime.exec`: a one-click command from an `actions` block, run in the task's folder (v1 /exec). The
-/// user's click only: no agent capability set names it. Additive (2026-11-10).
+/// A one-click command from an `actions` block, run in the task's folder. Only your click runs it: a task's agent can't
+/// (ADR-0115). Additive (2026-11-10).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[ts(export, export_to = "runtime/")]
 pub struct ExecArgs {

@@ -291,7 +291,7 @@ pub async fn follow_up(
     } else {
         open(ctx, call, rt, id, Some(text), (None, None)).await?;
     }
-    Ok(c::FollowedUp { turn_id: None, queued: None })
+    Ok(c::FollowedUp { turn_id: None, queued: None, interrupts: false })
 }
 
 /// The list row's `tui` (a terminal task) and `term` (its terminal is open): "In terminal".

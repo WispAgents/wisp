@@ -56,7 +56,7 @@ impl Plugin for Runtime {
         s.command::<r::FollowUp, _, _>(move |_, _, a: r::FollowUpArgs| {
             assert_eq!(a.by.as_deref(), Some("later"));
             rt.sent.lock().unwrap().push(a.text);
-            async move { Ok(r::FollowedUp { turn_id: None, queued: None }) }
+            async move { Ok(r::FollowedUp { turn_id: None, queued: None, interrupts: false }) }
         });
         let rt = self.0.clone();
         s.command::<r::Note, _, _>(move |_, _, a: r::NoteArgs| {

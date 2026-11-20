@@ -31,7 +31,7 @@ impl Command for Catalogue {
     type Out = Vec<CommandInfo>;
 }
 
-/// `cli.catalogue`'s arguments.
+/// Every command wisp has, with its arguments: what the generated CLI, the MCP tools and `wisp help` read.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, ts_rs::TS)]
 pub struct CatalogueArgs {
     /// a command about to run: its plugin, if it waits for its first call, is woken first so the entry carries its

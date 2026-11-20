@@ -510,6 +510,14 @@ impl Engine {
                 };
                 Tried { key: x.event.key, summary: x.event.summary, result: result.into(), why, prompt: x.prompt }
             })
+            .map(|mut x| {
+                // an off trigger answers what it would do, and says it's off (audit I15: "its next run, Fri … 21:01" for
+                // a trigger switched off)
+                if let Some(off) = off_words(name, &t) {
+                    x.summary = format!("{} ({off})", x.summary);
+                }
+                x
+            })
             .collect())
     }
 
@@ -596,6 +604,14 @@ fn due_event(t: &Live, st: &State, now: i64) -> Option<TriggerEvent> {
         }),
         _ => None,
     }
+}
+
+/// Why a trigger won't fire while it's like this: switched off, or its crew member paused. None: it's on.
+pub(crate) fn off_words(name: &str, t: &Live) -> Option<String> {
+    if !t.spec.on() {
+        return Some(format!("it's off: it won't fire until wisp trigger on {name}"));
+    }
+    t.paused.then(|| "its crew member is paused: it won't fire until they're resumed".to_owned())
 }
 
 /// The next event a trigger makes itself, for a dry run: a schedule's next minute, a one-off's time, a hand fire.
@@ -695,7 +711,9 @@ async fn start(ctx: &Ctx, call: &Call, store: &Store, t: &Live, job: &Job) -> Re
             let worktree = Some(rt::worktree_by_default(set.as_ref(), mode == Some(wisp_runtime_api::model::Mode::Plan)));
             let mut a = rt::StartArgs {
                 prompt: text("{event.summary}"),
-                title: Some(t.name.clone()),
+                // titled by what it does, as any task is (audit I15: every run of `tick` was "tick"); the trigger that
+                // started it is the task's lineage and its ext
+                title: None,
                 cwd: Some(cwd.clone()),
                 agent: opt(&t.spec.agent),
                 model: opt(&t.spec.model),

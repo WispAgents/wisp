@@ -109,9 +109,21 @@ pub fn public(doc: &str) -> String {
     // a bug by its number ("(B49: …)", "(#31 …)"), and "Additive (2026-11-16, B44: …)" whole (its colon split it)
     let aside = |t: &str| {
         let numbered = |p: &str| t.strip_prefix(p).is_some_and(|r| r.starts_with(|c: char| c.is_ascii_digit()));
-        ["(v1 ", "(v1's ", "(at most [`", "(ADR-", "(audit ", "(review ", "(owner-list ", "(owner, ", "Additive ("]
-            .iter()
-            .any(|o| t.starts_with(o))
+        [
+            "(v1 ",
+            "(v1's ",
+            "(at most [`",
+            "(ADR-",
+            "(audit ",
+            "(review ",
+            "(owner-list ",
+            "(owner, ",
+            "(owner's delegate",
+            "(owner’s delegate",
+            "Additive (",
+        ]
+        .iter()
+        .any(|o| t.starts_with(o))
             || numbered("(B")
             || numbered("(#")
     };
@@ -145,13 +157,65 @@ pub fn public(doc: &str) -> String {
     let dev = |t: &str| t.starts_with("Additive") || t.starts_with("v1 ") || t.starts_with("v1's ") || route(t);
     let kept: Vec<String> =
         s.split_inclusive(". ").flat_map(|x| x.split_inclusive(": ")).map(str::to_owned).filter(|x| !dev(x.trim())).collect();
-    let mut out = kept.concat().trim().to_owned();
-    // a doc left ending on a separator ("…colour.", "a: ")
+    without_wire_name(&untrailed(kept.concat().trim()))
+}
+
+/// A doc left ending on a separator ("…colour.", "a: "), without it.
+fn untrailed(doc: &str) -> String {
+    let mut out = doc.to_owned();
     while out.ends_with(':') || out.ends_with(',') {
         out.pop();
         out = out.trim_end().to_owned();
     }
     out
+}
+
+/// A doc without the command's wire name it opens with (audit I, E11: 75 pages began "`goal.set`: …", "`accounts.install`'s
+/// args: …", "`wisp_sessions`: …"): the name, its "'s args" or "'s call (…)", and the colon after it go; the words left
+/// start with a capital. A doc that's only the name keeps it.
+fn without_wire_name(doc: &str) -> String {
+    let wire = |n: &str| !n.is_empty() && !n.contains(' ') && (n.contains('.') || n.contains('_'));
+    let mut rest = doc.trim_start();
+    let mut named = false;
+    // one name, or several (`goal.pause` / `goal.resume` / …)
+    while let Some(r) = rest.strip_prefix('`') {
+        let Some(end) = r.find('`') else { break };
+        if !wire(&r[..end]) {
+            break;
+        }
+        named = true;
+        rest = r[end + 1..].trim_start();
+        match rest.strip_prefix('/') {
+            Some(more) => rest = more.trim_start(),
+            None => break,
+        }
+    }
+    if !named {
+        return doc.to_owned();
+    }
+    // "(on the machine)" after the name
+    if rest.starts_with('(')
+        && let Some(close) = rest.find(')')
+    {
+        rest = rest[close + 1..].trim_start();
+    }
+    // "'s args: …", "' arguments: …", "'s call (the MCP tool's input) on …: …"
+    if rest.starts_with('\'') {
+        match rest.find(": ") {
+            Some(i) if i <= 60 => rest = &rest[i + 1..],
+            _ => return doc.to_owned(),
+        }
+    } else if let Some(r) = rest.strip_prefix(':') {
+        rest = r;
+    } else {
+        return doc.to_owned();
+    }
+    let rest = rest.trim_start();
+    let mut chars = rest.chars();
+    match chars.next() {
+        Some(c) => format!("{}{}", c.to_uppercase(), chars.as_str()),
+        None => doc.to_owned(),
+    }
 }
 
 /// The top-level pieces of `s` split at `sep`, outside brackets, strings and comments.
@@ -208,7 +272,9 @@ fn kind_of(ty: &str) -> (Kind, bool) {
     let nullable = parts.iter().any(|p| p == "null");
     let rest: Vec<&str> = parts.iter().map(String::as_str).filter(|p| *p != "null").collect();
     let kind = match rest.as_slice() {
-        ["string"] => Kind::Str,
+        // a time or a count given either way (`at: 18:00` or ms, `in: 30`) is text too, which the command reads (audit
+        // H9: `--at JSON` for a time)
+        ["string"] | ["number", "string"] | ["string", "number"] => Kind::Str,
         ["number" | "bigint"] => Kind::Num,
         ["boolean"] => Kind::Bool,
         ["Array<string>"] => Kind::List,
@@ -328,6 +394,29 @@ mod tests {
         // the aside's own colon or full stop goes with it (review: "…latest).: `package`", a doc of "." alone)
         assert_eq!(public("the latest (v1 npm). Additive (2026-11-09): `package` names it."), "the latest. `package` names it.");
         assert_eq!(public("Additive (2026-11-19)."), "");
+    }
+
+    /// Audit I, E11: 75 pages opened with the command's wire name; and an owner's-delegate aside was left in.
+    #[test]
+    fn a_doc_opens_with_words_not_its_wire_name_audit_i_e11() {
+        assert_eq!(public("`goal.set`: what done means for a task."), "What done means for a task.");
+        assert_eq!(public("`accounts.install`'s args: the harness, and what npm installs."), "The harness, and what npm installs.");
+        assert_eq!(public("`wisp_sessions`: the user's other tasks, newest first."), "The user's other tasks, newest first.");
+        assert_eq!(
+            public("`wisp_watch`'s call (the MCP tool's input) on the agent's task: `action` and what it needs."),
+            "`action` and what it needs."
+        );
+        assert_eq!(public("`checkin: true` starts a first check-in at once."), "`checkin: true` starts a first check-in at once.");
+        assert_eq!(public("`name` is the member's name"), "`name` is the member's name");
+        assert_eq!(
+            public("what it runs, as the harness reads it (owner's delegate 2026-11-18)."),
+            "what it runs, as the harness reads it."
+        );
+        assert_eq!(public("`runtime.setup.ask` (ADR-0113): a change an agent asks for."), "A change an agent asks for.");
+        assert_eq!(public("`goal.pause` / `goal.resume` / `goal.drop`: a task's goal."), "A task's goal.");
+        assert_eq!(public("`machines.changes` (on the machine): what changed."), "What changed.");
+        assert_eq!(public("`budget.planWindows`' arguments: the tasks."), "The tasks.");
+        assert_eq!(public("`wisp_available`: `session` is the asking agent's task."), "`session` is the asking agent's task.");
     }
 
     /// Audit D6: an empty struct is an object of no fields, not `--args JSON`.

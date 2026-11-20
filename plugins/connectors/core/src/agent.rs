@@ -55,10 +55,38 @@ pub fn state(x: &Connector, has: &dyn Fn(&str) -> bool) -> String {
             format!("works: {n} tool{}{shown}", plural(n))
         }
         Some(t) if t.auth => "needs the user to sign in (wisp_connector_signin)".into(),
-        Some(t) => format!("fails: {}", t.error.as_deref().unwrap_or("")),
+        Some(t) => format!("fails: {}", error_words(t.error.as_deref().unwrap_or(""))),
         None if x.oauth.is_some() && has("oauth:access") => "signed in, not checked yet".into(),
         None => "not checked yet".into(),
     }
+}
+
+/// A connector's check failing, in words (audit I16: "fails: `Http://127.0.0.1:9/mcp`: error sending req…", a raw error
+/// with its capital H): what kind of failure, never the library's text. Anything else is said as it came, cut short.
+#[must_use]
+pub fn error_words(e: &str) -> String {
+    let l = e.to_lowercase();
+    if ["error sending request", "connection refused", "tcp connect", "dns error", "failed to lookup", "no route to host"]
+        .iter()
+        .any(|w| l.contains(w))
+    {
+        return "nothing answers at its address (is its server running, and is the address right?)".into();
+    }
+    if l.contains("timed out") || l.contains("timeout") || l.contains("deadline") {
+        return "it didn't answer in time".into();
+    }
+    if ["401", "403", "unauthorized", "forbidden"].iter().any(|w| l.contains(w)) {
+        return "it refused wisp: it needs signing in, or another key".into();
+    }
+    if l.contains("no such file") || l.contains("not found") && l.contains("command") {
+        return "its command isn't on this computer".into();
+    }
+    let t = e.trim();
+    let mut out: String = t.chars().take(160).collect();
+    if t.chars().count() > 160 {
+        out.push('…');
+    }
+    out
 }
 
 pub fn line(x: &Connector, has: &dyn Fn(&str) -> bool) -> String {
@@ -173,4 +201,19 @@ pub fn signin(x: &Connector, why: &str, has: &dyn Fn(&str) -> bool) -> Signin {
 /// The text that answers a waiting card once the connector works.
 pub fn works_text(name: &str, count: u32) -> String {
     format!("Done: {name} works ({count} tool{})", plural(count))
+}
+
+#[cfg(test)]
+mod words_tests {
+    use super::error_words;
+
+    /// Audit I16: a failing check read "fails: `Http://127.0.0.1:9/mcp`: error sending req…".
+    #[test]
+    fn a_failing_check_is_said_in_words_audit_i16() {
+        let raw = "Http://127.0.0.1:9/mcp: error sending request for url (http://127.0.0.1:9/mcp)";
+        assert_eq!(error_words(raw), "nothing answers at its address (is its server running, and is the address right?)");
+        assert_eq!(error_words("operation timed out"), "it didn't answer in time");
+        assert!(error_words("HTTP 401 Unauthorized").starts_with("it refused wisp"));
+        assert_eq!(error_words("bad tool list"), "bad tool list");
+    }
 }

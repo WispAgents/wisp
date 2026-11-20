@@ -168,8 +168,9 @@ fn built_in_groups() -> Vec<String> {
 /// QA round 10 #1: `wisp computer start|stop|enable`, `wisp recipes list` and `wisp grid start` launched agent tasks
 /// (each a paid run on a real setup). Under every built-in command group, a word that's none of its verbs: exit 2, its
 /// verbs named, the way to make it a task said, and no task. A prompt that starts with such a word is still a task as
-/// one quoted argument, or after `--`. Another plugin's name followed by none of its verbs is a prompt (owner's
-/// delegate: `wisp <prompt>` is how tasks start), and one of its verbs with a bad flag is still refused.
+/// one quoted argument, or after `--`. Audit I2 (owner's delegate, 2026-11-20): another plugin's name followed by none of
+/// its verbs is a slip too, however many words follow (it was a prompt from two words on); a word a prompt may start
+/// with (`wisp ship the docs`) stays a prompt, and one of a plugin's verbs with a bad flag is still refused.
 #[tokio::test(flavor = "multi_thread")]
 async fn an_unknown_verb_under_any_group_is_an_error_and_a_quoted_prompt_is_still_a_task() {
     let dir = temp("serve-cli-groups");
@@ -212,17 +213,32 @@ async fn an_unknown_verb_under_any_group_is_an_error_and_a_quoted_prompt_is_stil
     let (code, out, err) = wisp(&dir, port, &["channels", "refresh", "--bad"].map(str::to_owned));
     assert!(code != 0 && !out.contains("launched"), "wisp channels refresh --bad → {code}: {out}{err}");
 
-    // prompts (the fake harness: nothing paid): a group's word quoted as one argument, or after `--`; and a plugin's
-    // name followed by none of its verbs, plain (review, ship, update, git and learn are all plugins here)
+    // a plugin's name and words that are none of its verbs: a slip, however many (audit I2; review, update, git and
+    // learn are all plugins here)
     let catalogue = api.cmd("cli.catalogue", json!({})).await.to_string();
-    let prompts: [&[&str]; 7] = [
-        &["computer start fails on boot, fix it"],
-        &["--", "grid", "start", "is", "slow"],
-        &["review", "the", "auth", "module"],
-        &["ship", "the", "docs"],
+    for words in [
+        &["review", "the", "auth", "module"][..],
         &["update", "the", "readme"],
         &["git", "rebase", "onto", "main"],
         &["learn", "rust", "properly"],
+    ] {
+        assert!(catalogue.contains(&format!("\"{}.", words[0])), "{} is a plugin here, as the test means", words[0]);
+        let args: Vec<String> = std::iter::once("--no-open").chain(words.iter().copied()).map(str::to_owned).collect();
+        let (code, out, err) = wisp(&dir, port, &args);
+        let way = format!("To start a task with these words: wisp -- \"{}\"", words.join(" "));
+        assert!(code == 2 && !out.contains("launched") && err.contains(&way), "{words:?} → {code}: {out}{err}");
+    }
+    assert_eq!(api.cmd("runtime.list", json!({})).await.as_array().unwrap().len(), 0, "no task was made");
+    // prompts (the fake harness: nothing paid): a group's word quoted as one argument, or after `--`; a word a prompt
+    // may start with (`ship`)
+    let prompts: [&[&str]; 7] = [
+        &["computer start fails on boot, fix it"],
+        &["--", "grid", "start", "is", "slow"],
+        &["review the auth module"],
+        &["ship", "the", "docs"],
+        &["--", "update", "the", "readme"],
+        &["git rebase onto main"],
+        &["--", "learn", "rust", "properly"],
     ];
     for words in prompts {
         if let Some(ns) = words.first().filter(|w| **w != "--" && !w.contains(' ')) {
@@ -234,17 +250,17 @@ async fn an_unknown_verb_under_any_group_is_an_error_and_a_quoted_prompt_is_stil
     }
     // a flag no launch takes after a prompt (audit H2): refused, nothing launched, and the way to say it is `--`
     let before = api.cmd("runtime.list", json!({})).await.as_array().unwrap().len();
-    let strict = ["--no-open", "review", "the", "auth", "module", "--strict"].map(str::to_owned);
+    let strict = ["--no-open", "fix", "the", "auth", "module", "--strict"].map(str::to_owned);
     let (code, out, err) = wisp(&dir, port, &strict);
     assert!(code == 1 && err.contains("wisp takes no --strict") && !out.contains("launched"), "{strict:?} → {code}: {out}{err}");
-    assert!(err.contains("A task that says it: wisp \"review the auth module\" -- --strict"), "{err}");
+    assert!(err.contains("A task that says it: wisp \"fix the auth module\" -- --strict"), "{err}");
     assert_eq!(api.cmd("runtime.list", json!({})).await.as_array().unwrap().len(), before, "nothing was launched");
-    let said = ["--no-open", "review", "the", "auth", "module", "--", "--strict"].map(str::to_owned);
+    let said = ["--no-open", "fix", "the", "auth", "module", "--", "--strict"].map(str::to_owned);
     let (code, out, err) = wisp(&dir, port, &said);
     assert!(code == 0 && format!("{out}{err}").contains("launched"), "{said:?} → {code}: {out}{err}");
     let tasks = api.cmd("runtime.list", json!({})).await;
     let made = tasks.to_string();
-    assert!(made.contains("review the auth module --strict"), "after -- the flag is the prompt's: {tasks}");
+    assert!(made.contains("fix the auth module --strict"), "after -- the flag is the prompt's: {tasks}");
     for p in [
         "computer start fails on boot, fix it",
         "grid start is slow",
@@ -531,7 +547,7 @@ fn probe_within(dir: &Path, port: u16, args: &[&str], secs: u64) -> (i32, String
 
 /// QA round 14 (the owner's delegate's rule): after a command word, one word it doesn't take is a slip (exit 2, with
 /// the `wisp -- …` way out), and two or more are a prompt; a command that takes a task is one only for an id or
-/// `last`. #1: four prompts were refused; #2: `wisp settings open` and `wisp status all` launched tasks; #7: `wisp
+/// `last`. Audit I2 changed it for a group's word: a word that's none of its verbs is a slip however many follow. #1: four prompts were refused; #2: `wisp settings open` and `wisp status all` launched tasks; #7: `wisp
 /// attach last` hung.
 #[tokio::test(flavor = "multi_thread")]
 async fn after_a_command_word_one_word_is_a_slip_and_more_are_a_prompt() {
@@ -553,9 +569,12 @@ async fn after_a_command_word_one_word_is_a_slip_and_more_are_a_prompt() {
         &["show", "foo"],
         &["wait", "x"],
         &["channels", "refresh", "--bad"],
-        // a group that routes as a command, one word: a slip (two or more are a prompt, QA round 15)
+        // a group that routes as a command, one word: a slip
         &["mcp", "foo"],
         &["skill", "foo"],
+        // audit I2: a group's word and words that are none of its verbs, however many
+        &["share", "the", "results", "with", "the", "team"],
+        &["settings", "page", "needs", "a", "dark", "mode"],
     ] {
         let (code, out, err) = probe(&dir, port, words);
         assert!(code == 2 && !out.contains("launched") && err.contains("wisp -- "), "{words:?} → {code}: {out}{err}");
@@ -566,10 +585,8 @@ async fn after_a_command_word_one_word_is_a_slip_and_more_are_a_prompt() {
     let prompts = [
         "show me where the bug is",
         "stop using var in math.js",
-        "share the results with the team",
         "add logging to math.js",
         "open a PR for the math fix",
-        "settings page needs a dark mode",
         "status badge in the README",
         "merge the two helper functions",
         "attach a screenshot of the failing test",
@@ -610,6 +627,10 @@ async fn one_stray_word_is_a_slip_more_is_a_prompt_for_every_command_word() {
         (&["help", "me"], "wisp help lists every command and plugin"),
         // audit B #15: help never starts a task, however many words follow; the task is `wisp -- help …`
         (&["help", "me", "write", "a", "test", "for", "add()"], "wisp -- help me write a test for add()"),
+        // audit I2: a group's word and words that are none of its verbs, however many (QA round 15 made them prompts)
+        (&["plugin", "for", "prettier"], "wisp -- \"plugin for prettier\""),
+        (&["plugin", "to", "format", "the", "code"], "wisp -- \"plugin to format the code\""),
+        (&["mcp", "server", "for", "the", "docs"], "wisp -- \"mcp server for the docs\""),
     ] {
         let (code, out, err) = probe(&dir, port, words);
         assert!(code == 2 && !out.contains("launched") && err.contains(said) && err.contains("wisp -- "), "{words:?} → {code}: {out}{err}");
@@ -618,16 +639,15 @@ async fn one_stray_word_is_a_slip_more_is_a_prompt_for_every_command_word() {
     assert_eq!(api.cmd("runtime.list", json!({})).await.as_array().unwrap().len(), 0, "no task was made");
 
     // prompts (the fake harness: nothing paid)
-    let prompts = [
-        "plugin for prettier",
-        "plugin to format the code",
-        "mcp server for the docs",
-        "fork the repo and set up CI",
-        "export the results as CSV",
-        "run the failing tests twice",
-    ];
-    // one quoted argument, or `--`, after a prompt word: the prompt
-    for words in [&["--no-open", "ship", "the docs"][..], &["--no-open", "run", "the tests"], &["--no-open", "run", "--", "deploy"]] {
+    let prompts = ["fork the repo and set up CI", "export the results as CSV", "run the failing tests twice"];
+    // one quoted argument, or `--`, after a prompt word: the prompt; a group's words quoted, or after `--`
+    for words in [
+        &["--no-open", "ship", "the docs"][..],
+        &["--no-open", "run", "the tests"],
+        &["--no-open", "run", "--", "deploy"],
+        &["--no-open", "plugin for prettier"],
+        &["--no-open", "--", "mcp", "server", "for", "the", "docs"],
+    ] {
         let (code, out, err) = probe(&dir, port, words);
         assert!(code == 0 && out.contains("launched"), "{words:?} → {code}: {out}{err}");
     }
@@ -639,7 +659,7 @@ async fn one_stray_word_is_a_slip_more_is_a_prompt_for_every_command_word() {
     // #6: `ls -a` is --all
     let ids: Vec<String> =
         api.cmd("runtime.list", json!({})).await.as_array().unwrap().iter().map(|t| t["id"].as_str().unwrap().to_owned()).collect();
-    assert_eq!(ids.len(), prompts.len() + 3);
+    assert_eq!(ids.len(), prompts.len() + 5);
     api.cmd("runtime.archive", json!({ "id": ids[0], "archived": true })).await;
     let (code, out, err) = probe(&dir, port, &["ls", "-a"]);
     assert!(code == 0 && ids.iter().all(|id| out.contains(id.as_str())), "{code}: {out}{err}");

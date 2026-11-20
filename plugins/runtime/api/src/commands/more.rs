@@ -11,8 +11,9 @@ use crate::model::{Activity, Attachment, Ext, SessionState};
 use crate::{SessionId, TurnId};
 
 /// `runtime.setup.ask` (ADR-0113): a change to the user's setup an agent asks for. `command` is one of
-/// `wisp_runtime_core::setup::WRITES` (a connector, a crew member, a project) and `args` its arguments; the card says
-/// what it would change in the server's words, and the write runs only when the user answers Allow, never before.
+/// `connectors.agent.add`, `crew.agent.add`, `crew.agent.edit`, `crew.agent.remove` or `runtime.projectAdd`, and
+/// `args` its arguments; the card says what it would change in the server's words, and the write runs only when the
+/// user answers Allow, never before.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
 #[ts(export, export_to = "runtime/")]
@@ -462,8 +463,9 @@ pub struct CardArgs {
 #[serde(rename_all = "camelCase")]
 #[ts(export, export_to = "runtime/")]
 pub struct ForkArgs {
+    /// the task to fork: a new task goes on from its conversation
     pub id: SessionId,
-    /// the new task's id, made by the client that shows its row and page at once (as `StartArgs::id`). Additive (2026-11-14).
+    /// the new task's id, made by the client that shows its row and page at once (as a new task's own id is). Additive (2026-11-14).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub new_id: Option<SessionId>,
@@ -471,6 +473,7 @@ pub struct ForkArgs {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub turn_id: Option<TurnId>,
+    /// the new task's title (default: the task's, as a fork)
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub title: Option<String>,

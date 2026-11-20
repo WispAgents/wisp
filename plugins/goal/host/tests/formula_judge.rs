@@ -86,7 +86,7 @@ impl Plugin for Runtime {
         let rt = self.0.clone();
         s.command::<r::FollowUp, _, _>(move |_, _, a: r::FollowUpArgs| {
             rt.seen.lock().unwrap().follow_ups.push(a.text);
-            async move { Ok(r::FollowedUp { turn_id: None, queued: None }) }
+            async move { Ok(r::FollowedUp { turn_id: None, queued: None, interrupts: false }) }
         });
         let rt = self.0.clone();
         s.command::<r::Ask, _, _>(move |_, _, a: r::AskArgs| {
