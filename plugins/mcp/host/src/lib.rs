@@ -70,7 +70,17 @@ pub(crate) fn extras_for(ctx: &Ctx, call: &Call) -> (Vec<Extra>, Vec<Arc<wisp_mc
     }
     taken.push("delegate".into());
     let refs: Vec<&str> = taken.iter().map(String::as_str).collect();
-    let catalogue: Vec<_> = ctx.catalogue(call.caller()).into_iter().filter(|c| ctx.may(&c.permission)).collect();
+    let mut catalogue: Vec<_> = ctx.catalogue(call.caller()).into_iter().filter(|c| ctx.may(&c.permission)).collect();
+    // a task's agent gets the user's setup commands too, as cards (ADR-0113): the call asks, the user's Allow writes
+    let asks = setup_asks(call.caller());
+    if asks {
+        let have: Vec<String> = catalogue.iter().map(|c| c.id.clone()).collect();
+        catalogue.extend(
+            ctx.catalogue(&wisp_kernel::Caller::user())
+                .into_iter()
+                .filter(|c| SETUP_COMMANDS.contains(&c.id.as_str()) && !have.contains(&c.id) && ctx.may(&c.permission)),
+        );
+    }
     for (name, id, read_only, tool) in wisp_mcp_core::generated::tools(&catalogue, &refs) {
         let spec = wisp_kernel::decl::parse(catalogue.iter().find(|c| c.id == id).and_then(|c| c.args.as_deref()));
         let own_peer = spec.fields.iter().any(|f| f.name == wisp_mcp_core::generated::PEER);
@@ -82,6 +92,14 @@ pub(crate) fn extras_for(ctx: &Ctx, call: &Call) -> (Vec<Extra>, Vec<Arc<wisp_mc
                 // `args` as documented, and a run's own task filled in (audit E10)
                 let session = call.caller().session.clone();
                 let args = wisp_mcp_core::generated::call_args(&spec, &input, session.as_deref());
+                if let (true, Some(sid)) = (asks && SETUP_COMMANDS.contains(&id.as_str()), session.as_deref()) {
+                    return Ok(match crate::run::setup(&ctx, &call, sid, &id, args).await {
+                        wisp_mcp_core::Outcome::Failed(e) | wisp_mcp_core::Outcome::Rpc(_, e) => {
+                            wisp_mcp_api::ToolText { text: None, error: Some(e) }
+                        }
+                        wisp_mcp_core::Outcome::Text(t) => wisp_mcp_api::ToolText { text: Some(t), error: None },
+                    });
+                }
                 // `peer`: the command runs on that machine, through machines.route (ADR-0041)
                 let out = match peer {
                     Some(p) => {
@@ -135,6 +153,16 @@ pub(crate) fn extras_for(ctx: &Ctx, call: &Call) -> (Vec<Extra>, Vec<Arc<wisp_mc
         }));
     }
     (ex, list)
+}
+
+/// The catalogue commands that change the user's setup and that an agent reaches as a card (ADR-0113); the crew and
+/// connector ones are wisp's own tools (`wisp_crew_add`, `wisp_connector_add`).
+const SETUP_COMMANDS: [&str; 1] = ["runtime.projectAdd"];
+
+/// Whether this caller asks for setup changes on a card: a task's agent, not a capped one (v1 offered a capped task
+/// none of these).
+fn setup_asks(c: &wisp_kernel::Caller) -> bool {
+    c.session.is_some() && c.set.starts_with("agent:session")
 }
 
 /// A key for a routed call (one per tool call).

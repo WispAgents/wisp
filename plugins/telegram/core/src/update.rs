@@ -110,6 +110,9 @@ pub struct CallbackQuery {
     pub data: Option<String>,
     #[serde(default)]
     pub message: Option<TappedMessage>,
+    /// who tapped (Telegram's `from`): in a group, anyone in it can tap a button
+    #[serde(default)]
+    pub from: Option<From>,
 }
 
 impl CallbackQuery {

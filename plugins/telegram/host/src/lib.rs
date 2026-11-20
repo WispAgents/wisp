@@ -62,6 +62,14 @@ fn s<'a>(v: &'a Value, k: &str) -> &'a str {
 /// Where a refused token is fixed (Slack's and Discord's errors say theirs).
 const FIX: &str = "Check the token in wisp → Settings → Phone → Telegram.";
 
+/// Whether `from` is the person who linked this chat (ADR-0113): the id kept at linking, or, linked before that was kept,
+/// the chat itself when it's a private one (a private chat's id is its person's).
+fn linked_person(cfg: &Value, chat: &str, from: Option<&str>) -> bool {
+    let Some(from) = from.filter(|f| !f.is_empty()) else { return false };
+    let user = id_text(&cfg["userId"]);
+    if user.is_empty() { from == chat } else { from == user }
+}
+
 /// A chat id as Telegram sends it (a number) or wisp keeps it (a string).
 fn id_text(v: &Value) -> String {
     v.as_str().map_or_else(|| v.as_i64().map(|n| n.to_string()).unwrap_or_default(), str::to_owned)
@@ -193,6 +201,7 @@ impl Telegram {
                         index: Some(t.index),
                         text: None,
                         approvals: false,
+                        person: linked_person(&self.cfg(), &chat, q.from.as_ref().and_then(|f| f.id.as_deref())),
                     };
                     self.hub.act(&a).await.unwrap_or_else(|e| e.message)
                 } else {
@@ -227,7 +236,12 @@ impl Telegram {
             // linking: only the chat that sends the code shown in wisp's settings gets attached
             let code = s(&cfg, "linkCode");
             if !code.is_empty() && links_it(text).is_some_and(|c| wisp_telegram_core::secret_ok(Some(c), code)) {
-                self.hub.set_cfg("telegram", json!({ "chatId": m.chat.id, "chatName": core::chat_name(&m.chat), "linkCode": "" }));
+                // the person who sent the code, by their own id: in a group, only they answer what needs them
+                let by = m.from.as_ref().and_then(|f| f.id.clone()).unwrap_or_default();
+                self.hub.set_cfg(
+                    "telegram",
+                    json!({ "chatId": m.chat.id, "chatName": core::chat_name(&m.chat), "userId": by, "linkCode": "" }),
+                );
                 self.mark(None);
                 self.say("✓ Linked to wisp. Questions and finished tasks will show up here.", None).await?;
             }
@@ -286,6 +300,7 @@ impl Telegram {
                 index: None,
                 text: Some(text.to_owned()),
                 approvals: false,
+                person: linked_person(&cfg, &chat, m.from.as_ref().and_then(|f| f.id.as_deref())),
             })
             .await
             .unwrap_or_else(|e| e.message);

@@ -16,7 +16,10 @@ mod machine;
 mod quick;
 mod report_back;
 mod sandbox;
+mod setup;
 mod sign_in;
+pub(crate) use ask::open_setup;
+pub use setup::{KEYS_SETTING, RELAY, may_answer};
 
 use std::collections::BTreeMap;
 use std::sync::Arc;

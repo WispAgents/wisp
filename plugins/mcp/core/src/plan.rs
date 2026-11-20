@@ -18,8 +18,9 @@ pub enum AgentAction {
     Ask { question: String, context: Option<String>, options: Vec<String> },
     /// `approve`: the owner decides at once or opens a prompt to wait on
     Approve { args: Value, input: Value },
-    /// `wisp_connector_add`; `consent`: the question to ask first (a local command every task would start)
-    ConnectorAdd { consent: Option<String>, args: Value },
+    /// a change to the user's setup (`wisp_connector_add`, `wisp_crew_add`/`_edit`/`_remove`, `runtime_projectAdd`):
+    /// a card the user answers (ADR-0113, `runtime.setup.ask`), waited on; the write runs only on their Allow
+    Setup { command: &'static str, args: Value },
     /// `wisp_connector_signin`: the owner answers, or opens a card to wait on
     ConnectorSignin { args: Value },
     /// `wisp_launch`, then with `wait` the first task's report
@@ -78,10 +79,10 @@ pub fn agent_action(name: &str, a: Args, session: &str, info: &SessionInfo) -> R
         "wisp_crew" => {
             owner(owners::CREW_LIST, if a.get("member").is_some_and(truthy) { query(&a, &["member"], s) } else { json!({ "session": s }) })
         }
-        "wisp_crew_add" => owner(owners::CREW_ADD, with_session(a, s)),
-        "wisp_crew_edit" => owner(owners::CREW_EDIT, with_session(a, s)),
+        "wisp_crew_add" => setup(owners::CREW_ADD, with_session(a, s)),
+        "wisp_crew_edit" => setup(owners::CREW_EDIT, with_session(a, s)),
         "wisp_crew_kit" => owner(owners::CREW_KIT, with_session(a, s)),
-        "wisp_crew_remove" => owner(owners::CREW_REMOVE, with_session(a, s)),
+        "wisp_crew_remove" => setup(owners::CREW_REMOVE, with_session(a, s)),
         "wisp_connectors" => owner(owners::CONNECTORS_LIST, json!({ "session": s })),
         "wisp_connector_add" => connector_add(a, s),
         "wisp_connector_signin" => AgentAction::ConnectorSignin { args: with_session(a, s) },
@@ -133,12 +134,15 @@ fn session_read(a: &Args, s: &str) -> Result<AgentAction, McpError> {
     Ok(owner(owners::SESSION, args))
 }
 
+const fn setup(command: &'static str, args: Value) -> AgentAction {
+    AgentAction::Setup { command, args }
+}
+
+/// v1 asked the user before a local one (a command every task would start); now every add is a card (ADR-0113).
 fn connector_add(mut a: Args, s: &str) -> AgentAction {
     let remote = a.get("url").is_some_and(truthy);
-    let consent =
-        (a.get("command").is_some_and(truthy) && !remote).then(|| words::connector_question(&text(a.get("name")), &text(a.get("command"))));
     a.insert("transport".into(), Value::String(if remote { "remote" } else { "local" }.into()));
-    AgentAction::ConnectorAdd { consent, args: with_session(a, s) }
+    setup(owners::CONNECTORS_ADD, with_session(a, s))
 }
 
 fn launch(mut a: Args, s: &str) -> AgentAction {

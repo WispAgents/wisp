@@ -663,6 +663,13 @@ impl Runtime {
             opts,
             ..QueueItem::default()
         };
+        // a setup card waits on the user's own answer (ADR-0113): a follow-up queues behind it, the card stays
+        if crate::more::open_setup(&s).is_some() {
+            let id = item.id.clone();
+            s.queue.push(item);
+            self.persist(&mut s, Vec::new()).await?;
+            return Ok(FollowedUp { turn_id: None, queued: Some(id) });
+        }
         let last_held = self.repo.turns(a.id.as_str(), None, Some(1)).await?.last().is_some_and(|t| t.status == TurnStatus::Held);
         let run = self.run_state(a.id.as_str());
         let mut held = s.queue_held;
@@ -764,7 +771,8 @@ impl Runtime {
         {
             now.queue.insert(0, front.clone());
         }
-        if self.run_state(&id) != Run::Idle {
+        // nothing starts past an open setup card: the queue goes on once the user has answered it (ADR-0113)
+        if self.run_state(&id) != Run::Idle || crate::more::open_setup(&now).is_some() {
             return Ok(None);
         }
         let mut held = now.queue_held;

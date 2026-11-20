@@ -18,7 +18,16 @@ pub(crate) const ASK_TIMEOUT_MS: i64 = 30 * 60_000;
 pub(crate) const APPROVAL_ALLOW: &str = "Allow";
 pub(crate) const APPROVAL_ALWAYS: &str = "Always allow in this task";
 pub(crate) const APPROVAL_DENY: &str = "Deny";
+/// A question asked while a setup card is open (ADR-0113).
+pub(crate) const SETUP_OPEN: &str = "A change to the user's setup is waiting on their answer: ask again once they've answered it.";
+/// An answer to a question that's no longer the open one.
+pub(crate) const NOT_OPEN: &str = "That question was already answered, or a newer one replaced it: nothing was sent.";
 const SIDE_DENIED: &str = "Refused: a side discussion only reads. Ask the main task to do it.";
+
+/// The open setup card on a task (ADR-0113), if its open question is one.
+pub(crate) fn open_setup(s: &Session) -> Option<Value> {
+    slot(s)?.get("ask")?.get("setup").cloned()
+}
 
 /// The open question's id, from the task itself (the truth across a restart).
 pub(crate) fn ask_id(s: &Session) -> Option<String> {
@@ -59,30 +68,35 @@ impl Runtime {
 
     /// Puts a question on task `id`: `state: waiting`, unread, back from the archive, and an
     /// "Asked you: …" (or "Needs your OK to …") row on its turn. A question already open is replaced.
-    async fn ask_in(
+    pub(crate) async fn ask_in(
         self: &Arc<Self>,
         id: &SessionId,
         question: &str,
         context: &str,
         options: &[String],
-        permission: Option<Value>,
+        permission: Option<(&'static str, Value)>,
     ) -> Result<String> {
         let (tid, label, ask_id) = {
             let _g = self.task_lock(id.as_str()).await;
             let mut s = self.repo.session(id.as_str()).await?;
+            // a setup card stays until the user answers it (ADR-0113): nothing asked after it replaces it
+            if open_setup(&s).is_some() {
+                return Err(RuntimeError::Conflict(SETUP_OPEN.into()));
+            }
             if let Some(old) = ask_id(&s) {
                 self.asks().remove(&old);
             }
             let ask_id = wisp_kernel::ids::uuid7();
             let question = if question.trim().is_empty() { "The agent has a question.".to_owned() } else { question.trim().to_owned() };
             let options: Vec<String> = options.iter().take(6).cloned().collect();
-            let label = match permission.as_ref().and_then(|p| p.get("action")).and_then(Value::as_str) {
+            // `permission` (a live approval) or `setup` (ADR-0113), each with the `action` its row names
+            let label = match permission.as_ref().and_then(|(_, p)| p.get("action")).and_then(Value::as_str) {
                 Some(action) => format!("Needs your OK to {action}"),
                 None => format!("Asked you: {question}"),
             };
             let mut ask = json!({ "id": ask_id, "question": question, "context": context, "options": options, "askedAt": self.now() });
-            if let (Some(p), Some(o)) = (permission, ask.as_object_mut()) {
-                o.insert("permission".into(), p);
+            if let (Some((key, p)), Some(o)) = (permission, ask.as_object_mut()) {
+                o.insert(key.into(), p);
             }
             with_slot(&mut s.ext, |m| m.insert("ask".into(), ask));
             s.state = SessionState::Waiting;
@@ -99,9 +113,16 @@ impl Runtime {
         Ok(ask_id)
     }
 
-    /// `runtime.answer`: the user's answer to the open question.
-    pub async fn answer(self: &Arc<Self>, id: &SessionId, text: &str) -> Result<Value> {
+    /// `runtime.answer`: the user's answer to the open question. `ask`: the question it answers (a card's, a channel's
+    /// or the phone's button names it): refused when that one isn't the open one any more.
+    pub async fn answer(self: &Arc<Self>, id: &SessionId, text: &str, ask: Option<&str>) -> Result<Value> {
         let _g = self.task_lock(id.as_str()).await;
+        let s = self.repo.session(id.as_str()).await?;
+        if let Some(want) = ask
+            && ask_id(&s).as_deref() != Some(want)
+        {
+            return Err(RuntimeError::Conflict(NOT_OPEN.into()));
+        }
         self.answer_locked(id, text).await
     }
 
@@ -243,7 +264,8 @@ impl Runtime {
         let options = [APPROVAL_ALLOW, APPROVAL_ALWAYS, APPROVAL_DENY].map(str::to_owned);
         let question = format!("Allow {} to {}?", h.info().name, p.action);
         let permission = json!({ "tool": p.tool, "action": p.action, "detail": p.detail, "toolUseId": a.tool_use_id });
-        let ask_id = self.ask_in(&a.id, &question, p.why.as_deref().unwrap_or_default(), &options, Some(permission)).await?;
+        let ask_id =
+            self.ask_in(&a.id, &question, p.why.as_deref().unwrap_or_default(), &options, Some(("permission", permission))).await?;
         // v1 internal.js: an approval that asked you (not one an "always" already let through) counts
         self.host.track("approval", json!({ "agent": s.agent }));
         let Some(answer) = self.wait_answer(&ask_id, ASK_TIMEOUT_MS).await else {

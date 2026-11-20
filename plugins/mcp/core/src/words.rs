@@ -12,9 +12,8 @@ pub const APPROVE_CANCELLED: &str =
     "The user did not answer (the request was cancelled). Do not retry it; carry on without it and say what was skipped.";
 pub const DENIED: &str = "The user denied this. Do not retry it; carry on without it or ask how to proceed.";
 
-pub const ADD_IT: &str = "Add it";
-pub const DONT: &str = "Don’t";
-pub const CONNECTOR_UNANSWERED: &str = "The user did not answer, so nothing was added.";
+/// A setup card nobody answered (the task stopped, or the wait ran out): ADR-0113.
+pub const SETUP_UNANSWERED: &str = "The user didn't answer, so nothing was changed.";
 pub const CARD_CANCELLED: &str = "The card was cancelled; nothing changed. Carry on without it.";
 pub const SIGNIN_SKIPPED: &str =
     "The user skipped it for now; it stays in Settings → Connectors, where they can sign in later. Carry on without it.";
@@ -54,20 +53,6 @@ pub fn approve_answer(input: &Value, reply: Option<&wisp_mcp_api::AskReply>) -> 
         Some(r) if r.decision == Some(wisp_mcp_api::Decision::Allow) => allow_json(input),
         Some(r) => deny_json(&denied(r.message.as_deref())),
         None => deny_json(APPROVE_CANCELLED),
-    }
-}
-
-pub fn connector_question(name: &str, command: &str) -> String {
-    let name = if name.is_empty() { "this" } else { name };
-    format!("Add {name} as a connector? Every task will start it with: {command}")
-}
-
-/// A local connector the user didn't consent to: why nothing was added.
-pub fn connector_declined(answer: Option<&str>) -> String {
-    match answer {
-        None => CONNECTOR_UNANSWERED.to_owned(),
-        Some(a) if !a.is_empty() && a != DONT => format!("The user didn’t want it added and said: {a}. Nothing was added."),
-        Some(_) => "The user didn’t want it added. Nothing was added.".to_owned(),
     }
 }
 

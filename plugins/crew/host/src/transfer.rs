@@ -63,7 +63,10 @@ pub fn import(crew: &[Member], a: &c::ImportArgs, now: i64) -> Result<(c::Import
     let src = json!({ "kind": source });
     if a.dry_run {
         let members = plan.iter().map(|p| serde_json::to_value(p).unwrap_or(Value::Null)).collect();
-        return Ok((c::Imported { members, spell: None, source: Some(src), room: Some(room), ..c::Imported::default() }, Vec::new()));
+        return Ok((
+            c::Imported { members, spell: None, source: Some(src), room: Some(room), bundle: Some(j), ..c::Imported::default() },
+            Vec::new(),
+        ));
     }
     let exists = |p: &str| std::path::Path::new(p).is_dir();
     let machine_ok = |_: &str| false;

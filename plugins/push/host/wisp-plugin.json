@@ -14,6 +14,7 @@
   "permissions": [
     "runtime:get",
     "runtime:answer",
+    "runtime:setup.answer",
     "runtime:followUp",
     "runtime:setState",
     "runtime:stop",

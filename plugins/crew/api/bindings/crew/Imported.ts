@@ -4,4 +4,9 @@
  * The review (`members` plan, `room` left), a spell to review, or the members that joined. A review of a link the
  * grid won't open without a password answers `locked: "password"` (and `wrong` when the one given didn't open it).
  */
-export type Imported = { members?: Array<unknown>, spell?: Record<string, unknown>, source?: Record<string, unknown>, room?: number, locked?: string, wrong?: boolean, };
+export type Imported = { members?: Array<unknown>, spell?: Record<string, unknown>, source?: Record<string, unknown>, room?: number, locked?: string, wrong?: boolean, 
+/**
+ * a review's crew as read (a link fetched, a file parsed): importing this bundle takes in exactly what the review
+ * listed, with no second fetch (ADR-0113's setup card). Additive (2026-11-20).
+ */
+bundle?: unknown, };

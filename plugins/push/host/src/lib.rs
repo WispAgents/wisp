@@ -244,7 +244,8 @@ async fn answer(sh: &Shared, ctx: &Ctx, call: &Call, a: wisp_push_api::AnswerArg
     let id: wisp_runtime_api::SessionId = a.s.as_str().into();
     let line = match act {
         Act::Answer(text) => {
-            ctx.run::<rt::Answer>(call, rt::AnswerArgs { id, text }).await?;
+            // the question the tap answered: refused once it isn't the open one (a newer one replaced it)
+            ctx.run::<rt::Answer>(call, rt::AnswerArgs { id, text, ask_id: Some(a.r.clone()).filter(|r| !r.is_empty()) }).await?;
             "Answered."
         }
         Act::FollowUp(text) => {

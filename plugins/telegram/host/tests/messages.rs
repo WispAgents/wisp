@@ -84,3 +84,31 @@ async fn a_burst_of_updates_moves_the_offset_with_one_write_before_any_is_handle
     assert_eq!(said(&h).len(), 3, "each update is still handled");
     assert_eq!(h.net.sent("getUpdates")[1]["offset"], 8, "the next poll asks past the burst");
 }
+
+/// Review r194 row 66 #8: in a linked group chat anyone in it could tap a button and answer as the linked person. A tap
+/// is the person's only when Telegram's `from` is who linked the chat (or, in a private chat, the chat itself): what a
+/// setup card (ADR-0113) needs before it lets the tap through.
+#[tokio::test]
+async fn a_tap_is_the_linked_persons_only_when_they_tapped_it_not_anyone_in_the_chat() {
+    const GROUP: i64 = -10_077;
+    let tap = |from: i64| {
+        json!({ "update_id": 1, "callback_query": {
+            "id": "q1", "data": "a:0:signed:t1:ask1", "from": { "id": from, "first_name": "x" },
+            "message": { "message_id": 900, "chat": { "id": GROUP, "type": "group" } },
+        } })
+    };
+    for (from, person) in [(7, true), (8, false)] {
+        let h = TestHub::default().with_cfg("telegram", json!({ "enabled": true, "token": "123:abc", "chatId": GROUP, "userId": "7" }));
+        h.net.replies.lock().unwrap().extend([
+            Reply::json("getUpdates", json!({ "ok": true, "result": [tap(from)] })),
+            Reply::json("getUpdates", json!({ "ok": false, "description": "done" })).status(500),
+            Reply::json("answerCallbackQuery", json!({ "ok": true, "result": true })),
+            Reply::json("editMessageReplyMarkup", json!({ "ok": true, "result": true })),
+        ]);
+        let h = Arc::new(h);
+        run(&h).await;
+        let acts = h.phone.acts.lock().unwrap().clone();
+        assert_eq!(acts.len(), 1, "from {from}: the tap acts once");
+        assert_eq!((acts[0].reference.as_deref(), acts[0].person), (Some("ask1"), person), "from {from}");
+    }
+}

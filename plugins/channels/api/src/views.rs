@@ -491,6 +491,10 @@ pub struct ActArgs {
     pub text: Option<String>,
     #[serde(default = "yes")]
     pub approvals: bool,
+    /// the transport checked it came from the person linked on this channel (their own id, not just the chat): a
+    /// setup card (ADR-0113) is answered only so. Additive (2026-11-20).
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub person: bool,
 }
 
 /// `Phone::start_parsed`'s answer.

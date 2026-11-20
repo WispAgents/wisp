@@ -12,7 +12,7 @@ use super::{Slot, rt, track};
 /// asks, approvals, /btw, compact, rerun, fork, subagents, quick, sign-in, overage, agents (more.rs)
 pub(super) fn more(s: &mut Setup, slot: &Slot, harness_kind: Arc<StoredKind>, kinds_for_run: Arc<StoredKind>) {
     cmd!(s, slot, c::Ask, |r, call, a| r.ask(a).await.map(|ask_id| c::Asked { ask_id }));
-    cmd!(s, slot, c::Answer, |r, call, a| r.answer(&a.id, &a.text).await);
+    setup_cards(s, slot);
     cmd!(s, slot, c::Unask, |r, call, a| r.unask(&a.id, &a.question).await);
     cmd!(s, slot, c::PollAnswerOf, |r, call, a| Ok(r.poll_answer(&a.ask_id)));
     cmd!(s, slot, c::Approval, |r, call, a| r.approval(a).await);
@@ -192,6 +192,96 @@ async fn own_folder(ctx: &wisp_kernel::Ctx, r: &Arc<crate::runtime::Runtime>, pa
     if let Err(err) = r.worktree_ready(fork, serde_json::to_value(&wt).ok(), None).await {
         tracing::warn!(error = %err, task = fork, "runtime: a fork's worktree not saved");
     }
+}
+
+/// `runtime.setup.ask` and `runtime.answer` (ADR-0113): a setup card is answered by the user, never an agent, and its
+/// Allow runs the stored writes with wisp.runtime's own call (its manifest grants just those writes), so a channel's or
+/// the phone's tap allows it as the app's does.
+fn setup_cards(s: &mut Setup, slot: &Slot) {
+    use wisp_runtime_core::setup::{self as su, Normalized};
+    let sl = slot.clone();
+    s.command::<c::SetupAsk, _, _>(move |ctx, call, a| {
+        let slot = sl.clone();
+        async move {
+            let r = rt(&slot)?;
+            // v1 offered none of these to a capped task (mcp-ask.js CAPPED_OFF)
+            if call.caller().set.starts_with("agent:capped") {
+                return Err(WireError::forbidden(wisp_kernel::caps::capped_refusal("change the user's setup")));
+            }
+            let task = r.get(a.id.as_str()).await.map_err(WireError::from)?;
+            let t = su::Task { session: a.id.as_str(), cwd: &task.cwd };
+            let writes = match su::normalize(&a.command, &a.args, t).map_err(WireError::invalid)? {
+                Normalized::Writes(w) => w,
+                Normalized::Import { from } => vec![read_crew(&ctx, &from, &task.cwd).await?],
+            };
+            let who = asker(&ctx, &r, &a.id).await;
+            r.setup_ask(&a.id, &who, writes).await.map_err(WireError::from)
+        }
+    });
+    let sl = slot.clone();
+    s.command::<c::Answer, _, _>(move |ctx, call, a| {
+        let slot = sl.clone();
+        async move {
+            let r = rt(&slot)?;
+            if !r.asks_setup(&a.id).await {
+                return r.answer(&a.id, &a.text, a.ask_id.as_deref()).await.map_err(WireError::from);
+            }
+            let who = call.caller();
+            let relay = who
+                .set
+                .strip_prefix("plugin:")
+                .or(who.plugin.as_deref())
+                .is_some_and(|p| ctx.manifests().iter().any(|m| m.id == p && m.permissions.iter().any(|x| x == crate::more::RELAY)));
+            let keys: Vec<String> = ctx.setting(crate::more::KEYS_SETTING).and_then(|v| serde_json::from_value(v).ok()).unwrap_or_default();
+            if !crate::more::may_answer(&who.set, relay, &keys) {
+                return Err(WireError::forbidden("This card is the user's to answer: an agent can't allow a change to the user's setup."));
+            }
+            let run = move |cmd: String, args: serde_json::Value| {
+                let ctx = ctx.clone();
+                async move { ctx.run_json(&ctx.root_call(), &cmd, args).await.map_err(|e| e.message) }
+            };
+            r.answer_setup(&a.id, &a.text, a.ask_id.as_deref(), run).await.map_err(WireError::from)
+        }
+    });
+}
+
+/// A crew `from` a link or a pasted file, read before the card (ADR-0113): crew's own dry run, whose bundle is what
+/// Allow imports, so what the card lists is what joins (no second fetch).
+async fn read_crew(ctx: &wisp_kernel::Ctx, from: &str, cwd: &str) -> wisp_kernel::Result<wisp_runtime_core::setup::Write> {
+    use wisp_crew_api::commands as cc;
+    let link = from.starts_with("https://") || from.starts_with("http://") || from.starts_with("gist:");
+    let src = cc::ImportArgs {
+        url: link.then(|| from.to_owned()),
+        text: (!link).then(|| from.to_owned()),
+        dry_run: true,
+        ..cc::ImportArgs::default()
+    };
+    let review = ctx.run::<cc::Import>(&ctx.root_call(), src).await?;
+    if review.locked.is_some() {
+        return Err(WireError::invalid("That crew is locked with a password: the user imports it from Crew → Import."));
+    }
+    if review.spell.is_some() {
+        return Err(WireError::invalid("That's a spell, not a crew."));
+    }
+    let bundle = review.bundle.filter(|b| !b.is_null()).ok_or_else(|| WireError::invalid("No crew to read there."))?;
+    let keys: Vec<String> =
+        review.members.iter().filter_map(|m| m.get("key").and_then(serde_json::Value::as_str).map(str::to_owned)).collect();
+    Ok(wisp_runtime_core::setup::import_write(bundle, &keys, cwd))
+}
+
+/// Who asks, as the card names them: the crew member whose job it is, else the task's harness.
+async fn asker(ctx: &wisp_kernel::Ctx, r: &Arc<crate::Runtime>, id: &wisp_runtime_api::SessionId) -> String {
+    let Ok(s) = r.get(id.as_str()).await else { return String::new() };
+    if let Some(member) = s.ext.get("wisp.crew").and_then(|c| c.get("id")).and_then(serde_json::Value::as_str) {
+        let args = wisp_crew_api::commands::IdArgs { id: member.to_owned() };
+        if let Ok(m) = ctx.run::<wisp_crew_api::commands::Get>(&ctx.root_call(), args).await {
+            let name = serde_json::to_value(&m).ok().and_then(|v| v.get("name").and_then(serde_json::Value::as_str).map(str::to_owned));
+            if let Some(n) = name.filter(|n| !n.is_empty()) {
+                return n;
+            }
+        }
+    }
+    r.harness(&s.agent).map(|h| h.info().name.clone()).unwrap_or_default()
 }
 
 #[cfg(test)]

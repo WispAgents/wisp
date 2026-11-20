@@ -124,11 +124,10 @@ async fn every_builtin_tool_reaches_a_registered_owner() {
 
 /// The user's own harness (`wisp mcp`) adds a project through its MCP tool (`runtime_projectAdd`, generated from the
 /// catalogue, ADR-0040) and gets the server's naming (ADR-0077): a second `wisp` folder is `wisp-2`, the same folder again
-/// is the one it is. An agent inside a task has no such tool: the user's setup is the user's (ADR-0112).
+/// is the one it is. An agent inside a task asks for it on a card instead (ADR-0113, the setup cards' test).
 #[tokio::test(flavor = "multi_thread")]
 async fn the_users_harness_adds_a_project_through_its_mcp_tool_and_the_server_names_it() {
     let a = Agent::start("mcp-project-add").await;
-    assert!(!a.names(true).await.iter().any(|n| n == "runtime_projectAdd"), "an agent in a task has no tool to add a project");
     assert!(a.names(false).await.iter().any(|n| n == "runtime_projectAdd"), "the user's harness has it");
     let (one, two) = (a.dir.join("a/wisp"), a.dir.join("b/wisp"));
     // a project is a folder that's there (audit A F1)
@@ -188,9 +187,7 @@ async fn wisp_crew_lists_the_crew_and_reads_one_member_in_full() {
 async fn wisp_crew_edit_changes_only_the_fields_given_and_remembers_lines() {
     let a = Agent::start("mcp-crew-edit").await;
     a.api.cmd("crew.create", json!({ "name": "Scout", "role": "CI watcher", "agent": "claude", "notebook": "main is green" })).await;
-    // an agent in a task doesn't change the user's crew (ADR-0112); the user's harness does
-    let (t, err) = a.call("wisp_crew_edit", json!({ "member": "Scout", "role": "Boss" })).await;
-    assert!(err && t.contains("can't change the crew: the user does"), "{t}");
+    // an agent in a task asks on a card (ADR-0113, the setup cards' test); the user's harness changes it at once
     let (t, err) =
         a.user_call("wisp_crew_edit", json!({ "member": "Scout", "role": "Release captain", "remember": ["ships on fridays"] })).await;
     assert!(!err && t.starts_with("Updated.") && t.contains("Release captain"), "{t}");
@@ -204,8 +201,9 @@ async fn wisp_crew_edit_changes_only_the_fields_given_and_remembers_lines() {
 async fn wisp_crew_remove_removes_a_member() {
     let a = Agent::start("mcp-crew-remove").await;
     a.api.cmd("crew.create", json!({ "name": "Scout", "agent": "claude" })).await;
-    let (t, err) = a.call("wisp_crew_remove", json!({ "member": "scout" })).await;
-    assert!(err && t.contains("can't change the crew: the user does"), "an agent in a task doesn't (ADR-0112): {t}");
+    // an agent's own token can't (ADR-0112); its tool asks the user on a card (ADR-0113)
+    let direct = raw_cmd(&a, "crew.agent.remove", json!({ "session": a.id, "member": "scout" })).await;
+    assert!(direct["ok"] == false && direct.to_string().contains("can't change the crew itself"), "{direct}");
     let (t, err) = a.user_call("wisp_crew_remove", json!({ "member": "scout" })).await;
     assert!(!err && t.starts_with("Removed Scout from the crew."), "{t}");
     assert_eq!(a.api.cmd("crew.list", json!({})).await, json!([]));
@@ -242,13 +240,13 @@ async fn wisp_connectors_lists_the_users_connectors() {
     a.serve.stop();
 }
 
-/// An agent in a task never adds a connector (ADR-0112: a command it wrote would run for every task); the user does, by
-/// its header's name, the value typed on the card.
+/// An agent in a task never adds a connector itself (ADR-0112: a command it wrote would run for every task); it asks on
+/// a card (ADR-0113). The user adds one by its header's name, the value typed on the card.
 #[tokio::test(flavor = "multi_thread")]
 async fn wisp_connector_add_is_the_users_and_takes_key_names() {
     let a = Agent::start("mcp-connectors-add").await;
-    let (t, err) = a.call("wisp_connector_add", json!({ "name": "Linear", "url": "https://mcp.linear.app/mcp" })).await;
-    assert!(err && t.contains("the user adds them"), "{t}");
+    let direct = raw_cmd(&a, "connectors.agent.add", json!({ "sid": a.id, "name": "Linear", "url": "https://mcp.linear.app/mcp" })).await;
+    assert!(direct["ok"] == false && direct.to_string().contains("the user allows it on a card"), "{direct}");
     let refused = a
         .api
         .try_cmd(
@@ -966,9 +964,12 @@ async fn an_agent_never_adds_or_changes_a_connector() {
         let r = raw_cmd(&a, cmd, args).await;
         assert!(r["ok"] == false && r["error"]["code"] == "forbidden", "{cmd} → {r}");
     }
-    // its MCP tool only asks the user, who adds it or not: unanswered, nothing is added
-    let (said, err) = a.call("wisp_connector_add", evil).await;
-    assert!(err || said.contains("nothing was added"), "{said}");
+    // its MCP tool only asks the user on a card (ADR-0113): nothing is stored while it waits, nor once denied
+    let call = spawn_call(&a, "wisp_connector_add", &evil);
+    setup_card(&a).await;
+    assert!(!a.api.cmd("resources.export", json!({ "kinds": ["connector"] })).await.to_string().contains("evil"));
+    answer(&a, "Deny").await;
+    assert!(call.await.unwrap().0.contains("nothing was changed"));
     let list = a.api.cmd("resources.export", json!({ "kinds": ["connector"] })).await;
     assert!(!list.to_string().contains("evil"), "{list}");
     a.serve.stop();
@@ -1097,6 +1098,7 @@ async fn an_agents_capability_set_writes_only_its_own_work() {
         "runtime.setMode",
         "runtime.setState",
         "runtime.settle",
+        "runtime.setup.ask", // asks the user on a card; the write runs on their Allow (ADR-0113)
         "runtime.stop",
         "runtime.terminal",
         "runtime.unask",
@@ -1142,5 +1144,227 @@ async fn an_agents_card_carries_no_ext() {
     assert!(r["ok"] == false && r.to_string().contains("can't set a task's ext"), "{r}");
     let r = raw_cmd(&a, "runtime.card", json!({ "title": "t", "prompt": "p", "blocks": [] })).await;
     assert_eq!(r["ok"], true, "{r}");
+    a.serve.stop();
+}
+
+/// An agent's tool call that waits on the user (a setup card), run beside the test: (the tool's text, whether an error).
+fn spawn_call(a: &Agent, tool: &str, args: &Value) -> tokio::task::JoinHandle<(String, bool)> {
+    let (http, port, token, id) = (a.api.http.clone(), a.port, a.token.clone(), a.id.clone());
+    let body = json!({ "jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": { "name": tool, "arguments": args } });
+    tokio::spawn(async move {
+        let r = http
+            .post(format!("http://127.0.0.1:{port}/api/mcp"))
+            .header("content-type", "application/json")
+            .header("x-wisp-token", token)
+            .header("x-wisp-session", id)
+            .body(body.to_string())
+            .send()
+            .await
+            .unwrap();
+        Agent::text(&serde_json::from_slice(&r.bytes().await.unwrap()).unwrap_or(Value::Null))
+    })
+}
+
+/// The setup card open on the agent's task (`ext["wisp.runtime"].ask.setup`), once it's there.
+async fn setup_card(a: &Agent) -> Value {
+    let at = std::time::Instant::now();
+    loop {
+        let t = a.api.cmd("runtime.get", json!({ "id": a.id })).await;
+        let ask = &t["ext"]["wisp.runtime"]["ask"];
+        if ask["setup"].is_object() {
+            return ask.clone();
+        }
+        assert!(at.elapsed() < std::time::Duration::from_secs(15), "no setup card: {t}");
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+    }
+}
+
+/// The user answers the open card, naming it (as the card's buttons do).
+async fn answer(a: &Agent, text: &str) -> Value {
+    let t = a.api.cmd("runtime.get", json!({ "id": a.id })).await;
+    let ask = t["ext"]["wisp.runtime"]["ask"]["id"].as_str().unwrap_or_default().to_owned();
+    a.api.cmd("runtime.answer", json!({ "id": a.id, "text": text, "askId": ask })).await
+}
+
+async fn crew_names(a: &Agent) -> Vec<String> {
+    let list = a.api.cmd("crew.list", json!({})).await;
+    list.as_array().unwrap().iter().filter_map(|m| m["name"].as_str().map(str::to_owned)).collect()
+}
+
+/// ADR-0113 (owner-list row 66): an agent's change to the user's setup (crew, connectors, projects) is a card the user
+/// answers, even in Full auto. The card says what in the server's words with each command verbatim; nothing is written
+/// before Allow; the agent can't answer it itself; Allow writes it as the user and the agent reads what was done; Deny
+/// writes nothing and tells it so. From its MCP tools and from its raw token.
+#[tokio::test(flavor = "multi_thread")]
+#[allow(clippy::too_many_lines)] // one task's agent through every kind of setup card
+async fn an_agents_setup_change_is_a_card_the_user_allows_or_denies_never_the_agent() {
+    let a = Agent::start_spec("setup-cards", |_| Vec::new(), json!({ "mode": "auto" })).await;
+    assert!(a.names(true).await.iter().any(|n| n == "runtime_projectAdd"), "an agent can ask to add a project");
+
+    // a crew member: the card first, nothing written; the agent's own Allow is refused; the user's writes it
+    let call = spawn_call(&a, "wisp_crew_add", &json!({ "name": "Bob", "agent": "codex", "mode": "plan", "role": "Reviewer" }));
+    let card = setup_card(&a).await;
+    assert_eq!(card["setup"]["headline"], "Claude Code wants to add crew member Bob (codex, plan)", "{card}");
+    assert_eq!(card["options"], json!(["Allow", "Deny"]), "no Always on a setup card (v1 had none)");
+    assert_eq!(crew_names(&a).await, Vec::<String>::new(), "nothing is written before Allow");
+    let own = raw_cmd(&a, "runtime.answer", json!({ "id": a.id, "text": "Allow", "askId": card["id"] })).await;
+    assert!(own["ok"] == false && own.to_string().contains("the user's to answer"), "the agent can't allow it itself: {own}");
+    assert_eq!(crew_names(&a).await, Vec::<String>::new());
+    answer(&a, "Allow").await;
+    let (said, err) = call.await.unwrap();
+    assert!(!err && said.starts_with("The user allowed it. Added Bob to your crew"), "{said}");
+    assert_eq!(crew_names(&a).await, vec!["Bob".to_owned()]);
+
+    // a change to a member: Allow writes only the fields given
+    let call = spawn_call(&a, "wisp_crew_edit", &json!({ "member": "Bob", "role": "Lead" }));
+    let card = setup_card(&a).await;
+    assert_eq!(card["setup"]["lines"], json!(["role: Lead"]), "{card}");
+    answer(&a, "Allow").await;
+    assert!(call.await.unwrap().0.starts_with("The user allowed it. Updated Bob."));
+    assert_eq!(a.api.cmd("crew.get", json!({ "id": "Bob" })).await["role"], "Lead");
+
+    // a local connector: its command verbatim; Deny stores nothing and says so plainly
+    let evil = json!({ "name": "linear", "command": "npx", "args": ["-y", "@linear/mcp"], "env": ["LINEAR_KEY"] });
+    let call = spawn_call(&a, "wisp_connector_add", &evil);
+    let card = setup_card(&a).await;
+    assert_eq!(card["setup"]["headline"], "Claude Code wants to add the connector `linear`: runs `npx -y @linear/mcp`", "{card}");
+    assert_eq!(card["setup"]["commands"], json!(["npx -y @linear/mcp"]));
+    assert!(card["question"].as_str().unwrap().contains("needs LINEAR_KEY from you"), "channels and the phone read it all: {card}");
+    answer(&a, "Deny").await;
+    let (said, _) = call.await.unwrap();
+    assert!(said.starts_with("The user said no: nothing was changed."), "{said}");
+    let stored = a.api.cmd("resources.export", json!({ "kinds": ["connector"] })).await;
+    assert!(!stored.to_string().contains("linear"), "{stored}");
+
+    // a project, from the generated tool: Allow adds it under the server's name
+    let web = a.dir.join("code/web");
+    std::fs::create_dir_all(&web).unwrap();
+    let call = spawn_call(&a, "runtime_projectAdd", &json!({ "path": web }));
+    let card = setup_card(&a).await;
+    assert_eq!(card["setup"]["headline"], format!("Claude Code wants to add the project {}", web.display()), "{card}");
+    answer(&a, "Allow").await;
+    let (said, err) = call.await.unwrap();
+    assert!(!err && said.starts_with("The user allowed it. The project web is "), "{said}");
+
+    // from the raw token: the card is up at once, the answer comes through pollAnswer; removing a member
+    let r = raw_cmd(
+        &a,
+        "runtime.setup.ask",
+        json!({ "id": a.id, "command": "crew.agent.remove", "args": { "session": a.id, "member": "Bob" } }),
+    )
+    .await;
+    let ask_id = r["result"]["askId"].as_str().unwrap_or_else(|| panic!("{r}")).to_owned();
+    assert!(r["result"]["text"].as_str().unwrap().starts_with("Asked the user"), "{r}");
+    assert_eq!(crew_names(&a).await, vec!["Bob".to_owned()], "nothing runs before Allow");
+    let direct = raw_cmd(&a, "crew.agent.remove", json!({ "session": a.id, "member": "Bob" })).await;
+    assert!(direct["ok"] == false && direct.to_string().contains("the user allows it on a card"), "{direct}");
+    answer(&a, "Allow").await;
+    let p = raw_cmd(&a, "runtime.pollAnswer", json!({ "askId": ask_id })).await;
+    assert!(p["result"]["answer"].as_str().unwrap_or_default().starts_with("The user allowed it. Removed Bob"), "{p}");
+    assert_eq!(crew_names(&a).await, Vec::<String>::new());
+
+    // never a write off the list, whatever a raw call names
+    let r = raw_cmd(&a, "runtime.setup.ask", json!({ "id": a.id, "command": "settings.set", "args": { "key": "editor", "value": "sh" } }))
+        .await;
+    assert!(r["ok"] == false && r.to_string().contains("isn't a change to the user's setup"), "{r}");
+    a.serve.stop();
+}
+
+/// A setup card put up from the agent's raw token (`runtime.setup.ask`): (the call's answer, the card once it's up).
+async fn raw_card(a: &Agent, command: &str, args: Value) -> (Value, Value) {
+    let r = raw_cmd(a, "runtime.setup.ask", json!({ "id": a.id, "command": command, "args": args })).await;
+    if r["ok"] != true {
+        return (r, Value::Null);
+    }
+    (r, setup_card(a).await)
+}
+
+/// Review r194 row 66 #1: an answer names the card it answers. Without the card's id, or with another's, nothing runs;
+/// while the card is open nothing replaces it (a new question is refused, the card stays); then Allow on that card runs
+/// the write it showed.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_setup_answer_names_its_card_and_nothing_replaces_an_open_card_review_1() {
+    let a = Agent::start("setup-answer-id").await;
+    let (_, card) = raw_card(&a, "crew.agent.add", json!({ "session": a.id, "name": "Bob", "agent": "claude" })).await;
+    let id = card["id"].as_str().unwrap().to_owned();
+    for (args, what) in [
+        (json!({ "id": a.id, "text": "Allow" }), "no card named"),
+        (json!({ "id": a.id, "text": "Allow", "askId": "an-old-card" }), "another card"),
+    ] {
+        let r = a.api.try_cmd("runtime.answer", args).await;
+        assert_eq!(r["ok"], false, "{what}: {r}");
+    }
+    assert_eq!(crew_names(&a).await, Vec::<String>::new(), "nothing ran");
+    // an agent's new question while the card is open: refused, the card stays as it was
+    let q = raw_cmd(&a, "runtime.ask", json!({ "id": a.id, "question": "Add Eve instead?", "options": ["Allow", "Deny"] })).await;
+    assert!(q["ok"] == false && q.to_string().contains("waiting on their answer"), "{q}");
+    assert_eq!(setup_card(&a).await["id"], id, "the same card");
+    a.api.cmd("runtime.answer", json!({ "id": a.id, "text": "Allow", "askId": id })).await;
+    assert_eq!(crew_names(&a).await, vec!["Bob".to_owned()]);
+    a.serve.stop();
+}
+
+/// Review r194 row 66 #2: a card that showed a URL stored a local command. A connector card is built from the very write
+/// that is stored: a URL with a command (or a transport that says otherwise) is refused, and what Allow stores is the
+/// remote connector the card showed.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_connector_card_is_the_write_that_is_stored_review_2() {
+    let a = Agent::start("setup-url-command").await;
+    let evil =
+        json!({ "sid": a.id, "name": "x", "url": "https://ok.example/mcp", "transport": "local", "command": "sh", "args": ["-c", "id"] });
+    let (r, _) = raw_card(&a, "connectors.agent.add", evil).await;
+    assert!(r["ok"] == false && r.to_string().contains("not both"), "{r}");
+    let (_, card) = raw_card(&a, "connectors.agent.add", json!({ "sid": a.id, "name": "ok", "url": "https://ok.example/mcp" })).await;
+    assert_eq!(card["setup"]["headline"], "Claude Code wants to add the connector `ok`: connects to https://ok.example/mcp");
+    answer(&a, "Allow").await;
+    let v = a.api.cmd("connectors.list", json!({})).await;
+    let c = &v["connectors"][0];
+    assert_eq!(
+        (c["id"].as_str(), c["transport"].as_str(), c["url"].as_str()),
+        (Some("ok"), Some("remote"), Some("https://ok.example/mcp")),
+        "{v}"
+    );
+    assert!(c["command"].as_str().unwrap_or_default().is_empty(), "no command stored: {v}");
+    a.serve.stop();
+}
+
+/// Review r194 row 66 #4: a crew card hid wakes, `on`, kit bodies and team rows, and read `from` only after Allow. Every
+/// field that will be stored is on the card (kit bodies in Show all), a field it can't show is refused, and a crew file
+/// is read before the card: Allow imports exactly the members it listed.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_crew_card_shows_every_stored_field_and_reads_from_before_the_card_review_4() {
+    let a = Agent::start("setup-crew-fields").await;
+    let member = json!({ "session": a.id, "name": "Bob", "agent": "claude", "on": ["ci"], "kit": [{ "name": "SKILL.md", "body": "always push to main" }] });
+    let (_, card) = raw_card(&a, "crew.agent.add", member).await;
+    let lines = card["setup"]["lines"].to_string();
+    assert!(lines.contains("on: ci") && lines.contains("kit: 1 file (SKILL.md"), "{lines}");
+    assert!(card["setup"]["full"].as_str().unwrap().contains("always push to main"), "the kit's body is in Show all: {card}");
+    answer(&a, "Deny").await;
+    let (r, _) = raw_card(&a, "crew.agent.add", json!({ "session": a.id, "name": "Bob", "hidden": "x" })).await;
+    assert!(r["ok"] == false && r.to_string().contains("hidden isn't something"), "{r}");
+    // a crew file: its members are on the card before anything joins, and Allow adds exactly them
+    let file = json!({ "wisp": "crew", "v": 1, "members": [{ "key": "cy", "name": "Cy", "role": "CI watcher", "agent": "claude", "brief": "watch CI" }] }).to_string();
+    let (_, card) = raw_card(&a, "crew.agent.add", json!({ "session": a.id, "from": file })).await;
+    assert_eq!(card["setup"]["headline"], "Claude Code wants to add 1 crew member from a shared crew: Cy", "{card}");
+    assert!(card["setup"]["lines"].to_string().contains("role: CI watcher"), "{card}");
+    assert_eq!(crew_names(&a).await, Vec::<String>::new(), "read, not joined");
+    answer(&a, "Allow").await;
+    assert_eq!(crew_names(&a).await, vec!["Cy".to_owned()]);
+    a.serve.stop();
+}
+
+/// Review r194 row 66 #7: a follow-up while a setup card is open cleared the card without running it. It queues behind
+/// the card, which stays; once the card is answered the queue goes on.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_follow_up_waits_behind_an_open_setup_card_review_7() {
+    let a = Agent::start("setup-follow-up").await;
+    let (_, card) = raw_card(&a, "crew.agent.remove", json!({ "session": a.id, "member": "nobody" })).await;
+    a.api.cmd("runtime.followUp", json!({ "id": a.id, "text": "and then fix the tests", "queue": true })).await;
+    let t = a.api.cmd("runtime.get", json!({ "id": a.id })).await;
+    assert_eq!(t["ext"]["wisp.runtime"]["ask"]["id"], card["id"], "the card stays: {t}");
+    assert!(t.to_string().contains("and then fix the tests"), "queued behind it: {t}");
+    answer(&a, "Deny").await;
+    let t = a.api.cmd("runtime.get", json!({ "id": a.id })).await;
+    assert!(t["ext"]["wisp.runtime"]["ask"].is_null(), "{t}");
     a.serve.stop();
 }

@@ -42,9 +42,14 @@ export const reply = defineCommand<{ key: EntityKey; text: string; by?: string }
 });
 
 /** Answers the agent's live question (ask_user) or approval (Allow / Deny). */
-export const answer = defineCommand<{ key: EntityKey; answer: string | string[]; allow?: boolean; always?: boolean }>({
+export const answer = defineCommand<{ key: EntityKey; answer: string | string[]; allow?: boolean; always?: boolean; askId?: string }>({
   id: 'runtime.answer',
-  wire: (a) => ({ id: bare(a.key), text: a.allow === false ? 'deny' : a.always ? 'always' : a.allow ? 'allow' : Array.isArray(a.answer) ? a.answer.join(', ') : a.answer }),
+  wire: (a) => ({
+    id: bare(a.key),
+    text: a.allow === false ? 'deny' : a.always ? 'always' : a.allow ? 'allow' : Array.isArray(a.answer) ? a.answer.join(', ') : a.answer,
+    // the question it answers: refused once it isn't the open one (ADR-0113)
+    ...(a.askId !== undefined && { askId: a.askId }),
+  }),
   owner,
   optimistic: (base, a) => {
     const s = base.peek<TaskRow>(KIND.session, a.key);

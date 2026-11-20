@@ -184,6 +184,47 @@ pub fn script(at: &Path, sh: &str, cmd: &str) -> PathBuf {
 #[allow(dead_code)]
 pub const CMD_ARGS: &str = "set A1=%~1\nset A2=%~2\nif defined A1 set A1=%A1:\"=%\nif defined A2 set A2=%A2:\"=%\n";
 
+/// Where a test server's user lives: its own home under the test's folder, never the real one (owner-list row 66: a
+/// test server read this Mac's real Cursor and opencode MCP config). `HOME`, its Windows twins and the XDG folders
+/// point there; each harness's own override (`CLAUDE_CONFIG_DIR`, `CODEX_HOME`, `COPILOT_HOME`, `GROK_HOME`) is
+/// cleared, so it falls back under that home too. A test that sets one passes it in `start_with`'s `env`, which wins.
+pub fn user_home(dir: &Path) -> PathBuf {
+    dir.join("user-home")
+}
+
+/// The variables that keep a spawned wisp off the real user's files (see [`user_home`]): `(set, remove)`.
+pub fn isolated_env(dir: &Path) -> (Vec<(&'static str, PathBuf)>, [&'static str; 4]) {
+    let home = user_home(dir);
+    let set = vec![
+        ("HOME", home.clone()),
+        ("USERPROFILE", home.clone()),
+        ("APPDATA", home.join("AppData/Roaming")),
+        ("LOCALAPPDATA", home.join("AppData/Local")),
+        ("XDG_CONFIG_HOME", home.join(".config")),
+        ("XDG_DATA_HOME", home.join(".local/share")),
+        ("XDG_STATE_HOME", home.join(".local/state")),
+        ("XDG_CACHE_HOME", home.join(".cache")),
+    ];
+    (set, ["CLAUDE_CONFIG_DIR", "CODEX_HOME", "COPILOT_HOME", "GROK_HOME"])
+}
+
+/// `cmd` with [`isolated_env`] applied (before the caller's own variables, which win).
+pub fn isolate(cmd: &mut Command, dir: &Path) {
+    let (set, remove) = isolated_env(dir);
+    std::fs::create_dir_all(user_home(dir)).unwrap();
+    for k in remove {
+        cmd.env_remove(k);
+    }
+    cmd.envs(set);
+    // commits made for the task (checkpoints, worktrees) need a name, which the real ~/.gitconfig gave
+    cmd.envs([
+        ("GIT_AUTHOR_NAME", "wisp test"),
+        ("GIT_AUTHOR_EMAIL", "test@wisp.invalid"),
+        ("GIT_COMMITTER_NAME", "wisp test"),
+        ("GIT_COMMITTER_EMAIL", "test@wisp.invalid"),
+    ]);
+}
+
 pub fn start(dir: &Path) -> (Serve, u16) {
     start_with(dir, &[])
 }
@@ -207,7 +248,10 @@ fn spawn(dir: &Path, env: &[(&str, &str)]) -> (Serve, u16) {
     let home = dir.join("home");
     std::fs::create_dir_all(&home).unwrap();
     let log = std::fs::File::create(dir.join("serve.log")).unwrap();
-    let child = Command::new(env!("CARGO_BIN_EXE_wisp"))
+    // WISP_TEST_BIN: another build of wisp to run the same test against (a fix's test, shown failing on the build before it)
+    let mut cmd = Command::new(std::env::var_os("WISP_TEST_BIN").map_or_else(|| PathBuf::from(env!("CARGO_BIN_EXE_wisp")), PathBuf::from));
+    isolate(&mut cmd, dir);
+    let child = cmd
         .args(["serve", "--port", "0"])
         .env("WISP_HOME", &home)
         .envs(FAKES.map(|(n, var)| (var, bin.join(format!("{n}{}", std::env::consts::EXE_SUFFIX)))))

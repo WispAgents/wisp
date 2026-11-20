@@ -576,10 +576,16 @@ pub struct UnaskArgs {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
 #[ts(export, export_to = "runtime/")]
 pub struct AnswerArgs {
     pub id: SessionId,
     pub text: String,
+    /// the question this answers (its `ask.id`): an answer to one that's no longer open is refused. A setup card
+    /// (ADR-0113) is answered only with it. Additive (2026-11-20).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub ask_id: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]

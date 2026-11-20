@@ -21,6 +21,7 @@ pub mod plan;
 pub mod prompt;
 pub mod queue;
 pub mod refused;
+pub mod setup;
 pub mod summary;
 pub mod tags;
 pub mod task_usage;

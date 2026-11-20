@@ -111,6 +111,9 @@ command!(Ask = "runtime.ask": AskArgs => Asked);
 // a plugin takes back the question it put (the goal's "Keep going?" once the goal is dropped). Additive (2026-11-18).
 command!(Unask = "runtime.unask": UnaskArgs => Value);
 command!(Approval = "runtime.approval": ApprovalArgs => Value);
+// an agent asks the user to change their setup (ADR-0113): a card, and the write runs only on the user's Allow.
+// Additive (2026-11-20).
+command!(SetupAsk = "runtime.setup.ask": SetupAskArgs => SetupAsked);
 command!(PollAnswerOf = "runtime.pollAnswer": PollAnswerArgs => PollAnswer, read_only);
 command!(ApproveBlocked = "runtime.approveBlocked": ApproveBlockedArgs => Value);
 command!(Btw = "runtime.btw": BtwArgs => BtwEntry);

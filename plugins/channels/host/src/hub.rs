@@ -560,7 +560,21 @@ impl Phone for KPhone {
                 Ok("Marked done.".into())
             }
             ActKind::Answer => {
-                self.cmd_json::<rt::Answer>(json!({ "id": a.session_id, "text": text })).await?;
+                let s = self.cmd_json::<rt::Get>(json!({ "id": a.session_id })).await?;
+                let ask = s.pointer("/ext/wisp.runtime/ask").cloned().unwrap_or(Value::Null);
+                // a button's answer is its option (the open question's, by index), typed text is itself
+                let text = a
+                    .text
+                    .clone()
+                    .or_else(|| {
+                        a.index.and_then(|i| ask["options"].get(usize::try_from(i).ok()?).and_then(Value::as_str).map(str::to_owned))
+                    })
+                    .unwrap_or_default();
+                if ask.get("setup").is_some_and(|x| !x.is_null()) && !a.person {
+                    return Ok(wisp_channels_core::SETUP_ELSEWHERE.into());
+                }
+                // the question this answers: the button's (refused once it isn't the open one)
+                self.cmd_json::<rt::Answer>(json!({ "id": a.session_id, "text": text, "askId": a.reference })).await?;
                 Ok("Answered.".into())
             }
             ActKind::Reply | ActKind::Text => {

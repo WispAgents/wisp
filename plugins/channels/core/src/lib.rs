@@ -14,3 +14,8 @@ pub mod setup;
 pub use wisp_channels_api::{policy, scrub, secrets};
 pub mod sign;
 pub mod ws;
+
+/// A setup card (ADR-0113) tapped where the channel can't tell it was the linked person (ntfy: anyone with the topic;
+/// a group chat): answered in wisp instead.
+pub const SETUP_ELSEWHERE: &str =
+    "That's a change to your setup: answer it in wisp (or from the chat you linked, yourself). Nothing changed.";

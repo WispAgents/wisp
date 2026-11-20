@@ -235,6 +235,8 @@ pub struct TestPhone {
     pub heard: Mutex<Vec<(String, String, String)>>,
     /// files kept as uploads: (name, mime, bytes)
     pub uploads: Mutex<Vec<(String, String, Vec<u8>)>>,
+    /// every tap or reply acted on, as the transport sent it
+    pub acts: Mutex<Vec<ActArgs>>,
 }
 
 #[async_trait]
@@ -282,7 +284,8 @@ impl Phone for TestPhone {
         u.push((name.to_owned(), mime.to_owned(), bytes));
         Ok(serde_json::json!({ "id": format!("u{}", u.len()), "name": name, "mime": mime, "size": size }))
     }
-    async fn act(&self, _a: &ActArgs) -> Result<String> {
+    async fn act(&self, a: &ActArgs) -> Result<String> {
+        lock(&self.acts).push(a.clone());
         Ok("✓ Done.".into())
     }
     async fn projects(&self) -> Result<Vec<ProjectView>> {
@@ -448,8 +451,9 @@ impl ChannelHub for TestHub {
     fn sign(&self, session_id: &str, kind: ActionKind, reference: &str, index: u32) -> String {
         format!("sig.{session_id}.{}.{reference}.{index}", kind.code())
     }
+    /// this hub's own signature, or `signed` (a test's good signature where a channel's format allows no dots)
     fn verify(&self, s: &Signed) -> bool {
-        s.sig == format!("sig.{}.{}.{}.{}", s.s, s.k, s.r, s.i)
+        s.sig == "signed" || s.sig == format!("sig.{}.{}.{}.{}", s.s, s.k, s.r, s.i)
     }
     fn started_from(&self, session_id: &str) -> Option<(String, Option<String>)> {
         lock(&self.started).get(session_id).cloned()

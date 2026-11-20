@@ -650,7 +650,7 @@ function withUsage(list: Row[]): void {
  *  task page's answers in her story), Linus works (green), Hopper has a report you haven't read (accent), Ada works on
  *  her delegated review and has an older report, Hopper and Turing (paused) are otherwise idle. Rows as runtime sends
  *  them: the ask under `body.ext["wisp.runtime"].ask`, the job under `body.ext["wisp.crew"]`. */
-function withCrew(peer: string, now: number, list: Row[], topics: Map<Topic, Row[]>, at: number): void {
+function withCrew(peer: string, now: number, list: Row[], topics: Map<Topic, Row[]>, at: number, setup = false): void {
   const job = (i: number, t: Task, patch?: (v: Record<string, unknown>) => void): void => {
     const r = sessionTopic(peer, at + i, t, now);
     for (const row of [r.list, ...r.own.filter((x) => x.e === 'session')]) patch?.(row.v as Record<string, unknown>);
@@ -666,6 +666,17 @@ function withCrew(peer: string, now: number, list: Row[], topics: Map<Topic, Row
   job(0, { title: 'Bump to 0.61.0', agent: 'claude', state: 'running', ago: 6 * MIN, cwd: '~/code/wisp', prompt: 'Cut 0.61.0: changelog, version bump, tag.', answer: 'CHANGELOG has 18 entries; main green for 24 h.', crew: { id: 'crew:grace', job: 'task' } }, asks('Merge #812 and tag 0.61.0?', ['Yes', 'No']));
   job(1, { title: 'Phone Tasks polish', agent: 'codex', state: 'running', ago: 2 * MIN, cwd: '~/code/wisp', prompt: 'Polish the phone Tasks screen against v1.', answer: 'Comparing v1 and v2.', live: 'Comparing v1 and v2 at 390 px', crew: { id: 'crew:linus', job: 'task' } });
   job(2, { title: 'Competitor matrix', agent: 'claude', state: 'review', ago: 20 * MIN, cwd: '~/code/wisp', prompt: 'Compare the six tools we track.', answer: 'Report ready: 6 tools compared. Paseo added a queue; nobody has a ledger.', unread: true, crew: { id: 'crew:hopper', job: 'checkin' } });
+  // `setup`: Ada's job asks to add a connector, as runtime puts a setup card on its task (ADR-0113)
+  if (setup) {
+    const headline = 'Ada wants to add the connector `linear`: runs `npx -y @linear/mcp`';
+    const lines = ['Every task will start it, on this computer.', 'needs LINEAR_API_KEY from you'];
+    job(4, { title: 'Triage the Linear backlog', agent: 'claude', state: 'running', ago: 3 * MIN, cwd: '~/code/wisp', prompt: 'Triage the Linear backlog: label and size each issue.', answer: 'I need the Linear connector to read the issues.', crew: { id: 'crew:ada', job: 'task' } }, (v) => {
+      asks([headline, ...lines].join('\n'), ['Allow', 'Deny'])(v);
+      const ext = (v['body'] as { ext: Record<string, Record<string, Record<string, unknown>>> }).ext;
+      const ask = ext['wisp.runtime']?.['ask'];
+      if (ask) ask['setup'] = { command: 'connectors.agent.add', headline, lines, commands: ['npx -y @linear/mcp'], action: 'add the connector `linear`', full: JSON.stringify({ name: 'linear', command: 'npx', args: ['-y', '@linear/mcp'], env: ['LINEAR_API_KEY'], transport: 'local' }, null, 2) };
+    });
+  }
   job(3, { title: 'Review PR #806', agent: 'claude', state: 'done', ago: 26 * HOUR, cwd: '~/code/wisp', prompt: 'Review PR #806.', answer: 'PR #806: 2 layout reads after writes; fixed.', crew: { id: 'crew:ada', job: 'task' } });
 }
 
@@ -718,7 +729,7 @@ function withTrial(peer: string, now: number, list: Row[], topics: Map<Topic, Ro
   });
 }
 
-export function seed(o: { peer: string; now: number; extra: number; harnesses?: boolean; firstRun?: boolean; computers?: boolean; media?: boolean; ask?: boolean; env?: boolean; usage?: boolean; trial?: boolean; cloud?: boolean; crew?: boolean; team?: boolean; farJob?: boolean }): Seeded {
+export function seed(o: { peer: string; now: number; extra: number; harnesses?: boolean; firstRun?: boolean; computers?: boolean; media?: boolean; ask?: boolean; env?: boolean; usage?: boolean; trial?: boolean; cloud?: boolean; crew?: boolean; setup?: boolean; team?: boolean; farJob?: boolean }): Seeded {
   const topics = new Map<Topic, Row[]>();
   const list: Row[] = [];
   (o.firstRun ? [] : TASKS).forEach((t, i) => {
@@ -754,7 +765,7 @@ export function seed(o: { peer: string; now: number; extra: number; harnesses?: 
   if (o.env) withEnv(topics);
   if (o.usage) withUsage(list);
   if (o.trial) withTrial(o.peer, o.now, list, topics, TASKS.length + o.extra);
-  if (o.crew) withCrew(o.peer, o.now, list, topics, TASKS.length + o.extra + 2);
+  if (o.crew) withCrew(o.peer, o.now, list, topics, TASKS.length + o.extra + 2, o.setup === true);
   if (o.team) withTeam(o.peer, o.now, list, topics, TASKS.length + o.extra + 8);
   if (o.farJob) withFarJob(o.peer, o.now, list, topics);
   topics.set('list', list);

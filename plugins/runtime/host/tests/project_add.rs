@@ -116,7 +116,14 @@ async fn no_tasks_agent_adds_a_project_and_a_capped_one_hears_the_capped_words()
     assert!(e.message.contains("add a folder to the user’s projects"), "{}", e.message);
     assert_eq!(projects(&k).await, Vec::<(String, String)>::new());
     let e = k.k.call(Caller::agent("t1", false), "runtime.projectAdd", json!({ "path": "/tmp/cap/web" })).await.unwrap_err();
-    assert!(e.code == Code::Forbidden && e.message.contains("it can't add a project: the user does"), "{}", e.message);
+    assert!(
+        e.code == Code::Forbidden
+            && e.message.contains(
+                "it can't add a project itself: ask with runtime_projectAdd or runtime.setup.ask, and the user allows it on a card"
+            ),
+        "{}",
+        e.message
+    );
     let ok = k.k.call(Caller::user(), "runtime.projectAdd", json!({ "path": "/tmp/cap/web" })).await.unwrap();
     assert_eq!(ok["name"], "web");
 }

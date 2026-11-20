@@ -1191,6 +1191,9 @@
           "minimum": 0.0,
           "type": "integer"
         },
+        "runtime.setupAnswerSets": {
+          "description": "The API keys' capability sets (custom:<name>) you let answer an agent's setup cards (ADR-0113): none unless you list them"
+        },
         "runtime.subagentModel": {
           "description": "The model Claude Code's subagents run on (task: the task's own)",
           "enum": [

@@ -10,6 +10,28 @@ use super::RunPick;
 use crate::model::{Activity, Attachment, Ext, SessionState};
 use crate::{SessionId, TurnId};
 
+/// `runtime.setup.ask` (ADR-0113): a change to the user's setup an agent asks for. `command` is one of
+/// `wisp_runtime_core::setup::WRITES` (a connector, a crew member, a project) and `args` its arguments; the card says
+/// what it would change in the server's words, and the write runs only when the user answers Allow, never before.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export, export_to = "runtime/")]
+pub struct SetupAskArgs {
+    pub id: SessionId,
+    pub command: String,
+    #[ts(type = "unknown")]
+    pub args: Value,
+}
+
+/// The card is up: its answer comes through `runtime.pollAnswer` (`askId`); `text` says so in words.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export, export_to = "runtime/")]
+pub struct SetupAsked {
+    pub ask_id: String,
+    pub text: String,
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
 #[ts(export, export_to = "runtime/")]

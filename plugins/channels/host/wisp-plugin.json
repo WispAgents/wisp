@@ -18,7 +18,7 @@
     "runtime:btw",
     "stuff:receive",
     "runtime:setState",
-    "runtime:answer",
+    "runtime:answer", "runtime:setup.answer",
     "resources:read",
     "runtime:agents",
     "crew:read",

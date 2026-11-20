@@ -556,6 +556,11 @@ pub struct Imported {
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     #[ts(as = "Option<bool>", optional)]
     pub wrong: bool,
+    /// a review's crew as read (a link fetched, a file parsed): importing this bundle takes in exactly what the review
+    /// listed, with no second fetch (ADR-0113's setup card). Additive (2026-11-20).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional, type = "unknown")]
+    pub bundle: Option<Value>,
 }
 
 /// `crew.ask`: a message in a task that's for a member (`@ada can you check this?`): it becomes their job, and their

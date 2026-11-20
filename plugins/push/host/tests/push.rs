@@ -84,7 +84,8 @@ impl Plugin for Runtime {
         self.slot.register(s);
         let me = self.clone();
         s.command::<Answer, _, _>(move |_c, _call, a: AnswerArgs| {
-            me.ran.lock().unwrap().push(("answer".into(), a.text));
+            // with the question it answers (review r194 row 66 #1): `text@askId`
+            me.ran.lock().unwrap().push(("answer".into(), format!("{}@{}", a.text, a.ask_id.unwrap_or_default())));
             me.slot.set("wisp.runtime", json!({}));
             async { Ok(json!({ "ok": true })) }
         });
@@ -293,7 +294,7 @@ async fn a_notification_answer_lands_once() {
     // another choice from the same note: the question is answered already
     let other = serde_json::to_value(&n.choices[0].tap).unwrap();
     assert_eq!(a.k.call(Caller::user(), "push.answer", other).await.unwrap_err().code, Code::Conflict);
-    assert_eq!(a.rt.ran(), [("answer".to_owned(), "dev".to_owned())], "it landed once, with the choice's label");
+    assert_eq!(a.rt.ran(), [("answer".to_owned(), "dev@q1".to_owned())], "it landed once, with the choice's label and its question");
 
     // a tap this wisp didn't sign is refused, and so is a signed one with its index changed
     let mut forged = tap.clone();

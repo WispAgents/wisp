@@ -81,6 +81,8 @@ impl NtfyTransport {
                     index: Some(tap.i),
                     text: None,
                     approvals: false,
+                    // anyone who knows the topic can tap: never the linked person for sure
+                    person: false,
                 };
                 if let Err(e) = self.hub.act(&a).await {
                     self.hub.warn(&format!("ntfy: a tap on {} didn't act: {}", tap.s, e.message));

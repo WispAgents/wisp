@@ -95,6 +95,8 @@ impl Slack {
                 index: Some(b.i),
                 text: None,
                 approvals: false,
+                // gated above: the clicker is one of the linked people, by their own Slack id
+                person: true,
             })
             .await
         {

@@ -15,10 +15,12 @@ import { askOf } from './model.ts';
 const bare = (key: string): string => key.slice(key.indexOf(':') + 1);
 const askPath = '/body/ext/wisp.runtime/ask';
 
-/** runtime.answer: the question's answer (a choice, typed text, allow / always / deny). */
-const answer = defineCommand<{ key: EntityKey; id: string; text: string }>({
+/** runtime.answer: the question's answer (a choice, typed text, allow / always / deny), naming the question it answers:
+ * one that's no longer open is refused, and a setup card is answered only so (ADR-0113). */
+export const answer = defineCommand<{ key: EntityKey; id: string; text: string; askId: string }>({
   id: 'runtime.answer',
   owner: (a) => a.key,
+  wire: (a) => ({ id: a.id, text: a.text, askId: a.askId }),
   optimistic: (_b, a) => [{ e: KIND.session, id: a.key, op: 'patch', ops: [{ op: 'replace', path: askPath, value: null }] }],
 });
 
@@ -35,13 +37,13 @@ export default function TaskFoot(props: ExtensionProps): JSX.Element {
     return k ? useSignal(props.client.entities.row<unknown>(KIND.session, k)) : () => undefined;
   });
   const ask = createMemo(() => askOf(row()()));
-  const reply = (text: string): void => {
+  const reply = (text: string, askId: string): void => {
     const k = key();
-    if (k) void props.client.run(answer, { key: k, id: bare(k), text }).catch(() => undefined);
+    if (k) void props.client.run(answer, { key: k, id: bare(k), text, askId }).catch(() => undefined);
   };
   return (
     <Stack gap="2" part="task.foot">
-      <Show when={ask()}>{(a) => <AskCard ask={a()} t={t} onAnswer={reply} />}</Show>
+      <Show when={ask()}>{(a) => <AskCard ask={a()} t={t} onAnswer={(text) => reply(text, a().id)} />}</Show>
     </Stack>
   );
 }

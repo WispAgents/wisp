@@ -238,24 +238,20 @@ async fn agent_tool(ctx: &Ctx, call: &Call, session: &str, a: AgentAction) -> Ou
             }
         }
         AgentAction::TaskWait { task, wait_ms } => Outcome::Text(task_wait(ctx, call, &task, wait_ms).await),
-        AgentAction::ConnectorAdd { consent, args } => {
-            // a command every later task would start: the user says so first (v1 mcp-ask.js connectorTool)
-            if let Some(q) = consent {
-                let options = vec![words::ADD_IT.to_owned(), words::DONT.to_owned()];
-                let asked = typed::<rt::Ask>(ctx, call, rt::AskArgs { id: session.into(), question: q, options, details: None }).await;
-                let id = match asked {
-                    Ok(v) => v.get("askId").and_then(Value::as_str).unwrap_or_default().to_owned(),
-                    Err(e) => return Outcome::Failed(e),
-                };
-                let answer = wait_answer(ctx, call, &id, ASK_WAIT_MS).await;
-                if answer.as_deref() != Some(words::ADD_IT) {
-                    return Outcome::Text(words::connector_declined(answer.as_deref()));
-                }
-            }
-            text_of(owner(ctx, call, wisp_mcp_api::owners::CONNECTORS_ADD, args).await)
-        }
+        AgentAction::Setup { command, args } => setup(ctx, call, session, command, args).await,
         AgentAction::ConnectorSignin { args } => text_of(owner(ctx, call, wisp_mcp_api::owners::CONNECTORS_SIGNIN, args).await),
     }
+}
+
+/// A change to the user's setup an agent asked for (ADR-0113): the card on its task, then the user's answer in words
+/// (what the write said once allowed, or that they said no). Nothing runs here: the write runs from the user's Allow.
+pub(crate) async fn setup(ctx: &Ctx, call: &Call, session: &str, command: &str, args: Value) -> Outcome {
+    let asked = typed::<rt::SetupAsk>(ctx, call, rt::SetupAskArgs { id: session.into(), command: command.to_owned(), args }).await;
+    let id = match asked {
+        Ok(v) => v.get("askId").and_then(Value::as_str).unwrap_or_default().to_owned(),
+        Err(e) => return Outcome::Failed(e),
+    };
+    Outcome::Text(wait_answer(ctx, call, &id, ASK_WAIT_MS).await.unwrap_or_else(|| words::SETUP_UNANSWERED.to_owned()))
 }
 
 /// How long `wisp_stop` waits for the run to let go before it says it's still stopping.

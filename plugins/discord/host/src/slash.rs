@@ -292,7 +292,15 @@ impl Discord {
         }
         let result = match self
             .hub
-            .act(&ActArgs { session_id: session, kind: kind.into(), reference: Some(r), index: Some(index), text: None, approvals: false })
+            .act(&ActArgs {
+                session_id: session,
+                kind: kind.into(),
+                reference: Some(r),
+                index: Some(index),
+                text: None,
+                approvals: false,
+                person: true,
+            })
             .await
         {
             Ok(r) => r,

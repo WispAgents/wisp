@@ -59,7 +59,14 @@ async fn asker(ctx: &Ctx, call: &Call, sid: Option<&str>) -> Result<Asker> {
     let id = session_of(call, sid)?;
     let s = ctx.run::<rt::Get>(call, rt::IdArgs { id: id.as_str().into() }).await?;
     let crew = s.ext_of("wisp.crew").get("id").and_then(Value::as_str).is_some();
-    Ok(Asker { agent: s.agent.clone(), delegated: s.parent_id.is_some() || crew, capped: call.caller().set.starts_with("agent:capped") })
+    // a delegated task's agent doesn't change the user's connectors itself; the user's Allow on its card does
+    // (ADR-0113: that call names the task, it isn't the task's token)
+    let agent = call.caller().session.is_some();
+    Ok(Asker {
+        agent: s.agent.clone(),
+        delegated: agent && (s.parent_id.is_some() || crew),
+        capped: call.caller().set.starts_with("agent:capped"),
+    })
 }
 
 async fn seen(p: &Pane, ctx: &Ctx) -> Seen {
