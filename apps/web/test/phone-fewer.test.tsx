@@ -162,6 +162,31 @@ for (const kind of ['android', 'ios'] as const) {
 }
 
 
+// the Windows flake of the test above: the refusal showed, then its node was gone a line later. Any patch of the task's row
+// (a turn streaming, the full row after the list's) made a new source object for the pane's read, so it read git again and
+// the pane flipped to Loading and back, a new node. A row patch that changes nothing the read takes reads nothing again,
+// and a read under way keeps the answer it has on screen.
+for (const kind of ['android', 'ios'] as const) {
+  test(`on_${kind}_a_row_patch_after_a_refused_read_reads_nothing_again_and_moves_nothing`, async () => {
+    const { client, root, mock } = await start(phone(kind), { plugins: ['wisp.shell-task'] });
+    const reads: string[] = [];
+    mock.handle('git.changes', (a: unknown) => {
+      if ((a as { stageState?: boolean }).stageState) reads.push(JSON.stringify(a));
+      throw { code: 'not_found', message: 'no such folder: /Users/me/.wisp/worktrees/wisp-01a1eb6bf0bd' };
+    });
+    const id = await openTask(client, root, '[data-part="phone.task.bar"]');
+    client.nav.navigate({ t: 'openSide', side: { kind: 'changes', id: id as never } });
+    await until(() => q('[data-part~="side.changes.refused"]') !== null);
+    const first = q('[data-part~="side.changes.refused"]');
+    const before = reads.length;
+    // the task's row patched while the pane is open: a turn streams into it
+    expect(mock.stream(String(id), { tokens: 3, everyMs: 5 }), 'a turn streams into the task').toBeDefined();
+    await new Promise((r) => setTimeout(r, 150));
+    expect(reads.length, `no read again: ${reads.join(' | ')}`).toBe(before);
+    expect(q('[data-part~="side.changes.refused"]'), 'the same node, never replaced').toBe(first);
+  });
+}
+
 // #10: a task row on a phone is two lines: the title, then the harness's logo and what the task says (the computer
 // only when it isn't this one); no third run line
 for (const kind of ['android', 'ios'] as const) {

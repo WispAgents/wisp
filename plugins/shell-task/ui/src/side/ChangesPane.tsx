@@ -141,8 +141,14 @@ export function ChangesPane(): JSX.Element {
   // why the last read was refused: said where the files go, in words (a phone since UX 2026-11-18 phone #14, the browser
   // since the audit of 2026-11-19: a worktree cleaned up after the task toasted "no such folder: /Users/…")
   const [refused, setRefused] = createSignal<{ readonly code: string; readonly message: string } | undefined>();
+  // what the read takes, compared by value: every patch of the task's row (a turn streaming, the full row after the
+  // list's) made a new object here, so git was read again and the pane flipped to Loading and back (a Windows flake of
+  // phone-fewer's gone-folder test; nothing jumps, AGENTS.md)
+  const readArgs = createMemo(() => (dir() ? { path: dir(), base: base(), reveal: [...revealed()] } : undefined), undefined, {
+    equals: (a, b) => a === b || (!!a && !!b && a.path === b.path && a.base === b.base && a.reveal.join('\n') === b.reveal.join('\n')),
+  });
   const [git, { refetch }] = createResource(
-    () => (dir() ? { path: dir(), base: base(), reveal: [...revealed()] } : undefined),
+    readArgs,
     (a) =>
       task.client
         .run(readHere, { key: task.key, ...a })
@@ -501,8 +507,10 @@ export function ChangesPane(): JSX.Element {
 /** Nothing changed (or not read yet): one line, as v1's .cx-msg. */
 export function ChangesEmpty(props: { readonly loading: boolean; readonly refused?: { readonly code: string; readonly message: string }; readonly onRetry?: () => void }): JSX.Element {
   const shell = useShell();
+  // a refusal stays said while a read is under way (Retry, the folder back): its Retry shows the pending state, and the
+  // next answer replaces it in place, never a flash of Loading between them
   return (
-    <Show when={!props.loading && props.refused} fallback={<EmptyState icon="file" title={shell.t(props.loading ? 'shell-task.side.changes.loading' : 'shell-task.side.changes.empty')} compact />}>
+    <Show when={props.refused} fallback={<EmptyState icon="file" title={shell.t(props.loading ? 'shell-task.side.changes.loading' : 'shell-task.side.changes.empty')} compact />}>
       {(r) => (
         // a phone (UX 2026-11-18 phone #14): what happened in words; a gone folder is not an error to retry
         <EmptyState
@@ -513,7 +521,7 @@ export function ChangesEmpty(props: { readonly loading: boolean; readonly refuse
           {...(r().code !== 'not_found' &&
             props.onRetry && {
               action: (
-                <Button size="sm" variant="ghost" onClick={() => props.onRetry?.()}>
+                <Button size="sm" variant="ghost" loading={props.loading} onClick={() => props.onRetry?.()}>
                   {shell.t('shell-task.side.changes.retry')}
                 </Button>
               ),
