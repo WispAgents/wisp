@@ -11,7 +11,7 @@ RUN*; it never passes. The table goes to `qa/out/install.md`. Every release, nig
 | Scenario | How |
 |---|---|
 | INST-01 `npm pack` | Automated: `electron/` stays off npm, and of `desktop/` only `entry.mjs` and `shell-path.js` are on it (what the shell runs under `WISP_ROOT`), with `bin/desktop-shell.js` |
-| INST-02 `npm i -g` | Automated: no dependency installed; `--version`, `--no-open`, words, `--browser`, tab |
+| INST-02 `npm i -g` | Automated: no dependency installed; `--version`, `--no-open`, words, `--browser`, tab (`wisp` alone, against a release with no shell yet, as before it is published) |
 | INST-04 `npx` | Automated: wisp alone in `node_modules`; the same checks |
 | INST-25 `npm i -g`, `wisp`: the shell alone | Automated (`shell`): `wisp-shell-<os>-<arch>.tar.gz` from a release served here (`WISP_SHELL_URL`), checked against SHA256SUMS.txt, into `$WISP_HOME/desktop/<version>/`; the server on this Node from the npm package, its parent the shell, `method: global`, no tab; on a Mac its window seen on screen (CGWindowList). Windows: the server, the window by hand |
 | INST-26, 26b the next `wisp`, then kill -9 the shell | Automated: no download (the release is gone), no server left behind |
