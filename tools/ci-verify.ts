@@ -29,6 +29,7 @@ import { availableParallelism, tmpdir } from 'node:os';
 import { dirname, join, posix, relative, resolve, sep } from 'node:path';
 import { cargoFailures, slash, stripAnsi, tscFailures, vitestByPackage } from './ci-logs.ts';
 import { covers, plan, readProgram, ROOT_LINT, type How, type Program } from './ci-plan.ts';
+import { stopStrayRuns } from './ci-strays.ts';
 import { DEST } from './setup-monoflow.ts';
 import { PROGRAMS } from './typecheck.ts';
 
@@ -214,6 +215,7 @@ if (import.meta.main) {
     process.exit(2);
   }
   const start = performance.now();
+  const startedAt = Date.now();
   const ws = workspace();
   const only = argv.filter((a) => !a.startsWith('--'));
   const files = git(['ls-files', '--cached', '--others', '--exclude-standard']).split('\n').filter(Boolean);
@@ -274,7 +276,8 @@ if (import.meta.main) {
 
   const monoflowRuns = pool(calls, jobs, async (c) => {
     const t0 = performance.now();
-    const r = await monoflow(['verify', `--package=${c.name}`, '--json', ...c.args, ...noCache], false);
+    // --no-fix: CI never rewrites the checkout (a reformatted file is uncommitted work, which starts a background run)
+    const r = await monoflow(['verify', `--package=${c.name}`, '--json', '--no-fix', ...c.args, ...noCache], false);
     const piece = monoflowPiece(parse(r.out), performance.now() - t0, c.via);
     process.stdout.write(`  ${piece.ok ? 'ok  ' : 'FAIL'} ${c.name} (${c.via}, ${(piece.ms / 1000).toFixed(1)} s)\n`);
     return { call: c, piece };
@@ -315,6 +318,8 @@ if (import.meta.main) {
   })();
 
   const [mf, vt, tc] = await Promise.all([monoflowRuns, vitestRun, typecheckRun]);
+  // what the calls started in the background ends here, before the server budgets step times anything
+  await stopStrayRuns(ROOT, startedAt, (l) => process.stdout.write(l));
 
   // the packages' pieces
   const pieces = new Map<string, Piece[]>(targets.map((t) => [t.name, []]));
