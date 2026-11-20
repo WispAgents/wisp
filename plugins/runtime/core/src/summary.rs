@@ -106,7 +106,10 @@ fn t_id(t: Option<&Turn>) -> String {
 }
 
 /// The row. `fields`: what `runtime.summary@1` contributors added, flattened onto it.
-pub fn summarize(s: &Session, f: &RowFacts<'_>, fields: BTreeMap<String, Value>) -> Summary {
+pub fn summarize(s: &Session, f: &RowFacts<'_>, mut fields: BTreeMap<String, Value>) -> Summary {
+    // a plugin's `status` is the row's when the task's own turns say none (a factory run's task has none of its own,
+    // audit G15: it read "info", Report, beside the band's Done); a turn running or held still says it
+    let said = fields.remove("status").and_then(|v| v.as_str().map(str::to_owned)).filter(|v| !v.is_empty());
     let mut names: Vec<&str> = Vec::new();
     for n in f.waiting_on {
         if !names.contains(&n.as_str()) {
@@ -163,7 +166,10 @@ pub fn summarize(s: &Session, f: &RowFacts<'_>, fields: BTreeMap<String, Value>)
         mode: s.mode,
         cwd: s.cwd.clone(),
         state: s.state,
-        status: status(f, &waiting),
+        status: match (status(f, &waiting), said) {
+            (own, Some(said)) if own != "running" && own != "held" => said,
+            (own, _) => own,
+        },
         unread: s.unread,
         archived: s.archived,
         created_at: s.created_at,

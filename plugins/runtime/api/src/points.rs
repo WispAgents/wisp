@@ -23,7 +23,9 @@ pub const DELEGATE: Point<dyn DelegateTarget> = Point::new("runtime.delegate", 1
 pub const ACCOUNTS: Point<dyn AccountsProvider> = Point::new("runtime.accounts", 1);
 
 /// `runtime.summary@1`: a plugin adds its fields to the list row from its ext slot. Called once per row
-/// *change*, never per list read (the row is cached by the session's rev).
+/// *change*, never per list read (the row is cached by the session's rev). A `status` field is the row's status (its
+/// pill: `done`, `failed`, `blocked`, …) for a task whose own turns don't say one, as a factory run's task (it has no
+/// turns of its own); a turn running or held still says the row's.
 pub trait SummaryField: Send + Sync + 'static {
     fn plugin(&self) -> &str;
     fn fields(&self, session: &Session, last: Option<&Turn>, out: &mut BTreeMap<String, Value>);

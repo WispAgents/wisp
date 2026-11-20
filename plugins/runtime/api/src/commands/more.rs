@@ -451,7 +451,7 @@ pub struct ForkArgs {
     pub title: Option<String>,
 }
 
-/// `runtime.import`: bring v1's `~/.wisp/sessions/*.json` in (resumable by file, mtime and size).
+/// `runtime.import`: bring the tasks of wisp 1 (`~/.wisp/sessions/*.json`) in, each resumable (by file, mtime and size).
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[ts(export, export_to = "runtime/")]
 pub struct ImportArgs {

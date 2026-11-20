@@ -504,8 +504,15 @@ async fn shared_and_cloud(first: &str, p: &Parsed, o: &code::Opts, port: u16, cw
         "notes" if o.words.first().is_none_or(|w| args::session_id(w) || w.starts_with("--set")) => {
             notes_cli::run(&connect().await?, &o.words, o.json).await?
         }
-        // `wisp fresh <task>` or bare (WISP_TASK); "fresh look at the parser" stays a task
-        "fresh" if o.words.first().is_none_or(|w| args::session_id(w)) && o.words.len() <= 1 => {
+        // `wisp fresh <task>` or bare (WISP_TASK); "fresh look at the parser" stays a task. `-d`/`--detach` as launches
+        // take it (audit G17 printed the usage): fresh returns once the thread is asked for, so it changes nothing
+        "fresh"
+            if {
+                let w = undetached(&o.words);
+                w.first().is_none_or(|w| args::session_id(w)) && w.len() <= 1
+            } =>
+        {
+            let o = code::Opts { words: undetached(&o.words), ..o };
             fresh_cli::run(&connect().await?, &o).await?
         }
         "shares" if o.words.is_empty() => cloud_cli::shares(&connect().await?, &o).await?,
@@ -538,7 +545,7 @@ async fn shared_and_cloud(first: &str, p: &Parsed, o: &code::Opts, port: u16, cw
     Ok(Some(code))
 }
 
-/// `wisp shell-init`, `wisp trigger …`, `wisp crew wake|graph`, `wisp sandbox …`, `wisp team …` (ADR-0023, 0043, 0041).
+/// `wisp shell-init`, `wisp trigger …`, `wisp crew wake|graph|pause|resume`, `wisp sandbox …`, `wisp team …` (ADR-0023, 0043, 0041).
 async fn areas(first: &str, p: &Parsed, o: &code::Opts, port: u16, cwd: &Path) -> Result<Option<i32>> {
     let connect = || Client::connect(port, true);
     let o = o.clone();
@@ -586,7 +593,7 @@ async fn areas(first: &str, p: &Parsed, o: &code::Opts, port: u16, cwd: &Path) -
         {
             trigger_cli::run(&connect().await?, p, first, &cwd.display().to_string()).await?
         }
-        "crew" if matches!(o.words.first().map(String::as_str), Some("wake" | "graph")) => {
+        "crew" if matches!(o.words.first().map(String::as_str), Some("wake" | "graph" | "pause" | "resume")) => {
             trigger_cli::run(&connect().await?, p, "crew", &cwd.display().to_string()).await?
         }
         "sandbox" | "sandboxes"

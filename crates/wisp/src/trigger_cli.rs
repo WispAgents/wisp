@@ -8,7 +8,8 @@
 //!   source is the second word.)
 //! - `wisp trigger ls | rm <name> | fire <name> [--payload @file|JSON] | test <name> [--event @file] [--last N]
 //!   | log <name> | resume <name> | approve <name> <job> [--no] | sources`
-//! - `wisp crew wake <member> [--why TEXT]`, `wisp crew graph`
+//! - `wisp crew wake <member> [--why TEXT]`, `wisp crew graph`, `wisp crew pause <member>`, `wisp crew resume <member>`
+//!   (by name or id; audit G12: only `crew update <member> --paused false` resumed one)
 use std::collections::BTreeMap;
 
 use serde_json::{Map, Value, json};
@@ -319,12 +320,31 @@ async fn crew(c: &Client, p: &Parsed, verb: &str, s: &Said) -> Result<i32> {
                 return Ok(1);
             }
         }
-        other => return Err(CliError::said(format!("wisp crew {other}: wake or graph"))),
+        "pause" | "resume" => {
+            let [id] = s.words.as_slice() else { return Err(CliError::said(format!("wisp crew {verb} <member> (its name or id)"))) };
+            let v = c.cmd("crew.update", json!({ "id": id, "paused": verb == "pause" })).await?;
+            if p.flags.json {
+                say(&v.to_string());
+            } else {
+                say(&paused_words(&v, id, verb == "pause"));
+            }
+        }
+        other => return Err(CliError::said(format!("wisp crew {other}: wake, graph, pause or resume"))),
     }
     Ok(0)
 }
 
-/// `wisp trigger <verb> …` / `wisp crew <wake|graph> …`
+/// What `wisp crew pause|resume` says: the member by the name it has.
+fn paused_words(v: &Value, asked: &str, paused: bool) -> String {
+    let name = v["name"].as_str().or_else(|| v["member"]["name"].as_str()).filter(|n| !n.is_empty()).unwrap_or(asked);
+    if paused {
+        format!("  ✓ {name} is paused: no check-ins or jobs until wisp crew resume {name}")
+    } else {
+        format!("  ✓ {name} is back: check-ins and jobs run again")
+    }
+}
+
+/// `wisp trigger <verb> …` / `wisp crew <wake|graph|pause|resume> …`
 pub async fn run(c: &Client, p: &Parsed, area: &str, cwd: &str) -> Result<i32> {
     let at = p.argv.iter().position(|a| a == area).map_or(0, |i| i + 1);
     let rest = &p.argv[at.min(p.argv.len())..];

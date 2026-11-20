@@ -59,6 +59,10 @@ pub struct Engine {
     /// the runs whose trigger row says held for the plan: `turn.started` looks one up here and touches no row for the
     /// others, so a turn start costs a set lookup
     pub(crate) plan_runs: Mutex<std::collections::BTreeSet<String>>,
+    /// one load of the declared triggers at a time (`trigger::refresh`): a slow one never writes over a newer one
+    pub(crate) loading: tokio::sync::Mutex<()>,
+    /// a trigger's `project:` named a project that wasn't there at the last load: the tick loads again
+    pub(crate) unread: std::sync::atomic::AtomicBool,
 }
 
 fn lock<T>(m: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
@@ -95,6 +99,8 @@ impl Engine {
             declared: Mutex::default(),
             gate: tokio::sync::Mutex::new(()),
             plan_runs: Mutex::default(),
+            loading: tokio::sync::Mutex::new(()),
+            unread: std::sync::atomic::AtomicBool::new(false),
         }
     }
 

@@ -71,7 +71,7 @@ fn triggers(api_out: &Value) -> Vec<String> {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn a_trigger_named_by_its_project_runs_in_that_folder_and_an_unknown_name_is_refused_audit_a_14() {
-    let (dir, _serve, api, _port) = setup("serve-auditA-14");
+    let (dir, _serve, api, port) = setup("serve-auditA-14");
     let proj = dir.join("proj");
     let r = api
         .try_cmd(
@@ -83,10 +83,29 @@ async fn a_trigger_named_by_its_project_runs_in_that_folder_and_an_unknown_name_
         )
         .await;
     assert_eq!(r["ok"], true, "{r}");
-    // kept as the project's folder: the engine compares folders and starts its task in one
+    // kept as written (audit G11: stored as its folder, so `wisp diff` right after `apply` said "1 to change"); the
+    // engine reads it as that project's folder
+    let kept = api.cmd("resources.export", json!({ "kinds": ["trigger"] })).await;
+    let spec = kept.as_array().unwrap().iter().find(|t| t["name"] == "named").map(|t| t["spec"].clone()).unwrap();
+    assert_eq!(spec["project"], "proj", "{spec}");
     let ls = api.cmd("automations.trigger.ls", json!({})).await;
-    let spec = ls.as_array().unwrap().iter().find(|t| t["name"] == "named").map(|t| t["spec"].clone()).unwrap();
-    assert_eq!(canonical(Path::new(spec["project"].as_str().unwrap())), canonical(&proj), "{spec}");
+    let live = ls.as_array().unwrap().iter().find(|t| t["name"] == "named").map(|t| t["spec"].clone()).unwrap();
+    assert_eq!(canonical(Path::new(live["project"].as_str().unwrap())), canonical(&proj), "the engine's: {live}");
+    let f = dir.join("named.yml");
+    std::fs::write(
+        &f,
+        format!(
+            "wisp: 1\nprojects:\n  - name: proj\n    path: {}\ntriggers:\n  - name: named\n    on: schedule\n    cron: \"0 3 * * *\"\n    prompt: Tidy NAMED14\n    project: proj\ntasks:\n  - name: tidy\n    prompt: Tidy\n    project: proj\nworkflows:\n  - name: flow\n    project: proj\n    tasks:\n      a: {{ prompt: A, project: proj }}\n",
+            yaml_str(proj.display().to_string())
+        ),
+    )
+    .unwrap();
+    // every kind with a project field, the same: apply, then diff is unchanged
+    let (code, out, err) = wisp(&dir, &dir, port, &["apply", "-f", f.to_str().unwrap(), "--yes"]);
+    assert_eq!(code, 0, "{out}{err}");
+    let (code, out, err) = wisp(&dir, &dir, port, &["diff", "-f", f.to_str().unwrap()]);
+    assert_eq!(code, 0, "{out}{err}");
+    assert!(out.contains("0 to add, 0 to change, 0 to remove"), "apply → diff is unchanged: {out}{err}");
     let out = api.cmd("automations.trigger.fire", json!({ "name": "named" })).await;
     let id = out["session"].as_str().unwrap_or_else(|| panic!("fired nothing: {out}")).to_owned();
     finished(&api, &id).await;

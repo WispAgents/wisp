@@ -368,7 +368,7 @@ pub const VERB_PATHS: &[VerbPath] = &[
     vp("teams", &["ls", "list", "new", "create", "show", "add", "rm", "remove"], &[]),
     vp("trigger", &["add", "ls", "list", "rm", "remove", "fire", "test", "log", "resume", "approve", "sources"], TRIGGER),
     vp("triggers", &["add", "ls", "list", "rm", "remove", "fire", "test", "log", "resume", "approve", "sources"], TRIGGER),
-    vp("crew", &["wake", "graph"], TRIGGER),
+    vp("crew", &["wake", "graph", "pause", "resume"], TRIGGER),
     vp("hook", &["install", "uninstall", "remove", "status"], &[]),
     vp("events", &["tail", "why", "retry", "parked", "ls"], &["--follow", "-f", "--limit", "--since", "--subject", "--type"]),
     vp("task", &["spec", "export", "formula", "setup", "history"], TASK),

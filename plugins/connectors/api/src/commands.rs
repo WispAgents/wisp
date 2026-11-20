@@ -137,7 +137,7 @@ pub struct TurnQuery {
     pub cwd: Option<String>,
 }
 
-/// The agent tools speak for one session: the caller's own, or `sid` from v1's URL when the caller is
+/// The agent tools speak for one session: the caller's own, or the one `sid` names when the caller is
 /// the user or the kernel. An agent naming another session is refused.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default, TS)]
 pub struct AgentArgs {

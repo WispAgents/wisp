@@ -218,6 +218,23 @@ fn the_row_says_what_the_last_answer_said_and_what_runs_now() {
     assert_eq!(summarize(&s, &RowFacts { last: Some(&compact), ..RowFacts::default() }, none()).live, "Compacting");
 }
 
+/// Audit G15: a factory run's own task has no turns of its own, so its row said "info" (Report) beside the band's Done.
+/// A plugin's `status` is the row's when the task's turns don't say one; a turn running or held still wins.
+#[test]
+fn a_plugins_status_is_the_rows_when_the_tasks_own_turns_say_none_audit_g15() {
+    let s = session();
+    let said = || BTreeMap::from([("status".to_owned(), json!("failed")), ("factory".to_owned(), json!({ "state": "failed" }))]);
+    let row = summarize(&s, &RowFacts::default(), said());
+    assert_eq!(row.status, "failed");
+    assert!(!row.fields.contains_key("status"), "said once, as the row's status: {:?}", row.fields);
+    assert_eq!(row.fields["factory"]["state"], "failed", "the plugin's other fields stay");
+    let running = Turn { status: TurnStatus::Running, ..Turn::default() };
+    assert_eq!(summarize(&s, &RowFacts { last: Some(&running), ..RowFacts::default() }, said()).status, "running");
+    let held = Turn { status: TurnStatus::Held, ..Turn::default() };
+    assert_eq!(summarize(&s, &RowFacts { last: Some(&held), ..RowFacts::default() }, said()).status, "held");
+    assert_eq!(summarize(&s, &RowFacts::default(), BTreeMap::new()).status, "info", "none said: as before");
+}
+
 #[test]
 fn the_row_says_who_a_lead_waits_on_what_it_asks_and_what_plugins_add() {
     let s = session();

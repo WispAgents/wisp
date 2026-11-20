@@ -1,5 +1,6 @@
 // The factory band over a run's task (ADR-0114): one row for the whole run, its stations as steps under it. The header
-// says the factory, where it is (`Review · round 2 of 3`, Waiting on you, Done) and a menu: Open each station's task,
+// says the factory, where it is while it goes (`Review · round 2 of 3`, Waiting on you; once it ended, the task's own
+// status says how) and a menu: Open each station's task,
 // Open the PR, Stop the run. A station that waits on you says the question; the question card itself is the task's
 // own (it's `runtime.ask` on the run's task), so you answer it where you answer any agent's question.
 
@@ -8,7 +9,7 @@ import type { ExtensionProps } from '@wisp/shell/contract';
 import { Box, Button, Dialog, Icon, Inline, Menu, Pill, Stack, Steps, Text, useSignal } from '@wisp/ui';
 import { defineCommand, type EntityKey, type PluginClient } from '@wisp/client';
 import { t, type Vars } from './i18n.ts';
-import { endWhy, live, openable, runOf, step, where, type Said } from './model.ts';
+import { endWhy, live, openable, pill, runOf, step, type Said } from './model.ts';
 import { KIND, type SessionRow } from './types.ts';
 import './i18n/lazy.ts';
 
@@ -65,7 +66,6 @@ export default function Band(props: ExtensionProps): JSX.Element {
   return (
     <Show when={run()}>
       {(r) => {
-        const w = (): ReturnType<typeof where> => where(r());
         const steps = (): { title: string; detail?: string; status: ReturnType<typeof step>['status'] }[] =>
           r().stations.map((s) => {
             const x = step(r(), s);
@@ -82,9 +82,13 @@ export default function Band(props: ExtensionProps): JSX.Element {
                     {t('wisp.factory.title', { name: r().name })}
                   </Text>
                 </Box>
-                <Pill part="factory.where" tone={w().tone} dot={live(r())}>
-                  {say(w().said)}
-                </Pill>
+                <Show when={pill(r())}>
+                  {(w) => (
+                    <Pill part="factory.where" tone={w().tone} dot>
+                      {say(w().said)}
+                    </Pill>
+                  )}
+                </Show>
                 <Show when={actions().length > 0}>
                   <Menu part="factory.more" trigger={{ icon: 'dots', 'aria-label': t('wisp.factory.actions'), variant: 'ghost', size: 'xs' }} items={actions()} onSelect={act} placement="bottom-end" />
                 </Show>

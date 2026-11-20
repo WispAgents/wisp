@@ -6,7 +6,7 @@
 export type CreateArgs = { 
 /**
  * the client's id for it (the rail shows it under this id at once): kept when it's an id's shape and no member has
- * it, so the row it drew is the one that comes back (never two for a frame). Additive (2026-11-16).
+ * it, so the row it drew is the one that comes back, never a second one. Additive (2026-11-16).
  */
 id?: string, checkin?: boolean, name?: string, role?: string, avatar?: string, color?: string, 
 /**

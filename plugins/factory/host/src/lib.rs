@@ -263,6 +263,10 @@ impl wisp_runtime_api::points::SummaryField for Summary {
                 ..wisp_factory_api::RunView::default()
             },
         };
+        // ended: how, as the row's status (its task has no turns of its own to say it, audit G15)
+        if let Some(st) = wisp_factory_core::status_of(&view) {
+            out.insert("status".into(), json!(st));
+        }
         out.insert("factory".into(), wisp_factory_core::summary_of(&view));
     }
 }

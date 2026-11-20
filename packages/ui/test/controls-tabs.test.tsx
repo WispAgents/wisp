@@ -101,6 +101,29 @@ describe('Splitter and Split', () => {
     expect(fitPlan({ ...panel, minor: [false, false, false, false, false], room: 360 })).toEqual({ iconic: 0, tight: true });
   });
 
+  // audit E14 (G round): at 1280 with a Thread tab, "Changes 1" 91, "PR #2" 62, "Shell" 56 stayed labelled and Preview
+  // went to its icon: the tight row needs 6 + 5 + 91 + 62 + 56 + 74 + 28 = 322 of 305. Before any tab loses its words,
+  // the labelled ones drop their icon (`bare`: 13 px and the 4 px gap each), so the four keep their names.
+  test('fit_drops_the_labelled_tabs_icons_before_any_tab_loses_its_words_audit_e14', () => {
+    const counted = {
+      // Changes 1 (open), PR #2, Shell, Preview, Thread (minor)
+      normal: { widths: [100, 71, 65.4, 83.2, 78.3], icon: 32, gap: 2 },
+      tight: { widths: [91, 62, 56.4, 74.2, 69.3], icon: 28, gap: 1 },
+      bare: { widths: [74, 45, 39.4, 57.2, 52.3], icon: 28, gap: 1 },
+      chrome: 6,
+      open: 0,
+      minor: [false, false, false, false, true],
+    };
+    expect(fitPlan({ ...counted, room: 305 })).toEqual({ iconic: 1, tight: true, bare: true });
+    // room enough when tight: no need to go bare
+    expect(fitPlan({ ...counted, room: 330 })).toEqual({ iconic: 1, tight: true });
+    // still short when bare: Preview goes, the rest stay bare
+    expect(fitPlan({ ...counted, room: 230 })).toEqual({ iconic: 2, tight: true, bare: true });
+    // without a bare look measured, as before
+    const { bare: _, ...plain } = counted;
+    expect(fitPlan({ ...plain, room: 305 })).toEqual({ iconic: 2, tight: true });
+  });
+
   // audit E #6: a pinned tab open at 1280 (297 px) turned Changes, PR, Shell and Preview into icons with 45 px to spare:
   // "the last n from the end" can't label Shell while Changes (the widest, with its count) is an icon. Past that point
   // the tabs that still fit get their label back, front first.

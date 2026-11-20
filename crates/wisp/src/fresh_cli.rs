@@ -1,7 +1,7 @@
 //! `wisp fresh [<task>] [--print] [-f brief.md | -f -] [--json]` (ADR-0096): a new conversation on the same task when
 //! the old one got long. `--print` shows the brief it would start from (the Notes, the files changed, the last turns)
 //! so you can edit it; `-f` starts from your edited brief (`-`: from stdin); without either, from the brief as made.
-//! With no task: the task this shell runs in (`WISP_TASK`).
+//! With no task: the task this shell runs in (`WISP_TASK`). `-d`/`--detach` is taken, as launches take it: it never waits.
 use std::io::Read as _;
 
 use serde_json::{Value, json};

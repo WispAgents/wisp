@@ -38,6 +38,12 @@ export function where(r: RunLine): { readonly said: Said; readonly tone: Tone } 
   return { said: { key: `wisp.factory.state.${r.state === 'running' ? 'starting' : r.state}` as Key }, tone };
 }
 
+/** The band's state pill: only while the run goes. An ended run's state is its task's own status pill (Finished,
+ * Failed), so the band doesn't say it a second time (audit G15: "Report" beside "Done"). */
+export function pill(r: RunLine): ReturnType<typeof where> | undefined {
+  return live(r) ? where(r) : undefined;
+}
+
 const STATUS: Readonly<Record<StationLine['state'], StepStatus>> = { done: 'done', failed: 'failed', skipped: 'skipped', running: 'current', asking: 'current', waiting: 'pending' };
 
 /** One station as a step: its name (and round past the first), and what it gave, why it failed, or what it asks you. */

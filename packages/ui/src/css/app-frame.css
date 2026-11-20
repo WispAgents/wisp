@@ -47,7 +47,8 @@
      below v1's fixed 420px): the tabs' box takes the head's room and the bordered row sits in it at its own width. When
      the row doesn't fit, pinned tabs, Thread and Watch go to their icon first, then the row tightens (data-tight: 5px
      tab padding, 4px icon gap, 1px between tabs, 28px icon tabs; owner follow-up 2026-11-19, so a 396px panel at 1280
-     keeps Changes, PR, Shell and Preview labelled), then the rest from the end (the kit's Tabs `fit`, data-iconic). The
+     keeps Changes, PR, Shell and Preview labelled), then the labelled tabs drop their icon (data-bare), then the rest from
+     the end (the kit's Tabs `fit`, data-iconic). The
      row may use its -8px pull as room. The phone looks keep their own rows (no data-fit there). */
   [data-kit='tabs'][data-part='panel.tabs'][data-fit] { flex: 1 1 0; min-width: 0; margin-left: 0; padding: 0; border: 0; border-radius: 0; background: none; }
   [data-kit='tabs'][data-part='panel.tabs'][data-fit] > [data-kit='tab-list'] { flex: none; width: fit-content; max-width: calc(100% + 8px); overflow: hidden; margin-left: -8px; padding: 2px; border: 1px solid var(--line); border-radius: 9px; background: var(--bg-2); }
@@ -59,6 +60,9 @@
   [data-kit='tabs'][data-part='panel.tabs'][data-fit][data-tight] > [data-kit='tab-list'] { gap: 1px; }
   [data-kit='tabs'][data-part='panel.tabs'][data-fit][data-tight] [data-kit='tab'] { gap: 4px; padding: 0 5px; }
   [data-kit='tabs'][data-part='panel.tabs'][data-fit][data-tight] [data-kit='tab'][data-iconic] { width: 1.75rem; padding: 0; }
+  /* still short when tight: the labelled tabs show their words alone before any tab loses them (data-bare, audit E14:
+     "Changes 1" and "PR #2" beside a Thread tab left Preview an icon at 1280) */
+  [data-kit='tabs'][data-part='panel.tabs'][data-fit][data-bare] [data-kit='tab']:not([data-iconic]) > [data-kit='icon'] { display: none; }
   [data-kit='tabs'][data-part='panel.tabs'][data-fit] [data-kit='tab'][data-iconic] > [data-kit='tab-label'],
   [data-kit='tabs'][data-part='panel.tabs'][data-fit] [data-kit='tab'][data-iconic] > [data-kit='tab-count'] { display: none; }
   [data-part~='panel'] > [data-part~='side.body'] { flex: 1; min-height: 0; display: flex; flex-direction: column; padding: var(--space-5) var(--space-6); }

@@ -5,7 +5,7 @@ import { describe, expect, it } from 'vitest';
 import ui from '../src/index.ts';
 import { t } from '../src/i18n.ts';
 import '../src/i18n/lazy.ts';
-import { endWhy, live, openable, runOf, step, where } from '../src/model.ts';
+import { endWhy, live, openable, pill, runOf, step, where } from '../src/model.ts';
 import type { RunLine } from '../src/types.ts';
 
 const run = (over: Partial<RunLine> = {}): RunLine => ({
@@ -66,6 +66,10 @@ describe('wisp.factory ui', () => {
     // audit G15: said once, on its station, not again under the band
     const sh = run({ state: 'failed', station: '', why: 'ship failed: Nothing to ship', stations: r.stations.map((s) => (s.id === 'ship' ? { ...s, state: 'failed', why: 'ship failed: Nothing to ship' } : s)) });
     expect(endWhy(sh)).toBeUndefined();
+    // audit G15: an ended run's state is the task's own status (Finished, Failed), not a second pill in the band
+    expect(pill(r)).toEqual(where(r));
+    expect(pill(run({ state: 'waiting' }))).toEqual(where(run({ state: 'waiting' })));
+    for (const state of ['done', 'failed', 'stopped'] as const) expect(pill(run({ state, station: '' })), state).toBeUndefined();
     expect(words(where(run({ state: 'running', station: '', round: 1 })).said)).toBe('Starting');
     expect(words(where(run({ station: 'build', round: 1 })).said)).toBe('Build');
   });

@@ -22,6 +22,13 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Fixed
 
+- v2 `wisp diff` right after `wisp apply` no longer says "1 to change" for a trigger whose `project:` names a project: it's kept as written and read as that project's folder when it runs (a task's and a workflow's `project:` plan unchanged too).
+- v2 `wisp crew pause <member>` and `wisp crew resume <member>`, by name or id, stop a member's check-ins and jobs and start them again.
+- v2 `wisp goal set <task> <name>` sets a declared goal and refuses a name no goal has, with the goals there are, as `--goal` does at launch (a typo became the goal in words); `--text "…"` sets words.
+- v2 `wisp fresh <task> -d` (or `--detach`) works, as launches take it, instead of printing the usage line.
+- v2 factory runs: an ended run's task says how it ended (Finished, Failed) instead of "Report", and the band no longer says it a second time; past the review limit, a reviewer who gave no verdict reads "The review gave no verdict", not "still asks for changes".
+- v2 side panel: at 1280 with counts on Changes and PR beside a Thread tab, the panel's own tabs drop their icons before any of them loses its name (Preview was an icon).
+- v2 `--help` and tool descriptions no longer show notes meant for wisp's developers (a bug's number, "Additive (…)" with a colon, "never two for a frame", "v1's …").
 - v2 setup cards: `wisp reply <id> Allow` (or Deny, or your words) answers the card the task is asking, and `wisp show` says so; words typed under a card in the app, or a reply in a chat from the person who linked it, answer it too (anything but Allow is a no, with your words). An "Allow" is never queued as a follow-up, and a card whose agent a restart stopped is taken back.
 - v2 goals: a goal judged by an agent the task's own formula declares is judged by that agent; a judge that can't run stops the goal once and says why instead of sending the work back to its round limit. "after 1 round", not "1 rounds", and `wisp show` no longer repeats the question.
 - v2 formulas: an agent's formula file in its own worktree is read (it was refused as "a secrets file"); a formula with a field no kind has is refused before a task launches, with `wisp validate`'s words, and `wisp "…" --formula` honours the formula; `wisp run <task> --formula` gets its own worktree in a project; a picked task file reads its `formula: ./x.yml` beside it; a refusal lists at most 8 names.

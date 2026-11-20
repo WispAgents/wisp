@@ -105,13 +105,35 @@ fn leading_doc(s: &str) -> (String, &str) {
 /// takes any number and floors it", "[`crate::MAX_CREW`]").
 pub fn public(doc: &str) -> String {
     let mut s = doc.to_owned();
-    // asides: "(v1 …)", "(at most [`crate::…`])", "(ADR-0113)", "(audit G4: …)", "(review r194 …)", "(owner-list #63)"
-    for open in ["(v1 ", "(v1's ", "(at most [`", "(ADR-", "(audit ", "(review ", "(owner-list ", "(owner, "] {
-        while let Some(i) = s.find(open) {
-            let Some(len) = s[i..].find(')') else { break };
-            let before = s[..i].trim_end().to_owned();
-            s = format!("{before}{}", &s[i + len + 1..]);
-        }
+    // asides: "(v1 …)", "(at most [`crate::…`])", "(ADR-0113)", "(audit G4: …)", "(review r194 …)", "(owner-list #63)",
+    // a bug by its number ("(B49: …)", "(#31 …)"), and "Additive (2026-11-16, B44: …)" whole (its colon split it)
+    let aside = |t: &str| {
+        let numbered = |p: &str| t.strip_prefix(p).is_some_and(|r| r.starts_with(|c: char| c.is_ascii_digit()));
+        ["(v1 ", "(v1's ", "(at most [`", "(ADR-", "(audit ", "(review ", "(owner-list ", "(owner, ", "Additive ("]
+            .iter()
+            .any(|o| t.starts_with(o))
+            || numbered("(B")
+            || numbered("(#")
+    };
+    let mut from = 0;
+    while let Some(at) = s[from..].find(['(', 'A']).map(|i| from + i) {
+        let Some(len) = s[at..].find(')').filter(|_| aside(&s[at..])) else {
+            from = at + 1;
+            continue;
+        };
+        let before = s[..at].trim_end();
+        let after = &s[at + len + 1..];
+        // "…fell back). Additive (…)." leaves one full stop, not two; "Additive (…): x" its colon with it, and a doc that
+        // was only the note leaves nothing
+        let ends = before.is_empty() || before.ends_with('.');
+        let after = if ends || s[at..].starts_with("Additive (") {
+            after.strip_prefix(['.', ':']).filter(|_| ends || after.starts_with(':')).unwrap_or(after)
+        } else {
+            after
+        };
+        let joined = format!("{before}{after}");
+        from = before.len();
+        s = joined;
     }
     // ", checked by `normalize_kit`": the function that checks it
     while let Some(i) = s.find(", checked by `") {
@@ -295,6 +317,17 @@ mod tests {
         assert_eq!(public("a goal by name (owner-list #63, ADR-0110)"), "a goal by name");
         assert_eq!(public("what it fixed (audit G4: it was queued)"), "what it fixed");
         assert_eq!(public("v1's trigger kinds that start its jobs. what else wakes them"), "what else wakes them");
+        // audit G, E11 left: a bug cited by its number, and an `Additive (…)` whose aside has a colon in it
+        assert_eq!(
+            public(
+                "given empty: no judges, the task's own check (B49: clearing them fell back). Additive (2026-11-16, B44: they were dropped)."
+            ),
+            "given empty: no judges, the task's own check."
+        );
+        assert_eq!(public("the members (#31: two showed) by name"), "the members by name");
+        // the aside's own colon or full stop goes with it (review: "…latest).: `package`", a doc of "." alone)
+        assert_eq!(public("the latest (v1 npm). Additive (2026-11-09): `package` names it."), "the latest. `package` names it.");
+        assert_eq!(public("Additive (2026-11-19)."), "");
     }
 
     /// Audit D6: an empty struct is an object of no fields, not `--args JSON`.

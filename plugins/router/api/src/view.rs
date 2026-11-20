@@ -189,7 +189,7 @@ pub struct RouterView {
     pub report: RouterReport,
 }
 
-/// PATCH /router (v1 shape). Lists are checked by the router, with v1's messages.
+/// PATCH /router (v1 shape). Lists are checked by the router, which says what's wrong with one.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, TS)]
 #[serde(default)]
 #[ts(export, export_to = "router/")]

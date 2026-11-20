@@ -639,6 +639,39 @@ fn a_station_is_cut_when_the_runs_total_passes_the_budget() {
 }
 
 /// Audit G15: "after 1 round(s)", a check that printed nothing ended on a dangling colon, and Ship said a raw URL.
+/// Audit G15: an ended run's task says how it ended as its status (it said Report); a run that goes says none.
+#[test]
+fn an_ended_runs_task_says_how_it_ended_audit_g15() {
+    let mut r = Run::new(input(builtin_default()));
+    assert_eq!(status_of(r.view()), None);
+    r.start();
+    assert_eq!(status_of(r.view()), None, "running");
+    let mut v = r.view().clone();
+    for (state, said) in [(RunState::Done, "done"), (RunState::Failed, "failed"), (RunState::Stopped, "blocked")] {
+        v.state = state;
+        assert_eq!(status_of(&v), Some(said), "{state:?}");
+    }
+}
+
+/// Audit G15: past the limit, a reviewer who gave no verdict was "The review still asks for changes".
+#[test]
+fn the_review_limit_says_no_verdict_when_no_reviewer_gave_one_audit_g15() {
+    let at_limit = |answer: &str| {
+        let f = spec(json!({ "stations": { "build": {}, "review": { "agents": ["critic"] } }, "loop": { "max": 1 } }));
+        let mut r = Run::new(input(f));
+        let n = r.start();
+        made(&mut r, &n);
+        let n = r.on(Event::Ended(vec![ok("build0", "b")]));
+        made(&mut r, &n);
+        asks(&r.on(Event::Ended(vec![ok("review0", answer)])))
+    };
+    let q = at_limit("Looks fine to me.");
+    assert!(q.starts_with("The review gave no verdict after 1 round"), "{q}");
+    assert!(!q.contains("asks for changes"), "{q}");
+    let q = at_limit("CHANGES: add a test");
+    assert!(q.starts_with("The review still asks for changes after 1 round") && q.contains("add a test"), "{q}");
+}
+
 #[test]
 fn the_runs_words_say_rounds_prs_and_a_silent_check_plainly_audit_g15() {
     assert_eq!((rounds(1), rounds(3)), ("1 round".to_owned(), "3 rounds".to_owned()));

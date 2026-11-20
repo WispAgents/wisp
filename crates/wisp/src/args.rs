@@ -29,6 +29,7 @@ pub const HELP: &str = "usage:
   wisp plugin enable|disable|trust|untrust <id>   switch a plugin on or off; trust one you installed (its theme applies)
   wisp plugin install <folder|git URL>  install one, off, and see what it asks for; remove <id> takes it out
   wisp crew                     list your crew
+  wisp crew pause|resume <member>   stop a member's check-ins and jobs, or start them again (by name or id)
   wisp init                     a .wisp/ folder here: wisp.yml, the AGENTS.md note, its modules fetched and locked
                                 (asks first outside a git repo or project; --here: make it anyway)
   wisp plan|destroy             what applying .wisp/ would change; take out everything it declares   (--yes)

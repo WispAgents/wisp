@@ -43,8 +43,8 @@ export interface TabsProps extends KitProps {
    * which keeps the browser's 2px side margin; its `<span class="pk-seg">` ones (Auto's Goal, Scout first) have none. */
   readonly fieldset?: boolean;
   /** Labels give way to icons only when the row has no room for them, by priority (design/layout.md: control text
-   * collapses to its icon): the `minor` tabs at the end first, then the row tightens (`data-tight`), then the rest from
-   * the end, one at a time; the open tab keeps its label. They come back as room comes. For icon tabs in a bar that can
+   * collapses to its icon): the `minor` tabs at the end first, then the row tightens (`data-tight`), then the labelled
+   * tabs drop their icon (`data-bare`), then the rest from the end, one at a time; the open tab keeps its label. They come back as room comes. For icon tabs in a bar that can
    * narrow (the task's side panel). The browser's look only: a phone's row scrolls instead. Additive (2026-11-19). */
   readonly fit?: boolean;
 }
@@ -62,11 +62,14 @@ export interface FitLook {
  * their icon one at a time from the end; then the tight row; then the rest from the end, one at a time (owner
  * 2026-11-19: at 1280 the side panel keeps Changes, PR, Shell and Preview labelled, Thread and pinned tabs give way
  * first). `chrome` the row's own padding and border. Measured once in one pass, so nothing steps on a stale layout
- * (the first fit stepped while Solid was still mounting, saw the same overflow each time and turned every tab to an icon). */
+ * (the first fit stepped while Solid was still mounting, saw the same overflow each time and turned every tab to an icon).
+ * `bare`, when measured: the tight row with the labelled tabs' icons hidden, the step before any tab loses its words
+ * (audit E14: "Changes 1" and "PR #2" with a Thread tab left Preview an icon at 1280). */
 export function fitPlan(m: {
   readonly room: number;
   readonly normal: FitLook;
   readonly tight: FitLook;
+  readonly bare?: FitLook;
   readonly chrome: number;
   readonly open: number;
   readonly minor: readonly boolean[];
@@ -78,22 +81,26 @@ export function fitPlan(m: {
     return m.chrome + look.gap * Math.max(0, look.widths.length - 1) + look.widths.reduce((sum, w, i) => sum + (icons.has(i) ? Math.min(look.icon, w) : w), 0);
   };
   for (let n = 0; n <= minors; n += 1) if (total(m.normal, n) <= m.room + 0.5) return { iconic: n, tight: false };
-  for (let n = minors; n < others.length; n += 1) if (total(m.tight, n) <= m.room + 0.5) return { iconic: n, tight: true };
+  if (total(m.tight, minors) <= m.room + 0.5) return { iconic: minors, tight: true };
+  // then the labelled tabs drop their icons (a bare row), and only then does a tab lose its words
+  const last = m.bare ?? m.tight;
+  const bare = m.bare === undefined ? {} : { bare: true as const };
+  for (let n = minors; n < others.length; n += 1) if (total(last, n) <= m.room + 0.5) return { iconic: n, tight: true, ...bare };
   // every other tab an icon: the room that's left goes back to the tabs whose label still fits, front first (audit E
   // #6: a pinned tab open at 1280 left Changes, PR, Shell and Preview as icons with Shell's label's room to spare, since
   // the widest, Changes, was always the last to keep its label)
-  let used = total(m.tight, others.length);
+  let used = total(last, others.length);
   const labelled: number[] = [];
   if (used <= m.room + 0.5) {
     for (const i of others) {
-      const more = (m.tight.widths[i] ?? 0) - Math.min(m.tight.icon, m.tight.widths[i] ?? 0);
+      const more = (last.widths[i] ?? 0) - Math.min(last.icon, last.widths[i] ?? 0);
       if (used + more <= m.room + 0.5) {
         used += more;
         labelled.push(i);
       }
     }
   }
-  return { iconic: others.length - labelled.length, tight: true, ...(labelled.length > 0 && { labelled }) };
+  return { iconic: others.length - labelled.length, tight: true, ...(labelled.length > 0 && { ...bare, labelled }) };
 }
 
 /** `fitPlan`'s answer: the last `iconic` tabs (the open one aside) show their icon alone, or, when `labelled` is given,
@@ -101,6 +108,8 @@ export function fitPlan(m: {
 export interface FitResult {
   readonly iconic: number;
   readonly tight: boolean;
+  /** the labelled tabs show their words alone (`data-bare`) */
+  readonly bare?: boolean;
   readonly labelled?: readonly number[];
 }
 
@@ -143,7 +152,7 @@ export function Tabs(props: TabsProps): JSX.Element {
   };
   const byValue = createMemo(() => new Map(props.items.map((i) => [i.value, i])));
   return (
-    <div {...api().getRootProps()} ref={(el) => (root = el)} data-kit="tabs" data-part={part()} data-variant={props.variant ?? 'line'} data-fit={flag(fits())} data-tight={flag(fit().tight)}>
+    <div {...api().getRootProps()} ref={(el) => (root = el)} data-kit="tabs" data-part={part()} data-variant={props.variant ?? 'line'} data-fit={flag(fits())} data-tight={flag(fit().tight)} data-bare={flag(fit().bare)}>
       <div {...api().getListProps()} aria-label={props['aria-label']} data-kit="tab-list" data-part={sub(part(), 'list')} data-fill={flag(props.fill)} data-fieldset={flag(props.fieldset)}>
         <For each={values()}>
           {(value) => {
@@ -186,7 +195,7 @@ export function Tabs(props: TabsProps): JSX.Element {
  * (no flash, no Solid update in between). Run when the tabs' box changes size (a ResizeObserver, never per frame), the
  * frame after the tabs change (a tab added, a label or count changed), and once the fonts are in. */
 function useFit(root: () => HTMLElement | undefined, enabled: () => boolean, items: () => readonly TabItem[], open: () => string): () => FitResult {
-  const [plan, setPlan] = createSignal<FitResult>({ iconic: 0, tight: false }, { equals: (a, b) => a.iconic === b.iconic && a.tight === b.tight && String(a.labelled ?? '') === String(b.labelled ?? '') });
+  const [plan, setPlan] = createSignal<FitResult>({ iconic: 0, tight: false }, { equals: (a, b) => a.iconic === b.iconic && a.tight === b.tight && a.bare === b.bare && String(a.labelled ?? '') === String(b.labelled ?? '') });
   let check = (): void => {};
   onMount(() => {
     const el = root();
@@ -197,10 +206,12 @@ function useFit(root: () => HTMLElement | undefined, enabled: () => boolean, ite
       if (tabs.length === 0) return;
       const iconicWas = tabs.map((t) => t.hasAttribute('data-iconic'));
       const tightWas = el.hasAttribute('data-tight');
+      const bareWas = el.hasAttribute('data-bare');
       // each tab at its own width while measured: the open tab doesn't give way to the row then (it does once drawn)
       el.setAttribute('data-measuring', '');
-      const look = (tight: boolean): FitLook => {
+      const look = (tight: boolean, bare = false): FitLook => {
         el.toggleAttribute('data-tight', tight);
+        el.toggleAttribute('data-bare', bare);
         for (const t of tabs) t.removeAttribute('data-iconic');
         const widths = tabs.map((t) => t.getBoundingClientRect().width);
         const gap = parseFloat(getComputedStyle(list).columnGap) || 0;
@@ -212,7 +223,9 @@ function useFit(root: () => HTMLElement | undefined, enabled: () => boolean, ite
       };
       const normal = look(false);
       const tight = look(true);
+      const bare = look(true, true);
       el.toggleAttribute('data-tight', tightWas);
+      el.toggleAttribute('data-bare', bareWas);
       tabs.forEach((t, i) => t.toggleAttribute('data-iconic', iconicWas[i] === true));
       el.removeAttribute('data-measuring');
       const cs = getComputedStyle(list);
@@ -222,7 +235,7 @@ function useFit(root: () => HTMLElement | undefined, enabled: () => boolean, ite
       const room = el.clientWidth - Math.min(0, px(cs.marginLeft));
       const order = tabs.map((t) => t.getAttribute('data-value') ?? '');
       const byValue = new Map(items().map((i) => [i.value, i]));
-      setPlan(fitPlan({ room, normal, tight, chrome, open: order.indexOf(open()), minor: order.map((v) => byValue.get(v)?.minor === true) }));
+      setPlan(fitPlan({ room, normal, tight, bare, chrome, open: order.indexOf(open()), minor: order.map((v) => byValue.get(v)?.minor === true) }));
     };
     const seen = new ResizeObserver(() => check());
     seen.observe(el);

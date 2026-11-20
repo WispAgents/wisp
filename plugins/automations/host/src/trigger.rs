@@ -22,15 +22,27 @@ struct TriggerKind {
     ctx: Ctx,
 }
 
-async fn refresh(inner: &StoredKind, engine: &Engine) {
-    let list = inner
-        .specs()
-        .await
-        .unwrap_or_default()
-        .into_iter()
-        .filter_map(|(n, v)| Some((n, serde_json::from_value::<TriggerSpec>(v).ok()?)))
-        .collect();
+/// Loads the declared triggers into the engine, a `project: proj` read as that project's folder: the engine compares
+/// folders and starts its task in one. The spec stays as written (audit G11: kept as its folder, `wisp diff` right
+/// after `apply` said "1 to change"). One at a time (a slow load never writes over a newer one); a name it couldn't read
+/// (the projects weren't there yet at start, or one went) marks the engine `unread`, and the tick loads again.
+async fn refresh(ctx: &Ctx, inner: &StoredKind, engine: &Engine) {
+    let _one = engine.loading.lock().await;
+    let mut specs = inner.specs().await.unwrap_or_default();
+    let mut read = true;
+    if specs.iter().any(|(_, v)| project_name(v).is_some()) {
+        let folders = project_folders(ctx, &ctx.root_call()).await.unwrap_or_default();
+        for (_, v) in &mut specs {
+            let Some(name) = project_name(v) else { continue };
+            match folders.iter().find(|(n, _)| n == name) {
+                Some((_, folder)) => v["project"] = json!(folder),
+                None => read = false,
+            }
+        }
+    }
+    let list = specs.into_iter().filter_map(|(n, v)| Some((n, serde_json::from_value::<TriggerSpec>(v).ok()?))).collect();
     *engine.declared.lock().unwrap_or_else(std::sync::PoisonError::into_inner) = list;
+    engine.unread.store(!read, std::sync::atomic::Ordering::Relaxed);
 }
 
 /// An `on` no source offers (no plugin's, on or off): refused, naming the sources (audit G11: `on: "every minute"` was
@@ -85,42 +97,49 @@ impl ResourceKind for TriggerKind {
     }
     fn apply<'a>(&'a self, call: &'a Call, op: &'a Op) -> BoxFuture<'a, Result<()>> {
         Box::pin(async move {
-            let mut op = op.clone();
             if op.op != wisp_resources_api::OpKind::Delete {
-                project_folder(&self.ctx, call, &mut op.spec).await?;
+                project_named(&self.ctx, call, &op.spec).await?;
             }
-            self.inner.apply(call, &op).await?;
-            refresh(&self.inner, &self.engine).await;
+            self.inner.apply(call, op).await?;
+            refresh(&self.ctx, &self.inner, &self.engine).await;
             Ok(())
         })
     }
 }
 
 /// `project: api` names a declared project rather than a folder (no `/`, `\`, `:` or `~`), as a formula names one:
-/// the engine compares folders and starts its task in one, so it's kept as that project's folder. A name no project
-/// has is refused at apply: it would have matched no task and started none, saying nothing (audit A #14).
+/// the engine reads it as that project's folder ([`refresh`]). A name no project has is refused at apply: it would
+/// have matched no task and started none, saying nothing (audit A #14).
 pub(crate) fn project_name(spec: &Value) -> Option<&str> {
     let p = spec.get("project")?.as_str()?.trim();
     (!p.is_empty() && p != "." && p != ".." && !p.starts_with('~') && !p.contains(['/', '\\', ':'])).then_some(p)
 }
 
-async fn project_folder(ctx: &Ctx, call: &Call, spec: &mut Value) -> Result<()> {
-    let Some(name) = project_name(spec).map(str::to_owned) else { return Ok(()) };
+/// Each declared project's name and folder.
+async fn project_folders(ctx: &Ctx, call: &Call) -> Result<Vec<(String, String)>> {
     let args = wisp_resources_api::ExportArgs { kinds: vec!["project".into()], include: Vec::new() };
     let projects = ctx.run::<wisp_resources_api::Export>(call, args).await?;
-    let folder =
-        projects.iter().find(|r| r.kind == "project" && r.name == name).and_then(|r| r.spec.get("path")?.as_str().map(str::to_owned));
-    let Some(folder) = folder else {
-        let known: Vec<&str> = projects.iter().filter(|r| r.kind == "project").map(|r| r.name.as_str()).collect();
-        let hint = if known.is_empty() {
-            "there are no projects yet: give its folder".to_owned()
-        } else {
-            format!("give its folder, or one of {}", known.join(", "))
-        };
-        return Err(wisp_kernel::WireError::invalid(format!("project: no project is named {name:?}; {hint}")));
+    Ok(projects
+        .into_iter()
+        .filter(|r| r.kind == "project")
+        .filter_map(|r| Some((r.name, r.spec.get("path")?.as_str()?.to_owned())))
+        .collect())
+}
+
+/// A `project` given by name names a declared project.
+async fn project_named(ctx: &Ctx, call: &Call, spec: &Value) -> Result<()> {
+    let Some(name) = project_name(spec) else { return Ok(()) };
+    let projects = project_folders(ctx, call).await?;
+    if projects.iter().any(|(n, _)| n == name) {
+        return Ok(());
+    }
+    let known: Vec<&str> = projects.iter().map(|(n, _)| n.as_str()).collect();
+    let hint = if known.is_empty() {
+        "there are no projects yet: give its folder".to_owned()
+    } else {
+        format!("give its folder, or one of {}", known.join(", "))
     };
-    spec["project"] = json!(folder);
-    Ok(())
+    Err(wisp_kernel::WireError::invalid(format!("project: no project is named {name:?}; {hint}")))
 }
 
 /// `${secret:NAME}` read from secrets; a literal stays as it is.
@@ -414,13 +433,16 @@ pub fn register(s: &mut Setup, engine: &Shared) {
     commands(s, engine);
     let e = engine.clone();
     s.on_start(move |ctx| async move {
-        refresh(&inner, &e).await;
+        refresh(&ctx, &inner, &e).await;
         let clock = ctx.clock()?;
         let c2 = ctx.clone();
         ctx.spawn(async move {
             loop {
                 // every 15 s: a schedule's minute is never missed, a debounce closes within 15 s of its window
                 clock.sleep(15_000).await;
+                if e.unread.load(std::sync::atomic::Ordering::Relaxed) {
+                    refresh(&c2, &inner, &e).await;
+                }
                 e.tick(&c2, clock.now_ms()).await;
             }
         });

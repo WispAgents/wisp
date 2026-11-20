@@ -14,7 +14,8 @@ pub const PLUGIN: &str = "wisp.goal";
 pub struct SetArgs {
     /// the task
     pub id: String,
-    /// what done means; empty: no goal
+    /// what done means; empty: no goal. On the command line one word after the task is a declared goal's name
+    /// (`wisp goal set <task> green-build`), refused when no goal has it; `--text "…"` is words
     pub text: String,
     /// judged at once when the task isn't running (it may already hold), as `/goal …` in a reply box does (v1
     /// Goals#set `kick`); a running task's turn is judged when it ends either way. Additive (2026-11-14).

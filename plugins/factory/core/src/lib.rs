@@ -175,12 +175,19 @@ pub fn verdict(reviewer: &str, answer: &str) -> Verdict {
         let why = if why.is_empty() { "it asks for changes".to_owned() } else { why.to_owned() };
         return Verdict { reviewer: reviewer.to_owned(), approve: false, why };
     }
-    Verdict {
-        reviewer: reviewer.to_owned(),
-        approve: false,
-        why: format!("{reviewer} gave no verdict (its last line wasn't APPROVE or CHANGES: …)"),
-    }
+    Verdict { reviewer: reviewer.to_owned(), approve: false, why: format!("{reviewer} {NO_VERDICT}") }
 }
+
+/// What [`verdict`] says of an answer that is neither a yes nor a no.
+const NO_VERDICT: &str = "gave no verdict (its last line wasn't APPROVE or CHANGES: …)";
+
+/// A no that asked for something (`CHANGES: …`), not a reviewer who gave no verdict or whose review failed.
+fn asked_for_changes(v: &Verdict) -> bool {
+    !v.approve && !v.why.ends_with(NO_VERDICT) && !v.why.starts_with(REVIEW_FAILED)
+}
+
+/// What a review that couldn't run says, before its words.
+const REVIEW_FAILED: &str = "the review failed: ";
 
 /// The votes counted as a goal counts its judges' (ADR-0110): `all`, `any`, else a majority (a tie isn't approved).
 pub fn approved(vote: &str, v: &[Verdict]) -> bool {
@@ -755,17 +762,22 @@ impl Run {
 
     /// A station failed: back to `loop.back_to` while rounds are left, else ask or stop.
     fn failure(&mut self, station: &'static str, findings: &str) -> Next {
+        let what = match station {
+            "checks" => "Checks still fail",
+            "review" => "The review still asks for changes",
+            _ => "The build still fails",
+        };
+        self.failure_as(station, what, findings)
+    }
+
+    /// [`Run::failure`] with its own words for the limit's question (`what` after N rounds).
+    fn failure_as(&mut self, station: &'static str, what: &str, findings: &str) -> Next {
         findings.clone_into(&mut self.findings);
         station.clone_into(&mut self.failed_station);
         if self.round < self.max {
             return self.again("");
         }
         let (_, _, then) = self.input.spec.loop_rule();
-        let what = match station {
-            "checks" => "Checks still fail",
-            "review" => "The review still asks for changes",
-            _ => "The build still fails",
-        };
         if then == "stop" {
             let why = format!("{what} after {}: {}", rounds(self.round), short(findings, 400));
             return self.end(RunState::Failed, &why);
@@ -893,7 +905,7 @@ impl Run {
                                 if x.ok {
                                     verdict(&name, &x.text)
                                 } else {
-                                    Verdict { reviewer: name, approve: false, why: format!("the review failed: {}", short(&x.text, 200)) }
+                                    Verdict { reviewer: name, approve: false, why: format!("{REVIEW_FAILED}{}", short(&x.text, 200)) }
                                 }
                             })
                             .collect();
@@ -911,7 +923,12 @@ impl Run {
                         let findings = findings.join("\n");
                         self.set("review", StationState::Failed);
                         self.out("review", output, json!(detail), &short(&findings, 300));
-                        self.failure("review", &format!("What the review asked for:\n{findings}"))
+                        // audit G15: reviewers who gave no verdict (or couldn't review) didn't ask for changes
+                        if verdicts.iter().any(asked_for_changes) {
+                            self.failure("review", &format!("What the review asked for:\n{findings}"))
+                        } else {
+                            self.failure_as("review", "The review gave no verdict", &format!("What the reviewers said:\n{findings}"))
+                        }
                     }
                     _ => Next::Tasks(Vec::new()),
                 }
@@ -1106,6 +1123,17 @@ impl Run {
     /// The run's view, for its parent task.
     pub fn view(&self) -> &RunView {
         &self.view
+    }
+}
+
+/// An ended run's status for its task's row (`runtime.summary`'s `status`): its own task has no turns to say it, so it
+/// read Report beside the band's Done (audit G15). None while it goes.
+pub fn status_of(v: &RunView) -> Option<&'static str> {
+    match v.state {
+        RunState::Done => Some("done"),
+        RunState::Failed => Some("failed"),
+        RunState::Stopped => Some("blocked"),
+        RunState::Running | RunState::Waiting => None,
     }
 }
 

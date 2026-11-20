@@ -126,7 +126,7 @@ pub async fn generated(c: &Client, cat: &Catalogue, words: &[String], argv: &[St
         say(&verbs::help_verb(v));
         return Ok(Some(0));
     }
-    let args = match verbs::build(v, &rest) {
+    let mut args = match verbs::build(v, &rest) {
         Ok(a) => a,
         Err(u) => {
             // every refusal says the way out (QA round 14)
@@ -134,9 +134,32 @@ pub async fn generated(c: &Client, cat: &Catalogue, words: &[String], argv: &[St
             return Ok(Some(USAGE_EXIT));
         }
     };
-    let out = c.cmd(&v.info.id, args).await?;
+    let named = goal_by_name(&v.info.id, &rest, &mut args);
+    let out = match c.cmd(&v.info.id, args).await {
+        Err(CliError::Http { status, message, body }) if named && message.contains("no goal named") => {
+            return Err(CliError::Http { status, message: format!("{message}; use --text \"…\" for words"), body });
+        }
+        r => r?,
+    };
     print_result(&out, own.json || argv.iter().any(|a| a == "--json"));
     Ok(Some(0))
+}
+
+/// `wisp goal set <task> <name>`: one word after the task is a declared goal's name, refused when no goal has it, as
+/// `--goal` is at launch; `--text "…"` (or several words, which no name is) sets words. True: the word was sent as a
+/// name. Audit G16: `wisp goal set <task> nevr`, a typo of `never`, silently became the goal "nevr".
+fn goal_by_name(id: &str, rest: &[String], args: &mut Value) -> bool {
+    let flag = |f: &str| rest.iter().any(|a| a == f || a.starts_with(&format!("{f}=")));
+    if id != "goal.set" || flag("--text") || flag("--name") {
+        return false;
+    }
+    let Some(word) = args.get("text").and_then(Value::as_str).map(str::trim).filter(|t| !t.is_empty() && !t.contains(char::is_whitespace))
+    else {
+        return false;
+    };
+    args["name"] = json!(word);
+    args["text"] = json!("");
+    true
 }
 
 pub fn print_result(v: &Value, json: bool) {
@@ -264,6 +287,21 @@ mod tests {
     use std::path::PathBuf;
 
     use super::*;
+
+    /// Audit G16: the word after the task is a goal's name; `--text`, or several words, are words.
+    #[test]
+    fn goal_set_sends_one_word_as_a_name_audit_g16() {
+        let w = |s: &str| s.split(' ').map(str::to_owned).collect::<Vec<_>>();
+        let mut a = json!({ "id": "t1", "text": "nevr" });
+        assert!(goal_by_name("goal.set", &w("t1 nevr"), &mut a));
+        assert_eq!(a, json!({ "id": "t1", "text": "", "name": "nevr" }));
+        for (rest, text) in [("t1 --text nevr", "nevr"), ("t1 --text=nevr", "nevr"), ("t1 the tests pass", "the tests pass"), ("t1", "")] {
+            let mut a = json!({ "id": "t1", "text": text });
+            assert!(!goal_by_name("goal.set", &w(rest), &mut a), "{rest}");
+            assert_eq!(a["text"], text, "{rest}");
+        }
+        assert!(!goal_by_name("crew.update", &w("t1 x"), &mut json!({ "id": "t1", "text": "x" })), "only goal.set");
+    }
 
     fn root() -> PathBuf {
         Path::new(env!("CARGO_MANIFEST_DIR")).join("../..")
