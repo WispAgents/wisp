@@ -84,6 +84,13 @@ export function ShellPane(props: { readonly kind: Kind }): JSX.Element {
   const [error, setError] = createSignal('');
   const phone = shell.platform.phone;
   /** a refusal in words: a gone folder says so on a phone; anything else as the peer said it */
+  /** the page opened on a Shell that can't start (none here, its start refused): the reply box has the caret after all
+   * (TaskView leaves it to the Shell then, reply-focus.ts), when nothing else has it and the panel is beside the task */
+  const caretToReply = (): void => {
+    if (typeof document === 'undefined' || shell.nav().layout !== 'split') return;
+    const at = document.activeElement;
+    if (!at || at === document.body) shell.prompts?.get('reply')?.focus();
+  };
   const say = (e: unknown): string =>
     phone && (e as { code?: unknown }).code === 'not_found' ? t('shell-task.shell.gone') : e instanceof Error ? e.message : String(e);
   const [drawn, setDrawn] = createSignal(false);
@@ -154,18 +161,48 @@ export function ShellPane(props: { readonly kind: Kind }): JSX.Element {
   let tries = 0;
   let retry: (() => void) | undefined;
   onCleanup(() => retry?.());
+  // a focus the terminal refused for good: its input sits under the "Starting…" screen (hidden) until the shell first
+  // draws, which on a slow page (WebKit, a loaded machine) came after the half second of retries (audit H tasks G #3 and
+  // F #1: Enter on Shell left the keys on the tab, a deep link let the reply box have them). Kept until the first draw,
+  // then asked again; a press or a focus move anywhere else since drops it (the user went elsewhere).
+  let pending: boolean | undefined;
   const focusTerm = (opened = false): void => {
     if (typeof document === 'undefined' || !term || (!opened && elsewhere())) return;
     retry?.();
     tries = 0;
+    pending = undefined;
     const go = (): void => {
       if (!term || inTerm() || (!opened && elsewhere())) return;
       term.focus();
       // the panel still sliding in (or hidden a frame longer) refuses the focus: again next frame, for half a second
-      if (!inTerm() && (tries += 1) < 30) retry = afterNextPaint(go);
+      if (inTerm()) return;
+      if ((tries += 1) < 30) retry = afterNextPaint(go);
+      else if (!drawn()) pending = opened;
     };
     go();
   };
+  createEffect(
+    on(
+      drawn,
+      (d) => {
+        if (!d || pending === undefined) return;
+        const opened = pending;
+        pending = undefined;
+        retry = afterNextPaint(() => focusTerm(opened));
+      },
+      { defer: true },
+    ),
+  );
+  onMount(() => {
+    if (typeof document === 'undefined') return;
+    // a press, or the keys moved by the user (Tab to the reply box, ⌘K's field), anywhere but the Shell and its tabs
+    const away = (e: Event): void => {
+      if (!(e.target as Element | null)?.closest?.("[data-part~='side.shell'], [data-part~='panel.tabs']")) pending = undefined;
+    };
+    document.addEventListener('pointerdown', away, true);
+    document.addEventListener('focusin', away, true);
+    onCleanup(() => (document.removeEventListener('pointerdown', away, true), document.removeEventListener('focusin', away, true)));
+  });
   // the Shell tab pressed while the Shell shows (the panel opened on it; the tabs report no change then): the keys go
   // to it too
   createEffect(on(shellAsked, () => focusTerm(true), { defer: true }));
@@ -190,18 +227,18 @@ export function ShellPane(props: { readonly kind: Kind }): JSX.Element {
         connect();
         if (keys) focusTerm(untouched());
       },
-      (e: unknown) => setError(say(e)),
+      (e: unknown) => (setError(say(e)), caretToReply()),
     );
   };
   onMount(() => {
     c.run(phone ? infoHere : info, { key: task.key, id }).then(
       (i) => {
         setWhere(i);
-        if (!i.supported) return;
+        if (!i.supported) return caretToReply();
         if (mounted()) begin();
         else measured = begin;
       },
-      (e: unknown) => setError(say(e)),
+      (e: unknown) => (setError(say(e)), caretToReply()),
     );
   });
   onCleanup(() => es?.abort());

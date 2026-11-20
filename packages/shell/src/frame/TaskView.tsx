@@ -135,6 +135,7 @@ import { laterToggle } from './later-toggle.ts';
 import { promptHarness } from './prompt-harness.ts';
 import '../i18n/lazy.ts';
 import { openedByStep } from './stepped.ts';
+import { mayTakeCaret } from './reply-focus.ts';
 
 
 interface TurnBody {
@@ -405,7 +406,8 @@ export default function TaskView(props: { readonly id: string; readonly onBack?:
   }
   const focusReply = (): void => {
     unwatch();
-    if (!clicked) input?.focus();
+    // never taken from the side panel or a field the keys already went to (reply-focus.ts, audit H tasks F #1)
+    if (!clicked && mayTakeCaret(document.activeElement, document, untrack(() => shell.nav().side.kind))) input?.focus();
   };
   createEffect(
     on(built, (ready) => {

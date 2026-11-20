@@ -54,6 +54,8 @@ export function step(r: RunLine, s: StationLine): { readonly title: Said; readon
   // what it asks about, when it says (the spec waiting on your yes, audit G5), else the question
   if (s.state === 'asking' && r.waiting?.context) return { title, detail: { key: 'wisp.factory.asksAbout', vars: { about: r.waiting.context } }, status };
   if (s.state === 'asking' && r.waiting) return { title, detail: { key: 'wisp.factory.asks', vars: { question: r.waiting.question } }, status };
+  // a station you stopped says Stopped, as the row and Home do (audit H tasks note: the core's token read "stopped")
+  if (s.state === 'failed' && s.why === 'stopped') return { title, detail: { key: 'wisp.factory.state.stopped' }, status };
   if ((s.state === 'failed' || s.state === 'skipped') && s.why) return { title, detail: s.why, status };
   // running again: the last round's output isn't this round's
   if (s.state === 'running') return { title, detail: { key: 'wisp.factory.working' }, status };

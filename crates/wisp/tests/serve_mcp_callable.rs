@@ -104,15 +104,16 @@ async fn an_agent_keeps_its_tasks_notes_with_wisp_notes() {
 }
 
 /// #4: every tool `tools/list` offers can be called: none answers "doesn't declare … in its manifest". The audit's
-/// refused ones (automations, review, settings, git, history, worktrees) aren't offered; the threads ones are
+/// refused ones still refused (review, git, history) aren't offered; automations are granted since audit H; the threads ones are
 /// callable now (wisp.mcp grants threads:read and threads:write for `wisp_notes`, #3).
 #[tokio::test(flavor = "multi_thread")]
 async fn every_listed_tool_is_one_wisp_mcp_may_run() {
     let a = Agent::start("mcp-callable").await;
     let tools = a.tools().await;
     let names: Vec<&str> = tools.iter().filter_map(|t| t["name"].as_str()).collect();
-    // goal_* and factory_* are wisp.mcp's to run since audit G7 (an agent sets its own task's goal, ADR-0112)
-    for refused in ["automations_tasks", "automations_task_run", "review_view", "settings_list", "git_status", "history_list"] {
+    // goal_* and factory_* are wisp.mcp's to run since audit G7 (an agent sets its own task's goal, ADR-0112), and
+    // automations_* since audit H setup (HS: an agent manages its automations over MCP): those are called below
+    for refused in ["review_view", "git_status", "history_list"] {
         assert!(!names.contains(&refused), "{refused} is listed, and wisp.mcp may not run it: {names:?}");
     }
     // each generated tool's command is one wisp.mcp's manifest grants (or one of its own, `mcp.*`)
@@ -126,7 +127,15 @@ async fn every_listed_tool_is_one_wisp_mcp_may_run() {
         assert!(grants.iter().any(|g| g.split(':').next() == Some(ns)), "{} runs {cmd}, outside wisp.mcp's grants {grants:?}", t["name"]);
     }
     // and a sample of them answers past the permission check
-    for t in ["runtime_list", "wisp_sessions", "wisp_notes", "threads_notes"] {
+    for t in [
+        "runtime_list",
+        "wisp_sessions",
+        "wisp_notes",
+        "threads_notes",
+        "automations_tasks",
+        "automations_sources",
+        "automations_trigger_ls",
+    ] {
         let (text, _) = a.call(t, json!({})).await;
         assert!(!text.contains("in its manifest"), "{t}: {text}");
     }

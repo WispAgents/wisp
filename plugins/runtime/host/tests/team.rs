@@ -72,7 +72,8 @@ async fn a_team_with_an_unknown_harness_is_refused_and_the_follow_up_not_sent() 
     let id = task(&r, None).await;
     let turns = r.rt.turns(id.as_str(), None, None).await.unwrap().len();
     let err = r.rt.follow_up(follow(&id, "with a ghost", Some(json!([{ "agent": "ghost" }])))).await.unwrap_err();
-    assert!(err.to_string().contains("unknown subagent harness: ghost"), "{err}");
+    // named, with the harnesses there are, as `--agent frob` says them (audit H HS11)
+    assert!(err.to_string().contains("no harness ghost: name one of fake"), "{err}");
     assert_eq!(r.rt.turns(id.as_str(), None, None).await.unwrap().len(), turns);
     assert_eq!(subagents(&r, id.as_str()).await, Vec::<Value>::new());
 }

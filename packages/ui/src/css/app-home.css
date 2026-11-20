@@ -891,6 +891,14 @@
     :where([data-kit='launcher']:not([data-measure])) [data-kit='runners']:where(:not([data-cmp]):not([data-trial])) > [data-kit='runner-btn'][data-def] > [data-kit='rb-h'] {
       display: block;
     }
+    /* a picked file's agent (audit H tasks note: the bar said "gpt-5 · high", never who runs): its name is what runs,
+       so it keeps it here and its model gives way (the picker and the file's chip say it) */
+    :where([data-kit='launcher']:not([data-measure])) [data-kit='runner-btn'][data-file] > [data-kit='rb-h'] {
+      display: block;
+    }
+    :where([data-kit='launcher']:not([data-measure])) [data-kit='runner-btn'][data-file] > [data-kit='auto-pv'] {
+      display: none;
+    }
     :where([data-kit='launcher']:not([data-measure])) [data-kit='runners'][data-cmp] > [data-kit='runner-btn']:not([data-auto]) > [data-kit='rb-logo'] {
       margin-right: var(--space-2);
     }
@@ -983,6 +991,13 @@
   }
   :where([data-kit='launcher'][data-squeeze='3']) [data-kit='runners']:where(:not([data-cmp]):not([data-trial])) > [data-kit='runner-btn'][data-def] > [data-kit='rb-h'] {
     display: block;
+  }
+  /* a picked file's agent keeps its name here too, its model gives way (as the unmeasured narrow box above) */
+  :where([data-kit='launcher'][data-squeeze='3']) [data-kit='runner-btn'][data-file] > [data-kit='rb-h'] {
+    display: block;
+  }
+  :where([data-kit='launcher'][data-squeeze='3']) [data-kit='runner-btn'][data-file] > [data-kit='auto-pv'] {
+    display: none;
   }
   :where([data-kit='launcher'][data-squeeze='3']) [data-kit='runners'][data-cmp] > [data-kit='runner-btn']:not([data-auto]) > [data-kit='rb-logo'] {
     margin-right: var(--space-2);

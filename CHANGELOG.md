@@ -22,6 +22,13 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Fixed
 
+- v2 stopping a factory run that waits on its question takes the question back at once (it stayed on the task, after a reload and in `wisp show`, and One more round was taken and did nothing); an answer sent to it afterwards is refused and says the run stopped. A stopped station's band line reads "Stopped", as the row does.
+- v2 the Shell gets the keys when it starts slowly: Enter on the Shell tab, or a link that opens a task on its Shell, no longer leaves them on the tab or hands them to the reply box when the shell takes more than half a second to draw (WebKit).
+- v2 walking the side panel's tabs with the arrow keys keeps the focus on the tab it selects, even when that tab's pane is slow to show (in WebKit it fell to the page at a pinned app's tab).
+- v2 the harness picker answers at once: the pill shows it's open as you press it, the card and its harnesses come the next frame and the models, thinking and accounts the frame after (it took over 100 ms in WebKit).
+- v2 on a phone, the working panel's Stop is a full touch target (44 pt on iPhone, 48 dp on Android), like the question cards' buttons.
+- v2 a task file's agent is named on a phone-width browser's New task ("critic · Codex", not only "gpt-5 · high"), and the phone apps add its model and thinking level after the name when the row has room.
+- v2 the share preview's "hidden" list shows only what was hidden (`abcd…efgh`), not the key name that stays (`token=`).
 - v2 terminal context masks npm's, pnpm's and yarn's `config set <key> <value>` tokens (`//registry.npmjs.org/:_authToken`, `npmAuthToken`, behind `sudo` or `corepack` too), npm tokens by their shape, a here-string into `--password-stdin`, `sudo docker login -p`, and openssl's `-k`, `-pass pass:`, `-passin pass:` and `-passout pass:` passwords; it no longer eats a here-string's `<<<`, a header's name (`X-Api-Key: <secret>`) or a closing quote.
 - v2 a tap on a Telegram button answers again: every button on a task said "That button is out of date." because the ask id didn't fit in the button and wasn't read back from the task.
 - v2 a change to your setup an agent asks for (a crew member, a connector) reaches ntfy without Allow and Deny buttons, which did nothing there, and says to answer it in wisp; on Telegram, Slack and Discord the person who linked the chat still answers it with a tap.

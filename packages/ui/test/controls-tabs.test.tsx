@@ -224,3 +224,32 @@ describe('a phone tab row that overflows (QA r7 #5)', () => {
     expect(root.scrollLeft).toBe(100);
   });
 });
+
+test('a_walked_tab_that_loses_the_focus_to_the_page_gets_it_back_audit_h_tasks_new2', async () => {
+  // WebKit: the arrow walk selected the pinned app's tab, then the focus fell to the page (its pane took 100–245 ms to
+  // show), and the next → had nothing to walk from. Here the walked-to tab is blurred to nowhere right after the key.
+  mount(() => <Tabs items={items} aria-label="Side panel" />);
+  const tab = (v: string) => document.querySelector<HTMLElement>(`[data-part="ui.tabs.tab"][data-value="${v}"]`);
+  tab('changes')?.focus();
+  await tick(10);
+  key(document.activeElement, 'ArrowRight');
+  await tick(10);
+  expect(document.activeElement).toBe(tab('pr'));
+  (document.activeElement as HTMLElement).blur(); // the focus to the page, no new owner
+  await tick(40);
+  expect(document.activeElement, `focus on ${document.activeElement?.tagName}`).toBe(tab('pr'));
+  // a press elsewhere, or the focus going somewhere real, is left alone
+  const field = document.body.appendChild(document.createElement('input'));
+  key(tab('pr'), 'ArrowRight');
+  await tick(10);
+  field.focus();
+  await tick(40);
+  expect(document.activeElement).toBe(field);
+  tab('shell')?.focus();
+  key(tab('shell'), 'ArrowLeft');
+  await tick(10);
+  document.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }));
+  (document.activeElement as HTMLElement).blur();
+  await tick(40);
+  expect(document.activeElement).toBe(document.body);
+});

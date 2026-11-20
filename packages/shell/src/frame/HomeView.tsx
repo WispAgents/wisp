@@ -190,6 +190,16 @@ export function HomeView(props: { readonly onBack?: () => void }): JSX.Element {
     keepPick(a, r.model, r.modelLabel, r.effort);
   };
   const [picker, setPicker] = createSignal(false);
+  // the pill says it's open in the press's own frame; the card mounts the frame after (audit H tasks NEW #3: the press
+  // built the whole picker first, 102–130 ms to anything visible in WebKit). Closing is at once.
+  const [pickerShown, setPickerShown] = createSignal(false);
+  createEffect(
+    on(picker, (o) => {
+      if (!o || typeof requestAnimationFrame !== 'function') return void setPickerShown(o);
+      const frame = requestAnimationFrame(() => setPickerShown(true));
+      onCleanup(() => cancelAnimationFrame(frame));
+    }),
+  );
   // What Auto will run (v1 auto-preview.js openPop): from the Auto pick while Auto picks
   const [autoPop, setAutoPop] = createSignal(false);
   // v1 modelLabel: the model alone (what a Never rule acts on), or "<harness>'s default model"
@@ -999,6 +1009,7 @@ export function HomeView(props: { readonly onBack?: () => void }): JSX.Element {
                   label: f.name && f.name !== f.harness ? t('shell.home.fileRunner', { name: f.name, harness: agentName(t, harnesses(), f.harness) }) : agentName(t, harnesses(), f.harness || agent()),
                   title: t('shell.home.fileRunnerTitle'),
                   auto: false,
+                  file: true,
                   pick: [f.model || t('shell.home.fromFile'), f.effort].filter(Boolean).join(' · '),
                   pickTitle: t('shell.home.fileRunnerTitle'),
                 }
@@ -1177,7 +1188,7 @@ export function HomeView(props: { readonly onBack?: () => void }): JSX.Element {
           at once it loaded the picker, 8 KB br, on every first screen (perf r1 #1) */}
       <Show when={picker() || pickerPart.ready()}>
         <RunnerPicker
-          open={picker()}
+          open={pickerShown()}
           onOpenChange={setPicker}
           anchor={() => document.querySelector('[data-part="launcher.harness"][data-lead]')}
           back={() => input}

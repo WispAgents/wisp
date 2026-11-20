@@ -151,6 +151,7 @@ export function Tabs(props: TabsProps): JSX.Element {
     return others.indexOf(value) >= others.length - n;
   };
   const byValue = createMemo(() => new Map(props.items.map((i) => [i.value, i])));
+  onMount(() => keepWalkFocus(root));
   return (
     <div {...api().getRootProps()} ref={(el) => (root = el)} data-kit="tabs" data-part={part()} data-variant={props.variant ?? 'line'} data-fit={flag(fits())} data-tight={flag(fit().tight)} data-bare={flag(fit().bare)}>
       <div {...api().getListProps()} aria-label={props['aria-label']} data-kit="tab-list" data-part={sub(part(), 'list')} data-fill={flag(props.fill)} data-fieldset={flag(props.fieldset)}>
@@ -188,6 +189,45 @@ export function Tabs(props: TabsProps): JSX.Element {
       </For>
     </div>
   );
+}
+
+/** An arrow key walks the tabs and the focus goes with the selection. In WebKit, with a pane that took 100–245 ms to show,
+ * the focus fell to the page as the walk reached a pinned app's tab, and later Changes (audit H tasks NEW #2): the next
+ * arrow had nothing to walk from. Within a moment of a walking key, a tab that loses the focus to nowhere (no new owner,
+ * no press since) hands it to the selected tab. A press, or the focus going somewhere real (the Shell's keys), is left. */
+export const WALK_KEEP_MS = 1500;
+export function keepWalkFocus(root: HTMLElement | undefined, now: () => number = () => Date.now()): void {
+  if (!root || typeof document === 'undefined') return;
+  let walkedAt = -Infinity;
+  const key = (e: KeyboardEvent): void => {
+    if (/^(Arrow(Left|Right|Up|Down)|Home|End)$/.test(e.key) && (e.target as Element | null)?.closest?.("[data-kit='tab']")) walkedAt = now();
+  };
+  const press = (): void => void (walkedAt = -Infinity);
+  const lost = (e: FocusEvent): void => {
+    if (e.relatedTarget !== null || now() - walkedAt > WALK_KEEP_MS) return;
+    if (!(e.target as Element | null)?.closest?.("[data-kit='tab']")) return;
+    // a frame later: where the focus went is known (a field, the terminal) or it's the page
+    const back = (): void => {
+      frame = 0;
+      const at = document.activeElement;
+      if (at && at !== document.body && at.isConnected) return;
+      // the keys left the page (Shift+Tab out to the browser): not ours to take back
+      if (now() - walkedAt > WALK_KEEP_MS || !document.hasFocus()) return;
+      root.querySelector<HTMLElement>("[data-kit='tab'][data-selected]")?.focus({ preventScroll: true });
+    };
+    if (typeof requestAnimationFrame === 'function') frame = requestAnimationFrame(back);
+    else back();
+  };
+  let frame = 0;
+  root.addEventListener('keydown', key, true);
+  root.addEventListener('focusout', lost, true);
+  document.addEventListener('pointerdown', press, true);
+  onCleanup(() => {
+    if (frame && typeof cancelAnimationFrame === 'function') cancelAnimationFrame(frame);
+    root.removeEventListener('keydown', key, true);
+    root.removeEventListener('focusout', lost, true);
+    document.removeEventListener('pointerdown', press, true);
+  });
 }
 
 /** `fit`: the row's plan (fitPlan), from one measuring pass: every tab labelled and as its icon, at v1's padding and

@@ -106,7 +106,8 @@ fn task(id: &str, wt: Option<&Worktree>) -> TaskInfo {
 }
 
 /// Audit G GS1 (found beside it): a linked worktree that is a project of its own is that project, not a stray: neither
-/// project offers the other's folder (the main checkout was offered to Bring in as a task of the linked one).
+/// project offers the other's folder (the main checkout was offered to Bring in as a task of the linked one). A stray
+/// worktree of both is offered once, under the main checkout's project (audit H HS4).
 #[tokio::test]
 async fn a_folder_that_is_a_project_is_never_offered_to_bring_in() {
     let t = tmp("bring-proj");
@@ -125,7 +126,8 @@ async fn a_folder_that_is_a_project_is_never_offered_to_bring_in() {
         .iter()
         .map(|o| (o.project.clone(), o.items.iter().map(|i| wisp_runtime_api::paths::folder_key(&i.path)).collect()))
         .collect();
-    assert_eq!(got, vec![("app".to_owned(), vec![key(&stray)]), ("app-wt".to_owned(), vec![key(&stray)])], "{offers:?}");
+    // and the stray is offered once, under the repository's main checkout's project (audit H HS4), never under both
+    assert_eq!(got, vec![("app".to_owned(), vec![key(&stray)])], "{offers:?}");
 }
 
 /// F-wt-3: a project with a worktree Conductor left under ~/conductor/workspaces: the offer lists it (from

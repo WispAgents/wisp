@@ -16,3 +16,13 @@ for (const look of ['android', 'ios']) {
     expect(css).toMatch(rule);
   });
 }
+
+// Audit H tasks (G #4 partly fixed): the working panel's Stop (`task.stop`, on every running or asking task) was still
+// 68×28 on iOS and 81×32 on Android.
+for (const look of ['android', 'ios']) {
+  test(`the_${look}_look_gives_the_working_panels_stop_the_touch_target_audit_h_tasks`, () => {
+    const css = sheets.find((s) => s.look === look)?.css ?? '';
+    const rule = new RegExp(`:root\\[data-platform='${look}'\\] \\[data-kit='button'\\]\\[data-part~='task\\.stop'\\] \\{[^}]*min-height: var\\(--tap-min\\);`);
+    expect(css).toMatch(rule);
+  });
+}

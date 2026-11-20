@@ -124,6 +124,9 @@ export interface LauncherProps {
      * folds the account (720px), then the effort and a default model, where the harness's name stays (520px).
      * Additive (2026-11-15). */
     readonly pickParts?: { readonly model: string; readonly def: boolean; readonly effort: string; readonly account: string };
+    /** a picked formula or task file's agent runs (audit H5): its name is what runs, so a narrow bar keeps it over the
+     *  model (audit H tasks note); a phone row with room shows both. Additive (2026-11-20). */
+    readonly file?: boolean;
     readonly pickTitle: string;
     readonly logo?: string;
     readonly compare: string;
@@ -327,6 +330,7 @@ export function Launcher(props: LauncherProps): JSX.Element {
                   data-part="launcher.harness"
                   data-lead=""
                   data-auto={flag(props.runner.auto)}
+                  data-file={flag(props.runner.file)}
                   data-def={flag(!props.runner.auto && props.runner.pickParts?.def === true)}
                   aria-haspopup="dialog"
                   aria-expanded={props.runner.open ? 'true' : 'false'}

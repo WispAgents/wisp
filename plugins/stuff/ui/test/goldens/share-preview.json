@@ -27,7 +27,7 @@
               "type": "hero"
             }
           ],
-          "prompt": "fix the add bug, <secret> TOPIC[Fix add]",
+          "prompt": "fix the add bug, token=<secret> TOPIC[Fix add]",
           "status": "done",
           "text": "All done.\n```wisp\n{\"blocks\":[{\"status\":\"done\",\"summary\":\"No question asked.\",\"title\":\"Fake claude finished\",\"topic\":\"Fix add\",\"type\":\"hero\"}]}\n```"
         }
@@ -41,7 +41,7 @@
       "agent": "claude",
       "cwd": "<project>",
       "formula": "…",
-      "prompt": "fix the add bug, <secret> TOPIC[Fix add]"
+      "prompt": "fix the add bug, token=<secret> TOPIC[Fix add]"
     },
     "title": "Fix add",
     "version": "…",
@@ -58,13 +58,13 @@
       "at": "spec/prompt",
       "kind": "secret",
       "now": "<secret>",
-      "was": "toke…efgh"
+      "was": "abcd…efgh"
     },
     {
       "at": "report/answers/0/prompt",
       "kind": "secret",
       "now": "<secret>",
-      "was": "toke…efgh"
+      "was": "abcd…efgh"
     }
   ],
   "shared": null,

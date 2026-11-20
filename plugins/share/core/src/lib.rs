@@ -216,8 +216,10 @@ fn secrets(text: &str, at: &str, out: &mut Vec<Redaction>) -> String {
             let mut found = Vec::new();
             t = re
                 .replace_all(&t, |c: &regex::Captures<'_>| {
-                    found.push(c[0].to_owned());
-                    c.get(1).map_or_else(|| "<secret>".to_owned(), |kept| format!("{}<secret>", kept.as_str()))
+                    // what was hidden, without the name that stays (`token=` of `token=<secret>`): the preview's hint
+                    let kept = c.get(1).map_or("", |k| k.as_str());
+                    found.push(c[0][kept.len()..].to_owned());
+                    format!("{kept}<secret>")
                 })
                 .into_owned();
             out.extend(found.into_iter().map(|f| Redaction {
@@ -313,6 +315,7 @@ mod tests {
         let kinds: Vec<&str> = r.iter().map(|x| x.kind.as_str()).collect();
         assert_eq!(kinds, ["secret", "secret", "env", "path", "path", "name"]);
         assert_eq!(r[0].was, "sk-a…uvwx", "the preview shows only its ends");
+        assert_eq!(r[1].was, "abcd…efgh", "only what was hidden, not the name that stays (`token=`)");
         assert_eq!(counts(&r), json!({ "secret": 2, "env": 1, "path": 2, "name": 1 }));
         let key = "-----BEGIN OPENSSH PRIVATE KEY-----\nabc\n-----END OPENSSH PRIVATE KEY-----";
         assert_eq!(scrub_text(key, &Scrub::default(), "x", &mut Vec::new()), "<secret>");

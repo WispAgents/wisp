@@ -499,7 +499,28 @@ pub(crate) async fn stop(ctx: &Ctx, call: &Call, st: &State, id: &str, why: &str
         return Err(WireError::conflict("This factory run isn't running."));
     }
     halt(st, id, why);
+    take_back_question(ctx, call, &s).await;
     Ok(json!({ "stopping": true }))
+}
+
+/// A Stop takes the run's open question back now, not when its loop next looks (audit H tasks NEW #1: the question
+/// stayed on the task after a reload, and an answer to it was taken and nothing ran). Only the run's own question
+/// (`waiting.askId` is the task's open one), word for word through `runtime.unask`, so one asked since stays. An answer
+/// after it is refused by `runtime.answer` ("Nothing is being asked on this task").
+async fn take_back_question(ctx: &Ctx, call: &Call, s: &wisp_runtime_api::model::Session) {
+    let asked = s.ext.get(EXT).and_then(|v| v.get("waiting")).and_then(|w| w.get("askId")).and_then(Value::as_str).unwrap_or_default();
+    let open = s.ext.get("wisp.runtime").and_then(|v| v.get("ask"));
+    let Some(question) = open
+        .filter(|a| !asked.is_empty() && a.get("id").and_then(Value::as_str) == Some(asked))
+        .and_then(|a| a.get("question"))
+        .and_then(Value::as_str)
+    else {
+        return;
+    };
+    let a = r::UnaskArgs { id: SessionId(s.id.0.clone()), question: question.to_owned() };
+    if let Err(err) = ctx.run::<r::Unask>(call, a).await {
+        tracing::debug!(error = %err.message, task = %s.id.0, "factory: runtime.unask of a stopped run's question");
+    }
 }
 
 /// The run `id` stops: its loop sees why, and a check it's running is killed now.

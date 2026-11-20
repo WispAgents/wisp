@@ -5,6 +5,7 @@ import { expect, test } from 'vitest';
 import type { CommandDef } from '@wisp/client';
 import { ShellPane, shellWalkedTo, walksTabs } from '../src/side/ShellPane.tsx';
 import { useTask } from '../src/task-context.tsx';
+import { useShell } from '../src/shell.ts';
 import { mountTask, until } from './helpers.tsx';
 
 const inTerm = (): boolean => !!document.activeElement?.closest('[data-kit="term"]');
@@ -99,4 +100,106 @@ test('opening_the_shell_gives_the_terminal_the_keys_audit_f_tasks_1', async () =
   await until(() => ran.includes('terminal.shell.start') && inTerm());
   expect(document.activeElement).not.toBe(tab);
   expect(inTerm()).toBe(true);
+});
+
+test('a_shell_that_draws_late_still_gets_the_keys_it_was_asked_for_audit_h_tasks_g3', async () => {
+  // WebKit on a loaded machine: the terminal's input is under the "Starting…" screen (visibility: hidden, so focus is
+  // refused) until the shell's first output, which came after the pane's half second of retries: Enter on Shell left
+  // the keys on the tab. Here the input refuses focus until the first output, 900 ms in.
+  const tab = document.createElement('button');
+  document.body.append(tab);
+  tab.focus();
+  let hidden = true;
+  const real = HTMLTextAreaElement.prototype.focus;
+  HTMLTextAreaElement.prototype.focus = function (this: HTMLTextAreaElement, o?: FocusOptions) {
+    if (hidden && this.dataset.kit === 'term-input') return;
+    real.call(this, o);
+  };
+  try {
+    const ran: string[] = [];
+    await mountTask({ sessionId: 's1', rows: {} }, () => {
+      const task = useTask();
+      (task.client as { run: unknown }).run = (cmd: CommandDef<unknown, unknown>) => {
+        ran.push(cmd.id);
+        if (cmd.id === 'terminal.shell.info') return Promise.resolve({ supported: true, open: false, app: true, name: 'zsh' });
+        if (cmd.id === 'terminal.shell.start') return Promise.resolve({ ok: true, started: true });
+        return Promise.resolve({ ok: true });
+      };
+      (task.client as { http: unknown }).http = () => ({
+        events: async function* () {
+          await new Promise((r) => setTimeout(r, 900));
+          hidden = false; // the first draw shows the rows, and the input with them
+          yield { event: 'data', data: JSON.stringify('$ ') };
+          await new Promise(() => undefined);
+        },
+      });
+      return <ShellPane kind="shell" />;
+    });
+    await until(() => ran.includes('terminal.shell.start'));
+    await new Promise((r) => setTimeout(r, 1300));
+    expect(inTerm(), `focus on ${document.activeElement?.tagName}`).toBe(true);
+  } finally {
+    HTMLTextAreaElement.prototype.focus = real;
+  }
+});
+
+test('a_kept_request_is_dropped_when_the_user_moves_the_keys_elsewhere_review_of_audit_h_tasks_g3', async () => {
+  // a deep link to the Shell (a fresh page: the request is the page's own), the shell slow to draw: meanwhile the user
+  // Tabs to the reply box and types. When the shell draws, the keys stay where the user put them.
+  const reply = document.createElement('textarea');
+  document.body.append(reply);
+  Object.defineProperty(navigator, 'userActivation', { configurable: true, value: { hasBeenActive: false, isActive: false } });
+  let hidden = true;
+  const real = HTMLTextAreaElement.prototype.focus;
+  HTMLTextAreaElement.prototype.focus = function (this: HTMLTextAreaElement, o?: FocusOptions) {
+    if (hidden && this.dataset.kit === 'term-input') return;
+    real.call(this, o);
+  };
+  try {
+    const ran: string[] = [];
+    await mountTask({ sessionId: 's1', rows: {} }, () => {
+      const task = useTask();
+      (task.client as { run: unknown }).run = (cmd: CommandDef<unknown, unknown>) => {
+        ran.push(cmd.id);
+        if (cmd.id === 'terminal.shell.info') return Promise.resolve({ supported: true, open: false, app: true, name: 'zsh' });
+        if (cmd.id === 'terminal.shell.start') return Promise.resolve({ ok: true, started: true });
+        return Promise.resolve({ ok: true });
+      };
+      (task.client as { http: unknown }).http = () => ({
+        events: async function* () {
+          await new Promise((r) => setTimeout(r, 900));
+          hidden = false;
+          yield { event: 'data', data: JSON.stringify('$ ') };
+          await new Promise(() => undefined);
+        },
+      });
+      return <ShellPane kind="shell" />;
+    });
+    await until(() => ran.includes('terminal.shell.start'));
+    await new Promise((r) => setTimeout(r, 650)); // past the retries: the request is kept
+    reply.focus(); // the user moved on, by the keys
+    await new Promise((r) => setTimeout(r, 700)); // the shell draws
+    expect(document.activeElement).toBe(reply);
+  } finally {
+    HTMLTextAreaElement.prototype.focus = real;
+    delete (navigator as { userActivation?: unknown }).userActivation;
+  }
+});
+
+test('a_shell_that_cant_start_hands_the_caret_to_the_reply_box_review_of_audit_h_tasks_f1', async () => {
+  // the page opened on the Shell leaves the caret to it (TaskView): a computer with no shell gives it to the reply box
+  const reply = document.createElement('textarea');
+  document.body.append(reply);
+  await mountTask({ sessionId: 's1', rows: {} }, () => {
+    const task = useTask();
+    const shell = useShell() as { prompts?: unknown; nav: () => { layout: string } };
+    shell.prompts = { get: (n: string) => (n === 'reply' ? { focus: () => reply.focus() } : undefined), provide: () => () => undefined };
+    const nav = shell.nav;
+    shell.nav = () => ({ ...nav(), layout: 'split' });
+    (task.client as { run: unknown }).run = (cmd: CommandDef<unknown, unknown>) =>
+      cmd.id === 'terminal.shell.info' ? Promise.resolve({ supported: false, open: false, app: false, name: '' }) : Promise.resolve({ ok: true });
+    return <ShellPane kind="shell" />;
+  });
+  await until(() => document.activeElement === reply);
+  expect(document.activeElement).toBe(reply);
 });

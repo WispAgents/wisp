@@ -209,13 +209,35 @@ export function HarnessPicker(props: HarnessPickerProps): JSX.Element {
     if (box?.contains(t) || props.anchor()?.contains(t)) return;
     props.onClose();
   };
+  // the press's frame draws the card and the harnesses; the pane (models, thinking, accounts, a factory's list) the
+  // frame after (audit H tasks NEW #3: building both in the press took 102–130 ms in WebKit, over ADR-0017's 100)
+  const [drawn, setDrawn] = createSignal(typeof requestAnimationFrame !== 'function');
+  const focusPick = (): void => {
+    // v1 focusModels: the pick, then the search when there is one
+    if (!focusOptions()) focusSide(props.focused);
+    if (props.pane.search) input?.focus({ preventScroll: true });
+  };
   onMount(() => {
     place();
-    // once the portal has put the card in the page (v1 focusModels): the pick, then the search when there is one
-    queueMicrotask(() => {
-      if (!focusOptions()) focusSide(props.focused);
-      if (props.pane.search) input?.focus({ preventScroll: true });
-    });
+    if (drawn()) queueMicrotask(focusPick);
+    else {
+      // the side row the pick is on has the keys at once; the pick itself once its pane is there, unless the keys moved
+      // on meanwhile (an arrow along the harnesses on a slow frame)
+      let first: Element | null = null;
+      queueMicrotask(() => {
+        focusSide(props.focused);
+        first = document.activeElement;
+      });
+      const frame = requestAnimationFrame(() => {
+        setDrawn(true);
+        queueMicrotask(() => {
+          const at = document.activeElement;
+          if (first && at !== first && box?.contains(at)) return;
+          focusPick();
+        });
+      });
+      onCleanup(() => cancelAnimationFrame(frame));
+    }
     addEventListener('keydown', keys, true);
     addEventListener('pointerdown', onDown, true);
     addEventListener('resize', place);
@@ -289,7 +311,8 @@ export function HarnessPicker(props: HarnessPickerProps): JSX.Element {
             )}
           </Show>
         </div>
-        <div data-kit="pk-main">
+        <div data-kit="pk-main" data-drawn={flag(drawn())}>
+          <Show when={drawn()}>
           <Show when={p().search}>
             {(s) => (
               <label data-kit="pk-search">
@@ -401,6 +424,7 @@ export function HarnessPicker(props: HarnessPickerProps): JSX.Element {
                 </Index>
               </div>
             )}
+          </Show>
           </Show>
         </div>
       </div>

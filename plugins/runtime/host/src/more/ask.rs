@@ -30,6 +30,10 @@ pub(crate) const ANSWER_KEEP_MS: i64 = ASK_TIMEOUT_MS;
 pub(crate) const CLOSED_KEEP_MS: i64 = 6 * 60 * 60_000;
 /// An answer to a question that's no longer the open one.
 pub(crate) const NOT_OPEN: &str = "That question was already answered, or a newer one replaced it: nothing was sent.";
+/// An answer to a question when none is open now: answered already, or taken back as the task or its factory run
+/// stopped (audit H tasks NEW #1: a stopped run's answer read as "already answered").
+pub(crate) const NONE_OPEN: &str =
+    "That question isn't open any more (it was answered, or taken back when the task or its run stopped): nothing was sent.";
 const SIDE_DENIED: &str = "Refused: a side discussion only reads. Ask the main task to do it.";
 
 /// The open question of `row`, as a write is about to store it, settled against the stored one (`stored`): an ask
@@ -154,10 +158,12 @@ impl Runtime {
     pub async fn answer(self: &Arc<Self>, id: &SessionId, text: &str, ask: Option<&str>) -> Result<Value> {
         let _g = self.task_lock(id.as_str()).await;
         let s = self.repo.session(id.as_str()).await?;
-        if let Some(want) = ask
-            && ask_id(&s).as_deref() != Some(want)
-        {
-            return Err(RuntimeError::Conflict(NOT_OPEN.into()));
+        if let Some(want) = ask {
+            match ask_id(&s) {
+                None => return Err(RuntimeError::Conflict(NONE_OPEN.into())),
+                Some(open) if open != want => return Err(RuntimeError::Conflict(NOT_OPEN.into())),
+                Some(_) => {}
+            }
         }
         self.answer_locked(id, text).await
     }

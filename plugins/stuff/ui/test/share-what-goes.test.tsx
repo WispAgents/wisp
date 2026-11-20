@@ -38,7 +38,7 @@ test('with its work: the ask, one answer and its file, and each thing hidden onc
   const host = draw(true);
   const text = host.textContent ?? '';
   expect(text).toContain('What goes');
-  expect(host.querySelector('[data-part~="share.preview.ask"]')?.textContent).toBe('fix the add bug, <secret> TOPIC[Fix add]');
+  expect(host.querySelector('[data-part~="share.preview.ask"]')?.textContent).toBe('fix the add bug, token=<secret> TOPIC[Fix add]');
   expect(text).toContain('1 answer · 1 file changed');
   expect(host.querySelector('[data-part~="share.preview.files"]')?.textContent).toBe('math.js');
   const rows = [...host.querySelectorAll('[data-part~="share.hidden.row"]')].map((r) =>
@@ -46,7 +46,7 @@ test('with its work: the ask, one answer and its file, and each thing hidden onc
   );
   expect(rows).toEqual([
     ['your folder', '/tmp/…/proj', '→ <project>'],
-    ['a secret', 'toke…efgh', '→ <secret>', '2×'],
+    ['a secret', 'abcd…efgh', '→ <secret>', '2×'],
   ]);
 });
 
@@ -59,6 +59,6 @@ test('without its work: the ask only, and only what is hidden in it', () => {
   );
   expect(rows).toEqual([
     ['your folder', '/tmp/…/proj', '→ <project>'],
-    ['a secret', 'toke…efgh', '→ <secret>'],
+    ['a secret', 'abcd…efgh', '→ <secret>'],
   ]);
 });

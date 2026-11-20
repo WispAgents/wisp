@@ -85,3 +85,12 @@ describe('wisp.factory ui', () => {
     expect(step(old, old.stations[0]!).status).toBe('done');
   });
 });
+
+it('a_station_you_stopped_says_Stopped_as_the_row_does_audit_h', () => {
+  const stopped = run({ state: 'stopped', station: 'checks', stations: [{ id: 'checks', state: 'failed', round: 1, tasks: [], output: '', why: 'stopped' }] });
+  const s = step(stopped, stopped.stations[0]!);
+  expect(typeof s.detail === 'object' ? words(s.detail) : s.detail).toBe('Stopped');
+  // another failure's own words stay as they are
+  const failed = run({ state: 'failed', station: 'checks', stations: [{ id: 'checks', state: 'failed', round: 1, tasks: [], output: '', why: 'npm test exited 1' }] });
+  expect(step(failed, failed.stations[0]!).detail).toBe('npm test exited 1');
+});

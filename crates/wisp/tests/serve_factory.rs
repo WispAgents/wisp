@@ -449,3 +449,30 @@ async fn a_factory_run_picks_up_where_it_was_after_a_restart() {
     assert_eq!((run["state"].as_str(), station(&run, "build")["state"].as_str()), (Some("done"), Some("done")), "{run:#}");
     drop(serve);
 }
+
+/// Audit H tasks NEW #1: Stop on a run waiting on its question took the run down but left the question open (after a
+/// reload, in `wisp show`), and an answer to it was taken and did nothing. Stop takes the question back with the run,
+/// and an answer to it afterwards is refused, never a silent no-op.
+#[tokio::test(flavor = "multi_thread")]
+async fn stopping_a_run_takes_back_its_open_question_and_a_late_answer_is_refused_audit_h_new1() {
+    let (_dir, repo, serve, api) =
+        with_factories("serve-factory-stop-ask", &[], json!({ "gate": { "stations": { "build": {}, "checks": { "run": ["true"] } } } }))
+            .await;
+    let made =
+        api.cmd("runtime.create", json!({ "prompt": "Fix it", "cwd": repo, "agent": "claude", "mode": "edits", "factory": "gate" })).await;
+    let id = made["id"].as_str().unwrap().to_owned();
+    let run = until_run(&api, &id, "the checks ask first", |v| waits_at(v, "checks")).await;
+    let ask = run["waiting"]["askId"].as_str().unwrap().to_owned();
+    api.cmd("factory.stop", json!({ "id": id })).await;
+    // the question went with the run, at once (no reload brings it back)
+    let t = api.cmd("runtime.get", json!({ "id": id })).await;
+    assert!(t["ext"]["wisp.runtime"]["ask"].is_null(), "the question stayed open after Stop: {:#}", t["ext"]);
+    assert_ne!(t["state"], "waiting", "{t:#}");
+    // an answer to it is refused, saying so
+    let late = api.try_cmd("runtime.answer", json!({ "id": id, "text": "Run", "askId": ask })).await;
+    assert!(late.get("error").is_some() || late["ok"] == false, "a late answer was taken: {late}");
+    assert!(late.to_string().contains("taken back when the task or its run stopped"), "says why: {late}");
+    let run = until_run(&api, &id, "stopped", |v| v["state"] == "stopped").await;
+    assert_eq!(run["state"], "stopped", "{run:#}");
+    drop(serve);
+}

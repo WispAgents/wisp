@@ -14,6 +14,9 @@ const ROWS = [
   { id: 'cursor', name: 'Cursor', sub: 'Not installed', off: true },
 ];
 
+/** the pane draws the frame after the card (audit H tasks NEW #3) */
+const frame = (): Promise<void> => new Promise((r) => requestAnimationFrame(() => queueMicrotask(r)));
+
 const key = (k: string): void => void document.activeElement?.dispatchEvent(new KeyboardEvent('keydown', { key: k, bubbles: true, cancelable: true }));
 
 function setup() {
@@ -73,7 +76,7 @@ function setup() {
 
 test('both_panes_harnesses_with_logo_and_sub_line_auto_s_goals_with_a_check_and_its_help_line_v1_reference', async () => {
   setup();
-  await Promise.resolve();
+  await frame();
   const box = document.querySelector('[data-kit="picker"]') as HTMLElement;
   expect(box.getAttribute('role')).toBe('dialog');
   const side = [...box.querySelectorAll('[data-kit="pk-h"]')];
@@ -101,8 +104,9 @@ test('both_panes_harnesses_with_logo_and_sub_line_auto_s_goals_with_a_check_and_
   expect(document.activeElement).toBe(goals[0]);
 });
 
-test('a_harness_shows_its_models_thinking_and_accounts_on_the_right', () => {
+test('a_harness_shows_its_models_thinking_and_accounts_on_the_right', async () => {
   const s = setup();
+  await frame();
   (document.querySelectorAll('[data-kit="pk-h"]')[1] as HTMLElement).click();
   expect(s.used).toEqual(['claude']);
   const box = document.querySelector('[data-kit="picker"]') as HTMLElement;
@@ -120,8 +124,9 @@ test('a_harness_shows_its_models_thinking_and_accounts_on_the_right', () => {
   expect(s.picked).toEqual(['acct:w']);
 });
 
-test('only_the_account_row_is_a_wrap_group_the_other_segment_rows_stay_one_line_v1_pk_acct', () => {
+test('only_the_account_row_is_a_wrap_group_the_other_segment_rows_stay_one_line_v1_pk_acct', async () => {
   setup();
+  await frame();
   (document.querySelectorAll('[data-kit="pk-h"]')[1] as HTMLElement).click();
   const box = document.querySelector('[data-kit="picker"]') as HTMLElement;
   const wraps = [...box.querySelectorAll('[data-kit="pk-seg"][data-part$="wrap"]')];
@@ -135,7 +140,7 @@ test('only_the_account_row_is_a_wrap_group_the_other_segment_rows_stay_one_line_
 
 test('keys_arrows_preview_in_the_left_pane_right_and_enter_go_across_left_comes_back_escape_closes', async () => {
   const s = setup();
-  await Promise.resolve();
+  await frame();
   const side = (): HTMLElement[] => [...document.querySelectorAll<HTMLElement>('[data-kit="pk-h"]')];
   // from the goals, ← goes to the harnesses, on the focused one
   key('ArrowLeft');
@@ -177,7 +182,7 @@ test('a_click_outside_closes_and_the_card_goes_under_the_pill_inside_the_launche
 
 test('a_refresh_rebuilding_the_rows_and_the_pane_keeps_each_node_and_the_focus_in_place', async () => {
   const s = setup();
-  await Promise.resolve();
+  await frame();
   const goal = document.activeElement;
   const codex = document.querySelectorAll('[data-kit="pk-h"]')[2];
   expect((goal as HTMLElement).dataset['kit']).toBe('pk-m');
@@ -188,7 +193,7 @@ test('a_refresh_rebuilding_the_rows_and_the_pane_keeps_each_node_and_the_focus_i
   expect(codex?.querySelector('small')?.textContent).toBe('2 models');
 });
 
-test('what_s_different_a_row_of_segments_per_setting_under_the_pane_a_press_commits_in_place_v1_pk_vary', () => {
+test('what_s_different_a_row_of_segments_per_setting_under_the_pane_a_press_commits_in_place_v1_pk_vary', async () => {
   const anchor = document.createElement('button');
   document.body.append(anchor);
   const picked: string[] = [];
@@ -222,6 +227,7 @@ test('what_s_different_a_row_of_segments_per_setting_under_the_pane_a_press_comm
       onClose={() => closed++}
     />
   ));
+  await frame();
   const box = document.querySelector('[data-part="runner.vary"]') as HTMLElement;
   expect(box.getAttribute('role')).toBe('group');
   expect(box.querySelector('[data-kit="pk-head"]')?.textContent).toBe('What’s different');
@@ -496,4 +502,44 @@ test('the_harness_list_ends_with_set_up_another_agent_ux_2026_11_18_9', () => {
   expect(opened).toBe(1);
   // no second line where there's nothing to say
   expect(side.querySelector('[data-kit="pk-h"] small')).toBeNull();
+});
+
+test('the_card_and_its_harnesses_show_in_the_press_frame_and_the_pane_the_frame_after_audit_h_tasks_new3', async () => {
+  // WebKit took 102–130 ms to show anything after the pill's press (ADR-0017: within 100): both panes were built in it.
+  // Now the card, its harnesses and the focused row come at once; the models, thinking and accounts a frame later.
+  setup();
+  const box = document.querySelector('[data-kit="picker"]') as HTMLElement;
+  expect(box.querySelectorAll('[data-kit="pk-h"]').length).toBe(4);
+  expect(box.querySelector('[data-kit="pk-main"]')?.hasAttribute('data-drawn')).toBe(false);
+  expect(box.querySelectorAll('[data-kit="pk-m"]').length).toBe(0);
+  await Promise.resolve();
+  expect((document.activeElement as HTMLElement).dataset['kit']).toBe('pk-h'); // the keys at once, on the focused row
+  await frame();
+  expect(box.querySelector('[data-kit="pk-main"]')?.hasAttribute('data-drawn')).toBe(true);
+  expect(box.querySelectorAll('[data-kit="pk-m"]').length).toBe(3);
+  expect((document.activeElement as HTMLElement).dataset['kit']).toBe('pk-m'); // then the pick, as before
+});
+
+// Audit H tasks notes: a picked formula or task file's agent (critic = codex gpt-5 high) read "gpt-5 · high" on a
+// phone-width browser (who runs folded away) and "critic · Codex" alone in the phone apps (desktop says both).
+test('a_picked_files_pill_names_its_agent_on_a_narrow_bar_and_its_model_in_the_phone_apps_audit_h_tasks', async () => {
+  mount(() => <Launcher {...launcher({})} runner={{ ...launcher({}).runner, auto: false, file: true, label: 'critic · Codex', pick: 'gpt-5 · high' }} />);
+  const pill = document.querySelector<HTMLElement>('[data-part="launcher.harness"]');
+  expect(pill?.hasAttribute('data-file')).toBe(true);
+  expect(pill?.querySelector('[data-kit="rb-h"]')?.textContent?.trim()).toBe('critic · Codex');
+  expect(pill?.querySelector('[data-kit="apv-l"]')?.textContent?.trim()).toBe('gpt-5 · high');
+  const css = HOME_CSS.replace(/\/\*[^]*?\*\//g, '');
+  const narrow = css.slice(css.indexOf('@container launcher (max-width: 520px)'));
+  expect(narrow).toMatch(/\[data-kit='runner-btn'\]\[data-file\] > \[data-kit='rb-h'\] \{\s*display: block;/);
+  expect(narrow).toMatch(/\[data-kit='runner-btn'\]\[data-file\] > \[data-kit='auto-pv'\] \{\s*display: none;/);
+  // and the measured bar's last squeeze, its other narrow form
+  expect(css).toMatch(/:where\(\[data-kit='launcher'\]\[data-squeeze='3'\]\) \[data-kit='runner-btn'\]\[data-file\] > \[data-kit='rb-h'\] \{\s*display: block;/);
+  const looks = import.meta.glob<string>('../src/css/platform/*.css', { query: '?raw', import: 'default', eager: true });
+  for (const look of ['ios', 'android']) {
+    const sheet = (Object.entries(looks).find(([p]) => p.endsWith(`/${look}.css`))?.[1] ?? '').replace(/\/\*[^]*?\*\//g, '');
+    expect(sheet, look).toMatch(new RegExp(`:root\\[data-platform='${look}'\\] \\[data-kit='launcher'\\] \\[data-kit='runner-btn'\\]\\[data-file\\] > \\[data-kit='auto-pv'\\] \\{ display: flex;`));
+  }
+  // a harness picked by hand is unchanged
+  mount(() => <Launcher {...launcher({})} runner={{ ...launcher({}).runner, auto: false, label: 'Codex', pick: 'gpt-5' }} />);
+  expect(document.querySelectorAll('[data-part="launcher.harness"]')[1]?.hasAttribute('data-file')).toBe(false);
 });

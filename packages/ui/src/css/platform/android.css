@@ -462,6 +462,11 @@
   :root[data-platform='android'] [data-part~='task.ask'] [data-kit='wrap'] > [data-kit='button'] {
     min-height: var(--tap-min);
   }
+  /* the working panel's Stop, on every running or asking task, is a thumb target too: 48 dp (M3); sm made it 28 / 32
+     (audit H tasks: G #4 partly fixed) */
+  :root[data-platform='android'] [data-kit='button'][data-part~='task.stop'] {
+    min-height: var(--tap-min);
+  }
   /* a compare task's card sits inside the list's margins like its rows, never against the screen's edges; its vs
      Compare ends in the rows' time column (no ghost padding after its words) (audit F tasks #5) */
   :root[data-platform='android'] [data-kit='virtual-group'][data-part~='list.compare'] {
@@ -1393,6 +1398,10 @@
   :root[data-platform='android'] [data-kit='l-bar'][data-tight] [data-kit='vs-btn']:not([data-del]),
   :root[data-platform='android'] [data-kit='l-bar'][data-tight] [data-kit='runner-btn'] > [data-kit='rb-h'] { display: none; }
   :root[data-platform='android'] [data-kit='l-bar'][data-tight] [data-kit='runner-btn'] > [data-kit='auto-pv'] { display: none; }
+  /* a picked file's agent says its model and thinking after its name when the row has room, as desktop does (audit H
+     tasks note: "critic · Codex" alone); the model gives way first (it shrinks, ending in …) */
+  :root[data-platform='android'] [data-kit='launcher'] [data-kit='runner-btn'][data-file] > [data-kit='auto-pv'] { display: flex; flex: 0 10000 auto; min-width: 0; }
+  :root[data-platform='android'] [data-kit='launcher'] [data-kit='runner-btn'][data-file] > [data-kit='auto-pv'] > [data-kit='apv-l'] { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
   /* The task's side page (Changes, PR, Shell, Preview; QA round 2 #9): an M3 page head, not the browser's pill strip
      squeezed to icons. Close leads (a full-screen page), then the panel's primary tabs, each named, across the row;
