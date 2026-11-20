@@ -569,7 +569,8 @@ export class Discord extends Channel {
     if (!held) await this.#respond(d, OUT.update);
     const [k, s, r, i, sig, ...more] = String(d.data?.custom_id || '').split(':');
     const say = (t) => this.#say({ chat: d.channel_id }, t);
-    return this.turns.queue(d.channel_id, async () => {
+    // Held like a message's work: a quick task's report waits for this "✓ Sent" (publish → settled).
+    return this.turns.hold(d.channel_id, this.turns.queue(d.channel_id, async () => {
       if (more.length || !this.hub.verify({ k, s, r, i: Number(i), sig })) return say('That button doesn’t work any more.');
       const local = this.hub.store.get(s);
       if (needsWisp(local?.ask)) return say('That’s waiting for an approval, which only wisp can give: answer it there.');
@@ -578,7 +579,7 @@ export class Discord extends Channel {
       const result = await this.hub.act({ sessionId: s, kind: KIND[k], ref: r, index: Number(i) });
       await this.rest('PATCH', this.#original(hookOf(d)), { components: [] }).catch(() => {});
       await say(result);
-    }, this.#oops);
+    }, this.#oops));
   }
 
   // --- an interaction the grid held: a cloud wisp -----------------------------------------------

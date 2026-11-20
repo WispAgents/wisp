@@ -173,6 +173,10 @@ body.side-right .cl-pip { left: auto; right: -6px; border-radius: 2px 0 0 2px; }
 @media (prefers-reduced-motion: reduce) { .cl-pip { transition: none; } }
 /* Paused: dimmed, its spirit asleep. */
 .cl-face.paused .cr-av { opacity: 0.5; }
+/* Dragged into your order (ui/reorder.js): the face follows the pointer, raised; a line marks where it lands. */
+.cl-face.dragged { z-index: 1; background: var(--panel); border-color: var(--line-2); box-shadow: var(--shadow-2); cursor: grabbing; }
+.cl-face.drop-before { box-shadow: 0 -3px 0 -1px var(--accent); }
+.cl-face.drop-after { box-shadow: 0 3px 0 -1px var(--accent); }
 /* Asking you: amber. A report you haven't read: the accent. Their place on the face is the row's. */
 .cl-dot { position: absolute; top: 3px; right: 3px; width: 12px; height: 12px; border-radius: 50%; border: 2px solid var(--sunk); background: var(--accent); }
 .cl-dot.asks { background: var(--warn); }
@@ -389,6 +393,10 @@ button.mn.crew { font: inherit; padding: 0; }
 
 /* ---------- a member's thread (crew.js): the main pane in split view, in place in the feed ---------- */
 .cr-member { display: flex; flex-direction: column; }
+/* Dragged by its row, its jobs with it; a line marks where it lands. */
+.cr-member.dragged { position: relative; z-index: 1; border-radius: var(--radius); background: var(--surface); box-shadow: var(--shadow-2); cursor: grabbing; }
+.cr-member.drop-before { box-shadow: 0 -3px 0 -1px var(--accent); }
+.cr-member.drop-after { box-shadow: 0 3px 0 -1px var(--accent); }
 .cr-row.open { background: var(--bg-2); border-color: var(--line-2); }
 /* its live jobs: ordinary cards, tucked in under the member */
 .cr-jobs { padding-left: 18px; gap: 4px; }

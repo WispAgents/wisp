@@ -8,6 +8,7 @@
 //   axis      'x' for chips in a row (left/right of one), 'y' for rows (above/below)
 //   onDrop    (id, to, after) => …: id goes just before `to`, or just after it
 //   ok        (event) => bool, whether this press may start a drag (a search typed: no)
+//   onStart   () => …, once it's picked up (a hover card over it can go)
 //   onEnd     () => …, once a drag is over, dropped or not, before onDrop: a repaint held off
 //             while it ran (box has .reordering then) can go now
 
@@ -15,18 +16,18 @@ const HOLD = 300;
 const SLOP = 5; // px a mouse moves before it's a drag
 const wired = new WeakSet();
 
-export function reorderable(box, { item, axis = 'x', onDrop, onEnd = () => {}, ok = () => true }) {
+export function reorderable(box, { item, axis = 'x', onDrop, onStart = () => {}, onEnd = () => {}, ok = () => true }) {
   if (!box || wired.has(box)) return;
   wired.add(box);
   box.addEventListener('pointerdown', (e) => {
     const node = e.target.closest(item);
     if (!node || !box.contains(node) || e.button !== 0 || !node.dataset.id || !ok(e)) return;
     if (e.target.closest('input, textarea, [contenteditable], [data-no-drag]')) return;
-    press(e, box, node, { item, axis, onDrop, onEnd });
+    press(e, box, node, { item, axis, onDrop, onStart, onEnd });
   });
 }
 
-function press(e, box, node, { item, axis, onDrop, onEnd }) {
+function press(e, box, node, { item, axis, onDrop, onStart, onEnd }) {
   const touch = e.pointerType === 'touch';
   const x0 = e.clientX;
   const y0 = e.clientY;
@@ -38,7 +39,9 @@ function press(e, box, node, { item, axis, onDrop, onEnd }) {
   const start = () => {
     const items = [...box.querySelectorAll(item)].filter((n) => n.dataset.id && !n.hidden && n.offsetParent);
     if (items.length < 2) return end();
-    drag = { items: items.map((n) => ({ n, r: n.getBoundingClientRect() })), at: null };
+    // In the order they show, which CSS order (the crew rail) can make other than the DOM's.
+    const laid = items.map((n) => ({ n, r: n.getBoundingClientRect() })).sort((a, b) => (Math.abs(a.r.top - b.r.top) > 2 ? a.r.top - b.r.top : a.r.left - b.r.left));
+    drag = { items: laid, at: null };
     // Chips all on one line (the top bar's, which clips) slide along it only.
     drag.flat = axis === 'y' || drag.items.every((x) => Math.abs(x.r.top - drag.items[0].r.top) < 2);
     try {
@@ -49,6 +52,7 @@ function press(e, box, node, { item, axis, onDrop, onEnd }) {
     // A mouse drag would otherwise select the text it passes over (a row's name, say).
     getSelection()?.removeAllRanges();
     document.documentElement.style.userSelect = 'none';
+    onStart();
   };
   const mark = (to, after) => {
     if (drag.at?.n === to && drag.at.after === after) return;

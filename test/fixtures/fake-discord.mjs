@@ -8,7 +8,7 @@
 //   fake.interaction(o)    the same interaction, sent nowhere: for what comes over HTTP
 //   fake.sever(match)      the next REST call matching loses its connection, with no answer
 //   fake.deadTokens        interaction tokens past their 15 minutes
-//   fake.lag(match, ms)    every REST call matching takes that long to answer
+//   fake.lag(match, ms)    every REST call matching takes that long to answer → undo
 //   fake.drop()            the socket goes, with no goodbye
 //   fake.op(op, d)         a raw gateway op (7 reconnect, 9 invalid session, 1 heartbeat)
 //   fake.close(code)       the gateway closes with a code
@@ -85,7 +85,9 @@ export class FakeDiscord {
   }
 
   lag(match, ms) {
-    this.#lags.push({ match, ms });
+    const l = { match, ms };
+    this.#lags.push(l);
+    return () => this.#lags.splice(this.#lags.indexOf(l) >>> 0, 1);
   }
 
   sever(match) {

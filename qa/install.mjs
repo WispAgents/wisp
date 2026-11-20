@@ -17,6 +17,7 @@ import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { until, makeRepo } from '../test/helpers.js';
 import { OUT, ROOT, ok, qaEnv, runner, win32 } from './lib.mjs';
+import { closeFetch } from './close-fetch.mjs';
 import { Updater } from '../server/update.js';
 import { artefacts, shellArtefact } from '../desktop/scripts/package.mjs';
 import { NODE_VERSION, hostTarget } from '../desktop/scripts/fetch-node.mjs';
@@ -66,22 +67,29 @@ for (const name of ['open', 'xdg-open']) {
 const opened = () => (fs.existsSync(OPENED) ? fs.readFileSync(OPENED, 'utf8') : '');
 const clearOpened = () => fs.rmSync(OPENED, { force: true });
 
+// The release a machine finds for `wisp` alone: one with no shell in it, as a version is until
+// release.yml publishes it. Without this, rows got the real shell from GitHub once v<version> was out
+// (0.58.0, 11 Nov): on a Mac `wisp` alone opened its window, not the tab INST-02f and 04f wait for,
+// and on Windows that window stayed open, so INST-21's wisp.exe handed over to it (single instance)
+// and never served. INST-25 to 28 serve their own release.
+const noShell = http.createServer((req, res) => (req.url.endsWith('/SHA256SUMS.txt') ? res.end('') : ((res.statusCode = 404), res.end())));
+await new Promise((r) => noShell.listen(0, '127.0.0.1', r));
+noShell.unref();
+const NO_SHELL = `http://127.0.0.1:${noShell.address().port}`;
+
 // A clean machine, as near as a folder gets: its own HOME, only the system's tools, this Node and
 // the fake agents. No shell rc, so no nvm and no node but the one named here.
 function machine(extra = {}, { withNode = true } = {}) {
   const home = dirIn('home');
-  const { env, bins } = qaEnv({ HOME: home, USERPROFILE: home, SHELL: '/bin/sh', WISP_UPDATE_CHECK: '0', ...CACHE });
+  const { env, bins } = qaEnv({ HOME: home, USERPROFILE: home, SHELL: '/bin/sh', WISP_UPDATE_CHECK: '0', WISP_SHELL_URL: NO_SHELL, ...CACHE });
   delete env.ELECTRON_RUN_AS_NODE;
   delete env.CI; // Updater turns itself off on CI, which GET /update shouldn't hide
   env.PATH = [STUBS, bins, ...(withNode ? [path.dirname(process.execPath)] : []), SYSTEM].join(path.delimiter);
   return { ...env, ...extra };
 }
 
-// Each request to a wisp under test on a connection of its own. A pooled one can go stale while
-// sh()'s execFileSync blocks this loop: wisp closes it after 65 idle seconds (KEEP_ALIVE_MS), this
-// process can't see that until it runs again, and the next request goes out on it and gets a reset
-// ("fetch failed") from a wisp that's still up. Slow npx on Windows took INST-04b to 04d past that.
-const local = (url, opts = {}) => fetch(url, { ...opts, headers: { ...opts.headers, connection: 'close' } });
+// Each request to a wisp under test on a connection of its own, its body read at once (qa/close-fetch.mjs).
+const local = closeFetch;
 const health = async (port) => (await local(`http://127.0.0.1:${port}/api/health`)).json();
 const up = (port, what = 'wisp') => until(() => health(port), { timeout: 60_000, every: 200, what });
 const down = (port) => until(() => health(port).then(() => false, () => true), { timeout: 20_000, every: 100, what: `port ${port} to free up` });
