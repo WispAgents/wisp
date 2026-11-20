@@ -92,6 +92,10 @@ pub(crate) fn extras_for(ctx: &Ctx, call: &Call) -> (Vec<Extra>, Vec<Arc<wisp_mc
                 // `args` as documented, and a run's own task filled in (audit E10)
                 let session = call.caller().session.clone();
                 let args = wisp_mcp_core::generated::call_args(&spec, &input, session.as_deref());
+                // a field the command doesn't take is refused, never dropped (audit D6)
+                if let Some(e) = wisp_mcp_core::generated::unknown_field(&wisp_mcp_core::generated::tool_name(&id), &spec, &args) {
+                    return Ok(wisp_mcp_api::ToolText { text: None, error: Some(e) });
+                }
                 if let (true, Some(sid)) = (asks && SETUP_COMMANDS.contains(&id.as_str()), session.as_deref()) {
                     return Ok(match crate::run::setup(&ctx, &call, sid, &id, args).await {
                         wisp_mcp_core::Outcome::Failed(e) | wisp_mcp_core::Outcome::Rpc(_, e) => {

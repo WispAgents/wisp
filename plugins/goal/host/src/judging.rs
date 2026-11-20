@@ -33,7 +33,7 @@ async fn one_judge(
     place: Option<&(String, String)>,
     run: &str,
 ) -> wisp_goal_core::Verdict {
-    let pick = pick_of(ctx, judge).await;
+    let pick = pick_of(ctx, judge, round.task.id.as_str()).await;
     let at = now(ctx);
     let task = round.task.id.as_str();
     let check = runs::Check {
@@ -49,7 +49,7 @@ async fn one_judge(
     };
     // its task deleted meanwhile (`session.deleted`): no check starts, no record of it is left
     if !runs::put(ctx, runs::started(&check)).await {
-        return wisp_goal_core::Verdict { judge: judge.to_owned(), met: false, why: format!("{judge} didn't judge: the task is gone") };
+        return wisp_goal_core::Verdict::failed(judge, format!("{judge} didn't judge: the task is gone"));
     }
     let args = rt::QuickArgs {
         prompt: prompt.to_owned(),
@@ -71,12 +71,12 @@ async fn one_judge(
         Err(err) if was_cancelled(&err) => {
             let why = format!("{judge} was stopped: the goal changed while it judged");
             runs::put(ctx, runs::ended(&check, &runs::Ended::Cancelled { why: &why }, now(ctx))).await;
-            wisp_goal_core::Verdict { judge: judge.to_owned(), met: false, why }
+            wisp_goal_core::Verdict::failed(judge, why)
         }
         Err(err) => {
             let why = format!("{judge} couldn't judge: {}", err.message);
             runs::put(ctx, runs::ended(&check, &runs::Ended::Failed { why: &why }, now(ctx))).await;
-            wisp_goal_core::Verdict { judge: judge.to_owned(), met: false, why }
+            wisp_goal_core::Verdict::failed(judge, why)
         }
     }
 }
@@ -96,11 +96,7 @@ async fn judge(ctx: &Ctx, live: &Inflight, g: &Goal, r: &Round<'_>, answer: &str
                 return g
                     .judges
                     .iter()
-                    .map(|j| wisp_goal_core::Verdict {
-                        judge: j.clone(),
-                        met: false,
-                        why: format!("{j} couldn't judge in a sandbox: {}", e.message),
-                    })
+                    .map(|j| wisp_goal_core::Verdict::failed(j, format!("{j} couldn't judge in a sandbox: {}", e.message)))
                     .collect();
             }
         }

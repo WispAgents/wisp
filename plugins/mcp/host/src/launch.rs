@@ -90,15 +90,26 @@ async fn under_formula(ctx: &Ctx, call: &Call, body: Value, f: &Value, cwd: Opti
 ///
 /// # Errors
 /// A project or machine that isn't there, or what `runtime.create` refused.
-pub(crate) async fn launch(ctx: &Ctx, call: &Call, session: &str, a: &Map<String, Value>) -> Result<Value, String> {
+/// `session`: the asking task (an agent's run); None for the user's own `wisp_launch` (`/api/mcp` with no token,
+/// audit G6: it took v1's fields only, so a goal, formula, factory or worktree was dropped and it ran in place).
+pub(crate) async fn launch(ctx: &Ctx, call: &Call, session: Option<&str>, a: &Map<String, Value>) -> Result<Value, String> {
     let named = project(ctx, a).await;
-    let mine = if a.get("cwd").and_then(Value::as_str).is_some_and(|c| !c.is_empty()) { None } else { asking(ctx, call, session).await };
+    let given = a.get("cwd").and_then(Value::as_str).is_some_and(|c| !c.is_empty());
+    let mine = match session {
+        Some(s) if !given => asking(ctx, call, s).await,
+        _ => None,
+    };
     let cwd = launch::folder(a, named.as_deref(), mine.as_deref())?;
     let tree_on = match &cwd {
         Some(c) => trees_on(ctx) && in_git(c).await,
         None => false,
     };
     let mut body = launch::start_body(a, cwd.as_deref(), tree_on);
+    if session.is_none()
+        && let Some(o) = body.as_object_mut()
+    {
+        o.remove("by"); // the user's own launch, not an agent's
+    }
     if let Some(f) = a.get("formula").filter(|f| !f.is_null()) {
         body = under_formula(ctx, call, body, f, cwd.as_deref()).await?;
     }
@@ -110,7 +121,10 @@ pub(crate) async fn launch(ctx: &Ctx, call: &Call, session: &str, a: &Map<String
     };
     // another machine: its runtime.create doesn't see this agent, so a task held below Full auto (its own mode, or a
     // channel's cap) starts none there (review r194 round 2 #2)
-    let parent = ctx.run::<rt::Get>(&ctx.root_call(), rt::IdArgs { id: session.into() }).await.ok();
+    let parent = match session {
+        Some(s) => ctx.run::<rt::Get>(&ctx.root_call(), rt::IdArgs { id: s.into() }).await.ok(),
+        None => None,
+    };
     let held = call.caller().set.starts_with("agent:capped") || parent.is_some_and(|p| p.mode != wisp_runtime_api::model::Mode::Auto);
     if held {
         return Err("Refused: a task an agent starts can't run on another machine while its own task is held below Full auto. Say so in your report; the user can start it there in wisp.".into());
@@ -118,7 +132,7 @@ pub(crate) async fn launch(ctx: &Ctx, call: &Call, session: &str, a: &Map<String
     let list = ctx.run::<wisp_machines_api::List>(call, wisp_machines_api::NoArgs {}).await.map_err(|e| e.message)?;
     let list = serde_json::to_value(list).unwrap_or_default();
     let pid = wisp_mcp_core::generated::find_peer(&list, m).ok_or_else(|| format!("No machine “{m}”. wisp_available lists them."))?;
-    let mid = format!("launch-{session}-{}", ctx.clock().map_or(0, |c| c.now_ms()));
+    let mid = format!("launch-{}-{}", session.unwrap_or("user"), ctx.clock().map_or(0, |c| c.now_ms()));
     let args = wisp_machines_api::RouteArgs { id: Some(pid), cmd: "runtime.create".into(), args: body, mid };
     ctx.run::<wisp_machines_api::Route>(call, args).await.map_err(|e| e.message).map(|v| json!(v))
 }

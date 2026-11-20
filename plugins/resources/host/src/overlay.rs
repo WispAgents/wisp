@@ -96,7 +96,13 @@ impl Access {
     }
 
     fn inside_ok(&self, real: &Path, shown: &str, inside: &[PathBuf]) -> std::result::Result<(), String> {
-        if self.home.as_ref().is_some_and(|h| real.starts_with(h)) || real.file_name().is_some_and(|n| secret_name(&n.to_string_lossy())) {
+        // wisp's home is never read, but for a task folder of its own inside it (its worktree, `~/.wisp/worktrees/…`:
+        // audit G1); a task folder that is the home or holds it doesn't open the home
+        let in_home = self
+            .home
+            .as_ref()
+            .is_some_and(|h| real.starts_with(h) && !inside.iter().any(|r| r.starts_with(h) && r != h && real.starts_with(r)));
+        if in_home || real.file_name().is_some_and(|n| secret_name(&n.to_string_lossy())) {
             return Err(format!("{shown}: a secrets file isn't read for an agent's formula"));
         }
         if !inside.iter().any(|r| real.starts_with(r)) {
@@ -297,6 +303,33 @@ fn module_of(cwd: &Path, kinds: &[KindInfo], m: &str, access: &Access) -> std::r
     })
 }
 
+/// Where the picked file `name` with this `text` is in the project `root`: the one folder (at most 5 deep, past no
+/// `.git`, `node_modules`, `target` or `dist`, at most 5,000 entries) that holds a file of that name and text. None when
+/// there's none, or two.
+fn beside(root: &Path, name: &str, text: &str) -> Option<PathBuf> {
+    const SKIP: [&str; 4] = [".git", "node_modules", "target", "dist"];
+    let (mut queue, mut seen, mut hits) = (std::collections::VecDeque::from([(root.to_owned(), 0)]), 0usize, Vec::new());
+    while let Some((dir, depth)) = queue.pop_front() {
+        let Ok(rd) = std::fs::read_dir(&dir) else { continue };
+        for e in rd.flatten() {
+            seen += 1;
+            if seen > 5_000 {
+                return None;
+            }
+            let (p, n) = (e.path(), e.file_name().to_string_lossy().into_owned());
+            match e.file_type() {
+                Ok(t) if t.is_dir() && depth < 5 && !SKIP.contains(&n.as_str()) => queue.push_back((p, depth + 1)),
+                Ok(t) if t.is_file() && n == name && std::fs::read_to_string(&p).is_ok_and(|x| x == text) => hits.push(dir.clone()),
+                _ => {}
+            }
+        }
+    }
+    match hits.as_slice() {
+        [one] => Some(one.clone()),
+        _ => None,
+    }
+}
+
 /// Reads what `a` gives: its resources, its text (a formula, or a task file and what its `formula:` names), its files,
 /// as `access` allows. A task file's relative names are read from its own folder (`dir`) when that's known; a picked
 /// file's isn't, so they're read from the project (`cwd`), and a note says so (review r194 #5).
@@ -317,8 +350,15 @@ fn read_all(a: &OverlayArgs, kinds: &[KindInfo], access: &Access) -> Read {
             }
             Ok(doc) if doc.get("task").is_some() => {
                 r.task = doc.get("task").cloned();
-                let own = !a.dir.is_empty() && !access.confined();
-                let base = if own { PathBuf::from(&a.dir) } else { cwd.clone() };
+                // a picked file's folder isn't sent (a browser's file has no path): the same file (its name, its text)
+                // found in the project is where it is (audit G10: `.qa/a.task.yml`'s `./team.yml` was read at the root)
+                let found = if a.dir.is_empty() && !access.confined() { beside(&cwd, &name, &a.text) } else { None };
+                let own = (!a.dir.is_empty() || found.is_some()) && !access.confined();
+                let base = match (&found, own) {
+                    (Some(d), _) => d.clone(),
+                    (None, true) => PathBuf::from(&a.dir),
+                    (None, false) => cwd.clone(),
+                };
                 match ov::formula_refs(doc.get("formula")) {
                     Err(e) => r.problems.push(format!("{name}: {e}")),
                     Ok(refs) => {
@@ -359,6 +399,11 @@ fn read_all(a: &OverlayArgs, kinds: &[KindInfo], access: &Access) -> Read {
                                         r.sources.extend(l.sources);
                                         add(&mut r.resources, l.resources);
                                     }
+                                    // plain words, not the OS's: where it was looked for, and what reads it beside the file
+                                    Err(_) if !own && !base.join(&p).exists() => r.problems.push(format!(
+                                        "{name}: formula: {p} isn't in the project folder {}, where a picked task file's names are read (its own folder isn't known here): run it with wisp run -f <its path>",
+                                        base.display()
+                                    )),
                                     Err(e) => r.problems.push(format!("formula: {e}")),
                                 }
                             }
@@ -541,9 +586,9 @@ async fn names_in_formula(ks: &[Arc<dyn ResourceKind>], call: &Call, rs: &[Resou
                     continue;
                 }
                 let mut has =
-                    if have.is_empty() { format!("no {section} are declared") } else { format!("{section} has {}", have.join(", ")) };
+                    if have.is_empty() { format!("no {section} are declared") } else { format!("{section} has {}", ov::some_of(have)) };
                 if !also.is_empty() {
-                    has = format!("{has} (or {})", also.join(", "));
+                    has = format!("{has} (or {})", ov::some_of(also));
                 }
                 let line = format!("{}.{}: no {} named {name}: {has}", info.section, r.name, n.kind);
                 if !out.contains(&line) {
@@ -566,6 +611,13 @@ pub async fn overlay(ctx: &Ctx, call: &Call, ks: Vec<Arc<dyn ResourceKind>>, a: 
         tokio::task::spawn_blocking(move || read_all(&args, &infos, &access)).await.map_err(|e| WireError::internal(e.to_string()))?;
     let (overlay, left) = ov::overlay_of(&read.resources);
     let mut problems = read.problems;
+    // the schema, as `wisp validate` checks it: a formula a task runs under is refused for what validate names (audit
+    // G8: `agents.critic.brief`, an unknown field, was dropped, and the task launched with "no harness critic")
+    for r in &read.resources {
+        if let Some(info) = kinds.iter().find(|k| k.kind == r.kind).filter(|k| !k.map_form) {
+            problems.extend(wisp_resources_core::schema::validate(&info.schema, &r.spec, &format!("{}.{}", info.section, r.name)));
+        }
+    }
     problems.extend(names_in_formula(&ks, call, &read.resources).await);
     // an agent's formula declares only agents, skills (as text), teams and goals, with no secret (review r194 round 2 #1)
     if confined {
@@ -664,6 +716,34 @@ mod tests {
         );
         let e = declared_task(&f, "docs", &BTreeMap::new(), &["extra".to_owned()]).unwrap_err();
         assert!(e.starts_with("docs takes no values: \"extra\" is left over"), "{e}");
+    }
+
+    /// Audit G1: a task's worktree lives under wisp's home (`~/.wisp/worktrees/…`) and is its folder (ADR-0111): its
+    /// agent reads a formula there; the rest of wisp's home, `secrets.json` and `.env*` stay refused, even in it.
+    #[test]
+    fn an_agent_reads_a_formula_in_its_own_worktree_under_wisps_home() {
+        let d = std::env::temp_dir().join(format!("wisp-access-wt-{}", std::process::id()));
+        let wt = d.join("home/worktrees/proj-1");
+        std::fs::create_dir_all(&wt).unwrap();
+        std::fs::write(wt.join("ok.yml"), "wisp: 1").unwrap();
+        std::fs::write(wt.join(".env.local"), "A=1").unwrap();
+        std::fs::write(d.join("home/secrets.json"), "{}").unwrap();
+        std::fs::write(d.join("home/other.yml"), "wisp: 1").unwrap();
+        let real = wisp_proc::canonical_blocking(&d).unwrap();
+        let (home, wt) = (real.join("home"), real.join("home/worktrees/proj-1"));
+        let agent = access_for("agent:session", vec![wt.clone()], Some(home.clone()));
+        assert_eq!(agent.open(&wt, "ok.yml").unwrap(), wt.join("ok.yml"), "its own worktree is its folder");
+        assert!(agent.open(&wt, ".env.local").unwrap_err().contains("a secrets file isn't read"));
+        // a link out of the worktree into the rest of the home is still refused
+        #[cfg(unix)]
+        {
+            std::os::unix::fs::symlink(home.join("other.yml"), wt.join("link.yml")).unwrap();
+            assert!(agent.open(&wt, "link.yml").is_err(), "the rest of wisp's home");
+        }
+        // a task whose folder is the home itself (or holds it) reads nothing of it
+        let wide = access_for("agent:session", vec![real.clone()], Some(home.clone()));
+        assert!(wide.open(&real, "home/other.yml").unwrap_err().contains("isn't read for an agent's formula"));
+        let _ = std::fs::remove_dir_all(&d);
     }
 
     /// Review r194 round 2 #7: a grid box's owner reads their own files as the user does, never wisp's home or a secrets

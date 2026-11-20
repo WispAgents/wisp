@@ -28,8 +28,9 @@ macro_rules! command {
     };
 }
 
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, ts_rs::TS)]
 pub struct Id {
+    /// the item's id (My Stuff's, `stuff_list` lists them)
     pub id: String,
 }
 
@@ -43,53 +44,71 @@ pub struct Done {
 
 /// `stuff.save`: exactly one of `url`, `text`, `file` (a path on this computer) or `app` (a folder);
 /// with `replace` alone it edits that item's details.
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, ts_rs::TS)]
 pub struct SaveArgs {
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
     pub url: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
     pub text: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
     pub file: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
     pub app: Option<String>,
     /// text: its file name (notes.md); file: the name it's kept under
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
     pub name: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
     pub lang: Option<String>,
     /// app: a picture of it (a path on this computer), for its card
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
     pub cover: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
     pub title: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
     pub note: Option<String>,
     #[serde(default, skip_serializing_if = "Value::is_null")]
+    #[ts(as = "Option<serde_json::Value>", optional)]
     pub tags: Value,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
     pub starred: Option<bool>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional, type = "unknown")]
     pub from: Option<StuffFrom>,
     /// 'you', 'agent' or 'wisp'
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
     pub by: Option<String>,
     /// update this item in place: the content before it stays as the one previous version
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
     pub replace: Option<String>,
 }
 
 /// `stuff.update`: the fields a person (or an agent) may set on an item.
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, ts_rs::TS)]
 pub struct UpdateArgs {
     pub id: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
     pub title: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
     pub note: Option<String>,
     #[serde(default, skip_serializing_if = "Value::is_null")]
+    #[ts(as = "Option<serde_json::Value>", optional)]
     pub tags: Value,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
     pub starred: Option<bool>,
 }
 
@@ -121,18 +140,21 @@ pub struct Text {
 
 /// `stuff.allow`: what you allow a pane, and the task it's shown on (no new scope while that task,
 /// or the one that made the app, runs in Full auto).
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, ts_rs::TS)]
 pub struct AllowArgs {
     pub id: String,
     #[serde(default)]
+    #[ts(as = "Option<Vec<String>>", optional)]
     pub uses: Vec<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
     pub task: Option<String>,
 }
 
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, ts_rs::TS)]
 pub struct SetPublishedArgs {
     pub id: String,
+    #[ts(optional, type = "unknown")]
     pub published: Option<Published>,
 }
 
@@ -153,7 +175,7 @@ pub struct Ids {
 command!(List, "stuff.list", Some("stuff:read"), true, Empty => Vec<StuffView>; typed);
 command!(
     /// One record, paths included: for agents and plugins on this computer.
-    Get, "stuff.get", Some("stuff:read"), true, Id => Option<StuffItem>
+    Get, "stuff.get", Some("stuff:read"), true, Id => Option<StuffItem>; typed
 );
 command!(
     /// `wisp_stuff`'s list: filtered by words and kind, with where each file is.
@@ -161,22 +183,22 @@ command!(
 ; typed);
 command!(
     /// One item in full, for an agent (@-mentions, `wisp_stuff` with an id).
-    Describe, "stuff.describe", Some("stuff:read"), true, Id => Option<Text>
+    Describe, "stuff.describe", Some("stuff:read"), true, Id => Option<Text>; typed
 );
-command!(GrantOf, "stuff.grant", Some("stuff:read"), true, Id => Grant);
-command!(Save, "stuff.save", None, false, SaveArgs => StuffView);
-command!(Update, "stuff.update", Some("stuff:save"), false, UpdateArgs => StuffView);
-command!(Restore, "stuff.restore", Some("stuff:save"), false, Id => StuffView);
-command!(Remove, "stuff.remove", Some("stuff:save"), false, Id => Done);
-command!(Allow, "stuff.allow", None, false, AllowArgs => StuffView);
-command!(SetPublished, "stuff.setPublished", Some("stuff:publish"), false, SetPublishedArgs => StuffView);
-command!(Launch, "stuff.launch", None, false, Id => Launched);
-command!(Stop, "stuff.stop", Some("stuff:launch"), false, Id => Done);
-command!(ResetData, "stuff.resetData", Some("stuff:save"), false, Id => StuffView);
-command!(UploadOf, "stuff.upload", Some("stuff:read"), true, Id => Option<Upload>);
+command!(GrantOf, "stuff.grant", Some("stuff:read"), true, Id => Grant; typed);
+command!(Save, "stuff.save", None, false, SaveArgs => StuffView; typed);
+command!(Update, "stuff.update", Some("stuff:save"), false, UpdateArgs => StuffView; typed);
+command!(Restore, "stuff.restore", Some("stuff:save"), false, Id => StuffView; typed);
+command!(Remove, "stuff.remove", Some("stuff:save"), false, Id => Done; typed);
+command!(Allow, "stuff.allow", None, false, AllowArgs => StuffView; typed);
+command!(SetPublished, "stuff.setPublished", Some("stuff:publish"), false, SetPublishedArgs => StuffView; typed);
+command!(Launch, "stuff.launch", None, false, Id => Launched; typed);
+command!(Stop, "stuff.stop", Some("stuff:launch"), false, Id => Done; typed);
+command!(ResetData, "stuff.resetData", Some("stuff:save"), false, Id => StuffView; typed);
+command!(UploadOf, "stuff.upload", Some("stuff:read"), true, Id => Option<Upload>; typed);
 command!(
     /// A file that came another way than a drop (an email's attachment): kept as an upload. Additive (2026-11-11).
-    Receive, "stuff.receive", Some("stuff:receive"), false, ReceiveArgs => Upload
+    Receive, "stuff.receive", Some("stuff:receive"), false, ReceiveArgs => Upload; typed
 );
 
 /// `stuff.receive`'s file: its name, type and bytes (base64).
@@ -185,6 +207,7 @@ command!(
 pub struct ReceiveArgs {
     pub name: String,
     #[serde(default)]
+    #[ts(as = "Option<String>", optional)]
     pub mime: String,
     pub data: String,
 }
@@ -192,18 +215,18 @@ command!(
     /// v1 `uploads.resolve`: unknown ids are dropped.
     Uploads, "stuff.uploads", Some("stuff:read"), true, Ids => Vec<Upload>
 ; typed);
-command!(RemoveUpload, "stuff.removeUpload", Some("stuff:save"), false, Id => Done);
+command!(RemoveUpload, "stuff.removeUpload", Some("stuff:save"), false, Id => Done; typed);
 command!(
     /// The panes wisp ships, each with the item it was added as (v1 GET /stuff/starters).
     Starters, "stuff.starters", Some("stuff:read"), true, Empty => Value
 ; typed);
 command!(
     /// Adds a starter pane once (it grants and pins nothing).
-    AddStarter, "stuff.addStarter", Some("stuff:save"), false, Id => StuffView
+    AddStarter, "stuff.addStarter", Some("stuff:save"), false, Id => StuffView; typed
 );
 command!(
     /// Show in folder: this computer's file manager opens on it; the path comes back either way.
-    Reveal, "stuff.reveal", Some("stuff:read"), false, Id => Value
+    Reveal, "stuff.reveal", Some("stuff:read"), false, Id => Value; typed
 );
 command!(
     /// Where an app can be published (the publisher's targets): none without a publisher.
@@ -211,62 +234,78 @@ command!(
 ; typed);
 command!(
     /// Publish (again) to the publisher's grid: a link anyone can open.
-    PublishApp, "stuff.publish", Some("stuff:publish"), false, Id => StuffView
+    PublishApp, "stuff.publish", Some("stuff:publish"), false, Id => StuffView; typed
 );
 command!(
     /// Take an app's public link down.
-    UnpublishApp, "stuff.unpublish", Some("stuff:publish"), false, Id => StuffView
+    UnpublishApp, "stuff.unpublish", Some("stuff:publish"), false, Id => StuffView; typed
 );
 
 // ---------- a task's agent (v1 POST /internal/stuff, GET /internal/stuff/:id) ----------
 
 /// `stuff.agent.save`: the `wisp_save` tool's arguments and the caller's task. Exactly one of `path`, `text`, `url`
 /// or `app` (paths relative to the task's folder), or `id` alone to change an item's title, note or tags.
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, ts_rs::TS)]
 pub struct AgentSaveArgs {
     pub session: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
     pub path: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
     pub text: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
     pub url: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
     pub app: Option<String>,
     /// with `app`: a picture of it, for its card
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
     pub cover: Option<String>,
     /// update this item instead of adding one
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
     pub id: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
     pub name: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
     pub title: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
     pub note: Option<String>,
     #[serde(default, skip_serializing_if = "Value::is_null")]
+    #[ts(as = "Option<serde_json::Value>", optional)]
     pub tags: Value,
     /// with an app in a Make a pane task: `home` or `task`
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
     pub pin: Option<String>,
     /// with an app: true puts it on a public link (or updates it), false takes the link down
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
     pub publish: Option<bool>,
 }
 
 /// `stuff.agent.list`: the `wisp_stuff` tool. With `id`, that item in full; else the items matching `query` and
 /// `kind`, newest first (`limit` 30, at most 100). A capped task sees its own project's items.
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, ts_rs::TS)]
 pub struct AgentListArgs {
     pub session: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
     pub id: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
     pub query: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
     pub kind: Option<String>,
     #[serde(default, skip_serializing_if = "Value::is_null")]
+    #[ts(as = "Option<serde_json::Value>", optional)]
     pub limit: Value,
 }
 
@@ -281,11 +320,11 @@ pub struct AgentText {
 
 command!(
     /// `POST /internal/stuff`: an agent keeps something in My Stuff, or updates an item (`wisp_save`)
-    AgentSave, "stuff.agent.save", None, false, AgentSaveArgs => AgentText
+    AgentSave, "stuff.agent.save", None, false, AgentSaveArgs => AgentText; typed
 );
 command!(
     /// `GET /internal/stuff/:id`: My Stuff as an agent reads it, or one item in full (`wisp_stuff`)
-    AgentList, "stuff.agent.list", None, true, AgentListArgs => AgentText
+    AgentList, "stuff.agent.list", None, true, AgentListArgs => AgentText; typed
 );
 
 // ---------- events (published after the command commits) ----------
@@ -334,7 +373,7 @@ pub struct AppBundle {
 
 command!(
     /// An app packed for publishing (its secrets and source maps left out). For the publisher.
-    Bundle, "stuff.bundle", Some("stuff:publish"), true, Id => AppBundle
+    Bundle, "stuff.bundle", Some("stuff:publish"), true, Id => AppBundle; typed
 );
 
 // ---------- the publisher (provided by the plugin that knows the grid) ----------

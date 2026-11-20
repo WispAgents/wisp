@@ -584,7 +584,9 @@ pub struct UnaskArgs {
 #[serde(rename_all = "camelCase")]
 #[ts(export, export_to = "runtime/")]
 pub struct AnswerArgs {
+    /// the task that asks
     pub id: SessionId,
+    /// your answer: one of its options, or your own words (on a setup card, Allow; anything else is a no, with your words)
     pub text: String,
     /// the question this answers (its `ask.id`): an answer to one that's no longer open is refused. A setup card
     /// (ADR-0113) is answered only with it. Additive (2026-11-20).

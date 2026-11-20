@@ -73,6 +73,15 @@ fn tool_row(tool: ToolKind, label: String) -> Activity {
     }
 }
 
+/// A setup card a restart left open, taken off its task (audit G21: its agent is gone, so an Allow would change your
+/// setup with nobody told and `wisp show` didn't list it): what it asked, for the turn's words; None when none is open.
+pub(crate) fn take_setup_card(s: &mut wisp_runtime_api::model::Session) -> Option<String> {
+    ask::open_setup(s)?;
+    let ask = with_slot(&mut s.ext, |m| m.remove("ask"))?;
+    let action = ask.pointer("/setup/action").and_then(Value::as_str).unwrap_or("change your setup").to_owned();
+    Some(action)
+}
+
 /// Runs `f` on runtime's own ext slot (made an object if it wasn't one), then puts it back.
 fn with_slot<R>(ext: &mut BTreeMap<String, Value>, f: impl FnOnce(&mut serde_json::Map<String, Value>) -> R) -> R {
     let mut m = match ext.remove(SLOT) {

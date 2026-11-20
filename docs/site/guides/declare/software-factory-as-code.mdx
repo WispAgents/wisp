@@ -141,7 +141,7 @@ factories:
       ship:   { pr: true, merge: human }
     loop: { back_to: build, max: 3, then: ask }
 tasks:
-  default: { factory: default }              # every declared task's run goes through it
+  ship-fix: { prompt: Fix the failing test, factory: default }   # or `factory:` under tasks.default: every task
 triggers:
   build-labeled-issues-through-the-line:
     on: issue.labeled

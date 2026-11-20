@@ -299,15 +299,20 @@ pub struct FactoryRow {
     pub stations: Vec<String>,
 }
 
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+/// `factory.remove`: a declared factory.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(deny_unknown_fields)]
 pub struct NameArgs {
+    /// the factory's name
     pub name: String,
 }
 
 /// `factory.stop`: a run's parent task.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(deny_unknown_fields)]
 #[ts(export, export_to = "factory/")]
 pub struct StopArgs {
+    /// the run (its parent task's id)
     pub id: String,
 }
 
@@ -373,6 +378,10 @@ pub struct Waiting {
     pub options: Vec<String>,
     /// the question's id on the parent task (`runtime.answer`'s `askId`)
     pub ask_id: String,
+    /// what it's about, shown with it (the spec "Approve the spec?" asks about). Additive (2026-11-20, audit G5).
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    #[ts(optional, as = "Option<String>")]
+    pub context: String,
 }
 
 /// A run, on its parent task (`ext["wisp.factory"]`).
@@ -403,7 +412,7 @@ pub struct RunView {
 }
 
 macro_rules! command {
-    ($name:ident = $id:literal [$perm:literal] $(read $ro:ident)? : $args:ty => $out:ty) => {
+    ($name:ident = $id:literal [$perm:literal] $(read $ro:ident)? : $args:ty $(; typed $typed:ident)? $(; none $none:ident)? => $out:ty) => {
         #[derive(Debug)]
         pub struct $name;
         impl Command for $name {
@@ -412,15 +421,26 @@ macro_rules! command {
             $(const READ_ONLY: bool = { let _ = stringify!($ro); true };)?
             type Args = $args;
             type Out = $out;
+            // `; typed`: the generated CLI's flags and --help come from the argument type, so a flag it doesn't take
+            // is refused (serve_cli_verbs) and `wisp factory stop <id>` takes the id (ADR-0022)
+            $(fn args_ts() -> Option<String> {
+                let _ = stringify!($typed);
+                Some(format!("{}{}", <$args as TS>::docs().unwrap_or_default(), <$args as TS>::inline(&ts_rs::Config::default())))
+            })?
+            // `; none`: it takes nothing: `{ }`, so the CLI refuses a flag and a tool a field (audit D6)
+            $(fn args_ts() -> Option<String> {
+                let _ = stringify!($none);
+                Some("{ }".to_owned())
+            })?
         }
     };
 }
 
-command!(List = "factory.list" ["factory:read"] read yes : Value => Vec<NamedFactory>);
-command!(Names = "factory.names" ["factory:read"] read yes : Value => Vec<FactoryRow>);
+command!(List = "factory.list" ["factory:read"] read yes : Value; none yes => Vec<NamedFactory>);
+command!(Names = "factory.names" ["factory:read"] read yes : Value; none yes => Vec<FactoryRow>);
 command!(Set = "factory.set" ["factory:write"] : NamedFactory => NamedFactory);
-command!(Remove = "factory.remove" ["factory:write"] : NameArgs => Value);
-command!(Stop = "factory.stop" ["factory:run"] : StopArgs => Value);
+command!(Remove = "factory.remove" ["factory:write"] : NameArgs; typed yes => Value);
+command!(Stop = "factory.stop" ["factory:run"] : StopArgs; typed yes => Value);
 
 #[cfg(test)]
 #[allow(clippy::unwrap_used)]

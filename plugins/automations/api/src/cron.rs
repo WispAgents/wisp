@@ -278,6 +278,16 @@ pub fn read_schedule(text: &str) -> Result<String, CronError> {
     Ok(cron)
 }
 
+/// A schedule as a trigger or task says it (5 fields, or words: "every minute"), read to fire on. Audit G11: a
+/// trigger's `cron: "every minute"` passed its check (which reads words) and then never fired: the engine parsed it as
+/// 5 fields only.
+///
+/// # Errors
+/// What [`read_schedule`] or [`parse_cron`] refuse.
+pub fn schedule_of(text: &str) -> Result<Cron, CronError> {
+    parse_cron(&read_schedule(text)?)
+}
+
 /// Local wall time → UTC ms, for tests and callers that build instants from a date.
 pub fn local_to_utc(year: i64, month: u32, day: u32, hour: u32, minute: u32, zone: &dyn Zone) -> i64 {
     to_utc(days_from(year, month, day) * DAY + i64::from(hour) * HOUR + i64::from(minute) * MINUTE, zone)

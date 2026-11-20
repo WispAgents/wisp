@@ -340,7 +340,11 @@ pub async fn run_overlay(c: &Client, o: &Opts, cwd: &Path) -> Result<i32> {
         json!({ "resources": loaded.resources, "task": { "prompt": prompt }, "name": o.formulas.join(",") })
     };
     let out = resolve(c, args).await?;
-    let made = c.cmd("runtime.create", create_args(&out["task"], &out["overlay"], o, cwd)).await?;
+    let mut create = create_args(&out["task"], &out["overlay"], o, cwd);
+    // a project's task gets its own worktree, as `wisp "…" --formula` and `wisp run <task>` do (audit G9: it ran in
+    // place in the user's checkout); a task that says `worktree:` keeps its word
+    crate::scripted::in_project(c, &mut create).await;
+    let made = c.cmd("runtime.create", create).await?;
     let left: Vec<&str> = out.get("left").and_then(Value::as_array).into_iter().flatten().filter_map(Value::as_str).collect();
     if !left.is_empty() {
         say(&format!("  {}", paint(&st, DIM, &format!("not for one task (wisp apply -f to keep them): {}", left.join(", ")))));

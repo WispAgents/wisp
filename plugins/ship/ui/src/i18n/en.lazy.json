@@ -27,6 +27,8 @@
   "wisp.ship.rv.none.other": "none of the {count} files",
   "wisp.ship.rv.nothing": "nothing to fix",
   "wisp.ship.rv.notReviewed": "Not reviewed",
+  "wisp.ship.rv.failedLabel": "Review failed",
+  "wisp.ship.rv.heldLabel": "Review waits",
   "wisp.ship.rv.notYet": "Not reviewed by another harness yet. Click to review it now",
   "wisp.ship.rv.partial": "Partly reviewed",
   "wisp.ship.rv.partlySuffix": " · partly reviewed",

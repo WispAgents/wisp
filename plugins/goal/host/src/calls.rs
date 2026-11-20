@@ -58,9 +58,16 @@ pub(crate) fn spec_of(task: &Session) -> Value {
 }
 
 /// A judge's run: its profile's harness and model, a crew member's, `harness/model/effort`, or the harness itself.
-pub(crate) async fn pick_of(ctx: &Ctx, judge: &str) -> rt::RunPick {
-    let profiles = ctx.run::<rt::Profiles>(&ctx.root_call(), json!({})).await.unwrap_or_default();
+pub(crate) async fn pick_of(ctx: &Ctx, judge: &str, task: &str) -> rt::RunPick {
     let some = |s: &str| (!s.is_empty()).then(|| s.to_owned());
+    // an agent the task's own formula declares (run under `--formula`, a task file's `formula:`, never applied): it
+    // resolves as the task's agent did (audit G2: "no harness critic" four rounds running)
+    let snap = ctx.run::<rt::SnapshotOf>(&ctx.root_call(), wisp_runtime_api::spec::HashArgs { of: task.to_owned() }).await;
+    if let Some(p) = snap.ok().and_then(|s| formula_agent(&s.formula, judge).cloned()) {
+        let field = |k: &str| p.get(k).and_then(serde_json::Value::as_str).and_then(some);
+        return rt::RunPick { agent: field("harness"), model: field("model"), effort: field("effort") };
+    }
+    let profiles = ctx.run::<rt::Profiles>(&ctx.root_call(), json!({})).await.unwrap_or_default();
     if let Some(p) = profiles.iter().find(|p| p.name == judge) {
         return rt::RunPick { agent: some(&p.spec.harness), model: some(&p.spec.model), effort: some(&p.spec.effort) };
     }
@@ -75,6 +82,17 @@ pub(crate) async fn pick_of(ctx: &Ctx, judge: &str) -> rt::RunPick {
     let mut parts = judge.splitn(3, '/');
     let (agent, model, effort) = (parts.next().unwrap_or_default(), parts.next().unwrap_or_default(), parts.next().unwrap_or_default());
     rt::RunPick { agent: some(agent), model: some(model), effort: some(effort) }
+}
+
+/// The agent named `name` in a task's formula snapshot: `agents` as a list of `{name, …spec}` (the profile it resolved)
+/// or a map of name → spec (the formula's own section).
+pub(crate) fn formula_agent<'a>(formula: &'a serde_json::Value, name: &str) -> Option<&'a serde_json::Value> {
+    match formula.get("agents")? {
+        serde_json::Value::Array(a) => a.iter().find(|p| p.get("name").and_then(serde_json::Value::as_str) == Some(name)),
+        serde_json::Value::Object(m) => m.get(name),
+        _ => None,
+    }
+    .filter(|p| p.get("harness").and_then(serde_json::Value::as_str).is_some_and(|h| !h.is_empty()))
 }
 
 /// The task's scheduled entries (`later.list`), as the goal reads them.

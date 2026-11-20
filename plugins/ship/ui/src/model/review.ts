@@ -68,7 +68,9 @@ export function reviewState(t: T, s: ShipSession | undefined, ctx: ReviewContext
   if (r?.status === 'running' && r.current) return { kind: 'running', label: t('wisp.ship.rv.reviewing'), title: t('wisp.ship.rv.runningTitle', { by }) };
   if (!r || !r.current) return { kind: 'none', label: t('wisp.ship.rv.notReviewed'), title: r ? t('wisp.ship.rv.sincePush') : t('wisp.ship.rv.notYet') };
   // the why's own full stop goes: "…once more.. Click to try again" (audit E5)
-  if (r.status === 'failed' || r.status === 'held') return { kind: r.status, label: t('wisp.ship.rv.notReviewed'), title: t('wisp.ship.rv.retry', { why: (r.why || t('wisp.ship.rv.didntFinish')).replace(/[.\s]+$/, '') }) };
+  // a review that ran and failed (or waits on the reviewer's plan) says so, not "Not reviewed" as one never run (audit E5)
+  if (r.status === 'failed' || r.status === 'held')
+    return { kind: r.status, label: t(r.status === 'failed' ? 'wisp.ship.rv.failedLabel' : 'wisp.ship.rv.heldLabel'), title: t('wisp.ship.rv.retry', { why: (r.why || t('wisp.ship.rv.didntFinish')).replace(/[.\s]+$/, '') }) };
   return finished(t, s, by);
 }
 

@@ -29,7 +29,8 @@ export interface RunLine {
   readonly max: number;
   readonly stations: readonly StationLine[];
   readonly why: string;
-  readonly waiting?: { readonly station: string; readonly question: string; readonly options: readonly string[]; readonly askId: string };
+  /** `context`: what it asks about (the spec "Approve the spec?" asks you to approve) */
+  readonly waiting?: { readonly station: string; readonly question: string; readonly options: readonly string[]; readonly askId: string; readonly context?: string };
   readonly pr?: string;
 }
 

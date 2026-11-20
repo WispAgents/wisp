@@ -190,7 +190,9 @@ export function Flyout(props: { readonly api: menu.Api; readonly entry: MenuSubm
       const v = d.value;
       nextTask(() => props.fly.onSelect(v));
     },
-    positioning: { overflowPadding: 8, flip: true, slide: true },
+    // 8 px from the window's edge once slid to fit, past the flyout's own pull up by its padding and border (menu.css
+    // [data-flyout]: audit G22, a tall flyout sat at y=3)
+    positioning: { overflowPadding: 13, flip: true, slide: true },
   }));
   send = (event) => child.send(event);
   const capi = createMemo(() => menu.connect(child, normalizeProps));

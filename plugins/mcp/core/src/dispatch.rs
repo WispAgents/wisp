@@ -170,8 +170,9 @@ fn call(id: Box<RawValue>, mut m: Message, who: &Who, extras: &[Extra]) -> Step 
             let builtin =
                 table::table().is_ok_and(|t| name == "delegate" || t.agent_def(&name).is_some()) && table::exists_for(&name, info);
             if !builtin && extra.is_none() {
-                // v1 fell through every branch to its last line, which names the method, not the tool.
-                return Step::Reply(not_found(&id, "tools/call"));
+                // the tool, named, as the user's server says it (audit G18: v1 fell through to "Method not found:
+                // tools/call", which names the method)
+                return Step::Reply(rpc::error(&id, rpc::INVALID_PARAMS, &McpError::UnknownTool(name).to_string()));
             }
             Step::Call(Call { id, name, args: m.take_arguments(), extra: if builtin { None } else { extra } })
         }

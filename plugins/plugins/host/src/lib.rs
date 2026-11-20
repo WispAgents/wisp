@@ -32,6 +32,10 @@ impl wisp_kernel::Command for Install {
     const PERMISSION: Option<&'static str> = Some(wisp_plugins_api::perm::WRITE);
     type Args = install::InstallArgs;
     type Out = install::Installed;
+    // typed (audit D6): `wisp plugins install <source>`, and the tool's one field
+    fn args_ts() -> Option<String> {
+        Some("{ \n/**\n * a folder on this computer, or a git URL\n */\nsource: string, }".to_owned())
+    }
 }
 
 /// `plugins.uninstall` (ADR-0046): a `user.` plugin off, out, and its folder gone.
@@ -42,6 +46,9 @@ impl wisp_kernel::Command for Uninstall {
     const PERMISSION: Option<&'static str> = Some(wisp_plugins_api::perm::WRITE);
     type Args = install::UninstallArgs;
     type Out = serde_json::Value;
+    fn args_ts() -> Option<String> {
+        Some("{ \n/**\n * the plugin (`user.…`)\n */\nid: string, }".to_owned())
+    }
 }
 
 /// `plugins.trust` (ADR-0048): a plugin of yours trusted, or back to untrusted.
@@ -52,6 +59,9 @@ impl wisp_kernel::Command for Trust {
     const PERMISSION: Option<&'static str> = Some(wisp_plugins_api::perm::WRITE);
     type Args = install::TrustArgs;
     type Out = serde_json::Value;
+    fn args_ts() -> Option<String> {
+        Some("{ \n/**\n * the plugin (`user.…`)\n */\nid: string, \n/**\n * trust it (its own process with your environment), or take the trust back\n */\ntrusted: boolean, }".to_owned())
+    }
 }
 
 /// `plugins.folder`: where this wisp keeps your plugins (`<WISP_HOME>/plugins`), for Settings → Plugins' foot (audit

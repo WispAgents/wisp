@@ -13,6 +13,8 @@
     "crew:*",
     "events:tail",
     "events:why",
+    "factory:*",
+    "goal:*",
     "later:*",
     "machines:*",
     "plugins:*",

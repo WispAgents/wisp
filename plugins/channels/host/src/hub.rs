@@ -578,6 +578,17 @@ impl Phone for KPhone {
                 Ok("Answered.".into())
             }
             ActKind::Reply | ActKind::Text => {
+                // under a setup card a typed reply answers it, naming it, for the linked person only (ADR-0113 rules 4
+                // and 6; audit G4: a typed "Allow" queued behind the card and later ran as the agent's prompt)
+                let s = self.cmd_json::<rt::Get>(json!({ "id": a.session_id })).await?;
+                if let Some(ask) = s.pointer("/ext/wisp.runtime/ask").filter(|x| x.get("setup").is_some_and(|c| !c.is_null())) {
+                    if !a.person {
+                        return Ok(wisp_channels_core::SETUP_ELSEWHERE.into());
+                    }
+                    let card = ask.get("id").cloned().unwrap_or(Value::Null);
+                    self.cmd_json::<rt::Answer>(json!({ "id": a.session_id, "text": text, "askId": card })).await?;
+                    return Ok("Answered.".into());
+                }
                 self.cmd_json::<rt::FollowUp>(json!({ "id": a.session_id, "text": text })).await?;
                 Ok("Sent.".into())
             }

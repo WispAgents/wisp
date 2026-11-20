@@ -94,7 +94,8 @@ pub enum Next {
     /// make or follow up these tasks; then [`Event::Ended`] with how each ended, in this order
     Tasks(Vec<TaskStep>),
     /// ask on the parent task; then [`Event::Answered`]
-    Ask { question: String, options: Vec<String> },
+    /// `context`: what the question is about, shown with it (the spec it asks you to approve, audit G5)
+    Ask { question: String, options: Vec<String>, context: String },
     /// run the commands in `task`'s folder, in order, stopping at the first that fails; then [`Event::Checked`]
     Checks { task: String, commands: Vec<String>, minutes: u64 },
     /// `ship.ship` on `task`; then [`Event::Shipped`]
@@ -138,9 +139,12 @@ pub enum Event {
         pr: String,
         why: String,
     },
+    /// `local`: what the merge says of your checkout when it couldn't bring it up to date ("Local main was not
+    /// updated: …"), '' when it did (audit G20: the run said only "merged")
     Merged {
         ok: bool,
         why: String,
+        local: String,
     },
     /// the host couldn't do what it was told (a task it couldn't make): the run ends failed
     Failed(String),
@@ -256,6 +260,22 @@ pub fn tail(s: &str, n: usize) -> String {
 }
 
 const ORDER: [&str; 3] = ["plan", "edits", "auto"];
+
+/// "1 round", "3 rounds" (audit G15: "after 1 round(s)").
+pub fn rounds(n: u32) -> String {
+    if n == 1 { "1 round".to_owned() } else { format!("{n} rounds") }
+}
+
+/// A PR's URL as people say it: `PR #2` for `…/pull/2` (audit G15: "merged: `https://github.com/acme/repo/pull/2`"); any
+/// other link as it is.
+pub fn pr_words(url: &str) -> String {
+    match url.trim_end_matches('/').rsplit_once("/pull/") {
+        Some((_, n)) if !n.is_empty() && n.chars().all(|c| c.is_ascii_digit()) => format!("PR #{n}"),
+        _ => url.to_owned(),
+    }
+}
+/// How much of the spec goes with "Approve the spec?" (the whole of it is the spec station's output).
+const SPEC_SHOWN: usize = 1500;
 
 /// The lower of two modes ('' is the other).
 fn lower(a: &str, b: &str) -> String {
@@ -450,11 +470,21 @@ impl Run {
     }
 
     fn ask(&mut self, station: &str, question: String, options: &[&str]) -> Next {
+        self.ask_about(station, question, options, String::new())
+    }
+
+    /// A question with what it's about (`context`): on the run's task, the phone and channels beside the question.
+    fn ask_about(&mut self, station: &str, question: String, options: &[&str], context: String) -> Next {
         self.options = options.iter().map(|o| (*o).to_owned()).collect();
         self.set(station, StationState::Asking);
-        self.view.waiting =
-            Some(Waiting { station: station.to_owned(), question: question.clone(), options: self.options.clone(), ask_id: String::new() });
-        Next::Ask { question, options: self.options.clone() }
+        self.view.waiting = Some(Waiting {
+            station: station.to_owned(),
+            question: question.clone(),
+            options: self.options.clone(),
+            ask_id: String::new(),
+            context: context.clone(),
+        });
+        Next::Ask { question, options: self.options.clone(), context }
     }
 
     /// The host made a [`TaskStep::Start`]'s task.
@@ -719,7 +749,7 @@ impl Run {
         if !review.is_empty() {
             let _ = write!(body, "Review: {review}\n\n");
         }
-        let _ = write!(body, "Made by the wisp factory `{}` in {} round(s).", self.input.factory, self.round);
+        let _ = write!(body, "Made by the wisp factory `{}` in {}.", self.input.factory, rounds(self.round));
         Next::Ship { task: self.builds[chosen].clone(), title: self.input.title.clone(), body, draft: s.draft }
     }
 
@@ -737,11 +767,11 @@ impl Run {
             _ => "The build still fails",
         };
         if then == "stop" {
-            let why = format!("{what} after {} round(s): {}", self.round, short(findings, 400));
+            let why = format!("{what} after {}: {}", rounds(self.round), short(findings, 400));
             return self.end(RunState::Failed, &why);
         }
         self.at = At::Limit;
-        let q = format!("{what} after {} round(s): {}. Keep going?", self.round, short(findings, 300));
+        let q = format!("{what} after {}: {}. Keep going?", rounds(self.round), short(findings, 300));
         self.ask(station, q, &["One more round", "Stop"])
     }
 
@@ -828,7 +858,15 @@ impl Run {
                             return self.after_spec();
                         }
                         self.at = At::ApproveSpec;
-                        self.ask("spec", "Approve the spec? Approve to build it, Stop, or say what to change.".into(), &["Approve", "Stop"])
+                        // the spec itself goes with the question (audit G5: `wisp show`, the phone and channels asked
+                        // with no spec, and the app had it only behind ⋯ › Open Spec)
+                        let about = short(&self.spec_text, SPEC_SHOWN);
+                        self.ask_about(
+                            "spec",
+                            "Approve the spec? Approve to build it, Stop, or say what to change.".into(),
+                            &["Approve", "Stop"],
+                            about,
+                        )
                     }
                     At::Build => {
                         self.built = ends.iter().map(|x| x.ok).collect();
@@ -896,7 +934,12 @@ impl Run {
                     .iter()
                     .map(|r| {
                         let how = if r.timed_out { "ran past its time".to_owned() } else { format!("exited {}", r.code) };
-                        format!("`{}` {how}:\n{}", r.command, r.tail.trim())
+                        // a check that printed nothing: no dangling colon (audit G15 "`exit 1` exited 1:.")
+                        if r.tail.trim().is_empty() {
+                            format!("`{}` {how} (it printed nothing)", r.command)
+                        } else {
+                            format!("`{}` {how}:\n{}", r.command, r.tail.trim())
+                        }
                     })
                     .collect::<Vec<_>>()
                     .join("\n\n");
@@ -939,7 +982,7 @@ impl Run {
                         Said::Stop => {
                             let st = self.failed_station.clone();
                             self.set(&st, StationState::Failed);
-                            let why = format!("you stopped it after {} round(s)", self.round);
+                            let why = format!("you stopped it after {}", rounds(self.round));
                             self.end(RunState::Stopped, &why)
                         }
                         Said::Words(w) => {
@@ -989,7 +1032,7 @@ impl Run {
                 }
                 pr.clone_into(&mut self.pr);
                 self.view.pr = Some(pr.clone());
-                self.out("ship", format!("PR open: {pr}"), json!({ "pr": pr }), "");
+                self.out("ship", format!("{} open", pr_words(&pr)), json!({ "pr": pr }), "");
                 match self.merge_rule().as_str() {
                     "auto" => {
                         self.at = At::Merge;
@@ -1007,17 +1050,19 @@ impl Run {
                     }
                 }
             }
-            Event::Merged { ok, why } => {
+            Event::Merged { ok, why, local } => {
                 if ok {
                     let pr = self.pr.clone();
                     self.set("ship", StationState::Done);
-                    self.out("ship", format!("merged: {pr}"), json!({ "pr": pr, "merged": true }), "");
+                    let said =
+                        if local.is_empty() { format!("merged {}", pr_words(&pr)) } else { format!("merged {} · {local}", pr_words(&pr)) };
+                    self.out("ship", said, json!({ "pr": pr, "merged": true, "local": local }), "");
                     self.end(RunState::Done, "")
                 } else {
                     self.set("ship", StationState::Failed);
                     let why = format!("merge failed: {}", short(&why, 300));
                     let pr = self.pr.clone();
-                    self.out("ship", format!("PR open: {pr}"), json!({ "pr": pr }), &why);
+                    self.out("ship", format!("{} open", pr_words(&pr)), json!({ "pr": pr }), &why);
                     self.end(RunState::Failed, &why)
                 }
             }

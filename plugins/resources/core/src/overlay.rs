@@ -253,9 +253,9 @@ pub fn unknown_names(
                 continue;
             }
             let section = sections.get(&n.kind).cloned().unwrap_or_else(|| n.kind.clone());
-            let mut has = if have.is_empty() { format!("no {section} are declared") } else { format!("{section} has {}", have.join(", ")) };
+            let mut has = if have.is_empty() { format!("no {section} are declared") } else { format!("{section} has {}", some_of(have)) };
             if !more.is_empty() {
-                has = format!("{has} (or {})", more.join(", "));
+                has = format!("{has} (or {})", some_of(more));
             }
             let line = format!("{at}: no {} named {name}: {has}", n.kind);
             if !out.contains(&line) {
@@ -266,10 +266,31 @@ pub fn unknown_names(
     out
 }
 
+/// At most [`NAMES_SHOWN`] names, then how many more: a refusal names what there is without listing 32 goals in a toast
+/// 13 lines tall (audit G10).
+pub fn some_of<S: AsRef<str>>(names: &[S]) -> String {
+    let shown: Vec<&str> = names.iter().take(NAMES_SHOWN).map(AsRef::as_ref).collect();
+    match names.len().saturating_sub(NAMES_SHOWN) {
+        0 => shown.join(", "),
+        more => format!("{} and {more} more", shown.join(", ")),
+    }
+}
+
+/// How many names a refusal lists.
+pub const NAMES_SHOWN: usize = 8;
+
 #[cfg(test)]
 #[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
+
+    /// Audit G10: "no goal named tiny: goals has goal-01, goal-02, … goal-30, green-build, never" in a toast 13 lines tall.
+    #[test]
+    fn a_refusal_lists_eight_names_then_how_many_more_audit_g10() {
+        let goals: Vec<String> = (1..=32).map(|i| format!("goal-{i:02}")).collect();
+        assert_eq!(some_of(&goals), "goal-01, goal-02, goal-03, goal-04, goal-05, goal-06, goal-07, goal-08 and 24 more");
+        assert_eq!(some_of(&["a", "b"]), "a, b");
+    }
 
     fn r(kind: &str, name: &str, spec: Value) -> Resource {
         Resource::new(kind, name, spec)

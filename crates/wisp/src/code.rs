@@ -284,7 +284,9 @@ fn show_validate(plan: &Plan, loaded: &Loaded, st: &wisp_cli_api::Style) -> i32 
         say(&format!("  {} secret {s} isn't set here (wisp secret set {s})", paint(st, RED, "✗")));
     }
     if plan.problems.is_empty() && plan.missing_secrets.is_empty() {
-        say(&format!("  {} {} resources in {} (wisp: 1)", paint(st, GREEN, "✓"), loaded.resources.len(), loaded.sources.join(", ")));
+        let n = loaded.resources.len();
+        let what = if n == 1 { "1 resource".to_owned() } else { format!("{n} resources") }; // audit G17: "1 resources"
+        say(&format!("  {} {what} in {} (wisp: 1)", paint(st, GREEN, "✓"), loaded.sources.join(", ")));
         return 0;
     }
     1

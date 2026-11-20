@@ -50,9 +50,10 @@ impl Command for Declared {
     const READ_ONLY: bool = true;
     type Args = serde_json::Value;
     type Out = serde_json::Value;
-    // typed: `wisp goal declared` takes no flag, and says so for one it doesn't take (serve_cli_verbs)
+    // typed: `wisp goal declared` takes no flag, and says so for one it doesn't take (serve_cli_verbs); an agent's
+    // `goal_declared` no field (audit D6: `{ }`, not `JsonValue`, which read as `--args JSON`)
     fn args_ts() -> Option<String> {
-        Some(<serde_json::Value as ::ts_rs::TS>::inline(&::ts_rs::Config::default()))
+        Some("{ }".to_owned())
     }
 }
 

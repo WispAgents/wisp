@@ -26,7 +26,11 @@
   [data-kit='menu-item'][data-disabled] { opacity: 0.5; cursor: not-allowed; }
   [data-kit='menu-item-text'] { display: flex; flex-direction: column; flex: 1; min-width: 0; }
   [data-kit='menu-item-label'] { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  [data-kit='menu-item-hint'] { font-size: var(--fs-sm); color: var(--muted); line-height: var(--lh-snug); }
+  /* two lines at most, as the phone sheet's (audit G22: a goal's text ran to 3 lines, the flyout 633 px tall) */
+  [data-kit='menu-item-hint'] {
+    display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; overflow: hidden;
+    font-size: var(--fs-sm); color: var(--muted); line-height: var(--lh-snug); overflow-wrap: anywhere;
+  }
   [data-kit='menu-item'] > [data-kit='kbd'] { margin-left: auto; }
   [data-kit='menu-separator'] { height: var(--size-hairline); margin: var(--space-2) var(--space-3); background: var(--line); }
   [data-kit='menu-group-label'] { padding: var(--space-5) var(--space-5) var(--space-2); font-size: var(--fs-xs); font-weight: var(--fw-medium); color: var(--faint); }

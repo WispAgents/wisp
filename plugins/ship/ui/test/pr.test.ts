@@ -5,6 +5,10 @@ import { shippable } from '../src/model/pr.ts';
 import { dialogTitle } from '../src/model/ship.ts';
 import type { ShipSession } from '../src/types.ts';
 import { shipRow } from '../src/row.ts';
+import { reviewState } from '../src/model/review.ts';
+import { review } from '../src/commands.ts';
+import { t } from '../src/i18n.ts';
+import '../src/i18n/lazy.ts';
 
 const row = (over: Partial<ShipSession> = {}): ShipSession => ({ id: 'p:t1', agent: 'claude', state: 'idle', branch: 'wisp/fix-login', ...over });
 const inPlace = (over: Partial<ShipSession>): ShipSession => {
@@ -43,4 +47,18 @@ test('the synced store row reads flat, keyed by its entity key; a flat row passe
   expect(shippable(r)).toBe(true);
   expect(shipRow({ id: 'p:t1', agent: 'claude', branch: 'b' })?.branch).toBe('b');
   expect(shipRow(undefined, 'k')).toBeUndefined();
+});
+
+// Audit E5: a failed review read "Not reviewed", as one never run; Review again showed no progress. A failed review says
+// so (its why in the title), and the click's patch shows Reviewing at once.
+test('a failed review says so and Review again shows Reviewing at once_audit_E5', () => {
+  const ctx = { reviewOn: true, agentName: () => 'Codex' };
+  const failed = { id: 'local:s1', pr: { state: 'OPEN', number: 2, head: 'abc' }, review: { status: 'failed', current: true, head: 'abc', why: 'Codex timed out.', findings: [] } };
+  const v = reviewState(t, failed as never, ctx);
+  expect(v?.label).toBe('Review failed');
+  expect(v?.title).toContain('Codex timed out');
+  const row = { id: 's1', summary: { pr: failed.pr, review: failed.review } };
+  const ops = review.optimistic === 'none' || typeof review.optimistic !== 'function' ? [] : review.optimistic({ peek: () => row } as never, { key: 'local:s1' as never });
+  const next = (ops[0] as { ops: { value: unknown }[] }).ops[0]?.value;
+  expect(reviewState(t, { ...failed, review: next } as never, ctx)?.label).toBe('Reviewing');
 });

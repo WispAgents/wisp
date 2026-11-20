@@ -52,6 +52,7 @@ import {
   specOfForm,
   warning,
   type TriggerFormState,
+  switchedSpec,
 } from './trigger-form.ts';
 import './i18n/lazy.ts';
 
@@ -101,11 +102,19 @@ export default function AutomationsPage(props: { readonly client: PluginClient; 
     c.navigate({ t: 'openOverlay', overlay: { kind: 'dialog', id: 'automations.recipe' as never, params: draft } });
   const edit = (r: Recipe): void =>
     openRecipe({ editing: r.name, name: r.name, prompt: r.prompt, project: r.project ?? '', mode: r.mode ?? '', agent: r.agent ?? '', model: r.model ?? '', effort: r.effort ?? '' });
+  // the switch moves at once (ADR-0017) and goes back on a refusal, which the shell toasts (audit G3)
+  const [flipped, setFlipped] = createSignal<Readonly<Record<string, boolean>>>({});
+  const isOn = (x: Trigger): boolean => flipped()[x.name] ?? x.state !== 'off';
   const toggle = (x: Trigger): void => {
-    const spec: Record<string, unknown> = { ...(x.spec ?? {}) };
-    if (x.state === 'off') delete spec['enabled'];
-    else spec['enabled'] = false;
-    after(c.run(saveTrigger, { peer, name: x.name, spec }), () => void refetch());
+    const on = !isOn(x);
+    const settle = (): void => {
+      setFlipped(({ [x.name]: _, ...rest }) => rest);
+    };
+    setFlipped((f) => ({ ...f, [x.name]: on }));
+    void c.run(saveTrigger, { peer, name: x.name, spec: switchedSpec(x.spec ?? {}, on) }).then(
+      () => void Promise.resolve(refetch()).then(settle, settle),
+      settle,
+    );
   };
   const confirm = (): void => {
     const d = deleting();
@@ -170,7 +179,7 @@ export default function AutomationsPage(props: { readonly client: PluginClient; 
                 name: x.name,
                 line: [x.why || describeSpec(spec, { place, member, words: (cron) => cronWords(cron) })],
                 tags: triggerTags(x),
-                off: x.state === 'off',
+                off: !isOn(x),
                 actions: (
                   <>
                     <Show when={fire}>
@@ -180,7 +189,7 @@ export default function AutomationsPage(props: { readonly client: PluginClient; 
                         </Button>
                       )}
                     </Show>
-                    <KitSwitch aria-label={say('automations.page.onOff')} checked={x.state !== 'off'} onChange={() => toggle(x)} />
+                    <KitSwitch aria-label={say('automations.page.onOff')} checked={isOn(x)} onChange={() => toggle(x)} />
                     <IconButton
                       icon="pen"
                       size="sm"

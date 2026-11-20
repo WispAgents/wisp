@@ -162,7 +162,7 @@ pub(crate) async fn resume(ctx: Ctx, st: Arc<State>, id: String) -> bool {
         Resume::Ask { .. } => {
             // asked but its id never saved: ask again
             let w = m.view().waiting.clone().unwrap_or_default();
-            ask(&ctx, &call, &st, &id, &mut m, &input_v, w.question, w.options).await
+            ask(&ctx, &call, &st, &id, &mut m, &input_v, w.question, w.options, w.context).await
         }
     };
     let next = m.on(event);
@@ -199,7 +199,7 @@ async fn drive(ctx: &Ctx, st: &Arc<State>, id: &str, mut m: Run, input_v: &Value
                 }
                 Err(e) => e,
             },
-            Next::Ask { question, options } => ask(ctx, &call, st, id, &mut m, input_v, question, options).await,
+            Next::Ask { question, options, context } => ask(ctx, &call, st, id, &mut m, input_v, question, options, context).await,
             Next::Checks { task, commands, minutes } => match stopped(st, id) {
                 Some(why) => Event::Stop(why),
                 None => checks(ctx, &call, st, id, &task, &commands, minutes).await,
@@ -212,8 +212,8 @@ async fn drive(ctx: &Ctx, st: &Arc<State>, id: &str, mut m: Run, input_v: &Value
                 }
             }
             Next::Merge { task } => match ctx.run::<wisp_ship_api::Merge>(&call, wisp_ship_api::SessionArgs { session: task }).await {
-                Ok(_) => Event::Merged { ok: true, why: String::new() },
-                Err(e) => Event::Merged { ok: false, why: e.message },
+                Ok(m) => Event::Merged { ok: true, why: String::new(), local: if m.sync.ok { String::new() } else { m.sync.text } },
+                Err(e) => Event::Merged { ok: false, why: e.message, local: String::new() },
             },
         };
         next = m.on(event);
@@ -383,9 +383,20 @@ async fn ended(ctx: &Ctx, call: &Call, p: &Pending) -> Option<TaskEnd> {
 }
 
 /// Asks on the run's task and waits for the answer.
-#[allow(clippy::too_many_arguments)]
-async fn ask(ctx: &Ctx, call: &Call, st: &State, run: &str, m: &mut Run, input: &Value, question: String, options: Vec<String>) -> Event {
-    let a = r::AskArgs { id: SessionId(run.to_owned()), question, options, details: None };
+#[allow(clippy::too_many_arguments)] // the run's place (ctx, call, state, id, run, input) and the question's three parts
+async fn ask(
+    ctx: &Ctx,
+    call: &Call,
+    st: &State,
+    run: &str,
+    m: &mut Run,
+    input: &Value,
+    question: String,
+    options: Vec<String>,
+    context: String,
+) -> Event {
+    let details = (!context.is_empty()).then(|| serde_json::json!({ "context": context }));
+    let a = r::AskArgs { id: SessionId(run.to_owned()), question, options, details };
     let asked = match ctx.run::<r::Ask>(call, a).await {
         Ok(x) => x.ask_id,
         Err(e) => return Event::Failed(format!("couldn't ask: {}", e.message)),
@@ -408,7 +419,8 @@ async fn poll(ctx: &Ctx, call: &Call, st: &State, run: &str, asked: &str) -> Eve
                 return Event::Answered(answer);
             }
             Ok(r::PollAnswer::Pending) => clock.sleep(ANSWER_MS).await,
-            Ok(r::PollAnswer::Cancelled) => return Event::Stop("the question was taken back".into()),
+            // taken back: its task was stopped (`wisp stop <run>`), as `factory.stop` says it (audit G15)
+            Ok(r::PollAnswer::Cancelled) => return Event::Stop("you stopped it".into()),
             Err(e) => return Event::Failed(format!("couldn't read the answer: {}", e.message)),
         }
     }

@@ -16,11 +16,15 @@
   "wisp.factory.state.failed": "Failed",
   "wisp.factory.state.stopped": "Stopped",
   "wisp.factory.asks": "Waiting on you: {question}",
+  "wisp.factory.asksAbout": "{about} · waiting on you",
   "wisp.factory.working": "Working…",
   "wisp.factory.open": "Open {station}",
   "wisp.factory.open.nth": "Open {station} {n}",
   "wisp.factory.openPr": "Open the PR",
   "wisp.factory.stop": "Stop the run",
+  "wisp.factory.stopTitle": "Stop the factory run?",
+  "wisp.factory.stopBody": "Every station still working stops, and the run ends Stopped. Its stations’ tasks and worktrees are kept.",
+  "wisp.factory.stopCancel": "Cancel",
   "wisp.factory.actions": "Factory run actions",
   "wisp.factory.stopping": "Stopping the factory run"
 }

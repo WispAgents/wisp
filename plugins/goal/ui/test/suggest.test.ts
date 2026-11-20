@@ -39,3 +39,13 @@ test('the_goals_come_from_the_boxs_peer_asked_once_and_show_once_they_land', asy
   expect(run.mock.calls.map((c) => (c[1] as { peer: string }).peer)).toEqual(['peerA', 'peerB']);
   expect(goalItems('btw hi', { client })).toEqual([]);
 });
+
+test('a name typed whole shows no menu, so the first Enter sends it_audit_G14', () => {
+  const goals = [
+    { name: 'green-build', text: 'npm test passes' },
+    { name: 'green-build-fast', text: 'quick' },
+  ];
+  expect(goalSuggestions(goals, 'green-build')).toEqual([]);
+  expect(goalSuggestions(goals, 'GREEN-BUILD')).toEqual([]);
+  expect(goalSuggestions(goals, 'green').map((i) => i.label)).toEqual(['green-build', 'green-build-fast']);
+});

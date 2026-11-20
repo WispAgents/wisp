@@ -9,7 +9,7 @@ use std::sync::{Arc, Mutex};
 
 use serde_json::{Value, json};
 use wisp_automations_api::commands::{FireOut, LogLine, SourceRow, Tried, TriggerRow};
-use wisp_automations_api::{PROVIDERS, Polled, Provided, SOURCE, Target, TriggerEvent, TriggerFired, TriggerSpec, Zone, parse_cron};
+use wisp_automations_api::{PROVIDERS, Polled, Provided, SOURCE, Target, TriggerEvent, TriggerFired, TriggerSpec, Zone};
 use wisp_automations_core::engine::{self as core, Decision, Job, Outcome, PollOutcome, State, World};
 use wisp_kernel::{Call, Ctx, EventEnvelope, Result, WireError};
 use wisp_runtime_api::commands as rt;
@@ -83,7 +83,7 @@ pub fn zone(name: &str) -> Tz {
 }
 
 /// Whether trigger `on` takes event `ty` (`pr.*` takes `pr.opened`).
-fn takes(on: &str, ty: &str) -> bool {
+pub(crate) fn takes(on: &str, ty: &str) -> bool {
     core::glob(on, ty)
 }
 
@@ -556,7 +556,7 @@ pub fn sources(ctx: &Ctx) -> Vec<SourceRow> {
 fn due_event(t: &Live, st: &State, now: i64) -> Option<TriggerEvent> {
     match t.spec.on.as_str() {
         "schedule" => {
-            let c = parse_cron(&t.spec.cron).ok()?;
+            let c = wisp_automations_api::schedule_of(&t.spec.cron).ok()?;
             let z = zone(&t.spec.tz);
             let d = wisp_automations_core::schedule::due(&c, &z, st.last_minute, now)?;
             let summary =
@@ -588,7 +588,7 @@ fn own_next(t: &Live, now: i64) -> Option<TriggerEvent> {
     let at = match t.spec.on.as_str() {
         "schedule" => {
             let z = zone(&t.spec.tz);
-            let at = wisp_automations_api::next_run(&parse_cron(&t.spec.cron).ok()?, now, &z)?;
+            let at = wisp_automations_api::next_run(&wisp_automations_api::schedule_of(&t.spec.cron).ok()?, now, &z)?;
             let when = jiff::Timestamp::from_millisecond(at)
                 .map_or_else(|_| at.to_string(), |ts| ts.to_zoned(z.0.clone()).strftime("%a %Y-%m-%d %H:%M %Z").to_string());
             let minute = wisp_automations_core::schedule::local_minute(at, &z);

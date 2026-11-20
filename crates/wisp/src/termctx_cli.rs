@@ -53,6 +53,27 @@ async fn run(argv: &[String], cwd: &str) -> Option<String> {
     out.status.success().then(|| String::from_utf8_lossy(&out.stdout).into_owned()).filter(|s| !s.trim().is_empty())
 }
 
+/// This process's ancestors' pids, nearest first (the shell, past the npm launcher's node): at most 4.
+async fn ancestors() -> Vec<u32> {
+    #[cfg(unix)]
+    {
+        let mut out = vec![std::os::unix::process::parent_id()];
+        while out.len() < 4 {
+            let Some(&last) = out.last().filter(|p| **p > 1) else { break };
+            let o = tokio::process::Command::new("ps").args(["-o", "ppid=", "-p", &last.to_string()]).output().await;
+            let Some(p) = o.ok().and_then(|o| String::from_utf8_lossy(&o.stdout).trim().parse::<u32>().ok()).filter(|p| *p > 1) else {
+                break;
+            };
+            out.push(p);
+        }
+        out
+    }
+    #[cfg(not(unix))]
+    {
+        Vec::new()
+    }
+}
+
 fn this_tty() -> Option<String> {
     std::env::var("TTY")
         .ok()
@@ -136,7 +157,8 @@ pub async fn gather(c: Option<&Client>, cwd: &str, lines: usize, wisp_home: &Pat
                 if let Some(kept) = core::prune_log(&t, now) {
                     prune(&f, t.len(), kept).await;
                 }
-                Some(core::parse_log(&t, now)).filter(|v| !v.is_empty())
+                // only this shell's: a closed pane's tty name is reused by the next pane (audit G19)
+                Some(core::of_shell(core::parse_log(&t, now), &ancestors().await)).filter(|v| !v.is_empty())
             }
             Err(_) => None,
         },

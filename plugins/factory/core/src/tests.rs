@@ -80,6 +80,10 @@ fn a_spec_you_approve_goes_to_build_with_the_spec() {
     assert_eq!((st(&r, "spec"), r.view().station.as_str()), (StationState::Running, "spec"));
     let n = r.on(Event::Ended(vec![ok("spec0", "SPEC: add adds\n- a test")]));
     assert!(asks(&n).starts_with("Approve the spec?"));
+    // audit G5: the spec goes with the question (its context on the task, the phone, channels and `wisp show`)
+    let Next::Ask { context, .. } = &n else { panic!("{n:?}") };
+    assert_eq!(context, "SPEC: add adds\n- a test");
+    assert_eq!(r.view().waiting.as_ref().unwrap().context, "SPEC: add adds\n- a test");
     assert_eq!((r.view().state, st(&r, "spec")), (RunState::Waiting, StationState::Asking));
     assert_eq!(r.view().waiting.as_ref().unwrap().options, ["Approve", "Stop"]);
     r.asked("ask-1");
@@ -355,7 +359,7 @@ fn past_the_limit_then_ask_asks_and_one_more_round_or_words_go_on_and_stop_ends(
     r.on(Event::Checked(vec![fail("npm test", "boom")]));
     r.on(Event::Ended(vec![ok("build0", "b2")]));
     let n = r.on(Event::Checked(vec![fail("npm test", "boom again")]));
-    assert!(asks(&n).starts_with("Checks still fail after 2 round(s)"), "{n:?}");
+    assert!(asks(&n).starts_with("Checks still fail after 2 rounds"), "{n:?}");
     assert_eq!((r.view().state, r.view().round, r.view().max), (RunState::Waiting, 2, 2));
     // One more round: round 3, the limit one higher
     let n = r.on(Event::Answered("One more round".into()));
@@ -373,7 +377,7 @@ fn past_the_limit_then_ask_asks_and_one_more_round_or_words_go_on_and_stop_ends(
     let n = r.on(Event::Checked(vec![fail("npm test", "boom 4")]));
     asks(&n);
     let n = r.on(Event::Answered("Stop".into()));
-    assert_eq!(n, Next::End { state: RunState::Stopped, why: "you stopped it after 4 round(s)".into() });
+    assert_eq!(n, Next::End { state: RunState::Stopped, why: "you stopped it after 4 rounds".into() });
 }
 
 #[test]
@@ -386,7 +390,7 @@ fn past_the_limit_then_stop_ends_failed_and_says_why() {
     let n = r.on(Event::Checked(vec![fail("make lint", "unused import")]));
     let Next::End { state, why } = n else { panic!("{n:?}") };
     assert_eq!(state, RunState::Failed);
-    assert!(why.starts_with("Checks still fail after 1 round(s)") && why.contains("unused import"), "{why}");
+    assert!(why.starts_with("Checks still fail after 1 round") && why.contains("unused import"), "{why}");
     assert_eq!(r.view().why, why);
 }
 
@@ -454,8 +458,14 @@ fn ship_opens_the_pr_and_merge_human_asks_before_merging() {
     assert_eq!(asks(&n), "The PR is open (https://github.com/a/b/pull/7). Merge it?");
     assert_eq!(r.view().pr.as_deref(), Some("https://github.com/a/b/pull/7"));
     assert_eq!(r.on(Event::Answered("Merge".into())), Next::Merge { task: "build0".into() });
-    assert_eq!(r.on(Event::Merged { ok: true, why: String::new() }), Next::End { state: RunState::Done, why: String::new() });
+    let local = "Local main was not updated: your uncommitted changes to math.js are in the way. Commit or stash them, then pull.";
+    assert_eq!(
+        r.on(Event::Merged { ok: true, why: String::new(), local: local.into() }),
+        Next::End { state: RunState::Done, why: String::new() }
+    );
     assert_eq!(st(&r, "ship"), StationState::Done);
+    // audit G20: the run says your checkout wasn't brought up to date, as `wisp merge` does
+    assert_eq!(r.view().stations.iter().find(|s| s.id == "ship").unwrap().output, format!("merged PR #7 · {local}"));
     // Leave it open: done, the PR stays
     let mut r = Run::new(input(spec(json!({ "stations": { "build": {}, "ship": {} } }))));
     let n = r.start();
@@ -626,4 +636,12 @@ fn a_station_is_cut_when_the_runs_total_passes_the_budget() {
     assert_eq!(r.over_budget(0.6), None);
     assert!(r.over_budget(1.2).is_some_and(|w| w.contains("budget ($1.00)")));
     assert_eq!(Run::new(input(builtin_default())).over_budget(99.0), None, "no budget: never");
+}
+
+/// Audit G15: "after 1 round(s)", a check that printed nothing ended on a dangling colon, and Ship said a raw URL.
+#[test]
+fn the_runs_words_say_rounds_prs_and_a_silent_check_plainly_audit_g15() {
+    assert_eq!((rounds(1), rounds(3)), ("1 round".to_owned(), "3 rounds".to_owned()));
+    assert_eq!(pr_words("https://github.com/acme/repo/pull/2"), "PR #2");
+    assert_eq!(pr_words("https://gitlab.example/x/-/merge_requests/9"), "https://gitlab.example/x/-/merge_requests/9");
 }

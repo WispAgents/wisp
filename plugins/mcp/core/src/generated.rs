@@ -128,6 +128,25 @@ pub fn call_args(spec: &wisp_kernel::decl::ArgSpec, input: &Value, session: Opti
     Value::Object(v)
 }
 
+/// A field the call gives that the command doesn't take, refused in words that name what it does take (audit D6: an
+/// unknown field was dropped, so a typo'd `ids` read as nothing given). None when every field is the command's (or its
+/// type is open: `{ … } & { … }`, an index signature).
+pub fn unknown_field(tool: &str, spec: &wisp_kernel::decl::ArgSpec, args: &Value) -> Option<String> {
+    if !spec.object || spec.open {
+        return None;
+    }
+    let Value::Object(o) = args else { return None };
+    // `args` left empty (the documented form, `{"args":{}}`) says nothing
+    let empty = |v: &Value| v.is_null() || v.as_object().is_some_and(Map::is_empty);
+    let bad = o.iter().find(|(k, v)| !(spec.fields.iter().any(|f| f.name == **k) || (k.as_str() == "args" && empty(v))))?.0;
+    let takes: Vec<&str> = spec.fields.iter().map(|f| f.name.as_str()).collect();
+    Some(if takes.is_empty() {
+        format!("{tool} takes no arguments: {bad} isn't one")
+    } else {
+        format!("{tool} has no field {bad}: it takes {}", takes.join(", "))
+    })
+}
+
 /// A command's refusal as a tool's words: serde's "missing field `id`" says which field and what it is (audit D6:
 /// "crew.get: missing field `id`").
 pub fn said(id: &str, spec: &wisp_kernel::decl::ArgSpec, message: &str) -> String {
@@ -176,6 +195,27 @@ pub fn find_peer(list: &Value, on: &str) -> Option<String> {
 #[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
+
+    /// Audit D6: a generated tool's unknown field was dropped (a typo read as nothing given); it's refused, naming the
+    /// fields; an open type (`{ … } & { … }`) and a type of no fields still say so.
+    #[test]
+    fn an_unknown_field_is_refused_naming_the_fields_audit_d6() {
+        let spec = parse(Some("{ id: string, limit?: number, }"));
+        assert_eq!(unknown_field("crew_get", &spec, &json!({ "id": "a", "limit": 1 })), None);
+        assert_eq!(
+            unknown_field("crew_get", &spec, &json!({ "id": "a", "lmit": 1 })),
+            Some("crew_get has no field lmit: it takes id, limit".into())
+        );
+        let open = parse(Some("{ id: string, } & { name?: string, }"));
+        assert!(open.open && unknown_field("x", &open, &json!({ "id": "a", "name": "b" })).is_none());
+        let none = parse(Some("{ }"));
+        assert_eq!(unknown_field("crew_list", &none, &json!({ "x": 1 })), Some("crew_list takes no arguments: x isn't one".into()));
+        assert_eq!(
+            unknown_field("crew_list", &parse(Some("null")), &json!({ "x": 1 })),
+            Some("crew_list takes no arguments: x isn't one".into())
+        );
+        assert_eq!(unknown_field("crew_list", &parse(Some("null")), &json!({})), None);
+    }
 
     /// Audit E10: the documented `args` form for a tool with declared fields, and a run's own task filled in.
     #[test]

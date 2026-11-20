@@ -21,6 +21,8 @@ export const goalWord = (query: string): string | undefined => /^goal (\S*)$/i.e
  *  name or in what done means, each A–Z; at most MAX. */
 export function goalSuggestions(goals: readonly Declared[], word: string): PromptItem[] {
   const w = word.toLowerCase();
+  // the whole name typed: no menu, so the first Enter sends it (audit G14: Enter picked the same text, the second sent)
+  if (w && goals.some((g) => g.name.toLowerCase() === w)) return [];
   const byName = (a: Declared, b: Declared): number => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' });
   const starts = goals.filter((g) => g.name.toLowerCase().startsWith(w)).sort(byName);
   const holds = w ? goals.filter((g) => !g.name.toLowerCase().startsWith(w) && `${g.name}\n${g.text}`.toLowerCase().includes(w)).sort(byName) : [];

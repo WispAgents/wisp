@@ -208,6 +208,9 @@ fn untyped(raw: &str) -> Value {
     }
 }
 
+/// The words a switch takes after it as its value.
+const BOOL_WORDS: [&str; 8] = ["true", "false", "yes", "no", "on", "off", "1", "0"];
+
 /// The command's arguments from the words after its verb.
 #[allow(clippy::many_single_char_names)]
 pub fn build(v: &Verb, rest: &[String]) -> Result<Value, Usage> {
@@ -272,6 +275,10 @@ pub fn build(v: &Verb, rest: &[String]) -> Result<Value, Usage> {
         };
         let raw = match (inline, &f.kind) {
             (Some(x), _) => x,
+            // a switch takes a true/false said after it (`--paused false`: audit G12 read "false" as the member)
+            (None, Kind::Bool) if rest.get(i).is_some_and(|n| BOOL_WORDS.contains(&n.to_ascii_lowercase().as_str())) => {
+                rest.get(i).cloned().inspect(|_| i += 1).unwrap_or_default()
+            }
             (None, Kind::Bool) => "true".into(),
             (None, _) => rest.get(i).cloned().inspect(|_| i += 1).ok_or_else(|| Usage(format!("--{} needs a value", f.flag())))?,
         };
@@ -438,6 +445,25 @@ mod tests {
 
     fn w(s: &str) -> Vec<String> {
         s.split(' ').map(str::to_owned).collect()
+    }
+
+    /// Audit G12: `wisp crew update Ada --paused false` read "false" as the member ("Ada false": "No such crew member").
+    /// A switch takes a following true/false (and `=false`); any other word after it is still a word.
+    #[test]
+    fn a_switch_takes_true_or_false_after_it_audit_g12() {
+        let c = Catalogue::new(vec![info("crew.update", Some("{ id: string, paused?: boolean, name?: string, }"))]);
+        let (v, _) = c.resolve(&w("crew update")).unwrap();
+        for (said, want) in [
+            ("Ada --paused false", json!({ "id": "Ada", "paused": false })),
+            ("Ada --paused=false", json!({ "id": "Ada", "paused": false })),
+            ("Ada --paused off", json!({ "id": "Ada", "paused": false })),
+            ("Ada --paused true", json!({ "id": "Ada", "paused": true })),
+            ("Ada --paused", json!({ "id": "Ada", "paused": true })),
+            ("--paused Ada", json!({ "id": "Ada", "paused": true })),
+            ("Ada --no-paused", json!({ "id": "Ada", "paused": false })),
+        ] {
+            assert_eq!(build(v, &w(said)).unwrap(), want, "{said}");
+        }
     }
 
     #[test]

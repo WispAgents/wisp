@@ -51,11 +51,8 @@ impl Command for List {
     type Args = Value;
     /// typed for the generated CLI (flags, --help) and the MCP tools (ADR-0022): a flag it doesn't take is refused
     fn args_ts() -> Option<String> {
-        Some(format!(
-            "{}{}",
-            <Value as ::ts_rs::TS>::docs().unwrap_or_default(),
-            <Value as ::ts_rs::TS>::inline(&::ts_rs::Config::default())
-        ))
+        // it takes nothing: `{ }` (audit D6: `JsonValue` read as `--args JSON`, the tool as `{args}`)
+        Some("{ }".to_owned())
     }
     type Out = Vec<PluginRow>;
 }
@@ -136,7 +133,8 @@ pub struct AgentCheckArgs {
 /// The argument type of a command that takes any JSON (`plugins.ui`, `plugins.styles`), for the generated CLI: it takes
 /// no flag, so one it's given is refused (QA round 15).
 pub fn any_args_ts() -> Option<String> {
-    Some(<Value as ts_rs::TS>::inline(&ts_rs::Config::default()))
+    // `{ }`: no field (audit D6: `JsonValue` read as `--args JSON`, and the tool as `{args}`)
+    Some("{ }".to_owned())
 }
 
 /// `plugins.agent.list` (`wisp_plugins`): the plugins the user has, in plain words; theirs with their manifests.

@@ -663,8 +663,16 @@ impl Runtime {
             opts,
             ..QueueItem::default()
         };
-        // a setup card waits on the user's own answer (ADR-0113): a follow-up queues behind it, the card stays
+        // a setup card waits on the user's own answer (ADR-0113): a follow-up queues behind it, the card stays; but a
+        // card's answer (Allow, Deny, yes, no) is never queued as a prompt, from any client (audit G4: "Allow" ran as the
+        // agent's next turn)
         if crate::more::open_setup(&s).is_some() {
+            if !item.text.trim().is_empty() && wisp_runtime_core::setup::allowed(&item.text).1.is_none() {
+                return Err(RuntimeError::Conflict(format!(
+                    "This task waits on its setup card: answer the card (wisp reply {} Allow, or Deny), not with a follow-up.",
+                    a.id.as_str()
+                )));
+            }
             let id = item.id.clone();
             s.queue.push(item);
             self.persist(&mut s, Vec::new()).await?;

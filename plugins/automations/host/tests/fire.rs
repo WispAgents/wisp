@@ -112,6 +112,26 @@ async fn a_cron_schedule_starts_its_task_on_its_minute_once_in_its_project() {
     assert_eq!(rt.made().len(), 1, "a daily schedule fired twice");
 }
 
+/// Audit G11: `on: schedule, cron: "every minute"` (kinds.md: "a cron or words") passed its check and then fired 0 times
+/// in 3 minutes: the engine read 5 fields only. Words are read as the check reads them.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_schedule_in_words_fires_audit_g11() {
+    let (rt, clock) = (Rt::default(), FakeClock::at(T0));
+    let spec = TriggerSpec {
+        on: "schedule".into(),
+        cron: "every minute".into(),
+        tz: "UTC".into(),
+        prompt: "Tick".into(),
+        project: "/repo".into(),
+        mode: "plan".into(),
+        ..TriggerSpec::default()
+    };
+    let _k = kernel(&rt, &clock, vec![("tick".into(), spec)]).await;
+    run_for(&clock, 3 * 60_000).await;
+    // its first minute fires (0 before); the next ones skip while that run goes (concurrency: skip)
+    assert!(!rt.made().is_empty(), "it never fired");
+}
+
 async fn push(k: &Kernel, user: &str, text: &str, n: u32) -> Value {
     let ev = json!({ "on": "chat.message", "key": format!("chat:slack:{user}:{n}"), "at": T0, "summary": text,
         "payload": { "channel": "slack", "user": user, "text": text, "trusted": true } });

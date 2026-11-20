@@ -151,3 +151,29 @@ async fn a_setup_card_is_answered_from_a_channel_only_by_the_linked_person() {
     h.act(&tap("s2", "c2", 0, true)).await.unwrap();
     assert_eq!(answers.lock().unwrap().clone(), vec![json!({ "id": "s2", "text": "Allow", "askId": "c2" })]);
 }
+
+/// Audit G4: "Allow" typed in a chat was sent as a follow-up ("Sent."): it queued behind the card and later ran as the
+/// agent's prompt. A typed reply from the linked person answers the open card, naming it (words are the Deny with
+/// them, ADR-0113 rule 4); from anyone the channel can't vouch for, it says to answer in wisp and sends nothing.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_typed_reply_under_a_setup_card_answers_it_only_for_the_linked_person_audit_g4() {
+    let (_k, h, answers) = hub().await;
+    let typed = |text: &str, person: bool| ActArgs {
+        session_id: "s2".into(),
+        kind: ActKind::Text,
+        reference: None,
+        index: None,
+        text: Some(text.into()),
+        approvals: false,
+        person,
+    };
+    let said = h.act(&typed("Allow", false)).await.unwrap();
+    assert!(said.contains("answer it in wisp"), "{said}");
+    assert!(answers.lock().unwrap().is_empty());
+    h.act(&typed("Allow", true)).await.unwrap();
+    h.act(&typed("not that one", true)).await.unwrap();
+    assert_eq!(
+        answers.lock().unwrap().clone(),
+        vec![json!({ "id": "s2", "text": "Allow", "askId": "c2" }), json!({ "id": "s2", "text": "not that one", "askId": "c2" })]
+    );
+}

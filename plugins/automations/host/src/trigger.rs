@@ -33,6 +33,22 @@ async fn refresh(inner: &StoredKind, engine: &Engine) {
     *engine.declared.lock().unwrap_or_else(std::sync::PoisonError::into_inner) = list;
 }
 
+/// An `on` no source offers (no plugin's, on or off): refused, naming the sources (audit G11: `on: "every minute"` was
+/// stored "unavailable" and never fired). A glob (`pr.*`) is fine when it takes one of them.
+pub(crate) fn no_source(on: &str, sources: &[wisp_automations_api::commands::SourceRow]) -> Option<String> {
+    let on = on.trim();
+    if on.is_empty() || sources.iter().any(|r| crate::engine::takes(on, &r.on.on) || crate::engine::takes(&r.on.on, on)) {
+        return None;
+    }
+    let mut names: Vec<&str> = sources.iter().map(|r| r.on.on.as_str()).collect();
+    names.sort_unstable();
+    names.dedup();
+    let more = names.len().saturating_sub(12);
+    let list = names.into_iter().take(12).collect::<Vec<_>>().join(", ");
+    let list = if more > 0 { format!("{list} and {more} more (wisp trigger sources)") } else { list };
+    Some(format!("on: {on} is no source (a schedule is on: schedule with cron: \"every minute\"); sources: {list}"))
+}
+
 impl ResourceKind for TriggerKind {
     fn info(&self) -> KindInfo {
         self.inner.info()
@@ -48,7 +64,11 @@ impl ResourceKind for TriggerKind {
     }
     fn check(&self, r: &Resource) -> Vec<String> {
         match serde_json::from_value::<TriggerSpec>(r.spec.clone()) {
-            Ok(s) => wisp_automations_api::spec::check(&s),
+            Ok(s) => {
+                let mut out = wisp_automations_api::spec::check(&s);
+                out.extend(no_source(&s.on, &crate::engine::sources(&self.ctx)));
+                out
+            }
             Err(e) => vec![format!("not a trigger: {e}")],
         }
     }
@@ -433,6 +453,22 @@ fn spell_project(spec: &mut Value) {
 #[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
+
+    /// Audit G11: `on: "every minute"` (no source) passed validate and apply, was stored "unavailable" and never fired.
+    #[test]
+    fn an_on_that_names_no_source_is_refused_naming_the_sources_audit_g11() {
+        let row = |on: &str| wisp_automations_api::commands::SourceRow {
+            plugin: "wisp.automations".into(),
+            available: true,
+            on: wisp_automations_api::SourceOn { title: on.into(), on: on.into(), fields: json!({}), mode: "event".into(), every: None },
+        };
+        let list = [row("schedule"), row("pr.opened"), row("task.finished")];
+        let no = no_source("every minute", &list).unwrap();
+        assert!(no.starts_with("on: every minute is no source") && no.contains("pr.opened, schedule, task.finished"), "{no}");
+        for ok in ["schedule", "pr.*", "task.finished", ""] {
+            assert_eq!(no_source(ok, &list), None, "{ok}");
+        }
+    }
 
     #[test]
     fn a_project_given_by_its_name_is_told_from_a_folder_audit_a_14() {

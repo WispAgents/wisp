@@ -14,6 +14,16 @@ pub struct Verdict {
     pub met: bool,
     /// why not (empty when met)
     pub why: String,
+    /// it couldn't judge (its run failed: no such agent, a sandbox refused): no vote on the work (audit G2)
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub failed: bool,
+}
+
+impl Verdict {
+    /// A judge that couldn't judge, and why.
+    pub fn failed(judge: &str, why: String) -> Self {
+        Self { judge: judge.to_owned(), met: false, why, failed: true }
+    }
 }
 
 /// A judge's answer read: `NOT MET: why` (or `not met — why`) is no, `MET` is yes; anything else is no,
@@ -23,12 +33,17 @@ pub fn verdict(judge: &str, answer: &str) -> Verdict {
     if let Some(at) = up.find("NOT MET") {
         let why = answer[at + 7..].trim_start_matches([':', ' ', '-', '—']).lines().next().unwrap_or_default();
         let why = why.split(['"', '`']).next().unwrap_or_default().trim().to_owned();
-        return Verdict { judge: judge.to_owned(), met: false, why: if why.is_empty() { "the goal isn't met yet".into() } else { why } };
+        return Verdict {
+            judge: judge.to_owned(),
+            met: false,
+            why: if why.is_empty() { "the goal isn't met yet".into() } else { why },
+            failed: false,
+        };
     }
     if up.contains("MET") {
-        return Verdict { judge: judge.to_owned(), met: true, why: String::new() };
+        return Verdict { judge: judge.to_owned(), met: true, why: String::new(), failed: false };
     }
-    Verdict { judge: judge.to_owned(), met: false, why: format!("{judge} didn't say whether it's met") }
+    Verdict { judge: judge.to_owned(), met: false, why: format!("{judge} didn't say whether it's met"), failed: false }
 }
 
 /// The votes counted: `all`, `any`, else a majority (a tie isn't met).
@@ -58,8 +73,18 @@ pub fn next(vote: &str, v: &[Verdict], round: u32, max: u32) -> Next {
     }
     let why: Vec<String> = v.iter().filter(|x| !x.met).map(|x| format!("{}: {}", x.judge, x.why)).collect();
     let why = why.join("\n");
+    // no judge said what's missing, one or more couldn't judge at all: the work isn't sent back for that (it would go
+    // round to its limit on a judge that never ran), it stops once and says why (audit G2)
+    if v.iter().any(|x| x.failed) && v.iter().all(|x| x.met || x.failed) {
+        let failed: Vec<&str> = v.iter().filter(|x| x.failed).map(|x| x.why.as_str()).collect();
+        return Next::Stall(format!(
+            "The goal can't be judged: {}\nThe work isn't sent back for that. Fix the judge (or set the goal's judges), then check it again.",
+            failed.join("; ")
+        ));
+    }
     if round >= max.max(1) {
-        Next::Stall(format!("The goal isn't met after {round} rounds.\n{why}\nKeep going?"))
+        let rounds = if round == 1 { "1 round".to_owned() } else { format!("{round} rounds") };
+        Next::Stall(format!("The goal isn't met after {rounds}.\n{why}\nKeep going?"))
     } else {
         Next::Again(format!("The goal isn't met yet. What the judges said:\n{why}\nKeep going until it is."))
     }
@@ -73,6 +98,7 @@ pub fn judge_prompt(goal: &str, title: &str, answer: &str) -> String {
 }
 
 #[cfg(test)]
+#[allow(clippy::panic)]
 mod tests {
     use super::*;
 
@@ -85,7 +111,7 @@ mod tests {
         let v = |m: &[bool]| {
             m.iter()
                 .enumerate()
-                .map(|(i, &met)| Verdict { judge: format!("j{i}"), met, why: if met { String::new() } else { "x".into() } })
+                .map(|(i, &met)| Verdict { judge: format!("j{i}"), met, why: if met { String::new() } else { "x".into() }, failed: false })
                 .collect::<Vec<_>>()
         };
         assert!(met("majority", &v(&[true, true, false])) && !met("majority", &v(&[true, false])));
@@ -93,6 +119,24 @@ mod tests {
         assert_eq!(next("all", &v(&[true]), 1, 3), Next::Met);
         assert!(matches!(next("all", &v(&[false]), 1, 3), Next::Again(_)));
         assert!(matches!(next("all", &v(&[false]), 3, 3), Next::Stall(s) if s.contains("after 3 rounds")));
+    }
+
+    /// Audit G2: a judge that couldn't judge (no harness `critic`) never sends the work back: the goal stops at once,
+    /// saying why once, instead of going round to its limit; a judge that did say NOT MET still sends it back. G16:
+    /// "after 1 round", not "1 rounds".
+    #[test]
+    fn a_judge_that_cant_judge_stops_the_goal_once() {
+        let broke = Verdict::failed("critic", "critic couldn't judge: no harness critic".into());
+        match next("majority", std::slice::from_ref(&broke), 1, 4) {
+            Next::Stall(q) => {
+                assert!(q.starts_with("The goal can't be judged: critic couldn't judge: no harness critic"), "{q}");
+                assert_eq!(q.matches("no harness critic").count(), 1, "said once: {q}");
+            }
+            other => panic!("sent back: {other:?}"),
+        }
+        let said = verdict("reviewer", "NOT MET: tests fail");
+        assert!(matches!(next("all", &[broke, said], 1, 4), Next::Again(_)), "a real NOT MET still sends it back");
+        assert!(matches!(next("all", &[verdict("r", "NOT MET: x")], 1, 1), Next::Stall(s) if s.contains("after 1 round.")));
     }
 }
 

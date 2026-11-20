@@ -55,6 +55,8 @@ pub struct Cleanup {
     queue: Mutex<VecDeque<Job>>,
     cleaning: std::sync::Mutex<Option<Progress>>,
     scanning: Mutex<()>,
+    /// a `du` under way (it runs beside the looks, never inside one)
+    sizing: Mutex<()>,
     /// the longest a look runs (`sweep::LOOK_MAX_MS`; a test's shorter)
     look_max: std::sync::atomic::AtomicU64,
     /// a look started or ended, or a clean-up moved: the pane's rows are republished (`pane::publish`)
@@ -87,6 +89,7 @@ impl Cleanup {
             queue: Mutex::new(VecDeque::new()),
             cleaning: std::sync::Mutex::new(None),
             scanning: Mutex::new(()),
+            sizing: Mutex::new(()),
             look_max: sweep::LOOK_MAX_MS.into(),
             changed: tokio::sync::Notify::new(),
         })
@@ -111,6 +114,28 @@ impl Cleanup {
     /// A new folder: sizes are stale.
     pub async fn added(&self) {
         self.seen.lock().await.changed = true;
+    }
+
+    /// `du` of wisp's worktrees in a task of its own (one at a time; stopped with the plugin): the sizes land when it ends,
+    /// and the pane is told.
+    fn size_all(self: &Arc<Self>, dir: String, now: i64) -> tokio::task::JoinHandle<()> {
+        let me = self.clone();
+        let owner = self.engine.owner.clone();
+        tokio::spawn(async move {
+            let Ok(_one) = me.sizing.try_lock() else { return };
+            tokio::select! {
+                () = owner.cancelled() => {}
+                z = me.du(&dir) => {
+                    if let Some(z) = z {
+                        let mut s = me.seen.lock().await;
+                        s.sizes = z;
+                        s.sized = now;
+                        s.changed = false;
+                    }
+                    me.changed.notify_one();
+                }
+            }
+        })
     }
 
     async fn du(&self, dir: &str) -> Option<HashMap<String, u64>> {
@@ -151,7 +176,7 @@ impl Cleanup {
 
     /// One look; a look already under way is joined, not repeated. It ends within `look_max` (audit B #18: a look that
     /// never ended kept the pane on "still looking…" 40+ minutes): one that runs past it keeps what the last look had.
-    pub async fn scan(&self) {
+    pub async fn scan(self: &Arc<Self>) {
         let Ok(one) = self.scanning.try_lock() else {
             let _wait = self.scanning.lock().await;
             return;
@@ -171,15 +196,18 @@ impl Cleanup {
         self.changed.notify_one();
     }
 
-    async fn look(&self) {
+    async fn look(self: &Arc<Self>) {
         let now = self.engine.clock.now_ms();
         let dir = dir_of(&self.engine);
         let (prev_trees, sized, changed) = {
             let s = self.seen.lock().await;
             (s.trees.clone(), s.sized, s.changed)
         };
-        let du = sweep::du_due(changed, sized, now, self.port.machine_short());
-        let (sizes, disk) = tokio::join!(async { if du { self.du(&dir).await } else { None } }, self.disk(&dir));
+        // the sizes on their own (audit E6: `du` over ~60 worktrees, given 120 s, came before every other part of a look
+        // cut at 90 s, so no look ever ended): they land when du does; the look waits for them at most half its time
+        let sizing = sweep::du_due(changed, sized, now, self.port.machine_short()).then(|| self.size_all(dir.clone(), now));
+        let wait = std::time::Duration::from_millis(self.look_max.load(std::sync::atomic::Ordering::Relaxed) / 2);
+        let disk = self.disk(&dir).await;
         let tasks = self.port.tasks().await;
         let known: HashSet<String> = tasks.iter().flat_map(|t| own_trees(&self.engine, t)).map(|w| w.path.clone()).collect();
         let leftovers: Vec<String> =
@@ -191,12 +219,11 @@ impl Cleanup {
             all.push((self.leftover(&path).await, 0));
         }
         let found = self.look_all(all, &prev_trees).await;
-        let mut s = self.seen.lock().await;
-        if let Some(z) = sizes {
-            s.sizes = z;
-            s.sized = now;
-            s.changed = false;
+        // the sizes, when du ends soon after the rest (its own task keeps going past this, and writes them then)
+        if let Some(h) = sizing {
+            let _ = tokio::time::timeout(wait, h).await;
         }
+        let mut s = self.seen.lock().await;
         s.trees = found;
         s.leftovers = leftovers;
         if disk.is_some() {
@@ -494,7 +521,7 @@ impl Cleanup {
     }
 
     /// The hourly look. Nothing while the machine is short (the next one catches up).
-    pub async fn sweep(&self, limits: DiskLimits) -> SweepOut {
+    pub async fn sweep(self: &Arc<Self>, limits: DiskLimits) -> SweepOut {
         if self.cleaning().is_some() {
             return SweepOut::default();
         }

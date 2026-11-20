@@ -165,7 +165,7 @@ async fn a_task_goes_through_the_default_factory_end_to_end() {
     assert_eq!(pr, "https://github.com/acme/repo/pull/1");
     let gh: Value = serde_json::from_str(&std::fs::read_to_string(&state).unwrap()).unwrap();
     assert_eq!(gh["prs"]["1"]["state"], "OPEN", "{gh:#}");
-    assert!(gh["prs"]["1"]["body"].as_str().unwrap().contains("Made by the wisp factory `default` in 2 round(s)."), "{gh:#}");
+    assert!(gh["prs"]["1"]["body"].as_str().unwrap().contains("Made by the wisp factory `default` in 2 rounds."), "{gh:#}");
 
     // 6. your yes merges it, and the run is done
     let ask = run["waiting"]["askId"].as_str().unwrap().to_owned();
@@ -188,6 +188,14 @@ async fn a_task_goes_through_the_default_factory_end_to_end() {
     let (code, out, err) = wisp(&dir, port, &["show", &id]);
     assert_eq!(code, 0, "{out}{err}");
     assert!(out.contains("default: ✓ spec · ✓ build · ✓ checks · ✓ review · ✓ ship"), "{out}");
+    // audit G15: Ship says the PR as people say it, and `wisp ls` names the factory, never a harness (ADR-0114 rule 14)
+    // audit G20: the project's checkout has an uncommitted math.js, so local main wasn't updated, and the run says so
+    let ship = station(&run, "ship")["output"].as_str().unwrap_or_default().to_owned();
+    assert!(ship.starts_with("merged PR #1 · Local main was not updated:"), "{ship}");
+    let (code, out, err) = wisp(&dir, port, &["ls"]);
+    assert_eq!(code, 0, "{out}{err}");
+    let line = out.lines().find(|l| l.starts_with(id.as_str())).unwrap_or_default();
+    assert!(line.contains("Factory · default"), "{out}");
     drop(serve);
 }
 

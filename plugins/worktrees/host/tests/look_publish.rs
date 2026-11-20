@@ -120,3 +120,61 @@ async fn a_look_that_hangs_ends_and_the_pane_stops_saying_its_looking() {
     assert!(!wisp_worktrees::pane::looking_for_offers(c.view(false).await, false).looking);
     std::fs::remove_dir_all(&dir).ok();
 }
+
+/// `local()`, but `du` never answers (a home with ~60 worktrees and their `node_modules`, audit E6).
+struct SlowDu(wisp_proc::Proc);
+impl wisp_proc::ProcService for SlowDu {
+    fn which(&self, bin: &str, env: Option<Vec<(String, String)>>) -> BoxFuture<'static, Option<std::path::PathBuf>> {
+        self.0.which(bin, env)
+    }
+    fn spawn(&self, bin: &str, args: &[String], opts: wisp_proc::SpawnOpts) -> wisp_proc::Result<wisp_proc::Child> {
+        self.0.spawn(bin, args, opts)
+    }
+    fn exec(&self, bin: &str, args: &[String], opts: wisp_proc::ExecOpts) -> BoxFuture<'static, wisp_proc::Result<wisp_proc::ExecResult>> {
+        if bin == "du" {
+            return Box::pin(std::future::pending());
+        }
+        self.0.exec(bin, args, opts)
+    }
+    fn spawn_detached(&self, bin: &str, args: &[String], opts: wisp_proc::SpawnOpts) -> wisp_proc::Result<u32> {
+        self.0.spawn_detached(bin, args, opts)
+    }
+    fn live(&self) -> usize {
+        self.0.live()
+    }
+    fn kill_all(&self, grace: Duration) -> BoxFuture<'static, ()> {
+        self.0.kill_all(grace)
+    }
+}
+
+/// Audit E6: with ~60 worktrees `worktrees.view` said `looking: true, last: null` for 45 minutes. The look waited on `du`
+/// (120 s) before it looked at a single worktree, inside its own 90 s limit: it was cut every time, with nothing kept,
+/// and the next view started it again. The sizes come on their own; the look ends with all 60 found.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_look_over_sixty_worktrees_ends_whatever_du_takes_audit_e6() {
+    let dir = std::env::temp_dir().join(format!("wisp-wt-sixty-{}", std::process::id()));
+    for i in 0..60 {
+        std::fs::create_dir_all(dir.join(format!("h/worktrees/proj-{i:02}"))).unwrap();
+        std::fs::write(dir.join(format!("h/worktrees/proj-{i:02}/a.txt")), "x").unwrap();
+    }
+    let git = wisp_git::service(wisp_proc::local(), None, Arc::new(|| 1_000_000), None);
+    let engine = Engine::new(
+        Arc::new(wisp_git::Service(git)),
+        Arc::new(SlowDu(wisp_proc::local())),
+        wisp_testkit::FakeClock::at(1_000_000).service(),
+        dir.join("h").to_string_lossy().into_owned(),
+        dir.join("u").to_string_lossy().into_owned(),
+        "macos",
+        Vec::new(),
+        CancellationToken::new(),
+    );
+    let c = Cleanup::new(Arc::new(engine), MemPort::new(Vec::new(), WtSettings::default()), Call::new_root(Caller::user()));
+    c.set_look_max(10_000);
+    let at = std::time::Instant::now();
+    tokio::time::timeout(Duration::from_secs(30), c.scan()).await.expect("the look ends");
+    assert!(at.elapsed() < Duration::from_secs(9), "it ended on its own, not cut at its limit: {:?}", at.elapsed());
+    let v = c.view(false).await;
+    assert!(!v.looking, "done looking");
+    assert_eq!(v.leftovers.len(), 60, "every worktree found");
+    std::fs::remove_dir_all(&dir).ok();
+}

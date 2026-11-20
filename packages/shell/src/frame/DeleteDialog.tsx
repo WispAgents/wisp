@@ -4,9 +4,11 @@
 // Enter can't open it (audit A #11).
 import type { JSX } from 'solid-js';
 import type { EntityKey } from '@wisp/client';
-import { Button, Inline, Stack, Text } from '@wisp/ui';
+import { Button, Inline, Stack, Text, useSignal } from '@wisp/ui';
 import { useShell } from '../context.tsx';
 import { remove } from './commands.ts';
+import { SESSION, type SessionRow } from '../rows.ts';
+import { deleteWords } from './delete-words.ts';
 import '../i18n/lazy.ts';
 
 /** The delete dialog's overlay id: `{ id }` is the task's key. */
@@ -16,6 +18,7 @@ export default function DeleteDialog(props: { readonly params: { readonly id: st
   const shell = useShell();
   const t = shell.t;
   const key = props.params.id as EntityKey;
+  const row = useSignal(shell.client.entities.row<SessionRow>(SESSION, key));
   const close = (): void => shell.navigate({ t: 'closeOverlay', id: DELETE as never });
   const confirm = (): void => {
     close();
@@ -25,7 +28,7 @@ export default function DeleteDialog(props: { readonly params: { readonly id: st
   };
   return (
     <Stack gap="4" part="task.delete">
-      <Text tone="muted">{t('shell.delete.body')}</Text>
+      <Text tone="muted">{t(deleteWords(row()?.summary as { factory?: unknown } | undefined))}</Text>
       <Inline gap="3" justify="end">
         <Button variant="ghost" onClick={close} part="task.delete.cancel">
           {t('shell.stop.cancel')}

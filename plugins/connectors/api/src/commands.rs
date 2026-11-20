@@ -139,45 +139,57 @@ pub struct TurnQuery {
 
 /// The agent tools speak for one session: the caller's own, or `sid` from v1's URL when the caller is
 /// the user or the kernel. An agent naming another session is refused.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default, TS)]
 pub struct AgentArgs {
     /// wisp.mcp sends it as `session`
     #[serde(default, alias = "session", skip_serializing_if = "Option::is_none")]
+    #[ts(rename = "session", optional)]
     pub sid: Option<String>,
 }
 
 /// `wisp_connector_add`: key names only (`env: ["API_KEY"]`); a value would sit in the transcript.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default, TS)]
 pub struct AgentAddArgs {
     /// wisp.mcp sends it as `session`
     #[serde(default, alias = "session", skip_serializing_if = "Option::is_none")]
+    #[ts(rename = "session", optional)]
     pub sid: Option<String>,
     #[serde(default)]
+    #[ts(optional)]
     pub name: Option<String>,
     #[serde(default)]
+    #[ts(optional)]
     pub transport: Option<String>,
     #[serde(default)]
+    #[ts(optional)]
     pub command: Option<String>,
     #[serde(default)]
+    #[ts(optional)]
     pub args: Option<Vec<String>>,
     #[serde(default)]
+    #[ts(optional)]
     pub url: Option<String>,
     /// checked by the command: anything but an array of names is refused with the reason
     #[serde(default)]
+    #[ts(optional)]
     pub env: Option<Value>,
     #[serde(default)]
+    #[ts(optional)]
     pub headers: Option<Value>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default, TS)]
 pub struct AgentSigninArgs {
     /// wisp.mcp sends it as `session`
     #[serde(default, alias = "session", skip_serializing_if = "Option::is_none")]
+    #[ts(rename = "session", optional)]
     pub sid: Option<String>,
     #[serde(default)]
+    #[ts(as = "Option<String>", optional)]
     pub name: String,
     /// shown on the card (≤ 400 chars)
     #[serde(default)]
+    #[ts(as = "Option<String>", optional)]
     pub why: String,
 }
 
@@ -220,8 +232,8 @@ command!(
     false,
     ConnectorBody,
     ConnectorsView
-);
-command!(Update, "connectors.update", "connectors:update", false, UpdateArgs, ConnectorsView);
+; typed);
+command!(Update, "connectors.update", "connectors:update", false, UpdateArgs, ConnectorsView; typed);
 // `; typed`: `wisp connectors remove <id>` takes the id as its word (audit F setup F11: only `--id` worked)
 command!(Remove, "connectors.remove", "connectors:remove", false, IdArgs, ConnectorsView; typed);
 command!(
@@ -242,7 +254,7 @@ command!(
     false,
     SigninArgs,
     SigninUrl
-);
+; typed);
 command!(Signout, "connectors.signout", "connectors:signout", false, IdArgs, ConnectorsView; typed);
 command!(
     /// The browser came back from the sign-in page: trade the code for tokens.
@@ -288,7 +300,7 @@ command!(
     true,
     AgentArgs,
     AgentText
-);
+; typed);
 command!(
     /// `wisp_connector_add`: only a task the user started (not a subagent, not a crew member's job)
     AgentAdd,
@@ -297,7 +309,7 @@ command!(
     false,
     AgentAddArgs,
     AgentText
-);
+; typed);
 command!(
     /// `wisp_connector_signin`: the card where the user signs in or types the keys
     AgentSignin,
@@ -306,7 +318,7 @@ command!(
     true,
     AgentSigninArgs,
     AgentSigninOut
-);
+; typed);
 
 /// `connectors.call`: one tool of a remote (HTTP) connector, called by wisp itself with the connector's own
 /// sign-in or headers (v1 connectors.js `mcpCall`; the issue picker lists Linear and Jira through them).
@@ -336,7 +348,7 @@ command!(
     false,
     CallArgs,
     CallOut
-);
+; typed);
 
 // ---------- events ----------
 

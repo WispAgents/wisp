@@ -22,3 +22,9 @@ export function stopQuestion(o: { readonly sub: boolean; readonly name: string; 
     ok: o.sub ? t('shell.stop.okSub') : t('shell.stop.ok'),
   };
 }
+
+/** A factory run's Stop, asked as a task's Stop is (audit G13: ⋯ › Stop the run stopped every station at once): what
+ *  stops, and what's kept. */
+export function factoryStopQuestion(t: ShellContext['t']): StopQuestion & { readonly factory: true } {
+  return { title: t('shell.stop.factoryTitle'), body: t('shell.stop.factoryBody'), ok: t('shell.task.factoryStop'), factory: true };
+}

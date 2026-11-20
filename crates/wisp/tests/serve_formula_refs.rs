@@ -206,3 +206,54 @@ fn a_windows_path_in_the_formula_reads_back_as_itself() {
         assert_eq!(doc[0]["projects"]["app"]["path"], p);
     }
 }
+
+/// Audit G8: a formula with a field no kind has (`agents.critic.brief`) launched anyway: the agent was dropped, and the
+/// task showed "✗ Not started · no harness critic". A task under it is refused before it launches, in validate's words,
+/// from `wisp "…" --formula` and `wisp run <task> --formula`; nothing starts.
+#[tokio::test(flavor = "multi_thread")]
+async fn an_invalid_formula_is_refused_before_a_task_launches_audit_g8() {
+    let dir = temp("serve-formula-invalid");
+    let (_serve, port) = start(&dir);
+    let api = Api { http: reqwest::Client::new(), port, n: 0.into() };
+    std::fs::write(
+        dir.join("team.yml"),
+        "wisp: 1\nagents:\n  critic: { harness: claude, brief: be strict }\ntasks:\n  release: { prompt: ship it, agent: critic }\n",
+    )
+    .unwrap();
+    for args in [&["fix it", "--formula", "team.yml", "--agent", "critic"][..], &["run", "release", "--formula", "team.yml"]] {
+        let (code, out, err) = wisp(&dir, port, args);
+        assert_ne!(code, 0, "{args:?}: {out}{err}");
+        assert!(format!("{out}{err}").contains("agents.critic.brief: unknown field"), "{args:?}: {out}{err}");
+    }
+    let all = api.cmd("runtime.list", json!({})).await;
+    assert!(all.as_array().is_none_or(Vec::is_empty), "nothing launched: {all}");
+}
+
+/// Audit G9: `wisp run release --formula team.yml` from a project ran in place in the user's checkout, where `wisp "…"
+/// --formula` and a plain `wisp run fix-build` each got a worktree. It gets its own worktree too; a task that says
+/// `worktree: false` still runs in place.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_declared_task_under_a_formula_runs_in_its_own_worktree_audit_g9() {
+    let dir = temp("serve-formula-worktree");
+    let (_serve, port) = start(&dir);
+    let api = Api { http: reqwest::Client::new(), port, n: 0.into() };
+    for args in
+        [&["init", "-q", "-b", "main"][..], &["-c", "user.email=t@t", "-c", "user.name=t", "commit", "-q", "--allow-empty", "-m", "init"]]
+    {
+        assert!(Command::new("git").args(args).current_dir(&dir).status().unwrap().success());
+    }
+    std::fs::write(
+        dir.join("team.yml"),
+        "wisp: 1\nagents:\n  critic: { harness: claude }\ntasks:\n  release: { prompt: ship it, agent: critic }\n  here: { prompt: tidy, agent: critic, worktree: false }\n",
+    )
+    .unwrap();
+    let real = wisp_proc::canonical_blocking(&dir).unwrap();
+    for (task, own) in [("release", true), ("here", false)] {
+        let (code, out, err) = wisp(&dir, port, &["run", task, "--formula", "team.yml"]);
+        assert_eq!(code, 0, "{out}{err}");
+        let id = out.split_whitespace().skip_while(|w| *w != "attach").nth(1).unwrap_or_default().to_owned();
+        let t = made(&api, &id).await;
+        let cwd = wisp_proc::canonical_blocking(std::path::Path::new(t["cwd"].as_str().unwrap_or_default())).unwrap_or_default();
+        assert_eq!(cwd != real, own, "{task}: {cwd:?} (the checkout is {real:?}): {t}");
+    }
+}

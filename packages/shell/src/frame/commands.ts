@@ -219,6 +219,21 @@ export const followUp = defineCommand<{
   optimistic: (base, a) => (a.queue ? queuedOps(base.peek<SessionRow>(SESSION, a.id as EntityKey), a) : startedOps(a)),
 });
 
+/** The setup card open on a task (ADR-0113: an agent asks to change your setup), its id; undefined when none is. */
+export function setupCardOf(s: SessionRow | undefined): string | undefined {
+  const ask = ((s?.body as { ext?: Record<string, unknown> } | undefined)?.ext?.['wisp.runtime'] as { ask?: { id?: unknown; setup?: unknown } | null } | undefined)?.ask;
+  return ask && typeof ask.setup === 'object' && ask.setup !== null && typeof ask.id === 'string' && ask.id ? ask.id : undefined;
+}
+
+/** Words typed in the reply box under a setup card answer it: Allow (yes) runs it, anything else is the Deny with your
+ * words (ADR-0113 rule 4, the card's "Or type why not below"). A follow-up there queued behind the card (audit G4). */
+export const answerSetup = defineCommand<{ id: string; text: string; askId: string }>({
+  id: 'runtime.answer',
+  owner: (a) => a.id,
+  wire: (a) => ({ id: bare(a.id), text: a.text, askId: a.askId }),
+  optimistic: (_base, a) => [{ e: SESSION, id: a.id as EntityKey, op: 'patch', ops: [{ op: 'replace', path: '/body/ext/wisp.runtime/ask', value: null }] }],
+});
+
 /** A queued follow-up shows in the queue over the reply box at once, under its turn id (the peer's item id). */
 export function queuedOps(s: SessionRow | undefined, a: { id: string; text: string; turnId: string; at: number; attachments?: readonly Attachment[] }): LocalOp[] {
   const queue = ((s?.body as { queue?: readonly unknown[] } | undefined)?.queue ?? []) as readonly unknown[];

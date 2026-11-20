@@ -146,10 +146,10 @@ async fn dangling(
         let mut has = if names.is_empty() {
             format!("no {section} are declared")
         } else {
-            format!("{section} has {}", names.iter().map(|n| n.as_str()).collect::<Vec<_>>().join(", "))
+            format!("{section} has {}", wisp_resources_core::overlay::some_of(&names))
         };
         if !more.is_empty() {
-            has = format!("{has} (or {})", more.join(", "));
+            has = format!("{has} (or {})", wisp_resources_core::overlay::some_of(more));
         }
         let line = format!("{at}: no {} named {}: {has}", r.kind, r.name);
         if !out.contains(&line) {

@@ -1370,6 +1370,123 @@ async fn a_follow_up_waits_behind_an_open_setup_card_review_7() {
     a.serve.stop();
 }
 
+/// Audit G6: the user's own `wisp_launch` over HTTP (`/api/mcp`, no token) was v1's: it dropped `goal`, `formula`,
+/// `factory` and `worktree` and ran in place in the user's checkout. It is the same launch as everywhere else now: in a
+/// git project the task gets its worktree, and the goal it names is its goal.
+#[tokio::test(flavor = "multi_thread")]
+async fn the_users_http_wisp_launch_takes_a_goal_and_runs_in_a_worktree_audit_g6() {
+    let a = Agent::start("user-launch").await;
+    let repo = a.dir.join("repo");
+    std::fs::create_dir_all(&repo).unwrap();
+    for args in
+        [&["init", "-q", "-b", "main"][..], &["-c", "user.email=t@t", "-c", "user.name=t", "commit", "-q", "--allow-empty", "-m", "init"]]
+    {
+        assert!(std::process::Command::new("git").args(args).current_dir(&repo).status().unwrap().success());
+    }
+    let (said, err) = a
+        .user_call("wisp_launch", json!({ "prompt": "make the tests pass", "cwd": repo, "agent": "claude", "goal": "npm test passes" }))
+        .await;
+    assert!(!err, "{said}");
+    let id = said.split('`').nth(1).unwrap_or_default().to_owned();
+    let t = a.api.cmd("runtime.get", json!({ "id": id })).await;
+    assert_eq!(t["ext"]["wisp.runtime"]["spec"]["goal"], "npm test passes", "{t}");
+    let cwd = t["cwd"].as_str().unwrap_or_default();
+    assert!(!cwd.is_empty() && !std::path::Path::new(cwd).ends_with("repo"), "its own worktree, not the user's checkout: {cwd}");
+    assert_ne!(t["ext"]["wisp.runtime"]["spec"]["by"], "agent", "the user's own launch: {t}");
+    a.serve.stop();
+}
+
+/// Audit G7: no goal or factory tool in either server (wisp.mcp's manifest granted no `goal:*` or `factory:*`, and a
+/// tool runs on its grant), so a harness couldn't list the declared goals, set a goal on a task or stop a run. A run's
+/// agent gets the goal tools (ADR-0112: its own work) and reads the factories; the user's editor gets them all.
+#[tokio::test(flavor = "multi_thread")]
+async fn goal_and_factory_tools_reach_both_mcp_servers_audit_g7() {
+    let a = Agent::start("goal-tools").await;
+    let (agent, user) = (a.names(true).await, a.names(false).await);
+    for t in ["goal_set", "goal_declared", "goal_check", "goal_drop", "goal_pause", "goal_resume", "factory_list"] {
+        assert!(agent.iter().any(|n| n == t), "{t} for the agent: {agent:?}");
+    }
+    for t in ["goal_set", "goal_declared", "factory_list", "factory_stop"] {
+        assert!(user.iter().any(|n| n == t), "{t} for the user: {user:?}");
+    }
+    let (said, err) = a.call("goal_set", json!({ "id": a.id, "text": "the tests pass" })).await;
+    assert!(!err, "{said}");
+    let t = a.api.cmd("runtime.get", json!({ "id": a.id })).await;
+    assert_eq!(t["ext"]["wisp.goal"]["text"], "the tests pass", "{t}");
+    let (said, err) = a.user_call("goal_declared", json!({})).await;
+    assert!(!err, "{said}");
+    // audit G18: a tool the run isn't given is named, as the user's server names it (not "Method not found: tools/call")
+    let (said, err) = a.call("nosuch_tool", json!({})).await;
+    assert!(err && said.contains("Unknown tool: nosuch_tool"), "{said}");
+    a.serve.stop();
+}
+
+/// Audit G21: after a restart the agent that put up a setup card is gone (its turn "Stopped · wisp restarted"), yet the
+/// app still offered the card's Allow, which added the project with nobody told, and `wisp show` didn't show it. The
+/// card goes with the run that asked, and the turn says it was taken back.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_setup_card_goes_with_its_agent_on_a_restart_audit_g21() {
+    let a = Agent::start("setup-restart").await;
+    let (_, card) = raw_card(&a, "crew.agent.add", json!({ "session": a.id, "name": "Zed", "agent": "claude" })).await;
+    assert!(card["setup"].is_object());
+    let Agent { serve, dir, id, .. } = a;
+    serve.stop();
+    let (serve, port) = restart(&dir);
+    let api = Api { http: reqwest::Client::new(), port, n: 0.into() };
+    let t = api.cmd("runtime.get", json!({ "id": id })).await;
+    assert!(t["ext"]["wisp.runtime"]["ask"].is_null(), "no card left to answer: {t}");
+    let turns = api.cmd("runtime.turns", json!({ "id": id })).await;
+    assert!(turns.to_string().contains("was taken back"), "{turns}");
+    drop(serve);
+}
+
+/// The user's own CLI against the agent's server.
+fn cli(a: &Agent, args: &[&str]) -> (i32, String) {
+    let o = std::process::Command::new(env!("CARGO_BIN_EXE_wisp"))
+        .args(args)
+        .env("WISP_HOME", a.dir.join("home"))
+        .env("WISP_PORT", a.port.to_string())
+        .env("NO_COLOR", "1")
+        .current_dir(&a.dir)
+        .stdin(std::process::Stdio::null())
+        .output()
+        .unwrap();
+    (o.status.code().unwrap_or(-1), format!("{}{}", String::from_utf8_lossy(&o.stdout), String::from_utf8_lossy(&o.stderr)))
+}
+
+/// Audit G4: `wisp show` said "Answer: wisp reply <id> …", but `wisp reply <id> Allow` queued "Allow" as a follow-up
+/// behind the card, which stayed, and later ran as the agent's prompt. Now `wisp show` names the card's answers, `wisp
+/// reply` answers the open card (the user's own CLI is theirs to answer, ADR-0113 rule 5), words are the Deny with them
+/// (rule 4), and a card's answer word is never queued as a follow-up, from any client.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_setup_card_is_answered_with_wisp_reply_and_allow_is_never_queued_audit_g4() {
+    let a = Agent::start("setup-reply").await;
+    let (_, card) = raw_card(&a, "crew.agent.add", json!({ "session": a.id, "name": "Bob", "agent": "claude" })).await;
+    let (code, shown) = cli(&a, &["show", &a.id]);
+    assert_eq!(code, 0, "{shown}");
+    assert!(shown.contains(&format!("wisp reply {} Allow", a.id)) && shown.contains("Deny"), "{shown}");
+    // any client: the card's answer word isn't queued behind it as a prompt
+    let r = a.api.try_cmd("runtime.followUp", json!({ "id": a.id, "text": "Allow", "queue": true })).await;
+    assert!(r.to_string().contains("setup card"), "{r}");
+    let t = a.api.cmd("runtime.get", json!({ "id": a.id })).await;
+    assert!(t["queue"].as_array().is_none_or(Vec::is_empty), "nothing queued: {t}");
+    let (code, said) = cli(&a, &["reply", &a.id, "Allow"]);
+    assert_eq!(code, 0, "{said}");
+    assert!(!said.contains("queued") && said.contains("You allowed"), "{said}");
+    let t = a.api.cmd("runtime.get", json!({ "id": a.id })).await;
+    assert!(t["ext"]["wisp.runtime"]["ask"].is_null(), "the card is answered: {t}");
+    assert!(crew_names(&a).await.contains(&"Bob".to_owned()), "Allow ran the write the card showed");
+    assert!(t["queue"].as_array().is_none_or(Vec::is_empty), "{t}");
+    // words are the Deny, with them
+    let (_, card2) = raw_card(&a, "crew.agent.add", json!({ "session": a.id, "name": "Eve", "agent": "claude" })).await;
+    assert_ne!(card2["id"], card["id"]);
+    let (code, said) = cli(&a, &["reply", &a.id, "keep", "Eve", "out"]);
+    assert_eq!(code, 0, "{said}");
+    assert!(said.contains("You denied") && said.contains("keep Eve out"), "{said}");
+    assert!(!crew_names(&a).await.contains(&"Eve".to_owned()));
+    a.serve.stop();
+}
+
 /// The build station's task of the factory run `run`, once the run has made it.
 async fn build_station(a: &Agent, run: &str) -> Value {
     let at = std::time::Instant::now();

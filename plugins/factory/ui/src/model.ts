@@ -45,6 +45,8 @@ export function step(r: RunLine, s: StationLine): { readonly title: Said; readon
   const name = STATION_KEY[s.id];
   const title: Said = (s.round ?? 0) > 1 ? { key: 'wisp.factory.station.round', vars: { station: name, round: s.round } } : { key: name };
   const status = STATUS[s.state] ?? 'pending';
+  // what it asks about, when it says (the spec waiting on your yes, audit G5), else the question
+  if (s.state === 'asking' && r.waiting?.context) return { title, detail: { key: 'wisp.factory.asksAbout', vars: { about: r.waiting.context } }, status };
   if (s.state === 'asking' && r.waiting) return { title, detail: { key: 'wisp.factory.asks', vars: { question: r.waiting.question } }, status };
   if ((s.state === 'failed' || s.state === 'skipped') && s.why) return { title, detail: s.why, status };
   // running again: the last round's output isn't this round's
@@ -64,4 +66,11 @@ export function openable(r: RunLine): readonly { readonly task: string; readonly
 export function runOf(row: { readonly factory?: unknown; readonly summary?: Record<string, unknown> } | undefined): RunLine | undefined {
   const f = (row?.factory ?? row?.summary?.['factory']) as RunLine | undefined;
   return f && Array.isArray(f.stations) ? f : undefined;
+}
+
+/** Why the run ended, under the band: not when a station already says the same (audit G15: "ship failed: Nothing to
+ *  ship…" on the Ship row and again under the band). */
+export function endWhy(r: RunLine): string | undefined {
+  if (!r.why || live(r)) return undefined;
+  return r.stations.some((s) => s.why && (s.why === r.why || r.why.includes(s.why))) ? undefined : r.why;
 }

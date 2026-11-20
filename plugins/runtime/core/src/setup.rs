@@ -84,7 +84,9 @@ fn only(a: &Value, keys: &[&str], what: &str) -> Result<Map<String, Value>, Stri
             continue;
         }
         if !keys.contains(&k.as_str()) {
-            return Err(format!("{k} isn't something a {what} card can carry"));
+            // what it takes, named (audit G18: `wisp_crew_remove {"name":"Eve"}` never said it needs `member`)
+            let takes = if keys.len() <= 3 { keys.join(", ") } else { format!("{}, …", keys[..3].join(", ")) };
+            return Err(format!("{k} isn't something a {what} card can carry: it takes {takes}"));
         }
         out.insert(k.clone(), v.clone());
     }
@@ -474,6 +476,10 @@ mod tests {
             ("Ada wants to change crew member Bob", vec!["role: Lead".into(), "remember: ships on fridays".into()])
         );
         assert_eq!(card_of(CREW_REMOVE, json!({ "member": "Bob" })).0.action, "remove Bob from your crew");
+        // audit G18: a wrong field names the one it takes
+        let t = Task { session: "s1", cwd: "/w" };
+        let e = normalize(CREW_REMOVE, &json!({ "name": "Eve" }), t).unwrap_err();
+        assert_eq!(e, "name isn't something a crew card can carry: it takes member");
     }
 
     #[test]

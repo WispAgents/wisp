@@ -160,3 +160,17 @@ fn shell_hook_writes_a_private_file() {
     assert!(hook_script("fish").unwrap().contains("chmod 600"));
     assert!(hook_script("powershell").is_none());
 }
+
+/// Audit G19: a new tmux pane on a closed pane's tty listed that pane's `echo`, `node` and `wisp` among "your last
+/// commands". Each line says its shell; only the asking shell's are its own.
+#[test]
+fn a_new_pane_on_a_reused_tty_lists_only_its_own_commands_audit_g19() {
+    let log = "{\"cmd\":\"echo old\",\"at\":10,\"pid\":100}\n{\"cmd\":\"npm test\",\"at\":20,\"pid\":200}\n";
+    let cmds = parse_log(log, 30);
+    assert_eq!(of_shell(cmds.clone(), &[999, 200]).iter().map(|c| c.cmd.as_str()).collect::<Vec<_>>(), ["npm test"]);
+    assert_eq!(of_shell(cmds.clone(), &[]).len(), 2, "who asks isn't known: all of them");
+    let old = parse_log("{\"cmd\":\"ls\",\"at\":10}\n", 30);
+    assert_eq!(of_shell(old, &[200]).len(), 1, "an older hook's lines, with no pid: kept");
+    assert!(hook_script("zsh").unwrap().contains("\\\"pid\\\":$$"));
+    assert!(hook_script("bash").unwrap().contains("\"pid\":%d") && hook_script("fish").unwrap().contains("$fish_pid"));
+}

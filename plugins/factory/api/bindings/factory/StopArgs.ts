@@ -3,4 +3,8 @@
 /**
  * `factory.stop`: a run's parent task.
  */
-export type StopArgs = { id: string, };
+export type StopArgs = { 
+/**
+ * the run (its parent task's id)
+ */
+id: string, };

@@ -218,7 +218,12 @@ pub fn asking(task: &Value) -> String {
         let _ = write!(out, "\n  {}. {o}", i + 1);
     }
     let id = task.get("id").and_then(Value::as_str).unwrap_or_default();
-    let _ = write!(out, "\n  Answer: wisp reply {id} \"<your answer>\"");
+    if ask.get("setup").is_some_and(Value::is_object) {
+        // a setup card (ADR-0113): Allow runs what it shows; anything you type is the Deny, with your words
+        let _ = write!(out, "\n  Answer: wisp reply {id} Allow, or wisp reply {id} Deny (or say why not: wisp reply {id} \"<why not>\")");
+    } else {
+        let _ = write!(out, "\n  Answer: wisp reply {id} \"<your answer>\"");
+    }
     out
 }
 
@@ -281,11 +286,27 @@ pub async fn ls(c: &Client, f: &Flags) -> Result<()> {
     Ok(())
 }
 
+/// Who does a row's work: its harness, or `Factory · <name>` for a factory run, which runs no agent of its own (ADR-0114
+/// rule 14; audit G15: `wisp ls` said "claude").
+pub fn agent_of(x: &Value) -> String {
+    let factory = ["/factory/name", "/summary/factory/name", "/ext/wisp.factory/factory"]
+        .iter()
+        .find_map(|p| x.pointer(p).and_then(Value::as_str).filter(|n| !n.is_empty()));
+    match factory {
+        Some(name) => format!("Factory · {name}"),
+        None if ["/factory", "/summary/factory"].iter().any(|p| x.pointer(p).is_some_and(Value::is_object)) => {
+            "Factory · default".to_owned()
+        }
+        None => s(x, "agent").to_owned(),
+    }
+}
+
 /// `wisp ls`'s rows, each column as wide as its longest value (audit E15: "antigravity" pushed its row's project two
 /// characters right of every other row's, past the agent column's fixed 8).
 fn ls_lines(rows: &[&Value]) -> Vec<String> {
     let width = |k: &str, min: usize| rows.iter().map(|x| s(x, k).chars().count()).max().unwrap_or(0).max(min);
-    let (sw, aw) = (width("state", 7), width("agent", 8));
+    let aw = rows.iter().map(|x| agent_of(x).chars().count()).max().unwrap_or(0).max(8);
+    let sw = width("state", 7);
     rows.iter()
         .map(|x| {
             let ask =
@@ -295,7 +316,7 @@ fn ls_lines(rows: &[&Value]) -> Vec<String> {
                 "{}  {:<sw$}  {:<aw$}  {:<16}  {}{ask}",
                 s(x, "id"),
                 s(x, "state"),
-                s(x, "agent"),
+                agent_of(x),
                 proj.chars().take(16).collect::<String>(),
                 s(x, "title")
             )
@@ -332,6 +353,15 @@ pub async fn reply(c: &Client, f: &Flags, args: &[String]) -> Result<()> {
     let id = need(args.first(), "session id")?;
     let text = args[1..].join(" ");
     let text = need(Some(&text), "text")?;
+    // a setup card open on the task (ADR-0113): your reply answers it, naming it (audit G4: it was queued behind the card
+    // as a follow-up, and "Allow" later ran as the agent's prompt)
+    if let Ok(task) = c.cmd("runtime.get", json!({ "id": id })).await
+        && let Some(ask) = task.pointer("/ext/wisp.runtime/ask").filter(|a| a.get("setup").is_some_and(Value::is_object))
+    {
+        let r = c.cmd("runtime.answer", json!({ "id": id, "text": text, "askId": s(ask, "id") })).await?;
+        out(f, &r, &format!("  ✓ {}", Some(s(&r, "said")).filter(|t| !t.is_empty()).unwrap_or("answered")));
+        return Ok(());
+    }
     let mut a = json!({ "id": id, "text": text });
     if f.yes {
         a["confirmLimit"] = json!(true);

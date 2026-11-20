@@ -11,4 +11,8 @@ station: string, question: string, options: Array<string>,
 /**
  * the question's id on the parent task (`runtime.answer`'s `askId`)
  */
-askId: string, };
+askId: string, 
+/**
+ * what it's about, shown with it (the spec "Approve the spec?" asks about). Additive (2026-11-20, audit G5).
+ */
+context?: string, };

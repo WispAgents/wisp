@@ -171,9 +171,11 @@ impl Runtime {
             if self.run_state(id.as_str()) == wisp_runtime_core::queue::Run::Idle { SessionState::Review } else { SessionState::Running };
         self.persist(&mut s, Vec::new()).await?;
         if let Some(t) = self.last_turn(id.as_str()).await? {
-            self.add_row(id.as_str(), t.id.as_str(), tool_row(ToolKind::Answer, label)).await?;
+            self.add_row(id.as_str(), t.id.as_str(), tool_row(ToolKind::Answer, label.clone())).await?;
         }
-        Ok(json!({ "answered": true, "askId": ask_id }))
+        // `said`: what the answer did, in the card's words ("You allowed: …", "You denied: … (“why”)"), for the CLI
+        // (`wisp reply`, audit G4) and the channels. Additive (2026-11-20).
+        Ok(json!({ "answered": true, "askId": ask_id, "said": label }))
     }
 }
 

@@ -228,7 +228,7 @@ async fn agent_tool(ctx: &Ctx, call: &Call, session: &str, a: AgentAction) -> Ou
         }
         AgentAction::Launch { args, wait, wait_ms } => {
             let a = args.as_object().cloned().unwrap_or_default();
-            match crate::launch::launch(ctx, call, session, &a).await {
+            match crate::launch::launch(ctx, call, Some(session), &a).await {
                 Ok(c) if wait => {
                     let id = c.get("id").and_then(Value::as_str).unwrap_or_default().to_owned();
                     Outcome::Text(task_wait(ctx, call, &id, wait_ms).await)
@@ -325,9 +325,17 @@ async fn user_tool(ctx: &Ctx, call: &Call, name: &str, a: Map<String, Value>, cw
     let wait_ms = words::task_wait_ms(a.get("timeout_seconds"));
     match name {
         "wisp_launch" => {
-            let Some(prompt) = s("prompt").filter(|p| !p.trim().is_empty()) else { return Outcome::Failed("prompt is required".into()) };
-            let args = json!({ "prompt": prompt, "cwd": s("cwd").or_else(|| cwd.map(str::to_owned)), "agent": s("agent"), "model": s("model"), "effort": s("effort"), "mode": s("mode") });
-            match typed_json::<rt::Create>(ctx, call, args).await {
+            if s("prompt").is_none_or(|p| p.trim().is_empty()) {
+                return Outcome::Failed("prompt is required".into());
+            }
+            // one wisp_launch everywhere (audit G6): the agent's path, from where `wisp mcp` runs, with no asking task
+            let mut a = a.clone();
+            if s("cwd").is_none_or(|c| c.is_empty())
+                && let Some(c) = cwd
+            {
+                a.insert("cwd".into(), json!(c));
+            }
+            match crate::launch::launch(ctx, call, None, &a).await {
                 Ok(c) => {
                     let id = c.get("id").and_then(Value::as_str).unwrap_or_default().to_owned();
                     if a.get("wait").is_some_and(|w| w.as_bool().unwrap_or(false)) {

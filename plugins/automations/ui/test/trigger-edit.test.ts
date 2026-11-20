@@ -1,7 +1,7 @@
 // Settings → Automations → Manage (audit A #8, #9): a saved trigger opens v1's form on its own kind, an edit keeps
 // what the form doesn't show and the secret it isn't shown, and each row reads as v1 described it.
 import { expect, test } from 'vitest';
-import { describeSpec, emptyForm, fireLabel, formOfSpec, keyOfSpec, pick, specOfEdit, specOfForm } from '../src/trigger-form.ts';
+import { describeSpec, emptyForm, fireLabel, formOfSpec, keyOfSpec, pick, specOfEdit, specOfForm, switchedSpec } from '../src/trigger-form.ts';
 
 const o = { place: (p: string) => p.split('/').pop() ?? p, member: (id: string) => (id === 'm1' ? 'Ada' : undefined), words: (c: string) => (c === '0 9 * * 1-5' ? 'Every weekday at 9:00' : null) };
 
@@ -58,4 +58,10 @@ test('each row reads as v1 described it, and only a schedule or a watcher has Ru
   expect(fireLabel({ on: 'issue.labeled' })).toBe('check');
   expect(fireLabel({ on: 'task.done' })).toBeUndefined();
   expect(fireLabel({ on: 'webhook' })).toBeUndefined();
+});
+
+test('the switch turns a trigger off and back on: enabled is sent either way, since apply keeps a field left out_audit_G3', () => {
+  const off = { on: 'schedule', cron: '* * * * *', prompt: 'Tidy', enabled: false };
+  expect(switchedSpec(off, true)).toEqual({ ...off, enabled: true });
+  expect(switchedSpec({ on: 'schedule', cron: '* * * * *', prompt: 'Tidy' }, false)).toMatchObject({ enabled: false });
 });

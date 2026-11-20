@@ -200,7 +200,7 @@ impl Reader<'_> {
         match m.get("wisp").and_then(Value::as_u64) {
             Some(v) if v == u64::from(FORMAT) => {}
             Some(v) => return Err(format!("{at}: wisp: {v} is newer than this wisp reads (wisp: {FORMAT}); update wisp")),
-            None => return Err(format!("{at}: not a wisp formula: it starts with `wisp: {FORMAT}`")),
+            None => return Err(format!("{at}: not a wisp formula (a formula starts with `wisp: {FORMAT}`)")),
         }
         let includes: Vec<String> = match m.remove("include") {
             Some(Value::String(s)) => vec![s],
@@ -426,7 +426,10 @@ mod read_text_tests {
         assert_eq!(got.secrets, ["linear"]);
         let e = read_text("wisp: 1\ninclude: base.yml\n", Format::Yaml, &kinds).unwrap_err();
         assert!(e.contains("pasted text can't reach"), "{e}");
-        assert!(read_text("not: a formula", Format::Yaml, &kinds).unwrap_err().contains("not a wisp formula"));
+        // audit G17: what a formula starts with, not read as what this file starts with
+        assert!(
+            read_text("not: a formula", Format::Yaml, &kinds).unwrap_err().contains("not a wisp formula (a formula starts with `wisp: 1`)")
+        );
         assert_eq!(read_text("{\"wisp\": 1}", Format::Json, &kinds).unwrap().resources.len(), 0);
     }
 }

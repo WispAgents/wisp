@@ -245,3 +245,26 @@ async fn a_task_files_formula_is_read_from_its_own_folder_or_the_project_said() 
     );
     let _ = std::fs::remove_dir_all(&d);
 }
+
+/// Audit G10: New task's picked `.qa/a.task.yml` read its `formula: ./team.yml` at the project's root ("No such file or
+/// directory (os error 2)"). The same file found in the project (its name and text) is where its names are read; one
+/// that isn't found is said in plain words, never the OS's.
+#[tokio::test]
+async fn a_picked_task_file_reads_its_formula_beside_it_audit_g10() {
+    let store = Store::open(Location::Memory, Arc::new(SystemClock)).unwrap();
+    let k = TestApp::new().with(wisp_resources::ResourcesPlugin).with(Kinds).service(store).start().await;
+    let d = tmp("beside");
+    std::fs::create_dir_all(d.join(".qa")).unwrap();
+    std::fs::write(d.join(".qa/team.yml"), "wisp: 1\nagents:\n  beside: {}\n").unwrap();
+    let text = "wisp: 1\ntask: { prompt: x }\nformula: ./team.yml\n";
+    std::fs::write(d.join(".qa/a.task.yml"), text).unwrap();
+    let cwd = d.display().to_string();
+    let o = k.call(Caller::user(), "resources.overlay", json!({ "text": text, "name": "a.task.yml", "cwd": cwd })).await.unwrap();
+    assert_eq!(o["overlay"]["agents"], json!([{ "name": "beside" }]), "{o}");
+    assert_eq!(o.get("problems").and_then(Value::as_array).map_or(0, Vec::len), 0, "{o}");
+    let other = "wisp: 1\ntask: { prompt: y }\nformula: ./gone.yml\n";
+    let o = k.call(Caller::user(), "resources.overlay", json!({ "text": other, "name": "b.task.yml", "cwd": cwd })).await.unwrap();
+    let said = o["problems"].to_string();
+    assert!(said.contains("./gone.yml isn't in the project folder") && !said.contains("os error"), "{said}");
+    let _ = std::fs::remove_dir_all(&d);
+}

@@ -5,7 +5,7 @@ import { describe, expect, it } from 'vitest';
 import ui from '../src/index.ts';
 import { t } from '../src/i18n.ts';
 import '../src/i18n/lazy.ts';
-import { live, openable, runOf, step, where } from '../src/model.ts';
+import { endWhy, live, openable, runOf, step, where } from '../src/model.ts';
 import type { RunLine } from '../src/types.ts';
 
 const run = (over: Partial<RunLine> = {}): RunLine => ({
@@ -54,11 +54,18 @@ describe('wisp.factory ui', () => {
     expect(words(where(w).said)).toBe('Waiting on you');
     expect(where(w).tone).toBe('warn');
     expect(words(step(w, w.stations[4]!).detail as never)).toBe('Waiting on you: Merge it?');
+    // audit G5: "Approve the spec?" shows the spec it asks about, not only the question
+    const sp = run({ state: 'waiting', station: 'spec', round: 1, stations: r.stations.map((s) => (s.id === 'spec' ? { ...s, state: 'asking' } : s)), waiting: { station: 'spec', question: 'Approve the spec?', options: ['Approve', 'Stop'], askId: 'a2', context: 'SPEC: add adds' } });
+    expect(words(step(sp, sp.stations[0]!).detail as never)).toBe('SPEC: add adds · waiting on you');
     // ended: how, why, and no Stop
     const f = run({ state: 'failed', station: '', why: 'Checks still fail after 3 round(s)', stations: r.stations.map((s) => (s.id === 'checks' ? { ...s, state: 'failed', why: '`npm test` exited 1' } : s)) });
     expect(words(where(f).said)).toBe('Failed');
     expect(step(f, f.stations[2]!).detail).toBe('`npm test` exited 1');
     expect(live(f)).toBe(false);
+    expect(endWhy(f), 'no station says it: under the band').toBe('Checks still fail after 3 round(s)');
+    // audit G15: said once, on its station, not again under the band
+    const sh = run({ state: 'failed', station: '', why: 'ship failed: Nothing to ship', stations: r.stations.map((s) => (s.id === 'ship' ? { ...s, state: 'failed', why: 'ship failed: Nothing to ship' } : s)) });
+    expect(endWhy(sh)).toBeUndefined();
     expect(words(where(run({ state: 'running', station: '', round: 1 })).said)).toBe('Starting');
     expect(words(where(run({ station: 'build', round: 1 })).said)).toBe('Build');
   });

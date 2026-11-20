@@ -37,9 +37,12 @@ pub fn goal_line(task: &Value) -> String {
     let Some(text) = text else { return String::new() };
     let n = st.get("rounds").and_then(Value::as_u64).unwrap_or(0);
     let rounds = if n == 1 { "1 round".to_owned() } else { format!("{n} rounds") };
-    let why = st.get("why").and_then(Value::as_str).filter(|w| !w.is_empty()).map_or_else(String::new, |w| format!(": {w}"));
+    let said = st.get("why").and_then(Value::as_str).unwrap_or_default();
+    let why = judges_said(said).map_or_else(String::new, |w| format!(": {w}"));
     let at = match state {
         "met" => format!("met after {rounds}"),
+        // a judge that couldn't judge stopped it: that, not "not met" (audit G2)
+        "stalled" if said.starts_with("The goal can't be judged") => said.lines().next().unwrap_or(said).trim().to_owned(),
         "stalled" => format!("not met after {rounds}{why}"),
         "paused" => "paused".to_owned(),
         "judging" => "being checked".to_owned(),
@@ -47,6 +50,15 @@ pub fn goal_line(task: &Value) -> String {
         _ => format!("not met yet after {rounds}"),
     };
     format!("\n◎ Goal: {text}  · {at}")
+}
+
+/// What the judges said, from a stalled goal's question ("The goal isn't met after 1 round.\n<judge>: <why>\nKeep going?"):
+/// their lines, without the question's own head and tail, which the line already says (audit G16: "not met after 1
+/// round: The goal isn't met after 1 rounds.").
+fn judges_said(why: &str) -> Option<String> {
+    let lines: Vec<&str> =
+        why.lines().map(str::trim).filter(|l| !l.is_empty() && !l.starts_with("The goal isn't met after") && *l != "Keep going?").collect();
+    (!lines.is_empty()).then(|| lines.join("; "))
 }
 
 /// A turn held before it started (project trust, a changed harness, a failed setup, the plan's line): what holds it,
@@ -102,6 +114,17 @@ mod tests {
             serde_json::json!({ "goal": { "text": "green" } }),
         );
         assert_eq!(super::goal_line(&out), "\n◎ Goal: green  · not met after 3 rounds: still failing");
+        // audit G16: the stall's question isn't said again inside the line
+        let asked = t(
+            serde_json::json!({ "state": "stalled", "rounds": 1, "why": "The goal isn't met after 1 round.\ncritic: tests fail\nKeep going?" }),
+            serde_json::json!({ "goal": "green" }),
+        );
+        assert_eq!(super::goal_line(&asked), "\n◎ Goal: green  · not met after 1 round: critic: tests fail");
+        let broke = t(
+            serde_json::json!({ "state": "stalled", "rounds": 1, "why": "The goal can't be judged: critic couldn't judge: no harness critic\nThe work isn't sent back for that." }),
+            serde_json::json!({ "goal": "green" }),
+        );
+        assert_eq!(super::goal_line(&broke), "\n◎ Goal: green  · The goal can't be judged: critic couldn't judge: no harness critic");
         assert_eq!(super::goal_line(&t(serde_json::json!({ "state": "cleared" }), serde_json::json!({ "goal": "x" }))), "");
         assert_eq!(super::goal_line(&serde_json::json!({ "ext": {} })), "", "no goal: nothing");
         let run = serde_json::json!({ "ext": { "wisp.factory": { "factory": "default", "state": "failed", "station": "", "round": 3, "max": 3,

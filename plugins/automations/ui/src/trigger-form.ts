@@ -301,3 +301,9 @@ export function fireLabel(spec: Readonly<Record<string, unknown>>): 'run' | 'che
   if (key === 'schedule' || str(spec['on']) === 'manual') return 'run';
   return key && POLLED.has(kindOf(key).kind) ? 'check' : undefined;
 }
+
+/** What the switch saves (audit G3): `enabled` said either way. A spec is applied over the stored one (ADR-0026: a
+ * field left out keeps its value), so turning a trigger on by leaving `enabled` out kept it off. */
+export function switchedSpec(spec: Readonly<Record<string, unknown>>, on: boolean): Record<string, unknown> {
+  return { ...spec, enabled: on };
+}

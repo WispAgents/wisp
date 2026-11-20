@@ -46,6 +46,10 @@ pub struct ArgSpec {
     /// true: the type is `null` (no arguments at all)
     pub none: bool,
     pub fields: Vec<Field>,
+    /// fields beyond `fields` may be given (`{ … } & { … }`, an index signature): an unknown one isn't refused. Additive
+    /// (2026-11-20, audit D6: every other type's unknown fields were dropped)
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub open: bool,
 }
 
 impl ArgSpec {
@@ -101,8 +105,8 @@ fn leading_doc(s: &str) -> (String, &str) {
 /// takes any number and floors it", "[`crate::MAX_CREW`]").
 pub fn public(doc: &str) -> String {
     let mut s = doc.to_owned();
-    // asides: "(v1 …)", "(at most [`crate::…`])"
-    for open in ["(v1 ", "(at most [`"] {
+    // asides: "(v1 …)", "(at most [`crate::…`])", "(ADR-0113)", "(audit G4: …)", "(review r194 …)", "(owner-list #63)"
+    for open in ["(v1 ", "(v1's ", "(at most [`", "(ADR-", "(audit ", "(review ", "(owner-list ", "(owner, "] {
         while let Some(i) = s.find(open) {
             let Some(len) = s[i..].find(')') else { break };
             let before = s[..i].trim_end().to_owned();
@@ -116,7 +120,7 @@ pub fn public(doc: &str) -> String {
         s = format!("{}{}", &s[..i], &s[from + len + 1..]);
     }
     let route = |t: &str| ["`GET /", "`POST /", "`PUT /", "`PATCH /", "`DELETE /"].iter().any(|p| t.starts_with(p));
-    let dev = |t: &str| t.starts_with("Additive") || t.starts_with("v1 ") || route(t);
+    let dev = |t: &str| t.starts_with("Additive") || t.starts_with("v1 ") || t.starts_with("v1's ") || route(t);
     let kept: Vec<String> =
         s.split_inclusive(". ").flat_map(|x| x.split_inclusive(": ")).map(str::to_owned).filter(|x| !dev(x.trim())).collect();
     let mut out = kept.concat().trim().to_owned();
@@ -212,13 +216,23 @@ fn field(doc: String, text: &str) -> Option<Field> {
     Some(Field { name, doc, optional, nullable, kind, ty })
 }
 
+/// `serde_json::Value` inline, as ts-rs writes it.
+const JSON_VALUE: &str = "number | string | boolean | Array<JsonValue> | { [key in string]: JsonValue } | null";
+
 /// The argument type of a command, or an empty spec (`--args JSON`) for no declaration.
 pub fn parse(decl: Option<&str>) -> ArgSpec {
     let Some(decl) = decl else { return ArgSpec::default() };
     let (doc, body) = leading_doc(decl);
     let body = body.trim().trim_end_matches(';').trim();
     if body == "null" {
-        return ArgSpec { doc, object: true, none: true, fields: Vec::new() };
+        return ArgSpec { doc, object: true, none: true, fields: Vec::new(), open: false };
+    }
+    // an empty struct (ts-rs: `Record<symbol, never>`): an object of no fields (audit D6: read as not an object, so
+    // `stuff_list`, `crew_list`, … took `--args JSON` and their tools only `{args}`)
+    // and a command typed as a bare `serde_json::Value` (`JsonValue`): typed so that it takes no flag (`plugins.list`,
+    // `mcp.tools`, `telemetry.flush`, …), so no field either
+    if matches!(body, "Record<symbol, never>" | "Record<string, never>" | "{}" | "JsonValue" | JSON_VALUE) {
+        return ArgSpec { doc, object: true, none: false, fields: Vec::new(), open: false };
     }
     // `{ … } & ({ … } | { … })`: the object part's fields; the rest goes in --args
     let first = split_top(body, '&').into_iter().next().unwrap_or_default();
@@ -228,14 +242,16 @@ pub fn parse(decl: Option<&str>) -> ArgSpec {
     else {
         return ArgSpec { doc, ..ArgSpec::default() };
     };
-    let fields = split_top(inner, ',')
+    let pieces = split_top(inner, ',');
+    let open = split_top(body, '&').len() > 1 || pieces.iter().any(|p| leading_doc(p).1.trim().starts_with('['));
+    let fields = pieces
         .into_iter()
         .filter_map(|piece| {
             let (d, rest) = leading_doc(&piece);
             field(d, rest.trim())
         })
         .collect();
-    ArgSpec { doc, object: true, none: false, fields }
+    ArgSpec { doc, object: true, none: false, fields, open }
 }
 
 #[cfg(test)]
@@ -274,6 +290,20 @@ mod tests {
         assert_eq!(public("`[{ name, description?, body }]`, checked by `normalize_kit`"), "`[{ name, description?, body }]`");
         assert_eq!(public("the members (at most [`crate::MAX_CREW`])"), "the members");
         assert_eq!(public("a cron, or words (\"every 30 minutes\")"), "a cron, or words (\"every 30 minutes\")");
+        // audit G17 / E11 again: an ADR, an audit or a review cited, and v1's names
+        assert_eq!(public("the card it answers (ADR-0113), by its id"), "the card it answers, by its id");
+        assert_eq!(public("a goal by name (owner-list #63, ADR-0110)"), "a goal by name");
+        assert_eq!(public("what it fixed (audit G4: it was queued)"), "what it fixed");
+        assert_eq!(public("v1's trigger kinds that start its jobs. what else wakes them"), "what else wakes them");
+    }
+
+    /// Audit D6: an empty struct is an object of no fields, not `--args JSON`.
+    #[test]
+    fn an_empty_struct_is_an_object_of_no_fields_audit_d6() {
+        for d in ["Record<symbol, never>", "Record<string, never>", "{ }", "JsonValue", JSON_VALUE] {
+            let s = parse(Some(d));
+            assert!(s.object && !s.none && s.fields.is_empty() && !s.open, "{d}: {s:?}");
+        }
     }
 
     #[test]

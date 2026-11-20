@@ -2,9 +2,17 @@
 import type { OfferSettle } from "./OfferSettle";
 
 /**
- * `PATCH /crew/:id`. `queue`: the waiting job ids to keep (the rest are dropped).
+ * `PATCH /crew/:id`. A member's fields changed; what it leaves out stays.
  */
-export type UpdateArgs = { id: string, queue?: Array<string>, offers?: Array<OfferSettle>, name?: string, role?: string, avatar?: string, color?: string, 
+export type UpdateArgs = { 
+/**
+ * the member: its name (or its id)
+ */
+id: string, 
+/**
+ * the waiting job ids to keep (the rest are dropped)
+ */
+queue?: Array<string>, offers?: Array<OfferSettle>, name?: string, role?: string, avatar?: string, color?: string, 
 /**
  * the list's tint while they're picked (v1 `bg`): '' their glow, 'none', or a crew colour. Additive (2026-11-12).
  */

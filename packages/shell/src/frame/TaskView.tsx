@@ -63,7 +63,7 @@ import { isFeedback } from './feedback.ts';
 import { readComments } from './comment-text.ts';
 import { useNow } from '../clock.ts';
 import { turnClock } from './turn-clock.ts';
-import { stopQuestion, type StopQuestion } from './stop-question.ts';
+import { factoryStopQuestion, stopQuestion, type StopQuestion } from './stop-question.ts';
 import { noOutputLine } from './no-output.ts';
 import { completionOf, suggestedFollowUps } from './follow-ghost.ts';
 import { promptKeys, remember, sentStore } from './prompt-keys.ts';
@@ -87,6 +87,8 @@ import {
   coldOf,
   compactNow,
   followUp,
+  answerSetup,
+  setupCardOf,
   forLater,
   isSaved,
   markRead,
@@ -431,7 +433,7 @@ export default function TaskView(props: { readonly id: string; readonly onBack?:
   // the running turn's elapsed time counts each second (v1); the rest of the page reads `now` (every 30 s) (B21)
   const tick = useNow(shell.client, 1_000);
   // Stop asks first (v1 #781): what else stops (its running subagents, a subagent's report), and that queued follow-ups stay
-  const [stopAsk, setStopAsk] = createSignal<StopQuestion | undefined>();
+  const [stopAsk, setStopAsk] = createSignal<(StopQuestion & { readonly factory?: true }) | undefined>();
   const [stopping, setStopping] = createSignal(false);
   const allRows = useSignal(shell.client.entities.list<SessionRow>(SESSION));
   const askStop = (): void => {
@@ -468,12 +470,13 @@ export default function TaskView(props: { readonly id: string; readonly onBack?:
       });
   };
   const doStop = (): void => {
+    const factory = stopAsk()?.factory === true;
     setStopAsk(undefined);
     // checked again after the answer: a run that ended while the question was open isn't stopped by an old Yes
     const st = row()?.state;
     if (st !== 'running' && st !== 'waiting') return;
     setStopping(true);
-    void run(stopRun, { id: key })
+    void run(factory ? stopFactoryRun : stopRun, { id: key })
       .catch(() => undefined)
       .finally(() => setStopping(false));
   };
@@ -736,6 +739,13 @@ export default function TaskView(props: { readonly id: string; readonly onBack?:
     ) {
       setText('');
       setWhen(undefined);
+      return;
+    }
+    // under a setup card, words answer it (ADR-0113 rule 4: Allow runs it, else the Deny with them), never a follow-up
+    const card = setupCardOf(row());
+    if (card && v && !extra && files().length === 0) {
+      setText('');
+      run(answerSetup, { id: key, text: v, askId: card }).catch(() => setText(v));
       return;
     }
     setText('');
@@ -1148,7 +1158,8 @@ export default function TaskView(props: { readonly id: string; readonly onBack?:
           if (!f) return undefined;
           const said = t('shell.task.factoryHint');
           if (!f.live) return { long: said, short: said };
-          const stop: Act = { onClick: () => void run(stopFactoryRun, { id: key }).catch(() => undefined) };
+          // asked first, as a task's Stop is (audit G13)
+          const stop: Act = { onClick: () => setStopAsk(factoryStopQuestion(t)) };
           return { long: said, short: said, link: { label: t('shell.task.factoryStop'), title: t('shell.task.factoryStopTitle'), act: stop } };
         };
         const h = (): { name: string; logo?: string } => (factory() ? { name: factoryWords() } : harnessView(replyRun()?.agent ?? s().agent));

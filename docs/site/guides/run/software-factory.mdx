@@ -92,6 +92,10 @@ Declare it in a formula (`.wisp/factories.wisp.yml`, or any formula), then `wisp
 formula without applying it (`wisp "…" --factory careful --formula f.yml`, a task file's `formula:`).
 
 ```yaml
+agents:
+  planner: { harness: claude, mode: plan, instructions: "Write the spec: what changes, and how we'll know it works." }
+  reviewer: { harness: codex, mode: plan, instructions: "Correctness first, then tests." }
+  critic: { harness: claude, mode: plan, instructions: "Look for what the others missed." }
 factories:
   careful:
     description: Two builders, lint and tests, two reviewers

@@ -300,14 +300,16 @@ pub struct AgentText {
     pub error: Option<String>,
 }
 
-/// `PATCH /crew/:id`. `queue`: the waiting job ids to keep (the rest are dropped).
+/// `PATCH /crew/:id`. A member's fields changed; what it leaves out stays.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
 #[ts(export, export_to = "crew/")]
 pub struct UpdateArgs {
+    /// the member: its name (or its id)
     pub id: String,
     #[serde(flatten)]
     pub member: MemberBody,
+    /// the waiting job ids to keep (the rest are dropped)
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub queue: Option<Vec<String>>,

@@ -3,12 +3,12 @@
 // Open the PR, Stop the run. A station that waits on you says the question; the question card itself is the task's
 // own (it's `runtime.ask` on the run's task), so you answer it where you answer any agent's question.
 
-import { Show, createMemo, type JSX } from 'solid-js';
+import { Show, createMemo, createSignal, type JSX } from 'solid-js';
 import type { ExtensionProps } from '@wisp/shell/contract';
-import { Box, Icon, Inline, Menu, Pill, Stack, Steps, Text, useSignal } from '@wisp/ui';
+import { Box, Button, Dialog, Icon, Inline, Menu, Pill, Stack, Steps, Text, useSignal } from '@wisp/ui';
 import { defineCommand, type EntityKey, type PluginClient } from '@wisp/client';
 import { t, type Vars } from './i18n.ts';
-import { live, openable, runOf, step, where, type Said } from './model.ts';
+import { endWhy, live, openable, runOf, step, where, type Said } from './model.ts';
 import { KIND, type SessionRow } from './types.ts';
 import './i18n/lazy.ts';
 
@@ -47,11 +47,18 @@ export default function Band(props: ExtensionProps): JSX.Element {
     const stop = live(r) ? [{ value: 'stop', label: t('wisp.factory.stop'), icon: 'stop' as const }] : [];
     return [...open, ...pr, ...stop];
   };
+  // Stop the run is asked first, as a task's Stop is (audit G13: every station stopped at once, with no way back)
+  const [asking, setAsking] = createSignal(false);
+  const stop = (): void => {
+    setAsking(false);
+    const at = key();
+    if (at && run() && live(run() as NonNullable<ReturnType<typeof run>>)) void props.client.run(stopRun, { session: at }).catch(() => undefined);
+  };
   const act = (v: string): void => {
     const r = run();
     const at = key();
     if (!r || !at) return;
-    if (v === 'stop') void props.client.run(stopRun, { session: at }).catch(() => undefined);
+    if (v === 'stop') setAsking(true);
     else if (v === 'pr' && r.pr) window.open(r.pr, '_blank', 'noopener');
     else if (v.startsWith('open:')) props.client.navigate({ t: 'openTask', id: `${peer()}:${v.slice(5)}` as never });
   };
@@ -83,10 +90,33 @@ export default function Band(props: ExtensionProps): JSX.Element {
                 </Show>
               </Inline>
               <Steps part="factory.stations" items={steps()} />
-              <Show when={r().why && !live(r())}>
-                <Text part="factory.why" size="sm" tone="muted">
-                  {r().why}
-                </Text>
+              <Show when={asking()}>
+                <Dialog
+                  open
+                  role="alertdialog"
+                  size="sm"
+                  title={t('wisp.factory.stopTitle')}
+                  description={t('wisp.factory.stopBody')}
+                  onOpenChange={(open) => !open && setAsking(false)}
+                  part="factory.stopAsk"
+                  footer={
+                    <Inline gap="4" justify="end">
+                      <Button variant="ghost" onClick={() => setAsking(false)}>
+                        {t('wisp.factory.stopCancel')}
+                      </Button>
+                      <Button variant="danger" part="factory.stopAsk.ok" onClick={stop}>
+                        {t('wisp.factory.stop')}
+                      </Button>
+                    </Inline>
+                  }
+                />
+              </Show>
+              <Show when={endWhy(r())}>
+                {(why) => (
+                  <Text part="factory.why" size="sm" tone="muted">
+                    {why()}
+                  </Text>
+                )}
               </Show>
             </Stack>
           </Box>

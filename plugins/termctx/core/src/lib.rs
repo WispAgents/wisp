@@ -140,6 +140,20 @@ pub struct Cmd {
     pub ms: Option<i64>,
     #[serde(default)]
     pub at: i64,
+    /// the shell that ran it (`$$`): a closed pane's tty name is the next pane's, so its log holds both (audit G19)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pid: Option<u32>,
+}
+
+/// The commands of the asking shell, from a tty's log that a closed pane's shell wrote to too: those whose `pid` is
+/// one of `mine` (the asking process's ancestors: the shell, past a launcher); all of them when no line says which
+/// shell wrote it (an older hook) or nothing of `mine` is known.
+#[must_use]
+pub fn of_shell(cmds: Vec<Cmd>, mine: &[u32]) -> Vec<Cmd> {
+    if mine.is_empty() || cmds.iter().all(|c| c.pid.is_none()) {
+        return cmds;
+    }
+    cmds.into_iter().filter(|c| c.pid.is_some_and(|p| mine.contains(&p))).collect()
 }
 
 /// The hook's log (`~/.wisp/term/<tty>.jsonl`): its commands newer than 7 days, oldest first; a damaged line is
@@ -327,7 +341,7 @@ __wisp_precmd() {
   [[ -z $__wisp_cmd ]] && return
   local d="${WISP_HOME:-$HOME/.wisp}/term" t1=$EPOCHREALTIME tty=${TTY##*/}
   local -i ms=$(( (t1 - ${__wisp_t0:-$t1}) * 1000 )) at=$(( t1 * 1000 ))
-  ( umask 077; mkdir -p "$d" && print -r -- "{\"cmd\":\"$(__wisp_esc "$__wisp_cmd")\",\"cwd\":\"$(__wisp_esc "$PWD")\",\"exit\":$ec,\"ms\":$ms,\"at\":$at,\"shell\":\"zsh\"}" >> "$d/${tty:-notty}.jsonl" ) 2>/dev/null
+  ( umask 077; mkdir -p "$d" && print -r -- "{\"cmd\":\"$(__wisp_esc "$__wisp_cmd")\",\"cwd\":\"$(__wisp_esc "$PWD")\",\"exit\":$ec,\"ms\":$ms,\"at\":$at,\"pid\":$$,\"shell\":\"zsh\"}" >> "$d/${tty:-notty}.jsonl" ) 2>/dev/null
   __wisp_cmd=
 }
 autoload -Uz add-zsh-hook && add-zsh-hook preexec __wisp_preexec && add-zsh-hook precmd __wisp_precmd
@@ -343,7 +357,7 @@ __wisp_precmd() {
   [ -z "${__wisp_cmd:-}" ] && return
   local d="${WISP_HOME:-$HOME/.wisp}/term" t1 tty
   t1=$(__wisp_ms); tty=$(tty 2>/dev/null) || tty=notty; tty=${tty##*/}
-  ( umask 077; mkdir -p "$d" && printf '{"cmd":"%s","cwd":"%s","exit":%d,"ms":%d,"at":%d,"shell":"bash"}\n' "$(__wisp_esc "$__wisp_cmd")" "$(__wisp_esc "$PWD")" "$ec" "$(( t1 - __wisp_t0 ))" "$t1" >> "$d/${tty:-notty}.jsonl" ) 2>/dev/null
+  ( umask 077; mkdir -p "$d" && printf '{"cmd":"%s","cwd":"%s","exit":%d,"ms":%d,"at":%d,"pid":%d,"shell":"bash"}\n' "$(__wisp_esc "$__wisp_cmd")" "$(__wisp_esc "$PWD")" "$ec" "$(( t1 - __wisp_t0 ))" "$t1" "$$" >> "$d/${tty:-notty}.jsonl" ) 2>/dev/null
   __wisp_cmd=
 }
 trap '__wisp_preexec' DEBUG
@@ -363,7 +377,7 @@ function __wisp_postexec --on-event fish_postexec
     set tty (basename $tty)
     set -l at (date +%s)000
     fish -c "umask 077; mkdir -p '$d'" 2>/dev/null
-    printf '{"cmd":"%s","cwd":"%s","exit":%d,"ms":%d,"at":%d,"shell":"fish"}\n' (__wisp_esc "$argv[1]") (__wisp_esc "$PWD") $ec $CMD_DURATION $at >> $d/$tty.jsonl 2>/dev/null
+    printf '{"cmd":"%s","cwd":"%s","exit":%d,"ms":%d,"at":%d,"pid":%d,"shell":"fish"}\n' (__wisp_esc "$argv[1]") (__wisp_esc "$PWD") $ec $CMD_DURATION $at $fish_pid >> $d/$tty.jsonl 2>/dev/null
     chmod 600 $d/$tty.jsonl 2>/dev/null
 end
 "#;

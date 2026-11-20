@@ -243,6 +243,10 @@ impl Runtime {
 
     /// A turn a crash or restart left running never finished: it shows stopped (v1 `restartReason`).
     pub(crate) async fn end_unfinished(self: &Arc<Self>, mut s: Session, mut t: Turn) -> Result<()> {
+        // its setup card goes with the run that asked (ADR-0113): nobody is left to read the answer
+        let taken = crate::more::take_setup_card(&mut s).map(|action| {
+            format!("wisp restarted while this was running, so its card asking to {action} was taken back: nothing changed. Follow up to pick it back up.")
+        });
         let ending = Ending {
             stopped: true,
             interrupted: false,
@@ -250,7 +254,7 @@ impl Runtime {
             text: "",
             harness: "",
             changes: &[],
-            reason: Some(("Stopped", "wisp restarted while this was running. Follow up to pick it back up.")),
+            reason: Some(("Stopped", taken.as_deref().unwrap_or("wisp restarted while this was running. Follow up to pick it back up."))),
             signed_out: false,
         };
         let (status, p) = land::end_presentation(&ending, |_| wisp_runtime_api::model::Presentation::default());

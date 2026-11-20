@@ -16,6 +16,7 @@
     "sandbox:place",
     "machines:route",
     "runtime:profiles",
+    "runtime:snapshot",
     "runtime:quick",
     "runtime:quickCancel",
     "runtime:setExt",

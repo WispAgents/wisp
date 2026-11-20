@@ -36,6 +36,10 @@ at most 3 rounds. Each station runs on the task's agent, or your default harness
 one named `default` replaces the built-in one.
 
 ```yaml
+agents:
+  planner: { harness: claude, mode: plan, instructions: "Write the spec: what changes, and how we'll know it works." }
+  reviewer: { harness: codex, mode: plan, instructions: "Correctness first, then tests." }
+  critic: { harness: claude, mode: plan, instructions: "Look for what the others missed." }
 factories:
   careful:
     stations:

@@ -758,7 +758,10 @@ async fn add(user_home: &Path, port: u16, what: Option<&String>, cwd: &Path) -> 
 /// attached (the run live, then a reply box); `-d`, or no terminal, returns with its id.
 async fn launch_and_open(p: &Parsed, home: &Path, port: u16, cwd: &str) -> Result<i32> {
     let c = Client::connect(port, true).await?;
-    if let Some(no) = scripted::unknown_agent(&c, p.flags.agent.as_deref()).await {
+    // under a formula, `--agent` may name one of its agents: resources.overlay checks it with the formula's (ADR-0111)
+    if p.flags.formula.is_empty()
+        && let Some(no) = scripted::unknown_agent(&c, p.flags.agent.as_deref()).await
+    {
         eprintln!("{no}");
         return Ok(cli::USAGE_EXIT);
     }
@@ -766,6 +769,13 @@ async fn launch_and_open(p: &Parsed, home: &Path, port: u16, cwd: &str) -> Resul
     let mut args = scripted::launch_args(&p.flags, &prompt, cwd);
     scripted::in_project(&c, &mut args).await;
     termctx_cli::attach(&c, p, &mut args, &prompt, cwd, home).await;
+    // `--formula f.yml`: the task runs under it, nothing applied, and a formula with problems (validate's) starts
+    // nothing (audit G8: this path dropped `--formula`, so its agent was "no harness critic" and the task launched)
+    let shell_dir = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from(cwd));
+    if let Err(e) = tasks_cli::with_formula(&c, &mut args, &p.flags.formula, &code::Opts::default(), &shell_dir).await {
+        eprintln!("  ✗ {e}");
+        return Ok(1);
+    }
     let made = c.cmd("runtime.create", args).await?;
     let id = made.get("id").and_then(Value::as_str).unwrap_or("").to_owned();
     let title = c
